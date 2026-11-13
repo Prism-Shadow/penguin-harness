@@ -44,9 +44,12 @@ site passes `highlightSiteCode`), `SiteToc` with `useActiveTocEntry`, `SiteSideb
 `@prismshadow/penguin-ui/site.css` for their scoped appearance and shared cursors; a site's
 Tailwind entry also imports `site-page.css` (the `dark` variant, the brand scale, the neutral dark
 ramp, body defaults). This entry is independent of the app renderer and full theme; public sites
-do not need the app's bundled fonts just to render a page. Their wrappers only adapt routes,
-labels, content and preferences. Do not restore copied navbar markup, language-menu event
-handlers, theme cycles, footers, copy buttons or Markdown typography in a site package.
+do not need the app's bundled fonts just to render a page, nor the theme icon sets: a site control
+draws line icons (`site-icons`, `CheckLineIcon`) and builds menu rows with `MenuRow`, never
+`GlyphIcon`, `MenuItem` or a mark drawn in every set, any of which carries the sets into the
+landing and docs bundles. Their wrappers only adapt routes, labels, content and preferences. Do
+not restore copied navbar markup, language-menu event handlers, theme cycles, footers, copy
+buttons or Markdown typography in a site package.
 
 A site component is held to the package's de-slop rules like any other: its look lives in
 `site-content.css` or `site-prose.css` on the `--site-*` palette (Tailwind's values, the neutral
@@ -107,8 +110,8 @@ Rules:
   or border. Reach for `Badge` itself only for what is not a row label: a count, an outline or
   solid weight a design asks for, a superscript mark.
 - **Contrast is measured, not assumed.** The ratios in `tone.ts` are WCAG 2.x against the four
-  surfaces marks actually sit on — white and gray-50 in light, and the values the default theme
-  *overrides* for dark (`packages/ui/src/themes/github.css`: gray-950 is `#000000`, gray-900 is
+  surfaces marks actually sit on — white and gray-50 in light, and the values Primer
+  *overrides* for dark (`packages/ui/src/themes/github/tokens.css`: gray-950 is `#000000`, gray-900 is
   `#0d0d0d`, not Tailwind's stock values). Recompute if you change a tone; a graphical mark needs 3:1, and `muted` is the one tone
   allowed below it because its meaning is always already in text.
 - **What is out of scope**, and must not be folded in: categorical palettes where colour is an
@@ -139,6 +142,16 @@ character, and the placeholder says what blank means, so a visible line would on
 
 Already-disclosed text does not move: `title=` tooltips, `OptionMenu` row descriptions, confirm
 dialog bodies (the dialog *is* the disclosure), toasts, and empty states.
+
+### Placeholders: what blank does, or what to do
+
+A placeholder says what happens if the field is left as it is, or the next step to take (owner,
+2026-10-24): 「留空则使用环境变量 DEEPSEEK_API_KEY」 says what blank does, 「请填写 API key」 what
+to do, 「留空使用默认 base URL」 both. A field whose blank state means something, or that must be
+filled, never has an empty placeholder. No bare status word (「未设置」) and no value dump
+(「默认发往 <url>」): the placeholder speaks to the reader's next move, not to the configuration.
+A required field with a stored value shows the value itself; the placeholder covers the empty
+state only.
 
 ### Tooltips: when a mark gets one
 
@@ -309,6 +322,11 @@ Every control defaults to `sm` so a forgotten prop lands where its neighbours al
 surfaces are outside the family entirely: the chat composer is `text-base` because it holds prose,
 the file editor `font-mono text-xs` because it holds code.
 
+**A toolbar is one height.** `Button`'s `sm` and `base` rungs are the controls' own heights, so a
+search box, a `Select` and a button of one rung line up. A choice in a toolbar is the package's
+`Select` at that rung (the machine picker is one), never a button dressed as a select with a fixed
+`h-*`: the old machine picker, a button with `h-8`, stood about 5px above the controls beside it.
+
 **A button takes the rung of whatever it stands beside.** `Button` defaults to `md`
 (`text-sm px-3 py-1.5`), the page rung, and that is for an action standing on its own: an empty
 state's, the login card's submit, a list's "add a custom model". Wherever a button sits next to form
@@ -343,7 +361,11 @@ mode, machines, workflows:
   `Select`/`OptionMenu` that is the only control in its `PrefRow`. Render the new value at once,
   write only that value, settle on the server's answer; on failure roll back **and**
   `toastError(apiErrorText(e))` (or the row's hint slot) — `useInstantSetting`
-  (`lib/instant-setting.ts`) does all three. A consequential switch asks first through
+  (`lib/instant-setting.ts`) does all three. The one exception is a personal preference that
+  follows the account (`lib/account-sync`: theme, language, background, notifications…): it is
+  written to the browser's cache through `writeCached` and applies at once, and its server write
+  is batched and retried in the background — a failed write is neither rolled back nor toasted.
+  A consequential switch asks first through
   `ConfirmModal` and shows the stored state until confirmed — and joins
   `test/consequential-confirms.test.ts`. A switch that acts on a typed value acts on the *saved*
   value: while that value has unsaved edits (or is missing, where the switch means nothing
@@ -528,8 +550,10 @@ Three behaviours there are load-bearing:
   registers earlier, so without stopping propagation one Esc would close the panel *and* the dialog.
 - **Scroll uses capture**, because scroll does not bubble; the panel closes the moment its position
   would go stale rather than floating out of place. Its own internal scroll is exempted.
-- **`z-[60]`**, above the modal overlay's `z-50`: a portaled node sits in the root stacking context
-  and may be opened from inside a dialog.
+- **`z-popover`**, above a dialog's `z-modal`: a portaled node sits in the root stacking context
+  and may be opened from inside a dialog. A dialog opened from inside a popover therefore lands
+  under it: close the popover first (the chat toolbar's details card does, before its stop
+  confirmation).
 
 Modals, drawers, sheets, the lightbox and `Dropdown` additionally register in the Esc-layer stack
 (the UI package's `esc-layers.ts`: `useEscLayer`, or `pushEscLayer` / `isTopEscLayer`), so Escape
@@ -542,10 +566,57 @@ density `md` for account and project menus, `sm` for a row's overflow and contex
 `MenuRadioItem`, `MenuSeparator` and `MenuLabel`. The panel around them stays a `Dropdown`. A row
 outside a `Menu` is a plain button, for a panel that mixes rows with a search box or a listbox.
 
+## Layers: name one, never a number
+
+Every z-index is a layer of one scale, `packages/ui/src/layers.css`, the only file where a z-index
+is a number. A class names it (`z-sticky`, `z-modal`), a stylesheet reads it
+(`z-index: var(--layer-dock)`), and an inline style or a frame loop writes `layer("dock")`
+(`layers.ts`). In paint order:
+
+| layer | for |
+| --- | --- |
+| `behind` | a decoration under its own box's content: a wallpaper copy, a connector line |
+| `sticky` | a row pinned to its scroller: a tool row, a timeline label, a code gutter |
+| `sticky-head` | a head pinned over the sticky rows it passes: an activity group's head, the Trace toolbar |
+| `raised` | a mark or control floating over a list or scroller: a drop line, jump-to-newest, a chart readout |
+| `handle` | a resize handle straddling the edge it resizes |
+| `window-overlay` | what floats over a window and belongs to it: the dock launcher, a drop veil, a site header |
+| `dock` | a dock surface lifted to fullscreen |
+| `dock-handle` | the handle on a lifted surface's leading edge |
+| `menu` | an in-place menu, and a floating panel a dialog must cover (the find bar) |
+| `modal` | dialogs, drawers, sheets, the lightbox, the command palette, with their scrim |
+| `popover` | a portaled menu, select, picker or popover |
+| `toast` | toasts and progress cards |
+| `tooltip` | the hover hint |
+| `drag-preview` | what follows the pointer through a drag |
+
+**Windows are stacking contexts.** The Chat window and a Workbench window share the area under the
+chat page's tab strip (`WindowStack`, `AppWindow`), and the full-page workbench is a window too:
+each is `isolation: isolate`, so `behind` through `menu` order things only inside their window, and
+nothing inside one rises over the other window, the navigation column or an overlay. A hidden
+window stays mounted, `invisible` and `inert`; what it holds reads `useWindowShown()` for whatever
+a hidden ancestor does not stop by itself. `modal` and up live in the one portal root,
+`document.body`, where they order against each other above every window.
+
+So: a popup that may cross its window's edge or sit over a dock portals (`popover`); something laid
+over a window from outside it by coordinates (the built-in browser's page) paints over the whole
+window and must be told when its slot is hidden or covered. Pick the layer by what the element is
+for, not by what it should beat: if two things on one layer collide, one of them is on the wrong
+layer. `test/layer-scale.test.ts` in the UI package fails on a raw `z-<n>`, `z-[…]`, `zIndex` or
+`z-index` in `packages/ui/src`, `packages/web/src` and `packages/ui-gallery/src`, and on a layer
+name the scale does not declare. A new layer is a line in `layers.css` and `layers.ts` with a
+sentence saying what it is for.
+
 ## The rest of the house style
 
-- **Stacking contexts**: chrome creates none; dropdown/user menus `z-40`; modal and drawer overlays
-  `z-50`; portaled panels `z-[60]`. `styles.css`'s header states this.
+- **Local first, remote lazy** (owner principle, 2026-10-26): a page and the sidebar's local
+  Session list render from this server's answer alone. A machine (connected, connecting or
+  offline) and the public internet are asked after that, and only where the part that shows
+  them is needed (`lib/local-first.ts` gates the shell's own remote reads); each joins with its
+  own state and timeout. Never put a local read and a remote one in one `Promise.all` or behind
+  one skeleton, and never make a route await a machine or the network before it answers with
+  local data.
+- **Stacking**: see "Layers" below; chrome creates no stacking context.
 - **Every scroll container is a containing block** (`styles.css`, `@layer base`). Do not undo it: an
   absolutely positioned descendant of a `static` scroller escapes to the initial containing block
   and gives the whole shell a second scrollbar. That bug shipped three times.
@@ -557,6 +628,13 @@ outside a `Menu` is a plain button, for a panel that mixes rows with a search bo
 - **Example and template cards show a short summary**, one line saying what it is; the full text
   (a mission, a prompt) lands in the field it fills, and examples live where the choice is made,
   not again under that field (company landing, 2026-10-03).
+- **What a message carries is an attachment tile.** An image or a file attached to a message —
+  staged in the composer, sent, or inside a steer — is the UI package's `AttachmentImage` /
+  `AttachmentFile` in an `AttachmentList`, never a hand-built thumbnail or a chip. An image box
+  takes a box radius (`rounded-md`), never `rounded-control`: Frost's controls are pills at
+  9999px, and that radius on a box that is not square draws a stadium (owner, 2026-10-17:
+  「图片传上去不知道为啥变成椭圆了」). The gallery's attachments board and its browser spec
+  (`packages/ui-gallery/e2e/attachments.spec.mjs`) hold the shapes.
 - **Comments explain constraints, not history**, and never cite a design doc — inline the constraint.
 
 ## Verify

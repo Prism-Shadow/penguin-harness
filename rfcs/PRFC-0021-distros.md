@@ -23,9 +23,9 @@ Discussions of the distribution surface need one shared set of nouns for "how th
 
 A read-only survey compared the channels facet by facet and found them diverging on facts nobody records: the npm package and the release tarball ship a pushed-CLI loader, the Docker image and the desktop application do not; the harness record is written only when a hot push arrives or when a machine installs from a peer, so the other channels' roots start from "no record". The divergence is the current state; the defect lies in how it had to be found — from the code up, because no earlier document held the list.
 
-### Why the list is written down
+### Two RFCs need this list as a premise
 
-The RFCs that follow this direction — harness meta always present (PRFC-0023) chief among them — make claims "on every channel". Those claims need a citable list of channels with citable facet names, or each of them lists the channels again and the lists drift. This RFC is that list: it predates them and defines the nouns they cite.
+Two RFCs that follow the same direction — harness meta always present (PRFC-0023) and CLI resolution (PRFC-0024) — both make claims "on every channel". Those claims need a citable list of channels with citable facet names, or each of them lists the channels again and the two lists drift.
 
 ## Guide-level explanation
 [guide-level-explanation]: #guide-level-explanation
@@ -56,27 +56,27 @@ The list answers "is this a way the harness reaches machines". A channel's prese
 ## Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
 
-The six channels as they stand. The facts below come from a read-only survey, revised as later RFCs land (PRFC-0023's carried-image reconciliation is in); the durable part of this document is the channel identities and the facet names.
+The six channels as they stand. The facts below come from a read-only survey and will change as later RFCs land; the durable part of this document is the channel identities and the facet names.
 
 ### The npm package
 
-Installed from the package registry. **Entry**: the two bin links the package declares — the main CLI and the pushed-CLI loader. **Harness data root**: the default profile root; the server's startup copies its carried image into it, so any root an npm-installed server serves holds a record from its first start. **Pushed-CLI reachability**: both entries are present and the loader resolves, so a server started from this channel can re-run through the pushed CLI. **Carried harness image**: yes — the server dependency carries a store in `dist/hmr/`.
+Installed from the package registry. **Entry**: the two bin links the package declares — the main CLI and the pushed-CLI loader. **Harness data root**: the default profile root, provisioned on first run. **Pushed-CLI reachability**: both entries are present and the loader resolves, so a server started from this channel can re-run through the pushed CLI. **Carried harness image**: none — the package carries no prebuilt harness image.
 
 ### The release tarball and the universal bundle
 
-Installed by the release scripts into a directory of launcher, libraries, and a bundled runtime; the universal variant carries no bundled runtime. **Entry**: the launcher script beside the installed CLI pair. **Harness data root**: the default profile root, reconciled against the carried image at every start. **Pushed-CLI reachability**: the loader ships beside the entry, so re-running through the pushed CLI works. **Carried harness image**: yes — the release directory carries a harness store in `lib/dist/hmr/`, copied into the root at start and used for machine installs.
+Installed by the release scripts into a directory of launcher, libraries, and a bundled runtime; the universal variant carries no bundled runtime. **Entry**: the launcher script beside the installed CLI pair. **Harness data root**: the default profile root. **Pushed-CLI reachability**: the loader ships beside the entry, so re-running through the pushed CLI works. **Carried harness image**: yes — the release directory carries a push-format harness image of its own build, used today only for machine installs.
 
 ### The Docker image
 
-**Entry**: an extension-less symlink on `PATH` pointing at the CLI inside the image. **Harness data root**: a volume, reconciled against the carried image at every start of the container. **Pushed-CLI reachability**: the loader is in the image and nothing resolves it, so pushed CLI changes do not take effect on this channel today. **Carried harness image**: yes — the image carries a store in `lib/dist/hmr/`, built like a release store.
+**Entry**: an extension-less symlink on `PATH` pointing at the CLI inside the image. **Harness data root**: a volume, provisioned on first run of the container. **Pushed-CLI reachability**: the loader is in the image and nothing resolves it, so pushed CLI changes do not take effect on this channel today. **Carried harness image**: none.
 
 ### The desktop application
 
-**Entry**: the desktop shell starts its server process directly from a bundled server entry. **Harness data root**: the shared release-profile root; desktop startup provisioning remains a candidate. **Pushed-CLI reachability**: the current product ships no pushed-CLI loader, so the pushed CLI is unreachable; the user-facing command shim points at the bundled CLI. One implementation line already demonstrates the shape that ships the loader and consults the record before starting. **Carried harness image**: yes — desktop carries the existing gz image of its own build for machine installs.
+**Entry**: the desktop shell starts its server process directly from a bundled server entry. **Harness data root**: the shared release-profile root, provisioned on first run. **Pushed-CLI reachability**: the current product ships no pushed-CLI loader, so the pushed CLI is unreachable; the user-facing command shim points at the bundled CLI. One implementation line already demonstrates the shape that ships the loader and consults the record before starting. **Carried harness image**: yes — the application bundle carries a push-format image of its own build.
 
 ### The source checkout
 
-The development channel. **Entry**: dev scripts for source runs; a built CLI pair for built runs. A source run has no re-spawnable entry, which is a documented boundary. **Harness data root**: the dev profile root. **Pushed-CLI reachability**: the built pair works; a checkout can also build a harness image on demand, and that image is deliberately laid out for machine installs, not into the dev data root. **Carried harness image**: built on demand — a checkout ships no body, and its root holds a record once a push reaches it.
+The development channel. **Entry**: dev scripts for source runs; a built CLI pair for built runs. A source run has no re-spawnable entry, which is a documented boundary. **Harness data root**: the dev profile root. **Pushed-CLI reachability**: the built pair works; a checkout can also build a harness image on demand, and that image is deliberately laid out for machine installs, not into the dev data root. **Carried harness image**: built on demand.
 
 ### The machines-installed peer
 
@@ -135,15 +135,11 @@ A few details are left to the implementation or to a later revision.
 ## Future possibilities
 [future-possibilities]: #future-possibilities
 
-A channel-by-feature support matrix, maintained at the release surface. Release assertions can be phrased per channel ("every channel's product ships a loadable loader"). A new channel — a future package ecosystem, an appliance image — joins here first and then inherits the sibling RFCs' claims.
+A channel-by-feature support matrix, maintained at the release surface. Release assertions can be phrased per channel ("every channel's product ships a loadable loader"), which is where PRFC-0024 points. A new channel — a future package ecosystem, an appliance image — joins here first and then inherits the sibling RFCs' claims.
 
 ---
 
 ## Changes
-
-### v1.1.0
-
-- Revised the facts under PRFC-0023's carried-image reconciliation: the npm package and the Docker image gain a **Carried harness image** (the server dependency's `dist/`, and a build-time pack in the image), the release tarball's store also feeds the start-time copy into the data root; desktop keeps its existing gz image, and every **Harness data root** facet says the root is reconciled at start rather than provisioned at install. The channels stay the same channels.
 
 ### v1.0.0
 

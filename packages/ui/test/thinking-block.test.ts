@@ -31,9 +31,9 @@ describe("ThinkingBlock", () => {
     expect(html).not.toContain("the plan");
   });
 
-  it("reads a failed step as an error and shows why it stopped", () => {
-    const html = row({ state: "failed", stateLabel: "aborted", stopReason: "aborted" });
+  it("reads a failed step as an error, its label naming why", () => {
+    const html = row({ state: "failed", stateLabel: "aborted" });
     expect(html).toContain('data-state="error"');
-    expect(html).toContain(">[aborted]</span>");
+    expect(html).toContain('aria-label="aborted"');
   });
 });

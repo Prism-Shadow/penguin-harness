@@ -35,7 +35,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { approvalDecision, assistantText, toolCall } from "@prismshadow/penguin-core";
-import type { ApproveFn, OmniMessage, TextPayload } from "@prismshadow/penguin-core";
+import type { ApproveFn, AmspRecord, TextPayload } from "@prismshadow/penguin-core";
 import { wire } from "@prismshadow/penguin-core/kernel";
 import type {
   MessagingBindingsResponse,
@@ -183,7 +183,7 @@ function echoFakeSession(
   reply = "Reply text",
 ): RuntimeSession {
   return fakeSession(sessionId, {
-    async *run(input: OmniMessage[]) {
+    async *run(input: AmspRecord[]) {
       runs.push(input.map((m) => m.payload as TextPayload));
       yield assistantText(reply);
     },
@@ -202,7 +202,7 @@ function multiMessageFakeSession(sessionId: string, texts: readonly string[]): R
 /** Fake Session that completes `texts` and THEN parks on an approval (drives approval_request). */
 function parkingAfterMessagesSession(sessionId: string, texts: readonly string[]): RuntimeSession {
   return fakeSession(sessionId, {
-    async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
+    async *run(_input: AmspRecord[], opts: { approve: ApproveFn; signal: AbortSignal }) {
       for (const text of texts) yield assistantText(text);
       const tc = toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-qq" });
       yield tc;

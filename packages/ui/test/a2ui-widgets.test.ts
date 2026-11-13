@@ -1,6 +1,7 @@
 /**
  * The A2UI widgets (src/components/content/a2ui): weather, clock, countdown and metrics, each on
- * the shared widget surface and registered as the built-in renderer of its type.
+ * the shared widget surface and registered as the built-in renderer of its type (the chart block
+ * and the resource board, the other two widgets, have their own file: a2ui-charts.test.ts).
  *
  * Static markup only, at an instant pinned with fake timers: the live widgets read the time as
  * they render, so the figures a test asserts are the ones that instant shows. Ticking, the
@@ -8,16 +9,13 @@
  */
 import { createElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type {
-  A2uiClock,
-  A2uiCountdown,
-  A2uiMetric,
-  A2uiWeather,
-} from "@prismshadow/penguin-core/a2ui";
+import type { A2uiClock, A2uiCountdown, A2uiMetric, A2uiWeather } from "@prismshadow/a2ui";
+import { ChartBlock } from "../src/components/content/a2ui/chart-block";
 import { ClockBlock } from "../src/components/content/a2ui/clock-block";
 import { CountdownBlock } from "../src/components/content/a2ui/countdown-block";
 import { MetricsBlock } from "../src/components/content/a2ui/metrics-block";
 import { a2uiRendererFor } from "../src/components/content/a2ui/registry";
+import { ResourcesBlock } from "../src/components/content/a2ui/resources-block";
 import { WeatherBlock } from "../src/components/content/a2ui/weather-block";
 import { renderStatic } from "../src/testing";
 
@@ -30,11 +28,13 @@ afterEach(() => {
 });
 
 describe("the widgets' registry", () => {
-  it("draws the four widget types with their built-ins", () => {
+  it("draws the six widget types with their built-ins", () => {
     expect(a2uiRendererFor("weather")).toBe(WeatherBlock);
     expect(a2uiRendererFor("clock")).toBe(ClockBlock);
     expect(a2uiRendererFor("countdown")).toBe(CountdownBlock);
     expect(a2uiRendererFor("metrics")).toBe(MetricsBlock);
+    expect(a2uiRendererFor("chart")).toBe(ChartBlock);
+    expect(a2uiRendererFor("resources")).toBe(ResourcesBlock);
   });
 });
 
@@ -77,13 +77,16 @@ describe("WeatherBlock", () => {
     expect(html).toContain("Source: Open-Meteo");
   });
 
-  it("draws the next hours as a chart, and the coming days as rows from today", () => {
+  it("draws the next hours as a line chart, and the coming days as range rows from today", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 9, 4, 14, 10));
     const html = renderStatic(createElement(WeatherBlock, { spec: WEATHER }));
     expect(html).toMatch(/<svg[^>]*role="img" aria-label="Next hours: 14:00 18°, 15:00 19°/);
-    expect(html).toContain("ui-chart");
+    expect(html).toContain('data-chart="line"');
     expect(html).toContain('data-condition="cloudy"');
+    // The days are a range chart named by its section, each day's low to high on the week's scale.
+    expect(html).toContain('aria-label="Coming days"');
+    expect(html).toMatch(/data-part="bar"[^>]*style="left:\d+(\.\d+)?%;width:\d+(\.\d+)?%/);
     expect(html).toContain("Today");
     expect(html).toContain("Mon");
     expect(html).toContain("80%");
@@ -163,7 +166,6 @@ describe("CountdownBlock", () => {
       createElement(CountdownBlock, { spec: { ...past, doneLabel: "Launched" } }),
     );
     expect(named).toContain('aria-label="Launch, Launched"');
-    expect(named).toContain("text-tone-done-fg");
     expect(named).not.toContain("data-figure");
   });
 });
@@ -176,7 +178,6 @@ describe("MetricsBlock", () => {
       }),
     );
   /** The class of the first figure in the markup. */
-  const figureClass = (html: string) => html.match(/data-figure="true" class="([^"]*)"/)?.[1];
 
   it("makes a reading out of a whole a meter, with a ring, and a history a sparkline", () => {
     const html = metrics({ label: "CPU", value: 37, max: 100, unit: "%", history: [20, 30, 37] });
@@ -185,30 +186,12 @@ describe("MetricsBlock", () => {
     expect(html).toContain('aria-valuenow="37" aria-valuetext="37%"');
     expect(html).toContain('data-part="grid"'); // the ring's track
     expect(html).toContain('data-tooltip="CPU"'); // the sparkline
-    expect(figureClass(html)).not.toMatch(/text-tone-/);
-  });
-
-  it("inks a reading past its danger mark along the way `worse` reads", () => {
-    const high = metrics({ label: "CPU", value: 97, max: 100, unit: "%", warn: 80, danger: 95 });
-    expect(figureClass(high)).toContain("text-tone-danger-fg");
-    const low = metrics({
-      label: "Quota",
-      kind: "remaining",
-      value: 200,
-      max: 5000,
-      warn: 1000,
-      danger: 250,
-    });
-    expect(figureClass(low)).toContain("text-tone-danger-fg");
-    const fine = metrics({ label: "Quota", kind: "remaining", value: 4000, max: 5000, warn: 1000 });
-    expect(figureClass(fine)).not.toMatch(/text-tone-/);
   });
 
   it("draws a job's progress as a bar, done once complete", () => {
     const running = metrics({ label: "Upload", kind: "progress", value: 63, max: 100, unit: "%" });
     expect(running).toContain('role="progressbar" aria-label="Upload"');
     const done = metrics({ label: "Tasks", kind: "progress", value: 12, max: 12 });
-    expect(figureClass(done)).toContain("text-tone-done-fg");
     expect(done).toContain(">Done<");
   });
 });

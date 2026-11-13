@@ -85,12 +85,12 @@ describe("getMessages", () => {
       expect(m.switchModelUnavailable("b (q)", "no key")).toContain("no key");
       expect(m.switchModelUnavailable("b (q)", "")).not.toMatch(/[:：]$/);
       expect(m.switchModelBusy().length).toBeGreaterThan(0);
-      expect(m.switchModelNoCompaction().length).toBeGreaterThan(0);
+      expect(m.switchModelHandedOver("/t/s_001.jsonl")).toContain("/t/s_001.jsonl");
     }
     // Two languages, not one copied twice.
     expect(zh.switchModelDone("a", "b")).not.toBe(en.switchModelDone("a", "b"));
     expect(zh.switchModelBusy()).not.toBe(en.switchModelBusy());
-    expect(zh.switchModelNoCompaction()).not.toBe(en.switchModelNoCompaction());
+    expect(zh.switchModelHandedOver()).not.toBe(en.switchModelHandedOver());
   });
 
   it("server-backed command families exist in both languages (spot checks)", () => {

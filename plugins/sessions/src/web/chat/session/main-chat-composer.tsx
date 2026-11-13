@@ -1,16 +1,16 @@
 import { useCallback, useMemo, useRef } from "react";
 import type { SessionInfo, SessionPatchRequest } from "@prismshadow/penguin-server/api";
 import { toastError } from "@prismshadow/penguin-ui";
-import * as api from "@prismshadow/penguin-web/internal";
-import { ApiError } from "@prismshadow/penguin-web/internal";
-import { apiErrorText } from "@prismshadow/penguin-web/internal";
-import type { PermissionPick } from "@prismshadow/penguin-web/internal";
-import { a2uiDrafts } from "@prismshadow/penguin-web/internal";
-import { approvalKey } from "@prismshadow/penguin-web/internal";
-import { useLocale } from "@prismshadow/penguin-web/internal";
+import * as api from "../../../api/endpoints";
+import { ApiError } from "../../../api/client";
+import { apiErrorText } from "../../../lib/api-error";
+import type { PermissionPick } from "../../../lib/permission-level";
+import { a2uiDrafts } from "../../../lib/a2ui-drafts";
+import { approvalKey } from "../../../lib/amsp/stream-model";
+import { useLocale } from "../../../state/locale";
 import type { A2uiActions } from "../message-stream";
 import type { ComposerControl } from "../chat-input";
-import type { ComposerReference } from "@prismshadow/penguin-web/internal";
+import type { ComposerReference } from "../../../lib/workspace-tree";
 import type { useMainChatSends } from "./main-chat-sends";
 
 /** Exact consecutive main ChatPage statements 136..147; called once, in original order. */

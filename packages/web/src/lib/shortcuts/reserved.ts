@@ -193,7 +193,6 @@ const COMMON_BY_PLATFORM: Record<Platform, readonly string[]> = {
     "Mod+Alt+KeyK", // web console (Firefox)
     "Mod+Alt+KeyM", // responsive design mode (Firefox)
     "Mod+Alt+KeyN", // split view (Chrome)
-    "Mod+Alt+KeyP", // page setup (Chrome)
     "Mod+Alt+KeyR", // reader view (Firefox)
     "Mod+Alt+KeyU", // view source
     "Mod+Alt+Shift+KeyA", // focus inactive dialogs (Chrome)

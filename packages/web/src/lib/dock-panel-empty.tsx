@@ -1,6 +1,6 @@
 /**
  * What a dock panel body shows while the page is still a draft and there is no conversation to
- * show it for. The bodies are contributed by their modules (plugins/terminal/src/web/dock/iface.ts); this is a
+ * show it for. The bodies are contributed by their modules (features/dock/iface.ts); this is a
  * library so they can share the placeholder without importing the dock. The dock puts each body
  * under its panel's name (`DockPanelTitle`), which the placeholder wears as its title.
  */

@@ -167,7 +167,7 @@ The agent drives only these tabs:
 - A tab you hand over: select the extension's icon on that tab, then **Add this tab**. It moves into the Penguin group.
 - Pages those tabs open, such as a pop-up or a link opened in a new tab.
 
-It cannot see or touch your other tabs and windows, your cookies, your passwords, your history or your downloads. Raw DevTools commands that would reach them are refused (`cdp_refused`). Chrome's own pages (`chrome://`), the Chrome Web Store and local files cannot be driven at all. Import, clearing browsing data and the browsing history belong to the built-in browser; Chrome keeps its own.
+It cannot see or touch your other tabs and windows, your passwords, your history or your downloads, and it cannot read or change Chrome's cookies directly. Raw DevTools commands that would reach them are refused (`cdp_refused`). Chrome's own pages (`chrome://`), the Chrome Web Store and local files cannot be driven at all. Import, clearing browsing data and the browsing history belong to the built-in browser; Chrome keeps its own.
 
 What reaches the server is what the agent asks of a driven tab, as with the built-in browser: the page as simplified HTML or text, the values its scripts return, screenshots and the text of dialogs. A script in the page can read the cookies the page itself can read; HttpOnly session cookies never leave Chrome.
 

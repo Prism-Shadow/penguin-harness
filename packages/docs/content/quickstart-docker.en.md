@@ -156,13 +156,13 @@ These are the variables a container deployment touches. The full list is in the 
 | `HOST` | `0.0.0.0`, inside the container's own network namespace. `-p` decides the host side, and the examples keep it on loopback |
 | `PORT` | `7364`. Changing it moves the healthcheck with it |
 | `PENGUIN_SEED_ADMIN_PASSWORD` | Pins the initial admin password, on the first boot only. See [Set the password in advance](#set-the-password-in-advance) |
-| `PENGUIN_TRUST_PROXY` | Set to `1` behind a reverse proxy that terminates TLS, so session cookies are marked `Secure` |
+| `PENGUIN_TRUST_PROXY` | Set to `1` behind a reverse proxy that terminates TLS; without it, the Web App's writes are refused with `403` `cross_origin_write` |
 | `PENGUIN_PREVIEW_ORIGIN` | A second hostname routed to the same container, for Workspace HTML previews |
 | `PENGUIN_UPDATE_CHECK` | `off` turns off the automatic release check. Model requests, remote-control connections, key authorization and the proxy test still go out |
 
 ### Run behind a reverse proxy
 
-Publish the container on loopback, terminate TLS in front of it, and set `PENGUIN_TRUST_PROXY=1`. The proxy must set or strip `x-forwarded-proto` itself. That header comes from the caller, which is exactly why the server ignores it until you tell it otherwise. If you leave `PENGUIN_TRUST_PROXY` unset on an HTTPS deployment, session cookies are issued without the `Secure` flag.
+Publish the container on loopback, terminate TLS in front of it, and set `PENGUIN_TRUST_PROXY=1`. The proxy must pass the external `Host` header through unchanged and overwrite `x-forwarded-proto` with `https`. The protocol header comes from the caller, which is exactly why the server ignores it until you tell it otherwise. If you leave `PENGUIN_TRUST_PROXY` unset on an HTTPS deployment, every write the Web App makes, signing in included, is refused with `403` `cross_origin_write`, and session cookies are issued without the `Secure` flag. The same refusal happens if the proxy rewrites `Host` or does not overwrite `x-forwarded-proto` with `https`.
 
 ### Serve Workspace previews
 

@@ -4,12 +4,9 @@
  * reduction, and the tick rail's sliding-window bounds.
  */
 import { describe, expect, it } from "vitest";
-import type { ChatItem } from "../src/lib/omni/stream-model";
+import type { ChatItem } from "../src/lib/amsp/stream-model";
 import { handoffMessage } from "../src/features/chat/agent-handoff";
-import {
-  buildBackgroundTaskDoneMessage,
-  buildScheduledMessage,
-} from "@prismshadow/penguin-core/markers";
+import { buildBackgroundTaskDoneMessage, buildScheduledMessage } from "@prismshadow/amsp/markers";
 import {
   OUTLINE_MIN_TURNS,
   OUTLINE_WINDOW_AFTER,

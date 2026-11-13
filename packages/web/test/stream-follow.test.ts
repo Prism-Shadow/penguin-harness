@@ -10,11 +10,21 @@
  * - A programmatic snap reports where it landed at once, so growth racing its scroll event
  *   (entering a conversation, back-to-bottom) keeps follow; content that fits clamps to 0; a
  *   real upward scroll right after still exits.
+ * - The reader starts wheeling up between a snap and that snap's own delayed scroll event: the
+ *   event moved nothing, so follow stays off and the next streaming update does not snap.
+ * - A streaming snap reads the live position first: a view the browser moved up without a
+ *   scroll event yet is left where it is and stops following; a view at the old bottom snaps
+ *   to the new one; before any position was reported (entering a conversation) the reading
+ *   decides nothing and the view still lands at the bottom.
  * - While held (the selection menu is open) the view does not snap, the user's own scrolling
  *   still decides the intent, and the release catches a following view up.
  */
 import { describe, expect, it } from "vitest";
-import { createStreamFollow, stickToBottom } from "../src/features/chat/stream-follow";
+import {
+  createStreamFollow,
+  followToBottom,
+  stickToBottom,
+} from "../src/features/chat/stream-follow";
 
 /** Short scroll area: content 500px, viewport 460px, scrollable slack only 40px (always under the 80px threshold). */
 const SHORT = { scrollHeight: 500, clientHeight: 460 };
@@ -172,6 +182,55 @@ describe("stickToBottom", () => {
     stickToBottom(el, f);
     el.scrollHeight += 300;
     f.scrolled(el.metrics());
+    expect(f.stick).toBe(true);
+  });
+});
+
+describe("a gesture starting between a snap and its scroll event", () => {
+  it("a wheel-up after the snap stays in force when the snap's own scroll event arrives", () => {
+    const f = createStreamFollow();
+    const el = fakeContainer(2000, 460);
+    // A streaming commit snaps the view; the browser dispatches its scroll event a frame later.
+    stickToBottom(el, f);
+    // The reader's first upward tick reaches the page before that event does.
+    f.wheel(-3);
+    // The snap's event reads the position the snap already reported: nothing moved.
+    f.scrolled(el.metrics());
+    expect(f.stick).toBe(false);
+    // So the next streaming update does not snap the view back down under the gesture.
+    expect(f.snaps).toBe(false);
+  });
+});
+
+describe("followToBottom", () => {
+  it("leaves a view the browser moved up, before reporting it, where it is and stops following", () => {
+    const f = createStreamFollow();
+    const el = fakeContainer(2000, 460);
+    stickToBottom(el, f);
+    // A key, the scrollbar or a find jump moved the view; its scroll event has not arrived.
+    el.scrollTop = 1200;
+    el.scrollHeight += 300; // a streaming commit grows the reply below
+    followToBottom(el, f);
+    expect(el.scrollTop).toBe(1200);
+    expect(f.stick).toBe(false);
+  });
+
+  it("snaps a view still at the old bottom to the new bottom", () => {
+    const f = createStreamFollow();
+    const el = fakeContainer(2000, 460);
+    stickToBottom(el, f);
+    el.scrollHeight += 300;
+    followToBottom(el, f);
+    expect(el.scrollTop).toBe(1840);
+    expect(f.stick).toBe(true);
+  });
+
+  it("lands a conversation opened above its bottom at the bottom: the first reading decides nothing", () => {
+    const f = createStreamFollow();
+    // Entering a long conversation: the transcript mounts at the top, no position reported yet.
+    const el = fakeContainer(2000, 460);
+    followToBottom(el, f);
+    expect(el.scrollTop).toBe(1540);
     expect(f.stick).toBe(true);
   });
 });

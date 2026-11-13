@@ -14,3 +14,5 @@ export { PairingDialog } from "./pairing-dialog";
 
 export { adoptBrowserSession } from "./browser-actions";
 export { dispatchBrowser } from "./browser-store";
+
+export { BuiltinBrowserLayer } from "./browser-layer";

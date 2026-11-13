@@ -125,7 +125,7 @@ function rendererOf(raw: unknown): RendererRef | null {
  * parent can hold it is decided over the merged table (parentedPagesOf).
  *
  * A company-mode page (`nav: "org"`) has a path relative to an organization: company mode
- * mounts it under the organization layout (plugins/company/src/web/company/org-routes.tsx) and the router
+ * mounts it under the organization layout (features/company/org-routes.tsx) and the router
  * beside WebApp's own pages, from the root, so its path is kept without a leading slash and
  * clashes as the rooted one. Any other page's path is absolute.
  */
@@ -154,7 +154,12 @@ export function contributedPagesOf(
       "iframe" in renderer
         ? framePageFor(renderer.iframe.src, typeof title === "string" ? title : key)
         : renderers.get(renderer.builtin);
-    if (Component === undefined) continue;
+    if (Component === undefined) {
+      console.warn(
+        `Missing builtin renderer "${"builtin" in renderer ? renderer.builtin : ""}" for contributed page "${key}" (${path}); skipping page`,
+      );
+      continue;
+    }
     keys.add(key);
     paths.add(rooted);
     out.push({

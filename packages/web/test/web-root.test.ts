@@ -5,7 +5,10 @@ import { mainPanelDefinition as mainTrace } from "../src/features/traces/main-do
 import { mainPanelDefinition as mainMessaging } from "../src/features/messaging/main-dock-panel";
 import { mainPanelDefinition as mainSchedules } from "../src/features/schedules/main-dock-panel";
 import { mainPanelDefinition as mainBrowser } from "../src/features/builtin-browser/main-dock-panel";
+import { TerminalModule } from "../src/features/terminal/module";
 import { dockPanelDefinition, type DockPanelDefinition } from "../src/features/dock/panel-registry";
+
+const mainTerminal = new TerminalModule().panel.mainDefinitions[0]!;
 
 const OrgProposalsPage = () => null;
 /**
@@ -36,7 +39,7 @@ const OrgProposalsPage = () => null;
  *   the session list receives the messaging binding, the scheduled mark and the dock's "Browse
  *   files".
  * - The dock receives the eight panels in their menu order — agents and memory from chat, the
- *   files from workspace, the trace, messaging, schedules, the built-in browser and the ports from
+ *   files from workspace, the trace, messaging, schedules, the built-in browser and the terminal from
  *   theirs — with the names the dictionary held and a glyph in the icon registry, which the dock
  *   module registers in its panel registry at boot.
  * - The chat page receives the workflow tab strip beside the conversation.
@@ -210,6 +213,7 @@ describe("the booted page table", () => {
     const nav = navPagesOf(pages);
     expect(nav.map(({ key, admin, released }) => ({ key, admin, released }))).toEqual([
       { key: "agents", admin: false, released: true },
+      { key: "apps", admin: false, released: true },
       { key: "models", admin: false, released: true },
       { key: "plugins", admin: false, released: true },
       { key: "machines", admin: true, released: true },
@@ -222,6 +226,7 @@ describe("the booted page table", () => {
     const nav = navPagesOf(pages);
     expect(nav.map(({ key, title, titleZh, icon }) => ({ key, title, titleZh, icon }))).toEqual([
       { key: "agents", title: en.nav.agents, titleZh: zh.nav.agents, icon: "robot" },
+      { key: "apps", title: en.appCenter.title, titleZh: zh.appCenter.title, icon: "tiles" },
       { key: "models", title: "Models", titleZh: "模型库", icon: "chip" },
       { key: "plugins", title: en.nav.plugins, titleZh: zh.nav.plugins, icon: "puzzle" },
       {
@@ -379,7 +384,7 @@ describe("the booted sidebar slots", () => {
 });
 
 describe("the booted dock slot", () => {
-  it("registers the seven main panel definitions from their owners without a retired ports panel", () => {
+  it("registers the eight main panel definitions from their owners without a retired ports panel", () => {
     const definitions = dockPanels
       .flatMap(
         (c) => (c.code as { mainDefinitions: readonly DockPanelDefinition[] }).mainDefinitions,
@@ -387,6 +392,7 @@ describe("the booted dock slot", () => {
       .sort((a, b) => a.order - b.order);
     const expected = [
       mainAgents,
+      mainTerminal,
       mainWorkspace,
       mainMemory,
       mainTrace,
@@ -397,6 +403,7 @@ describe("the booted dock slot", () => {
     expect(definitions).toEqual(expected);
     expect(definitions.map((d) => d.id)).toEqual([
       "agents",
+      "terminal",
       "workspace",
       "memory",
       "trace",
@@ -418,6 +425,7 @@ describe("the booted dock slot", () => {
       messaging: "MessagingModule",
       schedules: "SchedulesModule",
       "builtin-browser": "BuiltinBrowserModule",
+      terminal: "TerminalModule",
     });
     expect(dockPanelDefinition("ports")).toBeUndefined();
   });

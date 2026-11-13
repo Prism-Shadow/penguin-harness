@@ -8,10 +8,12 @@
  *
  * After the organization's own pages come the company-mode pages a plugin contributes
  * (`nav: "org"`, use-org-pages.ts): their paths are relative to the organization, and the nav
- * row beside them is the sidebar's (company-nav.ts ORG_PAGE_RENDERERS). Each is drawn with the
- * component the shell resolved its renderer to — an iframe, or the component a module
- * contributed under its builtin name (`WebAppModule.pageRenderers`).
+ * row beside them is the sidebar's (company-nav.ts ORG_PAGE_RENDERERS). The page table has
+ * already resolved what each one draws — a builtin renderer into the component the module
+ * registered (`WebAppModule.pageRenderers`), an iframe into the shell's FramePage — so a
+ * route mounts the page's component as it is.
  */
+import type { ComponentType } from "react";
 import { Navigate, Route, Routes } from "react-router";
 import { OrgIndexRedirect, OrgLayout } from "./org-layout";
 import { OverviewPage } from "./overview-page";
@@ -25,7 +27,6 @@ import { useOrgPages } from "./use-org-pages";
 import { useCompany } from "./company-state";
 
 export function OrgRoutes() {
-  // Built but not yet offered: kept out of the organization layout.
   const contributed = useOrgPages().filter((page) => page.released);
   const { homePath } = useCompany();
   return (
@@ -40,8 +41,8 @@ export function OrgRoutes() {
         <Route path="finance" element={<FinancePage />} />
         <Route path="handbook" element={<HandbookPage />} />
         <Route path="channels/:channelId" element={<ChannelView />} />
-        {contributed.map(({ id, path, Component }) => (
-          <Route key={id} path={path} element={<Component />} />
+        {contributed.map((page) => (
+          <Route key={page.id} path={page.path} element={<page.Component />} />
         ))}
         <Route path="*" element={<Navigate to="overview" replace />} />
       </Route>

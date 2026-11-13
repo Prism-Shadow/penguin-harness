@@ -9,7 +9,7 @@
  * the panel. Round cards are drawn a page at a time from the newest end, so the list itself
  * stays a bounded number of heads however long the file is.
  */
-import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
+import type { AmspRecord } from "@prismshadow/amsp";
 import type { TraceEventsResponse } from "@prismshadow/penguin-server/api";
 
 /** Round cards drawn per step: the panel opens on the newest this many, and each "earlier" click adds this many more. */
@@ -72,8 +72,8 @@ export async function loadRoundEvents(
   fetchPage: (offset: number, limit: number) => Promise<TraceEventsResponse>,
   range: RoundRange,
   opts: { signal?: TraceEventsSignal } = {},
-): Promise<OmniMessage[]> {
-  const events: OmniMessage[] = [];
+): Promise<AmspRecord[]> {
+  const events: AmspRecord[] = [];
   if (roundSpan(range) === 0) return events;
   // Read through a call, not inline: the flag flips while a page is in flight, and an inline
   // check would narrow it to `false` for the rest of the loop body.

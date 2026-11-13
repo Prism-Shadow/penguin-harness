@@ -1,0 +1,7 @@
+{{FACTS}}
+
+{{NOTES_SECTION}}## Findings
+{{FINDINGS}}
+
+{{NEIGHBOURS}}## {{DRAFT_LABEL}}
+{{DRAFT}}

@@ -6,7 +6,7 @@
  */
 import type { Command } from "commander";
 import { Bind, Component } from "@prismshadow/penguin-core/kernel";
-import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/plugin";
+import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/cli";
 
 /** The node the host located for a key, typed with this package's commander. */
 const node = (command: CliCommandProgram): Command => command as Command;
@@ -15,7 +15,7 @@ import type { ProjectsResponse } from "../../api/types.js";
 import { ServerClient } from "../client.js";
 import { resolveConnection } from "../connection.js";
 import { renderTable } from "../table.js";
-import { getMessages, type Messages } from "../i18n.js";
+import type { Messages } from "../i18n.js";
 
 export function registerProjectCommand(project: Command, t: Messages): void {
   project
@@ -58,11 +58,11 @@ export function registerProjectCommand(project: Command, t: Messages): void {
   },
 })
 export class ProjectCommand {
-  @Bind("cli.project") command!: CliCommandCode;
+  @Bind("cli.project") command!: CliCommandCode<Messages>;
   setup() {
     this.command = {
       register: (command, ctx) => {
-        registerProjectCommand(node(command), getMessages(ctx.language));
+        registerProjectCommand(node(command), ctx.messages);
       },
     };
   }

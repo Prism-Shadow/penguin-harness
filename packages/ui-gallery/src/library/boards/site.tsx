@@ -146,7 +146,8 @@ export function SiteBoard() {
       </BoardGroup>
 
       <BoardGroup title={t.article} aside={t.articleHint}>
-        <div className="grid gap-10 sm:grid-cols-[minmax(0,1fr)_13rem]">
+        {/* One shrinkable column at phone width, so the article's wide table scrolls in its box. */}
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-10 sm:grid-cols-[minmax(0,1fr)_13rem]">
           <SiteMarkdown
             variant="doc"
             remarkPlugins={SITE_DOC_REMARK_PLUGINS}

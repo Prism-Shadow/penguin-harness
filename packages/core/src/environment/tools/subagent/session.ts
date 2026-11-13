@@ -8,7 +8,7 @@
  * running in the background) goes into a buffer, delivered all at once on the next access.
  *
  * Three kinds of output, each with its own destination:
- * - **Message buffer**: all of the child session's OmniMessage (already tagged with origin), for
+ * - **Message buffer**: all of the child session's AmspRecord (already tagged with origin), for
  *   the parent tool call to forward to the frontend for rendering; capped in count, overflow
  *   drops the oldest (only affects frontend replay — the child Session's own Trace loses no
  *   data);
@@ -33,8 +33,9 @@
  * need for a separate synchronous hard-kill path (its command sessions are reaped by their own
  * exit fallback); `killHard` is equivalent to `kill`.
  */
-import type { OmniMessage, ApprovalDecision, ToolCallPayload } from "../../../omnimessage/index.js";
+import type { AmspRecord, ApprovalDecision, ToolCallPayload } from "@prismshadow/amsp/records";
 import type {
+  ApprovalContext,
   ApproveFn,
   RunCutoff,
   SubagentHandle,
@@ -54,9 +55,14 @@ export interface SubagentExit {
   note?: string;
 }
 
-/** A pending approval request: the settled guard makes the decision first-to-arrive-wins (late/duplicate decisions are ignored). */
+/**
+ * A pending approval request: the settled guard makes the decision first-to-arrive-wins
+ * (late/duplicate decisions are ignored). `context` is what the child's policy wrapper said
+ * about the call (a command-policy `ask` reason), handed on to whichever sink answers it.
+ */
 interface PendingApproval {
-  toolCall: OmniMessage<ToolCallPayload>;
+  toolCall: AmspRecord<ToolCallPayload>;
+  context?: ApprovalContext;
   settled: boolean;
   resolve: (decision: ApprovalDecision) => void;
 }
@@ -74,7 +80,7 @@ export class ManagedSubagentSession {
    */
   private runCtrl: AbortController | null = null;
 
-  private messages: OmniMessage[] = [];
+  private messages: AmspRecord[] = [];
   private readonly textBuffer = new CappedTextBuffer(OUTPUT_BUFFER_CAP, "earlier subagent output");
 
   private isRunning = false;
@@ -99,7 +105,7 @@ export class ManagedSubagentSession {
    * the pump produces them instead of waiting in the message buffer for the next poll. Set
    * once at launch; anything already buffered flushes through it first (order preserved).
    */
-  private forwardTap: ((msg: OmniMessage) => void) | null = null;
+  private forwardTap: ((msg: AmspRecord) => void) | null = null;
 
   // Single wake point: new message / run finished / new approval request all wake a waiting waitWake through it.
   private readonly wakeSignal = new WakeSignal();
@@ -122,7 +128,7 @@ export class ManagedSubagentSession {
   }
 
   /** One-shot take of the child's origin-tagged session_meta (see SubagentHandle.takeMeta); null when the handle predates the seam or the meta already went out. */
-  takeMeta(): OmniMessage | null {
+  takeMeta(): AmspRecord | null {
     return this.handle.takeMeta?.() ?? null;
   }
 
@@ -153,14 +159,14 @@ export class ManagedSubagentSession {
 
   /**
    * Starts a new round of the task on the child Session (async pump, doesn't block the caller).
-   * `messages` is the round's input in the same OmniMessage shape `steer` takes — the caller
+   * `messages` is the round's input in the same AmspRecord shape `steer` takes — the caller
    * owns their `sender`, so a model dispatch and a human's panel message stay distinguishable
    * in the child's Trace. `opts.suppressDoneReport` keeps the settle watcher quiet for this round — a HOST-initiated
    * round is the user's own conversation with the child, not work the model dispatched, so the
    * parent must not receive a completion notice for it. Throws if already disposed or still
    * running (converted to an explanatory output by the caller).
    */
-  startRun(messages: OmniMessage[], opts?: { suppressDoneReport?: boolean }): void {
+  startRun(messages: AmspRecord[], opts?: { suppressDoneReport?: boolean }): void {
     if (this.killed) throw new Error("subagent session disposed");
     if (this.isRunning) throw new Error("subagent is still running");
     this.isRunning = true;
@@ -176,7 +182,7 @@ export class ManagedSubagentSession {
    * session with — see SubagentHandle.steer). False when idle, killed, or the handle predates
    * steering: the caller then falls back to a follow-up run or reports "not running".
    */
-  steer(messages: OmniMessage[]): boolean {
+  steer(messages: AmspRecord[]): boolean {
     if (this.killed || !this.isRunning) return false;
     return this.handle.steer?.(messages) ?? false;
   }
@@ -218,7 +224,7 @@ export class ManagedSubagentSession {
   }
 
   /** Takes the buffered child-session messages (already tagged with origin, for the parent tool to forward). */
-  drainMessages(): OmniMessage[] {
+  drainMessages(): AmspRecord[] {
     if (this.messages.length === 0) return [];
     const out = this.messages;
     this.messages = [];
@@ -290,7 +296,7 @@ export class ManagedSubagentSession {
   }
 
   /** Attaches the live forwarding tap of a background launch (see forwardTap), flushing the buffered backlog through it in order. */
-  setMessageTap(tap: (msg: OmniMessage) => void): void {
+  setMessageTap(tap: (msg: AmspRecord) => void): void {
     const backlog = this.messages;
     this.messages = [];
     this.forwardTap = tap;
@@ -351,7 +357,7 @@ export class ManagedSubagentSession {
   // -------------------------------------------------------------------------
 
   /** Drives one round of `handle.run`: buffers messages and text, settling the terminal state when it ends. */
-  private async pump(messages: OmniMessage[], runCtrl: AbortController): Promise<void> {
+  private async pump(messages: AmspRecord[], runCtrl: AbortController): Promise<void> {
     let wroteAny = false;
     // Whether the round was cut off early (a user abort, a terminal LLM failure, a
     // mid-task compaction failure): read from the run generator's return value — the
@@ -432,7 +438,7 @@ export class ManagedSubagentSession {
     }
   }
 
-  private bufferMessage(msg: OmniMessage): void {
+  private bufferMessage(msg: AmspRecord): void {
     // A live tap (background launch) replaces buffering outright: the frontend receives the
     // message immediately, and a later poll must not deliver a second copy.
     if (this.forwardTap) {
@@ -453,10 +459,15 @@ export class ManagedSubagentSession {
   // -------------------------------------------------------------------------
 
   /** Approval callback handed to the child Session: the request is queued and waits for some parent tool call to consult Human and give a decision. */
-  private readonly childApprove: ApproveFn = (toolCall) => {
+  private readonly childApprove: ApproveFn = (toolCall, context) => {
     if (this.killed) return Promise.resolve("deny");
     return new Promise<ApprovalDecision>((resolve) => {
-      this.approvals.push({ toolCall, settled: false, resolve });
+      this.approvals.push({
+        toolCall,
+        ...(context !== undefined ? { context } : {}),
+        settled: false,
+        resolve,
+      });
       this.wakeSignal.notify(); // Wake the parent tool call waiting within the window, so it can consult as soon as possible
       void this.pumpApprovals();
     });
@@ -489,13 +500,13 @@ export class ManagedSubagentSession {
         const req = this.approvals[0]!;
         const sink = this.sink;
         if (sink === null) {
-          await this.standingApprove()!(req.toolCall).then(
+          await this.standingApprove()!(...consultArgs(req)).then(
             (d) => this.settle(req, d),
             () => this.settle(req, "deny"), // An approval sink error is treated as a denial (avoids leaving the child session stuck forever)
           );
           continue;
         }
-        const answer = sink.approve(req.toolCall).then(
+        const answer = sink.approve(...consultArgs(req)).then(
           (d) => this.settle(req, d),
           () => this.settle(req, "deny"),
         );
@@ -511,11 +522,16 @@ export class ManagedSubagentSession {
   }
 }
 
+/** The arguments a sink is consulted with: the call, plus its context when the child's wrapper attached one. */
+function consultArgs(req: PendingApproval): Parameters<ApproveFn> {
+  return req.context === undefined ? [req.toolCall] : [req.toolCall, req.context];
+}
+
 /** Converts a run's terminal state into a tool result (note is appended outside the truncation, so it isn't lost with long output). A failed child run is fatal for this call — nothing retries a tool. */
 export function resultForSubagentExit(exit: SubagentExit | null): ToolResult {
-  if (!exit) return { stopReason: "completed" };
+  if (!exit) return { status: "completed" };
   return {
-    stopReason: exit.status === "failed" ? "fatal" : exit.status,
+    status: exit.status === "failed" ? "fatal" : exit.status,
     ...(exit.note !== undefined ? { note: exit.note } : {}),
   };
 }

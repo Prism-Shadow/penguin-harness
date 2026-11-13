@@ -1,11 +1,14 @@
 /**
- * GenerativeModel's attribution headers: what reaches MMSP's client as `defaultHeaders`.
- * Every model names PenguinHarness and its version in the User-Agent, whatever the endpoint.
- * OpenCode refuses a request that does not name its conversation in `x-opencode-session`, so
- * a model built for a Session sends that Session's id, and one built outside any Session (the
- * connectivity test, the vision probe) sends a fresh id of its own — never nothing, and never
- * one value shared between instances. The id is fixed per instance, so a rotated credential,
- * which rebuilds the client, keeps it.
+ * GenerativeModel's attribution headers: what reaches MMSP's client as `defaultHeaders`. Which
+ * headers an endpoint gets is App attribution's rule (app-attribution.test.ts); these scenarios
+ * prove the model sends them, and keeps OpenCode's conversation id fixed per instance.
+ *
+ * - Given a model built for a Session on OpenCode, its client sends the Session's id beside the
+ *   User-Agent that names PenguinHarness and its version.
+ * - Given two models built outside any Session (the connectivity test, the vision probe), each
+ *   sends a fresh id of its own — never nothing, and never one value shared between instances.
+ * - Given an endpoint that reads no attribution header, or no base URL, only the User-Agent.
+ * - Given a rotated credential, which rebuilds the client, the instance's id is kept.
  */
 import { describe, expect, it, vi } from "vitest";
 import { VERSION } from "../src/index.js";

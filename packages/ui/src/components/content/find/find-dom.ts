@@ -10,7 +10,7 @@
  * panel, and the file/preview surfaces a tool card draws. Searching what is on screen answers
  * all of them with one implementation, and it makes a hit *by construction* something that can
  * be shown and scrolled to. The price is stated plainly in the UI: only what is loaded can be
- * found — the transcript keeps a window (see lib/omni/stream-controller.ts), and a region that
+ * found — the transcript keeps a window (see lib/amsp/stream-controller.ts), and a region that
  * knows about more content says so with `data-find-more`, which is what the "load earlier
  * messages and keep searching" row is built on.
  *
@@ -108,13 +108,15 @@ interface Block {
 }
 
 /**
- * Regions currently in the document, in DOM order, skipping the ones that are not displayed
- * and any that nest inside another region (their text is already covered by the outer one).
+ * Regions currently in the document, in DOM order, skipping the ones that are not displayed,
+ * the ones inside an inert subtree — a window another one is shown over, a closed dock: laid out,
+ * but off the screen — and any that nest inside another region (their text is already covered
+ * by the outer one).
  */
 export function findRegions(root: ParentNode = document): FindRegion[] {
   const regions: FindRegion[] = [];
   for (const element of root.querySelectorAll<HTMLElement>(`[${REGION_ATTR}]`)) {
-    if (!displayed(element)) continue;
+    if (!displayed(element) || element.closest("[inert]") !== null) continue;
     if (element.parentElement?.closest(`[${REGION_ATTR}]`) != null) continue;
     regions.push({ kind: element.dataset["findRegion"] ?? "", element });
   }

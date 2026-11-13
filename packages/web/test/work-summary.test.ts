@@ -8,7 +8,7 @@
  * the header ticks from while the group is still running.
  */
 import { describe, expect, it } from "vitest";
-import type { ChatItem } from "../src/lib/omni/stream-model";
+import type { ChatItem } from "../src/lib/amsp/stream-model";
 import { summarizeWork } from "../src/features/chat/work-summary";
 
 let nextId = 1;

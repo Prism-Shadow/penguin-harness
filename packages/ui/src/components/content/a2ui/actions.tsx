@@ -10,7 +10,8 @@
  * answer it. The host opts in for the one reply that is waiting for an answer.
  *
  * A pick never sends anything: `fill` puts plain text in the composer, the person may edit it,
- * and the model reads it next turn as an ordinary user message.
+ * and the model reads it next turn as an ordinary user message. That message is the record of
+ * the answer: a read-only block handed it (`answeredWith`) shows the answers it reads back.
  */
 import { createContext, useContext } from "react";
 import type { ReactElement, ReactNode } from "react";
@@ -49,6 +50,14 @@ export interface A2uiActions {
    * hash taken over the block's source, so a scope must stay the same across a reload.
    */
   draftScope?: string;
+  /**
+   * The text of the message that answered this reply: what the reader sent after it, as the
+   * transcript reads it. Read only while `interactive` is off. A choice or a form shows the
+   * answers it reads back out of this text (the inverse of its fill text), so an answered
+   * question shows what was answered after a reload; text that is not its answer leaves it as
+   * asked.
+   */
+  answeredWith?: string;
 }
 
 const noop = () => {};

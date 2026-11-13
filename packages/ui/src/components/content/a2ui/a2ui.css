@@ -7,6 +7,9 @@
  * list its decimal markers on top of the numbers the block draws itself. These rules hand the
  * block's own parts back to the block, by the block's class, at a specificity the reading rules
  * do not reach. Nothing here sets a colour or a size: the block's utilities do.
+ *
+ * A widget's lists are data laid out in rows — a chart's legend, a range chart's rows — never
+ * prose, so they take no list markers and no indent.
  */
 .md-body .a2ui-block :is(p, ul, ol, li) {
   margin: 0;
@@ -15,6 +18,10 @@
   line-height: inherit;
 }
 .md-body .a2ui-block ol.a2ui-steps {
+  list-style: none;
+  padding-left: 0;
+}
+.md-body .a2ui-block [data-widget] :is(ul, ol) {
   list-style: none;
   padding-left: 0;
 }

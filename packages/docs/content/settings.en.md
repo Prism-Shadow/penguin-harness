@@ -36,10 +36,9 @@ The rail is grouped into **Personal** and **Server**:
 
 Personal preferences apply the moment they are touched. There is no Save button and nothing to lose by closing the dialog. The nickname on the Profile page is the one exception: typed text needs a commit, and its **Save** sits beside the field rather than under the page.
 
-Where your personal preferences are stored:
+Every personal preference is saved to your account: your profile, language, currency, notifications, theme, light or dark, accent, fonts, font size, background image, terminal theme, the shortcuts launcher, tool short names, keyboard shortcuts and your personal Company mode switch. Sign in from another browser or the desktop app and they are all there. Each browser also keeps a copy, so the app opens in your theme straight away. Your unsent drafts follow the account the same way.
 
-- In this browser: language, currency, notifications, theme, terminal theme, font size, accent, the shortcuts launcher, and tool short names.
-- With your account on the server: your profile, your keyboard shortcuts and your personal Company mode switch.
+What stays in each browser is that screen's own view: panel widths, the dock, sidebar and group folds, where the shortcuts launcher rests, the Plugins page's **Show only incompatible plugins** filter, and the notices you closed there.
 
 The Server pages are admin-only and server-global. A non-admin sees neither those entries nor any hint that they exist: they are left with the Personal pages alone, and the rail draws no group headings at all.
 
@@ -94,7 +93,7 @@ The **General** page is personal.
 | **Import Trace** | — | Turns a Trace file into a conversation. The row is there only if you own a Project. See [Import a Trace](#import-a-trace). |
 
 > [!NOTE]
-> Turning on **Task completion notifications** asks the system for permission on the spot. The system asks only once: after a refusal the switch stays off with a hint, and the only way back is the system's own notification settings. A browser without system notifications shows the switch disabled.
+> Turning on **Task completion notifications** asks the system for permission on the spot. The system asks only once: after a refusal the switch stays off with a hint, and the only way back is the system's own notification settings. A browser without system notifications shows the switch disabled. The switch is saved to your account, but each browser has to allow notifications on its own. If you turned them on elsewhere and this browser can't show them yet, the switch shows as off with a note: turn it on, then choose **Allow** when your browser asks.
 
 ### Import a Trace
 

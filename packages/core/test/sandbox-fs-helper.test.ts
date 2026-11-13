@@ -34,7 +34,7 @@ import type { FsPort } from "../src/environment/tools/fs-port.js";
 import { EDIT_FILE_NAME } from "../src/environment/tools/edit-file.js";
 import { READ_FILE_NAME } from "../src/environment/tools/read-file.js";
 import { WRITE_FILE_NAME } from "../src/environment/tools/write-file.js";
-import { toolCall } from "../src/omnimessage/index.js";
+import { toolCall } from "@prismshadow/amsp/records";
 import type { ConfinedSpawn, SpawnConfiner, ToolConfig } from "../src/interfaces/index.js";
 
 let tmp: string;
@@ -235,15 +235,15 @@ describe("the file tools through the helper", () => {
   async function execute(env: Environment, name: string, args: Record<string, unknown>) {
     const call = toolCall({ name, arguments: JSON.stringify(args), toolCallId: "t1" });
     let output = "";
-    let stopReason: string | undefined;
+    let status: string | undefined;
     for await (const msg of env.executeTool({ toolCall: call })) {
-      const p = msg.payload as { type?: string; output?: string; stop_reason?: string };
+      const p = msg.payload as { type?: string; output?: string; status?: string };
       if (p.type === "tool_call_output") {
         output = p.output ?? "";
-        stopReason = p.stop_reason;
+        status = p.status;
       }
     }
-    return { output, stopReason };
+    return { output, status };
   }
 
   it("writes, edits and reads through the helper, with the same output as in-process", async () => {
@@ -264,7 +264,7 @@ describe("the file tools through the helper", () => {
         file_path: file,
         content: "one\ntwo\n",
       });
-      expect(written.stopReason).toBe("completed");
+      expect(written.status).toBe("completed");
       expect(written.output).toContain("Created");
       expect(await readFile(file, "utf8")).toBe("one\ntwo\n");
       const edited = await execute(env, EDIT_FILE_NAME, {
@@ -272,14 +272,14 @@ describe("the file tools through the helper", () => {
         old_string: "two",
         new_string: "three",
       });
-      expect(edited.stopReason).toBe("completed");
+      expect(edited.status).toBe("completed");
       expect(edited.output).toContain("-two");
       expect(edited.output).toContain("+three");
       const read = await execute(env, READ_FILE_NAME, { file_path: "note.txt" });
       expect(read.output.split("\n")).toEqual(["     1\tone", "     2\tthree"]);
       // A missing path is diagnosed through the helper too, with the directory's entries.
       const missing = await execute(env, READ_FILE_NAME, { file_path: "nope.txt" });
-      expect(missing.stopReason).toBe("fatal");
+      expect(missing.status).toBe("fatal");
       expect(missing.output).toContain("has no entry");
       expect(missing.output).toContain("note.txt");
       // The helper is confined with the Session's scope, like a command.
@@ -339,7 +339,7 @@ describe("the file tools through the helper", () => {
         file_path: path.join(locked, "f.txt"),
         content: "y",
       });
-      expect(written.stopReason).toBe("fatal");
+      expect(written.status).toBe("fatal");
       expect(written.output).toContain("refused by this session's sandbox");
     } finally {
       env.dispose();
@@ -361,7 +361,7 @@ describe("the file tools through the helper", () => {
       await env.listTools();
       const file = path.join(tmp, "plain.txt");
       const written = await execute(env, WRITE_FILE_NAME, { file_path: file, content: "z" });
-      expect(written.stopReason).toBe("completed");
+      expect(written.status).toBe("completed");
       expect(await readFile(file, "utf8")).toBe("z");
       expect(asked).toBe(1);
     } finally {

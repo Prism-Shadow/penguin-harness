@@ -89,7 +89,7 @@ describe("dataExtends", () => {
 
 describe("named types and $ref", () => {
   const types: TypeTable = {
-    "core#OmniMessage": { role: "'user'|'assistant'", "parts?": [{ $ref: "core#Part" }, "[]"] },
+    "core#Record": { role: "'user'|'assistant'", "parts?": [{ $ref: "core#Part" }, "[]"] },
     "core#Part": [{ type: "'text'", text: "string" }, "|", { type: "'image'", url: "string" }],
     "core#Json": [
       "string|number|boolean|null",
@@ -106,7 +106,7 @@ describe("named types and $ref", () => {
     expect(dataExtends({ $ref: "core#Part" }, { type: "'text'", text: "string" }, types)).toBe(
       false,
     );
-    expect(dataExtends({ role: "'user'" }, { $ref: "core#OmniMessage" }, types)).toBe(true);
+    expect(dataExtends({ role: "'user'" }, { $ref: "core#Record" }, types)).toBe(true);
   });
 
   it("a recursive type compares finitely, by coinduction", () => {

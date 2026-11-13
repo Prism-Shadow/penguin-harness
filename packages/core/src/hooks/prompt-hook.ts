@@ -21,9 +21,9 @@
  * script-hook.ts; the in-process interface here is what SDK embedders and tests register
  * directly. Docs: /docs/agent-loop § "User-prompt hooks".
  */
-import { hookEvent, userText } from "../omnimessage/index.js";
+import { hookEvent, userText } from "@prismshadow/amsp/records";
 import type { UserPromptOutcome } from "../interfaces/index.js";
-import type { UserPromptTrigger } from "../plugins/index.js";
+import type { UserPromptTrigger } from "../plugin/library.js";
 import { failedAnswer } from "./answer.js";
 
 export interface UserPromptHookInput {

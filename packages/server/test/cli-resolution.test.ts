@@ -107,6 +107,44 @@ describe("the caller's own entry runs; the record decides what rides with it", (
       expect(resolved.detail).toMatch(/harness\.json is not readable JSON/);
     }
   });
+
+  it("faults a pointer that would leave the store — the record never walks out of it", async () => {
+    const caller = await makeCaller();
+    const { root } = await makeRoot({ record: { cli: { bundle: "../../evil.mjs" } } });
+    const resolved = await resolveCli({ callerEntry: caller, root });
+    expect(resolved).toMatchObject({ kind: "fault", fault: "record-unsupported" });
+    if (resolved.kind === "fault") {
+      expect(resolved.detail).toMatch(/outside/);
+    }
+  });
+
+  it("faults a CLI half that names no usable bundle, instead of reading it as none", async () => {
+    const caller = await makeCaller();
+    // `undefined` is absent from the JSON record entirely, so the record degenerates to
+    // "no committed version" — that answer is the reader's own (harness-meta), not this
+    // fault. An empty string and a non-string name a CLI half that cannot be acted on.
+    for (const bundle of ["", 42]) {
+      const { root } = await makeRoot({ record: { cli: { bundle } } });
+      const resolved = await resolveCli({ callerEntry: caller, root });
+      expect(resolved).toMatchObject({ kind: "fault", fault: "record-unsupported" });
+      if (resolved.kind === "fault") {
+        expect(resolved.detail).toMatch(/no bundle path/);
+      }
+    }
+  });
+
+  it("faults a bundle the store lost — not the same answer as nothing pushed", async () => {
+    const caller = await makeCaller();
+    const { root } = await makeRoot({
+      record: { cli: { bundle: "store/cli/abc123.mjs" } },
+      bundle: false,
+    });
+    const resolved = await resolveCli({ callerEntry: caller, root });
+    expect(resolved).toMatchObject({ kind: "fault", fault: "record-unsupported" });
+    if (resolved.kind === "fault") {
+      expect(resolved.detail).toMatch(/missing from the store/);
+    }
+  });
 });
 
 describe("the command shim on the answer", () => {

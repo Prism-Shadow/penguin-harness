@@ -8,7 +8,7 @@
 import type { ComponentType, ReactNode } from "react";
 import { createDeps } from "../lib/module-deps";
 import type { UserEventHandler } from "../state/user-events";
-import type { ChatDrafts } from "@penguinharness/plugin-sessions/web";
+import type { ChatDrafts } from "../features/chat";
 import type { WebAppPage } from "./page-table";
 import type { Sidebar } from "./sidebar/iface";
 

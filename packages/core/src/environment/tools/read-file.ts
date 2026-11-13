@@ -52,8 +52,8 @@ import path from "node:path";
 import { realpath } from "node:fs/promises";
 import { describeFsError, errorCode, localFsPort } from "./fs-port.js";
 import type { FsPort } from "./fs-port.js";
-import { imageUrlMessage, partialToolCallOutput, userText } from "../../omnimessage/index.js";
-import type { OmniMessage } from "../../omnimessage/index.js";
+import { imageUrlMessage, partialToolCallOutput, userText } from "@prismshadow/amsp/records";
+import type { AmspRecord } from "@prismshadow/amsp/records";
 import type {
   EnvironmentServices,
   LLMInterface,
@@ -298,8 +298,8 @@ async function* readImageSource(
   args: Record<string, unknown>,
   ctx: ToolExecutionContext,
   describer: VisionDescriberService | undefined,
-  delta: (output: string) => OmniMessage,
-): AsyncGenerator<OmniMessage, ToolResult | void> {
+  delta: (output: string) => AmspRecord,
+): AsyncGenerator<AmspRecord, ToolResult | void> {
   const { signal } = ctx;
   let proxy: ConfiguredDescriber | null = null;
   if (describer !== undefined) {
@@ -308,16 +308,16 @@ async function* readImageSource(
       // Checked before loading: an unreadable image is not what stands between this session
       // and image reading, the missing vision model is.
       yield delta(NO_VISION_MODEL_MESSAGE);
-      return { stopReason: "fatal" };
+      return { status: "fatal" };
     }
   }
 
   const fs = ctx.fs ?? localFsPort;
   const res = await loadImage(source, ctx.workspaceDir, signal, fs, fs.sandboxed);
   if (!res.ok) {
-    if (res.reason === "aborted") return { stopReason: "aborted" };
+    if (res.reason === "aborted") return { status: "aborted" };
     yield delta(res.message);
-    return { stopReason: "fatal" };
+    return { status: "fatal" };
   }
   const dataUrl = `data:${res.mime};base64,${res.bytes.toString("base64")}`;
 
@@ -360,8 +360,10 @@ async function* readImageSource(
       yield delta(p.text);
     }
   }
-  if (signal?.aborted) return { stopReason: "aborted" };
-  if (!outcome || outcome.status !== "completed") {
+  if (signal?.aborted) return { status: "aborted" };
+  // A description stopped at its output cap is still the text that streamed: the model reads
+  // what arrived.
+  if (!outcome || (outcome.status !== "completed" && outcome.errorCode !== "output_truncated")) {
     const detail =
       outcome && "errorMessage" in outcome && outcome.errorMessage
         ? `: ${outcome.errorMessage}`
@@ -369,7 +371,7 @@ async function* readImageSource(
     yield delta(
       `${streamedAny ? "\n" : ""}Vision model (${proxy.modelId}) request ${outcome?.status ?? "failed"}${detail}`,
     );
-    return { stopReason: "fatal" };
+    return { status: "fatal" };
   }
   if (!streamedAny) yield delta("[vision model returned no text]");
 }
@@ -392,9 +394,9 @@ export function createReadFileTool(
     async *execute(
       args: Record<string, unknown>,
       ctx: ToolExecutionContext,
-    ): AsyncGenerator<OmniMessage, ToolResult | void> {
+    ): AsyncGenerator<AmspRecord, ToolResult | void> {
       const { toolCallId, signal } = ctx;
-      const delta = (output: string): OmniMessage =>
+      const delta = (output: string): AmspRecord =>
         partialToolCallOutput({ eventType: "delta", output, toolCallId });
 
       const filePath = args["file_path"];
@@ -402,7 +404,7 @@ export function createReadFileTool(
         yield delta(
           describeArgumentError(definition, args, { argument: "file_path", kind: "missing" }),
         );
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
       const offsetArg = coerceCount(args["offset"], 1);
       if (!offsetArg.ok) {
@@ -413,7 +415,7 @@ export function createReadFileTool(
             detail: `expected a number (got ${JSON.stringify(args["offset"])})`,
           }),
         );
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
       const offset = Math.max(1, offsetArg.value);
       const limitArg = coerceCount(args["limit"], DEFAULT_READ_FILE_LIMIT);
@@ -425,7 +427,7 @@ export function createReadFileTool(
             detail: `expected a positive number (got ${JSON.stringify(args["limit"])})`,
           }),
         );
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
       const limit = limitArg.value;
 
@@ -450,7 +452,7 @@ export function createReadFileTool(
         yield delta(
           `Refusing to read "${filePath}": ${secretHit} holds the user's secrets and must never enter the conversation.`,
         );
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
 
       let size: number;
@@ -460,11 +462,11 @@ export function createReadFileTool(
           yield delta(
             `Cannot read "${filePath}": it is a directory. Pass the path of a file inside it.`,
           );
-          return { stopReason: "fatal" };
+          return { status: "fatal" };
         }
         size = st.size;
       } catch (err) {
-        if (signal?.aborted) return { stopReason: "aborted" };
+        if (signal?.aborted) return { status: "aborted" };
         const code = errorCode(err);
         // ENOTDIR is the same mistake seen one segment later (a file used as a directory),
         // so it gets the same diagnosis instead of a raw errno message.
@@ -476,9 +478,9 @@ export function createReadFileTool(
         } else {
           yield delta(`Failed to read "${filePath}": ${describeFsError(err, sandboxed)}`);
         }
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
-      if (signal?.aborted) return { stopReason: "aborted" };
+      if (signal?.aborted) return { status: "aborted" };
       if (size === 0) {
         yield delta(`"${filePath}" is an empty file (0 lines).`);
         return;
@@ -493,16 +495,16 @@ export function createReadFileTool(
       try {
         scan = await scanWindow(resolved, offset, limit, fs, signal);
       } catch (err) {
-        if (signal?.aborted) return { stopReason: "aborted" };
+        if (signal?.aborted) return { status: "aborted" };
         yield delta(`Failed to read "${filePath}": ${describeFsError(err, sandboxed)}`);
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
-      if (scan.aborted || signal?.aborted) return { stopReason: "aborted" };
+      if (scan.aborted || signal?.aborted) return { status: "aborted" };
       if (scan.binary) {
         yield delta(
           `"${filePath}" looks like a binary file (contains NUL bytes) and is not a supported image (png/jpeg/gif/webp). Use shell commands to inspect it.`,
         );
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
       if (scan.capBeforeWindow) {
         const mb = Math.round(READ_FILE_SCAN_CAP_BYTES / (1024 * 1024));
@@ -511,13 +513,13 @@ export function createReadFileTool(
             `(scanned ${scan.total} line${scan.total === 1 ? "" : "s"}). The offset is too deep or the file has extremely long ` +
             `lines — use shell commands (e.g. sed -n '${offset},${offset + limit - 1}p') for this file.`,
         );
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
       if (scan.totalKnown && offset > scan.total) {
         yield delta(
           `Offset ${offset} is past the end of "${filePath}" (${scan.total} line${scan.total === 1 ? "" : "s"} total).`,
         );
-        return { stopReason: "fatal" };
+        return { status: "fatal" };
       }
 
       // Render the window, self-budgeted below the tool's output cap so the trailing notes

@@ -110,18 +110,22 @@ The Optimizer also stops on contamination, on `version_changed` or `benchmark_in
 
 ## RSI toolkits
 
-RSI, recursive self-improvement, is what this page is about: an agent improves its own harness — prompts, Skills, tools and hooks — from its own measured results, while the model stays fixed. Each self-evolution algorithm ships as an **RSI toolkit**, a plugin in the library's **Agent Self-Evolution** category. The loop above is the **Default RSI Toolkit**, `default-rsi-toolkit`. Four more toolkits each run one published algorithm the way its paper does, through one Skill named like the plugin:
+RSI, recursive self-improvement, is what this page is about: an agent improves its own harness — prompts, Skills, tools and hooks — from its own measured results, while the model stays fixed. Each self-evolution algorithm ships as an **RSI toolkit**, a plugin in the library's **Agent Self-Evolution** category. The loop above is the **Default RSI Toolkit**, `default-rsi-toolkit`. Eight more toolkits implement published algorithms with declared adaptations, through one Skill named like the plugin:
 
 - **OPRO** (`opro-rsi-toolkit`), from [Large Language Models as Optimizers](https://arxiv.org/abs/2309.03409) (Yang et al., 2023): the optimizer proposes new instructions from the history of scored instructions, every candidate is measured on the frozen Benchmark, and the best-scoring instruction is kept.
 - **APE** (`ape-rsi-toolkit`), from [Large Language Models are Human-Level Prompt Engineers](https://arxiv.org/abs/2211.01910) (Zhou et al., 2022): in one non-iterative pass, the proposer induces candidate instructions from input/output demonstrations, every candidate is measured, and the best is kept.
 - **ACE** (`ace-rsi-toolkit`), from [Agentic Context Engineering](https://arxiv.org/abs/2510.04618) (Zhang et al., 2025), in its sequential offline form: a Reflector reads each training Trace, a Curator folds the lessons into a playbook of rules the agent reads before every task, and the final playbook is measured on the frozen Benchmark.
 - **AWM** (`awm-rsi-toolkit`), from [Agent Workflow Memory](https://arxiv.org/abs/2409.07429) (Wang et al., 2024): workflows are induced from successful trajectories into the agent's memory, online over a training stream or offline from supplied experiences, then frozen and tested on the Benchmark.
+- **[SkillAdam](https://arxiv.org/abs/2609.08944)** (`skilladam-rsi-toolkit`): evolving issue tracker and adaptive Skill edit budget.
+- **[SkillOpt](https://arxiv.org/abs/2605.23904)** (`skillopt-rsi-toolkit`): bounded Skill edits, score-based selection and cross-epoch reflection. Without separate validation data, reuse all or a fixed subset of Train for selection while retaining all Train examples for learning.
+- **[OpenSkill](https://arxiv.org/abs/2606.06741)** (`openskill-rsi-toolkit`): external research and independent virtual tests before frozen-State evaluation.
+- **TRACE** (`trace-rsi-toolkit`), from [TRACE](https://arxiv.org/abs/2608.22793) (Wu et al., 2026): the entry Skill organizes the experiment; its training reference is installed as a separate in-container Curator Skill. The host launches Harbor; each training Curator bootstraps and refines a modular bank from fresh Actor trajectories. Defaults are two attempts per task per batch and two evolution rounds. After training, select one validated bank per group by complete training mean (earliest stage breaks ties), freeze it and compare it with a no-Skill baseline across three complete test repetitions. This checkpoint rule is an experiment adaptation; test feedback never selects a bank. The toolkit follows the published continuous-training contract and reports the mean and sample SD across complete test-repetition means. Skill routing is instruction-driven and read bodies remain in history; this does not reproduce the paper’s per-turn context replacement.
 
 OPRO and APE each ship a small demo task: ask for it, and the Skill builds a fresh agent and a six-case Benchmark before it starts. Each Skill states the paper's default parameters and a smaller smoke budget, and never runs the paper's full budget unless you ask for it.
 
-The toolkits depend neither on each other nor on `default-rsi-toolkit`, so any one of them runs with no other plugin installed. Each initializes its own learning slot in the tested agent: a Skill of the agent's own that holds what the method learns (an instruction, a playbook or workflows), and one fixed line in its `AGENTS.md` telling it to read that Skill before it starts a task. The method's loop edits only what that Skill holds. Every measurement runs through the toolkit's own `references/evaluation.md`, which carries the same one-cell protocol as `agent-evaluation` (one subagent per Case × run, spawned through `run_subagent` and returning plain protocol YAML) and writes the same Scoreboard record. The file is byte-identical in all four algorithm toolkits. Built-in Benchmark cases run by their statements' **How this case is run** section, as they do under `agent-evaluation`.
+The toolkits depend neither on each other nor on `default-rsi-toolkit`, so any one of them runs with no other plugin installed. OPRO, APE, ACE and AWM initialize their own learning slot in the tested agent: a Skill of the agent's own that holds what the method learns (an instruction, a playbook, workflows or a modular skill bank), and one fixed line in its `AGENTS.md` telling it to read that Skill before it starts a task. The method's loop edits only what that Skill holds. Final Benchmark measurements follow the toolkit's own `references/evaluation.md` and write the existing Scoreboard schema. OPRO, APE, ACE and AWM share the generic one-cell evaluation protocol; continuous-training toolkits describe their training launch, artifact handoff and independent testing separately. Built-in Benchmark cases run by their statements' **How this case is run** section, as they do under `agent-evaluation`.
 
-Every candidate a toolkit measures gets a new Agent State `version`. As in the Default loop, a version is snapshotted before the toolkit changes it, and the run ends on the version the method selects. The evaluations go into `scoreboard.yaml` under the usual label, so a Default run and an OPRO run of the same agent on the same model and thinking level share one line of the chart: each point's version tells them apart, and each evaluation's summary title names the method. In the Web App, the **Method** field of the Evaluation Center's **Optimize** tab picks the toolkit; see [Evaluation Center](/evaluation-center#optimize-an-agent).
+Every candidate OPRO, APE, ACE or AWM measures gets a new Agent State `version`. As in the Default loop, a version is snapshotted before the toolkit changes it, and the run ends on the version the method selects. The evaluations go into `scoreboard.yaml` under the usual label, so a Default run and an OPRO run of the same agent on the same model and thinking level share one line of the chart: each point's version tells them apart, and each evaluation's summary title names the method. In the Web App, the **Method** field of the Evaluation Center's **Optimize** tab picks the toolkit; see [Evaluation Center](/evaluation-center#optimize-an-agent).
 
 ## Reproduced Benchmarks
 
@@ -140,7 +144,8 @@ Benchmarks belong to the Project. Each one is stored in `<root>/<project>/benchm
 ├── benchmark_config.toml       # the manifest: id, title, description, description_zh, version, status, runs (Builder runs is fixed at 1), [origin]
 ├── <case-id>/
 │   ├── statement/              # the task given to the Target Agent
-│   └── rubric/                 # private scoring rubric, isolated from the Target Agent
+│   ├── rubric/                 # private scoring rubric, isolated from the Target Agent
+│   └── task_config.toml        # task metadata and optional resource budget
 └── scoreboard.yaml             # evaluation records (current format)
 ```
 
@@ -169,15 +174,20 @@ kind = "agent"
 | --- | --- |
 | `id` | The directory name. A manifest whose `id` is another directory's is not read |
 | `title`, `description` | The title (without one, the directory name stands in) and an optional description; at most 200 and 2,000 characters when the server writes them |
+| `title_zh` | Optional Chinese title, preserved when importing or saving a package |
 | `description_zh` | Optional: the description in Chinese, shown instead of `description` in the Chinese interface, as a plugin's `description_zh` is; same limit |
-| `version` | A date version, `"YYYY.MM.DD.N"` |
+| `version` | `"x.y.z"` for Benchmark packages; existing `"YYYY.MM.DD.N"` date versions are also accepted |
+| `last_update` | Package update time, in ISO 8601 format |
+| `[author]` | Package author: `name`, with optional `email` and `homepage` |
 | `status` | `draft`, `published` or `failed`; see [Benchmark status](#benchmark-status) |
 | `runs` | Runs per case, a positive integer, 1 when absent; at most 1,000 when the server writes it |
 | `[origin]` | Where this copy came from, in `kind`: `builtin` (seeded with the Project), `manual` (the create form), `agent` (written by `benchmark-design`), `git` (an agent imported a repository folder: `url`, the 40-character commit `ref` it resolved to, `path` and `imported_at`) or `zip` (an uploaded package: `imported_at`) |
 
 `id`, `version` and `[origin]` are new in this release, and every one of them is optional when the file is read. A manifest written by an earlier release has none of them and is read as it is: under its directory name, unversioned, and with no origin. Nothing rewrites it, and nothing has to be done by hand. An `id`, `version` or `[origin]` that is present but out of shape makes the manifest unreadable (see [Benchmark status](#benchmark-status)). An earlier release that reads a manifest written by this one ignores the keys it does not know.
 
-Whatever an agent may edit on disk carries a date version, Skills and Benchmarks alike. A new Benchmark starts at the day's `.1`, another revision on the same day takes the next number, and `benchmark-design` moves the version on whenever it changes a case or the status. A Benchmark's page shows its version beside the directory path.
+Benchmark packages use `x.y.z` versions and retain their version when imported. A locally created Benchmark starts at the day's `.1`, another revision on the same day takes the next number, and `benchmark-design` moves the version on whenever it changes a case or the status. A Benchmark's page shows its version beside the directory path.
+
+[Community RFC-0001](https://github.com/Prism-Shadow/penguin-harness-community/blob/main/rfcs/RFC-0001-benchmark.md) defines the metadata required for repository submissions. Existing Project manifests remain readable without the new fields.
 
 A Benchmark's **package** is `benchmark_config.toml` and its case directories. `scoreboard.yaml`, the `.jobs/` trials, other entries whose names start with a dot, and symlinks belong to the copy on this disk and are never part of it. Large source files stay out of a package too: a statement links them in a repository at a pinned commit, as the built-in Benchmarks' statements do. The built-in Benchmarks are also published in this format under `packages/` in the public repository Prism-Shadow/penguin-harness-benchmark.
 
@@ -198,7 +208,7 @@ A failed Benchmark cannot be used. A Benchmark created by hand, the built-in exa
 Each evaluation record in `scoreboard.yaml` is timestamped and carries:
 
 - `agent_id`, the agent the evaluation tested. Together with `model_id` and `thinking_level`, it forms the record's **label**. The trend chart plots score against time with one series per label, and only scores under the same label are comparable. The Agent State `version` is not part of the label: successive versions of one agent on one runtime are the trend the chart exists to show, so they share a line, and each point names its version on hover. A record written before evaluations carried an agent reads as unlabelled and falls into the chart's grey series.
-- The evaluation runtime: `provider`, `model_id` and `thinking_level`. For the baseline, a `(provider, model_id)` pair the user specifies takes priority; otherwise the pair is inherited from the Builder Session. An evaluation from the Evaluation Center's **Evaluate** tab inherits its own conversation's pair the same way. An optimization reuses the Reference's runtime. `thinking_level` is read from the Target Agent's config, not from Trace metadata.
+- The evaluation runtime: `provider`, `model_id` and `thinking_level`. For the baseline, a `(provider, model_id)` pair the user specifies takes priority; otherwise the pair is inherited from the Builder Session. An evaluation from the Evaluation Center's **Evaluate** tab uses the pair its **Tested agent's model** names, which the prompt carries. An optimization reuses the Reference's runtime; one started from the **Optimize** tab names the tested model, and its Reference is the evaluation on that pair. `thinking_level` is read from the Target Agent's config, not from Trace metadata.
 - `summary_title` and `summary`: the round's conclusion and the hypothesis for the next one.
 - Score, cost and duration averages, written by the model. Case-level values average the runs, and evaluation-level values average the Cases. Run cost keeps its recorded precision. Cost averages ignore `null` inputs and are `null` only when every contributing cost is unknown. Scores use two decimals, cost averages six, and `duration_ms` is an integer.
 - Per-Case run details: each run records `score`, `cost`, `duration_ms` and `session_id`.
@@ -217,7 +227,9 @@ The `version` field in `system_config.yaml` is the Agent State version. It incre
 
 Before the Optimizer changes a Reference State, it makes sure `<agent>/snapshots/v<version>.tar.gz` exists for the Reference version. It reuses an existing snapshot, and otherwise creates one by archiving `agent_state/` without the Vault (`.vault.toml`): secrets never enter a snapshot. It never overwrites a snapshot of the same version, and if it cannot create one, it stops before changing anything. A rejected Candidate is rolled back in the same round: the Optimizer restores the original files and version and removes files the Candidate created.
 
-In the Web App, an agent's settings page offers **Export snapshot** to any member and **Import snapshot** to the Project owner. An import replaces the whole Agent State, takes the `version` inside the package, and keeps the current Vault; the current version is snapshotted first. Importing a version that is not newer than the current one asks for confirmation. The create dialog on the Agents page can also start a new agent from an exported package (**Initialize from a snapshot**): the agent starts with the package's state and version, with no confirmation.
+Overwriting an agent from a package (see [Export and import an agent](/agents#export-and-import-an-agent)) is for the Project owner. It replaces the parts of the Agent State the package carries (a part it leaves out keeps the agent's own), takes the `version` inside the package, and keeps the current Vault. Before it, the current State is packed afresh into a backup of its own, `<agent>/snapshots/import-backup-v<version>-<time>-<random>.tar.gz`, which never replaces an existing file and is not one of the `v<version>.tar.gz` snapshots: an older snapshot of the same version is neither reused nor overwritten. The workbench version history sits beside the Agent State, so an import leaves it as it is. Importing under a new id creates the agent with the package's state and version, and takes no backup.
+
+A zip package may hold no links at all. A `.tar.gz` package is accepted only if `agent_state/` is a real directory and every symbolic link inside it resolves within it; a link that leaves `agent_state/` or points at nothing is rejected, and so is a package whose `system_config.yaml` cannot be read. An import stops before touching the State if the current Vault cannot be read. Should the swap fail and the previous State not be restorable, that State and the Vault stay in the import's staging directory under the agent's folder, and the server log names it.
 
 ## Auditability
 
@@ -239,5 +251,9 @@ Every score can be traced back to the run that produced it.
 | `ape-rsi-toolkit` | `ape-rsi-toolkit` | Run APE: induce an instruction from input/output demonstrations |
 | `ace-rsi-toolkit` | `ace-rsi-toolkit` | Run ACE: evolve a playbook of rules from training Traces |
 | `awm-rsi-toolkit` | `awm-rsi-toolkit` | Run AWM: induce workflows from successful trajectories |
+| `skilladam-rsi-toolkit` | `skilladam-rsi-toolkit` | SkillAdam RSI Toolkit: evolve a Skill from execution feedback. |
+| `skillopt-rsi-toolkit` | `skillopt-rsi-toolkit` | SkillOpt RSI Toolkit: bounded Skill edits with score-based selection. |
+| `openskill-rsi-toolkit` | `openskill-rsi-toolkit` | OpenSkill RSI Toolkit: learn skills through research and virtual tests. |
+| `trace-rsi-toolkit` | `trace-rsi-toolkit` | Run TRACE: evolve a skill bank from contrasting trajectories and evaluate the frozen bank |
 
 How Skills are organized and installed is covered in [Skills](/skills).

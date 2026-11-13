@@ -2,7 +2,9 @@
  * The button: a small radius, a one-pixel line and a single accent, and nothing that moves but
  * colour. Five variants — the accent `primary`, the bordered `secondary`, `danger` (red ink on the
  * neutral box, the red reserved for hover), the borderless `ghost` and the `link` that reads as
- * text — on five sizes: three text rungs and two squares for a lone glyph.
+ * text — on six sizes: four text rungs and two squares for a lone glyph. `sm` and `base` are the
+ * control rungs' own heights (Input, Select, SearchInput of the same `size`), so a row of controls
+ * and buttons on one rung reads as one height; `xs` and `md` stand on their own.
  *
  * `loading` puts the one Spinner in the leading slot and marks the button busy, so no call site
  * hand-draws its own ring; the square sizes have one slot, so there the spinner takes the glyph's
@@ -13,7 +15,7 @@ import { useUiStrings } from "../../../strings";
 import { Spinner } from "../../icons/spinner/spinner";
 
 export type ButtonVariant = "primary" | "secondary" | "danger" | "ghost" | "link";
-export type ButtonSize = "xs" | "sm" | "md" | "icon" | "icon-sm";
+export type ButtonSize = "xs" | "sm" | "md" | "base" | "icon" | "icon-sm";
 
 const VARIANT: Record<ButtonVariant, string> = {
   // The accent follows the theme and the user's accent choice; the hover dims it rather than
@@ -27,15 +29,17 @@ const VARIANT: Record<ButtonVariant, string> = {
     "border border-line-emphasis bg-control font-medium text-tone-danger-fg hover:border-tone-danger-line hover:bg-tone-danger-bg",
   ghost:
     "border border-transparent bg-transparent font-medium text-fg-muted hover:bg-control-hover hover:text-fg",
-  // Text that acts: no box, the link colour, the underline on hover. It keeps the body weight,
-  // because a link-button sits in a sentence or a row of plain text.
-  link: "cursor-pointer text-link underline-offset-2 hover:text-link-hover hover:underline disabled:no-underline",
+  // Text that acts: no box, the link colour, the underline on hover — and at rest too where the
+  // theme's link ink is the body's (`--ui-link-decoration`). It keeps the body weight, because a
+  // link-button sits in a sentence or a row of plain text.
+  link: "cursor-pointer text-link underline-offset-2 [text-decoration-line:var(--ui-link-decoration)] hover:text-link-hover hover:underline disabled:no-underline",
 };
 
 const SIZE: Record<ButtonSize, string> = {
   xs: "rounded-control px-2 py-0.5 text-xs",
   sm: "rounded-control px-2.5 py-1 text-xs",
   md: "rounded-control px-3 py-1.5 text-sm",
+  base: "rounded-control px-3 py-2 text-base",
   icon: "rounded-control p-1.5",
   "icon-sm": "rounded-control p-1",
 };
@@ -45,6 +49,7 @@ const LINK_SIZE: Record<ButtonSize, string> = {
   xs: "text-xs",
   sm: "text-xs",
   md: "text-sm",
+  base: "text-base",
   icon: "",
   "icon-sm": "",
 };
@@ -92,6 +97,9 @@ export function Button({
   const nameless =
     isSquare(size) && rest["aria-label"] === undefined && rest["aria-labelledby"] === undefined;
   const spinner = loading ? <Spinner size="sm" label={loadingLabel ?? strings.loading} /> : null;
+  // A button with a fill or a line has a box whose edge a theme may draw; a ghost or a link
+  // button has none.
+  const edge = variant === "ghost" || variant === "link" ? "" : "ui-edge";
   return (
     <button
       type="button"
@@ -99,7 +107,7 @@ export function Button({
       {...(nameless && title !== undefined ? { "aria-label": title } : {})}
       aria-busy={loading || undefined}
       disabled={disabled || loading}
-      className={`${BASE} disabled:cursor-not-allowed disabled:opacity-60 ${look(variant, size)} ${className}`}
+      className={`${BASE} disabled:cursor-not-allowed disabled:opacity-60 ${look(variant, size)} ${edge} ${className}`}
       {...rest}
     >
       {isSquare(size) && spinner !== null ? (

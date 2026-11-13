@@ -1,10 +1,10 @@
-import { useProject } from "@prismshadow/penguin-web/internal";
-import { dispatchBrowser } from "@penguinharness/plugin-browser/web";
+import { useProject } from "../../state/project";
+import { dispatchBrowser } from "../builtin-browser";
 /**
  * Keeps the dock's scope on the conversation on screen (`WebAppModule.layers`, mounted once beside
  * every page). The docks belong to the conversation they were arranged in, so switching Sessions
  * switches the arrangement with it (dock-state.ts). The draft page's route id ("new" / a parked
- * draft id) is a scope of its own, handed to the Session the first send creates; pages with no
+ * draft id), qualified by its Project like the browser's, is a scope of its own, handed to the Session the first send creates; pages with no
  * Session scope to a placeholder. Layout effect, not a plain one: it has to land before the chat
  * page's docks paint, or the outgoing conversation's docks flash on the incoming one.
  */
@@ -22,7 +22,7 @@ export function DockScope() {
       ? `${projectId ?? "~none"}:${scope}`
       : (scope ?? (projectId === null ? null : `~project:${projectId}`));
     dispatchBrowser({ type: "scope", scope: browserScope, projectId });
-    setDockScope(scope);
+    setDockScope(provisional ? browserScope : scope);
   }, [scope, currentProject?.projectId]);
   return null;
 }

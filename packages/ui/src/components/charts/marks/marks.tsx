@@ -2,17 +2,21 @@
  * The chart primitives: the one place a theme's chart tokens (../chart-style.ts) become marks.
  *
  * Every chart — the cost center's requests, Token and cost charts, the token donut, the
- * sparklines, the ring gauges — draws its bars, lines, areas, points, arcs, grid and axis labels
- * through these, and the Trace timeline its lanes through TimelineBar (timeline-bar.tsx). A chart
+ * sparklines, the ring gauges, the basic bar and line charts — draws its bars, lines, areas,
+ * points, arcs, grid and axis labels through these, and the Trace timeline its lanes through TimelineBar (timeline-bar.tsx). A chart
  * decides WHAT to draw — where a mark sits, which series it belongs to, whether it is dimmed —
  * and never HOW: the width of a bar in its band, its corner radius, outline and fill opacity, a
  * line's width and curve, a point's size, the fill under a line and every colour come from the
  * active theme here. A source guard (chart-marks.test.ts, in this package and in the Web App)
  * holds the charts to that.
  *
- * Each primitive writes `data-part` (and `data-series` where a series index exists), so a theme
- * may still restyle a part in CSS — a dashed grid, square points (a point is a rect whose `rx`
- * is its radius, so `rx: 0` squares it), round joins.
+ * Each primitive writes `data-part` (and `data-series` where a mark belongs to a series: a palette
+ * slot's number, or a named colour's token name), so a theme may still restyle a part in CSS — a
+ * dashed grid, square points (a point is a rect whose `rx` is its radius, so `rx: 0` squares it),
+ * round joins. A filled mark (a bar, an area, a point) carries its paint as `--_paint` and takes
+ * its fill from it in theme.css's base rules, so a recipe or a utility that fills it otherwise
+ * still has the mark's colour to outline it in; the HTML marks — a timeline bar, a legend's or a
+ * bubble's swatch — take their background from it the same way.
  *
  * A mark's colour is a `ChartPaint`: a palette slot, one of the named roles (the reference line,
  * the Token kinds), or an `ink` — a Tailwind text class the mark paints with as currentColor,
@@ -23,6 +27,7 @@ import type { CSSProperties, MouseEventHandler, ReactNode } from "react";
 import { seriesStroke, useChartStyle } from "../chart-style";
 import type { ChartStyle } from "../chart-style";
 import { curvePath, fitBarWidth } from "./geom";
+import { htmlPaint, seriesAttr } from "./series";
 
 export type ChartPaint =
   /** Palette slot `series` (0-based; cycles past the last). */
@@ -45,9 +50,19 @@ export function resolvePaint(
   return { className: paint.ink };
 }
 
-/** `data-series` for a paint: the 1-based slot, like the tokens (none for a role or an ink). */
-const seriesAttr = (paint: ChartPaint) =>
-  "series" in paint ? { "data-series": paint.series + 1 } : {};
+/**
+ * A filled mark's style: its colour, which an outline drawn in `currentColor` reads, and the
+ * same paint as `--_paint`, which theme.css fills it from — `currentColor` for an ink, whose
+ * colour is its class's.
+ */
+const fillStyle = (color: string | undefined): CSSProperties =>
+  ({
+    ...(color !== undefined ? { color } : {}),
+    "--_paint": color ?? "currentColor",
+  }) as CSSProperties;
+
+/** The gap a flush bar leaves to its neighbour, px. */
+const FLUSH_SEAM = 1;
 
 /** The width a bar takes in a band of `band` px: the theme's fill share, capped and floored. */
 export function useBarWidth(band: number): number {
@@ -69,6 +84,10 @@ export function barPath(x: number, y: number, w: number, h: number, radius: numb
  * theme's radius; its fill takes the theme's bar opacity, and an outline the theme's bar
  * stroke (in the bar's own colour unless the theme names one). `opacity` dims the whole mark
  * (a highlight fading the rest).
+ *
+ * A `flush` bar is a histogram's bin: it takes its whole band, less a 1px seam so neighbouring
+ * bins of one colour still read as bins, and keeps square corners — contiguous bins have no top
+ * to round.
  */
 export function ChartBar({
   cx,
@@ -77,6 +96,7 @@ export function ChartBar({
   height,
   paint,
   top = true,
+  flush = false,
   opacity,
   className = "",
 }: {
@@ -86,11 +106,12 @@ export function ChartBar({
   height: number;
   paint: ChartPaint;
   top?: boolean;
+  flush?: boolean;
   opacity?: number;
   className?: string;
 }) {
   const chart = useChartStyle();
-  const width = fitBarWidth(band, chart.barFill);
+  const width = flush ? Math.max(1, band - FLUSH_SEAM) : fitBarWidth(band, chart.barFill);
   const x = cx - width / 2;
   const { color, className: ink } = resolvePaint(chart, paint);
   const outline =
@@ -104,13 +125,12 @@ export function ChartBar({
     "data-part": "bar",
     ...seriesAttr(paint),
     className: `${ink} ${className}`.trim(),
-    fill: "currentColor",
     ...(chart.barOpacity < 1 ? { fillOpacity: chart.barOpacity } : {}),
     ...outline,
     opacity,
-    style: color !== undefined ? { color } : undefined,
+    style: fillStyle(color),
   };
-  const d = top ? barPath(x, y, width, height, chart.barRadius) : null;
+  const d = top && !flush ? barPath(x, y, width, height, chart.barRadius) : null;
   return d === null ? (
     <rect x={x} y={y} width={width} height={height} {...common} />
   ) : (
@@ -163,15 +183,20 @@ export function ChartLine({
  * The fill under a line: the line's path in the theme's curve, dropped to `baseY` and closed.
  * Its opacity is the theme's area opacity times `strength` (a chart dims it while a point is
  * singled out, or draws a sparkline's a little stronger).
+ *
+ * A stacked area's band fills down to the series under it instead: `floor` is that series' top
+ * edge, one point under each of `points`, and the band closes back along it in the same curve.
  */
 export function ChartArea({
   points,
   baseY,
+  floor,
   paint,
   strength = 1,
 }: {
   points: ReadonlyArray<readonly [number, number]>;
   baseY: number;
+  floor?: ReadonlyArray<readonly [number, number]>;
   paint: ChartPaint;
   strength?: number;
 }) {
@@ -180,16 +205,19 @@ export function ChartArea({
   const { color, className: ink } = resolvePaint(chart, paint);
   const first = points[0]!;
   const last = points[points.length - 1]!;
+  const back =
+    floor !== undefined && floor.length > 0
+      ? curvePath([...floor].reverse(), chart.curve).replace(/^M/, "L")
+      : `L${last[0]},${baseY} L${first[0]},${baseY}`;
   return (
     <path
       data-part="area"
       {...seriesAttr(paint)}
-      d={`${curvePath(points, chart.curve)} L${last[0]},${baseY} L${first[0]},${baseY} Z`}
-      fill="currentColor"
+      d={`${curvePath(points, chart.curve)} ${back} Z`}
       stroke="none"
       opacity={chart.areaOpacity * strength}
       className={ink || undefined}
-      style={color !== undefined ? { color } : undefined}
+      style={fillStyle(color)}
     />
   );
 }
@@ -226,10 +254,9 @@ export function ChartPoint({
       width={2 * r}
       height={2 * r}
       rx={r}
-      fill="currentColor"
       opacity={opacity}
       className={ink || undefined}
-      style={color !== undefined ? { color } : undefined}
+      style={fillStyle(color)}
     />
   );
 }
@@ -304,6 +331,35 @@ export function ChartGrid({ x1, x2, y }: { x1: number; x2: number; y: number }) 
       className="stroke-chart-grid"
       strokeWidth={1}
     />
+  );
+}
+
+/**
+ * A value written beside its mark (a reading above its point), in the muted ink at the size a
+ * figure is read at; `data-part="label"` lets a theme set it in its data face.
+ */
+export function ChartLabel({
+  x,
+  y,
+  anchor = "middle",
+  children,
+}: {
+  x: number;
+  y: number;
+  anchor?: "start" | "middle" | "end";
+  children: ReactNode;
+}) {
+  return (
+    <text
+      data-part="label"
+      x={x}
+      y={y}
+      textAnchor={anchor}
+      fontSize={11}
+      className="fill-fg-muted tabular-nums"
+    >
+      {children}
+    </text>
   );
 }
 
@@ -417,7 +473,12 @@ export function ChartBarHit({
  */
 export type ChartSwatchShape = "square" | "block" | "dash" | "tick" | "chip";
 
-/** A legend or bubble swatch in a paint: a square for a bar series, a dash for a line. */
+/**
+ * A legend or bubble swatch in a paint: a square for a bar series, a dash for a line. It is the
+ * `swatch` part (outside the chart's own root, in a legend or a bubble), naming its shape in
+ * `data-shape` and its series as a mark does, and it carries its paint as `--_paint`, so a theme
+ * that fills a series' bars with something else may fill its swatch alike.
+ */
 export function ChartSwatch({
   paint,
   shape = "square",
@@ -429,7 +490,7 @@ export function ChartSwatch({
 }) {
   const chart = useChartStyle();
   const { color } = resolvePaint(chart, paint);
-  const ink = "ink" in paint ? (paint.swatch ?? "") : "";
+  const ink = "ink" in paint ? `${paint.swatch ?? ""} ${paint.ink}` : "";
   const size =
     shape === "dash"
       ? "h-0.5 w-3 rounded-sm"
@@ -440,9 +501,14 @@ export function ChartSwatch({
           : shape === "chip"
             ? "h-2 w-3 rounded-sm"
             : "h-2 w-2 rounded-[2px]";
-  const style: CSSProperties | undefined =
-    color !== undefined ? { backgroundColor: color } : undefined;
+  const style = { "--_paint": htmlPaint(color, paint) } as CSSProperties;
   return (
-    <span className={`inline-block shrink-0 ${size} ${ink} ${className}`.trim()} style={style} />
+    <span
+      data-part="swatch"
+      data-shape={shape}
+      {...seriesAttr(paint)}
+      className={`inline-block shrink-0 ${size} ${ink} ${className}`.replace(/\s+/g, " ").trim()}
+      style={style}
+    />
   );
 }

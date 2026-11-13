@@ -51,6 +51,4 @@ export function saveGroupSet(storageKey: string | null, next: ReadonlySet<string
 
 export const DRAFTS_GROUP_KEY = "\0drafts";
 
-export const NO_SCHEDULED_SESSIONS: ReadonlySet<string> = new Set();
-
 export const NEW_CHAT_ICON = ICONS.penLine;

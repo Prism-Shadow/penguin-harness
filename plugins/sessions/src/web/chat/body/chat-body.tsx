@@ -6,10 +6,10 @@
 import type { RefObject } from "react";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { Button, EmptyState, Skeleton } from "@prismshadow/penguin-ui";
-import { S } from "@prismshadow/penguin-web/internal";
-import type { ComposerReference } from "@prismshadow/penguin-web/internal";
-import type { ChatItem } from "@prismshadow/penguin-web/internal";
-import { DockLauncher } from "@prismshadow/penguin-web/internal";
+import { S } from "../../../lib/strings";
+import type { ComposerReference } from "../../../lib/workspace-tree";
+import type { ChatItem } from "../../../lib/amsp/stream-model";
+import { DockLauncher } from "../../dock";
 import { MessageStream, type StreamRenderContext } from "../message-stream";
 
 import { ChatDropRegion } from "../drop-zone";

@@ -4,11 +4,11 @@
  * dock's panels. Rebuilt every render, as the stream it reads mutates in place.
  */
 import type { ModelRefDto, SessionInfo } from "@prismshadow/penguin-server/api";
-import * as api from "@prismshadow/penguin-web/internal";
-import type { MemoryLocateTarget } from "@prismshadow/penguin-web/internal";
-import { bucketCostUsd, type BucketPricing } from "@prismshadow/penguin-web/internal";
+import * as api from "../../../api/endpoints";
+import type { MemoryLocateTarget } from "../../../lib/amsp/memory-changes";
+import { bucketCostUsd, type BucketPricing } from "../../../lib/amsp/task-stats";
 
-import { openPanel } from "@prismshadow/penguin-web/internal";
+import { openPanel } from "../../dock";
 import type { StreamRenderContext } from "../message-stream";
 import type { SessionStreamState } from "../use-session-stream";
 

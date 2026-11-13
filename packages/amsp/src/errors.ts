@@ -23,9 +23,11 @@ export class AmspHttpError extends Error {
 }
 
 /**
- * The stream ended or broke before `run.done`, or carried a block that is not an AMSP event: the
- * connection failed or the server did. The run's outcome is unknown; read the Session to learn
- * what happened to it.
+ * A run stream ended or broke before `data: [DONE]`, or carried a record that is not an
+ * envelope: the connection failed, or what answered is not an AMSP stream. The run's outcome is
+ * unknown; read the Session (its status, its history) to learn what happened to it. A run the
+ * server could not finish is not this: its stream still ends with `[DONE]`, and its result says
+ * `fatal`.
  */
 export class AmspStreamError extends Error {
   constructor(message: string, options?: { cause?: unknown }) {

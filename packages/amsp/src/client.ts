@@ -1,102 +1,86 @@
 /**
  * The client of one Agent's API: runs it, continues its Sessions, answers its approvals.
  *
- * Only `fetch`, `Headers`, `ReadableStream`, `TextDecoder` and `AbortController` are used, so the
- * same code runs in Node 24 and in a browser.
+ * Only `fetch`, `Headers`, `ReadableStream`, `TextDecoder` and `AbortController` are used (by
+ * the default transport), so the same code runs in Node 24 and in a browser.
  */
-import { RunCollector, type RunResult } from "./collect.js";
-import { AmspHttpError, AmspStreamError, httpError } from "./errors.js";
-import { sseData } from "./sse.js";
+import { RunCollector } from "./collect.js";
+import type { RunResult } from "./collect.js";
+import { AmspHttpError, AmspStreamError } from "./errors.js";
+import { HttpTransport } from "./transport.js";
+import type { HttpTransportOptions, Transport } from "./transport.js";
 import type {
   AgentInfo,
   AgentResponse,
-  AmspEvent,
+  AmspRecord,
   ApprovalRequest,
-  ApprovalRequested,
+  ApprovalsResponse,
   InputItem,
+  MessageOrigin,
+  MessagesPage,
+  MessagesResponse,
+  PendingApproval,
   RunRequest,
   SessionInfo,
   SessionResponse,
+  ToolCallPayload,
 } from "./types.js";
 
-export interface AgentClientOptions {
-  /** The server's AMSP base URL, e.g. `http://localhost:7364/api/amsp/v1`. */
-  baseUrl: string;
+export interface AgentClientOptions extends Partial<HttpTransportOptions> {
   /** The Agent, as `<projectId>/<agentId>`, e.g. `demo/coder`. */
   agent: string;
-  /** The Agent's API key, sent as a Bearer token. Omit it only for an Agent that allows keyless access; no environment variable is read for it. */
-  apiKey?: string;
-  /** The `fetch` to send requests with; the global one by default. */
-  fetch?: typeof fetch;
-  /** Extra headers for every request. A browser sends a cross-origin request only with the headers the server allows (`Authorization`, `Content-Type`). */
-  headers?: Record<string, string>;
+  /**
+   * How requests reach the server. Omitted, an {@link HttpTransport} over `baseUrl` (the server's
+   * AMSP base URL, e.g. `http://localhost:7364/api/amsp/v1`) with `apiKey` and the other options.
+   */
+  transport?: Transport;
 }
+
+/** The answer to one approval. */
+export type ApprovalAnswer = "allow" | "deny";
+
+/**
+ * Decides one tool call the server holds for an answer: the call (a `tool_call` record's payload)
+ * and, for a subagent's call, the child Session chain it came through.
+ */
+export type OnApproval = (
+  toolCall: ToolCallPayload,
+  origin: MessageOrigin[] | undefined,
+  ctx: { sessionId: string },
+) => Promise<ApprovalAnswer> | ApprovalAnswer;
 
 export interface RunOptions {
   /** The new user input: text, or text and image items. */
   input: string | InputItem[];
-  /** Continues this Session; omitted, the run starts a new one, named by `run.started`. */
+  /** Continues this Session; omitted, the run starts a new one, named by its `session_meta`. */
   sessionId?: string;
   /** Aborting it closes the connection, which aborts the run on the server, and rejects the run with the signal's reason. */
   signal?: AbortSignal;
-  /** Called for every `approval.requested`; the answer is POSTed for you. Absent, or throwing, = `"deny"`. */
-  onApproval?: (
-    req: ApprovalRequested,
-    ctx: { sessionId: string },
-  ) => Promise<"allow" | "deny"> | "allow" | "deny";
+  /**
+   * Decides the calls the Session's approval mode asks about; the client finds them through the
+   * Session's approvals resource and posts each answer for you. Absent, or throwing, = `"deny"`.
+   */
+  onApproval?: OnApproval;
 }
 
 /**
- * One run of the Agent, under way from the moment `stream()` returns. Iterate it for the events as
- * they arrive — once; events are kept until they are read, so use `run()` when only the result
- * matters. `result()` resolves when the stream ends. Approvals are answered as they arrive,
- * whether or not anyone iterates. Leaving the loop early stops the iteration, not the run; call
- * `abort()` or abort the signal for that.
+ * One run of the Agent, under way from the moment `stream()` returns. Iterate it for the records as
+ * they arrive — once; records are kept until they are read, so use `run()` when only the result
+ * matters. `result()` resolves when the stream reaches `[DONE]`. Approvals are answered as they
+ * come, whether or not anyone iterates. Leaving the loop early stops the iteration, not the run;
+ * call `abort()` or abort the signal for that.
  */
-export interface Run extends AsyncIterable<AmspEvent> {
-  /** The Session id, from `run.started`, before any other event. */
+export interface Run extends AsyncIterable<AmspRecord> {
+  /**
+   * The Session id, once the run is under way: for a continued Session the `sessionId` passed, at
+   * the stream's first frame; for a new one, at its `session_meta`, the stream's first record.
+   * Rejects when the run is refused, or its stream breaks, before then.
+   */
   readonly session: Promise<string>;
   /** The outcome. Rejects with an {@link AmspHttpError} on a refusal, an {@link AmspStreamError} when the stream broke, or the abort reason. */
   result(): Promise<RunResult>;
-  /** Asks the server to abort the run. The stream stays open and ends with `run.done` `aborted`. */
+  /** Asks the server to abort the run. The stream stays open and still ends with `[DONE]`; the result says `aborted`. */
   abort(): Promise<void>;
-}
-
-/** How every request is sent: the base URL, the key and extra headers, the chosen `fetch`. */
-class Transport {
-  readonly #baseUrl: string;
-  readonly #headers: Record<string, string>;
-  readonly #fetch: typeof fetch | undefined;
-
-  constructor(opts: AgentClientOptions) {
-    this.#baseUrl = opts.baseUrl.replace(/\/+$/, "");
-    this.#headers = {
-      ...opts.headers,
-      ...(opts.apiKey ? { Authorization: `Bearer ${opts.apiKey}` } : {}),
-    };
-    this.#fetch = opts.fetch;
-  }
-
-  /** Sends one request; an answer other than 2xx is thrown as an {@link AmspHttpError}. */
-  async send(
-    method: "GET" | "POST",
-    path: string,
-    init: { body?: unknown; accept?: string; signal?: AbortSignal } = {},
-  ): Promise<Response> {
-    const headers: Record<string, string> = { ...this.#headers };
-    if (init.body !== undefined) headers["Content-Type"] = "application/json";
-    if (init.accept !== undefined) headers.Accept = init.accept;
-    // Called bare: a browser's fetch throws "Illegal invocation" when called as another object's method.
-    const fetchImpl = this.#fetch ?? globalThis.fetch;
-    const response = await fetchImpl(this.#baseUrl + path, {
-      method,
-      headers,
-      ...(init.body !== undefined ? { body: JSON.stringify(init.body) } : {}),
-      ...(init.signal ? { signal: init.signal } : {}),
-    });
-    if (!response.ok) throw await httpError(response);
-    return response;
-  }
 }
 
 const sessionPath = (sessionId: string) => `/sessions/${encodeURIComponent(sessionId)}`;
@@ -104,34 +88,167 @@ const sessionPath = (sessionId: string) => `/sessions/${encodeURIComponent(sessi
 const approvalPath = (sessionId: string, toolCallId: string) =>
   `${sessionPath(sessionId)}/approvals/${encodeURIComponent(toolCallId)}`;
 
-/** One block of the stream as an event; anything that is not an object with a `type` breaks the stream. */
-function parseEvent(data: string): AmspEvent {
-  let event: unknown;
-  try {
-    event = JSON.parse(data);
-  } catch (err) {
-    throw new AmspStreamError(
-      `The stream carried a block that is not JSON: ${data.slice(0, 200)}`,
-      {
-        cause: err,
-      },
-    );
-  }
-  if (
-    event === null ||
-    typeof event !== "object" ||
-    typeof (event as { type?: unknown }).type !== "string"
-  ) {
-    throw new AmspStreamError(
-      `The stream carried a block that is not an event: ${data.slice(0, 200)}`,
-    );
-  }
-  return event as AmspEvent;
-}
+/** How long one look at the approvals resource waits for a call to appear, in seconds. */
+const APPROVAL_WAIT_S = 30;
+
+/** One tool call, as approvals are told apart: its Session chain and its id. */
+const originKey = (origin: MessageOrigin[] | undefined): string => origin?.join("/") ?? "";
+const approvalKey = (origin: MessageOrigin[] | undefined, toolCallId: string): string =>
+  `${originKey(origin)} ${toolCallId}`;
 
 type Outcome = { ok: true } | { ok: false; error: unknown };
 
-const END: IteratorResult<AmspEvent> = { value: undefined, done: true };
+const END: IteratorResult<AmspRecord> = { value: undefined, done: true };
+
+/**
+ * The approval loop of one run. While the run is open and some completed `tool_call` on the stream
+ * has no `approval_decision` yet, it keeps one look open on `GET …/sessions/:id/approvals?wait=30`
+ * and hands every call that look returns to `onApproval` once, posting the answer. It stops when
+ * every call it saw has its decision or ended with a Request that did not complete, or the run
+ * ends. The engine records a decision for every call it runs, the automatic ones included,
+ * before the call's Request ends, so the loop always comes to rest.
+ *
+ * No look is opened while an answer is being decided or posted: the server still lists that call
+ * until the answer lands, and the look would come back with it at once, over and over.
+ */
+class ApprovalLoop {
+  readonly #transport: Transport;
+  readonly #onApproval: OnApproval | undefined;
+  readonly #fail: (error: unknown) => void;
+  readonly #runSignal: AbortSignal;
+  #sessionId: string | null = null;
+  /** Completed calls seen on the stream with no decision yet: approvalKey → originKey. */
+  readonly #undecided = new Map<string, string>();
+  /** Calls this loop has answered, or is answering. */
+  readonly #answered = new Set<string>();
+  #inFlight = 0;
+  #look: AbortController | null = null;
+  #open = true;
+
+  constructor(
+    transport: Transport,
+    onApproval: OnApproval | undefined,
+    runSignal: AbortSignal,
+    fail: (error: unknown) => void,
+  ) {
+    this.#transport = transport;
+    this.#onApproval = onApproval;
+    this.#runSignal = runSignal;
+    this.#fail = fail;
+  }
+
+  started(sessionId: string): void {
+    this.#sessionId = sessionId;
+    this.#kick();
+  }
+
+  record(rec: AmspRecord): void {
+    const p = rec.payload as { type?: string; tool_call_id?: string; status?: string };
+    if (rec.type === "model_msg" && p.type === "tool_call") {
+      // A decision follows every call the server dispatches, before its Request ends.
+      this.#undecided.set(approvalKey(rec.origin, p.tool_call_id ?? ""), originKey(rec.origin));
+      this.#kick();
+    } else if (rec.type === "event_msg" && p.type === "approval_decision") {
+      this.#undecided.delete(approvalKey(rec.origin, p.tool_call_id ?? ""));
+      if (!this.#wanted()) this.#look?.abort();
+    } else if (rec.type === "event_msg" && p.type === "request_end" && p.status !== "completed") {
+      // A Request that did not complete: a call of its Session still undecided was closed with
+      // it (an interruption or a failure cut the call short) and is never dispatched.
+      const origin = originKey(rec.origin);
+      for (const [key, from] of this.#undecided) if (from === origin) this.#undecided.delete(key);
+      if (!this.#wanted()) this.#look?.abort();
+    }
+  }
+
+  /** The run is over: nothing more is answered. */
+  stop(): void {
+    this.#open = false;
+    this.#look?.abort();
+  }
+
+  /** Whether a look should be open: an undecided call nobody is answering, and no answer underway. */
+  #wanted(): boolean {
+    if (!this.#open || this.#runSignal.aborted) return false;
+    if (this.#sessionId === null || this.#inFlight > 0) return false;
+    for (const key of this.#undecided.keys()) if (!this.#answered.has(key)) return true;
+    return false;
+  }
+
+  #kick(): void {
+    if (this.#look !== null || !this.#wanted()) return;
+    void this.#poll();
+  }
+
+  async #poll(): Promise<void> {
+    const sessionId = this.#sessionId!;
+    while (this.#wanted()) {
+      const look = new AbortController();
+      const onRunAbort = () => look.abort(this.#runSignal.reason);
+      this.#runSignal.addEventListener("abort", onRunAbort, { once: true });
+      this.#look = look;
+      let approvals: PendingApproval[];
+      try {
+        const res = await this.#transport.get<ApprovalsResponse>(
+          `${sessionPath(sessionId)}/approvals?wait=${APPROVAL_WAIT_S}`,
+          { signal: look.signal },
+        );
+        approvals = res.body?.approvals ?? [];
+      } catch (err) {
+        this.#look = null;
+        // Closed on purpose (every call decided, or the run over): look again only if a call
+        // arrived meanwhile, which the loop's condition says.
+        if (look.signal.aborted) continue;
+        this.#fail(err);
+        return;
+      } finally {
+        this.#runSignal.removeEventListener("abort", onRunAbort);
+      }
+      this.#look = null;
+      for (const approval of approvals) {
+        const key = approvalKey(approval.origin, approval.tool_call.tool_call_id);
+        if (this.#answered.has(key)) continue;
+        this.#answered.add(key);
+        void this.#answer(sessionId, approval);
+      }
+    }
+    this.#look = null;
+  }
+
+  /**
+   * One answer: the callback's decision, else `deny`. The call being gone by then (someone
+   * answered first in the Web App, or the run ended) is not a failure. Any other failure to answer
+   * would leave the run waiting for good, so it ends the run.
+   */
+  async #answer(sessionId: string, approval: PendingApproval): Promise<void> {
+    this.#inFlight += 1;
+    try {
+      let decision: ApprovalAnswer = "deny";
+      if (this.#onApproval) {
+        try {
+          const answer = await this.#onApproval(approval.tool_call, approval.origin, { sessionId });
+          decision = answer === "allow" ? "allow" : "deny";
+        } catch {
+          decision = "deny";
+        }
+      }
+      if (!this.#open) return;
+      try {
+        await this.#transport.post(
+          approvalPath(sessionId, approval.tool_call.tool_call_id),
+          { decision } satisfies ApprovalRequest,
+          { signal: this.#runSignal },
+        );
+      } catch (err) {
+        if (err instanceof AmspHttpError && err.code === "approval_not_found") return;
+        if (this.#runSignal.aborted) return;
+        this.#fail(err);
+      }
+    } finally {
+      this.#inFlight -= 1;
+      this.#kick();
+    }
+  }
+}
 
 class AgentRun implements Run {
   readonly session: Promise<string>;
@@ -139,11 +256,11 @@ class AgentRun implements Run {
   readonly #result: Promise<RunResult>;
   /** Aborted by the caller's signal, or by an approval that could not be answered. */
   readonly #control = new AbortController();
-  /** Events not yet read by the iterator; null when nobody will read them (`run()`, or after the loop left). */
-  #queue: AmspEvent[] | null;
+  /** Records not yet read by the iterator; null when nobody will read them (`run()`, or after the loop left). */
+  #queue: AmspRecord[] | null;
   #iterated = false;
   #waiter: {
-    resolve: (result: IteratorResult<AmspEvent>) => void;
+    resolve: (result: IteratorResult<AmspRecord>) => void;
     reject: (error: unknown) => void;
   } | null = null;
   #outcome: Outcome | null = null;
@@ -175,11 +292,11 @@ class AgentRun implements Run {
       return; // refused or broken before the run started: nothing runs
     }
     if (this.#outcome !== null) return;
-    await this.#transport.send("POST", `${sessionPath(sessionId)}/abort`);
+    await this.#transport.post(`${sessionPath(sessionId)}/abort`);
   }
 
-  [Symbol.asyncIterator](): AsyncIterator<AmspEvent> {
-    if (this.#iterated) throw new TypeError("A run's events can be iterated once.");
+  [Symbol.asyncIterator](): AsyncIterator<AmspRecord> {
+    if (this.#iterated) throw new TypeError("A run's records can be iterated once.");
     this.#iterated = true;
     return {
       next: () => this.#next(),
@@ -190,7 +307,7 @@ class AgentRun implements Run {
     };
   }
 
-  #next(): Promise<IteratorResult<AmspEvent>> {
+  #next(): Promise<IteratorResult<AmspRecord>> {
     if (this.#queue === null) return Promise.resolve(END);
     // Aborted: reads fail at once and what was buffered is dropped, as an aborted fetch body does.
     // A run that completed is not undone by an abort that came after it.
@@ -198,8 +315,8 @@ class AgentRun implements Run {
       this.#queue = null;
       return Promise.reject(this.#control.signal.reason);
     }
-    const event = this.#queue.shift();
-    if (event !== undefined) return Promise.resolve({ value: event, done: false });
+    const record = this.#queue.shift();
+    if (record !== undefined) return Promise.resolve({ value: record, done: false });
     const outcome = this.#outcome;
     if (outcome !== null) {
       this.#queue = null;
@@ -210,12 +327,12 @@ class AgentRun implements Run {
     });
   }
 
-  #push(event: AmspEvent): void {
+  #push(record: AmspRecord): void {
     if (this.#waiter !== null) {
-      this.#waiter.resolve({ value: event, done: false });
+      this.#waiter.resolve({ value: record, done: false });
       this.#waiter = null;
     } else {
-      this.#queue?.push(event);
+      this.#queue?.push(record);
     }
   }
 
@@ -236,42 +353,49 @@ class AgentRun implements Run {
     const forward = () => control.abort(signal!.reason);
     if (signal?.aborted) forward();
     else signal?.addEventListener("abort", forward, { once: true });
-    const collector = new RunCollector();
+    const collector = new RunCollector(
+      opts.sessionId !== undefined ? { sessionId: opts.sessionId } : {},
+    );
+    const approvals = new ApprovalLoop(this.#transport, opts.onApproval, control.signal, (err) =>
+      control.abort(err),
+    );
+    let named = false;
+    /** Resolves `session` once the collector knows the Session and the stream has a frame. */
+    const name = () => {
+      const sessionId = collector.sessionId;
+      if (named || sessionId === null) return;
+      named = true;
+      this.#resolveSession(sessionId);
+      approvals.started(sessionId);
+    };
     try {
       const request: RunRequest = {
         ...(opts.sessionId !== undefined ? { session_id: opts.sessionId } : {}),
         input: opts.input,
       };
-      const response = await this.#transport.send("POST", `${agentPath}/runs`, {
-        body: request,
-        accept: "text/event-stream",
-        signal: control.signal,
-      });
-      const contentType = response.headers.get("content-type") ?? "";
-      if (response.body === null || !/^text\/event-stream\b/i.test(contentType)) {
-        throw new AmspStreamError(
-          `Expected an event stream, got ${contentType || "a response without a content type"}.`,
-        );
-      }
+      let end: "done" | "closed";
       try {
-        for await (const data of sseData(response.body, control.signal)) {
-          if (data === "[DONE]") break;
-          const event = parseEvent(data);
-          collector.add(event);
-          if (event.type === "run.started") this.#resolveSession(event.session_id);
-          else if (event.type === "approval.requested") this.#answer(event, opts.onApproval);
-          this.#push(event);
-        }
+        end = await this.#transport.stream(`${agentPath}/runs`, {
+          method: "POST",
+          body: request,
+          signal: control.signal,
+          onControl: name,
+          onRecord: (_id, record) => {
+            collector.add(record);
+            name();
+            approvals.record(record);
+            this.#push(record);
+          },
+        });
       } catch (err) {
         if (control.signal.aborted) throw control.signal.reason;
-        // After run.done the outcome is known, whatever happens to the rest of the body.
-        if (!collector.finished) {
-          throw err instanceof AmspStreamError
-            ? err
-            : new AmspStreamError(`The stream broke before run.done: ${String(err)}`, {
-                cause: err,
-              });
-        }
+        if (err instanceof AmspHttpError || err instanceof AmspStreamError) throw err;
+        throw new AmspStreamError(`The stream broke before [DONE]: ${String(err)}`, { cause: err });
+      }
+      if (end !== "done") {
+        throw new AmspStreamError(
+          "The stream ended before [DONE]: the connection broke, or the server did.",
+        );
       }
       const result = collector.result();
       this.#end({ ok: true });
@@ -280,38 +404,18 @@ class AgentRun implements Run {
       this.#end({ ok: false, error });
       throw error;
     } finally {
+      approvals.stop();
       signal?.removeEventListener("abort", forward);
     }
   }
+}
 
-  /**
-   * Answers one approval request: the callback's decision, else `deny`. The request being gone by
-   * then (someone answered first in the Web App, or the run ended) is not a failure. Any other
-   * failure to answer would leave the run waiting for good, so it ends a live run: the connection
-   * closes, the server aborts the run, and the run rejects with that error.
-   */
-  #answer(event: ApprovalRequested, onApproval: RunOptions["onApproval"]): void {
-    void (async () => {
-      const sessionId = await this.session;
-      let decision: ApprovalRequest["decision"] = "deny";
-      if (onApproval) {
-        try {
-          decision = (await onApproval(event, { sessionId })) === "allow" ? "allow" : "deny";
-        } catch {
-          decision = "deny";
-        }
-      }
-      try {
-        await this.#transport.send("POST", approvalPath(sessionId, event.tool_call.tool_call_id), {
-          body: { decision } satisfies ApprovalRequest,
-          signal: this.#control.signal,
-        });
-      } catch (err) {
-        if (err instanceof AmspHttpError && err.code === "approval_not_found") return;
-        this.#control.abort(err);
-      }
-    })().catch(() => {});
-  }
+/** The query string of a history page. */
+function pageQuery(page: MessagesPage | undefined): string {
+  if (page === undefined) return "";
+  if ("tailLimit" in page) return `?tailLimit=${page.tailLimit}`;
+  const limit = page.limit !== undefined ? `&limit=${page.limit}` : "";
+  return `?before=${encodeURIComponent(page.before)}${limit}`;
 }
 
 /**
@@ -333,11 +437,16 @@ export class AgentClient {
         `agent must be "<projectId>/<agentId>", got ${JSON.stringify(opts.agent)}.`,
       );
     }
-    this.#transport = new Transport(opts);
+    if (opts.transport === undefined && opts.baseUrl === undefined) {
+      throw new TypeError("AgentClient needs a baseUrl, or a transport.");
+    }
+    this.#transport =
+      opts.transport ??
+      new HttpTransport({ ...opts, baseUrl: opts.baseUrl! } as HttpTransportOptions);
     this.#agentPath = `/agents/${encodeURIComponent(projectId)}/${encodeURIComponent(agentId)}`;
   }
 
-  /** Starts a run and streams it; see {@link Run}. */
+  /** Starts a run and streams its records; see {@link Run}. */
   stream(opts: RunOptions): Run {
     return new AgentRun(this.#transport, this.#agentPath, opts, true);
   }
@@ -349,26 +458,46 @@ export class AgentClient {
 
   /** The Agent's id, name and description. */
   async agent(): Promise<AgentInfo> {
-    const response = await this.#transport.send("GET", this.#agentPath);
-    return ((await response.json()) as AgentResponse).agent;
+    const res = await this.#transport.get<AgentResponse>(this.#agentPath);
+    return res.body!.agent;
   }
 
   /** One of the Agent's API Sessions: its status and model. */
   async session(sessionId: string): Promise<SessionInfo> {
-    const response = await this.#transport.send("GET", sessionPath(sessionId));
-    return ((await response.json()) as SessionResponse).session;
+    const res = await this.#transport.get<SessionResponse>(sessionPath(sessionId));
+    return res.body!.session;
+  }
+
+  /** A Session's history: all of it, or one window of whole Tasks (see {@link MessagesResponse}). */
+  async messages(sessionId: string, page?: MessagesPage): Promise<MessagesResponse> {
+    const res = await this.#transport.get<MessagesResponse>(
+      `${sessionPath(sessionId)}/messages${pageQuery(page)}`,
+    );
+    return res.body!;
+  }
+
+  /**
+   * The calls the Session waits on a decision for. With `wait` (1–60 seconds) the server holds
+   * the answer until there is one, or the time is up (an empty list).
+   */
+  async approvals(sessionId: string, wait?: number): Promise<PendingApproval[]> {
+    const query = wait !== undefined ? `?wait=${wait}` : "";
+    const res = await this.#transport.get<ApprovalsResponse>(
+      `${sessionPath(sessionId)}/approvals${query}`,
+    );
+    return res.body?.approvals ?? [];
   }
 
   /** Aborts the Session's running run; `false` when nothing was running. */
   async abort(sessionId: string): Promise<boolean> {
-    const response = await this.#transport.send("POST", `${sessionPath(sessionId)}/abort`);
-    return response.status === 202;
+    const res = await this.#transport.post(`${sessionPath(sessionId)}/abort`);
+    return res.status === 202;
   }
 
   /** Answers a pending approval; an {@link AmspHttpError} `approval_not_found` when it was already decided. */
-  async approve(sessionId: string, toolCallId: string, decision: "allow" | "deny"): Promise<void> {
-    await this.#transport.send("POST", approvalPath(sessionId, toolCallId), {
-      body: { decision } satisfies ApprovalRequest,
-    });
+  async approve(sessionId: string, toolCallId: string, decision: ApprovalAnswer): Promise<void> {
+    await this.#transport.post(approvalPath(sessionId, toolCallId), {
+      decision,
+    } satisfies ApprovalRequest);
   }
 }

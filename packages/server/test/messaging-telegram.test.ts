@@ -57,7 +57,7 @@ import {
   scratchpadDir,
   toolCall,
 } from "@prismshadow/penguin-core";
-import type { ApproveFn, OmniMessage } from "@prismshadow/penguin-core";
+import type { ApproveFn, AmspRecord } from "@prismshadow/penguin-core";
 import { wire } from "@prismshadow/penguin-core/kernel";
 import type {
   FeishuBindingResponse,
@@ -461,7 +461,7 @@ function echoFakeSession(
   reply = "Reply text",
 ): RuntimeSession {
   return fakeSession(sessionId, {
-    async *run(input: OmniMessage[]) {
+    async *run(input: AmspRecord[]) {
       runs.push(input.map((m) => m.payload as InputPayload));
       yield assistantText(reply);
     },
@@ -491,7 +491,7 @@ function multiMessageFakeSession(
 /** Fake Session that parks on one approval per run (drives an approval_request event). */
 function parkingFakeSession(sessionId: string): RuntimeSession {
   return fakeSession(sessionId, {
-    async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
+    async *run(_input: AmspRecord[], opts: { approve: ApproveFn; signal: AbortSignal }) {
       const tc = toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-forum" });
       yield tc;
       const decision = await opts.approve(tc);

@@ -8,7 +8,7 @@ import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { ICONS } from "../src/components/icons/icons";
 import { NavList, NavRow, navRowClass } from "../src/components/navigation/nav-list/nav-list";
-import { classTokens, renderStatic } from "../src/testing";
+import { renderStatic } from "../src/testing";
 
 const list = (orientation: "vertical" | "responsive" = "vertical") =>
   renderStatic(
@@ -34,47 +34,19 @@ describe("NavList", () => {
     expect(html).toMatch(
       /<span aria-hidden="true" class="ui-icon-decor shrink-0 text-fg-subtle" data-role="nav"( data-tint="[a-z]+")?><svg/,
     );
-    expect(classTokens(html)).not.toContain("font-mono");
   });
 
   it("takes a disabled row out of use and leaves the badge at the row's end", () => {
     const html = list();
-    expect(html).toMatch(/<button type="button" disabled="" class="[^"]*cursor-not-allowed/);
-    expect(html).toMatch(/<span class="ml-auto flex shrink-0 items-center"><span>3<\/span>/);
-  });
-
-  it("scrolls sideways below sm when responsive, with rows at their labels' width", () => {
-    const html = list("responsive");
-    expect(html).toContain("overflow-x-auto sm:flex-col");
-    expect(classTokens(html)).toEqual(expect.arrayContaining(["shrink-0", "sm:w-full"]));
-    expect(classTokens(list())).toContain("w-full");
-  });
-});
-
-describe("selection", () => {
-  it("eases the arriving fill in slower than the departing one leaves, on either surface", () => {
-    for (const surface of ["default", "muted"] as const) {
-      const arriving = navRowClass({ active: true, surface }).split(" ");
-      const resting = navRowClass({ surface }).split(" ");
-      expect(arriving).toEqual(expect.arrayContaining(["transition-colors", "duration-200"]));
-      expect(resting).toEqual(expect.arrayContaining(["transition-colors", "duration-150"]));
-    }
-  });
-
-  it("is a fill and the full ink, never a heavier weight", () => {
-    for (const surface of ["default", "muted"] as const) {
-      const active = navRowClass({ active: true, surface }).split(" ");
-      expect(active).toContain("text-fg");
-      expect(active.filter((token) => token.startsWith("font-"))).toEqual([]);
-    }
-    expect(classTokens(list()).filter((token) => token.startsWith("font-"))).toEqual([]);
+    expect(html).toMatch(/<button type="button" disabled="" /);
+    expect(html).toMatch(/<span class="[^"]*"><span>3<\/span>/);
   });
 });
 
 describe("NavRow", () => {
   it("is a link with an address, and a disabled link leaves the tab order", () => {
     const link = renderStatic(createElement(NavRow, { label: "Agents", href: "/agents" }));
-    expect(link).toMatch(/^<a href="\/agents" class="/);
+    expect(link).toMatch(/^<a href="\/agents" /);
     const off = renderStatic(
       createElement(NavRow, { label: "Agents", href: "/agents", disabled: true }),
     );

@@ -23,6 +23,7 @@ import type { Context, MiddlewareHandler } from "hono";
 import type { HttpBindings } from "@hono/node-server";
 import { bodyLimit } from "hono/body-limit";
 import { bodyLimitBytes, toAttachmentLimits } from "./services/attachment-limits.js";
+import { isAgentImport, MAX_PACKAGE_BYTES } from "./services/agent-zip.js";
 import type { DatabaseSync } from "node:sqlite";
 import type { Instance, ModuleTree } from "@prismshadow/penguin-core/kernel";
 import type { ServerConfig } from "./config.js";
@@ -38,6 +39,9 @@ import {
   HMR_HOST_RESOURCE_ID,
   HMR_CONTROL_RESOURCE_ID,
   HMR_OVERRIDES_RESOURCE_ID,
+  HMR_SHELL_FRAMES_RESOURCE_ID,
+  newShellFrames,
+  type ShellFrames,
   HMR_TEST_PLUGINS_RESOURCE_ID,
   type Replacements,
   HMR_PROXY_RESOURCE_ID,
@@ -47,77 +51,78 @@ import {
   type ProxyControl,
 } from "./hmr/capabilities.js";
 import { ensureCliShim, resolveCli, shimFromResolution } from "./services/cli-shim.js";
-import { MembersRepo, ProjectsRepo } from "@penguinharness/plugin-projects/server";
-import { SchedulesRepo, SessionsRepo } from "@penguinharness/plugin-sessions/server";
-import { UsersRepo, AuthSessionsRepo } from "@penguinharness/plugin-settings/server";
-import type { UserRow } from "@penguinharness/plugin-settings/server";
-import { ErrorsRepo, TraceIndexRepo, UsageRepo } from "@penguinharness/plugin-usage/server";
-import { AgentsRepo } from "@penguinharness/plugin-agents/server";
-import { MessagingBindingsRepo } from "@penguinharness/plugin-messaging/server";
-import { openDatabase } from "@penguinharness/plugin-db/server";
+import { openDatabase } from "./db/database.js";
 import { MachinesRepo } from "./db/repos/machines.js";
-import { migrate } from "@penguinharness/plugin-db/server";
-import { ServerSettingsRepo } from "@penguinharness/plugin-settings/server";
-import { UiPrefsRepo } from "@penguinharness/plugin-settings/server";
-import { jsonOnlyWrites } from "./auth/middleware.js";
+import { ErrorsRepo } from "./db/repos/errors.js";
+import { MessagingBindingsRepo } from "./db/repos/messaging-bindings.js";
+import { SchedulesRepo } from "./db/repos/schedules.js";
+import { ServerSettingsRepo } from "./db/repos/server-settings.js";
+import { SessionsRepo } from "./db/repos/sessions.js";
+import { UiPrefsRepo } from "./db/repos/ui-prefs.js";
+import { UsersRepo } from "./db/repos/users.js";
+import type { UserRow } from "./db/repos/users.js";
+import { authMiddleware, jsonOnlyWrites, sameOriginWrites } from "./auth/middleware.js";
+import { originRule } from "./http/public-origin.js";
+import { WEB_APP_CSP } from "./http/page-csp.js";
 import { AMSP_PREFIX, amspAllowOrigin } from "./amsp/cors.js";
 import { mintApiToken, storeApiToken } from "./auth/api-token.js";
-import type { Identity } from "@penguinharness/plugin-terminal/server";
-import { terminalRoutes } from "@penguinharness/plugin-terminal/server";
-import type { TerminalManager } from "@penguinharness/plugin-terminal/server";
+import type { Identity } from "./terminal/identity.js";
+import { terminalRoutes } from "./terminal/routes.js";
+import type { TerminalManager } from "./terminal/manager.js";
 import { PLUGINS_RESOURCE_ID, type PluginHost } from "./plugin/host.js";
 import type { AppEnv } from "./auth/middleware.js";
 import { AuthService } from "./auth/service.js";
 import { newAuthRuntimeState } from "./auth/runtime-state.js";
+import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
 import { ensureInstallId } from "./install-id.js";
 import { handleError, HttpError, errorBody } from "./http/errors.js";
 import { attributedProjectId } from "./http/attribution.js";
 import { STREAM_IDLE_MS } from "./http/sse.js";
-import { installRoutes } from "@penguinharness/plugin-projects/server";
+import { installRoutes } from "./http/routes/install.js";
 import { ChannelHub } from "./runtime/channel.js";
 import { ErrorRecorder } from "./runtime/error-recorder.js";
 import {
   createCoreSessionLoader,
   SessionLoader,
   SessionManager,
-} from "@penguinharness/plugin-sessions/server";
-import { SessionSources } from "@penguinharness/plugin-sessions/server";
-import { Scheduler } from "@penguinharness/plugin-schedules/server";
-import { MessagingBridge } from "@penguinharness/plugin-messaging/server";
-import { FeishuConnector } from "@penguinharness/plugin-messaging/server";
-import { createLarkSdk } from "@penguinharness/plugin-messaging/server";
-import type { FeishuSdk } from "@penguinharness/plugin-messaging/server";
-import { TelegramConnector } from "@penguinharness/plugin-messaging/server";
-import { createTelegramTransport } from "@penguinharness/plugin-messaging/server";
-import type { TelegramTransport } from "@penguinharness/plugin-messaging/server";
-import { QQConnector } from "@penguinharness/plugin-messaging/server";
-import { createQQTransport } from "@penguinharness/plugin-messaging/server";
-import type { QQTransport } from "@penguinharness/plugin-messaging/server";
-import { QQScanService, createQQScanTransport } from "@penguinharness/plugin-messaging/server";
-import { WeChatConnector } from "@penguinharness/plugin-messaging/server";
-import { createWeChatTransport } from "@penguinharness/plugin-messaging/server";
-import type { WeChatTransport } from "@penguinharness/plugin-messaging/server";
-import { WeChatScanService, createWeChatScanTransport } from "@penguinharness/plugin-messaging/server";
-import type { WeChatScanTransport } from "@penguinharness/plugin-messaging/server";
-import type { QQScanTransport } from "@penguinharness/plugin-messaging/server";
-import { TitleGenerator, TitleNotifier } from "@penguinharness/plugin-sessions/server";
+} from "./runtime/session-manager.js";
+import { SessionSources } from "./runtime/session-sources.js";
+import { Scheduler } from "./runtime/scheduler.js";
+import { MessagingBridge } from "./runtime/messaging/bridge.js";
+import { FeishuConnector } from "./runtime/messaging/feishu-connector.js";
+import { createLarkSdk } from "./runtime/messaging/feishu-sdk.js";
+import type { FeishuSdk } from "./runtime/messaging/feishu-sdk.js";
+import { TelegramConnector } from "./runtime/messaging/telegram-connector.js";
+import { createTelegramTransport } from "./runtime/messaging/telegram-api.js";
+import type { TelegramTransport } from "./runtime/messaging/telegram-api.js";
+import { QQConnector } from "./runtime/messaging/qq-connector.js";
+import { createQQTransport } from "./runtime/messaging/qq-api.js";
+import type { QQTransport } from "./runtime/messaging/qq-api.js";
+import { QQScanService, createQQScanTransport } from "./runtime/messaging/qq-scan.js";
+import { WeChatConnector } from "./runtime/messaging/wechat-connector.js";
+import { createWeChatTransport } from "./runtime/messaging/wechat-api.js";
+import type { WeChatTransport } from "./runtime/messaging/wechat-api.js";
+import { WeChatScanService, createWeChatScanTransport } from "./runtime/messaging/wechat-scan.js";
+import type { WeChatScanTransport } from "./runtime/messaging/wechat-scan.js";
+import type { QQScanTransport } from "./runtime/messaging/qq-scan.js";
+import { TitleGenerator, TitleNotifier } from "./runtime/title-generator.js";
 import { AdminService } from "./services/admin-service.js";
 import { DesktopService } from "./services/desktop-service.js";
-import { AgentConfigService } from "@penguinharness/plugin-agents/server";
+import { AgentConfigService } from "./services/agent-config-service.js";
 import { MemoryService } from "./services/memory-service.js";
-import { AgentService } from "@penguinharness/plugin-agents/server";
-import { BenchmarkService } from "@penguinharness/plugin-usage/server";
-import { SnapshotService } from "@penguinharness/plugin-projects/server";
-import { ProjectConfigService } from "@penguinharness/plugin-projects/server";
-import { ModelOAuthService } from "@penguinharness/plugin-models/server";
-import { ProjectService } from "@penguinharness/plugin-projects/server";
+import { AgentService } from "./services/agent-service.js";
+import { BenchmarkService } from "./services/benchmark-service.js";
+import { SnapshotService } from "./services/snapshot-service.js";
+import { ProjectConfigService } from "./services/project-config-service.js";
+import { ModelOAuthService } from "./services/model-oauth-service.js";
+import { ProjectService } from "./services/project-service.js";
 import { SessionService } from "./services/session-service.js";
-import { TraceIndexService } from "@penguinharness/plugin-usage/server";
-import { TraceService } from "@penguinharness/plugin-usage/server";
+import { TraceIndexService } from "./services/trace-index.js";
+import { TraceService } from "./services/trace-service.js";
 import { UpdateCheckService } from "./services/update-check-service.js";
 import { UpdateJobService } from "./services/update-job.js";
-import { UsageService } from "@penguinharness/plugin-usage/server";
-import { WorkspaceFilesService } from "@penguinharness/plugin-projects/server";
+import { UsageService } from "./services/usage-service.js";
+import { WorkspaceFilesService } from "./services/workspace-files-service.js";
 import { HmrHost, hmrControl } from "@prismshadow/penguin-hmr";
 import type { Hmr } from "@prismshadow/penguin-hmr";
 import type { PlatformApi, ServerHmrHost } from "./hmr/platform.js";
@@ -133,43 +138,47 @@ import type { PreviewTokenSigner } from "./services/preview-token.js";
 
 import type { ControlEnvContext, ProxyEnvPolicy, SpawnConfiner } from "@prismshadow/penguin-core";
 import { declined } from "./hmr/hono-seam.js";
-import { adminUsersRoutes } from "@penguinharness/plugin-settings/server";
-import { adminSettingsRoutes } from "@penguinharness/plugin-settings/server";
+import { AgentsRepo } from "./db/repos/agents.js";
+import { MembersRepo } from "./db/repos/members.js";
+import { ProjectsRepo } from "./db/repos/projects.js";
+import { TraceIndexRepo } from "./db/repos/trace-index.js";
+import { UsageRepo } from "./db/repos/usage.js";
+import { adminUsersRoutes } from "./http/routes/admin.js";
+import { adminSettingsRoutes } from "./http/routes/admin-settings.js";
 import type { ServerEvent } from "./api/types.js";
-import { meRoutes } from "@penguinharness/plugin-settings/server";
+import { meRoutes } from "./http/routes/me.js";
 import { eventsRoutes, userChannelKey } from "./http/routes/events.js";
-import { projectsRoutes } from "@penguinharness/plugin-projects/server";
-import { membersRoutes } from "@penguinharness/plugin-projects/server";
-import { modelsRoutes } from "@penguinharness/plugin-models/server";
-import { modelOAuthCallbackRoutes, modelOAuthRoutes } from "@penguinharness/plugin-models/server";
-import { chatDefaultsRoutes } from "@penguinharness/plugin-sessions/server";
+import { projectsRoutes } from "./http/routes/projects.js";
+import { membersRoutes } from "./http/routes/members.js";
+import { modelsRoutes } from "./http/routes/models.js";
+import { modelOAuthCallbackRoutes, modelOAuthRoutes } from "./http/routes/model-oauth.js";
+import { chatDefaultsRoutes } from "./http/routes/chat-defaults.js";
 import { commandPolicyRoutes } from "./http/routes/command-policy.js";
 import { vaultRoutes } from "./http/routes/vault.js";
-import { memoryRoutes } from "@penguinharness/plugin-agents/server";
-import { scheduleRoutes } from "@penguinharness/plugin-schedules/server";
-import { benchmarksRoutes } from "@penguinharness/plugin-usage/server";
-import { agentSkillsRoutes } from "@penguinharness/plugin-agents/server";
-import { agentHooksRoutes } from "@penguinharness/plugin-agents/server";
-import { agentPluginsRoutes, pluginLibraryRoutes } from "@penguinharness/plugin-plugins/server";
-import { agentTransferRoutes } from "@penguinharness/plugin-agents/server";
-import { agentsRoutes } from "@penguinharness/plugin-agents/server";
-import { dirsRoutes } from "@penguinharness/plugin-projects/server";
+import { memoryRoutes } from "./http/routes/memory.js";
+import { scheduleRoutes } from "./http/routes/schedules.js";
+import { benchmarksRoutes } from "./http/routes/benchmarks.js";
+import { agentSkillsRoutes } from "./http/routes/skills.js";
+import { agentHooksRoutes } from "./http/routes/hooks.js";
+import { agentPluginsRoutes, pluginLibraryRoutes } from "./http/routes/plugins.js";
+import { agentsRoutes } from "./http/routes/agents.js";
+import { dirsRoutes } from "./http/routes/dirs.js";
 import { directorySkillsRoutes } from "./http/routes/directory-skills.js";
-import { agentConfigRoutes } from "@penguinharness/plugin-agents/server";
-import { agentTracesRoutes } from "@penguinharness/plugin-usage/server";
-import { usageRoutes } from "@penguinharness/plugin-usage/server";
-import { agentSessionsRoutes, sessionsRoutes } from "@penguinharness/plugin-sessions/server";
-import { sessionMessagingRoutes } from "@penguinharness/plugin-messaging/server";
+import { agentConfigRoutes } from "./http/routes/agent-config.js";
+import { agentTracesRoutes } from "./http/routes/agent-traces.js";
+import { usageRoutes } from "./http/routes/usage.js";
+import { agentSessionsRoutes, sessionsRoutes } from "./http/routes/sessions.js";
+import { sessionMessagingRoutes } from "./http/routes/messaging.js";
 import { versionRoutes } from "./http/routes/version.js";
-import { machinesRoutes } from "@penguinharness/plugin-machines/server";
+import { machinesRoutes } from "./http/routes/machines.js";
 import { UsageRecorder } from "./runtime/usage-recorder.js";
 import { previewRoutes } from "./http/routes/preview.js";
-import { MachinesService } from "@penguinharness/plugin-machines/server";
+import { MachinesService } from "./machines/service.js";
 import { wire } from "@prismshadow/penguin-core/kernel";
-import type { Settings } from "@penguinharness/plugin-settings/server";
-import type { Errors } from "@penguinharness/plugin-usage/server";
-import type { Access } from "@penguinharness/plugin-projects/server";
-import type { Auth } from "@penguinharness/plugin-settings/server";
+import type { Settings } from "./mechanisms/settings.js";
+import type { Errors } from "./mechanisms/observability.js";
+import type { Access } from "./mechanisms/projects.js";
+import type { Auth } from "./mechanisms/identity.js";
 
 /**
  * What the runtime process holds after boot: the capabilities it owns for the process
@@ -190,6 +199,8 @@ export interface ServerBoot {
    * hmr/platform.ts), which is why `tree` is derived from it on every read rather than held.
    */
   instance: Instance<PlatformApi>;
+  /** The host's message port as state; index.ts fills it when a port exists. */
+  shellFrames: ShellFrames;
   /**
    * The tree the running App serves — read through `instance` each time, so a plugin
    * change's re-assembly is seen without any push. A generation that has no tree to answer
@@ -342,6 +353,8 @@ export async function bootAppDeps(
   hmr.resources.register(HMR_OVERRIDES_RESOURCE_ID, replacements);
   const desktop = config.desktopToken !== null ? new DesktopService(config.desktopToken) : null;
   hmr.resources.register(HMR_DESKTOP_RESOURCE_ID, desktop);
+  const shellFrames = newShellFrames();
+  hmr.resources.register(HMR_SHELL_FRAMES_RESOURCE_ID, shellFrames);
   // The registry sweep only STARTS plugin disposal (its disposers are sync) — the
   // fallback for exit paths that skip the graceful shutdown. The graceful path awaits
   // host.dispose() itself, bounded (index.ts); dispose is idempotent, so both may fire.
@@ -364,7 +377,10 @@ export async function bootAppDeps(
   // members: the runtime singletons published above, and `tree` — which follows the
   // instance of the moment, so a re-assembly (a plugin change, no push) is never missed.
   // Per-request business dispatch rides the seam.
-  booted = liveTree({ config, db, channels, hmr, control: ctl, desktop, instance }, tree);
+  booted = liveTree(
+    { config, db, channels, hmr, control: ctl, desktop, instance, shellFrames },
+    tree,
+  );
   return booted;
 }
 
@@ -410,6 +426,7 @@ export function createApp(boot: ServerBoot): Hono<AppEnv> {
   const deps = {
     config: boot.config,
     desktop: boot.desktop,
+    shellFrames: boot.shellFrames,
     get authService() {
       return authService();
     },
@@ -503,7 +520,10 @@ export function createApp(boot: ServerBoot): Hono<AppEnv> {
   app.use(`${AMSP_PREFIX}/*`, amspAllowOrigin);
   let capped: { size: number; mw: MiddlewareHandler } | null = null;
   app.use("/api/*", (c, next) => {
-    const size = bodyLimitBytes(settings().getAttachmentLimitsMb());
+    // An Agent package is uploaded raw, under the package cap rather than the attachment budget.
+    const size = isAgentImport(c.req.method, c.req.path)
+      ? MAX_PACKAGE_BYTES
+      : bodyLimitBytes(settings().getAttachmentLimitsMb());
     if (capped === null || capped.size !== size) {
       capped = {
         size,
@@ -523,7 +543,8 @@ export function createApp(boot: ServerBoot): Hono<AppEnv> {
     }
     return capped.mw(c, next);
   });
-  app.use("/api/*", jsonOnlyWrites);
+  app.use("/api/*", sameOriginWrites(originRule(deps.config)));
+  app.use("/api/*", jsonOnlyWrites(originRule(deps.config)));
 
   // THE seam: every route is one the platform may take over by push — the upgrade channel
   // included, which the platform declares and contributes like any other group
@@ -709,6 +730,11 @@ function staticResponse(
     "Cache-Control": cacheControlFor(servedPath),
     ETag: responseEtag,
   };
+  // The page's own policy (http/page-csp.ts), on HTML only: a header governs the document it
+  // arrives with, and the scripts, stylesheets and fonts are not documents. On the 304 too: a
+  // revalidation updates the stored response's headers, so a shell cached before the policy
+  // existed picks it up without a re-download.
+  if (ext === ".html") headers["Content-Security-Policy"] = WEB_APP_CSP;
   // Announced whenever the answer COULD have varied — on the 304 too, and even when this
   // particular client took no encoding: a shared cache keys on what the header says, so
   // leaving it off is how one client's gzip reaches another that cannot read it.

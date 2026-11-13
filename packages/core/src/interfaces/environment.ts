@@ -3,8 +3,8 @@
  * call through, plus the configuration and runtime services an Environment is built with.
  *
  * Two planes live in this file and must not be confused (see the docs page):
- * - the **message plane** — `executeTool`, which the engine drives: an OmniMessage tool call
- *   in, a stream of OmniMessage out, nothing else;
+ * - the **message plane** — `executeTool`, which the engine drives: a `tool_call` record
+ *   in, a stream of records out, nothing else;
  * - the **management plane** — the tool list, the permission lookup, the background command
  *   and subagent listings, their stop/steer entry points and the listener attachments. These
  *   never pass through `context_engine`: they serve a host's own UI (the Web App's process
@@ -13,7 +13,7 @@
  *
  * Docs: packages/docs/content/interfaces.{zh,en}.md (site path /docs/interfaces).
  */
-import type { OmniMessage, ToolCallPayload, ToolDefinition } from "../omnimessage/types.js";
+import type { AmspRecord, ToolCallPayload, ToolDefinition } from "@prismshadow/amsp/records";
 import type { ApproveFn, RunCutoff, ThinkingLevelName } from "./shared.js";
 import type { LLMInterface } from "./llm.js";
 // Concrete classes, used only for EnvironmentServices type annotations (type-only import; no runtime dependency, no circular reference).
@@ -75,7 +75,7 @@ export interface MCPServerConfig {
   name: string;
   config: Record<string, unknown>;
   /**
-   * Provenance: the plugin whose install wrote this entry (its `penguin.mcp_servers`). Absent
+   * Provenance: the plugin whose install wrote this entry (its `mcpServers` contribution). Absent
    * on an entry the user added. Uninstalling or reinstalling that plugin touches exactly the
    * entries carrying its name.
    */
@@ -109,7 +109,7 @@ export interface SubagentHandle {
    * once taken (or once `run` already sent it). Optional — older embedders' handles simply
    * leave background launches without an upfront meta.
    */
-  takeMeta?(): OmniMessage | null;
+  takeMeta?(): AmspRecord | null;
   /**
    * Runs one turn of a task on the child Session. Emitted child-session messages **all already
    * carry the origin marker** (the child Session id); the first message of the first run is the
@@ -120,16 +120,16 @@ export interface SubagentHandle {
    */
   run(input: {
     /**
-     * The round's input, in the shape `Session.run` takes a Prompt in — the same OmniMessage
+     * The round's input, in the shape `Session.run` takes a Prompt in — the same AmspRecord
      * list `steer` carries, so both ways into a child session speak one vocabulary. The
      * caller owns the messages' `sender`: the model's dispatch is `parent_agent`, a human's
      * message from a host panel carries none.
      */
-    messages: OmniMessage[];
+    messages: AmspRecord[];
     signal?: AbortSignal;
     /** The parent Agent's approval callback; forwarded to the child Session to inherit the parent's approval mode. */
     approve?: ApproveFn;
-  }): AsyncGenerator<OmniMessage, RunCutoff | null>;
+  }): AsyncGenerator<AmspRecord, RunCutoff | null>;
   /**
    * Queues a steering message for the child Session's running Task (the same mechanism as a
    * user steering the main session: delivered as a `[user_steering]` user message at the
@@ -137,7 +137,7 @@ export interface SubagentHandle {
    * falls back to a follow-up run. Optional so older embedders' handles keep compiling; a
    * handle without it simply reports "not steerable".
    */
-  steer?(messages: OmniMessage[]): boolean;
+  steer?(messages: AmspRecord[]): boolean;
   /** Pins the child Session's thinking level (`Session.thinkingLevel`: applied from its next LLM request) — a host panel's pick on a live child. Optional, like `steer`. */
   setThinkingLevel?(level: ThinkingLevelName): void;
   /** Releases runtime resources held by the child Session (e.g. its managed command sessions). Idempotent. */
@@ -160,9 +160,10 @@ export const THINKING_LEVEL_NAMES: readonly ThinkingLevelName[] = [
  * user-facing pickers (many models cannot disable thinking; see the web picker's
  * SELECTABLE_THINKING_LEVELS and project-config's DEFAULT_CHAT_THINKING_LEVELS). Omitting the
  * argument inherits the parent Session's effective level, so a parent genuinely running
- * without a level still passes that down.
+ * without a level still passes that down. The element type keeps `"none"` out at compile time.
+ * This is the one selectable ladder: project-config's DEFAULT_CHAT_THINKING_LEVELS is this list.
  */
-export const SUBAGENT_THINKING_LEVELS: readonly ThinkingLevelName[] = [
+export const SUBAGENT_THINKING_LEVELS: readonly Exclude<ThinkingLevelName, "none">[] = [
   "low",
   "medium",
   "high",
@@ -254,7 +255,7 @@ export interface EnvironmentServices {
    * the durable record). Injected internally by Environment; forwarded to the listener the
    * Session attached (see EnvironmentInterface.setBackgroundMessageListener).
    */
-  backgroundForward?: (msg: OmniMessage) => void;
+  backgroundForward?: (msg: AmspRecord) => void;
 }
 
 /**
@@ -411,8 +412,8 @@ export interface ConfinedSpawn {
  * Docs: /docs/interfaces § "ToolExecutionRequest and EnvironmentConfig".
  */
 export interface ToolExecutionRequest {
-  /** The OmniMessage whose payload.type === "tool_call". */
-  toolCall: OmniMessage<ToolCallPayload>;
+  /** The AmspRecord whose payload.type === "tool_call". */
+  toolCall: AmspRecord<ToolCallPayload>;
   signal?: AbortSignal;
   /** The parent Agent's approval callback; forwarded to tools that need to derive a child Session (run_subagent), implementing approval inheritance. */
   approve?: ApproveFn;
@@ -505,7 +506,7 @@ export interface SubagentMessageOptions {
  */
 export interface EnvironmentInterface {
   listTools(): Promise<ToolDefinition[]>;
-  executeTool(request: ToolExecutionRequest): AsyncGenerator<OmniMessage>;
+  executeTool(request: ToolExecutionRequest): AsyncGenerator<AmspRecord>;
   /** Looks up a tool's permission level (for frontend permission-mode decisions); returns undefined for unknown tools. */
   toolPermission(name: string): ToolPermission | undefined;
   /** Background command processes this environment currently owns (host UI process list). Optional — standalone embedders may not track any. */
@@ -537,11 +538,11 @@ export interface EnvironmentInterface {
    * child runs, a follow-up run while it is idle, a revival (`opts.resume`) when the session
    * is no longer live (see SubagentMessageOutcome/SubagentMessageOptions). The human and the
    * model (`input_subagent`) converge on the managed session's same channel, and both hand
-   * it the same thing — an OmniMessage list, whichever state the child is in. Optional.
+   * it the same thing — an AmspRecord list, whichever state the child is in. Optional.
    */
   sendToBackgroundSubagent?(
     childSessionId: string,
-    messages: OmniMessage[],
+    messages: AmspRecord[],
     opts?: SubagentMessageOptions,
   ): Promise<SubagentMessageOutcome>;
   /**
@@ -600,7 +601,7 @@ export interface EnvironmentInterface {
    * EnvironmentServices.backgroundForward). Same buffering and dispose semantics as
    * setBackgroundTaskListener. Optional.
    */
-  setBackgroundMessageListener?(listener: (msg: OmniMessage) => void): void;
+  setBackgroundMessageListener?(listener: (msg: AmspRecord) => void): void;
   /** Releases runtime resources held by the environment (e.g. managed long-running command sessions); called by the host when the Session ends. Optional, idempotent. */
   dispose?(): void;
 }

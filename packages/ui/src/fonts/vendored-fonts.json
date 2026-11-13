@@ -9,5 +9,18 @@
     "licenseTitle": "MiSans Font Intellectual Property License Agreement",
     "licenseSource": "https://hyperos.mi.com/font-download/MiSans%E5%AD%97%E4%BD%93%E7%9F%A5%E8%AF%86%E4%BA%A7%E6%9D%83%E8%AE%B8%E5%8F%AF%E5%8D%8F%E8%AE%AE.pdf",
     "licenseSourceSha256": "4a93a27cd2bd81b3b5ecfd0a853144a876fa26938a93a68443c67d74172fcb86"
+  },
+  "wenkai": {
+    "family": "LXGW WenKai GB Screen",
+    "themes": ["doodle"],
+    "version": "1.530",
+    "files": "src/themes/doodle/fonts/",
+    "builtBy": "scripts/vendor-wenkai.mjs",
+    "package": "https://registry.npmjs.org/lxgw-wenkai-screen-web/-/lxgw-wenkai-screen-web-1.530.0.tgz",
+    "packageIntegrity": "sha512-E7gsH4/TpQpUtoRmjjQpKcHwELOW7zwnsC2cR+g1kSofCLb1qNEzcLmQckMb44NCiwEubDG8UpYGham9qr8U+g==",
+    "license": "src/fonts/LICENSES/lxgw-wenkai-gb-screen.txt",
+    "licenseTitle": "SIL OPEN FONT LICENSE Version 1.1",
+    "licenseSource": "https://github.com/lxgw/LxgwWenKai-Screen/blob/main/OFL.txt",
+    "licenseSourceSha256": "ba38832f9d7e0ad601a1ab90d58f251ba957532885ef80dca050a611962fd8b6"
   }
 }

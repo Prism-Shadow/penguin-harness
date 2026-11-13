@@ -23,10 +23,7 @@ export interface DockTabItem {
   /** Stable id: the tab's `data-tab-id`, and what `onSelect` / `onClose` receive. */
   key: string;
   label: string;
-  /**
-   * The hover hint; the label when omitted (a terminal's names its shell and directory). One that
-   * says more than the label shows over it in full.
-   */
+  /** The hover hint; the label when omitted. One that says more than the label shows over it in full. */
   title?: string;
   glyph: ReactNode;
   /** An attention dot beside the name (a pending approval behind the tab). */
@@ -35,8 +32,6 @@ export interface DockTabItem {
   closeLabel: string;
   /** The shortcut that runs the same close, named after the verb in the ×'s tooltip. */
   closeShortcut?: string;
-  /** A terminal tab keeps its shell's id on the node, for the strip's drag and for tests. */
-  terminalId?: string;
 }
 
 export interface DockTabButtonProps {
@@ -60,7 +55,6 @@ export function DockTabButton({
     <div
       data-testid="dock-tab"
       data-tab-id={tab.key}
-      {...(tab.terminalId !== undefined ? { "data-terminal-id": tab.terminalId } : {})}
       data-active={active}
       className={`flex ${coarse ? "h-8" : "h-6"} max-w-44 items-center rounded-md pr-0.5 transition-colors duration-150 ${
         active

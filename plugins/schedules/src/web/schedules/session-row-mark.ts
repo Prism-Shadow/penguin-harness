@@ -5,17 +5,21 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useMatch } from "react-router";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
-import { S } from "@prismshadow/penguin-web/internal";
-import type { RowAction } from "@prismshadow/penguin-web/internal";
-import { useProject } from "@prismshadow/penguin-web/internal";
+import { S } from "../../lib/strings";
+import type { RowAction } from "../../lib/session-row-contributions";
+import { useProject } from "../../state/project";
+import { useSessions } from "../../state/sessions";
+import { useLocalShown } from "../../lib/local-first";
 import { pendingScheduleSessions } from "./schedule-panel-state";
-import { useProjectSchedules } from "./schedule-store";
+import { useSchedulesAcross } from "./schedule-store";
 
 /** Standing "no Session is scheduled", so the first render has something to hold before any answer. */
 const NO_SCHEDULED_SESSIONS: ReadonlySet<string> = new Set();
 
 function useScheduledLabel(): (s: SessionInfo) => string | null {
   const { currentProject } = useProject();
+  const { machineIds } = useSessions();
+  const localShown = useLocalShown();
   const activeSessionId = useMatch("/chat/:sessionId")?.params.sessionId ?? null;
   // The Project's scheduled tasks, shared with the dock's schedules panel through one store, so
   // that neither surface can take the other's answer away. The scope is the Project, not the
@@ -23,9 +27,12 @@ function useScheduledLabel(): (s: SessionInfo) => string | null {
   // row wears the mark must not depend on which Agent is current — the chat page moves that to
   // whatever conversation is open, and with a per-Agent list every other Agent's rows lost their
   // marks until the user came back to them. Re-read on every navigation: opening a conversation
-  // is the moment a task may just have been created or switched off.
-  const { items: projectSchedules } = useProjectSchedules(
+  // is the moment a task may just have been created or switched off. Read on every server whose
+  // Sessions this list draws: a task bound to a conversation on a machine is that machine's
+  // file, and only that machine lists it — once this window's own content is on screen.
+  const projectSchedules = useSchedulesAcross(
     currentProject?.projectId ?? null,
+    localShown ? machineIds : [],
     activeSessionId ?? "",
   );
   // The Sessions wearing the alarm clock: one bound task with a next fire time is enough. The

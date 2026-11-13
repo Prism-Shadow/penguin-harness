@@ -39,7 +39,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { requestBegin, sessionMeta, subagentEvent, userText } from "@prismshadow/penguin-core";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/penguin-core";
 import type {
   ArchivedSessionGroupsResponse,
   ArchivedSessionsBatchResponse,
@@ -113,7 +113,7 @@ describe("the archive page", () => {
       title?: string;
       prompt?: string;
       trace?: boolean;
-      extra?: OmniMessage[];
+      extra?: AmspRecord[];
       /** When it was created and last active (ISO); by default each seed is a second newer. */
       at?: string;
     } = {},

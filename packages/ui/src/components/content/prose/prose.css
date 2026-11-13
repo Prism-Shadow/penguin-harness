@@ -22,7 +22,7 @@
      instead of breaking the layout (especially important for mobile message streams). */
   overflow-wrap: break-word;
 }
-.md-body :is(p, ul, ol, pre, blockquote, table) {
+.md-body :is(p, ul, ol, pre, blockquote, .md-table) {
   margin: 0.5rem 0;
 }
 .md-body li {
@@ -131,14 +131,19 @@
    register while every value that decides where a glyph lands — family, size, line height,
    letter spacing, tab size, padding, wrap mode — is the same in both. Size and line height are
    inherited so one wrapper sets them for both layers. */
+.code-surface {
+  /* The code's inset from the surface's edge: the message code block's own padding, kept to the
+     pixel. The Files panel's two layers, the textarea's indent past the gutter and the gutter's
+     clip all read it, so they cannot disagree. */
+  --code-pad-x: 0.75rem;
+  --code-pad-y: 0.625rem;
+}
 .code-surface :is(pre, textarea) {
   margin: 0;
   border: 0;
   border-radius: 0;
   background: transparent !important;
-  /* The message code block's own padding, kept to the pixel; the Files panel's two layers only
-     need to agree. */
-  padding: 0.625rem 0.75rem;
+  padding: var(--code-pad-y) var(--code-pad-x);
   font-size: inherit;
   line-height: inherit;
   letter-spacing: normal;
@@ -179,8 +184,9 @@
 
    The number is generated content and `user-select: none`, so dragging across the code selects
    the code alone; the copy affordances are unaffected either way, since they copy the string the
-   component was given and never the DOM. Its fill is the canvas the surface sits on, so code
-   scrolled under the sticky number is hidden. */
+   component was given and never the DOM. It has no fill of its own: the gutter shows whatever the
+   surface sits on — the canvas, a translucent theme's panel, a wallpaper — exactly as the code
+   beside it does. Unwrapped, the numbers move to a column of their own (below). */
 .code-lines pre {
   counter-reset: code-line;
 }
@@ -191,7 +197,7 @@
   text-indent: calc(-1 * var(--code-gutter, 4ch));
 }
 .code-lines textarea {
-  padding-left: calc(0.75rem + var(--code-gutter, 4ch));
+  padding-left: calc(var(--code-pad-x) + var(--code-gutter, 4ch));
 }
 .code-lines .line::before {
   content: counter(code-line);
@@ -204,7 +210,46 @@
   text-indent: 0;
   user-select: none;
   -webkit-user-select: none;
-  background-color: var(--ui-canvas);
+  color: var(--ui-code-gutter);
+}
+/* Unwrapped, a line is one row, so the numbers are one column of their own (CodeSurface's
+   `.code-gutter`) in the surface's cell, sticky at the scroll box's left edge, and the code layer
+   is clipped under it as it scrolls sideways — one element's style per scroll step
+   (gutter-clip.ts), where a mark on every line would restyle every line. A line keeps an empty
+   mark so a blank line still has its row, and its code starts past the column as before. */
+.code-surface.code-nowrap.code-lines {
+  display: grid;
+  /* The gutter's layer orders it over the code layer only: a pinned row the block scrolls under
+     stays on top of the whole block. */
+  isolation: isolate;
+}
+.code-surface.code-nowrap.code-lines > * {
+  grid-area: 1 / 1;
+}
+.code-nowrap.code-lines .line {
+  text-indent: 0;
+}
+.code-nowrap.code-lines .line::before {
+  content: "";
+  position: static;
+  width: 0;
+  padding: 0;
+}
+.code-gutter {
+  position: sticky;
+  left: 0;
+  z-index: var(--layer-sticky);
+  justify-self: start;
+  align-self: start;
+  box-sizing: content-box;
+  width: calc(var(--code-gutter, 4ch) - 1.25ch);
+  padding: var(--code-pad-y) 1.25ch var(--code-pad-y) var(--code-pad-x);
+  font-family: var(--ui-font-mono);
+  white-space: pre;
+  text-align: right;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
   color: var(--ui-code-gutter);
 }
 
@@ -242,8 +287,13 @@
 .code-editor-host[data-composing="true"] textarea {
   color: var(--ui-fg);
 }
-.code-editor-host[data-composing="true"] .code-editor > :not(textarea) {
+.code-editor-host[data-composing="true"] .code-editor > :not(textarea, .code-gutter) {
   visibility: hidden;
+}
+/* The numbers stay while the code steps aside: they do not change with what is being composed,
+   and hiding them for each composition would blink the gutter at every word typed through an IME. */
+.code-editor-host[data-composing="true"] .code-editor .line::before {
+  visibility: visible;
 }
 
 /* Shiki's dark palette. The highlighted markup carries both themes: the light colours inline, the
@@ -266,26 +316,38 @@ html.dark .shiki span {
   padding-left: calc(var(--ui-space-unit) * 3);
   color: var(--ui-fg-muted);
 }
-.md-body table {
-  border-collapse: collapse;
-  /* A wide table scrolls horizontally inside the body instead of pushing the whole page wide. */
-  display: block;
-  overflow-x: auto;
+/* Tables: the shape is markdown-table.css's, the same for every Markdown host; the body maps its
+   custom properties onto the theme — the muted line under each row, the stronger one under the
+   header, the header in muted ink at medium weight — and sets the cells in the body rung. The
+   stripes and the hover keep the sheet's ink-derived tints, so they read alike on every theme. */
+.md-body {
+  --md-table-pad-y: calc(var(--ui-space-unit) * 1.5);
+  --md-table-pad-x: calc(var(--ui-space-unit) * 2.5);
+  --md-table-rule-w: var(--ui-border-w);
+  --md-table-rule: var(--ui-line-muted);
+  --md-table-rule-head: var(--ui-line);
+  --md-table-head-fg: var(--ui-fg-muted);
+  --md-table-head-weight: var(--ui-weight-medium);
+  --md-table-dur: var(--ui-dur-fast);
+  --md-table-ease: var(--ui-ease-in-out);
 }
-/* `:where` keeps the cell rule at a class's weight, so a surface's own cell rule (a channel
-   bubble's deeper line) wins whichever stylesheet a bundle emits first. */
-.md-body :where(th, td) {
-  border: var(--ui-border-w) solid var(--ui-line);
-  padding: var(--ui-space-unit) calc(var(--ui-space-unit) * 2);
+.md-body :is(th, td) {
   font-size: var(--ui-text-body-size);
   line-height: var(--ui-text-body-lh);
+}
+/* Inline code in a cell: the chip is a tint of the ink rather than the neutral fill. Some themes
+   paint that fill opaque, in the same grey as a stripe, where a chip on a striped row would
+   vanish; a tint composes over whatever is under it, so the chip stays one step deeper than its
+   row — plain, striped, hovered or inside a bubble — in every theme and mode. */
+.md-body .md-table code:not(pre > code) {
+  background-color: color-mix(in srgb, var(--ui-fg) 6%, transparent);
 }
 
 /* A message that is a line in a stream (a channel message body): the same Markdown typography,
    one size tighter. Its blocks sit closer, its headings step down towards body size, and the
    first and last block give up their outer margins so a one-paragraph message occupies exactly
    its row. Used together with .md-body, after it, so these win at equal specificity. */
-.md-compact :is(p, ul, ol, pre, blockquote, table) {
+.md-compact :is(p, ul, ol, pre, blockquote, .md-table) {
   margin: 0.25rem 0;
 }
 .md-compact li {
@@ -296,6 +358,11 @@ html.dark .shiki span {
 }
 .md-compact :is(h1, h2, h3, h4) {
   margin: 0.5rem 0 0.25rem;
+}
+.md-compact {
+  --md-table-pad-y: var(--ui-space-unit);
+  --md-table-pad-x: calc(var(--ui-space-unit) * 2);
+  --md-table-prose-min: 15rem;
 }
 .md-compact h1 {
   font-size: 1.0625rem;
@@ -338,7 +405,7 @@ html.dark .shiki span {
 }
 
 /* Display math is `white-space: nowrap` by construction, so a wide matrix or a long derivation
-   would otherwise push the whole message body sideways. Same treatment as .md-body table and pre:
+   would otherwise push the whole message body sideways. Same treatment as tables and .md-body pre:
    scroll inside the block. Overflow on one axis forces the other to scroll too, so the padding is
    what keeps tall fractions and descenders from being clipped. */
 .md-body .katex-display {
@@ -358,6 +425,21 @@ html.dark .shiki span {
   max-width: 100%;
   overflow-x: auto;
   vertical-align: middle;
+}
+
+/* An inline formula and the punctuation mark it touches (math-punctuation.ts): one group no line
+   breaks inside, so a line never starts with the `，` after a formula or ends on the `（` before
+   one. The guard above still holds the formula, less room for its two marks, so the group fits the
+   column. While a reply streams the formula is its TeX source, which may still wrap inside itself;
+   only its edges stay with the marks. */
+.md-body .math-nobreak {
+  white-space: nowrap;
+}
+.md-body .math-nobreak > .katex {
+  max-width: calc(100% - 2em);
+}
+.md-body .math-nobreak > .math-inline {
+  white-space: normal;
 }
 
 /* ---------- The diff viewer (diff-viewer.tsx) ---------- */

@@ -20,6 +20,8 @@ export type MidRunAction =
   | "steer"
   /** Hold the whole draft server-side and auto-send it as the next ordinary message. */
   | "queue"
+  /** Stop the run and send the whole draft as the next message, right after the turn it cut. */
+  | "interrupt"
   /** A send of this draft is already in flight; the button is inert until it settles. */
   | "disabled";
 
@@ -32,8 +34,12 @@ export interface MidRunComposerState {
   canSteerChannel: boolean;
   /** The host wired a follow-up queue (`onQueueFollowUp`); the draft page does not. */
   canQueueChannel: boolean;
+  /** The host wired interrupt-then-send (`onInterruptSend`); the draft page does not. */
+  canInterruptChannel: boolean;
   /** Mid-run send mode is "follow-up" rather than "steer" (remembered per user). */
   followUpMode: boolean;
+  /** Mid-run send mode is "interrupt" (remembered per user). */
+  interruptMode: boolean;
   /** Where a staged `/agent` / `/model` chip would send this (see stagedSendRoute). */
   stagedRoute: "post" | "handoff" | "model" | "blocked";
   /** An `/agent` handoff target is staged. */
@@ -61,6 +67,10 @@ export interface MidRunComposerState {
  * Steering is preferred over the queue when both could carry the draft, since it reaches the
  * turn already under way; the queue picks up what steering cannot — a skills-only draft, a
  * staged chip — so that "unsendable here" never costs the user Stop.
+ *
+ * Interrupt mode takes a whole message, like the queue, but only one meant for this Session: a
+ * staged `/agent` or `/model` chip opens a conversation of its own, which has no business
+ * stopping this run, so such a draft goes the queue's way (which sends the switch directly).
  */
 export function midRunAction(s: MidRunComposerState): MidRunAction {
   if (s.sending) return "disabled";
@@ -73,7 +83,16 @@ export function midRunAction(s: MidRunComposerState): MidRunAction {
     !s.hasHandoffTarget &&
     !s.hasPendingModel &&
     (s.hasText || s.hasImages || s.hasFiles);
-  if (canSteer && !s.followUpMode) return "steer";
+  if (
+    s.interruptMode &&
+    open &&
+    s.canInterruptChannel &&
+    s.stagedRoute === "post" &&
+    s.hasContent
+  ) {
+    return "interrupt";
+  }
+  if (canSteer && !s.followUpMode && !s.interruptMode) return "steer";
   const canQueue = open && s.canQueueChannel && s.stagedRoute !== "blocked" && s.hasContent;
   if (canQueue) return "queue";
   // Follow-up mode with a draft the queue refuses: steering is not a silent substitute for it,

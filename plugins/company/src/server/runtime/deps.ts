@@ -4,7 +4,7 @@
  * usage pricing, the file store and the caches. app.ts binds the real services; tests bind
  * doubles — the same shape the schedule scheduler uses.
  */
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/penguin-core";
 import { Interface } from "@prismshadow/penguin-core/kernel";
 import type {
   ApprovalMode,
@@ -24,7 +24,7 @@ export interface OrgTaskRunner {
   statusOf(sessionId: string): SessionStatus;
   startTask(
     sessionId: string,
-    input: OmniMessage[],
+    input: AmspRecord[],
     opts?: { queueIfBusy?: boolean },
   ): Promise<{ sessionId: string; queued?: boolean }>;
 }
@@ -92,6 +92,7 @@ export function employeePlugins(extra: readonly string[] | undefined): string[] 
 /** The Agent lifecycle pieces hiring, creation and keeping an employee's plugins current need. */
 export interface OrgAgentGateway {
   exists(projectId: string, agentId: string): Promise<boolean>;
+  /** Creates an Agent with company mode as its author (`author: company`). */
   create(
     projectId: string,
     agentId: string,

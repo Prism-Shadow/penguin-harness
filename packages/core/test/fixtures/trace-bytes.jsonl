@@ -1,0 +1,26 @@
+{"timestamp":"2026-10-23T10:00:00.000Z","type":"session_meta","payload":{"session_id":"session-2026-10-23-10-00-00-0a1b2c3d","provider":"loopback","model_id":"pinned-model","model_context_window":128000,"system_prompt":"You are a pinned fixture.","agent_state":"/data/agents/demo/coder/agent_state","workspace":"/work","source":"api"}}
+{"timestamp":"2026-10-23T10:00:00.000Z","type":"event_msg","payload":{"type":"task_begin"}}
+{"timestamp":"2026-10-23T10:00:00.000Z","type":"model_msg","payload":{"type":"text","role":"user","text":"List the files, then sum 2 and 3."}}
+{"timestamp":"2026-10-23T10:00:00.000Z","type":"model_msg","payload":{"type":"text","role":"user","text":"[background note]","sender":"harness"}}
+{"timestamp":"2026-10-23T10:00:00.000Z","type":"model_msg","payload":{"type":"image_url","role":"user","image_url":"data:image/png;base64,iVBORw0KGgo="}}
+{"timestamp":"2026-10-23T10:00:00.000Z","type":"event_msg","payload":{"type":"mcp_connect_begin","servers":["files"]}}
+{"timestamp":"2026-10-23T10:00:00.000Z","type":"event_msg","payload":{"type":"mcp_connect_end","status":"completed","results":[{"server":"files","transport":"stdio","status":"completed","duration_ms":12,"tools":2}]}}
+{"timestamp":"2026-10-23T10:00:00.000Z","type":"event_msg","payload":{"type":"tool_list_ready","tools":[{"name":"exec_command","description":"Run a command.","parameters":{"type":"object"}}]}}
+{"timestamp":"2026-10-23T10:00:00.000Z","type":"event_msg","payload":{"type":"request_begin","thinking_level":"medium"}}
+{"timestamp":"2026-10-23T10:00:00.000Z","type":"model_msg","payload":{"type":"thinking","role":"assistant","thinking":"The user wants a listing.","fidelity":{"provider":"loopback","signature":"s1"}}}
+{"timestamp":"2026-10-23T10:00:00.000Z","type":"model_msg","payload":{"type":"inline_thinking","role":"assistant","data":"ZW5jcnlwdGVk","mime_type":"application/octet-stream"}}
+{"timestamp":"2026-10-23T10:00:00.000Z","type":"model_msg","payload":{"type":"text","role":"assistant","text":"Listing now."}}
+{"timestamp":"2026-10-23T10:00:00.000Z","type":"model_msg","payload":{"type":"tool_call","role":"assistant","name":"exec_command","arguments":"{\"cmd\":\"ls\"}","tool_call_id":"call_1"}}
+{"timestamp":"2026-10-23T10:00:00.000Z","type":"event_msg","payload":{"type":"approval_decision","decision":"allow","tool_call_id":"call_1"}}
+{"timestamp":"2026-10-23T10:00:00.000Z","type":"event_msg","payload":{"type":"token_usage","session":{"cache_read":10,"cache_write":2,"output":7,"total":40},"request":{"cache_read":10,"cache_write":2,"output":7,"total":40}}}
+{"timestamp":"2026-10-23T10:00:00.000Z","type":"event_msg","payload":{"type":"request_end","status":"completed"}}
+{"timestamp":"2026-10-23T10:00:00.000Z","type":"model_msg","payload":{"type":"tool_call_output","role":"user","output":"a.txt\nb.txt","tool_call_id":"call_1","status":"completed"}}
+{"timestamp":"2026-10-23T10:00:00.000Z","type":"event_msg","payload":{"type":"request_begin"}}
+{"timestamp":"2026-10-23T10:00:00.000Z","type":"model_msg","payload":{"type":"inline_data","role":"assistant","data":"aGVsbG8=","mime_type":"text/plain"}}
+{"timestamp":"2026-10-23T10:00:00.000Z","type":"event_msg","payload":{"type":"request_end","status":"retryable","error_code":"rate_limited","error_message":"busy","attempt":1,"retry_in_ms":2000}}
+{"timestamp":"2026-10-23T10:00:00.000Z","type":"event_msg","payload":{"type":"subagent","session_id":"session-2026-10-23-10-00-05-11223344"}}
+{"timestamp":"2026-10-23T10:00:00.000Z","type":"event_msg","payload":{"type":"hook","hook":"stop","name":"goal","decision":"continue","reason":"not yet","output":{"round":2}}}
+{"timestamp":"2026-10-23T10:00:00.000Z","type":"event_msg","payload":{"type":"compaction_begin","reason":"context","mode":"summarize","context":90000,"turns":3}}
+{"timestamp":"2026-10-23T10:00:00.000Z","type":"event_msg","payload":{"type":"compaction_end","reason":"context","mode":"summarize","status":"completed","attempt":1}}
+{"timestamp":"2026-10-23T10:00:00.000Z","type":"event_msg","payload":{"type":"abort","error_code":"user_abort"}}
+{"timestamp":"2026-10-23T10:00:00.000Z","type":"event_msg","payload":{"type":"task_end"}}

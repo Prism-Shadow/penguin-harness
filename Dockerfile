@@ -133,8 +133,9 @@ ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1
 
 # `<pkg>...` selects a package together with its workspace dependencies, so the CLI filter
 # pulls core, server and the @penguinharness/* plugin packages in topological order; web is
-# named separately because nothing depends on it — its dist is what web/ ships. The rest of
-# the workspace (desktop, docs, landing) is installed but never built.
+# named separately because nothing depends on it — its dist is what web/ ships — and so is the
+# UI package, whose Workbench runtime the web build copies in. The rest of the workspace
+# (desktop, docs, landing) is installed but never built.
 #
 # --config.verify-deps-before-run goes BEFORE the command: after it, pnpm forwards the flag
 # to the script instead of reading it. The check wants a terminal to prompt at, and a Docker
@@ -143,6 +144,7 @@ RUN set -eux; \
     pnpm install --frozen-lockfile; \
     pnpm --config.verify-deps-before-run=false \
       --filter "@prismshadow/penguin-cli..." \
+      --filter "@prismshadow/penguin-ui" \
       --filter "@prismshadow/penguin-web" \
       build
 

@@ -15,7 +15,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-/** Completed LLM turns (token_usage records) a Task must exceed before a summary fires. */
+/** Completed LLM turns (request_end records with status completed) a Task must exceed before a summary fires. */
 const TURNS_THRESHOLD = 30;
 /** Per-line clips of the excerpt and its total cap (the oldest lines go first). */
 const CLIP = { user: 800, assistant: 1200, toolCall: 300, toolOutput: 400 };
@@ -122,7 +122,7 @@ function condense(records) {
       lines.push(`[tool_call ${p.name}] ${clip(p.arguments || "", CLIP.toolCall)}`);
     } else if (p.type === "tool_call_output") {
       const name = toolNames.get(p.tool_call_id) || p.tool_call_id;
-      const status = p.stop_reason && p.stop_reason !== "completed" ? ` · ${p.stop_reason}` : "";
+      const status = p.status && p.status !== "completed" ? ` · ${p.status}` : "";
       lines.push(`[tool_output ${name}${status}] ${clip(p.output || "", CLIP.toolOutput)}`);
     }
   }
@@ -189,7 +189,11 @@ const skills = installedSkills(skillsDir);
 if (skills.length === 0) process.exit(0);
 
 const window = taskWindow(records);
-const turns = window.filter((r) => isEvent(r, "token_usage")).length;
+// A turn is a Request that completed: an attempt cut off at its output cap reports its usage too,
+// and it is retried, so it is no turn; nor is an interrupted or failed one.
+const turns = window.filter(
+  (r) => isEvent(r, "request_end") && r.payload.status === "completed",
+).length;
 if (turns <= TURNS_THRESHOLD) process.exit(0);
 
 const invoked = invokedSkills(window);

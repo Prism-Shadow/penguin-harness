@@ -10,7 +10,7 @@
 
 import { ICONS } from "@prismshadow/penguin-ui";
 
-/** Mirrors core's UNLIMITED_BUDGET (kept local: the constant is not part of the omnimessage bundle). */
+/** Mirrors core's UNLIMITED_BUDGET (kept local: the constant is not part of @prismshadow/amsp). */
 export const UNLIMITED_BUDGET = -1;
 
 /** The bullseye with an arrow in it: goal-mode UI (chip, plus-menu item, banner). */

@@ -18,7 +18,15 @@
  * writes the summary as the node's description, then calls the bound register with that
  * node. A register never names its own path.
  */
-import { Interface, Module, Provide } from "@prismshadow/penguin-core/kernel";
+import {
+  Bind,
+  bootModules,
+  Component,
+  Interface,
+  moduleDefOf,
+  Module,
+  Provide,
+} from "@prismshadow/penguin-core/kernel";
 import type {
   ClassCtx,
   IfaceTable,
@@ -26,13 +34,12 @@ import type {
   Resources,
   Slot,
 } from "@prismshadow/penguin-core/kernel";
-import { bootModules, moduleDefOf } from "@prismshadow/penguin-core/kernel";
 import type {
   CliCommandCode,
-  CliCommandContext,
   CliCommandData,
   CliCommandSummary,
-} from "@prismshadow/penguin-core/plugin";
+} from "@prismshadow/penguin-core/cli";
+import type { Messages } from "@prismshadow/penguin-server/cli";
 /**
  * The generated component table: the CLI's own command classes (by relative path) plus the
  * five resource commands contributed by the server package (through its `cli` subpath).
@@ -45,7 +52,7 @@ export interface BuiltinCommand {
   readonly id: string;
   readonly key: string;
   readonly summary: CliCommandSummary;
-  readonly code: CliCommandCode;
+  readonly code: CliCommandCode<Messages>;
 }
 
 /** The collector's face: the CLI's commands, in contribution order (the order help lists them in). */
@@ -56,7 +63,7 @@ export abstract class CliCommands {
 
 /** The slot `CliCommandsModule` owns: a command's key and summary, and the code half it binds. */
 export interface CliCommandsSlots {
-  commands: Slot<CliCommandData, CliCommandCode>;
+  commands: Slot<CliCommandData, CliCommandCode<Messages>>;
 }
 
 /** Owns the `commands` slot; its contributors are the command classes of the generated table. */
@@ -70,7 +77,7 @@ export class CliCommandsModule {
       id: c.id,
       key: c.data.key as string,
       summary: c.data.summary as unknown as CliCommandSummary,
-      code: c.code as CliCommandCode,
+      code: c.code as CliCommandCode<Messages>,
     }));
     this.cliCommands = { list: () => commands };
   }
@@ -95,20 +102,4 @@ export async function bootBuiltinCommands(): Promise<readonly BuiltinCommand[]> 
   } finally {
     tree.dispose();
   }
-}
-
-/** The context a builtin command runs with: this process's own output and exit code. */
-export function builtinContext(language: "en" | "zh"): CliCommandContext {
-  return {
-    language,
-    write: (text) => {
-      process.stdout.write(`${text}\n`);
-    },
-    writeErr: (text) => {
-      process.stderr.write(`${text}\n`);
-    },
-    setExitCode: (code) => {
-      process.exitCode = code;
-    },
-  };
 }

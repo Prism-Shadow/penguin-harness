@@ -959,6 +959,8 @@ export class SessionService {
     for (const projectId of await listChildDirs(this.deps.root)) {
       const agentIds = await listChildDirs(agentsDir(this.deps.root, projectId));
       for (const agentId of agentIds) {
+        // A dot-directory (`.deleting/`, where a deleted Agent's files wait) is never an Agent.
+        if (agentId.startsWith(".")) continue;
         const known = new Set(
           this.deps.sessions.listByAgent(projectId, agentId).map((r) => r.sessionId),
         );

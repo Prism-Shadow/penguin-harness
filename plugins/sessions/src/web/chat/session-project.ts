@@ -1,4 +1,5 @@
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
+import { ofProject } from "../../lib/project-scope";
 
 /**
  * The Session the route names: the loaded list's row when it holds one, otherwise the row a
@@ -10,16 +11,23 @@ import type { SessionInfo } from "@prismshadow/penguin-server/api";
  * is exactly that row, and losing it again is what left the conversation behind the skeleton
  * for good. The list row still WINS where it exists: it is the one the status and title
  * events keep current.
+ *
+ * Either is the routed Session only under its own Project. The looked-up row outlives a Project
+ * switch (the route does too), and showing it under the next Project renders that Project with
+ * the conversation — and the Agent — of the one just left.
  */
 export function resolveRoutedSession(
   sessionId: string | null,
   sessions: readonly SessionInfo[],
   fetched: SessionInfo | null,
+  projectId: string | null,
 ): SessionInfo | null {
   if (sessionId === null) return null;
   const row = sessions.find((s) => s.sessionId === sessionId);
-  if (row !== undefined) return row;
-  return fetched !== null && fetched.sessionId === sessionId ? fetched : null;
+  if (row !== undefined) return ofProject(row, projectId) ? row : null;
+  return fetched !== null && fetched.sessionId === sessionId && ofProject(fetched, projectId)
+    ? fetched
+    : null;
 }
 
 /**
@@ -57,18 +65,21 @@ export function sessionProbeKey(projectId: string, sessionId: string): string {
  * conversation for a tick. Taking that for "gone" is what paints the skeleton over a
  * conversation being read; holding the last answer through it is what this is for.
  *
- * The hold is released the moment either thing that could make it a LIE happens: the route
- * moved to another Session, or the direct lookup came back and said this one is not there.
- * So a deleted Session still leaves the screen — one tick later than it used to.
+ * The hold is released the moment anything that could make it a LIE happens: the route
+ * moved to another Session, the direct lookup came back and said this one is not there, or the
+ * Project changed — a Session is only ever held under its own Project. So a deleted Session
+ * still leaves the screen — one tick later than it used to.
  */
 export function heldRouteSession(
   held: SessionInfo | null,
   listed: SessionInfo | null,
   routeSessionId: string | null,
   probeSaysGone: boolean,
+  projectId: string | null,
 ): SessionInfo | null {
   if (listed !== null) return listed;
-  if (held === null || held.sessionId !== routeSessionId) return null;
+  if (held === null || held.sessionId !== routeSessionId || !ofProject(held, projectId))
+    return null;
   return probeSaysGone ? null : held;
 }
 
@@ -82,12 +93,15 @@ export function heldRouteSession(
  *   route naming no Session means, what deleting the conversation on screen means (the row is
  *   gone on purpose), and what a Session of another Project means (a Project switch leaves the
  *   old route behind).
+ * - `refused`: the machine holding the Session will not show it to this server (403
+ *   `session_forbidden`). It exists, so the page says so in place instead of calling it gone or
+ *   opening another conversation.
  * - `notFound`: the server said the Session does not exist — a stale link, a desk whose Agent
  *   was deleted, a conversation deleted in another tab. The page says so in place. Opening the
  *   latest conversation instead put the reader in an unrelated one under the dead link's
  *   pretence, which is exactly what a click on a deleted employee's desk used to do.
  */
-export type RouteSessionOutcome = "show" | "wait" | "redirect" | "notFound";
+export type RouteSessionOutcome = "show" | "wait" | "redirect" | "notFound" | "refused";
 
 export function routeSessionOutcome(state: {
   /** A row for the route is on screen (listed, looked up, or held through a refetch). */
@@ -99,9 +113,14 @@ export function routeSessionOutcome(state: {
   deletedHere: boolean;
   /** The direct lookup answered 404: no such Session, or none this user may see. */
   missing: boolean;
+  /** The machine holding the Session will not show it to this server: said in place. */
+  refused?: boolean;
 }): RouteSessionOutcome {
   if (state.shown) return "show";
   if (state.pending) return "wait";
+  if (state.refused === true && state.routeSessionId !== null && !state.deletedHere) {
+    return "refused";
+  }
   if (state.routeSessionId === null || state.deletedHere || !state.missing) return "redirect";
   return "notFound";
 }

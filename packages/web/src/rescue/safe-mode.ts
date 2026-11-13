@@ -1,7 +1,7 @@
 /**
  * Safe mode: the app runs without anything the server contributes, so a contribution that
- * breaks the UI can be stepped around and the harness rolled back. The one place that reads
- * it is the contributions consumer (web-app/contributions.tsx); the rescue panel enters it, the
+ * breaks the UI can be stepped around and the harness rolled back. The consumers are workflow
+ * tabs and full-page workflow frames in the plain app; the rescue panel enters it, the
  * marker and the command palette leave it.
  *
  * The switch lives in sessionStorage, not in the URL. An in-app navigation drops the query
@@ -37,13 +37,14 @@ export function isSafeMode(): boolean {
 }
 
 export function setSafeMode(next: boolean): void {
+  const previous = isSafeMode();
   try {
     if (next) sessionStorage.setItem(KEY, "1");
     else sessionStorage.removeItem(KEY);
   } catch {
     // Memory alone: see the header.
   }
-  if (isSafeMode() === next) return;
+  if (previous === next) return;
   on = next;
   listeners.forEach((l) => l());
 }

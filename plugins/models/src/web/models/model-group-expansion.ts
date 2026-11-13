@@ -16,7 +16,7 @@
  * injectable (draft-cache.ts convention: vitest runs in Node, no localStorage); search
  * force-open below stays derived and never writes storage.
  */
-import { MODEL_PROVIDERS } from "@prismshadow/penguin-core/model-catalog";
+import { MODEL_PROVIDERS } from "@prismshadow/penguin-server/model-catalog";
 
 /**
  * Provider ids expanded on first visit (nothing persisted yet): the leading group of

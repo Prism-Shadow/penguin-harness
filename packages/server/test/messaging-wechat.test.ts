@@ -36,7 +36,7 @@
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { assistantText } from "@prismshadow/penguin-core";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/penguin-core";
 import { wire } from "@prismshadow/penguin-core/kernel";
 import type {
   MessagingBindingsResponse,
@@ -271,7 +271,7 @@ function echoFakeSession(
   reply = "Reply text",
 ): RuntimeSession {
   return fakeSession(sessionId, {
-    async *run(input: OmniMessage[]) {
+    async *run(input: AmspRecord[]) {
       runs.push(input.map((m) => m.payload as InputPayload));
       yield assistantText(reply);
     },

@@ -24,8 +24,8 @@ import type {
   InlineThinkingPayload,
   McpConnectBeginPayload,
   McpConnectEndPayload,
-  OmniMessage,
-  OmniPayload,
+  AmspRecord,
+  AmspPayload,
   PartialTextPayload,
   PartialThinkingPayload,
   PartialToolCallOutputPayload,
@@ -43,6 +43,9 @@ import type {
 } from "@prismshadow/penguin-core";
 import type {
   ForkTraceResult,
+  HistoryTraceFile,
+  ImportedSession,
+  HistoryWindowRead,
   MessagesPageRequest,
   MessagesPageResult,
 } from "@penguinharness/plugin-usage/server";
@@ -111,7 +114,7 @@ export abstract class TraceIndex {
     fileIndex: number;
     date: string;
     sizeBytes: number;
-    records: OmniMessage[];
+    records: AmspRecord[];
   }): void;
   abstract removeSession(projectId: string, agentId: string, sessionId: string): void;
   abstract removeAgent(projectId: string, agentId: string): void;
@@ -143,6 +146,17 @@ export abstract class Traces {
     sessionId: string,
     req: MessagesPageRequest,
   ): Promise<MessagesPageResult>;
+  abstract readHistoryWindow(
+    projectId: string,
+    agentId: string,
+    sessionId: string,
+    req: MessagesPageRequest | { kind: "full" },
+  ): Promise<HistoryWindowRead>;
+  abstract historyTraceFiles(
+    projectId: string,
+    agentId: string,
+    sessionId: string,
+  ): Promise<HistoryTraceFile[]>;
   abstract forkSessionTrace(
     projectId: string,
     agentId: string,
@@ -181,6 +195,14 @@ export abstract class Traces {
     sessionId: string,
     index: number,
   ): Promise<TraceAnalysisResponse>;
+  /**
+   * The same analysis of one Trace file's records read elsewhere — a machine's file from the
+   * hub's copy (machines/history-routes.ts) — priced with `projectId`'s rates.
+   */
+  abstract analyzeRecords(
+    projectId: string,
+    messages: readonly AmspRecord[],
+  ): Promise<TraceAnalysisResponse>;
   abstract agentTraces(
     projectId: string,
     agentId: string,
@@ -198,4 +220,9 @@ export abstract class Traces {
     agentId: string,
     content: string,
   ): Promise<TraceImportResponse>;
+  abstract importSessions(
+    projectId: string,
+    agentId: string,
+    sessions: readonly ImportedSession[],
+  ): Promise<{ imported: number; skipped: string[] }>;
 }

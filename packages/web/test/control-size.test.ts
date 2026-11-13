@@ -187,6 +187,7 @@ const DIALOG_BODY_MODULES = new Set([
   "features/settings/proxy-section.tsx",
   "features/settings/shortcut-recorder.tsx",
   "features/settings/shortcuts-section.tsx",
+  "features/settings/theme-packs-section.tsx",
   "features/settings/trace-import-row.tsx",
   "features/settings/uploads-section.tsx",
   "features/admin/admin-users-page.tsx",

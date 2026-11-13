@@ -12,7 +12,8 @@
  * plaintext, merged into theirs per field — a field we do not hold is left alone there.
  *
  * An entry the machine refuses by name is left out and the rest of the table still lands, with
- * no pointer to it. A Project the machine is still provisioning on its first boot (its creation
+ * no pointer to it; one of our built-in models refused as not addable is marked as such, since
+ * then it is the machine's build that is behind. A Project the machine is still provisioning on its first boot (its creation
  * refused as taken, the Project not listed yet) is written once it is listed; one that never is
  * stays refused. A value a row takes from this server's environment never travels, and
  * `envSourced` names exactly those.
@@ -28,6 +29,7 @@ import type { ModelEntry } from "@prismshadow/penguin-core";
 import type { ModelsResponse, ModelsUpdateRequest } from "../src/api/types.js";
 import { envSourced, planModelSync, syncModelsToMachine } from "../src/machines/models-sync.js";
 import type { LocalModels } from "../src/machines/models-sync.js";
+import { catalogEntryFor } from "../src/model-catalog/catalog.js";
 import { machineApi } from "../src/machines/machine-api.js";
 import type { MachineApi } from "../src/machines/machine-api.js";
 import { createTestApp } from "./helpers.js";
@@ -379,18 +381,27 @@ describe("envSourced", () => {
     const found = envSourced(
       {
         models: [
-          // No key anywhere: the vendor's variable, set here.
+          // No key and no base URL anywhere: the routed client's variable, set here.
           { provider: "openai", model_id: "gpt-5" },
+          { provider: "myproxy", model_id: "gpt-5-proxy", client_type: "openai-chat" },
           // Its own key, and no OPENAI_BASE_URL here: nothing.
           { provider: "openai", model_id: "gpt-5-mini", api_key: "sk-own-0123456789" },
           // Its group's key, and no base URL: the routed client's ANTHROPIC_BASE_URL, set here.
           { provider: "anthropic", model_id: "claude-opus-5" },
           // No key, and DEEPSEEK_API_KEY is not set here: it does not run here either.
           { provider: "deepseek", model_id: "deepseek-v4-flash" },
-          // A gateway's endpoint is never lent a vendor's key.
+          // The client's own default endpoint from the file: its key variable, and its requests
+          // go there, not to `*_BASE_URL`.
+          { provider: "openai", model_id: "gpt-5-own", base_url: "https://api.openai.com/v1" },
+          // Any other base URL from the file — the row's own or its group's — reads nothing:
+          // MMSP refuses it keyless, and a key from the file goes there.
           { provider: "custom", model_id: "gpt-5", base_url: "https://gw.example.com/v1" },
+          { provider: "gateway", model_id: "claude-opus-5", api_key: "sk-gw-0123456789" },
         ],
-        providers: { anthropic: { api_key: "sk-ant-group-0123456789" } },
+        providers: {
+          anthropic: { api_key: "sk-ant-group-0123456789" },
+          gateway: { base_url: "https://gw.example.com/v1", client_type: "ant-messages" },
+        },
       },
       {
         OPENAI_API_KEY: "sk-env-0123456789",
@@ -401,7 +412,9 @@ describe("envSourced", () => {
     );
     expect(found).toEqual([
       { provider: "openai", modelId: "gpt-5", variable: "OPENAI_API_KEY" },
+      { provider: "myproxy", modelId: "gpt-5-proxy", variable: "OPENAI_API_KEY" },
       { provider: "anthropic", modelId: "claude-opus-5", variable: "ANTHROPIC_BASE_URL" },
+      { provider: "openai", modelId: "gpt-5-own", variable: "OPENAI_API_KEY" },
     ]);
   });
 });
@@ -540,6 +553,9 @@ describe("syncModelsToMachine, against a running server", () => {
         ],
       });
 
+      // A hand-added id is not one of our built-in models: the far side's own reason stands.
+      expect(outcome.kind === "synced" && outcome.skipped[0]).not.toHaveProperty("builtInHere");
+
       const config = await machine.deps.projectConfigService.loadConfig("default_project");
       expect(config.models.some((m) => m.model_id === "gemini-9.9-not-a-preset")).toBe(false);
       expect(config.models.find((m) => m.model_id === "deepseek-v4-flash")?.api_key).toBe(
@@ -550,6 +566,59 @@ describe("syncModelsToMachine, against a running server", () => {
       server.close();
       await machine.cleanup();
     }
+  });
+
+  it("marks a built-in model of ours that a machine on an older build refuses as not addable", async () => {
+    // An older build's catalog does not list a row this one ships, so its PUT refuses that row
+    // by name exactly as it refuses a hand-added id.
+    expect(catalogEntryFor("deepseek", "deepseek-v4-flash")).toBeDefined();
+    const refuse = new Set(["deepseek/deepseek-v4-flash", "deepseek/deepseek-hand-added"]);
+    const api: MachineApi = {
+      postBytes: async () => ({ status: 500, text: "" }),
+      request: async (method, path, body) => {
+        if (path === "/api/projects") {
+          return { status: 200, text: JSON.stringify({ projects: [{ projectId: "p1" }] }) };
+        }
+        if (method === "GET") return { status: 200, text: JSON.stringify(remoteTable()) };
+        const sent = (body as ModelsUpdateRequest).models.find((m) =>
+          refuse.has(`${m.provider}/${m.modelId}`),
+        );
+        if (sent === undefined) return { status: 200, text: "{}" };
+        const details = { provider: sent.provider, modelId: sent.modelId };
+        return {
+          status: 400,
+          text: JSON.stringify({
+            error: { code: "model_not_addable", message: "cannot be added", details },
+          }),
+        };
+      },
+    };
+
+    const outcome = await syncModelsToMachine({
+      api,
+      projects: ["p1"],
+      loadLocal: async () => ({
+        models: [local(), local({ model_id: "deepseek-hand-added" })],
+      }),
+    });
+    expect(outcome).toMatchObject({ kind: "synced", projects: ["p1"], refused: [] });
+    expect(outcome.kind === "synced" && outcome.skipped).toEqual([
+      {
+        projectId: "p1",
+        provider: "deepseek",
+        modelId: "deepseek-v4-flash",
+        code: "model_not_addable",
+        reason: "cannot be added",
+        builtInHere: true,
+      },
+      {
+        projectId: "p1",
+        provider: "deepseek",
+        modelId: "deepseek-hand-added",
+        code: "model_not_addable",
+        reason: "cannot be added",
+      },
+    ]);
   });
 
   it("creates the Project over there under the same id, and it works", async () => {

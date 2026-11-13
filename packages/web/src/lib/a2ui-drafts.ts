@@ -1,19 +1,21 @@
 /**
- * The open question's answers in progress, kept in this browser: a reply's form half filled in,
- * or a multi-select choice half ticked, comes back after a reload or a visit to another
- * conversation.
+ * The open question's answers in progress: a reply's form half filled in, or a multi-select
+ * choice half ticked, comes back after a reload, a visit to another conversation, or a sign-in on
+ * another browser. They are cached in this browser and follow the account (lib/account-sync):
+ * every write and removal below goes through the synced storage.
  *
  * The UI package decides what an entry holds and when it is read or written (its a2ui draft.ts);
  * this is only where entries live. A key is `penguin.a2uiDraft.<Session id>:<block hash>` and a
  * value `{ v: 1, at, state }`, `at` the time of the write in ms.
  *
- * A draft is a convenience, not a record. It is per browser, an entry a week old is dropped when
- * it is read, and every write keeps only the newest fifty entries, so answers left in
+ * A draft is a convenience, not a record. An entry a week old is dropped when it is read, and
+ * every write keeps only the newest fifty entries in this browser, so answers left in
  * conversations nobody returns to do not pile up. Storage is best-effort in both directions: a
  * private window, blocked site data or a full quota turn every write into a no-op and every read
  * into nothing, and the form starts blank, as it did before drafts.
  */
 import type { A2uiDrafts } from "@prismshadow/penguin-ui";
+import { syncedStorage } from "./account-sync/cache";
 
 const PREFIX = "penguin.a2uiDraft.";
 
@@ -55,18 +57,18 @@ function prune(now: number): void {
   const live: { key: string; at: number }[] = [];
   for (const key of keys) {
     const entry = liveEntry(localStorage.getItem(key), now);
-    if (entry === null) localStorage.removeItem(key);
+    if (entry === null) syncedStorage.removeItem(key);
     else live.push({ key, at: entry.at });
   }
   live.sort((a, b) => b.at - a.at);
-  for (const { key } of live.slice(A2UI_DRAFT_LIMIT)) localStorage.removeItem(key);
+  for (const { key } of live.slice(A2UI_DRAFT_LIMIT)) syncedStorage.removeItem(key);
 }
 
 function load(key: string): unknown {
   try {
     const raw = localStorage.getItem(PREFIX + key);
     const entry = liveEntry(raw, Date.now());
-    if (entry === null && raw !== null) localStorage.removeItem(PREFIX + key);
+    if (entry === null && raw !== null) syncedStorage.removeItem(PREFIX + key);
     return entry?.state;
   } catch {
     return undefined;
@@ -76,7 +78,7 @@ function load(key: string): unknown {
 function save(key: string, state: unknown): void {
   try {
     const entry: Entry = { v: 1, at: Date.now(), state };
-    localStorage.setItem(PREFIX + key, JSON.stringify(entry));
+    syncedStorage.setItem(PREFIX + key, JSON.stringify(entry));
     prune(entry.at);
   } catch {
     // Storage refused or is full: the answers are merely not kept past this page.
@@ -85,7 +87,7 @@ function save(key: string, state: unknown): void {
 
 function clear(key: string): void {
   try {
-    localStorage.removeItem(PREFIX + key);
+    syncedStorage.removeItem(PREFIX + key);
   } catch {
     // Storage refused: nothing was kept to remove.
   }

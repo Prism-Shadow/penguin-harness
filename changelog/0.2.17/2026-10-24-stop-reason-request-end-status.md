@@ -1,0 +1,33 @@
+# Records carry no stop_reason: a Request's end is request_end.status
+
+- **Date:** 2026-10-24
+- **Type:** refactor
+- **Scope:** `amsp`, `core`, `server`, `web`, `cli`
+- **PR:** [#1309](https://github.com/Prism-Shadow/penguin-harness/pull/1309)
+- **Breaking:** yes — no record carries `stop_reason` any more; every `tool_call_output` carries a required `status`, a response cut off at its output cap ends `retryable` with the new code `output_truncated` instead of committing, and the turn cap ends a Task with an `abort` record.
+
+[中文版](2026-10-24-stop-reason-request-end-status.zh.md)
+
+The `stop_reason` field left every AMSP record. A Request's end reason is recorded once, as `request_end.status`; a tool result says what it is in its own `status`; the turn cap is an `abort` record. Every streamed item still has its complete record, an interrupted one included. The decision is [PRFC-0022](https://github.com/Prism-Shadow/penguin-harness-design/pull/374).
+
+## Details
+
+- `request_end.status` keeps the four `StopReason` values. Whether a Request's items entered the model history is read from it alone: only a `completed` Request commits.
+- An item an interruption, a failure or a cut-off ended early still gets its partial `stop` and a complete record holding what arrived. A tool call closed that way holds the raw argument text and is never dispatched: `GenerativeModel` marks it in-process with `markInterruptedToolCall` (exported by core, never written to the record), and the engine skips marked calls. A call that streamed whole is dispatched as soon as its record arrives, as before.
+- A response that arrives whole but stops at its output cap (`finish_reason` `length`) ends `retryable` with the new `ErrorCode` `output_truncated` and an `error_message` saying the output hit the cap, instead of committing with a `fatal` last item. A finish reason MMSP does not map (`unknown`) ends `retryable` coded `malformed`. `GenerativeModel` takes the turn back out of MMSP's history but still emits its `token_usage` (the provider billed it, so the cost center meters it; it counts as no Session turn and adds no failure row). The engine retries it on the reconnect ladder by the same rules as any other retryable failure, with the cause on the `[request_error]` line, and when the retries run out the run ends as any exhausted `retryable` does.
+- The per-turn ceiling on attempts (`ContextEngineDeps.maxTurnAttempts`) defaults to 10 instead of 20, for every retryable failure: an attempt that received content resets the consecutive ladder, so this ceiling is what bounds a turn whose responses keep dropping mid-stream or stopping at the output cap. Compaction requests are unaffected; they retry on their own reconnect budget.
+- One-shot requests read an answer cut off at its cap like a completed one: the session title, `read_file`'s vision model and the model probe.
+- `tool_call_output.status` is required: `completed`, `fatal`, or `aborted`, which means the call did not run to its end (denied, or interrupted while it ran, with the output produced so far and the interruption note). `retryable` left the tool vocabulary. A tool's `ToolResult.stopReason` became `ToolResult.status` (`ToolStatus`), and the builder `toolCallOutput` takes `status`. `partial_*` records carry no status.
+- A Task that reaches `max_turns` ends with an `abort` record (`error_code: "max_turns"`, `error_message` `reached max turns (N)`) instead of a `fatal` assistant notice. The run's `RunCutoff` carries the same code. The Web App and the CLI show it as "[Stopped]: reached the maximum turns per task", with Retry on the Web App's line.
+- The record builders lost their stop-reason parameters: `assistantText(text, fidelity?)`, `thinkingMessage(thinking, fidelity?)`, `textMessage(role, text, fidelity?)`, `partialText(eventType, text?)`, `partialThinking(eventType, thinking?)`, and `toolCall` / `partialToolCall` / `partialToolCallOutput` without `stopReason`. `abortEvent` takes an optional `errorMessage`.
+- SDK `RunResult`: an `abort` is `aborted` (the turn cap's with code `max_turns`), the rule that read a `fatal` last assistant text is gone, and `text` holds only the assistant text of Requests that completed. Its approval loop stops waiting on a call whose Request ended without completing before the call was decided.
+- The Web App dropped the `[stop reason]` badges after replies and thinking, settles the card of a call its unfinished Request never decided as aborted when that Request ends, words the retry line for `output_truncated`, and reads a reply's fork point from whether its Request completed. The Trace view's badge and timeline show the record's `status`, a call its unfinished Request never dispatched gets no timeline lane, and the Trace analysis DTOs' `stopReason` fields became `status`.
+- The cost center's error table records tool failures as `tool_fatal:<tool>`.
+- The goal and continual-learning hooks read the new shape (hook versions `2026.10.23.1` and `2026.10.24.1`); continual-learning counts a turn per Request that completed rather than per `token_usage`, so a retried cut-off adds none.
+- The records, AMSP, Agent API, agent-loop, message-flow, interfaces, tools, architecture and sessions-and-traces docs pages follow the new shape; the records page's `stop_reason` section became "End reasons".
+
+## Compatibility
+
+- **API callers**: stop reading `stop_reason`. A turn now gives up after 10 attempts at most, where it allowed 20. Read a Request's end from its `request_end.status`, a tool result's from `tool_call_output.status`, and the turn cap from an `abort` with `error_code: "max_turns"`. A response cut off at its output cap now ends `retryable` with `error_code: "output_truncated"` and is retried, where it used to commit; the turn cap's `RunResult` is `aborted` rather than `fatal`. A `tool_call` of a Request that did not complete ran only if its `approval_decision` came before that `request_end`.
+- **Code built on core**: drop the stop-reason argument from the record builders, pass `status` to `toolCallOutput`, and return `{ status }` instead of `{ stopReason }` from a tool's `execute`. An `LLMInterface` implementation that closes a tool call early writes it whole and passes it through `markInterruptedToolCall`.
+- **Trace readers**: Traces written before this release keep `stop_reason` on their records; it is no longer read. A `tool_call_output` without `status` reads as `completed`, so an old failed, denied or interrupted tool result may show as completed. Resuming an old Trace is unaffected: replay already commits a turn only by its `request_end.status`. Nothing is migrated, and no compatibility code reads the old field.

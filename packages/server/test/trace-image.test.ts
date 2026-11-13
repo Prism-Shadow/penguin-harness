@@ -23,7 +23,7 @@ import {
   toolCallOutput,
   userText,
 } from "@prismshadow/penguin-core";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/penguin-core";
 import type { HistoryMessage, MessagesResponse } from "../src/api/types.js";
 import { sessionRow, uniqueSessionId } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser, writeTraceFile } from "./helpers.js";
@@ -40,7 +40,7 @@ const SVG = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>');
 const dataUrl = (mime: string, bytes: Buffer) => `data:${mime};base64,${bytes.toString("base64")}`;
 
 type Payload = { type?: string; text?: string; image_url?: string; images?: string[] };
-const payloadOf = (m: OmniMessage) => m.payload as Payload;
+const payloadOf = (m: AmspRecord) => m.payload as Payload;
 
 describe("images by reference", () => {
   let t: TestApp;
@@ -74,6 +74,7 @@ describe("images by reference", () => {
         output: "two shots",
         toolCallId: "t1",
         images: [dataUrl("image/jpeg", JPEG), dataUrl("image/png", PNG)],
+        status: "completed",
       }), // 6
       assistantText("done"), // 7
       requestEnd("completed"), // 8

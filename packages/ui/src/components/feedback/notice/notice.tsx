@@ -61,7 +61,9 @@ export interface NoticeDismiss {
 /**
  * Layout per variant; the tone, the line colour and the hook are the strip's. Every variant
  * wraps: the action buttons keep their labels whole, so where the body and the actions do not
- * fit one line the actions take a row of their own rather than squeezing the body.
+ * fit one line the actions take a row of their own rather than squeezing the body. A lone close
+ * cross is the exception: it stays at the end of the body's line and the body wraps beside it,
+ * since a cross on a row of its own reads as detached from the notice it closes.
  */
 const VARIANT: Readonly<Record<NoticeVariant, string>> = {
   strip: "flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b px-3 py-1.5 text-xs",
@@ -116,6 +118,8 @@ export function Notice({
         disabled={dismiss.disabled}
       />
     ) : null;
+  // The body takes the line's remaining room (a zero basis), so the line never breaks before it.
+  const crossOnly = cross !== null && retry === undefined && action === undefined;
   if (variant === "banner") {
     return (
       <NoticeStrip
@@ -155,7 +159,7 @@ export function Notice({
       {...(role !== undefined ? { role } : {})}
       className={`${VARIANT[variant]} ${className}`}
     >
-      <div className={`flex min-w-0 items-center ${ICON_GAP.menu}`}>
+      <div className={`flex min-w-0 items-center ${ICON_GAP.menu}${crossOnly ? " flex-1" : ""}`}>
         {glyph !== undefined && (
           <span data-slot="icon" aria-hidden className="flex shrink-0">
             {typeof glyph === "string" ? <GlyphIcon d={glyph} /> : glyph}

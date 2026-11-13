@@ -15,7 +15,7 @@
  * preset the user deleted counts as new again, since adding it back is exactly what the button
  * does; retired catalog rows never count.
  */
-import { presetModelEntries } from "@prismshadow/penguin-core/model-catalog";
+import { presetModelEntries } from "@prismshadow/penguin-server/model-catalog";
 
 /** What adding new presets would add (see {@link catalogDelta}). */
 export interface CatalogDelta {

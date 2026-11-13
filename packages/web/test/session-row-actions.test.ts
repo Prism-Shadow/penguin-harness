@@ -15,7 +15,7 @@ import {
   rowExtensionsOf,
   withEntries,
 } from "../src/features/session-list/row-actions";
-import type { RowAction } from "@prismshadow/penguin-web/internal";
+import type { RowAction } from "../src/lib/session-row-contributions";
 
 const contributed = (id: string, order: number, code: RowAction): Contributed =>
   ({ id, from: "Test", data: { order }, code }) as unknown as Contributed;

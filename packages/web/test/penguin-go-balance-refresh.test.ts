@@ -8,17 +8,20 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, createElement as h } from "react";
-import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
+import { providerInfo } from "@prismshadow/penguin-server/model-catalog";
 import { GroupBalance, PinnedBalanceBadge } from "../src/features/models/group-balance";
 import { ProjectProvider } from "../src/state/project";
 import { ThemeProvider } from "../src/state/theme";
 import { en } from "../src/lib/strings-en";
 import { setActiveStrings, zh } from "../src/lib/strings";
+import { noteLocalShown } from "../src/lib/local-first";
 import { apiError, json, stubFetch } from "./helpers/fetch";
 import { button, click, mount, unmountAll, waitFor } from "./helpers/dom";
 
 describe("Penguin Go balance refresh", () => {
   beforeEach(() => {
+    // The window's own content is on screen: the balance is a remote read that waits for it.
+    noteLocalShown();
     setActiveStrings(en);
     localStorage.clear();
     localStorage.setItem("penguin.currency", "CNY");

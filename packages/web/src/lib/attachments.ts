@@ -25,7 +25,13 @@ import {
   ATTACHED_IMAGE_PREFIX,
   matchAttachedFileLine,
   matchAttachedImageLine,
-} from "@prismshadow/penguin-core/markers";
+} from "@prismshadow/amsp/markers";
+
+/**
+ * The paperclip: the mark of an attached file wherever one is shown or added — the message
+ * banner, the composer's attachment entry, the drop overlay and the Files panel.
+ */
+export const PAPERCLIP_ICON = ICONS.paperclip;
 
 /**
  * The paperclip: the mark of an attached file wherever one is shown or added — the message

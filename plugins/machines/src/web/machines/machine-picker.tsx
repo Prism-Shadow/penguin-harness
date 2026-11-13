@@ -1,14 +1,15 @@
 /**
- * The compact machine switch in a page header: a small secondary button naming the machine
- * in view, the same height and shape as the icon buttons beside it, over a plain list of
- * machine names. Used where a page shows one machine at a time (the Plugins page, the
- * Settings dialog's Plugins page).
+ * The machine switch where a page or a section shows one machine at a time (the Plugins page's
+ * header, the Settings dialog's Plugins page): the shared UI package's `Select`, so it takes the
+ * control size scale like the search box and the selects beside it — one height, padding,
+ * radius, type rung and chevron for a given `size` — rather than a button of its own. The panel
+ * is portaled by `Select`, so a dialog's scrolling body does not clip it.
  *
- * The panel is portaled: one of its hosts is a dialog whose scrolling body would clip an
- * in-place panel.
+ * The trigger names the field (`aria-label`); the selected option's text says which machine is
+ * in view.
  */
-import { useState } from "react";
-import { Button, ChevronDown, Dropdown, MenuItem } from "@prismshadow/penguin-ui";
+import { Select } from "@prismshadow/penguin-ui";
+import type { ControlSize } from "@prismshadow/penguin-ui";
 
 export interface MachineChoice {
   value: string;
@@ -19,53 +20,38 @@ export function MachinePicker({
   choices,
   value,
   onChange,
+  size = "sm",
+  className = "max-w-48 shrink-0",
   "aria-label": ariaLabel,
 }: {
   choices: readonly MachineChoice[];
   value: string;
   onChange: (value: string) => void;
+  /** The control rung of the controls beside it; the filter-bar `sm` by default. */
+  size?: ControlSize;
+  /**
+   * The box the select fills: by default as wide as the machine's name (up to 12rem), so it
+   * takes no more of a header row than its choice needs.
+   */
+  className?: string;
   "aria-label": string;
 }) {
-  const [open, setOpen] = useState(false);
-  const current = choices.find((c) => c.value === value);
   return (
-    <Dropdown
-      open={open}
-      setOpen={setOpen}
-      className="flex"
-      menuClass="w-56 max-w-[calc(100vw-2rem)] origin-top-right py-1"
-      portal={{ direction: "down", align: "right" }}
-      button={
-        <Button
-          size="sm"
-          className="h-8 max-w-48 shrink-0"
-          aria-haspopup="listbox"
-          aria-expanded={open}
-          aria-label={`${ariaLabel}: ${current?.label ?? value}`}
-          onClick={() => setOpen(!open)}
-        >
-          <span className="min-w-0 truncate">{current?.label ?? value}</span>
-          <ChevronDown className="shrink-0 text-gray-400" />
-        </Button>
-      }
-    >
-      <ul role="listbox" aria-label={ariaLabel} className="max-h-72 overflow-y-auto">
-        {choices.map((choice) => {
-          const selected = choice.value === value;
-          return (
-            <li key={choice.value} role="option" aria-selected={selected}>
-              <MenuItem
-                label={choice.label}
-                checked={selected}
-                onSelect={() => {
-                  setOpen(false);
-                  if (!selected) onChange(choice.value);
-                }}
-              />
-            </li>
-          );
-        })}
-      </ul>
-    </Dropdown>
+    <div className={className}>
+      <Select
+        size={size}
+        aria-label={ariaLabel}
+        value={value}
+        onChange={(event) => {
+          if (event.target.value !== value) onChange(event.target.value);
+        }}
+      >
+        {choices.map((choice) => (
+          <option key={choice.value} value={choice.value}>
+            {choice.label}
+          </option>
+        ))}
+      </Select>
+    </div>
   );
 }

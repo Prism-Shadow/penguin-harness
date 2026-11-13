@@ -37,8 +37,7 @@ import { liveServerLock } from "@prismshadow/penguin-server/lock";
 import type { Command } from "commander";
 import type { Messages, WebProbeFailureKind } from "@prismshadow/penguin-server/cli";
 import { Bind, Component } from "@prismshadow/penguin-core/kernel";
-import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/plugin";
-import { getMessages } from "@prismshadow/penguin-server/cli";
+import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/cli";
 import { registerResetPasswordCommand } from "./reset-password.js";
 
 /** Why the readiness poll gave up: failure class plus a one-line diagnostic from the last probe. */
@@ -420,11 +419,11 @@ export function registerWebCommand(web: Command, t: Messages): void {
   },
 })
 export class ServerCommand {
-  @Bind("cli.server") command!: CliCommandCode;
+  @Bind("cli.server") command!: CliCommandCode<Messages>;
   setup() {
     this.command = {
       register: (command, ctx) => {
-        registerServerCommand(node(command), getMessages(ctx.language));
+        registerServerCommand(node(command), ctx.messages);
       },
     };
   }
@@ -446,11 +445,11 @@ export class ServerCommand {
   },
 })
 export class ServerResetAdminPasswordCommand {
-  @Bind("cli.server.reset-admin-password") command!: CliCommandCode;
+  @Bind("cli.server.reset-admin-password") command!: CliCommandCode<Messages>;
   setup() {
     this.command = {
       register: (command, ctx) => {
-        registerResetPasswordCommand(node(command), getMessages(ctx.language));
+        registerResetPasswordCommand(node(command), ctx.messages);
       },
     };
   }
@@ -472,11 +471,11 @@ export class ServerResetAdminPasswordCommand {
   },
 })
 export class WebCommand {
-  @Bind("cli.web") command!: CliCommandCode;
+  @Bind("cli.web") command!: CliCommandCode<Messages>;
   setup() {
     this.command = {
       register: (command, ctx) => {
-        registerWebCommand(node(command), getMessages(ctx.language));
+        registerWebCommand(node(command), ctx.messages);
       },
     };
   }

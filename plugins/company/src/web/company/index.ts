@@ -3,6 +3,7 @@
  * organization) for the shell and the features that change with the mode.
  */
 export { useCompany } from "./company-state";
-export { switchDeskModel } from "./desk-model";
 
-export { parseOrgKey } from "./company-nav.js";
+export { parseOrgKey } from "../../lib/company-nav";
+
+export { switchDeskModel } from "./desk-model";

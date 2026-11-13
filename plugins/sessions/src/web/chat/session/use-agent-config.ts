@@ -5,11 +5,11 @@
 import { useCallback, useEffect, useState } from "react";
 import type { SkillMetadataItem } from "@prismshadow/penguin-server/api";
 import { toastError, toastSuccess } from "@prismshadow/penguin-ui";
-import * as api from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { apiErrorText } from "@prismshadow/penguin-web/internal";
-import { configuredCompactionLimit } from "@prismshadow/penguin-web/internal";
-import { humanizeTokens } from "@prismshadow/penguin-web/internal";
+import * as api from "../../../api/endpoints";
+import { S } from "../../../lib/strings";
+import { apiErrorText } from "../../../lib/api-error";
+import { configuredCompactionLimit } from "../../../lib/context";
+import { humanizeTokens } from "../../../lib/format";
 
 /**
  * The machine the selected Session's Agent lives on (null: this server). A Session on a
@@ -33,7 +33,7 @@ export function useAgentConfig(
     if (!projectId || !selectedAgentId) return;
     let cancelled = false;
     api
-      .getAgentSkills(projectId, selectedAgentId)
+      .getAgentSkills(projectId, selectedAgentId, selectedAgentMachine)
       .then((res) => {
         if (!cancelled) setAgentSkills(res.skills);
       })

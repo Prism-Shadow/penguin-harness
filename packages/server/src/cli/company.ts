@@ -9,7 +9,15 @@
  * writes the summary as the node's description, then calls the bound register with that
  * node. A register never names its own path.
  */
-import { Bind, Component, Interface, Module, Provide } from "@prismshadow/penguin-core/kernel";
+import {
+  Bind,
+  Component,
+  Interface,
+  Module,
+  Provide,
+  bootModules,
+  moduleDefOf,
+} from "@prismshadow/penguin-core/kernel";
 import type {
   ClassCtx,
   IfaceTable,
@@ -17,15 +25,14 @@ import type {
   Resources,
   Slot,
 } from "@prismshadow/penguin-core/kernel";
-import { bootModules, moduleDefOf } from "@prismshadow/penguin-core/kernel";
 import type {
   CliCommandCode,
   CliCommandData,
   CliCommandProgram,
   CliCommandSummary,
-} from "@prismshadow/penguin-core/plugin";
+} from "@prismshadow/penguin-core/cli";
 import type { Command } from "commander";
-import { getMessages } from "./i18n.js";
+import type { Messages } from "./i18n.js";
 import table from "../ifaces.json" with { type: "json" };
 import { registerOrgCommand } from "./commands/org.js";
 
@@ -48,11 +55,11 @@ const node = (command: CliCommandProgram): Command => command as Command;
   },
 })
 export class OrgCommand {
-  @Bind("company.org") command!: CliCommandCode;
+  @Bind("company.org") command!: CliCommandCode<Messages>;
   setup() {
     this.command = {
       register: (command, ctx) => {
-        registerOrgCommand(node(command), getMessages(ctx.language));
+        registerOrgCommand(node(command), ctx.messages);
       },
     };
   }
@@ -63,7 +70,7 @@ export interface CompanyCommand {
   readonly id: string;
   readonly key: string;
   readonly summary: CliCommandSummary;
-  readonly code: CliCommandCode;
+  readonly code: CliCommandCode<Messages>;
 }
 
 /** The collector's face: the server's commands, in contribution order (the order help lists them in). */
@@ -74,7 +81,7 @@ export abstract class CompanyCommands {
 
 /** The slot `CompanyCommandsModule` owns: a command's key and summary, and the code half it binds. */
 export interface CompanyCommandsSlots {
-  commands: Slot<CliCommandData, CliCommandCode>;
+  commands: Slot<CliCommandData, CliCommandCode<Messages>>;
 }
 
 /** Owns the `commands` slot; its children are the server's commands. */
@@ -90,7 +97,7 @@ export class CompanyCommandsModule {
       id: c.id,
       key: c.data.key as string,
       summary: c.data.summary as unknown as CliCommandSummary,
-      code: c.code as CliCommandCode,
+      code: c.code as CliCommandCode<Messages>,
     }));
     this.companyCommands = { list: () => commands };
   }

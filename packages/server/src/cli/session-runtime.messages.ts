@@ -73,8 +73,8 @@ export interface SessionRuntimeText {
   /** 409 `model_unavailable`: the target is configured but cannot be constructed (e.g. no credential); `detail` is the server's message, verbatim (may be empty). */
   switchModelUnavailable(model: string, detail: string): string;
 
-  /** 409 `compaction_not_configured`: a switch always compacts first, and this Session has no compaction. */
-  switchModelNoCompaction(): string;
+  /** A switch that could not summarize handed the history over by its Trace path: the file the new model reads it from (absent for a Session that records no Trace). */
+  switchModelHandedOver(tracePath?: string): string;
 
   /** Dim line announcing one goal round (printed before the round runs). */
   goalRound(round: number): string;
@@ -119,8 +119,8 @@ export const sessionruntimeEn: SessionRuntimeText = {
   switchModelUnavailable: (model, detail) =>
     `[model switch] ${model} is configured but cannot be used${detail ? `: ${detail}` : ""}`,
 
-  switchModelNoCompaction: () =>
-    "[model switch] context compaction is not configured for this Session, and a model switch always compacts first",
+  switchModelHandedOver: (tracePath) =>
+    `[model switch] no summary: the new model reads the earlier history from its Trace file${tracePath ? ` ${tracePath}` : ""}`,
 
   goalRound: (round) => `[goal] round ${round}`,
 
@@ -164,8 +164,8 @@ export const sessionruntimeZh: SessionRuntimeText = {
   switchModelUnavailable: (model, detail) =>
     `[切换模型] ${model} 已配置但无法使用${detail ? `：${detail}` : ""}`,
 
-  switchModelNoCompaction: () =>
-    "[切换模型] 本 Session 未配置上下文压缩，而切换模型必须先压缩，因此无法切换",
+  switchModelHandedOver: (tracePath) =>
+    `[切换模型] 未生成摘要：新模型按需读取此前的 Trace 文件${tracePath ? ` ${tracePath}` : ""}`,
 
   goalRound: (round) => `[目标] 第 ${round} 轮`,
 

@@ -6,18 +6,12 @@
  * accent preset ids and font names stay English in both.
  *
  * `surfaces` names the app's surfaces the gallery frames (src/app/surfaces.ts) and `library`
- * the component library's topics (src/library/topics.ts), in both dictionaries; a test checks
- * each covers every id.
+ * the component library's topics (src/library/topics.ts), in both dictionaries. Every table keyed
+ * by an id `satisfies` a `Record` over that id, so the compiler checks each covers every id.
  */
-import type {
-  HookName,
-  StreamReveal,
-  TextVariant,
-  ThemeId,
-  ToneName,
-} from "@prismshadow/penguin-ui";
+import type { HookName, StreamReveal, TextVariant, ToneName } from "@prismshadow/penguin-ui";
 import type { TextSize } from "@prismshadow/penguin-ui/boot";
-import type { A2uiSpec } from "@prismshadow/penguin-core/a2ui";
+import type { A2uiSpec } from "@prismshadow/a2ui";
 import type { SurfaceGroupId, SurfaceId } from "./app/surfaces";
 import type { ChartToken } from "./library/chart-tokens";
 import type { TopicGroupId, TopicId } from "./library/topics";
@@ -26,6 +20,11 @@ import type { TopicGroupId, TopicId } from "./library/topics";
 export interface A2uiSample {
   lead: string;
   spec: A2uiSpec;
+  /**
+   * The message a reader sent to answer a choice or a form, as its fill button wrote it: the
+   * board shows the block once more, answered, reading its answers back from this text.
+   */
+  answer?: string;
 }
 
 /** What a surface page says: its title, one line on what the frame shows, and how the app reaches it. */
@@ -47,6 +46,10 @@ export const zh = {
       home: "主页",
       blog: "博客",
       download: "下载",
+      plugins: "插件",
+      benchmarks: "评估集",
+      leaderboards: "榜单",
+      amsp: "AMSP",
       docs: "文档",
       gallery: "画廊",
       github: "GitHub",
@@ -92,7 +95,7 @@ export const zh = {
     resources: "资源",
     measure: "度量",
     system: "系统",
-  } as Record<SurfaceGroupId, string>,
+  } satisfies Record<SurfaceGroupId, string>,
   surfaces: {
     chat: {
       title: "对话",
@@ -159,6 +162,12 @@ export const zh = {
       description: "智能体设置的定时任务标签页：周期、下次触发、绑定的会话与模型。",
       how: "智能体 › 智能体设置 › 定时任务标签页。",
     },
+    apps: {
+      title: "应用中心",
+      description:
+        "Project 的应用桌面：图标与名称组成的图块，各构建状态（可用、构建中、加载失败），收纳两个应用的分组，以及页头的「新建分组」。",
+      how: "侧栏 › 应用中心；页头「新建分组」打开命名并勾选应用的对话框；右键图块或空白处打开菜单，拖动图块排序或叠放成分组。",
+    },
     plugins: {
       title: "插件市场",
       description: "插件按分类列出，可换分组、可搜索；点卡片看详情。",
@@ -207,7 +216,7 @@ export const zh = {
       description: "登录页：装饰画布上的登录卡片。任意密码即可登录演示账户。",
       how: "未登录时的任意地址。",
     },
-  } as Record<SurfaceId, SurfaceCopy>,
+  } satisfies Record<SurfaceId, SurfaceCopy>,
   home: {
     eyebrow: "界面画廊",
     title: "Penguin UI",
@@ -228,11 +237,16 @@ export const zh = {
    */
   rail: {
     theme: "主题",
-    themeNames: { github: "朴素", modern: "白领", geek: "极客" } as Record<ThemeId, string>,
     accent: "强调色",
     accentTheme: "随主题",
     size: "字号",
-    sizeNames: { xs: "特小", s: "小", m: "中", l: "大", xl: "特大" } as Record<TextSize, string>,
+    sizeNames: {
+      xs: "特小",
+      s: "小",
+      m: "中",
+      l: "大",
+      xl: "特大",
+    } satisfies Record<TextSize, string>,
     sizeTitle: (name: string, px: number) => `${name} · 根字号 ${px}px`,
     fontLatin: "英文字体",
     fontCjk: "中文字体",
@@ -274,6 +288,23 @@ export const zh = {
     unset: "未定义",
   },
   foundations: {
+    /** The theme-pack table: each pack's manifest, built-in and imported on the demo's server. */
+    packs: {
+      intro:
+        "注册表里的每个内置主题包，以及演示服务端上管理员导入的主题包，各列出清单 pack.json：名称、基于什么、版本、目标主题 API、选择器用的色样与各字体角色的首选字体。",
+      name: "名称",
+      base: "基于",
+      version: "版本",
+      api: "主题 API",
+      swatches: "色样",
+      fonts: "字体",
+      isBase: "基准",
+      onFrost: "白领",
+      foundation: "基础层",
+      imported: "导入",
+      importedHint: "演示服务端上导入的主题包，读自 GET /api/themes",
+      fontRoles: { sans: "阅读", ui: "界面", cjk: "中文", mono: "等宽", display: "展示" },
+    },
     surfaces: "表面",
     inks: "文字",
     lines: "线条",
@@ -283,6 +314,7 @@ export const zh = {
     themeAccent: "主题",
     sampleSend: "发送",
     selectedRow: "选中",
+    sampleBubble: "我的消息",
     sampleLink: "打开文档",
     linkHover: "悬停",
     tones: "语义色调",
@@ -293,7 +325,7 @@ export const zh = {
       done: "已完成",
       neutral: "空闲",
       info: "同步中",
-    } as Record<ToneName, string>,
+    } satisfies Record<ToneName, string>,
     charts: "图表序列",
     tokenSeries: "Token 构成",
     code: "代码与差异",
@@ -314,14 +346,14 @@ export const zh = {
       secondary: "取消",
       input: "搜索会话",
       badge: "运行中",
-      menuTier: "z-[60] 菜单",
+      menuTier: "z-popover 菜单",
       menuItems: ["置顶", "重命名", "移动到…"] as readonly string[],
-      backdropTier: "z-50 对话框",
+      backdropTier: "z-modal 对话框",
       dialogTitle: "删除这个会话？",
       dialogBody: "对话记录与 Trace 文件会一并删除。",
       cancel: "取消",
       confirm: "删除",
-      toastTier: "z-[100] 通知",
+      toastTier: "z-toast 通知",
       toast: "已导出 Trace #001",
     },
     radius: "圆角",
@@ -393,11 +425,20 @@ export const zh = {
       "ui-notice": "提示条与弹出通知：按语气（信息、成功、警告、错误、中性）着色",
       "ui-chart": "统计图：网格、坐标轴、折线、面积、柱与数据点",
       "ui-widget": "回复里一眼看懂的读数块：天气、时钟、倒计时与指标",
+      "ui-edge":
+        "人按下、输入或写下的框的边：有底色或描边的按钮、输入框与选择框、复选框、单选框、开关、首页的选择器与本人的消息气泡",
+      "ui-start": "首页（新建对话）整体：品牌、三个计数、输入区与示例文件夹",
+      "ui-library": "模型库：按提供方分组的框与其中的模型卡片",
+      "ui-ledger": "单独列出的一组数字：用量汇总卡、公司指标块、Benchmark 卡片的分数",
+      "ui-empty": "空状态：插画、标题、说明与操作",
+      "ui-run": "对话工具栏里的运行指示：图标与「运行中」",
       "ui-scrim": "对话框、抽屉与面板背后的遮罩层",
       "ui-stream": "正在流式输出的文字（回答、思考、压缩摘要、工具输出）：各主题决定新文字如何出现",
       "ui-glyph":
         "按主题换画法的图标：朴素为线性画法，白领为线性画法衬淡色块（双色调），极客为像素画",
-    } as Record<HookName, string>,
+      "ui-avatar":
+        "按主题换画法的智能体缺省头像：同一只笑脸圆球企鹅，朴素为圆角方块，白领与卡通为圆形，极客为像素画",
+    } satisfies Record<HookName, string>,
     hookSamples: {
       menu: ["置顶", "重命名", "删除"] as readonly string[],
       group: "工作区",
@@ -450,7 +491,7 @@ export const zh = {
   /** The component library: its topics, and the words each board prints. */
   library: {
     title: "组件库",
-    groups: { components: "组件", foundations: "视觉基础" } as Record<TopicGroupId, string>,
+    groups: { components: "组件", foundations: "视觉基础" } satisfies Record<TopicGroupId, string>,
     topics: {
       buttons: {
         title: "按钮",
@@ -459,11 +500,12 @@ export const zh = {
       inputs: {
         title: "输入与表单",
         description:
-          "文本框、多行文本、密码框、搜索框、复选框与单选框，以及字段脚手架：标签、提示、说明与错误。",
+          "文本框、多行文本、密码框、数字与日期、搜索框、复选框与单选框，以及字段脚手架：标签、提示、说明与错误。",
       },
       pickers: {
         title: "选择器",
-        description: "下拉选择、分段控件、开关与开关行、色板、选项菜单、下拉菜单与菜单行。",
+        description:
+          "下拉选择、同档控件的尺寸、分段控件、滑块与选项组、开关与开关行、色板、选项菜单、下拉菜单、右键菜单与菜单行。",
       },
       toasts: {
         title: "提示弹窗",
@@ -487,7 +529,7 @@ export const zh = {
         description: "徽标与计数、状态点、运行状态图标、会话活动标记与更新点，以及统计卡与统计值。",
       },
       empty: { title: "空状态", description: "列表或详情为空时的占位文字，可带操作。" },
-      loading: { title: "加载", description: "转圈、骨架屏与进度条。" },
+      loading: { title: "加载", description: "转圈、骨架屏、进度条与传输进度。" },
       streaming: {
         title: "流式输出",
         description: "助手回答随流到达时怎样显现：朴素即时显示，白领按词淡入，极客逐字打出。",
@@ -497,7 +539,10 @@ export const zh = {
         description:
           "统计图的基础：所有图表共用的绘图原语、当前主题的图表令牌，以及建立在它们之上的每一种图表——环形图、环形仪表、图例、趋势与用量柱、请求与成功率、迷你折线、轨迹时间线。",
       },
-      avatars: { title: "头像", description: "用户头像与智能体头像的各个尺寸，以及头像组。" },
+      avatars: {
+        title: "头像",
+        description: "用户头像的各个尺寸；智能体头像在每套主题下的画法与整套颜色；头像组。",
+      },
       site: {
         title: "公开站点",
         description:
@@ -523,6 +568,25 @@ export const zh = {
         description:
           "机器管理页的组件：每种状态的状态胶囊、机器卡片与列表、详情工具栏与添加对话框。",
       },
+      retry: {
+        title: "重试",
+        description:
+          "机器重连的一行状态：正在尝试、等待下一次（倒计时、立即重试与放弃重试）、已失败、已放弃与不值得重试（重试），失败的说明接在句后；对话里模型请求的重试与失败行、失败详情对话框，以及加载失败的提示。",
+      },
+      report: {
+        title: "报告问题",
+        description:
+          "严重错误的「[报告问题]」入口：页面崩溃时的提示、带入口的错误提示条、带入口的加载失败提示，以及报告对话框。",
+      },
+      attachments: {
+        title: "附件",
+        description:
+          "对话里附加的图片与文件：输入框里待发送的、发出后消息里的、插话小块里的，以及窄屏、长文件名与加载失败。",
+      },
+      packs: {
+        title: "主题包",
+        description: "每个主题包的清单：名称、基于什么、版本、主题 API、色样与字体。",
+      },
       colour: {
         title: "颜色",
         description: "表面、文字、线条、强调色、语义色调、图表序列与代码色。",
@@ -534,7 +598,7 @@ export const zh = {
       motion: { title: "动效", description: "进出、显现、布局与时长缓动。" },
       icons: { title: "图标", description: "图标尺寸与 Web App 的图标表。" },
       hooks: { title: "样式钩子", description: "主题可以重绘的结构钩子，逐个示范。" },
-    } as Record<TopicId, { title: string; description: string }>,
+    } satisfies Record<TopicId, { title: string; description: string }>,
     buttons: {
       variants: "变体",
       primary: "保存",
@@ -609,10 +673,29 @@ export const zh = {
       radioReplace: "全部替换",
       radioReplaceHint: "删除导入中没有的内容。",
       radioInline: "单行排列",
+      number: "数字",
+      numberReplicas: "副本数",
+      numberPods: "个",
+      numberRetries: "重试次数",
+      numberTimeout: "超时",
+      numberSeconds: "秒",
+      numberBudget: "每日预算",
+      numberCurrency: "USD",
+      numberBudgetError: "需在 1–50 之间。",
+      stepUp: "增加",
+      stepDown: "减少",
+      dateTime: "日期与时间",
+      date: "开始日期",
+      time: "每日提醒时间",
+      dateTimeLocal: "下次运行",
     },
     pickers: {
       select: "下拉选择",
       selectLabel: "模型",
+      sizes: "控件尺寸",
+      sizeRow: (size: string) => `${size} 档：下拉选择、输入框与按钮同高`,
+      sizeSearch: "搜索插件",
+      sizeButton: "导入插件",
       options: ["DeepSeek V4.1 Flash", "Claude Sonnet 4.5", "GLM-5.3"] as readonly string[],
       segmented: "分段控件",
       segments: ["浅色", "深色", "跟随系统"] as readonly string[],
@@ -635,6 +718,12 @@ export const zh = {
         { value: "ask", trigger: "ask", label: "逐项审批", description: "每次写入前先询问。" },
       ] as readonly { value: string; trigger: string; label: string; description: string }[],
       dropdown: "下拉菜单",
+      contextMenu: "右键菜单",
+      contextMenuHint:
+        "右键、Shift+F10、ContextMenu 键或触屏长按都会打开；Esc 关闭并把焦点交还给目标。",
+      contextMenuTarget: "右键这里",
+      contextOpen: "打开",
+      contextFullScreen: "全屏打开",
       menu: "更多操作",
       menuPin: "置顶",
       menuRename: "重命名",
@@ -652,6 +741,38 @@ export const zh = {
       menuSortBy: "排序方式",
       menuRecent: "最近活跃",
       menuManual: "手动排序",
+      slider: "滑块",
+      sliderShare: "上下文占比",
+      sliderUnit: "%",
+      sliderTemperature: "温度",
+      sliderTemperatureHint: "越低越稳定，越高越发散。",
+      sliderTopP: "Top P",
+      sliderTopPHint: "由模型固定。",
+      choiceGroup: "选项组",
+      choiceMerge: "现在合并吗？",
+      mergeOptions: ["现在", "评审后", "暂不"] as readonly string[],
+      recommended: "推荐",
+      choiceFeatures: "启用的功能",
+      features: [
+        { value: "cdn", label: "CDN" },
+        { value: "waf", label: "WAF" },
+        { value: "backups", label: "备份" },
+        { value: "logs", label: "日志" },
+      ] as readonly { value: string; label: string }[],
+      choiceDatabase: "服务用哪个数据库？",
+      databases: [
+        { value: "pg", label: "PostgreSQL", description: "关系型，团队已在运行。" },
+        { value: "sqlite", label: "SQLite", description: "一个文件，放在服务旁边。" },
+        { value: "mongo", label: "MongoDB", description: "文档型，没有固定结构。" },
+      ] as readonly { value: string; label: string; description: string }[],
+      other: "其他…",
+      choiceRegions: "部署到哪些区域？",
+      regions: [
+        { value: "eu-west", label: "eu-west", description: "爱尔兰" },
+        { value: "us-east", label: "us-east", description: "弗吉尼亚" },
+        { value: "ap-east", label: "ap-east", description: "香港" },
+      ] as readonly { value: string; label: string; description: string }[],
+      choiceAnswered: "已回答：现在合并吗？",
     },
     toasts: {
       fire: "触发一条提示",
@@ -831,6 +952,23 @@ export const zh = {
       progressLabel: "下载进度",
       progressOver: "超出上限",
       progressIndeterminate: "不定进度",
+      transfer: "传输进度",
+      transferHint: "历史从机器传来：替代对话的一行、对话顶部的一行、展开的输出下的一行",
+      transferPane: "对话位置，过了一秒",
+      transferPaneWaiting: "对话位置，等待机器时",
+      transferUncounted: "尚未计数",
+      transferTop: "对话顶部",
+      transferTopWaiting: "对话顶部，等待机器时",
+      transferSlowCaption: "机器已连接、一分钟没有新数据时（不重试，不倒计时）",
+      transferSlow: (alias: string) => `${alias} 已连接，但一分钟内没有传来新数据，仍在等待`,
+      transferBody: "展开的输出下",
+      transferWindow: (alias: string) => `正在从 ${alias} 加载最近的对话`,
+      transferFill: "更早的历史正在同步",
+      transferOlder: "正在加载更早的对话…",
+      transferBodyLabel: "正在加载完整内容",
+      transferTrying: (n: number) => `机器没有回应，正在重新请求（第 ${n} 次）`,
+      transferRetryIn: (s: number, n: number) => `机器没有回应，${s} 秒后重新请求（第 ${n} 次）`,
+      transferRetryNow: "立即重试",
     },
     streaming: {
       reply: "助手回答",
@@ -839,9 +977,9 @@ export const zh = {
       received: "已全部到达",
       modes: {
         instant: "即时：文字一到就显示，不加动效",
-        fade: "淡入：按词显现，最新的一行半从一层轻纱里浮现",
+        fade: "淡入：按词显现，每段新到的文字各自淡入，最新的一行半从一层轻纱里浮现",
         typewriter: "打字机：逐字打出，末尾跟着一个实心块状光标",
-      } as Record<StreamReveal, string>,
+      } satisfies Record<StreamReveal, string>,
       unset: "按即时处理",
       rate: (perSecond: number) => `每秒约 ${Math.round(perSecond)} 字`,
       reduced: "已开启减少动态效果，回答到达即显示",
@@ -906,7 +1044,7 @@ export const zh = {
         "--ui-chart-point-radius": "数据点半径",
         "--ui-chart-curve": "连线方式（linear / smooth / step）",
         "--ui-chart-area-opacity": "面积填充不透明度（0–1）",
-      } as Record<ChartToken, string>,
+      } satisfies Record<ChartToken, string>,
       donut: "Token 环形图",
       donutHint: "缓存读取、缓存写入与输出的构成，环的余量随接近上限变色。",
       donutLabels: {
@@ -942,10 +1080,71 @@ export const zh = {
       timeline: "轨迹时间线",
       timelineHint:
         "一次 Task 的模型分段与工具调用：思考、回复、工具调用、等待审批与执行，各占一道。",
+      basic: {
+        part: "基础统计图",
+        partHint:
+          "由数据画出的基础图表，坐标轴带单位，宽度与文案由调用方传入。A2UI 的图表块直接画其中一种，系统资源、天气等组合组件也建立在它们之上。",
+        bar: "柱状图 · 分组",
+        barHint: "每个类别一组柱，每个系列一根，各取一个色槽；悬停某一列，气泡列出各系列的数值。",
+        stacked: "柱状图 · 堆叠",
+        stackedHint: "同一类别的各系列叠成一根柱，柱顶即合计；指向图例中的一项，其余系列淡出。",
+        histogram: "直方图",
+        histogramHint: "相邻分箱的柱占满各自的列，只留一像素的缝。",
+        hbar: "横向柱状图",
+        hbarHint:
+          "共用一条刻度的行：按数值从零画起（磁盘占用，超过阈值换成提醒或危险色）、按区间画（一周每天的最低到最高气温），或把几个系列首尾相接叠成一行（各区域的流量；指向其中一段，气泡给出它的数值）。",
+        line: "折线图",
+        lineHint: "两个系列，其中一个缺了一个读数：线在缺口处断开，悬停时气泡里记为“—”。",
+        area: "面积图 · 堆叠",
+        areaHint: "各系列叠成色带，每条色带填到下面那一条为止。",
+        bare: "折线图 · 无框",
+        bareHint:
+          "没有网格与数值轴：读数写在点的上方，按读数自身的范围缩放，首次出现时从左到右描出。",
+        days: ["周一", "周二", "周三", "周四", "周五", "周六", "周日"] as readonly string[],
+        weeks: ["第 38 周", "第 39 周", "第 40 周", "第 41 周", "第 42 周"] as readonly string[],
+        minutes: (v: number) => `${v} 分钟`,
+        latency: "延迟",
+        latencyLabel: "一周每天的 p50 与 p95 延迟",
+        buildTime: "构建时长",
+        buildLabel: "每周各平台的构建时长",
+        responseTime: "响应时间（毫秒）",
+        requests: "请求数",
+        histogramLabel: "响应时间分布",
+        diskLabel: "磁盘占用",
+        temperatureLabel: "未来五天的气温",
+        read: "读取",
+        write: "写入",
+        trafficLabel: "各区域的读写流量",
+        hour: "时间",
+        serviceLabel: "两个服务每小时的 p95 延迟",
+        memory: "内存",
+        memoryLabel: "各进程的内存占用",
+        forecastLabel: "未来十二小时的气温",
+        scatter: "散点图",
+        scatterHint:
+          "两个系列的数据点画在两条数值轴上，每条轴按数据自身的范围取整，不必从零起，坐标轴带单位；指向图例中的一项，其余系列淡出。",
+        pie: "饼图与环形图",
+        pieHint:
+          "各切片从十二点钟方向顺时针排开，占比即其份额；列表图例写出数值与占比，指向一行时其余切片淡出。",
+        gauge: "仪表",
+        gaugeHint: "一个读数对照整体：正常时圆环取强调色，越过阈值后读数与圆环换成提醒色或危险色。",
+        payload: "响应大小（KB）",
+        scatterLabel: "两个服务的响应大小与延迟",
+        storage: ["图片", "视频", "文档", "其他"] as readonly string[],
+        storageLabel: "存储空间的构成",
+        gauges: ["CPU", "内存", "磁盘"] as readonly string[],
+      },
     },
     avatars: {
       user: "用户头像",
       agent: "智能体头像",
+      agentAside: "当前主题的画法：十二个智能体，颜色各一",
+      variants: "各主题的画法",
+      variantsAside: "同一只笑脸圆球企鹅，每套主题一种画法；颜色只随智能体",
+      sizeCaption: (px: number) => `${px}px`,
+      picture: "智能体自己的图片",
+      pictureAside: "上传的图片保持智能体的圆角方块；读不出来时画缺省头像",
+      pictureBroken: "图片读不出来",
       stack: "头像组",
       stackShown: (shown: number, total: number) => `共 ${total} 个，显示 ${shown} 个`,
       userNames: ["admin", "演示管理员"] as readonly string[],
@@ -964,7 +1163,7 @@ export const zh = {
         { title: "资源", links: ["GitHub 仓库", "文档", "画廊"] },
       ] as readonly { title: string; links: readonly string[] }[],
       lineLinks: ["产品主页", "GitHub 仓库", "Apache-2.0 License"] as readonly string[],
-      copyright: "© 2026 Prism Shadow · 基于 Apache-2.0 协议开源",
+      copyright: "© 2026 Prism Shadow，基于 Apache-2.0 协议开源",
       code: "代码与复制",
       codeHint:
         "命令卡片带复制按钮；写入剪贴板后图标换成对勾，按钮文字不变，读屏软件播报「已复制」。",
@@ -984,7 +1183,7 @@ export const zh = {
       articleHint:
         "博客文章与文档页共用的排版。标题带锚点，围栏代码块高亮，标签组与提示框是文档的 Markdown 扩展；本页右侧是它的目录。",
       articleBody:
-        '## 安装\n\n在终端运行一行命令即可安装：\n\n```bash\ncurl -fsSL https://penguin.ooo/install.sh | sh\n```\n\n### 按平台\n\n```bash tab="Linux / macOS"\ncurl -fsSL https://penguin.ooo/install.sh | sh\n```\n\n```powershell tab="Windows"\nirm https://penguin.ooo/install.ps1 | iex\n```\n\n> [!INFO]- 首次启动被系统拦下\n>\n> 在系统设置里允许它运行即可。\n\n## 下一步\n\n- 运行 `penguin web` 打开 Web App\n- 回到[安装](#安装)\n\n| 命令 | 作用 |\n| --- | --- |\n| `penguin` | 在终端里对话 |\n| `penguin web` | 启动 Web App |',
+        '## 安装\n\n在终端运行一行命令即可安装：\n\n```bash\ncurl -fsSL https://penguin.ooo/install.sh | sh\n```\n\n### 按平台\n\n```bash tab="Linux / macOS"\ncurl -fsSL https://penguin.ooo/install.sh | sh\n```\n\n```powershell tab="Windows"\nirm https://penguin.ooo/install.ps1 | iex\n```\n\n> [!INFO]- 首次启动被系统拦下\n>\n> 在系统设置里允许它运行即可。\n\n## 下一步\n\n- 运行 `penguin web` 打开 Web App\n- 回到[安装](#安装)\n\n| 命令 | 作用 |\n| --- | --- |\n| `penguin` | 在终端里对话 |\n| `penguin web` | 启动 Web App |\n\n## API\n\n| 方法 | 路径 | 说明 |\n| --- | --- | --- |\n| POST | `/api/auth/login` | 登录：`{userId, password}` → `{user}` |\n| GET | `/api/auth/claim?token=…` | 兑换登录链接：设置 Cookie 并重定向到 `/` |\n| PUT | `/api/me/prefs` | 写入 UI 偏好（浅合并）；拒绝 `browserBackend`（`400`），它由内置浏览器自己的接口选择 |\n| GET | `/api/me/archived-sessions` | 一个分组中的已归档 Session：`?projectId=&workspace=&limit=&before=&q=&source=` → `{sessions, hasMore}` |',
       toc: "本页目录",
       sidebar: "文档侧栏",
       sidebarHint: "分节列出页面，子页面缩进在父页面下，当前页以品牌色标出；顶部是搜索入口。",
@@ -1088,7 +1287,7 @@ export const zh = {
         eyebrow: "分组标签",
         mono: "sess_7f3a · ~/work/penguin",
         label: "字段标签",
-      } as Record<TextVariant, string>,
+      } satisfies Record<TextVariant, string>,
       inline: { before: "先运行 ", code: "pnpm install", after: " 安装依赖。" },
       prose: "Markdown 正文",
       proseSample:
@@ -1109,6 +1308,12 @@ export const zh = {
         "- 类型检查与测试全部通过：`pnpm typecheck && pnpm test`",
         "- `changelog/unreleased/` 里的条目中英成对",
         "- 没有待合并的破坏性改动",
+        "",
+        "| 检查 | 命令 | 用时 |",
+        "| --- | --- | --- |",
+        "| 类型 | `pnpm typecheck` | 40 s |",
+        "| 测试 | `pnpm test` | 6 min |",
+        "| 格式 | `pnpm format:check` | 25 s |",
         "",
         "### 版本号",
         "",
@@ -1160,6 +1365,15 @@ export const zh = {
       ].join("\n"),
       compact: "紧凑：频道消息",
       compactSample: "已合并 **#897**，`feat/ui-w2` 可以删了。",
+      tables: "表格",
+      tablesHint:
+        "Markdown 表格占满正文列，放不下时在自己的盒内横向滚动。数字列右对齐，短格与行内代码不换行，长格换行；偶数行带斑马纹，指针所在行高亮。",
+      tableWide: "宽表：占满正文列，放不下时横向滚动",
+      tableWideSample:
+        "| 接口 | 路径 | 状态 | 请求数 | 错误率 | 费用 | 说明 | 更新于 |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n| 登录 | `/api/auth/login` | 正常 | 12,480 | 0.3% | $0.42 | 同一地址一分钟内失败五次后限流，十分钟后自动解除 | 2026-10-18 |\n| 会话事件流 | `/api/projects/:projectId/sessions/:sessionId/events` | 正常 | 3,912 | 0.1% | $1.86 | 推送会话事件直到会话结束；断线重连后从最后一个事件 id 续传 | 2026-10-17 |\n| 导入快照 | `/api/projects/:projectId/import` | 降级 | 48 | 6.2% | — | 超过 200 MB 的归档会超时，上传正在改为分块 | 2026-10-16 |\n| 模型余额 | `/api/models/balance` | 正常 | 905 | 0% | $0.03 | 结果缓存一分钟 | 2026-10-12 |",
+      tableShort: "短表：键与值",
+      tableShortSample:
+        "| 设置 | 取值 |\n| --- | --- |\n| 模型 | `gpt-5.6-luna` |\n| 审批 | 写文件前询问 |\n| 沙箱 | 仅限工作区 |\n| 上下文窗口 | 400k Token |",
       code: "代码",
       surface: "代码面：行号，无外框",
       diff: "差异",
@@ -1170,7 +1384,7 @@ export const zh = {
       patchLabel: "src/limits.ts 的改动",
       a2ui: "A2UI 组件",
       a2uiHint:
-        "模型写进回复的组件：天气、时钟、倒计时和指标小组件，以及选择、表单、步骤、提示框和 Mermaid 图。小组件是模型给出的快照，只有时钟和倒计时会走动；在这里点选或提交，要填入输入框的文字会以提示消息显示。",
+        "模型写进回复的组件：天气、时钟、倒计时、指标和系统资源小组件，从数据画出的统计图，以及选择、表单、步骤、提示框和 Mermaid 图。小组件是模型给出的快照，只有时钟和倒计时会走动；在这里点选或提交，要填入输入框的文字会以提示消息显示。",
       a2uiReply: [
         {
           lead: "北京现在的天气：",
@@ -1229,34 +1443,11 @@ export const zh = {
           },
         },
         {
-          lead: "刚读到的服务状态：",
+          lead: "刚读到的 0.3 版本发布进展：",
           spec: {
             type: "metrics",
-            title: "服务状态",
+            title: "0.3 版本发布",
             items: [
-              {
-                label: "CPU",
-                value: 37,
-                max: 100,
-                unit: "%",
-                gauge: "ring",
-                warn: 80,
-                danger: 95,
-                history: [22, 31, 28, 45, 52, 41, 37],
-              },
-              {
-                label: "内存",
-                kind: "used",
-                value: 15.3,
-                max: 16,
-                unit: "GB",
-                decimals: 1,
-                gauge: "bar",
-                warn: 13.6,
-                danger: 15.2,
-                delta: 0.4,
-                deltaLabel: "较昨天",
-              },
               {
                 label: "API 额度",
                 kind: "remaining",
@@ -1267,16 +1458,71 @@ export const zh = {
                 detail: "3 天后重置",
               },
               {
-                label: "本月预算",
+                label: "预算",
                 kind: "remaining",
                 value: 180,
                 max: 1000,
                 prefix: "¥",
-                warn: 300,
-                danger: 100,
+                warn: 200,
+                danger: 50,
+                delta: -60,
+                deltaLabel: "今天",
               },
-              { label: "上传", kind: "progress", value: 63, max: 100, unit: "%" },
+              {
+                label: "测试轮次",
+                kind: "progress",
+                value: 7,
+                max: 12,
+                unit: "轮",
+                history: [2, 3, 5, 7],
+              },
+              {
+                label: "p95 延迟",
+                value: 182,
+                unit: "ms",
+                warn: 250,
+                danger: 400,
+                delta: -14,
+                deltaLabel: "较昨天",
+              },
             ],
+            asOf: "2026-10-04T14:05+08:00",
+          },
+        },
+        {
+          lead: "这周接口的延迟：",
+          spec: {
+            type: "chart",
+            kind: "bar",
+            title: "接口延迟",
+            categories: ["周一", "周二", "周三", "周四", "周五"],
+            series: [
+              { label: "p50", values: [120, 135, 118, 142, 128] },
+              { label: "p95", values: [310, 360, 295, 420, 330] },
+            ],
+            yLabel: "延迟",
+            yUnit: "ms",
+          },
+        },
+        {
+          lead: "构建机现在的资源占用：",
+          spec: {
+            type: "resources",
+            host: "build-01",
+            cpu: { percent: 37, cores: 8, history: [22, 31, 28, 45, 52, 41, 37] },
+            memory: { used: 13.9, total: 16, history: [72, 75, 79, 82, 85, 86, 87] },
+            swap: { used: 0.4, total: 2 },
+            disks: [
+              { path: "/", used: 61, total: 100 },
+              { path: "/data", used: 431, total: 500 },
+            ],
+            network: {
+              unit: "KB/s",
+              rx: [120, 98, 140, 180, 160, 130, 150],
+              tx: [40, 35, 50, 62, 48, 44, 52],
+            },
+            load: { one: 1.2, five: 1, fifteen: 0.8, cores: 8 },
+            uptimeSec: 1071360,
             asOf: "2026-10-04T14:05+08:00",
           },
         },
@@ -1292,6 +1538,7 @@ export const zh = {
             ],
             allowOther: true,
           },
+          answer: "SQLite",
         },
         {
           lead: "改动已经通过全部检查。",
@@ -1317,6 +1564,7 @@ export const zh = {
               { label: "端到端测试", description: "大约十五分钟，需要浏览器" },
             ],
           },
+          answer: "类型检查、单元测试",
         },
         {
           lead: "部署信息一次填完：",
@@ -1324,6 +1572,15 @@ export const zh = {
             type: "form",
             title: "部署信息",
             fields: [
+              {
+                id: "service",
+                label: "服务名",
+                kind: "text",
+                placeholder: "billing-api",
+                pattern: "^[a-z][a-z0-9-]*$",
+                hint: "小写字母、数字和连字符",
+                required: true,
+              },
               {
                 id: "region",
                 label: "区域",
@@ -1335,7 +1592,7 @@ export const zh = {
                 id: "addons",
                 label: "附加功能",
                 kind: "multiple",
-                options: [{ label: "CDN" }, { label: "WAF" }],
+                options: [{ label: "CDN" }, { label: "WAF" }, { label: "备份" }],
               },
               {
                 id: "replicas",
@@ -1345,10 +1602,69 @@ export const zh = {
                 max: 10,
                 step: 1,
                 unit: "个",
+                default: 2,
               },
-              { id: "notes", label: "备注", kind: "text", placeholder: "其他要求" },
+              {
+                id: "scale",
+                label: "扩容阈值",
+                kind: "slider",
+                min: 50,
+                max: 90,
+                step: 5,
+                unit: "%",
+                default: 70,
+              },
+              {
+                id: "notes",
+                label: "备注",
+                kind: "textarea",
+                placeholder: "其他要求",
+                hint: "每行一条",
+              },
             ],
             submitLabel: "填入回答",
+          },
+          answer: [
+            "服务名：billing-api",
+            "区域：华北",
+            "附加功能：CDN、备份",
+            "副本数：3 个",
+            "扩容阈值：80%",
+            "备注：",
+            "  旧版本保留一天",
+            "  p95 超过 400 ms 时通知我",
+          ].join("\n"),
+        },
+        {
+          lead: "再定发布时间：",
+          spec: {
+            type: "form",
+            title: "发布窗口",
+            fields: [
+              {
+                id: "channel",
+                label: "发布渠道",
+                kind: "select",
+                options: [
+                  { label: "稳定版" },
+                  { label: "测试版" },
+                  { label: "每日构建" },
+                  { label: "金丝雀" },
+                  { label: "内部版" },
+                  { label: "热修复" },
+                ],
+              },
+              { id: "day", label: "发布日期", kind: "date", required: true },
+              { id: "start", label: "开始时间", kind: "time", default: "09:30" },
+              { id: "freeze", label: "代码冻结", kind: "datetime" },
+              {
+                id: "notify",
+                label: "通知值班工程师",
+                kind: "switch",
+                hint: "发布开始时发一条消息",
+                default: true,
+              },
+            ],
           },
         },
         {
@@ -1387,6 +1703,7 @@ export const zh = {
       a2uiDiagram:
         "flowchart LR\n  A[请求] --> B{命中缓存}\n  B -->|是| C[直接返回]\n  B -->|否| D[回源读取]\n  D --> C",
       a2uiInvalidLead: "无法显示的块给出原因和源码：",
+      a2uiAnswered: "已作答：只读，作答取自读者发出的消息",
     },
     layout: {
       page: "页面与页头",
@@ -1505,10 +1822,13 @@ export const zh = {
         queued: "排队中",
         working: "处理中",
         reconnecting: "重新连接中",
+        reconnectStopped: "重连已停止",
+        reconnectFailed: "重连失败",
         failed: "失败",
         signInRefused: "登录被拒",
         installedOnly: "已安装",
         behind: "有新版本",
+        restartNeeded: "需要重启",
         notConnected: "未连接",
         unreachable: "连不上",
         stopped: "已停止",
@@ -1519,8 +1839,11 @@ export const zh = {
         failed: "失败于「重启服务」：30 秒内端口 7364 没有响应。",
         unreachable: "ssh: connect to host 10.0.0.12 port 22: Connection timed out",
         working: "Downloading penguin-harness 0.2.16…",
-        reconnecting: "第 4 次尝试",
+        reconnecting: "第 3/5 次重连失败",
+        reconnectFailed: "lab-2 拒绝了连接：那个地址和端口上没有 ssh 服务。",
         behind: "有新版本 0.2.16",
+        restartNeeded:
+          "这台机器的版本和当前不一致，对话不会自动刷新。请点「重启服务」；还不行就点「重新安装」。",
       },
       cards: "机器卡片",
       cardsHint: "本服务端在首，其后每种状态一张；标题行至多两枚胶囊，版本在统计行。",
@@ -1537,11 +1860,9 @@ export const zh = {
         installing: "安装程序",
       },
       waits: {
-        reconnecting: "重新连接中…",
         stopped: "服务已停止",
         notConnected: "尚未连接",
         failed: "上次任务失败",
-        signInRefused: "那台机器拒绝了保存的密码——请在机器的 SSH 设置里重新填写。",
         notInstalled: "尚未安装",
         windows: "已安装，这台 Windows 机器需要手动启动服务",
       },
@@ -1555,6 +1876,7 @@ export const zh = {
         stop: "停止服务",
         restart: "重启服务",
         configure: "配置 SSH",
+        reinstall: "重新安装",
         uninstall: "卸载",
       },
       add: "添加机器",
@@ -1570,6 +1892,124 @@ export const zh = {
       submitCount: (count: number) => `添加 ${count} 台`,
       exhaustedCaption: "ssh 配置里已没有可添加的主机",
       noHosts: "ssh 配置里的主机都已在本页。",
+    },
+    retry: {
+      phases: "五个阶段",
+      phasesHint:
+        "卡片中段的一行：正在尝试（转圈与「放弃重试」）、等待下一次（沙漏，句中逐秒倒计时，「立即重试」与「放弃重试」）、已失败（危险色的叉与「重试」）、已放弃（暂停与「重试」）、不值得重试（危险色的叉与「重试」或不提供）。失败的说明接在句子后面，用淡色写出，过长时折成两行并可展开；只有标记带色；句子不加粗，尝试与等待时为正文色，停下后转为淡色。",
+      blocks: "正文字号",
+      blocksHint:
+        "详情弹窗的分节与加载失败的提示里：同样一行，正文字号，操作是同一行里的中括号文字。",
+      inCard: "在机器卡片中",
+      inCardHint:
+        "没有任务时占卡片中段；栏窄时两个操作一起换到句子下面；按下即置灰，下一次尝试开始才恢复。",
+      inChat: "在对话中",
+      inChatHint:
+        "模型请求重试时是对话里的一行文字，与「[已中断]」同一样式：中括号标签、第几次请求与倒计时、括号里的简短原因与 HTTP 状态码，再是同一行里的中括号文字操作。等待时有「立即重试」「放弃重试」，每个状态都有「详情」。重试用尽或在等待中被中断时为「[请求失败]」，作为最后一行带「重试」；无法重试的错误为「[错误]」。服务方原话不写在行里，在详情里。更早的对话加载失败时，对话顶部也是这样一行。",
+      report: "失败详情",
+      reportHint:
+        "「详情」打开的对话框：报告按发送时的样子显示（英文、等宽、只读），已去掉密钥一类的内容；「复制」复制成 Markdown，「到 GitHub 提交 issue」打开预填好的 bug 表单。",
+      loadFailed: "加载失败",
+      loadFailedHint:
+        "内容加载不出来时占据它的位置：标记、一句标题、其下淡色一行原因或接下来会怎样，自动重试时加上重试行，再是一个文字操作，原始报错收在「技术细节」里。不写红字，标记说明失败。",
+      historyFailed: "历史消息加载失败",
+      networkError: "网络错误，请检查连接",
+      awayHeadline: (alias: string) => `${alias} 当前连不上，正在重连`,
+      awayHint: "对话保存在那台机器上，连接恢复后会自动加载。",
+      openMachines: "去机器管理",
+      details: "技术细节",
+      transportError:
+        "The connection to QS7J4YVgSovi-Z2c did not answer: the session's SOCKS port did not answer: connect ECONNREFUSED 127.0.0.1:37747",
+      narrow: "窄屏",
+      narrowHint: "手机宽度下状态行在名称下方换行，操作不截断。",
+      trying: (n: number, m: number) => `正在尝试第 ${n}/${m} 次重连`,
+      waiting: (s: number, n: number, m: number) => `${s} 秒后尝试第 ${n}/${m} 次重连`,
+      failed: (n: number, m: number) => `第 ${n}/${m} 次重连失败`,
+      gaveUp: (m: number) => `${m} 次重连均失败`,
+      cancelled: "已放弃重试",
+      stoppedSsh: "重连失败，需先解决 ssh 问题",
+      stoppedPassword: "登录被拒，已停止重连",
+      retryNow: "立即重试",
+      stop: "放弃重试",
+      retry: "重试",
+      refused: (alias: string) => `${alias} 拒绝了连接：那个地址和端口上没有 ssh 服务。`,
+      hostKey:
+        "mini 的主机密钥和记录的不一致，ssh 拒绝连接。如果那台机器重装过，请用 ssh-keygen -R 删掉旧密钥，再连接一次。",
+      password: "那台机器拒绝了保存的密码——请在机器的 SSH 设置里重新填写。",
+      states: {
+        ready: "运行中",
+        reconnecting: "重新连接中",
+        reconnectStopped: "重连已停止",
+        reconnectFailed: "重连失败",
+      },
+      card: { checked: "4 分钟", use: "使用", settings: "设置", remove: "删除" },
+      chatWaiting: (s: number, n: number, m: number) => `${s} 秒后发起第 ${n}/${m} 次请求`,
+      chatSending: (n: number, m: number) => `正在发起第 ${n}/${m} 次请求`,
+      chatSent: (n: number, m: number) => `已发起第 ${n}/${m} 次请求`,
+      chatRetrying: (sentence: string, why: string) => `[重试中]：${sentence}（${why}）`,
+      chatRetried: (sentence: string, why: string) => `[已重试]：${sentence}（${why}）`,
+      chatFailed: (n: number, why: string) => `[请求失败]：${n} 次请求均失败（${why}）`,
+      chatFailedOnce: (why: string) => `[请求失败]：${why}`,
+      chatError: (why: string) => `[错误]：模型请求错误（${why}）`,
+      chatAborted: "[已中断]：重试等待中被中断",
+      chatWhy: "网络或服务暂时不可用，HTTP 503",
+      chatFatalWhy: "凭据被拒绝，HTTP 401",
+      chatEarlierFailed: "[加载失败]：未能加载更早的对话（网络错误，请检查连接）",
+      openDetails: "详情",
+      reportTitle: "请求失败详情",
+      reportLead:
+        "这类失败多数来自模型服务或网络。如果你认为问题出在 PenguinHarness，欢迎到 GitHub 提交 issue，帮助改进这个开源项目。",
+      reportCheck: "报告已去掉密钥一类的内容，发送前仍请检查有没有不想公开的信息。",
+      reportLabel: "失败报告",
+      copy: "复制",
+      fileIssue: "到 GitHub 提交 issue",
+    },
+    report: {
+      crash: "崩溃提示",
+      crashHint:
+        "某部分页面在显示时崩溃，原处不留空白，而是一行与「[已中断]」同一样式的提示，带「重新加载」与「报告问题」；报告里有错误、调用栈与组件栈，个人路径已去掉。",
+      toast: "错误提示条",
+      toastHint:
+        "只有严重错误（服务端未命名的 500、意料之外的异常）的提示条带「报告问题」，停留更久；可预期的错误（校验、权限、离线等）与原来一样。",
+      fireSerious: "严重错误",
+      fireExpected: "可预期的错误",
+      seriousText: "服务端内部错误",
+      expectedText: "没有权限访问该 Project",
+      loadFailed: "加载失败",
+      loadFailedHint: "加载失败的提示在失败是严重错误时，在「重试」旁边多一个「报告问题」。",
+      loadTitle: "历史消息加载失败",
+      retry: "重试",
+      dialog: "报告对话框",
+      dialogHint:
+        "报告按发送时的样子显示（英文、等宽、只读）：发生了什么、页面、错误与时间、版本、安装方式与操作系统，最后是调用栈；「复制」复制成 Markdown，「到 GitHub 提交 issue」打开预填好的 bug 表单。",
+      open: "打开报告",
+    },
+    attachments: {
+      composer: "输入框",
+      composerHint:
+        "待发送的图片与文件在输入框顶部排成一行：图片按原比例、等高，文件带类型图标、名称与大小；移除按钮常驻。",
+      sent: "发出的消息",
+      sentHint: "与输入框里同一套图块，排在正文气泡上方：图片一行、文件一行，只有一个时间页脚。",
+      steer: "插话",
+      steerHint: "插话小块里的图片与文件，与输入框同一尺寸。",
+      narrow: "窄屏",
+      narrowHint: "手机宽度下，图块换行，长文件名先截断，移除按钮始终可见。",
+      shapes: "比例与尺寸",
+      shapesHint:
+        "横图、竖图、方图、极小与超宽的图都保持原比例；超出边界或小于图块时完整放进图块，不拉伸、不裁切、不放大。",
+      failed: "加载失败",
+      failedHint: "加载不出来的图片保留方形图块，显示图片图标，悬停说明原因。",
+      reset: "恢复全部附件",
+      imageAlt: "用户上传的图片",
+      removeImage: "移除图片",
+      removeFile: "移除文件",
+      unavailable: "图片无法加载",
+      prompt: "这是昨天那次构建的截图和日志，帮我看看为什么失败了？",
+      steerText: "顺便看看这两个",
+      steerLabel: "插话",
+      time: "14:05",
+      copy: "复制消息",
+      placeholder: "输入消息…",
     },
   },
 };

@@ -746,7 +746,7 @@ describe("agent delete route", () => {
   // A name per attempt: the Project is the file's, so a retry must not meet its own Agent.
   let temps = 0;
 
-  it("owner deletes an Agent: 204, the directory and list entry disappear; default_agent 409; outsiders 404", async () => {
+  it("owner deletes an Agent: 202, the directory and list entry disappear; default_agent 409; outsiders 404", async () => {
     temps += 1;
     const created = (await (
       await owner.post(`/api/projects/${projectId}/agents`, {
@@ -762,7 +762,7 @@ describe("agent delete route", () => {
     expect(outsiderRes.status).toBe(404); // no access → don't leak existence
 
     const res = await owner.delete(`/api/projects/${projectId}/agents/${agentId}`);
-    expect(res.status).toBe(204);
+    expect(res.status).toBe(202);
     await expect(fs.access(dir)).rejects.toThrow();
     const list = (await (await owner.get(`/api/projects/${projectId}/agents`)).json()) as {
       agents: Array<{ agentId: string }>;

@@ -7,6 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createAgent } from "../src/agent.js";
+import { seedProject } from "./seeded-project.js";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -17,6 +18,8 @@ describe("AgentAssembly", () => {
   it("appends prompt sections under their headings, after the Agent's own prompt", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-assembly-"));
     roots.push(root);
+    // The Project a host would have seeded: core itself carries no models.
+    await seedProject(root);
     const agent = await createAgent({
       root,
       assembly: { promptSections: () => [{ title: "Host", text: "You run inside a test." }] },

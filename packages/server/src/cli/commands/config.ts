@@ -56,7 +56,7 @@ import { homedir } from "node:os";
 import { createInterface } from "node:readline";
 import type { Command } from "commander";
 import { Bind, Component } from "@prismshadow/penguin-core/kernel";
-import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/plugin";
+import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/cli";
 import {
   DEFAULT_AGENT_ID,
   DEFAULT_PROJECT_ID,
@@ -210,11 +210,11 @@ function confirmYes(prompt: string): Promise<boolean> {
   },
 })
 export class ConfigCommand {
-  @Bind("cli.config") command!: CliCommandCode;
+  @Bind("cli.config") command!: CliCommandCode<Messages>;
   setup() {
     this.command = {
       register: (command, ctx) => {
-        registerConfigCommand(node(command), getMessages(ctx.language));
+        registerConfigCommand(node(command), ctx.messages);
       },
     };
   }

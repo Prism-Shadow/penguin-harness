@@ -3,6 +3,10 @@
 package). Field names and shapes are unchanged; the host's table spreads this file in.
  */
 
+import { DEFAULT_CHAT_THINKING_LEVELS } from "@prismshadow/penguin-core";
+
+const LEVEL_CHOICES = DEFAULT_CHAT_THINKING_LEVELS.join("|");
+
 export interface ChatText {
   chat: {
     desc: string;
@@ -20,6 +24,9 @@ export interface ChatText {
 
   /** Acknowledgment printed when a line typed mid-run is queued as steering (echoes the text; delivered between turns). */
   steerQueued(text: string): string;
+
+  /** Acknowledgment when a message sent while the Session compacts is queued to start after it (echoes the text). */
+  messageQueued(text: string): string;
 
   /** Prompt shown when `/compact` has nothing to compact (session just started / two consecutive compactions). */
   compactNothing(): string;
@@ -77,6 +84,12 @@ export interface ChatText {
 
   /** One-line prompt shown after a successful resume, before rendering history. */
   resumedBanner(sessionId: string, messageCount: number): string;
+  /** Dim line after a resumed Session's history when it is still running: the chat follows the run before its first prompt, and says what typing, Ctrl-C and /exit do meanwhile. */
+  chatFollowingResumed(): string;
+  /** Dim line where a run joined under way had more records than the server still holds: how many are not shown. */
+  chatRunOmitted(count: number): string;
+  /** Dim line when the server cannot hand over a run under way (an older server or machine): upgrade it. */
+  chatServerTooOld(): string;
 
   /** Example resume command shown when the REPL exits (dim print; only when this session has a resumable record). */
   resumeHint(command: string): string;
@@ -101,6 +114,8 @@ export const chatEn: ChatText = {
 
   steerQueued: (text) => `» steering queued (delivered with the next turn): ${text}`,
 
+  messageQueued: (text) => `» queued (sent when the current run ends): ${text}`,
+
   compactNothing: () => "[compaction] nothing to compact yet",
 
   clearDone: () =>
@@ -118,7 +133,7 @@ export const chatEn: ChatText = {
   goalUsage: () => "Usage: /goal[:<budget>] <objective>  (e.g. /goal:500k fix all failing tests)",
 
   thinkingCurrent: (level) =>
-    `[thinking] level: ${level} (this Session's) — change with /thinking <low|medium|high|xhigh|max>`,
+    `[thinking] level: ${level} (this Session's) — change with /thinking <${LEVEL_CHOICES}>`,
 
   thinkingSet: (level) =>
     `[thinking] level pinned to ${level} for this Session, effective from the next request — changing it invalidates the model's cached context, so /compact first is recommended (the Agent config is unchanged)`,
@@ -148,6 +163,12 @@ export const chatEn: ChatText = {
 
   resumedBanner: (sessionId, messageCount) =>
     `[resumed] ${sessionId} · ${messageCount} message${messageCount === 1 ? "" : "s"} in the current context`,
+  chatFollowingResumed: () =>
+    "[running] This Session is still running; following it here. Type to steer it, press Ctrl-C to stop it, or /exit to leave it running.",
+  chatRunOmitted: (count) =>
+    `… ${count} earlier record${count === 1 ? "" : "s"} of this run not shown (penguin session log shows them all)`,
+  chatServerTooOld: () =>
+    "This server cannot hand over a run under way; upgrade it. Until then the chat shows the history and what streams from here on.",
 
   resumeHint: (command) => `To continue this conversation: ${command}`,
 };
@@ -170,6 +191,8 @@ export const chatZh: ChatText = {
 
   steerQueued: (text) => `» 插话已排队（随下一轮送达）：${text}`,
 
+  messageQueued: (text) => `» 已排队（当前运行结束后发出）：${text}`,
+
   compactNothing: () => "[压缩] 当前上下文为空，无需压缩",
 
   clearDone: () => "[清空] 下一条消息将开启全新 Session（原会话仍保留，可恢复）",
@@ -185,7 +208,7 @@ export const chatZh: ChatText = {
   goalUsage: () => "用法：/goal[:<预算>] <目标>（例如 /goal:500k 修复所有失败的测试）",
 
   thinkingCurrent: (level) =>
-    `[思考] 当前等级：${level}（本 Session）——用 /thinking <low|medium|high|xhigh|max> 修改`,
+    `[思考] 当前等级：${level}（本 Session）——用 /thinking <${LEVEL_CHOICES}> 修改`,
 
   thinkingSet: (level) =>
     `[思考] 本 Session 的等级已钉为 ${level}，下一轮请求起生效——更换思考等级会使模型缓存失效，建议先 /compact 压缩上下文（不改动 Agent 配置）`,
@@ -213,6 +236,12 @@ export const chatZh: ChatText = {
 
   resumedBanner: (sessionId, messageCount) =>
     `[已恢复] ${sessionId} · 当前上下文共 ${messageCount} 条消息`,
+  chatFollowingResumed: () =>
+    "[运行中] 该 Session 仍在运行，已在此接上：输入即插话，Ctrl-C 中断，/exit 离开（Task 继续运行）。",
+  chatRunOmitted: (count) =>
+    `… 此次运行更早的 ${count} 条记录未显示（penguin session log 可查看全部）`,
+  chatServerTooOld: () =>
+    "该服务端不支持接续正在进行的运行，请升级服务端；在此之前只显示历史与此后的实时输出。",
 
   resumeHint: (command) => `继续本次对话：${command}`,
 };

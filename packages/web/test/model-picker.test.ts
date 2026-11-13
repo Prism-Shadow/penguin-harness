@@ -16,7 +16,7 @@
  *   ⌘/Ctrl+digit to the browser.
  */
 import { describe, expect, it } from "vitest";
-import type { ModelCredentialRowLike } from "../src/features/models/model-grouping";
+import type { ModelCredentialRowLike } from "../src/lib/model-grouping";
 import {
   entryRow,
   groupShortcutIndex,

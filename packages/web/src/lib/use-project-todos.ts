@@ -95,7 +95,7 @@ function current(projectId: string, at: number): boolean {
 function fetchModels(projectId: string): void {
   if (modelsPromise.has(projectId)) return;
   const at = generation.get(projectId) ?? 0;
-  const promise = api.getModels(projectId).then((res) => {
+  const promise = api.getModels(projectId, null).then((res) => {
     if (!current(projectId, at)) return res;
     modelsCache.set(projectId, res);
     snapshotCache.delete(projectId);

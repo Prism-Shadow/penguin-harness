@@ -155,16 +155,26 @@ export interface LibraryUsage {
   usedBy: string[];
   /** Agents the server lists as behind on it that still carry some of it. */
   behind: string[];
+  /** Of `usedBy`, the Agents counted as last seen: on a machine that cannot be asked right now. */
+  lastSeen?: string[];
 }
+
+/** An Agent as the usage reads it; `lastSeen` marks one on a machine out of reach right now. */
+export type UsageAgent = Pick<AgentSummary, "agentId" | "pluginUpdates"> & { lastSeen?: boolean };
 
 /**
  * The Agents a plugin is on, in list order. Behind comes from the server's verdict, filtered to
  * the Agents this page's snapshot still shows a part on — the list is re-read after every install
  * action, but the snapshot moves first, so an Agent just uninstalled must not keep its update.
+ *
+ * Only what the snapshot knows counts: an Agent it holds nothing for (its server has not answered,
+ * or could not) is neither using the plugin nor not using it, and is simply not counted. An Agent
+ * on a machine out of reach counts with what that machine last answered, and is named in
+ * `lastSeen` so the status can say so.
  */
 export function libraryUsage(
   plugin: PluginParts,
-  agents: ReadonlyArray<Pick<AgentSummary, "agentId" | "pluginUpdates">>,
+  agents: ReadonlyArray<UsageAgent>,
   installed: InstalledMap,
 ): LibraryUsage {
   const behind = agents
@@ -174,13 +184,15 @@ export function libraryUsage(
         pluginPresent(plugin, installed.get(agent.agentId)),
     )
     .map((agent) => agent.agentId);
-  const usedBy = agents
-    .filter(
-      (agent) =>
-        behind.includes(agent.agentId) || pluginComplete(plugin, installed.get(agent.agentId)),
-    )
-    .map((agent) => agent.agentId);
-  return { usedBy, behind };
+  const using = agents.filter(
+    (agent) =>
+      behind.includes(agent.agentId) || pluginComplete(plugin, installed.get(agent.agentId)),
+  );
+  return {
+    usedBy: using.map((agent) => agent.agentId),
+    behind,
+    lastSeen: using.filter((agent) => agent.lastSeen === true).map((agent) => agent.agentId),
+  };
 }
 
 /** A server module's status, from its state on the machine in view. */

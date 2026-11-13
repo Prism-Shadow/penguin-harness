@@ -1,7 +1,7 @@
 /**
  * A page drawn by a server-contributed document: the `iframe` renderer of a page in
  * `WebModule.pages` (web-app/contributions.tsx). The page fills WebApp's content area and is
- * framed the way a workflow's tab is (plugins/workbenches/src/web/lib/workbench-theme.ts): same sandbox, the app's
+ * framed the way a workflow's tab is (lib/workbench-theme.ts): same sandbox, the app's
  * appearance copied in on load and on every change, and its keys forwarded so the app's
  * shortcuts still answer once the reader has clicked into it.
  */
@@ -11,11 +11,11 @@ import {
   PAGE_FRAME_SANDBOX,
   readDocumentTheme,
   themeWorkbenchFrame,
-} from "@prismshadow/penguin-web/internal";
+} from "../lib/workbench-theme";
 import { useTheme } from "../state/theme";
 
 export function FramePage({ src, title }: { src: string; title: string }) {
-  const { dark, themeId, accent, textSize, fontLatin, fontCjk } = useTheme();
+  const { dark, appliedTheme, accent, textSize, fontLatin, fontCjk } = useTheme();
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const applyTheme = useCallback(() => {
     themeWorkbenchFrame(frameRef.current, readDocumentTheme(document));
@@ -25,7 +25,7 @@ export function FramePage({ src, title }: { src: string; title: string }) {
   useEffect(() => {
     const id = requestAnimationFrame(applyTheme);
     return () => cancelAnimationFrame(id);
-  }, [applyTheme, dark, themeId, accent, textSize, fontLatin, fontCjk]);
+  }, [applyTheme, dark, appliedTheme, accent, textSize, fontLatin, fontCjk]);
   const detachKeys = useRef<() => void>(() => undefined);
   useEffect(() => () => detachKeys.current(), []);
   const onLoad = useCallback(() => {

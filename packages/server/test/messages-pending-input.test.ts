@@ -13,6 +13,9 @@
  *   the dedup compares the inline copies, and only then is the Trace copy's image referenced.
  * - A run aborted mid-bootstrap keeps its holds, so a reload still sees the message; the next
  *   run appends its own input and drops the stale connect pair.
+ * - The Session stream carries a run's task_begin first, then the input's echo, then what the
+ *   run streams next: the order the Trace has them in. On a Session's first message whose run
+ *   streams its session_meta, that record leads: session_meta, task_begin, then the echo.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -21,8 +24,9 @@ import {
   mcpConnectEnd,
   requestBegin,
   sessionMeta,
+  taskBegin,
 } from "@prismshadow/penguin-core";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/penguin-core";
 import type { MessagesResponse } from "../src/api/types.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import { adoptSession, fakeSession, uniqueSessionId } from "./fixtures/session.js";
@@ -32,11 +36,11 @@ import type { TestApp } from "./helpers.js";
 const PROJECT = "pender-default_project";
 
 /**
- * Fake Session that yields the MCP connect begin (the real Session streams it live before
- * the engine exists), then parks until released — the bootstrap window: nothing has
- * reached the Trace yet (this fake writes no Trace at all). After the first gate it
- * issues the run's first request_begin and parks again, so the test can observe the
- * holds ending mid-run.
+ * Fake Session that opens its Task with task_begin and yields the MCP connect begin (the real
+ * Session streams both live before the engine exists), then parks until released — the
+ * bootstrap window: the input has not reached the Trace yet (this fake writes no Trace at all).
+ * After the first gate it issues the run's first request_begin and parks again, so the test
+ * can observe the holds ending mid-run.
  */
 function parkedBootstrapSession(
   sessionId: string,
@@ -45,6 +49,7 @@ function parkedBootstrapSession(
 ): RuntimeSession {
   return fakeSession(sessionId, {
     async *run() {
+      yield taskBegin();
       yield mcpConnectBegin(["fx"]);
       await bootstrapGate;
       yield requestBegin();
@@ -99,7 +104,7 @@ describe("GET /messages serves the running task's pending inputs", () => {
     // the streamed connect status — without the latter, a rebuilding page shows a silent
     // blank while a slow MCP server times out.
     const during = (await (await api.get(`/api/sessions/${SID}/messages`)).json()) as {
-      messages: OmniMessage[];
+      messages: AmspRecord[];
     };
     const texts = during.messages.map((m) => (m.payload as { text?: string }).text);
     expect(texts).toContain("hello mcp");
@@ -126,7 +131,7 @@ describe("GET /messages serves the running task's pending inputs", () => {
     // This fake never wrote a Trace, so with the holds gone the appended copies vanish —
     // proving the earlier appends came from the holds, not some other channel.
     const mid = (await (await api.get(`/api/sessions/${SID}/messages`)).json()) as {
-      messages: OmniMessage[];
+      messages: AmspRecord[];
     };
     expect(mid.messages.map((m) => (m.payload as { text?: string }).text)).not.toContain(
       "hello mcp",
@@ -135,7 +140,7 @@ describe("GET /messages serves the running task's pending inputs", () => {
     releaseRequest();
     await waitFor(() => t.deps.manager.statusOf(SID) === "idle");
     const after = (await (await api.get(`/api/sessions/${SID}/messages`)).json()) as {
-      messages: OmniMessage[];
+      messages: AmspRecord[];
     };
     expect(after.messages.map((m) => (m.payload as { text?: string }).text)).not.toContain(
       "hello mcp",
@@ -143,6 +148,75 @@ describe("GET /messages serves the running task's pending inputs", () => {
     expect(after.messages.map((m) => (m.payload as { type?: string }).type)).not.toContain(
       "mcp_connect_begin",
     );
+  });
+
+  it("streams the run's task_begin first, then the input's echo, then the connect status", async () => {
+    const seen: string[] = [];
+    const unsubscribe = t.deps.channels.get(SID).subscribe((evt) => {
+      if (evt.event !== undefined) return; // server events ride beside the records
+      const msg = JSON.parse(evt.data) as AmspRecord;
+      const p = msg.payload as { type?: string; text?: string };
+      seen.push(p.type === "text" ? `text:${p.text}` : (p.type ?? msg.type));
+    });
+    try {
+      const res = await api.post(`/api/sessions/${SID}/tasks`, {
+        input: [{ type: "text", text: "in order" }],
+      });
+      expect(res.status).toBe(202);
+      await waitFor(() => t.deps.manager.pendingBootstrap(SID).length === 1);
+      expect(seen).toEqual(["task_begin", "text:in order", "mcp_connect_begin"]);
+      releaseBootstrap();
+      releaseRequest();
+      await waitFor(() => t.deps.manager.statusOf(SID) === "idle");
+      // Echoed exactly once over the whole run.
+      expect(seen.filter((x) => x === "text:in order")).toHaveLength(1);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("on a first message whose run streams its session_meta: session_meta, task_begin, then the echo", async () => {
+    const FIRST = uniqueSessionId();
+    adoptSession(
+      t.deps,
+      fakeSession(FIRST, {
+        async *run() {
+          yield sessionMeta({
+            session_id: FIRST,
+            provider: "custom",
+            model_id: "m1",
+            model_context_window: 10_000,
+            system_prompt: "test",
+            agent_state: "/tmp/agent-state",
+            workspace: "/tmp/w",
+            source: "user",
+          });
+          yield taskBegin();
+          yield requestBegin();
+        },
+      }),
+      { projectId: PROJECT, approvalMode: "always-ask" },
+    );
+    const seen: string[] = [];
+    const unsubscribe = t.deps.channels.get(FIRST).subscribe((evt) => {
+      if (evt.event !== undefined) return;
+      const msg = JSON.parse(evt.data) as AmspRecord;
+      const p = msg.payload as { type?: string; text?: string };
+      seen.push(
+        msg.type === "session_meta"
+          ? "session_meta"
+          : p.type === "text"
+            ? `text:${p.text}`
+            : p.type!,
+      );
+    });
+    try {
+      await api.post(`/api/sessions/${FIRST}/tasks`, { input: [{ type: "text", text: "first" }] });
+      await waitFor(() => t.deps.manager.statusOf(FIRST) === "idle");
+      expect(seen).toEqual(["session_meta", "task_begin", "text:first", "request_begin"]);
+    } finally {
+      unsubscribe();
+    }
   });
 
   it("deduplicates a persisted pending input even when history adds a Trace position", async () => {
@@ -167,7 +241,7 @@ describe("GET /messages serves the running task's pending inputs", () => {
     ]);
 
     const during = (await (await api.get(`/api/sessions/${SID}/messages`)).json()) as {
-      messages: OmniMessage[];
+      messages: AmspRecord[];
     };
     expect(
       during.messages.filter(
@@ -262,7 +336,7 @@ describe("GET /messages serves the running task's pending inputs", () => {
     // Idle after the aborted bootstrap: nothing reached the Trace, so the held input and
     // the aborted connect pair are the only copy a reload can show — they must survive.
     const afterAbort = (await (await api.get(`/api/sessions/${SID2}/messages`)).json()) as {
-      messages: OmniMessage[];
+      messages: AmspRecord[];
     };
     expect(afterAbort.messages.map((m) => (m.payload as { text?: string }).text)).toContain(
       "lost?",
@@ -279,7 +353,7 @@ describe("GET /messages serves the running task's pending inputs", () => {
     expect(second.status).toBe(202);
     await waitFor(() => t.deps.manager.pendingBootstrap(SID2).length === 1);
     const during = (await (await api.get(`/api/sessions/${SID2}/messages`)).json()) as {
-      messages: OmniMessage[];
+      messages: AmspRecord[];
     };
     const texts = during.messages.map((m) => (m.payload as { text?: string }).text);
     expect(texts.filter((x) => x === "lost?")).toHaveLength(1);

@@ -15,15 +15,15 @@ import {
   ICON_SIZE,
   StatChip,
 } from "@prismshadow/penguin-ui";
-import { S } from "@prismshadow/penguin-web/internal";
+import { S } from "../../../lib/strings";
 import {
   sessionActivity,
   sessionActivityLabel,
   sessionBackgroundTasks,
-} from "@prismshadow/penguin-web/internal";
-import { toneInk } from "@prismshadow/penguin-web/internal";
-import { STAT_ICONS } from "@prismshadow/penguin-web/internal";
-import { Truncated } from "@prismshadow/penguin-web/internal";
+} from "../../../lib/session-activity";
+import { toneInk } from "../../../lib/tone";
+import { STAT_ICONS } from "../../../lib/stat-icons";
+import { Truncated } from "../../../components/ui/truncated";
 import { OutlineMenuButton } from "../conversation-outline";
 import type { OutlineEntry } from "../outline-model";
 import { DockToggles } from "../dock-toggles";

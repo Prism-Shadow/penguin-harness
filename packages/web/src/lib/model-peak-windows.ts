@@ -1,4 +1,4 @@
-import type { OffPeakDiscount } from "@prismshadow/penguin-core/model-catalog";
+import type { OffPeakDiscount } from "@prismshadow/penguin-server/model-catalog";
 export interface PeakWindows {
   /**
    * The ISO weekdays the windows fall on (1 = Monday … 7 = Sunday), as inclusive runs of

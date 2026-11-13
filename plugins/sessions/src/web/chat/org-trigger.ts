@@ -4,10 +4,10 @@
  * identifies it (the event, the chat message, the ticket and its change) and the budget line
  * the scheduler wrote. The banner (org-trigger-banner.tsx) only localizes these.
  */
-import type { OrgTriggerOrigin } from "@prismshadow/penguin-core/markers";
+import type { OrgTriggerOrigin } from "@prismshadow/amsp/markers";
 
-export { parseOrgTriggerMessage } from "@prismshadow/penguin-core/markers";
-export type { OrgTriggerKind, OrgTriggerOrigin } from "@prismshadow/penguin-core/markers";
+export { parseOrgTriggerMessage } from "@prismshadow/amsp/markers";
+export type { OrgTriggerKind, OrgTriggerOrigin } from "@prismshadow/amsp/markers";
 
 export interface OrgTriggerSummary {
   org: string;

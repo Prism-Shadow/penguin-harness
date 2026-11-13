@@ -7,6 +7,7 @@ import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import {
   CheckIcon,
+  CheckLineIcon,
   ChevronDown,
   CloseIcon,
   DownloadIcon,
@@ -29,6 +30,7 @@ describe("marks", () => {
   it("draw the rest on the 24x24 line grid, hidden from assistive technology", () => {
     const marks = [
       createElement(CheckIcon),
+      createElement(CheckLineIcon),
       createElement(PlusIcon),
       createElement(DownloadIcon),
       createElement(UploadIcon),
@@ -60,14 +62,5 @@ describe("marks", () => {
 
   it("let the plus take a lighter or heavier stroke", () => {
     expect(renderStatic(createElement(PlusIcon, { strokeWidth: 2 }))).toContain('stroke-width="2"');
-  });
-});
-
-describe("Chevron", () => {
-  it("points down when open and rotates only by its transform", () => {
-    expect(renderStatic(createElement(Chevron, { open: true }))).toContain("rotate-90");
-    const closed = renderStatic(createElement(Chevron, { open: false }));
-    expect(closed).not.toContain("rotate-90");
-    expect(closed).toContain("transition-transform");
   });
 });

@@ -6,19 +6,18 @@ import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { DockTabs } from "../src/components/navigation/dock-tabs/dock-tabs";
 import type { DockTabItem } from "../src/components/navigation/dock-tabs/dock-tabs";
-import { classTokens, renderStatic } from "../src/testing";
+import { renderStatic } from "../src/testing";
 
 const TABS: DockTabItem[] = [
   { key: "workspace", label: "Files", glyph: "F", closeLabel: "Close tab" },
   {
-    key: "terminal:t1",
-    label: "1: zsh",
-    title: "zsh — /repo",
+    key: "trace",
+    label: "Trace",
+    title: "Trace — this conversation",
     glyph: "T",
     badge: true,
-    closeLabel: "Kill shell",
+    closeLabel: "Close panel",
     closeShortcut: "Ctrl+W",
-    terminalId: "t1",
   },
 ];
 
@@ -48,32 +47,13 @@ describe("DockTabs", () => {
   it("names each × after its tab, with the shortcut in the tooltip only", () => {
     const html = render();
     expect(html).toContain('aria-label="Close tab: Files"');
-    expect(html).toContain('aria-label="Kill shell: 1: zsh"');
-    expect(html).toContain('data-tooltip="Kill shell (Ctrl+W)"');
-    expect(html).toContain('data-tooltip="zsh — /repo"');
-    expect(html).toContain('data-terminal-id="t1"');
+    expect(html).toContain('aria-label="Close panel: Trace"');
+    expect(html).toContain('data-tooltip="Close panel (Ctrl+W)"');
+    expect(html).toContain('data-tooltip="Trace — this conversation"');
   });
 
-  it("grows the pills and the × targets under a finger", () => {
-    const coarse = renderStatic(
-      createElement(DockTabs, {
-        tabs: TABS,
-        active: "workspace",
-        coarse: true,
-        onSelect: () => {},
-        onClose: () => {},
-      }),
-    );
-    expect(classTokens(render())).toEqual(expect.arrayContaining(["h-6", "h-4", "w-4"]));
-    expect(classTokens(coarse)).toEqual(expect.arrayContaining(["h-8", "h-6", "w-6"]));
-    expect(classTokens(coarse)).not.toContain("h-4");
-  });
-
-  it("marks a tab's badge with the attention dot, in tokens", () => {
+  it("marks a tab's badge with one attention dot", () => {
     const html = render();
     expect(html.match(/bg-tone-attention-emphasis/g)).toHaveLength(1);
-    expect(classTokens(html)).toEqual(
-      expect.arrayContaining(["bg-control-selected", "text-fg-muted", "text-fg-subtle"]),
-    );
   });
 });

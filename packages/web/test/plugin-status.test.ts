@@ -7,6 +7,9 @@
  * - An Agent the server lists as behind whose snapshot shows nothing of the plugin any more
  *   (just uninstalled here) is neither behind nor using it; a plugin that ships nothing is on
  *   no Agent.
+ * - An Agent the snapshot holds nothing for (its server has not answered) is not counted either
+ *   way; an Agent on a machine out of reach counts with what it last answered, and is named as
+ *   last seen — only when it uses the plugin.
  * - A server module is installed when this server runs it, and otherwise waits for a restart,
  *   failed to load, is incompatible (or has not reached the machine in view yet), or is not
  *   listed; the module's state decides for a plugin that also ships Skills, whose Agents are
@@ -101,6 +104,7 @@ describe("a plugin of Skills and hooks", () => {
     expect(libraryUsage(PAIR, [agent("a"), agent("b")], new Map([["a", whole]]))).toEqual({
       usedBy: ["a"],
       behind: [],
+      lastSeen: [],
     });
     expect(statusOf(new Map(), [agent("a")])).toBe("available");
   });
@@ -113,12 +117,33 @@ describe("a plugin of Skills and hooks", () => {
     expect(libraryUsage(PAIR, [agent("a", "pair")], partial)).toEqual({
       usedBy: ["a"],
       behind: ["a"],
+      lastSeen: [],
     });
   });
 
   it("drops an Agent the server lists as behind once its snapshot shows nothing of the plugin", () => {
     const usage = libraryUsage(PAIR, [agent("gone", "pair")], new Map([["gone", installs({})]]));
-    expect(usage).toEqual({ usedBy: [], behind: [] });
+    expect(usage).toEqual({ usedBy: [], behind: [], lastSeen: [] });
+  });
+
+  it("does not count an Agent whose installs are not known, and names a last-seen user", () => {
+    const whole = installs({ plan: "2026.10.04.1", run: "2026.10.09.1" }, { pair: "2026.10.04.1" });
+    const agents = [agent("here"), agent("unknown"), { ...agent("far"), lastSeen: true }];
+    expect(libraryUsage(PAIR, agents, new Map([["here", whole]]))).toEqual({
+      usedBy: ["here"],
+      behind: [],
+      lastSeen: [],
+    });
+    const farHasIt = new Map([
+      ["here", installs({})],
+      ["far", whole],
+    ]);
+    expect(libraryUsage(PAIR, agents, farHasIt)).toEqual({
+      usedBy: ["far"],
+      behind: [],
+      lastSeen: ["far"],
+    });
+    expect(pluginStatus({}, libraryUsage(PAIR, agents, farHasIt))).toBe("installed");
   });
 
   it("puts a plugin that ships nothing on no Agent", () => {
@@ -251,10 +276,12 @@ it("counts workbench ownership and reports updates for workbench-only plugins", 
   expect(libraryUsage(plugin, [agent("a")], new Map([["a", foreign]]))).toEqual({
     usedBy: [],
     behind: [],
+    lastSeen: [],
   });
   expect(libraryUsage(plugin, [agent("a", "support")], new Map([["a", own]]))).toEqual({
     usedBy: ["a"],
     behind: ["a"],
+    lastSeen: [],
   });
   expect(changedParts(plugin, own)).toEqual([
     { kind: "workbench", name: "desk", installed: "2026.10.14.1", library: "2026.10.14.2" },

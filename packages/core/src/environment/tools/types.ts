@@ -7,7 +7,7 @@
  * retrieval) only requires implementing this interface and registering it with the registry, with
  * no changes needed to Environment.
  */
-import type { OmniMessage, StopReason } from "../../omnimessage/index.js";
+import type { AmspRecord, ToolStatus } from "@prismshadow/amsp/records";
 import type { ApproveFn, ToolDefinitionConfig } from "../../interfaces/index.js";
 import type { ToolFs } from "./fs-port.js";
 
@@ -46,7 +46,8 @@ export interface ToolExecutionContext {
  * Docs: /docs/tools § "Execution contract".
  */
 export interface ToolResult {
-  stopReason?: StopReason;
+  /** What the result is (the `tool_call_output.status` Environment writes); `completed` if omitted. */
+  status?: ToolStatus;
   /**
    * Terminal marker (e.g. `[exit code: 1]`): appended by Environment during its unified
    * close-out, **outside** the maxOutputLength truncation, and streamed to the frontend as an
@@ -66,7 +67,7 @@ export interface ToolResult {
 
 /**
  * Builtin tool interface. `execute` receives the already-parsed tool argument object and the
- * execution context, streaming out OmniMessage as an async generator. Contract (a relaxed
+ * execution context, streaming out AmspRecord as an async generator. Contract (a relaxed
  * version — framing and close-out are handled uniformly by Environment):
  *
  * - **Own output**: yielding the **delta** of `partial_tool_call_output` is enough; `start`/`stop`
@@ -74,12 +75,12 @@ export interface ToolResult {
  *   **no need** to produce a complete `tool_call_output` either (the complete message,
  *   maxOutputLength forward truncation, and close-out are all derived by Environment from the
  *   deltas). If a tool does produce a complete `tool_call_output` anyway, Environment uses it as
- *   the basis for content and stop reason (tolerated for compatibility, not recommended).
+ *   the basis for content and status (tolerated for compatibility, not recommended).
  * - **Nested forwarding**: yielding any message **tagged with origin** is passed through by
  *   Environment unchanged (e.g. run_subagent forwarding all of a child session's messages).
- * - **Stop reason**: reported via the generator's return value (defaults to completed); a throw
- *   is collapsed by Environment into aborted/failed based on interruption/error, never
- *   propagating up as an exception.
+ * - **Status**: reported via the generator's return value (defaults to completed); a throw
+ *   is collapsed by Environment into an interruption or `fatal` based on interruption/error,
+ *   never propagating up as an exception.
  * Docs: /docs/interfaces § "The inner tool contract: BuiltinTool"; /docs/tools § "Execution contract".
  */
 export interface BuiltinTool {
@@ -98,5 +99,5 @@ export interface BuiltinTool {
   execute(
     args: Record<string, unknown>,
     ctx: ToolExecutionContext,
-  ): AsyncGenerator<OmniMessage, ToolResult | void>;
+  ): AsyncGenerator<AmspRecord, ToolResult | void>;
 }

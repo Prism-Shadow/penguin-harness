@@ -1,17 +1,17 @@
 /**
  * What PenguinHarness is made of, as a radiating diagram: PenguinHarness fans out into
- * OmniMessage / Penguin SDK / Agent State, and each concept drops into the card under it that
+ * AMSP / Penguin SDK / Agent State, and each concept drops into the card under it that
  * says what it is and links to its docs page. Arrow paths carry slow-moving dots (SMIL
  * animateMotion). The diagram is hidden on small screens, where the three cards stack.
  */
-import { useSyncExternalStore } from "react";
 import { S } from "../lib/strings";
 import { DOCS_URL } from "../lib/links";
 import { Section } from "../components/section";
 import { ArrowRightIcon } from "../components/icons";
+import { usePrefersReducedMotion } from "../lib/reduced-motion";
 
 /** Docs page per card, in the order of `S.pillars.items`. */
-const DOCS_PAGES = ["omni-message", "quickstart-sdk", "configuration"];
+const DOCS_PAGES = ["amsp-records", "quickstart-sdk", "configuration"];
 
 /**
  * Concept chip centers in viewBox units. The cards below sit in a grid of the same width with a
@@ -28,26 +28,6 @@ const FAN_PATHS = [
 ];
 /** Short connectors from each concept chip into its card below. */
 const DROP_PATHS = CHIP_X.map((x) => `M${x},164 L${x},198`);
-
-const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
-
-function subscribeReducedMotion(onChange: () => void): () => void {
-  const mq = window.matchMedia(REDUCED_MOTION_QUERY);
-  mq.addEventListener("change", onChange);
-  return () => mq.removeEventListener("change", onChange);
-}
-
-/**
- * The stylesheet's reduced-motion rule stops CSS animations only; SMIL keeps running, so the
- * diagram reads the preference itself (live, as it can change while the page is open).
- */
-function usePrefersReducedMotion(): boolean {
-  return useSyncExternalStore(
-    subscribeReducedMotion,
-    () => window.matchMedia(REDUCED_MOTION_QUERY).matches,
-    () => false,
-  );
-}
 
 function FlowDot({ path, dur, begin }: { path: string; dur: string; begin: string }) {
   // Same color as the arrow strokes so the dot reads as flow on the line, not an accent.
@@ -68,7 +48,8 @@ function FlowDot({ path, dur, begin }: { path: string; dur: string; begin: strin
 }
 
 function RadialDiagram() {
-  // Under reduced motion the dots are left out and the arrows alone carry the structure.
+  // The stylesheet's reduced-motion rule stops CSS animations only; SMIL keeps running, so under
+  // reduced motion the dots are left out and the arrows alone carry the structure.
   const still = usePrefersReducedMotion();
   return (
     <svg
@@ -133,7 +114,7 @@ function RadialDiagram() {
         x={374}
         y={38}
         textAnchor="middle"
-        className="fill-brand-800 text-[14px] font-semibold dark:fill-brand-200"
+        className="fill-brand-800 text-sm font-semibold dark:fill-brand-200"
       >
         {S.pillars.root}
       </text>
@@ -156,7 +137,7 @@ function RadialDiagram() {
               x={cx}
               y={148}
               textAnchor="middle"
-              className="fill-gray-900 text-[12.5px] font-semibold dark:fill-gray-100"
+              className="fill-gray-900 text-xs font-semibold dark:fill-gray-100"
             >
               {item.concept}
             </text>
@@ -177,7 +158,7 @@ export function Pillars() {
           {p.items.map((item, i) => (
             <article
               key={item.concept}
-              className="flex flex-col rounded-xl bg-gray-50 p-6 dark:bg-gray-900/60"
+              className="flex flex-col rounded-xl bg-gray-50 p-6 dark:bg-gray-900"
             >
               <h3 className="text-lg leading-snug font-semibold tracking-tight text-balance break-keep [overflow-wrap:break-word]">
                 {item.title}
@@ -187,10 +168,10 @@ export function Pillars() {
               </p>
               <a
                 href={`${DOCS_URL}${DOCS_PAGES[i] ?? ""}`}
-                className="group mt-auto inline-flex w-fit items-center gap-1.5 pt-4 text-sm font-medium text-brand-700 hover:text-brand-600 dark:text-brand-300 dark:hover:text-brand-200"
+                className="mt-auto inline-flex w-fit items-center gap-1.5 pt-4 text-sm font-medium text-brand-700 hover:text-brand-600 dark:text-brand-300 dark:hover:text-brand-200"
               >
                 {item.link}
-                <ArrowRightIcon className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                <ArrowRightIcon className="h-4 w-4" />
               </a>
             </article>
           ))}

@@ -19,7 +19,7 @@
  * - An export carries `benchmark_config.toml` as the file reads and the cases, and none of the
  *   copy's own state (scoreboard, `.jobs/`, dot-entries, symlinks, stray files); it imports back
  *   as the same package with no scores. A Benchmark without a version exports as `<id>.zip`.
- *   Exporting an unchanged Benchmark again, later, gives the same bytes.
+ *   Exporting an unchanged Benchmark again, later or in another time zone, gives the same bytes.
  * - A zip that is not a package is refused before anything is written: entries that climb out
  *   (zip-slip), absolute or backslashed paths, names holding a control character, names a disk
  *   that ignores letter case would take for one, a link, the copy's own state, anything else at
@@ -52,6 +52,7 @@ import type {
 } from "../src/api/types.js";
 import { apiClient, canCreateSymlink, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
+import { switchTimeZone } from "./helpers/time-zone.js";
 
 const SHA = "c12d65bc20beb5130ed57b3b7983c62d497b7d2f";
 const FOLDER = `https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/${SHA}/packages/report-writing-v1`;
@@ -72,6 +73,8 @@ function manifest(id: string, over: Record<string, unknown> = {}): Record<string
 
 /** The cases of the package every scenario starts from, by path inside the Benchmark. */
 const CASES: Record<string, string> = {
+  "CASE-001-contradictions/task_config.toml":
+    'id = "CASE-001-contradictions"\ntitle = "Two briefs"\ndescription = "Resolve conflicting briefs."\n',
   "CASE-001-contradictions/statement/README.md": "# Two briefs\n\nWrite the report.\n",
   "CASE-001-contradictions/statement/materials/brief-a.md": "Brief A says 3%.\n",
   "CASE-001-contradictions/rubric/README.md":
@@ -212,7 +215,13 @@ describe("benchmark packages", () => {
 
   describe("import", () => {
     it("a member imports a package: it lists with its cases, its own version and no evaluations, from a zip", async () => {
-      const files = packageFiles("report-writing-v1");
+      const metadata = {
+        version: "0.1.0",
+        title_zh: "报告写作",
+        last_update: "2026-10-30T12:00:00Z",
+        author: { name: "Prism-Shadow" },
+      };
+      const files = packageFiles("report-writing-v1", "report-writing-v1", metadata);
       // A dot-entry inside a case is no part of the package.
       files["report-writing-v1/CASE-001-contradictions/statement/.DS_Store"] = strToU8("x");
       const before = Date.now();
@@ -224,7 +233,7 @@ describe("benchmark packages", () => {
       expect(benchmark).toMatchObject({
         id: "report-writing-v1",
         title: "Report writing under conflicting sources",
-        version: "2026.10.08.3",
+        version: "0.1.0",
         status: "published",
         runs: 2,
         caseCount: 2,
@@ -237,6 +246,9 @@ describe("benchmark packages", () => {
       expect((await list()).map((b) => b.id)).toEqual(["report-writing-v1"]);
 
       const benchDir = path.join(dir, "report-writing-v1");
+      expect(
+        parseToml(await fs.readFile(path.join(benchDir, "benchmark_config.toml"), "utf8")),
+      ).toMatchObject(metadata);
       for (const [rel, text] of Object.entries(CASES)) {
         expect(await fs.readFile(path.join(benchDir, rel), "utf8"), rel).toBe(text);
       }
@@ -851,7 +863,7 @@ describe("benchmark packages", () => {
       expect((await outsider.get(`${base}/report-writing-v1/archive`)).status).toBe(404);
     });
 
-    it("exports an unchanged Benchmark as the same bytes, whenever it is exported", async () => {
+    it("exports an unchanged Benchmark as the same bytes, whenever and in whatever time zone it is exported", async () => {
       await seedBenchmark();
       const exportAt = async (when: number): Promise<Buffer> => {
         vi.setSystemTime(when);
@@ -859,14 +871,27 @@ describe("benchmark packages", () => {
         expect(res.status).toBe(200);
         return Buffer.from(await res.arrayBuffer());
       };
+      const exportIn = async (zone: string, when: number): Promise<Buffer> => {
+        const restoreZone = switchTimeZone(zone);
+        try {
+          return await exportAt(when);
+        } finally {
+          restoreZone();
+        }
+      };
 
       vi.useFakeTimers({ toFake: ["Date"] });
       try {
         const now = Date.now();
         const first = await exportAt(now);
         const anHourLater = await exportAt(now + 61 * 60 * 1000);
+        // Far west and far east of the zone the server started in (UTC-11, UTC+14).
+        const farWest = await exportIn("Pacific/Pago_Pago", now);
+        const farEast = await exportIn("Pacific/Kiritimati", now);
 
         expect(anHourLater.equals(first)).toBe(true);
+        expect(farWest.equals(first)).toBe(true);
+        expect(farEast.equals(first)).toBe(true);
       } finally {
         vi.useRealTimers();
       }

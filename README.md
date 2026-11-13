@@ -4,7 +4,7 @@
 
 <h1 align="center">PenguinHarness</h1>
 
-<p align="center"><strong>Unified and Stable RSI Framework</strong><br />Automatically improve <strong>model × agent harness</strong></p>
+<p align="center"><strong>Unified and Stable RSI Framework</strong><br />Fully automatic optimization: <strong>any model&nbsp;· any algorithm&nbsp;· any benchmark</strong></p>
 
 <p align="center">
   <a href="https://penguin.ooo/download">
@@ -32,7 +32,7 @@
 <p align="center">
   <a href="https://discord.gg/eFHKqqcU3D"><img src="https://img.shields.io/badge/Discord-join%20chat-5865F2?logo=discord&logoColor=white" alt="Discord" /></a>
   <a href="https://x.com/code_hiyouga"><img src="https://img.shields.io/badge/X-code%5Fhiyouga-000000?logo=x&logoColor=white" alt="X (Twitter)" /></a>
-  <a href="https://github.com/Prism-Shadow/penguin-harness-community/blob/main/wechat/group.jpg"><img src="https://img.shields.io/badge/WeChat-user%20group-07C160?logo=wechat&logoColor=white" alt="WeChat" /></a>
+  <a href="https://github.com/Prism-Shadow/penguin-harness-community/blob/main/assets/wechat/penguin.jpg"><img src="https://img.shields.io/badge/WeChat-user%20group-07C160?logo=wechat&logoColor=white" alt="WeChat" /></a>
 </p>
 
 <p align="center">
@@ -42,14 +42,14 @@
 <p align="center">English | <a href="README.zh.md">简体中文</a></p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-start-page-en.png" alt="The PenguinHarness start page: agents, RSI algorithms and Benchmarks, and the examples" width="900" />
+  <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/assets/blog-assets/penguinharness-0-2-14-start-page-en.png" alt="The PenguinHarness start page: agents, RSI algorithms and Benchmarks, and the examples" width="900" />
 </p>
 
 ## Why PenguinHarness
 
 PenguinHarness is an open-source framework for agent self-evolution (recursive self-improvement, RSI). The model stays fixed; the harness evolves: prompts, Skills, tools and hooks. It runs on your computer or server as a desktop app, a Web App, a CLI and an SDK.
 
-- **Every RSI algorithm in one framework.** Default, OPRO, APE, ACE and AWM ship as plugins and run on the same built-in Benchmarks, scoreboard and snapshots.
+- **Every RSI algorithm in one framework.** Default, OPRO, APE, ACE, AWM, SkillAdam, SkillOpt, OpenSkill and TRACE ship as plugins and run on the same built-in Benchmarks, scoreboard and snapshots.
 - **One sentence builds an agent app.** Describe what you need, and an agent writes the app, its page and its run instructions.
 - **Cheap to run.** A deliberately small toolset, tuned for open models: on our data-analysis suite, the best accuracy at 1/70 of Claude Code's cost.
 
@@ -64,11 +64,15 @@ Pick an algorithm, pick a Benchmark, and an agent improves another agent round b
 | `ape-rsi-toolkit` | [APE](https://arxiv.org/abs/2211.01910): candidate instructions induced from examples |
 | `ace-rsi-toolkit` | [ACE](https://arxiv.org/abs/2510.04618): lessons from Traces curated into a playbook |
 | `awm-rsi-toolkit` | [AWM](https://arxiv.org/abs/2409.07429): workflows induced from successful runs |
+| `skilladam-rsi-toolkit` | [SkillAdam](https://arxiv.org/abs/2609.08944): evolving issue tracker and adaptive Skill edit budget |
+| `skillopt-rsi-toolkit` | [SkillOpt](https://arxiv.org/abs/2605.23904): bounded Skill edits, score-based selection and cross-epoch reflection |
+| `openskill-rsi-toolkit` | [OpenSkill](https://arxiv.org/abs/2606.06741): external research and independent virtual tests before frozen-State evaluation |
+| `trace-rsi-toolkit` | [TRACE](https://arxiv.org/abs/2608.22793): skill-bank evolution from contrasting trajectories, with consistency measurement |
 
-Every new Project includes seven Benchmarks, run as Harbor tasks in Docker: PenguinHarness Benchmark Sec A to Sec E (from rag-bench-essential, DeepSWE, AutomationBench, Terminal-Bench-Science and Terminal-Bench) and GDPevo Train and Test. More are in [penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark).
+Every new Project includes seventeen Benchmarks, run as Harbor tasks in Docker: PenguinHarness Benchmark Sec A to Sec E (from rag-bench-essential, DeepSWE, AutomationBench, Terminal-Bench-Science and Terminal-Bench) and a Train/Test pair for each of GDPEVO Essential's six scenarios. More are in [penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark).
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-benchmark-detail-en.png" alt="A Benchmark's score chart: three agents climbing across versions" width="820" />
+  <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/assets/blog-assets/penguinharness-0-2-14-benchmark-detail-en.png" alt="A Benchmark's score chart: three agents climbing across versions" width="820" />
 </p>
 
 **Demo:** a decision agent is evaluated, revises its working method once, and is retested on the same model. Its score goes from 84 to 100, and the cost of every run is on screen.
@@ -92,24 +96,24 @@ https://github.com/user-attachments/assets/28c0ef95-1dfa-47be-bad0-7326ccdf4e7c
     <td width="50%" valign="top">
       <b>Browser automation</b><br />
       Agents drive your own Chrome through the PenguinHarness Browser extension, or the desktop app's built-in browser. They read pages as text and act through short scripts, so a step costs few tokens. <a href="https://penguin.ooo/blog/let-agents-use-the-browser">Tutorial</a><br /><br />
-      <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-browser-en.png" alt="An agent reads the PenguinHarness blog in the Browser panel" />
+      <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/assets/blog-assets/penguinharness-0-2-14-browser-en.png" alt="An agent reads the PenguinHarness blog in the Browser panel" />
     </td>
     <td width="50%" valign="top">
       <b>Workbenches</b><br />
       Every agent can have its own hot-reloaded workbench: ask for one and the agent writes the page and its server code. The workbench appears as a tab beside the agent's chat. <a href="https://penguin.ooo/blog/build-agent-apps-with-workflows">Tutorial</a><br /><br />
-      <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-workflow-en.png" alt="A legal agent's Contract desk page" />
+      <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/assets/blog-assets/penguinharness-0-2-14-workflow-en.png" alt="A legal agent's Contract desk page" />
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
       <b>Remote machines</b><br />
       Add a machine the server reaches over ssh. Conversations in a Workspace on that machine run on it, in the same window. <a href="https://penguin.ooo/blog/run-agents-on-remote-machines">Tutorial</a><br /><br />
-      <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-machines-en.png" alt="A conversation running on the machine devbox" />
+      <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/assets/blog-assets/penguinharness-0-2-14-machines-en.png" alt="A conversation running on the machine devbox" />
     </td>
     <td width="50%" valign="top">
       <b>Agent API</b><br />
       One unified API connects any agent to any external app: send input over HTTP and read the run back as a stream of AMSP events. <a href="https://penguin.ooo/blog/call-agents-with-the-agent-api">Tutorial</a><br /><br />
-      <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-agent-api-en.png" alt="An agent's Try it panel after one run" />
+      <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/assets/blog-assets/penguinharness-0-2-14-agent-api-en.png" alt="An agent's Try it panel after one run" />
     </td>
   </tr>
 </table>
@@ -133,7 +137,7 @@ Agents can also write and optimize their own Skills ([docs](https://penguin.ooo/
 
 | Category             | Plugins                                                                       |
 | -------------------- | ----------------------------------------------------------------------------- |
-| Agent Self-Evolution | `default-rsi-toolkit`, `opro-rsi-toolkit`, `ape-rsi-toolkit`, `ace-rsi-toolkit`, `awm-rsi-toolkit` |
+| Agent Self-Evolution | `default-rsi-toolkit`, `opro-rsi-toolkit`, `ape-rsi-toolkit`, `ace-rsi-toolkit`, `awm-rsi-toolkit`, `skilladam-rsi-toolkit`, `skillopt-rsi-toolkit`, `openskill-rsi-toolkit`, `trace-rsi-toolkit` |
 | Office Productivity  | `a2ui`, `data-analysis`, `use-firecrawl`, `browser-automation`, `use-bento-slides`, `humanizer`, `goal`, `continual-learning`, `agent-company`, `penguin-support` |
 | Software Development | `software-development`, `use-claude-code`                              |
 | AI App Development   | `agent-development`, `agent-evaluation`, `model-development`, `skill-porting` |
@@ -185,7 +189,7 @@ Then run `penguin web`. It serves the Web App at `http://127.0.0.1:7364` and pri
 ### Docker
 
 ```bash
-docker run -d --name penguin -p 127.0.0.1:7364:7364 -v penguin-data:/data hiyouga/penguinharness:0.2.16
+docker run -d --name penguin -p 127.0.0.1:7364:7364 -v penguin-data:/data hiyouga/penguinharness:0.2.18
 docker logs penguin       # the first-login link, openable as it stands on this machine
 ```
 
@@ -269,7 +273,7 @@ pnpm install && pnpm build   # build first: core's exports point at dist/
 pnpm dev                     # backend + web app together (prefixed logs, deps built once)
 ```
 
-Working on this repository with a coding agent: its development Skills are in `.agents/skills/` (`penguin-harness-dev`, `penguin-harness-frontend`, `penguin-harness-manual-test`). Claude Code loads them with no install, through the `.claude` → `.agents` symlink; for another agent, link or copy `.agents/skills/*` into the directory it reads Skills from.
+Working on this repository with a coding agent: its development Skills are in `.agents/skills/` (`penguin-harness-dev`, `penguin-harness-frontend`, `penguin-harness-manual-test`, `penguin-harness-writing`). Claude Code loads them with no install, through the `.claude` → `.agents` symlink; for another agent, link or copy `.agents/skills/*` into the directory it reads Skills from.
 
 See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for the full workspace guide: dev commands, quality gates, repo layout, and the changelog rule.
 

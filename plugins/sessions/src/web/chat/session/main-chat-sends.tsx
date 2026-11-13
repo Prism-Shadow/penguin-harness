@@ -1,12 +1,19 @@
 import { useCallback } from "react";
-import type { AgentSummary, ModelRefDto, TaskInputPart } from "@prismshadow/penguin-server/api";
+import type {
+  AgentSummary,
+  InterruptRequest,
+  ModelRefDto,
+  TaskInputPart,
+} from "@prismshadow/penguin-server/api";
 import { toastError } from "@prismshadow/penguin-ui";
-import * as api from "@prismshadow/penguin-web/internal";
-import { switchDeskModel } from "@penguinharness/plugin-company/web";
-import { ApiError } from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { apiErrorText } from "@prismshadow/penguin-web/internal";
-import { machineForSession } from "@prismshadow/penguin-web/internal";
+import { toastApiError } from "../../../lib/toast-api-error";
+import * as api from "../../../api/endpoints";
+import { switchDeskModel } from "../../company";
+import { ApiError } from "../../../api/client";
+import { S } from "../../../lib/strings";
+import { apiErrorText } from "../../../lib/api-error";
+import { machineForSession } from "../../../lib/session-machines";
+import { discardUnstartedSession } from "../unstarted-session";
 import { handoffMessage, modelSwitchMessage } from "../agent-handoff";
 import type { useMainChatLifecycle } from "./main-chat-lifecycle";
 
@@ -18,6 +25,7 @@ export function useMainChatSends(scope: ReturnType<typeof useMainChatLifecycle>)
     currentAgent,
     projectId,
     addSession,
+    removeSession,
     models,
     selected,
     discardSessionDraft,
@@ -136,12 +144,18 @@ export function useMainChatSends(scope: ReturnType<typeof useMainChatLifecycle>)
         navigate(`/chat/${res.sessionId}`);
         return true;
       } catch (e) {
-        if (createdId) void api.deleteSession(createdId).catch(() => undefined);
+        // Out of the list first, then off the server (unstarted-session.ts).
+        if (createdId) {
+          void discardUnstartedSession(createdId, {
+            remove: removeSession,
+            deleteSession: api.deleteSession,
+          });
+        }
         toastError(apiErrorText(e, { modelId: ref.modelId }));
         return false;
       }
     },
-    [projectId, selected, addSession, discardSessionDraft, navigate, company],
+    [projectId, selected, addSession, removeSession, discardSessionDraft, navigate, company],
   );
 
   // /agent handoff: doesn't use the current Session — creates a new chat for the picked agent
@@ -165,10 +179,14 @@ export function useMainChatSends(scope: ReturnType<typeof useMainChatLifecycle>)
       };
       let createdId: string | null = null;
       try {
-        const created = await api.createSession(projectId, target.agentId, {
-          approvalMode: selected.approvalMode,
-          sandbox: selected.sandbox,
-        });
+        // This server's Agent list is what the /agent picker offers, so the new chat is created
+        // here, whichever machine the conversation handed off from is on.
+        const created = await api.createSession(
+          projectId,
+          target.agentId,
+          { approvalMode: selected.approvalMode, sandbox: selected.sandbox },
+          null,
+        );
         createdId = created.session.sessionId;
         const res = await api.postTask(createdId, { input: [origin, ...input] });
         addSession(created.session);
@@ -177,7 +195,13 @@ export function useMainChatSends(scope: ReturnType<typeof useMainChatLifecycle>)
         navigate(`/chat/${res.sessionId}`);
         return true;
       } catch (e) {
-        if (createdId) void api.deleteSession(createdId).catch(() => undefined);
+        // Out of the list first, then off the server (unstarted-session.ts).
+        if (createdId) {
+          void discardUnstartedSession(createdId, {
+            remove: removeSession,
+            deleteSession: api.deleteSession,
+          });
+        }
         // The new chat uses the project's default model (createSession doesn't specify a model reference), so the error copy's model context follows suit.
         toastError(
           apiErrorText(e, models?.defaultModel ? { modelId: models.defaultModel.modelId } : {}),
@@ -185,7 +209,16 @@ export function useMainChatSends(scope: ReturnType<typeof useMainChatLifecycle>)
         return false;
       }
     },
-    [projectId, currentAgent, selected, addSession, discardSessionDraft, navigate, models],
+    [
+      projectId,
+      currentAgent,
+      selected,
+      addSession,
+      removeSession,
+      discardSessionDraft,
+      navigate,
+      models,
+    ],
   );
 
   const onStop = useCallback(async () => {
@@ -268,5 +301,65 @@ export function useMainChatSends(scope: ReturnType<typeof useMainChatLifecycle>)
     },
     [selected, discardSessionDraft],
   );
-  return { ...scope, onSend, onSwitchModel, onHandoff, onStop, onRetry, onQueueFollowUp, onSteer };
+  // The Interrupt link on a queued line: the server stops the run and sends that follow-up or
+  // steering message first. A 409 (already started, already delivered) is a toast in its own
+  // words — the recall's sentences talk about taking a message back; the line retires on its
+  // own via the next task_state.
+  const interruptWaiting = useCallback(
+    async (target: InterruptRequest): Promise<boolean> => {
+      if (!selected) return false;
+      try {
+        await api.postInterrupt(selected.sessionId, target);
+        return true;
+      } catch (e) {
+        toastError(
+          e instanceof ApiError && (e.code === "not_pending" || e.code === "follow_up_started")
+            ? S.chat.interruptAlreadySent
+            : apiErrorText(e),
+        );
+        return false;
+      }
+    },
+    [selected],
+  );
+  const onInterruptFollowUp = useCallback(
+    (followUpId: string) => interruptWaiting({ followUpId }),
+    [interruptWaiting],
+  );
+  const onInterruptSteering = useCallback(
+    (steerId: string) => interruptWaiting({ steerId }),
+    [interruptWaiting],
+  );
+  // Interrupt, then send: post the full input with `interrupt` — a busy session stops its run
+  // and sends this right after the turn it cut (the abort's carry-over goes out ahead of it,
+  // with the undelivered steering), an idle one just starts it. Same success contract as the
+  // queue: the input area clears the draft on true.
+  const onInterruptSend = useCallback(
+    async (input: TaskInputPart[]): Promise<boolean> => {
+      if (!selected) return false;
+      try {
+        const res = await api.postTask(selected.sessionId, { input, interrupt: true });
+        discardSessionDraft();
+        await syncHealedSessionId(selected.sessionId, res.sessionId);
+        return true;
+      } catch (e) {
+        toastApiError(e, { modelId: selected.modelId });
+        return false;
+      }
+    },
+    [selected, discardSessionDraft, syncHealedSessionId],
+  );
+  return {
+    ...scope,
+    onSend,
+    onSwitchModel,
+    onHandoff,
+    onStop,
+    onRetry,
+    onQueueFollowUp,
+    onSteer,
+    onInterruptSend,
+    onInterruptFollowUp,
+    onInterruptSteering,
+  };
 }

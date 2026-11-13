@@ -49,13 +49,16 @@ export const INSTALL_ID_KEY = "penguin.installId";
  *   have. Against a new root it is at best inert and at worst a lie, which is the bug.
  * - `browser` — a display or input preference of this browser. It names nothing on the
  *   server, so a new root can honour it exactly as the old one did, and wiping a data root
- *   is not a request to reset someone's theme.
+ *   is not a request to reset someone's theme. The Settings pages' preferences among them are a
+ *   cache of the account's copy (lib/account-sync): kept across a wipe, they are what this
+ *   browser hands the new root's account on its first sign-in there.
  */
 export type KeyScope = "install" | "browser";
 
 /**
  * One classification rule. `kind: "exact"` matches the key itself; `kind: "family"` matches
- * a key prefix that ends in `.` and covers every id-suffixed key under it.
+ * a key prefix that ends in `.` and covers every id-suffixed key under it. Both are in the
+ * `penguin.` namespace, and the types hold that, and a family's trailing `.`, for every rule.
  *
  * Plain prefix matching would be wrong twice over, which is why the distinction exists:
  * `penguin.sidebarCollapsed` (a preference) is a prefix of
@@ -63,9 +66,17 @@ export type KeyScope = "install" | "browser";
  * covers both `penguin.terminal.theme` (a preference) and `penguin.terminal.page.id`
  * (a terminal id).
  */
-export interface KeyRule {
-  kind: "exact" | "family";
-  key: string;
+export type KeyRule =
+  | (KeyRuleScope & { kind: "exact"; key: `${KeyNamespace}.${string}` })
+  | (KeyRuleScope & { kind: "family"; key: `${KeyNamespace}.${string}.` });
+
+/**
+ * The namespace every key is in. Named apart from the dot so the source holds no quoted
+ * `penguin.` of its own, which install-scope.test.ts's key scan would read as a stored key.
+ */
+type KeyNamespace = "penguin";
+
+interface KeyRuleScope {
   scope: KeyScope;
   /** Why this scope — one line, kept next to the rule so the two cannot drift apart. */
   why: string;
@@ -84,7 +95,7 @@ export interface KeyRule {
  *   - `penguin.chatRouteApplied.<field>` (features/chat/body/draft-view.tsx) is `sessionStorage`,
  *     not `localStorage`: it is scoped to one tab's history and dies with the tab, so it
  *     cannot outlive a data root.
- *   - `penguin.ooo` (the shared UI package's remark-autolink-boundary.ts) is the product's
+ *   - `penguin.ooo` (the shared UI package's site comments, among others) is the product's
  *     domain inside an example URL in a doc comment. It is not a storage key.
  */
 export const KEY_RULES: readonly KeyRule[] = [
@@ -93,7 +104,13 @@ export const KEY_RULES: readonly KeyRule[] = [
     kind: "exact",
     key: "penguin.background.image",
     scope: "browser",
-    why: "Local wallpaper image; appearance only, with no reference to a server file.",
+    why: "Wallpaper image, cached from the account; appearance only, with no reference to a server file.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.background.imageId",
+    scope: "browser",
+    why: "Which of the account's wallpaper images the cached one is: a digest of the image, so a new root holding the same image answers with the same id.",
   },
   {
     kind: "exact",
@@ -112,6 +129,12 @@ export const KEY_RULES: readonly KeyRule[] = [
     key: "penguin.themeId",
     scope: "browser",
     why: "Which theme renders the app (the key lives in @prismshadow/penguin-ui/boot); pure appearance.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.themePacks",
+    scope: "install",
+    why: "The server's imported theme packs as this browser last read them (the boot script links one); they live in the data root, so another root's list is stale.",
   },
   {
     kind: "exact",
@@ -234,6 +257,12 @@ export const KEY_RULES: readonly KeyRule[] = [
     why: "Which nav entries stay out of the fold; keyed by the compile-time manifest, names nothing on the server.",
   },
   {
+    kind: "family",
+    key: "penguin.sidebarModeNavPinned.",
+    scope: "browser",
+    why: "Which of a sidebar mode's nav entries (company mode's) stay out of the fold, one key per mode; names nothing on the server.",
+  },
+  {
     kind: "exact",
     key: "penguin.modelsGroupsFolded",
     scope: "browser",
@@ -262,6 +291,18 @@ export const KEY_RULES: readonly KeyRule[] = [
     key: "penguin.pluginsGroupsFolded",
     scope: "browser",
     why: "Which of the Plugins page's sections are folded, keyed by grouping and category, status or contents id; those ids ship with the build and name nothing on the server.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.agentsGroupBy",
+    scope: "browser",
+    why: "How the Agents page groups its list (by author or not at all) — the MODE, valid against any root.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.agentsGroupsFolded",
+    scope: "browser",
+    why: "Which of the Agents page's author sections are folded, by author value (user, agent, company); those values ship with the build and name nothing on the server.",
   },
   {
     kind: "exact",
@@ -339,6 +380,18 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "family",
+    key: "penguin.agentInstalls.",
+    scope: "install",
+    why: "What each Agent — of this server or of a machine — was last seen having installed, shown by the plugin market until it answers again. Project, machine and Agent ids in the key — a new root knows none of them.",
+  },
+  {
+    kind: "family",
+    key: "penguin.machineMessaging.",
+    scope: "install",
+    why: "The messaging binding each machine conversation last answered, shown read-only while that machine is out of reach. Project, machine and Session ids in the key — a new root knows none of them.",
+  },
+  {
+    kind: "family",
     key: "penguin.sessionOrder.",
     scope: "install",
     why: "Manual Session order — an array of Session ids.",
@@ -378,6 +431,24 @@ export const KEY_RULES: readonly KeyRule[] = [
     key: "penguin.a2uiDraft.",
     scope: "install",
     why: "A reply's A2UI form or multi-select answers in progress, keyed by Session id: a new root has no such Session.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.prefsImported",
+    scope: "install",
+    why: "That this browser handed its preferences to an account on this root once already; a new root's accounts hold none, so they take them again.",
+  },
+  {
+    kind: "family",
+    key: "penguin.draftsImported.",
+    scope: "install",
+    why: "That this browser handed one user's drafts to their account on this root; keyed by user id, and a new root's account holds none.",
+  },
+  {
+    kind: "family",
+    key: "penguin.syncPending.",
+    scope: "install",
+    why: "One user's edits the account on this root has not acknowledged: draft keys naming Sessions and Projects of this root.",
   },
   {
     kind: "exact",

@@ -55,6 +55,17 @@ describe("makeGeom", () => {
     expect(makeGeom(0, 1, 640).step).toBe(586);
   });
 
+  it("a chart may ask for another canvas height and more room for its tick labels", () => {
+    const g = makeRangeGeom(2, 0, 100, 640, PAD_R, { h: 120, padL: 70 });
+    expect(g.h).toBe(120);
+    expect(g.padL).toBe(70);
+    // innerH = 120 − 10 − 22 = 88; innerW = 640 − 70 − 8 = 562, step 281.
+    expect(g.y(0)).toBe(98);
+    expect(g.y(100)).toBe(10);
+    expect(g.x(0)).toBe(210.5);
+    expect(makeGeom(2, 100, 640)).toMatchObject({ h: CHART_H, padL: PAD_L });
+  });
+
   it("an explicit non-zero range maps its min to the baseline and max to the top", () => {
     const g = makeRangeGeom(2, 60, 100, 640);
     expect(g.min).toBe(60);

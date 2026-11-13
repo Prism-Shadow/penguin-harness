@@ -3,9 +3,9 @@ title: 内置浏览器
 description: 侧边栏里由你和 Agent 共用的浏览器（桌面应用的内置浏览器，或你自己的 Chrome），可以用 penguin browser 自动操作。
 ---
 
-侧边栏里的**浏览器**面板承载着 Agent 在 shell 里用 `penguin browser` 驱动的浏览器：Agent 读取页面、点击和输入，并提取亚马逊订单这样的数据，登录用的是你自己的账号。它有两种后端：
+侧边栏里的**浏览器**面板承载着 Agent 在 shell 里用 `penguin browser` 操作的浏览器：Agent 读取页面、点击和输入，并提取亚马逊订单这样的数据，登录用的是你自己的账号。它有两种后端：
 
-- **内置浏览器**：桌面应用里的网页浏览器。你可以像使用任何浏览器一样在其中浏览，Agent 驱动的也是同一组标签页。它有自己的登录状态和历史记录，与系统浏览器互不相通，两者都可以从 Chrome、Edge、Brave、Arc、Vivaldi、Opera、Chromium 或 Firefox 导入。
+- **内置浏览器**：桌面应用里的网页浏览器。你可以像使用任何浏览器一样在其中浏览，Agent 操作的也是同一组标签页。它有自己的登录状态和历史记录，与系统浏览器互不相通，两者都可以从 Chrome、Edge、Brave、Arc、Vivaldi、Opera、Chromium 或 Firefox 导入。
 - **你自己的 Chrome**：经由 PenguinHarness Browser 扩展，桌面应用和 Web App 都能用。Agent 在你 Chrome 里名为 **Penguin** 的标签组中工作，沿用你已有的登录状态，从不触碰你的其他标签页。
 
 从哪里开始：
@@ -13,7 +13,7 @@ description: 侧边栏里由你和 Agent 共用的浏览器（桌面应用的内
 - 第一次使用，见[打开浏览器面板](#打开浏览器面板)。
 - 想让 Agent 使用你的 Chrome，见[使用你自己的 Chrome](#使用你自己的-chrome)。
 - 想让 Agent 在内置浏览器里使用你的账号，见[登录](#登录)和[从你的浏览器导入](#从你的浏览器导入)。
-- 想自己写自动化，或了解 Agent 在做什么，见[在命令行中驱动](#在命令行中驱动)。
+- 想自己写自动化，或了解 Agent 在做什么，见[在命令行中操作](#在命令行中操作)。
 - 内置浏览器变得吃力或页面崩溃时，见[性能](#性能)。
 
 ## 开始之前
@@ -21,7 +21,7 @@ description: 侧边栏里由你和 Agent 共用的浏览器（桌面应用的内
 - **内置浏览器**是 macOS、Windows 和 Linux 桌面应用的一部分。用浏览器登录服务器（`penguin web`）、在 Docker 中或在远程机器上都没有它。
 - **你自己的 Chrome** 在任何允许它的服务器上都能用，服务器缺省允许。它需要 Chrome 116 或更新版本，以及 PenguinHarness Browser 扩展。
 - 桌面应用缺省使用内置浏览器，直到你[切换](#在内置浏览器与-chrome-之间切换)；其他服务器只提供 Chrome。Agent 从不自行选择后端；一种后端不可用时，也不会改用另一种。
-- Agent 驱动的是正在驱动其对话的那个人的浏览器：发出启动本轮运行那条消息的人；如果是定时任务，则是创建它的人。在有多个账号的服务器上，每个人各自配对自己的 Chrome，Agent 从不使用别人的 Chrome。
+- Agent 操作的是发起本轮运行的那个人的浏览器：发出那条消息的人；如果是定时任务，则是创建它的人。在有多个账号的服务器上，每个人各自配对自己的 Chrome，Agent 从不使用别人的 Chrome。
 
 ## 打开浏览器面板
 
@@ -113,7 +113,7 @@ Agent 从不输入你的密码。Agent 需要的页面要求登录时，`browser
 
 ## 使用你自己的 Chrome
 
-Agent 可以在你自己的 Chrome 里工作，而不是在内置浏览器里：带着你的登录状态、扩展和设置，在桌面应用里或在任何服务器的 Web App 里都可以。PenguinHarness Browser 扩展把你的 Chrome 连到服务器，Agent 只驱动你交给它的标签页。
+Agent 可以在你自己的 Chrome 里工作，而不是在内置浏览器里：带着你的登录状态、扩展和设置，在桌面应用里或在任何服务器的 Web App 里都可以。PenguinHarness Browser 扩展把你的 Chrome 连到服务器，Agent 只操作你交给它的标签页。
 
 ### 安装扩展
 
@@ -151,7 +151,7 @@ Chrome 每次启动时会提醒你有处于开发者模式的扩展，扩展照�
 
 Agent 使用你的 Chrome 时，面板显示的是它的标签页，而不是页面本身：
 
-- 标签栏列出 Agent 在你 Chrome 里驱动的标签页。**+** 在 Chrome 里新开一个标签页，打开主页或空白页；**×** 关闭标签页。
+- 标签栏列出 Agent 在你 Chrome 里操作的标签页。**+** 在 Chrome 里新开一个标签页，打开主页或空白页；**×** 关闭标签页。
 - 工具栏上有地址栏（在当前标签页打开输入的网址）和菜单。
 - 页面区显示**此标签页在你的 Chrome 中打开**；**在 Chrome 中显示**会把 Chrome 切到前台并显示该标签页。
 - Agent 在某个标签页里操作时，与内置浏览器一样，有脉动的光环和工具栏上的图标提示。
@@ -161,15 +161,15 @@ Agent 使用你的 Chrome 时，面板显示的是它的标签页，而不是页
 
 ### Agent 能触及的范围
 
-Agent 只驱动这些标签页：
+Agent 只操作这些标签页：
 
 - 它自己打开的标签页。它们位于名为 **Penguin** 的蓝色标签组中，每个窗口一个（Chrome 与多台服务器配对时，组名为 **Penguin · <服务器>**）。
 - 你交给它的标签页：在该标签页上选择扩展的图标，再选择**添加此标签页**，它会移入 Penguin 标签组。
 - 由上述标签页打开的页面，例如弹窗或在新标签页中打开的链接。
 
-它看不到也碰不到你的其他标签页和窗口、Cookie、密码、历史记录和下载内容，触及这些内容的原始 DevTools 命令会被拒绝（`cdp_refused`）。Chrome 自己的页面（`chrome://`）、Chrome Web Store 和本地文件完全无法驱动。导入、清除浏览数据和浏览历史记录属于内置浏览器；Chrome 有它自己的。
+它看不到也碰不到你的其他标签页和窗口、密码、历史记录和下载内容，也不能直接读取或修改 Chrome 的 Cookie，触及这些内容的原始 DevTools 命令会被拒绝（`cdp_refused`）。Chrome 自己的页面（`chrome://`）、Chrome Web Store 和本地文件完全无法操作。导入、清除浏览数据和浏览历史记录属于内置浏览器；Chrome 有它自己的。
 
-到达服务器的，是 Agent 向被驱动的标签页索取的内容，与内置浏览器相同：简化后的 HTML 或纯文本、脚本的返回值、截图和对话框文字。页面中的脚本能读到页面本身可读的 Cookie；HttpOnly 的会话 Cookie 永远不会离开 Chrome。
+到达服务器的，是 Agent 向它操作的标签页索取的内容，与内置浏览器相同：简化后的 HTML 或纯文本、脚本的返回值、截图和对话框文字。页面中的脚本能读到页面本身可读的 Cookie；HttpOnly 的会话 Cookie 永远不会离开 Chrome。
 
 ### 收回标签页或让 Agent 停手
 
@@ -196,9 +196,9 @@ Agent 只驱动这些标签页：
 
 管理员可以禁止所有用户的 Chrome 连接：在**设置 › Chrome 扩展**中关闭**允许 Chrome 扩展连接**。它缺省开启。关闭前会先请你确认，随后立即断开所有已连接的扩展，所有人的 Chrome 后端都不可用（`extension_disabled`）。配对会保留：重新开启后，扩展会在一小时内自行重连。
 
-## 在命令行中驱动
+## 在命令行中操作
 
-`penguin browser` 在 shell 中驱动这些标签页，Agent 也正是这样使用浏览器的，内置浏览器和你自己的 Chrome 都一样。预装的 `browser-automation` 插件教给 Agent 一个循环：打开页面、读取页面、用 JavaScript 操作，再检查页面发生了什么变化。`penguin browser status` 会说明当前使用哪个后端，Agent 无法更改它。
+`penguin browser` 在 shell 中操作这些标签页，Agent 也正是这样使用浏览器的，内置浏览器和你自己的 Chrome 都一样。预装的 `browser-automation` 插件教给 Agent 一个循环：打开页面、读取页面、用 JavaScript 操作，再检查页面发生了什么变化。`penguin browser status` 会说明当前使用哪个后端，Agent 无法更改它。
 
 ```bash
 penguin browser open https://www.amazon.com/your-orders/orders
@@ -235,7 +235,7 @@ EOF
 ## 工作原理
 
 - 每个标签页都是桌面应用承载的一个 Chromium 页面。同一 Project 的页面共用持久化配置，不同 Project 使用独立配置。在页面看来，这就是一个普通的 Chrome 浏览器。
-- 服务器通过 Chrome DevTools Protocol 驱动页面，由桌面应用转发。读取页面、运行脚本、点击和输入都在这条链路的服务器一侧完成，因此会随服务器更新而改进。
+- 服务器通过 Chrome DevTools Protocol 操作页面，由桌面应用转发。读取页面、运行脚本、点击和输入都在这条链路的服务器一侧完成，因此会随服务器更新而改进。
 - 读取页面与追踪变化所用的脚本改编自 [GenericAgent](https://github.com/lsdefine/genericagent)（MIT 协议），包括它的 DOM 简化以及 `web_scan` / `web_execute_js` 的设计。
 - 历史记录和主页是数据根目录下的两个文件：`builtin-browser/history.json` 和 `builtin-browser/settings.json`。Cookie 和网站存储保存在桌面应用自己的配置目录里。
 - 使用你自己的 Chrome 时，服务器经由扩展的 WebSocket 发出同样的命令，扩展再通过 Chrome 的调试接口转给标签页。每个已配对的 Chrome 都有自己的钥匙，它放在 WebSocket 的子协议里传递，从不出现在地址中；服务器只保存它的散列。扩展本身不申请读取页面内容的权限，也不向页面注入任何东西。
@@ -248,7 +248,7 @@ EOF
 | 可用范围 | 内置浏览器：仅桌面应用。你自己的 Chrome：任何允许它的服务器，Chrome 116 或更新版本 |
 | 标签页 | 每种后端最多 20 个；超出时新建标签页会被拒绝（`too_many_tabs`） |
 | 连接的 Chrome | 每个用户同一时间一个；最后连上的那个接管 |
-| Chrome 中无法驱动的页面 | `chrome://` 页面、Chrome Web Store、本地文件 |
+| Chrome 中无法操作的页面 | `chrome://` 页面、Chrome Web Store、本地文件 |
 | 导入、清除数据、历史记录 | 仅内置浏览器（在你的 Chrome 中返回 `not_supported`） |
 | 配对码 | 只能用一次，10 分钟内有效；输错五次即作废 |
 | 负载警告 | 标签页合计超过 1.5 GB 内存、这台电脑的可用内存不足 10%，或超过 12 个标签页 |

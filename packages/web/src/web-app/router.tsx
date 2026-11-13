@@ -15,14 +15,14 @@ import { WebAppPagesProvider, useWebAppPages, useWebAppPagesPending } from "./co
  * "bare" page only needs the user signed in. The pages still declared in src/module.json
  * render beside them through the builtin registry; the ones the server contributes with
  * `nav: "org"` are company-mode pages relative to the organization layout, mounted by
- * OrgRoutes (plugins/company/src/web/company/org-routes.tsx), so they are not flat routes here.
+ * OrgRoutes (features/company/org-routes.tsx), so they are not flat routes here.
  *
  * The app normally routes on the browser's address bar. A host that mounts it inside another
  * document (the component gallery frames it against a mocked API) passes `initialPath`
  * instead: the router then runs in memory from that path, so the app navigates without
  * touching the host document's URL — the only seam the app needs to be mounted elsewhere.
  */
-import { useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import {
   Navigate,
   Outlet,
@@ -32,7 +32,11 @@ import {
   createBrowserRouter,
   createMemoryRouter,
   createRoutesFromElements,
+  useRouteError,
 } from "react-router";
+import { CrashNotice, setReportRoute } from "@prismshadow/penguin-ui";
+import { releaseBootWallpaper } from "@prismshadow/penguin-ui/boot";
+import { routePattern } from "../lib/route-pattern";
 import { NavigationGuard } from "../lib/unsaved/navigation-guard";
 import { useAuth } from "../state/auth";
 import { useRuntimeLanguages } from "../lib/use-runtime-languages";
@@ -85,8 +89,19 @@ function LoginRoute() {
   return <LoginPage />;
 }
 
-/** The root of every route: the leave guard above the page the route renders. */
+/**
+ * The root of every route: the leave guard above the page the route renders. Until the session is
+ * known no screen shows, and the pre-paint script's boot layer keeps the stored custom background
+ * on the window meanwhile; once it is, the first screen mounts in the same commit — the shell,
+ * painting its own wallpaper, or a screen outside it — and the boot layer ends before that frame
+ * is painted.
+ */
 function RootFrame() {
+  const { user } = useAuth();
+  const settled = user !== undefined;
+  useLayoutEffect(() => {
+    if (settled) releaseBootWallpaper(document.documentElement);
+  }, [settled]);
   return (
     <>
       <NavigationGuard />
@@ -95,15 +110,17 @@ function RootFrame() {
   );
 }
 
-/** Dynamic server pages stay below the one data router and its leave guard.
- * Keep the router/history identity stable; a pending URL must not redirect before its page arrives. */
-function ShellRoutes() {
+/** Every shell page, the company-mode ones included: a contributed page mounts both under the
+ * organization (org-routes.tsx) and from the root, its rooted path (contributions.tsx). They stay
+ * below the one data router and its leave guard; keep the router/history identity stable, so a
+ * pending URL does not redirect before its page arrives. */
+export function ShellRoutes() {
   const pages = useWebAppPages();
   const pending = useWebAppPagesPending();
   return (
     <Routes>
       {pages
-        .filter((page) => page.frame === "shell" && page.nav !== "org")
+        .filter((page) => page.frame === "shell")
         .map(({ id, path, Component }) => (
           <Route key={id} path={path} element={path === "*" && pending ? null : <Component />} />
         ))}
@@ -120,13 +137,22 @@ function BarePage({ id }: { id: string }) {
 }
 
 /**
+ * What the router shows in place of a route that crashed outside a page body's own boundary (the
+ * shell, a guard): the crash notice over the whole window, with Reload and Report.
+ */
+function RouteCrash() {
+  const error = useRouteError();
+  return <CrashNotice error={error} className="h-dvh" />;
+}
+
+/**
  * The routes: the pages the modules contributed (WebApp's bindings). Company contributions
  * are read and mounted under the organization layout by OrgRoutes
- * (plugins/company/src/web/company/org-routes.tsx).
+ * (features/company/org-routes.tsx).
  */
 function appRoutes(pages: readonly WebAppPage[]) {
   return createRoutesFromElements(
-    <Route element={<RootFrame />}>
+    <Route element={<RootFrame />} errorElement={<RouteCrash />}>
       <Route path="/login" element={<LoginRoute />} />
       {pages
         .filter((page) => page.frame === "bare")
@@ -144,7 +170,7 @@ function appRoutes(pages: readonly WebAppPage[]) {
       <Route element={<RequireAuth />}>
         {/* Admin-only pages are refused server-side (403); the sidebar hides their row, so a
             member only ever reaches one by typing the URL. Company mode is one page, /org/*,
-            whose nested routes are its own (plugins/company/src/web/company/org-routes.tsx). `/` and every
+            whose nested routes are its own (features/company/org-routes.tsx). `/` and every
             path nothing else matches lead home, which depends on the mode: company mode
             contributes that page too (path `*`). Settings and user management live in the
             settings dialog now (see SettingsDialog); their old routes fall through to it. */}
@@ -172,6 +198,11 @@ export function AppRouter({ initialPath }: AppRouterProps = {}) {
       ? (browserRouter ??= createBrowserRouter(appRoutes(pages)))
       : createMemoryRouter(appRoutes(pages), { initialEntries: [initialPath] }),
   );
+  // A problem report names the page by its route's pattern, never by the ids in the address.
+  useEffect(() => {
+    setReportRoute(() => routePattern(router.state.matches));
+    return () => setReportRoute(null);
+  }, [router]);
   return (
     <WebAppPagesProvider>
       <RouterProvider router={router} />

@@ -9,13 +9,13 @@
  * back when the build itself is what broke. The command palette mounts beside the tree and
  * stays reachable over this panel too.
  */
-import { useState, type ComponentType } from "react";
-
+import { useState } from "react";
+import type { ComponentType } from "react";
 import { Button, NoticeStrip } from "@prismshadow/penguin-ui";
 import { useShortcutLabel } from "../lib/shortcuts/use-keymap";
 import { S } from "../lib/strings";
 import { HarnessHistoryOverlay } from "./harness-history-overlay";
-import { isSafeMode, setSafeMode } from "./safe-mode";
+import { isSafeMode, SAFE_PARAM, setSafeMode } from "./safe-mode";
 
 function messageOf(error: unknown): string {
   if (error instanceof Error) return error.message || error.name;
@@ -55,7 +55,12 @@ export function RescuePanel({ error }: { error: unknown }) {
               size="sm"
               onClick={() => {
                 setSafeMode(true);
-                location.reload();
+                // setSafeMode falls back to module memory when storage is blocked, and a
+                // reload throws that away — the flag has to ride the address so startup
+                // adopts it (safe-mode.ts) even where no storage write can stick.
+                const url = new URL(window.location.href);
+                url.searchParams.set(SAFE_PARAM, "");
+                window.location.href = url.toString();
               }}
             >
               {t.reloadSafe}

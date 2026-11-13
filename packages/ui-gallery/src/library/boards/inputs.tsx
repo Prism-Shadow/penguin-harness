@@ -1,11 +1,14 @@
 /**
  * 输入与表单: Input, Textarea and PasswordInput on the shared field scaffolding, with hint, info,
- * error and in-field affixes; the search box in its three shapes; checkboxes and radio groups.
+ * error and in-field affixes; the number input with its stepper, at a bound, closed and refused;
+ * the native date and time inputs; the search box in its three shapes; checkboxes and radio
+ * groups.
  */
 import { useState } from "react";
 import {
   Checkbox,
   Input,
+  NumberInput,
   PasswordInput,
   RadioGroup,
   SearchInput,
@@ -26,6 +29,12 @@ export function InputsBoard() {
   const [password, setPassword] = useState("");
   const [context, setContext] = useState("200000");
   const [price, setPrice] = useState("15.00");
+  const [replicas, setReplicas] = useState("3");
+  const [retries, setRetries] = useState("5");
+  const [budget, setBudget] = useState("80");
+  const [date, setDate] = useState("2026-10-20");
+  const [time, setTime] = useState("09:30");
+  const [runAt, setRunAt] = useState("2026-10-20T09:30");
   const [fieldQuery, setFieldQuery] = useState("");
   const [iconQuery, setIconQuery] = useState("");
   const [panelQuery, setPanelQuery] = useState("");
@@ -38,6 +47,9 @@ export function InputsBoard() {
     { value: "overwrite", label: t.radioOverwrite, hint: t.radioOverwriteHint },
     { value: "replace", label: t.radioReplace, hint: t.radioReplaceHint },
   ] as const;
+  const steps = { up: t.stepUp, down: t.stepDown };
+  // Empty is unanswered, not wrong: only a figure outside the range is refused.
+  const budgetRefused = budget.trim() !== "" && !(Number(budget) >= 1 && Number(budget) <= 50);
   return (
     <div className="gf-board">
       <BoardGroup title={t.basics}>
@@ -89,6 +101,72 @@ export function InputsBoard() {
             affix={{ leading: t.affixCurrency, trailing: t.affixUnit }}
             value={price}
             onChange={(event) => setPrice(event.target.value)}
+          />
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.number}>
+        <div className="lib-stack">
+          <NumberInput
+            label={t.numberReplicas}
+            min={1}
+            max={10}
+            unit={t.numberPods}
+            value={replicas}
+            onChange={setReplicas}
+            stepLabels={steps}
+          />
+          {/* At the top of its range: the plus has nowhere to go. */}
+          <NumberInput
+            label={t.numberRetries}
+            min={0}
+            max={5}
+            value={retries}
+            onChange={setRetries}
+            stepLabels={steps}
+          />
+          <NumberInput
+            label={t.numberTimeout}
+            min={5}
+            max={120}
+            step={5}
+            unit={t.numberSeconds}
+            value="30"
+            onChange={() => {}}
+            disabled
+            stepLabels={steps}
+          />
+          <NumberInput
+            label={t.numberBudget}
+            required
+            min={1}
+            max={50}
+            unit={t.numberCurrency}
+            value={budget}
+            onChange={setBudget}
+            error={budgetRefused ? t.numberBudgetError : undefined}
+            stepLabels={steps}
+          />
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.dateTime}>
+        <div className="lib-stack">
+          <Input
+            label={t.date}
+            type="date"
+            value={date}
+            onChange={(event) => setDate(event.target.value)}
+          />
+          <Input
+            label={t.time}
+            type="time"
+            value={time}
+            onChange={(event) => setTime(event.target.value)}
+          />
+          <Input
+            label={t.dateTimeLocal}
+            type="datetime-local"
+            value={runAt}
+            onChange={(event) => setRunAt(event.target.value)}
           />
         </div>
       </BoardGroup>

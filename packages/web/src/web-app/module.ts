@@ -25,7 +25,7 @@ import {
 } from "@prismshadow/penguin-core/kernel";
 
 import type { UserEventHandlers } from "../state/user-events";
-import type { ChatDrafts } from "@penguinharness/plugin-sessions/web";
+import type { ChatDrafts } from "../features/chat";
 import type { Sidebar } from "./sidebar/iface";
 import { webAppDeps, type WebAppLayer, type WebAppSessionProvider } from "./deps";
 

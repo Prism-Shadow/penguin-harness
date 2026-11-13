@@ -1,6 +1,6 @@
 /**
  * Post-build step: GitHub Pages serves static files only, so every doc route gets a
- * copy of the SPA shell at dist/<slug>/index.html — deep links (…/docs/omni-message)
+ * copy of the SPA shell at dist/<slug>/index.html — deep links (…/docs/amsp-records)
  * then load without relying on a 404 fallback (the site-root 404.html belongs to the
  * landing page, which would swallow /docs/* misses). Slugs are derived from the
  * content/ filenames (<slug>.<lang>.md), the same source the router reads.

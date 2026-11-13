@@ -6,7 +6,7 @@ description: The terms PenguinHarness uses, grouped by topic, each with a link t
 PenguinHarness uses a small set of terms with specific meanings. This page defines them, grouped by topic, and each entry links to the page that covers the term in depth.
 
 - [How work is organized](#how-work-is-organized): Project, agent, Agent State, Workspace, data root
-- [How work runs](#how-work-runs): Session, Task, Trace, OmniMessage, approval mode, subagent
+- [How work runs](#how-work-runs): Session, Task, Trace, AMSP record, approval mode, subagent
 - [What an agent can use](#what-an-agent-can-use): tools, Skill, plugin, hook package, MCP server, memory, Vault, scheduled task
 - [How agents improve](#how-agents-improve): Benchmark, case, evaluation, optimization, version, snapshot
 - [Models](#models): provider, model, thinking level, Token
@@ -28,7 +28,7 @@ See [Agents](/agents).
 
 ### Agent State
 
-Agent State is an agent's persistent directory, `agent_state/`. It holds the agent's configuration (`system_config.yaml`), its editable prompt file `AGENTS.md`, tool and MCP server settings, Skills, hook packages, memory, Vault and scheduled tasks. An agent's behavior lives entirely in these files: you can change it by editing them, and so can another agent.
+Agent State is an agent's persistent directory, `agent_state/`. It holds the agent's configuration (`system_config.yaml`), its editable prompt file `AGENTS.md`, tool and MCP server settings, Skills, hook packages, workbenches, memory, Vault and scheduled tasks. An agent's behavior lives entirely in these files: you can change it by editing them, and so can another agent.
 
 See [Configuration Reference](/configuration).
 
@@ -64,11 +64,11 @@ A Trace is the record of a Session: every message, tool call, approval decision 
 
 See [Sessions & Traces](/sessions-and-traces).
 
-### OmniMessage
+### AMSP record
 
-OmniMessage is the single message format PenguinHarness uses everywhere: the SDK streams it, the Trace stores it, and the engine works with it internally. Marketing materials also call it Penguin Message; the documentation uses OmniMessage.
+An AMSP record is one message of the single format PenguinHarness uses everywhere: the SDK streams records, the Trace stores them, and the engine works with them internally. AMSP is the stream they travel on. Marketing materials also call a record a Penguin Message; the documentation says AMSP record.
 
-See [The OmniMessage Protocol](/omni-message).
+See [AMSP Records](/amsp-records).
 
 ### Approval mode
 

@@ -1,8 +1,23 @@
-/* Surface roles are shared across pages: canvas is clear, panels keep a light fill, and
-   activity rows sit directly on the image. Overlay content keeps its theme surfaces. */
-.ui-shell[data-wallpaper] {
-  --wallpaper-panel-fill: color-mix(in srgb, var(--ui-surface) 24%, transparent);
+/* The first frames of a reload, before the app has decided what to show: the stored image, laid
+   exactly as the shell's own wallpaper layer lays it, on properties the pre-paint script writes
+   (boot.ts). Without it the window shows the bare page colour where the image will be until the
+   shell mounts. The first screen to mount ends it (`releaseBootWallpaper`); the shell paints its
+   own layer in that same frame. */
+:root[data-boot-wallpaper]::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: var(--layer-behind);
+  pointer-events: none;
+  background-image: var(--boot-wallpaper-image);
+  background-size: var(--boot-wallpaper-size);
+  background-repeat: var(--boot-wallpaper-repeat);
+  background-position: var(--boot-wallpaper-position);
+  opacity: var(--boot-wallpaper-opacity);
 }
+/* Surface roles are shared across pages: canvas is clear, panels keep a light fill, tone strips
+   keep a thinner tint, and activity rows sit directly on the image. Overlay content keeps its
+   theme surfaces. */
 .ui-shell[data-wallpaper],
 .ui-shell[data-wallpaper] > [data-slot="main"],
 .ui-shell[data-wallpaper] > [data-slot="dock"],
@@ -17,13 +32,13 @@
 .ui-shell[data-wallpaper] [data-wallpaper-layer] {
   position: fixed;
   inset: 0;
-  z-index: -1;
+  z-index: var(--layer-behind);
   pointer-events: none;
 }
 .ui-shell[data-wallpaper] .ui-glass[data-glass="navigation"] {
   position: absolute;
   inset: 0;
-  z-index: -1;
+  z-index: var(--layer-behind);
   pointer-events: none;
   background-color: color-mix(in srgb, var(--ui-surface-muted) 18%, transparent);
   -webkit-backdrop-filter: blur(16px);
@@ -32,7 +47,7 @@
 /* Cards declare their role in the UI package, so a new page inherits the same fill. */
 .ui-shell[data-wallpaper] [data-slot="composer"],
 .ui-shell[data-wallpaper] [data-wallpaper-surface="panel"]:not([role="dialog"] *) {
-  background-color: var(--wallpaper-panel-fill);
+  background-color: var(--wallpaper-panel-fill, var(--ui-surface));
 }
 .ui-shell[data-wallpaper]
   [data-wallpaper-surface="panel"]:not([role="dialog"] *)
@@ -45,22 +60,36 @@
   background-color: transparent;
 }
 /* A floating panel reads against its own surface, including one mounted inside the shell.
-   Reset the inherited control fills there; the composer and navigation are wallpaper surfaces. */
+   Reset the inherited fills there, so a bubble or a notice inside one keeps its page form; the
+   composer and navigation are wallpaper surfaces. */
 .ui-glass:not([data-slot="composer"], [data-glass="navigation"]),
 [role="dialog"] {
+  --wallpaper-panel-fill: initial;
   --wallpaper-control-fill: initial;
   --wallpaper-hover-fill: initial;
   --wallpaper-selected-fill: initial;
   --wallpaper-well-fill: initial;
   --wallpaper-choice-fill: initial;
+  --wallpaper-neutral-fill: initial;
+  --wallpaper-tint-fill: initial;
 }
+/* The fills a role reads on the image, each with its theme token as the fallback where the role
+   is unset. A bubble's neutral fill is a light wash of the ink; a fill tinted by the accent
+   becomes the accent's own translucent wash. Reduced transparency sets none, so every role
+   falls back to its opaque token. */
 @media not (prefers-reduced-transparency: reduce) {
   .ui-shell[data-wallpaper] {
+    --wallpaper-panel-fill: color-mix(in srgb, var(--ui-surface) 24%, transparent);
+    --wallpaper-neutral-fill: color-mix(in srgb, var(--ui-fg) 7%, transparent);
+    --wallpaper-tint-fill: var(--ui-accent-muted);
     --wallpaper-control-fill: color-mix(in srgb, var(--ui-surface) 24%, transparent);
     --wallpaper-hover-fill: color-mix(in srgb, var(--ui-fg) 5%, transparent);
     --wallpaper-selected-fill: color-mix(in srgb, var(--ui-fg) 8%, transparent);
     --wallpaper-well-fill: color-mix(in srgb, var(--ui-fg) 3%, transparent);
     --wallpaper-choice-fill: color-mix(in srgb, var(--ui-surface) 40%, transparent);
+    /* The code gutter has no fill (prose.css), so on the image its numbers take the secondary
+       ink rather than the theme's faint gutter grey, which a busy image washes out. */
+    --ui-code-gutter: var(--ui-fg-muted);
   }
   .ui-shell[data-wallpaper]
     [data-wallpaper-surface="panel"]:not([role="dialog"] *)
@@ -68,21 +97,64 @@
     background-color: var(--wallpaper-hover-fill);
   }
 }
-/* Activity rows need no painted strip. Let them scroll with their bodies: a clear sticky row
-   would otherwise superimpose its words on the text moving underneath. */
+/* Activity rows need no painted strip: they sit on the image like the canvas around them. */
 @media not (prefers-reduced-transparency: reduce) {
   .ui-shell[data-wallpaper] .ui-frame:has(> .ui-activity):not([role="dialog"] *),
   .ui-shell[data-wallpaper] .ui-activity:not([role="dialog"] *) {
     background-color: transparent;
   }
-  .ui-shell[data-wallpaper] .ui-activity.sticky:not([role="dialog"] *) {
-    position: relative;
-    top: auto;
-  }
   .ui-shell[data-wallpaper]
     .ui-activity:not([data-state="error"], [role="dialog"] *):is(button, :has(button)):hover
     :is([data-slot="label"], [data-slot="detail"]) {
     color: var(--ui-fg);
+  }
+}
+/* A pinned activity row (a work group's head, an open thinking or tool row) still pins. While it
+   is stuck, its backdrop (`WallpaperBackdrop`) paints the page colour and the image again under
+   its words, the image fixed to the window as the shell's own layer is, so the row still reads
+   as clear while the text scrolling under it stays hidden; at rest nothing is drawn. The image
+   is a fixed background, not a fixed box: a box would be laid against whatever ancestor makes
+   a containing block, and each one would split the transcript into another compositor layer.
+   A browser that cannot report a stuck row lets the rows scroll with their bodies instead: a
+   clear pinned row would lay its words over the text moving underneath. */
+[data-wallpaper-backdrop] {
+  display: none;
+}
+@media not (prefers-reduced-transparency: reduce) {
+  @supports (container-type: scroll-state) {
+    .ui-shell[data-wallpaper] .ui-activity.sticky:not([role="dialog"] *) {
+      container-type: scroll-state;
+    }
+    @container scroll-state(stuck: top) {
+      .ui-shell[data-wallpaper]
+        .ui-activity.sticky:not([role="dialog"] *)
+        > [data-wallpaper-backdrop] {
+        display: block;
+        position: absolute;
+        inset: 0;
+        z-index: var(--layer-behind);
+        pointer-events: none;
+        background-color: var(--ui-canvas);
+      }
+    }
+    .ui-shell[data-wallpaper] [data-wallpaper-backdrop] > [data-wallpaper-layer] {
+      position: absolute;
+      background-attachment: fixed;
+    }
+  }
+  @supports not (container-type: scroll-state) {
+    .ui-shell[data-wallpaper] .ui-activity.sticky:not([role="dialog"] *) {
+      position: relative;
+      top: auto;
+    }
+  }
+}
+/* A loading placeholder stands in for words and figures, which sit on the image once they
+   arrive: its block is a light tint of the line colour here rather than a solid slab. Its card
+   is a panel (SkeletonCard) and takes the panel fill above. Reduced transparency keeps it solid. */
+@media not (prefers-reduced-transparency: reduce) {
+  .ui-shell[data-wallpaper] [data-skeleton]:not([role="dialog"] *) {
+    background-color: color-mix(in srgb, var(--ui-line) 45%, transparent);
   }
 }
 /* The lifted dock owns an opaque canvas and a copy of the viewport-aligned image. Its cards
@@ -100,8 +172,7 @@
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
-  .ui-shell[data-wallpaper] [data-slot="composer"],
-  .ui-shell[data-wallpaper] [data-wallpaper-surface="panel"]:not([role="dialog"] *) {
-    background-color: var(--ui-surface);
-  }
 }
+/* A tone strip on the image keeps its tone at half its tint: that rule is a foundation default
+   under every theme's own notice recipe, so it lives in theme.css's `ui-base` block, beside the
+   tone tints it reads. This file opens no cascade layer — the first one opened fixes the order. */

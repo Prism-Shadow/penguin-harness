@@ -123,6 +123,23 @@ describe("removedPagesOf", () => {
     expect(keysOf(removedPagesOf(table, ["agents"]))).toContain("agentsx");
   });
 
+  it("a splat page takes the pages under it, however they name their parameters", () => {
+    const table = [
+      ...COMPILED,
+      page("reports", "/reports/*", { order: 40 }),
+      page("report-detail", "/reports/:reportId", { order: 41 }),
+      page("report-history", "/reports/:reportId/history", { order: 42 }),
+    ];
+    const left = keysOf(removedPagesOf(table, ["reports"]));
+    expect(left).not.toContain("reports");
+    expect(left).not.toContain("report-detail");
+    expect(left).not.toContain("report-history");
+    // The splat answers the rest of the URL, the page's own bare path included: a page at the
+    // splat page's path without a further segment goes with it too.
+    const withBare = [...table, page("reports-overview", "/reports", { order: 43 })];
+    expect(keysOf(removedPagesOf(withBare, ["reports"]))).not.toContain("reports-overview");
+  });
+
   it("returns the table as it is for no keys or keys naming no page", () => {
     expect(removedPagesOf(COMPILED, [])).toBe(COMPILED);
     expect(removedPagesOf(COMPILED, ["nowhere"])).toBe(COMPILED);

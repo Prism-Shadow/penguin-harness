@@ -17,16 +17,22 @@ import type {
   AgentApiSettings,
   AgentConfigResponse,
   AgentCreateResponse,
+  AgentDeleteResponse,
+  AgentDeletionInfo,
   AgentHooksResponse,
   AgentMcpServerItem,
   AgentMcpServersResponse,
   AgentKernelUpdateResponse,
   AgentPluginsInstallResponse,
+  PluginUninstallResponse,
   AgentSchedulesConfigDto,
   AgentSkillsConfigDto,
   AgentSkillsResponse,
   AgentsResponse,
   AgentVaultConfigDto,
+  AppCenterLayout,
+  AppCenterLayoutResponse,
+  AppCenterResponse,
   ApprovalMode,
   ArchivedSessionGroup,
   ArchivedSessionGroupsResponse,
@@ -45,10 +51,12 @@ import type {
   BenchmarksResponse,
   CaseMaterial,
   ChatDefaultsDto,
+  ContributionsResponse,
   CommandPolicyDto,
   DefaultModelResponse,
   DesktopTrayStatusResponse,
   DesktopUpdateStatusResponse,
+  HostCommandsResponse,
   DirectorySkillsResponse,
   DirListResponse,
   EndpointModelListResponse,
@@ -65,10 +73,10 @@ import type {
   MemoryFilesResponse,
   MemoryImportResponse,
   MemoryOverviewResponse,
-  MemoryScopeExport,
   MeResponse,
   LanguageIndexResponse,
   MessagesResponse,
+  MessagingAccountHoldersResponse,
   MessagingBindingsResponse,
   ModelBalanceResponse,
   ModelProtocolDetectResponse,
@@ -86,6 +94,9 @@ import type {
   PluginLibraryResponse,
   PluginReadmeResponse,
   PrefsResponse,
+  BackgroundImagePutResponse,
+  BackgroundImageResponse,
+  DraftsResponse,
   ProjectSchedulesResponse,
   ProjectsResponse,
   ProjectUpdateResponse,
@@ -113,6 +124,8 @@ import type {
   SshHostsResponse,
   SubagentMessageResponse,
   TaskCreateResponse,
+  ThemePackDto,
+  ThemePacksResponse,
   TraceAnalysisResponse,
   TraceEventsResponse,
   TraceImportResponse,
@@ -129,21 +142,24 @@ import type {
   VaultResponse,
   VersionHistoryResponse,
   VersionResponse,
-  WorkbenchInfo,
+  WorkbenchesResponse,
   WorkspaceFilesResponse,
   WorkspaceSearchResponse,
 } from "@prismshadow/penguin-server/api";
+import { isThemeId } from "@prismshadow/penguin-ui";
 // The catalog decides which groups publish a balance, as it does on the server.
-import { catalogEntryFor, providerInfo } from "../../../../core/dist/state/model-catalog.js";
+import { catalogEntryFor, providerInfo } from "../../../../server/dist/model-catalog.js";
 import { READ_ONLY } from "./errors";
 import { amspTryStream, dayKey, effectiveOf } from "./fixtures";
+// The AMSP wire types, by path: the gallery reads them as types only and takes no dependency.
+import type { ApprovalsResponse } from "../../../../amsp/src/types";
 import type { UsageDay } from "./fixtures";
 import { IDS } from "./ids";
 import { empty, fail, json, raw, Router } from "./router";
 import type { RequestContext } from "./router";
 import type { DemoStore } from "./store";
 import { payloadOf } from "./types";
-import type { OmniMessage } from "./types";
+import type { AmspRecord } from "./types";
 
 type Ctx = RequestContext;
 
@@ -175,6 +191,16 @@ function costOf(day: Pick<UsageDay, "cacheRead" | "cacheWrite" | "output" | "pro
 }
 
 export const router = new Router();
+
+// The demo boots its own page table and has no server-side plugin contributions: no pages,
+// no file renderers, and nothing removed.
+router.get("/api/contributions", (): ContributionsResponse => ({
+  pages: [],
+  fileRenderers: [],
+  pageRemovals: [],
+  agentTabs: [],
+  sessionTabs: [],
+}));
 
 // ---------------------------------------------------------------------------------------------
 // Auth & user
@@ -212,7 +238,13 @@ router
   .put("/api/me/prefs", ({ store, body }): PrefsResponse => {
     store.f.prefs = { ...store.f.prefs, ...record(body) };
     return { prefs: store.f.prefs };
-  });
+  })
+  // The demo account holds no drafts and no background image: a frame keeps what it writes in
+  // its own storage, which is all a demo needs, so the writes are accepted and not kept.
+  .get("/api/me/drafts", (): DraftsResponse => ({ drafts: {} }))
+  .patch("/api/me/drafts", () => empty())
+  .get("/api/me/background-image", (): BackgroundImageResponse => ({ image: null, imageId: null }))
+  .put("/api/me/background-image", (): BackgroundImagePutResponse => ({ imageId: null }));
 
 // ---------------------------------------------------------------------------------------------
 // Admin
@@ -649,6 +681,7 @@ router
       files: memoryOf(ctx)
         .files.filter((f) => f.scopeKey === ctx.params.scopeKey)
         .map((f) => f.file),
+      orphanFiles: [],
     }),
   )
   .get(
@@ -661,35 +694,57 @@ router
       return found;
     },
   )
+  // Two segments or more: a file a topic keeps, by its `<folder>/<path>`, read through the same
+  // route as a topic and answered in the same shape.
+  .get(
+    "/api/projects/:projectId/agents/:agentId/memory/scopes/:scopeKey/files/*",
+    (ctx): MemoryFileResponse => {
+      const found = memoryOf(ctx).folderFiles.find(
+        (f) => f.scopeKey === ctx.params.scopeKey && f.file.path === ctx.params["*"],
+      );
+      if (!found) notFound("Memory file");
+      const { path, size, modifiedAt } = found.file;
+      return {
+        scopeKey: found.scopeKey,
+        file: { name: path, title: path, description: "", size, modifiedAt, files: [] },
+        content: found.content,
+      };
+    },
+  )
   .delete("/api/projects/:projectId/agents/:agentId/memory/scopes/:scopeKey/files/:name", (ctx) => {
     const memory = memoryOf(ctx);
+    const folder = `${ctx.params.name!.replace(/\.md$/i, "")}/`;
     memory.files = memory.files.filter(
       (f) => !(f.scopeKey === ctx.params.scopeKey && f.file.name === ctx.params.name),
+    );
+    // The topic's folder goes with it.
+    memory.folderFiles = memory.folderFiles.filter(
+      (f) => !(f.scopeKey === ctx.params.scopeKey && f.file.path.startsWith(folder)),
     );
     const scope = memory.overview.scopes.find((s) => s.scopeKey === ctx.params.scopeKey);
     if (scope) scope.fileCount = memory.files.filter((f) => f.scopeKey === scope.scopeKey).length;
     return empty();
   })
-  .get(
-    "/api/projects/:projectId/agents/:agentId/memory/scopes/:scopeKey/export",
-    (ctx): MemoryScopeExport => {
-      const memory = memoryOf(ctx);
-      const scope = memory.overview.scopes.find((s) => s.scopeKey === ctx.params.scopeKey);
-      if (!scope) notFound("Memory scope");
-      return {
-        format: "penguin-memory-scope",
-        version: 1,
-        scopeKey: scope.scopeKey,
-        kind: scope.kind,
-        ...(scope.workspacePath ? { workspacePath: scope.workspacePath } : {}),
-        exportedAt: new Date().toISOString(),
-        index: scope.hasIndex ? "# Memory\n" : null,
-        files: memory.files
-          .filter((f) => f.scopeKey === scope.scopeKey)
-          .map((f) => ({ name: f.file.name, content: f.content })),
-      };
-    },
-  )
+  .delete("/api/projects/:projectId/agents/:agentId/memory/scopes/:scopeKey/files/*", (ctx) => {
+    const memory = memoryOf(ctx);
+    const filePath = ctx.params["*"]!;
+    memory.folderFiles = memory.folderFiles.filter(
+      (f) => !(f.scopeKey === ctx.params.scopeKey && f.file.path === filePath),
+    );
+    for (const topic of memory.files) {
+      if (topic.scopeKey !== ctx.params.scopeKey) continue;
+      topic.file = { ...topic.file, files: topic.file.files.filter((k) => k.path !== filePath) };
+    }
+    return empty();
+  })
+  .get("/api/projects/:projectId/agents/:agentId/memory/scopes/:scopeKey/export", (ctx) => {
+    const scope = memoryOf(ctx).overview.scopes.find((s) => s.scopeKey === ctx.params.scopeKey);
+    if (!scope) notFound("Memory scope");
+    return raw("PK\u0003\u0004 demo archive", {
+      "content-type": "application/zip",
+      "content-disposition": `attachment; filename="${ctx.params.agentId}-${scope.scopeKey}-memory.zip"`,
+    });
+  })
   .post(
     "/api/projects/:projectId/agents/:agentId/memory/scopes/:scopeKey/import",
     (ctx): MemoryImportResponse => ({
@@ -751,6 +806,7 @@ router
     store.f.memory[id] = {
       overview: { ...store.f.memory[IDS.agents.notes]!.overview, scopes: [] },
       files: [],
+      folderFiles: [],
     };
     return json({ agent } satisfies AgentCreateResponse, 201);
   })
@@ -818,8 +874,20 @@ router
     if (agent.agentId === IDS.agents.docs)
       fail(409, "agent_builtin", "The docs Agent is the demo's; it stays.");
     ctx.store.f.agents = ctx.store.f.agents.filter((a) => a.agentId !== agent.agentId);
-    return empty();
-  });
+    // The demo has no files to remove: the deletion is over as it answers.
+    const deletion: AgentDeletionInfo = {
+      deletionId: `${agent.agentId}-0`,
+      agentId: agent.agentId,
+      phase: "done",
+      total: 0,
+      removed: 0,
+    };
+    return json({ deletion } satisfies AgentDeleteResponse, 202);
+  })
+  // No removal ever runs in the background here, so no deletion is known.
+  .get("/api/projects/:projectId/agent-deletions/:deletionId", () =>
+    fail(404, "agent_deletion_not_found", "No such deletion is in progress."),
+  );
 
 // ---------------------------------------------------------------------------------------------
 // An Agent's public API: its switches, approval mode and keys (the stream itself is not mocked)
@@ -913,16 +981,9 @@ router
   })
   // Try it: the stream a real run sends, scripted (fixtures.ts), whole in one body.
   .post("/api/projects/:projectId/agents/:agentId/api/try", (ctx) =>
-    raw(
-      amspTryStream(ctx.body, {
-        agent: `${ctx.params.projectId}/${ctx.params.agentId}`,
-        lang: ctx.store.lang,
-        now: Date.now(),
-      }),
-      {
-        "content-type": "text/event-stream; charset=utf-8",
-      },
-    ),
+    raw(amspTryStream(ctx.body, { lang: ctx.store.lang, now: Date.now() }), {
+      "content-type": "text/event-stream; charset=utf-8",
+    }),
   );
 
 // ---------------------------------------------------------------------------------------------
@@ -1195,6 +1256,10 @@ function batchIds(store: DemoStore, body: unknown): string[] {
 
 router
   .get("/api/me/archived-sessions/groups", ({ store, query }): ArchivedSessionGroupsResponse => {
+    // The demo runs on no machine: the machines' side of the archive holds nothing.
+    if (query.get("servers") === "machines") {
+      return { groups: [], total: 0, asOf: new Date().toISOString() };
+    }
     const groups = new Map<string, ArchivedSessionGroup>();
     const rows = archivedRows(store, query);
     for (const row of rows) {
@@ -1277,6 +1342,11 @@ router
   .post("/api/sessions/:sessionId/messaging/wechat/scan/poll", () => readOnly("poll a WeChat scan"))
   .post("/api/sessions/:sessionId/messaging/wechat/scan/verify", () => empty())
   .post("/api/sessions/:sessionId/messaging/wechat/scan/cancel", () => empty());
+// Nothing in the demo holds a bot, and the demo's machines have nothing to be asked.
+router.get(
+  "/api/projects/:projectId/messaging/account-holders",
+  (): MessagingAccountHoldersResponse => ({ holders: [], unreachable: [] }),
+);
 
 // ---------------------------------------------------------------------------------------------
 // Messages, tasks, approvals, the run
@@ -1302,6 +1372,13 @@ router
         ? {
             page: {
               earlierTurns: 0,
+              // The mock's transcripts are plain prompt-and-answer Tasks: one per user prompt.
+              units: messages.filter(
+                (m) =>
+                  m.type === "model_msg" &&
+                  (m.payload as { type?: string; role?: string }).type === "text" &&
+                  (m.payload as { role?: string }).role === "user",
+              ).length,
               prior: {
                 subagentTokens: 0,
                 elapsedMs: 0,
@@ -1330,6 +1407,8 @@ router
           .filter((t) => t !== "")
           .join("\n")
       : "";
+    // Interrupt, then send: the demo run stops the way Stop stops it, and the task starts.
+    if (row.status !== "idle" && record(body).interrupt === true) store.abort(sessionId);
     if (row.status !== "idle") {
       if (record(body).queueIfBusy === true) {
         row.pendingFollowUpCount += 1;
@@ -1341,6 +1420,13 @@ router
     return json({ sessionId } satisfies TaskCreateResponse, 202);
   })
   .get("/api/sessions/:sessionId/goal", (): GoalResponse => ({ goal: null }))
+  // The Agent API's approvals resource on the cookie door, which the API tab's Try it reads
+  // through the SDK: the demo's runs decide their calls themselves, so a look with `wait` holds a
+  // moment, as the server's would, and finds nothing.
+  .get("/api/sessions/:sessionId/approvals", async ({ query }): Promise<ApprovalsResponse> => {
+    if (query.get("wait") !== null) await new Promise((resolve) => setTimeout(resolve, 1000));
+    return { approvals: [] };
+  })
   .post("/api/sessions/:sessionId/approvals/:toolCallId", ({ store, params, body }) => {
     const decision = record(body).decision === "deny" ? "deny" : "allow";
     if (!store.decide(params.sessionId!, params.toolCallId!, decision)) {
@@ -1407,6 +1493,10 @@ router
   .delete("/api/sessions/:sessionId/follow-ups/:followUpId", () =>
     fail(409, "follow_up_started", "Already started."),
   )
+  // The demo never holds a queued message, so there is nothing to interrupt with.
+  .post("/api/sessions/:sessionId/interrupt", () =>
+    fail(409, "not_pending", "This steering message was already delivered to the model."),
+  )
   .post("/api/sessions/:sessionId/compact", ({ store, params }): unknown => {
     const sessionId = params.sessionId!;
     if (!store.session(sessionId)) notFound("Session");
@@ -1431,8 +1521,22 @@ router
 // ---------------------------------------------------------------------------------------------
 
 /** What the server derives from a Trace file, derived here from the transcript the same way. */
-function analyze(history: readonly OmniMessage[]): TraceAnalysisResponse {
-  const ms = (m: OmniMessage) => Date.parse(m.timestamp);
+/**
+ * A round's navigator label, as the server derives it: the first non-empty line of the text that
+ * started it, whitespace collapsed, at most 120 characters (the demo's prompts carry no markers).
+ */
+function promptLabel(text: string): string | undefined {
+  const line = text
+    .split("\n")
+    .map((l) => l.trim())
+    .find((l) => l !== "");
+  return line === undefined
+    ? undefined
+    : Array.from(line.replace(/\s+/g, " ")).slice(0, 120).join("");
+}
+
+function analyze(history: readonly AmspRecord[]): TraceAnalysisResponse {
+  const ms = (m: AmspRecord) => Date.parse(m.timestamp);
   const requests: TraceAnalysisResponse["requests"] = [];
   const tasks: TraceAnalysisResponse["tasks"] = [];
   const toolCalls: TraceAnalysisResponse["toolCalls"] = [];
@@ -1441,7 +1545,9 @@ function analyze(history: readonly OmniMessage[]): TraceAnalysisResponse {
   const usageTrend: TraceAnalysisResponse["usageTrend"] = [];
   let taskIndex = -1;
   let openRequest: (typeof requests)[number] | null = null;
-  let previous: OmniMessage | null = null;
+  let previous: AmspRecord | null = null;
+  /** A `task_begin` waiting for the turn its input opens: it heads that turn's rows. */
+  let heldTaskBegin: number | null = null;
   const calls = new Map<string, { index: number; span: (typeof toolSpans)[number] }>();
   history.forEach((message, i) => {
     const p = payloadOf(message);
@@ -1450,18 +1556,32 @@ function analyze(history: readonly OmniMessage[]): TraceAnalysisResponse {
       previous = message;
       return;
     }
+    // Task records time nothing, as on the server: a task_begin heads the turn its input opens,
+    // a task_end closes the rows of the turn it ends.
+    if (p.type === "task_begin") {
+      heldTaskBegin ??= i;
+      return;
+    }
+    if (p.type === "task_end") {
+      const last = tasks[tasks.length - 1];
+      if (last) last.messageTo = i;
+      return;
+    }
     if (p.type === "text" && p.role === "user") {
       taskIndex += 1;
+      const prompt = promptLabel(p.text);
       tasks.push({
         taskIndex,
-        messageFrom: i,
+        messageFrom: heldTaskBegin ?? i,
         messageTo: i,
         startTs: "",
         endTs: message.timestamp,
         tokens: { cacheRead: 0, cacheWrite: 0, output: 0 },
         llmMs: 0,
         toolMs: 0,
+        ...(prompt !== undefined ? { prompt } : {}),
       });
+      heldTaskBegin = null;
     }
     const task = tasks[tasks.length - 1];
     if (task) {
@@ -1469,7 +1589,11 @@ function analyze(history: readonly OmniMessage[]): TraceAnalysisResponse {
       task.endTs = message.timestamp;
     }
     if (p.type === "request_begin") {
-      openRequest = { beginTs: message.timestamp, taskIndex: Math.max(taskIndex, 0) };
+      openRequest = {
+        beginTs: message.timestamp,
+        taskIndex: Math.max(taskIndex, 0),
+        ...(p.thinking_level !== undefined ? { thinkingLevel: p.thinking_level } : {}),
+      };
       requests.push(openRequest);
       if (task && task.startTs === "") task.startTs = message.timestamp;
     } else if (p.type === "request_end" && openRequest) {
@@ -1509,11 +1633,11 @@ function analyze(history: readonly OmniMessage[]): TraceAnalysisResponse {
       if (call) {
         const started = Date.parse(call.span.callTs);
         call.span.outputTs = message.timestamp;
-        call.span.stopReason = p.stop_reason ?? "completed";
+        call.span.status = p.status ?? "completed";
         const entry = toolCalls[call.index]!;
         entry.endTs = message.timestamp;
         entry.durationMs = ms(message) - started;
-        entry.stopReason = p.stop_reason ?? "completed";
+        entry.status = p.status ?? "completed";
         if (task) task.toolMs += ms(message) - started;
       }
     } else if (p.type === "approval_decision") {
@@ -2219,6 +2343,35 @@ router
       "content-disposition": `attachment; filename="${params.name}.zip"`,
     }),
   )
+  // A whole plugin at once, as the server does it: the Skills its library entry contributes, its
+  // hook package and the MCP entries it installed (the demo has no workbenches).
+  .delete(
+    "/api/projects/:projectId/agents/:agentId/plugins/:name",
+    (ctx): PluginUninstallResponse => {
+      const installed = installedOf(ctx);
+      const agent = agentOf(ctx);
+      const config = configOf(ctx).config;
+      const name = ctx.params.name ?? "";
+      const plugin = libraryPlugins(ctx.store).find((p) => p.name === name);
+      const skillNames = new Set((plugin?.skills ?? []).map((s) => s.name));
+      const removed = {
+        skills: installed.skills.filter((s) => skillNames.has(s.name)).map((s) => s.name),
+        hooks: installed.hooks.filter((h) => h.name === name).map((h) => h.name),
+        mcpServers: config.mcpServers.filter((e) => e.plugin === name).map((e) => e.name),
+        workbenches: [],
+      };
+      if (removed.skills.length + removed.hooks.length + removed.mcpServers.length === 0) {
+        fail(404, "plugin_not_installed", `Nothing of ${name} is installed on this agent.`);
+      }
+      installed.skills = installed.skills.filter((s) => !skillNames.has(s.name));
+      installed.hooks = installed.hooks.filter((h) => h.name !== name);
+      config.mcpServers = config.mcpServers.filter((e) => e.plugin !== name);
+      agent.skillCount = installed.skills.length;
+      agent.hookCount = installed.hooks.length;
+      agent.pluginUpdates = agent.pluginUpdates.filter((u) => u.name !== name);
+      return { removed };
+    },
+  )
   .delete("/api/projects/:projectId/agents/:agentId/skills/:name", (ctx) => {
     const installed = installedOf(ctx);
     const before = installed.skills.length;
@@ -2226,6 +2379,76 @@ router
     if (installed.skills.length === before) notFound("Skill");
     agentOf(ctx).skillCount = installed.skills.length;
     return empty();
+  });
+
+// ---------------------------------------------------------------------------------------------
+// Theme packs
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * The one pack an admin imported on the demo's server: warm paper over Frost, tokens and one
+ * accent preset, served as the stylesheet the server would assemble for it.
+ */
+const THEME_PACK: ThemePackDto = {
+  id: "paper",
+  names: { zh: "纸页", en: "Paper" },
+  version: "1.0.0",
+  api: 1,
+  base: "modern",
+  modes: ["light", "dark"],
+  swatches: {
+    light: { canvas: "#f6f1e7", ink: "#2b2521", accent: "#2b2521" },
+    dark: { canvas: "#1c1a17", ink: "#ece4d6", accent: "#ece4d6" },
+  },
+  accent: {
+    own: { light: "#2b2521", dark: "#ece4d6" },
+    presets: [{ id: "ink-blue", swatch: "#2c4f9e" }],
+  },
+  fonts: {
+    sans: "MiSans",
+    ui: "MiSans",
+    mono: "JetBrains Mono Variable",
+    cjk: "MiSans",
+    display: "MiSans",
+  },
+  href: "/api/themes/paper/files/index.css?v=5e1f0c2a",
+  v: "5e1f0c2a",
+};
+
+const THEME_PACK_CSS =
+  '@layer ui-theme{:root[data-theme="paper"]{--ui-canvas:#f6f1e7;--ui-fg:#2b2521;--ui-accent:#2b2521}' +
+  ':root[data-theme="paper"].dark{--ui-canvas:#1c1a17;--ui-fg:#ece4d6;--ui-accent:#ece4d6}}' +
+  '@layer ui-accent{:root[data-theme="paper"][data-accent="ink-blue"]{--ui-accent:#2c4f9e}}';
+
+/** The server's refusal of a write a member may not make. */
+function adminOnly(store: DemoStore): void {
+  if (!store.f.user.isAdmin) {
+    fail(403, "admin_required", "Only an admin can perform this operation.");
+  }
+}
+
+router
+  .get("/api/themes", (): ThemePacksResponse => ({ themes: [THEME_PACK] }))
+  .get("/api/themes/:id/files/*", ({ params }) => {
+    if (params.id !== THEME_PACK.id || params["*"] !== "index.css") notFound("Theme file");
+    return raw(THEME_PACK_CSS, { "content-type": "text/css; charset=utf-8" });
+  })
+  .post("/api/themes", ({ store }): unknown => {
+    adminOnly(store);
+    return readOnly("import a theme pack");
+  })
+  .delete("/api/themes/:id", ({ store }): unknown => {
+    adminOnly(store);
+    return readOnly("remove a theme pack");
+  })
+  // A built-in pack or the demo's own, as a zip: the demo's bytes stand in for the archive.
+  .get("/api/themes/:id/export", ({ params }) => {
+    const id = params.id!;
+    if (id !== THEME_PACK.id && !isThemeId(id)) notFound("Theme pack");
+    return raw("PK\u0003\u0004 demo archive", {
+      "content-type": "application/zip",
+      "content-disposition": `attachment; filename="${id}-1.0.0.zip"`,
+    });
   });
 
 // ---------------------------------------------------------------------------------------------
@@ -2344,17 +2567,24 @@ router
   );
 
 // ---------------------------------------------------------------------------------------------
-// Agent State export / import
+// Agent zip export / import
 // ---------------------------------------------------------------------------------------------
 
 router
-  .get("/api/projects/:projectId/agents/:agentId/export", ({ params }) =>
-    raw("\u001f\u008b demo snapshot", {
-      "content-type": "application/gzip",
-      "content-disposition": `attachment; filename="${params.agentId}.tar.gz"`,
+  .get("/api/projects/:projectId/agents/:agentId/archive", ({ params }) =>
+    raw("PK\u0003\u0004 demo archive", {
+      "content-type": "application/zip",
+      "content-disposition": `attachment; filename="${params.agentId}.zip"`,
     }),
   )
-  .post("/api/projects/:projectId/agents/:agentId/import", () => readOnly("import a snapshot"));
+  .post("/api/projects/:projectId/agents/import", () => readOnly("import an Agent"));
+
+// An Agent's own picture: the demo's Agents have none (no `avatarRev`), so each draws its default.
+router
+  .get("/api/projects/:projectId/agents/:agentId/avatar", () => notFound("The agent's avatar"))
+  .put("/api/projects/:projectId/agents/:agentId/avatar", () =>
+    readOnly("change an agent's avatar"),
+  );
 
 // ---------------------------------------------------------------------------------------------
 // Machines (admin)
@@ -2392,6 +2622,7 @@ router
       machineId: null,
       local: false,
       connection: null,
+      socket: null,
       api: null,
       status: null,
       root: `~/.penguin/data`,
@@ -2424,6 +2655,14 @@ router
     readOnly("install on a machine"),
   )
   .post("/api/projects/:projectId/machines/:machineId/connect", () => readOnly("connect a machine"))
+  // Nothing in the fixtures is being brought back: a Retry or a Stop retrying finds nothing to
+  // do, as the server answers for a machine that is up.
+  .post("/api/projects/:projectId/machines/:machineId/reconnect", ({ store }) =>
+    machinesResponse(store),
+  )
+  .post("/api/projects/:projectId/machines/:machineId/stop-reconnecting", ({ store }) =>
+    machinesResponse(store),
+  )
   .post("/api/projects/:projectId/machines/:machineId/restart", () => readOnly("restart a machine"))
   .post("/api/projects/:projectId/machines/:machineId/sync", () =>
     readOnly("sync a machine's config"),
@@ -2462,7 +2701,10 @@ router
   .post("/api/desktop/update/install", () => notFound("Desktop updater"))
   .get("/api/desktop/tray", (): DesktopTrayStatusResponse => ({ status: null }))
   .put("/api/desktop/tray", () => empty())
-  .post("/api/desktop/privacy-settings", () => notFound("Desktop mode"));
+  .post("/api/desktop/privacy-settings", () => notFound("Desktop mode"))
+  // Host commands: a plain server's host offers none, so there is nothing to run.
+  .get("/api/command", (): HostCommandsResponse => ({ commands: [], offers: [] }))
+  .post("/api/command/:command", () => notFound("Host command"));
 
 // ---------------------------------------------------------------------------------------------
 // The agent browser: the demo answers as a server with no desktop shell does, where the only
@@ -2590,10 +2832,28 @@ router
 // ---------------------------------------------------------------------------------------------
 
 router
-  .get(
-    "/api/projects/:projectId/agents/:agentId/workbenches",
-    (): { workbenches: WorkbenchInfo[] } => ({
-      workbenches: [],
+  .get("/api/projects/:projectId/agents/:agentId/workbenches", (ctx): WorkbenchesResponse => ({
+    workbenches: [],
+    enabled: installedOf(ctx).workbenchesOff !== true,
+  }))
+  .put(
+    "/api/projects/:projectId/agents/:agentId/workbenches/enabled",
+    (ctx): WorkbenchesResponse => {
+      const installed = installedOf(ctx);
+      installed.workbenchesOff = record(ctx.body).enabled === false;
+      return { workbenches: [], enabled: !installed.workbenchesOff };
+    },
+  )
+  .put("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId/enabled", () =>
+    notFound("Workbench"),
+  )
+  .post("/api/projects/:projectId/agents/:agentId/workbenches/archive", () =>
+    readOnly("import a workbench archive"),
+  )
+  .get("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId/archive", ({ params }) =>
+    raw("PK\u0003\u0004 demo archive", {
+      "content-type": "application/zip",
+      "content-disposition": `attachment; filename="${params.workbenchId}.zip"`,
     }),
   )
   .post("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId/reload", () =>
@@ -2608,6 +2868,17 @@ router
   .delete("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId", () =>
     notFound("Workbench"),
   )
+  .patch("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId/app-center", () =>
+    notFound("Workbench"),
+  )
+  // The App Center lists shortcuts in every build state under a stored arrangement; the demo's
+  // Agents keep no workbench files, so a tile opened in a window finds no page to show.
+  .get("/api/projects/:projectId/app-center", ({ store }): AppCenterResponse => store.f.appCenter)
+  .put("/api/projects/:projectId/app-center/layout", ({ store, body }): AppCenterLayoutResponse => {
+    const layout = (record(body).layout ?? null) as AppCenterLayout | null;
+    store.f.appCenter = { ...store.f.appCenter, layout };
+    return { layout };
+  })
   .get(
     "/api/projects/:projectId/plugins/installed",
     ({ store }): InstalledPluginsResponse => store.f.installedPlugins,

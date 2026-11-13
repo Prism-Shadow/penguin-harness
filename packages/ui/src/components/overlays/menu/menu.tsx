@@ -1,7 +1,8 @@
 /**
  * The menu rows: one row family, at two densities, for every menu a Dropdown (or a context menu)
- * opens. Built on the menu panel's row states (`menuRowClass`, `menuRowTone`, `ChoiceCheck`), so
- * an action row, a current choice and a destructive row read the same wherever they are offered.
+ * opens. Built on the menu panel's row states (`menuRowClass`, `menuRowTone`, the check's
+ * `ChoiceSlot`), so an action row, a current choice and a destructive row read the same wherever
+ * they are offered.
  *
  * - `Menu` is the list: `role="menu"`, named by `label`, and the density its rows take — `md`
  *   (the body rung) for an account or project menu, `sm` (the small rung) for a row's overflow
@@ -12,6 +13,8 @@
  *   as a registry path is decorative (`ui-icon-decor`, role `menu`) and muted; a node (an avatar,
  *   a spinner) is drawn as given. `danger` sets the row in the danger tone, its glyph with it.
  *   With `href` the row is a link — a download, say — rather than a button.
+ * - `MenuRow` is the same row with both marks drawn by the caller, for a host that does not load
+ *   the theme icon sets (the public sites).
  * - `MenuRadioItem` is a row that picks one of several (`menuitemradio` inside a Menu).
  * - `MenuSeparator` rules one group of rows off from the next; `MenuLabel` names the group below
  *   it in the small muted rung.
@@ -24,7 +27,8 @@ import { createContext, useContext } from "react";
 import type { ReactNode } from "react";
 import { ICON_GAP } from "../../../icon-scale";
 import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
-import { ChoiceCheck, menuRowClass, menuRowTone } from "../menu-panel/menu-panel";
+import { CheckIcon } from "../../icons/marks/marks";
+import { ChoiceSlot, menuRowClass, menuRowTone } from "../menu-panel/menu-panel";
 
 /** A menu's row density: `md` rows on the body rung, `sm` rows on the small rung. */
 export type MenuDensity = "sm" | "md";
@@ -96,6 +100,8 @@ export interface MenuItemProps {
   role?: MenuItemRole;
   /** Layout extras on the row (a width, a margin); its look is the family's. */
   className?: string;
+  /** The row's tab order: `-1` for every row but one, where its list is a single tab stop. */
+  tabIndex?: number;
   "aria-label"?: string;
   /** ARIA the caller's container needs on the row (`aria-current` on the open one, say). */
   [aria: `aria-${string}`]: string | number | boolean | undefined;
@@ -116,10 +122,34 @@ function choiceState(
   return role === "option" ? { "aria-selected": checked } : { "aria-checked": checked };
 }
 
-export function MenuItem({
+export function MenuItem({ glyph, danger = false, ...row }: MenuItemProps) {
+  const lead = !shown(glyph) ? null : typeof glyph === "string" ? (
+    <GlyphIcon d={glyph} decor="menu" className={danger ? "" : "text-fg-subtle"} />
+  ) : (
+    <span className="flex shrink-0 items-center">{glyph}</span>
+  );
+  return (
+    <MenuRow {...row} danger={danger} lead={lead} check={<CheckIcon className="text-fg-muted" />} />
+  );
+}
+
+export type MenuRowProps = Omit<MenuItemProps, "glyph"> & {
+  /** The leading mark, drawn as given. */
+  lead?: ReactNode;
+  /** The current choice's mark, drawn as given in the check slot. */
+  check?: ReactNode;
+};
+
+/**
+ * The row MenuItem draws, with both marks drawn by the caller. MenuItem hands it a registry
+ * glyph and the menu check, which are drawn in every theme's icon set; the public sites draw
+ * line marks of their own here, which keeps those sets out of their bundles.
+ */
+export function MenuRow({
   label,
   onSelect,
-  glyph,
+  lead,
+  check,
   description,
   trailing,
   danger = false,
@@ -131,7 +161,7 @@ export function MenuItem({
   role,
   className = "",
   ...rest
-}: MenuItemProps) {
+}: MenuRowProps) {
   const scope = useContext(MenuScopeContext);
   const size = density ?? scope.density;
   const resolvedRole =
@@ -140,11 +170,6 @@ export function MenuItem({
     ? "text-tone-danger-fg hover:bg-tone-danger-bg"
     : menuRowTone(checked === true);
   const rowClass = `flex items-center ${ICON_GAP.menu} ${menuRowClass} ${densityText[size]} ${tone} disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent ${className}`;
-  const lead = !shown(glyph) ? null : typeof glyph === "string" ? (
-    <GlyphIcon d={glyph} decor="menu" className={danger ? "" : "text-fg-subtle"} />
-  ) : (
-    <span className="flex shrink-0 items-center">{glyph}</span>
-  );
   const body = (
     <>
       {lead}
@@ -155,7 +180,7 @@ export function MenuItem({
         )}
       </span>
       {shown(trailing) && <span className="shrink-0 text-xs text-fg-subtle">{trailing}</span>}
-      {checked !== undefined && <ChoiceCheck on={checked} />}
+      {checked !== undefined && <ChoiceSlot on={checked}>{check}</ChoiceSlot>}
     </>
   );
   if (href !== undefined) {

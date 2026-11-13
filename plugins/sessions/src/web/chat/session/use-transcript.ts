@@ -5,10 +5,10 @@
  */
 import { useMemo, useRef } from "react";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
-import type { StreamModel } from "@prismshadow/penguin-web/internal";
-import { aggregateMemoryChanges, sameMemoryChanges } from "@prismshadow/penguin-web/internal";
-import { panelDock } from "@prismshadow/penguin-web/internal";
-import { machineForSession } from "@prismshadow/penguin-web/internal";
+import type { StreamModel } from "../../../lib/amsp/stream-model";
+import { aggregateMemoryChanges, sameMemoryChanges } from "../../../lib/amsp/memory-changes";
+import { panelDock } from "../../dock";
+import { machineForSession } from "../../../lib/session-machines";
 import { useOutlineRailFit } from "../conversation-outline";
 import { buildInputHistory } from "../input-history";
 import { buildOutline } from "../outline-model";

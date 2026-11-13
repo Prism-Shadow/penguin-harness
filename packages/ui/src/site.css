@@ -1,7 +1,9 @@
 /** Public-site chrome and content. Import without the application theme or bundled fonts. */
+@import "./layers.css";
 @import "./cursors.css";
 @import "./site-content.css";
 @import "./site-prose.css";
+@import "./components/content/prose/markdown-table.css";
 
 /* Pin the public site's scale even inside a gallery previewing another theme or text size.
    Portaled menus carry this scope too, so their typography and colours match the trigger. */
@@ -59,7 +61,7 @@
   .site-ui-header {
     position: sticky;
     top: 0;
-    z-index: 40;
+    z-index: var(--layer-window-overlay);
     border-bottom: 1px solid var(--site-line);
   }
   .site-ui-brand {
@@ -83,7 +85,7 @@
   }
   .site-ui-nav-link {
     position: relative;
-    z-index: 1;
+    z-index: var(--layer-raised);
     flex-shrink: 0;
     padding: 6px 8px;
     border-radius: 6px;
@@ -184,7 +186,8 @@
       grid-template-rows: 0fr;
     }
   }
-  @media (min-width: 768px) {
+  /* The link row needs the room of all nine links; below it the menu button carries them. */
+  @media (min-width: 1024px) {
     .site-ui-desktop-links {
       display: flex;
     }
@@ -199,6 +202,7 @@
 .site-ui-header.ui-glass {
   background: color-mix(in srgb, var(--site-canvas) 85%, transparent);
   backdrop-filter: blur(8px);
+  border-color: var(--site-line);
 }
 .site-ui-language-panel {
   width: 144px;
@@ -220,7 +224,7 @@
 .site-ui-language-option[aria-checked="true"] {
   background: var(--site-pill);
 }
-.site-ui-language-option .ui-glyph {
+.site-ui-language-check {
   color: var(--site-accent);
 }
 .site-ui .ui-glyph > [data-set] {

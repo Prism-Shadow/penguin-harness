@@ -62,6 +62,13 @@ export function withNoticeDismissed(
 /** The id of a machine's "model keys from this server's environment" notice. */
 export const envOnlyNoticeId = (machineId: string): string => `machine-env-only:${machineId}`;
 
+/**
+ * The id of a machine's "models not synced to this machine" notice, per Project: the list holds
+ * that Project's entries only, so closing it in one Project leaves another Project's list alone.
+ */
+export const skippedNoticeId = (machineId: string, projectId: string): string =>
+  `machine-skipped:${machineId}:${projectId}`;
+
 interface NoticeStore {
   /** The stored map; null until read. */
   map: NoticeDismissMap | null;

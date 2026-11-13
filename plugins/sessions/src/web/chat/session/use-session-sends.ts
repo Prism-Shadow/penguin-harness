@@ -12,14 +12,14 @@ import type {
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
 import { toastError } from "@prismshadow/penguin-ui";
-import * as api from "@prismshadow/penguin-web/internal";
-import { ApiError } from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { apiErrorText } from "@prismshadow/penguin-web/internal";
-import { machineForSession } from "@prismshadow/penguin-web/internal";
-import { createStreamModel, finalizeHistory, pushMessage } from "@prismshadow/penguin-web/internal";
-import { switchDeskModel, useCompany } from "@penguinharness/plugin-company/web";
-import { adoptDockScope } from "@prismshadow/penguin-web/internal";
+import * as api from "../../../api/endpoints";
+import { ApiError } from "../../../api/client";
+import { S } from "../../../lib/strings";
+import { apiErrorText } from "../../../lib/api-error";
+import { machineForSession } from "../../../lib/session-machines";
+import { createStreamModel, finalizeHistory, pushMessage } from "../../../lib/amsp/stream-model";
+import { switchDeskModel, useCompany } from "../../company";
+import { adoptDockScope } from "../../dock";
 import { handoffMessage, modelSwitchMessage } from "../agent-handoff";
 import { prepareNewChatDraft } from "../new-chat";
 import { DRAFT_SESSION_ID } from "../draft-sessions";
@@ -56,8 +56,8 @@ export function useSessionSends({
       await reloadSessions();
       // Same conversation under a new id: its docks follow, or they are stranded under
       // an id nothing routes to again.
-      adoptDockScope(respondedId);
-      navigate(`/chat/${respondedId}`, { replace: true });
+      if (adoptDockScope(currentId, respondedId))
+        navigate(`/chat/${respondedId}`, { replace: true });
     },
     [reloadSessions, navigate],
   );
@@ -202,10 +202,14 @@ export function useSessionSends({
       };
       let createdId: string | null = null;
       try {
-        const created = await api.createSession(projectId, target.agentId, {
-          approvalMode: selected.approvalMode,
-          sandbox: selected.sandbox,
-        });
+        // This server's Agent list is what the /agent picker offers, so the new chat is created
+        // here, whichever machine the conversation handed off from is on.
+        const created = await api.createSession(
+          projectId,
+          target.agentId,
+          { approvalMode: selected.approvalMode, sandbox: selected.sandbox },
+          null,
+        );
         createdId = created.session.sessionId;
         const res = await api.postTask(createdId, { input: [origin, ...input] });
         addSession(created.session);

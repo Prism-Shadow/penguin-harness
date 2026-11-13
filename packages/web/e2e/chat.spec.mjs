@@ -137,7 +137,7 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   await expect(page.getByText(/已批准/).filter({ visible: true })).toHaveCount(0);
 
   // External chat links open in a new tab and never navigate the SPA away — including bare URLs
-  // that remark-gfm autolinks (the mock reply carries one inside a CJK sentence). A reply's link
+  // the chat Markdown autolinks (the mock reply carries one inside a CJK sentence). A reply's link
   // to a Workspace file opens the Files panel instead (md.test.ts, reply-link.test.ts).
   const replyLink = page.locator(".md-body a", { hasText: "example.com" }).first();
   await expect(replyLink).toBeVisible();
@@ -232,8 +232,8 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   await bottomDock.getByTestId("dock-pick-trace").click();
   const main = page.locator("main");
   await expect(main.locator('[data-tab-id="trace"][data-active="true"]')).toBeVisible();
-  // The file pills name the Session's own Trace files, newest first.
-  await expect(main.getByText("Trace 文件").first()).toBeVisible();
+  // The sticky toolbar names the Session's own Trace file: its number, date and size.
+  await expect(main.locator("[data-slot='toolbar']").getByText(/#\d{3} · /)).toBeVisible();
   // Legend shows the 5 fixed categories (tool-exec renamed).
   await expect(main.getByText("工具调用执行").first()).toBeVisible();
   await expect(main.getByText("模型回复").first()).toBeVisible();

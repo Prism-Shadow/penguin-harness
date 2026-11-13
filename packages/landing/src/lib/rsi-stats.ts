@@ -3,13 +3,12 @@
  * (their homepages), the self-evolution toolkits (the plugins of the library's `rsi` category,
  * each algorithm linked to its paper) and the benchmarks the built-in Benchmarks are drawn from
  * (each linked to its repository). Toolkit labels are names, the same in every language; a
- * benchmark is shown by its kind, which lives in the dictionaries, index-aligned with BENCHMARKS.
+ * benchmark is shown by its kind, a key into the dictionaries' `hero.benchmarkKinds`.
  *
- * test/rsi-stats.test.ts pins RSI_TOOLKITS to the library's `rsi` plugins and BENCHMARKS to
- * core's built-in Benchmarks, ids and upstream links alike, so neither list can ship behind its
- * source.
+ * The lists are kept by hand: a new toolkit or built-in Benchmark adds its entry here.
  */
 import type { ModelProvider } from "../components/icons";
+import type { Strings } from "./strings";
 
 /** In the order the hero draws the logos; `name` is the brand's own casing (link label). */
 export const MODEL_PROVIDERS = [
@@ -33,35 +32,32 @@ export const RSI_TOOLKITS = [
   { plugin: "ape-rsi-toolkit", label: "APE", href: "https://arxiv.org/abs/2211.01910" },
   { plugin: "ace-rsi-toolkit", label: "ACE", href: "https://arxiv.org/abs/2510.04618" },
   { plugin: "awm-rsi-toolkit", label: "AWM", href: "https://arxiv.org/abs/2409.07429" },
+  { plugin: "skilladam-rsi-toolkit", label: "SkillAdam", href: "https://arxiv.org/abs/2609.08944" },
+  { plugin: "skillopt-rsi-toolkit", label: "SkillOpt", href: "https://arxiv.org/abs/2605.23904" },
+  { plugin: "openskill-rsi-toolkit", label: "OpenSkill", href: "https://arxiv.org/abs/2606.06741" },
+  { plugin: "trace-rsi-toolkit", label: "TRACE", href: "https://arxiv.org/abs/2608.22793" },
 ] as const satisfies ReadonlyArray<{ plugin: string; label: string; href: string | null }>;
 
 /**
- * One entry per benchmark the built-ins are drawn from, in core's order, with the ids of the
- * built-ins drawn from it: GDPevo's train and test halves are one benchmark and one entry.
+ * One entry per upstream benchmark, in display order. GDPEVO Essential's six scenarios
+ * share one upstream and one entry; a Benchmark written for the Benchmark repository itself has
+ * no upstream and links to its own package there. Package ids are owned by that repository.
  */
 export const BENCHMARKS = [
+  { kind: "dataAnalysis", href: "https://github.com/Prism-Shadow/rag-bench-essential" },
+  { kind: "softwareEngineering", href: "https://github.com/datacurve-ai/deep-swe" },
+  { kind: "businessAutomation", href: "https://github.com/zapier/AutomationBench" },
   {
-    ids: ["penguinharness-benchmark-sec-a"],
-    href: "https://github.com/Prism-Shadow/rag-bench-essential",
-  },
-  {
-    ids: ["penguinharness-benchmark-sec-b"],
-    href: "https://github.com/datacurve-ai/deep-swe",
-  },
-  {
-    ids: ["penguinharness-benchmark-sec-c"],
-    href: "https://github.com/zapier/AutomationBench",
-  },
-  {
-    ids: ["penguinharness-benchmark-sec-d"],
+    kind: "scientificResearch",
     href: "https://github.com/harbor-framework/terminal-bench-science",
   },
+  { kind: "terminalTasks", href: "https://github.com/harbor-framework/terminal-bench" },
   {
-    ids: ["penguinharness-benchmark-sec-e"],
-    href: "https://github.com/harbor-framework/terminal-bench",
+    kind: "biomedicine",
+    href: "https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/packages/penguinharness-benchmark-biomedical-repeated-measures",
   },
-  {
-    ids: ["penguinharness-benchmark-gdpevo-train", "penguinharness-benchmark-gdpevo-test"],
-    href: "https://github.com/Prism-Shadow/GDPevo",
-  },
-] as const;
+  { kind: "agentSelfEvolution", href: "https://github.com/Prism-Shadow/GDPevo" },
+] as const satisfies ReadonlyArray<{
+  kind: keyof Strings["hero"]["benchmarkKinds"];
+  href: string;
+}>;

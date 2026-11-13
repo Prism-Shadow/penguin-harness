@@ -6,7 +6,7 @@ description: PenguinHarness 使用的术语，按主题分组，每条都附有�
 PenguinHarness 用到一组含义明确的术语。本页按主题分组给出定义，每条定义都链接到详细讲解它的页面。
 
 - [工作如何组织](#工作如何组织)：Project、Agent、Agent State、Workspace、数据目录
-- [工作如何运行](#工作如何运行)：Session、Task、Trace、OmniMessage、审批模式、子 Agent
+- [工作如何运行](#工作如何运行)：Session、Task、Trace、AMSP 记录、审批模式、子 Agent
 - [Agent 可用的能力](#agent-可用的能力)：工具、Skill、插件、钩子包、MCP Server、记忆、Vault、定时任务
 - [Agent 如何进化](#agent-如何进化)：Benchmark、题目、评估、优化、版本、快照
 - [模型与 Token](#模型与-token)：供应商、模型、思考等级、Token
@@ -28,7 +28,7 @@ Agent 是执行你所交代目标的主体。每个 Agent 都有自己的 Agent 
 
 ### Agent State
 
-Agent State 是 Agent 的持久化目录 `agent_state/`，存放 Agent 的配置（`system_config.yaml`）、可编辑的提示词文件 `AGENTS.md`、工具与 MCP Server 设置、Skill、钩子包、记忆、Vault 和定时任务。Agent 的行为完全由这些文件决定：你可以通过编辑文件改变它，其他 Agent 也可以。
+Agent State 是 Agent 的持久化目录 `agent_state/`，存放 Agent 的配置（`system_config.yaml`）、可编辑的提示词文件 `AGENTS.md`、工具与 MCP Server 设置、Skill、钩子包、工作台、记忆、Vault 和定时任务。Agent 的行为完全由这些文件决定：你可以通过编辑文件改变它，其他 Agent 也可以。
 
 见[配置参考](/configuration)。
 
@@ -64,11 +64,11 @@ Trace 是一个 Session 的记录：每条消息、每次工具调用、每个�
 
 见 [Session 与 Trace](/sessions-and-traces)。
 
-### OmniMessage
+### AMSP 记录
 
-OmniMessage 是 PenguinHarness 各处通用的统一消息格式：SDK 用它流式输出，Trace 用它存储，引擎内部也用它运转。产品宣传中也叫 Penguin Message，文档一律使用 OmniMessage。
+AMSP 记录是 PenguinHarness 各处通用的统一消息格式中的一条消息：SDK 用它流式输出，Trace 用它存储，引擎内部也用它运转；AMSP 即记录所在的流。产品宣传中也叫 Penguin Message，文档一律称 AMSP 记录。
 
-见 [OmniMessage 协议](/omni-message)。
+见 [AMSP 记录](/amsp-records)。
 
 ### 审批模式
 

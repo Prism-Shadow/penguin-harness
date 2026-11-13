@@ -15,7 +15,7 @@ import {
 
 import { S } from "../../lib/strings";
 import { useShortcutTitle } from "../../lib/shortcuts/use-keymap";
-import { latestConversation, withoutOrgSessions } from "@prismshadow/penguin-web/internal";
+import { latestConversation, withoutOrgSessions } from "../../lib/session-grouping";
 import { NEW_CHAT_ICON, glyphOf } from "../../lib/nav-icons";
 import { navChildKeysFor, navKeysFor } from "./nav-state";
 import { navPagesOf, pageTitle, useWebAppPages } from "../index";
@@ -23,15 +23,16 @@ import { useUpdateBadges } from "../../lib/use-update-badges";
 import { useAuth } from "../../state/auth";
 import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
-import { useCompany } from "@prismshadow/penguin-web/internal";
+import { useCompany } from "../../lib/company-context";
 
-import { parseOrgKey } from "@prismshadow/penguin-web/internal";
+import { parseOrgKey } from "../../lib/company-nav";
 import { UserMenu } from "./user-menu";
 import { isCurrentPath, renderRouterLink } from "./router-link";
-import { DRAFT_SESSION_ID, useNewChat } from "@penguinharness/plugin-sessions/web";
+import { DRAFT_SESSION_ID, useNewChat } from "../../features/chat";
 
 /**
- * The folded navigation column: the unfold button on top; below it, in product-specified order,
+ * The folded navigation column: the unfold button on top (in the desktop window it is the title
+ * band's sidebar toggle instead, and the rail has none); below it, in product-specified order,
  * last conversation / new chat / Agents / Models / Plugins / Machines (admins) / Cost Center /
  * Evaluation Center; the user avatar at the bottom, opening the same account menu the pinned
  * sidebar's avatar does. No logo.
@@ -46,7 +47,7 @@ import { DRAFT_SESSION_ID, useNewChat } from "@penguinharness/plugin-sessions/we
  * words in a styled tooltip (the package's `RailItem`). The entries' names come from the same
  * strings as the pinned nav's, so the rail follows the UI language with it.
  */
-export function CollapsedRail({ onExpand }: { onExpand: () => void }) {
+export function CollapsedRail({ onExpand }: { onExpand?: () => void }) {
   const { user } = useAuth();
   const navPages = navPagesOf(useWebAppPages());
   const { locale } = useLocale();
@@ -108,6 +109,8 @@ export function CollapsedRail({ onExpand }: { onExpand: () => void }) {
     currentMode >= 0
       ? modeStates[currentMode]!.navItems.map((item) => ({
           ...item,
+          /** The resolved drawing: the contribution names the glyph in the registry. */
+          icon: glyphOf(item.icon),
           note: notes.get(item.key) ?? null,
         }))
       : navKeysFor(navPages, user?.isAdmin === true).flatMap((key) => {
@@ -118,6 +121,7 @@ export function CollapsedRail({ onExpand }: { onExpand: () => void }) {
                 {
                   key,
                   to: page.path,
+                  // A page names itself in the interface's language (PageData.title / titleZh).
                   label: pageTitle(page, locale),
                   icon: glyphOf(page.icon ?? key),
                   note: notes.get(key) ?? null,
@@ -171,13 +175,15 @@ export function CollapsedRail({ onExpand }: { onExpand: () => void }) {
   return (
     <Rail
       head={
-        <RailItem
-          label={S.nav.expandSidebar}
-          tooltip={expandTitle}
-          glyph={ICONS.chevronRightPipe}
-          onClick={onExpand}
-          className="shrink-0"
-        />
+        onExpand === undefined ? undefined : (
+          <RailItem
+            label={S.nav.expandSidebar}
+            tooltip={expandTitle}
+            glyph={ICONS.chevronRightPipe}
+            onClick={onExpand}
+            className="shrink-0"
+          />
+        )
       }
       foot={
         /* The account menu opens here, on the rail, instead of the avatar expanding the sidebar

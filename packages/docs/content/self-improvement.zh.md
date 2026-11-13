@@ -110,18 +110,22 @@ Evaluator 返回的结果里不含评分细则的内容、Gold、逐项得分和
 
 ## RSI 工具包
 
-RSI（Recursive Self-Improvement，递归自我进化）正是本页讲的事：模型固定不动，Agent 依据自己实测的结果改进自己的 Harness——提示词、Skill、工具与钩子。每一种自进化算法都以一个 **RSI 工具包**发布，也就是插件库 **Agent 自进化**分类里的一个插件。上文的循环就是 **Default RSI Toolkit**（`default-rsi-toolkit`）；另外四个工具包各按原论文的流程运行一种已发表的算法，各带一个与插件同名的 Skill：
+RSI（Recursive Self-Improvement，递归自我进化）正是本页讲的事：模型固定不动，Agent 依据自己实测的结果改进自己的 Harness——提示词、Skill、工具与钩子。每一种自进化算法都以一个 **RSI 工具包**发布，也就是插件库 **Agent 自进化**分类里的一个插件。上文的循环就是 **Default RSI Toolkit**（`default-rsi-toolkit`）；另外八个工具包各实现一种已发表的算法，并声明适配差异，各带一个与插件同名的 Skill：
 
 - **OPRO**（`opro-rsi-toolkit`），出自 [Large Language Models as Optimizers](https://arxiv.org/abs/2309.03409)（Yang 等，2023）：优化器依据历史指令与分数提出新指令，每个候选都在冻结的 Benchmark 上测量，保留得分最高的指令。
 - **APE**（`ape-rsi-toolkit`），出自 [Large Language Models are Human-Level Prompt Engineers](https://arxiv.org/abs/2211.01910)（Zhou 等，2022）：不迭代、一次完成，提议者从输入 / 输出示例归纳候选指令，每个候选都测量一遍，保留最优者。
 - **ACE**（`ace-rsi-toolkit`），出自 [Agentic Context Engineering](https://arxiv.org/abs/2510.04618)（Zhang 等，2025），采用其顺序离线算法：Reflector 逐条阅读训练 Trace，Curator 把教训并入 Agent 每次任务前都会读的规则手册（playbook），最终的手册在冻结的 Benchmark 上测量。
 - **AWM**（`awm-rsi-toolkit`），出自 [Agent Workflow Memory](https://arxiv.org/abs/2409.07429)（Wang 等，2024）：从成功轨迹归纳工作流并存入 Agent 的记忆，可以在线（训练流）或离线（给定经验）进行，冻结后在 Benchmark 上测试。
+- **[SkillAdam](https://arxiv.org/abs/2609.08944)**（`skilladam-rsi-toolkit`）：持续更新问题记录，按评分变化调整 Skill 编辑预算。
+- **[SkillOpt](https://arxiv.org/abs/2605.23904)**（`skillopt-rsi-toolkit`）：限制文本编辑幅度，按评分筛选候选，并在训练轮次之间总结经验。无独立验证集时，复用全部或指定部分 Train 筛选候选，仍保留全部 Train 参与学习。
+- **[OpenSkill](https://arxiv.org/abs/2606.06741)**（`openskill-rsi-toolkit`）：先通过外部检索与独立虚拟验证构建技能，再评测冻结的 State。
+- **TRACE** （`trace-rsi-toolkit`），出自 [TRACE](https://arxiv.org/abs/2608.22793)（Wu 等，2026）：入口 Skill 负责外层实验组织，训练参考文件作为独立的 Curator Skill 安装到容器内。外层 Agent 通过 Harbor 启动训练，每个 Curator 从新 Actor 子会话的轨迹初始化、修订模块化技能库。默认每题每批两次、演化两轮；训练完成后，每个 Group 按完整训练均分选择一版有效技能库，平分选更早阶段，冻结后与无 Skill 基线各进行三次完整测试。这是实验采用的版本选择规则，测试反馈不参与选版。评测遵循已发布的连续训练契约，按完整测试重复的均分计算平均数与样本标准差；做题时的技能选择依赖指令执行，已读取的正文保留在历史中，不宣称复现论文的逐轮上下文替换。
 
 OPRO 与 APE 各自带一个小型演示任务：只要提出来，Skill 会先新建一个 Agent 和一套 6 题的 Benchmark 再开始。每个 Skill 都写明论文的默认参数和一档更小的冒烟预算；除非你要求，它从不按论文的完整预算运行。
 
-工具包之间互不依赖，也不依赖 `default-rsi-toolkit`，任何一个单独安装即可运行。每个工具包都在被测 Agent 里自行初始化学习槽：一个 Agent 自有的 Skill，存放方法学到的内容（指令、规则手册或工作流），再在它的 `AGENTS.md` 里加一行固定指令，要求它开始任务前先读这个 Skill。方法的循环只改这个 Skill 存放的内容。每一次测量都经由工具包自带的 `references/evaluation.md` 进行：它与 `agent-evaluation` 采用同一套单格协议（每个 Case × run 经 `run_subagent` 派生一个子 Agent，返回纯协议 YAML），写入同样的记分板记录。四个算法工具包里的这份文件逐字节相同。内置 Benchmark 的题目按题干的 **How this case is run** 一节运行，与 `agent-evaluation` 一致。
+工具包之间互不依赖，也不依赖 `default-rsi-toolkit`，任何一个单独安装即可运行。OPRO、APE、ACE 和 AWM 在被测 Agent 里自行初始化学习槽：一个 Agent 自有的 Skill，存放方法学到的内容（指令、规则手册、工作流或模块化技能库），再在它的 `AGENTS.md` 里加一行固定指令，要求它开始任务前先读这个 Skill。方法的循环只改这个 Skill 存放的内容。最终 Benchmark 评测遵循工具包自带的 `references/evaluation.md`，写入现有记分板格式。OPRO、APE、ACE 和 AWM 共用通用单格评测协议；连续训练工具包分别说明训练启动、产物交接与独立测试流程。内置 Benchmark 的题目按题干的 **How this case is run** 一节运行，与 `agent-evaluation` 一致。
 
-工具包测量的每个候选都取一个新的 Agent State `version`。与默认循环相同，每个版本在被改动之前先打快照；运行结束时停在方法选定的版本上。这些评估照常写入 `scoreboard.yaml`，标签规则不变，因此同一个 Agent 在同一模型与思考等级下的默认循环与 OPRO 共用图表上的一条线：各点的版本号区分它们，每条评估的摘要标题写明所用的方法。在 Web App 中，用评估中心**优化**标签页的**方法**字段选择工具包，见[评估中心](/evaluation-center#优化-agent)。
+OPRO、APE、ACE 和 AWM 测量的每个候选都取一个新的 Agent State `version`。与默认循环相同，每个版本在被改动之前先打快照；运行结束时停在方法选定的版本上。这些评估照常写入 `scoreboard.yaml`，标签规则不变，因此同一个 Agent 在同一模型与思考等级下的默认循环与 OPRO 共用图表上的一条线：各点的版本号区分它们，每条评估的摘要标题写明所用的方法。在 Web App 中，用评估中心**优化**标签页的**方法**字段选择工具包，见[评估中心](/evaluation-center#优化-agent)。
 
 ## 复现的 Benchmark
 
@@ -140,7 +144,8 @@ Benchmark 属于 Project，每个 Benchmark 存放在 `<root>/<project>/benchmar
 ├── benchmark_config.toml       # the manifest: id, title, description, description_zh, version, status, runs (Builder runs is fixed at 1), [origin]
 ├── <case-id>/
 │   ├── statement/              # the task given to the Target Agent
-│   └── rubric/                 # private scoring rubric, isolated from the Target Agent
+│   ├── rubric/                 # private scoring rubric, isolated from the Target Agent
+│   └── task_config.toml        # 任务元信息和可选资源预算
 └── scoreboard.yaml             # evaluation records (current format)
 ```
 
@@ -169,15 +174,20 @@ kind = "agent"
 | --- | --- |
 | `id` | 目录名。`id` 与所在目录不符的清单不会被读取 |
 | `title`、`description` | 标题（缺省时以目录名代替）和可选的描述；由服务端写入时分别不超过 200 和 2,000 个字符 |
+| `title_zh` | 可选的中文标题，导入和保存时保留 |
 | `description_zh` | 可选：中文描述，中文界面下代替 `description` 显示，与插件的 `description_zh` 一样；长度限制相同 |
-| `version` | 日期版本 `"YYYY.MM.DD.N"` |
+| `version` | Benchmark 包使用 `"x.y.z"`，也接受原有日期版本 `"YYYY.MM.DD.N"` |
+| `last_update` | 包的更新时间，使用 ISO 8601 格式 |
+| `[author]` | 包作者：`name`，以及选填的 `email` 和 `homepage` |
 | `status` | `draft`、`published` 或 `failed`，见 [Benchmark 状态](#benchmark-状态) |
 | `runs` | 每题运行次数，正整数，缺省为 1；由服务端写入时不超过 1,000 |
 | `[origin]` | 这份副本的来源，记在 `kind` 里：`builtin`（随 Project 预置）、`manual`（手动创建表单）、`agent`（由 `benchmark-design` 写入）、`git`（Agent 从仓库文件夹导入：带 `url`、解析到的 40 位提交 `ref`、`path` 与 `imported_at`）或 `zip`（上传的包：带 `imported_at`） |
 
 `id`、`version` 与 `[origin]` 是本版本新增的键，读取时都可以省略。早先版本写下的清单一个都没有，照原样读取：以目录名为 id，没有版本，也没有来源。没有任何东西改写它，也不需要手动处理。`id`、`version` 或 `[origin]` 出现了却不合规，清单就读不了（见 [Benchmark 状态](#benchmark-状态)）。早先版本读到本版本写下的清单时，会忽略它不认识的键。
 
-凡是 Agent 可能在本地改动的东西都带日期版本，Skill 与 Benchmark 都是如此。新的 Benchmark 从当天的 `.1` 开始，同一天的下一次修订取下一个序号；`benchmark-design` 每次改题或改 `status` 都会递增版本。Benchmark 页面在目录路径旁显示它的版本。
+Benchmark 包使用 `x.y.z` 版本，导入时保留原值。本地创建的 Benchmark 从当天的 `.1` 开始，同一天的下一次修订取下一个序号；`benchmark-design` 每次改题或改 `status` 都会递增版本。Benchmark 页面在目录路径旁显示它的版本。
+
+[Community RFC-0001](https://github.com/Prism-Shadow/penguin-harness-community/blob/main/rfcs/RFC-0001-benchmark.zh.md) 规定了仓库提交所需的元信息。已有 Project 的清单缺少新字段时仍可读取。
 
 Benchmark 的**包**是 `benchmark_config.toml` 加上各题目录。`scoreboard.yaml`、`.jobs/` 下的 trial、其他以点开头的条目和符号链接都属于这块磁盘上的副本，永远不属于包。原始大文件同样不进包：题干以固定提交的仓库链接引用它们，内置 Benchmark 的题干就是这样写的。内置 Benchmark 另以同一格式发布在公开仓库 Prism-Shadow/penguin-harness-benchmark 的 `packages/` 下。
 
@@ -198,7 +208,7 @@ Benchmark 的**包**是 `benchmark_config.toml` 加上各题目录。`scoreboard
 `scoreboard.yaml` 里的每条评估记录都带时间戳，并包含：
 
 - `agent_id`：这次评估测试的 Agent。它与 `model_id`、`thinking_level` 一起组成这条记录的**标签**。趋势图以时间为横轴、分数为纵轴，每个标签画一条线，只有同一标签下的分数才可比。Agent State 的 `version` 不属于标签：同一个 Agent 在同一 Runtime 下的历次版本，正是这张图要展示的趋势，所以它们共用一条线，每个点的悬停提示里写着对应的版本。评估记录还不带 Agent 的时期写下的记录，读作未标注，归入图表的灰色系列。
-- 评估 Runtime：`provider`、`model_id` 和 `thinking_level`。对于基线，用户指定的 `(provider, model_id)` 模型对优先，否则沿用 Builder Session 的模型对；评估中心**评估**标签页发起的评估同样沿用其评估会话的模型对；优化则沿用 Reference 的 Runtime。`thinking_level` 从 Target Agent 的配置读取，不依赖 Trace 元数据。
+- 评估 Runtime：`provider`、`model_id` 和 `thinking_level`。对于基线，用户指定的 `(provider, model_id)` 模型对优先，否则沿用 Builder Session 的模型对；评估中心**评估**标签页发起的评估用**被测智能体使用的模型**选定的模型对，由提示词带上；优化则沿用 Reference 的 Runtime，从**优化**标签页发起时提示词点名被测模型，Reference 取这个模型对上的评估。`thinking_level` 从 Target Agent 的配置读取，不依赖 Trace 元数据。
 - `summary_title` 和 `summary`：这一轮的结论和下一轮的假设。
 - 由模型写入的分数、成本和耗时平均值。题目级的值是各次运行的平均，评估级的值是各道题目的平均。单次运行的成本保留记录时的精度。成本平均值忽略 `null`，只有所有参与计算的成本都未知时才为 `null`。分数保留两位小数，成本平均值保留六位小数，`duration_ms` 为整数。
 - 每道题目的逐次运行明细：每次运行记录 `score`、`cost`、`duration_ms` 和 `session_id`。
@@ -217,7 +227,9 @@ Benchmark 的**包**是 `benchmark_config.toml` 加上各题目录。`scoreboard
 
 Optimizer 改动 Reference State 之前，会先确保 Reference 版本对应的 `<agent>/snapshots/v<version>.tar.gz` 存在。已有快照就直接复用；没有就把 `agent_state/` 打包成一个，打包时排除 Vault（`.vault.toml`），密钥永远不会进入快照。它从不覆盖同一版本已有的快照；如果创建不了快照，就在改动任何东西之前停下。落选的 Candidate 在同一轮内回滚：Optimizer 恢复原来的文件和版本号，并删除 Candidate 新建的文件。
 
-在 Web App 中，Agent 的设置页向所有成员提供**导出快照**，向 Project owner 提供**导入快照**。导入会整体替换 Agent State，版本号取包内的 `version`，并保留当前的 Vault；导入之前会先为当前版本打一个快照。导入的版本不比当前版本新时，需要先确认。智能体页面的创建对话框也可以直接用导出的快照包新建 Agent（**从快照初始化**）：新 Agent 以包内的状态和版本起步，无需确认。
+用包覆盖 Agent（见[导出和导入 Agent](/agents#导出和导入-agent)）只有 Project owner 能做。它替换 Agent State 中包所带的部分（包里没有的部件沿用现有内容），版本号取包内的 `version`，并保留当前的 Vault。导入之前，当前 State 会重新打包成一个单独的备份 `<agent>/snapshots/import-backup-v<version>-<time>-<random>.tar.gz`，从不覆盖已有文件，也不属于 `v<version>.tar.gz` 快照：同一版本的旧快照既不会被沿用，也不会被覆盖。工作台的版本历史位于 Agent State 之外，导入不会改动它。以新 id 导入时新建 Agent，以包内的状态和版本起步，不写备份。
+
+zip 包不能含任何链接。`.tar.gz` 包只有在 `agent_state/` 是真实目录、且其中所有符号链接都解析在 `agent_state/` 之内时才会被接受；链接指向 `agent_state/` 之外或指向不存在目标的包，以及 `system_config.yaml` 无法读取的包，都会被拒绝。导入时若现行 Vault 无法读取，则在触碰 State 之前停止。替换失败且无法恢复原 State 时，原 State 与 Vault 保留在该 Agent 目录下的导入暂存目录中，服务端日志会给出其路径。
 
 ## 可审计性
 
@@ -239,5 +251,9 @@ Optimizer 改动 Reference State 之前，会先确保 Reference 版本对应的
 | `ape-rsi-toolkit` | `ape-rsi-toolkit` | 运行 APE：从输入 / 输出示例归纳指令 |
 | `ace-rsi-toolkit` | `ace-rsi-toolkit` | 运行 ACE：从训练 Trace 进化规则手册 |
 | `awm-rsi-toolkit` | `awm-rsi-toolkit` | 运行 AWM：从成功轨迹归纳工作流 |
+| `skilladam-rsi-toolkit` | `skilladam-rsi-toolkit` | SkillAdam RSI 工具包：根据执行反馈迭代技能。 |
+| `skillopt-rsi-toolkit` | `skillopt-rsi-toolkit` | SkillOpt RSI 工具包：限制编辑幅度，按评分选择技能。 |
+| `openskill-rsi-toolkit` | `openskill-rsi-toolkit` | OpenSkill RSI 工具包：通过检索与虚拟测试学习技能。 |
+| `trace-rsi-toolkit` | `trace-rsi-toolkit` | 运行 TRACE：对比轨迹演化技能库，评测冻结后的技能 |
 
 Skill 如何组织和安装，见[技能与插件](/skills)。

@@ -22,7 +22,9 @@
  *
  * The output streams through `StreamText` in its plain format, so it arrives the way a reply
  * does (the theme's pace, veil and caret) and grows with the transcript while it streams; it
- * takes the output block's height cap back once settled.
+ * takes the output block's height cap back once settled. A note of the caller's (`bodyNote`: the
+ * whole of a folded output still being fetched) closes the body; it is mounted only while the row
+ * is open, as the rest of the body is.
  *
  * Copy is the caller's: the name (an alias, when it resolves one), the subtitle, the state label,
  * the marker, the action, the approval buttons' words and the images' alt text all arrive as
@@ -85,6 +87,11 @@ export interface ToolCallCardProps {
   images?: { srcs: readonly string[]; alt: string };
   /** Always shown below the details, whatever the collapsed state (a subagent's row). */
   footer?: ReactNode;
+  /**
+   * The body's last line (the rest of an output still being fetched). It is mounted only while
+   * the row is open, so mounting is the caller's sign that the reader opened it.
+   */
+  bodyNote?: ReactNode;
   /** The chevron's name while collapsed; the interface's word for "expand" by default. */
   expandLabel?: string;
   /** The chevron's name while expanded; the interface's word for "collapse" by default. */
@@ -107,6 +114,7 @@ export function ToolCallCard({
   outputStreaming = false,
   images,
   footer,
+  bodyNote,
   expandLabel,
   collapseLabel,
 }: ToolCallCardProps) {
@@ -217,6 +225,9 @@ export function ToolCallCard({
               />
             ))}
           </div>
+        )}
+        {bodyNote !== undefined && bodyNote !== null && (
+          <div className="border-t border-line-muted px-3 py-2">{bodyNote}</div>
         )}
       </>
     </DisclosureRow>

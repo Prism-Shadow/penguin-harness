@@ -11,6 +11,7 @@ import type { PushedBuild } from "../src/hmr/pushed-build.js";
 import { ShippedImage } from "../src/machines/shipped-image.js";
 import { shippedImage } from "../src/machines/install-server.js";
 import { resolveCli } from "../src/services/cli-shim.js";
+import type { Manifest } from "@prismshadow/penguin-hmr/manifest";
 
 const made: string[] = [];
 
@@ -121,7 +122,9 @@ async function expectRecordAndAnswer(root: string): Promise<void> {
   const answer = await resolveCli({ callerEntry: "/install/dist/penguin.js", root });
   expect(answer).toEqual({
     kind: "entry",
-    entry: "/install/dist/penguin.js",
+    // The resolver resolves the caller's entry, so the expectation is the same resolution
+    // — a literal POSIX string would not hold on Windows (drive letter, path separators).
+    entry: path.resolve("/install/dist/penguin.js"),
     reason: "own-entry",
     bundle: bundlePath,
   });
@@ -221,6 +224,48 @@ describe("the reconciliation is idempotent and defers to a push", () => {
       const bundle = await fs.readFile(path.join(root, "hmr", meta.manifest.cli!.bundle!), "utf8");
       expect(bundle).toBe(CLI + "// v2\n");
     }
+  });
+
+  // The mirror of the upgrade case, fixing the boundary the reconciliation lives
+  // under: the image follows whatever package started last, downgrades included —
+  // the content-hash id proves identity, not recency, so an older package started
+  // after a newer one lays its own image and the record follows it.
+  it("a downgraded installation copies its older body over the newer image's record", async () => {
+    const newDist = await tmp("penguin-sync-downgrade-new-");
+    const newerBody = await packImage(newDist, { ...BUILD, cli: CLI + "// v2\n" });
+    const root = await tmp("penguin-sync-downgrade-root-");
+    await syncCarriedImage(root, newerBody);
+
+    const oldDist = await tmp("penguin-sync-downgrade-old-");
+    const oldBody = await packImage(oldDist);
+    await expect(syncCarriedImage(root, oldBody)).resolves.toMatchObject({ kind: "copied" });
+
+    const meta = await readHarnessMeta(root);
+    if (meta.kind === "meta") {
+      const bundle = await fs.readFile(path.join(root, "hmr", meta.manifest.cli!.bundle!), "utf8");
+      expect(bundle).toBe(CLI);
+    }
+    await expectRecordAndAnswer(root);
+  });
+
+  // The same image id, but a record pointer outside that image's namespace: the check
+  // must treat this as incomplete. Mapping a prefix-mismatched pointer to an empty
+  // relative path would resolve to the store directory itself and let a start answer
+  // "current" while the CLI still resolves to a missing bundle.
+  it("a same-image record pointing outside its own namespace is repaired, not trusted", async () => {
+    const dist = await tmp("penguin-sync-namespace-dist-");
+    const body = await packImage(dist);
+    const root = await tmp("penguin-sync-namespace-root-");
+    await syncCarriedImage(root, body);
+
+    const record = path.join(root, "hmr", "harness.json");
+    const manifest = JSON.parse(await fs.readFile(record, "utf8")) as Manifest;
+    expect(manifest.source).toMatchObject({ image: expect.any(String) });
+    manifest.cli!.bundle = "store/carried/foreign-image/cli/0123456789abcdef.mjs";
+    await fs.writeFile(record, JSON.stringify(manifest));
+
+    await expect(syncCarriedImage(root, body)).resolves.toMatchObject({ kind: "copied" });
+    await expectRecordAndAnswer(root);
   });
 
   it("a hot-pushed root keeps its record: the copy never outlives a push", async () => {

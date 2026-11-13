@@ -3,7 +3,9 @@
  *
  * Ownership is per user, not per project: a shell runs as the OS account hosting the server
  * and can read and write everything that account can, so it is not a project-scoped
- * resource and must never be reachable by another account.
+ * resource and must never be reachable by another account. Within a user's shells, each
+ * also records the conversation (Session) it was opened for — a label, not a permission:
+ * it is what the Web App files a shell under, so one conversation never lists another's.
  *
  * Two lifetime rules matter:
  * - A session that has exited is kept for a short grace period instead of being dropped, so
@@ -44,6 +46,8 @@ export const MAX_TERMINALS_PER_USER = 12;
 export interface CreateTerminalRequest {
   cwd: string;
   ownerUserId: string;
+  /** The conversation the shell is opened for; absent or null for none. */
+  sessionId?: string | null;
   name?: string;
   cols?: number;
   rows?: number;
@@ -133,6 +137,7 @@ export class TerminalManager {
     const options: CreateTerminalSessionOptions = {
       cwd,
       ownerUserId: request.ownerUserId,
+      sessionId: request.sessionId ?? null,
       seq,
       name,
       ...(this.opts.assets !== undefined ? { assets: this.opts.assets } : {}),
@@ -252,6 +257,13 @@ export class TerminalManager {
 
   listInfo(userId: string): TerminalSessionInfo[] {
     return this.list(userId).map((session) => session.info());
+  }
+
+  /** Files one of the user's shells under another conversation (a self-healed Session id). */
+  reown(id: string, userId: string, sessionId: string | null): TerminalSession {
+    const session = this.require(id, userId);
+    session.setSession(sessionId);
+    return session;
   }
 
   kill(id: string, userId: string): void {

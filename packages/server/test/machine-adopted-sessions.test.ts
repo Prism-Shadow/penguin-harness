@@ -18,6 +18,8 @@
  *   unarchive by ids, and a whole-group delete pinned to the machine's own count time.
  * - Given a machine the adopter is not connected to, the groups name it as unreachable and still
  *   list this server's own; a page on it is a 503.
+ * - Given a machine that holds its connection but answers nothing, this server's groups asked
+ *   alone answer without it; the machines' groups are asked apart.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { sessionMeta, userText } from "@prismshadow/penguin-core";
@@ -99,6 +101,8 @@ describe("a machine's Sessions, read by the server that adopted it", () => {
   let adopter: TestApp;
   let machineCookie: string;
   let connected = true;
+  /** The connection holds, and nothing behind it answers. */
+  let silent = false;
 
   /** A call to the machine as the adopter makes one: its admin's session and the adoption time. */
   const asAdopter = async (method: string, path: string, body?: unknown) =>
@@ -134,6 +138,7 @@ describe("a machine's Sessions, read by the server that adopted it", () => {
                 api: connected
                   ? {
                       request: async (method: string, path: string, body?: unknown) => {
+                        if (silent) return new Promise<never>(() => {});
                         const res = await asAdopter(method, path, body);
                         return { status: res.status, text: await res.text() };
                       },
@@ -293,6 +298,24 @@ describe("a machine's Sessions, read by the server that adopted it", () => {
       expect(machine.deps.sessionsRepo.findById(second)).toBeNull();
       expect(machine.deps.sessionsRepo.findById(third)).toBeNull();
       expect(machine.deps.sessionsRepo.findById(first)).not.toBeNull();
+    });
+
+    it("answers this server's groups alone without asking a machine, and the machines' apart", async () => {
+      const admin = (await loginAdmin(adopter.app)).cookie;
+      const workspace = fresh("adopt-apart");
+      await seed(machine, { at: AFTER, source: "cli", workspace });
+      await seed(adopter, { at: AFTER, source: "cli", workspace });
+      silent = true;
+      try {
+        const here = await groups(admin, "?servers=here");
+        expect(here.groups.some((g) => g.workspace === workspace && !g.machineId)).toBe(true);
+        expect(here.groups.some((g) => g.machineId !== undefined)).toBe(false);
+      } finally {
+        silent = false;
+      }
+      const there = await groups(admin, "?servers=machines");
+      expect(machineGroup(there, workspace)).toMatchObject({ count: 1 });
+      expect(there.groups.some((g) => g.machineId === undefined)).toBe(false);
     });
 
     it("names a machine it cannot reach, lists its own all the same, and refuses a page there", async () => {

@@ -2,7 +2,10 @@
  * Penguin Go migration through real config stores and the real MMSP HTTP client.
  * - Overlapping and MMSP-only deliveries use MMSP and retain detailed metadata.
  * - New authorization, reauthorization and sync use MMSP with the existing device flow.
- * - Old projects migrate on read, including model overrides, and repeated reads do not rewrite.
+ * - Old projects migrate on the server's read, including model overrides, and repeated reads do
+ *   not rewrite; a load through the SDK alone leaves them as written (the migration needs the
+ *   server's catalog) — unless the App's start has swept every Project's file first, an
+ *   unparseable one left for its own read to report.
  * - Config migration needs no network requests, keys or current-catalog membership.
  * - Other groups and redirected Go rows keep their keys, settings and routes.
  * - The Go protocol is fixed: the group route and the whole-table PUT refuse another one, while
@@ -14,7 +17,6 @@ import fs from "node:fs/promises";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   GenerativeModel,
-  migratePenguinGoRoutes,
   loadProjectConfig,
   projectConfigPath,
   userText,
@@ -24,9 +26,10 @@ import {
   toolCallOutput,
   inlineData,
 } from "@prismshadow/penguin-core";
-import type { LLMOutcome, OmniMessage } from "@prismshadow/penguin-core";
+import type { LLMOutcome, AmspRecord } from "@prismshadow/penguin-core";
 import type { ErrorBody, ModelsResponse } from "../src/api/types.js";
 import { PlatformAuthService, platformConnection } from "../src/services/platform-auth-service.js";
+import { migratePenguinGoRoutes } from "../src/services/project-config-migrations.js";
 import { fakeFetch, jsonResponse, stubFetch } from "./fixtures/fetch.js";
 import { createTestApp, provisionUser, apiClient } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
@@ -237,7 +240,7 @@ describe("Penguin Go stored projects", () => {
       ).toBe(true);
     },
   );
-  it("sync changes both group and row routes while retaining keys, selections, promotions and custom settings", async () => {
+  it("sync changes routes, refreshes prices and removes an ended promotion while retaining keys, selections and custom settings", async () => {
     const id = await project();
     const deliveredBase = "https://token.penguin.ooo/api/v1";
     const original = oldConfig("saved-device-key");
@@ -263,11 +266,13 @@ describe("Penguin Go stored projects", () => {
       ...original.models[0],
       client_type: "mmsp",
       base_url: deliveredBase,
+      pricing: { unit: "usd_per_mtok", cache_read: 0.1, cache_write: 1, output: 3 },
     });
     expect(rows[1]).toEqual({
       ...original.models[1],
       client_type: "mmsp",
       base_url: deliveredBase,
+      pricing: { unit: "usd_per_mtok", cache_read: 0.1, cache_write: 1, output: 3 },
     });
     expect(rows.slice(2)).toEqual(original.models.slice(2));
     expect(raw.default_model).toEqual(original.default_model);
@@ -282,20 +287,22 @@ describe("Penguin Go stored projects", () => {
           "SELECT discount FROM model_promotions WHERE project_id=? AND provider='penguin-go'",
         )
         .get(id),
-    ).toMatchObject({ discount: 0.4 });
+    ).toBeUndefined();
     expect(fake.calls).toHaveLength(2);
   });
-  it("SDK and cached server loads migrate multiple old projects and do not rewrite a second time", async () => {
+  it("server loads migrate multiple old projects and do not rewrite a second time; an SDK load leaves them as written", async () => {
     const ids = [await project(), await project()];
     const fake = stubFetch(() => {
       throw new Error("Migration must not access the network");
     });
     for (const id of ids) {
       await t.deps.projectConfigService.writeRaw(id, oldConfig(`ep_auto_${id}`));
-      const config =
-        id === ids[0]
-          ? await loadProjectConfig(t.root, id)
-          : await t.deps.projectConfigService.loadConfig(id);
+      // The SDK alone has no catalog to migrate with: the old route stays as written.
+      const file = projectConfigPath(t.root, id);
+      const written = await fs.readFile(file, "utf8");
+      expect((await loadProjectConfig(t.root, id)).models[0]?.client_type).not.toBe("mmsp");
+      expect(await fs.readFile(file, "utf8")).toBe(written);
+      const config = await t.deps.projectConfigService.loadConfig(id);
       expect(config.models[0]).toMatchObject({
         model_id: "deepseek-flash",
         client_type: "mmsp",
@@ -303,13 +310,38 @@ describe("Penguin Go stored projects", () => {
         max_tokens: 1234,
         fast_mode: true,
       });
-      const file = projectConfigPath(t.root, id);
       const first = await fs.readFile(file, "utf8");
       await loadProjectConfig(t.root, id);
       await t.deps.projectConfigService.loadConfig(id);
       expect(await fs.readFile(file, "utf8")).toBe(first);
     }
     expect(fake.calls).toHaveLength(0);
+  });
+  it("the App's start migrates every Project's stored routes before anything opens one, so an SDK load reads them migrated", async () => {
+    const ids = [await project(), await project()];
+    for (const id of ids) {
+      await t.deps.projectConfigService.writeRaw(id, oldConfig(`ep_sweep_${id}`));
+    }
+    // A file that does not parse is left for the read that needs it to report.
+    const broken = projectConfigPath(t.root, await project());
+    await fs.writeFile(broken, "this is = = not toml", "utf8");
+    const fake = stubFetch(() => {
+      throw new Error("Migration must not access the network");
+    });
+    try {
+      await t.deps.projectConfigService.migrateStoredConfigs();
+      for (const id of ids) {
+        expect((await loadProjectConfig(t.root, id)).models[0], id).toMatchObject({
+          model_id: "deepseek-flash",
+          client_type: "mmsp",
+          base_url: base,
+        });
+      }
+      expect(await fs.readFile(broken, "utf8")).toBe("this is = = not toml");
+      expect(fake.calls).toHaveLength(0);
+    } finally {
+      await fs.rm(broken, { force: true });
+    }
   });
   it("legacy row overrides migrate even when the group's defaults already use MMSP", async () => {
     const id = await project();
@@ -399,8 +431,8 @@ describe("Penguin Go stored projects", () => {
   });
 });
 
-async function drain(stream: AsyncGenerator<OmniMessage, LLMOutcome>) {
-  const messages: OmniMessage[] = [];
+async function drain(stream: AsyncGenerator<AmspRecord, LLMOutcome>) {
+  const messages: AmspRecord[] = [];
   for (;;) {
     const step = await stream.next();
     if (step.done) return { messages, outcome: step.value };
@@ -457,10 +489,10 @@ describe("Penguin Go MMSP HTTP transport", () => {
     const client = llm();
     client.setHistory([
       userText("previous"),
-      thinkingMessage("saved", "completed", { signature: "history-signature" }),
+      thinkingMessage("saved", { signature: "history-signature" }),
       assistantText("past"),
       toolCall({ name: "lookup", arguments: "{}", toolCallId: "old-call" }),
-      toolCallOutput({ toolCallId: "old-call", output: "result" }),
+      toolCallOutput({ toolCallId: "old-call", output: "result", status: "completed" }),
     ]);
     const result = await drain(
       client.streamGenerate({

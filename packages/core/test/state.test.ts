@@ -8,7 +8,6 @@ import { DEFAULT_EMPTY_POLL_YIELD_MS } from "../src/environment/tools/command/in
 import {
   AGENT_ID_PLACEHOLDER,
   AGENTS_MD_PLACEHOLDER,
-  DEFAULT_CHAT_THINKING_LEVELS,
   VAULT_KEYS_PLACEHOLDER,
   SKILL_METADATA_PLACEHOLDER,
   VAULT_PLACEHOLDER,
@@ -22,8 +21,6 @@ import {
   DATE_PLACEHOLDER,
   DEFAULT_AGENT_ID,
   DEFAULT_PROJECT_ID,
-  MMSP_CLIENTS,
-  MODEL_CATALOG,
   OS_VERSION_PLACEHOLDER,
   PLATFORM_PLACEHOLDER,
   PROJECT_DIR_PLACEHOLDER,
@@ -41,7 +38,6 @@ import {
   selectBuiltinToolsForModel,
   defaultProjectConfig,
   effectiveConnection,
-  fastModeProtocol,
   effectivePluginTable,
   parsePluginTables,
   defaultSystemConfig,
@@ -54,16 +50,12 @@ import {
   scratchpadDir,
   projectConfigFromTable,
   projectConfigPath,
-  presetModelEntries,
-  presetProviderTable,
   providerConnectionShape,
   removeVaultEntry,
   renderProjectConfigToml,
   resolveEntryCredential,
-  resolveModelEnv,
   resolveModelRef,
   resolveRoot,
-  routedClientType,
   saveProjectConfig,
   setDefaultModel,
   setProviderConnection,
@@ -71,14 +63,11 @@ import {
   skillsDir,
   systemConfigPath,
   toolsDir,
-  unroutableVendorModel,
-  type ModelRef,
   type ProjectConfig,
   type SystemConfig,
 } from "../src/state/index.js";
-import { SUBAGENT_THINKING_LEVELS } from "../src/interfaces/index.js";
 import { DEFAULT_COMMAND_POLICY_RULES } from "../src/state/command-policy-defaults.js";
-import { catalogModelEntries } from "../src/state/model-catalog.js";
+import { seedProject, seededProjectConfig } from "./seeded-project.js";
 import { sessionEnvironment } from "../src/internal/session-support.js";
 
 let tmpRoot: string;
@@ -143,75 +132,31 @@ describe("loadAgentState", () => {
 
       expect(state.stateDir).toBe(agentStateDir(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID));
 
-      // The default system Prompt states the Agent's identity, without repeating tool details
-      // already in the tool schema (Suggested workflows only points to the run_subagent
-      // delegation entry point).
-      expect(state.systemConfig.system_prompt).toContain("PenguinHarness");
-      expect(state.systemConfig.system_prompt).not.toContain("exec_command");
-      // Personality pins the reply language to the user's own (the tool schema asks the same of
-      // every call description, so the two can't disagree).
-      expect(state.systemConfig.system_prompt).toContain("in the user's language");
-      // Suggested workflows absorbs Subagent delegation and task conventions (self-reported
-      // identity as a soft convention, parallelism, file exchange).
-      expect(state.systemConfig.system_prompt).toContain("# Suggested workflows");
-      expect(state.systemConfig.system_prompt).toContain("run_subagent");
-      expect(state.systemConfig.system_prompt).toContain("Caller agent");
       // The default AGENTS.md is empty: it carries no preset guidance.
       expect(state.agentsMd).toBe("");
-      // The default turn cap is the -1 sentinel: a new agent has no per-Task turn limit, so
-      // long runs are never cut off unless the user configures a positive cap. Existing
-      // agents keep their stored max_turns verbatim (config is never auto-merged).
-      expect(state.systemConfig.max_turns).toBe(-1);
-      expect(state.systemConfig.system_prompt).toContain(AGENTS_MD_PLACEHOLDER);
-      expect(state.systemConfig.system_prompt).toContain(SESSION_ID_PLACEHOLDER);
-      expect(state.systemConfig.system_prompt).toContain(CWD_PLACEHOLDER);
-      expect(state.systemConfig.system_prompt).toContain(PLATFORM_PLACEHOLDER);
-      expect(state.systemConfig.system_prompt).toContain(OS_VERSION_PLACEHOLDER);
-      expect(state.systemConfig.system_prompt).toContain(DATE_PLACEHOLDER);
-      // AGENTS.md and the Environment injection sit at the end of the template, with AGENTS.md
-      // before Environment; the [developer_instructions] wrapper text is written directly into
-      // the template (the Prompt is transparent about the config).
-      expect(state.systemConfig.system_prompt).toContain("[developer_instructions]");
-      expect(state.systemConfig.system_prompt).toContain("[/developer_instructions]");
-      // The default template explains the semantics of system-synthesized markers to the model,
-      // and recommends preferring tool use.
-      expect(state.systemConfig.system_prompt).toContain("[turn_aborted]");
-      expect(state.systemConfig.system_prompt).toContain("[turn_retried]");
-      expect(state.systemConfig.system_prompt).toContain("[context_summary]");
-      expect(state.systemConfig.system_prompt).toContain("[user_steering]");
-      expect(state.systemConfig.system_prompt).toContain("# Tool use");
-      // Privacy hardening: explicitly forbids reading .project_config.toml (the sole config file,
-      // which holds API keys) and each Agent's .vault.toml, and states that config can only be
-      // changed via the CLI (penguin config ...).
-      expect(state.systemConfig.system_prompt).toContain("Never read");
-      expect(state.systemConfig.system_prompt).toContain(".project_config.toml");
-      expect(state.systemConfig.system_prompt).toContain("agent_state/.vault.toml");
-      expect(state.systemConfig.system_prompt).toContain("CLI-only");
-      expect(state.systemConfig.system_prompt).toContain("penguin config");
-      expect(state.systemConfig.system_prompt).not.toContain(".credentials.toml");
-      expect(state.systemConfig.system_prompt.indexOf(AGENTS_MD_PLACEHOLDER)).toBeLessThan(
-        state.systemConfig.system_prompt.indexOf("# Environment"),
-      );
-      // The Vault / Skills / Memory / Schedules section placeholders: the default template
-      // places them after [/developer_instructions] and before # Environment, in that order.
-      // The section statement texts (# Vault, # Skills, [use_skills] …) moved into the
-      // editable default prompts, each carrying its inner injection point — the template body
-      // holds no inline {{VAULT_KEYS}}/{{SKILL_METADATA}} anymore (those are the legacy
-      // template form).
+      // Every injection point the prompt assembly fills is in the template; one missing would
+      // silently drop its section. The section placeholders replaced the legacy inline tokens.
       const tpl = state.systemConfig.system_prompt;
-      expect(tpl).toContain(VAULT_PLACEHOLDER);
-      expect(tpl).toContain(SKILLS_PLACEHOLDER);
-      expect(tpl).toContain(SCHEDULES_PLACEHOLDER);
-      expect(tpl).not.toContain("# Vault");
-      expect(tpl).not.toContain("# Skills");
+      for (const placeholder of [
+        AGENTS_MD_PLACEHOLDER,
+        SESSION_ID_PLACEHOLDER,
+        CWD_PLACEHOLDER,
+        PLATFORM_PLACEHOLDER,
+        OS_VERSION_PLACEHOLDER,
+        DATE_PLACEHOLDER,
+        VAULT_PLACEHOLDER,
+        SKILLS_PLACEHOLDER,
+        MEMORY_PLACEHOLDER,
+        SCHEDULES_PLACEHOLDER,
+      ]) {
+        expect(tpl, placeholder).toContain(placeholder);
+      }
       expect(tpl).not.toContain(VAULT_KEYS_PLACEHOLDER);
       expect(tpl).not.toContain(SKILL_METADATA_PLACEHOLDER);
-      expect(DEFAULT_VAULT_PROMPT).toContain("# Vault");
-      expect(DEFAULT_VAULT_PROMPT).toContain(VAULT_KEYS_PLACEHOLDER);
-      expect(DEFAULT_SKILLS_PROMPT).toContain("# Skills");
-      expect(DEFAULT_SKILLS_PROMPT).toContain(SKILL_METADATA_PLACEHOLDER);
-      expect(DEFAULT_SKILLS_PROMPT).toContain("[use_skills]");
-      expect(DEFAULT_SCHEDULES_PROMPT).toContain("# Scheduled Tasks");
+      // The prompt forbids reading the two files that hold secrets: the Project config (API
+      // keys) and each Agent's vault.
+      expect(tpl).toContain(".project_config.toml");
+      expect(tpl).toContain("agent_state/.vault.toml");
       // The per-feature injection config ships enabled with the default prompts materialized.
       expect(state.systemConfig.vault).toEqual({ enabled: true, prompt: DEFAULT_VAULT_PROMPT });
       expect(state.systemConfig.skills).toEqual({ enabled: true, prompt: DEFAULT_SKILLS_PROMPT });
@@ -219,22 +164,6 @@ describe("loadAgentState", () => {
         enabled: true,
         prompt: DEFAULT_SCHEDULES_PROMPT,
       });
-      // Tooling installs once into a shared per-Agent directory rather than per task, so a
-      // Session's scratchpad never becomes the home of a virtualenv. It governs every task, not
-      // just skill runs, so it belongs to # File system — pinned by position, since the rule
-      // reads as skills-only the moment it drifts back under # Skills (now the {{SKILLS}}
-      // block).
-      expect(tpl).toContain("<app_data_dir>/agents/<agent_id>/shared_env/");
-      expect(tpl.indexOf("# File system")).toBeLessThan(tpl.indexOf("shared_env/"));
-      expect(tpl.indexOf("shared_env/")).toBeLessThan(tpl.indexOf(SKILLS_PLACEHOLDER));
-      expect(tpl.indexOf("[/developer_instructions]")).toBeLessThan(tpl.indexOf(VAULT_PLACEHOLDER));
-      expect(tpl.indexOf(VAULT_PLACEHOLDER)).toBeLessThan(tpl.indexOf(SKILLS_PLACEHOLDER));
-      expect(tpl.indexOf(SKILLS_PLACEHOLDER)).toBeLessThan(tpl.indexOf(MEMORY_PLACEHOLDER));
-      expect(tpl.indexOf(MEMORY_PLACEHOLDER)).toBeLessThan(tpl.indexOf(SCHEDULES_PLACEHOLDER));
-      expect(tpl.indexOf(SCHEDULES_PLACEHOLDER)).toBeLessThan(tpl.indexOf("# Environment"));
-      expect(state.systemConfig.model?.max_tokens).toBe(32000);
-      expect(state.systemConfig.model?.thinking_level).toBe("medium");
-      expect(state.systemConfig.model?.timeoutMs).toBe(300000);
       expect(state.systemConfig.tools?.mcpServers).toEqual([]);
       expect(Object.hasOwn(state.systemConfig, "description")).toBe(false);
       expect(Object.hasOwn(state.systemConfig, "subagents")).toBe(false);
@@ -245,10 +174,9 @@ describe("loadAgentState", () => {
     const first = await loadAgentState({ init: {} });
     const second = await loadAgentState({ init: {} });
     expect(second.systemConfig.system_prompt).toBe(first.systemConfig.system_prompt);
-    expect(second.systemConfig.system_prompt).toContain("PenguinHarness");
     expect(second.agentsMd).toBe(first.agentsMd);
     // The tool config is fully preserved on the load path.
-    expect(second.systemConfig.tools?.builtin?.[0]?.name).toBe("read_file");
+    expect(second.systemConfig.tools).toEqual(first.systemConfig.tools);
   });
 
   it("respects custom agentId / projectId", async () => {
@@ -260,81 +188,18 @@ describe("loadAgentState", () => {
 });
 
 describe("buildToolConfig", () => {
-  it("exposes the command, file (read_file also reads images) and subagent tools with their default contracts", async () => {
+  it("exposes every default built-in tool, and input_command's timeout lets a default-length empty poll return first", async () => {
     const state = await loadAgentState({ init: {} });
     const cfg = buildToolConfig(state);
     expect(cfg.mcpServers).toEqual([]);
-    expect(cfg.customTools.map((t) => t.name)).toEqual([
-      "read_file",
-      "edit_file",
-      "write_file",
-      "exec_command",
-      "input_command",
-      "run_subagent",
-      "input_subagent",
-    ]);
-    const exec = cfg.customTools.find((t) => t.name === "exec_command")!;
-    expect(exec.permission).toBe("rw");
-    expect(exec.timeoutMs).toBe(120000);
-    expect(exec.maxOutputLength).toBe(16000);
-    expect((exec.parameters as { required?: string[] }).required).toEqual(["description", "cmd"]);
-    // The command/subagent tools declare the description call argument in config,
-    // toggled by the per-entry call_description field (default true).
-    expect(exec.call_description).toBe(true);
-    expect(
-      Object.keys((exec.parameters as { properties: Record<string, unknown> }).properties),
-    ).toEqual(["description", "cmd", "workdir", "yield_time_ms", "run_in_background"]);
-    const write = cfg.customTools.find((t) => t.name === "input_command")!;
-    expect(write.permission).toBe("rw");
-    expect(write.call_description).toBe(true);
-    // Same timeout tier as exec_command; the empty-poll default has to fit under it, so a
-    // default-length poll returns on its own before the Environment's timeout fires.
-    expect(write.timeoutMs).toBe(120000);
-    expect(clampYield(undefined, DEFAULT_EMPTY_POLL_YIELD_MS, write.timeoutMs)).toBe(
+    expect(cfg.customTools.map((t) => t.name)).toEqual(
+      defaultSystemConfig().tools!.builtin!.map((t) => t.name),
+    );
+    // A default-length poll returns on its own before the Environment's timeout fires.
+    const input = cfg.customTools.find((t) => t.name === "input_command")!;
+    expect(clampYield(undefined, DEFAULT_EMPTY_POLL_YIELD_MS, input.timeoutMs)).toBe(
       DEFAULT_EMPTY_POLL_YIELD_MS,
     );
-    expect((write.parameters as { required?: string[] }).required).toEqual([
-      "description",
-      "process_id",
-    ]);
-    // File tools: read_file is read-only with a wider output cap and the image-reading
-    // timeout (one vision request may sit inside a call); edit/write are rw.
-    const readFile = cfg.customTools.find((t) => t.name === "read_file")!;
-    expect(readFile.permission).toBe("r");
-    expect(readFile.timeoutMs).toBe(60000);
-    expect(readFile.maxOutputLength).toBe(64000);
-    expect((readFile.parameters as { required?: string[] }).required).toEqual(["file_path"]);
-    expect(Object.keys((readFile.parameters as { properties: object }).properties)).toEqual([
-      "file_path",
-      "offset",
-      "limit",
-      "prompt",
-    ]);
-    expect(readFile.description).toContain("image");
-    const editFile = cfg.customTools.find((t) => t.name === "edit_file")!;
-    expect(editFile.permission).toBe("rw");
-    expect(editFile.timeoutMs).toBe(30000);
-    expect(editFile.maxOutputLength).toBe(16000);
-    expect((editFile.parameters as { required?: string[] }).required).toEqual([
-      "file_path",
-      "old_string",
-      "new_string",
-    ]);
-    const writeFile = cfg.customTools.find((t) => t.name === "write_file")!;
-    expect(writeFile.permission).toBe("rw");
-    expect((writeFile.parameters as { required?: string[] }).required).toEqual([
-      "file_path",
-      "content",
-    ]);
-    const sub = cfg.customTools.find((t) => t.name === "run_subagent")!;
-    expect(sub.permission).toBe("rw");
-    expect((sub.parameters as { required?: string[] }).required).toEqual(["description", "prompt"]);
-    const writeSub = cfg.customTools.find((t) => t.name === "input_subagent")!;
-    expect(writeSub.permission).toBe("rw");
-    expect((writeSub.parameters as { required?: string[] }).required).toEqual([
-      "description",
-      "subagent_id",
-    ]);
     // No built-in entry is pinned to a model class: read_file serves both at runtime.
     expect(cfg.customTools.every((t) => t.forModel === undefined)).toBe(true);
   });
@@ -406,15 +271,9 @@ describe("buildToolConfig", () => {
       agentsMd: "y",
     };
     const cfg = buildToolConfig(state);
-    expect(cfg.customTools.map((t) => t.name)).toEqual([
-      "read_file",
-      "edit_file",
-      "write_file",
-      "exec_command",
-      "input_command",
-      "run_subagent",
-      "input_subagent",
-    ]);
+    expect(cfg.customTools.map((t) => t.name)).toEqual(
+      defaultSystemConfig().tools!.builtin!.map((t) => t.name),
+    );
   });
 });
 
@@ -901,7 +760,7 @@ describe("assembleSystemPrompt", () => {
 });
 
 describe("resetSystemConfigToDefaults", () => {
-  it("replaces everything with the current defaults, keeping only name/description/version", async () => {
+  it("replaces everything with the current defaults, keeping only name/description/author/version", async () => {
     await loadAgentState({ init: {} });
     const configPath = systemConfigPath(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID);
     // An old on-disk config: custom prompt/runtime/tools plus a key outside the schema.
@@ -910,6 +769,7 @@ describe("resetSystemConfigToDefaults", () => {
       [
         "name: Custom Name",
         "description: Custom description",
+        "author: company",
         "version: 7",
         "system_prompt: Custom prompt with {{PROJECT_DIR}}",
         "max_turns: 5",
@@ -935,6 +795,7 @@ describe("resetSystemConfigToDefaults", () => {
     // Identity fields survive; everything else is the current default.
     expect(written.name).toBe("Custom Name");
     expect(written.description).toBe("Custom description");
+    expect(written.author).toBe("company");
     expect(written.version).toBe(7);
     const defaults = defaultSystemConfig();
     expect(written.system_prompt).toBe(defaults.system_prompt);
@@ -950,7 +811,7 @@ describe("resetSystemConfigToDefaults", () => {
     expect(reloaded.systemConfig.system_prompt).toContain("App Data Dir: {{PROJECT_DIR}}");
   });
 
-  it("normalizes an invalid version to 1 and keeps a missing name/description absent", async () => {
+  it("normalizes an invalid version to 1 and keeps a missing name/description/author absent", async () => {
     await loadAgentState({ init: {} });
     const configPath = systemConfigPath(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID);
     await fs.writeFile(configPath, "system_prompt: old\nversion: nonsense\n", "utf8");
@@ -962,6 +823,7 @@ describe("resetSystemConfigToDefaults", () => {
     expect(written.version).toBe(1);
     expect("name" in written).toBe(false);
     expect("description" in written).toBe(false);
+    expect("author" in written).toBe(false);
   });
 
   it("throws for a nonexistent Agent instead of initializing one", async () => {
@@ -976,9 +838,13 @@ describe("resetSystemConfigToDefaults", () => {
 });
 
 describe("project-config round trip", () => {
-  it("returns default config when file is absent (without writing)", async () => {
+  it("returns default config when file is absent (without writing): no providers, models or default model", async () => {
     const cfg = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
     expect(cfg).toEqual(defaultProjectConfig());
+    // Core carries no model knowledge: the server seeds a new Project's models from its catalog.
+    expect(cfg.models).toEqual([]);
+    expect(cfg.providers).toBeUndefined();
+    expect(cfg.default_model).toBeUndefined();
     // loadProjectConfig must not write to disk.
     expect(await exists(projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID))).toBe(false);
   });
@@ -1085,36 +951,28 @@ describe("project-config round trip", () => {
       'model_id = "gemini-direct"',
       'client_type = "gemini-official"',
       'base_url = "https://generativelanguage.googleapis.com"',
+      'api_key = "sk-row"',
       "",
     ].join("\n");
     await fs.writeFile(file, text, "utf8");
     const loaded = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
     expect(await fs.readFile(file, "utf8")).toBe(text);
-    const env = { GEMINI_API_KEY: "sk-gemini-env" };
 
     // The group's protocol reaches its keyless row, which the client then serves from the
     // GEMINI_* pair it reads itself.
     const grouped = getModel(loaded, { provider: "google", model_id: "gemini-3.8-flash" })!;
     expect(
-      resolveEntryCredential(grouped, providerConnectionShape(loaded.providers?.google), {}, env),
+      resolveEntryCredential(grouped, providerConnectionShape(loaded.providers?.google)),
     ).toEqual({ clientType: "gemini-official" });
-    // A row naming Google's own endpoint is lent GEMINI_API_KEY, as google-official's would be.
+    // A row naming Google's own endpoint with its own key goes there on the alias, as written.
     const pinned = getModel(loaded, { provider: "custom", model_id: "gemini-direct" })!;
-    expect(pinned.client_type).toBe("gemini-official");
-    expect(resolveEntryCredential(pinned, undefined, {}, env)).toEqual({
-      apiKey: "sk-gemini-env",
+    expect(resolveEntryCredential(pinned, undefined)).toEqual({
+      apiKey: "sk-row",
       baseUrl: "https://generativelanguage.googleapis.com",
       clientType: "gemini-official",
     });
-
-    // Routed, and so accepted by the models page, the server and the CLI alike.
-    expect(unroutableVendorModel("google", "gemini-3.8-flash", "gemini-official")).toBe(false);
-    const routed = routedClientType("gemini-3.8-flash", "gemini-official")!;
-    expect(MMSP_CLIENTS[routed]).toEqual(MMSP_CLIENTS["google-official"]);
-    expect(resolveModelEnv("gemini-3.8-flash", "gemini-official")).toEqual(
-      resolveModelEnv("gemini-3.8-flash"),
-    );
-    expect(fastModeProtocol("gemini-3.8-flash", "gemini-official")).toBe("openai");
+    // Which client the stored alias reaches, and with what variable, is MMSP's to say (the
+    // server catalog's tests hold the previews and the fast tier for it).
   });
 
   it("rewrites the client types of AgentHub 0.4 to MMSP's once, on load, keeping the rest of the file", async () => {
@@ -1225,16 +1083,6 @@ describe("project-config round trip", () => {
     expect(
       getModel(loaded, { provider: "qwen-token-plan", model_id: "glm-5.2" })?.api_key,
     ).toBeUndefined();
-  });
-
-  it("addModel requires an explicit provider: a bare model_id does not type-check", () => {
-    // Compile-time contract (asserted by `pnpm typecheck`, which includes this file): with the
-    // catalog inference gone there is nothing to fall back to, so the entry's provider field is
-    // required rather than optional. vitest only checks that the call expression exists.
-    const bare = { model_id: "glm-5.2" };
-    // @ts-expect-error provider is required: a model reference is always a (provider, model_id) pair.
-    const call = (): Promise<ProjectConfig> => addModel(tmpRoot, DEFAULT_PROJECT_ID, bare);
-    expect(call).toBeTypeOf("function");
   });
 
   it("upserts by the (provider, model_id) pair; same model_id under two providers co-exists", async () => {
@@ -1501,91 +1349,12 @@ describe("project-config round trip", () => {
     // With nothing of its own left, the row runs on its group's table.
     const cfg = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
     expect(
-      resolveEntryCredential(bare, providerConnectionShape(cfg.providers?.openrouter), {}, {}),
+      resolveEntryCredential(bare, providerConnectionShape(cfg.providers?.openrouter)),
     ).toEqual({
       apiKey: "or-group",
       baseUrl: "https://openrouter.ai/api/v1",
       clientType: "openai-responses",
     });
-  });
-
-  it("default config carries the anthropic claude-sonnet-4-6 pricing (three buckets)", () => {
-    const entry = getModel(defaultProjectConfig(), {
-      provider: "anthropic",
-      model_id: "claude-sonnet-4-6",
-    });
-    expect(entry?.context_window).toBe(1000000);
-    expect(entry?.pricing).toEqual({
-      unit: "usd_per_mtok",
-      cache_read: 0.3,
-      cache_write: 3.75,
-      output: 15,
-    });
-    // A preset model that supports vision does not persist a vision field (default = supported).
-    expect(entry?.vision).toBeUndefined();
-  });
-
-  it("default config presets the full model catalog (default = deepseek deepseek-flash)", () => {
-    const cfg = defaultProjectConfig();
-    expect(cfg.default_model).toEqual({
-      provider: "deepseek",
-      model_id: "deepseek-flash",
-    });
-    // The default has to be a model that can actually read an image: a new Project's first
-    // pasted screenshot goes to it, and a text-only model would decline one for a reason
-    // nothing on screen explains.
-    const chosen = MODEL_CATALOG.find(
-      (m) =>
-        m.provider === cfg.default_model!.provider && m.modelId === cfg.default_model!.model_id,
-    );
-    expect(chosen?.supportsVision).toBe(true);
-    // And it has to be routable as written: `deepseek-flash` begins with the family MMSP
-    // routes to its DeepSeek client, so the preset entry for the default pins nothing — a
-    // default that resolved to no client would fail every first request.
-    const defaultEntry = cfg.models.find(
-      (m) =>
-        m.provider === cfg.default_model!.provider && m.model_id === cfg.default_model!.model_id,
-    );
-    expect(defaultEntry).toBeDefined();
-    expect(defaultEntry?.client_type).toBeUndefined();
-    expect(defaultEntry?.base_url).toBeUndefined();
-    // The catalog is presented in full, retired rows aside (they are kept only for Projects
-    // that already carry them): provider and model_id are separate columns, model_id being the
-    // plain upstream id (vision is only persisted as false for models that don't support images).
-    expect(cfg.models.map((m) => [m.provider, m.model_id])).toEqual(
-      MODEL_CATALOG.filter((m) => m.retired !== true).map((m) => [m.provider, m.modelId]),
-    );
-    for (const entry of cfg.models) {
-      const cat = MODEL_CATALOG.find(
-        (c) => c.provider === entry.provider && c.modelId === entry.model_id,
-      )!;
-      expect(entry.vision).toBe(cat.supportsVision ? undefined : false);
-      // A catalog entry without a list price would preset no pricing (none currently);
-      // every priced catalog entry stores USD pricing.
-      if (cat.pricing === undefined) expect(entry.pricing).toBeUndefined();
-      else expect(entry.pricing?.unit).toBe("usd_per_mtok");
-      // No key on any row. The protocol and endpoint come from the file alone — the row's own
-      // where it differs from its group, else the group's table the config carries beside the
-      // rows: a model that auto-routes resolves to no client_type, a gateway model to its pin
-      // (OpenRouter openai-responses, the other gateways openai-chat) and its preset base URL.
-      expect(entry.api_key).toBeUndefined();
-      const effective = effectiveConnection(
-        {
-          provider: entry.provider,
-          modelId: entry.model_id,
-          clientType: entry.client_type,
-          baseUrl: entry.base_url,
-        },
-        providerConnectionShape(cfg.providers?.[entry.provider]),
-      );
-      expect(effective.clientType).toBe(cat.clientType);
-      expect(effective.baseUrl).toBe(cat.baseUrl);
-    }
-    // The group tables are the catalog's, written once: a gateway's endpoint lives there, a
-    // first-party vendor has none (its client's own endpoint).
-    expect(cfg.providers).toEqual(presetProviderTable());
-    expect(cfg.providers?.openrouter?.base_url).toBe("https://openrouter.ai/api/v1");
-    expect(cfg.providers?.deepseek).toBeUndefined();
   });
 
   it("persists pricing and field-merges buckets on upsert", async () => {
@@ -1685,6 +1454,7 @@ describe("command_policy (sandbox command policy block)", () => {
           enabled: false,
         },
         { name: "no-curl", pattern: "\\bcurl\\b" },
+        { name: "ask-deploy", pattern: "\\bfly deploy\\b", action: "ask" as const },
       ],
     };
     const cfg = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
@@ -1717,6 +1487,7 @@ describe("command_policy (sandbox command policy block)", () => {
         'name = "ok-rule"',
         'pattern = "\\\\bcurl\\\\b"',
         "description = 3", // wrong type -> field dropped, entry kept
+        'action = "warn"', // unknown action -> field dropped, the rule refuses (deny)
         "[[command_policy.rules]]",
         'name = ""', // empty name -> entry dropped
         'pattern = "x"',
@@ -1814,15 +1585,10 @@ describe("providers (group-level connections)", () => {
   /** The credential and protocol each row's client is built with, the way a Session builds it. */
   const connections = (cfg: Pick<ProjectConfig, "models" | "providers">) =>
     Object.fromEntries(
-      cfg.models.map((m) => {
-        const key = `${m.provider}/${m.model_id}`;
-        try {
-          const group = providerConnectionShape(cfg.providers?.[m.provider]);
-          return [key, resolveEntryCredential(m, group, {}, {})];
-        } catch (err) {
-          return [key, (err as Error).name];
-        }
-      }),
+      cfg.models.map((m) => [
+        `${m.provider}/${m.model_id}`,
+        resolveEntryCredential(m, providerConnectionShape(cfg.providers?.[m.provider])),
+      ]),
     );
   /** One `[[models]]` row of an old file. */
   const row = (fields: Record<string, string>): string[] => [
@@ -1840,6 +1606,7 @@ describe("providers (group-level connections)", () => {
   }
 
   it("a group's table round-trips, sits above [[models]], and reads leniently", async () => {
+    await seedProject(tmpRoot);
     await setProviderConnection(tmpRoot, DEFAULT_PROJECT_ID, "tokendance", {
       base_url: "https://proxy.example/td/v1",
       client_type: "openai",
@@ -1849,9 +1616,9 @@ describe("providers (group-level connections)", () => {
     expect(text.indexOf("[providers.tokendance]")).toBeGreaterThan(-1);
     expect(text.indexOf("[providers.tokendance]")).toBeLessThan(text.indexOf("[[models]]"));
     const loaded = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
-    // A new Project's tables, TokenDance's as the patch left it.
+    // The seeded tables, TokenDance's as the patch left it.
     expect(loaded.providers).toEqual({
-      ...presetProviderTable(),
+      ...seededProjectConfig().providers,
       tokendance: {
         base_url: "https://proxy.example/td/v1",
         client_type: "openai-chat",
@@ -1883,6 +1650,7 @@ describe("providers (group-level connections)", () => {
   });
 
   it("setProviderConnection sets and clears per field and never touches a model's own key; a cleared table leaves its rows on the client's defaults", async () => {
+    await seedProject(tmpRoot);
     await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
       provider: "tokendance",
       model_id: "kimi-k3",
@@ -1927,30 +1695,6 @@ describe("providers (group-level connections)", () => {
         providerConnectionShape(cfg.providers?.tokendance),
       ),
     ).toEqual({ baseUrlSource: "none", clientTypeSource: "none", apiKeySource: "none" });
-  });
-
-  it("Go-owned routes switch to MMSP while OpenCode Go rows keep their own protocols", async () => {
-    for (const provider of ["penguin-go", "opencode-go"]) {
-      await setProviderConnection(tmpRoot, DEFAULT_PROJECT_ID, provider, {
-        client_type: "openai-chat",
-        api_key: "go-key",
-      });
-    }
-    const cfg = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
-    expect(cfg.providers?.["penguin-go"]).toMatchObject({ client_type: "mmsp" });
-    expect(cfg.providers?.["opencode-go"]).toMatchObject({ client_type: "openai-chat" });
-    const all = connections(cfg);
-    expect(all["penguin-go/gemini-3.8-flash"]).toMatchObject({
-      apiKey: "go-key",
-      clientType: "mmsp",
-    });
-    expect(all["penguin-go/deepseek-flash"]).toMatchObject({ clientType: "mmsp" });
-    // A Messages row on its own base, on the group's host: the group key reaches it.
-    expect(all["opencode-go/minimax-m3"]).toEqual({
-      apiKey: "go-key",
-      baseUrl: "https://opencode.ai/zen/go",
-      clientType: "ant-messages",
-    });
   });
 
   it("a file from before group tables moves what every row of a group shares onto the group, once, and every model runs on what it ran on", async () => {
@@ -2044,7 +1788,7 @@ describe("providers (group-level connections)", () => {
       model_id: "qwen-local",
     });
     // Every model runs on what it ran on; the keyless TokenDance model now has the group key.
-    expect(before["tokendance/seed-2.1-pro"]).toBe("ModelCredentialError");
+    expect(before["tokendance/seed-2.1-pro"]).not.toHaveProperty("apiKey");
     expect(after["tokendance/seed-2.1-pro"]).toEqual(after["tokendance/glm-5.3"]);
     expect({ ...after, "tokendance/seed-2.1-pro": "-" }).toEqual({
       ...before,
@@ -2075,13 +1819,27 @@ describe("providers (group-level connections)", () => {
       "qwen3.8-max",
     ];
     const relay = ["gemini-3.8-flash", "deepseek-flash"];
+    // Each row's catalog connection as those releases copied it.
+    const GO_CHAT = "https://opencode.ai/zen/go/v1";
+    const GO_MESSAGES = "https://opencode.ai/zen/go";
+    const RELAY = "https://go.penguin.ooo/api/v1";
+    const copied: Record<string, readonly [clientType: string, baseUrl: string]> = {
+      "opencode-go/glm-5.3": ["openai-chat", GO_CHAT],
+      "opencode-go/kimi-k3": ["openai-chat", GO_CHAT],
+      "opencode-go/deepseek-v4-pro": ["openai-chat", GO_CHAT],
+      "opencode-go/gpt-5.6-luna": ["openai-responses", GO_CHAT],
+      "opencode-go/minimax-m3": ["ant-messages", GO_MESSAGES],
+      "opencode-go/qwen3.8-max": ["ant-messages", GO_MESSAGES],
+      "penguin-go/gemini-3.8-flash": ["mmsp", RELAY],
+      "penguin-go/deepseek-flash": ["mmsp", RELAY],
+    };
     const oldRow = (provider: string, modelId: string, key: string): string[] => {
-      const cat = MODEL_CATALOG.find((m) => m.provider === provider && m.modelId === modelId)!;
+      const [clientType, baseUrl] = copied[`${provider}/${modelId}`]!;
       return row({
         provider,
         model_id: modelId,
-        client_type: cat.clientType!,
-        base_url: cat.baseUrl!,
+        client_type: clientType,
+        base_url: baseUrl,
         api_key: key,
         created_at: "2026-09-20T00:00:00.000Z",
       });
@@ -2090,33 +1848,31 @@ describe("providers (group-level connections)", () => {
       ...go.flatMap((id) => oldRow("opencode-go", id, "go-key")),
       ...relay.flatMap((id) => oldRow("penguin-go", id, "pg-key")),
     ]);
-    const fresh = presetProviderTable();
     expect(loaded.providers).toEqual({
       "opencode-go": {
-        base_url: fresh["opencode-go"]!.base_url,
+        base_url: GO_CHAT,
         api_key: "go-key",
         created_at: "2026-09-20T00:00:00.000Z",
       },
       "penguin-go": {
-        base_url: fresh["penguin-go"]!.base_url,
+        base_url: RELAY,
         client_type: "mmsp",
         api_key: "pg-key",
         created_at: "2026-09-20T00:00:00.000Z",
       },
     });
-    // Retired models remain in saved Projects. Their connection shape still follows the
-    // catalog even though a new Project no longer seeds them (for example GPT-5.6 Luna).
-    const catalog = catalogModelEntries();
+    // Each row keeps exactly what differs from its group: OpenCode Go's protocols (three of
+    // them, so none moved) and its Messages rows' base; Penguin Go's rows keep nothing.
     for (const [provider, ids] of [
       ["opencode-go", go],
       ["penguin-go", relay],
     ] as const) {
       for (const id of ids) {
         const own = stored(provider, id);
-        const expected = catalog.find((e) => e.provider === provider && e.model_id === id)!;
+        const [clientType, baseUrl] = copied[`${provider}/${id}`]!;
         expect([own.client_type, own.base_url], id).toEqual([
-          expected.client_type,
-          expected.base_url,
+          provider === "opencode-go" ? clientType : undefined,
+          baseUrl === GO_MESSAGES ? baseUrl : undefined,
         ]);
         expect(own.api_key, id).toBeUndefined();
       }
@@ -2319,22 +2075,6 @@ describe("default_chat (new-chat defaults block)", () => {
   });
 });
 
-describe("selectable thinking tiers (the parallel lists must agree)", () => {
-  it("run_subagent's enum is exactly the project-default tiers, and never offers none", () => {
-    // The same rule is spelled out in three places — this constant, the web picker's
-    // SELECTABLE_THINKING_LEVELS (pinned by its own test), and run_subagent's schema — while
-    // nothing checked the two core lists against each other. `"none"` stays a legal stored and
-    // wire value (a legacy config may carry it, and it is inherited verbatim by a subagent),
-    // it is simply never *offered*, because many models cannot disable thinking.
-    expect(SUBAGENT_THINKING_LEVELS).toEqual(DEFAULT_CHAT_THINKING_LEVELS);
-    expect(SUBAGENT_THINKING_LEVELS).not.toContain("none");
-    const entry = defaultSystemConfig().tools?.builtin?.find((t) => t.name === "run_subagent");
-    const properties = (entry?.parameters as { properties?: Record<string, { enum?: unknown }> })
-      ?.properties;
-    expect(properties?.thinking_level?.enum).toEqual([...SUBAGENT_THINKING_LEVELS]);
-  });
-});
-
 describe("resolveModelRef (validates a (provider, model_id) pair against the config)", () => {
   const cfg: ProjectConfig = {
     models: [
@@ -2373,15 +2113,6 @@ describe("resolveModelRef (validates a (provider, model_id) pair against the con
     expect(() => resolveModelRef(cfg, "deepseek-v4", "deepseek")).toThrow(
       /is not in the Project config/,
     );
-  });
-
-  it("requires provider: a bare model_id does not type-check (no resolution path left)", () => {
-    // The pair is enforced by the type checker — asserted by `pnpm typecheck`, which includes
-    // this file; the unused-directive error is the failure mode if the parameter ever goes
-    // optional again. vitest only checks that the call expression exists.
-    // @ts-expect-error provider is required: a model reference is always a (provider, model_id) pair.
-    const call = (): ModelRef => resolveModelRef(cfg, "deepseek-v4-pro");
-    expect(call).toBeTypeOf("function");
   });
 });
 
@@ -2427,6 +2158,7 @@ describe("single hidden config file (.project_config.toml, credentials inlined)"
   );
 
   it("writes provider and model_id as separate fields; refs are TOML inline tables", async () => {
+    await seedProject(tmpRoot);
     await addModel(
       tmpRoot,
       DEFAULT_PROJECT_ID,

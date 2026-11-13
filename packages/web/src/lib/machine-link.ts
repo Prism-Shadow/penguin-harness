@@ -12,6 +12,8 @@ export type MachineLink =
   | "connected"
   /** The server is bringing it back: ask again once it is connected. */
   | "reconnecting"
+  /** The server stopped bringing it back: a Retry on the Machines page starts again. */
+  | "reconnectStopped"
   /** Its stored password was refused: nothing brings it back until its SSH settings change. */
   | "signInRefused"
   /** Installed, and its server stopped — or never connected since. */
@@ -32,6 +34,7 @@ export function machineLink(
   const machine = state.machines.find((entry) => !entry.local && entry.machineId === machineId);
   if (machine === undefined) return "missing";
   if (machine.reconnect?.waitsForPassword === true) return "signInRefused";
+  if (machine.reconnect?.gaveUp !== undefined) return "reconnectStopped";
   if (machine.reconnect !== undefined) return "reconnecting";
   if (machine.connection !== null) return "connected";
   return machine.installed === null ? "notConnected" : "stopped";
@@ -47,6 +50,8 @@ export function remoteAgentsEmpty(link: MachineLink | null, failure: string | nu
   switch (link) {
     case "reconnecting":
       return c.reconnecting;
+    case "reconnectStopped":
+      return c.reconnectStopped;
     case "signInRefused":
       return c.signInRefused;
     case "stopped":

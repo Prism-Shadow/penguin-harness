@@ -17,11 +17,11 @@ import {
   createAgent,
   userText,
   isCompleteModelMessage,
-  type OmniMessage,
+  type AmspRecord,
 } from "@prismshadow/penguin-core";
 
 /** Stream a Session run to stdout and collect the assistant's final text. */
-async function runToStdout(run: AsyncGenerator<OmniMessage>): Promise<string> {
+async function runToStdout(run: AsyncGenerator<AmspRecord>): Promise<string> {
   let finalText = "";
   for await (const msg of run) {
     if (isCompleteModelMessage(msg) && msg.payload.type === "text") {

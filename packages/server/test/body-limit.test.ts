@@ -15,7 +15,7 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { assistantText } from "@prismshadow/penguin-core";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/penguin-core";
 import { bodyLimitBytes, MIN_ATTACHMENT_MB } from "../src/services/attachment-limits.js";
 import { adoptSession, fakeSession, uniqueSessionId } from "./fixtures/session.js";
 import { createTestApp, provisionUser, waitFor } from "./helpers.js";
@@ -60,7 +60,7 @@ describe("request body cap", () => {
   let t: TestApp;
   let cookie: string;
   let SID: string;
-  let runs: OmniMessage[][];
+  let runs: AmspRecord[][];
   /** The body cap implied by the smallest budget an admin can set. */
   let cap: number;
 
@@ -93,7 +93,7 @@ describe("request body cap", () => {
     SID = uniqueSessionId();
     runs = [];
     const session = fakeSession(SID, {
-      async *run(input: OmniMessage[]) {
+      async *run(input: AmspRecord[]) {
         runs.push(input);
         yield assistantText("done");
       },

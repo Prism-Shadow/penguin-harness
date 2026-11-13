@@ -1,8 +1,11 @@
 /**
- * The Agent API on the wire: the real Hono app, requests in, response bytes out, read the way a
- * client reads them (the client package's `readSse` over the body). Sessions are fake runtimes adopted as API
- * Sessions (fixtures/session.ts) playing scripted streams, except where creating a Session is
- * the point: those run a real core Session against a loopback model (live-session.ts).
+ * The Agent API's gate, admission and refusals on the wire: the real Hono app, requests in,
+ * response bytes out, read the way a client reads them (the SDK's `readAmsp` over the body).
+ * Where a scenario is about admission rather than a stream, its Session is a fake runtime adopted
+ * as an API Session (fixtures/session.ts) that holds its run open until released; where creating
+ * a Session is the point, a real core Session runs against a loopback model (live-session.ts).
+ * What a stream carries — records, control frames, approvals, the Session routes — is
+ * amsp-session-stream.test.ts.
  *
  * Scenarios — the gate:
  * - Given a keyed Agent, a run without a key is refused 401 before its body is read (a body
@@ -29,37 +32,31 @@
  *   continuing a Session preserves its choices, clearing defaults restores normal creation,
  *   and a removed workspace refuses creation without leaving a Session behind.
  * - Given a run without session_id, a Session is created with client `api` and source `api`
- *   and run.started names it; the stream is the real Session's projected — its toolset, one
- *   Request answering, run.done completed — and does not echo the input.
+ *   and the stream's first record, its session_meta, names it; the stream ends with [DONE] and
+ *   its records read completed.
  * - Given the Agent's API approval mode, the Session a run creates carries it; changing the
  *   mode on the tab leaves that Session as it was, and a PATCH on the Session moves it.
  * - Given a run with session_id, the same Session continues and its runtime receives the new
- *   input only, texts before images, none of it streamed back.
+ *   input only, texts before images, which the stream echoes in that order.
  * - Given a Session the Web App created, or another Agent's API Session, the answer is 404
  *   `session_not_found`.
  * - Given a busy Session, a second run is 409 and nothing is streamed.
- * - Given a Session whose Trace is gone, so that loading it heals it into a new id, the run is
- *   followed there: run.started names the new id and the stream runs to its end.
  * - Given an Agent with four runs going, a fifth is 429 with Retry-After, and creates nothing.
- * - Given each scripted stream, the caller reads exactly the fixture's events, ending with one
- *   run.done and then [DONE] (the approval script answered through the approvals route, which
- *   has nothing left to decide afterwards).
  * - Given the Web App's approval card answering first, the run goes on and the caller's answer
  *   finds nothing pending.
  * - Given a caller that disconnects mid-run, the run is aborted.
- * - Given an explicit abort, the stream ends with run.done aborted; aborting an idle Session is
- *   a 204.
+ * - Given an explicit abort, the stream ends with an abort record and [DONE]; aborting an idle
+ *   Session is a 204.
  * - Given a malformed body, the answer is 400 `bad_request` naming the field — an oversized or
  *   non-image data URL, a file item, too many image bytes included — and nothing is created.
- * - Given 15 s of silence, a `: keep-alive` comment is written (fake timers).
- * - Given a failure of the server's own while driving, the stream ends with run.done fatal
- *   `internal` and [DONE], and the run is stopped.
+ * - Given a run stream, `event: ping` opens it and is written every 20 s after (fake timers);
+ *   there is no `: keep-alive` comment.
  *
  * Scenarios — the API tab's try route (`POST /api/projects/:p/agents/:a/api/try`, the owner's
  * sign-in in place of a key):
- * - Given the owner's cookie, the try route streams what a keyed run streams, event type for
- *   event type: run.started names a Session with client `api`, source `api` and the Agent's API
- *   approval mode, then run.done and [DONE]; no key's last use moves.
+ * - Given the owner's cookie, the try route streams what a keyed run streams, record kind for
+ *   record kind: its session_meta names a Session with client `api`, source `api` and the
+ *   Agent's API approval mode, and [DONE] ends it; no key's last use moves.
  * - Given a member who is not the owner, the answer is 403 `owner_required`; a user outside the
  *   Project gets 404, a signed-out request 401; none of them creates anything.
  * - Given the Agent's switch off, or no such Agent, the answer is 404 `agent_not_found`; given
@@ -74,31 +71,26 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   abortEvent,
+  approvalDecision,
   assistantText,
   partialText,
   requestBegin,
   requestEnd,
+  taskBegin,
+  taskEnd,
+  toolCall,
 } from "@prismshadow/penguin-core";
-import type { OmniMessage, ToolCallPayload } from "@prismshadow/penguin-core";
-import { readSse } from "@prismshadow/amsp";
-import type { AmspEvent } from "@prismshadow/amsp";
+import { RunCollector, readAmsp } from "@prismshadow/amsp";
+import type { AmspFrame, AmspRecord, RunResult } from "@prismshadow/amsp";
 import type {
   AgentApiKeyCreateResponse,
   AgentApiResponse,
-  ApprovalMode,
   SessionResponse,
 } from "../src/api/types.js";
-import type { RuntimeSession, SessionLoader } from "../src/runtime/session-manager.js";
 import { bodyLimitBytes } from "../src/services/attachment-limits.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
-import { adoptSession, fakeSession, sessionRow, uniqueSessionId } from "./fixtures/session.js";
-import {
-  AMSP_FIXTURE_NOW,
-  AMSP_STREAM_SCRIPTS,
-  APPROVAL_ROUND_TRIP,
-} from "./fixtures/amsp-stream.js";
-import type { AmspStreamScript } from "./fixtures/amsp-stream.js";
+import { adoptSession, fakeSession, uniqueSessionId } from "./fixtures/session.js";
 import { MOCK_MODEL_ID, startMockLLM } from "./live-session.js";
 import type { MockLLM } from "./live-session.js";
 
@@ -125,30 +117,57 @@ async function amsp(
   });
 }
 
-/** A response body read event by event, as a client reads it. */
+/** The last frame of a run stream. */
+const DONE: AmspFrame = { kind: "done" };
+
+/** A record as the assertions name it: its payload type, or `session_meta`. */
+const kindOf = (r: AmspRecord): string =>
+  r.type === "session_meta" ? "session_meta" : ((r.payload as { type?: string }).type ?? r.type);
+
+const recordsOf = (frames: AmspFrame[]): AmspRecord[] =>
+  frames.flatMap((f) => (f.kind === "record" ? [f.record] : []));
+
+/** The opening frame of a run stream. */
+const PING: AmspFrame = { kind: "control", control: { kind: "ping" } };
+
+/** The new Session a run stream names: its main session_meta's. */
+function sessionOf(frames: AmspFrame[]): string {
+  const meta = recordsOf(frames).find((r) => r.type === "session_meta" && !r.origin?.length);
+  if (meta === undefined) throw new Error("no session_meta");
+  return (meta.payload as { session_id: string }).session_id;
+}
+
+/** The run's result, as the SDK folds its records; `sessionId` is the Session a run continued. */
+function resultOf(frames: AmspFrame[], sessionId?: string): RunResult {
+  const collector = new RunCollector(sessionId !== undefined ? { sessionId } : {});
+  for (const r of recordsOf(frames)) collector.add(r);
+  return collector.result();
+}
+
+/** A response body read frame by frame, as a client reads it. */
 function stream(res: Response) {
   const body = res.body!;
-  const reader = readSse(body);
+  const reader = readAmsp(body);
   return {
-    /** The next `data:` payload, parsed; "[DONE]" as the string; undefined once the body ends. */
-    async next(): Promise<AmspEvent | "[DONE]" | undefined> {
+    /** The next frame; undefined once the body ends. */
+    async next(): Promise<AmspFrame | undefined> {
       const r = await reader.next();
-      if (r.done) return undefined;
-      return r.value === "[DONE]" ? "[DONE]" : (JSON.parse(r.value) as AmspEvent);
+      return r.done ? undefined : r.value;
     },
-    /** Events up to and including the first of `type`. */
-    async until(type: AmspEvent["type"]): Promise<AmspEvent[]> {
-      const out: AmspEvent[] = [];
+    /** Frames up to and including the first record of `kind`. */
+    async until(kind: string): Promise<AmspFrame[]> {
+      const out: AmspFrame[] = [];
       for (;;) {
         const item = await this.next();
-        if (item === undefined || item === "[DONE]") throw new Error(`no ${type} before the end`);
+        if (item === undefined || item.kind === "done")
+          throw new Error(`no ${kind} before the end`);
         out.push(item);
-        if (item.type === type) return out;
+        if (item.kind === "record" && kindOf(item.record) === kind) return out;
       }
     },
     /** Everything left, to the end of the body. */
-    async rest(): Promise<Array<AmspEvent | "[DONE]">> {
-      const out: Array<AmspEvent | "[DONE]"> = [];
+    async rest(): Promise<AmspFrame[]> {
+      const out: AmspFrame[] = [];
       for (let item = await this.next(); item !== undefined; item = await this.next()) {
         out.push(item);
       }
@@ -162,29 +181,18 @@ function stream(res: Response) {
   };
 }
 
-/** The events with every server-stamped `at` checked and pinned, so they compare to a fixture. */
-function pinned(events: Array<AmspEvent | "[DONE]">): Array<AmspEvent | "[DONE]"> {
-  return events.map((e) => {
-    if (e === "[DONE]") return e;
-    if (e.type === "run.started" || e.type === "run.done" || e.type === "approval.requested") {
-      expect(Number.isNaN(Date.parse(e.at))).toBe(false);
-      return { ...e, at: AMSP_FIXTURE_NOW };
-    }
-    return e;
-  });
-}
-
 /**
  * A runtime that starts a request, then waits — for `release()` or an abort — and records what
  * each run was given and whether it was aborted.
  */
 function blocking(sessionId: string) {
   let release: () => void = () => {};
-  const runs: Array<{ input: OmniMessage[]; signal: AbortSignal }> = [];
+  const runs: Array<{ input: AmspRecord[]; signal: AbortSignal }> = [];
   const session = fakeSession(sessionId, {
     async *run(input, { signal }) {
       runs.push({ input, signal });
       const released = new Promise<void>((resolve) => (release = resolve));
+      yield taskBegin();
       yield requestBegin();
       yield partialText("start");
       yield partialText("delta", "Working");
@@ -195,38 +203,15 @@ function blocking(sessionId: string) {
       if (signal.aborted) {
         yield requestEnd("aborted", { attempt: 1 });
         yield abortEvent("user_abort");
+        yield taskEnd();
         return;
       }
       yield assistantText("Working");
       yield requestEnd("completed");
+      yield taskEnd();
     },
   });
   return { session, runs, release: () => release() };
-}
-
-/** A runtime that plays a script, asking for approval where the script does. */
-function scripted(script: AmspStreamScript, decisions: string[] = []): RuntimeSession {
-  return fakeSession(script.sessionId, {
-    async *run(_input, { approve }) {
-      for (const step of script.steps) {
-        if ("approve" in step) {
-          const call: OmniMessage<ToolCallPayload> = {
-            timestamp: AMSP_FIXTURE_NOW,
-            type: "model_msg",
-            payload: {
-              type: "tool_call",
-              role: "assistant",
-              ...step.approve,
-              stop_reason: "completed",
-            },
-          };
-          decisions.push(await approve(call));
-        } else {
-          yield step.message as unknown as OmniMessage;
-        }
-      }
-    },
-  });
 }
 
 /** Turns an Agent's API on and mints a key for it; returns the key. */
@@ -358,9 +343,9 @@ describe("Agent API: the gate", () => {
       expect(res.status).toBe(200);
       expect(res.headers.get("access-control-allow-origin")).toBeNull();
       const events = stream(res);
-      await events.until("text.delta");
+      await events.until("partial_text");
       release();
-      expect((await events.rest()).at(-1)).toBe("[DONE]");
+      expect((await events.rest()).at(-1)).toEqual(DONE);
     } finally {
       await admin.put(`/api/projects/${P}/agents/${A}/api`, { open: false });
     }
@@ -441,16 +426,11 @@ describe("Agent API: runs", () => {
   let admin: Admin;
   let key: string;
   let mock: MockLLM;
-  /** What loading a Session that is not in memory gives (the self-heal case sets it). */
-  let load: SessionLoader["load"] = () => Promise.reject(new Error("nothing to load here"));
 
   beforeAll(async () => {
     mock = await startMockLLM((n) => `reply ${n}`);
     // Titles stay off, so the model is asked for the runs alone.
-    t = await createTestApp({
-      titles: { maybeGenerate: () => {} },
-      loader: { load: (row) => load(row) },
-    });
+    t = await createTestApp({ titles: { maybeGenerate: () => {} } });
     admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
     const models = await admin.put(`/api/projects/${P}/models`, {
       defaultModel: { provider: "custom", modelId: MOCK_MODEL_ID },
@@ -484,43 +464,29 @@ describe("Agent API: runs", () => {
   const session = async (sessionId: string): Promise<SessionResponse["session"]> =>
     ((await (await admin.get(`/api/sessions/${sessionId}`)).json()) as SessionResponse).session;
 
-  it("a run without session_id creates a Session with client api and source api and names it in run.started", async () => {
+  it("a run without session_id creates a Session with client api and source api and names it with its session_meta", async () => {
     const res = await amsp(t, `/agents/${P}/${A}/runs`, { key, body: { input: "Say hello" } });
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("text/event-stream; charset=utf-8");
     expect(res.headers.get("cache-control")).toBe("no-cache");
     expect(res.headers.get("x-accel-buffering")).toBe("no");
     const items = await stream(res).rest();
-    const started = items[0] as Extract<AmspEvent, { type: "run.started" }>;
-    expect(started).toMatchObject({ type: "run.started", agent: `${P}/${A}` });
-    // The real Session's stream: its toolset (first run), one Request answering, the end.
-    const events = items.filter((e): e is AmspEvent => e !== "[DONE]");
-    expect(events.map((e) => e.type)).toEqual([
-      "run.started",
-      "tools.ready",
-      "request.started",
-      "text.delta",
-      "text.delta",
-      "text.done",
-      "request.done",
-      "run.done",
-    ]);
-    expect(events.find((e) => e.type === "text.done")).toMatchObject({
-      text: expect.stringMatching(/^reply \d+$/),
-    });
-    const done = events.at(-1) as Extract<AmspEvent, { type: "run.done" }>;
-    expect(done).toMatchObject({ status: "completed", requests: 1 });
-    expect(done.usage.total).toBeGreaterThan(0);
-    expect(done.usage).toEqual(done.session_usage);
-    expect(items.at(-1)).toBe("[DONE]");
+    expect(items[0]).toEqual(PING);
+    expect(items[1]).toMatchObject({ kind: "record", record: { type: "session_meta" } });
+    expect(items.at(-1)).toEqual(DONE);
+    const result = resultOf(items);
+    expect(result).toMatchObject({ status: "completed", requests: 1 });
+    expect(result.text).toMatch(/^reply \d+$/);
+    expect(result.usage.total).toBeGreaterThan(0);
+    expect(result.usage).toEqual(result.sessionUsage);
 
-    const created = await session(started.session_id);
+    const created = await session(result.sessionId);
     expect(created).toMatchObject({ client: "api", source: "api", agentId: A });
     // The caller reads the same Session back through the API.
-    const info = await amsp(t, `/sessions/${started.session_id}`, { key });
+    const info = await amsp(t, `/sessions/${result.sessionId}`, { key });
     expect(await info.json()).toMatchObject({
       session: {
-        id: started.session_id,
+        id: result.sessionId,
         agent: `${P}/${A}`,
         status: "idle",
         model_id: MOCK_MODEL_ID,
@@ -533,11 +499,11 @@ describe("Agent API: runs", () => {
     const workspace = await fs.realpath(await fs.mkdtemp(`${t.root}/api-workspace-`));
     const tab = `/api/projects/${P}/agents/${A}/api`;
     const model = { provider: "custom", modelId: "claude-api-model" };
-    const firstId = async (res: Response) => {
+    const firstId = async (res: Response, continued?: string) => {
       if (res.status !== 200) throw new Error(await res.text());
       const events = await stream(res).rest();
-      expect(events.at(-2)).toMatchObject({ type: "run.done", status: "completed" });
-      return (events[0] as Extract<AmspEvent, { type: "run.started" }>).session_id;
+      expect(resultOf(events, continued).status).toBe("completed");
+      return continued ?? sessionOf(events);
     };
     try {
       expect((await admin.put(tab, { model, thinkingLevel: "high", workspace })).status).toBe(200);
@@ -548,6 +514,7 @@ describe("Agent API: runs", () => {
       await admin.put(tab, { model: null, thinkingLevel: "low", workspace: null });
       await firstId(
         await amsp(t, `/agents/${P}/${A}/runs`, { key, body: { session_id: id, input: "two" } }),
+        id,
       );
       expect(await session(id)).toMatchObject({ ...model, thinkingLevel: "high", workspace });
       const tried = await firstId(await admin.post(`${tab}/try`, { input: "three" }));
@@ -582,7 +549,7 @@ describe("Agent API: runs", () => {
       const first = await stream(
         await amsp(t, `/agents/${P}/${A}/runs`, { key, body: { input: "one" } }),
       ).rest();
-      const sessionId = (first[0] as Extract<AmspEvent, { type: "run.started" }>).session_id;
+      const sessionId = sessionOf(first);
       expect((await session(sessionId)).approvalMode).toBe("read-only");
 
       await admin.put(tab, { approvalMode: "deny-all" });
@@ -595,14 +562,14 @@ describe("Agent API: runs", () => {
       const second = await stream(
         await amsp(t, `/agents/${P}/${A}/runs`, { key, body: { input: "two" } }),
       ).rest();
-      const next = (second[0] as Extract<AmspEvent, { type: "run.started" }>).session_id;
+      const next = sessionOf(second);
       expect((await session(next)).approvalMode).toBe("deny-all");
     } finally {
       await admin.put(tab, { approvalMode: "allow-all" });
     }
   });
 
-  it("a run with session_id continues the same Session and the runtime receives the new input only", async () => {
+  it("a run with session_id continues the same Session; the runtime receives the new input only, and the stream echoes it", async () => {
     const sessionId = uniqueSessionId();
     const { session: runtime, runs, release } = blocking(sessionId);
     adoptSession(t.deps, runtime, { projectId: P, agentId: A, client: "api" });
@@ -619,17 +586,17 @@ describe("Agent API: runs", () => {
       const events = stream(
         await amsp(t, `/agents/${P}/${A}/runs`, { key, body: { session_id: sessionId, input } }),
       );
-      expect(await events.next()).toMatchObject({ type: "run.started", session_id: sessionId });
-      await events.until("text.delta");
+      expect(await events.next()).toEqual(PING);
+      const upTo = await events.until("partial_text");
       release();
       const rest = await events.rest();
-      // The run's own input is the caller's: it is not streamed back.
-      const echoed = rest.filter(
-        (e) =>
-          e !== "[DONE]" &&
-          (e.type === "image_url.done" || (e.type === "text.done" && e.role === "user")),
-      );
-      expect(echoed).toEqual([]);
+      // The run's input is echoed behind its task_begin, as the Trace holds it.
+      const echoed = recordsOf([...upTo, ...rest]).flatMap((r) => {
+        const p = r.payload as { type?: string; role?: string; text?: string; image_url?: string };
+        if (p.type === "image_url") return [p.image_url];
+        return p.type === "text" && p.role === "user" ? [p.text] : [];
+      });
+      expect(echoed).toEqual(input.length === 1 ? ["first"] : ["second", image]);
     }
     const received = runs.map((r) =>
       r.input.map((m) => {
@@ -669,7 +636,7 @@ describe("Agent API: runs", () => {
     const first = stream(
       await amsp(t, `/agents/${P}/${A}/runs`, { key, body: { session_id: sessionId, input: "a" } }),
     );
-    await first.until("text.delta");
+    await first.until("partial_text");
     const second = await amsp(t, `/agents/${P}/${A}/runs`, {
       key,
       body: { session_id: sessionId, input: "b" },
@@ -679,33 +646,6 @@ describe("Agent API: runs", () => {
     release();
     await first.rest();
     expect(runs).toHaveLength(1);
-  });
-
-  it("a Session healed into a new id as it loads is followed: run.started names the new id and the run streams to its end", async () => {
-    const stale = uniqueSessionId();
-    const healed = uniqueSessionId();
-    t.deps.sessionsRepo.insert(sessionRow(stale, { projectId: P, agentId: A, client: "api" }));
-    load = async () =>
-      fakeSession(healed, {
-        async *run() {
-          // A real engine's first record follows its bootstrap I/O.
-          await new Promise((resolve) => setImmediate(resolve));
-          yield requestBegin();
-          yield assistantText("healed");
-          yield requestEnd("completed");
-        },
-      });
-    const items = await stream(
-      await amsp(t, `/agents/${P}/${A}/runs`, { key, body: { session_id: stale, input: "hi" } }),
-    ).rest();
-    expect(items[0]).toMatchObject({ type: "run.started", session_id: healed });
-    expect(items.find((e) => e !== "[DONE]" && e.type === "text.done")).toMatchObject({
-      text: "healed",
-    });
-    expect(items.slice(-2)).toEqual([
-      expect.objectContaining({ type: "run.done", status: "completed" }),
-      "[DONE]",
-    ]);
   });
 
   it("the fifth concurrent run of an Agent is 429 with Retry-After, and creates nothing", async () => {
@@ -721,7 +661,7 @@ describe("Agent API: runs", () => {
           body: { session_id: r.session.sessionId, input: "go" },
         }),
       );
-      await s.until("text.delta");
+      await s.until("partial_text");
       streams.push(s);
     }
     const idle = uniqueSessionId();
@@ -761,7 +701,7 @@ describe("Agent API: runs", () => {
         expect(res.status).toBe(200);
         const events = stream(res);
         streams.push(events);
-        await events.until("text.delta");
+        await events.until("partial_text");
       }
       const refused = await publicRun(2);
       expect(refused.headers.get("retry-after")).toBe("2");
@@ -772,7 +712,7 @@ describe("Agent API: runs", () => {
       expect(admitted.status).toBe(200);
       const third = stream(admitted);
       streams.push(third);
-      await third.until("text.delta");
+      await third.until("partial_text");
       await admin.put(tab, { maxConcurrentRuns: 1 });
       expect(t.deps.manager.activeCountForAgent(P, agent)).toBe(3);
       const before = t.deps.sessionsRepo.listByAgent(P, agent).length;
@@ -787,7 +727,7 @@ describe("Agent API: runs", () => {
     }
     const next = await admin.post(`${tab}/try`, { input: "capacity returned" });
     expect(next.status).toBe(200);
-    expect((await stream(next).rest()).at(-1)).toBe("[DONE]");
+    expect((await stream(next).rest()).at(-1)).toEqual(DONE);
   });
 
   it("simultaneous requests on one idle Session keep the 409 busy response", async () => {
@@ -828,7 +768,7 @@ describe("Agent API: runs", () => {
     ]);
     expect(responses.map((r) => r.status).sort()).toEqual([200, 429, 429]);
     for (const response of responses) {
-      if (response.status === 200) expect((await stream(response).rest()).at(-1)).toBe("[DONE]");
+      if (response.status === 200) expect((await stream(response).rest()).at(-1)).toEqual(DONE);
       else {
         expect(response.headers.get("retry-after")).toBe("2");
         expect(await errorOf(response)).toMatchObject({ code: "too_many_runs" });
@@ -837,67 +777,43 @@ describe("Agent API: runs", () => {
     expect(t.deps.sessionsRepo.listByAgent(P, agent)).toHaveLength(before + 1);
   });
 
-  it.each(AMSP_STREAM_SCRIPTS.map((s) => [s.name, s] as const))(
-    "%s reaches the caller as the fixture records it, ending with exactly one run.done then [DONE]",
-    async (_name, script) => {
-      const decisions: string[] = [];
-      adoptSession(t.deps, scripted(script, decisions), {
-        projectId: P,
-        agentId: A,
-        client: "api",
-        approvalMode: script.approvalMode as ApprovalMode,
-      });
-      const res = await amsp(t, `/agents/${P}/${A}/runs`, {
-        key,
-        body: { session_id: script.sessionId, input: script.input },
-      });
-      const events = stream(res);
-      const read: Array<AmspEvent | "[DONE]"> = [];
-      const asks = script.steps.filter((s) => "approve" in s).length;
-      for (let i = 0; i < asks; i++) {
-        const upTo = await events.until("approval.requested");
-        read.push(...upTo);
-        const ask = upTo.at(-1) as Extract<AmspEvent, { type: "approval.requested" }>;
-        const path = `/sessions/${script.sessionId}/approvals/${ask.tool_call.tool_call_id}`;
-        expect((await amsp(t, path, { key, body: { decision: "allow" } })).status).toBe(204);
-        // Decided: a second answer finds nothing pending.
-        const again = await amsp(t, path, { key, body: { decision: "deny" } });
-        expect(await errorOf(again)).toMatchObject({ status: 404, code: "approval_not_found" });
-      }
-      read.push(...(await events.rest()));
-      expect(pinned(read)).toEqual([...script.events, "[DONE]"]);
-      expect(read.filter((e) => e !== "[DONE]" && e.type === "run.done")).toHaveLength(1);
-      expect(decisions).toEqual(Array.from({ length: asks }, () => "allow"));
-    },
-  );
-
   it("the Web App's approval route answers the same request, and the caller's answer then finds nothing", async () => {
-    const script = { ...APPROVAL_ROUND_TRIP, sessionId: uniqueSessionId() };
+    const sessionId = uniqueSessionId();
     const decisions: string[] = [];
-    adoptSession(t.deps, scripted(script, decisions), {
-      projectId: P,
-      agentId: A,
-      client: "api",
-      approvalMode: "always-ask",
-    });
+    adoptSession(
+      t.deps,
+      fakeSession(sessionId, {
+        async *run(_input, { approve }) {
+          yield taskBegin();
+          const call = toolCall({ name: "exec_command", arguments: "{}", toolCallId: "call_1" });
+          yield call;
+          const decision = await approve(call);
+          decisions.push(decision);
+          yield approvalDecision(decision, "call_1");
+          yield taskEnd();
+        },
+      }),
+      { projectId: P, agentId: A, client: "api", approvalMode: "always-ask" },
+    );
     const events = stream(
       await amsp(t, `/agents/${P}/${A}/runs`, {
         key,
-        body: { session_id: script.sessionId, input: script.input },
+        body: { session_id: sessionId, input: "go" },
       }),
     );
-    await events.until("approval.requested");
-    const web = await admin.post(`/api/sessions/${script.sessionId}/approvals/call_1`, {
+    await events.until("tool_call");
+    await waitFor(() => t.deps.manager.pendingApprovals(sessionId).length === 1);
+    const web = await admin.post(`/api/sessions/${sessionId}/approvals/call_1`, {
       decision: "allow",
     });
     expect(web.status).toBe(204);
-    const late = await amsp(t, `/sessions/${script.sessionId}/approvals/call_1`, {
+    const late = await amsp(t, `/sessions/${sessionId}/approvals/call_1`, {
       key,
       body: { decision: "deny" },
     });
     expect(await errorOf(late)).toMatchObject({ status: 404, code: "approval_not_found" });
     const rest = await events.rest();
-    expect(rest.at(-2)).toMatchObject({ type: "run.done", status: "completed" });
+    expect(rest.at(-1)).toEqual(DONE);
     expect(decisions).toEqual(["allow"]);
   });
 
@@ -911,13 +827,13 @@ describe("Agent API: runs", () => {
         body: { session_id: sessionId, input: "go" },
       }),
     );
-    await events.until("text.delta");
+    await events.until("partial_text");
     await events.disconnect();
     await waitFor(() => t.deps.manager.statusOf(sessionId) === "idle");
     expect(runs[0]!.signal.aborted).toBe(true);
   });
 
-  it("an explicit abort ends the stream with run.done aborted", async () => {
+  it("an explicit abort ends the stream with its abort record and [DONE]", async () => {
     const sessionId = uniqueSessionId();
     const { session: runtime } = blocking(sessionId);
     adoptSession(t.deps, runtime, { projectId: P, agentId: A, client: "api" });
@@ -927,17 +843,13 @@ describe("Agent API: runs", () => {
         body: { session_id: sessionId, input: "go" },
       }),
     );
-    await events.until("text.delta");
+    await events.until("partial_text");
     expect((await amsp(t, `/sessions/${sessionId}/abort`, { key, method: "POST" })).status).toBe(
       202,
     );
     const rest = await events.rest();
-    expect(rest.at(-2)).toMatchObject({
-      type: "run.done",
-      status: "aborted",
-      error: { code: "user_abort" },
-    });
-    expect(rest.at(-1)).toBe("[DONE]");
+    expect(recordsOf(rest).map(kindOf)).toContain("abort");
+    expect(rest.at(-1)).toEqual(DONE);
     expect((await amsp(t, `/sessions/${sessionId}/abort`, { key, method: "POST" })).status).toBe(
       204,
     );
@@ -1005,11 +917,11 @@ describe("Agent API: runs", () => {
     }
   });
 
-  it("a keep-alive comment is written after 15 s of silence", async () => {
+  it("a ping opens the stream and goes out every 20 s after, and no keep-alive comment", async () => {
     const sessionId = uniqueSessionId();
     const { session: runtime, release } = blocking(sessionId);
     adoptSession(t.deps, runtime, { projectId: P, agentId: A, client: "api" });
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
     try {
       const res = await amsp(t, `/agents/${P}/${A}/runs`, {
         key,
@@ -1018,50 +930,25 @@ describe("Agent API: runs", () => {
       const reader = res.body!.getReader();
       const decoder = new TextDecoder();
       let text = "";
-      const readUntil = async (needle: string): Promise<void> => {
-        while (!text.includes(needle)) {
+      const readUntil = async (needle: string, times = 1): Promise<void> => {
+        while (text.split(needle).length - 1 < times) {
           const { done, value } = await reader.read();
           if (done) throw new Error(`the body ended before ${JSON.stringify(needle)}`);
           text += decoder.decode(value, { stream: true });
         }
       };
-      await readUntil('"text.delta","at"');
       await readUntil('"text":"Working"');
+      expect(text.startsWith("event: ping\ndata: {}\n\n")).toBe(true);
+      expect(text.split("event: ping\n").length - 1).toBe(1);
+      await vi.advanceTimersByTimeAsync(20_000);
+      await readUntil("event: ping\ndata: {}\n\n", 2);
       expect(text).not.toContain(": keep-alive");
-      await vi.advanceTimersByTimeAsync(15_000);
-      await readUntil(": keep-alive\n\n");
       release();
       await readUntil("data: [DONE]\n\n");
       await reader.cancel();
     } finally {
       vi.useRealTimers();
     }
-  });
-
-  it("a server failure while driving ends the stream with run.done fatal internal and [DONE], and stops the run", async () => {
-    const sessionId = uniqueSessionId();
-    const { session: runtime, runs } = blocking(sessionId);
-    adoptSession(t.deps, runtime, { projectId: P, agentId: A, client: "api" });
-    const events = stream(
-      await amsp(t, `/agents/${P}/${A}/runs`, {
-        key,
-        body: { session_id: sessionId, input: "go" },
-      }),
-    );
-    await events.until("text.delta");
-    // A record the translator cannot read stands in for any failure of the server's own.
-    t.deps.channels
-      .get(sessionId)
-      .publish({ timestamp: new Date().toISOString(), type: "model_msg", payload: null });
-    const rest = await events.rest();
-    expect(rest.at(-2)).toMatchObject({
-      type: "run.done",
-      status: "fatal",
-      error: { code: "internal" },
-    });
-    expect(rest.at(-1)).toBe("[DONE]");
-    await waitFor(() => t.deps.manager.statusOf(sessionId) === "idle");
-    expect(runs[0]!.signal.aborted).toBe(true);
   });
 });
 
@@ -1110,8 +997,11 @@ describe("Agent API: the try route", () => {
       (await (await admin.get(`/api/projects/${P}/agents/${A}/api`)).json()) as AgentApiResponse
     ).api.keys.map((k) => k.lastUsedAt);
 
-  const types = (items: Array<AmspEvent | "[DONE]">) =>
-    items.map((e) => (e === "[DONE]" ? e : e.type));
+  /** What a stream carried, frame by frame: records by kind, control frames by name. */
+  const shape = (items: AmspFrame[]) =>
+    items.map((f) =>
+      f.kind === "record" ? kindOf(f.record) : f.kind === "control" ? f.control.kind : f.kind,
+    );
 
   it("the owner's sign-in streams what a keyed run streams; the Session is an API Session with the Agent's approval mode, and no key's last use moves", async () => {
     const keyed = await stream(
@@ -1125,15 +1015,12 @@ describe("Agent API: the try route", () => {
     expect(res.headers.get("content-type")).toBe("text/event-stream; charset=utf-8");
     expect(res.headers.get("x-accel-buffering")).toBe("no");
     const items = await stream(res).rest();
-    expect(types(items)).toEqual(types(keyed));
-    expect(items.slice(-2)).toEqual([
-      expect.objectContaining({ type: "run.done", status: "completed", requests: 1 }),
-      "[DONE]",
-    ]);
-    const started = items[0] as Extract<AmspEvent, { type: "run.started" }>;
-    expect(started).toMatchObject({ type: "run.started", agent: `${P}/${A}` });
+    expect(shape(items)).toEqual(shape(keyed));
+    expect(items.at(-1)).toEqual(DONE);
+    expect(resultOf(items)).toMatchObject({ status: "completed", requests: 1 });
+    expect(items[0]).toEqual(PING);
     const created = (
-      (await (await admin.get(`/api/sessions/${started.session_id}`)).json()) as SessionResponse
+      (await (await admin.get(`/api/sessions/${sessionOf(items)}`)).json()) as SessionResponse
     ).session;
     expect(created).toMatchObject({
       client: "api",
@@ -1186,10 +1073,10 @@ describe("Agent API: the try route", () => {
     const events = stream(
       await admin.post(tryPath(), { session_id: sessionId, input: "And now?" }),
     );
-    expect(await events.next()).toMatchObject({ type: "run.started", session_id: sessionId });
-    await events.until("text.delta");
+    expect(await events.next()).toEqual(PING);
+    await events.until("partial_text");
     release();
-    expect((await events.rest()).at(-1)).toBe("[DONE]");
+    expect((await events.rest()).at(-1)).toEqual(DONE);
     expect(runs.map((r) => r.input.map((m) => (m.payload as { text?: string }).text))).toEqual([
       ["And now?"],
     ]);
@@ -1214,7 +1101,7 @@ describe("Agent API: the try route", () => {
           input: "go",
         }),
       );
-      await s.until("text.delta");
+      await s.until("partial_text");
       streams.push(s);
     }
     const before = t.deps.sessionsRepo.listByAgent(P, "busy_try_agent").length;
@@ -1248,7 +1135,7 @@ describe("Agent API: the try route", () => {
     const { session: runtime, runs } = blocking(sessionId);
     adoptSession(t.deps, runtime, { projectId: P, agentId: A, client: "api" });
     const events = stream(await admin.post(tryPath(), { session_id: sessionId, input: "go" }));
-    await events.until("text.delta");
+    await events.until("partial_text");
     await events.disconnect();
     await waitFor(() => t.deps.manager.statusOf(sessionId) === "idle");
     expect(runs[0]!.signal.aborted).toBe(true);

@@ -13,8 +13,8 @@ import {
   tokenUsage,
   emptyTokenCounts,
   withOrigin,
-} from "../src/omnimessage/index.js";
-import type { OmniMessage } from "../src/omnimessage/index.js";
+} from "@prismshadow/amsp/records";
+import type { AmspRecord } from "@prismshadow/amsp/records";
 import { Writer, parseTraceLines, readTrace } from "../src/trace/index.js";
 
 const SESSION_ID = "sess_abc";
@@ -180,7 +180,7 @@ describe("Writer", () => {
       // into multiple underlying writes (Node chunks the data at 512 KiB), small enough to
       // keep the test fast.
       const big = imageUrlMessage(`data:image/png;base64,${"A".repeat(3 * 1024 * 1024)}`);
-      const submitted: OmniMessage[] = [
+      const submitted: AmspRecord[] = [
         meta(),
         big,
         ...[1, 2, 3, 4, 5].map((i) => assistantText(`small ${i}`)),
@@ -205,8 +205,8 @@ describe("Writer", () => {
       // A large record right before the rotation: the rotation must wait for the whole
       // append, and writes submitted after it must land in the next shard.
       const big = imageUrlMessage(`data:image/png;base64,${"B".repeat(2 * 1024 * 1024)}`);
-      const shardOne: OmniMessage[] = [meta(), big];
-      const shardTwo: OmniMessage[] = [meta(), assistantText("new context")];
+      const shardOne: AmspRecord[] = [meta(), big];
+      const shardTwo: AmspRecord[] = [meta(), assistantText("new context")];
       await Promise.all([
         writer.write(shardOne[0]!),
         writer.write(shardOne[1]!),

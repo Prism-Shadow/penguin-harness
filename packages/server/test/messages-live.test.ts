@@ -26,7 +26,7 @@ import {
   userText,
   withOrigin,
 } from "@prismshadow/penguin-core";
-import type { ApproveFn, OmniMessage } from "@prismshadow/penguin-core";
+import type { ApproveFn, AmspRecord } from "@prismshadow/penguin-core";
 import type { MessagesResponse } from "../src/api/types.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
@@ -41,7 +41,7 @@ import type { TestApp } from "./helpers.js";
  */
 function midStreamFakeSession(sessionId: string): RuntimeSession {
   return fakeSession(sessionId, {
-    async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
+    async *run(_input: AmspRecord[], opts: { approve: ApproveFn; signal: AbortSignal }) {
       // A real run opens its first LLM request before any model output — and the
       // manager's pending-input holds end exactly there.
       yield requestBegin();
@@ -59,7 +59,11 @@ function midStreamFakeSession(sessionId: string): RuntimeSession {
       yield partialToolCallOutput({ eventType: "delta", output: "line 1\n", toolCallId: "tc-lv" });
       const decision = await opts.approve(tc); // blocks until the test decides
       yield approvalDecision(decision, "tc-lv");
-      yield toolCallOutput({ output: "line 1\nline 2\n", toolCallId: "tc-lv" });
+      yield toolCallOutput({
+        output: "line 1\nline 2\n",
+        toolCallId: "tc-lv",
+        status: "completed",
+      });
       yield assistantText("done");
     },
   });

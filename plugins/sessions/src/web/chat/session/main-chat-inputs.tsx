@@ -1,3 +1,4 @@
+import { scopedValue, type Scoped } from "../../../lib/project-scope";
 import { chatDeps } from "../deps";
 import { useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
@@ -7,12 +8,12 @@ import type {
   ModelsResponse,
   SessionProcessInfo,
 } from "@prismshadow/penguin-server/api";
-import { useCompany } from "@penguinharness/plugin-company/web";
-import { useAuth } from "@prismshadow/penguin-web/internal";
-import { useTheme } from "@prismshadow/penguin-web/internal";
-import { useProject } from "@prismshadow/penguin-web/internal";
-import { useSessions } from "@prismshadow/penguin-web/internal";
-import type { StagedThinkingSwitch } from "@prismshadow/penguin-web/internal";
+import { useCompany } from "../../company";
+import { useAuth } from "../../../state/auth";
+import { useTheme } from "../../../state/theme";
+import { useProject } from "../../../state/project";
+import { useSessions } from "../../../state/sessions";
+import type { StagedThinkingSwitch } from "../../model-picker";
 import { createCostStatHold } from "../header-stats";
 import type { SwitchContextShape } from "../model-switch";
 
@@ -55,7 +56,8 @@ export function useMainChatInputs() {
   const [infoOpen, setInfoOpen] = useState(false);
   const [modeSaving, setModeSaving] = useState(false);
   /** This server's model configuration for the Project (the page's own while it acts here). */
-  const [localModels, setLocalModels] = useState<ModelsResponse | null>(null);
+  const [localModelsRead, setLocalModels] = useState<Scoped<ModelsResponse> | null>(null);
+  const localModels = scopedValue(localModelsRead, projectId);
   // Background processes the conversation started (the details popover list), refreshed by
   // the polling effect below; procBusy marks the rows whose Stop / Remove requests are in
   // flight (every exited row at once while "clear exited" runs).

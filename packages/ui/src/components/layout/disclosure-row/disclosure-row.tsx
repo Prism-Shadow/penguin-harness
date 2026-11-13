@@ -21,6 +21,7 @@ import { useUiStrings } from "../../../strings";
 import { Chevron } from "../../icons/chevron/chevron";
 import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
 import type { RunState } from "../../icons/status-icon/status-icon";
+import { WallpaperBackdrop } from "../../shell/app-shell/wallpaper";
 import { Fold } from "../fold/fold";
 
 /**
@@ -35,7 +36,7 @@ export const DISCLOSURE_ROW_CLASS =
  * scrolls, the row pins right below the stuck group head (top-4 = the head's -top-4 offset plus
  * its 2rem height).
  */
-export const DISCLOSURE_ROW_STICKY_CLASS = "sticky top-4 z-[4]";
+export const DISCLOSURE_ROW_STICKY_CLASS = "sticky top-4 z-sticky";
 
 /**
  * The row's text label, minus the state's ink the row appends: the muted ink, the danger ink
@@ -59,8 +60,8 @@ export const ACTIVITY_HEAD_HOVER_CLASS = "transition-colors duration-150 hover:b
  */
 export const DISCLOSURE_HEADER_ROW_CLASS = `w-full bg-surface-muted ${ACTIVITY_HEAD_CLASS} ${ACTIVITY_HEAD_HOVER_CLASS}`;
 
-/** Header-level sticky positioning: pins against the message list's scrollport, one z level above the nested rows. */
-export const DISCLOSURE_HEADER_STICKY_CLASS = "sticky -top-4 z-[5]";
+/** Header-level sticky positioning: pins against the message list's scrollport, on the layer above the nested rows. */
+export const DISCLOSURE_HEADER_STICKY_CLASS = "sticky -top-4 z-sticky-head";
 
 /**
  * The header-family title, minus the state-dependent ink the caller appends. Sentence case on
@@ -293,6 +294,7 @@ export function DisclosureRow({
           data-kind={activity?.kind}
           data-state={activity?.state}
         >
+          {sticky && <WallpaperBackdrop />}
           {parts}
           <ActivityToggle open={open} />
           <span className="min-w-0 flex-1" />
@@ -301,6 +303,7 @@ export function DisclosureRow({
         // Two buttons, one disclosure: the row's words, and the chevron at its far end past the
         // parts that cannot sit inside a button.
         <div className={rowClass} data-kind={activity?.kind} data-state={activity?.state}>
+          {sticky && <WallpaperBackdrop />}
           <button
             type="button"
             aria-expanded={open}

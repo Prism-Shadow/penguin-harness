@@ -7,8 +7,9 @@
  */
 import fs from "node:fs/promises";
 import { wire } from "@prismshadow/penguin-core/kernel";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+  GenerativeModel,
   assistantText,
   partialText,
   partialThinking,
@@ -18,7 +19,7 @@ import {
   tokenUsage,
   emptyTokenCounts,
 } from "@prismshadow/penguin-core";
-import type { LLMOutcome, OmniMessage } from "@prismshadow/penguin-core";
+import type { LLMOutcome, AmspRecord } from "@prismshadow/penguin-core";
 import {
   ProjectConfigService,
   collectUtilityCompletion,
@@ -28,9 +29,9 @@ import { makeTempRoot } from "./helpers.js";
 
 /** A stream shaped the way the real translator shapes one: partial fragments, then the complete backfill. */
 async function* streamOf(
-  messages: OmniMessage[],
+  messages: AmspRecord[],
   outcome: LLMOutcome,
-): AsyncGenerator<OmniMessage, LLMOutcome> {
+): AsyncGenerator<AmspRecord, LLMOutcome> {
   for (const m of messages) yield m;
   return outcome;
 }
@@ -57,16 +58,24 @@ describe("utilityCompletionConfig", () => {
     expect(config.clientType).toBe("openai-chat");
   });
 
-  it("refuses a keyless entry whose endpoint is not the vendor's own (core's credential rule)", () => {
-    // completeOnce reports this as a failure; the environment's OPENAI_API_KEY is never
-    // borrowed for a third-party endpoint.
-    expect(() =>
-      utilityCompletionConfig("m-bench", {
+  it("hands a keyless entry's endpoint over with no key, and its client refuses to be built (MMSP's rule)", () => {
+    // completeOnce builds the client inside its try and reports the refusal as the failure it
+    // is; the environment's OPENAI_API_KEY is never borrowed for a third-party endpoint.
+    vi.stubEnv("OPENAI_API_KEY", "sk-env-must-not-cross");
+    try {
+      const config = utilityCompletionConfig("m-bench", {
         provider: "custom",
         base_url: "https://example.test/v1",
         client_type: "openai",
-      }),
-    ).toThrow(/has no API key/);
+      });
+      expect(config).not.toHaveProperty("apiKey");
+      expect(config.baseUrl).toBe("https://example.test/v1");
+      expect(() => new GenerativeModel(config)).toThrow(
+        /has no API key for https:\/\/example\.test\/v1/,
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("runs a keyless entry on its group's connection, and a value of the entry's own over it", () => {
@@ -99,13 +108,13 @@ describe("collectUtilityCompletion", () => {
         [
           partialThinking("start"),
           partialThinking("delta", "the name is Chinese, translate it"),
-          partialThinking("stop", "", "completed"),
-          thinkingMessage("the name is Chinese, translate it", "completed"),
+          partialThinking("stop", ""),
+          thinkingMessage("the name is Chinese, translate it"),
           partialText("start"),
           partialText("delta", "research_paper"),
           partialText("delta", "_lab"),
-          partialText("stop", "", "completed"),
-          assistantText("research_paper_lab", "completed"),
+          partialText("stop", ""),
+          assistantText("research_paper_lab"),
           tokenUsage(emptyTokenCounts(), emptyTokenCounts()),
         ],
         { status: "completed" },
@@ -121,8 +130,8 @@ describe("collectUtilityCompletion", () => {
         [
           partialThinking("start"),
           partialThinking("delta", "let me consider every possible identifier"),
-          partialThinking("stop", "", "retryable"),
-          thinkingMessage("let me consider every possible identifier", "retryable"),
+          partialThinking("stop", ""),
+          thinkingMessage("let me consider every possible identifier"),
         ],
         {
           status: "retryable",
@@ -149,7 +158,7 @@ describe("collectUtilityCompletion", () => {
 
   it("treats a whitespace-only answer as no answer", async () => {
     const result = await collectUtilityCompletion(
-      streamOf([assistantText("  \n ", "completed")], { status: "completed" }),
+      streamOf([assistantText("  \n ")], { status: "completed" }),
     );
     expect(result).toEqual({ ok: false, cause: "failed", error: "completed" });
   });

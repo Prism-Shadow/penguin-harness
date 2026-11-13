@@ -1,9 +1,9 @@
 {
   "name": "@prismshadow/penguin-desktop",
-  "version": "0.2.16",
+  "version": "0.2.18",
   "private": true,
   "type": "module",
-  "description": "PenguinHarness desktop app: Electron shell running @prismshadow/penguin-server as a utilityProcess, window on http://localhost (same-origin HTTP/SSE, no private IPC).",
+  "description": "PenguinHarness desktop app: Electron shell running @prismshadow/penguin-server as a utilityProcess, window on http://localhost (same-origin HTTP/SSE; the only IPC is the window-controls bridge).",
   "main": "dist/main.js",
   "scripts": {
     "build": "tsup && node scripts/build-assets.mjs",
@@ -31,10 +31,14 @@
     "@penguinharness/goal": "workspace:*",
     "@penguinharness/humanizer": "workspace:*",
     "@penguinharness/model-development": "workspace:*",
+    "@penguinharness/openskill-rsi-toolkit": "workspace:*",
     "@penguinharness/opro-rsi-toolkit": "workspace:*",
     "@penguinharness/penguin-support": "workspace:*",
     "@penguinharness/skill-porting": "workspace:*",
+    "@penguinharness/skilladam-rsi-toolkit": "workspace:*",
+    "@penguinharness/skillopt-rsi-toolkit": "workspace:*",
     "@penguinharness/software-development": "workspace:*",
+    "@penguinharness/trace-rsi-toolkit": "workspace:*",
     "@penguinharness/use-bento-slides": "workspace:*",
     "@penguinharness/use-firecrawl": "workspace:*",
     "@penguinharness/use-claude-code": "workspace:*"
@@ -44,11 +48,12 @@
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-server": "workspace:*",
     "@types/node": "^24.0.0",
-    "electron": "^43.2.0",
+    "electron": "^43.7.6",
     "electron-builder": "^26.16.1",
     "electron-updater": "^6.8.9",
     "tsup": "^8.3.0",
     "typescript": "^5.6.0",
-    "vitest": "^3.2.6"
+    "vitest": "^4.1.12",
+    "yaml": "^2.5.0"
   }
 }

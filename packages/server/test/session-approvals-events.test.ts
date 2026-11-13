@@ -17,7 +17,7 @@ import {
   toolCall,
   userText,
   type ApproveFn,
-  type OmniMessage,
+  type AmspRecord,
 } from "@prismshadow/penguin-core";
 import type { ServerEvent } from "../src/api/types.js";
 import { userChannelKey } from "../src/http/routes/events.js";
@@ -31,7 +31,7 @@ const PROJECT = "owner-default_project";
 /** A runtime whose Task asks to approve one call per id, in parallel, then answers. */
 function approvingSession(sessionId: string, toolCallIds: string[]): RuntimeSession {
   return fakeSession(sessionId, {
-    async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
+    async *run(_input: AmspRecord[], opts: { approve: ApproveFn; signal: AbortSignal }) {
       const calls = toolCallIds.map((id) =>
         toolCall({ name: "exec_command", arguments: "{}", toolCallId: id }),
       );

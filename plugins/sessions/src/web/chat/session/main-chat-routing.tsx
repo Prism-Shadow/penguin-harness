@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
-import { S } from "@prismshadow/penguin-web/internal";
-import { useDocumentTitle } from "@prismshadow/penguin-web/internal";
-import type { MemoryLocateTarget } from "@prismshadow/penguin-web/internal";
+import { S } from "../../../lib/strings";
+import { useDocumentTitle } from "../../../lib/use-document-title";
+import type { MemoryLocateTarget } from "../../../lib/amsp/memory-changes";
 import { DRAFT_SESSION_ID, parkedDraftIdOf } from "../draft-sessions";
 import {
   heldRouteSession,
@@ -10,10 +10,10 @@ import {
   routedView,
   sessionProbeKey,
 } from "../session-project";
-import { machineForSession } from "@prismshadow/penguin-web/internal";
-import { useMachineModels } from "@prismshadow/penguin-web/internal";
-import { setDockCwd, dockVersion, openPanel, panelDock, subscribeDock } from "@prismshadow/penguin-web/internal";
-import { terminalApiSupported, subscribeTerminals } from "@penguinharness/plugin-terminal/web";
+import { machineForSession } from "../../../lib/session-machines";
+import { useMachineModels } from "../../../lib/machine-models";
+import { setDockConversation, dockVersion, openPanel, panelDock, subscribeDock } from "../../dock";
+import { terminalApiSupported, subscribeTerminals } from "../../terminal";
 import type { useMainChatInputs } from "./main-chat-inputs";
 
 /** Exact consecutive main ChatPage statements 26..61; called once, in original order. */
@@ -29,6 +29,8 @@ export function useMainChatRouting(scope: ReturnType<typeof useMainChatInputs>) 
   // stream. The tabs themselves deliberately survive the switch — the panels re-bind to
   // the conversation on screen.
   useSyncExternalStore(subscribeDock, dockVersion);
+  // Keeps the terminal list fresh while a conversation is on screen — which is also how the
+  // page learns whether this server serves terminals at all (the terminal panel's `offered`).
   useSyncExternalStore(subscribeTerminals, terminalApiSupported);
   /** Workspace tab: locate this file in the tree (a message file card's click, or a reply's link to a file). */
   const [fileOpenRequest, setFileOpenRequest] = useState<{ path: string } | null>(null);
@@ -133,7 +135,7 @@ export function useMainChatRouting(scope: ReturnType<typeof useMainChatInputs>) 
   const listed =
     draft || (routeSessionId !== null && isSessionDeleted(routeSessionId))
       ? null
-      : resolveRoutedSession(routeSessionId, sessions, fetchedSession);
+      : resolveRoutedSession(routeSessionId, sessions, fetchedSession, projectId);
   /**
    * The routed Session, held across a refetch that momentarily does not list it.
    *
@@ -158,6 +160,7 @@ export function useMainChatRouting(scope: ReturnType<typeof useMainChatInputs>) 
     listed,
     routeSessionId ?? null,
     probeKey !== null && probeFailedKey === probeKey,
+    projectId,
   );
   const routed = draft ? null : heldSession.current;
   /**
@@ -213,20 +216,18 @@ export function useMainChatRouting(scope: ReturnType<typeof useMainChatInputs>) 
     : selected === null
       ? null
       : machineForSession(selected.sessionId);
-  // New shells start in this conversation's Workspace — its files are what a terminal
-  // opened here is for. While drafting, the Workspace is the one picked in the draft and
-  // DraftView publishes it instead (a child effect runs before this one, so this must
-  // yield rather than clobber it with null). Leaving the chat for another page keeps the
-  // last conversation's Workspace: it is a better default than home for the hotkey,
-  // which stays live everywhere. With the machine that Workspace is on: the path only means
-  // anything on its own filesystem, and a shell for this conversation belongs beside the
-  // agent running it.
+  // The docks' terminals belong to this conversation: they are created under its Session id,
+  // start in its Workspace — its files are what a terminal opened here is for — on the machine
+  // it runs on, and only its own are listed. While drafting there is no Session and DraftView
+  // publishes the draft's Workspace instead (a child effect runs before this one, so this must
+  // yield rather than clobber it).
   useEffect(() => {
     if (draft) return;
-    setDockCwd(
-      selected?.workspace ?? null,
-      selected === null ? null : machineForSession(selected.sessionId),
-    );
+    setDockConversation({
+      sessionId: selected?.sessionId ?? null,
+      workspace: selected?.workspace ?? null,
+      machineId: selected === null ? null : machineForSession(selected.sessionId),
+    });
   }, [draft, selected]);
 
   // Currently effective model (session state, the model reference comes from the Session DTO): model selection in draft state is handled internally by DraftView.

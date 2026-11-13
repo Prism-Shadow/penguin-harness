@@ -19,7 +19,7 @@ interface BuiltinTool {
   execute(
     args: Record<string, unknown>,
     ctx: ToolExecutionContext,
-  ): AsyncGenerator<OmniMessage, ToolResult | void>;
+  ): AsyncGenerator<AmspRecord, ToolResult | void>;
 }
 
 interface ToolExecutionContext {
@@ -31,7 +31,7 @@ interface ToolExecutionContext {
 }
 
 interface ToolResult {
-  stopReason?: StopReason; // the tool's self-reported terminal state (lowest priority, see below)
+  status?: ToolStatus; // the tool's self-reported result status (lowest priority, see below)
   note?: string; // terminal marker appended outside the output budget (e.g. exit code)
   images?: string[]; // data-URL images, appended after the text output
 }
@@ -41,7 +41,7 @@ A tool only yields incremental `partial_tool_call_output` deltas. The Environmen
 
 - streaming framing (start / stop) and `tool_call_id` threading;
 - timeouts, and head-and-tail truncation once output exceeds `maxOutputLength` (default 16000 characters);
-- `stop_reason` priority: user interrupt > timeout > tool throw > tool self-report. A timeout or a throw ends the call as `fatal`;
+- the result's `status` priority: user interrupt > timeout > tool throw > tool self-report. A user interrupt ends the call as `aborted`, with the output produced so far and the interruption note; a timeout or a throw ends it as `fatal`;
 - never-empty output: `[no output]` is substituted when a call produced no text and no note;
 - `note` (for example the exit code) and images are appended outside the output budget, so the terminal marker survives even when long output is cut.
 
@@ -54,7 +54,7 @@ Tools and the Environment never throw into the engine. Errors become `tool_call_
 - the tool's parameters, restated from its schema;
 - the shape of a correct call.
 
-That is enough to repair the call from the output alone. For message structure, see the [OmniMessage Protocol](/omni-message).
+That is enough to repair the call from the output alone. For message structure, see [AMSP Records](/amsp-records).
 
 ### Recovering oversized output
 
@@ -87,7 +87,7 @@ The same spelling rule covers every path core composes for the model:
 
 The Trace does not duplicate those bytes. It does record the same absolute Session path shown to the model, the Web App and the CLI, which exposes the host's data-root layout.
 
-A failed archive write never changes the original tool's `stop_reason`. The visible note and the stderr warning carry only a short error code (plus the tool name on stderr), never the path or the raw error message.
+A failed archive write never changes the original tool's `status`. The visible note and the stderr warning carry only a short error code (plus the tool name on stderr), never the path or the raw error message.
 
 ## Configuration fields
 
@@ -155,7 +155,7 @@ exec_command(cmd)
      input_command(process_id, kill: true) ──► SIGTERM the process group (SIGKILL after a grace period)
 ```
 
-A command that exits cleanly adds no note. A non-zero exit adds `[exit code: N]` and a signal adds `[terminated by signal S]`; both end the call as `fatal`.
+A command that exits cleanly adds no note. A non-zero exit adds `[exit code: N]` and a signal adds `[terminated by signal S]`; either way the call ends `completed`, because the exit status is the command's result, not the tool's failure. `fatal` is kept for the tool's own failures: a timeout, a spawn error, a throw.
 
 The tools' arguments (explicit keys):
 
@@ -305,7 +305,7 @@ A task launched with `run_in_background: true`, and a running call the user [mov
 
 A call the user moved to the background says so in its own result. The note tells the model to leave the work alone (no polling, no input) and to move on to other work or end the turn. The user moved it precisely so the model would not follow it up, and the completion arrives on its own.
 
-The message opens with a `[background_task_done]` marker block (kind, id, status and a one-line detail), followed by what ran and the output, capped at 4000 characters: for a command, the tail of its not-yet-delivered output; for a subagent, the end of the child's latest complete reply. The Web App shows the block as a collapsible notice. The message's `text` payload carries `sender: "harness"`, which distinguishes it from human input in the Trace (see [OmniMessage](/omni-message)).
+The message opens with a `[background_task_done]` marker block (kind, id, status and a one-line detail), followed by what ran and the output, capped at 4000 characters: for a command, the tail of its not-yet-delivered output; for a subagent, the end of the child's latest complete reply. The Web App shows the block as a collapsible notice. The message's `text` payload carries `sender: "harness"`, which distinguishes it from human input in the Trace (see [AMSP Records](/amsp-records)).
 
 When the report is delivered depends on the Session:
 
@@ -345,16 +345,22 @@ Every complete `tool_call` gets exactly one approval decision:
 
 ```ts
 type ApprovalDecision = "allow" | "deny" | "forbidden"; // "forbidden" = the command policy's veto
-type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalDecision>;
+// `context.reason` is set when a command-policy `ask` rule matched: the call needs a person.
+type ApproveFn = (
+  toolCall: AmspRecord<ToolCallPayload>,
+  context?: { reason?: { kind: "policy"; rule: string } },
+) => Promise<ApprovalDecision>;
 ```
 
 | Surface | Behavior |
 | --- | --- |
-| SDK | Pass `approve` to each `session.run`. With none injected, the engine denies everything by default, so nothing is approved unattended |
+| SDK | Pass `approve` to each `session.run`. With none injected, the engine denies everything by default, so nothing is approved unattended. A call that arrives with `context.reason` is one an `ask` rule matched: put it to a person rather than answering by mode. A callback that ignores the second argument decides it like any other call |
 | CLI | `--approve` takes four modes: `allow-all` (default), `deny-all`, `read-only`, `always-ask`. `read-only` auto-approves `permission: "r"` tools and leaves the rest to a person. The flag sets the approval mode of the server Session the CLI drives; without it, a CLI running inside an agent's command inherits the calling Session's mode |
 | Web / Server | The same four modes, set per Session. The mode is re-read from the database on every decision, so a change applies at once. A tool's `r` / `rw` comes from the running context's toolset, so a permission change applies at the next rotation (compaction). Manual decisions arrive through the API |
 
-Installed pre-tool-use hooks are consulted before the approval callback. A hook's `deny` refuses the call without asking, and its `allow` approves without asking, except that the [command policy](/configuration#command-policy) still vetoes an allowed call it matches. See [Pre-tool-use hooks](/agent-loop#pre-tool-use-hooks).
+The [command policy](/configuration#command-policy) sits above the mode. A rule with `action: deny` refuses a matching call as `forbidden` without asking anyone. A rule with `action: ask` hands a matching call to the approval callback with a policy reason, and the server puts it to a person under every mode but `deny-all`, which still denies it, so a `gh pr merge` stops for a click even under `allow-all`. The server pushes the call as an ordinary `approval_request` carrying `reason: { kind: "policy", rule }`, and the Web App's approval card shows a muted line naming the rule. An unattended Session (an organization's desks and tickets) has nobody to ask and denies such a call at once.
+
+Installed pre-tool-use hooks are consulted before the approval callback. A hook's `deny` refuses the call without asking, and its `allow` approves without asking, except that the command policy still answers for a call it matches: a `deny` rule's call stays forbidden and an `ask` rule's call still goes to a person. See [Pre-tool-use hooks](/agent-loop#pre-tool-use-hooks).
 
 A refused call gets a synthetic `aborted` `tool_call_output` for the model to react to. The wording names the decider:
 
@@ -366,7 +372,7 @@ A refused call gets a synthetic `aborted` `tool_call_output` for the model to re
 
 A policy hit therefore never reads as a person cancelling. See [ApproveFn](/interfaces#approvefn). Every decision is written to the Trace as an `approval_decision` event, with a policy veto recorded as `forbidden`, which makes the Trace a complete audit record. Approval happens in the tool-execution phase of the [agent loop](/agent-loop).
 
-**Subagent approvals.** Ending the parent's task never auto-denies a child's approval. The server attaches a session-lifetime fallback approval sink to every Session it runs, CLI-driven Sessions included. It escalates to the user any child approval that has no active poll window and no background-launch sink, even while the parent Session sits idle. When a parent task ends or is stopped, only the **main** Session's pending approvals are resolved. A child approval tagged with `origin` stays pending, with its card on screen, until the user decides. An SDK embedder that never calls `Session.setSubagentApprovalFallback` keeps the poll-window-only behavior: the child's requests wait until a `run_subagent` or `input_subagent` call is active.
+**Subagent approvals.** Ending the parent's task never auto-denies a child's approval. The server attaches a session-lifetime fallback approval sink to every Session it runs, CLI-driven Sessions included. It escalates to the user any child approval that has no active poll window and no background-launch sink, even while the parent Session sits idle. When a parent task ends or is stopped, only the **main** Session's pending approvals are resolved. A child approval tagged with `origin` stays pending, with its card on screen, until the user decides. An SDK embedder that never calls `Session.setSubagentApprovalFallback` keeps the poll-window-only behavior: the child's requests wait until a `run_subagent` or `input_subagent` call is active. The Session wraps the fallback sink with its command policy, so a child's `ask` hit that lands there reaches the host's callback with its reason and still goes to a person.
 
 ## Customizing the toolset
 
@@ -447,7 +453,7 @@ An existing entry that holds a literal `${…}` in a value reads it as a referen
 ### Connection and discovery
 
 - Connecting is **lazy**. Creating a Session returns at once; the first `run()` connects all Servers in parallel and discovers their tools once.
-- The wait streams as one `mcp_connect_begin` / `mcp_connect_end` pair: frontends show a connecting status, and the end event carries the overall status plus per-Server results. The full tool definitions follow as a `tool_list_ready` event (see [OmniMessage](/omni-message)). In the Trace, all three land after the run's input, inside the new turn.
+- The wait streams as one `mcp_connect_begin` / `mcp_connect_end` pair: frontends show a connecting status, and the end event carries the overall status plus per-Server results. The full tool definitions follow as a `tool_list_ready` event (see [AMSP Records](/amsp-records)). In the Trace, all three land after the run's input, inside the new turn.
 - Aborting during the connect **cancels** the attempt, and the next `run()` connects again.
 - The discovered tools are a snapshot for the model context: `tools/list_changed` notifications are ignored. When a compaction opens the next context, a Server whose entry is unchanged keeps its live connection and tools; a Vault value the entry references counts as part of it. Removed or changed Servers are closed, and new, changed or previously failed ones connect again. The connect event pair appears only when some Server needs connecting, while `tool_list_ready` is always emitted (see [Compaction](/agent-loop)).
 - An unreachable Server or an invalid entry only produces a warning on stderr and is skipped. **The Session is never blocked.** A Server skipped as needs setup or sign-in required is never contacted, and its connect result is a failure with the `mcp_needs_setup` or `mcp_sign_in_required` code.
@@ -465,5 +471,5 @@ An existing entry that holds a literal `${…}` in a value reads it as a referen
 - Text blocks are joined into the output text, and image blocks ride along as images (data URLs).
 - Audio and binary resources become placeholder lines; a text resource contributes its text; a `resource_link` becomes `[resource: <uri>]` plus its description; an unknown block type becomes `[unsupported content type: <type>]`.
 - When the joined text is empty, `structuredContent` is serialized as JSON.
-- A Server-reported `isError` ends the call with `stop_reason: "fatal"`, and the Server's error text as the content (`[tool reported an error with no message]` when it sent none).
+- A Server-reported `isError` ends the call with `status: "fatal"`, and the Server's error text as the content (`[tool reported an error with no message]` when it sent none).
 - Session teardown (`Environment.dispose`) closes every MCP client, and stdio child processes exit with it.

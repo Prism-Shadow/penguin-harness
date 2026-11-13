@@ -5,8 +5,8 @@
  * resets on a Session switch, and when its panel's tab closes.
  */
 import { useCallback, useEffect, useState } from "react";
-import type { MemoryLocateTarget } from "@prismshadow/penguin-web/internal";
-import { openPanel, panelDock } from "@prismshadow/penguin-web/internal";
+import type { MemoryLocateTarget } from "../../../lib/amsp/memory-changes";
+import { openPanel, panelDock } from "../../dock";
 
 export function usePanelRequests(routeSessionId: string | null) {
   /** Workspace tab: locate this file in the tree (a message file card's click, or a reply's link to a file). */
@@ -38,12 +38,18 @@ export function usePanelRequests(routeSessionId: string | null) {
   const [subagentTaskScope, setSubagentTaskScope] = useState<{
     anchorSessionId: string;
   } | null>(null);
-  useEffect(() => {
+  // The commands above belong to the conversation they were given in. Dropped while rendering
+  // the route that names another one, not in an effect after it: the panel bodies of the next
+  // conversation would otherwise mount with the last one's command for a render and act on it
+  // (land the Memory panel on its entry, focus the agents panel on its child).
+  const [commandsFor, setCommandsFor] = useState(routeSessionId);
+  if (commandsFor !== routeSessionId) {
+    setCommandsFor(routeSessionId);
     setFileOpenRequest(null);
     setMemoryRequest(null);
     setSubagentFocus(null);
     setSubagentTaskScope(null);
-  }, [routeSessionId]);
+  }
   // A command also resets when its panel's TAB closes: the tab body unmounts with the tab,
   // so a re-added tab is a fresh mount that would otherwise replay the stale command —
   // reopening the Workspace would re-locate a long-clicked file, and reopening the agents

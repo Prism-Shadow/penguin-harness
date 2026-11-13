@@ -1,17 +1,22 @@
 /**
  * Foundations › Colour: the palette as it is used, not as a list. The four surfaces stacked with
  * the three inks and the three lines drawn on each; the accent — the theme's own and the five
- * presets the active theme lists, in the mode under review — as a filled button and a selected
- * row, and the link; the six tones as a dot, a word and the soft / outline / solid badge; the
+ * presets the active theme lists, in the mode under review — as a filled button, a selected row
+ * and a message bubble on its tint, and the link; the six tones as a dot, a word and the soft / outline / solid badge; the
  * chart series as bars; the code and diff colours on a hunk. Every value, with its contrast
  * ratios, is in the tokens drawer.
  */
-import { ACCENT_PRESETS, TONES } from "@prismshadow/penguin-ui";
+import { ACCENT_PRESETS, INITIAL_THEME_ID, TONES } from "@prismshadow/penguin-ui";
 import type { ThemeId, ThemeModeName, ToneName } from "@prismshadow/penguin-ui";
 import type { CSSProperties } from "react";
-import geekCss from "../../../ui/src/themes/geek.css?raw";
-import githubCss from "../../../ui/src/themes/github.css?raw";
-import modernCss from "../../../ui/src/themes/modern.css?raw";
+import doodleAccents from "../../../ui/src/themes/doodle/accents.css?raw";
+import doodleTokens from "../../../ui/src/themes/doodle/tokens.css?raw";
+import geekAccents from "../../../ui/src/themes/geek/accents.css?raw";
+import geekTokens from "../../../ui/src/themes/geek/tokens.css?raw";
+import githubAccents from "../../../ui/src/themes/github/accents.css?raw";
+import githubTokens from "../../../ui/src/themes/github/tokens.css?raw";
+import modernAccents from "../../../ui/src/themes/modern/accents.css?raw";
+import modernTokens from "../../../ui/src/themes/modern/tokens.css?raw";
 import { useGallery } from "../state";
 import { BoardGroup } from "./shared";
 
@@ -19,32 +24,49 @@ const SURFACES = ["--ui-canvas", "--ui-surface", "--ui-surface-muted", "--ui-ins
 const INKS = ["--ui-fg", "--ui-fg-muted", "--ui-fg-subtle"] as const;
 const LINES = ["--ui-line", "--ui-line-muted", "--ui-line-emphasis"] as const;
 
-/** Each theme file's source: its presets are read from it, the way the contract test reads them. */
-const THEME_CSS: Readonly<Record<ThemeId, string>> = {
-  github: githubCss,
-  modern: modernCss,
-  geek: geekCss,
+/**
+ * Each pack's token rules and accent presets, as source: its presets are read from them, the way
+ * the contract test reads them.
+ */
+const THEME_CSS: Readonly<Record<ThemeId, { tokens: string; accents: string }>> = {
+  github: { tokens: githubTokens, accents: githubAccents },
+  modern: { tokens: modernTokens, accents: modernAccents },
+  geek: { tokens: geekTokens, accents: geekAccents },
+  doodle: { tokens: doodleTokens, accents: doodleAccents },
 };
 
+/** A pack's root selector: the base's is the bare root, every other pack's names its id. */
+const rootSelector = (theme: ThemeId) =>
+  theme === INITIAL_THEME_ID ? ":root" : String.raw`:root\[data-theme="${theme}"\]`;
+
 /**
- * The six accent tokens a preset sets under a theme in a mode, as inline custom properties: the
- * `[data-accent="<id>"] { … }` rule of the theme's file, overlaid in dark with the
- * `[data-accent="<id>"].dark { … }` rule when the theme lifts the preset. A specimen carrying them
- * paints the preset without touching the root, which stays on the reader's own choice.
+ * The accent tokens a preset paints under a theme in a mode, as inline custom properties. First
+ * the theme's own accent values that derive from `--ui-accent` (Frost's and Console's hover,
+ * wash, tint and line; Primer's tint): a value computed on the root has already read the root's
+ * accent, so a specimen declares them again to follow the accent it sets. Then the preset's
+ * `[data-accent="<id>"] { … }` rule, overlaid in dark with its `.dark` rule when the theme lifts
+ * the preset. A specimen carrying them paints the preset without touching the root, which stays
+ * on the reader's own choice.
  */
 function presetStyle(theme: ThemeId, preset: string, mode: ThemeModeName): CSSProperties {
   const css = THEME_CSS[theme];
   const style: Record<string, string> = {};
-  const overlay = (dark: boolean) => {
-    const tail = dark ? String.raw`\.dark` : "";
-    const block =
-      new RegExp(String.raw`\[data-accent="${preset}"\]${tail}\s*\{([^}]*)\}`).exec(css)?.[1] ?? "";
+  const take = (block: string, derivedOnly: boolean) => {
     for (const match of block.matchAll(/(--ui-accent[\w-]*):\s*([^;]+);/g)) {
-      style[match[1]!] = match[2]!.trim();
+      const value = match[2]!.trim();
+      if (!derivedOnly || /var\(--ui-accent\)/.test(value)) style[match[1]!] = value;
     }
   };
-  overlay(false);
-  if (mode === "dark") overlay(true);
+  const tails = mode === "dark" ? ["", String.raw`\.dark`] : [""];
+  for (const tail of tails) {
+    // The theme's base rule, then its dark rule: each starts and closes a line of its own.
+    const rule = new RegExp(String.raw`(?:^|\n)${rootSelector(theme)}${tail}\s*\{([\s\S]*?)\n\}`);
+    take(rule.exec(css.tokens)?.[1] ?? "", true);
+  }
+  for (const tail of tails) {
+    const rule = new RegExp(String.raw`\[data-accent="${preset}"\]${tail}\s*\{([^}]*)\}`);
+    take(rule.exec(css.accents)?.[1] ?? "", false);
+  }
   return style as CSSProperties;
 }
 
@@ -107,6 +129,7 @@ function Accents() {
             <span className="gf-caption gf-mono">{column.label}</span>
             <span className="gf-accent-button">{S.foundations.sampleSend}</span>
             <span className="gf-accent-row">{S.foundations.selectedRow}</span>
+            <span className="gf-accent-bubble">{S.foundations.sampleBubble}</span>
           </div>
         ))}
       </div>

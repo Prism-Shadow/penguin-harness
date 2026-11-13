@@ -2,15 +2,13 @@
  * The conversation on screen, handed to the dock panels docked beside it. The page's controller
  * (use-chat-controller.ts) is the source: `ChatSessionProvider` gives every panel the slice in
  * lib/chat-session.ts (`useChatSession()`), and chat's own two panels — the agents and the memory
- * — the whole controller (`useChatControllerContext()`), which no other module reads. The replies'
- * file renderers are built here too, from the same conversation (reply-files-provider.tsx).
+ * — the whole controller (`useChatControllerContext()`), which no other module reads.
  */
 import { createContext, useContext, type ReactNode } from "react";
 
-import { ChatSessionContext, type ChatSession } from "@prismshadow/penguin-web/internal";
+import { ChatSessionContext, type ChatSession } from "../../../lib/chat-session";
 
 import type { ChatController } from "./use-chat-controller";
-import { ReplyFilesProvider } from "../reply-files-provider";
 
 const ControllerContext = createContext<ChatController | null>(null);
 
@@ -33,9 +31,7 @@ export function ChatSessionProvider({
   };
   return (
     <ControllerContext.Provider value={controller}>
-      <ChatSessionContext.Provider value={session}>
-        <ReplyFilesProvider>{children}</ReplyFilesProvider>
-      </ChatSessionContext.Provider>
+      <ChatSessionContext.Provider value={session}>{children}</ChatSessionContext.Provider>
     </ControllerContext.Provider>
   );
 }

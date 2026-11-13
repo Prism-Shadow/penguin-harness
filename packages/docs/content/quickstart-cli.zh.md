@@ -8,7 +8,7 @@ description: 安装 penguin 命令，配置模型，打开 Web App，在终端�
 ## 开始之前
 
 - Linux 或 macOS（x64 或 arm64），或 Windows 10 及以上（x64）且 PowerShell 为 5.1 或更高版本。这些平台的安装器自带官方 Node.js 运行时，机器上不需要另装 Node.js。
-- Node.js >= 24：用 npm 安装、从源码构建或在其他平台上使用时才需要。
+- Node.js >= 24：用 npm 安装、从源码构建或在其他平台上使用时才需要。Node 更旧时，CLI 与服务端启动即退出，并说出检测到的版本。
 - 一个模型供应商的 API Key。
 
 ## 安装 CLI
@@ -48,7 +48,7 @@ penguin config model add --provider deepseek --model-id deepseek-flash --api-key
 之后也可以在 Web App 的**模型库**页面添加模型。
 
 - 模型始终以 `(provider, model_id)` 二元组引用，因此 `--provider` 与 `--model-id` 都必填。PenguinHarness 不会根据模型 id 推断供应商。内置分组见[模型与 Provider](/models)。
-- API Key 也可以来自环境变量，但仅限厂商自己的端点。模型条目没有内联 `api_key`、且没有自己的 `base_url`（或 `base_url` 就是厂商官方端点）时，key 取自 LLM 网关库 [MMSP](https://www.npmjs.com/package/@prismshadow/mmsp) 读取的该厂商变量，如 `DEEPSEEK_API_KEY`、`ANTHROPIC_API_KEY`、`OPENAI_API_KEY`、`GEMINI_API_KEY`。指向网关或自己服务器的条目需要 `--api-key`。工作目录下的 `.env` 文件会自动加载。
+- API Key 也可以来自环境变量。模型条目没有内联 `api_key`、且条目与分组都不带 `base_url`（或只带厂商的缺省端点）时，key 取自 LLM 网关库 [MMSP](https://www.npmjs.com/package/@prismshadow/mmsp) 读取的该厂商变量，如 `DEEPSEEK_API_KEY`、`ANTHROPIC_API_KEY`、`OPENAI_API_KEY`、`GEMINI_API_KEY`。带其他 base URL 的条目（网关、自己的服务器）需要 `--api-key`。工作目录下的 `.env` 文件会自动加载。
 
 ## 启动 Web App
 

@@ -9,7 +9,11 @@
 # macOS release artifacts are Developer ID signed and notarized when release.yml calls
 # this workflow with require_macos_signing=true. Windows release installers are signed
 # with EVSign when release.yml calls this workflow with require_windows_signing=true.
-# Standalone dry-runs can still build unsigned artifacts when signing secrets are absent.
+# Only a build that requires signing signs. A dispatch that leaves an OS's input false builds
+# that OS unsigned even where the job's environment holds the signing secrets: on Windows the
+# EVSign key is never handed to the build and the EVSign client is never downloaded. With
+# both inputs false (the default) a dispatch is a dry run that signs nothing, and each job
+# states its signing in the run summary.
 #
 # A push to a `release/**` branch runs the same signed matrix on its own: signing depends on
 # the hosted runner image as much as on this repository, and CI never exercises it, so a
@@ -233,23 +237,27 @@ jobs:
             fi
           } >> "$GITHUB_ENV"
 
+      # The key reaches this step, and the build below, only when Windows signing is required:
+      # the desktop-build environment holds it for every job that enters it, dry runs included,
+      # and the EVSign hook signs whenever it is given a key.
       - name: Prepare Windows signing credentials
         if: runner.os == 'Windows'
         shell: pwsh
         env:
-          EVSIGN_KEY: ${{ secrets.EVSIGN_KEY }}
+          EVSIGN_KEY: ${{ env.REQUIRE_WINDOWS_SIGNING == 'true' && secrets.EVSIGN_KEY || '' }}
         run: |
           $ErrorActionPreference = "Stop"
+          $ProgressPreference = "SilentlyContinue"
 
           "EVSIGN_REQUIRE=$($env:REQUIRE_WINDOWS_SIGNING)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-          if ([string]::IsNullOrWhiteSpace($env:EVSIGN_KEY)) {
-            if ($env:REQUIRE_WINDOWS_SIGNING -eq "true") {
-              Write-Error "Missing EVSIGN_KEY secret required for Windows release signing."
-            }
-
-            Write-Host "EVSIGN_KEY is not configured; Windows dry-run artifacts will remain unsigned."
+          if ($env:REQUIRE_WINDOWS_SIGNING -ne "true") {
+            Write-Host "Windows signing not required for this dry-run; building unsigned."
             exit 0
+          }
+
+          if ([string]::IsNullOrWhiteSpace($env:EVSIGN_KEY)) {
+            Write-Error "Missing EVSIGN_KEY secret required for Windows release signing."
           }
 
           Write-Output "::add-mask::$env:EVSIGN_KEY"
@@ -303,138 +311,17 @@ jobs:
       - name: Build packages
         env:
           EVSIGN_REQUIRE: ${{ runner.os == 'Windows' && env.REQUIRE_WINDOWS_SIGNING == 'true' && 'true' || 'false' }}
-          EVSIGN_KEY: ${{ runner.os == 'Windows' && secrets.EVSIGN_KEY || '' }}
+          EVSIGN_KEY: ${{ runner.os == 'Windows' && env.REQUIRE_WINDOWS_SIGNING == 'true' && secrets.EVSIGN_KEY || '' }}
         run: pnpm --dir packages/desktop exec electron-builder ${{ matrix.args }} --publish never ${{ runner.os == 'macOS' && env.REQUIRE_MACOS_SIGNING == 'true' && '-c.mac.forceCodeSigning=true' || '' }}
 
+      # Runs on every Windows build. A dry run's artifacts are expected unsigned and pass as
+      # such; their update metadata is still checked against the final installer bytes, and a
+      # signature that is present but broken still fails.
       - name: Verify Windows signing and update metadata
         if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          # This step stops a release on three things only: a required build output was not
-          # produced, an artifact that must be signed carries no signature, or a signature is
-          # present and does not validate. Everything else it inspects — which organisation
-          # signed, what app-update.yml records, whether latest.yml still describes the
-          # installer — is reported as a warning carrying the values it saw, so a certificate
-          # rotation or a metadata drift is loud in the log and on the run summary without
-          # stranding the release. Pinning an organisation name here turns a routine certificate
-          # rotation into a failed release; the name that has to be right at update time is
-          # electron-builder.yml's publisherName, which is verified on the user's machine.
-
-          # Write-Warning goes to the warning stream, which $ErrorActionPreference never
-          # promotes to a terminating error; the annotation puts the same line on the run
-          # summary. Neither affects the exit code.
-          function Add-Warning([string]$Message) {
-            Write-Host "::warning title=Windows signing metadata::$Message"
-            Write-Warning $Message
-          }
-
-          $outDir = "packages/desktop/out"
-          $installer = Join-Path $outDir "penguin-desktop-win32-x64.exe"
-          $latest = Join-Path $outDir "latest.yml"
-          $blockmap = "$installer.blockmap"
-          $appExe = Join-Path $outDir "win-unpacked/PenguinHarness.exe"
-          $elevateExe = Join-Path $outDir "win-unpacked/resources/elevate.exe"
-          $appUpdate = Join-Path $outDir "win-unpacked/resources/app-update.yml"
-
-          $requiredPaths = @($installer, $latest, $blockmap, $appExe, $elevateExe, $appUpdate)
-          foreach ($path in $requiredPaths) {
-            if (-not (Test-Path -LiteralPath $path)) {
-              Write-Error "Windows build output was not produced: $path"
-            }
-          }
-
-          $signerSubjects = @()
-          $signatures = @($installer, $appExe, $elevateExe)
-          foreach ($path in $signatures) {
-            $sig = Get-AuthenticodeSignature -LiteralPath $path
-            $subject = if ($null -ne $sig.SignerCertificate) { $sig.SignerCertificate.Subject } else { "<none>" }
-            $issuer = if ($null -ne $sig.SignerCertificate) { $sig.SignerCertificate.Issuer } else { "<none>" }
-            Write-Host "$path status=$($sig.Status)"
-            Write-Host "  signer: $subject"
-            Write-Host "  issuer: $issuer"
-
-            if ($sig.Status -eq "NotSigned" -and $env:REQUIRE_WINDOWS_SIGNING -ne "true") {
-              Write-Host "  $path is unsigned; allowed for this dry-run."
-              continue
-            }
-
-            if ($sig.Status -ne "Valid") {
-              Write-Error "$path signature is not valid: $($sig.Status) $($sig.StatusMessage)"
-            }
-
-            if ($null -eq $sig.SignerCertificate) {
-              Write-Error "$path reports a valid signature with no signer certificate."
-            }
-
-            if ($null -eq $sig.TimeStamperCertificate) {
-              Add-Warning "$path is signed but carries no timestamp certificate; its signature expires with the certificate. Signer: $subject"
-            }
-
-            $signerSubjects += $subject
-          }
-
-          $distinctSigners = @($signerSubjects | Sort-Object -Unique)
-          if ($distinctSigners.Count -gt 1) {
-            Add-Warning "Windows artifacts were signed by more than one identity: $($distinctSigners -join ' | ')"
-          }
-
-          $installerPath = (Resolve-Path -LiteralPath $installer).ProviderPath
-          $installerBytes = [System.IO.File]::ReadAllBytes($installerPath)
-          $sha512 = [Convert]::ToBase64String([System.Security.Cryptography.SHA512]::Create().ComputeHash($installerBytes))
-          $size = $installerBytes.Length
-          $latestText = Get-Content -LiteralPath $latest -Raw
-
-          if ($latestText -notmatch [Regex]::Escape("sha512: $sha512")) {
-            Add-Warning "latest.yml does not record the signed installer's sha512. Installer: $sha512"
-          }
-
-          if ($latestText -notmatch [Regex]::Escape("size: $size")) {
-            Add-Warning "latest.yml does not record the signed installer's size. Installer: $size bytes"
-          }
-
-          # electron-updater reads a missing publisherName as "nothing to verify" and installs
-          # whatever it downloaded, so the key surviving the build with at least one value is
-          # what matters here. Which identities are listed is electron-builder.yml's decision.
-          $appUpdateText = Get-Content -LiteralPath $appUpdate -Raw -Encoding UTF8
-          $publisherKey = [Regex]::Match($appUpdateText, "(?m)^publisherName:[ \t]*(?<inline>[^\r\n]*)")
-          $publisherNames = @()
-          if ($publisherKey.Success) {
-            $inlineValue = $publisherKey.Groups["inline"].Value.Trim()
-            if ($inlineValue -ne "") {
-              $publisherNames += $inlineValue
-            } else {
-              $rest = $appUpdateText.Substring($publisherKey.Index + $publisherKey.Length)
-              foreach ($line in ($rest -split "\r?\n")) {
-                if ($line -match "^[ \t]*-[ \t]*(?<value>\S.*)$") {
-                  $publisherNames += $Matches["value"].Trim().Trim([char[]]@('"', "'"))
-                } elseif ($line.Trim() -ne "") {
-                  break
-                }
-              }
-            }
-          }
-
-          if ($publisherNames.Count -eq 0) {
-            Add-Warning "app-update.yml carries no publisherName value; electron-updater would skip update-signature verification on clients installed from this build."
-          } else {
-            Write-Host "app-update.yml publisherName: $($publisherNames -join ' | ')"
-            foreach ($subject in $distinctSigners) {
-              $matched = $false
-              foreach ($name in $publisherNames) {
-                if ($subject -eq $name -or $subject.Contains($name)) { $matched = $true; break }
-              }
-              if (-not $matched) {
-                Add-Warning "app-update.yml's publisherName does not cover the signer, so clients installed from this build will reject its own successor. Signer: $subject. Listed: $($publisherNames -join ' | ')"
-              }
-            }
-          }
-
-          Write-Host "Windows verification complete: no signing failure. Any warnings above are non-fatal by policy."
-
-          # Explicit: every path above that is not a signing failure has to leave the step green.
-          exit 0
+        env:
+          EVSIGN_REQUIRE: ${{ env.REQUIRE_WINDOWS_SIGNING }}
+        run: node packages/desktop/scripts/verify-windows-artifacts.mjs
 
       - name: Notarize and staple macOS DMGs
         if: runner.os == 'macOS' && env.REQUIRE_MACOS_SIGNING == 'true'
@@ -611,3 +498,32 @@ jobs:
             # the installers ship but nothing can auto-update.
             packages/desktop/out/latest*.yml
             packages/desktop/out/*.blockmap
+
+      # A dry run's installers are picked up from this run's page, so each job says there
+      # whether what it uploaded is signed.
+      - name: Summarize signing
+        shell: bash
+        run: |
+          case "$RUNNER_OS" in
+            macOS)
+              required="$REQUIRE_MACOS_SIGNING"
+              signed="Developer ID signed and notarized"
+              ;;
+            Windows)
+              required="$REQUIRE_WINDOWS_SIGNING"
+              signed="signed with EVSign"
+              ;;
+            *)
+              required=false
+              signed=""
+              ;;
+          esac
+          if [[ "$required" == "true" ]]; then
+            line="$RUNNER_OS: $signed."
+          elif [[ "$RUNNER_OS" == "Linux" ]]; then
+            line="Linux: unsigned; Linux packages are never signed."
+          else
+            line="$RUNNER_OS: unsigned dry run; signing was not required, so no signing credentials reached electron-builder."
+          fi
+          echo "$line"
+          echo "- $line" >> "$GITHUB_STEP_SUMMARY"

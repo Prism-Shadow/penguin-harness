@@ -5,7 +5,7 @@
  */
 import { open } from "node:fs/promises";
 import { parseTraceLines, readTraceTolerant } from "@prismshadow/penguin-core";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/penguin-core";
 
 /** Head window for Trace head reads: generous for a long system prompt, far below a whole multi-MB shard. */
 export const TRACE_HEAD_BYTES = 256 * 1024;
@@ -17,7 +17,7 @@ export const TRACE_HEAD_BYTES = 256 * 1024;
  * The window is cut at its last newline (the tail fragment is incomplete); a first line
  * larger than the whole window falls back to the full tolerant read.
  */
-export async function readTraceHead(filePath: string): Promise<OmniMessage[]> {
+export async function readTraceHead(filePath: string): Promise<AmspRecord[]> {
   const fh = await open(filePath, "r");
   let text: string;
   let truncated: boolean;

@@ -23,7 +23,7 @@ import {
   SessionStatsList,
   sessionElapsedSplit,
 } from "../src/features/chat/session-stats";
-import { createTaskStatsTracker } from "../src/lib/omni/task-stats";
+import { createTaskStatsTracker } from "../src/lib/amsp/task-stats";
 import { S } from "../src/lib/strings";
 import { elementsOf, readMarkup, seenText } from "./helpers/markup";
 import type { MarkupElement } from "./helpers/markup";

@@ -6,11 +6,17 @@
  * storage: vitest runs in a Node environment (no localStorage), so unit tests inject an in-memory
  * implementation.
  *
+ * The drafts follow the account: the default storage is lib/account-sync's synced storage, which
+ * reports every write so it reaches the account's copy on the server, and the account's drafts
+ * are written into this cache when the user signs in. The cache is what a composer mounts from,
+ * so typing never waits on the network.
+ *
  * The key must include userId (#68): if the same browser logs into different accounts in
  * succession and the key only contains the Project/Session ID, the later user would recover the
  * previous user's text, Workspace, model selection, and handoff target — a cross-account information leak.
  */
 import type { ApprovalMode, SessionSandbox } from "@prismshadow/penguin-server/api";
+import { syncedStorage } from "../../lib/account-sync/cache";
 
 const APPROVAL_MODES: ApprovalMode[] = ["always-ask", "read-only", "allow-all", "deny-all"];
 
@@ -146,7 +152,7 @@ export function draftFromUnknown(parsed: unknown): DraftCache {
   return out;
 }
 
-export function loadDraft(key: string, storage: DraftStorage = localStorage): DraftCache {
+export function loadDraft(key: string, storage: DraftStorage = syncedStorage): DraftCache {
   try {
     return parseDraft(storage.getItem(key));
   } catch {
@@ -157,7 +163,7 @@ export function loadDraft(key: string, storage: DraftStorage = localStorage): Dr
 export function saveDraft(
   key: string,
   draft: DraftCache,
-  storage: DraftStorage = localStorage,
+  storage: DraftStorage = syncedStorage,
 ): void {
   try {
     storage.setItem(key, JSON.stringify(draft));
@@ -166,7 +172,7 @@ export function saveDraft(
   }
 }
 
-export function clearDraft(key: string, storage: DraftStorage = localStorage): void {
+export function clearDraft(key: string, storage: DraftStorage = syncedStorage): void {
   try {
     storage.removeItem(key);
   } catch {
@@ -184,7 +190,7 @@ export function clearDraft(key: string, storage: DraftStorage = localStorage): v
 export function clearDraftModelRef(
   userId: string,
   projectId: string,
-  storage: DraftStorage = localStorage,
+  storage: DraftStorage = syncedStorage,
 ): void {
   const key = draftKey(userId, projectId);
   const draft = loadDraft(key, storage);
@@ -207,7 +213,7 @@ export function clearDraftModelRef(
 export function clearDraftChatDefaults(
   userId: string,
   projectId: string,
-  storage: DraftStorage = localStorage,
+  storage: DraftStorage = syncedStorage,
 ): void {
   const key = draftKey(userId, projectId);
   const draft = loadDraft(key, storage);

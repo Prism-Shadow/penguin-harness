@@ -84,6 +84,7 @@ export const renderEn: RenderText = {
     `[stats] context ${s.context} (${s.contextDelta}) · tokens ${s.tokens} (${s.tokensDelta}) · ${s.elapsed} (${s.elapsedDelta})`,
 
   abortLabel: (abort) => {
+    if (abort?.errorCode === "max_turns") return "[stopped]: reached the maximum turns per task";
     const cause =
       abort?.errorCode === "user_abort"
         ? "aborted by user"
@@ -116,7 +117,11 @@ export const renderEn: RenderText = {
               ? "the model provider rejected an image in this turn's input (replaced with a note)"
               : kind === "failed"
                 ? "the model provider returned an error"
-                : "the request failed")(errorCode ?? status)}; sending retry #${attempt}…`,
+                : kind === "output_truncated"
+                  ? "the model's output was cut off at the output limit"
+                  : kind === "failed"
+                    ? "the model provider returned an error"
+                    : "the request failed")(errorCode ?? status)}; sending retry #${attempt}…`,
 
   compactionStart: (mode, reason) =>
     mode === "discard"
@@ -170,6 +175,7 @@ export const renderZh: RenderText = {
     `[统计信息] 上下文 ${s.context} (${s.contextDelta}) · tokens ${s.tokens} (${s.tokensDelta}) · 用时 ${s.elapsed} (${s.elapsedDelta})`,
 
   abortLabel: (abort) => {
+    if (abort?.errorCode === "max_turns") return "[已停止]：已达到单次任务最大轮数";
     const cause =
       abort?.errorCode === "user_abort"
         ? "用户中断"
@@ -199,7 +205,11 @@ export const renderZh: RenderText = {
               ? "模型服务拒绝了本轮输入中的图片（已换成文字说明）"
               : kind === "failed"
                 ? "模型服务返回错误"
-                : "请求失败")(errorCode ?? status)}，正在发起第 ${attempt} 次重试……`,
+                : kind === "output_truncated"
+                  ? "模型输出达到输出上限，被截断"
+                  : kind === "failed"
+                    ? "模型服务返回错误"
+                    : "请求失败")(errorCode ?? status)}，正在发起第 ${attempt} 次重试……`,
 
   compactionStart: (mode, reason) =>
     mode === "discard"

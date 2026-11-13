@@ -25,7 +25,16 @@ export function useBinding(id: CommandId): Chord | null {
 
 /** The command's chord for display: null while unbound, and null for a chord this host reserves. */
 export function useDisplayedBinding(id: CommandId): Chord | null {
-  const chord = useBinding(id);
+  useKeymap();
+  return displayedBinding(id);
+}
+
+/**
+ * useDisplayedBinding's read without the subscription, for a surface that shows the chords of
+ * commands it learns at render (the dock picker's panel rows): call it under one `useKeymap()`.
+ */
+export function displayedBinding(id: CommandId): Chord | null {
+  const chord = bindingOf(id);
   return chord !== null && shownOnHost(chord, currentPlatform(), currentHost()) ? chord : null;
 }
 

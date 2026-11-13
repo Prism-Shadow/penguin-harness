@@ -9,8 +9,8 @@
  * command line names none of its own commands, and only a server that is already running.
  *
  * One plugin answering the words runs; two or more answering the same words is ambiguous,
- * and the report lists one `penguin exec <package> …` line per plugin with exit code 2, so
- * the caller names the one it meant. No plugin answering leaves the command line to the
+ * and the report lists one `penguin exec <package>:<id>` line per plugin with exit code 2,
+ * so the caller names the one it meant. No plugin answering leaves the command line to the
  * CLI's own parse, which reports the unknown command as it always has.
  */
 import type {
@@ -18,9 +18,10 @@ import type {
   PluginCliCommandRunRequest,
   PluginCliCommandRunResponse,
   PluginCliCommandsResponse,
+  Language,
+  Messages,
 } from "@prismshadow/penguin-server/cli";
 import { resolveConnection, ServerClient } from "@prismshadow/penguin-server/cli";
-import type { Language, Messages } from "@prismshadow/penguin-server/cli";
 
 /** A word POSIX shells read back unchanged: letters, digits, and the portable punctuation set. */
 const SAFE_WORD = /^[A-Za-z0-9_@%+=:,./-]+$/;
@@ -114,20 +115,36 @@ export function writeRun(result: PluginCliCommandRunResponse): number {
 }
 
 /**
- * The ambiguity report: the header, one copyable `penguin exec` line per plugin, the
- * closing note. Returns exit code 2. When the argv carries an option, `--` follows the
- * package so the CLI hands the option to the plugin instead of reading it itself.
+ * The ambiguity report: the header, one copyable `penguin exec <package>:<id>` line per
+ * plugin, the closing note. Each id is the longest key of that package's commands that
+ * answer the argv, and what follows it is the part of the argv the key does not name — so
+ * a pasted line runs the plugin command with the same arguments, options included, no `--`
+ * needed. Returns exit code 2.
  */
 export function reportAmbiguous(
   argv: readonly string[],
-  packages: readonly string[],
+  commands: readonly PluginCliCommandInfo[],
   t: Messages,
 ): number {
+  const matching = commands.filter((cmd) => keyAnswers(cmd.key, argv));
+  const packages: string[] = [];
+  for (const cmd of matching) {
+    if (!packages.includes(cmd.package)) packages.push(cmd.package);
+  }
   process.stderr.write(`${t.ambiguous.header(commandWords(argv).join(" "), packages.length)}\n`);
-  const rest = argv.map(shellQuote).join(" ");
-  const separator = argv.some((arg) => arg.startsWith("-")) ? " --" : "";
+  const words = commandWords(argv);
   for (const pkg of packages) {
-    process.stderr.write(`  penguin exec ${shellQuote(pkg)}${separator} ${rest}\n`);
+    // The longest key the package contributes that answers the argv; its segments are
+    // dropped from the front of the argv, the rest is pasted after the id.
+    const key = matching
+      .filter((cmd) => cmd.package === pkg)
+      .reduce((a, b) => (b.key.split(".").length > a.key.split(".").length ? b : a)).key;
+    const rest = [...words.slice(key.split(".").length), ...argv.slice(words.length)]
+      .map(shellQuote)
+      .join(" ");
+    process.stderr.write(
+      `  penguin exec ${shellQuote(`${pkg}:${key}`)}${rest ? ` ${rest}` : ""}\n`,
+    );
   }
   process.stderr.write(`${t.ambiguous.note()}\n`);
   return 2;
@@ -152,7 +169,7 @@ export async function dispatchPluginCommand(
   }
   const packages = matchingPackages(commands, argv);
   if (packages.length === 0) return null;
-  if (packages.length > 1) return reportAmbiguous(argv, packages, t);
+  if (packages.length > 1) return reportAmbiguous(argv, commands, t);
   const result = await source.run({
     package: packages[0]!,
     args: [...argv],

@@ -1,12 +1,12 @@
 ---
 name: penguin-plugin
-description: Use for workbenches — the tabs and pages beside the chat, with server code behind them, that an Agent keeps in its own `workbenches/` folder inside PenguinHarness — building one, changing it, showing it as the whole app, restoring an earlier version, and removing a tab or a whole workbench when the user wants the custom UI gone.
-version: 2026.10.14.2
+description: Use for workbenches — the tabs and pages beside the chat, with server code behind them, that an Agent keeps in the `workbenches/` folder of its Agent State inside PenguinHarness — building one, changing it, showing it as the whole app, restoring an earlier version, and removing a tab or a whole workbench when the user wants the custom UI gone.
+version: 2026.11.09.1
 ---
 
 # Agent Workbench with Penguin Plugins
 
-Inside PenguinHarness an Agent can hold *workbenches*: small plugin packages in its own directory, written in TypeScript, that the server boots as module trees, shows as tabs beside the chat, reloads on every file change, and versions so any edit can be undone. This is the same module mechanism the server itself is built from — manifests as data, everything checked before any code runs — so a workbench that does not type-check, that was written against an interface version this server no longer fits, or whose manifests do not hold together fails to load with the problem named, while the previous version keeps serving.
+Inside PenguinHarness an Agent can hold *workbenches*: small plugin packages in its own Agent State, written in TypeScript, that the server boots as module trees, shows as tabs beside the chat, reloads on every file change, and versions so any edit can be undone. This is the same module mechanism the server itself is built from — manifests as data, everything checked before any code runs — so a workbench that does not type-check, that was written against an interface version this server no longer fits, or whose manifests do not hold together fails to load with the problem named, while the previous version keeps serving.
 
 A workbench is a plugin of the server's own kind, which is where this skill's name comes from. It is not a program that reaches an agent from outside, so it takes neither of the penguin-sdk skill's two ways, and that skill's question does not apply to it.
 
@@ -19,7 +19,7 @@ If the user's message only invokes this skill (e.g. "use penguin-plugin skill") 
 For an app inside PenguinHarness, use this skill with `agent-initialization`. The Plugin host already runs the Agent; do not ask the user to choose SDK/API architecture or enable Agent API keys. If the request says **new Agent**, create that target first and put all workbench files in **its** directory, not the Builder's. Keep the resolved target path for the whole task.
 
 1. Read the Environment's App Data Dir and Agent ID; use `agent-initialization` to create the requested target. List existing agent ids, choose an unused id (letters, digits and underscores), and write its role. Give a contract reviewer domain instructions, not app-building skills. Inherit the current runtime unless the user specified another.
-2. Under `<App Data Dir>/agents/<target_agent_id>/workbenches/<workbench_id>/`, write the three-file scaffold below. Every visible app needs a `WebModule.sessionTabs` contribution.
+2. Under `<App Data Dir>/agents/<target_agent_id>/agent_state/workbenches/<workbench_id>/`, write the three-file scaffold below. Every visible app needs a `WebModule.sessionTabs` contribution.
 3. **Activate and check the target**, including a new Agent nobody has opened yet:
    ```bash
    node "<this skill directory>/scripts/check.mjs" <target_agent_id> <workbench_id>
@@ -37,23 +37,101 @@ Use this pattern for uploads, research and support tickets:
 
 - On POST, validate input, create a Session and persist a job containing its `sessionId` and `status: "running"` with `host.setState`. Start the turn and return the job immediately. Catch launch failures and persist `failed`.
 - On GET, for each running job call `host.sessionResult(sessionId)`. Leave `running` jobs alone. Persist `completed` plus the returned text, or `failed` plus the error. Never mark a running snapshot failed because its text is empty.
-- Let the page poll GET every few seconds while visible. Reopening the tab or reloading code resumes from persisted session ids. Do not keep the only job state in a detached promise or a timer that disappears on reload.
+- Let the page poll GET every few seconds while visible; to show the answer as it is written, follow the Session too (*Follow the Agent live*). Reopening the tab or reloading code resumes from persisted session ids. Do not keep the only job state in a detached promise or a timer that disappears on reload.
 - For text reports, ask the Agent to put the complete report in its **final answer**; store that returned text and serve it with a download content type and `Content-Disposition: attachment`. Link directly to the same-origin report route with an `<a download>`; avoid fetching a Blob and clicking an object URL, which did not download in the embedded browser. Verify the saved file, not a toast saying it started. No Trace parsing or cross-workspace report-file probe is needed.
 - `host.getState()` is synchronous, `unknown`, initially `null`. Clone before editing; serialize read/modify/write handlers to avoid lost updates. Await `host.setState` before returning success.
 - Store large upload bytes outside the watched source folder, e.g. the target Agent's `scratchpad/<workbench_id>/uploads/`. Keep metadata in host state. Source changes trigger reloads; runtime files in `workbenches/<id>/` trigger needless rebuilds and enter version history. `import.meta.url` points into `.build/<revision>/`, not the source root.
 
+## Follow the Agent live (AMSP)
+
+Polling shows a job only once it is done. To show the answer while the Agent writes it, and to learn the moment a turn ends, follow the job's Session over AMSP: the records its Trace holds plus the streamed fragments, the same ones the chat view reads. AMSP carries the Agent's conversation and nothing else. Starting a turn, follow-ups, saving results and every other side effect stay in your handler.
+
+**The page** imports the page SDK the server serves beside your workbench, relative to the page just like `../api/…`: `../sdk/workbench.js` from a page directly under `ui/`, one more `../` for each folder deeper:
+
+```js
+let reader = null;
+
+async function openItem(item) {
+  if (item.status !== "running") return;
+  let sdk;
+  try {
+    sdk = await import("../sdk/workbench.js");
+  } catch {
+    return startPolling(); // an older server has no page SDK: keep polling GET
+  }
+  let draft = "";
+  reader = sdk.followSession(item.sessionId, { tailLimit: 1 });
+  reader.on("event", ({ record }) => {
+    if (record.origin) return; // a subagent's record, not the main conversation
+    const p = record.payload;
+    if (p.type === "request_begin") draft = "";
+    if (p.type === "partial_text") showDraft((draft += p.text));
+    if (p.type === "tool_call") showActivity(p.name);
+    if (p.type === "task_end") refresh(); // the saved answer replaces the draft
+  });
+  reader.on("reset", () => showDraft((draft = "")));
+  stopButton.onclick = () => sdk.abortSession(item.sessionId);
+}
+
+function closeItem() {
+  reader?.close();
+  reader = null;
+}
+```
+
+- Open one reader for the item on screen (its dialog or detail view), never one per list row: each reader holds a connection, and a browser allows only a few per origin. Close it when the dialog closes and when the page is hidden (`visibilitychange`).
+- `followSession(sessionId, options?)` returns the SDK's `SessionReader` on the Session's stream, taking `tailLimit` and the reader's other options: it reads the latest Tasks of the history (events with `source: "history"`), then the live tail, and reconnects on its own. On `reset`, drop what you drew; the history follows again. Records of subagents come through with an `origin`; skip them yourself.
+- `task_end` is a hint, not the result: on it, refresh from your handler, whose saved answer is what stays. Keep the polling path from *Background jobs* as the fallback for a failed import, and keep the list itself on (slower) polling.
+- `abortSession(sessionId)` stops the running task, for a Stop button, and resolves `true` when there was one to stop, `false` when nothing was running.
+- `workbench.js` re-exports everything `@prismshadow/amsp` does, plus `apiBase` and `transport` for other reads of the signed-in user's door. Never write an absolute `/api/…` path into a page: a workbench on a machine is served under `/server/<machine>/api/…`, a reverse proxy may add a prefix of its own, and `apiBase` already says which.
+
+**The handler** gets the same records from `host.subscribe(sessionId, listener)`, which returns the function that stops them. It is live only: nothing from before the call, no history, so subscribe before `host.run`. A record is a `WorkbenchRecord` (`{ timestamp, type, payload: { type?, … }, origin? }`, from `@prismshadow/penguin-server/plugin`). Treat it as a trigger and keep `await host.sessionResult(sessionId)` as the authoritative snapshot:
+
+```ts
+create({ use }) {
+  const host = use.host;
+  const watching = new Map<string, () => void>();
+  const watch = (sessionId: string) => {
+    if (watching.has(sessionId)) return;
+    const stop = host.subscribe(sessionId, (record) => {
+      if (record.origin || record.payload.type !== "task_end") return;
+      void settleWhenIdle(sessionId).then((done) => {
+        if (!done) return; // a queued follow-up started: wait for its task_end
+        stop();
+        watching.delete(sessionId);
+      });
+    });
+    watching.set(sessionId, stop);
+  };
+  // create runs again whenever the workbench loads, and a reload ends every subscription.
+  for (const job of runningJobs(host.getState())) watch(job.sessionId);
+  // …and call watch(sessionId) before host.run, when a job starts and on every follow-up.
+}
+```
+
+- The main `task_end` arrives a moment before the Session reads idle, and until then `sessionResult` still says `running`. So `settleWhenIdle` waits a little for `host.sessionStatus(sessionId)` to read `idle`, then reads `sessionResult` and saves `completed` or `failed` with `host.setState` under the same read/modify/write lock as your routes. If the Session stays busy, a queued follow-up has started: return `false` and keep watching.
+- Keep the GET-time reconcile from *Background jobs*. Nothing is replayed: subscriptions end with a reload, a rollback, removal or a server restart (and `create` runs again only when the workbench next loads), and on their own once the Session has sat idle with nothing published for a while.
+- A listener that throws is logged once and keeps receiving. A Session outside this Project throws at `subscribe`.
+- If `.harness/plugin.d.ts` has no `subscribe`, the workbench was written against an older harness: delete `.harness/` and let the server write it again, then fix what the compiler reports.
+
+Never reach the Agent from a workbench through the Agent API: not `/api/amsp/v1`, not an Agent key, not the Agent's API switch or the key door. That door needs the owner to open the Agent, refuses the Sessions a workbench creates, and a key in a page is readable by everyone who opens it. The page SDK reads the signed-in user's own door, which needs nothing.
+
+To see what a page will see, start a turn through your handler and run `node "<this skill directory>/scripts/check.mjs" --follow <sessionId>`: it prints the Session's records as they arrive, one JSON line each, until the main conversation's `task_end` or for a minute at most.
+
 ## Layout
 
-Layout, under `<root>/<project_id>/agents/<agent_id>/workbenches/<workbench_id>/` (beside `agent_state/`):
+Layout, under `<App Data Dir>/agents/<agent_id>/agent_state/workbenches/<workbench_id>/` (inside the Agent State):
 
 ```
 package.json    "type": "module" and "penguin": { "modules": [ …manifests ] } — no dependency to install
 index.ts        default export { modules: { <Name>: { create(ctx) } } } satisfies WorkbenchPackage — TypeScript only
-ui/             the workbench's pages and their assets; which of them are tabs is what the manifest contributes
+ui/             the workbench's pages and their assets, plain JS or TSX (see Pages in TSX); which of them are tabs is what the manifest contributes; ui/icon.svg is its App Center icon when the manifest names it
 state.json      the workbench's own document, kept by the server across reloads and rollbacks
-.harness/       the server's: the types this workbench was written against (plugin.d.ts) and their interface table — read plugin.d.ts, never edit it
-.build/         the server's: emitted JavaScript per revision, and status.json — the result of the last load; read it, never edit it
+.harness/       the server's: the types this workbench was written against (plugin.d.ts) and their interface table — read plugin.d.ts, never edit it; ui/ holds the types TSX pages compile against
+.build/         the server's: emitted JavaScript per revision (<revision>/ui/ for TSX pages), and status.json — the result of the last load; read it, never edit it
 ```
+
+The versions are kept beside the Agent State, not in it: `<App Data Dir>/agents/<agent_id>/agent_state.git/` is a bare git repository, the server's record of workbench versions, created at the first successful load; `agent_state/` itself holds no git files. Each successful load that changed a workbench's source commits that folder as `workbenches/<id>/`, and nothing else: not its `state.json`, `.harness/`, `.build/`, `.plugin.json` or `node_modules/`, and none of the rest of the Agent State. A workbench's revision is git's tree id of its folder. Never delete or rewrite `agent_state.git`, and do not commit to it (the server writes it without an index). Use git on it only to read — `log`, `show` — and to write one version's files back into `agent_state/` with a path-limited `checkout` (see *Undoing, reverting, removing*).
 
 ## The manifest and the handler
 
@@ -135,8 +213,9 @@ page of complete answers.
 - Show submission and generation progress immediately, prevent duplicate submits, and keep a
   retry path for failures. For a long task, show elapsed time and optionally a clearly approximate
   remaining-time estimate; if the estimate runs out, say it is still processing instead of claiming
-  completion. Preserve the question on failure. Do not hide useful actions behind an indefinite
-  loading screen.
+  completion. Better still, show the answer as the Agent writes it and what it is doing
+  (*Follow the Agent live*), with a Stop button. Preserve the question on failure. Do not hide
+  useful actions behind an indefinite loading screen.
 - Keep the code small: separate UI, styles and handler logic, reuse the host's theme variables,
   and prefer native controls before adding dependencies. Use real empty, loading and error states;
   never leave blank alert boxes or display internal errors as a successful answer.
@@ -150,11 +229,94 @@ successful TypeScript load alone is not UI/UX validation.
 
 ## TypeScript, checked by the server
 
-There is no build step to run, no `tsconfig.json` to write and nothing to `npm install`: the server builds one program from `index.ts` (and the `.ts` files it imports, with `.js` in the import specifier as NodeNext asks) under options it fixes itself — `strict` among them — refuses the load on any diagnostic, reporting file, line and reason, and otherwise emits into `.build/<revision>/` and imports that. `satisfies WorkbenchPackage` is what types `use.host` and `req`; without it `strict` refuses the untyped parameters. A folder holding `index.js` or `index.mjs` instead is refused outright.
+There is no build step to run, no `tsconfig.json` to write and nothing to `npm install`: the server builds one program from `index.ts` (and the `.ts` files it imports, with `.js` in the import specifier as NodeNext asks) under options it fixes itself — `strict` among them — refuses the load on any diagnostic, reporting file, line and reason, and otherwise emits into `.build/<revision>/` and imports that. `satisfies WorkbenchPackage` is what types `use.host` and `req`; without it `strict` refuses the untyped parameters. A folder holding `index.js` or `index.mjs` instead is refused outright. When `ui/` holds a `.tsx` file, the pages are a second program, checked and emitted the same way (*Pages in TSX*); a diagnostic in either refuses the whole load. Pages in plain JS are served as written and never checked.
 
 ## Types come from the harness that runs you
 
 One machine can run several harnesses — a release, a checkout, a platform someone pushed with interfaces of its own — and none of them is a version on npm, so `@prismshadow/penguin-server/plugin` is not a package here: the first time the server loads the folder it writes `.harness/plugin.d.ts`, rendered from ITS OWN interface table, and that is what the import resolves to. Create `package.json` and a minimal `index.ts`, let the server load it once, then read `.harness/plugin.d.ts` for the exact `WorkbenchHost` this harness offers. The server then leaves `.harness/` alone: it is the record of what the workbench was written against, and a later generation of the platform is COMPARED with it, by the TypeScript compiler, both for what the workbench requires and what it provides — a host method you rely on that has since gone is a load error naming it, not a failure on the first call. To move a workbench onto the harness that runs it now, delete `.harness/` and fix what the compiler then reports.
+
+## Pages in TSX
+
+Write a new page in TSX with the app's own components; plain-JS pages keep working. There is nothing to install and no bundler: when `ui/` holds a `.tsx` file, the server type-checks every `.ts`/`.tsx` under `ui/`, emits them into `.build/<revision>/ui/`, serves React and `@prismshadow/penguin-ui` beside the workbench, and writes their stylesheet link and an import map into the head of every HTML file under `ui/` (so write neither yourself). A page runs against the copy that checked it, offline too; a version in your `package.json` changes nothing.
+
+`ui/index.html` loads the emitted `app.js`, never `app.tsx`:
+
+```html
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
+```
+
+`ui/app.tsx`:
+
+```tsx
+import { useEffect, useState } from "react";
+import { createRoot } from "react-dom/client";
+import { Badge, Button, EmptyState, Spinner } from "@prismshadow/penguin-ui";
+
+type Job = { id: string; title: string; status: "running" | "completed" | "failed" };
+const BADGE = {
+  running: { tone: "success", label: "Running" },
+  completed: { tone: "done", label: "Answered" },
+  failed: { tone: "danger", label: "Failed" },
+} as const;
+
+function App() {
+  const [jobs, setJobs] = useState<Job[] | "failed" | null>(null);
+  const load = () =>
+    fetch("../api/jobs")
+      .then((r) => (r.ok ? (r.json() as Promise<{ jobs: Job[] }>) : Promise.reject(r.status)))
+      .then((body) => setJobs(body.jobs), () => setJobs("failed"));
+  useEffect(() => void load(), []);
+
+  if (jobs === null) return <Spinner label="Loading" />;
+  if (jobs === "failed") {
+    const retry = <Button onClick={() => void load()}>Try again</Button>;
+    return <EmptyState title="The questions could not be loaded" action={retry} />;
+  }
+  if (jobs.length === 0) return <EmptyState title="No questions yet" />;
+  return (
+    <ul className="jobs">
+      {jobs.map((job) => (
+        <li key={job.id}>
+          <span>{job.title}</span>
+          <Badge tone={BADGE[job.status].tone}>{BADGE[job.status].label}</Badge>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+createRoot(document.getElementById("root")!).render(<App />);
+```
+
+`ui/style.css`, for your own elements only (*Theme*):
+
+```css
+.jobs { max-width: 40rem; margin: 2rem auto; padding: 0; list-style: none; }
+.jobs li { display: flex; justify-content: space-between; gap: 1rem; padding: 0.625rem 0; border-bottom: 1px solid var(--ui-line); }
+```
+
+- **Imports.** `react`, `react/jsx-runtime`, `react-dom`, `react-dom/client` and `@prismshadow/penguin-ui` (no subpath), plus your own files under `ui/`, named with `.js` as NodeNext asks (`./list.js` for `list.tsx`). Anything else fails the load, naming the import: another npm package, a source file outside `ui/` (the handler's included: copy a shared type instead), a CSS import (`import "./style.css"`: link it in the HTML), and `x.ts` or `x.tsx` beside an `x.js` of the same name.
+- **Did it load.** A page's error, a broken import rule as much as a type error, lands in `.build/status.json` like the handler's and starts with `ui/<file>:<line>:<col>`, e.g. `ui/app.tsx:14:31 TS2322 …`; the previous version, pages included, keeps serving. The options are the server's (`strict`, ES2022, NodeNext, `jsx: react-jsx`, the DOM's types), so there is still no `tsconfig.json` to write.
+- **Exact props.** On a load with a `.tsx`, the server writes the types pages compile against into `.harness/ui/`: read `.harness/ui/node_modules/@prismshadow/penguin-ui/index.d.ts` for a component's props instead of guessing. The other packages there (`react-markdown`, `zustand`, …) are only what those props name: a page still cannot import them. Unlike `plugin.d.ts`, `.harness/ui/` is no record: the server rewrites it whenever the copy it serves changes, so never edit it. If a load with a `.tsx` leaves no `.harness/ui/` and no error, this harness predates TSX pages; if it fails saying this server has "no page runtime", it has none (a source checkout whose Web App was never built, say). Either way, write the page in plain JS.
+- **One kind per workbench.** Once `ui/` holds a `.tsx` file, every HTML page under it gets the components' stylesheet instead of `/workbench-ui.css`, so plain pages beside it lose their `wb-*` look: convert a workbench's pages together.
+- **The page SDK** (*Follow the Agent live*) is served, not a file under `ui/`, so a literal `import("../sdk/workbench.js")` fails the check. Import it through a variable, which the compiler leaves alone, and type what you call:
+
+```tsx
+const SDK_URL: string = "../sdk/workbench.js";
+type PageSdk = { abortSession(sessionId: string): Promise<boolean> /* followSession, … */ };
+// null: an older server without the page SDK; keep polling.
+const loadSdk = () => import(SDK_URL).then((m) => m as PageSdk, () => null);
+```
 
 ## Tabs are contributions
 
@@ -162,18 +324,18 @@ Each entry under `WebModule.sessionTabs` is one tab beside the chat: `key` (uniq
 
 ## The host
 
-`WorkbenchHost` (published as module `Host`) speaks the SDK's verbs, scoped to the workbench's Project: `listAgents()` returns the Project's Agents as `{ agentId }[]`; `createSession({ agentId? })` opens a Session of this Agent — or of another Agent of the same Project — and returns `{ sessionId }`. These Sessions carry source `workbench` and are automatically archived from the main chat sidebar; your list still reads and runs them through the host. `sessionTitle(sessionId)` returns the current generated title (or `null` before one exists); `run(sessionId, [{ text: "…" }])` — the SDK's `session.run`, its input items spelled out because a workbench has no package to import `userText` from — runs one turn in a Session, new or existing, and returns `{ sessionId, queued }` once it has started (a busy Session queues it as a follow-up; the Agent hears it as a message from the server, not from a person); `sessionStatus(sessionId)` says `idle` / `running` / …; `await sessionResult(sessionId)` returns a snapshot of the latest task (see *Background jobs*); `getState()` / `setState(doc)` over `state.json` (`getState()` is `unknown`: narrow it); `log(text)`. More modules may be listed in `penguin.modules` and named as `children` of `Workbench`, with their own `requires` between them — the tree is checked as a whole.
+`WorkbenchHost` (published as module `Host`) speaks the SDK's verbs, scoped to the workbench's Project: `listAgents()` returns the Project's Agents as `{ agentId }[]`; `createSession({ agentId? })` opens a Session of this Agent — or of another Agent of the same Project — and returns `{ sessionId }`. These Sessions carry source `workbench` and are automatically archived from the main chat sidebar; your list still reads and runs them through the host. `sessionTitle(sessionId)` returns the current generated title (or `null` before one exists); `run(sessionId, [{ text: "…" }])` — the SDK's `session.run`, its input items spelled out because a workbench has no package to import `userText` from — runs one turn in a Session, new or existing, and returns `{ sessionId, queued }` once it has started (a busy Session queues it as a follow-up; the Agent hears it as a message from the server, not from a person); `sessionStatus(sessionId)` says `idle` / `running` / …; `await sessionResult(sessionId)` returns a snapshot of the latest task (see *Background jobs*); `subscribe(sessionId, listener)` hands the listener the Session's AMSP records as they are written, live only, and returns the function that stops it (see *Follow the Agent live*); `getState()` / `setState(doc)` over `state.json` (`getState()` is `unknown`: narrow it); `log(text)`. More modules may be listed in `penguin.modules` and named as `children` of `Workbench`, with their own `requires` between them — the tree is checked as a whole.
 
 ## HTTP
 
-HTTP, all under `/api/projects/:projectId/agents/:agentId/workbenches` (Project members only): `GET /` lists the workbenches with their `revision`, `uiRev`, `tabs` (each page's URL resolved) and current load `error`; `GET /:id/ui/*` serves a file of `ui/` (there is no default document — a tab names its page); any method on `/:id/api/*` reaches `handle` — JSON by default in both directions (`req.body` parsed, `{ status?, body? }` answered as JSON), and anything else when you say so: a non-JSON request body arrives as `req.bytes` (a `Uint8Array`; `req.headers` has its `content-type`, never the app's cookie), and a response that names a `content-type` in `headers` sends `body` as the string you wrote, or `bytes` for binary, or `stream` — an async iterable (an `async function*`) of strings or `Uint8Array`s, each chunk written to the client as you yield it, which is how server-sent events and a model's token-by-token answer get through without waiting for the end (relay an upstream stream by yielding its chunks; a `finally` in the generator runs when the client goes away — though a generator parked inside an `await` only gets there once that await settles, so give a relay its own timeout rather than trusting the disconnect) — with `location` + a 3xx status for a redirect. That is how a handler serves a page it renders, an upload, a download, or the pages of a program it runs on this machine: fetch `http://127.0.0.1:<port>/…` from the HANDLER and return what came back — never put `127.0.0.1` in a page, because the page runs in the user's browser, which may be on another machine than you are; `POST /:id/reload`; `GET /:id/history` lists recorded versions; `POST /:id/rollback { revision }` restores one (code only — `state.json` stays) and reloads. `DELETE /:id` removes the workbench together with its recorded versions. From a page directly under `ui/`, call your handler with a relative `fetch("../api/…")`; the Web App shows each page in its tab and reloads it when `uiRev` changes.
+HTTP, all under `/api/projects/:projectId/agents/:agentId/workbenches` (Project members only): `GET /` lists the workbenches with their `revision`, `uiRev`, `tabs` (each page's URL resolved) and current load `error`; `GET /:id/ui/*` serves a file of `ui/` (there is no default document — a tab names its page), or, for a `.js` with no such file, what the server emitted from the `.tsx` of that name; `GET /:id/sdk/ui/*` serves React, the components and their stylesheet to TSX pages, through the import map the server writes into them; any method on `/:id/api/*` reaches `handle` — JSON by default in both directions (`req.body` parsed, `{ status?, body? }` answered as JSON), and anything else when you say so: a non-JSON request body arrives as `req.bytes` (a `Uint8Array`; `req.headers` has its `content-type`, never the app's cookie), and a response that names a `content-type` in `headers` sends `body` as the string you wrote, or `bytes` for binary, or `stream` — an async iterable (an `async function*`) of strings or `Uint8Array`s, each chunk written to the client as you yield it, which is how server-sent events and a model's token-by-token answer get through without waiting for the end (relay an upstream stream by yielding its chunks; a `finally` in the generator runs when the client goes away — though a generator parked inside an `await` only gets there once that await settles, so give a relay its own timeout rather than trusting the disconnect) — with `location` + a 3xx status for a redirect. That is how a handler serves a page it renders, an upload, a download, or the pages of a program it runs on this machine: fetch `http://127.0.0.1:<port>/…` from the HANDLER and return what came back — never put `127.0.0.1` in a page, because the page runs in the user's browser, which may be on another machine than you are; `GET /:id/sdk/workbench.js` and `GET /:id/sdk/amsp.js` serve the page SDK (the `@prismshadow/amsp` browser build of the server answering, see *Follow the Agent live*); `POST /:id/reload`; `GET /:id/history` lists its versions, newest first and at most 50, each `{ revision, commit, savedAt }` — the commits of `agent_state.git` that changed its folder; `POST /:id/rollback { revision }` makes the source exactly that listed version (code only — `state.json` stays) and reloads, which records the restore as the newest version. `DELETE /:id` removes the folder, `state.json` included, and records the removal, so its earlier versions are no longer listed, even if the id comes back. `POST /archive { dataBase64, overwrite? }` imports one workbench's source from a zip and loads it, answering `201 { workbench }` with the load's `error` (an id that exists answers 409 `workbench_exists` unless `overwrite` is true, which replaces the source and keeps `state.json`; a zip holding `state.json`, a dot entry, `node_modules`, a link, or a name git refuses or Windows cannot hold is refused before anything is written), and `GET /:id/archive` downloads the source as a zip that imports back unchanged. From a page directly under `ui/`, call your handler with a relative `fetch("../api/…")` and import the page SDK with `import("../sdk/workbench.js")`; the Web App shows each page in its tab and reloads it when `uiRev` changes.
 
 ## Undoing, reverting, removing (撤销 / 还原 / 清掉界面)
 
-When the user asks to undo the UI, revert it, clean it up or get the chat page back the way it was, they are asking you to TAKE SOMETHING AWAY — never to build something. Do not answer such a request by adding a feature (a reset button, an undo stack, a new route). Work out which of the four below they mean; if it is not obvious from what they said, ask in one line before touching anything. Everything about a workbench is files in your own Agent directory, so each of these is a file operation you make yourself — list `workbenches/` first to see what exists. The server notices within a moment and the user's tabs follow without a refresh.
+When the user asks to undo the UI, revert it, clean it up or get the chat page back the way it was, they are asking you to TAKE SOMETHING AWAY — never to build something. Do not answer such a request by adding a feature (a reset button, an undo stack, a new route). Work out which of the four below they mean; if it is not obvious from what they said, ask in one line before touching anything. Everything about a workbench is files in your own Agent State, so each of these is a change to files, made by you or by the user in the app — list `agent_state/workbenches/` first to see what exists. The server notices within a moment and the user's tabs follow without a refresh.
 
-1. *"Get rid of it" / "back to before there was any custom UI" / 回到没定义 UI 的状态* — remove the workbench entirely: delete the folder `workbenches/<id>/` **and** its recorded versions `workbenches-history/<id>/`. That is everything there is; the tabs disappear and nothing else of the Agent is touched. It cannot be undone, so say so in one line first, and never delete a workbench you were not asked to remove. (The user can do the same from the tab's bar: *Remove*, two clicks.)
-2. *"Undo your last change" / "it was better before"* — go back to an earlier version of the CODE: the recorded versions are full copies under `workbenches-history/<id>/<revision>/` (`versions.json` lists them, newest first); copy that version's files over the folder and the server reloads it. The tab's bar offers the same as *History → Restore*.
+1. *"Get rid of it" / "back to before there was any custom UI" / 回到没定义 UI 的状态* — remove the workbench entirely: delete its folder `agent_state/workbenches/<id>/`. The tabs disappear and nothing else of the Agent is touched; its data (`state.json`) goes with the folder for good. Say so in one line first, and never delete a workbench you were not asked to remove. Leave `agent_state.git` alone: it holds the history of every workbench, not only this one. A folder deleted by hand keeps its listed history: a workbench made again under that id shows its old versions. The user's *Remove* (in the tab's bar or on the Agent settings Workbenches tab, two clicks) and `DELETE /:id` cut it, so a new one under that id starts clean.
+2. *"Undo your last change" / "it was better before"* — go back to an earlier version of the CODE. Ask the user to use *History → Restore* in the tab's bar or on the Agent settings Workbenches tab: it makes the folder exactly that version and the server reloads it; `POST /:id/rollback` with a `revision` from `GET /:id/history` does the same (see *HTTP*). With `git` installed you can also do it yourself: `git --git-dir=<App Data Dir>/agents/<agent_id>/agent_state.git log --oneline -- workbenches/<id>` lists the versions, newest first; `git --git-dir=<App Data Dir>/agents/<agent_id>/agent_state.git show <commit>:workbenches/<id>/<file>` prints one file as it was; and `git --git-dir=<App Data Dir>/agents/<agent_id>/agent_state.git --work-tree=<App Data Dir>/agents/<agent_id>/agent_state checkout <commit> -- workbenches/<id>` writes that version's files back, after which the server reloads it and records it as the newest version. Files added since that version stay, because git writes back only the files the version has: delete them yourself, or use the app's Restore, which is exact.
 3. *"Remove that tab" / "I only want the first page"* — delete its entry under `WebModule.sessionTabs` in `package.json` (and its page under `ui/` if nothing else uses it). With `"contributes": {}` the workbench keeps its server code and has no UI at all.
 4. *"Bring back the data"* — you cannot: `state.json` is never part of a version (restoring code leaves the data as it is) and it has no history of its own. Say so plainly rather than inventing a recovery.
 
@@ -183,10 +345,34 @@ Your handler's responses are served from the app's own origin, so anything you e
 
 ## Theme
 
-A workbench page is a separate document, so it inherits nothing from the app's stylesheet by itself. The Web App stamps `light`/`dark` on the page's root, copies its resolved palette (the gray scale, the accent pair, the font stack, the root font size) onto it, and injects `/workbench-ui.css` first in the head — a base stylesheet that styles plain HTML (headings, lists, forms, tables, code) to match the app and exposes `--wb-bg`, `--wb-fg`, `--wb-muted`, `--wb-border`, `--wb-surface`, `--wb-accent`, `--wb-accent-fg`, plus the classes `wb-primary` (a button), `wb-card`, `wb-rows`, `wb-row`, `wb-muted`. Write plain markup, take every colour and font from those variables, and the page follows the user through a theme or accent change; hardcode them and it clashes in one theme or the other. The page's own rules always win, and linking `/workbench-ui.css` yourself makes it look right when opened outside the app too.
+A workbench page is a separate document, so it inherits nothing from the app's stylesheet by itself. The Web App stamps the app's look onto the page's root on every load and every appearance change: `light`/`dark`, `data-theme` (`modern`, `geek` or `github`), `data-accent` (only when the theme paints that accent), `data-font-latin` and `data-font-cjk`, the root font size, every `--ui-*` token of the app's token contract resolved as an inline style, and the app's bundled fonts. Take every colour and font from the variables below and the page follows the user through every theme, accent, font and light/dark change; hardcode them and it clashes in one theme or another. Pick a status tone the way the app does: there is no busy tone, so a running item is `success` with the word "Running", waiting or queued is `attention`, failed is `danger`, and finished is `done` or `neutral`.
+
+**A TSX page** (*Pages in TSX*) gets the components' stylesheet from the server, and the Web App leaves `/workbench-ui.css` out of it: no `--wb-*` variables, no `wb-*` classes. The components follow the theme by themselves and take their look from props such as `variant`, `tone` and `size` (`<Badge tone="done">Resolved</Badge>`). Style your own elements in a stylesheet of your own, under class names of your own, reading the tokens the components paint with: `--ui-canvas`, `--ui-surface`, `--ui-fg`, `--ui-fg-muted`, `--ui-line`, `--ui-accent`, `--ui-accent-fg`, `--ui-radius-md`, `--ui-font-mono`, and `--ui-tone-<tone>-fg`, `-bg` and `-line`. No Tailwind classes on your own elements: only the classes the components use are compiled, so some would work by chance and the rest silently do nothing. No rules on bare elements (`button`, `input`, `table`): yours would beat the components' own, which sit in cascade layers, and for the same reason never link `/workbench-ui.css` into a TSX page.
+
+**A plain-JS page** gets `/workbench-ui.css` injected first in the head: a base stylesheet that styles plain HTML (headings, lists, forms, tables, code) to match the app and exposes `--wb-bg`, `--wb-surface`, `--wb-fg`, `--wb-muted`, `--wb-border`, `--wb-hover`, `--wb-accent`, `--wb-accent-fg`, `--wb-radius` (a box radius, not a pill), `--wb-font`, `--wb-mono`, the tone colours `--wb-tone-<tone>-fg`, `-bg` and `-line`, plus the classes `wb-primary` (a button), `wb-card`, `wb-rows`, `wb-row`, `wb-muted` and `wb-badge`, a status pill coloured by `data-tone` (`neutral` without one), e.g. `<span class="wb-badge" data-tone="done">Resolved</span>`. The `--wb-*` names are only ever added to, never renamed. The `--ui-*` tokens underneath are readable too, but they follow the app's token contract and can be renamed with it, and as inline styles on the root no stylesheet of yours overrides them: to restyle, redeclare `--wb-*` on `:root`. The page's own rules always win over `/workbench-ui.css`, and linking `/workbench-ui.css` yourself makes it look right when opened outside the app too.
+
+**The page is see-through.** In the app a page's body paints nothing, so whatever the app shows under the chat — the theme's page colour, the Frost sheet, the user's wallpaper — shows through the page as it does under the conversation. Leave the body without a background to keep that. For a solid sheet (a drawing surface, a page that must not show an image behind it), paint the app's opaque page colour yourself: `body { background: var(--wb-canvas); }` on a plain page, `var(--ui-canvas)` in a TSX page's stylesheet. A background your own rules set always wins. Cards, inputs and buttons keep their own fills.
 
 Keep empty alerts hidden. A component rule such as `.notice { display: flex }` overrides the browser's default `[hidden]` styling; the shared stylesheet preserves `[hidden]`, and standalone custom CSS should do the same. Check both empty and populated states.
 
 ## Filling the app
 
 A page can be shown as the whole app — no sidebar, no chat, no tab strip — at `/app/<project>/<agent>/<workbench>[/<tab key>]` (the workbench's first tab when no key is given): the tab's *Fill the app* button goes there, `penguin web --app <project>/<agent>/<workbench>[/<tab key>]` opens the browser straight onto it, and the page itself can ask with `parent.postMessage({ type: "penguin:fill-app" }, "*")`. The floating *Exit full screen* button returns to the same Agent and workbench tab. The command palette also offers *Exit full page*. Its chord is Ctrl+Alt+P (⌥⌘P on macOS) unless the user rebound it under Settings › Keyboard shortcuts. A key pressed inside the page reaches the app only when the page has not handled it, so a page must not intercept that chord.
+
+## The App Center
+
+The App Center (`/apps` in the sidebar) is the Project's home screen: a grid of tiles, each a workbench's icon and name, that open the workbench in a window over the grid (or full screen from the tile's menu). The user arranges the tiles and folders themselves. A workbench is on it when its `package.json` says so, beside `penguin.version` and `penguin.modules`:
+
+```json
+"penguin": {
+  "appCenter": { "show": true, "title": "Tickets", "titleZh": "工单", "icon": "ui/icon.svg", "tab": "main" },
+  "modules": [ … ]
+}
+```
+
+- `show` is required when `appCenter` is there; `false`, or no `appCenter`, keeps the workbench off the App Center.
+- `title` and `titleZh` are optional, at most 60 characters each; without them the shortcut takes the first tab's titles, then the package name.
+- `icon` is optional: an SVG, PNG, JPEG, WebP, GIF or AVIF file under `ui/`, at most 256 KB, shown at 56 px as an image (never put into the page as markup). The server checks the file's bytes, so its extension must match what it is (`.jpg` or `.jpeg` for JPEG); an SVG must be plain (no script, animation, event handlers, links or external references). An SVG whose every paint is `currentColor` or `none` is drawn in the text colour; any other icon is drawn as itself, so a tile reads best as a filled rounded square with the glyph on it in its own colours. Without one the tile is a coloured letter.
+- `tab` is optional: the key of the tab the shortcut opens; the first tab without it.
+
+When you build a workbench for the user, set `"appCenter": { "show": true }` unless they say otherwise, so they find it again. While the server is loading your files the tile shows a building ring and does not open; a failed load leaves it marked, and its menu shows the error from `.build/status.json`. A declaration that does not hold up does not stop the load: the workbench loads, has no shortcut, and `.build/status.json` lists the fix in `hints`. The user turns the shortcut on or off with the switch on the workbench's row in Agent settings, which rewrites `penguin.appCenter.show` in this file and records a version; read the file before editing it again. The App Center lists the Agents of the server it runs on, so a workbench of an Agent on a connected machine opens from that Agent's settings instead.

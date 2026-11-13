@@ -9,6 +9,8 @@
  */
 import type {
   AgentApiSettings,
+  AppCenterResponse,
+  AppCenterShortcut,
   AgentConfigResponse,
   AgentSummary,
   BenchmarkCaseSummary,
@@ -24,6 +26,7 @@ import type {
   MeResponse,
   MemberInfo,
   MemoryFileResponse,
+  MemoryFolderFile,
   MemoryOverviewResponse,
   ModelEffectiveConnection,
   ModelInfo,
@@ -53,25 +56,19 @@ import type {
 // server uses.
 import {
   catalogEntryFor,
-  effectiveConnection,
   PENGUIN_GO_PROVIDER_ID,
   presetModelEntries,
   presetPromotions,
   presetProviderTable,
-} from "../../../../core/dist/state/model-catalog.js";
-// The built-in Benchmarks as core writes them into a new Project: their cards and their cases.
-import {
-  BENCHMARK_REPO,
-  BENCHMARK_RUN_RULES,
-  BUILTIN_BENCHMARKS,
-  HARBOR_AGENT,
-  HARBOR_VERSION,
-} from "../../../../core/dist/state/builtin-benchmarks-data.js";
+} from "../../../../server/dist/model-catalog.js";
+import { effectiveConnection } from "../../../../core/dist/state/model-connection.js";
+// The Benchmark files fetched for this build, shared with Project provisioning.
+import bundledBenchmarks from "../../../../../node_modules/.cache/penguin-benchmarks/catalog.json";
 // The AMSP wire types, by path: the gallery reads them as types only and takes no dependency.
-import type { AmspEvent } from "../../../../amsp/src/types";
+import type { AmspRecord } from "../../../../amsp/src/types";
 import { harnessTimeline, orgDeskTimeline, SWITCHED_MODEL } from "./harness-transcript";
 import { IDS } from "./ids";
-import { agentEvaluationPlugin, rsiToolkitPlugins } from "./library-plugins";
+import { agentEvaluationPlugin, rsiToolkitPlugins, shippedIcon } from "./library-plugins";
 import {
   docsAgentsMd,
   RSI_ROUND,
@@ -92,8 +89,14 @@ import type { ModelRef } from "./transcripts";
 // Helpers
 // ---------------------------------------------------------------------------------------------
 
-/** One built-in Benchmark, as core's data module holds it. */
-type BuiltinBenchmark = (typeof BUILTIN_BENCHMARKS)[number];
+/** The package metadata and README texts prepared for the browser at build time. */
+type BuiltinBenchmark = Pick<
+  BenchmarkSummary,
+  "id" | "title" | "description" | "descriptionZh" | "version"
+> & {
+  cases: Array<{ id: string; title: string; statement: string; rubric: string }>;
+};
+const BUILTIN_BENCHMARKS = bundledBenchmarks as BuiltinBenchmark[];
 
 /**
  * What a model is used with, as GET /models reports it: its own values, else its group's
@@ -116,14 +119,15 @@ export function effectiveOf(
     },
     group && { baseUrl: group.baseUrl, clientType: group.clientType, apiKey: group.apiKeyMasked },
   );
-  // The resolver was handed masks for keys, so the key it picked is already masked.
+  // The resolver was handed masks for keys, so the key it picked is already masked. A row with
+  // no key in the file reads as `env` only where the server reported the variable's mask.
   const masked = e.apiKeySource === "none" ? m.envKeyMasked : e.apiKey;
   return {
     ...(e.baseUrl !== undefined ? { baseUrl: e.baseUrl } : {}),
     baseUrlSource: e.baseUrlSource,
     ...(e.clientType !== undefined ? { clientType: e.clientType } : {}),
     clientTypeSource: e.clientTypeSource,
-    apiKeySource: e.apiKeySource === "none" && m.envKeyMasked ? "env" : e.apiKeySource,
+    apiKeySource: e.apiKeySource !== "none" ? e.apiKeySource : m.envKeyMasked ? "env" : "none",
     ...(masked !== undefined ? { apiKeyMasked: masked } : {}),
   };
 }
@@ -153,6 +157,13 @@ export const DEFAULT_MODEL: ModelRef = {
 // Rows
 // ---------------------------------------------------------------------------------------------
 
+/** A file a demo memory keeps in its folder, with its text: what the file route reads back. */
+export interface DemoKeptFile {
+  scopeKey: string;
+  file: MemoryFolderFile;
+  content: string;
+}
+
 export interface DemoFixtures {
   lang: Lang;
   now: number;
@@ -170,7 +181,11 @@ export interface DemoFixtures {
   schedules: ProjectScheduleItem[];
   library: PluginLibraryResponse;
   pluginFiles: Record<string, Record<string, string>>;
-  installed: Record<string, { skills: SkillMetadataItem[]; hooks: HookItem[] }>;
+  /** Per Agent: its Skills and hook packages, and whether its Agent-wide workbench switch is off. */
+  installed: Record<
+    string,
+    { skills: SkillMetadataItem[]; hooks: HookItem[]; workbenchesOff?: boolean }
+  >;
   installedPlugins: InstalledPluginsResponse;
   pluginIndex: PluginIndexResponse;
   readmes: Record<string, string>;
@@ -180,7 +195,15 @@ export interface DemoFixtures {
   machines: MachinesResponse;
   version: VersionResponse;
   update: UpdateCheckResponse;
-  memory: Record<string, { overview: MemoryOverviewResponse; files: MemoryFileResponse[] }>;
+  memory: Record<
+    string,
+    {
+      overview: MemoryOverviewResponse;
+      files: MemoryFileResponse[];
+      /** The files the topics keep in their folders (`<topic>/<path>`), each with its text. */
+      folderFiles: DemoKeptFile[];
+    }
+  >;
   vault: Record<string, VaultResponse>;
   /** Each Agent's public API settings, keyed by Agent id; an Agent missing here never had them set. */
   agentApi: Record<string, AgentApiSettings>;
@@ -193,6 +216,8 @@ export interface DemoFixtures {
   context: SessionContextResponse;
   usage: UsageDay[];
   usageErrors: UsageErrorItem[];
+  /** The App Center: a tile in each build state, and a folder in the viewer's arrangement. */
+  appCenter: AppCenterResponse;
 }
 
 /** One day of one Agent on one model, the grain the usage routes aggregate from. */
@@ -250,6 +275,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         "回答关于 Claude Code 文档的问题，每条结论都引用语料库里的真实文件。",
         "Answers questions about the Claude Code docs, citing a real corpus file for every claim.",
       ),
+      author: "user",
       createdAt: iso(ago(90)),
       // The self-evolution round's accepted candidate: its version, written when the round edited it.
       updatedAt: iso(rsi.evaluatedAt),
@@ -276,6 +302,8 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         "从变更日志起草发布说明，中英各一份。",
         "Drafts release notes from the changelog, in both languages.",
       ),
+      // Made by the general agent through "Create with AI", so the list shows a second group.
+      author: "agent",
       createdAt: iso(ago(40)),
       updatedAt: iso(ago(6)),
       activeSessionCount: 0,
@@ -336,6 +364,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     config: {
       name: agent.name,
       description: agent.description,
+      author: agent.author ?? "user",
       version: agent.version,
       kernelVersion: agent.kernelOutdated ? "2026-08-20" : "2026-09-11",
       kernelLatest: "2026-09-11",
@@ -816,9 +845,8 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
           {
             name: "penguin-sdk",
             description:
-              "Build with the PenguinHarness SDK: the Session, Agent State and OmniMessage APIs.",
-            descriptionZh:
-              "使用 PenguinHarness SDK 开发：Session、Agent State 与 OmniMessage 接口。",
+              "Build with the PenguinHarness SDK: the Session, Agent State and AMSP record APIs.",
+            descriptionZh: "使用 PenguinHarness SDK 开发：Session、Agent State 与 AMSP 记录接口。",
             version: "0.2.13",
             package: "@penguinharness/penguin-sdk",
             source: "builtin",
@@ -998,9 +1026,11 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     restartPending: false,
   };
   // The sandbox backends' cards: their rows carry the bilingual descriptions and the shield
-  // icons the packages' own package.json (its `penguin` block) and icon hold.
+  // icons the packages' own cards (declared in each backend's src/index.ts) and icons hold.
   const shield = (inner: string) =>
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5.2c0 4.4-3 8.2-7 9.8-4-1.6-7-5.4-7-9.8V6l7-3z" />${inner}</svg>`;
+    shippedIcon(
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5.2c0 4.4-3 8.2-7 9.8-4-1.6-7-5.4-7-9.8V6l7-3z" />${inner}</svg>`,
+    );
   const pluginIndex: PluginIndexResponse = {
     plugins: [
       {
@@ -1174,88 +1204,6 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     ),
   ];
 
-  // The built-in Benchmarks, as core writes them into a new Project: every case is a Harbor task
-  // whose statement and rubric are text only. The writer is core's (builtin-benchmarks.ts), kept
-  // private there beside the file system, so the two texts are spelled again here, word for word.
-  const builtinCaseId = (index: number, task: string) =>
-    `CASE-${String(index).padStart(3, "0")}-${task}`;
-  const taskPath = (bench: BuiltinBenchmark) => `benchmarks/${bench.repoDir}/tasks`;
-  const repoLink = (bench: BuiltinBenchmark, kind: "tree" | "blob", rel: string) =>
-    `${BENCHMARK_REPO}/${kind}/${bench.ref}/${rel}`;
-  const shellWord = (text: string) => `'${text.replace(/'/g, "'\\''")}'`;
-  const builtinStatement = (
-    bench: BuiltinBenchmark,
-    item: BuiltinBenchmark["cases"][number],
-  ): string => {
-    const offline = bench.agentNetwork === "no-network";
-    const facts = [
-      `- Benchmark: ${bench.title} — ${bench.source} · Category: ${item.category}` +
-        (item.expertHours !== undefined ? ` · Expert estimate: ${item.expertHours} h` : ""),
-      `- Task: \`${item.task}\` in ${repoLink(bench, "tree", `${taskPath(bench)}/${item.task}`)}`,
-      `- Upstream: ${bench.upstream.url} (${bench.upstream.license})` +
-        (item.upstreamTask !== undefined ? `, ${item.upstreamTask}` : ""),
-      `- Container: ${item.cpus} CPU, ${item.memoryMb / 1024} GB RAM, CPU only · Agent network: ` +
-        (offline ? "none, except the model provider's API host" : "public") +
-        ` · Verifier: ${bench.verifier}`,
-    ];
-    const command = [
-      'export PYTHONPATH="$PWD/agents"',
-      `uvx --from harbor==${HARBOR_VERSION} harbor run -p ${taskPath(bench)} -i ${item.task} \\`,
-      `  -a ${HARBOR_AGENT} -m <provider>/<model_id> \\`,
-      "  --ak thinking=<level> --ak penguin_version=<penguin version> \\",
-      `  --ak run_timeout=${bench.runTimeout} --ak max_turns=${bench.maxTurns} \\`,
-      ...(bench.timeBudgetNote !== undefined
-        ? [`  --ak time_budget_note=${shellWord(bench.timeBudgetNote)} \\`]
-        : []),
-      ...(offline ? ["  --allow-agent-host <model provider API host> \\"] : []),
-      ...(bench.sharedNetwork
-        ? ["  --extra-docker-compose tools/docker/shared-network.yaml \\"]
-        : []),
-      "  --agent-setup-timeout-multiplier 2.5 -k 1 -n 1 --job-name <job name> -o <jobs dir> -y",
-    ];
-    return [
-      `# ${item.title}`,
-      "",
-      item.summary,
-      "",
-      ...facts,
-      "",
-      "## How this case is run",
-      "",
-      "This case does not run in a Workspace. It is a Harbor task: the evaluator runs it in Docker " +
-        `with Harbor ${HARBOR_VERSION} and the PenguinHarness adapter from the repository above, ` +
-        `following that repository's rules for agents — ${repoLink(bench, "blob", BENCHMARK_RUN_RULES)} — ` +
-        `from the root of a checkout at commit \`${bench.ref}\`:`,
-      "",
-      "```bash",
-      ...command,
-      "```",
-      "",
-      `Caps: the agent is stopped at ${bench.runTimeout} and after ${bench.maxTurns} turns. Run at ` +
-        "most four trials at a time on one machine. Prerequisites on the evaluating machine: Docker " +
-        `with Compose v2; uv; network access to ${bench.downloads}, nodejs.org, the npm registry and ` +
-        "the model provider; the model under test configured in this machine's PenguinHarness with " +
-        "its API key saved (the adapter copies that one entry into the container, outside the " +
-        "trial's log directory)." +
-        (bench.note !== undefined ? ` ${bench.note}` : ""),
-      "",
-      "The score is the verifier's reward × 100: " +
-        (bench.grader?.scale ??
-          "a pass (1) scores 100, a fail (0) scores 0, and a fractional reward r scores 100·r") +
-        ". An evaluation from the Evaluation Center keeps every trial under this Benchmark's " +
-        "`.jobs/` directory and records its Session id as `harbor:<trial name>`.",
-      "",
-      ...(bench.results !== undefined
-        ? [
-            `Measured results of PenguinHarness on these tasks: ${repoLink(bench, "blob", bench.results)}`,
-            "",
-          ]
-        : []),
-    ].join("\n");
-  };
-  const builtinRubric = (bench: BuiltinBenchmark) =>
-    `# Scoring rubric (max 100 points)\n\n- 100 pts: the Harbor verifier's reward for this trial (\`/logs/verifier/reward.txt\` or the \`reward\` key of \`reward.json\`) multiplied by 100. The task's own ${bench.grader !== undefined ? "grader decides" : "tests decide"}; there is no manual judging and no partial credit beyond what the verifier itself reports.\n`;
-
   /**
    * The one built-in Benchmark the docs Agent has been through: one Harbor trial per case, the
    * verifier passing three of them. A run's Session id names its trial (`harbor:<trial>`).
@@ -1264,11 +1212,13 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     const rnd = seeded(4040);
     const cases = bench.cases.map((item, i) => {
       const score = i === 0 || i === 3 || i === 7 ? 100 : 0;
-      const trial = `${item.task.slice(0, 22)}__${Math.floor(rnd() * 36 ** 7)
+      const trial = `${item.id.replace(/^CASE-\d+-/, "").slice(0, 22)}__${Math.floor(
+        rnd() * 36 ** 7,
+      )
         .toString(36)
         .padStart(7, "0")}`;
       return caseRecord(
-        builtinCaseId(i + 1, item.task),
+        item.id,
         score,
         Math.round((0.04 + rnd() * 0.06) * 10_000) / 10_000,
         420_000 + Math.round(rnd() * 600_000),
@@ -1345,8 +1295,8 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     ],
   };
   for (const bench of BUILTIN_BENCHMARKS) {
-    benchmarkCases[bench.id] = bench.cases.map((item, i) => ({
-      id: builtinCaseId(i + 1, item.task),
+    benchmarkCases[bench.id] = bench.cases.map((item) => ({
+      id: item.id,
       title: item.title,
     }));
   }
@@ -1366,10 +1316,10 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
   }
   // A Harbor case is text only: what the task is, where its folder is, and how it is launched.
   for (const bench of BUILTIN_BENCHMARKS) {
-    bench.cases.forEach((item, i) => {
-      caseFiles[`${bench.id}/${builtinCaseId(i + 1, item.task)}`] = {
-        statement: { "README.md": builtinStatement(bench, item) },
-        rubric: { "README.md": builtinRubric(bench) },
+    bench.cases.forEach((item) => {
+      caseFiles[`${bench.id}/${item.id}`] = {
+        statement: { "README.md": item.statement },
+        rubric: { "README.md": item.rubric },
       };
     });
   }
@@ -1383,6 +1333,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         machineId: "demo-machine-0001",
         local: true,
         connection: null,
+        socket: null,
         api: null,
         status: { state: "running", checkedAt: iso(ago(0, 1)), port: 7364 },
         root: "/home/demo/.penguin/data",
@@ -1394,6 +1345,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         machineId: "gpu-box-a8f3c2",
         local: false,
         connection: { pid: 41_226 },
+        socket: null,
         api: { answeredAt: iso(ago(0, 3)) },
         status: { state: "running", checkedAt: iso(ago(0, 3)), port: 7364 },
         root: "/home/ubuntu/.penguin/data",
@@ -1418,6 +1370,15 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
               code: "model_not_addable",
               reason: "cannot be added",
             },
+            // A built-in model here that the machine's older build does not list yet.
+            {
+              projectId: IDS.project,
+              provider: "minimax",
+              modelId: "MiniMax-M3.1-Flash",
+              code: "model_not_addable",
+              reason: "cannot be added",
+              builtInHere: true,
+            },
           ],
         },
       },
@@ -1428,6 +1389,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         machineId: null,
         local: false,
         connection: null,
+        socket: null,
         api: null,
         status: null,
         root: "~/.penguin/data",
@@ -1466,6 +1428,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     description: string,
     content: string,
     days: number,
+    kept: DemoKeptFile[] = [],
   ): MemoryFileResponse => ({
     scopeKey,
     file: {
@@ -1475,10 +1438,43 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       updatedAt: dayKey(ago(days)),
       size: content.length,
       modifiedAt: iso(ago(days)),
+      files: kept.map((k) => k.file),
     },
     content,
   });
+  /** A file a topic keeps in its folder: `filePath` is `<topic>/<path>`. */
+  const keptFile = (
+    scopeKey: string,
+    filePath: string,
+    content: string,
+    days: number,
+  ): DemoKeptFile => ({
+    scopeKey,
+    file: { path: filePath, size: content.length, modifiedAt: iso(ago(days)) },
+    content,
+  });
   const workspaceScope = "docs-expert-4f2a9c";
+  // The corpus topic keeps the checker it describes, a folder of its own beside it.
+  const corpusFiles = [
+    keptFile(
+      workspaceScope,
+      "corpus-layout/broken-links.py",
+      [
+        "# Usage: python3 broken-links.py <docs-dir>",
+        "# Prints every relative Markdown link under <docs-dir> whose target file is missing.",
+        "import pathlib, re, sys",
+        "",
+        "root = pathlib.Path(sys.argv[1])",
+        'link = re.compile(r"\\]\\(([^)#\\s]+\\.md)")',
+        'for page in sorted(root.rglob("*.md")):',
+        '    for target in link.findall(page.read_text(encoding="utf-8")):',
+        "        if not (page.parent / target).exists():",
+        '            print(f"{page.relative_to(root)}: {target}")',
+        "",
+      ].join("\n"),
+      2,
+    ),
+  ];
   const memory: DemoFixtures["memory"] = {
     [IDS.agents.docs]: {
       overview: {
@@ -1527,10 +1523,12 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
           "corpus-layout.md",
           L("语料库结构", "Corpus layout"),
           L("corpus/ 下按上游仓库分目录。", "corpus/ is split by upstream repository."),
-          `---\nname: ${L("语料库结构", "Corpus layout")}\nupdated_at: ${dayKey(ago(2))}\n---\n\ncorpus/claude-code-docs/ · corpus/penguin-docs/\n`,
+          `---\nname: ${L("语料库结构", "Corpus layout")}\nupdated_at: ${dayKey(ago(2))}\n---\n\ncorpus/claude-code-docs/ · corpus/penguin-docs/\n\n${L("检查失效链接：", "Check for broken links:")} [broken-links.py](corpus-layout/broken-links.py) — python3 broken-links.py <docs-dir>\n`,
           2,
+          corpusFiles,
         ),
       ],
+      folderFiles: corpusFiles,
     },
     [IDS.agents.notes]: {
       overview: {
@@ -1540,6 +1538,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         scopes: [{ scopeKey: "user", kind: "user", fileCount: 0, hasIndex: false }],
       },
       files: [],
+      folderFiles: [],
     },
     [IDS.agents.general]: {
       overview: {
@@ -1549,6 +1548,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         scopes: [{ scopeKey: "user", kind: "user", fileCount: 0, hasIndex: false }],
       },
       files: [],
+      folderFiles: [],
     },
   };
 
@@ -1624,7 +1624,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         file("mcp.md", 7_420, 1),
         file("memory.md", 5_118, 1),
       ],
-      "corpus/penguin-docs": [file("server-api.md", 31_004, 1), file("omni-message.md", 22_870, 1)],
+      "corpus/penguin-docs": [file("server-api.md", 31_004, 1), file("amsp-records.md", 22_870, 1)],
       scripts: [file("check-links.mjs", 1_984, 3)],
       src: [file("bm25.ts", 3_102, 5), file("rag.ts", 1_410, 0)],
       test: [file("rag.test.ts", 2_206, 0)],
@@ -1648,7 +1648,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       "corpus/claude-code-docs/memory.md":
         "# Memory\n\nMemory files are Markdown with a frontmatter name and description.\n",
       "corpus/penguin-docs/server-api.md": "# Server API\n\nEvery route is listed here.\n",
-      "corpus/penguin-docs/omni-message.md": "# OmniMessage\n\nThe message protocol.\n",
+      "corpus/penguin-docs/amsp-records.md": "# AMSP Records\n\nThe message format.\n",
     },
   };
 
@@ -1667,10 +1667,11 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       enabled: true,
     },
     {
-      name: "no-force-push",
+      name: "git-push-force",
       pattern: "git\\s+push\\s+.*--force",
-      description: L("强制推送", "Force pushing"),
+      description: L("强制推送会改写共享历史", "A force-push rewrites shared history"),
       enabled: true,
+      action: "ask",
     },
     {
       name: "no-curl-pipe-sh",
@@ -1877,6 +1878,57 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     },
   ];
 
+  const shortcut = (
+    agent: AgentSummary,
+    workbenchId: string,
+    title: string,
+    titleZh: string,
+    build: AppCenterShortcut["build"] = "ready",
+    error?: string,
+  ): AppCenterShortcut => ({
+    agentId: agent.agentId,
+    agentName: agent.name ?? agent.agentId,
+    workbenchId,
+    title,
+    titleZh,
+    path: `/app/${IDS.project}/${agent.agentId}/${workbenchId}`,
+    build,
+    ...(error !== undefined ? { error } : {}),
+  });
+  const [docsAgent, notesAgent, generalAgent] = [agents[0]!, agents[1]!, agents[2]!];
+  const appCenter: AppCenterResponse = {
+    shortcuts: [
+      shortcut(docsAgent, "corpus-search", "Corpus search", "语料检索"),
+      shortcut(docsAgent, "citation-check", "Citation check", "引用核对", "building"),
+      shortcut(notesAgent, "changelog-board", "Changelog board", "变更看板"),
+      shortcut(
+        notesAgent,
+        "release-calendar",
+        "Release calendar",
+        "发布日历",
+        "failed",
+        "src/index.ts:12:7 TS2322 Type 'string' is not assignable to type 'number'.",
+      ),
+      shortcut(generalAgent, "daily-todos", "Daily to-dos", "每日待办"),
+      shortcut(generalAgent, "expenses", "Expense log", "报销登记"),
+    ],
+    layout: {
+      v: 1,
+      items: [
+        { type: "app", app: `${docsAgent.agentId}/corpus-search` },
+        {
+          type: "folder",
+          id: "release",
+          name: L("发布", "Release"),
+          apps: [`${notesAgent.agentId}/changelog-board`, `${notesAgent.agentId}/release-calendar`],
+        },
+        { type: "app", app: `${docsAgent.agentId}/citation-check` },
+        { type: "app", app: `${generalAgent.agentId}/daily-todos` },
+        { type: "app", app: `${generalAgent.agentId}/expenses` },
+      ],
+    },
+  };
+
   return {
     lang,
     now,
@@ -1950,6 +2002,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     context,
     usage,
     usageErrors,
+    appCenter,
   };
 }
 
@@ -1971,18 +2024,19 @@ function dateOutput(ms: number): string {
 }
 
 /**
- * The body the try route streams, as `data:` lines and `[DONE]`: the example question answered
- * by running `date` over two Requests — the tool call's fragments and the complete call, its
- * result, then the answer's fragments and the complete answer, so the rendered view has
- * fragments to merge; a run that continues a Session gets one answer in one Request.
+ * The body the try route streams, as AMSP frames: a `ping`, the run's records with their ids, then
+ * `[DONE]`. A new Session's first message: its session_meta, which names it, the Task, the example
+ * question answered by running `date` over two Requests — the tool call's fragments and the
+ * complete call, its decision and output, then the answer's fragments and the complete answer, so
+ * the rendered view has fragments to merge; a run that continues a Session gets one answer in one
+ * Request.
  */
-export function amspTryStream(
-  body: unknown,
-  run: { agent: string; lang: Lang; now: number },
-): string {
-  const { agent, lang, now } = run;
+export function amspTryStream(body: unknown, run: { lang: Lang; now: number }): string {
+  const { lang, now } = run;
   const L = <T>(zh: T, en: T): T => (lang === "zh" ? zh : en);
   const sessionField = (body as { session_id?: unknown } | null)?.session_id;
+  const inputField = (body as { input?: unknown } | null)?.input;
+  const question = typeof inputField === "string" ? inputField : "";
   const sessionId = typeof sessionField === "string" ? sessionField : TRY_SESSION_ID;
   let clock = now;
   const at = (stepMs: number) => new Date((clock += stepMs)).toISOString();
@@ -1992,37 +2046,30 @@ export function amspTryStream(
     output,
     total,
   });
-  const started: AmspEvent = {
-    type: "run.started",
-    at: at(0),
-    session_id: sessionId,
-    agent,
-  };
-  let events: AmspEvent[];
+  const ev = (stepMs: number, payload: object): AmspRecord =>
+    ({ timestamp: at(stepMs), type: "event_msg", payload }) as AmspRecord;
+  const msg = (stepMs: number, payload: object): AmspRecord =>
+    ({ timestamp: at(stepMs), type: "model_msg", payload }) as AmspRecord;
+  const userInput = msg(10, {
+    type: "text",
+    role: "user",
+    text: question,
+  });
+  let records: AmspRecord[];
   if (typeof sessionField === "string") {
     const answer = usage(38, 3120, 2944);
-    events = [
-      started,
-      { type: "request.started", at: at(120), request: 1 },
-      {
-        type: "text.done",
-        at: at(1400),
-        role: "assistant",
-        text: L(
-          "演示数据只回答第一个问题；真实的 Agent 会在这里接着同一个会话作答。",
-          "The demo answers only the first question; a real agent would carry on this conversation here.",
-        ),
-        stop_reason: "completed",
-      },
-      { type: "request.done", at: at(20), request: 1, status: "completed", usage: answer },
-      {
-        type: "run.done",
-        at: at(10),
-        status: "completed",
-        requests: 1,
-        usage: answer,
-        session_usage: usage(124, 5848, 5184),
-      },
+    const text = L(
+      "演示数据只回答第一个问题；真实的 Agent 会在这里接着同一个会话作答。",
+      "The demo answers only the first question; a real agent would carry on this conversation here.",
+    );
+    records = [
+      ev(0, { type: "task_begin" }),
+      userInput,
+      ev(120, { type: "request_begin", thinking_level: "medium" }),
+      msg(1400, { type: "text", role: "assistant", text }),
+      ev(10, { type: "token_usage", session: usage(124, 5848, 5184), request: answer }),
+      ev(10, { type: "request_end", status: "completed" }),
+      ev(10, { type: "task_end" }),
     ];
   } else {
     const call = usage(31, 1376, 1152);
@@ -2035,78 +2082,86 @@ export function amspTryStream(
     // The answer as a model streams it: three fragments, then the complete text.
     const third = Math.ceil(answerText.length / 3);
     const fragments = [0, 1, 2].map((i) => answerText.slice(i * third, (i + 1) * third));
-    events = [
-      started,
+    const id = "toolu_try_date";
+    records = [
       {
-        type: "context.opened",
-        at: at(60),
-        session_id: sessionId,
-        provider: "anthropic",
-        model_id: "claude-sonnet-5",
-        context_window: 200000,
-      },
-      {
-        type: "tools.ready",
-        at: at(20),
+        timestamp: at(0),
+        type: "session_meta",
+        payload: {
+          session_id: sessionId,
+          provider: "anthropic",
+          model_id: "claude-sonnet-5",
+          model_context_window: 200000,
+          system_prompt: "",
+          agent_state: "",
+          workspace: "",
+          source: "api",
+        },
+      } as AmspRecord,
+      ev(10, { type: "task_begin" }),
+      userInput,
+      ev(20, {
+        type: "tool_list_ready",
         tools: ["exec_command", "read_file", "write_file", "edit_file", "web_fetch"].map(
           (name) => ({ name, description: "" }),
         ),
-      },
-      { type: "request.started", at: at(40), request: 1 },
-      {
-        type: "tool_call.delta",
-        at: at(1200),
-        tool_call_id: "toolu_try_date",
+      }),
+      ev(40, { type: "request_begin", thinking_level: "medium" }),
+      msg(1200, {
+        type: "partial_tool_call",
+        event_type: "start",
         name: "exec_command",
+        arguments: "",
+        tool_call_id: id,
+      }),
+      msg(100, {
+        type: "partial_tool_call",
+        event_type: "delta",
+        name: "",
         arguments: '{"cmd": ',
-      },
-      {
-        type: "tool_call.delta",
-        at: at(200),
-        tool_call_id: "toolu_try_date",
+        tool_call_id: id,
+      }),
+      msg(200, {
+        type: "partial_tool_call",
+        event_type: "delta",
         name: "",
         arguments: '"date"}',
-      },
-      {
-        type: "tool_call.done",
-        at: at(100),
-        tool_call_id: "toolu_try_date",
+        tool_call_id: id,
+      }),
+      msg(10, {
+        type: "partial_tool_call",
+        event_type: "stop",
+        name: "",
+        arguments: "",
+        tool_call_id: id,
+      }),
+      msg(10, {
+        type: "tool_call",
         name: "exec_command",
         arguments: '{"cmd":"date"}',
-        stop_reason: "completed",
-      },
-      {
-        type: "tool_result.done",
-        at: at(260),
-        tool_call_id: "toolu_try_date",
+        tool_call_id: id,
+      }),
+      ev(10, { type: "approval_decision", decision: "allow", tool_call_id: id }),
+      ev(10, { type: "token_usage", session: call, request: call }),
+      ev(10, { type: "request_end", status: "completed" }),
+      msg(260, {
+        type: "tool_call_output",
         output: `${clockText}\n`,
-        stop_reason: "completed",
-      },
-      { type: "request.done", at: at(10), request: 1, status: "completed", usage: call },
-      { type: "request.started", at: at(30), request: 2 },
-      ...fragments.map((text): AmspEvent => ({
-        type: "text.delta",
-        at: at(400),
-        role: "assistant",
-        text,
-      })),
-      {
-        type: "text.done",
-        at: at(10),
-        role: "assistant",
-        text: answerText,
-        stop_reason: "completed",
-      },
-      { type: "request.done", at: at(20), request: 2, status: "completed", usage: answer },
-      {
-        type: "run.done",
-        at: at(10),
+        tool_call_id: id,
         status: "completed",
-        requests: 2,
-        usage: usage(86, 2728, 2240),
-        session_usage: usage(86, 2728, 2240),
-      },
+      }),
+      ev(30, { type: "request_begin", thinking_level: "medium" }),
+      msg(10, { type: "partial_text", role: "assistant", event_type: "start", text: "" }),
+      ...fragments.map((text) =>
+        msg(400, { type: "partial_text", role: "assistant", event_type: "delta", text }),
+      ),
+      msg(10, { type: "partial_text", role: "assistant", event_type: "stop", text: "" }),
+      msg(10, { type: "text", role: "assistant", text: answerText }),
+      ev(10, { type: "token_usage", session: usage(86, 2728, 2240), request: answer }),
+      ev(20, { type: "request_end", status: "completed" }),
+      ev(10, { type: "task_end" }),
     ];
   }
-  return [...events.map((e) => JSON.stringify(e)), "[DONE]"].map((d) => `data: ${d}\n\n`).join("");
+  const frames = records.map((r, i) => `id: try-${i + 1}\ndata: ${JSON.stringify(r)}\n\n`);
+  return ["event: ping\ndata: {}\n\n", ...frames, "data: [DONE]\n\n"].join("");
 }

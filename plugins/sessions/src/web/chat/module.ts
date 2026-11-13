@@ -12,8 +12,6 @@ import { Bind, Module, Provide, type ClassCtx } from "@prismshadow/penguin-core/
 
 import { ChatPage } from "./chat-page";
 import { chatDrafts } from "./chat-drafts";
-import { AgentsPanel } from "./panels/agents-panel";
-import { MemoryPanel } from "./panels/memory-panel";
 import type { Chat, ChatDrafts } from "./iface";
 import { chatDeps, fileRenderersOf, sessionTabsOf } from "./deps";
 

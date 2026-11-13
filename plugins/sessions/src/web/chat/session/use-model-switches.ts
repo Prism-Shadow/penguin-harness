@@ -7,10 +7,10 @@
 import { useCallback, useEffect, useState } from "react";
 import type { ModelRefDto, ModelsResponse, SessionInfo } from "@prismshadow/penguin-server/api";
 import { toastError, toastInfo, toastSuccess } from "@prismshadow/penguin-ui";
-import * as api from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { apiErrorText } from "@prismshadow/penguin-web/internal";
-import { sameModelRef } from "@penguinharness/plugin-models/web";
+import * as api from "../../../api/endpoints";
+import { S } from "../../../lib/strings";
+import { apiErrorText } from "../../../lib/api-error";
+import { sameModelRef } from "../../models";
 import {
   compactionTally,
   heldThinkingSwitch,
@@ -19,7 +19,7 @@ import {
   sessionThinkingLevel,
   thinkingLevelLabel,
   type StagedThinkingSwitch,
-} from "@prismshadow/penguin-web/internal";
+} from "../../model-picker";
 
 import {
   sessionModelPickerDisabled,
@@ -187,10 +187,14 @@ export function useModelSwitches({
       if (sessionModelPickerDisabled(stream.taskState)) return;
       // Read at pick time: the model's items mutate in place. The live tail decides, behind
       // whatever window was backfilled above it.
-      const shape = switchContextShape([...stream.prefixItems, ...stream.model.items]);
+      const shape = switchContextShape(
+        [...stream.prefixItems, ...stream.model.items],
+        selected,
+        models,
+      );
       setModelSwitchAsk({ to: ref, shape });
     },
-    [selected, stream.taskState, stream.prefixItems, stream.model],
+    [selected, stream.taskState, stream.prefixItems, stream.model, models],
   );
 
   // The dialog's confirm. 202 = the switch is streaming: the compaction row (or, right after a

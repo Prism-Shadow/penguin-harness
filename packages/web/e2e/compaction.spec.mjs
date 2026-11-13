@@ -139,10 +139,16 @@ test("compaction mid-turn: the reply's stats line is still reachable by hovering
   const main = page.locator("main");
   await expect(main.getByText("第 1 轮")).toBeVisible();
   await expect(main.getByText("第 2 轮")).toBeVisible();
-  const roundRows = main.locator("button").filter({ hasText: /第 \d 轮/ });
-  const compactionRow = roundRows.filter({ hasText: "第 2 轮" }).first();
-  await expect(compactionRow).toContainText("tok/s"); // the compaction round has its own TPS
-  await expect(compactionRow).not.toContainText("—");
+  // The TPS is in the round's readings panel, behind the button at the end of its row: a pure
+  // compaction round has no context snapshot, so a tokens glyph stands where the ring would.
+  const compactionToggle = main.locator("[data-round='1'] [data-slot='toggle']");
+  await expect(compactionToggle).toContainText("第 2 轮");
+  await main.locator("[data-round='1'] [data-slot='ring']").click();
+  const compactionReadings = page.getByRole("group", { name: "本轮读数" });
+  await expect(compactionReadings).toContainText("tok/s"); // the compaction round has its own TPS
+  await expect(compactionReadings).not.toContainText("—");
+  await page.keyboard.press("Escape");
+  await expect(compactionReadings).toHaveCount(0);
 
   // Global elapsed time = **the sum of each round's elapsed time (including the compaction
   // round)**, matching the same scope as the per-round display below — adding up each round

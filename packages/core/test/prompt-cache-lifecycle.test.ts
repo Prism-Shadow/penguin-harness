@@ -23,8 +23,9 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Environment } from "../src/environment/index.js";
 import { Session } from "../src/index.js";
-import { buildScheduledMessage, sessionMeta, userText } from "../src/omnimessage/index.js";
-import type { OmniMessage } from "../src/omnimessage/index.js";
+import { buildScheduledMessage } from "@prismshadow/amsp/markers";
+import { sessionMeta, userText } from "@prismshadow/amsp/records";
+import type { AmspRecord } from "@prismshadow/amsp/records";
 import { Writer, readTrace, resumeTrace } from "../src/trace/index.js";
 import type { CompactionSettings, TraceSink } from "../src/engine/context-engine.js";
 import { DETACHED_TOOL_NOTE_PREFIX } from "../src/interfaces/index.js";
@@ -630,8 +631,8 @@ function childRunnerFor(get: () => Session | null): SubagentRunner {
 }
 
 async function* tagged(
-  gen: AsyncGenerator<OmniMessage, RunCutoff | null>,
-): AsyncGenerator<OmniMessage, RunCutoff | null> {
+  gen: AsyncGenerator<AmspRecord, RunCutoff | null>,
+): AsyncGenerator<AmspRecord, RunCutoff | null> {
   for (;;) {
     const res = await gen.next();
     if (res.done) return res.value;

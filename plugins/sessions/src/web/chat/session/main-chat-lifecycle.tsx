@@ -1,29 +1,34 @@
-import { adoptBrowserSession } from "@penguinharness/plugin-browser/web";
+import { scoped } from "../../../lib/project-scope";
+import { adoptBrowserSession } from "../../builtin-browser";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type {
-  SessionInfo,
-  SessionStatus,
-  SkillMetadataItem,
-} from "@prismshadow/penguin-server/api";
+import type { SessionInfo, SessionStatus } from "@prismshadow/penguin-server/api";
 import { toastError, toastSuccess } from "@prismshadow/penguin-ui";
-import * as api from "@prismshadow/penguin-web/internal";
-import { ApiError } from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { apiErrorText } from "@prismshadow/penguin-web/internal";
-import { configuredCompactionLimit } from "@prismshadow/penguin-web/internal";
-import { humanizeTokens } from "@prismshadow/penguin-web/internal";
-import { latestConversation, withoutOrgSessions } from "@prismshadow/penguin-web/internal";
-import { noteSessionSeen } from "@prismshadow/penguin-web/internal";
+import * as api from "../../../api/endpoints";
+import { ApiError } from "../../../api/client";
+import { S } from "../../../lib/strings";
+import { apiErrorText } from "../../../lib/api-error";
+import { configuredCompactionLimit } from "../../../lib/context";
+import { humanizeTokens } from "../../../lib/format";
+import { latestConversation, withoutOrgSessions } from "../../../lib/session-grouping";
+import { noteSessionSeen } from "../../../lib/session-seen";
 import { latestTaskHasSubagent, taskStartCount } from "../agent-topology";
 import { DRAFT_SESSION_ID } from "../draft-sessions";
 import { routeSessionOutcome, sessionForProject } from "../session-project";
 import { RouteProbe } from "../route-probe";
-import { machineForSession } from "@prismshadow/penguin-web/internal";
+import { machineForSession } from "../../../lib/session-machines";
 import { CHAT_DEFAULTS_CHANGED_EVENT, chatDefaultsChangedDetail } from "../chat-defaults-event";
+import { goalPluginGate } from "../goal-plugin-gate";
+import { useAgentSkills } from "../use-agent-skills";
 import { applyUsageFetch } from "../header-stats";
-import { hasConfiguredKey, sameModelRef } from "@penguinharness/plugin-models/web";
-import { noteScheduleEvent } from "@penguinharness/plugin-schedules/web";
-import { adoptDockScope, isTabShown, openPanel } from "@prismshadow/penguin-web/internal";
+import { hasConfiguredKey, sameModelRef } from "../../models";
+import { noteScheduleEvent } from "../../schedules";
+import {
+  adoptDockScope,
+  currentDockScope,
+  isTabShown,
+  openPanel,
+  reownTerminals,
+} from "../../dock";
 import { advancePanelTaskScope, createPanelTaskScope } from "../panel-task-scope";
 import { exitedProcessIds, reportableProcessFailure } from "../process-list";
 import { PROCESS_POLL_MS, STAT_PATHS_PER_REQUEST } from "./main-chat-helpers";
@@ -83,6 +88,22 @@ export function useMainChatLifecycle(scope: ReturnType<typeof useMainChatTranscr
   // causing the new chat to end up created on the old Agent.
   const selectedSessionId = selected?.sessionId ?? null;
   const selectedAgentId = selected?.agentId ?? null;
+  /**
+   * The machine the selected Session's Agent lives on (null: this server). A Session on a
+   * machine runs that machine's Agent: its settings — the thinking level and compaction threshold
+   * the composer shows and edits, the settings page it links to — are that Agent's, read and
+   * written over there. The same id on this server is another Agent.
+   */
+  const selectedAgentMachine = selected === null ? null : machineForSession(selected.sessionId);
+  // Goal mode's plugin check, against the Session's Agent on the server that holds it
+  // (goal-plugin-gate.ts).
+  const goalPlugin = useMemo(
+    () =>
+      projectId && selectedAgentId
+        ? goalPluginGate(projectId, selectedAgentId, selectedAgentMachine)
+        : null,
+    [projectId, selectedAgentId, selectedAgentMachine],
+  );
   // The thinking level pinned on THIS Session, read straight off the Session row
   // (SessionInfo.thinkingLevel, written by the picker through PATCH — see
   // applyTurnThinkingLevel): "" = never pinned, and the picker then displays the Agent
@@ -118,37 +139,26 @@ export function useMainChatLifecycle(scope: ReturnType<typeof useMainChatTranscr
   // always lives in the live tail window, so live-only loses nothing.
   const taskCount = taskStartCount(stream.model.items);
   const liveSpawn = stream.taskState !== "idle" && latestTaskHasSubagent(stream.model);
+  // The stream trails a switch by one render (still the previous Session's model and state), so
+  // the tracker is told whose data it is looking at; the panel opens only in this conversation's
+  // own docks, the ones on screen when the effect runs.
+  const streamSessionId = stream.sessionId;
   useEffect(() => {
     const action = advancePanelTaskScope(panelTaskScopeRef.current, {
       sessionId: selectedSessionId,
+      streamSessionId,
       taskCount,
       liveSpawn,
     });
-    if (action === "autoOpen" && !isTabShown("agents")) openPanel("agents");
-    // The tracker only acts on real transitions of these three observed values.
+    if (action === "autoOpen" && currentDockScope() === selectedSessionId && !isTabShown("agents"))
+      openPanel("agents");
+    // The tracker only acts on real transitions of these observed values.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSessionId, taskCount, liveSpawn]);
+  }, [selectedSessionId, streamSessionId, taskCount, liveSpawn]);
 
-  // Skills installed on the session's Agent (candidates for the input area's skill dropdown):
-  // fetched keyed on the session's Agent; on switch, cleared first (which also clears the input
-  // area's selection) before refetching; a failed fetch is silently treated as no skills.
-  // Clearing preserves reference identity (an already-empty array isn't replaced), matching
-  // draft-view's convention.
-  const [agentSkills, setAgentSkills] = useState<SkillMetadataItem[]>([]);
-  useEffect(() => {
-    setAgentSkills((prev) => (prev.length > 0 ? [] : prev));
-    if (!projectId || !selectedAgentId) return;
-    let cancelled = false;
-    api
-      .getAgentSkills(projectId, selectedAgentId)
-      .then((res) => {
-        if (!cancelled) setAgentSkills(res.skills);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId, selectedAgentId]);
+  // Skills installed on the session's Agent, on its machine (candidates for the input area's
+  // skill dropdown); a switch clears them, which also clears the input area's selection.
+  const { skills: agentSkills } = useAgentSkills(projectId, selectedAgentId, selectedAgentMachine);
 
   // Two readouts come off the session Agent's config, via the same agent-config endpoint the
   // draft picker uses. The configured thinking level ("" = unset/loading) is what the in-session
@@ -181,7 +191,7 @@ export function useMainChatLifecycle(scope: ReturnType<typeof useMainChatTranscr
     if (!projectId || !selectedAgentId) return;
     let cancelled = false;
     api
-      .getAgentConfig(projectId, selectedAgentId)
+      .getAgentConfig(projectId, selectedAgentId, null)
       .then((res) => {
         if (cancelled) return;
         setAgentThinkingLevel(res.config.model?.thinkingLevel ?? "");
@@ -205,9 +215,12 @@ export function useMainChatLifecycle(scope: ReturnType<typeof useMainChatTranscr
     async (maxContextLength: number): Promise<void> => {
       if (!projectId || !selectedAgentId) return;
       try {
-        await api.putAgentConfig(projectId, selectedAgentId, {
-          config: { compaction: { maxContextLength } },
-        });
+        await api.putAgentConfig(
+          projectId,
+          selectedAgentId,
+          { config: { compaction: { maxContextLength } } },
+          null,
+        );
       } catch (e) {
         toastError(apiErrorText(e));
         throw e;
@@ -437,7 +450,7 @@ export function useMainChatLifecycle(scope: ReturnType<typeof useMainChatTranscr
       // the Files and Trace panels re-read theirs. One store refresh serves both surfaces: the
       // store notifies its subscribers, so the dock's schedules panel and the sidebar row's
       // alarm clock come from the same list and cannot disagree.
-      if (projectId !== null) noteScheduleEvent(projectId);
+      if (projectId !== null) noteScheduleEvent(projectId, machineForSession(selectedSessionId));
     }
   }, [stream.taskState, selectedSessionId, projectId, reloadSessions, reloadAgents]);
 
@@ -672,9 +685,9 @@ export function useMainChatLifecycle(scope: ReturnType<typeof useMainChatTranscr
     setModels(null);
     void (async () => {
       try {
-        const res = await api.getModels(projectId);
+        const res = await api.getModels(projectId, null);
         if (cancelled) return;
-        setModels(res);
+        setModels(scoped(projectId, res));
         const { prefs } = await api.getPrefs();
         if (cancelled || prefs.credentialGuideSeen) return;
         const def = res.models.find((m) => sameModelRef(m, res.defaultModel));
@@ -706,9 +719,9 @@ export function useMainChatLifecycle(scope: ReturnType<typeof useMainChatTranscr
       if (!detail || detail.defaultModel === undefined) return;
       setModels(null);
       api
-        .getModels(projectId)
+        .getModels(projectId, null)
         .then((res) => {
-          if (!cancelled) setModels(res);
+          if (!cancelled) setModels(scoped(projectId, res));
         })
         .catch(() => undefined);
     };
@@ -725,10 +738,12 @@ export function useMainChatLifecycle(scope: ReturnType<typeof useMainChatTranscr
       if (respondedId === currentId) return;
       await reloadSessions();
       // Same conversation under a new id: its docks follow, or they are stranded under
-      // an id nothing routes to again.
+      // an id nothing routes to again — its shells first, so its tabs stay its own. Only
+      // someone still on the old id is taken to the new one; whoever moved on stays put.
       await adoptBrowserSession(currentId, respondedId);
-      adoptDockScope(respondedId);
-      navigate(`/chat/${respondedId}`, { replace: true });
+      await reownTerminals(currentId, respondedId);
+      if (adoptDockScope(currentId, respondedId))
+        navigate(`/chat/${respondedId}`, { replace: true });
     },
     [reloadSessions, navigate],
   );
@@ -736,13 +751,13 @@ export function useMainChatLifecycle(scope: ReturnType<typeof useMainChatTranscr
     ...scope,
     selectedSessionId,
     selectedAgentId,
+    goalPlugin,
     turnThinkingLevel,
     selectedAgentKnown,
     panelTaskScopeRef,
     taskCount,
     liveSpawn,
     agentSkills,
-    setAgentSkills,
     agentThinkingLevel,
     setAgentThinkingLevel,
     compactionLimit,

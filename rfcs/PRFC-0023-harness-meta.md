@@ -38,7 +38,7 @@ The HMR layer landed with a criterion: a missing record and a damaged record are
 
 ### Provisioning is a self-push
 
-The npm, tarball and Docker programs carry a harness store (`harness.json` plus `store/`), built from the same sources as the program. The desktop application carries its existing gz image for machine installs; startup provisioning there remains a candidate. The data root is wherever the user points the harness, chosen per run and unknown at pack time, so no installer writes the record: every start of the program copies its image into the root it serves, before anything reads the root. The copy is a reconciliation, and it has four answers: a root with no record receives one; a root whose record came from this very image stays as it is; a root whose record came from an older image (an upgraded installation) rises to the version this program carries; and a root whose record came from a hot push — or from a peer's copied state — keeps it, because a push is a newer decision than any shipped image. The reading face sees the same thing it sees for a pushed record: it answers with the record, the machine's pushed-CLI face works from the first moment, and the first hot push replaces the record as any push replaces any record.
+When a channel provisions a data root, it lays the harness image its product carries down as the root's initial record, with provenance marked as installed by this channel. The reading face sees the same thing it sees for a pushed record: it answers with the record, the machine's pushed-CLI face works from the first moment, and the first hot push replaces the record as any push replaces any record.
 
 ### What "no record" says after presence
 
@@ -46,7 +46,7 @@ Absence narrows from every freshly installed machine to roots that were never pr
 
 ### Presence leaves the entry alone
 
-The record says what this root holds. It does not say which program starts the harness — the harness the root holds is started by the installation that serves it, from that installation's own program directory. A dev root carrying an install record still starts the dev way; the desktop shell still starts its server its own way.
+The record states what this root holds; which entry starts is decided by resolution, in [PRFC-0024](./PRFC-0024-cli-resolution.md#guide-level-explanation). A dev root carrying an install record still starts the dev way; the desktop shell still starts its server its own way.
 
 ## Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
@@ -65,9 +65,9 @@ Content-addressed pointers to the three payload kinds plus assets; a provenance 
 
 The reader returns the record or raises. Two situations carry their own names: **no record**, for a root that holds nothing at the path, and **damaged record**, for a file that cannot be read or parsed. Each exception names the file it looked for. These two names are what callers branch on, and a reader that merges them, or that guesses around an absence, silently reverts the criterion this surface landed with. Presence makes the missing-record exception rarer and keeps it in place: roots that were never provisioned still exist, and they stay distinguishable from a root whose record is damaged.
 
-### Provisioning copies the carried image at every start
+### Provisioning writes the initial record
 
-The npm server dependency carries `dist/hmr/`; release tarballs and Docker carry `lib/dist/hmr/`. The packer uses the built server's `writePushedBuild` to create these stores. Startup copies the store into the selected data root through staging and commits its record with an atomic rename. An unreadable existing record stays untouched. Desktop keeps the existing `install-image.gz` and its machine-install path; conversion of desktop startup remains a candidate. The checkout image keeps its gz build intermediate.
+Per channel: the tarball's install scripts and the desktop's first run lay down the image the product already carries; the npm package and the Docker image gain an image of their own build at build time and lay it down the same way; a machines-installed peer keeps copying the sender's record at install. Every hand-installed release arrives pre-provisioned from now on. A provisioning that cannot write its record raises a named fault of its own at that moment. Handling of read-only or unwritable media is left to the implementation.
 
 ### One store, mirrored only in flight *(candidate)*
 
@@ -79,16 +79,16 @@ A record's files can be damaged in place. The reader names such damage when aske
 
 ### Each channel's facets after this RFC
 
-The npm, tarball and Docker **harness data root** facets become "carries a record from the first start, copied from the image its program ships"; the machines-installed peer keeps its copy-at-install behavior and gains nothing.
+Every channel's **harness data root** facet becomes "provisioned with meta at provision time"; the machines-installed peer keeps its copy-at-install behavior and gains nothing; the two channels whose products carry an image start carrying it for themselves as well as for machine installs.
 
 ## Invariants
 [invariants]: #invariants
 
 ### Meta is always present
 
-> However a [distro channel](./PRFC-0021-distros.md#guide-level-explanation) reaches a machine, every data root its program serves carries [harness meta](./PRFC-0023-harness-meta.md#guide-level-explanation) from the first moment it is served: the program carries a harness image, and each start copies it into the root before anything reads the root.
+> However a [distro channel](./PRFC-0021-distros.md#guide-level-explanation) provisions a machine, the [harness data root](./PRFC-0023-harness-meta.md#guide-level-explanation) it provisions carries [harness meta](./PRFC-0023-harness-meta.md#guide-level-explanation) from the first moment the root exists.
 
-This is the floor this RFC lays, stated as a property of channels: whatever root a user points a channel's program at, that root holds a record that says what it holds. The record follows the root, not the install — a fresh PENGUIN_HOME is provisioned by the program's next start against it, with no reinstall. A future channel that ships a product without a harness image breaks this RFC.
+This is the floor this RFC lays, stated as a property of channels: whatever a channel does to a machine, the machine it leaves behind has a root that says what it holds. A future channel that ships a product without writing the record breaks this RFC.
 
 ### Each failure keeps its own name
 
@@ -96,11 +96,11 @@ This is the floor this RFC lays, stated as a property of channels: whatever root
 
 The two names predate this RFC and outlive it. Presence narrows the missing one to roots that were never provisioned and leaves the damaged one as the fault a provisioning or a corrupted file can produce. A reading face that merges them tells a caller with a damaged record that nothing was ever pushed — the reply that quietly throws away a version the root still holds.
 
-### The record describes; the installation starts
+### The record leaves the entry alone
 
-> The record says what a root holds. It does not say which program starts the harness, and no field of the record names one.
+> However complete [harness meta](./PRFC-0023-harness-meta.md#guide-level-explanation) is, which entry starts the harness is still decided by [resolution](./PRFC-0024-cli-resolution.md#guide-level-explanation).
 
-A record that named a start program would make every channel's launcher a servant of the record and every dev root a hostage of its own installed image — and the name could not even be written down once for all readers, because the program that starts lives in each installation's own directory, while the record may be read on any layout. What travels is the harness itself: content-addressed bundles, stored relative to the record, which whichever installation serves this root loads from its own program. Keeping that seam is what lets this RFC lay its floor.
+A record that obligates a start path would make every channel's launcher a servant of the record and every dev root a hostage of its own installed image. The record states what a root holds; resolution decides what runs. Keeping that seam is what lets this RFC lay its floor.
 
 ## Drawbacks
 [drawbacks]: #drawbacks
@@ -116,7 +116,7 @@ Presence costs a marker inside the record ("provisioned, never pushed") that abs
 
 **The reading face reads one file**: it reads `hmr/harness.json` under the root and nothing else, so a machine whose record exists only in a mirror has no record it can act on.
 
-**The cost of leaving this out**: a fresh install's remote-command face has no record to read — the exact silence presence closes.
+**The cost of leaving this out**: PRFC-0024's resolution has nothing to resolve on a fresh install.
 
 ## Prior art
 [prior-art]: #prior-art
@@ -143,11 +143,6 @@ Once every root has a record, upgrade accounting can walk the record alone: plan
 ---
 
 ## Changes
-
-### v1.2.0
-
-- Reworded the invariant "the record leaves the entry alone" into "the record describes; the installation starts": the record says what a root holds, not which program starts the harness. The earlier wording deferred the decision to a resolution RFC (PRFC-0024, withdrawn — the question answers itself: whichever installation serves the root starts its own program).
-- Provisioning moved from install time to start time: every channel's program carries a harness image, and each start copies it into whichever data root it serves (four answers — receive, stay, upgrade, defer to a push). The invariant "Meta is always present" now binds every root a program serves, not the machine an installer leaves behind; a record copied from an image is marked in its provenance.
 
 ### v1.1.0
 

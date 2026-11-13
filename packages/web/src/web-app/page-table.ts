@@ -41,7 +41,7 @@ export interface WebAppPage extends Omit<PageData, "nav"> {
   id: string;
   /**
    * `org`: a company-mode page the server contributed, with no row in the main nav; its path is
-   * relative to an organization (plugins/company/src/web/company/org-routes.tsx mounts it there).
+   * relative to an organization (features/company/org-routes.tsx mounts it there).
    */
   nav: PageData["nav"] | "org";
   Component: ComponentType;
@@ -81,10 +81,10 @@ export function parentedPagesOf(pages: readonly WebAppPage[]): readonly WebAppPa
 }
 
 /**
- * Where home leads: company mode's `home` page (path `*`, plugins/company/src/web/company/home-redirect.tsx)
+ * Where home leads: company mode's `home` page (path `*`, features/company/home-redirect.tsx)
  * answers `/`, a signed-in /login and every path nothing else matches by sending it to the
  * effective mode's home — development mode's conversations or company mode's organizations
- * (plugins/company/src/web/company/company-nav.ts `homePath`, which test/page-removal.test.ts holds to this
+ * (features/company/company-nav.ts `homePath`, which test/page-removal.test.ts holds to this
  * list). The pages that answer these paths, the `*` page included, are the ones no removal can
  * take away: without them home would lead to a path that falls to home again.
  */
@@ -95,7 +95,8 @@ const segmentsOf = (path: string) => path.split("/").filter((s) => s !== "");
 
 /**
  * The table without the pages the given keys name, nor the pages whose route lies under one of
- * theirs — whose pattern starts with every segment of the removed page's pattern, so removing
+ * theirs — whose pattern starts with every non-splat segment of the removed page's pattern (a
+ * trailing splat answers the rest of the URL), so removing
  * `benchmark` (/benchmark) takes `benchmark-detail` (/benchmark/:benchmarkId) with it but not
  * the other way round: what lives under a page's URL belongs to that page, and a removal names
  * the page a user sees, not the routes behind it. A page at "/" takes only itself. A page that
@@ -109,8 +110,18 @@ export function removedPagesOf(
   if (keys.length === 0) return pages;
   const removed = pages.filter((p) => keys.includes(p.key)).map((p) => segmentsOf(p.path));
   if (removed.length === 0) return pages;
-  const under = (path: readonly string[], root: readonly string[]) =>
-    root.length > 0 && root.length <= path.length && root.every((s, i) => s === path[i]);
+  // A page whose pattern ends in a splat (`/reports/*`) answers the rest of the URL — its own
+  // bare path included — so every page whose leading segments match it lies under it, however
+  // the pages under it name their parameters (`/reports/:reportId` goes with it). A pattern
+  // that is nothing but the splat (home, `*`) takes only itself: everything would match it,
+  // and the pages answering HOME_PATHS cannot be removed anyway.
+  const under = (path: readonly string[], root: readonly string[]) => {
+    if (root.length === 0) return false;
+    const splat = root[root.length - 1] === "*";
+    const stem = splat ? root.length - 1 : root.length;
+    if (stem === 0 || path.length < stem) return false;
+    return root.slice(0, stem).every((s, i) => s === path[i]);
+  };
   return pages.filter((p) => {
     if (HOME_PATHS.some((home) => matchPath(p.path, home) !== null)) return true;
     if (keys.includes(p.key)) return false;

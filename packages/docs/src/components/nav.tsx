@@ -1,11 +1,29 @@
-/** Docs routes and drawer control rendered through the shared public-site header. */
+/** Docs routes and drawer control rendered through the shared public-site navigation. */
 import type { RefObject } from "react";
 import { Link } from "react-router";
-import { SiteGitHubLink, SiteHeader, useSiteLocale } from "@prismshadow/penguin-ui/site";
+import {
+  SiteNav,
+  SiteNavLinks,
+  siteNavLinks,
+  useSiteLocale,
+  useSiteTheme,
+} from "@prismshadow/penguin-ui/site";
 import { S } from "../lib/strings";
 import { galleryUrl, REPO_API_URL, REPO_URL, SITE_URL } from "../lib/links";
-import { ThemeToggle } from "./theme-toggle";
-import { LangToggle } from "./lang-toggle";
+
+/** The site's pages, with the docs as this router's root and the page being read. */
+function useSiteLinks() {
+  const { locale } = useSiteLocale();
+  return siteNavLinks({
+    siteRoot: SITE_URL,
+    labels: S.nav,
+    current: "docs",
+    overrides: {
+      docs: { href: "/", render: ({ href, ...props }) => <Link to={href} {...props} /> },
+      gallery: { href: galleryUrl(locale) },
+    },
+  });
+}
 
 export function Nav({
   menuOpen,
@@ -16,40 +34,28 @@ export function Nav({
   onToggleMenu: () => void;
   menuButtonRef?: RefObject<HTMLButtonElement | null>;
 }) {
-  const { locale } = useSiteLocale();
-  const home = { id: "home", href: SITE_URL, label: S.nav.home };
+  const { lang, setLang } = useSiteLocale();
+  const { mode, setMode } = useSiteTheme();
   return (
-    <SiteHeader
+    <SiteNav
       name={S.siteName}
       logo={`${import.meta.env.BASE_URL}penguin-logo.svg`}
-      home={home}
-      links={[
-        home,
-        { id: "blog", href: `${SITE_URL}blog`, label: S.nav.blog },
-        { id: "download", href: `${SITE_URL}download`, label: S.nav.download },
-        {
-          id: "docs",
-          href: "/",
-          label: S.nav.docs,
-          active: true,
-          render: ({ href, ...props }) => <Link to={href} {...props} />,
-        },
-        { id: "gallery", href: galleryUrl(locale), label: S.nav.gallery },
-      ]}
-      actions={
-        <>
-          <LangToggle />
-          <ThemeToggle />
-          <SiteGitHubLink href={REPO_URL} apiUrl={REPO_API_URL} label={S.nav.github} />
-        </>
-      }
+      labels={S.nav}
+      links={useSiteLinks()}
+      language={{ value: lang, onChange: setLang, labels: S.lang }}
+      theme={{ mode, onChange: setMode, labels: S.theme }}
+      repo={{ href: REPO_URL, apiUrl: REPO_API_URL }}
       menu={{
         open: menuOpen,
         onToggle: onToggleMenu,
         buttonRef: menuButtonRef,
-        label: menuOpen ? S.nav.closeMenu : S.nav.openMenu,
         hiddenClass: "lg:hidden",
       }}
     />
   );
+}
+
+/** The site's links at the top of the drawer, where the bar has no room for them. */
+export function SiteMenu({ onNavigate }: { onNavigate: () => void }) {
+  return <SiteNavLinks links={useSiteLinks()} mobile onNavigate={onNavigate} />;
 }

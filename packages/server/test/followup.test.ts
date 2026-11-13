@@ -17,7 +17,7 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { approvalDecision, assistantText, toolCall, userText } from "@prismshadow/penguin-core";
-import type { ApproveFn, OmniMessage } from "@prismshadow/penguin-core";
+import type { ApproveFn, AmspRecord } from "@prismshadow/penguin-core";
 import type { TaskCreateResponse } from "../src/api/types.js";
 import type { RecallStore } from "../src/runtime/session-manager.js";
 import { adoptSession, fakeSession, uniqueSessionId } from "./fixtures/session.js";
@@ -44,7 +44,7 @@ describe("follow-up queue route", () => {
     SID = uniqueSessionId();
     runs = [];
     const session = fakeSession(SID, {
-      async *run(input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
+      async *run(input: AmspRecord[], opts: { approve: ApproveFn; signal: AbortSignal }) {
         runs.push(input.map((m) => (m.payload as { text?: string }).text ?? ""));
         const tc = toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-fu" });
         yield tc;

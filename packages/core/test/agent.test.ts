@@ -2,6 +2,10 @@
  * Agent.createSession's Workspace handling and vault injection (no network needed; only
  * constructs the Session, never sends a request).
  *
+ * A host recreating a Session that never ran passes its id: the Session keeps it until its
+ * first record lands in a Trace, after which the id refuses a second creation; an id that
+ * could name a path outside the Trace directory is refused before any workspace is created.
+ *
  * Regression: an explicitly given Workspace must be an existing directory. When it
  * does not exist, a clear error must be thrown rather than auto-creating it, and bash must not
  * be started with an invalid cwd after Session creation, which would throw a misleading
@@ -15,7 +19,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
-import type { OmniMessage } from "../src/omnimessage/index.js";
+import type { AmspRecord } from "@prismshadow/amsp/records";
 import type { ModelRef, OpenContextOptions, OpenedContext, SystemConfig } from "../src/index.js";
 import {
   agentsMdPath,
@@ -24,9 +28,9 @@ import {
   skillsDir,
   systemConfigPath,
   tracesDir,
+  workspacesDir,
 } from "../src/state/paths.js";
 import {
-  MODEL_CATALOG,
   addModel,
   createAgent,
   DEFAULT_AGENT_ID,
@@ -44,6 +48,7 @@ import { metaMaxTokens } from "../src/agent.js";
 import { findLatestTraceFile, readTrace } from "../src/trace/index.js";
 import { mapThinkingLevel } from "../src/llm/index.js";
 import { stubProviderKeys } from "./provider-keys.js";
+import { seedProject } from "./seeded-project.js";
 import type {
   EnvironmentConfig,
   EnvironmentServices,
@@ -91,6 +96,8 @@ beforeEach(async () => {
   tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-harness-"));
   process.env.PENGUIN_HOME = tmpRoot;
   restoreKeys = stubProviderKeys();
+  // The Project a host would have seeded: core itself carries no models.
+  await seedProject(tmpRoot);
 });
 
 afterEach(async () => {
@@ -194,6 +201,39 @@ describe("Agent.createSession workspace handling", () => {
   });
 });
 
+describe("Agent.createSession under a given id (a host recreating a Session that never ran)", () => {
+  const ID = "session-2026-07-06-11-00-00-abcd0001";
+
+  it("keeps the given id until the Session's first record lands, and refuses it from then on", async () => {
+    const agent = await createAgent();
+    const first = await agent.createSession({ sessionId: ID });
+    expect(first.sessionId).toBe(ID);
+    // Never ran: nothing is on disk under the id, so a host that lost the object recreates it.
+    const again = await agent.createSession({ sessionId: ID });
+    expect(again.sessionId).toBe(ID);
+
+    await bootstrapped(again);
+    const located = await findLatestTraceFile(
+      tracesDir(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID),
+      ID,
+    );
+    const head = (await readTrace(located!.path))[0]!;
+    expect((head.payload as { session_id?: string }).session_id).toBe(ID);
+    // A Trace exists now: only a resume may continue it.
+    await expect(agent.createSession({ sessionId: ID })).rejects.toThrow(/already has a Trace/);
+  });
+
+  it("refuses an id that could name a path outside the Trace directory, creating no workspace", async () => {
+    const agent = await createAgent();
+    const workspaces = workspacesDir(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID);
+    const before = await fs.readdir(workspaces).catch(() => []);
+    await expect(agent.createSession({ sessionId: "../elsewhere" })).rejects.toThrow(
+      /may contain only letters, digits/,
+    );
+    expect(await fs.readdir(workspaces).catch(() => [])).toEqual(before);
+  });
+});
+
 describe("Agent.createSession model reference ((provider, model_id) pair)", () => {
   it("records the pair reference in session_meta (default_model when unspecified)", async () => {
     const agent = await createAgent();
@@ -220,6 +260,7 @@ describe("Agent.createSession model reference ((provider, model_id) pair)", () =
     await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
       provider: "myproxy",
       model_id: "claude-sonnet-4-6",
+      api_key: "proxy-key",
     });
     const agent = await createAgent();
     const ws = path.join(tmpRoot, "ws-ref-pair");
@@ -395,14 +436,14 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
       const gen = handle.run({ messages: [userText("noop")] });
       const first = await gen.next();
       expect(first.done).toBe(false);
-      const msg = first.value as OmniMessage;
+      const msg = first.value as AmspRecord;
       expect(msg.type).toBe("session_meta");
       // Child messages are stamped with the child Session id as the origin hop.
       expect(msg.origin?.[0]).toBe(handle.sessionId);
       for (;;) {
         const next = await gen.next();
         expect(next.done).toBe(false);
-        if (((next.value as OmniMessage).payload as { type?: string }).type === "tool_list_ready") {
+        if (((next.value as AmspRecord).payload as { type?: string }).type === "tool_list_ready") {
           llm = capturedLLMConfigs.list.at(-1)!;
           break;
         }
@@ -604,7 +645,7 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
     }
   });
 
-  it("forwards the run input as an origin-tagged user message, after session_meta and before any model output", async () => {
+  it("forwards the run input as an origin-tagged user message, after session_meta and the child's task_begin, before any model output", async () => {
     const agent = await createAgent();
     const ws = path.join(tmpRoot, "ws-input-forward");
     await fs.mkdir(ws, { recursive: true });
@@ -623,10 +664,14 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
       const gen = handle.run({ messages: [userText("count the TODO items")] });
       const first = (await gen.next()).value as { type: string };
       expect(first.type).toBe("session_meta");
-      // The input yield precedes childSession.run: pulling it never issues an LLM request.
-      const second = await gen.next();
-      expect(second.done).toBe(false);
-      const msg = second.value as {
+      // The child's Task opens first, the order its own Trace has: task_begin, then the input.
+      const second = (await gen.next()).value as { origin?: string[]; payload: { type: string } };
+      expect(second.origin).toEqual([handle.sessionId]);
+      expect(second.payload.type).toBe("task_begin");
+      // The input follows before the child's run goes on: pulling it never issues an LLM request.
+      const third = await gen.next();
+      expect(third.done).toBe(false);
+      const msg = third.value as {
         type: string;
         origin?: string[];
         payload: { type: string; role?: string; text?: string };
@@ -659,6 +704,7 @@ describe("Agent.createSession max output tokens (per-model cap wins over the Age
       model_id: "local-32k",
       client_type: "openai",
       context_window: 32768,
+      api_key: "sk-local",
       max_tokens: 8000,
     });
     const agent = await createAgent();
@@ -696,11 +742,13 @@ describe("Agent.createSession max output tokens (per-model cap wins over the Age
       model_id: "local-32k",
       client_type: "openai",
       max_tokens: 8000,
+      api_key: "sk-local",
     });
     await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
       provider: "custom",
       model_id: "tiny-cap",
       client_type: "openai",
+      api_key: "sk-local",
       max_tokens: 128,
     });
     const agent = await createAgent();
@@ -750,6 +798,7 @@ describe("Agent.createSession fast mode (session requests only, never the meta o
       provider: "custom",
       model_id: "fast-on",
       client_type: "openai",
+      api_key: "sk-local",
       fast_mode: true,
     });
     const agent = await createAgent();
@@ -780,6 +829,7 @@ describe("Agent.createSession fast mode (session requests only, never the meta o
       provider: "custom",
       model_id: "fast-off",
       client_type: "openai",
+      api_key: "sk-local",
     });
     const agent = await createAgent();
     const ws = path.join(tmpRoot, "ws-fast-mode-off");
@@ -873,10 +923,10 @@ describe("Agent.createSession skill metadata injection", () => {
 });
 
 describe("Agent model contexts are assembled from the Agent State on disk, at every context open", () => {
-  const promptOf = (session: { metaMessage: OmniMessage }): string =>
+  const promptOf = (session: { metaMessage: AmspRecord }): string =>
     (session.metaMessage.payload as { system_prompt: string }).system_prompt;
   const mdFile = () => agentsMdPath(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID);
-  const typeOf = (msg: OmniMessage | undefined): string | undefined =>
+  const typeOf = (msg: AmspRecord | undefined): string | undefined =>
     (msg?.payload as { type?: string } | undefined)?.type;
   /** The engine-facing context opener (the Session's wrapper around the Agent's factory), reachable once the first-run bootstrap has resolved the toolset. */
   const openerOf = (session: unknown) =>
@@ -892,8 +942,8 @@ describe("Agent model contexts are assembled from the Agent State on disk, at ev
   /** Opens the Session's next context through its opener, collecting the records the opener publishes. */
   async function openNext(
     session: unknown,
-  ): Promise<{ opened: OpenedContext; records: OmniMessage[] }> {
-    const records: OmniMessage[] = [];
+  ): Promise<{ opened: OpenedContext; records: AmspRecord[] }> {
+    const records: AmspRecord[] = [];
     const opened = await openerOf(session)({ emit: (msg) => records.push(msg) });
     return { opened, records };
   }
@@ -1081,7 +1131,7 @@ describe("Agent model contexts are assembled from the Agent State on disk, at ev
     const agent = await createAgent();
     const ws = path.join(tmpRoot, "ws-thinking-meta");
     await fs.mkdir(ws, { recursive: true });
-    const levelOf = (session: { metaMessage: OmniMessage }) =>
+    const levelOf = (session: { metaMessage: AmspRecord }) =>
       (session.metaMessage.payload as { thinking_level?: string }).thinking_level;
 
     // The seeded config pins "medium"; a `null` pin (a subagent whose parent has none) runs
@@ -1143,7 +1193,7 @@ describe("Agent model contexts are assembled from the Agent State on disk, at ev
     const agent = await createAgent();
     const ws = path.join(tmpRoot, "ws-thinking-pin");
     await fs.mkdir(ws, { recursive: true });
-    const levelOf = (session: { metaMessage: OmniMessage }) =>
+    const levelOf = (session: { metaMessage: AmspRecord }) =>
       (session.metaMessage.payload as { thinking_level?: string }).thinking_level;
     const engineLevelOf = (session: unknown) =>
       (session as { engine: { thinkingLevel?: string } }).engine.thinkingLevel;
@@ -1239,8 +1289,8 @@ describe("Agent model contexts are assembled from the Agent State on disk, at ev
 describe("Session.switchModel on a real Agent (the composition layer's half)", () => {
   const TARGET = { provider: "anthropic", modelId: "claude-sonnet-4-6" };
   /** Runs a switch to its end, keeping what it streamed. */
-  async function drain(gen: AsyncGenerator<OmniMessage, unknown>): Promise<OmniMessage[]> {
-    const all: OmniMessage[] = [];
+  async function drain(gen: AsyncGenerator<AmspRecord, unknown>): Promise<AmspRecord[]> {
+    const all: AmspRecord[] = [];
     for (;;) {
       const res = await gen.next();
       if (res.done) return all;
@@ -1250,7 +1300,7 @@ describe("Session.switchModel on a real Agent (the composition layer's half)", (
   const lastBuilt = () =>
     capturedLLMConfigs.list.at(-1) as
       { modelId?: string; apiKey?: string; baseUrl?: string; systemPrompt?: string } | undefined;
-  const modelIdOf = (session: { metaMessage: OmniMessage }): string =>
+  const modelIdOf = (session: { metaMessage: AmspRecord }): string =>
     (session.metaMessage.payload as { model_id: string }).model_id;
   /**
    * The opener the Session's engine calls for its next context, and the Session's way of
@@ -1361,7 +1411,7 @@ describe("Session.switchModel on a real Agent (the composition layer's half)", (
         const gen = child.run({ messages: [userText("noop")] });
         const first = await gen.next();
         await gen.return(null);
-        expect((first.value as OmniMessage).payload).toMatchObject({
+        expect((first.value as AmspRecord).payload).toMatchObject({
           provider: "myproxy",
           model_id: "claude-sonnet-4-6",
         });
@@ -1416,7 +1466,7 @@ describe("Session.switchModel on a real Agent (the composition layer's half)", (
       const { foldInputImages } = (
         session as unknown as {
           engine: {
-            deps: { foldInputImages: (messages: OmniMessage[]) => Promise<OmniMessage[] | null> };
+            deps: { foldInputImages: (messages: AmspRecord[]) => Promise<AmspRecord[] | null> };
           };
         }
       ).engine.deps;
@@ -1499,8 +1549,8 @@ describe("Agent.createSession credential rule (a keyless gateway row never borro
   it("refuses a keyless gateway preset before any client exists, even with OPENAI_API_KEY set", async () => {
     // stubProviderKeys has set OPENAI_API_KEY and friends: the pre-rule behaviour was to hand
     // MMSP no key and let its generic client read the variable — sending the user's
-    // OpenAI key to the gateway. The preset carries the gateway's base URL and no key.
-    const preset = MODEL_CATALOG.find((m) => m.provider === "openrouter" && m.retired !== true)!;
+    // OpenAI key to the gateway. The row follows its gateway group's endpoint and holds no key.
+    const preset = { provider: "tokendance", modelId: "glm-5.3" };
     expect(process.env.OPENAI_API_KEY).toBeDefined();
     const agent = await createAgent();
     const ws = path.join(tmpRoot, "ws-gateway-keyless");

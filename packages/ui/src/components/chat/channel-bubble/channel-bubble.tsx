@@ -17,12 +17,12 @@
  * the compact reading box; what the caller renders into it is its own (a channel keeps its
  * `@mentions` as chips), and `footer` sits under it — the chips for what the message refers to.
  *
- * The two surfaces. Somebody else's bubble is the neutral tone's tint. The reader's own is a wash
- * of the link ink over the canvas — the theme's identity blue in the default theme — rather than
- * a status tone, because which side of a conversation wrote a message is an identity, not a
- * judgement, and rather than the accent, which is grey in the default theme, where a wash of it
- * is the neutral bubble again. A message that names the reader is marked by its mention chip
- * alone: a tinted bubble would read as a state of the whole message.
+ * The two surfaces. Somebody else's bubble is the neutral fill. The reader's own is the accent's
+ * tint, the fill the person's own prompt takes in a conversation, rather than a status tone,
+ * because which side of a conversation wrote a message is an identity, not a judgement. With the
+ * theme's own accent that tint is a gray as well, and the two sides are told apart by their side
+ * and the avatar. A message that names the reader is marked by its mention chip alone: a tinted
+ * bubble would read as a state of the whole message.
  *
  * channel-bubble.css deepens the inline-code chip and the table rules inside a bubble, which the
  * Markdown typography prints in the neutral tint the bubble itself is drawn in.
@@ -36,11 +36,11 @@ import "./channel-bubble.css";
 
 /** Who speaks a run. */
 export interface ChannelSender {
-  /** An employee (the agent's tinted tile) or a person (the initial on the foreground ink). */
+  /** An employee (the Agent mascot in its colour) or a person (the initial on the foreground ink). */
   kind: "agent" | "user";
-  /** The stable id: an agent's tile colour hashes it; the initial falls back to it on no name. */
+  /** The stable id: an agent's colour hashes it; a person's initial falls back to it on no name. */
   id: string;
-  /** The display name: the run's header, and the avatar's initial. */
+  /** The display name: the run's header, and a person's initial. */
   name: string;
 }
 
@@ -54,12 +54,7 @@ export const CHANNEL_RUN_AVATAR_PX = 36;
 function SenderAvatar({ sender }: { sender: ChannelSender }) {
   if (sender.kind === "agent") {
     return (
-      <AgentAvatar
-        id={sender.id}
-        name={sender.name}
-        size={CHANNEL_RUN_AVATAR_PX}
-        className="shrink-0 rounded-lg"
-      />
+      <AgentAvatar id={sender.id} size={CHANNEL_RUN_AVATAR_PX} className="shrink-0 rounded-lg" />
     );
   }
   return (
@@ -121,10 +116,10 @@ export function ChannelRun({
   );
 }
 
-/** The two bubble surfaces; see the module comment for why the reader's own is the link's wash. */
+/** The two bubble surfaces; the module comment says why the reader's own is the accent's tint. */
 const SURFACE = {
   other: "bg-fill-neutral text-fg",
-  own: "bg-[color-mix(in_srgb,var(--ui-fg-link)_12%,var(--ui-canvas))] text-fg",
+  own: "bg-accent-tint text-fg",
 } as const;
 
 /**

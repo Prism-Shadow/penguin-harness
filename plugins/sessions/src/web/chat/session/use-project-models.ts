@@ -4,8 +4,8 @@
  */
 import { useEffect, useState } from "react";
 import type { ModelsResponse } from "@prismshadow/penguin-server/api";
-import * as api from "@prismshadow/penguin-web/internal";
-import { hasConfiguredKey, sameModelRef } from "@penguinharness/plugin-models/web";
+import * as api from "../../../api/endpoints";
+import { hasConfiguredKey, sameModelRef } from "../../models";
 import { CHAT_DEFAULTS_CHANGED_EVENT, chatDefaultsChangedDetail } from "../chat-defaults-event";
 
 export function useProjectModels(projectId: string | null) {
@@ -25,7 +25,7 @@ export function useProjectModels(projectId: string | null) {
     setModels(null);
     void (async () => {
       try {
-        const res = await api.getModels(projectId);
+        const res = await api.getModels(projectId, null);
         if (cancelled) return;
         setModels(res);
         const { prefs } = await api.getPrefs();
@@ -59,7 +59,7 @@ export function useProjectModels(projectId: string | null) {
       if (!detail || detail.defaultModel === undefined) return;
       setModels(null);
       api
-        .getModels(projectId)
+        .getModels(projectId, null)
         .then((res) => {
           if (!cancelled) setModels(res);
         })

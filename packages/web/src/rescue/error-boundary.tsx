@@ -4,7 +4,8 @@
  * (the palette, the safe-mode marker) in its own, so neither failure domain can take the other
  * down. There is no reset: the panel's way out is a reload.
  */
-import { Component, type ReactNode } from "react";
+import { Component } from "react";
+import type { ReactNode } from "react";
 
 interface Props {
   /** What to draw once a descendant has thrown during render. */

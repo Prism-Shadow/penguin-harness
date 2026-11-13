@@ -4,7 +4,7 @@
 - **Type:** refactor
 - **Scope:** `web`
 
-[English](2026-10-03-web-WebApp-slots.md)
+[English](2026-10-03-web-shell-slots.md)
 
 Web App 基座原先逐个点名 feature 的三处，改为由 feature 向槽位贡献。`WebAppSlots` 增加 `sessionProviders`（登录期的 provider，挂在 Project 与 Sessions 之内，由外到内）与 `layers`（挂在每个页面旁、只挂一次的浮层与无界面运行时），都按 `order` 排序。新增的 `SessionsModule` 拥有 `userEvents` 槽位：每条贡献是一个带 `event(ev, source)` 与可选 `resync(source)` 的处理器，模块按顺序以 `UserEventHandlers` 接口提供它们，WebApp 取得后交给 `SessionsProvider`。
 

@@ -9,8 +9,8 @@ import {
   toolCall,
   toolCallOutput,
   withOrigin,
-} from "../src/omnimessage/index.js";
-import type { OmniMessage } from "../src/omnimessage/index.js";
+} from "@prismshadow/amsp/records";
+import type { AmspRecord } from "@prismshadow/amsp/records";
 import { BUILTIN_TOOL_FACTORIES } from "../src/environment/tools/registry.js";
 import type { ToolConfig, ToolDefinitionConfig } from "../src/interfaces/index.js";
 
@@ -37,9 +37,9 @@ function makeToolConfig(tool: ToolDefinitionConfig = execTool()): ToolConfig {
   return { customTools: [tool], mcpServers: [] };
 }
 
-/** Collects all OmniMessages produced by an async generator. */
-async function collect(gen: AsyncGenerator<OmniMessage>): Promise<OmniMessage[]> {
-  const out: OmniMessage[] = [];
+/** Collects all records produced by an async generator. */
+async function collect(gen: AsyncGenerator<AmspRecord>): Promise<AmspRecord[]> {
+  const out: AmspRecord[] = [];
   for await (const msg of gen) {
     out.push(msg);
   }
@@ -68,7 +68,7 @@ async function readFileEventually(
   }
 }
 
-function payloadTypes(messages: OmniMessage[]): string[] {
+function payloadTypes(messages: AmspRecord[]): string[] {
   return messages.map((m) => (m.payload as { type?: string }).type ?? "");
 }
 
@@ -172,13 +172,13 @@ describe("Environment.executeTool — basic file write", () => {
     );
     expect(hasStop).toBe(true);
 
-    // tool_call_id is echoed back as-is; a successful command has stop_reason completed.
+    // tool_call_id is echoed back as-is; a successful command has status completed.
     const outPayload = last.payload as {
       tool_call_id: string;
-      stop_reason?: string;
+      status?: string;
     };
     expect(outPayload.tool_call_id).toBe("call_write");
-    expect(outPayload.stop_reason).toBe("completed");
+    expect(outPayload.status).toBe("completed");
 
     const written = await readFileEventually(path.join(tmp, "note.txt"), "Hello, Penguin");
     expect(written).toBe("Hello, Penguin");
@@ -197,9 +197,9 @@ describe("Environment.executeTool — exec_command reads `command` as `cmd`", ()
         }),
       }),
     );
-    const last = messages[messages.length - 1]!.payload as { type: string; stop_reason?: string };
+    const last = messages[messages.length - 1]!.payload as { type: string; status?: string };
     expect(last.type).toBe("tool_call_output");
-    expect(last.stop_reason).toBe("completed");
+    expect(last.status).toBe("completed");
     expect(await readFileEventually(path.join(tmp, "note.txt"), "via-alias")).toBe("via-alias");
     env.dispose();
   });
@@ -218,8 +218,8 @@ describe("Environment.executeTool — exec_command reads `command` as `cmd`", ()
         }),
       }),
     );
-    const last = messages[messages.length - 1]!.payload as { stop_reason?: string };
-    expect(last.stop_reason).toBe("completed");
+    const last = messages[messages.length - 1]!.payload as { status?: string };
+    expect(last.status).toBe("completed");
     expect(await readFileEventually(path.join(tmp, "note.txt"), "from-cmd")).toBe("from-cmd");
     env.dispose();
   });
@@ -235,8 +235,8 @@ describe("Environment.executeTool — exec_command reads `command` as `cmd`", ()
         }),
       }),
     );
-    const last = messages[messages.length - 1]!.payload as { output: string; stop_reason?: string };
-    expect(last.stop_reason).toBe("fatal");
+    const last = messages[messages.length - 1]!.payload as { output: string; status?: string };
+    expect(last.status).toBe("fatal");
     expect(last.output).toContain(
       'argument "cmd" (received as "command") must be a string, but a number was received.',
     );
@@ -512,9 +512,9 @@ describe("Environment.executeTool — maxOutputLength truncation", () => {
 
     const complete = messages[messages.length - 1]!.payload as {
       output: string;
-      stop_reason?: string;
+      status?: string;
     };
-    expect(complete.stop_reason).toBe("completed");
+    expect(complete.status).toBe("completed");
     expect(complete.output.startsWith(expected.slice(0, 25))).toBe(true);
     expect(complete.output).toContain(
       `[output truncated: kept first 25 and last 25 of ${expected.length} chars]`,
@@ -620,7 +620,7 @@ describe("Environment.executeTool — maxOutputLength truncation", () => {
       stderr.push(String(chunk));
       return true;
     });
-    let messages: OmniMessage[];
+    let messages: AmspRecord[];
     try {
       messages = await collect(
         env.executeTool({
@@ -636,10 +636,10 @@ describe("Environment.executeTool — maxOutputLength truncation", () => {
     }
     const complete = messages[messages.length - 1]!.payload as {
       output: string;
-      stop_reason?: string;
+      status?: string;
     };
     expect(complete.output).toMatch(/\[output archive failed: [^\]]+\]/);
-    expect(complete.stop_reason).toBe("completed");
+    expect(complete.status).toBe("completed");
     expect(stderr.join("")).toMatch(
       /\[penguin\] tool "exec_command" truncated output archive write failed \([^)]+\)\./,
     );
@@ -683,11 +683,11 @@ describe("Environment.executeTool — maxOutputLength truncation", () => {
       );
       const complete = messages[messages.length - 1]!.payload as {
         output: string;
-        stop_reason?: string;
+        status?: string;
       };
       expect(saveSpy).toHaveBeenCalledOnce();
       expect(controller.signal.aborted).toBe(true);
-      expect(complete.stop_reason).toBe("completed");
+      expect(complete.status).toBe("completed");
       expect(complete.output).toContain("[output archived:");
       expect(complete.output).not.toContain("[interrupted: tool aborted by user]");
     } finally {
@@ -759,7 +759,7 @@ describe("Environment.executeTool — maxOutputLength truncation", () => {
         yield toolCallOutput({
           output: source,
           toolCallId: ctx.toolCallId,
-          stopReason: "completed",
+          status: "completed",
         });
       },
     });
@@ -781,7 +781,7 @@ describe("Environment.executeTool — maxOutputLength truncation", () => {
       );
       const complete = messages[messages.length - 1]!.payload as {
         output: string;
-        stop_reason?: string;
+        status?: string;
       };
       const savedPath = recoveryPath(complete.output);
       expect(savedPath).toBeDefined();
@@ -792,7 +792,7 @@ describe("Environment.executeTool — maxOutputLength truncation", () => {
         `[output truncated: kept first 10 and last 10 of ${source.length} chars]`,
       );
       expect(complete.output).toContain("-END");
-      expect(complete.stop_reason).toBe("completed");
+      expect(complete.status).toBe("completed");
       const streamed = messages
         .filter(
           (m) =>
@@ -841,12 +841,12 @@ describe("Environment.executeTool — maxOutputLength truncation", () => {
       );
       const complete = messages[messages.length - 1]!.payload as {
         output: string;
-        stop_reason?: string;
+        status?: string;
       };
       // 16 chars: past the 10-char head window but within the 20-char budget. The part past the
       // head arrives as a finalization flush — complete result, no marker, no archive.
       expect(complete.output).toBe("alpha-beta-gamma");
-      expect(complete.stop_reason).toBe("completed");
+      expect(complete.status).toBe("completed");
       await expect(
         access(path.join(sessionScratchpadDir, "truncated-tool-output")),
       ).rejects.toThrow();
@@ -940,7 +940,7 @@ describe("Environment.executeTool — relaxed tool contract", () => {
           output: "result",
           toolCallId: ctx.toolCallId,
         });
-        return { stopReason: "fatal" as const };
+        return { status: "fatal" as const };
       },
     });
     try {
@@ -961,11 +961,11 @@ describe("Environment.executeTool — relaxed tool contract", () => {
       const complete = out[out.length - 1]!.payload as {
         type?: string;
         output?: string;
-        stop_reason?: string;
+        status?: string;
       };
       expect(complete.type).toBe("tool_call_output");
       expect(complete.output).toBe("partial result");
-      expect(complete.stop_reason).toBe("fatal"); // Finish reason reported via the return value
+      expect(complete.status).toBe("fatal"); // Finish reason reported via the return value
       expect((out[out.length - 2]!.payload as { event_type?: string }).event_type).toBe("stop");
     } finally {
       delete BUILTIN_TOOL_FACTORIES[NAME];
@@ -1005,10 +1005,10 @@ describe("Environment.executeTool — relaxed tool contract", () => {
         type?: string;
         output?: string;
         images?: string[];
-        stop_reason?: string;
+        status?: string;
       };
       expect(complete.type).toBe("tool_call_output");
-      expect(complete.stop_reason).toBe("completed");
+      expect(complete.status).toBe("completed");
       expect(complete.output).toBe("image/png, 4 B");
       expect(complete.images).toEqual([dataUrl]);
       // Streamed concatenation == complete message: images are not delta-streamed; they are
@@ -1039,7 +1039,7 @@ describe("Environment.executeTool — relaxed tool contract", () => {
           output: "broken",
           toolCallId: ctx.toolCallId,
         });
-        return { stopReason: "fatal" as const, images: ["data:image/png;base64,AAAA"] };
+        return { status: "fatal" as const, images: ["data:image/png;base64,AAAA"] };
       },
     });
     try {
@@ -1055,10 +1055,10 @@ describe("Environment.executeTool — relaxed tool contract", () => {
           toolCall: toolCall({ name: NAME, arguments: "{}", toolCallId: "i2" }),
         }),
       );
-      const complete = out[out.length - 1]!.payload as { stop_reason?: string; images?: string[] };
+      const complete = out[out.length - 1]!.payload as { status?: string; images?: string[] };
       // Only a normal completion carries images: a failed finish drops them (neither the
       // stream nor the complete message carries them), keeping the finish handling simple.
-      expect(complete.stop_reason).toBe("fatal");
+      expect(complete.status).toBe("fatal");
       expect(complete.images).toBeUndefined();
       for (const m of out) {
         const p = m.payload as { type?: string };
@@ -1079,7 +1079,10 @@ describe("Environment.executeTool — relaxed tool contract", () => {
       async *execute(_args, ctx) {
         // Nested forwarding: origin-tagged messages pass through verbatim (a child session's
         // complete tool_call_output is not folded into the finish either).
-        yield withOrigin(toolCallOutput({ output: childOutput, toolCallId: "child_call" }), hop);
+        yield withOrigin(
+          toolCallOutput({ output: childOutput, toolCallId: "child_call", status: "completed" }),
+          hop,
+        );
         yield partialToolCallOutput({
           eventType: "delta",
           output: "own output",
@@ -1114,7 +1117,7 @@ describe("Environment.executeTool — relaxed tool contract", () => {
       );
       expect(completes).toHaveLength(1);
       expect((completes[0]!.payload as { output?: string }).output).toBe("own output");
-      expect((completes[0]!.payload as { stop_reason?: string }).stop_reason).toBe("completed");
+      expect((completes[0]!.payload as { status?: string }).status).toBe("completed");
       // The oversized child result belongs to the child's Session. The parent's own
       // output fits exactly, so the parent must not create a duplicate recovery archive.
       await expect(access(truncatedToolOutputRoot)).rejects.toThrow();
@@ -1148,15 +1151,15 @@ describe("Environment.executeTool — timeoutMs (PRN-013)", () => {
     const elapsedMs = Date.now() - startedAt;
     expect(elapsedMs).toBeLessThan(3000); // Did not wait the full 5s -> timeout aborts execution
 
-    // A timeout is a failure: stop_reason failed, the timeout reason is written into
+    // A timeout is a failure: status failed, the timeout reason is written into
     // tool_call_output, and the already-produced output is kept.
     const last = messages[messages.length - 1]!.payload as {
       type: string;
       output: string;
-      stop_reason?: string;
+      status?: string;
     };
     expect(last.type).toBe("tool_call_output");
-    expect(last.stop_reason).toBe("fatal");
+    expect(last.status).toBe("fatal");
     // Kept-prior-output is asserted only where the shell can win the race: a Git-Bash login
     // shell on Windows needs several hundred ms to start, so nothing is printed before a
     // sub-250ms timeout there — the timeout mechanics above are still fully exercised.
@@ -1199,9 +1202,9 @@ describe("Environment.executeTool — timeoutMs (PRN-013)", () => {
 
     const last = messages[messages.length - 1]!.payload as {
       output: string;
-      stop_reason?: string;
+      status?: string;
     };
-    expect(last.stop_reason).toBe("aborted");
+    expect(last.status).toBe("aborted");
     expect(last.output).toContain("[interrupted: tool aborted by user]");
   });
 });
@@ -1226,8 +1229,8 @@ describe("Environment — stored entries for tools removed since (read_image / d
         }),
       }),
     );
-    const last = messages[messages.length - 1]!.payload as { output: string; stop_reason?: string };
-    expect(last.stop_reason).toBe("fatal");
+    const last = messages[messages.length - 1]!.payload as { output: string; status?: string };
+    expect(last.status).toBe("fatal");
     expect(last.output).toContain("Unknown tool: read_image");
   });
 });
@@ -1264,12 +1267,12 @@ describe("Environment.executeTool — robustness", () => {
       type: string;
       output: string;
       tool_call_id: string;
-      stop_reason?: string;
+      status?: string;
     };
     expect(payload.type).toBe("tool_call_output");
     expect(payload.output).toContain("Unknown tool: not_a_real_tool"); // Complete content matches
     expect(payload.tool_call_id).toBe("call_unknown");
-    expect(payload.stop_reason).toBe("fatal");
+    expect(payload.status).toBe("fatal");
   });
 
   /** Runs one tool call and returns the payload of the last complete tool_call_output. */
@@ -1283,7 +1286,7 @@ describe("Environment.executeTool — robustness", () => {
     return messages[messages.length - 1]!.payload as {
       type: string;
       output: string;
-      stop_reason?: string;
+      status?: string;
     };
   }
 
@@ -1296,14 +1299,14 @@ describe("Environment.executeTool — robustness", () => {
       const payload = await runTool(args, `call_badjson_${i}`);
       expect(payload.type).toBe("tool_call_output");
       expect(payload.output, args).toContain("not valid JSON");
-      expect(payload.stop_reason).toBe("fatal");
+      expect(payload.status).toBe("fatal");
     }
   });
 
   it("tells the model the arguments were empty", async () => {
     const payload = await runTool("", "call_emptyargs");
     expect(payload.output).toContain("arguments field is empty");
-    expect(payload.stop_reason).toBe("fatal");
+    expect(payload.status).toBe("fatal");
   });
 
   it("never returns an empty tool output", async () => {
@@ -1311,7 +1314,7 @@ describe("Environment.executeTool — robustness", () => {
     // model unable to tell "no output" from "failure".
     const payload = await runTool(JSON.stringify({ cmd: "true" }), "call_silent");
     expect(payload.type).toBe("tool_call_output");
-    expect(payload.stop_reason).toBe("completed");
+    expect(payload.status).toBe("completed");
     expect(payload.output).toBe("[no output]");
   });
 
@@ -1344,7 +1347,9 @@ describe("Environment.executeTool — robustness", () => {
     expect(payload.output).toContain('Call exec_command again with "cmd" provided');
   });
 
-  it("reports a non-zero exit code in the final output", async () => {
+  it("a command that exits non-zero completes, with the exit code on the output's last line", async () => {
+    // The exit status is the command's result, not the tool's failure: `grep` exits 1 when
+    // nothing matches. Every surface reads `fatal` as "the tool broke", so it must not be one.
     const env = new Environment({
       workspaceDir: tmp,
       toolConfig: makeToolConfig(),
@@ -1354,7 +1359,7 @@ describe("Environment.executeTool — robustness", () => {
       env.executeTool({
         toolCall: toolCall({
           name: "exec_command",
-          arguments: JSON.stringify({ cmd: "exit 3" }),
+          arguments: JSON.stringify({ cmd: "echo partial; exit 3" }),
           toolCallId: "call_fail",
         }),
       }),
@@ -1363,10 +1368,11 @@ describe("Environment.executeTool — robustness", () => {
     const last = messages[messages.length - 1]!;
     const payload = last.payload as {
       output: string;
-      stop_reason?: string;
+      status?: string;
     };
-    expect(payload.output).toContain("[exit code: 3]");
-    expect(payload.stop_reason).toBe("fatal");
+    expect(payload.output).toContain("partial");
+    expect(payload.output.trimEnd().endsWith("[exit code: 3]")).toBe(true);
+    expect(payload.status).toBe("completed");
     // The exit-code marker is also produced via streaming (renderable by the frontend); the
     // streamed deltas concatenated == the complete content (short output here, no truncation).
     const streamed = messages
@@ -1380,6 +1386,31 @@ describe("Environment.executeTool — robustness", () => {
     expect(streamed).toContain("[exit code: 3]");
     expect(streamed).toBe(payload.output);
   });
+
+  // Windows reports no signals: a killed process there ends with an exit code.
+  it.skipIf(process.platform === "win32")(
+    "a command killed by a signal completes, with the signal on the output's last line",
+    async () => {
+      const env = new Environment({ workspaceDir: tmp, toolConfig: makeToolConfig() });
+
+      const messages = await collect(
+        env.executeTool({
+          toolCall: toolCall({
+            name: "exec_command",
+            arguments: JSON.stringify({ cmd: "kill -KILL $$" }),
+            toolCallId: "call_killed",
+          }),
+        }),
+      );
+
+      const payload = messages[messages.length - 1]!.payload as {
+        output: string;
+        status?: string;
+      };
+      expect(payload.output.trimEnd().endsWith("[terminated by signal SIGKILL]")).toBe(true);
+      expect(payload.status).toBe("completed");
+    },
+  );
 
   it("aborts background children without waiting for inherited pipes", async () => {
     // #23: on interrupt, kill the whole process group -- even though background children
@@ -1407,10 +1438,10 @@ describe("Environment.executeTool — robustness", () => {
 
     const elapsedMs = Date.now() - startedAt;
     const last = messages[messages.length - 1]!;
-    const payload = last.payload as { output: string; stop_reason?: string };
+    const payload = last.payload as { output: string; status?: string };
     expect(elapsedMs).toBeLessThan(2000); // Did not wait the full 5s -> the process group was interrupted as a whole
     expect(payload.output).toContain("[interrupted: tool aborted by user");
-    expect(payload.stop_reason).toBe("aborted");
+    expect(payload.status).toBe("aborted");
   });
 });
 
@@ -1477,10 +1508,10 @@ describe("Environment structure invariant on tool throw (PRN-012)", () => {
       ]);
       const noteDelta = out[2]!.payload as { output?: string };
       expect(noteDelta.output).toContain("kaboom"); // The error marker is produced via a streamed delta
-      const stop = out[3]!.payload as { stop_reason?: string };
-      expect(stop.stop_reason).toBe("fatal");
-      const complete = out[4]!.payload as { stop_reason?: string; output?: string };
-      expect(complete.stop_reason).toBe("fatal");
+      // The partial stop carries no status: what the result is rides on the complete record.
+      expect(out[3]!.payload).not.toHaveProperty("status");
+      const complete = out[4]!.payload as { status?: string; output?: string };
+      expect(complete.status).toBe("fatal");
       expect(complete.output).toContain("kaboom");
       expect(complete.output).toContain("working"); // Keeps the partial content already streamed.
       // Concatenating the streamed deltas == the complete content (relevant for frontend rendering).
@@ -1537,12 +1568,12 @@ describe("Environment abort handling (interrupt -> aborted, PRN-012)", () => {
         (m) =>
           (m.payload as { type?: string }).type === "partial_tool_call_output" &&
           (m.payload as { event_type?: string }).event_type === "stop",
-      )!.payload as { stop_reason?: string };
-      expect(stop.stop_reason).toBe("aborted");
+      )!.payload as { status?: string };
+      expect(stop).not.toHaveProperty("status");
       const complete = out.find(
         (m) => (m.payload as { type?: string }).type === "tool_call_output",
-      )!.payload as { stop_reason?: string; output?: string };
-      expect(complete.stop_reason).toBe("aborted");
+      )!.payload as { status?: string; output?: string };
+      expect(complete.status).toBe("aborted");
       expect(complete.output).toContain("interrupted");
       expect(complete.output).toContain("partial"); // Keeps the partial content already streamed.
     } finally {
@@ -1557,7 +1588,11 @@ describe("Environment abort handling (interrupt -> aborted, PRN-012)", () => {
       definition,
       async *execute(_args, ctx) {
         // The tool does not self-report aborted, and only yields one ordinary complete output.
-        yield toolCallOutput({ output: "done anyway", toolCallId: ctx.toolCallId });
+        yield toolCallOutput({
+          output: "done anyway",
+          toolCallId: ctx.toolCallId,
+          status: "completed",
+        });
       },
     });
     try {
@@ -1578,10 +1613,10 @@ describe("Environment abort handling (interrupt -> aborted, PRN-012)", () => {
       );
       const complete = out.find(
         (m) => (m.payload as { type?: string }).type === "tool_call_output",
-      )!.payload as { stop_reason?: string; output?: string };
+      )!.payload as { status?: string; output?: string };
       // Environment finalizes aborted based on the signal it holds, keeping the tool's
       // already-produced content and appending the interrupt notice.
-      expect(complete.stop_reason).toBe("aborted");
+      expect(complete.status).toBe("aborted");
       expect(complete.output).toContain("done anyway");
       expect(complete.output).toContain("interrupted");
       // Even when the tool yields only a complete message (no streaming), the whole content is
@@ -1609,7 +1644,11 @@ describe("Environment abort handling (interrupt -> aborted, PRN-012)", () => {
         // An internally-buffering tool: yields start, produces no delta, and directly gives
         // one complete message with content.
         yield partialToolCallOutput({ eventType: "start", toolCallId: ctx.toolCallId });
-        yield toolCallOutput({ output: "buffered result", toolCallId: ctx.toolCallId });
+        yield toolCallOutput({
+          output: "buffered result",
+          toolCallId: ctx.toolCallId,
+          status: "completed",
+        });
       },
     });
     try {
@@ -1630,8 +1669,8 @@ describe("Environment abort handling (interrupt -> aborted, PRN-012)", () => {
       );
       const complete = out.find(
         (m) => (m.payload as { type?: string }).type === "tool_call_output",
-      )!.payload as { stop_reason?: string; output?: string };
-      expect(complete.stop_reason).toBe("aborted");
+      )!.payload as { status?: string; output?: string };
+      expect(complete.status).toBe("aborted");
       expect(complete.output).toContain("buffered result");
       expect(complete.output).toContain("interrupted");
       // Key point: tool content that was never streamed is backfilled as a whole; concatenating

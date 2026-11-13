@@ -16,15 +16,25 @@
  * need caching, and a machine that answers must replace ITS entries without touching a
  * neighbour's.
  *
+ * One exception holds this server's answers too: what each Agent has installed, which the plugin
+ * market counts across every server at once. A status built from this server's Agents alone
+ * would read "not installed" until each of them answered, after every reload; remembered, the
+ * market opens on what it last showed and changes only where an answer differs.
+ *
  * Storage is best-effort in both directions. Every browser can refuse it (private windows,
  * cleared site data, storage disabled), and reading back something that no longer parses is
  * the same as having nothing — in every one of those cases the page degrades to exactly what
  * it did before there was a cache.
  */
-import type { AgentSummary, SessionInfo } from "@prismshadow/penguin-server/api";
+import type {
+  AgentPluginsInstallResponse,
+  AgentSummary,
+  SessionInfo,
+} from "@prismshadow/penguin-server/api";
 
 const SESSIONS_PREFIX = "penguin.machineSessions.";
 const AGENTS_PREFIX = "penguin.machineAgents.";
+const INSTALLS_PREFIX = "penguin.agentInstalls.";
 
 /**
  * Rows kept per machine. Comfortably more than the sidebar's first page, and far short of
@@ -113,4 +123,61 @@ export function cachedMachineAgents(projectId: string, machineId: string): Agent
     machineId,
     (row) => typeof (row as AgentSummary).agentId === "string",
   );
+}
+
+/** The storage key of one Agent's installs: this server's are kept too, under `-`. */
+const installsKey = (projectId: string, machineId: string | null, agentId: string) =>
+  `${INSTALLS_PREFIX}${projectId}:${machineId ?? "-"}:${agentId}`;
+
+/**
+ * Replaces what one Agent — of this server (`machineId` null) or of a machine — is remembered as
+ * having installed: its Skills, hooks, MCP servers and workbenches, as its plugins read answers
+ * them. Unlike a list, nothing installed is remembered too: it is an answer, and the plugin
+ * market tells it apart from an Agent it has not heard from.
+ */
+export function rememberAgentInstalls(
+  projectId: string,
+  machineId: string | null,
+  agentId: string,
+  installs: AgentPluginsInstallResponse,
+): void {
+  try {
+    localStorage.setItem(installsKey(projectId, machineId, agentId), JSON.stringify(installs));
+  } catch {
+    // Storage refused or is full: the answer is merely not remembered across the next restart.
+  }
+}
+
+/** What one Agent was last seen having installed; null when nothing is remembered, or it no longer reads. */
+export function cachedAgentInstalls(
+  projectId: string,
+  machineId: string | null,
+  agentId: string,
+): AgentPluginsInstallResponse | null {
+  try {
+    const raw = localStorage.getItem(installsKey(projectId, machineId, agentId));
+    if (raw === null) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null) return null;
+    const { skills, hooks, mcpServers, workbenches } = parsed as Partial<
+      Record<keyof AgentPluginsInstallResponse, unknown>
+    >;
+    const lists = [skills, hooks, mcpServers, workbenches ?? []];
+    return lists.every(Array.isArray) ? (parsed as AgentPluginsInstallResponse) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Forgets what one Agent was remembered as having installed (deleted, or its machine left). */
+export function forgetAgentInstalls(
+  projectId: string,
+  machineId: string | null,
+  agentId: string,
+): void {
+  try {
+    localStorage.removeItem(installsKey(projectId, machineId, agentId));
+  } catch {
+    // Storage refused: there was nothing it could have kept either.
+  }
 }

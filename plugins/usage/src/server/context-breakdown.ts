@@ -27,9 +27,10 @@ import {
   approximateMessagesTokens,
   approximateTokens,
   effectiveMaxContextLength,
+  lastNonTaskRecord,
 } from "@prismshadow/penguin-core";
 import type {
-  OmniMessage,
+  AmspRecord,
   SessionMetaPayload,
   ToolCallOutputPayload,
   ToolCallPayload,
@@ -130,18 +131,19 @@ function isInside(rel: string): boolean {
 
 /**
  * True when this shard's context was closed by a completed compaction — the same test Trace
- * replay uses: the file's last record is a `compaction_end` reporting `completed`. Anything
- * written after a compaction lands in the next shard, so no later record can follow it here.
+ * replay uses: the file's last record other than a Task record is a `compaction_end` reporting
+ * `completed`. The next context's first message opens the next shard; Task records (`task_end`,
+ * `task_begin`) never open a file, so those written after the compaction land here, behind it.
  */
-function endsWithCompletedCompaction(messages: OmniMessage[]): boolean {
-  const last = messages[messages.length - 1];
+function endsWithCompletedCompaction(messages: AmspRecord[]): boolean {
+  const last = lastNonTaskRecord(messages);
   if (last === undefined || last.type !== "event_msg") return false;
   const p = last.payload as { type?: string; status?: string };
   return p.type === "compaction_end" && p.status === "completed";
 }
 
 /** Composition of the context held by one Trace shard's messages (in write order). */
-export function buildContextBreakdown(messages: OmniMessage[]): SessionContextParts {
+export function buildContextBreakdown(messages: AmspRecord[]): SessionContextParts {
   const out = emptyContextBreakdown();
   /** name -> its calls plus their results; the definition is the `toolDefs` part, not a tool's own share. */
   const perTool = new Map<string, number>();

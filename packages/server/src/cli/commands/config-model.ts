@@ -10,21 +10,23 @@ import {
   type ModelRef,
   addModel,
   effectiveConnection,
-  fastModeProtocol,
-  fixedClientType,
-  fixedClientTypeRefuses,
   formatModelRef,
   getModel,
   loadProjectConfig,
   providerConnectionShape,
-  providerInfo,
   removeModel,
   setDefaultModel,
   setProviderConnection,
   setVisionModel,
+} from "@prismshadow/penguin-core";
+import { fastModeProtocol } from "../../model-catalog/client-protocols.js";
+import {
+  fixedClientType,
+  fixedClientTypeRefuses,
+  providerInfo,
   unaddableModel,
   unroutableVendorModel,
-} from "@prismshadow/penguin-core";
+} from "../../model-catalog/catalog.js";
 import type { Messages } from "../i18n.js";
 import { resolveRootOption } from "../root-option.js";
 import {
@@ -163,9 +165,9 @@ export function registerConfigModelCommand(model: Command, t: Messages): void {
         return;
       }
       // The route's second rule, enforced here for the same reason: only the groups that take
-      // hand-added models (custom, vLLM, OpenRouter, TokenDance, SiliconFlow, Atlas Cloud and
-      // user-defined groups) do, and every other built-in group carries its catalog presets. A
-      // preset may be added back; an entry already stored is left alone.
+      // hand-added models (custom, vLLM, OpenRouter, TokenDance, SiliconFlow, Atlas Cloud,
+      // Runcrate and user-defined groups) do, and every other built-in group carries its
+      // catalog presets. A preset may be added back; an entry already stored is left alone.
       if (!existed && unaddableModel(provider, modelId)) {
         refuse(t, t.modelNotAddable(formatModelRef(ref), pInfo?.label ?? provider));
         return;

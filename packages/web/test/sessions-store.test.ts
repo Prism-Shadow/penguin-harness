@@ -6,6 +6,8 @@
  * Loading:
  * - A fresh store is loading, and a reload with no Agent set does not claim to be done.
  * - A refresh over rows already on screen does not raise loading.
+ * - An empty list, once listed, stays listed: re-reads as a machine connects and names its own
+ *   Agents never raise loading again (the sidebar's skeleton would stand in for "no Sessions yet").
  *
  * Several machines:
  * - A reload asks each server once: every Agent's first page and every open Workspace group's,
@@ -18,6 +20,11 @@
  * - A machine that could not answer keeps its cached rows and its cache; counts come only
  *   from servers that answered.
  * - This server not answering abandons the reload: the rows stand and loading stays clear.
+ * - A machine is asked once this server's rows are on screen, and holds nothing back: they show
+ *   and loading clears as soon as this server answers; the machine keeps the rows it showed and
+ *   its cache until its own answer lands, which builds the list again. Until then it stands as
+ *   being asked, and a held machine that answers nothing stands as out of reach — so the chat
+ *   page never takes this server's "no such Session" for a verdict while it might hold it.
  * - Two machines' counts for one path stay apart.
  * - A group's next page is asked only of the machine the group is on, by path.
  *
@@ -57,6 +64,9 @@
  *   about again once it is unarchived.
  * - A deleted Session (session_deleted) is dropped and tombstoned, held or not, and a batch of
  *   them is one update.
+ * - A Session deleted while a reload or a next page that read it is on its way is not listed
+ *   by that answer; a reload in flight is dropped and asked again, so its totals do not count
+ *   the Session either.
  *
  * Property (seeded, 100 runs): after any sequence of loads, live flips and reloads, every list
  * the sidebar draws — time mode's, each Agent group's, each Workspace group's — is a prefix of
@@ -84,6 +94,7 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import {
   LISTING_CHANGE_DELAY_MS,
+  MACHINE_REST_MIN_MS,
   applyUserEvent,
   createSessionsStore,
   liveSessionStatuses,
@@ -352,6 +363,27 @@ describe("loading", () => {
     unsubscribe();
     expect(raised).toBe(false);
   });
+
+  it("an empty list once listed never raises loading again as a machine connects and names its Agents", async () => {
+    answers.set(key(null, "a1"), page([], 0));
+    answers.set(key("M1", "a1"), page([], 0));
+    answers.set(key("M1", "trainer"), page([], 0));
+    const store = boot();
+    const seen = [store.getState().loading];
+    const unsubscribe = store.subscribe((state) => {
+      if (state.loading !== seen.at(-1)) seen.push(state.loading);
+    });
+    await store.getState().reload();
+    // The machine connects: both servers are asked.
+    store.setState({ machineIds: ["M1"] });
+    await store.getState().reload();
+    // It names an Agent of its own: asked again, about that one too.
+    store.setState({ agentIdsByMachine: { M1: ["trainer"] } });
+    await store.getState().reload();
+    unsubscribe();
+    expect(seen).toEqual([true, false]);
+    expect(fetch.requests.some((r) => r.machine === "M1")).toBe(true);
+  });
 });
 
 describe("the list across machines", () => {
@@ -462,23 +494,64 @@ describe("the list across machines", () => {
     const store = boot(["M1"], ["M2"]);
     await store.getState().reload();
     expect(ids(store)).toEqual(["m2-cached", "here", "m1-cached"]);
+    // The held one that said nothing is out of reach for this round, as the one not held is.
+    expect(store.getState().silentMachineIds).toEqual(["M1"]);
     expect(machineForSession("m2-cached")).toBe("M2");
     expect(cachedMachineSessions("p", "M1").map((s) => s.sessionId)).toEqual(["m1-cached"]);
     // Counts come only from servers that answered: the cache makes no claim about now.
     expect(store.getState().countsByAgent.get("a1")?.active).toBe(1);
   });
 
-  it("this server not answering abandons the reload: the rows stand and loading is left alone", async () => {
-    answers.set(key(null, "a1"), page([row("here", "2026-01-02T00:00:00Z")], 1));
-    const store = boot();
-    await store.getState().reload();
-    expect(ids(store)).toEqual(["here"]);
-    expect(store.getState().loading).toBe(false);
+  describe("this server answering nothing", () => {
+    // The store asks again on a timer; fake timers keep that retry inside the case that
+    // started it instead of reloading against a later case's fetch.
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    });
+    afterEach(() => {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    });
 
-    answers.delete(key(null, "a1")); // mid-swap: nothing answers here
-    await store.getState().reload();
-    expect(ids(store)).toEqual(["here"]);
-    expect(store.getState().loading).toBe(false);
+    it("abandons the reload: the rows stand and loading is left alone", async () => {
+      answers.set(key(null, "a1"), page([row("here", "2026-01-02T00:00:00Z")], 1));
+      const store = boot();
+      await store.getState().reload();
+      expect(ids(store)).toEqual(["here"]);
+      expect(store.getState().loading).toBe(false);
+
+      answers.delete(key(null, "a1")); // mid-swap: nothing answers here
+      await store.getState().reload();
+      expect(ids(store)).toEqual(["here"]);
+      expect(store.getState().loading).toBe(false);
+    });
+
+    it("asks again on a doubling backoff, and starts over once it answers", async () => {
+      const warn = vi.mocked(console.warn);
+      const retryIn = () => /asked again in (\d+) ms/.exec(String(warn.mock.lastCall?.[0]))?.[1];
+      const store = boot();
+
+      await store.getState().reload(); // nothing answers
+      const perReload = fetch.requests.length;
+      expect(retryIn()).toBe("2000");
+
+      await vi.advanceTimersByTimeAsync(1_999);
+      expect(fetch.requests).toHaveLength(perReload);
+      await vi.advanceTimersByTimeAsync(1); // the retry, still unanswered
+      expect(fetch.requests).toHaveLength(2 * perReload);
+      expect(retryIn()).toBe("4000");
+
+      answers.set(key(null, "a1"), page([row("back", "2026-01-03T00:00:00Z")], 1));
+      await vi.advanceTimersByTimeAsync(4_000);
+      expect(fetch.requests).toHaveLength(3 * perReload);
+      expect(ids(store)).toEqual(["back"]);
+
+      answers.delete(key(null, "a1"));
+      await store.getState().reload();
+      expect(retryIn()).toBe("2000");
+    });
   });
 
   it("keeps two machines' counts for one path apart — a badge is about a directory, not a string", async () => {
@@ -515,6 +588,119 @@ describe("the list across machines", () => {
     fetch.requests.length = 0;
     await store.getState().loadMoreFor(["a1"], "/w");
     expect(asked()).toEqual([{ machineId: null, workspaceGroup: "/w" }]);
+  });
+});
+
+/** Requests to the named sources (null: this server) wait until released; the rest are served at once. */
+function hold(...sources: (string | null)[]) {
+  const waiting = new Map<string | null, Array<() => void>>(sources.map((s) => [s, []]));
+  fetch.answer((request) => {
+    const queue = waiting.get(request.machine);
+    if (queue === undefined) return serve(request);
+    return new Promise<Response>((resolve, reject) =>
+      queue.push(() => {
+        try {
+          resolve(serve(request));
+        } catch (err) {
+          reject(err);
+        }
+      }),
+    );
+  });
+  return {
+    waiting: (source: string | null) => waiting.get(source)?.length ?? 0,
+    release: (source: string | null) => {
+      const queue = waiting.get(source) ?? [];
+      waiting.delete(source);
+      for (const go of queue) go();
+    },
+  };
+}
+
+describe("a machine still being asked", () => {
+  it("is asked once this server's rows are on screen, and its rows join when it answers", async () => {
+    answers.set(key(null, "a1"), page([row("here", "2026-01-02T00:00:00Z")], 1));
+    answers.set(key("M1", "a1"), page([row("there", "2026-01-03T00:00:00Z")], 1));
+    const held = hold(null, "M1");
+    const store = boot(["M1"]);
+    const done = store.getState().reload();
+    await vi.waitFor(() => expect(held.waiting(null)).toBe(1));
+    expect(held.waiting("M1")).toBe(0);
+
+    held.release(null);
+    await vi.waitFor(() => expect(store.getState().loading).toBe(false));
+    expect(ids(store)).toEqual(["here"]);
+    await vi.waitFor(() => expect(held.waiting("M1")).toBe(1));
+
+    held.release("M1");
+    await done;
+    expect(ids(store)).toEqual(["there", "here"]);
+    expect(store.getState().countsByAgent.get("a1")?.active).toBe(2);
+  });
+
+  it("stands as being asked until its answer lands", async () => {
+    answers.set(key(null, "a1"), page([row("here", "2026-01-02T00:00:00Z")], 1));
+    answers.set(key("M1", "a1"), page([row("there", "2026-01-03T00:00:00Z")], 1));
+    const held = hold("M1");
+    const store = boot(["M1"]);
+    const done = store.getState().reload();
+    await vi.waitFor(() => expect(store.getState().loading).toBe(false));
+    expect(store.getState()).toMatchObject({ askingMachineIds: ["M1"], silentMachineIds: [] });
+
+    held.release("M1");
+    await done;
+    expect(store.getState()).toMatchObject({ askingMachineIds: [], silentMachineIds: [] });
+  });
+
+  it("once silent, stays out of reach while it is probed again, until it answers", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      answers.set(key(null, "a1"), page([row("here", "2026-01-02T00:00:00Z")], 1));
+      const store = boot(["M1"]);
+      await store.getState().reload(); // M1 answers nothing: out of reach, and resting
+      expect(store.getState()).toMatchObject({ askingMachineIds: [], silentMachineIds: ["M1"] });
+
+      answers.set(key("M1", "a1"), page([row("there", "2026-01-03T00:00:00Z")], 1));
+      const held = hold("M1");
+      await vi.advanceTimersByTimeAsync(MACHINE_REST_MIN_MS); // the rest ends: one question
+      expect(held.waiting("M1")).toBe(1);
+      // A page that said the machine is out of reach does not flip to "still asking" on a retry.
+      expect(store.getState()).toMatchObject({ askingMachineIds: [], silentMachineIds: ["M1"] });
+
+      held.release("M1");
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.runOnlyPendingTimersAsync();
+      expect(store.getState().silentMachineIds).toEqual([]);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    }
+  });
+
+  it("keeps the rows it showed, and its cache, until its own answer lands", async () => {
+    answers.set(key(null, "a1"), page([row("here", "2026-01-02T00:00:00Z")], 1));
+    answers.set(key("M1", "a1"), page([row("there", "2026-01-03T00:00:00Z")], 1));
+    const store = boot(["M1"]);
+    await store.getState().reload();
+
+    // Over there the Session was deleted meanwhile, and this server has a new one.
+    answers.set(key("M1", "a1"), page([], 0));
+    answers.set(
+      key(null, "a1"),
+      page([row("here", "2026-01-02T00:00:00Z"), row("here-new", "2026-01-04T00:00:00Z")], 2),
+    );
+    const held = hold("M1");
+    const done = store.getState().reload();
+    await vi.waitFor(() => expect(ids(store)).toContain("here-new"));
+    expect(ids(store)).toEqual(["here-new", "there", "here"]);
+    expect(cachedMachineSessions("p", "M1").map((s) => s.sessionId)).toEqual(["there"]);
+
+    held.release("M1");
+    await done;
+    expect(ids(store)).toEqual(["here-new", "here"]);
+    expect(cachedMachineSessions("p", "M1")).toEqual([]);
   });
 });
 
@@ -1010,6 +1196,68 @@ describe("archive, unarchive and delete", () => {
       expect(store.getState().deletedSessionIds.has(id), id).toBe(true);
     }
     expect(fetch.requests).toEqual([]);
+  });
+
+  /** Holds the next sidebar fetch's answer — read from the server now, delivered on release. */
+  function holdNextBatch(): { release: () => void } {
+    let release = () => {};
+    let held = false;
+    fetch.answer((request) => {
+      if (held || !request.path.endsWith("/sessions/batch")) return serve(request);
+      held = true;
+      const answer = serve(request);
+      return new Promise<Response>((resolve) => {
+        release = () => resolve(answer);
+      });
+    });
+    return { release: () => release() };
+  }
+  const withoutRow = (sessionId: string) =>
+    served.set(
+      key(null, "a1"),
+      served.get(key(null, "a1"))!.filter((s) => s.sessionId !== sessionId),
+    );
+
+  it("keeps out a Session deleted while a reload that read it was on its way, and asks again", async () => {
+    vi.useFakeTimers();
+    const store = await onScreen();
+    // A new conversation is announced and the list reloads; the server reads it...
+    served
+      .get(key(null, "a1"))!
+      .push(session("fresh", { lastActiveAt: "2026-09-16T11:00:00.000Z" }));
+    const hold = holdNextBatch();
+    const reload = store.getState().reload();
+    // ...then its first Task is refused and it is deleted, before that reload answers.
+    withoutRow("fresh");
+    applyUserEvent(store, [], deletedEvent("fresh"), () => undefined);
+    await vi.advanceTimersByTimeAsync(LISTING_CHANGE_DELAY_MS);
+    hold.release();
+    await reload;
+    await vi.runAllTimersAsync();
+    expect(ids(store)).not.toContain("fresh");
+    expect(store.getState().deletedSessionIds.has("fresh")).toBe(true);
+    // Asked once more: the late answer's totals counted the Session too.
+    expect(fetch.requests.filter((r) => r.path.endsWith("/sessions/batch"))).toHaveLength(2);
+    expect(active(store)).toBe(2);
+  });
+
+  it("keeps out a Session deleted while a next page that read it was on its way", async () => {
+    vi.useFakeTimers();
+    const rows = activeRun("r", 15);
+    served.set(key(null, "a1"), rows);
+    const store = boot();
+    await store.getState().reload();
+    // Below the first page: no held row stands for it.
+    const victim = rows[12]!.sessionId;
+    const hold = holdNextBatch();
+    const more = store.getState().loadMoreFor(["a1"]);
+    withoutRow(victim);
+    applyUserEvent(store, [], deletedEvent(victim), () => undefined);
+    await vi.advanceTimersByTimeAsync(LISTING_CHANGE_DELAY_MS);
+    hold.release();
+    await more;
+    expect(ids(store)).not.toContain(victim);
+    expect(ids(store)).toHaveLength(14);
   });
 });
 

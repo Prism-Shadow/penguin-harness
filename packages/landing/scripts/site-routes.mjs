@@ -11,6 +11,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { hubRoutes as hubRouteList, loadHub } from "./hub/hub.mjs";
 
 /** Production origin, no trailing slash. Override for a staging deploy. */
 export const SITE_ORIGIN = (process.env.SITE_ORIGIN ?? "https://penguin.ooo").replace(/\/+$/, "");
@@ -61,9 +62,37 @@ function newestDate(dir, slug) {
  * The home page is excluded; Vite's own index.html already sits at the dist root.
  */
 
-/** Non-blog landing SPA pages (currently the desktop download page). */
+/**
+ * The AMSP page's name for crawlers and link unfurlers, in English like the rest of the static
+ * shell (the page sets the reader's language at runtime). `image` is a file under public/,
+ * rendered by `node scripts/capture-og-cover.mjs amsp`.
+ */
+const AMSP_META = {
+  title: "AMSP: Agent Message Stream Protocol",
+  description:
+    "Stream, parse and store agent messages with one protocol: AMSP, the Session stream of a PenguinHarness agent.",
+  image: "/og-amsp.png",
+  imageAlt: "AMSP: Agent Message Stream Protocol",
+};
+
+/**
+ * Non-blog landing SPA pages: the desktop download page and the AMSP page. A page with `meta`
+ * gets its own title, description and share card in its shell (route-shell.mjs).
+ */
 export function pageRoutes() {
-  return [{ route: "/download/" }];
+  return [{ route: "/download/" }, { route: "/amsp/", meta: AMSP_META }];
+}
+
+/**
+ * The Plugins, Benchmarks and Leaderboards pages: each list and one page per entry, read from the
+ * same files the build read (the benchmark repository's clone the build just made, or
+ * PENGUIN_BENCHMARK_REPO). Each shell names its page; the share image is the site's own.
+ */
+export function hubRoutes() {
+  return hubRouteList(loadHub()).map(({ route, title, description }) => ({
+    route,
+    meta: { title, description, image: "/og-cover.png", imageAlt: "PenguinHarness" },
+  }));
 }
 
 /** Blog routes, one per post plus the list page. */

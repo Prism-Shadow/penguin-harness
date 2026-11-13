@@ -5,20 +5,26 @@
  * SiteLocaleProvider (app.tsx), which calls `setActiveStrings`, and SiteLocaleScope remounts
  * the tree keyed by locale — keep `S.x` reads inside components. Doc page bodies are Markdown files under content/, not here.
  */
+import type { DocsSectionDef } from "./nav";
+
 export const zh = {
   siteName: "PenguinHarness",
 
   nav: {
-    // Landing-parity labels: the top bar mirrors the landing page's nav exactly
-    // (same items, same order) so the two sites link into each other seamlessly.
+    // The landing page's words for the site bar; which pages it shows, and in what order, is
+    // the shared page list's (SITE_PAGES), the same on all three sites.
     home: "主页",
     blog: "博客",
     download: "下载",
+    plugins: "插件",
+    benchmarks: "评估集",
+    leaderboards: "榜单",
+    amsp: "AMSP",
     docs: "文档",
     gallery: "画廊",
     github: "GitHub",
-    openMenu: "打开目录",
-    closeMenu: "关闭目录",
+    openMenu: "打开菜单",
+    closeMenu: "关闭菜单",
   },
 
   theme: {
@@ -41,7 +47,7 @@ export const zh = {
     advanced: "进阶功能",
     design: "工作原理",
     reference: "参考",
-  } as Record<string, string>,
+  } satisfies Record<DocsSectionDef["id"], string>,
 
   doc: {
     toc: "本页目录",
@@ -69,7 +75,7 @@ export const zh = {
     repo: "GitHub 仓库",
     license: "Apache-2.0 License",
     site: "产品主页",
-    copyright: "© 2026 Prism Shadow · 基于 Apache-2.0 协议开源",
+    copyright: "© 2026 Prism Shadow，基于 Apache-2.0 协议开源",
   },
 };
 

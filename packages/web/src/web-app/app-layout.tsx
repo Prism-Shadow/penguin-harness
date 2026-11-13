@@ -7,20 +7,19 @@ import { backgroundStyle, useBackground } from "../state/background";
  *   sidebar in a drawer.
  * The shell's chrome uses solid fills and makes no stacking context (a frosted glass or a
  * transform would trap the menus it opens); the package's components say how.
+ * In the desktop shell's window the page also draws the window's title band (window-chrome.tsx):
+ * the sidebar toggle lives there, and the sidebar and the rail then carry no fold button of their
+ * own.
  */
 import { useEffect, useState } from "react";
-import { Outlet } from "react-router";
-import {
-  AppShell,
-  Drawer,
-  MobileTopBar,
-  Notice,
-  UpdateDot,
-} from "@prismshadow/penguin-ui";
+import { Outlet, useLocation } from "react-router";
+import { AppShell, Drawer, MobileTopBar, Notice, UpdateDot } from "@prismshadow/penguin-ui";
 import * as api from "../api/endpoints";
 import { nagsAboutInitialPassword } from "../lib/account-menu";
 import { S } from "../lib/strings";
 import { onCommand } from "../lib/shortcuts/dispatcher";
+import { ErrorBoundary } from "../rescue/error-boundary";
+import { RescuePanel } from "../rescue/rescue-panel";
 import { useWebAppLayers } from "./index";
 import { webAppDeps } from "./deps";
 import { useAuth } from "../state/auth";
@@ -29,8 +28,9 @@ import { useTrayLocale } from "../state/use-tray-locale";
 import { ChangePasswordDialog } from "../components/account/change-password-dialog";
 import { AppInfoDialog } from "../components/account/app-info-dialog";
 
-import { setDockScope } from "@prismshadow/penguin-web/internal";
 import { FindBar } from "../components/find/find-bar";
+import { windowBridge } from "../lib/window-bridge";
+import { TitleBand } from "./window-chrome";
 
 /**
  * Whether the pinned sidebar (or its rail) is on screen: the shell's navigation column is
@@ -45,6 +45,7 @@ function pinnedSidebarOnScreen(): boolean {
 export function AppLayout() {
   const background = useBackground();
   const { user, desktopMode, sessionVia } = useAuth();
+  const { pathname } = useLocation();
   const { sidebar, drafts } = webAppDeps.useDeps();
   // Desktop shell only (gated inside): system notification when a task finishes while
   // the window is unfocused.
@@ -131,6 +132,12 @@ export function AppLayout() {
     };
   }, [collapsed, inDefaultMode, newChat]);
 
+  const foldSidebar = () => {
+    setOpenSearchOnExpand(false);
+    toggleCollapsed();
+  };
+  // In the desktop window the band's toggle is the one fold button: the column offers none.
+  const band = windowBridge() !== null;
   return (
     <AppShell
       background={
@@ -139,20 +146,15 @@ export function AppLayout() {
           : backgroundStyle(background.image, background.settings)
       }
       navCollapsed={collapsed}
+      band={
+        band ? <TitleBand sidebarCollapsed={collapsed} onToggleSidebar={foldSidebar} /> : undefined
+      }
       nav={
         collapsed ? (
-          <sidebar.Rail
-            onExpand={() => {
-              setOpenSearchOnExpand(false);
-              toggleCollapsed();
-            }}
-          />
+          <sidebar.Rail {...(band ? {} : { onExpand: foldSidebar })} />
         ) : (
           <sidebar.Column
-            onCollapse={() => {
-              setOpenSearchOnExpand(false);
-              toggleCollapsed();
-            }}
+            {...(band ? {} : { onCollapse: foldSidebar })}
             initialSearchOpen={openSearchOnExpand}
           />
         )
@@ -214,7 +216,13 @@ export function AppLayout() {
       )}
 
       <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
-        <Outlet />
+        {/* A page that crashes says so here, and leaves the sidebar working: going to another
+            page gives the body another chance. The recovery panel (error details, safe reload,
+            harness history) stands in for the bare crash notice — the same fallback the shell
+            root uses, so a broken server contribution is recoverable in place. */}
+        <ErrorBoundary key={pathname} fallback={(error) => <RescuePanel error={error} />}>
+          <Outlet />
+        </ErrorBoundary>
       </main>
       {/* The layers modules contributed (WebAppModule.layers): overlays and headless runtimes,
           mounted once here, outside every page, so navigating never remounts or re-parents

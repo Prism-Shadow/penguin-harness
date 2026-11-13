@@ -6,10 +6,11 @@
  * changed: a link stays a link and keeps its click.
  *
  * Two parts, because the trailer is built where the chat page's state is and applied where a
- * reply is drawn: `ReplyFilesProvider` sits in the chat page's ChatSessionProvider and builds it
- * once per conversation; `ReplyTrailer` wraps an assistant reply's body only — reasoning and
- * compaction summaries are not replies. Outside the chat page (a test rendering the stream alone)
- * nothing is provided and a reply renders as it always has.
+ * reply is drawn: `ReplyFilesProvider` sits in the chat page's body (main-chat-body.tsx, inside
+ * the dock provider that hands the conversation around) and builds it once per conversation;
+ * `ReplyTrailer` wraps an assistant reply's body only — reasoning and compaction summaries are
+ * not replies. Outside the chat page (a test rendering the stream alone) nothing is provided
+ * and a reply renders as it always has.
  *
  * Every nested reply (a subagent's) shares the conversation's Workspace, so its files are fetched
  * through the conversation's own Session.
@@ -18,17 +19,21 @@ import { createContext, useContext, useMemo, type ReactNode } from "react";
 
 import { ProseBlockTrailerProvider, type ProseBlockTrailer } from "@prismshadow/penguin-ui";
 
-import * as api from "@prismshadow/penguin-web/internal";
-import { ChatSessionContext } from "@prismshadow/penguin-web/internal";
-import { useFileRendererRules } from "@prismshadow/penguin-web/internal";
-import { chatDeps } from "./deps";
+import * as api from "../../api/endpoints";
+import { ChatSessionContext } from "../../lib/chat-session";
+import { useFileRendererRules } from "../../lib/file-renderers";
+import { chatDeps, type ChatDeps } from "./deps";
 import { replyFilesOf } from "./reply-files";
 
 const ReplyTrailerContext = createContext<ProseBlockTrailer | null>(null);
 
+const EMPTY_RENDERERS: ChatDeps["fileRenderers"] = new Map();
+
 export function ReplyFilesProvider({ children }: { children: ReactNode }) {
   const rules = useFileRendererRules();
-  const { fileRenderers: registry } = chatDeps.useDeps();
+  // Outside the chat module's root (a test rendering the body alone) there is no registry:
+  // the trailer is then never built, and a reply renders as it always has.
+  const registry = chatDeps.useDepsOptional()?.fileRenderers ?? EMPTY_RENDERERS;
   const selected = useContext(ChatSessionContext)?.selected ?? null;
   const sessionId = selected?.sessionId ?? null;
   const workspace = selected?.workspace ?? null;

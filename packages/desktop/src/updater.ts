@@ -41,10 +41,12 @@ import {
 import type { FetchFn } from "./update-source.js";
 import { initialUpdateStatus, nextUpdateStatus } from "./updater-status.js";
 import type { UpdaterEvent } from "./updater-status.js";
+import { WindowsUpdater, WindowsUpdateVerificationError } from "./windows-updater.js";
 
-const { autoUpdater } = electronUpdater;
+const autoUpdater =
+  process.platform === "win32" ? new WindowsUpdater() : electronUpdater.autoUpdater;
 
-/** First check runs after this delay: booting the server and the window comes first. */
+/** First check runs this long after the main window is shown: what the window shows comes first. */
 const FIRST_CHECK_DELAY_MS = 20_000;
 /** Subsequent automatic checks. */
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
@@ -68,6 +70,7 @@ let downloadedVersion: string | null = null;
 let downloadInFlight = false;
 /** The running download was started from the native dialog: its outcomes get native dialogs too. */
 let nativeDownload = false;
+let nativeInstall = false;
 
 type FeedState =
   { phase: "pending" } | { phase: "unavailable" } | { phase: "ready"; fallbackUrl: string | null };
@@ -172,6 +175,40 @@ function scheduleChecks(): void {
   setInterval(() => void check(), CHECK_INTERVAL_MS).unref();
 }
 
+/**
+ * The automatic schedule waits for the main window: the update feed is chosen over the network
+ * (the OSS mirror, GitHub), and nothing of that may run while the app is launching. An app
+ * started straight into the tray shows no window, so the schedule starts anyway once this
+ * long has passed since the updater was wired. Whichever comes first starts it, once. A
+ * "Check for Updates…" the person asks for runs whenever it is asked.
+ */
+const START_WITHOUT_WINDOW_MS = 10 * 60 * 1000;
+
+let scheduleReleased = false;
+let startAfterRelease: (() => void) | null = null;
+let releaseFallback: ReturnType<typeof setTimeout> | null = null;
+
+function whenWindowShown(start: () => void): void {
+  if (scheduleReleased) start();
+  else startAfterRelease = start;
+}
+
+/** Lets the automatic schedule start: the window was shown, or the wait for it ran out. Only the first call counts. */
+function releaseSchedule(): void {
+  if (scheduleReleased) return;
+  scheduleReleased = true;
+  if (releaseFallback !== null) clearTimeout(releaseFallback);
+  releaseFallback = null;
+  const start = startAfterRelease;
+  startAfterRelease = null;
+  start?.();
+}
+
+/** The main window is on screen: the automatic update schedule may start. */
+export function noteMainWindowShown(): void {
+  releaseSchedule();
+}
+
 // --- status relay (the account-menu row's data source) -----------------------
 
 let status: DesktopUpdateStatus = initialUpdateStatus(app.getVersion());
@@ -199,16 +236,24 @@ function reannounceStatus(): void {
  * user in a dialog: a menu-driven check, or a download started from the offer dialog.
  * Web-driven steps report through the status the modal reads.
  */
-function reportUpdaterError(err: Error, step: "check" | "download"): void {
-  emitStatus({ kind: "error", message: err.message });
-  const native = step === "check" ? manualCheckInFlight : nativeDownload;
+function reportUpdaterError(err: Error, step: "check" | "download" | "install"): void {
+  if (step === "install") downloadedVersion = null;
+  emitStatus({ kind: step === "install" ? "download-invalidated" : "error", message: err.message });
+  const native =
+    step === "check" ? manualCheckInFlight : step === "install" ? nativeInstall : nativeDownload;
+  nativeInstall = false;
   if (!native) return;
   manualCheckInFlight = false;
   nativeDownload = false;
   void dialog
     .showMessageBox({
       type: "error",
-      message: step === "check" ? "Could not check for updates." : "Could not download the update.",
+      message:
+        step === "check"
+          ? "Could not check for updates."
+          : step === "install"
+            ? "Could not verify the update."
+            : "Could not download the update.",
       detail: `${err.message}\n\nYou can always download the latest release manually.`,
       buttons: ["Open Releases", "OK"],
       defaultId: 1,
@@ -277,6 +322,7 @@ export function handleUpdaterCommand(action: DesktopUpdaterCommandMessage["actio
   // Same path as the dialog's "Restart now": quitAndInstall goes through the normal
   // quit sequence, so the shell's will-quit hook still stops the embedded server
   // gracefully before the files are replaced.
+  nativeInstall = false;
   autoUpdater.quitAndInstall();
 }
 
@@ -291,8 +337,10 @@ export function updatesAvailableInThisForm(): boolean {
 }
 
 /**
- * Wires the updater and starts the automatic schedule. Safe to call in any form: an
- * unsupported one (dev run, deb install) only logs why it is standing down.
+ * Wires the updater, and starts the automatic schedule once the main window is shown
+ * ({@link noteMainWindowShown}) — or, with no window shown, once the wait for one runs out.
+ * Safe to call in any form: an unsupported one (dev run, deb install) only logs why it is
+ * standing down.
  */
 export function initUpdater(getWindow: () => BrowserWindow | null): void {
   const support = updateSupport({
@@ -305,6 +353,10 @@ export function initUpdater(getWindow: () => BrowserWindow | null): void {
     log(`disabled (${support.reason})`);
     emitStatus({ kind: "unsupported", reason: support.reason });
     return;
+  }
+  if (!scheduleReleased && releaseFallback === null) {
+    releaseFallback = setTimeout(releaseSchedule, START_WITHOUT_WINDOW_MS);
+    releaseFallback.unref();
   }
 
   // Explicit download, explicit install: the user decides both when to fetch and when to
@@ -356,6 +408,10 @@ export function initUpdater(getWindow: () => BrowserWindow | null): void {
   });
   autoUpdater.on("error", (err: Error) => {
     log(`error: ${err.message}`);
+    if (err instanceof WindowsUpdateVerificationError) {
+      reportUpdaterError(err, "install");
+      return;
+    }
     if (downloadInFlight) {
       return;
     }
@@ -373,7 +429,7 @@ export function initUpdater(getWindow: () => BrowserWindow | null): void {
     feedRefreshMode = "static";
     setGenericFeed(override, null);
     log(`feed override: ${override}`);
-    scheduleChecks();
+    whenWindowShown(scheduleChecks);
     return;
   }
 
@@ -389,13 +445,13 @@ export function initUpdater(getWindow: () => BrowserWindow | null): void {
     feedRefreshMode = "github";
     setGitHubFeed();
     log("selected GitHub update feed");
-    scheduleChecks();
+    whenWindowShown(scheduleChecks);
     return;
   }
 
   if (config.source === "oss") {
     feedRefreshMode = "oss";
-    void refreshUpdateFeed().finally(scheduleChecks);
+    whenWindowShown(() => void refreshUpdateFeed().finally(scheduleChecks));
     return;
   }
 
@@ -403,12 +459,12 @@ export function initUpdater(getWindow: () => BrowserWindow | null): void {
     feedRefreshMode = "github";
     setGitHubFeed();
     log("selected GitHub update feed");
-    scheduleChecks();
+    whenWindowShown(scheduleChecks);
     return;
   }
 
   feedRefreshMode = "auto-probe";
-  void refreshUpdateFeed().finally(scheduleChecks);
+  whenWindowShown(() => void refreshUpdateFeed().finally(scheduleChecks));
 }
 
 async function check(): Promise<void> {
@@ -599,5 +655,6 @@ async function promptRestart(version: string, parent: BrowserWindow | null): Pro
   if (result.response !== 0) return;
   // quitAndInstall triggers the normal quit path first, so the shell's will-quit hook
   // still stops the embedded server gracefully before the files are replaced.
+  nativeInstall = true;
   autoUpdater.quitAndInstall();
 }

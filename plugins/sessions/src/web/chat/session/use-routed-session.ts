@@ -5,7 +5,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
-import { openPanel } from "@prismshadow/penguin-web/internal";
+import { openPanel } from "../../dock";
 import { DRAFT_SESSION_ID, parkedDraftIdOf } from "../draft-sessions";
 import { heldRouteSession, resolveRoutedSession, sessionProbeKey } from "../session-project";
 import type { ChatInputs } from "./use-chat-inputs";
@@ -60,7 +60,9 @@ export function useRoutedSession({
    * the open conversation. See resolveRoutedSession.
    */
   const [fetchedSession, setFetchedSession] = useState<SessionInfo | null>(null);
-  const listed = draft ? null : resolveRoutedSession(routeSessionId, sessions, fetchedSession);
+  const listed = draft
+    ? null
+    : resolveRoutedSession(routeSessionId, sessions, fetchedSession, projectId);
   /**
    * The routed Session, held across a refetch that momentarily does not list it.
    *
@@ -84,6 +86,7 @@ export function useRoutedSession({
     listed,
     routeSessionId ?? null,
     probeKey !== null && probeFailedKey === probeKey,
+    projectId,
   );
   const selected = draft ? null : heldSession.current;
   return {

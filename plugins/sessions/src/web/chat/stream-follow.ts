@@ -9,10 +9,13 @@
  *   an "80px from bottom" threshold — otherwise a short scroll area with less than 80px of
  *   scrollable slack could never exit, and streaming updates would keep fighting the upward
  *   gesture back and forth.
- * - Resume: only resumes once the user brings the viewport back near the bottom (within 80px).
- *   Programmatic stick-to-bottom only happens while following (idempotent); content shrinking
- *   (e.g. a group collapsing) that clamps scrollTop downward while still touching the bottom
- *   (≤1px) doesn't count as scrolling up and doesn't change intent.
+ * - Resume: only resumes once the user's own scroll brings the viewport back near the bottom
+ *   (within 80px). A scroll event that moved nothing changes nothing: a programmatic snap's own
+ *   event arrives a frame later with the position the snap already reported, and the user may
+ *   have started scrolling up in between, so reading it as "near the bottom" would undo that
+ *   intent and let the next streaming update snap the view back down under the gesture. Content
+ *   shrinking (e.g. a group collapsing) that clamps scrollTop downward while still touching the
+ *   bottom (≤1px) doesn't count as scrolling up.
  * - The first scroll event has no direction to judge from, so it initializes from position
  *   (≥80px from bottom is treated as being at a historical position, i.e. not following) — this
  *   doesn't depend on the call-ordering guarantee of "must stick to bottom programmatically right
@@ -20,6 +23,10 @@
  *   landed position synchronously: the snap's own scroll event only arrives at the next
  *   rendering update, and content growing in between (an image decoding, a font swap) would
  *   otherwise make that first event look like a historical position and wrongly exit follow.
+ * - Live reading: the browser can move the view before it dispatches the scroll event that
+ *   reports the move (a key, the scrollbar, a find or outline jump), so a streaming snap first
+ *   judges the live position the way that event will (`observed`, via `followToBottom`) and
+ *   never undoes a move it has not been told about yet.
  * - Hold: something anchored to the content can hold the view still — the selection menu hangs
  *   off a point in the stream, and a snap would move that point out from under it. A hold only
  *   defers acting on the intent (`snaps`); it never changes the intent (`stick`), so the user's
@@ -45,8 +52,14 @@ export interface StreamFollow {
   /** Touch drag: finger moving down = content scrolling up, exits follow. */
   touchMove(clientY: number): void;
   touchEnd(): void;
-  /** scroll event (user scrolling and programmatic stick-to-bottom share this path): moving up exits; otherwise nearing the bottom resumes; the first event initializes from position. */
+  /** scroll event (user scrolling and programmatic stick-to-bottom share this path): moving up exits; moving down to near the bottom resumes; an event that moved nothing changes nothing; the first event initializes from position. */
   scrolled(m: ScrollMetrics): void;
+  /**
+   * A live reading of the position taken right before a snap, judged as its scroll event will
+   * be. With no position reported yet there is nothing to judge it against, and it is ignored:
+   * only a real scroll event or a snap may seed the model.
+   */
+  observed(m: ScrollMetrics): void;
   /** Explicit re-entry (the back-to-bottom button): resumes follow immediately — the caller scrolls to the bottom right after, and the resulting scroll event sees a bottom position, keeping it stuck. */
   resume(): void;
 }
@@ -56,6 +69,20 @@ export function createStreamFollow(): StreamFollow {
   let held = false;
   let lastTop: number | null = null;
   let touchY: number | null = null;
+  const scrolled = (m: ScrollMetrics) => {
+    const dist = m.scrollHeight - m.scrollTop - m.clientHeight;
+    const prev = lastTop;
+    lastTop = m.scrollTop;
+    if (prev === null) {
+      stick = dist < 80;
+      return;
+    }
+    if (m.scrollTop < prev && dist > 1) {
+      stick = false;
+      return;
+    }
+    if (dist < 80 && m.scrollTop !== prev) stick = true;
+  };
   return {
     get stick() {
       return stick;
@@ -79,19 +106,9 @@ export function createStreamFollow(): StreamFollow {
     touchEnd() {
       touchY = null;
     },
-    scrolled(m) {
-      const dist = m.scrollHeight - m.scrollTop - m.clientHeight;
-      const prev = lastTop;
-      lastTop = m.scrollTop;
-      if (prev === null) {
-        stick = dist < 80;
-        return;
-      }
-      if (m.scrollTop < prev && dist > 1) {
-        stick = false;
-        return;
-      }
-      if (dist < 80) stick = true;
+    scrolled,
+    observed(m) {
+      if (lastTop !== null) scrolled(m);
     },
     resume() {
       stick = true;
@@ -124,9 +141,21 @@ export interface ScrollContainer {
  */
 export function stickToBottom(el: ScrollContainer, follow: StreamFollow): void {
   el.scrollTop = el.scrollHeight; // The browser clamps to the real bottom; read back the clamped value below.
-  follow.scrolled({
-    scrollTop: el.scrollTop,
-    scrollHeight: el.scrollHeight,
-    clientHeight: el.clientHeight,
-  });
+  follow.scrolled(metricsOf(el));
+}
+
+/**
+ * The snap a following view takes when the transcript grows or resizes (a stream commit, a
+ * resize, the selection menu letting go): the live position is judged first (`observed`), so a
+ * move the browser has made but not reported yet exits follow instead of being undone, and the
+ * view snaps only if it still follows after that.
+ */
+export function followToBottom(el: ScrollContainer, follow: StreamFollow): void {
+  if (!follow.snaps) return;
+  follow.observed(metricsOf(el));
+  if (follow.snaps) stickToBottom(el, follow);
+}
+
+function metricsOf(el: ScrollContainer): ScrollMetrics {
+  return { scrollTop: el.scrollTop, scrollHeight: el.scrollHeight, clientHeight: el.clientHeight };
 }

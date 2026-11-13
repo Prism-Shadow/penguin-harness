@@ -32,7 +32,7 @@ import path from "node:path";
 import { prependPathEnv } from "../environment/tools/command/path-prepend.js";
 import { runnerLineFilter } from "../environment/tools/command/runner-lines.js";
 import type { ConfinedSpawn, SpawnConfiner } from "../interfaces/index.js";
-import type { UserPromptTrigger } from "../plugins/index.js";
+import type { UserPromptTrigger } from "../plugin/library.js";
 import type { StopHook, StopHookInput, StopHookResult } from "./stop-hook.js";
 import type { PreToolUseHook, PreToolUseHookInput, PreToolUseHookResult } from "./tool-hook.js";
 import type { UserPromptHook, UserPromptHookInput, UserPromptHookResult } from "./prompt-hook.js";

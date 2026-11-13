@@ -8,13 +8,13 @@
  */
 export const zh = {
   siteName: "PenguinHarness",
+  backToTop: "回到顶部",
 
   announcement: {
     label: "公告",
     prev: "上一条公告",
     next: "下一条公告",
-    geminiArgon: "Gemini 4 Argon 已上线，查看 0.2.16 更新日志",
-    tokenDanceChallenge: "TokenDance Agent 冲榜赛：15,000 元 Token 奖池，10 月 23 日截止",
+    release0217: "PenguinHarness 0.2.17 已发布：Agent API 记录流、统计图、表单，查看更新日志",
     penguinGo: "Penguin Go 官方 Token 包上线，Gemini 全系列模型 5 折",
   },
 
@@ -22,6 +22,10 @@ export const zh = {
     home: "主页",
     blog: "博客",
     download: "下载",
+    plugins: "插件",
+    benchmarks: "评估集",
+    leaderboards: "榜单",
+    amsp: "AMSP",
     docs: "文档",
     gallery: "画廊",
     github: "GitHub",
@@ -44,14 +48,22 @@ export const zh = {
   },
 
   hero: {
-    positioning: "统一、稳定的 Agent 自进化框架",
-    /** The badge on the positioning line's top-right corner. */
-    badge: "免费开源",
-    automation: "全自动优化模型 × Agent Harness",
+    /** Two clauses keep the emphasized phrases and punctuation in each locale's reading order. */
+    positioning: {
+      growthLead: "让软件",
+      growth: "持续成长",
+      growthEnd: "，",
+      separator: "",
+      reachLead: "让进化",
+      reach: "触手可及",
+      reachEnd: "",
+    },
+    /** The grey line under the slogan. */
+    subtitle: "免费、稳定的 Agent 自进化框架",
     downloadCta: "下载桌面版",
     cliInstall: "命令行安装",
     stats: [
-      { value: "跨平台部署", label: "Linux · Windows · macOS" },
+      { value: "跨平台部署", label: "Linux、Windows、macOS" },
       { value: "100% 开源", label: "Apache 2.0 协议" },
       { value: "首个自进化 Harness", label: "原生 Agent 自进化引擎" },
     ],
@@ -65,8 +77,16 @@ export const zh = {
     supportedModelsMore: "以及更多",
     algorithmsLabel: "自进化算法",
     benchmarksLabel: "评估集",
-    /** One per BENCHMARKS entry, in its order (the benchmarks of Sec A to Sec E, then GDPevo): the kind of each. */
-    benchmarkKinds: ["数据分析", "软件工程", "业务自动化", "科学研究", "终端任务", "Agent 自进化"],
+    /** The kind each BENCHMARKS entry is shown by, keyed by its `kind`. */
+    benchmarkKinds: {
+      dataAnalysis: "数据分析",
+      softwareEngineering: "软件工程",
+      businessAutomation: "业务自动化",
+      scientificResearch: "科学研究",
+      terminalTasks: "终端任务",
+      biomedicine: "生物医学",
+      agentSelfEvolution: "Agent 自进化",
+    },
     /** The confirmation an outside link in the catalogue rows asks before it opens. */
     externalLink: {
       title: "即将打开外部链接",
@@ -96,7 +116,6 @@ export const zh = {
   },
 
   download: {
-    eyebrow: "下载",
     title: "下载桌面端",
     recommended: "当前系统",
     platforms: {
@@ -157,31 +176,7 @@ export const zh = {
     /** The link to the same screen in the component gallery, full size. */
     open: "在画廊中打开",
     loading: "正在载入实时演示…",
-  },
-
-  /** The app live under the hero, and the three rows beside it (sections/showcase.tsx). */
-  showcase: {
-    /** Each `frame` names its frame for assistive technology. */
-    start: "开始页（实时演示）",
-    evolve: {
-      title: "一句话启动 Agent 自进化",
-      text: "说出要优化的智能体、评估集和目标分数，PenguinHarness 就会修改它、重新评测，分数更高才保留。",
-      link: "自进化怎么运作",
-      frame: "一轮自进化的对话（实时演示）",
-    },
-    evaluate: {
-      title: "每个版本都有分数",
-      text: "同一套 Benchmark 上的每次评测，按智能体和模型连成一条线，哪一版更好一眼可见。",
-      link: "了解评估中心",
-      frame: "评估中心里的一套 Benchmark（实时演示）",
-    },
-    toolkits: {
-      title: "自进化算法通过插件接入",
-      /** `names`: the paper toolkits, already listed (OPRO、APE、…). */
-      text: (names: string) => `除了默认循环，${names} 各自是一个工具包，按原论文的流程运行。`,
-      link: "浏览插件库",
-      frame: "插件市场（实时演示）",
-    },
+    evolutionFrame: "一轮自进化的对话（实时演示）",
   },
 
   /** The self-evolution loop and its three recorded numbers (sections/self-improve.tsx). */
@@ -204,7 +199,6 @@ export const zh = {
       { label: "成本", hint: "每次运行" },
       { label: "耗时", hint: "每次运行" },
     ],
-    trendsNote: "记分板会记录每个版本的分数、成本和耗时。这里的数值仅为示意。",
     demo: {
       caption: "演示：决策智能体经过评测、一次工作方法改进和同模型复测，分数从 84 提升到 100。",
       cost: "被测 Agent 的 6 次运行花费 $0.0373，不含出题、评分和优化的成本。",
@@ -263,7 +257,10 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
   },
 
   cases: {
-    title: "一句话 + 0.6 元构建法务应用",
+    title: "A2APP：一句话 + 0.6 元构建法务应用",
+    /** The subtitle's first line, saying what A2APP is; `subtitle` is its second. */
+    a2app:
+      "A2APP 是智能体自己的小应用，就是聊天旁边的一个标签页，会调用智能体完成工作。在聊天里说一句话就能修改它，改完立即重新加载，旧版本也会保留。",
     subtitle:
       "用一句话描述需求，PenguinHarness 就能构建法务智能体应用：上传合同、识别风险并生成审阅报告。",
     prompt:
@@ -281,14 +278,13 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
     title: "以文件为中心的极简 Agent 架构",
     subtitle: "Agent 变强时，改的是它的文件，模型保持不变。",
     root: "PenguinHarness",
-    diagramLabel:
-      "PenguinHarness 分出 OmniMessage、Penguin SDK 和 Agent State 三支，各指向下方一张卡片",
+    diagramLabel: "PenguinHarness 分出 AMSP、Penguin SDK 和 Agent State 三支，各指向下方一张卡片",
     items: [
       {
-        concept: "OmniMessage",
+        concept: "AMSP",
         title: "Simplest Is the Best",
-        desc: "引擎流式输出 OmniMessage，Trace 逐条存下，Web App 直接渲染，中间没有第二种格式。模型经 MMSP 接入，Agent API 把每次运行以 AMSP 事件流返回。",
-        link: "OmniMessage 协议",
+        desc: "引擎流式输出 AMSP 记录，Trace 逐条存下，Web App 直接渲染，Agent API 原样交给你的程序，中间没有第二种格式。模型经 MMSP 接入。",
+        link: "AMSP 记录",
       },
       {
         concept: "Penguin SDK",
@@ -350,13 +346,12 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
     dataTitle: "复杂数据分析",
     dataDesc:
       "三者中准确率最高（66.67%，另两者均为 53.33%），成本只有 OpenAI Codex 的 1/35、Claude Code 的 1/70。",
-    dataFootnote:
-      "15 道复杂数据分析任务 · 单次运行 · Token 与成本为全套题目合计 · 按官方计价估算。",
+    dataFootnote: "15 道复杂数据分析任务，单次运行；Token 与成本为全套题目合计，按官方计价估算。",
     codeTitle: "代码任务",
     codeDesc:
       "准确率与 OpenAI Codex 持平（71.25%）、低于 Claude Code（86.25%），但成本只有前者的 1/58、后者的 1/39。",
     codeFootnote:
-      "40 道代码任务 × 2 次运行（准确率取全部 80 次结果）· Token 与成本为全套题目合计 · 按官方计价估算。",
+      "40 道代码任务，每道运行 2 次，准确率取全部 80 次结果；Token 与成本为全套题目合计，按官方计价估算。",
     colFramework: "实验框架",
     colModel: "模型名称",
     colAccuracy: "准确率（%）",
@@ -390,7 +385,7 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
   },
 
   footer: {
-    tagline: "统一、稳定的 Agent 自进化框架",
+    tagline: "免费、稳定的 Agent 自进化框架",
     product: "产品",
     resources: "资源",
     quickstart: "快速开始",
@@ -400,7 +395,197 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
     docs: "文档",
     releases: "Releases",
     license: "Apache-2.0 License",
-    copyright: "© 2026 Prism Shadow · 基于 Apache-2.0 协议开源",
+    copyright: "© 2026 Prism Shadow，基于 Apache-2.0 协议开源",
+  },
+
+  hub: {
+    source: "来源",
+    searchPlaceholder: "按名称、简介或作者搜索",
+    clearSearch: "清空搜索",
+    all: "全部",
+    sortLabel: "排序",
+    sortLatest: "最近更新",
+    sortName: "名称",
+    empty: "没有符合条件的条目。清空搜索或取消筛选后再看。",
+    clearFilters: "清除筛选",
+    count: (n: number) => `${n} 个`,
+    listSeparator: "、",
+    viewSource: "在 GitHub 查看",
+    details: "详情",
+    pageTitle: (name: string) => `${name} | PenguinHarness`,
+    notFound: "找不到这个条目，它可能已改名或移除。",
+    backToList: "回到列表",
+    meta: {
+      author: "作者",
+      version: "版本",
+      license: "许可证",
+      category: "分类",
+      package: "npm 包",
+      preinstall: "新建 Agent 时预装",
+      yes: "是",
+      no: "否",
+      status: "状态",
+      updated: "更新时间",
+      tasks: "题目数",
+    },
+    status: { published: "已发布", draft: "草稿" } as Record<string, string>,
+    references: "参考文献",
+    plugins: {
+      title: "插件",
+      description: "PenguinHarness 的插件库：自进化工具包、Skills、Hooks 与工作台。",
+      facetCategory: "分类",
+      facetContents: "内容",
+      facetAuthor: "作者",
+      categories: {
+        rsi: "Agent 自进化",
+        "office-productivity": "办公效率",
+        "software-development": "软件开发",
+        "ai-app-development": "AI 应用开发",
+        sandbox: "Agent 运行沙箱",
+        other: "其他",
+      } as Record<string, string>,
+      contents: { skills: "Skills", hooks: "Hooks", workbenches: "工作台" },
+      about: "简介",
+      quickStart: "快速开始",
+      quickStartSkills: "选用的 Skills",
+      skills: "Skills",
+      hooks: "Hooks",
+      workbenches: "工作台",
+      extensions: "Hooks 与工作台",
+      skillCount: (n: number) => `${n} 个 Skill`,
+      preinstalled: "默认预装",
+    },
+    benchmarks: {
+      title: "评估集",
+      description: "PenguinHarness 评估集：用来测 Agent 的题目与评分标准。",
+      facetTimeout: "单题时限",
+      timeout: {
+        short: "15 分钟以内",
+        hour: "1 小时以内",
+        long: "1 小时以上",
+        none: "不限时",
+      } as Record<string, string>,
+      facetLeaderboard: "榜单",
+      onLeaderboard: "已收录",
+      facetStatus: "状态",
+      facetAuthor: "作者",
+      taskCount: (n: number) => `${n} 道题`,
+      about: "简介",
+      tasks: "题目",
+      budget: { timeout: "时限", cpus: "CPU", ram: "内存", disk: "磁盘", gpus: "GPU" },
+      minutes: (n: number) => `${n} 分钟`,
+      hours: (n: number) => `${n} 小时`,
+      cores: (n: number) => `${n} 核`,
+      gigabytes: (n: number) => `${n} GB`,
+      cards: (n: number) => `${n} 卡`,
+      unlimited: "不限",
+      leaderboards: "收录它的榜单",
+      taskParts: "题目内容",
+      statement: "题干",
+      rubric: "评分标准",
+      data: "数据",
+      instruction: "Agent 收到的指令",
+      files: (n: number) => `文件（共 ${n} 个）`,
+      allFiles: (n: number) => `在 GitHub 查看全部 ${n} 个文件`,
+      dataFolder: "在 GitHub 查看数据目录",
+      showAll: "展开全部",
+      showLess: "收起",
+      fileCount: (n: number) => `${n} 个文件`,
+      upTo: (time: string) => `单题最长 ${time}`,
+      withData: "附带数据",
+    },
+    leaderboards: {
+      title: "榜单",
+      description: "PenguinHarness 榜单：在评估集上比较 Agent 的得分与开销。",
+      facetAuthor: "作者",
+      entryCount: (n: number) => `${n} 个条目`,
+      benchmarkCount: (n: number) => `${n} 个评估集`,
+      charts: { table: "排行", pareto: "得分与开销", waffle: "逐题得分" },
+      chartsLabel: "视图",
+      results: "结果",
+      entries: "条目",
+      baseline: "基线",
+      rank: "排名",
+      model: "模型",
+      score: "得分",
+      modelThinking: (model: string, level: string) => `${model}（${level}）`,
+      columnNames: {
+        harness: "Harness",
+        algorithm: "算法",
+        released: "发布时间",
+        cost: "成本",
+      } as Record<"harness" | "algorithm" | "released" | "cost", string>,
+      columns: "列",
+      filter: "筛选",
+      sortBy: (name: string) => `按${name}排序`,
+      filters: {
+        model: "模型",
+        harness: "Harness",
+        algorithm: "算法",
+        thinking: "思考等级",
+      } as Record<"model" | "harness" | "algorithm" | "thinking", string>,
+      filterLabel: (name: string) => `按${name}筛选`,
+      noMatch: "没有符合筛选条件的条目。",
+      rawData: "查看原始数据",
+      raw: {
+        harness: "Harness",
+        provider: "模型提供商",
+        thinking: "思考等级",
+        phase: "阶段",
+        std: "标准差",
+        stdAttempts: (n: number) => `跨 ${n} 次尝试`,
+        stdExperiments: "由各实验的 score_std 合成",
+        experiments: "实验",
+        benchmark: "评估集与实验",
+        value: "得分",
+        attempts: "尝试次数",
+        tokens: "Token 输入／缓存／输出",
+        finished: "完成时间",
+        harnessSetting: "Harness 配置",
+        notRecorded: "未记录",
+      },
+      cost: "成本",
+      duration: "耗时",
+      tokens: "Token",
+      axisLabel: "横轴",
+      frontier: "帕累托前沿",
+      hoursShort: (value: string) => `${value} 小时`,
+      minutesShort: (value: string) => `${value} 分钟`,
+      scale: "得分",
+      noScore: "未评分",
+      task: "题目",
+      attemptsPerCell: (n: number) => (n === 1 ? "每格一个方块" : `每格 ${n} 个方块，每次尝试一个`),
+      cellScores: (scores: string[]) => `各次得分：${scores.join("、")}`,
+      methodOnModel: (method: string, model: string) => `${method}（${model}）`,
+      paretoPoint: (method: string, score: string, axis: string, value: string) =>
+        `${method}：得分 ${score}，${axis} ${value}`,
+      paretoSummary: (axis: string, points: string[], frontier: string[]) =>
+        `横轴：${axis}。${points.join("；")}。帕累托前沿：${frontier.join("、")}。`,
+      benchmarks: "评估集",
+      method: {
+        title: "计算方式与来源",
+        matrixLead: (metric: string, phase: string) =>
+          `每一格是一个实验在 \`${phase}\` 阶段 summary 中的 \`${metric}\`；横线下方各行是每一列合成后的结果。`,
+        listLead: "逐个条目列出表达式的各个参数：所读的实验、阶段与指标，以及取到的值。",
+        stdAttempts: (n: number | null) =>
+          `± 为跨${n === null ? "" : ` ${n} 次`}尝试的样本标准差，每次尝试的各题得分按与总分相同的方式合成。`,
+        stdExperiments: "± 由各实验自身的 `score_std` 按相互独立合成。",
+        stdExperimentsSome:
+          "± 取跨尝试的样本标准差；若某条目的各实验尝试次数不一致，改由各实验的 `score_std` 合成。",
+        benchmark: "评估集",
+        experiment: "实验",
+        phase: "阶段",
+        metric: "指标",
+        value: "值",
+        opName: (op: string | null) => (op === null ? "取值" : op),
+        opRow: (op: string | null) => (op === null ? "得分" : `得分（${op}）`),
+        stdRow: "± 标准差",
+        costRow: "成本（单次运行之和）",
+        timeRow: "耗时（单次运行之和）",
+        config: "配置",
+        experiments: "实验数据",
+      },
+    },
   },
 
   blog: {
@@ -419,6 +604,352 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
     notFound: "文章不存在",
     backHome: "返回首页",
     toc: "目录",
+    /** The heading over a post's numbered citations. */
+    references: "参考资料",
+    /** A citation's back-link, for screen readers: the k-th place in the text that cites source n. */
+    backToRef: (n: number, k: number) =>
+      k > 1 ? `返回正文中引用 ${n} 的第 ${k} 处` : `返回正文中的引用 ${n}`,
+  },
+
+  /**
+   * The AMSP page (pages/amsp.tsx, sections/amsp/*): AMSP, the Session stream, on one page, with
+   * scripted runs replayed. Protocol names (record kinds, fields, routes) stay as the protocol
+   * spells them; the Web App's labels are quoted verbatim from its dictionary.
+   */
+  amsp: {
+    /** The tab title and description while the page is open; the static shell carries the English pair (scripts/site-routes.mjs). */
+    title: "AMSP：Agent Message Stream Protocol",
+    description:
+      "用同一种协议流式传输、解析和存储 Agent 消息：AMSP，PenguinHarness Agent 的 Session 流。",
+    /** A no-break space keeps 「Agent 通信」 together where the headline wraps. */
+    headline: "Agent\u00a0通信统一协议",
+    /** No full stop, like MMSP's subtitle. */
+    subline: "用同一种协议流式传输、解析和存储 Agent 消息",
+    /** The sentence after the "MMSP" link, which opens it. */
+    lineage: " 传输一次模型调用；AMSP 传输 Agent 的一个 Session。",
+    reference: "协议参考",
+    copyPrompt: "复制给编码 Agent 的提示词",
+    copied: "已复制",
+    /** The Web App's API-tab prompt (apiAgentPrompt), with the per-Agent lines pointing at that tab. */
+    agentPrompt: (docsUrl: string) =>
+      `请先阅读 PenguinHarness Agent API 使用文档：${docsUrl}，然后帮我编写调用 Agent 的代码。\n\nBase URL 与 Agent ID：在 PenguinHarness 中该 Agent 的 API 标签页查看。\n\n使用 @prismshadow/amsp SDK：stream() 逐条读取记录，await run() 获取完整结果。需要密钥时，从 PENGUIN_AGENT_KEY 环境变量读取，不要硬编码。用 sessionId 继续已有会话。按文档处理审批请求和 HTTP 429；收到 429 时遵循 Retry-After。`,
+
+    player: {
+      label: "示例运行",
+      scenarios: { first: "首次请求", continue: "继续对话", interrupt: "打断" },
+      pause: "暂停",
+      play: "播放",
+      input: "只需要一份代码",
+      events: "流式事件传输",
+      /** The legend of the faint ground under the records the Trace stores. */
+      stored: "写入 Trace",
+      /** A request the caller sends beside the stream (the interrupt). */
+      besideStream: "流之外的请求",
+      assembled: "消息解析结果",
+      request: (n: number) => `Request ${n}`,
+      thinking: (level: string) => `思考等级 ${level}`,
+      streaming: "传输中",
+      result: "结果",
+      requests: (n: number) => `${n} 次 Request`,
+      tokens: (n: string) => `${n} Token`,
+    },
+
+    /** A run's three levels as one bar chart (sections/amsp/structure.tsx). */
+    structure: {
+      title: "消息结构",
+      subtitle:
+        "一次运行嵌套三层，从长到短依次是：Task、每次向模型发出的 Request，以及填满每个 Request 的各条消息，每条止于它的完整记录。",
+      figureLabel:
+        "一次包含两轮工具调用的运行画在同一条时间轴上，按时长从长到短分三行。Task 从 task_begin 到 task_end。其下是三个 Request，各自从 request_begin 到 request_end。再下面是填满各个 Request 的消息，每条止于它的完整记录：第一个 Request 里是思考和一次工具调用，第二个里是第二次工具调用，第三个里是回答。相邻两个 Request 之间工具在运行，它的 tool_call_output 在下一个 Request 开始处完成。",
+      /** The chart's row names, top to bottom. */
+      levels: { task: "Task", request: "Request", message: "消息" },
+      /** The figure in words: read out with it, and shown under it on a phone. */
+      steps: [
+        "task_begin 打开一个 Task，task_end 关闭它；[DONE] 时仍未闭合的 task_begin 说明运行没有走到终点。",
+        "每个 Request 以带思考等级的 request_begin 开始，以 request_end 结束。",
+        "消息先以 partial_* 片段流出（start、delta、stop），随后是它的完整记录，被打断的消息也一样。",
+        "工具在调用完整后开始运行；它的 tool_call_output 在 request_end 之后才完成，下一个 Request 从它开始。",
+      ],
+      boundaries: "event_msg：Task 或 Request，从开始记录到结束记录",
+      /** The Web App Trace view's names for the same colours, verbatim from packages/web's zh dictionary. */
+      kinds: {
+        thinking: "thinking：思考",
+        text: "text：模型回复",
+        tool_call: "tool_call：工具调用生成",
+        tool_call_output: "tool_call_output：工具调用执行",
+      },
+      complete: "model_msg：消息先以 partial_* 片段流出（仅实时），止于它的完整记录，写入 Trace",
+    },
+
+    /** Every record field by field (sections/amsp/records.tsx), keyed by lib/amsp-vocabulary.ts and lib/amsp-records.ts. */
+    records: {
+      title: "每种记录，逐个字段",
+      subtitle:
+        "每条记录都是 Trace 里的一行，逐字节相同；只有 partial_* 片段只在实时流中出现。选一种记录，查看示例和它的全部字段。客户端忽略不认识的类型与字段。",
+      choose: "选择一种记录",
+      families: {
+        envelope: "外壳",
+        session: "Session",
+        complete: "完整消息",
+        partial: "片段",
+        boundaries: "Task 与 Request",
+        interventions: "中止、审批与 Hook",
+        context: "上下文与工具",
+        control: "控制帧",
+      },
+      stored: "写入 Trace",
+      live: "仅实时",
+      firstMessage: "随 Session 的首条消息送出",
+      frame: "控制帧，不是记录",
+      example: "示例",
+      wire: "线上的样子",
+      envelopeFields: "外壳字段",
+      payloadFields: "payload 字段",
+      head: { field: "字段", type: "类型", required: "必填", meaning: "含义", example: "示例值" },
+      required: "必填",
+      optional: "可选",
+      frameNote: "控制帧不带 id：它不推进续传位置，也不会被重放。",
+      frames: {
+        ping: "流一打开即发送，因此是运行流的第一行；此后每 20 秒一次。",
+        done: "运行流的最后一行。",
+      },
+      /** What a field means wherever it appears, unless the record has its own words for it. */
+      common: {
+        type: "payload 的种类。",
+        role: "消息出自谁。",
+        event_type: "片段所处的阶段：start、delta 或 stop。",
+        tool_call_id: "所属工具调用的 id，用来把调用和它的输出配对。",
+        fidelity: "提供方在回放时需要原样拿回的数据，按原样保存。",
+        error_code: "机器可读的失败原因，跨版本稳定，客户端据此本地化。",
+        error_message: "失败的原始文字，按原样展示。",
+      },
+      items: {
+        envelope: {
+          summary: "每条记录都套着同一个外壳，变化的只有 payload。",
+          fields: {
+            timestamp: "记录产生的时间，ISO 8601，UTC。",
+            type: "session_meta、model_msg 或 event_msg。",
+            payload: "记录本身，以它自己的 type 区分。",
+            origin:
+              "Subagent 的记录经过的子 Session 链，由外到内；主 Session 自己的记录没有这个字段。",
+          },
+        },
+        session_meta: {
+          summary:
+            "一个模型上下文开启：模型、系统提示词、路径和来源。它是 Session 首条消息的流中第一条记录，也是每个 Trace 文件的第一行。",
+          fields: {
+            session_id: "Session 的 id；之后的请求带上它即可延续。",
+            provider: "模型所属的提供方分组。",
+            model_id: "发给提供方的模型 id。",
+            model_context_window: '模型的上下文窗口，单位 Token；未配置时为 "unknown"。',
+            system_prompt: "这个上下文使用的完整系统提示词。",
+            agent_state: "Agent State 的绝对路径。",
+            workspace: "Workspace 的绝对路径。",
+            source:
+              "谁开启了这个 Session：user、api、schedule、subagent、cli、company 或 workbench。",
+          },
+        },
+        text: {
+          summary: "一段完整文本：用户的输入，或模型的回复。",
+          fields: {
+            text: "文本内容。",
+            sender: "用户侧文本的来源：用户、父 Agent、Harness 或服务器；缺省即用户。",
+          },
+        },
+        thinking: {
+          summary: "模型完整的一段思考。",
+          fields: { thinking: "思考的文本。" },
+        },
+        tool_call: {
+          summary:
+            "模型发出的一次完整工具调用。若它所在的 Request 被提前截断，记录里是原样的参数，可能无法解析，这次调用也不会执行。",
+          fields: { name: "工具名。", arguments: "参数，JSON 字符串。" },
+        },
+        tool_call_output: {
+          summary: "工具的结果，会回传给模型。",
+          fields: {
+            output: "工具返回的文本。",
+            images: "工具返回的图片，data URL 形式。",
+            status:
+              "结果的性质：completed（工具执行完毕）、fatal（调用失败）或 aborted（没有执行：被用户、策略或 Hook 拒绝；或在运行中被打断）。",
+          },
+        },
+        image_url: {
+          summary: "用户以 URL 发送的一张图片。",
+          fields: { image_url: "网址，或 base64 的 data URL。" },
+        },
+        inline_data: {
+          summary: "内联的字节，例如用户或模型给出的图片、音频。",
+          fields: { data: "base64 编码的字节。", mime_type: "字节的媒体类型。" },
+        },
+        inline_thinking: {
+          summary: "以内联字节表示的思考，例如图像模型用来思考的图片。",
+          fields: { data: "base64 编码的字节。", mime_type: "字节的媒体类型。" },
+        },
+        partial_text: {
+          summary: "回复在流式传输中的一段。",
+          fields: { text: "这个片段新增的文本。" },
+        },
+        partial_thinking: {
+          summary: "思考在流式传输中的一段。",
+          fields: { thinking: "这个片段新增的思考。" },
+        },
+        partial_tool_call: {
+          summary: "工具调用在流式传输中的一段。",
+          fields: {
+            name: "工具名，在 start 片段上出现。",
+            arguments: "这个片段新增的那段参数 JSON。",
+          },
+        },
+        partial_tool_call_output: {
+          summary: "工具输出在流式传输中的一段。",
+          fields: {
+            output: "这个片段新增的输出。",
+            images: "工具返回的图片，由一个片段整体带上。",
+          },
+        },
+        task_begin: {
+          summary: "开启一个 Task，即一次输入的整个运行；Task 的每条记录都在它之后。",
+          fields: {},
+        },
+        task_end: {
+          summary: "关闭这个 Task。只有 task_begin 没有 task_end，说明运行没有走到终点。",
+          fields: {},
+        },
+        request_begin: {
+          summary: "开启对模型的一次请求。",
+          fields: { thinking_level: "这次请求实际使用的思考等级；没有传思考等级时缺省。" },
+        },
+        request_end: {
+          summary: "关闭这次请求，并说明它如何结束。",
+          fields: {
+            status:
+              "completed、aborted（这一轮没有提交）、retryable（在重试次数内会重试；输出达到上限被截断时 error_code 为 output_truncated）或 fatal；这是请求结束原因的唯一记录。",
+            attempt: "这次尝试在重试中的序号；一次就成功时缺省。",
+            retry_in_ms: "距下一次尝试的等待时间，只在引擎会重试时出现。",
+          },
+        },
+        token_usage: {
+          summary: "最近一次请求和整个 Session 到目前为止计入的 Token。",
+          fields: {
+            session: "Session 的累计数。",
+            "session.cache_read": "从提供方缓存读取的输入 Token。",
+            "session.cache_write": "写入缓存的输入 Token。",
+            "session.output": "输出 Token，含思考。",
+            "session.total": "计入的全部 Token。",
+            request: "这次请求的计数。",
+            "request.cache_read": "这次请求从缓存读取的输入 Token。",
+            "request.cache_write": "这次请求写入缓存的输入 Token。",
+            "request.output": "这次请求的输出 Token，含思考。",
+            "request.total": "这次请求计入的全部 Token。",
+          },
+        },
+        abort: {
+          summary: "运行被中止：调用方打断，或 Task 到达轮数上限。",
+          fields: {
+            error_code: "user_abort 表示被打断，max_turns 表示到达轮数上限。",
+            error_message: "细节，例如到达的上限。",
+            reason: "旧 Trace 里的文字原因；没有 error_code 时才读它。",
+          },
+        },
+        approval_decision: {
+          summary: "对一次需要审批的工具调用的答复。",
+          fields: { decision: "allow、deny，或 forbidden（被项目的命令策略拒绝）。" },
+        },
+        hook: {
+          summary: "Hook 在某个挂载点给出的答复。",
+          fields: {
+            hook: "挂载点：stop、pre_tool_use 或 user_prompt。",
+            name: "Hook 注册的名字。",
+            decision: "stop 点上为 continue 或 stop，工具调用前为 allow 或 deny。",
+            reason: "Hook 写给人看的一行说明。",
+            output: "Hook 自己的记录，只含标量。",
+          },
+        },
+        compaction_begin: {
+          summary: "上下文开始压缩。",
+          fields: {
+            reason: "原因：context、turns 或 manual。",
+            mode: "summarize 或 discard。",
+            context: "开始时上下文的 Token 数。",
+            turns: "开始时 Session 累计的轮数。",
+          },
+        },
+        compaction_end: {
+          summary: "压缩结束。",
+          fields: {
+            reason: "原因：context、turns 或 manual。",
+            mode: "summarize 或 discard。",
+            status: "completed，或放弃的方式：aborted、retryable、fatal；未完成时保留原上下文。",
+            attempt: "最后一次尝试的序号。",
+          },
+        },
+        tool_list_ready: {
+          summary: "Session 的工具定义，与发给模型的一致；在 MCP 服务器连接完成后送出。",
+          fields: {
+            tools: "全部工具定义。",
+            "tools[].name": "工具名。",
+            "tools[].description": "工具的用途。",
+            "tools[].parameters": "参数，JSON Schema 形式。",
+          },
+        },
+        mcp_connect_begin: {
+          summary: "开始连接 MCP 服务器。",
+          fields: { servers: "正在连接的服务器。" },
+        },
+        mcp_connect_end: {
+          summary: "MCP 服务器连接结束，可能有部分失败。",
+          fields: {
+            status: "completed、fatal（有服务器失败并被跳过）或 aborted。",
+            results: "每个服务器一条结果。",
+            "results[].server": "服务器名。",
+            "results[].transport": "stdio、http 或 sse。",
+            "results[].status": "completed、fatal 或 aborted。",
+            "results[].duration_ms": "连接与发现工具所用的时间。",
+            "results[].tools": "发现的工具数，在 completed 时出现。",
+            "results[].error_code":
+              "失败原因：connect_failed、mcp_needs_setup 或 mcp_sign_in_required。",
+            "results[].error_message": "失败的原始文字。",
+          },
+        },
+        subagent: {
+          summary: "在父 Session 的 Trace 里指向它启动的子 Session；只写入 Trace，不在流中发送。",
+          fields: { session_id: "子 Session 的 id。" },
+        },
+      },
+    },
+
+    /** Two steps to a first run (sections/amsp/quickstart.tsx); the code is lib/amsp-quickstart.ts. */
+    quickstart: {
+      title: "从零到第一次运行",
+      enable: {
+        title: "打开 Agent 的 API",
+        /** The Web App's labels, verbatim from packages/web's zh dictionary. */
+        text: "在 PenguinHarness 中打开「智能体」，选中一个 Agent，进入「API」标签页，打开「开启 API 访问」，再点「新建密钥」。",
+        link: "Agent API 使用指南",
+      },
+      run: {
+        title: "运行它",
+        label: "运行方式",
+        typescript: "TypeScript",
+        curl: "curl",
+      },
+      curl: {
+        response: "响应",
+        elided: "每条记录一个事件",
+      },
+    },
+
+    links: {
+      title: "继续阅读",
+      items: {
+        reference: { name: "AMSP 协议参考", text: "逐条说明每种记录与控制帧" },
+        records: { name: "AMSP 记录", text: "每种记录的 payload 字段" },
+        guide: { name: "Agent API 使用指南", text: "密钥、审批模式、路由与错误" },
+        npm: { name: "@prismshadow/amsp", text: "npm 上的 SDK，适用于 Node 24 与浏览器" },
+        source: { name: "源码", text: "packages/amsp，Apache-2.0" },
+      },
+    },
   },
 };
 

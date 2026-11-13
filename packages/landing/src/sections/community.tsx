@@ -31,9 +31,9 @@ export function Community() {
             rel="noreferrer"
             className="group rounded-xl border border-gray-200 bg-white p-5 transition-colors hover:border-gray-300 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700"
           >
-            <p className="flex items-center justify-between text-[15px] font-semibold tracking-tight">
+            <p className="flex items-center justify-between text-base font-semibold tracking-tight">
               {item.name}
-              <ArrowRightIcon className="h-4 w-4 text-gray-400 transition-transform group-hover:translate-x-0.5 group-hover:text-gray-600 dark:group-hover:text-gray-300" />
+              <ArrowRightIcon className="h-4 w-4 text-gray-400 transition-colors group-hover:text-gray-600 dark:group-hover:text-gray-300" />
             </p>
             <p className="mt-1.5 text-sm leading-6 text-gray-600 dark:text-gray-400">{item.desc}</p>
           </a>

@@ -8,7 +8,7 @@ Install the `penguin` command with one line, configure a model, and run your fir
 ## Before you begin
 
 - Linux or macOS (x64 or arm64), or Windows 10 or later (x64) with PowerShell 5.1 or later. The installers for these platforms bundle an official Node.js runtime, so you don't need Node.js on the machine.
-- Node.js >= 24, if you install with npm, build from source, or use another platform.
+- Node.js >= 24, if you install with npm, build from source, or use another platform. On an older Node the CLI and the server stop at start and name the version they found.
 - An API key for one model provider.
 
 ## Install the CLI
@@ -48,7 +48,7 @@ penguin config model add --provider deepseek --model-id deepseek-flash --api-key
 You can also add models later on the **Models** page of the Web App.
 
 - A model is always named by a `(provider, model_id)` pair, so `--provider` and `--model-id` are both required. PenguinHarness never infers the provider from the model id. See [Models & Providers](/models) for the built-in groups.
-- The API key can also come from an environment variable, for the vendor's own endpoint. When a model entry has no inline `api_key` and no `base_url` of its own (or one that is the vendor's official endpoint), the key comes from the vendor's variable that [MMSP](https://www.npmjs.com/package/@prismshadow/mmsp) (the LLM gateway library) reads, such as `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` and `GEMINI_API_KEY`. An entry pointed at a gateway or a server of your own needs `--api-key`. A `.env` file in the working directory is loaded automatically.
+- The API key can also come from an environment variable. When a model entry has no inline `api_key` and neither it nor its group names a `base_url` other than the vendor's default endpoint, the key comes from the vendor's variable that [MMSP](https://www.npmjs.com/package/@prismshadow/mmsp) (the LLM gateway library) reads, such as `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` and `GEMINI_API_KEY`. An entry with any other base URL (a gateway, a server of your own) needs `--api-key`. A `.env` file in the working directory is loaded automatically.
 
 ## Start the Web App
 

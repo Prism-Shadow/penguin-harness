@@ -5,7 +5,9 @@
  *   block shows its code as text before any highlighter answers; with the docs' dialect a run
  *   of `tab="…"` fences becomes one tab strip showing only the first panel, and a `[!INFO]-`
  *   quote becomes a collapsed box with its title; a host's link adapter replaces the links
- *   while the headings stay the shared ones.
+ *   while the headings stay the shared ones; a host's footnote options name the citations and
+ *   label their list, and the label keeps the id every citation is described by; a run of
+ *   citations reads as one bracketed group, each number its own link, tied to the text before it.
  * - The highlighter a site hands its articles colours a PowerShell and a JSON Lines fence with
  *   both themes baked in, and answers nothing for a language it does not carry.
  * - The footer: an external link opens a new tab and a route link renders through the host's
@@ -14,13 +16,18 @@
  * - The docs sidebar marks the current page, lists sub-pages under their parent, and leads with
  *   a search button that names its shortcut.
  * - A code card mutes `#` comment lines only, and its copy button names the action.
+ * - The site bar lists every page once, in the shared order, under the host's words, and marks
+ *   the landing page's download page current when it is opened with a trailing slash.
  */
 import { createElement as h } from "react";
 import type { ReactElement } from "react";
 import { describe, expect, it } from "vitest";
-import { SiteCodeCard } from "../src/components/site/site-code";
+import { SiteCodeCard } from "../src/components/site/site-code-card";
 import { SiteFooter } from "../src/components/site/site-footer";
+import { SiteNavLinks } from "../src/components/site/site-header";
 import type { SiteLinkProps } from "../src/components/site/site-header";
+import { landingPageAt, siteNavLinks } from "../src/components/site/site-nav";
+import type { SiteNavLabels } from "../src/components/site/site-nav";
 import { highlightSiteCode } from "../src/components/site/site-highlight";
 import { extractToc } from "../src/components/site/markdown-text";
 import { SITE_DOC_REMARK_PLUGINS, SiteMarkdown } from "../src/components/site/site-markdown";
@@ -63,9 +70,7 @@ describe("an article", () => {
     const html = article("> [!INFO]- First launch blocked\n>\n> Allow it.", {
       remarkPlugins: SITE_DOC_REMARK_PLUGINS,
     });
-    expect(html).toMatch(
-      /<details class="callout callout-info">\s*<summary[^>]*>First launch blocked/,
-    );
+    expect(html).toMatch(/<details class="[^"]*">\s*<summary[^>]*>First launch blocked/);
     expect(html).not.toContain("<details open");
   });
 
@@ -76,6 +81,30 @@ describe("an article", () => {
     const html = article("## Links\n\n[repo](https://example.test)", { components });
     expect(html).toContain('<a href="https://example.test" target="_blank">repo</a>');
     expect(html).toContain('id="links"');
+  });
+
+  it("names citations and labels their list with the host's footnote options", () => {
+    const html = article("A claim.[^1]\n\n[^1]: A source.", {
+      remarkRehypeOptions: {
+        clobberPrefix: "",
+        footnoteLabel: "References",
+        footnoteLabelProperties: { className: ["refs"] },
+      },
+    });
+    expect(html).toContain('href="#fn-1" id="fnref-1"');
+    expect(html).toContain('aria-describedby="footnote-label"');
+    expect(html).toMatch(/<h2 id="footnote-label" class="[^"]*">References<\/h2>/);
+  });
+
+  it("sets a run of citations as one bracketed group, each number its own link", () => {
+    const html = article("A claim[^1][^2]. Another[^2].\n\n[^1]: One.\n[^2]: Two.");
+    const ref = (n: number) => `<a [^>]*data-footnote-ref[^>]*>${n}</a>`;
+    expect(html).toMatch(
+      new RegExp(`A claim\u2060<sup class="site-cite">\\[${ref(1)},\u00a0${ref(2)}\\]</sup>\\.`),
+    );
+    expect(html).toMatch(
+      new RegExp(`Another\u2060<sup class="site-cite">\\[${ref(2)}\\]</sup>\\.`),
+    );
   });
 });
 
@@ -191,5 +220,56 @@ describe("a code card", () => {
     expect(html.match(/data-comment="true"/g)).toHaveLength(1);
     expect(html).toMatch(/data-comment="true"[^>]*># Linux</);
     expect(html).toMatch(/<button[^>]*>.*<span>Copy<\/span><\/button>/);
+  });
+});
+
+describe("the site bar", () => {
+  const labels: SiteNavLabels = {
+    home: "Home",
+    blog: "Blog",
+    download: "Download",
+    plugins: "Plugins",
+    benchmarks: "Benchmarks",
+    leaderboards: "Leaderboards",
+    amsp: "AMSP",
+    docs: "Docs",
+    gallery: "Gallery",
+    github: "GitHub",
+    openMenu: "Open menu",
+    closeMenu: "Close menu",
+  };
+
+  const anchorsAt = (pathname: string) => {
+    const links = siteNavLinks({ siteRoot: "/", labels, current: landingPageAt(pathname) });
+    const html = renderStatic(h(SiteNavLinks, { links }));
+    return [...html.matchAll(/<a ([^>]*)>([^<]*)<\/a>/g)].map(([, attrs, text]) => ({
+      text,
+      current: attrs!.includes('aria-current="page"'),
+    }));
+  };
+  const currentAt = (pathname: string) =>
+    anchorsAt(pathname)
+      .filter((anchor) => anchor.current)
+      .map((anchor) => anchor.text);
+
+  it("lists every page in order and marks /download/ as the download page", () => {
+    expect(anchorsAt("/download/").map((anchor) => anchor.text)).toEqual([
+      "Home",
+      "Blog",
+      "Download",
+      "Plugins",
+      "Benchmarks",
+      "Leaderboards",
+      "AMSP",
+      "Docs",
+      "Gallery",
+    ]);
+    expect(currentAt("/download/")).toEqual(["Download"]);
+  });
+
+  it("marks a list page as current on its detail pages, and nothing on a lookalike path", () => {
+    expect(currentAt("/plugins/goal/")).toEqual(["Plugins"]);
+    expect(currentAt("/leaderboards")).toEqual(["Leaderboards"]);
+    expect(currentAt("/benchmarks-old")).toEqual([]);
   });
 });

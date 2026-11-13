@@ -2,7 +2,9 @@
 /**
  * Screenshots of the app's surfaces through the gallery's frame document: one PNG per surface ×
  * theme × mode × language, written to `<out>/<theme>/<mode>/<lang>/<surface>.png` — the app at its
- * window width (1280 × 800), or at phone width with `--view phone`.
+ * window width (1280 × 800), or at phone width with `--view phone`. With `--accents` or
+ * `--wallpaper`, each accent × background state gets its own folder:
+ * `<out>/<theme>/<mode>/<lang>/<accent>/wallpaper-<off|on>/<surface>.png`.
  *
  * Needs the gallery running (`pnpm dev:gallery`, port 7372) and Playwright's Chromium. Shots are
  * never committed.
@@ -20,7 +22,15 @@
  *   --size      xs | s | m | l | xl            (default m: the 16 px root)
  *   --latin     a Latin pairing id             (default theme)
  *   --cjk       a CJK pairing id               (default theme)
- *   --accent    an accent preset id            (default: the theme's own accent)
+ *   --accent    an accent preset id            (default: the theme's own accent, `neutral`)
+ *   --accents   accent ids, `neutral` the theme's own; replaces --accent
+ *   --wallpaper off | on | both                (default off) — on seeds a custom background: a
+ *                                               fixture of strong, light and dark diagonal
+ *                                               bands, the way a user's browser holds one
+ *   --transparency  0–100, the background's page-colour share when on (default 25)
+ *   --notices   on | off                       (default off) — on raises the notices a
+ *                                               conversation can carry (the initial-password
+ *                                               banner, the context-window notice)
  *   --view      desktop | phone                (default desktop)
  *   --settle    ms to wait after the app reports ready (default 1200: the demo API answers with
  *                                               a beat, and a running Session's stream needs a
@@ -65,12 +75,67 @@ const langs = list(args.langs, ["en", "zh"]);
 const size = args.size ?? "m";
 const latin = args.latin ?? "theme";
 const cjk = args.cjk ?? "theme";
-const accent = args.accent ?? "neutral";
+const accents = list(args.accents, [args.accent ?? "neutral"]);
+const walls = { off: ["off"], on: ["on"], both: ["off", "on"] }[args.wallpaper ?? "off"];
+const transparency = Number(args.transparency ?? 25);
+const notices = args.notices === "on";
 const view = args.view === "phone" ? "phone" : "desktop";
 const settle = Number(args.settle ?? 1200);
 const frame = view === "phone" ? PHONE_FRAME : APP_FRAME;
+/** The accent and background folders, only when asked for: older recipes read the flat layout. */
+const variantDirs = args.accents !== undefined || args.wallpaper !== undefined;
+if (walls === undefined) {
+  console.error(`--wallpaper takes off, on or both, not ${args.wallpaper}`);
+  process.exit(2);
+}
 
 const browser = await chromium.launch({ env: { ...process.env, FONTCONFIG_FILE } });
+
+/**
+ * The background fixture: broad diagonal bands of strong, light and dark colours across the
+ * window, so a translucent fill shows over each kind. A test fixture, not a design: the
+ * gradient rule does not apply. Encoded as the JPEG data URL the app stores, and small: it
+ * travels in the frame's URL, and a server refuses a request line past 16 KB (HTTP 431), so it
+ * is drawn at a quarter of the window and the background's `cover` scales it up.
+ */
+async function fixtureImage() {
+  const scratch = await browser.newPage();
+  const dataUrl = await scratch.evaluate(
+    ({ width, height }) => {
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const g = canvas.getContext("2d");
+      const colours = ["#1d4ed8", "#f59e0b", "#059669", "#f8fafc", "#dc2626", "#111827"];
+      const band = width / 7;
+      for (let i = -6; i < 14; i++) {
+        g.fillStyle = colours[(i + 6) % colours.length];
+        g.beginPath();
+        g.moveTo(i * band, 0);
+        g.lineTo(i * band + band, 0);
+        g.lineTo(i * band + band + height * 0.6, height);
+        g.lineTo(i * band + height * 0.6, height);
+        g.closePath();
+        g.fill();
+      }
+      return canvas.toDataURL("image/jpeg", 0.8);
+    },
+    { width: APP_FRAME.width / 4, height: APP_FRAME.height / 4 },
+  );
+  await scratch.close();
+  if (dataUrl.length > 12_000) {
+    console.error(`the background fixture is ${dataUrl.length} characters, too long for a URL`);
+    process.exit(2);
+  }
+  return dataUrl;
+}
+const wallpaper = walls.includes("on") ? await fixtureImage() : null;
+const wallpaperSettings = JSON.stringify({
+  transparency,
+  mode: "cover",
+  position: "center center",
+});
+
 const context = await browser.newContext({
   viewport: { width: frame.width, height: frame.height },
   deviceScaleFactor: 2,
@@ -80,36 +145,51 @@ let shots = 0;
 for (const theme of themes) {
   for (const mode of modes) {
     for (const lang of langs) {
-      const dir = path.join(out, theme, mode, lang);
-      mkdirSync(dir, { recursive: true });
-      for (const id of surfaces) {
-        const surface = surfaceById(id);
-        if (!surface) {
-          console.error(`unknown surface: ${id}`);
-          process.exitCode = 1;
-          continue;
+      for (const accent of accents) {
+        for (const wall of walls) {
+          const dir = path.join(
+            out,
+            theme,
+            mode,
+            lang,
+            ...(variantDirs ? [accent, `wallpaper-${wall}`] : []),
+          );
+          mkdirSync(dir, { recursive: true });
+          for (const id of surfaces) {
+            const surface = surfaceById(id);
+            if (!surface) {
+              console.error(`unknown surface: ${id}`);
+              process.exitCode = 1;
+              continue;
+            }
+            const params = new URLSearchParams({
+              route: surface.route,
+              theme,
+              mode,
+              accent,
+              size,
+              latin,
+              cjk,
+              lang,
+            });
+            if (surface.signedOut) params.set("auth", "out");
+            if (surface.open) params.set("open", surface.open);
+            if (notices) params.set("notices", "1");
+            if (wall === "on" && wallpaper !== null) {
+              params.set("wallpaper", wallpaper);
+              params.set("wallpaperSettings", wallpaperSettings);
+            }
+            await page.goto(`${base}/app.html?${params}`, { waitUntil: "load" });
+            await page.waitForSelector("html[data-gallery-ready]", { timeout: 30_000 });
+            // A surface that opens a dialog is not ready until the dialog is on screen.
+            if (surface.open) await page.waitForSelector('[role="dialog"]', { timeout: 30_000 });
+            await page.waitForTimeout(settle);
+            const file = path.join(dir, `${id}.png`);
+            await page.screenshot({ path: file });
+            shots += 1;
+            console.log(path.relative(process.cwd(), file));
+          }
         }
-        const params = new URLSearchParams({
-          route: surface.route,
-          theme,
-          mode,
-          accent,
-          size,
-          latin,
-          cjk,
-          lang,
-        });
-        if (surface.signedOut) params.set("auth", "out");
-        if (surface.open) params.set("open", surface.open);
-        await page.goto(`${base}/app.html?${params}`, { waitUntil: "load" });
-        await page.waitForSelector("html[data-gallery-ready]", { timeout: 30_000 });
-        // A surface that opens a dialog is not ready until the dialog is on screen.
-        if (surface.open) await page.waitForSelector('[role="dialog"]', { timeout: 30_000 });
-        await page.waitForTimeout(settle);
-        const file = path.join(dir, `${id}.png`);
-        await page.screenshot({ path: file });
-        shots += 1;
-        console.log(path.relative(process.cwd(), file));
       }
     }
   }

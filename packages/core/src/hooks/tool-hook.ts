@@ -17,7 +17,7 @@
  * script-hook.ts; the in-process interface here is what SDK embedders and tests register
  * directly. Docs: /docs/agent-loop § "Hooks".
  */
-import { hookEvent } from "../omnimessage/index.js";
+import { hookEvent } from "@prismshadow/amsp/records";
 import type { PreToolUseOutcome } from "../interfaces/index.js";
 import { failedAnswer } from "./answer.js";
 

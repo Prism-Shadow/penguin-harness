@@ -1,9 +1,9 @@
 /**
  * @prismshadow/penguin-core — public entry point for the PenguinHarness core SDK.
  *
- * Exports the OmniMessage protocol, the three interface contracts (Human/LLM/Environment),
- * and the runtime entry points for Agent / Session / context_engine along with their
- * submodules (state / llm / environment / trace).
+ * Re-exports the AMSP records (types, guards, builders and markers, from `@prismshadow/amsp`), and
+ * exports the three interface contracts (Human/LLM/Environment) and the runtime entry points for
+ * Agent / Session / context_engine along with their submodules (state / llm / environment / trace).
  *
  * Typical usage:
  *
@@ -18,8 +18,11 @@
 import type { BuildInfo } from "./version-info.js";
 import { resolveBuildInfo } from "./internal/build-info.js";
 
-// Protocol and interface contracts (foundation)
-export * from "./omnimessage/index.js";
+// Protocol and interface contracts (foundation). The records and markers live in @prismshadow/amsp;
+// rejected-images is the engine's fallback for a request whose images the provider refused.
+export * from "@prismshadow/amsp/records";
+export * from "@prismshadow/amsp/markers";
+export * from "./engine/rejected-images.js";
 export * from "./interfaces/index.js";
 // Build/harness identity: not an interface contract, so it sits outside interfaces/ (see version-info.ts).
 export type * from "./version-info.js";
@@ -27,6 +30,11 @@ export type * from "./version-info.js";
 // Only the default server port leaves internal: the CLI / server default-port source of truth.
 export { DEFAULT_DEV_SERVER_PORT, DEFAULT_SERVER_PORT } from "./internal/ports.js";
 export { SERVER_RESTART_EXIT_CODE } from "./internal/server-lifecycle.js";
+// Whether a command-policy pattern compiles here: the server's save check and its read of the
+// policy ask the same question the matcher does.
+export { commandPolicyPatternError } from "./internal/command-policy-pattern.js";
+// The oldest Node the server and the CLI start on, checked at each entry.
+export { NODE_FLOOR, meetsNodeFloor, nodeFloorRefusal } from "./node-floor.js";
 
 // Submodules
 export * from "./state/index.js";
@@ -34,7 +42,86 @@ export * from "./llm/index.js";
 export * from "./environment/index.js";
 export * from "./trace/index.js";
 export * from "./hooks/index.js";
-export * from "./plugins/index.js";
+
+// The plugin library: Node-only readers over a package's npm fields and generated table. The
+// vocabulary a plugin compiles against is the `./plugin` subpath's (types only).
+export type {
+  HookCommand,
+  HookPackageContribution,
+  McpServerContribution,
+  PluginCard,
+  PluginSetupKey,
+  QuickStart,
+  SkillContribution,
+  UserPromptTrigger,
+  WorkbenchContribution,
+} from "./plugin/library.js";
+export {
+  PLUGIN_NAME_PATTERN,
+  PLUGIN_VERSION_PATTERN,
+  PluginManifestError,
+  parsePackageJson,
+  readPackageJson,
+  unscopedPackageName,
+} from "./plugin/package-json.js";
+export type { NpmPackage } from "./plugin/package-json.js";
+export { IFACES_FILE, packageEntry, readPluginTable } from "./plugin/table.js";
+export type { PluginDeclaration, PluginTable } from "./plugin/table.js";
+export { LIBRARY_SLOTS, libraryContributions } from "./plugin/contributions.js";
+export type {
+  LibraryContributions,
+  LibraryHooksContribution,
+  PluginMcpServer,
+} from "./plugin/contributions.js";
+export { hasLibraryContributions, isLibraryPackage, libraryParts } from "./plugin/kinds.js";
+export type { LibraryParts } from "./plugin/kinds.js";
+export { iconImage, readInstalledIcon, readPluginIcon } from "./plugin/icon.js";
+export type { IconImage } from "./plugin/icon.js";
+export {
+  ICON_CONTENT_TYPES,
+  ICON_FILE_NAMES,
+  MAX_ICON_BYTES,
+  iconFileName,
+  isIconFileName,
+  sniffIconFormat,
+} from "./plugin/icon-format.js";
+export type { IconFormat } from "./plugin/icon-format.js";
+export { isSafeIconSvg, isTintableSvg } from "./plugin/icon-svg.js";
+export {
+  USER_PROMPT_EVERY_PROMPT_SINCE,
+  comparePluginVersions,
+  parsePluginVersion,
+  pluginContentVersion,
+  predatesEveryPromptHooks,
+  userPromptTrigger,
+} from "./plugin/versions.js";
+export { parseSkillFrontmatter } from "./plugin/skill-frontmatter.js";
+export type { SkillMetadata } from "./plugin/skill-frontmatter.js";
+export {
+  useInstalledPluginPrefix,
+  useLibraryHost,
+  usePushedPluginLibrary,
+  workspacePluginRoot,
+} from "./plugin/library-host.js";
+export {
+  libraryPlugin,
+  libraryPluginPackage,
+  libraryPluginReadme,
+  librarySkill,
+  loadLibraryPlugins,
+  loadPreinstalledPlugins,
+  readLibraryPackage,
+  readPackageCard,
+} from "./plugin/library-reader.js";
+export type {
+  HookManifest,
+  LibraryHooks,
+  LibraryPlugin,
+  LibrarySkill,
+  LibraryWorkbench,
+} from "./plugin/library-reader.js";
+export { PLUGIN_CATEGORIES, groupPlugins, loadPluginGroups } from "./plugin/categories.js";
+export type { PluginCategory, ResolvedPluginGroup } from "./plugin/categories.js";
 
 // Runtime entry points
 export { ContextEngine, reconnectDelayMs } from "./engine/context-engine.js";
@@ -65,7 +152,7 @@ export type { AgentAssembly, ModelRequestContext, PromptSection } from "./agent.
 // implementation, so a title is cut the same way whichever path produced it. The
 // prompt/request internals (buildTitlePrompt / generateTitleWithLLM) are deliberately not
 // public; marker stripping (stripConversationMarkers) is exported from the markers module
-// via the omnimessage barrel.
+// through the root's `export *` of `@prismshadow/amsp/markers`.
 export { sanitizeTitle, truncateTitle } from "./internal/session-title.js";
 export type { SessionTitleResult } from "./internal/session-title.js";
 // Session assembly likewise stays internal; only the attachment-line placement rule is
@@ -92,7 +179,7 @@ export type {
 } from "./agent.js";
 
 /** SDK version number. */
-export const VERSION = "0.2.16";
+export const VERSION = "0.2.18";
 /** Release build date (UTC yyyy-mm-dd), stamped by the release workflow next to VERSION; null in a dev/source build. */
 export const BUILD_DATE: string | null = null;
 /** Full commit sha the release was built from, stamped by the release workflow next to VERSION; null in a dev/source build. */

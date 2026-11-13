@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/plugin";
+import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/cli";
 import { parseManifest } from "@prismshadow/penguin-core/kernel";
 import type { ModuleDef } from "@prismshadow/penguin-core/kernel";
 import { PluginHost } from "../src/plugin/host.js";
@@ -129,7 +129,7 @@ describe("runPluginCommands", () => {
     const code: CliCommandCode = {
       register: (node) => {
         (node as any).argument("<name>").action((name: string) => {
-          (node as any)._ctx.write(`Hello, ${name}!`);
+          process.stdout.write(`Hello, ${name}!\n`);
         });
       },
     };
@@ -160,16 +160,17 @@ describe("runPluginCommands", () => {
     expect(resultZh.stdout).toContain("打招呼");
   });
 
-  it("calls setExitCode and writes to the context", async () => {
+  it("captures what the command writes to the process, and its exit code", async () => {
     const code: CliCommandCode = {
-      register: (node, ctx) => {
+      register: (node) => {
         (node as any).action(() => {
-          ctx.write("out line");
-          ctx.writeErr("err line");
-          ctx.setExitCode(3);
+          process.stdout.write("out line\n");
+          process.stderr.write("err line\n");
+          process.exitCode = 3;
         });
       },
     };
+    const priorExitCode = process.exitCode;
     const result = await runPluginCommands(
       [{ package: "@a/x", key: "cmd", summary: { en: "", zh: "" }, code }],
       { args: ["cmd"], language: "en", prog: "penguin" },
@@ -177,6 +178,27 @@ describe("runPluginCommands", () => {
     expect(result.exitCode).toBe(3);
     expect(result.stdout).toContain("out line\n");
     expect(result.stderr).toContain("err line\n");
+    // The host's own streams and exit code are restored after the run.
+    expect(process.exitCode).toBe(priorExitCode);
+  });
+
+  it("serializes concurrent runs so neither captures the other's output", async () => {
+    const code: CliCommandCode = {
+      register: (node) => {
+        (node as any).argument("<tag>").action(async (tag: string) => {
+          process.stdout.write(`${tag} start\n`);
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          process.stdout.write(`${tag} end\n`);
+        });
+      },
+    };
+    const commands = [{ package: "@a/x", key: "cmd", summary: { en: "", zh: "" }, code }];
+    const [first, second] = await Promise.all([
+      runPluginCommands(commands, { args: ["cmd", "one"], language: "en", prog: "penguin" }),
+      runPluginCommands(commands, { args: ["cmd", "two"], language: "en", prog: "penguin" }),
+    ]);
+    expect(first.stdout).toBe("one start\none end\n");
+    expect(second.stdout).toBe("two start\ntwo end\n");
   });
 
   it("reports an unknown command on stderr with exit 1", async () => {
@@ -256,9 +278,9 @@ describe("routes (e2e)", () => {
       children: [],
     });
     const code: CliCommandCode = {
-      register: (node, ctx) => {
+      register: (node) => {
         (node as any).argument("[name]", "Name to greet").action((name?: string) => {
-          ctx.write(`Hello, ${name ?? "world"}!`);
+          process.stdout.write(`Hello, ${name ?? "world"}!\n`);
         });
       },
     };
@@ -432,6 +454,15 @@ describe("routes (e2e)", () => {
       prog: "penguin; rm -rf /",
     });
     expect(badProg.status).toBe(400);
+
+    // The explicit exec form names the package before the id, so prog carries a colon.
+    const colonProg = await adminClient.post("/api/cli/commands/run", {
+      package: "@acme/greet",
+      args: ["greet"],
+      language: "en",
+      prog: "penguin exec @acme/greet:greet",
+    });
+    expect(colonProg.status).toBe(200);
 
     app.cleanup();
   });

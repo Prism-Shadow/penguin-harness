@@ -1,7 +1,8 @@
 /**
  * The package's one fetch fake: an AMSP server reduced to a script. Every request is recorded;
  * each is answered by the route the test registered for its method and path (a JSON answer, an
- * empty status, or an event stream), and anything unrouted gets the server's JSON 404. An event
+ * empty status, or an event stream; a route registered several times answers its requests in
+ * turn, the last answer staying), and anything unrouted gets the server's JSON 404. An event
  * stream is written step by step: each string is sent as one chunk — so a test decides where
  * chunks split — and a promise in the script holds the stream until it settles. An aborted
  * request signal rejects the call before the response, as every `fetch` does; after it, the body
@@ -39,9 +40,14 @@ export const BASE_URL = "http://penguin.test/api/amsp/v1";
 
 const encoder = new TextEncoder();
 
-/** One AMSP event as the server frames it. */
-export function frame(event: object): string {
-  return `data: ${JSON.stringify(event)}\n\n`;
+/** One record as the server frames it: its id, then its envelope. */
+export function frame(record: object, id?: string): string {
+  return `${id !== undefined ? `id: ${id}\n` : ""}data: ${JSON.stringify(record)}\n\n`;
+}
+
+/** A control frame: named, id-less. */
+export function control(name: string, data: object = {}): string {
+  return `event: ${name}\ndata: ${JSON.stringify(data)}\n\n`;
 }
 
 export const DONE = "data: [DONE]\n\n";
@@ -96,7 +102,9 @@ function scriptedBody(steps: Step[]): {
 
 export function createFetchFake() {
   const calls: FetchCall[] = [];
-  const routes = new Map<string, Answer>();
+  /** Each key's answers: successive requests take them in turn, and the last one stays. */
+  const routes = new Map<string, Answer[]>();
+  const route = (k: string, answer: Answer) => routes.set(k, [...(routes.get(k) ?? []), answer]);
   const waiting = new Map<string, Array<(call: FetchCall) => void>>();
   const key = (method: string, path: string) => `${method} ${path}`;
 
@@ -117,7 +125,8 @@ export function createFetchFake() {
     calls.push(call);
     for (const notify of waiting.get(key(call.method, call.path)) ?? []) notify(call);
     waiting.delete(key(call.method, call.path));
-    const answer = routes.get(key(call.method, call.path));
+    const answers = routes.get(key(call.method, call.path));
+    const answer = answers && answers.length > 1 ? answers.shift() : answers?.[0];
     if (answer) return answer(call);
     const notFound = { error: { code: "not_found", message: `No route for ${call.path}.` } };
     return respond(404, JSON.stringify(notFound), "application/json");
@@ -129,18 +138,18 @@ export function createFetchFake() {
     calls,
     /** Answers `method path` with a JSON body, once `hold` (if given) settles. */
     json(method: string, path: string, status: number, body: unknown, hold?: Promise<unknown>) {
-      routes.set(key(method, path), async () => {
+      route(key(method, path), async () => {
         await hold;
         return respond(status, JSON.stringify(body), "application/json");
       });
     },
     /** Answers `method path` with a body of any type, such as a proxy's HTML error page. */
     text(method: string, path: string, status: number, body: string, contentType: string) {
-      routes.set(key(method, path), () => respond(status, body, contentType));
+      route(key(method, path), () => respond(status, body, contentType));
     },
     /** Answers `method path` with a status and no body. */
     empty(method: string, path: string, status: number) {
-      routes.set(key(method, path), () => new Response(null, { status }));
+      route(key(method, path), () => new Response(null, { status }));
     },
     /**
      * Answers `method path` with an event stream written from `steps`; with `abortErrorsBody`,
@@ -153,7 +162,7 @@ export function createFetchFake() {
       { abortErrorsBody = false }: { abortErrorsBody?: boolean } = {},
     ): ServedStream {
       const { body, served, abort } = scriptedBody(steps);
-      routes.set(key(method, path), (call) => {
+      route(key(method, path), (call) => {
         const signal = call.signal;
         if (abortErrorsBody && signal) {
           signal.addEventListener("abort", () => abort(signal.reason), { once: true });

@@ -29,9 +29,19 @@ pnpm --filter @prismshadow/penguin-landing dev        # frames and the Gallery l
 
 Without the gallery running, a frame keeps its placeholder. A frame is lazy (it loads about a screen ahead of the reader) and a guest (`embed=1`): it takes no focus and passes the wheel to the page until it is clicked. On phones it shows the gallery's phone window, and without a fine pointer it is a picture only; its window bar links to the same surface in the gallery.
 
+### Plugins, Benchmarks and Leaderboards
+
+These pages read their source files at build time and keep no copy here (`scripts/hub/`, served to the pages by the `virtual:penguin-hub` module of `scripts/hub-plugin.ts`): the packages under the repository's `plugins/`, and a shallow clone of [penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark) in `node_modules/.cache/penguin-hub/`: `packages/`, `experiments/` and `leaderboards/`, and from the large `data/` only each benchmark's `README.md` and each task's `instruction.md` (the other data files are listed from git, not downloaded). A build clones it afresh; `dev` reuses the last clone. To build offline or against a local checkout:
+
+```bash
+PENGUIN_BENCHMARK_REPO=/path/to/penguin-harness-benchmark pnpm --filter @prismshadow/penguin-landing dev
+```
+
+A source file that breaks its format (RFC-0001, RFC-0002, RFC-0003, RFC-0005) fails the build and names the file. Only published benchmarks and leaderboards are shown; a `draft` is skipped.
+
 ## Deployment
 
-`.github/workflows/pages.yml` builds landing + docs + gallery and deploys on pushes to main that touch any of the three packages, or the Web App and UI package the gallery frames (or on manual dispatch). First-time setup: repository Settings → Pages → Source = "GitHub Actions".
+`.github/workflows/pages.yml` builds landing + docs + gallery and deploys on pushes to main that touch any of the three packages, `plugins/`, or the Web App and UI package the gallery frames, once a day for the benchmark repository, and on manual dispatch. First-time setup: repository Settings → Pages → Source = "GitHub Actions".
 
 ## Blog
 

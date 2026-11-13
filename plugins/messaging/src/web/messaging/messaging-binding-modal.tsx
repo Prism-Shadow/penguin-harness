@@ -12,7 +12,8 @@
  * any channel's form asks to discard them first, through the app's one prompt; nothing closes it
  * while a save is in flight, and a failed load closes without asking. The dialog's edits are
  * registered under a scope of their own, apart from the conversation's dock panel, so neither
- * asks about the other's.
+ * asks about the other's. For a conversation on a machine out of reach the editor reads nothing
+ * and the dialog stays open on the machine's last answer, read-only, with Save disabled.
  */
 import type { MessagingChannel } from "@prismshadow/penguin-server/api";
 import { Button, Modal, useGuardedClose, useUnsavedChanges } from "@prismshadow/penguin-ui";
@@ -69,7 +70,7 @@ export function MessagingBindingModal({
             id={b.saveButtonId}
             size="sm"
             variant="primary"
-            disabled={b.busy || !b.dirty || !b.valid}
+            disabled={b.busy || !b.dirty || !b.valid || !b.access.live}
             onClick={() => void b.save()}
           >
             {b.busy ? S.common.saving : S.common.save}
@@ -80,7 +81,9 @@ export function MessagingBindingModal({
       <div className="space-y-3">
         <MessagingBindingBody b={b} />
         {/* The Save action lives in the footer; the collapsed FAQ trails the body. */}
-        {b.form !== null && <MessagingBindingHelp channel={b.form.channel} />}
+        {b.form !== null && (
+          <MessagingBindingHelp channel={b.form.channel} machineAlias={b.location?.alias ?? null} />
+        )}
       </div>
     </Modal>
   );

@@ -46,7 +46,7 @@ HMR 层落地时定下一条判据：缺记录与坏记录是两件不同的事�
 
 ### 常在不管入口
 
-记录只说这个根持有什么。它不说哪个程序来启动 harness——根里这份 harness 由服务它的那份安装启动，用的是那个安装自己程序目录里的程序。dev 根带着安装记录，照旧以 dev 的方式启动；桌面外壳照旧以自己的方式起 server。
+记录只陈述这个根持有什么；从哪个入口启动由 resolution 决定，见 [PRFC-0024](./PRFC-0024-cli-resolution.zh.md#guide-level-explanation)。dev 根带着安装记录，照旧以 dev 的方式启动；桌面外壳照旧以自己的方式起 server。
 
 ## Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
@@ -65,11 +65,9 @@ HMR 层落地时定下一条判据：缺记录与坏记录是两件不同的事�
 
 读取面交出记录，或者抛出。两类情况各带自己的名字：**没有记录**（这个根在该路径上没有东西），**记录损坏**（文件在，读不出或解析不了）。每个错误都点名它找过的文件。调用方按这两个名字分支；任何合并两者、或在缺席处猜的读取面，都在无声回退这个面已落库的判据。常在让「没有记录」这一类变少，同时让它留在原地：从未装配过的根仍然存在，它们与记录受损的根仍然可区分。
 
-### 装配即自推
+### 装配写初始记录
 
-npm、tarball 与 Docker 程序携带一份 harness store（`harness.json` 加 `store/`），从程序构建所用的同一批源码打出。桌面应用保留现有 gz 镜像供机器安装使用，桌面首启装配留作候选。数据根是用户把 harness 指向的那个目录，每次运行都能换、打包时不可能知道，所以写记录的不是安装器：程序每次启动，都把自己带的镜像复制进它服务的根，先于任何对根的读取。复制是一次对账，有四个答案：没有记录的根得到一份；记录来自同一份镜像的根保持原样；记录来自更旧镜像的根（升级安装）升到本程序携带的版本；记录来自热推——或来自对端复制的状态——的根保持不动，因为推送是比任何随包镜像更新的决定。读取面看到的与推送过的记录相同：它以记录作答，机器的推送 CLI 面从第一刻起就能工作，第一次热推像任何推送替换任何记录那样替换它。
-
-npm 的 server 依赖包携带 `dist/hmr/`，tarball 与 Docker 携带 `lib/dist/hmr/`。打包器用已构建 server 的 `writePushedBuild` 生成这些 store。首启经 staging 复制 store，再以原子 rename 提交记录；已有记录不可读时保持原样。桌面保留既有 `install-image.gz` 与机器安装路径，checkout 镜像保留 gz 构建中间件。
+逐通道：tarball 的安装脚本与桌面的首启把产品已带的镜像铺下去；npm 包与 Docker 镜像在构建时得到一份自己构建的镜像，以同样方式铺下；machines 对端保持安装时复制发送方的记录。每份手工安装的 release 从此自带预装配。写不进记录的装配在那一刻抛出自己的具名故障。只读或不可写介质的处置留给实现。
 
 ### 一个 store，镜像只在途中（候选）
 
@@ -81,16 +79,16 @@ npm 的 server 依赖包携带 `dist/hmr/`，tarball 与 Docker 携带 `lib/dist
 
 ### 本 RFC 之后各通道的侧面
 
-npm、tarball 与 Docker 的**数据根**侧面变成「从第一次启动起就带着记录，由程序自带的镜像复制而来」；machines 对端保持安装即复制，没有新增。
+每条通道的**数据根**侧面变成「装配时即带 meta」；machines 对端保持安装即复制，没有新增；自带镜像的两条通道从「只为机器安装携带」变成「也为自己携带」。
 
 ## Invariants
 [invariants]: #invariants
 
 ### Meta 常在
 
-> 无论一条 [distro channel](./PRFC-0021-distros.zh.md#guide-level-explanation) 以何种方式抵达一台机器，其程序服务的每个 [数据根](./PRFC-0023-harness-meta.zh.md#guide-level-explanation) 从被服务的第一刻起就带着 [harness meta](./PRFC-0023-harness-meta.zh.md#guide-level-explanation)：程序随身携带一份 harness 镜像，每次启动先把它复制进根，先于任何对根的读取。
+> 无论一条 [distro channel](./PRFC-0021-distros.zh.md#guide-level-explanation) 怎样装配一台机器，它装配出的 [数据根](./PRFC-0023-harness-meta.zh.md#guide-level-explanation) 从存在的第一刻起就带着 [harness meta](./PRFC-0023-harness-meta.zh.md#guide-level-explanation)。
 
-这是整份 RFC 要铺的那条底线，按「通道的属性」声明：无论用户把一条通道的程序指向哪个根，那个根上都写着「自己持有什么」。记录跟着根走，不跟着安装走——一个崭新的 PENGUIN_HOME 由程序下一次对它的启动装配，无需重装。未来的通道若发行不带 harness 镜像的产品，就破了本 RFC。
+这是整份 RFC 要铺的那条底线，按「通道的属性」声明：无论一条通道对一台机器做了什么，它留下的机器，其根上写着「自己持有什么」。未来的通道若带着不写记录的产品发行，就破了本 RFC。
 
 ### 两件失败各有其名
 
@@ -98,11 +96,11 @@ npm、tarball 与 Docker 的**数据根**侧面变成「从第一次启动起就
 
 这两个名字早于本 RFC，也要活得比它久。常在把「没有记录」收窄到从未被装配的根，把「记录损坏」留成装配或文件损坏可能造出的故障。合并两者的读取面，会对一个记录受损的调用方答「从来没推送过」——那句回答悄悄丢掉这个根仍然持有的一个版本。
 
-### 记录描述，安装启动
+### 记录不决定入口
 
-> 记录只说一个根持有什么。它不说哪个程序来启动 harness，记录里也没有任何字段写这个。
+> 无论 [harness meta](./PRFC-0023-harness-meta.zh.md#guide-level-explanation) 多完整，从哪个入口启动 harness 都由 [resolution](./PRFC-0024-cli-resolution.zh.md#guide-level-explanation) 决定。
 
-一份写明启动程序的记录，会让每条通道的 launcher 沦为记录的仆人，让每个 dev 根被自己安装的镜像扣为人质——而且这个名字根本写不成对所有读者都对的一份：启动的程序活在每份安装自己的目录里，记录却可能被站在任何布局上的读取方读到。能旅行的是 harness 本身：内容寻址的 bundle，相对记录存放，由服务这个根的那份安装用它自己的程序加载。保住这条缝，本 RFC 才能铺自己的底线。
+一份会强令启动路径的记录，会让每条通道的 launcher 沦为记录的仆人，让每个 dev 根被自己安装的镜像扣为人质。记录陈述根持有什么，resolution 决定运行什么；保住这条缝，本 RFC 才能铺自己的底线。
 
 ## Drawbacks
 [drawbacks]: #drawbacks
@@ -118,7 +116,7 @@ npm、tarball 与 Docker 的**数据根**侧面变成「从第一次启动起就
 
 **读取面只读一个文件**：它读根下的 `hmr/harness.json`，别处不读，所以记录只存在于镜像里的机器没有可据以行动的记录。
 
-**不做的代价**：新装的机器，远端命令面没有记录可读——正是常在要关掉的那片静默。
+**不做的代价**：PRFC-0024 的 resolution 在新装机器上无物可解析。
 
 ## Prior art
 [prior-art]: #prior-art
@@ -145,11 +143,6 @@ npm、tarball 与 Docker 的**数据根**侧面变成「从第一次启动起就
 ---
 
 ## Changes
-
-### v1.2.0
-
-- 把 invariant「记录不决定入口」改写为「记录描述，安装启动」：记录只说一个根持有什么，不说哪个程序来启动 harness。原先的措辞把决定推迟给一份 resolution RFC（PRFC-0024，已撤——这个问题自己就答了：服务这个根的那份安装，启动它自己的程序）。
-- 装配从安装时刻移到启动时刻：每条通道的程序随身携带一份 harness 镜像，每次启动把它复制进它服务的那个数据根（四个答案——收下、保持、升级、让位给推送）。invariant「Meta 常在」现在约束程序服务的每个根，而不是安装器留下的一台机器；从镜像复制来的记录在 provenance 里留有印记。
 
 ### v1.1.0
 

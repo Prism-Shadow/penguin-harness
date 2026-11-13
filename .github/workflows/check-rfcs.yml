@@ -1,0 +1,138 @@
+name: Check RFCs
+
+on:
+  pull_request:
+    paths:
+      - "rfcs/**"
+
+jobs:
+  check-rfcs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check RFC files
+        run: |
+          set -e
+          ERROR=0
+
+          echo "=== Checking RFC naming and numbering ==="
+
+          # Check that all RFC files follow the naming convention
+          for file in rfcs/PRFC-*.md; do
+            if [ ! -e "$file" ]; then
+              continue
+            fi
+
+            filename=$(basename "$file")
+            
+            # Check naming format: PRFC-NNNN-slug.md
+            if ! echo "$filename" | grep -qE '^PRFC-[0-9]{4}-[a-z0-9-]+(\.zh)?\.md$'; then
+              echo "❌ $filename does not follow naming convention PRFC-NNNN-slug.md"
+              ERROR=1
+            else
+              echo "✅ $filename: naming OK"
+            fi
+          done
+
+          echo ""
+          echo "=== Checking RFC number sequence ==="
+
+          # Extract all RFC numbers and check for duplicates
+          RFC_NUMBERS=$(ls rfcs/PRFC-*.md 2>/dev/null | grep -v '\.zh\.md$' | sed 's/.*PRFC-\([0-9]*\)-.*/\1/' | sort)
+
+          # Check for duplicate numbers (excluding known dual-0005)
+          DUPLICATES=$(echo "$RFC_NUMBERS" | uniq -d | grep -v '^0005$' || true)
+          if [ -n "$DUPLICATES" ]; then
+            echo "❌ Found duplicate RFC numbers: $DUPLICATES"
+            ERROR=1
+          else
+            echo "✅ No unexpected duplicate RFC numbers"
+          fi
+
+          echo ""
+          echo "=== Checking required sections in RFCs ==="
+
+          # Check that each RFC has required sections
+          REQUIRED_SECTIONS=(
+            "## Summary"
+            "## Motivation"
+            "## Reference-level explanation"
+          )
+
+          for file in rfcs/PRFC-*.md; do
+            if [ ! -e "$file" ]; then
+              continue
+            fi
+
+            # Skip README files
+            if [[ "$file" =~ README ]]; then
+              continue
+            fi
+
+            # The Chinese pair carries translated headings; the English file is the one checked
+            if [[ "$file" == *.zh.md ]]; then
+              continue
+            fi
+
+            filename=$(basename "$file")
+            MISSING=()
+
+            for section in "${REQUIRED_SECTIONS[@]}"; do
+              if ! grep -q "^$section" "$file"; then
+                MISSING+=("$section")
+              fi
+            done
+
+            if [ ${#MISSING[@]} -gt 0 ]; then
+              echo "❌ $filename missing sections: ${MISSING[*]}"
+              ERROR=1
+            else
+              echo "✅ $filename: all required sections present"
+            fi
+          done
+
+          echo ""
+          echo "=== Checking Changes section for modified RFCs ==="
+
+          # Get list of modified RFC files (excluding new files)
+          MODIFIED_RFCS=$(git diff --name-status origin/main...HEAD | grep -E '^M\s+rfcs/PRFC-' | grep -v '\.zh\.md$' | awk '{print $2}' || true)
+
+          if [ -n "$MODIFIED_RFCS" ]; then
+            for file in $MODIFIED_RFCS; do
+              filename=$(basename "$file")
+
+              # Check if ## Changes section exists
+              if ! grep -q "^## Changes" "$file"; then
+                echo "❌ $filename was modified but has no '## Changes' section"
+                echo "   When modifying a landed RFC, add a ## Changes section with version history"
+                ERROR=1
+                continue
+              fi
+
+              # Check if there's a version heading under ## Changes
+              if ! grep -A 10 "^## Changes" "$file" | grep -q "^### v[0-9]"; then
+                echo "❌ $filename has ## Changes section but no version headings (e.g., ### v2.0.0)"
+                ERROR=1
+              else
+                echo "✅ $filename: ## Changes section present with version"
+              fi
+            done
+          else
+            echo "ℹ️  No modified RFC files detected (only new additions)"
+          fi
+
+          echo ""
+          if [ $ERROR -eq 0 ]; then
+            echo "✅ All RFC checks passed!"
+          else
+            echo "❌ RFC checks failed. Please fix the issues above."
+            echo ""
+            echo "Guidelines:"
+            echo "- RFC files must be named PRFC-NNNN-slug.md, or PRFC-NNNN-slug.zh.md for its Chinese pair (4-digit number, lowercase kebab-case slug)"
+            echo "- Required sections: Summary, Motivation, Reference-level explanation"
+            echo "- When modifying a landed RFC, increment the version and add a ## Changes section"
+            echo "- See rfcs/TEMPLATE.md for the full RFC template"
+            exit 1
+          fi

@@ -1,19 +1,22 @@
-import { sessionActivity, sessionBackgroundTasks } from "@prismshadow/penguin-web/internal";
-import { bucketCostUsd } from "@prismshadow/penguin-web/internal";
-import { agentDisplayName } from "@prismshadow/penguin-web/internal";
+import { sessionActivity, sessionBackgroundTasks } from "../../../lib/session-activity";
+import { bucketCostUsd } from "../../../lib/amsp/task-stats";
+import { agentDisplayName } from "../../../state/project";
 import { modelTaskStartCount } from "../agent-topology";
 import { ChatInput } from "../chat-input";
 import { approvalModeChoices } from "../approval-mode";
-import { sessionThinkingLevel } from "@prismshadow/penguin-web/internal";
+import { sessionThinkingLevel } from "../../model-picker";
 import { advanceCostStat } from "../header-stats";
-import { sameModelRef } from "@penguinharness/plugin-models/web";
+import { sameModelRef } from "../../models";
 import { headerStats } from "../session/main-chat-helpers";
 import type { useChatController } from "../session/use-chat-controller";
 import { agentPagePath } from "../session/main-chat-dock";
-import { machineForSession } from "@prismshadow/penguin-web/internal";
+import { machineForSession } from "../../../lib/session-machines";
 
 export function createMainChatView(
-  scope: ReturnType<typeof useChatController> & { projectId: string; pageAgentId: string | null },
+  scope: ReturnType<typeof useChatController> & {
+    projectId: string;
+    pageAgentId: string | null;
+  },
 ) {
   const {
     navigate,
@@ -35,6 +38,7 @@ export function createMainChatView(
     onDraftSkillsChange,
     inputHistory,
     turnThinkingLevel,
+    goalPlugin,
     agentSkills,
     agentThinkingLevel,
     compactionLimit,
@@ -45,6 +49,9 @@ export function createMainChatView(
     onStop,
     onQueueFollowUp,
     onSteer,
+    onInterruptSend,
+    onInterruptFollowUp,
+    onInterruptSteering,
     composerRef,
     onRecallSteering,
     onRecallFollowUp,
@@ -122,6 +129,9 @@ export function createMainChatView(
       returnedSteering={stream.returnedSteering}
       onRecallSteering={onRecallSteering}
       onQueueFollowUp={onQueueFollowUp}
+      onInterruptSend={onInterruptSend}
+      onInterruptFollowUp={onInterruptFollowUp}
+      onInterruptSteering={onInterruptSteering}
       queuedFollowUps={stream.queuedFollowUps}
       pendingFollowUps={stream.pendingFollowUps}
       onRecallFollowUp={onRecallFollowUp}
@@ -160,6 +170,7 @@ export function createMainChatView(
       {...(sessionDraft.skills && sessionDraft.skills.length > 0
         ? { initialSkills: sessionDraft.skills }
         : {})}
+      goalPlugin={goalPlugin}
       onSkillsChange={onDraftSkillsChange}
       onHandoff={onHandoff}
       initialText={sessionDraft.text ?? ""}

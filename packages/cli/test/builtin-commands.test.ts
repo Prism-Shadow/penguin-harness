@@ -13,7 +13,7 @@
  *   description the host wrote from the entry.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cliCommandKeyFault } from "@prismshadow/penguin-core/plugin";
+import { cliCommandKeyFault } from "@prismshadow/penguin-core/cli";
 import { bootBuiltinCommands } from "../src/cli-commands.js";
 import type { BuiltinCommand } from "../src/cli-commands.js";
 import { bootBrowserCommands, bootCompanyCommands } from "@prismshadow/penguin-server/cli";

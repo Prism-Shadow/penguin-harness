@@ -19,7 +19,7 @@ The CLI and the server load a `.env` file from the working directory on startup.
 | `PENGUIN_PREVIEW_ORIGIN` | Origin that serves Workspace HTML previews, e.g. `https://preview.example.com` | Unset: the loopback counterpart is derived per request |
 | `PENGUIN_GO_ORIGIN` | Trusted origin for Penguin Go key authorization and account balance queries | `https://go.penguin.ooo` |
 | `MODELSCOPE_BRIDGE_URL` | Address of the authorization bridge the server-side ModelScope key authorization calls | `https://go.penguin.ooo/modelscope` |
-| `PENGUIN_TRUST_PROXY` | `1` trusts the `x-forwarded-proto` header | Unset: the header is ignored |
+| `PENGUIN_TRUST_PROXY` | `1` trusts the `x-forwarded-proto` and `x-forwarded-host` headers | Unset: both are ignored. The desktop app's server sets it |
 | `PENGUIN_SEED_ADMIN_PASSWORD` | Fixed initial password for the seeded built-in admin (automated tests / e2e) | Unset: a random password is generated |
 | `PENGUIN_LANG` | CLI language (`en` / `zh`), set with `penguin config lang` | `en` |
 | `PENGUIN_UPDATE_CHECK` | `off` disables the Web App's new-release check | Enabled |
@@ -29,7 +29,7 @@ The CLI and the server load a `.env` file from the working directory on startup.
 
 Notes:
 
-- `PENGUIN_TRUST_PROXY`: set it behind a reverse proxy that terminates TLS and sets or strips the header itself. Session cookies are then marked `Secure`, and the hot-update network gate sees HTTPS.
+- `PENGUIN_TRUST_PROXY`: set it behind a reverse proxy that terminates TLS. The proxy must keep the external `Host` header unchanged and overwrite `x-forwarded-proto` with `https`, and should overwrite `x-forwarded-host` with the external host or strip it. The server counts each header only as a single value: a list, which a proxy that appends instead of overwriting produces, is not trusted, and neither is a malformed value. From them it takes the address the browser is on, its [public origin](/security#network-surface): session cookies are marked `Secure`, the hot-update network gate sees HTTPS, and a model provider's authorization redirects back to it. A write's `Origin` is checked against the forwarded scheme with the unchanged `Host`. Without the setting, or when the proxy rewrites `Host` or appends to `x-forwarded-proto`, every write the Web App makes, signing in included, is refused with `403` `cross_origin_write`. Serve the external host with HSTS too. The desktop app's embedded server sets it itself, because it listens on loopback only and is reached from outside only through the Penguin Remote relay, whose client should keep the public host as `Host` and overwrite `x-forwarded-proto` with `https` and `x-forwarded-host` with the public host, each as a single value.
 - `PENGUIN_SEED_ADMIN_PASSWORD`: without it, the seed generates a random password that is hashed and discarded unseen, and you claim the account through the first-login link.
 - `PENGUIN_GO_ORIGIN`: server configuration, not an endpoint the browser can name. It must be a bare HTTPS origin; plain HTTP is accepted only for `localhost`, `127.0.0.1` and `[::1]`, for integration environments. A path, credentials, a query string or a fragment is rejected at startup. See [Connect an account](/models#connect-an-account).
 - `MODELSCOPE_BRIDGE_URL`: server configuration like `PENGUIN_GO_ORIGIN`, not an endpoint the browser can name. It must be an HTTPS address with no credentials, query string or fragment. Unlike `PENGUIN_GO_ORIGIN`, a path prefix **is** allowed, because the production bridge lives under `https://go.penguin.ooo/modelscope`. See [Connect an account](/models#connect-an-account).
@@ -70,20 +70,19 @@ An unparseable value stops the server at startup instead of falling back silentl
 
 ### Provider credential variables
 
-When neither a model entry nor its group holds an `api_key` that reaches it, the entry falls back to the provider's environment variable **only when its requests go to that provider's official endpoint**: no `base_url` resolves for it (see [Group connections](#group-connections)), or the one it resolves to is the vendor's own endpoint. A `*_BASE_URL` value is used only when no `base_url` resolves; an entry whose own or group `base_url` points elsewhere is never covered by the environment, even when `OPENAI_BASE_URL` names the same server. Every other entry — the gateway groups' preset endpoints, custom, vLLM and user-created groups with their own endpoints — needs an `api_key` of its own or its group's, and PenguinHarness refuses to build a client for it otherwise; see [Set API keys](/models#set-api-keys).
+A model's base URL, protocol and API key each resolve from the Project config alone: the model's own value, else its group's `[providers.<id>]` value (see [Group connections](#group-connections)). PenguinHarness passes those values to the [MMSP](https://www.npmjs.com/package/@prismshadow/mmsp) client the model routes to, and the client decides what a missing key means. With no key, it reads its own `*_API_KEY` only when no base URL is set, or when the base URL is the client's own default endpoint (`https://api.deepseek.com` for DeepSeek, for example); with no base URL, the endpoint is its `*_BASE_URL`, else that default. A model with no key and any other base URL is refused before any request, whatever the environment holds; the one exception is a model on the `mmsp` client, an open MMSP server, which is sent no key. To use a vendor variable for a vendor's second host, a proxy or Bedrock, leave the base URL empty on the model and its group and set the vendor's `*_BASE_URL` beside the key (`ANTHROPIC_BASE_URL=bedrock://us-east-1`). To use any other base URL from the file, put the key in the file too. See [Set API keys](/models#set-api-keys).
 
-| Provider | API key | Base URL |
+| Group | API key | Base URL |
 | --- | --- | --- |
 | deepseek | `DEEPSEEK_API_KEY` | `DEEPSEEK_BASE_URL` |
 | anthropic | `ANTHROPIC_API_KEY` | `ANTHROPIC_BASE_URL` |
-| openai, openrouter, fireworks, siliconflow, atlascloud, tokendance, opencode-go, qwen-pay-as-you-go, qwen-token-plan, modelscope, vllm, custom | `OPENAI_API_KEY` | `OPENAI_BASE_URL` |
-| penguin-go | `PENGUIN_GO_API_KEY` | `PENGUIN_GO_BASE_URL` |
+| openai | `OPENAI_API_KEY` | `OPENAI_BASE_URL` |
 | minimax | `MINIMAX_API_KEY` | `MINIMAX_BASE_URL` |
 | google | `GEMINI_API_KEY` | `GEMINI_BASE_URL` |
 | zhipu | `ZAI_API_KEY` | `ZAI_BASE_URL` |
 | moonshot | `MOONSHOT_API_KEY` | `MOONSHOT_BASE_URL` |
 
-The openrouter, fireworks, siliconflow, atlascloud, tokendance, opencode-go, qwen-pay-as-you-go, qwen-token-plan, vllm and custom groups speak an OpenAI-compatible protocol, hence the shared `OPENAI_*` variables — which, by the rule above, their rows do not fall back to: the variable holds your OpenAI key, and a gateway is not OpenAI. The same holds for the opencode-go models on Anthropic Messages, whose client reads `ANTHROPIC_*`. ModelScope also shares `OPENAI_*` because its group credential is an api-inference token, and its group stores the generic Responses client; its rows do not fall back to it either. The Penguin Go relay keeps a pair of its own, so the app never offers a vendor credential for it. MiniMax's official Responses client uses `MINIMAX_*`; the built-in MiniMax preset carries no base URL and reaches the official endpoint through that client's default. A model on the `mmsp` client (an MMSP server) reads `MMSP_API_KEY` and `MMSP_BASE_URL`, by default `http://127.0.0.1:25752/v1`, only when no `base_url` resolves for it; with a `base_url` and no `api_key` it is sent no key, which is what an open MMSP server takes. For provider groups and the built-in model catalog, see [Models & Providers](/models).
+A new Project writes no `base_url` for these seven first-party groups, so their keyless models read these variables; a group or model whose base URL is the vendor's default endpoint reads them too. The gateway groups (openrouter, fireworks, siliconflow, atlascloud, runcrate, tokendance, opencode-go, qwen-pay-as-you-go, qwen-token-plan, modelscope) carry the gateway's base URL on their group, so their models need a key in the file: their OpenAI-compatible client would read `OPENAI_*` (or `ANTHROPIC_*` for opencode-go's Anthropic Messages models), which holds your OpenAI or Anthropic key. A custom or user-created model with no base URL anywhere reads its protocol client's pair, `OPENAI_*` for the OpenAI-compatible protocols, and its requests go to that client's default endpoint (`https://api.openai.com/v1`) unless `OPENAI_BASE_URL` is set. The vllm group's client reads vLLM's own pair, `VLLM_API_KEY` and `VLLM_BASE_URL`, and never `OPENAI_*`: a new Project writes `http://127.0.0.1:8000/v1`, where `vllm serve` answers by default, as the group's base URL, and a vllm model with no base URL anywhere goes to `VLLM_BASE_URL`, else to that same address. Penguin Go and ModelScope take their key from the group's connection only: connect the group from its header, or paste the key in its group settings. `PENGUIN_GO_API_KEY` and `PENGUIN_GO_BASE_URL` are no longer read; if you set only those, reconnect Penguin Go from its group header or paste the key. MiniMax's official Responses client uses `MINIMAX_*`; the built-in MiniMax preset carries no base URL and reaches the official endpoint through that client's default. A model on the `mmsp` client (an MMSP server) or the `openai-chat-vllm-adapter` client (a vLLM server) with a `base_url` and no `api_key` is sent no key, which is what a server started without one takes; the vLLM client sends vLLM's placeholder key `EMPTY`. For provider groups and the built-in model catalog, see [Models & Providers](/models).
 
 ## Project config
 
@@ -115,7 +114,7 @@ Gemini 4 Argon uses `model_id = "gemini-4-argon"` in the `google` and `penguin-g
 | `max_tokens` | number | The agent's `model.max_tokens` | Per-model max output Tokens; overrides the agent's `model.max_tokens` when set |
 | `fast_mode` | boolean | Off | Per-model fast mode (the provider's premium faster serving tier) |
 | `pricing` | table | — | Three price buckets, `cache_read` / `cache_write` / `output`, in USD per million Tokens (`unit = "usd_per_mtok"`). Always the list price |
-| `api_key` | string | The group key, where it reaches the entry; with none, the provider's environment variable, for the vendor's own endpoint only | Inline credential, this model's own |
+| `api_key` | string | The group key, where it reaches the entry; with none, the client's own environment variable when no `base_url` resolves or it is the client's default endpoint | Inline credential, this model's own |
 | `base_url` | string | The group's; with neither, the client's default endpoint | Custom base URL, this model's own |
 | `created_at` | string | — | When `api_key` was written (ISO 8601); a display field maintained by the interface layer |
 
@@ -125,7 +124,7 @@ Field notes:
 - `fast_mode`: only `true` is persisted. It is offered only for models whose MMSP client can serve it, and the others reject requests that carry it. See [Models](/models#fast-mode).
 - `pricing`: the figure here is the list price. A running promotion is not written to this file: the server keeps it in `web.db` and takes it off when it computes cost. See [Prices and promotions](/models#prices-and-promotions).
 - `base_url`: a new Project stores each gateway's endpoint on its group, and a preset row stores one only where it differs from its group's (OpenCode Go's Anthropic Messages rows, custom's Atria Dawn). Nothing fills a missing one when a model is used: direct vendor rows have none and reach the vendor's default endpoint, or its `*_BASE_URL` variable.
-- `api_key`: when empty, the entry uses its group key, unless the entry's own `base_url` is on another origin than the group's (see [Group connections](#group-connections)). With neither, it falls back to the provider's environment variable only when its endpoint is the vendor's own (see [Provider credential variables](#provider-credential-variables)); a gateway, custom or vLLM entry needs a key of its own or its group's.
+- `api_key`: when empty, the entry uses its group key, unless the entry's own `base_url` is on another origin than the group's (see [Group connections](#group-connections)). With neither, it uses the client's own environment variable only when no `base_url` resolves for it or the one that does is the client's default endpoint (see [Provider credential variables](#provider-credential-variables)); every other entry needs a key of its own or its group's.
 
 ```toml
 default_model = { provider = "deepseek", model_id = "deepseek-flash" }
@@ -166,7 +165,7 @@ Edit this file with the CLI (`penguin config model …`) or on the Web App's Mod
 
 ### Group connections
 
-`[providers.<id>]` holds one group's connection, keyed by provider id: a built-in group or one you created. A new Project's file holds one for every built-in group the catalog gives an endpoint or protocol: the gateways' base URL and protocol, Penguin Go's relay base URL, vLLM's protocol; the first-party vendors and custom get none. The Models page's group settings and connecting a group write it, and so does `penguin config model add --provider <group>` without `--model-id`. A user-created group's table is removed together with the group's last model.
+`[providers.<id>]` holds one group's connection, keyed by provider id: a built-in group or one you created. A new Project's file holds one for every built-in group the catalog gives an endpoint or protocol: the gateways' base URL and protocol, Penguin Go's relay base URL, vLLM's protocol and its local base URL `http://127.0.0.1:8000/v1`. The first-party groups and custom get none. The Models page's group settings and connecting a group write it, and so does `penguin config model add --provider <group>` without `--model-id`. A user-created group's table is removed together with the group's last model.
 
 | Key | Type | Description |
 | --- | --- | --- |
@@ -181,9 +180,9 @@ Each connection field of a model resolves on its own; the first non-empty value 
 | --- | --- |
 | `base_url` | model entry → group → none: the client's default endpoint |
 | `client_type` | model entry → group → none: routed by `model_id` |
-| `api_key` | model entry → group, where its key reaches the model → none: the environment, where [Provider credential variables](#provider-credential-variables) allows it |
+| `api_key` | model entry → group, where its key reaches the model → none: the client's own environment variable, only with no `base_url` or the client's default endpoint (see [Provider credential variables](#provider-credential-variables)) |
 
-The file is the only source of these values. The built-in catalog is a reference: it is written into the file when a Project is created and by the Models page's **Add new models** and **Restore defaults**, and it is never read when a request is built. A key belongs to the endpoint it was issued for: the group key reaches a model only when the model has no `base_url` of its own, or its own has the same origin (scheme, host and port) as the group's `base_url`. OpenCode Go's Anthropic Messages rows, at `https://opencode.ai/zen/go` beside the group's `https://opencode.ai/zen/go/v1`, take it; custom's Atria Dawn, which carries its own endpoint, does not. The environment rule judges the `base_url` a model resolves to, so a group `base_url` that points at a proxy ends the fallback for every model in the group.
+The file is the only source of these values. The built-in catalog is a reference: it is written into the file when a Project is created and by the Models page's **Add new models** and **Restore defaults**, and it is never read when a request is built. A key belongs to the endpoint it was issued for: the group key reaches a model only when the model has no `base_url` of its own, or its own has the same origin (scheme, host and port) as the group's `base_url`. OpenCode Go's Anthropic Messages rows, at `https://opencode.ai/zen/go` beside the group's `https://opencode.ai/zen/go/v1`, take it; custom's Atria Dawn, which carries its own endpoint, does not.
 
 ### New chat defaults
 
@@ -218,21 +217,22 @@ The Plugins page does not offer package-global Delete plugin, which would remove
 
 ## Command policy
 
-The `[command_policy]` block is the Project's guardrail for shell commands: a list of deny rules applied at the approval boundary itself.
+The `[command_policy]` block is the Project's guardrail for shell commands: a list of rules applied at the approval boundary itself. A rule either refuses a matching command (`deny`) or holds it until a person allows it (`ask`).
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
 | `enabled` | boolean | On | Master switch; stored only as `enabled = false` |
-| `[[command_policy.rules]]` | array of tables | The factory set | The deny rules, matched in order. A stored empty list means no rules; an absent list means the factory set |
+| `[[command_policy.rules]]` | array of tables | The factory set | The rules. A stored empty list means no rules; an absent list means the factory set |
 
 Each rule has these keys:
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
 | `name` | string | — | Identifies the rule in the settings UI |
-| `pattern` | string | — | JavaScript regex source, matched against the whitespace-normalized command |
+| `pattern` | string | — | JavaScript regex source, matched against the whitespace-normalized command. It must compile on the server's runtime: a stored rule whose pattern does not is skipped when commands are matched, logged once, and marked on the settings page |
 | `description` | string | — | Optional description |
 | `enabled` | boolean | On | Per-rule switch |
+| `action` | `"deny"` \| `"ask"` | `"deny"` | What a hit does: `deny` refuses the call; `ask` puts it to a person whatever the approval mode. Stored only as `action = "ask"` |
 
 ```toml
 [command_policy]
@@ -242,6 +242,12 @@ enabled = true
 name = "rm-recursive-force"
 pattern = "…" # seeded from the factory set
 description = "rm with recursive + force flags in one command (rm -rf and friends)"
+
+[[command_policy.rules]]
+name = "gh-pr-merge-close"
+pattern = "…" # seeded from the factory set
+description = "gh pr merge / close — a pull request is merged or closed only with a person's go-ahead"
+action = "ask"
 
 [[command_policy.rules]]
 name = "no-force-push"
@@ -254,9 +260,12 @@ Manage the policy on the **Security policy** tab of **Project settings** in the 
 ### Enforcement
 
 - **What it checks:** both tools that reach a shell: `exec_command`'s `cmd` (the launch) and `input_command`'s `chars` (what gets typed into a running command).
-- **When it applies:** `Session.run` wraps the injected approval callback with the policy, so a hit is rejected before the host is asked, under every approval mode, allow-all included.
-- **What the model sees:** the fixed line `Tool call denied by policy.`, distinct from a person's cancellation, so the model changes course.
-- **Hooks:** the policy outranks a [pre-tool-use hook's](/agent-loop#pre-tool-use-hooks) `allow`. A vetoed call stays forbidden whatever an installed hook answers.
+- **When it applies:** `Session.run` wraps the injected approval callback with the policy, under every approval mode, allow-all included. A `deny` hit is rejected before the host is asked. An `ask` hit goes to the host's approval callback with a policy reason, which puts it to a person instead of answering by approval mode (see [Tools & Approval](/tools#approval)). The approval card then says which rule asked.
+- **Which rule wins:** a `deny` hit outranks an `ask` hit wherever the two sit in the list, so adding an `ask` rule never turns a refusal into a question. Among rules with the same action, the first match in list order is the one a decision names.
+- **What the model sees:** for a `deny` hit, the fixed line `Tool call denied by policy.`, distinct from a person's cancellation, so the model changes course. For an `ask` hit, the person's answer, recorded like any other approval.
+- **Hooks:** the policy outranks a [pre-tool-use hook's](/agent-loop#pre-tool-use-hooks) `allow`. A call a `deny` rule matches stays forbidden, and a call an `ask` rule matches still goes to a person, whatever an installed hook answers.
+- **Subagents:** a child Session applies the same policy to the callback it inherits, which is the parent's, so an `ask` hit inside a subagent reaches the same person with its reason.
+- **Unattended Sessions:** an organization's desk and ticket Sessions have nobody to ask, so an `ask` hit there is denied at once. `deny-all` denies it too.
 - **Where it lives:** in the Project config, not in Agent State, so an agent that edits its own configuration through its settings cannot reach it.
 - **When edits apply:** the policy is a strict-tier runtime parameter, read once when a model context opens. An edit reaches a running Session at its next rotation (compaction) and new conversations at once.
 
@@ -264,7 +273,9 @@ Manage the policy on the **Security policy** tab of **Project settings** in the 
 
 The rules are **plain data with no special tiers**. The factory set is seeded into each new Project exactly like the model presets: copied in at creation and never rewritten afterward. Every rule can then be edited, disabled or deleted, and you can add your own. A Project created before the seeding (no stored `rules` list) behaves as the factory set until its first saved edit writes the list. On the settings page, **Restore defaults** loads the factory set back into the editor, and saving writes it.
 
-The factory set is deliberately small. It covers commands whose verbatim execution is destructive with no undo:
+Because seeded rules are never rewritten, a factory rule added in a later release does not reach a Project that already stores its list. The five `ask` rules below are such rules: an existing Project adopts them with **Restore defaults**, which replaces the whole list (custom rules included) once you save. A Project that never saved its list reads as the factory set and has them already.
+
+The factory set is deliberately small. Its `deny` rules cover commands whose verbatim execution is destructive with no undo:
 
 - `rm` with both a recursive and a force flag
 - `mkfs`
@@ -278,6 +289,18 @@ Four more rules cover the same ground in Windows spellings, since `exec_command`
 - a volume format (`format C:`, `Format-Volume`)
 - a raw disk overwrite (`\\.\PhysicalDriveN`, `Clear-Disk`)
 - the cmd fork bomb
+
+Five `ask` rules follow them. Each covers a command that acts beyond this machine and is hard to take back, but is also routine work a person may well want done, so it waits for a go-ahead instead of being refused:
+
+| Rule | Matches |
+| --- | --- |
+| `gh-pr-merge-close` | `gh pr merge`, `gh pr close` |
+| `gh-release` | `gh release create`, `delete`, `edit` |
+| `git-push-force` | `git push` with `-f`, `--force` or `--force-with-lease` |
+| `git-push-default-branch` | `git push` to `main` or `master`, as a target or a refspec's destination. A bare `git push` names no target, so it cannot be told apart and is left to the agent's prompt |
+| `package-publish` | `npm publish`, `pnpm publish`, `yarn publish` |
+
+They match text, like every rule: `gh pr merge --help` and `npm publish --dry-run` ask too (one click), and the same action through an alias, a script or an API call walks past. The default system prompt's `# Tool use` section asks the agent to get a go-ahead for these actions and the wider class they belong to.
 
 ### Matching
 
@@ -309,13 +332,14 @@ What the policy does buy: a destructive one-liner does not run by accident, thro
 | --- | --- | --- |
 | `name` | — | Agent display name; falls back to the id |
 | `description` | — | Agent description |
+| `author` | `user` | Who created the agent: `user`, `agent` or `company` |
 | `version` | `1` | Agent State version (a natural number), incremented on each successful optimization |
 | `kernel_version` | The current kernel version | Which generation of the built-in defaults the config is based on (a date string) |
 | `system_prompt` | Built-in template | Required; the only template with placeholder substitution |
 | `max_turns` | `-1` | Maximum LLM turns per Task |
 | `model.max_tokens` | `32000` | Output Token ceiling per Request |
 | `model.thinking_level` | `medium` | The thinking level each model context opens at, unless the Session pins one |
-| `model.timeoutMs` | `300000` | **Idle** budget for a Request, in milliseconds |
+| `model.timeoutMs` | `600000` | **Idle** budget for a Request, in milliseconds |
 | `compaction.max_context_length` | `256000` | Context Token threshold that triggers compaction |
 | `compaction.max_session_turns` | `-1` | Cumulative Session turn threshold |
 | `compaction.mode` | `summarize` | `summarize` / `discard` |
@@ -335,14 +359,15 @@ What the policy does buy: a destructive one-liner does not run by accident, thro
 
 ### Field details
 
+- `author`: `user` for an agent a person created in the Web App, `agent` for one an agent created (**Create with AI**, or `penguin agent create` run inside a conversation), `company` for one company mode created. A missing or unknown value reads as `user`. You can change it on the **Overview** tab, and the **Agents** page can group by it.
 - `kernel_version`: stamped at creation, when defaults are restored and at a kernel update. It is unrelated to `version` and never changed by your edits. A missing value means the config predates the mechanism, which counts as outdated.
 - `max_turns`: `-1` means unlimited; a positive integer caps the Task.
 - `model.max_tokens`: `-1` means no cap (the provider default). Each request clamps the effective value to the model's `context_window` minus the estimated input, so a small-window model is never asked for more than fits.
 - `model.thinking_level`: `none` / `low` / `medium` / `high` / `xhigh` / `max`. The level is fixed for a model context, so a change lands at the next compaction. Without this field, the Project's `[default_chat]` `thinking_level` applies, then `medium`.
-- `model.timeoutMs`: the longest wait for the next upstream event, reset by every event. It is not a cap on the request's total duration. It bounds the wait to connect and receive the first event, and the gaps between events. A model that keeps its reasoning off the wire spends its whole thinking phase inside that first gap, which the default leaves room for.
+- `model.timeoutMs`: the longest wait for the next upstream event, reset by every event. It is not a cap on the request's total duration. It bounds the wait to connect and receive the first event, and the gaps between events. A model that keeps its reasoning off the wire spends its whole thinking phase inside that first gap, and so does a model behind a relay that consumes the thinking stream upstream and sends nothing until the answer starts. The default leaves room for both.
 - `compaction.max_context_length`: the effective threshold is the smaller of this value and the model's `context_window` − 2048. A small-window model therefore compacts inside its window, while a window above 258048 fires at this number. An entry with no `context_window` assumes a 128000 window.
 - `compaction.max_session_turns`: `-1` means unlimited.
-- `*.prompt`: each section prompt is editable on its settings tab: both Memory prompts on **Memory**, `vault.prompt` on **Vault**, `skills.prompt` on **Skills**, and `schedules.prompt` on **Schedules**.
+- `*.prompt`: each section prompt is editable on its settings tab: both Memory prompts on **Memory**, `vault.prompt` on **Vault**, `skills.prompt` on **Plugins**, and `schedules.prompt` on **Schedules**.
 - `vault.enabled`: when off, values are still injected into subprocess environments; the model just does not see the key-name list.
 - `skills.enabled`: when off, installed Skills can still be invoked explicitly with `[use_skills]`.
 - `schedules.enabled`: when off, the server still fires tasks; the model just is not taught the task system.
@@ -371,7 +396,7 @@ max_turns: -1
 model:
   max_tokens: 32000
   thinking_level: medium
-  timeoutMs: 300000
+  timeoutMs: 600000
 
 compaction:
   max_context_length: 256000
@@ -387,15 +412,15 @@ compaction:
 
 An existing agent always runs with its on-disk config as written; newer code defaults are never merged in automatically. When the built-in defaults change substantively, the config's `kernel_version` falls behind the current kernel, and the settings page and the agents list show an update hint. Two actions on the settings overview adopt the current defaults.
 
-**Update kernel** is a lossless merge, done one settings tab at a time (**System Prompt**, **Runtime**, **Tools**, **Skills**, **Memory**, **Vault**, **Schedules**):
+**Update kernel** is a lossless merge, done one settings tab at a time (**System Prompt**, **Runtime**, **Tools**, the Skills settings on **Plugins**, **Memory**, **Vault**, **Schedules**):
 
 - A tab the config lacks entirely, or one whose hash still matches a *recorded* generation's built-in default, is rewritten from the current defaults. This is also how tools added by a later version reach an existing agent.
 - A tab you have changed in any way stays unchanged **in full** and is listed in the result. If you edit one built-in tool, the whole **Tools** tab is kept: tools you added and tools you deleted both survive, and that tab stops following new defaults until you restore defaults.
-- `name`, `description`, `version`, `hooks` and `tools.mcpServers` belong to no tab and are never touched.
+- `name`, `description`, `author`, `version`, `hooks` and `tools.mcpServers` belong to no tab and are never touched.
 - The config is then stamped with the current `kernel_version`.
 - Matching is **conservative**: only a tab whose hash matches a recorded generation counts as an old default. A tab from a generation too old to be recorded is kept as if customized.
 
-**Restore default configuration** works like a Skill update: it overwrites the configuration with the current defaults and keeps only `name`, `description` and `version`. Everything else is replaced, including a custom system prompt, the tool list, the model and compaction settings, and MCP Servers, the ones a plugin installed included (**Manage installs** on the **Plugins** page puts those back). Use it as the full refresh when the kernel update's conservative matching leaves fields behind.
+**Restore default configuration** works like a Skill update: it overwrites the configuration with the current defaults and keeps only `name`, `description`, `author` and `version`. Everything else is replaced, including a custom system prompt, the tool list, the model and compaction settings, and MCP Servers, the ones a plugin installed included (**Manage installs** on the **Plugins** page puts those back). Use it as the full refresh when the kernel update's conservative matching leaves fields behind.
 
 For developers:
 
@@ -457,13 +482,17 @@ agent_state/memory/
 └── my-app-a81f32c4/              # one Workspace
     ├── .workspace                # the Workspace path this key stands for
     ├── MEMORY.md
-    └── testing-conventions.md
+    ├── testing-conventions.md
+    ├── csv-tools.md
+    └── csv-tools/                # optional: the scripts csv-tools.md keeps
+        ├── dedupe.py
+        └── lib/io.py
 ```
 
 Each scope has its own `MEMORY.md` index, and different agents never share Memory, even in the same Workspace. Because Memory lives in Agent State, it travels with export, import and snapshots.
 
 > [!WARNING]
-> Every Project member who can reach the agent can read its Memory. Keep credentials and sensitive personal data out of it.
+> Every Project member who can reach the agent can read its Memory, scripts included. Keep credentials and sensitive personal data out of it.
 
 To read or delete memories, or to ask the agent to edit them, use the **Memory** tab of the [agent settings](/agents).
 
@@ -507,6 +536,24 @@ The prompt rules out:
 
 Anything else can be saved if the user wants it. For corrections and decisions, the model adds **Why:** and **How to apply:** lines. A memory that proves wrong is deleted together with its index line. Dates are written absolute (`YYYY-MM-DD`), because relative dates mean nothing to a later Session.
 
+### Scripts
+
+A memory can keep scripts: programs the agent would otherwise write again, such as a parser, a report generator or a checker. They sit in a folder named after the memory's file without `.md`, beside it: `csv-tools.md` keeps `csv-tools/`. The folder holds any number of files, in any language and with any extension, in subfolders if the scripts need them. A memory has no folder until the agent writes its first file there.
+
+The default Memory prompt tells the model to:
+
+- keep the files free of dependencies beyond their interpreter
+- list the files in the memory's own body, each with what it does, how to run it and a relative link such as `[dedupe.py](csv-tools/dedupe.py)`, and never in `MEMORY.md`, which keeps one line per memory
+- run a script with `exec_command`, by absolute path through its interpreter (`python3`, `node`, `bash` and so on), because the file tools write files without the execute bit
+- delete the folder together with its memory
+- read a script before running one it did not write in the current Session, and keep secrets in the vault, never in a file
+
+Scripts have no tool of their own. A run is an ordinary `exec_command`, shown in the conversation like any other command, and the Session's sandbox, approval mode and command policy apply to it. Writing a script needs full access, as any write to Memory does: a confining [sandbox](/settings#sandbox) keeps Agent State read-only.
+
+A script carries the trust of a Skill the agent wrote for itself. Every later Session of the agent may run it, and every Project member who can reach the agent can read it on the **Memory** tab, under the memory that keeps it. A folder with no memory of its name beside it belongs to no memory; the tab lists its files apart, under **Files without a memory**.
+
+An agent created before scripts existed keeps its stored Memory prompt, which does not mention them, until a [kernel update](#kernel-updates) brings in the current one.
+
 ### Injection
 
 Only the indexes reach the context, through the template's `{{MEMORY}}` placeholder. Each `MEMORY.md` lists its scope's memories one per line, as `- [Title](file.md) — hook` with links relative to the scope directory. The model updates the index together with the file, deletions included, so the two never disagree.
@@ -523,7 +570,7 @@ Limits:
 - A blank index injects an explicit "nothing saved yet" note.
 - Injection is capped at 200 lines per scope (one memory per line by convention), then at 25,000 characters total as a backstop for an index with a few enormous lines. Past a cap, a truncation note tells the model to open the full `MEMORY.md` itself. The file on disk is never touched.
 - The default Memory prompt states the line cap and asks for index lines under about 150 characters, so the model keeps the index short before it reaches the caps. The character backstop exists only in code.
-- The model reads topic bodies on demand.
+- The model reads topic bodies and the files they keep on demand.
 
 The two halves are separate config keys because substitution has no conditionals. A temporary Workspace must never receive the Workspace section (its directory line and the rule for choosing a scope), so that half is simply not appended there. The harness only decides where Memory lives and keeps writes inside it. Deciding what is worth keeping, splitting topics and maintaining the indexes is the model's job, done with the ordinary file tools.
 
@@ -555,6 +602,8 @@ Each file `agent_state/schedule/<name>.toml` describes one scheduled task, which
 | `provider` / `model_id` | string pair | The Project's default model | Paired model reference for new-Session mode |
 
 Write both `provider` and `model_id`, or neither. A lone `model_id` is rejected; with neither, the Project's default model is used.
+
+A task that can never fire again — a one-shot task that has fired or was missed, or a task past `end_at` — is moved, unchanged, into `agent_state/schedule/expired/` by the scheduler; see [Finished tasks are archived](/schedules#finished-tasks-are-archived).
 
 ```toml
 prompt = "Check yesterday's builds and summarize the failures"

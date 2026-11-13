@@ -1,21 +1,25 @@
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import type { ModelRefDto } from "@prismshadow/penguin-server/api";
 import { toastError } from "@prismshadow/penguin-ui";
-import * as api from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { apiErrorText } from "@prismshadow/penguin-web/internal";
-import { createStreamModel, finalizeHistory, pushMessage } from "@prismshadow/penguin-web/internal";
-import { bucketCostUsd } from "@prismshadow/penguin-web/internal";
+import * as api from "../../../api/endpoints";
+import { S } from "../../../lib/strings";
+import { apiErrorText } from "../../../lib/api-error";
+import { createStreamModel, finalizeHistory, pushMessage } from "../../../lib/amsp/stream-model";
+import { bucketCostUsd } from "../../../lib/amsp/task-stats";
 import type { StreamRenderContext } from "../message-stream";
 import type { ForkTarget } from "../task-stats-line";
+import type { RequestFailure } from "../request-failure-report";
 import { prepareNewChatDraft } from "../new-chat";
 import { DRAFT_SESSION_ID } from "../draft-sessions";
-import { turnPricing, sameModelRef } from "@penguinharness/plugin-models/web";
-import { openPanel } from "@prismshadow/penguin-web/internal";
+import { turnPricing, sameModelRef } from "../../models";
+import { openPanel } from "../../dock";
 import type { useMainChatControls } from "./main-chat-controls";
 
 /** Exact consecutive main ChatPage statements 159..164; called once, in original order. */
 export function useMainChatActions(scope: ReturnType<typeof useMainChatControls>) {
+  // The request-failure dialog's subject: set by the stream's ctx.onShowFailure (message-item
+  // renders the entry point), cleared on close. Lives here with the other turn controls.
+  const [failureShown, setFailureShown] = useState<RequestFailure | null>(null);
   const {
     navigate,
     user,
@@ -97,6 +101,7 @@ export function useMainChatActions(scope: ReturnType<typeof useMainChatControls>
   const modelPricing = pricingOf(activeModelRef);
   const ctx: StreamRenderContext = {
     pendingApprovals: stream.pendingApprovals,
+    bodies: stream.bodies,
     onApprove,
     onSendToBackground,
     origin: [],
@@ -118,6 +123,7 @@ export function useMainChatActions(scope: ReturnType<typeof useMainChatControls>
     // Retry after a failed run: offered only while the composer could send — a Session on
     // screen with nothing running or compacting, the same state its Send requires.
     ...(selected && stream.taskState === "idle" ? { onRetry } : {}),
+    onShowFailure: setFailureShown,
     onOpenFile: openWorkspaceFile,
     onOpenSubagent: (sessionId, origin) => {
       // Chip click: the agents tab focused on that child (the focus chain ends with the
@@ -152,5 +158,15 @@ export function useMainChatActions(scope: ReturnType<typeof useMainChatControls>
   // main-session keys start with a space): surfaces an amber dot on the toolbar button so a
   // nested approval stays discoverable while the panel is closed.
   const anySubagentPending = [...stream.pendingApprovals.keys()].some((k) => !k.startsWith(" "));
-  return { ...scope, newChat, onFork, pricingOf, modelPricing, ctx, anySubagentPending };
+  return {
+    ...scope,
+    newChat,
+    onFork,
+    pricingOf,
+    modelPricing,
+    ctx,
+    anySubagentPending,
+    failureShown,
+    setFailureShown,
+  };
 }
