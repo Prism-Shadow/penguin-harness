@@ -181,3 +181,4 @@ export * from "./services/session-deletion.js";
 export * from "./http/sse.js";
 export * from "../../../plugins/settings/src/server/auth/live-streams.js";
 export * from "./services/platform-auth-service.js";
+export type { UserDraftsStore, BackgroundImageStore } from "./mechanisms/account-data.js";
