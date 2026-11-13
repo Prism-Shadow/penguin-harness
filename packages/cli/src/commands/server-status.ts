@@ -11,20 +11,16 @@
 import path from "node:path";
 import { readMachineStatus } from "@prismshadow/penguin-server/machine-status";
 import type { Command } from "commander";
-import type { Messages } from "../i18n.js";
-import { resolveRootOption } from "../root-option.js";
+import type { Messages } from "@prismshadow/penguin-server/cli";
+import { resolveRootOption } from "@prismshadow/penguin-server/cli";
 
-/** Attaches the subcommand to the `penguin server` command (see registerServeCommands). */
-export function registerStatusCommand(server: Command, t: Messages): void {
-  server
-    .command("status")
-    .description(t.serverStatus.desc)
-    .option("--root <dir>", t.common.root)
-    .action(async (opts: { root?: string }) => {
-      const root = resolveRootOption(opts.root);
-      // PENGUIN_WEB_DB honored as everywhere else, or this reads an identity out of a
-      // database the live server never writes to.
-      const dbPath = process.env.PENGUIN_WEB_DB ?? path.join(root, "web.db");
-      process.stdout.write(JSON.stringify(await readMachineStatus(root, dbPath)) + "\n");
-    });
+/** Fills in `penguin server status`, on the node the host located by the command's key. */
+export function registerStatusCommand(status: Command, t: Messages): void {
+  status.option("--root <dir>", t.common.root).action(async (opts: { root?: string }) => {
+    const root = resolveRootOption(opts.root);
+    // PENGUIN_WEB_DB honored as everywhere else, or this reads an identity out of a
+    // database the live server never writes to.
+    const dbPath = process.env.PENGUIN_WEB_DB ?? path.join(root, "web.db");
+    process.stdout.write(JSON.stringify(await readMachineStatus(root, dbPath)) + "\n");
+  });
 }

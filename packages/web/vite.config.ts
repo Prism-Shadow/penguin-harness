@@ -13,12 +13,17 @@
  * (`fonts-licenses/`) and copies the package's built Workbench runtime in as `workbench-runtime/`,
  * which the server serves to TSX Workbench pages: build `@prismshadow/penguin-ui` before this
  * package. It is imported by relative path on purpose — see its module doc.
+ *
+ * The dev server sends the server's page Content-Security-Policy (`WEB_APP_CSP`, imported by
+ * relative path from the server's dependency-free `http/page-csp.ts`, which the config bundle
+ * inlines), so the two cannot drift.
  */
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
 import type { Plugin } from "vite";
 import { dropNonWoff2FontSources, penguinUi } from "../ui/src/vite-plugin";
+import { WEB_APP_CSP } from "../server/src/http/page-csp";
 
 /**
  * Resolves the `/api` proxy target: PENGUIN_API_PROXY replaces it outright, otherwise the
@@ -111,6 +116,8 @@ export default defineConfig({
     // rule (localhost pages only) answered its preflight itself and refused it, so the request
     // never reached the server's pairing route. Off, the preflight is proxied like everything else.
     cors: false,
+    // The server's page policy, so a violation shows during development, not first in a build.
+    headers: { "Content-Security-Policy": WEB_APP_CSP },
     proxy: devProxy(),
   },
 });

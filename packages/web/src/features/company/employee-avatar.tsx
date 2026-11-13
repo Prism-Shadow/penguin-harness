@@ -1,13 +1,16 @@
 /**
- * An employee's avatar on a company surface: the picture the organization gave it, or the
- * Agent's letter tile when it has none.
+ * An employee's avatar on a company surface: the picture the organization gave it, else the
+ * Agent's own picture, else the Agent's default avatar (the mascot, in the Agent's colour).
  *
- * The picture is the organization's (its `avatars/` directory), like the employee's name, so
- * it is looked up in the open organization's chart rather than passed down by every caller —
- * a channel message, a desk row and a ticket all name an employee by id only.
+ * The organization's picture (its `avatars/` directory) comes first, like the employee's name:
+ * the same Agent may be pictured differently here than anywhere else, and only here. It is looked
+ * up in the open organization's chart rather than passed down by every caller — a channel
+ * message, a desk row and a ticket all name an employee by id only — and the Agent's own in the
+ * Agent list, through the one lookup every surface uses (lib/agent-avatar.ts).
  */
 import * as api from "../../api/endpoints";
 import { AgentAvatar, CHANNEL_RUN_AVATAR_PX } from "@prismshadow/penguin-ui";
+import { useAgentAvatarSrc } from "../../lib/agent-avatar";
 import { useCompany } from "./company-state";
 
 /**
@@ -27,38 +30,35 @@ export const FACE_PX = {
   message: CHANNEL_RUN_AVATAR_PX,
 } as const;
 
+/** The picture an employee is drawn with on a company surface; undefined draws the default. */
+export function useEmployeeAvatarSrc(): (agentId: string) => string | undefined {
+  const { currentOrg, orgChart } = useCompany();
+  const agentPicture = useAgentAvatarSrc();
+  return (agentId) => {
+    const rev = orgChart?.employees.find((e) => e.agentId === agentId)?.avatarRev;
+    if (currentOrg !== null && rev !== undefined) {
+      return api.orgEmployeeAvatarUrl(currentOrg.projectId, currentOrg.orgId, agentId, rev);
+    }
+    return agentPicture(agentId);
+  };
+}
+
 export function EmployeeAvatar({
   id,
-  name,
   size = 18,
   className,
 }: {
   id: string;
-  name?: string;
   size?: number;
   className?: string;
 }) {
-  const { currentOrg, orgChart } = useCompany();
-  const rev = orgChart?.employees.find((e) => e.agentId === id)?.avatarRev;
-  if (currentOrg === null || rev === undefined) {
-    return (
-      <AgentAvatar
-        id={id}
-        {...(name !== undefined ? { name } : {})}
-        size={size}
-        {...(className !== undefined ? { className } : {})}
-      />
-    );
-  }
+  const pictureOf = useEmployeeAvatarSrc();
   return (
-    <img
-      src={api.orgEmployeeAvatarUrl(currentOrg.projectId, currentOrg.orgId, id, rev)}
-      alt=""
-      width={size}
-      height={size}
-      draggable={false}
-      className={`object-cover ${className ?? ""}`}
-      style={{ width: size, height: size }}
+    <AgentAvatar
+      id={id}
+      size={size}
+      src={pictureOf(id)}
+      {...(className !== undefined ? { className } : {})}
     />
   );
 }

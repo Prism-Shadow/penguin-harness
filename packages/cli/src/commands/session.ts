@@ -28,15 +28,14 @@ import {
   resolveProjectId,
   ServerClient,
   shortSessionId,
-} from "../client.js";
+} from "@prismshadow/penguin-server/cli";
 import { checkSessionTitle, renameSession, resolveSessionTarget } from "../server-session.js";
 import { registerInputCommand } from "./input.js";
 import { registerLogCommand } from "./log.js";
 import { registerLsCommand } from "./ls.js";
-import type { Messages } from "../i18n.js";
+import type { Messages } from "@prismshadow/penguin-server/cli";
 
-export function registerSessionCommand(program: Command, t: Messages): void {
-  const session = program.command("session").description(t.session.desc);
+export function registerSessionCommand(session: Command, t: Messages): void {
   registerLsCommand(session, t);
   registerLogCommand(session, t);
   registerInputCommand(session, t);

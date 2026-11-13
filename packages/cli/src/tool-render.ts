@@ -37,7 +37,7 @@
  * File-tool paths render only once complete — shortening a still-growing path would rewrite
  * the line.
  */
-import { cutText } from "./cut-text.js";
+import { cutText } from "@prismshadow/penguin-server/cli";
 
 /** Max length of the single-line preview for a payload (chars / prompt / description); truncated with an ellipsis beyond this, after which the preview stops growing. */
 const MAX_PAYLOAD_PREVIEW = 120;

@@ -7,8 +7,8 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BuiltinBrowserTab } from "@prismshadow/penguin-server/api";
+import { getMessages } from "@prismshadow/penguin-server/cli";
 import { cli } from "../src/index.js";
-import { getMessages } from "../src/i18n.js";
 import {
   RETURN_LIMIT,
   SAVED_PREVIEW,

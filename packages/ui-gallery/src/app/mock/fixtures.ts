@@ -9,6 +9,8 @@
  */
 import type {
   AgentApiSettings,
+  AppCenterResponse,
+  AppCenterShortcut,
   AgentConfigResponse,
   AgentSummary,
   BenchmarkCaseSummary,
@@ -24,6 +26,7 @@ import type {
   MeResponse,
   MemberInfo,
   MemoryFileResponse,
+  MemoryFolderFile,
   MemoryOverviewResponse,
   ModelEffectiveConnection,
   ModelInfo,
@@ -65,7 +68,7 @@ import bundledBenchmarks from "../../../../../node_modules/.cache/penguin-benchm
 import type { AmspRecord } from "../../../../amsp/src/types";
 import { harnessTimeline, orgDeskTimeline, SWITCHED_MODEL } from "./harness-transcript";
 import { IDS } from "./ids";
-import { agentEvaluationPlugin, rsiToolkitPlugins } from "./library-plugins";
+import { agentEvaluationPlugin, rsiToolkitPlugins, shippedIcon } from "./library-plugins";
 import {
   docsAgentsMd,
   RSI_ROUND,
@@ -154,6 +157,13 @@ export const DEFAULT_MODEL: ModelRef = {
 // Rows
 // ---------------------------------------------------------------------------------------------
 
+/** A file a demo memory keeps in its folder, with its text: what the file route reads back. */
+export interface DemoKeptFile {
+  scopeKey: string;
+  file: MemoryFolderFile;
+  content: string;
+}
+
 export interface DemoFixtures {
   lang: Lang;
   now: number;
@@ -171,7 +181,11 @@ export interface DemoFixtures {
   schedules: ProjectScheduleItem[];
   library: PluginLibraryResponse;
   pluginFiles: Record<string, Record<string, string>>;
-  installed: Record<string, { skills: SkillMetadataItem[]; hooks: HookItem[] }>;
+  /** Per Agent: its Skills and hook packages, and whether its Agent-wide workbench switch is off. */
+  installed: Record<
+    string,
+    { skills: SkillMetadataItem[]; hooks: HookItem[]; workbenchesOff?: boolean }
+  >;
   installedPlugins: InstalledPluginsResponse;
   pluginIndex: PluginIndexResponse;
   readmes: Record<string, string>;
@@ -181,7 +195,15 @@ export interface DemoFixtures {
   machines: MachinesResponse;
   version: VersionResponse;
   update: UpdateCheckResponse;
-  memory: Record<string, { overview: MemoryOverviewResponse; files: MemoryFileResponse[] }>;
+  memory: Record<
+    string,
+    {
+      overview: MemoryOverviewResponse;
+      files: MemoryFileResponse[];
+      /** The files the topics keep in their folders (`<topic>/<path>`), each with its text. */
+      folderFiles: DemoKeptFile[];
+    }
+  >;
   vault: Record<string, VaultResponse>;
   /** Each Agent's public API settings, keyed by Agent id; an Agent missing here never had them set. */
   agentApi: Record<string, AgentApiSettings>;
@@ -194,6 +216,8 @@ export interface DemoFixtures {
   context: SessionContextResponse;
   usage: UsageDay[];
   usageErrors: UsageErrorItem[];
+  /** The App Center: a tile in each build state, and a folder in the viewer's arrangement. */
+  appCenter: AppCenterResponse;
 }
 
 /** One day of one Agent on one model, the grain the usage routes aggregate from. */
@@ -251,6 +275,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         "回答关于 Claude Code 文档的问题，每条结论都引用语料库里的真实文件。",
         "Answers questions about the Claude Code docs, citing a real corpus file for every claim.",
       ),
+      author: "user",
       createdAt: iso(ago(90)),
       // The self-evolution round's accepted candidate: its version, written when the round edited it.
       updatedAt: iso(rsi.evaluatedAt),
@@ -277,6 +302,8 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         "从变更日志起草发布说明，中英各一份。",
         "Drafts release notes from the changelog, in both languages.",
       ),
+      // Made by the general agent through "Create with AI", so the list shows a second group.
+      author: "agent",
       createdAt: iso(ago(40)),
       updatedAt: iso(ago(6)),
       activeSessionCount: 0,
@@ -337,6 +364,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     config: {
       name: agent.name,
       description: agent.description,
+      author: agent.author ?? "user",
       version: agent.version,
       kernelVersion: agent.kernelOutdated ? "2026-08-20" : "2026-09-11",
       kernelLatest: "2026-09-11",
@@ -1000,7 +1028,9 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
   // The sandbox backends' cards: their rows carry the bilingual descriptions and the shield
   // icons the packages' own cards (declared in each backend's src/index.ts) and icons hold.
   const shield = (inner: string) =>
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5.2c0 4.4-3 8.2-7 9.8-4-1.6-7-5.4-7-9.8V6l7-3z" />${inner}</svg>`;
+    shippedIcon(
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5.2c0 4.4-3 8.2-7 9.8-4-1.6-7-5.4-7-9.8V6l7-3z" />${inner}</svg>`,
+    );
   const pluginIndex: PluginIndexResponse = {
     plugins: [
       {
@@ -1398,6 +1428,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     description: string,
     content: string,
     days: number,
+    kept: DemoKeptFile[] = [],
   ): MemoryFileResponse => ({
     scopeKey,
     file: {
@@ -1407,10 +1438,43 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       updatedAt: dayKey(ago(days)),
       size: content.length,
       modifiedAt: iso(ago(days)),
+      files: kept.map((k) => k.file),
     },
     content,
   });
+  /** A file a topic keeps in its folder: `filePath` is `<topic>/<path>`. */
+  const keptFile = (
+    scopeKey: string,
+    filePath: string,
+    content: string,
+    days: number,
+  ): DemoKeptFile => ({
+    scopeKey,
+    file: { path: filePath, size: content.length, modifiedAt: iso(ago(days)) },
+    content,
+  });
   const workspaceScope = "docs-expert-4f2a9c";
+  // The corpus topic keeps the checker it describes, a folder of its own beside it.
+  const corpusFiles = [
+    keptFile(
+      workspaceScope,
+      "corpus-layout/broken-links.py",
+      [
+        "# Usage: python3 broken-links.py <docs-dir>",
+        "# Prints every relative Markdown link under <docs-dir> whose target file is missing.",
+        "import pathlib, re, sys",
+        "",
+        "root = pathlib.Path(sys.argv[1])",
+        'link = re.compile(r"\\]\\(([^)#\\s]+\\.md)")',
+        'for page in sorted(root.rglob("*.md")):',
+        '    for target in link.findall(page.read_text(encoding="utf-8")):',
+        "        if not (page.parent / target).exists():",
+        '            print(f"{page.relative_to(root)}: {target}")',
+        "",
+      ].join("\n"),
+      2,
+    ),
+  ];
   const memory: DemoFixtures["memory"] = {
     [IDS.agents.docs]: {
       overview: {
@@ -1459,10 +1523,12 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
           "corpus-layout.md",
           L("语料库结构", "Corpus layout"),
           L("corpus/ 下按上游仓库分目录。", "corpus/ is split by upstream repository."),
-          `---\nname: ${L("语料库结构", "Corpus layout")}\nupdated_at: ${dayKey(ago(2))}\n---\n\ncorpus/claude-code-docs/ · corpus/penguin-docs/\n`,
+          `---\nname: ${L("语料库结构", "Corpus layout")}\nupdated_at: ${dayKey(ago(2))}\n---\n\ncorpus/claude-code-docs/ · corpus/penguin-docs/\n\n${L("检查失效链接：", "Check for broken links:")} [broken-links.py](corpus-layout/broken-links.py) — python3 broken-links.py <docs-dir>\n`,
           2,
+          corpusFiles,
         ),
       ],
+      folderFiles: corpusFiles,
     },
     [IDS.agents.notes]: {
       overview: {
@@ -1472,6 +1538,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         scopes: [{ scopeKey: "user", kind: "user", fileCount: 0, hasIndex: false }],
       },
       files: [],
+      folderFiles: [],
     },
     [IDS.agents.general]: {
       overview: {
@@ -1481,6 +1548,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         scopes: [{ scopeKey: "user", kind: "user", fileCount: 0, hasIndex: false }],
       },
       files: [],
+      folderFiles: [],
     },
   };
 
@@ -1599,10 +1667,11 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       enabled: true,
     },
     {
-      name: "no-force-push",
+      name: "git-push-force",
       pattern: "git\\s+push\\s+.*--force",
-      description: L("强制推送", "Force pushing"),
+      description: L("强制推送会改写共享历史", "A force-push rewrites shared history"),
       enabled: true,
+      action: "ask",
     },
     {
       name: "no-curl-pipe-sh",
@@ -1809,6 +1878,57 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     },
   ];
 
+  const shortcut = (
+    agent: AgentSummary,
+    workbenchId: string,
+    title: string,
+    titleZh: string,
+    build: AppCenterShortcut["build"] = "ready",
+    error?: string,
+  ): AppCenterShortcut => ({
+    agentId: agent.agentId,
+    agentName: agent.name ?? agent.agentId,
+    workbenchId,
+    title,
+    titleZh,
+    path: `/app/${IDS.project}/${agent.agentId}/${workbenchId}`,
+    build,
+    ...(error !== undefined ? { error } : {}),
+  });
+  const [docsAgent, notesAgent, generalAgent] = [agents[0]!, agents[1]!, agents[2]!];
+  const appCenter: AppCenterResponse = {
+    shortcuts: [
+      shortcut(docsAgent, "corpus-search", "Corpus search", "语料检索"),
+      shortcut(docsAgent, "citation-check", "Citation check", "引用核对", "building"),
+      shortcut(notesAgent, "changelog-board", "Changelog board", "变更看板"),
+      shortcut(
+        notesAgent,
+        "release-calendar",
+        "Release calendar",
+        "发布日历",
+        "failed",
+        "src/index.ts:12:7 TS2322 Type 'string' is not assignable to type 'number'.",
+      ),
+      shortcut(generalAgent, "daily-todos", "Daily to-dos", "每日待办"),
+      shortcut(generalAgent, "expenses", "Expense log", "报销登记"),
+    ],
+    layout: {
+      v: 1,
+      items: [
+        { type: "app", app: `${docsAgent.agentId}/corpus-search` },
+        {
+          type: "folder",
+          id: "release",
+          name: L("发布", "Release"),
+          apps: [`${notesAgent.agentId}/changelog-board`, `${notesAgent.agentId}/release-calendar`],
+        },
+        { type: "app", app: `${docsAgent.agentId}/citation-check` },
+        { type: "app", app: `${generalAgent.agentId}/daily-todos` },
+        { type: "app", app: `${generalAgent.agentId}/expenses` },
+      ],
+    },
+  };
+
   return {
     lang,
     now,
@@ -1882,6 +2002,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     context,
     usage,
     usageErrors,
+    appCenter,
   };
 }
 

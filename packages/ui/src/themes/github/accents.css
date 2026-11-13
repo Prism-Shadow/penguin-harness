@@ -1,0 +1,64 @@
+/*
+ * The user's accent presets (`pack.json`, `accent.presets`): the five ids and values the app
+ * has always had, literal — a preset sets the accent tokens itself, nothing derives — and
+ * the same in both modes, with one lift: rose-700 was a 3:1 mark only on the pure-black dark,
+ * and on the lifted dark surfaces it is 2.98:1, so dark takes rose-600 (its white label still
+ * clears 4.5:1) with the 700 / 800 steps as hover and active. The selectors match only Primer's
+ * root, `data-theme="github"`, so a stored preset another theme lists paints nothing here, and
+ * these paint nothing under another theme. The layer puts them after the theme's dark rule,
+ * which they would otherwise only tie with. The tint is the one value that
+ * mixes: the preset's accent into the page at its wash's 12 %, stronger than the theme's own
+ * 8 % because a hue needs more than black does to read; a dark lift's accent carries into it.
+ */
+:root[data-theme="github"][data-accent="blue"] {
+  --ui-accent: #2563eb;
+  --ui-accent-hover: #1d4ed8;
+  --ui-accent-active: #1e40af;
+  --ui-accent-fg: #ffffff;
+  --ui-accent-muted: rgb(37 99 235 / 0.12);
+  --ui-accent-tint: color-mix(in srgb, var(--ui-accent) 12%, var(--ui-canvas));
+  --ui-accent-line: rgb(37 99 235 / 0.5);
+}
+:root[data-theme="github"][data-accent="green"] {
+  --ui-accent: #15803d; /* green-700: white text clears AA */
+  --ui-accent-hover: #166534;
+  --ui-accent-active: #14532d;
+  --ui-accent-fg: #ffffff;
+  --ui-accent-muted: rgb(21 128 61 / 0.12);
+  --ui-accent-tint: color-mix(in srgb, var(--ui-accent) 12%, var(--ui-canvas));
+  --ui-accent-line: rgb(21 128 61 / 0.5);
+}
+:root[data-theme="github"][data-accent="violet"] {
+  --ui-accent: #7c3aed;
+  --ui-accent-hover: #6d28d9;
+  --ui-accent-active: #5b21b6;
+  --ui-accent-fg: #ffffff;
+  --ui-accent-muted: rgb(124 58 237 / 0.12);
+  --ui-accent-tint: color-mix(in srgb, var(--ui-accent) 12%, var(--ui-canvas));
+  --ui-accent-line: rgb(124 58 237 / 0.5);
+}
+:root[data-theme="github"][data-accent="rose"] {
+  --ui-accent: #be123c; /* rose-700: white text clears AA */
+  --ui-accent-hover: #9f1239;
+  --ui-accent-active: #881337;
+  --ui-accent-fg: #ffffff;
+  --ui-accent-muted: rgb(190 18 60 / 0.12);
+  --ui-accent-tint: color-mix(in srgb, var(--ui-accent) 12%, var(--ui-canvas));
+  --ui-accent-line: rgb(190 18 60 / 0.5);
+}
+:root[data-theme="github"][data-accent="rose"].dark {
+  --ui-accent: #e11d48; /* rose-600: a 3:1 mark on the lifted dark surfaces */
+  --ui-accent-hover: #be123c;
+  --ui-accent-active: #9f1239;
+  --ui-accent-muted: rgb(225 29 72 / 0.12);
+  --ui-accent-line: rgb(225 29 72 / 0.5);
+}
+:root[data-theme="github"][data-accent="amber"] {
+  --ui-accent: #b45309; /* amber-700: white text clears AA */
+  --ui-accent-hover: #92400e;
+  --ui-accent-active: #78350f;
+  --ui-accent-fg: #ffffff;
+  --ui-accent-muted: rgb(180 83 9 / 0.12);
+  --ui-accent-tint: color-mix(in srgb, var(--ui-accent) 12%, var(--ui-canvas));
+  --ui-accent-line: rgb(180 83 9 / 0.5);
+}

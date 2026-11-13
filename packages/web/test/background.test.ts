@@ -23,6 +23,7 @@ import {
   useBackground,
 } from "../src/state/background";
 import { S } from "../src/lib/strings";
+import { fakeBrowserImage } from "./helpers/browser-image";
 import { button, click, field, mount, pickFile, type, unmountAll, waitFor } from "./helpers/dom";
 import { blockedStorage, stubLocalStorage } from "./helpers/storage";
 
@@ -152,36 +153,17 @@ describe("background choices", () => {
 
   it("releases a failed image decode and retains the current background", async () => {
     storedPicture();
-    const release = vi.fn();
-    vi.stubGlobal("URL", { createObjectURL: () => "blob:failed", revokeObjectURL: release });
-    vi.stubGlobal(
-      "Image",
-      class {
-        decode = () => Promise.reject(new Error("Broken image"));
-      },
-    );
+    const browser = fakeBrowserImage({ decodes: false, blobUrl: "blob:failed" });
     await render();
     await pickFile(photoInput(), new File(["broken"], "photo.png", { type: "image/png" }));
     await waitFor(() => document.querySelector('[role="alert"]') !== null);
-    expect(release).toHaveBeenCalledWith("blob:failed");
+    expect(browser.revoked).toContain("blob:failed");
     expect(wallpaper()?.style.backgroundImage).toContain(picture);
   });
 
   it("encodes a chosen picture locally and reveals the controls", async () => {
     const store = stubLocalStorage();
-    vi.stubGlobal("URL", { createObjectURL: () => "blob:photo", revokeObjectURL: vi.fn() });
-    vi.stubGlobal(
-      "Image",
-      class {
-        naturalWidth = 4000;
-        naturalHeight = 2000;
-        decode = () => Promise.resolve();
-      },
-    );
-    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
-      drawImage: vi.fn(),
-    } as unknown as CanvasRenderingContext2D);
-    vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue(nextPicture);
+    fakeBrowserImage({ width: 4000, height: 2000, encoded: nextPicture, blobUrl: "blob:photo" });
     await render();
     await pickFile(photoInput(), new File(["picture"], "photo.png", { type: "image/png" }));
     await waitFor(() => wallpaper() !== null);

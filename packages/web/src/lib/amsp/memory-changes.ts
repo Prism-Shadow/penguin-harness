@@ -14,13 +14,13 @@
 /** How a memory file was changed: `write` = full-content write (write_file, which also creates), `edit` = in-place edit (edit_file). */
 export type MemoryChangeOp = "write" | "edit";
 
-/** One merged row: a memory topic file that was changed. */
+/** One merged row: a memory file that was changed — a topic, or a file a topic keeps in its folder. */
 export interface MemoryChangeRow {
   /** Memory scope the file belongs to: the Agent-wide User scope or one Workspace scope. */
   scope: "user" | "workspace";
   /** The Workspace scope's directory key (`memory/<key>/`); absent for the User scope. */
   scopeKey?: string;
-  /** Path relative to the scope directory (usually `<topic>.md`). */
+  /** Path relative to the scope directory: `<topic>.md`, or `<topic>/<path>` for a file the topic keeps. */
   file: string;
   /** Merged summary op: `write` when any call wrote the whole file, else `edit`. */
   op: MemoryChangeOp;
@@ -44,6 +44,45 @@ export interface MemoryLocateTarget {
 /** The locate key of a row or target: one file within one scope. */
 export function memoryRowKey(row: MemoryLocateTarget): string {
   return `${row.scope} ${row.scopeKey ?? ""} ${row.file}`;
+}
+
+/** Whether a scope-relative memory path names a file kept in a folder (`<folder>/<path>`) rather than a topic file directly in the scope. */
+export function isFolderFilePath(file: string): boolean {
+  return file.includes("/");
+}
+
+/**
+ * The rows in display order: a file a topic keeps follows that topic's row when the topic is
+ * among the rows too — wherever either was first seen — so a script written beside its memory
+ * reads under it; everything else keeps its first-seen order.
+ */
+export function orderUnderTopics(rows: readonly MemoryChangeRow[]): MemoryChangeRow[] {
+  const scopeOf = (row: MemoryChangeRow): string => `${row.scope} ${row.scopeKey ?? ""}`;
+  const folderKey = (row: MemoryChangeRow): string =>
+    isFolderFilePath(row.file)
+      ? `${scopeOf(row)} ${row.file.split("/")[0]}`
+      : `${scopeOf(row)} ${row.file.slice(0, -".md".length)}`;
+  const topics = new Map<string, MemoryChangeRow>();
+  for (const row of rows) if (!isFolderFilePath(row.file)) topics.set(folderKey(row), row);
+  const ordered: MemoryChangeRow[] = [];
+  const placed = new Set<MemoryChangeRow>();
+  const place = (row: MemoryChangeRow): void => {
+    if (placed.has(row)) return;
+    placed.add(row);
+    ordered.push(row);
+  };
+  for (const row of rows) {
+    const topic = topics.get(folderKey(row));
+    if (topic === undefined || placed.has(topic)) {
+      place(row);
+      continue;
+    }
+    place(topic);
+    for (const other of rows) {
+      if (isFolderFilePath(other.file) && folderKey(other) === folderKey(topic)) place(other);
+    }
+  }
+  return ordered;
 }
 
 /** Splits an absolute path into non-empty segments, tolerating either separator (server paths may be Windows-style). */

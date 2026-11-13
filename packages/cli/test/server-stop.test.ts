@@ -8,7 +8,7 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { stop } from "../src/commands/server-stop.js";
+import { stopServer } from "../src/commands/server-stop.js";
 import type { StopEffects } from "../src/commands/server-stop.js";
 
 /** A lock the liveness probe accepts: this process's pid, and a port that answers. */
@@ -56,7 +56,7 @@ describe("penguin server stop", () => {
   it("a root nothing is serving is already the outcome asked for", async () => {
     const empty = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-stop-empty-"));
     try {
-      expect(await stop(empty, effects({}))).toEqual({ ok: true });
+      expect(await stopServer(empty, effects({}))).toEqual({ ok: true });
     } finally {
       fs.rmSync(empty, { recursive: true, force: true });
     }
@@ -64,7 +64,7 @@ describe("penguin server stop", () => {
 
   it("refuses on Windows: a signal there ends the process outright, which is the destruction it exists not to do", async () => {
     const sent: unknown[] = [];
-    const result = await stop(
+    const result = await stopServer(
       live.root,
       effects({ platform: "win32", kill: (...a) => sent.push(a) }),
     );
@@ -74,7 +74,7 @@ describe("penguin server stop", () => {
   });
 
   it("a server that could not be signalled is still serving — only ESRCH is 'already gone'", async () => {
-    const denied = await stop(
+    const denied = await stopServer(
       live.root,
       effects({
         kill: () => {
@@ -85,7 +85,7 @@ describe("penguin server stop", () => {
     expect(denied).toMatchObject({ ok: false, pid: process.pid });
     expect(denied.detail).toContain("EPERM");
 
-    const gone = await stop(
+    const gone = await stopServer(
       live.root,
       effects({
         kill: () => {
@@ -100,7 +100,7 @@ describe("penguin server stop", () => {
     // On the signal the listener closes at once — as a draining server's does — while the
     // process lives on and the lock still names it. That is not stopped, and the command
     // keeps waiting until its deadline.
-    const result = await stop(
+    const result = await stopServer(
       live.root,
       effects({
         kill: (_pid, signal) => {
@@ -114,7 +114,7 @@ describe("penguin server stop", () => {
 
   it("the process exiting is the stop", async () => {
     let signalled = false;
-    const result = await stop(
+    const result = await stopServer(
       live.root,
       effects({
         kill: (_pid, signal) => {
@@ -131,7 +131,7 @@ describe("penguin server stop", () => {
   });
 
   it("the lock changing hands is the stop too", async () => {
-    const result = await stop(
+    const result = await stopServer(
       live.root,
       effects({
         kill: (_pid, signal) => {

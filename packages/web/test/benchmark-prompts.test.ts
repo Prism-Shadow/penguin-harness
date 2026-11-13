@@ -18,19 +18,17 @@
  *   it: the conversation's model is not the model under test.
  * - The evaluation dialog's Ask AI question carries the facts on screen, every case and the
  *   Session of every run, and names no Skill to run; the case dialog's names both material
- *   paths and the latest runs; each box opens on the default question, which leads its examples.
+ *   paths and the latest runs.
  * - Case ids pad the position to three digits, a Benchmark lives at the Project level, and a
  *   runs count is 1..MAX_RUNS.
  */
 import { describe, expect, it } from "vitest";
 import { defaultSystemConfig } from "@prismshadow/penguin-core";
-import { S, zh } from "../src/lib/strings";
+import { zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import {
   MAX_RUNS,
-  askCaseExamples,
   askCaseTail,
-  askEvaluationExamples,
   askEvaluationTail,
   benchmarkCreateTail,
   benchmarkPath,
@@ -278,12 +276,6 @@ describe("askEvaluationTail (the evaluation dialog's Ask AI question)", () => {
     expect(tail).not.toContain("agent-optimization");
     expect(tail).not.toContain("run_subagent");
   });
-
-  it("leads the examples with the default question the box opens on", () => {
-    // The leading example IS that question, so a reader who tried another example can bring
-    // it back with one click.
-    expect(askEvaluationExamples()[0]?.prompt).toBe(S.benchmark.askEvaluationDefault);
-  });
 });
 
 describe("askCaseTail (the case dialog's Ask AI question)", () => {
@@ -318,10 +310,6 @@ describe("askCaseTail (the case dialog's Ask AI question)", () => {
     expect(tail).toContain("`benchmarks/report-writing-v1/CASE-002-citations/rubric/README.md`");
     expect(tail).not.toContain("ses-b1");
     expect(tail).not.toContain("64.7");
-  });
-
-  it("leads the examples with the default question the box opens on", () => {
-    expect(askCaseExamples()[0]?.prompt).toBe(S.benchmark.askCaseDefault);
   });
 });
 

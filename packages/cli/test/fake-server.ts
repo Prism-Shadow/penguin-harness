@@ -2,7 +2,7 @@
  * In-process fake PenguinHarness server for CLI tests: stubs `globalThis.fetch` with a
  * handler covering exactly the endpoints the server-backed commands touch (the current
  * user, session create/get/patch/delete, tasks/steer/compact/switch-model/abort, SSE stream,
- * messages, agents and their public API settings, projects, usage, schedules, the admin settings,
+ * messages, agents, their packages and their public API settings, projects, usage, schedules, the admin settings,
  * organizations and their channels, the plugins installed on the server, and — through
  * the `builtinBrowser` handler a test sets — the built-in browser). Connection resolution is pinned via PENGUIN_API_URL
  * (a loopback URL, so no token gate) and PENGUIN_HOME points at a scratch directory so
@@ -14,9 +14,15 @@
  * accepted only when it is one of `logins` (401 otherwise). Each request records what it sent.
  *
  * The SSE stream is real: a ReadableStream whose frames follow the server's wire shape
- * (default-event AmspRecord frames, `event: server_event` control frames, incrementing
+ * (default-event AmspRecord frames, `event: server_event` control frames, `<epoch>-<seq>`
  * ids). A task POST synchronously emits `task_state running`, the script's messages,
- * then `task_state idle` — enough for watchTask's full lifecycle.
+ * then `task_state idle` — enough for watchTask's full lifecycle. A Session that is not idle
+ * takes a task POST's input as steering when it asks `steerIfBusy` (queues it while
+ * compacting) and refuses it with 409 `task_in_progress` otherwise; GET /messages with
+ * `live=run` answers `history` (the transcript before the run under way) with the run form of
+ * the live tail (`liveRun` under the current cursor); a new subscriber gets
+ * `pendingApprovals` replayed after its `task_state` snapshot — all as the server does.
+ * `legacyServer` answers as a server from before `live=run` and `steerIfBusy`.
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -40,8 +46,10 @@ export interface FakeSessionState {
   lastActiveAt: string;
   /** Bodies of every POST /tasks, in order. */
   tasks: Json[];
-  /** Bodies of every POST /steer, in order. */
+  /** What the Session took as steering, in order: POST /steer bodies, and `{ text }` of a task POST it steered with (`steerIfBusy`). */
   steers: Json[];
+  /** Task POST bodies queued behind a compaction (`steerIfBusy`), in order. */
+  followUps: Json[];
   /** PATCH bodies, in order. */
   patches: Json[];
   aborts: number;
@@ -127,6 +135,9 @@ interface Subscriber {
 
 const encoder = new TextEncoder();
 
+/** The epoch half of every event id the fake assigns (`<epoch>-<seq>`, the server channel's shape). */
+const EVENT_EPOCH = "fake";
+
 /** The fake's fixed clock for company mode (the day file, the period, minted ids). */
 const ORG_NOW = "2026-09-02T10:00:00.000Z";
 const ORG_TODAY = "2026-09-02";
@@ -197,6 +208,8 @@ export class FakeServer {
   }> = [];
   /** Sign-in tokens a `penguin_session` cookie is accepted with; any other cookie is a 401. */
   readonly logins = new Set<string>();
+  /** When set, a request that carries no credential at all is a 401, as a server behind its token gate answers it. */
+  refuseAnonymous = false;
   readonly sessions = new Map<string, FakeSessionState>();
   agents: Array<Json> = [
     {
@@ -215,8 +228,25 @@ export class FakeServer {
   userId = "admin";
   /** Messages a task emits between running and idle (default: one assistant echo). */
   onTask: (session: FakeSessionState, body: Json) => unknown[] = () => [];
-  /** Messages GET /messages returns. */
+  /** Messages GET /messages returns: with `live=run` while a run is under way, the transcript before it. */
   history: unknown[] = [];
+  /**
+   * The run under way, as the run form of the live tail carries it while a Session is not idle:
+   * its records as published, each streamed fragment's deltas folded into its `start`.
+   */
+  liveRun: unknown[] = [];
+  /** How many older records of the run the server no longer holds (the run form's `omitted`). */
+  liveRunOmitted = 0;
+  /**
+   * Answer as a server from before `live=run` and `steerIfBusy`: a running Session's live tail
+   * carries `liveRun` as its open fragments and no records, an idle one none, and a busy
+   * Session refuses every task POST.
+   */
+  legacyServer = false;
+  /** Runs at the start of GET /messages, before its cursor is taken: what a run publishes between a client's subscription and its history read. */
+  beforeHistoryRead: ((session: FakeSessionState) => void) | null = null;
+  /** The approval requests a running Session is waiting on: replayed to each new subscriber, after the snapshot. */
+  pendingApprovals: Json[] = [];
   /** POST /compact behavior: "reject" -> 409 nothing_to_compact; a function emits its messages like a task. */
   compact: "reject" | ((session: FakeSessionState) => unknown[]) = "reject";
   /**
@@ -294,6 +324,23 @@ export class FakeServer {
   readonly mintedSecrets: string[] = [];
   private nextKeyOrdinal = 1;
   /**
+   * The Agent package routes: the bytes GET …/agents/:a/archive serves, every raw body POST
+   * …/agents/import was sent, and how the import answers one (given its query).
+   */
+  agentArchive = {
+    exported: new Uint8Array([0x50, 0x4b, 0x05, 0x06]),
+    uploads: [] as Uint8Array[],
+    answer: (query: URLSearchParams): { status?: number; body: unknown } => ({
+      body: {
+        agent: { agentId: query.get("agentId") ?? "imported", name: "Imported" },
+        mode: "created",
+        version: 1,
+        sessions: { imported: 0, skipped: [] },
+      },
+    }),
+  };
+
+  /**
    * The built-in browser (`/api/builtin-browser/*`): answers each request from its method, its
    * path below that prefix, its query and its body. The default is what a server outside the
    * desktop app answers.
@@ -342,6 +389,8 @@ export class FakeServer {
 
   private nextSessionOrdinal = 1;
   private nextEventId = 1;
+  /** Answering delay per request (0 = instant); lets a `--timeout` budget expire. */
+  latencyMs = 0;
   private readonly subscribers = new Map<string, Subscriber[]>();
   private savedFetch: typeof globalThis.fetch | null = null;
   private savedEnv = new Map<string, string | undefined>();
@@ -370,6 +419,7 @@ export class FakeServer {
       lastActiveAt: now,
       tasks: [],
       steers: [],
+      followUps: [],
       patches: [],
       aborts: 0,
       ...overrides,
@@ -447,9 +497,14 @@ export class FakeServer {
     };
   }
 
+  /** The id of the most recently assigned event: the live tail's cursor. */
+  get lastEventId(): string {
+    return `${EVENT_EPOCH}-${this.nextEventId - 1}`;
+  }
+
   /** Emits one SSE frame to every subscriber of the session. */
   emit(sessionId: string, data: unknown, event?: string): void {
-    const id = this.nextEventId++;
+    const id = `${EVENT_EPOCH}-${this.nextEventId++}`;
     const text =
       `id: ${id}\n` +
       (event !== undefined ? `event: ${event}\n` : "") +
@@ -1760,6 +1815,11 @@ export class FakeServer {
   }
 
   private async handle(input: string | URL | Request, init?: RequestInit): Promise<Response> {
+    // An optional answering delay: with one set, a request waits it out — slow enough
+    // for a `--timeout` budget to expire.
+    if (this.latencyMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, this.latencyMs));
+    }
     const url = new URL(
       typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
     );
@@ -1786,6 +1846,9 @@ export class FakeServer {
           }
         : {}),
     });
+    if (this.refuseAnonymous && authorization === undefined && cookie === undefined) {
+      return this.error(401, "unauthorized", "Not signed in or the sign-in has expired.");
+    }
     // The server reads a Bearer first; a cookie alone must be a sign-in it knows.
     if (authorization === undefined && cookie !== undefined) {
       const login = /(?:^|;\s*)penguin_session=([^;]+)/.exec(cookie)?.[1];
@@ -1851,6 +1914,50 @@ export class FakeServer {
         ...(this.defaultModel !== null ? { defaultModel: this.defaultModel } : {}),
         models: [],
       });
+    }
+
+    m = /^\/api\/projects\/[^/]+\/agents\/(?:([^/]+)\/archive|import)$/.exec(apiPath);
+    if (m && method === "GET") {
+      return new Response(this.agentArchive.exported, {
+        headers: { "content-disposition": `attachment; filename="${m[1]}-20261109.zip"` },
+      });
+    }
+    if (m) {
+      this.agentArchive.uploads.push(init?.body as Uint8Array);
+      const answer = this.agentArchive.answer(url.searchParams);
+      return this.json(answer.body, answer.status ?? 201);
+    }
+
+    // Project-level session enumeration (what `penguin session ls` reads): every row,
+    // the activity or created order, an optional agent narrowing and a `before` cursor
+    // — the same contract routes/sessions.ts serves.
+    m = /^\/api\/projects\/([^/]+)\/sessions$/.exec(apiPath);
+    if (m && method === "GET") {
+      const q = url.searchParams;
+      const order = q.get("order") ?? "created";
+      const before = q.get("before");
+      const agentId = q.get("agentId");
+      const keyOf = (s: FakeSessionState): [string, string] =>
+        order === "activity" ? [s.lastActiveAt, s.sessionId] : [s.createdAt, s.sessionId];
+      let sessions: FakeSessionState[] = [...this.sessions.values()];
+      if (agentId !== null) sessions = sessions.filter((s) => s.agentId === agentId);
+      if (before !== null) {
+        const comma = before.indexOf(",");
+        const [bt, bid] = [before.slice(0, comma), before.slice(comma + 1)];
+        const below = (s: FakeSessionState): boolean => {
+          const [t1, id1] = keyOf(s);
+          return t1 < bt || (t1 === bt && id1 < bid);
+        };
+        sessions = sessions.filter(below);
+      }
+      const sorted = sessions
+        .sort((a, b) => {
+          const [ta, ia] = keyOf(a);
+          const [tb, ib] = keyOf(b);
+          return tb.localeCompare(ta) || ib.localeCompare(ia);
+        })
+        .map((s) => this.sessionInfo(s));
+      return this.json({ sessions: sorted });
     }
 
     // Session create
@@ -2021,7 +2128,25 @@ export class FakeServer {
         if (typeof body?.title === "string") session.title = body.title;
         return this.json({ session: this.sessionInfo(session) });
       }
-      if (rest === "/messages" && method === "GET") return this.json({ messages: this.history });
+      if (rest === "/messages" && method === "GET") {
+        this.beforeHistoryRead?.(session);
+        const idle = session.status === "idle";
+        const runForm = url.searchParams.get("live") === "run" && !this.legacyServer;
+        const live = runForm
+          ? {
+              live: {
+                cursor: this.lastEventId,
+                status: session.status,
+                fragments: [],
+                records: idle ? [] : this.liveRun,
+                ...(this.liveRunOmitted > 0 ? { omitted: this.liveRunOmitted } : {}),
+              },
+            }
+          : idle
+            ? {}
+            : { live: { cursor: this.lastEventId, fragments: this.liveRun } };
+        return this.json({ messages: this.history, ...live });
+      }
       if (rest === "/stream" && method === "GET") {
         const subs = this.subscribers.get(sessionId) ?? [];
         this.subscribers.set(sessionId, subs);
@@ -2031,15 +2156,16 @@ export class FakeServer {
           start(controller) {
             const sub: Subscriber = { controller, closed: false };
             subs.push(sub);
-            const id = server.nextEventId++;
-            controller.enqueue(
-              encoder.encode(
-                `id: ${id}\nevent: server_event\ndata: ${JSON.stringify({
-                  type: "task_state",
-                  state: state.status,
-                })}\n\n`,
-              ),
-            );
+            const snapshot: Json[] = [
+              { type: "task_state", state: state.status },
+              ...(state.status === "idle" ? [] : server.pendingApprovals),
+            ];
+            for (const ev of snapshot) {
+              const id = `${EVENT_EPOCH}-${server.nextEventId++}`;
+              controller.enqueue(
+                encoder.encode(`id: ${id}\nevent: server_event\ndata: ${JSON.stringify(ev)}\n\n`),
+              );
+            }
           },
           cancel() {
             for (const sub of subs) sub.closed = true;
@@ -2053,6 +2179,22 @@ export class FakeServer {
       if (rest === "/tasks" && method === "POST") {
         const refusal = this.refuseTasks.shift();
         if (refusal !== undefined) return this.error(409, refusal, `Refused: ${refusal}.`);
+        if (session.status !== "idle") {
+          if (body?.steerIfBusy !== true || this.legacyServer) {
+            return this.error(
+              409,
+              "task_in_progress",
+              "This Session already has a Task in progress.",
+            );
+          }
+          if (session.status === "running" && this.steerMode === "accept") {
+            const text = (body.input as Array<{ text?: string }> | undefined)?.[0]?.text;
+            session.steers.push({ text });
+            return this.json({ sessionId: session.sessionId, queued: false, steered: true }, 202);
+          }
+          session.followUps.push(body);
+          return this.json({ sessionId: session.sessionId, queued: true }, 202);
+        }
         session.tasks.push(body ?? {});
         if (this.hangTasks) {
           session.status = "running";

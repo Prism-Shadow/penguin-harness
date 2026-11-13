@@ -14,8 +14,8 @@
  */
 import { liveServerLock, readServerLock } from "@prismshadow/penguin-server/lock";
 import type { Command } from "commander";
-import type { Messages } from "../i18n.js";
-import { resolveRootOption } from "../root-option.js";
+import type { Messages } from "@prismshadow/penguin-server/cli";
+import { resolveRootOption } from "@prismshadow/penguin-server/cli";
 
 /** How long a server that was signalled gets to let go of its lock. */
 const STOP_TIMEOUT_MS = 15_000;
@@ -39,16 +39,12 @@ interface StopResult {
   detail?: string;
 }
 
-export function registerStopCommand(server: Command, t: Messages): void {
-  server
-    .command("stop")
-    .description(t.serverStop.desc)
-    .option("--root <dir>", t.common.root)
-    .action(async (opts: { root?: string }) => {
-      const result = await stop(resolveRootOption(opts.root));
-      process.stdout.write(JSON.stringify(result) + "\n");
-      if (!result.ok) process.exitCode = 1;
-    });
+export function registerStopCommand(stop: Command, t: Messages): void {
+  stop.option("--root <dir>", t.common.root).action(async (opts: { root?: string }) => {
+    const result = await stopServer(resolveRootOption(opts.root));
+    process.stdout.write(JSON.stringify(result) + "\n");
+    if (!result.ok) process.exitCode = 1;
+  });
 }
 
 const realEffects: StopEffects = {
@@ -64,7 +60,7 @@ function codeOf(err: unknown): string | null {
   return typeof code === "string" ? code : null;
 }
 
-export async function stop(root: string, fx: StopEffects = realEffects): Promise<StopResult> {
+export async function stopServer(root: string, fx: StopEffects = realEffects): Promise<StopResult> {
   // Already stopped is the outcome asked for, not a failure: the caller wants nothing serving
   // this root, and nothing is.
   const lock = await liveServerLock(root);

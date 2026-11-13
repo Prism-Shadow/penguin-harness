@@ -15,35 +15,32 @@ import path from "node:path";
 import { resolveRoot } from "@prismshadow/penguin-core";
 import { resetAdminPassword } from "@prismshadow/penguin-server/reset-admin-password";
 import type { Command } from "commander";
-import type { Messages } from "../i18n.js";
+import type { Messages } from "@prismshadow/penguin-server/cli";
 
-/** Attaches the subcommand to the `penguin server` command (see registerServeCommands). */
-export function registerResetPasswordCommand(server: Command, t: Messages): void {
-  server
-    .command("reset-admin-password")
-    .description(t.resetPassword.desc)
-    .action(async () => {
-      const root = resolveRoot();
-      const dbPath = process.env.PENGUIN_WEB_DB ?? path.join(root, "web.db");
-      const result = await resetAdminPassword(root, dbPath);
-      switch (result.outcome) {
-        case "server_running":
-          process.stderr.write(
-            t.resetPassword.serverRunning(`http://localhost:${result.lock.port}/`) + "\n",
-          );
-          process.exitCode = 1;
-          return;
-        case "no_database":
-          process.stderr.write(t.resetPassword.noDatabase(result.dbPath) + "\n");
-          process.exitCode = 1;
-          return;
-        case "no_admin":
-          process.stderr.write(t.resetPassword.noAdmin() + "\n");
-          process.exitCode = 1;
-          return;
-        case "reset":
-          process.stdout.write(t.resetPassword.done(root) + "\n");
-          process.stdout.write(t.resetPassword.next() + "\n");
-      }
-    });
+/** Fills in `penguin server reset-admin-password`, on the node the host located by its key. */
+export function registerResetPasswordCommand(reset: Command, t: Messages): void {
+  reset.action(async () => {
+    const root = resolveRoot();
+    const dbPath = process.env.PENGUIN_WEB_DB ?? path.join(root, "web.db");
+    const result = await resetAdminPassword(root, dbPath);
+    switch (result.outcome) {
+      case "server_running":
+        process.stderr.write(
+          t.resetPassword.serverRunning(`http://localhost:${result.lock.port}/`) + "\n",
+        );
+        process.exitCode = 1;
+        return;
+      case "no_database":
+        process.stderr.write(t.resetPassword.noDatabase(result.dbPath) + "\n");
+        process.exitCode = 1;
+        return;
+      case "no_admin":
+        process.stderr.write(t.resetPassword.noAdmin() + "\n");
+        process.exitCode = 1;
+        return;
+      case "reset":
+        process.stdout.write(t.resetPassword.done(root) + "\n");
+        process.stdout.write(t.resetPassword.next() + "\n");
+    }
+  });
 }

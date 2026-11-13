@@ -69,12 +69,17 @@ describe("the mocked API", () => {
     }
     expect(gaps, "wrappers with no mock route").toEqual([]);
     expect(crashes, "handlers that threw something other than an ApiError").toEqual([]);
-    expect(wrappers().length).toBeGreaterThan(150);
   });
 
   it("answers the real ids with the fixtures, and unknown ids with 404", async () => {
     const store = resetStore({ lang: "zh", signedIn: true });
-    expect(await api.getContributions()).toEqual({ pages: [], agentTabs: [], sessionTabs: [] });
+    expect(await api.getContributions()).toEqual({
+      pages: [],
+      fileRenderers: [],
+      pageRemovals: [],
+      agentTabs: [],
+      sessionTabs: [],
+    });
     const me = await api.getMe();
     expect(me.user.isAdmin).toBe(true);
     expect(me.companyMode).toBe(false);

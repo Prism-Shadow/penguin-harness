@@ -146,7 +146,7 @@ host. Screenshots are named `penguinharness-<v-with-dashes>-<feature>-<lang>.png
 per UI language** — the post pair references `-en.png` and `-zh.png` separately.
 
 The assets live in the sibling `Prism-Shadow/penguin-harness-community` repo under
-`blog-assets/`, not here.
+`assets/blog-assets/`, not here.
 
 ## Screenshots
 

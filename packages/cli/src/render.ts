@@ -46,12 +46,6 @@
  * all only when the output stream supports color (see `supportsColor`): piped output, e.g. a
  * nested `penguin run` driven through `exec_command`, must stay plain (#102).
  */
-import {
-  isEventMessage,
-  isModelMessage,
-  parseInPlaceModelSwitch,
-  parseUserSteeringText,
-} from "@prismshadow/penguin-core";
 import type {
   AbortPayload,
   ApprovalDecision,
@@ -75,12 +69,20 @@ import type {
   ToolDefinition,
   ToolListReadyPayload,
 } from "@prismshadow/penguin-core";
+import {
+  isEventMessage,
+  isHarnessInput,
+  isModelMessage,
+  parseInPlaceModelSwitch,
+  parseUserSteeringText,
+} from "@prismshadow/penguin-core";
+
 import { toFallbackMarkdown } from "@prismshadow/a2ui";
 import { A2uiStreamFilter } from "./a2ui-stream.js";
 import { renderFileToolApprovalPayload, renderPartialToolCall } from "./tool-render.js";
 import { ToolOutputCollapser, collapseLines } from "./output-collapse.js";
-import { defaultMessages } from "./i18n.js";
-import type { Messages } from "./i18n.js";
+import type { Messages } from "@prismshadow/penguin-server/cli";
+import { defaultMessages, humanizeTokens } from "@prismshadow/penguin-server/cli";
 
 /** The ANSI codes the renderer uses; the plain palette maps every code to "" so all writes degrade to uncolored text with no further branching. */
 export interface Palette {
@@ -164,22 +166,6 @@ function callTag(toolCallId: string, origin?: readonly MessageOrigin[]): string 
   return origin && origin.length > 0 ? `agent-${shortId(origin[origin.length - 1]!)}-${tid}` : tid;
 }
 
-/** Converts a token count to a human-readable abbreviation: 1234->1.2k, 1500000->1.5M, 2e9->2B, <1000 unchanged. */
-export function humanizeTokens(n: number): string {
-  const abs = Math.abs(n);
-  if (abs < 1000) return `${n}`;
-  if (abs < 1_000_000) {
-    const v = n / 1000;
-    return `${trimZero(v)}k`;
-  }
-  if (abs < 1_000_000_000) {
-    const v = n / 1_000_000;
-    return `${trimZero(v)}M`;
-  }
-  const v = n / 1_000_000_000;
-  return `${trimZero(v)}B`;
-}
-
 /** Keeps one decimal place but drops a trailing `.0`. */
 function trimZero(v: number): string {
   const s = v.toFixed(1);
@@ -222,6 +208,13 @@ export interface RenderOptions {
    * REPL turns it on unless `--verbose`.
    */
   collapseToolOutput?: boolean;
+  /**
+   * Print the input a run opens with (`> text`), as history shows it. The chat REPL follows
+   * runs it did not start — another surface's, or one under way when it resumed — whose input
+   * nobody typed on this screen; its own message is on the screen already (see expectInput).
+   * Off for `penguin run`, whose input is its argument.
+   */
+  echoInput?: boolean;
 }
 
 /**
@@ -359,6 +352,10 @@ export class StreamRenderer {
   private readonly c: Palette;
   /** Collapse long tool outputs to head/tail + a dim elision marker (see RenderOptions); toggled live by the chat REPL's `/verbose`. */
   private collapseToolOutput: boolean;
+  /** Print a run's input (see RenderOptions.echoInput). */
+  private readonly echoInput: boolean;
+  /** The message this screen just sent, whose echoed input is not printed again (expectInput). */
+  private expectedInput: string | null = null;
   /** Per-stream collapse state (keyed by tool_call_id), created lazily on the first output delta; settled and dropped at the stream's stop (endTask settles leftovers of aborted streams). */
   private readonly toolOutCollapsers = new Map<string, ToolOutputCollapser>();
 
@@ -504,6 +501,15 @@ export class StreamRenderer {
     this.t = t;
     this.c = paletteFor(out);
     this.collapseToolOutput = opts.collapseToolOutput === true;
+    this.echoInput = opts.echoInput === true;
+  }
+
+  /**
+   * The text this screen just sent as a message: its input record, when the run echoes it, is
+   * not printed again under the line typed. Null forgets it (the message did not start a run).
+   */
+  expectInput(text: string | null): void {
+    this.expectedInput = text;
   }
 
   /**
@@ -786,9 +792,25 @@ export class StreamRenderer {
               this.out.write(`${dim(this.t.switchModelHandedOver(handover.tracePath), this.c)}\n`);
               this.lastLineKey = null;
             }
+            if (steering === null && handover === null && this.echoInput && !isHarnessInput(msg)) {
+              if (this.expectedInput === p.text) {
+                this.expectedInput = null;
+              } else {
+                this.finishLine();
+                this.out.write(`\n> ${p.text}\n`);
+                this.lastLineKey = null;
+              }
+            }
           }
           return;
         }
+        case "image_url":
+          if (this.echoInput && (payload as { role?: string }).role === "user") {
+            this.finishLine();
+            this.out.write(`\n> ${dim("[image]", this.c)}\n`);
+            this.lastLineKey = null;
+          }
+          return;
         default:
           return;
       }

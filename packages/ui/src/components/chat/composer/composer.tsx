@@ -175,7 +175,7 @@ export function SlashMenu({
   return (
     <div
       style={{ maxHeight }}
-      className={`ui-glass ${menuPanelClass} absolute bottom-full left-0 z-40 mb-1.5 w-80 max-w-[calc(100vw-2rem)] overscroll-contain`}
+      className={`ui-glass ${menuPanelClass} absolute bottom-full left-0 z-menu mb-1.5 w-80 max-w-[calc(100vw-2rem)] overscroll-contain`}
     >
       {items.map((item, i) => (
         <button
@@ -222,7 +222,7 @@ export function SlashPicker({
     <div
       ref={ref}
       style={{ maxHeight }}
-      className="anim-pop absolute bottom-full left-0 z-40 mb-1.5 flex w-80 max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-md border border-line bg-overlay py-1 shadow-lg"
+      className="anim-pop absolute bottom-full left-0 z-menu mb-1.5 flex w-80 max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-md border border-line bg-overlay py-1 shadow-lg"
     >
       <MenuTitle>{title}</MenuTitle>
       {children}

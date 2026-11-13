@@ -21,8 +21,8 @@ import {
   draftKey,
   loadDraft,
   saveDraft,
-  type DraftCache,
   parkActiveDraft,
+  type DraftCache,
 } from "../chat";
 
 export interface AiChatRequest {

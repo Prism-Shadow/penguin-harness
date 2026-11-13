@@ -15,6 +15,9 @@ import { AgentSettingsPage } from "./agent-settings-page";
         admin: false,
         released: true,
         order: 20,
+        title: "Agents",
+        titleZh: "智能体",
+        icon: "robot",
       },
       {
         id: "agents.settings",

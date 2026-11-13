@@ -59,7 +59,7 @@ export const zh = {
       reachEnd: "",
     },
     /** The grey line under the slogan. */
-    subtitle: "免费、稳定的 Agent 自进化框架",
+    subtitle: "开箱即用的 Agent 自进化框架",
     downloadCta: "下载桌面版",
     cliInstall: "命令行安装",
     stats: [
@@ -385,7 +385,7 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
   },
 
   footer: {
-    tagline: "免费、稳定的 Agent 自进化框架",
+    tagline: "开箱即用的 Agent 自进化框架",
     product: "产品",
     resources: "资源",
     quickstart: "快速开始",

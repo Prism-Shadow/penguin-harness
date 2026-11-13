@@ -20,7 +20,7 @@ import {
   userText,
 } from "@prismshadow/penguin-core";
 import { registerChatCommand } from "../src/commands/chat.js";
-import { getMessages } from "../src/i18n.js";
+import { getMessages } from "@prismshadow/penguin-server/cli";
 import { FakeServer } from "./fake-server.js";
 import type { FakeSessionState } from "./fake-server.js";
 
@@ -69,7 +69,7 @@ async function driveChat(lines: string[], argv: string[] = []): Promise<string> 
   try {
     const program = new Command();
     program.exitOverride();
-    registerChatCommand(program, t);
+    registerChatCommand(program.command("chat"), t);
     const done = program.parseAsync(["node", "penguin", "chat", ...argv]);
     for (let i = 0; i < lines.length; i++) {
       await Promise.race([waitForPrompt(i + 1), done]);

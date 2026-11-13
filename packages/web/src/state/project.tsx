@@ -254,3 +254,12 @@ export function useProject(): ProjectContextValue {
   if (!ctx) throw new Error("useProject must be used within a ProjectProvider");
   return ctx;
 }
+
+/**
+ * The Project state when there is one, null outside a ProjectProvider: for a reader that only
+ * decorates what a component already shows (an Agent's picture) and has nothing to say without
+ * a Project, where `useProject` would refuse.
+ */
+export function useProjectIfAny(): ProjectContextValue | null {
+  return useContext(ProjectContext);
+}

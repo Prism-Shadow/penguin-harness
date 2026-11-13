@@ -17,6 +17,7 @@
 import { mintApiTokenOnceSeeded } from "@prismshadow/penguin-server/auth-token";
 import { liveServerLock } from "@prismshadow/penguin-server/lock";
 import type { Command } from "commander";
+import type { Messages } from "@prismshadow/penguin-server/cli";
 import {
   call,
   clearSession,
@@ -26,9 +27,8 @@ import {
   sessionFile,
   tokenFromSetCookie,
   writeSession,
-} from "../auth-session.js";
-import { resolveRootOption } from "../root-option.js";
-import type { Messages } from "../i18n.js";
+  resolveRootOption,
+} from "@prismshadow/penguin-server/cli";
 
 /**
  * Must match the server's SESSION_COOKIE — the name a login's Set-Cookie carries for a client
@@ -88,9 +88,7 @@ function fail(message: string): void {
   process.exitCode = 1;
 }
 
-export function registerAuthCommand(program: Command, t: Messages): void {
-  const auth = program.command("auth").description(t.auth.desc);
-
+export function registerAuthCommand(auth: Command, t: Messages): void {
   auth
     .command("login")
     .description(t.auth.loginDesc)
