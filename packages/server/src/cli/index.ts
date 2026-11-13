@@ -23,6 +23,7 @@ export {
 } from "./connection.js";
 export * from "./client.js";
 export * from "./table.js";
+export * from "./cut-text.js";
 export * from "./zip-folder.js";
 export { resolveRootOption } from "./root-option.js";
 export * from "./lang-config.js";

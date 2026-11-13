@@ -37,6 +37,7 @@
  * File-tool paths render only once complete — shortening a still-growing path would rewrite
  * the line.
  */
+import { cutText } from "@prismshadow/penguin-server/cli";
 
 /** Max length of the single-line preview for a payload (chars / prompt / description); truncated with an ellipsis beyond this, after which the preview stops growing. */
 const MAX_PAYLOAD_PREVIEW = 120;
@@ -71,7 +72,7 @@ function visualizeControlChars(text: string): string {
 
 /** Truncate to the single-line preview limit, appending an ellipsis if exceeded. */
 function capPreview(text: string): string {
-  return text.length > MAX_PAYLOAD_PREVIEW ? `${text.slice(0, MAX_PAYLOAD_PREVIEW)}…` : text;
+  return text.length > MAX_PAYLOAD_PREVIEW ? `${cutText(text, MAX_PAYLOAD_PREVIEW)}…` : text;
 }
 
 /** A string field extracted from possibly-incomplete JSON: its value so far, and whether the closing quote was seen. */
@@ -359,7 +360,7 @@ export function renderFileToolApprovalPayload(name: string, argsJson: string): s
     shown = shown.slice(0, MAX_APPROVAL_PAYLOAD_LINES);
   }
   const capped = shown.map((l) =>
-    l.length > MAX_APPROVAL_PAYLOAD_LINE ? `${l.slice(0, MAX_APPROVAL_PAYLOAD_LINE)}…` : l,
+    l.length > MAX_APPROVAL_PAYLOAD_LINE ? `${cutText(l, MAX_APPROVAL_PAYLOAD_LINE)}…` : l,
   );
   if (elided > 0) capped.push(`[… ${elided} more line${elided === 1 ? "" : "s"} not shown]`);
   return capped.join("\n");

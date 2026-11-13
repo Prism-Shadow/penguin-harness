@@ -21,6 +21,7 @@ import {
   resolveProjectId,
   ServerClient,
   shortSessionId,
+  cutText,
   listAgents,
   listAgentSessions,
   relativeTime,
@@ -91,7 +92,7 @@ export function registerLsCommand(session: Command, t: Messages): void {
           rows.map((s) => [
             shortSessionId(s.sessionId),
             s.agentId,
-            (s.title ?? "").slice(0, 40),
+            cutText(s.title ?? "", 40),
             stateText(s),
             relativeTime(s.lastActiveAt),
             workspaceTail(s.workspace),

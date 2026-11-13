@@ -57,6 +57,7 @@ import type {
 import { resolveApprovalMode } from "../approval.js";
 import { ApiError, resolveProjectId, ServerClient } from "../client.js";
 import { resolveConnection } from "../connection.js";
+import { cutText } from "../cut-text.js";
 import { listAgents } from "../agents.js";
 import { registerAgentArchiveCommands } from "./agent-archive.js";
 import { displayWidth, renderTable } from "../table.js";
@@ -347,7 +348,7 @@ export function registerAgentCommand(agent: Command, t: Messages): void {
             a.agentId,
             a.name ?? "",
             String(a.sessionCount),
-            (a.description ?? "").slice(0, 60),
+            cutText(a.description ?? "", 60),
           ]),
         ),
       );
