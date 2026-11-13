@@ -1,19 +1,21 @@
 /**
- * A work session, opened: the conversation an agent has while it works on one ticket, in the
- * layout of the lead's conversation. The head names who works in it, where it stands and the
- * ticket it works on (a link back to the record); the body is the conversation, from the ticket
- * it was handed to the last line; the foot lets the reader talk to it directly, without the lead.
+ * A work session, opened as a tab of its ticket: the conversation an agent has while it works on
+ * that one ticket. The ticket's head above it already names who works and what on, so the tab is
+ * the conversation alone, from the ticket it was handed to the last line, and a box at its foot
+ * to talk to it directly, without the lead.
  *
- * While the session waits on the reader, the same block the ticket shows closes the
- * conversation, so a question is answered, or a delivery accepted, wherever the reader is. The answer goes into
- * this conversation as the reader's message, and the session carries on in the same context.
+ * While the session waits on the reader, the same block the record shows closes the
+ * conversation, so a question is answered, or a delivery accepted, wherever the reader is. The
+ * answer goes into this conversation as the reader's message, and the session carries on in the
+ * same context.
  */
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { Button, MessageBubble, Textarea } from "@prismshadow/penguin-ui";
-import { TitleButton } from "../../../web/src/features/company/shared";
 import { FIXTURES } from "./fixtures";
 import type { SessionMessage, SessionStatus, Ticket, WorkSession } from "./model";
+import { Deliverable, NeedsYou, SessionStatusPill } from "./needs-you";
+import type { TicketActions } from "./needs-you";
 import {
   acceptanceOf,
   gistOf,
@@ -24,28 +26,23 @@ import {
   returnOf,
   titleOf,
 } from "./text";
-import { PersonAvatar, PersonName } from "./people";
-import { NeedsYou, SessionStatusPill } from "./ticket-dialog";
-import type { TicketActions } from "./ticket-dialog";
 import { useWords } from "./use-words";
 
 const QUIET = "text-fg-muted";
 const BODY = "text-sm leading-relaxed text-fg";
 
-export function SessionPage({
+export function SessionConversation({
   session,
   ticket,
   status,
   actions,
   onSay,
-  onOpenTicket,
 }: {
   session: WorkSession;
   ticket: Ticket;
   status: SessionStatus;
   actions: TicketActions;
   onSay: (text: string) => void;
-  onOpenTicket: () => void;
 }) {
   const W = useWords();
   const [draft, setDraft] = useState("");
@@ -62,23 +59,13 @@ export function SessionPage({
     end.current?.scrollIntoView({ block: "end" });
   }, [session.messages.length, status]);
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <header className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-line px-4 py-3">
-        <PersonAvatar byline={ticket.owner} size={18} />
-        <h1 className="shrink-0 text-sm font-semibold">
-          <PersonName byline={ticket.owner} /> · {W.nav.sessionOf(session.n)}
-        </h1>
-        <SessionStatusPill status={status} />
-        <span className={`flex min-w-0 items-center gap-1.5 text-xs ${QUIET}`}>
-          {W.session.ticket}
-          <TitleButton className="min-w-0 truncate" onClick={onOpenTicket}>
-            {titleOf(ticket, W)}
-          </TitleButton>
-        </span>
-      </header>
+    <>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-3xl space-y-5 px-4 py-6">
-          <p className={`text-xs ${QUIET}`}>{W.session.info}</p>
+        <div className="max-w-3xl space-y-5 px-4 py-5 sm:px-6">
+          <p className={`flex flex-wrap items-center gap-2 text-xs ${QUIET}`}>
+            <SessionStatusPill status={status} />
+            {W.session.info}
+          </p>
           {session.messages.map((message, i) => (
             <Message
               key={i}
@@ -101,29 +88,30 @@ export function SessionPage({
         </div>
       </div>
       {status !== "ended" && (
-        <div className="mx-auto w-full max-w-3xl shrink-0 px-4 pb-4">
-          <form onSubmit={send} className="flex items-end gap-2">
-            <div className="min-w-0 flex-1">
-              <Textarea
-                size="sm"
-                rows={2}
-                aria-label={W.session.placeholder}
-                placeholder={W.session.placeholder}
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing)
-                    send(event);
-                }}
-              />
-            </div>
-            <Button size="sm" variant="primary" type="submit" disabled={draft.trim() === ""}>
-              {W.session.send}
-            </Button>
-          </form>
-        </div>
+        <form
+          onSubmit={send}
+          className="flex w-full max-w-3xl shrink-0 items-end gap-2 px-4 pb-4 sm:px-6"
+        >
+          <div className="min-w-0 flex-1">
+            <Textarea
+              size="sm"
+              rows={2}
+              aria-label={W.session.placeholder}
+              placeholder={W.session.placeholder}
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing)
+                  send(event);
+              }}
+            />
+          </div>
+          <Button size="sm" variant="primary" type="submit" disabled={draft.trim() === ""}>
+            {W.session.send}
+          </Button>
+        </form>
       )}
-    </div>
+    </>
   );
 }
 
@@ -189,11 +177,7 @@ function Message({
     return (
       <div className={BODY}>
         <p>{sentBack ? W.ticket.saidResult : resultOf(ticket, W)}</p>
-        {deliverable !== undefined && (
-          <p className={`mt-1 text-xs ${QUIET}`}>
-            {W.ticket.deliverable} <span className="font-mono text-fg">{deliverable}</span>
-          </p>
-        )}
+        {deliverable !== undefined && <Deliverable path={deliverable} />}
       </div>
     );
   }

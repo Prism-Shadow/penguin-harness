@@ -9,12 +9,17 @@ export const en: Words = {
   },
   nav: {
     inbox: "Inbox",
-    lead: "Lead",
+    talk: "Tell the lead…",
+    talkHint: "Anything new goes to the lead; it files a ticket",
     team: "Team",
     handbook: "Handbook",
-    sessions: "Work sessions",
-    sessionsEmpty: "No running work sessions",
+    board: "All tickets",
+    record: "Record",
     sessionOf: (n: number) => `Session ${n}`,
+    spend: (spent: string, budget: string) => `${spent} spent this month, budget ${budget}`,
+    pick: "Pick a ticket on the left.",
+    notStarted:
+      "The company has not started. Say what you care about and the lead proposes a few tickets.",
     you: "You",
     openMenu: "Open navigation",
   },
@@ -53,11 +58,6 @@ export const en: Words = {
     archived: "Archived",
   },
   inbox: {
-    title: "Inbox",
-    info: "Tickets appear in Waiting only when awaiting acceptance, answers, or review. In-progress work stays in the background.",
-    talk: "Message lead",
-    summary: (working: number, spent: string, budget: string) =>
-      `${working} in progress, ${spent} of ${budget} spent this cycle`,
     empty: {
       waiting: "Nothing waiting on you",
       working: "No tickets in progress",
@@ -65,10 +65,10 @@ export const en: Words = {
       handled: "No handled tickets yet",
       archived: "No archived tickets",
     },
-    unread: "unread",
     schedules: "Schedules",
     schedulesEmpty:
       "No schedules configured. Schedules proposed by the lead appear here once accepted.",
+    retroTitle: "Retrospective",
     retro: (every: number) => `Retrospective: every ${every} closed tickets`,
     retroDefault: "Default is 10; set to 5 for this organization",
     retroProgress: (closed: number, every: number) => `${closed} of ${every} closed`,
@@ -98,9 +98,6 @@ export const en: Words = {
     decisions: "Decisions",
     handbook: "Handbook record",
     returned: "Sent back",
-    sessionsEmpty: "No work sessions yet. Created automatically on ticket acceptance.",
-    sessionRow: (n: number, owner: string, messages: number) =>
-      `Session ${n} · ${owner} · ${messages} ${messages === 1 ? "message" : "messages"}`,
     saidInSession: "You said in the session:",
     later: "Later",
     archive: "Archive",
@@ -159,7 +156,6 @@ export const en: Words = {
   },
   session: {
     info: "Execution log for the assigned ticket. Summary conclusions are written back to the ticket; inspect or guide progress directly here.",
-    ticket: "Ticket",
     status: { running: "Running", ended: "Ended" },
     brief: "The lead assigned this ticket to this session.",
     answered: (label: string) => `Selected “${label}”.`,

@@ -26,12 +26,16 @@ export const zh = {
   },
   nav: {
     inbox: "收件箱",
-    lead: "主理",
+    talk: "对主理说…",
+    talkHint: "新的事都找主理，它会记成工单",
     team: "团队",
     handbook: "手册",
-    sessions: "工作会话",
-    sessionsEmpty: "无运行中的工作会话",
+    board: "全部工单",
+    record: "记录",
     sessionOf: (n: number) => `会话 ${n}`,
+    spend: (spent: string, budget: string) => `本月已用 ${spent}，预算 ${budget}`,
+    pick: "在左栏选一张工单。",
+    notStarted: "公司还没开始。说一句你关心的事，主理会提几张工单。",
     you: "你",
     openMenu: "打开导航",
   },
@@ -65,11 +69,6 @@ export const zh = {
   waits: { accept: "待接受", answer: "待回答", review: "待验收" },
   views: { waiting: "等你", working: "进行中", later: "稍后", handled: "已处理", archived: "归档" },
   inbox: {
-    title: "收件箱",
-    info: "工单仅在待接受、待回答与待验收时进入「等你」视图；其余阶段处于「进行中」。",
-    talk: "联系主理",
-    summary: (working: number, spent: string, budget: string) =>
-      `${working} 张进行中，本周期已用 ${spent} / ${budget}`,
     empty: {
       waiting: "无等你的工单",
       working: "无进行中工单",
@@ -77,9 +76,9 @@ export const zh = {
       handled: "暂无已处理工单",
       archived: "无归档工单",
     },
-    unread: "未读",
     schedules: "日程",
     schedulesEmpty: "暂无日程。主理提议的日程接受后在此显示。",
+    retroTitle: "复盘",
     retro: (every: number) => `复盘：每关闭 ${every} 张工单一次`,
     retroDefault: "默认每 10 张，当前设置为 5 张",
     retroProgress: (closed: number, every: number) => `已关闭 ${closed} / ${every}`,
@@ -108,10 +107,6 @@ export const zh = {
     decisions: "决定",
     handbook: "记入手册",
     returned: "打回",
-    sessionsEmpty: "暂无工作会话。接受工单后自动创建。",
-    /** A session's row on the ticket: who works in it and how long it is. */
-    sessionRow: (n: number, owner: string, messages: number) =>
-      `会话 ${n} · ${owner} · ${messages} 条消息`,
     saidInSession: "你在会话里说：",
     later: "稍后",
     archive: "归档",
@@ -166,7 +161,6 @@ export const zh = {
   },
   session: {
     info: "工作会话的执行记录。工单仅保留最终结论，可在会话中查看过程或直接交代。",
-    ticket: "工单",
     status: { running: "运行中", ended: "已结束" },
     brief: "主理已将该工单分配至本会话。",
     answered: (label: string) => `选「${label}」。`,

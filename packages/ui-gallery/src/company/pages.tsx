@@ -1,9 +1,7 @@
 /**
  * The prototype's pages, in the shipped company mode's page frame and with its controls.
  *
- * - The inbox takes the overview's place as the page an organization opens on. It keeps the
- *   overview's inbox rows and filter, and drops the four KPI tiles for one line: what is in
- *   progress and what it has cost. Its filter is the reader's own views of their tickets.
+ * - The schedules: what files tickets on its own, and when a retrospective comes due.
  * - The lead is the one conversation: what the reader says becomes a ticket, and the lead's
  *   lines name tickets, never the work.
  * - The board is the shipped five columns, unchanged; a card that waits says what for.
@@ -20,141 +18,63 @@ import {
   MessageBubble,
   PageFrame,
   PageHeader,
-  Pill,
   RuledSection,
-  Segmented,
   Switch,
   Textarea,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../../web/src/lib/strings";
-import {
-  PriorityBadge,
-  TicketStatusBadge,
-  TitleButton,
-} from "../../../web/src/features/company/shared";
+import { PriorityBadge, TitleButton } from "../../../web/src/features/company/shared";
 import { toneDot } from "../../../web/src/lib/tone";
 import type { FixtureId } from "./fixtures";
 import { RETRO_EVERY } from "./fixtures";
-import { closedSinceRetro, inboxCounts, spendOf, ticketsIn } from "./model";
-import type { ChatLine, CompanyState, Ticket } from "./model";
-import { INBOX_VIEWS, TICKET_STATUSES, waitOf } from "./spec";
-import type { InboxView, TicketStatus } from "./spec";
+import { closedSinceRetro } from "./model";
+import type { ChatLine, CompanyState } from "./model";
+import { TICKET_STATUSES, waitOf } from "./spec";
+import type { TicketStatus } from "./spec";
 import { PersonAvatar, PersonName } from "./people";
-import { gistOf, lineOf, titleOf } from "./text";
-import { money } from "./ticket-dialog";
+import { gistOf, titleOf } from "./text";
+import { Standing } from "./ticket-pane";
 import { useWords } from "./use-words";
 
 const QUIET = "text-fg-muted";
 
-/** What a ticket waits for, or else where it stands: one mark per row. */
-function Standing({ ticket }: { ticket: Ticket }) {
-  const W = useWords();
-  const wait = waitOf(ticket);
-  return wait !== null ? (
-    <Pill tone="attention">{W.waits[wait]}</Pill>
-  ) : (
-    <TicketStatusBadge status={ticket.status} />
-  );
-}
-
-export function InboxPage({
+/**
+ * The schedules, where the inbox column's schedule rows open: each with whether its tickets start
+ * work directly, and the retrospective that comes due by the count of closed tickets.
+ */
+export function SchedulesPage({
   state,
-  onOpen,
-  onTalk,
   onAuto,
 }: {
   state: CompanyState;
-  onOpen: (id: string) => void;
-  onTalk: () => void;
   onAuto: (id: FixtureId, auto: boolean) => void;
 }) {
   const W = useWords();
-  const [view, setView] = useState<InboxView>("waiting");
-  const counts = inboxCounts(state);
-  const tickets = ticketsIn(state, view);
   return (
-    <PageFrame width="xl">
-      <PageHeader
-        title={W.inbox.title}
-        info={W.inbox.info}
-        description={state.mission ?? W.org.mission}
-        actions={
-          <Button size="sm" onClick={onTalk}>
-            {W.inbox.talk}
-          </Button>
-        }
-      />
-      <p className={`text-xs ${QUIET}`}>
-        {W.inbox.summary(
-          counts.working,
-          money(spendOf(state)),
-          money(Object.values(state.budgets).reduce((sum, budget) => sum + budget, 0)),
-        )}
-      </p>
-
-      <div className="mt-4 max-w-2xl" role="group" aria-label={W.inbox.title}>
-        <Segmented
-          cols={5}
-          value={view}
-          onChange={setView}
-          options={INBOX_VIEWS.map((option) => ({
-            value: option,
-            label: `${W.views[option]} ${counts[option]}`,
-          }))}
-        />
-      </div>
-
-      {tickets.length === 0 ? (
-        <p className={`mt-4 py-1 text-xs ${QUIET}`}>{W.inbox.empty[view]}</p>
+    <PageFrame width="lg">
+      <PageHeader title={W.inbox.schedules} info={W.schedule.info} />
+      {state.schedules.length === 0 ? (
+        <p className={`py-1 text-xs ${QUIET}`}>{W.inbox.schedulesEmpty}</p>
       ) : (
-        <ul className="mt-3 divide-y divide-line">
-          {tickets.map((ticket) => (
-            <li key={ticket.id} className="flex items-start gap-3 py-2.5 text-sm">
-              <span className="flex w-20 shrink-0 pt-0.5">
-                <Standing ticket={ticket} />
-              </span>
+        <ul className="divide-y divide-line">
+          {state.schedules.map((schedule) => (
+            <li
+              key={schedule.id}
+              className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5 text-sm"
+            >
               <span className="min-w-0 flex-1">
-                <TitleButton
-                  className={`block max-w-full truncate ${ticket.unread ? "font-semibold" : ""}`}
-                  onClick={() => onOpen(ticket.id)}
-                >
-                  {titleOf(ticket, W)}
-                  {ticket.unread && <span className="sr-only"> ({W.inbox.unread})</span>}
-                </TitleButton>
-                <span className={`block truncate text-xs ${QUIET}`}>{lineOf(ticket, W)}</span>
+                <span className="block truncate">{W.tickets[schedule.id].title}</span>
+                <span className={`block text-xs ${QUIET}`}>{W.schedule.daily}</span>
               </span>
-              <span className={`hidden shrink-0 pt-0.5 text-xs sm:inline ${QUIET}`}>
-                {W.sources[ticket.source]}
-              </span>
+              <label className="flex shrink-0 items-center gap-2 text-xs text-fg-muted">
+                {W.schedule.auto}
+                <Switch checked={schedule.auto} onChange={(auto) => onAuto(schedule.id, auto)} />
+              </label>
             </li>
           ))}
         </ul>
       )}
-
-      <RuledSection
-        title={W.inbox.schedules}
-        info={W.schedule.info}
-        count={state.schedules.length}
-        className="mt-10"
-      >
-        {state.schedules.length === 0 ? (
-          <p className={`py-1 text-xs ${QUIET}`}>{W.inbox.schedulesEmpty}</p>
-        ) : (
-          <ul className="space-y-1">
-            {state.schedules.map((schedule) => (
-              <li
-                key={schedule.id}
-                className="flex flex-wrap items-center gap-x-3 gap-y-1 py-1.5 text-sm"
-              >
-                <span className="min-w-0 flex-1 truncate">{W.tickets[schedule.id].title}</span>
-                <label className="flex shrink-0 items-center gap-2 text-xs text-fg-muted">
-                  {W.schedule.auto}
-                  <Switch checked={schedule.auto} onChange={(auto) => onAuto(schedule.id, auto)} />
-                </label>
-              </li>
-            ))}
-          </ul>
-        )}
+      <RuledSection title={W.inbox.retroTitle} className="mt-10">
         <p className="flex flex-wrap items-center gap-x-3 gap-y-1 py-1.5 text-sm">
           <span className="min-w-0 flex-1" data-tooltip={W.inbox.retroDefault} data-tooltip-extra>
             {W.inbox.retro(RETRO_EVERY)}
@@ -213,10 +133,13 @@ function ChatMessage({
 
 export function LeadPage({
   state,
+  focus = false,
   onSay,
   onOpen,
 }: {
   state: CompanyState;
+  /** The reader asked for the lead: its box takes the focus. */
+  focus?: boolean;
   onSay: (text: string) => void;
   onOpen: (id: string) => void;
 }) {
@@ -258,6 +181,7 @@ export function LeadPage({
             rows={2}
             aria-label={W.lead.placeholder}
             placeholder={W.lead.placeholder}
+            autoFocus={focus}
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {

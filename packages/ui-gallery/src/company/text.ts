@@ -41,3 +41,6 @@ export function lineOf(ticket: Ticket, W: Words): string {
   if (ticket.delivered) return resultOf(ticket, W);
   return gistOf(ticket, W);
 }
+
+/** A sum of money, in dollars to the cent. */
+export const money = (usd: number) => `$${usd.toFixed(2)}`;

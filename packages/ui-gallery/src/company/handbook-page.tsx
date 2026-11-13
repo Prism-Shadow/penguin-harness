@@ -17,8 +17,8 @@ import { FIXTURES } from "./fixtures";
 import { metricsOf, windowOf } from "./model";
 import type { CompanyState, HandbookEntry, HandbookKind } from "./model";
 import { PersonName } from "./people";
-import { optionsOf, questionOf, returnOf, titleOf } from "./text";
-import { money } from "./ticket-dialog";
+import { money, optionsOf, questionOf, returnOf, titleOf } from "./text";
+
 import { useWords } from "./use-words";
 import type { Words } from "./words";
 

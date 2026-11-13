@@ -1,38 +1,31 @@
 /**
  * The company-mode prototype: the proposed company mode as something to click through, built of
- * the Web App's own shell, sidebar, page frame, ticket badges and dialog, on staged data
+ * the Web App's own shell, rows, page frame, ticket badges and controls, on staged data
  * (model.ts). It is the spec's main exhibit: what the mode shows first, where a decision is
  * taken, and what never reaches the reader.
  *
- * What it changes in the shipped sidebar: the inbox, the lead, the board and the team (in the org
- * chart's place, team-page.tsx) and the handbook (handbook-page.tsx) are the rows, with no fold:
- * the calendar's schedules are on the inbox and the finance page's figures on the inbox, the
- * team and each ticket, so neither keeps a page; the channel
- * list and the desks give way to one list of the work sessions that are not over, each opening
- * the conversation itself (session-page.tsx), with a link back to its ticket.
+ * Two columns. The left is the inbox, and it is the whole navigation (inbox-list.tsx): the line
+ * to the lead, what waits on the reader, what is in progress, the schedules. The right reads what
+ * the left names: a ticket, its record and its work sessions as tabs (ticket-pane.tsx), the
+ * lead's conversation, or the schedules. It opens on the first ticket that waits on the reader.
+ * The team, the handbook and the board are on the bar above the right column, with what the
+ * company has spent; they are where the reader looks now and then, not where the work is.
  *
  * No agent runs here. The bar under the page moves every work session one step when the reader
  * asks, so they see a ticket come to the inbox and nothing else change.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import {
   AppShell,
   Button,
   Drawer,
-  ICONS,
-  ICON_SIZE,
   MobileTopBar,
-  NavRow,
   Pill,
   SidebarFrame,
-  SidebarListHeader,
-  SidebarNavArea,
   toastInfo,
   UserAvatar,
 } from "@prismshadow/penguin-ui";
-import { S } from "../../../web/src/lib/strings";
-import { COMPANY_NAV_ICONS } from "../../../web/src/features/company/company-nav-icons";
 import { OrgStatusPill } from "../../../web/src/features/company/shared";
 import type { CompanyStart } from "./frame";
 import {
@@ -43,7 +36,6 @@ import {
   freshState,
   inboxCounts,
   letTimePass,
-  liveSessions,
   readTicket,
   rejectTicket,
   returnTicket,
@@ -52,53 +44,103 @@ import {
   sessionsOf,
   sessionStatus,
   setScheduleAuto,
+  spendOf,
   startCompany,
+  ticketsIn,
   triageTicket,
   weekState,
 } from "./model";
 import type { CompanyState } from "./model";
 import { entryWords, HandbookPage } from "./handbook-page";
-import { BoardPage, InboxPage, LeadPage, SetupPage } from "./pages";
-import { PersonAvatar, whoOf } from "./people";
-import { SessionPage } from "./session-page";
+import { InboxList, TalkRow } from "./inbox-list";
+import type { AsideView } from "./inbox-list";
+import type { TicketActions } from "./needs-you";
+import { BoardPage, LeadPage, SchedulesPage, SetupPage } from "./pages";
 import { TeamPage } from "./team-page";
-import { titleOf } from "./text";
-import { TicketDialog } from "./ticket-dialog";
-import type { TicketActions } from "./ticket-dialog";
+import { money, titleOf } from "./text";
+import { TicketPane } from "./ticket-pane";
+import type { TicketTab } from "./ticket-pane";
 import { useWords } from "./use-words";
 
-type Page = "inbox" | "lead" | "tickets" | "team" | "handbook" | "session";
+/** What the right column shows. */
+type Pane = "ticket" | "lead" | "schedules" | "team" | "handbook" | "board";
+
+/** The bar's pages, in its order. */
+const BAR: readonly ("team" | "handbook" | "board")[] = ["team", "handbook", "board"];
+
+/** The first ticket that waits on the reader, else the first in progress. */
+function firstTicket(state: CompanyState): string | null {
+  return (ticketsIn(state, "waiting")[0] ?? ticketsIn(state, "working")[0])?.id ?? null;
+}
+
+interface View {
+  state: CompanyState;
+  pane: Pane;
+  selected: string | null;
+}
+
+/** Where the prototype opens: the week on its first waiting ticket, read; a new company on setup. */
+function opening(start: CompanyStart): View {
+  if (start === "fresh") return { state: freshState(), pane: "lead", selected: null };
+  const state = weekState();
+  const selected = firstTicket(state);
+  return {
+    state: selected === null ? state : readTicket(state, selected),
+    pane: "ticket",
+    selected,
+  };
+}
 
 export function CompanyPrototype({ start }: { start: CompanyStart }) {
   const W = useWords();
-  const [state, setState] = useState<CompanyState>(() =>
-    start === "fresh" ? freshState() : weekState(),
-  );
-  const [page, setPage] = useState<Page>("inbox");
-  const [openId, setOpenId] = useState<string | null>(null);
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [first] = useState(() => opening(start));
+  const [state, setState] = useState<CompanyState>(first.state);
+  const [pane, setPane] = useState<Pane>(first.pane);
+  const [selected, setSelected] = useState<string | null>(first.selected);
+  const [tab, setTab] = useState<TicketTab>("record");
+  const [aside, setAside] = useState<AsideView | null>(null);
   const [handbookPath, setHandbookPath] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  // Bumped each time the reader asks for the lead, so its box takes the focus again.
+  const [talkTurn, setTalkTurn] = useState(0);
 
-  const open = state.tickets.find((ticket) => ticket.id === openId);
-  const openTicket = (id: string) => {
-    setState((current) => readTicket(current, id));
-    setOpenId(id);
-  };
-  const go = (next: Page) => {
-    setPage(next);
+  const running = state.stage === "running";
+  const show = (next: Pane) => {
+    setPane(next);
     setMenuOpen(false);
   };
+  const openTicket = (id: string, onTab: TicketTab = "record") => {
+    setState((current) => readTicket(current, id));
+    setSelected(id);
+    setTab(onTab);
+    show("ticket");
+  };
   const openSession = (id: string) => {
-    setOpenId(null);
-    setSessionId(id);
-    go("session");
+    const session = state.sessions.find((candidate) => candidate.id === id);
+    if (session !== undefined) openTicket(session.ticket, id);
   };
   const openHandbook = (path: string) => {
-    setOpenId(null);
     setHandbookPath(path);
-    go("handbook");
+    show("handbook");
   };
+  const talk = () => {
+    if (!running) return;
+    setTalkTurn((turn) => turn + 1);
+    show("lead");
+  };
+
+  // ⌘K or Ctrl+K reaches the lead from anywhere in the window.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        talk();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
   const actions: TicketActions = {
     accept: (id) => setState((current) => acceptTicket(current, id)),
     reject: (id) => setState((current) => rejectTicket(current, id)),
@@ -126,12 +168,9 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
     }
   };
 
-  const running = state.stage === "running";
   const waiting = inboxCounts(state).waiting;
-  const sessions = liveSessions(state);
-  const shown = state.sessions.find((session) => session.id === sessionId);
-  const ticketOfSession = (ticketId: string) =>
-    state.tickets.find((ticket) => ticket.id === ticketId);
+  const open =
+    pane === "ticket" ? state.tickets.find((ticket) => ticket.id === selected) : undefined;
   const orgName = W.org.name;
 
   const sidebar = (
@@ -142,48 +181,7 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
           {running && <OrgStatusPill org={{ status: "active" }} />}
         </div>
       }
-      pinned={
-        <SidebarNavArea>
-          <NavRow
-            label={W.nav.inbox}
-            glyph={ICONS.bell}
-            active={page === "inbox"}
-            onClick={() => go("inbox")}
-            {...(waiting > 0 ? { badge: <Pill tone="attention">{waiting}</Pill> } : {})}
-          />
-          <NavRow
-            label={W.nav.lead}
-            glyph={<PersonAvatar byline="lead" size={ICON_SIZE.navRow} />}
-            active={page === "lead"}
-            disabled={!running}
-            onClick={() => go("lead")}
-          />
-          <NavRow
-            label={S.nav.org.tickets}
-            glyph={ICONS[COMPANY_NAV_ICONS.tickets]}
-            active={page === "tickets"}
-            disabled={!running}
-            onClick={() => go("tickets")}
-          />
-          <NavRow
-            label={W.nav.team}
-            glyph={ICONS[COMPANY_NAV_ICONS.chart]}
-            active={page === "team"}
-            disabled={!running}
-            onClick={() => go("team")}
-          />
-          <NavRow
-            label={W.nav.handbook}
-            glyph={ICONS[COMPANY_NAV_ICONS.handbook]}
-            active={page === "handbook"}
-            disabled={!running}
-            onClick={() => {
-              setHandbookPath(null);
-              go("handbook");
-            }}
-          />
-        </SidebarNavArea>
-      }
+      pinned={<TalkRow active={pane === "lead"} disabled={!running} onTalk={talk} />}
       account={
         <div className="flex items-center gap-2 px-2 py-2 text-sm">
           <UserAvatar userId="you" displayName={W.nav.you} />
@@ -191,39 +189,15 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
         </div>
       }
     >
-      {running && (
-        <>
-          <SidebarListHeader label={W.nav.sessions}>
-            <span className="px-1 text-xs tabular-nums text-fg-subtle">{sessions.length}</span>
-          </SidebarListHeader>
-          <div className="px-2 pt-1">
-            {sessions.length === 0 ? (
-              <p className="px-2 py-1 text-xs text-fg-subtle">{W.nav.sessionsEmpty}</p>
-            ) : (
-              sessions.flatMap((session) => {
-                const ticket = ticketOfSession(session.ticket);
-                if (ticket === undefined) return [];
-                const status = sessionStatus(state, session);
-                return [
-                  <NavRow
-                    key={session.id}
-                    density="sm"
-                    label={titleOf(ticket, W)}
-                    glyph={<PersonAvatar byline={ticket.owner} size={ICON_SIZE.rowLead} />}
-                    active={page === "session" && sessionId === session.id}
-                    tooltip={whoOf(ticket.owner, W)}
-                    tooltipExtra
-                    onClick={() => openSession(session.id)}
-                    {...(status === "answer" || status === "review"
-                      ? { badge: <Pill tone="attention">{W.waits[status]}</Pill> }
-                      : {})}
-                  />,
-                ];
-              })
-            )}
-          </div>
-        </>
-      )}
+      <InboxList
+        state={state}
+        selected={open?.id ?? null}
+        aside={aside}
+        schedulesOpen={pane === "schedules"}
+        onOpen={(id) => openTicket(id)}
+        onAside={setAside}
+        onSchedules={() => show("schedules")}
+      />
     </SidebarFrame>
   );
 
@@ -232,76 +206,66 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
     body = (
       <SetupPage onStart={(mission) => setState((current) => startCompany(current, mission))} />
     );
-  } else if (page === "inbox") {
+  } else if (pane === "lead") {
     body = (
-      <InboxPage
+      <LeadPage
+        key={talkTurn}
         state={state}
-        onOpen={openTicket}
-        onTalk={() => go("lead")}
+        focus={talkTurn > 0}
+        onSay={(text) => setState((current) => sayToLead(current, text))}
+        onOpen={(id) => openTicket(id)}
+      />
+    );
+  } else if (pane === "schedules") {
+    body = (
+      <SchedulesPage
+        state={state}
         onAuto={(id, auto) => setState((current) => setScheduleAuto(current, id, auto))}
       />
     );
-  } else if (page === "lead") {
-    body = (
-      <LeadPage
-        state={state}
-        onSay={(text) => setState((current) => sayToLead(current, text))}
-        onOpen={openTicket}
-      />
-    );
-  } else if (page === "tickets") {
-    body = <BoardPage state={state} onOpen={openTicket} />;
-  } else if (page === "team") {
-    body = <TeamPage state={state} onHire={() => go("lead")} onOpenSession={openSession} />;
-  } else if (page === "session") {
-    const ticket = shown === undefined ? undefined : ticketOfSession(shown.ticket);
-    body =
-      shown === undefined || ticket === undefined ? null : (
-        <SessionPage
-          key={shown.id}
-          session={shown}
-          ticket={ticket}
-          status={sessionStatus(state, shown)}
-          actions={actions}
-          onSay={(text) => setState((current) => sayInSession(current, shown.id, text))}
-          onOpenTicket={() => openTicket(ticket.id)}
-        />
-      );
-  } else {
+  } else if (pane === "board") {
+    body = <BoardPage state={state} onOpen={(id) => openTicket(id)} />;
+  } else if (pane === "team") {
+    body = <TeamPage state={state} onHire={talk} onOpenSession={openSession} />;
+  } else if (pane === "handbook") {
     body = (
       <HandbookPage
         state={state}
         selected={handbookPath}
         onSelect={setHandbookPath}
-        onOpenTicket={openTicket}
+        onOpenTicket={(id) => openTicket(id)}
       />
     );
+  } else if (open !== undefined) {
+    body = (
+      <TicketPane
+        key={open.id}
+        ticket={open}
+        sessions={sessionsOf(state, open.id)}
+        statusOf={(session) => sessionStatus(state, session)}
+        cost={costOf(state, open)}
+        filed={state.handbook
+          .filter((entry) => entry.ticket === open.id)
+          .map((entry) => ({ path: entry.path, title: entryWords(entry, state, W).title }))}
+        actions={actions}
+        tab={tab}
+        onTab={setTab}
+        onSay={(session, text) => setState((current) => sayInSession(current, session, text))}
+        onOpenHandbook={openHandbook}
+      />
+    );
+  } else {
+    body = <p className="px-6 py-8 text-sm text-fg-muted">{W.nav.pick}</p>;
   }
 
+  const budget = Object.values(state.budgets).reduce((sum, value) => sum + value, 0);
   return (
     <AppShell
       nav={sidebar}
       overlays={
-        <>
-          <Drawer open={menuOpen} side="left" onClose={() => setMenuOpen(false)}>
-            {sidebar}
-          </Drawer>
-          {open !== undefined && (
-            <TicketDialog
-              ticket={open}
-              sessions={sessionsOf(state, open.id)}
-              statusOf={(session) => sessionStatus(state, session)}
-              cost={costOf(state, open)}
-              filed={state.handbook
-                .filter((entry) => entry.ticket === open.id)
-                .map((entry) => ({ path: entry.path, title: entryWords(entry, state, W).title }))}
-              actions={actions}
-              onOpenSession={openSession}
-              onOpenHandbook={openHandbook}
-              onClose={() => setOpenId(null)}
-            />
-          )}
-        </>
+        <Drawer open={menuOpen} side="left" onClose={() => setMenuOpen(false)}>
+          {sidebar}
+        </Drawer>
       }
     >
       <MobileTopBar
@@ -310,7 +274,32 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
         onMenu={() => setMenuOpen(true)}
         {...(waiting > 0 ? { menuBadge: <Pill tone="attention">{waiting}</Pill> } : {})}
       />
-      <main className="min-h-0 flex-1 overflow-y-auto">{body}</main>
+      {running && (
+        <div
+          data-slot="company-bar"
+          className="flex shrink-0 flex-wrap items-center justify-end gap-x-1 gap-y-1 border-b border-line px-3 py-1.5"
+        >
+          <span className="hidden min-w-0 flex-1 truncate px-1 text-xs tabular-nums text-fg-muted sm:block">
+            {W.nav.spend(money(spendOf(state)), money(budget))}
+          </span>
+          {BAR.map((page) => (
+            <Button
+              key={page}
+              size="sm"
+              variant="ghost"
+              aria-pressed={pane === page}
+              className={pane === page ? "text-fg" : "text-fg-muted"}
+              onClick={() => {
+                if (page === "handbook") setHandbookPath(null);
+                show(page);
+              }}
+            >
+              {W.nav[page]}
+            </Button>
+          ))}
+        </div>
+      )}
+      <main className="flex min-h-0 flex-1 flex-col overflow-y-auto">{body}</main>
       {running && (
         <div
           data-slot="prototype-bar"

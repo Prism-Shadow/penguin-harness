@@ -993,7 +993,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
         {
           topic: "Home",
           now: "Shows four overview metrics; inbox ranks third",
-          spec: "Defaults to inbox; tickets waiting on you come first",
+          spec: "Opens on the first ticket waiting on you",
         },
         {
           topic: "Decisions",
@@ -1013,7 +1013,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
         {
           topic: "Sidebar",
           now: "Six standalone pages, channels, and employee desks",
-          spec: "Inbox, Lead, Tickets, Team, Handbook, and active work sessions",
+          spec: "The left column is the inbox: tell the lead, waiting on you, in progress, schedules; team, handbook and all tickets sit on the top bar",
         },
         {
           topic: "Employees",

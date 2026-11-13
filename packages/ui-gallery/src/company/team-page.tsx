@@ -12,8 +12,8 @@ import type { Byline } from "./fixtures";
 import { costOf, employeeMetrics, liveSessions, sessionStatus } from "./model";
 import type { CompanyState } from "./model";
 import { waitOf } from "./spec";
-import { titleOf } from "./text";
-import { money, SessionStatusPill } from "./ticket-dialog";
+import { money, titleOf } from "./text";
+import { SessionStatusPill } from "./needs-you";
 import { PersonAvatar } from "./people";
 import { useWords } from "./use-words";
 
