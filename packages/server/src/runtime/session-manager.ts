@@ -108,7 +108,7 @@ import { loopbackHostRoles } from "../services/preview-token.js";
 import { agentNoProxy } from "../net/proxy.js";
 import type { SandboxService } from "../sandbox/service.js";
 import type { AuthState, Channels, Clock, Config, Log } from "../hmr/capabilities.js";
-import type { ProjectConfigStore, ProjectEvents } from "../mechanisms/projects.js";
+import type { ProjectConfigStore, ProjectEvents, Projects } from "../mechanisms/projects.js";
 import type { AgentState, SessionIndex, SessionOrigins } from "../mechanisms/sessions.js";
 import type { Errors, UsageRecording } from "../mechanisms/observability.js";
 import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
@@ -482,6 +482,8 @@ export interface SessionManagerDeps {
   /** Session-origin registry (session_meta is the single source of truth; subagent registration records the forwarded meta's source here). */
   sources: SessionOrigins;
   recorder: UsageRecorderLike;
+  /** Captures the Project lifetime for usage that may arrive after deletion and recreation. */
+  projects?: Pick<Projects, "findById">;
   /**
    * The data root, for what is read off an Agent's state on disk before a Session is loaded
    * (startGoal's goal-plugin check). Optional: a manager built without one — unit tests on a
@@ -576,6 +578,7 @@ interface PendingSteeringEntry {
 export interface RuntimeEntry {
   sessionId: string;
   projectId: string;
+  projectCreatedAt?: string;
   agentId: string;
   /**
    * The Session's current model (provider group paired with modelId): what the next drive
@@ -922,7 +925,9 @@ export class SessionManager {
     childSessionId: string,
     messages: AmspRecord[],
   ): Promise<SubagentMessageOutcome> {
-    const entry = await this.ensureEntry(sessionId);
+    // All runtime loads share the Task admission lock. Dispatch happens after it is
+    // released: a child resume must not hold up another Task's admission or cleanup.
+    const entry = await this.withLock(sessionId, () => this.ensureEntry(sessionId));
     entry.lastActivityMs = Date.now();
     const childRow = this.deps.sessions.findById(childSessionId);
     const resume =
@@ -1019,6 +1024,7 @@ export class SessionManager {
     const entry: RuntimeEntry = {
       sessionId: row.sessionId,
       projectId: row.projectId,
+      projectCreatedAt: this.deps.projects?.findById(row.projectId)?.createdAt,
       agentId: row.agentId,
       provider: row.provider,
       modelId: row.modelId,
@@ -1117,6 +1123,7 @@ export class SessionManager {
     this.deps.channels.get(entry.sessionId).publish(msg);
     const ctx: UsageContext = {
       projectId: entry.projectId,
+      projectCreatedAt: entry.projectCreatedAt,
       agentId: entry.agentId,
       sessionId: entry.sessionId,
       provider: entry.provider,
@@ -2330,10 +2337,42 @@ export class SessionManager {
     loadOpts?: { switchTo?: ModelRefDto },
   ): Promise<RuntimeEntry> {
     const existing = this.entries.get(sessionId);
+    const row = this.deps.sessions.findById(sessionId);
+    if (!row) {
+      throw new HttpError(
+        404,
+        "session_not_found",
+        "Session does not exist or you do not have access.",
+      );
+    }
+    // Bind to the original lifetime before credential refresh or runtime loading can yield.
+    const projectCreatedAt =
+      existing?.projectCreatedAt ?? this.deps.projects?.findById(row.projectId)?.createdAt;
+    const assertLifetime = (): void => {
+      const current = this.deps.sessions.findById(sessionId);
+      const project = this.deps.projects?.findById(row.projectId);
+      if (
+        !current ||
+        current.createdAt !== row.createdAt ||
+        current.projectId !== row.projectId ||
+        current.agentId !== row.agentId ||
+        (this.deps.projects && (!project || project.createdAt !== projectCreatedAt))
+      ) {
+        throw new HttpError(
+          404,
+          "session_not_found",
+          "Session does not exist or you do not have access.",
+        );
+      }
+      this.assertSessionNotDeleting(sessionId);
+      this.assertAgentNotDeleting(sessionId);
+    };
+    assertLifetime();
     /** Background-task counts the discarded runtime last reported (see the publish below). */
     let discardedBackgroundTasks: SessionBackgroundTasks | undefined;
     if (existing) {
       await this.refreshProviderCredentialIfNeeded(existing);
+      assertLifetime();
       if (existing.generation === this.generationOf(existing.projectId, existing.agentId)) {
         return existing;
       }
@@ -2351,15 +2390,8 @@ export class SessionManager {
       this.entries.delete(sessionId);
       discardedBackgroundTasks = existing.backgroundTasks;
     }
-    const row = this.deps.sessions.findById(sessionId);
-    if (!row) {
-      throw new HttpError(
-        404,
-        "session_not_found",
-        "Session does not exist or you do not have access.",
-      );
-    }
     await this.refreshProviderCredentialIfNeeded(row);
+    assertLifetime();
     // Captured before the (awaited) load: an invalidation racing with the load leaves
     // this entry stale, so the access after next rebuilds it with the new values.
     const generation = this.generationOf(row.projectId, row.agentId);
@@ -2377,8 +2409,12 @@ export class SessionManager {
     }
     // The Session/Agent was marked for deletion while loading: discard the load result,
     // don't rebuild the entry (avoids reviving an orphaned Trace).
-    this.assertSessionNotDeleting(row.sessionId);
-    this.assertAgentNotDeleting(row.sessionId);
+    try {
+      assertLifetime();
+    } catch (err) {
+      await session.dispose?.();
+      throw err;
+    }
     // A thinking-level PATCH that landed during the (awaited) load updated the row but found
     // no entry to assign, and the loader applied the snapshot's level: re-read the pin.
     const pin = this.deps.sessions.findById(row.sessionId)?.thinkingLevel;
@@ -2394,6 +2430,7 @@ export class SessionManager {
     const entry: RuntimeEntry = {
       sessionId: currentId,
       projectId: row.projectId,
+      projectCreatedAt,
       agentId: row.agentId,
       provider: row.provider,
       modelId: row.modelId,
@@ -2486,6 +2523,7 @@ export class SessionManager {
     const ctx: UsageContext = {
       projectId: entry.projectId,
       agentId: entry.agentId,
+      projectCreatedAt: entry.projectCreatedAt,
       sessionId: entry.sessionId,
       provider: entry.provider,
       modelId: entry.modelId,
@@ -3046,6 +3084,7 @@ export class SessionsModule {
   @Use() private readonly log!: Log;
   @Use() private readonly settings!: Settings;
   @Use() private readonly sessionsRepo!: SessionIndex;
+  @Use() private readonly projects!: Projects;
   @Use() private readonly sources!: SessionOrigins;
   @Use() private readonly state!: AgentState;
   @Use() private readonly recorder!: UsageRecording;
@@ -3171,6 +3210,7 @@ export class SessionsModule {
       }),
       sources,
       recorder,
+      projects: this.projects,
       errors,
       modelScopeAuth: this.modelScopeAuth,
       titles,
