@@ -58,10 +58,59 @@ import type { SessionOrigins } from "../mechanisms/sessions.js";
 
 const TRACE_FILE_RE = /^(.+)_(\d{3})\.jsonl$/;
 
+/** Absolute path of a shard from its identity (the layout {@link traceFilePath} reconstructs). */
+function shardFilePath(
+  root: string,
+  projectId: string,
+  agentId: string,
+  date: string,
+  sessionId: string,
+  fileIndex: number,
+): string {
+  const name = `${sessionId}_${String(fileIndex).padStart(3, "0")}.jsonl`;
+  return path.join(tracesDir(root, projectId, agentId), date, name);
+}
+
 /** Absolute path of an indexed shard (reconstructed — rows never store paths; the data root may move). */
 export function traceFilePath(root: string, row: TraceFileRow): string {
-  const name = `${row.sessionId}_${String(row.fileIndex).padStart(3, "0")}.jsonl`;
-  return path.join(tracesDir(root, row.projectId, row.agentId), row.date, name);
+  return shardFilePath(root, row.projectId, row.agentId, row.date, row.sessionId, row.fileIndex);
+}
+
+/**
+ * A Session's latest shard as DISK names it, with no index lookup and no file read: the date
+ * dirs are `YYYY-MM-DD` and every shard is `<sessionId>_<index:03>.jsonl`, so one readdir per
+ * date dir answers it — no stat, no head read. The shard with the highest index wins (the
+ * later date breaks a tie), which is what the index's own `ORDER BY file_index ASC` last row
+ * means; every date dir is scanned rather than the newest one alone, so a compaction
+ * `rotate()` — it writes the higher index into the Session's ORIGINAL date dir — reads the
+ * same here as it does through the index. `undefined` when no shard of that Session is on
+ * disk (the traces dir absent included), which is the caller's cue to force a reconcile.
+ *
+ * This is the truthful-by-construction shortcut for a consumer that has just missed the
+ * index: it cannot be staler than the index, because it reads the disk the index is derived
+ * from, and it cannot be wrong about names the index would have skipped — the same
+ * `<sessionId>_<index:03>.jsonl` shape both places.
+ */
+export async function latestShardOnDisk(
+  root: string,
+  projectId: string,
+  agentId: string,
+  sessionId: string,
+): Promise<string | undefined> {
+  const dir = tracesDir(root, projectId, agentId);
+  const prefix = `${sessionId}_`;
+  let best: { path: string; index: number } | undefined;
+  // Oldest date dir first, so an equal index (impossible within one dir) settles on the later date.
+  for (const date of (await listDirs(dir)).sort()) {
+    for (const name of await listFiles(path.join(dir, date))) {
+      if (!name.startsWith(prefix) || !name.endsWith(".jsonl")) continue;
+      const index = Number(name.slice(prefix.length, -".jsonl".length));
+      if (!Number.isInteger(index)) continue;
+      if (best !== undefined && index < best.index) continue;
+      best = { path: shardFilePath(root, projectId, agentId, date, sessionId, index), index };
+    }
+  }
+  return best?.path;
 }
 
 async function listDirs(dir: string): Promise<string[]> {
