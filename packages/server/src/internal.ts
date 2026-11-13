@@ -173,6 +173,7 @@ export type { Sessions, SessionServiceIface } from "@penguinharness/plugin-sessi
 export type { Messaging, MessagingSlots } from "@penguinharness/plugin-messaging/server";
 export * from "./http/app.js";
 export * from "./http/routes/contributions.js";
+export * from "./http/routes/messaging-accounts.js";
 export type { Http, HttpSlots } from "./http/app.js";
 export type { WebShell, WebShellSlots } from "./http/routes/contributions.js";
 export * from "./services/archived-sessions-service.js";

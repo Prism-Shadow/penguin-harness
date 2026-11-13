@@ -12,7 +12,9 @@
   },
   "dependencies": {
     "@larksuiteoapi/node-sdk": "^1.73.0",
+    "@penguinharness/plugin-machines": "workspace:*",
     "@penguinharness/plugin-projects": "workspace:*",
+    "@penguinharness/plugin-sessions": "workspace:*",
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-server": "workspace:*",
     "@prismshadow/penguin-ui": "workspace:*",
