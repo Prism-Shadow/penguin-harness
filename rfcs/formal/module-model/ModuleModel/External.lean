@@ -1,6 +1,9 @@
 import Std
 
 /-!
+Specification: ../../../PRFC-0001-module.md, "The judgment rules" and
+"Compilation, verification and runtime assembly".
+
 The external boundary, for one fixed TypeScript environment and code revision.
 
 These symbols describe types and opaque recipes, not the TypeScript type system or

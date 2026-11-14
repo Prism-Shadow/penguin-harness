@@ -1,6 +1,9 @@
 import ModuleModel.External
 
 /-!
+Specification: ../../../PRFC-0001-module.md, "Declarations and decorators",
+"Visibility is lexical" and "Compilation, verification and runtime assembly".
+
 A module is a finite sequence of named declarations. A qualified name determines
 scope; declarations may hold component recipes or ordinary data recipes alike.
 There is no second representation for a draft or an accepted module.
@@ -8,6 +11,11 @@ There is no second representation for a draft or an accepted module.
 Dependencies already name their targets. Resolving a source-language query to these
 names, and translating slot syntax to declarations, are outside this first model.
 Order is observable: filtering a slot must preserve its remaining members' order.
+
+This resolved-declaration abstraction covers part of the Module mechanism, which
+also includes authoring decorators, projection, resolution and runtime assembly.
+In particular, the namespace predicate below must be related to the RFC's lexical
+visibility rules by elaboration; it does not replace those rules.
 -/
 namespace ModuleModel
 

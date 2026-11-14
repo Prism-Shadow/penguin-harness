@@ -4,11 +4,11 @@
 
 - Feature Name: `module_compile`
 - Start Date: 2026-10-25
-- Rev: v2.1.0
+- Rev: v2.2.0
 
 ## Summary
 
-A Pass is a finite composition of edits to a Module and deferred decorations. Edits produce another value of the same Module type; decoration rules select their targets from the final structural result. Final verification precedes boot. [Module](PRFC-0001-module.md) defines declarations and validity; [Plugin](PRFC-0003-plugin.md) defines selection and rebuilding. Together they form the semantic core. The TypeScript tree adapter supplies pipeable authoring operators, manifest registration and plugin factories; the [Lean draft](../formal/module-model/README.md) specifies the core independently of that adapter.
+A Pass composes edits and deferred decoration over an assembled Module declaration snapshot. It belongs to the full [Module mechanism](PRFC-0001-module.md), including decorators, signature projection and dependency checks. Structural edits produce a new snapshot; deferred decorators select their targets from the final structural result. Verification precedes boot. [Plugin](PRFC-0003-plugin.md) defines which declarations and passes participate in a build.
 
 ## Motivation
 
@@ -16,7 +16,7 @@ Instrumentation must cover nodes produced by later passes without running rewrit
 
 ## Guide-level explanation
 
-The TypeScript authoring surface keeps ordinary function composition:
+The authoring surface keeps ordinary function composition:
 
 ```ts
 const testMode: ModulePass = {
@@ -43,18 +43,9 @@ Its plugin exports the factory in `passes.telemetry`. Factories are resolved ane
 
 ## Reference-level explanation
 
-### Semantic core
+### Edits and decorators
 
-[Pass.lean](../formal/module-model/ModuleModel/Pass.lean) defines a finite sequence with two operations and an end marker:
-
-```lean
-abbrev Decoration := (Name → Declaration → Bool) × (Code → Code)
-
-inductive Pass where
-  | done
-  | edit (transform : Module → Module) (next : Pass)
-  | decorate (rule : Decoration) (next : Pass)
-```
+A pass is a finite sequence of structural edits and deferred recipe decorators. A Decorator transforms one declaration as defined in [Module](PRFC-0001-module.md). Ordinary declaration decorators run when the author applies them. `decorate` records a selector and a recipe-only decorator for the final structural result; it cannot change names, provided types or requirements. These operations share declaration semantics while choosing different application times.
 
 An edit is a pure, total transformation. `add`, `filter`, fixed-name `remove`, identity-preserving `replace`, `expand` and namespace-local `filterAt` are functions on Module values, not additional pass variants. Built-in collection edits inspect their finite input snapshot; `expand` concatenates the callback results without visiting its own output. Conditions can inspect the current entry or current Module. They do not weaken the totality and purity preconditions, and predicates that inspect a changing Module do not inherit the algebra of fixed-name removal.
 
@@ -62,7 +53,7 @@ An edit is a pure, total transformation. `add`, `filter`, fixed-name `remove`, i
 
 `append` composes passes associatively; `pipe` folds that composition. In general, `run (append a b) m` is **not** `run b (run a m)`: separate runs materialize too early. For example, a replacement in `b` can discard a wrapper already applied by `a`; in the composition that wrapper instead selects the final replacement. There is one final materialization per composed build, using the same Module representation throughout.
 
-### TypeScript execution
+### Compilation
 
 1. Snapshot the assembled source tree, including nested manifest data. Opaque code references are retained; compiler edits never execute module factories. The snapshot protects earlier inputs and source declarations from mutation.
 2. Collect registrations once. Duplicate ids are errors. Topologically order `after` dependencies with lexical id order for ties; a missing dependency means “after it, if present”. Cycles are named errors. Pass-created registrations do not schedule work in this compile.
@@ -71,7 +62,7 @@ An edit is a pure, total transformation. `add`, `filter`, fixed-name `remove`, i
 5. Verify the final tree and retain diagnostic origins. Intermediate semantic mismatches are permitted. Graph validation and TypeScript assignment checks are distinct; TypeScript compatibility uses the declaration renderer described by PRFC-0001.
 6. Boot the verified candidate. Reassembly and recovery start from original declarations, never from a previously decorated result.
 
-The MVP retains the existing raw `rewrite` escape hatch. Built-in operator provenance includes pass id, operator position/name, affected module/slot, deletion and plugin ownership. Custom callbacks receive conservative pass-level attribution. Source locations and predicate-control lineage can be enriched later; diagnostics must not claim unique causal blame. These diagnostics and exception paths are implementation requirements outside the current pure Lean model. Translating tree nodes, aliases, exports and contribution collections into named declarations also remains a refinement obligation.
+The MVP retains the existing raw `rewrite` escape hatch. Built-in operator provenance includes pass id, operator position/name, affected module/slot, deletion and plugin ownership. Custom callbacks receive conservative pass-level attribution. Source locations and predicate-control lineage can be enriched later; diagnostics must not claim unique causal blame.
 
 ### Diagnostics and profiling
 
@@ -79,21 +70,21 @@ Diagnostic provenance is collected independently of debug timing. Final errors r
 
 `PENGUIN_MODULE_COMPILE_DEBUG=1` collects pass timing and the final tree description. Profiling, rather than a wall-clock theorem, guides optimization. Interface count alone does not bound compilation: record requirement/candidate counts, intermediate sizes, generated declaration size and tsc work separately. Do not enumerate all interface pairs merely because they exist in the catalog.
 
-The model's operation count is exactly the finite pass length; it does not count callback execution. For a final Module with `n` declarations and `d` deferred rules, straightforward materialization makes `n × d` predicate calls plus one recipe transformation per match. Snapshot expansion has output size equal to the sum of its callback output lengths. Neither statement bounds the work inside callbacks, generated output growth, provider search or tsc. The review workloads target interface catalogs of 5,000 and eventually 100,000 entries; these are workload parameters, not measured capacity or a count of Module declarations. Profile those costs separately before choosing indexes, sharing or incremental execution.
+The number of scheduled operations is exactly the finite pass length; it does not count callback execution. For a final Module with `n` declarations and `d` deferred rules, straightforward materialization makes `n × d` predicate calls plus one recipe transformation per match. Snapshot expansion has output size equal to the sum of its callback output lengths. Neither statement bounds the work inside callbacks, generated output growth, provider search or tsc. The review workloads target interface catalogs of 5,000 and eventually 100,000 entries; these are workload parameters, not measured capacity or a count of Module declarations. Profile those costs separately before choosing indexes, sharing or incremental execution.
 
-### Model proof scope
+### Composition and termination contracts
 
-The Lean 4 draft is model-only. Definitions and the external TypeScript assumption are separate from [Laws.lean](../formal/module-model/ModuleModel/Laws.lean), whose theorem bodies deliberately use `sorry`. The TypeScript checker contract and admission statements are in PRFC-0001. A successful build of the draft checks definitions and theorem statements, not those proofs or the TypeScript implementation.
+Finite composition with pure, total callbacks has a finite, deterministic evaluation for every finite input, without a fuel limit or maximum declaration count. Collection operators traverse the input snapshot, and the pass scheduler consumes its remaining sequence. An edit may grow the output; the new entries are not automatically sent back to their producer. Arbitrary TypeScript callbacks remain available, but an author must establish their termination and purity separately.
 
-`Evaluates` gives relational execution independently of the `collect` interpreter. The proposed laws state finite evaluation for every finite Module and Pass, uniqueness of its result and operation count, agreement with `collect`, and associative composition. There is no fuel limit or maximum input size. Callbacks must be pure, total functions; the theorem does not prove termination of arbitrary TypeScript rewrites, selectors or wrappers. Collection operators visit snapshots, while pass evaluation decreases the remaining finite sequence. Growth of a Module does not need to decrease the Module's size.
+Pure pointwise filters fuse. Removals selected by fixed identities are idempotent and commute; replacements preserve identity and position; a slot-local filter leaves other slots and components unchanged. Predicates reading a changing assembly do not inherit fixed-identity removal laws. General edits need not commute or preserve validity, which is checked after composition.
 
-Other statements cover pure pointwise filter fusion; fixed-name removal algebra; replacement and namespace locality; N-to-N−1 slot deletion; exact expansion size; final selection and rule order; coverage of later edits; absence of removed targets; and preservation of declared contracts by decoration. Decoration preserves `Valid` because it changes only opaque code, not because wrapper behavior is proved safe. Arbitrary edits need not preserve `Valid`, and arbitrary edits do not commute. Equal Module values need not imply equal diagnostic histories, which are absent from the model.
+Final recipe decoration preserves declared contracts, so it does not change their validity. It covers matching declarations introduced by later edits, preserves rule order and excludes removed targets. It does not guarantee the behavior of a wrapper. Declaration equality also does not imply identical diagnostic histories; operator origins remain available even when structural results coincide.
 
-Plugin installation, removal and strictly shrinking retries are specified in PRFC-0003. Provenance validity, exceptions, park/load, retention and recovery require additional modeling. If implementation verification becomes necessary, first relate the authoring adapter and callbacks to the core, then use an executable verified core or a verified checker of the requested transformation. A well-typed output alone does not establish that the requested deletion or replacement occurred.
+Plugin rebuilding, retry progress and runtime handover follow [Plugin](PRFC-0003-plugin.md). A finite pass schedule does not bound imports, migrations, runtime effects or the duration of TypeScript checking.
 
 ## Drawbacks
 
-Frozen snapshots and provenance have a cost. Deferred rules add a final selection pass. Arbitrary callbacks preserve MVP flexibility but weaken guarantees. The existing class adapter still constructs instances during assembly, and boot still repeats wiring resolution; those limits are explicit in PRFC-0001.
+Frozen snapshots and provenance have a cost. Deferred rules add a final selection pass. Arbitrary callbacks preserve MVP flexibility but limit termination and purity guarantees. Instance construction must be separated from declaration assembly, and boot must consume the wiring choices established by final verification.
 
 ## Rationale and alternatives
 
@@ -112,20 +103,25 @@ Pipeable operators follow RxJS's composition style. Persistent data structures m
 
 ## Future possibilities
 
-Profile representative interface catalogs before introducing incremental execution or query optimization. Reference-model testing can compare TypeScript execution with the Lean model without claiming an implementation proof. A production checker may later validate transformation evidence; it must check the requested operation, not only final type validity.
+Profile representative interface catalogs before introducing incremental execution or query optimization. A transformation checker may later validate the requested edit in addition to final type validity; accepting a well-typed result alone cannot establish that a requested deletion or replacement occurred.
 
 ## Changes
+
+### v2.2.0
+
+- Updated: connected ordinary declaration decorators and deferred recipe decoration within the Module mechanism.
+- Updated: stated composition, traversal and termination contracts independently of proof tooling; references point to RFC documents.
 
 ### v2.1.0
 
 - Added: the finite edit/decorate semantics, total callback preconditions, snapshot traversal and composition across one final materialization.
-- Updated: the Lean draft's theorem scope, exact pass-operation count and profiling dimensions; distinguished interface catalog size from module size.
-- Clarified: ordinary TypeScript callbacks remain available; provenance, runtime effects and adapter refinement are outside the model, and all theorem proofs use `sorry`.
+- Updated: composition contracts, exact pass-operation count and profiling dimensions; distinguished interface catalog size from module size.
+- Clarified: ordinary TypeScript callbacks remain available, with separate obligations for purity, termination, provenance and runtime effects.
 
 ### v2.0.0
 
 - Updated: renumbered the unmerged module-pass draft from PRFC-0021 to PRFC-0025; PRFC-0021 is assigned to Distros.
-- Updated: immutable pipeable edits, final-target decoration, plugin pass factories, diagnostic provenance, generation replay and model-only proof scope.
+- Updated: immutable pipeable edits, final-target decoration, plugin pass factories, diagnostic provenance, generation replay and termination assumptions.
 - Removed: registration-order ties and instrumentation depending on repeated rewrites.
 
 ### v1.0.0

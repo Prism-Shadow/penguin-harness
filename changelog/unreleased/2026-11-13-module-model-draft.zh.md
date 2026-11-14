@@ -1,10 +1,12 @@
 # Module 语义的 Lean 草稿
 
 - **Date:** 2026-11-13
-- **Type:** docs
-- **Scope:** `formal/module-model`
+- **Type:** process
+- **Scope:** `rfcs/formal`
 - **PR:** [#1560](https://github.com/Prism-Shadow/penguin-harness/pull/1560)
 
 [English](2026-11-13-module-model-draft.md)
 
 新增定义 Module、Pass 与插件选择的 Lean 草稿，显式列出外部类型检查假设。草稿陈述编辑、最终 decoration、准入、插件重算与停机的定理，证明暂以 `sorry` 保留供评审。
+
+将形式化材料放在 `rfcs/formal/`，新增与 Module 共用声明语义的 Decorator 及其组合、局部性与契约保持定理陈述。新增 POPL/PACMPL 版式的 Typst 论文，说明完整机制、模型定义、外部假设与证明边界；RFC 直接规定设计，形式化材料反向引用对应章节。

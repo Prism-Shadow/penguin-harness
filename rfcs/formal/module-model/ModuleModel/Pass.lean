@@ -1,6 +1,9 @@
-import ModuleModel.Module
+import ModuleModel.Decorator
 
 /-!
+Specification: ../../../PRFC-0025-module-pass.md, "Edits and decorators",
+"Compilation" and "Composition and termination contracts".
+
 A pass has two operations: transform declarations, or register a final decoration.
 Sequence is finite. Predicates and transforms are total, pure Lean functions.
 A partial or effectful TypeScript callback is not automatically represented by one.
@@ -10,7 +13,7 @@ change code, so a wrapped result never becomes a new selection target.
 -/
 namespace ModuleModel
 
-/-- A selector and a recipe transformation; neither owns a runtime instance. -/
+/-- A final selector and the input to `Decorator.recipe`; neither owns an instance. -/
 abbrev Decoration := (Name → Declaration → Bool) × (Code → Code)
 
 inductive Pass where
@@ -48,8 +51,9 @@ def selected (rules : List Decoration) (name : Name) (decl : Declaration) : List
 
 def materialize (rules : List Decoration) (m : Module) : Module :=
   m.map (fun (name, decl) =>
-    let code := (selected rules name decl).foldl (fun code rule => rule.2 code) decl.code
-    (name, { decl with code }))
+    let decorated := (selected rules name decl).foldl
+      (fun current rule => Decorator.recipe rule.2 current) decl
+    (name, decorated))
 
 def run (pass : Pass) (source : Module) : Module :=
   let (result, rules) := collect pass source

@@ -1,6 +1,6 @@
 # Module model draft
 
-A Lean model for reviewing the meaning of modules, passes and plugin selection before
+A Lean model for reviewing declarations, decorators, passes and plugin selection before
 writing proofs. Every theorem in `ModuleModel/Laws.lean` deliberately uses `sorry`.
 A successful build checks definitions and theorem statements; it does not establish
 those theorems or the correctness of the TypeScript implementation.
@@ -8,11 +8,20 @@ those theorems or the correctness of the TypeScript implementation.
 Run `lake build` in this directory with the pinned Lean toolchain. The package uses
 Lean's standard library and has no third-party dependencies.
 
+The specifications are [Module](../../PRFC-0001-module.md),
+[Module Pass](../../PRFC-0025-module-pass.md) and [Plugin](../../PRFC-0003-plugin.md).
+They define the complete mechanism, including authoring forms, signature projection,
+resolution and runtime assembly. This package abstracts its declaration operations;
+it does not redefine the mechanism as only a list. Every model file cites its governing
+RFC sections in a comment. The [paper](../docs/module.typ) explains the abstraction,
+theorems and remaining obligations; [build instructions](../README.md) cover both tools.
+
 ## Concepts
 
 | Concept | Definition |
 | --- | --- |
 | Module | A finite, ordered sequence of qualified names and declarations. Each declaration has a type, named requirements and an opaque code recipe. |
+| Decorator | A pure transformation of one declaration, applied in logical composition order. Identity and position are held by the Module. |
 | Pass | A finite composition of declaration edits and final decorations. |
 | Plugin | A name associating declarations with a pass. A fixed catalog defines precedence and revisions; enabled names select its members. |
 
@@ -27,12 +36,21 @@ Order is meaningful for contributions. Unique names are required by final validi
 intermediate edits may contain duplicate names, missing targets or incompatible types.
 `lookup` returns the first match, so uniqueness must be checked before admission.
 
-This is a semantic proposal, not a transcription of the current adapter. Dependencies
+This is an abstraction of the RFC mechanism. Dependencies
 already name their targets. Implicit provider search, aliases and export syntax must
 be translated into that representation; correctness of that translation is not part
 of this draft. A declaration may depend on names in its own namespace and enclosing
 namespaces. Dependencies must admit a decreasing natural-number rank, allowing a
 startup order without cycles.
+
+`Decorator` belongs to the domain model, alongside Module, Pass and Plugin. `withType`,
+`require` and `recipe` refine a declaration's contract, dependencies and code.
+`andThen` composes them; `on` applies one at a fixed identity. Class and field annotations
+are one notation for declaration construction and decoration. Their parsing, elaboration,
+multi-provision expansion and source-language evaluation order are not defined here.
+An ordinary decorator may change contracts and break validity. Deferred pass rules use
+`Decorator.recipe`, the same operation restricted to code, with selection on the final
+structural snapshot.
 
 ## Definitions and assumptions
 
@@ -42,9 +60,11 @@ Read the files in this order:
    optional checker answer, and the one external propositional axiom.
 2. `ModuleModel/Module.lean`: declarations, scope, edits, validity and a checker using
    an ordinary name list as the proposed startup order.
-3. `ModuleModel/Pass.lean`: composition, final decoration and relational evaluation.
-4. `ModuleModel/Plugin.lean`: assembly from a fixed base and the enabled plugin set.
-5. `ModuleModel/Laws.lean`: the proposed theorem statements.
+3. `ModuleModel/Decorator.lean`: declaration transformations, composition, application
+   at a fixed identity and preservation of contracts.
+4. `ModuleModel/Pass.lean`: composition, final decoration and relational evaluation.
+5. `ModuleModel/Plugin.lean`: assembly from a fixed base and the enabled plugin set.
+6. `ModuleModel/Laws.lean`: the proposed theorem statements.
 
 The external axiom says that a **completed** type-check answer agrees with the
 compatibility relation in one fixed environment. `none` represents an unavailable
@@ -75,6 +95,9 @@ preserves application behavior.
 - Validation: sound admission; completeness when answers are available; resolved,
   visible and compatible dependencies; absence of cycles; refusal of unanswered
   questions; preservation of the current module on rejection.
+- Decorators: associative composition with identity; composition at a fixed name;
+  name preservation and locality; recipe and composition contract preservation;
+  validity preservation conditional on unchanged contracts.
 - Passes: existence and uniqueness of finite evaluation; agreement of the interpreter
   and the relational meaning; associative composition; final selection, order and
   coverage of decoration; preservation of declared contracts.

@@ -2,19 +2,17 @@
 
 [English](PRFC-0003-plugin.md)
 
-> **来源**：设计仓 [penguin-harness-design](https://github.com/Prism-Shadow/penguin-harness-design) 的 `rfcs/PRFC-0003-plugin.md`——设计 PR [#421](https://github.com/Prism-Shadow/penguin-harness-design/pull/421)（插件库的内容改为模块贡献）的修订，它先于本镜像落地于默认分支 `main`；上一版取自落地提交 [`ac673a24`](https://github.com/Prism-Shadow/penguin-harness-design/commit/ac673a245eec78d6afca35e260dce28b2a3ab3ac)。
-> **修订**：v2.1.0；本面的约定见 [README.zh.md](README.zh.md)，逐版本改动记在文末 `## Changes`。
+> **来源**：迁自设计仓的 [PRFC-0003-plugin](https://github.com/Prism-Shadow/penguin-harness-design/blob/main/rfcs/PRFC-0003-plugin.md)。
+> **修订**：v2.2.0；逐版本改动记在文末 `## Changes`。
 
 - Feature Name: `plugin`
 - Start Date: 2026-09-02
-- PRFC PR: [Prism-Shadow/penguin-harness-design#107](https://github.com/Prism-Shadow/penguin-harness-design/pull/107)
-- Implementation PR: 已合并 [#383](https://github.com/Prism-Shadow/penguin-harness/pull/383)（插件平台）；在途 [#672](https://github.com/Prism-Shadow/penguin-harness/pull/672)（从 npm 安装）、[#727](https://github.com/Prism-Shadow/penguin-harness/pull/727)（内置插件打包）、[#614](https://github.com/Prism-Shadow/penguin-harness/pull/614)（Project 的插件表由平台加载）、[#450](https://github.com/Prism-Shadow/penguin-harness/pull/450)（插件表同步到机器、按机器的插件表）
 - 相关: PRFC-0001「Module」、PRFC-0002「HMR v1」、PRFC-0004「插件的作用域」、PRFC-0005「插件的版本」、PRFC-0010「插件的机器一致性与热加载」
 
 ## Summary
 [summary]: #summary
 
-语义核心中的 Plugin 为声明和 Pass 命名。固定 catalog 提供 revision 与顺序，有效启用集合决定选中哪些条目。安装与卸载改变选择，再从原始 base 和所选声明重建 Module。[Lean 草稿](../formal/module-model/README.md) 定义这一逻辑操作，包安装与运行时交接另行处理。
+Plugin 通过包提供模块声明及可选的 pass。安装与卸载改变有效选择，再从原始声明重建。声明重建与运行时交接遵循同一套 Module 机制，包括 Decorator、签名检查和生命周期。
 
 平台维护一个核心框架，其余的功能以插件接入。插件是一个 npm 包，内容是一组 Module，与平台自己的节点同一种写法。每次 App 创建时，平台读取所有 Project 插件表的并集，按签名检查这些 Module，再把它们作为模块树的子节点启动；它们经平台的槽贡献功能，只活一代 App；插件升级也靠 App 重新创建生效，状态可以 park 进新的一代。插件表随 Project 同步到它用到的每台机器，每台机器自己安装、自己重新装配，不重启进程。插件的影响范围由配置决定：激活的是插件的功能，而不是插件本身。
 
@@ -138,39 +136,27 @@ App 在以下时刻创建，每次都重新加载插件：
 
 ### Compile pass 与换代
 
-[Plugin.lean](../formal/module-model/ModuleModel/Plugin.lean) 的定义不另设 plan 或 generation 类型：
-
-```lean
-structure Plugin where
-  name : Name
-  declarations : Module
-  pass : Pass
-```
-
-固定 base 和有序 catalog 后，`selected` 按启用名称的成员关系筛选 catalog 条目。请求重复或顺序变化不改变结果，合法 catalog 的插件名唯一。`source` 在 base 后追加所选声明，`program` 按 catalog 顺序组合所选 pass，`build` 在 `source` 上执行该组合。每次比较中的 catalog 固定 revision 和优先级；将包版本及实现的 pass 依赖顺序解析成该 catalog 不在草稿内。
+插件包含身份、模块声明与可选的 pass。固定 catalog 提供所选包的 revision 和优先级。选择按启用成员关系进行：请求重复或顺序变化不改变参与的 catalog 条目，catalog 的插件名唯一。装配组合 base 与所选声明，并按已解析顺序组合所选 pass。固定执行顺序之前，必须完成包解析与 pass 依赖排序。
 
 插件可以在 modules 旁导出 `passes: Record<string, () => ModulePass>`。Manifest 在 `CompileModule.passes` 注册 id；工厂提供代码，每次 compile 尝试重新调用。工厂 id 冲突被拒绝。每代只解析本次保留插件集合的工厂，best-effort 重试同样如此。Operator 来源记录供应插件与 revision，避免把修改别人的 pass 归责给被修改模块。
 
-`install` 向启用集合加入名称，`uninstall` 移除名称。每次 `build` 都从原始声明开始，不以上次输出作为输入。被移除的 pass 可能删除过别人的贡献、替换过组件，或改变幸存 pass 的条件，因此只删除它拥有的输出、反向撤销编辑都不能实现卸载。模型的 `effective` 以成员关系合并各 Project 的请求：一个 Project 移除后，只要另一个仍请求，该插件就仍被选中。仅停用某个 pass 会改变 catalog 条目，固定 catalog 的往返定律不比较不同 catalog。
+`install` 向启用集合加入名称，`uninstall` 移除名称。每次 `build` 都从原始声明开始，不以上次输出作为输入。被移除的 pass 可能删除过别人的贡献、替换过组件，或改变幸存 pass 的条件，因此只删除它拥有的输出、反向撤销编辑都不能实现卸载。有效选择以成员关系合并各 Project 的请求：一个 Project 移除后，只要另一个仍请求，该插件就仍被选中。仅停用某个 pass 会改变 catalog 条目，固定 catalog 的往返定律不比较不同 catalog。
 
-构建和准入是同一种 Module 上的不同操作。卸载必需 provider 可能得到非法候选；验证拒绝时，`Module.admit` 保留当前 Module，不保证每次卸载请求都可发布。Best-effort 恢复可以缩小保留集合后重建，重试成功也必须通过最终验证才能准入。
+构建和准入是同一种 Module 上的不同操作。卸载必需 provider 可能得到非法候选；验证拒绝时，准入保留当前声明，不保证每次卸载请求都可发布。Best-effort 恢复可以缩小保留集合后重建，重试成功也必须通过最终验证才能准入。
 
 生命周期目标是拆除旧 runtime 前完成候选编译与准入，再通过 park/load 交接。Dispose 后新 boot 失败需要尝试恢复，不保证服务无间断，也不回滚外部副作用。恢复必须保留旧计划、parked state 和确切代码资源；npm 原地覆盖尚不能提供这项保证，属于实现缺口。
 
 逻辑停用与物理清理分开。新代排除被卸载的 pass；按 [PRFC-0015](PRFC-0015-agent-state.zh.md)，在途 Task 仍可能持有旧代码。活动代、候选代、在途任务、恢复快照及传递代码依赖均不再引用某资源后，才能回收它；不强制卸载进程中的 ESM 记录。移除模块的状态不会自动流入后续 `park()`；改变存量数据行为前，必须确定保留或删除策略、保留时长和清理责任方。
 
-### 模型证明目标
+### 重配置保证
 
-[Laws.lean](../formal/module-model/ModuleModel/Laws.lean) 的插件定理陈述要求回调纯且全定义，base 与 catalog 固定，包括代码 revision、回调捕获的配置和顺序：
+固定 base、包 revision、配置与执行顺序，且回调纯而全定义时，重建具有确定性。启用成员相同，重建声明相同；就这一结果而言，同名插件的重复安装或卸载各自幂等。若插件原先不存在，安装后再移除会恢复原始重建结果。移除原先已经存在的插件会改变初始选择，因此不适用该往返保证。
 
-- 启用成员相同，则重建出的 Module 相同；就这一结果而言，安装和卸载各自幂等。
-- 若 `p` 原先不在 `S` 中，则 `build(base, catalog, uninstall(p, install(p, S))) = build(base, catalog, S)`。未启用的前提不可省略；移除原已启用的插件会改变初始选择。
-- 被卸载的插件不在选择中，因而其 pass 不参与本次构建的调度；另一个 Project 留存的请求使已知插件继续被选中。这两个陈述都不表示旧运行代码已经停止。
-- `Retires next current` 表示按成员关系严格缩小：不新增启用名称，并至少移除一个名称。该关系良基，严格退出的转移次数至多为 `initial.eraseDups.length`。重排列表或删除重复请求不算推进。不指定最优保留子集或具体恢复算法。
+被移除插件的 pass 不参与下一次构建的调度；另一个 Project 留存的请求使已知插件继续被选中。这些保证针对新的一代，在途 Task 与保留资源遵循上面的生命周期规则。移除必需 provider 可能得到非法候选，必须在发布前拒绝，或按 best-effort 策略重新构建。
 
-这些定理的证明暂用 `sorry`。Module 准入和已接受依赖的定义见 [PRFC-0001](PRFC-0001-module.zh.md)；草稿没有运行时状态、异常处理、park/load、Task 或资源可达性。状态保持、运行时发布前准入、恢复与安全回收仍是操作要求，不是插件等式的推论。组件 park/load 契约没有被暗中设为本草稿的公理；后续生命周期模型必须显式写出这些契约，以及恢复成功、任务最终结束或清理所需的假设。
+每次 best-effort 重试必须在初始有限选择中推进：被排除插件与被丢弃的原始贡献组单调增加，每次至少新增一项排除，并从源声明重建。删除重复请求或重排请求不算推进。仅移除插件的策略中，严格移除步数不超过初始不同启用名称的数量；若允许单独丢弃贡献组，下降量还须计入原始贡献组。策略不保证找到最大可用子集。
 
-实现的 best-effort 策略可能只丢弃一个原始贡献组而不移除插件，该步骤不满足 `Retires`，因此当前重试定理不能说明整套策略停机。后续证明需同时计入保留插件与保留的原始贡献组，要求每次重试至少从这两个有限集合中移除一项，并从原始声明重建。Import、tsc、migration 和任意 TypeScript 回调各自需要停机论证；本草稿不宣称实现已经形式化验证。
+重建声明不撤销运行时副作用。状态保持需要显式 park/load 契约，恢复需要旧声明、保留状态和确切代码资源；任务最终结束、资源最终清理需要对应的运行时推进条件。这些要求不能仅由选择确定性或重试次数有限推出。
 
 ## Drawbacks
 [drawbacks]: #drawbacks
@@ -219,19 +205,24 @@ structure Plugin where
 
 ## Changes
 
+### v2.2.0
+
+- Updated：包声明与 pass 选择属于完整 Module 机制。
+- Updated：直接规定重配置保证与生命周期责任，不依赖证明实现。
+
 ### v2.1.0
 
 - Added：最小 Plugin 定义、固定 catalog 的选择与原始声明重建语义，明确区分构建和准入。
-- Updated：Lean 草稿的安装/卸载定律、原先未启用的前提、进程请求并集与严格退出的次数上界。
-- Clarified：park/load、运行时发布、代码资源回收和丢弃贡献组的恢复仍在草稿范围之外；所有定理暂用 `sorry`。
+- Updated：安装/卸载等价、原先未启用的前提、进程请求并集与严格退出的次数上界。
+- Clarified：park/load、运行时发布、代码资源回收和丢弃贡献组的恢复各有生命周期责任。
 
 ### v2.0.0
 
-- Updated：不可变模块计划、延后验证、换代归属与模型证明边界。
+- Updated：不可变模块计划、延后验证、换代归属与验证边界。
 
 ### v1.1.0
 
-- 更新：「原理」新增一段：插件库的内容（Skill、钩子包、MCP Server、Workbench 与卡片）是插件自身 Module 向 `PluginLibraryModule` 五个数据槽的贡献，从 `ifaces.json` 静态读取、照旧按 Agent 安装，包的种类由表推定；「快速开始」一条改为指向插件的卡片贡献（设计 PR [#421](https://github.com/Prism-Shadow/penguin-harness-design/pull/421)）。
+- 更新：「原理」新增一段：插件库的内容（Skill、钩子包、MCP Server、Workbench 与卡片）是插件自身 Module 向 `PluginLibraryModule` 五个数据槽的贡献，从 `ifaces.json` 静态读取、照旧按 Agent 安装，包的种类由表推定；「快速开始」一条改为指向插件的卡片贡献（本 RFC 的插件库修订）。
 - 删除：「Unresolved questions」中自带插件库的清单形态内容如何迁移一问，已由同一设计 PR 定下。
 
 ### v1.0.0

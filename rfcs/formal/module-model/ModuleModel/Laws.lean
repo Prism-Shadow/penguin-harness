@@ -1,6 +1,10 @@
 import ModuleModel.Plugin
 
 /-!
+Specifications: ../../../PRFC-0001-module.md (declarations and decorators),
+../../../PRFC-0025-module-pass.md (composition and termination contracts), and
+../../../PRFC-0003-plugin.md (reconfiguration guarantees).
+
 Review draft: every theorem body is intentionally `sorry`. Definitions and external
 assumptions are separate, so a proposed law cannot silently become a model axiom.
 These statements assert model properties, not correctness of the TypeScript runtime.
@@ -101,6 +105,47 @@ theorem admission_preserves_validity (current candidate : Module) (order : List 
   sorry
 
 end Module
+
+namespace Decorator
+
+-- PRFC-0001: logical composition and application at a fixed declaration identity.
+
+theorem andThen_associative (a b c : Decorator) :
+    andThen (andThen a b) c = andThen a (andThen b c) := by
+  sorry
+
+theorem identity_left (decorator : Decorator) : andThen identity decorator = decorator := by
+  sorry
+
+theorem identity_right (decorator : Decorator) : andThen decorator identity = decorator := by
+  sorry
+
+theorem on_composition (a b : Decorator) (name : Name) (m : Module) :
+    on name (andThen a b) m = on name b (on name a m) := by
+  sorry
+
+theorem on_preserves_names (decorator : Decorator) (name : Name) (m : Module) :
+    Module.names (on name decorator m) = Module.names m := by
+  sorry
+
+theorem on_local (decorator : Decorator) (name : Name) (m : Module) :
+    Module.AgreesOutside (fun other => other == name) m (on name decorator m) := by
+  sorry
+
+theorem recipe_preserves_contracts (wrap : Code → Code) : PreservesContracts (recipe wrap) := by
+  sorry
+
+theorem composition_preserves_contracts (a b : Decorator)
+    (left : PreservesContracts a) (right : PreservesContracts b) :
+    PreservesContracts (andThen a b) := by
+  sorry
+
+theorem on_preserves_validity (decorator : Decorator) (name : Name) (m : Module)
+    (contracts : PreservesContracts decorator) :
+    Module.Valid (on name decorator m) ↔ Module.Valid m := by
+  sorry
+
+end Decorator
 
 namespace Pass
 

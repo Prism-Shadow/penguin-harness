@@ -1,6 +1,9 @@
 import ModuleModel.Pass
 
 /-!
+Specification: ../../../PRFC-0003-plugin.md, "Compile passes and generation
+changes" and "Reconfiguration guarantees".
+
 A plugin names declarations and a pass. A fixed catalog supplies precedence and
 revisions. Enabled names are a set represented by membership in a list: request
 order and duplicate requests have no effect.

@@ -2,20 +2,18 @@
 
 [中文版](PRFC-0001-module.zh.md)
 
-> **Source**: `rfcs/PRFC-0001-module.md` from the design repository [penguin-harness-design](https://github.com/Prism-Shadow/penguin-harness-design) — landed (default branch `main`, commit [`ac673a24`](https://github.com/Prism-Shadow/penguin-harness-design/commit/ac673a245eec78d6afca35e260dce28b2a3ab3ac)).
-> **Rev**: v2.1.0; the conventions for this surface are in [README.md](README.md), and changes from version to version are recorded in `## Changes` at the end.
+> **Source**: migrated from [PRFC-0001-module](https://github.com/Prism-Shadow/penguin-harness-design/blob/main/rfcs/PRFC-0001-module.md) in the design repository.
+> **Rev**: v2.2.0; per-version changes are recorded in `## Changes` at the end.
 
 - Feature Name: `module`
 - Start Date: 2026-09-02
-- PRFC PR: [Prism-Shadow/penguin-harness-design#117](https://github.com/Prism-Shadow/penguin-harness-design/pull/117)
-- Implementation PR: [Prism-Shadow/penguin-harness#543](https://github.com/Prism-Shadow/penguin-harness/pull/543) (kernel and generator), [Prism-Shadow/penguin-harness#599](https://github.com/Prism-Shadow/penguin-harness/pull/599) (the server-side conversion)
 
 ## Summary
 [summary]: #summary
 
-Module is the immutable description from which this harness assembles code. The semantic core has three concepts: **Module** holds ordered, named declarations, **Pass** transforms them, and **Plugin** supplies declarations and a pass. Source, intermediate and accepted modules share one representation; validity is a predicate checked at admission. Interfaces describe contracts, components carry code recipes, and slots are namespace views within a Module. Type compatibility is delegated to generated TypeScript checks.
+The Module mechanism covers declarations, decorators, signature projection, dependency resolution, compilation and runtime assembly. Authors use Interface contracts, Component implementations and Module scopes; decorators attach the declarations from which the generator produces signature-level data. Passes transform immutable declaration snapshots, final verification checks the assembled result, and the runtime creates and connects its instances. Plugin selection determines which declarations and passes participate.
 
-The class decorators and tree manifests below remain the TypeScript authoring surface. The [Lean draft](../formal/module-model/README.md) specifies the smaller semantic core independently; translating that surface into the model and verifying the implementation are separate work.
+A Decorator is a declaration transformation in this mechanism. The TypeScript `@...` forms express that operation on classes and fields; their meaning is part of the design. Source, intermediate and accepted declaration snapshots share one representation, while runtime instances have their own lifecycle. [Module Pass](PRFC-0025-module-pass.md) defines rewriting and final decoration; [Plugin](PRFC-0003-plugin.md) defines installation, removal and generation changes.
 
 ## Motivation
 [motivation]: #motivation
@@ -43,9 +41,9 @@ A sandbox backend has to keep working after a hot push. The platform side requir
 ## Guide-level explanation
 [guide-level-explanation]: #guide-level-explanation
 
-A Module is an ordered collection of declarations. A pass can replace a component's recipe with a mock or filter the members of a slot; it produces another Module without changing its input. Missing dependencies and incompatible types are allowed during editing and checked once the composed passes finish. [Module Pass](PRFC-0025-module-pass.md) defines composition and final decoration; [Plugin](PRFC-0003-plugin.md) defines selection and rebuilding after installation or removal.
+The authoring forms describe the parts to assemble: **Interface** is a contract expressed through method and field signatures; **Component** provides its own instance; **Module** groups children and publishes selected provisions. A declaration records identity, contracts, dependencies and the recipe that produces its code or value. A slot receives an ordered collection of contributions.
 
-The TypeScript adapter offers these authoring forms: **Interface** is a set of method and field signatures, written as an abstract class purely to serve as a handle — declare its own members with `@Interface()`, be an existing type with `extends Interface<T>()`; **Component** is the node that exports itself, its instance being its own provision; **Module** is the node that exports others, it has children, and re-exports a portion of the interfaces from its children, with the rest of the subtree's provisions private to the outside. These forms do not introduce additional semantic state types.
+Decorators declare or refine these facts. `@Module` and `@Component` identify the class's role, `@Interface()` declares an interface handle, and `@Use`, `@Provide` and `@Bind` attach requirements, provisions and contribution bindings to fields. `extends Interface<T>()` names an existing contract. The generator reads these forms statically and the runtime interprets their resulting declarations. A pass may replace a component with a mock or filter a slot without mutating earlier snapshots; intermediate missing dependencies and type mismatches are checked after the composed edits finish.
 
 A node declares what it wants with `@Use()` fields, what it gives with `@Provide()` fields, hands over the code half of a contribution with `@Bind()`, and hands over the state to be retained with `park()`. Dependencies finish injecting before the optional `setup()`; the lifecycle hook is named `setup()` rather than `create()`, because the repo itself already has a domain method named `create`.
 
@@ -60,30 +58,19 @@ The server's business surface is organized this way: most services and all repos
 ## Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
 
-### Semantic core
+### Declarations and decorators
 
-The definitions in [Module.lean](../formal/module-model/ModuleModel/Module.lean) use names and declarations as data within a Module:
+The mechanism uses qualified declaration identities, contract data and opaque recipes. A Module introduces a lexical scope and an ordered assembly of declarations. A Component contributes a declaration whose recipe creates the instance; a slot exposes an ordered view of contribution declarations. These views do not create separate lifecycle stages for source, intermediate and accepted snapshots.
 
-```lean
-abbrev Name := List String
+A Decorator is a pure transformation of a declaration, applied in declared order. It may refine the provided contract, append a requirement or transform the recipe; the qualified identity and position belong to the surrounding Module and remain fixed. Composition applies the left decorator before the right, is associative and has an identity operation. General decorators need not preserve type validity or commute. A recipe-only decorator preserves declared contracts, without thereby guaranteeing the behavior of the code it produces.
 
-structure Declaration where
-  type : Ty
-  requires : List (Name × Ty)
-  code : Code
+In class notation, `@Module` and `@Component` introduce the declaration and scope, while field decorators refine the associated requirement, provision or contribution declaration. A class with several provisions or contributions produces the corresponding declaration entries. This logical order is the order recorded for composition; source-language evaluation order must be translated consistently. It is not permission to execute arbitrary runtime code during signature projection.
 
-abbrev Module := List (Name × Declaration)
-```
+The assembled snapshot preserves declaration and contribution order. Removing a uniquely identified, present slot member reduces the slot from N entries to N−1 without removing its owner component. Replacing a component preserves its identity while its new contract is verified with the final assembly. Duplicate identities, missing providers and incompatible contracts may occur during rewriting, but cannot be admitted into a running generation.
 
-Order is observable, including the order of contributions. A Component is a declaration whose opaque recipe creates a component. A slot can be represented by `Module.members scope`, the ordered view of declarations whose parent namespace is `scope`; it is not another container with its own lifecycle. Filtering that view leaves other names unchanged. With unique names and a present target in the slot, removing that target reduces its cardinality from N to N−1. Replacing a declaration retains its name and position.
+### Authoring forms
 
-Qualified names determine scope. `visible owner target` holds when `target.dropLast` is a prefix of `owner`: a declaration may refer to names in its own or enclosing namespaces. Requirements already name their providers. Implicit provider search, aliases, exports and the full slot syntax require a translation into this representation; that translation is outside the draft. The model's namespace predicate is not a proof of the class adapter's visibility rules below.
-
-Source declarations, intermediate results and accepted results all have type `Module`. Blueprint, Draft and BootPlan may describe implementation phases, but are not separate semantic objects. Intermediate modules may contain duplicate names, missing references and incompatible types. `Valid` requires unique, nonempty qualified names; visible, resolved and compatible dependencies; and a natural-number rank that strictly decreases from each consumer to its required providers. Finite data and pure edits do not themselves imply `Valid`.
-
-### TypeScript authoring and class adapter
-
-The following forms describe the existing tree adapter. **Interface** states the required contract; **Component** and the `@Module` form describe the two kinds of tree nodes. Their recipes, namespaces and contracts must be related to the semantic core before model theorems can apply to this implementation.
+The class and field notation below specifies how authors declare interfaces, components, modules and their connections.
 
 #### Interface: a set of method signatures, and signatures are data
 
@@ -272,25 +259,15 @@ An extension package provides a set of Modules: `package.json#penguin.modules` c
 
 Introducing this mechanism does not by itself change the runtime. The tree starts inside the existing platform kernel node, and at park time each module's document is written into the newly added `modules` field. Parked documents are not reversioned — fields are only added — so a data root parked by this version of the platform can still accept an older platform pushed back onto it. The only place the runtime is touched is the extension loader, which reads one more thing: `package.json#penguin`.
 
-### Final verification and runtime boundary
+### Compilation, verification and runtime assembly
 
-`Valid` is defined independently of the checker. `verify m order` checks names, named dependencies and an ordinary list of names witnessing startup order: every declaration occurs once, with providers before consumers. Each required type comparison must return `some true`. `admit current candidate order` selects the candidate only if verification succeeds; otherwise it returns the current Module. This is logical admission, not a runtime transaction. The current Module must already be valid for admission to preserve validity.
+Compilation reads the assembled declarations and applies the selected passes. It must preserve the original declarations and earlier snapshots. Recipe construction is separate from recipe execution: compile-time editing must not run component initialization or mutate live instances. Before boot, verify unique identities, resolved and visible providers, exports, contribution contracts and an acyclic dependency order. Intermediate mismatches are permitted; an accepted generation must satisfy all of these constraints.
 
 Type compatibility is delegated to TypeScript: render each side's own declaration snapshot into `.d.ts` files and generate assignment questions. Preserve direction, transitive references, compiler options and revision identity; never replace the consumer's declaration with the provider's just to answer a question. Unsupported rendering, a missing declaration or an unfinished compiler check is not a successful comparison. Graph checks remain responsible for missing or ambiguous providers. Diagnostics map generated questions and declaration ranges back to their module facts and operator origins, including deletions; origins explain relevant changes, not a unique minimal culprit.
 
-The implementation must also validate its own wiring resolution, exports and contribution syntax. Removing a slot contribution does not implicitly remove its provider component. A mock keeps the replaced node's identity, with its resulting contract checked in the final tree. Edits must preserve earlier inputs; structural sharing is permitted but is not a theorem about memory allocation in this model.
+The accepted declaration snapshot fixes the provider choices and startup order that boot consumes. Rejection preserves the current selection before runtime handover. Successful verification checks declared contracts; it does not prove that arbitrary component code honors those contracts or that boot cannot fail. Park/load, disposal and recovery follow the lifecycle in [Plugin](PRFC-0003-plugin.md) and [HMR](PRFC-0002-hmr.md).
 
-The runtime target is to consume the verified wiring and startup order without executing recipes during compile. The pass prototype in [PRFC-0025](PRFC-0025-module-pass.md) exercises immutable edits and deferred decoration over `ModuleDef`. Converting every class adapter to a reusable recipe and eliminating boot's repeated resolution are subsequent implementation steps; the existing `moduleDefOf` adapter still constructs instances during assembly. Model admission does not establish safe publication, successful boot or rollback of runtime effects.
-
-### Model verification
-
-The [Lean package](../formal/module-model/README.md) drafts definitions, external assumptions and theorem statements separately. Every theorem body in [Laws.lean](../formal/module-model/ModuleModel/Laws.lean) intentionally uses `sorry`; a successful build checks the statements, not their truth. This stage specifies the model without proving the TypeScript implementation.
-
-[External.lean](../formal/module-model/ModuleModel/External.lean) leaves `Ty`, `Code`, `Compatible` and `typeCheck : Ty → Ty → Option Bool` uninterpreted. Its one external propositional axiom says that, in a fixed TypeScript environment, a completed answer `typeCheck offered required = some answer` satisfies `answer = true ↔ Compatible offered required`. `none` means no answer and cannot admit a dependency. The checker is noncomputable relative to this oracle. No tsc termination, availability of answers, subtype algebra or truth of a recipe's declared type is assumed. Validity concerns declared contracts, not runtime type safety.
-
-Module theorem statements cover edit locality and algebra, slot filtering and single-member deletion, verification soundness, completeness conditional on available type answers, resolved dependencies, absence of dependency cycles and preservation of the current Module on rejection. Arbitrary edits need not preserve validity. Provenance, exceptions and runtime state are not in this model; friendly diagnostics remain an implementation requirement.
-
-Termination targets every finite input without fuel, under pure, total callbacks; [PRFC-0025](PRFC-0025-module-pass.md) states the traversal and composition assumptions. Actual cost is investigated by profiling, with interfaces, requirement sites, intermediate sizes and compiler work measured separately. A future implementation proof needs a semantics-preserving translation from author syntax plus either an executable verified core or a verified checker of the specified transformation. Checking only that the output is well typed cannot prove that a requested removal or replacement occurred.
+Declaration editing and runtime handover have different obligations. Edits must leave earlier inputs unchanged; implementations may use persistent data structures and structural sharing. Runtime resources belong to instances and generations, with explicit ownership and cleanup. A new declaration snapshot does not by itself copy, restore or dispose those resources.
 
 ## Drawbacks
 [drawbacks]: #drawbacks
@@ -335,15 +312,21 @@ The frontend has a tree of its own too: `web/src/module.json` is already the App
 
 ## Changes
 
+### v2.2.0
+
+- Updated: specified the complete Module mechanism, including decorators, authoring forms, signature projection, resolution, verification and lifecycle boundaries.
+- Added: language-independent Decorator composition and its relationship to class and field notation.
+- Updated: references point to RFC documents; the specification states behavior and contracts directly.
+
 ### v2.1.0
 
 - Updated: reduced the semantic core to Module, Pass and Plugin; represented components and slots within one ordered Module type, with validity separate from representation.
-- Added: explicit namespace and dependency definitions, the completed-answer TypeScript axiom, admission laws and links to the Lean draft.
-- Clarified: class-adapter translation, diagnostics, runtime effects and structural sharing remain outside the draft's theorem statements; all theorem proofs are deferred with `sorry`.
+- Added: explicit namespace, dependency, type-check completion and admission contracts.
+- Updated: distinguished declaration validity, diagnostics, runtime effects and structural sharing.
 
 ### v2.0.0
 
-- Updated: immutable module planning, deferred verification, generation ownership and model proof boundaries.
+- Updated: immutable module planning, deferred verification, generation ownership and validation boundaries.
 
 ### v1.0.0
 
