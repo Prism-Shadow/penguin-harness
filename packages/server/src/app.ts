@@ -52,7 +52,7 @@ import {
 } from "./hmr/capabilities.js";
 import { ensureCliShim, resolveCli, shimFromResolution } from "./services/cli-shim.js";
 import { openDatabase } from "@penguinharness/plugin-db/server";
-import { MachinesRepo } from "@penguinharness/plugin-machines/server";
+import { MachinesRepo } from "./db/repos/machines.js";
 import { ErrorsRepo } from "@penguinharness/plugin-usage/server";
 import { MessagingBindingsRepo } from "@penguinharness/plugin-messaging/server";
 import { SchedulesRepo } from "@penguinharness/plugin-sessions/server";
