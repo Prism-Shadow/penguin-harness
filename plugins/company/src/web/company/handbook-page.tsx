@@ -19,7 +19,7 @@ import * as api from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import { useDocumentTitle } from "@prismshadow/penguin-web/internal";
-import { WorkspaceBrowser } from "@prismshadow/penguin-web/internal";
+import { WorkspaceBrowser } from "@penguinharness/plugin-projects/web";
 import { useOrg } from "./org-layout";
 
 /** The index, `handbook/README.md`: opened on arrival, and kept where it is. */
