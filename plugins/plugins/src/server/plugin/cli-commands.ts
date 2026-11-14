@@ -134,7 +134,7 @@ export async function runPluginCommands(
   let stderr = "";
   let exitCode = 0;
   const ctx: CliCommandContext = {
-    language: request.language,
+    messages: { language: request.language },
     write: (text) => {
       stdout += `${text}\n`;
     },
