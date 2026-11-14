@@ -15,7 +15,7 @@ import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { AppEnv } from "../../auth/middleware.js";
 import { Hmr, Paths } from "../../hmr/capabilities.js";
 import { versionReport } from "../../version-report.js";
-import type { HandshakeAnswer } from "../../machines/handshake.js";
+import type { HandshakeAnswer } from "@penguinharness/plugin-machines/server";
 
 /** The registry slot this process's boot identity lives in (see bootIdentity). */
 const BOOT_IDENTITY = "handshake:boot-identity";

@@ -1,4 +1,4 @@
-import type { Migration } from "../migration.js";
+import type { Migration } from "@penguinharness/plugin-db/server";
 
 export const modelProviderAuthTokens: Migration = {
   name: "2026-09-21-model-provider-auth-tokens",

@@ -29,7 +29,7 @@ import type { InstalledMcpServer } from "@prismshadow/penguin-core";
 import type { PluginUninstallResponse } from "../api/types.js";
 import type { Workbenches } from "@penguinharness/plugin-workbenches/server";
 import type { PluginLibrary } from "../plugin/library-module.js";
-import { WorkbenchNotFound } from "../workbenches/service.js";
+import { WorkbenchNotFound } from "@penguinharness/plugin-workbenches/server";
 
 export interface PluginUninstallDeps {
   root: string;

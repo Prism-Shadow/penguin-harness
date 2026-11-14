@@ -23,8 +23,7 @@ import type { PluginIndexEntry } from "@prismshadow/penguin-server/api";
 import builtinIndex from "./builtin-index.json" with { type: "json" };
 import fs from "node:fs/promises";
 import path from "node:path";
-import { parsePluginPackage, readPluginIcon, userAgent } from "@prismshadow/penguin-core";
-import type { PluginPackageFields } from "@prismshadow/penguin-core";
+import { userAgent, readPackageCard } from "@prismshadow/penguin-core";
 import { resolvePluginPackage } from "./loader.js";
 import type { PluginBase } from "./loader.js";
 
@@ -162,23 +161,14 @@ export async function localPluginDisplay(
 ): Promise<PluginDisplay> {
   const found = resolvePluginPackage(name, bases);
   if (found === null) return {};
-  let penguin: PluginPackageFields;
-  try {
-    const raw = JSON.parse(await fs.readFile(found.manifest, "utf8")) as unknown;
-    penguin = parsePluginPackage(raw, found.manifest).manifest.penguin;
-  } catch {
-    return {};
-  }
+  const { card, icon } = readPackageCard(found.dir);
   const display: PluginDisplay = {};
-  if (penguin.title !== undefined) display.title = penguin.title;
-  if (penguin.titleZh !== undefined) display.titleZh = penguin.titleZh;
-  if (penguin.descriptionZh !== undefined) display.descriptionZh = penguin.descriptionZh;
-  if (penguin.shortDescription !== undefined) display.shortDescription = penguin.shortDescription;
-  if (penguin.shortDescriptionZh !== undefined) {
-    display.shortDescriptionZh = penguin.shortDescriptionZh;
-  }
+  if (card.title !== undefined) display.title = card.title;
+  if (card.titleZh !== undefined) display.titleZh = card.titleZh;
+  if (card.descriptionZh !== undefined) display.descriptionZh = card.descriptionZh;
+  if (card.shortDescription !== undefined) display.shortDescription = card.shortDescription;
+  if (card.shortDescriptionZh !== undefined) display.shortDescriptionZh = card.shortDescriptionZh;
   // No icon, or one that will not do: the card draws the puzzle piece.
-  const { icon } = readPluginIcon(found.dir, penguin.icon);
   if (icon !== undefined) display.icon = icon;
   return display;
 }
@@ -307,6 +297,387 @@ export const INDEX_RETRY_MS = 60_000;
  * Concurrent callers share one in-flight fetch, so a page opened in four tabs at once is one
  * request rather than four.
  */
+export interface IndexChannel {
+  name: string;
+  version: string;
+  integrity: string;
+  url: string;
+}
+
+/**
+ * What an entry's github channel is worth for an install: the channel when the entry pins
+ * its asset and the channel is one the install face fetches; a `fault` sentence when a
+ * channel is listed but the row does not pin it (there is nothing to verify against —
+ * the refusal says so rather than installing unverified bytes); channel null without a
+ * fault when the entry simply has no github channel (the caller's npm error stands).
+ */
+export function indexChannelOf(entry: IndexDocumentEntry): {
+  channel: IndexChannel | null;
+  fault: string | null;
+} {
+  const listed = entry.channels?.find((c) => c.kind === "github");
+  if (listed === undefined) return { channel: null, fault: null };
+  if (entry.integrity === undefined) {
+    return {
+      channel: null,
+      fault: `${entry.name}'s index entry lists a github release channel but pins no sha512 integrity, so its bytes cannot be verified; it is not installable.`,
+    };
+  }
+  // Plain http is refused everywhere but the loopback: a self-hosted index on this very
+  // machine serves its assets locally too, and the sha512 the entry pins is what actually
+  // guards the bytes — a man in the middle on any http hop cannot make a tampered tarball
+  // match. Off the machine the channel is https, no exceptions.
+  if (
+    !listed.url.startsWith("https://") &&
+    !/^http:\/\/(127\.0\.0\.1|localhost|\[::1\])([:/]|$)/.test(listed.url)
+  ) {
+    return {
+      channel: null,
+      fault: `${entry.name}'s github channel is not an https link; it is not installable.`,
+    };
+  }
+  return {
+    channel: {
+      name: entry.name,
+      version: entry.version,
+      integrity: entry.integrity,
+      url: listed.url,
+    },
+    fault: null,
+  };
+}
+
+/**
+ * Picks which of a name's index entries an install takes its github channel from. The index
+ * lists one row per version, so a name may carry several; the requested version — the very
+ * string npm failed on, a bare range in npm's own shape — decides among them:
+ *
+ *   - no version at all, or npm's `latest`: the newest version the index carries;
+ *   - an exact version (a leading `v` tolerated): the entry that names it;
+ *   - `^x.y.z`: the newest entry in the same major at or above the requested version;
+ *   - `~x.y.z`: the newest entry in the same major.minor at or above it;
+ *
+ * Anything else npm accepts — a dist-tag other than `latest`, a compound range — is refused
+ * with the versions the index does carry, rather than guessed at: refusing sends the user a
+ * sentence they can act on, guessing installs a version nobody asked for. The chosen entry's
+ * channel is then worth exactly what indexChannelOf says it is (a row without its integrity
+ * pin faults there, and that fault is the answer).
+ */
+export function selectIndexChannel(
+  entries: readonly IndexDocumentEntry[],
+  version: string | undefined,
+): { channel: IndexChannel | null; fault: string | null } {
+  if (entries.length === 0) return { channel: null, fault: null };
+  const newest = (pool: readonly IndexDocumentEntry[]) =>
+    pool.reduce((a, b) => (compareVersions(b.version, a.version) > 0 ? b : a));
+  const tag =
+    version === undefined || version.trim() === "" ? null : normalizeVersion(version.trim());
+  if (tag === null || tag === "latest") {
+    return indexChannelOf(newest(entries));
+  }
+  const noMatch = (): { channel: null; fault: string } => ({
+    channel: null,
+    fault: `${entries[0]!.name} is published on a github release channel, but no version of it matches ${version}; the index carries ${entries.map((e) => e.version).join(", ")}.`,
+  });
+  const range = /^([\^~])?(\d+)\.(\d+)(?:\.(\d+))?(?:[-+].*)?$/.exec(tag);
+  if (range !== null && range[1] !== undefined) {
+    const [op, major, minor] = [range[1], range[2], range[3]];
+    // The comparison runs against the numeric part alone: compareVersions reads a caret as
+    // no version at all, and the caret's work — the major constraint — is the filter above.
+    const floor = tag.slice(op.length);
+    const matching = entries.filter((e) => {
+      const [entryMajor, entryMinor] = normalizeVersion(e.version).split(".");
+      return (
+        entryMajor === major &&
+        (op === "~" ? entryMinor === minor : true) &&
+        compareVersions(e.version, floor) >= 0
+      );
+    });
+    if (matching.length === 0) return noMatch();
+    return indexChannelOf(newest(matching));
+  }
+  const exact = entries.find((e) => normalizeVersion(e.version) === tag);
+  if (exact !== undefined) return indexChannelOf(exact);
+  if (range !== null) return noMatch();
+  return {
+    channel: null,
+    fault: `${entries[0]!.name} can be installed from its github release channel by version only, not by the tag or range ${version}; name a version, or none for the newest.`,
+  };
+}
+
+/**
+ * Answers one package name's github channel from the published index — the entry whose
+ * version the requested one (when the caller has one) selects — fetched at most once
+ * per TTL (the same cadence the Plugins page reads at) and consulted only when npm has
+ * already failed on the name — installs are rare, so no standing fetch. A source that is
+ * down answers "no channel": the npm failure is the news then, not the index's silence.
+ */
+export function indexChannelLookup(
+  indexUrl: string | null,
+  { fetchImpl = fetch, ttlMs = INDEX_CACHE_TTL_MS, now = Date.now } = {},
+): (
+  name: string,
+  version?: string,
+) => Promise<{ channel: IndexChannel | null; fault: string | null }> {
+  // Every version the index carries for a name, not one row per name: the request's version
+  // is what picks among them (selectIndexChannel), and collapsing to one row per name would
+  // make the index's last-listed version the only one a channel could serve.
+  let cache: { at: number; byName: Map<string, IndexDocumentEntry[]> } | null = null;
+  return async (name, version) => {
+    if (indexUrl === null) return { channel: null, fault: null };
+    const at = now();
+    if (cache === null || at - cache.at > ttlMs) {
+      let entries: IndexDocumentEntry[];
+      try {
+        entries = await httpPluginRegistry(indexUrl, { fetchImpl }).index();
+      } catch {
+        return { channel: null, fault: null };
+      }
+      const byName = new Map<string, IndexDocumentEntry[]>();
+      for (const entry of entries) {
+        const rows = byName.get(entry.name);
+        if (rows === undefined) byName.set(entry.name, [entry]);
+        else rows.push(entry);
+      }
+      cache = { at, byName };
+    }
+    const rows = cache.byName.get(name);
+    return rows === undefined ? { channel: null, fault: null } : selectIndexChannel(rows, version);
+  };
+}
+
+/**
+ * What a package on this machine says about itself for its card: the Chinese and short
+ * descriptions of its card contribution (in its generated `ifaces.json`), and its icon — read by
+ * core's reader, the same one the library reads a library plugin with, so an icon that will not
+ * do is never served. Empty when the package is not here (an index row is then all there is)
+ * or carries neither; a package without a table, or whose table will not read, still has its
+ * root `icon.<ext>`. Nothing here fails the listing: the card falls back to what the index says.
+ */
+export async function localPluginDisplay(
+  name: string,
+  bases: readonly PluginBase[],
+): Promise<PluginDisplay> {
+  const found = resolvePluginPackage(name, bases);
+  if (found === null) return {};
+  const { card, icon } = readPackageCard(found.dir);
+  const display: PluginDisplay = {};
+  if (card.title !== undefined) display.title = card.title;
+  if (card.titleZh !== undefined) display.titleZh = card.titleZh;
+  if (card.descriptionZh !== undefined) display.descriptionZh = card.descriptionZh;
+  if (card.shortDescription !== undefined) display.shortDescription = card.shortDescription;
+  if (card.shortDescriptionZh !== undefined) display.shortDescriptionZh = card.shortDescriptionZh;
+  // No icon, or one that will not do: the card draws the puzzle piece.
+  if (icon !== undefined) display.icon = icon;
+  return display;
+}
+
+/** How a published index is fetched: `fetchImpl` and `delay` are injectable for tests. */
+export interface HttpRegistryOptions {
+  fetchImpl?: typeof fetch;
+  /** Tries at a connection-level failure (a refused or reset connection, a timeout), an HTTP status is never retried. */
+  attempts?: number;
+  /** Per attempt: a proxy that never answers must not hold the listing forever. */
+  timeoutMs?: number;
+  /** The pause before the next attempt, by attempt number (1-based). */
+  delay?: (attempt: number) => Promise<void>;
+}
+
+const backoff = (attempt: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, 500 * 2 ** (attempt - 1)));
+
+/**
+ * A registry behind an `index.json` URL.
+ *
+ * A connection that fails is tried again before it is reported: the document sits behind a
+ * CDN redirect, and the first hop out through a corporate proxy is exactly the kind of thing
+ * that fails once and works a second later. What the server answered (a 404, a 503) is not
+ * retried — that is a fact about the source, not about the wire.
+ */
+export function httpPluginRegistry(
+  indexUrl: string,
+  options: HttpRegistryOptions | typeof fetch = {},
+): PluginRegistry {
+  const opts: HttpRegistryOptions =
+    typeof options === "function" ? { fetchImpl: options } : options;
+  const fetchImpl = opts.fetchImpl ?? fetch;
+  const attempts = opts.attempts ?? 3;
+  const timeoutMs = opts.timeoutMs ?? 15_000;
+  const delay = opts.delay ?? backoff;
+  // What the last 200 answered, so the next read can revalidate instead of re-downloading:
+  // the etag goes back as If-None-Match, and the body's hash catches a CDN (GitHub Pages
+  // among them) whose etag churns while the document does not.
+  let revalidate: { etag: string | null; hash: string; entries: IndexDocumentEntry[] } | null =
+    null;
+  const request = async (): Promise<Response> => {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        return await fetchImpl(indexUrl, {
+          headers: {
+            "user-agent": userAgent(),
+            ...(revalidate !== null && revalidate.etag !== null
+              ? { "if-none-match": revalidate.etag }
+              : {}),
+          },
+          signal: AbortSignal.timeout(timeoutMs),
+        });
+      } catch (err) {
+        lastError = err;
+        if (attempt < attempts) await delay(attempt);
+      }
+    }
+    const cause = lastError instanceof Error ? lastError : new Error(String(lastError));
+    const why =
+      cause.cause instanceof Error ? `${cause.message} (${cause.cause.message})` : cause.message;
+    throw new Error(
+      `plugin index from ${indexUrl} could not be fetched (${attempts} attempts): ${why}`,
+    );
+  };
+  // One read of the index, fetch through parse. Reads are queued one after another (see
+  // `index` below): two overlapping reads would both fetch against the same revalidation
+  // state, and whichever finished last would write its document over the other's — an older
+  // completion could rewind the etag a newer read had just advanced, and the next read would
+  // revalidate against a header the server had already retired.
+  const readOnce = async (): Promise<IndexDocumentEntry[]> => {
+    const res = await request();
+    // Unchanged since the last read: the document in hand stands, nothing re-parsed.
+    if (res.status === 304 && revalidate !== null) {
+      const fresh = res.headers.get("etag");
+      if (fresh !== null) revalidate = { ...revalidate, etag: fresh };
+      return revalidate.entries;
+    }
+    if (!res.ok) {
+      throw new Error(`plugin index from ${indexUrl} answered HTTP ${res.status}`);
+    }
+    const text = await res.text();
+    const hash = createHash("sha256").update(text).digest("hex");
+    // The etag moved but the document did not — a Pages quirk this hash is here to catch.
+    // The new etag is kept so the next revalidation speaks the header the server last sent.
+    if (revalidate !== null && hash === revalidate.hash) {
+      revalidate = { ...revalidate, etag: res.headers.get("etag") };
+      return revalidate.entries;
+    }
+    let data: unknown;
+    try {
+      data = JSON.parse(text);
+    } catch (err) {
+      throw new Error(
+        `plugin index from ${indexUrl} is not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    const entries = parsePluginIndex(data, indexUrl, { icons: "drop" });
+    revalidate = { etag: res.headers.get("etag"), hash, entries };
+    return entries;
+  };
+  // The queue itself: every read follows the one before it, and a read that fails does not
+  // poison the chain — the failure is the caller's news, not the next read's state.
+  let chain: Promise<unknown> = Promise.resolve();
+  return {
+    source: indexUrl,
+    index: () => {
+      const next = chain.then(readOnce, readOnce);
+      chain = next.catch(() => undefined);
+      return next;
+    },
+    // The shared index format carries no readme location, so a remote source has none to
+    // offer yet. Null rather than a guessed URL: inventing one would have the Web App
+    // render whatever answered it.
+    readme: () => Promise.resolve(null),
+  };
+}
+
+/**
+ * Where the published plugin index lives.
+ *
+ * A release asset, not the GitHub API and not a Pages URL. The API would cost this server two
+ * requests against an unauthenticated 60/hour budget shared by every deployment behind one NAT,
+ * for a document that changes four times a day; the asset is a plain file download with no such
+ * budget, and the CDN in front of it is the same one that serves the installers.
+ *
+ * The tag is fixed and never re-pointed. What a six-hourly workbench in the index repository
+ * replaces is the ASSET on that release, so this URL is stable for the life of the tag and
+ * nothing here has to discover which release is newest — "latest nightly" is a name, resolved
+ * by the publisher rather than by a search.
+ */
+export const NIGHTLY_INDEX_URL =
+  "https://github.com/Prism-Shadow/penguin-extensions/releases/download/nightly/index.json";
+
+/** Wall-clock reader, injectable so a cache's TTL is deterministic in tests. */
+export type Clock = () => number;
+
+/**
+ * How long a fetched index is reused. The published document changes every six hours, so this
+ * is not about freshness — it is about a listing endpoint that any logged-in user can open on
+ * every page load, which without a cache turns one navigation habit into a request per view.
+ */
+export const INDEX_CACHE_TTL_MS = 30 * 60_000;
+
+/**
+ * How long a failed fetch stands before the next read tries again. Inside this window a read with
+ * nothing cached is answered with the failure at once: on a host that cannot reach the index at
+ * all, every page load would otherwise start the same doomed fetch and report the source as still
+ * loading instead of down.
+ */
+export const INDEX_RETRY_MS = 60_000;
+
+/**
+ * Wrap a registry so its index is fetched at most once per TTL, and keep serving the last good
+ * document when a refresh fails.
+ *
+ * Serving stale is the point rather than a fallback: the alternative to a slightly old index is
+ * no index at all, and the page's job is to show what exists. So a read past the TTL is answered
+ * with the document in hand while the refresh runs behind it, and the next read gets the new one.
+ * A failure with nothing cached still propagates — the caller decides whether one dead source
+ * should cost the whole listing — and is remembered for INDEX_RETRY_MS, so a source that is down
+ * costs one fetch per window rather than one per read.
+ *
+ * Concurrent callers share one in-flight fetch, so a page opened in four tabs at once is one
+ * request rather than four.
+ */
+
+export function selectIndexChannel(
+  entries: readonly IndexDocumentEntry[],
+  version: string | undefined,
+): { channel: IndexChannel | null; fault: string | null } {
+  if (entries.length === 0) return { channel: null, fault: null };
+  const newest = (pool: readonly IndexDocumentEntry[]) =>
+    pool.reduce((a, b) => (compareVersions(b.version, a.version) > 0 ? b : a));
+  const tag =
+    version === undefined || version.trim() === "" ? null : normalizeVersion(version.trim());
+  if (tag === null || tag === "latest") {
+    return indexChannelOf(newest(entries));
+  }
+  const noMatch = (): { channel: null; fault: string } => ({
+    channel: null,
+    fault: `${entries[0]!.name} is published on a github release channel, but no version of it matches ${version}; the index carries ${entries.map((e) => e.version).join(", ")}.`,
+  });
+  const range = /^([\^~])?(\d+)\.(\d+)(?:\.(\d+))?(?:[-+].*)?$/.exec(tag);
+  if (range !== null && range[1] !== undefined) {
+    const [op, major, minor] = [range[1], range[2], range[3]];
+    // The comparison runs against the numeric part alone: compareVersions reads a caret as
+    // no version at all, and the caret's work — the major constraint — is the filter above.
+    const floor = tag.slice(op.length);
+    const matching = entries.filter((e) => {
+      const [entryMajor, entryMinor] = normalizeVersion(e.version).split(".");
+      return (
+        entryMajor === major &&
+        (op === "~" ? entryMinor === minor : true) &&
+        compareVersions(e.version, floor) >= 0
+      );
+    });
+    if (matching.length === 0) return noMatch();
+    return indexChannelOf(newest(matching));
+  }
+  const exact = entries.find((e) => normalizeVersion(e.version) === tag);
+  if (exact !== undefined) return indexChannelOf(exact);
+  if (range !== null) return noMatch();
+  return {
+    channel: null,
+    fault: `${entries[0]!.name} can be installed from its github release channel by version only, not by the tag or range ${version}; name a version, or none for the newest.`,
+  };
+}
+
 export interface IndexSnapshot {
   /** When the document was fetched (ms since the epoch). */
   at: number;

@@ -1,4 +1,4 @@
-import type { Migration } from "../migration.js";
+import type { Migration } from "@penguinharness/plugin-db/server";
 
 export const messagingConversations: Migration = {
   name: "2026-10-12-messaging-conversations",

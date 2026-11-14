@@ -6,6 +6,7 @@ import { memoryRoutes } from "../memory.js";
 import { benchmarksRoutes, agentTracesRoutes } from "@penguinharness/plugin-usage/server";
 import { agentSkillsRoutes } from "../skills.js";
 import { agentApiRoutes } from "../agent-api.js";
+import { agentAvatarRoutes, agentArchiveRoutes } from "@prismshadow/penguin-server/internal";
 import type { AgentLifecycle, Paths, TraceIndex, SessionIndex, Config, TraceIndexStore } from "@prismshadow/penguin-server/internal";
 import type { Workbenches } from "@penguinharness/plugin-workbenches/server";
 

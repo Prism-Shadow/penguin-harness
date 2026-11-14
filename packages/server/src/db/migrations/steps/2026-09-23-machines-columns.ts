@@ -1,5 +1,5 @@
-import { ensureColumn } from "../../database.js";
-import type { Migration } from "../migration.js";
+import { ensureColumn } from "@penguinharness/plugin-db/server";
+import type { Migration } from "@penguinharness/plugin-db/server";
 
 export const machinesColumns: Migration = {
   name: "2026-09-23-machines-columns",

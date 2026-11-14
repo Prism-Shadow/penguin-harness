@@ -19,3 +19,6 @@ export {
 export type { HeldSession } from "./transport/index.js";
 export * from "./session-forward.js";
 export * from "./layout.js";
+
+export * from "./machine-api.js";
+export * from "./handshake.js";

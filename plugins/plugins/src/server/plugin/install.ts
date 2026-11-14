@@ -26,6 +26,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { Component } from "@prismshadow/penguin-core/kernel";
 import type { PluginPackages } from "../mechanism.js";
+import type { IndexChannel } from "../plugin/registry.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -42,7 +43,10 @@ const ARCHIVES_DIR = "archives";
 /** `<prefix>/.staging`: where an uploaded package is unpacked and packed; emptied after each install. */
 const STAGING_DIR = ".staging";
 
-export class PluginInstallError extends Error {}
+export class PluginInstallError extends Error {
+  /** Why the install failed, coarse: `unavailable` lets a route fall back to a registry channel. */
+  reason?: "unavailable" | "other";
+}
 
 /** A package npm put in the prefix: its name and the version it settled on. */
 export interface InstalledPackage {
@@ -94,7 +98,10 @@ async function npm(prefix: string, args: readonly string[], cwd = prefix): Promi
     });
     return stdout;
   } catch (err) {
-    throw new PluginInstallError(npmReason((err as { stderr?: string }).stderr, err as Error));
+    const stderr = (err as { stderr?: string }).stderr;
+    const failure = new PluginInstallError(npmReason(stderr, err as Error));
+    failure.reason = npmFailureKind(stderr);
+    throw failure;
   }
 }
 
@@ -302,6 +309,10 @@ export async function readInstalledVersion(prefix: string, name: string): Promis
  * reason is the first `npm error` line that is not that pointer, not a bare code, and not the
  * empty continuation lines npm pads the block with.
  */
+export function npmFailureKind(stderr: string | undefined): "unavailable" | "other" {
+  return /npm error code (E404|ETARGET)\b/m.test(stderr ?? "") ? "unavailable" : "other";
+}
+
 function npmReason(stderr: string | undefined, err: Error): string {
   const lines = (stderr ?? "")
     .split("\n")
@@ -314,6 +325,113 @@ function npmReason(stderr: string | undefined, err: Error): string {
 /** Windows resolves `npm` through npm.cmd; everywhere else the plain name is on PATH. */
 function npmCommand(): string {
   return process.platform === "win32" ? "npm.cmd" : "npm";
+}
+
+/**
+ * The installer as a node, so a test stands in for npm instead of running it: the routes reach
+ * the prefix only through this.
+ */
+@Component()
+export class NpmPluginPackages implements PluginPackages {
+  /** By name or by link (see installPluginSource). */
+  install(root: string, source: string): Promise<InstalledPackage> {
+    return installPluginSource(root, source);
+  }
+
+  /** An uploaded package's files (see installPluginFiles). */
+  installFiles(root: string, files: Record<string, Uint8Array>): Promise<InstalledPackage> {
+    return installPluginFiles(root, new Map(Object.entries(files)));
+  }
+
+  remove(root: string, name: string): Promise<void> {
+    return removePluginPackage(root, name);
+  }
+}
+
+export async function installPluginChannel(
+  root: string,
+  channel: IndexChannel,
+  {
+    fetchImpl = fetch,
+    install: run = (prefix, spec) => install(prefix, spec).then(() => undefined),
+    onProgress = undefined,
+  }: {
+    fetchImpl?: typeof fetch;
+    install?: (prefix: string, spec: string) => Promise<void>;
+    onProgress?: (received: number, total: number | null) => void;
+  } = {},
+): Promise<InstalledPackage> {
+  const prefix = await ensurePrefix(root);
+  let res: Awaited<ReturnType<typeof fetch>>;
+  try {
+    res = await fetchImpl(channel.url, { redirect: "follow" });
+  } catch (err) {
+    throw new PluginInstallError(
+      `could not fetch the release asset ${channel.url}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  if (!res.ok) {
+    throw new PluginInstallError(`the release asset answered ${res.status}: ${channel.url}`);
+  }
+  const bytes = new Uint8Array(await readAsset(res, onProgress));
+  const digest = verifyIntegrity(bytes, channel.integrity);
+  const archives = path.join(prefix, ARCHIVES_DIR);
+  await fs.mkdir(archives, { recursive: true });
+  const staging = path.join(archives, `.tmp-${randomUUID()}.tgz`);
+  await fs.writeFile(staging, bytes);
+  // The tarball's own manifest, read straight out of the archive; anything unreadable, or
+  // disagreeing with the index entry, refuses the install and leaves nothing behind.
+  let manifest: { name?: unknown; version?: unknown };
+  try {
+    manifest = JSON.parse(
+      // Relative to the staging dir: a Windows path carries a drive letter, which GNU tar
+      // reads as a remote host name.
+      (
+        await execFileAsync("tar", ["-xzOf", path.basename(staging), "package/package.json"], {
+          cwd: path.dirname(staging),
+        })
+      ).stdout,
+    ) as { name?: unknown; version?: unknown };
+  } catch (err) {
+    await fs.rm(staging, { force: true });
+    throw new PluginInstallError(
+      `the release asset does not carry a readable package/package.json: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  if (manifest.name !== channel.name || manifest.version !== channel.version) {
+    await fs.rm(staging, { force: true });
+    throw new PluginInstallError(
+      `the release asset's package.json says ${JSON.stringify(manifest.name)}@${JSON.stringify(manifest.version)}, not the ${channel.name}@${channel.version} the index entry publishes; it is not installed`,
+    );
+  }
+  // A file name under the prefix's archives: a package name's safe characters with the scope
+  // slash joined, a version's, and the first sixteen characters of the verified digest — so
+  // two entries that sanitize to the same name cannot overwrite one another, and a re-served
+  // tarball for the same version lands under its own name rather than replacing bytes npm may
+  // still be reading.
+  const base = `${channel.name
+    .split("/")
+    .filter((part) => /^[@A-Za-z0-9._~-]+$/.test(part))
+    .join("-")}-${channel.version.replace(/[^A-Za-z0-9._-]/g, "")}`;
+  if (base === "-" || base.length < 3) {
+    await fs.rm(staging, { force: true });
+    throw new PluginInstallError(
+      `the index entry's name and version do not make a file name: ${channel.name}@${channel.version}`,
+    );
+  }
+  // The digest tags the archive file. Base64 carries `/` and `+`, neither of which belongs in
+  // a file name (a `/` would make the rename a write into a directory that does not exist), so
+  // the tag is the digest's first sixteen file-safe characters — still collision-proof, since
+  // a sha512's base64 is 44 characters of which almost all are safe.
+  const tag = (digest.match(/[A-Za-z0-9._~-]/g) ?? []).slice(0, 16).join("");
+  const file = `${base}-${tag}.tgz`;
+  await fs.rename(staging, path.join(archives, file));
+  try {
+    await run(prefix, `./${ARCHIVES_DIR}/${file}`);
+  } finally {
+    await pruneArchives(prefix);
+  }
+  return { name: channel.name, version: await readInstalledVersion(prefix, channel.name) };
 }
 
 /**

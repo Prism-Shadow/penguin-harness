@@ -10,3 +10,5 @@ export type { WorkbenchRouteDeps } from "./workbenches/routes.js";
 export * from "./workbenches/store.js";
 export { migrateWorkbenches } from "./workbenches/migrate.js";
 export { isGitName } from "./workbenches/repo.js";
+export { ensureWorkbenchLinkTarget } from "./workbenches/migrate-state.js";
+export * from "./workbenches/ui-runtime.js";
