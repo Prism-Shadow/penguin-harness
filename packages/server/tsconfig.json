@@ -26,6 +26,9 @@
       "@penguinharness/plugin-machines/server/http/sse": [
         "../../packages/server/src/http/sse.ts"
       ],
+      "@penguinharness/plugin-machines/server/http/json-answer": [
+        "../../packages/server/src/http/json-answer.ts"
+      ],
       "@penguinharness/plugin-messaging/server": [
         "../../plugins/messaging/src/server/index.ts"
       ],

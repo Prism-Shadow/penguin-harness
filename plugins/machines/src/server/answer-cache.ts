@@ -21,7 +21,7 @@
  * machine's answers go when it is taken out of a Project or uninstalled (service.ts).
  */
 
-import { isJsonAnswer } from "../http/json-answer.js";
+import { isJsonAnswer } from "@penguinharness/plugin-machines/server/http/json-answer";
 
 /** One kept answer: what the machine said, with the validator it said it under. */
 export interface KeptAnswer {
