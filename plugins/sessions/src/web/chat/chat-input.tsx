@@ -142,7 +142,7 @@ import type { PermissionPick } from "@prismshadow/penguin-web/internal";
 import { SkillIcon, SkillPickList, toggleSkillName } from "@penguinharness/plugin-agents/web";
 import { sameModelRef } from "@penguinharness/plugin-models/web";
 import { filterAgents, stagedSendRoute } from "./agent-handoff";
-import { employeesLast, isEmployee } from "../agents";
+import { employeesLast, isEmployee } from "@prismshadow/penguin-web/internal";
 import {
   ModelCatalogSelect,
   ModelPickerModal,
