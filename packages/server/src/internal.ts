@@ -179,6 +179,7 @@ export type { WebShell, WebShellSlots } from "./http/routes/contributions.js";
 export * from "./services/archived-sessions-service.js";
 export * from "./runtime/goal-events.js";
 export * from "./services/session-deletion.js";
+export * from "./services/organization-deletion.js";
 export * from "./http/sse.js";
 export * from "../../../plugins/settings/src/server/auth/live-streams.js";
 export * from "./services/platform-auth-service.js";
