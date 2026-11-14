@@ -183,6 +183,8 @@ export * from "../../../plugins/settings/src/server/auth/live-streams.js";
 export * from "./services/platform-auth-service.js";
 export * from "./services/history-stream.js";
 export * from "./services/history-wire.js";
+export * from "./services/history-layout.js";
+export * from "./services/session-history.js";
 export * from "./socket/line-frames.js";
 export * from "./socket/compression.js";
 export * from "./socket/frames.js";

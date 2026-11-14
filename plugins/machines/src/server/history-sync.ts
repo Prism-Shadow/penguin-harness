@@ -50,13 +50,13 @@ import type {
   MessagesResponse,
 } from "@prismshadow/penguin-server/api";
 import { HttpError } from "@prismshadow/penguin-server/internal";
-import { assembleWindow } from "@penguinharness/plugin-usage/server";
-import { historyLinesPath, parseHistoryFileKey } from "@penguinharness/plugin-usage/server";
-import type { HistoryLinesQuery } from "@penguinharness/plugin-usage/server";
+import { assembleWindow } from "@prismshadow/penguin-server/internal";
+import { historyLinesPath, parseHistoryFileKey } from "@prismshadow/penguin-server/internal";
+import type { HistoryLinesQuery } from "@prismshadow/penguin-server/internal";
 import { encodeCursor } from "@penguinharness/plugin-usage/server";
 import { historyResponse } from "../services/session-history.js";
 import { SESSION_ROUTES_BASE } from "@penguinharness/plugin-usage/server";
-import type { MessagesPageRequest } from "../services/trace-service.js";
+import type { MessagesPageRequest } from "@prismshadow/penguin-server/internal";
 import { CREDIT_FLOW } from "@prismshadow/penguin-server/internal";
 import type { EventFrame } from "@prismshadow/penguin-server/internal";
 import { LineCommitter, frameBytes } from "@prismshadow/penguin-server/internal";
