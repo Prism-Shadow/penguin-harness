@@ -11,6 +11,7 @@
   "dependencies": {
     "@penguinharness/plugin-models": "workspace:*",
     "@penguinharness/plugin-plugins": "workspace:*",
+    "@penguinharness/plugin-projects": "workspace:*",
     "@penguinharness/plugin-schedules": "workspace:*",
     "@penguinharness/plugin-workbenches": "workspace:*",
     "@prismshadow/penguin-core": "workspace:*",

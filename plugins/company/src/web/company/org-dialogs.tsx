@@ -86,7 +86,7 @@ import { sameModelRef } from "@penguinharness/plugin-models/web";
 import { ErrorLine, InfoFieldLabel, MoneyPerMonthInput, OrgStatusPill } from "./shared";
 import { orgCreatedTarget } from "@prismshadow/penguin-web/internal";
 import { fromStoredUsd, isBudgetText, toStoredUsd } from "./budget-input";
-import { SemanticIdField } from "../semantic-id";
+import { SemanticIdField } from "@penguinharness/plugin-projects/web";
 import {
   EMPTY_ORG_DRAFT,
   clearOrgDraft,
