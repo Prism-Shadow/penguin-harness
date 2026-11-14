@@ -32,7 +32,7 @@ import { bodyAt, decodeBodyRef } from "@prismshadow/penguin-core/interfaces";
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import type { HistoryFileKey, TraceAnalysisResponse, TraceEventsResponse } from "../api/types.js";
 import { HttpError, errorBody } from "../http/errors.js";
-import type { SseRevocation } from "../http/sse.js";
+import type { SseRevocation } from "@penguinharness/plugin-machines/server/http/sse";
 import {
   HeldWindows,
   ProgressOut,

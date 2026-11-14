@@ -151,7 +151,7 @@ import type { Auth, Users } from "@prismshadow/penguin-server/internal";
 import type { Traces } from "@prismshadow/penguin-server/internal";
 import type { LiveStreams } from "@prismshadow/penguin-server/internal";
 import { streamRevocation } from "@prismshadow/penguin-server/internal";
-import type { SseRevocation } from "../http/sse.js";
+import type { SseRevocation } from "@penguinharness/plugin-machines/server/http/sse";
 import { userChannelKey } from "@prismshadow/penguin-server/internal";
 import { currentRemoteLayout } from "./layout.js";
 import { LinkActivity } from "./link-activity.js";

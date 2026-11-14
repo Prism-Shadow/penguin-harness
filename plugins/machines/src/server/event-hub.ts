@@ -32,7 +32,7 @@
  */
 import { randomUUID } from "node:crypto";
 import type { ServerEvent } from "../api/types.js";
-import { HEARTBEAT_MS } from "../http/sse.js";
+import { HEARTBEAT_MS } from "@penguinharness/plugin-machines/server/http/sse";
 import type { EventFrame } from "../socket/frames.js";
 import type {
   MachineSocket,

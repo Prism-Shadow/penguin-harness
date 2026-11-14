@@ -23,6 +23,9 @@
       "@penguinharness/plugin-machines/server": [
         "../../plugins/machines/src/server/index.ts"
       ],
+      "@penguinharness/plugin-machines/server/http/sse": [
+        "../../packages/server/src/http/sse.ts"
+      ],
       "@penguinharness/plugin-messaging/server": [
         "../../plugins/messaging/src/server/index.ts"
       ],
