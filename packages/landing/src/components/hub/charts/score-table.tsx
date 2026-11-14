@@ -12,7 +12,13 @@ import { Link } from "react-router";
 import { ChevronDownIcon, SiteGlyph, useSiteLocale } from "@prismshadow/penguin-ui/site";
 import type { SiteLocale } from "@prismshadow/penguin-ui/site";
 import type { LeaderboardEntry, LeaderboardPart } from "../../../lib/hub/types";
-import { formatCompact, formatDay, formatScore, formatUsd } from "../../../lib/hub/text";
+import {
+  formatCompact,
+  formatDay,
+  formatDuration,
+  formatScore,
+  formatUsd,
+} from "../../../lib/hub/text";
 import { S } from "../../../lib/strings";
 import { AuthorName } from "../hub-detail";
 import { ExternalLink } from "../../external-link";
@@ -67,15 +73,6 @@ const TH = "py-2 pr-3 text-left font-medium whitespace-nowrap last:pr-0";
 const TD = "py-2.5 pr-3 whitespace-nowrap last:pr-0";
 
 const distinct = (values: readonly string[]): string[] => [...new Set(values)];
-
-/** One run's time: minutes under an hour, else hours to one decimal. */
-export function formatDuration(ms: number): string {
-  const t = S.hub.leaderboards;
-  const minutes = ms / 60_000;
-  return minutes < 60
-    ? t.minutesShort(String(Math.max(1, Math.round(minutes))))
-    : t.hoursShort((minutes / 60).toFixed(1));
-}
 
 /** A name cut to one line, whole on hover. */
 function Cut({

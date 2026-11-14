@@ -8,13 +8,13 @@
  */
 import type { ReactNode } from "react";
 import type { LeaderboardEntry, LeaderboardPart } from "../../../lib/hub/types";
-import { formatUsd } from "../../../lib/hub/text";
+import { formatDuration, formatUsd } from "../../../lib/hub/text";
 import { S } from "../../../lib/strings";
 import { ExternalLink } from "../../external-link";
 import { InlineText } from "../inline-text";
 import { byValue } from "./chart-kit";
 import type { EntryColour } from "./entry-colour";
-import { BenchmarkName, Dot, formatDuration } from "./score-table";
+import { BenchmarkName, Dot } from "./score-table";
 
 const distinct = <T,>(values: readonly T[]): T[] => [...new Set(values)];
 /** A metric value as the summary gives it, to two decimals. */

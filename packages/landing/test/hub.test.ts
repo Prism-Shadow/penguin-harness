@@ -31,6 +31,8 @@
  * - Given search terms and facet choices, when a list is filtered, then every term must match,
  *   choices widen within a facet and narrow across facets, and each count says what choosing that
  *   value would show; a facet every item shares is not offered.
+ * - Given a run's time or token count that rounds up to the next unit, when it is shown, then it
+ *   is shown in that unit (1.0 h, not 60 min; 1.0M, not 1000K).
  */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -39,6 +41,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import { loadHub } from "../scripts/hub/hub.mjs";
 import { facetCounts, facetSplits, filterItems } from "../src/lib/hub/filter";
 import type { Facet } from "../src/lib/hub/filter";
+import { formatCompact, formatDuration } from "../src/lib/hub/text";
+import { setActiveStrings, zh } from "../src/lib/strings";
+import { en } from "../src/lib/strings-en";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -437,5 +442,22 @@ describe("filtering a hub list", () => {
     expect(
       facetSplits(items, { id: "some", values: (item) => (item.owner === "b" ? ["x"] : []) }),
     ).toBe(true);
+  });
+});
+
+describe("a run's time and tokens", () => {
+  afterEach(() => setActiveStrings(zh));
+
+  it("carry a figure that rounds up into the next unit", () => {
+    setActiveStrings(en);
+    // Picking the unit before rounding would print 60 min, 1000K, 100.0K and 1000.
+    expect(formatDuration(59.6 * 60_000)).toBe("1.0 h");
+    expect(formatCompact(999_500)).toBe("1.0M");
+    expect(formatCompact(99_960)).toBe("100K");
+    expect(formatCompact(999.6)).toBe("1.0K");
+    // Just below the carry the unit is unchanged.
+    expect(formatDuration(59.4 * 60_000)).toBe("59 min");
+    expect(formatCompact(999_499)).toBe("999K");
+    expect(formatCompact(99_940)).toBe("99.9K");
   });
 });
