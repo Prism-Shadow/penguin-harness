@@ -6,14 +6,8 @@
       "ES2023"
     ],
     "paths": {
-      "@penguinharness/plugin-workbenches/server": [
-        "../../plugins/workbenches/src/server/index.ts"
-      ],
       "@penguinharness/plugin-company/server": [
         "../company/src/server/index.ts"
-      ],
-      "@penguinharness/plugin-sessions/server": [
-        "../sessions/src/server/index.ts"
       ],
       "@penguinharness/plugin-messaging/server": [
         "./src/server/index.ts"
@@ -21,26 +15,35 @@
       "@penguinharness/plugin-messaging/web": [
         "./src/web/index.ts"
       ],
+      "@penguinharness/plugin-plugins/server": [
+        "../plugins/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-projects/server": [
+        "../projects/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-sandbox/server": [
+        "../sandbox/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-sessions/server": [
+        "../sessions/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-sessions/web": [
+        "../sessions/src/web/index.ts"
+      ],
+      "@penguinharness/plugin-workbenches/server": [
+        "../../plugins/workbenches/src/server/index.ts"
+      ],
       "@prismshadow/penguin-server/api": [
         "../../packages/server/src/api/types.ts"
+      ],
+      "@prismshadow/penguin-server/ifaces.json": [
+        "../../packages/server/src/ifaces.json"
       ],
       "@prismshadow/penguin-server/internal": [
         "../../packages/server/src/internal.ts"
       ],
       "@prismshadow/penguin-web/internal": [
         "../../packages/web/src/internal.ts"
-      ],
-      "@penguinharness/plugin-projects/server": [
-        "../projects/src/server/index.ts"
-      ],
-      "@prismshadow/penguin-server/ifaces.json": [
-        "../../packages/server/src/ifaces.json"
-      ],
-      "@penguinharness/plugin-plugins/server": [
-        "../plugins/src/server/index.ts"
-      ],
-      "@penguinharness/plugin-sandbox/server": [
-        "../sandbox/src/server/index.ts"
       ]
     },
     "resolveJsonModule": true

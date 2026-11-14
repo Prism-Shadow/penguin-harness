@@ -4,8 +4,8 @@
  * plane a relayed conversation's row wears, named by its channel.
  */
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
-import { S } from "../../lib/strings";
-import type { RowAction } from "../../lib/session-row-contributions";
+import { S } from "@prismshadow/penguin-web/internal";
+import type { RowAction } from "@penguinharness/plugin-sessions/web";
 import { useSessions } from "../../state/sessions";
 import { MessagingBindingModal } from "./messaging-binding-modal";
 

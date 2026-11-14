@@ -107,7 +107,7 @@ import {
   type MessagingFormErrors,
   type MessagingFormState,
 } from "./messaging-binding-form";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 /** How often the visible editor refreshes the runtime status (connects settle within a poll or two). */
 const STATUS_POLL_MS = 3000;
