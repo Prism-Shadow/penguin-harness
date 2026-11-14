@@ -139,7 +139,7 @@ import { useAuth } from "@prismshadow/penguin-web/internal";
 import { agentDisplayName } from "@prismshadow/penguin-web/internal";
 import { PermissionSelect } from "./permission-select";
 import type { PermissionPick } from "@prismshadow/penguin-web/internal";
-import { SkillIcon, SkillPickList, toggleSkillName } from "../skills";
+import { SkillIcon, SkillPickList, toggleSkillName } from "@penguinharness/plugin-agents/web";
 import { sameModelRef } from "../models";
 import { filterAgents, stagedSendRoute } from "./agent-handoff";
 import { employeesLast, isEmployee } from "../agents";

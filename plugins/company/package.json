@@ -9,6 +9,7 @@
     "./web": "./src/web/index.ts"
   },
   "dependencies": {
+    "@penguinharness/plugin-agents": "workspace:*",
     "@penguinharness/plugin-models": "workspace:*",
     "@penguinharness/plugin-plugins": "workspace:*",
     "@penguinharness/plugin-projects": "workspace:*",

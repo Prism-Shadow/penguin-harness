@@ -62,7 +62,7 @@ import {
   removeSkillNames,
   toggleSkillName,
   type PickableItem,
-} from "../skills";
+} from "@penguinharness/plugin-agents/web";
 
 import { StdioDisclosure, stdioServers } from "@penguinharness/plugin-plugins/web";
 import { InfoFieldLabel, MoneyPerMonthInput } from "./shared";
