@@ -197,7 +197,7 @@ import {
   type ModelGroupPins,
 } from "./model-group-pins";
 import { clearDraftModelRef } from "../chat/draft-cache";
-import { useUpdateBadges, dismissTodo, refreshProjectTodos } from "../todos";
+import { useUpdateBadges, dismissTodo, refreshProjectTodos } from "@prismshadow/penguin-web/internal";
 import { AddNewModelsButton, AddNewModelsConfirm, RestoreDefaultsConfirm } from "./preset-sync";
 import type { PresetSyncHost } from "./preset-sync";
 import { buildImportedRows, groupImportConnection, pickableModelIds } from "./group-import";

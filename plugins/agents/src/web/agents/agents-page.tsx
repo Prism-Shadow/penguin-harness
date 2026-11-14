@@ -87,7 +87,7 @@ import {
   failedList,
   firstFailure,
   noticeCounts,
-} from "../todos";
+} from "@prismshadow/penguin-web/internal";
 import { useAuth } from "@prismshadow/penguin-web/internal";
 import { useLocale } from "@prismshadow/penguin-web/internal";
 import { agentDisplayName, useProject } from "@prismshadow/penguin-web/internal";
