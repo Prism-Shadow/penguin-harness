@@ -49,7 +49,7 @@ import { useProject } from "@prismshadow/penguin-web/internal";
 import { useAgentLocation } from "@prismshadow/penguin-web/internal";
 import { useAgentsOn } from "@prismshadow/penguin-web/internal";
 import { AiCreateModal, AiCreateButtons } from "@penguinharness/plugin-sessions/web";
-import { ScheduleFormModal, ScheduleSuggestions, scheduleExamples, toggleBody } from "../schedules";
+import { ScheduleFormModal, ScheduleSuggestions, scheduleExamples, toggleBody } from "@penguinharness/plugin-schedules/web";
 import { usePromptInjection } from "./prompt-injection-controls";
 import { toastApiError } from "@prismshadow/penguin-web/internal";
 
