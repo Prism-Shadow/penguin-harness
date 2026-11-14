@@ -162,6 +162,8 @@ export * from "./lib/brand-logo";
 export * from "./lib/code-highlight";
 export * from "./lib/protocol-client-types";
 export * from "./lib/toast-api-error";
+export * from "./lib/model-grouping";
+export * from "./lib/model-group-order";
 export * from "./lib/file-renderers";
 export * from "./lib/find-dom";
 export * from "./lib/find-expand";
