@@ -65,7 +65,7 @@ import { loadTypeScript, TypeScriptUnavailable, type TypeScript } from "./typesc
  */
 let linkDirs: Set<string> | null = null;
 let linkDirsRoot: string | undefined;
-function linkedNames(): Set<string> {
+function linkPaths(): Set<string> {
   return linkDirs ?? new Set();
 }
 export async function refreshLinkDirs(root: string | undefined): Promise<void> {
@@ -408,17 +408,19 @@ export async function readPluginDeclaration(
   };
 }
 
-/** The link a resolved package came through, when it is one the link command parked: the row
- * names the author's directory, whichever path the resolution answered at. */
+/** The link a resolved package came through, when it is one the link command parked: the
+ * package answers at the link inside the prefix, whose real path is the author's directory —
+ * the record that names it is what the mark reads. */
 function linkOf(dir: string): { linked?: true; linkPath?: string } {
-  if (!linkedNames().has(dir)) return {};
-  let linkPath = dir;
+  let real: string;
   try {
-    linkPath = realpathSync(dir);
+    real = realpathSync(dir);
   } catch {
-    // A directory already gone: the row reads as it is, the mark stays on the path as asked.
+    return {};
   }
-  return { linked: true, linkPath };
+  if (real === dir) return {};
+  if (!linkPaths().has(real)) return {};
+  return { linked: true, linkPath: real };
 }
 
 /**
