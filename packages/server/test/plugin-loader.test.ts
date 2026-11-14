@@ -3,6 +3,8 @@
  * root, resolved against the installation, and every failure is per-entry and
  * non-fatal — the capability a plugin would have provided stays unavailable rather
  * than the boot failing.
+ * - Given exported pass factories, loading preserves them and each resolution creates a fresh pass.
+ * - Given a malformed pass map, loading names the plugin failure without executing its values.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, readFile, rm, writeFile, mkdir } from "node:fs/promises";
@@ -21,6 +23,7 @@ import {
   listProjectIds,
 } from "../src/plugin/loader.js";
 import { writeClassPackage } from "./plugin-fixtures.js";
+import { passResolver } from "../src/plugin/host.js";
 
 let root: string;
 
@@ -64,6 +67,37 @@ function lower(source: string): string {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
   }).outputText;
 }
+
+describe("plugin pass factories", () => {
+  it("loads factories and resolves fresh pass instances", async () => {
+    const file = await writeClassPackage(path.join(root, "mods", "passes"), {
+      name: "pass-demo",
+      module: "Unused",
+      index: `export default { passes: { demo: () => ({ id: "demo", rewrite: tree => tree }) } };`,
+    });
+    await writeConfig({ plugins: [file] });
+    const { loaded, failed } = await loadPlugins(root);
+    expect(failed.size).toBe(0);
+    const resolve = passResolver(loaded);
+    const first = resolve("demo"),
+      second = resolve("demo");
+    expect(first).not.toBe(second);
+    expect(first?.owner?.plugin).toBe(file);
+    expect(resolve("missing")).toBeUndefined();
+  });
+
+  it.each(["null", "[]", "{ demo: 4 }"])("rejects malformed factories %s", async (passes) => {
+    const file = await writeClassPackage(path.join(root, "mods", "bad-passes"), {
+      name: "bad-passes",
+      module: "Unused",
+      index: `export default { passes: ${passes} };`,
+    });
+    await writeConfig({ plugins: [file] });
+    const { loaded, failed } = await loadPlugins(root);
+    expect(loaded).toEqual([]);
+    expect(failed.get(file)).toContain("not a Plugin");
+  });
+});
 
 describe("plugin list", () => {
   it("no Project means no plugins — the default deployment shape, not an error", async () => {

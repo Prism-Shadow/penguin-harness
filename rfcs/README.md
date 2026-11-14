@@ -10,6 +10,7 @@ This directory is PenguinHarness's design RFC surface: one design decision per d
 2. **Once an RFC has landed, it should not be modified frequently.**
 3. **When a modification is truly needed, the version number (rev) must be raised** — e.g. `v2.0.0`.
 4. **Every modification lists that revision's change items at the end of the document, under a `## Changes` section** — `### v2.0.0` with `- Added…` / `- Removed…` / `- Updated…` entries.
+5. **RFCs reference RFC documents and state design contracts directly.** Formal definitions, external axioms, proof status and papers belong under `formal/` and refer back to the RFCs. Decorator and Module use the same domain vocabulary; concrete language notation is described separately.
 
 ## Shape of a document
 

@@ -2,6 +2,7 @@
  * Plugins are modules: the host holds what the loader paired (manifest ↔ code), the
  * platform boots them as children of its tree at EVERY App creation, and what a module
  * contributes lands on the same slots the built-in modules use.
+ * - Given duplicate pass factories, the host rejects the second owner before compilation.
  */
 import { describe, expect, it } from "vitest";
 import type { ModuleDef } from "@prismshadow/penguin-core/kernel";
@@ -42,6 +43,15 @@ function backend(name: string, onCreate?: () => void): ModuleDef {
 }
 
 describe("plugin host", () => {
+  it("refuses a pass factory owned by another plugin", () => {
+    const host = new PluginHost();
+    const passes = { probe: () => ({ id: "probe", rewrite: (tree: ModuleDef) => tree }) };
+    host.use({ specifier: "first", modules: [], replaces: [], passes });
+    expect(() => host.use({ specifier: "second", modules: [], replaces: [], passes })).toThrow(
+      "pass 'probe' is already loaded",
+    );
+    expect(host.entries().has("second")).toBe(false);
+  });
   it("holds every plugin's modules in load order", () => {
     const host = new PluginHost();
     host.use({ specifier: "a", modules: [backend("a1"), backend("a2")], replaces: [] });
