@@ -11,7 +11,7 @@ import {
   sessionDraftKey,
   removeDraftSession,
   prepareNewChatDraft,
-} from "../chat";
+} from "@penguinharness/plugin-sessions/web";
 import { docksOnScreen, openPanel, dockWorkspace } from "@penguinharness/plugin-terminal/web";
 import type { useMainSidebarFetchScope } from "./main-sidebar-fetch-scope";
 

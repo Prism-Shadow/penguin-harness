@@ -10,7 +10,7 @@ import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 import { workspaceLabel } from "@penguinharness/plugin-sessions/web";
 import { MessagingBindingModal } from "@penguinharness/plugin-messaging/web";
-import { draftSessionTitle } from "../chat";
+import { draftSessionTitle } from "@penguinharness/plugin-sessions/web";
 import type { MainSidebarState } from "./main-sidebar-controller";
 
 /** The rename chat dialog: its draft is the dialog's own, so closing with typed

@@ -4,7 +4,7 @@ import { loadPinnedSessions } from "./pinned-sessions";
 import { loadWorkspaceRegistry } from "./workspace-registry";
 import { loadSessionOrder } from "@penguinharness/plugin-sessions/web";
 import { loadGroupOrder } from "./group-order";
-import { useDraftSessions, type DraftSessionEntry } from "../chat";
+import { useDraftSessions, type DraftSessionEntry } from "@penguinharness/plugin-sessions/web";
 
 import { DRAG_POINTER_QUERY, loadGroupSet } from "../../lib/main-sidebar-persistence";
 import type { useMainSidebarSearchOpen } from "./main-sidebar-search-open";

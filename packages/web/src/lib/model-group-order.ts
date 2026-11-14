@@ -41,7 +41,7 @@ import {
   readStringArray,
   writeStringArray,
   type SessionOrderStorage,
-} from "./session-order";
+} from "@penguinharness/plugin-sessions/web";
 
 /** Minimal storage interface, shared with session-order.ts; tests inject an in-memory implementation. */
 export type ModelGroupOrderStorage = SessionOrderStorage;

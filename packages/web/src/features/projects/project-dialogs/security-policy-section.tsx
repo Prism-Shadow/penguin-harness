@@ -23,7 +23,7 @@ import * as api from "../../../api/endpoints";
 import { S } from "../../../lib/strings";
 import { apiErrorText } from "../../../lib/api-error";
 import { toastApiError } from "../../../lib/toast-api-error";
-import { useInstantSetting } from "../../../lib/instant-setting";
+import { useInstantSetting } from "@penguinharness/plugin-settings/web";
 import { PROJECT_SETTINGS_SCOPE } from "./shared";
 import { RuleTable, pageCountOf, pageOf, type RejectedRule } from "./command-policy-table";
 

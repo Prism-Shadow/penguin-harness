@@ -25,7 +25,7 @@ import {
   clearDraftModelRef,
   dispatchChatDefaultsChanged,
   type ChatDefaultsChangedDetail,
-} from "../../chat";
+} from "@penguinharness/plugin-sessions/web";
 
 import { ModelCatalogSelect, modelLabel, SELECTABLE_THINKING_LEVELS } from "../../model-picker";
 import { WorkspaceSelect } from "../../workspace";

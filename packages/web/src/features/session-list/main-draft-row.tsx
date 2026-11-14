@@ -1,7 +1,7 @@
 import { ICONS, NAV_FILL } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { Icon } from "../../components/ui/group-list";
-import { draftSessionTitle, type DraftSessionEntry } from "../chat";
+import { draftSessionTitle, type DraftSessionEntry } from "@penguinharness/plugin-sessions/web";
 
 import { Truncated } from "../../components/ui/truncated";
 

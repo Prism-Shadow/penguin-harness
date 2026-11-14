@@ -4,7 +4,7 @@
  */
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { createDeps } from "../../lib/module-deps";
-import type { ChatDrafts } from "../chat";
+import type { ChatDrafts } from "@penguinharness/plugin-sessions/web";
 import type { RowExtensions, RowMarks } from "./row-actions";
 
 export interface SessionListDeps {

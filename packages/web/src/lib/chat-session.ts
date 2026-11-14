@@ -6,7 +6,7 @@
  */
 import { createContext, useContext } from "react";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
-import type { ComposerReference } from "./workspace-tree";
+import type { ComposerReference } from "@penguinharness/plugin-projects/web";
 
 export interface ChatSession {
   projectId: string | null;

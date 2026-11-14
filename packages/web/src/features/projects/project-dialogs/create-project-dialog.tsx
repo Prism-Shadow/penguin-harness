@@ -17,7 +17,7 @@ import {
 } from "../../../lib/semantic-id";
 import { useProject } from "../../../state/project";
 import { useAuth } from "../../../state/auth";
-import { SemanticIdField } from "../../semantic-id";
+import { SemanticIdField } from "@penguinharness/plugin-projects/web";
 
 export function CreateProjectDialog({
   open,
