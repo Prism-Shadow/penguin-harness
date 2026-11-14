@@ -269,7 +269,9 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     const bases = pluginBases(deps.root, deps.assetsDir());
     // The link marks come from the prefix's link records, read fresh for this answer: a link
     // made since the last answer marks on the next read, and a directory edited on disk reads
-    // as what it now is.
+    // as what it now is. The route marks the rows itself — the table it read for the names
+    // above is the one source of truth — and the loader's own reads stay mark-free.
+    const links = await linkedPackages(pluginsPrefix(deps.root));
     await refreshLinkDirs(deps.root);
     // `builtin` on a row is where the package CAME FROM, a tag, not a second way of being
     // asked for. What the package declares is read from its files; whether the process holds
@@ -309,7 +311,9 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
         builtin: declared.builtin,
         modules: declared.modules,
         replaces: declared.replaces,
-        ...(declared.linked === true ? { linked: true, linkPath: declared.linkPath } : {}),
+        ...(links[specifier] !== undefined
+          ? { linked: true, linkPath: links[specifier]!.path }
+          : {}),
         ...(!active && failure !== undefined ? { error: failure } : {}),
         ...(unmet !== undefined
           ? { unsatisfied: { disabled: unmet.disabled, reason: unmet.reason } }
