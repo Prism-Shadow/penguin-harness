@@ -21,7 +21,7 @@ import {
   WORKBENCH_BUILDING_EVENT,
   WORKBENCH_UPDATED_EVENT,
   type WorkbenchUpdatedDetail,
-} from "../../lib/workbench-tabs";
+} from "@penguinharness/plugin-workbenches/web";
 
 /** How long a burst of workbench news is gathered into one read (ms). */
 const NEWS_SETTLE_MS = 120;
