@@ -293,7 +293,9 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
           builtin: false,
           modules: [],
           replaces: [],
-          ...(where.here ? { error: declared.error } : {}),
+          // A link's row exists because the link exists, not because a Project asked: the
+          // fault IS its disk truth, and the page reads it wherever the row shows.
+          ...(where.here || links[specifier] !== undefined ? { error: declared.error } : {}),
           ...where,
         });
         continue;
