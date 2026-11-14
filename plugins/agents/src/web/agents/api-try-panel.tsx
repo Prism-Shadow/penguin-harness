@@ -41,22 +41,10 @@ import {
   StreamingCaret,
   Text,
 } from "@prismshadow/penguin-ui";
-<<<<<<< /tmp/_o
-import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import { formatBytes } from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
 import { toneInk } from "@prismshadow/penguin-web/internal";
-||||||| /tmp/_a
-import { apiErrorText } from "../../lib/api-error";
-import { formatBytes } from "../../lib/format";
-import { S } from "../../lib/strings";
-import { toneInk } from "../../lib/tone";
-=======
-import { formatBytes } from "../../lib/format";
-import { S } from "../../lib/strings";
-import { toneInk } from "../../lib/tone";
-import { useAgentLocation } from "../../lib/agent-location";
->>>>>>> /tmp/_t
+import { useAgentLocation } from "@prismshadow/penguin-web/internal";
 import {
   approvalDesk,
   initialTryState,
@@ -66,15 +54,6 @@ import {
   runTry,
   stopTry,
   tryBody,
-<<<<<<< /tmp/_o
-  type TryEventRow,
-  type TryField,
-  type TryItemRow,
-  type TryRow,
-  type TryState,
-  type TryView,
-||||||| /tmp/_a
-=======
   unfinished,
 } from "./api-try-log";
 import type {
@@ -85,14 +64,8 @@ import type {
   TryRow,
   TryState,
   TryView,
->>>>>>> /tmp/_t
 } from "./api-try-log";
-<<<<<<< /tmp/_o
-||||||| /tmp/_a
-import type { TryEventRow, TryField, TryItemRow, TryRow, TryState, TryView } from "./api-try-log";
-=======
-import { toastApiError } from "../../lib/toast-api-error";
->>>>>>> /tmp/_t
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 export interface ApiTryViewProps {
   input: string;

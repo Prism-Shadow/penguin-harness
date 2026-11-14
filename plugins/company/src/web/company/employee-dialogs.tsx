@@ -19,16 +19,8 @@
  * session pins only that session, which then no longer follows the config; the dialog says so
  * when the current desk is pinned.
  */
-<<<<<<< /tmp/_o
-import { useEffect, useState, type ChangeEvent } from "react";
-
-||||||| /tmp/_a
-import { useEffect, useState } from "react";
-import type { ChangeEvent } from "react";
-=======
 import { useEffect, useState } from "react";
 
->>>>>>> /tmp/_t
 import type {
   AgentModelConfigDto,
   OrgEmployeeItem,
@@ -54,66 +46,16 @@ import {
   useGuardedClose,
   useUnsavedChanges,
 } from "@prismshadow/penguin-ui";
-<<<<<<< /tmp/_o
 import * as api from "@prismshadow/penguin-web/internal";
 import { ApiError } from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
-import {
-  avatarDataUrlFromImage,
-  loadAvatarImage,
-  releaseAvatarImage,
-  type AvatarCrop,
-} from "@prismshadow/penguin-web/internal";
-
 import { SEMANTIC_ID_PATTERN } from "@prismshadow/penguin-web/internal";
 import { formatMoney } from "@prismshadow/penguin-web/internal";
 import { useCompany } from "./company-state";
 import { agentDisplayName, useProject } from "@prismshadow/penguin-web/internal";
 import { useTheme } from "@prismshadow/penguin-web/internal";
-import { AvatarCropDialog } from "@prismshadow/penguin-web/internal";
-import {
-  SkillPickList,
-  addSkillNames,
-  removeSkillNames,
-  toggleSkillName,
-  type PickableItem,
-} from "@prismshadow/penguin-web/internal";
-
-import { StdioDisclosure, stdioServers } from "@prismshadow/penguin-web/internal";
-||||||| /tmp/_a
-import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import {
-  avatarDataUrlFromImage,
-  loadAvatarImage,
-  releaseAvatarImage,
-} from "../../lib/avatar-image";
-import type { AvatarCrop } from "../../lib/avatar-image";
-import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
-import { formatMoney } from "../../lib/format";
-import { useCompany } from "../../state/company";
-import { agentDisplayName, useProject } from "../../state/project";
-import { useTheme } from "../../state/theme";
-import { AvatarCropDialog } from "../../components/ui/avatar-crop-dialog";
-import { SkillPickList } from "../skills/skill-pick-list";
-import type { PickableItem } from "../skills/skill-pick-list";
-import { addSkillNames, removeSkillNames, toggleSkillName } from "../skills/skill-selection";
-import { StdioDisclosure } from "../plugins/plugin-mcp";
-import { stdioServers } from "../plugins/plugin-status";
-=======
-import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
-import { formatMoney } from "../../lib/format";
-import { useCompany } from "./company-state";
-import { agentDisplayName, useProject } from "../../state/project";
-import { useTheme } from "../../state/theme";
-import { AvatarPicker } from "../../components/ui/avatar-picker";
+import { AvatarPicker } from "@prismshadow/penguin-web/internal";
 import {
   SkillPickList,
   addSkillNames,
@@ -123,7 +65,6 @@ import {
 } from "../skills";
 
 import { StdioDisclosure, stdioServers } from "../plugins";
->>>>>>> /tmp/_t
 import { InfoFieldLabel, MoneyPerMonthInput } from "./shared";
 import { fromStoredUsd, isBudgetText, toStoredUsd } from "./budget-input";
 import { deskRenewPlan } from "./desk-renew";
@@ -133,14 +74,8 @@ import {
   SELECTABLE_THINKING_LEVELS,
   effectiveThinkingLevel,
   thinkingLevelLabel,
-<<<<<<< /tmp/_o
-} from "@prismshadow/penguin-web/internal";
-||||||| /tmp/_a
-} from "../chat/thinking-level";
-=======
 } from "../model-picker";
-import { toastApiError } from "../../lib/toast-api-error";
->>>>>>> /tmp/_t
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 /** The plugins a new employee starts with: the organization procedures and the development skills. */
 const DEFAULT_EMPLOYEE_PLUGINS = ["agent-company", "agent-development"];

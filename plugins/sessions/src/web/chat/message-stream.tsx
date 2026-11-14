@@ -7,22 +7,6 @@
  * own context menu (Copy / Add to conversation; open the link or copy its address — see
  * stream-selection-menu.tsx).
  */
-<<<<<<< /tmp/_o
-import {
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ComponentProps,
-  type ReactNode,
-  type RefObject,
-} from "react";
-
-||||||| /tmp/_a
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { ComponentProps, ReactNode, RefObject } from "react";
-=======
 import {
   useEffect,
   useLayoutEffect,
@@ -33,7 +17,6 @@ import {
   type RefObject,
 } from "react";
 
->>>>>>> /tmp/_t
 import {
   A2uiActionsProvider,
   EmptyState,
@@ -45,50 +28,22 @@ import {
   exceptionReport,
   isSeriousError,
 } from "@prismshadow/penguin-ui";
-<<<<<<< /tmp/_o
 import { S } from "@prismshadow/penguin-web/internal";
 import type { ChatItem } from "@prismshadow/penguin-web/internal";
 import type { MemoryChangeRow } from "@prismshadow/penguin-web/internal";
 import type { TaskStats } from "@prismshadow/penguin-web/internal";
-import type { PendingApproval } from "./use-session-stream";
-||||||| /tmp/_a
-import { S } from "../../lib/strings";
-import type { ChatItem } from "../../lib/omni/stream-model";
-import type { MemoryChangeRow } from "../../lib/omni/memory-changes";
-import type { TaskStats } from "../../lib/omni/task-stats";
-import type { PendingApproval } from "./use-session-stream";
-=======
-import { S } from "../../lib/strings";
-import type { ChatItem } from "../../lib/amsp/stream-model";
-import type { MemoryChangeRow } from "../../lib/amsp/memory-changes";
-import type { TaskStats } from "../../lib/amsp/task-stats";
 import type { ElidedBodies, HistoryTransfer, PendingApproval } from "./use-session-stream";
->>>>>>> /tmp/_t
 import { MessageItem } from "./message-item";
 import type { RequestFailure } from "./request-failure-report";
 import { parseUserMessageBody } from "./user-message-body";
 import { interactiveReplyIndex } from "./a2ui-reply";
-<<<<<<< /tmp/_o
-import { WorkspaceLinksProvider } from "@prismshadow/penguin-web/internal";
-||||||| /tmp/_a
-import { WorkspaceLinksProvider } from "./workspace-links";
-=======
 import { readOnlyActions } from "./a2ui-answered";
 import { WorkspaceLinksProvider } from "../workspace";
->>>>>>> /tmp/_t
 import { SessionWorkGroup, isWorkItem } from "./work-group";
-<<<<<<< /tmp/_o
-import { createStreamFollow, stickToBottom, type StreamFollow } from "./stream-follow";
-
-||||||| /tmp/_a
-import { createStreamFollow, stickToBottom } from "./stream-follow";
-import type { StreamFollow } from "./stream-follow";
-=======
 import { ElidedBodiesContext } from "./elided-body";
 import { HistoryTransferLine } from "./history-loading";
 import { createStreamFollow, followToBottom, stickToBottom } from "./stream-follow";
 import type { StreamFollow } from "./stream-follow";
->>>>>>> /tmp/_t
 import type { ForkTarget } from "./task-stats-line";
 import { useStreamSelectionMenu } from "./stream-selection-menu";
 import type { ComposerReference } from "@prismshadow/penguin-web/internal";

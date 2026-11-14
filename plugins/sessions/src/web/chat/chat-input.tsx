@@ -129,64 +129,19 @@ import {
   type MenuSelectOption,
   type TagInputChip,
 } from "@prismshadow/penguin-ui";
-<<<<<<< /tmp/_o
 
 import { S } from "@prismshadow/penguin-web/internal";
+import { useAgentAvatarSrc } from "@prismshadow/penguin-web/internal";
 import { formatBytes, humanizeTokens } from "@prismshadow/penguin-web/internal";
 import { fitTextarea } from "@prismshadow/penguin-web/internal";
 import { useLocale } from "@prismshadow/penguin-web/internal";
 import { useAuth } from "@prismshadow/penguin-web/internal";
 import { agentDisplayName } from "@prismshadow/penguin-web/internal";
-||||||| /tmp/_a
-import type { MenuSelectOption, TagInputChip } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { formatBytes, humanizeTokens } from "../../lib/format";
-import { fitTextarea } from "../../lib/textarea-fit";
-import { useLocale } from "../../state/locale";
-import { useAuth } from "../../state/auth";
-import { agentDisplayName } from "../../state/project";
-=======
-
-import { S } from "../../lib/strings";
-import { useAgentAvatarSrc } from "../../lib/agent-avatar";
-import { formatBytes, humanizeTokens } from "../../lib/format";
-import { fitTextarea } from "../../lib/textarea-fit";
-import { useLocale } from "../../state/locale";
-import { useAuth } from "../../state/auth";
-import { agentDisplayName } from "../../state/project";
->>>>>>> /tmp/_t
 import { PermissionSelect } from "./permission-select";
-<<<<<<< /tmp/_o
 import type { PermissionPick } from "@prismshadow/penguin-web/internal";
-import { SkillIcon, SkillPickList, toggleSkillName } from "@prismshadow/penguin-web/internal";
-import { sameModelRef } from "@penguinharness/plugin-models/web";
-||||||| /tmp/_a
-import type { PermissionPick } from "../../lib/permission-level";
-import { SkillIcon } from "../skills/skill-icon-view";
-import { SkillPickList } from "../skills/skill-pick-list";
-import { toggleSkillName } from "../skills/skill-selection";
-import { sameModelRef } from "../models/model-grouping";
-=======
-import type { PermissionPick } from "../../lib/permission-level";
 import { SkillIcon, SkillPickList, toggleSkillName } from "../skills";
 import { sameModelRef } from "../models";
->>>>>>> /tmp/_t
 import { filterAgents, stagedSendRoute } from "./agent-handoff";
-<<<<<<< /tmp/_o
-import { employeesLast, isEmployee } from "@penguinharness/plugin-agents/web";
-import {
-  ModelCatalogSelect,
-  ThinkingLevelSelect,
-  ModelPickerModal,
-  SELECTABLE_THINKING_LEVELS,
-  modelLabel,
-  thinkingLevelLabel,
-} from "@prismshadow/penguin-web/internal";
-||||||| /tmp/_a
-import { employeesLast, isEmployee } from "../agents/agent-employment";
-import { ModelCatalogSelect, modelLabel } from "./model-select";
-import { ModelPickerModal } from "./model-picker-modal";
-=======
 import { employeesLast, isEmployee } from "../agents";
 import {
   ModelCatalogSelect,
@@ -196,27 +151,14 @@ import {
   modelLabel,
   thinkingLevelLabel,
 } from "../model-picker";
->>>>>>> /tmp/_t
 import { sessionModelPickerDisabled } from "./model-switch";
 import { matchSlash, removeSlashToken } from "./slash-token";
-<<<<<<< /tmp/_o
 import {
   BOOK_ICON,
   buildSkillsMessage,
   localizedShortText,
   skillSlashItems,
 } from "@prismshadow/penguin-web/internal";
-||||||| /tmp/_a
-import { ThinkingLevelSelect } from "./thinking-level-select";
-import { BOOK_ICON, buildSkillsMessage, localizedShortText, skillSlashItems } from "./skill-use";
-=======
-import {
-  BOOK_ICON,
-  buildSkillsMessage,
-  localizedShortText,
-  skillSlashItems,
-} from "../../lib/skill-use";
->>>>>>> /tmp/_t
 import { GOAL_ICON, UNLIMITED_BUDGET, parseBudgetInput } from "./goal-use";
 import { useGoalPluginGate } from "./goal-plugin-gate";
 import type { GoalPluginGate } from "./goal-plugin-gate";
@@ -231,12 +173,6 @@ import {
 } from "./input-history";
 
 import { isStopAction, midRunAction } from "./composer-send";
-<<<<<<< /tmp/_o
-import { PAPERCLIP_ICON } from "@prismshadow/penguin-web/internal";
-||||||| /tmp/_a
-import { PAPERCLIP_ICON } from "./attached-files-banner";
-=======
->>>>>>> /tmp/_t
 import { FileDropZone } from "./drop-zone";
 import { ContextGauge } from "./context-gauge";
 import { modelWindowBelowCompactionLimit } from "@prismshadow/penguin-web/internal";

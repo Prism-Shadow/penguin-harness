@@ -56,52 +56,11 @@ import {
   toastError,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
-<<<<<<< /tmp/_o
 import * as api from "@prismshadow/penguin-web/internal";
 import { ApiError } from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import { useDocumentTitle } from "@prismshadow/penguin-web/internal";
-import { useUpdateBadges } from "@prismshadow/penguin-web/internal";
-import { dismissTodo } from "@prismshadow/penguin-web/internal";
-import { bulkOutcome, failedList, firstFailure, noticeCounts } from "@prismshadow/penguin-web/internal";
-import { useAuth } from "@prismshadow/penguin-web/internal";
-import { useLocale } from "@prismshadow/penguin-web/internal";
-import { agentDisplayName, useProject } from "@prismshadow/penguin-web/internal";
-import { useSessions } from "@prismshadow/penguin-web/internal";
-import { MachinePicker, type MachineChoice } from "@penguinharness/plugin-machines/web";
-import {
-  DRAFT_SESSION_ID,
-  draftKey,
-  loadDraft,
-  saveDraft,
-  prepareNewChatDraft,
-  localizedText,
-} from "@prismshadow/penguin-web/internal";
-||||||| /tmp/_a
-import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { useDocumentTitle } from "../../lib/use-document-title";
-import { useUpdateBadges } from "../../lib/use-update-badges";
-import { dismissTodo } from "../../lib/todo-dismissals";
-import { bulkOutcome, failedList, firstFailure, noticeCounts } from "../../lib/bulk-update";
-import { useAuth } from "../../state/auth";
-import { useLocale } from "../../state/locale";
-import { agentDisplayName, useProject } from "../../state/project";
-import { useSessions } from "../../state/sessions";
-import { MachinePicker, type MachineChoice } from "../machines/machine-picker";
-import { DRAFT_SESSION_ID } from "../chat/chat-page";
-import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
-import { prepareNewChatDraft } from "../chat/new-chat";
-import { localizedText } from "../chat/skill-use";
-=======
-import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { useDocumentTitle } from "../../lib/use-document-title";
 import {
   useUpdateBadges,
   dismissTodo,
@@ -110,33 +69,22 @@ import {
   firstFailure,
   noticeCounts,
 } from "../todos";
-import { useAuth } from "../../state/auth";
-import { useLocale } from "../../state/locale";
-import { agentDisplayName, useProject } from "../../state/project";
-import { useMachines } from "../../state/machines";
-import { useSessions } from "../../state/sessions";
-import { agentKey } from "../../lib/agent-location";
-import { mixAgents, useMachineAgents } from "../../lib/machine-agent-lists";
-import { readKey, useRead } from "../../lib/read-store";
+import { useAuth } from "@prismshadow/penguin-web/internal";
+import { useLocale } from "@prismshadow/penguin-web/internal";
+import { agentDisplayName, useProject } from "@prismshadow/penguin-web/internal";
+import { useMachines } from "@prismshadow/penguin-web/internal";
+import { useSessions } from "@prismshadow/penguin-web/internal";
+import { agentKey } from "@prismshadow/penguin-web/internal";
+import { mixAgents, useMachineAgents } from "@prismshadow/penguin-web/internal";
+import { readKey, useRead } from "@prismshadow/penguin-web/internal";
 import { MachinePicker, type MachineChoice } from "../machines";
 import { DRAFT_SESSION_ID, draftKey, loadDraft, saveDraft, prepareNewChatDraft } from "../chat";
-import { localizedText } from "../../lib/skill-use";
->>>>>>> /tmp/_t
+import { localizedText } from "@prismshadow/penguin-web/internal";
 import { usePluginRepair } from "./plugin-repair";
 import { samePluginTarget, viewedMachine } from "./viewed-machine";
-<<<<<<< /tmp/_o
-import { SettingsDialog } from "@penguinharness/plugin-settings/web";
-import { pickDefaultAgent } from "@prismshadow/penguin-web/internal";
-import { toneInk } from "@prismshadow/penguin-web/internal";
-||||||| /tmp/_a
-import { SettingsDialog } from "../settings/settings-dialog";
-import { pickDefaultAgent } from "../ai-create";
-import { toneInk } from "../../lib/tone";
-=======
 import { SettingsDialog } from "../settings";
 import { pickDefaultAgent } from "../ai-create";
-import { toneInk } from "../../lib/tone";
->>>>>>> /tmp/_t
+import { toneInk } from "@prismshadow/penguin-web/internal";
 import { ModuleApplyBody, PluginCard, libraryQuickStart } from "./plugin-card";
 import type { InstallTarget } from "./plugin-card";
 import {
@@ -157,19 +105,10 @@ import {
 } from "./agent-installs";
 import { StdioDisclosure, StdioInstallBody } from "./plugin-mcp";
 import { ImportPluginModal } from "./plugin-import-modal";
-<<<<<<< /tmp/_o
 import {
   usePluginsIncompatibleOnly,
   writePluginsIncompatibleOnly,
 } from "@prismshadow/penguin-web/internal";
-||||||| /tmp/_a
-import { usePluginsIncompatibleOnly, writePluginsIncompatibleOnly } from "./incompatible-only";
-=======
-import {
-  usePluginsIncompatibleOnly,
-  writePluginsIncompatibleOnly,
-} from "../../lib/plugins-incompatible-only";
->>>>>>> /tmp/_t
 import {
   PLUGIN_GROUP_BYS,
   foldKey,

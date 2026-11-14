@@ -23,38 +23,16 @@ import {
   PageHeader,
   Skeleton,
 } from "@prismshadow/penguin-ui";
-<<<<<<< /tmp/_o
 import * as api from "@prismshadow/penguin-web/internal";
 import type { MergedBenchmark } from "@prismshadow/penguin-web/internal";
 import { nameOnMachine } from "@prismshadow/penguin-web/internal";
 import { useSessions } from "@prismshadow/penguin-web/internal";
+import { useLeaveOnProjectSwitch } from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import { useDocumentTitle } from "@prismshadow/penguin-web/internal";
 import { useProject } from "@prismshadow/penguin-web/internal";
-import { downloadArchive } from "@prismshadow/penguin-web/internal";
-||||||| /tmp/_a
-import * as api from "../../api/endpoints";
-import type { MergedBenchmark } from "../../lib/benchmark-merge";
-import { nameOnMachine } from "../../lib/workspace-machines";
-import { useSessions } from "../../state/sessions";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { useDocumentTitle } from "../../lib/use-document-title";
-import { useProject } from "../../state/project";
-import { downloadArchive } from "../agents/archive-download";
-=======
-import * as api from "../../api/endpoints";
-import type { MergedBenchmark } from "../../lib/benchmark-merge";
-import { nameOnMachine } from "../../lib/workspace-machines";
-import { useSessions } from "../../state/sessions";
-import { useLeaveOnProjectSwitch } from "../../lib/use-opened-in-project";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { useDocumentTitle } from "../../lib/use-document-title";
-import { useProject } from "../../state/project";
 import { downloadArchive } from "../agents";
->>>>>>> /tmp/_t
 import { BenchmarkDetail } from "./benchmark-detail";
 import { benchmarkPath } from "./benchmark-prompts";
 import { useBenchmarksAcross } from "./benchmark-sources";

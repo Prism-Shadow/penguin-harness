@@ -14,21 +14,9 @@
  * text colour (so line icons follow the ink, as they always have), anything else as itself.
  * Nothing of the icon ever enters the page as markup.
  */
-<<<<<<< /tmp/_o
-import { useMemo } from "react";
-import { GlyphIcon } from "@prismshadow/penguin-ui";
-import { BOOK_ICON } from "@prismshadow/penguin-web/internal";
-import { sanitizeSkillIcon } from "./skill-icon";
-||||||| /tmp/_a
-import { useMemo } from "react";
-import { GlyphIcon } from "@prismshadow/penguin-ui";
-import { BOOK_ICON } from "../chat/skill-use";
-import { sanitizeSkillIcon } from "./skill-icon";
-=======
 import { GlyphIcon, ImageIcon } from "@prismshadow/penguin-ui";
 import type { IconRef } from "@prismshadow/penguin-server/api";
-import { BOOK_ICON } from "../../lib/skill-use";
->>>>>>> /tmp/_t
+import { BOOK_ICON } from "@prismshadow/penguin-web/internal";
 
 /**
  * Per-name tile colors (soft tinted tile + colored line-art stroke, light/dark pairs).

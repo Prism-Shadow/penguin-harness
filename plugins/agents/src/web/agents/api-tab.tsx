@@ -49,33 +49,15 @@ import {
   ToggleRow,
   useUnsavedChanges,
 } from "@prismshadow/penguin-ui";
-<<<<<<< /tmp/_o
 import * as api from "@prismshadow/penguin-web/internal";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import { formatDateTime } from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
 import { toneInk } from "@prismshadow/penguin-web/internal";
 import { useProject } from "@prismshadow/penguin-web/internal";
-import { APPROVAL_MODES } from "@prismshadow/penguin-web/internal";
-||||||| /tmp/_a
-import * as api from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
-import { formatDateTime } from "../../lib/format";
-import { S } from "../../lib/strings";
-import { toneInk } from "../../lib/tone";
-import { useProject } from "../../state/project";
-import { APPROVAL_MODES } from "../chat/approval-mode";
-=======
-import * as api from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
-import { formatDateTime } from "../../lib/format";
-import { S } from "../../lib/strings";
-import { toneInk } from "../../lib/tone";
-import { useProject } from "../../state/project";
-import { useAgentLocation } from "../../lib/agent-location";
-import { useMachineInfo } from "../../lib/machine-agent-lists";
+import { useAgentLocation } from "@prismshadow/penguin-web/internal";
+import { useMachineInfo } from "@prismshadow/penguin-web/internal";
 import { APPROVAL_MODES } from "../chat";
->>>>>>> /tmp/_t
 import { ApiSessionSettings, ApiConcurrencySettings } from "./api-session-settings";
 import { ApiTryPanel } from "./api-try-panel";
 import { toastApiError } from "../../lib/toast-api-error";

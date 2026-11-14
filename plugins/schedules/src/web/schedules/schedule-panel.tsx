@@ -40,32 +40,14 @@ import {
   Switch,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
-<<<<<<< /tmp/_o
 import * as api from "@prismshadow/penguin-web/internal";
+import { AgentLocationContext } from "@prismshadow/penguin-web/internal";
+import { useAgentsOn } from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
-import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import { toneInk } from "@prismshadow/penguin-web/internal";
 import { useLocale } from "@prismshadow/penguin-web/internal";
 import { useProject } from "@prismshadow/penguin-web/internal";
-import { AiCreateButtons } from "@prismshadow/penguin-web/internal";
-||||||| /tmp/_a
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { toneInk } from "../../lib/tone";
-import { useLocale } from "../../state/locale";
-import { useProject } from "../../state/project";
-import { AiCreateButtons } from "../ai-create/ai-create-buttons";
-=======
-import * as api from "../../api/endpoints";
-import { AgentLocationContext } from "../../lib/agent-location";
-import { useAgentsOn } from "../../lib/machine-agent-lists";
-import { S } from "../../lib/strings";
-import { toneInk } from "../../lib/tone";
-import { useLocale } from "../../state/locale";
-import { useProject } from "../../state/project";
 import { AiCreateButtons } from "../ai-create";
->>>>>>> /tmp/_t
 import { describeSchedule } from "./schedule-describe";
 import { ScheduleAiModal } from "./schedule-ai-modal";
 import { ScheduleFormModal } from "./schedule-form-modal";

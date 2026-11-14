@@ -20,16 +20,8 @@
  * and it decides whether the id is free. A new location drops the plugins
  * and the directory picked for the old one, which would name things the new one may not have.
  */
-<<<<<<< /tmp/_o
-import { useEffect, useState, type ChangeEvent } from "react";
-
-||||||| /tmp/_a
-import { useEffect, useState } from "react";
-import type { ChangeEvent } from "react";
-=======
 import { useEffect, useState } from "react";
 
->>>>>>> /tmp/_t
 import type {
   AgentCreateRequest,
   PluginItem,
@@ -52,42 +44,12 @@ import {
   useFormDraft,
   useGuardedClose,
 } from "@prismshadow/penguin-ui";
-<<<<<<< /tmp/_o
 import * as api from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import { SEMANTIC_ID_PATTERN } from "@prismshadow/penguin-web/internal";
-import { SemanticIdField } from "@prismshadow/penguin-web/internal";
-import { WorkspaceSelect } from "@prismshadow/penguin-web/internal";
-import {
-  SkillPickList,
-  addSkillNames,
-  removeSkillNames,
-  toggleSkillName,
-  type PickableItem,
-} from "@prismshadow/penguin-web/internal";
-
-import { StdioDisclosure, stdioServers } from "@prismshadow/penguin-web/internal";
-||||||| /tmp/_a
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
-import { SemanticIdField } from "../semantic-id/semantic-id-field";
-import { WorkspaceSelect } from "../chat/workspace-select";
-import { SkillPickList } from "../skills/skill-pick-list";
-import type { PickableItem } from "../skills/skill-pick-list";
-import { addSkillNames, removeSkillNames, toggleSkillName } from "../skills/skill-selection";
-import { StdioDisclosure } from "../plugins/plugin-mcp";
-import { stdioServers } from "../plugins/plugin-status";
-=======
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
 import { SemanticIdField } from "../semantic-id";
 import { WorkspaceSelect } from "../workspace";
->>>>>>> /tmp/_t
 import {
   SkillPickList,
   addSkillNames,

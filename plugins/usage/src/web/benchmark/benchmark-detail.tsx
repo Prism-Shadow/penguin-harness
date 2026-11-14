@@ -36,9 +36,9 @@ import {
   useChartWidth,
   type ChartPaint,
 } from "@prismshadow/penguin-ui";
-<<<<<<< /tmp/_o
 
-import type { MergedBenchmark, MergedCase } from "@prismshadow/penguin-web/internal";
+import { useAgentAvatarSrc } from "@prismshadow/penguin-web/internal";
+import type { MergedBenchmark, MergedCase, MergedEvaluation } from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import { formatDateTime, formatMoney, formatScore, humanizeDuration } from "@prismshadow/penguin-web/internal";
@@ -47,30 +47,6 @@ import { useLocale } from "@prismshadow/penguin-web/internal";
 import { useTheme, type Currency } from "@prismshadow/penguin-web/internal";
 
 import { NEUTRAL_SERIES } from "@prismshadow/penguin-web/internal";
-||||||| /tmp/_a
-import type { ChartPaint } from "@prismshadow/penguin-ui";
-import type { MergedBenchmark, MergedCase } from "../../lib/benchmark-merge";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { formatDateTime, formatMoney, formatScore, humanizeDuration } from "../../lib/format";
-import { toneInk } from "../../lib/tone";
-import { useLocale } from "../../state/locale";
-import { useTheme } from "../../state/theme";
-import type { Currency } from "../../state/theme";
-import { NEUTRAL_SERIES } from "../../lib/category-colors";
-=======
-
-import { useAgentAvatarSrc } from "../../lib/agent-avatar";
-import type { MergedBenchmark, MergedCase, MergedEvaluation } from "../../lib/benchmark-merge";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { formatDateTime, formatMoney, formatScore, humanizeDuration } from "../../lib/format";
-import { toneInk } from "../../lib/tone";
-import { useLocale } from "../../state/locale";
-import { useTheme, type Currency } from "../../state/theme";
-
-import { NEUTRAL_SERIES } from "../../lib/category-colors";
->>>>>>> /tmp/_t
 import { AskAiModal } from "./ask-ai-modal";
 import { BenchmarkCaseBrowser } from "./benchmark-case-browser";
 import { watchBenchmarkCases } from "./benchmark-sources";

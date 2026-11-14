@@ -12,35 +12,9 @@
  */
 import { useState } from "react";
 import type { BuiltinBrowserTab } from "@prismshadow/penguin-server/api";
-<<<<<<< /tmp/_o
-import {
-  WallpaperSurface,
-  CloseIcon,
-  Dot,
-  GlyphIcon,
-  ICONS,
-  ICON_SIZE,
-  PlusIcon,
-  Spinner,
-} from "@prismshadow/penguin-ui";
-import { S } from "@prismshadow/penguin-web/internal";
-||||||| /tmp/_a
-import {
-  WallpaperSurface,
-  CloseIcon,
-  Dot,
-  GlyphIcon,
-  ICONS,
-  ICON_SIZE,
-  PlusIcon,
-  Spinner,
-} from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-=======
 import { Dot, GlyphIcon, ICONS, ICON_SIZE, PanelTabs, Spinner } from "@prismshadow/penguin-ui";
 import type { PanelTabItem } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
->>>>>>> /tmp/_t
+import { S } from "@prismshadow/penguin-web/internal";
 import { faviconSrc, isBlankUrl, tabLabel } from "./address";
 import { formatMemory } from "./load";
 

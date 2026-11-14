@@ -54,19 +54,9 @@ import {
 } from "react";
 
 import type { BuiltinBrowserLoadWarning } from "@prismshadow/penguin-server/api";
-<<<<<<< /tmp/_o
-import { DOCK_FULLSCREEN_Z, toastAttention } from "@prismshadow/penguin-ui";
-import { toneInk } from "@prismshadow/penguin-web/internal";
-import { currentDockScope, isTabShown, openPanel } from "@prismshadow/penguin-web/internal";
-||||||| /tmp/_a
-import { DOCK_FULLSCREEN_Z, toastAttention } from "@prismshadow/penguin-ui";
-import { toneInk } from "../../lib/tone";
-import { currentDockScope, isTabShown, openPanel } from "../dock/dock-state";
-=======
 import { toastAttention } from "@prismshadow/penguin-ui";
-import { toneInk } from "../../lib/tone";
+import { toneInk } from "@prismshadow/penguin-web/internal";
 import { currentDockScope, isTabShown, openPanel } from "../dock";
->>>>>>> /tmp/_t
 import { isBlankUrl } from "./address";
 import {
   claimGuest,

@@ -78,27 +78,14 @@ import {
   toastInfo,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
-<<<<<<< /tmp/_o
 import * as api from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import { formatDateTime } from "@prismshadow/penguin-web/internal";
+import { machineLink } from "@prismshadow/penguin-web/internal";
 import { toneInk, type Tone } from "@prismshadow/penguin-web/internal";
-||||||| /tmp/_a
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { formatDateTime } from "../../lib/format";
-import { toneInk, type Tone } from "../../lib/tone";
-=======
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { formatDateTime } from "../../lib/format";
-import { machineLink } from "../../lib/machine-link";
-import { toneInk, type Tone } from "../../lib/tone";
-import { useMachines } from "../../state/machines";
-import { useProject } from "../../state/project";
+import { useMachines } from "@prismshadow/penguin-web/internal";
+import { useProject } from "@prismshadow/penguin-web/internal";
 import { cachedBinding, rememberBinding } from "./messaging-binding-cache";
 import {
   accountIdOf,
@@ -107,7 +94,6 @@ import {
   holderConflict,
   holdersNote,
 } from "./messaging-binding-location";
->>>>>>> /tmp/_t
 import { QQScanConnect } from "./qq-scan-connect";
 import { WeChatScanConnect } from "./wechat-scan-connect";
 import {

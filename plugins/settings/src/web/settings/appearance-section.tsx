@@ -25,60 +25,19 @@ import {
   ToggleRow,
 } from "@prismshadow/penguin-ui";
 import { FONT_CJK_OPTIONS, FONT_LATIN_OPTIONS, TEXT_SIZES } from "@prismshadow/penguin-ui/boot";
-<<<<<<< /tmp/_o
 import { S } from "@prismshadow/penguin-web/internal";
 import * as api from "@prismshadow/penguin-web/internal";
 import { isDesktopShellWindow } from "@prismshadow/penguin-web/internal";
+import { useThemePackList } from "@prismshadow/penguin-web/internal";
 import { useInstantSetting } from "@prismshadow/penguin-web/internal";
-||||||| /tmp/_a
-import { S } from "../../lib/strings";
-import * as api from "../../api/endpoints";
-import { isDesktopShellWindow } from "../../lib/account-menu";
-import { useInstantSetting } from "../../lib/instant-setting";
-=======
-import { S } from "../../lib/strings";
-import * as api from "../../api/endpoints";
-import { isDesktopShellWindow } from "../../lib/account-menu";
-import { useThemePackList } from "../../lib/account-sync/theme-packs";
-import { useInstantSetting } from "../../lib/instant-setting";
->>>>>>> /tmp/_t
 import {
   launcherHiddenVersion,
   readLauncherHidden,
   subscribeLauncherHidden,
   writeLauncherHidden,
-<<<<<<< /tmp/_o
-} from "@prismshadow/penguin-web/internal";
-import { useAuth } from "@prismshadow/penguin-web/internal";
-import {
-  accentSwatches,
-  useTheme,
-  type FontCjk,
-  type FontLatin,
-  type TerminalThemeMode,
-  type TextSize,
-  type ThemeId,
-  type ThemeMode,
-} from "@prismshadow/penguin-web/internal";
-
-import { FONT_FOLLOWS_THEME, effectiveAccent } from "@prismshadow/penguin-web/internal";
-||||||| /tmp/_a
-} from "../dock/dock-launcher-state";
-import { useAuth } from "../../state/auth";
-import { accentSwatches, useTheme } from "../../state/theme";
-import type {
-  FontCjk,
-  FontLatin,
-  TerminalThemeMode,
-  TextSize,
-  ThemeId,
-  ThemeMode,
-} from "../../state/theme";
-import { FONT_FOLLOWS_THEME, effectiveAccent } from "../../state/theme-prefs";
-=======
 } from "../dock";
-import { useAuth } from "../../state/auth";
-import { useLocale } from "../../state/locale";
+import { useAuth } from "@prismshadow/penguin-web/internal";
+import { useLocale } from "@prismshadow/penguin-web/internal";
 import {
   accentSwatches,
   useTheme,
@@ -87,10 +46,9 @@ import {
   type TerminalThemeMode,
   type TextSize,
   type ThemeMode,
-} from "../../state/theme";
-import { shownTheme, themeEntries, themeName } from "../../state/theme-entries";
-import { FONT_FOLLOWS_THEME, effectiveAccent } from "../../state/theme-prefs";
->>>>>>> /tmp/_t
+} from "@prismshadow/penguin-web/internal";
+import { shownTheme, themeEntries, themeName } from "@prismshadow/penguin-web/internal";
+import { FONT_FOLLOWS_THEME, effectiveAccent } from "@prismshadow/penguin-web/internal";
 import { BackgroundControls } from "./background-controls";
 import { ThemePacksSection } from "./theme-packs-section";
 

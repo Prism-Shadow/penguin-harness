@@ -17,8 +17,8 @@
  */
 import type { UiPrefs } from "@prismshadow/penguin-server/api";
 import { BACKGROUND_STORAGE_KEYS, THEME_STORAGE_KEYS } from "@prismshadow/penguin-ui/boot";
-import { LAUNCHER_HIDDEN_KEY } from "../../features/dock/dock-launcher-state";
-import { STEER_MODE_KEY } from "../../features/chat/steer-mode";
+import { LAUNCHER_HIDDEN_KEY } from "@penguinharness/plugin-terminal/web";
+import { STEER_MODE_KEY } from "@penguinharness/plugin-sessions/web";
 import { CURRENCY_KEY, TERMINAL_THEME_KEY, TOOL_ALIASES_KEY } from "../../state/theme-prefs";
 import { LANG_KEY } from "../../state/locale-pref";
 import { NOTIFICATIONS_KEY } from "../notification-pref";

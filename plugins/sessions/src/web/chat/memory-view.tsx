@@ -27,44 +27,16 @@ import {
   bodyWithoutFrontmatter,
   languageForFileName,
 } from "@prismshadow/penguin-ui";
-<<<<<<< /tmp/_o
 import * as api from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
-import { formatRelativeDate } from "@prismshadow/penguin-web/internal";
-import {
-  type MemoryChangeRow,
-  type MemoryLocateTarget,
-  memoryRowKey,
-} from "@prismshadow/penguin-web/internal";
-
-import { useLocale } from "@prismshadow/penguin-web/internal";
-import {
-  buildMemoryList,
-  memoryNavBack,
-  memoryNavForRequest,
-  type MemoryNavMode,
-  type ScopeFiles,
-} from "./memory-nav";
-||||||| /tmp/_a
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { formatRelativeDate } from "../../lib/format";
-import type { MemoryChangeRow, MemoryLocateTarget } from "../../lib/omni/memory-changes";
-import { memoryRowKey } from "../../lib/omni/memory-changes";
-import { useLocale } from "../../state/locale";
-import { buildMemoryList, memoryNavBack, memoryNavForRequest } from "./memory-nav";
-import type { MemoryNavMode, ScopeFiles } from "./memory-nav";
-=======
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { formatBytes, formatRelativeDate } from "../../lib/format";
+import { formatBytes, formatRelativeDate } from "@prismshadow/penguin-web/internal";
 import {
   type MemoryChangeRow,
   type MemoryLocateTarget,
   isFolderFilePath,
   memoryRowKey,
-} from "../../lib/amsp/memory-changes";
-import { useLocale } from "../../state/locale";
+} from "@prismshadow/penguin-web/internal";
+import { useLocale } from "@prismshadow/penguin-web/internal";
 import {
   buildMemoryList,
   memoryNavBack,
@@ -73,7 +45,6 @@ import {
   type MemoryNavMode,
   type ScopeFiles,
 } from "./memory-nav";
->>>>>>> /tmp/_t
 
 /** The scope marks: the folder for the Workspace scope, the person for the User scope. */
 const SCOPE_ICON = { user: ICONS.user, workspace: ICONS.folder } as const;

@@ -35,23 +35,11 @@ import {
   type WorkbenchNotice,
   type WorkbenchTab,
   type WorkbenchUpdatedDetail,
-<<<<<<< /tmp/_o
-} from "@prismshadow/penguin-web/internal";
-import { useLocale } from "@prismshadow/penguin-web/internal";
-import { useTheme } from "@prismshadow/penguin-web/internal";
-import { localizedText } from "@prismshadow/penguin-web/internal";
-||||||| /tmp/_a
-} from "../../lib/workbench-tabs";
-import { useLocale } from "../../state/locale";
-import { useTheme } from "../../state/theme";
-import { localizedText } from "../chat/skill-use";
-=======
 } from "../../lib/workbench-tabs";
 import { isSafeMode, useSafeMode } from "../../rescue/safe-mode";
-import { useLocale } from "../../state/locale";
-import { useTheme } from "../../state/theme";
+import { useLocale } from "@prismshadow/penguin-web/internal";
+import { useTheme } from "@prismshadow/penguin-web/internal";
 import { localizedText } from "../chat";
->>>>>>> /tmp/_t
 
 /** The Agent's workbench tabs, kept fresh by the server's `workbench_updated` events. */
 export function useWorkbenchTabs(

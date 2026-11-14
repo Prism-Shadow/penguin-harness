@@ -76,64 +76,26 @@ import {
   useFormDraft,
   type SheetSnap,
 } from "@prismshadow/penguin-ui";
-<<<<<<< /tmp/_o
 
 import * as api from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
-import { formatRelativeDate } from "@prismshadow/penguin-web/internal";
+import { formatBytes, formatRelativeDate } from "@prismshadow/penguin-web/internal";
 import { useAuth } from "@prismshadow/penguin-web/internal";
 import { useLocale } from "@prismshadow/penguin-web/internal";
 import { useProject } from "@prismshadow/penguin-web/internal";
-import { useAiBridge } from "@prismshadow/penguin-web/internal";
-||||||| /tmp/_a
-import type { SheetSnap } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { formatRelativeDate } from "../../lib/format";
-import { useAuth } from "../../state/auth";
-import { useLocale } from "../../state/locale";
-import { useProject } from "../../state/project";
+import { agentKey, useAgentLocation } from "@prismshadow/penguin-web/internal";
 import { useAiBridge } from "../ai-create";
-=======
-
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { formatBytes, formatRelativeDate } from "../../lib/format";
-import { useAuth } from "../../state/auth";
-import { useLocale } from "../../state/locale";
-import { useProject } from "../../state/project";
-import { agentKey, useAgentLocation } from "../../lib/agent-location";
-import { useAiBridge } from "../ai-create";
->>>>>>> /tmp/_t
 import { buildMemoryAddPrompt, buildMemoryEditPrompt } from "./memory-chat-prompts";
 import {
   MemoryDocumentError,
-<<<<<<< /tmp/_o
-  memoryDocumentFileName,
-  parseMemoryScopeDocument,
-  planMemoryImport,
-  type MemoryImportPlan,
-||||||| /tmp/_a
-  memoryDocumentFileName,
-  parseMemoryScopeDocument,
-  planMemoryImport,
-=======
   importConfirmPlan,
   memoryUploadOf,
   type MemoryImportPlan,
   type MemoryUpload,
->>>>>>> /tmp/_t
 } from "./memory-transfer";
-<<<<<<< /tmp/_o
-||||||| /tmp/_a
-import type { MemoryImportPlan } from "./memory-transfer";
-=======
-import { toastApiError } from "../../lib/toast-api-error";
-import { downloadArchive } from "../../lib/archive-download";
->>>>>>> /tmp/_t
+import { toastApiError } from "@prismshadow/penguin-web/internal";
+import { downloadArchive } from "@prismshadow/penguin-web/internal";
 
 /** Same breakpoint as the chat page's panels: \u22651024px the view opens as a side Drawer, below it as a bottom Sheet. */
 const DESKTOP_QUERY = "(min-width: 1024px)";

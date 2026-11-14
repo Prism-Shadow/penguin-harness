@@ -63,28 +63,16 @@ import {
   RuledSection,
   Spinner,
 } from "@prismshadow/penguin-ui";
-<<<<<<< /tmp/_o
 import * as api from "@prismshadow/penguin-web/internal";
-import { dismissNotice, envOnlyNoticeId, useNoticeDismissed } from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-import { toneInk } from "@prismshadow/penguin-web/internal";
-||||||| /tmp/_a
-import * as api from "../../api/endpoints";
-import { dismissNotice, envOnlyNoticeId, useNoticeDismissed } from "../../lib/notice-dismissals";
-import { S } from "../../lib/strings";
-import { toneInk } from "../../lib/tone";
-=======
-import * as api from "../../api/endpoints";
 import {
   dismissNotice,
   envOnlyNoticeId,
   skippedNoticeId,
   useNoticeDismissed,
-} from "../../lib/notice-dismissals";
-import { formatDateTime, formatRelativeShort } from "../../lib/format";
-import { S } from "../../lib/strings";
-import { toneInk } from "../../lib/tone";
->>>>>>> /tmp/_t
+} from "@prismshadow/penguin-web/internal";
+import { formatDateTime, formatRelativeShort } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { toneInk } from "@prismshadow/penguin-web/internal";
 import {
   configSyncView,
   envOnlyItems,
@@ -93,17 +81,6 @@ import {
   machineFacts,
   machineToolbar,
   reconnectView,
-<<<<<<< /tmp/_o
-  type CheckLine,
-  type ConfigSyncView,
-  type Fact,
-  type JobStep,
-  type MachineChip,
-  type StepState,
-  type ToolbarItem,
-  type ToolbarVerb,
-||||||| /tmp/_a
-=======
   skippedItems,
   type CheckLine,
   type ConfigSyncView,
@@ -113,28 +90,10 @@ import {
   type StepState,
   type ToolbarItem,
   type ToolbarVerb,
->>>>>>> /tmp/_t
 } from "./machine-detail-view";
-<<<<<<< /tmp/_o
-
-import { outOfDate, readMachine } from "./machines-view";
-||||||| /tmp/_a
-import type {
-  CheckLine,
-  ConfigSyncView,
-  Fact,
-  JobStep,
-  MachineChip,
-  StepState,
-  ToolbarItem,
-  ToolbarVerb,
-} from "./machine-detail-view";
-import { outOfDate, readMachine } from "./machines-view";
-=======
 
 import { outOfDate, readMachine, socketReading } from "./machines-view";
 import { retryStatus } from "./machine-card";
->>>>>>> /tmp/_t
 
 /**
  * Everything the dialog can ask its page to do for the machine. `use` is the whole pipeline —

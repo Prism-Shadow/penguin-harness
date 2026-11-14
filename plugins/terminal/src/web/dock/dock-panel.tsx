@@ -71,90 +71,19 @@ import {
   type DockPickerChoice,
   type DockTabItem,
 } from "@prismshadow/penguin-ui";
-<<<<<<< /tmp/_o
 
 import { S } from "@prismshadow/penguin-web/internal";
-import { NAV_ICONS } from "@prismshadow/penguin-web/internal";
 import { chordKeys } from "@prismshadow/penguin-web/internal";
-import { useDisplayedBinding, useShortcutLabel } from "@prismshadow/penguin-web/internal";
+import { displayedBinding, useKeymap } from "@prismshadow/penguin-web/internal";
 import { useCoarsePointer } from "@prismshadow/penguin-web/internal";
-import {
-  useTerminalChrome,
-  displayTitle,
-  killTerminal,
-  liveTerminals,
-  subscribeTerminals,
-  subscribeTerminalViewStates,
-  terminalViewContainer,
-  terminalViewState,
-  subscribeTerminalCloseRequests,
-  type TerminalInfo,
-} from "../terminal/index.js";
-
-import { invalidateSlotClips } from "@penguinharness/plugin-browser/web";
-import { confirmClose } from "./close-guard";
-import { createShellInDock, detachTerminal, openTerminalInDock } from "./dock-terminal";
-||||||| /tmp/_a
-import type { DockPickerChoice, DockTabItem } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { NAV_ICONS } from "../../lib/nav-icons";
-import { chordKeys } from "../../components/ui/chord-kbd";
-import { useDisplayedBinding, useShortcutLabel } from "../../lib/shortcuts/use-keymap";
-import { useCoarsePointer } from "../../lib/use-coarse-pointer";
-import { useTerminalChrome } from "../terminal/terminal-appearance";
-import {
-  displayTitle,
-  killTerminal,
-  liveTerminals,
-  subscribeTerminals,
-} from "../terminal/terminal-list";
-import {
-  subscribeTerminalViewStates,
-  terminalViewContainer,
-  terminalViewState,
-  subscribeTerminalCloseRequests,
-} from "../terminal/terminal-view-pool";
-import type { TerminalInfo } from "../terminal/terminal-view";
-import { invalidateSlotClips } from "../builtin-browser/slot-registry";
-import { confirmClose } from "./close-guard";
-import { createShellInDock, detachTerminal, openTerminalInDock } from "./dock-terminal";
-=======
-
-import { S } from "../../lib/strings";
-import { chordKeys } from "../../components/ui/chord-kbd";
-import { displayedBinding, useKeymap } from "../../lib/shortcuts/use-keymap";
-import { useCoarsePointer } from "../../lib/use-coarse-pointer";
 import { invalidateSlotClips } from "../builtin-browser";
-import { confirmClose } from "../../lib/dock-close-guard";
+import { confirmClose } from "@prismshadow/penguin-web/internal";
 import { TERMINAL_PANEL } from "./dock-terminal";
->>>>>>> /tmp/_t
 import { DockDragOverlay, dockDropCandidate } from "./dock-drag";
-<<<<<<< /tmp/_o
 import { DockPanelTitle } from "@prismshadow/penguin-web/internal";
 import { DockPanelProvider, type DockPanelHandle } from "./panel-context";
 
-||||||| /tmp/_a
-import { DockPanelProvider } from "./panel-context";
-import type { DockPanelHandle } from "./panel-context";
-=======
-import { DockPanelTitle } from "../../lib/dock-panel-empty";
-import { DockPanelProvider, type DockPanelHandle } from "./panel-context";
-
->>>>>>> /tmp/_t
 import { panelGlyph, panelLabel } from "./panel-meta";
-<<<<<<< /tmp/_o
-import {
-  dockPanelDefinition,
-  useDockPanels,
-  type DockPanelDefinition,
-  type PanelId,
-} from "./panel-registry";
-
-||||||| /tmp/_a
-import { dockPanelDefinition, useDockPanels } from "./panel-registry";
-import type { DockPanelDefinition, PanelId } from "./panel-registry";
-=======
->>>>>>> /tmp/_t
 import {
   dockPanelDefinition,
   useDockPanels,
@@ -192,11 +121,6 @@ import {
   resetPanelWidth,
   setPanelWidth,
   usePanelWidthValue,
-<<<<<<< /tmp/_o
-} from "./use-panel-width";
-||||||| /tmp/_a
-} from "../chat/use-panel-width";
-=======
 } from "./use-panel-width";
 
 /**
@@ -205,7 +129,6 @@ import {
  * panel follows in registry order, which is where a plugin's panel lands.
  */
 const PICKER_LEAD: readonly PanelId[] = ["agents", TERMINAL_PANEL, "builtin-browser"];
->>>>>>> /tmp/_t
 
 /**
  * Closes a tab once its close guards agree (the Files panel's editor asks about unsaved text),
@@ -283,14 +206,6 @@ function PanelBody({
   return (
     <DockPanelProvider handle={handle}>
       {Body !== undefined ? (
-<<<<<<< /tmp/_o
-        // The panel's name, which a contributed body's draft placeholder wears as its title.
-        <DockPanelTitle.Provider value={panelLabel(id)}>
-          <Body active={active} />
-        </DockPanelTitle.Provider>
-||||||| /tmp/_a
-        <Body active={active} />
-=======
         // A panel that crashes (a plugin's, or one of ours) takes down its own tab, not the
         // conversation beside it.
         <CrashBoundary resetKey={id}>
@@ -299,7 +214,6 @@ function PanelBody({
             <Body active={active} />
           </DockPanelTitle.Provider>
         </CrashBoundary>
->>>>>>> /tmp/_t
       ) : (
         <div className="flex h-full min-h-0 items-center justify-center overflow-y-auto p-4">
           <EmptyState title={S.dock.panelUnavailable} />

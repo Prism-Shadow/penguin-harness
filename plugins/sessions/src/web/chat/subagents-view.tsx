@@ -42,44 +42,18 @@ import {
   Text,
   toastError,
 } from "@prismshadow/penguin-ui";
-<<<<<<< /tmp/_o
 import { ApiError } from "@prismshadow/penguin-web/internal";
-import { abortSubagent, getAgentSkills, messageSubagent, patchSession } from "@prismshadow/penguin-web/internal";
-import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { abortSubagent, messageSubagent, patchSession } from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
 import type { NestedSessionMeta, StreamModel } from "@prismshadow/penguin-web/internal";
 import { ChatInput, type ComposerControl } from "./chat-input";
 
 import type { PermissionPick } from "@prismshadow/penguin-web/internal";
 import { noteSessionSeen } from "@prismshadow/penguin-web/internal";
+import { machineForSession } from "@prismshadow/penguin-web/internal";
+import { useAgentAvatarSrc } from "@prismshadow/penguin-web/internal";
 import { useProject } from "@prismshadow/penguin-web/internal";
 import { useSessions } from "@prismshadow/penguin-web/internal";
-||||||| /tmp/_a
-import { ApiError } from "../../api/client";
-import { abortSubagent, getAgentSkills, messageSubagent, patchSession } from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
-import { S } from "../../lib/strings";
-import type { NestedSessionMeta, StreamModel } from "../../lib/omni/stream-model";
-import { ChatInput } from "./chat-input";
-import type { ComposerControl } from "./chat-input";
-import type { PermissionPick } from "../../lib/permission-level";
-import { noteSessionSeen } from "../../lib/session-seen";
-import { useProject } from "../../state/project";
-import { useSessions } from "../../state/sessions";
-=======
-import { ApiError } from "../../api/client";
-import { abortSubagent, messageSubagent, patchSession } from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import type { NestedSessionMeta, StreamModel } from "../../lib/amsp/stream-model";
-import { ChatInput, type ComposerControl } from "./chat-input";
-
-import type { PermissionPick } from "../../lib/permission-level";
-import { noteSessionSeen } from "../../lib/session-seen";
-import { machineForSession } from "../../lib/session-machines";
-import { useAgentAvatarSrc } from "../../lib/agent-avatar";
-import { useProject } from "../../state/project";
-import { useSessions } from "../../state/sessions";
->>>>>>> /tmp/_t
 import {
   extractTopology,
   extractTopologyForChild,
@@ -90,20 +64,10 @@ import {
 } from "./agent-topology";
 
 import { AgentTopologyView } from "./agent-topology-view";
-<<<<<<< /tmp/_o
-import { MessageStream, type StreamRenderContext } from "./message-stream";
-
-import type { ComposerReference } from "@prismshadow/penguin-web/internal";
-||||||| /tmp/_a
-import { MessageStream } from "./message-stream";
-import type { StreamRenderContext } from "./message-stream";
-import type { ComposerReference } from "../../lib/workspace-tree";
-=======
 import { MessageStream, type StreamRenderContext } from "./message-stream";
 import { useAgentSkills } from "./use-agent-skills";
-import type { ComposerReference } from "../../lib/workspace-tree";
-import { toastApiError } from "../../lib/toast-api-error";
->>>>>>> /tmp/_t
+import type { ComposerReference } from "@prismshadow/penguin-web/internal";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 interface Selection {
   sessionId: string;

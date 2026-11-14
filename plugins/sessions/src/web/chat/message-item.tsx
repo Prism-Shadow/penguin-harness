@@ -26,28 +26,12 @@ import {
   TextAction,
   useCountdown,
 } from "@prismshadow/penguin-ui";
-<<<<<<< /tmp/_o
 import { S } from "@prismshadow/penguin-web/internal";
 import { useLocale } from "@prismshadow/penguin-web/internal";
 import { formatMessageTime } from "@prismshadow/penguin-web/internal";
-import { splitAttachments } from "@prismshadow/penguin-web/internal";
+import { attachmentFileName, splitAttachments } from "@prismshadow/penguin-web/internal";
 import { routedUrl } from "@prismshadow/penguin-web/internal";
 import type { ChatItem, ReconnectItem } from "@prismshadow/penguin-web/internal";
-||||||| /tmp/_a
-import { S } from "../../lib/strings";
-import { useLocale } from "../../state/locale";
-import { formatMessageTime } from "../../lib/format";
-import { splitAttachments } from "../../lib/attachments";
-import { routedUrl } from "../../lib/session-machines";
-import type { ChatItem, ReconnectItem } from "../../lib/omni/stream-model";
-=======
-import { S } from "../../lib/strings";
-import { useLocale } from "../../state/locale";
-import { formatMessageTime } from "../../lib/format";
-import { attachmentFileName, splitAttachments } from "../../lib/attachments";
-import { routedUrl } from "../../lib/session-machines";
-import type { ChatItem, ReconnectItem } from "../../lib/amsp/stream-model";
->>>>>>> /tmp/_t
 import { MessageFilesCard } from "./message-files-card";
 import { ReplyTrailer } from "./reply-files-provider";
 import { MemoryChangesCard } from "./memory-changes-card";
@@ -70,13 +54,7 @@ import {
   parseModelSwitchMessage,
   parseScheduledMessage,
 } from "./agent-handoff";
-<<<<<<< /tmp/_o
 import { parseSkillsMessage } from "@prismshadow/penguin-web/internal";
-||||||| /tmp/_a
-import { parseSkillsMessage } from "./skill-use";
-=======
-import { parseSkillsMessage } from "../../lib/skill-use";
->>>>>>> /tmp/_t
 import { TaskStatsLine } from "./task-stats-line";
 import type { StreamRenderContext } from "./message-stream";
 
@@ -412,53 +390,11 @@ export function MessageItem({
       // footer, and rendering both would pop up two copy buttons in the same spot. The stats
       // line's copy grabs **all** of this turn's assistant text (see collectTaskAssistant),
       // which is more useful than copying segment by segment.
-<<<<<<< /tmp/_o
-      // The body (Markdown, caret, the theme's reveal) is AssistantText; the stop reason and a
-      // nested reply's files card follow the text once it is fully revealed.
-      // ReplyTrailer: a linked Workspace file's renderer below its paragraph (reply-files-provider.tsx).
-||||||| /tmp/_a
-      // The body (Markdown, caret, the theme's reveal) is AssistantText; the stop reason and a
-      // nested reply's files card follow the text once it is fully revealed.
-=======
       // The body (Markdown, caret, the theme's reveal) is AssistantText; a nested reply's files
       // card follows the text once it is fully revealed. How the Request ended is not the
       // text's to say: the retry line, error banner or stop marker that follows says it.
       // ReplyTrailer: a linked Workspace file's renderer below its paragraph (reply-files-provider.tsx).
->>>>>>> /tmp/_t
       return (
-<<<<<<< /tmp/_o
-        <ReplyTrailer>
-          <AssistantText text={item.text} streaming={item.streaming}>
-            {item.stopReason && item.stopReason !== "completed" && (
-              <span className="ml-1 font-mono text-xs text-fg-subtle">[{item.stopReason}]</span>
-            )}
-            {/* Nested models don't produce task_stats, so preserve their existing message-level file summaries. The root conversation renders one aggregated card from task_stats instead. */}
-            {ctx.origin.length > 0 && !item.streaming && ctx.onOpenFile && ctx.statFiles && (
-              <MessageFilesCard
-                text={item.text}
-                workspace={ctx.workspace ?? null}
-                statFiles={ctx.statFiles}
-                onOpenFile={ctx.onOpenFile}
-              />
-            )}
-          </AssistantText>
-        </ReplyTrailer>
-||||||| /tmp/_a
-        <AssistantText text={item.text} streaming={item.streaming}>
-          {item.stopReason && item.stopReason !== "completed" && (
-            <span className="ml-1 font-mono text-xs text-fg-subtle">[{item.stopReason}]</span>
-          )}
-          {/* Nested models don't produce task_stats, so preserve their existing message-level file summaries. The root conversation renders one aggregated card from task_stats instead. */}
-          {ctx.origin.length > 0 && !item.streaming && ctx.onOpenFile && ctx.statFiles && (
-            <MessageFilesCard
-              text={item.text}
-              workspace={ctx.workspace ?? null}
-              statFiles={ctx.statFiles}
-              onOpenFile={ctx.onOpenFile}
-            />
-          )}
-        </AssistantText>
-=======
         <ReplyTrailer>
           <AssistantText text={item.text} streaming={item.streaming}>
             {/* Nested models don't produce task_stats, so preserve their existing message-level file summaries. The root conversation renders one aggregated card from task_stats instead. */}
@@ -472,7 +408,6 @@ export function MessageItem({
             )}
           </AssistantText>
         </ReplyTrailer>
->>>>>>> /tmp/_t
       );
     case "thinking":
       return <SessionThinking item={item} />;

@@ -15,7 +15,7 @@ import {
 
 import { S } from "../../lib/strings";
 import { useShortcutTitle } from "../../lib/shortcuts/use-keymap";
-import { latestConversation, withoutOrgSessions } from "../../lib/session-grouping";
+import { latestConversation, withoutOrgSessions } from "@prismshadow/penguin-web/internal";
 import { NEW_CHAT_ICON, glyphOf } from "../../lib/nav-icons";
 import { navChildKeysFor, navKeysFor } from "./nav-state";
 import { navPagesOf, pageTitle, useWebAppPages } from "../index";
@@ -23,12 +23,12 @@ import { useUpdateBadges } from "../../lib/use-update-badges";
 import { useAuth } from "../../state/auth";
 import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
-import { useCompany } from "../../lib/company-context";
+import { useCompany } from "@prismshadow/penguin-web/internal";
 
 import { parseOrgKey } from "../../lib/company-nav";
 import { UserMenu } from "./user-menu";
 import { isCurrentPath, renderRouterLink } from "./router-link";
-import { DRAFT_SESSION_ID, useNewChat } from "../../features/chat";
+import { DRAFT_SESSION_ID, useNewChat } from "@penguinharness/plugin-sessions/web";
 
 /**
  * The folded navigation column: the unfold button on top (in the desktop window it is the title

@@ -1,4 +1,4 @@
-import { MainSidebarBadgesModule } from "./features/models/main-sidebar-badges.module";
+import { MainSidebarBadgesModule } from "@penguinharness/plugin-models/web";
 /**
  * The composition root: the one file that lists the module classes, the web app's counterpart
  * of the server's platform.ts. `bootWeb()` boots the tree once, before the first render
@@ -27,27 +27,27 @@ import { WebAppModule, type WebApp } from "./web-app/module";
 import { SidebarModule } from "./web-app/sidebar/module";
 import type { AppRouterProps } from "./web-app/router";
 import { SessionsModule } from "./state/sessions.module";
-import { ChatModule } from "./features/chat/module";
-import { AgentsModule } from "./features/agents/module";
+import { ChatModule } from "@penguinharness/plugin-sessions/web";
+import { AgentsModule } from "@penguinharness/plugin-agents/web";
 import { AppCenterModule } from "./features/app-center/module";
-import { ModelsModule } from "./features/models/module";
-import { PluginsModule } from "./features/plugins/module";
-import { MachinesModule } from "./features/machines/module";
-import { UsageModule } from "./features/usage/module";
-import { BenchmarkModule } from "./features/benchmark/module";
-import { TerminalModule } from "./features/terminal/module";
-import { WorkbenchesModule } from "./features/workbenches/module";
-import { CompanyModule } from "./features/company/module";
-import { BuiltinBrowserModule } from "./features/builtin-browser/module";
-import { SettingsModule } from "./features/settings/module";
-import { SchedulesModule } from "./features/schedules/module";
-import { SessionListModule } from "./features/session-list/module";
-import { ProjectsModule } from "./features/projects/module";
-import { MessagingModule } from "./features/messaging/module";
-import { DockModule } from "./features/dock/module";
-import { WorkspaceModule } from "./features/workspace/module";
-import { TracesModule } from "./features/traces/module";
-import { AudioModule } from "./features/audio/module";
+import { ModelsModule } from "@penguinharness/plugin-models/web";
+import { PluginsModule } from "@penguinharness/plugin-plugins/web";
+import { MachinesModule } from "@penguinharness/plugin-machines/web";
+import { UsageModule } from "@penguinharness/plugin-usage/web";
+import { BenchmarkModule } from "@penguinharness/plugin-usage/web";
+import { TerminalModule } from "@penguinharness/plugin-terminal/web";
+import { WorkbenchesModule } from "@penguinharness/plugin-workbenches/web";
+import { CompanyModule } from "@penguinharness/plugin-company/web";
+import { BuiltinBrowserModule } from "@penguinharness/plugin-browser/web";
+import { SettingsModule } from "@penguinharness/plugin-settings/web";
+import { SchedulesModule } from "@penguinharness/plugin-schedules/web";
+import { SessionListModule } from "@penguinharness/plugin-sessions/web";
+import { ProjectsModule } from "@penguinharness/plugin-projects/web";
+import { MessagingModule } from "@penguinharness/plugin-messaging/web";
+import { DockModule } from "@penguinharness/plugin-terminal/web";
+import { WorkspaceModule } from "@penguinharness/plugin-projects/web";
+import { TracesModule } from "@penguinharness/plugin-usage/web";
+import { AudioModule } from "@penguinharness/plugin-sessions/web";
 
 @Module({
   children: [

@@ -70,3 +70,4 @@ export { setDockScope } from "./dock-state";
 export { measureComposer } from "./composer-height";
 
 export { setDockRevealer } from "./dock-reveal";
+export { LAUNCHER_HIDDEN_KEY, LAUNCHER_HIDDEN_ON } from "./dock-launcher-state";

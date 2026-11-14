@@ -38,43 +38,17 @@ import {
   Skeleton,
   TodoNotice,
 } from "@prismshadow/penguin-ui";
-<<<<<<< /tmp/_o
 import * as api from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import { useDocumentTitle } from "@prismshadow/penguin-web/internal";
-import { useUpdateBadges } from "@prismshadow/penguin-web/internal";
-import { dismissTodo } from "@prismshadow/penguin-web/internal";
-import { refreshProjectTodos } from "@prismshadow/penguin-web/internal";
+import { useUpdateBadges, dismissTodo, refreshProjectTodos } from "../todos";
 import { formatMoney, humanizeTokens } from "@prismshadow/penguin-web/internal";
 import { catalogEntryFor } from "@prismshadow/penguin-server/model-catalog";
+import { scoped, scopedValue, type Scoped } from "@prismshadow/penguin-web/internal";
+import { useOpenedInProject } from "@prismshadow/penguin-web/internal";
 import { useProject } from "@prismshadow/penguin-web/internal";
 import { useTheme } from "@prismshadow/penguin-web/internal";
-||||||| /tmp/_a
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { useDocumentTitle } from "../../lib/use-document-title";
-import { useUpdateBadges } from "../../lib/use-update-badges";
-import { dismissTodo } from "../../lib/todo-dismissals";
-import { refreshProjectTodos } from "../../lib/use-project-todos";
-import { formatMoney, humanizeTokens } from "../../lib/format";
-import { catalogEntryFor } from "@prismshadow/penguin-server/model-catalog";
-import { useProject } from "../../state/project";
-import { useTheme } from "../../state/theme";
-=======
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { useDocumentTitle } from "../../lib/use-document-title";
-import { useUpdateBadges, dismissTodo, refreshProjectTodos } from "../todos";
-import { formatMoney, humanizeTokens } from "../../lib/format";
-import { catalogEntryFor } from "@prismshadow/penguin-server/model-catalog";
-import { scoped, scopedValue, type Scoped } from "../../lib/project-scope";
-import { useOpenedInProject } from "../../lib/use-opened-in-project";
-import { useProject } from "../../state/project";
-import { useTheme } from "../../state/theme";
->>>>>>> /tmp/_t
 import { TrendChart } from "./trend-chart";
 import { RequestsChart, TokenBarChart, TokenLegend, type TokenLegendKey } from "./usage-charts";
 import {
@@ -86,13 +60,7 @@ import {
   rangeDays,
   type EntityCounts,
   type RangePreset,
-<<<<<<< /tmp/_o
-} from "@prismshadow/penguin-web/internal";
-||||||| /tmp/_a
-} from "./usage-controls";
-=======
 } from "../../lib/usage-controls";
->>>>>>> /tmp/_t
 import { ErrorsPanel } from "./errors-panel";
 
 /** A summary card's stat row: name on the left, value on the right — each item on its own row, so a narrow card no longer crams them into one wrapping line. */

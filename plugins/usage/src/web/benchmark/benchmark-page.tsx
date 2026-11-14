@@ -39,8 +39,8 @@ import {
   Sparkline,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
-<<<<<<< /tmp/_o
 import * as api from "@prismshadow/penguin-web/internal";
+import { useAgentAvatarSrc } from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import { cardBodyClick } from "@prismshadow/penguin-web/internal";
@@ -53,41 +53,7 @@ import { useSessions } from "@prismshadow/penguin-web/internal";
 import type { MergedBenchmark } from "@prismshadow/penguin-web/internal";
 import { nameOnMachine } from "@prismshadow/penguin-web/internal";
 import { useLocale } from "@prismshadow/penguin-web/internal";
-import { AiCreateModal, AiCreateButtons } from "@prismshadow/penguin-web/internal";
-import { pickDefaultAgent } from "@prismshadow/penguin-web/internal";
-||||||| /tmp/_a
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { cardBodyClick } from "../../lib/card-open";
-import { useDocumentTitle } from "../../lib/use-document-title";
-import { formatRelativeShort, formatScore, signedDelta } from "../../lib/format";
-import { STAT_ICONS } from "../../lib/stat-icons";
-import { toneInk } from "../../lib/tone";
-import { agentDisplayName, useProject } from "../../state/project";
-import { useSessions } from "../../state/sessions";
-import type { MergedBenchmark } from "../../lib/benchmark-merge";
-import { nameOnMachine } from "../../lib/workspace-machines";
-import { useLocale } from "../../state/locale";
-import { AiCreateModal, pickDefaultAgent } from "../ai-create";
-import { AiCreateButtons } from "../ai-create/ai-create-buttons";
-=======
-import * as api from "../../api/endpoints";
-import { useAgentAvatarSrc } from "../../lib/agent-avatar";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { cardBodyClick } from "../../lib/card-open";
-import { useDocumentTitle } from "../../lib/use-document-title";
-import { formatRelativeShort, formatScore, signedDelta } from "../../lib/format";
-import { STAT_ICONS } from "../../lib/stat-icons";
-import { toneInk } from "../../lib/tone";
-import { agentDisplayName, useProject } from "../../state/project";
-import { useSessions } from "../../state/sessions";
-import type { MergedBenchmark } from "../../lib/benchmark-merge";
-import { nameOnMachine } from "../../lib/workspace-machines";
-import { useLocale } from "../../state/locale";
 import { AiCreateModal, pickDefaultAgent, AiCreateButtons } from "../ai-create";
->>>>>>> /tmp/_t
 import {
   benchmarkDescription,
   latestWithDelta,

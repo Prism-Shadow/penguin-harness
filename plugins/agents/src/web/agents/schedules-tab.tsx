@@ -40,39 +40,16 @@ import {
   toastSuccess,
   type BadgeStyle,
 } from "@prismshadow/penguin-ui";
-<<<<<<< /tmp/_o
 
 import * as api from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import { formatDateTime } from "@prismshadow/penguin-web/internal";
 import { useProject } from "@prismshadow/penguin-web/internal";
-import { AiCreateModal, AiCreateButtons } from "@prismshadow/penguin-web/internal";
-import { ScheduleFormModal, ScheduleSuggestions, scheduleExamples, toggleBody } from "@penguinharness/plugin-schedules/web";
-||||||| /tmp/_a
-import type { BadgeStyle } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { formatDateTime } from "../../lib/format";
-import { useProject } from "../../state/project";
-import { AiCreateModal } from "../ai-create";
-import { AiCreateButtons } from "../ai-create/ai-create-buttons";
-import { ScheduleFormModal } from "../schedules/schedule-form-modal";
-import { ScheduleSuggestions, scheduleExamples } from "../schedules/schedule-suggestions";
-import { toggleBody } from "../schedules/schedule-upsert";
-=======
-
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { formatDateTime } from "../../lib/format";
-import { useProject } from "../../state/project";
-import { useAgentLocation } from "../../lib/agent-location";
-import { useAgentsOn } from "../../lib/machine-agent-lists";
+import { useAgentLocation } from "@prismshadow/penguin-web/internal";
+import { useAgentsOn } from "@prismshadow/penguin-web/internal";
 import { AiCreateModal, AiCreateButtons } from "../ai-create";
 import { ScheduleFormModal, ScheduleSuggestions, scheduleExamples, toggleBody } from "../schedules";
->>>>>>> /tmp/_t
 import { usePromptInjection } from "./prompt-injection-controls";
 import { toastApiError } from "../../lib/toast-api-error";
 

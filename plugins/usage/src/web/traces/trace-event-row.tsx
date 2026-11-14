@@ -26,30 +26,12 @@ import {
   ZoomableImage,
   type BadgeStyle,
 } from "@prismshadow/penguin-ui";
-<<<<<<< /tmp/_o
-
-||||||| /tmp/_a
-import type { BadgeStyle } from "@prismshadow/penguin-ui";
-=======
 import type { ToneName } from "@prismshadow/penguin-ui";
->>>>>>> /tmp/_t
 import ReactMarkdown from "react-markdown";
-<<<<<<< /tmp/_o
 import { S } from "@prismshadow/penguin-web/internal";
-import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
-import { formatTime, humanizeTokens } from "@prismshadow/penguin-web/internal";
-import { stopReasonTone } from "@prismshadow/penguin-web/internal";
-||||||| /tmp/_a
-import { S } from "../../lib/strings";
-import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
-import { formatTime, humanizeTokens } from "../../lib/format";
-import { stopReasonTone } from "../../lib/stop-reason-tone";
-=======
-import { S } from "../../lib/strings";
 import type { AmspRecord } from "@prismshadow/amsp";
-import { formatTime, humanizeTokens } from "../../lib/format";
-import { statusTone } from "../../lib/status-tone";
->>>>>>> /tmp/_t
+import { formatTime, humanizeTokens } from "@prismshadow/penguin-web/internal";
+import { statusTone } from "@prismshadow/penguin-web/internal";
 
 /**
  * A record family's pill tone, so the two families read apart at a glance down a round's rows:

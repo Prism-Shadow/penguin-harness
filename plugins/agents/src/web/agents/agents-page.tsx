@@ -72,68 +72,14 @@ import {
   toastError,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
-<<<<<<< /tmp/_o
 import * as api from "@prismshadow/penguin-web/internal";
 import { ApiError } from "@prismshadow/penguin-web/internal";
+import { useAgentAvatarSrc } from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import { cardBodyClick } from "@prismshadow/penguin-web/internal";
 import { formatDateTime, formatRelativeDays } from "@prismshadow/penguin-web/internal";
 import { useDocumentTitle } from "@prismshadow/penguin-web/internal";
-import { useUpdateBadges } from "@prismshadow/penguin-web/internal";
-import { dismissTodo } from "@prismshadow/penguin-web/internal";
-import { bulkOutcome, failedList, firstFailure, noticeCounts } from "@prismshadow/penguin-web/internal";
-import { useAuth } from "@prismshadow/penguin-web/internal";
-import { useLocale } from "@prismshadow/penguin-web/internal";
-import { agentDisplayName, useProject } from "@prismshadow/penguin-web/internal";
-import { STAT_ICONS } from "@prismshadow/penguin-web/internal";
-import { DRAFT_SESSION_ID, prepareNewChatDraft } from "@prismshadow/penguin-web/internal";
-import { AiCreateModal, AiCreateButtons } from "@prismshadow/penguin-web/internal";
-import { mergeAgents, type AgentSource } from "@prismshadow/penguin-web/internal";
-
-import { useSessions } from "@prismshadow/penguin-web/internal";
-import { employmentsOf, splitByEmployment } from "./agent-employment";
-import { CreateAgentDialog, type PluginPickItem } from "./create-agent-dialog";
-
-/** Built-in Agents; the server also rejects deletion, so no delete entry point is shown here. */
-const BUILTIN_AGENT_IDS = new Set(["default_agent", "penguin_support"]);
-||||||| /tmp/_a
-import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { cardBodyClick } from "../../lib/card-open";
-import { formatDateTime, formatRelativeDays } from "../../lib/format";
-import { useDocumentTitle } from "../../lib/use-document-title";
-import { useUpdateBadges } from "../../lib/use-update-badges";
-import { dismissTodo } from "../../lib/todo-dismissals";
-import { bulkOutcome, failedList, firstFailure, noticeCounts } from "../../lib/bulk-update";
-import { useAuth } from "../../state/auth";
-import { useLocale } from "../../state/locale";
-import { agentDisplayName, useProject } from "../../state/project";
-import { STAT_ICONS } from "../../lib/stat-icons";
-import { DRAFT_SESSION_ID } from "../chat/chat-page";
-import { prepareNewChatDraft } from "../chat/new-chat";
-import { AiCreateModal } from "../ai-create";
-import { AiCreateButtons } from "../ai-create/ai-create-buttons";
-import { mergeAgents } from "../../lib/benchmark-merge";
-import type { AgentSource } from "../../lib/benchmark-merge";
-import { useSessions } from "../../state/sessions";
-import { employmentsOf, splitByEmployment } from "./agent-employment";
-import { CreateAgentDialog } from "./create-agent-dialog";
-import type { PluginPickItem } from "./create-agent-dialog";
-
-/** Built-in Agents; the server also rejects deletion, so no delete entry point is shown here. */
-const BUILTIN_AGENT_IDS = new Set(["default_agent", "penguin_support"]);
-=======
-import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
-import { useAgentAvatarSrc } from "../../lib/agent-avatar";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { cardBodyClick } from "../../lib/card-open";
-import { formatDateTime, formatRelativeDays } from "../../lib/format";
-import { useDocumentTitle } from "../../lib/use-document-title";
 import {
   useUpdateBadges,
   dismissTodo,
@@ -142,18 +88,18 @@ import {
   firstFailure,
   noticeCounts,
 } from "../todos";
-import { useAuth } from "../../state/auth";
-import { useLocale } from "../../state/locale";
-import { agentDisplayName, useProject } from "../../state/project";
-import { STAT_ICONS } from "../../lib/stat-icons";
+import { useAuth } from "@prismshadow/penguin-web/internal";
+import { useLocale } from "@prismshadow/penguin-web/internal";
+import { agentDisplayName, useProject } from "@prismshadow/penguin-web/internal";
+import { STAT_ICONS } from "@prismshadow/penguin-web/internal";
 import { DRAFT_SESSION_ID, prepareNewChatDraft } from "../chat";
 import { AiCreateModal, AiCreateButtons } from "../ai-create";
-import { agentKey, agentSettingsPath } from "../../lib/agent-location";
-import { mixAgents, useMachineAgents } from "../../lib/machine-agent-lists";
-import type { PlacedAgent } from "../../lib/machine-agent-lists";
-import { toneInk } from "../../lib/tone";
-import { employmentsOf, splitByEmployment } from "../../lib/agent-employment";
-import { isBuiltinAgent } from "../../lib/builtin-agents";
+import { agentKey, agentSettingsPath } from "@prismshadow/penguin-web/internal";
+import { mixAgents, useMachineAgents } from "@prismshadow/penguin-web/internal";
+import type { PlacedAgent } from "@prismshadow/penguin-web/internal";
+import { toneInk } from "@prismshadow/penguin-web/internal";
+import { employmentsOf, splitByEmployment } from "@prismshadow/penguin-web/internal";
+import { isBuiltinAgent } from "@prismshadow/penguin-web/internal";
 import {
   AGENT_GROUP_BYS,
   groupByAuthor,
@@ -166,10 +112,9 @@ import {
 import { CreateAgentDialog, pluginPickItems } from "./create-agent-dialog";
 import { AgentExportDialog } from "./agent-export-dialog";
 import { AgentImportDialog } from "./agent-import-dialog";
-import { followAgentDeletion } from "../../lib/agent-deletion-progress";
+import { followAgentDeletion } from "@prismshadow/penguin-web/internal";
 import type { PluginPickItem } from "./create-agent-dialog";
-import { toastApiError } from "../../lib/toast-api-error";
->>>>>>> /tmp/_t
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 /** Card button icons (24x24 line path, rendered via GlyphIcon). */
 const CARD_ICONS = {

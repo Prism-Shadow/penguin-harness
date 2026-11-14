@@ -49,13 +49,8 @@ import {
   retryReading,
   stepLabel,
   useWaitsBecause,
-<<<<<<< /tmp/_o
-  type MachineReading,
-||||||| /tmp/_a
-=======
   type MachineReading,
   type RetryReading,
->>>>>>> /tmp/_t
 } from "./machines-view";
 
 /**

@@ -42,35 +42,15 @@ import {
   toastError,
 } from "@prismshadow/penguin-ui";
 import { useStore } from "zustand/react";
-<<<<<<< /tmp/_o
 import { formatDateTime } from "@prismshadow/penguin-web/internal";
 import { subscribeUserEvents } from "@prismshadow/penguin-web/internal";
-import { revealPlan, workspaceLabel } from "@prismshadow/penguin-web/internal";
+import { workspaceLabel } from "@prismshadow/penguin-web/internal";
 import { programSource } from "@prismshadow/penguin-web/internal";
 import { nameOnMachine } from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
 import { projectDisplayName, useProject } from "@prismshadow/penguin-web/internal";
 import { Truncated } from "@prismshadow/penguin-web/internal";
-||||||| /tmp/_a
-import { formatDateTime } from "../../lib/format";
-import { subscribeUserEvents } from "../../lib/omni/user-events";
-import { revealPlan, workspaceLabel } from "../../lib/session-grouping";
-import { programSource } from "../../lib/session-source-mark";
-import { nameOnMachine } from "../../lib/workspace-machines";
-import { S } from "../../lib/strings";
-import { projectDisplayName, useProject } from "../../state/project";
-import { Truncated } from "../../components/ui/truncated";
-=======
-import { formatDateTime } from "../../lib/format";
-import { subscribeUserEvents } from "../../lib/amsp/user-events";
-import { workspaceLabel } from "../../lib/session-grouping";
-import { programSource } from "../../lib/session-source-mark";
-import { nameOnMachine } from "../../lib/workspace-machines";
-import { S } from "../../lib/strings";
-import { projectDisplayName, useProject } from "../../state/project";
-import { Truncated } from "../../components/ui/truncated";
 import { pageCountOf } from "./archived-sessions-paging";
->>>>>>> /tmp/_t
 import {
   createArchiveStore,
   groupKey,

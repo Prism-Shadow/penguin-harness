@@ -10,14 +10,8 @@
  */
 import * as api from "@prismshadow/penguin-web/internal";
 import { AgentAvatar, CHANNEL_RUN_AVATAR_PX } from "@prismshadow/penguin-ui";
-<<<<<<< /tmp/_o
+import { useAgentAvatarSrc } from "@prismshadow/penguin-web/internal";
 import { useCompany } from "./company-state";
-||||||| /tmp/_a
-import { useCompany } from "../../state/company";
-=======
-import { useAgentAvatarSrc } from "../../lib/agent-avatar";
-import { useCompany } from "./company-state";
->>>>>>> /tmp/_t
 
 /**
  * How large a face is drawn, by where it sits. These are a chat product's rungs rather than

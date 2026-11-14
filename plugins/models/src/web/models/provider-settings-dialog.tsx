@@ -52,25 +52,6 @@ import {
   useFormDraft,
   useGuardedClose,
 } from "@prismshadow/penguin-ui";
-<<<<<<< /tmp/_o
-import {
-  fixedClientType,
-  providerEnvFallbackKey,
-  type ModelProviderInfo,
-} from "@prismshadow/penguin-server/model-catalog";
-
-import * as api from "@prismshadow/penguin-web/internal";
-import { apiErrorText } from "@prismshadow/penguin-web/internal";
-import { formatDateTime } from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
-||||||| /tmp/_a
-import { fixedClientType, providerEnvFallbackKey } from "@prismshadow/penguin-server/model-catalog";
-import type { ModelProviderInfo } from "@prismshadow/penguin-server/model-catalog";
-import * as api from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
-import { formatDateTime } from "../../lib/format";
-import { S } from "../../lib/strings";
-=======
 import {
   fixedClientType,
   providerCalledKeyless,
@@ -78,10 +59,9 @@ import {
   type ModelProviderInfo,
 } from "@prismshadow/penguin-server/model-catalog";
 
-import * as api from "../../api/endpoints";
-import { formatDateTime } from "../../lib/format";
-import { S } from "../../lib/strings";
->>>>>>> /tmp/_t
+import * as api from "@prismshadow/penguin-web/internal";
+import { formatDateTime } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
 import { protocolPathForModel } from "./protocol-path";
 import { ProtocolSuffixMenu } from "./protocol-suffix";
 import {

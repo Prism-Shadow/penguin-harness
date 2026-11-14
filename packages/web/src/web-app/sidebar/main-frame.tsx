@@ -3,7 +3,7 @@ import {
   MainSidebarFragments,
   renderMainSessionList,
   renderMainSessionDialogs,
-} from "../../features/session-list";
+} from "@penguinharness/plugin-sessions/web";
 import { sectionsIn } from "../../lib/sidebar-modes";
 import {
   NavRow,
@@ -13,7 +13,7 @@ import {
   SidebarNavGroup,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { DRAFT_SESSION_ID } from "../../features/chat";
+import { DRAFT_SESSION_ID } from "@penguinharness/plugin-sessions/web";
 import { NEW_CHAT_ICON } from "../../lib/main-sidebar-persistence";
 import type { MainSidebarView } from "./main-navigation";
 

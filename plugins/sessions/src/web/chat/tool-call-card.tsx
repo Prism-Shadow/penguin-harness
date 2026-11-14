@@ -19,7 +19,6 @@
  */
 import { useMemo } from "react";
 import { DETACHED_TOOL_NOTE_PREFIX } from "@prismshadow/penguin-core/interfaces";
-<<<<<<< /tmp/_o
 import {
   ToolCallCard,
   useElapsedPast,
@@ -30,37 +29,11 @@ import {
 import { S } from "@prismshadow/penguin-web/internal";
 import { toolDisplayName } from "@prismshadow/penguin-web/internal";
 import { stripAnsi } from "@prismshadow/penguin-web/internal";
+import { elidedArgumentsPreview, elidedPreview } from "@prismshadow/penguin-web/internal";
 import { routedUrl } from "@prismshadow/penguin-web/internal";
 import { approvalKey, type ToolCallItem } from "@prismshadow/penguin-web/internal";
 
 import { useTheme } from "@prismshadow/penguin-web/internal";
-||||||| /tmp/_a
-import { ToolCallCard, useElapsedPast } from "@prismshadow/penguin-ui";
-import type { RunState, ToolCallDuration } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { toolDisplayName } from "../../lib/tool-alias";
-import { stripAnsi } from "../../lib/strip-ansi";
-import { routedUrl } from "../../lib/session-machines";
-import { approvalKey } from "../../lib/omni/stream-model";
-import type { ToolCallItem } from "../../lib/omni/stream-model";
-import { useTheme } from "../../state/theme";
-=======
-import {
-  ToolCallCard,
-  useElapsedPast,
-  type RunState,
-  type ToolCallDuration,
-} from "@prismshadow/penguin-ui";
-
-import { S } from "../../lib/strings";
-import { toolDisplayName } from "../../lib/tool-alias";
-import { stripAnsi } from "../../lib/strip-ansi";
-import { elidedArgumentsPreview, elidedPreview } from "../../lib/history/elided-preview";
-import { routedUrl } from "../../lib/session-machines";
-import { approvalKey, type ToolCallItem } from "../../lib/amsp/stream-model";
-
-import { useTheme } from "../../state/theme";
->>>>>>> /tmp/_t
 import { agentIdFromRunSubagentArgs } from "./agent-topology";
 import { ElidedBodyNote, hasElidedNote } from "./elided-body";
 import { SessionSubagentChip } from "./subagent-chip";

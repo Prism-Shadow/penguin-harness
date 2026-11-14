@@ -43,23 +43,6 @@
  * forwarded whole, a big file's analysis outlasts any one call on a slow link. Each refresh
  * brings over only what the file grew by; a Session on this server answers `filled` at once.
  */
-<<<<<<< /tmp/_o
-import {
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-  type RefObject,
-} from "react";
-
-import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
-||||||| /tmp/_a
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode, RefObject } from "react";
-import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
-=======
 import {
   useEffect,
   useLayoutEffect,
@@ -71,7 +54,6 @@ import {
 } from "react";
 
 import type { AmspRecord } from "@prismshadow/amsp";
->>>>>>> /tmp/_t
 import type {
   HistoryProgress,
   TraceAnalysisResponse,
@@ -90,25 +72,13 @@ import {
   Skeleton,
   Text,
 } from "@prismshadow/penguin-ui";
-<<<<<<< /tmp/_o
 import * as api from "@prismshadow/penguin-web/internal";
+import { openHistoryStream } from "@prismshadow/penguin-web/internal";
 import { CostPartsRows, ElapsedSplitRows, StatHint } from "@prismshadow/penguin-web/internal";
+import { readHistory } from "@prismshadow/penguin-web/internal";
+import { HistoryFileLoading } from "../chat/history-loading";
 import { S } from "@prismshadow/penguin-web/internal";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
-||||||| /tmp/_a
-import * as api from "../../api/endpoints";
-import { CostPartsRows, ElapsedSplitRows, StatHint } from "../../components/ui/stat-hint";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-=======
-import * as api from "../../api/endpoints";
-import { openHistoryStream } from "../../api/sse";
-import { CostPartsRows, ElapsedSplitRows, StatHint } from "../../components/ui/stat-hint";
-import { readHistory } from "../../lib/history/history-read";
-import { HistoryFileLoading } from "../chat/history-loading";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
->>>>>>> /tmp/_t
 import {
   computeTps,
   formatAverage,
@@ -117,27 +87,11 @@ import {
   formatTps,
   humanizeDuration,
   humanizeTokens,
-<<<<<<< /tmp/_o
-} from "@prismshadow/penguin-web/internal";
-import { STAT_ICONS } from "@prismshadow/penguin-web/internal";
+} from "../../lib/format";
 import { resolveContextWindow } from "@prismshadow/penguin-web/internal";
 import { toneInk } from "@prismshadow/penguin-web/internal";
 import { useTheme, type Currency } from "@prismshadow/penguin-web/internal";
 
-||||||| /tmp/_a
-} from "../../lib/format";
-import { STAT_ICONS } from "../../lib/stat-icons";
-import { resolveContextWindow } from "../../lib/context";
-import { toneInk } from "../../lib/tone";
-import { useTheme } from "../../state/theme";
-import type { Currency } from "../../state/theme";
-=======
-} from "../../lib/format";
-import { resolveContextWindow } from "../../lib/context";
-import { toneInk } from "../../lib/tone";
-import { useTheme, type Currency } from "../../state/theme";
-
->>>>>>> /tmp/_t
 import {
   TRACE_ROUNDS_PAGE,
   expandedAfterAnalysis,

@@ -28,15 +28,8 @@
  * the Overview tab's first field changes it (agent-avatar-field.tsx), saved on its own the moment
  * a crop is confirmed rather than with the tab's Save.
  */
-<<<<<<< /tmp/_o
-import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react";
-||||||| /tmp/_a
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { ChangeEvent } from "react";
-=======
 import { useCallback, useEffect, useRef, useState } from "react";
 
->>>>>>> /tmp/_t
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import type {
   AgentAuthor,
@@ -77,51 +70,22 @@ import {
   useFormDraft,
   type OptionMenuChoice,
 } from "@prismshadow/penguin-ui";
-<<<<<<< /tmp/_o
 
 import * as api from "@prismshadow/penguin-web/internal";
-import { ApiError } from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import { useDocumentTitle } from "@prismshadow/penguin-web/internal";
+import { scopeKey, scoped, scopedValue, type Scoped } from "@prismshadow/penguin-web/internal";
+import { useLeaveOnProjectSwitch } from "@prismshadow/penguin-web/internal";
 import { useProject } from "@prismshadow/penguin-web/internal";
-import {
-  normalizeRuntime,
-  runtimeDraftOf,
-  runtimeErrors,
-  runtimeUpdateOf,
-  type RuntimeDraft,
-  type RuntimeNumberField,
-} from "./runtime-form";
-
-||||||| /tmp/_a
-import type { OptionMenuChoice } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { useDocumentTitle } from "../../lib/use-document-title";
-import { useProject } from "../../state/project";
-import { normalizeRuntime, runtimeDraftOf, runtimeErrors, runtimeUpdateOf } from "./runtime-form";
-import type { RuntimeDraft, RuntimeNumberField } from "./runtime-form";
-=======
-
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { useDocumentTitle } from "../../lib/use-document-title";
-import { scopeKey, scoped, scopedValue, type Scoped } from "../../lib/project-scope";
-import { useLeaveOnProjectSwitch } from "../../lib/use-opened-in-project";
-import { useProject } from "../../state/project";
-import { useMachines } from "../../state/machines";
-import { AgentLocationContext, machineInSearch, useAgentLocation } from "../../lib/agent-location";
-import { machineLink, remoteAgentsEmpty } from "../../lib/machine-link";
-import { publishMachineAgentsChanged, readMachineAgents } from "../../lib/machine-agent-lists";
-import { useAgentAvatarSrc } from "../../lib/agent-avatar";
+import { useMachines } from "@prismshadow/penguin-web/internal";
+import { AgentLocationContext, machineInSearch, useAgentLocation } from "@prismshadow/penguin-web/internal";
+import { machineLink, remoteAgentsEmpty } from "@prismshadow/penguin-web/internal";
+import { publishMachineAgentsChanged, readMachineAgents } from "@prismshadow/penguin-web/internal";
+import { useAgentAvatarSrc } from "@prismshadow/penguin-web/internal";
 import { AGENT_AVATAR_PREVIEW_PX, AgentAvatarField } from "./agent-avatar-field";
 import { normalizeRuntime, runtimeDraftOf, runtimeErrors, runtimeUpdateOf } from "./runtime-form";
 import type { RuntimeDraft, RuntimeNumberField } from "./runtime-form";
->>>>>>> /tmp/_t
 import {
   hasDescriptionProperty,
   normalizeTools,
@@ -132,20 +96,8 @@ import {
   type ToolNumberField,
   type ToolRowDraft,
 } from "./tools-form";
-<<<<<<< /tmp/_o
-
-import { SkillsTab } from "./skills-tab";
-import { WorkbenchesTab } from "./workbenches-tab";
-import { HooksTab } from "./hooks-tab";
-||||||| /tmp/_a
-import type { ToolNumberField, ToolRowDraft } from "./tools-form";
-import { SkillsTab } from "./skills-tab";
-import { WorkbenchesTab } from "./workbenches-tab";
-import { HooksTab } from "./hooks-tab";
-=======
 
 import { PluginsTab } from "./plugins-tab";
->>>>>>> /tmp/_t
 import { MemoryTab } from "./memory-tab";
 import { kernelTabLabel } from "./kernel-labels";
 import { AGENT_AUTHORS } from "./agent-groups";
@@ -153,19 +105,10 @@ import { VaultTab } from "./vault-tab";
 import { SchedulesTab } from "./schedules-tab";
 import { ApiTab } from "./api-tab";
 import { McpServersSection } from "./mcp-servers-section";
-<<<<<<< /tmp/_o
-import { SNAPSHOT_ACCEPT, SNAPSHOT_BUTTON_CLASS, fileToBase64 } from "./snapshot-file";
-import { effectiveThinkingLevel, ThinkingLevelSelect } from "@prismshadow/penguin-web/internal";
-||||||| /tmp/_a
-import { SNAPSHOT_ACCEPT, SNAPSHOT_BUTTON_CLASS, fileToBase64 } from "./snapshot-file";
-import { effectiveThinkingLevel } from "../chat/thinking-level";
-import { ThinkingLevelSelect } from "../chat/thinking-level-select";
-=======
 import { AgentExportDialog } from "./agent-export-dialog";
 import { AgentImportDialog } from "./agent-import-dialog";
 import { ThinkingLevelSelect, effectiveThinkingLevel } from "../model-picker";
-import { toastApiError } from "../../lib/toast-api-error";
->>>>>>> /tmp/_t
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 type TabKey =
   | "overview"

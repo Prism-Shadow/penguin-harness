@@ -14,41 +14,13 @@
 import { useMemo } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import { Button, type PaletteAction } from "@prismshadow/penguin-ui";
-<<<<<<< /tmp/_o
-import * as api from "@prismshadow/penguin-web/internal";
 import { useShortcutLabel } from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
-import {
-  appPageTab,
-  WORKBENCH_UPDATED_EVENT,
-  workbenchTabsOf,
-  type WorkbenchTab,
-} from "@prismshadow/penguin-web/internal";
 import { rememberSelection } from "@prismshadow/penguin-web/internal";
-import { AppPalette } from "@prismshadow/penguin-web/internal";
-import { openUserEvents } from "@prismshadow/penguin-web/internal";
-||||||| /tmp/_a
-import * as api from "../../api/endpoints";
-import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
-import { S } from "../../lib/strings";
-import {
-  appPageTab,
-  WORKBENCH_UPDATED_EVENT,
-  workbenchTabsOf,
-  type WorkbenchTab,
-} from "../../lib/workbench-tabs";
-import { rememberSelection } from "../../state/project";
-import { AppPalette } from "../palette/app-palette";
-import { openUserEvents } from "../../api/sse";
-=======
-import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
-import { S } from "../../lib/strings";
-import { rememberSelection } from "../../state/project";
-import { isAppCenterPath } from "../../lib/app-center-path";
+import { isAppCenterPath } from "@prismshadow/penguin-web/internal";
 import { useSafeMode } from "../../rescue/safe-mode";
-import { usePaletteActions } from "../../lib/palette-actions";
+import { usePaletteActions } from "@prismshadow/penguin-web/internal";
 import { useAppPageTab } from "./use-app-page-tab";
->>>>>>> /tmp/_t
 import { WorkbenchFrame } from "./workbench-tabs";
 
 export function WorkbenchAppPage() {
