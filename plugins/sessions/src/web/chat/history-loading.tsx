@@ -41,7 +41,7 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { transferAmount } from "../../lib/history/transfer-amount";
-import { machineForSession } from "../../lib/session-machines";
+import { machineForSession } from "../lib/session-machines.js";
 import { S } from "../../lib/strings";
 import { useMachines } from "../../state/machines";
 import { retryStatus } from "../machines/machine-card";

@@ -29,7 +29,7 @@ import { getGoal } from "../../api/endpoints";
 import { probeSession } from "../../api/session-probe";
 import { apiSocket } from "../../api/socket";
 import { openHistoryStream, openSessionStream, openTraceBodyStream } from "../../api/sse";
-import { machineForSession } from "../../lib/session-machines";
+import { machineForSession } from "../lib/session-machines.js";
 import { createStreamController } from "../../lib/amsp/stream-controller";
 import type {
   HistoryTransfer,

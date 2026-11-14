@@ -27,7 +27,7 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { machineLink } from "../../lib/machine-link";
-import { machineForSession } from "../../lib/session-machines";
+import { machineForSession } from "../lib/session-machines.js";
 import { S } from "../../lib/strings";
 import { useMachines } from "../../state/machines";
 import { retryStatus } from "../machines/machine-card";

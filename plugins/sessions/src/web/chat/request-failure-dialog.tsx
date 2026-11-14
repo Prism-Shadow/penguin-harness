@@ -15,7 +15,7 @@ import { useEffect, useState } from "react";
 import { ErrorReportDialog, osName } from "@prismshadow/penguin-ui";
 import type { VersionResponse } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
-import { machineForSession } from "../../lib/session-machines";
+import { machineForSession } from "../lib/session-machines.js";
 import { S } from "../../lib/strings";
 import { requestFailureReport } from "./request-failure-report";
 import type { RequestFailure } from "./request-failure-report";
