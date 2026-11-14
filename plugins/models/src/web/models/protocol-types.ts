@@ -10,6 +10,9 @@ import {
   modelCalledKeyless,
   modelEnvironment,
   providerInfo,
+} from "@prismshadow/penguin-server/model-catalog";
+import type { ModelEnvironment } from "@prismshadow/penguin-server/model-catalog";
+import type { ProviderConnectionShape } from "@prismshadow/penguin-core/model-connection";
 
 export { PROTOCOL_CLIENT_TYPES, type ProtocolClientType };
 

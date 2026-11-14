@@ -9,7 +9,15 @@
  * scoreboard is missing from the merge, which is what "could not read it" means. Only when NO
  * source answered is there an error to report.
  */
-}
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { BenchmarkCaseSummary, BenchmarkSummary } from "@prismshadow/penguin-server/api";
+import * as api from "@prismshadow/penguin-web/internal";
+import {
+  mergeBenchmarkCases,
+  mergeBenchmarks,
+  type MergedBenchmark,
+  type MergedCase,
+} from "@prismshadow/penguin-web/internal";
 
 const NOTHING_YET: BenchmarksView = { benchmarks: null, error: null, pending: [] };
 

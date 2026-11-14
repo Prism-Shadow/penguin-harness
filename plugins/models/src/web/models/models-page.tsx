@@ -89,6 +89,7 @@ import type {
   ProviderConnectionDto,
   ProviderConnectionUpdate,
 } from "@prismshadow/penguin-server/api";
+import {
   Pill,
   Button,
   Card,
@@ -130,6 +131,7 @@ import type {
 } from "@prismshadow/penguin-ui";
 
 import { AiCreateModal, AiCreateButtons } from "../ai-create";
+import {
   MODEL_PROVIDERS,
   PENGUIN_GO_PROVIDER_ID,
   catalogEntryFor,
@@ -145,6 +147,7 @@ import { AiCreateModal, AiCreateButtons } from "../ai-create";
 } from "@prismshadow/penguin-server/model-catalog";
 
 import { canonicalClientType, groupKeyReaches } from "@prismshadow/penguin-core/model-connection";
+import {
   allGroupKeys,
   discountedPrice,
   fractionOff,
@@ -153,6 +156,7 @@ import { canonicalClientType, groupKeyReaches } from "@prismshadow/penguin-core/
   sameModelRef,
   userProviderInfo,
 } from "@prismshadow/penguin-web/internal";
+import {
   commitModelGroupOrder,
   loadModelGroupOrder,
   saveModelGroupOrder,
@@ -160,6 +164,7 @@ import { canonicalClientType, groupKeyReaches } from "@prismshadow/penguin-core/
 import { TAG_TONE, modelTags } from "@prismshadow/penguin-web/internal";
 import { protocolPathForModel } from "./protocol-path";
 import { ProtocolSuffixMenu } from "./protocol-suffix";
+import {
   DEFAULT_CUSTOM_CLIENT_TYPE,
   detectableBaseUrl,
   displayWidthCh,
@@ -174,11 +179,13 @@ import { ProtocolSuffixMenu } from "./protocol-suffix";
   type ProtocolClientType,
 } from "./protocol-types";
 
+import {
   isGroupExpanded,
   loadExpandedProviders,
   saveExpandedProviders,
   toggleExpandedProvider,
 } from "./model-group-expansion";
+import {
   initialModelGroupPins,
   initialModelGroupsFolded,
   isModelGroupPinned,
@@ -195,6 +202,7 @@ import { AddNewModelsButton, AddNewModelsConfirm, RestoreDefaultsConfirm } from 
 import type { PresetSyncHost } from "./preset-sync";
 import { buildImportedRows, groupImportConnection, pickableModelIds } from "./group-import";
 import { ImportPickList } from "./group-import-picker";
+import {
   applyProviderUpdate,
   groupKeyMissesRow,
   groupShape,
@@ -205,6 +213,7 @@ import { ImportPickList } from "./group-import-picker";
 
 import { ProviderSettingsDialog } from "./provider-settings-dialog";
 import { GroupSettingsControl } from "./group-settings-menu";
+import {
   initialModelGroupSorts,
   modelGroupSortOf,
   sortModelGroups,
@@ -217,6 +226,7 @@ import { tpsTone, ttftTone, type SpeedResult, type SpeedTone } from "./speed-tes
 
 import { KeyAuthDialog, type KeyAuthTexts } from "./key-auth-dialog";
 
+import {
   HEADER_BUTTON,
   HEADER_LABEL,
   HEADER_SQUARE,
@@ -228,6 +238,7 @@ import { KeyAuthDialog, type KeyAuthTexts } from "./key-auth-dialog";
 
 import { GroupBalance } from "./group-balance";
 import { DisconnectConfirm, GroupConnection } from "./group-connection";
+import {
   DetailsFold,
   MODEL_DIALOG_SLOTS,
   foldedErrors,
