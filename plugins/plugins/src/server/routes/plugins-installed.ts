@@ -56,7 +56,7 @@ import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { AppEnv } from "@prismshadow/penguin-server/internal";
 import type { InstalledPlugin, InstalledPluginsResponse, PluginInstallOutcome, UnsatisfiedPlugin } from "@prismshadow/penguin-server/api";
 import { HttpError } from "@prismshadow/penguin-server/internal";
-import { eventStream } from "../event-stream.js";
+import { eventStream } from "@prismshadow/penguin-server/internal";
 import { readJson, requireString, requireValidId } from "@prismshadow/penguin-server/internal";
 import type { DatabaseSync } from "node:sqlite";
 import {
@@ -69,11 +69,11 @@ import {
 import type { Config, Db, Hmr, Reassembly, ReassemblyChange } from "@prismshadow/penguin-server/internal";
 import { discoverBuiltinPlugins, PACKAGE_NAME, loadPlugins, PLUGINS_FILE, pluginBases, readPluginClosure, readPluginDeclaration } from "../plugin/loader.js";
 import type { PluginPackages } from "../mechanism.js";
-import { installedPackageDir, installPluginChannel, PluginInstallError, pluginsPrefix, readInstalledVersion, InstalledPackage } from "../../plugin/install.js";
-import { indexChannelLookup, IndexChannel } from "../../plugin/registry.js";
-import { parsePluginSource, PluginSource } from "../../plugin/source.js";
-import { parsePluginArchive } from "../../services/plugin-archive.js";
-import { PluginHost, pluginHostFrom, PLUGINS_RESOURCE_ID } from "../../plugin/host.js";
+import { installedPackageDir, installPluginChannel, PluginInstallError, pluginsPrefix, readInstalledVersion, InstalledPackage } from "../plugin/install.js";
+import { indexChannelLookup, IndexChannel } from "../plugin/registry.js";
+import { parsePluginSource, PluginSource } from "../plugin/source.js";
+import { parsePluginArchive } from "../services/plugin-archive.js";
+import { PluginHost, pluginHostFrom, PLUGINS_RESOURCE_ID } from "../plugin/host.js";
 import { Access, ProjectConfigStore } from "@prismshadow/penguin-server/internal";
 import type { Machines } from "@penguinharness/plugin-machines/server";
 import { MachinesRepo } from "@prismshadow/penguin-server/internal";
