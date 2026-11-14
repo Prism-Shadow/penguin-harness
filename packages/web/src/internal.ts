@@ -153,7 +153,6 @@ export { ApiError } from "./api/client.js";
 export * from "./lib/model-catalog-sync.js";
 export * from "./lib/model-peak-windows.js";
 export * from "./lib/sidebar-contributions.js";
-export * from "./lib/default-agent.js";
 export * from "./lib/link-segments.js";
 export * from "./lib/reader-find.js";
 export * from "./lib/a2ui-drafts";

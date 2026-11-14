@@ -12,7 +12,7 @@ import { useAiBridge } from "./ai-bridge";
 import { AiCreatePanel, type AiCreatePanelProps } from "./ai-create-panel";
 
 import { composeAiPrompt } from "./ai-create-prompt";
-import { pickDefaultAgent } from "@prismshadow/penguin-web/internal";
+import { pickDefaultAgent } from "./default-agent";
 
 export interface AiCreateModalProps extends Omit<
   AiCreatePanelProps,
