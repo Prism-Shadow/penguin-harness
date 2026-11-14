@@ -47,7 +47,7 @@ import { S } from "@prismshadow/penguin-web/internal";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import { useProject } from "@prismshadow/penguin-web/internal";
 import { ModelCatalogSelect } from "@penguinharness/plugin-models/web";
-import { WorkspaceSelect } from "@prismshadow/penguin-web/internal";
+import { WorkspaceSelect } from "@penguinharness/plugin-projects/web";
 import { sameModelRef } from "@penguinharness/plugin-models/web";
 import { itemModelRef } from "./schedule-upsert";
 
