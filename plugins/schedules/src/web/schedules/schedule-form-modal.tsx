@@ -46,9 +46,9 @@ import * as api from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import { useProject } from "@prismshadow/penguin-web/internal";
-import { ModelCatalogSelect } from "@prismshadow/penguin-web/internal";
+import { ModelCatalogSelect } from "@penguinharness/plugin-models/web";
 import { WorkspaceSelect } from "@prismshadow/penguin-web/internal";
-import { sameModelRef } from "@prismshadow/penguin-web/internal";
+import { sameModelRef } from "@penguinharness/plugin-models/web";
 import { itemModelRef } from "./schedule-upsert";
 
 /** ISO → datetime-local input value (local timezone, minute precision); returns "" when missing/invalid. */
