@@ -1340,6 +1340,9 @@ importers:
       '@penguinharness/plugin-plugins':
         specifier: workspace:*
         version: link:../plugins
+      '@penguinharness/plugin-projects':
+        specifier: workspace:*
+        version: link:../projects
       '@penguinharness/plugin-schedules':
         specifier: workspace:*
         version: link:../schedules
@@ -8773,6 +8776,7 @@ snapshots:
     dependencies:
       '@penguinharness/plugin-models': file:plugins/models(@types/react@19.2.17)
       '@penguinharness/plugin-plugins': file:plugins/plugins(@types/react@19.2.17)
+      '@penguinharness/plugin-projects': file:plugins/projects(@types/react@19.2.17)
       '@penguinharness/plugin-schedules': file:plugins/schedules(@types/react@19.2.17)
       '@penguinharness/plugin-workbenches': file:plugins/workbenches(@types/react@19.2.17)
       '@prismshadow/penguin-core': file:packages/core(ws@8.21.0)
@@ -8805,6 +8809,7 @@ snapshots:
     dependencies:
       '@penguinharness/plugin-models': file:plugins/models(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
       '@penguinharness/plugin-plugins': file:plugins/plugins(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
+      '@penguinharness/plugin-projects': file:plugins/projects(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
       '@penguinharness/plugin-schedules': file:plugins/schedules(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
       '@penguinharness/plugin-workbenches': file:plugins/workbenches(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
@@ -8837,6 +8842,7 @@ snapshots:
     dependencies:
       '@penguinharness/plugin-models': file:plugins/models(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
       '@penguinharness/plugin-plugins': file:plugins/plugins(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
+      '@penguinharness/plugin-projects': file:plugins/projects(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
       '@penguinharness/plugin-schedules': file:plugins/schedules(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
       '@penguinharness/plugin-workbenches': file:plugins/workbenches(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
@@ -8869,6 +8875,7 @@ snapshots:
     dependencies:
       '@penguinharness/plugin-models': file:plugins/models(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@penguinharness/plugin-plugins': file:plugins/plugins(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-projects': file:plugins/projects(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@penguinharness/plugin-schedules': file:plugins/schedules(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@penguinharness/plugin-workbenches': file:plugins/workbenches(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
@@ -8901,6 +8908,7 @@ snapshots:
     dependencies:
       '@penguinharness/plugin-models': file:plugins/models(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
       '@penguinharness/plugin-plugins': file:plugins/plugins(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
+      '@penguinharness/plugin-projects': file:plugins/projects(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
       '@penguinharness/plugin-schedules': file:plugins/schedules(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
       '@penguinharness/plugin-workbenches': file:plugins/workbenches(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
@@ -8933,6 +8941,7 @@ snapshots:
     dependencies:
       '@penguinharness/plugin-models': file:plugins/models(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
       '@penguinharness/plugin-plugins': file:plugins/plugins(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
+      '@penguinharness/plugin-projects': file:plugins/projects(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
       '@penguinharness/plugin-schedules': file:plugins/schedules(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
       '@penguinharness/plugin-workbenches': file:plugins/workbenches(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
@@ -8965,6 +8974,7 @@ snapshots:
     dependencies:
       '@penguinharness/plugin-models': file:plugins/models(@types/react@19.2.17)(ws@8.21.0)
       '@penguinharness/plugin-plugins': file:plugins/plugins(@types/react@19.2.17)(ws@8.21.0)
+      '@penguinharness/plugin-projects': file:plugins/projects(@types/react@19.2.17)(ws@8.21.0)
       '@penguinharness/plugin-schedules': file:plugins/schedules(@types/react@19.2.17)(ws@8.21.0)
       '@penguinharness/plugin-workbenches': file:plugins/workbenches(@types/react@19.2.17)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(ws@8.21.0)
@@ -8997,6 +9007,7 @@ snapshots:
     dependencies:
       '@penguinharness/plugin-models': file:plugins/models(supports-color@10.2.2)(ws@8.21.0)
       '@penguinharness/plugin-plugins': file:plugins/plugins(supports-color@10.2.2)(ws@8.21.0)
+      '@penguinharness/plugin-projects': file:plugins/projects(supports-color@10.2.2)(ws@8.21.0)
       '@penguinharness/plugin-schedules': file:plugins/schedules(supports-color@10.2.2)(ws@8.21.0)
       '@penguinharness/plugin-workbenches': file:plugins/workbenches(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
@@ -9029,6 +9040,7 @@ snapshots:
     dependencies:
       '@penguinharness/plugin-models': file:plugins/models(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@penguinharness/plugin-plugins': file:plugins/plugins(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-projects': file:plugins/projects(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@penguinharness/plugin-schedules': file:plugins/schedules(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@penguinharness/plugin-workbenches': file:plugins/workbenches(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
@@ -9061,6 +9073,7 @@ snapshots:
     dependencies:
       '@penguinharness/plugin-models': file:plugins/models(ws@8.21.0)
       '@penguinharness/plugin-plugins': file:plugins/plugins(ws@8.21.0)
+      '@penguinharness/plugin-projects': file:plugins/projects(ws@8.21.0)
       '@penguinharness/plugin-schedules': file:plugins/schedules(ws@8.21.0)
       '@penguinharness/plugin-workbenches': file:plugins/workbenches(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(ws@8.21.0)
