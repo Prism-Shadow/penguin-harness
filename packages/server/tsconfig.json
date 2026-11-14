@@ -2,6 +2,9 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "paths": {
+      "@prismshadow/penguin-core/cli": [
+        "../../packages/core/src/plugin/cli-commands.ts"
+      ],
       "@prismshadow/penguin-server/model-catalog": [
         "./src/model-catalog/index.ts"
       ],

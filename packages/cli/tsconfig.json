@@ -3,6 +3,9 @@
   "compilerOptions": {
     "rootDir": ".",
     "paths": {
+      "@prismshadow/penguin-core/cli": [
+        "../../packages/core/src/plugin/cli-commands.ts"
+      ],
       "@penguinharness/plugin-plugins/server": [
         "../../plugins/plugins/src/server/index.ts"
       ],

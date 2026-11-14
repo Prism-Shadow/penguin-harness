@@ -21,14 +21,14 @@ import { Command, CommanderError } from "commander";
 import { Hono } from "hono";
 import { Bind, Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx, Slot } from "@prismshadow/penguin-core/kernel";
-import { cliCommandKeyFault } from "@prismshadow/penguin-core/plugin";
+import { cliCommandKeyFault } from "@prismshadow/penguin-core/cli";
 import type {
   CliCommandCode,
   CliCommandContext,
   CliCommandData,
   CliCommandProgram,
   CliCommandSummary,
-} from "@prismshadow/penguin-core/plugin";
+} from "@prismshadow/penguin-core/cli";
 import type {
   PluginCliCommandRunRequest,
   PluginCliCommandRunResponse,
