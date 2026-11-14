@@ -84,7 +84,7 @@ import {
 } from "../chat-defaults-event";
 import { newChatAgentId } from "../new-chat";
 import { onPluginConfigSaved } from "@prismshadow/penguin-web/internal";
-import { effectiveThinkingLevel } from "@prismshadow/penguin-web/internal";
+import { effectiveThinkingLevel } from "@penguinharness/plugin-models/web";
 import { WorkspaceSelect } from "@prismshadow/penguin-web/internal";
 import { FilesPanelToggle } from "../dock-toggles";
 import { sameModelRef } from "@penguinharness/plugin-models/web";
