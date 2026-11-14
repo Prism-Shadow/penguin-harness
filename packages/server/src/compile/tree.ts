@@ -37,20 +37,47 @@ export function declNameOf(cls: IfaceClass): string {
   return cls.name;
 }
 
-/**
- * A fresh def per node — the pipeline's hand to a pass, so the pass can hold its input
- * (or hand it back) without any later pass seeing a mutation of an earlier snapshot.
- * Manifests are copied shallowly: the records within (requires/provides/contributes)
- * are still shared with the earlier tree, so a pass that rewrites manifest DATA must
- * copy what it changes — passes that only add create() wrappers rely on this, and the
- * contract on ModulePass.rewrite says so out loud.
- */
+const snapshots = new WeakSet<ModuleDef>();
+
+/** Snapshot nested data once; immutable descendants are shared across later edits. */
 export function copyTree(def: ModuleDef): ModuleDef {
-  const copy = (d: ModuleDef): ModuleDef => ({
-    ...d,
-    manifest: { ...d.manifest },
-    ...(d.children === undefined ? {} : { children: d.children.map(copy) }),
-  });
+  const visiting = new Set<ModuleDef>();
+  const dataPath = new Set<object>();
+  const freeze = (value: unknown): void => {
+    if (value === null || typeof value !== "object") return;
+    if (dataPath.has(value)) throw new Error("module manifest contains cyclic data");
+    if (Object.isFrozen(value)) return;
+    dataPath.add(value);
+    Object.freeze(value);
+    for (const child of Object.values(value)) freeze(child);
+    dataPath.delete(value);
+  };
+  const copy = (d: ModuleDef): ModuleDef => {
+    if (snapshots.has(d)) return d;
+    if (visiting.has(d)) throw new Error("module containment cycle");
+    if (
+      d === null ||
+      typeof d !== "object" ||
+      d.manifest === null ||
+      typeof d.manifest !== "object"
+    ) {
+      throw new Error("rewrite returned no module definition");
+    }
+    visiting.add(d);
+    const manifest = structuredClone(d.manifest);
+    freeze(manifest);
+    const children = d.children?.map(copy);
+    if (children !== undefined) Object.freeze(children);
+    const result: ModuleDef = Object.freeze({
+      ...d,
+      manifest,
+      ...(d.migrations === undefined ? {} : { migrations: Object.freeze({ ...d.migrations }) }),
+      ...(children === undefined ? {} : { children }),
+    });
+    snapshots.add(result);
+    visiting.delete(d);
+    return result;
+  };
   return copy(def);
 }
 
@@ -84,9 +111,8 @@ export function providedIfaceNames(def: ModuleDef, table: TableLike): Set<string
  * Every entry a tree's manifests carry for one slot, in tree order — the pipeline's
  * registry. A slot's registrations are manifest DATA wherever they sit: a module that
  * ships a pass registers it in its own `contributes`, and the tree the host assembled
- * says what runs. Duplicates are the checker's to catch loudly (its `duplicate-id`
- * problem); the pipeline keeps the first of an id and skips the rest with the reason
- * kept, so one tree cannot run the same pass twice.
+ * says what runs. The pipeline rejects duplicate pass ids before resolving factories,
+ * so one tree cannot run the same pass twice.
  */
 export function contributionsOf<D extends { id: string }>(def: ModuleDef, slotKey: string): D[] {
   const out: D[] = [];

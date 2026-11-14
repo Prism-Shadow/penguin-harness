@@ -2,6 +2,7 @@
  * The interface comparison plugins and workbenches share: a package's OWN table against this
  * platform's, decided by the TypeScript compiler, both for what it requires and for what
  * it provides.
+ * - Given a named Date alias, rendering preserves the library type and tsc still detects a changed contract.
  */
 import { describe, expect, it } from "vitest";
 import ts from "typescript";
@@ -28,6 +29,18 @@ function compiledAgainst(edit: (table: IfaceTable) => void): IfaceTable {
 }
 
 describe("interface check", () => {
+  it("does not shadow the standard library when a named data type is called Date", () => {
+    const dated = compiledAgainst((t) => {
+      t.types["lib#Date"] = "Date";
+      t.ifaces[LOG]!.methods.line!.params = [{ data: { $ref: "lib#Date" } }];
+    });
+    expect(checkIfaces(ts, dated, dated, ifaceQuestions([manifest])).problems).toEqual([]);
+    const changed = structuredClone(dated);
+    changed.types["lib#Date"] = "string";
+    expect(
+      checkIfaces(ts, dated, changed, ifaceQuestions([manifest])).problems.join("\n"),
+    ).toContain("TS2322");
+  });
   it("asks about the interfaces a manifest names with a package part, in both directions", () => {
     expect(ifaceQuestions([manifest])).toEqual([
       { module: "Demo", alias: "log", direction: "requires", key: LOG },

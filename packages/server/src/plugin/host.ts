@@ -3,7 +3,13 @@
  * platform boots as children of its tree. Kept out of ./index.ts so the published
  * `@prismshadow/penguin-server/plugin` subpath stays types only.
  */
-import type { IfaceTable, ModuleDef, Resources } from "@prismshadow/penguin-core/kernel";
+import type {
+  IfaceTable,
+  ModuleDef,
+  ModulePass,
+  ModulePassFactory,
+  Resources,
+} from "@prismshadow/penguin-core/kernel";
 import type { UnsatisfiedPlugin } from "../api/types.js";
 
 /** One loaded plugin: the package, its modules and stand-ins with manifests paired to code, and its generated table. */
@@ -30,6 +36,7 @@ export interface LoadedPlugin {
   replaces: ModuleDef[];
   /** The interfaces and types the package's `ifaces.json` carries; absent for a module built in code. */
   ifaces?: IfaceTable;
+  passes?: Readonly<Record<string, ModulePassFactory>>;
 }
 
 /** One host per server process; load order is the order the modules join the tree. */
@@ -42,6 +49,13 @@ export class PluginHost {
 
   /** Registers a plugin; a module name already taken by an earlier plugin is refused. */
   use(plugin: LoadedPlugin): void {
+    const passIds = new Set(this.plugins.flatMap((entry) => Object.keys(entry.passes ?? {})));
+    for (const id of Object.keys(plugin.passes ?? {})) {
+      if (passIds.has(id))
+        throw new Error(
+          `plugin '${plugin.specifier}': pass '${id}' is already loaded by another plugin`,
+        );
+    }
     const taken = new Set(this.modules().map((m) => m.manifest.name));
     for (const m of plugin.modules) {
       if (taken.has(m.manifest.name)) {
@@ -77,10 +91,10 @@ export class PluginHost {
    * host's entry stands: it is what is provided, and what a hand-written manifest was
    * always looked up in.
    */
-  ifaces(host: IfaceTable): IfaceTable {
+  ifaces(host: IfaceTable, selection: readonly LoadedPlugin[] = this.plugins): IfaceTable {
     const ifaces = { ...host.ifaces };
     const types = { ...host.types };
-    for (const plugin of this.plugins) {
+    for (const plugin of selection) {
       if (plugin.ifaces === undefined) continue;
       for (const [key, decl] of Object.entries(plugin.ifaces.ifaces)) ifaces[key] ??= decl;
       for (const [key, decl] of Object.entries(plugin.ifaces.types)) types[key] ??= decl;
@@ -119,6 +133,31 @@ export class PluginHost {
 
   /** Nothing to release at process exit: modules dispose with the App that created them. */
   dispose(): void {}
+}
+
+/** One resolver per candidate selection; each resolution creates a fresh pass. */
+export function passResolver(
+  plugins: readonly LoadedPlugin[],
+): (id: string) => ModulePass | undefined {
+  const factories = new Map(
+    plugins.flatMap((plugin) =>
+      Object.entries(plugin.passes ?? {}).map(
+        ([id, factory]) => [id, { plugin, factory }] as const,
+      ),
+    ),
+  );
+  return (id) => {
+    const entry = factories.get(id);
+    if (entry === undefined) return undefined;
+    const { plugin, factory } = entry;
+    return {
+      ...factory(),
+      owner: {
+        plugin: plugin.specifier,
+        revision: `${plugin.file ?? plugin.specifier}@${plugin.stamp ?? "in-process"}`,
+      },
+    };
+  };
 }
 
 /**

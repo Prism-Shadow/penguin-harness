@@ -56,6 +56,14 @@ const appending = (
 });
 
 describe("the module-tree compile", () => {
+  it("rejects malformed scheduling data before a pass factory can run", async () => {
+    const resolve = vi.fn();
+    const input = tree(registering({ id: "bad", after: [null] as unknown as string[] }));
+    await expect(compileModuleTree(input, { ifaces, resolve })).rejects.toThrow(
+      "optional array of after ids",
+    );
+    expect(resolve).not.toHaveBeenCalled();
+  });
   it("runs passes in `after` order, whatever the registration order was", async () => {
     const compiled = await compileModuleTree(
       tree(registering({ id: "late", after: ["early"] }, { id: "early" })),
@@ -190,17 +198,16 @@ describe("the module-tree compile", () => {
     warn.mockRestore();
   });
 
-  it("a tree that registers the same id twice runs it once, and the checker rejects the tree", async () => {
+  it("rejects duplicate pass registrations before running either factory", async () => {
     const rewrite = vi.fn(appending("dup", manifest({ name: "grew-dup" })).rewrite);
-    // The pipeline keeps the first of an id — one pass, one rewrite — but the duplicate
-    // registration is still data the tree carries, and the final verify names it.
+    // Registration identity is a representation invariant, not an intermediate type mismatch.
     await expect(
       compileModuleTree(tree(registering({ id: "dup" }, { id: "dup", after: [] })), {
         ifaces,
         resolve: () => ({ id: "dup", rewrite }),
       }),
     ).rejects.toThrowError("contribution id 'dup' is already used by");
-    expect(rewrite).toHaveBeenCalledTimes(1);
+    expect(rewrite).not.toHaveBeenCalled();
   });
 
   it("a pass that breaks the tree fails the compile at the verify, first problem first", async () => {
@@ -253,6 +260,7 @@ it("the boot's own boot accepts what the compile accepted", async () => {
   });
   const booted = await bootModules(compiled.tree, {
     ifaces,
+    compare: compiled.compare,
     resources: { register: () => () => {}, claim: () => undefined },
   });
   expect(booted.has("grew-grows")).toBe(true);

@@ -100,6 +100,7 @@ export function checkTree(
   root: ManifestNode,
   table: TableLike,
   published: Published = {},
+  compare: typeof satisfies = satisfies,
 ): CheckResult {
   const problems: Problem[] = [];
   const located = locate(root);
@@ -140,6 +141,11 @@ export function checkTree(
           : [...m.visible, ...Object.keys(published)].filter(
               (name) => name !== mf.name && !m.ancestors.has(name),
             );
+      const exactProviders = candidates.filter(
+        (from) =>
+          requirable(from) && Object.values(provides[from] ?? {}).some((decl) => decl === required),
+      );
+      if (exactProviders.length === 1) continue;
       const matches: string[] = [];
       // Providers that DECLARE this very interface (the same table entry): when exactly
       // one does, it wins over the others that merely have the shape.
@@ -151,7 +157,7 @@ export function checkTree(
         if (offered === undefined) continue;
         let satisfied = false;
         for (const decl of Object.values(offered)) {
-          const gaps = satisfies(decl, required, table);
+          const gaps = decl === required ? [] : compare(decl, required, table);
           if (gaps.length === 0) {
             satisfied = true;
             if (decl === required) declared.push(from);

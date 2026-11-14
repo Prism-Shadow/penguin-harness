@@ -16,6 +16,7 @@
  * not said so is refused instead, with the same list (`refuse`), so they can be asked first.
  */
 import {
+  DecorationError,
   ModuleBootError,
   describeProblem,
   type ModuleDef,
@@ -23,12 +24,15 @@ import {
   type Problem,
 } from "@prismshadow/penguin-core/kernel";
 import type { UnsatisfiedPlugin } from "../api/types.js";
-import type { LoadedPlugin } from "./host.js";
+import { passResolver, type LoadedPlugin } from "./host.js";
+import { ModuleCompileError } from "../compile/diagnostics.js";
 
 /** What `boot` is given: the plugin modules and stand-ins left in. */
 export interface PluginSelection {
   modules: ModuleDef[];
   replacements: ReadonlyMap<string, ModuleDef>;
+  plugins: readonly LoadedPlugin[];
+  resolvePass: ReturnType<typeof passResolver>;
 }
 
 /** A boot refused because it would have to run without these plugins, or without part of them. */
@@ -123,6 +127,8 @@ export async function bootWithoutUnsatisfied(
     const kept = plugins.filter((p) => !left.has(p.specifier));
     try {
       const tree = await boot({
+        plugins: kept,
+        resolvePass: passResolver(kept),
         modules: kept.flatMap((p) => p.modules.map((m) => stripped(m, drop))),
         replacements: new Map(
           kept.flatMap((p) => p.replaces.map((m) => [m.manifest.name, stripped(m, drop)])),
@@ -130,17 +136,46 @@ export async function bootWithoutUnsatisfied(
       });
       return { tree, unsatisfied: listed(plugins, left, dropped) };
     } catch (err) {
+      if (err instanceof DecorationError) {
+        const owner = err.origin.plugin;
+        if (owner === undefined || !kept.some((p) => p.specifier === owner)) throw err;
+        note(left, owner, err.message);
+        if (mode === "refuse") throw new UnsatisfiedPluginsError(listed(plugins, left, dropped));
+        continue;
+      }
       if (!(err instanceof ModuleBootError)) throw err;
-      if (pluginsBehind(err.problems, kept) === null) throw err;
+      const editedBy = (problem: Problem): string[] =>
+        err instanceof ModuleCompileError
+          ? [
+              ...new Set(
+                (err.diagnostics.find((d) => d.problem === problem)?.origins ?? []).flatMap(
+                  (origin) =>
+                    origin.plugin !== undefined && kept.some((p) => p.specifier === origin.plugin)
+                      ? [origin.plugin]
+                      : [],
+                ),
+              ),
+            ]
+          : [];
+      const owners = (problem: Problem): Set<string> | null => {
+        const operators = editedBy(problem);
+        return operators.length > 0 ? new Set(operators) : pluginsBehind([problem], kept);
+      };
+      if (err.problems.length === 0 || err.problems.some((problem) => owners(problem) === null))
+        throw err;
       let progressed = false;
       for (const problem of err.problems) {
-        const behind = [...(pluginsBehind([problem], kept) ?? [])];
+        const behind = [...(owners(problem) ?? [])];
         const module =
           problem.path
             .split("/")
             .filter((s) => s !== "")
             .at(-1) ?? "";
-        if (CONTRIBUTION_KINDS.has(problem.kind) && "slotKey" in problem) {
+        if (
+          editedBy(problem).length === 0 &&
+          CONTRIBUTION_KINDS.has(problem.kind) &&
+          "slotKey" in problem
+        ) {
           const slots = drop.get(module) ?? new Set<string>();
           if (!slots.has(problem.slotKey)) {
             slots.add(problem.slotKey);

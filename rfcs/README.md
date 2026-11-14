@@ -48,4 +48,3 @@ Numbers and filenames carry over from the design repository unchanged. Two draft
 | [PRFC-0018-amsp.md](PRFC-0018-amsp.md) | AMSP and Agent API | landed |
 | [PRFC-0019-rsi-toolkits.md](PRFC-0019-rsi-toolkits.md) | RSI Toolkits | landed |
 | [PRFC-0020-agent-workbench.md](PRFC-0020-agent-workbench.md) | Agent Workbench: app naming, plugin distribution, and product support | landed |
-| [PRFC-0021-module-pass.md](PRFC-0021-module-pass.md) | Module Pass: the compile phase of the module tree | landed |

@@ -48,4 +48,3 @@
 | [PRFC-0018-amsp.md](PRFC-0018-amsp.md) | AMSP 与 Agent API | 已落地 |
 | [PRFC-0019-rsi-toolkits.md](PRFC-0019-rsi-toolkits.md) | RSI 工具包 | 已落地 |
 | [PRFC-0020-agent-workbench.md](PRFC-0020-agent-workbench.md) | Agent Workbench：应用命名、插件分发与产品支持 | 已落地 |
-| [PRFC-0021-module-pass.md](PRFC-0021-module-pass.md) | Module Pass：模块树的 compile 阶段 | 已落地 |

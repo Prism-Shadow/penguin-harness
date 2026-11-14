@@ -515,13 +515,18 @@ async function interfaceMisfits(
 /** The package's default export as a Plugin, or null when it is not one. */
 function asPlugin(module: unknown): Plugin | null {
   const def = (module as { default?: unknown }).default;
-  const d = def as { modules?: unknown; replaces?: unknown } | null;
+  const d = def as { modules?: unknown; replaces?: unknown; passes?: unknown } | null;
   const classes = (v: unknown) => Array.isArray(v) && v.every((m) => typeof m === "function");
   if (d === null || typeof d !== "object") return null;
-  if (d.modules === undefined && d.replaces === undefined) return null;
+  if (d.modules === undefined && d.replaces === undefined && d.passes === undefined) return null;
   if (
     (d.modules !== undefined && !classes(d.modules)) ||
-    (d.replaces !== undefined && !classes(d.replaces))
+    (d.replaces !== undefined && !classes(d.replaces)) ||
+    (d.passes !== undefined &&
+      (d.passes === null ||
+        typeof d.passes !== "object" ||
+        Array.isArray(d.passes) ||
+        Object.values(d.passes).some((factory) => typeof factory !== "function")))
   )
     return null;
   return def as Plugin;
@@ -599,7 +604,7 @@ export async function loadPlugins(
       if (plugin === null) {
         failed.set(
           specifier,
-          "the default export is not a Plugin ({ modules?: [<@Component or @Module class>, …], replaces?: [<class>, …] })",
+          "the default export is not a Plugin ({ modules?: [<class>, ...], replaces?: [<class>, ...], passes?: { <id>: <factory> } })",
         );
         continue;
       }
@@ -631,7 +636,15 @@ export async function loadPlugins(
         pushedAssets,
       );
       if (misfits.length > 0) throw new Error(misfits.join("\n"));
-      loaded.push({ specifier, file, stamp, modules, replaces, ifaces: read.ifaces });
+      loaded.push({
+        specifier,
+        file,
+        stamp,
+        modules,
+        replaces,
+        ifaces: read.ifaces,
+        ...(plugin.passes === undefined ? {} : { passes: plugin.passes }),
+      });
     } catch (err) {
       failed.set(specifier, err instanceof Error ? err.message : String(err));
     }

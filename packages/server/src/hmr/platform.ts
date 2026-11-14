@@ -490,17 +490,18 @@ async function createInner(
       // full one — CompileModule declares the pass registration surface, and any pass a
       // tree registers reaches the compile as data. A tree that registers nothing runs a
       // compile of the verify alone; the boot below is the same boot either way.
-      const ifaces = plugins.ifaces(ifaceTable as unknown as IfaceTable);
+      const ifaces = plugins.ifaces(ifaceTable as unknown as IfaceTable, kept.plugins);
       const compiled = await compileModuleTree(
         bareTree([...kept.modules, compileModuleDef()], kept.replacements),
-        { ifaces, debug: compileDebug },
+        { ifaces, resolve: kept.resolvePass, debug: compileDebug },
       );
       if (compileDebug)
         console.log(
-          `[compile] bare: ${describeCompile(compiled.trace)}\n${describeTree(compiled.tree)}`,
+          `[compile] bare: ${describeCompile(compiled.trace)}\n${JSON.stringify(compiled.profile)}\n${describeTree(compiled.tree)}`,
         );
       return bootModules(compiled.tree, {
         ifaces,
+        compare: compiled.compare,
         resources: ctx.resources,
         parked: parkedModules(context),
       });
@@ -513,13 +514,9 @@ async function createInner(
     ({ tree, unsatisfied } = await bootKept(async (kept) => {
       // THE COMPILE (compile/pipeline.ts): the assembled tree is data. A pass's
       // registration rides in it — CompileModule's `passes` slot, checked with the
-      // tree — and the pipeline collects, orders, isolates and traces what the tree
-      // registered; the result is verified with the kernel's own checkTree, and the
-      // kernel boots it with no hook and no seam of its own. The pass's CODE half the
-      // host resolves by id (the pipeline's `resolve` option): a plugin host answers
-      // this from what plugin bundles export, so the seam a future host fills is this
-      // call's options — nothing here hardcodes a pass.
-      const ifaces = plugins.ifaces(ifaceTable as unknown as IfaceTable);
+      // tree. The pipeline orders and isolates the registered passes, then verifies
+      // the result. Retained plugins supply fresh factories for each compile attempt.
+      const ifaces = plugins.ifaces(ifaceTable as unknown as IfaceTable, kept.plugins);
       const compiled = await compileModuleTree(
         platformDef(
           caps,
@@ -531,12 +528,15 @@ async function createInner(
           // SessionManager is built over it, running Tasks and all.
           takenOver ? new Map([[AgentStateStore, handed.state]]) : new Map(),
         ),
-        { ifaces, debug: compileDebug },
+        { ifaces, resolve: kept.resolvePass, debug: compileDebug },
       );
       if (compileDebug)
-        console.log(`[compile] ${describeCompile(compiled.trace)}\n${describeTree(compiled.tree)}`);
+        console.log(
+          `[compile] ${describeCompile(compiled.trace)}\n${JSON.stringify(compiled.profile)}\n${describeTree(compiled.tree)}`,
+        );
       return bootModules(compiled.tree, {
         ifaces,
+        compare: compiled.compare,
         resources: ctx.resources,
         parked: parkedModules(context),
       });

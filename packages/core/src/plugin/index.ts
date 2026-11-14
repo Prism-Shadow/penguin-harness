@@ -38,6 +38,7 @@
  * at signature level, before the module is created.
  */
 import type { ModuleClass } from "../kernel/decorators.js";
+import type { ModulePassFactory } from "../kernel/pass.js";
 
 export type { ClassCtx } from "../kernel/module.js";
 export type { ComponentMeta, ModuleClass, ModuleMeta } from "../kernel/decorators.js";
@@ -72,4 +73,6 @@ export type * from "./languages.js";
 export interface Plugin {
   modules?: readonly ModuleClass[];
   replaces?: readonly ModuleClass[];
+  /** Factories for ids registered by manifests in CompileModule.passes. */
+  passes?: Readonly<Record<string, ModulePassFactory>>;
 }

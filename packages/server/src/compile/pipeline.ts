@@ -1,208 +1,234 @@
-/**
- * THE MODULE-TREE COMPILE — the assembly's own compile phase, between "the tree is
- * assembled" and "the kernel boots it":
- *
- *   registrations = the tree's own manifests: every `CompileModule.passes` entry, data
- *                   (PassDecl — an id, the ids it runs after). WHAT runs, and in what
- *                   order, is declared with the assembly and checked as data; the pass's
- *                   code the host resolves by id (a contribution's code half cannot
- *                   travel with it: bind hands it over inside create, which is after).
- *   order         = the registrations' `after` deps, topologically, registration order
- *                   breaking ties; a cycle is a loud error naming the path.
- *   for each pass:
- *     if (!satisfyDeps(pass, m))       skip the pass, reason kept (debug);
- *     m = rewrite(ctx, pass, m_prev);  the pipeline hands a fresh copy; the pass
- *                                      returns a NEW tree and never mutates its input;
- *     if (fatal)                       m = m_prev, error kept — one pass cannot
- *                                      take the boot down;
- *   verify(m_final)                    the kernel's own checkTree, before any create:
- *                                      the problems as a list, its first line the first;
- *   debug()                           the trace — collected only when the compile runs
- *                                      with `debug`, so the quiet path times nothing.
- *
- * What this buys over a runtime hook: instrumentation is DATA applied in a declared
- * order, with declared dependencies checked against the current tree, per-pass failure
- * isolation, one trace to read, and a whole-tree type check before anything runs — the
- * kernel itself stays untouched, with no seam to keep honest.
- */
-import type { IfaceClass, ModuleDef, Problem, TableLike } from "@prismshadow/penguin-core/kernel";
-import { checkTree, describeProblem, ModuleBootError } from "@prismshadow/penguin-core/kernel";
+/** Registered, immutable rewrites followed by final-target decoration and verification. */
+import type {
+  Decoration,
+  ModuleDef,
+  ModuleEdit,
+  ModulePass,
+  OperatorOrigin,
+  RewriteCtx,
+  TableLike,
+  satisfies,
+} from "@prismshadow/penguin-core/kernel";
+import {
+  checkTree,
+  materializeDecorations,
+  ModuleBootError,
+  tableOf,
+} from "@prismshadow/penguin-core/kernel";
 import {
   contributionsOf,
   copyTree,
   declNameOf,
   manifestTreeOf,
   providedIfaceNames,
+  walkDefs,
 } from "./tree.js";
 import { PASSES_SLOT, type PassDecl } from "./module.js";
+import { diagnosticFor, ModuleCompileError } from "./diagnostics.js";
+import { finalCompatibility } from "./verify.js";
 
-/** What a pass may read besides the tree: the interface table (the tree's type layer)
- * and one bag the passes of a compile share, keyed by name. */
-export interface RewriteCtx {
-  ifaces: TableLike;
-  shared: Map<string, unknown>;
-}
-
-/**
- * One module's compile-time half: an id (what the registration names), declared
- * dependencies, a pure rewrite. Dependencies are the interface CLASSES the pass works
- * on — the same handles a manifest's fields are typed by — not their names: the class is
- * the type-checked reference, and the pipeline maps it to its declared name when it
- * asks the tree (compile/tree.ts declNameOf, where that edge is honest about what it
- * stands on).
- */
-export interface ModulePass {
-  id: string;
-  /** Interfaces the CURRENT tree must provide somewhere, or the pass is skipped. */
-  requires?: readonly IfaceClass[];
-  /** m[n] = rewrite(ctx, this, m[n-1]): returns a new tree; mutating the input is a bug. */
-  rewrite(tree: ModuleDef, ctx: RewriteCtx): ModuleDef | Promise<ModuleDef>;
-}
-
+export type { ModulePass, RewriteCtx } from "@prismshadow/penguin-core/kernel";
 export type PassState = "applied" | "skipped" | "failed";
-
-/** One pass's outcome. Collected only in a debug compile; a quiet compile has none. */
 export interface PassTrace {
   id: string;
   state: PassState;
   ms: number;
   why?: string;
 }
-
 export interface CompileResult {
   tree: ModuleDef;
-  /** debug(): one line per pass, in order — what a boot actually compiled. */
   trace: PassTrace[];
+  edits: readonly ModuleEdit[];
+  compare: typeof satisfies;
+  profile?: { modules: number; interfaces: number; verificationMs: number; decorationMs: number };
 }
-
 export interface CompileOpts {
   ifaces: TableLike;
-  /**
-   * The host's answer to a registration's id: the pass's code. A registered id with no
-   * resolution is a wiring gap (warned) — the registration stands, the pass does not
-   * run; a plugin host answers this from what plugin bundles export.
-   */
   resolve?: (id: string) => ModulePass | undefined;
-  /** Collect the trace (timings, skip and failure reasons). Without it: silent, untimed. */
   debug?: boolean;
 }
 
-/**
- * Runs the registered passes over the assembled tree and the final verify. Nothing here
- * executes module code; a pass that throws, or returns no tree, is set aside with the
- * reason kept. The final check is the same checkTree the kernel's boot runs — a tree the
- * compile accepts is a tree the boot accepts; the problems stand as the list, its first
- * line the first problem.
- */
 export async function compileModuleTree(
   root: ModuleDef,
   opts: CompileOpts,
 ): Promise<CompileResult> {
   const debug = opts.debug === true;
   const trace: PassTrace[] = [];
-  /** The trace exists only in a debug compile — this is the whole gate. */
   const note = (entry: PassTrace): void => {
     if (debug) trace.push(entry);
   };
-  // The registry: the tree's own registrations, first-of-an-id kept (the checker owns
-  // reporting duplicates loudly; the pipeline never runs one pass twice either).
+  let tree = copyTree(root);
   const seen = new Set<string>();
   const runs: PassDecl[] = [];
-  for (const reg of contributionsOf<PassDecl>(root, PASSES_SLOT)) {
-    if (seen.has(reg.id)) {
-      note({
-        id: reg.id,
-        state: "skipped",
-        ms: 0,
-        why: "registered more than once; the first runs",
-      });
-      continue;
+  for (const reg of contributionsOf<PassDecl>(tree, PASSES_SLOT)) {
+    if (
+      typeof reg.id !== "string" ||
+      reg.id.length === 0 ||
+      (reg.after !== undefined &&
+        (!Array.isArray(reg.after) || reg.after.some((id) => typeof id !== "string")))
+    ) {
+      throw new ModuleBootError(
+        "pass registration requires a nonempty id and an optional array of after ids",
+      );
     }
+    if (seen.has(reg.id))
+      throw new ModuleBootError(
+        `contribution id '${reg.id}' is already used by another pass registration`,
+      );
     seen.add(reg.id);
     runs.push(reg);
   }
-  const ctx: RewriteCtx = { ifaces: opts.ifaces, shared: new Map() };
-  let m = root;
-  // The tree's provisions, read through a memo: computed for the first pass that asks,
-  // and again only after a pass actually rewrote the tree (a skipped or failed pass
-  // changes nothing, so the answer stands). This is the cheap half of "N passes, how
-  // many walks"; the expensive half — one shared walk for many passes — is a pass-shape
-  // question left open in the design.
-  let provided: Set<string> | null = null;
-  const provides = (): Set<string> => (provided ??= providedIfaceNames(m, opts.ifaces));
+  const edits: ModuleEdit[] = [];
+  const rules: Decoration[] = [];
+  let shared = new Map<string, unknown>();
   for (const reg of orderPasses(runs)) {
-    const pass = opts.resolve?.(reg.id);
-    if (pass === undefined) {
-      console.warn(`[compile] pass '${reg.id}' is registered but nothing resolves it`);
-      note({ id: reg.id, state: "skipped", ms: 0, why: "registered, no resolver for this id" });
-      continue;
-    }
-    const missing = (pass.requires ?? []).map(declNameOf).filter((name) => !provides().has(name));
-    if (missing.length > 0) {
-      note({
-        id: reg.id,
-        state: "skipped",
-        ms: 0,
-        why: `requires [${missing.join(", ")}], not provided by this tree`,
-      });
-      continue;
-    }
     const start = debug ? performance.now() : 0;
     try {
-      const next = await pass.rewrite(copyTree(m), ctx);
-      if (next === null || typeof next !== "object" || typeof next.manifest !== "object") {
+      const pass = opts.resolve?.(reg.id);
+      if (pass === undefined) {
+        console.warn(`[compile] pass '${reg.id}' is registered but nothing resolves it`);
+        note({ id: reg.id, state: "skipped", ms: 0, why: "registered, no resolver for this id" });
+        continue;
+      }
+      if (pass.id !== reg.id) throw new Error(`factory for '${reg.id}' returned pass '${pass.id}'`);
+      const provided =
+        (pass.requires?.length ?? 0) > 0
+          ? providedIfaceNames(tree, opts.ifaces)
+          : new Set<string>();
+      const missing = (pass.requires ?? []).map(declNameOf).filter((name) => !provided.has(name));
+      if (missing.length > 0) {
+        note({
+          id: reg.id,
+          state: "skipped",
+          ms: 0,
+          why: `requires [${missing.join(", ")}], not provided by this tree`,
+        });
+        continue;
+      }
+      let index = 0;
+      let origin: OperatorOrigin = {
+        pass: pass.id,
+        operator: "rewrite",
+        index,
+        ...pass.owner,
+        ...(pass.source ? { source: pass.source } : {}),
+      };
+      const changed: ModuleEdit[] = [];
+      const deferred: Decoration[] = [];
+      const local = new Map(shared);
+      const ctx: RewriteCtx = {
+        ifaces: opts.ifaces,
+        shared: local,
+        operation(name, run) {
+          const parent = origin;
+          origin = { ...origin, operator: name, index: ++index };
+          try {
+            return run();
+          } finally {
+            origin = parent;
+          }
+        },
+        changed(edit) {
+          changed.push({ ...edit, origin });
+        },
+        defer(rule) {
+          deferred.push({ ...rule, origin });
+        },
+      };
+      const result = await pass.rewrite(tree, ctx);
+      if (result === null || typeof result !== "object" || typeof result.manifest !== "object") {
         throw new Error(`pass '${reg.id}' returned no tree`);
       }
-      m = next;
-      provided = null;
+      const next = copyTree(result);
+      if (result !== tree) {
+        // Escape-hatch rewrites cannot provide field-level lineage; retain changed owners.
+        const before = new Map([...walkDefs(tree)].map((node) => [node.manifest.name, node]));
+        const recorded = new Set(changed.map((edit) => edit.module));
+        for (const node of walkDefs(next)) {
+          const old = before.get(node.manifest.name);
+          if (
+            !recorded.has(node.manifest.name) &&
+            (old === undefined ||
+              old.create !== node.create ||
+              JSON.stringify(old.manifest) !== JSON.stringify(node.manifest))
+          ) {
+            changed.push({ module: node.manifest.name, origin });
+          }
+          before.delete(node.manifest.name);
+        }
+        for (const name of before.keys()) {
+          if (!recorded.has(name)) changed.push({ module: name, removed: true, origin });
+        }
+      }
+      tree = next;
+      shared = local;
+      edits.push(...changed);
+      rules.push(...deferred);
       note({ id: reg.id, state: "applied", ms: debug ? performance.now() - start : 0 });
     } catch (err) {
-      // A failed pass never takes the boot down: the tree it was handed is the tree the
-      // boot gets. The warn is not debug-gated — a pass that throws is a bug in a
-      // module, worth a line even where nobody asked for the trace.
       const why = err instanceof Error ? err.message : String(err);
       console.warn(`[compile] pass '${reg.id}' failed and was set aside: ${why}`);
       note({ id: reg.id, state: "failed", ms: debug ? performance.now() - start : 0, why });
     }
   }
-  const { problems } = checkTree(manifestTreeOf(m), opts.ifaces);
-  if (problems.length > 0) {
-    const report = problems.map((p: Problem) => `  - ${describeProblem(p)}`).join("\n");
-    throw new ModuleBootError(`module tree rejected at compile:\n${report}`, problems);
-  }
-  return { tree: m, trace };
+  const verificationStart = debug ? performance.now() : 0;
+  const compare = await finalCompatibility(tree, opts.ifaces);
+  const { problems } = checkTree(manifestTreeOf(tree), opts.ifaces, {}, compare);
+  if (problems.length > 0)
+    throw new ModuleCompileError(problems.map((problem) => diagnosticFor(problem, edits)));
+  const verificationMs = debug ? performance.now() - verificationStart : 0;
+  const decorationStart = debug ? performance.now() : 0;
+  const compiled = copyTree(materializeDecorations(tree, rules));
+  const decorationMs = debug ? performance.now() - decorationStart : 0;
+  return {
+    tree: compiled,
+    trace,
+    edits,
+    compare,
+    ...(debug
+      ? {
+          profile: {
+            modules: [...walkDefs(tree)].length,
+            interfaces: Object.keys(tableOf(opts.ifaces).ifaces).length,
+            verificationMs,
+            decorationMs,
+          },
+        }
+      : {}),
+  };
 }
 
-/** The registrations' `after` deps, topologically — registration order breaking ties, a
- * cycle a loud error naming the path. Membership is judged by Set (O(1)); an array's
- * indexOf would make the check O(n) and the whole sort O(n²) in passes. The path array
- * survives only to WRITE the cycle, and its scan runs once, on the way out. */
+/** Kahn ordering with lexical ids for simultaneously ready passes. */
 function orderPasses(registered: readonly PassDecl[]): PassDecl[] {
-  const byId = new Map(registered.map((reg) => [reg.id, reg] as const));
+  const byId = new Map(registered.map((reg) => [reg.id, reg]));
+  const pending = new Map(
+    registered.map((reg) => [reg.id, new Set((reg.after ?? []).filter((id) => byId.has(id)))]),
+  );
+  const ready = registered
+    .filter((reg) => pending.get(reg.id)!.size === 0)
+    .map((reg) => reg.id)
+    .sort();
   const out: PassDecl[] = [];
-  const done = new Set<string>();
-  const visiting = new Set<string>();
-  const path: string[] = [];
-  const visit = (reg: PassDecl): void => {
-    if (done.has(reg.id)) return;
-    if (visiting.has(reg.id)) {
-      throw new ModuleBootError(
-        `pass dependencies form a cycle: ${[...path.slice(path.indexOf(reg.id)), reg.id].join(" -> ")}`,
-      );
+  while (ready.length > 0) {
+    const id = ready.shift()!;
+    out.push(byId.get(id)!);
+    pending.delete(id);
+    for (const [next, deps] of pending) {
+      if (deps.delete(id) && deps.size === 0) ready.push(next);
     }
-    visiting.add(reg.id);
-    path.push(reg.id);
-    // An `after` naming an id nobody registered is vacuous — "behind it, if present".
-    for (const dep of reg.after ?? []) {
-      const next = byId.get(dep);
-      if (next !== undefined) visit(next);
+    ready.sort();
+  }
+  if (pending.size > 0) {
+    // Follow remaining predecessor edges until an actual cycle repeats.
+    const path: string[] = [];
+    let id = [...pending.keys()].sort()[0]!;
+    while (!path.includes(id)) {
+      path.push(id);
+      id = [...pending.get(id)!].sort()[0]!;
     }
-    path.pop();
-    visiting.delete(reg.id);
-    done.add(reg.id);
-    out.push(reg);
-  };
-  for (const reg of registered) visit(reg);
+    const cycle = [...path.slice(path.indexOf(id)), id].reverse();
+    throw new ModuleBootError(`pass dependencies form a cycle: ${cycle.join(" -> ")}`);
+  }
   return out;
 }
 
