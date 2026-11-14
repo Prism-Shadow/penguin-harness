@@ -24,6 +24,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { login, provisionAndLogin } from "./auth.mjs";
+import { setAccountPrefs } from "./account-prefs.mjs";
 
 const BASE = process.env.BASE_URL;
 const MOCK = process.env.MOCK_URL;
@@ -91,14 +92,10 @@ test.beforeAll(async () => {
 /** Opens the conversation list with the theme and grouping stored, the clock 23 hours ahead. */
 async function openList(page, { theme, grouping, drawer = false }) {
   await login(page.request, U, P);
-  await page.addInitScript(
-    ([t, g]) => {
-      localStorage.setItem("penguin.lang", "zh");
-      localStorage.setItem("penguin.themeId", t);
-      localStorage.setItem("penguin.sidebarGroupMode", g);
-    },
-    [theme, grouping],
-  );
+  // The language and the theme are the account's (account-prefs.mjs); the grouping is this
+  // browser's own.
+  await setAccountPrefs(page.request, { lang: "zh", themeId: theme });
+  await page.addInitScript((g) => localStorage.setItem("penguin.sidebarGroupMode", g), grouping);
   await page.clock.setFixedTime(new Date(Date.now() + 23 * 3600_000));
   await page.goto(`${BASE}/chat`);
   if (drawer) await page.getByRole("button", { name: /^Session/ }).click();

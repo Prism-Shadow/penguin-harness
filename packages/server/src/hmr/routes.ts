@@ -17,6 +17,7 @@ import { authMiddleware } from "../auth/middleware.js";
 import type { AppEnv } from "../auth/middleware.js";
 import type { Auth } from "../mechanisms/identity.js";
 import { HttpError } from "../http/errors.js";
+import { publicOriginOf } from "../http/public-origin.js";
 import { Channels, Config, Hmr, HmrControl } from "./capabilities.js";
 import { acceptsLeavingOut, answerPush, openPushSlip } from "./push-plugins.js";
 import type { Resources } from "@prismshadow/penguin-core/kernel";
@@ -52,11 +53,9 @@ export function hmrRoutes(deps: HmrRouteDeps): Hono<AppEnv> {
       // TLS terminated by this process) counts unless the deployment explicitly says a
       // reverse proxy is in front and strips/overwrites the header itself
       // (PENGUIN_TRUST_PROXY=1 / config.trustProxy) — the same opt-in a real proxy setup
-      // requires anyway.
-      const proto = deps.config.trustProxy
-        ? (c.req.header("x-forwarded-proto") ?? new URL(c.req.url).protocol.replace(":", ""))
-        : new URL(c.req.url).protocol.replace(":", "");
-      if (proto !== "https") {
+      // requires anyway. Even then only one value counts: a list (`https, http`, an appending
+      // proxy's) or anything but `http`/`https` leaves the request's own scheme.
+      if (new URL(publicOriginOf(c, deps.config.trustProxy)).protocol !== "https:") {
         throw new HttpError(
           403,
           "hmr_disabled",

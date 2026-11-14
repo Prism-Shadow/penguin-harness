@@ -37,8 +37,8 @@
  * reaches the menu through the kebab, which is drawn on every card rather than revealed on
  * hover for exactly this reason.
  */
-import { useEffect } from "react";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
+
 import type { OrgEmployeeItem, OrgEmployeeState } from "@prismshadow/penguin-server/api";
 import {
   Dot,
@@ -48,12 +48,13 @@ import {
   ICON_SIZE,
   Legend,
   useRowContextMenu,
+  type ToneName,
 } from "@prismshadow/penguin-ui";
-import type { ToneName } from "@prismshadow/penguin-ui";
+
 import { S } from "../../lib/strings";
 import { formatMoney, formatPercent } from "../../lib/format";
-import { toneDot, toneInk } from "../../lib/tone";
-import type { Tone } from "../../lib/tone";
+import { toneDot, toneInk, type Tone } from "../../lib/tone";
+
 import type { Currency } from "../../state/theme";
 import { EmployeeAvatar } from "./employee-avatar";
 import { budgetTone } from "./finance-tree";
@@ -184,12 +185,7 @@ export function ChartCard({
         }`}
       >
         <span className="flex items-center gap-2 pr-6">
-          <EmployeeAvatar
-            id={employee.agentId}
-            name={employee.name}
-            size={28}
-            className="shrink-0 rounded-md"
-          />
+          <EmployeeAvatar id={employee.agentId} size={28} className="shrink-0 rounded-md" />
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm leading-4 font-semibold text-fg">
               {employee.name}

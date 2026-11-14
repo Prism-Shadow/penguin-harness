@@ -9,18 +9,6 @@
  */
 import { S } from "../../lib/strings";
 
-/** The sites, in display order; their names live in `S.builtinBrowser.startPage.sites`. */
-export const START_PAGE_SITES = [
-  { id: "google", url: "https://www.google.com/", monogram: "G" },
-  { id: "bing", url: "https://www.bing.com/", monogram: "b" },
-  { id: "baidu", url: "https://www.baidu.com/", monogram: "du" },
-  { id: "github", url: "https://github.com/", monogram: "GH" },
-  { id: "stackoverflow", url: "https://stackoverflow.com/", monogram: "SO" },
-  { id: "wikipedia", url: "https://www.wikipedia.org/", monogram: "W" },
-] as const;
-
-export type StartPageSiteId = (typeof START_PAGE_SITES)[number]["id"];
-
 export function NewTabPage({ onOpen }: { onOpen: (url: string) => void }) {
   return (
     <div
@@ -59,3 +47,8 @@ export function NewTabPage({ onOpen }: { onOpen: (url: string) => void }) {
     </div>
   );
 }
+
+export { START_PAGE_SITES } from "../../lib/browser-start-sites";
+import { START_PAGE_SITES, type StartPageSiteId } from "../../lib/browser-start-sites";
+
+export type { StartPageSiteId } from "../../lib/browser-start-sites";

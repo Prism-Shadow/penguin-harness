@@ -4,7 +4,9 @@
 import { Interface } from "@prismshadow/penguin-core/kernel";
 import type { AgentConfigView } from "../services/agent-config-service.js";
 import type {
+  AgentAuthor,
   AgentConfigUpdateRequest,
+  AgentDeletionInfo,
   AgentKernelUpdateResponse,
   BenchmarkCasesResponse,
   BenchmarksResponse,
@@ -15,7 +17,6 @@ import type {
   MemoryImportMode,
   MemoryImportResponse,
   MemoryOverviewResponse,
-  MemoryScopeExport,
   MemoryScopeInfo,
   VaultResponse,
   VaultUpdateRequest,
@@ -25,7 +26,7 @@ import type {
   WorkspaceFileContent,
   WorkspaceFileReadOptions,
 } from "../services/workspace-files-service.js";
-import type { AgentListItem } from "../services/agent-service.js";
+import type { AgentCreation, AgentListItem } from "../services/agent-service.js";
 import type {
   BenchmarkArchive,
   BenchmarkCreateInput,
@@ -43,6 +44,7 @@ export abstract class AgentConfig {
   ): Promise<{
     name?: string;
     description?: string;
+    author: AgentAuthor;
     toolCount: number;
     version: number;
     kernelOutdated: boolean;
@@ -53,6 +55,12 @@ export abstract class AgentConfig {
     agentId: string,
     req: AgentConfigUpdateRequest,
   ): Promise<void>;
+  /** Writes `author` only into a config that has none; false when it had one or there is no config. */
+  abstract stampMissingAuthor(
+    projectId: string,
+    agentId: string,
+    author: AgentAuthor,
+  ): Promise<boolean>;
   abstract resetConfig(projectId: string, agentId: string): Promise<void>;
   abstract kernelUpdate(projectId: string, agentId: string): Promise<AgentKernelUpdateResponse>;
   abstract insertTemplatePlaceholder(
@@ -68,24 +76,23 @@ export abstract class AgentConfig {
   ): Promise<VaultResponse>;
 }
 
+/** A package an import swaps in: a zip of the Agent's directory, or a `.tar.gz` snapshot. */
+export interface AgentPackage {
+  bytes: Buffer<ArrayBufferLike>;
+  /** Given the package's `traces/` once its State is in place, before the staging goes. */
+  landTraces?: (dir: string) => Promise<void>;
+}
+
 /** Snapshots: the mechanism SnapshotService implements. */
 @Interface()
 export abstract class Snapshots {
   abstract currentVersion(projectId: string, agentId: string): Promise<number>;
-  abstract ensureSnapshot(
-    projectId: string,
-    agentId: string,
-  ): Promise<{ version: number; file: string }>;
-  abstract exportArchive(
-    projectId: string,
-    agentId: string,
-  ): Promise<{ version: number; file: string; fileName: string }>;
   abstract importArchive(
     projectId: string,
     agentId: string,
-    archive: Buffer<ArrayBufferLike>,
-    opts: { confirm: boolean; preSnapshot?: boolean },
-  ): Promise<{ version: number }>;
+    pkg: AgentPackage,
+    opts: { preSnapshot: boolean },
+  ): Promise<{ version: number; backup?: string }>;
 }
 
 /** Memory: the mechanism MemoryService implements. */
@@ -102,28 +109,27 @@ export abstract class Memory {
     agentId: string,
     scopeKey: string,
   ): Promise<MemoryFilesResponse>;
+  /** `filePath` is the file's place in the scope: a topic's name, or `<folder>/<path>` for a file it keeps. */
   abstract readFile(
     projectId: string,
     agentId: string,
     scopeKey: string,
-    fileName: string,
+    filePath: string,
   ): Promise<MemoryFileResponse>;
-  abstract exportScope(
-    projectId: string,
-    agentId: string,
-    scopeKey: string,
-  ): Promise<MemoryScopeExport>;
+  /** The scope folder as a zip. */
+  abstract exportScope(projectId: string, agentId: string, scopeKey: string): Promise<Uint8Array>;
   abstract importScope(
     projectId: string,
     agentId: string,
     scopeKey: string,
-    request: { mode: MemoryImportMode; confirm: boolean; payload: unknown },
+    request: { mode: MemoryImportMode; confirm: boolean; payload?: unknown; dataBase64?: string },
   ): Promise<MemoryImportResponse>;
+  /** `filePath` as in `readFile`; a topic goes together with the folder of files it keeps. */
   abstract deleteFile(
     projectId: string,
     agentId: string,
     scopeKey: string,
-    fileName: string,
+    filePath: string,
   ): Promise<void>;
 }
 
@@ -170,15 +176,21 @@ export abstract class AgentLifecycle {
   abstract listAgents(projectId: string): Promise<AgentListItem[]>;
   /** Every id `createAgent` refuses as taken, as names only, including a folder that does not list. */
   abstract takenAgentIds(projectId: string): Promise<string[]>;
-  abstract deleteAgent(projectId: string, agentId: string): Promise<void>;
+  /**
+   * Moves the Agent's folder out of the agents directory in one rename and drops its index row,
+   * so it is gone from every list and route at once; its files are then removed in the
+   * background, as the returned deletion reports. Refuses a built-in Agent, and a folder another
+   * program holds open (409 `agent_folder_busy`, nothing deleted).
+   */
+  abstract deleteAgent(projectId: string, agentId: string): Promise<AgentDeletionInfo>;
+  /** Where one deletion stands; null once it is unknown here (finished long ago, or never was). */
+  abstract agentDeletion(projectId: string, deletionId: string): AgentDeletionInfo | null;
+  /** Removes whatever deleted Agents left behind when the server last stopped mid-removal. */
+  abstract resumeDeletions(): Promise<void>;
   abstract createAgent(
     projectId: string,
     agentId: string,
-    name?: string,
-    description?: string,
-    skillNames?: readonly string[],
-    directory?: { path: string; names: readonly string[] },
-    archive?: Buffer<ArrayBufferLike>,
+    creation?: AgentCreation,
   ): Promise<AgentListItem>;
   abstract pluginVersion(
     projectId: string,

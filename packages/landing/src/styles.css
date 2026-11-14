@@ -1,8 +1,9 @@
 /**
  * Landing page styles: a Tailwind CSS 4 entry over the public sites' shared page base
  * (site-page.css) and components and article prose (site.css), both from
- * @prismshadow/penguin-ui, plus what is the landing page's own — section anchors, the scroll
- * reveal, the hero, the ambient backdrop and the home page's animations. GitHub-style
+ * @prismshadow/penguin-ui, plus what is the landing page's own — section anchors, the hero, the
+ * ambient backdrop and the home page's animations. Sections hold still while the page scrolls:
+ * motion is kept for content that shows something moving. GitHub-style
  * simplicity: solid backgrounds, 1px borders, one brand blue accent. Dark theme is toggled via
  * the html.dark class.
  */
@@ -24,19 +25,6 @@
   }
 }
 
-/* Scroll reveal: sections start slightly offset and settle in when they enter the viewport. */
-.reveal {
-  opacity: 0;
-  transform: translateY(14px);
-  transition:
-    opacity 500ms cubic-bezier(0.2, 0.7, 0.3, 1),
-    transform 500ms cubic-bezier(0.2, 0.7, 0.3, 1);
-}
-.reveal-visible {
-  opacity: 1;
-  transform: none;
-}
-
 /* Hero backdrop: a faint dot grid fading out downwards — subtle, no gradients on content. */
 .hero-dots {
   background-image: radial-gradient(rgb(26 115 232 / 0.14) 1px, transparent 1px);
@@ -51,6 +39,131 @@
 /* Keep the hero hierarchy consistent across languages and let narrow screens wrap naturally. */
 .hero-positioning {
   font-size: clamp(1.5rem, 4vw, 2.6rem);
+  line-height: 1.5;
+}
+.hero-positioning-clause {
+  display: inline-block;
+  max-width: 100%;
+}
+.hero-word {
+  --hero-word-cycle: 4.8s;
+  --hero-ink-edge: var(--color-brand-700);
+  --hero-ink-center: var(--color-brand-500);
+  --hero-word-delay: 0s;
+  position: relative;
+  isolation: isolate;
+  display: inline-block;
+  color: var(--hero-ink-edge);
+  white-space: nowrap;
+}
+.hero-word-reach {
+  --hero-word-delay: -2.4s;
+}
+.dark .hero-word {
+  --hero-ink-edge: var(--color-brand-300);
+  --hero-ink-center: var(--color-brand-500);
+}
+
+/* The color moves inside the glyphs; their size, baseline and advance never change. */
+.hero-word-ink {
+  position: relative;
+  display: inline-block;
+  /* deslop-ignore-next-line 06 -- One moving color emphasis, confined to the slogan's glyphs. */
+  background-image: linear-gradient(
+    110deg,
+    var(--hero-ink-edge) 40%,
+    var(--hero-ink-center) 50%,
+    var(--hero-ink-edge) 60%
+  );
+  background-size: 400% 100%;
+  background-position: 100% 50%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation: hero-ink-flow var(--hero-word-cycle) ease-in-out var(--hero-word-delay) infinite;
+}
+
+/* One timeline reveals and grows the line, carrying the plane by its tail without scaling it. */
+.hero-word-trace {
+  position: absolute;
+  right: 0.65em;
+  bottom: -0.03em;
+  left: 0.04em;
+  height: 0.045em;
+  pointer-events: none;
+}
+.hero-word-flight {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 100%;
+  opacity: 0;
+  animation: hero-flight-draw var(--hero-word-cycle) linear var(--hero-word-delay) infinite;
+}
+.hero-word-trail {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: currentColor;
+  opacity: 0.5;
+}
+.hero-word-plane {
+  position: absolute;
+  top: 50%;
+  left: 100%;
+  width: 0.65em;
+  height: 0.65em;
+  overflow: visible;
+  fill: none;
+  stroke-width: 1.5;
+  transform: translateY(-50%);
+}
+.hero-motion-paused .hero-word-ink,
+.hero-motion-paused .hero-word-flight {
+  animation-play-state: paused;
+}
+.content-motion-paused [class] {
+  animation-play-state: paused;
+}
+
+@keyframes hero-ink-flow {
+  0%,
+  12% {
+    background-position: 100% 50%;
+  }
+  68%,
+  100% {
+    background-position: 0% 50%;
+  }
+}
+@keyframes hero-flight-draw {
+  0%,
+  4% {
+    width: 0%;
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  44% {
+    width: 100%;
+    opacity: 1;
+  }
+  48% {
+    opacity: 0;
+  }
+  100% {
+    width: 100%;
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-word-ink,
+  .hero-word-flight {
+    animation: none;
+  }
 }
 .hero-automation {
   font-size: clamp(1rem, 2.1vw, 1.125rem);
@@ -60,7 +173,9 @@
    Viewport-FIXED (the page background stays put while content scrolls over it) with a
    uniform page background behind every section, so nothing jumps at section boundaries.
    Each glow wanders freely across the whole screen on its own slow route (vw/vh
-   amplitudes), soft and blue-family only (enterprise tone; hue drift stays within blues). Reduced-motion freezes them in place. */
+   amplitudes), soft and blue-family only. Only `transform` moves: the blur is drawn once and the
+   compositor slides it, where an animated filter would repaint four large blurred layers on
+   every frame. Reduced-motion freezes them in place. */
 .neon-bg {
   position: fixed;
   inset: 0;
@@ -74,9 +189,8 @@
   height: 48rem;
   border-radius: 9999px;
   opacity: 0.12;
-  will-change: transform, filter;
+  will-change: transform;
   filter: blur(88px);
-  animation: neon-hue 44s linear infinite alternate;
 }
 .dark .neon-blob {
   opacity: 0.16;
@@ -85,33 +199,25 @@
   top: -12rem;
   left: -10rem;
   background: radial-gradient(circle, #4285f4 0%, transparent 66%);
-  animation:
-    neon-wander-a 44s ease-in-out infinite,
-    neon-hue 46s linear infinite alternate;
+  animation: neon-wander-a 44s ease-in-out infinite;
 }
 .neon-blob-b {
   top: 8%;
   right: -12rem;
   background: radial-gradient(circle, #0ea5e9 0%, transparent 66%);
-  animation:
-    neon-wander-b 56s ease-in-out infinite,
-    neon-hue 52s linear infinite alternate -16s;
+  animation: neon-wander-b 56s ease-in-out infinite;
 }
 .neon-blob-c {
   bottom: -14rem;
   left: 18%;
   background: radial-gradient(circle, #06b6d4 0%, transparent 66%);
-  animation:
-    neon-wander-c 50s ease-in-out infinite,
-    neon-hue 58s linear infinite alternate -30s;
+  animation: neon-wander-c 50s ease-in-out infinite;
 }
 .neon-blob-d {
   top: 42%;
   left: -14rem;
   background: radial-gradient(circle, #2563eb 0%, transparent 66%);
-  animation:
-    neon-wander-d 62s ease-in-out infinite,
-    neon-hue 48s linear infinite alternate -22s;
+  animation: neon-wander-d 62s ease-in-out infinite;
 }
 @keyframes neon-wander-a {
   0%,
@@ -173,14 +279,6 @@
     transform: translate3d(28vw, 24vh, 0) scale(1.08);
   }
 }
-@keyframes neon-hue {
-  from {
-    filter: blur(88px) hue-rotate(-8deg);
-  }
-  to {
-    filter: blur(88px) hue-rotate(12deg);
-  }
-}
 
 /* ---------- Trend-line growth: draw from zero rightwards, hold, fade, loop ----------
    Paths must set pathLength=1; the dot pops in once the line has fully grown. */
@@ -227,13 +325,24 @@
   }
 }
 
+/* Hub detail pages: the panels rise in one after another when the page opens (never on
+   scroll); site-page.css's reduced-motion rule stops it. */
+.hub-stagger > * {
+  animation: rise-in 320ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+.hub-stagger > :nth-child(2) {
+  animation-delay: 60ms;
+}
+.hub-stagger > :nth-child(3) {
+  animation-delay: 120ms;
+}
+.hub-stagger > :nth-child(n + 4) {
+  animation-delay: 180ms;
+}
+
 /* Reduced motion (site-page.css stops every animation and transition): the states those leave
    behind are restored here. */
 @media (prefers-reduced-motion: reduce) {
-  .reveal {
-    opacity: 1;
-    transform: none;
-  }
   /* With animations disabled the trend lines' base state is hidden; restore them fully drawn. */
   .anim-line-draw {
     stroke-dashoffset: 0;
@@ -312,14 +421,6 @@ html.dark .amsp-code .shiki span {
   }
 }
 
-/* Printing never scrolls, so scroll-reveal must not hide content on paper/PDF. */
-@media print {
-  .reveal {
-    opacity: 1;
-    transform: none;
-  }
-}
-
 /* ---------- Drawn blog figures: inline SVG in a post's Markdown ----------
    A drawn figure is one <figure class="post-figure"> holding an <svg class="fig-svg">, a visually
    hidden <ol class="fig-steps"> that says the same thing as text, and a <figcaption>. Every mark
@@ -383,7 +484,7 @@ html.dark .post-figure figcaption {
 }
 .fig-svg .fig-note,
 .fig-svg .fig-tick {
-  font-size: 11.5px;
+  font-size: 12px;
   fill: var(--site-gray-500);
 }
 .fig-svg .fig-num {
@@ -491,4 +592,107 @@ html.dark .fig-svg .fig-box {
 html.dark .fig-svg .fig-terminal {
   fill: var(--site-gray-900);
   stroke: var(--site-gray-600);
+}
+
+/* ---------- Side-by-side repository directory trees in blog prose ---------- */
+.post-tree-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.5rem;
+  margin: 1.25rem 0;
+}
+@media (min-width: 640px) {
+  .post-tree-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2.25rem;
+  }
+}
+.post-tree-card {
+  min-width: 0;
+}
+.post-tree-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding-bottom: 0.375rem;
+  margin-bottom: 0.5rem;
+  border-bottom: 1px solid var(--site-gray-200);
+}
+html.dark .post-tree-head {
+  border-color: var(--site-gray-800);
+}
+.post-tree-repo {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--site-gray-900);
+}
+html.dark .post-tree-repo {
+  color: var(--site-gray-100);
+}
+.post-tree-tag {
+  font-size: 12px;
+  color: var(--site-gray-500);
+}
+html.dark .post-tree-tag {
+  color: var(--site-gray-400);
+}
+.post-tree-body {
+  overflow-x: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 12.5px;
+  line-height: 1.75;
+}
+.post-tree-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  white-space: nowrap;
+}
+.post-tree-path {
+  white-space: pre;
+  color: var(--site-gray-700);
+}
+html.dark .post-tree-path {
+  color: var(--site-gray-300);
+}
+.post-tree-branch {
+  color: var(--site-gray-400);
+  user-select: none;
+}
+html.dark .post-tree-branch {
+  color: var(--site-gray-600);
+}
+.post-tree-dir {
+  font-weight: 600;
+  color: var(--site-gray-900);
+}
+html.dark .post-tree-dir {
+  color: var(--site-gray-100);
+}
+.post-tree-note {
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    sans-serif;
+  font-size: 12px;
+  color: var(--site-gray-500);
+}
+html.dark .post-tree-note {
+  color: var(--site-gray-400);
+}
+.post-tree-harm {
+  color: #dc2626;
+  font-weight: 500;
+}
+html.dark .post-tree-harm {
+  color: #f87171;
+}
+
+/* Release the entry animation's stacking context so diagrams can blend with the page. */
+.anim-rise:has(.prose-figure-diagram) {
+  animation-fill-mode: backwards;
 }

@@ -67,6 +67,7 @@ import { sessionsKeptAt } from "./steps/2026-10-12-sessions-kept-at.js";
 import { agentApiConcurrency } from "./steps/2026-10-14-agent-api-concurrency.js";
 import { agentApiSessionSettings } from "./steps/2026-10-14-agent-api-session-settings.js";
 import { machinesAdoptedAt } from "./steps/2026-10-16-machines-adopted-at.js";
+import { userDrafts } from "./steps/2026-10-26-user-drafts.js";
 
 export type { Migration } from "./migration.js";
 export { IrreversibleMigrationError, UnknownMigrationError, appliedMigrations } from "./runner.js";
@@ -99,6 +100,7 @@ export const MIGRATIONS: readonly Migration[] = [
   agentApiConcurrency,
   machinesAdoptedAt,
   modelTablesAdoption,
+  userDrafts,
 ];
 
 /**

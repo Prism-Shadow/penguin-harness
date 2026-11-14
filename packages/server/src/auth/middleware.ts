@@ -20,15 +20,21 @@ import { parse } from "hono/utils/cookie";
 import { AMSP_PREFIX } from "../amsp/cors.js";
 import { HttpError } from "../http/errors.js";
 import { mediaType } from "../http/media-type.js";
+import {
+  NO_PROXY_RULE,
+  acceptsOrigin,
+  forwardedHeaders,
+  publicOriginOf,
+  sameOriginSite,
+} from "../http/public-origin.js";
+import type { OriginRule } from "../http/public-origin.js";
 import type { UserRow } from "../db/repos/users.js";
 import type { SessionVia } from "./service.js";
 import type { Auth } from "../mechanisms/identity.js";
+import { SESSION_COOKIE } from "../api/types.js";
 
-/**
- * The session cookie's name as every non-browser client spells it: the CLI, and a server
- * speaking to a machine it holds, each with a cookie jar of its own.
- */
-export const SESSION_COOKIE = "penguin_session";
+/** The session cookie's name as every non-browser client spells it (declared in the API contract). */
+export { SESSION_COOKIE };
 
 /** Browsers share cookies across ports; non-browser jars retain the legacy plain name. */
 export function sessionCookieName(requestUrl: string | URL, browser: boolean): string {
@@ -54,40 +60,9 @@ export function parseCookieHeader(header: string | null | undefined): Record<str
   return parse(header ?? "");
 }
 
-/** Scheme, host and port must agree; absent Origin retains the non-browser contract. */
-export function isOwnOrigin(origin: string | undefined, requestUrl: URL): boolean {
-  if (!origin) return true;
-  if (requestUrl.protocol !== "http:" && requestUrl.protocol !== "https:") return false;
-  try {
-    const source = new URL(origin);
-    return (
-      (source.protocol === "http:" || source.protocol === "https:") &&
-      source.origin === requestUrl.origin
-    );
-  } catch {
-    return false;
-  }
-}
-
-/** TLS-terminating proxies must preserve Host and overwrite, never append, the protocol header. */
-export function originTarget(
-  requestUrl: string | URL,
-  forwarded: string | undefined,
-  trustProxy: boolean,
-): URL {
-  const url = new URL(requestUrl);
-  if (trustProxy && forwarded !== undefined) {
-    if (forwarded !== "http" && forwarded !== "https") {
-      throw new HttpError(403, "cross_origin_write", "Invalid forwarded protocol.");
-    }
-    url.protocol = `${forwarded}:`;
-  }
-  return url;
-}
-
-function contextTarget(c: Context, trustProxy: boolean): URL {
-  return originTarget(c.req.url, c.req.header("x-forwarded-proto"), trustProxy);
-}
+// The origin comparison lives with the public-origin rule (http/public-origin.ts); re-exported
+// for the callers that reach it here.
+export { isOwnOrigin } from "../http/public-origin.js";
 
 /**
  * Session cookie attributes, shared by every path that sets one. `maxAge` comes from the
@@ -99,19 +74,17 @@ export function cookieOptions(
   ttlMs: number,
   trustProxy: boolean,
 ) {
-  // `x-forwarded-proto` is caller-supplied and untrusted unless the deployment opts in
-  // (config.trustProxy — the same gate hmr/routes.ts uses, and for the same reason). Trusting
-  // it on a plain-HTTP bind would let anyone reaching the port get a Secure cookie back, which
-  // the browser then refuses to send over that connection: a sign-in that never takes.
-  const proto = trustProxy
-    ? (c.req.header("x-forwarded-proto") ?? new URL(c.req.url).protocol.replace(":", ""))
-    : new URL(c.req.url).protocol.replace(":", "");
+  // Secure when the public origin is https. `x-forwarded-proto` counts only when the deployment
+  // trusts it (config.trustProxy — the same gate hmr/routes.ts uses, and for the same reason).
+  // Trusting it on a plain-HTTP bind would let anyone reaching the port get a Secure cookie back,
+  // which the browser then refuses to send over that connection: a sign-in that never takes.
+  const secure = new URL(publicOriginOf(c, trustProxy)).protocol === "https:";
   return {
     httpOnly: true,
     sameSite: "Lax" as const,
     path: "/",
     maxAge: Math.floor(ttlMs / 1000),
-    ...(proto === "https" ? { secure: true } : {}),
+    ...(secure ? { secure: true } : {}),
   };
 }
 
@@ -192,11 +165,11 @@ export function bearerToken(header: string | undefined): string | null {
 }
 
 /**
- * Refuses the local API token and its exchanged Remote cookies on a write that only a person
- * may make: 403 `human_required`. AuthService preserves their common "token" authority. A
- * person's sign-in — a cookie session, from the Web App, `penguin auth login` or
- * `penguin auth token` — passes. Every tool subprocess of a server-driven Session holds that token
- * as `PENGUIN_API_TOKEN`, so these are the writes an Agent must not make from its own shell:
+ * Refuses the local API token, presented as a Bearer header, on a write that only a person may
+ * make: 403 `human_required`. Every cookie session passes as the person's sign-in — from the Web
+ * App, `penguin auth login` or `penguin auth token`, and the Penguin Remote session exchanged
+ * from the token itself. Every tool subprocess of a server-driven Session holds that token as
+ * `PENGUIN_API_TOKEN`, so these are the writes an Agent must not make from its own shell:
  *
  * - who can reach an Agent from outside — its API switch, keyless access and approval mode, its
  *   keys, the API tab's Try it, and the admin's `agentApiEnabled` (http/routes/agent-api.ts,
@@ -206,17 +179,18 @@ export function bearerToken(header: string | undefined): string | null {
  *
  * This narrows the credential the harness hands an Agent; it is not a boundary. A process that
  * runs as the data root's OS user outside the sandbox can mint a sign-in of its own
- * (`penguin auth token`), or reset a password with the token and sign in. The sandbox is the
- * boundary. A per-Session credential (design PR #235) is the structural fix: when it lands, this
- * check becomes "a Session's credential is refused, a person's login is not", and the routes
- * calling it do not change.
+ * (`penguin auth token`), or reset a password with the token and sign in; and an Agent holding
+ * the token can exchange it for a Remote session (POST /api/remote/session) that passes here.
+ * The sandbox is the boundary. A per-Session credential (design PR #235) is the structural fix:
+ * when it lands, this check becomes "a Session's credential is refused, a person's login is
+ * not", and the routes calling it do not change.
  */
 export function requireHuman(c: { var: { sessionVia: SessionVia } }): void {
   if (c.var.sessionVia === "token") {
     throw new HttpError(
       403,
       "human_required",
-      "Sign in with your password to do this; an API token or its Remote session cannot.",
+      "This takes a person's sign-in; the local API token cannot do it.",
     );
   }
 }
@@ -252,18 +226,24 @@ function isAmspKeyedWrite(c: Context): boolean {
  * CSRF defense, first line: a write a browser makes must come from a page of THIS origin. The
  * browser states the origin itself (`Origin` rides on every POST, PUT, PATCH and DELETE, and a
  * page cannot forge it), so this asks the question directly — where the content-type rule
- * below only asks what a cross-site form is able to send. Host AND port: cookies ignore the
- * port, so `SameSite` lets a page served by any other local server ride the session.
+ * below only asks what a cross-site form is able to send. Scheme, host AND port: cookies ignore
+ * the port, so `SameSite` lets a page served by any other local server ride the session, and a
+ * browser without schemeful SameSite hands the https cookie to a page on `http://` of the same
+ * host. A browser that sends `Sec-Fetch-Site` must also say `same-origin` there. The browser
+ * computes it, scheme included, so this refuses such a page even where the desktop's transition
+ * (OriginRule.acceptOwnOrigin) lets its `Origin` through.
  */
 export const sameOriginWrites =
-  (trustProxy = false): MiddlewareHandler =>
+  (rule: OriginRule = NO_PROXY_RULE): MiddlewareHandler =>
   async (c, next) => {
     if (
       WRITE_METHODS.has(c.req.method) &&
       !OWN_ORIGIN_RULE_PATHS.has(c.req.path.replace(/\/+$/, "")) &&
       !isAmspKeyedWrite(c) &&
-      c.req.header("origin") &&
-      !isOwnOrigin(c.req.header("origin"), contextTarget(c, trustProxy))
+      !(
+        sameOriginSite(c.req.header("sec-fetch-site")) &&
+        acceptsOrigin(c.req.header("origin"), c.req.url, forwardedHeaders(c), rule)
+      )
     ) {
       throw new HttpError(
         403,
@@ -299,11 +279,11 @@ const ALLOWED_WRITE_CONTENT_TYPES = [
  */
 const WORKBENCH_API = /^\/api\/projects\/[^/]+\/agents\/[^/]+\/workbenches\/[^/]+\/api(\/|$)/;
 
-function fromThisOrigin(c: Context, trustProxy: boolean): boolean {
+function fromThisOrigin(c: Context, rule: OriginRule): boolean {
   const header = (name: string) => c.req.header(name);
   const site = header("sec-fetch-site");
   if (site !== undefined) return site === "same-origin";
-  return !header("origin") || isOwnOrigin(header("origin"), contextTarget(c, trustProxy));
+  return acceptsOrigin(header("origin"), c.req.url, forwardedHeaders(c), rule);
 }
 
 const crossOrigin = () =>
@@ -314,7 +294,7 @@ const crossOrigin = () =>
   );
 
 export const jsonOnlyWrites =
-  (trustProxy = false): MiddlewareHandler =>
+  (rule: OriginRule = NO_PROXY_RULE): MiddlewareHandler =>
   async (c, next) => {
     // A workbench's handler answers every method, so its GET is whatever the workbench made it
     // — not the read every other route's GET is. A `SameSite=Lax` cookie rides along on a
@@ -322,7 +302,7 @@ export const jsonOnlyWrites =
     // that handler as the signed-in user; the browser's own account of where the request came
     // from is what settles it, on every method rather than only on writes.
     if (!WRITE_METHODS.has(c.req.method) && WORKBENCH_API.test(c.req.path)) {
-      if (!fromThisOrigin(c, trustProxy)) throw crossOrigin();
+      if (!fromThisOrigin(c, rule)) throw crossOrigin();
     }
     if (WRITE_METHODS.has(c.req.method)) {
       const contentType = c.req.header("content-type");
@@ -336,7 +316,7 @@ export const jsonOnlyWrites =
         c.req.header("transfer-encoding") !== undefined;
       // A workbench's own handler takes any body; the origin rule is its whole defense there.
       if (WORKBENCH_API.test(c.req.path)) {
-        if (forgeable && !fromThisOrigin(c, trustProxy)) throw crossOrigin();
+        if (forgeable && !fromThisOrigin(c, rule)) throw crossOrigin();
       } else if (contentType ? forgeable : hasBody) {
         throw new HttpError(
           415,

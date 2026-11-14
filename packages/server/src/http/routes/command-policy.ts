@@ -3,12 +3,14 @@
  * `[command_policy]` block of .project_config.toml). Any member can read (the settings
  * dialog shows the effective policy); only the owner can replace it — it is Project-owned
  * security config, deliberately outside the Agent State an Agent edits for itself. The rules are
- * plain data: the factory set is seeded into new projects (and served to pre-seeding
+ * plain data, each saying what a hit does (`deny`, the default, or `ask`): the factory set is
+ * seeded into new projects (and served to pre-seeding
  * projects that store none), and a PUT always carries the full rule list, materializing it
  * into the file model-presets style.
  */
 import { Hono } from "hono";
 import type { AppEnv } from "../../auth/middleware.js";
+import { commandPolicyPatternError } from "@prismshadow/penguin-core";
 import { HttpError } from "../errors.js";
 import { readJson, requireValidId } from "../validate.js";
 import type { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
@@ -34,13 +36,16 @@ interface RuleInput {
   pattern: string;
   description?: string;
   enabled?: boolean;
+  action?: "deny" | "ask";
 }
 
 /**
  * Validates the `rules` array: every entry needs a non-empty name and a pattern that
  * actually compiles — an uncompilable pattern would be silently skipped at match time
  * (core's tolerant reader), turning a typo into a rule that never fires. Rejecting it here
- * keeps "saved" equal to "enforced".
+ * keeps "saved" equal to "enforced". The refusal names the rule and the engine's reason, and
+ * its `details` carry the rule's name, its index in the list and that reason, so the settings
+ * page can take the person to the row.
  */
 function validateRules(value: unknown): RuleInput[] {
   if (!Array.isArray(value)) {
@@ -50,11 +55,11 @@ function validateRules(value: unknown): RuleInput[] {
     throw new HttpError(400, "invalid_rules", `rules exceeds ${MAX_RULES} entries.`);
   }
   const rules: RuleInput[] = [];
-  for (const entry of value) {
+  for (const [index, entry] of value.entries()) {
     if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
       throw new HttpError(400, "invalid_rules", "Each rule must be an object.");
     }
-    const { name, pattern, description, enabled } = entry as Record<string, unknown>;
+    const { name, pattern, description, enabled, action } = entry as Record<string, unknown>;
     if (typeof name !== "string" || name.trim() === "" || name.length > MAX_RULE_NAME_LEN) {
       throw new HttpError(
         400,
@@ -69,13 +74,14 @@ function validateRules(value: unknown): RuleInput[] {
         `Each rule needs a non-empty pattern of at most ${MAX_RULE_PATTERN_LEN} characters.`,
       );
     }
-    try {
-      new RegExp(pattern);
-    } catch {
+    const reason = commandPolicyPatternError(pattern);
+    if (reason !== null) {
       throw new HttpError(
         400,
         "invalid_rule_pattern",
-        `Rule "${name.trim()}" has an invalid regular expression: ${pattern}`,
+        `Rule "${name.trim()}" has an invalid regular expression: ${reason}.`,
+        undefined,
+        { rule: name.trim(), index: String(index), reason },
       );
     }
     if (description !== undefined && typeof description !== "string") {
@@ -92,11 +98,15 @@ function validateRules(value: unknown): RuleInput[] {
     if (enabled !== undefined && typeof enabled !== "boolean") {
       throw new HttpError(400, "invalid_rules", "A rule's enabled must be a boolean.");
     }
+    if (action !== undefined && action !== "deny" && action !== "ask") {
+      throw new HttpError(400, "invalid_rules", 'A rule\'s action must be "deny" or "ask".');
+    }
     rules.push({
       name: name.trim(),
       pattern,
       ...(desc !== "" ? { description: desc } : {}),
       ...(enabled !== undefined ? { enabled } : {}),
+      ...(action !== undefined ? { action } : {}),
     });
   }
   return rules;

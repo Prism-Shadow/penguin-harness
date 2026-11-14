@@ -53,12 +53,13 @@ export function generateInitialAdminPassword(): string {
 
 /**
  * "desktop" and "setup" may set a password without the old one (theirs is random and was never
- * shown); desktop-only routes open to "desktop" alone. "token" is the local API token's
- * authority, whether presented as a Bearer header or exchanged for a Remote cookie.
- * Exchanging the credential must not grant the person's privileges. Anything else reads as
- * "password".
+ * shown); desktop-only routes open to "desktop" alone. "remote" is the one-hour browser session
+ * Penguin Remote exchanges the local API token for: it counts as the person wherever a check
+ * tells a person from the token (human-only writes, identity claims, who drives a run), opens
+ * no desktop-only route, and changes the password only with the old one. "token" is the local
+ * API token presented as a Bearer header, and nothing else. Anything else reads as "password".
  */
-export type SessionVia = "password" | "desktop" | "setup" | "token";
+export type SessionVia = "password" | "desktop" | "setup" | "remote" | "token";
 
 /** Row -> DTO. The two profile columns are omitted rather than sent as null when unset. */
 export function toUserInfo(row: UserRow): UserInfo {
@@ -371,7 +372,7 @@ export class AuthService implements Auth {
     }
     const via: SessionVia =
       session.via === "remote"
-        ? "token"
+        ? "remote"
         : session.via === "desktop"
           ? "desktop"
           : session.via === "setup"

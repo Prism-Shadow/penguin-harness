@@ -10,14 +10,15 @@
  * an account, not an error the user made on this page.
  */
 import { useEffect, useState } from "react";
-import type { ModelProviderInfo } from "@prismshadow/penguin-server/model-catalog";
-import { providerInfo } from "@prismshadow/penguin-server/model-catalog";
+import { type ModelProviderInfo, providerInfo } from "@prismshadow/penguin-server/model-catalog";
+
 import { ChevronDown, Dropdown, Menu, MenuItem, ProviderLogo } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { formatDateTime } from "../../lib/format";
+import { useLocalShown } from "../../lib/local-first";
 import { useProject } from "../../state/project";
-import { useTheme } from "../../state/theme";
-import type { Currency } from "../../state/theme";
+import { useTheme, type Currency } from "../../state/theme";
+
 import {
   displayBalance,
   formatBalance,
@@ -26,8 +27,9 @@ import {
   setPinnedBalance,
   useBalance,
   usePinnedBalance,
+  type BalanceState,
 } from "./balance";
-import type { BalanceState } from "./balance";
+
 import { HEADER_TEXT } from "./group-header";
 
 /** How often the pinned balance is read again while the app is open (plus once per page load). */
@@ -172,15 +174,17 @@ export function usePinnedBalanceView(): { provider: string; text: string; title:
   const projectId = reachable ? pin.projectId : null;
   const provider = pin?.provider ?? "";
   const state = useBalance(projectId, provider);
+  // Asked once this window's own content is on screen: the vendor's answer never holds it.
+  const shown = useLocalShown();
   useEffect(() => {
-    if (projectId === null) return;
+    if (projectId === null || !shown) return;
     void requestBalance(projectId, provider);
     const timer = window.setInterval(
       () => void requestBalance(projectId, provider),
       PINNED_BALANCE_REFRESH_MS,
     );
     return () => window.clearInterval(timer);
-  }, [projectId, provider]);
+  }, [projectId, provider, shown]);
   if (projectId === null) return null;
   return { provider, ...balanceView(state, providerInfo(provider)?.label ?? provider, currency) };
 }

@@ -27,6 +27,7 @@ import {
 } from "@prismshadow/amsp/records";
 import {
   buildBackgroundTaskDoneMessage,
+  buildModelSwitchMessage,
   stripLeadingMarkerBlocks,
 } from "@prismshadow/amsp/markers";
 import type {
@@ -192,13 +193,22 @@ export interface SessionConfig {
 /** `Session.run` options: the engine's per-call options. */
 export type SessionRunOptions = RunOptions;
 
-/** Why a model switch was refused before its first event (see {@link ModelSwitchRefusedError}). */
+/**
+ * Why a model switch was refused before its first event (see {@link ModelSwitchRefusedError}).
+ * The refusals `switchModel` produces are about the target: a model the Session is on that
+ * cannot be reached is no reason to refuse — the switch hands the history over by its Trace
+ * path instead.
+ */
 export type ModelSwitchRefusal =
   /** The target pair names no entry in the Project config on disk. */
   | "model_not_configured"
-  /** The target is configured but its client cannot be constructed (a missing credential foremost), or this Session has no switch support. */
+  /** The target is configured but its client cannot be constructed (a missing credential foremost), or this Session cannot switch at all (no switch support, or no opener for a next context). */
   | "model_unavailable"
-  /** The Session has a context to close but no compaction configured to close it with. */
+  /**
+   * No longer produced: a Session without compaction hands its history over by Trace path
+   * instead of refusing. Kept so SDK callers that branch on it still compile; remove it at the
+   * next breaking release (0.3.0), together with any host mapping of it.
+   */
   | "compaction_not_configured";
 
 /**
@@ -226,7 +236,9 @@ export interface ModelSwitchSupport {
    * Validates a switch target before anything is sent or recorded: resolves it against the
    * Project config as it is on disk and constructs its client, so a pair that is not
    * configured, or has no credential, is refused here (a {@link ModelSwitchRefusedError})
-   * exactly where Session creation would have failed.
+   * exactly where Session creation would have failed. The Session asks the same of the model
+   * it is on: a refusal there means that model is sent nothing, and the switch hands the
+   * history over by Trace path.
    */
   validate(ref: ModelRef): Promise<void>;
   /**
@@ -607,11 +619,13 @@ export class Session {
     opts?: SessionRunOptions,
   ): AsyncGenerator<AmspRecord, RunCutoff | null> {
     // The sandbox command policy is applied here, at the Human boundary itself: the
-    // injected callback is wrapped so a vetoed command is refused before the host is ever
-    // asked, which is what makes the policy outrank every approval mode — no host, and no
-    // approval mode, gets a say. Wrapped once for every Task of this call; a child Session
-    // wraps its own forwarded callback again, harmlessly. With no callback at all the
-    // engine denies everything anyway, so there is nothing to guard.
+    // injected callback is wrapped so a `deny` hit is refused before the host is ever asked
+    // and an `ask` hit reaches the host with a policy reason, which the host puts to a person
+    // whatever its approval mode — which is what makes the policy outrank every approval
+    // mode. Wrapped once for every Task of this call. A child Session wraps its own forwarded
+    // callback again: that callback is this wrapper, so the child's `ask` hit arrives here
+    // with its reason and is matched once more (see internal/command-policy.ts). With no
+    // callback at all the engine denies everything anyway, so there is nothing to guard.
     if (opts?.approve) {
       opts = { ...opts, approve: withCommandPolicy(opts.approve, this.commandPolicy) };
     }
@@ -619,8 +633,9 @@ export class Session {
     // engine records their events in stream order and applies the first decision before
     // the approval callback. One rule is enforced here, where the command policy lives:
     // a hook `allow` never overrides the policy — hook packages sit in agent-writable
-    // state, the policy is Project-owned security config — so a policy-vetoed allow is
-    // downgraded to no decision and the approval chain (policy outermost) answers.
+    // state, the policy is Project-owned security config — so an allow on a call either kind
+    // of rule matches (`deny` or `ask`) is downgraded to no decision and the approval chain
+    // (policy outermost) answers: refused, or put to a person.
     // The hooks are read at each consult rather than captured here: a compaction inside
     // this call opens a context with hooks of its own, and the calls after it are theirs.
     {
@@ -990,29 +1005,34 @@ export class Session {
    * and the record is yielded last, so the stream names the model too. Only callable at a Task
    * boundary, like `compact()`. Not the `/model` handoff, which opens a NEW Session.
    *
+   * When the summary cannot be had — the model the Session is on can no longer be reached
+   * (no longer configured, or its client cannot be built: it is then sent nothing), or the
+   * compaction ends other than `completed` or `aborted` — the switch hands the history over by
+   * Trace path instead: the next context opens on the target with the `/model` block naming
+   * this Session (see `switchHandoff`) where the summary would be. Only a stop keeps the model.
+   *
    * Before any event: the model the Session is already on is a no-op, and a target that
    * cannot be switched to is refused with a {@link ModelSwitchRefusedError} naming why
    * (anything else thrown is a failure). A Session that never ran has no context to close:
    * its first context is re-assembled on the target, silently, and the first run opens it.
    * One resumed after a restart builds its engine first, as `compact()` does. How the context
-   * is then closed and the next one opened is `ContextEngine.switchContext`; on which model,
-   * the opener is told here.
+   * is then closed and the next one opened is `ContextEngine.switchContext` (with a summary) or
+   * `handOverContext` (without); on which model, the opener is told here.
    *
    * Returns the terminal status: `completed` — the Session is on the target, and children
-   * spawned from here inherit it; anything else — the switch was stopped or its compaction
-   * failed (the events say how) and the Session stays on the model it was on.
+   * spawned from here inherit it; `aborted` — the switch was stopped, and the Session stays on
+   * the model it was on.
    */
   async *switchModel(opts: ModelSwitchOptions): AsyncGenerator<AmspRecord, StopReason> {
     const target: ModelRef = { provider: opts.provider, model_id: opts.modelId };
-    if (sameModelRef(target, { provider: this.provider, model_id: this.modelId })) {
-      return "completed";
-    }
-    if (!this.modelSwitch) {
-      throw new ModelSwitchRefusedError(
+    const from: ModelRef = { provider: this.provider, model_id: this.modelId };
+    if (sameModelRef(target, from)) return "completed";
+    const unavailable = (): ModelSwitchRefusedError =>
+      new ModelSwitchRefusedError(
         "model_unavailable",
         "Switching the model is not available for this Session.",
       );
-    }
+    if (!this.modelSwitch) throw unavailable();
     await this.modelSwitch.validate(target);
     if (!this.engine && !this.metaWritten) {
       // Never ran: no context to close and nothing recorded — the first context is simply
@@ -1024,16 +1044,26 @@ export class Session {
       if (first.maxTurns !== undefined) this.engineDeps.maxTurns = first.maxTurns;
       return "completed";
     }
-    if (this.compactability() === "unsupported") {
-      throw new ModelSwitchRefusedError(
-        "compaction_not_configured",
-        "Context compaction is not configured for this Session, so its model cannot be switched.",
-      );
-    }
+    // A context to close needs a next one to open.
+    if (!this.engineDeps.openNextContext) throw unavailable();
+    // The model the Session is on, asked the target's question: one that is no longer
+    // configured, or whose client cannot be built, is sent nothing.
+    const reachable = await this.modelSwitch.validate(from).then(
+      () => true,
+      (err: unknown) => {
+        if (err instanceof ModelSwitchRefusedError) return false;
+        throw err;
+      },
+    );
+    // Written now, while the Trace still points at the file of the context being left.
+    const handoff = this.switchHandoff(from);
     if (!(yield* this.ensureEngine(opts.signal))) return "aborted";
     this.switchTarget = target;
     try {
-      const status = yield* this.engine!.switchContext(opts.signal);
+      // Summary first, handing over on any end but a stop; an unreachable model, at once.
+      const status = reachable
+        ? yield* this.engine!.switchContext(opts.signal, handoff)
+        : yield* this.engine!.handOverContext(handoff);
       // Input an aborted bootstrap left with the Session rides on like the engine's pending
       // input: its text alone, in memory (the original stays where the abort wrote it).
       if (status === "completed") {
@@ -1045,6 +1075,25 @@ export class Session {
     } finally {
       this.switchTarget = undefined;
     }
+  }
+
+  /**
+   * The handoff a model switch opens the next context with when it cannot summarize: the
+   * `/model` origin block, word for word, naming this Session, the Trace file of the context
+   * being left (the running file, on the machine the Session runs on), the Workspace and the
+   * model left behind. A Session without a Trace sink has no file to name.
+   */
+  private switchHandoff(from: ModelRef): AmspRecord {
+    const tracePath = this.trace?.currentPath?.();
+    return userText(
+      buildModelSwitchMessage({
+        sessionId: this.sessionId,
+        ...(tracePath !== undefined ? { tracePath } : {}),
+        workspace: this.workspaceDir,
+        prevProvider: from.provider,
+        prevModelId: from.model_id,
+      }),
+    );
   }
 
   /**
@@ -1286,9 +1335,15 @@ export class Session {
     return this.environment.setBackgroundSubagentThinkingLevel?.(childSessionId, level) ?? false;
   }
 
-  /** Attaches the host's session-lifetime fallback approval sink for child sessions (see EnvironmentInterface.setSubagentApprovalFallback). */
+  /**
+   * Attaches the host's session-lifetime fallback approval sink for child sessions (see
+   * EnvironmentInterface.setSubagentApprovalFallback), wrapped with this Session's command
+   * policy as `run` wraps its callback: a child's call can reach this sink with no parent run
+   * whose wrapper would match it, and the host's callback alone would let allow-all wave an
+   * `ask` hit through: wrapped, that hit reaches the host's callback with its policy reason.
+   */
   setSubagentApprovalFallback(approve: ApproveFn): void {
-    this.environment.setSubagentApprovalFallback?.(approve);
+    this.environment.setSubagentApprovalFallback?.(withCommandPolicy(approve, this.commandPolicy));
   }
 
   /** Attaches the single listener for subagent run-state changes; the host re-reads `listBackgroundSubagents` on each ping (see EnvironmentInterface.setSubagentStateListener). */

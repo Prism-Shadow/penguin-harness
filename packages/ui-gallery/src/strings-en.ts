@@ -11,6 +11,10 @@ export const en: GalleryStrings = {
       home: "Home",
       blog: "Blog",
       download: "Download",
+      plugins: "Plugins",
+      benchmarks: "Benchmarks",
+      leaderboards: "Leaderboards",
+      amsp: "AMSP",
       docs: "Docs",
       gallery: "Gallery",
       github: "GitHub",
@@ -129,6 +133,12 @@ export const en: GalleryStrings = {
         "The Agent settings' schedule tab: periods, next fire time, the bound Session and model.",
       how: "Agents › Agent settings › the Schedules tab.",
     },
+    apps: {
+      title: "App Center",
+      description:
+        "The Project's home screen of apps: icon-and-name tiles in each build state (ready, building, failed), a folder holding two apps, and New folder in the header.",
+      how: "Sidebar › App Center; New folder in the header opens the dialog that names a folder and checks its apps; right-click a tile or the empty space for its menu, drag tiles to reorder them or stack them into a folder.",
+    },
     plugins: {
       title: "Plugins",
       description: "Every plugin by category, to regroup or search; a card opens its details.",
@@ -201,7 +211,6 @@ export const en: GalleryStrings = {
   },
   rail: {
     theme: "Theme",
-    themeNames: { github: "Primer", modern: "Frost", geek: "Console" },
     accent: "Accent",
     accentTheme: "Theme's own",
     size: "Size",
@@ -244,6 +253,22 @@ export const en: GalleryStrings = {
     unset: "unset",
   },
   foundations: {
+    packs: {
+      intro:
+        "Every built-in pack in the registry, and the packs an admin imported on the demo's server, each with its manifest (pack.json): names, what it builds on, version, the theme API it targets, the swatches a picker draws and the face each font role puts first.",
+      name: "Name",
+      base: "Builds on",
+      version: "Version",
+      api: "Theme API",
+      swatches: "Swatches",
+      fonts: "Fonts",
+      isBase: "The base",
+      onFrost: "Frost",
+      foundation: "Foundation",
+      imported: "Imported",
+      importedHint: "A pack imported on the demo's server, read from GET /api/themes",
+      fontRoles: { sans: "reading", ui: "UI", cjk: "CJK", mono: "mono", display: "display" },
+    },
     surfaces: "Surfaces",
     inks: "Inks",
     lines: "Lines",
@@ -287,14 +312,14 @@ export const en: GalleryStrings = {
       secondary: "Cancel",
       input: "Search sessions",
       badge: "Running",
-      menuTier: "z-[60] menu",
+      menuTier: "z-popover menu",
       menuItems: ["Pin", "Rename", "Move to…"],
-      backdropTier: "z-50 dialog",
+      backdropTier: "z-modal dialog",
       dialogTitle: "Delete this session?",
       dialogBody: "Its transcript and Trace files are deleted with it.",
       cancel: "Cancel",
       confirm: "Delete",
-      toastTier: "z-[100] toast",
+      toastTier: "z-toast toast",
       toast: "Exported Trace #001",
     },
     radius: "Radius",
@@ -373,11 +398,22 @@ export const en: GalleryStrings = {
       "ui-chart": "a chart: its grid, axes, lines, areas, bars and points",
       "ui-widget":
         "a reading in a reply taken in at a glance: weather, a clock, a countdown, metrics",
+      "ui-edge":
+        "the edge of a box a person presses, types into or wrote: a boxed button, a text field or select, a checkbox, a radio, a switch, the start page's pickers and their own message bubble",
+      "ui-start":
+        "the start page (a new conversation) as a whole: the brand, three counts, the composer and the example folders",
+      "ui-library": "the model library: a provider's group box and the model cards in it",
+      "ui-ledger":
+        "figures set apart as a ledger: the usage summary cards, a company KPI tile, a Benchmark card's score",
+      "ui-empty": "an empty state: its art, title, description and action",
+      "ui-run": "the run indicator in a conversation's toolbar: the glyph and the word Running",
       "ui-scrim": "the dimmed layer behind a dialog, drawer or sheet",
       "ui-stream":
         "text that is still streaming (a reply, thinking, a summary, a tool's output): each theme decides how new text appears",
       "ui-glyph":
         "an icon each theme draws its own way: line (Primer), duotone line (Frost) or pixel art (Console)",
+      "ui-avatar":
+        "an agent's default avatar each theme draws its own way: one smiling ball penguin, on a rounded square (Primer), a circle (Frost, Doodle) or in pixel art (Console)",
     },
     hookSamples: {
       menu: ["Pin", "Rename", "Delete"],
@@ -446,7 +482,7 @@ export const en: GalleryStrings = {
       pickers: {
         title: "Pickers",
         description:
-          "Select, control sizes, segmented control, slider and choice group, switch and toggle rows, swatches, option menu, dropdown and menu rows.",
+          "Select, control sizes, segmented control, slider and choice group, switch and toggle rows, swatches, option menu, dropdown, context menu and menu rows.",
       },
       toasts: {
         title: "Toasts",
@@ -480,7 +516,7 @@ export const en: GalleryStrings = {
       },
       loading: {
         title: "Loading",
-        description: "The spinner, the skeletons and the progress bar.",
+        description: "The spinner, the skeletons, the progress bar and the transfer row.",
       },
       streaming: {
         title: "Streaming",
@@ -494,7 +530,8 @@ export const en: GalleryStrings = {
       },
       avatars: {
         title: "Avatars",
-        description: "The user and agent avatars at their sizes, and a stack of them.",
+        description:
+          "The user avatar at its sizes; the agent avatar in every theme's drawing across its colours; a stack of them.",
       },
       site: {
         title: "Public site",
@@ -528,12 +565,22 @@ export const en: GalleryStrings = {
       retry: {
         title: "Retry",
         description:
-          "The status line every retry and reconnect shares: trying, waiting for the next attempt (a countdown and Retry now), gave up (Retry), not worth retrying — and how it sits in a machine card, a dialog and a chat notice.",
+          "A machine reconnect's status line: trying, waiting for the next attempt (a countdown, Retry now and Stop retrying), failed, stopped and not worth retrying (Retry), why after the sentence; a model request's retry and failure lines in a conversation, the failure details dialog, and the could-not-load notice.",
+      },
+      report: {
+        title: "Report a problem",
+        description:
+          "The Report entry of a serious error: the notice a crashed part of the page shows, an error toast and a could-not-load notice with the entry, and the report dialog.",
       },
       attachments: {
         title: "Attachments",
         description:
           "Images and files attached in a conversation: staged in the composer, in the message once sent, in a steer's chip, at phone width, with long names and when an image fails to load.",
+      },
+      packs: {
+        title: "Theme packs",
+        description:
+          "Each pack's manifest: names, what it builds on, version, theme API, swatches and fonts.",
       },
       colour: {
         title: "Colour",
@@ -685,6 +732,12 @@ export const en: GalleryStrings = {
         },
       ],
       dropdown: "Dropdown",
+      contextMenu: "Context menu",
+      contextMenuHint:
+        "A right-click, Shift+F10, the ContextMenu key or a press and hold on touch opens it; Esc closes it and hands focus back to the target.",
+      contextMenuTarget: "Right-click here",
+      contextOpen: "Open",
+      contextFullScreen: "Open full screen",
       menu: "More actions",
       menuPin: "Pin",
       menuRename: "Rename",
@@ -917,6 +970,26 @@ export const en: GalleryStrings = {
       progressLabel: "Download progress",
       progressOver: "Over the limit",
       progressIndeterminate: "Indeterminate",
+      transfer: "Transfer row",
+      transferHint:
+        "History coming over from a machine: the line that stands in for the conversation, the line over it, the line under an unfolded output",
+      transferPane: "In the conversation's place, after a second",
+      transferPaneWaiting: "In the conversation's place, waiting for the machine",
+      transferUncounted: "Nothing counted yet",
+      transferTop: "Over the conversation",
+      transferTopWaiting: "Over the conversation, waiting for the machine",
+      transferSlowCaption: "Connected, no new data for a minute (nothing retried, no countdown)",
+      transferSlow: (alias: string) =>
+        `${alias} is connected but has sent no new data for a minute; still waiting`,
+      transferBody: "Under an unfolded output",
+      transferWindow: (alias: string) => `Loading the latest messages from ${alias}`,
+      transferFill: "Syncing earlier history",
+      transferOlder: "Loading earlier messages…",
+      transferBodyLabel: "Loading the full text",
+      transferTrying: (n: number) => `The machine is not answering, asking again (attempt ${n})`,
+      transferRetryIn: (s: number, n: number) =>
+        `The machine is not answering, asking again in ${s} s (attempt ${n})`,
+      transferRetryNow: "Retry now",
     },
     streaming: {
       reply: "Assistant reply",
@@ -1096,6 +1169,15 @@ export const en: GalleryStrings = {
     avatars: {
       user: "User avatar",
       agent: "Agent avatar",
+      agentAside: "The active theme's drawing for twelve agents, one in each colour",
+      variants: "Every theme's drawing",
+      variantsAside:
+        "One smiling ball penguin, drawn once per theme; the colour follows the agent alone",
+      sizeCaption: (px) => `${px}px`,
+      picture: "An agent's own picture",
+      pictureAside:
+        "An uploaded picture keeps the agent's rounded tile; one that fails to load draws the default",
+      pictureBroken: "Fails to load",
       stack: "Avatar stack",
       stackShown: (shown, total) => `${shown} of ${total} shown`,
       userNames: ["admin", "Demo admin"],
@@ -1109,13 +1191,13 @@ export const en: GalleryStrings = {
       footer: "Footer",
       footerHint:
         "The landing page's brand and link columns; the docs' single line of copyright and links.",
-      tagline: "Unified and Stable RSI Framework.",
+      tagline: "Out-of-the-Box RSI Framework.",
       columns: [
         { title: "Product", links: ["Cases", "Quick start", "Blog", "Download"] },
         { title: "Resources", links: ["GitHub repository", "Docs", "Gallery"] },
       ],
       lineLinks: ["Home", "GitHub repository", "Apache-2.0 License"],
-      copyright: "© 2026 Prism Shadow · Open source under Apache-2.0",
+      copyright: "© 2026 Prism Shadow. Open source under Apache-2.0.",
       code: "Code and copy",
       codeHint:
         "A command card carries a copy button; once the text is on the clipboard its icon turns to a check, the label stays, and a screen reader hears Copied.",
@@ -1798,10 +1880,12 @@ export const en: GalleryStrings = {
         working: "Working",
         reconnecting: "Reconnecting",
         reconnectStopped: "Reconnect stopped",
+        reconnectFailed: "Reconnect failed",
         failed: "Failed",
         signInRefused: "Sign-in refused",
         installedOnly: "Installed",
         behind: "Update available",
+        restartNeeded: "Restart needed",
         notConnected: "Not connected",
         unreachable: "Unreachable",
         stopped: "Stopped",
@@ -1812,10 +1896,12 @@ export const en: GalleryStrings = {
         failed: "Failed at Restart the server: no answer on port 7364 within 30 s.",
         unreachable: "ssh: connect to host 10.0.0.12 port 22: Connection timed out",
         working: "Downloading penguin-harness 0.2.16…",
-        reconnecting: "Reconnect 3 of 8 failed",
-        reconnectStopped:
+        reconnecting: "Reconnect 3 of 5 failed",
+        reconnectFailed:
           "lab-2 refused the connection: no ssh server listens at that address and port.",
         behind: "Version 0.2.16 is available",
+        restartNeeded:
+          "This machine is on a different version, so its conversations won't update by themselves. Click Restart server; if that doesn't help, click Reinstall.",
       },
       cards: "Machine cards",
       cardsHint:
@@ -1849,6 +1935,7 @@ export const en: GalleryStrings = {
         stop: "Stop server",
         restart: "Restart server",
         configure: "Configure SSH",
+        reinstall: "Reinstall",
         uninstall: "Uninstall",
       },
       add: "Add machine",
@@ -1868,29 +1955,45 @@ export const en: GalleryStrings = {
       noHosts: "Every host in the ssh config is on this page already.",
     },
     retry: {
-      phases: "Four phases",
+      phases: "Five phases",
       phasesHint:
-        "A card's middle line: trying (a spinner), waiting for the next attempt (an hourglass, a countdown by the second and Retry now), gave up (a pause, the reason and Retry), not worth retrying (a cross in the danger tone and the fix; only the mark is coloured).",
-      blocks: "As a block",
+        "A card's middle line: trying (a spinner and Stop retrying), waiting for the next attempt (an hourglass, the countdown in the sentence, Retry now and Stop retrying), failed (a cross in the danger tone and Retry), stopped by a person (a pause and Retry), not worth retrying (a cross in the danger tone, with Retry or none). Why it failed follows the sentence in the muted ink, clamped to two lines with Expand; only the mark is coloured. The sentence is never bold: the body ink while an attempt is live, muted once it stops.",
+      blocks: "At body size",
       blocksHint:
-        "In a dialog section: body type, the reason under the sentence, the buttons under that on the form rung.",
+        "In a dialog section and in a load-failure notice: the same one line at body size, the actions bracketed text in it.",
       inCard: "In a machine card",
       inCardHint:
-        "The card's middle while no job runs; a press disables the buttons and spins until the next attempt begins.",
-      inChat: "In a chat notice",
+        "The card's middle while no job runs; in the narrow column both actions wrap under the sentence together; a press disables them until the next attempt begins.",
+      inChat: "In a conversation",
       inChatHint:
-        "The chat's reconnect notice takes the same pair: Retry now as secondary, Give up as ghost.",
+        'A model request being retried is a line of text in the conversation, the shape of "[Aborted]": a bracketed label, the attempt and the countdown, the cause in short with the HTTP status in parentheses, then bracketed text actions on the same line. Retry now and Stop retrying while it waits, Details on every state. A ladder that ran out, or was stopped during a wait, reads "[Failed]" and offers Retry as the last line; an error no retry can fix reads "[Error]". The provider\'s own words are in the details, not on the line. Earlier messages that failed to load get the same kind of line at the top.',
+      report: "Failure details",
+      reportHint:
+        "What Details opens: the report as it would be sent (English, mono, read-only), key-shaped strings taken out; Copy copies it as Markdown, and File an issue on GitHub opens the bug form prefilled.",
+      loadFailed: "Could not load",
+      loadFailedHint:
+        "What stands where content could not be loaded: a mark, a one-line title, a muted line under it with the reason or what happens next, the retry row while something retries on its own, one text action, and the raw error folded under Technical details. No red words: the mark says it failed.",
+      historyFailed: "Could not load the message history",
+      networkError: "Network error, please check your connection",
+      awayHeadline: (alias: string) => `${alias} is reconnecting`,
+      awayHint:
+        "The conversation is kept on that machine and loads as soon as the connection is back.",
+      openMachines: "Go to Machines",
+      details: "Technical details",
+      transportError:
+        "The connection to QS7J4YVgSovi-Z2c did not answer: the session's SOCKS port did not answer: connect ECONNREFUSED 127.0.0.1:37747",
       narrow: "Narrow",
-      narrowHint: "At phone width the line wraps under the name; the buttons are never cut.",
-      trying: (n: number, m: number) => `Trying to reconnect (${n} of ${m})…`,
+      narrowHint: "At phone width the line wraps under the name; the actions are never cut.",
+      trying: (n: number, m: number) => `Reconnecting (attempt ${n}/${m})`,
+      waiting: (s: number, n: number, m: number) => `Reconnecting in ${s} s (attempt ${n}/${m})`,
       failed: (n: number, m: number) => `Reconnect ${n} of ${m} failed`,
-      countdown: (s: number) => `next try in ${s} s`,
-      gaveUp: (m: number) => `Stopped retrying after ${m} failed reconnects`,
-      stoppedSsh: "Stopped reconnecting",
-      stoppedPassword: "Sign-in refused; stopped reconnecting",
+      gaveUp: (m: number) => `Reconnect failed after ${m} attempts`,
+      cancelled: "Stopped retrying",
+      stoppedSsh: "Reconnect failed; fix ssh first",
+      stoppedPassword: "Sign-in refused; not retrying",
       retryNow: "Retry now",
+      stop: "Stop retrying",
       retry: "Retry",
-      lasting: "For 16 minutes",
       refused: (alias: string) =>
         `${alias} refused the connection: no ssh server listens at that address and port.`,
       hostKey:
@@ -1900,11 +2003,52 @@ export const en: GalleryStrings = {
         ready: "Running",
         reconnecting: "Reconnecting",
         reconnectStopped: "Reconnect stopped",
+        reconnectFailed: "Reconnect failed",
       },
       card: { checked: "4 min", use: "Use", settings: "Settings", remove: "Delete" },
-      chatRetryNow: "Retry now",
-      chatGiveUp: "Give up",
-      chatLine: (n: number) => `[Retry] Connection timed out or dropped; retry #${n} shortly…`,
+      chatWaiting: (s: number, n: number, m: number) => `attempt ${n}/${m} in ${s} s`,
+      chatSending: (n: number, m: number) => `sending attempt ${n}/${m}`,
+      chatSent: (n: number, m: number) => `attempt ${n}/${m} sent`,
+      chatRetrying: (sentence: string, why: string) => `[Retrying]: ${sentence} (${why})`,
+      chatRetried: (sentence: string, why: string) => `[Retried]: ${sentence} (${why})`,
+      chatFailed: (n: number, why: string) => `[Failed]: all ${n} requests failed (${why})`,
+      chatFailedOnce: (why: string) => `[Failed]: ${why}`,
+      chatError: (why: string) => `[Error]: the model request failed (${why})`,
+      chatAborted: "[Aborted]: aborted during reconnect backoff",
+      chatWhy: "network or service temporarily unavailable, HTTP 503",
+      chatFatalWhy: "credentials rejected, HTTP 401",
+      chatEarlierFailed:
+        "[Load failed]: could not load earlier messages (network error, please check your connection)",
+      openDetails: "Details",
+      reportTitle: "Request failure details",
+      reportLead:
+        "Most of these failures come from the model provider or the network. If you think PenguinHarness is at fault, filing an issue on GitHub helps improve this open-source project.",
+      reportCheck:
+        "Key-shaped strings are taken out of the report; still check it for anything private before you send it.",
+      reportLabel: "Failure report",
+      copy: "Copy",
+      fileIssue: "File an issue on GitHub",
+    },
+    report: {
+      crash: "Crash notice",
+      crashHint:
+        'A part of the page that crashed while rendering leaves no blank: one line in the shape of "[Aborted]", with Reload and Report. The report holds the error, its stack and the component stack, personal paths taken out.',
+      toast: "Error toast",
+      toastHint:
+        "Only a serious error (a 500 the server did not name, an exception nobody expected) offers Report on its toast, which then stays longer; an expected error (validation, permission, offline) looks as it always did.",
+      fireSerious: "Serious error",
+      fireExpected: "Expected error",
+      seriousText: "Internal server error",
+      expectedText: "You do not have access to this Project",
+      loadFailed: "Could not load",
+      loadFailedHint:
+        "The could-not-load notice adds Report beside Retry when the failure is a serious error.",
+      loadTitle: "Could not load the message history",
+      retry: "Retry",
+      dialog: "Report dialog",
+      dialogHint:
+        "The report as it would be sent (English, mono, read-only): what happened, the page, the error and the time, the version, how it is installed and the OS, then the stack. Copy copies it as Markdown; File an issue on GitHub opens the bug form prefilled.",
+      open: "Open the report",
     },
     attachments: {
       composer: "Composer",

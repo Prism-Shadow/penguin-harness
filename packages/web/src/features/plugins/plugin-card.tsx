@@ -11,8 +11,8 @@
  *
  * - Skills / hooks / MCP servers (any member): the update nudge while an Agent is behind (the
  *   plugins trail's last stop, so it carries the dot), quick start, and "manage installs" — a
- *   dialog listing every Agent of the Project with Install / Installed (Uninstall on hover) /
- *   Update: this server's and each machine's own in one list, a machine's named `[SSH: alias]`
+ *   dialog listing every Agent of the Project with Install / Installed (Uninstall on hover, for
+ *   the Project owner, whose alone an uninstall is) / Update: this server's and each machine's own in one list, a machine's named `[SSH: alias]`
  *   after the Agent's name, every action on such a row going to that machine. A machine out of
  *   reach keeps its rows, greyed and inert with the reason, as it last answered; an Agent whose
  *   installs have not been answered yet keeps its row too, its Install held until they are.
@@ -32,8 +32,8 @@
  * the status and "used by" on the metadata line are fixed-width placeholders, so the first answer
  * replaces a bar rather than a word.
  */
-import { useId, useState } from "react";
-import type { ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
+
 import type { AgentSummary, PluginItem, QuickStartItem } from "@prismshadow/penguin-server/api";
 import {
   AgentAvatar,
@@ -44,19 +44,19 @@ import {
   ICONS,
   ICON_SIZE,
   Modal,
+  Pill,
   Skeleton,
   StatusIcon,
   UpdateDot,
-  toastError,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
+import { useAgentAvatarSrc } from "../../lib/agent-avatar";
 import { S } from "../../lib/strings";
 import { cardBodyClick } from "../../lib/card-open";
-import { apiErrorText } from "../../lib/api-error";
 import { downloadArchive } from "../agents/archive-download";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName } from "../../state/project";
-import { SkillTile } from "../skills/skill-icon-view";
+import { SkillTile } from "../skills";
 import { MetaLine, PluginDetailModal, moduleOnThisServer } from "./plugin-detail";
 import type { PluginRow } from "./plugin-groups";
 import { McpServerMarks, McpSetUpModal, StdioInstallBody } from "./plugin-mcp";
@@ -80,6 +80,7 @@ import {
   type LibraryUsage,
   type PluginStatus,
 } from "./plugin-status";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** "Manage installs" button icon: the arrow landing in its tray. */
 const INSTALL_ICON = ICONS.download;
@@ -169,6 +170,8 @@ export interface PluginCardProps {
   projectId: string | null;
   /** This row's module install or removal is running. */
   busy: boolean;
+  /** The install under way is a channel download: bytes received so far, the total when known. */
+  progress?: { received: number; total: number | null } | null;
   /** Another row's is: one at a time, so this one is held rather than queued. */
   blocked: boolean;
   onQuickStart: (plugin: PluginItem) => void;
@@ -187,6 +190,7 @@ export interface PluginCardProps {
 export function PluginCard(props: PluginCardProps) {
   const { row, status, usage, categoryTitle, targets, installed } = props;
   const { locale } = useLocale();
+  const avatarSrc = useAgentAvatarSrc();
   const sharedId = useId();
   const plugin = row.library;
   const [detailOpen, setDetailOpen] = useState(false);
@@ -240,7 +244,7 @@ export function PluginCard(props: PluginCardProps) {
     try {
       await downloadArchive(url, row.name);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     }
   };
 
@@ -332,9 +336,18 @@ export function PluginCard(props: PluginCardProps) {
         ...(mod.state !== "none" ? [false] : []),
       ];
       for (const install of verbs) {
+        // A channel download reports itself: the percent while the total is known, a pulse
+        // before that. npm's own fetches stay "installing" — npm reports no progress here.
+        const total = props.progress?.total ?? null;
+        const percent =
+          props.progress != null && total !== null && total > 0
+            ? Math.floor((props.progress.received / total) * 100)
+            : null;
         const label = install
           ? props.busy
-            ? S.plugins.installing
+            ? props.progress != null
+              ? S.plugins.downloading(percent)
+              : S.plugins.installing
             : S.plugins.install
           : S.plugins.uninstall;
         out.push(
@@ -539,6 +552,7 @@ export function PluginCard(props: PluginCardProps) {
                 key={t.key}
                 agentId={t.agent.agentId}
                 name={agentDisplayName(t.agent)}
+                avatarSrc={avatarSrc(t.agent.agentId, t.machine?.machineId ?? null)}
                 machine={t.machine?.label ?? null}
                 installed={usage?.usedBy.includes(t.key) ?? false}
                 outdated={behind.includes(t.key)}
@@ -738,8 +752,9 @@ export interface RowHold {
 
 /**
  * One Agent row in the "manage installs" dialog: an Agent without the plugin shows "Install";
- * one with it shows "Installed", switching to "Uninstall" on hover (the same button carries the
- * uninstall); a copy the server lists as behind additionally shows "Update" (reinstall =
+ * one with it shows "Installed", switching to "Uninstall" on hover for the Project owner (the
+ * same button carries the uninstall, which the server takes from the owner alone) and a plain
+ * label for anyone else; a copy the server lists as behind additionally shows "Update" (reinstall =
  * update). Install and uninstall go through the page's optimistic updates, rolling back on
  * failure. Where the Agent carries the plugin's MCP servers, marks beside its name say what
  * they wait for — vault values, a sign-in — and a Project owner gets Set up for the values. A
@@ -752,6 +767,7 @@ export interface RowHold {
 export function InstallRow({
   agentId,
   name,
+  avatarSrc,
   machine = null,
   installed,
   outdated,
@@ -764,6 +780,8 @@ export function InstallRow({
 }: {
   agentId: string;
   name: string;
+  /** The Agent's own picture, when it has one (lib/agent-avatar.ts). */
+  avatarSrc?: string | undefined;
   /** The ssh alias of the machine the Agent lives on; null for this server. */
   machine?: string | null;
   installed: boolean;
@@ -788,7 +806,7 @@ export function InstallRow({
     <div
       className={`flex items-center gap-2 rounded-md px-1.5 py-1.5 transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/60 ${held?.off === true ? "opacity-60" : ""}`}
     >
-      <AgentAvatar id={agentId} name={name} size={22} className="shrink-0 rounded" />
+      <AgentAvatar id={agentId} size={22} className="shrink-0 rounded" src={avatarSrc} />
       <span className="flex min-w-0 flex-1 items-center gap-1.5">
         <span
           className="min-w-0 truncate text-sm"
@@ -835,7 +853,9 @@ export function InstallRow({
           {S.skills.updateAction}
         </Button>
       )}
-      {installed ? (
+      {installed && !isOwner ? (
+        <Pill tone="success">{S.skills.installed}</Pill>
+      ) : installed ? (
         // group: on hover the button's copy switches "Installed" → "Uninstall" (the same button
         // carries the uninstall action) — not on a held row, whose button does nothing.
         <Button

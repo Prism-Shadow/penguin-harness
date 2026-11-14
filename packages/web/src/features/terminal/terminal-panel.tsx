@@ -26,6 +26,7 @@ import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
 import { dockVersion, setShownShell, subscribeDock } from "../dock/dock-state";
 import {
   createShell,
+  dockSessionId,
   ensureShell,
   ownTerminals,
   shownTerminalId,
@@ -125,7 +126,10 @@ export function TerminalPanel({ active }: DockPanelBodyProps) {
   const empty = shells.length === 0;
   const listComplete = useSyncExternalStore(subscribeTerminals, terminalListComplete);
   useEffect(() => {
-    if (sessionId === null || closing.current) return;
+    // The conversation this render saw must still be the one on screen: a route change can move
+    // the docks to the next conversation between the render and this effect, and closing then
+    // would take that conversation's tab.
+    if (sessionId === null || sessionId !== dockSessionId() || closing.current) return;
     if (!empty) {
       listedFor.current = sessionId;
       return;

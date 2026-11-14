@@ -83,11 +83,14 @@ import type { PluginHost } from "../plugin/host.js";
 import { loadPluginHost } from "../plugin/loader.js";
 import {
   useInstalledPluginPrefix,
+  useLibraryHost,
   usePushedPluginLibrary,
+  usePushedBenchmarkDirectory,
   userText,
 } from "@prismshadow/penguin-core";
 import { pluginsPrefix } from "../plugin/install.js";
-import { pushedLibraryDir } from "./asset-archives.js";
+import { serverPackageDir } from "../plugin/library-host.js";
+import { pushedLibraryDir, pushedBenchmarksDir } from "./asset-archives.js";
 import { UnsatisfiedPluginsError, bootWithoutUnsatisfied } from "../plugin/unsatisfied.js";
 import type { PluginSelection } from "../plugin/unsatisfied.js";
 import { takePushSlip } from "./push-plugins.js";
@@ -122,7 +125,8 @@ export interface PlatformApi extends Park {
    * In-process accessors for the one thing the seam cannot carry: a live socket. The
    * runtime's ws transport authenticates an upgrade, then hands the socket over with the
    * reference it authenticated — a pty's session, or the API socket's user — for the
-   * platform's protocol to drive.
+   * platform's protocol to drive. `url` is the upgrade's own: its public origin (the browser's
+   * scheme, host and port; http/public-origin.ts) with the path and query it asked for.
    */
   terminals(): TerminalManager;
   attachStream(ws: WebSocket, ref: AttachedStream, url: URL, log: (l: string) => void): void;
@@ -426,7 +430,11 @@ async function createInner(
   // The skill/hook plugin LIBRARY is the one this build was made with, when the push carried
   // it: a machine installed before a plugin existed otherwise never offers it, and a feature
   // that seeds an Agent with it (company mode's CEO, `agent-company`) fails on every attempt.
+  // Otherwise it is the one the server package was installed with: its own dependencies name
+  // the plugin packages (core no longer does), so it names itself the library's host.
   if (caps !== null) usePushedPluginLibrary(pushedLibraryDir(caps.hmr.assetsDir()));
+  useLibraryHost(serverPackageDir());
+  if (caps !== null) usePushedBenchmarkDirectory(pushedBenchmarksDir(caps.hmr.assetsDir()));
   // And it lists what an admin installed on this server: the packages of Skills, hooks or MCP
   // servers in the data root's plugin prefix, beside the ones the build ships.
   if (caps !== null) useInstalledPluginPrefix(pluginsPrefix(caps.config.root));
@@ -553,7 +561,10 @@ async function createInner(
     const what = disabled
       ? `left out of this generation: ${reason}`
       : `runs without the contributions this platform has no slot for: ${reason}`;
-    console.warn(`[platform] plugin '${specifier}' ${what}`);
+    // A plugin left out of this generation failed to load — an error. One that runs without
+    // some of its contributions is only said, not complained about.
+    if (disabled) console.error(`[platform] plugin '${specifier}' ${what}`);
+    else console.log(`[platform] plugin '${specifier}' ${what}`);
     errors?.record({
       source: "plugin",
       code: `unsatisfied:${specifier}`,

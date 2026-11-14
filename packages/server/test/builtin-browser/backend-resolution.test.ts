@@ -11,10 +11,11 @@
  *   by the admin — and never falls back to the built-in browser.
  * - A switch waits for the agent's action in flight on the backend being left (409
  *   `action_in_flight`).
- * - An agent's call (the API token or its exchanged Remote cookie naming its session) acts for the person who last
- *   started a run in that session, else the session's Project owner — so it drives their Chrome.
- * - Only the person chooses: neither the API token nor its Remote cookie can switch backends or mint a pairing code,
- *   and a prefs write cannot set the backend.
+ * - An agent's call (the API token naming its session) acts for the person who last started a run
+ *   in that session, else the session's Project owner — so it drives their Chrome. A Remote
+ *   session naming the same session is the person, and drives its own.
+ * - Only the person chooses: the API token can neither switch backends nor mint a pairing code,
+ *   and a prefs write cannot set the backend. A Remote session, the person's sign-in, can do both.
  * - The built-in browser's history, import and data are not Chrome's: 405 on chrome.
  */
 import { assistantText } from "@prismshadow/penguin-core";
@@ -219,86 +220,90 @@ describe("the desktop", () => {
 });
 
 describe("an agent's call", () => {
-  it.each(["bearer", "remote"] as const)(
-    "the %s credential drives the Chrome of the person who started its session's run, else the Project owner's",
-    async (credential) => {
-      t = await createTestApp();
-      const adminLogin = await loginAdmin(t.app);
-      const admin = apiClient(t.app, adminLogin.cookie);
-      // The admin's Chrome is paired (not connected); bob, a member of the admin's Project, has none.
-      await pair(t.app, adminLogin.cookie);
-      const bob = apiClient(t.app, (await provisionUser(t.app, "bob")).cookie);
-      expect(
-        (await admin.post("/api/projects/default_project/members", { userId: "bob" })).status,
-      ).toBe(201);
-      const prompted = uniqueSessionId();
-      adoptSession(
-        t.deps,
-        fakeSession(prompted, {
-          async *run() {
-            yield assistantText("done");
-          },
-        }),
-        { projectId: "default_project" },
-      );
-      const untouched = uniqueSessionId();
-      adoptSession(t.deps, fakeSession(untouched), { projectId: "default_project" });
-      const run = await bob.post(`/api/sessions/${prompted}/tasks`, {
-        input: [{ type: "text", text: "look this up" }],
-      });
-      expect(run.status).toBe(202);
-      await waitFor(() => t!.deps.manager.statusOf(prompted) === "idle");
+  it("the API token drives the Chrome of the person who started its session's run, else the Project owner's", async () => {
+    t = await createTestApp();
+    const adminLogin = await loginAdmin(t.app);
+    const admin = apiClient(t.app, adminLogin.cookie);
+    // The admin's Chrome is paired (not connected); bob, a member of the admin's Project, has none.
+    await pair(t.app, adminLogin.cookie);
+    const bob = apiClient(t.app, (await provisionUser(t.app, "bob")).cookie);
+    expect(
+      (await admin.post("/api/projects/default_project/members", { userId: "bob" })).status,
+    ).toBe(201);
+    const prompted = uniqueSessionId();
+    adoptSession(
+      t.deps,
+      fakeSession(prompted, {
+        async *run() {
+          yield assistantText("done");
+        },
+      }),
+      { projectId: "default_project" },
+    );
+    const untouched = uniqueSessionId();
+    adoptSession(t.deps, fakeSession(untouched), { projectId: "default_project" });
+    const run = await bob.post(`/api/sessions/${prompted}/tasks`, {
+      input: [{ type: "text", text: "look this up" }],
+    });
+    expect(run.status).toBe(202);
+    await waitFor(() => t!.deps.manager.statusOf(prompted) === "idle");
 
-      const token = t.deps.authService.localApiToken()!;
-      const headers =
-        credential === "bearer"
-          ? { authorization: `Bearer ${token}` }
-          : { cookie: await remoteSessionCookie(t.app, token) };
-      const agent = async (sessionId?: string) => {
-        const query = sessionId !== undefined ? `?sessionId=${sessionId}` : "";
-        const res = await t!.app.request(`/api/builtin-browser/status${query}`, {
-          headers,
-        });
-        return (await json<BuiltinBrowserStatus>(res)).reason;
-      };
-      expect(await agent(prompted)).toBe("extension_not_paired");
-      expect(await agent(untouched)).toBe("extension_disconnected");
-      expect(await agent()).toBe("extension_disconnected");
-      // In a body, as the CLI sends it.
-      const action = await t.app.request("/api/builtin-browser/tabs", {
-        method: "POST",
+    const token = t.deps.authService.localApiToken()!;
+    const status = async (headers: Record<string, string>, sessionId?: string) => {
+      const query = sessionId !== undefined ? `?sessionId=${sessionId}` : "";
+      const res = await t!.app.request(`/api/builtin-browser/status${query}`, {
+        headers,
+      });
+      return (await json<BuiltinBrowserStatus>(res)).reason;
+    };
+    const headers = { authorization: `Bearer ${token}` };
+    expect(await status(headers, prompted)).toBe("extension_not_paired");
+    expect(await status(headers, untouched)).toBe("extension_disconnected");
+    expect(await status(headers)).toBe("extension_disconnected");
+    // In a body, as the CLI sends it.
+    const action = await t.app.request("/api/builtin-browser/tabs", {
+      method: "POST",
+      headers: { ...headers, "content-type": "application/json" },
+      body: JSON.stringify({ sessionId: prompted }),
+    });
+    expect((await errorOf(action)).error.reason).toBe("extension_not_paired");
+    // The admin's Remote session naming bob's session is still the admin: its paired Chrome.
+    const remote = { cookie: await remoteSessionCookie(t.app, token) };
+    expect(await status(remote, prompted)).toBe("extension_disconnected");
+  });
+
+  it("the API token can neither switch backends nor mint a pairing code; nor can a prefs write", async () => {
+    t = await createTestApp();
+    const headers = { authorization: `Bearer ${t.deps.authService.localApiToken()!}` };
+    const asAgent = (method: string, path: string, body?: unknown) =>
+      t!.app.request(path, {
+        method,
         headers: { ...headers, "content-type": "application/json" },
-        body: JSON.stringify({ sessionId: prompted }),
+        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
       });
-      expect((await errorOf(action)).error.reason).toBe("extension_not_paired");
-    },
-  );
+    for (const res of [
+      await asAgent("PUT", "/api/builtin-browser/backend", { backend: "chrome" }),
+      await asAgent("POST", "/api/builtin-browser/extension/pairings"),
+    ]) {
+      expect(res.status).toBe(403);
+      expect((await errorOf(res)).error.code).toBe("human_required");
+    }
+    const admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
+    const prefs = await admin.put("/api/me/prefs", { browserBackend: "chrome" });
+    expect(prefs.status).toBe(400);
+  });
 
-  it.each(["bearer", "remote"] as const)(
-    "the %s credential can neither switch backends nor mint a pairing code; nor can a prefs write",
-    async (credential) => {
-      t = await createTestApp();
-      const token = t.deps.authService.localApiToken()!;
-      const headers =
-        credential === "bearer"
-          ? { authorization: `Bearer ${token}` }
-          : { cookie: await remoteSessionCookie(t.app, token) };
-      const asAgent = (method: string, path: string, body?: unknown) =>
-        t!.app.request(path, {
-          method,
-          headers: { ...headers, "content-type": "application/json" },
-          ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-        });
-      for (const res of [
-        await asAgent("PUT", "/api/builtin-browser/backend", { backend: "chrome" }),
-        await asAgent("POST", "/api/builtin-browser/extension/pairings"),
-      ]) {
-        expect(res.status).toBe(403);
-        expect((await errorOf(res)).error.code).toBe("human_required");
-      }
-      const admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
-      const prefs = await admin.put("/api/me/prefs", { browserBackend: "chrome" });
-      expect(prefs.status).toBe(400);
-    },
-  );
+  it("a Remote session is the person's sign-in: it switches backends and mints a pairing code", async () => {
+    t = await createTestApp();
+    const remote = apiClient(
+      t.app,
+      await remoteSessionCookie(t.app, t.deps.authService.localApiToken()!),
+    );
+    expect((await remote.put("/api/builtin-browser/backend", { backend: "chrome" })).status).toBe(
+      200,
+    );
+    const minted = await remote.post("/api/builtin-browser/extension/pairings");
+    expect(minted.status).toBe(200);
+    expect((await json<BrowserExtensionPairingResponse>(minted)).code).toEqual(expect.any(String));
+  });
 });

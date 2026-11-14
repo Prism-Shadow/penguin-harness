@@ -45,10 +45,10 @@ export function useMemoryListing(
       try {
         const overview = await api.getMemoryOverview(projectId, agentId, machineId);
         const scopes = await Promise.all(
-          overview.scopes.map(async (info) => ({
-            info,
-            files: (await api.getMemoryFiles(projectId, agentId, info.scopeKey, machineId)).files,
-          })),
+          overview.scopes.map(async (info) => {
+            const listed = await api.getMemoryFiles(projectId, agentId, info.scopeKey, machineId);
+            return { info, files: listed.files, orphanFiles: listed.orphanFiles };
+          }),
         );
         if (!cancelled) setState({ forAgent: agentKey, scopes, error: null });
       } catch (err) {

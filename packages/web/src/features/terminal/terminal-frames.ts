@@ -4,6 +4,9 @@
  *
  * Output is decoded straight into a string and handed to xterm — no JSON parse on the hot
  * path, which is what keeps a noisy build from stuttering the UI thread.
+ *
+ * Ping/Pong are symmetric: whoever probes sends its own clock reading and the peer echoes
+ * it back untouched, so each end can decide for itself that a silent socket is dead.
  */
 
 export const TerminalOpcode = {
@@ -12,6 +15,10 @@ export const TerminalOpcode = {
   Resize: 0x03,
   Restore: 0x05,
   Exit: 0x06,
+  /** Either direction: liveness probe; the peer echoes the payload back as Pong. */
+  Ping: 0x07,
+  /** Either direction: the echo of a Ping's payload, unchanged. */
+  Pong: 0x08,
 } as const;
 
 export type TerminalOpcode = (typeof TerminalOpcode)[keyof typeof TerminalOpcode];

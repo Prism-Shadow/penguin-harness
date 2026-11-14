@@ -13,9 +13,14 @@
  *   back, no longer coming back on its own (the Machines page retries it), stopped, not set up or
  *   not on the list — never "not connected" for a machine that is connected and answered with a
  *   failure, whose own words it gives instead.
+ * - A conversation's restart notice stands for its machine while that machine is connected and
+ *   its server never takes the API socket — read as the machine's card reads it, so not while the
+ *   server is bringing it back (the away reading speaks then), not once a handshake completed,
+ *   and not before the list has answered.
  */
 import { describe, expect, it } from "vitest";
 import type { MachineInfo, MachinesResponse } from "@prismshadow/penguin-server/api";
+import { machineRestartNeeded } from "../src/features/chat/machine-away";
 import { machineLink, remoteAgentsEmpty } from "../src/lib/machine-link";
 import { S } from "../src/lib/strings";
 
@@ -98,5 +103,34 @@ describe("the composer's Agent picker with nothing to offer", () => {
     expect(remoteAgentsEmpty("connected", null)).toBe(S.common.loading);
     expect(remoteAgentsEmpty(null, null)).toBe(S.common.loading);
     expect(remoteAgentsEmpty("unknown", null)).toBe(S.common.loading);
+  });
+});
+
+describe("a conversation's restart notice", () => {
+  const since = "2026-10-26T08:00:00.000Z";
+  const held = { connection: { pid: 1 } };
+
+  it("stands for the machine while it is connected and its server never takes the socket", () => {
+    const box = machine("a", { ...held, socket: { state: "unanswered", since } });
+    expect(machineRestartNeeded(list(box), "a")).toBe(box);
+  });
+
+  it("is nothing once a handshake completed, while the machine is being brought back, or before the list answered", () => {
+    const restarted = machine("a", { ...held, socket: { state: "connected", since } });
+    expect(machineRestartNeeded(list(restarted), "a")).toBeNull();
+    const away = machine("a", {
+      ...held,
+      socket: { state: "unanswered", since },
+      reconnect: {
+        since,
+        attempts: 1,
+        maxAttempts: 8,
+        nextAt: null,
+        lastError: null,
+        diagnosis: null,
+      },
+    });
+    expect(machineRestartNeeded(list(away), "a")).toBeNull();
+    expect(machineRestartNeeded(null, "a")).toBeNull();
   });
 });

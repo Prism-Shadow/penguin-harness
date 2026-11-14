@@ -9,5 +9,5 @@ import { blogFrontmatter } from "./scripts/frontmatter-plugin";
 
 export default defineConfig({
   plugins: [blogFrontmatter()],
-  test: { environment: "node" },
+  test: { environment: "node", include: ["test/**/*.test.ts"] },
 });

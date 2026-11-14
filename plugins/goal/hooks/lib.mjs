@@ -94,8 +94,7 @@ export function uncachedTokens(record) {
 }
 
 /**
- * The records of the round that just ended: everything after the last round input, or the
- * whole file when there is none in it (a compaction rotated the file mid-round).
+ * Everything after the last round input, or all available records if it is missing.
  */
 export function lastRoundRecords(records) {
   let start = 0;
@@ -103,6 +102,28 @@ export function lastRoundRecords(records) {
     if (isRoundInput(r)) start = i + 1;
   });
   return records.slice(start);
+}
+
+/** Read preceding compaction shards only as far as this round's input. */
+export function readRoundRecords(file, sessionId, records) {
+  const match = /^(.*)_(\d+)\.jsonl$/.exec(path.basename(file));
+  if (!match || match[1] !== sessionId) return lastRoundRecords(records);
+  let index = Number(match[2]);
+  if (!Number.isSafeInteger(index)) return lastRoundRecords(records);
+  const chunks = [records];
+  let chunk = records;
+  while (!chunk.some(isRoundInput) && index > 1) {
+    index -= 1;
+    const previous = readTrace(
+      path.join(path.dirname(file), `${sessionId}_${String(index).padStart(3, "0")}.jsonl`),
+    );
+    const meta = previous.find((r) => r && r.type === "session_meta");
+    // Missing/unreadable shards or another session are not a reason to count older rounds.
+    if (meta?.payload?.session_id !== sessionId) break;
+    chunks.unshift(previous);
+    chunk = previous;
+  }
+  return lastRoundRecords(chunks.flat());
 }
 
 /**

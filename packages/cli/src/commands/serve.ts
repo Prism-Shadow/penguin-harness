@@ -35,12 +35,15 @@ import {
 } from "@prismshadow/penguin-core";
 import { liveServerLock } from "@prismshadow/penguin-server/lock";
 import type { Command } from "commander";
-import type { Messages, WebProbeFailureKind } from "../i18n.js";
+import type { Messages, WebProbeFailureKind } from "@prismshadow/penguin-server/cli";
+import { Bind, Component } from "@prismshadow/penguin-core/kernel";
+import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/cli";
 import { registerResetPasswordCommand } from "./reset-password.js";
-import { registerStatusCommand } from "./server-status.js";
-import { registerStopCommand } from "./server-stop.js";
 
 /** Why the readiness poll gave up: failure class plus a one-line diagnostic from the last probe. */
+
+/** The node the host located for a key, typed with this package's commander. */
+const node = (command: CliCommandProgram): Command => command as Command;
 export interface ReadinessFailure {
   kind: WebProbeFailureKind;
   detail: string;
@@ -345,10 +348,14 @@ function openBrowser(url: string): void {
   }
 }
 
-export function registerServeCommands(program: Command, t: Messages): void {
-  const server = program
-    .command("server")
-    .description(t.serve.serverDesc)
+/**
+ * Fills in `penguin server`, on the node the host located by the command's key. Bare
+ * `penguin server` starts the service (commander runs the action when no subcommand is
+ * named); `status`, `stop` and `reset-admin-password` are commands of their own whose keys
+ * sit under this one, and only dispatch on an exact name match.
+ */
+export function registerServerCommand(server: Command, t: Messages): void {
+  server
     .option("--port <port>", t.serve.port)
     .option("--host <host>", t.serve.host)
     .action(async (opts: { port?: string; host?: string }) => {
@@ -360,15 +367,11 @@ export function registerServeCommands(program: Command, t: Messages): void {
       }
       await startServer(opts, t);
     });
-  // Bare `penguin server` still starts the service (commander runs the action when no
-  // subcommand is named); the subcommand only dispatches on an exact name match.
-  registerResetPasswordCommand(server, t);
-  registerStatusCommand(server, t);
-  registerStopCommand(server, t);
+}
 
-  program
-    .command("web")
-    .description(t.serve.webDesc)
+/** Fills in `penguin web`, on the node the host located by the command's key. */
+export function registerWebCommand(web: Command, t: Messages): void {
+  web
     .option("--port <port>", t.serve.port)
     .option("--host <host>", t.serve.host)
     .option("--no-open", t.serve.noOpen)
@@ -398,4 +401,82 @@ export function registerServeCommands(program: Command, t: Messages): void {
       process.stdout.write(`${t.webReady(url + page)}\n`);
       if (opts.open) openBrowser(url + page);
     });
+}
+
+/** `penguin server`. */
+@Component({
+  contributes: {
+    "CliCommandsModule.commands": [
+      {
+        id: "cli.server",
+        key: "server",
+        summary: {
+          en: "Start the Web service (HTTP API and the built-in frontend, same process); subcommand reset-admin-password resets a forgotten admin password",
+          zh: "启动 Web 服务（HTTP API 与内置前端，同一进程）；子命令 reset-admin-password 重置忘记的管理员密码",
+        },
+      },
+    ],
+  },
+})
+export class ServerCommand {
+  @Bind("cli.server") command!: CliCommandCode<Messages>;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerServerCommand(node(command), ctx.messages);
+      },
+    };
+  }
+}
+
+/** `penguin server reset-admin-password`. */
+@Component({
+  contributes: {
+    "CliCommandsModule.commands": [
+      {
+        id: "cli.server.reset-admin-password",
+        key: "server.reset-admin-password",
+        summary: {
+          en: "Reset the Web admin account so the next server start prints a new first-login link (the server must be stopped)",
+          zh: "重置 Web 管理员账号，下次启动服务时会打印新的首次登录链接（须先停止服务）",
+        },
+      },
+    ],
+  },
+})
+export class ServerResetAdminPasswordCommand {
+  @Bind("cli.server.reset-admin-password") command!: CliCommandCode<Messages>;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerResetPasswordCommand(node(command), ctx.messages);
+      },
+    };
+  }
+}
+
+/** `penguin web`. */
+@Component({
+  contributes: {
+    "CliCommandsModule.commands": [
+      {
+        id: "cli.web",
+        key: "web",
+        summary: {
+          en: "Start the Web service and open the UI in a browser once it is ready",
+          zh: "启动 Web 服务，就绪后用浏览器打开界面",
+        },
+      },
+    ],
+  },
+})
+export class WebCommand {
+  @Bind("cli.web") command!: CliCommandCode<Messages>;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerWebCommand(node(command), ctx.messages);
+      },
+    };
+  }
 }

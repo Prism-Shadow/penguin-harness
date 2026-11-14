@@ -329,6 +329,12 @@ const COPY: Record<Lang, Copy> = {
 /** The round's conversation title. */
 export const rsiTitle = (lang: Lang): string => COPY[lang].title;
 
+/** The request that starts the self-evolution example. */
+export const rsiPrompt = (lang: Lang): string => COPY[lang].prompt;
+
+/** The accepted round's summary, shared by the saved and streamed conversations. */
+export const rsiAnswer = (lang: Lang): string => COPY[lang].answer;
+
 /** A Test Session's title: the question its case asks. */
 export const rsiTestTitle = (lang: Lang, index: number): string =>
   COPY[lang].cases[index]!.question;

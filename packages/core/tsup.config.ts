@@ -1,4 +1,5 @@
 import { defineConfig } from "tsup";
+import { buildBenchmarks, stageBenchmarks } from "../../scripts/build-benchmarks.mjs";
 // Inlines this checkout's git identity into the artifact — see the helper's module doc:
 // core's dist is what the server imports at run time, and a shipped bundle has no path back to the checkout it came from.
 import { buildGitDefine } from "../../scripts/build-git-stamp.mjs";
@@ -13,18 +14,14 @@ export default defineConfig({
     // A row's effective connection and credential rule: no Node dependency and no catalog
     // data, so the Web App bundles the same answers the server and the CLI compute.
     "src/state/model-connection.ts",
-    // The built-in Benchmarks as data: no Node dependency, so the component gallery's demo
-    // Project lists them as a new Project gets them.
-    "src/state/builtin-benchmarks-data.ts",
+    // The CLI command contract: the data and code halves of one `penguin` command,
+    // shared by the CLI's own table and the server's plugin slot.
+    "src/cli/index.ts",
     // Window/threshold arithmetic plus its two defaults: pure numbers, no Node dependency, so
     // the web app can bundle the compaction-threshold derivation its context ring fills against.
     "src/llm/context-limits.ts",
     // Hot-update kernel: zero-dependency subpath so web can bundle it directly.
     "src/kernel/index.ts",
-    // A2UI block grammar: pure TypeScript, no Node dependency, so the web renderer bundles the
-    // same parser and fallback the checker script uses (cli.ts is bundled separately by
-    // scripts/build-a2ui-check.mjs and is deliberately not an entry here).
-    "src/a2ui/index.ts",
   ],
   format: ["esm"],
   target: "node24",
@@ -39,6 +36,10 @@ export default defineConfig({
   clean: true,
   sourcemap: true,
   define: buildGitDefine(),
+  onSuccess: async () => {
+    await buildBenchmarks();
+    await stageBenchmarks("dist/builtin-benchmarks");
+  },
   // @prismshadow/skills (the vendored SKILL.md parser and its writer) is a devDependency bundled
   // into dist, so the published core carries that code and never imports the package at run
   // time; its own runtime dependency, yaml, is one of core's dependencies and stays external.

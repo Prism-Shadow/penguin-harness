@@ -3,7 +3,8 @@
  * list is by construction what this user may see: every archived Session of every Project they
  * own or are a member of (services/archived-sessions-service.ts).
  *
- *   GET  /groups      the groups (one Workspace of one Project each) with their counts
+ *   GET  /groups      the groups (one Workspace of one Project each) with their counts;
+ *                     `servers=here` or `servers=machines` answers one side alone
  *   GET  /            one group's page, newest activity first, by cursor
  *   POST /unarchive   unarchive explicit ids, or every archived row a filter matches
  *   POST /delete      delete them the same way
@@ -19,6 +20,7 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import { isValidId } from "@prismshadow/penguin-core";
 import type {
+  ArchivedSessionGroupServers,
   ArchivedSessionSource,
   ArchivedSessionsBatch,
   ArchivedSessionsQuery,
@@ -177,9 +179,19 @@ function parseTarget(body: Record<string, unknown>): ArchivedSessionsBatch {
 export function archivedSessionsRoutes(deps: ArchivedSessionsRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
-  app.get("/groups", async (c) =>
-    c.json(await deps.service.groups(callerOf(c), parseQuery(queryOf(c)))),
-  );
+  app.get("/groups", async (c) => {
+    const raw = queryOf(c);
+    if (raw.servers !== undefined && raw.servers !== "here" && raw.servers !== "machines") {
+      throw badRequest("servers must be here or machines.");
+    }
+    return c.json(
+      await deps.service.groups(
+        callerOf(c),
+        parseQuery(raw),
+        raw.servers as ArchivedSessionGroupServers | undefined,
+      ),
+    );
+  });
 
   app.get("/", async (c) => {
     const raw = queryOf(c);

@@ -949,10 +949,11 @@ export class GenerativeModel implements LLMInterface {
     let outcome: LLMOutcome | null = null;
     // The stateful history's length before this request: a response cut off is cut back to it.
     let historyLength = 0;
+    let it: AsyncIterator<UniEvent> | undefined;
     try {
       await this.refreshApiKey();
       historyLength = this.client.getHistory().length;
-      const it = this.openStream(
+      it = this.openStream(
         uniMessage,
         ac.signal,
         this.requestConfig(params.thinkingLevel, params.newMessages),
@@ -983,10 +984,8 @@ export class GenerativeModel implements LLMInterface {
           clearTimer();
         }
         if (res === STOPPED) {
-          // Upstream never settled after the abort. Abandon it rather than await it: ask it to
-          // close (best effort — a stream that ignored the signal may ignore this too, so the
-          // rejection is swallowed and the promise is not awaited) and classify by trigger.
-          void Promise.resolve(it.return?.(undefined)).catch(() => undefined);
+          // Upstream never settled after the abort. Cleanup below is best effort and does
+          // not wait on a stream that may also ignore return(). Classify by trigger.
           outcome = userSignal?.aborted
             ? { status: "aborted" }
             : { status: "retryable", errorCode: "timeout" };
@@ -1069,6 +1068,20 @@ export class GenerativeModel implements LLMInterface {
     } finally {
       clearTimer();
       userSignal?.removeEventListener("abort", onUserAbort);
+      // Leaving before the stop (at a yield, on an error, or abandoning an upstream that never
+      // settled) must cancel generation, even without a caller-owned signal, and close the
+      // upstream iterator to release it. Once the stop arrived nothing is cancelled: the turn
+      // is committed and billed, and the transport may still be reading the stream's end
+      // (MMSP yields the stop before `[DONE]`); closing it here would drop the connection.
+      if (!translator.stopped) {
+        ac.abort();
+        // Do not let a broken or unresponsive cleanup replace the outcome or hold it open.
+        try {
+          void Promise.resolve(it?.return?.()).catch(() => undefined);
+        } catch {
+          // A synchronous cleanup failure is no more authoritative than a rejected promise.
+        }
+      }
     }
 
     // Defensive: a stream that ended without its `stop` event and without throwing — an

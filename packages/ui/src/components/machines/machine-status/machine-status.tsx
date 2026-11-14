@@ -22,10 +22,12 @@ export const MACHINE_STATES = [
   "working",
   "reconnecting",
   "reconnectStopped",
+  "reconnectFailed",
   "failed",
   "signInRefused",
   "installedOnly",
   "behind",
+  "restartNeeded",
   "notConnected",
   "unreachable",
   "stopped",
@@ -40,12 +42,16 @@ export const MACHINE_STATE_TONE: Readonly<Record<MachineState, ToneName>> = {
   queued: "success",
   working: "success",
   reconnecting: "success",
-  // The automatic attempts stopped: it waits on a person's Retry, not on time.
+  // A person stopped the automatic attempts: it waits on their Retry, not on time.
   reconnectStopped: "attention",
+  // The automatic attempts ran out, or ssh refused in a way no retry mends: a failure.
+  reconnectFailed: "danger",
   failed: "danger",
   signInRefused: "danger",
   installedOnly: "neutral",
   behind: "attention",
+  // Its server answers and its live updates do not arrive until a person restarts it.
+  restartNeeded: "attention",
   notConnected: "attention",
   unreachable: "attention",
   stopped: "attention",

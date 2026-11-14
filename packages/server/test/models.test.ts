@@ -23,7 +23,8 @@
  *   falls back to OPENAI_API_KEY for the openai protocol, requires a provider, refuses an id a
  *   vendor group cannot route when the request introduces it (unless its group names a
  *   protocol), refuses a hand-added model in a group that takes none (OpenRouter, TokenDance,
- *   SiliconFlow and Atlas Cloud take them, stored bare), and stores or clears a discount.
+ *   SiliconFlow, Atlas Cloud and Runcrate take them, stored bare), and stores or clears a
+ *   discount.
  * - Group connections (`[providers.<id>]`): GET reports each group's masked key and every row's
  *   effective connection with its sources; a PUT `providers` change or the group route sets and
  *   clears per field and keeps the rest, a cleared field reading as none; the group route is
@@ -57,7 +58,7 @@
  *   than the stored key, and refuses a keyless gateway row or a Penguin Go probe without reaching
  *   for vendor environment keys or the network (a relay row with no endpoint anywhere included).
  *   Its request names PenguinHarness and its version as the whole User-Agent, whichever SDK
- *   the protocol runs on.
+ *   the protocol runs on. The vision probe asks for a handful of tokens and sends no tools.
  * - A PUT invalidates the Project's cached Session runtimes (reads do not), tells the Project's
  *   open Session channels only, and GET/PUT report the file's updatedAt.
  *
@@ -586,7 +587,7 @@ describe("models preset & catalog enrichment", () => {
     expect(custom.status).toBe(200);
   });
 
-  it("PUT refuses a hand-added model where the group takes none and keeps every stored one; OpenRouter, TokenDance, SiliconFlow and Atlas Cloud take one bare", async () => {
+  it("PUT refuses a hand-added model where the group takes none and keeps every stored one; OpenRouter, TokenDance, SiliconFlow, Atlas Cloud and Runcrate take one bare", async () => {
     // A row a user added to a gateway group while every gateway still took them.
     await storeRows(t.root, projectId, [
       { provider: "fireworks", modelId: "acme/legacy-pick", clientType: "openai-chat" },
@@ -674,13 +675,14 @@ describe("models preset & catalog enrichment", () => {
         { provider: "tokendance", modelId: "acme/new-pick" },
         { provider: "siliconflow", modelId: "acme/new-pick" },
         { provider: "atlascloud", modelId: "acme/new-pick" },
+        { provider: "runcrate", modelId: "acme/new-pick" },
       ],
     });
     expect(open.status).toBe(200);
     // A model added to one of the open gateways is stored as sent — no endpoint and no
     // protocol of its own — and runs on the gateway's, through its group's table.
     const body = (await open.json()) as ModelsResponse;
-    for (const provider of ["openrouter", "tokendance", "siliconflow", "atlascloud"]) {
+    for (const provider of ["openrouter", "tokendance", "siliconflow", "atlascloud", "runcrate"]) {
       const row = pick(body, provider, "acme/new-pick");
       expect(row.clientType, provider).toBeUndefined();
       expect(row.credential, provider).toBeUndefined();
@@ -1330,21 +1332,22 @@ describe("model-reference rekeying and the connectivity test", () => {
   });
 
   it("the display name is editable: not persisted when it matches the built-in catalog; provider is always persisted as an entry field", async () => {
+    const catalogName = catalogEntryFor("openai", "gpt-5.5")!.displayName;
     // Preset model: saved as-is → the display name falls back to the built-in catalog, and display_name isn't written to the config file.
     await api.put(url(), {
       models: [
-        { provider: "openai", modelId: "gpt-5.5", displayName: "GPT-5.5" },
+        { provider: "openai", modelId: "gpt-5.5", displayName: catalogName },
         { provider: "openai", modelId: "gpt-5.4", displayName: "My GPT" },
       ],
     });
     const body = (await (await api.get(url())).json()) as ModelsResponse;
-    expect(pick(body, "openai", "gpt-5.5").displayName).toBe("GPT-5.5");
+    expect(pick(body, "openai", "gpt-5.5").displayName).toBe(catalogName);
     // Edited one: the display name takes effect per the user's setting.
     expect(pick(body, "openai", "gpt-5.4").displayName).toBe("My GPT");
 
     // Clean on disk: unchanged preset models don't write display_name; provider is stored as a separate column, no concatenated string.
     const toml = await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
-    expect(toml).not.toContain('display_name = "GPT-5.5"');
+    expect(toml).not.toContain(`display_name = "${catalogName}"`);
     expect(toml).toContain('display_name = "My GPT"');
     expect(toml).toContain('provider = "openai"');
     expect(toml).not.toContain("openai/gpt-5.5");
@@ -1505,7 +1508,9 @@ describe("model-reference rekeying and the connectivity test", () => {
     const cfgFile = path.join(t.root, projectId, ".project_config.toml");
     await api.put(url(), { models: [{ provider: "openai", modelId: "gpt-5.5" }] });
     const inherited = (await (await api.get(url())).json()) as ModelsResponse;
-    expect(pick(inherited, "openai", "gpt-5.5").displayName).toBe("GPT-5.5");
+    expect(pick(inherited, "openai", "gpt-5.5").displayName).toBe(
+      catalogEntryFor("openai", "gpt-5.5")!.displayName,
+    );
     expect(await readFile(cfgFile, "utf8")).not.toContain("display_name");
 
     // Cleared: the empty string records the deletion, so the name does not come back on the
@@ -1653,6 +1658,45 @@ describe("model-reference rekeying and the connectivity test", () => {
       for (const body of bodies) {
         expect("tools" in body).toBe(false);
         expect("tool_choice" in body).toBe(false);
+      }
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it("the vision probe asks for a handful of tokens and no tools, so a success cannot run up a bill", async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const server = createServer((req, res) => {
+      let raw = "";
+      req.on("data", (chunk: Buffer) => (raw += chunk.toString("utf8")));
+      req.on("end", () => {
+        try {
+          bodies.push(JSON.parse(raw) as Record<string, unknown>);
+        } catch {
+          bodies.push({});
+        }
+        res.statusCode = 401;
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ error: { message: "test-reject", type: "invalid_request" } }));
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as AddressInfo).port;
+    try {
+      const res = await api.post(`${url()}/detect-vision`, {
+        provider: "custom",
+        modelId: "probe-vision-model",
+        clientType: "openai",
+        apiKey: "sk-test-local",
+        baseUrl: `http://127.0.0.1:${port}/v1`,
+      });
+      expect(res.status).toBe(200);
+      expect(bodies.length).toBeGreaterThan(0);
+      for (const body of bodies) {
+        const cap = body.max_tokens ?? body.max_completion_tokens;
+        expect(typeof cap).toBe("number");
+        expect(cap as number).toBeLessThanOrEqual(16);
+        expect("tools" in body).toBe(false);
       }
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));

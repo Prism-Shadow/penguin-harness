@@ -12,6 +12,13 @@ pnpm --filter @prismshadow/penguin-web test:e2e          # build + start the ser
 SKIP_BUILD=1 pnpm --filter @prismshadow/penguin-web test:e2e   # skip the build
 ```
 
+A spec that needs a theme, a light or dark mode, a language or a background sets it on the
+account with `account-prefs.mjs`, after logging in and before the page loads. These preferences
+belong to the account, and at sign-in its copy replaces whatever the browser's `localStorage`
+holds, so a seeded `penguin.themeId` or `penguin.lang` gives way to what an earlier test of the
+same user left there. Keys that stay in the browser, such as `penguin.sidebarGroupMode`, are
+still seeded with `addInitScript`.
+
 PR CI runs `smoke.spec.mjs`, three browser scenarios against the real HTTP server and core:
 sign-in and its cookie across reload; a pending approval that must not write until allowed;
 and completed history plus a working follow-up after reload. The last scenario covers the

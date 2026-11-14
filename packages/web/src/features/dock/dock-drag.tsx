@@ -15,8 +15,10 @@
  */
 import { createPortal } from "react-dom";
 import type { CSSProperties } from "react";
-import { panelWidth } from "../chat/use-panel-width";
-import { DOCK_MIN_HEIGHT_PX, DOCK_RATIO_MAX, bottomRatio, type DockPosition } from "./dock-state";
+import { panelWidth } from "./use-panel-width";
+import { bottomDockHeight } from "./bottom-dock-size";
+import { composerHeight } from "./composer-height";
+import { bottomRatio, type DockPosition } from "./dock-state";
 
 /** Fraction of the host's width/height that counts as an edge band for direct drops. */
 const EDGE_BAND = 0.45;
@@ -46,7 +48,7 @@ export function dockDropCandidate(x: number, y: number): DockPosition | null {
 /**
  * The exact region a dock at `position` would occupy after the drop — measured from the
  * live layout, not assumed: an already-open dock contributes its rendered rect; otherwise
- * the stored sizes apply, clamped exactly like the docks' own CSS. Only an OPEN dock
+ * the stored sizes apply, clamped exactly as the docks clamp them. Only an OPEN dock
  * counts: a hidden one stays in the tree at zero size, and measuring that would preview a
  * region of nothing. The right region's top is the main row (`[data-dock-row]`, below the
  * chat toolbar), the row the right dock really renders in.
@@ -59,14 +61,14 @@ function previewStyle(host: DOMRect, position: DockPosition): CSSProperties {
       )
       ?.getBoundingClientRect() ?? null;
   if (position === "bottom") {
-    const height = Math.min(
+    const area = document.querySelector("[data-dock-area]")?.getBoundingClientRect().height;
+    const height =
       existing?.height ??
-        Math.max(
-          DOCK_MIN_HEIGHT_PX,
-          Math.min(DOCK_RATIO_MAX * host.height, bottomRatio() * host.height),
-        ),
-      host.height,
-    );
+      bottomDockHeight(bottomRatio(), {
+        host: host.height,
+        area: area ?? host.height,
+        composer: composerHeight(),
+      });
     return { left: host.left, top: host.bottom - height, width: host.width, height };
   }
   const row = document.querySelector("[data-dock-row]")?.getBoundingClientRect() ?? host;
@@ -113,7 +115,7 @@ export function DockDragOverlay({ candidate }: { candidate: DockPosition | null 
           data-testid="dock-layout-preview"
           data-pos={candidate}
           aria-hidden
-          className="pointer-events-none fixed z-[65] rounded-sm border border-sky-400/70 bg-sky-500/20"
+          className="pointer-events-none fixed z-drag-preview rounded-sm border border-sky-400/70 bg-sky-500/20"
           style={previewStyle(host, candidate)}
         />
       )}
@@ -121,7 +123,7 @@ export function DockDragOverlay({ candidate }: { candidate: DockPosition | null 
       {/* Drop-target widget, kept a comfortable margin off the host's corner. */}
       <div
         data-testid="dock-layout-widget"
-        className="fixed z-[70] flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white/95 p-2 shadow-lg dark:border-white/20 dark:bg-gray-900/90"
+        className="fixed z-drag-preview flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white/95 p-2 shadow-lg dark:border-white/20 dark:bg-gray-900/90"
         style={{ left: host.right - 108, top: host.bottom - 96 }}
       >
         <DropTarget position="bottom" candidate={candidate} shape="h-4 w-9" />

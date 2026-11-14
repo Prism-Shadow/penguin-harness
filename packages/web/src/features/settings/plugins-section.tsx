@@ -33,7 +33,7 @@ import type { PluginConfigEntry } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { useLocale } from "../../state/locale";
-import { localizedText } from "../chat/skill-use";
+import { localizedText } from "../../lib/skill-use";
 import { apiErrorText } from "../../lib/api-error";
 import { useSessions } from "../../state/sessions";
 import { useProject } from "../../state/project";
@@ -44,11 +44,11 @@ import {
   installInOrder,
 } from "../../lib/sandbox-backend-prompt";
 import { SETTINGS_SCOPE } from "../../lib/unsaved/scopes";
-import { MachinePicker } from "../machines/machine-picker";
+import { MachinePicker } from "../machines";
 import {
   usePluginsIncompatibleOnly,
   writePluginsIncompatibleOnly,
-} from "../plugins/incompatible-only";
+} from "../../lib/plugins-incompatible-only";
 import { PluginCard } from "./plugin-config-card";
 import { withLiveParts } from "./plugin-config-live";
 import { SandboxBackendPrompt } from "./sandbox-backend-prompt";
@@ -62,6 +62,7 @@ import {
   toastError,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /**
  * Brings one card into view once the list has loaded — an opening that names a card (the
@@ -168,7 +169,7 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
       (e: unknown) => {
         if (cancelled) return;
         if (machine === null) {
-          toastError(apiErrorText(e));
+          toastApiError(e);
           return;
         }
         // A machine that cannot answer — no connection, or a build without these routes —
@@ -250,7 +251,7 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
       if (res.ok) toastSuccess(message);
       else toastError(message);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(null);
     }
@@ -294,7 +295,7 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
       {
         installed: (pkg) => toastSuccess(S.plugins.deploymentInstalledToast(pkg)),
         failed: (pkg, error) => toastError(S.plugins.deploymentFailedToast(pkg, error)),
-        threw: (e) => toastError(apiErrorText(e)),
+        threw: (e) => toastApiError(e),
       },
     );
     closePrompt(dontAskAgain);
@@ -302,7 +303,7 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
       const config = await api.adminGetPluginConfig(machine);
       setEntries((prev) => withLiveParts(prev ?? [], config.plugins));
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setInstalling(false);
     }

@@ -60,8 +60,9 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
-import type { ReactNode } from "react";
+
 import type {
   ServerEvent,
   SessionBackgroundTasks,
@@ -77,14 +78,9 @@ import * as api from "../api/endpoints";
 import { ApiError } from "../api/client";
 import { probeSession } from "../api/session-probe";
 import { openMachineEvents, openUserEvents } from "../api/sse";
-import { isCompanyEvent, publishCompanyEvent, publishCompanyResync } from "./company";
 import { publishMachinesChanged, useMachines } from "./machines";
-import {
-  isBuiltinBrowserEvent,
-  publishBuiltinBrowserEvent,
-  publishBuiltinBrowserResync,
-} from "../features/builtin-browser/browser-events";
-import { WORKBENCH_UPDATED_EVENT } from "../lib/workbench-tabs";
+import type { UserEventHandler } from "./user-events";
+import { WORKBENCH_BUILDING_EVENT, WORKBENCH_UPDATED_EVENT } from "../lib/workbench-tabs";
 import { publishUserEvent } from "../lib/amsp/user-events";
 import { mergeCounts, mostRecentFirst } from "../lib/session-merge";
 import {
@@ -103,6 +99,7 @@ import {
   subscribeMachineAgentsChanged,
 } from "../lib/machine-agent-lists";
 import { setTerminalMachines } from "../lib/terminal-machines";
+import { noteLocalShown, useLocalShown } from "../lib/local-first";
 import { machineIdOf } from "../lib/workspace-machines";
 import {
   SIDEBAR_PAGE_SIZE,
@@ -114,9 +111,9 @@ import {
   workspaceGroupKey,
   workspaceGroupMachine,
   workspaceGroupQuery,
+  type ActivityKey,
+  type StreamPosition,
 } from "../lib/session-grouping";
-import type { ActivityKey, StreamPosition } from "../lib/session-grouping";
-import { noteScheduleEvent } from "../features/schedules/schedule-store";
 import {
   isCurrentProject,
   ofProject,
@@ -209,11 +206,30 @@ interface SessionsContextValue {
    */
   machinesUnreachable: boolean;
   /**
-   * The Project's machines that did not answer this round, by machine id. Their rows on
-   * screen come from the cache (lib/machine-cache.ts), so a caller that has to decide whether
-   * a Session is REACHABLE — not merely whether it is listed — asks this.
+   * The Project's machines that did not answer this round, by machine id: no connection is held
+   * to them, or the list's last round asked and got no answer. Their rows on screen come from
+   * the cache (lib/machine-cache.ts), so a caller that has to decide whether a Session is
+   * REACHABLE — not merely whether it is listed — asks this.
    */
   offlineMachineIds: string[];
+  /**
+   * Among `offlineMachineIds`, the machines no connection is held to; the others are connected
+   * and gave the list's last round no answer. What a page says about a machine out of reach —
+   * not connected, or not answering — follows this.
+   */
+  disconnectedMachineIds: string[];
+  /**
+   * The machines the list is asking right now and has no answer from yet. Neither reachable nor
+   * out of reach so far: a routed id missing from the list is not settled while one of them may
+   * still name it, and is not yet a machine's to be "out of reach" either.
+   */
+  askingMachineIds: string[];
+  /**
+   * Bumped each time a list round has every machine's answer in (or its silence): what the page
+   * compares against to know that what it heard about a machine elsewhere — the hub naming one
+   * that did not answer it — has been asked again since.
+   */
+  listRound: number;
   reload: () => Promise<void>;
   /** Fetches the first page for each given unloaded Agent and the next page for each loaded one with more (no-op otherwise); `workspaceGroup` pages that group's own stream instead of the Agent's whole one. */
   loadMoreFor: (agentIds: string[], workspaceGroup?: string) => Promise<void>;
@@ -358,6 +374,16 @@ interface SessionsStoreState {
    * from the list (features/chat/chat-page.tsx). Their rows come from the cache.
    */
   offlineMachineIds: string[];
+  /**
+   * The machines the last list round asked and got no answer from — one whose server went
+   * quiet behind a connection still held, or one resting after such a round — and the ones it
+   * is asking still. Set with each list the round puts on screen; the context reports the first
+   * as out of reach and the second as being asked.
+   */
+  silentMachineIds: string[];
+  askingMachineIds: string[];
+  /** Rounds whose machine answers are all in (see the context's `listRound`). */
+  listRound: number;
   /**
    * machineId → the Agents THAT machine runs, which are not this Project's.
    *
@@ -775,6 +801,9 @@ export function createSessionsStore() {
       agentIds: [],
       machineIds: [],
       offlineMachineIds: [],
+      silentMachineIds: [],
+      askingMachineIds: [],
+      listRound: 0,
       agentIdsByMachine: {},
 
       sessions: [],
@@ -857,95 +886,55 @@ export function createSessionsStore() {
           }
           bySource.set(source, list);
         }
-        try {
-          const results = (
-            await Promise.all(
-              [...bySource].map(async ([source, wanted]) => {
-                let answered: PageAnswer[];
-                try {
-                  const res = await api.batchSessions(
-                    projectId,
-                    wanted.map((w) => ({
-                      agentId: w.agentId,
-                      limit: SIDEBAR_PAGE_SIZE + 1,
-                      order: "activity",
-                      category: "active",
-                      excludeOrg: true,
-                      ...(w.scope === "" ? { withCounts: true } : { workspaceGroup: w.scope }),
-                    })),
-                    source,
-                  );
-                  answered = wanted.map((w, i) => oneAnswer(w, source, res.results[i]));
-                } catch {
-                  // The whole SOURCE failed to answer — this server mid-swap, a connection
-                  // held to a server that is not serving, the network. Nothing is applied
-                  // for it below, which is the point: an empty result standing in for a
-                  // failure replaces rows that are perfectly alive (see oneAnswer).
-                  answered = wanted.map((w) => ({
-                    agentId: w.agentId,
-                    source,
-                    pages: [],
-                    answered: false,
-                  }));
-                }
-                return answered;
-              }),
-            )
-          ).flat();
-          // Whether each machine answered is a fact about the machine, whichever reload is
-          // current by now — recorded before a newer one discards this one's rows.
+        /** One source's first pages; a source that fails to answer at all answers nothing. */
+        const ask = async (source: string | null, wanted: WantedPage[]): Promise<PageAnswer[]> => {
+          try {
+            const res = await api.batchSessions(
+              projectId,
+              wanted.map((w) => ({
+                agentId: w.agentId,
+                limit: SIDEBAR_PAGE_SIZE + 1,
+                order: "activity",
+                category: "active",
+                excludeOrg: true,
+                ...(w.scope === "" ? { withCounts: true } : { workspaceGroup: w.scope }),
+              })),
+              source,
+            );
+            return wanted.map((w, i) => oneAnswer(w, source, res.results[i]));
+          } catch {
+            // The whole SOURCE failed to answer — this server mid-swap, a connection held to
+            // a server that is not serving, the network. Nothing is applied for it below,
+            // which is the point: an empty result standing in for a failure replaces rows
+            // that are perfectly alive (see oneAnswer).
+            return wanted.map((w) => ({ agentId: w.agentId, source, pages: [], answered: false }));
+          }
+        };
+        // Superseded, or asked for a Project the list has since left: the Provider's context
+        // sync moves `projectId` before the next Agent set exists, and no reload runs to
+        // supersede this one until it does — so the Project is compared, not only `gen`.
+        const current = () => g === gen && isCurrentProject(projectId, get().projectId);
+        // Agents this server did not answer about. Per Agent, not per server: a damaged index
+        // or a 500 on ONE Agent is a different event from this server being unreadable, and
+        // reading the first as the second is what leaves the page on a skeleton — nothing is
+        // applied, so `loading` is never cleared, and on a quiet server nothing asks again.
+        const unansweredHere = (results: readonly PageAnswer[]) =>
+          new Set(results.flatMap((r) => (r.source === null && !r.answered ? [r.agentId] : [])));
+        /**
+         * Builds the list from the answers in hand and puts it on screen. `pending` names the
+         * machines still being asked: they stand as silent ones do — their cache neither
+         * replaced nor dropped — and keep what the list already showed of them.
+         */
+        const applyAnswers = (results: readonly PageAnswer[], pending: ReadonlySet<string>) => {
+          const unanswered = unansweredHere(results);
           const unansweredMachines = new Set(
             results.flatMap((r) => (r.source !== null && !r.answered ? [r.source] : [])),
           );
-          for (const source of sources) {
-            if (source === null) continue;
-            noteMachineAnswer(
-              source,
-              results.some((r) => r.source === source && r.answered),
-              probed.has(source),
-            );
-          }
-          // Superseded, or asked for a Project the list has since left: the Provider's context
-          // sync moves `projectId` before the next Agent set exists, and no reload runs to
-          // supersede this one until it does — so the Project is compared, not only `gen`.
-          if (g !== gen || !isCurrentProject(projectId, get().projectId)) return;
-          // Agents this server did not answer about. Per Agent, not per server: a damaged
-          // index or a 500 on ONE Agent is a different event from this server being
-          // unreadable, and reading the first as the second is what leaves the page on a
-          // skeleton — nothing is applied, so `loading` is never cleared, and on a quiet
-          // server nothing asks again.
-          const unanswered = new Set(
-            results.flatMap((r) => (r.source === null && !r.answered ? [r.agentId] : [])),
-          );
-          // This server did not answer about ANY of them. It holds the Sessions every other
-          // source is merged AROUND, so there is no list to build — and building one anyway
-          // would replace everything on screen with a handful of remote rows, or with nothing
-          // at all. A reload is a refresh, and a refresh that cannot read anything changes
-          // nothing: the rows stand, `loading` is left as it was, and the next one tries
-          // again. This is the ordinary state during a hot swap and for the moment after a
-          // reconnect.
-          if (unanswered.size === agentIds.length && agentIds.length > 0) {
-            // Said out loud, and asked again on a timer: a page that opened during a swap or
-            // a hiccup used to sit on the skeleton until some event happened to fire.
-            const reasons = results
-              .filter((r) => r.source === null && !r.answered)
-              .map((r) => `${r.agentId}: no answer`);
-            const delay = Math.min(RELOAD_RETRY_MAX_MS, RELOAD_RETRY_MIN_MS * 2 ** retries);
-            retries += 1;
-            console.warn(
-              `[sessions] this server answered for none of the Agents (${reasons.join("; ")}); ` +
-                `the list on screen is kept and asked again in ${delay} ms`,
-            );
-            setTimeout(() => {
-              if (g === gen) void get().reload();
-            }, delay);
-            return;
-          }
-          retries = 0;
           // Machines that did not answer are treated exactly like machines that were never
           // asked: their rows come from the cache below, and their cache is left alone.
-          // So are resting ones, and a probed one: one Agent's answer is not the machine's list.
-          const silent = new Set([...unansweredMachines, ...rested]);
+          // So are resting ones, a probed one (one Agent's answer is not the machine's list),
+          // and one whose answer has not landed yet.
+          const silent = new Set([...unansweredMachines, ...rested, ...pending]);
           const nextSessions: SessionInfo[] = [];
           const seen = new Set<string>();
           // Deleted stays deleted (see the header), read now: a deletion heard while the answers
@@ -1056,6 +1045,25 @@ export function createSessionsStore() {
             if (silent.has(machineId)) continue;
             rememberMachineSessions(projectId, machineId, rowsByMachine.get(machineId) ?? []);
           }
+          // A machine still being asked keeps what this list already showed of it — its rows and
+          // the page positions they were read at — until its own answer lands and the list is
+          // built again. Rows it never showed come from the cache below, as a silent machine's.
+          if (pending.size > 0) {
+            const held = get();
+            for (const s of held.sessions) {
+              const owner = machineForSession(s.sessionId);
+              if (owner === null || !pending.has(owner)) continue;
+              if (seen.has(s.sessionId) || deleted.has(s.sessionId)) continue;
+              seen.add(s.sessionId);
+              nextSessions.push(s);
+            }
+            for (const [key, position] of held.pageState) {
+              const parsed = parsePageKey(key);
+              if (parsed === null || parsed.source === null || !pending.has(parsed.source))
+                continue;
+              if (!nextPageState.has(key)) nextPageState.set(key, position);
+            }
+          }
           // And every machine this list could not read contributes what it last held — the
           // ones with no connection held, and the ones that went quiet during the fetch.
           // `seen` still guards, so a live answer always wins over a remembered one. Their
@@ -1129,13 +1137,80 @@ export function createSessionsStore() {
           );
           set({
             sessions: [...nextSessions, ...held],
+            // Who could not say whether they hold a Session: the chat page must not take this
+            // server's "no such Session" for the answer while one of them is silent or asked.
+            // A resting machine being probed again stays silent until it answers: a page that
+            // said it is out of reach must not flip back to "still asking" on every retry.
+            silentMachineIds: machineIds.filter(
+              (m) => silent.has(m) && (!pending.has(m) || rested.has(m)),
+            ),
+            askingMachineIds: machineIds.filter((m) => pending.has(m) && !rested.has(m)),
             pageState: nextPageState,
             countsByAgent: nextCounts,
             workspaceCountsByAgent: nextWorkspaceCounts,
             workspaceLatestByAgent: nextWorkspaceLatest,
             workspaceLatestActiveByAgent: nextWorkspaceLatestActive,
           });
+        };
+        // THIS server is asked first and its answer goes on screen the moment it lands; the
+        // machines are asked after that. No machine may hold this server's rows, nor `/chat`'s
+        // pick of the last conversation: one that holds its connection but answers nothing —
+        // the network behind it went quiet, or its server is stuck — takes as long as its calls
+        // take to time out, and reloads that supersede each other would stack those waits.
+        // Until a machine's answer lands it stands as a silent one does, and its answer builds
+        // the list again.
+        const machineSources = [...bySource].filter(
+          (entry): entry is [string, WantedPage[]] => entry[0] !== null,
+        );
+        try {
+          const here = await ask(null, bySource.get(null) ?? []);
+          if (!current()) return;
+          // This server did not answer about ANY of them. It holds the Sessions every other
+          // source is merged AROUND, so there is no list to build — and building one anyway
+          // would replace everything on screen with a handful of remote rows, or with nothing
+          // at all. A reload is a refresh, and a refresh that cannot read anything changes
+          // nothing: the rows stand, `loading` is left as it was, and the next one tries
+          // again. This is the ordinary state during a hot swap and for the moment after a
+          // reconnect. No machine is asked meanwhile.
+          const unanswered = unansweredHere(here);
+          if (unanswered.size === agentIds.length && agentIds.length > 0) {
+            // Said out loud, and asked again on a timer: a page that opened during a swap or
+            // a hiccup used to sit on the skeleton until some event happened to fire.
+            const reasons = [...unanswered].map((agentId) => `${agentId}: no answer`);
+            const delay = Math.min(RELOAD_RETRY_MAX_MS, RELOAD_RETRY_MIN_MS * 2 ** retries);
+            retries += 1;
+            console.warn(
+              `[sessions] this server answered for none of the Agents (${reasons.join("; ")}); ` +
+                `the list on screen is kept and asked again in ${delay} ms`,
+            );
+            setTimeout(() => {
+              if (g === gen) void get().reload();
+            }, delay);
+            return;
+          }
+          retries = 0;
+          applyAnswers(here, new Set(machineSources.map(([source]) => source)));
           applied = true;
+          if (machineSources.length === 0) {
+            set({ listRound: get().listRound + 1 });
+            return;
+          }
+          set({ loading: false });
+          const there = (
+            await Promise.all(machineSources.map(([source, wanted]) => ask(source, wanted)))
+          ).flat();
+          // Whether each machine answered is a fact about the machine, whichever reload is
+          // current by now — recorded before a newer one discards this one's rows.
+          for (const [source] of machineSources) {
+            noteMachineAnswer(
+              source,
+              there.some((r) => r.source === source && r.answered),
+              probed.has(source),
+            );
+          }
+          if (!current()) return;
+          applyAnswers([...here, ...there], new Set());
+          set({ listRound: get().listRound + 1 });
         } finally {
           reloadsInFlight -= 1;
           // Only a reload that produced a list may report one. Abandoning above leaves the
@@ -1321,9 +1396,10 @@ export function createSessionsStore() {
           try {
             fetched = (await api.getSession(sessionId, source)).session;
           } catch (err) {
-            // A 404 is an answer (the Session is gone, or was never this server's); anything
+            // A 404 is an answer (the Session is gone, or was never this server's), and so is a
+            // 403 (an admin refused it: asking again on the next flip changes nothing); anything
             // else may succeed on the next flip.
-            gone = err instanceof ApiError && err.status === 404;
+            gone = err instanceof ApiError && (err.status === 404 || err.status === 403);
           }
           const { latest } = entry;
           adopting.delete(sessionId);
@@ -1526,10 +1602,14 @@ export type SessionsStore = ReturnType<typeof createSessionsStore>;
  * Session channel. Split out from the subscription so this routing is testable without a React
  * tree or an EventSource, neither of which exists in this package's Node test environment.
  *
- * `onWebUpdated` is the escape hatch for the one event that is not a list update at all.
+ * Every event that is not the list's own goes to `handlers` (the features' contributions to
+ * `SessionsModule.userEvents`, state/user-events.ts), in order, before the list takes whatever
+ * part of it concerns the rows. `onWebUpdated` is the escape hatch for the one event that is
+ * not a list update at all.
  */
 export function applyUserEvent(
   store: SessionsStore,
+  handlers: readonly UserEventHandler[],
   ev: ServerEvent,
   onWebUpdated: () => void,
   /** The machine the event came from; null for this server. */
@@ -1636,31 +1716,22 @@ export function applyUserEvent(
   // above were lost — away long enough and a row sits on an hourglass that will never stop.
   // Refetch once, on the event that says so, rather than polling for it. The remembered
   // statuses go too: no fetch here refreshes them, and a stale entry beats every fresh snapshot
-  // company mode reads, so those surfaces re-read their snapshots and fall back to them.
+  // company mode reads, so those surfaces re-read their snapshots and fall back to them — as
+  // does every other handler that derived something from the events.
   if (ev.type === "resync_required") {
     store.setState({ liveStatuses: new Map() });
     void store.getState().reload();
-    publishCompanyResync();
-    if (source === null) publishBuiltinBrowserResync();
+    for (const handler of handlers) handler.resync?.(source);
     return;
   }
-  // The agent browser's tabs, page requests, agent activity, backend and Chrome connection go
-  // to the browser layer in the app shell. Only this server's: the built-in pages live in the
-  // desktop shell that spawned it, the user's Chrome is paired to it, and a machine's server
-  // drives no browser on this screen.
-  if (isBuiltinBrowserEvent(ev)) {
-    if (source === null) publishBuiltinBrowserEvent(ev);
-    return;
-  }
-  // Company-mode notifications fan out to the company store and any mounted organization page
-  // (state/company.tsx); a work run additionally opened a desk or ticket Session this list has
-  // not seen, so it refreshes like a schedule firing does.
-  if (isCompanyEvent(ev)) {
-    publishCompanyEvent(ev);
-    if (ev.type === "org_run" && ev.projectId === store.getState().projectId) {
-      void store.getState().reload();
-    }
-    return;
+  // Every event past here goes to the features' handlers first — the built-in browser's tabs
+  // and activity, company mode's notifications, a schedule's state — each taking the types it
+  // claims; the list then answers for its own rows. A company work run opens a desk or ticket
+  // Session, which the list never fetches (`excludeOrg`) — and (main behavior kept) a work run
+  // also opened a Session the sidebar may list, so the list refreshes like a schedule firing.
+  for (const handler of handlers) handler.event(ev, source);
+  if (ev.type === "org_run" && ev.projectId === store.getState().projectId) {
+    void store.getState().reload();
   }
   // A workbench of some Agent was (re)loaded: the chat page's tab strip owns that list and
   // listens on window (it is mounted per page, this provider per app).
@@ -1672,17 +1743,15 @@ export function applyUserEvent(
     );
     return;
   }
-  // A scheduled task firing may have created a new Session (new-session mode); reload the list
-  // so it appears immediately. schedule_queued doesn't change the list (the target Session
-  // already exists), so it is ignored, as is every other Session-scoped event.
-  // Either schedule event moves a task's state — nextFireAt, lastFiredAt, the queued flag, or a
-  // one-off going done — so the conversation's schedule list is stale from here. The store
-  // decides for itself whether the Project is the one on screen.
-  if (ev.type === "schedule_fired" || ev.type === "schedule_queued") {
-    // A machine's event (relayed as `machine_event`) moves that machine's list.
-    noteScheduleEvent(ev.projectId, source);
+  if (ev.type === "workbench_building") {
+    window.dispatchEvent(
+      new CustomEvent(WORKBENCH_BUILDING_EVENT, {
+        detail: { projectId: ev.projectId, agentId: ev.agentId, workbenchId: ev.workbenchId },
+      }),
+    );
+    return;
   }
-  // A scheduled task firing may also have created a new Session (new-session mode); reload the
+  // A scheduled task firing may have created a new Session (new-session mode); reload the
   // list so it appears immediately. schedule_queued doesn't change the list (the target Session
   // already exists), so it goes no further, as does every other Session-scoped event.
   if (ev.type !== "schedule_fired") return;
@@ -1726,9 +1795,18 @@ function sessionsListFor(
   return isCurrentProject(projectId, state.projectId) ? state : NOTHING_LISTED;
 }
 
-export function SessionsProvider({ children }: { children: ReactNode }) {
-  const { currentProject, agents } = useProject();
+export function SessionsProvider({
+  userEvents,
+  children,
+}: {
+  /** The features' user event handlers, in dispatch order (see applyUserEvent). */
+  userEvents: readonly UserEventHandler[];
+  children: ReactNode;
+}) {
+  const { currentProject, agents, projectsLoading, agentsLoading } = useProject();
   const projectId = currentProject?.projectId ?? null;
+  /** Whether this window's own content is on screen: what the machines' reads below wait for. */
+  const shown = useLocalShown();
   // Stable key for the Agent set: the list object is a new reference on every reload,
   // so join the ids to avoid unnecessary reloads.
   const agentIdsKey = agents.map((a) => a.agentId).join(",");
@@ -1810,6 +1888,9 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       const answers = await Promise.all([
         ...offline.map(async (machineId) => [machineId, remembered(machineId)] as const),
         ...held.map(async (machineId) => {
+          // Asked once this window's own content is on screen; until then what the machine
+          // was last seen running stands in, as for one out of reach.
+          if (!shown) return [machineId, remembered(machineId)] as const;
           try {
             const listed = await readMachineAgents(projectId, machineId);
             return [machineId, listed.map((agent) => agent.agentId)] as const;
@@ -1824,7 +1905,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [projectId, machineIdsKey, offlineMachineIdsKey, machineAgentsTick]);
+  }, [projectId, machineIdsKey, offlineMachineIdsKey, machineAgentsTick, shown]);
   // The machines' Agents of THIS Project only: until the answer for it is in, none — the
   // previous Project's would ask its machines about Agents this Project does not have.
   const machineAgentIdsJson = scopedValue(machineAgents, projectId) ?? "{}";
@@ -1864,6 +1945,8 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
             workspaceCountsByAgent: new Map(),
             workspaceLatestByAgent: new Map(),
             workspaceLatestActiveByAgent: new Map(),
+            silentMachineIds: [],
+            askingMachineIds: [],
             // The pages were just cleared, so the list is loading from this instant —
             // including the window where the Agent set itself is still being refetched (a
             // Project switch empties it, which makes reload() below return without fetching
@@ -1899,7 +1982,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
     const conn = openUserEvents({
       onRecord: () => undefined,
       onServerEvent: (ev) => {
-        applyUserEvent(store, ev, () => window.location.reload());
+        applyUserEvent(store, userEvents, ev, () => window.location.reload());
         // The surfaces that list this server's Sessions apart from the sidebar (the archive
         // page) follow the same channel.
         publishUserEvent(ev);
@@ -1914,7 +1997,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       },
     });
     return () => conn.close();
-  }, [store]);
+  }, [store, userEvents]);
 
   // The machines aggregate (GET /api/projects/:projectId/machines/events): one stream for every
   // connected machine, each event routed as that machine's word — the routing the retired HTTP
@@ -1922,19 +2005,21 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
   // of this channel (the archive page) keeps seeing the shape it always did. The hub's own
   // events (resync_required after a replay the buffer could not honour) are this server's: the
   // list facts missed are this list's. Reconnects on Project switches; the stream is per Project.
+  // Opened once this window's own content is on screen: it is what sets the hub dialling the
+  // machines.
   useEffect(() => {
-    if (projectId === null) return;
+    if (projectId === null || !shown) return;
     const conn = openMachineEvents(projectId, {
       onMachineEvent: (machineId, event) => {
-        applyUserEvent(store, event, () => window.location.reload(), machineId);
+        applyUserEvent(store, userEvents, event, () => window.location.reload(), machineId);
         publishUserEvent({ type: "machine_event", machineId, event });
       },
       onHubEvent: (ev) => {
-        applyUserEvent(store, ev, () => window.location.reload());
+        applyUserEvent(store, userEvents, ev, () => window.location.reload());
       },
     });
     return () => conn.close();
-  }, [store, projectId]);
+  }, [store, projectId, shown, userEvents]);
 
   // The store is told about a Project switch in the effect above, one commit after useProject()
   // reports it — and in that commit every descendant's effects run before this Provider's. So
@@ -1942,6 +2027,13 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
   // loading, never the previous Project's rows (their Agents paired with the new Project).
   const listed = sessionsListFor(state, projectId);
   const { pageState, countsByAgent } = listed;
+  // This window's own content is on screen once this list is — or once there is no list to
+  // wait for (no Project, or one with no Agents) — and the remote reads may start.
+  const nothingToList =
+    (!projectsLoading && projectId === null) || (!agentsLoading && agents.length === 0);
+  useEffect(() => {
+    if (!listed.loading || nothingToList) noteLocalShown();
+  }, [listed.loading, nothingToList]);
   const { machineIds } = state;
 
   const sources = useMemo<(string | null)[]>(() => [null, ...machineIds], [machineIds]);
@@ -2023,6 +2115,8 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
   }, [machineLabelsJson]);
 
   const value = useMemo<SessionsContextValue>(() => {
+    // Out of reach: no connection held, or asked this round and silent.
+    const unreachable = [...new Set([...state.offlineMachineIds, ...state.silentMachineIds])];
     return {
       sessions: listed.sessions,
       byAgent,
@@ -2037,8 +2131,11 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       hasMoreFor,
       activityWatermarkFor,
       loading: listed.loading,
-      machinesUnreachable: state.offlineMachineIds.length > 0,
-      offlineMachineIds: state.offlineMachineIds,
+      machinesUnreachable: unreachable.length > 0,
+      offlineMachineIds: unreachable,
+      disconnectedMachineIds: state.offlineMachineIds,
+      askingMachineIds: state.askingMachineIds,
+      listRound: state.listRound,
       reload: state.reload,
       loadMoreFor: state.loadMoreFor,
       add: state.add,

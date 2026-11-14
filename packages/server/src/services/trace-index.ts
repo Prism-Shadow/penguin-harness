@@ -174,6 +174,8 @@ export class TraceIndexService implements TraceIndex {
   /** Reconciles every Agent of a Project (the subagent-pointer resolver's miss path). */
   async reconcileProject(projectId: string, opts: { force?: boolean } = {}): Promise<void> {
     for (const agentId of await listDirs(agentsDir(this.root, projectId))) {
+      // A dot-directory (`.deleting/`, where a deleted Agent's files wait) is never an Agent.
+      if (agentId.startsWith(".")) continue;
       await this.reconcileAgent(projectId, agentId, opts);
     }
   }

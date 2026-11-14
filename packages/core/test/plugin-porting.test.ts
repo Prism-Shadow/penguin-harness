@@ -13,13 +13,13 @@
  * - A folder without a SKILL.md is removed; a folder whose name is not a skill name is renamed —
  *   by its frontmatter name when nothing of the folder name is left, else `skill`, and never onto
  *   a name another skill has.
- * - What it leaves is a package the plugin library reads with no warning.
  *
  * port-mcp.mjs, on the upstream plugin:
- * - A Codex `.mcp.json`'s servers become `penguin.mcp_servers`: an angle-bracket placeholder and
- *   each `env_vars` name become a `${KEY}` reference listed in the server's setup, a literal OAuth
- *   client secret is not carried (a reference and a note instead), a literal client id is kept,
- *   another client's callback settings are left behind, and the upstream note is passed on.
+ * - A Codex `.mcp.json`'s servers become `mcpServers` contribution entries, each with the id
+ *   `<plugin>.mcp.<name>`: an angle-bracket placeholder and each `env_vars` name become a `${KEY}`
+ *   reference listed in the server's setup, a literal OAuth client secret is not carried (a
+ *   reference and a note instead), a literal client id is kept, another client's callback
+ *   settings are left behind, and the upstream note is passed on.
  * - A Claude Code `mcpServers` map, with or without its wrapper: `${CLAUDE_PLUGIN_ROOT}` becomes
  *   `${PLUGIN_ROOT}`, a `${VAR}` stays a reference, a literal token in a header is not carried.
  * - A stdio server's relative command, `./` arguments and `cwd` are rooted in the package, each
@@ -29,15 +29,23 @@
  *   names outside the plugin is not read.
  * - `--oauth` and `--bearer` mark what only the upstream prose says: the server signs in with
  *   OAuth, and a token is the alternative.
- * - What it prints, pasted into a package.json, reads through the plugin library with no warning.
+ *
+ * The chain, as the skill runs it on a Codex plugin — normalize-skills.mjs, port-mcp.mjs,
+ * write-module.mjs, then the package's build (the real generator, penguin-gen-ifaces):
+ * - The package it leaves is read by the plugin library with no warning: its Skills as
+ *   normalized, its MCP servers as port-mcp.mjs printed them, its card as written; its
+ *   package.json builds with the generator of the PenguinHarness version it was ported for.
+ * - write-module.mjs drops a key that is no card field, naming it; without the PenguinHarness
+ *   version, or with nothing to declare, it writes nothing.
  */
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { parseSkillFrontmatter, readLibraryPackage } from "../src/plugins/index.js";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import type { LibraryPlugin } from "../src/index.js";
+import { parseSkillFrontmatter, readLibraryPackage } from "../src/index.js";
 
 const SCRIPT = path.resolve(
   import.meta.dirname,
@@ -91,7 +99,8 @@ async function upstream(files: Record<string, string>): Promise<string> {
 }
 
 interface PortedServers {
-  mcp_servers: Array<{
+  mcpServers: Array<{
+    id: string;
     name: string;
     config: Record<string, unknown>;
     setup?: Array<{ key: string; label?: string }>;
@@ -187,34 +196,22 @@ describe("normalize-skills.mjs", () => {
       "skills/校对/SKILL.md": "---\nname: 校对\ndescription: Proofread.\n---\n\nBody.\n",
     });
     normalize(dir);
-    const described = Object.fromEntries(
-      readLibraryPackage(dir).skills.map((s) => [s.name, s.description]),
-    );
-    expect(Object.keys(described).sort()).toEqual(["skill", "skill-2", "writing", "writing-2"]);
+    const folders = (await fs.readdir(path.join(dir, "skills"))).sort();
+    const described: Record<string, string | undefined> = {};
+    for (const folder of folders) {
+      const meta = parseSkillFrontmatter(await read(`skills/${folder}/SKILL.md`));
+      expect(meta?.name).toBe(folder);
+      described[folder] = meta?.description;
+    }
+    expect(folders).toEqual(["skill", "skill-2", "writing", "writing-2"]);
     expect(described.writing).toBe("Already here.");
     expect(described["writing-2"]).toBe("Write.");
     expect([described.skill, described["skill-2"]].sort()).toEqual(["Proofread.", "Translate."]);
   });
-
-  it("leaves a package the plugin library reads with no warning", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const dir = await building({
-      "skills/one/SKILL.md": "---\nname: one\ndescription: >-\n  Folded\n  text.\n---\n\nBody.\n",
-      "skills/one/assets/shot.png": new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0xff]),
-      "skills/two/SKILL.md": "# Two\n\nDoes the second thing.\n",
-    });
-    normalize(dir);
-    const plugin = readLibraryPackage(dir);
-    expect(plugin.skills.map((s) => [s.name, s.description, s.version])).toEqual([
-      ["one", "Folded text.", "2026.10.10.1"],
-      ["two", "Does the second thing.", "2026.10.10.1"],
-    ]);
-    expect(warn).not.toHaveBeenCalled();
-  });
 });
 
 describe("port-mcp.mjs", () => {
-  it("turns a Codex .mcp.json into mcp_servers: placeholders and env_vars become references, a literal client secret is not carried", async () => {
+  it("turns a Codex .mcp.json into mcpServers entries: placeholders and env_vars become references, a literal client secret is not carried", async () => {
     const dir = await upstream({
       ".codex-plugin/plugin.json": JSON.stringify({ name: "mail", mcpServers: "./.mcp.json" }),
       ".mcp.json": JSON.stringify({
@@ -247,9 +244,10 @@ describe("port-mcp.mjs", () => {
         },
       }),
     });
-    const { mcp_servers: servers, notes } = portMcp(dir);
+    const { mcpServers: servers, notes } = portMcp(dir);
     expect(servers).toEqual([
       {
+        id: "mail.mcp.gmail",
         name: "gmail",
         config: {
           transport: "http",
@@ -266,6 +264,7 @@ describe("port-mcp.mjs", () => {
         ],
       },
       {
+        id: "mail.mcp.github",
         name: "github",
         config: {
           transport: "http",
@@ -275,6 +274,7 @@ describe("port-mcp.mjs", () => {
         setup: [{ key: "GITHUB_CLIENT_SECRET", label: "Github OAuth client secret" }],
       },
       {
+        id: "mail.mcp.security",
         name: "security",
         config: {
           transport: "stdio",
@@ -310,8 +310,9 @@ describe("port-mcp.mjs", () => {
     expect(db.notes).toContain(
       "climb: its command ${PLUGIN_ROOT}/../../bin/tool lies outside the plugin; not carried",
     );
-    expect(db.mcp_servers).toEqual([
+    expect(db.mcpServers).toEqual([
       {
+        id: "db.mcp.db",
         name: "db",
         config: {
           transport: "stdio",
@@ -341,7 +342,7 @@ describe("port-mcp.mjs", () => {
       }),
     });
     const remote = portMcp(bare);
-    expect(remote.mcp_servers.map((s) => [s.name, s.config.headers, s.setup])).toEqual([
+    expect(remote.mcpServers.map((s) => [s.name, s.config.headers, s.setup])).toEqual([
       [
         "github",
         { Authorization: "Bearer ${GITHUB_PERSONAL_ACCESS_TOKEN}" },
@@ -378,13 +379,14 @@ describe("port-mcp.mjs", () => {
         },
       }),
     });
-    const { mcp_servers: servers, notes } = portMcp(
+    const { mcpServers: servers, notes } = portMcp(
       dir,
       "--root",
       "https://github.com/o/r/tree/abc/plugins/local",
     );
     expect(servers).toEqual([
       {
+        id: "local.mcp.local-widgets",
         name: "local-widgets",
         config: {
           transport: "stdio",
@@ -394,6 +396,7 @@ describe("port-mcp.mjs", () => {
         },
       },
       {
+        id: "local.mcp.launcher",
         name: "launcher",
         config: {
           transport: "stdio",
@@ -401,7 +404,11 @@ describe("port-mcp.mjs", () => {
           cwd: "${PLUGIN_ROOT}/work",
         },
       },
-      { name: "climber", config: { transport: "stdio", command: "node", args: ["--stdio"] } },
+      {
+        id: "local.mcp.climber",
+        name: "climber",
+        config: { transport: "stdio", command: "node", args: ["--stdio"] },
+      },
     ]);
     const said = notes.join("\n");
     expect(said).toContain(
@@ -436,15 +443,14 @@ describe("port-mcp.mjs", () => {
         mcpServers: { borrowed: { type: "http", url: "https://example.com/mcp" } },
       }),
     });
-    const { mcp_servers: servers, notes } = portMcp(path.join(dir, "plugin"));
+    const { mcpServers: servers, notes } = portMcp(path.join(dir, "plugin"));
     expect(servers).toEqual([]);
     expect(notes).toEqual([
       "../outside.json, which the manifest names for its MCP servers, lies outside the plugin; not read",
     ]);
   });
 
-  it("marks what only the upstream prose says, and what it prints reads through the plugin library with no warning", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  it("marks what only the upstream prose says: an OAuth sign-in, and a token as its alternative", async () => {
     const dir = await upstream({
       ".codex-plugin/plugin.json": JSON.stringify({ name: "cloudflare" }),
       ".mcp.json": JSON.stringify({
@@ -458,8 +464,9 @@ describe("port-mcp.mjs", () => {
       }),
     });
     const ported = portMcp(dir, "--oauth", "cloudflare-api", "--bearer", "cloudflare-api");
-    expect(ported.mcp_servers).toEqual([
+    expect(ported.mcpServers).toEqual([
       {
+        id: "cloudflare.mcp.cloudflare-api",
         name: "cloudflare-api",
         config: {
           transport: "http",
@@ -470,15 +477,123 @@ describe("port-mcp.mjs", () => {
         setup: [{ key: "CLOUDFLARE_API_TOKEN", label: "Cloudflare API token" }],
       },
     ]);
+  });
+});
+
+const WRITE_MODULE = path.resolve(
+  import.meta.dirname,
+  "../../../plugins/skill-porting/skills/plugin-porting/scripts/write-module.mjs",
+);
+/** The package's build line, `penguin-gen-ifaces --project tsconfig.json --out ifaces.json`. */
+const GENERATOR = path.resolve(import.meta.dirname, "../bin/gen-ifaces.mjs");
+/** A hook's budget for one generator run: a cold runner's first node spawn plus loading typescript. */
+const BUILD_BUDGET = 30_000;
+
+const writeModule = (dir: string, ...flags: string[]) =>
+  spawnSync(process.execPath, [WRITE_MODULE, dir, ...flags], { encoding: "utf8" });
+
+describe("the porting chain on a Codex plugin", () => {
+  let work: string;
+  let built: string;
+  let ported: PortedServers;
+  let plugin: LibraryPlugin;
+  let warned: unknown[][];
+  beforeAll(async () => {
+    work = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-porting-chain-"));
+    const src = path.join(work, "upstream");
+    built = path.join(work, "cloudflare");
+    const files: Record<string, string> = {
+      ".codex-plugin/plugin.json": JSON.stringify({ name: "cloudflare", version: "1.2.0" }),
+      ".mcp.json": JSON.stringify({
+        mcpServers: { "cloudflare-api": { type: "http", url: "https://mcp.cloudflare.com/mcp" } },
+      }),
+      "skills/workers/SKILL.md":
+        "---\nname: workers\ndescription: >-\n  Build on\n  Workers.\n---\n\nBody.\n",
+      "skills/d1/SKILL.md": "# D1\n\nQuery the database.\n",
+    };
+    for (const [rel, text] of Object.entries(files)) {
+      await fs.mkdir(path.dirname(path.join(src, rel)), { recursive: true });
+      await fs.writeFile(path.join(src, rel), text);
+    }
+    // 1. Skills, copied and normalized; 2. MCP servers; 4. package.json, the card, the module.
+    await fs.cp(path.join(src, "skills"), path.join(built, "skills"), { recursive: true });
+    normalize(built);
+    ported = portMcp(src, "--oauth", "cloudflare-api", "--bearer", "cloudflare-api");
+    await fs.writeFile(path.join(work, "mcp.json"), JSON.stringify(ported));
     await fs.writeFile(
-      path.join(dir, "package.json"),
+      path.join(built, "package.json"),
+      JSON.stringify({ name: "@ported/cloudflare", version: "1.2.0", description: "Cloudflare." }),
+    );
+    await fs.writeFile(
+      path.join(work, "card.json"),
       JSON.stringify({
-        name: "@ported/cloudflare",
-        version: "0.1.2",
-        penguin: { mcp_servers: ported.mcp_servers },
+        title: "Cloudflare",
+        category: "software-development",
+        quickStart: { prompt: "Deploy a Worker." },
+        interface: { brandColor: "#F38020" },
       }),
     );
-    expect(readLibraryPackage(dir).mcpServers).toEqual([{ ...ported.mcp_servers[0], oauth: true }]);
-    expect(warn).not.toHaveBeenCalled();
+    const wrote = writeModule(
+      built,
+      "--core",
+      "v0.2.19-3-gabc1234",
+      "--card",
+      path.join(work, "card.json"),
+      "--mcp",
+      path.join(work, "mcp.json"),
+    );
+    expect(wrote.status, wrote.stderr).toBe(0);
+    expect(wrote.stdout).toContain("card: dropped interface (not card fields)");
+    // 5. The build, as `npm run build` runs it.
+    const build = spawnSync(
+      process.execPath,
+      [GENERATOR, "--project", "tsconfig.json", "--out", "ifaces.json"],
+      { cwd: built, encoding: "utf8" },
+    );
+    expect(build.status, build.stderr).toBe(0);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    plugin = readLibraryPackage(built);
+    warned = warn.mock.calls;
+    warn.mockRestore();
+  }, BUILD_BUDGET);
+  afterAll(async () => {
+    await fs.rm(work, { recursive: true, force: true });
+  });
+
+  it("leaves a package the plugin library reads with no warning: its Skills, its MCP servers, its card", () => {
+    expect(warned).toEqual([]);
+    expect(plugin.skills.map((s) => [s.name, s.description, s.version])).toEqual([
+      ["d1", "Query the database.", "2026.10.10.1"],
+      ["workers", "Build on Workers.", "2026.10.10.1"],
+    ]);
+    const { id: _id, ...server } = ported.mcpServers[0]!;
+    expect(plugin.mcpServers).toEqual([{ ...server, oauth: true }]);
+    expect(plugin).toMatchObject({
+      title: "Cloudflare",
+      category: "software-development",
+      quickStart: { prompt: "Deploy a Worker." },
+    });
+  });
+
+  it("builds with the generator of the PenguinHarness version it was ported for", async () => {
+    const pkgJson = JSON.parse(await fs.readFile(path.join(built, "package.json"), "utf8"));
+    expect(pkgJson).toMatchObject({
+      type: "module",
+      scripts: { build: "penguin-gen-ifaces --project tsconfig.json --out ifaces.json" },
+      devDependencies: { "@prismshadow/penguin-core": "^0.2.19", typescript: "^5.6.0" },
+    });
+  });
+
+  it("writes nothing without the PenguinHarness version, or with nothing to declare", async () => {
+    const empty = path.join(work, "empty");
+    await fs.mkdir(empty);
+    await fs.writeFile(path.join(empty, "package.json"), JSON.stringify({ name: "@ported/empty" }));
+    const unversioned = writeModule(built, "--card", path.join(work, "card.json"));
+    expect(unversioned.status).toBe(1);
+    expect(unversioned.stderr).toContain("--core needs the PenguinHarness version");
+    const bare = writeModule(empty, "--core", "v0.2.19");
+    expect(bare.status).toBe(1);
+    expect(bare.stderr).toContain("nothing to declare");
+    expect(existsSync(path.join(empty, "src"))).toBe(false);
   });
 });

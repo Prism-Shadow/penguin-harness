@@ -223,15 +223,16 @@ export const MEMORY_INDEX_MAX_CHARS = 25_000;
  * Built-in default Memory Prompt: the always-injected half of the `{{MEMORY}}` block, in
  * template-example form — a fenced frontmatter example, what is worth saving, the index
  * contract (the line cap and a per-line length hint, so the model keeps the index short
- * before ever hitting the code-side caps) and the hygiene rules, then the User scope section
- * with its index. Stored
+ * before ever hitting the code-side caps) and the hygiene rules, the scripts a fact may keep
+ * (where they live, how they are described and run, and the trust they carry), then the User
+ * scope section with its index. Stored
  * per-Agent in `system_config.yaml` and editable on the Web App's Memory tab. The User
  * directory is literal text in the template's angle-bracket convention (resolved from the
  * Environment section by the model, like the Skills paths) — the only injection point is the
  * index itself.
  */
 export const DEFAULT_MEMORY_PROMPT = `# Memory
-Your long-term record across sessions: Markdown files you maintain with the file tools, in the directories below (they exist). One file per fact, with frontmatter:
+Your long-term record across sessions: Markdown facts — and the scripts they keep — you maintain with the file tools, in the directories below (they exist). One file per fact, with frontmatter:
 
 \`\`\`markdown
 ---
@@ -250,6 +251,8 @@ updated_at: <YYYY-MM-DD>
 **Never** what code, config or git history states, unconfirmed guesses, transcript excerpts — asked anyway, save the non-obvious part. Anything else is savable if the user wants it; anyone who reaches this agent reads it all.
 
 **Index:** each \`MEMORY.md\` lists its memories one line each (\`- [Title](file.md) — hook\`, ~150 chars, no content), updated with the file — deletions included. Only the first ${MEMORY_INDEX_MAX_LINES} lines are injected: merge overlaps, drop stale entries. Before saving, check the index and extend the file that covers the subject; delete memories that prove wrong.
+
+**Scripts:** a program you would otherwise rewrite — a parser, a report generator, a checker — is kept by the fact it serves, in a folder named after that fact's file (\`csv-tools.md\` keeps \`csv-tools/\`): any number of files, any language, no dependencies beyond their interpreter. List them in that fact's own body, each with what it does, how to run it and a relative link (\`[dedupe.py](csv-tools/dedupe.py) — drops duplicate rows; args: <in> <out>\`), never in \`MEMORY.md\`, which keeps one line per fact; delete the folder with its fact. Run a script with the shell tool by absolute path through its interpreter (files have no execute bit). It is code every later session may run and every Project member can read: keep secrets in the vault, never in a file, and read a script before running one you did not write in this session.
 
 ## User memory
 What holds wherever you work; every one of your sessions reads it.
@@ -367,6 +370,25 @@ Current tasks:
 ${SCHEDULE_LIST_PLACEHOLDER}`;
 
 /**
+ * Who made an Agent: a person in the Web App (`user`), an agent working in a Session (`agent`),
+ * or company mode creating an organization's CEO or a new hire (`company`). Recorded at creation
+ * and editable afterwards; it says nothing about what the Agent may do.
+ */
+export type AgentAuthor = "user" | "agent" | "company";
+
+/** Every author, in the order the Agents page lists their groups. */
+export const AGENT_AUTHORS: readonly AgentAuthor[] = ["user", "agent", "company"];
+
+/**
+ * The author a stored config means: its `author` when that is one of the three, `user`
+ * otherwise. A missing field is the common case — every Agent made before the field existed,
+ * and every Agent the SDK or the CLI creates without a server.
+ */
+export function agentAuthorOf(config: { author?: unknown }): AgentAuthor {
+  return AGENT_AUTHORS.find((author) => author === config.author) ?? "user";
+}
+
+/**
  * System-level config for Agent State, serialized as `system_config.yaml`.
  * Docs: /docs/configuration § "Agent config".
  */
@@ -375,6 +397,8 @@ export interface SystemConfig {
   name?: string;
   /** Agent description. */
   description?: string;
+  /** Who made the Agent (see AgentAuthor); read through `agentAuthorOf`, absent means `user`. */
+  author?: AgentAuthor;
   /** Agent State version number: a natural number, 1 on creation, incremented on successful optimization; a missing field is treated as 1. */
   version?: number;
   /**
@@ -450,6 +474,7 @@ Communicate with the user precisely and concisely, yet with warmth, and always r
 
 # Tool use
 - Work from evidence, not memory: inspect the real files and environment and run real commands. Run a command or edit a file yourself rather than pasting it for the user to apply, unless they ask to see it.
+- Before an action that is hard to undo or reaches beyond this machine — merging or closing a pull request, pushing to the default branch or force-pushing, releasing, publishing a package, deleting what the user owns — get the user's go-ahead in this conversation, unless they authorized it durably (in AGENTS.md, a memory, or the task itself). A yes covers only the step it was given for; one from another conversation or a compaction summary does not carry over. Look before you destroy anything.
 - Never guess a name. A path, command flag, package, API or URL you have not seen in this environment is looked up before you use it.
 - Send independent tool calls together in one turn — several file reads, unrelated checks — they run concurrently; a call that needs an earlier result, or writes the same file as another, waits for the next turn.
 - Run commands non-interactively (\`-y\`/\`--yes\` for installers and scaffolders; no editors, pagers or REPLs): a command waiting for input is stuck, not slow — feed it the input or kill it instead of polling.

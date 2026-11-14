@@ -20,6 +20,8 @@
  *   was ever created in; paths stay confined to it, and inline HTML is still served as text.
  * - An outsider to the Project gets 404 with nothing touched; a relative or missing directory is
  *   400 workspace_not_found.
+ * - A folder the server may only read refuses a new folder with 403 dir_write_denied, and nothing
+ *   appears in it.
  *
  * One app for the file; every case works in a Workspace directory of its own.
  */
@@ -283,4 +285,20 @@ describe("by directory", () => {
     expect(missing.status).toBe(400);
     expect(await errorCode(missing)).toBe("workspace_not_found");
   });
+
+  // POSIX permission bits: meaningless on win32, and root writes through them.
+  it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+    "a folder the server may only read refuses a new folder by name, and nothing appears in it",
+    async () => {
+      await fs.chmod(workspace, 0o555);
+      try {
+        const res = await owner.post(at("/create", ""), { path: "drafts", kind: "dir" });
+        expect(res.status).toBe(403);
+        expect(await errorCode(res)).toBe("dir_write_denied");
+        expect(await exists(path.join(workspace, "drafts"))).toBe(false);
+      } finally {
+        await fs.chmod(workspace, 0o755);
+      }
+    },
+  );
 });

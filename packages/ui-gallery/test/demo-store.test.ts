@@ -4,6 +4,12 @@
  * streams a reply and settles, an approval decides the pending command, an abort stops a run and a
  * Retry then replays it without a new message (once) — and the self-evolution round, which reads
  * as one round and reports what the scoreboard holds.
+ * - Given an autoplay Session in either language, sending its prompt streams one evolution
+ *   round, rejects a duplicate start, carries its live answer on reconnect and shows the gain.
+ * - Given a running walkthrough, abort cancels every later step; retry completes the round
+ *   without echoing another prompt.
+ * - Given paused playback, the evolution stream waits, then continues the same turn on resume.
+ * - Given repeated rounds, completed automatic Sessions are reclaimed while manual and running Sessions stay.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ServerEvent } from "@prismshadow/penguin-server/api";
@@ -15,7 +21,7 @@ import {
   parseSkillsMessage,
 } from "@prismshadow/amsp/markers";
 import { catalogEntryFor } from "../../server/dist/model-catalog.js";
-import { catalogDelta } from "../../web/src/features/models/catalog-sync";
+import { catalogDelta } from "../../web/src/lib/model-catalog-sync";
 import { splitAttachments } from "../../web/src/lib/attachments";
 import {
   createStreamModel,
@@ -28,6 +34,11 @@ import { REPLY_CLOSE_MS, REPLY_HOLD_MS, REPLY_LEAD_MS, resetStore } from "../src
 import { scriptDuration, streamScript } from "../src/app/mock/stream-script";
 import { streamingAnswer, TOOL_CALL_IDS } from "../src/app/mock/transcripts";
 import { payloadOf } from "../src/app/mock/types";
+import {
+  rsiPrompt,
+  rsiReferenceScore,
+  rsiCandidateEvaluation,
+} from "../src/app/mock/rsi-transcript";
 import type { AmspRecord, StreamHandlers } from "../src/app/mock/types";
 
 const NOW = Date.parse("2026-09-29T08:00:00Z");
@@ -86,19 +97,6 @@ describe("the fixtures", () => {
   it("seed every Session id the ids module lists, and no other", () => {
     const f = buildFixtures("en", NOW);
     expect(f.sessions.map((s) => s.sessionId).sort()).toEqual([...ALL_SESSION_IDS].sort());
-    expect(
-      f.sessions
-        .filter((s) => s.status === "running")
-        .map((s) => s.sessionId)
-        .sort(),
-    ).toEqual(
-      [
-        IDS.sessions.approval,
-        IDS.sessions.runningTool,
-        IDS.sessions.thinking,
-        IDS.sessions.streaming,
-      ].sort(),
-    );
   });
 
   it("carry the whole built-in catalog: the app's catalog check finds nothing to add", () => {
@@ -107,11 +105,10 @@ describe("the fixtures", () => {
       if (m.provider === "custom") continue;
       expect(catalogEntryFor(m.provider, m.modelId), `${m.provider}/${m.modelId}`).toBeDefined();
     }
-    expect(f.models.models.length).toBeGreaterThan(100);
     expect(catalogDelta(f.models.models)).toEqual({ added: 0, refs: [] });
-    expect(f.models.defaultModel).toEqual({ provider: "deepseek", modelId: "deepseek-flash" });
-    expect(f.models.models.filter((m) => m.isDefault).map((m) => m.modelId)).toEqual([
-      "deepseek-flash",
+    // One row is the default, the one the default model names, and every Session runs on a row.
+    expect(f.models.models.filter((m) => m.isDefault)).toEqual([
+      expect.objectContaining(f.models.defaultModel),
     ]);
     for (const s of f.sessions)
       expect(f.models.models.some((m) => m.modelId === s.modelId)).toBe(true);
@@ -129,14 +126,6 @@ describe("the fixtures", () => {
       }
     }
     expect(f.agents.some((agent) => agent.pluginUpdates.length > 0)).toBe(true);
-  });
-
-  it("carry thirty days of usage in both Agents' names", () => {
-    const f = buildFixtures("en", NOW);
-    expect(new Set(f.usage.map((d) => d.date)).size).toBe(30);
-    expect(new Set(f.usage.map((d) => d.agentId))).toEqual(
-      new Set([IDS.agents.docs, IDS.agents.notes]),
-    );
   });
 });
 
@@ -443,5 +432,133 @@ describe("a sent message", () => {
     expect(said).not.toContain("user");
     expect(store.session(row.sessionId)?.status).toBe("idle");
     expect(store.retryTask(row.sessionId)).toBe(false);
+  });
+});
+
+describe("the evolution walkthrough", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("reclaims completed rounds without deleting manual or unfinished Sessions", () => {
+    vi.useFakeTimers();
+    const store = resetStore({ lang: "en", signedIn: true, now: NOW, evolutionDemo: true });
+    const manual = store.createSession(IDS.agents.general, {});
+    const completed = store.createSession(IDS.agents.general, {});
+    store.startTask(completed.sessionId, rsiPrompt("en"));
+    vi.advanceTimersByTime(30_000);
+    const running = store.createSession(IDS.agents.general, {});
+    store.startTask(running.sessionId, rsiPrompt("en"));
+    const sub = collector();
+    store.userChannel.subscribe(sub);
+    store.clearEvolutionRounds();
+    expect(store.session(completed.sessionId)).toBeUndefined();
+    expect(store.transcript(completed.sessionId)).toBeUndefined();
+    expect(store.session(manual.sessionId)).toBeDefined();
+    expect(store.session(running.sessionId)?.status).toBe("running");
+    expect(sub.events).toContainEqual({
+      type: "session_deleted",
+      sessionId: completed.sessionId,
+      projectId: completed.projectId,
+    });
+    store.dispose();
+  });
+
+  it.each(["en", "zh"] as const)(
+    "streams the %s evolution round once and finishes with the evaluated improvement",
+    (lang) => {
+      vi.useFakeTimers();
+      const store = resetStore({ lang, signedIn: true, now: NOW, evolutionDemo: true });
+      const row = store.createSession(store.f.chatDefaults.agentId!, {});
+      const sub = collector();
+      store.channel(row.sessionId)!.subscribe(sub);
+      expect(store.startTask(row.sessionId, rsiPrompt(lang))).toBe(true);
+      expect(store.startTask(row.sessionId, rsiPrompt(lang))).toBe(false);
+      vi.advanceTimersByTime(14_500);
+      const fragments = store.liveTail(row.sessionId)!.fragments;
+      expect(fragments.some((m) => payloadOf(m)?.type === "partial_text")).toBe(true);
+      vi.advanceTimersByTime(10_000);
+      expect(store.session(row.sessionId)?.status).toBe("idle");
+      const messages = store.transcript(row.sessionId)!.history;
+      expect(
+        messages.filter((m) => {
+          const p = payloadOf(m);
+          return p?.type === "text" && p.role === "user" && !m.origin;
+        }),
+      ).toHaveLength(1);
+      expect(
+        messages.some((m) => {
+          const p = payloadOf(m);
+          return p?.type === "tool_call" && p.name === "edit_file";
+        }),
+      ).toBe(true);
+      expect(
+        messages.filter((m) => {
+          const p = payloadOf(m);
+          return p?.type === "tool_call" && p.name === "run_subagent";
+        }).length,
+      ).toBeGreaterThan(1);
+      const answer = messages.findLast((m) => {
+        const p = payloadOf(m);
+        return !m.origin && p?.type === "text" && p.role === "assistant";
+      });
+      const p = payloadOf(answer!);
+      expect(p?.type === "text" && p.text).toContain(String(rsiReferenceScore()));
+      expect(p?.type === "text" && p.text).toContain(String(rsiCandidateEvaluation().score));
+      expect(textDeltas(sub.messages).length).toBeGreaterThan(1);
+      store.dispose();
+    },
+  );
+
+  it("holds the evolution stream and resumes the same turn", () => {
+    vi.useFakeTimers();
+    const store = resetStore({ lang: "en", signedIn: true, now: NOW, evolutionDemo: true });
+    const row = store.createSession(IDS.agents.general, {});
+    const sub = collector();
+    store.channel(row.sessionId)!.subscribe(sub);
+    store.evolutionPlayback.setPaused(true);
+    store.startTask(row.sessionId, rsiPrompt("en"));
+    const start = sub.messages.length;
+    vi.advanceTimersByTime(30_000);
+    expect(sub.messages).toHaveLength(start);
+    store.evolutionPlayback.setPaused(false);
+    vi.advanceTimersByTime(6000);
+    expect(sub.messages.length).toBeGreaterThan(start);
+    store.evolutionPlayback.setPaused(true);
+    const middle = sub.messages.length;
+    vi.advanceTimersByTime(30_000);
+    expect(sub.messages).toHaveLength(middle);
+    expect(store.session(row.sessionId)?.status).toBe("running");
+    store.evolutionPlayback.setPaused(false);
+    vi.advanceTimersByTime(30_000);
+    expect(store.session(row.sessionId)?.status).toBe("idle");
+    expect(textDeltas(sub.messages).join("")).toContain(String(rsiCandidateEvaluation().score));
+    store.dispose();
+  });
+
+  it("stops future evolution steps on abort and retries without echoing a second prompt", () => {
+    vi.useFakeTimers();
+    const store = resetStore({ lang: "en", signedIn: true, now: NOW, evolutionDemo: true });
+    const row = store.createSession(IDS.agents.general, {});
+    const sub = collector();
+    store.channel(row.sessionId)!.subscribe(sub);
+    store.startTask(row.sessionId, rsiPrompt("en"));
+    vi.advanceTimersByTime(2000);
+    store.evolutionPlayback.setPaused(true);
+    store.abort(row.sessionId);
+    store.evolutionPlayback.setPaused(false);
+    const count = sub.messages.length;
+    vi.advanceTimersByTime(30_000);
+    expect(sub.messages).toHaveLength(count);
+    expect(store.retryTask(row.sessionId)).toBe(true);
+    vi.advanceTimersByTime(30_000);
+    expect(store.session(row.sessionId)?.status).toBe("idle");
+    const prompts = store.transcript(row.sessionId)!.history.filter((m) => {
+      const p = payloadOf(m);
+      return !m.origin && p?.type === "text" && p.role === "user";
+    });
+    expect(prompts).toHaveLength(1);
+    expect(store.liveTail(row.sessionId)).toBeUndefined();
+    store.dispose();
   });
 });

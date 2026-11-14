@@ -130,6 +130,11 @@ describe("routeSessionOutcome", () => {
     expect(routeSessionOutcome(settled)).toBe("redirect");
   });
 
+  it("says in place that the machine holding the Session refuses this server, neither gone nor another", () => {
+    expect(routeSessionOutcome({ ...settled, refused: true })).toBe("refused");
+    expect(routeSessionOutcome({ ...settled, refused: true, shown: true })).toBe("show");
+  });
+
   it("says in place that a Session the server does not have is gone, rather than opening another", () => {
     expect(routeSessionOutcome({ ...settled, missing: true })).toBe("notFound");
   });

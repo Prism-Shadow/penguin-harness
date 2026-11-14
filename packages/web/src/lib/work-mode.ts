@@ -4,11 +4,10 @@
  * `lastOrgKey`), which is the copy that follows the user to another browser; these mirrors
  * exist so the first render after a reload already stands in the right mode instead of
  * flashing development mode until the preferences arrive — the same reason `lastProjectId`
- * is mirrored. Storage is injectable (nav-group-collapse.ts convention: vitest runs in Node
+ * is mirrored. Storage is injectable (nav-state.ts convention: vitest runs in Node
  * with no localStorage), and every read degrades to the default on anything unexpected.
  */
-import type { WorkMode } from "../features/company/company-nav";
-import { parseOrgKey } from "../features/company/company-nav";
+import { type WorkMode, parseOrgKey } from "./company-nav";
 
 /** Minimal storage interface (the subset of localStorage used here); tests inject an in-memory one. */
 export interface WorkModeStorage {

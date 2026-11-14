@@ -12,6 +12,7 @@
  */
 import { test, expect } from "@playwright/test";
 import { provisionAndLogin } from "./auth.mjs";
+import { setAccountPrefs } from "./account-prefs.mjs";
 
 const BASE = process.env.BASE_URL;
 const MOCK = process.env.MOCK_URL;
@@ -59,11 +60,8 @@ const selectBetween = (page, from, to) =>
 test("copying selected text writes plain text alone, from the keyboard and the menu alike", async ({
   page,
 }) => {
-  await page.addInitScript(() => {
-    localStorage.setItem("penguin.theme", "dark");
-    localStorage.setItem("penguin.themeId", "github");
-  });
   await provisionAndLogin(page.request, U, P);
+  await setAccountPrefs(page.request, { themeMode: "dark", themeId: "github" });
   const projectId = (await (await page.request.get(`${BASE}/api/projects`)).json()).projects[0]
     .projectId;
   const put = await page.request.put(`${BASE}/api/projects/${projectId}/models`, {

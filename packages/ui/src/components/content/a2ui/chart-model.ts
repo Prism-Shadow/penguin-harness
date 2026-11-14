@@ -12,8 +12,8 @@
  * - The summary names the kind and the title, counts the categories and the series, then gives
  *   each series' range: "Bar chart: Latency. 5 categories, 2 series: p50 10–40 ms, p95 20–90 ms."
  */
-import { formatNumber, formatValue, seriesExtent } from "@prismshadow/penguin-core/a2ui";
-import type { A2uiChart, A2uiLang, A2uiMetric } from "@prismshadow/penguin-core/a2ui";
+import { formatNumber, formatValue, seriesExtent } from "@prismshadow/a2ui";
+import type { A2uiChart, A2uiLang, A2uiMetric } from "@prismshadow/a2ui";
 import type { A2uiStrings } from "../../../strings";
 import { isReading, niceDomain } from "../../charts/cartesian/cartesian-data";
 import type { CartesianSeries } from "../../charts/cartesian/cartesian-data";

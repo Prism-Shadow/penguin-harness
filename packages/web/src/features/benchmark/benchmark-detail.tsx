@@ -34,20 +34,22 @@ import {
   makeRangeGeom,
   segmentPoints,
   useChartWidth,
+  type ChartPaint,
 } from "@prismshadow/penguin-ui";
-import type { ChartPaint } from "@prismshadow/penguin-ui";
-import type { MergedBenchmark, MergedCase } from "../../lib/benchmark-merge";
+
+import { useAgentAvatarSrc } from "../../lib/agent-avatar";
+import type { MergedBenchmark, MergedCase, MergedEvaluation } from "../../lib/benchmark-merge";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime, formatMoney, formatScore, humanizeDuration } from "../../lib/format";
 import { toneInk } from "../../lib/tone";
 import { useLocale } from "../../state/locale";
-import { useTheme } from "../../state/theme";
-import type { Currency } from "../../state/theme";
+import { useTheme, type Currency } from "../../state/theme";
+
 import { NEUTRAL_SERIES } from "../../lib/category-colors";
 import { AskAiModal } from "./ask-ai-modal";
 import { BenchmarkCaseBrowser } from "./benchmark-case-browser";
-import { fetchBenchmarkCases } from "./benchmark-sources";
+import { watchBenchmarkCases } from "./benchmark-sources";
 import {
   benchmarkDescription,
   evaluationLabel,
@@ -55,10 +57,11 @@ import {
   scoreScale,
   scoreValues,
   seriesPoints,
+  type EvaluationSeries,
 } from "./benchmark-metrics";
-import type { EvaluationSeries } from "./benchmark-metrics";
-import { askCaseExamples, askCaseTail } from "./benchmark-prompts";
-import type { AskCaseParams } from "./benchmark-prompts";
+
+import { askCaseExamples, askCaseTail, type AskCaseParams } from "./benchmark-prompts";
+
 import { EvaluationDetailModal } from "./evaluation-detail-modal";
 
 /** A score series' paint: palette slot i, or the neutral for the evaluations with no label. */
@@ -186,11 +189,14 @@ function TrendSection({ evaluations }: { evaluations: BenchmarkEvaluation[] }) {
 /** One evaluation record: a clickable row; the detail it used to unfold is a dialog of its own. */
 function EvaluationRow({
   evaluation,
+  avatarSrc,
   machineName,
   onOpen,
   currency,
 }: {
   evaluation: BenchmarkEvaluation;
+  /** The tested Agent's own picture, when it has one (lib/agent-avatar.ts). */
+  avatarSrc: string | undefined;
   /**
    * The ssh alias of the machine whose scoreboard recorded this round, when the Benchmark is
    * held in more than one place — otherwise null, and nothing is said. A row read without
@@ -228,6 +234,7 @@ function EvaluationRow({
               id={evaluation.agentId}
               size={ICON_SIZE.rowLead}
               className="shrink-0 rounded"
+              src={avatarSrc}
             />
             <span className="min-w-0 truncate font-mono">{evaluation.agentId}</span>
           </span>
@@ -371,6 +378,9 @@ export function BenchmarkDetail({
 }) {
   const { currency } = useTheme();
   const { locale } = useLocale();
+  const avatarSrc = useAgentAvatarSrc();
+  /** A round's Agent's picture: the Agent of the machine whose scoreboard recorded it. */
+  const pictureOf = (ev: MergedEvaluation) => avatarSrc(ev.agentId ?? "", ev.machineId);
   const description = benchmarkDescription(bm, locale);
   const [caseStatements, setCaseStatements] = useState<MergedCase[] | null>(null);
   const [caseError, setCaseError] = useState<string | null>(null);
@@ -381,26 +391,27 @@ export function BenchmarkDetail({
   /** The case whose Ask AI dialog is open; kept as an id so it cannot outlive its case dialog. */
   const [askingCaseId, setAskingCaseId] = useState<string | null>(null);
 
+  // Another Benchmark starts over; a copy found on one more machine asks again with the Cases on
+  // screen kept, each copy's Cases joining as it answers.
   useEffect(() => {
     setCaseStatements(null);
     setCaseError(null);
     setOpenCaseId(null);
     setOpenEvaluationIndex(null);
     setAskingCaseId(null);
-    let cancelled = false;
-    fetchBenchmarkCases(projectId, bm)
-      .then((cases) => {
-        if (!cancelled) setCaseStatements(cases);
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) setCaseError(apiErrorText(error));
-      });
-    return () => {
-      cancelled = true;
-    };
+  }, [projectId, bm.id]);
+  useEffect(
+    () =>
+      watchBenchmarkCases(projectId, bm, ({ cases, error }) => {
+        if (cases !== null) {
+          setCaseStatements(cases);
+          setCaseError(null);
+        } else if (error !== null) setCaseError(apiErrorText(error));
+      }),
     // The machines are part of what the read asks; the key keeps a re-render from re-asking.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, bm.id, machinesKey]);
+    [projectId, bm.id, machinesKey],
+  );
 
   // The Scoreboard append order is the evaluation sequence. Preserve it even when a malformed
   // timestamp would otherwise reorder Agent versions; the detail table shows that sequence newest first.
@@ -454,6 +465,7 @@ export function BenchmarkDetail({
                     <EvaluationRow
                       key={index}
                       evaluation={ev}
+                      avatarSrc={pictureOf(ev)}
                       machineName={bm.machineIds.length > 1 ? machineNameOf(ev.machineId) : null}
                       onOpen={() => setOpenEvaluationIndex(index)}
                       currency={currency}
@@ -468,6 +480,7 @@ export function BenchmarkDetail({
         <EvaluationDetailModal
           benchmarkId={bm.id}
           evaluation={openEvaluation}
+          avatarSrc={pictureOf(openEvaluation)}
           caseTitles={caseTitles}
           currency={currency}
           onClose={() => setOpenEvaluationIndex(null)}
@@ -503,7 +516,7 @@ export function BenchmarkDetail({
           onClose={() => setAskingCaseId(null)}
           title={S.benchmark.askCaseTitle}
           description={S.benchmark.askCaseDescription}
-          question={S.benchmark.askCaseDefault}
+          question={S.benchmark.askCaseExamples.explain.prompt}
           examples={askCaseExamples()}
           tail={askCaseTail(caseAskParams(bm.id, openCase.id, evaluations))}
         />

@@ -15,6 +15,8 @@
  *                                 the next attempt now, or a new streak after it stopped; 200
  *                                 with the list, or 409 (`job_running`, `password_refused`,
  *                                 `not_kept_connected`).
+ * POST /:machineId/stop-reconnecting — a person's Stop retrying: the streak stops now
+ *                                 (`gaveUp: "cancelled"`); 200 with the list.
  * POST /:machineId/disconnect   — drop the tunnel (the remote server stays up).
  * POST /add                     — put machines in this Project's list, installing nothing.
  * GET  /ssh-hosts               — every host in the ssh config, with its block's user, host, port.
@@ -414,6 +416,18 @@ export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
         "not_kept_connected",
         "This server does not keep that machine connected, so there is nothing to bring back. Start it instead.",
       );
+    }
+    return c.json(state(c));
+  });
+
+  // A person's Stop retrying: the streak stops where it stands and waits for a Retry, and the
+  // attempt under way is cut, so every verb can start on the machine at once. Nothing to stop
+  // (the machine is up, or the streak already stopped) is not an error: a press that crossed the
+  // attempt that ended it answers the list as it now stands.
+  app.post("/:machineId/stop-reconnecting", (c) => {
+    const answer = deps.machines.stopReconnecting(c.req.param("machineId"));
+    if (!answer.ok) {
+      throw new HttpError(404, "unknown_machine", "No such host in this server's ssh config.");
     }
     return c.json(state(c));
   });

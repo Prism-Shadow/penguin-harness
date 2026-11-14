@@ -14,7 +14,9 @@
  *   harness.json  which table wrote them, and when
  *
  * and then leaves them alone. (`README.md` beside them is not part of that record: it is this
- * harness describing its own contract, rewritten whenever it differs — see {@link README}.) They are the record of what the workbench was written against:
+ * harness describing its own contract, rewritten whenever it differs — see {@link README}. Nor
+ * is `ui/`, the page runtime's declarations, which follow the server: ./ui-runtime.ts.) They
+ * are the record of what the workbench was written against:
  * a later generation of the platform, or another harness on the same machine, is compared
  * WITH them rather than overwriting them, which is what lets a removed host method be named
  * before the first call instead of failing at it. Deleting the directory is how a workbench
@@ -25,6 +27,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { IfaceTable } from "@prismshadow/penguin-core/kernel";
 import { renderDts } from "../plugin/iface-check.js";
+import { IDLE_RELEASE_MS } from "./subscribe.js";
 
 export const HARNESS_DIR = ".harness";
 const TYPES_FILE = "plugin.d.ts";
@@ -103,6 +106,18 @@ One entry per tab, beside the chat of this Agent; \`key\` is unique in the workb
 file under \`ui/\`. \`"contributes": {}\` is a server-only workbench with no UI — also how a UI is
 taken away again.
 
+## Pages in TSX
+
+A page may be TSX: \`ui/app.tsx\`, loaded by the HTML as \`<script type="module" src="app.js">\`.
+When \`ui/\` holds a \`.tsx\`, every load type-checks each \`.ts\`/\`.tsx\` under it and serves the
+\`.js\` it compiled to. A page imports \`react\`, \`react-dom\`, \`react-dom/client\`,
+\`@prismshadow/penguin-ui\` (the app's own components) and files under \`ui/\` (\`./x.js\`), nothing
+else; this server provides them, nothing to install. Their types are in \`.harness/ui/\`: the
+props of every component are in \`.harness/ui/node_modules/@prismshadow/penguin-ui/index.d.ts\`.
+Style your own markup with CSS that reads the \`--ui-*\` variables, linked from the HTML, never
+imported from code. Keep no \`ui/x.js\` beside a \`ui/x.tsx\`. The page SDK stays outside the
+check: \`const sdk = "../sdk/workbench.js"; await import(sdk)\`.
+
 ## Background work
 
 \`host.run\` starts a turn; it does not wait for completion. \`host.sessionResult(id)\` is a
@@ -110,6 +125,24 @@ snapshot: \`running\`, \`completed\` with the final \`text\`, or \`failed\` with
 Persist the Session id with \`host.setState\`, then poll from GET requests until terminal. Do not
 mark a running snapshot failed because its text is empty. Store small reports in host state;
 keep uploaded files outside this watched source directory. Never edit state.json by hand.
+
+## Following a Session live
+
+\`host.subscribe(sessionId, listener)\` hands \`listener\` every record the Session publishes from
+now on: the AMSP records \`GET /api/sessions/<id>/amsp\` streams, partial deltas and a subagent's
+records (\`origin\` set) included. Nothing is replayed, so subscribe before \`host.run\`. A record
+(\`WorkbenchRecord\`) is \`{ timestamp, type, payload, origin? }\`, and \`payload.type\` names it:
+\`task_begin\`, \`partial_text\`, \`tool_call\`, \`task_end\`, … A \`task_end\` without \`origin\` ends a
+task of the Session itself. The Session reads idle only after it, and until then
+\`host.sessionResult\` answers \`running\`: once \`host.sessionStatus(id)\` reads \`idle\`, take the
+answer and call the function \`subscribe\` returned (a second call does nothing). Listeners run
+after the record is published, in order; one that throws is logged and keeps its subscription.
+
+Reloading or removing this workbench ends all of its subscriptions, so \`create()\` subscribes
+again to the Sessions its state says are still running. A subscription whose Session stays idle
+with nothing published for ${IDLE_RELEASE_MS / 60_000} minutes ends by itself, and a server restart ends them all,
+so keep polling from GET requests as above. A \`plugin.d.ts\` here without \`subscribe\` predates
+it; delete \`.harness/\` to take it.
 
 ## Did it load
 

@@ -1,6 +1,6 @@
 {
   "name": "penguin-harness",
-  "version": "0.2.16",
+  "version": "0.2.18",
   "private": true,
   "type": "module",
   "description": "PenguinHarness \u2014 Unified and Stable RSI Framework (TypeScript SDK, CLI, server and Web App). Fully automatic optimization: any model, any algorithm, any benchmark.",
@@ -11,7 +11,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "oxlint",
-    "gen:ifaces": "node scripts/gen-ifaces.mjs --project packages/server/tsconfig.json --out packages/server/src/ifaces.json",
+    "gen:ifaces": "node scripts/gen-ifaces.mjs --project packages/server/tsconfig.json --out packages/server/src/ifaces.json && node scripts/gen-ifaces.mjs --project packages/web/tsconfig.json --out packages/web/src/ifaces.json && node scripts/gen-ifaces.mjs --project packages/cli/tsconfig.json --project packages/server/tsconfig.json --out packages/cli/src/ifaces.json",
     "ifaces:page": "pnpm gen:ifaces && node scripts/iface-page.mjs --in packages/server/src/ifaces.json --out dist-ifaces",
     "typecheck": "pnpm gen:ifaces && pnpm -r typecheck",
     "test": "pnpm -r test",

@@ -7,7 +7,7 @@
  *   2. Translating UniEvent[] into AmspRecord[] (partial_* ordering, complete messages,
  *      token_usage, tool_call_id passthrough).
  * As well as helper functions for token conversion, UniConfig construction, and retry
- * determination.
+ * determination, and how streamGenerate releases the upstream when it is left before the stop.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -1372,6 +1372,97 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
   }
 
   const abortError = (): Error => Object.assign(new Error("aborted"), { name: "AbortError" });
+
+  it("aborts and closes the upstream request when the consumer leaves early", async () => {
+    let upstreamSignal: AbortSignal | undefined;
+    let released = false;
+    const model = new SeamModel(async function* (signal) {
+      upstreamSignal = signal;
+      try {
+        yield delta({ type: "text.delta", text: "first" });
+        yield delta({ type: "text.delta", text: "unwanted" });
+      } finally {
+        released = true;
+      }
+    });
+    for await (const _record of model.streamGenerate({ newMessages: [userText("go")] })) break;
+    expect(upstreamSignal?.aborted).toBe(true);
+    expect(released).toBe(true);
+  });
+
+  it("closes upstream after a user abort while suspended at output", async () => {
+    const controller = new AbortController();
+    let released = false;
+    const model = new SeamModel(async function* () {
+      try {
+        yield delta({ type: "text.delta", text: "first" });
+      } finally {
+        released = true;
+      }
+    });
+    const gen = model.streamGenerate({ newMessages: [userText("go")], signal: controller.signal });
+    expect((await gen.next()).done).toBe(false);
+    controller.abort();
+    expect((await drain(gen)).outcome.status).toBe("aborted");
+    expect(released).toBe(true);
+  });
+
+  it("leaves the upstream open after a received stop, preserving billed usage", async () => {
+    let upstreamSignal: AbortSignal | undefined;
+    let released = false;
+    const model = new SeamModel(async function* (signal) {
+      upstreamSignal = signal;
+      try {
+        yield* text(["done"]);
+        yield stop("stop", { ...NO_USAGE, response_tokens: 7 });
+      } finally {
+        released = true;
+      }
+    });
+    const { messages, outcome } = await drain(
+      model.streamGenerate({ newMessages: [userText("go")] }),
+    );
+    expect(outcome.status).toBe("completed");
+    expect(messages.find((m) => typeOf(m) === "token_usage")?.payload).toMatchObject({
+      request: { output: 7 },
+    });
+    expect(upstreamSignal?.aborted).toBe(false);
+    // Not returned: the transport may still be reading the stream's end after the stop.
+    expect(released).toBe(false);
+  });
+
+  it.each(["throw", "reject", "hang"])(
+    "does not let %s during cleanup prevent leaving the stream",
+    async (mode) => {
+      let upstreamSignal: AbortSignal | undefined;
+      let returns = 0;
+      const model = new SeamModel((signal) => {
+        upstreamSignal = signal;
+        return {
+          [Symbol.asyncIterator]() {
+            return {
+              next: async () => ({
+                done: false as const,
+                value: delta({ type: "text.delta", text: "first" }),
+              }),
+              return: () => {
+                returns += 1;
+                if (mode === "throw") throw new Error("cleanup failed");
+                if (mode === "reject") return Promise.reject(new Error("cleanup failed"));
+                return new Promise<IteratorResult<UniEvent>>(() => {});
+              },
+            };
+          },
+        };
+      });
+      const gen = model.streamGenerate({ newMessages: [userText("go")] });
+      expect((await gen.next()).done).toBe(false);
+      expect(await gen.return({ status: "aborted" })).toMatchObject({ done: true });
+      expect(upstreamSignal?.aborted).toBe(true);
+      expect(returns).toBe(1);
+    },
+    1000,
+  );
 
   /**
    * An upstream that IGNORES its AbortSignal: it never yields and never rejects, whatever

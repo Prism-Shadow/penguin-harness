@@ -78,7 +78,7 @@ Drag files onto the conversation or the composer, on the chat page or the draft 
 
 - While the drag is over that area, a "Drop files to attach" overlay covers it. Dragging text, or anything that is not a file, is ignored.
 - Release to attach the whole batch. Images go the same way as pasted images and everything else becomes an attachment, with the same checks and messages as the + menu.
-- Dropping works while a Task runs; the attachments then follow the [mid-run send mode](#steer-or-queue-a-message).
+- Dropping works while a Task runs; the attachments then follow the [mid-run send mode](#steer-queue-or-interrupt).
 - In goal mode, dropped images are attached and files are refused with a notice.
 
 Only the chat area attaches. Dropping a file on the sidebar, the top bar, another panel or a page without a composer does nothing, and the browser does not navigate away to the file. The Files panel is the other drop target, and it uploads into the Workspace instead; see [Files panel](/files). The Files panel can also add a file, a directory or a selected passage to your message as a chip.
@@ -111,12 +111,13 @@ See [Goal mode](/goal-mode).
 
 While a Task runs, the composer stays live and the toolbar keeps a single action button. With an empty composer it is **Stop**, which ends the Task; it also stops a running compaction.
 
-### Steer or queue a message
+### Steer, queue or interrupt
 
 When you type while a Task runs, the button sends according to the **Mid-run send mode** at the bottom of the + menu. The choice is remembered in this browser.
 
 - **Steer** (the default): the button reads **Send to the running agent**. Your text, images and files reach the agent with its next turn, and the message shows as **User steering**.
 - **Queue**: the button reads **Queue as the next message**. The server holds the message and sends it as an ordinary new message when the run finishes. Until then, a line above the composer shows each queued message ("Follow-up queued — sent when this run finishes: …"). The queue survives a page reload.
+- **Interrupt**: the button reads **Interrupt and send**. The run stops at once and the message goes out right after the turn it cut, carrying whatever the agent had done and written so far. Steering that had not been delivered yet comes back to the composer, as it does on **Stop**. While the run winds down, a line above the composer reads "Interrupting — sent next: …".
 
 Some drafts cannot be steered:
 
@@ -124,9 +125,11 @@ Some drafts cannot be steered:
 - With a staged `/agent` pick, sending opens the new conversation right away.
 - With a staged `/model` pick, sending waits until the turn finishes. The button stays **Stop**, and a line above the composer explains the wait.
 
-### Recall a message
+### Recall a message or send it now
 
 A steering message that has not reached the agent yet ("Steering queued — delivered with the next turn: …") and each queued follow-up end in a **Recall** button, a curved arrow. It puts the message back into the composer, in front of what you have typed, attachments included, so you can edit and send it again.
+
+Before the Recall button sits an **Interrupt** text link. It works like sending in Interrupt mode: the run stops and the message goes out right away.
 
 - A steering message that already reached the agent cannot be recalled, and neither can a follow-up that has started.
 - When the run ends before a steering message is delivered, for example because you pressed **Stop** while a tool was running, the message returns to the composer by itself, attachments and all.
@@ -173,12 +176,12 @@ There are two ways to change the model, and they do different things.
 
 Select the model name in the composer's toolbar and pick another model. The picker is disabled while a Task runs or a compaction is under way, and picking the current model does nothing. A dialog asks first, because the switch compacts the context on the current model before moving on:
 
-- **Compact and switch**: the context is compacted on the current model (always a summary, even when the agent is configured to discard), and the conversation then continues on the new model. If the compaction fails or is aborted, the conversation stays on the current model.
+- **Compact and switch**: the context is compacted on the current model (always a summary, even when the agent is configured to discard), and the conversation then continues on the new model. If the compaction fails, the conversation still moves: the new model gets the path of this conversation's Trace file instead of a summary, and reads the earlier history from it when it needs to. If you stop the compaction, the conversation stays on the current model.
 - **Cancel**: keeps the current model.
 
-Right after a compaction or another switch there is nothing to compact, so the dialog says nothing is compacted again and the button reads **Switch**; a conversation with no messages yet switches at once.
+Right after a compaction or another switch there is nothing to compact, so the dialog says nothing is compacted again and the button reads **Switch**; a conversation with no messages yet switches at once. When the current model is unavailable (removed from the model configuration, or without a key), the dialog says nothing is summarized and the new model gets the Trace file path; the button reads **Switch**, and no request is sent to the unavailable model.
 
-The switch shows in the conversation as a compaction row followed by a "Model switched · A → B" marker (the marker alone when there was nothing to compact: right after a compaction or another switch, or when the last request never completed). A failed compaction shows as a failed compaction row with no marker. Once switched, the model badge, the context window and the cost estimate follow the new model.
+The switch shows in the conversation as a compaction row followed by a "Model switched · A → B" marker (the marker alone when there was nothing to compact: right after a compaction or another switch, or when the last request never completed). A switch that handed over the Trace file path reads "Model switched · A → B · handed over by Trace", after the failed compaction row when there was one; hover it to see the file. A stopped compaction shows as a stopped compaction row with no marker. Once switched, the model badge, the context window and the cost estimate follow the new model.
 
 ### In a new conversation
 
@@ -263,7 +266,7 @@ The chat page has two docks for panels: the right sidebar and the bottom panel. 
 | Panel | What it shows |
 | --- | --- |
 | **Agents panel** | The Task's subagents: the call graph and each subagent's live conversation |
-| **Command-line terminal** | The conversation's terminals, one tab each; see [Use a terminal](#use-a-terminal) |
+| **Terminal** | The conversation's terminals, one tab each; see [Use a terminal](#use-a-terminal) |
 | **Files** | The Workspace's files, with preview, editing and upload; see [Files panel](/files) |
 | **Memory** | The agent's memory |
 | **Trajectories** | The conversation's Trace files: a summary, per-turn statistics, an execution timeline and each event, with **Export** |
@@ -278,7 +281,7 @@ To make a dock as large as it goes, select **Full screen** in its header, or dra
 
 When the right sidebar is closed on a desktop-width window, or no panel is open on a narrow one, a round **Shortcuts** button floats 32px inside the right edge of the conversation. It is not shown on the draft page or while the conversation's history is loading or failed to load.
 
-1. Select the button, or focus it and press Enter or Space. A fan of round entries opens to its left: **Agents panel**, **Command-line terminal**, **Files**, **Memory**, **Trajectories**, **Remote control** and **Scheduled tasks**, then **Hide launcher**.
+1. Select the button, or focus it and press Enter or Space. A fan of round entries opens to its left: **Agents panel**, **Terminal**, **Files**, **Memory**, **Trajectories**, **Remote control** and **Scheduled tasks**, then **Hide launcher**.
 2. Point at an entry, or focus it, to see its name under the button.
 3. Select the entry. The panel opens in the right sidebar on a desktop-width window, or in the bottom sheet on a narrow one, and the button disappears.
 
@@ -293,9 +296,9 @@ Good to know:
 
 ### Use a terminal
 
-In the docks, terminals live in one **Command-line terminal** panel per conversation; they also open on the standalone `/terminal` page. The panel's top row holds the conversation's terminals as tabs, each with its number and title: select a tab to switch, **+** to start another terminal, and a tab's × to close that terminal after a confirmation. When the last terminal is closed or exits on its own (after `exit`, say), the panel closes with it. A terminal belongs to the conversation that opened it: it shows up only in that conversation's panel, and no other conversation can see or open it; terminals opened for the conversation on another device or browser are listed there too. A new conversation has no terminal until its first message is sent. Each runs your login shell with your own startup files, then puts this installation's `penguin` first on PATH, the same one agents get (see [PATH launcher](/configuration#path-launcher)).
+In the docks, terminals live in one **Terminal** panel per conversation; they also open on the standalone `/terminal` page. The panel's top row holds the conversation's terminals as tabs, each with its number and title: select a tab to switch, **+** to start another terminal, and a tab's × to close that terminal after a confirmation. When the last terminal is closed or exits on its own (after `exit`, say), the panel closes with it. A terminal belongs to the conversation that opened it: it shows up only in that conversation's panel, and no other conversation can see or open it; terminals opened for the conversation on another device or browser are listed there too. A new conversation has no terminal until its first message is sent. Each runs your login shell with your own startup files, then puts this installation's `penguin` first on PATH, the same one agents get (see [PATH launcher](/configuration#path-launcher)).
 
-- Ctrl+` shows or hides the Command-line terminal panel, opening it if it is not open yet and starting a terminal if the conversation has none.
+- Ctrl+` shows or hides the Terminal panel, opening it if it is not open yet and starting a terminal if the conversation has none.
 - Ctrl+Shift+` starts another terminal in the panel.
 - Ctrl+Alt+`, with a terminal focused, closes that terminal after a confirmation, like the × on its tab. The keystroke never reaches the shell. Ctrl+W does: it is readline's delete-word.
 
@@ -421,7 +424,7 @@ Archived conversations are listed under [Settings › Archived chats](/settings#
 | Ctrl+Alt+1 | Show or hide the sidebar |
 | Ctrl+Alt+2 | Show or hide the right sidebar |
 | Ctrl+Alt+3 | Show or hide the bottom panel |
-| Ctrl+` | Show or hide the Command-line terminal panel |
+| Ctrl+` | Show or hide the Terminal panel |
 | Ctrl+Shift+` | Start a new terminal |
 | Ctrl+Alt+` | Close the focused terminal, after confirmation |
 | Ctrl+S | Save in the Files panel's editor or the handbook |
@@ -446,7 +449,7 @@ On a Mac, ⌘ takes the place of Ctrl in Ctrl+S, Ctrl+F, Ctrl+Shift+F and in the
 
 Some of what you do in the chat travels as structured text in the conversation, which you may notice in the Trace:
 
-- `/model` starts the new Session with a `[model_switch_from]` block naming the source Session, its title, its Trace file, its Workspace and the previous provider and model, followed by your message. The new conversation shows the block as the "New conversation on another model" banner. A switch inside a conversation writes no block: it is recorded as an ordinary compaction, and the new context's `session_meta` names the new model.
+- `/model` starts the new Session with a `[model_switch_from]` block naming the source Session, its title, its Trace file, its Workspace and the previous provider and model, followed by your message. The new conversation shows the block as the "New conversation on another model" banner. A switch inside a conversation is recorded as an ordinary compaction, and the new context's `session_meta` names the new model; it writes the same block only when it hands over by Trace path, and the block then names this conversation itself.
 - A steering message is sent as a `[user_steering]` user message with the agent's next turn.
 - Selected Skills travel with the message in a `[use_skills]` block.
 - Each attached file adds an `[attached file: <path>]` line to the message.

@@ -8,13 +8,13 @@
  */
 export const zh = {
   siteName: "PenguinHarness",
+  backToTop: "回到顶部",
 
   announcement: {
     label: "公告",
     prev: "上一条公告",
     next: "下一条公告",
-    geminiArgon: "Gemini 4 Argon 已上线，查看 0.2.16 更新日志",
-    tokenDanceChallenge: "TokenDance Agent 冲榜赛：15,000 元 Token 奖池，10 月 23 日截止",
+    release0217: "PenguinHarness 0.2.17 已发布：Agent API 记录流、统计图、表单，查看更新日志",
     penguinGo: "Penguin Go 官方 Token 包上线，Gemini 全系列模型 5 折",
   },
 
@@ -22,6 +22,9 @@ export const zh = {
     home: "主页",
     blog: "博客",
     download: "下载",
+    plugins: "插件",
+    benchmarks: "评估集",
+    leaderboards: "榜单",
     amsp: "AMSP",
     docs: "文档",
     gallery: "画廊",
@@ -45,15 +48,22 @@ export const zh = {
   },
 
   hero: {
-    positioning: "统一、稳定的 Agent 自进化框架",
-    /** The badge on the positioning line's top-right corner. */
-    badge: "免费开源",
-    /** A no-break space before each dot keeps it at the end of its line when a phone wraps. */
-    automation: "全自动优化：任意模型\u00a0· 任意算法\u00a0· 任意 Benchmark",
+    /** Two clauses keep the emphasized phrases and punctuation in each locale's reading order. */
+    positioning: {
+      growthLead: "让软件",
+      growth: "持续成长",
+      growthEnd: "，",
+      separator: "",
+      reachLead: "让进化",
+      reach: "触手可及",
+      reachEnd: "",
+    },
+    /** The grey line under the slogan. */
+    subtitle: "开箱即用的 Agent 自进化框架",
     downloadCta: "下载桌面版",
     cliInstall: "命令行安装",
     stats: [
-      { value: "跨平台部署", label: "Linux · Windows · macOS" },
+      { value: "跨平台部署", label: "Linux、Windows、macOS" },
       { value: "100% 开源", label: "Apache 2.0 协议" },
       { value: "首个自进化 Harness", label: "原生 Agent 自进化引擎" },
     ],
@@ -67,8 +77,16 @@ export const zh = {
     supportedModelsMore: "以及更多",
     algorithmsLabel: "自进化算法",
     benchmarksLabel: "评估集",
-    /** One per BENCHMARKS entry, in its order (the benchmarks of Sec A to Sec E, then GDPevo): the kind of each. */
-    benchmarkKinds: ["数据分析", "软件工程", "业务自动化", "科学研究", "终端任务", "Agent 自进化"],
+    /** The kind each BENCHMARKS entry is shown by, keyed by its `kind`. */
+    benchmarkKinds: {
+      dataAnalysis: "数据分析",
+      softwareEngineering: "软件工程",
+      businessAutomation: "业务自动化",
+      scientificResearch: "科学研究",
+      terminalTasks: "终端任务",
+      biomedicine: "生物医学",
+      agentSelfEvolution: "Agent 自进化",
+    },
     /** The confirmation an outside link in the catalogue rows asks before it opens. */
     externalLink: {
       title: "即将打开外部链接",
@@ -98,7 +116,6 @@ export const zh = {
   },
 
   download: {
-    eyebrow: "下载",
     title: "下载桌面端",
     recommended: "当前系统",
     platforms: {
@@ -159,31 +176,7 @@ export const zh = {
     /** The link to the same screen in the component gallery, full size. */
     open: "在画廊中打开",
     loading: "正在载入实时演示…",
-  },
-
-  /** The app live under the hero, and the three rows beside it (sections/showcase.tsx). */
-  showcase: {
-    /** Each `frame` names its frame for assistive technology. */
-    start: "开始页（实时演示）",
-    evolve: {
-      title: "一句话启动 Agent 自进化",
-      text: "说出要优化的智能体、评估集和目标分数，PenguinHarness 就会修改它、重新评测，分数更高才保留。",
-      link: "自进化怎么运作",
-      frame: "一轮自进化的对话（实时演示）",
-    },
-    evaluate: {
-      title: "每个版本都有分数",
-      text: "同一套 Benchmark 上的每次评测，按智能体和模型连成一条线，哪一版更好一眼可见。",
-      link: "了解评估中心",
-      frame: "评估中心里的一套 Benchmark（实时演示）",
-    },
-    toolkits: {
-      title: "自进化算法通过插件接入",
-      /** `names`: the paper toolkits, already listed (OPRO、APE、…). */
-      text: (names: string) => `除了默认循环，${names} 各自是一个工具包，按原论文的流程运行。`,
-      link: "浏览插件库",
-      frame: "插件市场（实时演示）",
-    },
+    evolutionFrame: "一轮自进化的对话（实时演示）",
   },
 
   /** The self-evolution loop and its three recorded numbers (sections/self-improve.tsx). */
@@ -206,7 +199,6 @@ export const zh = {
       { label: "成本", hint: "每次运行" },
       { label: "耗时", hint: "每次运行" },
     ],
-    trendsNote: "记分板会记录每个版本的分数、成本和耗时。这里的数值仅为示意。",
     demo: {
       caption: "演示：决策智能体经过评测、一次工作方法改进和同模型复测，分数从 84 提升到 100。",
       cost: "被测 Agent 的 6 次运行花费 $0.0373，不含出题、评分和优化的成本。",
@@ -265,7 +257,10 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
   },
 
   cases: {
-    title: "一句话 + 0.6 元构建法务应用",
+    title: "A2APP：一句话 + 0.6 元构建法务应用",
+    /** The subtitle's first line, saying what A2APP is; `subtitle` is its second. */
+    a2app:
+      "A2APP 是智能体自己的小应用，就是聊天旁边的一个标签页，会调用智能体完成工作。在聊天里说一句话就能修改它，改完立即重新加载，旧版本也会保留。",
     subtitle:
       "用一句话描述需求，PenguinHarness 就能构建法务智能体应用：上传合同、识别风险并生成审阅报告。",
     prompt:
@@ -351,13 +346,12 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
     dataTitle: "复杂数据分析",
     dataDesc:
       "三者中准确率最高（66.67%，另两者均为 53.33%），成本只有 OpenAI Codex 的 1/35、Claude Code 的 1/70。",
-    dataFootnote:
-      "15 道复杂数据分析任务 · 单次运行 · Token 与成本为全套题目合计 · 按官方计价估算。",
+    dataFootnote: "15 道复杂数据分析任务，单次运行；Token 与成本为全套题目合计，按官方计价估算。",
     codeTitle: "代码任务",
     codeDesc:
       "准确率与 OpenAI Codex 持平（71.25%）、低于 Claude Code（86.25%），但成本只有前者的 1/58、后者的 1/39。",
     codeFootnote:
-      "40 道代码任务 × 2 次运行（准确率取全部 80 次结果）· Token 与成本为全套题目合计 · 按官方计价估算。",
+      "40 道代码任务，每道运行 2 次，准确率取全部 80 次结果；Token 与成本为全套题目合计，按官方计价估算。",
     colFramework: "实验框架",
     colModel: "模型名称",
     colAccuracy: "准确率（%）",
@@ -391,7 +385,7 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
   },
 
   footer: {
-    tagline: "统一、稳定的 Agent 自进化框架",
+    tagline: "开箱即用的 Agent 自进化框架",
     product: "产品",
     resources: "资源",
     quickstart: "快速开始",
@@ -401,7 +395,197 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
     docs: "文档",
     releases: "Releases",
     license: "Apache-2.0 License",
-    copyright: "© 2026 Prism Shadow · 基于 Apache-2.0 协议开源",
+    copyright: "© 2026 Prism Shadow，基于 Apache-2.0 协议开源",
+  },
+
+  hub: {
+    source: "来源",
+    searchPlaceholder: "按名称、简介或作者搜索",
+    clearSearch: "清空搜索",
+    all: "全部",
+    sortLabel: "排序",
+    sortLatest: "最近更新",
+    sortName: "名称",
+    empty: "没有符合条件的条目。清空搜索或取消筛选后再看。",
+    clearFilters: "清除筛选",
+    count: (n: number) => `${n} 个`,
+    listSeparator: "、",
+    viewSource: "在 GitHub 查看",
+    details: "详情",
+    pageTitle: (name: string) => `${name} | PenguinHarness`,
+    notFound: "找不到这个条目，它可能已改名或移除。",
+    backToList: "回到列表",
+    meta: {
+      author: "作者",
+      version: "版本",
+      license: "许可证",
+      category: "分类",
+      package: "npm 包",
+      preinstall: "新建 Agent 时预装",
+      yes: "是",
+      no: "否",
+      status: "状态",
+      updated: "更新时间",
+      tasks: "题目数",
+    },
+    status: { published: "已发布", draft: "草稿" } as Record<string, string>,
+    references: "参考文献",
+    plugins: {
+      title: "插件",
+      description: "PenguinHarness 的插件库：自进化工具包、Skills、Hooks 与工作台。",
+      facetCategory: "分类",
+      facetContents: "内容",
+      facetAuthor: "作者",
+      categories: {
+        rsi: "Agent 自进化",
+        "office-productivity": "办公效率",
+        "software-development": "软件开发",
+        "ai-app-development": "AI 应用开发",
+        sandbox: "Agent 运行沙箱",
+        other: "其他",
+      } as Record<string, string>,
+      contents: { skills: "Skills", hooks: "Hooks", workbenches: "工作台" },
+      about: "简介",
+      quickStart: "快速开始",
+      quickStartSkills: "选用的 Skills",
+      skills: "Skills",
+      hooks: "Hooks",
+      workbenches: "工作台",
+      extensions: "Hooks 与工作台",
+      skillCount: (n: number) => `${n} 个 Skill`,
+      preinstalled: "默认预装",
+    },
+    benchmarks: {
+      title: "评估集",
+      description: "PenguinHarness 评估集：用来测 Agent 的题目与评分标准。",
+      facetTimeout: "单题时限",
+      timeout: {
+        short: "15 分钟以内",
+        hour: "1 小时以内",
+        long: "1 小时以上",
+        none: "不限时",
+      } as Record<string, string>,
+      facetLeaderboard: "榜单",
+      onLeaderboard: "已收录",
+      facetStatus: "状态",
+      facetAuthor: "作者",
+      taskCount: (n: number) => `${n} 道题`,
+      about: "简介",
+      tasks: "题目",
+      budget: { timeout: "时限", cpus: "CPU", ram: "内存", disk: "磁盘", gpus: "GPU" },
+      minutes: (n: number) => `${n} 分钟`,
+      hours: (n: number) => `${n} 小时`,
+      cores: (n: number) => `${n} 核`,
+      gigabytes: (n: number) => `${n} GB`,
+      cards: (n: number) => `${n} 卡`,
+      unlimited: "不限",
+      leaderboards: "收录它的榜单",
+      taskParts: "题目内容",
+      statement: "题干",
+      rubric: "评分标准",
+      data: "数据",
+      instruction: "Agent 收到的指令",
+      files: (n: number) => `文件（共 ${n} 个）`,
+      allFiles: (n: number) => `在 GitHub 查看全部 ${n} 个文件`,
+      dataFolder: "在 GitHub 查看数据目录",
+      showAll: "展开全部",
+      showLess: "收起",
+      fileCount: (n: number) => `${n} 个文件`,
+      upTo: (time: string) => `单题最长 ${time}`,
+      withData: "附带数据",
+    },
+    leaderboards: {
+      title: "榜单",
+      description: "PenguinHarness 榜单：在评估集上比较 Agent 的得分与开销。",
+      facetAuthor: "作者",
+      entryCount: (n: number) => `${n} 个条目`,
+      benchmarkCount: (n: number) => `${n} 个评估集`,
+      charts: { table: "排行", pareto: "得分与开销", waffle: "逐题得分" },
+      chartsLabel: "视图",
+      results: "结果",
+      entries: "条目",
+      baseline: "基线",
+      rank: "排名",
+      model: "模型",
+      score: "得分",
+      modelThinking: (model: string, level: string) => `${model}（${level}）`,
+      columnNames: {
+        harness: "Harness",
+        algorithm: "算法",
+        released: "发布时间",
+        cost: "成本",
+      } as Record<"harness" | "algorithm" | "released" | "cost", string>,
+      columns: "列",
+      filter: "筛选",
+      sortBy: (name: string) => `按${name}排序`,
+      filters: {
+        model: "模型",
+        harness: "Harness",
+        algorithm: "算法",
+        thinking: "思考等级",
+      } as Record<"model" | "harness" | "algorithm" | "thinking", string>,
+      filterLabel: (name: string) => `按${name}筛选`,
+      noMatch: "没有符合筛选条件的条目。",
+      rawData: "查看原始数据",
+      raw: {
+        harness: "Harness",
+        provider: "模型提供商",
+        thinking: "思考等级",
+        phase: "阶段",
+        std: "标准差",
+        stdAttempts: (n: number) => `跨 ${n} 次尝试`,
+        stdExperiments: "由各实验的 score_std 合成",
+        experiments: "实验",
+        benchmark: "评估集与实验",
+        value: "得分",
+        attempts: "尝试次数",
+        tokens: "Token 输入／缓存／输出",
+        finished: "完成时间",
+        harnessSetting: "Harness 配置",
+        notRecorded: "未记录",
+      },
+      cost: "成本",
+      duration: "耗时",
+      tokens: "Token",
+      axisLabel: "横轴",
+      frontier: "帕累托前沿",
+      hoursShort: (value: string) => `${value} 小时`,
+      minutesShort: (value: string) => `${value} 分钟`,
+      scale: "得分",
+      noScore: "未评分",
+      task: "题目",
+      attemptsPerCell: (n: number) => (n === 1 ? "每格一个方块" : `每格 ${n} 个方块，每次尝试一个`),
+      cellScores: (scores: string[]) => `各次得分：${scores.join("、")}`,
+      methodOnModel: (method: string, model: string) => `${method}（${model}）`,
+      paretoPoint: (method: string, score: string, axis: string, value: string) =>
+        `${method}：得分 ${score}，${axis} ${value}`,
+      paretoSummary: (axis: string, points: string[], frontier: string[]) =>
+        `横轴：${axis}。${points.join("；")}。帕累托前沿：${frontier.join("、")}。`,
+      benchmarks: "评估集",
+      method: {
+        title: "计算方式与来源",
+        matrixLead: (metric: string, phase: string) =>
+          `每一格是一个实验在 \`${phase}\` 阶段 summary 中的 \`${metric}\`；横线下方各行是每一列合成后的结果。`,
+        listLead: "逐个条目列出表达式的各个参数：所读的实验、阶段与指标，以及取到的值。",
+        stdAttempts: (n: number | null) =>
+          `± 为跨${n === null ? "" : ` ${n} 次`}尝试的样本标准差，每次尝试的各题得分按与总分相同的方式合成。`,
+        stdExperiments: "± 由各实验自身的 `score_std` 按相互独立合成。",
+        stdExperimentsSome:
+          "± 取跨尝试的样本标准差；若某条目的各实验尝试次数不一致，改由各实验的 `score_std` 合成。",
+        benchmark: "评估集",
+        experiment: "实验",
+        phase: "阶段",
+        metric: "指标",
+        value: "值",
+        opName: (op: string | null) => (op === null ? "取值" : op),
+        opRow: (op: string | null) => (op === null ? "得分" : `得分（${op}）`),
+        stdRow: "± 标准差",
+        costRow: "成本（单次运行之和）",
+        timeRow: "耗时（单次运行之和）",
+        config: "配置",
+        experiments: "实验数据",
+      },
+    },
   },
 
   blog: {

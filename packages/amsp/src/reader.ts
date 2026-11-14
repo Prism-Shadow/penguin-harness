@@ -129,6 +129,8 @@ export class SessionReader {
   /** `waiting`: subscribed, history not asked for yet; `loading`: history in flight; `live`: delivering as it comes. */
   #phase: "waiting" | "loading" | "live" = "waiting";
   #held: Held[] = [];
+  /** An accepted live snapshot also covers partials still in transit on the stream. */
+  #snapshotCursor: { epoch: string; seq: number } | null = null;
   /** The last stream id seen: where a reconnect resumes. */
   #lastId: string | null = null;
   /** Bumped by every history read, so a read a resync overtook is dropped. */
@@ -136,6 +138,7 @@ export class SessionReader {
   #connection: AbortController | null = null;
   #watchdog: ReturnType<typeof setTimeout> | null = null;
   #retry: ReturnType<typeof setTimeout> | null = null;
+  #historyRetry: ReturnType<typeof setTimeout> | null = null;
 
   constructor(transport: Transport, sessionId: string, opts: SessionReaderOptions = {}) {
     this.#transport = transport;
@@ -167,6 +170,7 @@ export class SessionReader {
     this.#connection?.abort();
     if (this.#watchdog !== null) clearTimeout(this.#watchdog);
     if (this.#retry !== null) clearTimeout(this.#retry);
+    if (this.#historyRetry !== null) clearTimeout(this.#historyRetry);
   }
 
   #emit(record: HistoryRecord, id: string | null, source: "history" | "live"): void {
@@ -197,7 +201,7 @@ export class SessionReader {
     };
     const spoke = (): void => {
       arm();
-      if (this.#phase === "waiting") void this.#loadHistory();
+      if (this.#phase === "waiting" && this.#historyRetry === null) void this.#loadHistory();
     };
     const resume = this.#lastId;
     const done = this.#transport.stream(this.#streamPath, {
@@ -206,8 +210,13 @@ export class SessionReader {
       onRecord: (id, record) => {
         if (connection.signal.aborted) return;
         if (id !== null) this.#lastId = id;
-        if (this.#phase === "live") this.#emit(record, id, "live");
-        else this.#held.push({ id, record });
+        if (this.#phase === "live") {
+          const cursor = this.#snapshotCursor;
+          const at = id === null ? null : parseId(id);
+          const covered =
+            cursor !== null && at !== null && at.epoch === cursor.epoch && at.seq <= cursor.seq;
+          if (!covered || !isPartial(record)) this.#emit(record, id, "live");
+        } else this.#held.push({ id, record });
         spoke();
       },
       onControl: (control: AmspControl) => {
@@ -259,9 +268,12 @@ export class SessionReader {
   }
 
   #reset(): void {
+    if (this.#historyRetry !== null) clearTimeout(this.#historyRetry);
+    this.#historyRetry = null;
     this.#epoch += 1;
     this.#phase = "waiting";
     this.#held = [];
+    this.#snapshotCursor = null;
     for (const listener of this.#listeners.reset) listener();
   }
 
@@ -287,15 +299,22 @@ export class SessionReader {
       ).body;
     } catch (err) {
       if (this.#closed || epoch !== this.#epoch) return;
-      if (err instanceof AmspHttpError && err.status >= 400 && err.status < 500) {
+      // Timeouts and rate limits are transient, just as they are when opening the stream.
+      if (
+        err instanceof AmspHttpError &&
+        err.status >= 400 &&
+        err.status < 500 &&
+        err.status !== 408 &&
+        err.status !== 429
+      ) {
         this.#fail(err);
         return;
       }
       // Try again on the same stream, holding what it brings meanwhile.
       this.#phase = "waiting";
-      this.#retry = setTimeout(() => {
-        this.#retry = null;
-        if (this.#phase === "waiting") void this.#loadHistory();
+      this.#historyRetry = setTimeout(() => {
+        this.#historyRetry = null;
+        if (!this.#closed && this.#phase === "waiting") void this.#loadHistory();
       }, this.#reconnectMs);
       return;
     }
@@ -327,6 +346,7 @@ export class SessionReader {
     if (cursor === null) return held;
     const seenEpoch = this.#lastId === null ? null : parseId(this.#lastId)?.epoch;
     if (seenEpoch !== undefined && seenEpoch !== null && seenEpoch !== cursor.epoch) return held;
+    this.#snapshotCursor = cursor;
     const before: Held[] = [];
     const after: Held[] = [];
     for (const entry of held) {

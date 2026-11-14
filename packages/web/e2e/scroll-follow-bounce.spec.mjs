@@ -26,6 +26,7 @@
  */
 import { test, expect } from "@playwright/test";
 import { provisionAndLogin, login } from "./auth.mjs";
+import { setAccountPrefs } from "./account-prefs.mjs";
 
 const BASE = process.env.BASE_URL;
 const MOCK = process.env.MOCK_URL;
@@ -217,8 +218,9 @@ for (const [theme, name] of Object.entries(THEMES)) {
     page,
   }) => {
     test.setTimeout(60_000 + GESTURES * 20_000);
-    await page.addInitScript((id) => localStorage.setItem("penguin.themeId", id), theme);
     await login(page.request, USER, PASSWORD);
+    // The theme is the account's: every test signs in as the same user (account-prefs.mjs).
+    await setAccountPrefs(page.request, { themeId: theme });
     const created = await page.request.post(
       `${BASE}/api/projects/${projectId}/agents/default_agent/sessions`,
       { data: { provider: "custom", modelId: "claude-4-8", approvalMode: "allow-all" } },

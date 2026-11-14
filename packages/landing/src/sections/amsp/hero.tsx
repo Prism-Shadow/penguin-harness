@@ -12,7 +12,7 @@ import { CopyPromptButton } from "../../components/copy-prompt-button";
 import { ExternalLink, ExternalLinkScope } from "../../components/external-link";
 import { StreamPlayer } from "../../components/stream-player";
 
-/** The name spells its acronym: each word's initial is drawn in the brand colour. */
+/** The name in full, beside the mark that carries its initials. */
 const NAME = ["Agent", "Message", "Stream", "Protocol"];
 
 export function AmspHero() {
@@ -23,18 +23,12 @@ export function AmspHero() {
           <p className="anim-rise flex items-center gap-3">
             <AmspMark className="h-10 w-10 shrink-0" />
             <span className="text-xl font-semibold tracking-tight sm:text-2xl">
-              {NAME.map((word, i) => (
-                <span key={word}>
-                  {i > 0 && " "}
-                  <span className="text-brand-600 dark:text-brand-300">{word[0]}</span>
-                  {word.slice(1)}
-                </span>
-              ))}
+              {NAME.join(" ")}
             </span>
           </p>
 
           <h1
-            className="anim-rise mt-8 text-4xl leading-[1.18] font-semibold tracking-tight text-balance break-keep [overflow-wrap:break-word] sm:text-5xl"
+            className="anim-rise mt-8 text-3xl leading-tight font-semibold tracking-tight text-balance break-keep [overflow-wrap:break-word] sm:text-4xl"
             style={{ animationDelay: "60ms" }}
           >
             {S.amsp.headline}
@@ -66,7 +60,7 @@ export function AmspHero() {
           >
             <a
               href={`${DOCS_URL}amsp/`}
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-gray-900 px-5 text-[15px] font-medium whitespace-nowrap text-white shadow-sm transition-colors hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-gray-900 px-5 text-sm font-medium whitespace-nowrap text-white shadow-sm transition-colors hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
             >
               {S.amsp.reference}
               <ArrowRightIcon className="h-4 w-4" />

@@ -1,13 +1,18 @@
 /**
- * Add-group bulk import: the endpoint's base URL, protocol and key become the GROUP's
- * connection, written once; the imported rows keep the listing's order, skip and count the
- * entries that produce no row (duplicates, and ids the config could not hold), and store
+ * Add-group import: the endpoint's base URL, protocol and key become the GROUP's connection,
+ * written once; the pick list offers each usable id once, in the listing's order, and counts
+ * the entries it leaves out; the imported rows keep the order they are given, skip and count
+ * the entries that produce no row (duplicates, and ids the config could not hold), and store
  * nothing of the connection — each persists as a bare model that follows its group.
  */
 import { describe, expect, it } from "vitest";
 import type { ModelInfo } from "@prismshadow/penguin-server/api";
 import { applyProviderUpdate } from "../src/features/models/connection";
-import { buildImportedRows, groupImportConnection } from "../src/features/models/group-import";
+import {
+  buildImportedRows,
+  groupImportConnection,
+  pickableModelIds,
+} from "../src/features/models/group-import";
 import { rowToEntry, toRow } from "../src/features/models/models-page";
 
 const config = { baseUrl: "https://gw.example/v1", clientType: "openai-chat", apiKey: "sk-g1" };
@@ -34,6 +39,15 @@ describe("the group's connection", () => {
       baseUrl: "https://gw.example/v1",
       clientType: "openai-chat",
     });
+  });
+});
+
+describe("pickableModelIds", () => {
+  it("offers each usable id once, in the endpoint's order, and counts the entries it leaves out", () => {
+    // Which ids are unusable is buildImportedRows' rule too, covered below; one stands in here.
+    const { ids, dropped } = pickableModelIds(["m-b", " m-a ", "m-b", "", "m-a"]);
+    expect(ids).toEqual(["m-b", "m-a"]);
+    expect(dropped).toBe(3);
   });
 });
 

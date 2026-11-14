@@ -2,6 +2,11 @@
  * The goal plugin's scripts, run the way the harness runs them — as Node subprocesses with
  * JSON on stdin — against a fake Trace and scratchpad: start.mjs writes GOAL.json and prints
  * the round-1 message; stop.mjs reads the round's usage off the Trace and decides.
+ *
+ * - A round spanning several Trace shards includes all uncached usage when checking its budget.
+ * - A later round starts at its own injected input, without recounting the preceding round.
+ * - Missing or foreign preceding shards preserve the available current-round usage.
+ * - Unrecognized Trace names retain single-file accounting.
  */
 import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
@@ -82,8 +87,8 @@ const requestEnd = (status: string) => ({
 });
 const abort = () => ({ type: "event_msg", payload: { type: "abort", error_code: "user_abort" } });
 
-async function writeTrace(records: unknown[]): Promise<void> {
-  await fs.writeFile(tracePath, records.map((r) => `${JSON.stringify(r)}\n`).join(""), "utf8");
+async function writeTrace(records: unknown[], file = tracePath): Promise<void> {
+  await fs.writeFile(file, records.map((r) => `${JSON.stringify(r)}\n`).join(""), "utf8");
 }
 
 async function readGoal(): Promise<Record<string, unknown>> {
@@ -275,14 +280,76 @@ describe("stop.mjs", () => {
     });
   });
 
-  it("counts the whole file when a compaction rotated the round's input away", async () => {
-    start("obj");
-    await writeTrace([meta(), assistant("after compaction"), usage(30), usage(20)]);
-    expect(stop().out).toMatchObject({
+  it.each(["s1_001.jsonl", "legacy.jsonl", "other_002.jsonl", "s1_9007199254740992.jsonl"])(
+    "counts available usage without a round input in %s",
+    async (name) => {
+      start("obj");
+      tracePath = path.join(path.dirname(tracePath), name);
+      await writeTrace([meta(), assistant("after compaction"), usage(30), usage(20)]);
+      expect(stop().out).toMatchObject({
+        decision: "continue",
+        output: { round: 2, tokens_used: 50 },
+      });
+    },
+  );
+
+  it("counts usage across compaction shards and wraps up at the budget", async () => {
+    const { out: started } = start("obj", 100);
+    const dir = path.dirname(tracePath);
+    await writeTrace(
+      [meta(), usage(999), harness((started as { context: string }).context), usage(80, 20)],
+      path.join(dir, "s1_998.jsonl"),
+    );
+    await writeTrace([meta(), usage(30)], path.join(dir, "s1_999.jsonl"));
+    tracePath = path.join(dir, "s1_1000.jsonl");
+    await writeTrace([meta(), usage(20), requestEnd("completed")]);
+    const wrap = stop().out as { input: string };
+    expect(wrap).toMatchObject({
       decision: "continue",
-      output: { round: 2, tokens_used: 50 },
+      output: { status: "wrapping_up", round: 2, tokens_used: 110 },
+    });
+    expect(await readGoal()).toMatchObject({ status: "wrapping_up", tokens_used: 110 });
+
+    await writeTrace([meta(), usage(20), harness(wrap.input), usage(5)]);
+    expect(stop().out).toMatchObject({
+      decision: "stop",
+      output: { status: "budget_limited", tokens_used: 115 },
     });
   });
+
+  it("stops at the latest round input in a previous shard without recounting earlier usage", async () => {
+    const { out: started } = start("obj", 1000);
+    const firstRound = [meta(), harness((started as { context: string }).context), usage(90)];
+    await writeTrace(firstRound);
+    const next = stop().out as { input: string };
+    await writeTrace([...firstRound, harness(next.input), usage(10)]);
+    tracePath = path.join(path.dirname(tracePath), "s1_002.jsonl");
+    await writeTrace([meta(), usage(20)]);
+    expect(stop().out).toMatchObject({
+      decision: "continue",
+      output: { status: "active", round: 3, tokens_used: 120 },
+    });
+  });
+
+  it.each(["missing", "foreign"])(
+    "keeps available usage when the preceding shard is %s",
+    async (kind) => {
+      const { out: started } = start("obj", 100);
+      await writeTrace([meta(), harness((started as { context: string }).context), usage(90)]);
+      if (kind === "foreign") {
+        await writeTrace(
+          [{ type: "session_meta", payload: { session_id: "other" } }, usage(500)],
+          path.join(path.dirname(tracePath), "s1_002.jsonl"),
+        );
+      }
+      tracePath = path.join(path.dirname(tracePath), "s1_003.jsonl");
+      await writeTrace([meta(), usage(20)]);
+      expect(stop().out).toMatchObject({
+        decision: "continue",
+        output: { status: "active", tokens_used: 20 },
+      });
+    },
+  );
 
   it("stops at the round cap", async () => {
     start("obj");

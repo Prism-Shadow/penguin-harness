@@ -62,11 +62,16 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { VERSION, compareVersions, normalizeVersion, userAgent } from "@prismshadow/penguin-core";
 import type { Command } from "commander";
-import type { InstallerSource, Messages } from "../i18n.js";
+import type { InstallerSource, Messages } from "@prismshadow/penguin-server/cli";
+import { Bind, Component } from "@prismshadow/penguin-core/kernel";
+import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/cli";
 
 // The version helpers live in core (internal/version.ts) so the server's update-check
 // endpoint shares them; re-exported because they are part of this module's public,
 // unit-tested surface.
+
+/** The node the host located for a key, typed with this package's commander. */
+const node = (command: CliCommandProgram): Command => command as Command;
 export { compareVersions, normalizeVersion };
 
 /** Repository the released artifacts come from — the same repo install.sh downloads from. */
@@ -559,10 +564,8 @@ function refusalMessage(plan: Extract<UpdatePlan, { action: "refuse" }>, t: Mess
   }
 }
 
-export function registerUpdateCommand(program: Command, t: Messages): void {
-  program
-    .command("update")
-    .description(t.update.desc)
+export function registerUpdateCommand(update: Command, t: Messages): void {
+  update
     .option("--check", t.update.check)
     .option("--release <tag>", t.update.releaseOpt)
     .option("-y, --yes", t.update.yes)
@@ -704,4 +707,30 @@ async function confirmUpgrade(yes: boolean | undefined, t: Messages): Promise<bo
   if (await confirmYes(t.update.confirm())) return true;
   process.stdout.write(`${t.update.cancelled()}\n`);
   return false;
+}
+
+/** `penguin update`. */
+@Component({
+  contributes: {
+    "CliCommandsModule.commands": [
+      {
+        id: "cli.update",
+        key: "update",
+        summary: {
+          en: "Upgrade this PenguinHarness install in place",
+          zh: "原地升级当前的 PenguinHarness 安装",
+        },
+      },
+    ],
+  },
+})
+export class UpdateCommand {
+  @Bind("cli.update") command!: CliCommandCode<Messages>;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerUpdateCommand(node(command), ctx.messages);
+      },
+    };
+  }
 }

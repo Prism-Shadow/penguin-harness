@@ -29,10 +29,12 @@
  * structured facts only — payload fields such as `sender`, and the explicit queue/state that
  * delivered the message — so core BUILDS markers but never branches on them. Transforming a
  * protocol block core itself authored (the compaction `[summary]` extraction) is not source
- * discrimination and stays legitimate. Trace replay also recognizes the `[context_summary]` a
- * context opened with (no field marks that record): the answer only decides whether that
- * pending text is carried on to the next Trace file, so a user text that happens to start
- * with the tag is kept where it would have stayed behind — never the reverse.
+ * discrimination and stays legitimate. Trace replay also recognizes the text a context opened
+ * with — the `[context_summary]`, or the whole `[model_switch_from]` block naming the file's
+ * own Session that a model switch opened it with when it could not summarize (no field marks
+ * either record): the answer only
+ * decides whether that pending text is carried on to the next Trace file, so a user text that
+ * happens to match is kept where it would have stayed behind — never the reverse.
  *
  * Everything here is pure string work: no record envelopes, no I/O — the callers wrap
  * the result in `userText(...)` (or match against a payload's text) themselves.

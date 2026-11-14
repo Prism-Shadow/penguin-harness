@@ -7,6 +7,9 @@
 # - Pushes to main (and manual dispatch) build + deploy. The site is served from the
 #   custom apex domain https://penguin.ooo/ (Settings -> Pages -> Custom domain), so
 #   BASE_PATH is "/" — assets resolve from the domain root, not a /<repo>/ subpath.
+# - The Plugins, Benchmarks and Leaderboards pages read the repository's plugins/ and a fresh
+#   clone of Prism-Shadow/penguin-harness-benchmark at build time, so a push touching plugins/
+#   redeploys, and a daily run picks up what changed in the benchmark repository.
 # - The gallery frames the real Web App, compiled from packages/web and packages/ui, so a
 #   push touching either redeploys as well and the public gallery tracks the app. A pull
 #   request touching only those two is not built here: ci.yml selects their affected
@@ -18,6 +21,7 @@ on:
   push:
     branches: [main]
     paths:
+      - "plugins/**"
       - "packages/landing/**"
       - "packages/docs/**"
       - "packages/ui-gallery/**"
@@ -30,11 +34,14 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - "plugins/**"
       - "packages/landing/**"
       - "packages/docs/**"
       - "packages/ui-gallery/**"
       - "scripts/build-site.mjs"
       - ".github/workflows/pages.yml"
+  schedule:
+    - cron: "17 3 * * *"
   workflow_dispatch:
 
 permissions:

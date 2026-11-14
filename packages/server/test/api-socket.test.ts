@@ -3,9 +3,9 @@
  * app.request() can exercise. It arrives through the runtime's websocket seam at its own
  * route, `apiSocketPath()` (terminal/ws.ts, socket/ref.ts), so the seam is attached exactly
  * as index.ts attaches it. What is pinned: the handshake's gate (cookie, origin), that a call
- * answers exactly as its HTTP twin, which paths never ride the socket, that a stream endpoint
- * arrives as frames and a cancel releases it, and that a malformed frame closes the socket
- * rather than being guessed at.
+ * answers exactly as its HTTP twin and is addressed to the origin the socket was opened on,
+ * which paths never ride the socket, that a stream endpoint arrives as frames and a cancel
+ * releases it, and that a malformed frame closes the socket rather than being guessed at.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { serve } from "@hono/node-server";
@@ -143,6 +143,30 @@ describe("calls", () => {
     expect(frame.status).toBe(200);
     expect(frame.body).toEqual(expected);
     expect(typeof (frame.headers as Record<string, string>).date).toBe("string");
+    s.ws.close();
+  });
+
+  it("addresses calls to the origin the page opened the socket on, port included", async () => {
+    // A route that builds a URL back to the App reads it off the request: a key-authorization
+    // flow started over the socket must send the provider's redirect to the page's host and
+    // port, not to a port-less `http://localhost`.
+    const s = await open({ cookie, origin: `http://localhost:${port}` });
+    if (!("ws" in s)) throw new Error("handshake refused");
+    send(s.ws, {
+      id: 1,
+      call: {
+        method: "POST",
+        path: "/api/projects/default_project/model-oauth/start",
+        body: { provider: "tokendance" },
+      },
+    });
+    const frame = await s.next();
+    expect(frame.status).toBe(200);
+    const started = frame.body as { authorizeUrl: string; mode: string };
+    expect(started.mode).toBe("callback");
+    const callback = new URL(new URL(started.authorizeUrl).searchParams.get("callback_url") ?? "");
+    expect(callback.origin).toBe(`http://localhost:${port}`);
+    expect(callback.pathname).toBe("/api/projects/default_project/model-oauth/callback");
     s.ws.close();
   });
 

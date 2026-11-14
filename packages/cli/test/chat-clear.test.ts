@@ -11,7 +11,7 @@ import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Command } from "commander";
 import { registerChatCommand } from "../src/commands/chat.js";
-import { getMessages } from "../src/i18n.js";
+import { getMessages } from "@prismshadow/penguin-server/cli";
 import { FakeServer } from "./fake-server.js";
 
 let server: FakeServer;
@@ -56,7 +56,7 @@ async function driveChat(lines: string[], argv: string[] = []): Promise<string> 
   try {
     const program = new Command();
     program.exitOverride();
-    registerChatCommand(program, getMessages("en"));
+    registerChatCommand(program.command("chat"), getMessages("en"));
     const done = program.parseAsync(["node", "penguin", "chat", ...argv]);
     for (let i = 0; i < lines.length; i++) {
       // Racing against `done` keeps a REPL that errors out early from hanging the test.

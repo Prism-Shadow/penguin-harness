@@ -9,7 +9,7 @@
  * - On a non-loopback bind a spoofed `x-forwarded-proto` is refused by default, while real
  *   HTTPS on the request URL passes whatever trustProxy says.
  * - With trustProxy on, plain HTTP without the header is still refused, and the header is
- *   honored.
+ *   honored as one value only.
  * - A loopback bind needs neither HTTPS nor the header.
  *
  * A request past the gate meets the cookie check instead, so its 401 is the proof the gate let
@@ -56,6 +56,15 @@ describe("hmr network gate: a non-loopback bind with trustProxy on", () => {
 
   it("honors x-forwarded-proto", async () => {
     expect((await upgrade("/api/hmr/upgrade", { "x-forwarded-proto": "https" })).status).toBe(401);
+  });
+
+  it("counts only one value: a list or anything but a scheme is not https", async () => {
+    // An appending proxy puts the client's own value first.
+    for (const proto of ["https, http", "https,https", "ftp"]) {
+      const res = await upgrade("/api/hmr/upgrade", { "x-forwarded-proto": proto });
+      expect(res.status, proto).toBe(403);
+      expect(((await res.json()) as { error: { code: string } }).error.code).toBe("hmr_disabled");
+    }
   });
 });
 

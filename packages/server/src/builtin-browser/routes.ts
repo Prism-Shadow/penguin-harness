@@ -56,6 +56,7 @@ import type {
 import { requireHuman } from "../auth/middleware.js";
 import type { AppEnv } from "../auth/middleware.js";
 import { HttpError, errorBody } from "../http/errors.js";
+import { publicOriginOf } from "../http/public-origin.js";
 import { badRequest } from "../http/validate.js";
 import { isPenguinExtensionOrigin } from "./extension-origin.js";
 import type { ExtensionPairing } from "./extension-pairing.js";
@@ -140,6 +141,8 @@ export interface BrowserRouteDeps {
   driverOf?(sessionId: string): Actor | null;
   /** The extension pairing; absent, the server offers no chrome and the extension routes 404. */
   pairing?: ExtensionPairing;
+  /** Whether the forwarded headers name the public origin (config.trustProxy). */
+  trustProxy?: boolean;
 }
 
 const adminRequired = () =>
@@ -209,7 +212,9 @@ export function builtinBrowserRoutes(
     const minted = pairing.mint(userId);
     return c.json({
       ...minted,
-      origin: c.req.header("origin") ?? null,
+      // The address the extension is to pair with is the one the browser is on. Not the
+      // request's `Origin`: a call over the API socket carries none, and a relay may rewrite it.
+      origin: publicOriginOf(c, deps.trustProxy ?? false),
     } satisfies BrowserExtensionPairingResponse);
   });
 

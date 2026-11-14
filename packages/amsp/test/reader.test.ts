@@ -15,6 +15,15 @@
  *   last record's id as `Last-Event-ID`; a stream that ends is reopened the same way after the
  *   pause, and nothing is delivered twice.
  * - Given a stream the server refuses with a 404, an error is announced and nothing reopens.
+ * - Given a history read refused with 408 or 429, it retries on the same stream and delivers
+ *   history, held records and later live records in order without duplicates.
+ * - Given a history read refused with 401, 403 or 404, it stops without retrying.
+ * - Given close() while a history retry is pending, no retry or record follows.
+ * - Given a proxy's non-JSON 408 or 429 response, history still retries and recovers.
+ * - Given consecutive transient history failures followed by a permanent refusal, only the
+ *   permanent refusal ends the reader, and no further request follows.
+ * - Given close() while a retried history request is in flight, its late success or failure
+ *   delivers nothing and schedules no further retry.
  * - Given close(), the connection closes and nothing more is delivered.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -65,6 +74,185 @@ afterEach(() => {
 });
 
 describe("SessionReader", () => {
+  it.each([408, 429])("recovers from a non-JSON %i history response", async (status) => {
+    vi.useFakeTimers();
+    const fake = createFetchFake();
+    fake.text("GET", HISTORY, status, "<html>Try again later</html>", "text/html");
+    fake.json("GET", HISTORY, 200, { messages: [assistantText("recovered")] });
+    const served = fake.stream("GET", STREAM, [control("ping"), never()]);
+    const { reader, seen } = readerOf(fake);
+    const errors: unknown[] = [];
+    reader.on("error", (error) => errors.push(error));
+    try {
+      await vi.advanceTimersByTimeAsync(999);
+      expect(errors).toEqual([]);
+      expect(served.closed).toBe(false);
+      expect(fake.calls.filter((c) => c.path === HISTORY)).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(seen).toEqual(["history:text(recovered)"]);
+      expect(fake.calls.filter((c) => c.path === HISTORY)).toHaveLength(2);
+      expect(fake.calls.filter((c) => c.path === STREAM)).toHaveLength(1);
+    } finally {
+      reader.close();
+    }
+  });
+
+  it("stops retrying when temporary history failures become a permanent refusal", async () => {
+    vi.useFakeTimers();
+    const fake = createFetchFake();
+    for (const status of [429, 408, 403]) {
+      fake.json("GET", HISTORY, status, { error: { code: "refused", message: "Unavailable" } });
+    }
+    const served = fake.stream("GET", STREAM, [control("ping"), never()]);
+    const { reader, seen } = readerOf(fake);
+    const errors: unknown[] = [];
+    reader.on("error", (error) => errors.push(error));
+    try {
+      await vi.advanceTimersByTimeAsync(1_999);
+      expect(errors).toEqual([]);
+      expect(fake.calls.filter((c) => c.path === HISTORY)).toHaveLength(2);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toMatchObject({ status: 403 });
+      expect(served.closed).toBe(true);
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(fake.calls.filter((c) => c.path === HISTORY)).toHaveLength(3);
+      expect(fake.calls.filter((c) => c.path === STREAM)).toHaveLength(1);
+      expect(seen).toEqual([]);
+    } finally {
+      reader.close();
+    }
+  });
+
+  it.each([200, 429])("ignores a late %i retry response after close", async (status) => {
+    vi.useFakeTimers();
+    const fake = createFetchFake();
+    const reply = gate();
+    fake.json("GET", HISTORY, 429, { error: { code: "temporary", message: "Try again" } });
+    fake.json(
+      "GET",
+      HISTORY,
+      status,
+      status === 200
+        ? { messages: [assistantText("too late")] }
+        : { error: { code: "temporary", message: "Try again" } },
+      reply.promise,
+    );
+    const served = fake.stream("GET", STREAM, [control("ping"), never()]);
+    const { reader, seen } = readerOf(fake);
+    const errors: unknown[] = [];
+    reader.on("error", (error) => errors.push(error));
+    try {
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(fake.calls.filter((c) => c.path === HISTORY)).toHaveLength(2);
+      reader.close();
+      reply.open();
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(seen).toEqual([]);
+      expect(errors).toEqual([]);
+      expect(served.closed).toBe(true);
+      expect(fake.calls.filter((c) => c.path === HISTORY)).toHaveLength(2);
+      expect(fake.calls.filter((c) => c.path === STREAM)).toHaveLength(1);
+    } finally {
+      reply.open();
+      reader.close();
+    }
+  });
+
+  it.each([408, 429])(
+    "recovers from a %i history response without losing or duplicating records",
+    async (status) => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      const fake = createFetchFake();
+      const historyReply = gate();
+      const later = gate();
+      const shared = assistantText("saved");
+      fake.json(
+        "GET",
+        HISTORY,
+        status,
+        { error: { code: "temporary", message: "Try again" } },
+        historyReply.promise,
+      );
+      fake.json("GET", HISTORY, 200, { messages: [shared] });
+      const served = fake.stream("GET", STREAM, [
+        control("ping"),
+        frame(shared, "e-1"),
+        frame(taskBegin(), "e-2"),
+        later.promise,
+        frame(assistantText("later"), "e-3"),
+        never(),
+      ]);
+      const { reader, seen, resets } = readerOf(fake);
+      const errors: unknown[] = [];
+      reader.on("error", (error) => errors.push(error));
+      try {
+        await settle();
+        historyReply.open();
+        await settle();
+        expect(errors).toEqual([]);
+        expect(served.closed).toBe(false);
+        expect(seen).toEqual([]);
+        await vi.advanceTimersByTimeAsync(999);
+        expect(fake.calls.filter((c) => c.path === HISTORY)).toHaveLength(1);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(seen).toEqual(["history:text(saved)", "live:task_begin"]);
+        later.open();
+        await settle();
+        expect(seen).toEqual(["history:text(saved)", "live:task_begin", "live:text(later)"]);
+        expect(fake.calls.filter((c) => c.path === HISTORY)).toHaveLength(2);
+        expect(fake.calls.filter((c) => c.path === STREAM)).toHaveLength(1);
+        expect(resets()).toBe(0);
+      } finally {
+        reader.close();
+      }
+    },
+  );
+
+  it.each([401, 403, 404])(
+    "stops after a permanent %i history refusal without retrying",
+    async (status) => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      const fake = createFetchFake();
+      fake.json("GET", HISTORY, status, { error: { code: "refused", message: "Unavailable" } });
+      const served = fake.stream("GET", STREAM, [control("ping"), never()]);
+      const { reader, seen } = readerOf(fake);
+      const failed = new Promise<unknown>((resolve) => reader.on("error", resolve));
+      try {
+        expect(await failed).toMatchObject({ status, code: "refused" });
+        await vi.advanceTimersByTimeAsync(2_000);
+        expect(fake.calls.filter((c) => c.path === HISTORY)).toHaveLength(1);
+        expect(fake.calls.filter((c) => c.path === STREAM)).toHaveLength(1);
+        expect(served.closed).toBe(true);
+        expect(seen).toEqual([]);
+      } finally {
+        reader.close();
+      }
+    },
+  );
+
+  it("cancels a pending history retry when closed", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const fake = createFetchFake();
+    fake.json("GET", HISTORY, 429, { error: { code: "temporary", message: "Try again" } });
+    const served = fake.stream("GET", STREAM, [control("ping"), never()]);
+    const { reader, seen } = readerOf(fake);
+    const errors: unknown[] = [];
+    reader.on("error", (error) => errors.push(error));
+    try {
+      await settle();
+      expect(errors).toEqual([]);
+      expect(served.closed).toBe(false);
+      reader.close();
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(fake.calls.filter((c) => c.path === HISTORY)).toHaveLength(1);
+      expect(served.closed).toBe(true);
+      expect(seen).toEqual([]);
+    } finally {
+      reader.close();
+    }
+  });
+
   it("reads the history once the stream speaks, then delivers what streams after it", async () => {
     const fake = createFetchFake();
     const h1 = userText("hello");

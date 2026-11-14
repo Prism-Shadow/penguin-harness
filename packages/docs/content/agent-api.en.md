@@ -198,7 +198,7 @@ A request refused before the stream starts gets an HTTP status and one envelope,
 | 413 | `payload_too_large` | The body exceeds the server's request size cap |
 | 415 | `unsupported_media_type` | A write without `Content-Type: application/json` |
 | 429 | `too_many_runs` | The agent has reached its configured concurrency limit; retry after `Retry-After` seconds |
-| 503 | as the server sends it | The server is shutting down, or the agent or conversation is being deleted |
+| 503 | as the server sends it | The server is shutting down, or the agent or conversation is being deleted; through the cookie door, `machine_no_answer` when a machine that could hold the Session did not answer in time (see [Machines](/server-api#machines-admin-only)) |
 
 Once the stream has started, an error is never a separate frame: the records say what happened, and a run the server could not finish leaves its last `task_begin` unclosed before `[DONE]`. See [A run's result](/amsp#a-runs-result) and the codes under [Errors](/amsp#errors).
 
@@ -301,7 +301,7 @@ reader.on("error", (err) => console.error(err)); // refused for good, such as a 
 
 ### In a browser
 
-The same package works in a browser through a bundler, and ships one ES module with nothing to resolve, `dist/browser/amsp.js`, for a page that imports it by URL. A page on another origin than the server needs a key: the server answers the CORS preflight for any origin, but sends `Access-Control-Allow-Origin: *` only on a request carrying `Authorization`. A cross-origin request may carry only `Authorization` and `Content-Type`, so extra `headers` are for same-origin pages and Node.
+The same package works in a browser through a bundler, and ships one ES module with nothing to resolve, `@prismshadow/amsp/browser` (`dist/browser/amsp.js`), for a page that imports it by URL; a server that serves it to its pages can take the same bytes as a string, `BROWSER_SOURCE` from `@prismshadow/amsp/browser-source`. A page on another origin than the server needs a key: the server answers the CORS preflight for any origin, but sends `Access-Control-Allow-Origin: *` only on a request carrying `Authorization`. A cross-origin request may carry only `Authorization` and `Content-Type`, so extra `headers` are for same-origin pages and Node.
 
 ```ts
 import { AgentClient, isModelMessage } from "@prismshadow/amsp";
@@ -328,6 +328,8 @@ const reader = new SessionReader(transport, sessionId, {
   streamPath: `/sessions/${encodeURIComponent(sessionId)}/amsp`,
 });
 ```
+
+A workbench page does not build this itself: it imports `../sdk/workbench.js`, which the server serves beside every workbench, and calls `followSession(sessionId)`. That module re-exports the browser build of the server answering, with `apiBase` and `transport` already set for its cookie door, for a workbench on another machine or behind a proxy prefix too, and adds `abortSession(sessionId)`. See [Workbench plugins](/skills#workbench-plugins).
 
 > [!WARNING]
 > A key in a page is readable by everyone who loads the page. Use a browser client for a tool only you and your team open, with the key entered at run time, or keep the key on a backend that calls the agent for the page.

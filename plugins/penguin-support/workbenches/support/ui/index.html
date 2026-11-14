@@ -53,9 +53,30 @@
           </div>
         </form>
         <section id="ticket" hidden>
-          <p id="status" role="status" class="muted"></p>
-          <p id="waiting" class="muted" hidden></p>
+          <div class="ticket-state">
+            <span id="status" class="wb-badge" role="status"></span>
+            <span id="waiting" class="wb-muted" hidden></span>
+            <button id="stop" type="button" data-copy="stop" hidden></button>
+          </div>
+          <div
+            id="stop-confirm"
+            class="stop-confirm"
+            role="group"
+            aria-labelledby="stop-ask"
+            hidden
+          >
+            <span id="stop-ask"></span>
+            <div class="actions">
+              <button id="stop-no" type="button" data-copy="stopNo"></button>
+              <button id="stop-yes" type="button" class="danger" data-copy="stopYes"></button>
+            </div>
+          </div>
           <div id="messages"></div>
+          <article id="live" class="answer" hidden>
+            <h3 id="live-heading"></h3>
+            <p id="activity" class="wb-muted" role="status"></p>
+            <div id="draft"></div>
+          </article>
           <div class="actions">
             <button id="resolve" type="button"></button>
             <button id="retry" type="button" data-copy="retry" hidden></button>

@@ -7,6 +7,8 @@
  * - Given a draft on a machine's Workspace, the first send creates the Session on that machine,
  *   starts its task there, lists the row, opens the conversation, clears the draft and hands the
  *   draft's docks to the new Session.
+ * - Given a draft on this server's temporary Workspace that then moves to a machine's temporary
+ *   Workspace (the path is "" both times), the send creates the Session on the machine.
  * - Given the create refused, nothing else is sent, no row is listed, the page stays on the draft
  *   with the text in the composer, and one toast says why.
  * - Given the task refused after the create, the Session just created is deleted, and once the
@@ -35,11 +37,12 @@ import {
   mountDraft,
 } from "./helpers/draft-world";
 
-// The page's socket streams are the test's to drive: the draft world pushes the server's user
-// events into the handlers the page registers (helpers/api-socket-world.ts). One-shot calls
-// stay on fetch, as they are before the socket's first handshake; the transport itself —
-// frames, reconnects, deadlines — is pinned by api-socket.test.ts.
-vi.mock("../src/api/socket", async (importActual) => {
+// The page's socket is the test's to drive: the draft world pushes the server's user events
+// into the handlers the page registers (helpers/api-socket-world.ts) and carries calls over
+// the suite's fetch, as test/socket-stand-in.ts does for every suite. Mocked at the stand-in
+// the app imports (vitest.config.ts) — the one seam; the transport itself, frames, reconnects
+// and deadlines, is pinned by api-socket.test.ts.
+vi.mock("../test/socket-stand-in", async (importActual) => {
   const actual = await importActual<typeof import("../src/api/socket")>();
   const { socketWorld } = await import("./helpers/api-socket-world");
   return { ...actual, apiSocket: socketWorld.apiSocket };
@@ -87,6 +90,22 @@ describe("a new conversation's first send", () => {
     expect(listedRows()).toContain("session-1");
     expect(loadDraft(DRAFT_KEY).text).toBeUndefined();
     expect(currentDockScope()).toBe("session-1");
+  });
+
+  it("creates the Session on the machine a temporary Workspace moved to, though the path stayed empty", async () => {
+    const world = draftWorld();
+    const router = await mountDraft();
+    await waitFor(() => composer() !== null);
+    await act(async () => {
+      await router.navigate("/chat/new", { state: { workspace: "", machineId: MACHINE } });
+    });
+    await type(composer(), "Look at the build");
+    await waitFor(() => hasButton(S.chat.send) && !send().disabled, 40);
+    await click(send());
+    await waitFor(() => whereIs(router) === "/chat/session-1", 40);
+
+    // The temporary Workspace sends no path; the machine is what the Session is created on.
+    expect(world.creates().map((r) => r.machine)).toEqual([MACHINE]);
   });
 
   it("sends nothing else when the create is refused, lists nothing, and keeps the text", async () => {

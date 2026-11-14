@@ -53,7 +53,6 @@ import {
   SettingsGroup,
   SettingsSection,
   ToggleRow,
-  toastError,
   toastSuccess,
   useFormDraft,
   useSaving,
@@ -65,6 +64,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { useInstantSetting } from "../../lib/instant-setting";
 import { toneInk } from "../../lib/tone";
 import { SETTINGS_SCOPE } from "../../lib/unsaved/scopes";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** Brand names: identical in every locale, so they are keyed off the server's provider id rather than doubled into both dictionaries. */
 const PROVIDER_LABEL: Record<ProxyProbeProvider, string> = {
@@ -133,7 +133,7 @@ export function ProxySection() {
       })
       .catch((e: unknown) => {
         // Controls stay disabled; leaving and returning to the section retries the fetch.
-        if (!cancelled) toastError(apiErrorText(e));
+        if (!cancelled) toastApiError(e);
       });
     // The target list is static server-side, so its failure is not worth a second toast on
     // top of the settings one — the block simply stays empty until a retry succeeds.
@@ -164,7 +164,7 @@ export function ProxySection() {
       if (e instanceof ApiError && e.code === "invalid_proxy_url") {
         setAddressError(apiErrorText(e));
       } else {
-        toastError(apiErrorText(e));
+        toastApiError(e);
       }
     } finally {
       setBusy(false);
@@ -195,7 +195,7 @@ export function ProxySection() {
             // 200; only the request failing (a lost session, a dead server) lands here.
             if (runSeq.current !== run || reported) return;
             reported = true;
-            toastError(apiErrorText(e));
+            toastApiError(e);
           }),
       ),
     ).finally(() => {

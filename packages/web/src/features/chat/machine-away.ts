@@ -45,3 +45,19 @@ export function machineAway(
     retry: retryReading(readMachine(machine, null, state?.imageVersion ?? null), alias),
   };
 }
+
+/**
+ * The machine a conversation is on while it reads as needing a restart — its server answers
+ * requests and never takes the API socket, so none of the conversation's live updates arrive —
+ * read exactly as its card on the Machines page reads it; null otherwise, and while the list has
+ * not answered.
+ */
+export function machineRestartNeeded(
+  state: MachinesResponse | null,
+  machineId: string,
+): MachineInfo | null {
+  const machine = state?.machines.find((m) => !m.local && m.machineId === machineId) ?? null;
+  if (machine === null) return null;
+  const reading = readMachine(machine, null, state?.imageVersion ?? null);
+  return reading.kind === "restartNeeded" ? machine : null;
+}

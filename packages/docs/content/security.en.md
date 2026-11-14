@@ -36,8 +36,8 @@ Each authentication source has a `via` value recording how it was established:
 - `desktop`: the desktop app's own window
 - `setup`: the sign-in link on a fresh server
 - `cli`: the internal source stored for a session minted by `penguin auth token`
-- `remote`: a one-hour browser session issued to Penguin Remote from the local API token
-- `token`: the local API token’s authority, presented as a Bearer header or an exchanged Remote cookie
+- `remote`: a one-hour browser session issued to Penguin Remote from the local API token; it counts as a person's sign-in
+- `token`: the local API token itself, presented as a Bearer header
 
 ## Claim a fresh server
 
@@ -121,7 +121,7 @@ Penguin Remote may exchange that local ownership for a browser session by sendin
 
 The response contains a new raw `penguin_session` token for the built-in administrator, with a fixed one-hour expiry and an internal `via: remote` marker. It is returned with `Cache-Control: no-store`; the Harness response does not set a Cookie. Penguin Remote's local proxy must set the Cookie on its public-domain response and must treat the returned token as a credential: do not log, cache, or expose it elsewhere. The endpoint does not enable CORS.
 
-The public API reports this session as `token`: exchanging a token preserves its restrictions on human-only writes and its Agent identity rules. To change an Agent’s exposure, browser backend, or browser pairing, sign out and sign in with a password. The Remote proxy must preserve that password login instead of replacing it with another exchanged session.
+The public API reports this session as `remote`, and it counts as a person's sign-in: like a password sign-in, it can change an agent's exposure, choose the browser backend and pair a browser. It opens nothing reserved for the desktop app's own window, and changing the password from it still asks for the current one. Because the session is minted from the local API token, an agent that holds the token can exchange it for one and make those changes too. As above, the token's limits are not a boundary; the sandbox is.
 
 A script that needs a session of its own mints one. A session is a row in the data root's `web.db`, so the CLI writes one:
 
@@ -199,8 +199,16 @@ Model API keys are the one secret that cannot be reduced further: they must reac
 
 ### Network surface
 
-The server binds `127.0.0.1` by default. Exposing it (`HOST=0.0.0.0`) is a deployment decision that belongs behind TLS termination, with the proxy setting `x-forwarded-proto`.
+The server binds `127.0.0.1` by default. Exposing it (`HOST=0.0.0.0`) is a deployment decision that belongs behind TLS termination. Such a deployment needs `PENGUIN_TRUST_PROXY=1` and a proxy that keeps the external `Host` header unchanged and overwrites `x-forwarded-proto` with `https`, as a single value. If any of these is missing, every browser write, signing in included, is refused with `403` `cross_origin_write`. The proxy should also overwrite `x-forwarded-host` with the external host, or strip it: many proxies keep `Host` and pass a client's own `x-forwarded-host` through. Serve the external host with HSTS as well, so that a browser never loads an `http://` page of it, which anyone on the browser's network path could serve.
+
+The address the browser is on is the server's **public origin**. With the proxy trusted, its scheme comes from `x-forwarded-proto` and its host from `x-forwarded-host`, else `Host`. Each counts only as a single value: a list such as `https, http`, which a proxy that appends instead of overwriting produces, is ignored, as is a scheme other than `http` or `https`, or a host that is not a bare `host[:port]`. Without the proxy trusted, they are the connection's own scheme and the `Host` header. Every address the server hands back to a browser is built on it: a model provider's authorization redirect, and the address a Chrome extension pairs with. The origin check below reads less: the forwarded scheme with the unchanged `Host`, never `x-forwarded-host`. With the proxy trusted, it also refuses a write whose forwarded header is not a single value.
+
+The desktop app's embedded server trusts the forwarded headers. It listens on loopback only, which does not keep every web page off its port: a page whose domain rebinds to `127.0.0.1`, and a preview page on the loopback preview host, reach it and can set any header on their own same-origin requests. Neither holds the App's session cookie, and the guard that keeps the preview host off the API reads the raw `Host`, never a forwarded one. A page on another origin cannot set the forwarded headers on a cross-origin request (that takes a preflight the server never grants) or on a WebSocket handshake. From outside, the server is reached only through the Penguin Remote relay, which terminates TLS in front of it. The relay's last hop, the Penguin Remote client on the user's machine, should keep the public host as `Host` and overwrite `X-Forwarded-Proto` with `https` and `X-Forwarded-Host` with the public host, each as a single value, so the server sees the browser's `https://` address.
+
+During a transition, and on the desktop app's server only, a write whose `Origin` is the request's own origin, the connection's scheme with its `Host`, passes too. Desktops released before the public origin compare `Origin` with that alone, so a relay hop, today the Penguin Remote client, rewrites the browser's `https://` Origin to `http://` when it names the tunnel's own host. Any other server accepts the public origin alone. Behind a TLS-terminating proxy, the request's own origin is `http://` on the public host. Anyone on the browser's network path can serve that page, and a browser that does not tell `http://` from `https://` for `SameSite` sends the session cookie with its WebSocket handshakes and body-less writes, neither of which waits for a preflight. Before 0.3.0 the client stops rewriting `Origin` and sends the two forwarded headers instead, and in 0.3.0 the desktop accepts the public origin alone too.
 
 The API answers only under its canonical application host, which keeps user-generated preview content in a different browser origin from the application's cookies.
 
-Two independent layers block cross-site request forgery: the SameSite=Lax cookie, and a Content-Type check that rejects any write request whose content type an HTML form could produce.
+Three independent layers block cross-site request forgery: the SameSite=Lax cookie, an origin check on writes, and a Content-Type check. The SameSite=Lax cookie stops a page on another site from riding the session. The origin check refuses a write from another origin with `403` `cross_origin_write`. When the browser sends `Sec-Fetch-Site`, the check also requires `same-origin` there; the browser works that header out itself, scheme included. The API socket and terminal handshakes are held to the same two rules. This check is needed because `SameSite` treats another port of the same host as the same site, so a page served by another program on this machine could otherwise ride the session; some browsers also treat `http://` and `https://` of one host as the same site. The Content-Type check refuses a write whose content type an HTML form could produce, and a write with a body and no `Content-Type`; both refusals answer `415` `unsupported_media_type`.
+
+Two writes are exempt from the origin check: an Agent API write under `/api/amsp/v1` that presents a key as `Authorization: Bearer …`, which the Agent API's own gate judges; and the browser extension's pairing request, which the server answers for the extension's own origin only.

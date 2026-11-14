@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { decideSigint } from "../src/commands/chat.js";
-import { parseApprovalAnswer } from "../src/approval.js";
+import { parseApprovalAnswer } from "@prismshadow/penguin-server/cli";
 
 describe("decideSigint (Ctrl-C behavior state machine)", () => {
   it("approving -> deny (whether or not the buffer has content)", () => {

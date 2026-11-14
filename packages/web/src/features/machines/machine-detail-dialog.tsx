@@ -8,20 +8,22 @@
  * - The toolbar, right under it: every verb in one row of flat buttons, as a file manager lays out
  *   its commands, set apart by spacing alone — Update while the machine carries another build
  *   (Enable when nothing is installed), Stop or Start its server, Restart it, Sync config while it
- *   is connected on this server's build, Configure SSH, Uninstall. A verb that cannot run now
- *   stays in place, greyed, and ONE muted sentence under the row says why and names them.
+ *   is connected on this server's build, Configure SSH, Reinstall, Uninstall. A verb that cannot
+ *   run now stays in place, greyed, and ONE muted sentence under the row says why.
  * - Under the toolbar, one quiet line on the last config sync — when, or why it failed — and
  *   attention notices, each of which the person may close, saying what it could not carry:
  *   models keyed from this server's environment, and models the machine would not take.
  * - Reconnecting, while the server brings a machine it keeps connected back or has stopped trying:
- *   the shared retry status (the attempt of how many, the countdown to the next with Retry now,
- *   where it stopped with Retry — none for a refused password), for how long, the last failure —
- *   and what the connection check found, once the server ran it after failures in a row.
+ *   the shared retry row (the attempt of how many and the countdown to it with Retry now and Stop
+ *   retrying, where it stopped with Retry — none for a refused password), for how long, the last
+ *   failure in full — and what the connection check found, once the server ran it after failures
+ *   in a row.
  * - Progress, while a job is queued or running and after one: its own steps one per line, each
  *   marked done, current, failed or still to come; a job that finished well is a single quiet
  *   line. The log is folded underneath, open while the job runs, with a copy button for the whole
  *   of it. A failed job says at which step and why, what the connection check the server ran
- *   afterwards found, and offers Retry — and Force install when the failure offers it.
+ *   afterwards found, and offers Retry — and, when installing again may mend it, points at the
+ *   toolbar's Reinstall in one muted line: one way to reinstall, not a second button.
  * - Details: the facts, each label led by its glyph — how the machine is reached, the address its
  *   ssh alias names, the data directory; the server over there (with ssh's own words under it
  *   when it is out of reach), the last check, the build it carries — and last, quiet, the
@@ -36,8 +38,8 @@
  * `MachineDetailBody` is a pure function of its props. The dialog around it adds the one read the
  * machines list does not carry: the host block (the list is the ssh config's aliases only).
  */
-import { useEffect, useId, useState } from "react";
-import type { ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
+
 import type { MachineInfo, MachineJob, SshHostResponse } from "@prismshadow/penguin-server/api";
 import {
   Button,
@@ -80,27 +82,27 @@ import {
   machineToolbar,
   reconnectView,
   skippedItems,
+  type CheckLine,
+  type ConfigSyncView,
+  type Fact,
+  type JobStep,
+  type MachineChip,
+  type StepState,
+  type ToolbarItem,
+  type ToolbarVerb,
 } from "./machine-detail-view";
-import type {
-  CheckLine,
-  ConfigSyncView,
-  Fact,
-  JobStep,
-  MachineChip,
-  StepState,
-  ToolbarItem,
-  ToolbarVerb,
-} from "./machine-detail-view";
+
 import { outOfDate, readMachine, socketReading } from "./machines-view";
 import { retryStatus } from "./machine-card";
 
 /**
  * Everything the dialog can ask its page to do for the machine. `use` is the whole pipeline —
- * what Enable, Update and a failed job's Retry each run; `replaceProgram` the forced install a
- * failure offers; `reconnect` the Retry while the server brings the machine back.
+ * what Enable, Update and a failed job's Retry each run; `reinstall` the same pipeline with the
+ * program installed whatever version it carries; `reconnect` the Retry while the server brings
+ * the machine back, and `stopReconnecting` its Stop retrying.
  */
 export type MachineVerb =
-  Exclude<ToolbarVerb, "enable" | "update"> | "use" | "replaceProgram" | "reconnect";
+  Exclude<ToolbarVerb, "enable" | "update"> | "use" | "reconnect" | "stopReconnecting";
 
 /** The page verb a toolbar button asks for. */
 const VERB_OF: Record<ToolbarVerb, MachineVerb> = {
@@ -111,6 +113,7 @@ const VERB_OF: Record<ToolbarVerb, MachineVerb> = {
   restart: "restart",
   syncConfig: "syncConfig",
   configure: "configure",
+  reinstall: "reinstall",
   uninstall: "uninstall",
 };
 
@@ -566,21 +569,25 @@ export function MachineDetailBody({
 
       {reconnect !== null && (
         <RuledSection level={3} title={d.reconnect.title}>
-          {/* The card's retry status, at the dialog's size: the Retry sits under where the streak
-              stands, and the last failure, in full, under that. A job moving on the machine
-              decides first, so the Retry waits for it. */}
+          {/* The card's retry row, at the dialog's size, with no reason: the last failure is said in
+              full under it. A job moving on the machine decides first, so the presses wait for it. */}
           <RetryStatus
             {...retryStatus(reconnect.status, {
               onRetry: () => onAct("reconnect"),
+              onStop: () => onAct("stopReconnecting"),
               held: busy || (job !== null && (job.queued || job.running)),
-              layout: "block",
-              reason: d.reconnect.lasting(reconnect.lasting),
+              size: "sm",
+              reason: null,
             })}
           />
+          <p className="mt-1 text-xs text-fg-muted">{d.reconnect.lasting(reconnect.lasting)}</p>
+          {/* Its label on a line of its own: a failure that holds a colon of its own would read as
+              two labels in a row after "Last failure:". */}
           {reconnect.lastError !== null && (
-            <p className="mt-2 text-sm break-words whitespace-pre-line">
-              <span className="text-fg-muted">{d.reconnect.lastError}</span> {reconnect.lastError}
-            </p>
+            <div className="mt-2">
+              <p className="mb-1 text-xs text-fg-muted">{d.reconnect.lastError}</p>
+              <p className="text-sm break-words whitespace-pre-line">{reconnect.lastError}</p>
+            </div>
           )}
           {reconnect.detail !== null && (
             <p data-said="ssh" className="mt-1 text-xs break-words text-fg-muted">
@@ -640,9 +647,10 @@ export function MachineDetailBody({
               )}
             </div>
           )}
-          {/* A failed job's way out sits under what went wrong, and only here. */}
+          {/* A failed job's way out sits under what went wrong, and only here. Reinstall stays
+              the toolbar's: where installing again may mend it, one line points there. */}
           {view.kind === "failed" && (
-            <div className="mt-3 flex flex-wrap items-center gap-2">
+            <div className="mt-3">
               <Button
                 size="sm"
                 variant="primary"
@@ -654,16 +662,9 @@ export function MachineDetailBody({
                 {d.retry}
               </Button>
               {view.canReplaceProgram && (
-                // Secondary: the confirmation that follows carries the danger tone.
-                <Button
-                  size="sm"
-                  data-verb="replaceProgram"
-                  disabled={busy}
-                  onClick={() => onAct("replaceProgram")}
-                >
-                  <GlyphIcon d={ICONS.download} size={ICON_SIZE.inlineGlyph} />
-                  {m.replaceProgram}
-                </Button>
+                <p data-reinstall-hint="" className="mt-1.5 text-xs text-fg-muted">
+                  {d.reinstallHint}
+                </p>
               )}
             </div>
           )}

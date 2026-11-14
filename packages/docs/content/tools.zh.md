@@ -345,16 +345,22 @@ Web App 的子 Agent 面板用**与主对话相同的输入框**（子 Agent 变
 
 ```ts
 type ApprovalDecision = "allow" | "deny" | "forbidden"; // "forbidden" = the command policy's veto
-type ApproveFn = (toolCall: AmspRecord<ToolCallPayload>) => Promise<ApprovalDecision>;
+// `context.reason` is set when a command-policy `ask` rule matched: the call needs a person.
+type ApproveFn = (
+  toolCall: AmspRecord<ToolCallPayload>,
+  context?: { reason?: { kind: "policy"; rule: string } },
+) => Promise<ApprovalDecision>;
 ```
 
 | 入口 | 行为 |
 | --- | --- |
-| SDK | 每次调用 `session.run` 时传入 `approve`。若不注入，引擎默认拒绝所有调用，因此无人值守时不会有任何操作获得批准 |
+| SDK | 每次调用 `session.run` 时传入 `approve`。若不注入，引擎默认拒绝所有调用，因此无人值守时不会有任何操作获得批准。带着 `context.reason` 到来的调用命中了 `ask` 规则，应交给人决定，而不是按模式作答；忽略第二个参数的回调会像对待其他调用一样决定它 |
 | CLI | `--approve` 有四种模式：`allow-all`（默认）、`deny-all`、`read-only`、`always-ask`。`read-only` 自动批准 `permission: "r"` 的工具，其余交给人工处理。这个标志设置 CLI 所驱动的服务器端 Session 的审批模式；不设置时，运行在 Agent 命令里的 CLI 会继承调用方 Session 的模式 |
 | Web / Server | 同样四种模式，按 Session 各自设置。每次决策都从数据库重新读取模式，因此改动立即生效。工具的 `r` / `rw` 取自运行上下文的工具集，因此权限改动在下一次轮换（压缩）时生效。人工决策通过 API 传入 |
 
-已安装的 pre-tool-use 钩子先于审批回调生效。钩子返回 `deny` 会直接拒绝调用，返回 `allow` 会直接批准，两者都不询问；但[命令策略](/configuration#命令策略)依然会否决它所匹配的调用，哪怕钩子已经放行。参见 [Pre-tool-use 钩子](/agent-loop#pre-tool-use-hook)。
+[命令策略](/configuration#命令策略)位于审批模式之上。`action: deny` 的规则把命中的调用当场以 `forbidden` 拒绝，不询问任何人；`action: ask` 的规则把命中的调用带着策略原因交给审批回调，服务端在 `deny-all` 以外的所有模式下都把它交给人决定（`deny-all` 下仍拒绝），所以即使在 `allow-all` 下，`gh pr merge` 也会停下来等人点一下。服务端把这样的调用作为普通的 `approval_request` 推送，附带 `reason: { kind: "policy", rule }`，Web App 的审批卡片会以一行弱化文字写明是哪条规则。无人值守的 Session（组织的工位与工单）无人可问，会当场拒绝这类调用。
+
+已安装的 pre-tool-use 钩子先于审批回调生效。钩子返回 `deny` 会直接拒绝调用，返回 `allow` 会直接批准，两者都不询问；但命令策略对它所匹配的调用依然说了算：命中 `deny` 规则的调用保持禁止，命中 `ask` 规则的调用仍交人决定，哪怕钩子已经放行。参见 [Pre-tool-use 钩子](/agent-loop#pre-tool-use-hook)。
 
 被拒绝的调用会收到一条合成的 `aborted` `tool_call_output`，供模型据此作出反应。文案会指明决策方：
 
@@ -366,7 +372,7 @@ type ApproveFn = (toolCall: AmspRecord<ToolCallPayload>) => Promise<ApprovalDeci
 
 因此，命中策略绝不会在文案上显得像人工取消。参见 [ApproveFn](/interfaces#approvefn)。每次决策都会以 `approval_decision` 事件写入 Trace，策略否决记录为 `forbidden`，因此 Trace 就是一份完整的审计记录。审批发生在 [Agent 运行循环](/agent-loop)的工具执行阶段。
 
-**子 Agent 审批。** 父任务结束时，绝不会自动拒绝子 Agent 的审批。服务器会为它运行的每个 Session（包括 CLI 驱动的 Session）挂上一个与 Session 同生命周期的兜底审批出口。子 Agent 的审批请求只要既没有活跃的轮询窗口，也没有后台启动时挂上的出口，就会直接上报给用户，父 Session 空闲时也一样。父任务结束或停止时，只处理**主** Session 的待审批请求；带 `origin` 标记的子 Agent 审批会一直待定，卡片也一直留在屏幕上，直到用户作出决定。从不调用 `Session.setSubagentApprovalFallback` 的 SDK 嵌入方仍然只在轮询窗口内审批：子 Agent 的请求会一直等到 `run_subagent` 或 `input_subagent` 调用处于活跃状态。
+**子 Agent 审批。** 父任务结束时，绝不会自动拒绝子 Agent 的审批。服务器会为它运行的每个 Session（包括 CLI 驱动的 Session）挂上一个与 Session 同生命周期的兜底审批出口。子 Agent 的审批请求只要既没有活跃的轮询窗口，也没有后台启动时挂上的出口，就会直接上报给用户，父 Session 空闲时也一样。父任务结束或停止时，只处理**主** Session 的待审批请求；带 `origin` 标记的子 Agent 审批会一直待定，卡片也一直留在屏幕上，直到用户作出决定。从不调用 `Session.setSubagentApprovalFallback` 的 SDK 嵌入方仍然只在轮询窗口内审批：子 Agent 的请求会一直等到 `run_subagent` 或 `input_subagent` 调用处于活跃状态。Session 会用自己的命令策略包住兜底出口，所以落到这里的子 Agent `ask` 命中会带着原因到达宿主的回调，仍然交给人决定。
 
 ## 自定义工具集
 

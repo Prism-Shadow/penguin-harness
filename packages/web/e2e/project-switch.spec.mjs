@@ -22,6 +22,7 @@
  */
 import { test, expect } from "@playwright/test";
 import { provisionAndLogin } from "./auth.mjs";
+import { watchSocket } from "./api-socket.mjs";
 
 const BASE = process.env.BASE_URL;
 const MOCK = process.env.MOCK_URL;
@@ -113,16 +114,22 @@ async function twoProjects(request, user) {
 }
 
 /**
- * Records every browser request that names an Agent under a Project that has no such Agent —
- * in the path (`/api/projects/:p/agents/:a/…`), in an `agentId` query, or in a session-list
- * batch body — and every answer that says `agent_not_found`. Requests about Projects outside
+ * Records every request that names an Agent under a Project that has no such Agent — in the
+ * path (`/api/projects/:p/agents/:a/…`), in an `agentId` query, or in a session-list batch
+ * body — and every answer that says `agent_not_found`. Requests about Projects outside
  * `agentsOf` are not judged.
+ *
+ * Every call now rides the API socket as a frame, where `page.on("request")` cannot see it
+ * (`packages/web/src/api/socket.ts`); the socket is judged too, by the same rule, so this
+ * watch stays exactly as strong as it was over HTTP instead of quietly seeing nothing. The
+ * few calls HTTP still carries (auth, a read retried after a socket timeout) are judged by
+ * the page events as before, so neither transport escapes the watch.
  */
-function watchProjectAgentPairs(page, agentsOf) {
+function watchProjectAgentPairs(page, agentsOf, frames) {
   const bad = [];
   watched = bad;
-  page.on("request", (req) => {
-    const url = new URL(req.url());
+  const judgeRequest = (method, path, body) => {
+    const url = new URL(path, BASE);
     const parts = url.pathname.split("/").map((p) => decodeURIComponent(p));
     // ["", "api", "projects", projectId, kind, rest…]
     if (parts[1] !== "api" || parts[2] !== "projects" || parts[3] === undefined) return;
@@ -132,23 +139,43 @@ function watchProjectAgentPairs(page, agentsOf) {
     if (parts[4] === "agents" && parts[5] !== undefined && parts[5] !== "") named.push(parts[5]);
     const queried = url.searchParams.get("agentId");
     if (queried) named.push(queried);
-    if (parts[4] === "sessions" && parts[5] === "batch" && req.method() === "POST") {
-      const body = JSON.parse(req.postData() ?? "{}");
-      for (const r of body.requests ?? []) named.push(r.agentId);
+    if (parts[4] === "sessions" && parts[5] === "batch" && method === "POST") {
+      for (const r of body?.requests ?? []) named.push(r.agentId);
     }
     for (const agentId of named) {
       if (!known.has(agentId)) {
-        bad.push(`${req.method()} ${url.pathname}${url.search} names ${agentId} under ${parts[3]}`);
+        bad.push(`${method} ${url.pathname}${url.search} names ${agentId} under ${parts[3]}`);
       }
     }
+  };
+  const judgeAnswer = (method, path, status, body) => {
+    if (status !== 404) return;
+    const text = typeof body === "string" ? body : JSON.stringify(body ?? "");
+    if (text.includes("agent_not_found")) {
+      bad.push(`agent_not_found from ${method} ${new URL(path, BASE).pathname}`);
+    }
+  };
+  page.on("request", (req) => {
+    const url = new URL(req.url());
+    let body;
+    if (req.method() === "POST") {
+      try {
+        body = JSON.parse(req.postData() ?? "{}");
+      } catch {
+        body = undefined;
+      }
+    }
+    judgeRequest(req.method(), `${url.pathname}${url.search}`, body);
   });
   page.on("response", async (res) => {
     if (res.status() !== 404 || !res.url().includes("/api/")) return;
     const body = await res.text().catch(() => "");
-    if (body.includes("agent_not_found")) {
-      bad.push(`agent_not_found from ${res.request().method()} ${new URL(res.url()).pathname}`);
-    }
+    judgeAnswer(res.request().method(), new URL(res.url()).pathname, res.status(), body);
   });
+  frames.onCall((call) => judgeRequest(call.method, call.path, call.body));
+  frames.onAnswer((answer, call) =>
+    judgeAnswer(call.method, call.path, answer.status, answer.body),
+  );
   return bad;
 }
 
@@ -264,42 +291,21 @@ test("clicking the current Project in the dropdown: Agent and Session lists must
   await page.keyboard.press("Escape");
 });
 
-/**
- * These tests observe HTTP requests (`page.route`, `waitForResponse`/`waitForRequest`); the API
- * socket would carry those calls as frames, invisible to Playwright. Leave the page on the HTTP
- * transport the assertions are written for.
- */
-async function useHttpTransport(page) {
-  await page.addInitScript(() => {
-    Object.defineProperty(window, "WebSocket", { value: undefined, configurable: true });
-  });
-}
-
 test("a late Agent list of the Project just left never shows under the new one", async ({
   page,
 }) => {
   const { a, agentsOf } = await twoProjects(page.request, userFor("projlate"));
-  const bad = watchProjectAgentPairs(page, agentsOf);
-  await useHttpTransport(page);
+  const frames = await watchSocket(page);
+  const bad = watchProjectAgentPairs(page, agentsOf, frames);
   await page.addInitScript((projectId) => {
     localStorage.setItem("penguin.lastProjectId", projectId);
   }, a);
 
-  // A's first Agent list is held back until after the switch to B has been answered.
-  let held = true;
-  await page.route(
-    (url) => url.pathname === `/api/projects/${a}/agents`,
-    async (route) => {
-      if (held) {
-        held = false;
-        await new Promise((resolve) => setTimeout(resolve, 3_000));
-      }
-      await route.continue();
-    },
-  );
-  const lateAnswer = page.waitForResponse(
-    (res) => new URL(res.url()).pathname === `/api/projects/${a}/agents`,
-  );
+  // A's first Agent list is held back until after the switch to B has been answered: the call
+  // frame waits here for three seconds, then goes to the server like any other, and the answer
+  // awaited below is that call's own frame coming back.
+  frames.hold(`/api/projects/${a}/agents`, 3_000);
+  const lateAnswer = frames.nextAnswer((call) => call.path === `/api/projects/${a}/agents`);
 
   await page.goto("/agents");
   await switchProject(page, "Alpha Project", "Beta Project");
@@ -320,8 +326,8 @@ test("on a slow machine, quick Project switches keep each Project's Agents and c
   test.setTimeout(180_000);
   const user = userFor("projslow");
   const { a, b, sessions, agentsOf } = await twoProjects(page.request, user);
-  const bad = watchProjectAgentPairs(page, agentsOf);
-  await useHttpTransport(page);
+  const frames = await watchSocket(page);
+  const bad = watchProjectAgentPairs(page, agentsOf, frames);
   await page.addInitScript(
     ({ a, b, user }) => {
       localStorage.setItem("penguin.lastProjectId", a);
@@ -339,14 +345,7 @@ test("on a slow machine, quick Project switches keep each Project's Agents and c
   const cdp = await page.context().newCDPSession(page);
   await cdp.send("Emulation.setCPUThrottlingRate", { rate: 6 });
   const random = seededRandom(20261015);
-  await page.route(
-    (url) => url.pathname.startsWith("/api/"),
-    async (route) => {
-      const delay = 100 + Math.floor(random() * 700);
-      await new Promise((resolve) => setTimeout(resolve, delay));
-      await route.continue().catch(() => undefined);
-    },
-  );
+  frames.slowDown(() => 100 + Math.floor(random() * 700));
 
   const conversationOf = (projectId) => new RegExp(`/chat/(${sessions[projectId]}|new)$`);
   await page.goto(`/chat/${sessions[a]}`);
@@ -389,8 +388,8 @@ test("on a slow machine, quick Project switches keep each Project's Agents and c
 
   // The cost center, opened on A's Agent by its deep link (an in-app navigation), then B.
   await switchProject(page, "Beta Project", "Alpha Project");
-  const filtered = page.waitForRequest((req) => {
-    const url = new URL(req.url());
+  const filtered = frames.nextCall((call) => {
+    const url = new URL(call.path, BASE);
     return (
       url.pathname === `/api/projects/${a}/usage` &&
       url.searchParams.get("agentId") === "alpha_only"

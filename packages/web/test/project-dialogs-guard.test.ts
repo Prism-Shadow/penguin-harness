@@ -21,13 +21,11 @@ import { hasUnsaved } from "@prismshadow/penguin-ui";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { UnsavedPrompt } from "../src/lib/unsaved/unsaved-prompt";
-import {
-  CreateProjectDialog,
-  ProjectSettingsDialog,
-} from "../src/components/layout/project-dialogs";
+import { CreateProjectDialog } from "../src/features/projects/project-dialogs/create-project-dialog";
+import { ProjectSettingsDialog } from "../src/features/projects/project-dialogs/project-settings-dialog";
 import { AuthProvider } from "../src/state/auth";
 import { ProjectProvider } from "../src/state/project";
-import { projectSettingsServer } from "./helpers/project-settings";
+import { FACTORY_RULE, projectSettingsServer } from "./helpers/project-settings";
 import {
   button,
   click,
@@ -69,6 +67,8 @@ const idField = () => {
 };
 const heading = () => document.querySelector('[role="dialog"] h3')?.textContent ?? "";
 const nameField = () => field(en.project.displayName);
+/** The security page's delete button for the one stored rule. */
+const deleteRule = en.project.commandPolicyDeleteRuleNamed(FACTORY_RULE.name);
 
 describe("the Project settings dialog", () => {
   beforeAll(() => setActiveStrings(en));
@@ -121,8 +121,8 @@ describe("the Project settings dialog", () => {
   it("holds every close while a page's Save is in flight, and closes once it has answered", async () => {
     const { server, onClose } = await openSettings();
     await click(button(en.project.settingsTabSecurity));
-    await waitFor(() => hasButton(en.common.delete));
-    await click(button(en.common.delete));
+    await waitFor(() => hasButton(deleteRule));
+    await click(button(deleteRule));
     server.hold();
     await click(button(en.common.save));
     // One close at a time: a prompt opened by one would be answered by a later press on its scrim.
@@ -144,8 +144,8 @@ describe("the Project settings dialog", () => {
   it("keeps the tab while a page's Save is in flight, and the tab rail switches once it has answered", async () => {
     const { server } = await openSettings();
     await click(button(en.project.settingsTabSecurity));
-    await waitFor(() => hasButton(en.common.delete));
-    await click(button(en.common.delete));
+    await waitFor(() => hasButton(deleteRule));
+    await click(button(deleteRule));
     server.hold();
     await click(button(en.common.save));
     await click(button(en.project.settingsTabGeneral));

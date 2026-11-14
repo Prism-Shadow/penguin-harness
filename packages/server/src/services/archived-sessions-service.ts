@@ -24,6 +24,7 @@
  */
 import type {
   ArchivedSessionGroup,
+  ArchivedSessionGroupServers,
   ArchivedSessionGroupsResponse,
   ArchivedSessionSource,
   ArchivedSessionsBatch,
@@ -176,15 +177,17 @@ export class ArchivedSessionsService {
 
   /**
    * The groups holding archived Sessions that match, newest activity first, with their counts —
-   * this server's, and for an admin those of every machine the Projects in scope use.
+   * this server's, and for an admin those of every machine the Projects in scope use. `servers`
+   * narrows the answer to this server's groups (no machine is asked) or to the machines'.
    */
   async groups(
     caller: ArchiveCaller,
     query: ArchivedSessionsQuery,
+    servers?: ArchivedSessionGroupServers,
   ): Promise<ArchivedSessionGroupsResponse> {
     // Read before the rows: every row the counts include was archived by this time.
     const asOf = this.now();
-    const entries = await this.matching(caller, query);
+    const entries = servers === "machines" ? [] : await this.matching(caller, query);
     const byKey = new Map<string, ArchivedSessionGroup>();
     for (const { row, projectName, workspace } of entries) {
       const key = `${row.projectId}\0${workspace}`;
@@ -202,7 +205,10 @@ export class ArchivedSessionsService {
       group.count += 1;
       if (row.lastActiveAt > group.latest) group.latest = row.lastActiveAt;
     }
-    const remote = await this.machineGroups(caller, query);
+    const remote =
+      servers === "here"
+        ? { groups: [], unreachable: [] }
+        : await this.machineGroups(caller, query);
     const groups = [...byKey.values(), ...remote.groups].sort((a, b) => {
       if (a.latest !== b.latest) return a.latest > b.latest ? -1 : 1;
       if (a.projectId !== b.projectId) return a.projectId < b.projectId ? -1 : 1;

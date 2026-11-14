@@ -8,9 +8,10 @@ import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
-import { openPanel } from "../dock/dock-state";
+import { openPanel } from "../dock";
 import { browserState, dispatchBrowser } from "./browser-store";
 import { NO_BROWSER_SCOPE, type BrowserGuest } from "./browser-state";
+import { toastApiError } from "../../lib/toast-api-error";
 
 const opening = new Map<Promise<unknown>, string>();
 
@@ -97,7 +98,7 @@ export async function adoptBrowserSession(fromSessionId: string, sessionId: stri
       event: { type: "builtin_browser_session", fromSessionId, sessionId },
     });
   } catch (err) {
-    toastError(apiErrorText(err));
+    toastApiError(err);
   }
 }
 

@@ -4,7 +4,8 @@
  *
  * A row's reading follows a fixed precedence. The server's job for that machine is the
  * freshest word (queued, working); then the server bringing back a machine it keeps connected
- * (reconnecting), or having stopped trying (reconnectStopped, signInRefused); then a held connection, which settles "ready" whatever an older job said, so a
+ * (reconnecting), or having stopped trying (reconnectFailed, reconnectStopped, signInRefused); then
+ * a held connection, which settles "ready" whatever an older job said, so a
  * machine brought back after a failed job reads as ready rather than failed; only then does the
  * last job's failure, and after it the last probe, speak.
  */
@@ -25,7 +26,7 @@ export type MachineReading =
   | { kind: "queued" }
   /** The server is working on it; `step` is its latest line. */
   | { kind: "working"; step: string | null }
-  /** The last job failed, in the far side's own words; `canReplaceProgram` offers the forced install. */
+  /** The last job failed, in the far side's own words; `canReplaceProgram`: installing again may mend it. */
   | { kind: "failed"; step: string; message: string; canReplaceProgram: boolean }
   /** Connected and answering: agents can run there. */
   | { kind: "ready"; port: number | null }
@@ -33,7 +34,8 @@ export type MachineReading =
    * Kept connected, and being brought back by the server: its connection dropped, its server
    * stopped or restarted, or this server just started. `since` is when the streak began;
    * `attempts` failed so far of the `maxAttempts` that stop it; `nextAt` is when the next one
-   * runs, null while one runs.
+   * runs, null while one runs. `message` is the last failure as the page says it; null before
+   * the first one.
    */
   | {
       kind: "reconnecting";
@@ -41,15 +43,24 @@ export type MachineReading =
       attempts: number;
       maxAttempts: number;
       nextAt: string | null;
+      message: string | null;
     }
   /**
-   * Kept connected, and the server stopped bringing it back: `attempts` — that many failures in a
-   * row; `ssh` — a refusal no retry mends. Nothing runs until a Retry. `message` is the last
-   * failure as the page says it (an ssh refusal in the reader's language, with its fix).
+   * Kept connected, and bringing it back failed: `attempts` — that many failures in a row; `ssh` —
+   * a refusal no retry mends. Nothing runs until a Retry. `message` is the last failure as the
+   * page says it (an ssh refusal in the reader's language, with its fix).
    */
   | {
-      kind: "reconnectStopped";
+      kind: "reconnectFailed";
       why: "attempts" | "ssh";
+      since: string;
+      attempts: number;
+      maxAttempts: number;
+      message: string | null;
+    }
+  /** Kept connected, and a person stopped the server bringing it back; nothing runs until a Retry. */
+  | {
+      kind: "reconnectStopped";
       since: string;
       attempts: number;
       maxAttempts: number;
@@ -64,6 +75,13 @@ export type MachineReading =
   | { kind: "installedOnly" }
   /** Carrying a different build from the one this server would install. */
   | { kind: "behind"; version: string }
+  /**
+   * Connected, and its server answers requests but never the API socket (its `socket` reads
+   * `unanswered`): a server process older than its build, which keeps every live update from the
+   * machine away until it runs this server's version: its dialog's Restart first, and failing
+   * that Update or a reinstall.
+   */
+  | { kind: "restartNeeded" }
   /** Its server answers but nothing holds a connection to it. */
   | { kind: "notConnected" }
   | { kind: "unreachable"; detail: string | null }
@@ -168,24 +186,26 @@ export function readMachine(
     };
   }
   const reconnect = machine.reconnect;
+  const lastFailure =
+    reconnect === undefined || reconnect.lastError === null
+      ? null
+      : failureText(
+          {
+            message: reconnect.lastError,
+            ...(reconnect.sshReason === undefined ? {} : { sshReason: reconnect.sshReason }),
+          },
+          machine.alias,
+        ).message;
   if (reconnect?.gaveUp !== undefined) {
-    return {
-      kind: "reconnectStopped",
-      why: reconnect.gaveUp,
+    const streak = {
       since: reconnect.since,
       attempts: reconnect.attempts,
       maxAttempts: reconnect.maxAttempts,
-      message:
-        reconnect.lastError === null
-          ? null
-          : failureText(
-              {
-                message: reconnect.lastError,
-                ...(reconnect.sshReason === undefined ? {} : { sshReason: reconnect.sshReason }),
-              },
-              machine.alias,
-            ).message,
+      message: lastFailure,
     };
+    return reconnect.gaveUp === "cancelled"
+      ? { kind: "reconnectStopped", ...streak }
+      : { kind: "reconnectFailed", why: reconnect.gaveUp, ...streak };
   }
   if (reconnect !== undefined) {
     return {
@@ -194,9 +214,12 @@ export function readMachine(
       attempts: reconnect.attempts,
       maxAttempts: reconnect.maxAttempts,
       nextAt: reconnect.nextAt,
+      message: lastFailure,
     };
   }
   if (machine.connection !== null) {
+    // Whatever build it reports: the build on its disk is not the process that serves it.
+    if (needsRestart(machine)) return { kind: "restartNeeded" };
     const status = machine.status;
     return {
       kind: "ready",
@@ -233,9 +256,9 @@ export function readMachine(
 
 /**
  * The tone a reading's mark carries — by what it means, as tone.ts asks; a held connection is
- * `link`, never `success`. Only a failed job and a refused sign-in are `danger`: a machine out of
- * reach, or one the server stopped bringing back, is waiting on someone (its network, its host, a
- * person's Retry), which is `attention`, and red stays for what failed.
+ * `link`, never `success`. A failed job, a failed reconnect and a refused sign-in are `danger`: a
+ * machine out of reach, or one a person stopped bringing back, is waiting on someone (its network,
+ * its host, that person's Retry), which is `attention`, and red stays for what failed.
  */
 export function readingTone(reading: MachineReading): Tone {
   switch (reading.kind) {
@@ -244,6 +267,7 @@ export function readingTone(reading: MachineReading): Tone {
     case "reconnecting":
       return "busy";
     case "failed":
+    case "reconnectFailed":
     case "signInRefused":
       return "danger";
     case "ready":
@@ -258,6 +282,14 @@ export function readingTone(reading: MachineReading): Tone {
     default:
       return "attention";
   }
+}
+
+/**
+ * Whether the machine's server must be restarted before anything streams from it: it answers
+ * requests and never the API socket, so it is a process older than the build it reports.
+ */
+export function needsRestart(machine: MachineInfo): boolean {
+  return !machine.local && machine.socket?.state === "unanswered";
 }
 
 /**
@@ -280,6 +312,8 @@ const SOCKET_TONE: Record<MachineSocketFact["state"], Tone> = {
   // The machine answered the handshake with a status (a program predating the socket): not
   // broken, but nothing will stream until it is brought forward.
   refused: "attention",
+  // Its server answers and never takes the handshake: nothing streams until it is restarted.
+  unanswered: "attention",
   // The dial did not complete, or a socket that was up closed: the far side's words are there
   // when there are any, and this is what needs a person.
   failed: "danger",
@@ -348,6 +382,7 @@ export function useWaitsBecause(
     case "queued":
     case "working":
     case "reconnecting":
+    case "reconnectFailed":
     case "reconnectStopped":
     case "signInRefused":
       return null;
@@ -357,71 +392,111 @@ export function useWaitsBecause(
       return why.notInstalled;
     case "installedOnly":
       return why.windows;
-    case "notConnected":
-      return why.notConnected;
-    default:
+    case "stopped":
       return why.stopped;
+    default:
+      // Not connected — out of reach, never checked or on another build included: nothing says
+      // its server is stopped, only that nothing holds a connection to it.
+      return why.notConnected;
   }
 }
 
 /**
- * The retry status a machine shows while the server brings it back, or after it stopped trying —
- * the card's middle and the dialog's Reconnecting section, as the shared `RetryStatus` draws it.
+ * The retry row a machine shows while the server brings it back, or after it stopped trying —
+ * the card's middle, the dialog's Reconnecting section and a conversation on that machine, as the
+ * shared `RetryStatus` draws it.
  */
 export interface RetryReading {
   phase: RetryPhase;
-  /** Where things stand, in one sentence: the attempt of how many, or where it stopped. */
+  /**
+   * Where things stand, in one sentence: the attempt running of how many, or where it stopped.
+   * While waiting, what the row says once the moment has come.
+   */
   label: string;
-  /** What stands behind a stop: the last failure, or the fix; null while it is still trying. */
+  /** While waiting: the sentence for the seconds left; null otherwise. */
+  countdown: ((seconds: number) => string) | null;
+  /** After the row's sentence: the last failure, or the fix; null when there is nothing to explain. */
   reason: string | null;
   /** When the next attempt runs, in epoch ms, while one is waited for; null otherwise. */
   nextAtMs: number | null;
-  /** A Retry is on offer: while waiting and after a stop — never for a refused password. */
-  canRetry: boolean;
+  /** The presses on offer: Retry now and Stop retrying while it runs, Retry once it stopped. */
+  offers: { retryNow: boolean; stop: boolean; retry: boolean };
 }
 
+const RUNNING = { retryNow: false, stop: true, retry: false };
+const WAITING = { retryNow: true, stop: true, retry: false };
+const STOPPED = { retryNow: false, stop: false, retry: true };
+const NOTHING = { retryNow: false, stop: false, retry: false };
+
 /**
- * The retry status for a reading; null for a machine that is not being brought back. An attempt
- * running counts as the one past the failures so far; a wait before the first attempt says the
- * connection was lost, a wait after a failure which one failed. A refused password offers no
- * Retry: another try could lock the account, and saving its password tries again on its own.
+ * The retry row for a reading; null for a machine that is not being brought back. The attempt a
+ * row names is the one past the failures so far — running, or waited for. Stop retrying is on
+ * offer for as long as the streak runs; Retry once it stopped, at its limit, at an ssh refusal no
+ * retry mends, or by a person's stop. A refused password offers nothing: another try could lock
+ * the account, and saving its password tries again on its own.
  */
 export function retryReading(reading: MachineReading, alias: string): RetryReading | null {
   const r = S.machines.retry;
   switch (reading.kind) {
-    case "reconnecting":
+    case "reconnecting": {
+      const n = reading.attempts + 1;
+      const m = reading.maxAttempts;
+      const reason = reading.message;
       return reading.nextAt === null
         ? {
             phase: "trying",
-            label: r.trying(reading.attempts + 1, reading.maxAttempts),
-            reason: null,
+            label: r.trying(n, m),
+            countdown: null,
+            reason,
             nextAtMs: null,
-            canRetry: false,
+            offers: RUNNING,
           }
         : {
             phase: "waiting",
-            label:
-              reading.attempts === 0 ? r.lost : r.failed(reading.attempts, reading.maxAttempts),
-            reason: null,
+            label: r.trying(n, m),
+            countdown: (seconds) => r.waiting(seconds, n, m),
+            reason,
             nextAtMs: Date.parse(reading.nextAt),
-            canRetry: true,
+            offers: WAITING,
+          };
+    }
+    case "reconnectFailed":
+      return reading.why === "ssh"
+        ? {
+            phase: "blocked",
+            label: r.stoppedSsh,
+            countdown: null,
+            // The sentence for an ssh refusal is its fix already.
+            reason: reading.message,
+            nextAtMs: null,
+            offers: STOPPED,
+          }
+        : {
+            phase: "gaveUp",
+            label: r.gaveUp(reading.maxAttempts),
+            countdown: null,
+            reason: reading.message,
+            nextAtMs: null,
+            offers: STOPPED,
           };
     case "reconnectStopped":
       return {
-        phase: reading.why === "attempts" ? "gaveUp" : "blocked",
-        label: reading.why === "attempts" ? r.gaveUp(reading.maxAttempts) : r.stoppedSsh,
+        phase: "cancelled",
+        label: r.cancelled,
+        countdown: null,
         reason: reading.message,
         nextAtMs: null,
-        canRetry: true,
+        offers: STOPPED,
       };
     case "signInRefused":
       return {
         phase: "blocked",
         label: r.stoppedPassword,
+        countdown: null,
         // What to do about it, not only that it happened.
         reason: S.machines.check.ssh[reading.reason](alias),
         nextAtMs: null,
-        canRetry: false,
+        offers: NOTHING,
       };
     default:
       return null;

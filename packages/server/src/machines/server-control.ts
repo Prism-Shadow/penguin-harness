@@ -56,6 +56,11 @@ export async function startRemoteServer(
     // the interval is what bounds the CPU this wait costs there; a server that is coming up
     // takes a few seconds anyway.
     await sleep(1500);
+    // The work this start belongs to was cut: nothing is waited for any more, and its commands
+    // would only answer that they were not run.
+    if (target.signal?.aborted === true) {
+      return { ok: false, detail: "the start was stopped before its server answered." };
+    }
     const probed = await probeServerState(target, layout, exec);
     if (probed.state.kind === "running") return { ok: true };
     // Only an explicit `gone` ends the wait: a check that failed to run says nothing.

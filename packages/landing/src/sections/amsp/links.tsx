@@ -18,7 +18,7 @@ const ITEMS = [
 ] as const;
 
 const ROW =
-  "group flex items-baseline gap-4 py-3 text-sm leading-6 transition-colors hover:text-gray-950 dark:hover:text-white";
+  "flex items-baseline gap-4 py-3 text-sm leading-6 transition-colors hover:text-gray-950 dark:hover:text-white";
 
 export function AmspLinks() {
   const L = S.amsp.links;
@@ -39,7 +39,7 @@ export function AmspLinks() {
                 {item.external ? (
                   <ExternalLinkIcon className="h-3.5 w-3.5 shrink-0 text-gray-400 dark:text-gray-500" />
                 ) : (
-                  <ArrowRightIcon className="h-4 w-4 shrink-0 self-center text-gray-400 transition-transform group-hover:translate-x-0.5 dark:text-gray-500" />
+                  <ArrowRightIcon className="h-4 w-4 shrink-0 self-center text-gray-400 dark:text-gray-500" />
                 )}
               </>
             );

@@ -32,7 +32,7 @@
 <p align="center">
   <a href="https://discord.gg/eFHKqqcU3D"><img src="https://img.shields.io/badge/Discord-join%20chat-5865F2?logo=discord&logoColor=white" alt="Discord" /></a>
   <a href="https://x.com/code_hiyouga"><img src="https://img.shields.io/badge/X-code%5Fhiyouga-000000?logo=x&logoColor=white" alt="X（Twitter）" /></a>
-  <a href="https://github.com/Prism-Shadow/penguin-harness-community/blob/main/wechat/group.jpg"><img src="https://img.shields.io/badge/WeChat-user%20group-07C160?logo=wechat&logoColor=white" alt="微信" /></a>
+  <a href="https://github.com/Prism-Shadow/penguin-harness-community/blob/main/assets/wechat/penguin.jpg"><img src="https://img.shields.io/badge/WeChat-user%20group-07C160?logo=wechat&logoColor=white" alt="微信" /></a>
 </p>
 
 <p align="center">
@@ -42,14 +42,14 @@
 <p align="center"><a href="README.md">English</a> | 简体中文</p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-start-page-zh.png" alt="PenguinHarness 起始页：Agent、RSI 算法、Benchmark 与示例" width="900" />
+  <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/assets/blog-assets/penguinharness-0-2-14-start-page-zh.png" alt="PenguinHarness 起始页：Agent、RSI 算法、Benchmark 与示例" width="900" />
 </p>
 
 ## 为什么选择 PenguinHarness
 
 PenguinHarness 是开源的 Agent 自进化（recursive self-improvement, RSI）框架。模型保持不变，进化的是 Harness：提示词、Skill、工具和钩子。它可以在你的电脑或服务器上运行，提供桌面端、Web App、CLI 和 SDK。
 
-- **一个框架**，**集齐所有 RSI 算法**。 Default、OPRO、APE、ACE 和 AWM 都以插件形式提供，跑在同一套内置 Benchmark、记分板和快照上。
+- **一个框架**，**集齐所有 RSI 算法**。 Default、OPRO、APE、ACE、AWM、SkillAdam、SkillOpt、OpenSkill 和 TRACE 都以插件形式提供，跑在同一套内置 Benchmark、记分板和快照上。
 - **一句话生成一个 Agent 应用**。 描述你的需求，Agent 就会把应用、页面和运行说明都写好。
 - **跑起来很便宜**。 工具集刻意保持精简，专为开源模型调优：在我们的数据分析测试集上，以 Claude Code 1/70 的成本取得最高准确率。
 
@@ -64,11 +64,15 @@ PenguinHarness 是开源的 Agent 自进化（recursive self-improvement, RSI）
 | `ape-rsi-toolkit` | [APE](https://arxiv.org/abs/2211.01910)：从示例中归纳候选指令 |
 | `ace-rsi-toolkit` | [ACE](https://arxiv.org/abs/2510.04618)：把 Trace 中的经验提炼成 playbook |
 | `awm-rsi-toolkit` | [AWM](https://arxiv.org/abs/2409.07429)：从成功的运行中归纳出工作流 |
+| `skilladam-rsi-toolkit` | [SkillAdam](https://arxiv.org/abs/2609.08944)：持续更新问题记录，按评分变化调整 Skill 编辑预算 |
+| `skillopt-rsi-toolkit` | [SkillOpt](https://arxiv.org/abs/2605.23904)：限制文本编辑幅度，按评分筛选候选，并在训练轮次之间总结经验 |
+| `openskill-rsi-toolkit` | [OpenSkill](https://arxiv.org/abs/2606.06741)：先通过外部检索与独立虚拟验证构建技能，再评测冻结的 State |
+| `trace-rsi-toolkit` | [TRACE](https://arxiv.org/abs/2608.22793)：对比成功与失败轨迹，进化技能库并测量一致性 |
 
-每个新建的 Project 都自带七个 Benchmark，以 Harbor 任务的形式跑在 Docker 里：PenguinHarness Benchmark Sec A 到 Sec E（来自 rag-bench-essential、DeepSWE、AutomationBench、Terminal-Bench-Science 和 Terminal-Bench），以及 GDPevo Train 和 Test。更多 Benchmark 见 [penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark)。
+每个新建的 Project 都自带十七个 Benchmark，以 Harbor 任务的形式跑在 Docker 里：PenguinHarness Benchmark Sec A 到 Sec E（来自 rag-bench-essential、DeepSWE、AutomationBench、Terminal-Bench-Science 和 Terminal-Bench），以及 GDPEVO Essential 六个场景各自的 Train/Test 对，共十二个 GDPEVO Essential 条目。更多 Benchmark 见 [penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark)。
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-benchmark-detail-zh.png" alt="一个 Benchmark 的分数图：三个 Agent 随版本一路攀升" width="820" />
+  <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/assets/blog-assets/penguinharness-0-2-14-benchmark-detail-zh.png" alt="一个 Benchmark 的分数图：三个 Agent 随版本一路攀升" width="820" />
 </p>
 
 **演示**：以决策智能体为例，经过评测、一次工作方法的改进和同模型复测，分数从 84 提升到 100，每次运行的成本都看得到。
@@ -92,24 +96,24 @@ https://github.com/user-attachments/assets/138744cd-9ab8-42f3-bf6d-b0a25f404132
     <td width="50%" valign="top">
       <b>浏览器自动化</b><br />
       Agent 通过 PenguinHarness Browser 扩展操作你自己的 Chrome，也可以用桌面端的内置浏览器。读页面用文本、操作用短脚本，每一步只花很少的 Token。<a href="https://penguin.ooo/blog/let-agents-use-the-browser">教程</a><br /><br />
-      <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-browser-zh.png" alt="Agent 在浏览器面板里阅读 PenguinHarness 博客" />
+      <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/assets/blog-assets/penguinharness-0-2-14-browser-zh.png" alt="Agent 在浏览器面板里阅读 PenguinHarness 博客" />
     </td>
     <td width="50%" valign="top">
       <b>工作台</b><br />
       每个 Agent 都能有自己的热定制工作台：开口要一个，Agent 就把页面和服务端代码一起写好，作为标签页显示在对话旁边。<a href="https://penguin.ooo/blog/build-agent-apps-with-workflows">教程</a><br /><br />
-      <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-workflow-zh.png" alt="法务 Agent 的合同工作台页面" />
+      <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/assets/blog-assets/penguinharness-0-2-14-workflow-zh.png" alt="法务 Agent 的合同工作台页面" />
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
       <b>远程机器</b><br />
       添加一台机器，服务器通过 ssh 连接它。那台机器上 Workspace 里的会话就在那台机器上运行，而且仍在同一个窗口里。<a href="https://penguin.ooo/blog/run-agents-on-remote-machines">教程</a><br /><br />
-      <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-machines-zh.png" alt="在 devbox 机器上运行的一个会话" />
+      <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/assets/blog-assets/penguinharness-0-2-14-machines-zh.png" alt="在 devbox 机器上运行的一个会话" />
     </td>
     <td width="50%" valign="top">
       <b>Agent API</b><br />
       通过统一 API 把任意 Agent 接入外部应用：经 HTTP 发送输入，再以 AMSP 事件流读回运行过程。<a href="https://penguin.ooo/blog/call-agents-with-the-agent-api">教程</a><br /><br />
-      <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-agent-api-zh.png" alt="运行一次后的「试一试」面板" />
+      <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/assets/blog-assets/penguinharness-0-2-14-agent-api-zh.png" alt="运行一次后的「试一试」面板" />
     </td>
   </tr>
 </table>
@@ -133,7 +137,7 @@ Agent 还能编写并优化自己的 Skill（[文档](https://penguin.ooo/docs/s
 
 | 分类 | 插件                                                                       |
 | -------------------- | ----------------------------------------------------------------------------- |
-| Agent 自进化 | `default-rsi-toolkit`, `opro-rsi-toolkit`, `ape-rsi-toolkit`, `ace-rsi-toolkit`, `awm-rsi-toolkit` |
+| Agent 自进化 | `default-rsi-toolkit`, `opro-rsi-toolkit`, `ape-rsi-toolkit`, `ace-rsi-toolkit`, `awm-rsi-toolkit`, `skilladam-rsi-toolkit`, `skillopt-rsi-toolkit`, `openskill-rsi-toolkit`, `trace-rsi-toolkit` |
 | 办公效率 | `a2ui`, `data-analysis`, `use-firecrawl`, `browser-automation`, `use-bento-slides`, `humanizer`, `goal`, `continual-learning`, `agent-company`, `penguin-support` |
 | 软件开发 | `software-development`, `use-claude-code` |
 | AI 应用开发 | `agent-development`, `agent-evaluation`, `model-development`, `skill-porting` |
@@ -185,7 +189,7 @@ Claude 5.5 的 OpenCode Go 预设为 Haiku；Fable 5.1、Opus 5.5 和 Sonnet 5.5
 ### Docker
 
 ```bash
-docker run -d --name penguin -p 127.0.0.1:7364:7364 -v penguin-data:/data hiyouga/penguinharness:0.2.16
+docker run -d --name penguin -p 127.0.0.1:7364:7364 -v penguin-data:/data hiyouga/penguinharness:0.2.18
 docker logs penguin       # 首次登录链接，在本机可原样打开
 ```
 

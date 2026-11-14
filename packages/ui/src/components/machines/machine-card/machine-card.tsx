@@ -11,8 +11,9 @@
  * while the buttons on the card act on their own.
  *
  * The middle holds the job's stepper while a job for the machine is queued or running; else the
- * retry status while the server brings the machine back (`RetryStatus`: the attempt, the countdown
- * to the next, where the automatic attempts stopped, and the Retry); else, while Use waits, why
+ * retry row while the server brings the machine back (`RetryStatus`: the attempt and the countdown
+ * to it, or where the attempts stopped, the last failure behind its "?", and its presses); else,
+ * while Use waits, why
  * in one muted line. The quick buttons: Sync config (an icon,
  * first, so the buttons after it line up across cards whether or not it is there), Use with its
  * word, Settings with its gear and word, and Delete as a bare icon in the danger look. This
@@ -65,8 +66,8 @@ export interface MachineCardProps {
   /** The job's steps while one is queued or running; null when none is. */
   progress?: MachineStepperProps | null;
   /**
-   * The retry status while the server brings the machine back or has stopped trying, with its
-   * Retry; shown in the middle when no job is moving there. Null otherwise.
+   * The retry row while the server brings the machine back or has stopped trying, with its
+   * presses; shown in the middle when no job is moving there. Null otherwise.
    */
   retry?: RetryStatusProps | null;
   /** Why Use waits, when it does and no job is moving to say so; null otherwise. */
@@ -168,15 +169,14 @@ export function MachineCard({
         </div>
       </div>
 
-      {/* The middle: the job's stepper while one moves, else the retry status while the machine
+      {/* The middle: the job's stepper while one moves, else the retry row while the machine
           is being brought back, else why Use waits — and on a narrow screen nothing, taking no
-          line, when there is none of them. */}
+          line, when there is none of them. The retry row's column is wider, so its sentence
+          and the "?" after it hold one line, its presses on the line under them. */}
       <div
-        className={
-          progress !== null || retry !== null || waits !== null
-            ? "w-44 shrink-0"
-            : "hidden w-44 shrink-0 md:block"
-        }
+        className={`${progress === null && retry !== null ? "w-64" : "w-44"} shrink-0 ${
+          progress !== null || retry !== null || waits !== null ? "" : "hidden md:block"
+        }`}
       >
         {progress !== null ? (
           <MachineStepper {...progress} />

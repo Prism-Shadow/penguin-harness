@@ -6,6 +6,9 @@
  * - A token_usage message is one row of Tokens (never a cost); anything else writes nothing.
  * - A sub-session's usage is attributed to its own model through its session_meta, and falls
  *   back to the main Session's model when that mapping is missing or was evicted past its cap.
+ * - A billed request with an abnormal finish counts once; its unbilled retry still counts separately.
+ * - Interleaved main and child sessions cannot suppress each other's failed requests.
+ * - Compaction usage without streamed request boundaries does not hide the next request's failure.
  *
  * Querying:
  * - A scheduled model is priced per record by the tier its request ran in, each seller by its
@@ -27,7 +30,13 @@
  *   covered through its route in errors.test.ts).
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { requestEnd, sessionMeta, tokenUsage, withOrigin } from "@prismshadow/penguin-core";
+import {
+  requestBegin,
+  requestEnd,
+  sessionMeta,
+  tokenUsage,
+  withOrigin,
+} from "@prismshadow/penguin-core";
 import type { SessionMetaPayload, TokenCounts } from "@prismshadow/penguin-core";
 import { ORIGIN_MODELS_MAX, UsageRecorder } from "../src/runtime/usage-recorder.js";
 import { ErrorsRepo } from "../src/db/repos/errors.js";
@@ -119,6 +128,52 @@ describe("usage-recorder", () => {
     expect(row.session_id).toBe("session-main"); // attributed to its owning main Session
     expect(row.origin_session_id).toBe("session-child");
     expect(row.model_id).toBe("child-model");
+  });
+
+  it("counts a billed abnormal finish once and records its unbilled retry separately", async () => {
+    const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
+    await rec.record(CTX, requestBegin());
+    await rec.record(CTX, tokenUsage(counts(115), counts(115)));
+    // GenerativeModel reports usage even when an unknown finish reason returns malformed.
+    await rec.record(CTX, requestEnd("retryable", { errorCode: "malformed", retryInMs: 2000 }));
+    await rec.record(CTX, requestBegin());
+    await rec.record(CTX, requestEnd("retryable", { errorCode: "network" }));
+    expect(repo.bucketByModel(CTX.projectId)[0]).toMatchObject({ requests: 2, total: 115 });
+    expect(db.prepare("SELECT status, total FROM usage_records ORDER BY rowid").all()).toEqual([
+      { status: "completed", total: 115 },
+      { status: "retryable", total: 0 },
+    ]);
+  });
+
+  it.each(["another session", "child session"])(
+    "keeps metering separate from an interleaved %s",
+    async (kind) => {
+      const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
+      const otherCtx = kind === "another session" ? { ...CTX, sessionId: "session-other" } : CTX;
+      const other = (msg: Parameters<UsageRecorder["record"]>[1]) =>
+        kind === "child session" ? withOrigin(msg, "session-child") : msg;
+      await rec.record(CTX, requestBegin());
+      await rec.record(otherCtx, other(requestBegin()));
+      await rec.record(CTX, tokenUsage(counts(115), counts(115)));
+      await rec.record(otherCtx, other(requestEnd("retryable", { errorCode: "network" })));
+      await rec.record(CTX, requestEnd("retryable", { errorCode: "malformed" }));
+      expect(db.prepare("SELECT status, total FROM usage_records ORDER BY rowid").all()).toEqual([
+        { status: "completed", total: 115 },
+        { status: "retryable", total: 0 },
+      ]);
+    },
+  );
+
+  it("keeps a failure after compaction usage without streamed request boundaries", async () => {
+    const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
+    // Compaction streams token_usage, but its request_begin/request_end stay in the Trace.
+    await rec.record(CTX, tokenUsage(counts(115), counts(115)));
+    await rec.record(CTX, requestBegin());
+    await rec.record(CTX, requestEnd("fatal", { errorCode: "auth" }));
+    expect(db.prepare("SELECT status, total FROM usage_records ORDER BY rowid").all()).toEqual([
+      { status: "completed", total: 115 },
+      { status: "fatal", total: 0 },
+    ]);
   });
 
   it("falls back to the main Session's Model when the origin mapping is missing", async () => {

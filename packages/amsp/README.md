@@ -93,7 +93,19 @@ Options: `tailLimit` (default 20), `streamPath` (default `/sessions/<id>/stream`
 
 Both clients go through a `Transport` (`stream`, `get`, `post`). `HttpTransport` is the one over `fetch`, with `{baseUrl, apiKey?, credentials?, fetch?, headers?}`; a host with a channel of its own implements the interface, and `deliver(frames, handlers)` hands an SSE body's frames to a stream's handlers. A page on the server's own origin reads the cookie door with `new HttpTransport({ baseUrl: "/api", credentials: "same-origin" })` and `streamPath: "/sessions/<id>/amsp"`.
 
-The package also ships `dist/browser/amsp.js`, the root entry as one ES module with nothing to resolve, for a page that imports it by URL. A page on another origin needs a key: the server sends `Access-Control-Allow-Origin: *` only on requests that carry `Authorization`.
+The package also ships `dist/browser/amsp.js` (`@prismshadow/amsp/browser`), the root entry as one ES module with nothing to resolve, for a page that imports it by URL, and the same bytes as a string, `BROWSER_SOURCE` from `@prismshadow/amsp/browser-source`, for a server that serves it: a bundler that absorbs the server carries the string along, where a file beside a package would be left behind. A page on another origin needs a key: the server sends `Access-Control-Allow-Origin: *` only on requests that carry `Authorization`.
+
+A workbench page gets both from the server that answers the workbench, beside its own `ui/` folder: `…/workbenches/<id>/sdk/amsp.js` is this browser build, and `…/workbenches/<id>/sdk/workbench.js` re-exports it with the cookie door already set up. `apiBase` is that server's API (`/api`, or `/server/<machineId>/api` for a machine's workbench), `transport` the `HttpTransport` on it, `followSession(id, { tailLimit? })` a `SessionReader` on `/sessions/<id>/amsp`, and `abortSession(id)` interrupts the running Task (`true` when one was running):
+
+```js
+// In a page under the workbench's ui/ folder.
+const { followSession, abortSession } = await import("../sdk/workbench.js");
+const reader = followSession(sessionId, { tailLimit: 5 });
+reader.on("event", ({ record }) => {
+  if (!record.origin) render(record); // the main Session's records; subagents carry an origin
+});
+stopButton.onclick = () => abortSession(sessionId);
+```
 
 ## Reading a stream without the client
 

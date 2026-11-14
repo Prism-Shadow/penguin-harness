@@ -48,6 +48,7 @@ import { WeChatTransportProvider } from "./runtime/messaging/wechat-connector.js
 import { WeChatScanTransportProvider } from "./runtime/messaging/wechat-scan.js";
 import { PluginConfig, PluginConfigProvider } from "./plugin/config.js";
 import { PluginConfigAdmin, PluginConfigPage } from "./plugin/config-page.js";
+import { PluginCliCommandsProvider } from "./plugin/cli-commands.js";
 import {
   CoreSessionLoaders,
   DefaultTitleGenerators,
@@ -68,6 +69,8 @@ import { UsersRepo } from "./db/repos/users.js";
 import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
 import { ServerSettingsRepo } from "./db/repos/server-settings.js";
 import { UiPrefsRepo } from "./db/repos/ui-prefs.js";
+import { UserDraftsRepo } from "./db/repos/user-drafts.js";
+import { BackgroundImagesRepo } from "./db/repos/background-images.js";
 import { SessionsRepo } from "./db/repos/sessions.js";
 import { ProjectsRepo } from "./db/repos/projects.js";
 import { ModelPromotionsRepo } from "./db/repos/model-promotions.js";
@@ -122,6 +125,8 @@ import { OrgRoutes } from "./http/routes/organizations.js";
 import { OrgRuns, OrgSessions } from "./runtime/organization/deps.js";
 import { TerminalRelay } from "./machines/terminal-relay.js";
 import { SessionForwardRoutes } from "./machines/session-forward.js";
+import { HistoryLinesRoutes } from "./http/routes/history-lines.js";
+import { HistoryRoutes } from "./http/routes/history.js";
 import { ProjectAdminRoutes } from "./http/routes/projects.js";
 import { AdminRoutes } from "./http/routes/admin.js";
 import { MeRoutes } from "./http/routes/me.js";
@@ -133,12 +138,16 @@ import {
   DesktopTrayRoutes,
   DesktopUpdateRoutes,
 } from "./http/routes/desktop.js";
+import { CommandRoutes } from "./http/routes/command.js";
 import { InstallRoutes } from "./http/routes/install.js";
+import { HandshakeRoutes } from "./http/routes/handshake.js";
 import { HmrRoutes } from "./hmr/routes.js";
 import { EventsRoutes } from "./http/routes/events.js";
 import { PluginRegistryRoutes, PluginRoutes } from "./http/routes/plugins.js";
 import { InstalledPluginRoutes } from "./http/routes/plugins-installed.js";
 import { NpmPluginPackages } from "./plugin/install.js";
+import { PluginLibraryModule } from "./plugin/library-module.js";
+import { PluginUiRoutes } from "./http/routes/plugin-ui.js";
 import { SuggestIdRoutes } from "./http/routes/suggest-id.js";
 import { LanguageRoutes } from "./http/routes/languages.js";
 import { Languages, LanguagesModule } from "./languages/service.js";
@@ -167,6 +176,7 @@ import {
 import { Workbenches } from "./mechanisms/workbenches.js";
 import { WorkbenchService } from "./workbenches/service.js";
 import { WorkbenchRoutes } from "./workbenches/routes.js";
+import { ThemeRoutes } from "./http/routes/themes.js";
 import {
   ErrorLog,
   Errors,
@@ -178,6 +188,7 @@ import { TraceIndex, TraceIndexStore, Traces } from "./mechanisms/traces.js";
 import { AgentConfig, AgentLifecycle, Benchmarks, Memory, Snapshots } from "./mechanisms/agents.js";
 import { FileReveal, WorkspaceFiles } from "./mechanisms/workspace.js";
 import { Settings, UiPrefsStore } from "./mechanisms/settings.js";
+import { BackgroundImageStore, UserDraftsStore } from "./mechanisms/account-data.js";
 import { MessagingBindings } from "./mechanisms/messaging.js";
 import { OrgCache } from "./mechanisms/organization.js";
 import { PreviewModule, PreviewTokens } from "./http/routes/preview.js";
@@ -209,6 +220,7 @@ export class Startup {
   @Use() private readonly machines!: Machines;
   @Use() private readonly errors!: Errors;
   @Use() private readonly projectConfig!: ProjectConfigStore;
+  @Use() private readonly agents!: AgentLifecycle;
 
   async setup() {
     // Every Project's config through the server's read path once, before anything opens one:
@@ -219,15 +231,27 @@ export class Startup {
     await this.projectConfig.migrateStoredConfigs().catch((err: unknown) => {
       this.errors.record({ source: "process", err, code: "config_migration_failed" });
     });
-    // Schedule scheduler: startup reconciliation (missed, don't backfill) + periodic scan.
-    await this.scheduler.start();
-    // Company mode's scheduler: same lifetime and the same startup rule (reconcile once,
-    // no backfill), only active while this App is.
-    await this.orgScheduler.start();
+    // Schedule scheduler: startup reconciliation (missed, don't backfill) + periodic scan; and
+    // company mode's scheduler, with the same lifetime and the same startup rule (reconcile
+    // once, no backfill), only active while this App is. Neither first pass is on the boot
+    // path: a pass can fire a missed slot, and a fire can reach the network (a model's
+    // credential refresh) before it is queued — the port is announced and local pages are
+    // served without waiting on it. Each pass still runs, here, as the platform comes up.
+    void this.scheduler.start().catch((err: unknown) => {
+      this.errors.record({ source: "process", err, code: "scheduler_start_failed" });
+    });
+    void this.orgScheduler.start().catch((err: unknown) => {
+      this.errors.record({ source: "process", err, code: "org_scheduler_start_failed" });
+    });
     // Startup adoption sweep: fold Trace-only Sessions into the index. Fire-and-forget —
     // a broken trace shard must not block the boot.
     void this.sessionService.adoptUnmanagedTraceSessions().catch((err: unknown) => {
       this.errors.record({ source: "process", err, code: "trace_adoption_failed" });
+    });
+    // Deleted Agents whose files a stopped process had not finished removing: removed now, in
+    // the background, the way the delete itself removes them.
+    void this.agents.resumeDeletions().catch((err: unknown) => {
+      this.errors.record({ source: "process", err, code: "agent_purge_failed" });
     });
     // Machines, in one sweep (machines/service.ts start()): a push here is a push everywhere,
     // so this App booting hands the same build on to any machine still carrying a different
@@ -376,6 +400,17 @@ export class SessionRuntimeModule {}
 export class SettingsModule {}
 
 /**
+ * What an account keeps on the server beside its preferences: unsent drafts and the custom
+ * background image. A group of its own rather than part of the settings group, so a stand-in
+ * for the settings store does not have to stand in for these too.
+ */
+@Module({
+  children: [UserDraftsRepo, BackgroundImagesRepo],
+  exports: [UserDraftsStore, BackgroundImageStore],
+})
+export class AccountDataModule {}
+
+/**
  * Plugin configuration as a group of its own, beside the settings it is stored in: a plugin
  * that stands in for the settings group replaces the store, not the schema-and-watch layer
  * over it, and a plugin's manifest names this module as where `PluginConfig` comes from.
@@ -466,9 +501,11 @@ export class CompanyModule {}
     HttpModule,
     WebModule,
     InstallRoutes,
+    HandshakeRoutes,
     VersionRoutes,
     HmrRoutes,
     DesktopRoutes,
+    CommandRoutes,
     DesktopUpdateRoutes,
     DesktopTrayRoutes,
     DesktopPrivacySettingsRoutes,
@@ -476,6 +513,8 @@ export class CompanyModule {}
     PluginRegistryRoutes,
     NpmPluginPackages,
     InstalledPluginRoutes,
+    PluginCliCommandsProvider,
+    PluginUiRoutes,
     SuggestIdRoutes,
     LanguagesModule,
     LanguageRoutes,
@@ -490,11 +529,22 @@ export class ApiModule {}
 })
 export class WorkbenchesModule {}
 
+/**
+ * The server's theme packs: the store under the data root and the routes over it. Its own group:
+ * nothing else reads the store, and a pack is a per-server web resource, not a plugin.
+ */
+@Module({
+  children: [ThemeRoutes],
+  exports: [],
+})
+export class ThemesModule {}
+
 /** The root: provides nothing and requires nothing; it exists so the groups have a scope to see each other in. */
 @Module({
   children: [
     RuntimeModule,
     SettingsModule,
+    AccountDataModule,
     PluginConfigModule,
     IdentityModule,
     ProjectsModule,
@@ -506,13 +556,17 @@ export class WorkbenchesModule {}
     MessagingHubModule,
     CompanyModule,
     ApiModule,
+    PluginLibraryModule,
     SandboxModule,
     SandboxSettingsModule,
     TerminalModule,
     MachinesModule,
     TerminalRelay,
     SessionForwardRoutes,
+    HistoryRoutes,
+    HistoryLinesRoutes,
     WorkbenchesModule,
+    ThemesModule,
     BuiltinBrowserModule,
     AgentApiModule,
     Startup,

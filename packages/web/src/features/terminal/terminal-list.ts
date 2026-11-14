@@ -13,6 +13,7 @@
  */
 import type { TerminalInfo } from "./terminal-view";
 import { probeSession } from "../../api/session-probe";
+import { ANSWER_TIMEOUT_MS } from "../../api/socket";
 import { apiUrl } from "../../lib/server-context";
 import {
   machineForTerminal,
@@ -130,6 +131,14 @@ export function terminalApiSupported(): boolean {
   return !unsupported;
 }
 
+/**
+ * How long a machine's list is waited for. A machine that holds its connection but answers
+ * nothing would otherwise hold its round — and every refresh after it, which shares the one in
+ * flight — until ssh gives the connection up; its shells are left out of that round instead, as
+ * an unreachable machine's are. The API socket's own wait for an answer.
+ */
+const MACHINE_LIST_TIMEOUT_MS = ANSWER_TIMEOUT_MS;
+
 /** Re-reads the list from the server; concurrent calls share one request. */
 export function refreshTerminals(): Promise<void> {
   if (inflight) return inflight;
@@ -141,15 +150,30 @@ export function refreshTerminals(): Promise<void> {
       // the list is not one server's answer. A machine that does not answer contributes
       // nothing and its terminals are simply not listed this round — which is right, since
       // a pane whose bytes cannot arrive is not a pane anyone can use.
-      const answers = await Promise.all(
-        terminalSources().map(async (source) => {
-          const res = await fetch(apiUrl("/api/terminals", source), {
-            credentials: "same-origin",
-          }).catch(() => null);
-          return { source, res };
-        }),
-      );
-      const here = answers.find((a) => a.source === null)?.res ?? null;
+      const sources = terminalSources();
+      /** Each source's answer as it lands: its shells, or null when it did not answer. */
+      const parts = new Map<string | null, { terminals: TerminalInfo[] } | null>();
+      const ask = async (source: string | null) => {
+        const giveUp = new AbortController();
+        const timer =
+          source === null ? null : setTimeout(() => giveUp.abort(), MACHINE_LIST_TIMEOUT_MS);
+        const res = await fetch(apiUrl("/api/terminals", source), {
+          credentials: "same-origin",
+          signal: giveUp.signal,
+        })
+          .catch(() => null)
+          .finally(() => {
+            if (timer !== null) clearTimeout(timer);
+          });
+        const part =
+          res !== null && res.ok
+            ? ((await res.json().catch(() => null)) as { terminals: TerminalInfo[] } | null)
+            : null;
+        parts.set(source, part);
+        return { source, res };
+      };
+      // This server first; the machines once its shells are on screen.
+      const here = (await ask(null)).res;
       // 404 means the route does not exist at all: the running runtime predates the
       // terminal API. Under hot update the Web App and the runtime can be different
       // versions by design, so the UI has to notice rather than offer a dead control.
@@ -170,37 +194,57 @@ export function refreshTerminals(): Promise<void> {
       }
       if (here === null || !here.ok) return; // server unreachable or refusing: keep the last list
       unsupported = false;
-      const terminals: TerminalInfo[] = [];
-      for (const { source, res } of answers) {
-        if (res === null || !res.ok) continue;
-        const part = (await res.json()) as { terminals: TerminalInfo[] };
-        for (const terminal of part.terminals) {
-          terminals.push(terminal);
-          // Where it lives, so the two calls about it — attach and kill — reach that
-          // machine. Rebuilt by the very list that displays them.
-          rememberTerminalMachine(terminal.id, source);
+      /**
+       * The list from the answers in hand, in source order. A machine still out keeps the
+       * shells it had until its own answer lands.
+       */
+      const listFrom = (out: ReadonlySet<string | null>): TerminalInfo[] => {
+        const terminals: TerminalInfo[] = [];
+        for (const source of sources) {
+          if (out.has(source)) {
+            terminals.push(...raw.filter((t) => machineForTerminal(t.id) === source));
+            continue;
+          }
+          for (const terminal of parts.get(source)?.terminals ?? []) {
+            terminals.push(terminal);
+            // Where it lives, so the two calls about it — attach and kill — reach that
+            // machine. Rebuilt by the very list that displays them.
+            rememberTerminalMachine(terminal.id, source);
+          }
         }
-      }
-      const listed = new Set(terminals.map((t) => t.id));
-      for (const id of pendingKills.keys()) {
-        if (!listed.has(id)) pendingKills.delete(id); // fully gone: nothing left to hide
-      }
-      const live = terminals.filter((t) => t.alive && !isPendingKill(t.id));
-      // This window created or refiled a shell while the list was on its way: the answer
-      // predates that, so it would take the new shell out of the panel (or file it under the
-      // old conversation) until the next poll. Ask again instead (below, once this request is
-      // no longer the one in flight).
-      stale = localChanges !== changesAtStart;
-      if (stale) return;
-      // A short answer (a machine still being re-held after a restart answers nothing yet) is
-      // displayed as it is: a pane whose bytes cannot arrive is not usable yet, but nothing
-      // acts on its strength (terminalListComplete), and the next complete refresh restores
-      // the rest.
-      const answeredAll = answers.every((a) => a.res !== null && a.res.ok);
-      const flipped = answeredAll !== complete;
-      complete = answeredAll;
-      commit(live);
-      if (flipped) notify();
+        const listed = new Set(terminals.map((t) => t.id));
+        for (const id of pendingKills.keys()) {
+          if (!listed.has(id)) pendingKills.delete(id); // fully gone: nothing left to hide
+        }
+        return terminals.filter((t) => t.alive && !isPendingKill(t.id));
+      };
+      /** Shows a list unless this window changed it since the round began (see below). */
+      const show = (live: TerminalInfo[], answeredAll: boolean): boolean => {
+        // This window created or refiled a shell while the list was on its way: the answer
+        // predates that, so it would take the new shell out of the panel (or file it under the
+        // old conversation) until the next poll. Ask again instead (below, once this request is
+        // no longer the one in flight).
+        stale = localChanges !== changesAtStart;
+        if (stale) return false;
+        // A short answer (a machine still being re-held after a restart answers nothing yet)
+        // is displayed as it is: a pane whose bytes cannot arrive is not usable yet, but
+        // nothing acts on its strength (terminalListComplete), and the next complete refresh
+        // restores the rest.
+        const flipped = answeredAll !== complete;
+        complete = answeredAll;
+        commit(live);
+        if (flipped) notify();
+        return true;
+      };
+      // This server's shells are shown the moment it answers: a machine still out never holds
+      // them back.
+      const machines = sources.filter((source): source is string => source !== null);
+      if (machines.length > 0 && !show(listFrom(new Set(machines)), false)) return;
+      const answers = await Promise.all(machines.map(ask));
+      show(
+        listFrom(new Set()),
+        answers.every((a) => a.res !== null && a.res.ok),
+      );
     } catch {
       // Network hiccup: the next poll/focus refresh will catch up.
     } finally {

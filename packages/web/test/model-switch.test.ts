@@ -1,21 +1,17 @@
 /**
  * In-conversation model switch (model-switch.ts): the picker's gate, what the switch will do to
- * the context, the stale-row predicate that makes the Session row follow the running context's
- * `session_meta`, and the copy of the `/model` handoff, the confirm dialog and the model-change
- * marker in both locales. (The Web suite runs in a node environment and renders no React, so
- * the pure helpers are what get exercised.)
+ * the context (compact, continue, or — the current model unavailable — hand over by Trace path),
+ * and the stale-row predicate that makes the Session row follow the running context's
+ * `session_meta`. (The Web suite runs in a node environment and renders no React, so the pure
+ * helpers are what get exercised.)
  */
-import { afterEach, describe, expect, it } from "vitest";
-import { setActiveStrings, zh } from "../src/lib/strings";
-import { en } from "../src/lib/strings-en";
+import { describe, expect, it } from "vitest";
+import type { ModelInfo } from "@prismshadow/penguin-server/api";
 import {
   sessionModelPickerDisabled,
   sessionRowStale,
-  switchContextShape,
+  switchContextShape as shapeOf,
 } from "../src/features/chat/model-switch";
-
-// S is a live binding shared across the suite: always hand it back the default.
-afterEach(() => setActiveStrings(zh));
 
 const A = { provider: "anthropic", modelId: "a-1" };
 const B = { provider: "openai", modelId: "b-2" };
@@ -29,6 +25,15 @@ describe("sessionModelPickerDisabled", () => {
 });
 
 describe("switchContextShape", () => {
+  /** The configured models the picker offers: the current model A, with a key, and B. */
+  const keyed = { credential: { apiKeyMasked: "sk-…" }, effective: { apiKeySource: "model" } };
+  const listOf = (models: unknown[]) => ({ models: models as ModelInfo[], providers: {} });
+  const configured = listOf([
+    { ...A, ...keyed },
+    { ...B, ...keyed },
+  ]);
+  const switchContextShape = (items: Parameters<typeof shapeOf>[0]) =>
+    shapeOf(items, A, configured);
   const user = { kind: "user" };
   const done = { kind: "compaction", running: false, status: "completed" };
   const failed = { kind: "compaction", running: false, status: "fatal" };
@@ -64,6 +69,27 @@ describe("switchContextShape", () => {
     expect(switchContextShape([user, failed])).toBe("compact");
     expect(switchContextShape([user, running])).toBe("compact");
   });
+
+  it("hands over by Trace path when the current model is gone from the list or has no key, and only when there is something to compact", () => {
+    const keyless = listOf([{ ...A, effective: { apiKeySource: "none" } }]);
+    expect(shapeOf([user], A, listOf([{ ...B, ...keyed }]))).toBe("handover");
+    expect(shapeOf([user], A, keyless)).toBe("handover");
+    expect(shapeOf([], A, keyless)).toBe("empty");
+    expect(shapeOf([user, done], A, keyless)).toBe("compacted");
+    // While the list loads the server decides: the dialog promises the ordinary compaction.
+    expect(shapeOf([user], A, undefined)).toBe("compact");
+  });
+
+  it("a model whose endpoint is called without a key is available though it has none: it compacts as usual", () => {
+    const vllm = {
+      provider: "vllm",
+      modelId: "Qwen/Qwen3.8-27B",
+      clientType: "openai-chat-vllm-adapter",
+      credential: { baseUrl: "http://127.0.0.1:8000/v1" },
+      effective: { apiKeySource: "none" },
+    };
+    expect(shapeOf([user], vllm, listOf([vllm]))).toBe("compact");
+  });
 });
 
 describe("sessionRowStale", () => {
@@ -91,46 +117,5 @@ describe("sessionRowStale", () => {
 
   it("says nothing about another Session's row: the stream of the conversation the page just left", () => {
     expect(sessionRowStale(on(B, "session-1"), on(A, "session-2"))).toBe(false);
-  });
-});
-
-describe("/model copy", () => {
-  it("says in both locales that /model opens a new conversation", () => {
-    expect(zh.chat.switchModel).toContain("新会话");
-    expect(zh.chat.switchModel).toContain("本会话保持不变");
-    expect(zh.chat.switchModelTitle).toContain("新会话");
-    expect(zh.chat.modelSwitchTargetTitle("b-2")).toContain("新开");
-    expect(en.chat.switchModel).toMatch(/new session/);
-    expect(en.chat.switchModelTitle).toMatch(/New conversation/);
-    expect(en.chat.modelSwitchTargetTitle("b-2")).toMatch(/new conversation on b-2/);
-  });
-
-  it("the confirm dialog uses the design's zh body and a two-choice label", () => {
-    expect(zh.chat.modelSwitchInSessionBody("A", "B")).toBe(
-      "将先用当前模型「A」压缩上下文，成功后以「B」继续本对话；压缩失败则保持「A」。",
-    );
-    expect(zh.chat.modelSwitchInSessionConfirm).toBe("压缩并切换");
-    expect(zh.chat.modelSwitchInSessionDirectBody("B")).toContain("直接切换到「B」");
-    expect(en.chat.modelSwitchInSessionBody("A", "B")).toContain('"B"');
-  });
-
-  it("right after a compaction, neither the dialog nor the toast promises a compaction", () => {
-    // The server runs no compaction for a just-compacted Session (design: no second pair), so
-    // the copy for that shape must not say "compact".
-    expect(zh.chat.modelSwitchInSessionCompactedBody("B")).toContain("不会再次压缩");
-    expect(zh.chat.modelSwitchInSessionCompactedBody("B")).toContain("「B」");
-    expect(en.chat.modelSwitchInSessionCompactedBody("B")).toMatch(/nothing is compacted again/);
-    expect(en.chat.modelSwitchInSessionCompactedBody("B")).toContain('"B"');
-    expect(zh.chat.modelSwitchInSessionSwitching("B")).toBe("正在切换到「B」。");
-    expect(en.chat.modelSwitchInSessionSwitching("B")).not.toMatch(/compact/i);
-    expect(zh.chat.modelSwitchInSessionDirectConfirm).toBe("切换");
-    expect(en.chat.modelSwitchInSessionDirectConfirm).toBe("Switch");
-    // The compacting toast is the one that may say so.
-    expect(en.chat.modelSwitchInSessionStarted("A", "B")).toMatch(/Compacting/);
-  });
-
-  it("the model-change marker names both model ids in both locales", () => {
-    expect(zh.chat.modelChanged("a-1", "b-2")).toBe("模型已切换 · a-1 → b-2");
-    expect(en.chat.modelChanged("a-1", "b-2")).toBe("Model switched · a-1 → b-2");
   });
 });

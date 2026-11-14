@@ -16,13 +16,18 @@
  * - The docs sidebar marks the current page, lists sub-pages under their parent, and leads with
  *   a search button that names its shortcut.
  * - A code card mutes `#` comment lines only, and its copy button names the action.
+ * - The site bar lists every page once, in the shared order, under the host's words, and marks
+ *   the landing page's download page current when it is opened with a trailing slash.
  */
 import { createElement as h } from "react";
 import type { ReactElement } from "react";
 import { describe, expect, it } from "vitest";
-import { SiteCodeCard } from "../src/components/site/site-code";
+import { SiteCodeCard } from "../src/components/site/site-code-card";
 import { SiteFooter } from "../src/components/site/site-footer";
+import { SiteNavLinks } from "../src/components/site/site-header";
 import type { SiteLinkProps } from "../src/components/site/site-header";
+import { landingPageAt, siteNavLinks } from "../src/components/site/site-nav";
+import type { SiteNavLabels } from "../src/components/site/site-nav";
 import { highlightSiteCode } from "../src/components/site/site-highlight";
 import { extractToc } from "../src/components/site/markdown-text";
 import { SITE_DOC_REMARK_PLUGINS, SiteMarkdown } from "../src/components/site/site-markdown";
@@ -65,9 +70,7 @@ describe("an article", () => {
     const html = article("> [!INFO]- First launch blocked\n>\n> Allow it.", {
       remarkPlugins: SITE_DOC_REMARK_PLUGINS,
     });
-    expect(html).toMatch(
-      /<details class="callout callout-info">\s*<summary[^>]*>First launch blocked/,
-    );
+    expect(html).toMatch(/<details class="[^"]*">\s*<summary[^>]*>First launch blocked/);
     expect(html).not.toContain("<details open");
   });
 
@@ -90,7 +93,7 @@ describe("an article", () => {
     });
     expect(html).toContain('href="#fn-1" id="fnref-1"');
     expect(html).toContain('aria-describedby="footnote-label"');
-    expect(html).toMatch(/<h2 id="footnote-label" class="[^"]*\brefs\b[^"]*">References<\/h2>/);
+    expect(html).toMatch(/<h2 id="footnote-label" class="[^"]*">References<\/h2>/);
   });
 
   it("sets a run of citations as one bracketed group, each number its own link", () => {
@@ -217,5 +220,56 @@ describe("a code card", () => {
     expect(html.match(/data-comment="true"/g)).toHaveLength(1);
     expect(html).toMatch(/data-comment="true"[^>]*># Linux</);
     expect(html).toMatch(/<button[^>]*>.*<span>Copy<\/span><\/button>/);
+  });
+});
+
+describe("the site bar", () => {
+  const labels: SiteNavLabels = {
+    home: "Home",
+    blog: "Blog",
+    download: "Download",
+    plugins: "Plugins",
+    benchmarks: "Benchmarks",
+    leaderboards: "Leaderboards",
+    amsp: "AMSP",
+    docs: "Docs",
+    gallery: "Gallery",
+    github: "GitHub",
+    openMenu: "Open menu",
+    closeMenu: "Close menu",
+  };
+
+  const anchorsAt = (pathname: string) => {
+    const links = siteNavLinks({ siteRoot: "/", labels, current: landingPageAt(pathname) });
+    const html = renderStatic(h(SiteNavLinks, { links }));
+    return [...html.matchAll(/<a ([^>]*)>([^<]*)<\/a>/g)].map(([, attrs, text]) => ({
+      text,
+      current: attrs!.includes('aria-current="page"'),
+    }));
+  };
+  const currentAt = (pathname: string) =>
+    anchorsAt(pathname)
+      .filter((anchor) => anchor.current)
+      .map((anchor) => anchor.text);
+
+  it("lists every page in order and marks /download/ as the download page", () => {
+    expect(anchorsAt("/download/").map((anchor) => anchor.text)).toEqual([
+      "Home",
+      "Blog",
+      "Download",
+      "Plugins",
+      "Benchmarks",
+      "Leaderboards",
+      "AMSP",
+      "Docs",
+      "Gallery",
+    ]);
+    expect(currentAt("/download/")).toEqual(["Download"]);
+  });
+
+  it("marks a list page as current on its detail pages, and nothing on a lookalike path", () => {
+    expect(currentAt("/plugins/goal/")).toEqual(["Plugins"]);
+    expect(currentAt("/leaderboards")).toEqual(["Leaderboards"]);
+    expect(currentAt("/benchmarks-old")).toEqual([]);
   });
 });

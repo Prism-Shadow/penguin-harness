@@ -17,6 +17,13 @@ inputs:
       sources, such as the Prettier gate, needs no dist at all.
     required: false
     default: ""
+  alongside:
+    description: >-
+      A command run in the background while the build runs, which the step then waits for: a
+      download that waits on the network while the build waits on the CPU (the gallery job's
+      Chromium). Its output is printed only when it fails, and the step fails with it.
+    required: false
+    default: ""
 
 runs:
   using: composite
@@ -76,16 +83,26 @@ runs:
       shell: bash
       env:
         BUILD_FILTERS: ${{ inputs.build }}
+        ALONGSIDE: ${{ inputs.alongside }}
       run: |
+        if [ -n "$ALONGSIDE" ]; then
+          echo "Alongside the build: $ALONGSIDE"
+          bash -c "$ALONGSIDE" >"$RUNNER_TEMP/alongside.log" 2>&1 &
+          alongside=$!
+        fi
         if [ -z "$BUILD_FILTERS" ]; then
           echo "No build requested for this job."
-          exit 0
+        else
+          args=""
+          IFS=','
+          for f in $BUILD_FILTERS; do
+            args="$args --filter $f"
+          done
+          unset IFS
+          echo "pnpm$args --if-present build"
+          pnpm --config.verify-deps-before-run=false $args --if-present build
         fi
-        args=""
-        IFS=','
-        for f in $BUILD_FILTERS; do
-          args="$args --filter $f"
-        done
-        unset IFS
-        echo "pnpm$args --if-present build"
-        pnpm --config.verify-deps-before-run=false $args --if-present build
+        if [ -n "$ALONGSIDE" ]; then
+          wait "$alongside" || { cat "$RUNNER_TEMP/alongside.log"; exit 1; }
+          echo "Alongside the build: done"
+        fi

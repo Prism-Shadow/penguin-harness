@@ -11,13 +11,19 @@
  *   events that arrived.
  * - Given a caller that stops after the first event, the body is cancelled: the connection
  *   closes rather than being read on.
+ * - Given an abort between events in one chunk, no buffered event is delivered afterwards.
+ * - Given an abort after an event flushed at EOF, the next read rejects instead of completing.
+ * - Given an abort before a buffered [DONE], the HTTP transport rejects with the abort reason
+ *   rather than reporting a successful end.
  * - Given an AMSP body, an unnamed event is a record with its id, `ping` is a control frame,
  *   `[DONE]` is the end, any other name is a host's own event, and an unnamed event that is not
  *   an envelope breaks the stream.
  */
 import { describe, expect, it } from "vitest";
-import { AmspStreamError, readAmsp, readSse } from "../src/index.js";
+import { AmspStreamError, HttpTransport, readAmsp, readSse } from "../src/index.js";
 import type { AmspFrame, SseEvent } from "../src/index.js";
+import { BASE_URL, createFetchFake, DONE, frame, never } from "./helpers/fetch-fake.js";
+import { taskBegin } from "./helpers/streams.js";
 
 const encoder = new TextEncoder();
 
@@ -92,6 +98,33 @@ describe("readSse", () => {
     expect(data(await read(body('data: {"a":1}\n\ndata: {"b":')))).toEqual(['{"a":1}']);
   });
 
+  it("rejects an abort between events without delivering the rest of the chunk", async () => {
+    const control = new AbortController();
+    const reason = new Error("Stopped by the caller");
+    const events = readSse(body("data: first\n\ndata: second\n\n"), control.signal);
+    try {
+      expect((await events.next()).value?.data).toBe("first");
+      control.abort(reason);
+      await expect(events.next()).rejects.toBe(reason);
+    } finally {
+      await events.return(undefined);
+    }
+  });
+
+  it("rejects an abort after an event flushed at EOF instead of completing", async () => {
+    const control = new AbortController();
+    const reason = new Error("Stopped at EOF");
+    // The last CR is held until EOF, in case an LF follows in another chunk.
+    const events = readSse(body("data: final\r\r"), control.signal);
+    try {
+      expect((await events.next()).value?.data).toBe("final");
+      control.abort(reason);
+      await expect(events.next()).rejects.toBe(reason);
+    } finally {
+      await events.return(undefined);
+    }
+  });
+
   it("rejects with the body's error after the events that arrived", async () => {
     const dropped = new TypeError("terminated");
     let sent = false;
@@ -127,6 +160,31 @@ describe("readSse", () => {
       break;
     }
     expect(cancelled).toBe(true);
+  });
+});
+
+describe("HTTP stream cancellation", () => {
+  it("rejects an abort before a buffered DONE instead of reporting success", async () => {
+    const fake = createFetchFake();
+    const record = taskBegin();
+    const served = fake.stream("GET", "/stream", [frame(record, "e-1") + DONE, never()]);
+    const transport = new HttpTransport({ baseUrl: BASE_URL, fetch: fake.fetch });
+    const control = new AbortController();
+    const reason = new Error("Stopped before DONE");
+    const seen: unknown[] = [];
+
+    await expect(
+      transport.stream("/stream", {
+        signal: control.signal,
+        onRecord: (_id, value) => {
+          seen.push(value);
+          control.abort(reason);
+        },
+        onControl: () => {},
+      }),
+    ).rejects.toBe(reason);
+    expect(seen).toEqual([record]);
+    expect(served.closed).toBe(true);
   });
 });
 

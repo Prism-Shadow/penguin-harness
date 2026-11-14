@@ -29,8 +29,8 @@
  *   the reason.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createElement, isValidElement } from "react";
-import type { ReactElement, ReactNode } from "react";
+import { createElement, isValidElement, type ReactElement, type ReactNode } from "react";
+
 import { renderToStaticMarkup } from "react-dom/server";
 import type {
   AgentApiKeyInfo,
@@ -46,12 +46,14 @@ import {
   OneTimeKey,
   agentApiBaseUrl,
   agentApiExamples,
+  type ApiTabViewProps,
 } from "../src/features/agents/api-tab";
-import type { ApiTabViewProps } from "../src/features/agents/api-tab";
+
 import { AgentApiMark } from "../src/features/agents/agents-page";
 import { AgentApiServerOffConfirm } from "../src/features/settings/agent-api-section";
 import { S } from "../src/lib/strings";
 import { apiError, json, stubFetch } from "./helpers/fetch";
+import { readMarkup, seenText } from "./helpers/markup";
 
 const toasts = vi.hoisted(() => [] as string[]);
 
@@ -359,7 +361,9 @@ describe("the Agents list", () => {
   it("marks an Agent whose API is on with the plug, named for screen readers, and no other", () => {
     const on = renderToStaticMarkup(createElement(AgentApiMark, { enabled: true }));
     expect(on).toContain(`data-tooltip="${S.agent.apiOn}"`);
-    expect(on).toContain(`<span class="sr-only">${S.agent.apiOn}</span>`);
+    // The name is in the markup for a screen reader, and none of it is words on screen.
+    expect(on).toContain(`>${S.agent.apiOn}<`);
+    expect(seenText(readMarkup(on))).toBe("");
     expect(renderToStaticMarkup(createElement(AgentApiMark, { enabled: false }))).toBe("");
   });
 });

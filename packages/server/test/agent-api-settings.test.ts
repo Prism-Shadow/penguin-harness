@@ -24,13 +24,13 @@
  *   GET/PUT /api/admin/settings; a non-admin cannot change it.
  * - Given the admin's switch off, a Project owner who cannot read the admin settings learns it
  *   from the API tab's settings, on a read and on a write alike.
- * - Given the local API token, directly or exchanged for a Remote cookie: it reads an Agent's
- *   settings and keys, but turning the API on, creating a key, deleting one and Try it are each
- *   403 `human_required` and change nothing, run nothing and create no Session; the owner's
- *   sign-in then does each of them.
- * - Given either form of that credential on the admin settings: it changes every setting but
- *   `agentApiEnabled`; a body carrying that is 403 `human_required` alone, and none of its
- *   other fields is written.
+ * - Given the local API token as a Bearer: it reads an Agent's settings and keys, but turning
+ *   the API on, creating a key, deleting one and Try it are each 403 `human_required` and change
+ *   nothing, run nothing and create no Session; the owner's sign-in then does each of them.
+ * - Given that Bearer on the admin settings: it changes every setting but `agentApiEnabled`; a
+ *   body carrying that is 403 `human_required` alone, and none of its other fields is written.
+ * - Given a Penguin Remote session exchanged from that token: it is the person's sign-in, and
+ *   turns an Agent's API on and the admin switch off.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type {
@@ -263,7 +263,7 @@ describe("Agent API settings", () => {
     const { secret } = (await (
       await owner.post(`${tab("short_lived")}/keys`, { name: "k" })
     ).json()) as AgentApiKeyCreateResponse;
-    expect((await owner.delete(`/api/projects/${projectId}/agents/short_lived`)).status).toBe(204);
+    expect((await owner.delete(`/api/projects/${projectId}/agents/short_lived`)).status).toBe(202);
 
     await owner.post(`/api/projects/${projectId}/agents`, { agentId: "short_lived" });
     expect(await read(owner, "short_lived")).toEqual({
@@ -320,104 +320,108 @@ describe("Agent API settings", () => {
     expect(((await res.json()) as { error: { code: string } }).error.code).toBe("human_required");
   };
 
-  it.each(["bearer", "remote"] as const)(
-    "the %s credential reads an Agent's API but cannot change it or try it; the owner's sign-in can",
-    async (credential) => {
-      // The admin's own Project: the token authenticates as the admin, who owns it.
-      const mine = "/api/projects/default_project/agents/default_agent/api";
-      const localToken = t.deps.authService.localApiToken()!;
-      const token =
-        credential === "bearer"
-          ? tokenClient(t.app, localToken)
-          : apiClient(t.app, await remoteSessionCookie(t.app, localToken));
-      const readByToken = async () => {
-        const res = await token.get(mine);
-        expect(res.status).toBe(200);
-        return ((await res.json()) as AgentApiResponse).api;
-      };
+  it("the local API token reads an Agent's API but cannot change it or try it; the owner's sign-in can", async () => {
+    // The admin's own Project: the token authenticates as the admin, who owns it.
+    const mine = "/api/projects/default_project/agents/default_agent/api";
+    const token = tokenClient(t.app, t.deps.authService.localApiToken()!);
+    const readByToken = async () => {
+      const res = await token.get(mine);
+      expect(res.status).toBe(200);
+      return ((await res.json()) as AgentApiResponse).api;
+    };
 
-      expect((await admin.put(mine, { enabled: false, open: false })).status).toBe(200);
+    expect((await admin.put(mine, { enabled: false, open: false })).status).toBe(200);
+    await humanRequired(
+      await token.put(mine, { enabled: true, open: true, approvalMode: "read-only" }),
+    );
+    expect(await readByToken()).toMatchObject({ enabled: false, open: false });
+    expect((await admin.put(mine, { enabled: true })).status).toBe(200);
+    expect(await readByToken()).toMatchObject({ enabled: true, open: false });
+
+    await humanRequired(await token.post(`${mine}/keys`, { name: "carried out" }));
+    expect((await readByToken()).keys).toEqual([]);
+    const created = await admin.post(`${mine}/keys`, { name: "ci" });
+    expect(created.status).toBe(201);
+    const { key } = (await created.json()) as AgentApiKeyCreateResponse;
+    expect((await readByToken()).keys).toEqual([key]);
+
+    await humanRequired(await token.delete(`${mine}/keys/${key.keyId}`));
+    expect((await readByToken()).keys).toEqual([key]);
+    expect((await admin.delete(`${mine}/keys/${key.keyId}`)).status).toBe(204);
+    expect((await readByToken()).keys).toEqual([]);
+
+    // Try it: refused before anything runs or is created, on a new conversation and an old one.
+    let runs = 0;
+    const sessionId = uniqueSessionId();
+    adoptSession(
+      t.deps,
+      fakeSession(sessionId, {
+        async *run() {
+          runs += 1;
+        },
+      }),
+      { projectId: "default_project", agentId: "default_agent", client: "api" },
+    );
+    const sessions = t.deps.sessionsRepo.listByAgent("default_project", "default_agent").length;
+    await humanRequired(await token.post(`${mine}/try`, { input: "hi" }));
+    await humanRequired(await token.post(`${mine}/try`, { session_id: sessionId, input: "hi" }));
+    expect(runs).toBe(0);
+    expect(t.deps.sessionsRepo.listByAgent("default_project", "default_agent")).toHaveLength(
+      sessions,
+    );
+    const tried = await admin.post(`${mine}/try`, { session_id: sessionId, input: "hi" });
+    expect(tried.status).toBe(200);
+    await tried.text();
+    expect(runs).toBe(1);
+  });
+
+  it("the local API token changes every admin setting but agentApiEnabled, which is refused with the rest of its body", async () => {
+    const token = tokenClient(t.app, t.deps.authService.localApiToken()!);
+    const read = async () =>
+      ((await (await token.get("/api/admin/settings")).json()) as ServerSettingsResponse).settings;
+    const before = await read();
+    const flipped = {
+      proxyForAgent: !before.proxyForAgent,
+      browserExtensionsEnabled: !before.browserExtensionsEnabled,
+    };
+    try {
+      expect((await token.put("/api/admin/settings", flipped)).status).toBe(200);
+      expect(await read()).toEqual({ ...before, ...flipped });
+
       await humanRequired(
-        await token.put(mine, { enabled: true, open: true, approvalMode: "read-only" }),
-      );
-      expect(await readByToken()).toMatchObject({ enabled: false, open: false });
-      expect((await admin.put(mine, { enabled: true })).status).toBe(200);
-      expect(await readByToken()).toMatchObject({ enabled: true, open: false });
-
-      await humanRequired(await token.post(`${mine}/keys`, { name: "carried out" }));
-      expect((await readByToken()).keys).toEqual([]);
-      const created = await admin.post(`${mine}/keys`, { name: "ci" });
-      expect(created.status).toBe(201);
-      const { key } = (await created.json()) as AgentApiKeyCreateResponse;
-      expect((await readByToken()).keys).toEqual([key]);
-
-      await humanRequired(await token.delete(`${mine}/keys/${key.keyId}`));
-      expect((await readByToken()).keys).toEqual([key]);
-      expect((await admin.delete(`${mine}/keys/${key.keyId}`)).status).toBe(204);
-      expect((await readByToken()).keys).toEqual([]);
-
-      // Try it: refused before anything runs or is created, on a new conversation and an old one.
-      let runs = 0;
-      const sessionId = uniqueSessionId();
-      adoptSession(
-        t.deps,
-        fakeSession(sessionId, {
-          async *run() {
-            runs += 1;
-          },
-        }),
-        { projectId: "default_project", agentId: "default_agent", client: "api" },
-      );
-      const sessions = t.deps.sessionsRepo.listByAgent("default_project", "default_agent").length;
-      await humanRequired(await token.post(`${mine}/try`, { input: "hi" }));
-      await humanRequired(await token.post(`${mine}/try`, { session_id: sessionId, input: "hi" }));
-      expect(runs).toBe(0);
-      expect(t.deps.sessionsRepo.listByAgent("default_project", "default_agent")).toHaveLength(
-        sessions,
-      );
-      const tried = await admin.post(`${mine}/try`, { session_id: sessionId, input: "hi" });
-      expect(tried.status).toBe(200);
-      await tried.text();
-      expect(runs).toBe(1);
-    },
-  );
-
-  it.each(["bearer", "remote"] as const)(
-    "the %s credential changes every admin setting but agentApiEnabled, which is refused with the rest of its body",
-    async (credential) => {
-      const localToken = t.deps.authService.localApiToken()!;
-      const token =
-        credential === "bearer"
-          ? tokenClient(t.app, localToken)
-          : apiClient(t.app, await remoteSessionCookie(t.app, localToken));
-      const read = async () =>
-        ((await (await token.get("/api/admin/settings")).json()) as ServerSettingsResponse)
-          .settings;
-      const before = await read();
-      const flipped = {
-        proxyForAgent: !before.proxyForAgent,
-        browserExtensionsEnabled: !before.browserExtensionsEnabled,
-      };
-      try {
-        expect((await token.put("/api/admin/settings", flipped)).status).toBe(200);
-        expect(await read()).toEqual({ ...before, ...flipped });
-
-        await humanRequired(
-          await token.put("/api/admin/settings", {
-            agentApiEnabled: !before.agentApiEnabled,
-            proxyForAgent: before.proxyForAgent,
-            browserExtensionsEnabled: before.browserExtensionsEnabled,
-          }),
-        );
-        expect(await read()).toEqual({ ...before, ...flipped });
-      } finally {
         await token.put("/api/admin/settings", {
+          agentApiEnabled: !before.agentApiEnabled,
           proxyForAgent: before.proxyForAgent,
           browserExtensionsEnabled: before.browserExtensionsEnabled,
-        });
-      }
-    },
-  );
+        }),
+      );
+      expect(await read()).toEqual({ ...before, ...flipped });
+    } finally {
+      await token.put("/api/admin/settings", {
+        proxyForAgent: before.proxyForAgent,
+        browserExtensionsEnabled: before.browserExtensionsEnabled,
+      });
+    }
+  });
+
+  it("a Remote session is the person's sign-in: it turns an Agent's API on and the admin switch off", async () => {
+    const mine = "/api/projects/default_project/agents/default_agent/api";
+    const remote = apiClient(
+      t.app,
+      await remoteSessionCookie(t.app, t.deps.authService.localApiToken()!),
+    );
+    expect((await admin.put(mine, { enabled: false })).status).toBe(200);
+    const enabled = await remote.put(mine, { enabled: true });
+    expect(enabled.status).toBe(200);
+    expect(((await enabled.json()) as AgentApiResponse).api.enabled).toBe(true);
+    try {
+      const off = await remote.put("/api/admin/settings", { agentApiEnabled: false });
+      expect(off.status).toBe(200);
+      expect(((await off.json()) as ServerSettingsResponse).settings.agentApiEnabled).toBe(false);
+    } finally {
+      await admin.put("/api/admin/settings", { agentApiEnabled: true });
+    }
+  });
 
   it("the admin switch round-trips through GET/PUT /api/admin/settings", async () => {
     const get = async () =>

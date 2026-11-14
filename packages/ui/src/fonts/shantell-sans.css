@@ -1,0 +1,35 @@
+/**
+ * Shantell Sans, Doodle's (`doodle`) chrome and reading face: variable `wght` 300–800, latin +
+ * latin-ext — @fontsource-variable/shantell-sans, OFL-1.1. A marker hand drawn for legibility,
+ * which holds up at the 13–14px rungs where the other hand faces tried crowd or sprawl.
+ *
+ * Declared here with the app's shared faces rather than in the pack's `fonts.css`: a pack's
+ * `fonts.css` names only the pack's own `fonts/*.woff2`, and these files are the font package's,
+ * as Console's Latin faces are. Only Doodle's tokens name the family, so no other theme
+ * downloads it. The `url()`s are relative to this file on purpose — see `index.css`.
+ */
+
+@font-face {
+  font-family: "Shantell Sans Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 300 800;
+  src: url("../../node_modules/@fontsource-variable/shantell-sans/files/shantell-sans-latin-ext-wght-normal.woff2")
+    format("woff2-variations");
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+
+@font-face {
+  font-family: "Shantell Sans Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 300 800;
+  src: url("../../node_modules/@fontsource-variable/shantell-sans/files/shantell-sans-latin-wght-normal.woff2")
+    format("woff2-variations");
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}

@@ -6,12 +6,17 @@
  * chart series as bars; the code and diff colours on a hunk. Every value, with its contrast
  * ratios, is in the tokens drawer.
  */
-import { ACCENT_PRESETS, TONES } from "@prismshadow/penguin-ui";
+import { ACCENT_PRESETS, INITIAL_THEME_ID, TONES } from "@prismshadow/penguin-ui";
 import type { ThemeId, ThemeModeName, ToneName } from "@prismshadow/penguin-ui";
 import type { CSSProperties } from "react";
-import geekCss from "../../../ui/src/themes/geek.css?raw";
-import githubCss from "../../../ui/src/themes/github.css?raw";
-import modernCss from "../../../ui/src/themes/modern.css?raw";
+import doodleAccents from "../../../ui/src/themes/doodle/accents.css?raw";
+import doodleTokens from "../../../ui/src/themes/doodle/tokens.css?raw";
+import geekAccents from "../../../ui/src/themes/geek/accents.css?raw";
+import geekTokens from "../../../ui/src/themes/geek/tokens.css?raw";
+import githubAccents from "../../../ui/src/themes/github/accents.css?raw";
+import githubTokens from "../../../ui/src/themes/github/tokens.css?raw";
+import modernAccents from "../../../ui/src/themes/modern/accents.css?raw";
+import modernTokens from "../../../ui/src/themes/modern/tokens.css?raw";
 import { useGallery } from "../state";
 import { BoardGroup } from "./shared";
 
@@ -19,12 +24,20 @@ const SURFACES = ["--ui-canvas", "--ui-surface", "--ui-surface-muted", "--ui-ins
 const INKS = ["--ui-fg", "--ui-fg-muted", "--ui-fg-subtle"] as const;
 const LINES = ["--ui-line", "--ui-line-muted", "--ui-line-emphasis"] as const;
 
-/** Each theme file's source: its presets are read from it, the way the contract test reads them. */
-const THEME_CSS: Readonly<Record<ThemeId, string>> = {
-  github: githubCss,
-  modern: modernCss,
-  geek: geekCss,
+/**
+ * Each pack's token rules and accent presets, as source: its presets are read from them, the way
+ * the contract test reads them.
+ */
+const THEME_CSS: Readonly<Record<ThemeId, { tokens: string; accents: string }>> = {
+  github: { tokens: githubTokens, accents: githubAccents },
+  modern: { tokens: modernTokens, accents: modernAccents },
+  geek: { tokens: geekTokens, accents: geekAccents },
+  doodle: { tokens: doodleTokens, accents: doodleAccents },
 };
+
+/** A pack's root selector: the base's is the bare root, every other pack's names its id. */
+const rootSelector = (theme: ThemeId) =>
+  theme === INITIAL_THEME_ID ? ":root" : String.raw`:root\[data-theme="${theme}"\]`;
 
 /**
  * The accent tokens a preset paints under a theme in a mode, as inline custom properties. First
@@ -46,13 +59,13 @@ function presetStyle(theme: ThemeId, preset: string, mode: ThemeModeName): CSSPr
   };
   const tails = mode === "dark" ? ["", String.raw`\.dark`] : [""];
   for (const tail of tails) {
-    // The theme's base rule, then its dark rule: each closes on its own line inside the layer.
-    const rule = new RegExp(String.raw`:root\[data-theme="${theme}"\]${tail}\s*\{([\s\S]*?)\n  \}`);
-    take(rule.exec(css)?.[1] ?? "", true);
+    // The theme's base rule, then its dark rule: each starts and closes a line of its own.
+    const rule = new RegExp(String.raw`(?:^|\n)${rootSelector(theme)}${tail}\s*\{([\s\S]*?)\n\}`);
+    take(rule.exec(css.tokens)?.[1] ?? "", true);
   }
   for (const tail of tails) {
     const rule = new RegExp(String.raw`\[data-accent="${preset}"\]${tail}\s*\{([^}]*)\}`);
-    take(rule.exec(css)?.[1] ?? "", false);
+    take(rule.exec(css.accents)?.[1] ?? "", false);
   }
   return style as CSSProperties;
 }
