@@ -44,9 +44,14 @@ function referableImage(url: string): { mime: string; dataStart: number } | null
 }
 
 /** The route URL of one image slot of the record at `at` (`slot` = index into a tool output's `images`). */
-export function traceImageUrl(sessionId: string, at: TracePosition, slot?: number): string {
+export function traceImageUrl(
+  sessionId: string,
+  at: TracePosition,
+  slot?: number,
+  base: string = SESSION_ROUTES_BASE,
+): string {
   const query = `file=${at.fileIndex}&ordinal=${at.ordinal}${slot !== undefined ? `&i=${slot}` : ""}`;
-  return `/api/sessions/${encodeURIComponent(sessionId)}/trace-image?${query}`;
+  return `${base}/${encodeURIComponent(sessionId)}/trace-image?${query}`;
 }
 
 /**
@@ -55,7 +60,11 @@ export function traceImageUrl(sessionId: string, at: TracePosition, slot?: numbe
  * messages carry no position and stay inline. The input is never mutated; a message with
  * nothing to replace is returned as is.
  */
-export function withImagesByReference(sessionId: string, msg: HistoryMessage): HistoryMessage {
+export function withImagesByReference(
+  sessionId: string,
+  msg: HistoryMessage,
+  base: string = SESSION_ROUTES_BASE,
+): HistoryMessage {
   const at = msg.tracePosition;
   if (at === undefined || msg.type !== "model_msg") return msg;
   const kind = (msg.payload as { type?: string }).type;
@@ -64,7 +73,10 @@ export function withImagesByReference(sessionId: string, msg: HistoryMessage): H
     if (typeof payload.image_url !== "string" || referableImage(payload.image_url) === null) {
       return msg;
     }
-    return { ...msg, payload: { ...payload, image_url: traceImageUrl(sessionId, at) } };
+    return {
+      ...msg,
+      payload: { ...payload, image_url: traceImageUrl(sessionId, at, undefined, base) },
+    };
   }
   if (kind === "tool_call_output") {
     const payload = msg.payload as ToolCallOutputPayload;
@@ -73,7 +85,7 @@ export function withImagesByReference(sessionId: string, msg: HistoryMessage): H
     const images = payload.images.map((image, k) => {
       if (typeof image !== "string" || referableImage(image) === null) return image;
       replaced = true;
-      return traceImageUrl(sessionId, at, k);
+      return traceImageUrl(sessionId, at, k, base);
     });
     if (replaced) return { ...msg, payload: { ...payload, images } };
   }

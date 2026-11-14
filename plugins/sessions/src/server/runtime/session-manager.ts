@@ -85,7 +85,7 @@ import type { Approvals, PendingApproval } from "./approvals.js";
 import type { ChannelHub } from "@prismshadow/penguin-server/internal";
 import type { ErrorSink } from "@prismshadow/penguin-server/internal";
 import { AgentStateStore } from "@prismshadow/penguin-server/internal";
-import type { LiveTail } from "./live-tail.js";
+import type { LiveRun, LiveTail } from "./live-tail.js";
 import { unrunSource } from "./session-sources.js";
 import { StreamErrorWatcher } from "@prismshadow/penguin-server/internal";
 import type { TitleNotifier } from "./title-generator.js";
@@ -903,6 +903,11 @@ export class SessionManager {
    */
   liveFragments(sessionId: string): OmniMessage[] {
     return this.liveTail.fragments(sessionId);
+  }
+
+  /** The current run's log; null when no run is under way (see live-tail.ts). */
+  liveRun(sessionId: string): LiveRun | null {
+    return this.liveTail.run(sessionId);
   }
 
   /**
