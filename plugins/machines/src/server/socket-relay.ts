@@ -25,8 +25,8 @@
  * nor fails in time is torn down, so one stuck handshake can never hold every later stream to
  * that machine behind it.
  */
-import { formatSseEvent } from "../socket/sse-text.js";
-import type { StreamAnswer } from "../socket/stream-answer.js";
+import { formatSseEvent } from "@prismshadow/penguin-server/internal";;
+import type { StreamAnswer } from "@prismshadow/penguin-server/internal";;
 import {
   MachineEventHub,
   STREAM_OPEN_TIMEOUT_MS,

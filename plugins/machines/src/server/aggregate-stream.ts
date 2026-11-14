@@ -14,8 +14,8 @@
  * attached as the hub's holder, which dials it again after a failure (event-hub.ts, `Hold`).
  */
 import { HEARTBEAT_MS } from "../http/sse.js";
-import { formatSseEvent } from "../socket/sse-text.js";
-import type { StreamAnswer } from "../socket/stream-answer.js";
+import { formatSseEvent } from "@prismshadow/penguin-server/internal";;
+import type { StreamAnswer } from "@prismshadow/penguin-server/internal";;
 import { SUBSCRIBER_HIGH_WATER_BYTES } from "./event-hub.js";
 import type { MachineEventHub } from "./event-hub.js";
 import type { MachineSocketTarget } from "./machine-sockets.js";

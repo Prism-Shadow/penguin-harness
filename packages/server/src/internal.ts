@@ -184,6 +184,12 @@ export * from "./services/platform-auth-service.js";
 export * from "./services/history-stream.js";
 export * from "./services/history-wire.js";
 export * from "./socket/line-frames.js";
+export * from "./socket/compression.js";
+export * from "./socket/frames.js";
+export * from "./socket/ref.js";
+export * from "./socket/serve.js";
+export * from "./socket/sse-text.js";
+export * from "./socket/stream-answer.js";
 export type { UserDraftsStore, BackgroundImageStore } from "./mechanisms/account-data.js";
 
 export type { AppEnv } from "./auth/middleware.js";
