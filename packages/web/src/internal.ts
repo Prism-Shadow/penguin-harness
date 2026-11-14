@@ -9,6 +9,7 @@
 export * from "./api/client";
 export * from "./api/session-probe";
 export * from "./api/endpoints";
+export * from "./api/socket";
 export * from "./components/ui/avatar-crop-dialog";
 export * from "./components/ui/avatar-picker";
 export * from "./components/account/version-stamp";
