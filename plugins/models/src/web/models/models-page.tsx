@@ -130,7 +130,7 @@ import {
   useGuardedClose,
 } from "@prismshadow/penguin-ui";
 
-import { AiCreateModal, AiCreateButtons } from "../ai-create";
+import { AiCreateModal, AiCreateButtons } from "@penguinharness/plugin-sessions/web";
 import {
   MODEL_PROVIDERS,
   PENGUIN_GO_PROVIDER_ID,
