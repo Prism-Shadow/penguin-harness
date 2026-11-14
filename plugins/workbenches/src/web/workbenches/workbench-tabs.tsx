@@ -39,7 +39,7 @@ import {
 import { isSafeMode, useSafeMode } from "@prismshadow/penguin-web/internal";
 import { useLocale } from "@prismshadow/penguin-web/internal";
 import { useTheme } from "@prismshadow/penguin-web/internal";
-import { localizedText } from "../chat";
+import { localizedText } from "@prismshadow/penguin-web/internal";
 
 /** The Agent's workbench tabs, kept fresh by the server's `workbench_updated` events. */
 export function useWorkbenchTabs(
