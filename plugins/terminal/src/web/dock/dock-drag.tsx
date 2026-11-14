@@ -16,7 +16,8 @@
 import { createPortal } from "react-dom";
 import type { CSSProperties } from "react";
 import { panelWidth } from "./use-panel-width";
-import { DOCK_MIN_HEIGHT_PX, DOCK_RATIO_MAX, bottomRatio, type DockPosition } from "./dock-state";
+import { DOCK_RATIO_MAX, bottomRatio, type DockPosition } from "./dock-state";
+import { DOCK_MIN_HEIGHT_PX } from "./bottom-dock-size";
 
 /** Fraction of the host's width/height that counts as an edge band for direct drops. */
 const EDGE_BAND = 0.45;
