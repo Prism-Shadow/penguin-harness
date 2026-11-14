@@ -1,5 +1,5 @@
 import { scoped } from "./project-scope";
-import { adoptBrowserSession } from "@prismshadow/penguin-web/internal";
+import { adoptBrowserSession } from "@penguinharness/plugin-browser/web";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SessionInfo, SessionStatus } from "@prismshadow/penguin-server/api";
 import { toastError, toastSuccess } from "@prismshadow/penguin-ui";
