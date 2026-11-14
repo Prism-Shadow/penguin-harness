@@ -70,7 +70,7 @@ import {
   publishMachineAgentsChanged,
   readMachineAgents,
   useAgentsOn,
-} from "./machine-agent-lists.js";
+} from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
 import { toastApiError } from "@prismshadow/penguin-web/internal";
 import { WORKBENCH_UPDATED_EVENT } from "@penguinharness/plugin-workbenches/web";
