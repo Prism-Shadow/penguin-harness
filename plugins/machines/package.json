@@ -20,6 +20,7 @@
     "react-dom": "^19.1.0",
     "react-router": "^8.3.0",
     "tar": "^7.5.21",
+    "ws": "^8.18.3",
     "zustand": "^5.0.15"
   },
   "devDependencies": {
