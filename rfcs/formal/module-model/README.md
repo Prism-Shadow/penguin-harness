@@ -10,11 +10,11 @@ Lean's standard library and has no third-party dependencies.
 
 The specifications are [Module](../../PRFC-0001-module.md),
 [Module Pass](../../PRFC-0025-module-pass.md), [Plugin](../../PRFC-0003-plugin.md),
-[HMR](../../PRFC-0002-hmr.md), and [Agent State](../../PRFC-0015-agent-state.md).
-They define the complete mechanism, including authoring forms, signature projection,
-resolution and runtime assembly. This package abstracts its declaration operations;
-it does not redefine the mechanism as only a list. Every model file cites its governing
-RFC sections in a comment. The [paper](../docs/module.typ) explains the abstraction,
+and [HMR](../../PRFC-0002-hmr.md). This package abstracts declaration operations,
+Plugin replay, and the local update protocol. The RFCs also cover authoring forms,
+signature projection, resolution, and runtime assembly beyond these abstractions.
+Every model file cites the relevant RFC sections in a comment.
+The [paper](../docs/module.typ) explains the abstraction,
 theorems and remaining obligations; [build instructions](../README.md) cover both tools.
 
 ## Concepts
@@ -27,6 +27,11 @@ theorems and remaining obligations; [build instructions](../README.md) cover bot
 | Plugin | A name associating declarations with a pass. A fixed catalog defines precedence and revisions; enabled names select its members. |
 | Replay machine | Scratch declarations, pending instructions, and accumulated deferred rules. Every retry starts from the retained source selection. |
 | HMR generation | A plan and its immutable code roots. Phase images, running Tasks, and resource references determine which artifacts must remain stored. |
+
+The HMR state records only protocol phases, generation references, resource roots,
+and stored artifacts. A running task is represented by its generation reference;
+the parked snapshot is an opaque token. Application state fields, task execution,
+and state migration have no semantics in this model.
 
 A declaration is the entry in a Module, not another lifecycle object. A Component is
 a declaration whose code creates a component. Names determine scopes. A slot can be

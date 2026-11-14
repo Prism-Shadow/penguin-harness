@@ -2,7 +2,7 @@
 
 // Governing specifications: ../../PRFC-0001-module.md,
 // ../../PRFC-0003-plugin.md and ../../PRFC-0025-module-pass.md, revision v2.3.0;
-// runtime obligations also refer to PRFC-0002-hmr and PRFC-0015-agent-state.
+// the local update protocol also refers to PRFC-0002-hmr.
 // Third-party acmart port: https://github.com/fzaiser/faithful-acmart/tree/v0.2.0
 // The acmsmall settings follow POPL/PACMPL; this is a design draft.
 #show: acmart.with(
@@ -15,9 +15,9 @@
   authors-addresses: none,
   doi: none,
   isbn: none,
-  title: "A Modular System with Checked Hot Updates",
+  title: "A Modular System with Hot Updates and Runtime Checking",
   subtitle: "Declarations, Operators, and Replay in PenguinHarness",
-  short-title: "A Modular System with Checked Hot Updates",
+  short-title: "Hot Updates and Runtime Checking",
   authors: (),
   abstract: [
     PenguinHarness assembles components from declarations, operators, dependency
@@ -52,7 +52,7 @@ recipes, scoped declarations, operators, and plugin contributions. Its Module
 mechanism also includes signature projection, dependency resolution, verification,
 and runtime handover. The governing specifications are the Module, Plugin, and
 Module Pass RFCs #cite(<rfc-module>, <rfc-plugin>, <rfc-pass>).
-Checked hot updates combine these runtime admission checks with the lifecycle
+The system combines runtime admission checks with its hot-update lifecycle
 protocol; behavioral compatibility tests are a proposed extension discussed in
 @runtime-verification.
 
@@ -443,16 +443,16 @@ artifacts independently of the build equation.
 
 == R5: generations, handover, and recovery <hmr-semantics>
 
-// PRFC-0002: local lifecycle; PRFC-0003: generation changes;
-// PRFC-0015: handoff, current pointer, and dependencies after disposal.
+// PRFC-0002: local lifecycle; PRFC-0003: generation changes.
 A generation $gamma=⟨ i;M;U ⟩$ identifies a compiled plan and its code roots $U$.
 Artifact identities include revisions: replacing bytes at the same pathname is
 not preservation of the old artifact. A fixed graph $G$ maps each artifact to its
 direct code dependencies. Write $sf("reach")_G (U)$ for roots $U$ together with
 all dependencies reachable from them. This graph concerns code retention; it is
 distinct from the declaration dependency graph used for admission.
-The lifecycle and Task obligations follow the HMR and Agent State specifications
-#cite(<rfc-hmr>, <rfc-agent-state>).
+The local update protocol follows the Module/Plugin lifecycle boundaries
+#cite(<rfc-plugin>, <rfc-hmr>). Tasks enter this abstraction only through the code
+references they retain.
 
 A protocol state is $H=⟨ phi;J;L;A ⟩$: a phase, running Task generations,
 resource-held code roots, and stored artifacts. The phase retains the generations
@@ -824,7 +824,7 @@ counts the finite source contribution groups.
 PenguinHarness already performs runtime type checking at its assembly and update
 boundaries. The implementation compares separately supplied interface snapshots,
 asks TypeScript directional assignment questions, checks the members of live
-capabilities, and compares the closed shapes of shared Agent state. These checks
+capabilities, and compares the closed shapes of shared runtime state. These checks
 operate at their respective boundaries; they do not execute the behavioral
 contract between an interface producer and its consumer.
 

@@ -1,16 +1,16 @@
 # Module formalization
 
-The specifications are [Module](../PRFC-0001-module.md),
-[Plugin](../PRFC-0003-plugin.md), [Module Pass](../PRFC-0025-module-pass.md),
-[HMR](../PRFC-0002-hmr.md), and [Agent State](../PRFC-0015-agent-state.md).
-Formal definitions and the paper refer back to their sections. The RFCs define the
-mechanism independently of the proof language and proof status.
+This package formalizes declaration operations, Pass evaluation, Plugin replay,
+and a local Module/Plugin hot-update protocol. The specifications are
+[Module](../PRFC-0001-module.md), [Plugin](../PRFC-0003-plugin.md),
+[Module Pass](../PRFC-0025-module-pass.md), and [HMR](../PRFC-0002-hmr.md).
+Formal definitions and the paper refer back to their relevant sections.
 
 - [Lean package](module-model/README.md): definitions, explicit external assumptions,
   and complete proofs. `Basics.lean` contains the elementary laws;
   `Proofs/Normalization.lean`, `Proofs/Plugin.lean`, and `Proofs/HMR.lean` contain
   the main results.
-- [A Modular System with Checked Hot Updates](docs/module.typ): shared syntax and
+- [A Modular System with Hot Updates and Runtime Checking](docs/module.typ): shared syntax and
   semantics in Chapters 2–3, deferred
   operator normalization, plugin replay, and HMR safety in Chapter 4, with basic
   proofs in the appendix. Section 4.2 compares replay with Cordis 2026, including
@@ -49,9 +49,9 @@ typst compile --root rfcs/formal rfcs/formal/docs/module.typ rfcs/formal/docs/bu
 ```
 
 Generated PDFs and page previews belong in the ignored `docs/build/` directory.
-The proof scope includes an abstract local Module/Plugin update protocol, with
-running Task roots, recovery after boot failure, retained repair state after recovery
-failure, and token-guarded resource cleanup. It excludes package transport and the
-semantics of parked data. No proof of the TypeScript implementation follows from
-either build: source elaboration, callback behavior, actual reference tracking, and
-the implementation's preparation order still require a refinement argument.
+The HMR model tracks generations, retained code, and registration ownership.
+A running task contributes only a generation reference; a parked snapshot is an
+opaque token. Application state and behavior require separate semantics. Package
+transport is outside the protocol. No proof of the TypeScript implementation follows
+from either build: source elaboration, callback behavior, actual reference tracking,
+and the implementation's preparation order still require a refinement argument.

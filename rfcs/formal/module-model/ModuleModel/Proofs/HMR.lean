@@ -2,8 +2,8 @@ import ModuleModel.Basics
 import ModuleModel.HMR
 
 /-!
-Specifications: ../../../../PRFC-0002-hmr.md, ../../../../PRFC-0003-plugin.md,
-../../../../PRFC-0015-agent-state.md. Paper Section 4.3.
+Specifications: ../../../../PRFC-0002-hmr.md and ../../../../PRFC-0003-plugin.md.
+Paper Section 4.3.
 
 Safety is derived for all reachable protocol states from local transition rules.
 No rule assumes Safe of the destination. New artifacts must carry their dependencies;

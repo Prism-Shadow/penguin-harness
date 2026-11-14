@@ -2,14 +2,15 @@ import ModuleModel.Module
 
 /-!
 Specifications: ../../../PRFC-0003-plugin.md, "Compile passes and generation changes";
-../../../PRFC-0002-hmr.md, lifecycle and publication; ../../../PRFC-0015-agent-state.md,
-"The handoff", "The current pointer", and "Dependencies after the old tree's dispose".
+../../../PRFC-0002-hmr.md, lifecycle and publication.
 
 A protocol model of one serialized Module/Plugin update. Targets are already present;
 transport is not modeled. Parked documents and runtime callbacks are abstract. A
 snapshot is retained through both boot and recovery failure. Generation code roots,
 task roots and resource-disposer roots remain distinct. The graph describes immutable
 artifact identities and their transitive dependencies, not JavaScript heap semantics.
+Tasks contribute generation references only; application state and task execution
+have no semantics in this protocol.
 
 Prepare checks declarations and bundle closure; state preflight remains abstract.
 Boot failure, recovery failure and success are possible transitions, not assumed
