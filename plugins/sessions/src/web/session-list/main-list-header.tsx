@@ -13,7 +13,7 @@ import {
 } from "@prismshadow/penguin-ui";
 import { S } from "@prismshadow/penguin-web/internal";
 import { GROUP_MODE_ICONS, SORT_MODE_ICONS } from "@prismshadow/penguin-web/internal";
-import { WorkspaceSelect } from "@prismshadow/penguin-web/internal";
+import { WorkspaceSelect } from "@penguinharness/plugin-projects/web";
 import { NEW_CHAT_ICON } from "@prismshadow/penguin-web/internal";
 import type { MainSidebarState } from "./main-sidebar-controller";
 
