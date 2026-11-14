@@ -30,7 +30,7 @@ import {
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
-import { skillTileColor } from "../skills";
+import { skillTileColor } from "@penguinharness/plugin-agents/web";
 import type { GridApp, GridFolder, Side } from "./arrangement";
 
 /** Edge of a tile's icon, in px: the phone home screen's size, large enough to read a glyph in. */
