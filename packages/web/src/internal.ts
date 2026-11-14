@@ -43,6 +43,7 @@ export * from "./lib/shortcuts/dispatcher";
 export * from "./lib/shortcuts/conflicts";
 export * from "./lib/shortcuts/chord";
 export * from "./rescue/palette";
+export * from "./rescue/safe-mode";
 export * from "./components/ui/stat-hint";
 export * from "./lib/benchmark-merge";
 export * from "./lib/card-open";
