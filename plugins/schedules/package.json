@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@penguinharness/plugin-sessions": "workspace:*",
+    "@penguinharness/plugin-terminal": "workspace:*",
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-server": "workspace:*",
     "@prismshadow/penguin-ui": "workspace:*",
