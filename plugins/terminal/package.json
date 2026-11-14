@@ -11,9 +11,10 @@
     "./web/*": "./src/web/*"
   },
   "dependencies": {
+    "@penguinharness/plugin-browser": "workspace:*",
     "@prismshadow/penguin-core": "workspace:*",
-    "@prismshadow/penguin-ui": "workspace:*",
     "@prismshadow/penguin-server": "workspace:*",
+    "@prismshadow/penguin-ui": "workspace:*",
     "@prismshadow/penguin-web": "workspace:*",
     "@xterm/addon-clipboard": "^0.1.0",
     "@xterm/addon-fit": "^0.10.0",

@@ -76,7 +76,7 @@ import { S } from "@prismshadow/penguin-web/internal";
 import { chordKeys } from "@prismshadow/penguin-web/internal";
 import { displayedBinding, useKeymap } from "@prismshadow/penguin-web/internal";
 import { useCoarsePointer } from "@prismshadow/penguin-web/internal";
-import { invalidateSlotClips } from "../builtin-browser";
+import { invalidateSlotClips } from "@penguinharness/plugin-browser/web";
 import { confirmClose } from "@prismshadow/penguin-web/internal";
 import { TERMINAL_PANEL } from "./dock-terminal";
 import { DockDragOverlay, dockDropCandidate } from "./dock-drag";
