@@ -161,7 +161,7 @@ import {
   loadModelGroupOrder,
   saveModelGroupOrder,
 } from "./model-group-order";
-import { TAG_TONE, modelTags } from "@prismshadow/penguin-web/internal";
+import { TAG_TONE, modelTags } from "./model-tags";
 import { protocolPathForModel } from "./protocol-path";
 import { ProtocolSuffixMenu } from "./protocol-suffix";
 import {
