@@ -28,7 +28,7 @@ import {
   sameOriginSite,
 } from "../http/public-origin.js";
 import type { OriginRule } from "../http/public-origin.js";
-import type { UserRow } from "../db/repos/users.js";
+import type { UserRow } from "@penguinharness/plugin-settings/server";
 import type { SessionVia } from "./service.js";
 import type { Auth } from "@penguinharness/plugin-settings/server";
 import { SESSION_COOKIE } from "../api/types.js";
