@@ -25,11 +25,11 @@
 import http from "node:http";
 import { WebSocket } from "ws";
 import type { MachineSocketFact } from "@prismshadow/penguin-server/api";
-import { CREDIT_FLOW } from "@prismshadow/penguin-server/internal";;
-import type { EventFrame, ServerFrame } from "@prismshadow/penguin-server/internal";;
-import { apiSocketPath } from "@prismshadow/penguin-server/internal";;
-import { HEARTBEAT_MS } from "@prismshadow/penguin-server/internal";;
-import { API_SOCKET_DEFLATE } from "@prismshadow/penguin-server/internal";;
+import { CREDIT_FLOW } from "@prismshadow/penguin-server/internal";
+import type { EventFrame, ServerFrame } from "@prismshadow/penguin-server/internal";
+import { apiSocketPath } from "@prismshadow/penguin-server/internal";
+import { HEARTBEAT_MS } from "@prismshadow/penguin-server/internal";
+import { API_SOCKET_DEFLATE } from "@prismshadow/penguin-server/internal";
 
 /** The machine answered the handshake with a status: it is up, and has no socket to offer (or refused this server). */
 export class HandshakeRefused extends Error {

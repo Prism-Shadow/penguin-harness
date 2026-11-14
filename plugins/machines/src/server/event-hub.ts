@@ -33,7 +33,7 @@
 import { randomUUID } from "node:crypto";
 import type { ServerEvent } from "@prismshadow/penguin-server/api";
 import { HEARTBEAT_MS } from "@penguinharness/plugin-machines/server/http/sse";
-import type { EventFrame } from "@prismshadow/penguin-server/internal";;
+import type { EventFrame } from "@prismshadow/penguin-server/internal";
 import type {
   MachineSocket,
   MachineSocketTarget,
