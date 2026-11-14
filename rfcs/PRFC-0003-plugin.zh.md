@@ -3,7 +3,7 @@
 [English](PRFC-0003-plugin.md)
 
 > **来源**：设计仓 [penguin-harness-design](https://github.com/Prism-Shadow/penguin-harness-design) 的 `rfcs/PRFC-0003-plugin.md`——设计 PR [#421](https://github.com/Prism-Shadow/penguin-harness-design/pull/421)（插件库的内容改为模块贡献）的修订，它先于本镜像落地于默认分支 `main`；上一版取自落地提交 [`ac673a24`](https://github.com/Prism-Shadow/penguin-harness-design/commit/ac673a245eec78d6afca35e260dce28b2a3ab3ac)。
-> **修订**：v1.1.0；本面的约定见 [README.zh.md](README.zh.md)，逐版本改动记在文末 `## Changes`。
+> **修订**：v2.0.0；本面的约定见 [README.zh.md](README.zh.md)，逐版本改动记在文末 `## Changes`。
 
 - Feature Name: `plugin`
 - Start Date: 2026-09-02
@@ -77,7 +77,7 @@ App 在以下时刻创建，每次都重新加载插件：
 
 所以一个 Module 只活一代 App：它投进槽里的贡献不会带进下一代，每一代重新投稿。要跨代保留的状态走 park，见「热更新」。
 
-**变更的代价。** 重新装配交接的东西与热推送相同：终端、连接、parked 状态。交接不了的也相同：所有 Project 里正在运行的 Agent 被停下，待审批的调用被拒绝。插件页在应用之前就这么说。两个管理员的改动在队列里依次写入，每次重新装配只读为它写下的那一份。
+**变更的代价。** 重新装配交接的东西与热推送相同：终端、连接、parked 状态。AgentState 的接续与不兼容路径按 PRFC-0015 执行。两个管理员的改动在队列里依次写入，每次重新装配只读为它写下的那一份。
 
 ### 热更新
 
@@ -134,6 +134,22 @@ App 在以下时刻创建，每次都重新加载插件：
 代价是纪律：插件要在读配置时带上调用方的上下文，由自己决定这项功能对谁打开。平台自己消费的那些面——命令约束、HTTP 路由、工具——作用域由平台带着解析，不指望插件配合。
 
 
+### Compile pass 与换代
+
+插件可以在 modules 旁导出 `passes: Record<string, () => ModulePass>`。Manifest 在 `CompileModule.passes` 注册 id；工厂提供代码，每次 compile 尝试重新调用。工厂 id 冲突被拒绝。每代只解析本次保留插件集合的工厂，best-effort 重试同样如此。Operator 来源记录供应插件与 revision，避免把修改别人的 pass 归责给被修改模块。
+
+固定原始声明、配置、revision 与排序后，定义 `Plan(S) = verify(run(passes(S), assemble(Base, S)))`。安装、卸载或停用 pass 均从原始输入重算，不反向撤销编辑，也不只删掉插件拥有的输出节点：被移除的 pass 可能删除过别人的贡献、替换过组件，或改变幸存 pass 的条件。一个 Project 删掉插件后，若另一个 Project 仍请求它，它仍在进程的有效并集中。
+
+生命周期目标是拆除旧 runtime 前完成候选编译与准入，再通过 park/load 交接。Dispose 后新 boot 失败需要尝试恢复，不保证服务无间断，也不回滚外部副作用。恢复必须保留旧计划、parked state 和确切代码资源；npm 原地覆盖尚不能提供这项保证，属于实现缺口。
+
+逻辑停用与物理清理分开。新代排除被卸载的 pass；按 [PRFC-0015](PRFC-0015-agent-state.zh.md)，在途 Task 仍可能持有旧代码。活动代、候选代、在途任务、恢复快照及传递代码依赖均不再引用某资源后，才能回收它；不强制卸载进程中的 ESM 记录。移除模块的状态不会自动流入后续 `park()`；改变存量数据行为前，必须确定保留或删除策略、保留时长和清理责任方。
+
+### 模型证明目标
+
+在输入固定与纯度假设下，证明安装后卸载的计划等价、下一代不执行已退出集合的 pass、接受计划的必需引用均已解析、先准入后发布、遵守选定状态策略，以及不回收仍可达的代码资源。Best-effort 在初始有限集合上单调增加被排除插件与被丢弃的原始贡献组，每次重试增加至少一项排除，且每轮从原始声明重建。下降量同时计入剩余插件与原始贡献组，因为丢弃贡献不一定移除插件。证明不承诺找到最大可用插件子集。
+
+这些性质初期用 Lean 4 证明模型，TypeScript 兼容关系及组件 park/load 契约作为外部假设。恢复成功、任务最终结束、资源最终清理需要对应的活性假设；模型停机不证明 import、tsc、migration 或任意插件代码会返回。初期原型不要求形式化验证实现。
+
 ## Drawbacks
 [drawbacks]: #drawbacks
 
@@ -180,6 +196,10 @@ App 在以下时刻创建，每次都重新加载插件：
 只重建受影响的子树，减少一次插件变更需要重新装配的范围。
 
 ## Changes
+
+### v2.0.0
+
+- Updated：不可变模块计划、延后验证、换代归属与模型证明边界。
 
 ### v1.1.0
 

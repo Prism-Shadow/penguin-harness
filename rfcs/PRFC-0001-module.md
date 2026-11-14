@@ -3,7 +3,7 @@
 [中文版](PRFC-0001-module.zh.md)
 
 > **Source**: `rfcs/PRFC-0001-module.md` from the design repository [penguin-harness-design](https://github.com/Prism-Shadow/penguin-harness-design) — landed (default branch `main`, commit [`ac673a24`](https://github.com/Prism-Shadow/penguin-harness-design/commit/ac673a245eec78d6afca35e260dce28b2a3ab3ac)).
-> **Rev**: v1.0.0 (migrated into the main repository); the conventions for this surface are in [README.md](README.md), and changes from version to version are recorded in `## Changes` at the end.
+> **Rev**: v2.0.0; the conventions for this surface are in [README.md](README.md), and changes from version to version are recorded in `## Changes` at the end.
 
 - Feature Name: `module`
 - Start Date: 2026-09-02
@@ -247,6 +247,22 @@ An extension package provides a set of Modules: `package.json#penguin.modules` c
 
 Introducing this mechanism does not by itself change the runtime. The tree starts inside the existing platform kernel node, and at park time each module's document is written into the newly added `modules` field. Parked documents are not reversioned — fields are only added — so a data root parked by this version of the platform can still accept an older platform pushed back onto it. The only place the runtime is touched is the extension loader, which reads one more thing: `package.json#penguin`.
 
+### Blueprint, plan and runtime
+
+A Module is a lexical scope with declarations, children and an optional component recipe. A Component describes how to create an instance; compiling a tree must not execute that recipe. Separate the immutable source Blueprint, the Draft being rewritten, the verified BootPlan, and each boot's mutable Runtime. Structural sharing is permitted; modifying a Draft must not mutate an earlier generation or the source declarations.
+
+Intermediate Drafts may have missing providers or incompatible types. Representation invariants still hold: finite data, stable identities and an acyclic containment tree. Final verification checks wiring, visibility, exports, contributions and dependency order. Removing a slot contribution does not implicitly remove its provider component. A mock keeps the identity of the node it replaces; its resulting contract is checked with the final tree.
+
+Type compatibility is delegated to TypeScript: render each side's own declaration snapshot into `.d.ts` files and generate assignment questions. Preserve direction, transitive references, compiler options and revision identity; never replace the consumer's declaration with the provider's just to answer a question. Unsupported rendering, a missing declaration or an unfinished compiler check is not a successful comparison. Graph checks remain responsible for missing or ambiguous providers. Diagnostics map generated questions and declaration ranges back to their module facts and operator origins, including deletions; origins explain relevant changes, not a unique minimal culprit.
+
+The intended BootPlan freezes resolved wiring and startup order so boot consumes the verified choices. The pass prototype in [PRFC-0021](PRFC-0021-module-pass.md) first exercises immutable edits and deferred decoration over `ModuleDef`. Converting every class adapter to a reusable recipe and eliminating boot's repeated resolution are subsequent implementation steps; the existing `moduleDefOf` adapter still constructs instances during assembly. Do not describe that adapter as a pure Blueprint.
+
+### Model verification
+
+Use Lean 4 initially to verify the model, not the TypeScript implementation. Types and compatibility in a fixed type environment are uninterpreted parameters; do not model tsc internally or assume algebraic laws that a proof does not need. Prove representation preservation, local edit boundaries, final constraint coverage and correspondence between accepted plans and the model's validity predicate. These are proof targets, not completed machine-checked proofs.
+
+Termination means every finite input completes without a fuel limit. Operator traversal must use a finite snapshot or a well-founded decreasing measure; newly generated nodes do not automatically reschedule their producer. Actual cost is investigated by profiling, with interfaces, requirement sites, intermediate sizes and compiler work measured separately. A future implementation proof may use an executable verified core or a verified checker for the specified transformation; checking only that the output is well typed is insufficient.
+
 ## Drawbacks
 [drawbacks]: #drawbacks
 
@@ -289,6 +305,10 @@ Agent Workbench (formerly Workflow) describes its backend and UI in one declarat
 The frontend has a tree of its own too: `web/src/module.json` is already the App's manifest — each page's route, navigation position, whether it is admin-only, and its renderer name are all in there, and the routes and the sidebar are exported from it; `GET /api/contributions` returns, as data, what the server contributes to the frontend slots, and the frontend renders only the renderers it recognizes. The possibility of both trees using the same set of judgment rules is left for another piece.
 
 ## Changes
+
+### v2.0.0
+
+- Updated: immutable module planning, deferred verification, generation ownership and model proof boundaries.
 
 ### v1.0.0
 

@@ -4,7 +4,7 @@
 
 > **Source**: `rfcs/PRFC-0003-plugin.md` from the design repository [penguin-harness-design](https://github.com/Prism-Shadow/penguin-harness-design) — the revision of design PR [#421](https://github.com/Prism-Shadow/penguin-harness-design/pull/421) (plugin library content as module contributions), which lands on the default branch `main` before this mirror; the previous rev took the landed commit [`ac673a24`](https://github.com/Prism-Shadow/penguin-harness-design/commit/ac673a245eec78d6afca35e260dce28b2a3ab3ac).
 > **Unmerged revision**: the open design PR [#279](https://github.com/Prism-Shadow/penguin-harness-design/pull/279) carries one unmerged revision against this document (the passage on enabling a local plugin directory via link; based on an older base of the design repository), not folded into this version; once it is merged or rejected, the rev is raised per the conventions and recorded in `## Changes`.
-> **Rev**: v1.1.0; the conventions for this surface are in [README.md](README.md), and per-version changes are recorded in `## Changes` at the end.
+> **Rev**: v2.0.0; the conventions for this surface are in [README.md](README.md), and per-version changes are recorded in `## Changes` at the end.
 
 - Feature Name: `plugin`
 - Start Date: 2026-09-02
@@ -78,7 +78,7 @@ Each creation does these things in order:
 
 So a Module lives for exactly one App generation: its contributions to the slots are not carried into the next generation — every generation contributes anew. State that must be kept across generations goes through park; see "Hot updates".
 
-**The cost of a change.** A re-assembly hands over the same things a hot push does: terminals, connections, parked state. What cannot be handed over is the same too: the Agents currently running in all Projects are stopped, and calls awaiting approval are rejected. The plugin page says as much before applying. Two admins' changes are written one after another through a queue, and each re-assembly reads only the one written for it.
+**The cost of a change.** A re-assembly hands over the same things a hot push does: terminals, connections, parked state. AgentState continuation and the incompatible-state path follow PRFC-0015. Two admins' changes are written one after another through a queue, and each re-assembly reads only the one written for it.
 
 ### Hot updates
 
@@ -135,6 +135,22 @@ Why plugins are not loaded per scope, one tree per Project for example:
 The price is discipline: a plugin must carry the caller's context when reading configuration and decide for itself for whom this functionality is on. For the surfaces the platform itself consumes — command constraints, HTTP routes, tools — the scope is parsed by the platform; plugins are not expected to help.
 
 
+### Compile passes and generation changes
+
+A plugin may export `passes: Record<string, () => ModulePass>` beside its modules. Its manifests register ids in `CompileModule.passes`; factories provide the code and are called afresh for each compile attempt. Duplicate factory ids are rejected. A generation resolves only factories belonging to its retained plugin selection, including best-effort retries. Operator provenance records the supplying plugin and revision so a pass changing another module is not blamed on the victim module.
+
+For fixed source declarations, configuration, revisions and ordering, define `Plan(S) = verify(run(passes(S), assemble(Base, S)))`. Install, uninstall and pass disablement recompute from those sources. Do not invert edits or remove only plugin-owned output nodes: a removed pass may have deleted someone else's contribution, replaced a component or changed a surviving pass's condition. Removing a plugin from one Project does not remove it from the effective process-wide union while another Project still requests it.
+
+The lifecycle target is to compile and admit the candidate before dismantling the old runtime, then use park/load for the handover. After disposal, a failed boot requires a recovery attempt; this is not a guarantee of uninterrupted service or rollback of external effects. Keep the old plan, parked state and exact code artifacts available for recovery. In-place npm replacement does not provide this guarantee and remains an implementation gap.
+
+Logical deactivation and physical cleanup are distinct. New generations exclude removed passes; in-flight Tasks may still hold old code under [PRFC-0015](PRFC-0015-agent-state.md). Reclaim an artifact only after no active or candidate generation, in-flight Task, recovery snapshot or transitive code dependency retains it. Unused ESM records are not forcibly unloaded from the process. Removed module state is not automatically preserved by later `park()` calls: retention versus deletion, its duration and the cleanup owner must be decided before changing stored-data behavior.
+
+### Model proof targets
+
+Under explicit fixed-input and purity assumptions, prove install-then-uninstall plan equivalence, absence of retired pass execution in the next plan, resolved required references in every accepted plan, admission before publication, compliance with the selected state policy, and no reclamation of reachable artifacts. For best-effort, excluded plugins and dropped original contribution groups grow monotonically within finite initial sets; each retry adds an exclusion. The measure counts remaining plugins and original contribution groups, since dropping a contribution need not remove its plugin. Rebuild from source on each retry. The proof does not promise the largest usable plugin subset.
+
+These are model properties to prove in Lean 4, with TypeScript compatibility and component park/load contracts as external assumptions. Recovery success, eventual task completion and eventual cleanup require corresponding liveness assumptions. Model termination does not prove that imports, tsc, migrations or arbitrary plugin code return. No formal implementation verification is required for the initial prototype.
+
 ## Drawbacks
 [drawbacks]: #drawbacks
 
@@ -181,6 +197,10 @@ More activation dimensions: enable a plugin's functionality per user, per Agent.
 Rebuild only the affected subtree, reducing what one plugin change must re-assemble.
 
 ## Changes
+
+### v2.0.0
+
+- Updated: immutable module planning, deferred verification, generation ownership and model proof boundaries.
 
 ### v1.1.0
 

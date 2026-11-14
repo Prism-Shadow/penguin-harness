@@ -3,7 +3,7 @@
 [English](PRFC-0001-module.md)
 
 > **来源**：设计仓 [penguin-harness-design](https://github.com/Prism-Shadow/penguin-harness-design) 的 `rfcs/PRFC-0001-module.md`——落地于默认分支 `main`（提交 [`ac673a24`](https://github.com/Prism-Shadow/penguin-harness-design/commit/ac673a245eec78d6afca35e260dce28b2a3ab3ac)）。
-> **修订**：v1.0.0（迁入主仓）；本面的约定见 [README.zh.md](README.zh.md)，逐版本改动记在文末 `## Changes`。
+> **修订**：v2.0.0；本面的约定见 [README.zh.md](README.zh.md)，逐版本改动记在文末 `## Changes`。
 
 - Feature Name: `module`
 - Start Date: 2026-09-02
@@ -247,6 +247,22 @@ Go 的赋值规则，跨编译边界执行：消费者点名的每个方法都�
 
 引入这套机制本身不改运行时。树在既有的平台 kernel 节点内启动，park 时每个模块的文档写进新增的 `modules` 字段。parked 文档不重定版本——只加字段——因此一个被这一版平台 park 过的数据根，仍然接得住推回去的旧平台。运行时唯一被碰到的地方，是扩展加载器多读一个 `package.json#penguin`。
 
+### Blueprint、plan 与 runtime
+
+Module 是包含声明、子节点和可选组件配方的词法作用域；Component 描述如何创建实例，编译树时不得执行这个配方。区分不可变的原始 Blueprint、正在改写的 Draft、已验证的 BootPlan 和每次 boot 的可变 Runtime。允许结构共享，但修改 Draft 不得污染旧代或原始声明。
+
+Draft 的中间态允许 provider 缺失或类型失配；表示约束仍须成立：数据有限、身份稳定、包含关系无环。最终统一验证布线、可见性、exports、贡献和依赖顺序。删除槽贡献不隐式删除提供该贡献的组件。Mock 保持被替换节点的身份，其契约随最终树一起检查。
+
+类型兼容性交给 TypeScript：将两侧各自的声明快照生成 `.d.ts`，再生成赋值问题。保留方向、传递引用、编译选项和 revision 身份；不得用提供方的声明替换消费者的声明来回答问题。无法渲染、声明缺失或编译器未完成都不等于检查通过。图检查仍负责 provider 缺失或歧义。诊断将生成问题与声明区间映射回模块事实和 operator 来源，包括删除记录；来源说明相关改动，不承诺唯一最小责任方。
+
+目标 BootPlan 固定布线和启动顺序，boot 直接消费已验证的选择。[PRFC-0021](PRFC-0021-module-pass.zh.md) 的 pass 原型先在 `ModuleDef` 上检验不可变改写与延后 decoration；将全部类适配器改为可复用配方、消除 boot 的重复解析属于后续实现。现有 `moduleDefOf` 仍在装配时构造实例，不能把该适配器称为纯 Blueprint。
+
+### 模型验证
+
+初期使用 Lean 4 证明模型，不证明 TypeScript 实现。固定类型环境中的类型与兼容关系作为无解释参数，不建模 tsc 内部，也不添加证明不需要的代数律。证明目标包括表示约束保持、局部编辑边界、最终约束覆盖，以及接受计划与模型合法性的对应。这些是待完成的证明目标，不是已经通过机器检查的定理。
+
+停机要求对任意有限输入成立，不依赖 fuel。Operator 遍历有限快照，或给出良基下降量；新增节点不自动重新调度生成它的 operator。实际性能通过 profile 分析，分别记录接口、requirement、中间结果规模与编译器工作量。未来若验证实现，可以采用可执行的已验证核心，或验证指定变换结果的检查器；仅检查输出类型合法不足以证明变换正确。
+
 ## Drawbacks
 [drawbacks]: #drawbacks
 
@@ -289,6 +305,10 @@ Agent Workbench（原 Workflow）以一份声明描述 backend 与 UI，沿用�
 前端也有自己的一棵树：`web/src/module.json` 已经是 App 的清单，页面的路由、导航位置、是否管理员限定、渲染器名字都在里面，路由与侧栏由它导出；`GET /api/contributions` 把服务端投给前端槽的东西作为数据返回，前端只渲染自己认得的渲染器。两棵树用同一套判定的可能性留待另一篇。
 
 ## Changes
+
+### v2.0.0
+
+- Updated：不可变模块计划、延后验证、换代归属与模型证明边界。
 
 ### v1.0.0
 
