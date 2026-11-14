@@ -75,7 +75,7 @@ import * as api from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import { useDocumentTitle } from "@prismshadow/penguin-web/internal";
-import { scopeKey, scoped, scopedValue, type Scoped } from "@prismshadow/penguin-web/internal";
+import { scopeKey, scoped, scopedValue, type Scoped } from "@penguinharness/plugin-sessions/web";
 import { useLeaveOnProjectSwitch } from "@prismshadow/penguin-web/internal";
 import { useProject } from "@prismshadow/penguin-web/internal";
 import { useMachines } from "@prismshadow/penguin-web/internal";
