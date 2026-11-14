@@ -3,6 +3,7 @@
 - **Date:** 2026-11-13
 - **Type:** docs
 - **Scope:** `formal/module-model`
+- **PR:** [#1561](https://github.com/Prism-Shadow/penguin-harness/pull/1561)
 
 [English](2026-11-13-module-model-draft.md)
 
