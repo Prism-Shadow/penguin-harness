@@ -25,6 +25,8 @@ import type {
 import type {
   WorkspaceFileContent,
   WorkspaceFileReadOptions,
+} from "@penguinharness/plugin-projects/server";
+import type { AgentCreation, AgentListItem } from "./agents/agent-service.js";
 import type {
   BenchmarkArchive,
   BenchmarkCreateInput,

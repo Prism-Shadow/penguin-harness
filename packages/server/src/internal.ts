@@ -134,6 +134,7 @@ export * from "./services/protocol-detect.js";
 export * from "./services/vision-detect.js";
 export * from "./services/platform-auth-types.js";
 export * from "./services/skill-import-limits.js";
+export { assertDistinctPaths, CONTROL_CHARACTER, specialEntries } from "./services/zip-entries.js";
 export * from "../../../plugins/projects/src/server/projects/workspace-files-service.js";
 export * from "./services/session-service.js";
 export * from "@penguinharness/plugin-sessions/server";
