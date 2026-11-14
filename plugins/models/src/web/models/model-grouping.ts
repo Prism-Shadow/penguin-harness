@@ -400,5 +400,5 @@ export function visibleChatModels<T extends ModelCredentialRowLike>(
   return keep.filter((m) => matchesQuery(m, query));
 }
 
-export type { PeakWindows } from "@prismshadow/penguin-web/internal";
-import type { PeakWindows } from "@prismshadow/penguin-web/internal";
+import type { PeakWindows } from "./model-peak-windows";
+export type { PeakWindows } from "./model-peak-windows";
