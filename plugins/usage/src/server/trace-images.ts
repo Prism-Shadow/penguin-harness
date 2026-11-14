@@ -32,6 +32,8 @@ const REFERENCED_IMAGE_MIMES: ReadonlySet<string> = new Set([
   "image/webp",
 ]);
 
+export const SESSION_ROUTES_BASE = "/api/sessions";
+
 /** A base64 image data URL the route can serve: its type, and where its payload starts. */
 function referableImage(url: string): { mime: string; dataStart: number } | null {
   if (!url.startsWith("data:")) return null;
