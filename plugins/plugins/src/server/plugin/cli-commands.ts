@@ -34,10 +34,10 @@ import type {
   PluginCliCommandRunResponse,
   PluginCliCommandsResponse,
 } from "@prismshadow/penguin-server/api";
-import type { AppEnv } from "@penguinharness/plugin-settings/server";
+import type { AppEnv } from "@prismshadow/penguin-server/internal";
 import type { Hmr } from "@prismshadow/penguin-server/internal";
-import { HttpError } from "@penguinharness/plugin-settings/server";
-import { badRequest, readJson, requireString } from "@penguinharness/plugin-settings/server";
+import { HttpError } from "@prismshadow/penguin-server/internal";
+import { badRequest, readJson, requireString } from "@prismshadow/penguin-server/internal";
 import { pluginHostFrom } from "@penguinharness/plugin-plugins/server";
 
 /** One plugin command the server holds: its package, its data half, its bound code half. */
