@@ -7996,6 +7996,13 @@ export interface InstalledPlugin {
   /** Node names the package declares it stands in for. */
   replaces: string[];
   /**
+   * The prefix resolves this name through a link `penguin plugin link` parked: the package is
+   * the author's directory, read fresh from disk every time.
+   */
+  linked?: true;
+  /** The author directory the link points at (when `linked`). */
+  linkPath?: string;
+  /**
    * Why the package is not running: unresolvable, or a load that
    * failed (an import that threw, a module name another plugin already took). Only ever
    * reported for a plugin this server is asked to run (`here`).

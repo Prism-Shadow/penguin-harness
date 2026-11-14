@@ -149,6 +149,12 @@ export function rowInstalledOnServer(row: PluginRow): boolean {
   );
 }
 
+/** Whether the row's package is a local directory linked in (`penguin plugin link`), and where it points. */
+export function rowLinked(row: PluginRow): { linkPath: string } | null {
+  const part = row.module;
+  return part?.linked === true ? { linkPath: part.linkPath ?? "" } : null;
+}
+
 /**
  * What a row is called: the package's display name in the UI language, from the library or
  * the module's registry entry, falling back to its name.

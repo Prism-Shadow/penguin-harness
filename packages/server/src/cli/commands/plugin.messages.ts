@@ -11,6 +11,9 @@ export interface PluginText {
     installDesc: string;
     /** `install --overwrite`: replace another version of an uploaded package directory. */
     overwriteOpt: string;
+    linkDesc: string;
+    /** `link --overwrite`: replace the name's installed package or earlier link. */
+    linkOverwriteOpt: string;
     removeDesc: string;
     colName(): string;
     colKind(): string;
@@ -18,6 +21,8 @@ export interface PluginText {
     /** What a row is: a package of server modules the Project lists, or a package of Skills, hooks or MCP servers in the library. */
     kindModules(): string;
     kindLibrary(): string;
+    /** A row whose package is a linked local directory, not one npm put in the prefix. */
+    kindLink(): string;
     active(): string;
     pending(): string;
     failed(reason: string): string;
@@ -71,12 +76,16 @@ export const pluginEn: PluginText = {
       "Install a plugin on the server: an npm package name (@scope/name, name@1.2.3), an https link to a git repository or a tarball, or a local package directory, which is read with the plugin library's reader, zipped without node_modules and uploaded. A plugin of server modules is loaded at once, which stops the agent runs in progress",
     overwriteOpt:
       "Replace another version of the package already on the server (a package directory only)",
+    linkDesc:
+      "Link a local plugin package directory into the server's plugin prefix: the directory stays where it is and the server loads it in place, and the Plugins page shows it with a link mark. The directory must be a built plugin package",
+    linkOverwriteOpt: "Replace the name's installed package or earlier link",
     removeDesc: "Remove a plugin from the Project, and from the server once nothing else lists it",
     colName: () => "PLUGIN",
     colKind: () => "KIND",
     colState: () => "STATE",
     kindModules: () => "server modules",
     kindLibrary: () => "skills / hooks / MCP",
+    kindLink: () => "link (local directory)",
     active: () => "running",
     pending: () => "waits for a restart",
     failed: (reason) => `failed to load: ${reason}`,
@@ -104,6 +113,8 @@ export const pluginEn: PluginText = {
     modulesLoaded: (projectId) => `Listed for Project ${projectId} on this server and loaded.`,
     restartNext: () => "Listed; restart the server to load it.",
     removed: (name) => `Removed ${name}.`,
+    /** After a successful link. */
+    linked: (dir) => `Linked ${dir}; the server loads it in place.`,
   },
 
   ambiguous: {
@@ -121,12 +132,16 @@ export const pluginZh: PluginText = {
     installDesc:
       "把插件安装到服务端：npm 包名（@scope/name、name@1.2.3）、指向 git 仓库或 tarball 的 https 链接，或本地插件包目录（先用插件库的读取器校验，去掉 node_modules 打成 zip 后上传）。服务端模块插件会立即载入，正在进行的 Agent 运行会被中止",
     overwriteOpt: "替换服务端上已安装的该包的其他版本（仅用于插件包目录）",
+    linkDesc:
+      "把本机的插件包目录链接进服务端的插件前缀：目录留在原地，服务端就地装载，插件页显示它并标记 link。目录必须是构建过的插件包",
+    linkOverwriteOpt: "替换该名字已安装的包或先前的链接",
     removeDesc: "从 Project 中移除插件；没有其他 Project 使用时一并从服务端删除",
     colName: () => "插件",
     colKind: () => "类型",
     colState: () => "状态",
     kindModules: () => "服务端模块",
     kindLibrary: () => "技能 / 钩子 / MCP",
+    kindLink: () => "链接（本机目录）",
     active: () => "运行中",
     pending: () => "待重启",
     failed: (reason) => `加载失败：${reason}`,
@@ -152,6 +167,8 @@ export const pluginZh: PluginText = {
     modulesLoaded: (projectId) => `已在本服务端为 Project ${projectId} 启用并载入。`,
     restartNext: () => "已启用；重启服务端后载入。",
     removed: (name) => `已移除 ${name}。`,
+    /** After a successful link. */
+    linked: (dir) => `已链接 ${dir}；服务端就地装载它。`,
   },
 
   ambiguous: {

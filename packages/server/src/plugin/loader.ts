@@ -44,8 +44,9 @@ import type {
   Resources,
 } from "@prismshadow/penguin-core/kernel";
 import { moduleDefOf } from "@prismshadow/penguin-core/kernel";
-import { pluginsPrefix } from "./install.js";
+import { pluginsPrefix, linkedPackages } from "./install.js";
 import { unpackedAssetsDir } from "../hmr/asset-archives.js";
+
 import { readManifest } from "../hmr/manifest.js";
 import type { Plugin } from "@prismshadow/penguin-core/plugin";
 import type { LoadedPlugin } from "./host.js";
@@ -53,6 +54,31 @@ import { PluginHost, pluginHostFrom } from "./host.js";
 import platformTable from "../ifaces.json" with { type: "json" };
 import { checkIfaces, ifaceQuestions } from "./iface-check.js";
 import { loadTypeScript, TypeScriptUnavailable, type TypeScript } from "./typescript.js";
+
+/**
+ * The resolved directories of this prefix's links, computed once per root: a link resolves to
+ * the author's directory, so a package whose resolved path IS one of these came through a link
+ * the `penguin plugin link` command parked. Read once per batch (the routes call
+ * `refreshLinkDirs` before a page's declarations); a link command in this process re-refreshes
+ * it, so a just-made link is marked on the next read.
+ */
+let linkDirs: Set<string> | null = null;
+let linkDirsRoot: string | undefined;
+function linkedNames(): Set<string> {
+  return linkDirs ?? new Set();
+}
+export async function refreshLinkDirs(root: string | undefined): Promise<void> {
+  if (root === linkDirsRoot && linkDirs !== null) return;
+  linkDirsRoot = root;
+  const out = new Set<string>();
+  if (root !== undefined && root !== "") {
+    for (const link of Object.values(await linkedPackages(pluginsPrefix(root)))) {
+      out.add(link.path);
+    }
+  }
+  linkDirs = out;
+}
+
 
 /**
  * Where a Project's list lives, for a surface that has to name the file. The data root's
@@ -336,10 +362,21 @@ export type { PluginDeclaration };
  * imported. Lets a surface say which plugin a loaded module came from, and why a listed one is
  * not there, without the runtime having to publish its load report.
  */
+/** What a listed specifier declares, plus how it came to be in the prefix. */
+export interface PluginDeclarationRead {
+  modules: string[];
+  replaces: string[];
+  builtin: boolean;
+  /** The prefix resolves this name through a link the `penguin plugin link` command parked. */
+  linked?: true;
+  /** The author directory the link points at (when `linked`). */
+  linkPath?: string;
+}
+
 export async function readPluginDeclaration(
   specifier: string,
   bases: readonly PluginBase[],
-): Promise<{ modules: string[]; replaces: string[]; builtin: boolean } | { error: string }> {
+): Promise<PluginDeclarationRead | { error: string }> {
   const fault = specifierFault(specifier);
   if (fault !== null) return { error: fault };
   const resolved = resolvePlugin(specifier, bases);
@@ -362,7 +399,17 @@ export async function readPluginDeclaration(
     modules: [...read.plugin.modules],
     replaces: [...read.plugin.replaces],
     builtin: resolved.base.builtin,
+    // A link reads as what it is: the prefix resolves the name through a symlink the
+    // `penguin plugin link` command parked there, and the row says so and names the author's
+    // directory — the page's link mark and the disk-truth reading both come from here.
+    ...linkOf(resolved.dir),
   };
+}
+
+/** The link a resolved package came through, when it is one the link command parked. */
+function linkOf(dir: string): { linked?: true; linkPath?: string } {
+  if (!linkedNames().has(dir)) return {};
+  return { linked: true, linkPath: dir };
 }
 
 /**

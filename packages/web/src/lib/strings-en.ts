@@ -3243,6 +3243,11 @@ export const en: Strings = {
     /** The tag of a plugin an admin installed on this server (not shipped with the build). */
     installedOnServer: "installed on server",
     installedOnServerHint: "Installed on this server by an admin; it does not ship with the build.",
+    /** The tag of a plugin linked in from a local directory (penguin plugin link). */
+    linkedTag: "link",
+    linkedHint: (dir: string) => `Linked from a local directory: ${dir}. Edits apply on the next load.`,
+    /** The detail line naming the directory a link points at. */
+    linkedDirectory: "linked directory",
     /** The detail dialog's export (any member) and delete (admin, a package installed on the server). */
     exportPlugin: "Export",
     exportPluginHint:
