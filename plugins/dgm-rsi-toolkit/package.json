@@ -1,0 +1,38 @@
+{
+  "name": "@penguinharness/dgm-rsi-toolkit",
+  "version": "0.2.18",
+  "description": "DGM RSI Toolkit: open-ended, archive-based self-improvement of a coding agent — parents are selected from an archive of agent variants by score and diversity, fresh subagent sessions modify the Target's skill files, and every candidate is measured on the frozen Benchmark.",
+  "keywords": [
+    "penguin-plugin",
+    "penguinharness",
+    "skills"
+  ],
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Prism-Shadow",
+    "url": "https://github.com/Prism-Shadow"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "plugins/dgm-rsi-toolkit"
+  },
+  "files": [
+    "icon.svg",
+    "skills",
+    "ifaces.json",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json"
+  },
+  "devDependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/skills": "workspace:*",
+    "vitest": "^4.1.12"
+  }
+}
