@@ -5808,7 +5808,7 @@ export type {
   WorkbenchRequest,
   WorkbenchResponse,
   WorkbenchRecord,
-} from "../mechanisms/workbenches.js";
+} from "@penguinharness/plugin-workbenches/server";
 
 /** GET /api/version/history: the harness versions this data root has committed, newest first. */
 export type VersionHistoryResponse = HarnessHistory;
