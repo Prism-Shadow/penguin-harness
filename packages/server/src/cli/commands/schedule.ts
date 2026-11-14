@@ -45,7 +45,7 @@ import { resolveAgentId, resolveProjectId, ServerClient, shortSessionId } from "
 import { resolveConnection } from "../connection.js";
 import { listAgents } from "../agents.js";
 import { renderTable } from "../table.js";
-import { getMessages, type Messages } from "../i18n.js";
+import type { Messages } from "../i18n.js";
 
 const enc = encodeURIComponent;
 
@@ -323,11 +323,11 @@ function validateTarget(
   },
 })
 export class ScheduleCommand {
-  @Bind("cli.schedule") command!: CliCommandCode;
+  @Bind("cli.schedule") command!: CliCommandCode<Messages>;
   setup() {
     this.command = {
       register: (command, ctx) => {
-        registerScheduleCommand(node(command), getMessages(ctx.language));
+        registerScheduleCommand(node(command), ctx.messages);
       },
     };
   }

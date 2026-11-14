@@ -7,7 +7,7 @@
  *               [--background] [--goal [budget]] [--json] [--server <url>]
  *
  * The CLI is a thin client: it creates a Session over the API (or reuses `--session`),
- * POSTs the task, subscribes to the SSE stream and renders OmniMessages until the task
+ * POSTs the task, subscribes to the SSE stream and renders records until the task
  * ends, then prints the stats line. Exit 0 on completed; a goal run exits 0 only when
  * the goal outcome is `complete`.
  *
@@ -31,20 +31,19 @@
  *   the stream wind down (the abort event maps to exit code 1).
  * Docs: /docs/cli § "penguin run".
  */
-import { Option } from "commander";
 import type { Command } from "commander";
+import { Option } from "commander";
+
 import { buildInfo } from "@prismshadow/penguin-core";
 import { StreamRenderer, dim } from "../render.js";
 import { parseDurationMs } from "../duration.js";
 import { parseTokenBudget, UNLIMITED_BUDGET } from "../goal-command.js";
 import { resolveThinkingLevel } from "../thinking-command.js";
+import type { Messages } from "@prismshadow/penguin-server/cli";
 import {
   denyActivePrompt,
   promptApproval,
   resolveApprovalMode,
-  getMessages,
-} from "@prismshadow/penguin-server/cli";
-import {
   connectionLabel,
   resolveAgentId,
   resolveConnection,
@@ -53,6 +52,7 @@ import {
   ServerClient,
   shortSessionId,
 } from "@prismshadow/penguin-server/cli";
+
 import {
   callerSessionContext,
   checkSessionTitle,
@@ -63,12 +63,7 @@ import {
   resolveWorkspace,
 } from "../server-session.js";
 import { SessionStream, watchTask } from "../server-task.js";
-import type { Messages } from "@prismshadow/penguin-server/cli";
-import { Bind, Component } from "@prismshadow/penguin-core/kernel";
-import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/cli";
 
-/** The node the host located for a key, typed with this package's commander. */
-const node = (command: CliCommandProgram): Command => command as Command;
 export function registerRunCommand(run: Command, t: Messages): void {
   run
     .requiredOption("-m, --message <message>", t.run.message)
@@ -329,31 +324,5 @@ export function registerRunCommand(run: Command, t: Messages): void {
 class NullSink {
   write(_chunk: string): boolean {
     return true;
-  }
-}
-
-/** `penguin run`. */
-@Component({
-  contributes: {
-    "CliCommandsModule.commands": [
-      {
-        id: "cli.run",
-        key: "run",
-        summary: {
-          en: "Run a single Task",
-          zh: "单次运行一个 Task",
-        },
-      },
-    ],
-  },
-})
-export class RunCommand {
-  @Bind("cli.run") command!: CliCommandCode;
-  setup() {
-    this.command = {
-      register: (command, ctx) => {
-        registerRunCommand(node(command), getMessages(ctx.language));
-      },
-    };
   }
 }
