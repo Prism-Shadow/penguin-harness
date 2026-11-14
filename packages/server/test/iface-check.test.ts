@@ -2,6 +2,9 @@
  * The interface comparison plugins and workbenches share: a package's OWN table against this
  * platform's, decided by the TypeScript compiler, both for what it requires and for what
  * it provides.
+ *
+ * - Given declarations named after TypeScript library types or the opaque helper, a
+ *   table still compares with itself, and a changed return type still fails comparison.
  */
 import { describe, expect, it } from "vitest";
 import ts from "typescript";
@@ -28,6 +31,46 @@ function compiledAgainst(edit: (table: IfaceTable) => void): IfaceTable {
 }
 
 describe("interface check", () => {
+  it("compares declarations whose names collide with the renderer's library types", () => {
+    const key = "@example/contracts#Service";
+    const names = [
+      "Opaque",
+      "Date",
+      "Promise",
+      "Array",
+      "Map",
+      "Set",
+      "AsyncIterable",
+      "AsyncGenerator",
+      "Uint8Array",
+    ];
+    const table: IfaceTable = {
+      ifaces: {
+        [key]: {
+          name: "Service",
+          slots: {},
+          methods: Object.fromEntries(
+            names.map((name) => [
+              name.toLowerCase(),
+              { params: [], returns: { data: { $ref: `@example/contracts#${name}` } } },
+            ]),
+          ),
+        },
+      },
+      types: Object.fromEntries(names.map((name) => [`@example/contracts#${name}`, "Date"])),
+    };
+    const questions = [
+      { module: "Example", alias: "service", direction: "requires" as const, key },
+    ];
+    expect(checkIfaces(ts, table, table, questions)).toEqual({ problems: [], uncompared: [] });
+    const changed = structuredClone(table);
+    changed.types!["@example/contracts#Date"] = "string";
+    const result = checkIfaces(ts, changed, table, questions);
+    expect(result.uncompared).toEqual([]);
+    expect(result.problems).toHaveLength(1);
+    expect(result.problems[0]).toContain("TS2322");
+  });
+
   it("asks about the interfaces a manifest names with a package part, in both directions", () => {
     expect(ifaceQuestions([manifest])).toEqual([
       { module: "Demo", alias: "log", direction: "requires", key: LOG },
@@ -36,7 +79,13 @@ describe("interface check", () => {
   });
 
   it("passes a package compiled against this very platform", () => {
-    expect(checkIfaces(ts, platform, platform, ifaceQuestions([manifest]))).toEqual({
+    const questions = Object.keys(platform.ifaces).map((key) => ({
+      module: "Snapshot",
+      alias: key,
+      direction: "requires" as const,
+      key,
+    }));
+    expect(checkIfaces(ts, platform, platform, questions)).toEqual({
       problems: [],
       uncompared: [],
     });

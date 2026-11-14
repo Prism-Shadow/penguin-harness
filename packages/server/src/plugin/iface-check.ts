@@ -79,7 +79,17 @@ const property = (name: string) => (/^[A-Za-z_$][\w$]*$/.test(name) ? name : JSO
 
 class Renderer {
   private readonly names = new Map<string, string>();
-  private readonly taken = new Set<string>();
+  private readonly taken = new Set([
+    "Opaque",
+    "Date",
+    "Promise",
+    "Array",
+    "Map",
+    "Set",
+    "AsyncIterable",
+    "AsyncGenerator",
+    "Uint8Array",
+  ]);
   private readonly out: string[] = [];
   private readonly done = new Set<string>();
 

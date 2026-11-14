@@ -284,22 +284,31 @@ async function compileEntry(entry, outfile) {
     });
   }
   for (const pkg of ["server", "cli"]) {
-    // The CLI's generated table also names the server's command classes (its children come
-    // in through the server's `cli` subpath), so the CLI scan covers the server project too —
-    // the same projects the CLI's own `gen:ifaces` build line scans.
-    const projects = pkg === "cli" ? ["cli", "server"] : [pkg];
-    const args = [path.join(ROOT, "scripts/gen-ifaces.mjs")];
-    for (const p of projects)
-      args.push("--project", path.join(ROOT, "packages", p, "tsconfig.json"));
+    // The same projects and sources the packages' own `gen:ifaces` lines scan, merged into one
+    // compiler graph per table. The CLI's generated table also names the server's command
+    // classes (its children come in through the server's `cli` subpath), so the CLI scan covers
+    // the server project too.
+    const args = [
+      path.join(ROOT, "scripts/gen-ifaces.mjs"),
+      "--project",
+      path.join(ROOT, "packages", pkg, "tsconfig.ifaces.json"),
+      ...(pkg === "cli"
+        ? ["--project", path.join(ROOT, "packages", "server", "tsconfig.json")]
+        : []),
+    ];
     // Only the host's own sources and the library's, as the packages' `gen:ifaces` lines say: a
     // shipped plugin's sources the programs reach (a test helper, the CLI's generated module
     // list) carry their own table, and a copy here would stand in for theirs.
-    for (const p of projects) {
-      for (const dir of ["src", "test"])
-        args.push("--sources", path.join(ROOT, "packages", p, dir));
-    }
+    const sources =
+      pkg === "cli"
+        ? [["cli", "src"], ["cli", "test"], ["server", "src"], ["server", "test"]]
+        : [["server", "src"], ["server", "test"]];
+    for (const [p, dir] of sources)
+      args.push("--sources", path.join(ROOT, "packages", p, dir));
     args.push("--sources", path.join(ROOT, "library"));
     args.push("--out", path.join(ROOT, "packages", pkg, "src", "ifaces.json"));
+    if (pkg === "cli")
+      args.push("--components-out", path.join(ROOT, "packages/cli/src/cli-commands.gen.ts"));
     execFileSync(process.execPath, args, { stdio: "inherit" });
   }
   await compilePushBundle(pushBundleOptions(entry, outfile));

@@ -255,8 +255,8 @@ try {
           stdio: "inherit",
           // shell on Windows: pnpm is a .cmd shim there (see ensureInstalled).
           shell: process.platform === "win32",
-          // The server's declarations take most of its build and nothing at runtime reads
-          // them; the other packages' configs ignore this.
+          // Core and server declarations are only needed by TypeScript consumers;
+          // runtime builds skip them. A full build refreshes them for typecheck and release.
           env: { ...process.env, PENGUIN_BUILD_JS_ONLY: "1" },
         },
       );
