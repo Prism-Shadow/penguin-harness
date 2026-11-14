@@ -35,7 +35,7 @@ import type {
   PluginCliCommandsResponse,
 } from "@prismshadow/penguin-server/api";
 import type { AppEnv } from "@penguinharness/plugin-settings/server";
-import type { Hmr } from "@penguinharness/plugin-terminal/server";
+import type { Hmr } from "@prismshadow/penguin-server/internal";
 import { HttpError } from "@penguinharness/plugin-settings/server";
 import { badRequest, readJson, requireString } from "@penguinharness/plugin-settings/server";
 import { pluginHostFrom } from "@penguinharness/plugin-plugins/server";
