@@ -1,4 +1,4 @@
-import type { Migration } from "../../migration.js";
+import type { Migration } from "../migration.js";
 
 export const agentApi: Migration = {
   name: "2026-10-10-agent-api",

@@ -162,7 +162,7 @@ export function agentSkillsRoutes(deps: SkillsRouteDeps): Hono<AppEnv> {
     projectId: string,
     agentId: string,
   ): Promise<AgentSkillsResponse> => ({
-    skills: (await listInstalledSkills(deps.config.root, projectId, agentId)).map(toSkillItem),
+    skills: (await listInstalledSkills(deps.config.root, projectId, agentId)).map((skill) => toSkillItem(skill)),
   });
 
   app.get("/", async (c) => {

@@ -252,7 +252,7 @@ export function agentHooksRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   const installedItems = async (projectId: string, agentId: string): Promise<HookItem[]> =>
-    (await listInstalledHooks(deps.config.root, projectId, agentId)).map(toHookItem);
+    (await listInstalledHooks(deps.config.root, projectId, agentId)).map((hook) => toHookItem(hook, iconRoute));
 
   /** The install criterion every per-package route shares, the one listInstalledHooks uses: hooks/<name>/hooks.json exists. Returns the package directory. */
   const requireInstalled = async (

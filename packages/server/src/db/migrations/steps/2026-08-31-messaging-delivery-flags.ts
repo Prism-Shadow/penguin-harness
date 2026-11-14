@@ -1,5 +1,5 @@
 import { ensureColumn } from "@penguinharness/plugin-db/server";
-import type { Migration } from "../../migration.js";
+import type { Migration } from "../migration.js";
 
 export const messagingDeliveryFlags: Migration = {
   name: "2026-08-31-messaging-delivery-flags",

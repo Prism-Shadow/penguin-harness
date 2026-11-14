@@ -1,4 +1,4 @@
-import type { Migration } from "../../migration.js";
+import type { Migration } from "../migration.js";
 
 export const modelPromotions: Migration = {
   name: "2026-09-17-model-promotions",

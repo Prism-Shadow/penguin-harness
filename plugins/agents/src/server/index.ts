@@ -13,7 +13,6 @@ export { AgentRoutes } from "./agents/agent-routes.js";
 export * from "./agents.js";
 export * from "./agent-api.js";
 export * from "./agent-config.js";
-export * from "./agent-transfer.js";
 export * from "./hooks.js";
 export * from "./memory.js";
 export * from "./skills.js";

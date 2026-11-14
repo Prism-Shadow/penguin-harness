@@ -20,6 +20,8 @@
     "@prismshadow/penguin-server": "workspace:*",
     "@prismshadow/penguin-ui": "workspace:*",
     "@prismshadow/penguin-web": "workspace:*",
+    "@prismshadow/a2ui": "workspace:*",
+    "@prismshadow/chat-markdown": "workspace:*",
     "@types/mdast": "^4.0.4",
     "hono": "^4.12.34",
     "react": "^19.1.0",

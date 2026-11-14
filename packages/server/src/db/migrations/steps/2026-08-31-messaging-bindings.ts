@@ -1,4 +1,4 @@
-import type { Migration } from "../../migration.js";
+import type { Migration } from "../migration.js";
 
 export const messagingBindings: Migration = {
   name: "2026-08-31-messaging-bindings",

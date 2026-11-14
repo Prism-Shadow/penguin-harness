@@ -1,4 +1,4 @@
-import type { Migration } from "../../migration.js";
+import type { Migration } from "../migration.js";
 
 export const machines: Migration = {
   name: "2026-09-04-machines",
