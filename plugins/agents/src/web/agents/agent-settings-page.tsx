@@ -107,7 +107,7 @@ import { ApiTab } from "./api-tab";
 import { McpServersSection } from "./mcp-servers-section";
 import { AgentExportDialog } from "./agent-export-dialog";
 import { AgentImportDialog } from "./agent-import-dialog";
-import { ThinkingLevelSelect, effectiveThinkingLevel } from "@prismshadow/penguin-web/internal";
+import { ThinkingLevelSelect, effectiveThinkingLevel } from "@penguinharness/plugin-models/web";
 import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 type TabKey =

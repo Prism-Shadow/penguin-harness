@@ -19,7 +19,7 @@ import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import { useInstantSetting } from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
 import { toneInk } from "@prismshadow/penguin-web/internal";
-import { ModelCatalogSelect, effectiveThinkingLevel, ThinkingLevelSelect } from "@prismshadow/penguin-web/internal";
+import { ModelCatalogSelect, effectiveThinkingLevel, ThinkingLevelSelect } from "@penguinharness/plugin-models/web";
 import { WorkspaceSelect } from "@penguinharness/plugin-projects/web";
 
 interface ApiSettingsProps {
