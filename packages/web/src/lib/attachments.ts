@@ -33,12 +33,6 @@ import {
  */
 export const PAPERCLIP_ICON = ICONS.paperclip;
 
-/**
- * The paperclip: the mark of an attached file wherever one is shown or added — the message
- * banner, the composer's attachment entry, the drop overlay and the Files panel.
- */
-export const PAPERCLIP_ICON = ICONS.paperclip;
-
 export interface ParsedAttachments {
   /** Body text with restored attachment lines removed (unrecognized lines are kept). */
   text: string;
