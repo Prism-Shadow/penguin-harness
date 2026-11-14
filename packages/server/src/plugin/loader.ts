@@ -33,7 +33,7 @@ import {
 } from "@prismshadow/penguin-core";
 import type { PluginDeclaration } from "@prismshadow/penguin-core";
 import { findPackageJSON } from "node:module";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, statSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type {
@@ -56,11 +56,12 @@ import { checkIfaces, ifaceQuestions } from "./iface-check.js";
 import { loadTypeScript, TypeScriptUnavailable, type TypeScript } from "./typescript.js";
 
 /**
- * The resolved directories of this prefix's links, computed once per root: a link resolves to
- * the author's directory, so a package whose resolved path IS one of these came through a link
- * the `penguin plugin link` command parked. Read once per batch (the routes call
- * `refreshLinkDirs` before a page's declarations); a link command in this process re-refreshes
- * it, so a just-made link is marked on the next read.
+ * The paths a link answers for, computed once per root: a link's record names the author's
+ * directory, but a package resolved through the prefix answers at the link's own path inside
+ * it (`node_modules/<name>`), so both stand for the same link and a resolved package matches
+ * either. Read once per batch (the routes call `refreshLinkDirs` before a page's
+ * declarations); a link command in this process re-refreshes it, so a just-made link is
+ * marked on the next read.
  */
 let linkDirs: Set<string> | null = null;
 let linkDirsRoot: string | undefined;
@@ -72,8 +73,10 @@ export async function refreshLinkDirs(root: string | undefined): Promise<void> {
   linkDirsRoot = root;
   const out = new Set<string>();
   if (root !== undefined && root !== "") {
-    for (const link of Object.values(await linkedPackages(pluginsPrefix(root)))) {
+    const prefix = pluginsPrefix(root);
+    for (const [name, link] of Object.entries(await linkedPackages(prefix))) {
       out.add(link.path);
+      out.add(path.join(prefix, "node_modules", ...name.split("/")));
     }
   }
   linkDirs = out;
@@ -406,10 +409,17 @@ export async function readPluginDeclaration(
   };
 }
 
-/** The link a resolved package came through, when it is one the link command parked. */
+/** The link a resolved package came through, when it is one the link command parked: the row
+ * names the author's directory, whichever path the resolution answered at. */
 function linkOf(dir: string): { linked?: true; linkPath?: string } {
   if (!linkedNames().has(dir)) return {};
-  return { linked: true, linkPath: dir };
+  let linkPath = dir;
+  try {
+    linkPath = realpathSync(dir);
+  } catch {
+    // A directory already gone: the row reads as it is, the mark stays on the path as asked.
+  }
+  return { linked: true, linkPath };
 }
 
 /**
