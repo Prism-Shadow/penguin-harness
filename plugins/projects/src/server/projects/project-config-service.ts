@@ -97,7 +97,7 @@ import {
   VISION_PROBE_TIMEOUT_MS,
   classifyVisionProbe,
   classifyVisionProbeError,
-} from "./vision-detect.js";
+} from "@prismshadow/penguin-server/internal";
 import type { PricingRates, TieredRates } from "./usage-service.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Config, Paths } from "@prismshadow/penguin-server/internal";
