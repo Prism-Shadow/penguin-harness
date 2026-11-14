@@ -143,6 +143,9 @@ export type { ServerConfig } from "./config.js";
 export type { ServerHmrHost } from "./hmr/platform.js";
 
 export * from "./amsp/keys.js";
+export * from "./amsp/session-stream.js";
+export * from "./amsp/approvals.js";
+export * from "./http/session-access.js";
 export * from "./config.js";
 export { Clock } from "./hmr/capabilities.js";
 export { adminPluginConfigRoutes } from "@penguinharness/plugin-plugins/server";

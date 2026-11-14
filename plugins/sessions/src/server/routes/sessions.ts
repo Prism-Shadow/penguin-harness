@@ -22,11 +22,8 @@ import {
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import type { ApprovalMode, FilesStatResponse, GoalResponse, GoalStateView, RecalledMessageResponse, ServerEvent, SessionCategory, SessionBatchResult, SessionContextResponse, SessionCreateResponse, SessionForkResponse, SessionProcessesResponse, SessionResponse, SessionsResponse, SessionsBatchResponse, SubagentMessageResponse, RetryNowResponse, TaskCreateResponse, SessionSandbox } from "@prismshadow/penguin-server/api";
 import { compactionThresholdFor } from "@penguinharness/plugin-usage/server";
-import { sessionMessages, sessionTraceImage } from "../../services/session-history.js";
-import { SESSION_ROUTES_BASE } from "../../services/trace-images.js";
-import { readableSession } from "../session-access.js";
-import { amspSessionStream } from "../../amsp/session-stream.js";
-import { pendingApprovals } from "../../amsp/approvals.js";
+import { sessionMessages, sessionTraceImage, SESSION_ROUTES_BASE } from "@prismshadow/penguin-server/internal";
+import { readableSession, amspSessionStream, pendingApprovals } from "@prismshadow/penguin-server/internal";
 import { PREVIEW_TOKEN_TTL_MS, resolvePreviewTarget } from "@prismshadow/penguin-server/internal";
 import type { AppEnv } from "@prismshadow/penguin-server/internal";
 import type { SessionRow } from "@prismshadow/penguin-server/internal";
@@ -45,10 +42,19 @@ import {
   paginationQuery,
   pathParam,
   positiveIntParam,
+  parseAttachmentPart,
   readJson,
+  readRecalledFiles,
+  removeAttachments,
   requireEnum,
   requireString,
   requireValidId,
+  attachFilesToInput,
+  assertAttachmentBudget,
+  toAttachmentLimits,
+  INLINE_IMAGE_MAX_BYTES,
+  INLINE_IMAGE_MAX_MB,
+  cacheable,
 } from "@prismshadow/penguin-server/internal";
 import type { ServerConfig } from "@prismshadow/penguin-server/internal";
 import { normalizePenguinGoOrigin } from "@prismshadow/penguin-server/internal";
@@ -62,6 +68,10 @@ import type {
   SessionListOrder,
   SessionListPaging,
   SessionService,
+  ProjectConfigStore,
+  Access,
+  ProjectEvents,
+  ModelOAuth,
 } from "@prismshadow/penguin-server/internal";
 
 /** What this route group reaches — bound by its module (src/modules). */
@@ -116,15 +126,10 @@ import { Sessions as ManagerIface } from "@prismshadow/penguin-server/internal";
 import { SessionServiceIface } from "../runtime/session-manager.js";
 import { Messaging } from "@penguinharness/plugin-messaging/server";
 
-import { agentDeletionsRoutes, agentsRoutes } from "./agents.js";
-import { agentConfigRoutes } from "./agent-config.js";
-import { vaultRoutes } from "./vault.js";
-import { modelsRoutes } from "./models.js";
-import { modelOAuthCallbackRoutes, modelOAuthRoutes } from "./model-oauth.js";
-import { platformAuthRoutes } from "./platform-auth.js";
-import { modelScopeAuthRoutes } from "./modelscope-auth.js";
+import { agentDeletionsRoutes, agentsRoutes, agentConfigRoutes } from "@penguinharness/plugin-agents/server";
+import { vaultRoutes, platformAuthRoutes, commandPolicyRoutes } from "@prismshadow/penguin-server/internal";
+import { modelsRoutes, modelOAuthRoutes, modelOAuthCallbackRoutes, modelScopeAuthRoutes } from "@penguinharness/plugin-models/server";
 import { chatDefaultsRoutes } from "./chat-defaults.js";
-import { commandPolicyRoutes } from "@prismshadow/penguin-server/internal";
 import { usageRoutes } from "@penguinharness/plugin-usage/server";
 import { registerWorkspaceFileRoutes, workspaceFilesRoutes } from "@penguinharness/plugin-projects/server";
 import { archivedSessionsRoutes } from "./archived-sessions.js";
@@ -151,8 +156,6 @@ import type { Auth } from "@prismshadow/penguin-server/internal";
 import type { AgentApi } from "@prismshadow/penguin-server/internal";
 import type { Workbenches } from "@penguinharness/plugin-workbenches/server";
 import type { OrgService } from "@penguinharness/plugin-company/server";
-import type { ActivityCursor, INLINE_IMAGE_MAX_BYTES, readJson, paginationQuery, parseAttachmentPart, requireString, readRecalledFiles, optionalSessionListPagingQuery, optionalEnum, badRequest, cacheable, SessionListOrder, requireValidId, ProjectEvents, Access, optionalString, attachFilesToInput, positiveIntParam, SessionListPaging, ModelOAuth, Users, toAttachmentLimits, pathParam, Projects, assertAttachmentBudget, SessionService, APPROVAL_MODES, removeAttachments, INLINE_IMAGE_MAX_MB, listingViewOfRequest, requireEnum, ProjectConfigStore } from "@prismshadow/penguin-server/internal";
-import type { isValidId, imageUrlMessage, stripLeadingMarkerBlocks, sessionScratchpadDir, THINKING_LEVEL_NAMES, userText, scratchpadDir } from "@prismshadow/penguin-core";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 
 /** Max title length for manual renames: looser than the auto-generated 30-char limit, to accommodate users' own organizing conventions. */
