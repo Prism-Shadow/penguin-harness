@@ -255,7 +255,7 @@ Draft 的中间态允许 provider 缺失或类型失配；表示约束仍须成�
 
 类型兼容性交给 TypeScript：将两侧各自的声明快照生成 `.d.ts`，再生成赋值问题。保留方向、传递引用、编译选项和 revision 身份；不得用提供方的声明替换消费者的声明来回答问题。无法渲染、声明缺失或编译器未完成都不等于检查通过。图检查仍负责 provider 缺失或歧义。诊断将生成问题与声明区间映射回模块事实和 operator 来源，包括删除记录；来源说明相关改动，不承诺唯一最小责任方。
 
-目标 BootPlan 固定布线和启动顺序，boot 直接消费已验证的选择。[PRFC-0021](PRFC-0021-module-pass.zh.md) 的 pass 原型先在 `ModuleDef` 上检验不可变改写与延后 decoration；将全部类适配器改为可复用配方、消除 boot 的重复解析属于后续实现。现有 `moduleDefOf` 仍在装配时构造实例，不能把该适配器称为纯 Blueprint。
+目标 BootPlan 固定布线和启动顺序，boot 直接消费已验证的选择。[PRFC-0025](PRFC-0025-module-pass.zh.md) 的 pass 原型先在 `ModuleDef` 上检验不可变改写与延后 decoration；将全部类适配器改为可复用配方、消除 boot 的重复解析属于后续实现。现有 `moduleDefOf` 仍在装配时构造实例，不能把该适配器称为纯 Blueprint。
 
 ### 模型验证
 

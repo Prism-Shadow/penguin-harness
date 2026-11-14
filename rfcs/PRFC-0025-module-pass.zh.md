@@ -1,6 +1,6 @@
-# PRFC-0021 Module Pass：boot 前的不可变 operator
+# PRFC-0025 Module Pass：boot 前的不可变 operator
 
-[English](PRFC-0021-module-pass.md)
+[English](PRFC-0025-module-pass.md)
 
 - Feature Name: `module_compile`
 - Start Date: 2026-10-25
@@ -93,6 +93,7 @@ Pipeable operator 借鉴 RxJS 的组合风格；持久化数据结构提供可�
 
 ### v2.0.0
 
+- Updated：未合并的 module-pass 草稿从 PRFC-0021 调整为 PRFC-0025；PRFC-0021 已用于 Distros。
 - Updated：不可变 pipeable 编辑、最终目标 decoration、插件 pass 工厂、诊断来源、换代重放与仅证明模型的范围。
 - Removed：以注册顺序破平局，以及 instrument 依赖反复改写的语义。
 

@@ -1,6 +1,6 @@
-# PRFC-0021 Module Pass: immutable operators before boot
+# PRFC-0025 Module Pass: immutable operators before boot
 
-[中文版](PRFC-0021-module-pass.zh.md)
+[中文版](PRFC-0025-module-pass.zh.md)
 
 - Feature Name: `module_compile`
 - Start Date: 2026-10-25
@@ -93,6 +93,7 @@ Profile representative interface catalogs before introducing incremental executi
 
 ### v2.0.0
 
+- Updated: renumbered the unmerged module-pass draft from PRFC-0021 to PRFC-0025; PRFC-0021 is assigned to Distros.
 - Updated: immutable pipeable edits, final-target decoration, plugin pass factories, diagnostic provenance, generation replay and model-only proof scope.
 - Removed: registration-order ties and instrumentation depending on repeated rewrites.
 
