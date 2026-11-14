@@ -9,13 +9,14 @@
     "./web": "./src/web/index.ts"
   },
   "dependencies": {
+    "@penguinharness/plugin-terminal": "workspace:*",
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-server": "workspace:*",
     "@prismshadow/penguin-ui": "workspace:*",
     "@prismshadow/penguin-web": "workspace:*",
     "hono": "^4.12.34",
-    "ws": "^8.18.3",
     "smol-toml": "^1.9.1",
+    "ws": "^8.18.3",
     "yaml": "^2.5.0"
   },
   "devDependencies": {
