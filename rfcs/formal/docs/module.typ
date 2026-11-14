@@ -1,7 +1,8 @@
 #import "@preview/faithful-acmart:0.2.0": *
 
 // Governing specifications: ../../PRFC-0001-module.md,
-// ../../PRFC-0003-plugin.md and ../../PRFC-0025-module-pass.md, revision v2.3.0.
+// ../../PRFC-0003-plugin.md and ../../PRFC-0025-module-pass.md, revision v2.3.0;
+// runtime obligations also refer to PRFC-0002-hmr and PRFC-0015-agent-state.
 // Third-party acmart port: https://github.com/fzaiser/faithful-acmart/tree/v0.2.0
 // The acmsmall settings follow POPL/PACMPL; this is a design draft.
 #show: acmart.with(
@@ -14,26 +15,27 @@
   authors-addresses: none,
   doi: none,
   isbn: none,
-  title: "Declarations, Operators, and Replay in a Module Mechanism",
-  subtitle: "A model and theorem-statement draft for PenguinHarness",
-  short-title: "Module Semantics: Design Draft",
+  title: "Operators, Replay, and Hot Reload in a Module Mechanism",
+  subtitle: "A Lean-checked model for PenguinHarness",
+  short-title: "Module Reconfiguration",
   authors: (),
   abstract: [
-    PenguinHarness assembles components from declarations, operators, interface
-    signatures, dependency resolution, compile passes, and runtime lifecycle rules.
-    Instrumentation must cover declarations introduced by later passes, while mocks,
-    contribution removal, and plugin uninstallation require structural changes.
-    We specify a finite declaration model with ordinary and deferred recipe
-    operators. Edits may temporarily violate contracts; admission checks the
-    final result using an external TypeScript compatibility relation. Plugin changes
-    rebuild from the original declarations. A shared abstract syntax, direct operator
-    application and big-step Pass evaluation explain a worked example of mock
-    replacement, tab removal, telemetry and plugin removal. The paper makes the
-    intended value and its conditions explicit. Existing theorem candidates are restated in that syntax;
-    theorem selection and all proofs remain deferred. Source elaboration, diagnostic
-    provenance, and runtime recovery require additional arguments.
+    PenguinHarness assembles components from declarations, operators, dependency
+    checks, compile passes, and runtime lifecycle rules. Instrumentation must cover
+    later replacements; plugin removal must recover declarations lost to destructive
+    edits; running Tasks must retain the code they can still call after an update.
+    We give a finite declaration model and an abstract hot-reload protocol, with
+    proofs checked in Lean. The main results establish a normal form for deferred
+    operators, refinement of failed-attempt replay to a clean plugin rebuild, and
+    preservation of verified plans and reachable code across handover and recovery.
+    Counterexamples delimit permissible reordering, output-only undo, and dependency
+    graphs as a basis for incremental recompilation. Cordis 2026 supplies a closely
+    related account of runtime effects and hot replacement; our model documents the
+    conditions required by this software's declaration transformations and generation
+    lifetime rules. External type checking, source elaboration, callback behavior,
+    and refinement of the TypeScript implementation remain explicit obligations.
   ],
-  keywords: ("module systems", "operators", "rewriting", "plugin reconfiguration", "Lean"),
+  keywords: ("module systems", "operators", "plugin reconfiguration", "hot reload", "Lean"),
 )
 
 #show raw.where(block: true): set block(breakable: false)
@@ -59,7 +61,7 @@ and reconfiguration that authors can use before executing component code.
 
 == Requirements and intended value
 
-We use four requirements to evaluate the design:
+We use the following requirements to evaluate the design:
 
 - *R1: express structural changes directly.* An author can replace a recipe or
   remove a named contribution while retaining other declarations. A contribution
@@ -74,6 +76,9 @@ We use four requirements to evaluate the design:
 - *R4: explain plugin removal by the selected configuration.* Rebuilding from the
   original declarations and remaining passes determines the next candidate.
   Authors do not have to supply an inverse for every deletion or replacement.
+- *R5: retain what a generation can still use.* Handover must preserve the code
+  needed by running Tasks, resource cleanup, and recovery, including transitive
+  dependencies. A failed recovery must retain a repair path.
 
 The proposed mechanism uses one immutable declaration representation, finite pass
 composition, an explicit boundary for deferred operators, and rebuilding from source.
@@ -83,13 +88,13 @@ which inputs determine a rebuild. It does not prescribe a query-language-only
 API. Pure, total callbacks remain expressible, while the common operations have
 names that expose their scope.
 
-The contribution of this draft is a shared syntax and an account of how these
-choices address R1--R4. @syntax defines the shared declaration syntax;
-@semantics interprets it and follows one example through mock replacement,
-tab removal, telemetry, verification, and plugin removal. @candidates
-records the existing candidate laws in that same notation. Their selection and
-priority remain open; the candidates are grouped by the semantic boundary they
-concern.
+This paper provides a checked foundation for those choices. @syntax fixes the
+declaration language; @semantics defines evaluation, rebuilding, and the handover
+protocol. @guarantees develops deferred operator normalization, plugin replay, and
+hot-reload safety. The elementary algebra and its proofs are in @basics.
+The purpose is to guide PenguinHarness development. Compiler passes, reversible
+effects, and dynamic update already have substantial industrial and academic
+precedents; @position identifies the overlap rather than asserting a new paradigm.
 
 == Scope of the claims
 
@@ -100,12 +105,14 @@ representation. Class and field annotations are one way to express declaration
 construction and operator application. Their elaboration must preserve identities,
 contracts, scope, and logical operator order.
 
-This draft studies declaration operations. It does not yet establish the
-elaboration from class syntax, diagnostic provenance, or runtime park/load and
-resource reclamation. The external TypeScript assumption concerns completed type
-comparisons. All accompanying Lean theorem bodies remain `sorry`. The equations
-below define the semantics; statements labeled “Candidate law” are unproved and
-await a separate decision about which guarantees merit proof.
+All accompanying theorem bodies are complete. Lean checks declaration operations
+and a protocol over abstract generations, parked snapshots, and immutable code
+artifacts. The external TypeScript assumption concerns completed type comparisons.
+The protocol does not execute JavaScript or prove state migration correct. It
+covers local Module and Plugin replacement; package upload, distribution, and
+data-transfer protocols are outside its scope. Relating source syntax, caches,
+callbacks, and actual runtime references to this model remains necessary before
+its theorems can be claimed for the production implementation.
 
 = Syntax <syntax>
 
@@ -429,47 +436,459 @@ admission. Restoring declarations also does not restore a live socket or undo an
 external write. Runtime handover needs park/load, recovery state, and retained code
 artifacts independently of the build equation.
 
-== Assessing the design against the requirements
+== R5: generations, handover, and recovery <hmr-semantics>
+
+// PRFC-0002: local lifecycle; PRFC-0003: generation changes;
+// PRFC-0015: handoff, current pointer, and dependencies after disposal.
+A generation $gamma=⟨ i;M;U ⟩$ identifies a compiled plan and its code roots $U$.
+Artifact identities include revisions: replacing bytes at the same pathname is
+not preservation of the old artifact. A fixed graph $G$ maps each artifact to its
+direct code dependencies. Write $sf("reach")_G (U)$ for roots $U$ together with
+all dependencies reachable from them. This graph concerns code retention; it is
+distinct from the declaration dependency graph used for admission.
+The lifecycle and Task obligations follow the HMR and Agent State specifications
+#cite(<rfc-hmr>, <rfc-agent-state>).
+
+A protocol state is $H=⟨ phi;J;L;A ⟩$: a phase, running Task generations,
+resource-held code roots, and stored artifacts. The phase retains the generations
+listed in @phases. A parked snapshot $sigma$ is an opaque document identifier;
+its capture, validation, and load behavior are abstract operations.
 
 #figure(
   tabular(
-    columns: (0.4fr, 2.4fr, 2.2fr),
+    columns: (2.2fr, 1.15fr, 0.7fr, 1fr),
     align: left,
     toprule(),
-    [Need], [Observable result in the example], [Condition or remaining obligation],
+    [Phase], [Retained images], [Current], [Recovery],
     midrule(),
-    [R1], [$M_2$ retains the mock store and help tab; the debug tab is absent.],
-      [Stable contribution identities and immutable snapshots.],
-    [R2], [$sf("run")(P_t,M_0)$ contains $w_t (c_m)$ after one finalization.],
-      [All composed passes share one final boundary; callbacks are total.],
-    [R3], [$M_1$ fails a requirement; the final result can still be admitted.],
-      [Completed tsc checks, graph validation, and diagnostic provenance.],
-    [R4], [Removing $q_t$ rebuilds $M_0$ from the same base and catalog.],
-      [Retained source and fixed revisions; runtime recovery is separate.],
+    [$sf("running")(gamma)$], [$gamma$], [$gamma$], [None],
+    [$sf("prepared")(gamma_o,gamma_n,sigma)$], [$gamma_o,gamma_n$], [$gamma_o$], [$gamma_o,sigma$],
+    [$sf("booting")(gamma_o,gamma_n,sigma)$], [$gamma_o,gamma_n$], [None], [$gamma_o,sigma$],
+    [$sf("recovering")(gamma_o,sigma)$], [$gamma_o$], [None], [$gamma_o,sigma$],
+    [$sf("degraded")(gamma_o,sigma)$], [$gamma_o$], [None], [$gamma_o,sigma$],
     bottomrule(),
   ),
   placement: none,
-  caption: [Design value is assessed by observable behavior and its conditions.
-    These worked evaluations are not claims of implementation correctness or
-    measured performance.],
-) <value-map>
+  caption: [Phases of one serialized update. An image names a plan and code revision,
+    not a live instance that can be resurrected after disposal.],
+) <phases>
 
-This account makes the design choices testable before choosing proof priorities.
-A candidate law is useful to the extent that it secures a required observation,
-permits a justified optimization, or isolates an assumption an author must satisfy.
-Whether each law below meets that criterion remains open.
+The local Module/Plugin update algorithm is:
 
-= Candidate laws in the shared syntax <candidates>
++ *Prepare.* With the old generation current, choose the target Module and Plugin
+  revisions, rebuild the candidate from its source, and require $V(M_n,pi)$.
+  Retain a parked snapshot and the candidate's code bundle. A rejection before
+  disposal leaves the old instance current. The abstract model checks the plan
+  and bundle; a real implementation must additionally establish that the parked
+  state can be loaded and that its capture is synchronized with mutation.
++ *Detach and boot.* Dispose the old tree's generation-owned registrations and
+  enter $sf("booting")$. Existing Tasks keep their generation references. There
+  is no current generation during this interval, so new framework Tasks wait or
+  fail according to host policy. Boot the candidate, load its parked state, and
+  publish it only on success. New Tasks then use the new current generation.
++ *Recover or retain a repair path.* If boot fails, release the candidate's owned
+  resources and rebuild a fresh old instance from the retained old code and
+  snapshot. Recovery success republishes the old generation. Recovery failure
+  enters $sf("degraded")$ and retains that code and snapshot; a verified repair
+  target can subsequently enter $sf("booting")$. Neither success nor termination
+  of a lifecycle callback is assumed.
++ *Retire independently.* A Task releases its generation reference when finished.
+  A resource releases its captured code roots after cleanup. An artifact may be
+  reclaimed only when it is outside the transitive closure of every remaining
+  phase, Task, and resource root.
 
-The following groups restate the existing draft statements using @syntax
-and the semantics of @semantics. They are an inventory for later selection,
-not a selected set of contributions. All proofs remain deferred. Equality below
-is equality of semantic results unless an expression explicitly denotes a sequence;
-it does not identify different syntax trees by definition.
+The candidate bundle $B$ must contain its roots. For each $a in B$, every direct
+dependency is either in $B$ or already reachable from the old state's roots.
+This local closure condition permits dependencies shared with retained generations.
+Resource acquisition may capture already reachable code; fresh code first enters
+through a checked bundle. These are transition premises, not an assumption that
+the destination state is already safe.
+
+Define the global roots and retention invariant by
+
+$
+  sf("roots")(H) &= sf("code")(sf("images")(phi)) ⧺ sf("code")(J) ⧺ sf("flatten")(L), \
+  sf("Safe")_G (H) &⇔ sf("reach")_G (sf("roots")(H)) ⊆ A.
+$
+
+Here $sf("code")$ concatenates the roots of a generation sequence. The plan
+invariant $sf("ValidPlans")(H)$ says that every retained phase image has a valid
+Module. Resource keys also carry fresh registration tokens: releasing $(k,t)$
+clears key $k$ only if its current token still equals $t$. This prevents a late
+old disposer from deleting a successor's registration at the same key.
+
+== Basic properties
+
+Operator composition is associative with an identity. Fixed-predicate filters
+fuse; fixed-name deletions commute and are idempotent. Fixed-target edits preserve
+other names. Finite Pass evaluation is deterministic, and deferred recipe
+operators preserve declared contracts. Verification is sound, and complete when
+all required external comparisons return answers. Plugin selection depends on
+requested membership; strict retirement bounds the number of retries. These
+properties supply the lemmas used below. Their statements, necessary premises,
+and proofs are collected in @basics and `Basics.lean`.
+
+= Reconfiguration guarantees <guarantees>
+
+The following results address the boundaries where local edits become a complete
+build, a failed attempt becomes a retry, and an old generation becomes retired.
+Equality in the first two subsections compares declarations, not live heaps.
+
+== Deferred Operator Normalization <normalization>
+
+Let $sf("edits")(P)$ be the ordered projection of structural instructions and
+$sf("rules")(P)$ the ordered projection of deferred pairs. Neither projection
+executes a callback. For an edit sequence $[E_1,dots,E_k]$, define
+$sf("apply")([E_1,dots,E_k],M)=E_k (dots E_1 (M) dots)$, with the empty sequence
+returning $M$.
+
+#theorem(name: "Deferred normal form")[
+  For every finite Pass $P$ and Module $M$,
+  $
+    ⟨ P,M ⟩ ⇓ (sf("apply")(sf("edits")(P),M),sf("rules")(P)).
+  $
+  This result is unique. Consequently, if
+  $sf("edits")(P)=sf("edits")(Q)$ and $sf("rules")(P)=sf("rules")(Q)$, then
+  $
+    sf("run")(P,M)=sf("run")(Q,M).
+  $
+]
+
+#proof[
+  Induct on $P$. The empty pass contributes neither an edit nor a rule. An edit
+  contributes the first function in the edit projection and applies it to the
+  input of the induction hypothesis. A deferral leaves that input unchanged and
+  prepends its pair to the rule projection. Thus collection returns exactly the
+  two projected results. Determinism identifies any derivation with this result;
+  finalization is a function of those two results. The Lean proofs are
+  `collect_normal_form`, `reorder_evaluation`, and `reorder_invariant` in
+  `Proofs/Normalization.lean`.
+]
+
+This is a normalization result: every interleaving has the same meaning as the
+form containing all structural edits, in order, followed by all deferred rules,
+in order. It justifies moving a deferral across a structural edit and implementing
+collection with separate edit and rule queues. Selectors inspect the final
+structural snapshot, so an earlier registration covers a later replacement.
+This depends on a fixed instruction sequence and pure, total callbacks. Moving
+source-language code that constructs a callback or chooses which rule to register
+requires an additional argument.
+
+The word “reordering” alone would overstate the result. Edits can observe previous
+edits; wrapper order can change code; neither sequence is freely permutable. No
+claim of general rewrite confluence follows. In particular, normalization does
+not permit introducing an extra finalization boundary:
+
+#theorem(name: "Separate finalizations can differ")[
+  Let $p(q,d)=sf("true")$, $P=sf("defer")(p,w);epsilon$, and
+  $Q=sf("replace")_(q,d);epsilon$, where $d=⟨ tau;R;c ⟩$ and $w(c)!=c$.
+  For $M=[q mapsto d]$,
+  $
+    sf("run")(P ⊙ Q,M) != sf("run")(Q,sf("run")(P,M)).
+  $
+]
+
+#proof[
+  The composed pass replaces the declaration before applying $w$, yielding recipe
+  $w(c)$. Separate execution applies $w$ and then replaces the entire declaration,
+  yielding $c$. The assumed inequality distinguishes them. This is
+  `separate_finalization_counterexample`.
+]
+
+== Plugin Reconfiguration (Cordis 2026) <plugin-guarantee>
+
+Rebuilding has an operational obligation beyond the equation defining
+$sf("build")$: partial failed attempts must not become the input of a later one.
+Use a machine state $X=⟨ M;P;Delta ⟩$, containing current declarations, pending
+instructions, and accumulated rules. Its steps are
+
+$
+  ⟨ M;(E;P);Delta ⟩ &arrow ⟨ E(M);P;Delta ⟩, \
+  ⟨ M;(sf("defer")(p,w);P);Delta ⟩ &arrow ⟨ M;P;Delta ⧺ [(p,w)] ⟩.
+$
+
+A fresh attempt starts
+with the original source for $K[S]$, their concatenated passes, and no deferred
+rules. A failed attempt may stop at any prefix. A retry uses a strictly smaller
+retained support and starts fresh again; its failed scratch state is kept only
+as history. A completed attempt finalizes its scratch result. Here “completed”
+means compilation has finished; Module admission is the subsequent check.
+
+#theorem(name: "Replay refinement and history independence")[
+  Every completed machine run from the fresh state for $B,K,S$ returns
+  $sf("build")(B,K,S)$. If a history of partial failed attempts ends with a completed
+  attempt at $S_f$, its result is $sf("build")(B,K,S_f)$, independently of its earlier
+  selections and failure positions. Histories ending in the same retained support
+  have equal outputs, with $B,K$ and their callbacks fixed.
+]
+
+#proof[
+  Assign a meaning to each scratch state: collect its pending instructions,
+  append the resulting rules after its accumulated rules, and finalize the
+  resulting declarations. Both machine steps preserve this meaning. For an edit,
+  the same function is moved from the pending sequence to the scratch Module;
+  for a deferral, list associativity preserves the total rule sequence. At a
+  fresh state this meaning is $sf("build")$; at a completed state it is the returned
+  result. Induction over the attempt history discards each failed prefix and
+  reduces to the final run. Equal supports select identical catalog entries.
+  `machine_refines_build`, `attempts_refine_build`, and `history_independent` are
+  in `Proofs/Plugin.lean`; support equivalence is in `Basics.lean`.
+]
+
+Total callbacks and a finite pending sequence ensure that a machine run completes.
+Strict retirement decreases the cardinality of retained support, bounding retries
+by the initial support size. It does not specify the policy for selecting a
+usable subset or prove that subset maximal. An implementation must also recreate
+or reset every stateful pass factory and cache used by an attempt; the theorem's
+fresh scratch state cannot establish that fact about TypeScript by itself.
+
+Source retention is necessary for general destructive transformations unless
+some other history is retained. Two small counterexamples make the boundary
+precise:
+
+#theorem(name: "Output and DI dependencies do not determine undo")[
+  Given distinct declarations $d_0,d_1$, deletion of $q$ has no common inverse
+  $U:sf("Module") arrow sf("Module")$ satisfying
+  $U(sf("remove")((lambda n . n=q),M))=M$ for every $M$.
+  Moreover, a pass can produce different valid declarations depending on the
+  presence of $x$, while its output has no declaration dependency on $x$.
+]
+
+#proof[
+  Both $[q mapsto d_0]$ and $[q mapsto d_1]$ delete to $[]$; a single value $U([])$
+  cannot recover both inputs. For the second claim, take distinct names $x,y$ and
+  let a pass output $[y mapsto d_1]$ when $x$ is present, and $[y mapsto d_0]$
+  otherwise. Choose well-formed $y$ and declarations with no requirements. Both
+  outputs are valid and have no DI edge to $x$. Deleting $x$ from the first output
+  leaves it unchanged, while a fresh run without $x$ produces the second output.
+  These are `no_output_only_undo` and `di_graph_insufficient`.
+]
+
+The second example shows why the admitted DI graph alone cannot certify which
+compile callbacks are unaffected by a configuration change. Incremental replay
+would need a sound record of their observations, a restricted callback language,
+or an independent equivalence check. Full replay provides the reference result
+against which such an optimization can be judged.
+
+Cordis 2026 #cite(<shi2026cordis>) is a close precedent, including reactive
+coeffects, configuration reconciliation, and HMR. Its witnessed effect has type
+$Gamma arrow Gamma times (Gamma arrow Gamma)$: applying an effect to $gamma$
+returns $(delta,u)$ with $u(delta)=gamma$. The returned inverse may capture
+information specific to that input. It therefore escapes the output-only
+impossibility result: our counterexample does not apply to such retained undo
+information. Cordis uses context-mediated effects to support runtime disposal
+and reinstallation. Our declaration layer instead retains original source and
+replays arbitrary pure transformations, including deletion and replacement,
+without requiring each author to construct an inverse. These mechanisms can
+coexist: replay determines the next plan, while tracked resources support runtime
+cleanup during its installation.
+
+== Hot Module Reload <hmr-guarantee>
+
+The protocol in @hmr-semantics separates publication from the lifetime of code
+still referenced by Tasks and recovery. This distinction matters after a
+successful update as well as after a failure: removing an old generation from
+the current pointer does not remove all references to its code.
+
+#theorem(name: "Generation safety across handover and recovery")[
+  Fix an immutable artifact graph $G$. If $H_0$ satisfies
+  $sf("Safe")_G (H_0)$ and $sf("ValidPlans")(H_0)$, and
+  $H_0 arrow^* H$ follows the protocol transitions, then
+  $
+    sf("Safe")_G (H) and sf("ValidPlans")(H).
+  $
+  Consequently, every published plan is valid; every artifact transitively
+  reachable from a running Task's generation remains stored; and the code needed
+  by a retained recovery generation remains stored, including in the degraded
+  state after recovery itself fails.
+]
+
+#proof[
+  First consider introducing a candidate bundle. Any artifact reachable in the
+  new state is either reachable from the old roots or belongs to the bundle.
+  Prove this by induction on its reachability path. At a new root the bundle
+  premise applies. At an edge leaving a bundle artifact, the direct-dependency
+  premise supplies another bundle artifact or an old reachable artifact; an edge
+  leaving an old reachable artifact remains old reachable. The old invariant and
+  the enlarged store therefore cover every case.
+
+  Detach preserves phase roots. Commit, rejection, and either recovery outcome
+  retain a subset of the preceding roots. Starting a Task copies roots from the
+  current phase image; retaining a resource adds already reachable references.
+  Finishing a Task or releasing a resource removes roots. Reclamation removes
+  only an unreachable artifact, so it cannot remove one required by the invariant.
+  These cases prove preservation of $sf("Safe")$. For plan validity, only prepare
+  and repair introduce an image, and both require successful verification; all
+  other transitions retain existing images. Induction on the transition sequence
+  yields the result. The Task and recovery claims follow by embedding their
+  roots into the global roots and closing transitively.
+
+  The corresponding proofs are `step_safe`, `step_valid_plans`,
+  `reachable_invariants`, `published_valid`, `running_task_retained`, and
+  `recovery_retained` in `Proofs/HMR.lean`.
+]
+
+The recovery snapshot is retained explicitly in each failure phase. Recovery
+constructs a fresh instance of the old generation; it does not resurrect a
+disposed tree or roll back external writes. The result is a safety invariant,
+with no promise of zero downtime, lifecycle success, or eventual collection. An
+old Task that never finishes can keep its entire callable dependency closure
+alive indefinitely.
+
+Resource handover has a second, independent obligation. For a registry $r$, let
+$sf("acquire")(r,k,t)$ install token $t$ at key $k$, and let
+$sf("release")(r,k,t)$ clear it only when that token is still current.
+
+#theorem(name: "Stale cleanup cannot release a successor registration")[
+  If $t_n != t_o$, then
+  $
+    sf("release")(sf("acquire")(r,k,t_n),k,t_o)=sf("acquire")(r,k,t_n).
+  $
+  Releasing the current token does clear that registration.
+]
+
+#proof[
+  At $k$, the stored token is $t_n$, so the stale release guard fails; at every
+  other key release is the identity. The current-token guard succeeds.
+  These are `stale_release_noop` and `current_release`.
+]
+
+Token freshness must survive key reuse for as long as an old disposer can run.
+The registry theorem and artifact invariant model complementary parts of resource
+ownership; their connection to actual callbacks is an implementation obligation.
+Code retention also does not make a disposed service callable. Running Tasks
+need a lifecycle discipline that preserves every capability they may invoke, or
+an explicit rule preventing those calls. Equality of parked state shapes supplies
+no behavioral compatibility proof for old Tasks and new code sharing mutable state.
+
+= Position, cost, and implementation obligations <position>
+
+== Relation to existing systems
+
+The closest conceptual comparison is Cordis 2026, discussed in
+@plugin-guarantee. Its HMR algorithm classifies modules, detects stale entries,
+backs up module caches, and disposes and reinstantiates affected fibers; a failure
+restores caches and recreates previous components #cite(<shi2026cordis>).
+Our explicit degraded phase records that the recovery boot can fail as well.
+The artifact invariant states an additional obligation for this application's
+long-lived Tasks and recovery references; it is not a proof about Cordis's
+implementation or a claim that Cordis lacks resource tracking.
+
+Compiler passes over DI definitions are established industrial practice. Symfony
+allows definition transformations before validation and instance creation
+#cite(<symfony>), closely matching our structural compilation boundary. OSGi
+Declarative Services specifies activation and deactivation in response to service
+availability #cite(<osgi-ds>), and its framework lifecycle separates bundle revisions
+and wiring during updates #cite(<osgi-lifecycle>). Erlang release handling provides
+ordered upgrade instructions, versioned code, and application-controlled state
+changes #cite(<erlang>). ZIO provides reloadable service layers #cite(<zio>).
+These precedents rule out positioning mutable assembly plans or reloadable
+services as new in themselves.
+
+Dynamic software updating has also studied code replacement and state continuity
+in depth. Kitsune updates C programs using update points and state transformation
+#cite(<kitsune>); Theseus uses ownership and runtime state management to support
+live evolution #cite(<theseus>). The survey by Ahmed et al. #cite(<dsu-survey>)
+describes a broader range of techniques and constraints. These works are relevant
+precedents, not a ranking of the latest systems: their execution models differ,
+and this paper supplies no comparative evaluation or claim of academic superiority.
+
+The useful position for this work is a checked account of PenguinHarness's own
+composition boundaries. Deferred normalization explains which scheduling changes
+are valid. Replay refinement defines the result that retry and incremental
+implementations must match. Generation safety identifies the references that
+must outlive a successful or failed handover. The counterexamples explain why
+less information is insufficient. Pipeable notation follows familiar operator
+APIs #cite(<rxjs>), and source retention draws on ordinary persistent-state
+techniques #cite(<okasaki>).
+
+== Cost <cost>
+
+A counted refinement $⟨ P,M ⟩ scripts(⇓)_k (M',Delta)$ adds one per edit or deferral
+and zero for the empty pass. Its count is exactly $k=|P|$, as proved in
+`Basics.lean`. It counts scheduled instructions, excluding callback work,
+finalization, and external checking. It gives neither a fuel limit nor a wall-time
+bound for TypeScript execution.
+
+For $n$ declarations in the final structural snapshot and $d$ deferred rules,
+direct finalization evaluates $n times d$ selectors and performs one recipe
+transformation per match. Expansion output size is the sum of callback output
+sizes. Strict-retirement retries perform at most one more attempt than the initial
+support cardinality, conditional on each attempt returning. Callback cost, provider
+search, intermediate growth, and tsc must be measured separately. HMR retention
+has no size bound without progress of Tasks and resource cleanup. No measured
+performance or capacity claim follows from these operation counts.
+
+== Proof correspondence and remaining obligations
+
+The Lean package uses the standard library and the pinned toolchain. Every
+stated theorem has a proof; no proof placeholder or additional propositional axiom
+was introduced. Types, code, compatibility, and the checker are external parameters.
+The sole domain-specific propositional axiom says that completed checker answers
+agree with compatibility; standard Lean logical axioms remain part of the proof
+foundation #cite(<lean4>).
+
+#figure(
+  tabular(
+    columns: (1.45fr, 3.05fr),
+    align: left,
+    toprule(),
+    [Paper content], [Lean files and principal results],
+    midrule(),
+    [Types, recipes, checker], [`External.lean`: `Ty`, `Code`, `Compatible`, `typeCheck_correct`],
+    [Declarations and operators], [`Module.lean`, `Operator.lean`: edits, `Valid`, `verify`, `admit`],
+    [Pass and plugin meaning], [`Pass.lean`, `Plugin.lean`: `Evaluates`, `materialize`, `build`],
+    [Basic properties (@basics)], [`Basics.lean`: editing, verification, evaluation, selection, retry bounds],
+    [Normalization (@normalization)], [`Proofs/Normalization.lean`: `collect_normal_form`, `reorder_invariant`],
+    [Replay (@plugin-guarantee)], [`Replay.lean`, `Proofs/Plugin.lean`: `attempts_refine_build`, counterexamples],
+    [HMR (@hmr-guarantee)], [`HMR.lean`, `Proofs/HMR.lean`: `reachable_invariants`, `stale_release_noop`],
+    bottomrule(),
+  ),
+  placement: none,
+  caption: [Correspondence to definitions and complete proofs. The artifact proves
+    the model theorems; it does not establish a refinement by the TypeScript code.],
+) <proof-map>
+
+An elaboration relation must preserve qualified identities, contribution order,
+provider choices, exports, aliases, and dependencies introduced by contributions.
+It must account for multiple provisions sharing one instance, signature projection,
+and the TypeScript questions actually generated. Pure, total callback semantics
+must be justified for concrete factories; diagnostic provenance needs source and
+edit histories. A valid output alone cannot show that the requested transformation
+was performed.
+
+The HMR model deliberately exposes a present implementation gap. The Plugin RFC
+requires candidate compilation before dismantling the old runtime. In the
+implementation accompanying this draft, `upgrade.ts` disposes the old tree before
+successor boot, while `platform.ts` compiles the candidate inside that boot.
+The stronger preparation order proved here is therefore a target protocol, not
+an established implementation property. In-place package overwrite likewise does
+not by itself retain the exact old revision needed for recovery. Neither gap is
+repaired by adding a theorem about the abstract model.
+
+A runtime refinement must also justify serialization, complete tracking of code
+and disposer references, immutable revision identities, fresh registration tokens,
+and the lifetime of capabilities used by old Tasks. The parked snapshot is opaque:
+consistent capture, migration, and shared mutable state require further contracts.
+The model neither verifies Node's module-cache behavior nor implements ESM unloading.
+A transition indicates that a lifecycle callback returned; it cannot force that
+callback to terminate or succeed. These are concrete conditions for using the
+proved protocol as the foundation of the software.
+
+#bibliography("module.bib")
+
+#pagebreak()
+#counter(heading).update(0)
+#set heading(numbering: "A.1")
+= Basic properties and proofs <basics>
+
+This appendix records the algebra used by the main results. Full proofs are in
+`Basics.lean`; the arguments below describe their structure. All callbacks are
+pure and total, all sequences finite, and equality concerns semantic values.
 
 == Operators and structural edits
 
-#theorem(title: "Candidate law", name: "Operator composition and locality")[
+#theorem(title: "Lemma", name: "Operator composition and locality")[
   For all $O_1,O_2,O_3,d$,
   $((O_1;O_2);O_3)(d)=(O_1;(O_2;O_3))(d)$, and
   $(sf("id");O_1)(d)=O_1 (d)=(O_1;sf("id"))(d)$.
@@ -488,7 +907,18 @@ it does not identify different syntax trees by definition.
 Contract preservation concerns the declared $(tau,R)$ fields. It supplies no
 behavioral equivalence of the recipes, and general $O$ need not satisfy it.
 
-#theorem(title: "Candidate law", name: "Editing laws")[
+#proof[
+  Expand composition to function application for associativity and the identities.
+  For application at $q$, induct on the Module and split on whether the head name
+  equals $q$. The same split preserves other names and their first lookup. A recipe
+  operator changes only $c$; composition preserves $(tau,R)$ when both factors do.
+  Mapping such operators preserves name validity, provider contracts, requirement
+  lists, and the dependency relation. The same decreasing rank therefore witnesses
+  validity in both directions. See `on_composition`, `on_local`, `valid_map`, and
+  `on_preserves_validity`.
+]
+
+#theorem(title: "Lemma", name: "Editing laws")[
   For pure entry predicates $p_1,p_2$ and fixed name predicates $u,v$,
   $
     sf("filter")(p_2,sf("filter")(p_1,M)) &= sf("filter")(p_1 and p_2,M), \
@@ -511,9 +941,21 @@ $f$ that inspects the changing Module does not inherit the fixed-predicate laws.
 The equations concern values; they establish no allocation or structural-sharing
 bound for a particular persistent representation.
 
+#proof[
+  Induction on the entry sequence reduces filter fusion and the deletion equations
+  to Boolean identities on each unchanged entry. Membership follows from the
+  filter predicate. Replacement maps names to themselves, and induction on first
+  lookup proves locality. Slot filtering splits on the parent scope; inside the
+  scope it is the ordinary filter, and outside it the entry is unchanged. For the
+  cardinality equation, uniqueness permits exactly one matching entry, so removing
+  it decreases the slot count by one. Expansion is concatenation of callback
+  outputs; induction and additivity of list length give the sum. These arguments
+  prove `filter_fusion` through `expansion_size`.
+]
+
 == Verification and admission
 
-#theorem(title: "Candidate law", name: "Verification and admission")[
+#theorem(title: "Lemma", name: "Verification and admission")[
   $V(M,pi)=sf("true")$ implies $⊢ M sf("ok")$.
   Conversely, $⊢ M sf("ok")$ and completed answers for every required comparison
   imply $exists pi, V(M,pi)=sf("true")$. Accepted requirements resolve to visible
@@ -526,9 +968,24 @@ bound for a particular persistent representation.
   $
 ]
 
+#proof[
+  For soundness, extract unique names and completed positive dependency checks
+  from the checker's conjunction. The external axiom turns each positive answer
+  into compatibility. Use the position of each name in $pi$ as its rank; every
+  dependency points to a smaller position. For completeness, sort the finite name
+  sequence by a rank witnessing validity. A strict rank decrease places every
+  provider before its consumer, and completed comparisons must answer positively
+  for compatible contracts. A cycle would induce a strict rank decrease back to
+  its starting point, which is impossible. An unknown comparison fails the
+  checker's conjunction. Finally, admission returns either the verified candidate
+  or the assumed-valid current Module. These are `verify_sound`, `verify_complete`,
+  `valid_has_no_dependency_cycle`, `incomplete_dependency_rejected`, and
+  `admission_preserves_validity`.
+]
+
 == Pass evaluation and deferred operators
 
-#theorem(title: "Candidate law", name: "Finite evaluation and composition")[
+#theorem(title: "Lemma", name: "Finite evaluation and composition")[
   For every finite $P,M$ there exist unique $M',Delta$ such that
   $⟨ P,M ⟩ ⇓ (M',Delta)$.
   The recursive interpreter agrees with this relation. Concatenation $⊙$ is
@@ -543,7 +1000,19 @@ The decreasing structure is the remaining pass sequence. There is no fuel limit
 or bound on Module size; the embedded callbacks must already be total. A counted
 refinement of this judgment is given in @cost.
 
-#theorem(title: "Candidate law", name: "Final recipe application")[
+#proof[
+  Induct on $P$. The empty pass has the unique Done derivation. An edit applies its
+  total callback and uses the induction hypothesis for the tail. A deferral uses
+  that hypothesis and prepends its pair. Inverting any competing derivation fixes
+  the same constructor and tail result, proving uniqueness. The interpreter
+  follows these cases, so induction also proves agreement. Induction on the left
+  pass proves concatenation associativity and the collection equation. In the
+  counted judgment, each constructor consumes one instruction, yielding exactly
+  $|P|$. See `evaluates_terminates`, `evaluates_unique`, `collect_correct`,
+  `collect_append`, and `evaluates_steps`.
+]
+
+#theorem(title: "Lemma", name: "Final recipe application")[
   $sf("sel")(Delta,q,d)$ retains exactly the accepting occurrences of $Delta$ in
   their original order. Extending $sf("ctr")$ entrywise to retain names gives
   $sf("ctr")(sf("finalize")(Delta,M))=sf("ctr")(M)$ and
@@ -559,9 +1028,22 @@ refinement of this judgment is given in @cost.
   $q ∉ sf("names")(M')$ ⇒ $q ∉ sf("names")(sf("run")(P,M))$.
 ]
 
+#proof[
+  Selection is a list filter on the unmodified structural entry, so it preserves
+  accepting occurrences and order. Induct on the selected list to compute its
+  left fold: each step changes only the current recipe and adds the next outer
+  wrapper. Mapping this computation preserves names and contracts, so `valid_map`
+  gives validity equivalence. Interpreter agreement identifies the structural
+  result of any derivation, and lookup through the map yields the stated recipe.
+  The later-edit example follows by evaluating collection; name preservation
+  gives absence of removed targets. See `selected_exactly`,
+  `selection_preserves_order`, `fold_recipe`, `materialize_preserves_validity`,
+  and `final_recipe_operators`.
+]
+
 == Plugin selection and retirement
 
-#theorem(title: "Candidate law", name: "Selection and installation")[
+#theorem(title: "Lemma", name: "Selection and installation")[
   With fixed $B,K$, equal $sf("support")(S_1)$ and $sf("support")(S_2)$ give equal
   $sf("build")(B,K,S_1)$ and $sf("build")(B,K,S_2)$. Selected plugin names are unique
   when catalog names are unique, and every selected name is requested.
@@ -578,96 +1060,35 @@ The premise on $q$ is necessary for the round trip. Fixed $K$ also fixes revisio
 callback configuration, and precedence; upgrading a package or disabling only its
 pass changes that parameter. These equations compare declarations, not live heaps.
 
-#theorem(title: "Candidate law", name: "Strict retirement")[
+#proof[
+  Selection filters the fixed catalog by requested membership. Equal supports
+  therefore produce equal ordered selections, hence the same source and Pass.
+  A subsequence of unique catalog names remains unique, and filter membership
+  implies the request is present. Installation and removal have the stated
+  support equations; under freshness, adding and then removing $q$ restores the
+  old support. Membership in any remaining Project request puts the known plugin
+  in the union and therefore in the selection. See `build_depends_on_selection`,
+  `install_then_uninstall`, `install_idempotent`, `uninstall_idempotent`, and
+  `remaining_request_retains_plugin`.
+]
+
+#theorem(title: "Lemma", name: "Strict retirement")[
   Define $S' ≺ S$ by
   $sf("support")(S') ⊊ sf("support")(S)$. This relation is well founded.
   A chain $S_m ≺ dots ≺ S_0$ has
   $m <= |sf("support")(S_0)|$ strict transitions.
 ]
 
+#proof[
+  Deduplicate each request sequence to measure its finite support. Strict inclusion
+  supplies an element of the old support absent from the next one, so the next
+  cardinality is strictly smaller. Pull back the well-founded order on natural
+  numbers along this measure. Induction on a retry chain adds one for its first
+  strict decrease and bounds the remaining chain by the next cardinality. These
+  are `retirement_decreases`, `retry_wellFounded`, and `retry_bound`.
+]
+
 Reordering requests or dropping a duplicate does not satisfy $≺$.
 A policy that drops original contribution groups without removing a plugin needs
 a measure that also counts those groups. The current statement does not cover
 that policy or promise the largest usable subset.
-
-= Cost, correspondence, and remaining obligations <cost>
-
-For operation counts, refine the structural judgment to
-$⟨ P,M ⟩ scripts(⇓)_k (M',Delta)$. It uses the same rules with count zero for Done and
-one added to the premise's count for Edit and Defer. Erasing that count gives
-the earlier judgment:
-
-$
-  ⟨ P,M ⟩ ⇓ (M',Delta) ⇔ exists k, ⟨ P,M ⟩ scripts(⇓)_k (M',Delta).
-$
-
-#theorem(title: "Candidate law", name: "Operation count")[
-  If $⟨ P,M ⟩ scripts(⇓)_k (M',Delta)$, then $k=|P|$.
-]
-
-The count measures scheduled pass instructions. It excludes callback work,
-finalization and external checking; it is neither a fuel limit nor a time bound.
-
-For $n$ entries in the final structural Module $M'$ and $d$ pairs in $Delta$,
-direct finalization evaluates $n times d$ selectors and performs one recipe
-transformation per match. $sf("expand")(h,M)$ has output size equal to the sum of its
-callback output sizes. These quantities do not bound callback cost, provider
-search, or tsc. The requested profiling workloads use interface catalogs of 5,000
-and eventually 100,000 entries. Interface count alone determines neither Module
-size nor the number of assignment questions; profiles must record intermediate
-sizes, requirement sites, candidate comparisons, rendered declarations, and checker
-work separately. No benchmark or measured capacity claim is made here.
-
-The syntax is interpreted by the existing Lean definitions. The paper's three
-checker answers correspond to `some true`, `some false`, and `none`; it assumes
-only agreement of completed answers with compatibility. The structural judgment
-corresponds to `Evaluates`, which hides the count in `EvaluatesIn`. The concrete
-function and constructor names are mapped below so that implementation vocabulary
-does not have to carry the exposition.
-
-#figure(
-  tabular(
-    columns: (1.35fr, 2.65fr, 1fr),
-    align: left,
-    toprule(),
-    [Paper notation], [Lean correspondence], [Status],
-    midrule(),
-    [$tau,c,≼,chi$], [`External.lean`: `Ty`, `Code`, `Compatible`, `typeCheck`], [External assumption],
-    [$d,M,E$], [`Module.lean`: declarations and edits; $sf("at")$ uses `Operator.on`], [Definitions],
-    [$sf("type"), sf("need"), sf("recipe"), O_1;O_2$], [`Operator.lean`: `withType`, `require`, `recipe`, `andThen`], [Definitions],
-    [$epsilon,E;P,sf("defer")(p,w);P$], [`Pass.lean`: `done`, `edit`, `defer`], [Definitions],
-    [$⇓,sf("finalize")_Delta,sf("run")(P,M)$], [`Pass.lean`: `Evaluates`, `materialize`, `run`], [Definitions],
-    [$scripts(⇓)_k$], [`Pass.lean`: `EvaluatesIn`], [Definition],
-    [$⊢ M sf("ok"),V,sf("admit")$], [`Module.lean`: `Valid`, `verify`, `admit`], [Definitions],
-    [$g,K[S],sf("build"),≺$], [`Plugin.lean`: selection, rebuilding, `Retires`], [Definitions],
-    [@candidates], [`Laws.lean`: the existing candidate statements], [Proofs deferred],
-    bottomrule(),
-  ),
-  placement: none,
-  caption: [Correspondence to the model. Every model file cites its governing RFC
-    sections. The table is not a proof of source elaboration or implementation.],
-) <proof-map>
-
-To apply model laws to the production system, an elaboration relation must preserve
-qualified identities, contribution order, provider choices, exports, aliases, and
-dependencies introduced by contributions. It must account for multiple provisions
-sharing one component instance. Signature projection and generated TypeScript
-questions need a correspondence argument too. A subsequent implementation proof
-could refine an executable verified core or check transformation evidence with a
-verified checker. Output validity alone cannot establish that the requested edit
-was performed.
-
-Diagnostics need edit histories and source mappings. Runtime reconfiguration needs
-admission, park/load, handover, boot failure, and recovery transitions. Reclamation
-needs an explicit relation connecting artifacts to active or candidate generations,
-Tasks, and recovery snapshots; eventual cleanup needs progress assumptions. These
-obligations remain outside the current declaration model.
-
-Pipeable authoring follows RxJS @rxjs; persistence motivates retaining earlier
-snapshots @okasaki; Lean checks the definitions and statement types @lean4.
-The requirements and worked semantics in the introduction and @semantics provide the
-basis for choosing useful theorems. Proof priorities remain to be selected against
-those requirements, independently of how easy a particular algebraic identity is
-to prove.
-
-#bibliography("module.bib")

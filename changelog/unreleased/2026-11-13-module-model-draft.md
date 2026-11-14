@@ -1,4 +1,4 @@
-# Draft module semantics in Lean
+# Module semantics and proofs in Lean
 
 - **Date:** 2026-11-13
 - **Type:** process
@@ -7,12 +7,10 @@
 
 [中文版](2026-11-13-module-model-draft.zh.md)
 
-Added a Lean draft defining modules, passes and plugin selection, with explicit external type-check assumptions. The draft states laws for editing, deferred recipe operators, admission, plugin replay and termination; theorem proofs remain `sorry` for review.
+Added a Lean model of Module declarations, Operators, Passes, Plugin replay, and local HMR, with complete proofs and explicit external type-check assumptions. Basic laws are in `Basics.lean`; the main results are in `Proofs/Normalization.lean`, `Proofs/Plugin.lean`, and `Proofs/HMR.lean`.
 
-Placed formal materials under `rfcs/formal/`, added declaration operators with composition, locality and contract-preservation statements, and added a Typst paper in POPL/PACMPL format describing the mechanism, model, assumptions and proof boundary. RFCs state the design directly; formal materials cite the corresponding RFC sections.
+Added a Typst paper in POPL/PACMPL format. Chapter 3 introduces semantics and basic properties; Chapter 4 develops deferred operator normalization, plugin reconfiguration with a Cordis 2026 comparison, and Hot Module Reload. The appendix contains the basic laws and proof arguments.
 
-Reorganized the paper around shared abstract syntax, explicit design requirements and a worked example connecting mock replacement, tab removal, telemetry and plugin removal. Restated the existing theorem candidates in that syntax, leaving theorem selection and proof priorities open.
+Formalized compilation steps and failed-attempt histories, including counterexamples to output-only undo and DI-only impact analysis. Added an HMR protocol for verified plans, transitive retention of generation, Task, resource, and recovery code, degraded recovery state, and token-guarded cleanup. The paper identifies the remaining TypeScript refinement obligations and excludes package transport.
 
-Unified declaration transformations under Operator, used direct application and big-step Pass evaluation, and moved instruction counts to a cost refinement. Distinguished operation types from final Module validity in the paper and RFCs.
-
-Standardized paper notation with upright sans-serif operation names, parenthesized complete calls and subscripts for partially applied operators. Made curried argument types and operator composition explicit.
+Unified declaration transformations under Operator and standardized upright sans-serif operation names, curried types, complete calls, and partial applications. Formal materials cite the governing RFCs and distinguish operation types from final Module validity.

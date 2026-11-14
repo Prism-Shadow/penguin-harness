@@ -38,6 +38,18 @@ def length : Pass → Nat
   | .edit _ next => next.length + 1
   | .defer _ next => next.length + 1
 
+/-- Structural instructions in their relative order. -/
+def edits : Pass → List (Module → Module)
+  | .done => []
+  | .edit f next => f :: edits next
+  | .defer _ next => edits next
+
+/-- Deferred registrations in their relative order, including duplicate occurrences. -/
+def rules : Pass → List DeferredRule
+  | .done => []
+  | .edit _ next => rules next
+  | .defer rule next => rule :: rules next
+
 /-- Interpret structural edits and collect rules without introducing a new module state type. -/
 def collect : Pass → Module → Module × List DeferredRule
   | .done, m => (m, [])
