@@ -8,7 +8,7 @@
  * and saying that is what it is. It carries no terminal id and stands for no terminal, so
  * nothing downstream can mistake it for one.
  */
-import type { TerminalSession } from "../terminal/session.js";
+import type { TerminalSession } from "@penguinharness/plugin-terminal/server";
 
 export { apiSocketPath } from "../api/types.js";
 
