@@ -65,6 +65,7 @@ export * from "./features/model-picker";
 export * from "./features/workspace";
 export * from "./lib/agent-location";
 export * from "./lib/account-sync/cache";
+export * from "./lib/account-sync/theme-packs";
 export * from "./lib/machine-agent-lists";
 
 export * from "./lib/sidebar-contributions";
