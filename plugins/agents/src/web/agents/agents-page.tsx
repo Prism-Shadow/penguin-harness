@@ -92,7 +92,7 @@ import { useAuth } from "@prismshadow/penguin-web/internal";
 import { useLocale } from "@prismshadow/penguin-web/internal";
 import { agentDisplayName, useProject } from "@prismshadow/penguin-web/internal";
 import { STAT_ICONS } from "@prismshadow/penguin-web/internal";
-import { DRAFT_SESSION_ID, prepareNewChatDraft } from "../chat";
+import { DRAFT_SESSION_ID, prepareNewChatDraft } from "@penguinharness/plugin-sessions/web";
 import { AiCreateModal, AiCreateButtons } from "../ai-create";
 import { agentKey, agentSettingsPath } from "@prismshadow/penguin-web/internal";
 import { mixAgents, useMachineAgents } from "@prismshadow/penguin-web/internal";

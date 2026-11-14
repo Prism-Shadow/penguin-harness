@@ -57,7 +57,7 @@ import { toneInk } from "@prismshadow/penguin-web/internal";
 import { useProject } from "@prismshadow/penguin-web/internal";
 import { useAgentLocation } from "@prismshadow/penguin-web/internal";
 import { useMachineInfo } from "@prismshadow/penguin-web/internal";
-import { APPROVAL_MODES } from "../chat";
+import { APPROVAL_MODES } from "@penguinharness/plugin-sessions/web";
 import { ApiSessionSettings, ApiConcurrencySettings } from "./api-session-settings";
 import { ApiTryPanel } from "./api-try-panel";
 import { toastApiError } from "@prismshadow/penguin-web/internal";
