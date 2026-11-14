@@ -64,6 +64,11 @@ export default defineConfig({
   sourcemap: true,
   // The hot-update mechanism is a package for the boundary, not for npm (it is `private`):
   // inlined here so this package's published dist stays self-contained.
+  // The parked plugin groups import this package's `./model-catalog` subpath; esbuild does
+  // not read tsconfig paths, so the alias resolves it back to this package's source.
+  alias: {
+    "@prismshadow/penguin-server/model-catalog": "./src/model-catalog/index.ts",
+  },
   noExternal: ["@prismshadow/penguin-hmr"],
   // Scripts that run somewhere else, as REAL files beside the bundles: the release installers
   // a remote install feeds to the far side (the one thing that has to arrive before the CLI
