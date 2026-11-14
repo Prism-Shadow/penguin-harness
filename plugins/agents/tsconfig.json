@@ -63,6 +63,9 @@
       "@penguinharness/plugin-projects/web": [
         "../projects/src/web/index.ts"
       ],
+      "@penguinharness/plugin-plugins/web": [
+        "../plugins/src/web/index.ts"
+      ],
       "@prismshadow/penguin-web/internal": [
         "../../packages/web/src/internal.ts"
       ]

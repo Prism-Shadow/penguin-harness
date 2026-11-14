@@ -38,7 +38,7 @@ import { S } from "@prismshadow/penguin-web/internal";
 import { workbenchTabsOf } from "@penguinharness/plugin-workbenches/web";
 import {useLocale} from "@prismshadow/penguin-web/internal";
 import {useProject} from "@prismshadow/penguin-web/internal";
-import { useAgentLocation } from "./agent-location.js";
+import { useAgentLocation } from "@prismshadow/penguin-web/internal";
 import { localizedText } from "@prismshadow/penguin-web/internal";
 import { toastApiError } from "@prismshadow/penguin-web/internal";
 import { downloadArchive } from "./archive-download";

@@ -85,7 +85,7 @@ import {
   installsKey,
   type AgentPluginGroup,
   type AgentPluginStatus,
-} from "../plugins";
+} from "@penguinharness/plugin-plugins/web";
 import { SkillTile } from "../skills";
 import { HookImportDialog, useHookRows } from "./agent-hooks";
 import { SkillImportDialog, useSkillRows } from "./agent-skills";

@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@penguinharness/plugin-machines": "workspace:*",
+    "@penguinharness/plugin-plugins": "workspace:*",
     "@penguinharness/plugin-projects": "workspace:*",
     "@penguinharness/plugin-schedules": "workspace:*",
     "@penguinharness/plugin-sessions": "workspace:*",
