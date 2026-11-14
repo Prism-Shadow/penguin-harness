@@ -135,7 +135,11 @@ export async function linkPluginDirectory(
   overwrite = false,
 ): Promise<LinkedPackage> {
   const prefix = await ensurePrefix(root);
-  const manifestFile = path.join(dir, "package.json");
+  // Record the directory the way the loader will resolve it: the author's path may itself
+  // sit behind a symlink (a dotfiles checkout, an OS temp alias), and the page's link mark
+  // matches the resolved package against this path.
+  const real = await fs.realpath(dir);
+  const manifestFile = path.join(real, "package.json");
   let name: string;
   try {
     name = await readPackageName(manifestFile);
@@ -164,19 +168,19 @@ export async function linkPluginDirectory(
   await fs.rm(target, { force: true, recursive: true });
   let mode: LinkedPackage["mode"];
   try {
-    await fs.symlink(dir, target, "junction");
+    await fs.symlink(real, target, "junction");
     mode = "link";
   } catch {
     try {
-      await fs.cp(dir, target, { recursive: true, force: true });
+      await fs.cp(real, target, { recursive: true, force: true });
       mode = "copy";
     } catch (err) {
       throw new PluginLinkError(
-        `could not link ${dir} into the prefix (${err instanceof Error ? err.message : String(err)})`,
+        `could not link ${real} into the prefix (${err instanceof Error ? err.message : String(err)})`,
       );
     }
   }
-  table[name] = { name, path: dir, mode };
+  table[name] = { name, path: real, mode };
   await writeLinked(prefix, table);
   return table[name];
 }

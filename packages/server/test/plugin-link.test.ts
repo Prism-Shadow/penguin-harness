@@ -63,7 +63,7 @@ describe("plugin link", () => {
   beforeEach(async () => {
     t = await createTestApp();
     admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
-    scratch = await fs.mkdtemp(path.join(os.tmpdir(), "p263-link-"));
+    scratch = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "p263-link-")));
   });
 
   afterEach(async () => {
