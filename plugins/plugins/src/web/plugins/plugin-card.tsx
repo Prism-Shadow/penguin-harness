@@ -53,7 +53,7 @@ import * as api from "@prismshadow/penguin-web/internal";
 import { useAgentAvatarSrc } from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
 import { cardBodyClick } from "@prismshadow/penguin-web/internal";
-import { downloadArchive } from "../agents/archive-download";
+import { downloadArchive } from "@penguinharness/plugin-agents/web";
 import { useLocale } from "@prismshadow/penguin-web/internal";
 import { agentDisplayName } from "@prismshadow/penguin-web/internal";
 import { SkillTile } from "../skills";
