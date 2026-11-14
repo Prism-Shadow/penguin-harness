@@ -55,6 +55,8 @@ export interface PluginText {
     /** After installing a package of server modules this server could not apply in place. */
     restartNext(): string;
     removed(name: string): string;
+    /** After a successful link. */
+    linked(dir: string): string;
   };
 
   /** The ambiguity report: one argv matched commands from two or more plugins. */
