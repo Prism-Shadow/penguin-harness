@@ -3,6 +3,7 @@
 - **Date:** 2026-11-13
 - **Type:** feature
 - **Scope:** `core`, `server`
+- **PR:** [#1560](https://github.com/Prism-Shadow/penguin-harness/pull/1560)
 
 [中文版](2026-11-13-module-pass-operators.zh.md)
 

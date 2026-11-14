@@ -23,32 +23,32 @@ export interface TelemetrySample {
 }
 
 export function telemetryPass(record: (sample: TelemetrySample) => void): ModulePass {
-  const span = async <T>(probe: string, run: () => Promise<T>): Promise<T> => {
-    const started = performance.now();
-    let status: TelemetrySample["status"] = "error";
-    try {
-      const result = await run();
-      status = "ok";
-      return result;
-    } finally {
-      // A sample sink is an observer; failure must not change the application's result.
+  const span =
+    (probe: string) =>
+    <Args extends unknown[], Result>(next: (...args: Args) => Promise<Result>) =>
+    async (...args: Args): Promise<Result> => {
+      const started = performance.now();
+      let status: TelemetrySample["status"] = "error";
       try {
-        record({ probe, status, durationMs: performance.now() - started });
-      } catch {
-        /* Observer failure. */
+        const result = await next(...args);
+        status = "ok";
+        return result;
+      } finally {
+        // A sample sink is an observer; failure must not change the application's result.
+        try {
+          record({ probe, status, durationMs: performance.now() - started });
+        } catch {
+          /* Observer failure. */
+        }
       }
-    }
-  };
+    };
   return {
     id: "telemetry",
     source: "compile/demo/telemetry.ts",
     rewrite: pipe(
       decorate(provides(interfaceRef<Sessions>("@prismshadow/penguin-server#Sessions")), (api) =>
         wrapMethods(api, {
-          startTask:
-            (next) =>
-            (...args) =>
-              span("task.accept", () => next(...args)),
+          startTask: span("task.accept"),
         }),
       ),
       decorate(
@@ -57,28 +57,19 @@ export function telemetryPass(record: (sample: TelemetrySample) => void): Module
         ),
         (api) =>
           wrapMethods(api, {
-            listSessions:
-              (next) =>
-              (...args) =>
-                span("sessions.list", () => next(...args)),
+            listSessions: span("sessions.list"),
           }),
       ),
       decorate(provides(interfaceRef<Traces>("@prismshadow/penguin-server#Traces")), (api) =>
         wrapMethods(api, {
-          readMessagesPage:
-            (next) =>
-            (...args) =>
-              span("session.messages", () => next(...args)),
+          readMessagesPage: span("session.messages"),
         }),
       ),
       decorate(
         provides(interfaceRef<TraceIndex>("@prismshadow/penguin-server#TraceIndex")),
         (api) =>
           wrapMethods(api, {
-            reconcileAgent:
-              (next) =>
-              (...args) =>
-                span("trace.reconcile", () => next(...args)),
+            reconcileAgent: span("trace.reconcile"),
           }),
       ),
       decorate(
@@ -89,10 +80,7 @@ export function telemetryPass(record: (sample: TelemetrySample) => void): Module
               (next) =>
               (...args) =>
                 wrapMethods(next(...args), {
-                  load:
-                    (load) =>
-                    (...params) =>
-                      span("session.load", () => load(...params)),
+                  load: span("session.load"),
                 }),
           }),
       ),
