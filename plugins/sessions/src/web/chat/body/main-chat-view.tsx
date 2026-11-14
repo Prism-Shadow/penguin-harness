@@ -4,7 +4,7 @@ import {agentDisplayName} from "@prismshadow/penguin-web/internal";
 import { modelTaskStartCount } from "../agent-topology";
 import { ChatInput } from "../chat-input";
 import { approvalModeChoices } from "../approval-mode";
-import { sessionThinkingLevel } from "@prismshadow/penguin-web/internal";
+import { sessionThinkingLevel } from "@penguinharness/plugin-models/web";
 import { advanceCostStat } from "../header-stats";
 import { sameModelRef } from "@penguinharness/plugin-models/web";
 import { headerStats } from "../session/main-chat-helpers";

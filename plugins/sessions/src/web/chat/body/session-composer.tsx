@@ -14,7 +14,7 @@ import type {
   SkillMetadataItem,
 } from "@prismshadow/penguin-server/api";
 import { sameModelRef } from "@penguinharness/plugin-models/web";
-import { sessionThinkingLevel } from "@prismshadow/penguin-web/internal";
+import { sessionThinkingLevel } from "@penguinharness/plugin-models/web";
 import { ChatInput, type ComposerControl } from "../chat-input";
 
 import { approvalModeChoices } from "../approval-mode";

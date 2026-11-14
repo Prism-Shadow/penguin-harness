@@ -3,7 +3,7 @@
  * started over per conversation (keyed by Session).
  */
 import { DraftPanelEmpty } from "@prismshadow/penguin-web/internal";
-import { sessionThinkingLevel } from "@prismshadow/penguin-web/internal";
+import { sessionThinkingLevel } from "@penguinharness/plugin-models/web";
 import { approvalModeChoices } from "../approval-mode";
 import { SubagentsView } from "../subagents-view";
 import { useChatControllerContext } from "../session/chat-session-context";

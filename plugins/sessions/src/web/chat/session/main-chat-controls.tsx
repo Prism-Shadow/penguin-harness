@@ -13,7 +13,7 @@ import {
   sessionThinkingLevel,
   thinkingLevelLabel,
   type StagedThinkingSwitch,
-} from "@prismshadow/penguin-web/internal";
+} from "@penguinharness/plugin-models/web";
 
 import { sessionModelPickerDisabled, sessionRowStale, switchContextShape } from "../model-switch";
 import { sameModelRef } from "@penguinharness/plugin-models/web";

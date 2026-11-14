@@ -1,6 +1,6 @@
 import { agentSettingsPath as agentPagePath } from "@prismshadow/penguin-web/internal";
 import { useCallback } from "react";
-import { sessionThinkingLevel } from "@prismshadow/penguin-web/internal";
+import { sessionThinkingLevel } from "@penguinharness/plugin-models/web";
 import { useDockMount, closedDockView, dockViews } from "@prismshadow/penguin-web/internal";
 import type { ChatDockState } from "./main-dock-context";
 import type { useMainChatActions } from "./main-chat-actions";
