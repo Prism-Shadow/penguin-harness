@@ -9,9 +9,10 @@
     "./web": "./src/web/index.ts"
   },
   "dependencies": {
+    "@penguinharness/plugin-sessions": "workspace:*",
+    "@penguinharness/plugin-terminal": "workspace:*",
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-hmr": "workspace:*",
-    "@penguinharness/plugin-sessions": "workspace:*",
     "@prismshadow/penguin-server": "workspace:*",
     "@prismshadow/penguin-ui": "workspace:*",
     "@prismshadow/penguin-web": "workspace:*",
@@ -22,8 +23,8 @@
     "react-markdown": "^10.1.0",
     "react-router": "^8.3.0",
     "smol-toml": "^1.9.1",
-    "yaml": "^2.5.0",
     "ws": "^8.18.3",
+    "yaml": "^2.5.0",
     "zustand": "^5.0.15"
   },
   "devDependencies": {
