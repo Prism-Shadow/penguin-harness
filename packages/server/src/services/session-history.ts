@@ -28,13 +28,13 @@ import type {
 import type { SessionRow } from "@penguinharness/plugin-sessions/server";
 import { badRequest, parseNonNegativeInt } from "../http/validate.js";
 import type { Channels } from "../hmr/capabilities.js";
-import type { Traces } from "../mechanisms/traces.js";
+import type { Traces } from "@penguinharness/plugin-usage/server";
 import { envelopeDigest } from "@penguinharness/plugin-sessions/server";
 import type { RunStart } from "@penguinharness/plugin-sessions/server";
-import type { SessionManager } from "../runtime/session-manager.js";
+import type { SessionManager } from "@penguinharness/plugin-sessions/server";
 import { decodeCursor } from "@penguinharness/plugin-usage/server";
 import { withImagesByReference } from "@penguinharness/plugin-usage/server";
-import type { MessagesPageRequest, MessagesPageResult } from "./trace-service.js";
+import type { MessagesPageRequest, MessagesPageResult } from "@penguinharness/plugin-usage/server";
 
 export interface SessionHistoryDeps {
   traceService: Pick<Traces, "readMessages" | "readMessagesPage" | "readTraceImage">;
