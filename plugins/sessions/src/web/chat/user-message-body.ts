@@ -12,7 +12,7 @@ import {
   parseModelSwitchMessage,
   parseScheduledMessage,
 } from "./agent-handoff";
-import { parseSkillsMessage } from "@prismshadow/penguin-web/internal";
+import { parseSkillsMessage } from "./skill-use";
 import { parseOrgTriggerMessage } from "./org-trigger";
 import { splitAttachments } from "@prismshadow/penguin-web/internal";
 
