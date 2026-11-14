@@ -54,7 +54,7 @@ export { toggleDock } from "./dock-state";
 
 export type { DockPosition } from "./dock-state";
 
-export { setCloseGuard } from "../../lib/dock-close-guard";
+export { setCloseGuard } from "@prismshadow/penguin-web/internal";
 
 export { tabKey } from "./dock-state";
 

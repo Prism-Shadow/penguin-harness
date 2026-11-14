@@ -6,8 +6,8 @@
  * addressed by the directory itself: the dock belongs to the conversation on screen, so a folder
  * another conversation is in has no panel here.
  */
-import { S } from "../../lib/strings";
-import type { RowAction } from "../../lib/session-row-contributions";
+import { S } from "@prismshadow/penguin-web/internal";
+import type { RowAction } from "@penguinharness/plugin-sessions/web";
 import { docksOnScreen, openPanel } from "./dock-state";
 import { dockWorkspace } from "./dock-terminal";
 

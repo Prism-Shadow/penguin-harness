@@ -58,6 +58,7 @@ export * from "./lib/clipboard";
 export * from "@penguinharness/plugin-company/web";
 export * from "./lib/format";
 export * from "./lib/nav-icons";
+export * from "./lib/dock-close-guard.js";
 export * from "./lib/semantic-id";
 export * from "./lib/sidebar-contributions";
 export * from "./lib/stat-icons";

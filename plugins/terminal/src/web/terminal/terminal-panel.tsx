@@ -20,9 +20,9 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ConfirmModal, GlyphIcon, ICON_SIZE, PanelTabs } from "@prismshadow/penguin-ui";
 import type { PanelTabItem } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { NAV_ICONS } from "../../lib/nav-icons";
-import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
+import { S } from "@prismshadow/penguin-web/internal";
+import { NAV_ICONS } from "@prismshadow/penguin-web/internal";
+import { useShortcutLabel } from "@prismshadow/penguin-web/internal";
 import { dockVersion, setShownShell, subscribeDock } from "../dock/dock-state";
 import {
   createShell,

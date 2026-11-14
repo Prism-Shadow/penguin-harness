@@ -26,7 +26,7 @@
 import { useMemo, useSyncExternalStore, type ComponentType } from "react";
 
 import { ICONS } from "@prismshadow/penguin-ui";
-import type { CommandId } from "../../lib/shortcuts/types";
+import type { CommandId } from "@prismshadow/penguin-web/internal";
 import type { DockPosition } from "./dock-state";
 
 /** A panel kind's id, also its tab's stored key. Built-ins keep their existing ids. */

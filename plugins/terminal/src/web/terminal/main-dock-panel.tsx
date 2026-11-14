@@ -1,5 +1,5 @@
-import { NAV_ICONS } from "../../lib/nav-icons";
-import { S } from "../../lib/strings";
+import { NAV_ICONS } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
 import { TERMINAL_PANEL, subscribeTerminalPanelOffered, terminalPanelOffered } from "../dock/index";
 
 import { TerminalPanel } from "./terminal-panel";
