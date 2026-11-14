@@ -12,7 +12,7 @@
 import type { AppCenterShortcut } from "@prismshadow/penguin-server/api";
 import { GlyphIcon, ICONS, ICON_SIZE, IconButton } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { useAppPageTab, WorkbenchFrame } from "../workbenches";
+import { useAppPageTab, WorkbenchFrame } from "@penguinharness/plugin-workbenches/web";
 import { TileIcon } from "./app-tile";
 
 /** The title bar's icon: one rung above a line glyph in the same slot, as an avatar sits. */
