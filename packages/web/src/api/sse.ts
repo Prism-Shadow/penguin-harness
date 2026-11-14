@@ -30,7 +30,7 @@ import type {
   ServerEvent,
 } from "@prismshadow/penguin-server/api";
 import { apiUrl } from "../lib/server-context";
-import { machineForSession } from "../lib/session-machines";
+import { machineForSession } from "@penguinharness/plugin-sessions/web";
 import { apiSocket } from "./socket";
 import type { StreamOptions } from "./socket";
 
