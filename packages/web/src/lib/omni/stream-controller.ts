@@ -82,7 +82,7 @@ import {
   type StreamModel,
   type ThinkingItem,
   type ToolCallItem,
-} from "./stream-model";
+} from "../amsp/stream-model";
 import { seedPriorStats } from "./task-stats";
 
 /** A single pending approval (keyed by approvalKey(origin, toolCallId)). */
