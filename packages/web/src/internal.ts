@@ -132,7 +132,6 @@ export * from "./lib/shortcuts/reserved.js";
 export * from "./lib/shortcuts/store.js";
 export * from "./lib/shortcuts/types.js";
 export * from "./lib/shortcuts/use-keymap.js";
-export * from "./lib/skill-use.js";
 export * from "./lib/stat-icons.js";
 export * from "./lib/strings.js";
 export * from "./lib/todo-dismissals.js";

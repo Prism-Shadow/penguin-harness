@@ -66,7 +66,7 @@ import {
 
 import { useAuth } from "@prismshadow/penguin-web/internal";
 import { useLocale } from "@prismshadow/penguin-web/internal";
-import { localizedText } from "@prismshadow/penguin-web/internal";
+import { localizedText } from "./skill-use";
 import { SettingsDialog } from "@penguinharness/plugin-settings/web";
 
 /**

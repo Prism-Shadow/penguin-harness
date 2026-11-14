@@ -158,7 +158,7 @@ import {
   buildSkillsMessage,
   localizedShortText,
   skillSlashItems,
-} from "@prismshadow/penguin-web/internal";
+} from "./skill-use";
 import { GOAL_ICON, UNLIMITED_BUDGET, parseBudgetInput } from "./goal-use";
 import { useGoalPluginGate } from "./goal-plugin-gate";
 import type { GoalPluginGate } from "./goal-plugin-gate";
