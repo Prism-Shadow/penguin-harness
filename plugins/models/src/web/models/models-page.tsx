@@ -196,7 +196,7 @@ import {
   withModelGroupPinned,
   type ModelGroupPins,
 } from "./model-group-pins";
-import { clearDraftModelRef } from "../chat/draft-cache";
+import { clearDraftModelRef } from "@penguinharness/plugin-sessions/web";
 import { useUpdateBadges, dismissTodo, refreshProjectTodos } from "@prismshadow/penguin-web/internal";
 import { AddNewModelsButton, AddNewModelsConfirm, RestoreDefaultsConfirm } from "./preset-sync";
 import type { PresetSyncHost } from "./preset-sync";

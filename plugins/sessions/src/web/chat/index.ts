@@ -38,3 +38,4 @@ export { APPROVAL_MODES } from "./approval-mode";
 
 export { useNewChat } from "./use-new-chat";
 export { STEER_MODE_KEY } from "./steer-mode";
+export { HistoryFileLoading } from "./history-loading";

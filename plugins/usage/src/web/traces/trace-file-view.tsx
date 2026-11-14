@@ -76,7 +76,7 @@ import * as api from "@prismshadow/penguin-web/internal";
 import { openHistoryStream } from "@prismshadow/penguin-web/internal";
 import { CostPartsRows, ElapsedSplitRows, StatHint } from "@prismshadow/penguin-web/internal";
 import { readHistory } from "@prismshadow/penguin-web/internal";
-import { HistoryFileLoading } from "../chat/history-loading";
+import { HistoryFileLoading } from "@penguinharness/plugin-sessions/web";
 import { S } from "@prismshadow/penguin-web/internal";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import {
