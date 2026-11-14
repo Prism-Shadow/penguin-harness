@@ -160,6 +160,7 @@ export * from "./lib/reader-find.js";
 export * from "./lib/a2ui-drafts";
 export * from "./lib/brand-logo";
 export * from "./lib/code-highlight";
+export * from "./lib/protocol-client-types";
 export * from "./lib/file-renderers";
 export * from "./lib/find-dom";
 export * from "./lib/find-expand";
