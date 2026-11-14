@@ -21,7 +21,7 @@
 import { useEffect } from "react";
 import { Button, Skeleton, guardLeave, useUnsavedChanges } from "@prismshadow/penguin-ui";
 import { S } from "@prismshadow/penguin-web/internal";
-import { setCloseGuard, tabKey } from "@prismshadow/penguin-web/internal";
+import { setCloseGuard, tabKey } from "@penguinharness/plugin-terminal/web";
 import {
   MessagingBindingBody,
   MessagingBindingHelp,

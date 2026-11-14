@@ -160,7 +160,7 @@ import {
 import { restoreSelection } from "@prismshadow/penguin-web/internal";
 import { STAT_ICONS } from "@prismshadow/penguin-web/internal";
 import { toneInk } from "@prismshadow/penguin-web/internal";
-import { setCloseGuard, tabKey } from "@prismshadow/penguin-web/internal";
+import { setCloseGuard, tabKey } from "@penguinharness/plugin-terminal/web";
 import { PAPERCLIP_ICON } from "@prismshadow/penguin-web/internal";
 import { WorkspaceTreeView } from "./workspace-tree-view";
 
