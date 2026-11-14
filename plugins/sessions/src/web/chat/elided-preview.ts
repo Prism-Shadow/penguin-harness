@@ -3,7 +3,7 @@
  * an ellipsis between them, so the cut reads as a cut rather than as the value. The server keeps
  * the two as one string and says how much of it is the head (`ElidedBody.head`).
  */
-import type { ElidedRecord } from "../amsp/stream-model";
+import type { ElidedRecord } from "@prismshadow/penguin-web/internal";
 
 /**
  * `value` as shown: the value itself when nothing at `path` was folded, else its head, `gap`, its
