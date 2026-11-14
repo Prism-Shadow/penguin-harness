@@ -9,7 +9,7 @@ import {
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 import { workspaceLabel } from "@penguinharness/plugin-sessions/web";
-import { MessagingBindingModal } from "../messaging";
+import { MessagingBindingModal } from "@penguinharness/plugin-messaging/web";
 import { draftSessionTitle } from "../chat";
 import type { MainSidebarState } from "./main-sidebar-controller";
 

@@ -14,11 +14,11 @@ import {
 import { SessionRow, toastSuccess } from "@prismshadow/penguin-ui";
 import { Truncated } from "../../components/ui/truncated";
 import { writeClipboard } from "../../lib/clipboard";
-import { sessionActivityLabel, type SessionActivity } from "../../lib/session-activity";
+import { sessionActivityLabel, type SessionActivity } from "@penguinharness/plugin-sessions/web";
 
 import { backgroundSourceMark } from "@penguinharness/plugin-sessions/web";
 import { useAgentAvatarSrc } from "../../lib/agent-avatar";
-import { machineForSession } from "../../lib/session-machines";
+import { machineForSession } from "@penguinharness/plugin-sessions/web";
 
 export function SidebarSessionRow({
   s,

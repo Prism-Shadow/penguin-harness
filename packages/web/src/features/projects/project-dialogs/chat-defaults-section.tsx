@@ -29,7 +29,7 @@ import {
 
 import { ModelCatalogSelect, modelLabel, SELECTABLE_THINKING_LEVELS } from "../../model-picker";
 import { WorkspaceSelect } from "../../workspace";
-import { sameModelRef } from "../../models";
+import { sameModelRef } from "@penguinharness/plugin-models/web";
 import { PROJECT_SETTINGS_SCOPE } from "./shared";
 
 export const APPROVAL_MODES: readonly ApprovalMode[] = [

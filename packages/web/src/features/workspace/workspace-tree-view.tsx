@@ -9,7 +9,7 @@ import { FileTree, type TreeToggle } from "@prismshadow/penguin-ui";
 
 import { S } from "../../lib/strings";
 import { formatBytes, formatDateTime } from "../../lib/format";
-import type { TreeRow } from "../../lib/workspace-tree";
+import type { TreeRow } from "@penguinharness/plugin-projects/web";
 
 export function WorkspaceTreeView({
   rows,

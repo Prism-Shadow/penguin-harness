@@ -80,7 +80,7 @@ import { formatDateTime } from "../../lib/format";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { machineLabel, nameOnMachine, workspaceMachines } from "../../lib/workspace-machines";
 import type { WorkspaceMachine } from "../../lib/workspace-machines";
-import { newEntryName } from "../../lib/workspace-tree";
+import { newEntryName } from "@penguinharness/plugin-projects/web";
 import { useSessions } from "../../state/sessions";
 import { useMachines } from "../../state/machines";
 import {

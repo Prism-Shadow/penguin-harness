@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
-import { useSessionSeen } from "../../lib/session-seen";
+import { useSessionSeen } from "@penguinharness/plugin-sessions/web";
 import { isSidebarRow } from "@penguinharness/plugin-sessions/web";
 import { collapsedGroupsKey, pinnedGroupsKey } from "../../lib/main-sidebar-persistence";
 import type { useMainSidebarInputs } from "./main-sidebar-inputs";

@@ -153,12 +153,12 @@ import {
   type ComposerReference,
   type EditorState,
   type Listings,
-} from "../../lib/workspace-tree";
+} from "@penguinharness/plugin-projects/web";
 
 import { restoreSelection } from "../../components/ui/text-selection";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { toneInk } from "../../lib/tone";
-import { setCloseGuard, tabKey } from "../dock";
+import { setCloseGuard, tabKey } from "@penguinharness/plugin-terminal/web";
 import { WorkspaceTreeView } from "./workspace-tree-view";
 import { toastApiError } from "../../lib/toast-api-error";
 

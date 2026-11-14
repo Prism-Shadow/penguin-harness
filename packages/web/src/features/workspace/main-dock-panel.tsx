@@ -1,6 +1,6 @@
 import { EmptyState, ICONS } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { panelLabel, type DockPanelBodyProps, type PanelId } from "../dock/index";
+import { panelLabel, type DockPanelBodyProps, type PanelId } from "@penguinharness/plugin-terminal/web";
 
 import { WorkspaceBrowser } from "./index";
 import { useChatSession } from "../../lib/chat-session";

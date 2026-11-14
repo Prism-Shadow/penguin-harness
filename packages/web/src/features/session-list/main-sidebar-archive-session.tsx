@@ -1,6 +1,6 @@
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
-import { forgetSession } from "../../lib/session-seen";
+import { forgetSession } from "@penguinharness/plugin-sessions/web";
 import { apiErrorText } from "../../lib/api-error";
 import { toastApiError } from "../../lib/toast-api-error";
 import { removePinnedSession, savePinnedSessions } from "./pinned-sessions";
@@ -12,7 +12,7 @@ import {
   removeDraftSession,
   prepareNewChatDraft,
 } from "../chat";
-import { docksOnScreen, openPanel, dockWorkspace } from "../dock";
+import { docksOnScreen, openPanel, dockWorkspace } from "@penguinharness/plugin-terminal/web";
 import type { useMainSidebarFetchScope } from "./main-sidebar-fetch-scope";
 
 /** Consecutive live main statements 116..122, called once in original hook order. */
