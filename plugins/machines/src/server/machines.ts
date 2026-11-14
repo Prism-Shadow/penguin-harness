@@ -47,6 +47,22 @@
  */
 import { Hono } from "hono";
 import type { Context } from "hono";
+import { HttpError, requireValidId } from "@prismshadow/penguin-server/internal";
+import type { AppEnv } from "@prismshadow/penguin-server/internal";
+import type {
+  MachinesResponse,
+  MachinesUseResponse,
+  SshHostsResponse,
+  SshHostResponse,
+  MachineUninstallRequest,
+  MachineDiagnosis,
+  DirListResponse,
+} from "@prismshadow/penguin-server/api";
+import { answerOf } from "@prismshadow/penguin-server/internal";
+import type { Access } from "@prismshadow/penguin-server/internal";
+import type { MachinesService } from "./service.js";
+import type { MachineEventHub } from "./event-hub.js";
+import { machineEventsStream, type WatchedMachine } from "./aggregate-stream.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface MachinesRouteDeps {
