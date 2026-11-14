@@ -42,6 +42,7 @@
     "@penguinharness/openskill-rsi-toolkit": "workspace:*",
     "@penguinharness/opro-rsi-toolkit": "workspace:*",
     "@penguinharness/penguin-support": "workspace:*",
+    "@penguinharness/rrsi-rsi-toolkit": "workspace:*",
     "@penguinharness/sandbox-bwrap": "workspace:*",
     "@penguinharness/sandbox-dsh": "workspace:*",
     "@penguinharness/sandbox-seatbelt": "workspace:*",
