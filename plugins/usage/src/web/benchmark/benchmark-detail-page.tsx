@@ -32,7 +32,7 @@ import { S } from "@prismshadow/penguin-web/internal";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import { useDocumentTitle } from "@prismshadow/penguin-web/internal";
 import { useProject } from "@prismshadow/penguin-web/internal";
-import { downloadArchive } from "../agents";
+import { downloadArchive } from "@penguinharness/plugin-agents/web";
 import { BenchmarkDetail } from "./benchmark-detail";
 import { benchmarkPath } from "./benchmark-prompts";
 import { useBenchmarksAcross } from "./benchmark-sources";
