@@ -30,6 +30,9 @@
       "@penguinharness/plugin-sessions/web": [
         "../sessions/src/web/index.ts"
       ],
+      "@penguinharness/plugin-terminal/web": [
+        "../terminal/src/web/index.ts"
+      ],
       "@penguinharness/plugin-workbenches/server": [
         "../../plugins/workbenches/src/server/index.ts"
       ],
