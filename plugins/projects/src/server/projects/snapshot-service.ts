@@ -31,7 +31,7 @@ import {
 import { HttpError } from "@prismshadow/penguin-server/internal";
 import { badRequest } from "@prismshadow/penguin-server/internal";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import { isTempName, STATE_FILE } from "./store.js";
+import { isTempName, STATE_FILE } from "@penguinharness/plugin-workbenches/server";
 import { isGitName } from "@penguinharness/plugin-workbenches/server";
 import { isZip, unpackAgentZip, overTemplate } from "@prismshadow/penguin-server/internal";
 import type { AgentPackage, Snapshots } from "@penguinharness/plugin-agents/server";

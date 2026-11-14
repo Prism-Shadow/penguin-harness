@@ -348,6 +348,62 @@ export class NpmPluginPackages implements PluginPackages {
   }
 }
 
+function readAsset(
+  res: Awaited<ReturnType<typeof fetch>>,
+  onProgress: ((received: number, total: number | null) => void) | undefined,
+): Promise<Uint8Array> {
+  const totalHeader = Number(res.headers.get("content-length"));
+  const total = Number.isFinite(totalHeader) && totalHeader > 0 ? totalHeader : null;
+  if (res.body === null || onProgress === undefined) {
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    onProgress?.(bytes.byteLength, total ?? bytes.byteLength);
+    return bytes;
+  }
+  const chunks: Uint8Array[] = [];
+  let received = 0;
+  let lastStep = -1;
+  const reader = res.body.getReader();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    received += value.byteLength;
+    // The step counter doubles as the mebibyte counter when no total is known; either way a
+    // step is a call, and a chunk is not.
+    const step =
+      total === null
+        ? Math.floor(received / PROGRESS_MIB)
+        : Math.min(100, Math.floor((received / total) * 100));
+    if (step > lastStep) {
+      lastStep = step;
+      onProgress(received, total);
+    }
+  }
+  onProgress(received, total ?? received);
+  const bytes = new Uint8Array(received);
+  let at = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, at);
+    at += chunk.byteLength;
+  }
+  return bytes;
+}
+
+/**
+ * Installs a version through an index entry's github channel: the release asset is
+ * fetched, verified against the entry's sha512, and only the verified bytes are written —
+ * into the prefix's archives, where `npm install` takes them as a `file:` dependency, the
+ * same record an uploaded zip installs under. The hash pins the bytes, not what they are:
+ * before anything is published under its final name, the tarball's own package.json is read
+ * (`tar -xzOf`) and has to agree with the entry's name and version — an archive that says it
+ * is another package, or another version, is refused, so the manifest never names a package
+ * that was not what the index published, and the caller's post-install vetting cannot end up
+ * vetting, or uninstalling, the wrong one. The verified bytes are written to a temporary file
+ * first and renamed into place, so a concurrent install never sees a half-written archive.
+ * `fetchImpl` and `install` are injectable so a test stands in for the network and npm;
+ * `onProgress`, when given, is called as the asset is read — the bytes received so far and
+ * the total when the answer carries a content-length — in steps a progress bar can show.
+ */
 export async function installPluginChannel(
   root: string,
   channel: IndexChannel,
@@ -432,25 +488,4 @@ export async function installPluginChannel(
     await pruneArchives(prefix);
   }
   return { name: channel.name, version: await readInstalledVersion(prefix, channel.name) };
-}
-
-/**
- * The installer as a node, so a test stands in for npm instead of running it: the routes reach
- * the prefix only through this.
- */
-@Component()
-export class NpmPluginPackages implements PluginPackages {
-  /** By name or by link (see installPluginSource). */
-  install(root: string, source: string): Promise<InstalledPackage> {
-    return installPluginSource(root, source);
-  }
-
-  /** An uploaded package's files (see installPluginFiles). */
-  installFiles(root: string, files: Record<string, Uint8Array>): Promise<InstalledPackage> {
-    return installPluginFiles(root, new Map(Object.entries(files)));
-  }
-
-  remove(root: string, name: string): Promise<void> {
-    return removePluginPackage(root, name);
-  }
 }

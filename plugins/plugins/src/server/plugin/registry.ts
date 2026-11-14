@@ -8,12 +8,12 @@
  * Two implementations, one contract:
  *   - the builtin registry serves the index embedded in this package
  *     (builtin-index.json — the four sandbox backends the workspace ships, each row carrying
- *     the descriptions of the package's own package.json `penguin` block and its icon, so its
- *     card renders on a server the package is not installed on);
+ *     the descriptions of the package's own card contribution and its icon, so its card renders
+ *     on a server the package is not installed on);
  *   - the HTTP registry fetches an `index.json` URL and runs it through the same
  *     validator, so a remote index is trusted no further than the embedded one — and less
- *     in one respect: its entries lose their `icon`, an SVG the Web App inlines into the
- *     page, which only what ships with this server may supply (the embedded index, and a
+ *     in one respect: its entries lose their `icon`, an SVG this server would serve as its own
+ *     image, which only what ships with this server may supply (the embedded index, and a
  *     package's own icon on this machine, see localPluginDisplay).
  *
  * A deployment's list is the builtin registry plus the published index (see
@@ -23,16 +23,29 @@ import type { PluginIndexEntry } from "@prismshadow/penguin-server/api";
 import builtinIndex from "./builtin-index.json" with { type: "json" };
 import fs from "node:fs/promises";
 import path from "node:path";
-import { userAgent, readPackageCard } from "@prismshadow/penguin-core";
+import { createHash } from "node:crypto";
+import type { IconImage } from "@prismshadow/penguin-core";
+import {
+  compareVersions,
+  normalizeVersion,
+  readPackageCard,
+  userAgent,
+} from "@prismshadow/penguin-core";
 import { resolvePluginPackage } from "./loader.js";
 import type { PluginBase } from "./loader.js";
 
-/** One source of plugin index entries; `source` identifies it for display and errors. */
+/**
+ * One row of an index document, as a registry hands it out: the listing's entry, except that its
+ * icon, when it has one, is raw SVG text. Only the index embedded in this server keeps one (see
+ * parsePluginIndex); the listing reads it the way it reads a package's icon file and names it by
+ * the URL it is served at (http/routes/plugins.ts).
+ */
 export type IndexDocumentEntry = Omit<PluginIndexEntry, "icon"> & { icon?: string };
 
+/** One source of plugin index entries; `source` identifies it for display and errors. */
 export interface PluginRegistry {
   readonly source: string;
-  index(): Promise<PluginIndexEntry[]>;
+  index(): Promise<IndexDocumentEntry[]>;
   /**
    * Long-form documentation for one entry, or null when this source has none for it.
    *
@@ -40,6 +53,12 @@ export interface PluginRegistry {
    * on every page load, a readme is large and wanted only for the entry someone opened.
    */
   readme(name: string): Promise<string | null>;
+  /**
+   * What this source can answer without waiting on the network: the document in hand, or the
+   * failure it remembers; null while a read is still out (one is started if none is). Absent on a
+   * source that never waits on the network — the builtin index — which is simply read.
+   */
+  inHand?(): Promise<IndexDocumentEntry[]> | null;
 }
 
 function isStringArray(value: unknown): value is string[] {
@@ -47,7 +66,7 @@ function isStringArray(value: unknown): value is string[] {
 }
 
 /** Validates one raw entry; returns null instead of throwing so the caller can name the index position. */
-function asIndexEntry(value: unknown): PluginIndexEntry | null {
+function asIndexEntry(value: unknown): IndexDocumentEntry | null {
   if (typeof value !== "object" || value === null) return null;
   const e = value as Record<string, unknown>;
   if (
@@ -75,7 +94,24 @@ function asIndexEntry(value: unknown): PluginIndexEntry | null {
     if (e[key] !== undefined && !isStringArray(e[key])) return null;
   }
   if (e.updatedAt !== undefined && typeof e.updatedAt !== "number") return null;
-  return value as PluginIndexEntry;
+  // The release pin and its channels ride the row like any other field: an index that
+  // carries them is malformed when they are not well-formed, and the install face
+  // decides what a well-formed row's channel is worth (registry.ts, indexChannelOf).
+  if (
+    e.integrity !== undefined &&
+    (typeof e.integrity !== "string" || !/^sha512-[A-Za-z0-9+/]+={0,2}$/.test(e.integrity))
+  ) {
+    return null;
+  }
+  if (e.channels !== undefined) {
+    if (!Array.isArray(e.channels)) return null;
+    for (const channel of e.channels) {
+      if (typeof channel !== "object" || channel === null) return null;
+      const c = channel as Record<string, unknown>;
+      if (typeof c.kind !== "string" || c.kind === "" || typeof c.url !== "string") return null;
+    }
+  }
+  return value as IndexDocumentEntry;
 }
 
 /**
@@ -84,15 +120,15 @@ function asIndexEntry(value: unknown): PluginIndexEntry | null {
  * unlike a Project's plugin list, whose entries are independent choices skipped one
  * by one.
  *
- * `icons: "drop"` is for a document from the network: the Web App draws an entry's icon by
- * inlining its SVG, so a remote entry's is removed. Removed rather than refused — the rest of
- * the row still lists, under the puzzle piece.
+ * `icons: "drop"` is for a document from the network: this server would serve an entry's icon
+ * as an image of its own, so a remote entry's is removed. Removed rather than refused — the
+ * rest of the row still lists, under the puzzle piece.
  */
 export function parsePluginIndex(
   data: unknown,
   source: string,
   { icons = "keep" }: { icons?: "keep" | "drop" } = {},
-): PluginIndexEntry[] {
+): IndexDocumentEntry[] {
   if (!Array.isArray(data)) {
     throw new Error(`plugin index from ${source} is not an array`);
   }
@@ -106,7 +142,7 @@ export function parsePluginIndex(
 }
 
 /** An index entry with no `icon`: what a remote source's entry becomes (see parsePluginIndex). */
-export function withoutIcon(entry: PluginIndexEntry): PluginIndexEntry {
+export function withoutIcon(entry: IndexDocumentEntry): IndexDocumentEntry {
   if (!("icon" in entry)) return entry;
   const { icon: _dropped, ...rest } = entry;
   return rest;
@@ -141,162 +177,13 @@ export function builtinPluginRegistry(
   };
 }
 
-/** The display fields an index entry may carry, which a package can also carry itself. */
+/** The display fields an index entry may carry, which a package can also carry itself: its card's, and its icon. */
 export type PluginDisplay = Pick<
   PluginIndexEntry,
-  "title" | "titleZh" | "descriptionZh" | "shortDescription" | "shortDescriptionZh" | "icon"
->;
+  "title" | "titleZh" | "descriptionZh" | "shortDescription" | "shortDescriptionZh"
+> & { icon?: IconImage };
 
-/**
- * What a package on this machine says about itself for its card: the Chinese and short
- * descriptions of its own package.json's `penguin` block, and its icon — read by core's manifest
- * reader, the same one the library reads a library plugin with, so an icon that is not a plain
- * SVG is never sent. Empty when the package is not here (an index row is then all there is) or
- * carries neither. A package.json that will not read gives nothing rather than failing the
- * listing: the card falls back to what the index says.
- */
-export async function localPluginDisplay(
-  name: string,
-  bases: readonly PluginBase[],
-): Promise<PluginDisplay> {
-  const found = resolvePluginPackage(name, bases);
-  if (found === null) return {};
-  const { card, icon } = readPackageCard(found.dir);
-  const display: PluginDisplay = {};
-  if (card.title !== undefined) display.title = card.title;
-  if (card.titleZh !== undefined) display.titleZh = card.titleZh;
-  if (card.descriptionZh !== undefined) display.descriptionZh = card.descriptionZh;
-  if (card.shortDescription !== undefined) display.shortDescription = card.shortDescription;
-  if (card.shortDescriptionZh !== undefined) display.shortDescriptionZh = card.shortDescriptionZh;
-  // No icon, or one that will not do: the card draws the puzzle piece.
-  if (icon !== undefined) display.icon = icon;
-  return display;
-}
-
-/** How a published index is fetched: `fetchImpl` and `delay` are injectable for tests. */
-export interface HttpRegistryOptions {
-  fetchImpl?: typeof fetch;
-  /** Tries at a connection-level failure (a refused or reset connection, a timeout), an HTTP status is never retried. */
-  attempts?: number;
-  /** Per attempt: a proxy that never answers must not hold the listing forever. */
-  timeoutMs?: number;
-  /** The pause before the next attempt, by attempt number (1-based). */
-  delay?: (attempt: number) => Promise<void>;
-}
-
-const backoff = (attempt: number) =>
-  new Promise<void>((resolve) => setTimeout(resolve, 500 * 2 ** (attempt - 1)));
-
-/**
- * A registry behind an `index.json` URL.
- *
- * A connection that fails is tried again before it is reported: the document sits behind a
- * CDN redirect, and the first hop out through a corporate proxy is exactly the kind of thing
- * that fails once and works a second later. What the server answered (a 404, a 503) is not
- * retried — that is a fact about the source, not about the wire.
- */
-export function httpPluginRegistry(
-  indexUrl: string,
-  options: HttpRegistryOptions | typeof fetch = {},
-): PluginRegistry {
-  const opts: HttpRegistryOptions =
-    typeof options === "function" ? { fetchImpl: options } : options;
-  const fetchImpl = opts.fetchImpl ?? fetch;
-  const attempts = opts.attempts ?? 3;
-  const timeoutMs = opts.timeoutMs ?? 15_000;
-  const delay = opts.delay ?? backoff;
-  const request = async (): Promise<Response> => {
-    let lastError: unknown;
-    for (let attempt = 1; attempt <= attempts; attempt += 1) {
-      try {
-        return await fetchImpl(indexUrl, {
-          headers: { "user-agent": userAgent() },
-          signal: AbortSignal.timeout(timeoutMs),
-        });
-      } catch (err) {
-        lastError = err;
-        if (attempt < attempts) await delay(attempt);
-      }
-    }
-    const cause = lastError instanceof Error ? lastError : new Error(String(lastError));
-    const why =
-      cause.cause instanceof Error ? `${cause.message} (${cause.cause.message})` : cause.message;
-    throw new Error(
-      `plugin index from ${indexUrl} could not be fetched (${attempts} attempts): ${why}`,
-    );
-  };
-  return {
-    source: indexUrl,
-    index: async () => {
-      const res = await request();
-      if (!res.ok) {
-        throw new Error(`plugin index from ${indexUrl} answered HTTP ${res.status}`);
-      }
-      let data: unknown;
-      try {
-        data = await res.json();
-      } catch (err) {
-        throw new Error(
-          `plugin index from ${indexUrl} is not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
-      return parsePluginIndex(data, indexUrl, { icons: "drop" });
-    },
-    // The shared index format carries no readme location, so a remote source has none to
-    // offer yet. Null rather than a guessed URL: inventing one would have the Web App
-    // render whatever answered it.
-    readme: () => Promise.resolve(null),
-  };
-}
-
-/**
- * Where the published plugin index lives.
- *
- * A release asset, not the GitHub API and not a Pages URL. The API would cost this server two
- * requests against an unauthenticated 60/hour budget shared by every deployment behind one NAT,
- * for a document that changes four times a day; the asset is a plain file download with no such
- * budget, and the CDN in front of it is the same one that serves the installers.
- *
- * The tag is fixed and never re-pointed. What a six-hourly workbench in the index repository
- * replaces is the ASSET on that release, so this URL is stable for the life of the tag and
- * nothing here has to discover which release is newest — "latest nightly" is a name, resolved
- * by the publisher rather than by a search.
- */
-export const NIGHTLY_INDEX_URL =
-  "https://github.com/Prism-Shadow/penguin-extensions/releases/download/nightly/index.json";
-
-/** Wall-clock reader, injectable so a cache's TTL is deterministic in tests. */
-export type Clock = () => number;
-
-/**
- * How long a fetched index is reused. The published document changes every six hours, so this
- * is not about freshness — it is about a listing endpoint that any logged-in user can open on
- * every page load, which without a cache turns one navigation habit into a request per view.
- */
-export const INDEX_CACHE_TTL_MS = 30 * 60_000;
-
-/**
- * How long a failed fetch stands before the next read tries again. Inside this window a read with
- * nothing cached is answered with the failure at once: on a host that cannot reach the index at
- * all, every page load would otherwise start the same doomed fetch and report the source as still
- * loading instead of down.
- */
-export const INDEX_RETRY_MS = 60_000;
-
-/**
- * Wrap a registry so its index is fetched at most once per TTL, and keep serving the last good
- * document when a refresh fails.
- *
- * Serving stale is the point rather than a fallback: the alternative to a slightly old index is
- * no index at all, and the page's job is to show what exists. So a read past the TTL is answered
- * with the document in hand while the refresh runs behind it, and the next read gets the new one.
- * A failure with nothing cached still propagates — the caller decides whether one dead source
- * should cost the whole listing — and is remembered for INDEX_RETRY_MS, so a source that is down
- * costs one fetch per window rather than one per read.
- *
- * Concurrent callers share one in-flight fetch, so a page opened in four tabs at once is one
- * request rather than four.
- */
+/** An index entry's github channel, as the install face installs it: pinned bytes at a URL. */
 export interface IndexChannel {
   name: string;
   version: string;
@@ -635,53 +522,10 @@ export const INDEX_RETRY_MS = 60_000;
  * Concurrent callers share one in-flight fetch, so a page opened in four tabs at once is one
  * request rather than four.
  */
-
-export function selectIndexChannel(
-  entries: readonly IndexDocumentEntry[],
-  version: string | undefined,
-): { channel: IndexChannel | null; fault: string | null } {
-  if (entries.length === 0) return { channel: null, fault: null };
-  const newest = (pool: readonly IndexDocumentEntry[]) =>
-    pool.reduce((a, b) => (compareVersions(b.version, a.version) > 0 ? b : a));
-  const tag =
-    version === undefined || version.trim() === "" ? null : normalizeVersion(version.trim());
-  if (tag === null || tag === "latest") {
-    return indexChannelOf(newest(entries));
-  }
-  const noMatch = (): { channel: null; fault: string } => ({
-    channel: null,
-    fault: `${entries[0]!.name} is published on a github release channel, but no version of it matches ${version}; the index carries ${entries.map((e) => e.version).join(", ")}.`,
-  });
-  const range = /^([\^~])?(\d+)\.(\d+)(?:\.(\d+))?(?:[-+].*)?$/.exec(tag);
-  if (range !== null && range[1] !== undefined) {
-    const [op, major, minor] = [range[1], range[2], range[3]];
-    // The comparison runs against the numeric part alone: compareVersions reads a caret as
-    // no version at all, and the caret's work — the major constraint — is the filter above.
-    const floor = tag.slice(op.length);
-    const matching = entries.filter((e) => {
-      const [entryMajor, entryMinor] = normalizeVersion(e.version).split(".");
-      return (
-        entryMajor === major &&
-        (op === "~" ? entryMinor === minor : true) &&
-        compareVersions(e.version, floor) >= 0
-      );
-    });
-    if (matching.length === 0) return noMatch();
-    return indexChannelOf(newest(matching));
-  }
-  const exact = entries.find((e) => normalizeVersion(e.version) === tag);
-  if (exact !== undefined) return indexChannelOf(exact);
-  if (range !== null) return noMatch();
-  return {
-    channel: null,
-    fault: `${entries[0]!.name} can be installed from its github release channel by version only, not by the tag or range ${version}; name a version, or none for the newest.`,
-  };
-}
-
 export interface IndexSnapshot {
   /** When the document was fetched (ms since the epoch). */
   at: number;
-  entries: PluginIndexEntry[];
+  entries: IndexDocumentEntry[];
 }
 
 /** A cached registry also hands out its last good document, for a successor to start from. */
@@ -710,8 +554,8 @@ export function cachedRegistry(
 ): CachedRegistry {
   let good: IndexSnapshot | null = seed;
   let failed: { at: number; error: unknown } | null = null;
-  let inFlight: Promise<PluginIndexEntry[]> | null = null;
-  const refresh = (): Promise<PluginIndexEntry[]> =>
+  let inFlight: Promise<IndexDocumentEntry[]> | null = null;
+  const refresh = (): Promise<IndexDocumentEntry[]> =>
     (inFlight ??= inner
       .index()
       .then(
@@ -728,51 +572,36 @@ export function cachedRegistry(
       .finally(() => {
         inFlight = null;
       }));
+  /** The answer in hand — refreshing a stale document behind it — or null when a fetch is all there is. */
+  const inHand = (): Promise<IndexDocumentEntry[]> | null => {
+    if (good !== null && now() - good.at < ttlMs) return Promise.resolve(good.entries);
+    const resting = failed !== null && now() - failed.at < retryMs;
+    if (good !== null) {
+      // Answered with the document in hand; a refresh that fails leaves it standing.
+      if (!resting) refresh().catch(() => undefined);
+      return Promise.resolve(good.entries);
+    }
+    if (resting) return Promise.reject(failed!.error);
+    return null;
+  };
   return {
     source: inner.source,
     snapshot: () => good,
-    index: async () => {
-      if (good !== null && now() - good.at < ttlMs) return good.entries;
-      const resting = failed !== null && now() - failed.at < retryMs;
-      if (good !== null) {
-        // Answered with the document in hand; a refresh that fails leaves it standing.
-        if (!resting) refresh().catch(() => undefined);
-        return good.entries;
-      }
-      if (resting) throw failed!.error;
-      return refresh();
+    index: () => inHand() ?? refresh(),
+    inHand: () => {
+      const answer = inHand();
+      if (answer === null) refresh().catch(() => undefined);
+      return answer;
     },
     readme: (name) => inner.readme(name),
   };
 }
 
-/**
- * How long a listing waits for a source that has not answered yet. Long enough for a reachable
- * index to arrive in the same answer, so a page load renders once; short enough that one behind a
- * network that drops the connection (a host that cannot reach GitHub) costs the page a moment
- * rather than every retry the fetch is allowed. The fetch goes on behind the answer, and a later
- * read gets its entries from the cache.
- */
-export const SOURCE_WAIT_MS = 1_500;
-
-/** `work`'s value, or null once `ms` has passed first; `work` runs on either way. */
-async function within<T>(work: Promise<T>, ms: number): Promise<T | null> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const late = new Promise<null>((resolve) => {
-    timer = setTimeout(() => resolve(null), ms);
-  });
-  try {
-    return await Promise.race([work, late]);
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 /** What merging the sources gave: their entries, and the sources that failed or are still being read. */
 export interface MergedIndex {
-  entries: PluginIndexEntry[];
+  entries: IndexDocumentEntry[];
   failures: { source: string; error: string }[];
-  /** Sources that had not answered within `waitMs`: their entries are missing from this listing. */
+  /** Sources still being read when the listing was made: their entries are missing from it. */
   pending: string[];
 }
 
@@ -783,36 +612,39 @@ export interface MergedIndex {
  * because that index is one publisher's single artifact, but a source that is unreachable,
  * misconfigured or serving garbage must not empty the page of everything else. The failure is
  * reported alongside the entries rather than swallowed, so the Web App can say which source is
- * down instead of quietly showing a shorter list. With `waitMs`, a source that has not answered
- * by then is reported as pending rather than waited for, for the same reason: a slow source must
- * not hold back the ones that answered.
+ * down instead of quietly showing a shorter list. With `waitForNetwork: false`, a source is read
+ * from what it has in hand, and one with nothing in hand yet is reported as pending rather than
+ * waited for, for the same reason: what this server ships lists at once, wherever the network is.
  *
  * On a name collision the FIRST source wins, and the builtin registry is listed first: what this
  * deployment actually ships is the truth about it, and a published index claiming the same
- * specifier does not get to describe a package the operator already has.
+ * specifier does not get to describe a package the operator already has. Within one source, the
+ * newest row per name wins (see newestPerName) — a publisher's document may carry several
+ * versions of a package, and the listing carries the one a consumer would want.
  */
 export async function mergeIndexes(
   registries: readonly PluginRegistry[],
-  { waitMs }: { waitMs?: number } = {},
+  { waitForNetwork = true }: { waitForNetwork?: boolean } = {},
 ): Promise<MergedIndex> {
   const settled = await Promise.all(
     registries.map(async (r) => {
-      const read = (async () => {
-        try {
-          return { entries: await r.index(), error: null };
-        } catch (err) {
-          return {
-            entries: [] as PluginIndexEntry[],
+      const reading = waitForNetwork || r.inHand === undefined ? r.index() : r.inHand();
+      if (reading === null) return { source: r.source, answer: null };
+      try {
+        return { source: r.source, answer: { entries: await reading, error: null } };
+      } catch (err) {
+        return {
+          source: r.source,
+          answer: {
+            entries: [] as IndexDocumentEntry[],
             error: err instanceof Error ? err.message : String(err),
-          };
-        }
-      })();
-      const answer = waitMs === undefined ? await read : await within(read, waitMs);
-      return { source: r.source, answer };
+          },
+        };
+      }
     }),
   );
   const seen = new Set<string>();
-  const entries: PluginIndexEntry[] = [];
+  const entries: IndexDocumentEntry[] = [];
   const failures: MergedIndex["failures"] = [];
   const pending: string[] = [];
   for (const { source, answer } of settled) {
@@ -821,12 +653,98 @@ export async function mergeIndexes(
       continue;
     }
     if (answer.error !== null) failures.push({ source, error: answer.error });
-    for (const entry of answer.entries) {
-      const key = `${entry.name}@${entry.version}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
+    for (const entry of newestPerName(answer.entries)) {
+      if (seen.has(entry.name)) continue;
+      seen.add(entry.name);
       entries.push(entry);
     }
   }
   return { entries, failures, pending };
+}
+
+/** A parsed semver: the numeric core and the prerelease identifiers, `null` when there are none. */
+interface ParsedSemver {
+  core: [number, number, number];
+  pre: string[] | null;
+}
+
+const SEMVER =
+  /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
+
+function parseSemver(version: string): ParsedSemver | null {
+  const match = SEMVER.exec(version);
+  if (match === null) return null;
+  return {
+    core: [Number(match[1]), Number(match[2]), Number(match[3])],
+    pre: match[4] === undefined ? null : match[4].split("."),
+  };
+}
+
+/** Whether the version parses as a semver at all (a row whose version does not is unranked). */
+export function isSemver(version: string): boolean {
+  return parseSemver(version) !== null;
+}
+
+/**
+ * SemVer 2.0.0 precedence (semver.org §11), negative when `a` ranks below `b`, positive above,
+ * zero when equivalent: the numeric core first; then a prerelease ranks BELOW the release it
+ * belongs to (`0.0.1-alpha.2 < 0.0.1`), its dot-separated identifiers compare left to right —
+ * numeric identifiers by value (`alpha.2 < alpha.10`, the trap a string compare falls into),
+ * alphanumeric by ASCII (`alpha < beta`), numeric below alphanumeric — and a shorter prerelease
+ * that matches so far ranks lower (`alpha < alpha.1`). Build metadata never takes part:
+ * `1.0.0+x` and `1.0.0+y` are equivalent. Both versions must parse (`isSemver`); one that does
+ * not throws — the caller gates on `isSemver` first.
+ */
+export function compareSemver(a: string, b: string): number {
+  const left = parseSemver(a);
+  const right = parseSemver(b);
+  if (left === null) throw new Error(`not a semver: ${a}`);
+  if (right === null) throw new Error(`not a semver: ${b}`);
+  for (let i = 0; i < 3; i += 1) {
+    if (left.core[i] !== right.core[i]) return left.core[i]! - right.core[i]!;
+  }
+  if (left.pre === null && right.pre === null) return 0;
+  if (left.pre === null) return 1;
+  if (right.pre === null) return -1;
+  const shared = Math.min(left.pre.length, right.pre.length);
+  for (let i = 0; i < shared; i += 1) {
+    const x = left.pre[i]!;
+    const y = right.pre[i]!;
+    const xn = /^\d+$/.test(x);
+    const yn = /^\d+$/.test(y);
+    if (xn && yn) {
+      if (x !== y) return Number(x) - Number(y);
+    } else if (xn !== yn) {
+      return xn ? -1 : 1;
+    } else if (x !== y) {
+      return x < y ? -1 : 1;
+    }
+  }
+  return left.pre.length - right.pre.length;
+}
+
+/** Whether version `a` outranks `b` for the same package: a semver outranks a non-semver, two non-semvers keep the first, two semvers go by precedence (equal keeps the first). */
+function outranks(a: string, b: string): boolean {
+  const parsedA = isSemver(a);
+  const parsedB = isSemver(b);
+  if (parsedA !== parsedB) return parsedA;
+  if (!parsedA) return false;
+  return compareSemver(a, b) > 0;
+}
+
+/**
+ * The newest row per package name: of a document's several rows for one package — the format is
+ * a flat array of per-version entries — the one a consumer would want. The winner is the highest
+ * SemVer 2.0.0 precedence (see compareSemver for what that means for prereleases); a row whose
+ * version does not parse as semver loses to any row that does, and keeps the document's first
+ * among themselves; rows of equal precedence (a build-metadata difference) keep the first. The
+ * survivors come back in the document's own order.
+ */
+export function newestPerName(entries: readonly IndexDocumentEntry[]): IndexDocumentEntry[] {
+  const newest = new Map<string, IndexDocumentEntry>();
+  for (const entry of entries) {
+    const held = newest.get(entry.name);
+    if (held === undefined || outranks(entry.version, held.version)) newest.set(entry.name, entry);
+  }
+  return entries.filter((entry) => newest.get(entry.name) === entry);
 }
