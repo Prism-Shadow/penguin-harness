@@ -63,7 +63,6 @@ export * from "./lib/semantic-id";
 export * from "./features/model-picker";
 export * from "./features/workspace";
 export * from "./lib/agent-location";
-export * from "./lib/agent-employment";
 export * from "./lib/account-sync/cache";
 export * from "./lib/machine-agent-lists";
 
