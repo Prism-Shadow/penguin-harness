@@ -77,7 +77,7 @@ import { useSessions } from "@prismshadow/penguin-web/internal";
 import { agentKey } from "@prismshadow/penguin-web/internal";
 import { mixAgents, useMachineAgents } from "@prismshadow/penguin-web/internal";
 import { readKey, useRead } from "@prismshadow/penguin-web/internal";
-import { MachinePicker, type MachineChoice } from "../machines";
+import { MachinePicker, type MachineChoice } from "@penguinharness/plugin-machines/web";
 import { DRAFT_SESSION_ID, draftKey, loadDraft, saveDraft, prepareNewChatDraft } from "../chat";
 import { localizedText } from "@prismshadow/penguin-web/internal";
 import { usePluginRepair } from "./plugin-repair";
