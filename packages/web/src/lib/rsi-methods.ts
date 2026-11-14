@@ -12,7 +12,7 @@
  * the hint are the plugin's own display name and short description, in the reader's language.
  */
 import type { PluginItem, PluginLibraryResponse } from "@prismshadow/penguin-server/api";
-import { localizedText } from "./skill-use";
+import { localizedText } from "@penguinharness/plugin-sessions/web";
 
 /** The plugin library's category the self-evolution toolkits are filed under. */
 export const RSI_CATEGORY = "rsi";
