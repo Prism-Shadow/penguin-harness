@@ -6,8 +6,32 @@
       "ES2023"
     ],
     "paths": {
+      "@penguinharness/plugin-browser/web": [
+        "../browser/src/web/index.ts"
+      ],
+      "@penguinharness/plugin-company/server": [
+        "../company/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-company/web": [
+        "../company/src/web/index.ts"
+      ],
+      "@penguinharness/plugin-db/server": [
+        "../db/src/index.ts"
+      ],
+      "@penguinharness/plugin-machines/server": [
+        "../machines/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-plugins/server": [
+        "../plugins/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-sandbox/server": [
+        "../sandbox/src/server/index.ts"
+      ],
       "@penguinharness/plugin-sessions/server": [
         "../sessions/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-sessions/web": [
+        "../sessions/src/web/index.ts"
       ],
       "@penguinharness/plugin-settings/server": [
         "./src/server/index.ts"
@@ -15,38 +39,17 @@
       "@penguinharness/plugin-settings/web": [
         "./src/web/index.ts"
       ],
-      "@penguinharness/plugin-machines/server": [
-        "../machines/src/server/index.ts"
-      ],
       "@prismshadow/penguin-server/api": [
         "../../packages/server/src/api/types.ts"
-      ],
-      "@prismshadow/penguin-server/internal": [
-        "../../packages/server/src/internal.ts"
       ],
       "@prismshadow/penguin-server/ifaces.json": [
         "../../packages/server/src/ifaces.json"
       ],
+      "@prismshadow/penguin-server/internal": [
+        "../../packages/server/src/internal.ts"
+      ],
       "@prismshadow/penguin-web/internal": [
         "../../packages/web/src/internal.ts"
-      ],
-      "@penguinharness/plugin-browser/web": [
-        "../browser/src/web/index.ts"
-      ],
-      "@penguinharness/plugin-company/web": [
-        "../company/src/web/index.ts"
-      ],
-      "@penguinharness/plugin-company/server": [
-        "../company/src/server/index.ts"
-      ],
-      "@penguinharness/plugin-sandbox/server": [
-        "../sandbox/src/server/index.ts"
-      ],
-      "@penguinharness/plugin-plugins/server": [
-        "../plugins/src/server/index.ts"
-      ],
-      "@penguinharness/plugin-db/server": [
-        "../db/src/index.ts"
       ]
     }
   },

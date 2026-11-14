@@ -5,7 +5,7 @@
  */
 import { useEffect, useState } from "react";
 import { onSettingsRequest } from "../../lib/settings-request";
-import type { SettingsSectionKey } from "../../lib/settings-sections";
+import type { SettingsSectionKey } from "../lib/settings-sections.js";
 import { SettingsDialog } from "./settings-dialog";
 
 export function SettingsLayer() {
