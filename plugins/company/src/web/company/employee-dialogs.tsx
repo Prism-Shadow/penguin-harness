@@ -74,7 +74,7 @@ import {
   SELECTABLE_THINKING_LEVELS,
   effectiveThinkingLevel,
   thinkingLevelLabel,
-} from "@prismshadow/penguin-web/internal";
+} from "@penguinharness/plugin-models/web";
 import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 /** The plugins a new employee starts with: the organization procedures and the development skills. */
