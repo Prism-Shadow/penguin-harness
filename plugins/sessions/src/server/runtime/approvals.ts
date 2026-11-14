@@ -28,6 +28,7 @@ import type {
   AmspRecord,
   ToolCallPayload,
 } from "@prismshadow/penguin-core";
+import type { ApprovalMode, ApprovalReason } from "@prismshadow/penguin-server/api";
 
 export interface PendingApproval {
   toolCall: AmspRecord<ToolCallPayload>;

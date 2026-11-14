@@ -25,6 +25,7 @@
  * so an unchanged tree ticks with zero readdir/readFile — manual edits are still
  * picked up next tick because every edit variant moves an mtime the gate stats.
  */
+import type { ScheduleServerEvent, ScheduleStatus } from "@prismshadow/penguin-server/api";
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import { agentsDir, buildScheduledMessage, userText } from "@prismshadow/penguin-core";

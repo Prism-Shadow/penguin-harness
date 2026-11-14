@@ -51,9 +51,7 @@ import type { PluginLibrary } from "@prismshadow/penguin-server/internal";
 import { resolveDirectorySkills } from "./directory-skills.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Config, Paths } from "@prismshadow/penguin-server/internal";
-import type { AgentConfig, AgentLifecycle, Snapshots } from "@prismshadow/penguin-server/internal";
-import type { AgentIndex } from "@penguinharness/plugin-projects/server";
-import type { Config, Paths } from "@prismshadow/penguin-server/internal";
+import type { AgentConfig, AgentLifecycle, Snapshots, AgentPackage } from "./../mechanism.js";
 import type { AgentIndex } from "@penguinharness/plugin-projects/server";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 

@@ -1,9 +1,9 @@
 /** A workbench reads the latest task's answer, never an earlier answer or a child's output. */
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/penguin-core";
 import type { WorkbenchResult } from "../mechanism.js";
 
 
-export function workbenchResult(status: string, messages: readonly OmniMessage[]): WorkbenchResult {
+export function workbenchResult(status: string, messages: readonly AmspRecord[]): WorkbenchResult {
   if (status !== "idle") return { status: "running", text: "", error: null };
   let text = "";
   let error: string | null = null;

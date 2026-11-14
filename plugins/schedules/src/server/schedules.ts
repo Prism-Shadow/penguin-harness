@@ -15,9 +15,9 @@
 import { createHash } from "node:crypto";
 import { Hono } from "hono";
 import { isValidId } from "@prismshadow/penguin-core";
-import type { ProjectSchedulesResponse, ScheduleItem, SchedulesResponse } from "../../api/types.js";
-import type { AppEnv } from "../../auth/middleware.js";
-import type { ServerConfig } from "../../config.js";
+import type { ProjectSchedulesResponse, ScheduleItem, SchedulesResponse } from "@prismshadow/penguin-server/api";
+import type { AppEnv } from "@prismshadow/penguin-server/internal";
+import type { ServerConfig } from "@prismshadow/penguin-server/internal";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface SchedulesRouteDeps {
@@ -50,8 +50,8 @@ import {
   serializeSchedule,
   validateScheduleModelRef,
   writeScheduleFile,
-} from "../../runtime/schedule-store.js";
-import { scheduleStatus } from "../../runtime/scheduler.js";
+} from "./schedule-store.js";
+import { scheduleStatus } from "./scheduler.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Config } from "@prismshadow/penguin-server/internal";
 import type { Access, ProjectConfigStore } from "@prismshadow/penguin-server/internal";

@@ -23,9 +23,9 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { iconImage, MAX_ICON_BYTES } from "@prismshadow/penguin-core";
 import type { IconImage } from "@prismshadow/penguin-core";
-import type { IconRef } from "../api/types.js";
-import { iconRev } from "../http/icon-response.js";
-import type { AppCenterShortcut, WorkbenchAppCenter } from "../mechanisms/workbenches.js";
+import type { IconRef } from "@prismshadow/penguin-server/api";
+import { iconRev } from "@prismshadow/penguin-server/internal";
+import type { AppCenterShortcut, WorkbenchAppCenter } from "../mechanism.js";
 import { readLoadStatus } from "./compile.js";
 import { isSafeRelPath, isSwitchedOff, isWorkbenchId, TMP_SUFFIX, UI_DIR } from "./store.js";
 

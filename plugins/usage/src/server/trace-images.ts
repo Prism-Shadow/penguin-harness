@@ -19,7 +19,7 @@
  */
 import type {
   ImageUrlPayload,
-  OmniMessage,
+  AmspRecord,
   ToolCallOutputPayload,
 } from "@prismshadow/penguin-core";
 import type { HistoryMessage, TracePosition } from "@prismshadow/penguin-server/api";
@@ -100,7 +100,7 @@ export function withImagesByReference(
  * the route serves — the same test the page applied before it handed out the URL.
  */
 export function traceRecordImage(
-  record: OmniMessage,
+  record: AmspRecord,
   slot: number | undefined,
 ): { mime: string; bytes: Buffer } | null {
   if (record.type !== "model_msg") return null;

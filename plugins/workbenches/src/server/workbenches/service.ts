@@ -1,4 +1,3 @@
-import { isSafeRelPath } from "@prismshadow/penguin-server/internal";
 /**
  * WorkbenchService: boots every workbench folder of an Agent as a module tree of its own.
  *

@@ -12,7 +12,7 @@ import type {
   SessionInfo,
   SessionResponse,
 } from "@prismshadow/penguin-server/cli";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/penguin-core";
 import {
   listAgentSessions,
   resolveSessionRef,
@@ -183,12 +183,12 @@ export async function resolveSessionTarget(
 export async function getSessionMessages(
   client: ServerClient,
   sessionId: string,
-): Promise<OmniMessage[]> {
+): Promise<AmspRecord[]> {
   const res = await client.request<MessagesResponse>(
     "GET",
     `/api/sessions/${enc(sessionId)}/messages`,
   );
-  // MessagesResponse messages are OmniMessages plus an optional tracePosition tag the
+  // MessagesResponse messages are AmspRecords plus an optional tracePosition tag the
   // renderer ignores.
-  return res.messages as unknown as OmniMessage[];
+  return res.messages as unknown as AmspRecord[];
 }

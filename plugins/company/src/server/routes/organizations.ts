@@ -49,7 +49,18 @@ import { ORG_TICKET_COLUMNS, isCalendarEventName, isChannelId } from "../organiz
 import { parsePrincipal } from "../organization/principal.js";
 import { Actor, OrgService } from "../runtime/service.js";
 import type { Workbenches } from "@penguinharness/plugin-workbenches/server";
-import type { Agents } from "@penguinharness/plugin-agents/server";
+import {
+  AgentConfig,
+  AgentLifecycle,
+  UserDraftsStore,
+  SessionIndex,
+  TraceIndex,
+  Schedules,
+  ErrorLog,
+  AgentApi,
+  deleteOrganizationWithAgents,
+  type OrganizationDeletionDeps,
+} from "@prismshadow/penguin-server/internal";
 import type { Sessions } from "@prismshadow/penguin-server/internal";
 import {
   badRequest,

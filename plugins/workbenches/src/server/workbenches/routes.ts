@@ -44,12 +44,12 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import { agentDir } from "@prismshadow/penguin-core";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { AppCenterLayoutResponse, AppCenterResponse, WorkbenchAppCenterResponse, WorkbenchArchiveInstallResponse, WorkbenchesResponse } from "../api/types.js";
+import type { AppCenterLayoutResponse, AppCenterResponse, WorkbenchAppCenterResponse, WorkbenchArchiveInstallResponse, WorkbenchesResponse } from "@prismshadow/penguin-server/api";
 import type { AppEnv } from "@prismshadow/penguin-server/internal";
 import type { Paths } from "@prismshadow/penguin-server/internal";
 import { HttpError } from "@prismshadow/penguin-server/internal";
-import { iconResponse } from "../http/icon-response.js";
-import { mediaType } from "../http/media-type.js";
+import { iconResponse } from "@prismshadow/penguin-server/internal";
+import { mediaType } from "@prismshadow/penguin-server/internal";
 import { badRequest, readJson, requireString, requireValidId } from "@prismshadow/penguin-server/internal";
 import type { AgentConfig } from "@prismshadow/penguin-server/internal";
 import type { Access, Projects } from "@prismshadow/penguin-server/internal";
@@ -72,11 +72,29 @@ import {
 import { migrateWorkbenches } from "./migrate.js";
 import { withUiRuntime } from "./page-html.js";
 import { etagMatches, isPageSdkName, PAGE_SDK_CONTENT_TYPE, pageSdkFile } from "./page-sdk.js";
-import { WorkbenchDisabled, WorkbenchNotFound } from "./service.js";
+import { WorkbenchDisabled } from "./service.js";
 import { isWorkbenchId, readFolder, workbenchesDir } from "./store.js";
 
-import { WorkbenchNotFound } from "./service.js";
-import type { Agents } from "@penguinharness/plugin-agents/server";
+
+const MIME: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".htm": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".mjs": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".ico": "image/x-icon",
+  ".txt": "text/plain; charset=utf-8",
+  ".map": "application/json; charset=utf-8",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+};
 
 /** The largest request body a workbench handler is handed. */
 const MAX_BODY_BYTES = 50 * 1024 * 1024;

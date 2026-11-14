@@ -11,12 +11,17 @@
     "./web/*": "./src/web/*"
   },
   "dependencies": {
+    "@penguinharness/plugin-plugins": "workspace:*",
     "@penguinharness/plugin-schedules": "workspace:*",
+    "@penguinharness/plugin-settings": "workspace:*",
+    "@prismshadow/amsp": "workspace:*",
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-server": "workspace:*",
     "@prismshadow/penguin-ui": "workspace:*",
     "@prismshadow/penguin-web": "workspace:*",
+    "fflate": "^0.8.3",
     "hono": "^4.12.34",
+    "isomorphic-git": "^1.44.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-router": "^8.3.0",

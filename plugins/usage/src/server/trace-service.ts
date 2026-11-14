@@ -33,7 +33,8 @@ import {
   tracesDir,
 } from "@prismshadow/penguin-core";
 import type { CompactionMode, AmspRecord } from "@prismshadow/penguin-core";
-import { promptLabel } from "./trace-prompt-label.js";
+import { promptLabel } from "@prismshadow/penguin-server/internal";
+import { elideHistoryRecord } from "@prismshadow/penguin-core/interfaces";
 import type {
   AgentTraceSessionEntry,
   AgentTracesResponse,

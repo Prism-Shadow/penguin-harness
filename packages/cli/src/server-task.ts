@@ -4,7 +4,7 @@
  * A task is driven entirely by the server; the CLI subscribes to the Session's SSE
  * stream FIRST (so nothing is missed), POSTs the task, then consumes frames until the
  * `task_state` flip back to idle:
- *   - default-event frames are OmniMessages, fed straight into StreamRenderer.handle —
+ *   - default-event frames are AmspRecords, fed straight into StreamRenderer.handle —
  *     the same protocol core streams, so rendering is unchanged;
  *   - `server_event` frames carry `task_state` (end detection; the first event on a
  *     fresh subscription is an authoritative snapshot), `approval_request` (the [Y/n]
@@ -20,7 +20,7 @@ import {
   isHookInput,
   isModelMessage,
 } from "@prismshadow/penguin-core";
-import type { ApprovalDecision, OmniMessage, ToolCallPayload } from "@prismshadow/penguin-core";
+import type { ApprovalDecision, AmspRecord, ToolCallPayload } from "@prismshadow/penguin-core";
 import type { GoalServerEvent } from "@prismshadow/penguin-server/cli";
 import { ServerClient } from "@prismshadow/penguin-server/cli";
 import type { SseFrame } from "@prismshadow/penguin-server/cli";
@@ -33,7 +33,7 @@ import type { Messages } from "@prismshadow/penguin-server/cli";
 interface ServerEventFrame {
   type: string;
   state?: "idle" | "running" | "compacting";
-  toolCall?: OmniMessage<ToolCallPayload>;
+  toolCall?: AmspRecord<ToolCallPayload>;
   origin?: string[];
 }
 
@@ -139,7 +139,7 @@ export interface WatchTaskOptions {
    * Absent = the request is left pending untouched — a passive watcher (the poll form,
    * `--json` collectors) must never decide another surface's approvals.
    */
-  approvalPrompt?: (tc: OmniMessage<ToolCallPayload>) => Promise<ApprovalDecision>;
+  approvalPrompt?: (tc: AmspRecord<ToolCallPayload>) => Promise<ApprovalDecision>;
   /** Goal mode: receives the dim round/summary lines (same rhythm as the core-direct loop had); a minimal sink so --json can swallow them. */
   goal?: { out: { write(text: string): unknown } };
   /** Collects main-session assistant text (complete messages) for `--json` output. */
@@ -257,7 +257,7 @@ export async function watchTask(
       continue;
     }
     if (frame.event !== undefined) continue; // unknown named events: skip
-    const msg = JSON.parse(frame.data) as OmniMessage;
+    const msg = JSON.parse(frame.data) as AmspRecord;
     if (isEventMessage(msg) && msg.payload.type === "abort" && (msg.origin?.length ?? 0) === 0) {
       aborted = true;
     }

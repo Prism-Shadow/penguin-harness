@@ -14,7 +14,7 @@
  * accepted only when it is one of `logins` (401 otherwise). Each request records what it sent.
  *
  * The SSE stream is real: a ReadableStream whose frames follow the server's wire shape
- * (default-event OmniMessage frames, `event: server_event` control frames, incrementing
+ * (default-event AmspRecord frames, `event: server_event` control frames, incrementing
  * ids). A task POST synchronously emits `task_state running`, the script's messages,
  * then `task_state idle` — enough for watchTask's full lifecycle.
  */

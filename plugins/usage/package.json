@@ -12,6 +12,7 @@
     "@penguinharness/plugin-agents": "workspace:*",
     "@penguinharness/plugin-sessions": "workspace:*",
     "@penguinharness/plugin-terminal": "workspace:*",
+    "@prismshadow/amsp": "workspace:*",
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-hmr": "workspace:*",
     "@prismshadow/penguin-server": "workspace:*",

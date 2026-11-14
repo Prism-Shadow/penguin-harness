@@ -19,12 +19,12 @@
 import { Hono } from "hono";
 import { setCookie } from "hono/cookie";
 import { createHash } from "node:crypto";
-import { AVATAR_MAX_CHARS, BACKGROUND_IMAGE_MAX_CHARS } from "../../api/types.js";
-import type { BackgroundImagePutResponse, BackgroundImageResponse, DraftsResponse } from "../../api/types.js";
+import { AVATAR_MAX_CHARS, BACKGROUND_IMAGE_MAX_CHARS } from "@prismshadow/penguin-server/api";
+import type { BackgroundImagePutResponse, BackgroundImageResponse, DraftsResponse } from "@prismshadow/penguin-server/api";
 import type { MeResponse, PrefsResponse, UiPrefs, UpdateProfileRequest, UpdateProfileResponse } from "@prismshadow/penguin-server/api";
 import { toUserInfo } from "@prismshadow/penguin-server/internal";
 import { cookieOptions } from "@prismshadow/penguin-server/internal";
-import { sessionCookieName } from "./auth/middleware.js";
+import { sessionCookieName } from "@prismshadow/penguin-server/internal";
 import type { AppEnv } from "@prismshadow/penguin-server/internal";
 import { badRequest, readJson, requireString } from "@prismshadow/penguin-server/internal";
 import { HttpError } from "@prismshadow/penguin-server/internal";
@@ -46,8 +46,7 @@ export interface MeRouteDeps {
 import { resolvePreviewTarget } from "@prismshadow/penguin-server/internal";
 import { validateDraftShortcuts } from "@prismshadow/penguin-server/internal";
 import { validateKeybindings } from "@prismshadow/penguin-server/internal";
-import { validateAccountSettings } from "../../services/account-settings.js";
-import { DRAFTS_MAX_COUNT, DRAFTS_MAX_TOTAL_CHARS, parseDraftsPatch } from "../../services/user-drafts.js";
+import { validateAccountSettings, DRAFTS_MAX_COUNT, DRAFTS_MAX_TOTAL_CHARS, parseDraftsPatch } from "@prismshadow/penguin-server/internal";
 import { INLINE_IMAGE_MAX_MB, MAX_ATTACHMENT_COUNT, MAX_ATTACHMENT_MB, MIN_ATTACHMENT_MB } from "@prismshadow/penguin-server/internal";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
@@ -381,4 +380,3 @@ export class MeRoutes {
     });
   }
 }
-import type { UserDraftsStore, BackgroundImageStore } from "@prismshadow/penguin-server/internal";
