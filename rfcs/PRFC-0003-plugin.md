@@ -4,7 +4,7 @@
 
 > **Source**: `rfcs/PRFC-0003-plugin.md` from the design repository [penguin-harness-design](https://github.com/Prism-Shadow/penguin-harness-design) — the revision of design PR [#421](https://github.com/Prism-Shadow/penguin-harness-design/pull/421) (plugin library content as module contributions), which lands on the default branch `main` before this mirror; the previous rev took the landed commit [`ac673a24`](https://github.com/Prism-Shadow/penguin-harness-design/commit/ac673a245eec78d6afca35e260dce28b2a3ab3ac).
 > **Unmerged revision**: the open design PR [#279](https://github.com/Prism-Shadow/penguin-harness-design/pull/279) carries one unmerged revision against this document (the passage on enabling a local plugin directory via link; based on an older base of the design repository), not folded into this version; once it is merged or rejected, the rev is raised per the conventions and recorded in `## Changes`.
-> **Rev**: v1.1.0; the conventions for this surface are in [README.md](README.md), and per-version changes are recorded in `## Changes` at the end.
+> **Rev**: v2.1.0; the conventions for this surface are in [README.md](README.md), and per-version changes are recorded in `## Changes` at the end.
 
 - Feature Name: `plugin`
 - Start Date: 2026-09-02
@@ -14,6 +14,8 @@
 
 ## Summary
 [summary]: #summary
+
+In the semantic core, a Plugin names declarations and a Pass. A fixed catalog supplies revisions and order; the effective enabled set selects its entries. Installation and removal change that selection, then rebuild a Module from the original base and selected declarations. The [Lean draft](../formal/module-model/README.md) specifies this logical operation separately from package installation and runtime handover.
 
 The platform maintains a core framework; everything else plugs in as plugins. A plugin is an npm package whose contents are a set of Modules, written the same way as the platform's own nodes. Each time an App is created, the platform reads the union of all Project plugin tables, checks these Modules against their signatures, and starts them as child nodes of the module tree; through the platform's slots they contribute functionality and live for exactly one App generation. Plugin upgrades also take effect by re-creating the App, and state can be parked into the new generation. The plugin table syncs with a Project to every machine the Project uses; each machine installs and re-assembles on its own, without restarting the process. A plugin's scope of effect is decided by configuration: what is activated is the plugin's functionality, not the plugin itself.
 
@@ -78,7 +80,7 @@ Each creation does these things in order:
 
 So a Module lives for exactly one App generation: its contributions to the slots are not carried into the next generation — every generation contributes anew. State that must be kept across generations goes through park; see "Hot updates".
 
-**The cost of a change.** A re-assembly hands over the same things a hot push does: terminals, connections, parked state. What cannot be handed over is the same too: the Agents currently running in all Projects are stopped, and calls awaiting approval are rejected. The plugin page says as much before applying. Two admins' changes are written one after another through a queue, and each re-assembly reads only the one written for it.
+**The cost of a change.** A re-assembly hands over the same things a hot push does: terminals, connections, parked state. AgentState continuation and the incompatible-state path follow PRFC-0015. Two admins' changes are written one after another through a queue, and each re-assembly reads only the one written for it.
 
 ### Hot updates
 
@@ -135,6 +137,42 @@ Why plugins are not loaded per scope, one tree per Project for example:
 The price is discipline: a plugin must carry the caller's context when reading configuration and decide for itself for whom this functionality is on. For the surfaces the platform itself consumes — command constraints, HTTP routes, tools — the scope is parsed by the platform; plugins are not expected to help.
 
 
+### Compile passes and generation changes
+
+The definition in [Plugin.lean](../formal/module-model/ModuleModel/Plugin.lean) introduces no separate plan or generation type:
+
+```lean
+structure Plugin where
+  name : Name
+  declarations : Module
+  pass : Pass
+```
+
+For a fixed base and ordered catalog, `selected` filters catalog entries by membership in the enabled names. Duplicate requests and their order do not change the result; a valid catalog has unique plugin names. `source` appends the selected declarations to the base, `program` composes their passes in catalog order, and `build` runs that composition on `source`. The catalog fixes revisions and precedence for each comparison. Resolving package versions and the implementation's pass dependency order into this catalog is outside the draft.
+
+A plugin may export `passes: Record<string, () => ModulePass>` beside its modules. Its manifests register ids in `CompileModule.passes`; factories provide the code and are called afresh for each compile attempt. Duplicate factory ids are rejected. A generation resolves only factories belonging to its retained plugin selection, including best-effort retries. Operator provenance records the supplying plugin and revision so a pass changing another module is not blamed on the victim module.
+
+`install` adds a name to the enabled set and `uninstall` removes it. Every `build` starts from source declarations; the previous output is never its input. A removed pass may have deleted someone else's contribution, replaced a component or changed a surviving pass's condition, so removing only its owned output or trying to invert its edits does not implement uninstall. The model's `effective` selection is the union by membership of Project requests: removal from one Project leaves the plugin selected while another still requests it. Disabling only a pass changes the catalog entry; the fixed-catalog round-trip law does not compare different catalogs.
+
+Build and admission are distinct operations on the same Module type. Uninstalling a required provider can produce an invalid candidate. `Module.admit` retains the current Module when verification rejects it; it does not promise that every requested uninstall can be published. Best-effort recovery may shrink the retained selection and rebuild. A successful retry is admitted only after final verification.
+
+The lifecycle target is to compile and admit the candidate before dismantling the old runtime, then use park/load for the handover. After disposal, a failed boot requires a recovery attempt; this is not a guarantee of uninterrupted service or rollback of external effects. Keep the old plan, parked state and exact code artifacts available for recovery. In-place npm replacement does not provide this guarantee and remains an implementation gap.
+
+Logical deactivation and physical cleanup are distinct. New generations exclude removed passes; in-flight Tasks may still hold old code under [PRFC-0015](PRFC-0015-agent-state.md). Reclaim an artifact only after no active or candidate generation, in-flight Task, recovery snapshot or transitive code dependency retains it. Unused ESM records are not forcibly unloaded from the process. Removed module state is not automatically preserved by later `park()` calls: retention versus deletion, its duration and the cleanup owner must be decided before changing stored-data behavior.
+
+### Model proof targets
+
+The plugin statements in [Laws.lean](../formal/module-model/ModuleModel/Laws.lean) use pure, total callbacks with a fixed base and catalog, including code revisions, configuration captured by callbacks and order:
+
+- Equal enabled membership produces equal rebuilt Modules. Install and uninstall are each idempotent with respect to that result.
+- If `p` was absent from `S`, then `build(base, catalog, uninstall(p, install(p, S))) = build(base, catalog, S)`. The freshness premise is necessary; removing an already enabled plugin would change the initial selection.
+- An uninstalled plugin is absent from selection and hence its pass is not scheduled for that build. A remaining Project request keeps a known plugin selected. Neither statement says that old running code has stopped.
+- `Retires next current` means a strict subset by membership: no new enabled name and at least one removed name. This relation is well founded, with at most `initial.eraseDups.length` strict retirement transitions. Reordering a list or deleting a duplicate request is not progress. No optimal retained subset or concrete recovery algorithm is specified.
+
+These theorem bodies intentionally remain `sorry`. Module admission and accepted dependencies are specified in [PRFC-0001](PRFC-0001-module.md); the draft has no runtime state, exception handling, park/load, Tasks or artifact reachability. State preservation, admission before runtime publication, recovery and safe reclamation remain operational requirements, not consequences of the plugin equations. Component park/load contracts are not hidden axioms in this draft. A later lifecycle model would have to state them explicitly, along with any assumptions needed for recovery success, eventual task completion or cleanup.
+
+The implementation's best-effort policy may drop an original contribution group without removing a plugin. That step does not satisfy `Retires`, so the present retry theorem cannot justify the entire policy. A future proof must measure both retained plugins and retained original contribution groups, require each retry to remove at least one member of those finite sets, and rebuild from source. Imports, tsc, migrations and arbitrary TypeScript callbacks need their own termination arguments. No formal implementation verification is claimed.
+
 ## Drawbacks
 [drawbacks]: #drawbacks
 
@@ -181,6 +219,16 @@ More activation dimensions: enable a plugin's functionality per user, per Agent.
 Rebuild only the affected subtree, reducing what one plugin change must re-assemble.
 
 ## Changes
+
+### v2.1.0
+
+- Added: the minimal Plugin definition, fixed-catalog selection and source rebuild semantics, with explicit separation of build and admission.
+- Updated: the Lean draft's install/uninstall laws, freshness premise, process-wide request union and strict-retirement bound.
+- Clarified: park/load, runtime publication, artifact reclamation and contribution-group recovery remain outside the draft; all theorem proofs use `sorry`.
+
+### v2.0.0
+
+- Updated: immutable module planning, deferred verification, generation ownership and model proof boundaries.
 
 ### v1.1.0
 
