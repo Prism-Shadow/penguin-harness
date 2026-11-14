@@ -15,9 +15,9 @@
   authors-addresses: none,
   doi: none,
   isbn: none,
-  title: "Operators, Replay, and Hot Reload in a Module Mechanism",
-  subtitle: "A Lean-checked model for PenguinHarness",
-  short-title: "Module Reconfiguration",
+  title: "A Modular System with Checked Hot Updates",
+  subtitle: "Declarations, Operators, and Replay in PenguinHarness",
+  short-title: "A Modular System with Checked Hot Updates",
   authors: (),
   abstract: [
     PenguinHarness assembles components from declarations, operators, dependency
@@ -34,6 +34,8 @@
     conditions required by this software's declaration transformations and generation
     lifetime rules. External type checking, source elaboration, callback behavior,
     and refinement of the TypeScript implementation remain explicit obligations.
+    We discuss the implemented recovery policy and a proposed extension from
+    runtime type checks to producer/consumer contract tests at update admission.
   ],
   keywords: ("module systems", "operators", "plugin reconfiguration", "hot reload", "Lean"),
 )
@@ -50,6 +52,9 @@ recipes, scoped declarations, operators, and plugin contributions. Its Module
 mechanism also includes signature projection, dependency resolution, verification,
 and runtime handover. The governing specifications are the Module, Plugin, and
 Module Pass RFCs #cite(<rfc-module>, <rfc-plugin>, <rfc-pass>).
+Checked hot updates combine these runtime admission checks with the lifecycle
+protocol; behavioral compatibility tests are a proposed extension discussed in
+@runtime-verification.
 
 The design problem is how to let independently authored extensions change that
 assembly. Instrumentation must reach a mock introduced by a later pass. Removing
@@ -683,6 +688,16 @@ without requiring each author to construct an inverse. These mechanisms can
 coexist: replay determines the next plan, while tracked resources support runtime
 cleanup during its installation.
 
+The overlap also concerns guarantees. Cordis's Theorem 68 establishes recovery
+exactness for its observable context tables; its Theorem 80 establishes a canonical
+form and confluence for quiescent lifecycle executions with the same orchestration
+inputs, under its totality and effect/coeffect premises. Agreement with a fresh
+assembly is therefore an existing objective. Our replay theorem addresses a
+different operational mechanism: deterministic declaration transformations are
+rerun from retained source, and failed scratch states are discarded. Its equality
+is equality of declarations for a fixed catalog and final selection; Cordis's
+comparison is observational equivalence of runtime contexts under its own premises.
+
 == Hot Module Reload <hmr-guarantee>
 
 The protocol in @hmr-semantics separates publication from the lifetime of code
@@ -761,7 +776,80 @@ need a lifecycle discipline that preserves every capability they may invoke, or
 an explicit rule preventing those calls. Equality of parked state shapes supplies
 no behavioral compatibility proof for old Tasks and new code sharing mutable state.
 
-= Position, cost, and implementation obligations <position>
+= Discussion <position>
+
+== Error recovery <error-recovery>
+
+Replay determines the result of a retained configuration, but it does not choose
+which configuration to retain after an error. Validity is nonmonotone in plugin
+selection: adding a plugin can introduce duplicate names, while removing one can
+remove a required provider. A plugin excluded by one attempt can also become
+usable when another is restored. Consequently, a sequence that only removes
+plugins can terminate without finding the largest usable selection.
+
+Even the restricted problem of maximizing the number of retained plugins is
+NP-hard. Given a graph, assign one plugin to each vertex and one declaration name
+to each edge. Each endpoint's plugin contributes that edge's name, with no
+requirements or Passes. A selected configuration has unique names exactly when
+its vertices form an independent set; maximizing retained plugins would therefore
+solve Maximum Independent Set. This observation concerns optimal selection, not
+the cost of checking one proposed configuration.
+
+The implementation uses an ordered best-effort policy: try candidates in sequence
+and stop at the first successful compile and boot. `bootWithoutUnsatisfied` first
+tries all loaded plugins. On a supported failure, it processes the reported
+diagnostics in order. A missing or incompatible slot contribution with no edit
+origin is dropped at its module/slot group while retaining the plugin. Other
+attributable problems exclude the supplying plugin, using operator provenance
+before falling back to module ownership. The next attempt rebuilds from original
+declarations with those exclusions and fresh retained pass factories. One failed
+attempt may produce several exclusions; this is not an enumeration of every
+plugin subset.
+
+Failures without supported plugin attribution are propagated. Refusal mode stops
+at the first such plugin rejection instead of attempting a reduced configuration.
+Excluded plugins and contributions are reported with reasons; the loaded catalog
+is retained so a later generation can try them again. This policy prioritizes
+obtaining a usable generation and explaining omissions. It provides no optimality
+guarantee, and a different candidate order may retain a different configuration.
+Within a compile attempt, Passes also execute in their scheduled order. A failing
+rewrite discards its pending edits and deferred rules, reports the failure, and
+allows subsequent Passes to run; the final candidate still has to pass verification.
+The strict-plugin-retirement bound in @basics applies to its corresponding model;
+the implementation's contribution-only exclusions require a measure that also
+counts the finite source contribution groups.
+
+== Runtime verification at the update handshake <runtime-verification>
+
+PenguinHarness already performs runtime type checking at its assembly and update
+boundaries. The implementation compares separately supplied interface snapshots,
+asks TypeScript directional assignment questions, checks the members of live
+capabilities, and compares the closed shapes of shared Agent state. These checks
+operate at their respective boundaries; they do not execute the behavioral
+contract between an interface producer and its consumer.
+
+A proposed extension is to run compatibility tests during the hot-update handshake.
+The tested object is the concrete producer/consumer pairing that the candidate
+will connect. A consumer can supply executable expectations about an interface,
+and the handshake can exercise the candidate producer against those expectations.
+Where versions coexist, the relevant pair may include an old producer and a new
+consumer, or an old consumer and a new producer. The tests and their results must
+be associated with the revisions actually admitted.
+
+For example, two implementations can expose the same method types while disagreeing
+on whether cancellation terminates a stream or whether releasing a registration
+twice is harmless. Contract tests can observe these interactions using controlled
+inputs, expected outputs, and operation sequences. A failing or incomplete required
+test would withhold publication of the candidate. Executing such tests requires a
+trial environment or disposable fixtures so that a rejected candidate's tests do
+not mutate the live state they were intended to protect.
+
+This is a runtime-verification direction beyond the implemented type checks and
+the present Lean model. Passing tests provides evidence for the exercised behavior;
+it does not prove compatibility for every input, state, or concurrent schedule.
+Choosing the contracts, test isolation, and coverage of shared-state interactions
+remains future work. The immediate aim is an admission decision informed by both
+type compatibility and observed producer/consumer behavior.
 
 == Relation to existing systems
 

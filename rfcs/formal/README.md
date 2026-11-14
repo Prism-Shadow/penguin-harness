@@ -10,10 +10,14 @@ mechanism independently of the proof language and proof status.
   and complete proofs. `Basics.lean` contains the elementary laws;
   `Proofs/Normalization.lean`, `Proofs/Plugin.lean`, and `Proofs/HMR.lean` contain
   the main results.
-- [Paper](docs/module.typ): shared syntax and semantics in Chapters 2–3, deferred
+- [A Modular System with Checked Hot Updates](docs/module.typ): shared syntax and
+  semantics in Chapters 2–3, deferred
   operator normalization, plugin replay, and HMR safety in Chapter 4, with basic
   proofs in the appendix. Section 4.2 compares replay with Cordis 2026, including
-  the information retained by its per-state inverses.
+  recovery exactness, confluence, and the information retained by its per-state
+  inverses. The Discussion describes ordered error recovery and proposes behavioral
+  producer/consumer tests at the hot-update handshake alongside existing runtime
+  type checks.
 
 Declaration transformations are Operators. The paper uses direct operator application,
 big-step Pass evaluation and a separate judgment for final Module validity. Operation
