@@ -58,8 +58,8 @@ import {
   loAnchorRange,
   parseHistoryFileKey,
   sameHistoryFile,
-} from "@penguinharness/plugin-usage/server";
-import { LineCommitter, frameBytes } from "../socket/line-frames.js";
+} from "@prismshadow/penguin-server/internal";
+import { LineCommitter, frameBytes } from "@prismshadow/penguin-server/internal";
 
 /** The on-disk format; a directory written by another one is wiped when the cache opens. */
 export const TRACE_CACHE_FORMAT = 2;
