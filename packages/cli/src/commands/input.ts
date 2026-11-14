@@ -28,24 +28,25 @@
  * Docs: /docs/cli § "penguin session input".
  */
 import type { Command } from "commander";
-import { isModelMessage, type OmniMessage } from "@prismshadow/penguin-core";
-import { toFallbackMarkdown } from "@prismshadow/penguin-core/a2ui";
+import { isModelMessage, type AmspRecord } from "@prismshadow/penguin-core";
+import { toFallbackMarkdown } from "@prismshadow/a2ui";
 import { StreamRenderer, dim } from "../render.js";
 import { parseDurationMs } from "../duration.js";
-import { promptApproval } from "@prismshadow/penguin-server/cli";
+import type { Messages } from "@prismshadow/penguin-server/cli";
 import {
+  promptApproval,
   resolveAgentId,
   resolveConnection,
   resolveProjectId,
   ServerClient,
   shortSessionId,
 } from "@prismshadow/penguin-server/cli";
+
 import { getSessionInfo, getSessionMessages, resolveSessionTarget } from "../server-session.js";
 import { SessionStream, watchTask } from "../server-task.js";
-import type { Messages } from "@prismshadow/penguin-server/cli";
 
 /** The most recent complete assistant text of the main session (poll's snapshot); null when none exists yet. */
-export function latestAssistantText(messages: OmniMessage[]): string | null {
+export function latestAssistantText(messages: AmspRecord[]): string | null {
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i]!;
     if ((msg.origin?.length ?? 0) > 0 || !isModelMessage(msg)) continue;

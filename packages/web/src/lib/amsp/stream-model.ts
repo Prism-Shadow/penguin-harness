@@ -1,7 +1,7 @@
 /**
- * OmniMessage stream → render view-model reducer. A
+ * Record stream → render view-model reducer. A
  * pure logic module, no React dependency: takes in an ordered sequence of
- * OmniMessage (history's complete messages + real-time partial/complete/
+ * records (history's complete messages + real-time partial/complete/
  * event), and produces a `ChatItem[]` view model (updated in place, with the caller triggering the re-render).
  *
  * Key points:
@@ -49,31 +49,41 @@
  *     (finalizeHistory). Either way the duration comes from Trace timestamps
  *     alone and never the local clock, so a round settles to the same figure
  *     watched live and replayed after a reload. A stats row is only added if token_usage occurred during the Task.
+ *     The Trace's Task records (task_begin / task_end) are ignored outright, at every level:
+ *     segmentation is still derived as above, so a Trace reads the same with or without them.
  *   - Overlap-dedup helpers: buildDedupIndex/isDuplicate
  *     judge duplicates by exact match of the envelope JSON; when a complete
  *     message hits the dedup check, discardFragmentFor also discards the corresponding in-flight fragment.
- * Docs: /docs/omni-message § "The streaming discipline".
+ * Docs: /docs/amsp-records § "The streaming discipline".
  */
 import {
   isEventMessage,
   isModelMessage,
   isPartialPayload,
+  isTaskRecord,
   normalizeSessionSource,
+} from "@prismshadow/amsp";
+import {
   parseBackgroundTaskDoneMessage,
+  parseInPlaceModelSwitch,
   parseUserSteeringText,
-  type ApprovalDecision,
-  type CompactionMode,
-  type CompactionReason,
-  type CompleteModelPayload,
-  type EventPayload,
-  type OmniMessage,
-  type PartialModelPayload,
-  type SessionMetaPayload,
-  type SessionSource,
-  type StopReason,
-  type TokenUsagePayload,
-} from "@prismshadow/penguin-core/omnimessage";
-
+} from "@prismshadow/amsp/markers";
+import type {
+  ApprovalDecision,
+  CompactionMode,
+  CompactionReason,
+  CompleteModelPayload,
+  EventPayload,
+  AmspRecord,
+  PartialModelPayload,
+  SessionMetaPayload,
+  SessionSource,
+  StopReason,
+  TokenUsagePayload,
+  ToolStatus,
+} from "@prismshadow/amsp";
+import { elideHistoryRecord } from "@prismshadow/penguin-core/interfaces";
+import type { ElidedBody, HistoryRecordLike } from "@prismshadow/penguin-core/interfaces";
 import type { TracePosition } from "@prismshadow/penguin-server/api";
 import {
   addLlmDuration,
@@ -167,7 +177,8 @@ export interface AssistantTextItem {
   text: string;
   /** The streamed fragment is still accumulating. */
   streaming: boolean;
-  stopReason?: StopReason;
+  /** Its Request ended `completed` (set at that request_end): only such a reply is a fork point. */
+  requestCompleted?: boolean;
   /**
    * Message timestamp (milliseconds): shown on footer hover. During
    * streaming it's a placeholder using the partial start's timestamp;
@@ -179,16 +190,37 @@ export interface AssistantTextItem {
   tracePosition?: TracePosition;
 }
 
+/**
+ * A history record that came with values left out — the bulky bodies the transcript shows folded
+ * (a tool's output, a long argument, a thinking block, a child's inline image): the record as it
+ * arrived, previews in place, and the entries naming what was left out. The whole values are
+ * fetched when the reader unfolds the item; `takeWholeRecord` then puts the record back.
+ */
+export interface ElidedRecord {
+  record: HistoryRecordLike;
+  entries: ElidedBody[];
+}
+
+/** An item's folded values being fetched: the bytes so far of their total, or why it failed. */
+export interface BodyLoad {
+  doneBytes: number;
+  totalBytes: number;
+  error: string | null;
+}
+
 export interface ThinkingItem {
   kind: "thinking";
   id: number;
   thinking: string;
   streaming: boolean;
-  stopReason?: StopReason;
   /** Start timestamp in milliseconds (the partial start's message time; approximated by the previous message's time when history has no fragments). */
   startedAtMs?: number;
   /** Thinking duration (settled when the complete message arrives: message time - start time). */
   durationMs?: number;
+  /** The text came as a preview of a longer one (a history window folds long thinking). */
+  elided?: ElidedRecord;
+  /** The whole text being fetched. */
+  bodyLoad?: BodyLoad;
 }
 
 export interface ToolCallItem {
@@ -201,14 +233,18 @@ export interface ToolCallItem {
   callStreaming: boolean;
   /** A complete tool_call message has been received (all streamed copies after this are ignored). */
   callComplete: boolean;
-  callStopReason?: StopReason;
   /** Tool output (appended via streaming, replaced once the complete message arrives; truncation/timeout/interruption markers are already in the text). */
   output: string;
   /** Images carried by the tool output (an array of data URLs; a streamed delta carries the whole array at once, and the complete message converges it again). */
   images?: string[];
   outputStreaming: boolean;
   outputComplete: boolean;
-  outputStopReason?: StopReason;
+  /**
+   * The result's `status` (tool_call_output.status; a record written before the field reads as
+   * completed). `aborted` also marks a card that will never get a result — the call was cut
+   * short while streaming, or interrupted while it ran.
+   */
+  outputStatus?: ToolStatus;
   /** Approval decision (annotated by the approval_decision event). */
   decision?: ApprovalDecision;
   decisionSource?: DecisionSource;
@@ -239,6 +275,12 @@ export interface ToolCallItem {
   argStartedAtMs?: number;
   /** Total tool duration (settled when the tool_call_output complete message arrives) = the argument-generation segment + the execution segment, excluding the approval wait (see settleToolDuration). */
   durationMs?: number;
+  /** The call's arguments came with a long string value as a preview (a history window folds it). */
+  elidedCall?: ElidedRecord;
+  /** The output (or a child's inline image) came as a preview. */
+  elidedOutput?: ElidedRecord;
+  /** The whole values being fetched. */
+  bodyLoad?: BodyLoad;
 }
 
 /** A standalone sub-session card for when no run_subagent tool card can be bound. */
@@ -252,7 +294,7 @@ export interface SubagentItem {
 export interface AbortItem {
   kind: "abort";
   id: number;
-  /** Machine-readable cause (the omnimessage ErrorCode vocabulary); the banner localizes from it. */
+  /** Machine-readable cause (the records' ErrorCode vocabulary); the banner localizes from it. */
   errorCode?: string;
   /** Raw failure detail, shown verbatim (absent on live user interrupts). */
   errorMessage?: string;
@@ -264,13 +306,25 @@ export interface AbortItem {
  * A run-ending LLM failure, from a `request_end` with status `fatal` (an LLM failure
  * produces no abort event — the request_end is its terminal record).
  */
-export interface LlmErrorItem {
+export interface LlmErrorItem extends RequestFailureFacts {
   kind: "llm_error";
   id: number;
   /** Machine-readable cause (request_end.error_code). */
   errorCode?: string;
-  /** The provider's own error text (request_end.error_message), shown verbatim. */
+  /** The provider's own error text (request_end.error_message), shown in the failure details. */
   errorMessage?: string;
+  /** The request's ordinal within its retry run (request_end.attempt); absent on a first try and in old Traces. */
+  attempt?: number;
+}
+
+/**
+ * What a failed request's details report beyond its record, read from the records around it:
+ * the model its context was opened on (`StreamModel.contextModel` when the request ended; absent
+ * when no `session_meta` had said which yet) and when it ended (the request_end's timestamp).
+ */
+export interface RequestFailureFacts {
+  model?: { provider: string; modelId: string };
+  atMs?: number;
 }
 
 /** `retryable` is the live protocol; failed/timeout/malformed are legacy Trace spellings kept for replay. */
@@ -283,7 +337,7 @@ function isReconnectStatus(status: string | undefined): status is ReconnectStatu
 }
 
 /** An LLM Request ending retryable → the engine retries carrying the content already produced. */
-export interface ReconnectItem {
+export interface ReconnectItem extends RequestFailureFacts {
   kind: "reconnect";
   id: number;
   /** Trigger status (legacy Traces carry the finer pre-convergence spellings). */
@@ -296,7 +350,7 @@ export interface ReconnectItem {
   gaveUp?: boolean;
   /** Machine-readable cause (request_end.error_code); the cause wording localizes from it. */
   errorCode?: string;
-  /** The final failure's detail (request_end.error_message), rendered in the gave-up state. */
+  /** The latest failure's detail (request_end.error_message), shown in the failure details. */
   errorMessage?: string;
   /**
    * The engine's planned wait before the next attempt (request_end.retry_in_ms; absent
@@ -390,6 +444,12 @@ export interface ModelChangeItem {
   to: { provider: string; modelId: string };
   /** The timestamp of the `session_meta` that named the new model (ms). */
   tsMs?: number;
+  /**
+   * The switch handed the history over by its Trace path instead of a summary: the
+   * `[model_switch_from]` handoff naming this Session that followed the meta (folded into this
+   * marker rather than shown as a message), with the file it named.
+   */
+  handover?: { tracePath?: string };
 }
 
 /** One MCP tool for the connect row's expandable list (from tool_list_ready, `mcp__` entries only). */
@@ -586,6 +646,12 @@ export interface StreamModel {
    */
   openRequestBeginMs: number | null;
   /**
+   * The first item id the main session's currently unclosed Request could have produced
+   * (`nextItemId` at its request_begin; null before one is seen): its request_end marks the
+   * assistant texts from there on with whether the Request completed.
+   */
+  openRequestFirstItemId: number | null;
+  /**
    * Total human approval wait time (milliseconds) within the currently
    * unclosed Request: deducted from the wall-clock duration at request_end,
    * so only the time the LLM is actually generating counts toward the
@@ -696,6 +762,7 @@ function newModel(nested: boolean, localDecisions: Set<string>): StreamModel {
     pendingDecisionTs: new Map(),
     lastTsMs: 0,
     openRequestBeginMs: null,
+    openRequestFirstItemId: null,
     openApprovalWaitMs: 0,
     taskOpen: false,
     taskStartLocalMs: 0,
@@ -722,12 +789,11 @@ function nextId(model: StreamModel): number {
 // Main entry point
 // ---------------------------------------------------------------------------
 
-/** Feed in one OmniMessage in order (history or live); nowMs is used for the Task's live timing (injectable for tests). */
-export function pushMessage(
-  model: StreamModel,
-  msg: OmniMessage,
-  nowMs: number = Date.now(),
-): void {
+/** Feed in one AmspRecord in order (history or live); nowMs is used for the Task's live timing (injectable for tests). */
+export function pushMessage(model: StreamModel, msg: AmspRecord, nowMs: number = Date.now()): void {
+  // Task records: no item, no Task change, no timestamp — checked before the origin routing so a
+  // child's own pair leaves the parent's timing alone too.
+  if (isTaskRecord(msg)) return;
   if (msg.origin && msg.origin.length > 0) {
     routeNested(model, msg, nowMs);
     return;
@@ -794,7 +860,8 @@ export function pushMessage(
       msg.payload as CompleteModelPayload,
       msg.timestamp,
       nowMs,
-      (msg as OmniMessage & { tracePosition?: TracePosition }).tracePosition,
+      (msg as AmspRecord & { tracePosition?: TracePosition }).tracePosition,
+      elidedOf(msg),
     );
     advanceLastTs(model, msg.timestamp);
     return;
@@ -856,7 +923,7 @@ export function pushMessage(
  * ended the run, with no Task opened since (see StreamModel.runEnded). A compaction's own
  * requests never count — compaction is housekeeping, not a run.
  */
-function startsRetryRun(model: StreamModel, msg: OmniMessage): boolean {
+function startsRetryRun(model: StreamModel, msg: AmspRecord): boolean {
   return (
     model.runEnded &&
     !model.stats.compactionActive &&
@@ -865,7 +932,7 @@ function startsRetryRun(model: StreamModel, msg: OmniMessage): boolean {
 }
 
 /** Whether the message is a complete user image — the only kind that can join an open steering chip. */
-function isCompleteUserImage(msg: OmniMessage): boolean {
+function isCompleteUserImage(msg: AmspRecord): boolean {
   return msg.type === "model_msg" && (msg.payload as { type?: string }).type === "image_url";
 }
 
@@ -919,7 +986,7 @@ function advanceLastTs(model: StreamModel, timestamp: string): void {
  */
 export function pushMessages(
   model: StreamModel,
-  messages: OmniMessage[],
+  messages: AmspRecord[],
   nowMs: number = Date.now(),
   serverNowMs: number | null = null,
 ): void {
@@ -1134,7 +1201,7 @@ function collectTaskAssistant(model: StreamModel): {
       if (atMs === undefined) {
         atMs = it.atMs; // walking backward: the first hit is the last one
         tracePosition = it.tracePosition;
-        completed = it.stopReason === "completed";
+        completed = it.requestCompleted === true;
       }
     }
   }
@@ -1159,8 +1226,7 @@ function collectTaskMemoryChanges(model: StreamModel): MemoryChangeRow[] {
   for (let i = model.items.length - 1; i >= 0; i--) {
     const it = model.items[i]!;
     if (it.kind === "task_stats") break;
-    if (it.kind !== "tool_call" || !it.outputComplete || it.outputStopReason !== "completed")
-      continue;
+    if (it.kind !== "tool_call" || !it.outputComplete || it.outputStatus !== "completed") continue;
     if (it.name !== "write_file" && it.name !== "edit_file") continue;
     let args: unknown;
     try {
@@ -1208,7 +1274,6 @@ function handlePartial(model: StreamModel, p: PartialModelPayload, tsMs?: number
       if (p.text) open.text += p.text;
       if (p.event_type === "stop") {
         open.streaming = false;
-        if (p.stop_reason !== undefined) open.stopReason = p.stop_reason;
         model.pendingText = open;
         model.openText = null;
       }
@@ -1233,7 +1298,6 @@ function handlePartial(model: StreamModel, p: PartialModelPayload, tsMs?: number
       if (p.thinking) open.thinking += p.thinking;
       if (p.event_type === "stop") {
         open.streaming = false;
-        if (p.stop_reason !== undefined) open.stopReason = p.stop_reason;
         settleThinkingDuration(open, tsMs);
         model.pendingThinking = open;
         model.openThinking = null;
@@ -1267,7 +1331,6 @@ function handlePartial(model: StreamModel, p: PartialModelPayload, tsMs?: number
       if (p.arguments) card.argumentsText += p.arguments;
       if (p.event_type === "stop") {
         card.callStreaming = false;
-        if (p.stop_reason !== undefined) card.callStopReason = p.stop_reason;
         // Execution start = the call's closing timestamp (same convention as Trace analysis: tool_call → tool_call_output).
         if (tsMs !== undefined) card.callStartedAtMs = tsMs;
       }
@@ -1291,7 +1354,6 @@ function handlePartial(model: StreamModel, p: PartialModelPayload, tsMs?: number
       if (p.images && p.images.length > 0) card.images = p.images;
       if (p.event_type === "stop") {
         card.outputStreaming = false;
-        if (p.stop_reason !== undefined) card.outputStopReason = p.stop_reason;
         settleToolDuration(card, tsMs, model.stats);
       }
       return;
@@ -1303,12 +1365,20 @@ function handlePartial(model: StreamModel, p: PartialModelPayload, tsMs?: number
 // Complete messages
 // ---------------------------------------------------------------------------
 
+/** What a history record left out, or undefined for a record carried whole (every live one). */
+function elidedOf(msg: AmspRecord): ElidedRecord | undefined {
+  const record = msg as HistoryRecordLike;
+  const entries = record.elided;
+  return entries !== undefined && entries.length > 0 ? { record, entries } : undefined;
+}
+
 function handleComplete(
   model: StreamModel,
   p: CompleteModelPayload,
   timestamp: string,
   nowMs: number,
   tracePosition?: TracePosition,
+  elided?: ElidedRecord,
 ): void {
   switch (p.type) {
     case "text": {
@@ -1319,6 +1389,21 @@ function handleComplete(
         // Traces containing it are re-rendered through this reducer.
         if (p.text.startsWith("[context_summary]") || p.text.startsWith("<context_summary>")) {
           touchTask(model, timestamp);
+          return;
+        }
+        // The Trace handoff an in-session model switch opened the context with instead of a
+        // summary (a whole `[model_switch_from]` block naming this Session — a `/model` new
+        // conversation's names its source): no bubble and no Task either; it marks the switch.
+        const handover = parseInPlaceModelSwitch(p.text, model.contextModel?.sessionId);
+        if (handover !== null) {
+          touchTask(model, timestamp);
+          const marker = model.items.findLast(
+            (i): i is ModelChangeItem => i.kind === "model_change",
+          );
+          if (marker) {
+            marker.handover =
+              handover.tracePath !== undefined ? { tracePath: handover.tracePath } : {};
+          }
           return;
         }
         // Mid-run steering (`[user_steering]`-wrapped user text, delivered between turns):
@@ -1409,7 +1494,6 @@ function handleComplete(
         const doneMs = tsOf(timestamp);
         if (doneMs !== undefined) target.atMs = doneMs; // the completion timestamp overrides the start placeholder
         if (tracePosition !== undefined) target.tracePosition = tracePosition;
-        if (p.stop_reason !== undefined) target.stopReason = p.stop_reason;
         if (target === model.openText) model.openText = null;
         model.pendingText = null;
         return;
@@ -1435,7 +1519,6 @@ function handleComplete(
         ...(doneMs !== undefined ? { atMs: doneMs } : {}),
         ...(tracePosition !== undefined ? { tracePosition } : {}),
       };
-      if (p.stop_reason !== undefined) item.stopReason = p.stop_reason;
       model.items.push(item);
       return;
     }
@@ -1471,7 +1554,8 @@ function handleComplete(
         }
         target.thinking = p.thinking;
         target.streaming = false;
-        if (p.stop_reason !== undefined) target.stopReason = p.stop_reason;
+        if (elided !== undefined) target.elided = elided;
+        else delete target.elided;
         settleThinkingDuration(target, tsMs);
         if (target === model.openThinking) model.openThinking = null;
         model.pendingThinking = null;
@@ -1485,8 +1569,8 @@ function handleComplete(
         id: nextId(model),
         thinking: p.thinking,
         streaming: false,
+        ...(elided !== undefined ? { elided } : {}),
       };
-      if (p.stop_reason !== undefined) item.stopReason = p.stop_reason;
       // History rebuild (no fragment): approximate the thinking start with the previous message's time.
       if (model.lastTsMs > 0) item.startedAtMs = model.lastTsMs;
       settleThinkingDuration(item, tsMs);
@@ -1506,12 +1590,12 @@ function handleComplete(
       if (card) {
         card.name = p.name;
         card.argumentsText = p.arguments;
+        if (elided !== undefined) card.elidedCall = elided;
+        else delete card.elidedCall;
         card.callStreaming = false;
         card.callComplete = true;
-        if (p.stop_reason !== undefined) card.callStopReason = p.stop_reason;
         if (tsMs !== undefined) card.callStartedAtMs = tsMs;
         noteApprovalWait(model, card); // Approval arrived first (mid-stream join): only here do both timestamps come together
-        settleUndispatchedCall(card);
         return;
       }
       if (existing && !existing.outputComplete) {
@@ -1520,7 +1604,7 @@ function handleComplete(
         // the running timer (same behavior as closeExecutingToolCards).
         existing.outputComplete = true;
         existing.outputStreaming = false;
-        existing.outputStopReason ??= "aborted";
+        existing.outputStatus ??= "aborted";
       }
       const created = createToolCard(model, {
         toolCallId: p.tool_call_id,
@@ -1529,7 +1613,7 @@ function handleComplete(
         callStreaming: false,
       });
       created.callComplete = true;
-      if (p.stop_reason !== undefined) created.callStopReason = p.stop_reason;
+      if (elided !== undefined) created.elidedCall = elided;
       if (tsMs !== undefined) created.callStartedAtMs = tsMs;
       noteApprovalWait(model, created); // createToolCard may have already backfilled a pending approval timestamp
       // History rebuild (no partial_tool_call start): approximate "argument
@@ -1537,7 +1621,6 @@ function handleComplete(
       // convention as thinking. Otherwise the tool duration would lose its
       // argument-generation segment (often the bulk of it) after a refresh, for no reason.
       if (model.lastTsMs > 0) created.argStartedAtMs = model.lastTsMs;
-      settleUndispatchedCall(created);
       return;
     }
     case "tool_call_output": {
@@ -1553,11 +1636,14 @@ function handleComplete(
         });
       }
       card.output = p.output;
+      if (elided !== undefined) card.elidedOutput = elided;
+      else delete card.elidedOutput;
       // The complete message converges the images (the streamed delta already carried them once; overwrites with the same value; also serves as a fallback for a mid-stream join).
       if (p.images && p.images.length > 0) card.images = p.images;
       card.outputStreaming = false;
       card.outputComplete = true;
-      if (p.stop_reason !== undefined) card.outputStopReason = p.stop_reason;
+      // A result written before tool results carried a status reads as completed.
+      card.outputStatus = p.status ?? "completed";
       settleToolDuration(card, tsOf(timestamp), model.stats);
       // This turn owes the model its results, so a compaction triggering now is mid-Task
       // and the round is not over (see turnToolOutputs).
@@ -1577,32 +1663,57 @@ function handleComplete(
  * arrived): after an interruption or Task finalization, these cards will
  * never get a tool_call_output, so mark output complete to stop the view
  * layer's rolling timer; the duration stays unset and isn't shown. The
- * stop reason is recorded as aborted — these tools **never produced a
- * result**, and leaving it unset would render as a "completed" checkmark,
- * visually indistinguishable from "executed successfully but with empty output".
+ * status is recorded as aborted — these tools **never produced a
+ * result** (a call interrupted while it runs writes none), and leaving it
+ * unset would render as a "completed" checkmark, visually
+ * indistinguishable from "executed successfully but with empty output".
  * A late-arriving complete tool_call_output (if any) still overrides unconditionally, unaffected by this.
  */
 function closeExecutingToolCards(model: StreamModel): void {
   for (const card of model.toolCards.values()) {
-    if (card.callComplete && !card.outputComplete) {
-      card.outputComplete = true;
-      card.outputStreaming = false;
-      card.outputStopReason ??= "aborted";
-    }
+    if (!card.outputComplete) settleUnfinishedCard(card);
   }
 }
 
 /**
- * A tool_call that closed with a non-completed status (produced by an interrupt closure)
- * was never dispatched for execution and will never get a tool_call_output: settle the
- * card by its closing reason as soon as it arrives, so the execution timer doesn't keep
- * spinning forever.
+ * Settle the cards a Request left with a call that will never run, once its request_end
+ * arrives: a call still streaming then (a join that missed its complete record), and — when the
+ * Request did not complete — a call with no approval decision. The engine decides every call it
+ * dispatches before the call's Request ends, so an undecided one was closed with the Request
+ * (written whole with the arguments that arrived) and will never get a result. Settled as
+ * aborted, so the timer doesn't keep spinning.
  */
-function settleUndispatchedCall(card: ToolCallItem): void {
-  if (!card.callStopReason || card.callStopReason === "completed" || card.outputComplete) return;
+function settleCutShortCalls(model: StreamModel, completed: boolean): void {
+  for (const card of model.toolCards.values()) {
+    if (card.outputComplete) continue;
+    if (!card.callComplete || (!completed && card.decision === undefined)) {
+      settleUnfinishedCard(card);
+    }
+  }
+}
+
+function settleUnfinishedCard(card: ToolCallItem): void {
+  card.callStreaming = false;
   card.outputComplete = true;
   card.outputStreaming = false;
-  card.outputStopReason ??= card.callStopReason;
+  card.outputStatus ??= "aborted";
+}
+
+/**
+ * Marks the assistant texts the main session's closing Request produced with whether it
+ * completed: the items appended since its request_begin (or, on a mid-stream join that missed
+ * it, those back to the previous Task's stats row) that no earlier request_end marked.
+ */
+function markRequestTexts(model: StreamModel, completed: boolean): void {
+  const from = model.openRequestFirstItemId;
+  model.openRequestFirstItemId = null;
+  for (let i = model.items.length - 1; i >= 0; i--) {
+    const it = model.items[i]!;
+    if (it.kind === "task_stats" || (from !== null && it.id < from)) break;
+    if (it.kind === "assistant_text" && it.requestCompleted === undefined) {
+      it.requestCompleted = completed;
+    }
+  }
 }
 
 /** Settle the thinking duration: end time - start time (skipped if either is missing; negative values clamp to 0). */
@@ -1876,6 +1987,7 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       // Record this Request's start (for output TPS timing); compaction requests aren't timed.
       if (!model.stats.compactionActive) {
         model.openRequestBeginMs = tsMs ?? null;
+        model.openRequestFirstItemId = model.nextItemId;
         model.openApprovalWaitMs = 0;
         // A new turn: whatever the previous one owed the model has been sent with it.
         model.turnToolOutputs = false;
@@ -1900,6 +2012,10 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       }
       model.openRequestBeginMs = null;
       model.openApprovalWaitMs = 0;
+      // The Request is over: its texts learn whether it completed (the fork point needs a
+      // completed one), and a call it cut short will never run.
+      markRequestTexts(model, p.status === "completed");
+      settleCutShortCalls(model, p.status === "completed");
       // This is now the round's end (so far): update taskLastReqEndMs, with
       // the duration taken as "it − the first message". This also settles
       // compaction's Token attribution — reaching this point means a
@@ -1918,11 +2034,16 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       // A fatal end stops the run — no abort event follows; this request_end is the
       // terminal record, rendered as an error banner.
       if (p.status === "fatal") {
-        const item: LlmErrorItem = { kind: "llm_error", id: nextId(model) };
+        const item: LlmErrorItem = {
+          kind: "llm_error",
+          id: nextId(model),
+          ...failureFacts(model, tsMs),
+        };
         if (typeof p.error_code === "string") item.errorCode = p.error_code;
         if (typeof p.error_message === "string" && p.error_message) {
           item.errorMessage = p.error_message;
         }
+        if (typeof p.attempt === "number") item.attempt = p.attempt;
         model.items.push(item);
         return;
       }
@@ -1937,6 +2058,7 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
           // Traces written before the field existed lack it (rendered as attempt 1).
           attempt: p.attempt ?? 1,
           retrying: false,
+          ...failureFacts(model, tsMs),
         };
         if (typeof p.error_code === "string") item.errorCode = p.error_code;
         if (typeof p.error_message === "string" && p.error_message) {
@@ -1973,6 +2095,15 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       return;
     }
   }
+}
+
+/** The model the running context was opened on and the record's time, for a failed request's details. */
+function failureFacts(model: StreamModel, tsMs: number | undefined): RequestFailureFacts {
+  const held = model.contextModel;
+  return {
+    ...(held !== null ? { model: { provider: held.provider, modelId: held.modelId } } : {}),
+    ...(tsMs !== undefined ? { atMs: tsMs } : {}),
+  };
 }
 
 function findLastRunningMcpConnect(model: StreamModel): McpConnectItem | null {
@@ -2116,7 +2247,7 @@ function findLastWaitingReconnect(model: StreamModel): ReconnectItem | null {
 // origin nested routing
 // ---------------------------------------------------------------------------
 
-function routeNested(model: StreamModel, msg: OmniMessage, nowMs: number): void {
+function routeNested(model: StreamModel, msg: AmspRecord, nowMs: number): void {
   const head = msg.origin![0]!;
   // Sub-session token_usage: the request delta counts toward this level's stats (at any depth, same convention as the CLI).
   if (isEventMessage(msg) && msg.payload.type === "token_usage") {
@@ -2154,7 +2285,7 @@ function routeNested(model: StreamModel, msg: OmniMessage, nowMs: number): void 
   }
   // Strip the first origin hop and recursively feed into the nested model.
   const rest = msg.origin!.slice(1);
-  const forwarded: OmniMessage = { ...msg };
+  const forwarded: AmspRecord = { ...msg };
   if (rest.length > 0) forwarded.origin = rest;
   else delete forwarded.origin;
   pushMessage(sub, forwarded, nowMs);
@@ -2224,7 +2355,7 @@ function moveToSpawningCard(
 }
 
 /** The opening prompt a child's first model message carries: a user text from its parent agent (or, in a Trace older than `sender`, from no one named). */
-function openingPrompt(msg: OmniMessage): string | null {
+function openingPrompt(msg: AmspRecord): string | null {
   const p = msg.payload as { type?: string; role?: string; text?: unknown; sender?: string };
   if (p.type !== "text" || p.role !== "user" || typeof p.text !== "string") return null;
   return p.sender === undefined || p.sender === "parent_agent" ? p.text : null;
@@ -2300,38 +2431,58 @@ const IMAGE_IN_KEY = "<image>";
  */
 function imageInKey(value: unknown): unknown {
   if (typeof value !== "string") return value;
-  return value.startsWith("data:") || /^\/api\/sessions\/[^/?#]+\/trace-image\?/.test(value)
+  // "" is an image a history window folded away (a child's output has no Trace position to be
+  // carried by reference, so its large image is elided whole): the same picture as its bytes.
+  return value === "" ||
+    value.startsWith("data:") ||
+    /^\/api\/sessions\/[^/?#]+\/trace-image\?/.test(value)
     ? IMAGE_IN_KEY
     : value;
 }
 
+/** Where a dedup key's folded values would be fetched from: nowhere, the key drops the refs. */
+const KEY_SOURCE = { agentId: "", sessionId: "", fileIndex: 0, ordinal: 0 };
+
 /**
  * The envelope a history copy and its SSE copy share. Disk-only transport metadata
- * (`tracePosition`) must not make an otherwise identical SSE envelope look new, and neither
- * may an image's form: a windowed history page carries a user `image_url` and a tool output's
- * `images` by reference while the stream carries the bytes, and an SSE copy that escaped the
- * overlap dedup would draw the person's image twice. Two images of one prompt may then share a
- * key (same timestamp); that is harmless, since a history read holds a prompt whole (the server
- * appends held inputs the Trace lacks), so each stream copy has its own history copy to match.
+ * (`tracePosition`, the `elided` entries) must not make an otherwise identical SSE envelope look
+ * new, and neither may a value's form:
+ *
+ * - An image: a windowed history page carries a user `image_url` and a tool output's `images` by
+ *   reference while the stream carries the bytes, and an SSE copy that escaped the overlap dedup
+ *   would draw the person's image twice. Every form stands in as one token, before anything is
+ *   folded: the bytes, the reference, and the empty string a window leaves where it folded an
+ *   image away — a child's record has no Trace position to carry its image by reference, so a
+ *   large one comes folded on the history side only. Two images of one prompt may then share a
+ *   key (same timestamp); that is harmless, since a history read holds a prompt whole (the server
+ *   appends held inputs the Trace lacks), so each stream copy has its own history copy to match.
+ * - A bulky value: a history window carries a tool's output, a long argument or a thinking
+ *   block folded (a head and a tail) while the stream carries it whole, so the key folds the
+ *   stream's copy by the same rule the server folds by (folding a folded copy changes nothing).
  */
-function dedupKey(msg: OmniMessage): string {
-  const { tracePosition: _tracePosition, ...envelope } = msg as OmniMessage & {
-    tracePosition?: TracePosition;
-  };
+function dedupKey(input: AmspRecord): string {
+  let msg = input as HistoryRecordLike;
   if (msg.type === "model_msg") {
     const p = msg.payload as { type?: string; image_url?: unknown; images?: unknown };
     if (p.type === "image_url") {
-      return JSON.stringify({ ...envelope, payload: { ...p, image_url: imageInKey(p.image_url) } });
-    }
-    if (p.type === "tool_call_output" && Array.isArray(p.images)) {
-      return JSON.stringify({ ...envelope, payload: { ...p, images: p.images.map(imageInKey) } });
+      msg = { ...msg, payload: { ...p, image_url: imageInKey(p.image_url) } } as HistoryRecordLike;
+    } else if (p.type === "tool_call_output" && Array.isArray(p.images)) {
+      msg = { ...msg, payload: { ...p, images: p.images.map(imageInKey) } } as HistoryRecordLike;
     }
   }
+  const folded = elideHistoryRecord(msg, KEY_SOURCE).record;
+  const {
+    tracePosition: _tracePosition,
+    elided: _elided,
+    ...envelope
+  } = folded as HistoryRecordLike & {
+    tracePosition?: TracePosition;
+  };
   return JSON.stringify(envelope);
 }
 
 /** Build a dedup index from the envelope JSON of history's **last `limit` messages**. */
-export function buildDedupIndex(messages: OmniMessage[], limit = 100): Set<string> {
+export function buildDedupIndex(messages: AmspRecord[], limit = 100): Set<string> {
   const index = new Set<string>();
   for (let i = Math.max(0, messages.length - limit); i < messages.length; i++) {
     index.add(dedupKey(messages[i]!));
@@ -2340,8 +2491,59 @@ export function buildDedupIndex(messages: OmniMessage[], limit = 100): Set<strin
 }
 
 /** Determine whether a complete message/event is exactly identical to history's envelope JSON (overlap dedup). */
-export function isDuplicate(index: Set<string>, msg: OmniMessage): boolean {
+export function isDuplicate(index: Set<string>, msg: AmspRecord): boolean {
   return index.has(dedupKey(msg));
+}
+
+// ---------------------------------------------------------------------------
+// Folded bodies (history windows carry bulky values as previews)
+// ---------------------------------------------------------------------------
+
+/** Which of an item's values a folded record fills: a call's arguments, its output, a thinking text. */
+export type ElidedSlot = "call" | "output" | "thinking";
+
+/** An item's folded records, each with the slot its whole values go back into. */
+export function elidedRecordsOf(
+  item: ToolCallItem | ThinkingItem,
+): { slot: ElidedSlot; elided: ElidedRecord }[] {
+  if (item.kind === "thinking") {
+    return item.elided === undefined ? [] : [{ slot: "thinking", elided: item.elided }];
+  }
+  const out: { slot: ElidedSlot; elided: ElidedRecord }[] = [];
+  if (item.elidedCall !== undefined) out.push({ slot: "call", elided: item.elidedCall });
+  if (item.elidedOutput !== undefined) out.push({ slot: "output", elided: item.elidedOutput });
+  return out;
+}
+
+/**
+ * The item takes a record whose values are whole again (`withElidedBody` put each one back): it
+ * shows them from now on, and that slot is folded no more.
+ */
+export function takeWholeRecord(
+  item: ToolCallItem | ThinkingItem,
+  slot: ElidedSlot,
+  record: HistoryRecordLike,
+): void {
+  const p = record.payload as {
+    arguments?: unknown;
+    output?: unknown;
+    images?: unknown;
+    thinking?: unknown;
+  };
+  if (item.kind === "thinking") {
+    if (slot !== "thinking") return;
+    if (typeof p.thinking === "string") item.thinking = p.thinking;
+    delete item.elided;
+    return;
+  }
+  if (slot === "call") {
+    if (typeof p.arguments === "string") item.argumentsText = p.arguments;
+    delete item.elidedCall;
+  } else if (slot === "output") {
+    if (typeof p.output === "string") item.output = p.output;
+    if (Array.isArray(p.images) && p.images.length > 0) item.images = p.images as string[];
+    delete item.elidedOutput;
+  }
 }
 
 /**
@@ -2350,12 +2552,12 @@ export function isDuplicate(index: Set<string>, msg: OmniMessage): boolean {
  * into the reducer before this complete message, its content duplicates
  * history and must be entirely removed/cleared. Routed recursively to nested models by origin.
  */
-export function discardFragmentFor(model: StreamModel, msg: OmniMessage): void {
+export function discardFragmentFor(model: StreamModel, msg: AmspRecord): void {
   if (msg.origin && msg.origin.length > 0) {
     const sub = model.subagents.get(msg.origin[0]!);
     if (!sub) return;
     const rest = msg.origin.slice(1);
-    const forwarded: OmniMessage = { ...msg };
+    const forwarded: AmspRecord = { ...msg };
     if (rest.length > 0) forwarded.origin = rest;
     else delete forwarded.origin;
     discardFragmentFor(sub, forwarded);
