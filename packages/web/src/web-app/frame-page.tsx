@@ -11,7 +11,7 @@ import {
   PAGE_FRAME_SANDBOX,
   readDocumentTheme,
   themeWorkbenchFrame,
-} from "../lib/workbench-theme";
+} from "@penguinharness/plugin-workbenches/web";
 import { useTheme } from "../state/theme";
 
 export function FramePage({ src, title }: { src: string; title: string }) {
