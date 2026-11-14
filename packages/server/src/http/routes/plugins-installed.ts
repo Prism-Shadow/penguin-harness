@@ -253,13 +253,18 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
   const view = async (projectId: string): Promise<InstalledPluginsResponse> => {
     const tables = await tablesOf(projectId);
     const here = effectivePluginTable(tables, deps.machineId);
-    // Every name any table lists, shared ones first: the page shows where each one runs.
+    // Every name any table lists, shared ones first, then the names linked into the prefix:
+    // the page shows where each one runs. A linked name no table lists is the author's row
+    // before any Project asked for it — present with its disk truth, not active.
     const names = [
       ...new Set([
         ...Object.keys(tables.all),
         ...Object.values(tables.machines).flatMap((t) => Object.keys(t)),
       ]),
     ];
+    for (const name of Object.keys(await linkedPackages(pluginsPrefix(deps.root)))) {
+      if (!names.includes(name)) names.push(name);
+    }
     const { loaded, skipped, unsatisfied } = deps.running();
     const bases = pluginBases(deps.root, deps.assetsDir());
     // The link marks come from the prefix's link records, read fresh for this answer: a link
