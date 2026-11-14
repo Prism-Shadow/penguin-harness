@@ -40,7 +40,7 @@ import {
   useElapsedPast,
 } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
-import { transferAmount } from "@prismshadow/penguin-web/internal";
+import { transferAmount } from "./transfer-amount";
 import { machineForSession } from "../lib/session-machines.js";
 import { S } from "@prismshadow/penguin-web/internal";
 import {useMachines} from "@prismshadow/penguin-web/internal";

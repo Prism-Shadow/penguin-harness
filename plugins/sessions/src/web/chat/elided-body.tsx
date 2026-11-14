@@ -21,7 +21,7 @@ import {
 } from "@prismshadow/penguin-ui";
 import { elidedRecordsOf } from "@prismshadow/penguin-web/internal";
 import type { ThinkingItem, ToolCallItem } from "@prismshadow/penguin-web/internal";
-import { transferAmount } from "@prismshadow/penguin-web/internal";
+import { transferAmount } from "./transfer-amount";
 import { S } from "@prismshadow/penguin-web/internal";
 import type { ElidedBodies } from "./use-session-stream";
 
