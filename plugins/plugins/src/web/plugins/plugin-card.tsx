@@ -56,7 +56,7 @@ import { cardBodyClick } from "@prismshadow/penguin-web/internal";
 import { downloadArchive } from "@penguinharness/plugin-agents/web";
 import { useLocale } from "@prismshadow/penguin-web/internal";
 import { agentDisplayName } from "@prismshadow/penguin-web/internal";
-import { SkillTile } from "../skills";
+import { SkillTile } from "@penguinharness/plugin-agents/web";
 import { MetaLine, PluginDetailModal, moduleOnThisServer } from "./plugin-detail";
 import type { PluginRow } from "./plugin-groups";
 import { McpServerMarks, McpSetUpModal, StdioInstallBody } from "./plugin-mcp";
