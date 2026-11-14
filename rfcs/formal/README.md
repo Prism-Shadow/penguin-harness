@@ -13,7 +13,8 @@ mechanism independently of the proof language and proof status.
 
 Declaration transformations are Operators. The paper uses direct operator application,
 big-step Pass evaluation and a separate judgment for final Module validity. Operation
-counts refine evaluation in the cost discussion.
+counts refine evaluation in the cost discussion. Named operations use upright sans-serif;
+complete calls use parentheses, and subscripts mark fixed parameters in partial applications.
 
 From the repository root, build the model with the version pinned in
 `module-model/lean-toolchain`:

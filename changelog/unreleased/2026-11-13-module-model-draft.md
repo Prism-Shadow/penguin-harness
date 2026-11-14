@@ -14,3 +14,5 @@ Placed formal materials under `rfcs/formal/`, added declaration operators with c
 Reorganized the paper around shared abstract syntax, explicit design requirements and a worked example connecting mock replacement, tab removal, telemetry and plugin removal. Restated the existing theorem candidates in that syntax, leaving theorem selection and proof priorities open.
 
 Unified declaration transformations under Operator, used direct application and big-step Pass evaluation, and moved instruction counts to a cost refinement. Distinguished operation types from final Module validity in the paper and RFCs.
+
+Standardized paper notation with upright sans-serif operation names, parenthesized complete calls and subscripts for partially applied operators. Made curried argument types and operator composition explicit.

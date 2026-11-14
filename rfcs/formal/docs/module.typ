@@ -39,6 +39,8 @@
 #show raw.where(block: true): set block(breakable: false)
 #show table: set par(justify: false)
 
+#let sf(body) = math.upright(math.sans(body))
+
 = Introduction
 
 PenguinHarness assembles an application from interface contracts, component
@@ -123,10 +125,16 @@ below are pure, total functions; predicates may inspect the entry given to them,
 and $f$ may inspect the whole current Module:
 
 $
-  p &: "Name" times "Decl" arrow bb(B), & u &: "Name" arrow bb(B), \
-  w &: C arrow C, & a &: "Decl" arrow "Decl", \
-  h &: "Name" times "Decl" arrow "Module", & f &: "Module" arrow "Module".
+  p &: sf("Name") arrow sf("Decl") arrow bb(B), & u &: sf("Name") arrow bb(B), \
+  w &: C arrow C, & a &: sf("Decl") arrow sf("Decl"), \
+  h &: sf("Name") arrow sf("Decl") arrow sf("Module"), & f &: sf("Module") arrow sf("Module").
 $
+
+Multi-letter operation and type names use upright sans-serif; variables and
+parameters use mathematical italics. Arrows associate to the right. Parenthesized
+argument lists abbreviate successive curried application. A subscript on a named
+operation fixes leading parameters, leaving the final declaration or Module argument
+unapplied.
 
 Every sequence in @grammar is finite. $[x_1, dots, x_n]$ includes the empty sequence
 $[]$; $x :: L$ prepends an element and $L_1 ⧺ L_2$ concatenates sequences.
@@ -144,10 +152,10 @@ Comprehensions and sums over sequences count occurrences, including duplicates.
     [Requirements], [$R ::= [(q_1 : tau_1), dots, (q_n : tau_n)]$],
     [Declaration], [$d ::= ⟨ tau; R; c ⟩$],
     [Module], [$M ::= [q_1 mapsto d_1, dots, q_n mapsto d_n]$],
-    [Operator], [$O ::= "id" | "type"(tau) | "need"(q, tau) | "recipe"(w) | O;O | a$],
-    [Edit], [$E ::= "add"(M) | "filter"(p) | "remove"(u) | "replace"(q, d)$ \
-      $quad | "expand"(h) | "filterAt"(s, p) | "at"(q, O) | f$],
-    [Pass], [$P ::= epsilon | E;P | "defer"(p, w);P$],
+    [Operator], [$O ::= sf("id") | sf("type")_tau | sf("need")_(q, tau) | sf("recipe")_w | O;O | a$],
+    [Edit], [$E ::= sf("add")_M | sf("filter")_p | sf("remove")_u | sf("replace")_(q, d)$ \
+      $quad | sf("expand")_h | sf("filterAt")_(s, p) | sf("at")_(q, O) | f$],
+    [Pass], [$P ::= epsilon | E;P | sf("defer")(p, w);P$],
     [Plugin], [$g ::= ⟨ q; M; P ⟩$],
     [Catalog], [$K ::= [g_1, dots, g_n]$],
     [Requests], [$S ::= [q_1, dots, q_n]$],
@@ -162,9 +170,9 @@ Comprehensions and sums over sequences count occurrences, including duplicates.
 
 A declaration $⟨ tau;R;c ⟩$ offers a contract, requires named contracts,
 and carries a recipe. Its name and position belong to the surrounding Module.
-An ordinary operator $O$ transforms one declaration. Thus $"at"(q,O)$ preserves
-the target's identity while applying an operator. $"defer"(p,w)$ records a
-selector and the same recipe operator $"recipe"(w)$ for application after all
+An ordinary operator $O$ transforms one declaration. Thus $sf("at")_(q,O)$ preserves
+the target's identity while applying an operator. $sf("defer")(p,w)$ records a
+selector and the same recipe operator $sf("recipe")_w$ for application after all
 structural edits. The latter cannot change a declaration's offered type or
 requirements.
 
@@ -176,35 +184,49 @@ $f$ retain the general declaration and Module transformations of the model.
 Totality is a premise on these parameters, not a syntactic restriction that proves
 termination of arbitrary TypeScript code.
 
-For later judgments, $"names"(M)$ is the ordered name sequence, $M(q)$ is the
+For later judgments, $sf("names")(M)$ is the ordered name sequence, $M(q)$ is the
 first matching declaration or $⊥$, and $M[s]$ is the ordered subsequence whose
 names have parent scope $s$. Names may repeat in intermediate snapshots. Final
 validity requires nonempty names with nonempty parts and no duplicates.
-$"vis"(o,q)$ means that the parent scope of $q$ is a prefix of $o$; dependencies
+$sf("vis")(o,q)$ means that the parent scope of $q$ is a prefix of $o$; dependencies
 already name their targets. Relating this resolved-name abstraction to implicit
 provider search, exports, aliases, and class scopes is an elaboration obligation.
 
-$"support"(S)$ is the set of names occurring in the request sequence. Repeated
+$sf("support")(S)$ is the set of names occurring in the request sequence. Repeated
 requests and request order are representable, but selection uses membership.
 $S + q$ installs $q$ if absent, and $S - q$ removes all occurrences of $q$.
 Project requests combine by union of their supports. These are operations on
 configuration data; they introduce no new kind of Module.
 
-== Operation types
+== Application and operation types
 
-We write application directly as $O thin d$ and $E thin M$. The equations in @semantics
-define how these applications compute. With the parameter types above,
+Operators and edits apply as $O(d)$ and $E(M)$. Their types are:
 
 $
-  O &: "Decl" arrow "Decl", \
-  E &: "Module" arrow "Module", \
-  "run" thin &: "Pass" arrow "Module" arrow "Module".
+  sf("Operator") &:= sf("Decl") arrow sf("Decl"), \
+  O &: sf("Operator"), \
+  E &: sf("Module") arrow sf("Module"), \
+  sf("at") &: sf("Name") arrow sf("Operator") arrow sf("Module") arrow sf("Module"), \
+  sf("run") &: sf("Pass") arrow sf("Module") arrow sf("Module").
 $
 
-These types specify the input and output representations. For example,
-$"at"(q,O)$ lifts a declaration operator to a Module edit, and $"filter"(p)$
-requires a predicate on a named declaration. Neither type requires the output
-Module to satisfy its dependencies. The separate judgment $⊢ M "ok"$ checks
+The complete call $sf("at")(q,O,M)$ supplies all arguments. Fixing $q$ and $O$
+gives the edit
+
+$
+  sf("at")_(q,O) &: sf("Module") arrow sf("Module"), \
+  sf("at")_(q,O) &:= lambda M . sf("at")(q,O,M).
+$
+
+Likewise, $sf("recipe")_w$ is a declaration operator and $sf("filter")_p$ is a
+Module edit. The syntax table contains these partially applied operators;
+evaluation equations use complete calls. In $sf("at")_(q,O_1;O_2)$, the second
+parameter is the single composed operator $O_1;O_2$. Its complete application is
+$sf("at")(q,O_1;O_2,M)$. We write $F compose G$ for function composition,
+with $(F compose G)(x)=F(G(x))$.
+
+These types specify the input and output representations. They do not require the output
+Module to satisfy its dependencies. The separate judgment $⊢ M sf("ok")$ checks
 identities, visibility, contract compatibility and acyclicity at admission.
 Thus a correctly typed edit can produce an intermediate Module that fails
 that judgment; a subsequent edit may repair it. Purity and totality remain
@@ -230,7 +252,7 @@ Let $p_s (q,d)$ test $q=q_s$, let $u_d (q)$ test $q=q_d$, and let $w_t$ wrap a r
 with telemetry. The pass and its providing plugin are:
 
 $
-  P_t &= "defer"(p_s,w_t); "replace"(q_s,d_m); "remove"(u_d); epsilon, \
+  P_t &= sf("defer")(p_s,w_t); sf("replace")_(q_s,d_m); sf("remove")_(u_d); epsilon, \
   g_t &= ⟨ q_t; []; P_t ⟩.
 $
 
@@ -241,8 +263,8 @@ and the result after removing the plugin from the request sequence.
 = Semantics and design value <semantics>
 
 We use direct application for operators and edits, big-step evaluation for Passes,
-and a separate validity judgment for admission. $O thin d$ applies an operator,
-$E thin M$ applies an edit, and $"run" thin P thin M$ evaluates a complete pass, including its
+and a separate validity judgment for admission. $O(d)$ applies an operator,
+$E(M)$ applies an edit, and $sf("run")(P,M)$ evaluates a complete pass, including its
 deferred recipe operators. These operations transform declarations and snapshots;
 the recipes they contain remain unexecuted.
 
@@ -252,24 +274,24 @@ the recipes they contain remain unexecuted.
 For $d=⟨ tau;R;c ⟩$, the application equations are:
 
 $
-  "id" thin d &= d, \
-  "type"(tau') thin d &= ⟨ tau';R;c ⟩, \
-  "need"(q,tau') thin d &= ⟨ tau;R ⧺ [(q:tau')];c ⟩, \
-  "recipe"(w) thin d &= ⟨ tau;R;w(c) ⟩, \
-  (O_1;O_2) thin d &= O_2 thin (O_1 thin d).
+  sf("id")(d) &= d, \
+  sf("type")(tau',d) &= ⟨ tau';R;c ⟩, \
+  sf("need")(q,tau',d) &= ⟨ tau;R ⧺ [(q:tau')];c ⟩, \
+  sf("recipe")(w,d) &= ⟨ tau;R;w(c) ⟩, \
+  (O_1;O_2)(d) &= O_2 (O_1 (d)).
 $
 
-$"at"(q,O) thin M$ applies $O$ to every entry named $q$ and preserves its position;
-other entries remain unchanged. $"replace"(q,d)$ instead substitutes $d$ at those
-positions. $"add"(A)$ appends $A$. $"filter"(p)$ retains matching entries in their
-original order, and $"remove"(u)$ retains those whose names fail $u$.
-$"filterAt"(s,p)$ applies the filter only to entries in $M[s]$.
-$"expand"(h)$ concatenates $h(q,d)$ for each input entry. The parameters $a$ and
+$sf("at")(q,O,M)$ applies $O$ to every entry named $q$ and preserves its position;
+other entries remain unchanged. $sf("replace")_(q,d)$ instead substitutes $d$ at those
+positions. $sf("add")_A$ appends $A$. $sf("filter")_p$ retains matching entries in their
+original order, and $sf("remove")_u$ retains those whose names fail $u$.
+$sf("filterAt")_(s,p)$ applies the filter only to entries in $M[s]$.
+$sf("expand")_h$ concatenates $h(q,d)$ for each input entry. The parameters $a$ and
 $f$ use ordinary function application.
 
 In the example, set
-$M_1="replace"(q_s,d_m) thin M_0$ and
-$M_2="remove"(u_d) thin M_1$. Then
+$M_1=sf("replace")(q_s,d_m,M_0)$ and
+$M_2=sf("remove")(u_d,M_1)$. Then
 
 $
   M_1 &= [q_s mapsto d_m, q_d mapsto d_d, q_h mapsto d_h], \
@@ -291,26 +313,26 @@ an ordered list of deferred pairs $(p,w)$. Its rules are:
 
 $
   mat(delim: #none, row-gap: #0.6em,
-    display(frac(, ⟨ epsilon,M ⟩ ⇓ (M,[]))), "Done";
-    display(frac(⟨ P,E thin M ⟩ ⇓ (M',Delta),
-      ⟨ E;P,M ⟩ ⇓ (M',Delta))), "Edit";
+    display(frac(, ⟨ epsilon,M ⟩ ⇓ (M,[]))), sf("Done");
+    display(frac(⟨ P,E(M) ⟩ ⇓ (M',Delta),
+      ⟨ E;P,M ⟩ ⇓ (M',Delta))), sf("Edit");
     display(frac(⟨ P,M ⟩ ⇓ (M',Delta),
-      ⟨ "defer"(p,w);P,M ⟩ ⇓ (M',(p,w)::Delta))), "Defer";
+      ⟨ sf("defer")(p,w);P,M ⟩ ⇓ (M',(p,w)::Delta))), sf("Defer");
   )
 $
 ]
 
-Let $"sel"(Delta,q,d)$ retain precisely the pairs whose predicates accept $(q,d)$,
-in list order. Finalization $"finalize" thin Delta$ maps each entry $q mapsto d$ to
-$q mapsto ("recipe"(w_1); dots; "recipe"(w_j)) thin d$, using the selected pairs.
+Let $sf("sel")(Delta,q,d)$ retain precisely the pairs whose predicates accept $(q,d)$,
+in list order. Finalization $sf("finalize")_Delta$ maps each entry $q mapsto d$ to
+$q mapsto (sf("recipe")_(w_1); dots; sf("recipe")_(w_j))(d)$, using the selected pairs.
 All selections inspect $M'$ before any wrapper is applied. An empty selection uses
-$"id"$. We define $"run" thin P thin M="finalize" thin Delta thin M'$ from the structural judgment above.
+$sf("id")$. We define $sf("run")(P,M)=sf("finalize")(Delta,M')$ from the structural judgment above.
 
 For the running example,
 
 $
   ⟨ P_t,M_0 ⟩ &⇓ (M_2,[(p_s,w_t)]), \
-  "run" thin P_t thin M_0 &= [q_s mapsto ⟨ tau_m;[];w_t (c_m) ⟩, q_h mapsto d_h].
+  sf("run")(P_t,M_0) &= [q_s mapsto ⟨ tau_m;[];w_t (c_m) ⟩, q_h mapsto d_h].
 $
 
 Telemetry therefore wraps the mock that survives the edits. The removed tab has
@@ -319,9 +341,9 @@ a rule twice applies it twice. This gives a fixed place to inspect coverage and
 wrapper order without making wrapper output another rewrite target.
 
 Composition must preserve that boundary. For example,
-$P_a="defer"(p_s,w_t);epsilon$ and
-$P_b="replace"(q_s,d_m);epsilon$ give the recipe $w_t (c_m)$ in
-$"run" thin (P_a ⊙ P_b) thin M_0$, whereas $"run" thin P_b thin ("run" thin P_a thin M_0)$ gives $c_m$.
+$P_a=sf("defer")(p_s,w_t);epsilon$ and
+$P_b=sf("replace")_(q_s,d_m);epsilon$ give the recipe $w_t (c_m)$ in
+$sf("run")(P_a ⊙ P_b,M_0)$, whereas $sf("run")(P_b,sf("run")(P_a,M_0))$ gives $c_m$.
 The latter is two completed builds. This distinction is observable and is part of
 the authoring contract.
 
@@ -331,11 +353,11 @@ the authoring contract.
 Write $tau_o ≼ tau_r$ for directional contract compatibility in one fixed
 TypeScript environment. It is an uninterpreted relation, with no assumed subtype
 algebra. The external checker is
-$chi:T times T arrow {"yes","no","unknown"}$.
+$chi:T arrow T arrow {sf("yes"),sf("no"),sf("unknown")}$.
 
 #definition(title: "External assumption", name: "Completed comparisons")[
-  For $chi(tau_o,tau_r) != "unknown"$,
-  $chi(tau_o,tau_r)="yes"$ if and only if $tau_o ≼ tau_r$.
+  For $chi(tau_o,tau_r) != sf("unknown")$,
+  $chi(tau_o,tau_r)=sf("yes")$ if and only if $tau_o ≼ tau_r$.
 ]
 
 The environment fixes compiler options and declaration revisions. The implementation
@@ -344,26 +366,26 @@ assignment question, preserving direction and transitive references. Missing
 signatures, unsupported rendering, and incomplete checks produce no positive
 answer. This assumption says nothing about tsc termination or recipe execution.
 
-The judgment $⊢ M "ok"$ requires unique, well-formed names and the following
+The judgment $⊢ M sf("ok")$ requires unique, well-formed names and the following
 conditions. For every entry $o mapsto ⟨ tau;R;c ⟩$ and every
-$(q:tau_r) in R$, $"vis"(o,q)$ holds and
+$(q:tau_r) in R$, $sf("vis")(o,q)$ holds and
 $M(q)=⟨ tau_o;R_o;c_o ⟩$ for some $tau_o ≼ tau_r$.
-There must also be a rank $rho:"Name" arrow bb(N)$ with $rho(q)<rho(o)$ for every
+There must also be a rank $rho:sf("Name") arrow bb(N)$ with $rho(q)<rho(o)$ for every
 such requirement. The rank rules out dependency cycles.
 
 Let $V(M,pi)$ check the names and dependencies, requiring each comparison to return
-$"yes"$. The order witness $pi$ lists every name exactly once with providers before
+$sf("yes")$. The order witness $pi$ lists every name exactly once with providers before
 consumers. The admission operation is
 
 $
-  "admit"(M_c,M_n,pi) = cases(
-    M_n & "if" V(M_n,pi)="true",
+  sf("admit")(M_c,M_n,pi) = cases(
+    M_n & "if" V(M_n,pi)=sf("true"),
     M_c & "otherwise".
   )
 $
 
-For the example, suppose $chi(tau_s,tau_s)="yes"$ and
-$chi(tau_m,tau_s)="no"$. The debug tab's dependency is satisfied in $M_0$ and
+For the example, suppose $chi(tau_s,tau_s)=sf("yes")$ and
+$chi(tau_m,tau_s)=sf("no")$. The debug tab's dependency is satisfied in $M_0$ and
 broken in $M_1$. The next edit removes that requirement by deleting its owner;
 $M_2$ and its final wrapped result have no remaining requirements. With the
 stated well-formed, distinct names, they pass final verification. Thus the composed
@@ -379,22 +401,22 @@ the cost is a need to retain provenance across the whole composition.
 
 // PRFC-0003: Compile passes and generation changes; Reconfiguration guarantees.
 For a fixed catalog $K$, let $K[S]$ retain plugins whose names occur in
-$"support"(S)$, preserving catalog order. Write its entries as
+$sf("support")(S)$, preserving catalog order. Write its entries as
 $[⟨ q_i;M_i;P_i ⟩]_(i=1)^r$. With base Module $B$, define
 
 $
-  "source"(B,K,S) &= B ⧺ M_1 ⧺ dots ⧺ M_r, \
-  "program"(K,S) &= P_1 ⊙ dots ⊙ P_r, \
-  "build"(B,K,S) &= "run" thin ("program"(K,S)) thin ("source"(B,K,S)).
+  sf("source")(B,K,S) &= B ⧺ M_1 ⧺ dots ⧺ M_r, \
+  sf("program")(K,S) &= P_1 ⊙ dots ⊙ P_r, \
+  sf("build")(B,K,S) &= sf("run")(sf("program")(K,S),sf("source")(B,K,S)).
 $
 
 An empty selection contributes no declarations and the empty pass $epsilon$.
 Every build starts from the source terms in this equation. For $B=M_0$ and
 $K=[g_t]$, enabling $q_t$ gives
-$"build"(M_0,[g_t],[q_t])="run" thin P_t thin M_0$. Removing that request gives
+$sf("build")(M_0,[g_t],[q_t])=sf("run")(P_t,M_0)$. Removing that request gives
 
 $
-  "build"(M_0,[g_t],[q_t]-q_t) = "build"(M_0,[g_t],[]) = M_0.
+  sf("build")(M_0,[g_t],[q_t]-q_t) = sf("build")(M_0,[g_t],[]) = M_0.
 $
 
 The original store recipe and debug tab return because the source still contains
@@ -418,7 +440,7 @@ artifacts independently of the build equation.
     midrule(),
     [R1], [$M_2$ retains the mock store and help tab; the debug tab is absent.],
       [Stable contribution identities and immutable snapshots.],
-    [R2], [$"run" thin P_t thin M_0$ contains $w_t (c_m)$ after one finalization.],
+    [R2], [$sf("run")(P_t,M_0)$ contains $w_t (c_m)$ after one finalization.],
       [All composed passes share one final boundary; callbacks are total.],
     [R3], [$M_1$ fails a requirement; the final result can still be admitted.],
       [Completed tsc checks, graph validation, and diagnostic provenance.],
@@ -449,18 +471,18 @@ it does not identify different syntax trees by definition.
 
 #theorem(title: "Candidate law", name: "Operator composition and locality")[
   For all $O_1,O_2,O_3,d$,
-  $((O_1;O_2);O_3) thin d=(O_1;(O_2;O_3)) thin d$, and
-  $("id";O_1) thin d=O_1 thin d=(O_1;"id") thin d$.
+  $((O_1;O_2);O_3)(d)=(O_1;(O_2;O_3))(d)$, and
+  $(sf("id");O_1)(d)=O_1 (d)=(O_1;sf("id"))(d)$.
   Moreover,
   $
-    "at"(q,O_1;O_2) thin M = "at"(q,O_2) thin ("at"(q,O_1) thin M).
+    sf("at")_(q,O_1;O_2) = sf("at")_(q,O_2) compose sf("at")_(q,O_1).
   $
-  Application preserves $"names"(M)$ and $M(q')$ for $q' != q$.
-  Let $"ctr"(⟨ tau;R;c ⟩)=(tau,R)$ and let $"CP"(O)$ mean
-  $forall d, "ctr"(O thin d)="ctr"(d)$.
-  Then $"CP"("recipe"(w))$; $"CP"(O_1)$ and $"CP"(O_2)$ imply
-  $"CP"(O_1;O_2)$; and $"CP"(O)$ implies
-  $(⊢ "at"(q,O) thin M "ok") ⇔ (⊢ M "ok")$.
+  The edit $sf("at")_(q,O)$ preserves $sf("names")(M)$ and $M(q')$ for $q' != q$.
+  Let $sf("ctr")(⟨ tau;R;c ⟩)=(tau,R)$ and let $sf("CP")(O)$ mean
+  $forall d, sf("ctr")(O(d))=sf("ctr")(d)$.
+  Then $sf("CP")(sf("recipe")_w)$; $sf("CP")(O_1)$ and $sf("CP")(O_2)$ imply
+  $sf("CP")(O_1;O_2)$; and $sf("CP")(O)$ implies
+  $(⊢ sf("at")(q,O,M) sf("ok")) ⇔ (⊢ M sf("ok"))$.
 ]
 
 Contract preservation concerns the declared $(tau,R)$ fields. It supplies no
@@ -469,19 +491,19 @@ behavioral equivalence of the recipes, and general $O$ need not satisfy it.
 #theorem(title: "Candidate law", name: "Editing laws")[
   For pure entry predicates $p_1,p_2$ and fixed name predicates $u,v$,
   $
-    "filter"(p_2) thin ("filter"(p_1) thin M) &= "filter"(p_1 and p_2) thin M, \
-    "remove"(u) thin ("remove"(u) thin M) &= "remove"(u) thin M, \
-    "remove"(v) thin ("remove"(u) thin M) &= "remove"(u or v) thin M \
-      &= "remove"(u) thin ("remove"(v) thin M).
+    sf("filter")(p_2,sf("filter")(p_1,M)) &= sf("filter")(p_1 and p_2,M), \
+    sf("remove")(u,sf("remove")(u,M)) &= sf("remove")(u,M), \
+    sf("remove")(v,sf("remove")(u,M)) &= sf("remove")(u or v,M) \
+      &= sf("remove")(u,sf("remove")(v,M)).
   $
   Removal retains exactly those names failing its predicate.
-  $"replace"(q,d)$ preserves the name sequence and lookup outside $q$.
-  $"filterAt"(s,p)$ agrees with $"filter"(p)$ on $M[s]$ and preserves lookup
+  $sf("replace")_(q,d)$ preserves the name sequence and lookup outside $q$.
+  $sf("filterAt")_(s,p)$ agrees with $sf("filter")_p$ on $M[s]$ and preserves lookup
   outside $s$. For unique names and a present $q$ directly in $s$,
   $
-    |("remove"(lambda x . x=q) thin M)[s]|+1=|M[s]|.
+    |(sf("remove")((lambda x . x=q),M))[s]|+1=|M[s]|.
   $
-  Finally, $|"expand"(h) thin M|=sum_((q mapsto d) in M)|h(q,d)|$.
+  Finally, $|sf("expand")(h,M)|=sum_((q mapsto d) in M)|h(q,d)|$.
 ]
 
 Here conjunction and disjunction are pointwise predicate combinations. A callback
@@ -492,15 +514,15 @@ bound for a particular persistent representation.
 == Verification and admission
 
 #theorem(title: "Candidate law", name: "Verification and admission")[
-  $V(M,pi)="true"$ implies $⊢ M "ok"$.
-  Conversely, $⊢ M "ok"$ and completed answers for every required comparison
-  imply $exists pi, V(M,pi)="true"$. Accepted requirements resolve to visible
-  providers with compatible contracts, and $⊢ M "ok"$ excludes a dependency
-  cycle. If a required comparison is $"unknown"$, then $V(M,pi)="false"$.
+  $V(M,pi)=sf("true")$ implies $⊢ M sf("ok")$.
+  Conversely, $⊢ M sf("ok")$ and completed answers for every required comparison
+  imply $exists pi, V(M,pi)=sf("true")$. Accepted requirements resolve to visible
+  providers with compatible contracts, and $⊢ M sf("ok")$ excludes a dependency
+  cycle. If a required comparison is $sf("unknown")$, then $V(M,pi)=sf("false")$.
   Also,
   $
-    V(M_n,pi)="false" &⇒ "admit"(M_c,M_n,pi)=M_c, \
-    ⊢ M_c "ok" &⇒ ⊢ "admit"(M_c,M_n,pi) "ok".
+    V(M_n,pi)=sf("false") &⇒ sf("admit")(M_c,M_n,pi)=M_c, \
+    ⊢ M_c sf("ok") &⇒ ⊢ sf("admit")(M_c,M_n,pi) sf("ok").
   $
 ]
 
@@ -522,31 +544,31 @@ or bound on Module size; the embedded callbacks must already be total. A counted
 refinement of this judgment is given in @cost.
 
 #theorem(title: "Candidate law", name: "Final recipe application")[
-  $"sel"(Delta,q,d)$ retains exactly the accepting occurrences of $Delta$ in
-  their original order. Extending $"ctr"$ entrywise to retain names gives
-  $"ctr"("finalize" thin Delta thin M)="ctr"(M)$ and
-  $(⊢ "finalize" thin Delta thin M "ok") ⇔ (⊢ M "ok")$.
+  $sf("sel")(Delta,q,d)$ retains exactly the accepting occurrences of $Delta$ in
+  their original order. Extending $sf("ctr")$ entrywise to retain names gives
+  $sf("ctr")(sf("finalize")(Delta,M))=sf("ctr")(M)$ and
+  $(⊢ sf("finalize")(Delta,M) sf("ok")) ⇔ (⊢ M sf("ok"))$.
   If $⟨ P,M ⟩ ⇓ (M',Delta)$ and
   $M'(q)=⟨ tau;R;c ⟩$, then
   $
-    ("run" thin P thin M)(q)=⟨ tau;R;w_j (dots w_1 (c) thin dots) ⟩,
+    (sf("run")(P,M))(q)=⟨ tau;R;w_j (dots w_1 (c) dots) ⟩,
   $
-  where $[(p_1,w_1),dots,(p_j,w_j)]="sel"(Delta,q,M'(q))$; for $j=0$ the
+  where $[(p_1,w_1),dots,(p_j,w_j)]=sf("sel")(Delta,q,M'(q))$; for $j=0$ the
   recipe is $c$. In particular,
-  $"run" thin ("defer"(p,w);E;epsilon) thin M="finalize" thin [(p,w)] thin (E thin M)$, and
-  $q ∉ "names"(M')$ ⇒ $q ∉ "names"("run" thin P thin M)$.
+  $sf("run")(sf("defer")(p,w);E;epsilon,M)=sf("finalize")([(p,w)],E(M))$, and
+  $q ∉ sf("names")(M')$ ⇒ $q ∉ sf("names")(sf("run")(P,M))$.
 ]
 
 == Plugin selection and retirement
 
 #theorem(title: "Candidate law", name: "Selection and installation")[
-  With fixed $B,K$, equal $"support"(S_1)$ and $"support"(S_2)$ give equal
-  $"build"(B,K,S_1)$ and $"build"(B,K,S_2)$. Selected plugin names are unique
+  With fixed $B,K$, equal $sf("support")(S_1)$ and $sf("support")(S_2)$ give equal
+  $sf("build")(B,K,S_1)$ and $sf("build")(B,K,S_2)$. Selected plugin names are unique
   when catalog names are unique, and every selected name is requested.
   Repeated installation or removal is idempotent with respect to the rebuilt
-  result. For $q ∉ "support"(S)$,
+  result. For $q ∉ sf("support")(S)$,
   $
-    "build"(B,K,(S+q)-q)="build"(B,K,S).
+    sf("build")(B,K,(S+q)-q)=sf("build")(B,K,S).
   $
   A plugin named $q$ is absent from $K[S-q]$. A known plugin remains selected
   while its name occurs in any remaining Project request sequence.
@@ -558,9 +580,9 @@ pass changes that parameter. These equations compare declarations, not live heap
 
 #theorem(title: "Candidate law", name: "Strict retirement")[
   Define $S' ≺ S$ by
-  $"support"(S') ⊊ "support"(S)$. This relation is well founded.
+  $sf("support")(S') ⊊ sf("support")(S)$. This relation is well founded.
   A chain $S_m ≺ dots ≺ S_0$ has
-  $m <= |"support"(S_0)|$ strict transitions.
+  $m <= |sf("support")(S_0)|$ strict transitions.
 ]
 
 Reordering requests or dropping a duplicate does not satisfy $≺$.
@@ -588,7 +610,7 @@ finalization and external checking; it is neither a fuel limit nor a time bound.
 
 For $n$ entries in the final structural Module $M'$ and $d$ pairs in $Delta$,
 direct finalization evaluates $n times d$ selectors and performs one recipe
-transformation per match. $"expand"(h)$ has output size equal to the sum of its
+transformation per match. $sf("expand")(h,M)$ has output size equal to the sum of its
 callback output sizes. These quantities do not bound callback cost, provider
 search, or tsc. The requested profiling workloads use interface catalogs of 5,000
 and eventually 100,000 entries. Interface count alone determines neither Module
@@ -611,13 +633,13 @@ does not have to carry the exposition.
     [Paper notation], [Lean correspondence], [Status],
     midrule(),
     [$tau,c,≼,chi$], [`External.lean`: `Ty`, `Code`, `Compatible`, `typeCheck`], [External assumption],
-    [$d,M,E$], [`Module.lean`: declarations and edits; $"at"$ uses `Operator.on`], [Definitions],
-    [$"type", "need", "recipe", O_1;O_2$], [`Operator.lean`: `withType`, `require`, `recipe`, `andThen`], [Definitions],
-    [$epsilon,E;P,"defer"(p,w);P$], [`Pass.lean`: `done`, `edit`, `defer`], [Definitions],
-    [$⇓,"finalize" thin Delta,"run" thin P thin M$], [`Pass.lean`: `Evaluates`, `materialize`, `run`], [Definitions],
+    [$d,M,E$], [`Module.lean`: declarations and edits; $sf("at")$ uses `Operator.on`], [Definitions],
+    [$sf("type"), sf("need"), sf("recipe"), O_1;O_2$], [`Operator.lean`: `withType`, `require`, `recipe`, `andThen`], [Definitions],
+    [$epsilon,E;P,sf("defer")(p,w);P$], [`Pass.lean`: `done`, `edit`, `defer`], [Definitions],
+    [$⇓,sf("finalize")_Delta,sf("run")(P,M)$], [`Pass.lean`: `Evaluates`, `materialize`, `run`], [Definitions],
     [$scripts(⇓)_k$], [`Pass.lean`: `EvaluatesIn`], [Definition],
-    [$⊢ M "ok",V,"admit"$], [`Module.lean`: `Valid`, `verify`, `admit`], [Definitions],
-    [$g,K[S],"build",≺$], [`Plugin.lean`: selection, rebuilding, `Retires`], [Definitions],
+    [$⊢ M sf("ok"),V,sf("admit")$], [`Module.lean`: `Valid`, `verify`, `admit`], [Definitions],
+    [$g,K[S],sf("build"),≺$], [`Plugin.lean`: selection, rebuilding, `Retires`], [Definitions],
     [@candidates], [`Laws.lean`: the existing candidate statements], [Proofs deferred],
     bottomrule(),
   ),
