@@ -757,7 +757,7 @@ export class InstalledPluginRoutes {
       contributed: async () => {
         const out = new Map<string, SkillMetadataItem[]>();
         for (const { specifier, skills } of await pluginSkills.list()) {
-          out.set(specifier, skills.map(toSkillItem));
+          out.set(specifier, skills.map((skill) => toSkillItem(skill)));
         }
         return out;
       },

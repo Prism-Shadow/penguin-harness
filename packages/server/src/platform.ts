@@ -48,7 +48,7 @@ import { WeChatTransportProvider } from "@penguinharness/plugin-messaging/server
 import { WeChatScanTransportProvider } from "@penguinharness/plugin-messaging/server/messaging/wechat-scan.js";
 import { PluginConfig, PluginConfigProvider } from "@penguinharness/plugin-plugins/server";
 import { PluginConfigAdmin, PluginConfigPage } from "@penguinharness/plugin-plugins/server";
-import { PluginCliCommandsProvider } from "@penguinharness/plugin-plugins/server";
+import { PluginCliCommandsProvider, PluginSkills, PluginSkillsProvider } from "@penguinharness/plugin-plugins/server";
 import {
   CoreSessionLoaders,
   DefaultTitleGenerators,
@@ -509,13 +509,14 @@ export class MessagingHubModule {}
     PluginRegistryRoutes,
     NpmPluginPackages,
     InstalledPluginRoutes,
+    PluginSkillsProvider,
     PluginCliCommandsProvider,
     PluginUiRoutes,
     SuggestIdRoutes,
     LanguagesModule,
     LanguageRoutes,
   ],
-  exports: [Http, WebShell, UpdateCheck],
+  exports: [Http, WebShell, UpdateCheck, PluginSkills],
 })
 export class ApiModule {}
 

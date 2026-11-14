@@ -18,6 +18,7 @@ import { strFromU8, zipSync } from "fflate";
 import { Hono } from "hono";
 import {
   listInstalledSkills,
+  readInstalledIcon,
   removeSkill,
   replaceSkillDirectory,
   skillsDir,
@@ -36,7 +37,8 @@ export interface SkillsRouteDeps {
 }
 import { HttpError } from "@prismshadow/penguin-server/internal";
 import { badRequest, readJson, requireString, requireValidId } from "@prismshadow/penguin-server/internal";
-import { toSkillItem } from "@prismshadow/penguin-server/internal";
+import { agentSkillIconRoute, toSkillItem } from "@prismshadow/penguin-server/internal";
+import { iconResponse } from "@prismshadow/penguin-server/internal";
 import { MAX_ARCHIVE_BYTES, MAX_ARCHIVE_FILES, MAX_FILE_BYTES, MAX_TOTAL_BYTES, assertSafeEntryPath, skillTooLarge, unzipBounded } from "@prismshadow/penguin-server/internal";
 import { Bind, Component } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
@@ -162,7 +164,9 @@ export function agentSkillsRoutes(deps: SkillsRouteDeps): Hono<AppEnv> {
     projectId: string,
     agentId: string,
   ): Promise<AgentSkillsResponse> => ({
-    skills: (await listInstalledSkills(deps.config.root, projectId, agentId)).map((skill) => toSkillItem(skill)),
+    skills: (await listInstalledSkills(deps.config.root, projectId, agentId)).map((skill) =>
+      toSkillItem(skill, agentSkillIconRoute(projectId, agentId, skill.name)),
+    ),
   });
 
   app.get("/", async (c) => {
@@ -258,6 +262,17 @@ export function agentSkillsRoutes(deps: SkillsRouteDeps): Hono<AppEnv> {
         "X-Content-Type-Options": "nosniff",
       },
     });
+  });
+
+  // The icon in the skill's directory, read the way the listing reads it (so an icon.<ext> that
+  // will not do is a 404 here too); `?rev=` is only the listing's cache key.
+  app.get("/:name/icon", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const agentId = requireValidId(c, "agentId");
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
+    const name = requireValidId(c, "name");
+    const dir = path.join(skillsDir(deps.config.root, projectId, agentId), name);
+    return iconResponse(await readInstalledIcon(dir));
   });
 
   app.delete("/:name", async (c) => {

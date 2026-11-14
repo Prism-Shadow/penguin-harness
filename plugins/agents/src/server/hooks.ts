@@ -25,6 +25,7 @@ import {
   hooksDir,
   listInstalledHooks,
   parsePluginVersion,
+  readInstalledIcon,
   removeHook,
   replaceSkillDirectory,
 } from "@prismshadow/penguin-core";
@@ -34,7 +35,8 @@ import type { AppEnv } from "@prismshadow/penguin-server/internal";
 import type { PluginsRouteDeps } from "@prismshadow/penguin-server/internal";
 import { HttpError } from "@prismshadow/penguin-server/internal";
 import { badRequest, readJson, requireString, requireValidId } from "@prismshadow/penguin-server/internal";
-import { toHookItem } from "@prismshadow/penguin-server/internal";
+import { agentHookIconRoute, toHookItem } from "@prismshadow/penguin-server/internal";
+import { iconResponse } from "@prismshadow/penguin-server/internal";
 import { MAX_ARCHIVE_BYTES, MAX_ARCHIVE_FILES, MAX_FILE_BYTES, MAX_TOTAL_BYTES, assertSafeEntryPath } from "@prismshadow/penguin-server/internal";
 
 /** The hook points a manifest lists commands for. */
@@ -252,7 +254,9 @@ export function agentHooksRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   const installedItems = async (projectId: string, agentId: string): Promise<HookItem[]> =>
-    (await listInstalledHooks(deps.config.root, projectId, agentId)).map((hook) => toHookItem(hook, iconRoute));
+    (await listInstalledHooks(deps.config.root, projectId, agentId)).map((hook) =>
+      toHookItem(hook, agentHookIconRoute(projectId, agentId, hook.name)),
+    );
 
   /** The install criterion every per-package route shares, the one listInstalledHooks uses: hooks/<name>/hooks.json exists. Returns the package directory. */
   const requireInstalled = async (
@@ -353,6 +357,17 @@ export function agentHooksRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
         "X-Content-Type-Options": "nosniff",
       },
     });
+  });
+
+  // The icon beside the manifest, read the way the listing reads it; `?rev=` is only the
+  // listing's cache key.
+  app.get("/:name/icon", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const agentId = requireValidId(c, "agentId");
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
+    const name = requireValidId(c, "name");
+    const dir = await requireInstalled(projectId, agentId, name);
+    return iconResponse(await readInstalledIcon(dir));
   });
 
   app.delete("/:name", async (c) => {

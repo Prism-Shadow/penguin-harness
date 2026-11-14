@@ -76,17 +76,8 @@ import { pluginArchiveResponse, unscopedName, zipPluginPackage } from "../servic
 import { migrateWorkbenches } from "@penguinharness/plugin-workbenches/server";
 import type { PluginLibrary } from "@prismshadow/penguin-server/internal";
 import { uninstallAgentPlugin } from "@prismshadow/penguin-server/internal";
+import type { PluginSkills } from "../plugin/skills.js";
 
-/** What these route groups reach — bound by their component below. */
-export interface PluginsRouteDeps {
-  config: ServerConfig;
-  access: Access;
-  agentConfigService: AgentConfig;
-  manager: ManagerIface;
-  library: PluginLibrary;
-  /** An uninstall removes the plugin's workbenches the way a single removal does. */
-  workbenches: Pick<Workbenches, "remove">;
-}
 import { errorBody } from "@prismshadow/penguin-server/internal";
 import { HttpError } from "@prismshadow/penguin-server/internal";
 import { iconRef, iconResponse } from "@prismshadow/penguin-server/internal";
@@ -101,8 +92,22 @@ import {
   toHookItem,
   toPluginItem,
   toSkillItem,
-  resolveLibraryPlugins,
 } from "@prismshadow/penguin-server/internal";
+import { libraryPlugin } from "@prismshadow/penguin-core";
+import type { LibraryPlugin } from "@prismshadow/penguin-core";
+
+/** What these route groups reach — bound by their component below. */
+export interface PluginsRouteDeps {
+  config: ServerConfig;
+  access: Access;
+  agentConfigService: AgentConfig;
+  manager: ManagerIface;
+  library: PluginLibrary;
+  /** An uninstall removes the plugin's workbenches the way a single removal does. */
+  workbenches: Pick<Workbenches, "remove">;
+  /** The skills the enabled code plugins contribute (plugin/skills.ts): installable by package name. */
+  pluginSkills: Pick<PluginSkills, "resolve">;
+}
 
 /** A server name another owner holds, as the answer: what it is and who has it; nothing was written. */
 async function refusingTakenNames<T>(install: () => Promise<T>): Promise<T> {
@@ -214,18 +219,26 @@ export function agentPluginsRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
     await deps.agentConfigService.requireExists(projectId, agentId);
     const names = optionalStringArray(await readJson(c), "names") ?? [];
     if (names.length === 0) throw badRequest("names must be a non-empty array.");
-    // Verify every name up front before writing anything: an unknown name, or an MCP server
-    // name the Agent already has from someone else, rejects the whole request rather than
-    // leaving a half-installed state.
-    const plugins = resolveLibraryPlugins(deps.library, names);
+    // Resolve all names and check MCP ownership before any installation writes.
+    const library: LibraryPlugin[] = [];
+    const rest: string[] = [];
+    for (const name of names) {
+      const plugin = libraryPlugin(name);
+      if (plugin !== undefined) library.push(plugin);
+      else rest.push(name);
+    }
+    const contributed = rest.length > 0 ? await deps.pluginSkills.resolve(rest) : [];
     const root = deps.config.root;
     // Before the install: one that wrote a workbench into Agent State ahead of the move would
     // take its id, and the Agent's existing folder, data included, would stay in the old place.
     await migrateWorkbenches(agentDir(root, projectId, agentId));
     await refusingTakenNames(async () => {
-      await assertPluginMcpServersInstallable(root, projectId, agentId, plugins);
-      await assertPluginWorkbenchesInstallable(root, projectId, agentId, plugins);
-      for (const plugin of plugins) await installPlugin(root, projectId, agentId, plugin);
+      await assertPluginMcpServersInstallable(root, projectId, agentId, library);
+      await assertPluginWorkbenchesInstallable(root, projectId, agentId, library);
+      for (const plugin of library) await installPlugin(root, projectId, agentId, plugin);
+      for (const plugin of contributed) {
+        for (const skill of plugin.skills) await installSkill(root, projectId, agentId, skill);
+      }
     });
     // Core reads hook packages when a model context opens: a conversation that is running
     // would keep the old set — or none — until its next compaction. Rebuilding the runtime
@@ -345,6 +358,7 @@ export class PluginRoutes {
   @Use() private readonly manager!: ManagerIface;
   @Use() private readonly library!: PluginLibrary;
   @Use() private readonly workbenches!: Workbenches;
+  @Use() private readonly pluginSkills!: PluginSkills;
   @Bind("PluginRoutes.library") libraryRoutes!: Hono<AppEnv>;
   @Bind("PluginRoutes.agent-plugins") pluginRoutes!: Hono<AppEnv>;
   @Bind("PluginRoutes.agent-hooks") hookRoutes!: Hono<AppEnv>;
@@ -357,6 +371,7 @@ export class PluginRoutes {
       manager: this.manager,
       library: this.library,
       workbenches: this.workbenches,
+      pluginSkills: this.pluginSkills,
     };
     this.libraryRoutes = pluginLibraryRoutes(this.library);
     this.pluginRoutes = agentPluginsRoutes(deps);

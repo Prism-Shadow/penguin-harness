@@ -41,8 +41,10 @@ import {
   parseSkillFrontmatter,
   type SkillMetadata,
 } from "@prismshadow/penguin-core";
+import { iconImage } from "@prismshadow/penguin-core";
 import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx, Slot } from "@prismshadow/penguin-core/kernel";
+import type { IconImage } from "@prismshadow/penguin-core";
 import type { Config, Hmr } from "@prismshadow/penguin-server/internal";
 import { HttpError } from "@prismshadow/penguin-server/internal";
 import type { LoadedPlugin } from "./host.js";
@@ -67,8 +69,8 @@ export interface PluginSkillsSlots {
 export interface ContributedSkill extends SkillMetadata {
   /** SKILL.md verbatim, written as-is on install. */
   content: string;
-  /** The skill directory's own icon.svg, when it ships one; a code plugin has no plugin icon to stamp instead. */
-  icon?: string;
+  /** The skill directory's own icon.svg, when it ships one, read through core's icon reader; a code plugin has no plugin icon to stamp instead. */
+  icon?: IconImage;
   /** Auxiliary files keyed POSIX-relative to the skill directory, installed alongside SKILL.md. */
   files?: Record<string, string>;
 }
@@ -81,7 +83,7 @@ export interface ContributedPlugin {
 }
 
 /** A skill as the installable list carries it: its metadata, no body and no auxiliary payload. */
-export type ContributedSkillMeta = SkillMetadata & { icon?: string };
+export type ContributedSkillMeta = SkillMetadata & { icon?: IconImage };
 
 /** What a module reads: the skills the enabled code plugins declared, installable like the library's. */
 @Interface()
@@ -182,9 +184,11 @@ async function readDeclaredSkill(
   if (metadata === null) {
     return { skip: `${path.posix.join(decl, "SKILL.md")} has no frontmatter with a name` };
   }
-  let icon: string | undefined;
+  let icon: IconImage | undefined;
   try {
-    icon = await fs.readFile(path.join(skillDir, "icon.svg"), "utf8");
+    const svg = await fs.readFile(path.join(skillDir, "icon.svg"), "utf8");
+    const checked = iconImage(new TextEncoder().encode(svg), "icon.svg");
+    if ("icon" in checked) icon = checked.icon;
   } catch {
     // The skill ships its own icon or none; the book glyph covers the rest.
   }

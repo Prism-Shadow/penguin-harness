@@ -8031,6 +8031,13 @@ export interface InstalledPlugin {
    * is false and no `error` is reported for it.
    */
   here: boolean;
+  /**
+   * The skills this enabled code plugin declares on the server's skills slot, metadata only —
+   * installable onto an Agent through the plugin install route, by this package name. Present
+   * only while the process runs the package; a plugin no Project lists contributes nothing, so
+   * its skills stop being offered — what "disabled" means for a skill's source.
+   */
+  skills?: SkillMetadataItem[];
 }
 
 /** What an install put on this server (POST …/plugins/installed and …/installed/archive). */
