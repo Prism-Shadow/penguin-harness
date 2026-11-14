@@ -29,7 +29,7 @@ import {
   MenuSeparator,
   Switch,
 } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 import { SkillTile } from "../skills";
 
 /** Edge of the row's mark, in px: the tile every settings row leads with. */

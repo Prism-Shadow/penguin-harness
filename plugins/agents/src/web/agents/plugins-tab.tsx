@@ -63,20 +63,20 @@ import {
 import type { ToneName } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
-import { apiErrorText } from "../../lib/api-error";
-import { useAgentLocation } from "../../lib/agent-location";
-import { useInstantSetting } from "../../lib/instant-setting";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { useAgentLocation } from "./agent-location.js";
+import { useInstantSetting } from "@penguinharness/plugin-settings/web";
 import {
   publishMachineAgentsChanged,
   readMachineAgents,
   useAgentsOn,
-} from "../../lib/machine-agent-lists";
-import { S } from "../../lib/strings";
-import { toastApiError } from "../../lib/toast-api-error";
-import { WORKBENCH_UPDATED_EVENT } from "../../lib/workbench-tabs";
+} from "./machine-agent-lists.js";
+import { S } from "@prismshadow/penguin-web/internal";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
+import { WORKBENCH_UPDATED_EVENT } from "@penguinharness/plugin-workbenches/web";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
-import { BOOK_ICON, localizedText } from "../../lib/skill-use";
+import { BOOK_ICON, localizedText } from "@prismshadow/penguin-web/internal";
 import {
   StdioDisclosure,
   agentInstalls,

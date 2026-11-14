@@ -35,10 +35,10 @@ import {
   useGuardedClose,
 } from "@prismshadow/penguin-ui";
 import { ApiError } from "../../api/client";
-import { apiErrorText } from "../../lib/api-error";
-import { useAgentLocation } from "../../lib/agent-location";
-import { S } from "../../lib/strings";
-import { toneInk } from "../../lib/tone";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { useAgentLocation } from "./agent-location.js";
+import { S } from "@prismshadow/penguin-web/internal";
+import { toneInk } from "@prismshadow/penguin-web/internal";
 import { useAiBridge } from "../ai-create";
 
 /** The Button look on the upload `<label>`. */

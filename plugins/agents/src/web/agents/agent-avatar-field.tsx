@@ -26,8 +26,8 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { AvatarPicker } from "../../components/ui/avatar-picker";
-import { S } from "../../lib/strings";
-import { toastApiError } from "../../lib/toast-api-error";
+import { S } from "@prismshadow/penguin-web/internal";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 /**
  * The avatar's edge, in the field and in the page's header: the profile row's preview, for the

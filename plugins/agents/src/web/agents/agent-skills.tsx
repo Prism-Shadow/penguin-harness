@@ -31,16 +31,16 @@ import {
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
-import { useAgentLocation } from "../../lib/agent-location";
+import { useAgentLocation } from "./agent-location.js";
 import { SkillTile } from "../skills";
-import { localizedShortText } from "../../lib/skill-use";
+import { localizedShortText } from "@prismshadow/penguin-web/internal";
 import { downloadArchive } from "./archive-download";
 import { ChatOrZipImportDialog } from "./chat-or-zip-import-dialog";
 import { buildImportPrompt } from "./skill-import-source";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 /**
  * The rows of an Agent's Skills and the one uninstall confirmation they share. `agentName` names
