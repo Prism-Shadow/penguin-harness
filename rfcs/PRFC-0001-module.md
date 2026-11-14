@@ -3,7 +3,7 @@
 [中文版](PRFC-0001-module.zh.md)
 
 > **Source**: `rfcs/PRFC-0001-module.md` from the design repository [penguin-harness-design](https://github.com/Prism-Shadow/penguin-harness-design) — landed (default branch `main`, commit [`ac673a24`](https://github.com/Prism-Shadow/penguin-harness-design/commit/ac673a245eec78d6afca35e260dce28b2a3ab3ac)).
-> **Rev**: v2.0.0; the conventions for this surface are in [README.md](README.md), and changes from version to version are recorded in `## Changes` at the end.
+> **Rev**: v2.1.0; the conventions for this surface are in [README.md](README.md), and changes from version to version are recorded in `## Changes` at the end.
 
 - Feature Name: `module`
 - Start Date: 2026-09-02
@@ -13,7 +13,9 @@
 ## Summary
 [summary]: #summary
 
-Module is the unit in which this harness assembles code — a mechanism, not a directory convention. It has only three primitives: **Interface** states what is needed, **Component** exports itself, **Module** exports others. The interfaces between nodes are expressed as **signature-level data**, and the whole tree is validated before any node's code runs. The server's business surface is its first application, and the catch-all `AppDeps` wrapper it used to carry is retired along with it.
+Module is the immutable description from which this harness assembles code. The semantic core has three concepts: **Module** holds ordered, named declarations, **Pass** transforms them, and **Plugin** supplies declarations and a pass. Source, intermediate and accepted modules share one representation; validity is a predicate checked at admission. Interfaces describe contracts, components carry code recipes, and slots are namespace views within a Module. Type compatibility is delegated to generated TypeScript checks.
+
+The class decorators and tree manifests below remain the TypeScript authoring surface. The [Lean draft](../formal/module-model/README.md) specifies the smaller semantic core independently; translating that surface into the model and verifying the implementation are separate work.
 
 ## Motivation
 [motivation]: #motivation
@@ -41,7 +43,9 @@ A sandbox backend has to keep working after a hot push. The platform side requir
 ## Guide-level explanation
 [guide-level-explanation]: #guide-level-explanation
 
-Three primitives, one sentence each: **Interface** is a set of method and field signatures, written as an abstract class purely to serve as a handle — declare its own members with `@Interface()`, be an existing type with `extends Interface<T>()`; **Component** is the node that exports itself, its instance being its own provision; **Module** is the node that exports others, it has children, and re-exports a portion of the interfaces from its children, with the rest of the subtree's provisions private to the outside.
+A Module is an ordered collection of declarations. A pass can replace a component's recipe with a mock or filter the members of a slot; it produces another Module without changing its input. Missing dependencies and incompatible types are allowed during editing and checked once the composed passes finish. [Module Pass](PRFC-0025-module-pass.md) defines composition and final decoration; [Plugin](PRFC-0003-plugin.md) defines selection and rebuilding after installation or removal.
+
+The TypeScript adapter offers these authoring forms: **Interface** is a set of method and field signatures, written as an abstract class purely to serve as a handle — declare its own members with `@Interface()`, be an existing type with `extends Interface<T>()`; **Component** is the node that exports itself, its instance being its own provision; **Module** is the node that exports others, it has children, and re-exports a portion of the interfaces from its children, with the rest of the subtree's provisions private to the outside. These forms do not introduce additional semantic state types.
 
 A node declares what it wants with `@Use()` fields, what it gives with `@Provide()` fields, hands over the code half of a contribution with `@Bind()`, and hands over the state to be retained with `park()`. Dependencies finish injecting before the optional `setup()`; the lifecycle hook is named `setup()` rather than `create()`, because the repo itself already has a domain method named `create`.
 
@@ -56,9 +60,30 @@ The server's business surface is organized this way: most services and all repos
 ## Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
 
-### The three primitives
+### Semantic core
 
-The whole mechanism has only three things: **Interface** says "what is needed"; **Component** and **Module** are the two kinds of nodes on the tree.
+The definitions in [Module.lean](../formal/module-model/ModuleModel/Module.lean) use names and declarations as data within a Module:
+
+```lean
+abbrev Name := List String
+
+structure Declaration where
+  type : Ty
+  requires : List (Name × Ty)
+  code : Code
+
+abbrev Module := List (Name × Declaration)
+```
+
+Order is observable, including the order of contributions. A Component is a declaration whose opaque recipe creates a component. A slot can be represented by `Module.members scope`, the ordered view of declarations whose parent namespace is `scope`; it is not another container with its own lifecycle. Filtering that view leaves other names unchanged. With unique names and a present target in the slot, removing that target reduces its cardinality from N to N−1. Replacing a declaration retains its name and position.
+
+Qualified names determine scope. `visible owner target` holds when `target.dropLast` is a prefix of `owner`: a declaration may refer to names in its own or enclosing namespaces. Requirements already name their providers. Implicit provider search, aliases, exports and the full slot syntax require a translation into this representation; that translation is outside the draft. The model's namespace predicate is not a proof of the class adapter's visibility rules below.
+
+Source declarations, intermediate results and accepted results all have type `Module`. Blueprint, Draft and BootPlan may describe implementation phases, but are not separate semantic objects. Intermediate modules may contain duplicate names, missing references and incompatible types. `Valid` requires unique, nonempty qualified names; visible, resolved and compatible dependencies; and a natural-number rank that strictly decreases from each consumer to its required providers. Finite data and pure edits do not themselves imply `Valid`.
+
+### TypeScript authoring and class adapter
+
+The following forms describe the existing tree adapter. **Interface** states the required contract; **Component** and the `@Module` form describe the two kinds of tree nodes. Their recipes, namespaces and contracts must be related to the semantic core before model theorems can apply to this implementation.
 
 #### Interface: a set of method signatures, and signatures are data
 
@@ -247,21 +272,25 @@ An extension package provides a set of Modules: `package.json#penguin.modules` c
 
 Introducing this mechanism does not by itself change the runtime. The tree starts inside the existing platform kernel node, and at park time each module's document is written into the newly added `modules` field. Parked documents are not reversioned — fields are only added — so a data root parked by this version of the platform can still accept an older platform pushed back onto it. The only place the runtime is touched is the extension loader, which reads one more thing: `package.json#penguin`.
 
-### Blueprint, plan and runtime
+### Final verification and runtime boundary
 
-A Module is a lexical scope with declarations, children and an optional component recipe. A Component describes how to create an instance; compiling a tree must not execute that recipe. Separate the immutable source Blueprint, the Draft being rewritten, the verified BootPlan, and each boot's mutable Runtime. Structural sharing is permitted; modifying a Draft must not mutate an earlier generation or the source declarations.
-
-Intermediate Drafts may have missing providers or incompatible types. Representation invariants still hold: finite data, stable identities and an acyclic containment tree. Final verification checks wiring, visibility, exports, contributions and dependency order. Removing a slot contribution does not implicitly remove its provider component. A mock keeps the identity of the node it replaces; its resulting contract is checked with the final tree.
+`Valid` is defined independently of the checker. `verify m order` checks names, named dependencies and an ordinary list of names witnessing startup order: every declaration occurs once, with providers before consumers. Each required type comparison must return `some true`. `admit current candidate order` selects the candidate only if verification succeeds; otherwise it returns the current Module. This is logical admission, not a runtime transaction. The current Module must already be valid for admission to preserve validity.
 
 Type compatibility is delegated to TypeScript: render each side's own declaration snapshot into `.d.ts` files and generate assignment questions. Preserve direction, transitive references, compiler options and revision identity; never replace the consumer's declaration with the provider's just to answer a question. Unsupported rendering, a missing declaration or an unfinished compiler check is not a successful comparison. Graph checks remain responsible for missing or ambiguous providers. Diagnostics map generated questions and declaration ranges back to their module facts and operator origins, including deletions; origins explain relevant changes, not a unique minimal culprit.
 
-The intended BootPlan freezes resolved wiring and startup order so boot consumes the verified choices. The pass prototype in [PRFC-0025](PRFC-0025-module-pass.md) first exercises immutable edits and deferred decoration over `ModuleDef`. Converting every class adapter to a reusable recipe and eliminating boot's repeated resolution are subsequent implementation steps; the existing `moduleDefOf` adapter still constructs instances during assembly. Do not describe that adapter as a pure Blueprint.
+The implementation must also validate its own wiring resolution, exports and contribution syntax. Removing a slot contribution does not implicitly remove its provider component. A mock keeps the replaced node's identity, with its resulting contract checked in the final tree. Edits must preserve earlier inputs; structural sharing is permitted but is not a theorem about memory allocation in this model.
+
+The runtime target is to consume the verified wiring and startup order without executing recipes during compile. The pass prototype in [PRFC-0025](PRFC-0025-module-pass.md) exercises immutable edits and deferred decoration over `ModuleDef`. Converting every class adapter to a reusable recipe and eliminating boot's repeated resolution are subsequent implementation steps; the existing `moduleDefOf` adapter still constructs instances during assembly. Model admission does not establish safe publication, successful boot or rollback of runtime effects.
 
 ### Model verification
 
-Use Lean 4 initially to verify the model, not the TypeScript implementation. Types and compatibility in a fixed type environment are uninterpreted parameters; do not model tsc internally or assume algebraic laws that a proof does not need. Prove representation preservation, local edit boundaries, final constraint coverage and correspondence between accepted plans and the model's validity predicate. These are proof targets, not completed machine-checked proofs.
+The [Lean package](../formal/module-model/README.md) drafts definitions, external assumptions and theorem statements separately. Every theorem body in [Laws.lean](../formal/module-model/ModuleModel/Laws.lean) intentionally uses `sorry`; a successful build checks the statements, not their truth. This stage specifies the model without proving the TypeScript implementation.
 
-Termination means every finite input completes without a fuel limit. Operator traversal must use a finite snapshot or a well-founded decreasing measure; newly generated nodes do not automatically reschedule their producer. Actual cost is investigated by profiling, with interfaces, requirement sites, intermediate sizes and compiler work measured separately. A future implementation proof may use an executable verified core or a verified checker for the specified transformation; checking only that the output is well typed is insufficient.
+[External.lean](../formal/module-model/ModuleModel/External.lean) leaves `Ty`, `Code`, `Compatible` and `typeCheck : Ty → Ty → Option Bool` uninterpreted. Its one external propositional axiom says that, in a fixed TypeScript environment, a completed answer `typeCheck offered required = some answer` satisfies `answer = true ↔ Compatible offered required`. `none` means no answer and cannot admit a dependency. The checker is noncomputable relative to this oracle. No tsc termination, availability of answers, subtype algebra or truth of a recipe's declared type is assumed. Validity concerns declared contracts, not runtime type safety.
+
+Module theorem statements cover edit locality and algebra, slot filtering and single-member deletion, verification soundness, completeness conditional on available type answers, resolved dependencies, absence of dependency cycles and preservation of the current Module on rejection. Arbitrary edits need not preserve validity. Provenance, exceptions and runtime state are not in this model; friendly diagnostics remain an implementation requirement.
+
+Termination targets every finite input without fuel, under pure, total callbacks; [PRFC-0025](PRFC-0025-module-pass.md) states the traversal and composition assumptions. Actual cost is investigated by profiling, with interfaces, requirement sites, intermediate sizes and compiler work measured separately. A future implementation proof needs a semantics-preserving translation from author syntax plus either an executable verified core or a verified checker of the specified transformation. Checking only that the output is well typed cannot prove that a requested removal or replacement occurred.
 
 ## Drawbacks
 [drawbacks]: #drawbacks
@@ -305,6 +334,12 @@ Agent Workbench (formerly Workflow) describes its backend and UI in one declarat
 The frontend has a tree of its own too: `web/src/module.json` is already the App's manifest — each page's route, navigation position, whether it is admin-only, and its renderer name are all in there, and the routes and the sidebar are exported from it; `GET /api/contributions` returns, as data, what the server contributes to the frontend slots, and the frontend renders only the renderers it recognizes. The possibility of both trees using the same set of judgment rules is left for another piece.
 
 ## Changes
+
+### v2.1.0
+
+- Updated: reduced the semantic core to Module, Pass and Plugin; represented components and slots within one ordered Module type, with validity separate from representation.
+- Added: explicit namespace and dependency definitions, the completed-answer TypeScript axiom, admission laws and links to the Lean draft.
+- Clarified: class-adapter translation, diagnostics, runtime effects and structural sharing remain outside the draft's theorem statements; all theorem proofs are deferred with `sorry`.
 
 ### v2.0.0
 

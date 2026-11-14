@@ -3,7 +3,7 @@
 [English](PRFC-0001-module.md)
 
 > **来源**：设计仓 [penguin-harness-design](https://github.com/Prism-Shadow/penguin-harness-design) 的 `rfcs/PRFC-0001-module.md`——落地于默认分支 `main`（提交 [`ac673a24`](https://github.com/Prism-Shadow/penguin-harness-design/commit/ac673a245eec78d6afca35e260dce28b2a3ab3ac)）。
-> **修订**：v2.0.0；本面的约定见 [README.zh.md](README.zh.md)，逐版本改动记在文末 `## Changes`。
+> **修订**：v2.1.0；本面的约定见 [README.zh.md](README.zh.md)，逐版本改动记在文末 `## Changes`。
 
 - Feature Name: `module`
 - Start Date: 2026-09-02
@@ -13,7 +13,9 @@
 ## Summary
 [summary]: #summary
 
-Module 是这套 harness 组装代码的单位——一套机制，不是一条目录约定。它只有三个原语：**Interface** 说需要什么，**Component** 导出它自己，**Module** 导出别人。节点之间的接口以**签名级的数据**表达，整棵树在任何节点的代码运行之前被校验一遍。服务端的业务面是它的第一个应用，此前那只什么都装的 `AppDeps` 包裹随之取消。
+Module 是这套 harness 组装代码所用的不可变描述。语义核心收敛为三个概念：**Module** 保存有序、具名的声明，**Pass** 变换这些声明，**Plugin** 提供声明和 pass。原始、中间与已接受的模块使用同一种表示，合法性是准入时检查的谓词。Interface 描述契约，Component 携带代码配方，slot 是 Module 内的命名空间视图。类型兼容性交给生成的 TypeScript 检查。
+
+下文的类装饰器和树形 manifest 仍是 TypeScript 作者接口。[Lean 草稿](../formal/module-model/README.md) 独立定义更小的语义核心；把作者接口翻译到模型、验证实现正确性是另外的工作。
 
 ## Motivation
 [motivation]: #motivation
@@ -41,7 +43,9 @@ Module 是这套 harness 组装代码的单位——一套机制，不是一条�
 ## Guide-level explanation
 [guide-level-explanation]: #guide-level-explanation
 
-三个原语，一句话各自说清：**Interface** 是一组方法与字段的签名，写成抽象类只是为了当句柄——自己声明成员的用 `@Interface()`，本身就是某个已有类型的用 `extends Interface<T>()`；**Component** 是导出自己的节点，实例本身就是它的提供物；**Module** 是导出别人的节点，它有 children，并从 children 里转出一部分接口，子树其余的提供物对外私有。
+Module 是有序的声明集合。Pass 可以把组件配方替换为 mock，也可以筛选某个 slot 的成员；结果是新的 Module，输入保持不变。编辑期间允许依赖缺失和类型失配，组合后的 pass 执行结束再统一检查。[Module Pass](PRFC-0025-module-pass.zh.md) 定义组合和最终 decoration，[Plugin](PRFC-0003-plugin.zh.md) 定义选择及装卸后的重建。
+
+TypeScript 适配器提供这些作者接口：**Interface** 是一组方法与字段的签名，写成抽象类只是为了当句柄——自己声明成员的用 `@Interface()`，本身就是某个已有类型的用 `extends Interface<T>()`；**Component** 是导出自己的节点，实例本身就是它的提供物；**Module** 是导出别人的节点，它有 children，并从 children 里转出一部分接口，子树其余的提供物对外私有。这些写法不引入额外的语义状态类型。
 
 一个节点用 `@Use()` 字段声明它要什么，用 `@Provide()` 字段声明它给出什么，用 `@Bind()` 交出某个贡献的代码半，用 `park()` 交出要留存的状态。依赖在可选的 `setup()` 之前注入完毕；生命周期钩子叫 `setup()` 而不是 `create()`，因为 repo 本身就有一个叫 `create` 的领域方法。
 
@@ -56,9 +60,30 @@ Module 是这套 harness 组装代码的单位——一套机制，不是一条�
 ## Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
 
-### 三个原语
+### 语义核心
 
-整套机制只有三样东西：**Interface** 说「需要什么」，**Component** 与 **Module** 是树上的两种节点。
+[Module.lean](../formal/module-model/ModuleModel/Module.lean) 中，名称与声明是 Module 内的数据：
+
+```lean
+abbrev Name := List String
+
+structure Declaration where
+  type : Ty
+  requires : List (Name × Ty)
+  code : Code
+
+abbrev Module := List (Name × Declaration)
+```
+
+顺序可观察，包括贡献的顺序。Component 是代码配方创建组件的声明，配方在模型中不透明。Slot 可以表示为 `Module.members scope`：父命名空间为 `scope` 的声明按原顺序形成的视图，无需另设有生命周期的容器。筛选该视图不改变其他名称；名称唯一且目标存在于 slot 时，删除该目标使数量从 N 变为 N−1。替换声明保留名称和位置。
+
+限定名称决定作用域：`visible owner target` 要求 `target.dropLast` 是 `owner` 的前缀，声明可以引用自身或外层命名空间中的名称。Requirement 已经明确指定 provider 的名称。隐式 provider 搜索、alias、exports 与完整 slot 语法需要翻译到该表示，翻译不在本次草稿内。模型的命名空间谓词不构成下文类适配器可见性规则的证明。
+
+原始声明、中间结果与已接受结果的类型都是 `Module`。Blueprint、Draft、BootPlan 可以描述实现阶段，但不另设语义对象。中间态允许名称重复、引用缺失和类型失配。`Valid` 要求限定名称唯一且各部分非空，依赖可见、已解析且类型兼容，并存在自然数 rank，使每条消费者到 provider 的依赖都严格下降。数据有限、编辑纯粹本身不蕴含 `Valid`。
+
+### TypeScript 作者接口与类适配器
+
+以下写法描述现有树适配器：**Interface** 表达所需契约，**Component** 与 `@Module` 写法描述两种树节点。只有先建立它们的配方、命名空间和契约与语义核心的对应，模型定理才能适用于该实现。
 
 #### Interface：一组方法签名，而签名是数据
 
@@ -247,21 +272,25 @@ Go 的赋值规则，跨编译边界执行：消费者点名的每个方法都�
 
 引入这套机制本身不改运行时。树在既有的平台 kernel 节点内启动，park 时每个模块的文档写进新增的 `modules` 字段。parked 文档不重定版本——只加字段——因此一个被这一版平台 park 过的数据根，仍然接得住推回去的旧平台。运行时唯一被碰到的地方，是扩展加载器多读一个 `package.json#penguin`。
 
-### Blueprint、plan 与 runtime
+### 最终验证与运行时边界
 
-Module 是包含声明、子节点和可选组件配方的词法作用域；Component 描述如何创建实例，编译树时不得执行这个配方。区分不可变的原始 Blueprint、正在改写的 Draft、已验证的 BootPlan 和每次 boot 的可变 Runtime。允许结构共享，但修改 Draft 不得污染旧代或原始声明。
-
-Draft 的中间态允许 provider 缺失或类型失配；表示约束仍须成立：数据有限、身份稳定、包含关系无环。最终统一验证布线、可见性、exports、贡献和依赖顺序。删除槽贡献不隐式删除提供该贡献的组件。Mock 保持被替换节点的身份，其契约随最终树一起检查。
+`Valid` 的定义独立于检查器。`verify m order` 检查名称、具名依赖，以及由普通名称列表提供的启动顺序证据：每个声明恰好出现一次，provider 排在消费者之前。每个必需类型比较都须返回 `some true`。`admit current candidate order` 只在验证成功时选择候选，否则返回当前 Module。这是逻辑准入，不是运行时事务；准入保持合法性的前提是当前 Module 已合法。
 
 类型兼容性交给 TypeScript：将两侧各自的声明快照生成 `.d.ts`，再生成赋值问题。保留方向、传递引用、编译选项和 revision 身份；不得用提供方的声明替换消费者的声明来回答问题。无法渲染、声明缺失或编译器未完成都不等于检查通过。图检查仍负责 provider 缺失或歧义。诊断将生成问题与声明区间映射回模块事实和 operator 来源，包括删除记录；来源说明相关改动，不承诺唯一最小责任方。
 
-目标 BootPlan 固定布线和启动顺序，boot 直接消费已验证的选择。[PRFC-0025](PRFC-0025-module-pass.zh.md) 的 pass 原型先在 `ModuleDef` 上检验不可变改写与延后 decoration；将全部类适配器改为可复用配方、消除 boot 的重复解析属于后续实现。现有 `moduleDefOf` 仍在装配时构造实例，不能把该适配器称为纯 Blueprint。
+实现还须检查自身的布线解析、exports 和贡献语法。删除槽贡献不隐式删除提供该贡献的组件；mock 保留被替换节点的身份，其契约随最终树一起检查。编辑必须保留旧输入；允许结构共享，但模型不证明实际内存分配的性质。
+
+运行时目标是消费已验证的布线与启动顺序，compile 不执行配方。[PRFC-0025](PRFC-0025-module-pass.zh.md) 的 pass 原型在 `ModuleDef` 上检验不可变改写与延后 decoration；将全部类适配器改为可复用配方、消除 boot 的重复解析属于后续实现，现有 `moduleDefOf` 仍在装配时构造实例。模型的准入不证明安全发布、boot 成功或运行时副作用可回滚。
 
 ### 模型验证
 
-初期使用 Lean 4 证明模型，不证明 TypeScript 实现。固定类型环境中的类型与兼容关系作为无解释参数，不建模 tsc 内部，也不添加证明不需要的代数律。证明目标包括表示约束保持、局部编辑边界、最终约束覆盖，以及接受计划与模型合法性的对应。这些是待完成的证明目标，不是已经通过机器检查的定理。
+[Lean 包](../formal/module-model/README.md) 分开编写定义、外部假设和定理陈述。[Laws.lean](../formal/module-model/ModuleModel/Laws.lean) 中每个定理的证明暂用 `sorry`；构建成功只检查陈述，不确立其真实性。本阶段定义模型，不证明 TypeScript 实现。
 
-停机要求对任意有限输入成立，不依赖 fuel。Operator 遍历有限快照，或给出良基下降量；新增节点不自动重新调度生成它的 operator。实际性能通过 profile 分析，分别记录接口、requirement、中间结果规模与编译器工作量。未来若验证实现，可以采用可执行的已验证核心，或验证指定变换结果的检查器；仅检查输出类型合法不足以证明变换正确。
+[External.lean](../formal/module-model/ModuleModel/External.lean) 将 `Ty`、`Code`、`Compatible` 与 `typeCheck : Ty → Ty → Option Bool` 留作无解释符号。唯一外部命题公理要求：固定 TypeScript 环境下，若已得到 `typeCheck offered required = some answer`，则 `answer = true ↔ Compatible offered required`。`none` 表示没有答案，不能放行依赖；相对于该 oracle，检查器是 noncomputable 的。不假设 tsc 停机、一定提供答案、子类型代数律或配方确实满足其声明类型。合法性针对声明契约，不等于运行时类型安全。
+
+Module 的定理陈述覆盖编辑局部性与代数律、slot 筛选与单项删除、验证可靠性、取得类型答案前提下的完备性、依赖解析、依赖无环以及拒绝时保留当前 Module。任意编辑不保证保持合法性。来源、异常与运行时状态尚未建模；友好诊断仍是实现要求。
+
+停机目标是在回调纯且全定义的前提下，对任意有限输入成立，不依赖 fuel；遍历与组合的假设见 [PRFC-0025](PRFC-0025-module-pass.zh.md)。实际性能通过 profile 分析，分别记录接口、requirement、中间结果规模与编译器工作量。未来若验证实现，需要先证明作者语法到模型的翻译保持语义，再采用可执行的已验证核心或验证指定变换的检查器；仅检查输出类型合法不足以证明指定删除或替换确实执行。
 
 ## Drawbacks
 [drawbacks]: #drawbacks
@@ -305,6 +334,12 @@ Agent Workbench（原 Workflow）以一份声明描述 backend 与 UI，沿用�
 前端也有自己的一棵树：`web/src/module.json` 已经是 App 的清单，页面的路由、导航位置、是否管理员限定、渲染器名字都在里面，路由与侧栏由它导出；`GET /api/contributions` 把服务端投给前端槽的东西作为数据返回，前端只渲染自己认得的渲染器。两棵树用同一套判定的可能性留待另一篇。
 
 ## Changes
+
+### v2.1.0
+
+- Updated：语义核心收敛为 Module、Pass、Plugin；Component 和 slot 表示在同一种有序 Module 内，合法性独立于表示。
+- Added：明确命名空间与依赖定义、TypeScript 已完成答案公理、准入定律及 Lean 草稿链接。
+- Clarified：类适配器翻译、诊断、运行时副作用与结构共享不在草稿的定理陈述范围内；所有定理暂用 `sorry` 延后证明。
 
 ### v2.0.0
 

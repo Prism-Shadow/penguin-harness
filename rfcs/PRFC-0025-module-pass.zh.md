@@ -4,17 +4,19 @@
 
 - Feature Name: `module_compile`
 - Start Date: 2026-10-25
-- Rev: v2.0.0
+- Rev: v2.1.0
 
 ## Summary
 
-Pass 在装配后的模块树上组合不可变 operator。结构编辑按声明顺序各执行一次；decoration 规则在最终结构上选目标，最终验证通过后才 boot。Manifest 数据负责注册，插件工厂提供 pass 代码。Blueprint/BootPlan/Runtime 的划分见 [Module](PRFC-0001-module.zh.md)，换代语义见 [Plugin](PRFC-0003-plugin.zh.md)。
+Pass 是 Module 编辑与延后 decoration 的有限组合。编辑产生同一 Module 类型的新值，decoration 规则在最终结构结果上选择目标，最终验证通过后才 boot。[Module](PRFC-0001-module.zh.md) 定义声明与合法性，[Plugin](PRFC-0003-plugin.zh.md) 定义选择与重建，三者共同构成语义核心。TypeScript 树适配器提供 pipeable 作者接口、manifest 注册与插件工厂；[Lean 草稿](../formal/module-model/README.md) 独立于该适配器定义核心语义。
 
 ## Motivation
 
 Instrument 应覆盖后续 pass 生成的节点，无需反复改写直到收敛。同一套接口还要支持 mock 与删除某个槽贡献。作者应能写简短的 `pipe`，无需实现树遍历或手写 SQL AST。先开放普通 TypeScript operator 与 predicate，再依据使用经验收紧核心。
 
 ## Guide-level explanation
+
+TypeScript 作者接口保留普通函数组合：
 
 ```ts
 const testMode: ModulePass = {
@@ -27,7 +29,7 @@ const testMode: ModulePass = {
 };
 ```
 
-`at` 将集合 operator 提升为对某个槽全部贡献的操作；删除贡献不移除仍有其他用途的组件。MVP 保持贡献者之间的顺序，允许同一贡献者内部重排；跨贡献者重排会被拒绝，新增条目也必须指向已有贡献者。`replace` 保持模块身份，新依赖与提供物是否兼容由最终验证决定。`when`、`and`、`or`、`not` 组合条件。普通条件读取该步骤的输入，不在后续步骤完成后回头重跑。
+`at` 将集合 operator 提升为对某个槽全部贡献的操作；删除贡献不移除仍有其他用途的组件。当前适配器保持贡献者之间的顺序，允许同一贡献者内部重排；跨贡献者重排会被拒绝，新增条目也必须指向已有贡献者。这些是适配器约束，不是抽象 Module 表示的限制。`replace` 保持模块身份，新依赖与提供物是否兼容由最终验证决定。`when`、`and`、`or`、`not` 组合条件。普通条件读取该步骤的输入，不在后续步骤完成后回头重跑。MVP 不禁止普通 TypeScript 条件，也不要求查询 AST；谓词语法本身不能使任意回调全定义或纯粹。
 
 `decorate` 登记规则。编译器在结构编辑全部结束后选择具体 provision alias，排除 exports 转发的 alias，每条匹配规则对同一 provider 值在 boot 时包装一次。Wrapper 创建的值不成为新的编译目标。Telemetry 演示有类型的成员包装，覆盖在其 pass 之后加入的 provider，插件自己无需递归遍历。
 
@@ -41,7 +43,26 @@ const testMode: ModulePass = {
 
 ## Reference-level explanation
 
-### 执行
+### 语义核心
+
+[Pass.lean](../formal/module-model/ModuleModel/Pass.lean) 将 pass 定义为有限序列，只有两种操作和结束标记：
+
+```lean
+abbrev Decoration := (Name → Declaration → Bool) × (Code → Code)
+
+inductive Pass where
+  | done
+  | edit (transform : Module → Module) (next : Pass)
+  | decorate (rule : Decoration) (next : Pass)
+```
+
+Edit 是纯且全定义的变换。`add`、`filter`、按固定名称的 `remove`、保留身份的 `replace`、`expand` 和命名空间内的 `filterAt` 都是 Module 值上的函数，不另设 pass 变体。内置集合编辑读取有限输入快照；`expand` 拼接回调结果，不遍历自己的输出。条件可以读取当前条目或当前 Module，但仍须满足纯度与全定义前提；检查变化中 Module 的谓词不自动享有固定名称删除的代数律。
+
+`collect` 按顺序执行编辑并积累 decoration 规则。整个组合收集结束后，`materialize` 用同一份最终声明快照测试所有规则，再按规则顺序折叠匹配的配方变换。Wrapper 只改变不透明代码，不改变名称、声明类型和依赖。每个匹配的列表项应用一次，同一规则登记两次就应用两次。Selector 看不到之前的 wrapper，wrapper 输出不成为新目标。因此 instrument 能覆盖后续编辑，无需收敛迭代；但不假设 wrapper 保持应用行为。
+
+`append` 满足组合结合律，`pipe` 折叠该组合。一般而言，`run (append a b) m` **不等于** `run b (run a m)`，因为分开运行会提前 materialize。例如，`b` 中的替换可以丢弃 `a` 已应用的 wrapper；组合执行时，这个 wrapper 会改为选择最终替换结果。每次组合构建只进行一次最终 materialize，全程使用同一种 Module 表示。
+
+### TypeScript 执行
 
 1. 对装配后的原始树建立快照，包括嵌套 manifest 数据；保留不透明代码引用，编译编辑不执行模块工厂。快照保护旧输入与原始声明。
 2. 一次性收集注册，重复 id 报错；按 `after` 拓扑排序，以 id 字典序破平局。缺失依赖表示「若存在则排在其后」，成环具名报错。Pass 新建的注册不在本次 compile 调度。
@@ -50,7 +71,7 @@ const testMode: ModulePass = {
 5. 最终统一验证并保留诊断来源，中间态允许语义失配。图验证与 TypeScript 赋值检查分别进行；类型兼容沿用 PRFC-0001 的声明渲染机制。
 6. Boot 已验证候选。重装配和恢复都从原始声明开始，不复用已装饰的输出作为源树。
 
-MVP 保留原始 `rewrite` 开放接口。内置 operator 的来源包括 pass id、operator 位置与名称、受影响模块/槽、删除和供应插件。自定义回调保守归因到 pass。源码位置、条件判断的控制来源可以后续细化，不得宣称唯一因果归责。
+MVP 保留原始 `rewrite` 开放接口。内置 operator 的来源包括 pass id、operator 位置与名称、受影响模块/槽、删除和供应插件。自定义回调保守归因到 pass。源码位置、条件判断的控制来源可以后续细化，不得宣称唯一因果归责。诊断和异常路径是实现要求，不在当前纯 Lean 模型中；树节点、alias、exports 与贡献集合到具名声明的翻译，也仍需建立 refinement 对应。
 
 ### 诊断与 profile
 
@@ -58,13 +79,17 @@ MVP 保留原始 `rewrite` 开放接口。内置 operator 的来源包括 pass i
 
 `PENGUIN_MODULE_COMPILE_DEBUG=1` 收集 pass 耗时与最终树。优化依据 profile，不追求墙钟时间定理。接口数不足以约束编译成本，分别记录 requirement/候选对数、中间结果规模、声明生成量与 tsc 工作量，不因目录里存在接口就枚举全部接口对。
 
+模型的操作步数恰好是有限 pass 的长度，不包含回调执行。最终 Module 有 `n` 个声明、`d` 条延后规则时，直接 materialize 执行 `n × d` 次谓词调用，并对每次匹配执行一次配方变换。快照展开的输出大小等于各回调输出长度之和。这些陈述都不约束回调内部工作、生成结果的增长、provider 搜索或 tsc。评审工作负载以 5,000 条接口目录为初期目标，远期为 100,000 条；这是工作负载参数，不是实测容量或 Module 声明数。先分别 profile 这些成本，再决定索引、共享或增量执行。
+
 ### 模型证明范围
 
-初期使用 Lean 4，仅证明模型。固定环境中的 TypeScript 类型与兼容关系作为无解释参数。对任意有限输入证明不依赖 fuel 的停机，使用有限输入快照或良基下降量；新增节点无需减少树大小，但不得让遍历自动在自己的输出上重新调度。任意 TS 回调、tsc 执行、import、migration 与运行时副作用不在该定理内。
+Lean 4 草稿仅针对模型。定义、外部 TypeScript 假设与 [Laws.lean](../formal/module-model/ModuleModel/Laws.lean) 分开，后者的定理证明暂用 `sorry`。TypeScript 检查器契约与准入陈述见 PRFC-0001。草稿构建成功只检查定义和定理陈述，不代表证明完成或 TypeScript 实现正确。
 
-其他目标包括表示约束保持、编辑局部性、针对固定身份集合的结构删除幂等与交换性、纯逐项 filter 融合、确定性组合、来源有效性和最终约束覆盖。等价关系需说明是否忽略执行历史，结构等价的改写可能产生不同日志。插件安装/卸载、准入、保留和恢复的证明目标见 PRFC-0003。这些是待完成证明，不是实现已验证的声明。
+`Evaluates` 独立于 `collect` 解释器给出关系式执行语义。拟证明的定律包括：对任意有限 Module 和 Pass 存在有限求值，结果与操作步数唯一，求值与 `collect` 一致，以及组合满足结合律。不设 fuel 或输入规模上限。回调必须是纯且全定义的函数，定理不证明任意 TypeScript rewrite、selector 或 wrapper 停机。集合 operator 遍历快照，pass 求值则递减剩余有限序列；允许 Module 增长，不要求其大小下降。
 
-将来若需验证实现，复用模型实现可执行的已验证核心，或验证指定变换的结果检查器。输出类型合法不证明作者要求的删除或替换已经执行。实际性能仍通过 profile 解决。
+其余陈述覆盖纯逐项 filter 融合、固定名称删除的代数律、替换与命名空间局部性、slot 从 N 到 N−1 的删除、精确展开大小、最终选择与规则顺序、后续编辑覆盖、被删除目标不再出现，以及 decoration 保持声明契约。Decoration 保持 `Valid` 是因为它只改变不透明代码，不代表 wrapper 行为已经证明安全。任意编辑不保证保持 `Valid`，也不保证交换律。Module 值相同不表示诊断历史相同，模型尚未包含历史。
+
+插件安装、卸载与严格缩小集合的重试见 PRFC-0003。来源有效性、异常、park/load、保留与恢复需要补充建模。将来若需验证实现，先建立作者适配器及回调与核心语义的对应，再采用可执行的已验证核心或验证指定变换的检查器。输出类型合法不证明作者要求的删除或替换已经执行。
 
 ## Drawbacks
 
@@ -90,6 +115,12 @@ Pipeable operator 借鉴 RxJS 的组合风格；持久化数据结构提供可�
 在代表性接口目录上 profile 后，再决定增量执行与查询优化。参考模型测试可以对照 TS 与 Lean 的执行，但不宣称实现证明。未来的生产检查器可验证变换证据，必须检查指定操作，不能只检查最终类型。
 
 ## Changes
+
+### v2.1.0
+
+- Added：有限 edit/decorate 语义、回调全定义前提、快照遍历，以及跨组合统一进行最终 materialize。
+- Updated：Lean 草稿的定理范围、精确 pass 操作步数与 profile 维度，区分接口目录大小和模块大小。
+- Clarified：保留普通 TypeScript 回调；来源、运行时副作用与适配器 refinement 不在模型内，所有定理暂用 `sorry`。
 
 ### v2.0.0
 

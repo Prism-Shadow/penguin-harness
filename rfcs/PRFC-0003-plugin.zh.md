@@ -3,7 +3,7 @@
 [English](PRFC-0003-plugin.md)
 
 > **来源**：设计仓 [penguin-harness-design](https://github.com/Prism-Shadow/penguin-harness-design) 的 `rfcs/PRFC-0003-plugin.md`——设计 PR [#421](https://github.com/Prism-Shadow/penguin-harness-design/pull/421)（插件库的内容改为模块贡献）的修订，它先于本镜像落地于默认分支 `main`；上一版取自落地提交 [`ac673a24`](https://github.com/Prism-Shadow/penguin-harness-design/commit/ac673a245eec78d6afca35e260dce28b2a3ab3ac)。
-> **修订**：v2.0.0；本面的约定见 [README.zh.md](README.zh.md)，逐版本改动记在文末 `## Changes`。
+> **修订**：v2.1.0；本面的约定见 [README.zh.md](README.zh.md)，逐版本改动记在文末 `## Changes`。
 
 - Feature Name: `plugin`
 - Start Date: 2026-09-02
@@ -13,6 +13,8 @@
 
 ## Summary
 [summary]: #summary
+
+语义核心中的 Plugin 为声明和 Pass 命名。固定 catalog 提供 revision 与顺序，有效启用集合决定选中哪些条目。安装与卸载改变选择，再从原始 base 和所选声明重建 Module。[Lean 草稿](../formal/module-model/README.md) 定义这一逻辑操作，包安装与运行时交接另行处理。
 
 平台维护一个核心框架，其余的功能以插件接入。插件是一个 npm 包，内容是一组 Module，与平台自己的节点同一种写法。每次 App 创建时，平台读取所有 Project 插件表的并集，按签名检查这些 Module，再把它们作为模块树的子节点启动；它们经平台的槽贡献功能，只活一代 App；插件升级也靠 App 重新创建生效，状态可以 park 进新的一代。插件表随 Project 同步到它用到的每台机器，每台机器自己安装、自己重新装配，不重启进程。插件的影响范围由配置决定：激活的是插件的功能，而不是插件本身。
 
@@ -136,9 +138,22 @@ App 在以下时刻创建，每次都重新加载插件：
 
 ### Compile pass 与换代
 
+[Plugin.lean](../formal/module-model/ModuleModel/Plugin.lean) 的定义不另设 plan 或 generation 类型：
+
+```lean
+structure Plugin where
+  name : Name
+  declarations : Module
+  pass : Pass
+```
+
+固定 base 和有序 catalog 后，`selected` 按启用名称的成员关系筛选 catalog 条目。请求重复或顺序变化不改变结果，合法 catalog 的插件名唯一。`source` 在 base 后追加所选声明，`program` 按 catalog 顺序组合所选 pass，`build` 在 `source` 上执行该组合。每次比较中的 catalog 固定 revision 和优先级；将包版本及实现的 pass 依赖顺序解析成该 catalog 不在草稿内。
+
 插件可以在 modules 旁导出 `passes: Record<string, () => ModulePass>`。Manifest 在 `CompileModule.passes` 注册 id；工厂提供代码，每次 compile 尝试重新调用。工厂 id 冲突被拒绝。每代只解析本次保留插件集合的工厂，best-effort 重试同样如此。Operator 来源记录供应插件与 revision，避免把修改别人的 pass 归责给被修改模块。
 
-固定原始声明、配置、revision 与排序后，定义 `Plan(S) = verify(run(passes(S), assemble(Base, S)))`。安装、卸载或停用 pass 均从原始输入重算，不反向撤销编辑，也不只删掉插件拥有的输出节点：被移除的 pass 可能删除过别人的贡献、替换过组件，或改变幸存 pass 的条件。一个 Project 删掉插件后，若另一个 Project 仍请求它，它仍在进程的有效并集中。
+`install` 向启用集合加入名称，`uninstall` 移除名称。每次 `build` 都从原始声明开始，不以上次输出作为输入。被移除的 pass 可能删除过别人的贡献、替换过组件，或改变幸存 pass 的条件，因此只删除它拥有的输出、反向撤销编辑都不能实现卸载。模型的 `effective` 以成员关系合并各 Project 的请求：一个 Project 移除后，只要另一个仍请求，该插件就仍被选中。仅停用某个 pass 会改变 catalog 条目，固定 catalog 的往返定律不比较不同 catalog。
+
+构建和准入是同一种 Module 上的不同操作。卸载必需 provider 可能得到非法候选；验证拒绝时，`Module.admit` 保留当前 Module，不保证每次卸载请求都可发布。Best-effort 恢复可以缩小保留集合后重建，重试成功也必须通过最终验证才能准入。
 
 生命周期目标是拆除旧 runtime 前完成候选编译与准入，再通过 park/load 交接。Dispose 后新 boot 失败需要尝试恢复，不保证服务无间断，也不回滚外部副作用。恢复必须保留旧计划、parked state 和确切代码资源；npm 原地覆盖尚不能提供这项保证，属于实现缺口。
 
@@ -146,9 +161,16 @@ App 在以下时刻创建，每次都重新加载插件：
 
 ### 模型证明目标
 
-在输入固定与纯度假设下，证明安装后卸载的计划等价、下一代不执行已退出集合的 pass、接受计划的必需引用均已解析、先准入后发布、遵守选定状态策略，以及不回收仍可达的代码资源。Best-effort 在初始有限集合上单调增加被排除插件与被丢弃的原始贡献组，每次重试增加至少一项排除，且每轮从原始声明重建。下降量同时计入剩余插件与原始贡献组，因为丢弃贡献不一定移除插件。证明不承诺找到最大可用插件子集。
+[Laws.lean](../formal/module-model/ModuleModel/Laws.lean) 的插件定理陈述要求回调纯且全定义，base 与 catalog 固定，包括代码 revision、回调捕获的配置和顺序：
 
-这些性质初期用 Lean 4 证明模型，TypeScript 兼容关系及组件 park/load 契约作为外部假设。恢复成功、任务最终结束、资源最终清理需要对应的活性假设；模型停机不证明 import、tsc、migration 或任意插件代码会返回。初期原型不要求形式化验证实现。
+- 启用成员相同，则重建出的 Module 相同；就这一结果而言，安装和卸载各自幂等。
+- 若 `p` 原先不在 `S` 中，则 `build(base, catalog, uninstall(p, install(p, S))) = build(base, catalog, S)`。未启用的前提不可省略；移除原已启用的插件会改变初始选择。
+- 被卸载的插件不在选择中，因而其 pass 不参与本次构建的调度；另一个 Project 留存的请求使已知插件继续被选中。这两个陈述都不表示旧运行代码已经停止。
+- `Retires next current` 表示按成员关系严格缩小：不新增启用名称，并至少移除一个名称。该关系良基，严格退出的转移次数至多为 `initial.eraseDups.length`。重排列表或删除重复请求不算推进。不指定最优保留子集或具体恢复算法。
+
+这些定理的证明暂用 `sorry`。Module 准入和已接受依赖的定义见 [PRFC-0001](PRFC-0001-module.zh.md)；草稿没有运行时状态、异常处理、park/load、Task 或资源可达性。状态保持、运行时发布前准入、恢复与安全回收仍是操作要求，不是插件等式的推论。组件 park/load 契约没有被暗中设为本草稿的公理；后续生命周期模型必须显式写出这些契约，以及恢复成功、任务最终结束或清理所需的假设。
+
+实现的 best-effort 策略可能只丢弃一个原始贡献组而不移除插件，该步骤不满足 `Retires`，因此当前重试定理不能说明整套策略停机。后续证明需同时计入保留插件与保留的原始贡献组，要求每次重试至少从这两个有限集合中移除一项，并从原始声明重建。Import、tsc、migration 和任意 TypeScript 回调各自需要停机论证；本草稿不宣称实现已经形式化验证。
 
 ## Drawbacks
 [drawbacks]: #drawbacks
@@ -196,6 +218,12 @@ App 在以下时刻创建，每次都重新加载插件：
 只重建受影响的子树，减少一次插件变更需要重新装配的范围。
 
 ## Changes
+
+### v2.1.0
+
+- Added：最小 Plugin 定义、固定 catalog 的选择与原始声明重建语义，明确区分构建和准入。
+- Updated：Lean 草稿的安装/卸载定律、原先未启用的前提、进程请求并集与严格退出的次数上界。
+- Clarified：park/load、运行时发布、代码资源回收和丢弃贡献组的恢复仍在草稿范围之外；所有定理暂用 `sorry`。
 
 ### v2.0.0
 
