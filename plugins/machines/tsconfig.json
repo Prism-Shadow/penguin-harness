@@ -7,7 +7,7 @@
     ],
     "paths": {
       "@prismshadow/penguin-core/cli": [
-        "../../packages/core/src/plugin/cli-commands.ts"
+        "../../packages/core/src/cli/index.ts"
       ],
       "@penguinharness/plugin-company/server": [
         "../company/src/server/index.ts"

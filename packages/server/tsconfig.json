@@ -3,7 +3,7 @@
   "compilerOptions": {
     "paths": {
       "@prismshadow/penguin-core/cli": [
-        "../../packages/core/src/plugin/cli-commands.ts"
+        "../../packages/core/src/cli/index.ts"
       ],
       "@prismshadow/penguin-server/model-catalog": [
         "./src/model-catalog/index.ts"

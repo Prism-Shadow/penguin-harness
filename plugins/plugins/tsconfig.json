@@ -8,7 +8,7 @@
     "resolveJsonModule": true,
     "paths": {
       "@prismshadow/penguin-core/cli": [
-        "../../packages/core/src/plugin/cli-commands.ts"
+        "../../packages/core/src/cli/index.ts"
       ],
       "@penguinharness/plugin-workbenches/server": [
         "../../plugins/workbenches/src/server/index.ts"
