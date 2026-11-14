@@ -14,6 +14,18 @@
  */
 import http from "node:http";
 import { Readable } from "node:stream";
+import { buffer } from "node:stream/consumers";
+import { ADOPTED_AT_HEADER } from "@penguinharness/plugin-sessions/server";
+import { answerOf } from "../socket/stream-answer.js";
+import { MachineAnswers, keepable, keptResponse } from "./answer-cache.js";
+import type { AnswerReader, KeptAnswer } from "./answer-cache.js";
+import { ASKED_ENCODINGS, decodableEncoding, decodedBody } from "./answer-decoding.js";
+import type { MachineEventHub } from "./event-hub.js";
+import { isHistoryRead } from "./history-paths.js";
+import type { HistoryCaller, MachineHistory } from "./history-routes.js";
+import { MachineSocketRelay } from "./socket-relay.js";
+import type { MachineSockets } from "./machine-sockets.js";
+
 
 /** Path prefix of the proxy: `/server/<id>/api/…`. */
 export const SERVER_PROXY_PREFIX = "/server/";
