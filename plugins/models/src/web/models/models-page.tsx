@@ -155,7 +155,7 @@ import {
   isFreeModel,
   sameModelRef,
   userProviderInfo,
-} from "@prismshadow/penguin-web/internal";
+} from "./model-grouping";
 import {
   commitModelGroupOrder,
   loadModelGroupOrder,
