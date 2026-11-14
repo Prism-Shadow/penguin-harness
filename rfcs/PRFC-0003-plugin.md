@@ -3,7 +3,7 @@
 [中文版](PRFC-0003-plugin.zh.md)
 
 > **Source**: migrated from [PRFC-0003-plugin](https://github.com/Prism-Shadow/penguin-harness-design/blob/main/rfcs/PRFC-0003-plugin.md) in the design repository.
-> **Rev**: v2.2.0; per-version changes are recorded in `## Changes` at the end.
+> **Rev**: v2.3.0; per-version changes are recorded in `## Changes` at the end.
 
 - Feature Name: `plugin`
 - Start Date: 2026-09-02
@@ -12,7 +12,7 @@
 ## Summary
 [summary]: #summary
 
-A Plugin supplies module declarations and optional passes through a package. Installation and removal change the effective selection, then rebuild from the original declarations. Declaration rebuilding and runtime handover follow the same Module mechanism, including its decorators, signature checks and lifecycle.
+A Plugin supplies module declarations and optional passes through a package. Installation and removal change the effective selection, then rebuild from the original declarations. Declaration rebuilding and runtime handover follow the same Module mechanism, including its operators, signature checks and lifecycle.
 
 The platform maintains a core framework; everything else plugs in as plugins. A plugin is an npm package whose contents are a set of Modules, written the same way as the platform's own nodes. Each time an App is created, the platform reads the union of all Project plugin tables, checks these Modules against their signatures, and starts them as child nodes of the module tree; through the platform's slots they contribute functionality and live for exactly one App generation. Plugin upgrades also take effect by re-creating the App, and state can be parked into the new generation. The plugin table syncs with a Project to every machine the Project uses; each machine installs and re-assembles on its own, without restarting the process. A plugin's scope of effect is decided by configuration: what is activated is the plugin's functionality, not the plugin itself.
 
@@ -204,6 +204,10 @@ More activation dimensions: enable a plugin's functionality per user, per Agent.
 Rebuild only the affected subtree, reducing what one plugin change must re-assemble.
 
 ## Changes
+
+### v2.3.0
+
+- Updated: aligned declaration transformation terminology with Operator in the Module mechanism.
 
 ### v2.2.0
 

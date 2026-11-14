@@ -3,7 +3,7 @@
 [中文版](PRFC-0001-module.zh.md)
 
 > **Source**: migrated from [PRFC-0001-module](https://github.com/Prism-Shadow/penguin-harness-design/blob/main/rfcs/PRFC-0001-module.md) in the design repository.
-> **Rev**: v2.2.0; per-version changes are recorded in `## Changes` at the end.
+> **Rev**: v2.3.0; per-version changes are recorded in `## Changes` at the end.
 
 - Feature Name: `module`
 - Start Date: 2026-09-02
@@ -11,9 +11,9 @@
 ## Summary
 [summary]: #summary
 
-The Module mechanism covers declarations, decorators, signature projection, dependency resolution, compilation and runtime assembly. Authors use Interface contracts, Component implementations and Module scopes; decorators attach the declarations from which the generator produces signature-level data. Passes transform immutable declaration snapshots, final verification checks the assembled result, and the runtime creates and connects its instances. Plugin selection determines which declarations and passes participate.
+The Module mechanism covers declarations, operators, signature projection, dependency resolution, compilation and runtime assembly. Authors use Interface contracts, Component implementations and Module scopes; class and field annotations attach the declarations from which the generator produces signature-level data. Passes transform immutable declaration snapshots, final verification checks the assembled result, and the runtime creates and connects its instances. Plugin selection determines which declarations and passes participate.
 
-A Decorator is a declaration transformation in this mechanism. The TypeScript `@...` forms express that operation on classes and fields; their meaning is part of the design. Source, intermediate and accepted declaration snapshots share one representation, while runtime instances have their own lifecycle. [Module Pass](PRFC-0025-module-pass.md) defines rewriting and final decoration; [Plugin](PRFC-0003-plugin.md) defines installation, removal and generation changes.
+An Operator is a declaration transformation in this mechanism. The TypeScript `@...` forms express declaration construction and operator application on classes and fields. Source, intermediate and accepted declaration snapshots share one representation, while runtime instances have their own lifecycle. [Module Pass](PRFC-0025-module-pass.md) defines rewriting and deferred recipe operators; [Plugin](PRFC-0003-plugin.md) defines installation, removal and generation changes.
 
 ## Motivation
 [motivation]: #motivation
@@ -43,7 +43,7 @@ A sandbox backend has to keep working after a hot push. The platform side requir
 
 The authoring forms describe the parts to assemble: **Interface** is a contract expressed through method and field signatures; **Component** provides its own instance; **Module** groups children and publishes selected provisions. A declaration records identity, contracts, dependencies and the recipe that produces its code or value. A slot receives an ordered collection of contributions.
 
-Decorators declare or refine these facts. `@Module` and `@Component` identify the class's role, `@Interface()` declares an interface handle, and `@Use`, `@Provide` and `@Bind` attach requirements, provisions and contribution bindings to fields. `extends Interface<T>()` names an existing contract. The generator reads these forms statically and the runtime interprets their resulting declarations. A pass may replace a component with a mock or filter a slot without mutating earlier snapshots; intermediate missing dependencies and type mismatches are checked after the composed edits finish.
+Class and field annotations declare or refine these facts. `@Module` and `@Component` identify the class's role, `@Interface()` declares an interface handle, and `@Use`, `@Provide` and `@Bind` attach requirements, provisions and contribution bindings to fields. `extends Interface<T>()` names an existing contract. The generator reads these forms statically and the runtime interprets their resulting declarations. A pass may replace a component with a mock or filter a slot without mutating earlier snapshots; intermediate missing dependencies and type mismatches are checked after the composed edits finish.
 
 A node declares what it wants with `@Use()` fields, what it gives with `@Provide()` fields, hands over the code half of a contribution with `@Bind()`, and hands over the state to be retained with `park()`. Dependencies finish injecting before the optional `setup()`; the lifecycle hook is named `setup()` rather than `create()`, because the repo itself already has a domain method named `create`.
 
@@ -58,13 +58,15 @@ The server's business surface is organized this way: most services and all repos
 ## Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
 
-### Declarations and decorators
+### Declarations and operators
 
 The mechanism uses qualified declaration identities, contract data and opaque recipes. A Module introduces a lexical scope and an ordered assembly of declarations. A Component contributes a declaration whose recipe creates the instance; a slot exposes an ordered view of contribution declarations. These views do not create separate lifecycle stages for source, intermediate and accepted snapshots.
 
-A Decorator is a pure transformation of a declaration, applied in declared order. It may refine the provided contract, append a requirement or transform the recipe; the qualified identity and position belong to the surrounding Module and remain fixed. Composition applies the left decorator before the right, is associative and has an identity operation. General decorators need not preserve type validity or commute. A recipe-only decorator preserves declared contracts, without thereby guaranteeing the behavior of the code it produces.
+An Operator is a pure transformation of a declaration, applied in declared order. It may refine the provided contract, append a requirement or transform the recipe; the qualified identity and position belong to the surrounding Module and remain fixed. Composition applies the left operator before the right, is associative and has an identity operation. General operators need not preserve validity or commute. A recipe operator preserves declared contracts, without thereby guaranteeing the behavior of the code it produces.
 
-In class notation, `@Module` and `@Component` introduce the declaration and scope, while field decorators refine the associated requirement, provision or contribution declaration. A class with several provisions or contributions produces the corresponding declaration entries. This logical order is the order recorded for composition; source-language evaluation order must be translated consistently. It is not permission to execute arbitrary runtime code during signature projection.
+Operator application has type `Declaration → Declaration`; lifting an operator to a named entry, or editing a collection, has type `Module → Module`. These types specify the inputs and outputs of the operations. Final validity separately checks identities, visibility, compatible dependencies and acyclicity. An operator can be correctly typed while producing an intermediate Module that fails those checks.
+
+In class notation, `@Module` and `@Component` introduce the declaration and scope, while field decorators express operator application to the associated requirement, provision or contribution declaration. A class with several provisions or contributions produces the corresponding declaration entries. This logical order is the order recorded for composition; source-language evaluation order must be translated consistently. It is not permission to execute arbitrary runtime code during signature projection.
 
 The assembled snapshot preserves declaration and contribution order. Removing a uniquely identified, present slot member reduces the slot from N entries to N−1 without removing its owner component. Replacing a component preserves its identity while its new contract is verified with the final assembly. Duplicate identities, missing providers and incompatible contracts may occur during rewriting, but cannot be admitted into a running generation.
 
@@ -311,6 +313,11 @@ Agent Workbench (formerly Workflow) describes its backend and UI in one declarat
 The frontend has a tree of its own too: `web/src/module.json` is already the App's manifest — each page's route, navigation position, whether it is admin-only, and its renderer name are all in there, and the routes and the sidebar are exported from it; `GET /api/contributions` returns, as data, what the server contributes to the frontend slots, and the frontend renders only the renderers it recognizes. The possibility of both trees using the same set of judgment rules is left for another piece.
 
 ## Changes
+
+### v2.3.0
+
+- Updated: named declaration transformations Operator and separated operation types from final Module validity.
+- Updated: related class and field annotations to declaration construction and operator application.
 
 ### v2.2.0
 

@@ -1,7 +1,7 @@
 import ModuleModel.External
 
 /-!
-Specification: ../../../PRFC-0001-module.md, "Declarations and decorators",
+Specification: ../../../PRFC-0001-module.md, "Declarations and operators",
 "Visibility is lexical" and "Compilation, verification and runtime assembly".
 
 A module is a finite sequence of named declarations. A qualified name determines
@@ -13,7 +13,7 @@ names, and translating slot syntax to declarations, are outside this first model
 Order is observable: filtering a slot must preserve its remaining members' order.
 
 This resolved-declaration abstraction covers part of the Module mechanism, which
-also includes authoring decorators, projection, resolution and runtime assembly.
+also includes authoring annotations, operators, projection, resolution and runtime assembly.
 In particular, the namespace predicate below must be related to the RFC's lexical
 visibility rules by elaboration; it does not replace those rules.
 -/
@@ -72,7 +72,7 @@ def AgreesOutside (selected : Name → Bool) (before after : Module) : Prop :=
 def Depends (m : Module) (owner target : Name) : Prop :=
   ∃ decl required, (owner, decl) ∈ m ∧ (target, required) ∈ decl.requires
 
-/-- Semantic validity; intermediate modules need not satisfy it. -/
+/-- Semantic validity is separate from the `Module` type; intermediate results need not satisfy it. -/
 def Valid (m : Module) : Prop :=
   (names m).Nodup ∧
   (∀ name decl, (name, decl) ∈ m → named name = true) ∧

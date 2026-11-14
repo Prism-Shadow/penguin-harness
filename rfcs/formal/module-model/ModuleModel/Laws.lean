@@ -1,7 +1,7 @@
 import ModuleModel.Plugin
 
 /-!
-Specifications: ../../../PRFC-0001-module.md (declarations and decorators),
+Specifications: ../../../PRFC-0001-module.md (declarations and operators),
 ../../../PRFC-0025-module-pass.md (composition and termination contracts), and
 ../../../PRFC-0003-plugin.md (reconfiguration guarantees).
 
@@ -106,75 +106,75 @@ theorem admission_preserves_validity (current candidate : Module) (order : List 
 
 end Module
 
-namespace Decorator
+namespace Operator
 
 -- PRFC-0001: logical composition and application at a fixed declaration identity.
 
-theorem andThen_associative (a b c : Decorator) :
+theorem andThen_associative (a b c : Operator) :
     andThen (andThen a b) c = andThen a (andThen b c) := by
   sorry
 
-theorem identity_left (decorator : Decorator) : andThen identity decorator = decorator := by
+theorem identity_left (operator : Operator) : andThen identity operator = operator := by
   sorry
 
-theorem identity_right (decorator : Decorator) : andThen decorator identity = decorator := by
+theorem identity_right (operator : Operator) : andThen operator identity = operator := by
   sorry
 
-theorem on_composition (a b : Decorator) (name : Name) (m : Module) :
+theorem on_composition (a b : Operator) (name : Name) (m : Module) :
     on name (andThen a b) m = on name b (on name a m) := by
   sorry
 
-theorem on_preserves_names (decorator : Decorator) (name : Name) (m : Module) :
-    Module.names (on name decorator m) = Module.names m := by
+theorem on_preserves_names (operator : Operator) (name : Name) (m : Module) :
+    Module.names (on name operator m) = Module.names m := by
   sorry
 
-theorem on_local (decorator : Decorator) (name : Name) (m : Module) :
-    Module.AgreesOutside (fun other => other == name) m (on name decorator m) := by
+theorem on_local (operator : Operator) (name : Name) (m : Module) :
+    Module.AgreesOutside (fun other => other == name) m (on name operator m) := by
   sorry
 
 theorem recipe_preserves_contracts (wrap : Code → Code) : PreservesContracts (recipe wrap) := by
   sorry
 
-theorem composition_preserves_contracts (a b : Decorator)
+theorem composition_preserves_contracts (a b : Operator)
     (left : PreservesContracts a) (right : PreservesContracts b) :
     PreservesContracts (andThen a b) := by
   sorry
 
-theorem on_preserves_validity (decorator : Decorator) (name : Name) (m : Module)
-    (contracts : PreservesContracts decorator) :
-    Module.Valid (on name decorator m) ↔ Module.Valid m := by
+theorem on_preserves_validity (operator : Operator) (name : Name) (m : Module)
+    (contracts : PreservesContracts operator) :
+    Module.Valid (on name operator m) ↔ Module.Valid m := by
   sorry
 
-end Decorator
+end Operator
 
 namespace Pass
 
 -- Finite interpretation, with no bound on module size and no fuel parameter.
 
 theorem evaluates_terminates (pass : Pass) (m : Module) :
-    ∃ result rules steps, Evaluates pass m result rules steps := by
+    ∃ result rules steps, EvaluatesIn pass m result rules steps := by
   sorry
 
 theorem evaluates_unique (pass : Pass) (m a b : Module)
-    (ra rb : List Decoration) (na nb : Nat)
-    (left : Evaluates pass m a ra na) (right : Evaluates pass m b rb nb) :
+    (ra rb : List DeferredRule) (na nb : Nat)
+    (left : EvaluatesIn pass m a ra na) (right : EvaluatesIn pass m b rb nb) :
     a = b ∧ ra = rb ∧ na = nb := by
   sorry
 
 /-- Counts pass operations; callbacks and the type checker have separate costs. -/
-theorem evaluates_steps (pass : Pass) (m result : Module) (rules : List Decoration) (steps : Nat)
-    (evaluation : Evaluates pass m result rules steps) : steps = pass.length := by
+theorem evaluates_steps (pass : Pass) (m result : Module) (rules : List DeferredRule) (steps : Nat)
+    (evaluation : EvaluatesIn pass m result rules steps) : steps = pass.length := by
   sorry
 
 theorem collect_correct (pass : Pass) (m : Module) :
-    Evaluates pass m (collect pass m).1 (collect pass m).2 pass.length := by
+    EvaluatesIn pass m (collect pass m).1 (collect pass m).2 pass.length := by
   sorry
 
 theorem append_associative (a b c : Pass) :
     append (append a b) c = append a (append b c) := by
   sorry
 
-/-- Collect across the whole composition before materializing any decoration. -/
+/-- Collect across the whole composition before applying any deferred rule. -/
 theorem collect_append (a b : Pass) (m : Module) :
     collect (append a b) m =
       let first := collect a m
@@ -182,36 +182,36 @@ theorem collect_append (a b : Pass) (m : Module) :
       (second.1, first.2 ++ second.2) := by
   sorry
 
--- Final decoration. No behavioral law about code is assumed.
+-- Final recipe operators. No behavioral law about code is assumed.
 
-theorem selected_exactly (rules : List Decoration) (rule : Decoration)
+theorem selected_exactly (rules : List DeferredRule) (rule : DeferredRule)
     (name : Name) (decl : Declaration) :
     rule ∈ selected rules name decl ↔ rule ∈ rules ∧ rule.1 name decl = true := by
   sorry
 
-theorem selection_preserves_order (rules : List Decoration) (name : Name) (decl : Declaration) :
+theorem selection_preserves_order (rules : List DeferredRule) (name : Name) (decl : Declaration) :
     (selected rules name decl).Sublist rules := by
   sorry
 
-theorem materialize_preserves_contracts (rules : List Decoration) (m : Module) :
+theorem materialize_preserves_contracts (rules : List DeferredRule) (m : Module) :
     (materialize rules m).map (fun (name, decl) => (name, decl.type, decl.requires)) =
       m.map (fun (name, decl) => (name, decl.type, decl.requires)) := by
   sorry
 
-theorem materialize_preserves_validity (rules : List Decoration) (m : Module) :
+theorem materialize_preserves_validity (rules : List DeferredRule) (m : Module) :
     Module.Valid (materialize rules m) ↔ Module.Valid m := by
   sorry
 
 /-- Each matching list occurrence wraps once, in order, selected from the final declaration. -/
-theorem final_decoration (pass : Pass) (m result : Module) (rules : List Decoration)
+theorem final_recipe_operators (pass : Pass) (m result : Module) (rules : List DeferredRule)
     (collected : collect pass m = (result, rules))
     (name : Name) (decl : Declaration) (found : Module.lookup result name = some decl) :
     Module.lookup (run pass m) name =
       some { decl with code := (selected rules name decl).foldl (fun code rule => rule.2 code) decl.code } := by
   sorry
 
-theorem decoration_covers_later_edits (rule : Decoration) (f : Module → Module) (m : Module) :
-    run (.decorate rule (.edit f .done)) m = materialize [rule] (f m) := by
+theorem deferred_operators_cover_later_edits (rule : DeferredRule) (f : Module → Module) (m : Module) :
+    run (.defer rule (.edit f .done)) m = materialize [rule] (f m) := by
   sorry
 
 theorem removed_targets_stay_absent (pass : Pass) (m : Module) (name : Name)

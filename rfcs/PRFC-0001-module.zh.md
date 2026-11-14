@@ -3,7 +3,7 @@
 [English](PRFC-0001-module.md)
 
 > **来源**：迁自设计仓的 [PRFC-0001-module](https://github.com/Prism-Shadow/penguin-harness-design/blob/main/rfcs/PRFC-0001-module.md)。
-> **修订**：v2.2.0；逐版本改动记在文末 `## Changes`。
+> **修订**：v2.3.0；逐版本改动记在文末 `## Changes`。
 
 - Feature Name: `module`
 - Start Date: 2026-09-02
@@ -11,9 +11,9 @@
 ## Summary
 [summary]: #summary
 
-Module 机制覆盖声明、Decorator、签名投影、依赖解析、编译和运行时装配。作者使用 Interface 契约、Component 实现与 Module 作用域；Decorator 附加声明，生成器据此产出签名级数据。Pass 变换不可变声明快照，最终验证检查装配结果，运行时创建并连接实例。插件选择决定哪些声明和 pass 参与。
+Module 机制覆盖声明、Operator、签名投影、依赖解析、编译和运行时装配。作者使用 Interface 契约、Component 实现与 Module 作用域；类与字段标注附加声明，生成器据此产出签名级数据。Pass 变换不可变声明快照，最终验证检查装配结果，运行时创建并连接实例。插件选择决定哪些声明和 pass 参与。
 
-Decorator 是该机制中的声明变换，TypeScript 的 `@...` 写法在类和字段上表达它，其含义属于设计本身。原始、中间与已接受的声明快照使用同一种表示，运行时实例另有生命周期。改写和最终 decoration 见 [Module Pass](PRFC-0025-module-pass.zh.md)，安装、卸载与换代见 [Plugin](PRFC-0003-plugin.zh.md)。
+Operator 是该机制中的声明变换，TypeScript 的 `@...` 写法在类和字段上表达声明构造与算子应用。原始、中间与已接受的声明快照使用同一种表示，运行时实例另有生命周期。改写和延后配方算子见 [Module Pass](PRFC-0025-module-pass.zh.md)，安装、卸载与换代见 [Plugin](PRFC-0003-plugin.zh.md)。
 
 ## Motivation
 [motivation]: #motivation
@@ -43,7 +43,7 @@ Decorator 是该机制中的声明变换，TypeScript 的 `@...` 写法在类和
 
 作者接口描述待装配的部分：**Interface** 通过方法与字段签名表达契约，**Component** 提供自己的实例，**Module** 组织子节点并发布选定的提供物。声明记录身份、契约、依赖及产出代码或值的配方；slot 接收有序的贡献集合。
 
-Decorator 声明或细化这些事实：`@Module` 和 `@Component` 指定类的角色，`@Interface()` 声明接口句柄，`@Use`、`@Provide` 和 `@Bind` 在字段上附加需求、提供物与贡献绑定。`extends Interface<T>()` 为已有契约命名。生成器静态读取这些写法，运行时解释由此得到的声明。Pass 可以把组件替换为 mock 或筛选 slot，且不修改旧快照；中间态的依赖缺失和类型失配在组合编辑完成后统一检查。
+类与字段标注声明或细化这些事实：`@Module` 和 `@Component` 指定类的角色，`@Interface()` 声明接口句柄，`@Use`、`@Provide` 和 `@Bind` 在字段上附加需求、提供物与贡献绑定。`extends Interface<T>()` 为已有契约命名。生成器静态读取这些写法，运行时解释由此得到的声明。Pass 可以把组件替换为 mock 或筛选 slot，且不修改旧快照；中间态的依赖缺失和类型失配在组合编辑完成后统一检查。
 
 一个节点用 `@Use()` 字段声明它要什么，用 `@Provide()` 字段声明它给出什么，用 `@Bind()` 交出某个贡献的代码半，用 `park()` 交出要留存的状态。依赖在可选的 `setup()` 之前注入完毕；生命周期钩子叫 `setup()` 而不是 `create()`，因为 repo 本身就有一个叫 `create` 的领域方法。
 
@@ -58,13 +58,15 @@ Decorator 声明或细化这些事实：`@Module` 和 `@Component` 指定类的�
 ## Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
 
-### 声明与 Decorator
+### 声明与 Operator
 
 机制使用限定的声明身份、契约数据与不透明配方。Module 引入词法作用域，并按顺序装配声明；Component 提供由配方创建实例的声明，slot 暴露贡献声明的有序视图。这些视图不为原始、中间和已接受的快照另设生命周期阶段。
 
-Decorator 是按声明顺序应用的纯声明变换，可以细化提供契约、追加需求或变换配方；限定身份和位置由所在 Module 持有，保持不变。组合先应用左侧、再应用右侧，满足结合律并有恒等操作。一般 Decorator 不保证保持类型合法性，也不保证交换律。只变换配方的 Decorator 保持声明契约，但不因此保证产出代码的行为。
+Operator 是按声明顺序应用的纯声明变换，可以细化提供契约、追加需求或变换配方；限定身份和位置由所在 Module 持有，保持不变。组合先应用左侧、再应用右侧，满足结合律并有恒等操作。一般算子不保证保持合法性，也不保证交换律。配方算子保持声明契约，但不因此保证产出代码的行为。
 
-类写法中，`@Module` 与 `@Component` 引入声明和作用域，字段 Decorator 细化对应的需求、提供物或贡献声明。一个类有多个提供物或贡献时，生成对应的声明条目。这里的逻辑顺序是组合所记录的顺序，具体语言的求值顺序必须一致地转换；它不允许在签名投影期间执行任意运行时代码。
+算子应用的类型为 `Declaration → Declaration`；将算子提升到指定条目或编辑集合时，类型为 `Module → Module`。这些类型规定操作的输入与输出。最终合法性另行检查身份、可见性、依赖兼容性和无环性。算子本身类型正确，仍可以产生不满足这些检查的中间 Module。
+
+类写法中，`@Module` 与 `@Component` 引入声明和作用域，字段装饰器表达对相应需求、提供物或贡献声明的算子应用。一个类有多个提供物或贡献时，生成对应的声明条目。这里的逻辑顺序是组合所记录的顺序，具体语言的求值顺序必须一致地转换；它不允许在签名投影期间执行任意运行时代码。
 
 装配快照保留声明和贡献顺序。删除唯一标识且确实存在的 slot 成员，使数量从 N 变为 N−1，不移除其所属组件。替换组件保留身份，新契约随最终装配一起验证。改写期间可以存在身份重复、provider 缺失与契约失配，但这些状态不能被接受为运行中的一代。
 
@@ -311,6 +313,11 @@ Agent Workbench（原 Workflow）以一份声明描述 backend 与 UI，沿用�
 前端也有自己的一棵树：`web/src/module.json` 已经是 App 的清单，页面的路由、导航位置、是否管理员限定、渲染器名字都在里面，路由与侧栏由它导出；`GET /api/contributions` 把服务端投给前端槽的东西作为数据返回，前端只渲染自己认得的渲染器。两棵树用同一套判定的可能性留待另一篇。
 
 ## Changes
+
+### v2.3.0
+
+- Updated：将声明变换命名为 Operator，区分操作类型与最终 Module 合法性。
+- Updated：明确类与字段标注对应声明构造和算子应用。
 
 ### v2.2.0
 

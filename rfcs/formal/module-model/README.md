@@ -1,6 +1,6 @@
 # Module model draft
 
-A Lean model for reviewing declarations, decorators, passes and plugin selection before
+A Lean model for reviewing declarations, operators, passes and plugin selection before
 writing proofs. Every theorem in `ModuleModel/Laws.lean` deliberately uses `sorry`.
 A successful build checks definitions and theorem statements; it does not establish
 those theorems or the correctness of the TypeScript implementation.
@@ -21,8 +21,8 @@ theorems and remaining obligations; [build instructions](../README.md) cover bot
 | Concept | Definition |
 | --- | --- |
 | Module | A finite, ordered sequence of qualified names and declarations. Each declaration has a type, named requirements and an opaque code recipe. |
-| Decorator | A pure transformation of one declaration, applied in logical composition order. Identity and position are held by the Module. |
-| Pass | A finite composition of declaration edits and final decorations. |
+| Operator | A pure transformation of one declaration, applied in logical composition order. Identity and position are held by the Module. |
+| Pass | A finite composition of declaration edits and deferred recipe operators. |
 | Plugin | A name associating declarations with a pass. A fixed catalog defines precedence and revisions; enabled names select its members. |
 
 A declaration is the entry in a Module, not another lifecycle object. A Component is
@@ -43,14 +43,19 @@ of this draft. A declaration may depend on names in its own namespace and enclos
 namespaces. Dependencies must admit a decreasing natural-number rank, allowing a
 startup order without cycles.
 
-`Decorator` belongs to the domain model, alongside Module, Pass and Plugin. `withType`,
+`Operator` belongs to the domain model, alongside Module, Pass and Plugin. `withType`,
 `require` and `recipe` refine a declaration's contract, dependencies and code.
 `andThen` composes them; `on` applies one at a fixed identity. Class and field annotations
-are one notation for declaration construction and decoration. Their parsing, elaboration,
+are one notation for declaration construction and operator application. Their parsing, elaboration,
 multi-provision expansion and source-language evaluation order are not defined here.
-An ordinary decorator may change contracts and break validity. Deferred pass rules use
-`Decorator.recipe`, the same operation restricted to code, with selection on the final
+An ordinary operator may change contracts and break validity. Deferred pass rules use
+`Operator.recipe`, the same operation restricted to code, with selection on the final
 structural snapshot.
+
+`Operator = Declaration → Declaration` and an edit's `Module → Module` type describe
+their input and output representations. Neither entails `Module.Valid` for the output.
+The final checker judges identities, visibility, compatible dependencies and acyclicity
+after all edits and deferred recipe operators have been applied.
 
 ## Definitions and assumptions
 
@@ -60,9 +65,9 @@ Read the files in this order:
    optional checker answer, and the one external propositional axiom.
 2. `ModuleModel/Module.lean`: declarations, scope, edits, validity and a checker using
    an ordinary name list as the proposed startup order.
-3. `ModuleModel/Decorator.lean`: declaration transformations, composition, application
+3. `ModuleModel/Operator.lean`: declaration transformations, composition, application
    at a fixed identity and preservation of contracts.
-4. `ModuleModel/Pass.lean`: composition, final decoration and relational evaluation.
+4. `ModuleModel/Pass.lean`: composition, deferred recipe operators and relational evaluation.
 5. `ModuleModel/Plugin.lean`: assembly from a fixed base and the enabled plugin set.
 6. `ModuleModel/Laws.lean`: the proposed theorem statements.
 
@@ -77,9 +82,12 @@ concerns declarations and dependencies, not runtime type safety.
 Callbacks are pure, total Lean functions. The built-in edits use finite input
 snapshots; generated entries are not revisited. An arbitrary TS callback needs a
 separate refinement argument before it can be treated as one of these functions.
-The termination statement counts pass operations, not callback work or wall time.
+`Pass.Evaluates` observes the structural result and deferred rules. Its counted
+refinement, `Pass.EvaluatesIn`, also records the number of scheduled instructions;
+`Evaluates` existentially hides that count. The termination statement counts pass
+operations, not callback work or wall time.
 
-Decoration has a separate meaning from an ordinary edit. Selectors see the final
+Deferred operators have an explicit application boundary. Selectors see the final
 structural declarations, and matching rules transform each recipe in order. Each
 list occurrence is applied once; registering the same rule twice applies it twice.
 Selectors do not observe earlier wrappers. Consequently, running two passes
@@ -95,12 +103,12 @@ preserves application behavior.
 - Validation: sound admission; completeness when answers are available; resolved,
   visible and compatible dependencies; absence of cycles; refusal of unanswered
   questions; preservation of the current module on rejection.
-- Decorators: associative composition with identity; composition at a fixed name;
+- Operators: associative composition with identity; composition at a fixed name;
   name preservation and locality; recipe and composition contract preservation;
   validity preservation conditional on unchanged contracts.
 - Passes: existence and uniqueness of finite evaluation; agreement of the interpreter
   and the relational meaning; associative composition; final selection, order and
-  coverage of decoration; preservation of declared contracts.
+  coverage of deferred recipe operators; preservation of declared contracts.
 - Plugins: equality under equal enabled sets; fresh install/uninstall round trips;
   idempotent install/uninstall; absence of retired plugins from scheduling; retention
   while another request remains; well-founded retries under strict retirement.

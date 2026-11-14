@@ -3,7 +3,7 @@
 [English](PRFC-0003-plugin.md)
 
 > **来源**：迁自设计仓的 [PRFC-0003-plugin](https://github.com/Prism-Shadow/penguin-harness-design/blob/main/rfcs/PRFC-0003-plugin.md)。
-> **修订**：v2.2.0；逐版本改动记在文末 `## Changes`。
+> **修订**：v2.3.0；逐版本改动记在文末 `## Changes`。
 
 - Feature Name: `plugin`
 - Start Date: 2026-09-02
@@ -12,7 +12,7 @@
 ## Summary
 [summary]: #summary
 
-Plugin 通过包提供模块声明及可选的 pass。安装与卸载改变有效选择，再从原始声明重建。声明重建与运行时交接遵循同一套 Module 机制，包括 Decorator、签名检查和生命周期。
+Plugin 通过包提供模块声明及可选的 pass。安装与卸载改变有效选择，再从原始声明重建。声明重建与运行时交接遵循同一套 Module 机制，包括 Operator、签名检查和生命周期。
 
 平台维护一个核心框架，其余的功能以插件接入。插件是一个 npm 包，内容是一组 Module，与平台自己的节点同一种写法。每次 App 创建时，平台读取所有 Project 插件表的并集，按签名检查这些 Module，再把它们作为模块树的子节点启动；它们经平台的槽贡献功能，只活一代 App；插件升级也靠 App 重新创建生效，状态可以 park 进新的一代。插件表随 Project 同步到它用到的每台机器，每台机器自己安装、自己重新装配，不重启进程。插件的影响范围由配置决定：激活的是插件的功能，而不是插件本身。
 
@@ -204,6 +204,10 @@ App 在以下时刻创建，每次都重新加载插件：
 只重建受影响的子树，减少一次插件变更需要重新装配的范围。
 
 ## Changes
+
+### v2.3.0
+
+- Updated：将声明变换术语与 Module 机制中的 Operator 对齐。
 
 ### v2.2.0
 

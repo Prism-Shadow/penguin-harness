@@ -1,7 +1,7 @@
 #import "@preview/faithful-acmart:0.2.0": *
 
 // Governing specifications: ../../PRFC-0001-module.md,
-// ../../PRFC-0003-plugin.md and ../../PRFC-0025-module-pass.md, revision v2.2.0.
+// ../../PRFC-0003-plugin.md and ../../PRFC-0025-module-pass.md, revision v2.3.0.
 // Third-party acmart port: https://github.com/fzaiser/faithful-acmart/tree/v0.2.0
 // The acmsmall settings follow POPL/PACMPL; this is a design draft.
 #show: acmart.with(
@@ -14,26 +14,26 @@
   authors-addresses: none,
   doi: none,
   isbn: none,
-  title: "Declarations, Decorators, and Replay in a Module Mechanism",
+  title: "Declarations, Operators, and Replay in a Module Mechanism",
   subtitle: "A model and theorem-statement draft for PenguinHarness",
   short-title: "Module Semantics: Design Draft",
   authors: (),
   abstract: [
-    PenguinHarness assembles components from declarations, decorators, interface
+    PenguinHarness assembles components from declarations, operators, interface
     signatures, dependency resolution, compile passes, and runtime lifecycle rules.
     Instrumentation must cover declarations introduced by later passes, while mocks,
     contribution removal, and plugin uninstallation require structural changes.
-    We specify a finite declaration model with ordinary decorators and deferred
-    recipe decoration. Edits may temporarily violate contracts; admission checks the
+    We specify a finite declaration model with ordinary and deferred recipe
+    operators. Edits may temporarily violate contracts; admission checks the
     final result using an external TypeScript compatibility relation. Plugin changes
-    rebuild from the original declarations rather than invert prior edits. A shared abstract syntax connects these operations to
-    their semantics and to a worked example of mock replacement, tab removal,
-    telemetry, and plugin removal. The paper makes the intended value and its
-    conditions explicit. Existing theorem candidates are restated in that syntax;
+    rebuild from the original declarations. A shared abstract syntax, direct operator
+    application and big-step Pass evaluation explain a worked example of mock
+    replacement, tab removal, telemetry and plugin removal. The paper makes the
+    intended value and its conditions explicit. Existing theorem candidates are restated in that syntax;
     theorem selection and all proofs remain deferred. Source elaboration, diagnostic
     provenance, and runtime recovery require additional arguments.
   ],
-  keywords: ("module systems", "decorators", "rewriting", "plugin reconfiguration", "Lean"),
+  keywords: ("module systems", "operators", "rewriting", "plugin reconfiguration", "Lean"),
 )
 
 #show raw.where(block: true): set block(breakable: false)
@@ -42,7 +42,7 @@
 = Introduction
 
 PenguinHarness assembles an application from interface contracts, component
-recipes, scoped declarations, decorators, and plugin contributions. Its Module
+recipes, scoped declarations, operators, and plugin contributions. Its Module
 mechanism also includes signature projection, dependency resolution, verification,
 and runtime handover. The governing specifications are the Module, Plugin, and
 Module Pass RFCs #cite(<rfc-module>, <rfc-plugin>, <rfc-pass>).
@@ -62,7 +62,7 @@ We use four requirements to evaluate the design:
 - *R1: express structural changes directly.* An author can replace a recipe or
   remove a named contribution while retaining other declarations. A contribution
   has its own identity; removing it need not remove its owner component.
-- *R2: make decoration coverage predictable.* A telemetry rule selects the final
+- *R2: make operator coverage predictable.* A deferred telemetry rule selects the final
   structural declarations, including later replacements. Its application does not
   depend on repeatedly rewriting wrapper-generated output until convergence.
 - *R3: validate a composed change.* Authors can pass through temporary contract
@@ -74,7 +74,7 @@ We use four requirements to evaluate the design:
   Authors do not have to supply an inverse for every deletion or replacement.
 
 The proposed mechanism uses one immutable declaration representation, finite pass
-composition, an explicit final decoration boundary, and rebuilding from source.
+composition, an explicit boundary for deferred operators, and rebuilding from source.
 Its intended value is to make the effects of a composed change inspectable: which
 entries remain, which recipes are wrapped, which dependencies must check, and
 which inputs determine a rebuild. It does not prescribe a query-language-only
@@ -91,12 +91,12 @@ concern.
 
 == Scope of the claims
 
-Module, Decorator, Pass, and Plugin are domain concepts. Names, contracts,
+Module, Operator, Pass, and Plugin are domain concepts. Names, contracts,
 requirements, and recipes are data within them. Source, intermediate, and accepted
 snapshots use the same Module representation; validity is a judgment about that
 representation. Class and field annotations are one way to express declaration
-construction and decoration. Their elaboration must preserve identities,
-contracts, scope, and logical decorator order.
+construction and operator application. Their elaboration must preserve identities,
+contracts, scope, and logical operator order.
 
 This draft studies declaration operations. It does not yet establish the
 elaboration from class syntax, diagnostic provenance, or runtime park/load and
@@ -107,9 +107,9 @@ await a separate decision about which guarantees merit proof.
 
 = Syntax <syntax>
 
-// PRFC-0001: Declarations and decorators; PRFC-0025: Edits and decorators;
+// PRFC-0001: Declarations and operators; PRFC-0025: Edits and deferred operators;
 // PRFC-0003: Compile passes and generation changes.
-We give one abstract syntax for declarations, decorators, edits, passes, and
+We give one abstract syntax for declarations, operators, edits, passes, and
 plugins. The remaining sections use these categories rather than introduce a new
 vocabulary for each mechanism. The notation presents the existing domain
 operations; it does not require an implementation to allocate a syntax tree for
@@ -131,7 +131,7 @@ $
 Every sequence in @grammar is finite. $[x_1, dots, x_n]$ includes the empty sequence
 $[]$; $x :: L$ prepends an element and $L_1 ⧺ L_2$ concatenates sequences.
 $epsilon$ is the empty pass. A semicolon inside a declaration separates fields;
-in decorator and pass expressions it specifies logical execution order.
+in operator and pass expressions it specifies logical execution order.
 Comprehensions and sums over sequences count occurrences, including duplicates.
 
 #figure(
@@ -144,9 +144,9 @@ Comprehensions and sums over sequences count occurrences, including duplicates.
     [Requirements], [$R ::= [(q_1 : tau_1), dots, (q_n : tau_n)]$],
     [Declaration], [$d ::= ⟨ tau; R; c ⟩$],
     [Module], [$M ::= [q_1 mapsto d_1, dots, q_n mapsto d_n]$],
-    [Decorator], [$D ::= "id" | "type"(tau) | "need"(q, tau) | "recipe"(w) | D;D | a$],
+    [Operator], [$O ::= "id" | "type"(tau) | "need"(q, tau) | "recipe"(w) | O;O | a$],
     [Edit], [$E ::= "add"(M) | "filter"(p) | "remove"(u) | "replace"(q, d)$ \
-      $quad | "expand"(h) | "filterAt"(s, p) | "at"(q, D) | f$],
+      $quad | "expand"(h) | "filterAt"(s, p) | "at"(q, O) | f$],
     [Pass], [$P ::= epsilon | E;P | "defer"(p, w);P$],
     [Plugin], [$g ::= ⟨ q; M; P ⟩$],
     [Catalog], [$K ::= [g_1, dots, g_n]$],
@@ -162,9 +162,9 @@ Comprehensions and sums over sequences count occurrences, including duplicates.
 
 A declaration $⟨ tau;R;c ⟩$ offers a contract, requires named contracts,
 and carries a recipe. Its name and position belong to the surrounding Module.
-An ordinary decorator $D$ transforms one declaration. Thus $"at"(q,D)$ preserves
-the target's identity while applying a decorator. $"defer"(p,w)$ records a
-selector and the same recipe decorator $"recipe"(w)$ for application after all
+An ordinary operator $O$ transforms one declaration. Thus $"at"(q,O)$ preserves
+the target's identity while applying an operator. $"defer"(p,w)$ records a
+selector and the same recipe operator $"recipe"(w)$ for application after all
 structural edits. The latter cannot change a declaration's offered type or
 requirements.
 
@@ -189,6 +189,26 @@ requests and request order are representable, but selection uses membership.
 $S + q$ installs $q$ if absent, and $S - q$ removes all occurrences of $q$.
 Project requests combine by union of their supports. These are operations on
 configuration data; they introduce no new kind of Module.
+
+== Operation types
+
+We write application directly as $O thin d$ and $E thin M$. The equations in @semantics
+define how these applications compute. With the parameter types above,
+
+$
+  O &: "Decl" arrow "Decl", \
+  E &: "Module" arrow "Module", \
+  "run" thin &: "Pass" arrow "Module" arrow "Module".
+$
+
+These types specify the input and output representations. For example,
+$"at"(q,O)$ lifts a declaration operator to a Module edit, and $"filter"(p)$
+requires a predicate on a named declaration. Neither type requires the output
+Module to satisfy its dependencies. The separate judgment $⊢ M "ok"$ checks
+identities, visibility, contract compatibility and acyclicity at admission.
+Thus a correctly typed edit can produce an intermediate Module that fails
+that judgment; a subsequent edit may repair it. Purity and totality remain
+additional premises on callbacks.
 
 #block(breakable: false, above: 0.65em)[
 == One example in this syntax
@@ -220,34 +240,36 @@ and the result after removing the plugin from the request sequence.
 
 = Semantics and design value <semantics>
 
-We interpret the syntax of @syntax to answer R1--R4. $⟦D⟧d$ applies a
-decorator, $⟦E⟧M$ applies an edit, and $⟦P⟧M$ evaluates a complete pass, including
-its final decorations. These are functions on declarations and snapshots, not
-execution of the recipes they contain.
+We use direct application for operators and edits, big-step evaluation for Passes,
+and a separate validity judgment for admission. $O thin d$ applies an operator,
+$E thin M$ applies an edit, and $"run" thin P thin M$ evaluates a complete pass, including its
+deferred recipe operators. These operations transform declarations and snapshots;
+the recipes they contain remain unexecuted.
 
 == R1: structural edits have an explicit target
 
-// PRFC-0001: Declarations and decorators.
-For $d=⟨ tau;R;c ⟩$, decorator meanings are:
+// PRFC-0001: Declarations and operators.
+For $d=⟨ tau;R;c ⟩$, the application equations are:
 
 $
-  ⟦"id"⟧d &= d, \
-  ⟦"type"(tau')⟧d &= ⟨ tau';R;c ⟩, \
-  ⟦"need"(q,tau')⟧d &= ⟨ tau;R ⧺ [(q:tau')];c ⟩, \
-  ⟦"recipe"(w)⟧d &= ⟨ tau;R;w(c) ⟩, \
-  ⟦D_1;D_2⟧d &= ⟦D_2⟧(⟦D_1⟧d), & ⟦a⟧d &= a(d).
+  "id" thin d &= d, \
+  "type"(tau') thin d &= ⟨ tau';R;c ⟩, \
+  "need"(q,tau') thin d &= ⟨ tau;R ⧺ [(q:tau')];c ⟩, \
+  "recipe"(w) thin d &= ⟨ tau;R;w(c) ⟩, \
+  (O_1;O_2) thin d &= O_2 thin (O_1 thin d).
 $
 
-$⟦"at"(q,D)⟧M$ applies $D$ to every entry named $q$ and preserves its position;
+$"at"(q,O) thin M$ applies $O$ to every entry named $q$ and preserves its position;
 other entries remain unchanged. $"replace"(q,d)$ instead substitutes $d$ at those
 positions. $"add"(A)$ appends $A$. $"filter"(p)$ retains matching entries in their
 original order, and $"remove"(u)$ retains those whose names fail $u$.
 $"filterAt"(s,p)$ applies the filter only to entries in $M[s]$.
-$"expand"(h)$ concatenates $h(q,d)$ for each input entry, and $⟦f⟧M=f(M)$.
+$"expand"(h)$ concatenates $h(q,d)$ for each input entry. The parameters $a$ and
+$f$ use ordinary function application.
 
 In the example, set
-$M_1=⟦"replace"(q_s,d_m)⟧M_0$ and
-$M_2=⟦"remove"(u_d)⟧M_1$. Then
+$M_1="replace"(q_s,d_m) thin M_0$ and
+$M_2="remove"(u_d) thin M_1$. Then
 
 $
   M_1 &= [q_s mapsto d_m, q_d mapsto d_d, q_h mapsto d_h], \
@@ -257,40 +279,38 @@ $
 The observable change is precise: the debug contribution disappears, the help tab
 retains its identity and order, and the store remains present with a mock recipe.
 The tab view changes from $|M_0[s_t]|=2$ to $|M_2[s_t]|=1$.
-A general decorator may change contracts; this freedom is needed for structural
+A general operator may change contracts; this freedom is needed for structural
 rewrites, with validity checked at the boundary described below.
 
 #block(breakable: false, above: 0.65em)[
-== R2: a single final boundary determines decoration coverage
+== R2: a single final boundary determines operator coverage
 
-// PRFC-0025: Edits and decorators; Composition and termination contracts.
-Use the evaluation judgment
-$⟨ P,M ⟩ ⇓ (M',Delta,k)$ for structural evaluation: it
-returns a snapshot, an ordered list of deferred pairs $(p,w)$, and an instruction
-count. Its rules are:
+// PRFC-0025: Edits and deferred operators; Composition and termination contracts.
+The big-step judgment $⟨ P,M ⟩ ⇓ (M',Delta)$ returns a structural snapshot and
+an ordered list of deferred pairs $(p,w)$. Its rules are:
 
 $
   mat(delim: #none, row-gap: #0.6em,
-    display(frac(, ⟨ epsilon,M ⟩ ⇓ (M,[],0))), "Done";
-    display(frac(⟨ P,⟦E⟧M ⟩ ⇓ (M',Delta,k),
-      ⟨ E;P,M ⟩ ⇓ (M',Delta,k+1))), "Edit";
-    display(frac(⟨ P,M ⟩ ⇓ (M',Delta,k),
-      ⟨ "defer"(p,w);P,M ⟩ ⇓ (M',(p,w)::Delta,k+1))), "Defer";
+    display(frac(, ⟨ epsilon,M ⟩ ⇓ (M,[]))), "Done";
+    display(frac(⟨ P,E thin M ⟩ ⇓ (M',Delta),
+      ⟨ E;P,M ⟩ ⇓ (M',Delta))), "Edit";
+    display(frac(⟨ P,M ⟩ ⇓ (M',Delta),
+      ⟨ "defer"(p,w);P,M ⟩ ⇓ (M',(p,w)::Delta))), "Defer";
   )
 $
 ]
 
 Let $"sel"(Delta,q,d)$ retain precisely the pairs whose predicates accept $(q,d)$,
-in list order. Finalization $F_Delta$ maps each entry $q mapsto d$ to
-$q mapsto ⟦"recipe"(w_1); dots; "recipe"(w_j)⟧d$, using the selected pairs.
+in list order. Finalization $"finalize" thin Delta$ maps each entry $q mapsto d$ to
+$q mapsto ("recipe"(w_1); dots; "recipe"(w_j)) thin d$, using the selected pairs.
 All selections inspect $M'$ before any wrapper is applied. An empty selection uses
-$"id"$. We define $⟦P⟧M=F_Delta (M')$ from the structural judgment above.
+$"id"$. We define $"run" thin P thin M="finalize" thin Delta thin M'$ from the structural judgment above.
 
 For the running example,
 
 $
-  ⟨ P_t,M_0 ⟩ &⇓ (M_2,[(p_s,w_t)],3), \
-  ⟦P_t⟧M_0 &= [q_s mapsto ⟨ tau_m;[];w_t (c_m) ⟩, q_h mapsto d_h].
+  ⟨ P_t,M_0 ⟩ &⇓ (M_2,[(p_s,w_t)]), \
+  "run" thin P_t thin M_0 &= [q_s mapsto ⟨ tau_m;[];w_t (c_m) ⟩, q_h mapsto d_h].
 $
 
 Telemetry therefore wraps the mock that survives the edits. The removed tab has
@@ -301,7 +321,7 @@ wrapper order without making wrapper output another rewrite target.
 Composition must preserve that boundary. For example,
 $P_a="defer"(p_s,w_t);epsilon$ and
 $P_b="replace"(q_s,d_m);epsilon$ give the recipe $w_t (c_m)$ in
-$⟦P_a ⊙ P_b⟧M_0$, whereas $⟦P_b⟧(⟦P_a⟧M_0)$ gives $c_m$.
+$"run" thin (P_a ⊙ P_b) thin M_0$, whereas $"run" thin P_b thin ("run" thin P_a thin M_0)$ gives $c_m$.
 The latter is two completed builds. This distinction is observable and is part of
 the authoring contract.
 
@@ -345,7 +365,7 @@ $
 For the example, suppose $chi(tau_s,tau_s)="yes"$ and
 $chi(tau_m,tau_s)="no"$. The debug tab's dependency is satisfied in $M_0$ and
 broken in $M_1$. The next edit removes that requirement by deleting its owner;
-$M_2$ and its recipe-decorated result have no remaining requirements. With the
+$M_2$ and its final wrapped result have no remaining requirements. With the
 stated well-formed, distinct names, they pass final verification. Thus the composed
 edit is admissible even though its intermediate snapshot is not.
 
@@ -365,12 +385,13 @@ $[⟨ q_i;M_i;P_i ⟩]_(i=1)^r$. With base Module $B$, define
 $
   "source"(B,K,S) &= B ⧺ M_1 ⧺ dots ⧺ M_r, \
   "program"(K,S) &= P_1 ⊙ dots ⊙ P_r, \
-  "build"(B,K,S) &= ⟦"program"(K,S)⟧"source"(B,K,S).
+  "build"(B,K,S) &= "run" thin ("program"(K,S)) thin ("source"(B,K,S)).
 $
 
-An empty selection contributes no declarations and the empty pass $epsilon$. Every build starts from the
-source terms in this equation. For $B=M_0$ and $K=[g_t]$, enabling $q_t$ gives
-$"build"(M_0,[g_t],[q_t])=⟦P_t⟧M_0$. Removing that request gives
+An empty selection contributes no declarations and the empty pass $epsilon$.
+Every build starts from the source terms in this equation. For $B=M_0$ and
+$K=[g_t]$, enabling $q_t$ gives
+$"build"(M_0,[g_t],[q_t])="run" thin P_t thin M_0$. Removing that request gives
 
 $
   "build"(M_0,[g_t],[q_t]-q_t) = "build"(M_0,[g_t],[]) = M_0.
@@ -397,7 +418,7 @@ artifacts independently of the build equation.
     midrule(),
     [R1], [$M_2$ retains the mock store and help tab; the debug tab is absent.],
       [Stable contribution identities and immutable snapshots.],
-    [R2], [$⟦P_t⟧M_0$ contains $w_t (c_m)$ after one finalization.],
+    [R2], [$"run" thin P_t thin M_0$ contains $w_t (c_m)$ after one finalization.],
       [All composed passes share one final boundary; callbacks are total.],
     [R3], [$M_1$ fails a requirement; the final result can still be admitted.],
       [Completed tsc checks, graph validation, and diagnostic provenance.],
@@ -424,43 +445,43 @@ not a selected set of contributions. All proofs remain deferred. Equality below
 is equality of semantic results unless an expression explicitly denotes a sequence;
 it does not identify different syntax trees by definition.
 
-== Decorators and structural edits
+== Operators and structural edits
 
-#theorem(title: "Candidate law", name: "Decorator composition and locality")[
-  For all $D_1,D_2,D_3,d$,
-  $⟦(D_1;D_2);D_3⟧d=⟦D_1;(D_2;D_3)⟧d$, and
-  $⟦"id";D_1⟧d=⟦D_1⟧d=⟦D_1;"id"⟧d$.
+#theorem(title: "Candidate law", name: "Operator composition and locality")[
+  For all $O_1,O_2,O_3,d$,
+  $((O_1;O_2);O_3) thin d=(O_1;(O_2;O_3)) thin d$, and
+  $("id";O_1) thin d=O_1 thin d=(O_1;"id") thin d$.
   Moreover,
   $
-    ⟦"at"(q,D_1;D_2)⟧M = ⟦"at"(q,D_2)⟧(⟦"at"(q,D_1)⟧M).
+    "at"(q,O_1;O_2) thin M = "at"(q,O_2) thin ("at"(q,O_1) thin M).
   $
   Application preserves $"names"(M)$ and $M(q')$ for $q' != q$.
-  Let $"ctr"(⟨ tau;R;c ⟩)=(tau,R)$ and let $"CP"(D)$ mean
-  $forall d, "ctr"(⟦D⟧d)="ctr"(d)$.
-  Then $"CP"("recipe"(w))$; $"CP"(D_1)$ and $"CP"(D_2)$ imply
-  $"CP"(D_1;D_2)$; and $"CP"(D)$ implies
-  $(⊢ ⟦"at"(q,D)⟧M "ok") ⇔ (⊢ M "ok")$.
+  Let $"ctr"(⟨ tau;R;c ⟩)=(tau,R)$ and let $"CP"(O)$ mean
+  $forall d, "ctr"(O thin d)="ctr"(d)$.
+  Then $"CP"("recipe"(w))$; $"CP"(O_1)$ and $"CP"(O_2)$ imply
+  $"CP"(O_1;O_2)$; and $"CP"(O)$ implies
+  $(⊢ "at"(q,O) thin M "ok") ⇔ (⊢ M "ok")$.
 ]
 
 Contract preservation concerns the declared $(tau,R)$ fields. It supplies no
-behavioral equivalence of the recipes, and general $D$ need not satisfy it.
+behavioral equivalence of the recipes, and general $O$ need not satisfy it.
 
 #theorem(title: "Candidate law", name: "Editing laws")[
   For pure entry predicates $p_1,p_2$ and fixed name predicates $u,v$,
   $
-    ⟦"filter"(p_2)⟧(⟦"filter"(p_1)⟧M) &= ⟦"filter"(p_1 and p_2)⟧M, \
-    ⟦"remove"(u)⟧(⟦"remove"(u)⟧M) &= ⟦"remove"(u)⟧M, \
-    ⟦"remove"(v)⟧(⟦"remove"(u)⟧M) &= ⟦"remove"(u or v)⟧M \
-      &= ⟦"remove"(u)⟧(⟦"remove"(v)⟧M).
+    "filter"(p_2) thin ("filter"(p_1) thin M) &= "filter"(p_1 and p_2) thin M, \
+    "remove"(u) thin ("remove"(u) thin M) &= "remove"(u) thin M, \
+    "remove"(v) thin ("remove"(u) thin M) &= "remove"(u or v) thin M \
+      &= "remove"(u) thin ("remove"(v) thin M).
   $
   Removal retains exactly those names failing its predicate.
   $"replace"(q,d)$ preserves the name sequence and lookup outside $q$.
   $"filterAt"(s,p)$ agrees with $"filter"(p)$ on $M[s]$ and preserves lookup
   outside $s$. For unique names and a present $q$ directly in $s$,
   $
-    |(⟦"remove"(lambda x . x=q)⟧M)[s]|+1=|M[s]|.
+    |("remove"(lambda x . x=q) thin M)[s]|+1=|M[s]|.
   $
-  Finally, $|⟦"expand"(h)⟧M|=sum_((q mapsto d) in M)|h(q,d)|$.
+  Finally, $|"expand"(h) thin M|=sum_((q mapsto d) in M)|h(q,d)|$.
 ]
 
 Here conjunction and disjunction are pointwise predicate combinations. A callback
@@ -483,37 +504,37 @@ bound for a particular persistent representation.
   $
 ]
 
-== Pass evaluation and final decoration
+== Pass evaluation and deferred operators
 
 #theorem(title: "Candidate law", name: "Finite evaluation and composition")[
-  For every finite $P,M$ there exist unique $M',Delta,k$ such that
-  $⟨ P,M ⟩ ⇓ (M',Delta,k)$, with $k=|P|$.
+  For every finite $P,M$ there exist unique $M',Delta$ such that
+  $⟨ P,M ⟩ ⇓ (M',Delta)$.
   The recursive interpreter agrees with this relation. Concatenation $⊙$ is
-  associative. If $⟨ P,M ⟩ ⇓ (M_1,Delta_1,k_1)$ and
-  $⟨ Q,M_1 ⟩ ⇓ (M_2,Delta_2,k_2)$, then
+  associative. If $⟨ P,M ⟩ ⇓ (M_1,Delta_1)$ and
+  $⟨ Q,M_1 ⟩ ⇓ (M_2,Delta_2)$, then
   $
-    ⟨ P ⊙ Q,M ⟩ ⇓ (M_2,Delta_1 ⧺ Delta_2,k_1+k_2).
+    ⟨ P ⊙ Q,M ⟩ ⇓ (M_2,Delta_1 ⧺ Delta_2).
   $
 ]
 
 The decreasing structure is the remaining pass sequence. There is no fuel limit
-or bound on Module size; the embedded callbacks must already be total. The count
-$|P|$ excludes their internal work and the duration of external checks.
+or bound on Module size; the embedded callbacks must already be total. A counted
+refinement of this judgment is given in @cost.
 
-#theorem(title: "Candidate law", name: "Final decoration")[
+#theorem(title: "Candidate law", name: "Final recipe application")[
   $"sel"(Delta,q,d)$ retains exactly the accepting occurrences of $Delta$ in
   their original order. Extending $"ctr"$ entrywise to retain names gives
-  $"ctr"(F_Delta (M))="ctr"(M)$ and
-  $(⊢ F_Delta (M) "ok") ⇔ (⊢ M "ok")$.
-  If $⟨ P,M ⟩ ⇓ (M',Delta,k)$ and
+  $"ctr"("finalize" thin Delta thin M)="ctr"(M)$ and
+  $(⊢ "finalize" thin Delta thin M "ok") ⇔ (⊢ M "ok")$.
+  If $⟨ P,M ⟩ ⇓ (M',Delta)$ and
   $M'(q)=⟨ tau;R;c ⟩$, then
   $
-    (⟦P⟧M)(q)=⟨ tau;R;w_j (dots w_1 (c) dots) ⟩,
+    ("run" thin P thin M)(q)=⟨ tau;R;w_j (dots w_1 (c) thin dots) ⟩,
   $
   where $[(p_1,w_1),dots,(p_j,w_j)]="sel"(Delta,q,M'(q))$; for $j=0$ the
   recipe is $c$. In particular,
-  $⟦"defer"(p,w);E;epsilon⟧M=F_([(p,w)]) (⟦E⟧M)$, and
-  $q ∉ "names"(M')$ ⇒ $q ∉ "names"(⟦P⟧M)$.
+  $"run" thin ("defer"(p,w);E;epsilon) thin M="finalize" thin [(p,w)] thin (E thin M)$, and
+  $q ∉ "names"(M')$ ⇒ $q ∉ "names"("run" thin P thin M)$.
 ]
 
 == Plugin selection and retirement
@@ -547,7 +568,23 @@ A policy that drops original contribution groups without removing a plugin needs
 a measure that also counts those groups. The current statement does not cover
 that policy or promise the largest usable subset.
 
-= Cost, correspondence, and remaining obligations
+= Cost, correspondence, and remaining obligations <cost>
+
+For operation counts, refine the structural judgment to
+$⟨ P,M ⟩ scripts(⇓)_k (M',Delta)$. It uses the same rules with count zero for Done and
+one added to the premise's count for Edit and Defer. Erasing that count gives
+the earlier judgment:
+
+$
+  ⟨ P,M ⟩ ⇓ (M',Delta) ⇔ exists k, ⟨ P,M ⟩ scripts(⇓)_k (M',Delta).
+$
+
+#theorem(title: "Candidate law", name: "Operation count")[
+  If $⟨ P,M ⟩ scripts(⇓)_k (M',Delta)$, then $k=|P|$.
+]
+
+The count measures scheduled pass instructions. It excludes callback work,
+finalization and external checking; it is neither a fuel limit nor a time bound.
 
 For $n$ entries in the final structural Module $M'$ and $d$ pairs in $Delta$,
 direct finalization evaluates $n times d$ selectors and performs one recipe
@@ -562,8 +599,9 @@ work separately. No benchmark or measured capacity claim is made here.
 The syntax is interpreted by the existing Lean definitions. The paper's three
 checker answers correspond to `some true`, `some false`, and `none`; it assumes
 only agreement of completed answers with compatibility. The structural judgment
-corresponds to `Evaluates`. The concrete function and constructor names are mapped
-below so that implementation vocabulary does not have to carry the exposition.
+corresponds to `Evaluates`, which hides the count in `EvaluatesIn`. The concrete
+function and constructor names are mapped below so that implementation vocabulary
+does not have to carry the exposition.
 
 #figure(
   tabular(
@@ -573,10 +611,11 @@ below so that implementation vocabulary does not have to carry the exposition.
     [Paper notation], [Lean correspondence], [Status],
     midrule(),
     [$tau,c,≼,chi$], [`External.lean`: `Ty`, `Code`, `Compatible`, `typeCheck`], [External assumption],
-    [$d,M,E$], [`Module.lean`: declarations and edits; $"at"$ uses `Decorator.on`], [Definitions],
-    [$"type", "need", "recipe", D_1;D_2$], [`Decorator.lean`: `withType`, `require`, `recipe`, `andThen`], [Definitions],
-    [$epsilon,E;P,"defer"(p,w);P$], [`Pass.lean`: `done`, `edit`, `decorate`], [Definitions],
-    [$⇓,F_Delta,⟦P⟧M$], [`Pass.lean`: `Evaluates`, `materialize`, `run`], [Definitions],
+    [$d,M,E$], [`Module.lean`: declarations and edits; $"at"$ uses `Operator.on`], [Definitions],
+    [$"type", "need", "recipe", O_1;O_2$], [`Operator.lean`: `withType`, `require`, `recipe`, `andThen`], [Definitions],
+    [$epsilon,E;P,"defer"(p,w);P$], [`Pass.lean`: `done`, `edit`, `defer`], [Definitions],
+    [$⇓,"finalize" thin Delta,"run" thin P thin M$], [`Pass.lean`: `Evaluates`, `materialize`, `run`], [Definitions],
+    [$scripts(⇓)_k$], [`Pass.lean`: `EvaluatesIn`], [Definition],
     [$⊢ M "ok",V,"admit"$], [`Module.lean`: `Valid`, `verify`, `admit`], [Definitions],
     [$g,K[S],"build",≺$], [`Plugin.lean`: selection, rebuilding, `Retires`], [Definitions],
     [@candidates], [`Laws.lean`: the existing candidate statements], [Proofs deferred],

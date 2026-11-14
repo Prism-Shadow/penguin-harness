@@ -11,6 +11,10 @@ mechanism independently of the proof language and proof status.
   illustrated by mock replacement, tab removal, telemetry and plugin removal. Existing
   theorem candidates use that syntax; their selection and proof priorities remain open.
 
+Declaration transformations are Operators. The paper uses direct operator application,
+big-step Pass evaluation and a separate judgment for final Module validity. Operation
+counts refine evaluation in the cost discussion.
+
 From the repository root, build the model with the version pinned in
 `module-model/lean-toolchain`:
 

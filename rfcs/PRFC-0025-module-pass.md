@@ -4,11 +4,11 @@
 
 - Feature Name: `module_compile`
 - Start Date: 2026-10-25
-- Rev: v2.2.0
+- Rev: v2.3.0
 
 ## Summary
 
-A Pass composes edits and deferred decoration over an assembled Module declaration snapshot. It belongs to the full [Module mechanism](PRFC-0001-module.md), including decorators, signature projection and dependency checks. Structural edits produce a new snapshot; deferred decorators select their targets from the final structural result. Verification precedes boot. [Plugin](PRFC-0003-plugin.md) defines which declarations and passes participate in a build.
+A Pass composes edits and deferred recipe operators over an assembled Module declaration snapshot. It belongs to the full [Module mechanism](PRFC-0001-module.md), including operators, signature projection and dependency checks. Structural edits produce a new snapshot; deferred rules select their targets from the final structural result. Verification precedes boot. [Plugin](PRFC-0003-plugin.md) defines which declarations and passes participate in a build.
 
 ## Motivation
 
@@ -43,9 +43,11 @@ Its plugin exports the factory in `passes.telemetry`. Factories are resolved ane
 
 ## Reference-level explanation
 
-### Edits and decorators
+### Edits and deferred operators
 
-A pass is a finite sequence of structural edits and deferred recipe decorators. A Decorator transforms one declaration as defined in [Module](PRFC-0001-module.md). Ordinary declaration decorators run when the author applies them. `decorate` records a selector and a recipe-only decorator for the final structural result; it cannot change names, provided types or requirements. These operations share declaration semantics while choosing different application times.
+A pass is a finite sequence of structural edits and deferred recipe operators. An Operator transforms one declaration as defined in [Module](PRFC-0001-module.md). Ordinary declaration operators run when the author applies them. `decorate` records a selector and a recipe operator for the final structural result; it cannot change names, provided types or requirements. These operations share declaration semantics while choosing different application times.
+
+An edit's `Module → Module` type checks its input and output representation. It does not require each intermediate Module to satisfy final dependency checks. The complete pass produces a candidate, and final verification decides admission.
 
 An edit is a pure, total transformation. `add`, `filter`, fixed-name `remove`, identity-preserving `replace`, `expand` and namespace-local `filterAt` are functions on Module values, not additional pass variants. Built-in collection edits inspect their finite input snapshot; `expand` concatenates the callback results without visiting its own output. Conditions can inspect the current entry or current Module. They do not weaken the totality and purity preconditions, and predicates that inspect a changing Module do not inherit the algebra of fixed-name removal.
 
@@ -106,6 +108,11 @@ Pipeable operators follow RxJS's composition style. Persistent data structures m
 Profile representative interface catalogs before introducing incremental execution or query optimization. A transformation checker may later validate the requested edit in addition to final type validity; accepting a well-typed result alone cannot establish that a requested deletion or replacement occurred.
 
 ## Changes
+
+### v2.3.0
+
+- Updated: described deferred recipe transformations using the same Operator concept as ordinary declaration transformations.
+- Clarified: operation types and final dependency validity are separate judgments.
 
 ### v2.2.0
 

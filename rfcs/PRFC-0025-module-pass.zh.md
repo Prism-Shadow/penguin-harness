@@ -4,11 +4,11 @@
 
 - Feature Name: `module_compile`
 - Start Date: 2026-10-25
-- Rev: v2.2.0
+- Rev: v2.3.0
 
 ## Summary
 
-Pass 在装配后的 Module 声明快照上组合编辑和延后 decoration，属于包含 Decorator、签名投影和依赖检查的完整 [Module 机制](PRFC-0001-module.zh.md)。结构编辑产生新快照，延后的 Decorator 在最终结构结果上选择目标，验证通过后才 boot。[Plugin](PRFC-0003-plugin.zh.md) 定义哪些声明与 pass 参与构建。
+Pass 在装配后的 Module 声明快照上组合编辑和延后配方算子，属于包含 Operator、签名投影和依赖检查的完整 [Module 机制](PRFC-0001-module.zh.md)。结构编辑产生新快照，延后规则在最终结构结果上选择目标，验证通过后才 boot。[Plugin](PRFC-0003-plugin.zh.md) 定义哪些声明与 pass 参与构建。
 
 ## Motivation
 
@@ -43,9 +43,11 @@ const testMode: ModulePass = {
 
 ## Reference-level explanation
 
-### 编辑与 Decorator
+### 编辑与延后算子
 
-Pass 是结构编辑和延后配方 Decorator 的有限序列。Decorator 按 [Module](PRFC-0001-module.zh.md) 的定义变换单个声明；普通声明 Decorator 在作者应用它时执行，`decorate` 则登记 selector 与只变换配方的 Decorator，在最终结构结果上执行，不改变名称、提供类型或需求。两者使用相同的声明语义，应用时机不同。
+Pass 是结构编辑和延后配方算子的有限序列。Operator 按 [Module](PRFC-0001-module.zh.md) 的定义变换单个声明；普通声明算子在作者应用它时执行，`decorate` 则登记 selector 与配方算子，在最终结构结果上执行，不改变名称、提供类型或需求。两者使用相同的声明语义，应用时机不同。
+
+Edit 的 `Module → Module` 类型检查输入与输出的表示，不要求每个中间 Module 都满足最终依赖检查。完整 Pass 产生候选，由最终验证决定是否接受。
 
 Edit 是纯且全定义的变换。`add`、`filter`、按固定名称的 `remove`、保留身份的 `replace`、`expand` 和命名空间内的 `filterAt` 都是 Module 值上的函数，不另设 pass 变体。内置集合编辑读取有限输入快照；`expand` 拼接回调结果，不遍历自己的输出。条件可以读取当前条目或当前 Module，但仍须满足纯度与全定义前提；检查变化中 Module 的谓词不自动享有固定名称删除的代数律。
 
@@ -106,6 +108,11 @@ Pipeable operator 借鉴 RxJS 的组合风格；持久化数据结构提供可�
 在代表性接口目录上 profile 后，再决定增量执行与查询优化。未来的变换检查器可以在最终类型合法之外验证指定编辑；只接受合法类型结果不足以说明指定删除或替换确实发生。
 
 ## Changes
+
+### v2.3.0
+
+- Updated：延后配方变换与普通声明变换统一使用 Operator 概念。
+- Clarified：操作类型与最终依赖合法性是独立的判断。
 
 ### v2.2.0
 
