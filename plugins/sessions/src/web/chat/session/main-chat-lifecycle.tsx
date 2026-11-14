@@ -1,4 +1,4 @@
-import { scoped } from "@prismshadow/penguin-web/internal";
+import { scoped } from "./project-scope";
 import { adoptBrowserSession } from "@prismshadow/penguin-web/internal";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SessionInfo, SessionStatus } from "@prismshadow/penguin-server/api";
