@@ -1,27 +1,27 @@
-export { sameModelRef } from "../../lib/model-grouping";
+export { sameModelRef } from "./model-grouping.js";
 
-export { hasConfiguredKey } from "../../lib/model-grouping";
+export { hasConfiguredKey } from "./model-grouping.js";
 
-export { promotedPricing } from "../../lib/model-grouping";
+export { promotedPricing } from "./model-grouping.js";
 
-export { discountedPrice } from "../../lib/model-grouping";
+export { discountedPrice } from "./model-grouping.js";
 
-export { groupModelRows } from "../../lib/model-grouping";
+export { groupModelRows } from "./model-grouping.js";
 
-export { isFreeModel } from "../../lib/model-grouping";
+export { isFreeModel } from "./model-grouping.js";
 
-export { visibleChatModels } from "../../lib/model-grouping";
+export { visibleChatModels } from "./model-grouping.js";
 
-export type { ModelCredentialRowLike } from "../../lib/model-grouping";
+export type { ModelCredentialRowLike } from "./model-grouping.js";
 
-export type { ModelRefValue } from "../../lib/model-grouping";
+export type { ModelRefValue } from "./model-grouping.js";
 
-export type { ModelRowLike } from "../../lib/model-grouping";
+export type { ModelRowLike } from "./model-grouping.js";
 
-export { modelTags } from "../../lib/model-tags";
+export { modelTags } from "./model-tags.js";
 
-export type { ModelTag } from "../../lib/model-tags";
+export type { ModelTag } from "./model-tags.js";
 
-export { loadModelGroupOrder } from "../../lib/model-group-order";
+export { loadModelGroupOrder } from "./model-group-order.js";
 
-export { turnPricing } from "../../lib/model-grouping";
+export { turnPricing } from "./model-grouping.js";
