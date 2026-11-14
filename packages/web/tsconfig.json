@@ -117,6 +117,9 @@
       "@prismshadow/penguin-server/internal": [
         "../server/src/internal.ts"
       ],
+      "@prismshadow/penguin-server/model-catalog": [
+        "../server/src/model-catalog/index.ts"
+      ],
       "@prismshadow/penguin-web/internal": [
         "./src/internal.ts"
       ]
