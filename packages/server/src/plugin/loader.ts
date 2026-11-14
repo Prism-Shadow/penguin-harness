@@ -33,7 +33,7 @@ import {
 } from "@prismshadow/penguin-core";
 import type { PluginDeclaration } from "@prismshadow/penguin-core";
 import { findPackageJSON } from "node:module";
-import { existsSync, statSync, realpathSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type {
@@ -44,7 +44,7 @@ import type {
   Resources,
 } from "@prismshadow/penguin-core/kernel";
 import { moduleDefOf } from "@prismshadow/penguin-core/kernel";
-import { pluginsPrefix, linkedPackages } from "./install.js";
+import { pluginsPrefix } from "./install.js";
 import { unpackedAssetsDir } from "../hmr/asset-archives.js";
 
 import { readManifest } from "../hmr/manifest.js";
@@ -54,32 +54,6 @@ import { PluginHost, pluginHostFrom } from "./host.js";
 import platformTable from "../ifaces.json" with { type: "json" };
 import { checkIfaces, ifaceQuestions } from "./iface-check.js";
 import { loadTypeScript, TypeScriptUnavailable, type TypeScript } from "./typescript.js";
-
-/**
- * The paths a link answers for, computed once per root: a link's record names the author's
- * directory, but a package resolved through the prefix answers at the link's own path inside
- * it (`node_modules/<name>`), so both stand for the same link and a resolved package matches
- * either. Read once per batch (the routes call `refreshLinkDirs` before a page's
- * declarations); a link command in this process re-refreshes it, so a just-made link is
- * marked on the next read.
- */
-let linkDirs: Set<string> | null = null;
-let linkDirsRoot: string | undefined;
-function linkPaths(): Set<string> {
-  return linkDirs ?? new Set();
-}
-export async function refreshLinkDirs(root: string | undefined): Promise<void> {
-  const out = new Set<string>();
-  if (root !== undefined && root !== "") {
-    const prefix = pluginsPrefix(root);
-    for (const [name, link] of Object.entries(await linkedPackages(prefix))) {
-      out.add(link.path);
-      out.add(path.join(prefix, "node_modules", ...name.split("/")));
-    }
-  }
-  linkDirs = out;
-  linkDirsRoot = root;
-}
 
 
 /**
@@ -401,26 +375,7 @@ export async function readPluginDeclaration(
     modules: [...read.plugin.modules],
     replaces: [...read.plugin.replaces],
     builtin: resolved.base.builtin,
-    // A link reads as what it is: the prefix resolves the name through a symlink the
-    // `penguin plugin link` command parked there, and the row says so and names the author's
-    // directory — the page's link mark and the disk-truth reading both come from here.
-    ...linkOf(resolved.dir),
   };
-}
-
-/** The link a resolved package came through, when it is one the link command parked: the
- * package answers at the link inside the prefix, whose real path is the author's directory —
- * the record that names it is what the mark reads. */
-function linkOf(dir: string): { linked?: true; linkPath?: string } {
-  let real: string;
-  try {
-    real = realpathSync(dir);
-  } catch {
-    return {};
-  }
-  if (real === dir) return {};
-  if (!linkPaths().has(real)) return {};
-  return { linked: true, linkPath: real };
 }
 
 /**

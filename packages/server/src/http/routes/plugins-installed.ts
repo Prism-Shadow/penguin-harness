@@ -81,7 +81,6 @@ import {
   pluginBases,
   readPluginClosure,
   readPluginDeclaration,
-  refreshLinkDirs,
 } from "../../plugin/loader.js";
 import type { PluginPackages } from "../../mechanisms/plugins.js";
 import {
@@ -272,7 +271,6 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     // as what it now is. The route marks the rows itself — the table it read for the names
     // above is the one source of truth — and the loader's own reads stay mark-free.
     const links = await linkedPackages(pluginsPrefix(deps.root));
-    await refreshLinkDirs(deps.root);
     // `builtin` on a row is where the package CAME FROM, a tag, not a second way of being
     // asked for. What the package declares is read from its files; whether the process holds
     // it, and why not, is the host's — a load that failed says so, rather than passing as a
