@@ -29,7 +29,7 @@ import {
 import { S } from "@prismshadow/penguin-web/internal";
 import { toolDisplayName } from "@prismshadow/penguin-web/internal";
 import { stripAnsi } from "@prismshadow/penguin-web/internal";
-import { elidedArgumentsPreview, elidedPreview } from "@prismshadow/penguin-web/internal";
+import { elidedArgumentsPreview, elidedPreview } from "./elided-preview";
 import { routedUrl } from "@prismshadow/penguin-web/internal";
 import { approvalKey, type ToolCallItem } from "@prismshadow/penguin-web/internal";
 
