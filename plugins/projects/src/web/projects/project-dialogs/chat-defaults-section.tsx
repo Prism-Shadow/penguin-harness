@@ -28,7 +28,7 @@ import {
 } from "@prismshadow/penguin-web/internal";
 
 import { ModelCatalogSelect, modelLabel, SELECTABLE_THINKING_LEVELS } from "@penguinharness/plugin-models/web";
-import { WorkspaceSelect } from "@prismshadow/penguin-web/internal";
+import { WorkspaceSelect } from "@penguinharness/plugin-projects/web";
 import { sameModelRef } from "@penguinharness/plugin-models/web";
 import { PROJECT_SETTINGS_SCOPE } from "./shared";
 
