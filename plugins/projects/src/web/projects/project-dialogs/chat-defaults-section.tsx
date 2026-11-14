@@ -27,9 +27,9 @@ import {
   type ChatDefaultsChangedDetail,
 } from "@prismshadow/penguin-web/internal";
 
-import { ModelCatalogSelect, modelLabel, SELECTABLE_THINKING_LEVELS } from "@prismshadow/penguin-web/internal";
+import { ModelCatalogSelect, modelLabel, SELECTABLE_THINKING_LEVELS } from "@penguinharness/plugin-models/web";
 import { WorkspaceSelect } from "@prismshadow/penguin-web/internal";
-import { sameModelRef } from "@prismshadow/penguin-web/internal";
+import { sameModelRef } from "@penguinharness/plugin-models/web";
 import { PROJECT_SETTINGS_SCOPE } from "./shared";
 
 export const APPROVAL_MODES: readonly ApprovalMode[] = [
