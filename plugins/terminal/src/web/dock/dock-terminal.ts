@@ -26,6 +26,7 @@ import {
   terminalsOf,
   watchTerminals,
   type TerminalInfo,
+} from "@penguinharness/plugin-terminal/web";
 import {
   currentDockScope,
   docksOnScreen,
@@ -38,6 +39,7 @@ import {
   togglePanelShown,
   type DockPosition,
 } from "./dock-state";
+import { rememberTerminalMachine } from "../lib/terminal-machines";
 import { revealDocks } from "./dock-reveal";
 
 /** The terminal panel's id in the registry and the dock store (and its stored tab key). */
