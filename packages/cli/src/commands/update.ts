@@ -64,7 +64,7 @@ import { VERSION, compareVersions, normalizeVersion, userAgent } from "@prismsha
 import type { Command } from "commander";
 import type { InstallerSource, Messages } from "@prismshadow/penguin-server/cli";
 import { Bind, Component } from "@prismshadow/penguin-core/kernel";
-import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/plugin";
+import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/cli";
 import { getMessages } from "@prismshadow/penguin-server/cli";
 
 // The version helpers live in core (internal/version.ts) so the server's update-check
