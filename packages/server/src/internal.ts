@@ -186,4 +186,5 @@ export type { UserDraftsStore, BackgroundImageStore } from "./mechanisms/account
 export type { AppEnv } from "./auth/middleware.js";
 export { HttpError, badRequest } from "./http/errors.js";
 export { readJson, requireString } from "./http/validate.js";
+export { errorBody } from "./http/errors.js";
 export type { Hmr } from "./hmr/capabilities.js";

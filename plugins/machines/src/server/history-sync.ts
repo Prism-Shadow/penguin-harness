@@ -48,12 +48,12 @@ import type {
   HistoryProgress,
   HistoryWindowPart,
   MessagesResponse,
-} from "../api/types.js";
-import { HttpError } from "../http/errors.js";
-import { assembleWindow } from "../services/history-layout.js";
-import { historyLinesPath, parseHistoryFileKey } from "../services/history-wire.js";
-import type { HistoryLinesQuery } from "../services/history-wire.js";
-import { encodeCursor } from "../services/message-window.js";
+} from "@prismshadow/penguin-server/api";
+import { HttpError } from "@prismshadow/penguin-server/internal";
+import { assembleWindow } from "@penguinharness/plugin-usage/server";
+import { historyLinesPath, parseHistoryFileKey } from "@penguinharness/plugin-usage/server";
+import type { HistoryLinesQuery } from "@penguinharness/plugin-usage/server";
+import { encodeCursor } from "@penguinharness/plugin-usage/server";
 import { historyResponse } from "../services/session-history.js";
 import { SESSION_ROUTES_BASE } from "@penguinharness/plugin-usage/server";
 import type { MessagesPageRequest } from "../services/trace-service.js";

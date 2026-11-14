@@ -25,7 +25,7 @@ import type { Context } from "hono";
 import { Bind, Component, Interface, Use } from "@prismshadow/penguin-core/kernel";
 import type { LiveStreams } from "@prismshadow/penguin-server/internal";
 import type { AppEnv } from "@prismshadow/penguin-server/internal";
-import { errorBody } from "../http/errors.js";
+import { errorBody } from "@prismshadow/penguin-server/internal";
 import { streamRevocation } from "@prismshadow/penguin-server/internal";
 import type { SseRevocation } from "@penguinharness/plugin-machines/server/http/sse";
 import type { Auth } from "@prismshadow/penguin-server/internal";

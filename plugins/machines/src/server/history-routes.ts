@@ -30,8 +30,8 @@
  */
 import { bodyAt, decodeBodyRef } from "@prismshadow/penguin-core/interfaces";
 import type { AmspRecord } from "@prismshadow/penguin-core";
-import type { HistoryFileKey, TraceAnalysisResponse, TraceEventsResponse } from "../api/types.js";
-import { HttpError, errorBody } from "../http/errors.js";
+import type { HistoryFileKey, TraceAnalysisResponse, TraceEventsResponse } from "@prismshadow/penguin-server/api";
+import { HttpError, errorBody } from "@penguinharness/plugin-settings/server";
 import type { SseRevocation } from "@penguinharness/plugin-machines/server/http/sse";
 import {
   HeldWindows,
@@ -43,9 +43,9 @@ import {
   sendError,
   sendWindow,
   serializeWindow,
-} from "../services/history-stream.js";
-import type { HistoryOut } from "../services/history-stream.js";
-import { historyFileKey } from "../services/history-wire.js";
+} from "@penguinharness/plugin-usage/server";
+import type { HistoryOut } from "@penguinharness/plugin-usage/server";
+import { historyFileKey } from "@penguinharness/plugin-usage/server";
 import { traceRecordImage } from "@penguinharness/plugin-usage/server";
 import { AGENT_EVENTS, SESSION_EVENTS, SESSION_READ } from "./history-paths.js";
 import { GenerationClosed, HistorySync } from "./history-sync.js";

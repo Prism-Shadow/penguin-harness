@@ -50,7 +50,7 @@ import type {
   HistoryHave,
   HistoryLinesFrame,
   HistoryPartFrame,
-} from "../api/types.js";
+} from "@prismshadow/penguin-server/api";
 import {
   HAVE_MAX_CHARS,
   anchorOf,
@@ -58,7 +58,7 @@ import {
   loAnchorRange,
   parseHistoryFileKey,
   sameHistoryFile,
-} from "../services/history-wire.js";
+} from "@penguinharness/plugin-usage/server";
 import { LineCommitter, frameBytes } from "../socket/line-frames.js";
 
 /** The on-disk format; a directory written by another one is wiped when the cache opens. */
