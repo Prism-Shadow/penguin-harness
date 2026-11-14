@@ -1,7 +1,7 @@
 import { EmptyState } from "@prismshadow/penguin-ui";
 import { S } from "@prismshadow/penguin-web/internal";
 import { NAV_ICONS } from "@prismshadow/penguin-web/internal";
-import { panelLabel, type DockPanelBodyProps, type PanelId } from "../dock/index";
+import { panelLabel, type DockPanelBodyProps, type PanelId } from "@penguinharness/plugin-terminal/web";
 
 import { TracePanel } from "./trace-panel";
 import { useChatSession } from "@prismshadow/penguin-web/internal";

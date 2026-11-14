@@ -27,6 +27,9 @@
       "@prismshadow/penguin-server/ifaces.json": [
         "../../packages/server/src/ifaces.json"
       ],
+      "@penguinharness/plugin-terminal/web": [
+        "../terminal/src/web/index.ts"
+      ],
       "@prismshadow/penguin-web/internal": [
         "../../packages/web/src/internal.ts"
       ],
