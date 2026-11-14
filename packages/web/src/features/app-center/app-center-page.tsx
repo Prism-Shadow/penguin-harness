@@ -46,8 +46,8 @@ import { toastApiError } from "../../lib/toast-api-error";
 import { useLocale } from "../../state/locale";
 import { useMachines } from "../../state/machines";
 import { useProject } from "../../state/project";
-import { AiCreateButtons, AiCreateModal } from "../ai-create";
-import type { AiExample } from "../ai-create";
+import { AiCreateButtons, AiCreateModal } from "@penguinharness/plugin-sessions/web";
+import type { AiExample } from "@penguinharness/plugin-sessions/web";
 import { AppCenterWindow } from "./app-center-window";
 import { AppTile, FolderTile, MENU_PX, type TileMark } from "./app-tile";
 import {
