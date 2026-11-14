@@ -51,6 +51,7 @@ export * from "./lib/context";
 export * from "./lib/rsi-methods";
 export * from "./lib/todo-dismissals";
 export * from "./lib/usage-controls";
+export * from "./lib/status-tone";
 export * from "./lib/use-project-todos";
 export * from "./lib/use-rsi-toolkits";
 export * from "./lib/use-update-badges";
