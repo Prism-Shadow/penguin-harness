@@ -60,7 +60,7 @@ import {
   rangeDays,
   type EntityCounts,
   type RangePreset,
-} from "../../lib/usage-controls";
+} from "@prismshadow/penguin-web/internal";
 import { ErrorsPanel } from "./errors-panel";
 
 /** A summary card's stat row: name on the left, value on the right — each item on its own row, so a narrow card no longer crams them into one wrapping line. */

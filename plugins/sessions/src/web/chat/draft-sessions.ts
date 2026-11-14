@@ -23,8 +23,8 @@
 import { DRAFT_SESSION_ID } from "@prismshadow/penguin-server/api";
 import { useStore } from "zustand/react";
 import { createStore } from "zustand/vanilla";
-import { randomHex } from "../../lib/random-id";
-import { subscribeAccountApplied, syncedStorage } from "../../lib/account-sync/cache";
+import { randomHex } from "@prismshadow/penguin-web/internal";
+import { subscribeAccountApplied, syncedStorage } from "@prismshadow/penguin-web/internal";
 import {
   clearDraft,
   draftFromUnknown,

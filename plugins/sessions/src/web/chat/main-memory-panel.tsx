@@ -1,5 +1,5 @@
 import { EmptyState, ICONS } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 import { machineForSession } from "../lib/session-machines.js";
 import { panelLabel, type DockPanelBodyProps, type PanelId } from "../dock/index";
 

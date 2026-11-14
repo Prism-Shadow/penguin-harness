@@ -1,16 +1,16 @@
-import { sessionActivity, sessionBackgroundTasks } from "../../../lib/session-activity";
-import { bucketCostUsd } from "../../../lib/amsp/task-stats";
+import { sessionActivity, sessionBackgroundTasks } from "@prismshadow/penguin-web/internal";
+import { bucketCostUsd } from "@prismshadow/penguin-web/internal";
 import None{agentDisplayName} from "@prismshadow/penguin-web/internal";
 import { modelTaskStartCount } from "../agent-topology";
 import { ChatInput } from "../chat-input";
 import { approvalModeChoices } from "../approval-mode";
-import { sessionThinkingLevel } from "../../model-picker";
+import { sessionThinkingLevel } from "@prismshadow/penguin-web/internal";
 import { advanceCostStat } from "../header-stats";
-import { sameModelRef } from "../../models";
+import { sameModelRef } from "@prismshadow/penguin-web/internal";
 import { headerStats } from "../session/main-chat-helpers";
 import type { useChatController } from "../session/use-chat-controller";
 import { agentPagePath } from "../session/main-chat-dock";
-import { machineForSession } from "../../../lib/session-machines";
+import { machineForSession } from "@prismshadow/penguin-web/internal";
 
 export function createMainChatView(
   scope: ReturnType<typeof useChatController> & {

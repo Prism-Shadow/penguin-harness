@@ -73,7 +73,7 @@ import { MachineCard } from "./machine-card";
 import { MachineDetailDialog, type MachineVerb } from "./machine-detail-dialog";
 
 import { programDirOf } from "./machine-detail-view";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 /** While a job is on its way, the page reads the list this often too: a net under the server's word. */
 const FALLBACK_POLL_MS = 5_000;

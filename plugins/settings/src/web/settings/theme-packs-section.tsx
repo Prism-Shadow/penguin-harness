@@ -32,12 +32,12 @@ import {
   toastError,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
-import { downloadArchive } from "../../lib/archive-download";
-import { acceptThemePacks, useThemePacks } from "../../lib/account-sync/theme-packs";
-import { S } from "../../lib/strings";
-import { toastApiError } from "../../lib/toast-api-error";
+import * as api from "@prismshadow/penguin-web/internal";
+import { ApiError } from "@prismshadow/penguin-web/internal";
+import { downloadArchive } from "@prismshadow/penguin-web/internal";
+import { acceptThemePacks, useThemePacks } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 import None{useAuth} from "@prismshadow/penguin-web/internal";
 import None{useLocale} from "@prismshadow/penguin-web/internal";
 import None{useTheme} from "@prismshadow/penguin-web/internal";

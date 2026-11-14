@@ -19,9 +19,9 @@ import { createContext, useContext, useMemo, type ReactNode } from "react";
 
 import { ProseBlockTrailerProvider, type ProseBlockTrailer } from "@prismshadow/penguin-ui";
 
-import * as api from "../../api/endpoints";
+import * as api from "@prismshadow/penguin-web/internal";
 import { ChatSessionContext } from "../lib/chat-session.js";
-import { useFileRendererRules } from "../../lib/file-renderers";
+import { useFileRendererRules } from "@prismshadow/penguin-web/internal";
 import { chatDeps, type ChatDeps } from "./deps";
 import { replyFilesOf } from "./reply-files";
 

@@ -25,14 +25,14 @@ import {
   exceptionReport,
   isSeriousError,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { machineLink } from "../../lib/machine-link";
+import * as api from "@prismshadow/penguin-web/internal";
+import { machineLink } from "@prismshadow/penguin-web/internal";
 import { machineForSession } from "../lib/session-machines.js";
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 import None{useMachines} from "@prismshadow/penguin-web/internal";
 import { retryStatus } from "../machines/machine-card";
 import { machineAway } from "./machine-away";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 export function HistoryLoadFailed({
   projectId,

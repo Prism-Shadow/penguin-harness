@@ -66,7 +66,7 @@ import { benchmarkRoute } from "./benchmark-route";
 import { useBenchmarksAcross } from "./benchmark-sources";
 import { CreateBenchmarkModal } from "./create-benchmark-modal";
 import { UseBenchmarkModal } from "./use-benchmark-modal";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 /** The Skills a design conversation is opened with (see the create modal below). */
 const BENCHMARK_DESIGN_SKILLS = ["benchmark-design", "agent-evaluation"];

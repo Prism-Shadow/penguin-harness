@@ -5,11 +5,11 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useMatch } from "react-router";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
-import { S } from "../../lib/strings";
-import type { RowAction } from "../../lib/session-row-contributions";
+import { S } from "@prismshadow/penguin-web/internal";
+import type { RowAction } from "@prismshadow/penguin-web/internal";
 import None{useProject} from "@prismshadow/penguin-web/internal";
 import None{useSessions} from "@prismshadow/penguin-web/internal";
-import { useLocalShown } from "../../lib/local-first";
+import { useLocalShown } from "@prismshadow/penguin-web/internal";
 import { pendingScheduleSessions } from "./schedule-panel-state";
 import { useSchedulesAcross } from "./schedule-store";
 

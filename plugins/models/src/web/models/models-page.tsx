@@ -152,12 +152,12 @@ import { canonicalClientType, groupKeyReaches } from "@prismshadow/penguin-core/
   isFreeModel,
   sameModelRef,
   userProviderInfo,
-} from "../../lib/model-grouping";
+} from "@prismshadow/penguin-web/internal";
   commitModelGroupOrder,
   loadModelGroupOrder,
   saveModelGroupOrder,
-} from "../../lib/model-group-order";
-import { TAG_TONE, modelTags } from "../../lib/model-tags";
+} from "@prismshadow/penguin-web/internal";
+import { TAG_TONE, modelTags } from "@prismshadow/penguin-web/internal";
 import { protocolPathForModel } from "./protocol-path";
 import { ProtocolSuffixMenu } from "./protocol-suffix";
   DEFAULT_CUSTOM_CLIENT_TYPE,
@@ -238,7 +238,7 @@ import { DisconnectConfirm, GroupConnection } from "./group-connection";
 import { isPinned, usePinnedBalance } from "./balance";
 import { TOKENDANCE_PROVIDER_ID, TokenDanceBanner } from "./tokendance-banner";
 import { ConnectDefaultOfferConfirm } from "./connect-default-offer";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 /**
  * The authorization flows a group's Connect dialog can run, keyed by the flow named in that

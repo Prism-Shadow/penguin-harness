@@ -4,6 +4,6 @@
  */
 export { useCompany } from "./company-state";
 
-export { parseOrgKey } from "../../lib/company-nav";
+export { parseOrgKey } from "@prismshadow/penguin-web/internal";
 
 export { switchDeskModel } from "./desk-model";

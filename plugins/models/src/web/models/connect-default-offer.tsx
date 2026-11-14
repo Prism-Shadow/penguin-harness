@@ -13,9 +13,9 @@ import { useState } from "react";
 import type { DefaultModelOffer, ModelRefDto } from "@prismshadow/penguin-server/api";
 import { providerInfo } from "@prismshadow/penguin-server/model-catalog";
 import { ConfirmModal, toastSuccess } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { toastApiError } from "../../lib/toast-api-error";
+import * as api from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 /** A row as far as naming it goes. */
 interface NamedRow {

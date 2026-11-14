@@ -87,7 +87,7 @@ import {
   formatTps,
   humanizeDuration,
   humanizeTokens,
-} from "../../lib/format";
+} from "@prismshadow/penguin-web/internal";
 import { resolveContextWindow } from "@prismshadow/penguin-web/internal";
 import { toneInk } from "@prismshadow/penguin-web/internal";
 import { useTheme, type Currency } from "@prismshadow/penguin-web/internal";

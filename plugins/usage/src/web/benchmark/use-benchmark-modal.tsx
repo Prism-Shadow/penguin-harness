@@ -76,7 +76,7 @@ import {
   OPTIMIZATION_SKILL,
   pickRsiMethod,
   rsiMethods,
-} from "../../lib/rsi-methods";
+} from "@prismshadow/penguin-web/internal";
 import { useRsiToolkits } from "@prismshadow/penguin-web/internal";
 
 /** Which half of the dialog is on screen. */

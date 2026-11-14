@@ -16,7 +16,7 @@
  * previous user's text, Workspace, model selection, and handoff target — a cross-account information leak.
  */
 import type { ApprovalMode, SessionSandbox } from "@prismshadow/penguin-server/api";
-import { syncedStorage } from "../../lib/account-sync/cache";
+import { syncedStorage } from "@prismshadow/penguin-web/internal";
 
 const APPROVAL_MODES: ApprovalMode[] = ["always-ask", "read-only", "allow-all", "deny-all"];
 

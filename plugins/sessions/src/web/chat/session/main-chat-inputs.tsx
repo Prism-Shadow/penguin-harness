@@ -1,4 +1,4 @@
-import { scopedValue, type Scoped } from "../../../lib/project-scope";
+import { scopedValue, type Scoped } from "@prismshadow/penguin-web/internal";
 import { chatDeps } from "../deps";
 import { useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
@@ -8,12 +8,12 @@ import type {
   ModelsResponse,
   SessionProcessInfo,
 } from "@prismshadow/penguin-server/api";
-import { useCompany } from "../../company";
+import { useCompany } from "@prismshadow/penguin-web/internal";
 import None{useAuth} from "@prismshadow/penguin-web/internal";
 import None{useTheme} from "@prismshadow/penguin-web/internal";
 import None{useProject} from "@prismshadow/penguin-web/internal";
 import None{useSessions} from "@prismshadow/penguin-web/internal";
-import type { StagedThinkingSwitch } from "../../model-picker";
+import type { StagedThinkingSwitch } from "@prismshadow/penguin-web/internal";
 import { createCostStatHold } from "../header-stats";
 import type { SwitchContextShape } from "../model-switch";
 

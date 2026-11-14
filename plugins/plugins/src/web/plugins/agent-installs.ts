@@ -15,14 +15,14 @@
  */
 import { useMemo } from "react";
 import type { AgentPluginsInstallResponse, PluginItem } from "@prismshadow/penguin-server/api";
-import * as api from "../../api/endpoints";
+import * as api from "@prismshadow/penguin-web/internal";
 import {
   cachedAgentInstalls,
   forgetAgentInstalls,
   rememberAgentInstalls,
-} from "../../lib/machine-cache";
-import { createReadStore, readKey, useReads } from "../../lib/read-store";
-import type { ReadStore } from "../../lib/read-store";
+} from "@prismshadow/penguin-web/internal";
+import { createReadStore, readKey, useReads } from "@prismshadow/penguin-web/internal";
+import type { ReadStore } from "@prismshadow/penguin-web/internal";
 import type { AgentInstalls, InstalledMap } from "./plugin-status";
 
 /** The part of a key that says which kind of read it is (see `readKey`). */

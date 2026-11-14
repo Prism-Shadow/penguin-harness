@@ -18,7 +18,7 @@ import { useShortcutLabel } from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
 import { rememberSelection } from "@prismshadow/penguin-web/internal";
 import { isAppCenterPath } from "@prismshadow/penguin-web/internal";
-import { useSafeMode } from "../../rescue/safe-mode";
+import { useSafeMode } from "@prismshadow/penguin-web/internal";
 import { usePaletteActions } from "@prismshadow/penguin-web/internal";
 import { useAppPageTab } from "./use-app-page-tab";
 import { WorkbenchFrame } from "./workbench-tabs";

@@ -1,7 +1,7 @@
-import { agentSettingsPath as agentPagePath } from "../../../lib/agent-location";
+import { agentSettingsPath as agentPagePath } from "@prismshadow/penguin-web/internal";
 import { useCallback } from "react";
-import { sessionThinkingLevel } from "../../model-picker";
-import { useDockMount, closedDockView, dockViews } from "../../dock";
+import { sessionThinkingLevel } from "@prismshadow/penguin-web/internal";
+import { useDockMount, closedDockView, dockViews } from "@prismshadow/penguin-web/internal";
 import type { ChatDockState } from "./main-dock-context";
 import type { useMainChatActions } from "./main-chat-actions";
 
@@ -9,7 +9,7 @@ import type { useMainChatActions } from "./main-chat-actions";
  * An Agent's settings page, on one tab: this server's Agent, or with `machineId` the Agent of
  * that id on that machine, which the page reads and writes over there (`?machine=`).
  */
-export { agentSettingsPath as agentPagePath } from "../../../lib/agent-location";
+export { agentSettingsPath as agentPagePath } from "@prismshadow/penguin-web/internal";
 
 /** Exact consecutive main ChatPage statements 165..170; called once, in original order. */
 export function useMainChatDock(scope: ReturnType<typeof useMainChatActions>) {

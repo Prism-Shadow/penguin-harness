@@ -24,8 +24,8 @@ import {
   toastError,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { AvatarPicker } from "../../components/ui/avatar-picker";
+import * as api from "@prismshadow/penguin-web/internal";
+import { AvatarPicker } from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
 import { toastApiError } from "@prismshadow/penguin-web/internal";
 

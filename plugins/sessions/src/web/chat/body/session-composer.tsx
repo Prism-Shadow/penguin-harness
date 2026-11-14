@@ -13,13 +13,13 @@ import type {
   SessionInfo,
   SkillMetadataItem,
 } from "@prismshadow/penguin-server/api";
-import { sameModelRef } from "../../models";
-import { sessionThinkingLevel } from "../../model-picker";
+import { sameModelRef } from "@prismshadow/penguin-web/internal";
+import { sessionThinkingLevel } from "@prismshadow/penguin-web/internal";
 import { ChatInput, type ComposerControl } from "../chat-input";
 
 import { approvalModeChoices } from "../approval-mode";
 import { agentPagePath } from "../session/main-chat-dock";
-import { machineForSession } from "../../../lib/session-machines";
+import { machineForSession } from "@prismshadow/penguin-web/internal";
 import type { DraftCache } from "../draft-cache";
 import type { SessionStreamState } from "../use-session-stream";
 

@@ -1,5 +1,5 @@
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
-import { ofProject } from "../../lib/project-scope";
+import { ofProject } from "@prismshadow/penguin-web/internal";
 
 /**
  * The Session the route names: the loaded list's row when it holds one, otherwise the row a

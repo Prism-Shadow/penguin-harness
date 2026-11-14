@@ -1,6 +1,6 @@
 import { useOrgPages } from "./use-org-pages";
 import None{useLocale} from "@prismshadow/penguin-web/internal";
-import { glyphOf } from "../../lib/nav-icons";
+import { glyphOf } from "@prismshadow/penguin-web/internal";
 /**
  * Company mode in the sidebar (`SidebarModule.modes` and `.sections`): the work mode beside
  * development, with the organization's six pages and the company-mode pages plugins contribute
@@ -12,17 +12,17 @@ import { glyphOf } from "../../lib/nav-icons";
  */
 import { useLocation, useMatch } from "react-router";
 import { RailDivider } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 import type {
   ModeNavItem,
   ModeState,
   SidebarMode,
   SidebarSection,
-} from "../../lib/sidebar-contributions";
+} from "@prismshadow/penguin-web/internal";
 import { useCompany } from "./company-state";
 import { CompanyBetaBadge } from "./company-beta";
 import { COMPANY_NAV_ICONS } from "./company-nav-icons";
-import { COMPANY_NAV_KEYS, isOrgRoute, orgPagePath, parseOrgKey } from "../../lib/company-nav";
+import { COMPANY_NAV_KEYS, isOrgRoute, orgPagePath, parseOrgKey } from "@prismshadow/penguin-web/internal";
 import { NoOrganizationsSidebar, OrgSwitcher } from "./org-switcher";
 import { ChannelRailRows, ChannelSidebar, DefaultChannelRailRow } from "./channel-sidebar";
 import { DeskRailRows, OrgSessionGroups, TempSessionRailRows } from "./org-session-groups";

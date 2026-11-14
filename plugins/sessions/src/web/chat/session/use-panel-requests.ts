@@ -5,8 +5,8 @@
  * resets on a Session switch, and when its panel's tab closes.
  */
 import { useCallback, useEffect, useState } from "react";
-import type { MemoryLocateTarget } from "../../../lib/amsp/memory-changes";
-import { openPanel, panelDock } from "../../dock";
+import type { MemoryLocateTarget } from "@prismshadow/penguin-web/internal";
+import { openPanel, panelDock } from "@prismshadow/penguin-web/internal";
 
 export function usePanelRequests(routeSessionId: string | null) {
   /** Workspace tab: locate this file in the tree (a message file card's click, or a reply's link to a file). */

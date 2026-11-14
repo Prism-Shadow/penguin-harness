@@ -37,8 +37,8 @@
  */
 import { useEffect, useMemo, useSyncExternalStore } from "react";
 import type { ProjectScheduleItem } from "@prismshadow/penguin-server/api";
-import * as api from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
+import * as api from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import type {UserEventHandler} from "@prismshadow/penguin-web/internal";
 
 interface Entry {

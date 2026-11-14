@@ -9,17 +9,17 @@ import {
   ICON_SIZE,
   StatChip,
 } from "@prismshadow/penguin-ui";
-import { S } from "../../../lib/strings";
-import { formatDateTime } from "../../../lib/format";
-import { Truncated } from "../../../components/ui/truncated";
-import { CostPartsRows, StatHint } from "../../../components/ui/stat-hint";
+import { S } from "@prismshadow/penguin-web/internal";
+import { formatDateTime } from "@prismshadow/penguin-web/internal";
+import { Truncated } from "@prismshadow/penguin-web/internal";
+import { CostPartsRows, StatHint } from "@prismshadow/penguin-web/internal";
 import { OutlineMenuButton } from "../conversation-outline";
-import { nameOnMachine } from "../../../lib/workspace-machines";
+import { nameOnMachine } from "@prismshadow/penguin-web/internal";
 import { providerInfo } from "@prismshadow/penguin-server/model-catalog";
 import { DockToggles } from "../dock-toggles";
 import { RunStatus } from "../run-status";
-import { toneInk } from "../../../lib/tone";
-import { STAT_ICONS } from "../../../lib/stat-icons";
+import { toneInk } from "@prismshadow/penguin-web/internal";
+import { STAT_ICONS } from "@prismshadow/penguin-web/internal";
 import { SessionIdRow } from "../session/main-chat-helpers";
 import type { MainChatView } from "../body/main-chat-view";
 

@@ -95,9 +95,9 @@ import {
   orgDraftKey,
   saveOrgDraft,
 } from "./org-draft";
-import { toastApiError } from "../../lib/toast-api-error";
-import { failedList } from "../../lib/bulk-update";
-import { followAgentDeletion } from "../../lib/agent-deletion-progress";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
+import { failedList } from "@prismshadow/penguin-web/internal";
+import { followAgentDeletion } from "@prismshadow/penguin-web/internal";
 import { orgDeletePlan } from "./org-delete-plan";
 import type { OrgDeletePlan } from "./org-delete-plan";
 

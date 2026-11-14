@@ -4,7 +4,7 @@
  * page — on the page the request names, else the viewer's first.
  */
 import { useEffect, useState } from "react";
-import { onSettingsRequest } from "../../lib/settings-request";
+import { onSettingsRequest } from "@prismshadow/penguin-web/internal";
 import type { SettingsSectionKey } from "../lib/settings-sections.js";
 import { SettingsDialog } from "./settings-dialog";
 

@@ -1,5 +1,5 @@
 import { WallpaperSurface, Button, EmptyState, Skeleton } from "@prismshadow/penguin-ui";
-import { S } from "../../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 import { MessageStream } from "../message-stream";
 import { ChatDropRegion } from "../drop-zone";
 import { ConversationOutline } from "../conversation-outline";
@@ -9,7 +9,7 @@ import { HistoryLoadFailed } from "../history-load-failed";
 import { HistoryLoading } from "../history-loading";
 import { RequestFailureDialog } from "../request-failure-dialog";
 import { MachineRestartNotice } from "../machine-restart-notice";
-import { DockPanel, DockLauncher, measureComposer } from "../../dock";
+import { DockPanel, DockLauncher, measureComposer } from "@prismshadow/penguin-web/internal";
 import { ChatDockProvider } from "../session/main-dock-context";
 import { ReplyFilesProvider } from "../reply-files-provider";
 import { ArchivedSessionStub } from "../archived-session-stub";

@@ -37,7 +37,7 @@ import { BenchmarkDetail } from "./benchmark-detail";
 import { benchmarkPath } from "./benchmark-prompts";
 import { useBenchmarksAcross } from "./benchmark-sources";
 import { UseBenchmarkModal } from "./use-benchmark-modal";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 /**
  * What stands in place of the detail for a Benchmark that is not published: still being built,

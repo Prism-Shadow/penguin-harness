@@ -18,7 +18,7 @@ import type {
   PluginIndexResponse,
   PluginLibraryResponse,
 } from "@prismshadow/penguin-server/api";
-import { createReadStore, readKey } from "../../lib/read-store";
+import { createReadStore, readKey } from "@prismshadow/penguin-web/internal";
 
 export const pluginLibrary = createReadStore<PluginLibraryResponse>();
 export const LIBRARY_KEY = "library";

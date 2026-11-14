@@ -25,32 +25,32 @@ import type {
   SessionStatus,
   SubagentRuntimeInfo,
 } from "@prismshadow/penguin-server/api";
-import { getGoal } from "../../api/endpoints";
-import { probeSession } from "../../api/session-probe";
-import { apiSocket } from "../../api/socket";
-import { openHistoryStream, openSessionStream, openTraceBodyStream } from "../../api/sse";
+import { getGoal } from "@prismshadow/penguin-web/internal";
+import { probeSession } from "@prismshadow/penguin-web/internal";
+import { apiSocket } from "@prismshadow/penguin-web/internal";
+import { openHistoryStream, openSessionStream, openTraceBodyStream } from "@prismshadow/penguin-web/internal";
 import { machineForSession } from "../lib/session-machines.js";
-import { createStreamController } from "../../lib/amsp/stream-controller";
+import { createStreamController } from "@prismshadow/penguin-web/internal";
 import type {
   HistoryTransfer,
   OlderHistoryState,
   PendingApproval,
   StreamController,
-} from "../../lib/amsp/stream-controller";
-import { createStreamModel } from "../../lib/amsp/stream-model";
+} from "@prismshadow/penguin-web/internal";
+import { createStreamModel } from "@prismshadow/penguin-web/internal";
 import type {
   ChatItem,
   StreamModel,
   ThinkingItem,
   ToolCallItem,
-} from "../../lib/amsp/stream-model";
+} from "@prismshadow/penguin-web/internal";
 import type { GoalBannerState } from "./goal-use";
 
 export type {
   HistoryTransfer,
   OlderHistoryState,
   PendingApproval,
-} from "../../lib/amsp/stream-controller";
+} from "@prismshadow/penguin-web/internal";
 
 /** Fetches the whole of an item's folded values (see the stream controller's loadBodies). */
 export interface ElidedBodies {

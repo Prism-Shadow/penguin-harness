@@ -10,7 +10,7 @@
  * connected, does.
  */
 import { EmptyState } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 
 /** At most this many silent machines are named. */
 const NAMED = 3;

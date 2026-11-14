@@ -12,14 +12,14 @@ import type {
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
 import { toastError } from "@prismshadow/penguin-ui";
-import * as api from "../../../api/endpoints";
-import { ApiError } from "../../../api/client";
-import { S } from "../../../lib/strings";
-import { apiErrorText } from "../../../lib/api-error";
-import { machineForSession } from "../../../lib/session-machines";
-import { createStreamModel, finalizeHistory, pushMessage } from "../../../lib/amsp/stream-model";
-import { switchDeskModel, useCompany } from "../../company";
-import { adoptDockScope } from "../../dock";
+import * as api from "@prismshadow/penguin-web/internal";
+import { ApiError } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { machineForSession } from "@prismshadow/penguin-web/internal";
+import { createStreamModel, finalizeHistory, pushMessage } from "@prismshadow/penguin-web/internal";
+import { switchDeskModel, useCompany } from "@prismshadow/penguin-web/internal";
+import { adoptDockScope } from "@prismshadow/penguin-web/internal";
 import { handoffMessage, modelSwitchMessage } from "../agent-handoff";
 import { prepareNewChatDraft } from "../new-chat";
 import { DRAFT_SESSION_ID } from "../draft-sessions";

@@ -34,7 +34,7 @@ import {
   useFormDraft,
   useGuardedClose,
 } from "@prismshadow/penguin-ui";
-import { ApiError } from "../../api/client";
+import { ApiError } from "@prismshadow/penguin-web/internal";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import { useAgentLocation } from "./agent-location.js";
 import { S } from "@prismshadow/penguin-web/internal";

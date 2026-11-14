@@ -20,8 +20,8 @@ import {
   useFormDraft,
   useGuardedClose,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
+import * as api from "@prismshadow/penguin-web/internal";
+import { ApiError } from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
 import { SEMANTIC_ID_PATTERN } from "@prismshadow/penguin-web/internal";
 import { toneInk } from "@prismshadow/penguin-web/internal";

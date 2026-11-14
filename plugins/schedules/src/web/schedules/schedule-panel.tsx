@@ -62,7 +62,7 @@ import {
 import { refreshSchedules, useProjectSchedules } from "./schedule-store";
 import { ScheduleSuggestions } from "./schedule-suggestions";
 import { toggleBody } from "./schedule-upsert";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 /** How often the list refetches while on screen — about the server's own re-read cadence for the schedule directory. */
 const REFRESH_MS = 30_000;

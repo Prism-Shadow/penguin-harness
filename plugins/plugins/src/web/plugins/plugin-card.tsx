@@ -80,7 +80,7 @@ import {
   type LibraryUsage,
   type PluginStatus,
 } from "./plugin-status";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 /** "Manage installs" button icon: the arrow landing in its tray. */
 const INSTALL_ICON = ICONS.download;

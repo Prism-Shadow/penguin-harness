@@ -135,7 +135,7 @@ import {
   type LibraryUsage,
   type PluginStatus,
 } from "./plugin-status";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 const NO_INSTALLS: AgentInstalls = { skills: new Map(), hooks: new Map(), mcp: new Map() };
 

@@ -8,8 +8,8 @@
  * what the confirmation shows.
  */
 import type { AgentSummary, UnreadableChart } from "@prismshadow/penguin-server/api";
-import { employmentsOf } from "../../lib/agent-employment";
-import { isBuiltinAgent } from "../../lib/builtin-agents";
+import { employmentsOf } from "@prismshadow/penguin-web/internal";
+import { isBuiltinAgent } from "@prismshadow/penguin-web/internal";
 
 /**
  * Why an employee's Agent stays: built in, employed by these other organizations (their names),

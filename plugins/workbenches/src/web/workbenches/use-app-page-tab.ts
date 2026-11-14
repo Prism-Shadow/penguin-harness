@@ -12,8 +12,8 @@
  * stream of its own, or it would never notice its workbench being edited or removed.
  */
 import { useEffect, useState } from "react";
-import * as api from "../../api/endpoints";
-import { openUserEvents } from "../../api/sse";
+import * as api from "@prismshadow/penguin-web/internal";
+import { openUserEvents } from "@prismshadow/penguin-web/internal";
 import {
   appPageTab,
   runningWorkbenches,
@@ -21,7 +21,7 @@ import {
   workbenchTabsOf,
   type WorkbenchTab,
   type WorkbenchUpdatedDetail,
-} from "../../lib/workbench-tabs";
+} from "@prismshadow/penguin-web/internal";
 
 export interface AppPageTabQuery {
   projectId: string;

@@ -5,12 +5,12 @@
  */
 import { useEffect, useRef, useState } from "react";
 import type { SessionInfo, SessionStatus } from "@prismshadow/penguin-server/api";
-import * as api from "../../../api/endpoints";
-import { ApiError } from "../../../api/client";
-import { latestConversation, withoutOrgSessions } from "../../../lib/session-grouping";
-import { noteSessionSeen } from "../../../lib/session-seen";
-import { machineForSession } from "../../../lib/session-machines";
-import { noteScheduleEvent } from "../../schedules";
+import * as api from "@prismshadow/penguin-web/internal";
+import { ApiError } from "@prismshadow/penguin-web/internal";
+import { latestConversation, withoutOrgSessions } from "@prismshadow/penguin-web/internal";
+import { noteSessionSeen } from "@prismshadow/penguin-web/internal";
+import { machineForSession } from "@prismshadow/penguin-web/internal";
+import { noteScheduleEvent } from "@prismshadow/penguin-web/internal";
 import { DRAFT_SESSION_ID } from "../draft-sessions";
 import { routeSessionOutcome, sessionForProject } from "../session-project";
 import type { SessionStreamState } from "../use-session-stream";

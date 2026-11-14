@@ -21,8 +21,8 @@
  */
 import { DEFAULT_MAX_TURN_ATTEMPTS } from "@prismshadow/penguin-core/interfaces";
 import type { RetryAction } from "@prismshadow/penguin-ui";
-import type { LlmErrorItem, ReconnectItem } from "../../lib/amsp/stream-model";
-import { S } from "../../lib/strings";
+import type { LlmErrorItem, ReconnectItem } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
 import { httpStatusOf } from "./provider-error";
 import type { RequestFailure } from "./request-failure-report";
 

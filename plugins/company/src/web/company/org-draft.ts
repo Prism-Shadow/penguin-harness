@@ -13,7 +13,7 @@
  * account to another browser.
  */
 import type { ModelRefDto } from "@prismshadow/penguin-server/api";
-import { syncedStorage } from "../../lib/account-sync/cache";
+import { syncedStorage } from "@prismshadow/penguin-web/internal";
 
 /** Minimal storage interface (the subset of localStorage used here); tests inject an in-memory one. */
 export interface DraftStorage {

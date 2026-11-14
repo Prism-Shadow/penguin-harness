@@ -1,5 +1,5 @@
 import { ICONS } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 import { isBrowserOffered, subscribeBrowser } from "./browser-store";
 import { BuiltinBrowserPanel } from "./browser-panel";
 

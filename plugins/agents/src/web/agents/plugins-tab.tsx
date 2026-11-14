@@ -61,8 +61,8 @@ import {
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import type { ToneName } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
+import * as api from "@prismshadow/penguin-web/internal";
+import { ApiError } from "@prismshadow/penguin-web/internal";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import { useAgentLocation } from "./agent-location.js";
 import { useInstantSetting } from "@penguinharness/plugin-settings/web";

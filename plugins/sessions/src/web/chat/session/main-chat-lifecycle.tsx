@@ -1,34 +1,34 @@
-import { scoped } from "../../../lib/project-scope";
-import { adoptBrowserSession } from "../../builtin-browser";
+import { scoped } from "@prismshadow/penguin-web/internal";
+import { adoptBrowserSession } from "@prismshadow/penguin-web/internal";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SessionInfo, SessionStatus } from "@prismshadow/penguin-server/api";
 import { toastError, toastSuccess } from "@prismshadow/penguin-ui";
-import * as api from "../../../api/endpoints";
-import { ApiError } from "../../../api/client";
-import { S } from "../../../lib/strings";
-import { apiErrorText } from "../../../lib/api-error";
-import { configuredCompactionLimit } from "../../../lib/context";
-import { humanizeTokens } from "../../../lib/format";
-import { latestConversation, withoutOrgSessions } from "../../../lib/session-grouping";
-import { noteSessionSeen } from "../../../lib/session-seen";
+import * as api from "@prismshadow/penguin-web/internal";
+import { ApiError } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { configuredCompactionLimit } from "@prismshadow/penguin-web/internal";
+import { humanizeTokens } from "@prismshadow/penguin-web/internal";
+import { latestConversation, withoutOrgSessions } from "@prismshadow/penguin-web/internal";
+import { noteSessionSeen } from "@prismshadow/penguin-web/internal";
 import { latestTaskHasSubagent, taskStartCount } from "../agent-topology";
 import { DRAFT_SESSION_ID } from "../draft-sessions";
 import { routeSessionOutcome, sessionForProject } from "../session-project";
 import { RouteProbe } from "../route-probe";
-import { machineForSession } from "../../../lib/session-machines";
+import { machineForSession } from "@prismshadow/penguin-web/internal";
 import { CHAT_DEFAULTS_CHANGED_EVENT, chatDefaultsChangedDetail } from "../chat-defaults-event";
 import { goalPluginGate } from "../goal-plugin-gate";
 import { useAgentSkills } from "../use-agent-skills";
 import { applyUsageFetch } from "../header-stats";
-import { hasConfiguredKey, sameModelRef } from "../../models";
-import { noteScheduleEvent } from "../../schedules";
+import { hasConfiguredKey, sameModelRef } from "@prismshadow/penguin-web/internal";
+import { noteScheduleEvent } from "@prismshadow/penguin-web/internal";
 import {
   adoptDockScope,
   currentDockScope,
   isTabShown,
   openPanel,
   reownTerminals,
-} from "../../dock";
+} from "@prismshadow/penguin-web/internal";
 import { advancePanelTaskScope, createPanelTaskScope } from "../panel-task-scope";
 import { exitedProcessIds, reportableProcessFailure } from "../process-list";
 import { PROCESS_POLL_MS, STAT_PATHS_PER_REQUEST } from "./main-chat-helpers";

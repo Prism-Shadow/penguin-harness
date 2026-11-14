@@ -19,10 +19,10 @@ import {
   TransferProgress,
   useElapsedPast,
 } from "@prismshadow/penguin-ui";
-import { elidedRecordsOf } from "../../lib/amsp/stream-model";
-import type { ThinkingItem, ToolCallItem } from "../../lib/amsp/stream-model";
-import { transferAmount } from "../../lib/history/transfer-amount";
-import { S } from "../../lib/strings";
+import { elidedRecordsOf } from "@prismshadow/penguin-web/internal";
+import type { ThinkingItem, ToolCallItem } from "@prismshadow/penguin-web/internal";
+import { transferAmount } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
 import type { ElidedBodies } from "./use-session-stream";
 
 /** How long a fetch may take before its progress shows. */

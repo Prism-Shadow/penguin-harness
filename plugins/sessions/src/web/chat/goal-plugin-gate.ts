@@ -14,8 +14,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AgentPluginsInstallResponse } from "@prismshadow/penguin-server/api";
 
-import { getAgentPlugins, installAgentPlugins } from "../../api/endpoints";
-import { toastApiError } from "../../lib/toast-api-error";
+import { getAgentPlugins, installAgentPlugins } from "@prismshadow/penguin-web/internal";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 /** The library plugin goal mode runs on; its hook package carries the same name. */
 export const GOAL_PLUGIN = "goal";

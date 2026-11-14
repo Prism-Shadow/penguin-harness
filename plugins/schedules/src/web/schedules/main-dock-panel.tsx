@@ -1,10 +1,10 @@
-import { machineForSession } from "../../lib/session-machines";
+import { machineForSession } from "@prismshadow/penguin-web/internal";
 import { EmptyState, ICONS } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 import { panelLabel, type DockPanelBodyProps, type PanelId } from "../dock/index";
 
 import { SchedulePanel } from "./schedule-panel";
-import { useChatSession } from "../../lib/chat-session";
+import { useChatSession } from "@prismshadow/penguin-web/internal";
 function draftPlaceholder(id: PanelId) {
   return (
     <EmptyState

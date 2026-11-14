@@ -29,7 +29,7 @@ import {
   ICONS,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
+import * as api from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
 import None{useLocale} from "@prismshadow/penguin-web/internal";
 import None{useProject} from "@prismshadow/penguin-web/internal";

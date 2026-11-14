@@ -31,7 +31,7 @@ import type { ReactNode } from "react";
 import { useNavigate } from "react-router";
 import type { IconRef, WorkbenchInfo, WorkbenchVersion } from "@prismshadow/penguin-server/api";
 import { Button, ConfirmModal, ListRow, Modal, Switch } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
+import * as api from "@prismshadow/penguin-web/internal";
 import { formatDateTime } from "@prismshadow/penguin-web/internal";
 import { useInstantSetting } from "@penguinharness/plugin-settings/web";
 import { S } from "@prismshadow/penguin-web/internal";
