@@ -171,6 +171,7 @@ export * from "./lib/builtin-agents";
 export * from "./lib/agent-deletion-progress";
 export * from "./lib/read-store";
 export * from "./lib/local-first";
+export * from "./lib/app-center-path";
 export * from "./lib/file-renderers";
 export * from "./lib/find-dom";
 export * from "./lib/find-expand";
