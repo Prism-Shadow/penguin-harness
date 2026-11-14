@@ -23,6 +23,17 @@
  * Agent's Memory directory.
  */
 import { Hono } from "hono";
+import {
+  badRequest,
+  optionalBoolean,
+  optionalEnum,
+  pathParam,
+  readJson,
+  requireValidId,
+} from "@prismshadow/penguin-server/internal";
+import type { Access, MemoryImportMode } from "@prismshadow/penguin-server/api";
+import type { Memory } from "./mechanism.js";
+
 import type { Context } from "hono";
 import type { AppEnv } from "@prismshadow/penguin-server/internal";
 

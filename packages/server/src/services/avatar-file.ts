@@ -16,7 +16,7 @@ import { createHash, randomBytes } from "node:crypto";
 import type { Stats } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { TMP_SUFFIX } from "../workbenches/store.js";
+import { TMP_SUFFIX } from "@penguinharness/plugin-workbenches/server";
 
 // Same cap as a user's avatar, measured on the data URL as it arrives (≈ 96 KiB of image).
 import { AVATAR_MAX_CHARS } from "../api/types.js";

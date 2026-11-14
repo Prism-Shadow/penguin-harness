@@ -17,11 +17,11 @@ import {
 } from "@prismshadow/penguin-core";
 import type { AgentArchiveQuery } from "../api/types.js";
 import { HttpError, badRequest } from "../http/errors.js";
-import type { SessionIndex } from "../mechanisms/sessions.js";
-import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
-import { STATE_FILE } from "../workbenches/store.js";
+import type { SessionIndex } from "@penguinharness/plugin-sessions/server";
+import type { TraceIndex, TraceIndexStore } from "@penguinharness/plugin-usage/server";
+import { STATE_FILE } from "@penguinharness/plugin-workbenches/server";
 import { MAX_ENTRIES, MAX_PACKAGE_BYTES, MAX_UNPACKED_BYTES } from "./agent-zip.js";
-import { isGitEntry, isLeftOut } from "./snapshot-service.js";
+import { isGitEntry, isLeftOut } from "@penguinharness/plugin-projects/server";
 
 export interface AgentExportDeps {
   root: string;

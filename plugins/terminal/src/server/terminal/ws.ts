@@ -20,6 +20,20 @@ import { format } from "node:url";
 import { TLSSocket } from "node:tls";
 import type { Duplex } from "node:stream";
 import { WebSocketServer } from "ws";
+import {
+  API_SOCKET_DEFLATE,
+  apiSocketRef,
+  compressesApiSocket,
+  sameOriginSite,
+  acceptsOrigin,
+  publicOrigin,
+  sessionCookies,
+  parseCookieHeader,
+} from "@prismshadow/penguin-server/internal";
+import type { ServerHmrHost } from "@prismshadow/penguin-server/internal";
+import type { Auth } from "@penguinharness/plugin-settings/server";
+import { API_SOCKET_PATH } from "@prismshadow/penguin-server/api";
+
 
 const STREAM_PATH = /^\/api\/terminals\/([^/]+)\/stream$/;
 

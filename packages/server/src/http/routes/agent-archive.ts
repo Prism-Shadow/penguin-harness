@@ -16,12 +16,12 @@ import { formatLocalDate } from "../../internal/dates.js";
 import type { AgentConfig, AgentLifecycle, Snapshots } from "../../mechanisms/agents.js";
 import type { Access } from "../../mechanisms/projects.js";
 import type { Traces } from "../../mechanisms/traces.js";
-import type { Workbenches } from "../../mechanisms/workbenches.js";
+import type { Workbenches } from "@penguinharness/plugin-workbenches/server";
 import { exportAgent } from "../../services/agent-export.js";
 import type { AgentExportDeps } from "../../services/agent-export.js";
 import { isZip, readPackageTraces, zipTopDirectory } from "../../services/agent-zip.js";
-import { migrateWorkbenches } from "../../workbenches/migrate.js";
-import { ensureWorkbenchLinkTarget } from "../../workbenches/migrate-state.js";
+import { migrateWorkbenches } from "@penguinharness/plugin-workbenches/server";
+import { ensureWorkbenchLinkTarget } from "@penguinharness/plugin-workbenches/server";
 import { HttpError } from "../errors.js";
 import { badRequest, requireValidId } from "../validate.js";
 

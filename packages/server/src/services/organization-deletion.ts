@@ -30,8 +30,8 @@
 import { BUILTIN_AGENT_IDS } from "@prismshadow/penguin-core";
 import type { OrganizationDeleteResponse } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
-import type { AgentConfig } from "../mechanisms/agents.js";
-import type { OrgService } from "../runtime/organization/service.js";
+import type { AgentConfig } from "@penguinharness/plugin-agents/server";
+import type { OrgService } from "@penguinharness/plugin-company/server";
 import { refuseUndeletable, removeAgents } from "./agent-deletion.js";
 import type { AgentDeletionDeps } from "./agent-deletion.js";
 

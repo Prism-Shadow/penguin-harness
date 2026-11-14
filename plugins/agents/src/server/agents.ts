@@ -13,6 +13,43 @@
  * runs too for the employees it takes with it.
  */
 import { Hono } from "hono";
+import {
+  badRequest,
+  optionalEnum,
+  optionalString,
+  optionalStringArray,
+  readJson,
+  requireProjectDir,
+  requireString,
+  requireValidId,
+  HttpError,
+  deleteAgentEverywhere,
+  migrateEmployeeAuthors,
+} from "@prismshadow/penguin-server/internal";
+import type {
+  AppEnv,
+  AgentApi,
+  AgentConfig,
+  AgentLifecycle,
+  ErrorLog,
+  SessionManager,
+  SessionService,
+  SessionIndex,
+  Schedules,
+  TraceIndex,
+  Access,
+  UserDraftsStore,
+} from "@prismshadow/penguin-server/internal";
+import type {
+  AgentCreateResponse,
+  AgentDeleteResponse,
+  AgentDeletionResponse,
+  AgentsResponse,
+  AgentSummary,
+} from "@prismshadow/penguin-server/api";
+import { AGENT_AUTHORS } from "@prismshadow/penguin-core";
+import type { OrgService } from "@penguinharness/plugin-company/server";
+import type { Workbenches } from "@penguinharness/plugin-workbenches/server";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface AgentsRouteDeps {

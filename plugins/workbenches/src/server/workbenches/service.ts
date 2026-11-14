@@ -43,8 +43,9 @@ import type {
   ModuleTree,
 } from "@prismshadow/penguin-core/kernel";
 import { agentDir, userText } from "@prismshadow/penguin-core";
+import { isWorkbenchId, workbenchesDir } from "./store.js";
 import type { IconImage } from "@prismshadow/penguin-core";
-import table from "../ifaces.json" with { type: "json" };
+import table from "@prismshadow/penguin-server/ifaces.json" with { type: "json" };
 import type { ServerEvent } from "@prismshadow/penguin-server/api";
 import { HttpError } from "@prismshadow/penguin-server/internal";
 import type { Channels, Clock, Config, Hmr, Log, Paths } from "@prismshadow/penguin-server/internal";
@@ -54,8 +55,8 @@ import type { AgentIndex, Members, Projects } from "@prismshadow/penguin-server/
 import type { Traces } from "@prismshadow/penguin-server/internal";
 import { workbenchResult } from "./result.js";
 import type { SessionIndex } from "@prismshadow/penguin-server/internal";
-import type { AppCenterShortcut, WorkbenchInput, WorkbenchRecord, WorkbenchUiFile, WorkbenchUiRuntime, WorkbenchUiRuntimeFile, Workbenches } from "../mechanism.js";
-import type { WorkbenchInfo, WorkbenchRequest, WorkbenchResponse, WorkbenchTab, WorkbenchVersion } from "@prismshadow/penguin-server/api";
+import type { AppCenterShortcut, WorkbenchInput, WorkbenchRecord, WorkbenchUiFile, WorkbenchUiRuntime, WorkbenchUiRuntimeFile, Workbenches, WorkbenchTab } from "../mechanism.js";
+import type { WorkbenchInfo, WorkbenchRequest, WorkbenchResponse, WorkbenchVersion } from "@prismshadow/penguin-server/api";
 import { ScheduleSessionCreator, ScheduleTaskRunner } from "@penguinharness/plugin-schedules/server";
 import {
   agentShortcuts,
@@ -81,15 +82,11 @@ import { checkIfaces, ifaceQuestions } from "@prismshadow/penguin-server/interna
 import { loadTypeScript } from "@prismshadow/penguin-server/internal";
 import { openUiRuntime, requireUiRuntime, UiRuntime, WebFiles } from "./ui-runtime.js";
 import { AgentStateRepo, agentStateRepoDir } from "./repo.js";
-import type { IfaceDecl, IfaceTable, Manifest, ModuleTree, ClassCtx, ModuleDef } from "@prismshadow/penguin-core/kernel";
-import type { isWorkbenchId, workbenchesDir } from "@penguinharness/plugin-workbenches/server";
-import type { Agents } from "@penguinharness/plugin-agents/server";
 import type { Users } from "@prismshadow/penguin-server/internal";
 import {
   isSafeRelPath,
   isSwitchedOff,
   isTempName,
-  isWorkbenchId,
   listFolders,
   readFolder,
   readLoadedSource,
@@ -97,7 +94,6 @@ import {
   restoreSource,
   STATE_FILE,
   UI_DIR,
-  workbenchesDir,
   writeState,
   writeSwitch,
   type WorkbenchFolder,

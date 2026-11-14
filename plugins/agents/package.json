@@ -19,6 +19,7 @@
     "@penguinharness/plugin-sessions": "workspace:*",
     "@penguinharness/plugin-settings": "workspace:*",
     "@penguinharness/plugin-usage": "workspace:*",
+    "@penguinharness/plugin-company": "workspace:*",
     "@penguinharness/plugin-workbenches": "workspace:*",
     "@prismshadow/amsp": "workspace:*",
     "@prismshadow/penguin-core": "workspace:*",

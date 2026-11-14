@@ -47,7 +47,7 @@ import { HttpError } from "../http/errors.js";
 import type { EventSink } from "../http/event-stream.js";
 import { badRequest } from "../http/validate.js";
 import type { Channels } from "../hmr/capabilities.js";
-import type { Traces } from "../mechanisms/traces.js";
+import type { Traces } from "@penguinharness/plugin-usage/server";
 import type { Sessions } from "../runtime/session-manager.js";
 import { FRAME_TEXT_BUDGET, lineFrames, partFrames } from "../socket/line-frames.js";
 import type { LineFrame, PartFrame } from "../socket/line-frames.js";

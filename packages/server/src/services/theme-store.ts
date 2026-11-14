@@ -61,7 +61,7 @@ import {
 import { PACK_RULES, packRuleHits } from "@prismshadow/penguin-ui/pack-rules";
 import type { ThemePackDto } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
-import type { WebFiles } from "../workbenches/ui-runtime.js";
+import type { WebFiles } from "@penguinharness/plugin-workbenches/server";
 
 /** Where the packs live under the data root. */
 export const THEMES_DIR = "themes";

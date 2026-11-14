@@ -19,14 +19,14 @@ import { HttpError } from "../http/errors.js";
 import { settleWithin } from "../http/settle.js";
 import type { UserDraftsStore } from "../mechanisms/account-data.js";
 import type { AgentApi } from "../mechanisms/agent-api.js";
-import type { AgentConfig, AgentLifecycle } from "../mechanisms/agents.js";
-import type { ErrorLog } from "../mechanisms/observability.js";
-import type { Schedules, SessionIndex } from "../mechanisms/sessions.js";
-import type { TraceIndex } from "../mechanisms/traces.js";
-import type { Workbenches } from "../mechanisms/workbenches.js";
-import type { OrgService } from "../runtime/organization/service.js";
+import type { AgentConfig, AgentLifecycle } from "@penguinharness/plugin-agents/server";
+import type { ErrorLog } from "@penguinharness/plugin-usage/server";
+import type { Schedules, SessionIndex } from "@penguinharness/plugin-sessions/server";
+import type { TraceIndex } from "@penguinharness/plugin-usage/server";
+import type { Workbenches } from "@penguinharness/plugin-workbenches/server";
+import type { OrgService } from "@penguinharness/plugin-company/server";
 import type { SessionManager } from "../runtime/session-manager.js";
-import { refuseBuiltinDeletion } from "./agent-service.js";
+import { refuseBuiltinDeletion } from "@penguinharness/plugin-agents/server";
 
 /** What a deletion reaches: the Agent's folder, its runs, and every table keyed on it. */
 export interface AgentDeletionDeps {

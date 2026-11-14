@@ -14,7 +14,7 @@
  * (http/routes/agents.ts) and `AgentConfig.stampMissingAuthor` — once every install has
  * listed its Agents on a build that carries it.
  */
-import type { AgentConfig } from "../mechanisms/agents.js";
+import type { AgentConfig } from "@penguinharness/plugin-agents/server";
 
 export async function migrateEmployeeAuthors(
   config: Pick<AgentConfig, "stampMissingAuthor">,
