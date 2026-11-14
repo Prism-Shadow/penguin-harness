@@ -1,4 +1,4 @@
-import { scopedValue, type Scoped } from "@prismshadow/penguin-web/internal";
+import { scopedValue, type Scoped } from "./project-scope";
 import { chatDeps } from "../deps";
 import { useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
