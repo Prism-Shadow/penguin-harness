@@ -32,6 +32,7 @@ import {
   userAgent,
 } from "@prismshadow/penguin-core";
 import safeRegex from "safe-regex";
+import { indexMirrorRules } from "./mirror-settings.js";
 import { resolvePluginPackage } from "./loader.js";
 import type { PluginBase } from "./loader.js";
 
@@ -299,26 +300,17 @@ export function selectIndexChannel(
 }
 
 /**
- * Answers one package name's github channel from the published index — the entry whose
+ * Answers one package name's github channel from the configured index sources — the entry whose
  * version the requested one (when the caller has one) selects — fetched at most once
  * per TTL (the same cadence the Plugins page reads at) and consulted only when npm has
- * already failed on the name — installs are rare, so no standing fetch. A source that is
- * down answers "no channel": the npm failure is the news then, not the index's silence.
+ * already failed on the name — installs are rare, so no standing fetch. The sources are read
+ * in the configured order and their rows are concatenated, the first source's row for a
+ * `name@version` staying the one the selection sees. A source that is down contributes no
+ * rows: the npm failure is the news then, not the index's silence.
  */
 export function indexChannelLookup(
-  indexUrl: string | null,
-  {
-    fetchImpl = fetch,
-    ttlMs = INDEX_CACHE_TTL_MS,
-    now = Date.now,
-    proxy = [],
-  }: {
-    fetchImpl?: typeof fetch;
-    ttlMs?: number;
-    now?: Clock;
-    /** The deployment's rewrite rules, applied to every channel this source serves. */
-    proxy?: readonly PluginProxyRule[];
-  } = {},
+  readUrls: () => readonly string[],
+  { fetchImpl = fetch, ttlMs = INDEX_CACHE_TTL_MS, now = Date.now } = {},
 ): (
   name: string,
   version?: string,
@@ -326,18 +318,26 @@ export function indexChannelLookup(
   // Every version the index carries for a name, not one row per name: the request's version
   // is what picks among them (selectIndexChannel), and collapsing to one row per name would
   // make the index's last-listed version the only one a channel could serve.
-  let cache: { at: number; byName: Map<string, IndexDocumentEntry[]> } | null = null;
+  let cache: {
+    at: number;
+    urls: string;
+    byName: Map<string, IndexDocumentEntry[]>;
+  } | null = null;
   return async (name, version) => {
-    if (indexUrl === null) return { channel: null, fault: null };
+    const urls = readUrls();
+    if (urls.length === 0) return { channel: null, fault: null };
     const at = now();
-    if (cache === null || at - cache.at > ttlMs) {
-      let entries: IndexDocumentEntry[];
-      try {
-        entries = await httpPluginRegistry([indexUrl, ...pluginProxyMirrors(indexUrl, proxy)], {
-          fetchImpl,
-        }).index();
-      } catch {
-        return { channel: null, fault: null };
+    if (cache === null || at - cache.at > ttlMs || cache.urls !== urls.join(" ")) {
+      const entries: IndexDocumentEntry[] = [];
+      const mirrors = indexMirrorRules();
+      for (const url of urls) {
+        try {
+          entries.push(
+            ...(await httpPluginRegistry([url, ...pluginProxyMirrors(url, mirrors)], { fetchImpl }).index()),
+          );
+        } catch {
+          // A dead source shortens the rows this lookup sees; it does not fail the lookup.
+        }
       }
       const byName = new Map<string, IndexDocumentEntry[]>();
       for (const entry of entries) {
@@ -345,13 +345,13 @@ export function indexChannelLookup(
         if (rows === undefined) byName.set(entry.name, [entry]);
         else rows.push(entry);
       }
-      cache = { at, byName };
+      cache = { at, urls: urls.join(" "), byName };
     }
     const rows = cache.byName.get(name);
     if (rows === undefined) return { channel: null, fault: null };
     const picked = selectIndexChannel(rows, version);
-    if (picked.channel !== null && proxy.length > 0) {
-      const mirrors = pluginProxyMirrors(picked.channel.url, proxy);
+    if (picked.channel !== null) {
+      const mirrors = pluginProxyMirrors(picked.channel.url, indexMirrorRules());
       if (mirrors.length > 0) picked.channel = { ...picked.channel, mirrors };
     }
     return picked;

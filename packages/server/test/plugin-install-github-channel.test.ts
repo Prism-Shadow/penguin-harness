@@ -325,7 +325,7 @@ describe("indexChannelLookup", () => {
   it("answers an entry's channel from the published index, fetched once per TTL", async () => {
     const fetchImpl = vi.fn(async () => Response.json(index));
     let time = 0;
-    const lookup = indexChannelLookup("https://registry.example/index.json", {
+    const lookup = indexChannelLookup(() => ["https://registry.example/index.json"], {
       fetchImpl: fetchImpl as unknown as typeof fetch,
       now: () => time,
     });
@@ -338,7 +338,7 @@ describe("indexChannelLookup", () => {
   });
 
   it("answers no channel when the index is down, so npm's failure stands", async () => {
-    const lookup = indexChannelLookup("https://registry.example/index.json", {
+    const lookup = indexChannelLookup(() => ["https://registry.example/index.json"], {
       fetchImpl: (async () => {
         throw new TypeError("fetch failed");
       }) as unknown as typeof fetch,
@@ -347,7 +347,7 @@ describe("indexChannelLookup", () => {
   });
 
   it("answers no channel when no published index is configured", async () => {
-    const lookup = indexChannelLookup(null);
+    const lookup = indexChannelLookup(() => []);
     expect(await lookup("@penguinharness/language-typst")).toEqual({ channel: null, fault: null });
   });
 });

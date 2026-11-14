@@ -548,7 +548,7 @@ describe("installed plugins", () => {
           installFiles: async () => npmSays("not used", "other"),
           remove: async () => {},
         },
-        config: { pluginIndexUrl: `${base}/index.json` },
+        config: {},
       });
       const cookie = (await loginAdmin(t.app)).cookie;
       admin = apiClient(t.app, cookie);

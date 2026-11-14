@@ -83,15 +83,15 @@ import {
   localPluginDisplay,
   mergeIndexes,
   withoutIcon,
-  NIGHTLY_INDEX_URL,
 } from "../../plugin/registry.js";
 import type {
   CachedRegistry,
   IndexDocumentEntry,
   IndexSnapshot,
-  PluginProxyRule,
   PluginRegistry,
 } from "../../plugin/registry.js";
+import { IndexSources } from "../../plugin/index-config.js";
+import { indexMirrorRules } from "../../plugin/mirror-settings.js";
 import { PACKAGE_NAME, pluginBases, resolvePluginPackage } from "../../plugin/loader.js";
 import type { PluginBase } from "../../plugin/loader.js";
 import { installedPackageDir, pluginsPrefix, prefixDependencies } from "../../plugin/install.js";
@@ -391,12 +391,11 @@ export class PluginRoutes {
 
 export interface PluginRoutesOptions {
   /**
-   * The published index to read, or null for builtin entries only (see ServerConfig).
-   * Undefined = unset, which reads the index repository's published document.
+   * The published index sources to read, or null for builtin entries only (see IndexSources).
+   * Read per listing: the sources are the plugin-index settings group, whose document a save
+   * changes without a restart.
    */
-  indexUrl?: string | null;
-  /** The deployment's proxy rules for the published index, tried after its own URL. */
-  proxy?: PluginProxyRule[];
+  indexUrl?: () => readonly string[];
   /** Where packages are on this machine (plugin/loader.ts's pluginBases): for the builtin readmes, and for every listed package's own display fields (localPluginDisplay). */
   bases?: () => readonly PluginBase[];
   /** Overrides the resolved source list entirely; tests pass registries directly. */
@@ -575,23 +574,33 @@ function indexRowIcon(svg: string): IconImage | undefined {
 
 function resolveRegistries(options: PluginRoutesOptions): PluginRegistry[] {
   const builtin = builtinPluginRegistry(options.bases);
-  // Undefined and null part ways here: a runtime that predates the setting publishes nothing
-  // and gets the default index, while `off` resolves to null and means builtin entries only.
-  const url = options.indexUrl === undefined ? NIGHTLY_INDEX_URL : options.indexUrl;
-  if (url === null) return [builtin];
+  // The sources are read per listing, from the plugin-index settings group: a save changes
+  // the list without a restart. Empty = builtin entries only (the switch off); a single URL
+  // is the one-element list. Each address is its own registry, so the listing reports a down
+  // source by its URL and the merge lets the earlier source win a name. The park carries one
+  // snapshot — the first configured source's, the primary published index — so the seed and
+  // the parking hook ride that one; a further source starts its own cache cold.
+  const urls = options.indexUrl?.() ?? [];
+  if (urls.length === 0) return [builtin];
   // The parked document goes through the remote rule too: it was fetched by a previous App,
-  // which may not have dropped the icons.
+  // which may not have dropped the icons. The park carries one snapshot — the first
+  // configured source's, the primary published index — so the seed and the parking hook
+  // ride that one; a further source starts its own cache cold and answers its first fetch
+  // like any first page load.
   const seed = options.seed ?? null;
-  const cache = cachedRegistry(
-    httpPluginRegistry([url, ...pluginProxyMirrors(url, options.proxy ?? [])], {
-      fetchImpl: options.fetchImpl ?? fetch,
-    }),
-    {
-      seed: seed === null ? null : { at: seed.at, entries: seed.entries.map(withoutIcon) },
-    },
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const mirrors = indexMirrorRules();
+  const remote = urls.map((url, i) =>
+    cachedRegistry(
+      httpPluginRegistry([url, ...pluginProxyMirrors(url, mirrors)], { fetchImpl }),
+      {
+        seed:
+          i === 0 && seed !== null ? { at: seed.at, entries: seed.entries.map(withoutIcon) } : null,
+      },
+    ),
   );
-  options.onCache?.(cache);
-  return [builtin, cache];
+  if (remote.length > 0) options.onCache?.(remote[0]!);
+  return [builtin, ...remote];
 }
 
 /**
@@ -619,13 +628,13 @@ function resolveRegistries(options: PluginRoutesOptions): PluginRegistry[] {
 export class PluginRegistryRoutes {
   @Use() private readonly config!: Config;
   @Use() private readonly hmr!: Hmr;
+  @Use() private readonly sources!: IndexSources;
   @Bind("PluginRegistryRoutes.routes") routes!: Hono<AppEnv>;
   private cache: CachedRegistry | null = null;
   setup(_ctx: ClassCtx, context: Json) {
     const parked = (context as { index?: IndexSnapshot } | null)?.index;
     this.routes = pluginRegistryRoutes({
-      indexUrl: this.config.pluginIndexUrl,
-      proxy: this.config.pluginProxy ?? [],
+      indexUrl: () => this.sources.urls(),
       // Read per request: a push moves the shipped prefix to a new assets directory.
       bases: () => pluginBases(this.config.root, this.hmr.assetsDir()),
       prefix: () => pluginsPrefix(this.config.root),
