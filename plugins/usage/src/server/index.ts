@@ -27,3 +27,4 @@ export type { MessagesPageRequest, MessagesPageResult, ForkTraceResult } from ".
 export { MESSAGES_PAGE_MAX_BYTES } from "./trace-service.js";
 export type { BenchmarkArchive, BenchmarkCreateInput, BenchmarkImportOptions, BenchmarkCaseInput } from "./benchmark-service.js";
 export type { UsageQuery, UsageErrorsQuery, UsageErrorsClearQuery } from "./usage-service.js";
+export { traceRecordImage } from "./trace-images.js";
