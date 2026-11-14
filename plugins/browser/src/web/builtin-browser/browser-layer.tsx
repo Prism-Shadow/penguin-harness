@@ -56,7 +56,7 @@ import {
 import type { BuiltinBrowserLoadWarning } from "@prismshadow/penguin-server/api";
 import { toastAttention } from "@prismshadow/penguin-ui";
 import { toneInk } from "@prismshadow/penguin-web/internal";
-import { currentDockScope, isTabShown, openPanel } from "../dock";
+import { currentDockScope, isTabShown, openPanel } from "@penguinharness/plugin-terminal/web";
 import { isBlankUrl } from "./address";
 import {
   claimGuest,

@@ -35,7 +35,7 @@ import {
   readLauncherHidden,
   subscribeLauncherHidden,
   writeLauncherHidden,
-} from "../dock";
+} from "@penguinharness/plugin-terminal/web";
 import { useAuth } from "@prismshadow/penguin-web/internal";
 import { useLocale } from "@prismshadow/penguin-web/internal";
 import {

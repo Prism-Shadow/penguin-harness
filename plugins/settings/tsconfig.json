@@ -48,6 +48,9 @@
       "@prismshadow/penguin-server/internal": [
         "../../packages/server/src/internal.ts"
       ],
+      "@penguinharness/plugin-terminal/web": [
+        "../terminal/src/web/index.ts"
+      ],
       "@prismshadow/penguin-web/internal": [
         "../../packages/web/src/internal.ts"
       ]
