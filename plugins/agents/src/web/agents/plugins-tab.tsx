@@ -64,7 +64,7 @@ import type { ToneName } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
 import { ApiError } from "@prismshadow/penguin-web/internal";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
-import { useAgentLocation } from "./agent-location.js";
+import { useAgentLocation } from "@prismshadow/penguin-web/internal";
 import { useInstantSetting } from "@penguinharness/plugin-settings/web";
 import {
   publishMachineAgentsChanged,

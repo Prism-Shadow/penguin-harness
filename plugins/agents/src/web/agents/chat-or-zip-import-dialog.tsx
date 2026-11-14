@@ -36,7 +36,7 @@ import {
 } from "@prismshadow/penguin-ui";
 import { ApiError } from "@prismshadow/penguin-web/internal";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
-import { useAgentLocation } from "./agent-location.js";
+import { useAgentLocation } from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
 import { toneInk } from "@prismshadow/penguin-web/internal";
 import { useAiBridge } from "@penguinharness/plugin-sessions/web";
