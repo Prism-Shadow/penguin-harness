@@ -69,8 +69,6 @@ function linkedNames(): Set<string> {
   return linkDirs ?? new Set();
 }
 export async function refreshLinkDirs(root: string | undefined): Promise<void> {
-  if (root === linkDirsRoot && linkDirs !== null) return;
-  linkDirsRoot = root;
   const out = new Set<string>();
   if (root !== undefined && root !== "") {
     const prefix = pluginsPrefix(root);
@@ -80,6 +78,7 @@ export async function refreshLinkDirs(root: string | undefined): Promise<void> {
     }
   }
   linkDirs = out;
+  linkDirsRoot = root;
 }
 
 
