@@ -1,6 +1,7 @@
 export { dropsEmployeeGroup } from "./agent-employment.js";
 
 export { employmentsOf } from "./agent-employment.js";
+export { splitByEmployment } from "./agent-employment.js";
 
 export { downloadArchive } from "./archive-download";
 

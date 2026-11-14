@@ -98,7 +98,7 @@ import { agentKey, agentSettingsPath } from "@prismshadow/penguin-web/internal";
 import { mixAgents, useMachineAgents } from "@prismshadow/penguin-web/internal";
 import type { PlacedAgent } from "@prismshadow/penguin-web/internal";
 import { toneInk } from "@prismshadow/penguin-web/internal";
-import { employmentsOf, splitByEmployment } from "@prismshadow/penguin-web/internal";
+import { employmentsOf, splitByEmployment } from "./agent-employment";
 import { isBuiltinAgent } from "@prismshadow/penguin-web/internal";
 import {
   AGENT_GROUP_BYS,
