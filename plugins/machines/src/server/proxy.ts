@@ -16,7 +16,7 @@ import http from "node:http";
 import { Readable } from "node:stream";
 import { buffer } from "node:stream/consumers";
 import { ADOPTED_AT_HEADER } from "@penguinharness/plugin-sessions/server";
-import { answerOf } from "../socket/stream-answer.js";
+import { answerOf } from "@penguinharness/plugin-machines/server/socket/stream-answer";
 import { MachineAnswers, keepable, keptResponse } from "./answer-cache.js";
 import type { AnswerReader, KeptAnswer } from "./answer-cache.js";
 import { ASKED_ENCODINGS, decodableEncoding, decodedBody } from "./answer-decoding.js";

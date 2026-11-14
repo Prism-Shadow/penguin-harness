@@ -32,6 +32,9 @@
       "@penguinharness/plugin-machines/server/http/json-answer": [
         "../../packages/server/src/http/json-answer.ts"
       ],
+      "@penguinharness/plugin-machines/server/socket/stream-answer": [
+        "../../packages/server/src/socket/stream-answer.ts"
+      ],
       "@penguinharness/plugin-messaging/server": [
         "../../plugins/messaging/src/server/index.ts"
       ],
