@@ -1,7 +1,7 @@
 import { EmptyState, ICONS } from "@prismshadow/penguin-ui";
 import { S } from "@prismshadow/penguin-web/internal";
 import { machineForSession } from "../lib/session-machines.js";
-import { panelLabel, type DockPanelBodyProps, type PanelId } from "../dock/index";
+import { panelLabel, type DockPanelBodyProps, type PanelId } from "@penguinharness/plugin-terminal/web";
 
 import { useChatDock } from "./session/main-dock-context";
 import { ChatMemoryView } from "./memory-view";
