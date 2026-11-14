@@ -54,7 +54,7 @@ import {
   parseModelSwitchMessage,
   parseScheduledMessage,
 } from "./agent-handoff";
-import { parseSkillsMessage } from "@prismshadow/penguin-web/internal";
+import { parseSkillsMessage } from "./skill-use";
 import { TaskStatsLine } from "./task-stats-line";
 import type { StreamRenderContext } from "./message-stream";
 
