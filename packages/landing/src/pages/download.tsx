@@ -88,11 +88,11 @@ function FaqItem({
   );
 }
 
-function formatSpeed(bytesPerSecond: number): string {
-  if (bytesPerSecond >= 1024 * 1024) {
-    return `${(bytesPerSecond / 1024 / 1024).toFixed(1)} MB/s`;
-  }
-  return `${Math.max(1, Math.round(bytesPerSecond / 1024))} KB/s`;
+export function formatSpeed(bytesPerSecond: number): string {
+  // The unit is picked from the rounded value: 1023.6 KB/s rounds to 1024, which reads 1.0 MB/s.
+  const kilobytes = Math.max(1, Math.round(bytesPerSecond / 1024));
+  if (kilobytes < 1024) return `${kilobytes} KB/s`;
+  return `${(bytesPerSecond / 1024 / 1024).toFixed(1)} MB/s`;
 }
 
 function speedText(measurement: Measurement | null, testing: boolean): string {
