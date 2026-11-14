@@ -22,7 +22,8 @@ import {
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import type { ApprovalMode, FilesStatResponse, GoalResponse, GoalStateView, RecalledMessageResponse, ServerEvent, SessionCategory, SessionBatchResult, SessionContextResponse, SessionCreateResponse, SessionForkResponse, SessionProcessesResponse, SessionResponse, SessionsResponse, SessionsBatchResponse, SubagentMessageResponse, RetryNowResponse, TaskCreateResponse, SessionSandbox } from "@prismshadow/penguin-server/api";
 import { compactionThresholdFor } from "@penguinharness/plugin-usage/server";
-import { sessionMessages, sessionTraceImage, SESSION_ROUTES_BASE } from "@prismshadow/penguin-server/internal";
+import { sessionMessages, sessionTraceImage } from "@prismshadow/penguin-server/internal";
+import { SESSION_ROUTES_BASE } from "@penguinharness/plugin-usage/server";
 import { readableSession, amspSessionStream, pendingApprovals } from "@prismshadow/penguin-server/internal";
 import { PREVIEW_TOKEN_TTL_MS, resolvePreviewTarget } from "@prismshadow/penguin-server/internal";
 import type { AppEnv } from "@prismshadow/penguin-server/internal";
@@ -105,19 +106,7 @@ export interface SessionsRouteDeps {
   /** Users' unsent drafts, which go with the Session they were written for. */
   drafts: Pick<UserDraftsStore, "deleteBySession">;
 }
-import {
-  assertAttachmentBudget,
-  attachFilesToInput,
-  parseAttachmentPart,
-  readRecalledFiles,
-  removeAttachments,
-} from "@prismshadow/penguin-server/internal";
 import type { TaskAttachment } from "@prismshadow/penguin-server/internal";
-import {
-  INLINE_IMAGE_MAX_BYTES,
-  INLINE_IMAGE_MAX_MB,
-  toAttachmentLimits,
-} from "@prismshadow/penguin-server/internal";
 import type { AttachmentLimits } from "@prismshadow/penguin-server/internal";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
@@ -135,12 +124,6 @@ import { registerWorkspaceFileRoutes, workspaceFilesRoutes } from "@penguinharne
 import { archivedSessionsRoutes } from "./archived-sessions.js";
 import { ArchivedSessionsService } from "@prismshadow/penguin-server/internal";
 import { PreviewTokens } from "@prismshadow/penguin-server/internal";
-import type {
-  Access,
-  ModelOAuth,
-  ProjectConfigStore,
-  ProjectEvents,
-} from "@prismshadow/penguin-server/internal";
 import type { PlatformAuth } from "@prismshadow/penguin-server/internal";
 import type { ModelScopeAuth } from "@penguinharness/plugin-models/server";
 import type { Schedules, SessionDrivers, SessionIndex, SessionOrigins } from "@prismshadow/penguin-server/internal";

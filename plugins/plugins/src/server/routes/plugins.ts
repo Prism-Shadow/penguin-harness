@@ -56,7 +56,7 @@ import {
 } from "@prismshadow/penguin-core";
 import type { IconImage, NpmPackage } from "@prismshadow/penguin-core";
 import type { AgentMcpServersResponse, AgentPluginsInstallResponse, PluginFilesResponse, PluginIndexEntry, PluginIndexResponse, PluginLibraryResponse, PluginReadmeResponse } from "@prismshadow/penguin-server/api";
-import type { PluginUninstallResponse } from "../../api/types.js";
+import type { PluginUninstallResponse } from "@prismshadow/penguin-server/api";
 import type { AppEnv } from "@prismshadow/penguin-server/internal";
 import type { ServerConfig } from "@prismshadow/penguin-server/internal";
 import type { Config, Hmr } from "@prismshadow/penguin-server/internal";
@@ -68,14 +68,14 @@ import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx, Json } from "@prismshadow/penguin-core/kernel";
 import { agentHooksRoutes } from "@penguinharness/plugin-agents/server";
 import { BUILTIN_REGISTRY_SOURCE, builtinPluginRegistry, cachedRegistry, httpPluginRegistry, localPluginDisplay, mergeIndexes, withoutIcon, NIGHTLY_INDEX_URL } from "../plugin/registry.js";
-import type { CachedRegistry, IndexDocumentEntry, IndexSnapshot, PluginRegistry } from "../plugin/registry.js";
+import type { CachedRegistry, IndexSnapshot, PluginRegistry } from "../plugin/registry.js";
 import { PACKAGE_NAME, pluginBases, resolvePluginPackage } from "../plugin/loader.js";
 import type { PluginBase } from "../plugin/loader.js";
 import { installedPackageDir, pluginsPrefix, prefixDependencies } from "../plugin/install.js";
 import { pluginArchiveResponse, unscopedName, zipPluginPackage } from "../services/plugin-archive.js";
 import { migrateWorkbenches } from "@penguinharness/plugin-workbenches/server";
 import type { PluginLibrary } from "@prismshadow/penguin-server/internal";
-import { uninstallAgentPlugin } from "../../services/plugin-uninstall.js";
+import { uninstallAgentPlugin } from "@prismshadow/penguin-server/internal";
 
 /** What these route groups reach — bound by their component below. */
 export interface PluginsRouteDeps {
@@ -87,11 +87,12 @@ export interface PluginsRouteDeps {
   /** An uninstall removes the plugin's workbenches the way a single removal does. */
   workbenches: Pick<Workbenches, "remove">;
 }
-import { errorBody } from "../errors.js";
+import { errorBody } from "@prismshadow/penguin-server/internal";
 import { HttpError } from "@prismshadow/penguin-server/internal";
-import { iconRef, iconResponse } from "../icon-response.js";
+import { iconRef, iconResponse } from "@prismshadow/penguin-server/internal";
 import { badRequest, optionalStringArray, readJson, requireValidId } from "@prismshadow/penguin-server/internal";
-import type { toAgentMcpServerItem, toPluginItem, resolveLibraryPlugins, PluginsRouteDeps, toSkillItem, toHookItem } from "@prismshadow/penguin-server/internal";
+import { toAgentMcpServerItem, toPluginItem, toSkillItem, toHookItem } from "@prismshadow/penguin-server/internal";
+import type { resolveLibraryPlugins } from "@prismshadow/penguin-server/internal";
 import type { Plugin } from "@prismshadow/penguin-core/plugin";
 import {
   agentHookIconRoute,
@@ -396,9 +397,9 @@ export interface PluginRoutesOptions {
 async function prefixEntries(
   prefix: string | null,
   listed: ReadonlySet<string>,
-): Promise<IndexDocumentEntry[]> {
+): Promise<(PluginIndexEntry & { icon?: string })[]> {
   if (prefix === null) return [];
-  const entries: IndexDocumentEntry[] = [];
+  const entries: (PluginIndexEntry & { icon?: string })[] = [];
   for (const name of Object.keys(await prefixDependencies(prefix)).sort()) {
     if (listed.has(name) || !PACKAGE_NAME.test(name)) continue;
     const dir = installedPackageDir(prefix, name);

@@ -185,6 +185,8 @@ export * from "./services/session-deletion.js";
 export * from "./services/organization-deletion.js";
 export * from "./services/agent-deletion.js";
 export * from "./services/agent-author-migration.js";
+export * from "./services/plugin-uninstall.js";
+export * from "./http/icon-response.js";
 export * from "./http/sse.js";
 export * from "./http/event-stream.js";
 export * from "./http/public-origin.js";

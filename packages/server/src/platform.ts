@@ -119,8 +119,7 @@ import { SandboxModule } from "@penguinharness/plugin-sandbox/server";
 import { SandboxSettings } from "@penguinharness/plugin-sandbox/server";
 import { SandboxSettingsStatus } from "@penguinharness/plugin-sandbox/server";
 import { SchedulerRoutes } from "@penguinharness/plugin-schedules/server";
-import { Machines } from "@penguinharness/plugin-machines/server";
-import { MachinesModule } from "@penguinharness/plugin-machines/server";
+import { Machines, MachinesModule } from "@penguinharness/plugin-machines/server";
 import { OrganizationModule, OrgScheduler, OrgService } from "@penguinharness/plugin-company/server";
 import { OrgRoutes } from "@penguinharness/plugin-company/server";
 import { OrgRuns, OrgSessions } from "@penguinharness/plugin-company/server";
@@ -197,9 +196,7 @@ import { WebModule, WebShell } from "./http/routes/contributions.js";
 import { BuiltinBrowserModule } from "@penguinharness/plugin-browser/server";
 import { AgentApiModule } from "./amsp/module.js";
 import { CompanyModule } from "@penguinharness/plugin-company/server";
-import { OrgScheduler } from "@penguinharness/plugin-company/server";
 import { Scheduling } from "@penguinharness/plugin-sessions/server";
-import { Machines } from "@penguinharness/plugin-machines/server";
 
 
 /**
@@ -491,12 +488,6 @@ export class MessagingHubModule {}
  * The caches are the group's own store — only the four members the session runtime and
  * Project deletion reach for leave the group, as OrgCache.
  */
-@Module({
-  children: [OrgCacheRepo, OrganizationModule, OrgRoutes],
-  exports: [OrgCache, OrgService, OrgScheduler],
-})
-export class CompanyModule {}
-
 @Module({
   children: [
     GlobalFetch,

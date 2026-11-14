@@ -27,8 +27,10 @@ export type {
 } from "@prismshadow/penguin-server/internal";
 export type { Terminals } from "@penguinharness/plugin-terminal/server";
 export type { AgentService, AgentConfigService } from "@penguinharness/plugin-agents/server";
-export type {
+export {
   PluginConfig,
+} from "./plugin/config.js";
+export type {
   PluginConfigField,
   PluginConfiguration,
   PluginConfigSlots,
