@@ -12,7 +12,8 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import { Button, ConfirmModal, Modal } from "@prismshadow/penguin-ui";
 import { S } from "@prismshadow/penguin-web/internal";
-import { thinkingLevelLabel, type StagedThinkingSwitch } from "@prismshadow/penguin-web/internal";
+import { thinkingLevelLabel } from "@penguinharness/plugin-models/web";
+import type { StagedThinkingSwitch } from "@penguinharness/plugin-models/web";
 
 import type { SwitchContextShape } from "../model-switch";
 

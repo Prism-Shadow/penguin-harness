@@ -142,7 +142,7 @@ import type { PermissionPick } from "@prismshadow/penguin-web/internal";
 import { SkillIcon, SkillPickList, toggleSkillName } from "@penguinharness/plugin-agents/web";
 import { sameModelRef } from "@penguinharness/plugin-models/web";
 import { filterAgents, stagedSendRoute } from "./agent-handoff";
-import { employeesLast, isEmployee } from "@prismshadow/penguin-web/internal";
+import { employeesLast, isEmployee } from "@penguinharness/plugin-agents/web";
 import {
   ModelCatalogSelect,
   ModelPickerModal,
@@ -150,7 +150,7 @@ import {
   ThinkingLevelSelect,
   modelLabel,
   thinkingLevelLabel,
-} from "@prismshadow/penguin-web/internal";
+} from "@penguinharness/plugin-models/web";
 import { sessionModelPickerDisabled } from "./model-switch";
 import { matchSlash, removeSlashToken } from "./slash-token";
 import {

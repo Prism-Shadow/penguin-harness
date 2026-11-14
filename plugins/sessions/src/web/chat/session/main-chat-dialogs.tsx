@@ -1,6 +1,6 @@
 import { Button, ConfirmModal, Modal } from "@prismshadow/penguin-ui";
 import { S } from "@prismshadow/penguin-web/internal";
-import { thinkingLevelLabel } from "@prismshadow/penguin-web/internal";
+import { thinkingLevelLabel } from "@penguinharness/plugin-models/web";
 import type { MainChatView } from "../body/main-chat-view";
 
 export function renderMainChatDialogs(scope: MainChatView) {
