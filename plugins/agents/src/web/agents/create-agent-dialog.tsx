@@ -58,7 +58,7 @@ import {
   type PickableItem,
 } from "../skills";
 
-import { StdioDisclosure, stdioServers } from "../plugins";
+import { StdioDisclosure, stdioServers } from "@penguinharness/plugin-plugins/web";
 
 /** A library plugin as a picker row, keeping what the create confirmation reads: its title and its MCP servers. */
 export type PluginPickItem = PickableItem & Pick<PluginItem, "title" | "titleZh" | "mcpServers">;
