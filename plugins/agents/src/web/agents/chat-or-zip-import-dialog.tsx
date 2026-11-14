@@ -39,7 +39,7 @@ import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import { useAgentLocation } from "./agent-location.js";
 import { S } from "@prismshadow/penguin-web/internal";
 import { toneInk } from "@prismshadow/penguin-web/internal";
-import { useAiBridge } from "../ai-create";
+import { useAiBridge } from "@penguinharness/plugin-sessions/web";
 
 /** The Button look on the upload `<label>`. */
 const UPLOAD_LABEL_CLASS = buttonClass("secondary", "sm");

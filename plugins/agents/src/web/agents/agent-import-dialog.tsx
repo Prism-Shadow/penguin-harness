@@ -27,7 +27,7 @@ import { SEMANTIC_ID_PATTERN } from "@prismshadow/penguin-web/internal";
 import { toneInk } from "@prismshadow/penguin-web/internal";
 import { toastApiError } from "@prismshadow/penguin-web/internal";
 import {agentDisplayName, useProject} from "@prismshadow/penguin-web/internal";
-import { PromptFold, pickDefaultAgent, useAiBridge } from "../ai-create";
+import { PromptFold, pickDefaultAgent, useAiBridge } from "@penguinharness/plugin-sessions/web";
 import { ARCHIVE_ACCEPT, ARCHIVE_BUTTON_CLASS, agentIdFromArchiveName } from "./archive-file";
 import {
   MIGRATION_SOURCES,

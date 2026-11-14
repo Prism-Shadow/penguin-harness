@@ -85,7 +85,7 @@ import { useAuth } from "@prismshadow/penguin-web/internal";
 import { useLocale } from "@prismshadow/penguin-web/internal";
 import { useProject } from "@prismshadow/penguin-web/internal";
 import { agentKey, useAgentLocation } from "@prismshadow/penguin-web/internal";
-import { useAiBridge } from "../ai-create";
+import { useAiBridge } from "@penguinharness/plugin-sessions/web";
 import { buildMemoryAddPrompt, buildMemoryEditPrompt } from "./memory-chat-prompts";
 import {
   MemoryDocumentError,

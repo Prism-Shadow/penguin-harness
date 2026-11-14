@@ -48,7 +48,7 @@ import { formatDateTime } from "@prismshadow/penguin-web/internal";
 import { useProject } from "@prismshadow/penguin-web/internal";
 import { useAgentLocation } from "@prismshadow/penguin-web/internal";
 import { useAgentsOn } from "@prismshadow/penguin-web/internal";
-import { AiCreateModal, AiCreateButtons } from "../ai-create";
+import { AiCreateModal, AiCreateButtons } from "@penguinharness/plugin-sessions/web";
 import { ScheduleFormModal, ScheduleSuggestions, scheduleExamples, toggleBody } from "../schedules";
 import { usePromptInjection } from "./prompt-injection-controls";
 import { toastApiError } from "@prismshadow/penguin-web/internal";

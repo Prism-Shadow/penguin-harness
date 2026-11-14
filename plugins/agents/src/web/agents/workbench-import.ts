@@ -9,7 +9,7 @@
  * language switches like every other string consumer.
  */
 import { S } from "@prismshadow/penguin-web/internal";
-import { composeAiPrompt } from "../ai-create";
+import { composeAiPrompt } from "@penguinharness/plugin-sessions/web";
 import { classifyImportSource } from "./skill-import-source";
 
 /** Lead sentence for one source: one per source kind, each embedding the trimmed source. */
