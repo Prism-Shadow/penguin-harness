@@ -11,7 +11,7 @@ import type { ForkTarget } from "../task-stats-line";
 import type { RequestFailure } from "../request-failure-report";
 import { prepareNewChatDraft } from "../new-chat";
 import { DRAFT_SESSION_ID } from "../draft-sessions";
-import { turnPricing, sameModelRef } from "@prismshadow/penguin-web/internal";
+import { turnPricing, sameModelRef } from "@penguinharness/plugin-models/web";
 import { openPanel } from "@prismshadow/penguin-web/internal";
 import type { useMainChatControls } from "./main-chat-controls";
 
