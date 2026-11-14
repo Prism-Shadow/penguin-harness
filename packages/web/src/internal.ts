@@ -61,6 +61,7 @@ export * from "./lib/nav-icons";
 export * from "./lib/dock-close-guard.js";
 export * from "./lib/semantic-id";
 export * from "./features/model-picker";
+export * from "./features/workspace";
 
 export * from "./lib/sidebar-contributions";
 export * from "./lib/stat-icons";

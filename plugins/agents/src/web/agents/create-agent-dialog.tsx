@@ -49,7 +49,7 @@ import { S } from "@prismshadow/penguin-web/internal";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import { SEMANTIC_ID_PATTERN } from "@prismshadow/penguin-web/internal";
 import { SemanticIdField } from "../semantic-id";
-import { WorkspaceSelect } from "../workspace";
+import { WorkspaceSelect } from "@prismshadow/penguin-web/internal";
 import {
   SkillPickList,
   addSkillNames,
