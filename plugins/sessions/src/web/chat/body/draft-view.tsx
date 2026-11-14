@@ -68,7 +68,7 @@ import { useProject } from "@prismshadow/penguin-web/internal";
 import { useSessions } from "@prismshadow/penguin-web/internal";
 import { ChatInput, type ComposerControl } from "../chat-input";
 import { APPROVAL_MODES } from "../approval-mode";
-import { adoptDockScope, setDockConversation } from "@penguinharness/plugin-terminal/web";
+import { adoptDockScope, currentDockScope, setDockConversation } from "@penguinharness/plugin-terminal/web";
 import { StartDashboard } from "../start-dashboard";
 import { clearDraft, draftKey, loadDraft, saveDraft, type DraftCache } from "../draft-cache";
 import {
@@ -803,7 +803,7 @@ export function DraftView({
         // The draft now has an id of its own, so its docks move with it: anything left
         // behind under the draft's scope would surface in the NEXT new conversation
         // instead (dock-state.ts).
-        adoptDockScope(dockScope, res.sessionId, openRef.current);
+        adoptDockScope(currentDockScope(), res.sessionId, openRef.current);
         navigate(`/chat/${res.sessionId}`, { replace: true });
         return true;
       } catch (e) {
