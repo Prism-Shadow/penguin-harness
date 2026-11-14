@@ -8,8 +8,8 @@ import type { MachineInfo, MachinesResponse } from "@prismshadow/penguin-server/
 import { machineLink } from "@prismshadow/penguin-web/internal";
 import type { MachineLink } from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
-import { readMachine, retryReading } from "../machines/machines-view";
-import type { RetryReading } from "../machines/machines-view";
+import { readMachine, retryReading } from "@penguinharness/plugin-machines/web";
+import type { RetryReading } from "@penguinharness/plugin-machines/web";
 
 export interface MachineAway {
   link: Exclude<MachineLink, "connected" | "unknown">;
