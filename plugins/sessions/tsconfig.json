@@ -9,6 +9,9 @@
     ],
     "jsx": "react-jsx",
     "paths": {
+      "@prismshadow/penguin-server/model-catalog": [
+        "../../packages/server/src/model-catalog/index.ts"
+      ],
       "@penguinharness/plugin-workbenches/server": [
         "../../plugins/workbenches/src/server/index.ts"
       ],

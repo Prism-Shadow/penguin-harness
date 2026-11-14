@@ -15,7 +15,7 @@ import {
   groupKeyReaches,
   type EffectiveConnection,
   type ProviderConnectionShape,
-} from "@prismshadow/penguin-core/model-catalog";
+} from "@prismshadow/penguin-server/model-catalog";
 
 import type {
   CredentialInfo,

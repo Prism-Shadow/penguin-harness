@@ -112,7 +112,7 @@ import type { Settings } from "@prismshadow/penguin-server/internal";
 import type { MessagingBindings } from "@prismshadow/penguin-server/internal";
 import type { OrgCache } from "@penguinharness/plugin-company/server";
 import { enabledMessagingChannel } from "@penguinharness/plugin-messaging/server";
-import { MODELSCOPE_PROVIDER_ID } from "@prismshadow/penguin-core/model-catalog";
+import { MODELSCOPE_PROVIDER_ID } from "@prismshadow/penguin-server/model-catalog";
 
 /**
  * 409 for when there's nothing to compact: give the specific reason rather than a

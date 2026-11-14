@@ -35,7 +35,7 @@ import {
   catalogEntryFor,
   offPeakAt,
   offPeakScheduledRefs,
-} from "@prismshadow/penguin-core/model-catalog";
+} from "@prismshadow/penguin-server/model-catalog";
 import type {
   UsageModelSums,
   UsageGroupModelSums,

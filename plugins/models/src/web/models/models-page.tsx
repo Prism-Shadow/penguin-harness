@@ -247,15 +247,15 @@ import {
   type FastModeProtocol,
   type ModelProviderBridgeAuth,
   type ModelProviderInfo,
-} from "@prismshadow/penguin-core/model-catalog";
+} from "@prismshadow/penguin-server/model-catalog";
 
 ||||||| /tmp/_a
-} from "@prismshadow/penguin-core/model-catalog";
+} from "@prismshadow/penguin-server/model-catalog";
 import type {
   FastModeProtocol,
   ModelProviderBridgeAuth,
   ModelProviderInfo,
-} from "@prismshadow/penguin-core/model-catalog";
+} from "@prismshadow/penguin-server/model-catalog";
 =======
   type FastModeProtocol,
   type ModelProviderBridgeAuth,
