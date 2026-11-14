@@ -14,7 +14,7 @@ import type { PermissionPick } from "@prismshadow/penguin-web/internal";
 import { onPluginConfigSaved } from "@prismshadow/penguin-web/internal";
 import { approvalKey } from "@prismshadow/penguin-web/internal";
 import type { ComposerReference } from "@prismshadow/penguin-web/internal";
-import None{useLocale} from "@prismshadow/penguin-web/internal";
+import {useLocale} from "@prismshadow/penguin-web/internal";
 import type { ComposerControl } from "../chat-input";
 import type { A2uiActions } from "../message-stream";
 import type { SessionStreamState } from "../use-session-stream";

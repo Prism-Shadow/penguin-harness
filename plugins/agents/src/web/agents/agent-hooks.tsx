@@ -31,8 +31,8 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
-import None{useLocale} from "@prismshadow/penguin-web/internal";
-import None{useProject} from "@prismshadow/penguin-web/internal";
+import {useLocale} from "@prismshadow/penguin-web/internal";
+import {useProject} from "@prismshadow/penguin-web/internal";
 import { useAgentLocation } from "./agent-location.js";
 import { localizedText } from "@prismshadow/penguin-web/internal";
 import { SkillTile } from "../skills";

@@ -1,6 +1,6 @@
 import { sessionActivity, sessionBackgroundTasks } from "@prismshadow/penguin-web/internal";
 import { bucketCostUsd } from "@prismshadow/penguin-web/internal";
-import None{agentDisplayName} from "@prismshadow/penguin-web/internal";
+import {agentDisplayName} from "@prismshadow/penguin-web/internal";
 import { modelTaskStartCount } from "../agent-topology";
 import { ChatInput } from "../chat-input";
 import { approvalModeChoices } from "../approval-mode";

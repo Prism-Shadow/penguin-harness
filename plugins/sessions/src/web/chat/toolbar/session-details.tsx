@@ -10,7 +10,7 @@ import { providerInfo } from "@prismshadow/penguin-server/model-catalog";
 import { S } from "@prismshadow/penguin-web/internal";
 import { formatDateTime } from "@prismshadow/penguin-web/internal";
 import { nameOnMachine } from "@prismshadow/penguin-web/internal";
-import None{agentDisplayName} from "@prismshadow/penguin-web/internal";
+import {agentDisplayName} from "@prismshadow/penguin-web/internal";
 import type { HeaderStats } from "./session-stats";
 
 /**

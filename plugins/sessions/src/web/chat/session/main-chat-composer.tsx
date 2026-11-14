@@ -7,7 +7,7 @@ import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import type { PermissionPick } from "@prismshadow/penguin-web/internal";
 import { a2uiDrafts } from "@prismshadow/penguin-web/internal";
 import { approvalKey } from "@prismshadow/penguin-web/internal";
-import None{useLocale} from "@prismshadow/penguin-web/internal";
+import {useLocale} from "@prismshadow/penguin-web/internal";
 import type { A2uiActions } from "../message-stream";
 import type { ComposerControl } from "../chat-input";
 import type { ComposerReference } from "@prismshadow/penguin-web/internal";
