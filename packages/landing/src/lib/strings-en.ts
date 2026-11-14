@@ -962,4 +962,240 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
       },
     },
   },
+  company: {
+    title: "Company mode: read tickets, not transcripts",
+    description:
+      "Spec and interactive prototype for the next company mode. You talk to one lead agent; it files work as tickets, and a ticket comes to you only to be accepted, answered or reviewed.",
+    name: "Company mode",
+    draft: "Draft spec",
+    headline: "Read tickets, not transcripts",
+    subline:
+      "The lead agent takes your requests, files them as tickets and hands each to a work session. A ticket comes to you only to be accepted, answered or reviewed.",
+    specNote:
+      "This page specifies the next company mode as the implementation target. For the current release, see ",
+    currentDocs: "the company mode docs",
+    specEnd: ".",
+
+    frame: {
+      title: "Company mode prototype",
+      startsLabel: "Initial state",
+      starts: { week: "After one week", fresh: "From scratch" },
+      open: "Open standalone",
+      note: "Built with production controls and sample data; no live agents are running. Click “Let time pass” at the bottom right to advance work sessions.",
+    },
+
+    changes: {
+      title: "Changes from the shipped version",
+      subtitle:
+        "The shell, board, ticket format, and schedules remain. Displayed content, decision points, and notification triggers are revised.",
+      head: { topic: "Item", now: "Current", spec: "New spec" },
+      items: [
+        {
+          topic: "Home",
+          now: "Shows four overview metrics; inbox ranks third",
+          spec: "Opens on the first ticket waiting on you",
+        },
+        {
+          topic: "Decisions",
+          now: "Tickets show only block reasons; answers require a channel",
+          spec: "Accept, answer or review on the ticket; the record stays there",
+        },
+        {
+          topic: "Communication",
+          now: "All-hands channel, stream channels, and individual desks",
+          spec: "New tasks go to the lead; ticket details run in work sessions",
+        },
+        {
+          topic: "Notifications",
+          now: "Mentions, blocked tickets, and closed tickets notify the inbox",
+          spec: "Notifies only when awaiting acceptance, answers, or review",
+        },
+        {
+          topic: "Sidebar",
+          now: "Six standalone pages, channels, and employee desks",
+          spec: "Laid out as the Agent page: tell the lead, team, handbook and all tickets at the top, then the inbox grouped by state, and the schedules",
+        },
+        {
+          topic: "Employees",
+          now: "Permanent desks collaborating via channels",
+          spec: "A name and a title; only the lead is permanent, others launch sessions per ticket",
+        },
+        {
+          topic: "Working together",
+          now: "Employees hand work to each other in channels",
+          spec: "Several employees can relay one ticket: a delivery goes to verification first, and reaches you once it passes",
+        },
+        {
+          topic: "Setup",
+          now: "CEO posts a setup proposal in the all-hands channel",
+          spec: "State a single goal, then review proposed tickets one by one",
+        },
+        {
+          topic: "Calendar and finance",
+          now: "Standalone pages for calendar and finances",
+          spec: "Removed. Schedules live in the inbox; Token use and cost show on the team page and each ticket",
+        },
+      ],
+    },
+
+    evolution: {
+      title: "Self-improvement from reviews",
+      subtitle:
+        "No Benchmark and no scoring. The company learns from your reviews, send-backs and answers.",
+      loops: [
+        {
+          title: "Every ticket",
+          when: "Automatic, no approval required",
+          items: [
+            "Your answers are recorded as decisions, so you are not asked again.",
+            "Send-back reasons are logged as lessons.",
+            "An employee whose delivery is sent back or corrected records the point in its own Skill.",
+          ],
+        },
+        {
+          title: "Every week",
+          when: "A schedule of the lead's own, Mondays by default",
+          items: [
+            "Compares the share accepted at first review, send-backs, questions and cost against the last one.",
+            "Records observed outcomes from previously accepted changes.",
+            "Files proposed changes as tickets for you; once you accept, snapshots before applying.",
+          ],
+        },
+      ],
+      curves: {
+        title: "Key metrics",
+        subtitle:
+          "Counted from ticket files. Spend is high at first, then should fall, along with mistakes.",
+        head: { metric: "Metric", trend: "Expected trend" },
+        items: [
+          { metric: "Share accepted at first review", trend: "Upward" },
+          { metric: "Questions per ticket", trend: "Downward, approaching zero repeats" },
+          { metric: "Send-backs repeating a known lesson", trend: "Downward" },
+          {
+            metric: "Token usage and cost per finished ticket",
+            trend: "High initially, then downward",
+          },
+        ],
+        note: "Retrospectives show concrete figures (e.g. “2 of 10 sent back”), not percentages alone. Whether to undo a change is your call.",
+        shrink:
+          "Handbook size remains bounded: lessons merged into Skills leave the index, and superseded decisions are deleted to prevent token bloat.",
+      },
+    },
+
+    ticket: {
+      title: "Ticket file specification",
+      subtitle:
+        "A ticket is a Markdown file in the Project; its directory reflects its status. New fields are marked in the final column.",
+      example: "Example: ticket with an open question",
+      exampleFile: `---
+title: Add CSV to the export
+status: in_progress
+owner: agent:org-engineer
+verifier: agent:org-verifier
+source: user:alice
+notify: [user:alice]
+priority: P1
+blocked: Waiting on a decision
+blocked_by: user:alice
+ask:
+  question: "Large exports: stream them, or build them in one go?"
+  options: [stream, one go]
+  recommended: 0
+sessions:
+  - {id: s_c1, by: agent:org-engineer, as: build}
+history:
+  - {at: 2026-11-13T10:00:12+08:00, by: agent:lead, action: created}
+  - {at: 2026-11-13T10:01:03+08:00, by: system, action: session_started, note: s_c1}
+  - {at: 2026-11-13T10:05:40+08:00, by: agent:org-engineer, action: blocked, note: user:alice}
+---
+
+## Goal
+The export page offers CSV as well as JSON.
+
+## Acceptance criteria
+- An export of a hundred thousand rows does not time out
+- The JSON export is unchanged
+
+## Progress
+- Read the export module; there are two ways to do it
+
+## Result
+`,
+      groups: {
+        frontmatter: "Frontmatter",
+        sections: "Sections",
+        triage: "Your triage (stored per person, not in the file)",
+      },
+      head: {
+        field: "Field",
+        required: "Required",
+        writers: "Writer",
+        meaning: "Meaning",
+        state: "Today",
+      },
+      required: "required",
+      optional: "optional",
+      shipped: "shipped",
+      added: "new",
+      writers: { person: "person", agent: "Agent", server: "server" },
+      join: ", ",
+      waitTitle: "Waiting states are derived",
+      waitText: "Computed directly from three existing conditions without an extra status field:",
+      waits: {
+        accept: "Awaiting acceptance",
+        answer: "Awaiting answer",
+        review: "Awaiting review",
+      },
+      fields: {
+        title: "Single-line summary displayed in the inbox.",
+        status: "Task progress, matching the file's parent directory.",
+        owner:
+          "The one principal responsible for it: it builds, and it starts every session of the ticket.",
+        verifier: "Verifies each delivery first; only what it passes reaches you.",
+        source: "Ticket origin: a person, a schedule, or another ticket.",
+        parent: "Parent ticket for rolling up costs.",
+        notify: "Recipients notified upon ticket closure.",
+        priority: "Priority level.",
+        due: "Target completion date.",
+        blocked: "Reason for blockage.",
+        blocked_by: "Who can unblock it; when that is a person, the ticket waits on them.",
+        ask: "Open question, choices, and recommended option; cleared once answered.",
+        deliverables: "Paths or URLs to deliverables (e.g. pull requests).",
+        sessions: "The sessions that worked on it: who, and whether to build or verify.",
+        history: "Chronological audit log.",
+        "## Goal": "What is to be achieved.",
+        "## Acceptance criteria": "What counts as done.",
+        "## Progress": "Progress log, one entry per line.",
+        "## Decisions": "Questions resolved and their recorded answers.",
+        "## Result": "Outcome summary and deliverable locations.",
+        unread: "Marked unread when entering a waiting state; cleared on open.",
+        snoozed_until: "Hidden from inbox until this timestamp.",
+        archived: "Removed from inbox without modifying ticket content.",
+      },
+    },
+
+    invariants: {
+      title: "Server-enforced invariants",
+      subtitle: "Skills and handbooks are advisory. The server enforces these rules directly.",
+      refusal: "Refused with ",
+      shipped: "shipped",
+      added: "new",
+      items: {
+        owner_starts: "Work sessions can only be initiated by the assigned owner or a person.",
+        files_are_truth:
+          "Files are the source of truth; the database only stores rebuildable caches and each person's triage.",
+        one_front: "A work session reaches you only through its ticket's question and delivery.",
+        three_points: "Only proposals, questions, and deliverables trigger an unread state.",
+        one_ask: "A ticket may have at most one open question at a time.",
+        answer_recorded:
+          "Answers are written to the ticket before forwarding to the asking session.",
+        observe_first: "Tickets proposed by schedules open no sessions until accepted.",
+        triage_apart:
+          "Later and archive actions do not modify tasks; a ticket waiting on you cannot be deferred or archived.",
+        own_skill_kept: "An employee's own Skill survives plugin updates.",
+        verified_first: "On a ticket with a verifier, a delivery reaches you only once verified.",
+        snapshot_first: "The employees a change touches are snapshotted before it is applied.",
+      },
+    },
+  },
 };

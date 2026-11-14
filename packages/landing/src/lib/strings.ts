@@ -6,6 +6,8 @@
  * the tree keyed by locale — keep `S.x` reads inside components. English marketing copy uses lowercase `agent`; preserve the
  * established casing of Workspace, Token, Task, Skill, Trace, and other product terms.
  */
+import type { FieldPath, InvariantId } from "../../../ui-gallery/src/company/spec";
+
 export const zh = {
   siteName: "PenguinHarness",
   backToTop: "回到顶部",
@@ -949,6 +951,241 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
         npm: { name: "@prismshadow/amsp", text: "npm 上的 SDK，适用于 Node 24 与浏览器" },
         source: { name: "源码", text: "packages/amsp，Apache-2.0" },
       },
+    },
+  },
+  /**
+   * The company-mode spec (pages/company.tsx): the page around the prototype, which lives in the
+   * gallery (packages/ui-gallery/src/company) and carries its own words. `fields` and `items` are
+   * keyed by the gallery's spec.ts, so a field or a rule with no words fails to typecheck.
+   */
+  company: {
+    /** The tab title and description while the page is open; the static shell carries the English pair (scripts/site-routes.mjs). */
+    title: "公司模式：只读工单，不读对话",
+    description:
+      "下一版公司模式规格与交互原型。你只和主理 Agent 说话，需求记成工单，只在等你接受、回答或验收时找你。",
+    name: "公司模式",
+    draft: "规格草案",
+    headline: "只读工单，不读对话",
+    subline:
+      "主理 Agent 接下需求，记成工单，交给工作会话去做。工单只在等你接受、回答或验收时找你。",
+    /** The sentence before the link to the shipped mode's docs page, and the full stop after it. */
+    specNote: "本页为下一版公司模式规格，实现以此为准。已发布版本见",
+    currentDocs: "公司模式文档",
+    specEnd: "。",
+
+    /** The framed prototype (sections/company/prototype.tsx). */
+    frame: {
+      title: "公司模式原型",
+      /** The two states the prototype can open in, and the name of that choice. */
+      startsLabel: "初始状态",
+      starts: { week: "运行一周", fresh: "从零开始" },
+      open: "单独打开",
+      note: "界面采用真实控件与演示数据，后台无运行中的 Agent。点击右下角「让时间过去」，推进工作会话进度。",
+    },
+
+    /** What the spec changes against the shipped company mode (sections/company/changes.tsx). */
+    changes: {
+      title: "与已发布版本的差异",
+      subtitle: "沿用外壳、看板、工单文件与日程。调整展示内容、决策入口与通知条件。",
+      head: { topic: "事项", now: "现有版本", spec: "新版规格" },
+      items: [
+        {
+          topic: "首页",
+          now: "展示四项概览指标，收件箱排在第三",
+          spec: "打开就停在第一张等你的工单上",
+        },
+        {
+          topic: "决策方式",
+          now: "工单仅显示阻塞原因，回答需进入频道",
+          spec: "在工单上接受、回答或验收，记录留在工单里",
+        },
+        {
+          topic: "沟通对象",
+          now: "全员频道、业务线频道与员工个人工位",
+          spec: "新任务对接主理，工单细节在对应工作会话处理",
+        },
+        {
+          topic: "通知范围",
+          now: "提及、阻塞与关闭的工单均进入收件箱",
+          spec: "仅待接受、待回答与待验收三种事件触发通知",
+        },
+        {
+          topic: "侧边栏",
+          now: "六个独立页面、各频道与员工工位",
+          spec: "和 Agent 页面一样：上面是对主理说、团队、手册和全部工单，下面是按状态分组的收件箱和日程",
+        },
+        {
+          topic: "员工架构",
+          now: "员工常驻工位，通过频道进行协作",
+          spec: "有名字和职位；仅主理常驻，其余员工按工单启动工作会话",
+        },
+        {
+          topic: "多人协作",
+          now: "员工在频道里互相交接",
+          spec: "一张工单可由几名员工接力：开发交付后交给验证，验证通过才到你",
+        },
+        {
+          topic: "初始配置",
+          now: "CEO 在全员频道发布初始化提案",
+          spec: "输入一句话目标，逐项确认主理提议的工单",
+        },
+        {
+          topic: "日程与财务",
+          now: "日程与财务各占一个独立页面",
+          spec: "去掉。日程归入收件箱，Token 用量和花费显示在团队页和工单上",
+        },
+      ],
+    },
+
+    /** How the company gets better (sections/company/evolution.tsx). */
+    evolution: {
+      title: "按验收结果自进化",
+      subtitle: "不跑 Benchmark，也不打分。公司从你的验收、打回和回答里学习。",
+      loops: [
+        {
+          title: "每张工单",
+          when: "自动执行，不用你批",
+          items: [
+            "你的回答记录为决定，同类问题不再问你。",
+            "打回原因记录为教训。",
+            "被打回或纠正的员工将要点记入自身 Skill。",
+          ],
+        },
+        {
+          title: "每周复盘",
+          when: "主理的定时日程，默认每周一",
+          items: [
+            "统计一次就验收通过的比例、打回数、提问数与费用，和上次对比。",
+            "记录上次采纳改动后的实际运行效果。",
+            "要改的提成工单给你；你接受后先存快照再改。",
+          ],
+        },
+      ],
+      curves: {
+        title: "核心指标",
+        subtitle: "指标均统计自工单文件。初期花费较高，之后费用和出错应逐步下降。",
+        head: { metric: "指标", trend: "预期走向" },
+        items: [
+          { metric: "一次就验收通过的比例", trend: "上升" },
+          { metric: "工单平均提问次数", trend: "下降，重复问题趋近于 0" },
+          { metric: "与已知教训重复的打回次数", trend: "下降" },
+          { metric: "每张完成工单的 Token 与费用", trend: "前期较高，后续下降" },
+        ],
+        note: "复盘写具体数值，如「10 张打回 2 张」，不只写百分比。是否撤回改动由你决定。",
+        shrink:
+          "教训并入 Skill 后移出索引，被推翻的决定直接删除。否则手册越来越长，会把省下的 Token 吃回去。",
+      },
+    },
+
+    /** The ticket file field by field (sections/company/ticket.tsx), keyed by lib/company-spec.ts. */
+    ticket: {
+      title: "工单文件逐字段说明",
+      subtitle: "工单是 Project 里的 Markdown 文件，所在目录对应其状态。最后一列标注新增字段。",
+      example: "示例：包含未决问题的工单",
+      exampleFile: `---
+title: 给导出加上 CSV
+status: in_progress
+owner: agent:org-engineer
+verifier: agent:org-verifier
+source: user:alice
+notify: [user:alice]
+priority: P1
+blocked: 等一个决定
+blocked_by: user:alice
+ask:
+  question: 大文件导出：流式写出，还是一次生成？
+  options: [流式写出, 一次生成]
+  recommended: 0
+sessions:
+  - {id: s_c1, by: agent:org-engineer, as: build}
+history:
+  - {at: 2026-11-13T10:00:12+08:00, by: agent:lead, action: created}
+  - {at: 2026-11-13T10:01:03+08:00, by: system, action: session_started, note: s_c1}
+  - {at: 2026-11-13T10:05:40+08:00, by: agent:org-engineer, action: blocked, note: user:alice}
+---
+
+## Goal
+导出页除了 JSON，还能导出 CSV。
+
+## Acceptance criteria
+- 十万行的导出不超时
+- 现有的 JSON 导出不变
+
+## Progress
+- 读完导出模块，有两种做法
+
+## Result
+`,
+      groups: {
+        frontmatter: "Frontmatter",
+        sections: "正文各节",
+        triage: "你的处置（按人保存，不写入文件）",
+      },
+      head: {
+        field: "字段",
+        required: "必填",
+        writers: "写入方",
+        meaning: "含义",
+        state: "是否新增",
+      },
+      required: "必填",
+      optional: "可选",
+      shipped: "已有",
+      added: "新增",
+      writers: { person: "人", agent: "Agent", server: "服务端" },
+      /** Between two writers, and between a field's facts on a phone. */
+      join: "、",
+      waitTitle: "「等你」不是一种状态",
+      waitText: "由三种已有情形推导得出，无需额外的状态定义：",
+      waits: { accept: "待接受", answer: "待回答", review: "待验收" },
+      fields: {
+        title: "单行标题，显示在收件箱中。",
+        status: "任务进度，对应文件所在目录。",
+        owner: "唯一的负责方，负责开发，也由它发起工单的每个会话。",
+        verifier: "交付先由它验证，通过了才到你这里。",
+        source: "工单来源：人、日程或另一张工单。",
+        parent: "父工单，用于向上汇总成本。",
+        notify: "工单关闭时的通知对象。",
+        priority: "工单优先级。",
+        due: "截止日期。",
+        blocked: "阻塞原因说明。",
+        blocked_by: "谁能解除阻塞；是人时，工单在等这个人。",
+        ask: "未决问题、选项与推荐项，回答后移除。",
+        deliverables: "交付物路径或链接（如 PR 地址）。",
+        sessions: "为它工作过的会话：谁，开发还是验证。",
+        history: "按时间正序记录的操作日志。",
+        "## Goal": "要达成什么。",
+        "## Acceptance criteria": "怎样算做完。",
+        "## Progress": "进展记录，每行一条。",
+        "## Decisions": "历史提问与对应决定。",
+        "## Result": "交付结果与产物位置。",
+        unread: "进入等待状态时标记为未读，打开后转为已读。",
+        snoozed_until: "在此时间前在收件箱中隐藏。",
+        archived: "移出收件箱，不影响工单本身。",
+      } satisfies Record<FieldPath, string>,
+    },
+
+    /** What the server enforces (sections/company/invariants.tsx), keyed by lib/company-spec.ts. */
+    invariants: {
+      title: "服务端强制规则",
+      subtitle: "Skill 与手册属于软性指引。以下规则由服务端强制校验。",
+      /** Before the answer a refused write gets. */
+      refusal: "拒绝时返回 ",
+      shipped: "已有",
+      added: "新增",
+      items: {
+        owner_starts: "工单会话只能由负责方或人发起。",
+        files_are_truth: "文件为唯一事实来源，数据库仅存可重建缓存与个人处置。",
+        one_front: "工作会话不主动找你，只通过工单上的提问和交付。",
+        three_points: "仅新增提议、提问与交付三种事件会触发未读状态。",
+        one_ask: "单张工单同一时间最多存在一个未决问题。",
+        answer_recorded: "回答先写入工单文件，再转交提问会话。",
+        observe_first: "日程生成的提议工单在接受前不创建会话。",
+        triage_apart: "稍后与归档不影响任务；等你的工单不能稍后或归档。",
+        own_skill_kept: "员工自己的 Skill 不会被插件更新覆盖。",
+        verified_first: "有验证人的工单，交付要验证通过才到你这里。",
+        snapshot_first: "改动员工前先存快照。",
+      } satisfies Record<InvariantId, string>,
     },
   },
 };
