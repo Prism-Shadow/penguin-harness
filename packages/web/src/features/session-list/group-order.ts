@@ -4,7 +4,7 @@ import {
   readStringArray,
   writeStringArray,
   type SessionOrderStorage,
-} from "../../lib/session-order";
+} from "@penguinharness/plugin-sessions/web";
 
 import type { GroupMode } from "../../components/ui/group-list";
 

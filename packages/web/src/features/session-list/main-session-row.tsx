@@ -16,7 +16,7 @@ import { Truncated } from "../../components/ui/truncated";
 import { writeClipboard } from "../../lib/clipboard";
 import { sessionActivityLabel, type SessionActivity } from "../../lib/session-activity";
 
-import { backgroundSourceMark } from "../../lib/session-source-mark";
+import { backgroundSourceMark } from "@penguinharness/plugin-sessions/web";
 import { useAgentAvatarSrc } from "../../lib/agent-avatar";
 import { machineForSession } from "../../lib/session-machines";
 

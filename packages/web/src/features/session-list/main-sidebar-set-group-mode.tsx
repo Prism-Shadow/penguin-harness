@@ -11,7 +11,7 @@ import {
   type NavEntryKey,
 } from "../../lib/sidebar-nav-state";
 
-import { loadSessionOrder } from "../../lib/session-order";
+import { loadSessionOrder } from "@penguinharness/plugin-sessions/web";
 import { loadGroupOrder } from "./group-order";
 import { storeGroupMode, type GroupMode } from "../../components/ui/group-list";
 

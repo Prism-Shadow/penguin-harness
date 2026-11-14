@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { loadPinnedSessions } from "./pinned-sessions";
 import { loadWorkspaceRegistry } from "./workspace-registry";
-import { loadSessionOrder } from "../../lib/session-order";
+import { loadSessionOrder } from "@penguinharness/plugin-sessions/web";
 import { loadGroupOrder } from "./group-order";
 import { useDraftSessions, type DraftSessionEntry } from "../chat";
 

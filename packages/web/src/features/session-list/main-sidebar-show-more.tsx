@@ -1,4 +1,4 @@
-import { SIDEBAR_PAGE_SIZE, revealStep } from "../../lib/session-grouping";
+import { SIDEBAR_PAGE_SIZE, revealStep } from "@penguinharness/plugin-sessions/web";
 import { MoreRow } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import type { useMainSidebarRenderRows } from "./main-sidebar-render-rows";

@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { groupPageOf, workspaceGroupKey } from "../../lib/session-grouping";
+import { groupPageOf, workspaceGroupKey } from "@penguinharness/plugin-sessions/web";
 import {
   registerWorkspace,
   saveWorkspaceRegistry,

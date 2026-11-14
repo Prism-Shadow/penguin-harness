@@ -4,7 +4,7 @@ import { forgetSession } from "../../lib/session-seen";
 import { apiErrorText } from "../../lib/api-error";
 import { toastApiError } from "../../lib/toast-api-error";
 import { removePinnedSession, savePinnedSessions } from "./pinned-sessions";
-import { removeFromSessionOrder, saveSessionOrder } from "../../lib/session-order";
+import { removeFromSessionOrder, saveSessionOrder } from "@penguinharness/plugin-sessions/web";
 import {
   DRAFT_SESSION_ID,
   clearDraft,

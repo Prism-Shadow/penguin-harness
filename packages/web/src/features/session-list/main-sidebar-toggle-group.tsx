@@ -6,9 +6,9 @@ import {
   groupPageSlice,
   groupSessionsByTime,
   matchesSessionQuery,
-} from "../../lib/session-grouping";
+} from "@penguinharness/plugin-sessions/web";
 import { savePinnedSessions, togglePinnedSession } from "./pinned-sessions";
-import { storeSessionSortMode, type SessionSortMode } from "../../lib/session-order";
+import { storeSessionSortMode, type SessionSortMode } from "@penguinharness/plugin-sessions/web";
 
 import { GroupPager } from "../../components/ui/group-list";
 import { saveGroupSet } from "../../lib/main-sidebar-persistence";

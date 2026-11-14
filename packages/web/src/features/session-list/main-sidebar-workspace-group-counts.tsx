@@ -4,7 +4,7 @@ import {
   aggregateWorkspaceLatest,
   completeWorkspaceGroups,
   groupSessionsByWorkspace,
-} from "../../lib/session-grouping";
+} from "@penguinharness/plugin-sessions/web";
 import { machineForSession } from "../../lib/session-machines";
 import { mergeRegisteredWorkspaces } from "./workspace-registry";
 import { orderGroups } from "./group-order";

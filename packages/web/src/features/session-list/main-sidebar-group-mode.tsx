@@ -7,7 +7,7 @@ import {
   initialSessionSortMode,
   loadSessionOrder,
   type SessionSortMode,
-} from "../../lib/session-order";
+} from "@penguinharness/plugin-sessions/web";
 
 import { loadGroupOrder } from "./group-order";
 import { initialGroupMode, type GroupMode } from "../../components/ui/group-list";

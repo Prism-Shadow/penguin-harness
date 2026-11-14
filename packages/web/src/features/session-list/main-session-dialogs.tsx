@@ -8,7 +8,7 @@ import {
 } from "@prismshadow/penguin-ui";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
-import { workspaceLabel } from "../../lib/session-grouping";
+import { workspaceLabel } from "@penguinharness/plugin-sessions/web";
 import { MessagingBindingModal } from "../messaging";
 import { draftSessionTitle } from "../chat";
 import type { MainSidebarState } from "./main-sidebar-controller";

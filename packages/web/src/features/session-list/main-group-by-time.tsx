@@ -1,4 +1,4 @@
-import { sectionWindow, SIDEBAR_PAGE_SIZE, TIME_LIST_KEY } from "../../lib/session-grouping";
+import { sectionWindow, SIDEBAR_PAGE_SIZE, TIME_LIST_KEY } from "@penguinharness/plugin-sessions/web";
 import { Fold, GroupHeader, MoreRow, SkeletonList } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { GROUP_MODE_ICONS } from "../../components/ui/group-list";

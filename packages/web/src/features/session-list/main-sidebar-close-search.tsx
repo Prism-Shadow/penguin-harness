@@ -1,5 +1,5 @@
 import type { DragEvent as ReactDragEvent } from "react";
-import { applyManualReorder, moveInSequence, saveSessionOrder } from "../../lib/session-order";
+import { applyManualReorder, moveInSequence, saveSessionOrder } from "@penguinharness/plugin-sessions/web";
 import { commitGroupOrder, isOrderableGroupMode, saveGroupOrder } from "./group-order";
 import { GROUP_DRAG_MIME, isGroupDrag } from "../../lib/main-sidebar-persistence";
 import type { useMainSidebarToggleGroup } from "./main-sidebar-toggle-group";
