@@ -66,6 +66,9 @@
       "@penguinharness/plugin-projects/web": [
         "../../plugins/projects/src/web/index.ts"
       ],
+      "@penguinharness/plugin-sandbox/server": [
+        "../../plugins/sandbox/src/server/index.ts"
+      ],
       "@penguinharness/plugin-schedules/web": [
         "../../plugins/schedules/src/web/index.ts"
       ],
@@ -104,6 +107,9 @@
       ],
       "@prismshadow/penguin-server/api": [
         "../server/src/api/types.ts"
+      ],
+      "@prismshadow/penguin-server/db/repos/organizations": [
+        "../server/src/db/repos/organizations.ts"
       ],
       "@prismshadow/penguin-server/ifaces.json": [
         "../server/src/ifaces.json"
