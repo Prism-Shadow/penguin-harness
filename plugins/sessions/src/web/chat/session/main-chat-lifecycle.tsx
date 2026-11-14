@@ -21,7 +21,7 @@ import { goalPluginGate } from "../goal-plugin-gate";
 import { useAgentSkills } from "../use-agent-skills";
 import { applyUsageFetch } from "../header-stats";
 import { hasConfiguredKey, sameModelRef } from "@prismshadow/penguin-web/internal";
-import { noteScheduleEvent } from "@prismshadow/penguin-web/internal";
+import { noteScheduleEvent } from "@penguinharness/plugin-schedules/web";
 import {
   adoptDockScope,
   currentDockScope,
