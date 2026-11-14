@@ -2,6 +2,9 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "paths": {
+      "@prismshadow/penguin-server/model-catalog": [
+        "./src/model-catalog/index.ts"
+      ],
       "@penguinharness/plugin-agents/server": [
         "../../plugins/agents/src/server/index.ts"
       ],
