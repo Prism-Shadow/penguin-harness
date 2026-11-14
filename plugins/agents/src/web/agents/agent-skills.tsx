@@ -32,8 +32,8 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "@prismshadow/penguin-web/internal";
-import { useLocale } from "../../state/locale";
-import { useProject } from "../../state/project";
+import None{useLocale} from "@prismshadow/penguin-web/internal";
+import None{useProject} from "@prismshadow/penguin-web/internal";
 import { useAgentLocation } from "./agent-location.js";
 import { SkillTile } from "../skills";
 import { localizedShortText } from "@prismshadow/penguin-web/internal";

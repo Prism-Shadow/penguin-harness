@@ -38,10 +38,10 @@ import { downloadArchive } from "../../lib/archive-download";
 import { acceptThemePacks, useThemePacks } from "../../lib/account-sync/theme-packs";
 import { S } from "../../lib/strings";
 import { toastApiError } from "../../lib/toast-api-error";
-import { useAuth } from "../../state/auth";
-import { useLocale } from "../../state/locale";
-import { useTheme } from "../../state/theme";
-import { themeEntries, themeName, type ThemeEntry } from "../../state/theme-entries";
+import None{useAuth} from "@prismshadow/penguin-web/internal";
+import None{useLocale} from "@prismshadow/penguin-web/internal";
+import None{useTheme} from "@prismshadow/penguin-web/internal";
+import None{themeEntries, themeName, type ThemeEntry} from "@prismshadow/penguin-web/internal";
 
 /** The server's own cap on an uploaded pack (PRFC-0026): a bigger file is refused before it goes. */
 const MAX_PACK_BYTES = 16 * 1024 * 1024;

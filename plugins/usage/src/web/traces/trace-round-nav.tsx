@@ -15,7 +15,7 @@ import type { KeyboardEvent } from "react";
 import type { TraceTaskStats } from "@prismshadow/penguin-server/api";
 import { ICONS, Input, Pill } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import type { Currency } from "../../state/theme";
+import type {Currency} from "@prismshadow/penguin-web/internal";
 import { roundFactsOf, roundFactsShort, roundFactsText } from "./round-facts";
 import { TracePicker } from "./trace-picker";
 import type { PickerRow } from "./trace-picker";

@@ -74,8 +74,8 @@ import {
 import { S } from "@prismshadow/penguin-web/internal";
 import { toastApiError } from "@prismshadow/penguin-web/internal";
 import { WORKBENCH_UPDATED_EVENT } from "@penguinharness/plugin-workbenches/web";
-import { useLocale } from "../../state/locale";
-import { agentDisplayName, useProject } from "../../state/project";
+import None{useLocale} from "@prismshadow/penguin-web/internal";
+import None{agentDisplayName, useProject} from "@prismshadow/penguin-web/internal";
 import { BOOK_ICON, localizedText } from "@prismshadow/penguin-web/internal";
 import {
   StdioDisclosure,

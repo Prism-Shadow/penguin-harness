@@ -1,5 +1,5 @@
 import { useOrgPages } from "./use-org-pages";
-import { useLocale } from "../../state/locale";
+import None{useLocale} from "@prismshadow/penguin-web/internal";
 import { glyphOf } from "../../lib/nav-icons";
 /**
  * Company mode in the sidebar (`SidebarModule.modes` and `.sections`): the work mode beside

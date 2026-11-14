@@ -29,7 +29,7 @@ import * as api from "../../api/endpoints";
 import { machineLink } from "../../lib/machine-link";
 import { machineForSession } from "../lib/session-machines.js";
 import { S } from "../../lib/strings";
-import { useMachines } from "../../state/machines";
+import None{useMachines} from "@prismshadow/penguin-web/internal";
 import { retryStatus } from "../machines/machine-card";
 import { machineAway } from "./machine-away";
 import { toastApiError } from "../../lib/toast-api-error";

@@ -3,10 +3,10 @@
  * current Project with its Agents, and its Session list.
  */
 import { useLocation, useNavigate, useParams } from "react-router";
-import { useAuth } from "../../../state/auth";
-import { useTheme } from "../../../state/theme";
-import { useProject } from "../../../state/project";
-import { useSessions } from "../../../state/sessions";
+import None{useAuth} from "@prismshadow/penguin-web/internal";
+import None{useTheme} from "@prismshadow/penguin-web/internal";
+import None{useProject} from "@prismshadow/penguin-web/internal";
+import None{useSessions} from "@prismshadow/penguin-web/internal";
 
 export function useChatInputs() {
   const navigate = useNavigate();

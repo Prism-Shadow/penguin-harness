@@ -14,7 +14,7 @@ import type { PermissionPick } from "../../../lib/permission-level";
 import { onPluginConfigSaved } from "../../../lib/plugin-config-event";
 import { approvalKey } from "../../../lib/amsp/stream-model";
 import type { ComposerReference } from "../../../lib/workspace-tree";
-import { useLocale } from "../../../state/locale";
+import None{useLocale} from "@prismshadow/penguin-web/internal";
 import type { ComposerControl } from "../chat-input";
 import type { A2uiActions } from "../message-stream";
 import type { SessionStreamState } from "../use-session-stream";

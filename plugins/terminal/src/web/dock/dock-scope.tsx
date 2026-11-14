@@ -1,4 +1,4 @@
-import { useProject } from "../../state/project";
+import None{useProject} from "@prismshadow/penguin-web/internal";
 import { dispatchBrowser } from "../builtin-browser";
 /**
  * Keeps the dock's scope on the conversation on screen (`WebAppModule.layers`, mounted once beside

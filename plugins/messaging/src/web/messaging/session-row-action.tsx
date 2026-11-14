@@ -6,7 +6,7 @@
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { S } from "@prismshadow/penguin-web/internal";
 import type { RowAction } from "@penguinharness/plugin-sessions/web";
-import { useSessions } from "../../state/sessions";
+import None{useSessions} from "@prismshadow/penguin-web/internal";
 import { MessagingBindingModal } from "./messaging-binding-modal";
 
 /** The binding dialog: the row's mark updates in place from the dialog's own save/unbind outcome. */

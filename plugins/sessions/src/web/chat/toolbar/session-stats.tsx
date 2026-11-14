@@ -21,7 +21,7 @@ import { advanceCostStat, type CostStatDisplay, type CostStatHold } from "../hea
 
 import { modelTaskStartCount } from "../agent-topology";
 import type { SessionStreamState } from "../use-session-stream";
-import type { Currency } from "../../../state/theme";
+import type {Currency} from "@prismshadow/penguin-web/internal";
 
 /**
  * Elapsed value for the header statistics: while a Task runs it ticks once per second over the

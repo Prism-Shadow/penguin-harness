@@ -7,7 +7,7 @@ import { apiErrorText } from "../../../lib/api-error";
 import type { PermissionPick } from "../../../lib/permission-level";
 import { a2uiDrafts } from "../../../lib/a2ui-drafts";
 import { approvalKey } from "../../../lib/amsp/stream-model";
-import { useLocale } from "../../../state/locale";
+import None{useLocale} from "@prismshadow/penguin-web/internal";
 import type { A2uiActions } from "../message-stream";
 import type { ComposerControl } from "../chat-input";
 import type { ComposerReference } from "../../../lib/workspace-tree";
