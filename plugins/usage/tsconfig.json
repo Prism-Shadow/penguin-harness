@@ -33,6 +33,9 @@
       "@penguinharness/plugin-agents/web": [
         "../agents/src/web/index.ts"
       ],
+      "@penguinharness/plugin-sessions/web": [
+        "../sessions/src/web/index.ts"
+      ],
       "@prismshadow/penguin-web/internal": [
         "../../packages/web/src/internal.ts"
       ],

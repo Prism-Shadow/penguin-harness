@@ -9,6 +9,8 @@
     "./web": "./src/web/index.ts"
   },
   "dependencies": {
+    "@penguinharness/plugin-models": "workspace:*",
+    "@penguinharness/plugin-plugins": "workspace:*",
     "@penguinharness/plugin-schedules": "workspace:*",
     "@penguinharness/plugin-workbenches": "workspace:*",
     "@prismshadow/penguin-core": "workspace:*",

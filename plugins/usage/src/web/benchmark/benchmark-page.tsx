@@ -53,7 +53,7 @@ import { useSessions } from "@prismshadow/penguin-web/internal";
 import type { MergedBenchmark } from "@prismshadow/penguin-web/internal";
 import { nameOnMachine } from "@prismshadow/penguin-web/internal";
 import { useLocale } from "@prismshadow/penguin-web/internal";
-import { AiCreateModal, pickDefaultAgent, AiCreateButtons } from "../ai-create";
+import { AiCreateModal, pickDefaultAgent, AiCreateButtons } from "@penguinharness/plugin-sessions/web";
 import {
   benchmarkDescription,
   latestWithDelta,

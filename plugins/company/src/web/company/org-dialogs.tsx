@@ -82,7 +82,7 @@ import { agentDisplayName, projectDisplayName, useProject } from "@prismshadow/p
 import { useTheme } from "@prismshadow/penguin-web/internal";
 import { ModelCatalogSelect, modelLabel } from "../model-picker";
 import { WorkspaceSelect } from "../workspace";
-import { sameModelRef } from "../models";
+import { sameModelRef } from "@penguinharness/plugin-models/web";
 import { ErrorLine, InfoFieldLabel, MoneyPerMonthInput, OrgStatusPill } from "./shared";
 import { orgCreatedTarget } from "@prismshadow/penguin-web/internal";
 import { fromStoredUsd, isBudgetText, toStoredUsd } from "./budget-input";

@@ -59,7 +59,7 @@ import { S } from "@prismshadow/penguin-web/internal";
 import { formatScore } from "@prismshadow/penguin-web/internal";
 import { useLocale } from "@prismshadow/penguin-web/internal";
 import { agentDisplayName, useProject } from "@prismshadow/penguin-web/internal";
-import { PromptFold, composeAiPrompt, pickDefaultAgent, useAiBridge } from "../ai-create";
+import { PromptFold, composeAiPrompt, pickDefaultAgent, useAiBridge } from "@penguinharness/plugin-sessions/web";
 import { ModelCatalogSelect } from "../model-picker";
 import { defaultTargetScore, latestScoreOfAgent } from "./benchmark-metrics";
 import {

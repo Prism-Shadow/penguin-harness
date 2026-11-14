@@ -34,6 +34,12 @@
       "@penguinharness/plugin-messaging/server": [
         "../../plugins/messaging/src/server/index.ts"
       ],
+      "@penguinharness/plugin-plugins/web": [
+        "../plugins/src/web/index.ts"
+      ],
+      "@penguinharness/plugin-models/web": [
+        "../models/src/web/index.ts"
+      ],
       "@prismshadow/penguin-web/internal": [
         "../../packages/web/src/internal.ts"
       ],
