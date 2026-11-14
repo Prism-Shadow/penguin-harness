@@ -99,6 +99,7 @@
     "@penguinharness/plugin-agents": "workspace:*",
     "@penguinharness/plugin-browser": "workspace:*",
     "@penguinharness/plugin-company": "workspace:*",
+    "@penguinharness/plugin-db": "workspace:*",
     "@penguinharness/plugin-machines": "workspace:*",
     "@penguinharness/plugin-messaging": "workspace:*",
     "@penguinharness/plugin-models": "workspace:*",

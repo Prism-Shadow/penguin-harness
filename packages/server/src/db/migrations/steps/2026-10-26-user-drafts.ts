@@ -1,4 +1,4 @@
-import type { Migration } from "@penguinharness/plugin-db/server";
+import type { Migration } from "../../migration.js";
 
 export const userDrafts: Migration = {
   name: "2026-10-26-user-drafts",

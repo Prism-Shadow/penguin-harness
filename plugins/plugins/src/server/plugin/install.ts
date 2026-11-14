@@ -348,7 +348,30 @@ export class NpmPluginPackages implements PluginPackages {
   }
 }
 
-function readAsset(
+export function verifyIntegrity(bytes: Uint8Array, integrity: string): string {
+  const pinned = /^sha512-([A-Za-z0-9+/]+={0,2})$/.exec(integrity);
+  if (pinned === null) {
+    throw new PluginInstallError(
+      `the index entry's integrity is not sha512-<base64>: ${JSON.stringify(integrity)}`,
+    );
+  }
+  const actual = createHash("sha512").update(bytes).digest("base64");
+  const expected = pinned[1]!;
+  if (
+    actual.length !== expected.length ||
+    !timingSafeEqual(Buffer.from(actual), Buffer.from(expected))
+  ) {
+    throw new PluginInstallError(
+      "the release asset does not match the sha512 the index entry pins; it is not installed",
+    );
+  }
+  return actual;
+}
+
+/** The size step a no-length answer reports by: every mebibyte read, rather than every chunk. */
+const PROGRESS_MIB = 1024 * 1024;
+
+async function readAsset(
   res: Awaited<ReturnType<typeof fetch>>,
   onProgress: ((received: number, total: number | null) => void) | undefined,
 ): Promise<Uint8Array> {
@@ -388,6 +411,7 @@ function readAsset(
   }
   return bytes;
 }
+
 
 /**
  * Installs a version through an index entry's github channel: the release asset is

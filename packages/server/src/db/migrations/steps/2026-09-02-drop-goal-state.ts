@@ -1,4 +1,4 @@
-import type { Migration } from "@penguinharness/plugin-db/server";
+import type { Migration } from "../../migration.js";
 
 export const dropGoalState: Migration = {
   name: "2026-09-02-drop-goal-state",

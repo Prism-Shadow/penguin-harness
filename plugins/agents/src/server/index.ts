@@ -3,7 +3,7 @@
  * agent routes and the hooks, memory and skills routes, exported for the
  * server's composition root.
  */
-export { AgentService } from "./agents/agent-service.js";
+export { AgentService, refuseBuiltinDeletion } from "./agents/agent-service.js";
 export * from "./mechanism.js";
 export * from "./repos/agents.js";
 export type { AgentListItem } from "./agents/agent-service.js";

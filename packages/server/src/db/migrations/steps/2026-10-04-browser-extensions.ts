@@ -1,4 +1,4 @@
-import type { Migration } from "@penguinharness/plugin-db/server";
+import type { Migration } from "../../migration.js";
 
 export const browserExtensions: Migration = {
   name: "2026-10-04-browser-extensions",
