@@ -150,7 +150,7 @@ import {
   ThinkingLevelSelect,
   modelLabel,
   thinkingLevelLabel,
-} from "../model-picker";
+} from "@prismshadow/penguin-web/internal";
 import { sessionModelPickerDisabled } from "./model-switch";
 import { matchSlash, removeSlashToken } from "./slash-token";
 import {

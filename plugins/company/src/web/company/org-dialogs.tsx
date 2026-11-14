@@ -80,7 +80,7 @@ import { useAuth } from "@prismshadow/penguin-web/internal";
 import { useCompany } from "./company-state";
 import { agentDisplayName, projectDisplayName, useProject } from "@prismshadow/penguin-web/internal";
 import { useTheme } from "@prismshadow/penguin-web/internal";
-import { ModelCatalogSelect, modelLabel } from "../model-picker";
+import { ModelCatalogSelect, modelLabel } from "@prismshadow/penguin-web/internal";
 import { WorkspaceSelect } from "../workspace";
 import { sameModelRef } from "@penguinharness/plugin-models/web";
 import { ErrorLine, InfoFieldLabel, MoneyPerMonthInput, OrgStatusPill } from "./shared";
