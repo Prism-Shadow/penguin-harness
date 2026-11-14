@@ -77,7 +77,7 @@ import type {
   ProviderTable,
 } from "@prismshadow/penguin-core";
 import type { ChatDefaultsDto, CommandPolicyDto, CommandPolicyRuleDto, EndpointModelListRequest, EndpointModelListResponse, ModelEffectiveConnection, ModelInfo, ModelPricingDto, ModelProtocolDetectRequest, ModelProtocolDetectResponse, ModelRefDto, ModelsResponse, ModelsUpdateRequest, ModelTestRequest, ModelTestResponse, ModelVisionDetectRequest, ModelVisionDetectResponse, PresetSyncMode, PresetSyncResponse, ProviderConnectionDto, ProviderConnectionUpdate } from "@prismshadow/penguin-server/api";
-import type { DefaultModelOffer, ProviderConnectionResponse } from "../api/types.js";
+import type { DefaultModelOffer, ProviderConnectionResponse } from "@prismshadow/penguin-server/api";
 import { badRequest } from "@prismshadow/penguin-server/internal";
 import { HttpError } from "@prismshadow/penguin-server/internal";
 import { cacheable } from "@prismshadow/penguin-server/internal";
@@ -86,7 +86,7 @@ import type {
   PlatformCatalogPricing,
   PlatformModelApplyResult,
   PlatformModelCatalog,
-} from "./platform-auth-types.js";
+} from "@prismshadow/penguin-server/internal";
 import { detectModelProtocol } from "@prismshadow/penguin-server/internal";
 import { migratePenguinGoRoutes } from "./project-config-migrations.js";
 import { presetProjectConfig } from "./project-config-seed.js";
@@ -98,10 +98,10 @@ import {
   classifyVisionProbe,
   classifyVisionProbeError,
 } from "@prismshadow/penguin-server/internal";
-import type { PricingRates, TieredRates } from "./usage-service.js";
+import type { PricingRates, TieredRates } from "@penguinharness/plugin-usage/server";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Config, Paths } from "@prismshadow/penguin-server/internal";
-import type { GroupKeyApplied } from "../mechanisms/projects.js";
+import type { GroupKeyApplied } from "@penguinharness/plugin-projects/server";
 import type { ModelPromotion, ModelProviderAuthToken, ModelProviderAuthTokens, ModelPromotions, ProjectConfigStore } from "@prismshadow/penguin-server/internal";
 
 export type RawTable = Record<string, unknown>;
