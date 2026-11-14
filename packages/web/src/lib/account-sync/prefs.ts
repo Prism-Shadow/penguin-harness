@@ -21,7 +21,7 @@ import { LAUNCHER_HIDDEN_KEY } from "@penguinharness/plugin-terminal/web";
 import { STEER_MODE_KEY } from "@penguinharness/plugin-sessions/web";
 import { CURRENCY_KEY, TERMINAL_THEME_KEY, TOOL_ALIASES_KEY } from "../../state/theme-prefs";
 import { LANG_KEY } from "../../state/locale-pref";
-import { NOTIFICATIONS_KEY } from "../notification-pref";
+import { NOTIFICATIONS_KEY } from "@penguinharness/plugin-settings/web";
 
 /** The `ui_prefs` fields this table syncs. */
 export type SyncedPrefField =
