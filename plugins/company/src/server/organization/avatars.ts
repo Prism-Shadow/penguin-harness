@@ -7,8 +7,8 @@
  * every avatar has (services/avatar-file.ts).
  */
 import path from "node:path";
-import { avatarFileRev, readAvatarFile, writeAvatarFile } from "../services/avatar-file.js";
-import type { AvatarImage, StoredAvatar } from "../services/avatar-file.js";
+import { avatarFileRev, readAvatarFile, writeAvatarFile } from "@prismshadow/penguin-server/internal";
+import type { AvatarImage, StoredAvatar } from "@prismshadow/penguin-server/internal";
 
 export function avatarsDir(dir: string): string {
   return path.join(dir, "avatars");

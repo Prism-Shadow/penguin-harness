@@ -121,9 +121,9 @@ import type { OrgDeps } from "./deps.js";
 import { loadOrg, orgEmployeeNames, projectUserIds, sharedWorkspace } from "./model.js";
 import type { LoadedOrg } from "./model.js";
 import { readAvatar, readAvatarRev, writeAvatar } from "../organization/avatars.js";
-import { parseAvatarDataUrl } from "../../services/avatar-file.js";
-import { employeeNameProblem, findMentions } from "../../organization/names.js";
-import type { MentionHandle } from "../../organization/names.js";
+import { parseAvatarDataUrl } from "@prismshadow/penguin-server/internal";
+import { employeeNameProblem, findMentions } from "../organization/names.js";
+import type { MentionHandle } from "../organization/names.js";
 import {
   channelArchiveChanged,
   channelCreated,

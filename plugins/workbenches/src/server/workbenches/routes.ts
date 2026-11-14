@@ -72,7 +72,7 @@ import {
 import { migrateWorkbenches } from "./migrate.js";
 import { withUiRuntime } from "./page-html.js";
 import { etagMatches, isPageSdkName, PAGE_SDK_CONTENT_TYPE, pageSdkFile } from "./page-sdk.js";
-import { WorkbenchDisabled } from "./service.js";
+import { WorkbenchDisabled, WorkbenchNotFound } from "./service.js";
 import { isWorkbenchId, readFolder, workbenchesDir } from "./store.js";
 
 

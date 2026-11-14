@@ -91,8 +91,8 @@ import { listCategory, listingMarksOf, readRecordedSource } from "@prismshadow/p
 import { TraceIndexService, traceFilePath } from "./trace-index.js";
 import { TraceLineIndex } from "./trace-line-index.js";
 import type { TraceLineIndexEntry } from "./trace-line-index.js";
-import type { RecordSource } from "./history-layout.js";
-import { fileIdentityOf } from "./history-wire.js";
+import type { RecordSource } from "@prismshadow/penguin-server/internal";
+import { fileIdentityOf } from "@prismshadow/penguin-server/internal";
 import { traceRecordImage, withImagesByReference } from "./trace-images.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import { Paths, TraceIndex, TraceIndexStore, Traces, SessionIndex, SessionOrigins } from "@prismshadow/penguin-server/internal";

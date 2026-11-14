@@ -23,4 +23,4 @@ export { OrgCache } from "./mechanisms-organization.js";
 export { OrganizationModule } from "./runtime/service.js";
 export { OrgRoutes } from "./routes/organizations.js";
 export { OrgCacheRepo } from "@prismshadow/penguin-server/db/repos/organizations";
-export { CompanyModule };
+

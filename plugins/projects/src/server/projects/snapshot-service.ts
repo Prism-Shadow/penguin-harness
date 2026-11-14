@@ -31,7 +31,10 @@ import {
 import { HttpError } from "@prismshadow/penguin-server/internal";
 import { badRequest } from "@prismshadow/penguin-server/internal";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Snapshots } from "@penguinharness/plugin-agents/server";
+import { isTempName, STATE_FILE } from "./store.js";
+import { isGitName } from "@penguinharness/plugin-workbenches/server";
+import { isZip, unpackAgentZip, overTemplate } from "@prismshadow/penguin-server/internal";
+import type { AgentPackage, Snapshots } from "@penguinharness/plugin-agents/server";
 import type { Log, Paths, Clock } from "@prismshadow/penguin-server/internal";
 
 /** Vault file name inside a snapshot/import package (used for archive filtering). */

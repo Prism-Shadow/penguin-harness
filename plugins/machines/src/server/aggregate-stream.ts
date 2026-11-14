@@ -13,7 +13,7 @@
  * machines again and attaches the ones it does not carry yet. A machine that has joined stays
  * attached as the hub's holder, which dials it again after a failure (event-hub.ts, `Hold`).
  */
-import { HEARTBEAT_MS } from "../http/sse.js";
+import { HEARTBEAT_MS } from "@prismshadow/penguin-server/internal";
 import { formatSseEvent } from "@prismshadow/penguin-server/internal";
 import type { StreamAnswer } from "@prismshadow/penguin-server/internal";
 import { SUBSCRIBER_HIGH_WATER_BYTES } from "./event-hub.js";

@@ -91,8 +91,7 @@ import { errorBody } from "@prismshadow/penguin-server/internal";
 import { HttpError } from "@prismshadow/penguin-server/internal";
 import { iconRef, iconResponse } from "@prismshadow/penguin-server/internal";
 import { badRequest, optionalStringArray, readJson, requireValidId } from "@prismshadow/penguin-server/internal";
-import { toAgentMcpServerItem, toPluginItem, toSkillItem, toHookItem } from "@prismshadow/penguin-server/internal";
-import type { resolveLibraryPlugins } from "@prismshadow/penguin-server/internal";
+import type { IndexDocumentEntry } from "../plugin/registry.js";
 import type { Plugin } from "@prismshadow/penguin-core/plugin";
 import {
   agentHookIconRoute,
@@ -102,6 +101,7 @@ import {
   toHookItem,
   toPluginItem,
   toSkillItem,
+  resolveLibraryPlugins,
 } from "@prismshadow/penguin-server/internal";
 
 /** A server name another owner holds, as the answer: what it is and who has it; nothing was written. */
@@ -223,12 +223,9 @@ export function agentPluginsRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
     // take its id, and the Agent's existing folder, data included, would stay in the old place.
     await migrateWorkbenches(agentDir(root, projectId, agentId));
     await refusingTakenNames(async () => {
-      await assertPluginMcpServersInstallable(root, projectId, agentId, library);
-      await assertPluginWorkbenchesInstallable(root, projectId, agentId, library);
-      for (const plugin of library) await installPlugin(root, projectId, agentId, plugin);
-      for (const plugin of contributed) {
-        for (const skill of plugin.skills) await installSkill(root, projectId, agentId, skill);
-      }
+      await assertPluginMcpServersInstallable(root, projectId, agentId, plugins);
+      await assertPluginWorkbenchesInstallable(root, projectId, agentId, plugins);
+      for (const plugin of plugins) await installPlugin(root, projectId, agentId, plugin);
     });
     // Core reads hook packages when a model context opens: a conversation that is running
     // would keep the old set — or none — until its next compaction. Rebuilding the runtime
@@ -397,9 +394,9 @@ export interface PluginRoutesOptions {
 async function prefixEntries(
   prefix: string | null,
   listed: ReadonlySet<string>,
-): Promise<(PluginIndexEntry & { icon?: string })[]> {
+): Promise<IndexDocumentEntry[]> {
   if (prefix === null) return [];
-  const entries: (PluginIndexEntry & { icon?: string })[] = [];
+  const entries: IndexDocumentEntry[] = [];
   for (const name of Object.keys(await prefixDependencies(prefix)).sort()) {
     if (listed.has(name) || !PACKAGE_NAME.test(name)) continue;
     const dir = installedPackageDir(prefix, name);

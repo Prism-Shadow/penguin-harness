@@ -29,6 +29,8 @@ import { resolvePluginPackage } from "./loader.js";
 import type { PluginBase } from "./loader.js";
 
 /** One source of plugin index entries; `source` identifies it for display and errors. */
+export type IndexDocumentEntry = Omit<PluginIndexEntry, "icon"> & { icon?: string };
+
 export interface PluginRegistry {
   readonly source: string;
   index(): Promise<PluginIndexEntry[]>;

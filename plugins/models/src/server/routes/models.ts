@@ -9,7 +9,7 @@
  * masked) and read a group's balance; only the owner can modify, test, or detect.
  */
 import { Hono } from "hono";
-import { providerInfo } from "../../model-catalog/catalog.js";
+import { providerInfo } from "@prismshadow/penguin-server/model-catalog";
 import type {
   DefaultModelResponse,
   EndpointModelListRequest,

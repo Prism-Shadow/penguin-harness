@@ -31,7 +31,8 @@ import {
   readJson,
   requireValidId,
 } from "@prismshadow/penguin-server/internal";
-import type { Access, MemoryImportMode } from "@prismshadow/penguin-server/api";
+import type { MemoryImportMode } from "@prismshadow/penguin-server/api";
+import type { Access } from "@prismshadow/penguin-server/internal";
 import type { Memory } from "./mechanism.js";
 
 import type { Context } from "hono";
