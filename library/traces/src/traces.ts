@@ -532,6 +532,11 @@ export interface AgentTraceSessionFile {
   sizeBytes: number;
 }
 
+export interface AgentTraceFileRef {
+  index: number;
+  sizeBytes: number;
+}
+
 @Interface()
 export abstract class TraceIndexStore {
   abstract upsertFile(row: TraceFileRow): void;
