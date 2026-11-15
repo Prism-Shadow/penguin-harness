@@ -1,6 +1,8 @@
 /**
  * The traces mechanisms: what a node may require, declared apart from what implements it.
  */
+import type { ElidedBody } from "@prismshadow/amsp";
+
 import { Interface } from "@prismshadow/penguin-core/kernel";
 
 import type { TraceFileRow, TraceSessionRow } from "./repos/trace-index.js";
@@ -243,6 +245,279 @@ export interface MessagesPageResult {
 export interface MessageCursor {
   fileIndex: number;
   ordinal: number;
+}
+
+/** From packages/server (api/types.ts): the trace DTOs' own vocabulary (spans, cost parts,
+ * category counts, window stats). */
+
+export interface CostParts {
+  cacheRead: number;
+  cacheWrite: number;
+  output: number;
+}
+
+export interface RequestSpan {
+  beginTs: string;
+  endTs?: string;
+  durationMs?: number;
+  status?: string;
+  /** The Task it belongs to (same convention as modelSegments/toolSpans). */
+  taskIndex: number;
+  /** Compaction request (falls between compaction_begin and compaction_end): excluded from TPS, see TraceTaskStats. */
+  compaction?: boolean;
+  /**
+   * Total human approval wait time within this Request. core does `await approve(tc)` inside
+   * the streaming loop — if approval doesn't return, the next chunk isn't consumed and
+   * `request_end` can't be emitted either, so the entire human wait falls inside the span
+   * (see context-engine's runTurn). Tool **execution** is not included (`void executeOne`,
+   * doesn't block the loop).
+   */
+  approvalWaitMs?: number;
+  /** LLM generation duration = durationMs − approvalWaitMs (≥ 0): only this can be used as the TPS denominator, not durationMs. */
+  activeMs?: number;
+  /**
+   * The thinking level this request went out at, as its `request_begin` records it. Absent
+   * when no level was sent, and on Traces written before the field — unknown, not a level.
+   */
+  thinkingLevel?: string;
+}
+
+export interface TraceTaskStats {
+  taskIndex: number;
+  /**
+   * This turn is a **compaction turn** (compaction forms its own turn); the UI marks it with
+   * a badge accordingly. It's treated the same as a user turn: it has Token /
+   * cost / duration / TPS, and **counts normally toward global stats** — the global totals are
+   * just the sum of the per-turn cards below, the two scopes match, so adding up the per-turn
+   * numbers must equal the total.
+   */
+  compaction?: boolean;
+  /**
+   * Which kind of compaction turn it is, from the turn's `compaction_begin`. Additive beside
+   * the flag rather than folded into it: `compaction` stays the sole gate on "is this a
+   * compaction turn", so a client that only knows the boolean keeps working unchanged, and one
+   * that reads this can name the turn for what it did — the two modes are different operations,
+   * and only `summarize` actually compacts anything (`discard` drops the old context outright).
+   * Absent on a turn analyzed before this field existed, or whose `compaction_begin` carried no
+   * mode; treat an absent value as `summarize`, which is what the badge said before the split.
+   */
+  compactionMode?: CompactionMode;
+  /**
+   * A short label for the round navigator: the first non-empty line of the user text that
+   * started this turn, with harness marker blocks and attachment lines removed, whitespace
+   * collapsed, at most 120 characters (the view truncates it further to fit). Absent when no
+   * user text started the turn — a summarize compaction turn, an image-only send — or none of
+   * its lines is left (only attachment lines).
+   */
+  prompt?: string;
+  /**
+   * This turn's message index range within the **entire file** (inclusive). A single
+   * sequential scan on the server tells which turn each message belongs to; the frontend
+   * attributes messages by this, **no longer guessing by timestamp** — the same millisecond
+   * can pack "previous turn's last reply + compaction start + compaction prompt + next turn's
+   * request_begin", which time boundaries can't separate, misattributing this turn's reply to
+   * the next turn.
+   */
+  messageFrom: number;
+  messageTo: number;
+  /**
+   * This turn's duration span: `startTs` = the moment of this turn's **first `request_begin`**
+   * — duration only looks at LLM requests, not the timestamp of user text like the user
+   * Prompt / compaction summary (`[context_summary]` is created during compaction but only
+   * persisted on the next run; resuming the next day would inflate the first turn by a whole
+   * day for no reason); `endTs` = the moment of the last non-session_meta message in the
+   * range. For a degenerate turn with no Request at all (interrupted right after sending),
+   * `startTs` is an empty string and duration counts as 0.
+   */
+  startTs: string;
+  endTs: string;
+  /**
+   * Context usage at the end of this Task = the three-bucket Token snapshot of the last
+   * **non-compaction** Request (same convention as the Chat page's `contextNow`). Note this
+   * must not be the sum of this Task's Requests — each Request's input carries the full
+   * history again, so summing double-counts the context, and a few rounds of tool calls
+   * would blow past the context window. A pure-compaction Task (no non-compaction Request)
+   * has no value here.
+   */
+  context?: { cacheRead: number; cacheWrite: number; output: number };
+  /**
+   * This turn's **cumulative** usage (the sum of the three buckets over every Request in this
+   * Task), for Token stats and cost conversion. Two different figures from `context`: that one
+   * is a snapshot (how much is occupied right now), this one is a ledger (how much this turn
+   * spent in total). Includes compaction requests — compaction tokens are real money spent and
+   * must be counted; consistent with the Chat page's tokensByBucket.
+   */
+  tokens: { cacheRead: number; cacheWrite: number; output: number };
+  /**
+   * This turn's cost in USD: each Request's three buckets at the Project's current rates for
+   * the file's model, at the tier that Request's own timestamp fell in — the rule and the
+   * price lookup the cost center applies to the usage row the same `token_usage` produced,
+   * so this figure, the toolbar's and the cost center's agree on what a request cost. Present
+   * on every turn of a priced file (a turn with no Request reads 0); absent when the model has
+   * no pricing or the file's head names no provider, and then absent from the response's
+   * total as well.
+   */
+  cost?: number;
+  /**
+   * Total LLM generation duration for this turn (the denominator for output TPS; human
+   * approval wait already deducted). The numerator is simply `tokens.output`: since
+   * compaction forms its own turn, each turn's output tokens are just its own Requests'
+   * output — there's no second figure to reconcile.
+   */
+  llmMs: number;
+  /**
+   * Wall-clock time this turn spent executing tools: the **union** of its tool spans'
+   * execution intervals (`approvalTs ?? callTs` to `outputTs`), so tools running in parallel
+   * are counted once instead of summed. Two exclusions, both deliberate: the human approval
+   * wait (`callTs` to `approvalTs`) is not tool work, and the argument-generation segment is
+   * the model streaming arguments, already counted in `llmMs`. A span with no `outputTs` —
+   * still running when the file ended, or interrupted — contributes nothing rather than being
+   * extrapolated to now.
+   *
+   * This and `llmMs` may **overlap**: a tool started in the background keeps running while the
+   * model decodes. They are two measured components of the turn's duration, not a partition of
+   * it, and they need not add up to the turn's span (approval waits and harness overhead belong
+   * to neither). Never derive one by subtracting the other from the duration.
+   */
+  toolMs: number;
+}
+
+export interface ToolCallSpan {
+  toolCallId: string;
+  name: string;
+  startTs: string;
+  endTs?: string;
+  durationMs?: number;
+  /** The paired tool_call_output's `status` (completed / aborted / fatal); absent while the call has no output. */
+  status?: string;
+}
+
+export interface TraceModelSegment {
+  kind: "thinking" | "text" | "tool_call";
+  startTs: string;
+  endTs: string;
+  /** Given when kind=tool_call. */
+  toolCallId?: string;
+  name?: string;
+  /** The Task it belongs to (a single user turn can contain multiple Requests): the frontend groups by this, each Task on its own independent timeline. */
+  taskIndex: number;
+}
+
+export interface TraceToolSpan {
+  toolCallId: string;
+  name: string;
+  callTs: string;
+  approvalTs?: string;
+  decision?: string;
+  outputTs?: string;
+  /** The tool_call_output's `status` (completed / aborted / fatal); absent while unclosed. */
+  status?: string;
+  /** The Task that initiated this tool (grouped with its tool_call segment): async output belongs to this Task even if it arrives after request_end. */
+  taskIndex: number;
+}
+
+export interface TraceOtherSpan {
+  /** Unique bar key (e.g. `mcp-connect-<beginTs>`). */
+  key: string;
+  /** Lane label, e.g. "mcp connect". */
+  name: string;
+  startTs: string;
+  endTs: string;
+  /** Attached to the Task that follows the phase (same grouping convention as toolSpans). */
+  taskIndex: number;
+  /** True when the phase ended with failures (some servers unreachable) or was aborted. */
+  failed?: boolean;
+}
+
+export interface UsageTrendPointInTrace {
+  ts: string;
+  requestTotal: number;
+  sessionTotal: number;
+}
+
+export interface AgentTraceDateGroup {
+  date: string;
+  sessions: AgentTraceSessionGroup[];
+}
+
+export interface AgentTraceSessionEntry {
+  sessionId: string;
+  /**
+   * Display title, resolved only for the returned page: the sessions DB title when one
+   * exists, else derived from the Session's first user prompt (bounded head-read of the
+   * earliest shard); absent when neither yields one (the client falls back to its
+   * default title — raw session ids are never rendered).
+   */
+  title?: string;
+  /**
+   * Sidebar category of this Session, from the same bounded classification the listing
+   * filters and counts with: archived exactly from the DB row; origin from the shared
+   * in-process registry / previously observed session_meta; a DB-untracked Session this
+   * process has not yet head-read falls into `active` until a page surfaces it (its
+   * head-read then registers the true origin for subsequent requests).
+   */
+  category: SessionCategory;
+  /** Workspace path locked at creation (DB row or observed session_meta); "" when unknown — the client's merged temp-group fallback. */
+  workspace: string;
+  /** Sorted by index ascending (a higher index is newer). */
+  files: AgentTraceSessionFile[];
+}
+
+export type SessionCategoryCounts = Record<SessionCategory, number>;
+
+export interface ContextToolShare {
+  name: string;
+  tokens: number;
+}
+
+export interface ContextFileShare {
+  /**
+   * Workspace-relative when the file is inside the Session's Workspace; otherwise absolute, with
+   * the home directory shortened to `~`. Spellings that resolve to the same file are one row.
+   */
+  path: string;
+  tokens: number;
+  /** How many calls of each file tool named the file in this context. */
+  ops: { read: number; edit: number; write: number };
+}
+
+/** Where one returned record was read from. */
+export interface RecordSource {
+  agentId: string;
+  sessionId: string;
+  fileIndex: number;
+  ordinal: number;
+  /**
+   * The origin chain the history expansion prepended to the line's own `origin`, outer to
+   * inner; null for the Session's own records, which carry a `tracePosition` instead.
+   */
+  chain: string[] | null;
+}
+
+/** Cumulative totals at a point in the trace (all values are "before this point"). */
+export interface WindowPriorStats {
+  /** Outline entries opened before this point (the Web outline's global numbering offset). */
+  turns: number;
+  /** Sum of subagent token_usage request totals (all descendant sessions) before this point. */
+  subagentTokens: number;
+  /** Sum of finished Tasks' elapsed time before this point (the Web's sessionElapsedMs basis). */
+  elapsedMs: number;
+  /**
+   * Sum of finished Tasks' model-API time before this point (the Web's sessionLlmMs basis):
+   * paired request spans with the human approval wait deducted, compaction requests excluded —
+   * the same scope `elapsedMs` uses, so the component and its total cover the same turns.
+   */
+  apiMs: number;
+  /**
+   * Sum of finished Tasks' tool wall time before this point (the Web's sessionToolMs basis):
+   * per Task the union of its tool execution intervals, so parallel tools count once. Overlaps
+   * `apiMs` when a tool runs on while the model decodes; the two never partition `elapsedMs`.
+   */
+  toolMs: number;
+  /** The last main-session token_usage `session.total` seen before this point (0 = none). */
+  sessionTokens: number;
+  /** The last main-session NON-compaction token_usage `request.total` before this point (context occupancy basis). */
+  contextTokens: number;
 }
 
 @Interface()

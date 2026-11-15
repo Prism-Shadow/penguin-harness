@@ -17,18 +17,7 @@ import type { AmspRecord } from "@prismshadow/penguin-core";
 import { historyFileKey, parseHistoryFileKey } from "./history-wire.js";
 import type { HistoryFileKey, HistoryMessage, HistorySegment, HistoryStub } from "../";
 
-/** Where one returned record was read from. */
-export interface RecordSource {
-  agentId: string;
-  sessionId: string;
-  fileIndex: number;
-  ordinal: number;
-  /**
-   * The origin chain the history expansion prepended to the line's own `origin`, outer to
-   * inner; null for the Session's own records, which carry a `tracePosition` instead.
-   */
-  chain: string[] | null;
-}
+
 
 /** One file's record offsets by ordinal (trace-line-index.ts's `starts`/`ends`). */
 export interface LineOffsets {
