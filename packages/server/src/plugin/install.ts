@@ -150,8 +150,14 @@ export function npmFailureKind(stderr: string | undefined): "unavailable" | "oth
   return /npm error code (E404|ETARGET)\b/m.test(stderr ?? "") ? "unavailable" : "other";
 }
 
+// `--install-links=false` on EVERY install: it is what makes npm reify a `file:` directory
+// dependency as a symlink to the author's directory instead of a copy (npm 7+ defaults the
+// other way). Every install carries the flag — a plain install that dropped it would silently
+// replace an existing link with a frozen copy — and a flag beats any config file: the same
+// command behaves the same whatever npm version the PATH resolves to. (The prefix's .npmrc
+// pins the same rule for anything else that runs npm there.)
 const install = (prefix: string, spec: string) =>
-  npm(prefix, ["install", "--no-audit", "--no-fund", "--omit=dev", "--", spec]);
+  npm(prefix, ["install", "--no-audit", "--no-fund", "--omit=dev", "--install-links=false", "--", spec]);
 
 /**
  * Installs (or upgrades) one package into the root's plugin prefix. Returns the version npm

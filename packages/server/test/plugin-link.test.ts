@@ -162,17 +162,6 @@ describe("plugin link", () => {
     // than passing as a healthy install.
     await fs.rm(dir, { recursive: true, force: true });
     const gone = await view();
-    // DEBUG(p263): the whole gone row
-    console.log(
-      "DEBUG p263 state:",
-      JSON.stringify({
-        root: t.root,
-        manifest: await fs.readFile(path.join(prefix(), "package.json"), "utf8").catch((e) => String(e)),
-        npmrc: await fs.readFile(path.join(prefix(), ".npmrc"), "utf8").catch((e) => String(e)),
-        nm: await fs.readdir(path.join(prefix(), "node_modules")).catch((e) => String(e)),
-        rows: gone.plugins.length,
-      }),
-    );
     const goneRow = gone.plugins.find((p) => p.specifier === "@acme/live");
     expect(goneRow?.error ?? "").toContain("@acme");
   });
