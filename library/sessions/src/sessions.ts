@@ -3,15 +3,11 @@
  */
 import { Interface } from "@prismshadow/penguin-core/kernel";
 import type { Opaque } from "@prismshadow/penguin-core/kernel";
-import type { SessionSource, ApprovalMode } from "./repos/sessions.js";
+import type { SessionSource } from "@prismshadow/amsp";
 import type { SessionRow } from "./repos/sessions.js";
 import type { ThinkingLevelName } from "@prismshadow/penguin-core";
 import type { SandboxSettings } from "@prismshadow/penguin-core/plugin";
 import type { ScheduleStateRow } from "./repos/schedules.js";
-import type { ScheduleFileCache } from "./repos/schedules.js";
-import type { ScheduleEntryView } from "./repos/schedules.js";
-import type { LiveTail } from "./repos/sessions.js";
-import type { RuntimeEntry } from "./repos/sessions.js";
 
 /** From packages/server: ApprovalMode (was api/types.ts). The contract names it, so the type lives with the contract. */
 export type ApprovalMode = "allow-all" | "deny-all" | "read-only" | "always-ask";
@@ -73,16 +69,56 @@ export interface RunStarter {
 
 /** AgentState: the mechanism AgentStateStore implements — the Session runtime's in-memory state, data only. */
 export abstract class AgentState extends Interface<{
-  readonly entries: Map<string, RuntimeEntry>;
+  /** The live Session runtimes, keyed by Session id. The entry shape is the server
+   * runtime's own (session-manager's RuntimeEntry) — opaque here: the contract carries
+   * the map's identity and size, the runtime owns its rows. */
+  readonly entries: Map<string, Opaque<"RuntimeEntry">>;
   readonly childRoots: Map<string, string>;
   readonly locks: Map<string, Promise<unknown>>;
   readonly deletingAgents: Set<string>;
   readonly deletingSessions: Set<string>;
   readonly agentGenerations: Map<string, number>;
-  readonly liveTail: LiveTail;
+  /** The live fragment log: the server runtime's LiveTail, opaque to this contract. */
+  readonly liveTail: Opaque<"LiveTail">;
   /** The generation working on this state right now; every generation points it at itself when it takes the state over. */
   current: RunStarter | null;
 }>() {}
+
+/** From packages/server (runtime/schedule-file.ts): a registered task's definition, as the
+ * schedule file states it. The contract carries the shape a schedule read shows; the
+ * scheduler's file parser owns the rest of the file's fields. */
+export interface ScheduleDefinition {
+  name: string;
+  /** The Prompt to send (required). */
+  prompt: string;
+  /** Enabled switch; disabled by default. */
+  enabled: boolean;
+  /** Original text of the first trigger time (for API echo, preserving the written form). */
+  startAt: string;
+  /** First trigger time (epoch ms). */
+  startAtMs: number;
+  /** Original text of the end time. */
+  endAt?: string;
+  /** Original text of the trigger period (e.g. `30m`, for API echo); undefined means a one-shot task. */
+  period?: string;
+  /** Trigger period (ms); undefined means a one-shot task. */
+  periodMs?: number;
+  /** End time (epoch ms); no more triggers once past it. */
+  endAtMs?: number;
+  /** The target Session to bind to; defaults to creating a new Session each time. */
+  sessionId?: string;
+  /** Workspace for new-Session mode (same semantics as manually starting a session; a temporary workspace is auto-created if unspecified). */
+  workspace?: string;
+  /** Model for new-Session mode (upstream id, always paired with provider; omit both for the Project's default reference). */
+  modelId?: string;
+}
+
+/** From packages/server (runtime/scheduler.ts): the in-memory view of a registered task. */
+export interface ScheduleEntry {
+  def: ScheduleDefinition;
+  state: ScheduleStateRow;
+  queued: boolean;
+}
 
 /** SessionOrigins: the mechanism SessionSources implements. */
 @Interface()
@@ -125,7 +161,7 @@ export abstract class Schedules {
 /** Scheduling: the mechanism Scheduler implements. */
 @Interface()
 export abstract class Scheduling {
-  abstract readonly files: Opaque<"ScheduleFileCache", ScheduleFileCache>;
+  abstract readonly files: Opaque<"ScheduleFileCache">;
   abstract start(): Promise<void>;
   abstract stop(): void;
   abstract tickOnce(): Promise<void>;
@@ -133,9 +169,9 @@ export abstract class Scheduling {
   abstract listAgent(
     projectId: string,
     agentId: string,
-  ): Promise<{ entries: ScheduleEntryView[]; invalid: Array<{ name: string; error: string }> }>;
+  ): Promise<{ entries: ScheduleEntry[]; invalid: Array<{ name: string; error: string }> }>;
   abstract listProject(projectId: string): Promise<{
-    entries: Array<ScheduleEntryView & { agentId: string }>;
+    entries: Array<ScheduleEntry & { agentId: string }>;
     invalid: Array<{ agentId: string; name: string; error: string }>;
   }>;
   abstract dropEntry(projectId: string, agentId: string, name: string): void;
