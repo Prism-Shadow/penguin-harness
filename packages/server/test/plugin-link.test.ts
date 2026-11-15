@@ -95,11 +95,9 @@ describe("plugin link", () => {
       // npm reifies the spec it was given, and the spec was written against the prefix's
       // real path — the link's own target may name the logical path macOS hands out. Both
       // spellings walk to the same directory; the real paths are what must agree.
-      expect(
-        await fs
-          .realpath(path.resolve(path.dirname(target), readlinkSync(target)))
-          .catch(() => ""),
-      ).toBe(await fs.realpath(dir));
+      expect(await fs.realpath(path.resolve(path.dirname(target), readlinkSync(target))).catch(() => "")).toBe(
+        await fs.realpath(dir),
+      );
     }
   });
 
