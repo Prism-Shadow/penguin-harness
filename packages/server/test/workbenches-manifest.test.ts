@@ -350,15 +350,17 @@ describe("workbench manifest route", { timeout: 30_000 }, () => {
       const build = path.join(fresh.dir, ".build");
       const res = await fresh.t.app.request(`${COLD_BASE}/demo/manifest.webmanifest`);
       expect(res.status).toBe(200);
+      // No .build after the anonymous read: no compile, no boot, nothing.
       await assertDoesNotExit(build);
-      // The registration the manifest answered from was the folder, not a loaded instance:
-      // the session-gated list (which would compile and boot) was never asked.
+      // The contrast: the SESSION-gated list (which the manifest gate does not call) does
+      // run the lifecycle — the same folder, one GET later, has a build on disk. That is
+      // what the manifest route must not be able to cause, and what it did not.
       const listed = await fresh.owner.get(`${COLD_BASE}`);
       expect(listed.status).toBe(200);
-      // And a second anonymous read answers again, still without a build on disk.
+      await expect(fs.access(build)).resolves.toBeTruthy();
+      // And a second anonymous read answers again — reading, not touching, what is there.
       const again = await fresh.t.app.request(`${COLD_BASE}/demo/manifest.webmanifest`);
       expect(again.status).toBe(200);
-      await assertDoesNotExit(build);
     } finally {
       await fresh.t.cleanup();
     }
