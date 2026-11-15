@@ -18,8 +18,8 @@ import {
   appliedMigrations,
   migrate,
   rollbackTo,
-} from "../src/db/migrations/index.js";
-import * as runner from "../src/db/migrations/runner.js";
+} from "@prismshadow/penguin-library-db/migrations";
+import * as runner from "@prismshadow/penguin-library-db/migrations/runner";
 import {
   columns,
   contents,

@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { DatabaseSync } from "node:sqlite";
-import { MIGRATIONS, appliedMigrations, migrate, rollbackTo } from "../src/db/migrations/index.js";
+import { MIGRATIONS, appliedMigrations, migrate, rollbackTo } from "@prismshadow/penguin-library-db/migrations";
 import {
   columns,
   hasTable,

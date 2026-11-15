@@ -7,7 +7,7 @@ import { expect, it } from "vitest";
 import { requestBegin, requestEnd, withOrigin } from "@prismshadow/penguin-core";
 import type { SessionTitleResult } from "@prismshadow/penguin-core";
 import { wire } from "@prismshadow/penguin-core/kernel";
-import { openDatabase } from "../src/db/database.js";
+import { openDatabase } from "@prismshadow/penguin-library-db";
 import { SessionsRepo } from "../src/db/repos/sessions.js";
 import { UsageRepo } from "../src/db/repos/usage.js";
 import { ChannelHub } from "../src/runtime/channel.js";

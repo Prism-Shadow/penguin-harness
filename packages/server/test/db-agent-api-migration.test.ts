@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
-import { appliedMigrations, migrate, rollbackTo } from "../src/db/migrations/index.js";
+import { appliedMigrations, migrate, rollbackTo } from "@prismshadow/penguin-library-db/migrations";
 import { namesAfter, openFresh, record, shape } from "./db-migrations-fixtures.js";
 /** A root whose line never declared 2026-10-10-agent-api, though it declared everything else. */
 function openSkipped(): DatabaseSync {

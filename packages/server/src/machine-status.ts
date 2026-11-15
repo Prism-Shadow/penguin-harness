@@ -15,7 +15,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { openDatabaseReadOnly } from "./db/database.js";
+import { openDatabaseReadOnly } from "@prismshadow/penguin-library-db";
 import { MachinesRepo } from "./db/repos/machines.js";
 import { liveServerLock } from "./lock.js";
 

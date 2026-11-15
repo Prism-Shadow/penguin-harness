@@ -12,7 +12,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import type { DatabaseSync } from "node:sqlite";
 import type { AmspRecord, SessionTitleResult } from "@prismshadow/penguin-core";
-import { openDatabase } from "../src/db/database.js";
+import { openDatabase } from "@prismshadow/penguin-library-db";
 import { SessionsRepo } from "../src/db/repos/sessions.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import { ChannelHub } from "../src/runtime/channel.js";

@@ -7,7 +7,7 @@
 import path from "node:path";
 import fs from "node:fs";
 import type { DatabaseSync } from "node:sqlite";
-import { openExistingDatabase } from "./db/database.js";
+import { openExistingDatabase } from "@prismshadow/penguin-library-db";
 import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
 import type { SessionViaValue } from "./db/repos/auth-sessions.js";
 import { UsersRepo } from "./db/repos/users.js";
