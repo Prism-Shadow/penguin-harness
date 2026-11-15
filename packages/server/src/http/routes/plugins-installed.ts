@@ -271,8 +271,10 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
       if (!spec.startsWith("file:")) continue;
       const target = path.resolve(pluginsPrefix(deps.root), spec.slice("file:".length));
       // lstat, not stat: the row exists because the LINK exists — a dangling link (the
-      // author's directory deleted) stays a row and reports its fault.
-      if ((await fs.lstat(target).catch(() => null))?.isDirectory()) links.push([name, target] as const);
+      // author's directory deleted) stays a row and reports its fault. A symlink lstats
+      // as a symlink (isDirectory is false on it), so both count.
+      const st = await fs.lstat(target).catch(() => null);
+      if (st?.isDirectory() || st?.isSymbolicLink()) links.push([name, target] as const);
     }
     for (const [name] of links) {
       if (!names.includes(name)) names.push(name);
