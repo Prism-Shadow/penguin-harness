@@ -93,15 +93,23 @@ async function assertDoesNotExit(p: string): Promise<void> {
   await expect(fs.access(p)).rejects.toThrow();
 }
 
-/** An app with the owner's Project and a demo workbench (with or without an icon) in its default Agent. */
+/**
+ * An app with the owner's Project and a demo workbench (with or without an icon) in its
+ * default Agent. The folder is written BEFORE the app boots (`beforeSeed`): a folder that
+ * appears after boot goes through the first-workbench poller, which lists — and so compiles
+ * and boots — it; one present at boot is watched without that first load.
+ */
 async function workbenchApp(opts: { icon?: boolean } = {}) {
-  const t = await createTestApp();
+  const t = await createTestApp({
+    beforeSeed: async (root) => {
+      await writeDemo(path.join(agentDir(root, PROJECT, AGENT), "workbenches", "demo"), opts);
+    },
+  });
   const a = await provisionUser(t.app, "owner");
   const owner = apiClient(t.app, a.cookie);
   const created = await owner.post("/api/projects", { projectId: PROJECT, name: "wf" });
   expect(created.status, await created.text()).toBe(201);
   const dir = path.join(agentDir(t.root, PROJECT, AGENT), "workbenches", "demo");
-  await writeDemo(dir, opts);
   return { t, owner, dir };
 }
 
@@ -218,6 +226,9 @@ describe("workbench manifest route", { timeout: 30_000 }, () => {
   });
 
   it("falls back to the plugin icon when the first tab declares none — even if a later tab does", async () => {
+    // The suite shares one folder: an earlier case stripped `icon.svg` to test the fallback,
+    // so the plugin icon is shipped again here.
+    await fs.writeFile(path.join(dir, "icon.svg"), ICON_SVG);
     await fs.writeFile(
       path.join(dir, "package.json"),
       JSON.stringify({
