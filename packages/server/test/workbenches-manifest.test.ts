@@ -163,7 +163,7 @@ describe("workbench manifest route", { timeout: 30_000 }, () => {
     // Same source as `name` — the first tab's title, not the package name: the browser shows
     // one in the install prompt and the other as the launcher label, and two different
     // strings read as two different apps (a workbench titled "Sakana" on a folder "shot"
-    // installed as "shot"). See the 2026-10-31 read on the deployed instance.
+    // installed as "shot").
     expect(m.short_name).toBe("Board");
     expect(m.version).toBe("1.0.0");
     expect(m.display).toBe("standalone");

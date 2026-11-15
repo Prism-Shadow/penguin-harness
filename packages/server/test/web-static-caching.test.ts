@@ -32,7 +32,7 @@ const webFiles = (marker: string) => ({
   ).toString("base64"),
   "assets/index-abc123.js": Buffer.from(`console.log("${marker}")`).toString("base64"),
   // The PWA manifest rides in the web push as a static file; browsers install a manifest
-  // only when it answers `application/manifest+json` (Deployer's 53531 read, 2026-10-31).
+  // only when it answers `application/manifest+json`.
   "manifest.webmanifest": Buffer.from(`{"name":"${marker}"}`).toString("base64"),
 });
 
