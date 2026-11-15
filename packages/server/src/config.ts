@@ -284,7 +284,9 @@ export function normalizeModelScopeBridgeUrl(raw: string | undefined): string {
 function resolvePluginProxy(raw: string | undefined): PluginProxyRule[] {
   const check = (rules: PluginProxyRule[]): PluginProxyRule[] => {
     if (rules.length > PROXY_RULES_MAX) {
-      throw new Error(`PENGUIN_PLUGIN_PROXY carries ${rules.length} rules, over the ${PROXY_RULES_MAX} cap`);
+      throw new Error(
+        `PENGUIN_PLUGIN_PROXY carries ${rules.length} rules, over the ${PROXY_RULES_MAX} cap`,
+      );
     }
     for (const rule of rules) {
       if (typeof rule.match !== "string" || typeof rule.rewrite !== "string") {
