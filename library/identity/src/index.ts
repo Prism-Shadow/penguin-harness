@@ -11,11 +11,5 @@
  * - `./identity` - the contracts module on its own.
  * - `./repos` (and per-file) - the users and auth_sessions storing components.
  */
-export {
-  Users,
-  AuthSessions,
-  Auth,
-  Admin,
-  SessionVia,
-  UserInfo,
-} from "./identity.js";
+export { Users, AuthSessions, Auth, Admin } from "./identity.js";
+export type { SessionVia, UserInfo } from "./identity.js";

@@ -10,5 +10,6 @@
  * - `./agent-api` - the contract module on its own.
  * - `./agent-api-repo` - the storing component.
  */
-export { AgentApi, AgentApiSettings, AgentApiUpdateRequest, ModelRefDto } from "./agent-api.js";
+export { AgentApi, AgentApiSettings, AgentApiUpdateRequest } from "./agent-api.js";
+export type { ModelRefDto } from "./agent-api.js";
 export { AgentApiRepo } from "./agent-api-repo.js";
