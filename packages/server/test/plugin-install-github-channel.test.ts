@@ -156,7 +156,12 @@ describe("installPluginChannel", () => {
         await fakeNpmInstall(pinned.name, pinned.version)(prefix, spec);
       },
     });
-    expect(fetchImpl).toHaveBeenCalledWith(pinned.url, { redirect: "follow" });
+    // Each address's fetch carries its own timeout window (the channel's Happy Eyeballs
+    // budget), and the signal is created per call, so the shape is asserted, not the identity.
+    expect(fetchImpl).toHaveBeenCalledWith(
+      pinned.url,
+      expect.objectContaining({ redirect: "follow", signal: expect.any(AbortSignal) }),
+    );
     expect(installed).toEqual({ name: pinned.name, version: pinned.version });
     // The tag is the digest's first sixteen file-safe characters: base64 carries `/` and
     // `+`, and neither belongs in a file name (a `/` would make the rename a subdirectory).
