@@ -4204,10 +4204,7 @@ export interface FilesStatResponse {
 
 
 
-export interface AgentTraceFileRef {
-  index: number;
-  sizeBytes: number;
-}
+
 
 
 
