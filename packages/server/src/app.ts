@@ -773,14 +773,17 @@ function workbenchAppPage(reqPath: string): {
   agentId: string;
   workbenchId: string;
   tabKey?: string;
+  machineId?: string;
 } | null {
   const m = /^\/app\/([^/]+)\/([^/]+)\/([^/]+)(?:\/([^/]+))?/.exec(reqPath);
   if (m === null) return null;
+  const machine = new URL(`http://localhost${reqPath}`).searchParams.get("machine") ?? undefined;
   return {
     projectId: m[1]!,
     agentId: m[2]!,
     workbenchId: m[3]!,
     ...(m[4] === undefined ? {} : { tabKey: m[4] }),
+    ...(machine === undefined || machine === "" ? {} : { machineId: machine }),
   };
 }
 
@@ -794,11 +797,13 @@ function withWorkbenchManifestLink(content: Buffer, reqPath: string): Buffer {
   const page = workbenchAppPage(reqPath);
   if (page === null) return content;
   const segments = [page.projectId, page.agentId, page.workbenchId].map(encodeURIComponent);
-  // `tabs/` is a literal, not a segment: only the tab key is encoded.
+  // `tabs/` is a literal, not a segment: only the tab key is encoded. A remote machine's
+  // workbench names the machine in the query — the auth-less gate hops to it.
   const href =
     `/api/projects/${segments[0]}/agents/${segments[1]}/workbenches/${segments[2]}` +
     (page.tabKey === undefined ? "" : `/tabs/${encodeURIComponent(page.tabKey)}`) +
-    "/manifest.webmanifest";
+    "/manifest.webmanifest" +
+    (page.machineId === undefined ? "" : `?machine=${encodeURIComponent(page.machineId)}`);
   const html = content.toString("utf8");
   const rewritten = html.replace('href="/manifest.webmanifest"', `href="${href}"`);
   return rewritten === html ? content : Buffer.from(rewritten, "utf8");

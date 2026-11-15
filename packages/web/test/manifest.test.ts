@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { appManifest, MANIFEST_FILE, manifestMiddleware } from "../scripts/penguin-manifest";
+import { appManifest, MANIFEST_FILE, manifestMiddleware, penguinManifest } from "../scripts/penguin-manifest";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const pkgDir = path.resolve(here, "..");
@@ -55,14 +55,48 @@ describe("the main app's manifest", () => {
     const pkg = JSON.parse(await fs.readFile(path.join(pkgDir, "package.json"), "utf8")) as {
       version: string;
     };
-    const middleware = manifestMiddleware(appManifest(pkg));
+    const manifest = appManifest(pkg);
+    const middleware = manifestMiddleware(manifest);
+    // The dev answer is the manifest's own content type — `octet-stream` makes some browsers
+    // refuse the manifest and with it the install.
+    const headers = new Map<string, string>();
     const chunks: string[] = [];
-    const res = { statusCode: 0, setHeader() {}, end: (b: string) => chunks.push(b) };
+    const res = {
+      statusCode: 0,
+      setHeader: (name: string, value: string) => void headers.set(name, value),
+      end: (b: string) => chunks.push(b),
+    };
     middleware({ url: `/${MANIFEST_FILE}` }, res as never, () => {
       throw new Error("the middleware must answer, not pass on");
     });
     expect(res.statusCode).toBe(200);
-    expect(JSON.parse(chunks.join(""))).toMatchObject({ version: pkg.version });
+    expect(headers.get("content-type")).toContain("application/manifest+json");
+    expect(JSON.parse(chunks.join(""))).toEqual(JSON.parse(JSON.stringify(manifest)));
+    // And a request for anything else passes on.
+    let passed = false;
+    middleware({ url: "/index.html" }, res as never, () => {
+      passed = true;
+    });
+    expect(passed).toBe(true);
+  });
+
+  it("is emitted into the build by the plugin", async () => {
+    // The same document the dev middleware answers, into dist/ at build time: the plugin's
+    // generateBundle emits `manifest.webmanifest` as an asset.
+    const pkg = JSON.parse(await fs.readFile(path.join(pkgDir, "package.json"), "utf8")) as {
+      version: string;
+    };
+    const plugin = penguinManifest();
+    expect(plugin.name).toBe("penguin:manifest");
+    const emitted: Record<string, string> = {};
+    plugin.generateBundle.call({
+      emitFile: (file) => {
+        emitted[file.fileName] = file.source;
+        return file.fileName;
+      },
+    });
+    expect(Object.keys(emitted)).toEqual([MANIFEST_FILE]);
+    expect(JSON.parse(emitted[MANIFEST_FILE]!)).toMatchObject({ version: pkg.version });
   });
 
   it("is linked from index.html", async () => {

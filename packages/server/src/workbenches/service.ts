@@ -409,6 +409,42 @@ export class WorkbenchService implements Workbenches {
     return !(await isSwitchedOff(workbenchesDir(this.paths.root, projectId, agentId)));
   }
 
+  /**
+   * What the install manifest needs, read from the folder alone — NO migrate, NO watcher,
+   * NO load: an anonymous request (the manifest's auth-less gate) must not be able to run
+   * the folder's compile/boot lifecycle, only look at its `package.json`. The registration
+   * here is the folder's declaration, not a loaded instance: tabs carry their renderer as
+   * declared, `loadedAt` is this read's time, `error`/`hints` stay empty — the manifest uses
+   * none of them, and anything that wants the live instance asks {@link list}.
+   */
+  async describe(projectId: string, agentId: string, workbenchId: string): Promise<WorkbenchInfo> {
+    if (!isWorkbenchId(workbenchId)) throw new WorkbenchNotFound("no such workbench");
+    const folder = await readFolder(
+      path.join(workbenchesDir(this.paths.root, projectId, agentId), workbenchId),
+      workbenchId,
+    );
+    if (folder === null) throw new WorkbenchNotFound("no such workbench");
+    let tabs: WorkbenchTab[];
+    try {
+      tabs = contributedTabs(await readManifests(folder), uiBase(projectId, agentId, folder.id));
+    } catch {
+      // A folder that declares nothing loadable is not a workbench the manifest can name:
+      // the same 404 the session-gated routes answer for an unknown id.
+      throw new WorkbenchNotFound("no such workbench");
+    }
+    return {
+      id: folder.id,
+      name: folder.pkg.name,
+      version: folder.pkg.version,
+      revision: folder.revision,
+      uiRev: folder.uiRev,
+      tabs,
+      loadedAt: this.clock.now().toISOString(),
+      error: null,
+      hints: [],
+    };
+  }
+
   async reload(projectId: string, agentId: string, workbenchId: string): Promise<WorkbenchInfo> {
     const folder = await this.folder(projectId, agentId, workbenchId);
     if (!(await this.runs(projectId, agentId, folder))) throw new WorkbenchDisabled(workbenchId);

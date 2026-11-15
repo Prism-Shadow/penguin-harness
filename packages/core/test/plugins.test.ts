@@ -67,6 +67,7 @@ import {
   loadPreinstalledPlugins,
   parseSkillFrontmatter,
   readLibraryPackage,
+  readPluginIcon,
   useInstalledPluginPrefix,
   usePushedPluginLibrary,
   workspacePluginRoot,
@@ -129,6 +130,106 @@ describe("groupPlugins", () => {
     expect(groups[2]).toMatchObject({ title: "Other", titleZh: "其他" });
   });
 });
+
+describe("lookups", () => {
+  it("libraryPlugin and librarySkill find by name; illegal names never touch the filesystem", () => {
+    expect(libraryPlugin("goal")?.name).toBe("goal");
+    expect(libraryPlugin("does-not-exist")).toBeUndefined();
+    expect(libraryPlugin("../etc")).toBeUndefined();
+    expect(librarySkill("goal")).toBeUndefined();
+    expect(librarySkill("..")).toBeUndefined();
+  });
+
+  it("readPluginIcon reads a declared PNG by its bytes and an SVG by its markup, and refuses the rest", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-icon-"));
+    try {
+      // A real 1×1 PNG: signature, IHDR, IDAT, IEND — what a renderer could actually decode.
+      const png = validPngBytes();
+      await write(dir, { "icon.png": png, "icon.svg": "<svg xmlns=\"http://www.w3.org/2000/svg\"><rect/></svg>", "note.txt": "hello" });
+      // A declared .png: bytes base64-encoded, kind png.
+      const pngIcon = readPluginIcon(dir, "icon.png");
+      expect(pngIcon.warnings).toEqual([]);
+      expect(pngIcon.kind).toBe("png");
+      expect(pngIcon.icon).toBe(Buffer.from(png).toString("base64"));
+      // A declared .svg: markup from the root, kind svg.
+      const svgIcon = readPluginIcon(dir, "icon.svg");
+      expect(svgIcon.warnings).toEqual([]);
+      expect(svgIcon.kind).toBe("svg");
+      expect(svgIcon.icon).toBe("<svg xmlns=\"http://www.w3.org/2000/svg\"><rect/></svg>");
+      // A declared file that is neither .svg nor .png: refused, with the reason.
+      const bad = readPluginIcon(dir, "note.txt");
+      expect(bad.icon).toBeUndefined();
+      expect(bad.warnings.join(" ")).toMatch(/must name an \.svg or \.png file/);
+      // A declared .png whose bytes are not a PNG: refused, with the reason.
+      await write(dir, { "fake.png": Uint8Array.from([0x00, 0x01, 0x02]) });
+      const fake = readPluginIcon(dir, "fake.png");
+      expect(fake.icon).toBeUndefined();
+      expect(fake.warnings.join(" ")).toMatch(/is not a PNG file/);
+      // A signature and nothing else: refused as truncated — the first eight bytes alone are
+      // not an icon, and accepting them would block the manifest's fallback.
+      await write(dir, { "cut.png": png.subarray(0, 8) });
+      const cut = readPluginIcon(dir, "cut.png");
+      expect(cut.icon).toBeUndefined();
+      expect(cut.warnings.join(" ")).toMatch(/truncated/);
+      // A signature and an IHDR but no IEND: refused too.
+      const noEnd = png.subarray(0, 8 + 12 + 13);
+      await write(dir, { "head.png": noEnd });
+      const head = readPluginIcon(dir, "head.png");
+      expect(head.icon).toBeUndefined();
+      expect(head.warnings.join(" ")).toMatch(/no IEND block/);
+      // Nothing declared: the root icon.svg (which this fixture wrote) is the default.
+      const fallback = readPluginIcon(dir, undefined);
+      expect(fallback.warnings).toEqual([]);
+      expect(fallback.kind).toBe("svg");
+      expect(fallback.icon).toBe('<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>');
+      // Nothing declared and no icon.svg: silent none.
+      await fs.rm(path.join(dir, "icon.svg"));
+      expect(readPluginIcon(dir, undefined).icon).toBeUndefined();
+    } finally {
+      await fs.rm(dir, { recursive: true });
+    }
+  });
+});
+
+/** A real (decodable) 1×1 grayscale PNG, assembled from its chunk parts. */
+function validPngBytes(): Uint8Array {
+  const chunk = (type: string, data: Uint8Array): Uint8Array => {
+    const body = Buffer.concat([Buffer.from(type, "latin1"), Buffer.from(data)]);
+    return Uint8Array.from([
+      ...Uint8Array.of(body.length).reverse(),
+      ...body,
+      ...crc32(body),
+    ]);
+  };
+  // IHDR: width 1, height 1, bit depth 8, color type 0 (grayscale), the rest zero.
+  const ihdr = Uint8Array.from([0, 0, 0, 1, 0, 0, 0, 1, 8, 0, 0, 0, 0]);
+  const idat = Uint8Array.from([0x78, 0x9c, 0x63, 0x60, 0x60, 0x60, 0x00, 0x00, 0x00, 0x04, 0x00, 0x01]);
+  return Uint8Array.from([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+    ...chunk("IHDR", ihdr),
+    ...chunk("IDAT", idat),
+    ...chunk("IEND", new Uint8Array(0)),
+  ]);
+}
+
+/** The PNG chunk CRC (polynomial 0xedb88320), little-endian trailing bytes. */
+function crc32(body: Buffer): Uint8Array {
+  let crc = 0xffffffff;
+  for (const byte of body) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+  }
+  crc = ~crc >>> 0;
+  return Uint8Array.from([crc & 0xff, (crc >>> 8) & 0xff, (crc >>> 16) & 0xff, (crc >>> 24) & 0xff]);
+}
+
+/** Writes `files` under `dir` (paths relative to it; a Uint8Array is written as bytes). */
+async function write(dir: string, files: Record<string, string | Uint8Array>): Promise<void> {
+  for (const [rel, data] of Object.entries(files)) {
+    await fs.mkdir(path.dirname(path.join(dir, rel)), { recursive: true });
+    await fs.writeFile(path.join(dir, rel), data);
+  }
+}
 
 describe("shipped packages, on a fixture library", () => {
   let root: string | null = null;

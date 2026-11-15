@@ -51,17 +51,23 @@ export function workbenchUiBase(projectId: string, agentId: string, workbenchId:
  * The workbench's full-page app route: the page that installs the workbench as its own app
  * (its manifest link points here), and the manifest's `start_url` and `scope` — launching the
  * app opens the shell on this workbench, and the scope keeps its navigations in the window.
+ * A workbench of a remote machine carries `machine`: the route's query names the machine the
+ * page asks for its workbench (the scope is the path prefix, so the query rides along).
  */
 export function workbenchAppBase(
   projectId: string,
   agentId: string,
   workbenchId: string,
   tabKey?: string,
+  machineId?: string,
 ): string {
   const segments = [projectId, agentId, workbenchId, ...(tabKey === undefined ? [] : [tabKey])].map(
     encodeURIComponent,
   );
-  return `/app/${segments.join("/")}`;
+  const path = `/app/${segments.join("/")}`;
+  // The machine is not part of the workbench's name, only of where to ask for it — the same
+  // shape `workbenchAppPath` gives the in-app route.
+  return machineId === undefined ? path : `${path}?machine=${encodeURIComponent(machineId)}`;
 }
 
 /**
@@ -105,12 +111,13 @@ export function workbenchManifest(
   info: WorkbenchInfo,
   icon: { kind: "svg" | "png"; data: string } | null,
   tabKey?: string,
+  machineId?: string,
 ): WorkbenchManifest {
   const tab = tabKey === undefined ? undefined : info.tabs.find((t) => t.key === tabKey);
   // Unreachable through the route (it 404s an unknown tab first); a guard, not a fallback.
   if (tabKey !== undefined && tab === undefined)
     throw new Error(`workbench '${info.id}' has no tab '${tabKey}'`);
-  const base = workbenchAppBase(projectId, agentId, info.id, tabKey);
+  const base = workbenchAppBase(projectId, agentId, info.id, tabKey, machineId);
   const title = tab?.title ?? info.tabs[0]?.title ?? info.name;
   return {
     name: title,

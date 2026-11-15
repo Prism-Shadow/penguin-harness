@@ -318,7 +318,17 @@ export abstract class Workbenches {
   abstract list(projectId: string, agentId: string): Promise<WorkbenchInfo[]>;
   /** The Agent-wide switch: false while `.disabled` sits beside the workbench folders. */
   abstract agentEnabled(projectId: string, agentId: string): Promise<boolean>;
-  /** Loads the folder now; one that does not run is refused (409 `workbench_disabled`). */
+  /**
+   * One workbench's registration, read from its folder alone — no migrate, no watcher, no
+   * load (a 404 `WorkbenchNotFound` for an unknown id). The auth-less install-manifest gate
+   * answers from this: an anonymous request must not be able to run the folder's
+   * compile/boot lifecycle, only look at its `package.json`.
+   */
+  abstract describe(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+  ): Promise<WorkbenchInfo>;
   abstract reload(projectId: string, agentId: string, workbenchId: string): Promise<WorkbenchInfo>;
   /**
    * After its source was written (an archive import): loads it as `reload` does when it runs,

@@ -16,13 +16,12 @@ import { useLocation, useNavigate, useParams, useSearchParams } from "react-rout
 import { Button, type PaletteAction } from "@prismshadow/penguin-ui";
 import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
 import { S } from "../../lib/strings";
+import { useInstallManifest } from "../../lib/workbench-tabs";
 import { rememberSelection } from "../../state/project";
 import { isAppCenterPath } from "../../lib/app-center-path";
 import { useSafeMode } from "../../rescue/safe-mode";
 import { usePaletteActions } from "../../lib/palette-actions";
 import { useAppPageTab } from "./use-app-page-tab";
-import { useInstallManifest } from "../../lib/workbench-tabs";
-import { useDocumentTitle } from "../../lib/use-document-title";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { WorkbenchFrame } from "./workbench-tabs";
 

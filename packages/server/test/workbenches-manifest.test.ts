@@ -88,6 +88,11 @@ export default {
   await fs.writeFile(path.join(dir, "ui", "index.html"), "<h1>demo v1</h1>");
 }
 
+/** The compile/boot lifecycle writes `.build/` into the folder; its absence says nothing ran. */
+async function assertDoesNotExit(p: string): Promise<void> {
+  await expect(fs.access(p)).rejects.toThrow();
+}
+
 /** An app with the owner's Project and a demo workbench (with or without an icon) in its default Agent. */
 async function workbenchApp(opts: { icon?: boolean } = {}) {
   const t = await createTestApp();
@@ -162,7 +167,57 @@ describe("workbench manifest route", { timeout: 30_000 }, () => {
     expect((m.icons as { src: string }[])[0]!.src).not.toContain("/ui/");
   });
 
-  it("takes the app icon from the first tab that names one, svg or png", async () => {
+  it("takes the app icon from the FIRST tab — the one the manifest is named for", async () => {
+    await fs.writeFile(
+      path.join(dir, "package.json"),
+      JSON.stringify({
+        name: "Demo",
+        version: "1.0.0",
+        type: "module",
+        penguin: {
+          modules: [
+            {
+              ...MANIFEST,
+              contributes: {
+                "WebModule.sessionTabs": [
+                  { ...TAB, icon: { kind: "png", data: PNG_BYTES_BASE64 } },
+                  {
+                    ...TAB,
+                    id: "demo.svg",
+                    key: "svg",
+                    title: "Svg",
+                    renderer: { iframe: { src: "ui/index.html" } },
+                    icon: { kind: "svg", data: ICON_SVG },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      }),
+    );
+    const res = await owner.post(`${BASE}/${wf.id}/reload`);
+    expect(res.status, await res.text()).toBe(200);
+    // The whole manifest is named for and opens the FIRST tab — its icon comes with it, not
+    // some later tab's: name, page and icon are one face (the plugin icon would only be
+    // asked when the first tab declares none).
+    const m = (await (await owner.get(`${BASE}/${wf.id}/manifest.webmanifest`)).json()) as {
+      icons: { src: string; type: string }[];
+    };
+    expect(m.icons).toHaveLength(1);
+    expect(m.icons[0]!.type).toBe("image/png");
+    expect(m.icons[0]!.src).toBe(`data:image/png;base64,${PNG_BYTES_BASE64}`);
+    // The other tab's own manifest takes ITS icon.
+    const svg = (await (
+      await owner.get(`${BASE}/${wf.id}/tabs/svg/manifest.webmanifest`)
+    ).json()) as { icons: { src: string; type: string }[] };
+    expect(svg.icons[0]!.type).toBe("image/svg+xml");
+    expect(svg.icons[0]!.src).toBe(
+      `data:image/svg+xml;base64,${Buffer.from(ICON_SVG, "utf8").toString("base64")}`,
+    );
+  });
+
+  it("falls back to the plugin icon when the first tab declares none — even if a later tab does", async () => {
     await fs.writeFile(
       path.join(dir, "package.json"),
       JSON.stringify({
@@ -193,13 +248,15 @@ describe("workbench manifest route", { timeout: 30_000 }, () => {
     );
     const res = await owner.post(`${BASE}/${wf.id}/reload`);
     expect(res.status, await res.text()).toBe(200);
-    // The FIRST tab that names an icon is the app's icon, ahead of the plugin's own.
     const m = (await (await owner.get(`${BASE}/${wf.id}/manifest.webmanifest`)).json()) as {
       icons: { src: string; type: string }[];
     };
-    expect(m.icons).toHaveLength(1);
-    expect(m.icons[0]!.type).toBe("image/png");
-    expect(m.icons[0]!.src).toBe(`data:image/png;base64,${PNG_BYTES_BASE64}`);
+    // Not the second tab's PNG: the first tab anchors the face, and this fixture's workbench
+    // ships a plugin icon — that is what the whole manifest carries.
+    expect(m.icons[0]!.type).toBe("image/svg+xml");
+    expect(m.icons[0]!.src).toBe(
+      `data:image/svg+xml;base64,${Buffer.from(ICON_SVG, "utf8").toString("base64")}`,
+    );
   });
 
   it("404s for a workbench that does not exist", async () => {
@@ -250,5 +307,45 @@ describe("workbench manifest route", { timeout: 30_000 }, () => {
     // An unknown tab is the same 404 the routes give an unknown workbench.
     const missing = await t.app.request(`${BASE}/${wf.id}/tabs/nope/manifest.webmanifest`);
     expect(missing.status).toBe(404);
+  });
+
+  it("runs no lifecycle on the manifest path — an anonymous read touches nothing", async () => {
+    // The anonymous gate answers from the folder's package.json alone: no directory
+    // migration, no watcher, no compile (no .build directory written), no module booted
+    // (the workbench has never been listed in this fresh app). The compile side of this
+    // suite's own setup ran because a session-gated request listed the workbenches; what
+    // this asserts is that the ANONYMOUS manifest read does none of that by itself.
+    const fresh = await workbenchApp({ icon: true });
+    try {
+      const build = path.join(fresh.dir, ".build");
+      const res = await fresh.t.app.request(`${BASE}/demo/manifest.webmanifest`);
+      expect(res.status).toBe(200);
+      await assertDoesNotExit(build);
+      // The registration the manifest answered from was the folder, not a loaded instance:
+      // the session-gated list (which would compile and boot) was never asked.
+      const listed = await fresh.owner.get(`${BASE}`);
+      expect(listed.status).toBe(200);
+      // And a second anonymous read answers again, still without a build on disk.
+      const again = await fresh.t.app.request(`${BASE}/demo/manifest.webmanifest`);
+      expect(again.status).toBe(200);
+      await assertDoesNotExit(build);
+    } finally {
+      await fresh.t.cleanup();
+    }
+  });
+
+  it("answers a remote machine's manifest with the machine named in start_url", async () => {
+    // A workbench of a remote machine: the gate hops to that machine's identical gate (the
+    // hop is the Machines forward, wired in setup) and names the machine in the start_url —
+    // the installed app opens the tab there. Here the hop is exercised through the route's
+    // own query contract against the null forward (no machine connected): 503, the proxy's
+    // own answer for it.
+    const res = await t.app.request(`${BASE}/${wf.id}/manifest.webmanifest?machine=vm-1`);
+    expect(res.status).toBe(503);
+    // The workbench-level route without the query is untouched by the machine contract.
+    const local = await t.app.request(`${BASE}/${wf.id}/manifest.webmanifest`);
+    expect(local.status).toBe(200);
+    const m = JSON.parse(await local.text()) as { start_url: string };
+    expect(m.start_url).not.toContain("machine=");
   });
 });
