@@ -23,13 +23,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { skillsDir, librarySkill } from "@prismshadow/penguin-core";
-import type {
-  AgentCreateResponse,
-  AgentsResponse,
-  AgentSkillsResponse,
-  DirectorySkillsResponse,
-  ProjectCreateResponse,
-} from "../src/api/types.js";
+import type { AgentCreateResponse, AgentsResponse, AgentSkillsResponse, DirectorySkillsResponse, ProjectCreateResponse } from "../src/";
 import { apiClient, canCreateSymlink, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 

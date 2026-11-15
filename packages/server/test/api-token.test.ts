@@ -26,13 +26,13 @@ import { Hono } from "hono";
 import fs from "node:fs";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { MeResponse, SessionCreateResponse } from "../src/api/types.js";
+import type { MeResponse, SessionCreateResponse } from "../src/";
 import { apiTokenPath, readApiToken, storeApiToken, tokensEqual } from "../src/auth/api-token.js";
 import { authMiddleware, bearerToken, SESSION_COOKIE } from "../src/auth/middleware.js";
 import { REMOTE_SESSION_TTL_MS } from "../src/auth/service.js";
 import { remoteRoutes } from "../src/http/routes/remote.js";
 import { handleError } from "../src/http/errors.js";
-import { sessionTokenHash } from "../src/db/repos/auth-sessions.js";
+import { sessionTokenHash } from "@prismshadow/penguin-library-identity/repos/auth-sessions";
 import {
   apiClient,
   cookieFrom,

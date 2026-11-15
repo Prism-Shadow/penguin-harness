@@ -22,28 +22,12 @@
  * A machine that should have been asked and could not be is named in the answer, never dropped
  * in silence.
  */
-import type {
-  ArchivedSessionGroup,
-  ArchivedSessionGroupServers,
-  ArchivedSessionGroupsResponse,
-  ArchivedSessionSource,
-  ArchivedSessionsBatch,
-  ArchivedSessionsBatchFilter,
-  ArchivedSessionsBatchResponse,
-  ArchivedSessionsQuery,
-  ArchivedSessionsResponse,
-  ProjectSummary,
-  ServerEvent,
-  SessionCategory,
-  SessionInfo,
-  SessionSource,
-  SessionStatus,
-} from "../api/types.js";
-import type { SessionRow } from "../db/repos/sessions.js";
+import type { ArchivedSessionGroup, ArchivedSessionGroupServers, ArchivedSessionGroupsResponse, ArchivedSessionSource, ArchivedSessionsBatch, ArchivedSessionsBatchFilter, ArchivedSessionsBatchResponse, ArchivedSessionsQuery, ArchivedSessionsResponse, ProjectSummary, ServerEvent, SessionCategory, SessionInfo, SessionSource, SessionStatus } from "../";
+import type { SessionRow } from "@prismshadow/penguin-library-sessions/repos/sessions";
 import { HttpError, badRequest } from "../http/errors.js";
 import type { ListingView } from "../runtime/session-sources.js";
-import type { SessionIndex } from "../mechanisms/sessions.js";
-import type { TraceIndexStore } from "../mechanisms/traces.js";
+import type { SessionIndex } from "@prismshadow/penguin-library-sessions";
+import type { TraceIndexStore } from "@prismshadow/penguin-library-traces";
 import { compareActivityDesc } from "./session-service.js";
 import type { ActivityCursor, ArchivedRow } from "./session-service.js";
 import { TEMP_WORKSPACE_GROUP, isTempWorkspace, matchesWorkspaceGroup } from "./workspace-group.js";

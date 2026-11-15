@@ -34,13 +34,7 @@ import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { APP_URL } from "@prismshadow/penguin-core";
 import { presetModelEntries, providerInfo } from "../src/model-catalog/index.js";
-import type {
-  ModelOAuthCodeResponse,
-  ModelOAuthStartResponse,
-  ModelOAuthStatusResponse,
-  ModelsResponse,
-  ProjectCreateResponse,
-} from "../src/api/types.js";
+import type { ModelOAuthCodeResponse, ModelOAuthStartResponse, ModelOAuthStatusResponse, ModelsResponse, ProjectCreateResponse } from "../src/";
 import type { ChannelEvent } from "../src/runtime/channel.js";
 import { HttpError } from "../src/http/errors.js";
 import {

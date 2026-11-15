@@ -46,7 +46,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { HistoryFileFact } from "../src/api/types.js";
+import type { HistoryFileFact } from "../src/";
 import { TraceCache, dirNameOf, traceCacheAt } from "../src/machines/trace-cache.js";
 import {
   HAVE_MAX_CHARS,

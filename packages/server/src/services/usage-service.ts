@@ -16,21 +16,9 @@
  * errors with no Project context) are visible only to admins, see the ErrorsRepo
  * file header.
  */
-import type {
-  CostParts,
-  UsageAgentSeries,
-  UsageBucket,
-  UsageErrors,
-  UsageErrorsPage,
-  UsageGranularity,
-  UsageGroupBy,
-  UsageGroupRow,
-  UsageModelSeries,
-  UsageModelTotals,
-  UsageResponse,
-  UsageSeriesPoint,
-} from "../api/types.js";
-import type { ErrorFilter } from "../db/repos/errors.js";
+import type { UsageGroupBy } from "@prismshadow/penguin-library-observability";
+import type { CostParts, UsageAgentSeries, UsageBucket, UsageErrors, UsageErrorsPage, UsageGranularity, UsageGroupRow, UsageModelSeries, UsageModelTotals, UsageResponse, UsageSeriesPoint } from "../";
+import type { ErrorFilter } from "@prismshadow/penguin-library-observability/repos/errors";
 import { catalogEntryFor, offPeakAt, offPeakScheduledRefs } from "../model-catalog/catalog.js";
 import type {
   UsageModelSums,
@@ -39,7 +27,7 @@ import type {
   UsageAgentBucketCount,
   UsageFilter,
   PeakTier,
-} from "../db/repos/usage.js";
+} from "@prismshadow/penguin-library-observability/repos/usage";
 import {
   enumerateBuckets,
   enumerateTsBuckets,
@@ -49,8 +37,8 @@ import {
 import { badRequest } from "../http/validate.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Clock } from "../hmr/capabilities.js";
-import type { ErrorLog, UsageQueries, UsageStore } from "../mechanisms/observability.js";
-import type { ProjectConfigStore } from "../mechanisms/projects.js";
+import type { ErrorLog, UsageQueries, UsageStore } from "@prismshadow/penguin-library-observability";
+import type { ProjectConfigStore } from "@prismshadow/penguin-library-projects";
 
 /**
  * Number of most-recent rows kept in the error detail table. Also the page size the whole

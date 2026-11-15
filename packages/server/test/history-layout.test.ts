@@ -34,7 +34,7 @@ import {
   userText,
 } from "@prismshadow/penguin-core";
 import type { AmspRecord } from "@prismshadow/penguin-core";
-import type { HistorySegment, HistoryStub } from "../src/api/types.js";
+import type { HistorySegment, HistoryStub } from "../src/";
 import { assembleWindow, windowLayout } from "../src/services/history-layout.js";
 import type { LineOffsets } from "../src/services/history-layout.js";
 import { decodeCursor } from "../src/services/message-window.js";

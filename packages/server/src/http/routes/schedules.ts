@@ -15,7 +15,7 @@
 import { createHash } from "node:crypto";
 import { Hono } from "hono";
 import { isValidId } from "@prismshadow/penguin-core";
-import type { ProjectSchedulesResponse, ScheduleItem, SchedulesResponse } from "../../api/types.js";
+import type { ProjectSchedulesResponse, ScheduleItem, SchedulesResponse } from "../../";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { ServerConfig } from "../../config.js";
 
@@ -43,7 +43,7 @@ import {
   parseScheduleFile,
   slotInWindow,
 } from "../../runtime/schedule-file.js";
-import type { ScheduleStateRow } from "../../db/repos/schedules.js";
+import type { ScheduleStateRow } from "@prismshadow/penguin-library-sessions/repos/schedules";
 import {
   deleteScheduleFile,
   readScheduleFile,
@@ -54,8 +54,8 @@ import {
 import { scheduleStatus } from "../../runtime/scheduler.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Config } from "../../hmr/capabilities.js";
-import type { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
-import type { Schedules, Scheduling } from "../../mechanisms/sessions.js";
+import type { Access, ProjectConfigStore } from "@prismshadow/penguin-library-projects";
+import type { Schedules, Scheduling } from "@prismshadow/penguin-library-sessions";
 import type { AgentConfig } from "../../mechanisms/agents.js";
 
 /** Validate and shape the POST/PUT request body into file fields (semantic validation is left to parseScheduleFile). */

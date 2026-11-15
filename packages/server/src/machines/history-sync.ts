@@ -39,16 +39,7 @@
  */
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import type { BodySource } from "@prismshadow/penguin-core/interfaces";
-import type {
-  HistoryFileKey,
-  HistoryHave,
-  HistoryLinesFrame,
-  HistoryLinesWindow,
-  HistoryPartFrame,
-  HistoryProgress,
-  HistoryWindowPart,
-  MessagesResponse,
-} from "../api/types.js";
+import type { HistoryFileKey, HistoryHave, HistoryLinesFrame, HistoryLinesWindow, HistoryPartFrame, HistoryProgress, HistoryWindowPart, MessagesResponse } from "../";
 import { HttpError } from "../http/errors.js";
 import { assembleWindow } from "../services/history-layout.js";
 import { historyLinesPath, parseHistoryFileKey } from "../services/history-wire.js";

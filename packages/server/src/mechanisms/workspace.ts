@@ -7,7 +7,7 @@ import type {
   WorkspaceFileReadOptions,
   WorkspaceFileStat,
 } from "../services/workspace-files-service.js";
-import type { WorkspaceFilesResponse, WorkspaceSearchResponse } from "../api/types.js";
+import type { WorkspaceFilesResponse, WorkspaceSearchResponse } from "../";
 
 /** WorkspaceFiles: the mechanism WorkspaceFilesService implements. */
 @Interface()

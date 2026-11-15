@@ -16,7 +16,7 @@ import {
   type Slot,
 } from "@prismshadow/penguin-core/kernel";
 import type { LanguageContribution, LanguageGrammar } from "@prismshadow/penguin-core/plugin";
-import type { LanguageSummary } from "../api/types.js";
+import type { LanguageSummary } from "../";
 
 export interface LanguagesSlots {
   /** One language: its metadata here, its TextMate grammar bound by the contributor. */

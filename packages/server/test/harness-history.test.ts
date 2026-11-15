@@ -31,7 +31,7 @@ import {
 } from "../src/services/harness-history.js";
 import zlib from "node:zlib";
 import { diffIfaces } from "@prismshadow/penguin-hmr";
-import type { VersionHistoryDiffResponse, VersionHistoryResponse } from "../src/api/types.js";
+import type { VersionHistoryDiffResponse, VersionHistoryResponse } from "../src/";
 import {
   apiClient,
   createTestApp,

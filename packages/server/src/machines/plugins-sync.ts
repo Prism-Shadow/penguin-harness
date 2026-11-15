@@ -30,7 +30,7 @@
  * waiting for a restart, which this sync reports back rather than papering over.
  */
 import type { MachineApi } from "./machine-api.js";
-import type { InstalledPluginsResponse } from "../api/types.js";
+import type { InstalledPluginsResponse } from "../";
 
 /** What a sync did, in the words the connect log shows. */
 export type PluginSyncOutcome =

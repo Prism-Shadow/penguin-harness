@@ -20,7 +20,7 @@
  * than this registers no slip, and the push it serves boots as one nobody is waiting on.
  */
 import type { Resources } from "@prismshadow/penguin-core/kernel";
-import type { ErrorBody, UnsatisfiedPlugin } from "../api/types.js";
+import type { ErrorBody, UnsatisfiedPlugin } from "../";
 
 /** Registry key of the slip for the push in flight. */
 export const PUSH_SLIP_RESOURCE_ID = "platform.pushSlip";

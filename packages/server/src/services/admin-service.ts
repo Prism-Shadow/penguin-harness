@@ -13,17 +13,17 @@
  * Both of those end sessions, so both go through `signOutEverywhere`: dropping the rows
  * alone leaves the connections those rows authorised still open.
  */
-import type { UserInfo } from "../api/types.js";
+import type { UserInfo } from "@prismshadow/penguin-library-identity";
 import { HttpError } from "../http/errors.js";
 import { ADMIN_USER_ID, MIN_PASSWORD_LENGTH, toUserInfo } from "../auth/service.js";
 import type { PasswordHasher } from "../auth/password.js";
-import type { UserRow } from "../db/repos/users.js";
+import type { UserRow } from "@prismshadow/penguin-library-identity/repos/users";
 import { SEMANTIC_ID_RULE, USERNAME_PATTERN } from "./ids.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Clock } from "../hmr/capabilities.js";
 import type { LiveStreams } from "../auth/live-streams.js";
-import type { Admin, AuthSessions, Users } from "../mechanisms/identity.js";
-import type { ProjectLifecycle, Projects } from "../mechanisms/projects.js";
+import type { Admin, AuthSessions, Users } from "@prismshadow/penguin-library-identity";
+import type { ProjectLifecycle, Projects } from "@prismshadow/penguin-library-projects";
 
 @Component()
 export class AdminService implements Admin {

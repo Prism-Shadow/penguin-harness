@@ -44,13 +44,7 @@ import fs from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
 import path from "node:path";
 import type { AmspRecord } from "@prismshadow/penguin-core";
-import type {
-  HistoryFileFact,
-  HistoryFileKey,
-  HistoryHave,
-  HistoryLinesFrame,
-  HistoryPartFrame,
-} from "../api/types.js";
+import type { HistoryFileFact, HistoryFileKey, HistoryHave, HistoryLinesFrame, HistoryPartFrame } from "../";
 import {
   HAVE_MAX_CHARS,
   anchorOf,

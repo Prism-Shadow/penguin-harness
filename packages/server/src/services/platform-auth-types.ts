@@ -1,5 +1,5 @@
 /** Stable identifiers for Penguin Go's key-authorization flow. */
-import type { DefaultModelOffer } from "../api/types.js";
+import type { DefaultModelOffer } from "../";
 
 export const PLATFORM_CLIENT_ID = "penguin-harness";
 

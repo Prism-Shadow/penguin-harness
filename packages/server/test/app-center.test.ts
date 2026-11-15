@@ -65,15 +65,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { agentStateDir } from "@prismshadow/penguin-core";
-import type {
-  AppCenterLayoutResponse,
-  AppCenterResponse,
-  AppCenterShortcut,
-  PrefsResponse,
-  ServerEvent,
-  WorkbenchInfo,
-  WorkbenchVersion,
-} from "../src/api/types.js";
+import type { AppCenterLayoutResponse, AppCenterResponse, AppCenterShortcut, PrefsResponse, ServerEvent, WorkbenchInfo, WorkbenchVersion } from "../src/";
 import { userChannelKey } from "../src/http/routes/events.js";
 import { readFolder } from "../src/workbenches/store.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";

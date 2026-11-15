@@ -24,7 +24,7 @@
  */
 import { Hono } from "hono";
 import { Component, Bind, Use } from "@prismshadow/penguin-core/kernel";
-import type { HostCommand, HostCommandOffer, HostCommandsResponse } from "../../api/types.js";
+import type { HostCommand, HostCommandOffer, HostCommandsResponse } from "../../";
 import { LEGACY_HOST_COMMANDS } from "../../api/types.js";
 import { HttpError } from "../errors.js";
 import type { AppEnv } from "../../auth/middleware.js";

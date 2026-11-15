@@ -13,7 +13,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { scratchpadDir } from "@prismshadow/penguin-core";
-import type { ProjectCreateResponse, SessionCreateResponse } from "../src/api/types.js";
+import type { ProjectCreateResponse, SessionCreateResponse } from "../src/";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 

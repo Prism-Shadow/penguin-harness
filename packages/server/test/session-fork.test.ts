@@ -55,14 +55,10 @@ import {
   transcribeToolCallOutput,
 } from "@prismshadow/amsp/markers";
 import type { AmspRecord, SessionMetaPayload, TokenCounts } from "@prismshadow/penguin-core";
-import type {
-  MessagesResponse,
-  ProjectCreateResponse,
-  SessionForkResponse,
-} from "../src/api/types.js";
+import type { MessagesResponse, ProjectCreateResponse, SessionForkResponse } from "../src/";
 import { apiClient, createTestApp, provisionUser, writeTraceFile, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
-import type { SessionRow } from "../src/db/repos/sessions.js";
+import type { SessionRow } from "@prismshadow/penguin-library-sessions/repos/sessions";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import { rewriteSummaryPaths } from "../src/services/trace-service.js";
 import { fakeSession } from "./fixtures/session.js";

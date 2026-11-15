@@ -18,10 +18,11 @@ import {
   provisionProjectBenchmarks,
   type BuiltinBenchmark,
 } from "@prismshadow/penguin-core";
-import type { MemberInfo, ProjectRole, ProjectSummary } from "../api/types.js";
+import type { ProjectRole } from "@prismshadow/penguin-library-projects";
+import type { MemberInfo, ProjectSummary } from "../";
 import { HttpError } from "../http/errors.js";
-import type { ProjectRow } from "../db/repos/projects.js";
-import type { UserRow } from "../db/repos/users.js";
+import type { ProjectRow } from "@prismshadow/penguin-library-projects/repos/projects";
+import type { UserRow } from "@prismshadow/penguin-library-identity/repos/users";
 import type { SessionManager } from "../runtime/session-manager.js";
 import {
   PROJECT_ID_MAX_LENGTH,
@@ -38,14 +39,14 @@ import type {
   ProjectConfigStore,
   ProjectLifecycle,
   Projects,
-} from "../mechanisms/projects.js";
-import type { Users } from "../mechanisms/identity.js";
-import type { Schedules, SessionIndex } from "../mechanisms/sessions.js";
-import type { ErrorLog, UsageStore } from "../mechanisms/observability.js";
-import type { TraceIndex } from "../mechanisms/traces.js";
-import type { OrgCache } from "../mechanisms/organization.js";
-import type { AgentApi } from "../mechanisms/agent-api.js";
-import type { UserDraftsStore } from "../mechanisms/account-data.js";
+} from "@prismshadow/penguin-library-projects";
+import type { Users } from "@prismshadow/penguin-library-identity";
+import type { Schedules, SessionIndex } from "@prismshadow/penguin-library-sessions";
+import type { ErrorLog, UsageStore } from "@prismshadow/penguin-library-observability";
+import type { TraceIndex } from "@prismshadow/penguin-library-traces";
+import type { OrgCache } from "@prismshadow/penguin-library-organization";
+import type { AgentApi } from "@prismshadow/penguin-library-agent-api";
+import type { UserDraftsStore } from "@prismshadow/penguin-library-account-data";
 
 /** Fallback timeout for waiting on runs to settle before deleting a Project. */
 const ABORT_SETTLE_TIMEOUT_MS = 5000;

@@ -13,18 +13,7 @@
  * functions over the API's DTOs; commands/browser.ts does the I/O. Docs: /docs/cli §
  * "penguin browser".
  */
-import type {
-  BrowserBackend,
-  BrowserBackendInfo,
-  BuiltinBrowserExecResult,
-  BuiltinBrowserHistoryEntry,
-  BuiltinBrowserImportResult,
-  BuiltinBrowserImportSource,
-  BuiltinBrowserScanResult,
-  BuiltinBrowserStatus,
-  BuiltinBrowserTab,
-  BuiltinBrowserTabsResponse,
-} from "../api/types.js";
+import type { BrowserBackend, BrowserBackendInfo, BuiltinBrowserExecResult, BuiltinBrowserHistoryEntry, BuiltinBrowserImportResult, BuiltinBrowserImportSource, BuiltinBrowserScanResult, BuiltinBrowserStatus, BuiltinBrowserTab, BuiltinBrowserTabsResponse } from "../";
 import type { Messages } from "./i18n.js";
 import { cutText } from "./cut-text.js";
 import { renderTable } from "./table.js";

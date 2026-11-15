@@ -11,7 +11,7 @@
  * grammar, and chords are checked against the grammar only, never against a key list.
  */
 import { HttpError } from "../http/errors.js";
-import type { StoredKeybindings } from "../api/types.js";
+import type { StoredKeybindings } from "../";
 
 export const KEYBINDINGS_SECTION_MAX = 64;
 export const KEYBINDINGS_ID_MAX = 64;

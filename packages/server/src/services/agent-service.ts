@@ -45,7 +45,7 @@ import { migrateWorkbenches } from "../workbenches/migrate.js";
 import { agentAvatarRev } from "./agent-avatar.js";
 import { isWorkbenchId, workbenchesDir } from "../workbenches/store.js";
 import { isTopicFileName } from "./memory-service.js";
-import type { AgentAuthor, AgentDeletionInfo, PluginUpdateRef } from "../api/types.js";
+import type { AgentAuthor, AgentDeletionInfo, PluginUpdateRef } from "../";
 import { resolveLibraryPlugins } from "./plugin-library.js";
 import type { PluginLibrary } from "../plugin/library-module.js";
 import { resolveDirectorySkills } from "./directory-skills.js";
@@ -53,7 +53,7 @@ import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import type { Config, Paths } from "../hmr/capabilities.js";
 import type { AgentConfig, AgentLifecycle, AgentPackage, Snapshots } from "../mechanisms/agents.js";
-import type { AgentIndex } from "../mechanisms/projects.js";
+import type { AgentIndex } from "@prismshadow/penguin-library-projects";
 
 /**
  * How much of a SKILL.md is read to answer "which version is installed" (see `installedSkills`).

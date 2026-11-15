@@ -18,17 +18,7 @@ import {
   parse as parseYaml,
   stringify as stringifyYaml,
 } from "yaml";
-import type {
-  OrgApprovalMode,
-  OrgChannelMessage,
-  OrgChannelNoticeKind,
-  OrgLanguage,
-  OrgStatus,
-  OrgTicketHistoryAction,
-  OrgTicketHistoryEntry,
-  OrgTicketPriority,
-  OrgTicketStatus,
-} from "../api/types.js";
+import type { OrgApprovalMode, OrgChannelMessage, OrgChannelNoticeKind, OrgLanguage, OrgStatus, OrgTicketHistoryAction, OrgTicketHistoryEntry, OrgTicketPriority, OrgTicketStatus } from "../";
 import { parseScheduleFile } from "../runtime/schedule-file.js";
 import type { ScheduleDefinition } from "../runtime/schedule-file.js";
 import { SEMANTIC_ID_PATTERN } from "../services/ids.js";

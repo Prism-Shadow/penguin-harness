@@ -48,32 +48,10 @@
  */
 import { Hono } from "hono";
 import type { Context } from "hono";
-import type {
-  FeishuBindingInfo,
-  FeishuBindingResponse,
-  FeishuTestResponse,
-  MessagingBindingInfo,
-  MessagingBindingsResponse,
-  MessagingBindingStateRequest,
-  MessagingChannelState,
-  MessagingTestMessageResponse,
-  QQBindingInfo,
-  QQBindingResponse,
-  QQScanPollResponse,
-  QQScanStartResponse,
-  QQTestResponse,
-  TelegramBindingInfo,
-  TelegramBindingResponse,
-  TelegramTestResponse,
-  WeChatBindingInfo,
-  WeChatBindingResponse,
-  WeChatScanPollResponse,
-  WeChatScanStartResponse,
-  WeChatTestResponse,
-} from "../../api/types.js";
+import type { FeishuBindingInfo, FeishuBindingResponse, FeishuTestResponse, MessagingBindingInfo, MessagingBindingsResponse, MessagingBindingStateRequest, MessagingChannelState, MessagingTestMessageResponse, QQBindingInfo, QQBindingResponse, QQScanPollResponse, QQScanStartResponse, QQTestResponse, TelegramBindingInfo, TelegramBindingResponse, TelegramTestResponse, WeChatBindingInfo, WeChatBindingResponse, WeChatScanPollResponse, WeChatScanStartResponse, WeChatTestResponse } from "../../";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { MessagingBindingRow } from "../../db/repos/messaging-bindings.js";
-import type { SessionRow } from "../../db/repos/sessions.js";
+import type { MessagingBindingRow } from "@prismshadow/penguin-library-messaging/repos/messaging-bindings";
+import type { SessionRow } from "@prismshadow/penguin-library-sessions/repos/sessions";
 import { FEISHU_DEFAULT_DOMAIN, feishuConfigOf } from "../../runtime/messaging/feishu-connector.js";
 import { telegramBotIdOf } from "../../runtime/messaging/telegram-connector.js";
 import { maskApiKey } from "../../services/project-config-service.js";
@@ -98,9 +76,9 @@ import { isMessagingChannel } from "../../runtime/messaging/enabled-channel.js";
 import type { WeChatScanService } from "../../runtime/messaging/wechat-scan.js";
 import type { MessagingBridge } from "../../runtime/messaging/bridge.js";
 import type { QQScanService } from "../../runtime/messaging/qq-scan.js";
-import type { MessagingBindings } from "../../mechanisms/messaging.js";
-import type { SessionIndex } from "../../mechanisms/sessions.js";
-import type { Access } from "../../mechanisms/projects.js";
+import type { MessagingBindings } from "@prismshadow/penguin-library-messaging";
+import type { SessionIndex } from "@prismshadow/penguin-library-sessions";
+import type { Access } from "@prismshadow/penguin-library-projects";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface MessagingRouteDeps {

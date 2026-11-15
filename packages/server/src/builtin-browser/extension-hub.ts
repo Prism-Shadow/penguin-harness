@@ -9,14 +9,8 @@
  * and refuses new ones. The windows of the user hear `builtin_browser_extension` as their Chrome
  * connects, goes away, is replaced or revoked.
  */
-import type {
-  BrowserBackendInfo,
-  BrowserExtensionRecord,
-  BrowserExtensionsResponse,
-  BuiltinBrowserServerEvent,
-  BuiltinBrowserUnavailableReason,
-} from "../api/types.js";
-import type { BrowserExtensionRow, BrowserExtensionStore } from "../db/repos/browser-extensions.js";
+import type { BrowserBackendInfo, BrowserExtensionRecord, BrowserExtensionsResponse, BuiltinBrowserServerEvent, BuiltinBrowserUnavailableReason } from "../";
+import type { BrowserExtensionRow, BrowserExtensionStore } from "@prismshadow/penguin-library-machines/repos/browser-extensions";
 import { BrowserBackendRuntime } from "./backend-runtime.js";
 import type { BackendRuntimeDeps } from "./backend-runtime.js";
 import { CLOSE, ExtensionLink } from "./extension-link.js";

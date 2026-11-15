@@ -29,11 +29,7 @@ import type {
   CliCommandProgram,
   CliCommandSummary,
 } from "@prismshadow/penguin-core/cli";
-import type {
-  PluginCliCommandRunRequest,
-  PluginCliCommandRunResponse,
-  PluginCliCommandsResponse,
-} from "../api/types.js";
+import type { PluginCliCommandRunRequest, PluginCliCommandRunResponse, PluginCliCommandsResponse } from "../";
 import type { AppEnv } from "../auth/middleware.js";
 import type { Hmr } from "../hmr/capabilities.js";
 import { HttpError } from "../http/errors.js";

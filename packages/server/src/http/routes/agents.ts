@@ -14,13 +14,7 @@
  */
 import { Hono } from "hono";
 import { AGENT_AUTHORS } from "@prismshadow/penguin-core";
-import type {
-  AgentCreateResponse,
-  AgentDeleteResponse,
-  AgentDeletionResponse,
-  AgentsResponse,
-  AgentSummary,
-} from "../../api/types.js";
+import type { AgentCreateResponse, AgentDeleteResponse, AgentDeletionResponse, AgentsResponse, AgentSummary } from "../../";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { OrgService } from "../../runtime/organization/service.js";
 import { HttpError } from "../errors.js";
@@ -37,12 +31,12 @@ import {
 import type { SessionManager } from "../../runtime/session-manager.js";
 import type { SessionService } from "../../services/session-service.js";
 import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
-import type { TraceIndex } from "../../mechanisms/traces.js";
-import type { ErrorLog } from "../../mechanisms/observability.js";
-import type { Schedules, SessionIndex } from "../../mechanisms/sessions.js";
-import type { Access } from "../../mechanisms/projects.js";
-import type { AgentApi } from "../../mechanisms/agent-api.js";
-import type { UserDraftsStore } from "../../mechanisms/account-data.js";
+import type { TraceIndex } from "@prismshadow/penguin-library-traces";
+import type { ErrorLog } from "@prismshadow/penguin-library-observability";
+import type { Schedules, SessionIndex } from "@prismshadow/penguin-library-sessions";
+import type { Access } from "@prismshadow/penguin-library-projects";
+import type { AgentApi } from "@prismshadow/penguin-library-agent-api";
+import type { UserDraftsStore } from "@prismshadow/penguin-library-account-data";
 import type { Workbenches } from "../../mechanisms/workbenches.js";
 import { deleteAgentEverywhere } from "../../services/agent-deletion.js";
 import { migrateEmployeeAuthors } from "../../services/agent-author-migration.js";

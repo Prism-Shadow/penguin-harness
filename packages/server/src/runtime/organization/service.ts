@@ -6,50 +6,7 @@ import path from "node:path";
  * lock, followed by an immediate reconcile pass so the change takes effect now; every
  * read is a projection of the files plus the live session state and the period's spend.
  */
-import type {
-  OrgCalendarItem,
-  OrgCalendarResponse,
-  OrgCalendarUpsertRequest,
-  OrgCalendarWriteResponse,
-  SemanticIdSuggestRequest,
-  SemanticIdSuggestResponse,
-  OrgChannelCreateRequest,
-  OrgChannelDetail,
-  OrgChannelItem,
-  OrgChannelMember,
-  OrgChannelPatchRequest,
-  OrgChannelsResponse,
-  OrgChannelMessage,
-  OrgChannelMessageSendRequest,
-  OrgChannelMessagesResponse,
-  Employment,
-  UnreadableChart,
-  OrgChartResponse,
-  OrgDeskResponse,
-  OrgEmployeeItem,
-  OrgEmployeePatchRequest,
-  OrgFinanceResponse,
-  OrgHireRequest,
-  OrgInbox,
-  OrgSessionsResponse,
-  OrgTicketCreateRequest,
-  OrgTicketDetail,
-  OrgTicketHistoryAction,
-  OrgTicketItem,
-  OrgTicketSessionItem,
-  OrgTicketStatus,
-  OrgTicketUpdateRequest,
-  OrgTicketsResponse,
-  OrganizationCreateRequest,
-  OrganizationDetail,
-  OrganizationPatchRequest,
-  OrganizationSettings,
-  OrganizationSummary,
-  OrgLanguage,
-  ScheduleStatus,
-  OrgHandbookFileResponse,
-  OrgHandbookFilesResponse,
-} from "../../api/types.js";
+import type { OrgCalendarItem, OrgCalendarResponse, OrgCalendarUpsertRequest, OrgCalendarWriteResponse, SemanticIdSuggestRequest, SemanticIdSuggestResponse, OrgChannelCreateRequest, OrgChannelDetail, OrgChannelItem, OrgChannelMember, OrgChannelPatchRequest, OrgChannelsResponse, OrgChannelMessage, OrgChannelMessageSendRequest, OrgChannelMessagesResponse, Employment, UnreadableChart, OrgChartResponse, OrgDeskResponse, OrgEmployeeItem, OrgEmployeePatchRequest, OrgFinanceResponse, OrgHireRequest, OrgInbox, OrgSessionsResponse, OrgTicketCreateRequest, OrgTicketDetail, OrgTicketHistoryAction, OrgTicketItem, OrgTicketSessionItem, OrgTicketStatus, OrgTicketUpdateRequest, OrgTicketsResponse, OrganizationCreateRequest, OrganizationDetail, OrganizationPatchRequest, OrganizationSettings, OrganizationSummary, OrgLanguage, ScheduleStatus, OrgHandbookFileResponse, OrgHandbookFilesResponse } from "../../";
 import { TICKET_SLUG_PATTERN } from "../../api/types.js";
 import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
@@ -57,18 +14,18 @@ import { HttpError } from "../../http/errors.js";
 import { userChannelKey } from "../../http/routes/events.js";
 import type { Channels, Clock, Config, Log } from "../../hmr/capabilities.js";
 import type { ChannelHub } from "../channel.js";
-import type { OrgCache } from "../../mechanisms/organization.js";
+import type { OrgCache } from "@prismshadow/penguin-library-organization";
 import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
 import type {
   AgentIndex,
   Members,
   ProjectConfigStore,
   Projects,
-} from "../../mechanisms/projects.js";
-import type { MessagingBindings } from "../../mechanisms/messaging.js";
-import type { SessionIndex } from "../../mechanisms/sessions.js";
+} from "@prismshadow/penguin-library-projects";
+import type { MessagingBindings } from "@prismshadow/penguin-library-messaging";
+import type { SessionIndex } from "@prismshadow/penguin-library-sessions";
 import type { Settings } from "@prismshadow/penguin-library-settings";
-import type { Errors, UsageQueries } from "../../mechanisms/observability.js";
+import type { Errors, UsageQueries } from "@prismshadow/penguin-library-observability";
 import { OrgStore } from "../../organization/store.js";
 import { badRequest } from "../../http/validate.js";
 import type { ChannelConfig, OrgConfig, OrgEmployee, TicketDoc } from "../../organization/files.js";

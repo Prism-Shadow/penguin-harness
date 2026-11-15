@@ -14,7 +14,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { createDesktopApp, createTestApp, desktopLoginCookie, loginAdmin } from "./helpers.js";
-import type { DesktopTrayPatch, DesktopTrayStatusResponse, ErrorBody } from "../src/api/types.js";
+import type { DesktopTrayPatch, DesktopTrayStatusResponse, ErrorBody } from "../src/";
 import { DesktopService } from "../src/services/desktop-service.js";
 import {
   parseTrayStatusMessage,

@@ -24,13 +24,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { VERSION } from "@prismshadow/penguin-core";
 import { versionReport } from "../src/version-report.js";
-import type {
-  RestartResponse,
-  UpdateCheckResponse,
-  UpdateJobStatus,
-  UpdateRunResponse,
-  VersionResponse,
-} from "../src/api/types.js";
+import type { RestartResponse, UpdateCheckResponse, UpdateJobStatus, UpdateRunResponse, VersionResponse } from "../src/";
 import {
   FAILURE_TTL_MS,
   SUCCESS_TTL_MS,

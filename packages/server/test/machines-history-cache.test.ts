@@ -53,14 +53,7 @@ import {
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import { elideHistoryRecord, encodeBodyRef } from "@prismshadow/penguin-core/interfaces";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import type {
-  TraceEventsResponse,
-  HistoryMessage,
-  HistoryPage,
-  HistoryProgress,
-  HistoryRecords,
-  MessagesResponse,
-} from "../src/api/types.js";
+import type { TraceEventsResponse, HistoryMessage, HistoryPage, HistoryProgress, HistoryRecords, MessagesResponse } from "../src/";
 import { machineHistory } from "../src/machines/history-routes.js";
 import type { MachineHistory } from "../src/machines/history-routes.js";
 import type { HistorySync } from "../src/machines/history-sync.js";

@@ -10,28 +10,15 @@
  */
 import { Hono } from "hono";
 import { providerInfo } from "../../model-catalog/catalog.js";
-import type {
-  DefaultModelResponse,
-  EndpointModelListRequest,
-  ModelBalanceResponse,
-  ModelProtocolDetectRequest,
-  ModelRefDto,
-  ModelsUpdateRequest,
-  ModelTestRequest,
-  ModelUpdateEntry,
-  ModelVisionDetectRequest,
-  PresetSyncMode,
-  ProviderConnectionUpdate,
-  ServerEvent,
-} from "../../api/types.js";
+import type { DefaultModelResponse, EndpointModelListRequest, ModelBalanceResponse, ModelProtocolDetectRequest, ModelRefDto, ModelsUpdateRequest, ModelTestRequest, ModelUpdateEntry, ModelVisionDetectRequest, PresetSyncMode, ProviderConnectionUpdate, ServerEvent } from "../../";
 import type { AppEnv } from "../../auth/middleware.js";
 import { badRequest, pathParam, readJson, requireString, requireValidId } from "../validate.js";
 import { HttpError } from "../errors.js";
 import { isHttpUrl } from "../../services/protocol-detect.js";
 import type { ChannelHub } from "../../runtime/channel.js";
 import type { SessionManager } from "../../runtime/session-manager.js";
-import type { SessionIndex } from "../../mechanisms/sessions.js";
-import type { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
+import type { SessionIndex } from "@prismshadow/penguin-library-sessions";
+import type { Access, ProjectConfigStore } from "@prismshadow/penguin-library-projects";
 import type { Machines } from "../../machines/service.js";
 import { ModelBalances } from "../../services/model-balance.js";
 

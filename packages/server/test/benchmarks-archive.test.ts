@@ -44,12 +44,7 @@ import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import { parse as parseYaml } from "yaml";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { benchmarksDir } from "@prismshadow/penguin-core";
-import type {
-  BenchmarkArchiveImportResponse,
-  BenchmarksResponse,
-  ErrorBody,
-  ProjectCreateResponse,
-} from "../src/api/types.js";
+import type { BenchmarkArchiveImportResponse, BenchmarksResponse, ErrorBody, ProjectCreateResponse } from "../src/";
 import { apiClient, canCreateSymlink, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 import { switchTimeZone } from "./helpers/time-zone.js";

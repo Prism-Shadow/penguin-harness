@@ -15,17 +15,10 @@
  * the channel and the account id only, and both are public. A machine that cannot be asked is
  * listed apart with the reason and never guessed at; the caller decides what to do about it.
  */
-import type {
-  MessagingAccount,
-  MessagingAccountHolder,
-  MessagingAccountHoldersResponse,
-  MessagingChannel,
-  MessagingUnreachableMachine,
-  MessagingUnreachableReason,
-} from "../../api/types.js";
+import type { MessagingAccount, MessagingAccountHolder, MessagingAccountHoldersResponse, MessagingChannel, MessagingUnreachableMachine, MessagingUnreachableReason } from "../../";
 import type { MachineApi } from "../../machines/machine-api.js";
-import type { MessagingBindings } from "../../mechanisms/messaging.js";
-import type { SessionIndex } from "../../mechanisms/sessions.js";
+import type { MessagingBindings } from "@prismshadow/penguin-library-messaging";
+import type { SessionIndex } from "@prismshadow/penguin-library-sessions";
 import { isMessagingChannel } from "./enabled-channel.js";
 
 /** Where a server answers its enabled accounts (GET, admin only). */

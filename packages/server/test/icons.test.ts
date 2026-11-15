@@ -18,12 +18,7 @@
  */
 import { strToU8, zipSync } from "fflate";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type {
-  AgentHooksResponse,
-  AgentSkillsResponse,
-  PluginLibraryResponse,
-  ProjectsResponse,
-} from "../src/api/types.js";
+import type { AgentHooksResponse, AgentSkillsResponse, PluginLibraryResponse, ProjectsResponse } from "../src/";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 

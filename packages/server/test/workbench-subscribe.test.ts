@@ -19,7 +19,7 @@ import { agentStateDir } from "@prismshadow/penguin-core";
 import type { IfaceTable } from "@prismshadow/penguin-core/kernel";
 import { readAmsp } from "@prismshadow/amsp";
 import type { AmspRecord } from "@prismshadow/amsp";
-import type { WorkbenchInfo, WorkbenchRecord } from "../src/api/types.js";
+import type { WorkbenchInfo, WorkbenchRecord } from "../src/";
 import { Channel } from "../src/runtime/channel.js";
 import { IDLE_RELEASE_MS, WorkbenchSubscriptions } from "../src/workbenches/subscribe.js";
 import { adoptSession, fakeSession, uniqueSessionId } from "./fixtures/session.js";

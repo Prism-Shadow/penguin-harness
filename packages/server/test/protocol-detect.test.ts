@@ -32,7 +32,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import type { ModelProtocolDetectResponse, ModelsResponse } from "../src/api/types.js";
+import type { ModelProtocolDetectResponse, ModelsResponse } from "../src/";
 import {
   MAX_PROBE_BODY_BYTES,
   candidateBaseUrls,

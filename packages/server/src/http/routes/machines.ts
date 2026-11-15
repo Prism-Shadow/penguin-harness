@@ -47,15 +47,7 @@
  */
 import { Hono } from "hono";
 import type { Context } from "hono";
-import type {
-  DirListResponse,
-  MachineDiagnosis,
-  MachineUninstallRequest,
-  MachinesResponse,
-  MachinesUseResponse,
-  SshHostResponse,
-  SshHostsResponse,
-} from "../../api/types.js";
+import type { DirListResponse, MachineDiagnosis, MachineUninstallRequest, MachinesResponse, MachinesUseResponse, SshHostResponse, SshHostsResponse } from "../../";
 import { HttpError } from "../errors.js";
 import { requireValidId } from "../validate.js";
 import { answerOf } from "../../socket/stream-answer.js";
@@ -64,7 +56,7 @@ import type { MachinesService } from "../../machines/service.js";
 import type { MachineEventHub } from "../../machines/event-hub.js";
 import { machineEventsStream } from "../../machines/aggregate-stream.js";
 import type { WatchedMachine } from "../../machines/aggregate-stream.js";
-import type { Access } from "../../mechanisms/projects.js";
+import type { Access } from "@prismshadow/penguin-library-projects";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface MachinesRouteDeps {

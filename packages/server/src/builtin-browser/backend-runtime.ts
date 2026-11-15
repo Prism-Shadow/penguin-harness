@@ -20,20 +20,7 @@
  * bracketed by `builtin_browser_activity` events so the window can show the agent at work.
  */
 import os from "node:os";
-import type {
-  BrowserBackend,
-  BuiltinBrowserAction,
-  BuiltinBrowserExecResult,
-  BuiltinBrowserMetrics,
-  BuiltinBrowserScanResult,
-  BuiltinBrowserScreenshot,
-  BuiltinBrowserServerEvent,
-  BuiltinBrowserTab,
-  BuiltinBrowserTabsResponse,
-  BuiltinBrowserUnavailableReason,
-  DesktopBrowserCommand,
-  DesktopBrowserEvent,
-} from "../api/types.js";
+import type { BrowserBackend, BuiltinBrowserAction, BuiltinBrowserExecResult, BuiltinBrowserMetrics, BuiltinBrowserScanResult, BuiltinBrowserScreenshot, BuiltinBrowserServerEvent, BuiltinBrowserTab, BuiltinBrowserTabsResponse, BuiltinBrowserUnavailableReason, DesktopBrowserCommand, DesktopBrowserEvent } from "../";
 import { HttpError } from "../http/errors.js";
 import { BrowserActions, DEFAULT_ACTION_TIMING } from "./actions.js";
 import type { ActionTiming } from "./actions.js";

@@ -46,15 +46,15 @@ import {
   tracesDir,
 } from "@prismshadow/penguin-core";
 import type { AmspRecord } from "@prismshadow/penguin-core";
-import type { TraceFileRow, TraceSessionRow } from "../db/repos/trace-index.js";
-import { TraceIndexRepo } from "../db/repos/trace-index.js";
+import type { TraceFileRow, TraceSessionRow } from "@prismshadow/penguin-library-traces/repos/trace-index";
+import { TraceIndexRepo } from "@prismshadow/penguin-library-traces/repos/trace-index";
 import { cacheable, statMtime } from "../internal/mtime-gate.js";
 import { readTraceHead } from "../internal/trace-head.js";
 import { fallbackTitle } from "../runtime/title-generator.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Paths } from "../hmr/capabilities.js";
-import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
-import type { SessionOrigins } from "../mechanisms/sessions.js";
+import type { TraceIndex, TraceIndexStore } from "@prismshadow/penguin-library-traces";
+import type { SessionOrigins } from "@prismshadow/penguin-library-sessions";
 
 const TRACE_FILE_RE = /^(.+)_(\d{3})\.jsonl$/;
 

@@ -18,7 +18,7 @@ import type { AmspRecord } from "@prismshadow/penguin-core";
 import { formatLocalDate } from "../internal/dates.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Clock } from "../hmr/capabilities.js";
-import type { UsageRecording, UsageStore } from "../mechanisms/observability.js";
+import type { UsageRecording, UsageStore } from "@prismshadow/penguin-library-observability";
 import type { Projects } from "../mechanisms/projects.js";
 
 /** Attribution context for one record (top-level Session scope). */

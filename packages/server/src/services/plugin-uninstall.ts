@@ -26,7 +26,7 @@ import {
   uninstallPluginMcpServers,
 } from "@prismshadow/penguin-core";
 import type { InstalledMcpServer } from "@prismshadow/penguin-core";
-import type { PluginUninstallResponse } from "../api/types.js";
+import type { PluginUninstallResponse } from "../";
 import type { Workbenches } from "../mechanisms/workbenches.js";
 import type { PluginLibrary } from "../plugin/library-module.js";
 import { WorkbenchNotFound } from "../workbenches/service.js";

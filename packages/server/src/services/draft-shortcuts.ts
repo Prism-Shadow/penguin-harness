@@ -15,7 +15,7 @@
  * example prompt. Together they bound one user's row at about 12 KB.
  */
 import { HttpError } from "../http/errors.js";
-import type { DraftShortcut } from "../api/types.js";
+import type { DraftShortcut } from "../";
 
 export const DRAFT_SHORTCUT_MAX_COUNT = 3;
 export const DRAFT_SHORTCUT_TITLE_MAX = 40;

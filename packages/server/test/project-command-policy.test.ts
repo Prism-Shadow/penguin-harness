@@ -18,12 +18,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
-import type {
-  CommandPolicyDto,
-  ErrorBody,
-  ModelsResponse,
-  ProjectCreateResponse,
-} from "../src/api/types.js";
+import type { CommandPolicyDto, ErrorBody, ModelsResponse, ProjectCreateResponse } from "../src/";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 

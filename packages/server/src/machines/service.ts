@@ -35,24 +35,7 @@ import {
   loadProjectConfig,
 } from "@prismshadow/penguin-core";
 import type { AmspRecord, ModelRef, ProjectConfig } from "@prismshadow/penguin-core";
-import type {
-  SshHostSummary,
-  MachineCheck,
-  MachineConfigSync,
-  MachineDiagnosis,
-  MachineEnvOnly,
-  MachineInfo,
-  MachineSkippedModel,
-  MachineJob,
-  MachinePhase,
-  MachineReconnect,
-  MachineServerStatus,
-  MachineSshFailure,
-  MachineSocketFact,
-  MachineUseRefusal,
-  MachinesCheckoutImage,
-  ServerEvent,
-} from "../api/types.js";
+import type { SshHostSummary, MachineCheck, MachineConfigSync, MachineDiagnosis, MachineEnvOnly, MachineInfo, MachineSkippedModel, MachineJob, MachinePhase, MachineReconnect, MachineServerStatus, MachineSshFailure, MachineSocketFact, MachineUseRefusal, MachinesCheckoutImage, ServerEvent } from "../";
 import { readServerLock } from "../lock.js";
 import { SESSION_COOKIE } from "../auth/middleware.js";
 import http from "node:http";
@@ -121,7 +104,7 @@ import { machineApi } from "./machine-api.js";
 import type { MachineApi } from "./machine-api.js";
 import { ADOPTED_AT_HEADER } from "../runtime/session-sources.js";
 import { startRemoteServer, stopRemoteServer } from "./server-control.js";
-import type { MachineRow } from "../db/repos/machines.js";
+import type { MachineRow } from "@prismshadow/penguin-library-machines/repos/machines";
 import { Interface, Bind, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { AppEnv } from "../auth/middleware.js";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
@@ -141,14 +124,14 @@ import type { HandshakeReading } from "./handshake.js";
 import { machineSessionForward } from "./session-forward.js";
 import type { MachineSessionForward } from "./session-forward.js";
 import { HttpError } from "../http/errors.js";
-import type { Access, Projects } from "../mechanisms/projects.js";
+import type { Access, Projects } from "@prismshadow/penguin-library-projects";
 import { Hono } from "hono";
 import type { Context } from "hono";
-import { MachinesRepo } from "../db/repos/machines.js";
+import { MachinesRepo } from "@prismshadow/penguin-library-machines/repos/machines";
 import type { DatabaseSync } from "node:sqlite";
 import type { Channels, Db, Hmr, Paths, ResourceGroups } from "../hmr/capabilities.js";
-import type { Auth, Users } from "../mechanisms/identity.js";
-import type { Traces } from "../mechanisms/traces.js";
+import type { Auth, Users } from "@prismshadow/penguin-library-identity";
+import type { Traces } from "@prismshadow/penguin-library-traces";
 import type { LiveStreams } from "../auth/live-streams.js";
 import { streamRevocation } from "../http/sse.js";
 import type { SseRevocation } from "../http/sse.js";

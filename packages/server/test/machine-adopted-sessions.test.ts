@@ -23,14 +23,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { sessionMeta, userText } from "@prismshadow/penguin-core";
-import type {
-  ArchivedSessionGroupsResponse,
-  ArchivedSessionsBatchResponse,
-  ArchivedSessionsResponse,
-  SessionResponse,
-  SessionSource,
-  SessionsResponse,
-} from "../src/api/types.js";
+import type { ArchivedSessionGroupsResponse, ArchivedSessionsBatchResponse, ArchivedSessionsResponse, SessionResponse, SessionSource, SessionsResponse } from "../src/";
 import type { MachinesService } from "../src/machines/service.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser, writeTraceFile } from "./helpers.js";
 import type { TestApp } from "./helpers.js";

@@ -53,14 +53,14 @@ import type {
 // must keep reading them, so these fixtures write them through a cast.
 const legacyEnd = (status: string) => requestEnd(status as StopReason);
 import type { TraceService } from "../src/services/trace-service.js";
-import type { SessionRow } from "../src/db/repos/sessions.js";
+import type { SessionRow } from "@prismshadow/penguin-library-sessions/repos/sessions";
 import { openDatabase } from "@prismshadow/penguin-library-db";
 import { wire } from "@prismshadow/penguin-core/kernel";
-import { ErrorsRepo } from "../src/db/repos/errors.js";
-import { UsageRepo } from "../src/db/repos/usage.js";
+import { ErrorsRepo } from "@prismshadow/penguin-library-observability/repos/errors";
+import { UsageRepo } from "@prismshadow/penguin-library-observability/repos/usage";
 import { SessionSources } from "../src/runtime/session-sources.js";
 import { UsageService } from "../src/services/usage-service.js";
-import type { PricingLookup } from "../src/services/usage-service.js";
+import type { PricingLookup } from "../src/";
 import { makeTempRoot, makeTraceHarness, writeTraceFile } from "./helpers.js";
 
 const P = "project-t";

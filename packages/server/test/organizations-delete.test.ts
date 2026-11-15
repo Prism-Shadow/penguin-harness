@@ -27,11 +27,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { agentDir } from "@prismshadow/penguin-core";
-import type {
-  AgentsResponse,
-  OrganizationDeleteResponse,
-  OrganizationsResponse,
-} from "../src/api/types.js";
+import type { AgentsResponse, OrganizationDeleteResponse, OrganizationsResponse } from "../src/";
 import { ORG_CONFIG_DEFAULTS } from "../src/organization/files.js";
 import { orgChartPath } from "../src/organization/paths.js";
 import { OrgStore, TRASH_DIR } from "../src/organization/store.js";

@@ -12,14 +12,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { agentsDir, benchmarksDir } from "@prismshadow/penguin-core";
-import type {
-  AgentsResponse,
-  BenchmarkCreateRequest,
-  BenchmarksResponse,
-  ProjectsResponse,
-  SemanticIdSuggestResponse,
-} from "../src/api/types.js";
-import type { UtilityCompletion } from "../src/services/project-config-service.js";
+import type { AgentsResponse, BenchmarkCreateRequest, BenchmarksResponse, ProjectsResponse, SemanticIdSuggestResponse } from "../src/";
+import type { UtilityCompletion } from "@prismshadow/penguin-library-projects";
 import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 

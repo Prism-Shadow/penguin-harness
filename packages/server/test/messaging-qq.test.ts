@@ -37,12 +37,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { approvalDecision, assistantText, toolCall } from "@prismshadow/penguin-core";
 import type { ApproveFn, AmspRecord, TextPayload } from "@prismshadow/penguin-core";
 import { wire } from "@prismshadow/penguin-core/kernel";
-import type {
-  MessagingBindingsResponse,
-  QQBindingResponse,
-  QQTestResponse,
-} from "../src/api/types.js";
-import { ProjectsRepo } from "../src/db/repos/projects.js";
+import type { MessagingBindingsResponse, QQBindingResponse, QQTestResponse } from "../src/";
+import { ProjectsRepo } from "@prismshadow/penguin-library-projects/repos/projects";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import {
   MESSAGING_APPROVAL_NOTICE,

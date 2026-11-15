@@ -31,23 +31,13 @@ import {
   ELIDE_BYTES,
   elideHistoryRecord,
 } from "@prismshadow/penguin-core/interfaces";
-import type {
-  HistoryFileFact,
-  HistoryHave,
-  HistoryLinesFrame,
-  HistoryLinesWindow,
-  HistoryMessage,
-  HistoryPartFrame,
-  HistoryStreamError,
-  HistoryStub,
-  HistoryWindowPart,
-} from "../api/types.js";
-import type { SessionRow } from "../db/repos/sessions.js";
+import type { HistoryFileFact, HistoryHave, HistoryLinesFrame, HistoryLinesWindow, HistoryMessage, HistoryPartFrame, HistoryStreamError, HistoryStub, HistoryWindowPart } from "../";
+import type { SessionRow } from "@prismshadow/penguin-library-sessions/repos/sessions";
 import { HttpError } from "../http/errors.js";
 import type { EventSink } from "../http/event-stream.js";
 import { badRequest } from "../http/validate.js";
 import type { Channels } from "../hmr/capabilities.js";
-import type { Traces } from "../mechanisms/traces.js";
+import type { Traces } from "@prismshadow/penguin-library-traces";
 import type { Sessions } from "../runtime/session-manager.js";
 import { FRAME_TEXT_BUDGET, lineFrames, partFrames } from "../socket/line-frames.js";
 import type { LineFrame, PartFrame } from "../socket/line-frames.js";

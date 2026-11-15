@@ -75,8 +75,8 @@
 import { imageUrlMessage, scratchpadDir, userText } from "@prismshadow/penguin-core";
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import { toFallbackMarkdown } from "@prismshadow/a2ui";
-import type { MessagingDeliveryError, MessagingRuntimeStatus } from "../../api/types.js";
-import type { MessagingBindingRow } from "../../db/repos/messaging-bindings.js";
+import type { MessagingDeliveryError, MessagingRuntimeStatus } from "../../";
+import type { MessagingBindingRow } from "@prismshadow/penguin-library-messaging/repos/messaging-bindings";
 import { INLINE_IMAGE_MAX_BYTES, toAttachmentLimits } from "@prismshadow/penguin-library-settings/attachment-limits";
 import type { AttachmentLimits } from "@prismshadow/penguin-library-settings/attachment-limits";
 import { attachFilesToInput, removeAttachments } from "../../services/task-attachments.js";
@@ -120,12 +120,12 @@ import { WeChatScanService } from "./wechat-scan.js";
 import type { WeChatScanTransportHandle } from "./wechat-scan.js";
 import { sessionMessagingRoutes } from "../../http/routes/messaging.js";
 import type { Channels, Clock, Log, Paths } from "../../hmr/capabilities.js";
-import type { Access } from "../../mechanisms/projects.js";
-import type { SessionIndex } from "../../mechanisms/sessions.js";
-import type { Errors } from "../../mechanisms/observability.js";
+import type { Access } from "@prismshadow/penguin-library-projects";
+import type { SessionIndex } from "@prismshadow/penguin-library-sessions";
+import type { Errors } from "@prismshadow/penguin-library-observability";
 import type { WorkspaceFiles } from "../../mechanisms/workspace.js";
 import type { Settings } from "@prismshadow/penguin-library-settings";
-import type { MessagingBindings } from "../../mechanisms/messaging.js";
+import type { MessagingBindings } from "@prismshadow/penguin-library-messaging";
 
 /**
  * Max characters per outbound text message, shared by every channel: it must sit under

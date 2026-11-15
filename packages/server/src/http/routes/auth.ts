@@ -8,13 +8,13 @@
  */
 import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
-import type { AuthResponse } from "../../api/types.js";
+import type { AuthResponse } from "../../";
 import { cookieOptions, sessionCookieName, sessionCookies } from "../../auth/middleware.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { readJson, requireString } from "../validate.js";
 import { HttpError } from "../errors.js";
 import type { ServerConfig } from "../../config.js";
-import type { Auth } from "../../mechanisms/identity.js";
+import type { Auth } from "@prismshadow/penguin-library-identity";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import { Config, Desktop } from "../../hmr/capabilities.js";
 import type { DesktopApi } from "../../hmr/capabilities.js";

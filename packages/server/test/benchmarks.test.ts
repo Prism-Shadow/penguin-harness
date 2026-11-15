@@ -29,14 +29,7 @@ import path from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import { benchmarksDir } from "@prismshadow/penguin-core";
-import type {
-  BenchmarkCasesResponse,
-  BenchmarkCreateRequest,
-  BenchmarkCreateResponse,
-  BenchmarksResponse,
-  ProjectCreateResponse,
-  WorkspaceFilesResponse,
-} from "../src/api/types.js";
+import type { BenchmarkCasesResponse, BenchmarkCreateRequest, BenchmarkCreateResponse, BenchmarksResponse, ProjectCreateResponse, WorkspaceFilesResponse } from "../src/";
 import { apiClient, canCreateSymlink, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 

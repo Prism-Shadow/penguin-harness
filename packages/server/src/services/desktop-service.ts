@@ -25,16 +25,7 @@
  * System Settings at a privacy pane.
  */
 import { createHash, timingSafeEqual } from "node:crypto";
-import type {
-  DesktopFolderAccessResult,
-  DesktopPrivacyPane,
-  DesktopTrayPatch,
-  DesktopTrayStatus,
-  DesktopUpdateStatus,
-  DesktopUpdaterCommandMessage,
-  HostCommand,
-  HostCommandOffer,
-} from "../api/types.js";
+import type { DesktopFolderAccessResult, DesktopPrivacyPane, DesktopTrayPatch, DesktopTrayStatus, DesktopUpdateStatus, DesktopUpdaterCommandMessage, HostCommand, HostCommandOffer } from "../";
 import { LEGACY_HOST_COMMANDS } from "../api/types.js";
 
 /** What the page may ask the shell's updater to do (the relayed command's `action`). */

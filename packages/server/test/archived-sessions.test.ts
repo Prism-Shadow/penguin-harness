@@ -40,15 +40,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { requestBegin, sessionMeta, subagentEvent, userText } from "@prismshadow/penguin-core";
 import type { AmspRecord } from "@prismshadow/penguin-core";
-import type {
-  ArchivedSessionGroupsResponse,
-  ArchivedSessionsBatchResponse,
-  ArchivedSessionsResponse,
-  ServerEvent,
-  SessionResponse,
-  SessionSource,
-  SessionsResponse,
-} from "../src/api/types.js";
+import type { ArchivedSessionGroupsResponse, ArchivedSessionsBatchResponse, ArchivedSessionsResponse, ServerEvent, SessionResponse, SessionSource, SessionsResponse } from "../src/";
 import { ADMIN_USER_ID } from "../src/auth/service.js";
 import { userChannelKey } from "../src/http/routes/events.js";
 import { apiClient, createTestApp, provisionUser, waitFor, writeTraceFile } from "./helpers.js";

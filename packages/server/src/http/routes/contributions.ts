@@ -6,17 +6,7 @@
 import { Hono } from "hono";
 import type { AppEnv } from "../../auth/middleware.js";
 import { Interface, Bind, Module, Provide } from "@prismshadow/penguin-core/kernel";
-import type {
-  ContributionsResponse,
-  RendererRef,
-  WebContribution,
-  WebFileRendererContribution,
-  WebFileRendererData,
-  WebPageContribution,
-  WebPageData,
-  WebPageRemovalContribution,
-  WebPageRemovalData,
-} from "../../api/types.js";
+import type { ContributionsResponse, RendererRef, WebContribution, WebFileRendererContribution, WebFileRendererData, WebPageContribution, WebPageData, WebPageRemovalContribution, WebPageRemovalData } from "../../";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 
 export interface ContributionsRouteDeps {

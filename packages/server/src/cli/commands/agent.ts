@@ -44,16 +44,7 @@ import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-cor
 /** The node the host located for a key, typed with this package's commander. */
 const node = (command: CliCommandProgram): Command => command as Command;
 
-import type {
-  AgentApiKeyCreateResponse,
-  AgentAuthor,
-  AgentApiResponse,
-  AgentApiSettings,
-  AgentApiUpdateRequest,
-  AgentCreateResponse,
-  AgentSummary,
-  ServerSettingsResponse,
-} from "../../api/types.js";
+import type { AgentApiKeyCreateResponse, AgentAuthor, AgentApiResponse, AgentApiSettings, AgentApiUpdateRequest, AgentCreateResponse, AgentSummary, ServerSettingsResponse } from "../../";
 import { resolveApprovalMode } from "../approval.js";
 import { ApiError, resolveProjectId, ServerClient } from "../client.js";
 import { resolveConnection } from "../connection.js";

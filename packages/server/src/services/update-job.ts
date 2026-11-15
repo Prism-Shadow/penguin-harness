@@ -34,7 +34,7 @@
  */
 import { Component, Interface } from "@prismshadow/penguin-core/kernel";
 import { spawn } from "node:child_process";
-import type { UpdateJobPhase, UpdateJobStatus, UpdateRunResponse } from "../api/types.js";
+import type { UpdateJobPhase, UpdateJobStatus, UpdateRunResponse } from "../";
 import { UPDATE_REFUSAL_MARKERS } from "../api/types.js";
 
 /** Only the tail of the update output is kept (installer logs can be long). */

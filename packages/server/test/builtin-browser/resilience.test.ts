@@ -15,7 +15,7 @@ import type {
   BuiltinBrowserStatus,
 } from "../../src/api/types.js";
 import type { AppEnv } from "../../src/auth/middleware.js";
-import type { UserRow } from "../../src/db/repos/users.js";
+import type { UserRow } from "@prismshadow/penguin-library-identity/repos/users";
 import { handleError } from "../../src/http/errors.js";
 import { builtinBrowserRoutes } from "../../src/builtin-browser/routes.js";
 import { BuiltinBrowser } from "../../src/builtin-browser/service.js";

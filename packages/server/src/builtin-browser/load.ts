@@ -15,11 +15,7 @@
  * While a memory warning stands the heaviest tabs are named: up to three, largest first, each
  * holding at least a tenth of the pages' memory, so a mark points at a tab worth closing.
  */
-import type {
-  BuiltinBrowserLoadWarning,
-  BuiltinBrowserMetrics,
-  BuiltinBrowserTabMetrics,
-} from "../api/types.js";
+import type { BuiltinBrowserLoadWarning, BuiltinBrowserMetrics, BuiltinBrowserTabMetrics } from "../";
 
 const GB_KB = 1024 * 1024;
 /** The pages' memory over which `memory` is warned about, and under which the warning clears. */

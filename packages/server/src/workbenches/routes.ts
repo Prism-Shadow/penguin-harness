@@ -45,13 +45,7 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import { agentDir } from "@prismshadow/penguin-core";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
-import type {
-  AppCenterLayoutResponse,
-  AppCenterResponse,
-  WorkbenchAppCenterResponse,
-  WorkbenchArchiveInstallResponse,
-  WorkbenchesResponse,
-} from "../api/types.js";
+import type { AppCenterLayoutResponse, AppCenterResponse, WorkbenchAppCenterResponse, WorkbenchArchiveInstallResponse, WorkbenchesResponse } from "../";
 import type { AppEnv } from "../auth/middleware.js";
 import type { Paths } from "../hmr/capabilities.js";
 import { HttpError } from "../http/errors.js";
@@ -59,7 +53,7 @@ import { iconResponse } from "../http/icon-response.js";
 import { mediaType } from "../http/media-type.js";
 import { badRequest, readJson, requireString, requireValidId } from "../http/validate.js";
 import type { AgentConfig } from "../mechanisms/agents.js";
-import type { Access, Projects } from "../mechanisms/projects.js";
+import type { Access, Projects } from "@prismshadow/penguin-library-projects";
 import type { UiPrefsStore } from "@prismshadow/penguin-library-settings";
 import { MAX_ARCHIVE_BYTES } from "../services/skill-import-limits.js";
 import { forwardToMachine } from "../machines/proxy.js";

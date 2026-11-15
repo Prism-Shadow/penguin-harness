@@ -28,7 +28,7 @@
  * Agent.
  */
 import { BUILTIN_AGENT_IDS } from "@prismshadow/penguin-core";
-import type { OrganizationDeleteResponse } from "../api/types.js";
+import type { OrganizationDeleteResponse } from "../";
 import { HttpError } from "../http/errors.js";
 import type { AgentConfig } from "../mechanisms/agents.js";
 import type { OrgService } from "../runtime/organization/service.js";

@@ -26,7 +26,7 @@ import {
   parseSkillFrontmatter,
   PLUGIN_NAME_PATTERN,
 } from "@prismshadow/penguin-core";
-import type { AgentSkillsResponse } from "../../api/types.js";
+import type { AgentSkillsResponse } from "../../";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { ServerConfig } from "../../config.js";
 
@@ -52,7 +52,7 @@ import {
 import { Bind, Component } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import type { AgentConfig } from "../../mechanisms/agents.js";
-import type { Access } from "../../mechanisms/projects.js";
+import type { Access } from "@prismshadow/penguin-library-projects";
 
 /** A skill decoded from an uploaded zip: name + file bytes keyed by path relative to the skill directory. */
 interface ArchiveSkill {
