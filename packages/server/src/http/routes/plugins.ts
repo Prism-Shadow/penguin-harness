@@ -54,7 +54,16 @@ import {
   uninstallMcpServer,
 } from "@prismshadow/penguin-core";
 import type { IconImage, NpmPackage } from "@prismshadow/penguin-core";
-import type { AgentMcpServersResponse, AgentPluginsInstallResponse, PluginUninstallResponse, PluginFilesResponse, PluginIndexEntry, PluginIndexResponse, PluginLibraryResponse, PluginReadmeResponse } from "../../";
+import type {
+  AgentMcpServersResponse,
+  AgentPluginsInstallResponse,
+  PluginUninstallResponse,
+  PluginFilesResponse,
+  PluginIndexEntry,
+  PluginIndexResponse,
+  PluginLibraryResponse,
+  PluginReadmeResponse,
+} from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { ServerConfig } from "../../config.js";
 import type { Config, Hmr } from "../../hmr/capabilities.js";

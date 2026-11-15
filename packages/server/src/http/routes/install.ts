@@ -20,7 +20,7 @@
  * load instead of a remembered one, so the browser sweeps without waiting for a restart.
  */
 import { Hono } from "hono";
-import type { InstallResponse } from "../../";
+import type { InstallResponse } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { ServerConfig } from "../../config.js";
 

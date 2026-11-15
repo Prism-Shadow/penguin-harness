@@ -1,6 +1,9 @@
 /** Project-owner routes for authorizing a ModelScope key through the harness's bridge. */
 import { Hono } from "hono";
-import type { ModelScopeAuthFlowStatusResponse, ModelScopeAuthStartResponse } from "../../";
+import type {
+  ModelScopeAuthFlowStatusResponse,
+  ModelScopeAuthStartResponse,
+} from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { ModelScopeAuth } from "../../services/modelscope-auth-service.js";
 import { HttpError } from "../errors.js";

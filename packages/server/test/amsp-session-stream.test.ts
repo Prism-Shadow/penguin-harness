@@ -45,7 +45,7 @@ import {
 } from "@prismshadow/penguin-core";
 import { AgentClient, RunCollector, readAmsp } from "@prismshadow/amsp";
 import type { AmspFrame, AmspRecord, RunResult } from "@prismshadow/amsp";
-import type { AgentApiKeyCreateResponse, MessagesResponse } from "../src/";
+import type { AgentApiKeyCreateResponse, MessagesResponse } from "../src/api/types.js";
 import { adoptSession, fakeSession, sessionRow, uniqueSessionId } from "./fixtures/session.js";
 import { apiClient, createTestApp, loginAdmin, waitFor, writeTraceFile } from "./helpers.js";
 import type { TestApp } from "./helpers.js";

@@ -37,7 +37,7 @@ import type { ScheduleSessionCreator, ScheduleTaskRunner } from "../src/runtime/
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import { Scheduler } from "../src/runtime/scheduler.js";
 import { ProjectConfigService } from "../src/services/project-config-service.js";
-import type { ScheduleServerEvent } from "../src/";
+import type { ScheduleServerEvent } from "../src/api/types.js";
 import { makeTempRoot } from "./helpers.js";
 import { wire } from "@prismshadow/penguin-core/kernel";
 

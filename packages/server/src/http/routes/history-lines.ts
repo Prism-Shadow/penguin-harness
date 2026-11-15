@@ -21,7 +21,7 @@ import fs from "node:fs/promises";
 import { isValidId } from "@prismshadow/penguin-core";
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import { bodyAt, decodeBodyRef } from "@prismshadow/penguin-core/interfaces";
-import type { HistoryProgress, HistoryRecords } from "../../";
+import type { HistoryProgress, HistoryRecords } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { SessionRow } from "@prismshadow/penguin-library-sessions/repos/sessions";
 import { Channels, Log } from "../../hmr/capabilities.js";

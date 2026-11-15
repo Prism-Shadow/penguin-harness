@@ -17,7 +17,21 @@
  * HostCommandsMessage / HostCommandMessage) so the shell imports the same contract.
  */
 import { randomUUID } from "node:crypto";
-import type { DesktopFolderAccessMessage, DesktopFolderAccessResult, DesktopFolderAccessResultMessage, DesktopOpenPrivacySettingsMessage, DesktopTrayCommandMessage, DesktopTrayStatus, DesktopTrayStatusMessage, DesktopUpdateStatus, DesktopUpdaterCommandMessage, DesktopUpdaterStatusMessage, HostCommandMessage, HostCommandOffer, HostCommandsMessage } from "../";
+import type {
+  DesktopFolderAccessMessage,
+  DesktopFolderAccessResult,
+  DesktopFolderAccessResultMessage,
+  DesktopOpenPrivacySettingsMessage,
+  DesktopTrayCommandMessage,
+  DesktopTrayStatus,
+  DesktopTrayStatusMessage,
+  DesktopUpdateStatus,
+  DesktopUpdaterCommandMessage,
+  DesktopUpdaterStatusMessage,
+  HostCommandMessage,
+  HostCommandOffer,
+  HostCommandsMessage,
+} from "../api/types.js";
 import type { DesktopService } from "./desktop-service.js";
 import type { ShellFrames } from "../hmr/capabilities.js";
 

@@ -25,7 +25,7 @@
  *   every route is owner-only.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { WeChatScanPollResponse, WeChatScanStartResponse } from "../src/";
+import type { WeChatScanPollResponse, WeChatScanStartResponse } from "../src/api/types.js";
 import { WECHAT_API_BASE } from "../src/runtime/messaging/wechat-api.js";
 import type {
   WeChatScanPollResult,

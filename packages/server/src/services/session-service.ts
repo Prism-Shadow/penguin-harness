@@ -28,7 +28,17 @@ import type {
   ThinkingLevelName,
 } from "@prismshadow/penguin-core";
 import type { ApprovalMode } from "@prismshadow/penguin-library-sessions";
-import type { MessagingChannel, SessionCategory, SessionCategoryCounts, SessionInfo, SessionSandbox, SessionSandboxPreset, SessionSource, ServerEvent, UnavailableSandboxBackend } from "../";
+import type {
+  MessagingChannel,
+  SessionCategoryCounts,
+  SessionInfo,
+  SessionSandbox,
+  SessionSandboxPreset,
+  SessionSource,
+  UnavailableSandboxBackend,
+} from "../api/types.js";
+import type { ServerEvent } from "@prismshadow/penguin-library-projects";
+import type { SessionCategory } from "@prismshadow/penguin-library-traces";
 import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
 import type { SessionRow } from "@prismshadow/penguin-library-sessions/repos/sessions";

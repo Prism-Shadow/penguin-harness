@@ -18,7 +18,7 @@
  */
 import type { IconImage } from "@prismshadow/penguin-core";
 import { Interface } from "@prismshadow/penguin-core/kernel";
-import type { IconRef } from "../";
+import type { IconRef } from "../api/types.js";
 
 /** A request the workbench's handler receives (the HTTP shape, minus the transport). */
 export interface WorkbenchRequest {

@@ -52,7 +52,14 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { agentDir, agentStateDir } from "@prismshadow/penguin-core";
 import type { IfaceTable } from "@prismshadow/penguin-core/kernel";
-import type { WorkbenchInfo, WorkbenchVersion, SessionResponse, SessionsResponse, ArchivedSessionsResponse, AgentsResponse } from "../src/";
+import type {
+  WorkbenchInfo,
+  WorkbenchVersion,
+  SessionResponse,
+  SessionsResponse,
+  ArchivedSessionsResponse,
+  AgentsResponse,
+} from "../src/api/types.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 

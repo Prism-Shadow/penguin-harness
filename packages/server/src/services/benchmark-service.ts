@@ -38,7 +38,19 @@ import {
   writeBenchmarkManifest,
   type BenchmarkManifest,
 } from "@prismshadow/penguin-core";
-import type { BenchmarkArchiveGitOrigin, BenchmarkCaseScore, BenchmarkCaseSummary, BenchmarkCasesResponse, BenchmarkEvaluation, BenchmarkOrigin, BenchmarkRunScore, BenchmarkSummary, BenchmarksResponse, CaseMaterial, WorkspaceFilesResponse } from "../";
+import type {
+  BenchmarkArchiveGitOrigin,
+  BenchmarkCaseScore,
+  BenchmarkCaseSummary,
+  BenchmarkCasesResponse,
+  BenchmarkEvaluation,
+  BenchmarkOrigin,
+  BenchmarkRunScore,
+  BenchmarkSummary,
+  BenchmarksResponse,
+  CaseMaterial,
+  WorkspaceFilesResponse,
+} from "../api/types.js";
 import type { WorkspaceFileContent, WorkspaceFileReadOptions } from "./workspace-files-service.js";
 import { packBenchmark, readBenchmarkArchive } from "./benchmark-archive.js";
 import { HttpError } from "../http/errors.js";

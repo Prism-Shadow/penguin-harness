@@ -11,7 +11,7 @@
  * wins, and a second window's claim is a duplicate it should remove.
  */
 import { randomUUID } from "node:crypto";
-import type { BuiltinBrowserTab } from "../";
+import type { BuiltinBrowserTab } from "../api/types.js";
 
 /** How long an unclaimed open request stays claimable. */
 const OPEN_REQUEST_TTL_MS = 60_000;

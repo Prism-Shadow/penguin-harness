@@ -9,7 +9,13 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AmspRecord, SessionMetaPayload } from "@prismshadow/penguin-core";
-import type { AgentTracesResponse, ProjectCreateResponse, SessionsResponse, TraceEventsResponse, TraceImportResponse } from "../src/";
+import type {
+  AgentTracesResponse,
+  ProjectCreateResponse,
+  SessionsResponse,
+  TraceEventsResponse,
+  TraceImportResponse,
+} from "../src/api/types.js";
 import { apiClient, createTestApp, provisionUser, writeTraceFile } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 

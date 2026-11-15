@@ -4,7 +4,13 @@
  * for Session-level routes via index lookup; default_project deletion protection.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { MembersResponse, ModelsResponse, ProjectCreateResponse, ProjectsResponse, SessionCreateResponse } from "../src/";
+import type {
+  MembersResponse,
+  ModelsResponse,
+  ProjectCreateResponse,
+  ProjectsResponse,
+  SessionCreateResponse,
+} from "../src/api/types.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 

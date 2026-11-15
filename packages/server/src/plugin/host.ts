@@ -4,7 +4,7 @@
  * `@prismshadow/penguin-server/plugin` subpath stays types only.
  */
 import type { IfaceTable, ModuleDef, Resources } from "@prismshadow/penguin-core/kernel";
-import type { UnsatisfiedPlugin } from "../";
+import type { UnsatisfiedPlugin } from "../api/types.js";
 
 /** One loaded plugin: the package, its modules and stand-ins with manifests paired to code, and its generated table. */
 export interface LoadedPlugin {

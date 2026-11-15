@@ -4,7 +4,7 @@
  * keeps its richer task-side helpers in the CLI package and re-exports this one, so its
  * callers do not change.
  */
-import type { SessionInfo, SessionResponse } from "../";
+import type { SessionInfo, SessionResponse } from "../api/types.js";
 import type { ServerClient } from "./client.js";
 
 const enc = encodeURIComponent;

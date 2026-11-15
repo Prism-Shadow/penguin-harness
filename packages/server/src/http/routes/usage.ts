@@ -17,7 +17,8 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
 import type { UsageGroupBy } from "@prismshadow/penguin-library-observability";
-import type { UsageErrorKind, UsageErrorsClearResponse, UsageGranularity } from "../../";
+import type { UsageErrorKind, UsageErrorsClearResponse } from "../../api/types.js";
+import type { UsageGranularity } from "@prismshadow/penguin-library-observability";
 import type { AppEnv } from "../../auth/middleware.js";
 import { badRequest, optionalDateParam, paginationQuery, requireValidId } from "../validate.js";
 import type { UsageQueries } from "@prismshadow/penguin-library-observability";

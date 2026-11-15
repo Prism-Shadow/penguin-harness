@@ -31,7 +31,17 @@
  */
 
 import type { Command } from "commander";
-import type { BuiltinBrowserExecResult, BuiltinBrowserHistoryResponse, BuiltinBrowserImportResult, BuiltinBrowserImportSourcesResponse, BuiltinBrowserScanResult, BuiltinBrowserScreenshot, BuiltinBrowserStatus, BuiltinBrowserTab, BuiltinBrowserTabsResponse } from "../../";
+import type {
+  BuiltinBrowserExecResult,
+  BuiltinBrowserHistoryResponse,
+  BuiltinBrowserImportResult,
+  BuiltinBrowserImportSourcesResponse,
+  BuiltinBrowserScanResult,
+  BuiltinBrowserScreenshot,
+  BuiltinBrowserStatus,
+  BuiltinBrowserTab,
+  BuiltinBrowserTabsResponse,
+} from "../../api/types.js";
 import type { Messages } from "../i18n.js";
 import {
   renderCdpResult,

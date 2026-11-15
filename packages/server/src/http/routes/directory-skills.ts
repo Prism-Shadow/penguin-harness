@@ -15,7 +15,7 @@
  * rather than an error — pointing at one is a normal thing to do.
  */
 import { Hono } from "hono";
-import type { DirectorySkillsResponse } from "../../";
+import type { DirectorySkillsResponse } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { requireProjectDir, requireValidId } from "../validate.js";
 

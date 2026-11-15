@@ -15,7 +15,7 @@ import {
   parseTraceLines,
   tracesDir,
 } from "@prismshadow/penguin-core";
-import type { AgentArchiveQuery } from "../";
+import type { AgentArchiveQuery } from "../api/types.js";
 import { HttpError, badRequest } from "../http/errors.js";
 import type { SessionIndex } from "@prismshadow/penguin-library-sessions";
 import type { TraceIndex, TraceIndexStore } from "@prismshadow/penguin-library-traces";

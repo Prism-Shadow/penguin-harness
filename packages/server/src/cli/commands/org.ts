@@ -48,7 +48,31 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Command } from "commander";
-import type { MeResponse, OrgCalendarItem, OrgCalendarResponse, OrgCalendarWriteResponse, OrgChartResponse, OrgChannelDetail, OrgChannelItem, OrgChannelMessage, OrgChannelMessagesResponse, OrgChannelsResponse, OrgHandbookFileResponse, OrgHandbookFilesResponse, OrgDeskResponse, OrgEmployeeItem, OrgFinanceResponse, OrgTicketDetail, OrgTicketItem, OrgTicketPriority, OrgTicketStartResponse, OrgTicketStatus, OrgTicketsResponse, OrganizationDetail, OrganizationsResponse } from "../../";
+import type {
+  MeResponse,
+  OrgCalendarItem,
+  OrgCalendarResponse,
+  OrgCalendarWriteResponse,
+  OrgChartResponse,
+  OrgChannelDetail,
+  OrgChannelItem,
+  OrgChannelMessage,
+  OrgChannelMessagesResponse,
+  OrgChannelsResponse,
+  OrgHandbookFileResponse,
+  OrgHandbookFilesResponse,
+  OrgDeskResponse,
+  OrgEmployeeItem,
+  OrgFinanceResponse,
+  OrgTicketDetail,
+  OrgTicketItem,
+  OrgTicketPriority,
+  OrgTicketStartResponse,
+  OrgTicketStatus,
+  OrgTicketsResponse,
+  OrganizationDetail,
+  OrganizationsResponse,
+} from "../../api/types.js";
 import { resolveAgentId, resolveProjectId, resolveSessionRef, ServerClient } from "../client.js";
 import { resolveConnection } from "../connection.js";
 import { getSessionInfo } from "../server-session.js";

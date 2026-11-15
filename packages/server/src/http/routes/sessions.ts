@@ -21,7 +21,26 @@ import {
 } from "@prismshadow/penguin-core";
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import type { ApprovalMode } from "@prismshadow/penguin-library-sessions";
-import type { FilesStatResponse, GoalResponse, GoalStateView, RecalledMessageResponse, ServerEvent, SessionCategory, SessionBatchResult, SessionContextResponse, SessionCreateResponse, SessionForkResponse, SessionProcessesResponse, SessionResponse, SessionsResponse, SessionsBatchResponse, SubagentMessageResponse, RetryNowResponse, TaskCreateResponse, SessionSandbox } from "../../";
+import type {
+  FilesStatResponse,
+  GoalResponse,
+  GoalStateView,
+  RecalledMessageResponse,
+  SessionBatchResult,
+  SessionContextResponse,
+  SessionCreateResponse,
+  SessionForkResponse,
+  SessionProcessesResponse,
+  SessionResponse,
+  SessionsResponse,
+  SessionsBatchResponse,
+  SubagentMessageResponse,
+  RetryNowResponse,
+  TaskCreateResponse,
+  SessionSandbox,
+} from "../../api/types.js";
+import type { ServerEvent } from "@prismshadow/penguin-library-projects";
+import type { SessionCategory } from "@prismshadow/penguin-library-traces";
 import { compactionThresholdFor } from "../../services/context-breakdown.js";
 import { sessionMessages, sessionTraceImage } from "../../services/session-history.js";
 import { SESSION_ROUTES_BASE } from "../../services/trace-images.js";

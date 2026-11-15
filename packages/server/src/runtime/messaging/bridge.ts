@@ -75,9 +75,14 @@
 import { imageUrlMessage, scratchpadDir, userText } from "@prismshadow/penguin-core";
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import { toFallbackMarkdown } from "@prismshadow/a2ui";
-import type { MessagingDeliveryError, MessagingRuntimeStatus } from "../../";
-import type { MessagingBindingRow } from "@prismshadow/penguin-library-messaging/repos/messaging-bindings";
-import { INLINE_IMAGE_MAX_BYTES, toAttachmentLimits } from "@prismshadow/penguin-library-settings/attachment-limits";
+import type { MessagingDeliveryError, MessagingRuntimeStatus } from "../../api/types.js";
+import type {
+  MessagingBindingRow,
+} from "@prismshadow/penguin-library-messaging/repos/messaging-bindings";
+import None{
+  INLINE_IMAGE_MAX_BYTES,
+  toAttachmentLimits,
+} from "@prismshadow/penguin-library-settings/attachment-limits";
 import type { AttachmentLimits } from "@prismshadow/penguin-library-settings/attachment-limits";
 import { attachFilesToInput, removeAttachments } from "../../services/task-attachments.js";
 import type { AttachedFiles, TaskAttachment } from "../../services/task-attachments.js";

@@ -3,7 +3,7 @@
 package). Field names and shapes are unchanged; the host's table spreads this file in.
  */
 
-import type { OrgChannelNoticeKind } from "../../";
+import type { OrgChannelNoticeKind } from "../../api/types.js";
 export interface OrgText {
   /** `penguin org`: company mode — a thin client over the organization API (the organization's files stay the single source of truth; every DTO is a projection). */
   org: {

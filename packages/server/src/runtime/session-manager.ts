@@ -69,7 +69,14 @@ import type {
   ThinkingLevelName,
   ToolDetachResult,
 } from "@prismshadow/penguin-core";
-import type { ModelRefDto, PendingFollowUpInfo, PendingSteeringInfo, ServerEvent, SessionBackgroundTasks, SessionStatus } from "../";
+import type {
+  PendingFollowUpInfo,
+  PendingSteeringInfo,
+  SessionBackgroundTasks,
+  SessionStatus,
+} from "../api/types.js";
+import type { ModelRefDto } from "@prismshadow/penguin-library-agent-api";
+import type { ServerEvent } from "@prismshadow/penguin-library-projects";
 import type { RecallableFile } from "../services/task-attachments.js";
 import { cliShimDir } from "../services/cli-shim.js";
 import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
@@ -102,7 +109,11 @@ import { agentNoProxy } from "../net/proxy.js";
 import type { SandboxService } from "../sandbox/service.js";
 import type { AuthState, Channels, Clock, Config, Log } from "../hmr/capabilities.js";
 import type { ProjectConfigStore, ProjectEvents } from "@prismshadow/penguin-library-projects";
-import type { AgentState, SessionIndex, SessionOrigins } from "@prismshadow/penguin-library-sessions";
+import type {
+  AgentState,
+  SessionIndex,
+  SessionOrigins,
+} from "@prismshadow/penguin-library-sessions";
 import type { Errors, UsageRecording } from "@prismshadow/penguin-library-observability";
 import type { TraceIndex, TraceIndexStore } from "@prismshadow/penguin-library-traces";
 import type { Settings } from "@prismshadow/penguin-library-settings";

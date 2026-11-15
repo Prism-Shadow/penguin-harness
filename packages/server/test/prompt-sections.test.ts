@@ -13,7 +13,12 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { LEGACY_SKILLS_SECTION, LEGACY_VAULT_SECTION } from "@prismshadow/penguin-core";
-import type { AgentConfigResponse, AgentSchedulesConfigDto, AgentSkillsConfigDto, AgentVaultConfigDto } from "../src/";
+import type {
+  AgentConfigResponse,
+  AgentSchedulesConfigDto,
+  AgentSkillsConfigDto,
+  AgentVaultConfigDto,
+} from "../src/api/types.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 

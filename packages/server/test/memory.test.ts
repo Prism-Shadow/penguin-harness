@@ -53,7 +53,15 @@ import {
   memoryDir,
   memoryScopeDir,
 } from "@prismshadow/penguin-core";
-import type { AgentConfigResponse, MemoryFileResponse, MemoryFilesResponse, MemoryImportMode, MemoryImportResponse, MemoryOverviewResponse, ProjectCreateResponse } from "../src/";
+import type {
+  AgentConfigResponse,
+  MemoryFileResponse,
+  MemoryFilesResponse,
+  MemoryImportMode,
+  MemoryImportResponse,
+  MemoryOverviewResponse,
+  ProjectCreateResponse,
+} from "../src/api/types.js";
 import { MAX_MEMORY_ARCHIVE_FILES } from "../src/services/memory-archive.js";
 import {
   MAX_IMPORT_FILE_BYTES,

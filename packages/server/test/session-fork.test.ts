@@ -45,7 +45,11 @@ import {
 } from "@prismshadow/penguin-core";
 import { buildModelSwitchMessage, parseInPlaceModelSwitch } from "@prismshadow/amsp/markers";
 import type { AmspRecord, SessionMetaPayload, TokenCounts } from "@prismshadow/penguin-core";
-import type { MessagesResponse, ProjectCreateResponse, SessionForkResponse } from "../src/";
+import type {
+  MessagesResponse,
+  ProjectCreateResponse,
+  SessionForkResponse,
+} from "../src/api/types.js";
 import { apiClient, createTestApp, provisionUser, writeTraceFile, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 import type { SessionRow } from "@prismshadow/penguin-library-sessions/repos/sessions";

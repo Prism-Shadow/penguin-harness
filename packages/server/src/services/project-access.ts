@@ -7,11 +7,16 @@
  * without a cycle. Lifecycle stays in ProjectService and delegates its checks here.
  */
 import type { ProjectRole } from "@prismshadow/penguin-library-projects";
-import type { ProjectSummary } from "../";
+import type { ProjectSummary } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 import type { ProjectRow } from "@prismshadow/penguin-library-projects/repos/projects";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Access, Members, ProjectConfigStore, Projects } from "@prismshadow/penguin-library-projects";
+import type {
+  Access,
+  Members,
+  ProjectConfigStore,
+  Projects,
+} from "@prismshadow/penguin-library-projects";
 
 @Component()
 export class ProjectAccess implements Access {

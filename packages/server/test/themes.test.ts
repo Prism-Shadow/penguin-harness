@@ -42,7 +42,7 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { zipSync } from "fflate";
 import { readPackArchive, type ThemePackManifest } from "@prismshadow/penguin-theme-pack";
-import type { ServerEvent, ThemePackImportResponse, ThemePacksResponse } from "../src/";
+import type { ServerEvent, ThemePackImportResponse, ThemePacksResponse } from "../src/api/types.js";
 import { userChannelKey } from "../src/http/routes/events.js";
 import {
   apiClient,

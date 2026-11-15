@@ -37,7 +37,7 @@ import { OrganizationScheduler } from "../src/runtime/organization/scheduler.js"
 import { OrganizationService } from "../src/runtime/organization/service.js";
 import { ProjectConfigService } from "../src/services/project-config-service.js";
 import type { UtilityCompletion } from "@prismshadow/penguin-library-projects";
-import type { ServerEvent } from "../src/";
+import type { ServerEvent } from "../src/api/types.js";
 import { makeTempRoot } from "./helpers.js";
 
 const P = "p1";

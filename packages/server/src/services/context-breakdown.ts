@@ -36,7 +36,7 @@ import type {
   ToolCallPayload,
   ToolListReadyPayload,
 } from "@prismshadow/penguin-core";
-import type { ContextFileShare, SessionContextParts } from "../";
+import type { ContextFileShare, SessionContextParts } from "@prismshadow/penguin-library-traces";
 
 /** How many entries each ranking — tools, files — names before the tail is dropped. */
 const RANKING_SIZE = 5;

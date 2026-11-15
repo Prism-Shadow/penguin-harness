@@ -21,7 +21,7 @@ import {
   readBuiltinBenchmarks,
   type BuiltinBenchmark,
 } from "@prismshadow/penguin-core";
-import type { BenchmarksResponse } from "../src/";
+import type { BenchmarksResponse } from "../src/api/types.js";
 import {
   apiClient,
   createTestApp,

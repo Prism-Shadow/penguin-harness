@@ -28,7 +28,7 @@ import {
   tokenUsage,
   truncateTitle,
 } from "@prismshadow/penguin-core";
-import type { ServerEvent } from "../";
+import type { ServerEvent } from "@prismshadow/penguin-library-projects";
 import type { ChannelHub } from "./channel.js";
 import type { ErrorSink } from "./error-recorder.js";
 import type { RuntimeSession } from "./session-manager.js";

@@ -48,7 +48,14 @@ import os from "node:os";
 import path from "node:path";
 import { agentDir, agentStateDir, snapshotsDir } from "@prismshadow/penguin-core";
 import * as tar from "tar";
-import type { AgentDeleteResponse, AgentDeletionInfo, AgentDeletionResponse, AgentsResponse, WorkbenchInfo, WorkbenchVersion } from "../src/";
+import type {
+  AgentDeleteResponse,
+  AgentDeletionInfo,
+  AgentDeletionResponse,
+  AgentsResponse,
+  WorkbenchInfo,
+  WorkbenchVersion,
+} from "../src/api/types.js";
 import { FsLimiter, purgeTree } from "../src/services/tree-purge.js";
 import { migrateWorkbenches } from "../src/workbenches/migrate.js";
 import { migrateWorkbenchesIntoState, SETTLE_MS } from "../src/workbenches/migrate-state.js";

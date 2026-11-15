@@ -14,7 +14,7 @@
  *   another inode, or two known birth times that differ, is another file.
  */
 import { describe, expect, it } from "vitest";
-import type { HistoryHave } from "../src/";
+import type { HistoryHave } from "../src/api/types.js";
 import {
   decodeHistoryHave,
   encodeHistoryHave,

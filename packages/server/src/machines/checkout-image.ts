@@ -31,7 +31,7 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import type { Readable } from "node:stream";
 import zlib from "node:zlib";
-import type { MachinesCheckoutImage } from "../";
+import type { MachinesCheckoutImage } from "../api/types.js";
 import { writePushedBuild } from "../hmr/pushed-build.js";
 import type { PushedBuild } from "../hmr/pushed-build.js";
 import { planOver } from "./install-server.js";

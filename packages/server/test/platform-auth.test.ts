@@ -36,7 +36,13 @@
  * - A flow the user cancels while a poll is in flight applies nothing.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ModelsResponse, PlatformAuthFlowStatusResponse, PlatformAuthStartResponse, PlatformModelSyncResponse, ProjectCreateResponse } from "../src/";
+import type {
+  ModelsResponse,
+  PlatformAuthFlowStatusResponse,
+  PlatformAuthStartResponse,
+  PlatformModelSyncResponse,
+  ProjectCreateResponse,
+} from "../src/api/types.js";
 import { PlatformAuthService, platformConnection } from "../src/services/platform-auth-service.js";
 import { fakeFetch, jsonResponse, stubFetch } from "./fixtures/fetch.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";

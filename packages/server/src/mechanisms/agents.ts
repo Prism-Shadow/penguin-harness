@@ -3,7 +3,25 @@
  */
 import { Interface } from "@prismshadow/penguin-core/kernel";
 import type { AgentConfigView } from "../services/agent-config-service.js";
-import type { AgentAuthor, AgentConfigUpdateRequest, AgentDeletionInfo, AgentKernelUpdateResponse, BenchmarkCasesResponse, BenchmarksResponse, BenchmarkSummary, CaseMaterial, MemoryFileResponse, MemoryFilesResponse, MemoryImportMode, MemoryImportResponse, MemoryOverviewResponse, MemoryScopeInfo, VaultResponse, VaultUpdateRequest, WorkspaceFilesResponse } from "../";
+import type {
+  AgentAuthor,
+  AgentConfigUpdateRequest,
+  AgentDeletionInfo,
+  AgentKernelUpdateResponse,
+  BenchmarkCasesResponse,
+  BenchmarksResponse,
+  BenchmarkSummary,
+  CaseMaterial,
+  MemoryFileResponse,
+  MemoryFilesResponse,
+  MemoryImportMode,
+  MemoryImportResponse,
+  MemoryOverviewResponse,
+  MemoryScopeInfo,
+  VaultResponse,
+  VaultUpdateRequest,
+  WorkspaceFilesResponse,
+} from "../api/types.js";
 import type {
   WorkspaceFileContent,
   WorkspaceFileReadOptions,

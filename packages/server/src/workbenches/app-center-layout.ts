@@ -8,7 +8,7 @@
  * files, and the Web App drops what it is not shown. The bounds keep one account's row small;
  * a layout that breaks one is refused whole, and one stored that no longer holds up reads as none.
  */
-import type { AppCenterLayout, AppCenterLayoutItem, UiPrefs } from "../";
+import type { AppCenterLayout, AppCenterLayoutItem, UiPrefs } from "../api/types.js";
 import { badRequest } from "../http/errors.js";
 import type { UiPrefsStore } from "@prismshadow/penguin-library-settings";
 

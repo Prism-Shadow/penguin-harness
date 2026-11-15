@@ -6,7 +6,7 @@
  */
 import { Document } from "yaml";
 import { defaultSystemConfig } from "@prismshadow/penguin-core";
-import type { AgentConfigUpdateRequest } from "../";
+import type { AgentConfigUpdateRequest } from "../api/types.js";
 import { AgentConfigService } from "./agent-config-service.js";
 
 type Fields = Record<string, unknown>;

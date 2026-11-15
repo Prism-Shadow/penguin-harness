@@ -21,7 +21,11 @@
  * services/proxy-probe.ts.
  */
 import { Hono } from "hono";
-import type { ProxyProbeResponse, ProxyProbeTargetsResponse, ServerSettingsResponse } from "../../";
+import type {
+  ProxyProbeResponse,
+  ProxyProbeTargetsResponse,
+  ServerSettingsResponse,
+} from "../../api/types.js";
 import { HttpError } from "../errors.js";
 import { requireHuman } from "../../auth/middleware.js";
 import type { AppEnv } from "../../auth/middleware.js";
@@ -34,7 +38,10 @@ export interface AdminSettingsRouteDeps {
   serverSettingsRepo: Settings;
 }
 import { applyProxySettings, normalizeProxyUrl } from "../../net/proxy.js";
-import { MAX_ATTACHMENT_MB, MIN_ATTACHMENT_MB } from "@prismshadow/penguin-library-settings/attachment-limits";
+import None{
+  MAX_ATTACHMENT_MB,
+  MIN_ATTACHMENT_MB,
+} from "@prismshadow/penguin-library-settings/attachment-limits";
 import {
   PROXY_PROBE_TARGETS,
   probeProxyReachabilityOf,

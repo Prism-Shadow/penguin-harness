@@ -96,7 +96,7 @@ import type { PluginSelection } from "../plugin/unsatisfied.js";
 import { takePushSlip } from "./push-plugins.js";
 import type { PushSlip } from "./push-plugins.js";
 import type { Errors } from "@prismshadow/penguin-library-observability";
-import type { UnsatisfiedPlugin } from "../";
+import type { UnsatisfiedPlugin } from "../api/types.js";
 import { migrate } from "@prismshadow/penguin-library-db/migrations";
 import { MachinesRepo } from "@prismshadow/penguin-library-machines/repos/machines";
 import type { Auth } from "@prismshadow/penguin-library-identity";

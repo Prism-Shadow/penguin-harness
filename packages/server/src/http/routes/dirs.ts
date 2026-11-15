@@ -38,7 +38,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { Hono } from "hono";
-import type { DirAccessResponse, DirEntryInfo, DirListResponse } from "../../";
+import type { DirAccessResponse, DirEntryInfo, DirListResponse } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { HttpError } from "../errors.js";
 import { requireValidId } from "../validate.js";

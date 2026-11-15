@@ -30,7 +30,14 @@ import {
   snapshotsDir,
   tracesDir,
 } from "@prismshadow/penguin-core";
-import type { AgentApiKeyCreateResponse, AgentApiResponse, AgentArchiveImportResponse, AgentConfigResponse, ProjectCreateResponse, SessionsResponse } from "../src/";
+import type {
+  AgentApiKeyCreateResponse,
+  AgentApiResponse,
+  AgentArchiveImportResponse,
+  AgentConfigResponse,
+  ProjectCreateResponse,
+  SessionsResponse,
+} from "../src/api/types.js";
 import { MAX_PACKAGE_BYTES } from "../src/services/agent-zip.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";

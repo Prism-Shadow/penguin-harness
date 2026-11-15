@@ -4,7 +4,7 @@ import { parseManifest } from "@prismshadow/penguin-core/kernel";
 import type { ModuleDef } from "@prismshadow/penguin-core/kernel";
 import { PluginHost } from "../src/plugin/host.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser, tokenClient } from "./helpers.js";
-import type { PluginCliCommandRunRequest } from "../src/";
+import type { PluginCliCommandRunRequest } from "../src/api/types.js";
 import { validPluginCommands, runPluginCommands } from "../src/plugin/cli-commands.js";
 
 describe("validPluginCommands", () => {

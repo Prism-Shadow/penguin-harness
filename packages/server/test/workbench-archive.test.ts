@@ -44,7 +44,12 @@ import path from "node:path";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import type { ZipOptions } from "fflate";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { ProjectCreateResponse, WorkbenchArchiveInstallResponse, WorkbenchInfo, WorkbenchVersion } from "../src/";
+import type {
+  ProjectCreateResponse,
+  WorkbenchArchiveInstallResponse,
+  WorkbenchInfo,
+  WorkbenchVersion,
+} from "../src/api/types.js";
 import { agentDir } from "@prismshadow/penguin-core";
 import { workbenchesDir } from "../src/workbenches/store.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";

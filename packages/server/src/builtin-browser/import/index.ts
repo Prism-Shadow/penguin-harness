@@ -15,7 +15,11 @@
  *   sqlite-copy.ts       reading a store through a private copy
  *   system-env.ts        the ImportEnv of the machine the server runs on
  */
-import type { BuiltinBrowserHistoryEntry, BuiltinBrowserImportSource, DesktopBrowserCookie } from "../../";
+import type {
+  BuiltinBrowserHistoryEntry,
+  BuiltinBrowserImportSource,
+  DesktopBrowserCookie,
+} from "../../api/types.js";
 import { chromiumBrowser } from "./browsers.js";
 import { readChromiumCookies } from "./chromium-cookies.js";
 import { normalizeDomains } from "./cookie-rules.js";

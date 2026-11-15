@@ -18,7 +18,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import type { AgentCreateResponse, ProjectCreateResponse } from "../src/";
+import type { AgentCreateResponse, ProjectCreateResponse } from "../src/api/types.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 

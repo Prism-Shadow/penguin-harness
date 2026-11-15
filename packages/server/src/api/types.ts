@@ -25,6 +25,68 @@ import type {
 import type { HarnessInfo, VersionReport, HarnessHistory } from "@prismshadow/penguin-core";
 import type { IfacesDiff } from "@prismshadow/penguin-hmr";
 import type { AppCenterShortcut, WorkbenchInfo } from "../mechanisms/workbenches.js";
+// The vocabulary whose ownership moved to the domain libraries (the contracts name it):
+// the server's own API DTOs reference these, and the Web App reads them through this
+// module's exports, so each is imported and re-exported — the server→library direction
+// is the allowed one (restack3 rule 4).
+import type {
+  AgentApiKeyInfo,
+  AgentApiSettings,
+  AgentApiUpdateRequest,
+  ModelRefDto,
+} from "@prismshadow/penguin-library-agent-api";
+import type {
+  ChatDefaultsDto,
+  EndpointModelListRequest,
+  EndpointModelListResponse,
+  ModelProtocolDetectRequest,
+  ModelProtocolDetectResponse,
+  ModelsResponse,
+  ModelsUpdateRequest,
+  ModelTestRequest,
+  ModelTestResponse,
+  ModelVisionDetectRequest,
+  ModelVisionDetectResponse,
+  PresetSyncMode,
+  PresetSyncResponse,
+  ProviderConnectionDto,
+  ProviderConnectionResponse,
+  ProviderConnectionUpdate,
+  ScheduleServerEvent,
+  ServerEvent,
+  CommandPolicyDto,
+} from "@prismshadow/penguin-library-projects";
+import type {
+  AgentTraceSessionEntry,
+  AgentTracesResponse,
+  ContextFileShare,
+  CostParts,
+  RequestSpan,
+  SessionCategory,
+  SessionContextParts,
+  ToolCallSpan,
+  TraceAnalysisResponse,
+  TraceEventsResponse,
+  TraceFileInfo,
+  TraceImportResponse,
+  TraceModelSegment,
+  TraceOtherSpan,
+  TraceTaskStats,
+  TraceToolSpan,
+  UsageTrendPointInTrace,
+} from "@prismshadow/penguin-library-traces";
+import type {
+  UsageAgentSeries,
+  UsageBucket,
+  UsageErrors,
+  UsageErrorsPage,
+  UsageGranularity,
+  UsageGroupRow,
+  UsageModelSeries,
+  UsageModelTotals,
+  UsageResponse,
+  UsageSeriesPoint,
+} from "@prismshadow/penguin-library-observability";
 
 // ---------------------------------------------------------------------------
 // General
@@ -1536,25 +1598,69 @@ export interface AgentConfigUpdateRequest {
 // /api/amsp/v1, whose snake_case wire types live in @prismshadow/amsp)
 // ---------------------------------------------------------------------------
 
-/** One API key of an Agent, as listed: the secret itself is shown once, at creation, and never again. */
-export interface AgentApiKeyInfo {
-  keyId: string;
-  /** 1-64 characters, given by whoever created it. */
-  name: string;
-  /** The key's first 16 characters (`penguin_` + 8), enough to tell keys apart. */
-  prefix: string;
-  /** user_id of the Project owner who created it. */
-  createdBy: string;
-  createdAt: string;
-  /** Last run request that authenticated with it; null = never used. */
-  lastUsedAt: string | null;
-}
+// AgentApiKeyInfo (the list view of one API key) lives with the AgentApi contract in
+// library/agent-api — imported and re-exported at the top of this file's Agent API block.
 
 /**
  * One Agent's public API settings — this server's, kept in web.db, never in the Agent State or
  * the Project file, so the Agent cannot expose itself or loosen its own approvals. An Agent
  * never configured reads as disabled, keyed, allow-all, with no keys.
  */
+
+// The vocabulary above lives with its contracts in the domain libraries; these
+// re-exports keep the module's export surface whole for the API's consumers.
+export type {
+  AgentApiKeyInfo,
+  AgentApiSettings,
+  AgentApiUpdateRequest,
+  ModelRefDto,
+  ChatDefaultsDto,
+  EndpointModelListRequest,
+  EndpointModelListResponse,
+  ModelProtocolDetectRequest,
+  ModelProtocolDetectResponse,
+  ModelsResponse,
+  ModelsUpdateRequest,
+  ModelTestRequest,
+  ModelTestResponse,
+  ModelVisionDetectRequest,
+  ModelVisionDetectResponse,
+  PresetSyncMode,
+  PresetSyncResponse,
+  ProviderConnectionDto,
+  ProviderConnectionResponse,
+  ProviderConnectionUpdate,
+  ScheduleServerEvent,
+  ServerEvent,
+  CommandPolicyDto,
+  AgentTraceSessionEntry,
+  AgentTracesResponse,
+  ContextFileShare,
+  CostParts,
+  RequestSpan,
+  SessionCategory,
+  SessionContextParts,
+  ToolCallSpan,
+  TraceAnalysisResponse,
+  TraceEventsResponse,
+  TraceFileInfo,
+  TraceImportResponse,
+  TraceModelSegment,
+  TraceOtherSpan,
+  TraceTaskStats,
+  TraceToolSpan,
+  UsageTrendPointInTrace,
+  UsageAgentSeries,
+  UsageBucket,
+  UsageErrors,
+  UsageErrorsPage,
+  UsageGranularity,
+  UsageGroupRow,
+  UsageModelSeries,
+  UsageModelTotals,
+  UsageResponse,
+  UsageSeriesPoint,
+};
 
 
 export interface AgentApiResponse {

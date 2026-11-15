@@ -13,7 +13,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { approvalDecision, assistantText, toolCall } from "@prismshadow/penguin-core";
 import type { ApproveFn, AmspRecord } from "@prismshadow/penguin-core";
-import type { RecalledMessageResponse, TaskCreateResponse } from "../src/";
+import type { RecalledMessageResponse, TaskCreateResponse } from "../src/api/types.js";
 import { adoptSession, fakeSession, uniqueSessionId } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";

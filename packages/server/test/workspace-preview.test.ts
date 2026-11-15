@@ -27,7 +27,7 @@ import {
   loopbackHostRoles,
   resolvePreviewTarget,
 } from "../src/services/preview-token.js";
-import type { ProjectCreateResponse, SessionCreateResponse } from "../src/";
+import type { ProjectCreateResponse, SessionCreateResponse } from "../src/api/types.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 

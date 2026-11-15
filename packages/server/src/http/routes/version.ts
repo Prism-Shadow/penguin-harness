@@ -23,7 +23,15 @@
 import { versionReport } from "../../version-report.js";
 import { Hono } from "hono";
 import type { Context } from "hono";
-import type { RestartResponse, UpdateJobStatus, UpdateRunResponse, VersionHistoryDiffResponse, VersionHistoryResponse, VersionResponse, VersionRollbackResponse } from "../../";
+import type {
+  RestartResponse,
+  UpdateJobStatus,
+  UpdateRunResponse,
+  VersionHistoryDiffResponse,
+  VersionHistoryResponse,
+  VersionResponse,
+  VersionRollbackResponse,
+} from "../../api/types.js";
 import { diffIfaces } from "@prismshadow/penguin-hmr";
 import type { HarnessHistoryIface } from "../../services/harness-history.js";
 import { HttpError } from "../errors.js";

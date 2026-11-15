@@ -24,7 +24,7 @@
  */
 import { Hono } from "hono";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { SessionCategory, TraceImportResponse } from "../../";
+import type { SessionCategory, TraceImportResponse } from "@prismshadow/penguin-library-traces";
 import {
   badRequest,
   optionalPagingQuery,

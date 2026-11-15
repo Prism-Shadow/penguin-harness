@@ -17,7 +17,12 @@ import {
   resolveMCPServer,
 } from "@prismshadow/penguin-core";
 import type { MCPServerConfig } from "@prismshadow/penguin-core";
-import type { AgentConfigResponse, AgentConfigUpdateRequest, AgentKernelUpdateResponse, McpServerTestResponse } from "../../";
+import type {
+  AgentConfigResponse,
+  AgentConfigUpdateRequest,
+  AgentKernelUpdateResponse,
+  McpServerTestResponse,
+} from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { ServerConfig } from "../../config.js";
 import { badRequest, optionalString, readJson, requireValidId } from "../validate.js";

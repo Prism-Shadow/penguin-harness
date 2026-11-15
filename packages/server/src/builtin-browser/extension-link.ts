@@ -23,7 +23,13 @@
  * not a reply or event of the protocol is dropped, and a listener that throws is logged.
  */
 import { randomUUID } from "node:crypto";
-import type { BrowserHello, DesktopBrowserCommand, DesktopBrowserCommandMessage, DesktopBrowserEvent, DesktopBrowserReplyMessage } from "../";
+import type {
+  BrowserHello,
+  DesktopBrowserCommand,
+  DesktopBrowserCommandMessage,
+  DesktopBrowserEvent,
+  DesktopBrowserReplyMessage,
+} from "../api/types.js";
 import { BrowserLinkError, CHROME_CAPABILITIES } from "./link.js";
 import type { BrowserLink } from "./link.js";
 import { parseBrowserEvent, parseBrowserReply } from "./shell-link.js";

@@ -19,7 +19,12 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { isValidId } from "@prismshadow/penguin-core";
-import type { ArchivedSessionGroupServers, ArchivedSessionSource, ArchivedSessionsBatch, ArchivedSessionsQuery } from "../../";
+import type {
+  ArchivedSessionGroupServers,
+  ArchivedSessionSource,
+  ArchivedSessionsBatch,
+  ArchivedSessionsQuery,
+} from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type {
   ArchiveCaller,

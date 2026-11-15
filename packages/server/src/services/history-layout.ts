@@ -15,7 +15,7 @@
  */
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import { historyFileKey, parseHistoryFileKey } from "./history-wire.js";
-import type { HistoryFileKey, HistoryMessage, HistorySegment, HistoryStub } from "../";
+import type { HistoryFileKey, HistoryMessage, HistorySegment, HistoryStub } from "../api/types.js";
 
 
 

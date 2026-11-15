@@ -1,6 +1,10 @@
 /** Project-owner routes for authorizing a Penguin Go key. */
 import { Hono } from "hono";
-import type { PlatformAuthFlowStatusResponse, PlatformAuthStartResponse, PlatformModelSyncResponse } from "../../";
+import type {
+  PlatformAuthFlowStatusResponse,
+  PlatformAuthStartResponse,
+  PlatformModelSyncResponse,
+} from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { PlatformAuth } from "../../services/platform-auth-service.js";
 import { HttpError } from "../errors.js";

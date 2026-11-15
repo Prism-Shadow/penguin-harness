@@ -14,7 +14,11 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { agentStateDir } from "@prismshadow/penguin-core";
-import type { AgentAvatarResponse, AgentsResponse, ProjectCreateResponse } from "../src/";
+import type {
+  AgentAvatarResponse,
+  AgentsResponse,
+  ProjectCreateResponse,
+} from "../src/api/types.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 

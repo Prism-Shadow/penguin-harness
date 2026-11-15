@@ -54,7 +54,12 @@
 import { Hono } from "hono";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { InstalledPlugin, InstalledPluginsResponse, PluginInstallOutcome, UnsatisfiedPlugin } from "../../";
+import type {
+  InstalledPlugin,
+  InstalledPluginsResponse,
+  PluginInstallOutcome,
+  UnsatisfiedPlugin,
+} from "../../api/types.js";
 import { HttpError } from "../errors.js";
 import { eventStream } from "../event-stream.js";
 import { readJson, requireString, requireValidId } from "../validate.js";

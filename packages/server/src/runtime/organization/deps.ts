@@ -7,7 +7,8 @@
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import { Interface } from "@prismshadow/penguin-core/kernel";
 import type { ApprovalMode } from "@prismshadow/penguin-library-sessions";
-import type { MessagingChannel, ServerEvent, SessionStatus } from "../../";
+import type { MessagingChannel, SessionStatus } from "../../api/types.js";
+import type { ServerEvent } from "@prismshadow/penguin-library-projects";
 import type { OrgCache } from "@prismshadow/penguin-library-organization";
 import type { Members, ProjectConfigStore, Projects } from "@prismshadow/penguin-library-projects";
 import type { SessionIndex } from "@prismshadow/penguin-library-sessions";

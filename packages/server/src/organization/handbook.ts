@@ -6,7 +6,7 @@
  * two templates carry the same sections and tables, with paths, commands, ids and field
  * names ASCII in both; the CEO and HR own the file afterwards and may rewrite any of it.
  */
-import type { OrgLanguage } from "../";
+import type { OrgLanguage } from "../api/types.js";
 
 export interface HandbookInput {
   orgId: string;

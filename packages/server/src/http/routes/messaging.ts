@@ -48,9 +48,33 @@
  */
 import { Hono } from "hono";
 import type { Context } from "hono";
-import type { FeishuBindingInfo, FeishuBindingResponse, FeishuTestResponse, MessagingBindingInfo, MessagingBindingsResponse, MessagingBindingStateRequest, MessagingChannelState, MessagingTestMessageResponse, QQBindingInfo, QQBindingResponse, QQScanPollResponse, QQScanStartResponse, QQTestResponse, TelegramBindingInfo, TelegramBindingResponse, TelegramTestResponse, WeChatBindingInfo, WeChatBindingResponse, WeChatScanPollResponse, WeChatScanStartResponse, WeChatTestResponse } from "../../";
+import type {
+  FeishuBindingInfo,
+  FeishuBindingResponse,
+  FeishuTestResponse,
+  MessagingBindingInfo,
+  MessagingBindingsResponse,
+  MessagingBindingStateRequest,
+  MessagingChannelState,
+  MessagingTestMessageResponse,
+  QQBindingInfo,
+  QQBindingResponse,
+  QQScanPollResponse,
+  QQScanStartResponse,
+  QQTestResponse,
+  TelegramBindingInfo,
+  TelegramBindingResponse,
+  TelegramTestResponse,
+  WeChatBindingInfo,
+  WeChatBindingResponse,
+  WeChatScanPollResponse,
+  WeChatScanStartResponse,
+  WeChatTestResponse,
+} from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { MessagingBindingRow } from "@prismshadow/penguin-library-messaging/repos/messaging-bindings";
+import type {
+  MessagingBindingRow,
+} from "@prismshadow/penguin-library-messaging/repos/messaging-bindings";
 import type { SessionRow } from "@prismshadow/penguin-library-sessions/repos/sessions";
 import { FEISHU_DEFAULT_DOMAIN, feishuConfigOf } from "../../runtime/messaging/feishu-connector.js";
 import { telegramBotIdOf } from "../../runtime/messaging/telegram-connector.js";

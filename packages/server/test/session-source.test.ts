@@ -37,7 +37,12 @@
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { assistantText, sessionMeta, userText, withOrigin } from "@prismshadow/penguin-core";
-import type { ProjectCreateResponse, SessionCreateResponse, SessionResponse, SessionsResponse } from "../src/";
+import type {
+  ProjectCreateResponse,
+  SessionCreateResponse,
+  SessionResponse,
+  SessionsResponse,
+} from "../src/api/types.js";
 import { apiClient, createTestApp, provisionUser, waitFor, writeTraceFile } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 import { adoptSession, fakeSession } from "./fixtures/session.js";

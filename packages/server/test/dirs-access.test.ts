@@ -21,7 +21,12 @@
  * so the frames themselves are exercised, not just the service's seam.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import type { DesktopFolderAccessResult, DesktopPrivacyPane, DirAccessResponse, ErrorBody } from "../src/";
+import type {
+  DesktopFolderAccessResult,
+  DesktopPrivacyPane,
+  DirAccessResponse,
+  ErrorBody,
+} from "../src/api/types.js";
 import { DesktopService } from "../src/services/desktop-service.js";
 import {
   FOLDER_ACCESS_TIMEOUT_MS,

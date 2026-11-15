@@ -10,7 +10,7 @@ import type {
   SandboxProvider,
   SandboxProviderSource,
 } from "@prismshadow/penguin-core/plugin";
-import type { PluginConfigEntry, PluginConfigResponse } from "../src/";
+import type { PluginConfigEntry, PluginConfigResponse } from "../src/api/types.js";
 import { PluginHost } from "../src/plugin/host.js";
 import { SandboxService } from "../src/sandbox/index.js";
 import { enforcementNotice } from "../src/sandbox/settings-status.js";

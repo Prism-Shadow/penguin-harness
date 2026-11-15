@@ -2,7 +2,11 @@
  * Project routes: GET|POST /api/projects, PATCH|DELETE /api/projects/:p.
  */
 import { Hono } from "hono";
-import type { ProjectCreateResponse, ProjectUpdateResponse, ProjectsResponse } from "../../";
+import type {
+  ProjectCreateResponse,
+  ProjectUpdateResponse,
+  ProjectsResponse,
+} from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import {
   badRequest,

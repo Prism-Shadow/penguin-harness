@@ -20,7 +20,7 @@ import {
   toolCallOutput,
   userText,
 } from "@prismshadow/penguin-core";
-import type { HistoryLinesFrame, HistoryPartFrame } from "../src/";
+import type { HistoryLinesFrame, HistoryPartFrame } from "../src/api/types.js";
 import { FRAME_TEXT_BUDGET, LineCommitter } from "../src/socket/line-frames.js";
 import { apiSocketPath } from "../src/socket/ref.js";
 import { attachTerminalWebSocket } from "../src/terminal/ws.js";

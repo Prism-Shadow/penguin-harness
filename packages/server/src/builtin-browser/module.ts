@@ -20,10 +20,14 @@ import { buildInfo } from "@prismshadow/penguin-core";
 import { Bind, Component, Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx, Opaque } from "@prismshadow/penguin-core/kernel";
 import type { Hono } from "hono";
-import type { BrowserBackend, BuiltinBrowserServerEvent, UiPrefs } from "../";
+import type { BrowserBackend, BuiltinBrowserServerEvent, UiPrefs } from "../api/types.js";
 import type { AppEnv } from "../auth/middleware.js";
-import { BrowserExtensionsRepo } from "@prismshadow/penguin-library-machines/repos/browser-extensions";
-import { BROWSER_EXTENSIONS_KEY } from "@prismshadow/penguin-library-settings/repos/server-settings";
+import None{
+  BrowserExtensionsRepo,
+} from "@prismshadow/penguin-library-machines/repos/browser-extensions";
+import None{
+  BROWSER_EXTENSIONS_KEY,
+} from "@prismshadow/penguin-library-settings/repos/server-settings";
 import type { Channels, Clock, Config, Db, Desktop, Log, Paths } from "../hmr/capabilities.js";
 import { userChannelKey } from "../http/routes/events.js";
 import { ensureInstallId } from "../install-id.js";

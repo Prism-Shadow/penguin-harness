@@ -10,7 +10,12 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { ModelsResponse, ProjectCreateResponse, ProjectUpdateResponse, ProjectsResponse } from "../src/";
+import type {
+  ModelsResponse,
+  ProjectCreateResponse,
+  ProjectUpdateResponse,
+  ProjectsResponse,
+} from "../src/api/types.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 

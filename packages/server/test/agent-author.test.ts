@@ -26,7 +26,7 @@ import path from "node:path";
 import { strToU8, zipSync } from "fflate";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { agentDir, systemConfigPath } from "@prismshadow/penguin-core";
-import type { AgentConfigResponse, AgentsResponse } from "../src/";
+import type { AgentConfigResponse, AgentsResponse } from "../src/api/types.js";
 import { ORG_CONFIG_DEFAULTS } from "../src/organization/files.js";
 import type { OrgEmployee } from "../src/organization/files.js";
 import { OrgStore } from "../src/organization/store.js";

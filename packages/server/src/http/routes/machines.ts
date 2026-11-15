@@ -47,7 +47,15 @@
  */
 import { Hono } from "hono";
 import type { Context } from "hono";
-import type { DirListResponse, MachineDiagnosis, MachineUninstallRequest, MachinesResponse, MachinesUseResponse, SshHostResponse, SshHostsResponse } from "../../";
+import type {
+  DirListResponse,
+  MachineDiagnosis,
+  MachineUninstallRequest,
+  MachinesResponse,
+  MachinesUseResponse,
+  SshHostResponse,
+  SshHostsResponse,
+} from "../../api/types.js";
 import { HttpError } from "../errors.js";
 import { requireValidId } from "../validate.js";
 import { answerOf } from "../../socket/stream-answer.js";

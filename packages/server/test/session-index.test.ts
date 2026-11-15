@@ -36,7 +36,12 @@ import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { sessionMeta, userText } from "@prismshadow/penguin-core";
 import type { AmspRecord, SessionMetaPayload } from "@prismshadow/penguin-core";
-import type { ProjectCreateResponse, SessionCreateResponse, SessionResponse, SessionsResponse } from "../src/";
+import type {
+  ProjectCreateResponse,
+  SessionCreateResponse,
+  SessionResponse,
+  SessionsResponse,
+} from "../src/api/types.js";
 import { sessionIdCreatedAt } from "../src/services/session-service.js";
 import { apiClient, createTestApp, provisionUser, writeTraceFile } from "./helpers.js";
 import type { TestApp } from "./helpers.js";

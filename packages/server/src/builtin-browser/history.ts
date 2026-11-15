@@ -13,7 +13,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { atomicWriteFile } from "@prismshadow/penguin-core";
-import type { BuiltinBrowserHistoryEntry, BuiltinBrowserTab } from "../";
+import type { BuiltinBrowserHistoryEntry, BuiltinBrowserTab } from "../api/types.js";
 
 /** The most entries the file keeps. */
 export const HISTORY_CAP = 5_000;

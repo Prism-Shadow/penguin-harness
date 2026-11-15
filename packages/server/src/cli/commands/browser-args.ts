@@ -5,7 +5,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import type { BuiltinBrowserImportSourcesResponse } from "../../";
+import type { BuiltinBrowserImportSourcesResponse } from "../../api/types.js";
 import { ApiError, ServerClient } from "../client.js";
 import { resolveConnection } from "../connection.js";
 import type { Messages } from "../i18n.js";

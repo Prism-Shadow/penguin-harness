@@ -25,7 +25,11 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createCipheriv, randomBytes } from "node:crypto";
-import type { QQBindingResponse, QQScanPollResponse, QQScanStartResponse } from "../src/";
+import type {
+  QQBindingResponse,
+  QQScanPollResponse,
+  QQScanStartResponse,
+} from "../src/api/types.js";
 import {
   QQ_SCAN_TASK_TTL_MS,
   QQScanService,

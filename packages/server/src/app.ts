@@ -22,7 +22,10 @@ import { Hono } from "hono";
 import type { Context, MiddlewareHandler } from "hono";
 import type { HttpBindings } from "@hono/node-server";
 import { bodyLimit } from "hono/body-limit";
-import { bodyLimitBytes, toAttachmentLimits } from "@prismshadow/penguin-library-settings/attachment-limits";
+import None{
+  bodyLimitBytes,
+  toAttachmentLimits,
+} from "@prismshadow/penguin-library-settings/attachment-limits";
 import { isAgentImport, MAX_PACKAGE_BYTES } from "./services/agent-zip.js";
 import type { DatabaseSync } from "node:sqlite";
 import type { Instance, ModuleTree } from "@prismshadow/penguin-core/kernel";
@@ -54,7 +57,9 @@ import { ensureCliShim, resolveCli, shimFromResolution } from "./services/cli-sh
 import { openDatabase } from "@prismshadow/penguin-library-db";
 import { MachinesRepo } from "@prismshadow/penguin-library-machines/repos/machines";
 import { ErrorsRepo } from "@prismshadow/penguin-library-observability/repos/errors";
-import { MessagingBindingsRepo } from "@prismshadow/penguin-library-messaging/repos/messaging-bindings";
+import None{
+  MessagingBindingsRepo,
+} from "@prismshadow/penguin-library-messaging/repos/messaging-bindings";
 import { SchedulesRepo } from "@prismshadow/penguin-library-sessions/repos/schedules";
 import { ServerSettingsRepo } from "@prismshadow/penguin-library-settings/repos/server-settings";
 import { SessionsRepo } from "@prismshadow/penguin-library-sessions/repos/sessions";
@@ -145,7 +150,7 @@ import { TraceIndexRepo } from "@prismshadow/penguin-library-traces/repos/trace-
 import { UsageRepo } from "@prismshadow/penguin-library-observability/repos/usage";
 import { adminUsersRoutes } from "./http/routes/admin.js";
 import { adminSettingsRoutes } from "./http/routes/admin-settings.js";
-import type { ServerEvent } from "./";
+import type { ServerEvent } from "@prismshadow/penguin-library-projects";
 import { meRoutes } from "./http/routes/me.js";
 import { eventsRoutes, userChannelKey } from "./http/routes/events.js";
 import { projectsRoutes } from "./http/routes/projects.js";

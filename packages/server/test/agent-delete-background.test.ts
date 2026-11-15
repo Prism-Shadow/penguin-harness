@@ -19,7 +19,12 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { agentDir, systemConfigPath } from "@prismshadow/penguin-core";
-import type { AgentDeleteResponse, AgentDeletionInfo, AgentDeletionResponse, AgentsResponse } from "../src/";
+import type {
+  AgentDeleteResponse,
+  AgentDeletionInfo,
+  AgentDeletionResponse,
+  AgentsResponse,
+} from "../src/api/types.js";
 import { deletingDir } from "../src/services/agent-service.js";
 import { apiClient, createTestApp, provisionUser, restartTestApp } from "./helpers.js";
 import type { TestApp } from "./helpers.js";

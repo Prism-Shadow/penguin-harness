@@ -31,7 +31,7 @@
  * would ever dial again.
  */
 import { randomUUID } from "node:crypto";
-import type { ServerEvent } from "../";
+import type { ServerEvent } from "@prismshadow/penguin-library-projects";
 import { HEARTBEAT_MS } from "../http/sse.js";
 import type { EventFrame } from "../socket/frames.js";
 import type {

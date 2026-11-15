@@ -21,8 +21,26 @@
  * `not_supported` (Chrome keeps its own).
  */
 import { createHash } from "node:crypto";
-import type { BrowserBackend, BrowserBackendInfo, BrowserBackendResponse, BuiltinBrowserExecResult, BuiltinBrowserHistoryEntry, BuiltinBrowserImportRequest, BuiltinBrowserImportResult, BuiltinBrowserImportSource, BuiltinBrowserScanResult, BuiltinBrowserScreenshot, BuiltinBrowserServerEvent, BuiltinBrowserSettings, BuiltinBrowserStatus, BuiltinBrowserTab, BuiltinBrowserTabsResponse } from "../";
-import type { BrowserExtensionStore } from "@prismshadow/penguin-library-machines/repos/browser-extensions";
+import type {
+  BrowserBackend,
+  BrowserBackendInfo,
+  BrowserBackendResponse,
+  BuiltinBrowserExecResult,
+  BuiltinBrowserHistoryEntry,
+  BuiltinBrowserImportRequest,
+  BuiltinBrowserImportResult,
+  BuiltinBrowserImportSource,
+  BuiltinBrowserScanResult,
+  BuiltinBrowserScreenshot,
+  BuiltinBrowserServerEvent,
+  BuiltinBrowserSettings,
+  BuiltinBrowserStatus,
+  BuiltinBrowserTab,
+  BuiltinBrowserTabsResponse,
+} from "../api/types.js";
+import type {
+  BrowserExtensionStore,
+} from "@prismshadow/penguin-library-machines/repos/browser-extensions";
 import { HttpError } from "../http/errors.js";
 import { BrowserBackendRuntime } from "./backend-runtime.js";
 import type { BrowserTiming } from "./backend-runtime.js";

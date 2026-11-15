@@ -10,7 +10,7 @@
  * that no client has to parse them out of the message, which is prose and may change.
  */
 import type { Context } from "hono";
-import type { ErrorBody, ErrorDetails } from "../";
+import type { ErrorBody, ErrorDetails } from "../api/types.js";
 
 export class HttpError extends Error {
   constructor(

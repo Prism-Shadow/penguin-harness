@@ -10,7 +10,11 @@
  * Meanwhile the page's dialogs are answered and reported, since one would block it (see
  * `watchDialogs`); and a tab runs one of them at a time.
  */
-import type { BuiltinBrowserDialog, BuiltinBrowserExecResult, BuiltinBrowserScreenshot } from "../";
+import type {
+  BuiltinBrowserDialog,
+  BuiltinBrowserExecResult,
+  BuiltinBrowserScreenshot,
+} from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 import { PageScriptError } from "./driver.js";
 import type { BrowserDriver, EvaluateOutcome } from "./driver.js";

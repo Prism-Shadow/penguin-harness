@@ -18,7 +18,14 @@ import type {
   PluginMcpServer,
   SkillMetadata,
 } from "@prismshadow/penguin-core";
-import type { AgentMcpServerItem, HookItem, McpTransport, PluginItem, PluginMcpServerItem, SkillMetadataItem } from "../";
+import type {
+  AgentMcpServerItem,
+  HookItem,
+  McpTransport,
+  PluginItem,
+  PluginMcpServerItem,
+  SkillMetadataItem,
+} from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 import { iconRef } from "../http/icon-response.js";
 import type { PluginLibrary } from "../plugin/library-module.js";

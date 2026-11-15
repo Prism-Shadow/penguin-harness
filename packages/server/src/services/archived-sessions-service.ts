@@ -22,7 +22,23 @@
  * A machine that should have been asked and could not be is named in the answer, never dropped
  * in silence.
  */
-import type { ArchivedSessionGroup, ArchivedSessionGroupServers, ArchivedSessionGroupsResponse, ArchivedSessionSource, ArchivedSessionsBatch, ArchivedSessionsBatchFilter, ArchivedSessionsBatchResponse, ArchivedSessionsQuery, ArchivedSessionsResponse, ProjectSummary, ServerEvent, SessionCategory, SessionInfo, SessionSource, SessionStatus } from "../";
+import type {
+  ArchivedSessionGroup,
+  ArchivedSessionGroupServers,
+  ArchivedSessionGroupsResponse,
+  ArchivedSessionSource,
+  ArchivedSessionsBatch,
+  ArchivedSessionsBatchFilter,
+  ArchivedSessionsBatchResponse,
+  ArchivedSessionsQuery,
+  ArchivedSessionsResponse,
+  ProjectSummary,
+  SessionInfo,
+  SessionSource,
+  SessionStatus,
+} from "../api/types.js";
+import type { ServerEvent } from "@prismshadow/penguin-library-projects";
+import type { SessionCategory } from "@prismshadow/penguin-library-traces";
 import type { SessionRow } from "@prismshadow/penguin-library-sessions/repos/sessions";
 import { HttpError, badRequest } from "../http/errors.js";
 import type { ListingView } from "../runtime/session-sources.js";
