@@ -56,31 +56,7 @@ import type { AmspRecord } from "@prismshadow/penguin-core";
 /** Bump when any counting/boundary rule changes: cached page_stats records with an older version are recomputed. */
 export const CACHE_VERSION = 4;
 
-/** Cumulative totals at a point in the trace (all values are "before this point"). */
-export interface WindowPriorStats {
-  /** Outline entries opened before this point (the Web outline's global numbering offset). */
-  turns: number;
-  /** Sum of subagent token_usage request totals (all descendant sessions) before this point. */
-  subagentTokens: number;
-  /** Sum of finished Tasks' elapsed time before this point (the Web's sessionElapsedMs basis). */
-  elapsedMs: number;
-  /**
-   * Sum of finished Tasks' model-API time before this point (the Web's sessionLlmMs basis):
-   * paired request spans with the human approval wait deducted, compaction requests excluded —
-   * the same scope `elapsedMs` uses, so the component and its total cover the same turns.
-   */
-  apiMs: number;
-  /**
-   * Sum of finished Tasks' tool wall time before this point (the Web's sessionToolMs basis):
-   * per Task the union of its tool execution intervals, so parallel tools count once. Overlaps
-   * `apiMs` when a tool runs on while the model decodes; the two never partition `elapsedMs`.
-   */
-  toolMs: number;
-  /** The last main-session token_usage `session.total` seen before this point (0 = none). */
-  sessionTokens: number;
-  /** The last main-session NON-compaction token_usage `request.total` before this point (context occupancy basis). */
-  contextTokens: number;
-}
+
 
 /** Open-Task bookkeeping carried across messages (mirrors StreamModel.task* fields). */
 interface TaskCarry {

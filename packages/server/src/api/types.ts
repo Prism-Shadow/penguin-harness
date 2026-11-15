@@ -2189,7 +2189,7 @@ export interface SessionBackgroundTasks {
 
 
 /** Per-category totals across an Agent's whole Session list (returned when the list is requested with counts). */
-export type SessionCategoryCounts = Record<SessionCategory, number>;
+
 
 /**
  * GET /api/projects/:projectId/agents/:agentId/sessions. Every query parameter is optional:
@@ -4025,25 +4025,13 @@ export interface SessionTracesResponse {
 }
 
 /** One tool's share of the context: its calls plus their results. Its *definition* is counted in `toolDefs`, not here. */
-export interface ContextToolShare {
-  name: string;
-  tokens: number;
-}
+
 
 /**
  * One file's share of the context: its `read_file` / `edit_file` / `write_file` calls plus their
  * results, keyed by the file each call named.
  */
-export interface ContextFileShare {
-  /**
-   * Workspace-relative when the file is inside the Session's Workspace; otherwise absolute, with
-   * the home directory shortened to `~`. Spellings that resolve to the same file are one row.
-   */
-  path: string;
-  tokens: number;
-  /** How many calls of each file tool named the file in this context. */
-  ops: { read: number; edit: number; write: number };
-}
+
 
 /**
  * What the Session's current model context is made of — the part derived from its messages.
@@ -4074,31 +4062,7 @@ export interface SessionContextResponse extends SessionContextParts {
 
 
 /** Duration span of a single LLM Request (request_begin/request_end paired by proximity). */
-export interface RequestSpan {
-  beginTs: string;
-  endTs?: string;
-  durationMs?: number;
-  status?: string;
-  /** The Task it belongs to (same convention as modelSegments/toolSpans). */
-  taskIndex: number;
-  /** Compaction request (falls between compaction_begin and compaction_end): excluded from TPS, see TraceTaskStats. */
-  compaction?: boolean;
-  /**
-   * Total human approval wait time within this Request. core does `await approve(tc)` inside
-   * the streaming loop — if approval doesn't return, the next chunk isn't consumed and
-   * `request_end` can't be emitted either, so the entire human wait falls inside the span
-   * (see context-engine's runTurn). Tool **execution** is not included (`void executeOne`,
-   * doesn't block the loop).
-   */
-  approvalWaitMs?: number;
-  /** LLM generation duration = durationMs − approvalWaitMs (≥ 0): only this can be used as the TPS denominator, not durationMs. */
-  activeMs?: number;
-  /**
-   * The thinking level this request went out at, as its `request_begin` records it. Absent
-   * when no level was sent, and on Traces written before the field — unknown, not a level.
-   */
-  thinkingLevel?: string;
-}
+
 
 /**
  * Per-Task Token / duration figures (aggregated server-side over the **entire** Trace file,
@@ -4108,116 +4072,10 @@ export interface RequestSpan {
  * the frontend's events are paginated (only the first N), so self-aggregation would mismatch
  * a numerator covering only the first N against a denominator covering the whole file.
  */
-export interface TraceTaskStats {
-  taskIndex: number;
-  /**
-   * This turn is a **compaction turn** (compaction forms its own turn); the UI marks it with
-   * a badge accordingly. It's treated the same as a user turn: it has Token /
-   * cost / duration / TPS, and **counts normally toward global stats** — the global totals are
-   * just the sum of the per-turn cards below, the two scopes match, so adding up the per-turn
-   * numbers must equal the total.
-   */
-  compaction?: boolean;
-  /**
-   * Which kind of compaction turn it is, from the turn's `compaction_begin`. Additive beside
-   * the flag rather than folded into it: `compaction` stays the sole gate on "is this a
-   * compaction turn", so a client that only knows the boolean keeps working unchanged, and one
-   * that reads this can name the turn for what it did — the two modes are different operations,
-   * and only `summarize` actually compacts anything (`discard` drops the old context outright).
-   * Absent on a turn analyzed before this field existed, or whose `compaction_begin` carried no
-   * mode; treat an absent value as `summarize`, which is what the badge said before the split.
-   */
-  compactionMode?: CompactionMode;
-  /**
-   * A short label for the round navigator: the first non-empty line of the user text that
-   * started this turn, with harness marker blocks and attachment lines removed, whitespace
-   * collapsed, at most 120 characters (the view truncates it further to fit). Absent when no
-   * user text started the turn — a summarize compaction turn, an image-only send — or none of
-   * its lines is left (only attachment lines).
-   */
-  prompt?: string;
-  /**
-   * This turn's message index range within the **entire file** (inclusive). A single
-   * sequential scan on the server tells which turn each message belongs to; the frontend
-   * attributes messages by this, **no longer guessing by timestamp** — the same millisecond
-   * can pack "previous turn's last reply + compaction start + compaction prompt + next turn's
-   * request_begin", which time boundaries can't separate, misattributing this turn's reply to
-   * the next turn.
-   */
-  messageFrom: number;
-  messageTo: number;
-  /**
-   * This turn's duration span: `startTs` = the moment of this turn's **first `request_begin`**
-   * — duration only looks at LLM requests, not the timestamp of user text like the user
-   * Prompt / compaction summary (`[context_summary]` is created during compaction but only
-   * persisted on the next run; resuming the next day would inflate the first turn by a whole
-   * day for no reason); `endTs` = the moment of the last non-session_meta message in the
-   * range. For a degenerate turn with no Request at all (interrupted right after sending),
-   * `startTs` is an empty string and duration counts as 0.
-   */
-  startTs: string;
-  endTs: string;
-  /**
-   * Context usage at the end of this Task = the three-bucket Token snapshot of the last
-   * **non-compaction** Request (same convention as the Chat page's `contextNow`). Note this
-   * must not be the sum of this Task's Requests — each Request's input carries the full
-   * history again, so summing double-counts the context, and a few rounds of tool calls
-   * would blow past the context window. A pure-compaction Task (no non-compaction Request)
-   * has no value here.
-   */
-  context?: { cacheRead: number; cacheWrite: number; output: number };
-  /**
-   * This turn's **cumulative** usage (the sum of the three buckets over every Request in this
-   * Task), for Token stats and cost conversion. Two different figures from `context`: that one
-   * is a snapshot (how much is occupied right now), this one is a ledger (how much this turn
-   * spent in total). Includes compaction requests — compaction tokens are real money spent and
-   * must be counted; consistent with the Chat page's tokensByBucket.
-   */
-  tokens: { cacheRead: number; cacheWrite: number; output: number };
-  /**
-   * This turn's cost in USD: each Request's three buckets at the Project's current rates for
-   * the file's model, at the tier that Request's own timestamp fell in — the rule and the
-   * price lookup the cost center applies to the usage row the same `token_usage` produced,
-   * so this figure, the toolbar's and the cost center's agree on what a request cost. Present
-   * on every turn of a priced file (a turn with no Request reads 0); absent when the model has
-   * no pricing or the file's head names no provider, and then absent from the response's
-   * total as well.
-   */
-  cost?: number;
-  /**
-   * Total LLM generation duration for this turn (the denominator for output TPS; human
-   * approval wait already deducted). The numerator is simply `tokens.output`: since
-   * compaction forms its own turn, each turn's output tokens are just its own Requests'
-   * output — there's no second figure to reconcile.
-   */
-  llmMs: number;
-  /**
-   * Wall-clock time this turn spent executing tools: the **union** of its tool spans'
-   * execution intervals (`approvalTs ?? callTs` to `outputTs`), so tools running in parallel
-   * are counted once instead of summed. Two exclusions, both deliberate: the human approval
-   * wait (`callTs` to `approvalTs`) is not tool work, and the argument-generation segment is
-   * the model streaming arguments, already counted in `llmMs`. A span with no `outputTs` —
-   * still running when the file ended, or interrupted — contributes nothing rather than being
-   * extrapolated to now.
-   *
-   * This and `llmMs` may **overlap**: a tool started in the background keeps running while the
-   * model decodes. They are two measured components of the turn's duration, not a partition of
-   * it, and they need not add up to the turn's span (approval waits and harness overhead belong
-   * to neither). Never derive one by subtracting the other from the duration.
-   */
-  toolMs: number;
-}
+
 
 /** Duration span of a single tool call (complete tool_call message → paired tool_call_output). */
-export interface ToolCallSpan {
-  toolCallId: string;
-  name: string;
-  startTs: string;
-  endTs?: string;
-  durationMs?: number;
-  /** The paired tool_call_output's `status` (completed / aborted / fatal); absent while the call has no output. */
-  status?: string;
-}
+
 
 /** Workspace file entry (Files tab). */
 export interface WorkspaceFileEntry {
@@ -4326,58 +4184,23 @@ export interface FilesStatResponse {
  * is based on request_begin; user input is treated as sent instantaneously and takes no
  * segment).
  */
-export interface TraceModelSegment {
-  kind: "thinking" | "text" | "tool_call";
-  startTs: string;
-  endTs: string;
-  /** Given when kind=tool_call. */
-  toolCallId?: string;
-  name?: string;
-  /** The Task it belongs to (a single user turn can contain multiple Requests): the frontend groups by this, each Task on its own independent timeline. */
-  taskIndex: number;
-}
+
 
 /**
  * Tool full lifecycle (parallel to model decoding): initiated (callTs) → approved
  * (approvalTs) → output (outputTs). Unclosed fields are unset (approval pending / executing /
  * file truncated).
  */
-export interface TraceToolSpan {
-  toolCallId: string;
-  name: string;
-  callTs: string;
-  approvalTs?: string;
-  decision?: string;
-  outputTs?: string;
-  /** The tool_call_output's `status` (completed / aborted / fatal); absent while unclosed. */
-  status?: string;
-  /** The Task that initiated this tool (grouped with its tool_call segment): async output belongs to this Task even if it arrives after request_end. */
-  taskIndex: number;
-}
+
 
 /**
  * Non-tool auxiliary phase on the timeline: rendered in its own lane under the "other"
  * legend category — deliberately not a tool span, since nothing was called. Currently the
  * first run's MCP connect + discovery (from the mcp_connect_begin/end event pair).
  */
-export interface TraceOtherSpan {
-  /** Unique bar key (e.g. `mcp-connect-<beginTs>`). */
-  key: string;
-  /** Lane label, e.g. "mcp connect". */
-  name: string;
-  startTs: string;
-  endTs: string;
-  /** Attached to the Task that follows the phase (same grouping convention as toolSpans). */
-  taskIndex: number;
-  /** True when the phase ended with failures (some servers unreachable) or was aborted. */
-  failed?: boolean;
-}
 
-export interface UsageTrendPointInTrace {
-  ts: string;
-  requestTotal: number;
-  sessionTotal: number;
-}
+
+
 
 
 
@@ -4391,10 +4214,7 @@ export interface AgentTraceSessionGroup {
   files: AgentTraceFileRef[];
 }
 
-export interface AgentTraceDateGroup {
-  date: string;
-  sessions: AgentTraceSessionGroup[];
-}
+
 
 /** One Trace file in the session-centric listing (`date` carried per file: one Session's shards can span date directories). */
 export interface AgentTraceSessionFile {
@@ -4404,28 +4224,7 @@ export interface AgentTraceSessionFile {
 }
 
 /** One Session's Trace files merged across date directories (the paginated listing's unit). */
-export interface AgentTraceSessionEntry {
-  sessionId: string;
-  /**
-   * Display title, resolved only for the returned page: the sessions DB title when one
-   * exists, else derived from the Session's first user prompt (bounded head-read of the
-   * earliest shard); absent when neither yields one (the client falls back to its
-   * default title — raw session ids are never rendered).
-   */
-  title?: string;
-  /**
-   * Sidebar category of this Session, from the same bounded classification the listing
-   * filters and counts with: archived exactly from the DB row; origin from the shared
-   * in-process registry / previously observed session_meta; a DB-untracked Session this
-   * process has not yet head-read falls into `active` until a page surfaces it (its
-   * head-read then registers the true origin for subsequent requests).
-   */
-  category: SessionCategory;
-  /** Workspace path locked at creation (DB row or observed session_meta); "" when unknown — the client's merged temp-group fallback. */
-  workspace: string;
-  /** Sorted by index ascending (a higher index is newer). */
-  files: AgentTraceSessionFile[];
-}
+
 
 /**
  * Agent-level Trace browsing structure. Without `limit` the response is the legacy full
@@ -4459,11 +4258,7 @@ export interface TraceImportRequest {
  * rate the whole cost was priced at, so the three sum to the cost they accompany (up to
  * floating-point rounding).
  */
-export interface CostParts {
-  cacheRead: number;
-  cacheWrite: number;
-  output: number;
-}
+
 
 
 
