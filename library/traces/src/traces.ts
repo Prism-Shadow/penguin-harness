@@ -1,7 +1,8 @@
 /**
  * The traces mechanisms: what a node may require, declared apart from what implements it.
  */
-import type { ElidedBody } from "@prismshadow/amsp";
+import type { CompactionMode } from "@prismshadow/amsp";
+import type { ElidedBody } from "@prismshadow/penguin-core/interfaces";
 
 import { Interface } from "@prismshadow/penguin-core/kernel";
 
@@ -518,6 +519,17 @@ export interface WindowPriorStats {
   sessionTokens: number;
   /** The last main-session NON-compaction token_usage `request.total` before this point (context occupancy basis). */
   contextTokens: number;
+}
+
+export interface AgentTraceSessionGroup {
+  sessionId: string;
+  files: AgentTraceFileRef[];
+}
+
+export interface AgentTraceSessionFile {
+  index: number;
+  date: string;
+  sizeBytes: number;
 }
 
 @Interface()

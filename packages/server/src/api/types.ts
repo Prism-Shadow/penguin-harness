@@ -4209,19 +4209,12 @@ export interface AgentTraceFileRef {
   sizeBytes: number;
 }
 
-export interface AgentTraceSessionGroup {
-  sessionId: string;
-  files: AgentTraceFileRef[];
-}
+
 
 
 
 /** One Trace file in the session-centric listing (`date` carried per file: one Session's shards can span date directories). */
-export interface AgentTraceSessionFile {
-  index: number;
-  date: string;
-  sizeBytes: number;
-}
+
 
 /** One Session's Trace files merged across date directories (the paginated listing's unit). */
 
