@@ -7,7 +7,8 @@
  * Project file (synchronized across machines in company mode, while exposure is one server's).
  */
 import { Interface } from "@prismshadow/penguin-core/kernel";
-import type { AgentApiSettings, AgentApiUpdateRequest } from "./agent-api-repo.js";
+import type { ThinkingLevelName } from "@prismshadow/penguin-core/interfaces";
+import type { ApprovalMode } from "@prismshadow/penguin-library-sessions";
 
 /** The default for API admission, preserved for Agents configured before this setting existed. */
 export const DEFAULT_API_CONCURRENT_RUNS = 4;
@@ -42,6 +43,41 @@ export type AgentApiPatch = AgentApiUpdateRequest;
 export interface ModelRefDto {
   provider: string;
   modelId: string;
+}
+
+/** From packages/server (api/types.ts): the agent API tab's settings and the patch the
+ * admin PATCH takes. The contract names them, so the types live with the contract. */
+
+export interface AgentApiSettings {
+  /** The API tab's switch; off = every AMSP request for this Agent is 404 `agent_not_found`. */
+  enabled: boolean;
+  /** Keyless access: a request without `Authorization` is accepted; off = 401 `unauthorized`. */
+  open: boolean;
+  /**
+   * The approval mode an API Session is created with. It is copied onto each API Session when
+   * that Session is created, and the Session's own mode is what every decision reads, so a
+   * change here applies to API Sessions created afterwards.
+   */
+  approvalMode: ApprovalMode;
+  /** Null follows the Project's default model. Applied only to new API Sessions. */
+  model: ModelRefDto | null;
+  /** Null follows the Agent/Project thinking configuration. */
+  thinkingLevel: ThinkingLevelName | null;
+  /** Null creates a temporary Workspace for each new API Session. */
+  workspace: string | null;
+  /** Positive integer. Checked for each API run; defaults to four concurrent Agent sessions. */
+  maxConcurrentRuns: number;
+  keys: AgentApiKeyInfo[];
+}
+
+export interface AgentApiUpdateRequest {
+  enabled?: boolean;
+  open?: boolean;
+  approvalMode?: ApprovalMode;
+  model?: ModelRefDto | null;
+  thinkingLevel?: ThinkingLevelName | null;
+  workspace?: string | null;
+  maxConcurrentRuns?: number;
 }
 
 @Interface()
