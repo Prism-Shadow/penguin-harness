@@ -13,7 +13,7 @@ import type {
   TraceImportResponse,
   TracePosition,
 } from "../api/types.js";
-import type { TraceFileRow, TraceSessionRow } from "../db/repos/trace-index.js";
+import type { TraceFileRow, TraceSessionRow } from "@penguinharness/plugin-db/repos";
 import type {
   AbortPayload,
   ApprovalDecisionPayload,

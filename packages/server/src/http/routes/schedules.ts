@@ -43,7 +43,7 @@ import {
   parseScheduleFile,
   slotInWindow,
 } from "../../runtime/schedule-file.js";
-import type { ScheduleStateRow } from "../../db/repos/schedules.js";
+import type { ScheduleStateRow } from "@penguinharness/plugin-db/repos";
 import {
   deleteScheduleFile,
   readScheduleFile,

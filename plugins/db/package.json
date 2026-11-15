@@ -1,0 +1,62 @@
+{
+  "name": "@penguinharness/plugin-db",
+  "version": "0.2.18",
+  "description": "The server's SQLite database: one connection, the schema, the named migrations and the table repos. A server-module plugin, not library content — the platform depends on it at build time.",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Prism-Shadow",
+    "url": "https://github.com/Prism-Shadow"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "plugins/db"
+  },
+  "files": [
+    "dist",
+    "ifaces.json",
+    "LICENSE"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./repos": {
+      "types": "./dist/repos/index.d.ts",
+      "import": "./dist/repos/index.js"
+    },
+    "./migrations": {
+      "types": "./dist/migrations/index.d.ts",
+      "import": "./dist/migrations/index.js"
+    },
+    "./schema": {
+      "types": "./dist/schema.d.ts",
+      "import": "./dist/schema.js"
+    },
+    "./attachment-limits": {
+      "types": "./dist/attachment-limits.d.ts",
+      "import": "./dist/attachment-limits.js"
+    },
+    "./testing": {
+      "types": "./test/db-migrations-fixtures.d.ts",
+      "import": "./test/db-migrations-fixtures.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json && tsup"
+  },
+  "dependencies": {
+    "@prismshadow/penguin-server": "workspace:*"
+  },
+  "devDependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
+    "tsup": "^8.3.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.12"
+  }
+}

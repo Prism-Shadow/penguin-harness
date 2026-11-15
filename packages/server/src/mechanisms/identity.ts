@@ -2,8 +2,8 @@
  * The identity mechanisms: what a node may require, declared apart from what implements it.
  */
 import { Interface } from "@prismshadow/penguin-core/kernel";
-import type { UserRow } from "../db/repos/users.js";
-import type { AuthSessionRow, SessionViaValue } from "../db/repos/auth-sessions.js";
+import type { UserRow } from "@penguinharness/plugin-db/repos";
+import type { AuthSessionRow, SessionViaValue } from "@penguinharness/plugin-db/repos";
 import type { UserInfo } from "../api/types.js";
 import type { SessionVia } from "../auth/service.js";
 

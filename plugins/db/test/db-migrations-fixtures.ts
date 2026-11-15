@@ -4,8 +4,8 @@
  * (each migration's own change).
  */
 import type { DatabaseSync } from "node:sqlite";
-import { MIGRATIONS } from "../src/db/migrations/index.js";
-import { SCHEMA_SQL } from "../src/db/schema.js";
+import { MIGRATIONS } from "../src/migrations/index.js";
+import { SCHEMA_SQL } from "../src/schema.js";
 
 export const sqlite = process.getBuiltinModule("node:sqlite");
 

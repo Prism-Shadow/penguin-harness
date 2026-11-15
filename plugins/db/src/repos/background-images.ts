@@ -3,8 +3,8 @@
  * ui_prefs so the megabyte it may hold is read only when the image itself is asked for.
  */
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Db } from "../../hmr/capabilities.js";
-import type { BackgroundImageStore, StoredBackgroundImage } from "../../mechanisms/account-data.js";
+import type { Db } from "@prismshadow/penguin-server/hmr/capabilities";
+import type { BackgroundImageStore, StoredBackgroundImage } from "@prismshadow/penguin-server/mechanisms/account-data";
 
 @Component()
 export class BackgroundImagesRepo implements BackgroundImageStore {

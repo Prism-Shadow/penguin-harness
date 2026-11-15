@@ -54,8 +54,8 @@ import type {
   TraceToolSpan,
   UsageTrendPointInTrace,
 } from "../api/types.js";
-import type { SessionRow } from "../db/repos/sessions.js";
-import type { TraceFileRow, TraceSessionRow } from "../db/repos/trace-index.js";
+import type { SessionRow } from "@penguinharness/plugin-db/repos";
+import type { TraceFileRow, TraceSessionRow } from "@penguinharness/plugin-db/repos";
 import { HttpError } from "../http/errors.js";
 import { formatLocalDate } from "../internal/dates.js";
 import {

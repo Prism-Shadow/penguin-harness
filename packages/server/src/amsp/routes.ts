@@ -33,7 +33,7 @@ import { readJson, requireEnum } from "../http/validate.js";
 import { DEFAULT_API_CONCURRENT_RUNS } from "../mechanisms/agent-api.js";
 import type { AgentConfig } from "../mechanisms/agents.js";
 import type { Settings } from "../mechanisms/settings.js";
-import { toAttachmentLimits } from "../services/attachment-limits.js";
+import { toAttachmentLimits } from "@penguinharness/plugin-db/attachment-limits";
 import { sessionMessages, sessionTraceImage } from "../services/session-history.js";
 import type { SessionHistoryDeps } from "../services/session-history.js";
 import { reserveStart } from "./admission.js";

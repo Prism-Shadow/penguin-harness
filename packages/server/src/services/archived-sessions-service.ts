@@ -39,7 +39,7 @@ import type {
   SessionSource,
   SessionStatus,
 } from "../api/types.js";
-import type { SessionRow } from "../db/repos/sessions.js";
+import type { SessionRow } from "@penguinharness/plugin-db/repos";
 import { HttpError, badRequest } from "../http/errors.js";
 import type { ListingView } from "../runtime/session-sources.js";
 import type { SessionIndex } from "../mechanisms/sessions.js";

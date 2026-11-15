@@ -42,7 +42,7 @@ import type {
   QQBindingResponse,
   QQTestResponse,
 } from "../src/api/types.js";
-import { ProjectsRepo } from "../src/db/repos/projects.js";
+import { ProjectsRepo } from "@penguinharness/plugin-db/repos";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import {
   MESSAGING_APPROVAL_NOTICE,

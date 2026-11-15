@@ -12,7 +12,7 @@
 import { createHash } from "node:crypto";
 import { comparePluginVersions } from "@prismshadow/penguin-core";
 import type { OrgCalendarOutcome, OrgChannelMessage, OrgTicketChange } from "../../api/types.js";
-import type { SessionRow } from "../../db/repos/sessions.js";
+import type { SessionRow } from "@penguinharness/plugin-db/repos";
 import type { ChannelConfig, TicketDoc } from "../../organization/files.js";
 import { parseChannelMessageLine, serializeChannelMessageLine } from "../../organization/files.js";
 import { agentPrincipal, parsePrincipal, principalAgentId } from "../../organization/principal.js";

@@ -6,7 +6,7 @@
  * they stand now go in, one Markdown section comes out.
  */
 import type { OrgTicketChange } from "../../api/types.js";
-import type { OrgDeskNoticeRow } from "../../db/repos/organizations.js";
+import type { OrgDeskNoticeRow } from "@penguinharness/plugin-db/repos";
 import type { TicketDoc } from "../../organization/files.js";
 
 /** A ticket as the digest reads it: the listing the reconcile pass already holds. */

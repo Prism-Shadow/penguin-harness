@@ -27,11 +27,11 @@ import {
   saveProjectConfig,
   scheduleDir,
 } from "@prismshadow/penguin-core";
-import { openDatabase } from "../src/db/database.js";
-import { ProjectsRepo } from "../src/db/repos/projects.js";
-import { SchedulesRepo } from "../src/db/repos/schedules.js";
-import { SessionsRepo } from "../src/db/repos/sessions.js";
-import { UsersRepo } from "../src/db/repos/users.js";
+import { openDatabase } from "@penguinharness/plugin-db";
+import { ProjectsRepo } from "@penguinharness/plugin-db/repos";
+import { SchedulesRepo } from "@penguinharness/plugin-db/repos";
+import { SessionsRepo } from "@penguinharness/plugin-db/repos";
+import { UsersRepo } from "@penguinharness/plugin-db/repos";
 import type { ErrorRecordArgs } from "../src/runtime/error-recorder.js";
 import type { ScheduleSessionCreator, ScheduleTaskRunner } from "../src/runtime/scheduler.js";
 import type { AmspRecord } from "@prismshadow/penguin-core";

@@ -18,57 +18,109 @@
       "types": "./dist/api/types.d.ts",
       "import": "./dist/api/types.js"
     },
-    "./model-catalog": {
-      "types": "./dist/model-catalog.d.ts",
-      "import": "./dist/model-catalog.js"
-    },
-    "./machine-status": {
-      "types": "./dist/machine-status.d.ts",
-      "import": "./dist/machine-status.js"
-    },
-    "./lock": {
-      "types": "./dist/lock.d.ts",
-      "import": "./dist/lock.js"
-    },
-    "./initial-password": {
-      "types": "./dist/initial-password.d.ts",
-      "import": "./dist/initial-password.js"
-    },
-    "./reset-admin-password": {
-      "types": "./dist/reset-admin-password.d.ts",
-      "import": "./dist/reset-admin-password.js"
-    },
-    "./hmr/manifest": {
-      "types": "./dist/hmr/manifest.d.ts",
-      "import": "./dist/hmr/manifest.js"
-    },
-    "./harness-meta": {
-      "types": "./dist/harness-meta.d.ts",
-      "import": "./dist/harness-meta.js"
-    },
-    "./cli-shim": {
-      "types": "./dist/cli-shim.d.ts",
-      "import": "./dist/cli-shim.js"
-    },
-    "./version-report": {
-      "types": "./dist/version-report.d.ts",
-      "import": "./dist/version-report.js"
+    "./attachment-limits": {
+      "types": "./dist/attachment-limits.d.ts",
+      "import": "./dist/attachment-limits.js"
     },
     "./auth-token": {
       "types": "./dist/auth-token.d.ts",
       "import": "./dist/auth-token.js"
     },
-    "./secret-file": {
-      "types": "./dist/secret-file.d.ts",
-      "import": "./dist/secret-file.js"
+    "./cli": {
+      "types": "./dist/cli/index.d.ts",
+      "import": "./dist/cli/index.js"
+    },
+    "./cli-shim": {
+      "types": "./dist/cli-shim.d.ts",
+      "import": "./dist/cli-shim.js"
+    },
+    "./harness-meta": {
+      "types": "./dist/harness-meta.d.ts",
+      "import": "./dist/harness-meta.js"
+    },
+    "./hmr/capabilities": {
+      "types": "./dist/hmr/capabilities.d.ts",
+      "import": "./dist/hmr/capabilities.js"
+    },
+    "./hmr/manifest": {
+      "types": "./dist/hmr/manifest.d.ts",
+      "import": "./dist/hmr/manifest.js"
+    },
+    "./initial-password": {
+      "types": "./dist/initial-password.d.ts",
+      "import": "./dist/initial-password.js"
+    },
+    "./lock": {
+      "types": "./dist/lock.d.ts",
+      "import": "./dist/lock.js"
+    },
+    "./machine-status": {
+      "types": "./dist/machine-status.d.ts",
+      "import": "./dist/machine-status.js"
+    },
+    "./mechanisms/account-data": {
+      "types": "./dist/mechanisms/account-data.d.ts",
+      "import": "./dist/mechanisms/account-data.js"
+    },
+    "./mechanisms/agent-api": {
+      "types": "./dist/mechanisms/agent-api.d.ts",
+      "import": "./dist/mechanisms/agent-api.js"
+    },
+    "./mechanisms/identity": {
+      "types": "./dist/mechanisms/identity.d.ts",
+      "import": "./dist/mechanisms/identity.js"
+    },
+    "./mechanisms/messaging": {
+      "types": "./dist/mechanisms/messaging.d.ts",
+      "import": "./dist/mechanisms/messaging.js"
+    },
+    "./mechanisms/observability": {
+      "types": "./dist/mechanisms/observability.d.ts",
+      "import": "./dist/mechanisms/observability.js"
+    },
+    "./mechanisms/organization": {
+      "types": "./dist/mechanisms/organization.d.ts",
+      "import": "./dist/mechanisms/organization.js"
+    },
+    "./mechanisms/projects": {
+      "types": "./dist/mechanisms/projects.d.ts",
+      "import": "./dist/mechanisms/projects.js"
+    },
+    "./mechanisms/sessions": {
+      "types": "./dist/mechanisms/sessions.d.ts",
+      "import": "./dist/mechanisms/sessions.js"
+    },
+    "./mechanisms/settings": {
+      "types": "./dist/mechanisms/settings.d.ts",
+      "import": "./dist/mechanisms/settings.js"
+    },
+    "./mechanisms/traces": {
+      "types": "./dist/mechanisms/traces.d.ts",
+      "import": "./dist/mechanisms/traces.js"
+    },
+    "./model-catalog": {
+      "types": "./dist/model-catalog.d.ts",
+      "import": "./dist/model-catalog.js"
     },
     "./plugin": {
       "types": "./dist/plugin/index.d.ts",
       "import": "./dist/plugin/index.js"
     },
-    "./cli": {
-      "types": "./dist/cli/index.d.ts",
-      "import": "./dist/cli/index.js"
+    "./reset-admin-password": {
+      "types": "./dist/reset-admin-password.d.ts",
+      "import": "./dist/reset-admin-password.js"
+    },
+    "./runtime/session-sources": {
+      "types": "./dist/runtime/session-sources.d.ts",
+      "import": "./dist/runtime/session-sources.js"
+    },
+    "./secret-file": {
+      "types": "./dist/secret-file.d.ts",
+      "import": "./dist/secret-file.js"
+    },
+    "./version-report": {
+      "types": "./dist/version-report.d.ts",
+      "import": "./dist/version-report.js"
     }
   },
   "main": "./dist/index.js",
@@ -104,22 +156,23 @@
     "@penguinharness/openskill-rsi-toolkit": "workspace:*",
     "@penguinharness/opro-rsi-toolkit": "workspace:*",
     "@penguinharness/penguin-support": "workspace:*",
+    "@penguinharness/plugin-db": "workspace:*",
     "@penguinharness/skill-porting": "workspace:*",
     "@penguinharness/skilladam-rsi-toolkit": "workspace:*",
     "@penguinharness/skillopt-rsi-toolkit": "workspace:*",
     "@penguinharness/software-development": "workspace:*",
     "@penguinharness/trace-rsi-toolkit": "workspace:*",
     "@penguinharness/use-bento-slides": "workspace:*",
-    "@penguinharness/use-firecrawl": "workspace:*",
     "@penguinharness/use-claude-code": "workspace:*",
+    "@penguinharness/use-firecrawl": "workspace:*",
     "@prismshadow/a2ui": "workspace:*",
     "@prismshadow/amsp": "workspace:*",
     "@prismshadow/chat-markdown": "workspace:*",
     "@prismshadow/mmsp": "^0.5.6",
     "@prismshadow/penguin-core": "workspace:*",
     "@xterm/headless": "^5.5.0",
-    "css-tree": "^3.2.1",
     "commander": "^13.0.0",
+    "css-tree": "^3.2.1",
     "dotenv": "^17.0.0",
     "fflate": "^0.8.3",
     "hono": "^4.13.11",

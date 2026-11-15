@@ -17,7 +17,7 @@ import { originRule } from "./public-origin.js";
 import { attributedProjectId } from "./attribution.js";
 import { jsonCompression } from "./json-compression.js";
 import { jsonValidators } from "./json-validators.js";
-import { bodyLimitBytes } from "../services/attachment-limits.js";
+import { bodyLimitBytes } from "@penguinharness/plugin-db/attachment-limits";
 import { isAgentImport, MAX_PACKAGE_BYTES } from "../services/agent-zip.js";
 import { declined } from "../hmr/hono-seam.js";
 import type { Auth, Users } from "../mechanisms/identity.js";

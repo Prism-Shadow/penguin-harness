@@ -7,10 +7,10 @@ import {
   clampAttachmentMb,
   DEFAULT_ATTACHMENT_MAX_MB,
   DEFAULT_ATTACHMENT_TOTAL_MB,
-} from "../../services/attachment-limits.js";
+} from "../attachment-limits.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Db } from "../../hmr/capabilities.js";
-import type { Settings } from "../../mechanisms/settings.js";
+import type { Db } from "@prismshadow/penguin-server/hmr/capabilities";
+import type { Settings } from "@prismshadow/penguin-server/mechanisms/settings";
 
 /** Key of the "application uses the proxy" switch (the server's own outbound dispatcher); default on. */
 const PROXY_FOR_APP_KEY = "proxy_for_app";

@@ -30,7 +30,7 @@ import type {
   UsageResponse,
   UsageSeriesPoint,
 } from "../api/types.js";
-import type { ErrorFilter } from "../db/repos/errors.js";
+import type { ErrorFilter } from "@penguinharness/plugin-db/repos";
 import { catalogEntryFor, offPeakAt, offPeakScheduledRefs } from "../model-catalog/catalog.js";
 import type {
   UsageModelSums,
@@ -39,7 +39,7 @@ import type {
   UsageAgentBucketCount,
   UsageFilter,
   PeakTier,
-} from "../db/repos/usage.js";
+} from "@penguinharness/plugin-db/repos";
 import {
   enumerateBuckets,
   enumerateTsBuckets,

@@ -3,8 +3,8 @@
  * draft may grow is services/user-drafts.ts; this only stores, bounds and forgets rows.
  */
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Db } from "../../hmr/capabilities.js";
-import type { DraftWrite, StoredDraft, UserDraftsStore } from "../../mechanisms/account-data.js";
+import type { Db } from "@prismshadow/penguin-server/hmr/capabilities";
+import type { DraftWrite, StoredDraft, UserDraftsStore } from "@prismshadow/penguin-server/mechanisms/account-data";
 
 @Component()
 export class UserDraftsRepo implements UserDraftsStore {

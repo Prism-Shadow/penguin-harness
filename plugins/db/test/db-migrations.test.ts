@@ -18,8 +18,8 @@ import {
   appliedMigrations,
   migrate,
   rollbackTo,
-} from "../src/db/migrations/index.js";
-import * as runner from "../src/db/migrations/runner.js";
+} from "../src/migrations/index.js";
+import * as runner from "../src/migrations/index.js";
 import {
   columns,
   contents,

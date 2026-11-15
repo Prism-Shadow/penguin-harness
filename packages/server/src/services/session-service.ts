@@ -41,7 +41,7 @@ import type {
 } from "../api/types.js";
 import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
-import type { SessionRow } from "../db/repos/sessions.js";
+import type { SessionRow } from "@penguinharness/plugin-db/repos";
 import type { SessionManager } from "../runtime/session-manager.js";
 import {
   listCategory,

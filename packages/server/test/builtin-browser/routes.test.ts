@@ -27,7 +27,7 @@ import type {
   BuiltinBrowserTab,
 } from "../../src/api/types.js";
 import type { AppEnv } from "../../src/auth/middleware.js";
-import type { UserRow } from "../../src/db/repos/users.js";
+import type { UserRow } from "@penguinharness/plugin-db/repos";
 import { handleError } from "../../src/http/errors.js";
 import { ImportSourceNotFoundError } from "../../src/builtin-browser/import/index.js";
 import { builtinBrowserRoutes } from "../../src/builtin-browser/routes.js";

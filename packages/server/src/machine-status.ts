@@ -15,8 +15,8 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { openDatabaseReadOnly } from "./db/database.js";
-import { MachinesRepo } from "./db/repos/machines.js";
+import { openDatabaseReadOnly } from "@penguinharness/plugin-db";
+import { MachinesRepo } from "@penguinharness/plugin-db/repos";
 import { liveServerLock } from "./lock.js";
 
 /** What `penguin server status` prints, as one line of JSON. */

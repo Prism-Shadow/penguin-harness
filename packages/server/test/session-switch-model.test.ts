@@ -46,7 +46,7 @@ import type {
   SessionResponse,
   TaskCreateResponse,
 } from "../src/api/types.js";
-import type { SessionRow } from "../src/db/repos/sessions.js";
+import type { SessionRow } from "@penguinharness/plugin-db/repos";
 import { ORG_CONFIG_DEFAULTS } from "../src/organization/files.js";
 import { OrgStore } from "../src/organization/store.js";
 import type { RuntimeSession, SessionLoader } from "../src/runtime/session-manager.js";

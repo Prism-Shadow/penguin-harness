@@ -39,11 +39,11 @@ import {
 } from "@prismshadow/penguin-core";
 import type { SessionMetaPayload, TokenCounts } from "@prismshadow/penguin-core";
 import { ORIGIN_MODELS_MAX, UsageRecorder } from "../src/runtime/usage-recorder.js";
-import { ErrorsRepo } from "../src/db/repos/errors.js";
-import { UsageRepo } from "../src/db/repos/usage.js";
+import { ErrorsRepo } from "@penguinharness/plugin-db/repos";
+import { UsageRepo } from "@penguinharness/plugin-db/repos";
 import { UsageService } from "../src/services/usage-service.js";
 import type { PricingRates } from "../src/services/usage-service.js";
-import { openDatabase } from "../src/db/database.js";
+import { openDatabase } from "@penguinharness/plugin-db";
 import { enumerateBuckets, enumerateTsBuckets, formatLocalDate } from "../src/internal/dates.js";
 import { switchTimeZone } from "./helpers/time-zone.js";
 import type { DatabaseSync } from "node:sqlite";

@@ -36,7 +36,7 @@ import type { SessionIndex } from "../mechanisms/sessions.js";
 import type { Settings } from "../mechanisms/settings.js";
 import type { ChannelEvent } from "../runtime/channel.js";
 import type { SessionManager } from "../runtime/session-manager.js";
-import { toAttachmentLimits } from "../services/attachment-limits.js";
+import { toAttachmentLimits } from "@penguinharness/plugin-db/attachment-limits";
 import type { SessionService } from "../services/session-service.js";
 import { assertWorkspaceAllowed } from "../services/workspace-guard.js";
 import { reserveStart } from "./admission.js";

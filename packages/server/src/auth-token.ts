@@ -7,10 +7,10 @@
 import path from "node:path";
 import fs from "node:fs";
 import type { DatabaseSync } from "node:sqlite";
-import { openExistingDatabase } from "./db/database.js";
-import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
-import type { SessionViaValue } from "./db/repos/auth-sessions.js";
-import { UsersRepo } from "./db/repos/users.js";
+import { openExistingDatabase } from "@penguinharness/plugin-db";
+import { AuthSessionsRepo } from "@penguinharness/plugin-db/repos";
+import type { SessionViaValue } from "@penguinharness/plugin-db/repos";
+import { UsersRepo } from "@penguinharness/plugin-db/repos";
 import { liveServerLock } from "./lock.js";
 import { wire } from "@prismshadow/penguin-core/kernel";
 

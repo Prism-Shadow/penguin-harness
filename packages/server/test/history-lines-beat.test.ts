@@ -11,7 +11,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 import type { AppEnv } from "../src/auth/middleware.js";
-import type { SessionRow } from "../src/db/repos/sessions.js";
+import type { SessionRow } from "@penguinharness/plugin-db/repos";
 import { historyLinesRoutes } from "../src/http/routes/history-lines.js";
 import type { HistoryLinesRouteDeps } from "../src/http/routes/history-lines.js";
 import { HISTORY_LINES_BEAT_MS } from "../src/services/history-lines.js";

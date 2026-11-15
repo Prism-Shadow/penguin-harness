@@ -8,7 +8,7 @@
  */
 import type { ProjectRole, ProjectSummary } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
-import type { ProjectRow } from "../db/repos/projects.js";
+import type { ProjectRow } from "@penguinharness/plugin-db/repos";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Access, Members, ProjectConfigStore, Projects } from "../mechanisms/projects.js";
 

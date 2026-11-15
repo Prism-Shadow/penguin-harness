@@ -38,7 +38,7 @@ export interface AdminSettingsRouteDeps {
   serverSettingsRepo: Settings;
 }
 import { applyProxySettings, normalizeProxyUrl } from "../../net/proxy.js";
-import { MAX_ATTACHMENT_MB, MIN_ATTACHMENT_MB } from "../../services/attachment-limits.js";
+import { MAX_ATTACHMENT_MB, MIN_ATTACHMENT_MB } from "@penguinharness/plugin-db/attachment-limits";
 import {
   PROXY_PROBE_TARGETS,
   probeProxyReachabilityOf,

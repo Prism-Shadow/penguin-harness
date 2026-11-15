@@ -64,7 +64,7 @@ import {
   MAX_ATTACHMENT_COUNT,
   MAX_ATTACHMENT_MB,
   MIN_ATTACHMENT_MB,
-} from "../../services/attachment-limits.js";
+} from "@penguinharness/plugin-db/attachment-limits";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { Config, Desktop } from "../../hmr/capabilities.js";

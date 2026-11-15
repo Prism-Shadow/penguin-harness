@@ -53,11 +53,11 @@ import type {
 // must keep reading them, so these fixtures write them through a cast.
 const legacyEnd = (status: string) => requestEnd(status as StopReason);
 import type { TraceService } from "../src/services/trace-service.js";
-import type { SessionRow } from "../src/db/repos/sessions.js";
-import { openDatabase } from "../src/db/database.js";
+import type { SessionRow } from "@penguinharness/plugin-db/repos";
+import { openDatabase } from "@penguinharness/plugin-db";
 import { wire } from "@prismshadow/penguin-core/kernel";
-import { ErrorsRepo } from "../src/db/repos/errors.js";
-import { UsageRepo } from "../src/db/repos/usage.js";
+import { ErrorsRepo } from "@penguinharness/plugin-db/repos";
+import { UsageRepo } from "@penguinharness/plugin-db/repos";
 import { SessionSources } from "../src/runtime/session-sources.js";
 import { UsageService } from "../src/services/usage-service.js";
 import type { PricingLookup } from "../src/services/usage-service.js";

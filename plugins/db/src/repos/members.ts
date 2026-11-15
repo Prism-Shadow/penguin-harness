@@ -3,8 +3,8 @@
  * authorization relationships — the owner is never in this table.
  */
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Db } from "../../hmr/capabilities.js";
-import type { Members } from "../../mechanisms/projects.js";
+import type { Db } from "@prismshadow/penguin-server/hmr/capabilities";
+import type { Members } from "@prismshadow/penguin-server/mechanisms/projects";
 
 export interface MemberRow {
   projectId: string;

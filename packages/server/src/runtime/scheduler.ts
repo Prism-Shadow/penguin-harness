@@ -28,7 +28,7 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import { agentsDir, buildScheduledMessage, userText } from "@prismshadow/penguin-core";
-import type { ScheduleStateRow } from "../db/repos/schedules.js";
+import type { ScheduleStateRow } from "@penguinharness/plugin-db/repos";
 import { cacheable, statMtime } from "../internal/mtime-gate.js";
 import type { ErrorSink } from "./error-recorder.js";
 import type { ScheduleDefinition } from "./schedule-file.js";

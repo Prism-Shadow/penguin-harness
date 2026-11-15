@@ -13,13 +13,13 @@ import { Hono } from "hono";
 import { wire } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx, Contributed } from "@prismshadow/penguin-core/kernel";
 import type { AppEnv } from "../src/auth/middleware.js";
-import type { UserRow } from "../src/db/repos/users.js";
+import type { UserRow } from "@penguinharness/plugin-db/repos";
 import { HttpModule } from "../src/http/app.js";
 import { WebModule } from "../src/http/routes/contributions.js";
 import {
   DEFAULT_ATTACHMENT_MAX_MB,
   DEFAULT_ATTACHMENT_TOTAL_MB,
-} from "../src/services/attachment-limits.js";
+} from "@penguinharness/plugin-db/attachment-limits";
 
 const TOKEN = "good-token";
 const USER = { userId: "u1", isAdmin: false };

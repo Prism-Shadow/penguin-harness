@@ -9,7 +9,7 @@ import type {
   ErrorItem,
   ErrorRecordInsert,
   ErrorSummary,
-} from "../db/repos/errors.js";
+} from "@penguinharness/plugin-db/repos";
 import type { ErrorRecordArgs } from "../runtime/error-recorder.js";
 import type {
   UsageAgentBucketCount,
@@ -20,7 +20,7 @@ import type {
   UsageSeriesGranularity,
   UsageSeriesModelSums,
   PeakTier,
-} from "../db/repos/usage.js";
+} from "@penguinharness/plugin-db/repos";
 import type {
   UsageErrorsPage,
   UsageGroupBy,

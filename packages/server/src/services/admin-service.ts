@@ -17,7 +17,7 @@ import type { UserInfo } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 import { ADMIN_USER_ID, MIN_PASSWORD_LENGTH, toUserInfo } from "../auth/service.js";
 import type { PasswordHasher } from "../auth/password.js";
-import type { UserRow } from "../db/repos/users.js";
+import type { UserRow } from "@penguinharness/plugin-db/repos";
 import { SEMANTIC_ID_RULE, USERNAME_PATTERN } from "./ids.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Clock } from "../hmr/capabilities.js";

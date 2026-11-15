@@ -13,7 +13,7 @@
  * means "unknown": the list path resolves it from the Trace once per process lifetime.
  */
 import type { SessionCategory, SessionSource } from "../api/types.js";
-import type { SessionRow } from "../db/repos/sessions.js";
+import type { SessionRow } from "@penguinharness/plugin-db/repos";
 import { Component } from "@prismshadow/penguin-core/kernel";
 import type { SessionOrigins } from "../mechanisms/sessions.js";
 

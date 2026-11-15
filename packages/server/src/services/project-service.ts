@@ -20,8 +20,8 @@ import {
 } from "@prismshadow/penguin-core";
 import type { MemberInfo, ProjectRole, ProjectSummary } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
-import type { ProjectRow } from "../db/repos/projects.js";
-import type { UserRow } from "../db/repos/users.js";
+import type { ProjectRow } from "@penguinharness/plugin-db/repos";
+import type { UserRow } from "@penguinharness/plugin-db/repos";
 import type { SessionManager } from "../runtime/session-manager.js";
 import {
   PROJECT_ID_MAX_LENGTH,

@@ -72,8 +72,8 @@ import type {
   WeChatTestResponse,
 } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { MessagingBindingRow } from "../../db/repos/messaging-bindings.js";
-import type { SessionRow } from "../../db/repos/sessions.js";
+import type { MessagingBindingRow } from "@penguinharness/plugin-db/repos";
+import type { SessionRow } from "@penguinharness/plugin-db/repos";
 import { FEISHU_DEFAULT_DOMAIN, feishuConfigOf } from "../../runtime/messaging/feishu-connector.js";
 import { telegramBotIdOf } from "../../runtime/messaging/telegram-connector.js";
 import { maskApiKey } from "../../services/project-config-service.js";

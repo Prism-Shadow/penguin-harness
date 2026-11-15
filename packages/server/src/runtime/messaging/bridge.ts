@@ -76,9 +76,9 @@ import { imageUrlMessage, scratchpadDir, userText } from "@prismshadow/penguin-c
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import { toFallbackMarkdown } from "@prismshadow/a2ui";
 import type { MessagingDeliveryError, MessagingRuntimeStatus } from "../../api/types.js";
-import type { MessagingBindingRow } from "../../db/repos/messaging-bindings.js";
-import { INLINE_IMAGE_MAX_BYTES, toAttachmentLimits } from "../../services/attachment-limits.js";
-import type { AttachmentLimits } from "../../services/attachment-limits.js";
+import type { MessagingBindingRow } from "@penguinharness/plugin-db/repos";
+import { INLINE_IMAGE_MAX_BYTES, toAttachmentLimits } from "@penguinharness/plugin-db/attachment-limits";
+import type { AttachmentLimits } from "@penguinharness/plugin-db/attachment-limits";
 import { attachFilesToInput, removeAttachments } from "../../services/task-attachments.js";
 import type { AttachedFiles, TaskAttachment } from "../../services/task-attachments.js";
 import type { ChannelEvent, ChannelHub } from "../channel.js";
@@ -611,7 +611,7 @@ function filesSkippedError(
  *
  * Per image, the ceiling is the server's inline-image limit. In aggregate there was
  * nothing: every accepted image is written into the conversation as a base64 data URL, and
- * services/attachment-limits.ts says what that costs — the Trace JSONL is read back whole,
+ * the db plugin's attachment-limits says what that costs — the Trace JSONL is read back whole,
  * into a single JS string, on every history page and every Session resume, so a large
  * enough pile of inline images is not a slow Session but one that never recovers. The web
  * composer reaches the same ceiling only through an authenticated user; anyone who can DM

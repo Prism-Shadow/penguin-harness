@@ -90,7 +90,7 @@ import type {
   SessionCreateResponse,
   UsageResponse,
 } from "../src/api/types.js";
-import { UsageRepo } from "../src/db/repos/usage.js";
+import { UsageRepo } from "@penguinharness/plugin-db/repos";
 import { ProjectConfigService } from "../src/services/project-config-service.js";
 import type { ChannelEvent } from "../src/runtime/channel.js";
 import { jsonResponse, stubFetch } from "./fixtures/fetch.js";

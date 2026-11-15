@@ -23,7 +23,7 @@ import type { AmspRecord } from "@prismshadow/penguin-core";
 import { bodyAt, decodeBodyRef } from "@prismshadow/penguin-core/interfaces";
 import type { HistoryProgress, HistoryRecords } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { SessionRow } from "../../db/repos/sessions.js";
+import type { SessionRow } from "@penguinharness/plugin-db/repos";
 import { Channels, Log } from "../../hmr/capabilities.js";
 import type { Access } from "../../mechanisms/projects.js";
 import type { SessionIndex } from "../../mechanisms/sessions.js";

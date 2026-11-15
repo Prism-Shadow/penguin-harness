@@ -24,10 +24,10 @@ import {
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import { HttpError } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
-import type { AttachmentLimits } from "./attachment-limits.js";
+import type { AttachmentLimits } from "@penguinharness/plugin-db/attachment-limits";
 
 /**
- * The size limits are no longer constants here: they are admin-settable (see attachment-limits.ts
+ * The size limits are no longer constants here: they are admin-settable (see the db plugin's attachment-limits
  * for the numbers and the reasoning) and are resolved per request, so a change applies to the very
  * next upload without a restart. The caps are still enforced in THIS module rather than delegated
  * to the global body cap — that cap is derived from these limits, and a validator that depends on

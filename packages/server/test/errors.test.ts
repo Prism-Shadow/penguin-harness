@@ -58,9 +58,9 @@ import {
 } from "@prismshadow/penguin-core";
 import type { AmspRecord, StopReason } from "@prismshadow/penguin-core";
 import type { ProjectCreateResponse, UsageErrorsPage, UsageResponse } from "../src/api/types.js";
-import { openDatabase } from "../src/db/database.js";
-import { ErrorsRepo } from "../src/db/repos/errors.js";
-import type { ErrorRecordInsert } from "../src/db/repos/errors.js";
+import { openDatabase } from "@penguinharness/plugin-db";
+import { ErrorsRepo } from "@penguinharness/plugin-db/repos";
+import type { ErrorRecordInsert } from "@penguinharness/plugin-db/repos";
 import { HttpError } from "../src/http/errors.js";
 import {
   DEDUP_KEYS_MAX,

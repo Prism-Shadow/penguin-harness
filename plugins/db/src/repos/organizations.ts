@@ -9,9 +9,9 @@
  * else — the changes themselves live in the ticket files and the all-hands channel.
  */
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Db } from "../../hmr/capabilities.js";
-import type { OrgCache } from "../../mechanisms/organization.js";
-import type { OrgCalendarOutcome, OrgTicketChange } from "../../api/types.js";
+import type { Db } from "@prismshadow/penguin-server/hmr/capabilities";
+import type { OrgCache } from "@prismshadow/penguin-server/mechanisms/organization";
+import type { OrgCalendarOutcome, OrgTicketChange } from "@prismshadow/penguin-server/api";
 
 export interface OrgSessionRow {
   sessionId: string;

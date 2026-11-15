@@ -38,7 +38,7 @@ import type {
   BuiltinBrowserTab,
   BuiltinBrowserTabsResponse,
 } from "../api/types.js";
-import type { BrowserExtensionStore } from "../db/repos/browser-extensions.js";
+import type { BrowserExtensionStore } from "@penguinharness/plugin-db/repos";
 import { HttpError } from "../http/errors.js";
 import { BrowserBackendRuntime } from "./backend-runtime.js";
 import type { BrowserTiming } from "./backend-runtime.js";

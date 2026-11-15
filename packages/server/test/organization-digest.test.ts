@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { OrgTicketChange } from "../src/api/types.js";
-import type { OrgDeskNoticeRow } from "../src/db/repos/organizations.js";
+import type { OrgDeskNoticeRow } from "@penguinharness/plugin-db/repos";
 import type { TicketDoc } from "../src/organization/files.js";
 import { deskDigest } from "../src/runtime/organization/digest.js";
 import type { DigestTicket } from "../src/runtime/organization/digest.js";

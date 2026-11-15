@@ -20,7 +20,7 @@ import { Hono } from "hono";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { LiveStreams } from "../../auth/live-streams.js";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { SessionRow } from "../../db/repos/sessions.js";
+import type { SessionRow } from "@penguinharness/plugin-db/repos";
 import type { Channels } from "../../hmr/capabilities.js";
 import type { Auth } from "../../mechanisms/identity.js";
 import type { Access } from "../../mechanisms/projects.js";

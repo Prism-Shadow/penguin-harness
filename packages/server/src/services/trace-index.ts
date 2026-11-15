@@ -46,8 +46,8 @@ import {
   tracesDir,
 } from "@prismshadow/penguin-core";
 import type { AmspRecord } from "@prismshadow/penguin-core";
-import type { TraceFileRow, TraceSessionRow } from "../db/repos/trace-index.js";
-import { TraceIndexRepo } from "../db/repos/trace-index.js";
+import type { TraceFileRow, TraceSessionRow } from "@penguinharness/plugin-db/repos";
+import { TraceIndexRepo } from "@penguinharness/plugin-db/repos";
 import { cacheable, statMtime } from "../internal/mtime-gate.js";
 import { readTraceHead } from "../internal/trace-head.js";
 import { fallbackTitle } from "../runtime/title-generator.js";

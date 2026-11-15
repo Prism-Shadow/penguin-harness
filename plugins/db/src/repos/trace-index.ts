@@ -4,10 +4,10 @@
  * policy (mtime gates, head-reads) lives in the service.
  */
 import { normalizeSessionSource } from "@prismshadow/penguin-core";
-import type { RecordedSource } from "../../runtime/session-sources.js";
+import type { RecordedSource } from "@prismshadow/penguin-server/runtime/session-sources";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Db } from "../../hmr/capabilities.js";
-import type { TraceIndexStore } from "../../mechanisms/traces.js";
+import type { Db } from "@prismshadow/penguin-server/hmr/capabilities";
+import type { TraceIndexStore } from "@prismshadow/penguin-server/mechanisms/traces";
 
 /** One indexed Trace shard. */
 export interface TraceFileRow {

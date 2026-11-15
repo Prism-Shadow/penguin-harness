@@ -5,15 +5,15 @@
  * turns every exposed Agent off and invalidates every key.
  */
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { ApprovalMode } from "../../api/types.js";
-import { DEFAULT_API_CONCURRENT_RUNS } from "../../mechanisms/agent-api.js";
-import type { Db } from "../../hmr/capabilities.js";
+import type { ApprovalMode } from "@prismshadow/penguin-server/api";
+import { DEFAULT_API_CONCURRENT_RUNS } from "@prismshadow/penguin-server/mechanisms/agent-api";
+import type { Db } from "@prismshadow/penguin-server/hmr/capabilities";
 import type {
   AgentApi,
   AgentApiKeyRow,
   AgentApiPatch,
   AgentApiRow,
-} from "../../mechanisms/agent-api.js";
+} from "@prismshadow/penguin-server/mechanisms/agent-api";
 
 type Row = Record<string, unknown>;
 
