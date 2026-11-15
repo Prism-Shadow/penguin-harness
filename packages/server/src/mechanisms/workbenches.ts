@@ -386,12 +386,6 @@ export abstract class Workbenches {
     workbenchId: string,
     rel: string,
   ): Promise<WorkbenchUiRuntimeFile | null>;
-  ): Promise<string | null>;
-  /**
-   * The workbench's plugin icon as SVG text (its package's `penguin.icon`, read through the
-   * plugin library's own reader), or null when it ships none or the icon is refused. Server
-   * side only — the icon never enters a `WorkbenchInfo`.
-   */
   /**
    * The workbench's plugin icon (`.svg` markup or `.png` bytes base64-encoded), from its
    * `package.json#penguin.icon`; null when it ships none or the read refuses it. The PWA

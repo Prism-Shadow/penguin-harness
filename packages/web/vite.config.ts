@@ -93,7 +93,13 @@ function katexWoff2Only(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [penguinManifest(), penguinUi({ workbenchRuntime: true }), react(), tailwindcss(), katexWoff2Only()],
+  plugins: [
+    penguinManifest(),
+    penguinUi({ workbenchRuntime: true }),
+    react(),
+    tailwindcss(),
+    katexWoff2Only(),
+  ],
   // The module classes (`module.ts`, web-root.ts) use standard decorators, which no browser
   // runs yet. The production build lowers them for its browser target; the dev server
   // transforms for `esnext` by default and would pass them through as a syntax error.

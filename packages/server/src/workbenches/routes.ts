@@ -57,12 +57,7 @@ import type { Paths } from "../hmr/capabilities.js";
 import { HttpError } from "../http/errors.js";
 import { iconResponse } from "../http/icon-response.js";
 import { mediaType } from "../http/media-type.js";
-import {
-  badRequest,
-  readJson,
-  requireString,
-  requireValidId,
-} from "../http/validate.js";
+import { badRequest, readJson, requireString, requireValidId } from "../http/validate.js";
 import type { AgentConfig } from "../mechanisms/agents.js";
 import type { Access, Projects } from "../mechanisms/projects.js";
 import type { UiPrefsStore } from "../mechanisms/settings.js";
@@ -91,7 +86,7 @@ import { migrateWorkbenches } from "./migrate.js";
 import { withUiRuntime } from "./page-html.js";
 import { etagMatches, isPageSdkName, PAGE_SDK_CONTENT_TYPE, pageSdkFile } from "./page-sdk.js";
 import { WorkbenchDisabled, contributedAppIcon, WorkbenchNotFound } from "./service.js";
-import { WORKBENCH_ICONS, workbenchManifest } from "./manifest.js";
+import { workbenchManifest } from "./manifest.js";
 import { isWorkbenchId, readFolder, workbenchesDir } from "./store.js";
 
 const MIME: Record<string, string> = {
@@ -732,18 +727,6 @@ export function appCenterRoutes(deps: AppCenterRouteDeps) {
 @Component({
   contributes: {
     "HttpModule.routes": [
-      {
-        id: "WorkbenchManifestModule.routes",
-        prefix: "/api/projects/:projectId/agents/:agentId/workbenches",
-        auth: "none",
-        order: 19,
-      },
-      {
-        id: "WorkbenchesModule.routes",
-        prefix: "/api/projects/:projectId/agents/:agentId/workbenches",
-        auth: "user",
-        order: 20,
-      },
       {
         id: "WorkbenchManifestModule.routes",
         prefix: "/api/projects/:projectId/agents/:agentId/workbenches",

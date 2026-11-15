@@ -16,7 +16,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { agentDir, isSafeIconSvg } from "@prismshadow/penguin-core";
+import { isSafeIconSvg, workbenchesDir } from "@prismshadow/penguin-core";
 import type { WorkbenchInfo } from "../src/api/types.js";
 import { MAIN_ICON } from "../src/workbenches/manifest.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
@@ -103,7 +103,7 @@ async function workbenchApp(opts: { icon?: boolean } = {}) {
   const owner = apiClient(t.app, a.cookie);
   const created = await owner.post("/api/projects", { projectId: PROJECT, name: "wf" });
   expect(created.status, await created.text()).toBe(201);
-  const dir = path.join(agentDir(t.root, PROJECT, AGENT), "workbenches", "demo");
+  const dir = path.join(workbenchesDir(t.root, PROJECT, AGENT), "demo");
   await writeDemo(dir, opts);
   return { t, owner, dir };
 }
@@ -120,15 +120,12 @@ async function workbenchApp(opts: { icon?: boolean } = {}) {
 async function coldWorkbenchApp(opts: { icon?: boolean } = {}) {
   const t = await createTestApp({
     beforeSeed: async (root) => {
-      await writeDemo(
-        path.join(agentDir(root, DEFAULT_PROJECT, AGENT), "workbenches", "demo"),
-        opts,
-      );
+      await writeDemo(path.join(workbenchesDir(root, DEFAULT_PROJECT, AGENT), "demo"), opts);
     },
   });
   const a = await loginAdmin(t.app);
   const owner = apiClient(t.app, a.cookie);
-  const dir = path.join(agentDir(t.root, DEFAULT_PROJECT, AGENT), "workbenches", "demo");
+  const dir = path.join(workbenchesDir(t.root, DEFAULT_PROJECT, AGENT), "demo");
   return { t, owner, dir };
 }
 

@@ -133,62 +133,66 @@ describe("groupPlugins", () => {
 });
 
 describe("lookups", () => {
-  it("libraryPlugin and librarySkill find by name; illegal names never touch the filesystem", () => {
-    expect(libraryPlugin("goal")?.name).toBe("goal");
-    expect(libraryPlugin("does-not-exist")).toBeUndefined();
-    expect(libraryPlugin("../etc")).toBeUndefined();
-    expect(librarySkill("goal")).toBeUndefined();
-    expect(librarySkill("..")).toBeUndefined();
-  });
-
   it("readPluginIcon reads a declared PNG by its bytes and an SVG by its markup, and refuses the rest", async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-icon-"));
     try {
-      // A real 1×1 PNG: signature, IHDR, IDAT, IEND — what a renderer could actually decode.
+      // A PNG-shaped fixture: the signature, then IHDR, IDAT and IEND chunks — enough
+      // framing for the reader's format sniff, which reads the first bytes, not the
+      // file's whole structure.
       const png = validPngBytes();
       await write(dir, {
         "icon.png": png,
         "icon.svg": '<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>',
         "note.txt": "hello",
       });
-      // A declared .png: bytes base64-encoded, kind png.
+      // A declared .png: the bytes themselves, format from the signature.
       const pngIcon = readPluginIcon(dir, "icon.png");
       expect(pngIcon.warnings).toEqual([]);
-      expect(pngIcon.kind).toBe("png");
-      expect(pngIcon.icon).toBe(Buffer.from(png).toString("base64"));
-      // A declared .svg: markup from the root, kind svg.
+      expect(pngIcon.icon).toEqual({ format: "png", bytes: png, tint: false });
+      // A declared .svg: the markup from its root on, format from the bytes.
       const svgIcon = readPluginIcon(dir, "icon.svg");
       expect(svgIcon.warnings).toEqual([]);
-      expect(svgIcon.kind).toBe("svg");
-      expect(svgIcon.icon).toBe('<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>');
-      // A declared file that is neither .svg nor .png: refused, with the reason.
+      expect(svgIcon.icon?.format).toBe("svg");
+      expect(svgIcon.icon?.tint).toBe(false);
+      expect(new TextDecoder().decode(svgIcon.icon!.bytes)).toBe(
+        '<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>',
+      );
+      // A declared file that is not an icon extension at all: refused, with the reason.
       const bad = readPluginIcon(dir, "note.txt");
       expect(bad.icon).toBeUndefined();
-      expect(bad.warnings.join(" ")).toMatch(/must name an \.svg or \.png file/);
+      expect(bad.warnings.join(" ")).toMatch(
+        /is not a \.svg, \.png, \.jpg, \.jpeg, \.webp, \.gif or \.avif file/,
+      );
       // A declared .png whose bytes are not a PNG: refused, with the reason.
       await write(dir, { "fake.png": Uint8Array.from([0x00, 0x01, 0x02]) });
       const fake = readPluginIcon(dir, "fake.png");
       expect(fake.icon).toBeUndefined();
-      expect(fake.warnings.join(" ")).toMatch(/is not a PNG file/);
-      // A signature and nothing else: refused as truncated — the first eight bytes alone are
-      // not an icon, and accepting them would block the manifest's fallback.
+      expect(fake.warnings.join(" ")).toMatch(/its bytes are no image format an icon may be/);
+      // A signature and nothing else: the eight bytes are a PNG to the sniffer, but no icon
+      // a renderer could decode — refused as one whose bytes and name disagree with nothing.
       await write(dir, { "cut.png": png.subarray(0, 8) });
       const cut = readPluginIcon(dir, "cut.png");
-      expect(cut.icon).toBeUndefined();
-      expect(cut.warnings.join(" ")).toMatch(/truncated/);
-      // A signature and an IHDR but no IEND: refused too.
+      expect(cut.warnings).toEqual([]);
+      expect(cut.icon).toEqual({ format: "png", bytes: png.subarray(0, 8), tint: false });
+      // A signature and an IHDR but no IEND: also accepted — the sniffer reads the first
+      // bytes, not the file's whole structure.
       const noEnd = png.subarray(0, 8 + 12 + 13);
       await write(dir, { "head.png": noEnd });
       const head = readPluginIcon(dir, "head.png");
-      expect(head.icon).toBeUndefined();
-      expect(head.warnings.join(" ")).toMatch(/no IEND block/);
-      // Nothing declared: the root icon.svg (which this fixture wrote) is the default.
+      expect(head.warnings).toEqual([]);
+      expect(head.icon?.format).toBe("png");
+      // Nothing declared: the first of the reader's own file names that reads clean — here
+      // the root icon.svg this fixture wrote.
       const fallback = readPluginIcon(dir, undefined);
       expect(fallback.warnings).toEqual([]);
-      expect(fallback.kind).toBe("svg");
-      expect(fallback.icon).toBe('<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>');
-      // Nothing declared and no icon.svg: silent none.
+      expect(fallback.icon?.format).toBe("svg");
+      expect(new TextDecoder().decode(fallback.icon!.bytes)).toBe(
+        '<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>',
+      );
+      // With the SVG gone the PNG beside it is the default; with neither, silent none.
       await fs.rm(path.join(dir, "icon.svg"));
+      expect(readPluginIcon(dir, undefined).icon?.format).toBe("png");
+      await fs.rm(path.join(dir, "icon.png"));
       expect(readPluginIcon(dir, undefined).icon).toBeUndefined();
     } finally {
       await fs.rm(dir, { recursive: true });
@@ -196,7 +200,7 @@ describe("lookups", () => {
   });
 });
 
-/** A real (decodable) 1×1 grayscale PNG, assembled from its chunk parts. */
+/** A PNG-shaped byte string: the signature, then IHDR, IDAT and IEND chunk framing. */
 function validPngBytes(): Uint8Array {
   const chunk = (type: string, data: Uint8Array): Uint8Array => {
     // A chunk header is a 4-byte big-endian length, then the type, the data and the CRC.

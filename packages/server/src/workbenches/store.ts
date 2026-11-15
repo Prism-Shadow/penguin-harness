@@ -180,12 +180,14 @@ export async function readFolder(dir: string, id: string): Promise<WorkbenchFold
       if (icon === undefined) return null;
       // The manifest face keeps two of the reader's formats: an SVG as its markup (already
       // sanitized by the reader), a PNG as its bytes base64-encoded.
-      if (icon.format === "svg")
-        return { kind: "svg", data: new TextDecoder().decode(icon.bytes) };
+      if (icon.format === "svg") return { kind: "svg", data: new TextDecoder().decode(icon.bytes) };
       if (icon.format === "png")
         return { kind: "png", data: Buffer.from(icon.bytes).toString("base64") };
       return null;
-    })(readPluginIcon(dir, typeof pkg.penguin?.icon === "string" ? pkg.penguin.icon : undefined).icon),
+    })(
+      readPluginIcon(dir, typeof pkg.penguin?.icon === "string" ? pkg.penguin.icon : undefined)
+        .icon,
+    ),
   };
 }
 
