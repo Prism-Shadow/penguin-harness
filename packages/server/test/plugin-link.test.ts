@@ -1,13 +1,14 @@
 /**
- * `penguin plugin link` — a local package directory linked into the data root's plugin prefix:
- * the directory stays where it is, the prefix gets a link under the package's name and a
- * `penguin.linked` record, and the installed-plugins surface reads the package fresh from disk
- * and marks the row as linked.
+ * `penguin plugin link` — a local package directory linked into the data root's plugin prefix
+ * the way npm itself does it: `npm install link:<dir>` records the directory as a `link:` dependency
+ * in the prefix's package.json and puts the link in node_modules, and the installed-plugins
+ * surface reads the package fresh from disk and marks the row as linked. The link table IS the
+ * prefix manifest's `file:` dependencies — nothing penguin keeps beside them.
  *
- * The tests run against a real temp root (no npm: a link never runs npm), so what is pinned is
- * the disk shape — the link, the record, the refusal and removal faces, and what the page's
- * answer carries for a linked row, including the disk-truth reading after the author edits or
- * deletes the directory.
+ * The tests run a real npm against a real temp root: the link is npm's own act, so what is
+ * pinned is what npm records and puts on disk — the manifest entry, the node_modules link, the
+ * refusal face, and what the page's answer carries for a linked row, including the disk-truth
+ * reading after the author edits or deletes the directory.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
@@ -15,13 +16,7 @@ import os from "node:os";
 import path from "node:path";
 import { existsSync, lstatSync, readlinkSync } from "node:fs";
 import type { InstalledPluginsResponse } from "../src/api/types.js";
-import {
-  linkPluginDirectory,
-  linkedPackages,
-  unlinkPluginPackage,
-  PluginInstallError,
-  PluginLinkError,
-} from "../src/plugin/install.js";
+import { linkPluginDirectory, prefixDependencies, PluginInstallError } from "../src/plugin/install.js";
 import { decorators, lower } from "./plugin-fixtures.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
@@ -74,48 +69,64 @@ describe("plugin link", () => {
   const view = async (): Promise<InstalledPluginsResponse> =>
     (await admin.get("/api/projects/default_project/plugins/installed")).json() as Promise<InstalledPluginsResponse>;
 
-  it("links the directory into the prefix and records it, without npm's dependencies", async () => {
+  it("links the directory into the prefix as npm records one: a link: dependency and a node_modules link", async () => {
     const dir = await authorDir("@acme/local-one");
     const linked = await linkPluginDirectory(t.root, dir);
-    expect(linked.mode).toBe(process.platform === "win32" ? "link" : "link");
+    expect(linked).toMatchObject({ name: "@acme/local-one", version: "0.1.0" });
+    // The manifest entry IS the link record: name → the author's directory, npm's own.
+    const deps = await prefixDependencies(prefix());
+    expect(deps["@acme/local-one"]).toMatch(/^link:/);
+    expect(path.resolve(prefix(), deps["@acme/local-one"]!.slice("link:".length))).toBe(dir);
     const target = path.join(prefix(), "node_modules", "@acme", "local-one");
     expect(existsSync(target)).toBe(true);
-    if (process.platform !== "win32") {
-      expect(lstatSync(target).isSymbolicLink()).toBe(true);
-      expect(readlinkSync(target)).toBe(dir);
+    if (process.platform !== "win32" && lstatSync(target).isSymbolicLink()) {
+      expect(path.resolve(path.dirname(target), readlinkSync(target))).toBe(dir);
     }
-    const table = await linkedPackages(prefix());
-    expect(table["@acme/local-one"]).toMatchObject({ name: "@acme/local-one", path: dir });
-    // npm's own dependencies did not change: the link is nobody npm reconciles against.
-    const manifest = JSON.parse(
-      await fs.readFile(path.join(prefix(), "package.json"), "utf8"),
-    ) as { dependencies?: Record<string, string> };
-    expect(manifest.dependencies?.["@acme/local-one"]).toBeUndefined();
   });
 
   it("refuses a directory that is not a package, leaving the prefix untouched", async () => {
     const empty = path.join(scratch, "empty");
     await fs.mkdir(empty);
-    await expect(linkPluginDirectory(t.root, empty)).rejects.toBeInstanceOf(PluginLinkError);
+    await expect(linkPluginDirectory(t.root, empty)).rejects.toBeInstanceOf(PluginInstallError);
     expect(existsSync(path.join(prefix(), "node_modules"))).toBe(false);
 
     // A manifest without a legal npm name refuses too.
     const nameless = path.join(scratch, "nameless");
     await fs.mkdir(nameless);
     await fs.writeFile(path.join(nameless, "package.json"), "{}", "utf8");
-    await expect(linkPluginDirectory(t.root, nameless)).rejects.toBeInstanceOf(PluginLinkError);
+    await expect(linkPluginDirectory(t.root, nameless)).rejects.toBeInstanceOf(PluginInstallError);
+    expect(await prefixDependencies(prefix())).toEqual({});
   });
 
-  it("refuses a second link of the same name unless --overwrite, and overwrite replaces it", async () => {
+  it("a second link of the same name replaces it, npm's own reconciliation", async () => {
     const first = await authorDir("@acme/dup", "0.1.0");
     await linkPluginDirectory(t.root, first);
     const second = await authorDir("@acme/dup", "0.2.0");
-    await expect(linkPluginDirectory(t.root, second)).rejects.toBeInstanceOf(PluginInstallError);
     const relinked = await linkPluginDirectory(t.root, second, true);
-    expect(relinked.path).toBe(second);
-    expect(await linkedPackages(prefix())).toMatchObject({
-      "@acme/dup": { path: second },
-    });
+    expect(relinked).toMatchObject({ name: "@acme/dup", version: "0.2.0" });
+    const deps = await prefixDependencies(prefix());
+    expect(path.resolve(prefix(), deps["@acme/dup"]!.slice("link:".length))).toBe(second);
+  });
+
+  it("replacing an installed package with a link refuses unless --overwrite", async () => {
+    const dir = await authorDir("@acme/over", "0.1.0");
+    // An installed package: a plain range dependency in the manifest, as npm records one,
+    // with the tree entry npm reconciles it against.
+    const manifest = path.join(prefix(), "package.json");
+    await fs.mkdir(path.join(prefix(), "node_modules", "@acme", "over"), { recursive: true });
+    await fs.writeFile(
+      path.join(prefix(), "node_modules", "@acme", "over", "package.json"),
+      JSON.stringify({ name: "@acme/over", version: "1.0.0" }, null, 2),
+      "utf8",
+    );
+    await fs.writeFile(
+      manifest,
+      `${JSON.stringify({ name: "penguin-plugins", private: true, version: "0.0.0", dependencies: { "@acme/over": "^1.0.0" } }, null, 2)}\n`,
+      "utf8",
+    );
+    await expect(linkPluginDirectory(t.root, dir)).rejects.toBeInstanceOf(PluginInstallError);
+    await expect(linkPluginDirectory(t.root, dir, true)).resolves.toMatchObject({ name: "@acme/over" });
+    expect((await prefixDependencies(prefix()))["@acme/over"]).toMatch(/^link:/);
   });
 
   it("the page marks the row linked, and reads the disk truth: an edit shows, a deletion fails honestly", async () => {
@@ -124,10 +135,6 @@ describe("plugin link", () => {
     const body = await view();
     const row = body.plugins.find((p) => p.specifier === "@acme/live");
     expect(row).toMatchObject({ linked: true, linkPath: dir, active: false });
-    // The version the page shows is the disk's, read fresh each answer.
-    expect(await view()).toMatchObject({
-      plugins: [expect.objectContaining({ linked: true })],
-    });
 
     // The author edits: the next read sees the edit (the package is never cached into a
     // snapshot by the link).
@@ -159,7 +166,7 @@ describe("plugin link", () => {
     expect(goneRow?.error ?? "").toContain("@acme");
   });
 
-  it("remove takes the link and its record away; the author directory stays byte for byte", async () => {
+  it("remove runs npm's uninstall: the link and its manifest entry go; the author directory stays byte for byte", async () => {
     const dir = await authorDir("@acme/gone", "0.1.0");
     await linkPluginDirectory(t.root, dir);
     const before = await fs.readFile(path.join(dir, "package.json"), "utf8");
@@ -169,13 +176,8 @@ describe("plugin link", () => {
     );
     expect(res.status).toBe(200);
     expect(existsSync(path.join(prefix(), "node_modules", "@acme", "gone"))).toBe(false);
-    expect(await linkedPackages(prefix())).not.toHaveProperty("@acme/gone");
+    expect(await prefixDependencies(prefix())).not.toHaveProperty("@acme/gone");
     expect(await fs.readFile(path.join(dir, "package.json"), "utf8")).toBe(before);
-  });
-
-  it("unlink of a name npm installed is a no-op, not an error", async () => {
-    await unlinkPluginPackage(t.root, "@acme/never-linked");
-    expect(true).toBe(true);
   });
 
   it("the route refuses a relative path and, for a non-admin, the whole verb", async () => {

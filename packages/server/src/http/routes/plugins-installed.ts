@@ -86,14 +86,12 @@ import type { PluginPackages } from "../../mechanisms/plugins.js";
 import {
   installedPackageDir,
   installPluginChannel,
+  linkPluginDirectory,
   PluginInstallError,
   pluginsPrefix,
+  prefixDependencies,
   readInstalledVersion,
-  linkPluginDirectory,
-  unlinkPluginPackage,
-  linkedPackages,
   type InstalledPackage,
-  type LinkedPackage,
 } from "../../plugin/install.js";
 import { indexChannelLookup, type IndexChannel } from "../../plugin/registry.js";
 import { parsePluginSource, type PluginSource } from "../../plugin/source.js";
@@ -221,9 +219,11 @@ export interface InstalledPluginsDeps {
   syncFleet: (projectId: string) => void;
   /**
    * Links a local package directory into the prefix (`penguin plugin link`); absent in tests
-   * that stand in `packages` and do not exercise links.
+   * that stand in `packages` and do not exercise links. npm's own link: `npm install <dir>`
+   * records a `file:` dependency and puts the symlink in node_modules, so the link and its
+   * record are npm's to keep in step.
    */
-  link?: (dir: string, overwrite: boolean) => Promise<LinkedPackage>;
+  link?: (dir: string, overwrite: boolean) => Promise<InstalledPackage>;
 }
 
 export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> {
@@ -261,16 +261,18 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
         ...Object.values(tables.machines).flatMap((t) => Object.keys(t)),
       ]),
     ];
-    for (const name of Object.keys(await linkedPackages(pluginsPrefix(deps.root)))) {
+    // npm link's own records: the prefix manifest's `file:` dependencies are the directories
+    // linked into the prefix, npm keeps them through its own re-entry, and each names the
+    // author's directory on this machine.
+    const links = Object.entries(await prefixDependencies(pluginsPrefix(deps.root)))
+      .filter(([, spec]) => spec.startsWith("link:"))
+      .map(([name, spec]) => [name, path.resolve(pluginsPrefix(deps.root), spec.slice("link:".length))] as const);
+    for (const [name] of links) {
       if (!names.includes(name)) names.push(name);
     }
+    const linkTable = new Map(links);
     const { loaded, skipped, unsatisfied } = deps.running();
     const bases = pluginBases(deps.root, deps.assetsDir());
-    // The link marks come from the prefix's link records, read fresh for this answer: a link
-    // made since the last answer marks on the next read, and a directory edited on disk reads
-    // as what it now is. The route marks the rows itself — the table it read for the names
-    // above is the one source of truth — and the loader's own reads stay mark-free.
-    const links = await linkedPackages(pluginsPrefix(deps.root));
     // `builtin` on a row is where the package CAME FROM, a tag, not a second way of being
     // asked for. What the package declares is read from its files; whether the process holds
     // it, and why not, is the host's — a load that failed says so, rather than passing as a
@@ -295,7 +297,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
           replaces: [],
           // A link's row exists because the link exists, not because a Project asked: the
           // fault IS its disk truth, and the page reads it wherever the row shows.
-          ...(where.here || links[specifier] !== undefined ? { error: declared.error } : {}),
+          ...(where.here || linkTable.has(specifier) ? { error: declared.error } : {}),
           ...where,
         });
         continue;
@@ -311,8 +313,8 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
         builtin: declared.builtin,
         modules: declared.modules,
         replaces: declared.replaces,
-        ...(links[specifier] !== undefined
-          ? { linked: true, linkPath: links[specifier]!.path }
+        ...(linkTable.has(specifier)
+          ? { linked: true, linkPath: linkTable.get(specifier) }
           : {}),
         ...(!active && failure !== undefined ? { error: failure } : {}),
         ...(unmet !== undefined
@@ -656,17 +658,17 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     if (deps.link === undefined) {
       throw new HttpError(400, "bad_request", "linking is not available on this server.");
     }
-    let linked: LinkedPackage;
+    let linked: InstalledPackage;
     try {
       linked = await deps.link(dir, overwrite);
     } catch (err) {
-      if (err instanceof PluginInstallError || err instanceof PluginLinkError) {
-        throw new HttpError(err instanceof PluginInstallError ? 409 : 400, "plugin_link_refused", err.message);
+      if (err instanceof PluginInstallError) {
+        throw new HttpError(400, "plugin_link_refused", err.message);
       }
       throw err;
     }
     if ((await shippedNames()).includes(linked.name)) {
-      await unlinkPluginPackage(deps.root, linked.name);
+      await deps.packages.remove(deps.root, linked.name);
       throw new HttpError(
         409,
         "plugin_shipped",
@@ -675,7 +677,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     }
     const kinds = kindsOf(linked.name);
     if (!kinds.library && !kinds.modules) {
-      await unlinkPluginPackage(deps.root, linked.name);
+      await deps.packages.remove(deps.root, linked.name);
       throw new HttpError(
         400,
         "not_a_plugin",
@@ -730,13 +732,12 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     const projectId = scope(c);
     const specifier = nameOf(c.req.query("specifier"));
     const machineId = machineOf(c.req.query("machineId"));
-    // A link goes with this verb too: the link and its record go, the author's directory
-    // stays. npm's uninstall path never touches a link — its manifest has no record of one —
-    // so each goes through its own removal.
-    const links = await linkedPackages(pluginsPrefix(deps.root));
-    if (links[specifier] !== undefined) {
+    // A link goes with this verb too: `npm uninstall` takes a `file:` dependency out the same
+    // way it takes any package out — the symlink and the manifest entry both go, the author's
+    // directory stays. npm's uninstall is idempotent, so is this.
+    if ((await prefixDependencies(pluginsPrefix(deps.root)))[specifier]?.startsWith("link:")) {
       if (!(await readPluginClosure(deps.root, deps.machineId)).includes(specifier)) {
-        await unlinkPluginPackage(deps.root, specifier);
+        await deps.packages.remove(deps.root, specifier);
       }
       deps.syncFleet(projectId);
       return c.json(await view(projectId));

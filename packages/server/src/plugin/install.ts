@@ -26,7 +26,7 @@
 import { execFile } from "node:child_process";
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import fs from "node:fs/promises";
-import path from "node:path";
+import path, { relative } from "node:path";
 import { promisify } from "node:util";
 import { Component } from "@prismshadow/penguin-core/kernel";
 import type { PluginPackages } from "../mechanisms/plugins.js";
@@ -46,161 +46,8 @@ const ARCHIVES_DIR = "archives";
 /** `<prefix>/.staging`: where an uploaded package is unpacked and packed; emptied after each install. */
 const STAGING_DIR = ".staging";
 
-/** A bare package name, scoped or not — the same rule loader.ts resolves by (kept here, not
- * imported from it, because loader.ts already imports this module for the prefix helpers). */
+/** A bare package name, scoped or not — the same rule loader.ts resolves by. */
 const PACKAGE_NAME = /^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/;
-
-/**
- * The prefix manifest's record of the directories linked in by `penguin plugin link`: package
- * name → the absolute path of the author's directory on this machine. Deliberately NOT a key
- * of npm's `dependencies` — npm reconciles the prefix against that manifest on every install,
- * and a link there would be resolved, rewritten or deleted by it; a link is the operator's
- * own pointer, so it lives beside the dependencies and nothing npm does touches it.
- */
-const LINKED_FIELD = "penguin.linked";
-
-/** What one link put in the prefix. */
-export interface LinkedPackage {
-  name: string;
-  /** The author directory's absolute path, as link wrote it. */
-  path: string;
-  /** How the link was made: a symlink or junction, or — where neither was possible — a copy. */
-  mode: "link" | "copy";
-}
-
-/** A link cannot be made or read: what failed, for the answer to carry. */
-export class PluginLinkError extends Error {}
-
-/** The prefix's linked table, name → path and mode; empty when nothing was linked or no prefix exists. */
-export async function linkedPackages(prefix: string): Promise<Record<string, LinkedPackage>> {
-  try {
-    const raw = JSON.parse(await fs.readFile(path.join(prefix, "package.json"), "utf8")) as {
-      [LINKED_FIELD]?: unknown;
-    };
-    const table = raw[LINKED_FIELD];
-    if (typeof table !== "object" || table === null) return {};
-    const out: Record<string, LinkedPackage> = {};
-    for (const [name, value] of Object.entries(table as Record<string, unknown>)) {
-      if (typeof value !== "object" || value === null) continue;
-      const entry = value as { path?: unknown; mode?: unknown };
-      if (
-        typeof entry.path === "string" &&
-        (entry.mode === "link" || entry.mode === "copy")
-      ) {
-        out[name] = { name, path: entry.path, mode: entry.mode };
-      }
-    }
-    return out;
-  } catch {
-    return {};
-  }
-}
-
-async function writeLinked(
-  prefix: string,
-  table: Record<string, LinkedPackage>,
-): Promise<void> {
-  const manifest = path.join(prefix, "package.json");
-  const parsed = JSON.parse(await fs.readFile(manifest, "utf8")) as Record<string, unknown>;
-  if (Object.keys(table).length === 0) {
-    delete parsed[LINKED_FIELD];
-  } else {
-    parsed[LINKED_FIELD] = Object.fromEntries(
-      Object.values(table).map((l) => [l.name, { path: l.path, mode: l.mode }]),
-    );
-  }
-  // Write-then-rename, the prefix manifest's own discipline: a reader mid-write reads either
-  // the old or the new table, never a half one.
-  const tmp = `${manifest}.tmp-${process.pid}`;
-  await fs.writeFile(tmp, `${JSON.stringify(parsed, null, 2)}\n`);
-  await fs.rename(tmp, manifest);
-}
-
-/**
- * Links one local package directory into the plugin prefix: the directory stays where it is,
- * the prefix gets a link under the package's name and a `penguin.linked` record of it. The
- * directory must be a plugin package (a package.json with a name; the caller vets the
- * contributions), and it is read fresh each boot — what the page and the loader see is
- * whatever is on disk.
- *
- * The link is a symlink on POSIX and a junction on Windows; where neither can be created the
- * directory is copied and the record says so — a copy is a snapshot, and the record is what
- * keeps the page from claiming a live link that is not one. A name already linked refuses
- * unless `overwrite` (npm would have to be asked to replace an installed package; a link is
- * the operator's own pointer, so the operator replaces it directly).
- */
-export async function linkPluginDirectory(
-  root: string,
-  dir: string,
-  overwrite = false,
-): Promise<LinkedPackage> {
-  const prefix = await ensurePrefix(root);
-  // Record the directory the way the loader will resolve it: the author's path may itself
-  // sit behind a symlink (a dotfiles checkout, an OS temp alias), and the page's link mark
-  // matches the resolved package against this path.
-  const real = await fs.realpath(dir);
-  const manifestFile = path.join(real, "package.json");
-  let name: string;
-  try {
-    name = await readPackageName(manifestFile);
-  } catch (err) {
-    throw new PluginLinkError(
-      `${dir} is not a plugin package (its package.json could not be read: ${err instanceof Error ? err.message : String(err)})`,
-    );
-  }
-  if (!PACKAGE_NAME.test(name)) {
-    throw new PluginLinkError(`'${name}' is not a package name npm would accept`);
-  }
-  const table = await linkedPackages(prefix);
-  const existing = table[name];
-  if (existing !== undefined && !overwrite) {
-    throw new PluginInstallError(
-      existing.mode === "link"
-        ? `${name} is already linked from ${existing.path}; pass --overwrite to replace it.`
-        : `${name} is installed in the prefix; pass --overwrite to replace it with a link.`,
-    );
-  }
-  const target = path.join(prefix, "node_modules", ...name.split("/"));
-  await fs.mkdir(path.dirname(target), { recursive: true });
-  // Replace whatever stands there now (a previous link, or npm's copy of the same name) —
-  // npm's tree is reconciled against its manifest, which never had this link, so removing it
-  // behind npm's back cannot come back.
-  await fs.rm(target, { force: true, recursive: true });
-  let mode: LinkedPackage["mode"];
-  try {
-    await fs.symlink(real, target, "junction");
-    mode = "link";
-  } catch {
-    try {
-      await fs.cp(real, target, { recursive: true, force: true });
-      mode = "copy";
-    } catch (err) {
-      throw new PluginLinkError(
-        `could not link ${real} into the prefix (${err instanceof Error ? err.message : String(err)})`,
-      );
-    }
-  }
-  table[name] = { name, path: real, mode };
-  await writeLinked(prefix, table);
-  return table[name];
-}
-
-/**
- * Takes a link back out: the link and its `penguin.linked` record go, the author's directory
- * stays untouched. A name that is not linked is not an error — remove is idempotent, the way
- * npm uninstall is. A name npm installed (no record) is npm's to remove, not this one's.
- */
-export async function unlinkPluginPackage(root: string, name: string): Promise<void> {
-  const prefix = pluginsPrefix(root);
-  const table = await linkedPackages(prefix);
-  if (table[name] === undefined) return;
-  await fs.rm(path.join(prefix, "node_modules", ...name.split("/")), {
-    force: true,
-    recursive: true,
-  });
-  delete table[name];
-  await writeLinked(prefix, table);
-}
 
 export class PluginInstallError extends Error {
   /**
@@ -414,6 +261,54 @@ function packedFileName(stdout: string): string {
     throw new PluginInstallError("npm pack did not report the tarball it wrote");
   }
   return file.filename;
+}
+
+/**
+ * Links a local package directory into the prefix the way npm itself does it: `npm install
+ * link:<dir>` records the directory as a `link:` dependency in the prefix's package.json and
+ * reifies it as a symlink to the author's directory in node_modules — npm link's own shape.
+ * Nothing here is penguin's own record — the manifest entry IS the link table (the route reads
+ * it back as one), npm keeps the symlink and the entry in step through its own re-entry, and
+ * `npm uninstall <name>` takes a link out the same way it takes any package out. The link is
+ * npm's, so are its semantics.
+ *
+ * The directory is vetted before npm is asked: its package.json must be readable and carry a
+ * name npm accepts (the same rule the loader resolves by). An existing dependency under the
+ * same name that is not a `link:` entry refuses unless `overwrite` — replacing an installed
+ * package with a link is the operator's to confirm, the way a replacing install is.
+ */
+export async function linkPluginDirectory(
+  root: string,
+  dir: string,
+  overwrite = false,
+): Promise<InstalledPackage> {
+  const prefix = await ensurePrefix(root);
+  const real = await fs.realpath(dir);
+  const name = await (async () => {
+    try {
+      return await readPackageName(path.join(real, "package.json"));
+    } catch (err) {
+      throw new PluginInstallError(
+        `${dir} is not a plugin package (its package.json could not be read: ${err instanceof Error ? err.message : String(err)})`,
+      );
+    }
+  })();
+  if (!PACKAGE_NAME.test(name)) {
+    throw new PluginInstallError(`'${name}' is not a package name npm would accept`);
+  }
+  const existing = (await prefixDependencies(prefix))[name];
+  if (existing !== undefined && !existing.startsWith("link:") && !overwrite) {
+    throw new PluginInstallError(
+      `${name} is installed in the prefix at ${existing}; pass --overwrite to replace it with a link.`,
+    );
+  }
+  // Named relative to the prefix, so npm records the entry whatever path the data root
+  // reaches the prefix through (see installPluginFiles, which records its tarball the same
+  // way). The `link:` protocol is npm's own link: npm reifies it as a symlink to the
+  // directory and keeps it there across its installs — unlike `file:`, which npm satisfies
+  // by copying the directory and so would freeze the author's tree at link time.
+  await install(prefix, `link:${relative(prefix, real)}`);
+  return { name, version: await readInstalledVersion(prefix, name) };
 }
 
 async function readPackageName(manifest: string): Promise<string> {
