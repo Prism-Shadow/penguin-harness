@@ -13,7 +13,7 @@
  * Like the loaded-once group there, each case runs the TypeScript compiler, so one app and
  * one compile are shared.
  */
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { agentDir, isSafeIconSvg } from "@prismshadow/penguin-core";
@@ -357,7 +357,10 @@ describe("workbench manifest route", { timeout: 30_000 }, () => {
       // what the manifest route must not be able to cause, and what it did not.
       const listed = await fresh.owner.get(`${COLD_BASE}`);
       expect(listed.status).toBe(200);
-      await expect(fs.access(build)).resolves.toBeTruthy();
+      // The compile is a background job of the load; the build appears when it lands.
+      await vi.waitFor(async () => {
+        await expect(fs.access(build)).resolves.toBeTruthy();
+      }, { timeout: 30_000 });
       // And a second anonymous read answers again — reading, not touching, what is there.
       const again = await fresh.t.app.request(`${COLD_BASE}/demo/manifest.webmanifest`);
       expect(again.status).toBe(200);
