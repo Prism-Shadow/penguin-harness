@@ -161,6 +161,13 @@ describe("plugin link", () => {
     // The author deletes the directory: the row reports the fault from that read, rather
     // than passing as a healthy install.
     await fs.rm(dir, { recursive: true, force: true });
+    // DEBUG(p263): what did npm actually put in the prefix?
+    try {
+      const t2 = path.join(prefix(), "node_modules", "@acme", "live");
+      console.log("DEBUG p263 lstat:", lstatSync(t2).isSymbolicLink(), readlinkSync(t2), "exists:", existsSync(t2));
+    } catch (e) {
+      console.log("DEBUG p263 lstat failed:", (e as Error).message);
+    }
     const gone = await view();
     const goneRow = gone.plugins.find((p) => p.specifier === "@acme/live");
     expect(goneRow?.error ?? "").toContain("@acme");
