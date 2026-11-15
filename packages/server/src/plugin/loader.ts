@@ -55,7 +55,6 @@ import platformTable from "../ifaces.json" with { type: "json" };
 import { checkIfaces, ifaceQuestions } from "./iface-check.js";
 import { loadTypeScript, TypeScriptUnavailable, type TypeScript } from "./typescript.js";
 
-
 /**
  * Where a Project's list lives, for a surface that has to name the file. The data root's
  * old `plugins.json` is NOT read any more: the list moved into Project config, deliberately

@@ -16,7 +16,11 @@ import os from "node:os";
 import path from "node:path";
 import { existsSync, lstatSync, readlinkSync } from "node:fs";
 import type { InstalledPluginsResponse } from "../src/api/types.js";
-import { linkPluginDirectory, prefixDependencies, PluginInstallError } from "../src/plugin/install.js";
+import {
+  linkPluginDirectory,
+  prefixDependencies,
+  PluginInstallError,
+} from "../src/plugin/install.js";
 import { decorators, lower } from "./plugin-fixtures.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
@@ -32,9 +36,13 @@ describe("plugin link", () => {
     const dir = path.join(scratch, name.replace(/^@[^/]+\//, ""));
     await fs.mkdir(dir, { recursive: true });
     const main = path.join(dir, "index.js");
-    await fs.writeFile(main, lower(`import { Module } from ${JSON.stringify(decorators)};
+    await fs.writeFile(
+      main,
+      lower(`import { Module } from ${JSON.stringify(decorators)};
         @Module() export class M {}
-        export default { modules: [M] };`), "utf8");
+        export default { modules: [M] };`),
+      "utf8",
+    );
     await fs.writeFile(
       path.join(dir, "package.json"),
       JSON.stringify({ name, version, type: "module", main: "./index.js" }, null, 2),
@@ -58,7 +66,7 @@ describe("plugin link", () => {
   beforeEach(async () => {
     t = await createTestApp();
     admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
-    scratch = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "p263-link-")));
+    scratch = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "plugin-link-")));
   });
 
   afterEach(async () => {
@@ -67,7 +75,9 @@ describe("plugin link", () => {
   });
 
   const view = async (): Promise<InstalledPluginsResponse> =>
-    (await admin.get("/api/projects/default_project/plugins/installed")).json() as Promise<InstalledPluginsResponse>;
+    (
+      await admin.get("/api/projects/default_project/plugins/installed")
+    ).json() as Promise<InstalledPluginsResponse>;
 
   it("links the directory into the prefix as npm records one: a link: dependency and a node_modules link", async () => {
     const dir = await authorDir("@acme/local-one");
@@ -125,7 +135,9 @@ describe("plugin link", () => {
       "utf8",
     );
     await expect(linkPluginDirectory(t.root, dir)).rejects.toBeInstanceOf(PluginInstallError);
-    await expect(linkPluginDirectory(t.root, dir, true)).resolves.toMatchObject({ name: "@acme/over" });
+    await expect(linkPluginDirectory(t.root, dir, true)).resolves.toMatchObject({
+      name: "@acme/over",
+    });
     expect((await prefixDependencies(prefix()))["@acme/over"]).toMatch(/^file:/);
   });
 
@@ -190,7 +202,8 @@ describe("plugin link", () => {
       ).status,
     ).toBe(400);
     const member = apiClient(t.app, (await provisionUser(t.app, "member")).cookie);
-    expect((await member.post("/api/projects/default_project/plugins/installed/link", { dir })).status)
-      .toBe(403);
+    expect(
+      (await member.post("/api/projects/default_project/plugins/installed/link", { dir })).status,
+    ).toBe(403);
   });
 });

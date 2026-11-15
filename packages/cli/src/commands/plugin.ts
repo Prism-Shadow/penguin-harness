@@ -293,9 +293,7 @@ export function registerPluginCommand(plugin: Command, t: Messages): void {
       }
       const row = res.plugins.find((p) => p.linked === true);
       process.stdout.write(
-        row === undefined
-          ? t.plugin.linked(dir)
-          : t.plugin.linked(row.linkPath ?? dir),
+        row === undefined ? t.plugin.linked(dir) : t.plugin.linked(row.linkPath ?? dir),
       );
       process.stdout.write("\n");
     });

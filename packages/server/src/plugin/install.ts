@@ -157,7 +157,15 @@ export function npmFailureKind(stderr: string | undefined): "unavailable" | "oth
 // command behaves the same whatever npm version the PATH resolves to. (The prefix's .npmrc
 // pins the same rule for anything else that runs npm there.)
 const install = (prefix: string, spec: string) =>
-  npm(prefix, ["install", "--no-audit", "--no-fund", "--omit=dev", "--install-links=false", "--", spec]);
+  npm(prefix, [
+    "install",
+    "--no-audit",
+    "--no-fund",
+    "--omit=dev",
+    "--install-links=false",
+    "--",
+    spec,
+  ]);
 
 /**
  * Installs (or upgrades) one package into the root's plugin prefix. Returns the version npm

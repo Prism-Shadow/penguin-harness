@@ -324,9 +324,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
         builtin: declared.builtin,
         modules: declared.modules,
         replaces: declared.replaces,
-        ...(linkTable.has(specifier)
-          ? { linked: true, linkPath: linkTable.get(specifier) }
-          : {}),
+        ...(linkTable.has(specifier) ? { linked: true, linkPath: linkTable.get(specifier) } : {}),
         ...(!active && failure !== undefined ? { error: failure } : {}),
         ...(unmet !== undefined
           ? { unsatisfied: { disabled: unmet.disabled, reason: unmet.reason } }
