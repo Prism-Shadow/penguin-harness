@@ -76,7 +76,7 @@ export type {
 export { hasLibraryContributions, isLibraryPackage, libraryParts } from "./plugin/kinds.js";
 export type { LibraryParts } from "./plugin/kinds.js";
 export { iconImage, readInstalledIcon, readPluginIcon } from "./plugin/icon.js";
-export type { IconImage } from "./plugin/icon.js";
+export type { IconImage, IconBytes } from "./plugin/icon.js";
 export {
   ICON_CONTENT_TYPES,
   ICON_FILE_NAMES,
