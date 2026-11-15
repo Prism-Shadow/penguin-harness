@@ -193,81 +193,22 @@ interface LocatedFile {
 }
 
 /** A windowed history read's request shape (see readMessagesPage). */
-export type MessagesPageRequest = (
-  { kind: "tail"; limit: number } | { kind: "before"; cursor: MessageCursor; limit: number }
-) & {
-  /**
-   * The window's byte budget as the `history` stream sends its records — images by reference
-   * and bodies elided (core's history-elision.ts) — capped at MESSAGES_PAGE_MAX_BYTES. Absent:
-   * MESSAGES_PAGE_MAX_BYTES of records with their bodies whole, as `/messages` serves them.
-   */
-  budget?: number;
-};
+
 
 /**
  * A history window with where each record was read from: what `readMessagesPage` (or, for
  * `full`, `readMessages`) returns, plus `sources`, parallel to `messages` — the input of the
  * history layout (history-layout.ts) and of each record's body refs.
  */
-export interface HistoryWindowRead {
-  messages: HistoryMessage[];
-  sources: RecordSource[];
-  /** The window's page facts; absent for the full transcript. */
-  page?: Omit<MessagesPageResult, "messages">;
-}
+
 
 /** One Trace file of a Session or a descendant, as the machine leg of a history stream reads it. */
-export interface HistoryTraceFile {
-  agentId: string;
-  sessionId: string;
-  fileIndex: number;
-  path: string;
-  /** Inode and device, decimal: an NTFS file id passes 2^53. */
-  ino: string;
-  dev: string;
-  birthtimeMs: number;
-  /** Bytes, as the line index last saw the file. */
-  size: number;
-  /** One past the last `\n`: whole lines end here; an unterminated tail lies beyond. */
-  scanned: number;
-  /** Each record's first byte and one past its last, by ordinal (trace-line-index.ts). */
-  starts: number[];
-  ends: number[];
-  /** A rotated shard (its Session has a newer one): it never changes again. */
-  final: boolean;
-}
+
 
 /** A windowed history read's result (route maps it onto MessagesResponse.page). */
-export interface MessagesPageResult {
-  /** The window's records with their `tracePosition`, images still inline (the route references them). */
-  messages: AmspRecord[];
-  /** Cursor of the window's first unit; absent = the window reaches the beginning. */
-  before?: string;
-  /** Cumulative stats before the window (earlierTurns = prior.turns). */
-  prior: WindowPriorStats;
-  /** The units (Tasks) the window holds: the scanner's boundaries from its start on. */
-  units: number;
-  /**
-   * The model of the context the window starts in: the `session_meta` heading the shard its
-   * first unit lies in. One shard is one model context, and a window that starts partway into
-   * one does not hold that record. Absent for an empty transcript.
-   */
-  contextModel?: { provider: string; modelId: string };
-  /** Agent State directory from the same context's metadata, for memory-change detection. */
-  agentState?: string;
-}
 
-export interface ForkTraceResult {
-  sessionId: string;
-  createdAt: string;
-  /**
-   * The model the fork resumes on: the `session_meta` of the shard the cut falls in. Each shard
-   * records its own context's model, so a source that switched models mid-way forks onto the
-   * model that was serving the selected reply, not the one the source runs on today.
-   */
-  provider: string;
-  modelId: string;
-}
+
+
 
 /**
  * Per-request expansion context: `projectScanned` caps the miss-path force reconcile at
@@ -332,10 +273,7 @@ export interface TraceSessionIndex {
 }
 
 /** One Session's Trace files to import: each one's date directory, index and content. */
-export interface ImportedSession {
-  sessionId: string;
-  files: readonly { date: string; index: number; body: string }[];
-}
+
 
 /** TraceService wiring (the trace-file index is required: every listing/locating path serves from it — no directory walks). */
 /** One Session's classification result (see classify): its sidebar category + Workspace path ("" = unknown). */
