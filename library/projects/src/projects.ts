@@ -8,6 +8,9 @@ import type { AgentRow } from "./repos/agents.js";
 
 import type { UserRow } from "@prismshadow/penguin-library-identity";
 
+/** The roles a Project membership carries (was api/types.ts's Project authorization section). */
+export type ProjectRole = "owner" | "member";
+
 import type {
   ListEndpointModelsOptions,
   ModelRequestContext,

@@ -37,8 +37,10 @@ import type {
 } from "@prismshadow/penguin-library-agent-api";
 import type {
   ChatDefaultsDto,
+  DefaultModelOffer,
   EndpointModelListRequest,
   EndpointModelListResponse,
+  MemberInfo,
   ModelProtocolDetectRequest,
   ModelProtocolDetectResponse,
   ModelsResponse,
@@ -49,6 +51,7 @@ import type {
   ModelVisionDetectResponse,
   PresetSyncMode,
   PresetSyncResponse,
+  ProjectSummary,
   ProviderConnectionDto,
   ProviderConnectionResponse,
   ProviderConnectionUpdate,
@@ -56,13 +59,16 @@ import type {
   ServerEvent,
   CommandPolicyDto,
 } from "@prismshadow/penguin-library-projects";
+import type { ProjectRole } from "@prismshadow/penguin-library-projects";
 import type {
   AgentTraceSessionEntry,
   AgentTracesResponse,
   ContextFileShare,
   CostParts,
+  HistoryMessage,
   RequestSpan,
   SessionCategory,
+  SessionCategoryCounts,
   SessionContextParts,
   ToolCallSpan,
   TraceAnalysisResponse,
@@ -71,6 +77,7 @@ import type {
   TraceImportResponse,
   TraceModelSegment,
   TraceOtherSpan,
+  TracePosition,
   TraceTaskStats,
   TraceToolSpan,
   UsageTrendPointInTrace,
@@ -87,6 +94,9 @@ import type {
   UsageResponse,
   UsageSeriesPoint,
 } from "@prismshadow/penguin-library-observability";
+import type { UserInfo } from "@prismshadow/penguin-library-identity";
+import type { ApprovalMode } from "@prismshadow/penguin-library-sessions";
+import type { OrgCalendarOutcome } from "@prismshadow/penguin-library-organization";
 
 // ---------------------------------------------------------------------------
 // General
@@ -1633,12 +1643,18 @@ export type {
   ScheduleServerEvent,
   ServerEvent,
   CommandPolicyDto,
+  ProjectRole,
+  ProjectSummary,
+  MemberInfo,
+  DefaultModelOffer,
   AgentTraceSessionEntry,
   AgentTracesResponse,
   ContextFileShare,
   CostParts,
+  HistoryMessage,
   RequestSpan,
   SessionCategory,
+  SessionCategoryCounts,
   SessionContextParts,
   ToolCallSpan,
   TraceAnalysisResponse,
@@ -1647,6 +1663,7 @@ export type {
   TraceImportResponse,
   TraceModelSegment,
   TraceOtherSpan,
+  TracePosition,
   TraceTaskStats,
   TraceToolSpan,
   UsageTrendPointInTrace,
@@ -1660,6 +1677,9 @@ export type {
   UsageModelTotals,
   UsageResponse,
   UsageSeriesPoint,
+  UserInfo,
+  ApprovalMode,
+  OrgCalendarOutcome,
 };
 
 
