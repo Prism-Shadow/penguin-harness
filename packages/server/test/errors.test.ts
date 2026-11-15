@@ -59,8 +59,8 @@ import {
 import type { AmspRecord, StopReason } from "@prismshadow/penguin-core";
 import type { ProjectCreateResponse, UsageErrorsPage, UsageResponse } from "../src/api/types.js";
 import { openDatabase } from "@penguinharness/plugin-db/server";
-import { ErrorsRepo } from "../src/db/repos/errors.js";
-import type { ErrorRecordInsert } from "../src/db/repos/errors.js";
+import { ErrorsRepo } from "../../../plugins/usage/src/server/index.js";
+import type { ErrorRecordInsert } from "../../../plugins/usage/src/server/index.js";
 import { HttpError } from "../src/http/errors.js";
 import {
   DEDUP_KEYS_MAX,
@@ -68,8 +68,8 @@ import {
   ErrorRecorder,
   MESSAGE_MAX,
 } from "../src/runtime/error-recorder.js";
-import { messagingErrorKind } from "../src/runtime/messaging/error-kind.js";
-import { MessagingConnectionClosedError } from "../src/runtime/messaging/qq-api.js";
+import { messagingErrorKind } from "../../../plugins/messaging/src/server/index.js";
+import { MessagingConnectionClosedError } from "../../../plugins/messaging/src/server/index.js";
 import { StreamErrorWatcher } from "../src/runtime/stream-error-watcher.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";

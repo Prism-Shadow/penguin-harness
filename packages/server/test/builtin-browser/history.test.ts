@@ -6,8 +6,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { HISTORY_CAP, HistoryStore } from "../../src/builtin-browser/history.js";
-import type { BuiltinBrowserHistoryEntry } from "../../src/api/types.js";
+import { HISTORY_CAP, HistoryStore } from "../../../../plugins/browser/src/server/builtin-browser/history.js";
+import type { BuiltinBrowserHistoryEntry } from "../../../../packages/server/src/api/types.js";
 import { tab } from "./fake-shell.js";
 
 let dir: string;

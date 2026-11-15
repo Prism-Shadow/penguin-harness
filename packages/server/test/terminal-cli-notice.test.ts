@@ -17,16 +17,14 @@ import fs from "node:fs";
 import path from "node:path";
 import type { ServerConfig } from "../src/config.js";
 import { cliShimDir } from "../src/services/cli-shim.js";
-import { shimNamesDataRoot, terminalCliNotice } from "../src/terminal/cli-notice.js";
+import { shimNamesDataRoot } from "../../../plugins/terminal/src/server/terminal/cli-notice.js";
+import { terminalCliNotice } from "../../../plugins/terminal/src/server/terminal/cli-notice.js";
 import { makeTempRoot } from "./helpers.js";
-
 const roots: string[] = [];
 afterEach(async () => {
   while (roots.length > 0) await fs.promises.rm(roots.pop()!, { recursive: true, force: true });
 });
-
 type Facts = Pick<ServerConfig, "root" | "cliEntry" | "cliLaunch">;
-
 /** A data root whose shim directory holds a `penguin` (unless `shim` is false). */
 async function rootWith(shim = true): Promise<{ root: string; dirs: string[] }> {
   const root = await makeTempRoot();
@@ -38,10 +36,8 @@ async function rootWith(shim = true): Promise<{ root: string; dirs: string[] }> 
   }
   return { root, dirs: [dir] };
 }
-
 /** A home directory spelled the way this platform spells paths, as `os.homedir()` would. */
 const HOME = path.join(path.sep, "home", "anne");
-
 describe("a terminal's first line", () => {
   it("is nothing on an installation", async () => {
     const { root, dirs } = await rootWith();
@@ -52,7 +48,6 @@ describe("a terminal's first line", () => {
     };
     expect(terminalCliNotice(config, dirs, HOME)).toBeNull();
   });
-
   it("names a dev instance's CLI and data root, for each origin", async () => {
     const { root, dirs } = await rootWith();
     const checkout = path.join(HOME, "work", "penguin-harness");
@@ -82,7 +77,6 @@ describe("a terminal's first line", () => {
       "/opt/other/penguin.js (PENGUIN_CLI_ENTRY)",
     );
   });
-
   it("warns, with the reason, when the checkout's CLI cannot run", async () => {
     const { root, dirs } = await rootWith();
     const unavailable = "packages/cli/dist/penguin.js is not built in /work/x.";
@@ -98,7 +92,6 @@ describe("a terminal's first line", () => {
     expect(notice?.tone).toBe("warning");
     expect(notice?.text).toContain(unavailable);
   });
-
   it("warns that PATH decides when a shim that should be there is not, on any instance", async () => {
     const { root, dirs } = await rootWith(false);
     const notice = terminalCliNotice(
@@ -114,7 +107,6 @@ describe("a terminal's first line", () => {
     expect(notice?.text).toContain(path.join(dirs[0]!, "penguin"));
   });
 });
-
 describe("whether a shim names the data root (else the shell keeps PENGUIN_HOME)", () => {
   const launch: Facts["cliLaunch"] = {
     execArgs: [],
@@ -122,12 +114,10 @@ describe("whether a shim names the data root (else the shell keeps PENGUIN_HOME)
     origin: "env",
     unavailable: null,
   };
-
   it("does when this runtime wrote it and it is there", async () => {
     const { dirs } = await rootWith();
     expect(shimNamesDataRoot({ cliLaunch: launch }, dirs)).toBe(true);
   });
-
   it("does not without a shim, with a missing one, or under a runtime older than the default", async () => {
     const present = await rootWith();
     const missing = await rootWith(false);

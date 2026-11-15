@@ -10,46 +10,37 @@ import type {
   DesktopBrowserCommandMessage,
   DesktopBrowserCookie,
   DesktopBrowserEvent,
-} from "../../src/api/types.js";
-import type { BrowserShellPort } from "../../src/builtin-browser/shell-link.js";
-
+} from "../../../../packages/server/src/api/types.js";
+import { BrowserShellPort } from "../../../../plugins/browser/src/server/builtin-browser/shell-link.js";
 type Listener = (e: { data: unknown }) => void;
-
 /** `process.parentPort`, as the link uses it: frames out are recorded, frames in are emitted. */
 export class FakePort implements BrowserShellPort {
   readonly sent: unknown[] = [];
   onPost: ((message: unknown) => void) | null = null;
   private readonly listeners = new Set<Listener>();
-
   on(_event: "message", listener: Listener): void {
     this.listeners.add(listener);
   }
-
   off(_event: "message", listener: Listener): void {
     this.listeners.delete(listener);
   }
-
   postMessage(message: unknown): void {
     this.sent.push(message);
     this.onPost?.(message);
   }
-
   /** A frame from the shell. */
   emit(data: unknown): void {
     for (const listener of [...this.listeners]) listener({ data });
   }
-
   get listenerCount(): number {
     return this.listeners.size;
   }
 }
-
 export type CdpHandler = (
   tabId: number,
   method: string,
   params: Record<string, unknown> | undefined,
 ) => unknown;
-
 export function tab(id: number, patch: Partial<BuiltinBrowserTab> = {}): BuiltinBrowserTab {
   return {
     id,
@@ -61,7 +52,6 @@ export function tab(id: number, patch: Partial<BuiltinBrowserTab> = {}): Builtin
     ...patch,
   };
 }
-
 /** A shell hosting guests: answers commands (hello, tabs, cdp, cookies, clear-data, throttle) and pushes events. */
 export class FakeShell {
   readonly port = new FakePort();
@@ -76,23 +66,19 @@ export class FakeShell {
   throttles = true;
   /** Answers `cdp`; throw to make the shell refuse the command with that message. */
   cdp: CdpHandler = () => ({});
-
   constructor() {
     this.port.onPost = (message) => void this.handle(message);
   }
-
   /** A guest attaches (or changes): the shell pushes its state. */
   show(t: BuiltinBrowserTab): void {
     this.guests.set(t.id, t);
     this.event({ kind: "tab", tab: t });
   }
-
   /** A guest is destroyed. */
   close(tabId: number): void {
     this.guests.delete(tabId);
     this.event({ kind: "tab-closed", tabId });
   }
-
   /** A guest's renderer dies: the shell says why, then reports the tab crashed, as builtin-browser.ts does. */
   crash(tabId: number, reason = "crashed"): void {
     const crashed = { ...this.guests.get(tabId)!, loading: false, crashed: reason };
@@ -100,7 +86,6 @@ export class FakeShell {
     this.event({ kind: "tab-crashed", tabId, reason, exitCode: 9 });
     this.event({ kind: "tab", tab: crashed });
   }
-
   /** The shell's load measurement. */
   measure(
     tabs: { tabId: number; memoryKB: number; cpuPercent?: number }[],
@@ -116,16 +101,13 @@ export class FakeShell {
       totalKB: totalKB ?? tabs.reduce((sum, t) => sum + t.memoryKB, 0),
     });
   }
-
   event(event: DesktopBrowserEvent): void {
     this.port.emit({ type: "desktop-browser-event", event });
   }
-
   private reply(id: string, outcome: { ok: true; result: unknown } | { ok: false; error: string }) {
     // Asynchronous, like a real port: never inside the sender's own call.
     setImmediate(() => this.port.emit({ type: "desktop-browser-reply", id, ...outcome }));
   }
-
   private async handle(message: unknown): Promise<void> {
     const msg = message as DesktopBrowserCommandMessage;
     if (msg?.type !== "desktop-browser-command" || !this.speaksBrowser) return;
@@ -182,14 +164,12 @@ export class FakeShell {
     }
   }
 }
-
 /** A Runtime.evaluate answer carrying `value`, as CDP returns one by value. */
 export function evaluated(value: unknown): unknown {
   return value === undefined
     ? { result: { type: "undefined" } }
     : { result: { type: typeof value, value } };
 }
-
 /** The expression a Runtime.evaluate command carries. */
 export function expressionOf(params: Record<string, unknown> | undefined): string {
   return typeof params?.expression === "string" ? params.expression : "";

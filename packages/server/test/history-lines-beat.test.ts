@@ -11,12 +11,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 import type { AppEnv } from "../src/auth/middleware.js";
-import type { SessionRow } from "../src/db/repos/sessions.js";
+import type { SessionRow } from "../../../plugins/sessions/src/server/index.js";
 import { historyLinesRoutes } from "../src/http/routes/history-lines.js";
 import type { HistoryLinesRouteDeps } from "../src/http/routes/history-lines.js";
 import { HISTORY_LINES_BEAT_MS } from "../src/services/history-lines.js";
-import { initialScanState } from "../src/services/message-window.js";
-import type { HistoryWindowRead } from "../src/services/trace-service.js";
+import { initialScanState } from "../../../plugins/usage/src/server/index.js";
+import type { HistoryWindowRead } from "../../../plugins/usage/src/server/index.js";
 import { sessionRow } from "./fixtures/session.js";
 
 describe("history-lines while it plans", () => {

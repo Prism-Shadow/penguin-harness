@@ -51,7 +51,7 @@ import type {
   WorkbenchVersion,
 } from "../src/api/types.js";
 import { agentDir } from "@prismshadow/penguin-core";
-import { workbenchesDir } from "../src/workbenches/store.js";
+import { workbenchesDir } from "../../../plugins/workbenches/src/server/index.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 

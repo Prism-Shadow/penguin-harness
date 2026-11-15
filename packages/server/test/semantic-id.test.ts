@@ -24,7 +24,7 @@ import {
   projectIdRule,
   sanitizeSuggestedId,
   uniqueSemanticId,
-} from "../src/services/semantic-id.js";
+} from "../../../plugins/projects/src/server/index.js";
 
 const { org, channel } = SEMANTIC_ID_RULES;
 

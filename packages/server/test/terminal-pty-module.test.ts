@@ -21,17 +21,15 @@
 import fs from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { loadNodePtyFrom, nodePtySources } from "../src/terminal/pty-module.js";
+import { loadNodePtyFrom } from "../../../plugins/terminal/src/server/terminal/pty-module.js";
+import { nodePtySources } from "../../../plugins/terminal/src/server/terminal/pty-module.js";
 import { makeTempRoot } from "./helpers.js";
-
 const roots: string[] = [];
 afterEach(() => {
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
 });
-
 /** A directory as module resolution reports it: macOS's temp dir is a symlink into /private. */
 const real = (dir: string) => fs.realpathSync(dir);
-
 /**
  * A node-pty package under `<dir>/node_modules/node-pty` that loads, or fails as a foreign
  * binding does; `binding` puts a file at build/Release/pty.node that no loader accepts.
@@ -54,7 +52,6 @@ function fakeNodePty(dir: string, copy: string, loads: boolean, binding = false)
       : `throw new Error("Failed to load native module: pty.node, checked: build/Release, build/Debug, prebuilds/linux-arm64");`,
   );
 }
-
 /** An installed program (`<program>/lib/dist/penguin-hmr.js`) and a pushed assets directory. */
 async function machine(opts: { program: boolean; pushed: boolean; programBinding?: boolean }) {
   const root = await makeTempRoot();
@@ -70,7 +67,6 @@ async function machine(opts: { program: boolean; pushed: boolean; programBinding
   const sources = nodePtySources(() => assets, entry).slice(1);
   return { sources, lib, assets };
 }
-
 describe("node-pty for a pushed platform", () => {
   it("uses the installed program's copy, built for this machine, over the pushed one", async () => {
     const { sources, lib } = await machine({ program: true, pushed: true });
@@ -78,14 +74,12 @@ describe("node-pty for a pushed platform", () => {
     expect((loaded.pty as unknown as { copy: string }).copy).toBe("program");
     expect(loaded.dir).toBe(real(path.join(lib, "node_modules", "node-pty")));
   });
-
   it("falls back to the pushed copy when the program's has no binding for this machine", async () => {
     const { sources, assets } = await machine({ program: false, pushed: true });
     const loaded = loadNodePtyFrom(sources);
     expect((loaded.pty as unknown as { copy: string }).copy).toBe("pushed");
     expect(loaded.dir).toBe(real(path.join(assets, "node_modules", "node-pty")));
   });
-
   it("says why a binding that is there would not load, instead of node-pty's last miss", async () => {
     const { sources } = await machine({ program: false, pushed: false, programBinding: true });
     let said = "";
@@ -99,7 +93,6 @@ describe("node-pty for a pushed platform", () => {
     expect(program).not.toContain("Failed to load native module");
     expect(said).toContain("the pushed build's: Failed to load native module");
   });
-
   it("says plainly that terminals cannot start here when no copy loads, and what each said", async () => {
     const { sources } = await machine({ program: false, pushed: false });
     expect(() => loadNodePtyFrom(sources, "linux-arm64")).toThrow(

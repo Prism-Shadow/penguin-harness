@@ -24,25 +24,13 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { wire } from "@prismshadow/penguin-core/kernel";
 import table from "../src/ifaces.json" with { type: "json" };
-import {
-  HarnessHistoryStore,
-  HISTORY_KEEP,
-  KEEP_VERSIONS,
-} from "../src/services/harness-history.js";
 import zlib from "node:zlib";
 import { diffIfaces } from "@prismshadow/penguin-hmr";
 import type { VersionHistoryDiffResponse, VersionHistoryResponse } from "../src/api/types.js";
-import {
-  apiClient,
-  createTestApp,
-  loginAdmin,
-  makeTempRoot,
-  provisionUser,
-  type TestApp,
-} from "./helpers.js";
-
+import { HarnessHistoryStore } from "../../../plugins/usage/src/server/harness-history.js";
+import { HISTORY_KEEP, KEEP_VERSIONS } from "../../../plugins/usage/src/server/harness-history.js";
+import { TestApp, apiClient, loginAdmin, makeTempRoot, createTestApp } from "./helpers.js";
 const OWN_HASH = (table as { hash: string }).hash;
-
 /** A runtime commit record, as harness.json would carry it. */
 async function commit(
   root: string,
@@ -77,7 +65,6 @@ async function commit(
     }),
   );
 }
-
 /** What a rollback handed the runtime's upgrade channel, and what the runtime answered with. */
 const pushed: Request[] = [];
 const broadcasts: unknown[] = [];
@@ -99,7 +86,6 @@ const storeAt = (root: string) =>
     },
     channels: { broadcast: (...args: unknown[]) => broadcasts.push(args) },
   });
-
 /** Boots the store the way the platform does: setup() defers the record to the commit. */
 function bootedAt(root: string) {
   const store = storeAt(root);
@@ -107,7 +93,6 @@ function bootedAt(root: string) {
   store.setup({ effect: (fn: () => void) => disposers.push(fn) } as never);
   return { store, dispose: () => disposers.forEach((fn) => fn()) };
 }
-
 describe("harness history store", () => {
   const roots: string[] = [];
   const tempRoot = async () => {
@@ -120,7 +105,6 @@ describe("harness history store", () => {
       roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true, maxRetries: 10 })),
     );
   });
-
   it("records a boot once per version, with this platform's own table, newest first", async () => {
     const root = await tempRoot();
     const store = storeAt(root);
@@ -153,7 +137,6 @@ describe("harness history store", () => {
     expect(await store.table("f".repeat(64))).toBeNull();
     expect(await store.table("../../harness")).toBeNull();
   });
-
   it("never overwrites another platform's line: the boot before a push sees the previous commit", async () => {
     const root = await tempRoot();
     // The previous platform recorded version 1 with ITS table …
@@ -186,7 +169,6 @@ describe("harness history store", () => {
       ["store/platform/p1.mjs", false],
     ]);
   });
-
   it("keeps a committed version's body and hands it back to the runtime's own upgrade channel", async () => {
     const root = await tempRoot();
     const store = storeAt(root);
@@ -229,7 +211,6 @@ describe("harness history store", () => {
     expect(await store.rollback("nope")).toBe(false);
     expect(await store.rollback("../etc")).toBe(false);
   });
-
   it("a push the runtime refuses is reported on the next read, in the runtime's words", async () => {
     const root = await tempRoot();
     const store = storeAt(root);
@@ -254,7 +235,6 @@ describe("harness history store", () => {
         new Response(JSON.stringify({ status: "ok", web: { rev: "r2" } }), { status: 200 });
     }
   });
-
   it("records a boot only once the runtime's commit has landed, and never after being put back", async () => {
     // Version 1 is committed and the platform booting is version 2's: while its boot is in
     // flight harness.json still names version 1, and no line may be written for it.
@@ -285,7 +265,6 @@ describe("harness history store", () => {
       landed = async () => {};
     }
   });
-
   it("writes one record at a time, and rewrites nothing when the line is unchanged", async () => {
     const root = await tempRoot();
     const store = storeAt(root);
@@ -299,7 +278,6 @@ describe("harness history store", () => {
     expect((await fs.stat(file)).mtimeMs).toBe(before.mtimeMs);
     expect(await fs.readdir(path.join(root, "harness-history", "versions"))).toEqual(["p1-c1-w1"]);
   });
-
   it("keeps the newest KEEP_VERSIONS versions' artifacts", async () => {
     const root = await tempRoot();
     const store = storeAt(root);
@@ -312,7 +290,6 @@ describe("harness history store", () => {
     expect(dirs).not.toContain("p0-c0-w0");
     expect(dirs).toContain(`p${KEEP_VERSIONS + 1}-c${KEEP_VERSIONS + 1}-w${KEEP_VERSIONS + 1}`);
   });
-
   it("keeps the newest HISTORY_KEEP entries, and degrades a corrupt file to what still parses", async () => {
     const root = await tempRoot();
     const store = storeAt(root);
@@ -352,7 +329,6 @@ describe("harness history store", () => {
     ]);
   });
 });
-
 const TABLE_A = {
   ifaces: {
     "@x#Users": {
@@ -409,7 +385,6 @@ const TABLE_B = {
     },
   },
 };
-
 describe("interface table diff", () => {
   it("names the nodes and interfaces that appeared, vanished, or changed, member by member", () => {
     const d = diffIfaces({ hash: "a", ...TABLE_A } as never, { hash: "b", ...TABLE_B } as never);
@@ -439,14 +414,12 @@ describe("interface table diff", () => {
     expect(same.ifaces).toEqual([]);
   });
 });
-
 describe("GET /api/version/history", () => {
   let t: TestApp | null = null;
   afterEach(async () => {
     await t?.cleanup();
     t = null;
   });
-
   it("a fresh root already has this platform's boot on record, with its table", async () => {
     t = await createTestApp();
     const admin = await loginAdmin(t.app);
@@ -470,7 +443,6 @@ describe("GET /api/version/history", () => {
     expect(diff.modules.length).toBeGreaterThan(0);
     expect(diff.modules.every((m) => m.change === "added")).toBe(true);
   });
-
   it("a committed version is recorded with the runtime's provenance and shown current", async () => {
     t = await createTestApp({
       beforeSeed: (root) => commit(root, 7, { repo: "r", revision: "v7" }),

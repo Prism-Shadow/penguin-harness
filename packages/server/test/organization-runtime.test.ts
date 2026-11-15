@@ -18,28 +18,30 @@ import fs from "node:fs/promises";
 import { wire } from "@prismshadow/penguin-core/kernel";
 import path from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
-import { parseOrgTriggerMessage, saveProjectConfig } from "@prismshadow/penguin-core";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord as OmniMessage } from "@prismshadow/penguin-core";
 import { openDatabase } from "@penguinharness/plugin-db/server";
-import { MembersRepo } from "../src/db/repos/members.js";
+import { MembersRepo } from "../../../plugins/projects/src/server/index.js";
 import { OrgCacheRepo } from "../src/db/repos/organizations.js";
-import { ProjectsRepo } from "../src/db/repos/projects.js";
-import { SessionsRepo } from "../src/db/repos/sessions.js";
-import { UsersRepo } from "../src/db/repos/users.js";
-import { OrgStore } from "../src/organization/store.js";
-import { parseChannelConfig, serializeCalendarEvent } from "../src/organization/files.js";
-import { DEFAULT_CHANNEL_ID, ticketPath } from "../src/organization/paths.js";
-import { zonedDate } from "../src/organization/zoned.js";
+import { ProjectsRepo } from "../../../plugins/projects/src/server/index.js";
+import { SessionsRepo } from "../../../plugins/sessions/src/server/index.js";
 import type { ErrorRecordArgs } from "../src/runtime/error-recorder.js";
-import { DEFAULT_EMPLOYEE_PLUGINS } from "../src/runtime/organization/deps.js";
-import type { OrgDeps } from "../src/runtime/organization/deps.js";
-import { OrganizationScheduler } from "../src/runtime/organization/scheduler.js";
-import { OrganizationService } from "../src/runtime/organization/service.js";
-import { ProjectConfigService } from "../src/services/project-config-service.js";
-import type { UtilityCompletion } from "../src/services/project-config-service.js";
+import { parseChannelConfig } from "../../../plugins/company/src/server/organization/files.js";
+import { serializeCalendarEvent } from "../../../plugins/company/src/server/organization/files.js";
+import { ticketPath } from "../../../plugins/company/src/server/organization/paths.js";
+import { zonedDate } from "../../../plugins/company/src/server/organization/zoned.js";
+import { DEFAULT_CHANNEL_ID } from "../../../plugins/company/src/web/index.js";
+import { DEFAULT_EMPLOYEE_PLUGINS } from "../../../plugins/company/src/server/runtime/deps.js";
+import { OrgDeps } from "../../../plugins/company/src/server/runtime/deps.js";
+import { OrgStore } from "../../../plugins/company/src/server/organization/store.js";
+import { OrganizationService } from "../../../plugins/company/src/server/runtime/service.js";
+import { ProjectConfigService } from "../../../plugins/projects/src/server/index.js";
+import type { UtilityCompletion } from "../../../plugins/projects/src/server/index.js";
+import { UsersRepo } from "../../../plugins/settings/src/server/repos/users.js"
 import type { ServerEvent } from "../src/api/types.js";
 import { makeTempRoot } from "./helpers.js";
-
+import { OrganizationScheduler } from "../../../plugins/company/src/server/runtime/scheduler.js"
+import { parseOrgTriggerMessage } from "../../../plugins/sessions/src/web/chat/org-trigger.js"
+import { saveProjectConfig } from "../../../packages/core/src/state/project-config.js"
 const P = "p1";
 const ORG = "acme";
 const CEO = "acme_ceo";
@@ -48,7 +50,6 @@ const T0 = Date.parse("2026-09-01T01:00:00Z");
 const DAY = 86_400_000;
 /** The version the fake plugin library offers; an employee set behind it is what a pass fixes. */
 const LIBRARY_VERSION = "2026.09.14.1";
-
 /** The utility completion's three shapes, as the id proposals see them. */
 const NO_MODEL: UtilityCompletion = {
   ok: false,
@@ -57,18 +58,15 @@ const NO_MODEL: UtilityCompletion = {
 };
 const answered = (text: string): UtilityCompletion => ({ ok: true, text });
 const failed = (error: string): UtilityCompletion => ({ ok: false, cause: "failed", error });
-
 interface Started {
   sessionId: string;
   text: string;
   queueIfBusy: boolean;
 }
-
 function textOf(input: OmniMessage[]): string {
   const first = input[0] as { payload?: { text?: string } } | undefined;
   return first?.payload?.text ?? "";
 }
-
 describe("organization runtime", () => {
   let root: string;
   let db: ReturnType<typeof openDatabase>;
@@ -119,7 +117,6 @@ describe("organization runtime", () => {
     updated: Array<{ agentId: string; plugin: string }>;
     failUpdates: Set<string>;
   };
-
   beforeEach(async () => {
     root = await makeTempRoot();
     await saveProjectConfig(root, P, {
@@ -262,7 +259,6 @@ describe("organization runtime", () => {
     scheduler = new OrganizationScheduler(deps, { intervalMs: 1_000_000 });
     service = new OrganizationService(deps, scheduler);
   });
-
   async function createOrg(): Promise<void> {
     await service.create(
       P,
@@ -275,15 +271,12 @@ describe("organization runtime", () => {
       "alice",
     );
   }
-
   const orgDir = (): string => store.dir(P, ORG);
-
   it("keeps the knowledge base under handbook/: the index first, documents by path, the index undeletable", async () => {
     await createOrg();
     const index = await service.handbook(P, ORG);
     expect(index).toContain("## Knowledge base");
     expect(index).toContain("## Documents");
-
     await service.writeHandbookFile(P, ORG, "decisions/2026-09-02-hire-plan.md", "# Hire plan\n");
     await service.writeHandbookFile(P, ORG, "conventions.md", "# Conventions\n");
     const listing = await service.handbookFiles(P, ORG);
@@ -298,7 +291,6 @@ describe("organization runtime", () => {
       path: "decisions/2026-09-02-hire-plan.md",
       content: "# Hire plan\n",
     });
-
     await expect(service.handbookFile(P, ORG, "../org_config.toml")).rejects.toMatchObject({
       status: 400,
     });
@@ -311,7 +303,6 @@ describe("organization runtime", () => {
     await expect(service.deleteHandbookFile(P, ORG, "missing.md")).rejects.toMatchObject({
       status: 404,
     });
-
     await service.deleteHandbookFile(P, ORG, "decisions/2026-09-02-hire-plan.md");
     await expect(fs.stat(path.join(orgDir(), "handbook", "decisions"))).rejects.toBeTruthy();
     expect((await service.handbookFiles(P, ORG)).files.map((f) => f.path)).toEqual([
@@ -319,7 +310,6 @@ describe("organization runtime", () => {
       "conventions.md",
     ]);
   });
-
   it("creation writes the files, the CEO with its plugins and brief, and opens the desk with an init run", async () => {
     await createOrg();
     const dir = orgDir();
@@ -393,7 +383,6 @@ describe("organization runtime", () => {
     expect(detail.employeeCount).toBe(1);
     expect(detail.ceoDeskSessionId).toBe(started[0]!.sessionId);
   });
-
   it("writes the CEO budget creation asked for, zero included", async () => {
     await service.create(P, { orgId: ORG, mission: "Build it", ceoBudget: 25 }, "alice");
     expect((await service.chart(P, ORG)).employees[0]).toMatchObject({ agentId: CEO, budget: 25 });
@@ -401,7 +390,6 @@ describe("organization runtime", () => {
     await service.create(P, { orgId: "zero", mission: "Build it", ceoBudget: 0 }, "alice");
     expect((await service.chart(P, "zero")).employees[0]).toMatchObject({ budget: 0 });
   });
-
   it("uses the chosen shared workspace and model for desks and ticket sessions", async () => {
     const shared = path.join(root, "company-ws");
     await fs.mkdir(shared, { recursive: true });
@@ -450,7 +438,6 @@ describe("organization runtime", () => {
       ),
     ).rejects.toMatchObject({ status: 400 });
   });
-
   it("hires without a model by default: the entry carries none and the desk opens without a model pair, so the Project default is resolved as the desk opens — and the ticket sessions follow the desk", async () => {
     await createOrg();
     await service.hire(P, ORG, { newAgent: { agentId: HR }, title: "HR", reportsTo: CEO });
@@ -487,7 +474,6 @@ describe("organization runtime", () => {
       modelId: "m-bench",
     });
   });
-
   describe("an employee's model is its desk session's", () => {
     const NEXT = { provider: "custom", modelId: "m-next" };
     const entryOf = async (agentId: string) =>
@@ -506,7 +492,6 @@ describe("organization runtime", () => {
       sessions.updateModel(sessionId, NEXT.provider, NEXT.modelId);
       await service.deskModelChanged(sessionId, NEXT);
     };
-
     beforeEach(async () => {
       await saveProjectConfig(root, P, {
         default_model: { provider: "custom", model_id: "m-bench" },
@@ -518,13 +503,10 @@ describe("organization runtime", () => {
       await createOrg();
       await service.hire(P, ORG, { newAgent: { agentId: HR }, title: "HR", reportsTo: CEO });
     });
-
     it("a switch on the desk is the employee's: the chart entry takes the model, the next ticket session opens on it, and so does a renewed desk", async () => {
       const desk = (await service.desk(P, ORG, HR, {})).sessionId;
       expect(await entryOf(HR)).not.toHaveProperty("model");
-
       await switchDesk(desk);
-
       expect((await entryOf(HR)).model).toEqual(NEXT);
       // Nobody else's entry moved.
       expect(await entryOf(CEO)).not.toHaveProperty("model");
@@ -535,7 +517,6 @@ describe("organization runtime", () => {
       expect(created.at(-1)).toMatchObject({ agentId: HR, ...NEXT });
       expect(sessions.findById(renewed)?.modelId).toBe(NEXT.modelId);
     });
-
     it("a ticket session follows the desk, not the chart: a model written to the chart alone waits for the next desk", async () => {
       await service.patchEmployee(P, ORG, HR, { model: NEXT });
       // The desk that is open keeps the model it runs on, and so do its ticket sessions.
@@ -547,7 +528,6 @@ describe("organization runtime", () => {
       await service.startTicket(P, ORG, await ticketFor(HR), {}, { userId: "alice" });
       expect(created.at(-1)).toMatchObject({ agentId: HR, ...NEXT });
     });
-
     it("only the current desk speaks for the employee: a replaced desk, a ticket session or a session of no organization leaves the chart alone", async () => {
       const replaced = (await service.desk(P, ORG, HR, {})).sessionId;
       await service.desk(P, ORG, HR, { renew: true });
@@ -555,28 +535,22 @@ describe("organization runtime", () => {
         .sessionId;
       const chartFile = path.join(orgDir(), "org_chart.yaml");
       const before = await fs.readFile(chartFile, "utf8");
-
       await switchDesk(replaced);
       await switchDesk(work);
       await service.deskModelChanged("session-2026-09-01-00-00-00-ffffffff", NEXT);
-
       expect(await fs.readFile(chartFile, "utf8")).toBe(before);
       expect(await entryOf(HR)).not.toHaveProperty("model");
     });
-
     it("a switch back to the model the chart already names writes nothing", async () => {
       const desk = (await service.desk(P, ORG, HR, {})).sessionId;
       await switchDesk(desk);
       const chartFile = path.join(orgDir(), "org_chart.yaml");
       const stamp = (await fs.stat(chartFile)).mtimeMs;
       await new Promise((resolve) => setTimeout(resolve, 20));
-
       await service.deskModelChanged(desk, NEXT);
-
       expect((await fs.stat(chartFile)).mtimeMs).toBe(stamp);
     });
   });
-
   it("refuses a taken organization id and cleans up when the CEO cannot be created", async () => {
     await createOrg();
     await expect(createOrg()).rejects.toMatchObject({ status: 409, code: "org_exists" });
@@ -584,7 +558,6 @@ describe("organization runtime", () => {
       service.create(P, { orgId: "bad id", mission: "x" }, "alice"),
     ).rejects.toMatchObject({ code: "invalid_org_id" });
   });
-
   it("writes the creation layout under the org lock, so a delete landing mid-creation cannot leave a half-made directory behind", async () => {
     // A delete cannot be timed into the real millisecond window, so the test opens one: the
     // first writeConfig fires a delete, and — while the layout is written unlocked — holds
@@ -623,7 +596,6 @@ describe("organization runtime", () => {
       const wasInsideLock = insideOrgLock;
       if (!wasInsideLock) await trashDone;
     };
-
     await expect(
       service.create(P, { orgId: ORG, mission: "Build it" }, "alice"),
     ).rejects.toMatchObject({ status: 404, code: "org_not_found" });
@@ -637,7 +609,6 @@ describe("organization runtime", () => {
     expect(existsSync(orgDir())).toBe(false);
     expect(existingAgents.has(CEO)).toBe(true);
   });
-
   it("hires through the API, writes the chart and announces it in the all-hands channel", async () => {
     await createOrg();
     await fs.mkdir(path.join(orgDir(), "workspace", "people"));
@@ -680,7 +651,6 @@ describe("organization runtime", () => {
       code: "agent_not_found",
     });
   });
-
   it("hires with the company plugins plus the extra ones asked for, in order and without repeats", async () => {
     await createOrg();
     await service.hire(P, ORG, {
@@ -698,7 +668,6 @@ describe("organization runtime", () => {
       "web-design",
     ]);
   });
-
   describe("settings", () => {
     it("refuses a value the config parser would reject, rather than writing one that stops the organization", async () => {
       await createOrg();
@@ -717,7 +686,6 @@ describe("organization runtime", () => {
       ).toMatchObject({ mentionChainLimit: 100, budgetPauseRatio: 10 });
       expect((await service.detail(P, ORG, "alice")).invalid).toBeUndefined();
     });
-
     it("repairs a config that no longer parses, and leaves a readable one's creator alone", async () => {
       await createOrg();
       const configPath = path.join(orgDir(), "org_config.toml");
@@ -725,18 +693,15 @@ describe("organization runtime", () => {
       // defaulted, `created_by` empty among them, and its automation is held.
       await fs.writeFile(configPath, 'name = "Acme"\nmission = 7\n', "utf8");
       expect((await service.detail(P, ORG, "alice")).invalid).toContain("org_config.toml");
-
       const repaired = await service.patch(P, ORG, { mission: "Build it" }, "bob");
       // Written back with an empty `created_by` the file would not parse either, and the
       // settings page would report success over an organization that is still stopped.
       expect(repaired.createdBy).toBe("bob");
       expect((await service.detail(P, ORG, "alice")).invalid).toBeUndefined();
-
       const later = await service.patch(P, ORG, { mission: "Build it twice" }, "carol");
       expect(later.createdBy).toBe("bob");
     });
   });
-
   describe("employee workspaces", () => {
     it("gives a hire with no workspace its own sub-directory, and still takes an explicit `.`", async () => {
       await createOrg();
@@ -760,7 +725,6 @@ describe("organization runtime", () => {
       expect(asked.workspace).toBe(".");
       expect(asked.resolvedWorkspace).toBe(path.join(orgDir(), "workspace"));
     });
-
     it("creates a relative sub-directory as the employee is hired, and stores one spelling of it", async () => {
       await createOrg();
       const item = await service.hire(P, ORG, {
@@ -779,7 +743,6 @@ describe("organization runtime", () => {
       const desk = await service.desk(P, ORG, HR, {});
       expect(desk.workspace).toBe(dir);
     });
-
     it("refuses a spec that leaves the shared workspace, and an absolute path nobody created", async () => {
       await createOrg();
       await expect(
@@ -802,7 +765,6 @@ describe("organization runtime", () => {
       expect((await service.chart(P, ORG)).employees.map((e) => e.agentId)).toEqual([CEO]);
       await expect(fs.stat(path.join(orgDir(), "workspace", "outside"))).rejects.toBeTruthy();
     });
-
     it("creates the directory a hand-edited chart names, so the calendar still reaches that desk", async () => {
       await createOrg();
       await service.hire(P, ORG, { newAgent: { agentId: HR }, title: "HR", reportsTo: CEO });
@@ -831,7 +793,6 @@ describe("organization runtime", () => {
       expect(desk.workspace).toBe(path.join(orgDir(), "workspace", "people"));
       expect((await fs.stat(path.join(orgDir(), "workspace", "people"))).isDirectory()).toBe(true);
     });
-
     it("reassigns a partition and creates the new one", async () => {
       await createOrg();
       await service.hire(P, ORG, { newAgent: { agentId: HR }, title: "HR", reportsTo: CEO });
@@ -843,10 +804,8 @@ describe("organization runtime", () => {
       ).rejects.toMatchObject({ status: 400, code: "invalid_workspace" });
     });
   });
-
   describe("the working language", () => {
     const ZH_MISSION = "做一个 DeepSeek Harness 插件市场，并靠首页置顶位盈利。";
-
     it("follows the mission: a Chinese mission gives a Chinese handbook, brief and init run", async () => {
       await service.create(P, { orgId: ORG, name: "插件市场", mission: ZH_MISSION }, "alice");
       const settings = (await service.detail(P, ORG, "alice")).settings;
@@ -871,7 +830,6 @@ describe("organization runtime", () => {
       await service.hire(P, ORG, { newAgent: { agentId: HR }, title: "人事", reportsTo: CEO });
       expect(briefs.get(HR)).toContain("# 员工简介");
     });
-
     it("takes the request's language over the mission's, and PATCH changes it", async () => {
       await service.create(P, { orgId: ORG, mission: ZH_MISSION, language: "en" }, "alice");
       expect(await service.handbook(P, ORG)).toContain("## Working language");
@@ -883,7 +841,6 @@ describe("organization runtime", () => {
       // The handbook is an intent file: a language change never rewrites what the CEO owns.
       expect(await service.handbook(P, ORG)).toContain("## Working language");
     });
-
     it("says English when nothing was ever written, so an old organization still reports one", async () => {
       await createOrg();
       const raw = await fs.readFile(path.join(orgDir(), "org_config.toml"), "utf8");
@@ -895,7 +852,6 @@ describe("organization runtime", () => {
       expect((await service.detail(P, ORG, "alice")).settings.language).toBe("en");
     });
   });
-
   describe("semantic id proposals", () => {
     /** `co_org_<yyyymmdd>` / `ch_channel_<yyyymmdd>` for today, which is what a placeholder reads as. */
     function placeholderFor(kind: "org" | "channel"): string {
@@ -903,7 +859,6 @@ describe("organization runtime", () => {
       const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
       return kind === "org" ? `co_org_${stamp}` : `ch_channel_${stamp}`;
     }
-
     it("takes the model's answer, names the ids already taken, and never returns one of them", async () => {
       completion.answers = [answered("`research_paper_lab`\n")];
       // The model answers the semantic core; the server puts the kind's prefix on it.
@@ -921,7 +876,6 @@ describe("organization runtime", () => {
       expect(completion.prompts).toHaveLength(2);
       expect(errors).toEqual([]);
     });
-
     it("asks a second time, with the format spelled out, when the first answer is not an id", async () => {
       completion.answers = [answered("我建议叫「科研实验室」"), answered("research_lab")];
       expect(await service.suggestId(P, { name: "科研公司", kind: "org" })).toEqual({
@@ -933,7 +887,6 @@ describe("organization runtime", () => {
       expect(completion.prompts[1]).toContain("Answer with the identifier only");
       expect(errors).toEqual([]);
     });
-
     it("falls back to the ASCII slug when neither answer is usable, and records why", async () => {
       completion.answers = [answered("我建议叫「科研实验室」"), answered("还是叫科研实验室吧")];
       expect(await service.suggestId(P, { name: "Plugin Marketplace", kind: "org" })).toEqual({
@@ -944,7 +897,6 @@ describe("organization runtime", () => {
       expect(errors[0]).toMatchObject({ source: "organization", code: "id_suggest_failed" });
       expect(String((errors[0]?.err as Error).message)).toContain("还是叫科研实验室吧");
     });
-
     it("does not repeat a request that failed outright, and records the provider's reason", async () => {
       completion.answers = [failed("401 invalid api key")];
       expect(await service.suggestId(P, { name: "Plugin Marketplace", kind: "org" })).toEqual({
@@ -954,7 +906,6 @@ describe("organization runtime", () => {
       expect(completion.prompts).toHaveLength(1);
       expect(String((errors[0]?.err as Error).message)).toContain("401 invalid api key");
     });
-
     it("answers a dated placeholder, never a failure, when neither the model nor the name can name it", async () => {
       // The model answered twice and neither answer was an id.
       completion.answers = [answered("科研实验室"), answered("实验室")];
@@ -987,7 +938,6 @@ describe("organization runtime", () => {
         }),
       ).toMatchObject({ id: `${placeholderFor("org")}_2`, source: "placeholder" });
     });
-
     it("says no_ascii when there is no model to ask at all", async () => {
       const noModelService = new OrganizationService(
         { ...deps, completeOnce: undefined },
@@ -1000,7 +950,6 @@ describe("organization runtime", () => {
       });
     });
   });
-
   describe("company mode's own sessions", () => {
     it('opens every desk and ticket session as a company Session stamped client: "org", and a reconcile pass marks one that is not', async () => {
       await createOrg();
@@ -1022,7 +971,6 @@ describe("organization runtime", () => {
       );
       expect(created.at(-1)).toMatchObject({ client: "org", source: "company" });
       expect(sessions.findById(work)?.client).toBe("org");
-
       // What an organization that predates the marker looks like: its files still name the
       // sessions, so the next reconcile pass stamps them.
       db.prepare("UPDATE sessions SET client = NULL WHERE session_id IN (?, ?)").run(ceoDesk, work);
@@ -1030,7 +978,6 @@ describe("organization runtime", () => {
       await scheduler.reconcile(P, ORG);
       expect(sessions.findById(ceoDesk)?.client).toBe("org");
       expect(sessions.findById(work)?.client).toBe("org");
-
       // The stamp is the row's own, so an organization whose directory was removed by hand
       // leaves it in place — which is the whole point: nothing else is left to say whose the
       // sessions were.
@@ -1040,7 +987,6 @@ describe("organization runtime", () => {
       expect(sessions.findById(ceoDesk)?.client).toBe("org");
       expect(sessions.findById(work)?.client).toBe("org");
     });
-
     it("opens desk and ticket sessions under the organization's approval mode", async () => {
       await createOrg();
       await service.patch(P, ORG, { approvalMode: "read-only" }, "alice");
@@ -1064,7 +1010,6 @@ describe("organization runtime", () => {
       );
       expect(sessions.findById(work)?.approvalMode).toBe("read-only");
     });
-
     it("carries a changed approval mode onto the sessions it already has, except archived ones", async () => {
       await createOrg();
       await service.hire(P, ORG, { newAgent: { agentId: HR }, title: "HR", reportsTo: CEO });
@@ -1088,11 +1033,9 @@ describe("organization runtime", () => {
       const live = [firstDesk, ceoDesk, hrDesk, work];
       const modeOf = (sessionId: string) => sessions.findById(sessionId)?.approvalMode;
       expect([...live, archived].map(modeOf)).toEqual(Array(5).fill("allow-all"));
-
       await service.patch(P, ORG, { approvalMode: "read-only" }, "alice");
       expect(live.map(modeOf)).toEqual(Array(4).fill("read-only"));
       expect(modeOf(archived)).toBe("allow-all");
-
       // A write that leaves the mode where it is touches no session, so a desk whose mode was
       // changed from its own composer keeps it until the organization's mode next changes.
       sessions.updateApprovalMode(hrDesk, "deny-all");
@@ -1102,7 +1045,6 @@ describe("organization runtime", () => {
       expect(live.map(modeOf)).toEqual(Array(4).fill("allow-all"));
     });
   });
-
   describe("who starts a ticket session", () => {
     it("an employee starts one only on the ticket it owns; a person on any", async () => {
       await createOrg();
@@ -1115,12 +1057,10 @@ describe("organization runtime", () => {
         { title: "Ship it", owner: `agent:${HR}` },
         { userId: "alice" },
       );
-
       // The CEO files and assigns; the owner's desk is what turns that into work.
       await expect(
         service.startTicket(P, ORG, t.ticketId, {}, { userId: "alice", sessionId: ceoDesk }),
       ).rejects.toMatchObject({ status: 403, code: "not_ticket_owner" });
-
       const own = await service.startTicket(
         P,
         ORG,
@@ -1129,7 +1069,6 @@ describe("organization runtime", () => {
         { userId: "alice", sessionId: hrDesk },
       );
       expect(sessions.findById(own.sessionId)?.agentId).toBe(HR);
-
       // The owner may enlist a colleague on its OWN ticket — how a request for help is answered.
       const helper = await service.startTicket(
         P,
@@ -1139,12 +1078,10 @@ describe("organization runtime", () => {
         { userId: "alice", sessionId: hrDesk },
       );
       expect(sessions.findById(helper.sessionId)?.agentId).toBe(CEO);
-
       // A person is not an employee of anything: the board may start any ticket.
       const byPerson = await service.startTicket(P, ORG, t.ticketId, {}, { userId: "alice" });
       expect(sessions.findById(byPerson.sessionId)?.agentId).toBe(HR);
     });
-
     it("an unowned ticket needs an owner before an employee may start it", async () => {
       await createOrg();
       const ceoDesk = (await service.desk(P, ORG, CEO, {})).sessionId;
@@ -1167,7 +1104,6 @@ describe("organization runtime", () => {
       );
       expect(sessions.findById(byPerson.sessionId)?.agentId).toBe(CEO);
     });
-
     it("hands a claim in review to a reviewer: the owner's ticket session starts the review, and the reviewer's session sends the ticket back", async () => {
       await createOrg();
       const REVIEWER = `${ORG}_reviewer`;
@@ -1197,7 +1133,6 @@ describe("organization runtime", () => {
         {},
         { userId: "alice", sessionId: hrDesk },
       );
-
       // The author's ticket session moves the claim to review. The reviewer's desk may not
       // open a session on a ticket it does not own …
       const author = { userId: "alice", sessionId: loop.sessionId };
@@ -1205,7 +1140,6 @@ describe("organization runtime", () => {
       await expect(
         service.startTicket(P, ORG, t.ticketId, {}, { userId: "alice", sessionId: reviewerDesk }),
       ).rejects.toMatchObject({ status: 403, code: "not_ticket_owner" });
-
       // … so the author's ticket session starts the round, which runs as the reviewer in the
       // reviewer's own partition.
       const review = await service.startTicket(
@@ -1219,7 +1153,6 @@ describe("organization runtime", () => {
         agentId: REVIEWER,
         workspace: path.join(orgDir(), "workspace", REVIEWER),
       });
-
       // The reviewer's session writes its verdict and sends the ticket back to the owner.
       const reviewer = { userId: "alice", sessionId: review.sessionId };
       await service.progressTicket(P, ORG, t.ticketId, "Round 1: major revision", reviewer);
@@ -1231,7 +1164,6 @@ describe("organization runtime", () => {
         [`agent:${REVIEWER}`, "moved"],
       ]);
     });
-
     it("leaves nothing on the ticket when the session cannot be started", async () => {
       await createOrg();
       const ceoDesk = (await service.desk(P, ORG, CEO, {})).sessionId;
@@ -1265,13 +1197,11 @@ describe("organization runtime", () => {
       expect(sessions.findById(retry.sessionId)?.title).toBe("Ship it #1");
     });
   });
-
   describe("the overview inbox", () => {
     it("lists what names you, what is blocked and what closed this period", async () => {
       await createOrg();
       await service.hire(P, ORG, { newAgent: { agentId: HR }, title: "HR", reportsTo: CEO });
       const alice = { userId: "alice" };
-
       await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
         text: "nothing to see here",
       });
@@ -1281,7 +1211,6 @@ describe("organization runtime", () => {
       await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
         text: "@all standup at ten",
       });
-
       const blocked = await service.createTicket(
         P,
         ORG,
@@ -1309,7 +1238,6 @@ describe("organization runtime", () => {
         { title: "Still open", slug: "c-open", owner: `agent:${HR}` },
         alice,
       );
-
       const inbox = (await service.detail(P, ORG, "alice")).inbox!;
       // Newest first, and only the lines that name this person (the ticket changes the
       // scheduler writes name them too, so the assertion is over what a colleague wrote).
@@ -1327,7 +1255,6 @@ describe("organization runtime", () => {
       expect(inbox.doneTickets[0]!.closedAt).toBe(new Date(nowMs).toISOString());
       expect(inbox.doneTickets.map((t) => t.ticketId)).not.toContain(open.ticketId);
     });
-
     it("a ticket closed in an earlier period drops out; one closed by hand stays with no time", async () => {
       await createOrg();
       const alice = { userId: "alice" };
@@ -1356,7 +1283,6 @@ describe("organization runtime", () => {
           .join("\n"),
         "utf8",
       );
-
       nowMs = T0 + 40 * DAY;
       const inbox = (await service.detail(P, ORG, "alice")).inbox!;
       const ids = inbox.doneTickets.map((t) => t.ticketId);
@@ -1367,7 +1293,6 @@ describe("organization runtime", () => {
       ).toBeUndefined();
     });
   });
-
   it("announces a departure with the manager the reports move to", async () => {
     await createOrg();
     await service.hire(P, ORG, { newAgent: { agentId: HR }, title: "HR", reportsTo: CEO });
@@ -1386,12 +1311,10 @@ describe("organization runtime", () => {
       params: { agent: `agent:${HR}`, reportsTo: `agent:${CEO}` },
     });
   });
-
   describe("calendar", () => {
     async function hireHr(): Promise<void> {
       await service.hire(P, ORG, { newAgent: { agentId: HR }, title: "HR", reportsTo: CEO });
     }
-
     it("does not backfill a slot that passed before registration, then fires on the next one to the desk", async () => {
       await createOrg();
       await hireHr();
@@ -1417,7 +1340,6 @@ describe("organization runtime", () => {
         paused: false,
       });
       expect(list.events[0]!.nextFireAt).toBe(new Date(T0 + DAY).toISOString());
-
       nowMs = T0 + DAY + 1000;
       await scheduler.tickOnce();
       expect(started).toHaveLength(1);
@@ -1440,7 +1362,6 @@ describe("organization runtime", () => {
       await scheduler.tickOnce();
       expect(started).toHaveLength(1);
     });
-
     it("retries a one-shot event whose dispatch failed, so desk notices are not stranded", async () => {
       await createOrg();
       await hireHr();
@@ -1481,7 +1402,6 @@ describe("organization runtime", () => {
       await scheduler.tickOnce();
       expect(started).toHaveLength(1);
     });
-
     it("queues behind a busy desk, holds while paused, and consumes silently with the switch off", async () => {
       await createOrg();
       await hireHr();
@@ -1506,7 +1426,6 @@ describe("organization runtime", () => {
       expect(started).toHaveLength(1);
       expect((await service.calendar(P, ORG)).events[0]!.lastOutcome).toBe("queued");
       busy.clear();
-
       await service.patch(P, ORG, { status: "paused" }, "alice");
       nowMs = T0 + 2 * DAY + 1;
       await scheduler.tickOnce();
@@ -1514,7 +1433,6 @@ describe("organization runtime", () => {
       expect((await service.calendar(P, ORG)).events[0]!.lastOutcome).toBe("paused");
       expect((await service.calendar(P, ORG)).events[0]!.paused).toBe(true);
       await service.patch(P, ORG, { status: "active" }, "alice");
-
       companyMode = false;
       nowMs = T0 + 3 * DAY + 1;
       await scheduler.tickOnce();
@@ -1527,7 +1445,6 @@ describe("organization runtime", () => {
       await scheduler.tickOnce();
       expect(started).toHaveLength(2);
     });
-
     it("answers a write with the rota it collides with, and writes it anyway", async () => {
       await createOrg();
       await hireHr();
@@ -1573,7 +1490,6 @@ describe("organization runtime", () => {
       );
       expect(updated.warnings).toBeUndefined();
     });
-
     it("reports an invalid file and one that belongs to nobody without firing", async () => {
       await createOrg();
       await store.writeCalendarEvent(orgDir(), CEO, "bad", 'prompt = ""\n');
@@ -1591,7 +1507,6 @@ describe("organization runtime", () => {
       expect(list.invalidFiles.map((f) => f.name).sort()).toEqual(["bad", "sweep"]);
     });
   });
-
   describe("tickets", () => {
     beforeEach(async () => {
       await createOrg();
@@ -1599,7 +1514,6 @@ describe("organization runtime", () => {
       started.length = 0;
       events.length = 0;
     });
-
     it("creates in proposed with an owner, queues the assignment, and opens ticket sessions that contribute", async () => {
       const t = await service.createTicket(
         P,
@@ -1623,7 +1537,6 @@ describe("organization runtime", () => {
       expect(started).toHaveLength(0);
       await scheduler.tickOnce();
       expect(started).toHaveLength(0);
-
       const { sessionId } = await service.startTicket(
         P,
         ORG,
@@ -1650,7 +1563,6 @@ describe("organization runtime", () => {
       expect(work!.text).toContain(
         "Name every input you rely on and every deliverable you produce by its full path",
       );
-
       // A second session for the same ticket, and progress written from inside it.
       const second = await service.startTicket(P, ORG, t.ticketId, {}, { userId: "alice" });
       expect((await service.ticket(P, ORG, t.ticketId)).sessions).toEqual([
@@ -1669,7 +1581,6 @@ describe("organization runtime", () => {
         note: "half done",
       });
     });
-
     it("delivers queued changes in the next sweep, keeps them while paused, and empties the queue", async () => {
       await store.writeCalendarEvent(
         orgDir(),
@@ -1684,7 +1595,6 @@ describe("organization runtime", () => {
       );
       await scheduler.tickOnce(); // registers the event and consumes the slot standing at T0
       started.length = 0;
-
       const t = await service.createTicket(
         P,
         ORG,
@@ -1695,7 +1605,6 @@ describe("organization runtime", () => {
       await service.moveTicket(P, ORG, t.ticketId, "done", undefined, { userId: "alice" });
       // An owner assigned and a ticket closed: two changes, no run at any desk.
       expect(started).toHaveLength(0);
-
       // A paused organization consumes the slot and keeps the queue for the sweep that fires.
       await service.patch(P, ORG, { status: "paused" }, "alice");
       nowMs = T0 + DAY + 1000;
@@ -1703,7 +1612,6 @@ describe("organization runtime", () => {
       expect(started).toHaveLength(0);
       expect((await service.calendar(P, ORG)).events[0]!.lastOutcome).toBe("paused");
       await service.patch(P, ORG, { status: "active" }, "alice");
-
       nowMs = T0 + 2 * DAY + 1000;
       await scheduler.tickOnce();
       expect(started).toHaveLength(1);
@@ -1720,14 +1628,12 @@ describe("organization runtime", () => {
           'Decide on each: start a ticket session (`penguin org ticket start <id> -m "…"`), verify and unblock, or leave it — do not do the work at your desk.',
         ].join("\n"),
       );
-
       // Delivered once: the next sweep carries the event's own prompt and nothing else.
       started.length = 0;
       nowMs = T0 + 3 * DAY + 1000;
       await scheduler.tickOnce();
       expect(parseOrgTriggerMessage(started[0]!.text)?.rest).toBe("Sweep the board");
     });
-
     it("puts the queued changes back when the sweep cannot start", async () => {
       await store.writeCalendarEvent(
         store.dir(P, ORG),
@@ -1749,14 +1655,12 @@ describe("organization runtime", () => {
         { userId: "alice" },
       );
       expect(started).toHaveLength(0);
-
       // The Agent vanishes, so the desk cannot be opened: the slot fails and the change is kept.
       existingAgents.delete(HR);
       nowMs = T0 + DAY + 1000;
       await scheduler.tickOnce();
       expect(started).toHaveLength(0);
       expect((await service.calendar(P, ORG)).events[0]!.lastOutcome).toBe("error");
-
       existingAgents.add(HR);
       nowMs = T0 + 2 * DAY + 1000;
       await scheduler.tickOnce();
@@ -1765,7 +1669,6 @@ describe("organization runtime", () => {
         `- ${t.ticketId} (Write the FAQ): assigned to you`,
       );
     });
-
     it("drops an employee's undelivered changes when it leaves", async () => {
       const t = await service.createTicket(
         P,
@@ -1777,7 +1680,6 @@ describe("organization runtime", () => {
       expect(cache.takeDeskNotices(P, ORG, HR)).toEqual([]);
       expect(t.owner).toBe(`agent:${HR}`);
     });
-
     it("moves between columns, queues done for Notify, and rejects need a reason", async () => {
       const t = await service.createTicket(
         P,
@@ -1821,7 +1723,6 @@ describe("organization runtime", () => {
       const closed = await service.ticket(P, ORG, t.ticketId);
       expect(closed.history.at(-1)).toMatchObject({ action: "moved", note: "done" });
     });
-
     it("books the writing session onto the ticket, so a desk that did the work pays for it", async () => {
       const t = await service.createTicket(
         P,
@@ -1831,7 +1732,6 @@ describe("organization runtime", () => {
       );
       const desk = await service.desk(P, ORG, HR, {});
       const fromDesk = { userId: "alice", sessionId: desk.sessionId };
-
       // A person's write books nothing: there is no session behind it.
       await service.moveTicket(P, ORG, t.ticketId, "in_progress", undefined, { userId: "alice" });
       expect((await service.ticket(P, ORG, t.ticketId)).sessions).toEqual([]);
@@ -1842,7 +1742,6 @@ describe("organization runtime", () => {
       await service.blockTicket(P, ORG, t.ticketId, "waiting for copy", undefined, fromDesk);
       await service.unblockTicket(P, ORG, t.ticketId, fromDesk);
       expect((await service.ticket(P, ORG, t.ticketId)).sessions).toEqual([]);
-
       // Handing the work in claims it: the desk is booked from the move into review on.
       const moved = await service.moveTicket(P, ORG, t.ticketId, "review", undefined, fromDesk);
       expect(moved.sessions).toEqual([desk.sessionId]);
@@ -1859,7 +1758,6 @@ describe("organization runtime", () => {
       const finance = await service.finance(P, ORG);
       expect(finance.tickets.find((x) => x.ticketId === t.ticketId)?.cost).toBe(4);
     });
-
     it("attaches only a session of an employee, so nothing spends where no budget can see it", async () => {
       const t = await service.createTicket(
         P,
@@ -1888,12 +1786,10 @@ describe("organization runtime", () => {
         service.attachTicket(P, ORG, t.ticketId, stranger, { userId: "alice" }),
       ).rejects.toMatchObject({ status: 400, code: "not_employee_session" });
       expect((await service.ticket(P, ORG, t.ticketId)).sessions).toEqual([]);
-
       const desk = await service.desk(P, ORG, HR, {});
       await service.attachTicket(P, ORG, t.ticketId, desk.sessionId, { userId: "alice" });
       expect((await service.ticket(P, ORG, t.ticketId)).sessions).toEqual([desk.sessionId]);
     });
-
     it("refuses a parent that already sits under the ticket", async () => {
       const by = { userId: "alice" };
       const a = await service.createTicket(P, ORG, { title: "Launch the site" }, by);
@@ -1910,7 +1806,6 @@ describe("organization runtime", () => {
         service.updateTicket(P, ORG, a.ticketId, { parent: b.ticketId }, by),
       ).rejects.toMatchObject({ status: 400 });
       expect((await service.ticket(P, ORG, a.ticketId)).parent).toBeUndefined();
-
       // A grandchild is refused the same way; re-parenting sideways is not a cycle.
       const c = await service.createTicket(
         P,
@@ -1924,7 +1819,6 @@ describe("organization runtime", () => {
       await service.updateTicket(P, ORG, c.ticketId, { parent: a.ticketId }, by);
       expect((await service.ticket(P, ORG, c.ticketId)).parent).toBe(a.ticketId);
     });
-
     it("files a ticket for another principal, and refuses one nobody holds", async () => {
       const byEmployee = await service.createTicket(
         P,
@@ -1961,7 +1855,6 @@ describe("organization runtime", () => {
         ).rejects.toMatchObject({ status: 400 });
       }
     });
-
     it("writes no channel line when a ticket closes, whoever Notify names", async () => {
       const t = await service.createTicket(
         P,
@@ -1984,7 +1877,6 @@ describe("organization runtime", () => {
       const detail = await service.detail(P, ORG, "alice");
       expect(detail.inbox?.doneTickets.map((x) => x.ticketId)).toEqual([t.ticketId]);
     });
-
     it("records the operator from the calling Agent id, over the calling session", async () => {
       const t = await service.createTicket(
         P,
@@ -2008,7 +1900,6 @@ describe("organization runtime", () => {
       });
       expect(again.history.at(-1)).toMatchObject({ by: `agent:${CEO}`, action: "progress" });
     });
-
     it("names a ticket whose title carries no English through the Project's model", async () => {
       completion.answers = [answered("launch-the-site")];
       const t = await service.createTicket(P, ORG, { title: "上线站点" }, { userId: "alice" });
@@ -2034,7 +1925,6 @@ describe("organization runtime", () => {
       const again = await service.createTicket(P, ORG, { title: "上线站点" }, { userId: "alice" });
       expect(again.ticketId).toBe("2026-09-01-launch-the-site-b");
     });
-
     it("blocking notices the blocker and the owner's manager; closing the blocker tells the owner", async () => {
       const blocker = await service.createTicket(
         P,
@@ -2075,7 +1965,6 @@ describe("organization runtime", () => {
         board.columns.proposed.find((x) => x.ticketId === t.ticketId)?.blocked,
       ).toBeUndefined();
     });
-
     it("holds a blocking ticket's by principal to the chart: a shape-valid id that names nobody is refused", async () => {
       const t = await service.createTicket(P, ORG, { title: "Launch" }, { userId: "alice" });
       // A principal that names no employee, or a person outside the Project, is refused
@@ -2111,7 +2000,6 @@ describe("organization runtime", () => {
       });
       expect((await service.ticket(P, ORG, t.ticketId)).blockedBy).toBe(blocker.ticketId);
     });
-
     it("reports a `# Ticket:` file as an invalid file: listed nowhere, refused on write, never rewritten", async () => {
       const valid = await service.createTicket(
         P,
@@ -2135,7 +2023,6 @@ describe("organization runtime", () => {
       await fs.mkdir(path.dirname(headedPath), { recursive: true });
       await fs.writeFile(headedPath, headed, "utf8");
       errors.length = 0;
-
       // The pass carries on past it and records it.
       await scheduler.tickOnce();
       expect(errors.filter((e) => e.code === "org_ticket_invalid").length).toBeGreaterThan(0);
@@ -2171,14 +2058,12 @@ describe("organization runtime", () => {
       expect(await fs.readFile(headedPath, "utf8")).toBe(headed);
     });
   });
-
   describe("channel messages", () => {
     beforeEach(async () => {
       await createOrg();
       await service.hire(P, ORG, { newAgent: { agentId: HR }, title: "HR", reportsTo: CEO });
       started.length = 0;
     });
-
     it("delivers mentions to desks, records the rest, and stops the chain at the limit", async () => {
       const m1 = await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
         text: "@acme_hr welcome, and @nobody too",
@@ -2191,7 +2076,6 @@ describe("organization runtime", () => {
       expect(first?.origin).toMatchObject({ kind: "mention", message: `${m1.id} from user:alice` });
       expect(first?.rest).toContain("welcome");
       const hrDesk = started[0]!.sessionId;
-
       // HR answers from its desk: hop 1, delivered to the CEO.
       const m2 = await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
         text: `@${CEO} done`,
@@ -2202,7 +2086,6 @@ describe("organization runtime", () => {
       expect(started).toHaveLength(2);
       const ceoDesk = started[1]!.sessionId;
       expect(cache.ownerOfSession(ceoDesk)?.agentId).toBe(CEO);
-
       // CEO replies: hop 2, delivered to HR; HR replies: hop 3 = the limit, recorded only.
       const m3 = await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
         text: `@${HR} thanks`,
@@ -2217,7 +2100,6 @@ describe("organization runtime", () => {
       expect(m4.hop).toBe(3);
       expect(m4.mentions).toEqual([`agent:${CEO}`]);
       expect(started).toHaveLength(3);
-
       // A plain message reaches nobody; @all reaches everyone but the sender.
       await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
         text: "just noting",
@@ -2227,7 +2109,6 @@ describe("organization runtime", () => {
         text: "@all standup in 5",
       });
       expect(started).toHaveLength(5);
-
       const allHands = await service.channelMessages(
         P,
         ORG,
@@ -2246,7 +2127,6 @@ describe("organization runtime", () => {
         (await service.channelMessages(P, ORG, { userId: "alice" }, DEFAULT_CHANNEL_ID, {})).unread,
       ).toBe(0);
     });
-
     it("the system's own lines and a paused organization deliver nothing", async () => {
       await service.patch(P, ORG, { status: "paused" }, "alice");
       await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
@@ -2255,7 +2135,6 @@ describe("organization runtime", () => {
       expect(started).toHaveLength(0);
     });
   });
-
   describe("channels", () => {
     const alice = { userId: "alice" };
     let ceoDesk: string;
@@ -2268,7 +2147,6 @@ describe("organization runtime", () => {
       userId: "alice",
       sessionId: hrDesk,
     });
-
     beforeEach(async () => {
       await createOrg();
       await service.hire(P, ORG, { newAgent: { agentId: HR }, title: "HR", reportsTo: CEO });
@@ -2276,7 +2154,6 @@ describe("organization runtime", () => {
       hrDesk = (await service.desk(P, ORG, HR, {})).sessionId;
       started.length = 0;
     });
-
     it("a new channel holds only its creator; the all-hands channel holds everyone", async () => {
       const site = await service.createChannel(
         P,
@@ -2303,7 +2180,6 @@ describe("organization runtime", () => {
         [`agent:${CEO}`, `agent:${HR}`, "user:alice"].sort(),
       );
       expect(all.members.find((m) => m.principal === `agent:${CEO}`)?.name).toBe(`Name of ${CEO}`);
-
       await expect(
         service.createChannel(P, ORG, { channelId: "site" }, alice),
       ).rejects.toMatchObject({ status: 409, code: "channel_exists" });
@@ -2318,7 +2194,6 @@ describe("organization runtime", () => {
         code: "channel_not_found",
       });
     });
-
     it("an employee joins only by invitation; a person joins any channel itself", async () => {
       await service.createChannel(P, ORG, { channelId: "site" }, asCeo());
       expect(
@@ -2331,7 +2206,6 @@ describe("organization runtime", () => {
         status: 403,
         code: "not_a_member",
       });
-
       const joined = await service.addChannelMember(P, ORG, "site", "user:alice", alice);
       expect(joined.members.map((m) => m.principal)).toEqual([`agent:${CEO}`, "user:alice"]);
       const invited = await service.addChannelMember(P, ORG, "site", `agent:${HR}`, asCeo());
@@ -2345,7 +2219,6 @@ describe("organization runtime", () => {
       expect(
         (await service.addChannelMember(P, ORG, "site", `agent:${HR}`, asCeo())).memberCount,
       ).toBe(3);
-
       for (const principal of ["agent:ghost", "user:mallory", "all"]) {
         await expect(
           service.addChannelMember(P, ORG, "site", principal, alice),
@@ -2363,7 +2236,6 @@ describe("organization runtime", () => {
         { kind: "channel_invited", params: { by: `agent:${CEO}`, principal: `agent:${HR}` } },
       ]);
     });
-
     it("a member leaves; a person removes anyone; an employee removes only itself", async () => {
       await service.createChannel(P, ORG, { channelId: "site" }, alice);
       await service.addChannelMember(P, ORG, "site", `agent:${CEO}`, alice);
@@ -2371,7 +2243,6 @@ describe("organization runtime", () => {
       await expect(
         service.removeChannelMember(P, ORG, "site", `agent:${CEO}`, asHr()),
       ).rejects.toMatchObject({ status: 403, code: "not_a_member" });
-
       await service.removeChannelMember(P, ORG, "site", `agent:${HR}`, asHr());
       expect(
         (await service.channel(P, ORG, "site", alice)).members.map((m) => m.principal),
@@ -2390,7 +2261,6 @@ describe("organization runtime", () => {
         texts.filter((t) => t === `user:alice removed agent:${CEO} from the channel.`),
       ).toHaveLength(1);
     });
-
     it("archiving is a person's call, and an archived channel takes no writes", async () => {
       await service.createChannel(P, ORG, { channelId: "site" }, asCeo());
       await expect(
@@ -2423,7 +2293,6 @@ describe("organization runtime", () => {
       expect(texts).toContain("user:alice archived the channel.");
       expect(texts).toContain("user:alice unarchived the channel.");
     });
-
     it("the all-hands channel cannot be archived, joined or left", async () => {
       for (const call of [
         () => service.patchChannel(P, ORG, DEFAULT_CHANNEL_ID, { archived: true }, alice),
@@ -2437,12 +2306,10 @@ describe("organization runtime", () => {
         (await service.patchChannel(P, ORG, DEFAULT_CHANNEL_ID, { name: "Everyone" }, alice)).name,
       ).toBe("Everyone");
     });
-
     it("delivers a mention inside the channel only, and refuses one that names an outsider", async () => {
       await service.createChannel(P, ORG, { channelId: "site" }, alice);
       await service.addChannelMember(P, ORG, "site", `agent:${CEO}`, alice);
       started.length = 0;
-
       await expect(
         service.sendChannelMessage(P, ORG, "alice", "site", { text: "hello", sessionId: hrDesk }),
       ).rejects.toMatchObject({ status: 403, code: "not_a_member" });
@@ -2460,7 +2327,6 @@ describe("organization runtime", () => {
         ),
       ).toEqual([]);
       expect(started).toHaveLength(0);
-
       const msg = await service.sendChannelMessage(P, ORG, "alice", "site", {
         text: "@all kickoff",
       });
@@ -2478,7 +2344,6 @@ describe("organization runtime", () => {
           (e) => e.type === "org_channel" && e.channelId === "site" && e.message.id === msg.id,
         ),
       ).toBe(true);
-
       // The same `@all` in the all-hands channel is every employee.
       started.length = 0;
       await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
@@ -2487,7 +2352,6 @@ describe("organization runtime", () => {
       expect(started.map((s) => s.sessionId).sort()).toEqual([ceoDesk, hrDesk].sort());
       expect(parseOrgTriggerMessage(started[0]!.text)?.origin.channel).toBe(DEFAULT_CHANNEL_ID);
     });
-
     it("counts unread per channel and shows an employee only the channels it is in", async () => {
       await service.createChannel(P, ORG, { channelId: "site" }, alice);
       await service.addChannelMember(P, ORG, "site", `agent:${CEO}`, alice);
@@ -2496,7 +2360,6 @@ describe("organization runtime", () => {
         sessionId: ceoDesk,
       });
       await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, { text: "plain line" });
-
       const listed = await service.channels(P, ORG, alice);
       expect(listed.channels.map((c) => c.channelId)).toEqual([DEFAULT_CHANNEL_ID, "site"]);
       const byId = new Map(listed.channels.map((c) => [c.channelId, c]));
@@ -2504,7 +2367,6 @@ describe("organization runtime", () => {
       expect(byId.get("site")!.lastMessageAt).toBe(ping.time);
       expect(byId.get(DEFAULT_CHANNEL_ID)).toMatchObject({ mentionsMe: 0, memberCount: 3 });
       expect(byId.get(DEFAULT_CHANNEL_ID)!.unread).toBeGreaterThan(0);
-
       // Reading one channel leaves the other's cursor where it was.
       const site = await service.channelMessages(P, ORG, alice, "site", {});
       expect(site.channelId).toBe("site");
@@ -2514,7 +2376,6 @@ describe("organization runtime", () => {
       );
       expect(after.get("site")).toMatchObject({ unread: 0, mentionsMe: 0 });
       expect(after.get(DEFAULT_CHANNEL_ID)!.unread).toBeGreaterThan(0);
-
       expect((await service.channels(P, ORG, asHr())).channels.map((c) => c.channelId)).toEqual([
         DEFAULT_CHANNEL_ID,
       ]);
@@ -2529,7 +2390,6 @@ describe("organization runtime", () => {
         code: "not_a_member",
       });
     });
-
     it("never counts a person's own lines as unread", async () => {
       const seen = await service.channelMessages(P, ORG, alice, DEFAULT_CHANNEL_ID, {});
       await service.markRead(P, ORG, "alice", DEFAULT_CHANNEL_ID, seen.messages.at(-1)!.id);
@@ -2541,7 +2401,6 @@ describe("organization runtime", () => {
       const mine = await service.channelMessages(P, ORG, alice, DEFAULT_CHANNEL_ID, {});
       expect(mine.messages.at(-1)!.sender).toBe("user:alice");
       expect(mine.unread).toBe(0);
-
       // A colleague's line in the same place is unread, and names her.
       await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
         text: "@user:alice have a look",
@@ -2556,7 +2415,6 @@ describe("organization runtime", () => {
       );
       expect(listed.get(DEFAULT_CHANNEL_ID)).toMatchObject({ unread: 1, mentionsMe: 1 });
     });
-
     it("counts unread past the seven newest active days, stopping at the read cursor", async () => {
       const read = await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
         text: "day zero",
@@ -2564,7 +2422,6 @@ describe("organization runtime", () => {
       });
       await service.markRead(P, ORG, "alice", DEFAULT_CHANNEL_ID, read.id);
       expect((await service.channelMessages(P, ORG, alice, DEFAULT_CHANNEL_ID, {})).unread).toBe(0);
-
       // Nine more active days, each its own message file. Only days with messages have a
       // file, so a count that stopped after the seven newest would lose the two oldest —
       // and an organization left running for weeks is where that is the normal case.
@@ -2586,7 +2443,6 @@ describe("organization runtime", () => {
       // And the overview's "mentions waiting" is the same walk.
       expect((await service.detail(P, ORG, "alice")).pending.mentions).toBe(9);
     });
-
     it("ignores a stray entry under channels/ and reports a channel whose file does not parse", async () => {
       // A directory without a channel.toml, and a plain file, are not channels.
       await fs.writeFile(path.join(orgDir(), "channels", "notes.md"), "scratch\n", "utf8");
@@ -2609,7 +2465,6 @@ describe("organization runtime", () => {
       });
     });
   });
-
   describe("budgets", () => {
     it("warns once, pauses the employee's calendar and its subordinates, and resumes when the budget is raised", async () => {
       await createOrg();
@@ -2634,7 +2489,6 @@ describe("organization runtime", () => {
       await scheduler.tickOnce();
       started.length = 0;
       events.length = 0;
-
       costs.set(desk.sessionId, 9);
       await scheduler.tickOnce();
       expect(
@@ -2647,7 +2501,6 @@ describe("organization runtime", () => {
       expect(hr).toMatchObject({ own: 9, cumulative: 9, budget: 10, warned: true, paused: false });
       expect(finance.employees.find((e) => e.agentId === CEO)!.cumulative).toBe(9);
       expect(finance.total).toBe(9);
-
       costs.set(desk.sessionId, 11);
       nowMs = T0 + DAY + 1;
       await scheduler.tickOnce();
@@ -2692,7 +2545,6 @@ describe("organization runtime", () => {
       expect(paused.messages.find((m) => m.text.startsWith("Budget pause"))?.notice?.kind).toBe(
         "budget_paused",
       );
-
       await service.patchEmployee(P, ORG, HR, { budget: 100 });
       expect(
         events.filter((e) => e.type === "org_budget").map((e) => (e as { state: string }).state),
@@ -2704,7 +2556,6 @@ describe("organization runtime", () => {
         "11.00 / 100.00 USD (11%)",
       );
     });
-
     it("enforces a zero budget, which nothing can be under", async () => {
       await createOrg();
       await service.hire(P, ORG, {
@@ -2733,7 +2584,6 @@ describe("organization runtime", () => {
       // The CEO's 100 is untouched, so the zero budget is the only one that tripped.
       expect(finance.employees.find((e) => e.agentId === CEO)).toMatchObject({ paused: false });
     });
-
     it("reports the month asked for, and refuses a month that is not one", async () => {
       await createOrg();
       expect((await service.finance(P, ORG)).period).toBe("2026-09");
@@ -2743,7 +2593,6 @@ describe("organization runtime", () => {
       await expect(service.finance(P, ORG, "2026-13")).rejects.toThrow(/yyyy-mm/);
       await expect(service.finance(P, ORG, "2026-00")).rejects.toThrow(/yyyy-mm/);
     });
-
     it("reports a ratio for a zero budget, so a paused row is never a meterless one", async () => {
       await createOrg();
       await service.hire(P, ORG, {
@@ -2762,12 +2611,10 @@ describe("organization runtime", () => {
       expect((await service.finance(P, ORG)).employees.find((e) => e.agentId === HR)).toMatchObject(
         { budget: 0, ratio: 1, warned: true, paused: true },
       );
-
       // The chart row reads the same convention, and a budget that is not zero is unchanged.
       const chart = await service.chart(P, ORG);
       expect(chart.employees.find((e) => e.agentId === HR)!.spend.ratio).toBe(1);
       expect(chart.employees.find((e) => e.agentId === CEO)!.spend.ratio).toBe(0.03);
-
       // So does the organization's own spend, measured against the CEO's budget.
       await service.create(P, { orgId: "zero", mission: "Build it", ceoBudget: 0 }, "alice");
       expect((await service.detail(P, "zero", "alice")).spend).toMatchObject({
@@ -2776,7 +2623,6 @@ describe("organization runtime", () => {
       });
     });
   });
-
   describe("desks and caches", () => {
     it("renews a desk when the chart moves its workspace and keeps the old session counting", async () => {
       await createOrg();
@@ -2798,7 +2644,6 @@ describe("organization runtime", () => {
       const list = await service.sessions(P, ORG);
       expect(list.desks.map((d) => d.sessionId)).toEqual([renewed.sessionId]);
     });
-
     it("deletes the organization and nothing else: its files to the trash, its Agents and Sessions left alone", async () => {
       await createOrg();
       const desk = await service.desk(P, ORG, CEO, {});
@@ -2809,7 +2654,6 @@ describe("organization runtime", () => {
         { userId: "alice" },
       );
       await service.delete(P, ORG);
-
       // Gone from every surface.
       expect((await service.list(P)).map((o) => o.orgId)).toEqual([]);
       await expect(service.detail(P, ORG, "alice")).rejects.toMatchObject({ status: 404 });
@@ -2835,7 +2679,6 @@ describe("organization runtime", () => {
       await createOrg();
       expect((await service.list(P)).map((o) => o.orgId)).toEqual([ORG]);
     });
-
     it("rebuilds the session caches from the files after they are dropped", async () => {
       await createOrg();
       const desk = await service.desk(P, ORG, CEO, {});
@@ -2853,7 +2696,6 @@ describe("organization runtime", () => {
       expect(cache.ownerOfSession(sessionId)).toMatchObject({ kind: "ticket", agentId: CEO });
       expect(service.orgIdOfSession(sessionId)).toBe(ORG);
     });
-
     it("maps a Project's organization sessions in one lookup, desks and ticket sessions alike", async () => {
       await createOrg();
       const desk = await service.desk(P, ORG, CEO, {});
@@ -2878,7 +2720,6 @@ describe("organization runtime", () => {
       expect(ids.has("session-2026-09-01-00-00-00-0000ffff")).toBe(false);
       expect(cache.orgIdsOfProject("other_project").size).toBe(0);
     });
-
     it("calls an employee what the chart calls it, tells two of a name apart, and delivers @name", async () => {
       await createOrg();
       await service.hire(P, ORG, {
@@ -2890,7 +2731,6 @@ describe("organization runtime", () => {
       const hr = () =>
         service.chart(P, ORG).then((c) => c.employees.find((e) => e.agentId === HR)!);
       expect(await hr()).toMatchObject({ name: "小明", givenName: "小明" });
-
       // Two of a name: each is shown — and addressed — with its id noted.
       await service.patchEmployee(P, ORG, CEO, { name: "小明" });
       expect((await hr()).name).toBe(`小明 (${HR})`);
@@ -2898,7 +2738,6 @@ describe("organization runtime", () => {
         text: `@小明 (${HR}) 请看一下，@小明 是谁？`,
       });
       expect(ambiguous.mentions).toEqual([`agent:${HR}`]);
-
       // Cleared, the Agent's display name stands in again, and the other name is its own.
       await service.patchEmployee(P, ORG, CEO, { name: null });
       expect((await hr()).name).toBe("小明");
@@ -2910,7 +2749,6 @@ describe("organization runtime", () => {
         status: 400,
       });
     });
-
     it("refuses a bad name before it creates anything, and takes the Agent's name only when it can be one", async () => {
       await createOrg();
       const before = agentsCreated.length;
@@ -2927,7 +2765,6 @@ describe("organization runtime", () => {
       await expect(fs.stat(path.join(orgDir(), "workspace", HR))).rejects.toMatchObject({
         code: "ENOENT",
       });
-
       // A display name the Agent may have but an employee may not: the hire goes through,
       // and the employee simply has no given name.
       const item = await service.hire(P, ORG, {
@@ -2938,7 +2775,6 @@ describe("organization runtime", () => {
       expect(agentsCreated.map((a) => a.agentId)).toContain(HR);
       expect(item.givenName).toBeUndefined();
     });
-
     it("keeps an employee's avatar as a file of the organization, and says when it changes", async () => {
       await createOrg();
       // A 1×1 png.
@@ -2948,7 +2784,6 @@ describe("organization runtime", () => {
         service.chart(P, ORG).then((c) => c.employees.find((e) => e.agentId === CEO)!);
       expect((await ceo()).avatarRev).toBeUndefined();
       await expect(service.employeeAvatar(P, ORG, CEO)).rejects.toMatchObject({ status: 404 });
-
       const set = await service.setEmployeeAvatar(P, ORG, CEO, png);
       expect(set.avatarRev).toMatch(/^[0-9a-f]{12}$/);
       expect(await fs.readdir(path.join(orgDir(), "avatars"))).toEqual([`${CEO}.png`]);
@@ -2974,12 +2809,10 @@ describe("organization runtime", () => {
         status: 404,
       });
       expect((await ceo()).avatarRev).toBe(set.avatarRev);
-
       await service.setEmployeeAvatar(P, ORG, CEO, null);
       expect((await ceo()).avatarRev).toBeUndefined();
       expect(await fs.readdir(path.join(orgDir(), "avatars"))).toEqual([]);
     });
-
     it("opens the new employee's desk as it is hired, and starts no run for it", async () => {
       await createOrg();
       const runsAfterCreation = started.length;
@@ -3003,7 +2836,6 @@ describe("organization runtime", () => {
       });
       // A desk is a Session, not a work run: hiring dispatches nothing to it.
       expect(started).toHaveLength(runsAfterCreation);
-
       const ledger = (await store.readDesks(orgDir())).parsed;
       expect(ledger.ok && ledger.value[HR]?.sessionId).toBe(deskSessionId);
       const listed = (await service.sessions(P, ORG)).desks.find((d) => d.agentId === HR);
@@ -3015,12 +2847,10 @@ describe("organization runtime", () => {
         created: false,
       });
     });
-
     it("provisions a desk the chart names but the ledger does not, and re-opens one whose session is gone, listing it nowhere in between", async () => {
       await createOrg();
       await service.hire(P, ORG, { newAgent: { agentId: HR }, title: "HR", reportsTo: CEO });
       const hired = (await service.chart(P, ORG)).employees.find((e) => e.agentId === HR)!;
-
       // An employee written into the chart by hand — the CEO's file tools, or a person — has
       // no ledger entry at all. The pass opens its desk without any trigger.
       const dev = "acme_dev";
@@ -3053,7 +2883,6 @@ describe("organization runtime", () => {
         client: "org",
       });
       expect(started).toHaveLength(runs);
-
       // A desk session deleted by hand leaves the ledger naming a Session the server cannot
       // find. Until the pass replaces it the desk is listed nowhere: a row handing out that id
       // is what sent a click into somebody else's conversation, and what a messaging binding
@@ -3074,12 +2903,10 @@ describe("organization runtime", () => {
       await scheduler.tickOnce();
       expect(created).toHaveLength(openedSoFar);
     });
-
     it("records a desk it cannot open and provisions the rest of the chart, paused or not", async () => {
       await createOrg();
       await service.hire(P, ORG, { newAgent: { agentId: HR }, title: "HR", reportsTo: CEO });
       await service.patch(P, ORG, { status: "paused" }, "alice");
-
       // Two employees with no desk: one whose Agent is gone (nothing can open it) and one
       // that is fine. A paused organization fires no run, but a desk is not a run.
       const ghost = "acme_ghost";
@@ -3117,14 +2944,12 @@ describe("organization runtime", () => {
       expect(desks).toContain(dev);
       expect(desks).not.toContain(ghost);
     });
-
     it("marks an employee whose Agent is gone, offers no desk for it, and keeps it until it leaves", async () => {
       await createOrg();
       await service.hire(P, ORG, { newAgent: { agentId: HR }, title: "HR", reportsTo: CEO });
       // Deleted the way the Agent route deletes one: the Agent, and every Session row it had.
       existingAgents.delete(HR);
       sessions.deleteByAgent(P, HR);
-
       const chart = await service.chart(P, ORG);
       const orphan = chart.employees.find((e) => e.agentId === HR);
       expect(orphan).toMatchObject({ agentMissing: true, invalid: expect.any(String) });
@@ -3132,7 +2957,6 @@ describe("organization runtime", () => {
       const ceo = chart.employees.find((e) => e.agentId === CEO);
       expect(ceo).not.toHaveProperty("agentMissing");
       expect(ceo?.desk).toBeDefined();
-
       // Each pass says once that the desk cannot be opened, and opens nothing for it.
       errors.length = 0;
       const opened = created.length;
@@ -3147,13 +2971,11 @@ describe("organization runtime", () => {
         status: 409,
         code: "desk_unavailable",
       });
-
       // Nothing takes the entry out on its own; leaving does.
       expect((await service.chart(P, ORG)).employees.map((e) => e.agentId)).toContain(HR);
       await service.leave(P, ORG, HR);
       expect((await service.chart(P, ORG)).employees.map((e) => e.agentId)).not.toContain(HR);
     });
-
     it("pausing keeps every desk session open, and nothing removes an organization", async () => {
       await createOrg();
       const desk = await service.desk(P, ORG, CEO, {});
@@ -3165,7 +2987,6 @@ describe("organization runtime", () => {
         settings: { status: "paused" },
       });
       expect(await fs.stat(orgDir())).toBeTruthy();
-
       // The only way one goes away is by hand, and it takes neither the Agent nor the session.
       await fs.rm(orgDir(), { recursive: true, force: true });
       await scheduler.tickOnce();
@@ -3174,17 +2995,14 @@ describe("organization runtime", () => {
       expect(sessions.findById(desk.sessionId)).not.toBeNull();
     });
   });
-
   describe("employee plugins", () => {
     const OLD = "2026-09-01.1";
-
     async function orgWithHr(): Promise<void> {
       await createOrg();
       await service.hire(P, ORG, { newAgent: { agentId: HR }, title: "HR", reportsTo: CEO });
       plugins.updated.length = 0;
       errors.length = 0;
     }
-
     it("reinstalls a company plugin the library has moved past, and leaves the rest alone", async () => {
       await orgWithHr();
       plugins.installed.set(`${HR}:agent-company`, OLD);
@@ -3193,7 +3011,6 @@ describe("organization runtime", () => {
       expect(plugins.installed.get(`${HR}:agent-company`)).toBe(LIBRARY_VERSION);
       expect(errors).toEqual([]);
     });
-
     it("writes nothing while every employee is current", async () => {
       await orgWithHr();
       await scheduler.tickOnce();
@@ -3203,7 +3020,6 @@ describe("organization runtime", () => {
       await scheduler.tickOnce();
       expect(plugins.updated).toEqual([]);
     });
-
     it("leaves a plugin the employee does not carry uninstalled", async () => {
       await orgWithHr();
       plugins.installed.delete(`${HR}:agent-development`);
@@ -3211,7 +3027,6 @@ describe("organization runtime", () => {
       expect(plugins.updated).toEqual([]);
       expect(plugins.installed.has(`${HR}:agent-development`)).toBe(false);
     });
-
     it("records a failed update and carries on with the rest of the pass", async () => {
       await orgWithHr();
       plugins.installed.set(`${HR}:agent-company`, OLD);
@@ -3230,11 +3045,9 @@ describe("organization runtime", () => {
       expect(await service.list(P)).toHaveLength(1);
     });
   });
-
   describe("crash-window robustness in the org store", () => {
     const ticketFile = (ticketId: string, column: string): string =>
       path.join(orgDir(), "tickets", ticketId.slice(0, 7), column, `${ticketId}.md`);
-
     it("keeps a ticket on the board when a crash left it in two columns", async () => {
       await createOrg();
       const t = await service.createTicket(
@@ -3251,7 +3064,6 @@ describe("organization runtime", () => {
       await fs.writeFile(ticketFile(t.ticketId, "proposed"), raw, "utf8");
       const stale = new Date(Date.now() - 60_000);
       await fs.utimes(ticketFile(t.ticketId, "proposed"), stale, stale);
-
       const board = await service.tickets(P, ORG);
       expect(board.columns.in_progress.map((x) => x.ticketId)).toContain(t.ticketId);
       expect(board.columns.proposed.map((x) => x.ticketId)).not.toContain(t.ticketId);
@@ -3259,7 +3071,6 @@ describe("organization runtime", () => {
       expect(dup).toHaveLength(1);
       expect(dup[0]?.error).toContain("keeping the newest copy");
     });
-
     it("does not swallow a failing removal of the old column on a move", async () => {
       await createOrg();
       const t = await service.createTicket(
@@ -3284,7 +3095,6 @@ describe("organization runtime", () => {
         await fs.rmdir(from);
       }
     });
-
     it("leaves no temp files behind after ticket writes", async () => {
       await createOrg();
       const t = await service.createTicket(

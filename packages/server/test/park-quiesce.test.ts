@@ -13,8 +13,8 @@ import { packagedPlatform } from "../src/hmr/platform.js";
 import type { PlatformApi } from "../src/hmr/platform.js";
 import type { Instance } from "@prismshadow/penguin-core/kernel";
 import { PENGUIN_FAMILY, HMR_INTERFACES_RESOURCE_ID } from "../src/hmr/capabilities.js";
-import { TerminalManager } from "../src/terminal/manager.js";
-import type { TerminalSession } from "../src/terminal/session.js";
+import { TerminalManager } from "../../../plugins/terminal/src/server/index.js";
+import type { TerminalSession } from "../../../plugins/terminal/src/server/index.js";
 import { waitFor } from "./helpers.js";
 
 /** A pty stand-in carrying exactly what the manager touches: id, alive, onExit, dispose. */

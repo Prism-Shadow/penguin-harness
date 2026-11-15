@@ -65,7 +65,7 @@ import type {
   TelegramBindingResponse,
   TelegramTestResponse,
 } from "../src/api/types.js";
-import { ProjectsRepo } from "../src/db/repos/projects.js";
+import { ProjectsRepo } from "../../../plugins/projects/src/server/index.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import { INLINE_IMAGE_MAX_BYTES } from "../src/services/attachment-limits.js";
 import {
@@ -74,10 +74,10 @@ import {
   MESSAGING_TEST_MESSAGE,
   messagingImageFailedNotice,
   messagingInboundFileTooLargeNotice,
-} from "../src/runtime/messaging/bridge.js";
-import { MessagingChannelError } from "../src/runtime/messaging/connector.js";
-import { messagingErrorKind } from "../src/runtime/messaging/error-kind.js";
-import { MessagingMediaTooLargeError, collectUnderCap } from "../src/runtime/messaging/media.js";
+} from "../../../plugins/messaging/src/server/index.js";
+import { MessagingChannelError } from "../../../plugins/messaging/src/server/index.js";
+import { messagingErrorKind } from "../../../plugins/messaging/src/server/index.js";
+import { MessagingMediaTooLargeError, collectUnderCap } from "../../../plugins/messaging/src/server/index.js";
 import type {
   TelegramBotClient,
   TelegramBotUser,
@@ -87,13 +87,13 @@ import type {
   TelegramTransportOpts,
   TelegramUpdate,
   TelegramWebhookInfo,
-} from "../src/runtime/messaging/telegram-api.js";
+} from "../../../plugins/messaging/src/server/index.js";
 import {
   TELEGRAM_MAX_DOWNLOAD_BYTES,
   TelegramApiError,
   createTelegramTransport,
-} from "../src/runtime/messaging/telegram-api.js";
-import { TelegramConnector, telegramBotIdOf } from "../src/runtime/messaging/telegram-connector.js";
+} from "../../../plugins/messaging/src/server/index.js";
+import { TelegramConnector, telegramBotIdOf } from "../../../plugins/messaging/src/server/index.js";
 import { FakeFeishuSdk } from "./fixtures/feishu.js";
 import { fakeFetch, jsonResponse } from "./fixtures/fetch.js";
 import { forwardingTo } from "./fixtures/forwarding.js";

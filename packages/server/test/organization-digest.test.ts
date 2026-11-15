@@ -6,12 +6,10 @@
 import { describe, expect, it } from "vitest";
 import type { OrgTicketChange } from "../src/api/types.js";
 import type { OrgDeskNoticeRow } from "../src/db/repos/organizations.js";
-import type { TicketDoc } from "../src/organization/files.js";
-import { deskDigest } from "../src/runtime/organization/digest.js";
-import type { DigestTicket } from "../src/runtime/organization/digest.js";
-
+import { TicketDoc } from "../../../plugins/company/src/server/organization/files.js";
+import { deskDigest } from "../../../plugins/company/src/server/runtime/digest.js";
+import { DigestTicket } from "../../../plugins/company/src/server/runtime/digest.js";
 let seq = 0;
-
 function row(agentId: string, ticketId: string, change: OrgTicketChange): OrgDeskNoticeRow {
   seq += 1;
   return {
@@ -24,7 +22,6 @@ function row(agentId: string, ticketId: string, change: OrgTicketChange): OrgDes
     at: "2026-09-08T01:00:00Z",
   };
 }
-
 function ticket(ticketId: string, title: string, doc: Partial<TicketDoc> = {}): DigestTicket {
   return {
     ticketId,
@@ -46,12 +43,10 @@ function ticket(ticketId: string, title: string, doc: Partial<TicketDoc> = {}): 
     },
   };
 }
-
 describe("deskDigest", () => {
   it("says nothing when nothing is queued", () => {
     expect(deskDigest([], [ticket("2026-09-08-site", "Launch the marketing site")])).toBe("");
   });
-
   it("lists one line per change in queue order, with the reason or blocker the ticket carries", () => {
     const tickets = [
       ticket("2026-09-08-site-launch", "Launch the marketing site"),
@@ -86,7 +81,6 @@ describe("deskDigest", () => {
       ].join("\n"),
     );
   });
-
   it("names a ticket whose file is gone, and asks for no command on it", () => {
     const rows = [
       row("acme_dev", "2026-09-01-deleted", "assigned"),
@@ -96,7 +90,6 @@ describe("deskDigest", () => {
     expect(lines[1]).toBe("- 2026-09-01-deleted (ticket removed): assigned to you");
     expect(lines[2]).toBe("- 2026-09-01-also-gone (ticket removed): blocker closed");
   });
-
   it("takes one line of a long reason, capped, so a list item stays a list item", () => {
     const reason = `${"a".repeat(200)}\nthe second line`;
     const rows = [row("acme_dev", "2026-09-01-long", "rejected")];

@@ -26,8 +26,8 @@ import {
   userText,
 } from "@prismshadow/penguin-core";
 import type { AmspRecord, TokenCounts } from "@prismshadow/penguin-core";
-import { decodeCursor } from "../src/services/message-window.js";
-import type { TraceService } from "../src/services/trace-service.js";
+import { decodeCursor } from "../../../plugins/usage/src/server/index.js";
+import type { TraceService } from "../../../plugins/usage/src/server/index.js";
 import { makeTempRoot, makeTraceHarness, writeTraceFile } from "./helpers.js";
 
 const P = "project-u";

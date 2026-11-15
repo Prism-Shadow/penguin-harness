@@ -7,26 +7,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import {
-  listImportSources,
-  readHistory,
-  ImportSourceNotFoundError,
-} from "../src/builtin-browser/import/index.js";
-import {
-  FakeMachine,
-  writeChromiumCookies,
-  writeChromiumHistory,
-  writeFile,
-  writeFirefoxCookies,
-  writeFirefoxPlaces,
-  writeLocalState,
-  writeProfilesIni,
-  nowSeconds,
-} from "./builtin-browser-import-fixtures.js";
+import { FakeMachine, nowSeconds, writeChromiumCookies, writeChromiumHistory, writeLocalState, writeFirefoxCookies, writeFirefoxPlaces, writeProfilesIni, writeFile } from "./builtin-browser-import-fixtures.js";
 
+import {
+ImportSourceNotFoundError, listImportSources, readHistory
+} from "../../../plugins/browser/src/server/builtin-browser/import/index.js";
 let machine: FakeMachine;
 afterEach(() => machine.cleanup());
-
 const cookieStore = (dir: string) =>
   writeChromiumCookies(path.join(dir, "Network", "Cookies"), [
     { host: ".a.com", name: "a", value: "1" },
@@ -35,7 +22,6 @@ const historyStore = (dir: string) =>
   writeChromiumHistory(path.join(dir, "History"), [
     { url: "https://a.com/", visitedAt: nowSeconds() },
   ]);
-
 describe("listImportSources on macOS", () => {
   it("names Chrome's profiles from Local State and lists only those holding a store", () => {
     machine = new FakeMachine("darwin");
@@ -48,7 +34,6 @@ describe("listImportSources on macOS", () => {
     historyStore(path.join(chrome, "Profile 2"));
     fs.mkdirSync(path.join(chrome, "Profile 3"), { recursive: true }); // no stores
     historyStore(path.join(chrome, "System Profile")); // never a user profile
-
     expect(listImportSources(machine.env())).toEqual([
       {
         id: "chrome:Default",
@@ -70,7 +55,6 @@ describe("listImportSources on macOS", () => {
       },
     ]);
   });
-
   it("falls back to the profile directories without Local State, and reads the legacy Cookies path", () => {
     machine = new FakeMachine("darwin");
     const brave = machine.path("Library", "Application Support", "BraveSoftware", "Brave-Browser");
@@ -87,7 +71,6 @@ describe("listImportSources on macOS", () => {
     ]);
     expect(sources[2]).toMatchObject({ profileName: "Profile 10", hasCookies: true });
   });
-
   it("lists Arc and Firefox, the install's default Firefox profile first", () => {
     machine = new FakeMachine("darwin");
     historyStore(machine.path("Library", "Application Support", "Arc", "User Data", "Default"));
@@ -108,13 +91,11 @@ describe("listImportSources on macOS", () => {
       ["firefox:zz99yy88.default", "default", false, true],
     ]);
   });
-
   it("finds nothing on a machine without browsers", () => {
     machine = new FakeMachine("darwin");
     expect(listImportSources(machine.env())).toEqual([]);
   });
 });
-
 describe("listImportSources on Linux", () => {
   it("honours XDG_CONFIG_HOME", () => {
     machine = new FakeMachine("linux");
@@ -123,7 +104,6 @@ describe("listImportSources on Linux", () => {
     historyStore(machine.path(".config", "google-chrome", "Profile 1")); // not the config home
     expect(listImportSources(machine.env()).map((s) => s.id)).toEqual(["chrome:Default"]);
   });
-
   it("keeps the most recently written copy when a snap and a deb install hold the same profile", async () => {
     machine = new FakeMachine("linux");
     const old = new Date(Date.now() - 7 * 86_400_000);
@@ -147,7 +127,6 @@ describe("listImportSources on Linux", () => {
       writeFirefoxPlaces(path.join(root, "x1.default-release", "places.sqlite"), visit(url));
     }
     fs.utimesSync(path.join(firefoxSnap, "x1.default-release", "places.sqlite"), old, old);
-
     const env = machine.env();
     const sources = listImportSources(env);
     expect(sources.map((s) => s.id)).toEqual(["chromium:Default", "firefox:x1.default-release"]);
@@ -157,7 +136,6 @@ describe("listImportSources on Linux", () => {
     expect(await urls(1)).toEqual(["https://deb.example/"]);
   });
 });
-
 describe("listImportSources on Windows", () => {
   it("reads Local AppData for Chrome and Edge, Roaming for Opera's single-profile layout and Firefox", () => {
     machine = new FakeMachine("win32");
@@ -173,7 +151,6 @@ describe("listImportSources on Windows", () => {
       { name: "work", path: elsewhere, relative: false },
     ]);
     writeFirefoxCookies(path.join(elsewhere, "cookies.sqlite"), []);
-
     expect(listImportSources(machine.env()).map((s) => [s.id, s.browserName])).toEqual([
       ["chrome:Default", "Chrome"],
       ["edge:Profile 1", "Microsoft Edge"],
@@ -181,7 +158,6 @@ describe("listImportSources on Windows", () => {
       ["firefox:ff-profile", "Firefox"],
     ]);
   });
-
   it("finds nothing when LOCALAPPDATA and APPDATA are unset", () => {
     machine = new FakeMachine("win32");
     cookieStore(path.join(machine.vars.LOCALAPPDATA!, "Google", "Chrome", "User Data", "Default"));
@@ -190,7 +166,6 @@ describe("listImportSources on Windows", () => {
     expect(listImportSources(machine.env())).toEqual([]);
   });
 });
-
 describe("resolving a source", () => {
   it("rejects a source discovery does not list, whatever its fields say", async () => {
     machine = new FakeMachine("darwin");

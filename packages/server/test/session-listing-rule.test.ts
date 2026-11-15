@@ -10,7 +10,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { SessionSource } from "../src/api/types.js";
-import { listCategory } from "../src/runtime/session-sources.js";
+import { listCategory } from "../../../plugins/sessions/src/server/index.js";
 
 const unmarked = { archivedAt: null, keptAt: null };
 const archived = { archivedAt: "2026-10-11T08:00:00.000Z", keptAt: null };

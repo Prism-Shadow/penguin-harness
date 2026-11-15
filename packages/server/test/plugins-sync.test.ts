@@ -7,10 +7,9 @@
  * list, so keeping one means listing it fleet-wide.
  */
 import { describe, expect, it } from "vitest";
-import type { MachineApi } from "../src/machines/machine-api.js";
+import type { MachineApi } from "../../../plugins/machines/src/server/index.js";
 import type { InstalledPluginsResponse } from "../src/api/types.js";
-import { syncPluginsToMachine } from "../src/machines/plugins-sync.js";
-
+import { syncPluginsToMachine } from "../../../plugins/machines/src/server/plugins-sync.js";
 /** A machine whose list is whatever was last written to it. */
 function fakeMachine(
   initial: Record<string, string[]>,
@@ -85,11 +84,9 @@ function fakeMachine(
   };
   return { api, calls, state };
 }
-
 const local =
   (lists: Record<string, (string | { name: string; version: string })[]>) => (projectId: string) =>
     Promise.resolve((lists[projectId] ?? []).map((p) => (typeof p === "string" ? { name: p } : p)));
-
 describe("syncPluginsToMachine", () => {
   it("writes what the Project asks for, and removes what the machine has beyond it", async () => {
     const m = fakeMachine({ p1: ["@acme/keep", "@acme/theirs"] });
@@ -105,7 +102,6 @@ describe("syncPluginsToMachine", () => {
     expect(out.removed).toEqual(["@acme/theirs"]);
     expect(m.state.get("p1")).toEqual(["@acme/keep", "@acme/ours"]);
   });
-
   it("writes nothing when the machine is already in parity", async () => {
     const m = fakeMachine({ p1: ["@acme/same"] });
     const out = await syncPluginsToMachine({
@@ -117,7 +113,6 @@ describe("syncPluginsToMachine", () => {
     // A connect must not rewrite a machine that already agrees.
     expect(m.calls.some((c) => c.method === "PUT")).toBe(false);
   });
-
   it("reports a specifier the machine cannot resolve instead of dropping it", async () => {
     // Most often a machine still on a build that does not ship the plugin: the operator's
     // choice is not taking effect there, and silence would read as success.
@@ -130,7 +125,6 @@ describe("syncPluginsToMachine", () => {
     expect(out.kind === "synced" && out.unresolved).toEqual(["@acme/not-there"]);
     expect(m.state.get("p1")).toEqual(["@acme/not-there"]);
   });
-
   it("reports a machine that still has to restart to finish loading", async () => {
     const m = fakeMachine({ p1: [] }, { restartPending: true });
     const out = await syncPluginsToMachine({
@@ -140,7 +134,6 @@ describe("syncPluginsToMachine", () => {
     });
     expect(out.kind === "synced" && out.restartPending).toBe(true);
   });
-
   it("refuses a Project the machine does not have, rather than creating one", async () => {
     // A Project exists to hold work; creating one over there to carry a plugin list would
     // invent a workspace nobody asked for.
@@ -155,7 +148,6 @@ describe("syncPluginsToMachine", () => {
     ]);
     expect(m.calls.some((c) => c.method === "PUT")).toBe(false);
   });
-
   it("tells a machine that lacks the ROUTE from one that lacks the Project", async () => {
     // The same 404 means two opposite things, and the operator reads the difference. A
     // machine on an older build listed the Project it was refused for, in the line right
@@ -183,7 +175,6 @@ describe("syncPluginsToMachine", () => {
       },
     ]);
   });
-
   it("carries on to the next Project when one is refused", async () => {
     const m = fakeMachine({ p2: [] });
     const out = await syncPluginsToMachine({
@@ -210,7 +201,6 @@ describe("syncPluginsToMachine", () => {
     expect(out.kind === "synced" && out.added).toEqual(["@acme/new"]);
     expect(m.state.get("p1")).toEqual(["@acme/had", "@acme/new"]);
   });
-
   it("lists a plugin the machine's build ships without a download", async () => {
     const m = fakeMachine({ p1: [] }, { shipped: ["@acme/builtin"] });
     await syncPluginsToMachine({
@@ -221,7 +211,6 @@ describe("syncPluginsToMachine", () => {
     expect(m.calls.some((c) => c.method === "POST")).toBe(false);
     expect(m.state.get("p1")).toEqual(["@acme/builtin"]);
   });
-
   it("reports a package that machine cannot fetch and still delivers the rest", async () => {
     const m = fakeMachine({ p1: [] }, { unfetchable: ["@acme/gone"] });
     const out = await syncPluginsToMachine({
@@ -234,7 +223,6 @@ describe("syncPluginsToMachine", () => {
     ]);
     expect(m.state.get("p1")).toEqual(["@acme/ok"]);
   });
-
   it("leaves rows the machine's own tables add out of the comparison", async () => {
     const m = fakeMachine({ p1: ["@acme/same"] }, { ownRows: { p1: ["@acme/its-own"] } });
     const out = await syncPluginsToMachine({

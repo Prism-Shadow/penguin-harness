@@ -13,14 +13,13 @@
  * the second is not, and confusing them strands every machine carrying an older build.
  */
 import { describe, expect, it } from "vitest";
-import { authTokenCommand, mintTokenOnRemote, parseToken } from "../src/machines/remote-token.js";
-import { remoteLayoutFor } from "../src/machines/layout.js";
-import type { ExecResult } from "../src/machines/transport/index.js";
-
+import { remoteLayoutFor } from "../../../plugins/machines/src/server/index.js";
+import { authTokenCommand } from "../../../plugins/machines/src/server/remote-token.js";
+import { mintTokenOnRemote } from "../../../plugins/machines/src/server/remote-token.js";
+import { parseToken } from "../../../plugins/machines/src/server/remote-token.js";
+import { ExecResult } from "../../../plugins/machines/src/server/transport/exec.js";
 const ok = (stdout: string): ExecResult => ({ code: 0, stdout, stderr: "", timedOut: false });
-
 const RELEASE = remoteLayoutFor("release");
-
 describe("parseToken", () => {
   it("takes the first line after the marker, not a shell banner before it", () => {
     // The command runs through a shell whose profile may print anything; a banner is not a
@@ -29,7 +28,6 @@ describe("parseToken", () => {
     expect(parseToken("---penguin-auth-token---\n\n  abc123  \n")).toBe("abc123");
     expect(parseToken("command not found: penguin")).toBeNull();
   });
-
   it("asks for a bounded lifetime, and refuses a nonsensical one", () => {
     expect(authTokenCommand(RELEASE, 60)).toContain("--ttl-seconds 60");
     // The command the CLI actually has, and `--mark` — without it the token comes back bare
@@ -40,7 +38,6 @@ describe("parseToken", () => {
     expect(() => authTokenCommand(RELEASE, 0)).toThrow();
   });
 });
-
 describe("mintTokenOnRemote", () => {
   it("reads a machine too old to know the command as 'ask another way'", async () => {
     // Separate from a failure on purpose: the caller still has the seeded-password path, and
@@ -50,7 +47,6 @@ describe("mintTokenOnRemote", () => {
     );
     expect(outcome.kind).toBe("unsupported");
   });
-
   it("does not read a timeout as an old build", async () => {
     const outcome = await mintTokenOnRemote({ alias: "nas", user: "me" }, RELEASE, async () => ({
       code: 255,
@@ -60,7 +56,6 @@ describe("mintTokenOnRemote", () => {
     }));
     expect(outcome.kind).toBe("failed");
   });
-
   it("answers when the connection is gone, rather than throwing through its caller", async () => {
     // The shared ssh connection REJECTS once it is dead. Every other way of not getting a
     // token is a returned outcome, and signInOn reads outcomes to decide whether to fall back

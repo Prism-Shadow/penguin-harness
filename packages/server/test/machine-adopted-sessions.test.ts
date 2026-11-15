@@ -31,7 +31,7 @@ import type {
   SessionSource,
   SessionsResponse,
 } from "../src/api/types.js";
-import type { MachinesService } from "../src/machines/service.js";
+import type { MachinesService } from "../../../plugins/machines/src/server/index.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser, writeTraceFile } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 

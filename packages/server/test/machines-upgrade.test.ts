@@ -11,14 +11,12 @@ import zlib from "node:zlib";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { LEAVE_OUT, UNSATISFIED_PLUGINS_HEADER } from "../src/hmr/push-plugins.js";
-import { upgradeRemote } from "../src/machines/upgrade.js";
-
+import { upgradeRemote } from "../../../plugins/machines/src/server/upgrade.js";
 describe("handing a build over to a machine", () => {
   let root: string;
   let server: http.Server;
   let seen: { url: string; headers: http.IncomingHttpHeaders }[];
   let answer: { status: number; body: unknown };
-
   beforeEach(async () => {
     root = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-handover-"));
     const hmr = path.join(root, "hmr");
@@ -46,12 +44,10 @@ describe("handing a build over to a machine", () => {
     });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   });
-
   afterEach(async () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
     fs.rmSync(root, { recursive: true, force: true });
   });
-
   const handOver = () =>
     upgradeRemote({
       agent: new http.Agent(),
@@ -59,7 +55,6 @@ describe("handing a build over to a machine", () => {
       cookie: "penguin_session=x",
       dataRoot: root,
     });
-
   it("sends the push with the acceptance on it", async () => {
     const outcome = await handOver();
     expect(outcome.kind).toBe("upgraded");
@@ -68,7 +63,6 @@ describe("handing a build over to a machine", () => {
     expect(seen[0]!.headers[UNSATISFIED_PLUGINS_HEADER]).toBe(LEAVE_OUT);
     expect(seen[0]!.headers.cookie).toBe("penguin_session=x");
   });
-
   it("still reads a machine's refusal in its own words", async () => {
     answer = {
       status: 409,

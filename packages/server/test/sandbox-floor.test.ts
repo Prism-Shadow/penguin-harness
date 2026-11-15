@@ -12,17 +12,15 @@ import type {
 } from "@prismshadow/penguin-core/plugin";
 import type { PluginConfigEntry, PluginConfigResponse } from "../src/api/types.js";
 import { PluginHost } from "../src/plugin/host.js";
-import { SandboxService } from "../src/sandbox/index.js";
-import { enforcementNotice } from "../src/sandbox/settings-status.js";
+import { SandboxService } from "../../../plugins/sandbox/src/server/index.js";
+import { enforcementNotice } from "../../../plugins/sandbox/src/server/settings-status.js";
 import { apiClient, createTestApp, loginAdmin } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
-
 const ARGV = ["bash", "-lc", "echo hi"];
 const OPTS = { cwd: "/work/project", workspaceDir: "/work/project" };
 const BWRAP_DIMENSIONS: SandboxDimension[] = ["fs-write", "network", "mask-paths", "closed-temp"];
 const REFUSED =
   "'bwrap' is missing or refuses the base profile (setting up uid map: Permission denied)";
-
 /** A backend that prefixes its label; `dimensions` absent = filesystem only. */
 function fake(label: string, dimensions?: SandboxDimension[], mechanism?: string) {
   const calls: string[][] = [];
@@ -41,13 +39,11 @@ function fake(label: string, dimensions?: SandboxDimension[], mechanism?: string
   };
   return { provider, calls };
 }
-
 async function service(...entries: Array<[string, SandboxProviderSource]>) {
   const svc = new SandboxService(entries);
   await svc.whenReady();
   return svc;
 }
-
 describe("routing between bubblewrap and the DSH adaptor", () => {
   it("between backends implementing as much, registration order decides", async () => {
     const first = fake("first", ["fs-write", "network"]);
@@ -59,7 +55,6 @@ describe("routing between bubblewrap and the DSH adaptor", () => {
     svc.configure({ mode: "read-only", maskPaths: ["/k"] });
     expect(svc.confiner()(ARGV, OPTS).argv).toEqual(["second", ...ARGV]);
   });
-
   it("where bubblewrap is refused, the adaptor serves files and a network cut fails closed", async () => {
     const dsh = fake("dsh", undefined, "Landlock");
     const svc = await service(
@@ -78,7 +73,6 @@ describe("routing between bubblewrap and the DSH adaptor", () => {
     expect(dsh.calls).toHaveLength(1);
   });
 });
-
 /** A plugin contributing bubblewrap (refused or serving) and the adaptor, as Linux installs them. */
 function linuxBackends(bwrap: "refused" | "serving"): PluginHost {
   const module: ModuleDef = {
@@ -109,13 +103,11 @@ function linuxBackends(bwrap: "refused" | "serving"): PluginHost {
   host.use({ specifier: "linux-backends", modules: [module], replaces: [] });
   return host;
 }
-
 describe("the sandbox card on the Linux floor", () => {
   const apps: TestApp[] = [];
   afterEach(async () => {
     for (const t of apps.splice(0)) await t.cleanup();
   });
-
   async function boot(bwrap: "refused" | "serving") {
     const t = await createTestApp({ plugins: linuxBackends(bwrap) });
     apps.push(t);
@@ -134,7 +126,6 @@ describe("the sandbox card on the Linux floor", () => {
     };
     return { admin, card, save, refusal };
   }
-
   it("says files only, by Landlock, discloses why bubblewrap is not in use, and tells the composer", async () => {
     const { admin, card } = await boot("refused");
     const entry = await card();
@@ -153,7 +144,6 @@ describe("the sandbox card on the Linux floor", () => {
     ).json()) as { sandbox: { backendsInUse?: string[] } };
     expect(defaults.sandbox.backendsInUse).toEqual(["dsh-local"]);
   });
-
   it("greys out what the adaptor cannot enforce and refuses saving it", async () => {
     const { card, save, refusal } = await boot("refused");
     expect((await card()).unavailable).toEqual([
@@ -180,7 +170,6 @@ describe("the sandbox card on the Linux floor", () => {
     // The default table keeps the network open, and turning temp on is never refused.
     expect((await save({ enabled: true, writableTemp: true })).status).toBe(200);
   });
-
   it("warns that saved masked paths refuse every command", async () => {
     const { card, save } = await boot("refused");
     expect((await save({ enabled: true, maskPaths: ["/k"] })).status).toBe(200);
@@ -189,7 +178,6 @@ describe("the sandbox card on the Linux floor", () => {
       text: expect.stringContaining("every agent command and hook script is refused"),
     });
   });
-
   it("names bubblewrap where it serves, greys out only Localhost only, and lets temp be closed", async () => {
     const { card, save } = await boot("serving");
     const entry = await card();
@@ -203,7 +191,6 @@ describe("the sandbox card on the Linux floor", () => {
     expect((await save({ writableTemp: false })).status).toBe(200);
   });
 });
-
 describe("closing the temporary directory", () => {
   it("is routed only to a backend declaring closed-temp, and refused where none does", async () => {
     const dsh = fake("dsh", undefined, "Landlock");
@@ -219,14 +206,12 @@ describe("closing the temporary directory", () => {
     svc.configure({ mode: "danger-full-access", writableTemp: false });
     expect(svc.confiner()(ARGV, OPTS).argv).toEqual(ARGV);
     expect(dsh.calls).toHaveLength(0);
-
     const bwrap = fake("bwrap", BWRAP_DIMENSIONS, "bubblewrap");
     const both = await service(["dsh-local", dsh.provider], ["penguin-bwrap", bwrap.provider]);
     both.configure({ mode: "workspace-write", writableTemp: false });
     expect(both.confiner()(ARGV, OPTS).argv).toEqual(["bwrap", ...ARGV]);
   });
 });
-
 describe("the runner's informational lines", () => {
   it("reach the spawn as runnerLines, so it drops them from the command's stderr", async () => {
     const LINE = "landlock-run: partial enforcement (older Landlock ABI)";
@@ -250,10 +235,8 @@ describe("the runner's informational lines", () => {
     expect(plain.confiner()(ARGV, OPTS)).toEqual({ argv: ["dsh", ...ARGV] });
   });
 });
-
 describe("the enforcement headline", () => {
   const dsh = { name: "dsh-local", dimensions: ["fs-write"] as SandboxDimension[] };
-
   it("names every backend that adds a dimension, and only those", () => {
     const notice = enforcementNotice(
       [
@@ -268,7 +251,6 @@ describe("the enforcement headline", () => {
     );
     expect(notice.textZh).toContain("由 bubblewrap (penguin-bwrap)、local-net 实施");
   });
-
   it("discloses the serving backend's limits, before why others are not in use", () => {
     const limited = {
       ...dsh,

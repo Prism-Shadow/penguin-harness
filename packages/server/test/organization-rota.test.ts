@@ -5,12 +5,10 @@
  * is read in the organization's timezone, and a disabled event is nobody's rota.
  */
 import { describe, expect, it } from "vitest";
-import { rotaWarnings } from "../src/runtime/organization/rota.js";
-import type { RotaEvent } from "../src/runtime/organization/rota.js";
-
+import { rotaWarnings } from "../../../plugins/company/src/server/runtime/rota.js";
+import { RotaEvent } from "../../../plugins/company/src/server/runtime/rota.js";
 const TZ = "Asia/Shanghai";
 const NOW = Date.parse("2026-09-01T01:00:00Z");
-
 function event(over: Partial<RotaEvent> & Pick<RotaEvent, "agentId" | "name">): RotaEvent {
   return {
     enabled: true,
@@ -19,7 +17,6 @@ function event(over: Partial<RotaEvent> & Pick<RotaEvent, "agentId" | "name">): 
     ...over,
   };
 }
-
 describe("rotaWarnings", () => {
   it("names another employee's recurring event on the same start minute", () => {
     const hr = event({ agentId: "acme_hr", name: "hr-audit" });
@@ -42,7 +39,6 @@ describe("rotaWarnings", () => {
     });
     expect(rotaWarnings([hr, staggered], staggered, NOW, TZ)).toEqual([]);
   });
-
   it("ignores a disabled or one-shot neighbour, and the written event's own row", () => {
     const disabled = event({ agentId: "acme_hr", name: "hr-audit", enabled: false });
     const oneShot = event({ agentId: "acme_ops", name: "kickoff", period: undefined });
@@ -53,7 +49,6 @@ describe("rotaWarnings", () => {
     const hr = event({ agentId: "acme_hr", name: "hr-audit" });
     expect(rotaWarnings([hr, off], off, NOW, TZ)).toEqual([]);
   });
-
   it("names a second recurring event of the same period on one employee", () => {
     const first = event({ agentId: "acme_dev", name: "daily-sweep" });
     const second = event({
@@ -73,7 +68,6 @@ describe("rotaWarnings", () => {
     });
     expect(rotaWarnings([first, weekly], weekly, NOW, TZ)).toEqual([]);
   });
-
   it("flags a recurring event started at 'now', and lets a one-shot one through", () => {
     const now = event({
       agentId: "acme_dev",
@@ -92,7 +86,6 @@ describe("rotaWarnings", () => {
     });
     expect(rotaWarnings([later], later, NOW, TZ)).toEqual([]);
   });
-
   it("reports every problem the one write has, in the order to fix them", () => {
     const hr = event({
       agentId: "acme_hr",
@@ -111,7 +104,6 @@ describe("rotaWarnings", () => {
       "A recurring event started at 'now' shares its minute with every other event started the same way; pick the role's hour.",
     ]);
   });
-
   it("says nothing about an event whose start_at is not an instant", () => {
     const broken = event({ agentId: "acme_dev", name: "daily-sweep", startAt: "whenever" });
     const hr = event({ agentId: "acme_hr", name: "hr-audit" });

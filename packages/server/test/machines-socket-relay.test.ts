@@ -11,11 +11,10 @@ import net from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
-import { MachineSocketRelay } from "../src/machines/socket-relay.js";
-import { MachineEventHub } from "../src/machines/event-hub.js";
-import { MachineSockets } from "../src/machines/machine-sockets.js";
-import type { Sink } from "../src/machines/machine-sockets.js";
-
+import { MachineEventHub } from "../../../plugins/machines/src/server/event-hub.js";
+import { MachineSocketRelay } from "../../../plugins/machines/src/server/socket-relay.js";
+import { MachineSockets } from "../../../plugins/machines/src/server/machine-sockets.js";
+import { Sink } from "../../../plugins/machines/src/server/machine-sockets.js";
 /** A machine's socket endpoint the test scripts: `answer` decides what a call frame gets. */
 async function machine(answer: (ws: WebSocket, frame: { id: number }) => void) {
   const server = http.createServer();
@@ -39,17 +38,13 @@ async function machine(answer: (ws: WebSocket, frame: { id: number }) => void) {
       }),
   };
 }
-
 async function errorCode(res: Response): Promise<string> {
   return ((await res.json()) as { error: { code: string } }).error.code;
 }
-
 const opensAll = (ws: WebSocket, frame: { id: number }) =>
   ws.send(JSON.stringify({ id: frame.id, status: 200, stream: true, headers: {} }));
-
 describe("the relay subscription cleanup", () => {
   const target = { agent: new http.Agent(), port: 1, cookie: "", session: 1 };
-
   function scripted(begin: (sink: Sink) => void) {
     const sockets = new MachineSockets(() => undefined);
     const events = new MachineEventHub(sockets, () => undefined);
@@ -63,7 +58,6 @@ describe("the relay subscription cleanup", () => {
     const relay = new MachineSocketRelay(() => undefined, { sockets, events });
     return { relay, detach, sink: () => sink! };
   }
-
   it.each([403, 404])("detaches once after a synchronous non-stream %s answer", async (status) => {
     const body = { error: { code: "remote", message: "remote refusal" } };
     const script = scripted((sink) => sink.onResponse(status, body));
@@ -77,7 +71,6 @@ describe("the relay subscription cleanup", () => {
     script.sink().onResponse(500, null);
     expect(script.detach).toHaveBeenCalledTimes(1);
   });
-
   it("detaches once when begin ends synchronously before opening", async () => {
     const script = scripted((sink) => sink.onEnd());
     const response = await script.relay.stream("m", target, {
@@ -89,7 +82,6 @@ describe("the relay subscription cleanup", () => {
     script.sink().onEnd();
     expect(script.detach).toHaveBeenCalledTimes(1);
   });
-
   it.each(["end", "cancel", "backpressure"])(
     "detaches once after an open stream's %s",
     async (mode) => {
@@ -118,14 +110,12 @@ describe("the relay subscription cleanup", () => {
     },
   );
 });
-
 describe("the machine socket relay", () => {
   let stop: (() => Promise<void>) | null = null;
   afterEach(async () => {
     await stop?.();
     stop = null;
   });
-
   it("gives up on a stream the machine never opens, tears the socket down, and dials again next time", async () => {
     let opens = 0;
     const m = await machine((ws, frame) => {
@@ -143,7 +133,6 @@ describe("the machine socket relay", () => {
       cookie: "penguin_session=x",
       session: 1,
     };
-
     const first = await relay.stream("m1", target, { path: "/api/events", lastEventId: null });
     expect(first.status).toBe(504); // answered with the reason — never forwarded over HTTP
     expect(await errorCode(first)).toBe("machine_stream_not_opened");
@@ -158,7 +147,6 @@ describe("the machine socket relay", () => {
     expect(second.headers.get("content-type")).toBe("text/event-stream");
     expect(m.connections).toHaveLength(2);
   });
-
   it("leaves a stream that opens in time alone", async () => {
     const m = await machine((ws, frame) => {
       ws.send(JSON.stringify({ id: frame.id, status: 200, stream: true, headers: {} }));
@@ -176,7 +164,6 @@ describe("the machine socket relay", () => {
     expect(lines).toEqual([]);
     expect(m.connections[0]!.readyState).toBe(m.connections[0]!.OPEN);
   });
-
   it("gives up on a dial the machine accepts and never answers, and dials again next time", async () => {
     // A machine that takes the connection and never answers the upgrade: without a deadline
     // the dial's promise stays pending and every later stream waits behind it. It answers no
@@ -199,7 +186,6 @@ describe("the machine socket relay", () => {
     const lines: string[] = [];
     const relay = new MachineSocketRelay((l) => lines.push(l), { dialTimeoutMs: 100 });
     const target = { agent: new http.Agent(), port, cookie: "penguin_session=x", session: 1 };
-
     const started = Date.now();
     const first = await relay.stream("m1", target, { path: "/api/events", lastEventId: null });
     expect(Date.now() - started).toBeLessThan(2_000);
@@ -210,7 +196,6 @@ describe("the machine socket relay", () => {
     await relay.stream("m1", target, { path: "/api/events", lastEventId: null });
     expect(upgrades).toBe(2);
   });
-
   it("answers a machine that refuses the handshake with its reason, and does not ask again for a while", async () => {
     let upgrades = 0;
     const server = http.createServer((_req, res) => {
@@ -225,7 +210,6 @@ describe("the machine socket relay", () => {
     stop = () => new Promise<void>((resolve) => server.close(() => resolve()));
     const relay = new MachineSocketRelay(() => undefined);
     const target = { agent: new http.Agent(), port, cookie: "penguin_session=x", session: 1 };
-
     const first = await relay.stream("m1", target, { path: "/api/events", lastEventId: null });
     expect(first.status).toBe(502);
     expect(await errorCode(first)).toBe("machine_socket_refused");
@@ -233,14 +217,12 @@ describe("the machine socket relay", () => {
     expect(await errorCode(second)).toBe("machine_socket_refused");
     expect(upgrades).toBe(1);
   });
-
   it("never reuses a socket across ssh sessions: a replaced session drops the old socket and dials anew", async () => {
     const m = await machine(opensAll);
     stop = m.close;
     const lines: string[] = [];
     const relay = new MachineSocketRelay((l) => lines.push(l));
     const base = { agent: new http.Agent(), port: m.port, cookie: "penguin_session=x" };
-
     const first = await relay.stream(
       "m1",
       { ...base, session: 1 },
@@ -254,7 +236,6 @@ describe("the machine socket relay", () => {
     );
     expect(again.status).toBe(200);
     expect(m.connections).toHaveLength(1);
-
     const moved = await relay.stream(
       "m1",
       { ...base, session: 2 },

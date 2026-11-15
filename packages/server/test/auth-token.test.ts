@@ -35,12 +35,11 @@ import { wire } from "@prismshadow/penguin-core/kernel";
 import { CLI_TOKEN_MAX_TTL_MS, mintApiToken, mintApiTokenOnceSeeded } from "../src/auth-token.js";
 import type { MintTokenResult, SeedWait } from "../src/auth-token.js";
 import { SESSION_COOKIE } from "../src/auth/middleware.js";
-import { openDatabase, openExistingDatabase } from "../src/db/database.js";
-import { UsersRepo } from "../src/db/repos/users.js";
+import { openDatabase, openExistingDatabase } from "../../../plugins/db/src/index.js";
+import { UsersRepo } from "../../../plugins/settings/src/server/repos/users.js"
 import { acquireServerLock, releaseServerLock } from "../src/lock.js";
 import { apiClient, createTestApp, makeTempRoot } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
-
 describe("minting an API session", () => {
   it("reports no_server when the root has no web.db", async () => {
     const root = await makeTempRoot();
@@ -48,7 +47,6 @@ describe("minting an API session", () => {
       outcome: "no_server",
     });
   });
-
   /**
    * The multi-user case: web.db exists but belongs to another OS account (the one running the
    * server), and this caller cannot open it. That must come back as a failed outcome pointing
@@ -75,12 +73,10 @@ describe("minting an API session", () => {
     },
   );
 });
-
 describe("minting against a server's database", () => {
   let t: TestApp;
   let root: string;
   let dbPath: string;
-
   // The app seeds the account on this file, then each case mints against the same file as the
   // CLI would: the app and the mint share one on-disk database, no cross-process hop.
   beforeAll(async () => {
@@ -91,20 +87,17 @@ describe("minting against a server's database", () => {
   afterAll(async () => {
     await t.cleanup();
   });
-
   const minted = (r: MintTokenResult) => {
     expect(r.outcome).toBe("minted");
     if (r.outcome !== "minted") throw new Error(`not minted: ${JSON.stringify(r)}`);
     return r;
   };
   const me = async (token: string) => apiClient(t.app, `${SESSION_COOKIE}=${token}`).get("/api/me");
-
   it("inserts a session row the server then authenticates", async () => {
     const r = minted(mintApiToken(root, { dbPath, ttlMs: 60_000 }));
     expect(r.userId).toBe("admin");
     expect((await me(r.token)).status).toBe(200);
   });
-
   /**
    * `--ttl-seconds` only rejects values <= 0, so without the clamp `penguin auth token
    * --ttl-seconds 315360000` writes a ten-year row — and because its span passes the renewal
@@ -116,7 +109,6 @@ describe("minting against a server's database", () => {
     const r = minted(mintApiToken(root, { dbPath, ttlMs: 10 * 365 * 24 * 60 * 60_000, now }));
     expect(Date.parse(r.expiresAt)).toBe(now.getTime() + CLI_TOKEN_MAX_TTL_MS);
   });
-
   /**
    * The desktop shell mints with `via: "desktop"` when it signs its own window in against a
    * server it did not spawn, and the session has to read back as that kind — it is what the
@@ -131,12 +123,10 @@ describe("minting against a server's database", () => {
       "desktop",
     );
   });
-
   it("refuses an account that does not exist", () => {
     expect(mintApiToken(root, { dbPath, userId: "ghost" }).outcome).toBe("failed");
   });
 });
-
 describe("minting while the server is still starting", () => {
   /**
    * The server's schema step, run once in memory, written out in one go and copied into each
@@ -153,7 +143,6 @@ describe("minting while the server is still starting", () => {
       schema.close();
     }
   });
-
   /** Listeners standing in for live servers' ports, closed after each case. */
   const listeners: net.Server[] = [];
   afterEach(async () => {
@@ -161,7 +150,6 @@ describe("minting while the server is still starting", () => {
       listeners.splice(0).map((srv) => new Promise<void>((resolve) => srv.close(() => resolve()))),
     );
   });
-
   /**
    * A lock the liveness probe accepts, as a server writes it the moment its port binds. Its
    * exit is the server's own: the lock removed, then the port closed (index.ts's shutdown).
@@ -180,7 +168,6 @@ describe("minting while the server is still starting", () => {
       },
     };
   }
-
   /**
    * A clock that jumps on every sleep, so a wait of twenty seconds costs nothing. `onSleep` is
    * what the starting server gets done meanwhile; `oversleepMs` is a loaded machine's sleep
@@ -201,13 +188,10 @@ describe("minting while the server is still starting", () => {
     };
     return { wait, waited: () => now };
   }
-
   /** The first thing a server creating web.db leaves on disk: an empty file, no tables yet. */
   const createBareFile = (dbPath: string) => fs.writeFileSync(dbPath, "");
-
   /** The server's schema step: tables created, no account in them yet. */
   const createSchema = (dbPath: string) => fs.copyFileSync(schemaOnly, dbPath);
-
   /** An account row, as the seed (or an admin adding a user) writes it, into a schema in place. */
   function addAccount(dbPath: string, userId: string): void {
     const db = openExistingDatabase(dbPath);
@@ -225,7 +209,6 @@ describe("minting while the server is still starting", () => {
       db.close();
     }
   }
-
   it("a mint that arrives before the database exists waits for the seed, then returns a token", async () => {
     const root = await makeTempRoot();
     const dbPath = path.join(root, "web.db");
@@ -241,7 +224,6 @@ describe("minting while the server is still starting", () => {
     const r = await mintApiTokenOnceSeeded(root, { dbPath }, clock.wait);
     expect(r).toMatchObject({ outcome: "minted", userId: "admin" });
   });
-
   it.each([
     ["has no web.db", (_dbPath: string) => {}, { outcome: "no_server" }],
     ["holds no account", createSchema, { outcome: "failed", detail: "no such account: admin" }],
@@ -253,7 +235,6 @@ describe("minting while the server is still starting", () => {
     expect(await mintApiTokenOnceSeeded(root, { dbPath }, clock.wait)).toEqual(expected);
     expect(clock.waited()).toBe(0);
   });
-
   it("a live server whose accounts do not include admin has been seeded already: the mint fails at once", async () => {
     const root = await makeTempRoot();
     const dbPath = path.join(root, "web.db");
@@ -267,7 +248,6 @@ describe("minting while the server is still starting", () => {
     });
     expect(clock.waited()).toBe(0);
   });
-
   it("a live server that never seeds is waited for only so long, and the failure says it is still starting", async () => {
     const root = await makeTempRoot();
     const dbPath = path.join(root, "web.db");
@@ -281,7 +261,6 @@ describe("minting while the server is still starting", () => {
     expect(r.detail).toMatch(/not finished starting/);
     expect(r.detail).toContain("no such account: admin");
   });
-
   it("a server that exits while the mint waits ends the wait with the ordinary answer", async () => {
     const root = await makeTempRoot();
     const dbPath = path.join(root, "web.db");

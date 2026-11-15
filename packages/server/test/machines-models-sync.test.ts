@@ -27,13 +27,14 @@ import { describe, expect, it } from "vitest";
 import { serve } from "@hono/node-server";
 import type { ModelEntry } from "@prismshadow/penguin-core";
 import type { ModelsResponse, ModelsUpdateRequest } from "../src/api/types.js";
-import { envSourced, planModelSync, syncModelsToMachine } from "../src/machines/models-sync.js";
-import type { LocalModels } from "../src/machines/models-sync.js";
 import { catalogEntryFor } from "../src/model-catalog/catalog.js";
-import { machineApi } from "../src/machines/machine-api.js";
-import type { MachineApi } from "../src/machines/machine-api.js";
+import { machineApi } from "../../../plugins/machines/src/server/index.js";
+import type { MachineApi } from "../../../plugins/machines/src/server/index.js";
+import { LocalModels } from "../../../plugins/machines/src/server/models-sync.js";
+import { envSourced } from "../../../plugins/machines/src/server/models-sync.js";
+import { planModelSync } from "../../../plugins/machines/src/server/models-sync.js";
+import { syncModelsToMachine } from "../../../plugins/machines/src/server/models-sync.js";
 import { createTestApp } from "./helpers.js";
-
 /**
  * One POST to the machine under test. node:http with an explicit Host header, for the reason
  * machineApi gives: the API answers only under the canonical app host while the connection
@@ -69,7 +70,6 @@ function post(
     req.end(payload);
   });
 }
-
 /**
  * Serves an app on a free port. Port 0: the OS picks one, so this never has to guess on a
  * shared machine — and the address is only known once it is listening, which serve() reports
@@ -84,28 +84,24 @@ function listening(
     );
   });
 }
-
 const local = (over: Partial<ModelEntry> = {}): ModelEntry => ({
   provider: "deepseek",
   model_id: "deepseek-v4-flash",
   api_key: "sk-local-0123456789",
   ...over,
 });
-
 /** What that machine's GET answers: keys masked, exactly as the real endpoint reports them. */
 const remoteTable = (over: Partial<ModelsResponse> = {}): ModelsResponse => ({
   providers: {},
   models: [],
   ...over,
 });
-
 /** A remote row's effective connection, as its GET reports one; the sync never reads it. */
 const followsNothing = {
   baseUrlSource: "none",
   clientTypeSource: "none",
   apiKeySource: "none",
 } as const;
-
 describe("planModelSync", () => {
   it("sends our entry with its key in plaintext", () => {
     const plan = planModelSync({ models: [local()] }, remoteTable());
@@ -113,7 +109,6 @@ describe("planModelSync", () => {
       { provider: "deepseek", modelId: "deepseek-v4-flash", apiKey: "sk-local-0123456789" },
     ]);
   });
-
   it("re-sends a machine's own entry, and never its masked key", () => {
     const plan = planModelSync(
       { models: [local()] },
@@ -137,7 +132,6 @@ describe("planModelSync", () => {
     expect(theirs).not.toHaveProperty("apiKey");
     expect(JSON.stringify(plan)).not.toContain("…");
   });
-
   it("replaces a machine's entry for the same pair with ours", () => {
     const plan = planModelSync(
       { models: [local({ api_key: "sk-newer-0123456789" })] },
@@ -156,7 +150,6 @@ describe("planModelSync", () => {
     expect(plan.models).toHaveLength(1);
     expect(plan.models[0]?.apiKey).toBe("sk-newer-0123456789");
   });
-
   it("omits a key we do not have, rather than clearing theirs", () => {
     const plan = planModelSync(
       { models: [local({ api_key: undefined, base_url: "https://gw.example" })] },
@@ -166,7 +159,6 @@ describe("planModelSync", () => {
     expect(plan.models[0]).not.toHaveProperty("clearApiKey");
     expect(plan.models[0]?.baseUrl).toBe("https://gw.example");
   });
-
   it("points the machine's default at ours, even when it already had one", () => {
     const mine: LocalModels = {
       models: [local()],
@@ -177,7 +169,6 @@ describe("planModelSync", () => {
     expect(planModelSync(mine, remoteTable({ defaultModel: theirs })).defaultModel).toEqual(ours);
     expect(planModelSync(mine, remoteTable()).defaultModel).toEqual(ours);
   });
-
   it("sends our group connections with their keys in plaintext, omitting what we do not hold", () => {
     const plan = planModelSync(
       {
@@ -197,7 +188,6 @@ describe("planModelSync", () => {
     });
     expect(JSON.stringify(plan)).not.toContain("…");
   });
-
   it("does not name a pointer that is not in the table it sends", () => {
     const plan = planModelSync(
       {
@@ -211,7 +201,6 @@ describe("planModelSync", () => {
     expect(plan.visionModel).toBeUndefined();
   });
 });
-
 /** Records every call, answering GETs from a table keyed by path. */
 function fakeMachine(answers: Record<string, { status: number; body: unknown }>): {
   api: MachineApi;
@@ -239,7 +228,6 @@ function fakeMachine(answers: Record<string, { status: number; body: unknown }>)
     },
   };
 }
-
 describe("syncModelsToMachine, against a scripted machine", () => {
   it("a Project the machine refuses is reported and skipped; the ones after it are still written", async () => {
     const machine = fakeMachine({
@@ -265,7 +253,6 @@ describe("syncModelsToMachine, against a scripted machine", () => {
     });
     expect(machine.puts.map((p) => p.path)).toEqual(["/api/projects/default_project/models"]);
   });
-
   it("a Project whose only configuration is a group key is written; one with nothing to carry is left alone", async () => {
     const machine = fakeMachine({
       "/api/projects": {
@@ -291,7 +278,6 @@ describe("syncModelsToMachine, against a scripted machine", () => {
       },
     ]);
   });
-
   /**
    * A machine on its first boot, still provisioning `default_project`: its directory is there, so
    * a creation is refused as taken, and it is listed only once `ready` is set.
@@ -321,7 +307,6 @@ describe("syncModelsToMachine, against a scripted machine", () => {
     };
     return { api, state, puts };
   }
-
   it("writes a Project the machine is still provisioning once it is listed", async () => {
     const machine = provisioningMachine();
     const outcome = await syncModelsToMachine({
@@ -336,7 +321,6 @@ describe("syncModelsToMachine, against a scripted machine", () => {
     expect(outcome).toMatchObject({ kind: "synced", projects: ["default_project"], created: [] });
     expect(machine.puts).toEqual(["/api/projects/default_project/models"]);
   });
-
   it("refuses a Project still not listed after waiting, and writes nothing for it", async () => {
     const machine = provisioningMachine();
     const outcome = await syncModelsToMachine({
@@ -355,7 +339,6 @@ describe("syncModelsToMachine, against a scripted machine", () => {
     expect(machine.puts).toEqual([]);
     expect(machine.state.pauses).toBeGreaterThan(0);
   });
-
   it("the channel giving out fails the sync as a whole — nothing after it would fare better", async () => {
     const api: MachineApi = {
       postBytes: async () => ({ status: 500, text: "" }),
@@ -375,7 +358,6 @@ describe("syncModelsToMachine, against a scripted machine", () => {
     expect(outcome).toEqual({ kind: "failed", detail: "the machine's server closed mid-answer" });
   });
 });
-
 describe("envSourced", () => {
   it("names exactly the values a row takes from this server's environment, and only those set here", () => {
     const found = envSourced(
@@ -418,7 +400,6 @@ describe("envSourced", () => {
     ]);
   });
 });
-
 describe("machineApi", () => {
   it("rejects, rather than hangs, when the machine closes the answer before its body", async () => {
     // Headers, part of a body, then the socket closes: `end` never fires, `close` does.
@@ -440,7 +421,6 @@ describe("machineApi", () => {
     }
   });
 });
-
 describe("syncModelsToMachine, against a running server", () => {
   it("lands our key on it and leaves its own entry intact", async () => {
     const machine = await createTestApp();
@@ -451,14 +431,12 @@ describe("syncModelsToMachine, against a running server", () => {
           { provider: "anthropic", modelId: "claude-opus-5", apiKey: "sk-theirs-9876543210" },
         ],
       });
-
       const login = await post(port, "/api/auth/login", {
         userId: "admin",
         password: machine.adminPassword,
       });
       expect(login.status).toBe(200);
       const cookie = login.setCookie.map((line) => line.split(";")[0]?.trim() ?? "").join("; ");
-
       const outcome = await syncModelsToMachine({
         api: machineApi(new http.Agent(), port, cookie),
         projects: ["default_project"],
@@ -474,7 +452,6 @@ describe("syncModelsToMachine, against a running server", () => {
         refused: [],
         skipped: [],
       });
-
       const config = await machine.deps.projectConfigService.loadConfig("default_project");
       const ours = config.models.find((m) => m.model_id === "deepseek-v4-flash");
       const theirs = config.models.find((m) => m.model_id === "claude-opus-5");
@@ -485,7 +462,6 @@ describe("syncModelsToMachine, against a running server", () => {
       await machine.cleanup();
     }
   });
-
   it("lands a group key and a bare model of the user's on it, with no row of ours keyed", async () => {
     const machine = await createTestApp();
     const { server, port } = await listening(machine.app.fetch);
@@ -495,7 +471,6 @@ describe("syncModelsToMachine, against a running server", () => {
         password: machine.adminPassword,
       });
       const cookie = login.setCookie.map((line) => line.split(";")[0]?.trim() ?? "").join("; ");
-
       const outcome = await syncModelsToMachine({
         api: machineApi(new http.Agent(), port, cookie),
         projects: ["default_project"],
@@ -506,7 +481,6 @@ describe("syncModelsToMachine, against a running server", () => {
         }),
       });
       expect(outcome).toMatchObject({ kind: "synced", projects: ["default_project"] });
-
       const config = await machine.deps.projectConfigService.loadConfig("default_project");
       expect(config.providers?.openrouter?.api_key).toBe("sk-or-group-0123456789");
       expect(config.models.find((m) => m.model_id === "acme/hand-added")).toEqual({
@@ -518,7 +492,6 @@ describe("syncModelsToMachine, against a running server", () => {
       await machine.cleanup();
     }
   });
-
   it("leaves out an entry the machine refuses by name, with the pointer to it, and lands the rest", async () => {
     const machine = await createTestApp();
     const { server, port } = await listening(machine.app.fetch);
@@ -530,7 +503,6 @@ describe("syncModelsToMachine, against a running server", () => {
       const cookie = login.setCookie.map((line) => line.split(";")[0]?.trim() ?? "").join("; ");
       // Penguin Go carries only its built-in models; this id is none of them.
       const handAdded = { provider: "penguin-go", model_id: "gemini-9.9-not-a-preset" };
-
       const outcome = await syncModelsToMachine({
         api: machineApi(new http.Agent(), port, cookie),
         projects: ["default_project"],
@@ -552,10 +524,8 @@ describe("syncModelsToMachine, against a running server", () => {
           },
         ],
       });
-
       // A hand-added id is not one of our built-in models: the far side's own reason stands.
       expect(outcome.kind === "synced" && outcome.skipped[0]).not.toHaveProperty("builtInHere");
-
       const config = await machine.deps.projectConfigService.loadConfig("default_project");
       expect(config.models.some((m) => m.model_id === "gemini-9.9-not-a-preset")).toBe(false);
       expect(config.models.find((m) => m.model_id === "deepseek-v4-flash")?.api_key).toBe(
@@ -567,7 +537,6 @@ describe("syncModelsToMachine, against a running server", () => {
       await machine.cleanup();
     }
   });
-
   it("marks a built-in model of ours that a machine on an older build refuses as not addable", async () => {
     // An older build's catalog does not list a row this one ships, so its PUT refuses that row
     // by name exactly as it refuses a hand-added id.
@@ -593,7 +562,6 @@ describe("syncModelsToMachine, against a running server", () => {
         };
       },
     };
-
     const outcome = await syncModelsToMachine({
       api,
       projects: ["p1"],
@@ -620,7 +588,6 @@ describe("syncModelsToMachine, against a running server", () => {
       },
     ]);
   });
-
   it("creates the Project over there under the same id, and it works", async () => {
     const machine = await createTestApp();
     const { server, port } = await listening(machine.app.fetch);
@@ -630,7 +597,6 @@ describe("syncModelsToMachine, against a running server", () => {
         password: machine.adminPassword,
       });
       const cookie = login.setCookie.map((line) => line.split(";")[0]?.trim() ?? "").join("; ");
-
       const outcome = await syncModelsToMachine({
         api: machineApi(new http.Agent(), port, cookie),
         projects: ["field_work"],
@@ -647,11 +613,9 @@ describe("syncModelsToMachine, against a running server", () => {
         refused: [],
         skipped: [],
       });
-
       const listed = await machine.deps.projectService.listProjects("admin");
       expect(listed.find((entry) => entry.projectId === "field_work")?.name).toBe("Field work");
       expect((await machine.deps.agentService.listAgents("field_work")).length).toBeGreaterThan(0);
-
       const config = await machine.deps.projectConfigService.loadConfig("field_work");
       expect(config.default_model).toEqual({ provider: "deepseek", model_id: "deepseek-v4-flash" });
       expect(config.models.find((m) => m.model_id === "deepseek-v4-flash")?.api_key).toBe(

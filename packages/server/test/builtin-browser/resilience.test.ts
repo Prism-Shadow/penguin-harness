@@ -13,17 +13,15 @@ import type {
   BuiltinBrowserMetrics,
   BuiltinBrowserServerEvent,
   BuiltinBrowserStatus,
-} from "../../src/api/types.js";
-import type { AppEnv } from "../../src/auth/middleware.js";
-import type { UserRow } from "../../src/db/repos/users.js";
+} from "../../../../packages/server/src/api/types.js";
+import type { AppEnv } from "../../../../packages/server/src/auth/middleware.js";
+import { UserRow } from "../../../../plugins/settings/src/server/repos/users.js"
 import { handleError } from "../../src/http/errors.js";
-import { builtinBrowserRoutes } from "../../src/builtin-browser/routes.js";
-import { BuiltinBrowser } from "../../src/builtin-browser/service.js";
-import type { BrowserTiming } from "../../src/builtin-browser/service.js";
+import { builtinBrowserRoutes } from "../../../../plugins/browser/src/server/builtin-browser/routes.js";
+import { BuiltinBrowser } from "../../../../plugins/browser/src/server/builtin-browser/service.js";
+import type { BrowserTiming } from "../../../../plugins/browser/src/server/builtin-browser/service.js";
 import { FakeShell, evaluated, expressionOf, tab } from "./fake-shell.js";
-
 const GB = 1024 * 1024;
-
 let root: string;
 const browsers: BuiltinBrowser[] = [];
 beforeEach(async () => {
@@ -36,7 +34,6 @@ afterEach(async () => {
   }
   await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 });
-
 interface Harness {
   shell: FakeShell;
   browser: BuiltinBrowser;
@@ -44,7 +41,6 @@ interface Harness {
   logs: string[];
   call(method: string, url: string, body?: unknown): Promise<Response>;
 }
-
 function mount(
   opts: {
     timing?: Partial<BrowserTiming>;
@@ -97,7 +93,6 @@ function mount(
       }),
   };
 }
-
 const json = async <T>(res: Response): Promise<T> => (await res.json()) as T;
 const errorOf = async (res: Response) =>
   (await res.json()) as { error: { code: string; message: string } };
@@ -117,7 +112,6 @@ async function connected(h: Harness, ...ids: number[]): Promise<void> {
 const lastTabs = (h: Harness) =>
   h.events.filter((e) => e.type === "builtin_browser_tabs").at(-1) as
     Extract<BuiltinBrowserServerEvent, { type: "builtin_browser_tabs" }> | undefined;
-
 describe("a crashed tab", () => {
   it("is marked with why, and an agent action on it answers tab_crashed at once", async () => {
     const h = mount();
@@ -125,7 +119,6 @@ describe("a crashed tab", () => {
     h.shell.crash(3, "oom");
     await until(() => lastTabs(h)?.tabs.some((t) => t.crashed === "oom") === true, "the crash");
     expect(h.logs).toContain("builtin browser: tab 3's page crashed (oom, exit code 9)");
-
     const cdpBefore = h.shell.commands.filter((c) => c.op === "cdp").length;
     for (const [action, body] of [
       ["exec", { script: "return 1" }],
@@ -145,7 +138,6 @@ describe("a crashed tab", () => {
     const status = await json<BuiltinBrowserStatus>(await h.call("GET", "/status"));
     expect(status.tabs.find((t) => t.id === 3)?.crashed).toBe("oom");
   });
-
   it("turns whatever an action's crashing page left behind into tab_crashed", async () => {
     const h = mount();
     await connected(h, 5);
@@ -160,7 +152,6 @@ describe("a crashed tab", () => {
     expect(res.status).toBe(409);
     expect((await errorOf(res)).error.message).toContain("Tab 5's page crashed (killed)");
   });
-
   it("works again once the shell reports the page reloaded", async () => {
     const h = mount();
     await connected(h, 6);
@@ -175,7 +166,6 @@ describe("a crashed tab", () => {
     expect((await json<{ value: unknown }>(res)).value).toBe(42);
   });
 });
-
 describe("load", () => {
   it("judges each measurement, keeps it for the status, and sends it to the windows", async () => {
     const h = mount({ free: 1 * 1024 ** 3 });
@@ -203,7 +193,6 @@ describe("load", () => {
     const status = await json<BuiltinBrowserStatus>(await h.call("GET", "/status"));
     expect(status.metrics).toEqual(sent.metrics);
   });
-
   it("leaves the system's memory out on macOS", async () => {
     const h = mount({ platform: "darwin", free: 10 * 1024 ** 2 });
     await connected(h, 1);
@@ -213,7 +202,6 @@ describe("load", () => {
     expect(status.metrics?.system).toBeUndefined();
     expect(status.metrics?.warnings).toEqual([]);
   });
-
   it("ignores a measurement that is not one", async () => {
     const h = mount();
     await connected(h, 1);
@@ -226,14 +214,12 @@ describe("load", () => {
     expect(h.events.some((e) => e.type === "builtin_browser_metrics")).toBe(false);
   });
 });
-
 describe("throttling", () => {
   it("lets the shell throttle every tab nobody is driving", async () => {
     const h = mount();
     await connected(h, 4, 7);
     await until(() => h.shell.throttled.at(-1)?.join() === "4,7", "the throttled tabs");
   });
-
   it("keeps the tab a window shows at full speed, and throttles the one it replaced", async () => {
     const h = mount();
     await connected(h, 4, 7);
@@ -249,7 +235,6 @@ describe("throttling", () => {
       expect((await h.call("POST", "/tabs/on-screen", { tabId })).status).toBe(400);
     }
   });
-
   it("runs a tab at full speed before an agent's action reaches it, and for a grace after", async () => {
     const h = mount({ timing: { throttleGraceMs: 40 } });
     await connected(h, 4, 7);
@@ -269,7 +254,6 @@ describe("throttling", () => {
     expect(h.shell.throttled.at(-1)?.join()).toBe("7");
     await until(() => h.shell.throttled.at(-1)?.join() === "4,7", "the grace to end");
   });
-
   it("gives a new tab the grace from the moment it appears", async () => {
     const h = mount();
     await connected(h, 1);
@@ -284,7 +268,6 @@ describe("throttling", () => {
     // It was never throttled on its way in.
     expect(h.shell.throttled.some((list) => list.includes(8))).toBe(false);
   });
-
   it("stops asking a shell too old to throttle", async () => {
     const h = mount();
     h.shell.throttles = false;
@@ -297,7 +280,6 @@ describe("throttling", () => {
     expect(h.shell.commands.filter((c) => c.op === "throttle")).toHaveLength(1);
   });
 });
-
 describe("the tab list to the windows", () => {
   it("goes once per burst of tab events, and not at all when nothing changed", async () => {
     const h = mount({ timing: { publishDelayMs: 20 } });
@@ -313,7 +295,6 @@ describe("the tab list to the windows", () => {
     await new Promise((resolve) => setTimeout(resolve, 40));
     expect(h.events.filter((e) => e.type === "builtin_browser_tabs").length).toBe(before + 1);
   });
-
   it("drops a data: favicon too large to ride every list", async () => {
     const h = mount();
     await connected(h, 1);
@@ -325,7 +306,6 @@ describe("the tab list to the windows", () => {
     await until(() => h.browser.tabs.get(1)?.favicon === undefined, "the large icon dropped");
   });
 });
-
 describe("shell traffic that fails", () => {
   it("never throws out of the port: a failing event is logged and the next one works", async () => {
     const h = mount();
@@ -340,7 +320,6 @@ describe("shell traffic that fails", () => {
     h.shell.show(tab(1, { title: "Fine again" }));
     expect(h.browser.tabs.get(1)?.title).toBe("Fine again");
   });
-
   it("keeps going when sending to the windows fails", async () => {
     let fail = true;
     const events: BuiltinBrowserServerEvent[] = [];

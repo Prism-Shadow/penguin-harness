@@ -13,18 +13,16 @@ import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { serve } from "@hono/node-server";
 import { WebSocket, WebSocketServer } from "ws";
-import { MachineSocket } from "../src/machines/machine-sockets.js";
+import { MachineSocket } from "../../../plugins/machines/src/server/machine-sockets.js";
 import { API_SOCKET_DEFLATE } from "../src/socket/compression.js";
 import { apiSocketPath } from "../src/socket/ref.js";
-import { attachTerminalWebSocket } from "../src/terminal/ws.js";
+import { attachTerminalWebSocket } from "../../../plugins/terminal/src/server/index.js";
 import { createTestApp, loginAdmin } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
-
 let t: TestApp;
 let port: number;
 let server: ReturnType<typeof serve>;
 let cookie: string;
-
 beforeAll(async () => {
   t = await createTestApp();
   cookie = (await loginAdmin(t.app)).cookie;
@@ -40,13 +38,11 @@ beforeAll(async () => {
     log: () => undefined,
   });
 });
-
 afterAll(async () => {
   (server as unknown as http.Server).closeAllConnections();
   await new Promise<void>((resolve) => server.close(() => resolve()));
   await t.cleanup();
 });
-
 /** The extension header a handshake with these headers was answered with (the client offers deflate). */
 async function negotiated(host: string, origin?: string): Promise<string> {
   const ws = new WebSocket(`ws://127.0.0.1:${port}${apiSocketPath()}`, {
@@ -65,7 +61,6 @@ async function negotiated(host: string, origin?: string): Promise<string> {
   ws.close();
   return accepted;
 }
-
 describe("API socket compression", () => {
   it("this server's dial to a machine negotiates permessage-deflate", async () => {
     const machine = new WebSocketServer({ port: 0, perMessageDeflate: API_SOCKET_DEFLATE });
@@ -83,7 +78,6 @@ describe("API socket compression", () => {
     agent.destroy();
     await new Promise<void>((resolve) => machine.close(() => resolve()));
   });
-
   it("a handshake from another server or a browser on another computer is compressed, frame by frame", async () => {
     for (const answer of [
       await negotiated(`localhost:${port}`),
@@ -94,7 +88,6 @@ describe("API socket compression", () => {
       expect(answer).toContain("client_no_context_takeover");
     }
   });
-
   it("a handshake from a browser on this computer is not", async () => {
     expect(await negotiated(`localhost:${port}`, `http://localhost:${port}`)).toBe("");
   });

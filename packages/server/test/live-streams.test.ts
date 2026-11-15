@@ -10,27 +10,23 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 import { LiveStreamRegistry } from "../src/auth/live-streams.js";
 import { SESSION_COOKIE } from "../src/auth/middleware.js";
-import { sessionTokenHash } from "../src/db/repos/auth-sessions.js";
+import { sessionTokenHash } from "../../../plugins/settings/src/server/repos/auth-sessions.js"
 import { Channel } from "../src/runtime/channel.js";
 import { sseEndpoint } from "../src/http/sse.js";
 import { createTestApp, loginAdmin } from "./helpers.js";
-
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** The heartbeat period the SSE endpoint runs on (http/sse.ts). */
 const HEARTBEAT_MS = 20_000;
-
 describe("live stream registry", () => {
   it("holds a user's streams and ends them all at once", () => {
     const registry = new LiveStreamRegistry();
     const ended: string[] = [];
     registry.add("alice", () => ended.push("alice-1"));
     registry.add("alice", () => ended.push("alice-2"));
-
     expect(registry.countFor("alice")).toBe(2);
     expect(registry.endForUser("alice")).toBe(2);
     expect(ended).toEqual(["alice-1", "alice-2"]);
   });
-
   it("leaves another user's streams alone", () => {
     const registry = new LiveStreamRegistry();
     let bobEnded = false;
@@ -38,26 +34,22 @@ describe("live stream registry", () => {
     registry.add("bob", () => {
       bobEnded = true;
     });
-
     registry.endForUser("alice");
     expect(bobEnded).toBe(false);
     expect(registry.countFor("bob")).toBe(1);
   });
-
   it("a released stream is no longer ended, and releasing twice is harmless", () => {
     const registry = new LiveStreamRegistry();
     let ended = 0;
     const release = registry.add("alice", () => {
       ended += 1;
     });
-
     release();
     release();
     expect(registry.countFor("alice")).toBe(0);
     expect(registry.endForUser("alice")).toBe(0);
     expect(ended).toBe(0);
   });
-
   it("a stream that releases itself while the registry is ending it is still counted once", () => {
     const registry = new LiveStreamRegistry();
     let ended = 0;
@@ -66,19 +58,16 @@ describe("live stream registry", () => {
       ended += 1;
       release();
     });
-
     expect(registry.endForUser("alice")).toBe(1);
     expect(ended).toBe(1);
     expect(registry.countFor("alice")).toBe(0);
   });
-
   it("a user nobody is streaming for is a no-op", () => {
     const registry = new LiveStreamRegistry();
     expect(registry.endForUser("nobody")).toBe(0);
     expect(registry.countFor("nobody")).toBe(0);
   });
 });
-
 describe("sessionIsLive", () => {
   it("answers for the row behind the token without sliding its expiry", async () => {
     let now = new Date("2026-09-21T00:00:00.000Z");
@@ -97,12 +86,10 @@ describe("sessionIsLive", () => {
         const row = t.deps.db.prepare(sql).get(hash) as { expires_at: unknown };
         return row.expires_at;
       };
-
       now = new Date(now.getTime() + 2 * DAY_MS);
       const before = expiresAt();
       expect(t.deps.authService.sessionIsLive(token)).toBe(true);
       expect(expiresAt()).toBe(before);
-
       // The contrast: the path the request gate uses tops the expiry up in place, which is
       // exactly what a connection re-checking itself every 20s must not do.
       expect(t.deps.authService.authenticateWithMeta(token)).not.toBeNull();
@@ -111,7 +98,6 @@ describe("sessionIsLive", () => {
       await t.cleanup();
     }
   });
-
   it("is false once the row is gone, and false while it is only expired", async () => {
     let now = new Date("2026-09-21T00:00:00.000Z");
     const t = await createTestApp({ now: () => now });
@@ -119,12 +105,10 @@ describe("sessionIsLive", () => {
       const { cookie } = await loginAdmin(t.app);
       const token = cookie.slice(`${SESSION_COOKIE}=`.length);
       expect(t.deps.authService.sessionIsLive(token)).toBe(true);
-
       // Expired but still on disk: the sweep has not run, and the check must not be fooled
       // by the row merely existing.
       now = new Date(now.getTime() + 31 * DAY_MS);
       expect(t.deps.authService.sessionIsLive(token)).toBe(false);
-
       t.deps.db.prepare("DELETE FROM auth_sessions").run();
       expect(t.deps.authService.sessionIsLive(token)).toBe(false);
       expect(t.deps.authService.sessionIsLive("never-issued")).toBe(false);
@@ -133,12 +117,10 @@ describe("sessionIsLive", () => {
     }
   });
 });
-
 describe("the SSE heartbeat re-checks its own session", () => {
   afterEach(() => {
     vi.useRealTimers();
   });
-
   /** An SSE route over a bare channel; `live` stands in for the session row behind the connection. */
   function streamingApp(session: { live: boolean }, registry: LiveStreamRegistry) {
     const app = new Hono();
@@ -154,7 +136,6 @@ describe("the SSE heartbeat re-checks its own session", () => {
     );
     return app;
   }
-
   it("a session that is still there gets a ping and keeps the stream", async () => {
     // Only the interval: the stream's own plumbing runs on promises, and faking those
     // would stall the reads below.
@@ -165,7 +146,6 @@ describe("the SSE heartbeat re-checks its own session", () => {
     const reader = res.body!.getReader();
     await reader.read(); // hello: the connection is established and registered
     await reader.read(); // the ping every stream opens with
-
     vi.advanceTimersByTime(HEARTBEAT_MS);
     const beat = await reader.read();
     expect(beat.done).toBe(false);
@@ -173,7 +153,6 @@ describe("the SSE heartbeat re-checks its own session", () => {
     expect(registry.countFor("alice")).toBe(1);
     await reader.cancel();
   });
-
   it("a session that was revoked ends the stream on the next beat, and releases it", async () => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
     const registry = new LiveStreamRegistry();
@@ -183,7 +162,6 @@ describe("the SSE heartbeat re-checks its own session", () => {
     await reader.read(); // hello
     await reader.read(); // the opening ping
     expect(registry.countFor("alice")).toBe(1);
-
     // Whatever dropped the rows did not tell the registry — the beat is what notices.
     session.live = false;
     vi.advanceTimersByTime(HEARTBEAT_MS);

@@ -12,7 +12,7 @@ import {
   projectConfigPath,
   renderProjectConfigToml,
 } from "@prismshadow/penguin-core";
-import { ProjectConfigService } from "../src/services/project-config-service.js";
+import { ProjectConfigService } from "../../../plugins/projects/src/server/index.js";
 import { makeTempRoot } from "./helpers.js";
 import { wire } from "@prismshadow/penguin-core/kernel";
 

@@ -53,10 +53,10 @@ import {
   newestPerName,
   parsePluginIndex,
   selectIndexChannel,
-} from "../src/plugin/registry.js";
-import type { IndexDocumentEntry, PluginRegistry } from "../src/plugin/registry.js";
+} from "../../../plugins/plugins/src/server/index.js";
+import type { IndexDocumentEntry, PluginRegistry } from "../../../plugins/plugins/src/server/index.js";
 import { resolveServerConfig } from "../src/config.js";
-import { pluginRegistryRoutes } from "../src/http/routes/plugins.js";
+import { pluginRegistryRoutes } from "../../../plugins/plugins/src/server/index.js";
 import { fakeFetch, fetchFailed, jsonResponse } from "./fixtures/fetch.js";
 import { apiClient, createTestApp, loginAdmin } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
@@ -291,7 +291,7 @@ describe("httpPluginRegistry", () => {
  * is the specifier a Project's list names, and a catalogue that describes
  * its entries wrongly is worse than one that omits them.
  */
-const PLUGINS_DIR = fileURLToPath(new URL("../../../plugins/", import.meta.url));
+const PLUGINS_DIR = fileURLToPath(new URL("../../../../plugins/", import.meta.url));
 
 interface PackageManifest {
   name: string;

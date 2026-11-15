@@ -17,16 +17,14 @@ import net from "node:net";
 import type { AddressInfo } from "node:net";
 import { getGlobalDispatcher, setGlobalDispatcher } from "undici";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { machineApi } from "../src/machines/machine-api.js";
-import { machinesProxy } from "../src/machines/proxy.js";
-import { dialThroughSocks } from "../src/machines/transport/socks.js";
+import { machineApi } from "../../../plugins/machines/src/server/index.js";
+import { machinesProxy } from "../../../plugins/machines/src/server/proxy.js";
+import { dialThroughSocks } from "../../../plugins/machines/src/server/transport/socks.js";
 import { buildProxyDispatcher } from "../src/net/proxy.js";
-
 const listen = (server: net.Server): Promise<number> =>
   new Promise((resolve) =>
     server.listen(0, "127.0.0.1", () => resolve((server.address() as AddressInfo).port)),
   );
-
 /** Just enough SOCKS5 for a CONNECT to an IPv4 address, piped to that port on loopback. */
 function socksServer(): net.Server {
   return net.createServer((client) => {
@@ -55,7 +53,6 @@ function socksServer(): net.Server {
     });
   });
 }
-
 /** The agent MachineConnection.agent builds, with this test's SOCKS port in place of the session's. */
 function sessionAgent(socksPort: number, remotePort: number): http.Agent {
   const agent = new http.Agent({ keepAlive: false });
@@ -70,14 +67,12 @@ function sessionAgent(socksPort: number, remotePort: number): http.Agent {
   };
   return agent;
 }
-
 describe("machine traffic and the proxy settings", () => {
   const cleanups: Array<() => void | Promise<void>> = [];
   afterEach(async () => {
     for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
     vi.unstubAllEnvs();
   });
-
   /**
    * A machine behind a SOCKS port, a proxy that answers 502 to everything (and counts what it
    * saw), the proxy variables pointing at a port nothing listens on, and the global dispatcher
@@ -104,7 +99,6 @@ describe("machine traffic and the proxy settings", () => {
     const dead = net.createServer();
     const deadPort = await listen(dead);
     await new Promise<void>((resolve) => dead.close(() => resolve()));
-
     const nowhere = `http://127.0.0.1:${deadPort}`;
     for (const name of ["http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY"]) {
       vi.stubEnv(name, nowhere);
@@ -127,13 +121,10 @@ describe("machine traffic and the proxy settings", () => {
     );
     return { machinePort, socksPort, seenByProxy };
   }
-
   it("a call to a machine's API is answered by the machine, and the proxy sees nothing", async () => {
     const { machinePort, socksPort, seenByProxy } = await rig();
     const api = machineApi(sessionAgent(socksPort, machinePort), machinePort, "penguin_session=x");
-
     const answer = await api.request("GET", "/api/version");
-
     expect(answer.status).toBe(200);
     expect(JSON.parse(answer.text)).toMatchObject({
       answeredBy: "the machine",
@@ -142,7 +133,6 @@ describe("machine traffic and the proxy settings", () => {
     });
     expect(seenByProxy).toEqual([]);
   });
-
   it("a page's request through the /server/<machineId> forward is answered by the machine", async () => {
     const { machinePort, socksPort, seenByProxy } = await rig();
     const forward = machinesProxy(async () => ({
@@ -152,11 +142,9 @@ describe("machine traffic and the proxy settings", () => {
       adoptedAt: null,
       session: 1,
     }));
-
     const res = await forward(
       new Request("http://localhost:7368/server/QS7J4YVgSovi-Z2c/api/projects/p/agents"),
     );
-
     expect(res?.status).toBe(200);
     expect(await res?.json()).toMatchObject({
       answeredBy: "the machine",

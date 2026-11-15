@@ -15,9 +15,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { planOver, runningBuild, runsPlan } from "../src/machines/install-server.js";
-import type { PushPlan } from "../src/machines/install-server.js";
-
+import { planOver } from "../../../plugins/machines/src/server/install-server.js";
+import { runningBuild } from "../../../plugins/machines/src/server/install-server.js";
+import { runsPlan } from "../../../plugins/machines/src/server/install-server.js";
+import { PushPlan } from "../../../plugins/machines/src/server/install-server.js";
 const HARNESS = {
   source: null,
   pushedAt: "2026-10-12T09:33:03.909Z",
@@ -59,7 +60,6 @@ fs.writeFileSync(
 );
 const IMAGE: PushPlan = planOver("0.2.13", store);
 afterAll(() => fs.rmSync(store, { recursive: true, force: true }));
-
 describe("runningBuild", () => {
   it("reads a machine running its pushed image as that image, spelled as its plan", () => {
     expect(runningBuild(IMAGE_RUNNING)).toEqual({
@@ -69,7 +69,6 @@ describe("runningBuild", () => {
       foreign: false,
     });
   });
-
   it("reads a release answering beside a pushed image as not running it", () => {
     expect(runningBuild(RELEASE_RUNNING)).toMatchObject({ release: "0.2.13", foreign: true });
     // A source push recorded at a revision past the release is still another build.
@@ -79,7 +78,6 @@ describe("runningBuild", () => {
     };
     expect(runningBuild({ ...RELEASE_RUNNING, harness: pushed })).toMatchObject({ foreign: true });
   });
-
   it("reads a release answering beside its own release's image as running it", () => {
     // The image a release ships is compiled from that release, and records it as its revision:
     // whichever of the two copies the runtime loaded, the code is that release's.
@@ -93,7 +91,6 @@ describe("runningBuild", () => {
     const older = { ...HARNESS, source: { repo: "penguin-harness", revision: "v0.2.12" } };
     expect(runningBuild({ ...RELEASE_RUNNING, harness: older })).toMatchObject({ foreign: true });
   });
-
   it("reads a release with nothing pushed as that release", () => {
     expect(runningBuild({ ...RELEASE_RUNNING, harness: null })).toEqual({
       release: "0.2.13",
@@ -102,21 +99,18 @@ describe("runningBuild", () => {
       foreign: false,
     });
   });
-
   it("reads an answer that names no version as nothing", () => {
     for (const report of [null, "0.2.13", {}, { version: 3 }, { version: "" }, { models: [] }]) {
       expect(runningBuild(report)).toBeNull();
     }
   });
 });
-
 describe("runsPlan", () => {
   it("is true for the image's own platform, whatever the release half of the version says", () => {
     // A packaged server stands on its release; the build pushed to it came from a checkout whose
     // VERSION may already be the next one.
     expect(runsPlan(runningBuild({ ...IMAGE_RUNNING, version: "0.2.14" })!, IMAGE)).toBe(true);
   });
-
   it("is false for another platform, and for a plain release where an image is expected", () => {
     const older = {
       ...IMAGE_RUNNING,
@@ -128,7 +122,6 @@ describe("runsPlan", () => {
     expect(runsPlan(runningBuild(older)!, IMAGE)).toBe(false);
     expect(runsPlan(runningBuild({ ...RELEASE_RUNNING, harness: null })!, IMAGE)).toBe(false);
   });
-
   it("is true for a plain release where that release is what is installed", () => {
     const bare: PushPlan = {
       baseVersion: "0.2.13",

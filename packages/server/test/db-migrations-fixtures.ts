@@ -5,7 +5,7 @@
  */
 import type { DatabaseSync } from "node:sqlite";
 import { MIGRATIONS } from "../src/db/migrations/index.js";
-import { SCHEMA_SQL } from "../src/db/schema.js";
+import { SCHEMA_SQL } from "../../../plugins/db/src/index.js";
 
 export const sqlite = process.getBuiltinModule("node:sqlite");
 

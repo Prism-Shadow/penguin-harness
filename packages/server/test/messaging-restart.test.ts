@@ -24,8 +24,8 @@ import type {
 import type {
   TelegramTransportOpts,
   TelegramUpdate,
-} from "../src/runtime/messaging/telegram-api.js";
-import { createTelegramTransport } from "../src/runtime/messaging/telegram-api.js";
+} from "../../../plugins/messaging/src/server/index.js";
+import { createTelegramTransport } from "../../../plugins/messaging/src/server/index.js";
 import { fakeFetch, jsonResponse } from "./fixtures/fetch.js";
 import type { FetchCall } from "./fixtures/fetch.js";
 import { apiClient, createTestApp, loginAdmin, restartTestApp, waitFor } from "./helpers.js";

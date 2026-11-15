@@ -25,22 +25,21 @@ import type {
   BuiltinBrowserSettings,
   BuiltinBrowserStatus,
   BuiltinBrowserTab,
-} from "../../src/api/types.js";
-import type { AppEnv } from "../../src/auth/middleware.js";
-import type { UserRow } from "../../src/db/repos/users.js";
+} from "../../../../packages/server/src/api/types.js";
+import type { AppEnv } from "../../../../packages/server/src/auth/middleware.js";
+import { UserRow } from "../../../../plugins/settings/src/server/repos/users.js"
 import { handleError } from "../../src/http/errors.js";
-import { ImportSourceNotFoundError } from "../../src/builtin-browser/import/index.js";
-import { builtinBrowserRoutes } from "../../src/builtin-browser/routes.js";
+import { ImportSourceNotFoundError } from "../../../../plugins/browser/src/server/builtin-browser/import/index.js";
+import { builtinBrowserRoutes } from "../../../../plugins/browser/src/server/builtin-browser/routes.js";
 import {
   BuiltinBrowser,
   MAX_TABS,
   browserUrl,
   homepageUrl,
-} from "../../src/builtin-browser/service.js";
-import type { Importer } from "../../src/builtin-browser/service.js";
+} from "../../../../plugins/browser/src/server/builtin-browser/service.js";
+import type { Importer } from "../../../../plugins/browser/src/server/builtin-browser/service.js";
 import { FakeShell, evaluated, expressionOf, tab } from "./fake-shell.js";
 import type { CdpHandler } from "./fake-shell.js";
-
 const FAST = {
   helloTimeoutMs: 50,
   helloRetryMs: 60_000,
@@ -53,7 +52,6 @@ const FAST = {
   closeWaitMs: 200,
   publishDelayMs: 0,
 };
-
 let root: string;
 const browsers: BuiltinBrowser[] = [];
 beforeEach(async () => {
@@ -67,7 +65,6 @@ afterEach(async () => {
   }
   await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 });
-
 interface Harness {
   shell: FakeShell;
   browser: BuiltinBrowser;
@@ -75,7 +72,6 @@ interface Harness {
   nextOpen(): Promise<Extract<BuiltinBrowserServerEvent, { type: "builtin_browser_open" }>>;
   call(method: string, url: string, body?: unknown): Promise<Response>;
 }
-
 function mount(
   opts: {
     shell?: FakeShell | null;
@@ -136,7 +132,6 @@ function mount(
       }),
   };
 }
-
 const json = async <T>(res: Response): Promise<T> => (await res.json()) as T;
 const errorOf = async (res: Response) =>
   (await res.json()) as { error: { code: string; message: string; reason?: string } };
@@ -154,7 +149,6 @@ function openEvent(events: BuiltinBrowserServerEvent[]) {
   if (open?.type !== "builtin_browser_open") throw new Error("no open event");
   return open;
 }
-
 /**
  * A page for the fake shell: answers readyState, the monitor's begin and end, and hands the
  * exec script (and anything else) to `rest`.
@@ -183,7 +177,6 @@ function page(
     return rest(tabId, method, params);
   };
 }
-
 /** Create an owned page through the same open/claim exchange as a real window. */
 async function openOwned(h: Harness, id: number, sessionId: string, projectId?: string) {
   const announced = h.nextOpen();
@@ -200,7 +193,6 @@ async function openOwned(h: Harness, id: number, sessionId: string, projectId?: 
   expect((await response).status).toBe(200);
   return event;
 }
-
 describe("availability", () => {
   it("is not_desktop without a shell port, and says so with a reason on every action", async () => {
     const h = mount({ shell: null });
@@ -220,7 +212,6 @@ describe("availability", () => {
       reason: "not_desktop",
     });
   });
-
   it("is shell_unsupported when the shell never answers hello", async () => {
     const shell = new FakeShell();
     shell.speaksBrowser = false;
@@ -231,7 +222,6 @@ describe("availability", () => {
     expect(res.status).toBe(503);
     expect((await errorOf(res)).error.reason).toBe("shell_unsupported");
   });
-
   it("is available once the shell answers, with the tabs it already hosts", async () => {
     const shell = new FakeShell();
     shell.guests.set(4, tab(4));
@@ -246,7 +236,6 @@ describe("availability", () => {
       activeTabId: 7,
     });
   });
-
   it("is for admins only, status included", async () => {
     const h = mount({ admin: false });
     for (const [method, url] of [
@@ -260,7 +249,6 @@ describe("availability", () => {
     }
   });
 });
-
 describe("tabs", () => {
   it("opens a tab through a window's claim, then waits for the page to load", async () => {
     const h = mount();
@@ -297,7 +285,6 @@ describe("tabs", () => {
       "the tabs event",
     );
   });
-
   it("waits for a new tab's page, not the empty document a quick claim finds", async () => {
     const h = mount();
     // The initial empty document reads as loaded, as it does in Chromium.
@@ -322,7 +309,6 @@ describe("tabs", () => {
       url: "https://example.test/slow",
     });
   });
-
   it("answers no_window when no window claims the tab", async () => {
     const h = mount();
     const res = await h.call("POST", "/tabs", {});
@@ -336,7 +322,6 @@ describe("tabs", () => {
     const late = await h.call("POST", "/tabs/claim", { requestId: "gone", tabId: 3 });
     expect((await errorOf(late)).error.code).toBe("unknown_request");
   });
-
   it("refuses a page the browser cannot open", async () => {
     const h = mount();
     for (const url of ["file:///etc/passwd", "javascript:alert(1)", "mailto:a@b.test"]) {
@@ -345,7 +330,6 @@ describe("tabs", () => {
       expect((await errorOf(res)).error.code).toBe("invalid_url");
     }
   });
-
   it("lets a page open at most 3 tabs in 5 seconds, and drops the rest", async () => {
     let clock = 1_000_000;
     const logs: string[] = [];
@@ -363,7 +347,6 @@ describe("tabs", () => {
     await flush();
     expect(opens()).toBe(4);
   });
-
   it("holds no more than its tab limit: an agent's new tab is refused, a page's popup dropped", async () => {
     const h = mount();
     for (let id = 1; id <= MAX_TABS; id++) h.shell.show(tab(id));
@@ -374,7 +357,6 @@ describe("tabs", () => {
     await flush();
     expect(h.events.some((e) => e.type === "builtin_browser_open")).toBe(false);
   });
-
   it("activates, closes through the window, and resolves `active`", async () => {
     const h = mount();
     h.shell.show(tab(1));
@@ -383,14 +365,12 @@ describe("tabs", () => {
     const activated = await h.call("POST", "/tabs/1/activate");
     expect((await json<{ tab: BuiltinBrowserTab }>(activated)).tab.id).toBe(1);
     expect((await json<{ activeTabId: number }>(await h.call("GET", "/tabs"))).activeTabId).toBe(1);
-
     const closing = h.call("DELETE", "/tabs/active");
     await until(() => h.events.some((e) => e.type === "builtin_browser_close"), "the close event");
     expect(h.events).toContainEqual({ type: "builtin_browser_close", tabId: 1 });
     h.shell.close(1);
     expect((await closing).status).toBe(204);
     expect(h.browser.tabs.ids()).toEqual([2]);
-
     // A window that does not remove the tab leaves it open: no_window.
     const stuck = await h.call("DELETE", "/tabs/2");
     expect((await errorOf(stuck)).error.reason).toBe("no_window");
@@ -398,7 +378,6 @@ describe("tabs", () => {
       "no_such_tab",
     );
   });
-
   it("answers no_tab for `active` when nothing is open", async () => {
     const h = mount();
     const res = await h.call("POST", "/tabs/active/scan", {});
@@ -406,7 +385,6 @@ describe("tabs", () => {
     expect((await errorOf(res)).error.code).toBe("no_tab");
   });
 });
-
 describe("agent actions", () => {
   it("navigates an open tab and returns it loaded", async () => {
     const h = mount();
@@ -446,7 +424,6 @@ describe("agent actions", () => {
       },
     ]);
   });
-
   it("reports a page that cannot be reached", async () => {
     const h = mount();
     h.shell.show(tab(3));
@@ -455,7 +432,6 @@ describe("agent actions", () => {
     expect(res.status).toBe(502);
     expect((await errorOf(res)).error.code).toBe("navigation_failed");
   });
-
   it("opens a tab to navigate `active` when none is open", async () => {
     const h = mount();
     h.shell.cdp = page(() => ({}));
@@ -466,7 +442,6 @@ describe("agent actions", () => {
     await h.call("POST", "/tabs/claim", { requestId: open.requestId, tabId: 8 });
     expect((await json<{ tab: BuiltinBrowserTab }>(await pending)).tab.id).toBe(8);
   });
-
   it("scans with the tab list beside the content", async () => {
     const h = mount();
     h.shell.show(tab(5));
@@ -493,7 +468,6 @@ describe("agent actions", () => {
       '__penguinScan({"textOnly":false,"maxChars":1000,"instruction":"Order"})',
     );
   });
-
   it("gives the text scan a third of the budget, as GenericAgent's web_scan does", async () => {
     const h = mount();
     h.shell.show(tab(5));
@@ -507,7 +481,6 @@ describe("agent actions", () => {
     expect(seen[0]).toContain('"maxChars":11666');
     expect(seen[1]).toContain('"maxChars":1666');
   });
-
   it("answers exec with the value, the transients and the diff", async () => {
     const h = mount();
     await openOwned(h, 2, "s1");
@@ -534,7 +507,6 @@ describe("agent actions", () => {
     // The script travels to the page inside GenericAgent's executor, as a JSON string.
     expect(script).toContain('const jsCode = "return {rows: 3}".trim();');
   });
-
   /** The shell relaying a dialog the page opened; the page is blocked until it is answered. */
   async function openDialog(
     h: Harness,
@@ -550,7 +522,6 @@ describe("agent actions", () => {
     });
     await until(() => answers.length > count, `the ${params.type} answered`);
   }
-
   it("answers the page's dialogs during an action: alerts accepted, the rest dismissed", async () => {
     const h = mount();
     h.shell.show(tab(2));
@@ -589,7 +560,6 @@ describe("agent actions", () => {
       { op: "cdp", tabId: 2, method: "Page.disable", params: {}, events: [] },
     ]);
   });
-
   it("accepts every dialog with acceptDialogs, a prompt with its default text", async () => {
     const h = mount();
     h.shell.show(tab(2));
@@ -613,7 +583,6 @@ describe("agent actions", () => {
     expect(result.dialogs).toEqual([{ type: "prompt", message: "How many?", accepted: true }]);
     expect(answers).toEqual([{ accept: true, promptText: "3" }]);
   });
-
   it("runs one action at a time on a tab, so their measurements never overlap", async () => {
     const h = mount();
     h.shell.show(tab(2));
@@ -653,7 +622,6 @@ describe("agent actions", () => {
     await Promise.all([first, second]);
     expect(order).toEqual(["begin", "first", "end", "begin", "second", "end"]);
   });
-
   it("keeps the keys of a returned object in the order the page built them", async () => {
     const h = mount();
     h.shell.show(tab(2));
@@ -664,7 +632,6 @@ describe("agent actions", () => {
     const res = await h.call("POST", "/tabs/2/exec", { script: "return row", noMonitor: true });
     expect(await res.text()).toContain('"value":{"total":"$19.99","date":"2026-09-20"}');
   });
-
   it("notes when nothing visible happened, and skips measuring with noMonitor", async () => {
     const h = mount();
     h.shell.show(tab(2));
@@ -687,7 +654,6 @@ describe("agent actions", () => {
     );
     expect(bare).toEqual({ status: "success", tabId: 2, value: "x" });
   });
-
   it("reports the script's own failure in band", async () => {
     const h = mount();
     h.shell.show(tab(2));
@@ -703,7 +669,6 @@ describe("agent actions", () => {
       error: "TypeError: x is not a function",
     });
   });
-
   it("reports a navigation the script caused as reloaded", async () => {
     const h = mount();
     h.shell.show(tab(2));
@@ -714,7 +679,6 @@ describe("agent actions", () => {
       await h.call("POST", "/tabs/2/exec", { script: "location.href = 'https://next.test/'" }),
     );
     expect(result).toEqual({ status: "success", tabId: 2, reloaded: true });
-
     // A navigation the page started after the script returned is found by the end measure.
     const late = mount();
     late.shell.show(tab(2));
@@ -724,7 +688,6 @@ describe("agent actions", () => {
     );
     expect(after).toEqual({ status: "success", tabId: 2, reloaded: true });
   });
-
   it("lists the popup a script opened as a new tab", async () => {
     const h = mount();
     await openOwned(h, 2, "s4");
@@ -754,7 +717,6 @@ describe("agent actions", () => {
     expect(result.diff).toBeUndefined();
     expect(result.suggestion).toMatch(/New tabs opened/);
   });
-
   it("clicks with the full trusted mouse sequence at the element's centre", async () => {
     const h = mount();
     h.shell.show(tab(2));
@@ -786,7 +748,6 @@ describe("agent actions", () => {
     ]);
     expect(mouse[1]).toMatchObject({ x: 120, y: 48, button: "left", clickCount: 1 });
   });
-
   it("answers script_error when the element is not there", async () => {
     const h = mount();
     h.shell.show(tab(2));
@@ -806,7 +767,6 @@ describe("agent actions", () => {
     const bad = await h.call("POST", "/tabs/2/click", {});
     expect(bad.status).toBe(400);
   });
-
   it("types by insertText, fires input and change, and submits with Enter", async () => {
     const h = mount();
     h.shell.show(tab(2));
@@ -834,7 +794,6 @@ describe("agent actions", () => {
       "key:keyUp:Enter",
     ]);
   });
-
   it("stops typing when the shell cannot give the tab keyboard focus, and says so", async () => {
     const h = mount();
     h.shell.show(tab(2));
@@ -856,7 +815,6 @@ describe("agent actions", () => {
     expect(result.error).toContain("could not take keyboard focus");
     // The refused text is not followed by an Enter.
     expect(typing).toEqual(["Input.insertText"]);
-
     const raw = await h.call("POST", "/tabs/2/cdp", {
       method: "Input.dispatchKeyEvent",
       params: { type: "keyDown", key: "Enter" },
@@ -864,7 +822,6 @@ describe("agent actions", () => {
     expect(raw.status).toBe(409);
     expect((await errorOf(raw)).error.code).toBe("keyboard_focus_failed");
   });
-
   it("takes a screenshot, of the viewport or the whole page", async () => {
     const h = mount();
     h.shell.show(tab(2));
@@ -887,7 +844,6 @@ describe("agent actions", () => {
       },
     ]);
   });
-
   it("passes raw CDP through", async () => {
     const h = mount();
     h.shell.show(tab(2));
@@ -902,7 +858,6 @@ describe("agent actions", () => {
     const bad = await h.call("POST", "/tabs/2/cdp", { method: "not a method" });
     expect(bad.status).toBe(400);
   });
-
   it("keeps raw CDP within the browser: no Target domain, no navigation off the web", async () => {
     const h = mount();
     h.shell.show(tab(2));
@@ -929,7 +884,6 @@ describe("agent actions", () => {
     expect(web.status).toBe(200);
     expect(sent).toEqual(["Page.navigate"]);
   });
-
   it("drops a tab the shell no longer has", async () => {
     const h = mount();
     h.shell.show(tab(2));
@@ -941,7 +895,6 @@ describe("agent actions", () => {
     expect(h.browser.tabs.has(2)).toBe(false);
   });
 });
-
 describe("import, history and data", () => {
   const chrome: BuiltinBrowserImportSource = {
     id: "chrome:Default",
@@ -981,7 +934,6 @@ describe("import, history and data", () => {
       warnings: [],
     }),
   };
-
   it("imports cookies through the shell and history into the store", async () => {
     const h = mount({ importer });
     const sources = await json<{ sources: BuiltinBrowserImportSource[] }>(
@@ -1014,7 +966,6 @@ describe("import, history and data", () => {
       [],
     );
   });
-
   it("imports and clears cookies only in the Session's Project, ignoring another Project hint", async () => {
     const h = mount({ importer, projectOf: () => "project-a" });
     const page = await openOwned(h, 1, "session-a");
@@ -1035,7 +986,6 @@ describe("import, history and data", () => {
     });
     expect(h.shell.commands.at(-1)).toMatchObject({ op: "clear-data", partition: page.partition });
   });
-
   it("imports only what is asked for, and names a missing source", async () => {
     const h = mount({ importer });
     const history = await json<BuiltinBrowserImportResult>(
@@ -1056,7 +1006,6 @@ describe("import, history and data", () => {
     expect(failed.status).toBe(422);
     expect((await errorOf(failed)).error).toMatchObject({ code: "import_failed" });
   });
-
   it("answers source_not_found for a profile gone since it was listed", async () => {
     const gone = mount({
       importer: {
@@ -1068,7 +1017,6 @@ describe("import, history and data", () => {
     expect(res.status).toBe(404);
     expect((await errorOf(res)).error.code).toBe("source_not_found");
   });
-
   it("imports history without the desktop shell; cookies still need it", async () => {
     const h = mount({ shell: null, importer });
     const history = await h.call("POST", "/import", { sourceId: "chrome", history: true });
@@ -1081,7 +1029,6 @@ describe("import, history and data", () => {
     expect(cookies.status).toBe(503);
     expect((await errorOf(cookies)).error.reason).toBe("not_desktop");
   });
-
   it("clears the browser's data through the shell", async () => {
     const h = mount();
     expect((await h.call("POST", "/clear-data", { storages: ["cookies", "cache"] })).status).toBe(
@@ -1094,7 +1041,6 @@ describe("import, history and data", () => {
     });
     expect((await h.call("POST", "/clear-data", { storages: ["everything"] })).status).toBe(400);
   });
-
   it("records the pages tabs visit", async () => {
     const h = mount();
     h.shell.show(
@@ -1106,7 +1052,6 @@ describe("import, history and data", () => {
     ]);
   });
 });
-
 describe("settings", () => {
   it("has no homepage until one is set, and keeps it in the data root without the shell", async () => {
     const h = mount({ shell: null });
@@ -1129,7 +1074,6 @@ describe("settings", () => {
     const cleared = await h.call("PUT", "/settings", { homepage: null });
     expect(await json<BuiltinBrowserSettings>(cleared)).toEqual({ homepage: null });
   });
-
   it("takes a web address or null, and nothing else", async () => {
     const h = mount({ shell: null });
     for (const homepage of [
@@ -1153,7 +1097,6 @@ describe("settings", () => {
       homepage: null,
     });
   });
-
   it("is for admins only", async () => {
     const h = mount({ admin: false });
     for (const [method, body] of [
@@ -1165,7 +1108,6 @@ describe("settings", () => {
       expect((await errorOf(res)).error.code).toBe("admin_required");
     }
   });
-
   it("opens the homepage in a new tab given no address, and an address given as given", async () => {
     const h = mount();
     h.shell.cdp = page(() => ({}));
@@ -1182,20 +1124,17 @@ describe("settings", () => {
       id: 5,
       url: "https://home.test/",
     });
-
     // Nobody claims these two; only the address each asked the windows for matters here.
     const opens = () => h.events.flatMap((e) => (e.type === "builtin_browser_open" ? [e.url] : []));
     await h.call("POST", "/tabs", { url: "https://other.test/" });
     await h.call("POST", "/tabs", { url: "about:blank" });
     expect(opens()).toEqual(["https://home.test/", "https://other.test/", "about:blank"]);
-
     // Without a homepage a new tab is blank again.
     await h.call("PUT", "/settings", { homepage: null });
     await h.call("POST", "/tabs", {});
     expect(opens().at(-1)).toBe("about:blank");
   });
 });
-
 describe("browserUrl", () => {
   it("gives a bare host a scheme and refuses anything that is not a web page", () => {
     expect(browserUrl("amazon.com/orders", false)).toBe("https://amazon.com/orders");
@@ -1218,7 +1157,6 @@ describe("browserUrl", () => {
       expect(() => browserUrl(bad, false)).toThrow(/not a web address/);
     }
   });
-
   it("reads a homepage the same way, with null for none and never the blank page", () => {
     expect(homepageUrl("home.test")).toBe("https://home.test/");
     expect(homepageUrl("localhost:5173/app")).toBe("http://localhost:5173/app");
@@ -1228,7 +1166,6 @@ describe("browserUrl", () => {
     }
   });
 });
-
 describe("Session and Project isolation", () => {
   it("keeps lists, status, active targets and all explicit commands inside the Session", async () => {
     const h = mount({ projectOf: () => "project-a" });
@@ -1279,7 +1216,6 @@ describe("Session and Project isolation", () => {
       ).status,
     ).toBe(403);
   });
-
   it("does not report another Session's concurrent open as its own script result", async () => {
     const h = mount();
     await openOwned(h, 11, "session-a");
@@ -1297,7 +1233,6 @@ describe("Session and Project isolation", () => {
     expect(result.tabId).toBe(11);
     expect(result.newTabs).toBeUndefined();
   });
-
   it("navigates a fresh page for an empty Session while another Session has tabs", async () => {
     const h = mount();
     await openOwned(h, 11, "session-a");
@@ -1319,7 +1254,6 @@ describe("Session and Project isolation", () => {
       ),
     ).toEqual([11]);
   });
-
   it("shares Project storage and lets idle popups inherit their opener's ownership", async () => {
     const h = mount({ projectOf: (id) => (id === "session-c" ? "project-b" : "project-a") });
     const a = await openOwned(h, 11, "session-a");
@@ -1339,7 +1273,6 @@ describe("Session and Project isolation", () => {
       ),
     ).toEqual([11, 14]);
   });
-
   it("adopts a draft and its pending popup without moving its storage", async () => {
     const h = mount({ human: true, projectOf: (id) => (id === "session-a" ? "project-a" : null) });
     const draft = await openOwned(h, 11, "draft-a", "project-a");

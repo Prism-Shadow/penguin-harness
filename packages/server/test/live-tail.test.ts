@@ -34,7 +34,7 @@ import type {
   PartialToolCallPayload,
 } from "@prismshadow/penguin-core";
 import { Channel } from "../src/runtime/channel.js";
-import { LiveTailTracker } from "../src/runtime/live-tail.js";
+import { LiveTailTracker } from "../../../plugins/sessions/src/server/index.js";
 
 const SID = "s1";
 

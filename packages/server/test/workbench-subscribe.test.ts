@@ -21,20 +21,19 @@ import { readAmsp } from "@prismshadow/amsp";
 import type { AmspRecord } from "@prismshadow/amsp";
 import type { WorkbenchInfo, WorkbenchRecord } from "../src/api/types.js";
 import { Channel } from "../src/runtime/channel.js";
-import { IDLE_RELEASE_MS, WorkbenchSubscriptions } from "../src/workbenches/subscribe.js";
+import { IDLE_RELEASE_MS } from "../../../plugins/workbenches/src/server/workbenches/subscribe.js";
+import { WorkbenchSubscriptions } from "../../../plugins/workbenches/src/server/workbenches/subscribe.js";
 import { adoptSession, fakeSession, uniqueSessionId } from "./fixtures/session.js";
 import { apiClient, createTestApp, loginAdmin } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 import { MOCK_MODEL_ID, startMockLLM } from "./live-session.js";
 import type { MockLLM } from "./live-session.js";
-
 const P = "default_project";
 const A = "default_agent";
 const BASE = `/api/projects/${P}/agents/${A}/workbenches`;
 const HOST_KEY = "@prismshadow/penguin-server#WorkbenchHost";
 const MAIN_KEY = "@prismshadow/penguin-server#WorkbenchMain";
 const RECORD_KEY = "@prismshadow/penguin-server#WorkbenchRecord";
-
 const PACKAGE = JSON.stringify({
   name: "Follow",
   version: "1.0.0",
@@ -51,12 +50,10 @@ const PACKAGE = JSON.stringify({
     ],
   },
 });
-
 // Only ES2022 APIs: loading the DOM declarations would slow every compile of the fixture.
 const FOLLOW = `/// <reference no-default-lib="true" />
 /// <reference lib="es2022" />
 import type { WorkbenchPackage, WorkbenchRecord, WorkbenchResponse } from "@prismshadow/penguin-server/plugin";
-
 export default {
   modules: {
     Workbench: {
@@ -108,12 +105,10 @@ export default {
   },
 } satisfies WorkbenchPackage;
 `;
-
 /** A handler that never heard of `subscribe`. */
 const PLAIN = `/// <reference no-default-lib="true" />
 /// <reference lib="es2022" />
 import type { WorkbenchPackage } from "@prismshadow/penguin-server/plugin";
-
 export default {
   modules: {
     Workbench: {
@@ -124,17 +119,14 @@ export default {
   },
 } satisfies WorkbenchPackage;
 `;
-
 /** What a record is called in assertions: its payload type, or `session_meta`. */
 const kindOf = (r: AmspRecord | WorkbenchRecord): string =>
   r.type === "session_meta" ? "session_meta" : String((r.payload as { type?: string }).type);
-
 describe("WorkbenchHost.subscribe", { timeout: 30_000 }, () => {
   let t: TestApp;
   let admin: ReturnType<typeof apiClient>;
   let mock: MockLLM;
   const lines: string[] = [];
-
   const writeWorkbench = async (id: string, source: string) => {
     const dir = path.join(agentStateDir(t.root, P, A), "workbenches", id);
     await fs.mkdir(dir, { recursive: true });
@@ -153,7 +145,6 @@ describe("WorkbenchHost.subscribe", { timeout: 30_000 }, () => {
     expect(res.status, await res.clone().text()).toBe(200);
     return (await res.json()) as T;
   };
-
   beforeAll(async () => {
     mock = await startMockLLM();
     t = await createTestApp({ titles: { maybeGenerate: () => {} }, log: (l) => lines.push(l) });
@@ -180,7 +171,6 @@ describe("WorkbenchHost.subscribe", { timeout: 30_000 }, () => {
     await t.cleanup();
     await mock.close();
   });
-
   it("hands the handler exactly what the cookie door streams, task_begin to task_end, in order", async () => {
     const { sessionId } = await call<{ sessionId: string }>("/open");
     const stream = readAmsp((await admin.get(`/api/sessions/${sessionId}/amsp`)).body!);
@@ -196,7 +186,6 @@ describe("WorkbenchHost.subscribe", { timeout: 30_000 }, () => {
       if (next.value.record.origin === undefined && kindOf(next.value.record) === "task_end") break;
     }
     await stream.return(undefined);
-
     let seen: WorkbenchRecord[] = [];
     for (let i = 0; i < 100 && seen.length < streamed.length; i++) {
       if (i > 0) await new Promise((r) => setTimeout(r, 20));
@@ -211,13 +200,11 @@ describe("WorkbenchHost.subscribe", { timeout: 30_000 }, () => {
     // The listener that threw on every record was logged once, and the other one got them all.
     expect(lines.filter((l) => l.includes("the listener failed: listener failed"))).toHaveLength(1);
   });
-
   it("refuses a Session of another Project like every other host call", async () => {
     const foreign = uniqueSessionId();
     adoptSession(t.deps, fakeSession(foreign), { projectId: "elsewhere" });
     expect(await call("/try", foreign)).toBe(`subscribe: this Project has no Session '${foreign}'`);
   });
-
   it("unsubscribing twice is harmless and ends only that subscription", async () => {
     const { sessionId } = await call<{ sessionId: string }>("/open");
     const channel = t.deps.channels.get(sessionId);
@@ -229,7 +216,6 @@ describe("WorkbenchHost.subscribe", { timeout: 30_000 }, () => {
     await call("/stop");
     expect(channel.subscriberCount).toBe(1);
   });
-
   it("a reload ends every subscription of the tree it replaces, forgotten ones included", async () => {
     const { sessionId } = await call<{ sessionId: string }>("/open");
     const channel = t.deps.channels.get(sessionId);
@@ -239,7 +225,6 @@ describe("WorkbenchHost.subscribe", { timeout: 30_000 }, () => {
     expect((await reload("follow")).error).toBeNull();
     expect(channel.subscriberCount).toBe(0);
   });
-
   it("still loads a workbench whose .harness/ was written before subscribe existed", async () => {
     const dir = await writeWorkbench("plain", PLAIN);
     expect((await reload("plain")).error).toBeNull();
@@ -256,12 +241,10 @@ describe("WorkbenchHost.subscribe", { timeout: 30_000 }, () => {
       .replace(/^export type WorkbenchRecord = .*\n/m, "");
     expect(types).not.toContain("WorkbenchRecord");
     await fs.writeFile(typesFile, types);
-
     expect((await reload("plain")).error).toBeNull();
     expect(await (await admin.get(`${BASE}/plain/api/`)).json()).toBe("plain");
   });
 });
-
 describe("WorkbenchSubscriptions", () => {
   it("ends a subscription whose Session sat idle and silent through the idle window, never a running or publishing one", () => {
     let now = 0;

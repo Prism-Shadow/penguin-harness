@@ -79,7 +79,7 @@ import type { ApproveFn, AmspRecord } from "@prismshadow/penguin-core";
 import { toFallbackMarkdown } from "@prismshadow/a2ui";
 import { wire } from "@prismshadow/penguin-core/kernel";
 import type { FeishuBindingResponse, FeishuTestResponse } from "../src/api/types.js";
-import { ProjectsRepo } from "../src/db/repos/projects.js";
+import { ProjectsRepo } from "../../../plugins/projects/src/server/index.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import { INLINE_IMAGE_MAX_BYTES, toAttachmentLimits } from "../src/services/attachment-limits.js";
 import { MESSAGE_MAX } from "../src/runtime/error-recorder.js";
@@ -105,17 +105,17 @@ import {
   messagingInboundFileTooLargeNotice,
   messagingInboundFilesTooLargeNotice,
   splitReplyLines,
-} from "../src/runtime/messaging/bridge.js";
-import type { MessagingTaskRunner } from "../src/runtime/messaging/bridge.js";
+} from "../../../plugins/messaging/src/server/index.js";
+import type { MessagingTaskRunner } from "../../../plugins/messaging/src/server/index.js";
 import type {
   MessagingChannelConnector,
   MessagingInboundFile,
   MessagingInboundImage,
   MessagingInboundMessage,
-} from "../src/runtime/messaging/connector.js";
-import { messagingErrorKind } from "../src/runtime/messaging/error-kind.js";
-import { FeishuConnector } from "../src/runtime/messaging/feishu-connector.js";
-import { FeishuApiError } from "../src/runtime/messaging/feishu-sdk.js";
+} from "../../../plugins/messaging/src/server/index.js";
+import { messagingErrorKind } from "../../../plugins/messaging/src/server/index.js";
+import { FeishuConnector } from "../../../plugins/messaging/src/server/index.js";
+import { FeishuApiError } from "../../../plugins/messaging/src/server/index.js";
 import {
   MessagingPermissionError,
   MessagingUnsupportedError,
@@ -123,8 +123,8 @@ import {
   imageMimeOfName,
   isImageFileName,
   sniffImageMime,
-} from "../src/runtime/messaging/media.js";
-import { replyFileMentions } from "../src/runtime/messaging/reply-files.js";
+} from "../../../plugins/messaging/src/server/index.js";
+import { replyFileMentions } from "../../../plugins/messaging/src/server/index.js";
 import { FILE_BYTES, FakeFeishuSdk, IMAGE_BYTES, oneChunk } from "./fixtures/feishu.js";
 import type { SentMedia } from "./fixtures/feishu.js";
 import { forwardingTo } from "./fixtures/forwarding.js";
@@ -585,7 +585,7 @@ describe("replyFileMentions", () => {
   });
 
   it("reads a Windows Workspace's path in either spelling, and dedupes on the result", () => {
-    // core spells model-visible paths with "/" while path.join produces "\\"; the same file
+    // core spells model-visible paths with "/" while path.join produces "\" the same file
     // named both ways is one file, and must not be sent twice.
     expect(paths("Wrote C:\\ws\\out\\chart.png just now.", "C:\\ws")).toEqual(["out/chart.png"]);
     expect(paths("Wrote C:/ws/out/chart.png, i.e. C:\\ws\\out\\chart.png.", "C:\\ws")).toEqual([

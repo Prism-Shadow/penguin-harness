@@ -11,14 +11,13 @@ import { afterEach, describe, expect, it } from "vitest";
 import { hashPassword, verifyPassword } from "../src/auth/password.js";
 import { ADMIN_USER_ID } from "../src/auth/service.js";
 import { openDatabase } from "@penguinharness/plugin-db/server";
-import { UsersRepo } from "../src/db/repos/users.js";
-import { AuthSessionsRepo } from "../src/db/repos/auth-sessions.js";
+import { UsersRepo } from "../../../plugins/settings/src/server/repos/users.js"
+import { AuthSessionsRepo } from "../../../plugins/settings/src/server/repos/auth-sessions.js"
 import { initialAdminPasswordPath } from "../src/initial-password.js";
 import { acquireServerLock } from "../src/lock.js";
 import { resetAdminPassword } from "../src/reset-admin-password.js";
 import { makeTempRoot } from "./helpers.js";
 import { wire } from "@prismshadow/penguin-core/kernel";
-
 describe("resetAdminPassword", () => {
   const roots: string[] = [];
   afterEach(async () => {
@@ -26,13 +25,11 @@ describe("resetAdminPassword", () => {
       await fs.promises.rm(root, { recursive: true, force: true });
     }
   });
-
   async function tempRoot(): Promise<string> {
     const root = await makeTempRoot();
     roots.push(root);
     return root;
   }
-
   /** Seeds a web.db with the admin (password "old-password-1", already changed) plus a bystander user, each holding one login session. */
   async function seedDatabase(root: string): Promise<string> {
     const dbPath = path.join(root, "web.db");
@@ -76,19 +73,16 @@ describe("resetAdminPassword", () => {
     db.close();
     return dbPath;
   }
-
   it("returns the admin to the unclaimed state, producing no plaintext at all", async () => {
     const root = await tempRoot();
     const dbPath = await seedDatabase(root);
     // A plaintext an older build left behind must not survive the rescue.
     fs.writeFileSync(initialAdminPasswordPath(root), "penguin-0000\n");
-
     const result = await resetAdminPassword(root);
     expect(result).toEqual({ outcome: "reset" });
     // Nothing to write down and nothing left on disk: the next server start prints a
     // first-login link, and claiming it is what sets a real password.
     expect(fs.existsSync(initialAdminPasswordPath(root))).toBe(false);
-
     const db = openDatabase(dbPath);
     try {
       const admin = wire(UsersRepo, { db: db }).findById(ADMIN_USER_ID);
@@ -105,7 +99,6 @@ describe("resetAdminPassword", () => {
       db.close();
     }
   });
-
   it("refuses while a live server owns the data root and changes nothing", async () => {
     const root = await tempRoot();
     const dbPath = await seedDatabase(root);
@@ -129,7 +122,6 @@ describe("resetAdminPassword", () => {
       await new Promise<void>((resolve) => srv.close(() => resolve()));
     }
   });
-
   it("reports a missing database without creating one", async () => {
     const root = await tempRoot();
     const dbPath = path.join(root, "web.db");
@@ -137,7 +129,6 @@ describe("resetAdminPassword", () => {
     expect(result).toEqual({ outcome: "no_database", dbPath });
     expect(fs.existsSync(dbPath)).toBe(false);
   });
-
   it("reports an unseeded database (admin never created)", async () => {
     const root = await tempRoot();
     const db = openDatabase(path.join(root, "web.db"));

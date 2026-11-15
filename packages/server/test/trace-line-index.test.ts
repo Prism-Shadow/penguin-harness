@@ -23,8 +23,8 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { readTraceTolerant, subagentEvent, userText } from "@prismshadow/penguin-core";
 import type { AmspRecord } from "@prismshadow/penguin-core";
-import { TraceLineIndex } from "../src/services/trace-line-index.js";
 import { makeTempRoot } from "./helpers.js";
+import { TraceLineIndex } from "../../../plugins/usage/src/server/trace-line-index.js"
 
 const line = (msg: AmspRecord): string => `${JSON.stringify(msg)}\n`;
 const texts = (events: AmspRecord[]): string[] =>

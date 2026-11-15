@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { mkdtemp, rm } from "node:fs/promises";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EndpointModelListResponse, ProjectCreateResponse } from "../src/api/types.js";
-import { ProjectConfigService } from "../src/services/project-config-service.js";
+import { ProjectConfigService } from "../../../plugins/projects/src/server/index.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 import { wire } from "@prismshadow/penguin-core/kernel";

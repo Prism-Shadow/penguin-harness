@@ -42,15 +42,15 @@ import type {
   QQBindingResponse,
   QQTestResponse,
 } from "../src/api/types.js";
-import { ProjectsRepo } from "../src/db/repos/projects.js";
+import { ProjectsRepo } from "../../../plugins/projects/src/server/index.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import {
   MESSAGING_APPROVAL_NOTICE,
   MESSAGING_TEST_MESSAGE,
   MESSAGING_UNSUPPORTED_NOTICE,
-} from "../src/runtime/messaging/bridge.js";
-import type { MessagingClient } from "../src/runtime/messaging/connector.js";
-import { MessagingUnsupportedError } from "../src/runtime/messaging/media.js";
+} from "../../../plugins/messaging/src/server/index.js";
+import type { MessagingClient } from "../../../plugins/messaging/src/server/index.js";
+import { MessagingUnsupportedError } from "../../../plugins/messaging/src/server/index.js";
 import type {
   QQBotClient,
   QQCredentials,
@@ -59,9 +59,9 @@ import type {
   QQInboundEvent,
   QQSendArgs,
   QQTransport,
-} from "../src/runtime/messaging/qq-api.js";
-import { QQApiError, normalizeDispatch, qqSendErrorText } from "../src/runtime/messaging/qq-api.js";
-import type { QQConnectorOpts } from "../src/runtime/messaging/qq-connector.js";
+} from "../../../plugins/messaging/src/server/index.js";
+import { QQApiError, normalizeDispatch, qqSendErrorText } from "../../../plugins/messaging/src/server/index.js";
+import type { QQConnectorOpts } from "../../../plugins/messaging/src/server/index.js";
 import {
   QQ_PASSIVE_WINDOW_MS,
   QQ_REPLY_BUDGET,
@@ -69,7 +69,7 @@ import {
   parseQQChatId,
   qqChatIdOf,
   qqConfigOf,
-} from "../src/runtime/messaging/qq-connector.js";
+} from "../../../plugins/messaging/src/server/index.js";
 import { forwardingTo } from "./fixtures/forwarding.js";
 import { fakeSession, sessionRow, uniqueSessionId } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";

@@ -18,40 +18,39 @@ import type { ChannelHub } from "../src/runtime/channel.js";
 import type { DesktopService } from "../src/services/desktop-service.js";
 import type { AuthService } from "../src/auth/service.js";
 import type { AdminService } from "../src/services/admin-service.js";
-import type { ProjectService } from "../src/services/project-service.js";
-import { ShippedBuiltinBenchmarkSeeds } from "../src/services/project-service.js";
-import type { ProjectAccess } from "../src/services/project-access.js";
-import type { ProjectConfigService } from "../src/services/project-config-service.js";
-import type { ModelOAuthService } from "../src/services/model-oauth-service.js";
-import type { AgentService } from "../src/services/agent-service.js";
-import type { AgentConfigService } from "../src/services/agent-config-service.js";
+import type { ProjectService } from "../../../plugins/projects/src/server/index.js";
+import { ShippedBuiltinBenchmarkSeeds } from "../../../plugins/projects/src/server/index.js";
+import type { ProjectAccess } from "../../../plugins/projects/src/server/index.js";
+import type { ProjectConfigService } from "../../../plugins/projects/src/server/index.js";
+import type { ModelOAuthService } from "../../../plugins/models/src/server/index.js";
+import type { AgentService } from "../../../plugins/agents/src/server/index.js";
+import type { AgentConfigService } from "../../../plugins/agents/src/server/index.js";
 import type { MemoryService } from "../src/services/memory-service.js";
 import type { SessionService } from "../src/services/session-service.js";
-import type { PricingLookup, UsageService } from "../src/services/usage-service.js";
-import type { WorkspaceFilesService } from "../src/services/workspace-files-service.js";
+import type { UsageService } from "../../../plugins/usage/src/server/index.js";
 import type { PreviewTokenSigner } from "../src/services/preview-token.js";
-import type { BenchmarkService } from "../src/services/benchmark-service.js";
-import type { SnapshotService } from "../src/services/snapshot-service.js";
-import type { SessionsRepo } from "../src/db/repos/sessions.js";
-import type { UiPrefsRepo } from "../src/db/repos/ui-prefs.js";
-import type { ServerSettingsRepo } from "../src/db/repos/server-settings.js";
-import type { SchedulesRepo } from "../src/db/repos/schedules.js";
-import type { ErrorsRepo } from "../src/db/repos/errors.js";
-import type { MessagingBindingsRepo } from "../src/db/repos/messaging-bindings.js";
-import type { MessagingBridge } from "../src/runtime/messaging/bridge.js";
-import type { QQScanService, QQScanTransport } from "../src/runtime/messaging/qq-scan.js";
-import type { Scheduler } from "../src/runtime/scheduler.js";
-import type { OrganizationService } from "../src/runtime/organization/service.js";
+import type { BenchmarkService } from "../../../plugins/usage/src/server/index.js";
+import type { SnapshotService } from "../../../plugins/projects/src/server/index.js";
+import type { SessionsRepo } from "../../../plugins/sessions/src/server/index.js";
+import type { UiPrefsRepo } from "../../../plugins/settings/src/server/index.js";
+import type { ServerSettingsRepo } from "../../../plugins/settings/src/server/index.js";
+import type { SchedulesRepo } from "../../../plugins/sessions/src/server/index.js";
+import type { ErrorsRepo } from "../../../plugins/usage/src/server/index.js";
+import type { MessagingBindingsRepo } from "../../../plugins/messaging/src/server/index.js";
+import type { MessagingBridge } from "../../../plugins/messaging/src/server/index.js";
+import type { QQScanService, QQScanTransport } from "../../../plugins/messaging/src/server/index.js";
+import type { Scheduler } from "../../../plugins/schedules/src/server/index.js";
 import type { OrgCacheRepo } from "../src/db/repos/organizations.js";
 import type { SessionManager, SessionLoader } from "../src/runtime/session-manager.js";
 import type { ErrorRecorder } from "../src/runtime/error-recorder.js";
-import type { MachinesService } from "../src/machines/service.js";
+import type { MachinesService } from "../../../plugins/machines/src/server/index.js";
 import { openDatabase } from "@penguinharness/plugin-db/server";
-import { TraceIndexRepo } from "../src/db/repos/trace-index.js";
-import { SessionSources } from "../src/runtime/session-sources.js";
-import { TraceIndexService } from "../src/services/trace-index.js";
-import { TraceService } from "../src/services/trace-service.js";
-import type { TraceSessionIndex } from "../src/services/trace-service.js";
+import { TraceIndexRepo } from "../../../plugins/usage/src/server/index.js";
+import { SessionSources } from "../../../plugins/sessions/src/server/index.js";
+import { TraceIndexService } from "../../../plugins/usage/src/server/index.js";
+import { TraceService } from "../../../plugins/usage/src/server/index.js";
+import { PricingLookup } from "../../../plugins/usage/src/server/usage-service.js";
+import { TraceSessionIndex } from "../../../plugins/usage/src/server/trace-service.js";
 import type { AppEnv } from "../src/auth/middleware.js";
 import { ADMIN_USER_ID } from "../src/auth/service.js";
 import type { ServerConfig } from "../src/config.js";
@@ -62,39 +61,39 @@ import type { Replacements, ShellFrames } from "../src/hmr/capabilities.js";
 import { ConsoleLog, SystemClock } from "../src/hmr/capabilities.js";
 import { hashPassword, ScryptHasher } from "../src/auth/password.js";
 import { CoreSessionLoaders, DefaultTitleGenerators } from "../src/runtime/session-manager.js";
-import type { TitleNotifier } from "../src/runtime/title-generator.js";
+import type { TitleNotifier } from "../../../plugins/sessions/src/server/index.js";
 import { UpdateCheckService } from "../src/services/update-check-service.js";
-import { RevealService } from "../src/services/reveal-path.js";
+import { RevealService } from "../../../plugins/projects/src/server/index.js";
 import { NpmPluginPackages } from "../src/plugin/install.js";
-import type { PluginPackages } from "../src/mechanisms/plugins.js";
-import { DefaultMessagingTuning } from "../src/runtime/messaging/bridge.js";
-import { FeishuSdkProvider } from "../src/runtime/messaging/feishu-connector.js";
-import type { FeishuSdk } from "../src/runtime/messaging/feishu-sdk.js";
-import { TelegramTransportProvider } from "../src/runtime/messaging/telegram-connector.js";
-import type { TelegramTransport } from "../src/runtime/messaging/telegram-api.js";
-import { QQTransportProvider } from "../src/runtime/messaging/qq-connector.js";
-import type { QQTransport } from "../src/runtime/messaging/qq-api.js";
-import { QQScanTransportProvider } from "../src/runtime/messaging/qq-scan.js";
-import { WeChatTransportProvider } from "../src/runtime/messaging/wechat-connector.js";
-import type { WeChatTransport } from "../src/runtime/messaging/wechat-api.js";
-import { WeChatScanTransportProvider } from "../src/runtime/messaging/wechat-scan.js";
-import type { WeChatScanTransport } from "../src/runtime/messaging/wechat-scan.js";
-import { MachinesModule, machinesServerProxyRoutes } from "../src/machines/service.js";
-import { OrganizationModule } from "../src/runtime/organization/service.js";
-import { machinesRoutes } from "../src/http/routes/machines.js";
-import { MachineEventHub } from "../src/machines/event-hub.js";
-import { MachineSockets } from "../src/machines/machine-sockets.js";
-import { machineSessionForward } from "../src/machines/session-forward.js";
-import { machineHistory } from "../src/machines/history-routes.js";
-import type { HistorySync } from "../src/machines/history-sync.js";
-import { TraceCache } from "../src/machines/trace-cache.js";
-import type { Access } from "../src/mechanisms/projects.js";
-import { ProcessShellPort } from "../src/builtin-browser/module.js";
-import type { BrowserShellPort } from "../src/builtin-browser/shell-link.js";
-
+import type { PluginPackages } from "../../../plugins/plugins/src/server/index.js";
+import { DefaultMessagingTuning } from "../../../plugins/messaging/src/server/index.js";
+import { FeishuSdkProvider } from "../../../plugins/messaging/src/server/index.js";
+import type { FeishuSdk } from "../../../plugins/messaging/src/server/index.js";
+import { TelegramTransportProvider } from "../../../plugins/messaging/src/server/index.js";
+import type { TelegramTransport } from "../../../plugins/messaging/src/server/index.js";
+import { QQTransportProvider } from "../../../plugins/messaging/src/server/index.js";
+import type { QQTransport } from "../../../plugins/messaging/src/server/index.js";
+import { QQScanTransportProvider } from "../../../plugins/messaging/src/server/index.js";
+import { WeChatTransportProvider } from "../../../plugins/messaging/src/server/index.js";
+import type { WeChatTransport } from "../../../plugins/messaging/src/server/index.js";
+import { WeChatScanTransportProvider } from "../../../plugins/messaging/src/server/index.js";
+import type { WeChatScanTransport } from "../../../plugins/messaging/src/server/index.js";
+import { MachinesModule, machinesServerProxyRoutes } from "../../../plugins/machines/src/server/index.js";
+import { OrganizationModule } from "../../../plugins/company/src/server/index.js";
+import { OrganizationService } from "../../../plugins/company/src/server/runtime/service.js";
+import { machinesRoutes } from "../../../plugins/machines/src/server/index.js";
+import { machineSessionForward } from "../../../plugins/machines/src/server/index.js";
+import { machineHistory } from "../../../plugins/machines/src/server/history-routes.js";
+import { HistorySync } from "../../../plugins/machines/src/server/history-sync.js";
+import { MachineEventHub } from "../../../plugins/machines/src/server/event-hub.js";
+import { MachineSockets } from "../../../plugins/machines/src/server/machine-sockets.js";
+import { TraceCache } from "../../../plugins/machines/src/server/trace-cache.js";
+import type { Access } from "../../../plugins/projects/src/server/index.js";
+import { WorkspaceFilesService } from "../../../plugins/projects/src/server/projects/workspace-files-service.js"
+import { ProcessShellPort } from "../../../plugins/browser/src/server/builtin-browser/module.js";
+import { BrowserShellPort } from "../../../plugins/browser/src/server/builtin-browser/shell-link.js";
 /** The roots {@link makeTempRoot} handed out that nothing has removed yet. */
 const tempRoots = new Set<string>();
-
 /**
  * A fresh directory under the OS temp directory. Remove it with {@link removeTempRoot} when the
  * test is done; whatever a test file leaves is removed when the file ends
@@ -106,7 +105,6 @@ export async function makeTempRoot(): Promise<string> {
   tempRoots.add(root);
   return root;
 }
-
 /**
  * Removes a root. maxRetries: Windows can report ENOTEMPTY/EBUSY while handles from the test's
  * own just-closed files (SQLite, trace writers) are still being released — Node's rm retries
@@ -117,14 +115,11 @@ export async function removeTempRoot(root: string): Promise<void> {
   await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   tempRoots.delete(root);
 }
-
 /** Removes every root still handed out; one that cannot be removed is left for the report. */
 export async function removeTempRoots(): Promise<void> {
   await Promise.all([...tempRoots].map((root) => removeTempRoot(root).catch(() => {})));
 }
-
 let symlinkCapability: boolean | undefined;
-
 /**
  * Whether this process can create symbolic links at all. Windows denies symlink creation
  * without a privilege or Developer Mode (EPERM), so tests that need a real symlink skip when
@@ -149,12 +144,9 @@ export function canCreateSymlink(): boolean {
   }
   return symlinkCapability;
 }
-
 const DAY_MS = 24 * 60 * 60 * 1000;
-
 /** Fixed seeded-admin password injected into every test app (in production the seed generates a random one). */
 export const TEST_ADMIN_PASSWORD = "penguin-0000";
-
 /**
  * scrypt work factor for test apps: the lowest legal one. Nearly every case here seeds an
  * admin, provisions users and logs them in, and at production strength those derivations
@@ -163,7 +155,6 @@ export const TEST_ADMIN_PASSWORD = "penguin-0000";
  * the production strength itself is asserted in password.test.ts, which uses the default.
  */
 const TEST_PASSWORD_HASH_COST = 2;
-
 export function testConfig(root: string): ServerConfig {
   return {
     root,
@@ -193,7 +184,6 @@ export function testConfig(root: string): ServerConfig {
     pluginIndexUrl: null,
   };
 }
-
 /**
  * The module tree, flattened under the names tests have always used. Production has no
  * such object — a module names what it needs in its manifest — but a test reaches into
@@ -243,7 +233,6 @@ export interface TestDeps {
   errors: ErrorRecorder;
   machines: MachinesService;
 }
-
 export function flattenForTests(boot: ServerBoot): TestDeps {
   const { tree } = boot;
   // Read through the groups' exports, never an implementation node by name: a test that
@@ -292,7 +281,6 @@ export function flattenForTests(boot: ServerBoot): TestDeps {
     machines: api("MachinesModule", "machines"),
   };
 }
-
 export interface TestApp {
   app: Hono<AppEnv>;
   deps: TestDeps;
@@ -303,7 +291,6 @@ export interface TestApp {
   adminPassword: string;
   cleanup(): Promise<void>;
 }
-
 /**
  * What a test stands in for, by the name it has always used; each becomes a node
  * Replacement (the platform boots the given instance instead of the class it names).
@@ -373,7 +360,6 @@ export interface TestAppOptions {
    */
   durableDatabase?: boolean;
 }
-
 /** The update check a test app gets unless the test supplies one: every lookup is unreachable. */
 function offlineUpdateCheck(): UpdateCheckService {
   return wire(UpdateCheckService, {
@@ -382,10 +368,8 @@ function offlineUpdateCheck(): UpdateCheckService {
     clock: { now: () => new Date() },
   });
 }
-
 /** The history sync of each replaced machines node, by data root, closed with its App. */
 const replacedHistorySyncs = new Map<string, HistorySync>();
-
 /** The node each option stands in for. */
 /** A stand-in Project gate for a replaced machines node: every test that supplies one is an admin's. */
 function accessDouble(): Access {
@@ -394,7 +378,6 @@ function accessDouble(): Access {
     requireProjectOwner: () => ({}) as never,
   } as unknown as Access;
 }
-
 export function replacementsFor(
   o: TestAppOptions,
   /** The data root, where a replaced machines node keeps its copy of the machines' history. */
@@ -491,7 +474,6 @@ export function replacementsFor(
   }
   return out;
 }
-
 export async function createTestApp(options: TestAppOptions = {}): Promise<TestApp> {
   const { beforeSeed, config, durableDatabase, ...rest } = options;
   const root = await makeTempRoot();
@@ -509,7 +491,6 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
     throw error;
   }
 }
-
 /**
  * Stops `t` the way a server process stops — its runs drained, the App disposed, the database
  * closed — and boots a new App on the same root and database file, as the next process would.
@@ -529,7 +510,6 @@ export async function restartTestApp(
   t.deps.db.close();
   return bootTestApp(t.boot.config, t.root, options);
 }
-
 /**
  * Boots an App on `config` and seeds its admin. `root` is the temp root the App owns — what its
  * `cleanup` removes — which a scenario sharing a root of its own across apps (`config.root`)
@@ -588,10 +568,8 @@ async function bootTestApp(
     },
   };
 }
-
 /** The desktop-mode fixture token (see createDesktopApp). */
 export const TEST_DESKTOP_TOKEN = "test-desktop-token";
-
 /** A test app running in desktop mode (desktop.test.ts, desktop-update.test.ts). */
 export function createDesktopApp(options: TestAppOptions = {}): Promise<TestApp> {
   return createTestApp({
@@ -599,7 +577,6 @@ export function createDesktopApp(options: TestAppOptions = {}): Promise<TestApp>
     config: { desktopToken: TEST_DESKTOP_TOKEN, ...options.config },
   });
 }
-
 /** Redeems the shell's one-shot token for a `sessionVia: "desktop"` cookie. */
 export async function desktopLoginCookie(app: Hono<AppEnv>): Promise<string> {
   const res = await app.request(`/api/auth/claim?token=${TEST_DESKTOP_TOKEN}`);
@@ -610,7 +587,6 @@ export async function desktopLoginCookie(app: Hono<AppEnv>): Promise<string> {
   if (!setCookie) throw new Error("Desktop login response is missing set-cookie");
   return setCookie.split(";")[0]!;
 }
-
 /** Logs in and returns the session cookie (`penguin_session=...`). */
 export async function loginUser(
   app: Hono<AppEnv>,
@@ -630,17 +606,14 @@ export async function loginUser(
   const body = (await res.json()) as { user: UserInfo };
   return { cookie: setCookie.split(";")[0]!, user: body.user };
 }
-
 /** Logs in as the seeded admin (every test app seeds with TEST_ADMIN_PASSWORD). */
 export function loginAdmin(app: Hono<AppEnv>): Promise<{ cookie: string; user: UserInfo }> {
   return loginUser(app, ADMIN_USER_ID, TEST_ADMIN_PASSWORD);
 }
-
 /** The `name=value` cookie pair from a response's Set-Cookie (the shape apiClient wants). */
 export function cookieFrom(res: Response): string {
   return (res.headers.get("set-cookie") ?? "").split(";")[0]!;
 }
-
 /** Admin creates the account and logs in as that user (the only way to create test users while registration is closed). */
 export async function provisionUser(
   app: Hono<AppEnv>,
@@ -655,12 +628,10 @@ export async function provisionUser(
   }
   return loginUser(app, userId, password);
 }
-
 /** JSON request client that carries the cookie. */
 export function apiClient(app: Hono<AppEnv>, cookie: string) {
   return clientWith(app, { cookie });
 }
-
 /**
  * JSON request client as a Session's tool subprocess calls the server: the boot's local API
  * token (`t.deps.authService.localApiToken()`) as a Bearer header, and no cookie.
@@ -668,7 +639,6 @@ export function apiClient(app: Hono<AppEnv>, cookie: string) {
 export function tokenClient(app: Hono<AppEnv>, token: string) {
   return clientWith(app, { authorization: `Bearer ${token}` });
 }
-
 /** A browser cookie exchanged from the same API token an Agent's commands receive. */
 export async function remoteSessionCookie(app: Hono<AppEnv>, token: string): Promise<string> {
   const res = await tokenClient(app, token).post("/api/remote/session", {});
@@ -676,7 +646,6 @@ export async function remoteSessionCookie(app: Hono<AppEnv>, token: string): Pro
   const session = (await res.json()) as { cookieName: string; sessionToken: string };
   return `${session.cookieName}=${session.sessionToken}`;
 }
-
 function clientWith(app: Hono<AppEnv>, credential: Record<string, string>) {
   const call = (method: string) => (apiPath: string, body?: unknown) =>
     app.request(apiPath, {
@@ -702,7 +671,6 @@ function clientWith(app: Hono<AppEnv>, credential: Record<string, string>) {
       }),
   };
 }
-
 /**
  * Index-backed TraceService for pure service tests: an in-memory DB with the real
  * schema, a real reconciler over the temp root, and a shared origin registry — the
@@ -739,7 +707,6 @@ export function makeTraceHarness(
   });
   return { traceIndex, service, sources, shardReads, close: () => db.close() };
 }
-
 /** Writes a Trace JSONL file directly (for building historical / discovery scenarios). */
 export async function writeTraceFile(
   root: string,
@@ -756,7 +723,6 @@ export async function writeTraceFile(
   await fs.writeFile(file, messages.map((m) => JSON.stringify(m)).join("\n") + "\n", "utf8");
   return file;
 }
-
 /** Simple wait: until the condition is true or it times out. */
 export async function waitFor(cond: () => boolean, timeoutMs = 2000): Promise<void> {
   const start = Date.now();

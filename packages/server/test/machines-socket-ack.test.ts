@@ -11,14 +11,12 @@ import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
-import { MachineSocket } from "../src/machines/machine-sockets.js";
-import type { Sink } from "../src/machines/machine-sockets.js";
-
+import { MachineSocket } from "../../../plugins/machines/src/server/machine-sockets.js";
+import { Sink } from "../../../plugins/machines/src/server/machine-sockets.js";
 let machine: WebSocketServer;
 let peer: Promise<WebSocket>;
 const received: Array<Record<string, unknown>> = [];
 let onReceived: () => void = () => undefined;
-
 /** Resolves once the machine has received frames that satisfy `done`. */
 const until = (done: () => boolean) =>
   new Promise<void>((resolve) => {
@@ -27,7 +25,6 @@ const until = (done: () => boolean) =>
       if (done()) resolve();
     };
   });
-
 beforeAll(async () => {
   machine = new WebSocketServer({ port: 0 });
   peer = new Promise((resolve) =>
@@ -44,7 +41,6 @@ beforeAll(async () => {
 afterAll(async () => {
   await new Promise<void>((resolve) => machine.close(() => resolve()));
 });
-
 describe("acks to a machine", () => {
   it("go only on a stream whose start frame echoed x-flow: credit", async () => {
     const agent = new http.Agent();

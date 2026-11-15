@@ -8,29 +8,16 @@
 import fs from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import {
-  listImportSources,
-  readCookies,
-  readHistory,
-} from "../src/builtin-browser/import/index.js";
-import { HISTORY_LIMIT } from "../src/builtin-browser/import/history.js";
-import { unreadableStoreWarning } from "../src/builtin-browser/import/sqlite-copy.js";
-import {
-  DAY,
-  FakeMachine,
-  nowSeconds,
-  writeChromiumCookies,
-  writeChromiumHistory,
-  writeFirefoxCookies,
-  writeFirefoxPlaces,
-  writeProfilesIni,
-} from "./builtin-browser-import-fixtures.js";
+import { DAY, FakeMachine, nowSeconds, writeChromiumCookies, writeChromiumHistory, writeFirefoxCookies, writeFirefoxPlaces, writeProfilesIni } from "./builtin-browser-import-fixtures.js";
 
+import { HISTORY_LIMIT } from "../../../plugins/browser/src/server/builtin-browser/import/history.js";
+import { unreadableStoreWarning } from "../../../plugins/browser/src/server/builtin-browser/import/sqlite-copy.js";
+import {
+listImportSources, readCookies, readHistory
+} from "../../../plugins/browser/src/server/builtin-browser/import/index.js";
 const sqlite = process.getBuiltinModule("node:sqlite");
-
 let machine: FakeMachine;
 afterEach(() => machine.cleanup());
-
 /** A Linux machine with one Firefox profile; returns the profile directory. */
 function linuxFirefox(): string {
   machine = new FakeMachine("linux");
@@ -38,9 +25,7 @@ function linuxFirefox(): string {
   writeProfilesIni(root, [{ name: "default-release", path: "k3y.default-release" }]);
   return path.join(root, "k3y.default-release");
 }
-
 const firstSource = () => listImportSources(machine.env())[0]!;
-
 describe("Firefox cookies", () => {
   it("reads expiry in seconds or milliseconds by magnitude and maps SameSite", async () => {
     const profile = linuxFirefox();
@@ -61,7 +46,6 @@ describe("Firefox cookies", () => {
     ]);
     expect(result.cookies[1]!.url).toBe("https://github.com/");
   });
-
   it("skips expired and single-context cookies, and applies the domain filter", async () => {
     const profile = linuxFirefox();
     const future = nowSeconds() + DAY;
@@ -89,7 +73,6 @@ describe("Firefox cookies", () => {
     expect(result.cookies.map((c) => c.name)).toEqual(["live"]);
   });
 });
-
 describe("history", () => {
   it("reads Chromium's urls: 1601-epoch times to epoch ms, http(s) only, hidden out, newest first", async () => {
     machine = new FakeMachine("darwin");
@@ -136,7 +119,6 @@ describe("history", () => {
       },
     ]);
   });
-
   it("reads Firefox's places: microseconds to ms, untitled pages and unvisited bookmarks", async () => {
     const profile = linuxFirefox();
     const t = nowSeconds();
@@ -156,7 +138,6 @@ describe("history", () => {
       },
     ]);
   });
-
   it(`keeps the newest ${HISTORY_LIMIT}`, async () => {
     machine = new FakeMachine("linux");
     const t = nowSeconds();
@@ -173,7 +154,6 @@ describe("history", () => {
     expect(entries.at(-1)!.url).toBe(`https://site.example/${HISTORY_LIMIT - 1}`);
   });
 });
-
 describe("the private copy", () => {
   it("sees rows still in the write-ahead log, leaves the temp directory empty and the store unchanged", async () => {
     machine = new FakeMachine("linux");
@@ -193,7 +173,6 @@ describe("the private copy", () => {
         .run();
       expect(fs.existsSync(`${file}-wal`)).toBe(true);
       const before = fs.readFileSync(file);
-
       const result = await readCookies(firstSource(), {}, machine.env());
       expect(result.cookies.map((c) => c.name).sort()).toEqual(["checkpointed", "in-wal"]);
       expect(fs.readdirSync(machine.tmp)).toEqual([]);
@@ -202,7 +181,6 @@ describe("the private copy", () => {
       live.close();
     }
   });
-
   it("turns a store it cannot copy into a warning, a sharing violation into 'close the browser'", async () => {
     machine = new FakeMachine("linux");
     writeChromiumCookies(machine.path(".config", "google-chrome", "Default", "Cookies"), [

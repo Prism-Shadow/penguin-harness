@@ -34,17 +34,13 @@ import type {
   ModelsResponse,
   ProjectCreateResponse,
 } from "../src/api/types.js";
-import {
-  ModelScopeAuthService,
-  modelscopeAccessToken,
-} from "../src/services/modelscope-auth-service.js";
 import { fakeFetch, jsonResponse, stubFetch } from "./fixtures/fetch.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
-
+import { modelscopeAccessToken } from "../../../plugins/models/src/server/services/modelscope-auth-service.js";
+import { ModelScopeAuthService } from "../../../plugins/models/src/server/services/modelscope-auth-service.js"
 /** The production bridge address, path prefix included: the prefix must survive into every call. */
 const BRIDGE = "https://go.penguin.ooo/modelscope";
-
 function started(expiresInMs = 60_000): Response {
   return jsonResponse(
     {
@@ -54,11 +50,9 @@ function started(expiresInMs = 60_000): Response {
     201,
   );
 }
-
 function pathOf(input: string | URL | Request): string {
   return new URL(typeof input === "string" || input instanceof URL ? input : input.url).pathname;
 }
-
 /** What the bridge answers once the user has finished ModelScope's own consent screen. */
 const delivery = {
   status: "completed",
@@ -76,9 +70,7 @@ const delivery = {
     clientType: "openai-chat",
   },
 };
-
 const owner = { projectId: "p1", userId: "u1" };
-
 describe("ModelScope key authorization service", () => {
   it("carries the bridge's own authorize URL through and writes the delivered token", async () => {
     const applied: { projectId: string; token: string }[] = [];
@@ -103,13 +95,11 @@ describe("ModelScope key authorization service", () => {
         return polls === 1 ? jsonResponse({ status: "pending" }) : jsonResponse(delivery);
       }).fetch,
     });
-
     const flow = await service.start(owner);
     // The bridge builds this URL itself — it knows the redirect URI and its own public prefix —
     // so the harness passes it through untouched.
     expect(flow.authorizeUrl).toBe(`${BRIDGE}/oauth/authorize?code=abc`);
     expect(JSON.stringify(flow)).not.toContain("deviceSecret");
-
     expect(await service.status({ ...owner, flowId: flow.flowId })).toEqual({ status: "pending" });
     expect(await service.status({ ...owner, flowId: flow.flowId })).toEqual({
       status: "completed",
@@ -119,7 +109,6 @@ describe("ModelScope key authorization service", () => {
     expect(applied).toEqual([{ projectId: "p1", token: "ms-token-0001" }]);
     expect(polls).toBe(2);
   });
-
   it("keeps the token on the flow after a failed write and retries it without polling again", async () => {
     let applies = 0;
     let polls = 0;
@@ -151,7 +140,6 @@ describe("ModelScope key authorization service", () => {
     expect(polls).toBe(1);
     expect(applies).toBe(2);
   });
-
   it("maps every terminal status the bridge can report onto the flow's own states", async () => {
     // `delivered` is the one that matters most: it means somebody else already collected this
     // token, so the flow must end rather than keep polling for a token that is gone.
@@ -179,7 +167,6 @@ describe("ModelScope key authorization service", () => {
       expect(await service.status({ ...owner, flowId: flow.flowId }), reported).toEqual(expected);
     }
   });
-
   it("stops polling once the bridge reports a terminal status", async () => {
     let polls = 0;
     const service = new ModelScopeAuthService({
@@ -196,7 +183,6 @@ describe("ModelScope key authorization service", () => {
     await service.status({ ...owner, flowId: flow.flowId });
     expect(polls).toBe(1);
   });
-
   it("reports an unreachable bridge and a rejected start as upstream failures", async () => {
     const unreachable = new ModelScopeAuthService({
       bridgeUrl: BRIDGE,
@@ -209,7 +195,6 @@ describe("ModelScope key authorization service", () => {
       status: 502,
       code: "modelscope_unreachable",
     });
-
     const refused = new ModelScopeAuthService({
       bridgeUrl: BRIDGE,
       applyCredential: async () => 1,
@@ -220,7 +205,6 @@ describe("ModelScope key authorization service", () => {
       code: "modelscope_start_failed",
     });
   });
-
   it("refuses an authorize URL that is not an address a browser tab may be sent to", async () => {
     for (const authorizeUrl of ["javascript:alert(1)", "https://user:pw@token.penguin.ooo/x", ""]) {
       const service = new ModelScopeAuthService({
@@ -242,7 +226,6 @@ describe("ModelScope key authorization service", () => {
       });
     }
   });
-
   it("surfaces the bridge's rate limit on start with its own Retry-After", async () => {
     const service = new ModelScopeAuthService({
       bridgeUrl: BRIDGE,
@@ -257,7 +240,6 @@ describe("ModelScope key authorization service", () => {
       retryAfterSeconds: 12,
     });
   });
-
   it("keeps a rate-limited poll pending and retries it after the bridge's backoff", async () => {
     let now = 1_000;
     let polls = 0;
@@ -293,7 +275,6 @@ describe("ModelScope key authorization service", () => {
     });
     expect(polls).toBe(2);
   });
-
   it("silently refreshes a stored token that is about to expire", async () => {
     let now = 1_000;
     const applied: string[] = [];
@@ -328,7 +309,6 @@ describe("ModelScope key authorization service", () => {
     );
     expect(applied).toEqual(["new-access"]);
   });
-
   it("drops a refreshed token when the stored refresh token changed before apply", async () => {
     let now = 1_000;
     const service = new ModelScopeAuthService({
@@ -359,7 +339,6 @@ describe("ModelScope key authorization service", () => {
       { changed: false },
     );
   });
-
   it("keeps a nearly expired token usable when a proactive refresh fails", async () => {
     let now = 1_000;
     const service = new ModelScopeAuthService({
@@ -380,7 +359,6 @@ describe("ModelScope key authorization service", () => {
       { changed: false },
     );
   });
-
   it("asks for re-authorization when an expired token cannot be refreshed", async () => {
     let now = 1_000;
     const service = new ModelScopeAuthService({
@@ -399,7 +377,6 @@ describe("ModelScope key authorization service", () => {
       service.ensureFresh({ projectId: "p1", provider: "modelscope" }),
     ).rejects.toMatchObject({ status: 409, code: "modelscope_refresh_failed" });
   });
-
   it("prompts for re-authorization after three proactive refresh failures", async () => {
     let now = 1_000;
     let attempts = 0;
@@ -418,7 +395,6 @@ describe("ModelScope key authorization service", () => {
         return jsonResponse({ error: "bridge_down" }, 502);
       }).fetch,
     });
-
     await expect(service.ensureFresh({ projectId: "p1", provider: "modelscope" })).resolves.toEqual(
       { changed: false },
     );
@@ -435,7 +411,6 @@ describe("ModelScope key authorization service", () => {
     ).rejects.toMatchObject({ status: 409, code: "modelscope_refresh_failed" });
     expect(attempts).toBe(3);
   });
-
   it("forgets an old failure ceiling after the stored refresh token changes", async () => {
     let now = 1_000;
     let refreshToken = "old-refresh";
@@ -462,7 +437,6 @@ describe("ModelScope key authorization service", () => {
         });
       }).fetch,
     });
-
     await service.ensureFresh({ projectId: "p1", provider: "modelscope" });
     now += 30_000;
     await service.ensureFresh({ projectId: "p1", provider: "modelscope" });
@@ -470,14 +444,12 @@ describe("ModelScope key authorization service", () => {
     await expect(
       service.ensureFresh({ projectId: "p1", provider: "modelscope" }),
     ).rejects.toMatchObject({ status: 409, code: "modelscope_refresh_failed" });
-
     refreshToken = "reauthorized-refresh";
     await expect(service.ensureFresh({ projectId: "p1", provider: "modelscope" })).resolves.toEqual(
       { changed: true },
     );
     expect(attempts).toBe(4);
   });
-
   it("cancels at the bridge as well as locally, and never applies the token", async () => {
     let cancelled = 0;
     let applied = 0;
@@ -505,7 +477,6 @@ describe("ModelScope key authorization service", () => {
     expect(applied).toBe(0);
     await vi.waitFor(() => expect(cancelled).toBe(1));
   });
-
   it("hides a flow from another Project or user, and forgets an expired one", async () => {
     let now = 1_000;
     const service = new ModelScopeAuthService({
@@ -526,7 +497,6 @@ describe("ModelScope key authorization service", () => {
     now += 10 * 60 * 1000 + 1;
     await expect(service.status({ ...owner, flowId: flow.flowId })).rejects.toMatchObject(gone);
   });
-
   it("validates the delivery rather than trusting it", () => {
     expect(modelscopeAccessToken(delivery)).toBe("ms-token-0001");
     expect(() => modelscopeAccessToken({ ...delivery, status: "pending" })).toThrow(
@@ -540,14 +510,12 @@ describe("ModelScope key authorization service", () => {
     ).toThrow("invalid access token");
   });
 });
-
 describe("ModelScope key authorization routes", () => {
   let t: TestApp;
   let ownerClient: ReturnType<typeof apiClient>;
   let memberClient: ReturnType<typeof apiClient>;
   let projectId: string;
   let pollCount: number;
-
   beforeEach(async () => {
     t = await createTestApp();
     const ownerUser = await provisionUser(t.app, "modelscope_api_owner");
@@ -569,7 +537,6 @@ describe("ModelScope key authorization routes", () => {
         })
       ).status,
     ).toBe(201);
-
     pollCount = 0;
     stubFetch(({ url, init }) => {
       const path = pathOf(url);
@@ -586,13 +553,11 @@ describe("ModelScope key authorization routes", () => {
       throw new Error(`Unexpected bridge request: ${path}`);
     });
   });
-
   afterEach(async () => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
     await t.cleanup();
   });
-
   it("writes the delivered token as the group's key, which the preset rows use, and exposes no account state", async () => {
     const base = `/api/projects/${projectId}/modelscope-auth`;
     const before = (await (
@@ -609,26 +574,21 @@ describe("ModelScope key authorization routes", () => {
     );
     expect(preset.every((model) => model.effective.clientType === "openai-responses")).toBe(true);
     expect(before.providers.modelscope?.apiKeyMasked).toBeUndefined();
-
     expect((await memberClient.post(`${base}/start`, {})).status).toBe(403);
-
     const startResponse = await ownerClient.post(`${base}/start`, {});
     expect(startResponse.status).toBe(201);
     const flow = (await startResponse.json()) as ModelScopeAuthStartResponse;
     expect(flow.authorizeUrl).toBe(`${BRIDGE}/oauth/authorize?code=abc`);
     expect(JSON.stringify(flow)).not.toContain("deviceSecret");
-
     const pending = (await (
       await ownerClient.get(`${base}/${flow.flowId}/status`)
     ).json()) as ModelScopeAuthFlowStatusResponse;
     expect(pending).toEqual({ status: "pending" });
-
     const done = (await (
       await ownerClient.get(`${base}/${flow.flowId}/status`)
     ).json()) as ModelScopeAuthFlowStatusResponse;
     expect(done).toEqual({ status: "completed", applied: 3 });
     expect(JSON.stringify(done)).not.toContain("ms-token");
-
     const after = (await (
       await ownerClient.get(`/api/projects/${projectId}/models`)
     ).json()) as ModelsResponse;
@@ -643,7 +603,6 @@ describe("ModelScope key authorization routes", () => {
           model.effective.apiKeyMasked === after.providers.modelscope?.apiKeyMasked,
       ),
     ).toBe(true);
-
     // Stored once, as the group's key; no row holds a copy.
     const raw = await t.deps.projectConfigService.readRaw(projectId);
     expect((raw.providers as Record<string, Record<string, unknown>>).modelscope?.api_key).toBe(
@@ -664,7 +623,6 @@ describe("ModelScope key authorization routes", () => {
     expect(tokenRow).toMatchObject({ refresh_token: "ms-refresh-0001" });
     expect(Date.parse(tokenRow?.access_token_expires_at ?? "")).toBeGreaterThan(Date.now());
   });
-
   it("in a group where every model has its own key, the token still lands as the group key and the flow completes with 0", async () => {
     const base = `/api/projects/${projectId}/modelscope-auth`;
     const models = `/api/projects/${projectId}/models`;
@@ -676,7 +634,6 @@ describe("ModelScope key authorization routes", () => {
         apiKey: `ms-own-key-000${i}`,
       }));
     expect((await ownerClient.put(models, { models: own })).status).toBe(200);
-
     const flow = (await (
       await ownerClient.post(`${base}/start`, {})
     ).json()) as ModelScopeAuthStartResponse;
@@ -685,7 +642,6 @@ describe("ModelScope key authorization routes", () => {
       await ownerClient.get(`${base}/${flow.flowId}/status`)
     ).json()) as ModelScopeAuthFlowStatusResponse;
     expect(done).toEqual({ status: "completed", applied: 0 });
-
     const after = (await (await ownerClient.get(models)).json()) as ModelsResponse;
     expect(after.providers.modelscope?.apiKeyMasked).toBeTruthy();
     // Every model keeps the key it was given.
@@ -695,7 +651,6 @@ describe("ModelScope key authorization routes", () => {
         .map((model) => model.effective.apiKeySource),
     ).toEqual(own.map(() => "model"));
   });
-
   it("a model on the group key sends the token refreshed into the group; a model with its own key sends that and asks for no refresh", async () => {
     const [following, owning] = presetModelEntries()
       .filter((entry) => entry.provider === "modelscope")
@@ -738,11 +693,9 @@ describe("ModelScope key authorization routes", () => {
       network.calls
         .filter((c) => !pathOf(c.url).endsWith("/oauth/refresh"))
         .map((c) => c.headers.get("authorization"));
-
     await ownerClient.post(`${models}/test`, { provider: "modelscope", modelId: owning! });
     expect(refreshes()).toEqual([]);
     expect(new Set(sentKeys())).toEqual(new Set(["Bearer ms-own-row-key-0002"]));
-
     network.calls.length = 0;
     await ownerClient.post(`${models}/test`, { provider: "modelscope", modelId: following! });
     expect(refreshes()).toHaveLength(1);
@@ -752,7 +705,6 @@ describe("ModelScope key authorization routes", () => {
       "ms-new-access-0003",
     );
   });
-
   it("a ModelScope group key typed by hand replaces the authorization: its refresh token goes with the old key", async () => {
     const tokens = () =>
       t.deps.db
@@ -780,7 +732,6 @@ describe("ModelScope key authorization routes", () => {
     });
     expect(tokens()).toEqual([]);
   });
-
   it("Disconnect ends the authorization: the group key and its refresh token both go, and a later request neither refreshes nor brings the key back", async () => {
     const base = `/api/projects/${projectId}/modelscope-auth`;
     const flow = (await (
@@ -796,7 +747,6 @@ describe("ModelScope key authorization routes", () => {
         .prepare("SELECT refresh_token FROM model_provider_auth_tokens WHERE project_id = ?")
         .all(projectId);
     expect(tokens()).toHaveLength(1);
-
     const res = await ownerClient.put(`/api/projects/${projectId}/models/providers/modelscope`, {
       clearApiKey: true,
     });
@@ -806,7 +756,6 @@ describe("ModelScope key authorization routes", () => {
     const rows = body.models.filter((model) => model.provider === "modelscope");
     expect(rows.every((model) => model.effective.apiKeySource === "none")).toBe(true);
     expect(tokens()).toEqual([]);
-
     const probe = (await (
       await ownerClient.post(`/api/projects/${projectId}/models/test`, {
         provider: "modelscope",
@@ -819,7 +768,6 @@ describe("ModelScope key authorization routes", () => {
       undefined,
     );
   });
-
   it("answers an unknown or foreign flow with its own not-found code", async () => {
     const base = `/api/projects/${projectId}/modelscope-auth`;
     const missing = await ownerClient.get(`${base}/not-a-flow/status`);

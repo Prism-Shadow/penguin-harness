@@ -31,14 +31,14 @@ import type {
   BuiltinBrowserStatus,
   BuiltinBrowserTab,
   DesktopBrowserCommandMessage,
-} from "../../src/api/types.js";
-import { PENGUIN_EXTENSION_ID } from "../../src/builtin-browser/extension-origin.js";
-import { ExtensionPairing } from "../../src/builtin-browser/extension-pairing.js";
-import { attachExtensionWebSocket } from "../../src/builtin-browser/extension-ws.js";
-import type { ExtensionGate } from "../../src/builtin-browser/extension-ws.js";
-import { BuiltinBrowser } from "../../src/builtin-browser/service.js";
-import { openDatabase } from "../../src/db/database.js";
-import { BrowserExtensionsRepo } from "../../src/db/repos/browser-extensions.js";
+} from "../../../../packages/server/src/api/types.js";
+import { PENGUIN_EXTENSION_ID } from "../../../../plugins/browser/src/server/builtin-browser/extension-origin.js";
+import { ExtensionPairing } from "../../../../plugins/browser/src/server/builtin-browser/extension-pairing.js";
+import { attachExtensionWebSocket } from "../../../../plugins/browser/src/server/builtin-browser/extension-ws.js";
+import type { ExtensionGate } from "../../../../plugins/browser/src/server/builtin-browser/extension-ws.js";
+import { BuiltinBrowser } from "../../../../plugins/browser/src/server/builtin-browser/service.js";
+import { openDatabase } from "../../../../plugins/db/src/index.js";
+import { BrowserExtensionsRepo } from "../../../../plugins/browser/src/server/repos/browser-extensions.js";
 import { userChannelKey } from "../../src/http/routes/events.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser, waitFor } from "../helpers.js";
 import type { TestApp } from "../helpers.js";

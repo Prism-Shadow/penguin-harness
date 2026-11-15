@@ -35,9 +35,9 @@ import {
 } from "@prismshadow/penguin-core";
 import type { ApproveFn, AmspRecord } from "@prismshadow/penguin-core";
 import type { MessagesResponse, SessionStatus } from "../src/api/types.js";
-import type { SessionRow } from "../src/db/repos/sessions.js";
+import type { SessionRow } from "../../../plugins/sessions/src/server/index.js";
 import { Channel } from "../src/runtime/channel.js";
-import { LiveTailTracker } from "../src/runtime/live-tail.js";
+import { LiveTailTracker } from "../../../plugins/sessions/src/server/index.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import { sessionMessages } from "../src/services/session-history.js";
 import type { SessionHistoryDeps } from "../src/services/session-history.js";

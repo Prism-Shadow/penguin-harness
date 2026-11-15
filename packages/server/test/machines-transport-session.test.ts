@@ -28,22 +28,18 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Resources } from "@prismshadow/penguin-core/kernel";
-import {
-  SESSION_GROUP,
-  attachSessionRegistry,
-  closeAllConnections,
-  closeConnectionTo,
-  connectionTo,
-  forgetRefusal,
-  heldSessionOf,
-  sessionOf,
-} from "../src/machines/transport/index.js";
-import { SshPasswords } from "../src/machines/ssh-passwords.js";
-
+import {SESSION_GROUP} from "../../../plugins/machines/src/server/index.js";
+import { SshPasswords } from "../../../plugins/machines/src/server/ssh-passwords.js";
+import { attachSessionRegistry } from "../../../plugins/machines/src/server/transport/ssh-session.js";
+import { closeAllConnections } from "../../../plugins/machines/src/server/transport/connection.js";
+import { closeConnectionTo } from "../../../plugins/machines/src/server/transport/connection.js";
+import { connectionTo } from "../../../plugins/machines/src/server/transport/connection.js";
+import { forgetRefusal } from "../../../plugins/machines/src/server/transport/index.js";
+import { sessionOf } from "../../../plugins/machines/src/server/transport/ssh-session.js";
+import { heldSessionOf } from "../../../plugins/machines/src/server/transport/ssh-session.js"
 // The stub `ssh` below is a shell script, which execFile cannot run on Windows; what stays
 // unmeasured on Windows is listed in ci.yml's test-windows note.
 const posixOnly = process.platform === "win32" ? describe.skip : describe;
-
 /**
  * The runtime's resource registry as the transport uses it: one entry per id, a later
  * registration takes the slot over, and a release whose registration lost the slot does nothing.
@@ -68,18 +64,16 @@ function fakeRegistry(): {
   };
   return { registry, entry: (id) => store.get(id) };
 }
-
 /**
  * The transport's session module imported afresh, as a hot push re-imports the platform bundle
  * (hmr/host.ts): a generation with its own map of sessions and its own listeners.
  */
 async function generation(
   n: number,
-): Promise<typeof import("../src/machines/transport/ssh-session.js")> {
-  const file = path.join(import.meta.dirname, "../src/machines/transport/ssh-session.ts");
+): Promise<typeof import("../../../plugins/machines/src/server/transport/ssh-session.js")> {
+  const file = path.join(import.meta.dirname, "../../../plugins/machines/src/server/transport/ssh-session.ts");
   return import(/* @vite-ignore */ `${file}?generation=${n}`);
 }
-
 posixOnly("the session", () => {
   let stubBin: string;
   let logFile: string;
@@ -109,7 +103,6 @@ exit 1
     fs.rmSync(stubBin, { recursive: true, force: true });
   });
   const spawns = () => fs.readFileSync(logFile, "utf8").trim().split("\n");
-
   it("counts a session a command opened as up, and as a connection only once it is held", async () => {
     const conn = connectionTo({ alias: "nas", user: "deploy" });
     await conn.exec("true");
@@ -119,7 +112,6 @@ exit 1
     expect(heldSessionOf("ssh:nas")).not.toBeNull();
     expect(heldSessionOf("ssh:nas")).toEqual(sessionOf("ssh:nas"));
   });
-
   it("runs commands with their exit code, and an `exit` cannot end the session", async () => {
     const conn = connectionTo({ alias: "nas", user: "deploy" });
     // The command's own trailing newline is kept, as execFile would keep it.
@@ -128,7 +120,6 @@ exit 1
     expect(await conn.exec("echo still here")).toMatchObject({ code: 0, stdout: "still here\n" });
     expect(spawns()).toHaveLength(1);
   });
-
   it("hands a command its stdin as a heredoc, bytes intact, and relays lines as they arrive", async () => {
     const conn = connectionTo({ alias: "nas", user: "deploy" });
     const input = Buffer.from("héllo\nEOF\nworld\n", "utf8");
@@ -141,14 +132,12 @@ exit 1
     const echoed = await conn.stream("od -An -tx1 | tr -d ' \\n'", { input: bytes });
     expect(echoed.stdout).toBe("1f8b00ff0a0d00");
   });
-
   it("is one session however many ask: commands queue, and two opens spawn once", async () => {
     const conn = connectionTo({ alias: "nas", user: "deploy" });
     const [a, b] = await Promise.all([conn.open(), conn.open()]);
     expect(a.ok && b.ok && a.session.pid === b.session.pid).toBe(true);
     expect(spawns()).toHaveLength(1);
     expect(sessionOf("ssh:nas")?.pid).toBe(a.ok ? a.session.pid : -1);
-
     let started = Date.now();
     await Promise.all([conn.exec("sleep 0.2"), conn.exec("sleep 0.2")]);
     expect(Date.now() - started).toBeGreaterThanOrEqual(380);
@@ -159,7 +148,6 @@ exit 1
     expect(Date.now() - started).toBeLessThan(380);
     expect(spawns()).toHaveLength(2);
   });
-
   it("a session that dies says what ssh's words mean, then the words, and is not kept", async () => {
     const conn = connectionTo({ alias: "refused", user: "deploy" });
     const opened = await conn.open();
@@ -170,7 +158,6 @@ exit 1
     }
     expect(sessionOf("ssh:refused")).toBeNull();
   });
-
   it("answers a command that outlasts its timeout with the timeout, and hands the next one a live session", async () => {
     const conn = connectionTo({ alias: "nas", user: "deploy" });
     // Establish the session before timing the command. A cold shell can take longer than
@@ -183,7 +170,6 @@ exit 1
     // promise has, and the precise diagnosis has to win.
     const timedOut = await conn.stream("sleep 5", { input: Buffer.alloc(0), timeoutMs: 150 });
     expect(timedOut).toMatchObject({ code: 255, stdout: "the machine did not answer in time" });
-
     // The killed session's close event lands while its replacement is already coming up. It
     // belongs to a child nobody holds any more, and must not take the replacement — or the
     // command riding it — down with it.
@@ -191,7 +177,6 @@ exit 1
     expect(conn.session()?.pid).not.toBe(opened.ok ? opened.session.pid : undefined);
     expect(spawns()).toHaveLength(2);
   });
-
   it("a held session that dies comes back on its own; a closed one stays closed", async () => {
     // The reopen wait is a timer and the clock is the test's: the reconnect and the silence
     // after a close are advanced to, not waited out. The child processes stay real, so what
@@ -210,7 +195,6 @@ exit 1
       expect(held.ok).toBe(true);
       expect(conn.held()).toBe(true);
       const first = sessionOf("ssh:nas")!.pid;
-
       // The link drops — the ssh child is gone, as after keepalives give up on a dead link.
       process.kill(first);
       await until(() => sessionOf("ssh:nas") === null, "the session to drop");
@@ -227,7 +211,6 @@ exit 1
       expect(await conn.exec("echo back")).toMatchObject({ code: 0, stdout: "back\n" });
       expect(spawns()).toHaveLength(2);
       expect(conn.held()).toBe(true);
-
       // An explicit close lets go for good: past every reopen wait, nothing reopens it.
       closeConnectionTo("ssh:nas");
       expect(conn.held()).toBe(false);
@@ -238,7 +221,6 @@ exit 1
       vi.useRealTimers();
     }
   });
-
   it("a command that times out on a held session drops the corpse but keeps the hold", async () => {
     const conn = connectionTo({ alias: "nas", user: "deploy" });
     await conn.hold();
@@ -249,7 +231,6 @@ exit 1
     expect(await conn.exec("echo after")).toMatchObject({ code: 0, stdout: "after\n" });
     expect(conn.held()).toBe(true);
   });
-
   it("a command whose work is cut answers at once and the next one gets a live session; one cut before it is sent starts no ssh", async () => {
     const conn = connectionTo({ alias: "nas", user: "deploy" });
     const opened = await conn.open();
@@ -261,17 +242,14 @@ exit 1
     setTimeout(() => work.abort(), 100);
     expect(await running).toMatchObject({ code: 255, stdout: "stopped before it finished" });
     expect(Date.now() - started).toBeLessThan(4_000);
-
     // The session it was cut on is gone, and its close does not take the next one down.
     expect(await conn.exec("echo after")).toMatchObject({ code: 0, stdout: "after\n" });
     expect(conn.session()?.pid).not.toBe(opened.ok ? opened.session.pid : undefined);
     expect(spawns()).toHaveLength(2);
-
     closeConnectionTo("ssh:nas");
     expect((await cutConn.exec("echo never")).code).toBe(255);
     expect(spawns()).toHaveLength(2);
   });
-
   it("closing lets go of the session; the next ask opens a new one", async () => {
     const conn = connectionTo({ alias: "nas", user: "deploy" });
     await conn.exec("true");
@@ -280,7 +258,6 @@ exit 1
     await conn.exec("true");
     expect(spawns()).toHaveLength(2);
   });
-
   it("does not claim a delivered session the platform judged another contract — it opens its own", async () => {
     const { registry, entry } = fakeRegistry();
     attachSessionRegistry(registry);
@@ -302,7 +279,6 @@ exit 1
       attachSessionRegistry(null);
     }
   });
-
   it("a held session the next generation adopts tells that generation when it drops, not the one that opened it", async () => {
     // Inside the test's own deadline, so a drop told to the wrong generation fails by name.
     const until = async (condition: () => boolean, what: string): Promise<void> => {
@@ -328,13 +304,11 @@ exit 1
       if (!held.ok) throw new Error(held.detail);
       expect(heardByOlder).toEqual(["ssh:nas up"]);
       older.closeAllShells(); // the older generation leaves; its held session stays registered
-
       // The newer one holds the machine again and gets the live session, not a second ssh.
       newer.attachSessionRegistry(registry);
       const adopted = await newer.holdShell("ssh:nas", target);
       expect(adopted.ok && adopted.session.pid).toBe(held.session.pid);
       expect(spawns()).toHaveLength(1);
-
       // The link drops: the generation keeping the machine connected is the one told.
       process.kill(held.session.pid);
       await until(() => heardByNewer.includes("ssh:nas down"), "the drop to be told");
@@ -349,7 +323,6 @@ exit 1
     }
   });
 });
-
 posixOnly("a password sign-in", () => {
   const PASSWORD = `it's $HOME & "quoted"`;
   let stubBin: string;
@@ -385,7 +358,6 @@ exec /bin/sh
     fs.rmSync(stubBin, { recursive: true, force: true });
   });
   const spawns = () => fs.readFileSync(path.join(stubBin, "calls.log"), "utf8").trim().split("\n");
-
   it("signs in through the helper, and a refused password waits for a new save, held or not", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const until = async (condition: () => boolean, what: string): Promise<void> => {
@@ -412,7 +384,6 @@ exec /bin/sh
       expect(spawns()).toHaveLength(1);
       expect(spawns()[0]).not.toContain("quoted");
       expect(spawns()[0]).toContain("PubkeyAuthentication=no");
-
       // The machine's password changes under a held session, and the link drops.
       accept("changed on the machine");
       process.kill(sessionOf("ssh:nas")!.pid);
@@ -426,7 +397,6 @@ exec /bin/sh
       expect(again.code).toBe(255);
       expect(again.stdout).toMatch(/^nas rejected the password saved for it\./);
       expect(spawns()).toHaveLength(2);
-
       // Saved anew (the same password, the machine put right): it dials again.
       accept(PASSWORD);
       store.save("nas", PASSWORD);

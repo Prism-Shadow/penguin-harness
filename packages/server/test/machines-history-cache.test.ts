@@ -61,14 +61,15 @@ import type {
   HistoryRecords,
   MessagesResponse,
 } from "../src/api/types.js";
-import { machineHistory } from "../src/machines/history-routes.js";
-import type { MachineHistory } from "../src/machines/history-routes.js";
-import type { HistorySync } from "../src/machines/history-sync.js";
-import { MachineSockets } from "../src/machines/machine-sockets.js";
-import { machinesProxy } from "../src/machines/proxy.js";
-import { TraceCache, dirNameOf } from "../src/machines/trace-cache.js";
+import { machineHistory } from "../../../plugins/machines/src/server/history-routes.js";
+import { machinesProxy } from "../../../plugins/machines/src/server/proxy.js";
+import { HistorySync } from "../../../plugins/machines/src/server/history-sync.js";
+import { MachineHistory } from "../../../plugins/machines/src/server/history-routes.js";
+import { MachineSockets } from "../../../plugins/machines/src/server/machine-sockets.js";
+import { TraceCache } from "../../../plugins/machines/src/server/trace-cache.js";
+import { dirNameOf } from "../../../plugins/machines/src/server/trace-cache.js";
 import { FRAME_TEXT_BUDGET } from "../src/socket/line-frames.js";
-import { attachTerminalWebSocket } from "../src/terminal/ws.js";
+import { attachTerminalWebSocket } from "../../../plugins/terminal/src/server/index.js";
 import { eventReader, windowRecords } from "./fixtures/history-stream.js";
 import { appApi, fakeMachinesNode } from "./fixtures/machines.js";
 import type { StreamEvent } from "./fixtures/history-stream.js";
@@ -82,11 +83,9 @@ import {
   writeTraceFile,
 } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
-
 const MACHINE = "QS7J4YVgSovi-Z2c";
 const AGENT = "default_agent";
 const PROJECT = "default_project";
-
 /** A TCP link to the machine's port: every byte it carries back is counted, and it can be cut. */
 async function linkTo(port: number) {
   const open = new Set<Socket>();
@@ -128,14 +127,12 @@ async function linkTo(port: number) {
       }),
   };
 }
-
 let machine: TestApp;
 let server: ReturnType<typeof serve>;
 let link: Awaited<ReturnType<typeof linkTo>>;
 let cookie = "";
 let hubRoot = "";
 const accepted = new Set<Socket>();
-
 beforeAll(async () => {
   machine = await createTestApp();
   cookie = (await loginAdmin(machine.app)).cookie;
@@ -153,7 +150,6 @@ beforeAll(async () => {
   link = await linkTo(port);
   hubRoot = await makeTempRoot();
 });
-
 afterAll(async () => {
   await link?.close();
   for (const socket of accepted) socket.destroy();
@@ -161,7 +157,6 @@ afterAll(async () => {
   await machine?.cleanup();
   await removeTempRoot(hubRoot);
 });
-
 /** What crossed the machine streams: each run of Trace bytes, as the hub handled it. */
 let crossed: { k: string; off: number; bytes: number }[];
 let hub: {
@@ -176,7 +171,6 @@ let onFrame: (frame: { k: string; off: number; bytes: number }) => void;
 let connected = true;
 /** The Projects the hub has config for (an analysis is priced here only for those). */
 let hubProjects = new Set<string>();
-
 beforeEach(async () => {
   crossed = [];
   onFrame = () => undefined;
@@ -218,12 +212,10 @@ beforeEach(async () => {
       ),
   };
 });
-
 afterEach(() => {
   hub.sync.close();
   hub.sockets.close();
 });
-
 const meta = (sid: string): AmspRecord =>
   sessionMeta({
     session_id: sid,
@@ -235,14 +227,12 @@ const meta = (sid: string): AmspRecord =>
     workspace: "/tmp/w",
     source: "user",
   });
-
 /** `tasks` question-and-answer Tasks, each answer `pad` characters long. */
 const tasks = (count: number, pad = 200): AmspRecord[] =>
   Array.from({ length: count }, (_, i) => [
     userText(`question ${i}`),
     assistantText(`${i} ${"a".repeat(pad)}`),
   ]).flat();
-
 /** A Session on the machine, with its Trace file; returns the file's path. */
 async function machineSession(
   sid: string,
@@ -254,7 +244,6 @@ async function machineSession(
   }
   return writeTraceFile(machine.root, PROJECT, agentId, "2026-10-29", sid, 1, records);
 }
-
 /** Resolves once `file` of the copy is gone (a drop runs behind the stream that caused it). */
 async function dropped(file: string): Promise<void> {
   const start = Date.now();
@@ -263,17 +252,14 @@ async function dropped(file: string): Promise<void> {
     await new Promise((r) => setTimeout(r, 5));
   }
 }
-
 /** A history stream through the hub, read to its end. */
 async function read(sid: string, query: string): Promise<StreamEvent[]> {
   const reader = eventReader(await hub.get(`/api/sessions/${sid}/history${query}`));
   await reader.finished;
   return reader.named();
 }
-
 const progress = (events: StreamEvent[]) =>
   events.filter((e) => e.event === "progress").map((e) => JSON.parse(e.data) as HistoryProgress);
-
 /** The machine's own `/messages` for `query`, elided as the stream elides it. */
 async function machineWindow(sid: string, query: string): Promise<unknown[]> {
   const res = await machine.app.request(`/api/sessions/${sid}/messages${query}`, {
@@ -294,13 +280,11 @@ async function machineWindow(sid: string, query: string): Promise<unknown[]> {
     ),
   ) as unknown[];
 }
-
 describe("a machine Session's history through the hub's copy", () => {
   it("counts its progress to a fixed total, then sends the window, and keeps the file byte for byte", async () => {
     const sid = uniqueSessionId();
     const file = await machineSession(sid, [meta(sid), ...tasks(6)]);
     const events = await read(sid, "?tailLimit=20");
-
     const counted = progress(events).filter((p) => p.phase === "window");
     expect(counted.length).toBeGreaterThan(0);
     expect(new Set(counted.map((p) => p.totalBytes)).size).toBe(1);
@@ -315,7 +299,6 @@ describe("a machine Session's history through the hub's copy", () => {
     expect(windowRecords(events)).toEqual(await machineWindow(sid, "?tailLimit=20"));
     expect(await fs.readFile(hub.cacheFile(sid))).toEqual(await fs.readFile(file));
   });
-
   it("asks the machine for only the records appended since the last open", async () => {
     const sid = uniqueSessionId();
     const file = await machineSession(sid, [meta(sid), ...tasks(3)]);
@@ -326,14 +309,12 @@ describe("a machine Session's history through the hub's copy", () => {
       .join("");
     await fs.appendFile(file, appended);
     crossed = [];
-
     const events = await read(sid, "?tailLimit=20");
     expect(crossed.map((c) => c.off)).toEqual([size]);
     expect(crossed.reduce((sum, c) => sum + c.bytes, 0)).toBe(Buffer.byteLength(appended));
     expect(windowRecords(events)).toEqual(await machineWindow(sid, "?tailLimit=20"));
     expect(await fs.readFile(hub.cacheFile(sid))).toEqual(await fs.readFile(file));
   });
-
   /**
    * Opens `sid` as the chat opens it: a first window within a small budget, the rest of the 20
    * pairs before it, and the fill behind both.
@@ -346,7 +327,6 @@ describe("a machine Session's history through the hub's copy", () => {
     expect(older.at(-1)?.event).toBe("done");
     await waitFor(() => hub.sync.held().size === 0);
   };
-
   it("reopens a Session it holds whole and unchanged for a few hundred bytes each way, none of them Trace", async () => {
     const sid = uniqueSessionId();
     // Answers that do not compress, so a window sent again would show on the link.
@@ -357,19 +337,16 @@ describe("a machine Session's history through the hub's copy", () => {
     const file = await machineSession(sid, [meta(sid), ...noisy]);
     await openAsTheChat(sid);
     expect(await fs.readFile(hub.cacheFile(sid))).toEqual(await fs.readFile(file));
-
     crossed = [];
     const before = link.carried();
     await openAsTheChat(sid);
     const after = link.carried();
-
     // Two streams (the first window, then the rest of the 20 pairs), each the machine's window
     // facts and no line: about 2.3 KB from the machine and 1.1 KB of `have` to it, for 26 KB.
     expect(crossed).toEqual([]);
     expect(after.down - before.down).toBeLessThan(3 * 1024);
     expect(after.up - before.up).toBeLessThan(2 * 1024);
   });
-
   it("sends a Session held whole, reopened as the chat opens it after one more Task, only that Task's lines", async () => {
     const sid = uniqueSessionId();
     const file = await machineSession(sid, [meta(sid), ...tasks(40, 400)]);
@@ -381,14 +358,12 @@ describe("a machine Session's history through the hub's copy", () => {
       .map((m) => `${JSON.stringify(m)}\n`)
       .join("");
     await fs.appendFile(file, task);
-
     crossed = [];
     await open();
     expect(crossed.every((c) => c.off >= size)).toBe(true);
     expect(crossed.reduce((sum, c) => sum + c.bytes, 0)).toBe(Buffer.byteLength(task));
     expect(await fs.readFile(hub.cacheFile(sid))).toEqual(await fs.readFile(file));
   });
-
   it("resumes a transfer cut inside a line sent in parts from the bytes it holds", async () => {
     const sid = uniqueSessionId();
     const file = await machineSession(sid, [
@@ -406,7 +381,6 @@ describe("a machine Session's history through the hub's copy", () => {
       }
     };
     const events = await read(sid, "?tailLimit=20");
-
     expect(cut).toBe(true);
     expect(events.at(-1)?.event).toBe("done");
     const bytes = await fs.readFile(file);
@@ -414,7 +388,6 @@ describe("a machine Session's history through the hub's copy", () => {
     const sent = crossed.reduce((sum, c) => sum + c.bytes, 0);
     expect(sent).toBeLessThanOrEqual(bytes.length + FRAME_TEXT_BUDGET);
   });
-
   it("starts the copy over when the machine's file was rewritten or replaced, and drops a deleted subagent's", async () => {
     const sid = uniqueSessionId();
     const child = uniqueSessionId();
@@ -431,7 +404,6 @@ describe("a machine Session's history through the hub's copy", () => {
     await read(sid, "?tailLimit=20");
     const childCopy = hub.cacheFile(child);
     expect((await fs.stat(childCopy)).size).toBeGreaterThan(0);
-
     // Same size, other bytes, at the end where the anchor looks.
     const rewritten = (await fs.readFile(file, "utf8")).replace("ABCDEF", "UVWXYZ");
     await fs.writeFile(file, rewritten);
@@ -450,19 +422,16 @@ describe("a machine Session's history through the hub's copy", () => {
     expect(await fs.readFile(hub.cacheFile(sid), "utf8")).toBe(rewritten);
     expect(windowRecords(events).some((r) => JSON.stringify(r).includes("UVWXYZ"))).toBe(true);
     await expect(fs.stat(childCopy)).rejects.toThrow();
-
     // A new file under the same name: another inode, so nothing held is offered again.
     await fs.rm(file);
     const replaced = await machineSession(sid, [meta(sid), ...tasks(2)]);
     await read(sid, "?tailLimit=20");
     expect(await fs.readFile(hub.cacheFile(sid))).toEqual(await fs.readFile(replaced));
   });
-
   it("goes on after the window with the fill's progress and ends with filled, the whole Session held", async () => {
     const sid = uniqueSessionId();
     const file = await machineSession(sid, [meta(sid), ...tasks(25)]);
     const events = await read(sid, "?tailLimit=20&fill=1");
-
     const names = events.map((e) => e.event);
     const done = names.indexOf("done");
     expect(done).toBeGreaterThan(0);
@@ -470,7 +439,6 @@ describe("a machine Session's history through the hub's copy", () => {
     expect(progress(events.slice(done)).some((p) => p.phase === "fill")).toBe(true);
     expect(await fs.readFile(hub.cacheFile(sid))).toEqual(await fs.readFile(file));
   });
-
   it("answers the Trace panel's events and analysis of a file synced to the copy, live or rotated, and an image by reference, the machine away", async () => {
     const sid = uniqueSessionId();
     const png = `data:image/png;base64,${Buffer.from("not really a png").toString("base64")}`;
@@ -485,7 +453,6 @@ describe("a machine Session's history through the hub's copy", () => {
     expect(url).toMatch(/\/trace-image\?file=1&ordinal=2$/);
     const machineSays = async (remote: string) =>
       (await (await machine.app.request(remote, { headers: { cookie } })).json()) as unknown;
-
     // The live file grew on the machine; the panel makes it whole before it reads it.
     await fs.appendFile(live, `${JSON.stringify(userText("one more"))}\n`);
     expect((await read(sid, "?fill=only&file=2")).at(-1)?.event).toBe("filled");
@@ -495,7 +462,6 @@ describe("a machine Session's history through the hub's copy", () => {
       rotated: await machineSays(`/api/sessions/${sid}/traces/1?offset=1&limit=3`),
       analysis: await machineSays(`/api/sessions/${sid}/traces/2/analysis`),
     };
-
     connected = false;
     const json = async (res: Response) => {
       expect(res.status).toBe(200);
@@ -524,7 +490,6 @@ describe("a machine Session's history through the hub's copy", () => {
     connected = false;
     expect(await json(await hub.get(analysis))).toEqual(own.analysis);
   });
-
   it("keeps the rest of the Session's copy when one folded value is fetched from the machine", async () => {
     const sid = uniqueSessionId();
     machine.deps.sessionsRepo.insert(sessionRow(sid));
@@ -544,7 +509,6 @@ describe("a machine Session's history through the hub's copy", () => {
     await waitFor(() => hub.sync.held().size === 0);
     expect((await read(sid, "?fill=only&file=1")).at(-1)?.event).toBe("filled");
     await waitFor(() => hub.sync.held().size === 0);
-
     const ref = encodeBodyRef(
       { agentId: AGENT, sessionId: sid, fileIndex: 2, ordinal: 3 },
       "payload.output",
@@ -557,13 +521,11 @@ describe("a machine Session's history through the hub's copy", () => {
     expect(body.has("done")).toBe(true);
     expect(crossed.length).toBeGreaterThan(0);
     await waitFor(() => hub.sync.held().size === 0);
-
     expect(await fs.readFile(hub.cacheFile(sid, 1))).toEqual(await fs.readFile(rotated));
     crossed = [];
     expect((await read(sid, "?fill=only&file=1")).at(-1)?.event).toBe("filled");
     expect(crossed.filter((c) => c.k === `${AGENT}/${sid}/1`)).toEqual([]);
   });
-
   it("unfolds a subagent's value after one of the Session's own was fetched", async () => {
     const sid = uniqueSessionId();
     const child = uniqueSessionId();
@@ -602,12 +564,10 @@ describe("a machine Session's history through the hub's copy", () => {
       { agentId: AGENT, sessionId: sid, fileIndex: 1, ordinal: 3 },
       "payload.output",
     );
-
     expect(await unfold(childRef)).toBe("done");
     expect(await unfold(ownRef)).toBe("done");
     expect(await unfold(childRef)).toBe("done");
   });
-
   it("lets go of a Session the machine deleted: its copy goes, and nothing of it is answered from here", async () => {
     const sid = uniqueSessionId();
     const png = `data:image/png;base64,${Buffer.from("secret picture").toString("base64")}`;
@@ -623,7 +583,6 @@ describe("a machine Session's history through the hub's copy", () => {
       headers: { cookie },
     });
     expect(deleted.status).toBe(204);
-
     const again = await read(sid, "?tailLimit=20");
     expect(again.at(-1)).toMatchObject({ event: "error" });
     expect(JSON.parse(again.at(-1)!.data)).toMatchObject({ code: "session_not_found" });
@@ -631,7 +590,6 @@ describe("a machine Session's history through the hub's copy", () => {
     expect((await hub.get(`/api/sessions/${sid}/traces/1?offset=0&limit=5`)).status).toBe(404);
     expect((await hub.get(`/api/sessions/${sid}/trace-image?file=1&ordinal=2`)).status).toBe(404);
   });
-
   it("drops a Session's copy when the machine says it deleted it", async () => {
     const sid = uniqueSessionId();
     const png = `data:image/png;base64,${Buffer.from("secret picture").toString("base64")}`;
@@ -641,14 +599,11 @@ describe("a machine Session's history through the hub's copy", () => {
     connected = false;
     const image = `/api/sessions/${sid}/trace-image?file=1&ordinal=2`;
     expect((await hub.get(image)).status).toBe(200);
-
     hub.history.hear(MACHINE, JSON.stringify({ type: "session_deleted", sessionId: sid }));
-
     await dropped(hub.cacheFile(sid, 1));
     // Not from the copy any more: the forward, which has no machine to reach.
     expect((await hub.get(image)).status).toBe(503);
   });
-
   it("finds a Session deleted on the machine though nothing told this server, drops its copy, and answers nothing more from it", async () => {
     const sid = uniqueSessionId();
     const png = `data:image/png;base64,${Buffer.from("secret picture").toString("base64")}`;
@@ -665,7 +620,6 @@ describe("a machine Session's history through the hub's copy", () => {
       headers: { cookie },
     });
     expect(deleted.status).toBe(204);
-
     // The read the copy answers does not wait on the machine; asking it behind the answer is
     // what finds the deletion, and the copy goes.
     const image = `/api/sessions/${sid}/trace-image?file=1&ordinal=2`;
@@ -678,7 +632,6 @@ describe("a machine Session's history through the hub's copy", () => {
     );
     expect((await hub.get(`/api/sessions/${sid}/traces/1?offset=0&limit=5`)).status).toBe(404);
   });
-
   it("keeps the copy of a Session the machine will not show this server, on the copy's own reads and on a history read", async () => {
     const sid = uniqueSessionId();
     const png = `data:image/png;base64,${Buffer.from("a picture").toString("base64")}`;
@@ -697,7 +650,6 @@ describe("a machine Session's history through the hub's copy", () => {
       expect((await hub.get(image)).status).toBe(200);
       await waitFor(() => hub.sync.known(MACHINE, sid)?.kind === "refused");
       expect((await hub.get(image)).status).toBe(200);
-
       const refused = await read(sid, "?tailLimit=20");
       expect(refused.at(-1)?.event).toBe("error");
       expect(JSON.parse(refused.at(-1)!.data)).toMatchObject({ code: "session_forbidden" });
@@ -708,7 +660,6 @@ describe("a machine Session's history through the hub's copy", () => {
       else delete access.requireProjectAccess;
     }
   });
-
   it("leaves the analysis of a Session whose Project this server has no config for to the machine", async () => {
     const sid = uniqueSessionId();
     await machineSession(sid, [meta(sid), ...tasks(3)]);
@@ -723,7 +674,6 @@ describe("a machine Session's history through the hub's copy", () => {
     hubProjects.clear();
     expect((await hub.get(analysis)).status).toBe(503);
   });
-
   it("loads a Trace with a line of NULs in it, as the machine reads it", async () => {
     const sid = uniqueSessionId();
     const file = await machineSession(sid, [meta(sid), ...tasks(2)]);
@@ -735,12 +685,10 @@ describe("a machine Session's history through the hub's copy", () => {
         .map((m) => `${JSON.stringify(m)}\n`)
         .join(""),
     );
-
     const events = await read(sid, "?tailLimit=20");
     expect(events.at(-1)?.event).toBe("done");
     expect(windowRecords(events)).toEqual(await machineWindow(sid, "?tailLimit=20"));
   });
-
   it("reads a window again from the machine when its copy does not read back, keeping the rest of the copy", async () => {
     const sid = uniqueSessionId();
     machine.deps.sessionsRepo.insert(sessionRow(sid));
@@ -763,7 +711,6 @@ describe("a machine Session's history through the hub's copy", () => {
     const copy = await fs.open(hub.cacheFile(sid, 2), "r+");
     await copy.write(Buffer.from("#"), 0, 1, lineStart);
     await copy.close();
-
     crossed = [];
     const events = await read(sid, "?tailLimit=30");
     expect(events.at(-1)?.event).toBe("done");
@@ -774,7 +721,6 @@ describe("a machine Session's history through the hub's copy", () => {
     expect(await fs.readFile(hub.cacheFile(sid, 1))).toEqual(await fs.readFile(rotated));
     expect(await fs.readFile(hub.cacheFile(sid, 2))).toEqual(liveBytes);
   });
-
   it("does not send again a line held below the newest run", async () => {
     const sid = uniqueSessionId();
     const file = await machineSession(sid, [
@@ -800,7 +746,6 @@ describe("a machine Session's history through the hub's copy", () => {
     await body.finished;
     expect(body.has("done")).toBe(true);
     await waitFor(() => hub.sync.held().size === 0);
-
     crossed = [];
     expect((await read(sid, "?fill=only")).at(-1)?.event).toBe("filled");
     const size = (await fs.stat(file)).size;
@@ -808,7 +753,6 @@ describe("a machine Session's history through the hub's copy", () => {
     // The fill brought what was missing around the held output line, never the line again.
     expect(crossed.reduce((sum, c) => sum + c.bytes, 0)).toBeLessThan(size - 200_000);
   });
-
   it("resumes a fill cut inside a file's first line held, before anything of the file was whole", async () => {
     const sid = uniqueSessionId();
     machine.deps.sessionsRepo.insert(sessionRow(sid));
@@ -842,14 +786,12 @@ describe("a machine Session's history through the hub's copy", () => {
     };
     crossed = [];
     expect((await read(sid, "?fill=only")).at(-1)?.event).toBe("filled");
-
     expect(cut).toBe(true);
     expect(await fs.readFile(hub.cacheFile(sid, 1))).toEqual(await fs.readFile(first));
     const size = (await fs.stat(first)).size;
     const sent = crossed.filter((c) => c.k === k1).reduce((sum, c) => sum + c.bytes, 0);
     expect(sent).toBeLessThanOrEqual(size + FRAME_TEXT_BUDGET);
   });
-
   it("sends a reader that left and came back only what its first open had not brought", async () => {
     const sid = uniqueSessionId();
     const file = await machineSession(sid, [meta(sid), ...tasks(150, 1_000)]);
@@ -867,7 +809,6 @@ describe("a machine Session's history through the hub's copy", () => {
     await waitFor(() => hub.sync.held().size === 0);
     const before = crossed.reduce((sum, c) => sum + c.bytes, 0);
     expect(before).toBeLessThan((await fs.stat(file)).size);
-
     expect((await read(sid, "?tailLimit=20&fill=1")).at(-1)?.event).toBe("filled");
     const size = (await fs.stat(file)).size;
     expect(await fs.readFile(hub.cacheFile(sid))).toEqual(await fs.readFile(file));
@@ -875,7 +816,6 @@ describe("a machine Session's history through the hub's copy", () => {
       size + FRAME_TEXT_BUDGET,
     );
   });
-
   it("sends an elided value whole, fetching its line once and then from the copy", async () => {
     const sid = uniqueSessionId();
     const output = "row\n".repeat(10_000);
@@ -894,7 +834,6 @@ describe("a machine Session's history through the hub's copy", () => {
       { agentId: AGENT, sessionId: sid, fileIndex: 1, ordinal: 3 },
       "payload.output",
     );
-
     const body = async () => {
       const reader = eventReader(
         await hub.get(`/api/sessions/${sid}/trace-body?ref=${encodeURIComponent(ref)}`),
@@ -918,19 +857,16 @@ describe("a machine Session's history through the hub's copy", () => {
     const done = fetched.progress.map((p) => p.doneBytes);
     expect(done).toEqual([...done].sort((a, b) => a - b));
     expect(done.at(-1)).toBe(fetched.progress[0]!.totalBytes);
-
     crossed = [];
     expect((await body()).value).toBe(output);
     expect(crossed).toEqual([]);
   });
 });
-
 describe("a machine Session's history opened by its URL alone", () => {
   let hubApp: TestApp;
   let hubCookie = "";
   /** Whether the hub has lost its forward to the machine. */
   let away = false;
-
   beforeAll(async () => {
     hubApp = await createTestApp({
       machines: fakeMachinesNode(
@@ -943,11 +879,9 @@ describe("a machine Session's history opened by its URL alone", () => {
     });
     hubCookie = (await loginAdmin(hubApp.app)).cookie;
   });
-
   afterAll(async () => {
     await hubApp?.cleanup();
   });
-
   it("is answered by the hub's stream through the Session forward, and kept under the hub's data root", async () => {
     const sid = uniqueSessionId();
     const file = await machineSession(sid, [meta(sid), ...tasks(3)]);
@@ -957,7 +891,6 @@ describe("a machine Session's history opened by its URL alone", () => {
       }),
     );
     await reader.finished;
-
     expect(reader.named().at(-1)?.event).toBe("done");
     expect(windowRecords(reader.events)).toEqual(await machineWindow(sid, "?tailLimit=20"));
     const copy = path.join(
@@ -984,7 +917,6 @@ describe("a machine Session's history opened by its URL alone", () => {
     );
     await opened.finished;
     expect(opened.named().at(-1)?.event).toBe("filled");
-
     away = true;
     try {
       const events = (project: string) =>
@@ -1004,7 +936,6 @@ describe("a machine Session's history opened by its URL alone", () => {
       away = false;
     }
   });
-
   // Last: it resets the admin's password, which signs the suite's admin out.
   it("ends an HTTP history stream the moment its user is signed out everywhere", async () => {
     const sid = uniqueSessionId();

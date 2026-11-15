@@ -13,19 +13,18 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as tar from "tar";
-import { installOnRemote, packHmrState } from "../src/machines/install-server.js";
-import { remoteLayoutFor } from "../src/machines/layout.js";
-import type { PushPlan } from "../src/machines/install-server.js";
-import type { ExecResult, MachineChannel } from "../src/machines/transport/index.js";
-
+import { remoteLayoutFor } from "../../../plugins/machines/src/server/index.js";
+import { installOnRemote } from "../../../plugins/machines/src/server/install-server.js";
+import { packHmrState } from "../../../plugins/machines/src/server/install-server.js";
+import { PushPlan } from "../../../plugins/machines/src/server/install-server.js";
+import { ExecResult } from "../../../plugins/machines/src/server/transport/exec.js";
+import { MachineChannel } from "../../../plugins/machines/src/server/transport/connection.js";
 const RELEASE = remoteLayoutFor("release");
-
 interface Call {
   verb: "exec" | "stream" | "oneShot" | "copyTo";
   command: string;
   input?: Buffer;
 }
-
 /** How a scripted machine answers. */
 interface Script {
   probe: string;
@@ -44,9 +43,7 @@ interface Script {
   /** How the machine reaches the two release sources (releaseReachCommand's answer); both by default. */
   reach?: string;
 }
-
 const ok = (stdout: string): ExecResult => ({ code: 0, stdout, stderr: "", timedOut: false });
-
 function scripted(script: Script): MachineChannel & { calls: Call[] } {
   const calls: Call[] = [];
   let ran = false;
@@ -103,11 +100,9 @@ function scripted(script: Script): MachineChannel & { calls: Call[] } {
     },
   };
 }
-
 describe("installOnRemote", () => {
   let work: string;
   const HARNESS = '{"platform":{"bundle":"store/platform/cafe0123456789ab.mjs"}}';
-
   /** A plan the way resolvePushPlan builds one, with a real hmr dir to pack. */
   const plan = (over: Partial<PushPlan> = {}): PushPlan => {
     const hmrDir = path.join(work, "hmr");
@@ -122,19 +117,15 @@ describe("installOnRemote", () => {
       ...over,
     };
   };
-
   /** Where the push finds install.sh / install.ps1 — the repo root, in a source checkout. */
   const assets = () => path.resolve(__dirname, "..", "..", "..");
-
   beforeEach(() => {
     work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-push-test-"));
   });
   afterEach(() => {
     fs.rmSync(work, { recursive: true, force: true });
   });
-
   const target = { alias: "build-box", user: "deploy" };
-
   it("probes, installs and replicates over the ONE session, then asks what the machine now has", async () => {
     const channel = scripted({
       probe: "Linux x86_64\\n---penguin---\\n---penguin---\\n",
@@ -149,7 +140,6 @@ describe("installOnRemote", () => {
       channel,
       onProgress: (line) => progress.push(line),
     });
-
     expect(outcome).toMatchObject({ kind: "installed" });
     const { calls } = channel;
     // Four commands, all on the session: no one-shot connection, no scp, no scratch dir.
@@ -170,7 +160,6 @@ describe("installOnRemote", () => {
     // The far side's own output is relayed as it arrives, not withheld until exit.
     expect(progress).toContain("PenguinHarness 0.2.4 installed");
   });
-
   it("calls an install that ran cleanly and changed nothing a failure", async () => {
     // The installer exits 0 and says it installed; the machine still has nothing. Every step
     // answers for itself and none of them answers whether the thing on disk over there is now
@@ -185,11 +174,9 @@ describe("installOnRemote", () => {
       channel,
       layout: RELEASE,
     });
-
     expect(outcome).toMatchObject({ kind: "failed", step: "verify the install" });
     expect((outcome as { detail: string }).detail).toContain("still has no install");
   });
-
   it("calls a base that took without the pushed state a failure", async () => {
     // The store's unpack exited 0 and the base is exactly right, so every step answered for
     // itself; only the second probe can tell that the pushed half never landed. Blessing this
@@ -207,11 +194,9 @@ describe("installOnRemote", () => {
       channel,
       layout: RELEASE,
     });
-
     expect(outcome).toMatchObject({ kind: "failed", step: "verify the install" });
     expect((outcome as { detail: string }).detail).toContain("no pushed state");
   });
-
   it("a Windows host has no session to hold: the probe, a copied script and the store each get their own connection", async () => {
     const channel = scripted({
       probe: "Windows_NT AMD64\\n---penguin---\\n---penguin---\\n",
@@ -225,7 +210,6 @@ describe("installOnRemote", () => {
       channel,
       layout: RELEASE,
     });
-
     expect(outcome).toMatchObject({ kind: "installed" });
     const { calls } = channel;
     // The session is tried first and dies unopened (cmd.exe has no sh); the Windows probe
@@ -247,7 +231,6 @@ describe("installOnRemote", () => {
     expect(calls[4]!.command).toContain("tar -xzf -");
     expect(calls[4]!.input?.subarray(0, 2)).toEqual(Buffer.from([0x1f, 0x8b]));
   });
-
   it("a matching base is a hot update to hand on, not an install to perform", async () => {
     // Same release, different pushed state. Nothing to install — and streaming the store over
     // and restarting the process would swap the code under a server without asking whether it
@@ -269,7 +252,6 @@ describe("installOnRemote", () => {
     // The probe, and nothing else: no installer, and no store either.
     expect(channel.calls).toHaveLength(1);
   });
-
   it("a matching base over an EMPTY store gets the store, without the installer", async () => {
     // A release installed with nothing in its store — what a server that shipped no image of
     // its own left behind. Every command this side runs there goes through the CLI in that
@@ -292,7 +274,6 @@ describe("installOnRemote", () => {
     expect(commands.filter((c) => c.includes("tar -xzf -"))).toHaveLength(1);
     expect(commands.at(-1)).toContain("uname -s -m");
   });
-
   it("does nothing when the remote already matches base AND pushed state", async () => {
     const channel = scripted({
       probe: `Linux x86_64\\n---penguin---\\n{"version":"0.2.4"}\\n---penguin---\\n${HARNESS}\\n`,
@@ -307,7 +288,6 @@ describe("installOnRemote", () => {
     expect(outcome).toMatchObject({ kind: "already-installed", version: "0.2.4+hmr.cafe01234567" });
     expect(channel.calls).toHaveLength(1); // the probe, and nothing else
   });
-
   it("packs the replicated state in this process: the state's own files, the helper still executable", async () => {
     const p = plan();
     const helper = path.join(p.hmrDir!, "store", "assets", "a1", "spawn-helper");
@@ -332,11 +312,9 @@ describe("installOnRemote", () => {
       expect(files.get("store/assets/a1/spawn-helper")! & 0o111).not.toBe(0);
     }
   });
-
   describe("a machine that cannot download the release itself", () => {
     const fresh = "Linux x86_64\\n---penguin---\\n---penguin---\\n";
     const after = `Linux x86_64\\n---penguin---\\n{"version":"0.2.4"}\\n---penguin---\\n${HARNESS}`;
-
     it("gets the package from this side: sent into a scratch directory, installed from it, the scratch removed", async () => {
       const pkg = path.join(work, "penguin-linux-x64.tar.gz");
       fs.writeFileSync(pkg, "the package");
@@ -368,7 +346,6 @@ describe("installOnRemote", () => {
       expect(install?.command).not.toContain("PENGUIN_VERSION");
       expect(channel.calls.at(-1)?.command).toBe('rm -rf "/tmp/penguin-release.Ab12Cd"');
     });
-
     it("downloads it there after all when one source answers", async () => {
       let carried = 0;
       const channel = scripted({
@@ -392,7 +369,6 @@ describe("installOnRemote", () => {
         "PENGUIN_VERSION='v0.2.4'",
       );
     });
-
     it("stops before sending anything when both sources answer and neither has the release", async () => {
       const channel = scripted({ probe: fresh, reach: "@@oss 404 0\n@@github 404 0\n" });
       const outcome = await installOnRemote({
@@ -407,7 +383,6 @@ describe("installOnRemote", () => {
       expect((outcome as { detail: string }).detail).toContain("v0.2.4");
       expect(channel.calls.some((c) => c.command.includes("sh -s"))).toBe(false);
     });
-
     it("says so when this side cannot fetch the package either", async () => {
       const channel = scripted({ probe: fresh, reach: "@@nocurl\n" });
       const outcome = await installOnRemote({
@@ -423,7 +398,6 @@ describe("installOnRemote", () => {
       expect(channel.calls.some((c) => c.command.includes("sh -s"))).toBe(false);
     });
   });
-
   it("a bare release plan streams nothing", async () => {
     const channel = scripted({
       probe: "Linux x86_64\\n---penguin---\\n---penguin---\\n",
@@ -439,7 +413,6 @@ describe("installOnRemote", () => {
     expect(outcome).toMatchObject({ kind: "installed" });
     expect(channel.calls.some((c) => c.command.includes("tar -xzf -"))).toBe(false);
   });
-
   it("reports the installer's own output on failure", async () => {
     const channel = scripted({
       probe: 'Linux x86_64\\n---penguin---\\n{"version":"0.0.1"}\\n---penguin---\\n',
@@ -455,7 +428,6 @@ describe("installOnRemote", () => {
     expect(outcome).toMatchObject({ kind: "failed", step: "install" });
     expect((outcome as { detail: string }).detail).toContain("PenguinHarness 0.2.4 installed");
   });
-
   it("leads ssh's own words with what to do when the session cannot be opened, and asks no second connection", async () => {
     const channel = scripted({ probe: "" });
     channel.exec = async (command) => {
@@ -483,7 +455,6 @@ describe("installOnRemote", () => {
     // ssh refused before any shell: the Windows dialect is not tried on a second connection.
     expect(channel.calls.map((c) => c.verb)).toEqual(["exec"]);
   });
-
   it("an unknown host key says to connect once by hand, not to set up a key", async () => {
     const channel = scripted({ probe: "" });
     channel.exec = async () => ({
@@ -505,7 +476,6 @@ describe("installOnRemote", () => {
     expect(detail).toContain("Host key verification failed.");
     expect(detail).not.toContain("authorized_keys");
   });
-
   it("a machine that took this build through its own update channel already carries it", async () => {
     // Its HMR layer wrote harness.json itself on commit — its own pushedAt, its own spacing —
     // around the same content-named files. Read as text, that is a different build, and every
@@ -530,7 +500,6 @@ describe("installOnRemote", () => {
     });
     expect(outcome).toMatchObject({ kind: "already-installed" });
   });
-
   it("keeps curl's progress bar out of the log and quotes the installer's error as the failure", async () => {
     const channel = scripted({
       probe: "Linux x86_64\\n---penguin---\\n---penguin---\\n",
@@ -559,7 +528,6 @@ describe("installOnRemote", () => {
         "error: download failed from both the primary source and its fallback. Check your network, then retry.",
     });
   });
-
   it("leads with the program's own error when the installer points above itself", async () => {
     const channel = scripted({
       probe: "Linux x86_64\\n---penguin---\\n---penguin---\\n",
@@ -589,7 +557,6 @@ describe("installOnRemote", () => {
       "error: candidate PenguinHarness failed to run (exit status 1). See the error above.",
     );
   });
-
   it("refuses a base that cannot name a release", async () => {
     const channel = scripted({
       probe: "Linux x86_64\\n---penguin---\\n---penguin---\\n",

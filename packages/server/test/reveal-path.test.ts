@@ -5,7 +5,7 @@
 import { EventEmitter } from "node:events";
 import type { spawn } from "node:child_process";
 import { describe, expect, it } from "vitest";
-import { revealCommand, revealInFileManager } from "../src/services/reveal-path.js";
+import { revealCommand, revealInFileManager } from "../../../plugins/projects/src/server/index.js";
 
 /**
  * A spawn that records its call and then behaves like a child that either started or could

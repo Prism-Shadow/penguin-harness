@@ -9,10 +9,10 @@ import type { SandboxProvider, SandboxSettings } from "@prismshadow/penguin-core
 import { openDatabase } from "@penguinharness/plugin-db/server";
 import { migrate } from "@penguinharness/plugin-db/server";
 import { SCHEMA_SQL } from "@penguinharness/plugin-db/server";
-import { SessionsRepo } from "../src/db/repos/sessions.js";
-import type { SessionRow } from "../src/db/repos/sessions.js";
+import { SessionsRepo } from "../../../plugins/sessions/src/server/index.js";
+import type { SessionRow } from "../../../plugins/sessions/src/server/index.js";
 import type { SessionSandbox } from "../src/api/types.js";
-import { SandboxService } from "../src/sandbox/index.js";
+import { SandboxService } from "../../../plugins/sandbox/src/server/index.js";
 import { applySandboxPick, sessionSandboxOf } from "../src/services/session-service.js";
 
 const sqlite = process.getBuiltinModule("node:sqlite");

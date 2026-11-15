@@ -14,8 +14,8 @@ import type {
   DesktopBrowserCommand,
   DesktopBrowserCommandMessage,
   DesktopBrowserEvent,
-} from "../../src/api/types.js";
-import type { ExtensionSocket } from "../../src/builtin-browser/extension-link.js";
+} from "../../../../packages/server/src/api/types.js";
+import type { ExtensionSocket } from "../../../../plugins/browser/src/server/builtin-browser/extension-link.js";
 import type { CdpHandler } from "./fake-shell.js";
 
 export class FakeChrome implements ExtensionSocket {

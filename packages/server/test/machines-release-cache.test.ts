@@ -15,13 +15,11 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { RELEASE_SOURCES } from "../src/machines/diagnose.js";
-import { releaseCache } from "../src/machines/release-cache.js";
+import { RELEASE_SOURCES } from "../../../plugins/machines/src/server/diagnose.js";
+import { releaseCache } from "../../../plugins/machines/src/server/release-cache.js";
 import { makeTempRoot } from "./helpers.js";
-
 const PACKAGE = Buffer.from("the linux-x64 package");
 const SUM = crypto.createHash("sha256").update(PACKAGE).digest("hex");
-
 let dir: string;
 beforeEach(async () => {
   dir = await makeTempRoot();
@@ -29,7 +27,6 @@ beforeEach(async () => {
 afterEach(() => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
-
 /** A network that answers `routes` by URL and fails everything else; every URL asked is recorded. */
 function network(routes: Record<string, Buffer | string | Error>) {
   const asked: string[] = [];
@@ -43,9 +40,7 @@ function network(routes: Record<string, Buffer | string | Error>) {
   }) as typeof fetch;
   return { fetchImpl, asked };
 }
-
 const at = (base: string, version: string, file: string) => `${base}/v${version}/${file}`;
-
 describe("release packages fetched for a machine", () => {
   it("fetches from the mirror once, checks the checksum, and serves later asks from the cache", async () => {
     const net = network({
@@ -61,7 +56,6 @@ describe("release packages fetched for a machine", () => {
     expect(await carry("0.2.13", "linux-x64")).toEqual(first);
     expect(net.asked).toHaveLength(asked);
   });
-
   it("shares one fetch between two jobs asking at once", async () => {
     const net = network({
       [at(RELEASE_SOURCES.oss, "0.2.13", "penguin-linux-arm64.tar.gz.sha256")]: SUM,
@@ -75,7 +69,6 @@ describe("release packages fetched for a machine", () => {
     expect(a).toEqual(b);
     expect(net.asked.filter((url) => url.endsWith(".tar.gz"))).toHaveLength(1);
   });
-
   it("refuses a package that does not match its published checksum, keeping nothing", async () => {
     const net = network({
       [at(RELEASE_SOURCES.oss, "0.2.13", "penguin-linux-x64.tar.gz.sha256")]: SUM,
@@ -88,7 +81,6 @@ describe("release packages fetched for a machine", () => {
     if (!result.ok) expect(result.detail).toContain("does not match its published checksum");
     expect(fs.existsSync(path.join(dir, "v0.2.13", "penguin-linux-x64.tar.gz"))).toBe(false);
   });
-
   it("gets the package from GitHub when the mirror is out of reach", async () => {
     const net = network({
       [at(RELEASE_SOURCES.oss, "0.2.13", "penguin-darwin-arm64.tar.gz.sha256")]: new TypeError(
@@ -99,7 +91,6 @@ describe("release packages fetched for a machine", () => {
     });
     expect((await releaseCache(dir, net.fetchImpl)("0.2.13", "darwin-arm64")).ok).toBe(true);
   });
-
   it("lets the older version go once another is fetched", async () => {
     const routes: Record<string, Buffer | string> = {};
     for (const version of ["0.2.13", "0.2.14"]) {

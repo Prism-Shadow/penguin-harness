@@ -13,7 +13,7 @@ import {
   MACHINE_SESSION_IFACE,
   SESSION_GROUP,
   SESSION_SHAPE_ID,
-} from "../src/machines/transport/index.js";
+} from "../../../plugins/machines/src/server/index.js";
 import { createTestApp } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 

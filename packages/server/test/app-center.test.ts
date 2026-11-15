@@ -75,7 +75,7 @@ import type {
   WorkbenchVersion,
 } from "../src/api/types.js";
 import { userChannelKey } from "../src/http/routes/events.js";
-import { readFolder } from "../src/workbenches/store.js";
+import { readFolder } from "../../../plugins/workbenches/src/server/index.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 

@@ -29,19 +29,18 @@ import type {
   BuiltinBrowserServerEvent,
   BuiltinBrowserStatus,
   BuiltinBrowserTab,
-} from "../../src/api/types.js";
-import type { AppEnv } from "../../src/auth/middleware.js";
-import { ExtensionPairing } from "../../src/builtin-browser/extension-pairing.js";
-import { builtinBrowserRoutes } from "../../src/builtin-browser/routes.js";
-import { BuiltinBrowser } from "../../src/builtin-browser/service.js";
-import { openDatabase } from "../../src/db/database.js";
-import { BrowserExtensionsRepo } from "../../src/db/repos/browser-extensions.js";
-import type { UserRow } from "../../src/db/repos/users.js";
+} from "../../../../packages/server/src/api/types.js";
+import type { AppEnv } from "../../../../packages/server/src/auth/middleware.js";
+import { ExtensionPairing } from "../../../../plugins/browser/src/server/builtin-browser/extension-pairing.js";
+import { builtinBrowserRoutes } from "../../../../plugins/browser/src/server/builtin-browser/routes.js";
+import { BuiltinBrowser } from "../../../../plugins/browser/src/server/builtin-browser/service.js";
+import { openDatabase } from "../../../../plugins/db/src/index.js";
+import { BrowserExtensionsRepo } from "../../../../plugins/browser/src/server/repos/browser-extensions.js";
+import { UserRow } from "../../../../plugins/settings/src/server/repos/users.js"
 import { handleError } from "../../src/http/errors.js";
 import { FakeChrome } from "./fake-chrome.js";
 import { evaluated, expressionOf } from "./fake-shell.js";
 import type { CdpHandler } from "./fake-shell.js";
-
 const FAST = {
   settleMs: 0,
   reloadWaitMs: 200,
@@ -50,7 +49,6 @@ const FAST = {
   closeWaitMs: 200,
   publishDelayMs: 0,
 };
-
 let root: string;
 let db: DatabaseSync;
 const browsers: BuiltinBrowser[] = [];
@@ -69,7 +67,6 @@ afterEach(async () => {
   db.close();
   await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 });
-
 interface Harness {
   browser: BuiltinBrowser;
   /** What alice's windows heard. */
@@ -78,7 +75,6 @@ interface Harness {
   /** Pairs a Chrome to alice and connects it; resolves once it answered hello. */
   connect(chrome?: FakeChrome): Promise<FakeChrome>;
 }
-
 function mount(): Harness {
   const store = new BrowserExtensionsRepo(db);
   const events: BuiltinBrowserServerEvent[] = [];
@@ -134,7 +130,6 @@ function mount(): Harness {
     },
   };
 }
-
 const json = async <T>(res: Response): Promise<T> => (await res.json()) as T;
 const errorOf = async (res: Response) =>
   (await res.json()) as { error: { code: string; message: string; reason?: string } };
@@ -145,14 +140,12 @@ async function until(ready: () => boolean, what: string): Promise<void> {
   }
   throw new Error(`timed out waiting for ${what}`);
 }
-
 /** A page in Chrome: loaded, and any other script reads it as a scan does. */
 const page: CdpHandler = (_tabId, method, params) => {
   if (method !== "Runtime.evaluate") return {};
   if (expressionOf(params).includes("return document.readyState;")) return evaluated("complete");
   return evaluated({ content: "<p>hi</p>" });
 };
-
 describe("tabs in the user's Chrome", () => {
   it("opens a tab through the extension and waits for its page; closing it closes it there", async () => {
     const h = mount();
@@ -177,14 +170,12 @@ describe("tabs in the user's Chrome", () => {
         ),
       "the tab list",
     );
-
     expect((await h.call("DELETE", `/tabs/${tab.id}`)).status).toBe(204);
     expect(chrome.commands).toContainEqual({ op: "close-tab", tabId: tab.id });
     expect((await json<{ tabs: BuiltinBrowserTab[] }>(await h.call("GET", "/tabs"))).tabs).toEqual(
       [],
     );
   });
-
   it("shows a tab the agent switches to in the user's Chrome, but not one an action works in", async () => {
     const h = mount();
     const chrome = await h.connect();
@@ -193,17 +184,14 @@ describe("tabs in the user's Chrome", () => {
     const second = (await json<{ tab: BuiltinBrowserTab }>(await h.call("POST", "/tabs", {}))).tab;
     // A blank tab has no page to wait for.
     expect(chrome.commands.filter((c) => c.op === "cdp")).toEqual([]);
-
     expect((await h.call("POST", `/tabs/${first.id}/activate`, {})).status).toBe(200);
     expect(chrome.commands).toContainEqual({ op: "activate-tab", tabId: first.id });
-
     const scanned = await h.call("POST", `/tabs/${second.id}/scan`, {});
     expect(scanned.status).toBe(200);
     expect(chrome.commands).not.toContainEqual({ op: "activate-tab", tabId: second.id });
     expect(h.browser.extensions?.runtimeFor("alice")?.tabs.activeTabId).toBe(second.id);
   });
 });
-
 describe("a tab the user takes back", () => {
   it("ends the action running in it with tab_released, and every later call on it too", async () => {
     const h = mount();
@@ -215,7 +203,6 @@ describe("a tab the user takes back", () => {
     const running = h.call("POST", `/tabs/${tab.id}/cdp`, { method: "Page.reload" });
     await until(() => chrome.commands.some((c) => c.op === "cdp"), "the command reaching Chrome");
     chrome.release(tab.id, "user");
-
     const res = await running;
     expect(res.status).toBe(409);
     expect((await errorOf(res)).error.code).toBe("tab_released");
@@ -228,7 +215,6 @@ describe("a tab the user takes back", () => {
     );
   });
 });
-
 describe("Chrome going away and coming back", () => {
   it("keeps the tab list while disconnected, and is back only with Chrome's own list", async () => {
     const h = mount();
@@ -240,7 +226,6 @@ describe("Chrome going away and coming back", () => {
       );
     }
     chrome.drop();
-
     const away = await json<BuiltinBrowserStatus>(await h.call("GET", "/status"));
     expect(away).toMatchObject({ available: false, reason: "extension_disconnected" });
     expect(away.tabs.map((t) => t.id)).toEqual(opened);
@@ -250,7 +235,6 @@ describe("Chrome going away and coming back", () => {
     expect(h.events).toContainEqual(
       expect.objectContaining({ type: "builtin_browser_extension", state: "disconnected" }),
     );
-
     // Back again: Chrome still has the second tab; the first was closed meanwhile. It says
     // hello at once and lists its tabs late.
     const back = new FakeChrome();
@@ -260,7 +244,6 @@ describe("Chrome going away and coming back", () => {
     await until(() => back.commands.some((c) => c.op === "tabs"), "the tab list request");
     const greeted = await json<BuiltinBrowserStatus>(await h.call("GET", "/status"));
     expect(greeted).toMatchObject({ available: false, reason: "extension_disconnected" });
-
     listTabs();
     await reconnected;
     const status = await json<BuiltinBrowserStatus>(await h.call("GET", "/status"));
@@ -268,7 +251,6 @@ describe("Chrome going away and coming back", () => {
     expect(status.tabs.map((t) => t.id)).toEqual([opened[1]]);
   });
 });
-
 describe("raw CDP on the user's Chrome", () => {
   it.each([
     "Network.getAllCookies",
@@ -293,7 +275,6 @@ describe("raw CDP on the user's Chrome", () => {
     expect((await errorOf(res)).error.code).toBe("cdp_refused");
     expect(chrome.commands.some((c) => c.op === "cdp" && c.method === method)).toBe(false);
   });
-
   it("refuses a navigation to anything but a web page or about:blank", async () => {
     const h = mount();
     const chrome = await h.connect();
@@ -306,7 +287,6 @@ describe("raw CDP on the user's Chrome", () => {
     expect((await errorOf(res)).error.code).toBe("invalid_url");
     expect(chrome.commands.some((c) => c.op === "cdp" && c.method === "Page.navigate")).toBe(false);
   });
-
   it.each([
     ["no_such_tab", 404, "no_such_tab"],
     ["tab_released", 409, "tab_released"],
@@ -325,7 +305,6 @@ describe("raw CDP on the user's Chrome", () => {
     expect(res.status).toBe(status);
     expect((await errorOf(res)).error.code).toBe(code);
   });
-
   it("passes a page-level method through", async () => {
     const h = mount();
     const chrome = await h.connect();

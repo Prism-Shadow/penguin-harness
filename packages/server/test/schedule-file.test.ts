@@ -8,7 +8,7 @@ import {
   parsePeriod,
   parseScheduleFile,
   slotInWindow,
-} from "../src/runtime/schedule-file.js";
+} from "../../../plugins/schedules/src/server/index.js";
 
 const BASE = `prompt = "Write the daily report"\nenabled = true\nstart_at = "2026-07-16T09:00:00Z"\n`;
 

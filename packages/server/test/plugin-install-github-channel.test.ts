@@ -33,23 +33,19 @@ import {
   indexChannelOf,
   type IndexChannel,
   type IndexDocumentEntry,
-} from "../src/plugin/registry.js";
-import { installNamedOrChanneled } from "../src/http/routes/plugins-installed.js";
-
+} from "../../../plugins/plugins/src/server/index.js";
+import { installNamedOrChanneled } from "../../../plugins/plugins/src/server/routes/plugins-installed.js";
 const execFileAsync = promisify(execFile);
-
 const roots: string[] = [];
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));
   vi.restoreAllMocks();
 });
-
 const tempRoot = async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-channel-"));
   roots.push(root);
   return root;
 };
-
 /**
  * A real gzipped tarball carrying `package/package.json` with the given name and version —
  * packed by the system tar, the same reader the install uses to check the manifest against
@@ -71,35 +67,29 @@ async function packTarball(name: string, version: string): Promise<Uint8Array> {
     await fs.rm(dir, { recursive: true, force: true });
   }
 }
-
 const digest = (bytes: Uint8Array) =>
   `sha512-${createHash("sha512").update(bytes).digest("base64")}`;
 const asset = new TextEncoder().encode("a release tarball's bytes");
 const integrity = digest(asset);
-
 const channel: IndexChannel = {
   name: "@penguinharness/language-typst",
   version: "0.0.2",
   integrity,
   url: "https://github.com/o/r/releases/download/v0.0.2/x.tgz",
 };
-
 describe("verifyIntegrity", () => {
   it("accepts the bytes the entry pins, answering the digest that names the archive", () => {
     expect(verifyIntegrity(asset, integrity)).toBe(integrity.slice("sha512-".length));
   });
-
   it("refuses a mismatch, saying the asset is not installed", () => {
     const other = new TextEncoder().encode("tampered bytes");
     expect(() => verifyIntegrity(other, integrity)).toThrow(PluginInstallError);
     expect(() => verifyIntegrity(other, integrity)).toThrow(/does not match the sha512/);
   });
-
   it("refuses an integrity that is not sha512-<base64>", () => {
     expect(() => verifyIntegrity(asset, "md5-abc")).toThrow(/not sha512-<base64>/);
   });
 });
-
 describe("npmFailureKind", () => {
   it("calls a missing package or an unmatched version unavailable", () => {
     expect(
@@ -111,7 +101,6 @@ describe("npmFailureKind", () => {
       npmFailureKind("npm error code ETARGET\nnpm error Not Found - no match for ^3.0.0"),
     ).toBe("unavailable");
   });
-
   it("calls every other npm failure other", () => {
     expect(npmFailureKind("npm error code EACCES\nnpm error permission denied")).toBe("other");
     expect(
@@ -122,7 +111,6 @@ describe("npmFailureKind", () => {
     expect(npmFailureKind(undefined)).toBe("other");
   });
 });
-
 describe("installPluginChannel", () => {
   /** What npm would record for a file: install — the record that keeps the tarball past a prune. */
   const fakeNpmInstall =
@@ -140,7 +128,6 @@ describe("installPluginChannel", () => {
       };
       await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2));
     };
-
   it("fetches the asset, checks its manifest against the entry, and installs the verified tarball under its digest-named archive", async () => {
     const root = await tempRoot();
     const bytes = await packTarball(channel.name, channel.version);
@@ -175,7 +162,6 @@ describe("installPluginChannel", () => {
     expect(new Uint8Array(kept)).toEqual(bytes);
     await expect(fs.readdir(path.join(pluginsPrefix(root), "archives"))).resolves.toEqual([file]);
   });
-
   it("refuses a tarball whose package.json is not the entry's package and version — npm never runs, nothing is written", async () => {
     const root = await tempRoot();
     const bytes = await packTarball("other-package", "9.9.9");
@@ -194,7 +180,6 @@ describe("installPluginChannel", () => {
     expect(install).not.toHaveBeenCalled();
     await expect(fs.readdir(path.join(pluginsPrefix(root), "archives"))).resolves.toEqual([]);
   });
-
   it("refuses a mismatched asset before anything is written or installed", async () => {
     const root = await tempRoot();
     const wrong = new TextEncoder().encode("not what the index pinned");
@@ -212,7 +197,6 @@ describe("installPluginChannel", () => {
     ).rejects.toThrow(/does not match the sha512/);
     expect(install).not.toHaveBeenCalled();
   });
-
   it("refuses an asset URL that answers an error status", async () => {
     const root = await tempRoot();
     await expect(
@@ -222,7 +206,6 @@ describe("installPluginChannel", () => {
       }),
     ).rejects.toThrow(/answered 404/);
   });
-
   it("reports the download as it is read, the total from the content-length", async () => {
     const root = await tempRoot();
     const bytes = await packTarball(channel.name, channel.version);
@@ -244,7 +227,6 @@ describe("installPluginChannel", () => {
     expect(onProgress).toHaveBeenCalledWith(bytes.length, bytes.length);
     expect(onProgress.mock.calls.every((call) => call[1] === bytes.length)).toBe(true);
   });
-
   it("steps the report in percents of a known size, not once per chunk", async () => {
     const root = await tempRoot();
     const bytes = await packTarball(channel.name, channel.version);
@@ -279,7 +261,6 @@ describe("installPluginChannel", () => {
     expect(received).toEqual([quarter, quarter * 2, quarter * 3, bytes.length, bytes.length]);
     expect(onProgress.mock.calls.every((call) => call[1] === bytes.length)).toBe(true);
   });
-
   it("reports a lengthless answer by mebibytes, the last call naming the whole asset", async () => {
     const root = await tempRoot();
     const bytes = await packTarball(channel.name, channel.version);
@@ -302,7 +283,6 @@ describe("installPluginChannel", () => {
     ]);
   });
 });
-
 describe("indexChannelOf", () => {
   const entry = (over: Partial<IndexDocumentEntry>): IndexDocumentEntry => ({
     name: "@penguinharness/language-typst",
@@ -312,7 +292,6 @@ describe("indexChannelOf", () => {
     license: "MIT",
     ...over,
   });
-
   it("hands over the channel of an entry that pins one", () => {
     expect(
       indexChannelOf(
@@ -323,13 +302,11 @@ describe("indexChannelOf", () => {
       ),
     ).toEqual({ channel, fault: null });
   });
-
   it("refuses an entry whose github channel pins no integrity, with the reason", () => {
     const resolved = indexChannelOf(entry({ channels: [{ kind: "github", url: channel.url }] }));
     expect(resolved.channel).toBeNull();
     expect(resolved.fault).toMatch(/pins no sha512 integrity/);
   });
-
   it("answers no channel, without a fault, for an entry without a github channel", () => {
     expect(indexChannelOf(entry({ channels: [{ kind: "npm", url: "https://x" }] }))).toEqual({
       channel: null,
@@ -337,7 +314,6 @@ describe("indexChannelOf", () => {
     });
     expect(indexChannelOf(entry({}))).toEqual({ channel: null, fault: null });
   });
-
   it("takes plain http from the loopback only — a self-hosted index serving its own assets — and refuses it elsewhere", () => {
     const loopback = indexChannelOf(
       entry({ integrity, channels: [{ kind: "github", url: "http://127.0.0.1:9/asset.tgz" }] }),
@@ -351,10 +327,8 @@ describe("indexChannelOf", () => {
     ).toMatch(/not an https link/);
   });
 });
-
 describe("indexChannelLookup", () => {
   const index = [entry()];
-
   function entry(): IndexDocumentEntry {
     return {
       name: "@penguinharness/language-typst",
@@ -366,7 +340,6 @@ describe("indexChannelLookup", () => {
       channels: [{ kind: "github", url: channel.url }],
     };
   }
-
   it("answers an entry's channel from the published index, fetched once per TTL", async () => {
     const fetchImpl = vi.fn(async () => Response.json(index));
     let time = 0;
@@ -381,7 +354,6 @@ describe("indexChannelLookup", () => {
     await lookup("@penguinharness/language-typst");
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
-
   it("answers no channel when the index is down, so npm's failure stands", async () => {
     const lookup = indexChannelLookup("https://registry.example/index.json", {
       fetchImpl: (async () => {
@@ -390,13 +362,11 @@ describe("indexChannelLookup", () => {
     });
     expect(await lookup("@penguinharness/language-typst")).toEqual({ channel: null, fault: null });
   });
-
   it("answers no channel when no published index is configured", async () => {
     const lookup = indexChannelLookup(null);
     expect(await lookup("@penguinharness/language-typst")).toEqual({ channel: null, fault: null });
   });
 });
-
 describe("npm first, the channel only on its failure (the route's install)", () => {
   const spec = {
     kind: "name" as const,
@@ -404,14 +374,12 @@ describe("npm first, the channel only on its failure (the route's install)", () 
     name: "@penguinharness/language-typst",
     version: "0.0.2",
   };
-
   /** npm's failure as installNamedOrChanneled sees it: a message, and the bucket npm's stderr sorted it into. */
   const npmSays = (message: string, reason: "unavailable" | "other") => {
     const err = new PluginInstallError(message);
     err.reason = reason;
     throw err;
   };
-
   it("a name npm installs never consults the index", async () => {
     const channelOf = vi.fn();
     const installChannel = vi.fn();
@@ -424,7 +392,6 @@ describe("npm first, the channel only on its failure (the route's install)", () 
     expect(channelOf).not.toHaveBeenCalled();
     expect(installChannel).not.toHaveBeenCalled();
   });
-
   it("a name npm has no answer for (E404) falls through to the index channel, with the requested version", async () => {
     const channelOf = vi.fn(async () => ({ channel, fault: null }));
     const installChannel = vi.fn(async () => ({ name: channel.name, version: channel.version }));
@@ -443,7 +410,6 @@ describe("npm first, the channel only on its failure (the route's install)", () 
     // opts, so it knows nothing was riding along.
     expect(installChannel).toHaveBeenCalledWith("/root", channel, { onProgress: undefined });
   });
-
   it("a download's progress rides to the channel install, never to npm", async () => {
     const channelOf = vi.fn(async () => ({ channel, fault: null }));
     const installChannel = vi.fn(async () => ({ name: channel.name, version: channel.version }));
@@ -456,7 +422,6 @@ describe("npm first, the channel only on its failure (the route's install)", () 
     });
     expect(installChannel).toHaveBeenCalledWith("/root", channel, { onProgress });
   });
-
   it("an npm failure that is not 'unavailable' does not fall through — a channel is not the answer to it", async () => {
     const channelOf = vi.fn();
     const installChannel = vi.fn();
@@ -470,7 +435,6 @@ describe("npm first, the channel only on its failure (the route's install)", () 
     expect(channelOf).not.toHaveBeenCalled();
     expect(installChannel).not.toHaveBeenCalled();
   });
-
   it("an index with no channel for the name refuses, naming both answers", async () => {
     await expect(
       installNamedOrChanneled("/root", spec, {
@@ -482,7 +446,6 @@ describe("npm first, the channel only on its failure (the route's install)", () 
       /npm said: not found\. The published plugin index lists no installable github channel/,
     );
   });
-
   it("a channel listed without an integrity refuses with the reason, not an install", async () => {
     const installChannel = vi.fn();
     await expect(
@@ -498,7 +461,6 @@ describe("npm first, the channel only on its failure (the route's install)", () 
     ).rejects.toThrow(/pins no sha512 integrity/);
     expect(installChannel).not.toHaveBeenCalled();
   });
-
   it("a failing channel keeps npm's word and adds the channel's", async () => {
     await expect(
       installNamedOrChanneled("/root", spec, {

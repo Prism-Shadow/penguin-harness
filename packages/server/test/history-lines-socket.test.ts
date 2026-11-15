@@ -23,7 +23,7 @@ import {
 import type { HistoryLinesFrame, HistoryPartFrame } from "../src/api/types.js";
 import { FRAME_TEXT_BUDGET, LineCommitter } from "../src/socket/line-frames.js";
 import { apiSocketPath } from "../src/socket/ref.js";
-import { attachTerminalWebSocket } from "../src/terminal/ws.js";
+import { attachTerminalWebSocket } from "../../../plugins/terminal/src/server/index.js";
 import { sessionRow, uniqueSessionId } from "./fixtures/session.js";
 import { createTestApp, loginAdmin, writeTraceFile } from "./helpers.js";
 import type { TestApp } from "./helpers.js";

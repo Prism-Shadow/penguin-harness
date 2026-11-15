@@ -15,7 +15,7 @@ import {
   toolCall,
   emptyTokenCounts,
 } from "@prismshadow/penguin-core";
-import { isProbeContent, probeTps, probeVerdict } from "../src/services/project-config-service.js";
+import { isProbeContent, probeTps, probeVerdict } from "../../../plugins/projects/src/server/index.js";
 
 describe("isProbeContent", () => {
   it("counts thinking and text content, partial or complete", () => {

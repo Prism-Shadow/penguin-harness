@@ -5,21 +5,19 @@
  * carried as written rather than rejected.
  */
 import { describe, expect, it } from "vitest";
-import { parseChannelMessageLine, serializeChannelMessageLine } from "../src/organization/files.js";
-import {
-  budgetPaused,
-  budgetWarned,
-  channelArchiveChanged,
-  channelCreated,
-  channelMemberAdded,
-  channelMemberRemoved,
-  employeeJoined,
-  employeeLeft,
-  systemMessage,
-} from "../src/runtime/organization/notices.js";
+import { parseChannelMessageLine } from "../../../plugins/company/src/server/organization/files.js";
+import { serializeChannelMessageLine } from "../../../plugins/company/src/server/organization/files.js";
+import { budgetPaused } from "../../../plugins/company/src/server/runtime/notices.js";
+import { budgetWarned } from "../../../plugins/company/src/server/runtime/notices.js";
+import { channelArchiveChanged } from "../../../plugins/company/src/server/runtime/notices.js";
+import { channelCreated } from "../../../plugins/company/src/server/runtime/notices.js";
+import { channelMemberAdded } from "../../../plugins/company/src/server/runtime/notices.js";
+import { channelMemberRemoved } from "../../../plugins/company/src/server/runtime/notices.js";
+import { employeeJoined } from "../../../plugins/company/src/server/runtime/notices.js";
+import { employeeLeft } from "../../../plugins/company/src/server/runtime/notices.js";
+import { systemMessage } from "../../../plugins/company/src/server/runtime/notices.js";
 
 const ID = "msg-2026-09-01-10-00-00-0000000a";
-
 describe("organization system notices", () => {
   it("builds the sentence and the structure from the same facts", () => {
     expect(employeeJoined("agent:acme_hr", "HR", "agent:acme_ceo")).toEqual({
@@ -37,7 +35,6 @@ describe("organization system notices", () => {
     expect(channelArchiveChanged("user:alice", true).notice.kind).toBe("channel_archived");
     expect(channelArchiveChanged("user:alice", false).notice.kind).toBe("channel_unarchived");
   });
-
   it("distinguishes joining from being invited, and leaving from being removed", () => {
     expect(channelMemberAdded("user:alice", "user:alice")).toEqual({
       text: "user:alice joined the channel.",
@@ -53,7 +50,6 @@ describe("organization system notices", () => {
     expect(channelMemberRemoved("agent:acme_hr", "agent:acme_hr").notice.kind).toBe("channel_left");
     expect(channelMemberRemoved("user:alice", "agent:acme_hr").notice.kind).toBe("channel_removed");
   });
-
   it("carries the budget figures as the sentence prints them", () => {
     const facts = { agent: "agent:acme_hr", period: "2026-09", percent: 85, cost: 8.5, budget: 10 };
     expect(budgetWarned(facts)).toEqual({
@@ -72,7 +68,6 @@ describe("organization system notices", () => {
     expect(budgetPaused(facts).text).toContain("Budget pause: agent:acme_hr reached 85%");
     expect(budgetPaused(facts).notice.kind).toBe("budget_paused");
   });
-
   it("still reads a ticket line written before the board stopped narrating itself", () => {
     // Nothing writes these any more; the lines already in an organization's files must render.
     const line = serializeChannelMessageLine({
@@ -88,7 +83,6 @@ describe("organization system notices", () => {
     expect(parsed.ok).toBe(true);
     if (parsed.ok) expect(parsed.value.notice?.kind).toBe("ticket_done");
   });
-
   it("round-trips a notice through a message line", () => {
     const msg = {
       id: ID,
@@ -99,7 +93,6 @@ describe("organization system notices", () => {
     const parsed = parseChannelMessageLine(serializeChannelMessageLine(msg));
     expect(parsed).toEqual({ ok: true, value: msg });
   });
-
   it("parses a line written before the field existed, and keeps a kind it does not know", () => {
     const base = {
       id: ID,

@@ -12,7 +12,7 @@ import { parseManifest } from "@prismshadow/penguin-core/kernel";
 import type { ModuleDef } from "@prismshadow/penguin-core/kernel";
 import type { PluginConfigEntry, PluginConfigResponse, SessionSandbox } from "../src/api/types.js";
 import { PluginHost } from "../src/plugin/host.js";
-import type { SandboxService } from "../src/sandbox/service.js";
+import type { SandboxService } from "../../../plugins/sandbox/src/server/index.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 

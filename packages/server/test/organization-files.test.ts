@@ -5,45 +5,45 @@
  */
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import {
-  detectLanguage,
-  orgLanguage,
-  parseCalendarEvent,
-  parseChannelConfig,
-  parseChannelMessageLine,
-  parseDesks,
-  parseOrgChart,
-  parseOrgConfig,
-  parseTicket,
-  serializeCalendarEvent,
-  serializeChannelConfig,
-  serializeChannelMessageLine,
-  serializeDesks,
-  serializeOrgChart,
-  serializeOrgConfig,
-  serializeTicket,
-  slugSuffix,
-  slugify,
-  subordinatesOf,
-  ancestorsOf,
-} from "../src/organization/files.js";
-import type { ChannelConfig, OrgChart, OrgConfig, TicketDoc } from "../src/organization/files.js";
-import { formatPrincipal, parsePrincipal } from "../src/organization/principal.js";
-import {
-  DEFAULT_CHANNEL_ID,
-  channelConfigPath,
-  channelDayPath,
-  isChannelId,
-  normalizeWorkspaceSpec,
-  ticketMonth,
-  ticketPath,
-} from "../src/organization/paths.js";
-import {
-  zonedDate,
-  zonedMonthRange,
-  zonedOffsetMinutes,
-  zonedPeriodRange,
-} from "../src/organization/zoned.js";
+
+import { ChannelConfig } from "../../../plugins/company/src/server/organization/files.js";
+import { OrgChart } from "../../../plugins/company/src/server/organization/files.js";
+import { OrgConfig } from "../../../plugins/company/src/server/organization/files.js";
+import { TicketDoc } from "../../../plugins/company/src/server/organization/files.js";
+import { formatPrincipal } from "../../../plugins/company/src/server/organization/principal.js";
+import { parsePrincipal } from "../../../plugins/company/src/web/company/principals.js";
+import { DEFAULT_CHANNEL_ID } from "../../../plugins/company/src/web/index.js";
+import { ancestorsOf } from "../../../plugins/company/src/server/organization/files.js";
+import { channelConfigPath } from "../../../plugins/company/src/server/organization/paths.js";
+import { channelDayPath } from "../../../plugins/company/src/server/organization/paths.js";
+import { detectLanguage } from "../../../plugins/company/src/server/organization/files.js";
+import { isChannelId } from "../../../plugins/company/src/server/organization/paths.js";
+import { normalizeWorkspaceSpec } from "../../../plugins/company/src/server/organization/paths.js";
+import { orgLanguage } from "../../../plugins/company/src/server/organization/files.js";
+import { parseCalendarEvent } from "../../../plugins/company/src/server/organization/files.js";
+import { parseChannelConfig } from "../../../plugins/company/src/server/organization/files.js";
+import { parseChannelMessageLine } from "../../../plugins/company/src/server/organization/files.js";
+import { parseDesks } from "../../../plugins/company/src/server/organization/files.js";
+import { parseOrgChart } from "../../../plugins/company/src/server/organization/files.js";
+import { parseOrgConfig } from "../../../plugins/company/src/server/organization/files.js";
+import { parseTicket } from "../../../plugins/company/src/server/organization/files.js";
+import { serializeCalendarEvent } from "../../../plugins/company/src/server/organization/files.js";
+import { serializeChannelConfig } from "../../../plugins/company/src/server/organization/files.js";
+import { serializeChannelMessageLine } from "../../../plugins/company/src/server/organization/files.js";
+import { serializeDesks } from "../../../plugins/company/src/server/organization/files.js";
+import { serializeOrgChart } from "../../../plugins/company/src/server/organization/files.js";
+import { serializeOrgConfig } from "../../../plugins/company/src/server/organization/files.js";
+import { serializeTicket } from "../../../plugins/company/src/server/organization/files.js";
+import { slugSuffix } from "../../../plugins/company/src/server/organization/files.js";
+import { slugify } from "../../../plugins/company/src/server/organization/files.js";
+import { subordinatesOf } from "../../../plugins/company/src/server/organization/files.js";
+import { ticketMonth } from "../../../plugins/company/src/server/organization/paths.js";
+import { ticketPath } from "../../../plugins/company/src/server/organization/paths.js";
+import { zonedDate } from "../../../plugins/company/src/server/organization/zoned.js";
+import { zonedMonthRange } from "../../../plugins/company/src/server/organization/zoned.js";
+import { zonedOffsetMinutes } from "../../../plugins/company/src/server/organization/zoned.js";
+import { zonedPeriodRange } from "../../../plugins/company/src/server/organization/zoned.js";
+
 
 const config: OrgConfig = {
   name: "Acme",
@@ -56,7 +56,6 @@ const config: OrgConfig = {
   budgetPauseRatio: 1,
   createdBy: "alice",
 };
-
 const chart: OrgChart = {
   employees: [
     { agentId: "acme_ceo", title: "CEO", reportsTo: null, workspace: ".", budget: 200 },
@@ -71,7 +70,6 @@ const chart: OrgChart = {
     },
   ],
 };
-
 describe("org_config.toml", () => {
   it("round-trips and applies defaults for omitted fields", () => {
     const parsed = parseOrgConfig(serializeOrgConfig(config));
@@ -81,7 +79,6 @@ describe("org_config.toml", () => {
     expect(minimal.ok && minimal.value.mentionChainLimit).toBe(3);
     expect(minimal.ok && minimal.value.timezone).toBe("UTC");
   });
-
   it("round-trips the working language and rejects anything but zh or en", () => {
     const zh = parseOrgConfig(serializeOrgConfig({ ...config, language: "zh" }));
     expect(zh).toEqual({ ok: true, value: { ...config, language: "zh" } });
@@ -89,7 +86,6 @@ describe("org_config.toml", () => {
       parseOrgConfig('name = "A"\nmission = "x"\ncreated_by = "u"\nlanguage = "fr"\n').ok,
     ).toBe(false);
   });
-
   it("rejects a bad status, timezone or ratio", () => {
     expect(parseOrgConfig('name = "A"\nmission = ""\ncreated_by = "u"\nstatus = "off"\n').ok).toBe(
       false,
@@ -103,7 +99,6 @@ describe("org_config.toml", () => {
     expect(parseOrgConfig("name = [\n").ok).toBe(false);
   });
 });
-
 describe("the working language", () => {
   it("reads zh from one Han character anywhere and en from everything else", () => {
     expect(detectLanguage("做一个插件 Marketplace")).toBe("zh");
@@ -113,7 +108,6 @@ describe("the working language", () => {
     // Kana alone is not Han: only Chinese has a template here.
     expect(detectLanguage("マーケット")).toBe("en");
   });
-
   it("falls back to the mission, so an organization written without the field still has one", () => {
     expect(orgLanguage({ ...config, mission: "做一个插件市场" })).toBe("zh");
     expect(orgLanguage({ ...config, mission: "Build a marketplace" })).toBe("en");
@@ -121,13 +115,11 @@ describe("the working language", () => {
     expect(orgLanguage({ ...config, mission: "做一个插件市场", language: "en" })).toBe("en");
   });
 });
-
 describe("org_chart.yaml", () => {
   it("round-trips the tree with budgets and models", () => {
     const parsed = parseOrgChart(serializeOrgChart(chart), "acme");
     expect(parsed).toEqual({ ok: true, value: chart });
   });
-
   it("requires exactly one root and that it is the CEO", () => {
     const noRoot =
       "employees:\n  - agent_id: acme_ceo\n    title: CEO\n    reports_to: acme_hr\n  - agent_id: acme_hr\n    title: HR\n    reports_to: acme_ceo\n";
@@ -138,7 +130,6 @@ describe("org_chart.yaml", () => {
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error).toContain("acme_ceo");
   });
-
   it("rejects unknown managers, duplicates and cycles", () => {
     const unknown =
       "employees:\n  - agent_id: acme_ceo\n    title: CEO\n    reports_to: null\n  - agent_id: acme_hr\n    title: HR\n    reports_to: nobody\n";
@@ -150,7 +141,6 @@ describe("org_chart.yaml", () => {
       "employees:\n  - agent_id: acme_ceo\n    title: CEO\n    reports_to: null\n  - agent_id: a\n    title: A\n    reports_to: b\n  - agent_id: b\n    title: B\n    reports_to: a\n";
     expect(parseOrgChart(cycle, "acme").ok).toBe(false);
   });
-
   it("walks the reporting line both ways", () => {
     expect(subordinatesOf(chart, "acme_ceo")).toEqual(["acme_hr", "acme_dev"]);
     expect(subordinatesOf(chart, "acme_dev")).toEqual([]);
@@ -158,7 +148,6 @@ describe("org_chart.yaml", () => {
     expect(ancestorsOf(chart, "acme_ceo")).toEqual([]);
   });
 });
-
 describe("desks.toml", () => {
   it("round-trips the ledger with renewal history", () => {
     const desks = {
@@ -173,7 +162,6 @@ describe("desks.toml", () => {
     expect(parseDesks("")).toEqual({ ok: true, value: {} });
   });
 });
-
 describe("calendar events", () => {
   it("accepts the schedule fields plus a title and rejects target fields", () => {
     const raw = serializeCalendarEvent({
@@ -195,7 +183,6 @@ describe("calendar events", () => {
     if (!bad.ok) expect(bad.error).toContain("session_id");
   });
 });
-
 describe("tickets", () => {
   const doc: TicketDoc = {
     title: "Launch the site",
@@ -225,7 +212,6 @@ describe("tickets", () => {
     extra: {},
     extraSections: [],
   };
-
   it("round-trips the frontmatter and the four sections", () => {
     const text = serializeTicket(doc);
     expect(text.startsWith("---\ntitle: Launch the site\nstatus: in_progress\n")).toBe(true);
@@ -235,7 +221,6 @@ describe("tickets", () => {
     expect(text).toContain("## Progress\n- scaffolded the site under /srv/site\n");
     expect(parseTicket(text)).toEqual({ ok: true, value: doc });
   });
-
   it("defaults notify to the owner and priority to P2, keeps unknown fields and sections", () => {
     const text = [
       "---",
@@ -263,7 +248,6 @@ describe("tickets", () => {
     const again = parseTicket(serializeTicket(parsed.value));
     expect(again).toEqual(parsed);
   });
-
   it("rejects a bad status, owner, history action or opening fence", () => {
     expect(parseTicket("---\ntitle: x\nstatus: flying\nowner: user:a\n---\n").ok).toBe(false);
     expect(parseTicket("---\ntitle: x\nstatus: done\nowner: alice\n---\n").ok).toBe(false);
@@ -275,7 +259,6 @@ describe("tickets", () => {
     if (!badAction.ok) expect(badAction.error).toContain("danced");
     expect(parseTicket("status: done\n").ok).toBe(false);
   });
-
   it("rejects a file that does not open with the frontmatter, `# Ticket:` headers included", () => {
     const headed = parseTicket(
       [
@@ -294,7 +277,6 @@ describe("tickets", () => {
       error: "the file must start with `---` (YAML frontmatter)",
     });
   });
-
   it("derives ids: letters-only slugs, letter suffixes, month and path", () => {
     expect(slugify("Launch the Site! v2")).toBe("launch-the-site-v");
     expect(slugify("上线站点")).toBe("");
@@ -311,7 +293,6 @@ describe("tickets", () => {
     );
   });
 });
-
 describe("channel files", () => {
   const site: ChannelConfig = {
     name: "Site launch",
@@ -321,12 +302,10 @@ describe("channel files", () => {
     archived: false,
     members: ["user:alice", "agent:acme_dev"],
   };
-
   it("round-trips a member channel and the all-hands channel", () => {
     const raw = serializeChannelConfig(site);
     expect(raw).toContain('members = [ "user:alice", "agent:acme_dev" ]');
     expect(parseChannelConfig("site", raw)).toEqual({ ok: true, value: site });
-
     const all: ChannelConfig = {
       name: "All hands",
       purpose: "",
@@ -340,7 +319,6 @@ describe("channel files", () => {
     expect(allRaw).not.toContain("members =");
     expect(parseChannelConfig(DEFAULT_CHANNEL_ID, allRaw)).toEqual({ ok: true, value: all });
   });
-
   it("tolerates a hand edit: a bare datetime, a missing purpose, archived", () => {
     const raw = [
       'name = "Marketing"',
@@ -361,7 +339,6 @@ describe("channel files", () => {
       },
     });
   });
-
   it("rejects what the API would never write", () => {
     const errorOf = (channelId: string, lines: string[]): string => {
       const r = parseChannelConfig(channelId, lines.join("\n"));
@@ -399,7 +376,6 @@ describe("channel files", () => {
       errorOf(DEFAULT_CHANNEL_ID, [...base, "everyone = true", 'members = ["user:alice"]']),
     ).toContain("keeps no members list");
   });
-
   it("names a channel's directory, config and day file", () => {
     expect(isChannelId("site")).toBe(true);
     expect(isChannelId(DEFAULT_CHANNEL_ID)).toBe(true);
@@ -414,7 +390,6 @@ describe("channel files", () => {
     );
   });
 });
-
 describe("workspace specs", () => {
   it("spells one partition one way, and leaves an absolute path alone", () => {
     expect(normalizeWorkspaceSpec("./hr")).toBe("hr");
@@ -428,7 +403,6 @@ describe("workspace specs", () => {
     expect(normalizeWorkspaceSpec("../outside")).toBe("../outside");
   });
 });
-
 describe("channel message lines", () => {
   it("round-trips a message with refs and rejects malformed lines", () => {
     const msg = {
@@ -448,11 +422,9 @@ describe("channel message lines", () => {
     expect(parseChannelMessageLine(JSON.stringify({ ...msg, sender: "nobody" })).ok).toBe(false);
   });
 });
-
 describe("an employee's name", () => {
   const chart = (name: unknown) =>
     `employees:\n  - agent_id: acme_ceo\n    name: ${JSON.stringify(name)}\n    title: CEO\n    reports_to: null\n    workspace: .\n`;
-
   it("round-trips through the chart in any script, and is optional", () => {
     const parsed = parseOrgChart(chart("王总 Ada"), "acme");
     expect(parsed).toMatchObject({ ok: true, value: { employees: [{ name: "王总 Ada" }] } });
@@ -464,14 +436,12 @@ describe("an employee's name", () => {
     );
     expect(bare.ok && bare.value.employees[0]!.name).toBeUndefined();
   });
-
   it("refuses a name that would break a mention or a line", () => {
     expect(parseOrgChart(chart("a@b"), "acme")).toMatchObject({ ok: false });
     expect(parseOrgChart(chart(""), "acme")).toMatchObject({ ok: false });
     expect(parseOrgChart(chart(7), "acme")).toMatchObject({ ok: false });
   });
 });
-
 describe("principals", () => {
   it("parses and formats the four forms", () => {
     expect(parsePrincipal("agent:acme_ceo")).toEqual({ kind: "agent", id: "acme_ceo" });
@@ -482,7 +452,6 @@ describe("principals", () => {
     expect(formatPrincipal({ kind: "user", id: "alice" })).toBe("user:alice");
   });
 });
-
 describe("zoned time", () => {
   it("names days and months in the organization's timezone", () => {
     const ms = Date.parse("2026-08-31T20:30:00Z");
@@ -490,7 +459,6 @@ describe("zoned time", () => {
     expect(zonedDate("UTC", ms)).toBe("2026-08-31");
     expect(zonedOffsetMinutes("Asia/Shanghai", ms)).toBe(480);
   });
-
   it("bounds the natural month by UTC instants", () => {
     const r = zonedMonthRange("Asia/Shanghai", Date.parse("2026-09-15T00:00:00Z"));
     expect(r.period).toBe("2026-09");

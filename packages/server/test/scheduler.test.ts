@@ -28,24 +28,22 @@ import {
   scheduleDir,
 } from "@prismshadow/penguin-core";
 import { openDatabase } from "@penguinharness/plugin-db/server";
-import { ProjectsRepo } from "../src/db/repos/projects.js";
-import { SchedulesRepo } from "../src/db/repos/schedules.js";
-import { SessionsRepo } from "../src/db/repos/sessions.js";
-import { UsersRepo } from "../src/db/repos/users.js";
+import { ProjectsRepo } from "../../../plugins/projects/src/server/index.js";
+import { SchedulesRepo } from "../../../plugins/sessions/src/server/index.js";
+import { SessionsRepo } from "../../../plugins/sessions/src/server/index.js";
 import type { ErrorRecordArgs } from "../src/runtime/error-recorder.js";
-import type { ScheduleSessionCreator, ScheduleTaskRunner } from "../src/runtime/scheduler.js";
+import type { ScheduleSessionCreator, ScheduleTaskRunner } from "../../../plugins/schedules/src/server/index.js";
 import type { AmspRecord } from "@prismshadow/penguin-core";
-import { Scheduler } from "../src/runtime/scheduler.js";
-import { ProjectConfigService } from "../src/services/project-config-service.js";
+import { Scheduler } from "../../../plugins/schedules/src/server/index.js";
+import { ProjectConfigService } from "../../../plugins/projects/src/server/index.js";
+import { UsersRepo } from "../../../plugins/settings/src/server/repos/users.js"
 import type { ScheduleServerEvent } from "../src/api/types.js";
 import { makeTempRoot } from "./helpers.js";
 import { wire } from "@prismshadow/penguin-core/kernel";
-
 const P = "p1";
 const A = "agent_x";
 const T0 = Date.parse("2026-07-16T09:00:00Z");
 const MIN = 60_000;
-
 describe("scheduler", () => {
   let root: string;
   let db: ReturnType<typeof openDatabase>;
@@ -60,7 +58,6 @@ describe("scheduler", () => {
   let onNotify: ((event: ScheduleServerEvent) => void) | null;
   let errors: ErrorRecordArgs[];
   let scheduler: Scheduler;
-
   beforeEach(async () => {
     root = await makeTempRoot();
     // A schedule's model reference is checked against the Project config during
@@ -127,7 +124,6 @@ describe("scheduler", () => {
     scheduler.stop();
     db.close();
   });
-
   function insertSession(sessionId: string): void {
     sessions.insert({
       sessionId,
@@ -142,7 +138,6 @@ describe("scheduler", () => {
       lastActiveAt: new Date(nowMs).toISOString(),
     });
   }
-
   async function writeFile(name: string, lines: string[]): Promise<void> {
     await fs.writeFile(
       path.join(scheduleDir(root, P, A), `${name}.toml`),
@@ -150,18 +145,14 @@ describe("scheduler", () => {
       "utf8",
     );
   }
-
   function iso(ms: number): string {
     return new Date(ms).toISOString();
   }
-
   const expiredDir = (): string => path.join(scheduleDir(root, P, A), "expired");
-
   /** Task names the scheduler lists (the routes' view). */
   async function listed(): Promise<string[]> {
     return (await scheduler.listAgent(P, A)).entries.map((e) => e.def.name);
   }
-
   /** File names under `schedule/expired/`, sorted. */
   async function archived(): Promise<string[]> {
     try {
@@ -170,11 +161,9 @@ describe("scheduler", () => {
       return [];
     }
   }
-
   function inSchedule(name: string): boolean {
     return existsSync(path.join(scheduleDir(root, P, A), `${name}.toml`));
   }
-
   /**
    * Ages the given paths' mtimes past the mtime gate's FRESH_MS window (fresh mtimes are
    * deliberately never cached as clean), so steady-state assertions see a tree that looks
@@ -185,7 +174,6 @@ describe("scheduler", () => {
     const at = new Date(instant);
     for (const p of paths) await fs.utimes(p, at, at);
   }
-
   it("steady state: an unchanged tree ticks with zero file reads and zero dir listings (stat-gated); a new file re-scans", async () => {
     insertSession("session-1");
     // Carries a model reference so every tick also exercises model-ref validation —
@@ -206,7 +194,6 @@ describe("scheduler", () => {
     ]);
     await scheduler.tickOnce(); // First look: populates the gate caches (this pass reads).
     expect(repo.find(P, A, "cached")).not.toBeNull();
-
     const fileReads = scheduler.files.counters.fileReads;
     const dirScans = scheduler.files.counters.dirScans;
     const readFileSpy = vi.spyOn(fs, "readFile");
@@ -221,7 +208,6 @@ describe("scheduler", () => {
     expect(readdirSpy).not.toHaveBeenCalled();
     readFileSpy.mockRestore();
     readdirSpy.mockRestore();
-
     // A new file moves the schedule dir's mtime: the gate notices and registers it.
     await writeFile("added", [
       `prompt = "a"`,
@@ -233,7 +219,6 @@ describe("scheduler", () => {
     expect(repo.find(P, A, "added")).not.toBeNull();
     expect(scheduler.files.counters.dirScans).toBe(dirScans + 1);
   });
-
   it("an in-place edit (file mtime moves, dir mtime does not) is picked up next tick and fires with the new content", async () => {
     insertSession("session-1");
     await writeFile("inplace", [
@@ -251,7 +236,6 @@ describe("scheduler", () => {
     ]);
     await scheduler.tickOnce(); // Populate the gate caches at the stable mtimes.
     await scheduler.tickOnce(); // Steady state: served from memory.
-
     // Overwriting an existing file's CONTENT never moves the directory's mtime — only the
     // file's own — which is exactly what the per-file stats of the unchanged-dir path catch.
     await writeFile("inplace", [
@@ -262,7 +246,6 @@ describe("scheduler", () => {
       `session_id = "session-1"`,
     ]);
     await backdate([path.join(scheduleDir(root, P, A), "inplace.toml")], "2026-01-01T00:01:00Z");
-
     nowMs = T0 + 5 * MIN;
     const dirScans = scheduler.files.counters.dirScans;
     await scheduler.tickOnce();
@@ -272,7 +255,6 @@ describe("scheduler", () => {
     // The pickup came from the unchanged-dir path's per-file stat, not a directory rescan.
     expect(scheduler.files.counters.dirScans).toBe(dirScans);
   });
-
   it("periodic task: registration consumes past slots (missed, not backfilled); fires once on time, never twice", async () => {
     insertSession("session-1");
     await writeFile("report", [
@@ -284,7 +266,6 @@ describe("scheduler", () => {
     ]);
     await scheduler.tickOnce(); // Registration: all slots before 09:00 are consumed without firing.
     expect(started).toHaveLength(0);
-
     nowMs = T0 + 30 * MIN; // The next slot that should fire (start+90m)
     await scheduler.tickOnce();
     expect(started).toHaveLength(1);
@@ -295,14 +276,11 @@ describe("scheduler", () => {
     expect(started[0]?.text).toContain("Write the daily report");
     expect(events.map((e) => e.event.type)).toContain("schedule_fired");
     expect(events[0]?.userId).toBe("owner_a");
-
     await scheduler.tickOnce(); // The same slot doesn't fire twice.
     expect(started).toHaveLength(1);
-
     const state = repo.find(P, A, "report");
     expect(state?.lastFiredAt).toBe(iso(T0 + 30 * MIN));
   });
-
   it("a fired one-shot is archived before schedule_fired reaches the user, gone from the listing and from SQLite", async () => {
     insertSession("session-1");
     const lines = [
@@ -314,7 +292,6 @@ describe("scheduler", () => {
     await writeFile("future", lines);
     await scheduler.tickOnce();
     expect(await listed()).toEqual(["future"]);
-
     // What a client refetching on the event would find at that very moment.
     let seenAtEvent: { inSchedule: boolean; hasRunState: boolean } | null = null;
     onNotify = (event) => {
@@ -336,12 +313,10 @@ describe("scheduler", () => {
     );
     expect(repo.find(P, A, "future")).toBeNull();
     expect(await listed()).toEqual([]);
-
     nowMs = T0 + 60 * MIN;
     await scheduler.tickOnce();
     expect(started).toHaveLength(1);
   });
-
   it("a one-shot found already past at registration is archived, not listed as missed", async () => {
     insertSession("session-1");
     await writeFile("stale", [
@@ -356,7 +331,6 @@ describe("scheduler", () => {
     expect(repo.find(P, A, "stale")).toBeNull();
     expect(started).toHaveLength(0);
   });
-
   it("a periodic task past end_at is archived by the reconcile pass", async () => {
     insertSession("session-1");
     await writeFile("window", [
@@ -371,14 +345,12 @@ describe("scheduler", () => {
     nowMs = T0 + 20 * MIN; // Still inside the window (end_at is inclusive): stays.
     await scheduler.tickOnce();
     expect(inSchedule("window")).toBe(true);
-
     nowMs = T0 + 21 * MIN;
     await scheduler.tickOnce();
     expect(await archived()).toEqual(["window.toml"]);
     expect(repo.find(P, A, "window")).toBeNull();
     expect(await listed()).toEqual([]);
   });
-
   it("an expired periodic task with a queued fire stays until that fire is sent, then is archived", async () => {
     insertSession("session-1");
     busy.add("session-1");
@@ -395,13 +367,11 @@ describe("scheduler", () => {
     nowMs = T0 + 5 * MIN; // Due while the Session is busy: queued.
     await scheduler.tickOnce();
     expect(events.map((e) => e.event.type)).toEqual(["schedule_queued"]);
-
     nowMs = T0 + 10 * MIN; // Past end_at, the fire still waiting: the task must not move yet.
     await scheduler.tickOnce();
     expect(inSchedule("late")).toBe(true);
     const [entry] = (await scheduler.listAgent(P, A)).entries;
     expect(entry).toMatchObject({ def: { name: "late" }, queued: true });
-
     busy.delete("session-1");
     await scheduler.tickOnce();
     expect(started.map((s) => s.sessionId)).toEqual(["session-1"]);
@@ -409,7 +379,6 @@ describe("scheduler", () => {
     expect(await archived()).toEqual(["late.toml"]);
     expect(repo.find(P, A, "late")).toBeNull();
   });
-
   it("disabled and invalid tasks stay listed, even once their time has passed", async () => {
     insertSession("session-1");
     await writeFile("paused", [
@@ -436,7 +405,6 @@ describe("scheduler", () => {
     expect(repo.find(P, A, "ghost")?.invalidReason).toBe("session_missing");
     expect(started).toHaveLength(0);
   });
-
   it("a clash in expired/ keeps every file: the newcomer takes a timestamped name", async () => {
     const stale = (prompt: string) => [
       `prompt = "${prompt}"`,
@@ -459,7 +427,6 @@ describe("scheduler", () => {
     expect(await read("stale.20260716T090000Z.toml")).toContain("second");
     expect(await read("stale.20260716T090000Z-2.toml")).toContain("third");
   });
-
   it("a file moved back with its time still past is archived again, without firing twice", async () => {
     insertSession("session-1");
     await writeFile("once", [
@@ -473,7 +440,6 @@ describe("scheduler", () => {
     await scheduler.tickOnce();
     expect(started).toHaveLength(1);
     expect(await archived()).toEqual(["once.toml"]);
-
     // Moving it back registers it as a new task, whose time is already past.
     await fs.rename(
       path.join(expiredDir(), "once.toml"),
@@ -486,7 +452,6 @@ describe("scheduler", () => {
     expect(await archived()).toEqual(["once.toml"]);
     expect(await listed()).toEqual([]);
   });
-
   it("when the move fails, the error is recorded, the task stays listed, and a later pass archives it", async () => {
     await writeFile("stale", [
       `prompt = "s"`,
@@ -499,13 +464,11 @@ describe("scheduler", () => {
     expect(entries.map((e) => [e.def.name, e.state.missed])).toEqual([["stale", true]]);
     expect(errors.some((e) => e.code === "schedule_archive_failed")).toBe(true);
     expect(inSchedule("stale")).toBe(true);
-
     await fs.unlink(expiredDir());
     await scheduler.tickOnce();
     expect(await archived()).toEqual(["stale.toml"]);
     expect(await listed()).toEqual([]);
   });
-
   it("busy queueing: a running target queues and notifies, sends once idle; repeated slots don't stack", async () => {
     insertSession("session-1");
     busy.add("session-1");
@@ -524,18 +487,15 @@ describe("scheduler", () => {
     await scheduler.tickOnce();
     expect(started).toHaveLength(0);
     expect(events.map((e) => e.event.type)).toEqual(["schedule_queued"]);
-
     nowMs = T0 + 5 * MIN; // Another slot: still busy, so it's just consumed, not re-queued.
     await scheduler.tickOnce();
     expect(events.map((e) => e.event.type)).toEqual(["schedule_queued"]);
-
     busy.delete("session-1");
     nowMs = T0 + 6 * MIN;
     await scheduler.tickOnce();
     expect(started).toHaveLength(1);
     expect(events.map((e) => e.event.type)).toEqual(["schedule_queued", "schedule_fired"]);
   });
-
   it("missing bound Session: records an error and marks invalid; recovers after the file is edited", async () => {
     await writeFile("ghost", [
       `prompt = "g"`,
@@ -550,11 +510,9 @@ describe("scheduler", () => {
     await scheduler.tickOnce(); // Slot arrives: Session doesn't exist → invalidated.
     expect(errors.some((e) => e.code === "schedule_session_missing")).toBe(true);
     expect(repo.find(P, A, "ghost")?.invalidReason).toBe("session_missing");
-
     nowMs = T0 + 9 * MIN;
     await scheduler.tickOnce(); // No further attempts while invalid.
     expect(errors.filter((e) => e.code === "schedule_session_missing")).toHaveLength(1);
-
     // Editing the file (rebinding to an existing Session): clears the invalid state and resumes firing.
     insertSession("session-2");
     await writeFile("ghost", [
@@ -569,7 +527,6 @@ describe("scheduler", () => {
     expect(repo.find(P, A, "ghost")?.invalidReason).toBeNull();
     expect(started.map((s) => s.sessionId)).toEqual(["session-2"]);
   });
-
   it("enabled=false never fires; deleting the file clears the run state", async () => {
     insertSession("session-1");
     await writeFile("off", [
@@ -583,12 +540,10 @@ describe("scheduler", () => {
     await scheduler.tickOnce();
     expect(started).toHaveLength(0);
     expect(repo.find(P, A, "off")).not.toBeNull();
-
     await fs.unlink(path.join(scheduleDir(root, P, A), "off.toml"));
     await scheduler.tickOnce();
     expect(repo.find(P, A, "off")).toBeNull();
   });
-
   it("new-Session mode: every trigger opens a fresh session and sends (passing workspace through)", async () => {
     await writeFile("fresh", [
       `prompt = "fresh session"`,
@@ -619,7 +574,6 @@ describe("scheduler", () => {
     });
     expect(started.map((s) => s.sessionId)).toEqual(["session-new-1", "session-new-2"]);
   });
-
   it("new-Session mode: omitting the model reference entirely leaves the Project default to the session creator", async () => {
     await writeFile("default-model", [
       `prompt = "default"`,
@@ -633,7 +587,6 @@ describe("scheduler", () => {
     expect("provider" in created[0]!).toBe(false);
     expect("modelId" in created[0]!).toBe(false);
   });
-
   it("a file carrying model_id without provider is invalid: never scheduled, error recorded", async () => {
     // A schedule file persisted before the pairing rule can hold model_id alone. It must
     // fail exactly like any other invalid file — skipped with an error recorded — rather
@@ -654,7 +607,6 @@ describe("scheduler", () => {
     expect(recorded.length).toBeGreaterThan(0);
     expect((recorded[0]?.err as Error).message).toContain("given together");
   });
-
   it("invalid files are skipped with an error recorded, without affecting other tasks", async () => {
     insertSession("session-1");
     await writeFile("bad", [`prompt = "x"`, `enabled = true`, `start_at = "nonsense"`]);

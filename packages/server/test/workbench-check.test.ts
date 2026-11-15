@@ -18,7 +18,7 @@ import { createTestApp, waitFor, type TestApp } from "./helpers.js";
 const exec = promisify(execFile);
 const checker = fileURLToPath(
   new URL(
-    "../../../plugins/agent-development/skills/penguin-plugin/scripts/check.mjs",
+    "../../../../plugins/agent-development/skills/penguin-plugin/scripts/check.mjs",
     import.meta.url,
   ),
 );

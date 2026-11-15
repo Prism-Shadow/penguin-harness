@@ -21,20 +21,17 @@ import { serve } from "@hono/node-server";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { WebSocket } from "ws";
 import type { ApiSocketRef } from "../src/socket/ref.js";
-import { MachineSockets } from "../src/machines/machine-sockets.js";
-import { machinesProxy } from "../src/machines/proxy.js";
-import { attachTerminalWebSocket } from "../src/terminal/ws.js";
+import { MachineSockets } from "../../../plugins/machines/src/server/machine-sockets.js";
+import { machinesProxy } from "../../../plugins/machines/src/server/proxy.js";
+import { attachTerminalWebSocket } from "../../../plugins/terminal/src/server/index.js";
 import { fakeMachinesNode } from "./fixtures/machines.js";
 import { sessionRow } from "./fixtures/session.js";
 import { createTestApp, loginAdmin, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
-
 const MACHINE = "QS7J4YVgSovi-Z2c";
 const SID = "session-2026-10-26-09-00-00-00000001";
 const ADMIN: ApiSocketRef = { apiSocket: true, ownerUserId: "admin" };
-
 type Frame = Record<string, unknown>;
-
 /** The browser's end of this server's API socket: its call frames in, every frame out recorded. */
 function browserSocket() {
   const handlers = new Map<string, ((...args: unknown[]) => void)[]>();
@@ -68,7 +65,6 @@ function browserSocket() {
   };
   return socket;
 }
-
 let machine: TestApp;
 let hub: TestApp;
 let server: ReturnType<typeof serve>;
@@ -78,7 +74,6 @@ let oldPort = 0;
 let cookie = "";
 /** Every connection the machine accepted, upgraded ones included: closeAllConnections skips those. */
 const connections = new Set<Socket>();
-
 /** Serves the machine App on a port of its own. */
 function listen(app: TestApp): Promise<{ server: ReturnType<typeof serve>; port: number }> {
   return new Promise((resolve) => {
@@ -88,7 +83,6 @@ function listen(app: TestApp): Promise<{ server: ReturnType<typeof serve>; port:
     served.on("connection", (socket: Socket) => connections.add(socket));
   });
 }
-
 beforeAll(async () => {
   machine = await createTestApp();
   cookie = (await loginAdmin(machine.app)).cookie;
@@ -120,7 +114,6 @@ beforeAll(async () => {
     ),
   });
 });
-
 afterAll(async () => {
   await hub?.cleanup();
   for (const socket of connections) socket.destroy();
@@ -128,7 +121,6 @@ afterAll(async () => {
   await new Promise<void>((resolve) => oldRuntime.close(() => resolve()));
   await machine?.cleanup();
 });
-
 describe("a machine's Session stream", () => {
   it("carries a record the machine publishes after the stream opened to the browser's socket", async () => {
     const platform = await hub.deps.hmr.ensure();
@@ -143,7 +135,6 @@ describe("a machine's Session stream", () => {
       ws.stream(1, `/server/${MACHINE}/api/sessions/${SID}/stream`);
       await waitFor(() => ws.framesOf(1).some((f) => f.event === "ping"), 5000);
       expect(ws.framesOf(1)[0]).toMatchObject({ status: 200, stream: true });
-
       const record = { role: "assistant", payload: { type: "text", text: "live" } };
       machine.deps.channels.get(SID).publish(record);
       await waitFor(() => ws.framesOf(1).some((f) => f.event === "message"), 5000);
@@ -154,7 +145,6 @@ describe("a machine's Session stream", () => {
       ws.close();
     }
   });
-
   it("is refused with the restart named for a machine whose runtime predates the socket, until it restarts", async () => {
     const told: (string | undefined)[] = [];
     const sockets: MachineSockets = new MachineSockets(() => undefined, {
@@ -178,7 +168,6 @@ describe("a machine's Session stream", () => {
         new Request(`http://localhost/server/${MACHINE}/api/sessions/${SID}/messages`),
       );
       expect(history!.status).toBe(200);
-
       const refused = await stream();
       expect(refused!.status).toBe(502);
       const { error } = (await refused!.json()) as { error: { code: string; message: string } };
@@ -187,11 +176,9 @@ describe("a machine's Session stream", () => {
       const fact = sockets.fact(MACHINE);
       expect(fact).toMatchObject({ state: "unanswered" });
       expect(told).toEqual(["unanswered"]);
-
       expect((await stream())!.status).toBe(502);
       expect(sockets.fact(MACHINE)).toEqual(fact);
       expect(told).toEqual(["unanswered"]);
-
       // The restart: the process that takes the upgrade is now one that knows the socket.
       attachTerminalWebSocket(oldRuntime as unknown as HttpServer, {
         hmr: machine.deps.hmr,

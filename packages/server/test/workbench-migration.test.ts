@@ -8,9 +8,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { convertWorkflows } from "../src/workbenches/migrate.js";
-import { readFolder } from "../src/workbenches/store.js";
-
+import { readFolder } from "../../../plugins/workbenches/src/server/index.js";
+import { convertWorkflows } from "../../../plugins/workbenches/src/server/workbenches/migrate.js";
 let dir: string;
 beforeEach(async () => {
   dir = await fs.mkdtemp(path.join(os.tmpdir(), "workbench-migration-"));

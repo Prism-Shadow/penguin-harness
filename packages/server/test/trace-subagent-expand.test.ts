@@ -22,7 +22,7 @@ import {
   userText,
 } from "@prismshadow/penguin-core";
 import type { AmspRecord, SessionMetaPayload } from "@prismshadow/penguin-core";
-import type { TraceService } from "../src/services/trace-service.js";
+import type { TraceService } from "../../../plugins/usage/src/server/index.js";
 import { makeTraceHarness } from "./helpers.js";
 
 const PROJECT = "proj";

@@ -47,10 +47,10 @@ import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import {
   MESSAGING_TEST_MESSAGE,
   MESSAGING_UNSUPPORTED_NOTICE,
-} from "../src/runtime/messaging/bridge.js";
-import { MessagingReplyHeldError } from "../src/runtime/messaging/connector.js";
-import { messagingErrorKind } from "../src/runtime/messaging/error-kind.js";
-import { MessagingMediaTooLargeError } from "../src/runtime/messaging/media.js";
+} from "../../../plugins/messaging/src/server/index.js";
+import { MessagingReplyHeldError } from "../../../plugins/messaging/src/server/index.js";
+import { messagingErrorKind } from "../../../plugins/messaging/src/server/index.js";
+import { MessagingMediaTooLargeError } from "../../../plugins/messaging/src/server/index.js";
 import type {
   WeChatBotClient,
   WeChatCredentials,
@@ -60,13 +60,13 @@ import type {
   WeChatSendArgs,
   WeChatTransport,
   WeChatUpdates,
-} from "../src/runtime/messaging/wechat-api.js";
+} from "../../../plugins/messaging/src/server/index.js";
 import {
   WECHAT_API_BASE,
   WECHAT_SEND_REFUSED_CODE,
   WeChatApiError,
-} from "../src/runtime/messaging/wechat-api.js";
-import type { WeChatConversationStore } from "../src/runtime/messaging/wechat-connector.js";
+} from "../../../plugins/messaging/src/server/index.js";
+import type { WeChatConversationStore } from "../../../plugins/messaging/src/server/index.js";
 import {
   WECHAT_HELD_HEADER,
   WECHAT_REPLY_BUDGET,
@@ -75,10 +75,10 @@ import {
   createMemoryWeChatConversationStore,
   wechatConfigOf,
   wechatRetryDelayMs,
-} from "../src/runtime/messaging/wechat-connector.js";
+} from "../../../plugins/messaging/src/server/index.js";
 import { openDatabase } from "@penguinharness/plugin-db/server";
-import { MessagingBindingsRepo } from "../src/db/repos/messaging-bindings.js";
-import { MessagingConversationsRepo } from "../src/db/repos/messaging-conversations.js";
+import { MessagingBindingsRepo } from "../../../plugins/messaging/src/server/index.js";
+import { MessagingConversationsRepo } from "../../../plugins/messaging/src/server/index.js";
 import { forwardingTo } from "./fixtures/forwarding.js";
 import { fakeSession, sessionRow, uniqueSessionId } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";

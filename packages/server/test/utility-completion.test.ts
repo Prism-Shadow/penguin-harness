@@ -24,7 +24,7 @@ import {
   ProjectConfigService,
   collectUtilityCompletion,
   utilityCompletionConfig,
-} from "../src/services/project-config-service.js";
+} from "../../../plugins/projects/src/server/index.js";
 import { makeTempRoot } from "./helpers.js";
 
 /** A stream shaped the way the real translator shapes one: partial fragments, then the complete backfill. */

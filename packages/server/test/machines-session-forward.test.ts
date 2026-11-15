@@ -29,7 +29,7 @@ import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
 import { ADMIN_USER_ID } from "../src/auth/service.js";
 import type { Http } from "../src/http/app.js";
-import { machineApi } from "../src/machines/machine-api.js";
+import { machineApi } from "../../../plugins/machines/src/server/index.js";
 import { StreamAnswer, carryStreamAnswer } from "../src/socket/stream-answer.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser, tokenClient } from "./helpers.js";
 import type { TestApp } from "./helpers.js";

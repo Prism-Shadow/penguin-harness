@@ -699,6 +699,9 @@ importers:
       '@penguinharness/plugin-workbenches':
         specifier: workspace:*
         version: file:plugins/workbenches(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/a2ui':
+        specifier: workspace:*
+        version: link:../a2ui
       '@prismshadow/amsp':
         specifier: workspace:*
         version: link:../amsp
@@ -729,6 +732,9 @@ importers:
       hono:
         specifier: ^4.12.34
         version: 4.13.13
+      isomorphic-git:
+        specifier: ^1.44.0
+        version: 1.44.13
       node-pty:
         specifier: ^1.1.0
         version: 1.1.0
@@ -13024,6 +13030,7 @@ snapshots:
       '@penguinharness/plugin-terminal': file:plugins/terminal
       '@penguinharness/plugin-usage': file:plugins/usage
       '@penguinharness/plugin-workbenches': file:plugins/workbenches(ws@8.21.0)
+      '@prismshadow/a2ui': file:packages/a2ui
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/mmsp': 0.5.6(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(ws@8.21.0)
@@ -13034,6 +13041,7 @@ snapshots:
       dotenv: 17.4.2
       fflate: 0.8.3
       hono: 4.13.13
+      isomorphic-git: 1.44.13
       node-pty: 1.1.0
       remark-gfm: 4.0.1(supports-color@10.2.2)
       remark-parse: 11.0.0(supports-color@10.2.2)
@@ -13079,6 +13087,7 @@ snapshots:
       '@penguinharness/plugin-terminal': file:plugins/terminal(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
       '@penguinharness/plugin-usage': file:plugins/usage(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
       '@penguinharness/plugin-workbenches': file:plugins/workbenches(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/a2ui': file:packages/a2ui
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
@@ -13089,6 +13098,7 @@ snapshots:
       dotenv: 17.4.2
       fflate: 0.8.3
       hono: 4.13.13
+      isomorphic-git: 1.44.13
       node-pty: 1.1.0
       remark-gfm: 4.0.1(supports-color@10.2.2)
       remark-parse: 11.0.0(supports-color@10.2.2)
@@ -13134,6 +13144,7 @@ snapshots:
       '@penguinharness/plugin-terminal': file:plugins/terminal(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(zod@4.6.7)
       '@penguinharness/plugin-usage': file:plugins/usage(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(zod@4.6.7)
       '@penguinharness/plugin-workbenches': file:plugins/workbenches(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/a2ui': file:packages/a2ui
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
@@ -13144,6 +13155,7 @@ snapshots:
       dotenv: 17.4.2
       fflate: 0.8.3
       hono: 4.13.13
+      isomorphic-git: 1.44.13
       node-pty: 1.1.0
       remark-gfm: 4.0.1(supports-color@10.2.2)
       remark-parse: 11.0.0(supports-color@10.2.2)
@@ -13189,6 +13201,7 @@ snapshots:
       '@penguinharness/plugin-terminal': file:plugins/terminal(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
       '@penguinharness/plugin-usage': file:plugins/usage(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
       '@penguinharness/plugin-workbenches': file:plugins/workbenches(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/a2ui': file:packages/a2ui
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
@@ -13199,6 +13212,7 @@ snapshots:
       dotenv: 17.4.2
       fflate: 0.8.3
       hono: 4.13.13
+      isomorphic-git: 1.44.13
       node-pty: 1.1.0
       remark-gfm: 4.0.1(supports-color@10.2.2)
       remark-parse: 11.0.0(supports-color@10.2.2)
@@ -13244,6 +13258,7 @@ snapshots:
       '@penguinharness/plugin-terminal': file:plugins/terminal(@types/react@19.2.17)
       '@penguinharness/plugin-usage': file:plugins/usage(@types/react@19.2.17)
       '@penguinharness/plugin-workbenches': file:plugins/workbenches(@types/react@19.2.17)(ws@8.21.0)
+      '@prismshadow/a2ui': file:packages/a2ui
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/mmsp': 0.5.6(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(ws@8.21.0)
@@ -13254,6 +13269,7 @@ snapshots:
       dotenv: 17.4.2
       fflate: 0.8.3
       hono: 4.13.13
+      isomorphic-git: 1.44.13
       node-pty: 1.1.0
       remark-gfm: 4.0.1(supports-color@10.2.2)
       remark-parse: 11.0.0(supports-color@10.2.2)
@@ -13299,6 +13315,7 @@ snapshots:
       '@penguinharness/plugin-terminal': file:plugins/terminal
       '@penguinharness/plugin-usage': file:plugins/usage
       '@penguinharness/plugin-workbenches': file:plugins/workbenches(ws@8.21.0)
+      '@prismshadow/a2ui': file:packages/a2ui
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/mmsp': 0.5.6(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(ws@8.21.0)
@@ -13309,6 +13326,7 @@ snapshots:
       dotenv: 17.4.2
       fflate: 0.8.3
       hono: 4.13.13
+      isomorphic-git: 1.44.13
       node-pty: 1.1.0
       remark-gfm: 4.0.1(supports-color@10.2.2)
       remark-parse: 11.0.0(supports-color@10.2.2)
@@ -13354,6 +13372,7 @@ snapshots:
       '@penguinharness/plugin-terminal': file:plugins/terminal(supports-color@10.2.2)
       '@penguinharness/plugin-usage': file:plugins/usage(supports-color@10.2.2)
       '@penguinharness/plugin-workbenches': file:plugins/workbenches(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/a2ui': file:packages/a2ui
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
@@ -13364,6 +13383,7 @@ snapshots:
       dotenv: 17.4.2
       fflate: 0.8.3
       hono: 4.13.13
+      isomorphic-git: 1.44.13
       node-pty: 1.1.0
       remark-gfm: 4.0.1(supports-color@10.2.2)
       remark-parse: 11.0.0(supports-color@10.2.2)
@@ -13409,6 +13429,7 @@ snapshots:
       '@penguinharness/plugin-terminal': file:plugins/terminal(supports-color@10.2.2)(zod@4.6.7)
       '@penguinharness/plugin-usage': file:plugins/usage(supports-color@10.2.2)(zod@4.6.7)
       '@penguinharness/plugin-workbenches': file:plugins/workbenches(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/a2ui': file:packages/a2ui
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
@@ -13419,6 +13440,7 @@ snapshots:
       dotenv: 17.4.2
       fflate: 0.8.3
       hono: 4.13.13
+      isomorphic-git: 1.44.13
       node-pty: 1.1.0
       remark-gfm: 4.0.1(supports-color@10.2.2)
       remark-parse: 11.0.0(supports-color@10.2.2)

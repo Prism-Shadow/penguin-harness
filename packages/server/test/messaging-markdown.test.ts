@@ -30,12 +30,12 @@
  */
 import { describe, expect, it } from "vitest";
 import { attachedFileLine } from "@prismshadow/penguin-core";
-import { MESSAGING_TEXT_CHUNK_CHARS } from "../src/runtime/messaging/bridge.js";
-import { chunkMarkdown, isSafeUrl, parseMarkdown } from "../src/runtime/messaging/markdown.js";
-import { feishuCardOf, feishuMarkdownOf } from "../src/runtime/messaging/feishu-card.js";
-import { qqMarkdownOf } from "../src/runtime/messaging/qq-markdown.js";
-import { telegramHtmlOf } from "../src/runtime/messaging/telegram-html.js";
-import { wechatMarkdownOf } from "../src/runtime/messaging/wechat-markdown.js";
+import { MESSAGING_TEXT_CHUNK_CHARS } from "../../../plugins/messaging/src/server/index.js";
+import { chunkMarkdown, isSafeUrl, parseMarkdown } from "../../../plugins/messaging/src/server/index.js";
+import { feishuCardOf, feishuMarkdownOf } from "../../../plugins/messaging/src/server/index.js";
+import { qqMarkdownOf } from "../../../plugins/messaging/src/server/index.js";
+import { telegramHtmlOf } from "../../../plugins/messaging/src/server/index.js";
+import { wechatMarkdownOf } from "../../../plugins/messaging/src/server/index.js";
 
 describe("parseMarkdown", () => {
   it("reads GFM, so tables and task lists are constructs rather than punctuation", () => {

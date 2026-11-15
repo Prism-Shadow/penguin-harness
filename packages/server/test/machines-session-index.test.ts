@@ -21,12 +21,10 @@
  * - Given more Sessions than it holds, the least recently used one is forgotten first.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SessionMachineIndex } from "../src/machines/session-index.js";
-import type { MachineCandidate } from "../src/machines/session-index.js";
-
+import { SessionMachineIndex } from "../../../plugins/machines/src/server/session-index.js";
+import { MachineCandidate } from "../../../plugins/machines/src/server/session-index.js";
 const ID = "session-2026-10-22-09-00-00-a1b2c3d4";
 const PROJECT = "default_project";
-
 /** A machine's API as the index asks it: `answer` scripts each path, and every ask is counted. */
 function machine(
   machineId: string,
@@ -45,7 +43,6 @@ function machine(
     },
   };
 }
-
 const holds =
   (projectId = PROJECT) =>
   async () => ({
@@ -60,24 +57,20 @@ const fleet =
   (...machines: MachineCandidate[]) =>
   async () =>
     machines;
-
 afterEach(() => {
   vi.useRealTimers();
 });
-
 describe("the Session → machine index", () => {
   it("asks every connected machine once and remembers the one that holds the Session", async () => {
     const index = new SessionMachineIndex();
     const a = machine("a", absent);
     const b = machine("b", holds("blog"));
-
     expect((await index.resolve(ID, fleet(a, b))).place).toEqual({
       machineId: "b",
       projectId: "blog",
     });
     expect(a.asked).toEqual([`/api/sessions/${ID}`]);
     expect(b.asked).toEqual([`/api/sessions/${ID}`]);
-
     expect((await index.resolve(ID, fleet(a, b))).place).toEqual({
       machineId: "b",
       projectId: "blog",
@@ -85,7 +78,6 @@ describe("the Session → machine index", () => {
     expect(a.asked).toHaveLength(1);
     expect(b.asked).toHaveLength(1);
   });
-
   it("asks the machines once for requests about the same id that arrive together", async () => {
     const index = new SessionMachineIndex();
     const b = machine("b", holds());
@@ -96,13 +88,11 @@ describe("the Session → machine index", () => {
     ]);
     expect(b.asked).toHaveLength(1);
   });
-
   it("keeps the first machine to answer when two hold the same id", async () => {
     const index = new SessionMachineIndex();
     let late: (value: { status: number; text: string }) => void = () => undefined;
     const slow = machine("slow", () => new Promise((resolve) => (late = resolve)));
     const quick = machine("quick", holds());
-
     expect((await index.resolve(ID, fleet(slow, quick))).place).toEqual({
       machineId: "quick",
       projectId: PROJECT,
@@ -111,28 +101,23 @@ describe("the Session → machine index", () => {
     await Promise.resolve();
     expect(index.lookup(ID)).toEqual({ machineId: "quick", projectId: PROJECT });
   });
-
   it("remembers an id every machine denied as a miss, and asks again once the miss expires", async () => {
     let now = 1_000;
     const index = new SessionMachineIndex({ now: () => now, missTtlMs: 10_000 });
     const a = machine("a", absent);
-
     expect((await index.resolve(ID, fleet(a))).place).toBeNull();
     now += 9_000;
     expect((await index.resolve(ID, fleet(a))).place).toBeNull();
     expect(a.asked).toHaveLength(1);
-
     now += 2_000;
     expect((await index.resolve(ID, fleet(a))).place).toBeNull();
     expect(a.asked).toHaveLength(2);
   });
-
   it("does not remember a miss when a machine failed to answer, so the next request asks again", async () => {
     const index = new SessionMachineIndex();
     const denies = machine("a", absent);
     const fails = machine("b", async () => ({ status: 500, text: "{}" }));
     const throws = machine("c", () => Promise.reject(new Error("the channel closed")));
-
     const first = await index.resolve(ID, fleet(denies, fails, throws));
     expect(first).toEqual({
       place: null,
@@ -145,12 +130,10 @@ describe("the Session → machine index", () => {
     expect((await index.resolve(ID, fleet(denies, fails, throws))).place).toBeNull();
     expect(denies.asked).toHaveLength(2);
   });
-
   it("gives up on a machine that never answers at the deadline, without remembering a miss", async () => {
     vi.useFakeTimers();
     const index = new SessionMachineIndex({ askTimeoutMs: 5_000 });
     const silent = machine("a", () => new Promise(() => undefined));
-
     const denies = machine("b", absent);
     const pending = index.resolve(ID, fleet(silent, denies));
     await vi.advanceTimersByTimeAsync(5_000);
@@ -159,12 +142,10 @@ describe("the Session → machine index", () => {
       silent: [{ machineId: "a", alias: "alias-a" }],
       refused: [],
     });
-
     void index.resolve(ID, fleet(silent));
     await vi.advanceTimersByTimeAsync(0);
     expect(silent.asked).toHaveLength(2);
   });
-
   it("names a machine that holds the Session and will not show it, without remembering a miss", async () => {
     const index = new SessionMachineIndex();
     const denies = machine("a", absent);
@@ -172,7 +153,6 @@ describe("the Session → machine index", () => {
       status: 403,
       text: JSON.stringify({ error: { code: "session_forbidden", message: "No." } }),
     }));
-
     expect(await index.resolve(ID, fleet(denies, refuses))).toEqual({
       place: null,
       silent: [],
@@ -181,13 +161,11 @@ describe("the Session → machine index", () => {
     await index.resolve(ID, fleet(denies, refuses));
     expect(refuses.asked).toHaveLength(2);
   });
-
   it("does not ask a machine that is not connected", async () => {
     const index = new SessionMachineIndex();
     const offline: MachineCandidate = { machineId: "a", alias: "box", api: null };
     expect((await index.resolve(ID, fleet(offline))).place).toBeNull();
   });
-
   it("learns a Session from its machine's events and forgets it when that machine deletes it", async () => {
     const index = new SessionMachineIndex();
     const a = machine("a", absent);
@@ -200,11 +178,9 @@ describe("the Session → machine index", () => {
       projectId: PROJECT,
     });
     expect(a.asked).toEqual([]);
-
     // Another machine deleting a Session it minted under the same id says nothing about b's.
     index.hear("c", JSON.stringify({ type: "session_deleted", projectId: PROJECT, sessionId: ID }));
     expect(index.lookup(ID)).toEqual({ machineId: "b", projectId: PROJECT });
-
     index.hear("b", JSON.stringify({ type: "session_deleted", projectId: PROJECT, sessionId: ID }));
     expect(index.lookup(ID)).toBeNull();
     // Events that are not about a Session's existence, and frames that are not events, change nothing.
@@ -212,7 +188,6 @@ describe("the Session → machine index", () => {
     index.hear("b", "not json");
     expect(index.lookup(ID)).toBeNull();
   });
-
   it("forgets the least recently used Session first when it is full", () => {
     const index = new SessionMachineIndex({ capacity: 2 });
     index.note("s1", "a", PROJECT);

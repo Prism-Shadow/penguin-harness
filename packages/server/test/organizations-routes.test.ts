@@ -29,14 +29,12 @@ import type {
   SessionResponse,
   SessionsResponse,
 } from "../src/api/types.js";
-import { ORG_CONFIG_DEFAULTS } from "../src/organization/files.js";
-import { OrgStore } from "../src/organization/store.js";
-import type { OrganizationService } from "../src/runtime/organization/service.js";
+import { ORG_CONFIG_DEFAULTS } from "../../../plugins/company/src/server/organization/files.js";
+import { OrgStore } from "../../../plugins/company/src/server/organization/store.js";
+import { OrganizationService } from "../../../plugins/company/src/server/runtime/service.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser, writeTraceFile } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
-
 type Call = { method: string; args: unknown[] };
-
 function fakeService(calls: Call[]): OrganizationService {
   const handler: ProxyHandler<Record<string, unknown>> = {
     get: (_target, method) => {
@@ -89,7 +87,6 @@ function fakeService(calls: Call[]): OrganizationService {
   };
   return new Proxy({}, handler) as unknown as OrganizationService;
 }
-
 /**
  * A write as a Session's subprocess would send it: the boot's local API token as a Bearer
  * header and no cookie, which is what `controlEnv` hands the CLI (auth/api-token.ts).
@@ -104,13 +101,11 @@ function fromSession(t: TestApp, apiPath: string, body: unknown) {
     body: JSON.stringify(body),
   });
 }
-
 describe("organization routes", () => {
   let t: TestApp;
   const calls: Call[] = [];
   let owner: ReturnType<typeof apiClient>;
   const ownerProject = "olivia-default_project";
-
   // One app serves the group. The service is a recording fake: it goes in as a boot override,
   // since the route group takes the one the module tree provides at creation.
   beforeAll(async () => {
@@ -130,7 +125,6 @@ describe("organization routes", () => {
     // case is about what the routes do once an admin has enabled it.
     t.deps.serverSettingsRepo.setCompanyMode(true);
   });
-
   it("is off on a server whose admin never touched the switch", async () => {
     const fresh = await createTestApp();
     try {
@@ -149,7 +143,6 @@ describe("organization routes", () => {
       await fresh.cleanup();
     }
   });
-
   it("answers 404 on every route while the admin switch is off, and /api/me reports it", async () => {
     const admin = await loginAdmin(t.app);
     const adminApi = apiClient(t.app, admin.cookie);
@@ -169,7 +162,6 @@ describe("organization routes", () => {
     await adminApi.put("/api/admin/settings", { companyMode: true });
     expect((await owner.get(`/api/projects/${ownerProject}/organizations`)).status).toBe(200);
   });
-
   it("gates by Project access: outsiders 404, members read and write", async () => {
     const stranger = apiClient(t.app, (await provisionUser(t.app, "stranger")).cookie);
     expect((await stranger.get(`/api/projects/${ownerProject}/organizations`)).status).toBe(404);
@@ -181,7 +173,6 @@ describe("organization routes", () => {
         )
       ).status,
     ).toBe(404);
-
     const member = await provisionUser(t.app, "mia");
     const grant = await owner.post(`/api/projects/${ownerProject}/members`, { userId: "mia" });
     expect([200, 201]).toContain(grant.status);
@@ -197,7 +188,6 @@ describe("organization routes", () => {
       args: [ownerProject, "acme", "mia", "default_channel", { text: "hi @all" }],
     });
   });
-
   it("deletes an organization for the Project's owner only; pausing stays a setting", async () => {
     // A Project-level management operation, like deleting an Agent: a member who can write
     // everything else in the organization cannot make it go away.
@@ -220,7 +210,6 @@ describe("organization routes", () => {
       args: [ownerProject, "acme", { status: "paused" }, "olivia"],
     });
   });
-
   it("validates bodies before asking the service", async () => {
     const base = `/api/projects/${ownerProject}/organizations`;
     expect((await owner.post(base, { orgId: "acme" })).status).toBe(400); // mission missing
@@ -268,7 +257,6 @@ describe("organization routes", () => {
       ],
     });
   });
-
   it("carries the organization's language both ways", async () => {
     const base = `/api/projects/${ownerProject}/organizations`;
     expect((await owner.post(base, { orgId: "acme", mission: "x", language: "fr" })).status).toBe(
@@ -288,7 +276,6 @@ describe("organization routes", () => {
       args: [ownerProject, "acme", { language: "en" }, "olivia"],
     });
   });
-
   it("carries a ticket owner and slug through to the service, and validates them first", async () => {
     const base = `/api/projects/${ownerProject}/organizations/acme`;
     const created = await owner.post(`${base}/tickets`, {
@@ -322,16 +309,13 @@ describe("organization routes", () => {
     // An owner cannot be cleared: a ticket always has one, so `null` is refused as a shape.
     expect((await owner.put(`${base}/tickets/2026-09-01-site`, { owner: null })).status).toBe(400);
   });
-
   it("routes handbook documents by their relative path and keeps the index", async () => {
     const base = `/api/projects/${ownerProject}/organizations/acme/handbook`;
     expect((await owner.get(`${base}/files`)).status).toBe(200);
     expect(calls.at(-1)).toEqual({ method: "handbookFiles", args: [ownerProject, "acme"] });
-
     const doc = "decisions/2026-09-02-hire-plan.md";
     expect((await owner.get(`${base}/files/${doc}`)).status).toBe(200);
     expect(calls.at(-1)).toEqual({ method: "handbookFile", args: [ownerProject, "acme", doc] });
-
     const put = await owner.put(`${base}/files/${doc}`, { content: "# Hire plan" });
     expect(put.status).toBe(200);
     expect(calls.at(-1)).toEqual({
@@ -339,14 +323,12 @@ describe("organization routes", () => {
       args: [ownerProject, "acme", doc, "# Hire plan"],
     });
     expect((await owner.put(`${base}/files/${doc}`, {})).status).toBe(400); // content missing
-
     expect((await owner.delete(`${base}/files/${doc}`)).status).toBe(204);
     expect(calls.at(-1)).toEqual({
       method: "deleteHandbookFile",
       args: [ownerProject, "acme", doc],
     });
   });
-
   it("routes the channel family and validates its bodies", async () => {
     const base = `/api/projects/${ownerProject}/organizations/acme/channels`;
     expect((await owner.get(base)).status).toBe(200);
@@ -354,7 +336,6 @@ describe("organization routes", () => {
       method: "channels",
       args: [ownerProject, "acme", { userId: "olivia" }],
     });
-
     const create = await owner.post(base, { channelId: "site", name: "Site", purpose: "Ship it" });
     expect(create.status).toBe(201);
     expect(calls.at(-1)).toEqual({
@@ -366,13 +347,11 @@ describe("organization routes", () => {
         { userId: "olivia" },
       ],
     });
-
     expect((await owner.get(`${base}/site`)).status).toBe(200);
     expect(calls.at(-1)).toEqual({
       method: "channel",
       args: [ownerProject, "acme", "site", { userId: "olivia" }],
     });
-
     const patch = await owner.patch(`${base}/site`, { name: "Site launch", archived: true });
     expect(patch.status).toBe(200);
     expect(calls.at(-1)).toEqual({
@@ -385,21 +364,18 @@ describe("organization routes", () => {
         { userId: "olivia" },
       ],
     });
-
     const add = await owner.post(`${base}/site/members`, { principal: "agent:acme_dev" });
     expect(add.status).toBe(201);
     expect(calls.at(-1)).toEqual({
       method: "addChannelMember",
       args: [ownerProject, "acme", "site", "agent:acme_dev", { userId: "olivia" }],
     });
-
     const remove = await owner.delete(`${base}/site/members/agent:acme_dev`);
     expect(remove.status).toBe(204);
     expect(calls.at(-1)).toEqual({
       method: "removeChannelMember",
       args: [ownerProject, "acme", "site", "agent:acme_dev", { userId: "olivia" }],
     });
-
     // A path id no channel could carry names no channel, and neither reaches the service.
     calls.length = 0;
     expect((await owner.get(`${base}/Site`)).status).toBe(404);
@@ -410,7 +386,6 @@ describe("organization routes", () => {
     expect((await owner.delete(`${base}/site/members/all`)).status).toBe(400);
     expect(calls).toEqual([]);
   });
-
   it("carries the channel of the path through the message routes", async () => {
     const base = `/api/projects/${ownerProject}/organizations/acme/channels`;
     const all = await owner.get(`${base}/default_channel/messages`);
@@ -426,19 +401,16 @@ describe("organization routes", () => {
       method: "channelMessages",
       args: [ownerProject, "acme", { userId: "olivia" }, "site", { date: "2026-09-01" }],
     });
-
     expect((await owner.post(`${base}/site/messages`, { text: "hi" })).status).toBe(201);
     expect(calls.at(-1)).toMatchObject({
       method: "sendChannelMessage",
       args: [ownerProject, "acme", "olivia", "site", { text: "hi" }],
     });
-
     expect((await owner.post(`${base}/site/read`, { upTo: "msg-1" })).status).toBe(204);
     expect(calls.at(-1)).toEqual({
       method: "markRead",
       args: [ownerProject, "acme", "olivia", "site", "msg-1"],
     });
-
     // A path id no channel could carry names no channel; the bodies are validated too.
     calls.length = 0;
     expect((await owner.get(`${base}/Site/messages`)).status).toBe(404);
@@ -447,7 +419,6 @@ describe("organization routes", () => {
     expect((await owner.post(`${base}/site/read`, {})).status).toBe(400);
     expect(calls).toEqual([]);
   });
-
   it("honours a read's sessionId only from the control environment", async () => {
     const base = `/api/projects/${ownerProject}/organizations/acme/channels`;
     const res = await t.app.request(`${base}?sessionId=session-desk&agentId=acme_dev`, {
@@ -469,7 +440,6 @@ describe("organization routes", () => {
       args: [ownerProject, "acme", { userId: "olivia" }],
     });
   });
-
   it("passes the calling session through write bodies so the file records the employee", async () => {
     const base = `/api/projects/${ownerProject}/organizations/acme/tickets/2026-09-01-site`;
     const res = await fromSession(t, `${base}/progress`, {
@@ -536,7 +506,6 @@ describe("organization routes", () => {
     expect(unblock.status).toBe(200);
     expect(calls.at(-1)).toMatchObject({ method: "unblockTicket" });
   });
-
   it("drops a signed-in member's session id: the write cannot be attributed to that employee", async () => {
     const base = `/api/projects/${ownerProject}/organizations/acme`;
     const mallory = await provisionUser(t.app, "mallory");
@@ -544,7 +513,6 @@ describe("organization routes", () => {
       (await owner.post(`/api/projects/${ownerProject}/members`, { userId: "mallory" })).status,
     );
     const memberApi = apiClient(t.app, mallory.cookie);
-
     // The CEO desk session id is in the GET /:orgId response, so every member can quote it.
     const posted = await memberApi.post(`${base}/channels/default_channel/messages`, {
       text: "ship it",
@@ -558,7 +526,6 @@ describe("organization routes", () => {
       "default_channel",
       { text: "ship it" },
     ]);
-
     const progress = await memberApi.post(`${base}/tickets/2026-09-01-site/progress`, {
       text: "done",
       sessionId: "session-ceo-desk",
@@ -566,7 +533,6 @@ describe("organization routes", () => {
     });
     expect(progress.status).toBe(200);
     expect(calls.at(-1)?.args.at(-1)).toEqual({ userId: "mallory" });
-
     // `attach` takes the Session to attach in the same field: it still arrives, as an argument
     // rather than an identity — this is the Web App's attach button.
     const attach = await memberApi.post(`${base}/tickets/2026-09-01-site/attach`, {
@@ -582,7 +548,6 @@ describe("organization routes", () => {
     ]);
   });
 });
-
 describe("organization sessions route over the real service", () => {
   it("marks a desk whose Session has an enabled messaging binding, as the Session's own row is marked", async () => {
     const t = await createTestApp();
@@ -593,7 +558,6 @@ describe("organization sessions route over the real service", () => {
       const projectId = "olivia-default_project";
       const ceoDesk = "session-2026-09-01-09-00-00-0abc0021";
       const devDesk = "session-2026-09-01-09-05-00-0abc0022";
-
       // The organization as its files describe it: a CEO and one report, each with a desk.
       const store = new OrgStore(t.deps.config.root);
       const dir = store.dir(projectId, "acme");
@@ -642,7 +606,6 @@ describe("organization sessions route over the real service", () => {
           ((await res.json()) as OrgSessionsResponse).desks.map((d) => [d.agentId, d]),
         );
       };
-
       // A saved config is not a binding until it is enabled: no mark yet.
       t.deps.messagingRepo.upsert({
         sessionId: ceoDesk,
@@ -651,7 +614,6 @@ describe("organization sessions route over the real service", () => {
         config: { botToken: "12345:secret" },
       });
       expect((await desks()).get("acme_ceo")).not.toHaveProperty("messagingChannel");
-
       t.deps.messagingRepo.setEnabled(ceoDesk, "telegram", true);
       const bound = await desks();
       expect(bound.get("acme_ceo")).toMatchObject({
@@ -663,7 +625,6 @@ describe("organization sessions route over the real service", () => {
       // One reading behind both marks: the Session's own row says the same.
       const own = (await (await api.get(`/api/sessions/${ceoDesk}`)).json()) as SessionResponse;
       expect(own.session.messagingChannel).toBe("telegram");
-
       // Unbinding takes the mark away with it.
       t.deps.messagingRepo.setEnabled(ceoDesk, "telegram", false);
       expect((await desks()).get("acme_ceo")).not.toHaveProperty("messagingChannel");
@@ -671,7 +632,6 @@ describe("organization sessions route over the real service", () => {
       await t.cleanup();
     }
   });
-
   it("finds an employee's desk and a ticket's session, which the employee's session list leaves out", async () => {
     const t = await createTestApp();
     try {
@@ -684,7 +644,6 @@ describe("organization sessions route over the real service", () => {
       const desk = "session-2026-09-01-09-00-00-0abc0031";
       const ticketSession = "session-2026-09-02-10-00-00-0abc0032";
       const own = "session-2026-09-03-11-00-00-0abc0033";
-
       const store = new OrgStore(t.deps.config.root);
       const dir = store.dir(projectId, "acme");
       await store.createLayout(dir);
@@ -758,7 +717,6 @@ describe("organization sessions route over the real service", () => {
           userText("work"),
         ]);
       }
-
       const org = (await (
         await api.get(`/api/projects/${projectId}/organizations/acme/sessions`)
       ).json()) as OrgSessionsResponse;
@@ -766,7 +724,6 @@ describe("organization sessions route over the real service", () => {
       expect(org.tickets.flatMap((tk) => tk.sessions.map((s) => s.sessionId))).toEqual([
         ticketSession,
       ]);
-
       const list = async (qs: string) =>
         (await (
           await api.get(`/api/projects/${projectId}/agents/${agentId}/sessions${qs}`)

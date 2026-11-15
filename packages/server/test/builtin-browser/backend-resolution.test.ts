@@ -26,10 +26,10 @@ import type {
   BrowserExtensionPairingResponse,
   BuiltinBrowserServerEvent,
   BuiltinBrowserStatus,
-} from "../../src/api/types.js";
-import { hashPassword } from "../../src/auth/password.js";
+} from "../../../../packages/server/src/api/types.js";
+import { hashPassword } from "../../../../packages/server/src/auth/password.js";
 import { userChannelKey } from "../../src/http/routes/events.js";
-import type { Users } from "../../src/mechanisms/identity.js";
+import type { Users } from "../../../../plugins/settings/src/server/mechanism-identity.js";
 import { adoptSession, fakeSession, uniqueSessionId } from "../fixtures/session.js";
 import {
   apiClient,

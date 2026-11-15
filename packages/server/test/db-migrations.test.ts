@@ -21,13 +21,11 @@ import {
   MIGRATIONS,
   RestartRequiredError,
   migrate,
-  rollbackTo,
   schemaVersion,
 } from "@penguinharness/plugin-db/server";
 import { SCHEMA_SQL } from "@penguinharness/plugin-db/server";
-
+import { rollbackTo } from "../../../plugins/db/src/migrations.js"
 const sqlite = process.getBuiltinModule("node:sqlite");
-
 /**
  * The goal_state table as every release from 0.1.3 to 0.2.9 declared it (frozen: the live
  * schema no longer has it, and the migration that drops it must not learn a new shape).
@@ -48,25 +46,21 @@ const GOAL_STATE_DDL = `
   );
   CREATE INDEX idx_goal_session ON goal_state(session_id);
 `;
-
 /** Migration 13's table and index: a database stamped before it had neither. */
 function dropBrowserExtensions(db: DatabaseSync): void {
   db.exec("DROP INDEX IF EXISTS idx_browser_extensions_user");
   db.exec("DROP TABLE IF EXISTS browser_extensions");
 }
-
 /** Migration 14's two tables and index: a database stamped before it had none of them. */
 function dropAgentApi(db: DatabaseSync): void {
   db.exec("DROP INDEX IF EXISTS idx_agent_api_keys_agent");
   db.exec("DROP TABLE IF EXISTS agent_api_keys");
   db.exec("DROP TABLE IF EXISTS agent_api");
 }
-
 /** Migration 15's table: a database stamped before it had none. */
 function dropMessagingConversations(db: DatabaseSync): void {
   db.exec("DROP TABLE IF EXISTS messaging_conversations");
 }
-
 /** Every company-mode table the migrations add: a database from before them had none. */
 function dropCompanyModeTables(db: DatabaseSync): void {
   for (const table of [
@@ -82,7 +76,6 @@ function dropCompanyModeTables(db: DatabaseSync): void {
     db.exec(`DROP TABLE IF EXISTS ${table}`);
   }
 }
-
 /**
  * The v0.2.4 schema, as a frozen excerpt: today's declaration minus exactly what 0.2.4
  * lacked, plus the one table it had that today's declaration dropped. Derived from
@@ -107,7 +100,6 @@ function open024(): DatabaseSync {
   db.exec(GOAL_STATE_DDL);
   return db;
 }
-
 /**
  * The two chat tables as migration 5 declared them (frozen: company mode's chat became
  * channels in migration 6 — renamed tables, `channel_id` in the primary keys — and the
@@ -131,7 +123,6 @@ const PRE_CHANNEL_CHAT_DDL = `
     PRIMARY KEY (project_id, org_id, user_id)
   );
 `;
-
 /** A database stamped at migration 5: company mode's caches, before chat became channels. */
 function open6(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
@@ -147,7 +138,6 @@ function open6(): DatabaseSync {
   db.exec("PRAGMA user_version = 6");
   return db;
 }
-
 /** A database stamped at migration 6: channels, and no desk-notice queue yet. */
 function open7(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
@@ -161,7 +151,6 @@ function open7(): DatabaseSync {
   db.exec("PRAGMA user_version = 7");
   return db;
 }
-
 /** A database stamped at migration 8: desk notices exist, but the promotions table does not. */
 function open8(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
@@ -174,7 +163,6 @@ function open8(): DatabaseSync {
   db.exec("PRAGMA user_version = 8");
   return db;
 }
-
 /** A database stamped at migration 9: promotions exist, but provider auth refresh tokens do not. */
 function open9(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
@@ -186,7 +174,6 @@ function open9(): DatabaseSync {
   db.exec("PRAGMA user_version = 9");
   return db;
 }
-
 /** A 0.2.9 database: everything 0.2.4 had plus what versions 1 and 2 added, and still goal_state. */
 function open029(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
@@ -206,7 +193,6 @@ function open029(): DatabaseSync {
   db.exec("PRAGMA user_version = 2");
   return db;
 }
-
 /**
  * A database from before the user profile: today's declaration minus exactly the two columns
  * migration 5 adds, stamped at the version before it. Derived from SCHEMA_SQL for the reason
@@ -227,7 +213,6 @@ function openPreProfile(): DatabaseSync {
   db.exec("PRAGMA user_version = 4");
   return db;
 }
-
 /** Takes everything migrations 6–8 create off a database built from the current declaration. */
 function dropCompanyTables(db: DatabaseSync): void {
   db.exec(`
@@ -244,19 +229,16 @@ function dropCompanyTables(db: DatabaseSync): void {
     DROP TABLE IF EXISTS org_sessions;
   `);
 }
-
 /** Takes migration 5's two columns off a database built from the current declaration. */
 function dropProfileColumns(db: DatabaseSync): void {
   db.exec("ALTER TABLE users DROP COLUMN avatar");
   db.exec("ALTER TABLE users DROP COLUMN display_name");
 }
-
 /** Column names of `users`, for the two cases that are about columns rather than whole shapes. */
 function userColumns(db: DatabaseSync): string[] {
   const rows = db.prepare("PRAGMA table_info(users)").all() as { name: string }[];
   return rows.map((r) => r.name);
 }
-
 /** Runs `fn` with the restart-only migration taken off the list, so a swap-path case can see swap-safe ones apply. */
 function withoutRestartOnly<T>(fn: () => T): T {
   const list = MIGRATIONS as unknown as (typeof MIGRATIONS)[number][];
@@ -268,7 +250,6 @@ function withoutRestartOnly<T>(fn: () => T): T {
     list.splice(2, 0, ...removed);
   }
 }
-
 /**
  * Every schema object, in a form two databases can be compared by — columns keyed by NAME,
  * with ordinal position (`cid`) excluded.
@@ -315,13 +296,11 @@ function shape(db: DatabaseSync): string {
     })),
   );
 }
-
 describe("migration mechanism", () => {
   it("versions are contiguous from 1, so a stamp names an unambiguous state", () => {
     expect(MIGRATIONS.map((m) => m.version)).toEqual(MIGRATIONS.map((_, i) => i + 1));
     expect(LATEST_VERSION).toBe(MIGRATIONS.length);
   });
-
   it("stamps the database with how far it has come", () => {
     const db = open024();
     try {
@@ -335,7 +314,6 @@ describe("migration mechanism", () => {
       db.close();
     }
   });
-
   it("runs once: an already-current database does no work", () => {
     const db = open024();
     try {
@@ -349,7 +327,6 @@ describe("migration mechanism", () => {
       db.close();
     }
   });
-
   it("a failing migration leaves the version untouched, never half-applied", () => {
     const db = open024();
     try {
@@ -379,7 +356,6 @@ describe("migration mechanism", () => {
     }
   });
 });
-
 describe("the swap path refuses what a rollback could not survive", () => {
   it("applies swap-safe migrations while a pushed platform boots", () => {
     const db = open024();
@@ -390,7 +366,6 @@ describe("the swap path refuses what a rollback could not survive", () => {
       db.close();
     }
   });
-
   it("refuses a restart-only migration whole, applying nothing — drop-goal-state is the first", () => {
     const db = open024();
     try {
@@ -405,7 +380,6 @@ describe("the swap path refuses what a rollback could not survive", () => {
       db.close();
     }
   });
-
   it("a database already at the latest version boots on the swap path without a word", () => {
     const db = open024();
     try {
@@ -416,7 +390,6 @@ describe("the swap path refuses what a rollback could not survive", () => {
     }
   });
 });
-
 describe("0.2.9 → current: drop-goal-state", () => {
   it("drops the table and its index, and a database that never had them migrates the same", () => {
     const db = open029();
@@ -435,7 +408,6 @@ describe("0.2.9 → current: drop-goal-state", () => {
       fresh.close();
     }
   });
-
   it("down recreates the 0.2.9 table empty, with its index", () => {
     const db = open029();
     try {
@@ -453,7 +425,6 @@ describe("0.2.9 → current: drop-goal-state", () => {
     }
   });
 });
-
 describe("pre-profile → current: user-profile", () => {
   it("adds both columns, and a database that already has them migrates the same", () => {
     const db = openPreProfile();
@@ -467,7 +438,6 @@ describe("pre-profile → current: user-profile", () => {
       expect(userColumns(db)).toContain("display_name");
       expect(userColumns(db)).toContain("avatar");
       expect(shape(db)).toBe(shape(fresh));
-
       // ADOPTION: on a database this build created, the declarative track already added both,
       // so the migration must find its work done, add nothing twice, and stamp anyway.
       fresh.exec("PRAGMA user_version = 4");
@@ -480,7 +450,6 @@ describe("pre-profile → current: user-profile", () => {
       fresh.close();
     }
   });
-
   it("down removes both columns, taking every nickname and avatar with them", () => {
     const db = openPreProfile();
     try {
@@ -490,7 +459,6 @@ describe("pre-profile → current: user-profile", () => {
       const before = shape(db);
       migrate(db);
       db.exec("UPDATE users SET display_name = 'Bob', avatar = 'data:image/png;base64,AAAA'");
-
       rollbackTo(db, 4);
       expect(shape(db)).toBe(before);
       expect(userColumns(db)).not.toContain("display_name");
@@ -502,7 +470,6 @@ describe("pre-profile → current: user-profile", () => {
     }
   });
 });
-
 describe("migration 6 → current: company-mode-channels", () => {
   it("renames both chat tables and puts channel_id in their primary keys, recreating them empty", () => {
     const db = open6();
@@ -514,7 +481,6 @@ describe("migration 6 → current: company-mode-channels", () => {
           " VALUES ('p1', 'acme', 'alice', 'msg-2026-09-01-00-00-00-00000000')",
       );
       expect(shape(db)).not.toBe(shape(fresh));
-
       expect(migrate(db).applied).toEqual(
         MIGRATIONS.filter((m) => m.version > 6).map((m) => m.name),
       );
@@ -539,7 +505,6 @@ describe("migration 6 → current: company-mode-channels", () => {
       fresh.close();
     }
   });
-
   it("down puts the old tables and the single-chat shape back, empty", () => {
     const db = open6();
     const at6 = open6();
@@ -555,7 +520,6 @@ describe("migration 6 → current: company-mode-channels", () => {
     }
   });
 });
-
 describe("migration 7 → current: company-mode-desk-notices", () => {
   it("adds the queue a ticket change is delivered through, writable and indexed", () => {
     const db = open7();
@@ -578,7 +542,6 @@ describe("migration 7 → current: company-mode-desk-notices", () => {
       fresh.close();
     }
   });
-
   it("down drops the queue with the notices nobody has been told about yet", () => {
     const db = open7();
     const at7 = open7();
@@ -597,7 +560,6 @@ describe("migration 7 → current: company-mode-desk-notices", () => {
     }
   });
 });
-
 describe("migration 8 → current: model-promotions", () => {
   it("creates the promotions table, and its down drops it again", () => {
     const db = open8();
@@ -628,7 +590,6 @@ describe("migration 8 → current: model-promotions", () => {
       expect(schemaVersion(db)).toBe(LATEST_VERSION);
       expect(promotionsTableExists()).toEqual({ "1": 1 });
       expect(authTokensTableExists()).toEqual({ "1": 1 });
-
       rollbackTo(db, 8);
       expect(schemaVersion(db)).toBe(8);
       expect(promotionsTableExists()).toBeUndefined();
@@ -637,7 +598,6 @@ describe("migration 8 → current: model-promotions", () => {
       db.close();
     }
   });
-
   it("is safe to create while a pushed platform boots", () => {
     const db = open8();
     try {
@@ -660,7 +620,6 @@ describe("migration 8 → current: model-promotions", () => {
     }
   });
 });
-
 describe("migration 9 → current: model-provider-auth-tokens", () => {
   it("creates the server-side refresh-token table, writable and rollback-safe", () => {
     const db = open9();
@@ -700,7 +659,6 @@ describe("migration 9 → current: model-provider-auth-tokens", () => {
       expect(db.prepare("SELECT refresh_token FROM model_provider_auth_tokens").all()).toEqual([
         { refresh_token: "refresh" },
       ]);
-
       rollbackTo(db, 9);
       expect(schemaVersion(db)).toBe(9);
       expect(tableExists()).toBeUndefined();
@@ -709,7 +667,6 @@ describe("migration 9 → current: model-provider-auth-tokens", () => {
     }
   });
 });
-
 /** A database stamped at migration 12: everything before the Chrome pairings. */
 function open12(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
@@ -720,7 +677,6 @@ function open12(): DatabaseSync {
   db.exec("PRAGMA user_version = 12");
   return db;
 }
-
 describe("migration 12 → current: browser-extensions", () => {
   it("creates the pairings table, which holds one row per token and cascades with its user", () => {
     const db = open12();
@@ -756,7 +712,6 @@ describe("migration 12 → current: browser-extensions", () => {
       db.close();
     }
   });
-
   it("down drops the pairings, and a second up recreates the table empty", () => {
     const db = open12();
     const tableExists = () =>
@@ -775,7 +730,6 @@ describe("migration 12 → current: browser-extensions", () => {
     }
   });
 });
-
 /** A database stamped at migration 13: everything before the Agent API. */
 function open13(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
@@ -785,7 +739,6 @@ function open13(): DatabaseSync {
   db.exec("PRAGMA user_version = 13");
   return db;
 }
-
 describe("migration 13 → current: agent-api", () => {
   it("creates the settings table while a pushed platform boots: one row per Agent, keyed and allow-all unless set", () => {
     const db = open13();
@@ -816,7 +769,6 @@ describe("migration 13 → current: agent-api", () => {
       db.close();
     }
   });
-
   it("creates the keys table, which holds one key per token hash and only keys a user created", () => {
     const db = open13();
     try {
@@ -844,7 +796,6 @@ describe("migration 13 → current: agent-api", () => {
       db.close();
     }
   });
-
   it("down drops the settings and every key, and a second up recreates both empty", () => {
     const db = open13();
     const at13 = open13();
@@ -865,7 +816,6 @@ describe("migration 13 → current: agent-api", () => {
     }
   });
 });
-
 /** A database stamped at migration 14: everything before the stored messaging conversations. */
 function open14(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
@@ -874,7 +824,6 @@ function open14(): DatabaseSync {
   db.exec("PRAGMA user_version = 14");
   return db;
 }
-
 describe("migration 14 → current: messaging-conversations", () => {
   it("creates one row per (channel, bot, chat) while a pushed platform boots, and its down drops them", () => {
     const db = open14();
@@ -905,7 +854,6 @@ describe("migration 14 → current: messaging-conversations", () => {
     }
   });
 });
-
 /** A database stamped at migration 15: Sessions carry no keep-in-sidebar mark yet. */
 function open15(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
@@ -914,14 +862,12 @@ function open15(): DatabaseSync {
   db.exec("PRAGMA user_version = 15");
   return db;
 }
-
 describe("migration 15 → current: sessions-kept-at", () => {
   const insertSession = (db: DatabaseSync) =>
     db.exec(
       "INSERT INTO sessions (session_id, project_id, agent_id, provider, model_id, workspace, created_at)" +
         " VALUES ('s1', 'p1', 'coder', 'openai', 'gpt', '/w', '2026-10-11T00:00:00.000Z')",
     );
-
   it("adds the mark while a pushed platform boots, leaving every existing Session unmarked", () => {
     const db = open15();
     try {
@@ -940,7 +886,6 @@ describe("migration 15 → current: sessions-kept-at", () => {
       db.close();
     }
   });
-
   it("down keeps the column and the marks in it, so a kept Session stays kept", () => {
     const db = open15();
     try {
@@ -957,7 +902,6 @@ describe("migration 15 → current: sessions-kept-at", () => {
     }
   });
 });
-
 /** A database stamped at migration 18: machine rows carry no adoption time yet. */
 function open18(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
@@ -966,13 +910,11 @@ function open18(): DatabaseSync {
   db.exec("PRAGMA user_version = 18");
   return db;
 }
-
 describe("migration 18 → current: machines-adopted-at", () => {
   const insertMachine = (db: DatabaseSync) =>
     db.exec(
       "INSERT INTO machines (address, machine_id, version, installed_at) VALUES ('ssh:nas', 'm1', '0.2.16', '2026-10-14T00:00:00.000Z')",
     );
-
   it("adds the adoption time while a pushed platform boots, leaving a machine adopted before it without one", () => {
     const db = open18();
     try {
@@ -985,7 +927,6 @@ describe("migration 18 → current: machines-adopted-at", () => {
       db.close();
     }
   });
-
   it("down keeps the column and the times in it", () => {
     const db = open18();
     try {
@@ -1002,7 +943,6 @@ describe("migration 18 → current: machines-adopted-at", () => {
     }
   });
 });
-
 describe("0.2.4 → current", () => {
   /** The whole point: an older runtime's database becomes what a current build creates. */
   it("brings a 0.2.4 database to the shape a fresh one is created with", () => {
@@ -1011,16 +951,13 @@ describe("0.2.4 → current", () => {
     try {
       fresh.exec(SCHEMA_SQL);
       expect(shape(old)).not.toBe(shape(fresh));
-
       migrate(old);
-
       expect(shape(old)).toBe(shape(fresh));
     } finally {
       old.close();
       fresh.close();
     }
   });
-
   it("the messaging table it creates is writable, which is what the boot needed", () => {
     const db = open024();
     try {
@@ -1034,7 +971,6 @@ describe("0.2.4 → current", () => {
       db.close();
     }
   });
-
   it("leaves existing rows alone", () => {
     const db = open024();
     try {
@@ -1048,7 +984,6 @@ describe("0.2.4 → current", () => {
     }
   });
 });
-
 describe("a machines table from before migration 4", () => {
   /** The machines table as the machines line created it before release: forwards, no session, no platform. */
   const ADOPTED_MACHINES_DDL = `
@@ -1062,7 +997,6 @@ describe("a machines table from before migration 4", () => {
       remote_port  INTEGER
     );
   `;
-
   it("is adopted by migration 4 as it stands, and gains the columns the row writes at 10", () => {
     // What a data root that ran the machines line before its migration holds: IF NOT EXISTS
     // kept the table, and the first connect failed on the insert naming session_pid.
@@ -1087,7 +1021,6 @@ describe("a machines table from before migration 4", () => {
     }
   });
 });
-
 describe("rollbackTo", () => {
   /** Every migration states an undo or states that it has none — never leaves it unsaid. */
   it("every migration declares its down, one way or the other", () => {
@@ -1096,13 +1029,11 @@ describe("rollbackTo", () => {
       expect(typeof m.down === "function" || m.down === null).toBe(true);
     }
   });
-
   it("undoes a migration and moves the stamp back with it", () => {
     const db = open024();
     try {
       migrate(db);
       expect(schemaVersion(db)).toBe(LATEST_VERSION);
-
       // Back to version 1: everything after it is undone, so the columns migration 2 added are gone.
       const r = rollbackTo(db, 1);
       expect(r.from).toBe(LATEST_VERSION);
@@ -1133,18 +1064,15 @@ describe("rollbackTo", () => {
       db.close();
     }
   });
-
   /** The property that makes an undo an undo: up ∘ down ∘ up leaves the same schema as up. */
   it("round-trips: up, down, up again lands on the same shape", () => {
     const db = open024();
     try {
       migrate(db);
       const afterUp = shape(db);
-
       rollbackTo(db, 0);
       expect(schemaVersion(db)).toBe(0);
       expect(shape(db)).not.toBe(afterUp);
-
       migrate(db);
       expect(schemaVersion(db)).toBe(LATEST_VERSION);
       expect(shape(db)).toBe(afterUp);
@@ -1152,7 +1080,6 @@ describe("rollbackTo", () => {
       db.close();
     }
   });
-
   it("reverts newest first, so a multi-step rollback is ordered", () => {
     const db = open024();
     try {
@@ -1174,7 +1101,6 @@ describe("rollbackTo", () => {
       db.close();
     }
   });
-
   it("refuses whole when anything in range has no down, applying nothing", () => {
     const db = open024();
     try {
@@ -1208,7 +1134,6 @@ describe("rollbackTo", () => {
       db.close();
     }
   });
-
   it("will not roll forward, and rejects a negative target", () => {
     const db = open024();
     try {
@@ -1220,7 +1145,6 @@ describe("rollbackTo", () => {
     }
   });
 });
-
 describe("migration 16 → current: Agent API session settings", () => {
   it("preserves exposure, approvals and keys while adding defaults, and keeps later choices on re-open", () => {
     const db = new sqlite.DatabaseSync(":memory:");
@@ -1270,7 +1194,6 @@ describe("migration 16 → current: Agent API session settings", () => {
     }
   });
 });
-
 // Given a database that already has session settings, the concurrency upgrade preserves them
 // and its key, starts with the old limit, and retains a changed limit across repeated startup.
 describe("migration 17 → current: API concurrency", () => {

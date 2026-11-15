@@ -6,24 +6,21 @@
  */
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import {
-  POWERSHELL_ARGS,
-  conventionallyHiddenNames,
-  createPlaceDiscovery,
-  darwinLocations,
-  discoverPlaces,
-  parseMounts,
-  parseWindowsReport,
-  systemEffects,
-  windowsHiddenNames,
-  windowsLocations,
-  type ExecOutcome,
-  type PlaceDirent,
-  type PlaceEffects,
-} from "../src/services/dir-places.js";
+import { ExecOutcome } from "../../../plugins/projects/src/server/projects/dir-places.js";
+import { POWERSHELL_ARGS } from "../../../plugins/projects/src/server/projects/dir-places.js";
+import { PlaceDirent } from "../../../plugins/projects/src/server/projects/dir-places.js";
+import { PlaceEffects } from "../../../plugins/projects/src/server/projects/dir-places.js";
+import { conventionallyHiddenNames } from "../../../plugins/projects/src/server/projects/dir-places.js";
+import { createPlaceDiscovery } from "../../../plugins/projects/src/server/projects/dir-places.js";
+import { darwinLocations } from "../../../plugins/projects/src/server/projects/dir-places.js";
+import { discoverPlaces } from "../../../plugins/projects/src/server/projects/dir-places.js";
+import { parseMounts } from "../../../plugins/projects/src/server/projects/dir-places.js";
+import { parseWindowsReport } from "../../../plugins/projects/src/server/projects/dir-places.js";
+import { systemEffects } from "../../../plugins/projects/src/server/projects/dir-places.js";
+import { windowsHiddenNames } from "../../../plugins/projects/src/server/projects/dir-places.js";
+import { windowsLocations } from "../../../plugins/projects/src/server/projects/dir-places.js";
 
 const errno = (code: string) => Object.assign(new Error(code), { code });
-
 /** A machine with nothing on it; each case overrides the calls it is about. */
 function fakeEffects(over: Partial<PlaceEffects> & Pick<PlaceEffects, "platform">): PlaceEffects {
   return {
@@ -46,7 +43,6 @@ function fakeEffects(over: Partial<PlaceEffects> & Pick<PlaceEffects, "platform"
     ...over,
   };
 }
-
 const exited = (stdout: Buffer, code = 0): ExecOutcome => ({ stdout, code, timedOut: false });
 const killed = (stdout: Buffer): ExecOutcome => ({ stdout, code: null, timedOut: true });
 /** What `cmd /u` writes: UTF-16LE, CRLF, no BOM. */
@@ -56,7 +52,6 @@ const dirent = (name: string, kind: "dir" | "link"): PlaceDirent => ({
   isDirectory: () => kind === "dir",
   isSymbolicLink: () => kind === "link",
 });
-
 describe("parseMounts", () => {
   it("keeps the browsable mounts, decoded and in order, and none of the plumbing", () => {
     const text = [
@@ -87,7 +82,6 @@ describe("parseMounts", () => {
     ]);
   });
 });
-
 describe("Linux standard folders", () => {
   it("follows user-dirs.dirs: localized names, $HOME expanded, the home value disabling a folder", async () => {
     const existing = new Set([
@@ -122,7 +116,6 @@ describe("Linux standard folders", () => {
     });
     expect(places.locations[0]).toEqual({ path: "/", kind: "root" });
   });
-
   it("falls back to the English names that exist when there is no file", async () => {
     const effects = fakeEffects({
       platform: "linux",
@@ -133,7 +126,6 @@ describe("Linux standard folders", () => {
     });
   });
 });
-
 describe("Windows drive report", () => {
   it("maps each JSON line, or an array of them, to a location and skips what is not the report", () => {
     const text = [
@@ -156,7 +148,6 @@ describe("Windows drive report", () => {
       { path: "Z:\\", kind: "network", label: "\\\\nas\\media" },
     ]);
   });
-
   it("keeps what PowerShell printed before its deadline", async () => {
     const effects = fakeEffects({
       platform: "win32",
@@ -173,7 +164,6 @@ describe("Windows drive report", () => {
     // The folders line never came: unanswered, not "none", so the picker may find them by name.
     expect(places.standardFolders).toBeUndefined();
   });
-
   it("probes the letters through cmd when PowerShell said nothing, and knows the system drive when even that fails", async () => {
     const calls: string[] = [];
     const probing = fakeEffects({
@@ -198,7 +188,6 @@ describe("Windows drive report", () => {
       "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
       "C:\\Windows\\system32\\cmd.exe",
     ]);
-
     const blind = fakeEffects({
       platform: "win32",
       homedir: "D:\\Users\\me",
@@ -210,7 +199,6 @@ describe("Windows drive report", () => {
     ]);
   });
 });
-
 describe("windowsHiddenNames", () => {
   it("reads dir /a:h /b as UTF-16LE, the directory quoted on the command line", async () => {
     const calls: string[][] = [];
@@ -227,11 +215,9 @@ describe("windowsHiddenNames", () => {
     expect([...hidden].sort()).toEqual(["AppData", "NTUSER.DAT", "桌面"]);
     expect(calls).toEqual([["cmd.exe", "/d", "/u", "/c", "dir", "/a:h", "/b", '"C:\\Users\\我"']]);
   });
-
   it("treats exit 1 with nothing printed as no hidden entries, and anything worse as unknown", async () => {
     const none = fakeEffects({ platform: "win32", exec: async () => exited(Buffer.alloc(0), 1) });
     expect(await windowsHiddenNames("C:\\ws", ["AppData", "src"], none)).toEqual(new Set());
-
     const late = fakeEffects({ platform: "win32", exec: async () => killed(Buffer.alloc(0)) });
     expect(
       await windowsHiddenNames("C:\\", ["$Recycle.Bin", "Users", "pagefile.sys"], late),
@@ -242,7 +228,6 @@ describe("windowsHiddenNames", () => {
     ).toEqual(new Set(["ntuser.dat.LOG1", "AppData"]));
   });
 });
-
 describe("darwinLocations", () => {
   it("lists the startup disk first by its link, then the other volumes, and nothing hidden", async () => {
     const effects = fakeEffects({
@@ -272,7 +257,6 @@ describe("darwinLocations", () => {
     ]);
   });
 });
-
 describe("createPlaceDiscovery", () => {
   it("shares one run between concurrent callers and keeps it until the TTL passes", async () => {
     let runs = 0;
@@ -296,7 +280,6 @@ describe("createPlaceDiscovery", () => {
     expect(runs).toBe(2);
   });
 });
-
 /**
  * The one place the Windows report script itself runs. Everything above feeds the parser text;
  * a script that fails on a real PowerShell would fall back to the letter probe without a word,

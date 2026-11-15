@@ -9,27 +9,21 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { ImportEnv } from "../src/builtin-browser/import/index.js";
-
+import { ImportEnv } from "../../../plugins/browser/src/server/builtin-browser/import/index.js";
 const sqlite = process.getBuiltinModule("node:sqlite");
-
 /** Seconds between 1601-01-01 (Chromium's epoch) and 1970-01-01. */
 const EPOCH_DELTA = 11644473600n;
-
 /** A Chromium timestamp (microseconds since 1601) for unix seconds. */
 export function chromeTime(unixSeconds: number): bigint {
   return (BigInt(unixSeconds) + EPOCH_DELTA) * 1_000_000n;
 }
-
 export const nowSeconds = (): number => Math.floor(Date.now() / 1000);
 export const DAY = 86_400;
-
 export interface HelperCall {
   file: string;
   args: string[];
   input?: string;
 }
-
 /** A scratch machine: its home, temp directory, environment and key helpers. */
 export class FakeMachine {
   readonly root: string;
@@ -39,7 +33,6 @@ export class FakeMachine {
   /** Helpers by executable name; a missing one behaves as not installed. */
   readonly helpers = new Map<string, (args: string[], input?: string) => string>();
   readonly vars: Record<string, string | undefined> = {};
-
   constructor(readonly platform: NodeJS.Platform) {
     this.root = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-import-test-"));
     this.home = path.join(this.root, "home");
@@ -51,7 +44,6 @@ export class FakeMachine {
       this.vars.APPDATA = path.join(this.home, "AppData", "Roaming");
     }
   }
-
   env(): ImportEnv {
     return {
       platform: this.platform,
@@ -66,22 +58,18 @@ export class FakeMachine {
       },
     };
   }
-
   /** A path under the home directory. */
   path(...segments: string[]): string {
     return path.join(this.home, ...segments);
   }
-
   cleanup(): void {
     fs.rmSync(this.root, { recursive: true, force: true });
   }
 }
-
 export function writeFile(file: string, content: string): void {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, content);
 }
-
 export function writeLocalState(
   userDataDir: string,
   state: { names?: Record<string, string>; encryptedKey?: string },
@@ -100,22 +88,18 @@ export function writeLocalState(
     }),
   );
 }
-
 // ---------------------------------------------------------------------------
 // Keys and encryption (Chromium's scheme, written from its description)
 // ---------------------------------------------------------------------------
-
 export function cbcKey(password: string, iterations: number): Buffer {
   return crypto.pbkdf2Sync(password, "saltysalt", iterations, 16, "sha1");
 }
-
 /** SHA-256(host) + value: the plaintext layout from store version 24. */
 function plaintextOf(value: string, digestHost: string | undefined): Buffer {
   const body = Buffer.from(value, "utf8");
   if (digestHost === undefined) return body;
   return Buffer.concat([crypto.createHash("sha256").update(digestHost).digest(), body]);
 }
-
 /** macOS / Linux: tag + AES-128-CBC (IV of 16 spaces, PKCS7). */
 export function encryptCbc(
   tag: "v10" | "v11",
@@ -127,7 +111,6 @@ export function encryptCbc(
   const body = Buffer.concat([cipher.update(plaintextOf(value, digestHost)), cipher.final()]);
   return Buffer.concat([Buffer.from(tag), body]);
 }
-
 /** Windows: tag + 12-byte nonce + AES-256-GCM ciphertext + 16-byte tag. */
 export function encryptGcm(
   tag: "v10" | "v11" | "v20",
@@ -140,21 +123,17 @@ export function encryptGcm(
   const body = Buffer.concat([cipher.update(plaintextOf(value, digestHost)), cipher.final()]);
   return Buffer.concat([Buffer.from(tag), nonce, body, cipher.getAuthTag()]);
 }
-
 /** A stand-in for DPAPI: XOR with a constant, so "unprotecting" is the same operation. */
 export function fakeDpapi(data: Buffer): Buffer {
   return Buffer.from(data.map((byte) => byte ^ 0x5a));
 }
-
 /** `Local State`'s os_crypt.encrypted_key for an AES key under the fake DPAPI. */
 export function wrappedKey(key: Buffer): string {
   return Buffer.concat([Buffer.from("DPAPI"), fakeDpapi(key)]).toString("base64");
 }
-
 // ---------------------------------------------------------------------------
 // Stores
 // ---------------------------------------------------------------------------
-
 export interface ChromiumCookieFixture {
   host: string;
   name: string;
@@ -169,7 +148,6 @@ export interface ChromiumCookieFixture {
   /** A partitioned (CHIPS) cookie's top-level site; needs the store's `partitioned` column. */
   topFrameSiteKey?: string;
 }
-
 /**
  * A Chromium `Cookies` store. `legacy` writes the pre-2019 columns (secure / httponly, no
  * samesite); `version` is `meta.version` (omitted: no meta table at all); `partitioned` adds
@@ -226,7 +204,6 @@ export function writeChromiumCookies(
   }
   db.close();
 }
-
 export interface ChromiumHistoryFixture {
   url: string;
   title?: string;
@@ -235,7 +212,6 @@ export interface ChromiumHistoryFixture {
   visitedAt: number;
   hidden?: boolean;
 }
-
 export function writeChromiumHistory(file: string, rows: ChromiumHistoryFixture[]): void {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const db = new sqlite.DatabaseSync(file);
@@ -259,7 +235,6 @@ export function writeChromiumHistory(file: string, rows: ChromiumHistoryFixture[
   db.exec("COMMIT");
   db.close();
 }
-
 export interface FirefoxCookieFixture {
   host: string;
   name: string;
@@ -272,7 +247,6 @@ export interface FirefoxCookieFixture {
   sameSite?: number;
   originAttributes?: string;
 }
-
 export function writeFirefoxCookies(file: string, cookies: FirefoxCookieFixture[]): void {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const db = new sqlite.DatabaseSync(file);
@@ -299,7 +273,6 @@ export function writeFirefoxCookies(file: string, cookies: FirefoxCookieFixture[
   }
   db.close();
 }
-
 export interface FirefoxPlaceFixture {
   url: string;
   title?: string | null;
@@ -308,7 +281,6 @@ export interface FirefoxPlaceFixture {
   visitedAt: number | null;
   hidden?: boolean;
 }
-
 export function writeFirefoxPlaces(file: string, places: FirefoxPlaceFixture[]): void {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const db = new sqlite.DatabaseSync(file);
@@ -330,7 +302,6 @@ export function writeFirefoxPlaces(file: string, places: FirefoxPlaceFixture[]):
   }
   db.close();
 }
-
 /** A `profiles.ini` listing profiles, the first one being the install's default. */
 export function writeProfilesIni(
   root: string,

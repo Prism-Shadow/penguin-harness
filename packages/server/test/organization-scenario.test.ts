@@ -11,10 +11,9 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import { parseOrgTriggerMessage } from "@prismshadow/penguin-core";
-import { DEFAULT_CHANNEL_ID } from "../src/organization/paths.js";
+import { DEFAULT_CHANNEL_ID } from "../../../plugins/company/src/web/index.js";
 import { makeOrgHarness } from "./org-harness.js";
 import type { OrgHarness } from "./org-harness.js";
-
 const ORG = "marketplace";
 const CEO = "marketplace_ceo";
 const HR = "marketplace_hr";
@@ -25,23 +24,18 @@ const T0 = Date.parse("2026-09-01T01:00:00Z");
 const DAY = 86_400_000;
 const MISSION =
   "Build a DeepSeek Harness plugin Marketplace, promote it on social media and SEO into the top three search results, and earn from paid featured slots on the home page.";
-
 describe("scenario: the DeepSeek Harness plugin Marketplace company", () => {
   let h: OrgHarness;
   const P = "p1";
-
   const triggers = (): Array<{
     sessionId: string;
     origin: ReturnType<typeof parseOrgTriggerMessage>;
   }> => h.started.map((s) => ({ sessionId: s.sessionId, origin: parseOrgTriggerMessage(s.text) }));
-
   beforeEach(async () => {
     h = await makeOrgHarness({ nowMs: T0 });
   });
-
   it("runs the company from the mission to the first paid slot", async () => {
     const { service, scheduler, store } = h;
-
     // 1. The board creates the organization with one sentence: only the CEO exists.
     const detail = await service.create(
       P,
@@ -71,7 +65,6 @@ describe("scenario: the DeepSeek Harness plugin Marketplace company", () => {
     expect(prose).toContain("saturates the CPU or a GPU for more than a few minutes");
     expect(handbook).toContain("## Ask before it touches the machine or the outside");
     expect(handbook).toContain("penguin org ticket block <id> --reason … --by user:alice");
-
     // 2. The CEO (from its desk) confirms the mission with the board in the all-hands channel …
     const m1 = await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
       text: "@alice I read the mission as: marketplace site first, then SEO and social, revenue from featured slots. Correct?",
@@ -93,7 +86,6 @@ describe("scenario: the DeepSeek Harness plugin Marketplace company", () => {
     expect(
       triggers().filter((t) => t.origin?.origin.kind === "mention" && t.sessionId === ceoDesk),
     ).toHaveLength(1);
-
     // … hires HR and finance first, then the roles the mission needs, partitioning the workspace.
     const dir = store.dir(P, ORG);
     for (const sub of ["people", "finance", "site", "marketing"])
@@ -134,7 +126,6 @@ describe("scenario: the DeepSeek Harness plugin Marketplace company", () => {
     expect(chart.employees.every((e) => e.invalid === undefined)).toBe(true);
     expect(h.agentsCreated.every((a) => a.plugins.includes("agent-company"))).toBe(true);
     expect(h.briefs.get(DEV)).toContain("Duties: Build and run the marketplace site");
-
     // 3. Everyone gets a daily sweep on the calendar.
     for (const agentId of [CEO, HR, FIN, DEV, MKT]) {
       await service.upsertCalendar(
@@ -153,7 +144,6 @@ describe("scenario: the DeepSeek Harness plugin Marketplace company", () => {
       );
     }
     expect((await service.calendar(P, ORG)).events).toHaveLength(5);
-
     // 4. The mission becomes a ticket tree: one parent, one child per stream.
     const ceoActor = { userId: "alice", sessionId: ceoDesk };
     const runsBeforeTickets = h.started.length;
@@ -221,7 +211,6 @@ describe("scenario: the DeepSeek Harness plugin Marketplace company", () => {
     expect(h.started).toHaveLength(runsBeforeTickets);
     const devDesk = (await service.desk(P, ORG, DEV, {})).sessionId;
     const mktDesk = (await service.desk(P, ORG, MKT, {})).sessionId;
-
     // 5. The CEO accepts the streams; SEO waits on the site.
     for (const t of [site, seo, social, slots])
       await service.moveTicket(P, ORG, t.ticketId, "in_progress", undefined, ceoActor);
@@ -241,7 +230,6 @@ describe("scenario: the DeepSeek Harness plugin Marketplace company", () => {
     expect(board2.columns.in_progress.find((t) => t.ticketId === seo.ticketId)?.blocked).toBe(
       "Nothing to index until the site is live",
     );
-
     // 5b. The site stream gets its own channel: the CEO opens it and invites the developer,
     // so the thread lives beside the all-hands channel instead of drowning it.
     const siteChannel = await service.createChannel(
@@ -294,7 +282,6 @@ describe("scenario: the DeepSeek Harness plugin Marketplace company", () => {
         (c) => c.channelId,
       ),
     ).toEqual([DEFAULT_CHANNEL_ID]);
-
     // 6. The calendar fires the next day: every desk gets its sweep with a budget line.
     h.started.length = 0;
     h.clock.nowMs = T0 + DAY + 120_000;
@@ -316,7 +303,6 @@ describe("scenario: the DeepSeek Harness plugin Marketplace company", () => {
     expect(sweeps.find((t) => t.sessionId === ceoDesk)!.origin!.rest).toContain(
       `- ${seo.ticketId} (SEO to the top three): blocked — "Nothing to index until the site is live" (by ${site.ticketId})`,
     );
-
     // 7. The developer's desk opens a ticket session for the site; the session works and writes back.
     // The developer's OWN desk starts it: an employee may open a session only on a ticket it owns.
     const { sessionId: siteWork } = await service.startTicket(
@@ -369,7 +355,6 @@ describe("scenario: the DeepSeek Harness plugin Marketplace company", () => {
     // The CEO's desk accepted the ticket from inside its own session, but accepting is a
     // decision, not work: only the developer's ticket session is booked as contributing.
     expect(siteDetail.sessions).toEqual([siteWork]);
-
     // 8. The CEO reviews and closes it: the developer is told, and the marketer learns its blocker closed.
     h.started.length = 0;
     await service.moveTicket(P, ORG, site.ticketId, "done", undefined, ceoActor);
@@ -383,7 +368,6 @@ describe("scenario: the DeepSeek Harness plugin Marketplace company", () => {
       [seo.ticketId, "blocker_closed"],
     ]);
     await service.unblockTicket(P, ORG, seo.ticketId, { userId: "alice", sessionId: mktDesk });
-
     // 9. Marketing works SEO and social from one session attached to both tickets; finance rolls it all up.
     const { sessionId: mktWork } = await service.startTicket(
       P,
@@ -411,7 +395,6 @@ describe("scenario: the DeepSeek Harness plugin Marketplace company", () => {
     expect(ticketCost.get(seo.ticketId)?.cost).toBe(15);
     expect(ticketCost.get(social.ticketId)?.cost).toBe(15);
     expect(ticketCost.get(parent.ticketId)?.rolledUp).toBe(70);
-
     // 10. Revenue: the paid featured slots ship and the board is told.
     const slotWork = await service.startTicket(
       P,
@@ -438,7 +421,6 @@ describe("scenario: the DeepSeek Harness plugin Marketplace company", () => {
     expect(overview.spend).toMatchObject({ cost: 72, budget: 300 });
     expect(overview.pending.mentions).toBeGreaterThanOrEqual(1);
     expect(overview.recentMessages.at(-1)?.text).toContain("first paid featured slot sold");
-
     // Every automatic message went through the marker the frontend folds, never a bare prompt.
     for (const s of h.started) expect(parseOrgTriggerMessage(s.text)).not.toBeNull();
     expect(h.errors).toEqual([]);

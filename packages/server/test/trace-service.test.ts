@@ -48,33 +48,28 @@ import type {
   TokenCounts,
   StopReason,
 } from "@prismshadow/penguin-core";
-
 // Traces written before the stop-reason convergence carry the retired spellings; analysis
 // must keep reading them, so these fixtures write them through a cast.
 const legacyEnd = (status: string) => requestEnd(status as StopReason);
-import type { TraceService } from "../src/services/trace-service.js";
-import type { SessionRow } from "../src/db/repos/sessions.js";
+import type { TraceService } from "../../../plugins/usage/src/server/index.js";
+import type { SessionRow } from "../../../plugins/sessions/src/server/index.js";
 import { openDatabase } from "@penguinharness/plugin-db/server";
 import { wire } from "@prismshadow/penguin-core/kernel";
-import { ErrorsRepo } from "../src/db/repos/errors.js";
-import { UsageRepo } from "../src/db/repos/usage.js";
-import { SessionSources } from "../src/runtime/session-sources.js";
-import { UsageService } from "../src/services/usage-service.js";
-import type { PricingLookup } from "../src/services/usage-service.js";
+import { ErrorsRepo } from "../../../plugins/usage/src/server/index.js";
+import { UsageRepo } from "../../../plugins/usage/src/server/index.js";
+import { SessionSources } from "../../../plugins/sessions/src/server/index.js";
+import { UsageService } from "../../../plugins/usage/src/server/index.js";
+import { PricingLookup } from "../../../plugins/usage/src/server/usage-service.js";
 import { makeTempRoot, makeTraceHarness, writeTraceFile } from "./helpers.js";
-
 const P = "project-t";
 const A = "agent-t";
 const S = "session-2026-07-05-10-00-00-aabbccdd";
-
 function at(ts: string, msg: AmspRecord): AmspRecord {
   return { ...msg, timestamp: ts };
 }
-
 function counts(total: number): TokenCounts {
   return { cache_read: 0, cache_write: 0, output: 0, total };
 }
-
 /** Request usage with real three-bucket counts (both the context snapshot and the TPS numerator are derived from this). */
 function buckets(cacheRead: number, cacheWrite: number, output: number): TokenCounts {
   return {
@@ -84,7 +79,6 @@ function buckets(cacheRead: number, cacheWrite: number, output: number): TokenCo
     total: cacheRead + cacheWrite + output,
   };
 }
-
 function metaPayload(over: Partial<SessionMetaPayload> = {}): SessionMetaPayload {
   return {
     session_id: S,
@@ -98,7 +92,6 @@ function metaPayload(over: Partial<SessionMetaPayload> = {}): SessionMetaPayload
     ...over,
   };
 }
-
 /** A sessions-table row for the paginated listing's index fake (only the listing-relevant fields vary per test). */
 function dbRow(over: Partial<SessionRow> & { sessionId: string }): SessionRow {
   return {
@@ -114,12 +107,10 @@ function dbRow(over: Partial<SessionRow> & { sessionId: string }): SessionRow {
     ...over,
   };
 }
-
 describe("trace-service", () => {
   let root: string;
   let service: TraceService;
   let harness: ReturnType<typeof makeTraceHarness>;
-
   beforeEach(async () => {
     root = await makeTempRoot();
     harness = makeTraceHarness(root);
@@ -129,7 +120,6 @@ describe("trace-service", () => {
     harness.close();
     await fs.rm(root, { recursive: true, force: true });
   });
-
   it("messages: all index files concatenated in order (across date directories)", async () => {
     await writeTraceFile(root, P, A, "2026-07-05", S, 1, [
       sessionMeta(metaPayload()),
@@ -144,14 +134,12 @@ describe("trace-service", () => {
     expect((messages[1]!.payload as { text: string }).text).toBe("first file");
     expect((messages[3]!.payload as { text: string }).text).toBe("second file");
   });
-
   it("messages: tolerates a truncated last line", async () => {
     const file = await writeTraceFile(root, P, A, "2026-07-05", S, 1, [userText("ok")]);
     await fs.appendFile(file, '{"timestamp":"2026', "utf8");
     const messages = await service.readMessages(P, A, S);
     expect(messages).toHaveLength(1);
   });
-
   it("traces listing: index / date / size / mtime", async () => {
     await writeTraceFile(root, P, A, "2026-07-05", S, 1, [userText("a")]);
     await writeTraceFile(root, P, A, "2026-07-06", S, 2, [userText("bb")]);
@@ -161,7 +149,6 @@ describe("trace-service", () => {
     expect(files[0]!.sizeBytes).toBeGreaterThan(0);
     expect(Date.parse(files[0]!.mtime)).not.toBeNaN();
   });
-
   it("paginated line reads: offset/limit and total", async () => {
     const messages = Array.from({ length: 10 }, (_, i) => userText(`m${i}`));
     await writeTraceFile(root, P, A, "2026-07-05", S, 1, messages);
@@ -173,7 +160,6 @@ describe("trace-service", () => {
     const notFound = await service.readEvents(P, A, S, 99, 0, 10).catch((e: unknown) => e);
     expect((notFound as { status: number }).status).toBe(404);
   });
-
   it("paginated line reads follow a file the running Task appends to", async () => {
     const file = await writeTraceFile(root, P, A, "2026-07-05", S, 1, [
       userText("m0"),
@@ -185,7 +171,6 @@ describe("trace-service", () => {
     expect(grown.total).toBe(3);
     expect(grown.events.map((e) => (e.payload as { text: string }).text)).toEqual(["m1", "m2"]);
   });
-
   it("the analysis carries the context window its file's head names, and none when the head names none", async () => {
     await writeTraceFile(root, P, A, "2026-07-05", S, 1, [
       sessionMeta(metaPayload({ model_context_window: 200_000 })),
@@ -195,7 +180,6 @@ describe("trace-service", () => {
     expect((await service.analyze(P, A, S, 1)).modelContextWindow).toBe(200_000);
     expect((await service.analyze(P, A, S, 2)).modelContextWindow).toBeUndefined();
   });
-
   it("performance analysis: Request pairing, tool durations, reconnect / compaction counts, Token trend", async () => {
     await writeTraceFile(root, P, A, "2026-07-05", S, 1, [
       sessionMeta(metaPayload()),
@@ -225,7 +209,6 @@ describe("trace-service", () => {
       at("2026-07-05T10:00:11.000Z", requestBegin()), // unclosed (process exited)
     ]);
     const analysis = await service.analyze(P, A, S, 1);
-
     expect(analysis.requests).toHaveLength(3);
     expect(analysis.requests[0]!.status).toBe("retryable");
     expect(analysis.requests[0]!.durationMs).toBe(2000);
@@ -237,19 +220,16 @@ describe("trace-service", () => {
     // req1(retry succeeded) are both Task 0 — they must not be split into two
     // turns. Compaction interrupts continuation, so req2 starts a new turn.
     expect(analysis.requests.map((r) => r.taskIndex)).toEqual([0, 0, 1]);
-
     expect(analysis.toolCalls).toHaveLength(1);
     expect(analysis.toolCalls[0]!.name).toBe("exec_command");
     expect(analysis.toolCalls[0]!.durationMs).toBe(2500);
     expect(analysis.toolCalls[0]!.status).toBe("completed");
-
     expect(analysis.reconnectCount).toBe(1);
     expect(analysis.compactionCount).toBe(1);
     expect(analysis.usageTrend).toEqual([
       { ts: "2026-07-05T10:00:07.000Z", requestTotal: 400, sessionTotal: 1000 },
     ]);
   });
-
   /** One completed text turn: Prompt, one Request, and its usage stamped at `ts` plus three seconds. */
   const priceTurn = (ts: string, request: TokenCounts): AmspRecord[] => {
     const t = Date.parse(ts);
@@ -262,7 +242,6 @@ describe("trace-service", () => {
       at(plus(3), tokenUsage(request, request)),
     ];
   };
-
   it("prices each Request at the tier its own timestamp ran in, and the file adds up to what the cost center bills the same rows, bucket by bucket", async () => {
     // A DeepSeek reference carries the catalog's Beijing-hours schedule; the lookup answers
     // both tiers, as project-config-service does for a row still at the catalog's price.
@@ -301,7 +280,6 @@ describe("trace-service", () => {
       expect(parts.output).toBeCloseTo((5 * 4 * 2) / 1e6, 12);
       expect(parts.cacheRead + parts.cacheWrite + parts.output).toBeCloseTo(a.cost!, 12);
       expect(lookups).toEqual([`${P}/deepseek/deepseek-flash`]);
-
       // The same three requests as usage rows, priced by the cost center's session grouping —
       // the figure the conversation toolbar shows — land on the file's total and its split.
       const db = openDatabase(":memory:");
@@ -343,7 +321,6 @@ describe("trace-service", () => {
       priced.close();
     }
   });
-
   it("a model with no schedule bills every hour at its one rate; no pricing, or a head naming no provider, means no cost at all", async () => {
     const lookups: string[] = [];
     const priced = makeTraceHarness(root, {
@@ -368,7 +345,6 @@ describe("trace-service", () => {
       const flat = await priced.service.analyze(P, A, S, 1);
       expect(flat.tasks.map((t) => t.cost)).toEqual([(10 + 1 + 5) / 1e6, 0]);
       expect(flat.cost).toBeCloseTo((10 + 1 + 5) / 1e6, 12);
-
       await writeTraceFile(root, P, A, "2026-07-12", S, 2, [
         sessionMeta(metaPayload({ model_id: "m-unpriced" })),
         ...priceTurn("2026-07-12T03:10:00.000Z", buckets(10, 1, 5)),
@@ -377,7 +353,6 @@ describe("trace-service", () => {
       expect(unpriced.tasks.map((t) => t.cost)).toEqual([undefined]);
       expect(unpriced.cost).toBeUndefined();
       expect(unpriced.costParts).toBeUndefined();
-
       const legacy = metaPayload({ model_id: "m1" }) as Partial<SessionMetaPayload>;
       delete legacy.provider;
       await writeTraceFile(root, P, A, "2026-07-12", S, 3, [
@@ -395,7 +370,6 @@ describe("trace-service", () => {
     expect(plain.cost).toBeUndefined();
     expect(plain.tasks.every((t) => t.cost === undefined)).toBe(true);
   });
-
   it("the Task context snapshot takes the turn's last Request, not a sum across its Requests", async () => {
     // Two Requests within one Task (a tool call triggers another round): each
     // input **re-carries the entire history**, so 60k → 65k is the context
@@ -422,7 +396,6 @@ describe("trace-service", () => {
       at("2026-07-05T10:00:06.100Z", tokenUsage(counts(65_000), buckets(58_000, 4_000, 3_000))),
     ]);
     const a = await service.analyze(P, A, S, 1);
-
     expect(a.requests.map((r) => r.taskIndex)).toEqual([0, 0]); // tool call → continues the same Task
     expect(a.tasks).toHaveLength(1);
     const t = a.tasks[0]!;
@@ -436,7 +409,6 @@ describe("trace-service", () => {
     expect(t.tokens).toEqual({ cacheRead: 108_000, cacheWrite: 12_000, output: 5_000 });
     expect(t.llmMs).toBe(2000 + 2000);
   });
-
   it("Task records leave the rounds as they are: a task_begin heads its Task's round, and none moves a round's end or adds one", async () => {
     const ts = (hhmm: string, s: string) => `2026-07-05T${hhmm}:${s}Z`;
     const task1 = [
@@ -482,7 +454,6 @@ describe("trace-service", () => {
       ...task1,
       ...task2,
     ]);
-
     const paired = await service.analyze(P, A, S, 1);
     const plain = await service.analyze(P, A, S, 2);
     const rounds = (a: typeof plain) =>
@@ -495,7 +466,6 @@ describe("trace-service", () => {
     expect(paired.tasks[1]!.messageFrom).toBe(8);
     expect(paired.tasks[2]!.messageTo).toBe(21);
   });
-
   it("human approval waits don't count toward LLM generation time (the TPS denominator)", async () => {
     // core does `await approve(tc)` inside the streaming loop: until approval
     // returns, the next chunk isn't consumed and request_end can't fire, so the
@@ -515,7 +485,6 @@ describe("trace-service", () => {
       at("2026-07-05T10:00:33.100Z", tokenUsage(counts(1000), buckets(0, 0, 1_000))),
     ]);
     const a = await service.analyze(P, A, S, 1);
-
     const rq = a.requests[0]!;
     expect(rq.durationMs).toBe(32_000); // wall clock: includes the approval wait
     expect(rq.approvalWaitMs).toBe(30_000);
@@ -523,7 +492,6 @@ describe("trace-service", () => {
     expect(a.tasks[0]!.llmMs).toBe(2_000); // the denominator uses only activeMs
     expect(a.tasks[0]!.tokens.output).toBe(1_000); // → 500 tok/s, not 31 tok/s
   });
-
   it("splits a turn's duration into API time and tool wall time, counting parallel tools once", async () => {
     // Two tools run concurrently: 10:00:03→10:00:09 and 10:00:04→10:00:11. Summing their
     // durations would claim 13s of tool work; the clock only ever spent 8s (03→11), which is
@@ -559,7 +527,6 @@ describe("trace-service", () => {
     ]);
     const a = await service.analyze(P, A, S, 1);
     const t = a.tasks[0]!;
-
     // API: 01→05 minus the two approval waits (1s + 2s), plus 11→13.
     expect(t.llmMs).toBe(1_000 + 2_000);
     // Tools: the union of [03,09] and [04,11] — 8s, not the 6s + 7s the two spans add up to.
@@ -571,7 +538,6 @@ describe("trace-service", () => {
     expect(a.apiMs).toBe(a.tasks.reduce((sum, x) => sum + x.llmMs, 0));
     expect(a.toolMs).toBe(a.tasks.reduce((sum, x) => sum + x.toolMs, 0));
   });
-
   it("a tool still running when the trace ends contributes no tool time", async () => {
     // No tool_call_output ever arrives: the execution has no measured end, and extrapolating it
     // to "now" would grow a finished file's figures every time it is read.
@@ -587,12 +553,10 @@ describe("trace-service", () => {
       at("2026-07-05T10:00:03.100Z", tokenUsage(counts(1000), buckets(0, 0, 1_000))),
     ]);
     const a = await service.analyze(P, A, S, 1);
-
     expect(a.tasks[0]!.toolMs).toBe(0);
     expect(a.toolMs).toBe(0);
     expect(a.tasks[0]!.llmMs).toBe(2_000);
   });
-
   it("compaction is its own turn: its TPS is its own and doesn't pollute user turns; the context snapshot still takes only non-compaction Requests", async () => {
     // Compaction's request_begin/end and token_usage all sit between
     // compaction_begin and compaction_end (see core's context-engine summarize
@@ -618,17 +582,14 @@ describe("trace-service", () => {
       ),
     ]);
     const a = await service.analyze(P, A, S, 1);
-
     expect(a.requests[1]!.compaction).toBe(true);
     expect(a.requests[0]!.compaction).toBeUndefined();
     expect(a.tasks.map((t) => t.taskIndex)).toEqual([0, 1]);
-
     // User turn: TPS counts only its own Request — none of the compaction's 3k output or 10s of generation time bleeds in.
     const t = a.tasks[0]!;
     expect(t.context).toEqual({ cacheRead: 20_000, cacheWrite: 9_000, output: 1_000 });
     expect(t.tokens.output).toBe(1_000);
     expect(t.llmMs).toBe(2_000);
-
     // The compaction turn: it IS **a turn**, with its own TPS (how fast the summary was generated) — it shouldn't be blanked out as "—".
     const ct = a.tasks[1]!;
     expect(ct.llmMs).toBe(10_000);
@@ -638,7 +599,6 @@ describe("trace-service", () => {
     // The running total is still recorded (output also serves as the compaction
     // turn's own TPS numerator): compaction's tokens are genuinely paid for, so the cost must not be dropped.
     expect(ct.tokens).toEqual({ cacheRead: 29_000, cacheWrite: 0, output: 3_000 });
-
     // The compaction turn is flagged (the UI shows a "compaction" badge); its
     // duration is measured from its request_begin (10:00:05) to compaction_end (10:00:16).
     expect(ct.compaction).toBe(true);
@@ -656,7 +616,6 @@ describe("trace-service", () => {
     expect(Date.parse(t.endTs) - Date.parse(t.startTs)).toBe(2_100);
     expect(a.elapsedMs).toBe(2_100 + 11_000);
   });
-
   it("a discard compaction turn is flagged and carries mode 'discard', though it issues no request", async () => {
     // `discard` drops the old context outright instead of summarizing it, and core emits
     // compaction_begin/compaction_end back-to-back with **no request in between** (see
@@ -679,7 +638,6 @@ describe("trace-service", () => {
       ),
     ]);
     const a = await service.analyze(P, A, S, 1);
-
     expect(a.compactionCount).toBe(1);
     expect(a.tasks.map((t) => t.taskIndex)).toEqual([0, 1]);
     // The user turn is untouched...
@@ -694,7 +652,6 @@ describe("trace-service", () => {
     expect(ct.startTs).toBe("");
     expect(ct.llmMs).toBe(0);
   });
-
   it("a compaction request exhausting retries (ending in timeout) doesn't fold the next user turn into the compaction Task", async () => {
     // The intersection of "timeout → continuation" and "compaction is its own
     // turn": when a compaction request exhausts its retries and ends in timeout,
@@ -723,7 +680,6 @@ describe("trace-service", () => {
       at("2026-07-05T10:00:10.100Z", tokenUsage(counts(1200), buckets(0, 0, 700))),
     ]);
     const a = await service.analyze(P, A, S, 1);
-
     // Task 0 = the first turn; Task 1 = compaction (its own turn); Task 2 = the
     // user turn after compaction, which must not be folded into Task 1.
     expect(a.requests.map((r) => r.taskIndex)).toEqual([0, 1, 2]);
@@ -736,7 +692,6 @@ describe("trace-service", () => {
     expect(a.tasks[1]!.context).toBeUndefined();
     expect(a.tasks[2]!.tokens.output).toBe(700);
   });
-
   it("the user Prompt joins this turn's message range, but duration starts at the first request_begin; empty turns still make the list", async () => {
     // Message **attribution** (messageFrom/To) and **duration** (startTs/endTs)
     // are two different things: the Prompt belongs to this turn's message range
@@ -761,7 +716,6 @@ describe("trace-service", () => {
       at("2026-07-05T10:01:04.000Z", requestEnd("retryable")),
     ]);
     const a = await service.analyze(P, A, S, 1);
-
     expect(a.tasks.map((t) => t.taskIndex)).toEqual([0, 1]); // the empty turn is present too
     // Message attribution: starting from "question two" (index 5), it belongs to the second turn, not the tail of the previous one.
     expect(a.tasks[0]!.messageTo).toBe(4);
@@ -771,7 +725,6 @@ describe("trace-service", () => {
     expect(a.tasks[1]!.endTs).toBe("2026-07-05T10:01:04.000Z");
     expect(a.tasks[1]!.tokens.output).toBe(0); // nothing was produced
     expect(a.tasks[0]!.startTs).toBe("2026-07-05T10:00:01.000Z");
-
     // Overall elapsed time = **the sum of each turn's duration**, not "last minus
     // first": this example spans 64s overall, but 58s of that is the gap between
     // turns where the user was thinking/away — not time the Agent spent working.
@@ -780,7 +733,6 @@ describe("trace-service", () => {
     expect(Date.parse(a.tasks[1]!.endTs) - Date.parse(a.tasks[1]!.startTs)).toBe(3_000);
     expect(a.elapsedMs).toBe(4_100);
   });
-
   it("a legacy-trace `failed` request the engine retried stays inside the same turn (reconnect, not a turn end)", async () => {
     // Traces from the pre-convergence era spell a retried request `failed`; segmentation
     // must keep reading it as a reconnect, or one gateway blip would split a single turn's
@@ -800,7 +752,6 @@ describe("trace-service", () => {
     expect(a.reconnectCount).toBe(1);
     expect(a.tasks[0]!.tokens.output).toBe(100);
   });
-
   it("a legacy-trace `failed` compaction request is NOT a reconnect: that era failed fast on it", async () => {
     // Legacy segmentation nuance: the pre-convergence turn loop retried `failed`, its
     // compaction loop deliberately did not. Counting the give-up as a reconnect would
@@ -826,7 +777,6 @@ describe("trace-service", () => {
     const a = await service.analyze(P, A, S, 1);
     expect(a.reconnectCount).toBe(0);
   });
-
   it("after the previous turn's retries are exhausted, a new user message starts a new turn", async () => {
     // "retryable → continuation" holds only for **automatic retries within the
     // same run**. Once retries are exhausted and the engine gives up, a message
@@ -852,7 +802,6 @@ describe("trace-service", () => {
     expect(a.tasks[1]!.startTs).toBe("2026-07-05T10:01:01.000Z"); // duration start = this turn's request_begin
     expect(a.tasks[1]!.tokens.output).toBe(100); // the second turn's usage isn't folded into the first
   });
-
   it("one send with text + multiple images: turn attribution starts at the **first** message, not the last image", async () => {
     // One send = multiple messages (user text + some number of image_url). If the
     // pending index were overwritten on every message, turn attribution would
@@ -880,7 +829,6 @@ describe("trace-service", () => {
     expect(a.tasks[1]!.startTs).toBe("2026-07-05T10:01:02.000Z"); // duration start = request_begin
     expect(a.tasks[0]!.endTs).toBe("2026-07-05T10:00:02.100Z"); // the second send's messages don't land in the first turn
   });
-
   it("messages attributed one by one, never guessed from timestamps: same-millisecond \"this turn's reply / compaction begin / compaction Prompt / next turn's request\" each land on their own turn", async () => {
     // Automatic compaction triggered at turn wrap-up crams these messages into
     // **the same millisecond**: this turn's last reply, compaction_begin, the
@@ -907,14 +855,12 @@ describe("trace-service", () => {
       ),
     ]);
     const a = await service.analyze(P, A, S, 1);
-
     expect(a.tasks.map((t) => t.taskIndex)).toEqual([0, 1]);
     // Turn 0 = session_meta..request_end (index 0..5): **this turn's reply stays in this turn**.
     expect([a.tasks[0]!.messageFrom, a.tasks[0]!.messageTo]).toEqual([0, 5]);
     // Turn 1 = compaction_begin..compaction_end (index 6..10): the compaction
     // Prompt belongs to the compaction turn, not the tail of the previous one.
     expect([a.tasks[1]!.messageFrom, a.tasks[1]!.messageTo]).toEqual([6, 10]);
-
     // Duration is attributed to each turn separately: this turn is 4s
     // (request_begin 10:00:01 → request_end 10:00:05, excluding compaction's 20s),
     // the compaction turn is 20s (the compaction request's request_begin →
@@ -922,7 +868,6 @@ describe("trace-service", () => {
     expect(Date.parse(a.tasks[0]!.endTs) - Date.parse(a.tasks[0]!.startTs)).toBe(4_000);
     expect(Date.parse(a.tasks[1]!.endTs) - Date.parse(a.tasks[1]!.startTs)).toBe(20_000);
   });
-
   it("Agent-level drill-down browsing: dates descending, Sessions descending, file index ascending", async () => {
     const s2 = "session-2026-07-06-09-00-00-11112222";
     await writeTraceFile(root, P, A, "2026-07-05", S, 1, [userText("a")]);
@@ -937,7 +882,6 @@ describe("trace-service", () => {
     expect(res.sessions).toBeUndefined();
     expect(res.totalSessions).toBeUndefined();
   });
-
   it("Agent-level paging: slices Session groups newest-first, merges one Session's files across dates, and carries the total", async () => {
     const s2 = "session-2026-07-06-09-00-00-11112222";
     const s3 = "session-2026-07-07-08-00-00-33334444";
@@ -946,12 +890,10 @@ describe("trace-service", () => {
     await writeTraceFile(root, P, A, "2026-07-06", S, 2, [userText("b")]);
     await writeTraceFile(root, P, A, "2026-07-06", s2, 1, [userText("c")]);
     await writeTraceFile(root, P, A, "2026-07-07", s3, 1, [userText("d")]);
-
     const page1 = await service.agentTraces(P, A, { offset: 0, limit: 2 });
     expect(page1.totalSessions).toBe(3);
     expect(page1.dates).toEqual([]); // paged responses are session-centric; per-file stats happen only for the slice
     expect(page1.sessions!.map((s) => s.sessionId)).toEqual([s3, s2]);
-
     const page2 = await service.agentTraces(P, A, { offset: 2, limit: 2 });
     expect(page2.totalSessions).toBe(3);
     expect(page2.sessions!.map((s) => s.sessionId)).toEqual([S]);
@@ -960,13 +902,11 @@ describe("trace-service", () => {
       { index: 2, date: "2026-07-06" },
     ]);
     expect(page2.sessions![0]!.files.every((f) => f.sizeBytes > 0)).toBe(true);
-
     // Paging an empty Agent stays well-formed.
     const empty = await service.agentTraces(P, "agent-none", { offset: 0, limit: 2 });
     expect(empty.sessions).toEqual([]);
     expect(empty.totalSessions).toBe(0);
   });
-
   it("Agent-level paging: the sessions DB title wins over the first-prompt fallback", async () => {
     const withTitles = makeTraceHarness(root, {
       sessions: { listByAgent: () => [dbRow({ sessionId: S, title: "已生成的标题" })] },
@@ -979,7 +919,6 @@ describe("trace-service", () => {
     expect(res.sessions![0]!.title).toBe("已生成的标题");
     withTitles.close();
   });
-
   it("Agent-level paging: category/workspace come from the DB row (archived wins; a registry-known source fills its bucket; a subagent is in none)", async () => {
     const s2 = "session-2026-07-06-09-00-00-11112222";
     const s3 = "session-2026-07-07-08-00-00-33334444";
@@ -1001,7 +940,6 @@ describe("trace-service", () => {
         ],
       },
     });
-
     const res = await h.service.agentTraces(P, A, { offset: 0, limit: 10 });
     const byId = new Map(res.sessions!.map((x) => [x.sessionId, x]));
     expect(byId.get(S)!.category).toBe("archived");
@@ -1012,7 +950,6 @@ describe("trace-service", () => {
     expect(res.counts).toEqual({ active: 1, archived: 2 });
     expect(res.workspaceCounts!["/ws/one"]).toEqual({ active: 0, archived: 1 });
     expect(res.workspaceCounts!["/ws/two"]).toEqual({ active: 1, archived: 0 });
-
     // The category filter pages within one bucket; totalSessions is the bucket's count.
     const active = await h.service.agentTraces(
       P,
@@ -1032,7 +969,6 @@ describe("trace-service", () => {
     expect(archived.sessions!.map((x) => x.sessionId)).toEqual([s2, S]);
     h.close();
   });
-
   it("Agent-level paging: an untracked Session is classified at registration (head-read once), so the FIRST listing is exact", async () => {
     // No DB row, nothing pre-registered: the reconciler registers the file and reads the
     // earliest shard's session_meta ONCE; the listing itself then serves category /
@@ -1041,7 +977,6 @@ describe("trace-service", () => {
       sessionMeta(metaPayload({ source: "cli", workspace: "/ws/run" })),
       userText("run prompt"),
     ]);
-
     const first = await service.agentTraces(P, A, { offset: 0, limit: 10 });
     expect(first.sessions![0]!.category).toBe("archived");
     expect(first.sessions![0]!.workspace).toBe("/ws/run");
@@ -1049,12 +984,10 @@ describe("trace-service", () => {
     // The observation landed in the shared registry (single source of truth) at registration.
     expect(harness.sources.get(S)).toBe("cli");
     const reads = harness.traceIndex.counters.headReads;
-
     const second = await service.agentTraces(P, A, { offset: 0, limit: 10 });
     expect(second.sessions![0]!.category).toBe("archived");
     expect(harness.traceIndex.counters.headReads).toBe(reads); // classification never re-reads
   });
-
   it("Agent-level paging: every Session is listed whichever client created it (no CLI filter)", async () => {
     const cliSid = "session-2026-07-06-09-00-00-11112222"; // untracked, user-created meta (a legacy CLI-direct run)
     const childSid = "session-2026-07-07-08-00-00-33334444"; // untracked, a scheduled run -> archived by rule
@@ -1074,20 +1007,17 @@ describe("trace-service", () => {
     const h = makeTraceHarness(root, {
       sessions: { listByAgent: () => [dbRow({ sessionId: webSid, workspace: "/ws/web" })] },
     });
-
     const listed = await h.service.agentTraces(P, A, { offset: 0, limit: 10 });
     expect(listed.sessions!.map((x) => x.sessionId)).toEqual([childSid, cliSid, webSid]);
     expect(listed.totalSessions).toBe(3);
     expect(listed.counts).toEqual({ active: 2, archived: 1 });
     h.close();
   });
-
   it("Agent-level paging: a Session whose head has no user text gets no title (the client falls back to its default)", async () => {
     await writeTraceFile(root, P, A, "2026-07-05", S, 1, [sessionMeta(metaPayload())]);
     const res = await service.agentTraces(P, A, { offset: 0, limit: 10 });
     expect(res.sessions![0]!.title).toBeUndefined();
   });
-
   it("every endpoint returns empty when there is no Trace", async () => {
     expect(await service.readMessages(P, A, S)).toEqual([]);
     expect(await service.listTraceFiles(P, A, S)).toEqual([]);
@@ -1114,7 +1044,6 @@ describe("trace-service", () => {
       at(T("10.100"), requestEnd("completed")),
     ]);
     const a = await service.analyze(P, A, S, 7);
-
     // A single user turn containing two rounds of Requests (the first calls a
     // tool, the second produces the answer) is merged into the same Task (taskIndex 0).
     expect(a.modelSegments).toEqual([
@@ -1160,7 +1089,6 @@ describe("trace-service", () => {
       },
     ]);
   });
-
   it("Task grouping: plain text with no further tool call → the next user turn enters a new Task (taskIndex increments)", async () => {
     const T = (sec: string) => `2026-07-05T10:01:${sec}Z`;
     await writeTraceFile(root, P, A, "2026-07-05", S, 9, [
@@ -1186,7 +1114,6 @@ describe("trace-service", () => {
     // The first round calls a tool → the continuation round stays in Task 0; after ending in plain text, the new user turn goes into Task 1.
     expect(a.requests.map((r) => r.taskIndex)).toEqual([0, 0, 1]);
   });
-
   it("MCP connect pair becomes an other-span attached to the following Task", async () => {
     const T = (sec: string) => `2026-07-05T10:04:${sec}Z`;
     await writeTraceFile(root, P, A, "2026-07-05", S, 13, [
@@ -1219,7 +1146,6 @@ describe("trace-service", () => {
       },
     ]);
   });
-
   it("Task grouping: [user_steering] user texts never start a new Task (steering continuation stays in the same Task)", async () => {
     const T = (sec: string) => `2026-07-05T10:03:${sec}Z`;
     await writeTraceFile(root, P, A, "2026-07-05", S, 12, [
@@ -1250,7 +1176,6 @@ describe("trace-service", () => {
     expect(a.requests.map((r) => r.taskIndex)).toEqual([0, 0, 0, 1]);
     expect(a.modelSegments.map((s) => s.taskIndex)).toEqual([0, 0, 0, 1]);
   });
-
   // The Web's live-stream twin of this case lives in stream-model.test.ts.
   it("Task grouping: a steered background notice stays in the same Task; an unstamped notice task keeps its own turn", async () => {
     const T = (sec: string) => `2026-07-05T10:05:${sec}Z`;
@@ -1293,7 +1218,6 @@ describe("trace-service", () => {
     expect(a.tasks[0]!.startTs).toBe(T("01.000"));
     expect(a.tasks[1]!.startTs).toBe(T("21.000"));
   });
-
   it("Task grouping: an UNSTAMPED notice in a tool-continuation gap merges too (pre-stamp traces)", async () => {
     // Legacy shape (0.2.4 core, no delivery stamp): the notice sits between a tool-calling
     // request and its continuation, where a Task cannot end — position alone proves it is
@@ -1323,7 +1247,6 @@ describe("trace-service", () => {
     expect(a.requests.map((r) => r.taskIndex)).toEqual([0, 0]);
     expect(a.tasks.map((t) => t.taskIndex)).toEqual([0]);
   });
-
   it("Task grouping: a notice drained at run start rides behind the fresh Prompt without merging turns", async () => {
     // A notice queued while the session sat idle can be consumed by a user run's start
     // instead of the idle launcher: core writes it right after the Prompt, steering-stamped.
@@ -1359,7 +1282,6 @@ describe("trace-service", () => {
     // Both the Prompt and the ride-along notice belong to the second turn's span.
     expect(a.tasks[1]!.messageFrom).toBe(5);
   });
-
   it("Task grouping: images sent with a steering message don't start a Task either (a Prompt's do)", async () => {
     const T = (sec: string) => `2026-07-05T10:04:${sec}Z`;
     await writeTraceFile(root, P, A, "2026-07-05", S, 13, [
@@ -1390,7 +1312,6 @@ describe("trace-service", () => {
     const a = await service.analyze(P, A, S, 13);
     expect(a.requests.map((r) => r.taskIndex)).toEqual([0, 0, 1]);
   });
-
   // Compaction is its own turn: the previous turn called a tool and would
   // otherwise "continue", but compaction_begin breaks that continuation, so the
   // compaction request lands on a new taskIndex. A successful compaction splits
@@ -1421,7 +1342,6 @@ describe("trace-service", () => {
     expect(a.requests.map((r) => r.taskIndex)).toEqual([0, 1]);
     expect(a.compactionCount).toBe(1);
   });
-
   // A failed compaction doesn't split the file: the continuation request is
   // still in the same file, and it starts a new turn (the compaction request
   // doesn't call a tool, and request_end has already broken continuation).
@@ -1450,7 +1370,6 @@ describe("trace-service", () => {
     expect(a.modelSegments.map((s) => s.taskIndex)).toEqual([0, 1, 2]);
     expect(a.toolSpans.map((s) => s.taskIndex)).toEqual([0]);
   });
-
   it("a call its unfinished Request never dispatched gets no timeline lane; one it ran keeps its lane", async () => {
     const T = (sec: string) => `2026-07-05T10:00:${sec}Z`;
     await writeTraceFile(root, P, A, "2026-07-05", S, 8, [
@@ -1475,7 +1394,6 @@ describe("trace-service", () => {
     expect(a.toolCalls.find((c) => c.toolCallId === "t1")?.status).toBeUndefined();
     expect(a.toolCalls.find((c) => c.toolCallId === "t0")?.status).toBe("completed");
   });
-
   it("each request carries the thinking level its request_begin records; a request written before the field carries none", async () => {
     const T = (sec: string) => `2026-07-05T10:03:${sec}Z`;
     await writeTraceFile(root, P, A, "2026-07-05", S, 11, [
@@ -1495,7 +1413,6 @@ describe("trace-service", () => {
     expect(a.requests.map((r) => r.thinkingLevel)).toEqual(["medium", "high", undefined]);
     expect("thinkingLevel" in a.requests[2]!).toBe(false);
   });
-
   it("a round's navigator label is the first line of the text that started it, markers and attachment lines left out, cut at 120 characters", async () => {
     const T = (sec: string) => `2026-07-05T10:04:${sec}Z`;
     const long = "x".repeat(200);
@@ -1523,7 +1440,6 @@ describe("trace-service", () => {
       "x".repeat(120),
     ]);
   });
-
   it("rounds no user text started carry no label — an image-only send, a summarize compaction — and a send that never got a request keeps its own", async () => {
     const T = (sec: string) => `2026-07-05T10:05:${sec}Z`;
     await writeTraceFile(root, P, A, "2026-07-05", S, 13, [

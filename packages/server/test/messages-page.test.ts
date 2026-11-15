@@ -51,9 +51,9 @@ import {
   buildModelSwitchMessage,
 } from "@prismshadow/amsp/markers";
 import type { AmspRecord, SessionMetaPayload, TokenCounts } from "@prismshadow/penguin-core";
-import { decodeCursor, encodeCursor } from "../src/services/message-window.js";
-import { MESSAGES_PAGE_MAX_BYTES } from "../src/services/trace-service.js";
-import type { TraceService } from "../src/services/trace-service.js";
+import { decodeCursor, encodeCursor } from "../../../plugins/usage/src/server/index.js";
+import { MESSAGES_PAGE_MAX_BYTES } from "../../../plugins/usage/src/server/index.js";
+import type { TraceService } from "../../../plugins/usage/src/server/index.js";
 import { makeTempRoot, makeTraceHarness, writeTraceFile } from "./helpers.js";
 
 const P = "project-w";

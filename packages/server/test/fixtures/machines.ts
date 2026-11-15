@@ -10,17 +10,15 @@
  */
 import type { Hono } from "hono";
 import type { AppEnv } from "../../src/auth/middleware.js";
-import type { MachineApi } from "../../src/machines/machine-api.js";
-import type { ProxyTarget } from "../../src/machines/proxy.js";
-import type { MachinesService } from "../../src/machines/service.js";
-
+import type { MachineApi } from "../../../../plugins/machines/src/server/index.js";
+import type { MachinesService } from "../../../../plugins/machines/src/server/index.js";
+import { ProxyTarget } from "../../../../plugins/machines/src/server/proxy.js";
 /** One machine of a Project, as projectApis lists it. */
 export interface FleetMachineDouble {
   machineId: string;
   alias: string;
   api: Pick<MachineApi, "request"> | null;
 }
-
 export function fakeMachinesNode(
   projectApis: (projectId: string) => FleetMachineDouble[],
   proxyTarget: (machineId: string) => ProxyTarget | null = () => null,
@@ -44,7 +42,6 @@ export function fakeMachinesNode(
             },
   }) as unknown as MachinesService;
 }
-
 /** A client to an in-process app's API, carrying that app's admin session on every call. */
 export function appApi(app: Hono<AppEnv>, cookie: string): Pick<MachineApi, "request"> {
   return {

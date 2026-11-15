@@ -25,41 +25,34 @@ import type {
   AgentDeletionResponse,
   AgentsResponse,
 } from "../src/api/types.js";
-import { deletingDir } from "../src/services/agent-service.js";
+import { deletingDir } from "../../../plugins/agents/src/server/agents/agent-service.js";
 import { apiClient, createTestApp, provisionUser, restartTestApp } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
-
 const PROJECT = "olivia-default_project";
 /** Permission bits do not stop root, and mean something else on Windows. */
 const permissionsHold = process.platform !== "win32" && process.getuid?.() !== 0;
-
 describe("deleting a large Agent", () => {
   let t: TestApp;
   let cookie: string;
   let api: ReturnType<typeof apiClient>;
   const agentsPath = `/api/projects/${PROJECT}/agents`;
   const root = () => t.deps.config.root;
-
   beforeAll(async () => {
     t = await createTestApp({ durableDatabase: true });
     cookie = (await provisionUser(t.app, "olivia")).cookie;
     api = apiClient(t.app, cookie);
   });
-
   afterAll(async () => {
     await t.cleanup();
   });
-
   async function createAgent(agentId: string): Promise<void> {
     expect((await api.post(agentsPath, { agentId })).status).toBe(201);
   }
-
   async function listed(): Promise<string[]> {
     const res = await api.get(agentsPath);
     expect(res.status).toBe(200);
     return ((await res.json()) as AgentsResponse).agents.map((a) => a.agentId);
   }
-
   /** A temporary Workspace the way an install leaves one: many small files in nested folders. */
   async function fillWorkspace(agentId: string, dirs: number, filesPerDir: number): Promise<void> {
     const base = path.join(agentDir(root(), PROJECT, agentId), "workspaces", "ws_big");
@@ -71,7 +64,6 @@ describe("deleting a large Agent", () => {
       }
     }
   }
-
   /** Every entry under `dir`, `dir` itself included. */
   async function countTree(dir: string): Promise<number> {
     let n = 1;
@@ -80,13 +72,11 @@ describe("deleting a large Agent", () => {
     }
     return n;
   }
-
   async function reading(deletionId: string, client = api): Promise<AgentDeletionInfo> {
     const res = await client.get(`/api/projects/${PROJECT}/agent-deletions/${deletionId}`);
     expect(res.status).toBe(200);
     return ((await res.json()) as AgentDeletionResponse).deletion;
   }
-
   /** Reads the deletion until it is over; every reading on the way, oldest first. */
   async function readUntilOver(deletionId: string, client = api): Promise<AgentDeletionInfo[]> {
     const seen: AgentDeletionInfo[] = [];
@@ -100,13 +90,11 @@ describe("deleting a large Agent", () => {
     );
     return seen;
   }
-
   const exists = (p: string) =>
     fs.access(p).then(
       () => true,
       () => false,
     );
-
   it("lists only Agents the routes accept: a row whose folder lost its config is left out", async () => {
     await createAgent("half_gone");
     await fillWorkspace("half_gone", 2, 3);
@@ -114,14 +102,12 @@ describe("deleting a large Agent", () => {
     await fs.rm(path.dirname(systemConfigPath(root(), PROJECT, "half_gone")), {
       recursive: true,
     });
-
     const ids = await listed();
     expect(ids).not.toContain("half_gone");
     for (const id of ids) {
       expect((await api.get(`${agentsPath}/${id}/config`)).status).toBe(200);
     }
   });
-
   it.skipIf(!permissionsHold)(
     "refuses a folder that cannot be moved, and deletes nothing",
     async () => {
@@ -150,7 +136,6 @@ describe("deleting a large Agent", () => {
       } finally {
         await fs.chmod(agents, 0o755);
       }
-
       expect(res.status).toBe(409);
       expect(((await res.json()) as { error: { code: string } }).error.code).toBe(
         "agent_folder_busy",
@@ -160,24 +145,20 @@ describe("deleting a large Agent", () => {
       expect(t.deps.sessionsRepo.findById(sessionId)).not.toBeNull();
     },
   );
-
   it("takes the Agent off every list at once, frees its id, and removes its files in the background", async () => {
     await createAgent("big_one");
     await fillWorkspace("big_one", 40, 25);
     const folder = agentDir(root(), PROJECT, "big_one");
     const entries = await countTree(folder);
-
     const res = await api.delete(`${agentsPath}/big_one`);
     expect(res.status).toBe(202);
     const { deletion } = (await res.json()) as AgentDeleteResponse;
     expect(deletion.agentId).toBe("big_one");
-
     expect(await exists(folder)).toBe(false);
     expect(await listed()).not.toContain("big_one");
     expect((await api.get(`${agentsPath}/big_one/config`)).status).toBe(404);
     // The id is free while the old files are still being removed.
     await createAgent("big_one");
-
     const seen = await readUntilOver(deletion.deletionId);
     const last = seen[seen.length - 1]!;
     expect(last).toMatchObject({ phase: "done", total: entries, removed: entries });
@@ -188,7 +169,6 @@ describe("deleting a large Agent", () => {
     expect(await exists(systemConfigPath(root(), PROJECT, "big_one"))).toBe(true);
     expect(await listed()).toContain("big_one");
   });
-
   it.skipIf(!permissionsHold)(
     "keeps what it cannot remove for the next start, which removes it",
     async () => {
@@ -198,7 +178,6 @@ describe("deleting a large Agent", () => {
       await fs.writeFile(path.join(locked, "keep.txt"), "x");
       // No write permission on the folder: its file cannot be unlinked.
       await fs.chmod(locked, 0o555);
-
       const res = await api.delete(`${agentsPath}/stuck_one`);
       expect(res.status).toBe(202);
       const { deletion } = (await res.json()) as AgentDeleteResponse;
@@ -211,7 +190,6 @@ describe("deleting a large Agent", () => {
       expect(await listed()).not.toContain("stuck_one");
       const left = path.join(deletingDir(root(), PROJECT), deletion.deletionId);
       expect(await exists(path.join(left, "workspaces", "locked", "keep.txt"))).toBe(true);
-
       // Whatever held the file let go while the server was down.
       await fs.chmod(path.join(left, "workspaces", "locked"), 0o755);
       t = await restartTestApp(t);

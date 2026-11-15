@@ -90,8 +90,8 @@ import type {
   SessionCreateResponse,
   UsageResponse,
 } from "../src/api/types.js";
-import { UsageRepo } from "../src/db/repos/usage.js";
-import { ProjectConfigService } from "../src/services/project-config-service.js";
+import { UsageRepo } from "../../../plugins/usage/src/server/index.js";
+import { ProjectConfigService } from "../../../plugins/projects/src/server/index.js";
 import type { ChannelEvent } from "../src/runtime/channel.js";
 import { jsonResponse, stubFetch } from "./fixtures/fetch.js";
 import { fakeSession, sessionRow } from "./fixtures/session.js";

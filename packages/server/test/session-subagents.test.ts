@@ -18,7 +18,7 @@ import type {
   SubagentMessageOptions,
   SubagentMessageOutcome,
 } from "@prismshadow/penguin-core";
-import { ApprovalRegistry } from "../src/runtime/approvals.js";
+import { ApprovalRegistry } from "../../../plugins/sessions/src/server/index.js";
 import type { ServerEvent, SubagentMessageResponse } from "../src/api/types.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import { adoptSession, fakeSession, sessionRow, uniqueSessionId } from "./fixtures/session.js";

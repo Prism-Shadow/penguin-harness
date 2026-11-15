@@ -32,7 +32,7 @@ import { authMiddleware, bearerToken, SESSION_COOKIE } from "../src/auth/middlew
 import { REMOTE_SESSION_TTL_MS } from "../src/auth/service.js";
 import { remoteRoutes } from "../src/http/routes/remote.js";
 import { handleError } from "../src/http/errors.js";
-import { sessionTokenHash } from "../src/db/repos/auth-sessions.js";
+import { sessionTokenHash } from "../../../plugins/settings/src/server/repos/auth-sessions.js"
 import {
   apiClient,
   cookieFrom,
@@ -44,18 +44,15 @@ import {
   remoteSessionCookie,
 } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
-
 interface RemoteSessionResponse {
   cookieName: typeof SESSION_COOKIE;
   sessionToken: string;
   expiresAt: string;
   maxAgeSeconds: number;
 }
-
 describe("local API token", () => {
   let t: TestApp;
   let token: string;
-
   beforeAll(async () => {
     t = await createTestApp();
     const stored = readApiToken(t.root);
@@ -65,7 +62,6 @@ describe("local API token", () => {
   afterAll(async () => {
     await t.cleanup();
   });
-
   const bearerFor = (
     app: TestApp["app"],
     value: string,
@@ -80,10 +76,8 @@ describe("local API token", () => {
         ...((init.headers as Record<string, string>) ?? {}),
       },
     });
-
   const bearer = (value: string, init: RequestInit = {}, apiPath = "/api/me") =>
     bearerFor(t.app, value, init, apiPath);
-
   it("boot persists the token at <root>/api-token with owner-only permissions", () => {
     expect(t.deps.authService.localApiToken()).toBe(token);
     if (process.platform !== "win32") {
@@ -91,7 +85,6 @@ describe("local API token", () => {
       expect(mode).toBe(0o600);
     }
   });
-
   it("a valid Bearer authenticates as the admin (sessionVia 'token'), with no cookie at all", async () => {
     const res = await bearer(token);
     expect(res.status).toBe(200);
@@ -100,7 +93,6 @@ describe("local API token", () => {
     expect(body.user.isAdmin).toBe(true);
     expect(body.sessionVia).toBe("token");
   });
-
   it("a wrong Bearer is 401 — even alongside a valid cookie (no silent fallback)", async () => {
     expect((await bearer("not-the-token")).status).toBe(401);
     const { cookie } = await loginAdmin(t.app);
@@ -112,7 +104,6 @@ describe("local API token", () => {
     const cookieOnly = await t.app.request("/api/me", { headers: { cookie } });
     expect(cookieOnly.status).toBe(200);
   });
-
   it("Bearer works on writes (the JSON-only CSRF guard still applies) and on SSE endpoints", async () => {
     // Pin a model whose client constructs without a credential (the anthropic protocol);
     // the seeded preset default may need an env key this machine does not have. The PUT
@@ -138,7 +129,6 @@ describe("local API token", () => {
     expect(create.status).toBe(201);
     const { session } = (await create.json()) as SessionCreateResponse;
     expect(t.deps.sessionsRepo.findById(session.sessionId)!.client).toBe("cli");
-
     // A write with a form Content-Type is still refused (the CSRF guard is not bypassed).
     const form = await t.app.request(
       "/api/projects/default_project/agents/default_agent/sessions",
@@ -152,14 +142,12 @@ describe("local API token", () => {
       },
     );
     expect(form.status).toBe(415);
-
     // SSE: the session stream answers a Bearer-authenticated subscribe.
     const sse = await bearer(token, {}, `/api/sessions/${session.sessionId}/stream`);
     expect(sse.status).toBe(200);
     expect(sse.headers.get("content-type")).toContain("text/event-stream");
     await sse.body?.cancel();
   });
-
   it("hot-update APIs accept the Bearer token as the admin credential", async () => {
     // /api/hmr/status goes through the same middleware plus the admin check; the local
     // token IS admin authority, so it must pass the gate (the malformed body then 404s
@@ -168,7 +156,6 @@ describe("local API token", () => {
     expect(res.status).not.toBe(401);
     expect(res.status).not.toBe(403);
   });
-
   it("remote session exchange is available only to the local API token", async () => {
     const nowMs = Date.now();
     const remote = await createTestApp({ now: () => new Date(nowMs) });
@@ -180,7 +167,6 @@ describe("local API token", () => {
         body: "{}",
       });
       expect(unauthenticated.status).toBe(401);
-
       const wrong = await bearerFor(
         remote.app,
         "not-the-token",
@@ -189,21 +175,18 @@ describe("local API token", () => {
       );
       expect(wrong.status).toBe(401);
       expect(await wrong.text()).not.toContain("not-the-token");
-
       const missingContentType = await remote.app.request("/api/remote/session", {
         method: "POST",
         headers: { authorization: `Bearer ${remoteToken}` },
         body: "{}",
       });
       expect(missingContentType.status).toBe(415);
-
       const admin = await loginAdmin(remote.app);
       const passwordCookie = await apiClient(remote.app, admin.cookie).post(
         "/api/remote/session",
         {},
       );
       expect(passwordCookie.status).toBe(403);
-
       const setupToken = remote.deps.authService.mintFirstLogin();
       expect(setupToken).not.toBeNull();
       const setupClaim = await remote.app.request(
@@ -216,7 +199,6 @@ describe("local API token", () => {
         {},
       );
       expect(setupCookieRes.status).toBe(403);
-
       const desktop = await createDesktopApp({ now: () => new Date(nowMs) });
       try {
         const desktopCookie = await desktopLoginCookie(desktop.app);
@@ -232,7 +214,6 @@ describe("local API token", () => {
       await remote.cleanup();
     }
   });
-
   it("exchanges the local API token for a one-hour browser session without setting a cookie", async () => {
     const nowMs = Date.now();
     const remote = await createTestApp({ now: () => new Date(nowMs) });
@@ -250,7 +231,6 @@ describe("local API token", () => {
       const text = await res.text();
       expect(text.includes(remoteToken)).toBe(false);
       expect(text.includes("penguinGo")).toBe(false);
-
       const body = JSON.parse(text) as RemoteSessionResponse;
       expect(Object.keys(body).sort()).toEqual([
         "cookieName",
@@ -263,7 +243,6 @@ describe("local API token", () => {
       expect(body.sessionToken !== remoteToken).toBe(true);
       expect(body.maxAgeSeconds).toBe(3600);
       expect(Date.parse(body.expiresAt)).toBe(nowMs + REMOTE_SESSION_TTL_MS);
-
       const hash = sessionTokenHash(body.sessionToken);
       const row = remote.deps.db
         .prepare("SELECT user_id, expires_at, via FROM auth_sessions WHERE token_hash = ?")
@@ -273,7 +252,6 @@ describe("local API token", () => {
         expires_at: body.expiresAt,
         via: "remote",
       });
-
       const me = await apiClient(remote.app, `${SESSION_COOKIE}=${body.sessionToken}`).get(
         "/api/me",
       );
@@ -285,7 +263,6 @@ describe("local API token", () => {
       await remote.cleanup();
     }
   });
-
   it.each(["platform", "user-gate"] as const)(
     "a Remote cookie cannot exchange another session through the %s mount",
     async (mount) => {
@@ -310,7 +287,6 @@ describe("local API token", () => {
       expect(accepted.status).toBe(200);
     },
   );
-
   it.each(["password", "setup", "desktop"] as const)(
     "rejects an aging %s cookie without renewing it, while ordinary API access still renews",
     async (via) => {
@@ -342,12 +318,10 @@ describe("local API token", () => {
           ).expires_at;
         const expiresAt = readExpiry();
         nowMs += 2 * 24 * 60 * 60_000;
-
         const refused = await apiClient(remote.app, cookie).post("/api/remote/session", {});
         expect(refused.status).toBe(403);
         expect(refused.headers.has("set-cookie")).toBe(false);
         expect(readExpiry()).toBe(expiresAt);
-
         const me = await apiClient(remote.app, cookie).get("/api/me");
         expect(me.status).toBe(200);
         expect(me.headers.has("set-cookie")).toBe(true);
@@ -357,7 +331,6 @@ describe("local API token", () => {
       }
     },
   );
-
   it("rejects an expired cookie without setting a cookie", async () => {
     let nowMs = Date.now();
     const remote = await createTestApp({ now: () => new Date(nowMs) });
@@ -371,7 +344,6 @@ describe("local API token", () => {
       await remote.cleanup();
     }
   });
-
   it("keeps Bearer precedence beside an aging cookie without renewing that cookie", async () => {
     let nowMs = Date.now();
     const remote = await createTestApp({ now: () => new Date(nowMs) });
@@ -386,7 +358,6 @@ describe("local API token", () => {
         ).expires_at;
       const expiresAt = readExpiry();
       nowMs += 2 * 24 * 60 * 60_000;
-
       const wrong = await bearerFor(
         remote.app,
         "not-the-token",
@@ -396,7 +367,6 @@ describe("local API token", () => {
       expect(wrong.status).toBe(401);
       expect(wrong.headers.has("set-cookie")).toBe(false);
       expect(readExpiry()).toBe(expiresAt);
-
       const res = await bearerFor(
         remote.app,
         readApiToken(remote.root)!,
@@ -417,7 +387,6 @@ describe("local API token", () => {
       await remote.cleanup();
     }
   });
-
   it("a Remote session expires at its issued hour even after it has been used", async () => {
     let nowMs = Date.now();
     const remote = await createTestApp({ now: () => new Date(nowMs) });
@@ -441,7 +410,6 @@ describe("local API token", () => {
       await remote.cleanup();
     }
   });
-
   it("logging out revokes an exchanged Remote session", async () => {
     const remote = await createTestApp();
     try {
@@ -461,7 +429,6 @@ describe("local API token", () => {
       await remote.cleanup();
     }
   });
-
   it("overwrites the previous boot's file on the next boot, atomically", async () => {
     const root = await makeTempRoot();
     try {
@@ -477,14 +444,12 @@ describe("local API token", () => {
       fs.rmSync(root, { recursive: true, force: true });
     }
   });
-
   it("tokensEqual: constant-time compare semantics (equal / different / different length)", () => {
     expect(tokensEqual("abc", "abc")).toBe(true);
     expect(tokensEqual("abc", "abd")).toBe(false);
     expect(tokensEqual("abc", "abcd")).toBe(false);
     expect(tokensEqual("", "")).toBe(true);
   });
-
   it("bearerToken parses the header shape and nothing else", () => {
     expect(bearerToken("Bearer tok")).toBe("tok");
     expect(bearerToken("bearer tok")).toBe("tok");
@@ -493,7 +458,6 @@ describe("local API token", () => {
     expect(bearerToken(undefined)).toBeNull();
     expect(bearerToken("Bearer")).toBeNull();
   });
-
   it("reads an absent or empty token file as no token", async () => {
     expect(readApiToken(path.join(t.root, "no-such-subdir"))).toBeNull();
     const root = await makeTempRoot();

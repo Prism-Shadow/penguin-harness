@@ -18,22 +18,23 @@ import { afterEach, describe, expect, it } from "vitest";
 import { VERSION } from "@prismshadow/penguin-core";
 import type { DatabaseSync } from "node:sqlite";
 import { HotResources } from "@prismshadow/penguin-hmr";
-import { openDatabase } from "../src/db/database.js";
+import { openDatabase } from "../../../plugins/db/src/index.js";
 import { MachinesRepo } from "../src/db/repos/machines.js";
-import { MachinesService } from "../src/machines/service.js";
-import type { MachinesEffects, SettleTimeouts } from "../src/machines/service.js";
-import { runningBuild } from "../src/machines/install-server.js";
-import type { PushPlan, RemoteInstallOutcome } from "../src/machines/install-server.js";
-import type { RemoteIdentity } from "../src/machines/detect.js";
-import { MachineSockets } from "../src/machines/machine-sockets.js";
-import type { StreamSettle } from "../src/machines/machine-sockets.js";
-import { MachineSocketRelay } from "../src/machines/socket-relay.js";
-import { HANDSHAKE_PATH, judgeHandshake, readHandshakeAnswer } from "../src/machines/handshake.js";
-import type { HandshakeAnswer } from "../src/machines/handshake.js";
+import { MachinesService } from "../../../plugins/machines/src/server/index.js";
+import type { MachinesEffects } from "../../../plugins/machines/src/server/index.js";
+import { HANDSHAKE_PATH, judgeHandshake, readHandshakeAnswer } from "../../../plugins/machines/src/server/index.js";
+import type { HandshakeAnswer } from "../../../plugins/machines/src/server/index.js";
+import { MachineSocketRelay } from "../../../plugins/machines/src/server/socket-relay.js";
+import { MachineSockets } from "../../../plugins/machines/src/server/machine-sockets.js";
+import { PushPlan } from "../../../plugins/machines/src/server/install-server.js";
+import { RemoteIdentity } from "../../../plugins/machines/src/server/detect.js";
+import { RemoteInstallOutcome } from "../../../plugins/machines/src/server/install-server.js";
+import { SettleTimeouts } from "../../../plugins/machines/src/server/service.js";
+import { StreamSettle } from "../../../plugins/machines/src/server/machine-sockets.js";
+import { runningBuild } from "../../../plugins/machines/src/server/install-server.js";
 import { bootIdentity, handshakeRoutes } from "../src/http/routes/handshake.js";
 import { versionReport } from "../src/version-report.js";
 import { makeTempRoot, waitFor } from "./helpers.js";
-
 /** The seeded Project every server has, and this machine's fixed id. */
 const PROJECT = "default_project";
 const LOCAL_ID = "TESTlocalID00000";
@@ -43,7 +44,6 @@ const IDENTITY: RemoteIdentity = {
   installedVersion: null,
   harness: null,
 };
-
 /** This hub's build, and one before it: pushed platforms, named by shas as the store names them. */
 const OURS = "cafe0123456789ab";
 const THEIRS = "0123456789abcdef";
@@ -56,7 +56,6 @@ const PLAN: PushPlan = {
   hmrDir: "/nonexistent",
   version: OURS_VERSION,
 };
-
 /** What a process answers: the build it loaded, in the shape the version door answers. */
 const identityOf = (platform: string) => ({
   version: "9.9.9",
@@ -65,7 +64,6 @@ const identityOf = (platform: string) => ({
 });
 const OURS_IDENTITY = identityOf(OURS);
 const THEIRS_IDENTITY = identityOf(THEIRS);
-
 describe("reading the handshake answer", () => {
   it("reads 404 as a build it does not know, never as a failure of the machine", () => {
     expect(readHandshakeAnswer(404, "")).toEqual({
@@ -73,7 +71,6 @@ describe("reading the handshake answer", () => {
       detail: "it has no handshake door (404), so its build is unknown",
     });
   });
-
   it("reads a report naming a version as the build that process runs", () => {
     const reading = readHandshakeAnswer(200, JSON.stringify({ identity: OURS_IDENTITY }));
     expect(reading.kind).toBe("answered");
@@ -81,7 +78,6 @@ describe("reading the handshake answer", () => {
       OURS_VERSION,
     );
   });
-
   it.each([
     ["a status that is neither 200 nor 404", 500, "{}"],
     ["a body that is not JSON", 200, "not json"],
@@ -91,7 +87,6 @@ describe("reading the handshake answer", () => {
     expect(readHandshakeAnswer(status, text).kind).toBe("failed");
   });
 });
-
 describe("the handshake route", () => {
   it("answers one typed thing — the identity — with no protocol number and no capability list", async () => {
     const identity = OURS_IDENTITY as unknown as HandshakeAnswer["identity"];
@@ -108,7 +103,6 @@ describe("the handshake route", () => {
     expect(withProtocol).toBeDefined();
   });
 });
-
 describe("the identity a process answers", () => {
   /** A data root whose hmr store commits `platform` as its pushed build. */
   const pushTo = async (root: string, platform: string) => {
@@ -118,7 +112,6 @@ describe("the identity a process answers", () => {
       JSON.stringify({ platform: { bundle: `store/platform/${platform}.mjs` } }),
     );
   };
-
   it("is the build the process loaded at its start: a hot update moves the disk, not the answer", async () => {
     const root = await makeTempRoot();
     await pushTo(root, OURS);
@@ -126,13 +119,11 @@ describe("the identity a process answers", () => {
     const resources = new HotResources();
     const booted = await bootIdentity(resources, root);
     expect(runningBuild(booted.identity)?.version).toBe(`${VERSION}+hmr.${OURS.slice(0, 12)}`);
-
     // The hot update: the store now names another build, and the version door says so.
     await pushTo(root, THEIRS);
     expect(runningBuild(await versionReport(root))?.version).toBe(
       `${VERSION}+hmr.${THEIRS.slice(0, 12)}`,
     );
-
     // The same process, asked again: it still serves what it started with.
     const again = await bootIdentity(resources, root);
     expect(runningBuild(again.identity)?.version).toBe(`${VERSION}+hmr.${OURS.slice(0, 12)}`);
@@ -143,7 +134,6 @@ describe("the identity a process answers", () => {
     expect((await versionReport(root)).version).toBe(VERSION);
   });
 });
-
 describe("what an answer means for the plan", () => {
   it("compares the build the answer names with the plan, and nothing else", () => {
     expect(judgeHandshake({ kind: "answered", identity: OURS_IDENTITY as never }, PLAN)).toEqual({
@@ -159,7 +149,6 @@ describe("what an answer means for the plan", () => {
     });
   });
 });
-
 describe("a stream that found no socket", () => {
   /** A port with nothing on it: every dial fails, and the settle hook is what answers. */
   const quiet = async () => {
@@ -177,14 +166,12 @@ describe("a stream that found no socket", () => {
     const body = (await response.json()) as { error: { code: string; message: string } };
     return { status: response.status, ...body.error };
   };
-
   it("is told the machine is being upgraded, not given the same 502", async () => {
     const answered = await answer({ kind: "upgrading", detail: "it is being brought onto 9.9.9" });
     expect(answered.status).toBe(503);
     expect(answered.code).toBe("machine_upgrading");
     expect(answered.message).toContain("being brought onto 9.9.9");
   });
-
   it("is told the verdict when the pair could not be brought together", async () => {
     const answered = await answer({
       kind: "incompatible",
@@ -194,14 +181,12 @@ describe("a stream that found no socket", () => {
     expect(answered.code).toBe("machine_incompatible");
   });
 });
-
 describe("the one action a handshake decides", () => {
   let service: MachinesService | null = null;
   let store: DatabaseSync | null = null;
   const closers: Array<() => Promise<void>> = [];
   /** The plan this hub serves; a test moves it to stand for a new build landing here. */
   let plan: PushPlan = PLAN;
-
   afterEach(async () => {
     service?.stop();
     service = null;
@@ -210,7 +195,6 @@ describe("the one action a handshake decides", () => {
     plan = PLAN;
     for (const close of closers.splice(0)) await close();
   });
-
   /** A machine's server: answers the handshake with what `state` holds now, and 404 when told to. */
   const machine = async (identity: unknown) => {
     const state = { identity, door: true, asks: 0 };
@@ -230,7 +214,6 @@ describe("the one action a handshake decides", () => {
     closers.push(() => new Promise<void>((resolve) => server.close(() => resolve())));
     return { state, port };
   };
-
   /** The effects a machine this service can reach needs; every one of them tells the world by hand. */
   const effects = (over: Partial<MachinesEffects>): Partial<MachinesEffects> => ({
     watchSessions: () => () => {},
@@ -257,7 +240,6 @@ describe("the one action a handshake decides", () => {
     }),
     ...over,
   });
-
   /** A service over a fresh root and store, reaching a machine whose server answers on `port`. */
   const boot = async (
     remote: { port: number },
@@ -300,7 +282,6 @@ describe("the one action a handshake decides", () => {
     repo.setMembers(PROJECT, ["ssh:nas"]);
     return repo;
   };
-
   /** Install, stop and start as they happened, in order. */
   const counted = (log: string[]): Partial<MachinesEffects> => ({
     install: async (opts: { forceInstaller?: boolean }): Promise<RemoteInstallOutcome> => {
@@ -316,19 +297,15 @@ describe("the one action a handshake decides", () => {
       return { ok: true as const };
     },
   });
-
   it("leaves a machine whose process answers this hub's build alone", async () => {
     const remote = await machine(OURS_IDENTITY);
     const done: string[] = [];
     const repo = await boot(remote, counted(done));
-
     await service!.syncOutOfDate();
-
     expect(done).toEqual([]);
     expect(remote.state.asks).toBe(1);
     expect(repo.get("ssh:nas")?.version).toBe(OURS_VERSION);
   });
-
   it("installs this hub's build once and restarts it once when the process answers another", async () => {
     const remote = await machine(THEIRS_IDENTITY);
     const done: string[] = [];
@@ -341,14 +318,11 @@ describe("the one action a handshake decides", () => {
         return { kind: "installed", output: "done", identity: IDENTITY };
       },
     });
-
     await service!.syncOutOfDate();
-
     expect(done).toEqual(["install(force: true)", "stop", "start"]);
     expect(remote.state.asks).toBe(2);
     expect(repo.get("ssh:nas")?.version).toBe(OURS_VERSION);
   });
-
   it("reads a machine without the door as an unknown build, and brings it forward all the same", async () => {
     const remote = await machine(THEIRS_IDENTITY);
     remote.state.door = false;
@@ -363,13 +337,10 @@ describe("the one action a handshake decides", () => {
         return { kind: "installed", output: "done", identity: IDENTITY };
       },
     });
-
     await service!.syncOutOfDate();
-
     expect(done).toEqual(["install", "stop", "start"]);
     expect(remote.state.asks).toBe(2);
   });
-
   it("leaves a machine it cannot ask at all alone: nothing is installed on a server that is not up", async () => {
     const remote = await machine(THEIRS_IDENTITY);
     const done: string[] = [];
@@ -377,30 +348,24 @@ describe("the one action a handshake decides", () => {
       ...counted(done),
       probe: async () => ({ state: { kind: "stopped" as const }, machineId: null }),
     });
-
     await service!.syncOutOfDate();
-
     expect(done).toEqual([]);
     expect(remote.state.asks).toBe(0);
   });
-
   it("records a pair it could not bring together, and walks it again only when a build moves", async () => {
     const remote = await machine(THEIRS_IDENTITY);
     const done: string[] = [];
     await boot(remote, counted(done));
-
     await service!.syncOutOfDate();
     expect(done).toEqual(["install(force: true)", "stop", "start"]);
     // The next sweep asks the same question and installs nothing: the verdict holds it back.
     await service!.syncOutOfDate();
     expect(done).toEqual(["install(force: true)", "stop", "start"]);
     expect(remote.state.asks).toBe(3);
-
     const held = service!.settleForStream("REMOTE");
     expect(held?.kind).toBe("incompatible");
     expect(held?.detail).toContain(versionOf(THEIRS));
     expect(held?.detail).toContain(`serves ${OURS_VERSION}`);
-
     // A new build here is a new pair: the action runs for it.
     plan = {
       ...PLAN,
@@ -411,7 +376,6 @@ describe("the one action a handshake decides", () => {
     await waitFor(() => done.length === 6);
     expect(done.slice(3)).toEqual(["install(force: true)", "stop", "start"]);
   });
-
   it("walks one machine once however many ask meanwhile, and answers each that it is being upgraded", async () => {
     const remote = await machine(THEIRS_IDENTITY);
     let release: () => void = () => {};
@@ -424,7 +388,6 @@ describe("the one action a handshake decides", () => {
         return { kind: "installed", output: "done", identity: IDENTITY };
       },
     });
-
     const first = service!.settleForStream("REMOTE");
     const second = service!.settleForStream("REMOTE");
     expect(first?.kind).toBe("upgrading");
@@ -434,7 +397,6 @@ describe("the one action a handshake decides", () => {
     await waitFor(() => remote.state.asks === 2);
     expect(installs).toBe(1);
   });
-
   it("gives up on an install that does not finish, and records what it could not do", async () => {
     const remote = await machine(THEIRS_IDENTITY);
     await boot(
@@ -442,11 +404,9 @@ describe("the one action a handshake decides", () => {
       { install: () => new Promise<RemoteInstallOutcome>(() => {}) },
       { install: 20 },
     );
-
     const started = Date.now();
     await service!.syncOutOfDate();
     expect(Date.now() - started).toBeLessThan(5_000);
-
     const held = service!.settleForStream("REMOTE");
     expect(held?.kind).toBe("incompatible");
     expect(held?.detail).toContain("could not be installed again");

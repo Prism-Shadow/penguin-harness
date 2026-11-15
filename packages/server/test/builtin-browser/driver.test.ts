@@ -10,15 +10,14 @@ import {
   PageScriptError,
   exceptionMessage,
   mapLinkError,
-} from "../../src/builtin-browser/driver.js";
-import { ShellLink, ShellLinkError } from "../../src/builtin-browser/shell-link.js";
+} from "../../../../plugins/browser/src/server/builtin-browser/driver.js";
+import { ShellLink } from "../../../../plugins/browser/src/server/builtin-browser/shell-link.js";
+import { ShellLinkError } from "../../../../plugins/browser/src/server/builtin-browser/shell-link.js";
 import { FakeShell, evaluated, expressionOf, tab } from "./fake-shell.js";
-
 const links: ShellLink[] = [];
 afterEach(() => {
   for (const link of links.splice(0)) link.dispose();
 });
-
 function setup() {
   const shell = new FakeShell();
   shell.show(tab(1));
@@ -27,7 +26,6 @@ function setup() {
   const driver = new BrowserDriver(link, { sleep: async () => {} });
   return { shell, driver };
 }
-
 describe("BrowserDriver.evaluate", () => {
   it("wraps the code in an async function and asks for the value by value, as a user gesture", async () => {
     const { shell, driver } = setup();
@@ -50,7 +48,6 @@ describe("BrowserDriver.evaluate", () => {
       timeout: 4_000,
     });
   });
-
   it("returns no value for undefined, and the text of an unserializable one", async () => {
     const { shell, driver } = setup();
     shell.cdp = () => evaluated(undefined);
@@ -58,7 +55,6 @@ describe("BrowserDriver.evaluate", () => {
     shell.cdp = () => ({ result: { type: "number", unserializableValue: "NaN" } });
     await expect(driver.evaluate(1, "return NaN;")).resolves.toEqual({ value: "NaN" });
   });
-
   it("reports a navigation under the script as reloaded, whichever way CDP says it", async () => {
     const { shell, driver } = setup();
     for (const message of [
@@ -80,7 +76,6 @@ describe("BrowserDriver.evaluate", () => {
     });
     await expect(driver.evaluate(1, "await x")).resolves.toEqual({ reloaded: true });
   });
-
   it("throws the page's own message when the script throws", async () => {
     const { shell, driver } = setup();
     shell.cdp = () => ({
@@ -101,19 +96,16 @@ describe("BrowserDriver.evaluate", () => {
       "TypeError: Cannot read properties of null (reading 'click')",
     );
   });
-
   it("maps a closed tab and a silent shell to the routes' codes", async () => {
     const { shell, driver } = setup();
     const gone = await driver.evaluate(2, "return 1;").catch((e: unknown) => e);
     expect(gone).toBeInstanceOf(HttpError);
     expect((gone as HttpError).code).toBe("no_such_tab");
     expect((gone as HttpError).status).toBe(404);
-
     shell.cdp = () => new Promise(() => {});
     const silent = await driver.cdp(1, "Page.reload", undefined, 30).catch((e: unknown) => e);
     expect((silent as HttpError).code).toBe("timeout");
     expect((silent as HttpError).status).toBe(504);
-
     shell.cdp = () => {
       throw new Error("'Page.nope' wasn't found");
     };
@@ -122,7 +114,6 @@ describe("BrowserDriver.evaluate", () => {
     expect((refused as HttpError).message).toBe("'Page.nope' wasn't found");
   });
 });
-
 describe("BrowserDriver.waitForLoad", () => {
   it("polls readyState through a navigation until the document is complete", async () => {
     const { shell, driver } = setup();
@@ -139,7 +130,6 @@ describe("BrowserDriver.waitForLoad", () => {
     await expect(driver.waitForLoad(1, 5_000)).resolves.toBe(true);
     expect(calls).toBe(4);
   });
-
   it("gives up at the deadline, and stops at once for a closed tab", async () => {
     const shell = new FakeShell();
     shell.show(tab(1));
@@ -158,7 +148,6 @@ describe("BrowserDriver.waitForLoad", () => {
     expect((err as HttpError).code).toBe("no_such_tab");
   });
 });
-
 describe("error helpers", () => {
   it("prefers the exception's description, then its value, then CDP's text", () => {
     expect(exceptionMessage({ exception: { description: "Error: boom\n  at x" } })).toBe(
@@ -169,7 +158,6 @@ describe("error helpers", () => {
     );
     expect(exceptionMessage({ text: "Uncaught" })).toBe("Uncaught");
   });
-
   it("passes non-link errors through", () => {
     const err = new Error("other");
     expect(mapLinkError(err, 1)).toBe(err);

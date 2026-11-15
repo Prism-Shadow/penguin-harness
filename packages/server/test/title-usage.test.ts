@@ -7,11 +7,11 @@ import { expect, it } from "vitest";
 import { requestBegin, requestEnd, withOrigin } from "@prismshadow/penguin-core";
 import type { SessionTitleResult } from "@prismshadow/penguin-core";
 import { wire } from "@prismshadow/penguin-core/kernel";
-import { openDatabase } from "../src/db/database.js";
-import { SessionsRepo } from "../src/db/repos/sessions.js";
-import { UsageRepo } from "../src/db/repos/usage.js";
+import { openDatabase } from "../../../plugins/db/src/index.js";
+import { SessionsRepo } from "../../../plugins/sessions/src/server/index.js";
+import { UsageRepo } from "../../../plugins/usage/src/server/index.js";
 import { ChannelHub } from "../src/runtime/channel.js";
-import { TitleGenerator } from "../src/runtime/title-generator.js";
+import { TitleGenerator } from "../../../plugins/sessions/src/server/index.js";
 import { UsageRecorder } from "../src/runtime/usage-recorder.js";
 
 it.each(["main", "child"])(

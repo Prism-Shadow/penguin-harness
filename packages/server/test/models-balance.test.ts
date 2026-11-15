@@ -18,29 +18,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MODEL_CATALOG } from "../src/model-catalog/index.js";
 import type { ModelBalanceResponse, ProjectCreateResponse } from "../src/api/types.js";
-import {
-  BALANCE_CACHE_MS,
-  ModelBalances,
-  microToDecimal,
-  readBalance,
-} from "../src/services/model-balance.js";
+import {BALANCE_CACHE_MS, ModelBalances} from "../../../plugins/models/src/server/index.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
-
+import { microToDecimal } from "../../../plugins/models/src/server/services/model-balance.js";
+import { readBalance } from "../../../plugins/models/src/server/services/model-balance.js";
 const TOKENDANCE_URL = "https://tokendance.space/portal/api/v1/user/balance";
 const DEEPSEEK_URL = "https://api.deepseek.com/user/balance";
-
 const json = (status: number, body: unknown): Response =>
   new Response(JSON.stringify(body), {
     status,
     headers: { "content-type": "application/json" },
   });
-
 /** TokenDance's documented reply (https://tokendance.space/docs/open-api), in micro-yuan. */
 const TOKENDANCE_REPLY = {
   balance: { credits: 58000000, credits_used: 57837189, balance: 162811 },
 };
-
 /** DeepSeek's documented reply, with a second currency riding along. */
 const DEEPSEEK_REPLY = {
   is_available: true,
@@ -54,12 +47,10 @@ const DEEPSEEK_REPLY = {
     { currency: "USD", total_balance: "5.00", granted_balance: "0.00", topped_up_balance: "5.00" },
   ],
 };
-
 interface VendorCall {
   url: string;
   authorization: string | null;
 }
-
 /**
  * Stubs the global fetch with a stand-in for the two vendors: every call to a balance URL is
  * recorded, and `answer` decides the reply. Anything else the app fetches meanwhile is
@@ -75,7 +66,6 @@ function stubVendors(answer: (url: string) => Response | Promise<Response>): Ven
   });
   return calls;
 }
-
 describe("GET /api/projects/:p/models/balance", () => {
   let t: TestApp;
   let owner: ReturnType<typeof apiClient>;
@@ -105,7 +95,6 @@ describe("GET /api/projects/:p/models/balance", () => {
       expect(group.status).toBe(200);
     }
   };
-
   beforeEach(async () => {
     t = await createTestApp();
     const { cookie } = await provisionUser(t.app, "alice");
@@ -120,7 +109,6 @@ describe("GET /api/projects/:p/models/balance", () => {
     vi.unstubAllEnvs();
     await t.cleanup();
   });
-
   it("TokenDance: reads balance.balance in micro-yuan as CNY yuan, asking with the group's stored key", async () => {
     await storeKeys({ tokendance: "sk-td-secret-0001" });
     const calls = stubVendors(() => json(200, TOKENDANCE_REPLY));
@@ -138,7 +126,6 @@ describe("GET /api/projects/:p/models/balance", () => {
     expect(Date.parse(body.fetchedAt)).not.toBeNaN();
     expect(calls).toEqual([{ url: TOKENDANCE_URL, authorization: "Bearer sk-td-secret-0001" }]);
   });
-
   it("DeepSeek: the first currency is the headline, the others ride along, is_available passes through", async () => {
     await storeKeys({ deepseek: "sk-ds-secret-0002" });
     const calls = stubVendors(() => json(200, DEEPSEEK_REPLY));
@@ -153,7 +140,6 @@ describe("GET /api/projects/:p/models/balance", () => {
     });
     expect(calls).toEqual([{ url: DEEPSEEK_URL, authorization: "Bearer sk-ds-secret-0002" }]);
   });
-
   it("a group with no stored key answers no_key, and nobody is called", async () => {
     const calls = stubVendors(() => json(200, TOKENDANCE_REPLY));
     const res = await balance("tokendance");
@@ -161,7 +147,6 @@ describe("GET /api/projects/:p/models/balance", () => {
     expect(await res.json()).toMatchObject({ ok: false, provider: "tokendance", error: "no_key" });
     expect(calls).toEqual([]);
   });
-
   it("DeepSeek with no stored key asks with DEEPSEEK_API_KEY, the key a Session on its rows would use", async () => {
     vi.stubEnv("DEEPSEEK_API_KEY", "sk-ds-env-0003");
     await storeKeys({});
@@ -173,7 +158,6 @@ describe("GET /api/projects/:p/models/balance", () => {
     expect(JSON.parse(text)).toMatchObject({ ok: true, provider: "deepseek", amount: "110.00" });
     expect(calls).toEqual([{ url: DEEPSEEK_URL, authorization: "Bearer sk-ds-env-0003" }]);
   });
-
   it("a model's own key is never asked with: a group whose only key sits on one model answers no_key", async () => {
     vi.stubEnv("DEEPSEEK_API_KEY", "");
     const res = await owner.put(`/api/projects/${projectId}/models`, {
@@ -192,7 +176,6 @@ describe("GET /api/projects/:p/models/balance", () => {
     }
     expect(calls).toEqual([]);
   });
-
   it("DeepSeek pointed at another base URL as a group uses no DEEPSEEK_API_KEY; at its own default endpoint, or with none, it does", async () => {
     vi.stubEnv("DEEPSEEK_API_KEY", "sk-ds-env-0003");
     await storeKeys({});
@@ -204,7 +187,6 @@ describe("GET /api/projects/:p/models/balance", () => {
       error: "no_key",
     });
     expect(calls).toEqual([]);
-
     for (const baseUrl of ["https://api.deepseek.com/", null]) {
       calls.length = 0;
       await owner.put(group, { baseUrl });
@@ -215,7 +197,6 @@ describe("GET /api/projects/:p/models/balance", () => {
       expect(calls).toEqual([{ url: DEEPSEEK_URL, authorization: "Bearer sk-ds-env-0003" }]);
     }
   });
-
   it("TokenDance is a gateway: the environment lends its rows nothing, so no stored key is no_key", async () => {
     vi.stubEnv("OPENAI_API_KEY", "sk-openai-env-0004");
     vi.stubEnv("DEEPSEEK_API_KEY", "sk-ds-env-0003");
@@ -228,7 +209,6 @@ describe("GET /api/projects/:p/models/balance", () => {
     });
     expect(calls).toEqual([]);
   });
-
   it("a gateway with its base URL cleared is still lent nothing: only a first-party vendor group borrows its variable", async () => {
     // TokenDance's rows would then go to OPENAI_* on api.openai.com; that key must never reach
     // TokenDance's balance endpoint.
@@ -243,7 +223,6 @@ describe("GET /api/projects/:p/models/balance", () => {
     });
     expect(calls).toEqual([]);
   });
-
   it("a group without a balance endpoint answers unsupported; a missing provider is a bad request", async () => {
     await storeKeys({ tokendance: "sk-td-secret-0001" });
     const calls = stubVendors(() => json(200, TOKENDANCE_REPLY));
@@ -256,7 +235,6 @@ describe("GET /api/projects/:p/models/balance", () => {
     expect((await owner.get(`/api/projects/${projectId}/models/balance`)).status).toBe(400);
     expect(calls).toEqual([]);
   });
-
   it("a vendor failure is an answer, carrying the status and none of the vendor's text", async () => {
     await storeKeys({ tokendance: "sk-td-secret-0001", deepseek: "sk-ds-secret-0002" });
     stubVendors((url) =>
@@ -281,7 +259,6 @@ describe("GET /api/projects/:p/models/balance", () => {
       ok: false,
       error: "upstream_failed",
     });
-
     vi.unstubAllGlobals();
     vi.stubGlobal("fetch", async () => {
       throw new TypeError("fetch failed");
@@ -291,7 +268,6 @@ describe("GET /api/projects/:p/models/balance", () => {
       error: "upstream_failed",
     });
   });
-
   it("answers from the cache for the same key, asks again on force or for a new key", async () => {
     await storeKeys({ tokendance: "sk-td-secret-0001" });
     const calls = stubVendors(() => json(200, TOKENDANCE_REPLY));
@@ -300,17 +276,14 @@ describe("GET /api/projects/:p/models/balance", () => {
     expect(calls).toHaveLength(1);
     // The cached answer keeps the time it was read at.
     expect(second).toEqual(first);
-
     await balance("tokendance", true);
     expect(calls).toHaveLength(2);
-
     // A new authorization writes a new key: the old account's balance must not be served.
     await storeKeys({ tokendance: "sk-td-secret-0003" });
     await balance("tokendance");
     expect(calls).toHaveLength(3);
     expect(calls[2]!.authorization).toBe("Bearer sk-td-secret-0003");
   });
-
   it("any member may read a Project's balances; a stranger may not", async () => {
     await storeKeys({ tokendance: "sk-td-secret-0001" });
     stubVendors(() => json(200, TOKENDANCE_REPLY));
@@ -330,7 +303,6 @@ describe("GET /api/projects/:p/models/balance", () => {
     expect(refused.status).toBe(404);
   });
 });
-
 describe("ModelBalances", () => {
   it("serves a cached answer for 60 s, then asks again", async () => {
     let now = 1_700_000_000_000;
@@ -354,7 +326,6 @@ describe("ModelBalances", () => {
     await balances.read("p2", "tokendance");
     expect(calls).toBe(3);
   });
-
   it("shares one vendor call between readers asking at the same time", async () => {
     let calls = 0;
     let release: () => void = () => {};
@@ -381,7 +352,6 @@ describe("ModelBalances", () => {
     expect(a).toEqual(b);
   });
 });
-
 describe("balance readers", () => {
   it("microToDecimal keeps every stated digit and writes at least two decimals", () => {
     expect(microToDecimal(162811)).toBe("0.162811");
@@ -390,7 +360,6 @@ describe("balance readers", () => {
     expect(microToDecimal(0)).toBe("0.00");
     expect(microToDecimal(-2_500_000)).toBe("-2.50");
   });
-
   it("TokenDance: balance.balance, as a number or a numeric string, with or without an envelope", () => {
     expect(readBalance("tokendance", TOKENDANCE_REPLY)).toEqual({
       amount: "0.162811",
@@ -404,7 +373,6 @@ describe("balance readers", () => {
       expect(readBalance("tokendance", body), JSON.stringify(body)).toBeUndefined();
     }
   });
-
   it("DeepSeek: entries that are not a currency with a decimal amount are skipped, none left is a failure", () => {
     expect(
       readBalance("deepseek", {

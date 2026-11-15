@@ -8,29 +8,24 @@ import { readHarnessMeta } from "../src/harness-meta.js";
 import { carriedBody, syncCarriedImage } from "../src/carried-image.js";
 import { writePushedBuild } from "../src/hmr/pushed-build.js";
 import type { PushedBuild } from "../src/hmr/pushed-build.js";
-import { ShippedImage } from "../src/machines/shipped-image.js";
-import { shippedImage } from "../src/machines/install-server.js";
+import { ShippedImage } from "../../../plugins/machines/src/server/shipped-image.js";
+import { shippedImage } from "../../../plugins/machines/src/server/install-server.js";
 import { resolveCli } from "../src/services/cli-shim.js";
 import type { Manifest } from "@prismshadow/penguin-hmr/manifest";
-
 const made: string[] = [];
-
 async function tmp(prefix: string): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
   made.push(dir);
   return dir;
 }
-
 afterEach(async () => {
   while (made.length > 0) {
     const dir = made.pop();
     if (dir !== undefined) await fs.rm(dir, { recursive: true, force: true });
   }
 });
-
 const CLI = "export async function cli(argv) { return 0; }\n";
 const WEB = { "index.html": Buffer.from("<html></html>").toString("base64") };
-
 /**
  * A minimal but bootable platform: hand-rolled any-schema context, park as the only
  * method — the least a bundle needs to pass the mechanism's floor. It travels as source
@@ -58,7 +53,6 @@ const impl = {
 };
 export const hotPlatform = { id: "packaged", iface, impl, context: {} };
 `;
-
 const PACKAGED = {
   id: "packaged",
   iface: {
@@ -80,7 +74,6 @@ const PACKAGED = {
   },
   context: {},
 } as never;
-
 /** A hot push through the layer's own host: the provisioning every pushed root has run. */
 async function pushThroughHost(root: string, cli = CLI): Promise<void> {
   const { HmrHost } = await import("@prismshadow/penguin-hmr");
@@ -92,21 +85,18 @@ async function pushThroughHost(root: string, cli = CLI): Promise<void> {
     host.dispose();
   }
 }
-
 const BUILD: PushedBuild = {
   platform: PLATFORM_SOURCE,
   cli: CLI,
   web: { files: WEB },
   source: { repo: "https://github.com/Prism-Shadow/penguin-harness.git", revision: "vTEST" },
 };
-
 /** The store layout emitted by the packer's compiled writePushedBuild. */
 async function packImage(dir: string, build = BUILD): Promise<string> {
   const store = path.join(dir, "hmr");
   await writePushedBuild(store, build, new Date(0));
   return store;
 }
-
 /** The answers every channel's provisioned root must satisfy. */
 async function expectRecordAndAnswer(root: string): Promise<void> {
   const meta = await readHarnessMeta(root);
@@ -114,11 +104,9 @@ async function expectRecordAndAnswer(root: string): Promise<void> {
   if (meta.kind !== "meta") return;
   expect(meta.manifest.cli?.bundle).toMatch(/^store\/carried\/[0-9a-f]+\/cli\/[0-9a-f]+\.mjs$/);
   expect(meta.manifest.source).toMatchObject({ channel: "shipped-image" });
-
   const bundlePath = path.join(root, "hmr", meta.manifest.cli!.bundle!);
   expect(await fs.readFile(bundlePath, "utf8")).toBe(CLI);
   expect(await readHarnessInfo(root)).toMatchObject({ bundles: { cli: expect.any(String) } });
-
   const answer = await resolveCli({ callerEntry: "/install/dist/penguin.js", root });
   expect(answer).toEqual({
     kind: "entry",
@@ -129,7 +117,6 @@ async function expectRecordAndAnswer(root: string): Promise<void> {
     bundle: bundlePath,
   });
 }
-
 describe("every channel's carried image provisions the root it serves", () => {
   for (const channel of ["npm", "tarball", "docker"] as const) {
     it(`${channel} ships a body its program finds, and a start copies it into any root`, async () => {
@@ -139,18 +126,15 @@ describe("every channel's carried image provisions the root it serves", () => {
       const dist = await tmp(`penguin-channel-${channel}-dist-`);
       const body = await packImage(dist);
       const root = await tmp(`penguin-channel-${channel}-root-`);
-
       const outcome = await syncCarriedImage(root, body);
       expect(outcome).toMatchObject({ kind: "copied" });
       await expectRecordAndAnswer(root);
-
       // A different PENGUIN_HOME: the same program copies there too — the root is the
       // copy's address, not a fact learned at install time.
       const other = await tmp(`penguin-channel-${channel}-other-`);
       await expect(syncCarriedImage(other, body)).resolves.toMatchObject({ kind: "copied" });
       await expectRecordAndAnswer(other);
     });
-
     // The lookup that finds the body: a real layout on disk, the way each channel's
     // program is laid out — the entry beside its dist/, npm through the server package.
     it(`${channel} 's program layout resolves the body the packer wrote`, async () => {
@@ -180,7 +164,6 @@ describe("every channel's carried image provisions the root it serves", () => {
         syncCarriedImage(root, carriedBody(path.join(dist, "penguin.js"))),
       ).resolves.toMatchObject({ kind: "copied" });
       await expectRecordAndAnswer(root);
-
       // No body beside the entry: the lookup says so rather than guessing elsewhere.
       const bare = path.join(program, "lib", "bare");
       await fs.mkdir(bare, { recursive: true });
@@ -189,13 +172,11 @@ describe("every channel's carried image provisions the root it serves", () => {
     });
   }
 });
-
 describe("the reconciliation is idempotent and defers to a push", () => {
   it("a second start over the same root copies nothing", async () => {
     const dist = await tmp("penguin-sync-current-dist-");
     const body = await packImage(dist);
     const root = await tmp("penguin-sync-current-root-");
-
     await expect(syncCarriedImage(root, body)).resolves.toMatchObject({ kind: "copied" });
     const record = path.join(root, "hmr", "harness.json");
     const before = await fs.stat(record);
@@ -206,26 +187,22 @@ describe("the reconciliation is idempotent and defers to a push", () => {
     expect((await fs.stat(record)).mtimeMs).toBe(before.mtimeMs);
     await expectRecordAndAnswer(root);
   });
-
   it("an upgraded installation copies its newer body over the older image's record", async () => {
     const oldDist = await tmp("penguin-sync-upgrade-old-");
     const oldBody = await packImage(oldDist);
     const root = await tmp("penguin-sync-upgrade-root-");
     await syncCarriedImage(root, oldBody);
-
     // The "new" program carries a changed CLI — a genuinely different build, so the
     // record's bundle must rise to it.
     const newDist = await tmp("penguin-sync-upgrade-new-");
     const newerBody = await packImage(newDist, { ...BUILD, cli: CLI + "// v2\n" });
     await expect(syncCarriedImage(root, newerBody)).resolves.toMatchObject({ kind: "copied" });
-
     const meta = await readHarnessMeta(root);
     if (meta.kind === "meta") {
       const bundle = await fs.readFile(path.join(root, "hmr", meta.manifest.cli!.bundle!), "utf8");
       expect(bundle).toBe(CLI + "// v2\n");
     }
   });
-
   // The mirror of the upgrade case, fixing the boundary the reconciliation lives
   // under: the image follows whatever package started last, downgrades included —
   // the content-hash id proves identity, not recency, so an older package started
@@ -235,11 +212,9 @@ describe("the reconciliation is idempotent and defers to a push", () => {
     const newerBody = await packImage(newDist, { ...BUILD, cli: CLI + "// v2\n" });
     const root = await tmp("penguin-sync-downgrade-root-");
     await syncCarriedImage(root, newerBody);
-
     const oldDist = await tmp("penguin-sync-downgrade-old-");
     const oldBody = await packImage(oldDist);
     await expect(syncCarriedImage(root, oldBody)).resolves.toMatchObject({ kind: "copied" });
-
     const meta = await readHarnessMeta(root);
     if (meta.kind === "meta") {
       const bundle = await fs.readFile(path.join(root, "hmr", meta.manifest.cli!.bundle!), "utf8");
@@ -247,7 +222,6 @@ describe("the reconciliation is idempotent and defers to a push", () => {
     }
     await expectRecordAndAnswer(root);
   });
-
   // The same image id, but a record pointer outside that image's namespace: the check
   // must treat this as incomplete. Mapping a prefix-mismatched pointer to an empty
   // relative path would resolve to the store directory itself and let a start answer
@@ -257,32 +231,26 @@ describe("the reconciliation is idempotent and defers to a push", () => {
     const body = await packImage(dist);
     const root = await tmp("penguin-sync-namespace-root-");
     await syncCarriedImage(root, body);
-
     const record = path.join(root, "hmr", "harness.json");
     const manifest = JSON.parse(await fs.readFile(record, "utf8")) as Manifest;
     expect(manifest.source).toMatchObject({ image: expect.any(String) });
     manifest.cli!.bundle = "store/carried/foreign-image/cli/0123456789abcdef.mjs";
     await fs.writeFile(record, JSON.stringify(manifest));
-
     await expect(syncCarriedImage(root, body)).resolves.toMatchObject({ kind: "copied" });
     await expectRecordAndAnswer(root);
   });
-
   it("a hot-pushed root keeps its record: the copy never outlives a push", async () => {
     const dist = await tmp("penguin-sync-pushed-dist-");
     const body = await packImage(dist);
     const root = await tmp("penguin-sync-pushed-root-");
     await pushThroughHost(root, "export async function cli() { return 42; }\n");
-
     const bytes = await fs.readFile(path.join(root, "hmr", "harness.json"));
     const before = await readHarnessMeta(root);
     expect(before.kind).toBe("meta");
-
     await expect(syncCarriedImage(root, body)).resolves.toMatchObject({
       kind: "kept",
       reason: "pushed",
     });
-
     const after = await readHarnessMeta(root);
     expect(after).toEqual(before);
     expect(await fs.readFile(path.join(root, "hmr", "harness.json"))).toEqual(bytes);
@@ -292,39 +260,33 @@ describe("the reconciliation is idempotent and defers to a push", () => {
       expect(bundle).toBe("export async function cli() { return 42; }\n");
     }
   });
-
   it("an unreadable record is left alone, and a start without a body does nothing", async () => {
     const dist = await tmp("penguin-sync-broken-dist-");
     const body = await packImage(dist);
     const root = await tmp("penguin-sync-broken-root-");
     await fs.mkdir(path.join(root, "hmr"), { recursive: true });
     await fs.writeFile(path.join(root, "hmr", "harness.json"), "{ not json");
-
     await expect(syncCarriedImage(root, body)).resolves.toMatchObject({
       kind: "kept",
       reason: "unreadable-record",
     });
     expect((await readHarnessMeta(root)).kind).toBe("broken");
     expect(await fs.readFile(path.join(root, "hmr", "harness.json"), "utf8")).toBe("{ not json");
-
     await expect(syncCarriedImage(root, null)).resolves.toMatchObject({
       kind: "absent",
       reason: "no-body",
     });
   });
-
   it("a peer's copied state provisions the receiving root as-is, no copy of ours over it", async () => {
     const senderRoot = await tmp("penguin-channel-peer-sender-");
     await pushThroughHost(senderRoot);
     const peerRoot = await tmp("penguin-channel-peer-receiver-");
     await fs.cp(path.join(senderRoot, "hmr"), path.join(peerRoot, "hmr"), { recursive: true });
-
     const sender = await readHarnessMeta(senderRoot);
     const peer = await readHarnessMeta(peerRoot);
     expect(peer.kind).toBe("meta");
     if (peer.kind !== "meta" || sender.kind !== "meta") return;
     expect(peer.manifest).toEqual(sender.manifest);
-
     const answer = await resolveCli({
       callerEntry: "/install/lib/dist/penguin.js",
       root: peerRoot,
@@ -334,7 +296,6 @@ describe("the reconciliation is idempotent and defers to a push", () => {
       reason: "own-entry",
       bundle: path.join(peerRoot, "hmr", peer.manifest.cli!.bundle!),
     });
-
     // A start on the peer — if its program carries a body — defers: the sender's pushed
     // record has no mark of ours.
     const bytes = await fs.readFile(path.join(peerRoot, "hmr", "harness.json"));
@@ -345,7 +306,6 @@ describe("the reconciliation is idempotent and defers to a push", () => {
     });
     expect(await fs.readFile(path.join(peerRoot, "hmr", "harness.json"))).toEqual(bytes);
   });
-
   it("a record laid down as a checkout/release install image is a meta the CLI answers", async () => {
     // The writer an install (writePushedBuild) uses is the one the copy uses, so a root
     // provisioned by any writer answers the same. This is the release-tarball-installs-
@@ -363,13 +323,11 @@ describe("the reconciliation is idempotent and defers to a push", () => {
     expect(answer).toMatchObject({ kind: "entry", reason: "own-entry" });
   });
 });
-
 describe("store image consumers", () => {
   it("source checkout lookup has no carried store", async () => {
     const checkout = await tmp("penguin-channel-checkout-");
     expect(carriedBody(path.join(checkout, "src", "index.ts"))).toBeNull();
   });
-
   it("machine installs use the shared carried-store lay-down", async () => {
     const program = await tmp("penguin-store-machine-");
     const lib = path.join(program, "lib");

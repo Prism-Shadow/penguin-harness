@@ -12,37 +12,44 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { classifyUpgradeAnswer, readPushedBuild, refusalDetail } from "../src/machines/upgrade.js";
-import { machineIdentity, parseHostAliases, parseHostEntries } from "../src/machines/ssh-config.js";
-import {
-  parseProbe,
-  probeServerState,
-  readServerStateCommand,
-} from "../src/machines/server-state.js";
-import { parseProbeOutput, posixProbe, windowsProbe } from "../src/machines/detect.js";
-import { profileFromEnv, remoteLayoutFor } from "../src/machines/layout.js";
-import { startRemoteServer } from "../src/machines/server-control.js";
-import {
-  cmdQuote,
-  isAliveCommand,
-  launchedPid,
-  runInstallScriptCommand,
-  startServerCommand,
-  uninstallCommand,
-  unpackStoreCommand,
-  scpArgs,
-  shQuote,
-  sshArgs,
-  sessionArgs,
-} from "../src/machines/commands.js";
-import { installedRelease, resolvePushPlan, shippedImage } from "../src/machines/install-server.js";
-import { askpassPlan, passwordEnv } from "../src/machines/transport/login.js";
-import { explainSshFailure, sshFailureText } from "../src/machines/ssh-failure.js";
-import { SshPasswords, passwordProblem } from "../src/machines/ssh-passwords.js";
 
+import { profileFromEnv, remoteLayoutFor } from "../../../plugins/machines/src/server/index.js";
+import { windowsProbe } from "../../../plugins/machines/src/server/detect.js";
+import { startRemoteServer } from "../../../plugins/machines/src/server/server-control.js";
+
+import { posixProbe } from "../../../plugins/machines/src/server/detect.js";
+import { readPushedBuild } from "../../../plugins/machines/src/server/upgrade.js";
+import { refusalDetail } from "../../../plugins/machines/src/server/upgrade.js";
+import { resolvePushPlan } from "../../../plugins/machines/src/server/install-server.js";
+import { shippedImage } from "../../../plugins/machines/src/server/install-server.js";
+import { sshFailureText } from "../../../plugins/machines/src/server/ssh-failure.js";
+import { SshPasswords } from "../../../plugins/machines/src/server/ssh-passwords.js";
+import { askpassPlan } from "../../../plugins/machines/src/server/transport/login.js";
+import { classifyUpgradeAnswer } from "../../../plugins/machines/src/server/upgrade.js";
+import { explainSshFailure } from "../../../plugins/machines/src/server/ssh-failure.js";
+import { installedRelease } from "../../../plugins/machines/src/server/install-server.js";
+import { machineIdentity } from "../../../plugins/machines/src/server/ssh-config.js";
+import { parseHostAliases } from "../../../plugins/machines/src/server/ssh-config.js";
+import { parseHostEntries } from "../../../plugins/machines/src/server/ssh-config.js";
+import { parseProbeOutput } from "../../../plugins/machines/src/server/detect.js";
+import { passwordEnv } from "../../../plugins/machines/src/server/transport/login.js";
+import { passwordProblem } from "../../../plugins/machines/src/server/ssh-passwords.js";
+import { cmdQuote } from "../../../plugins/machines/src/server/commands.js";
+import { isAliveCommand } from "../../../plugins/machines/src/server/commands.js";
+import { launchedPid } from "../../../plugins/machines/src/server/commands.js";
+import { parseProbe } from "../../../plugins/machines/src/server/server-state.js";
+import { probeServerState } from "../../../plugins/machines/src/server/server-state.js";
+import { readServerStateCommand } from "../../../plugins/machines/src/server/server-state.js";
+import { runInstallScriptCommand } from "../../../plugins/machines/src/server/commands.js";
+import { scpArgs } from "../../../plugins/machines/src/server/commands.js";
+import { sessionArgs } from "../../../plugins/machines/src/server/commands.js";
+import { shQuote } from "../../../plugins/machines/src/server/commands.js";
+import { sshArgs } from "../../../plugins/machines/src/server/commands.js";
+import { startServerCommand } from "../../../plugins/machines/src/server/commands.js";
+import { uninstallCommand } from "../../../plugins/machines/src/server/commands.js";
+import { unpackStoreCommand } from "../../../plugins/machines/src/server/commands.js";
 const RELEASE = remoteLayoutFor("release");
 const DEV = remoteLayoutFor("dev");
-
 describe("the stored passwords", () => {
   it("keeps one private file per alias, named so no alias is a path, and deletes it", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-passwords-"));
@@ -81,10 +88,8 @@ describe("the stored passwords", () => {
     }
   });
 });
-
 describe("parseHostAliases", () => {
   const noIncludes = () => [];
-
   it("lists declared aliases in file order, expanding multi-alias blocks", () => {
     const aliases = parseHostAliases(
       ["Host build-box", "  HostName 10.0.0.4", "", "Host gpu-1 gpu-1.lan", "  User root"].join(
@@ -94,7 +99,6 @@ describe("parseHostAliases", () => {
     );
     expect(aliases).toEqual(["build-box", "gpu-1", "gpu-1.lan"]);
   });
-
   it("skips pattern entries — they configure other hosts rather than naming one", () => {
     const aliases = parseHostAliases(
       ["Host *", "  ServerAliveInterval 30", "Host !prod *.lan", "Host real"].join("\n"),
@@ -102,14 +106,12 @@ describe("parseHostAliases", () => {
     );
     expect(aliases).toEqual(["real"]);
   });
-
   it("ignores comments and blank lines, and is case-insensitive like ssh", () => {
     expect(parseHostAliases("# Host commented\n\nhost lower\nHOST upper", noIncludes)).toEqual([
       "lower",
       "upper",
     ]);
   });
-
   it("follows Include through the supplied reader and de-duplicates the result", () => {
     const files: Record<string, string> = {
       "work/*": "Host build-box\nHost shared",
@@ -121,7 +123,6 @@ describe("parseHostAliases", () => {
     );
     expect(aliases).toEqual(["build-box", "shared", "laptop", "nas"]);
   });
-
   it("reads every file one Include line names, in order", () => {
     const files: Record<string, string> = {
       "config.d/*": "Host gpu-1",
@@ -133,14 +134,12 @@ describe("parseHostAliases", () => {
     );
     expect(aliases).toEqual(["gpu-1", "orb", "laptop"]);
   });
-
   it("survives an include cycle instead of spinning", () => {
     const aliases = parseHostAliases("Include self\nHost top", () => ["Include self\nHost deep"]);
     expect(aliases).toContain("top");
     expect(aliases).toContain("deep");
   });
 });
-
 describe("parseHostEntries", () => {
   it("reads each host's own HostName, User and Port, a shared block for both its aliases, through Include", () => {
     const files: Record<string, string> = {
@@ -171,7 +170,6 @@ describe("parseHostEntries", () => {
     ]);
   });
 });
-
 describe("machineIdentity", () => {
   it("is <user>@<alias>: the Linux account is part of the machine, the alias is the name", () => {
     expect(machineIdentity("build-box", "deploy")).toBe("deploy@build-box");
@@ -179,7 +177,6 @@ describe("machineIdentity", () => {
     expect(machineIdentity("build-box", "")).toBe("build-box");
   });
 });
-
 describe("identity probe", () => {
   it("asks in each shell's own dialect — sh cannot read the Windows one and vice versa", () => {
     expect(posixProbe(RELEASE)).toContain("uname -s -m");
@@ -195,7 +192,6 @@ describe("identity probe", () => {
     expect(posixProbe(DEV)).not.toContain("$HOME/.penguin/");
     expect(windowsProbe(DEV)).toContain("%USERPROFILE%\\.penguin-dev\\lib\\package.json");
   });
-
   it("reads identity, installed version and pushed state from the three sections", () => {
     expect(
       parseProbeOutput(
@@ -208,20 +204,17 @@ describe("identity probe", () => {
       harness: '{"platform":{}}',
     });
   });
-
   it("a machine with nothing installed answers empty sections", () => {
     expect(parseProbeOutput("Linux x86_64\n---penguin---\n---penguin---\n")).toMatchObject({
       installedVersion: null,
       harness: null,
     });
   });
-
   it("skips a login banner before the identity line", () => {
     expect(
       parseProbeOutput("Welcome to build-box!\nLinux x86_64\n---penguin---\n---penguin---\n"),
     ).toMatchObject({ platform: "linux", arch: "x64" });
   });
-
   it("recognizes every platform-arch pair the release targets name", () => {
     expect(parseProbeOutput("Windows_NT AMD64\n---penguin---\n")).toMatchObject({
       platform: "win32",
@@ -236,36 +229,30 @@ describe("identity probe", () => {
       arch: "arm64",
     });
   });
-
   it("an unrecognized answer (or an error message) parses as null", () => {
     expect(
       parseProbeOutput("'uname' is not recognized as an internal or external command"),
     ).toBeNull();
     expect(parseProbeOutput("")).toBeNull();
   });
-
   it("a damaged manifest reads as nothing installed", () => {
     expect(parseProbeOutput("Linux x86_64\n---penguin---\nnot json at all")).toMatchObject({
       installedVersion: null,
     });
   });
 });
-
 describe("ssh / scp invocations", () => {
   const target = { alias: "build-box", user: "deploy" };
-
   it("never lets ssh prompt: a GUI has no terminal to type a password into", () => {
     const args = sshArgs(target, "uname -a");
     expect(args).toContain("BatchMode=yes");
     expect(args).toContain("ConnectTimeout=10");
     expect(scpArgs(target, ["/tmp/a"], "/tmp/dir")).toContain("BatchMode=yes");
   });
-
   it("selects the account on the command line, never by writing the ssh config", () => {
     expect(sshArgs(target, "true")).toContain("User=deploy");
     expect(sshArgs({ alias: "build-box", user: "" }, "true").join(" ")).not.toContain("User=");
   });
-
   it("holds ONE session per machine: no tty, a SOCKS listener on loopback, keepalives, sh", () => {
     const args = sessionArgs(target, 49152).join(" ");
     expect(args).toContain("-T");
@@ -278,7 +265,6 @@ describe("ssh / scp invocations", () => {
     // Nothing is forwarded by name: any port on the machine is a channel through -D.
     expect(args).not.toContain("-L ");
   });
-
   it("signs a password machine in with the password alone, which never rides the command line", () => {
     const secret = "hunter2 & co";
     const login = {
@@ -312,7 +298,6 @@ describe("ssh / scp invocations", () => {
     });
     expect(passwordEnv({ DISPLAY: ":1" }, "/a", secret).DISPLAY).toBe(":1");
   });
-
   it("hands the password to any OpenSSH it can make ask the helper, and refuses the rest naming the version", () => {
     expect(askpassPlan("OpenSSH_9.6p1 Ubuntu-3ubuntu13.5, OpenSSL 3.0.13", "linux")).toEqual({
       ok: true,
@@ -330,7 +315,6 @@ describe("ssh / scp invocations", () => {
       detail: expect.stringContaining("OpenSSH 8.4 or later"),
     });
   });
-
   it("reads 'Permission denied' by how the machine signs in, and reads its own sentence back the same", () => {
     const said = "deploy@10.0.0.9: Permission denied (publickey,password).";
     expect(explainSshFailure(said, "nas")?.reason).toBe("auth");
@@ -354,12 +338,10 @@ describe("ssh / scp invocations", () => {
     expect(led).toMatch(/^nas rejected the password saved for it\./);
     expect(explainSshFailure(led, "nas")?.reason).toBe("password-rejected");
   });
-
   it("refuses a SOCKS port that is not one", () => {
     expect(() => sessionArgs(target, 0)).toThrow(/bad port/);
     expect(() => sessionArgs(target, 70000)).toThrow(/bad port/);
   });
-
   it("a 200 is not yet a yes: blocked is a refusal, and a swap not written down is not durable", () => {
     // /api/hmr/upgrade answers 200 for `blocked` so clients keep one parsing path; the body
     // names what would have been discarded. And `persisted: false` is the machine saying the
@@ -392,7 +374,6 @@ describe("ssh / scp invocations", () => {
     ).toMatchObject({ kind: "upgraded", persisted: true });
     expect(classifyUpgradeAnswer(200, "<html>")).toMatchObject({ kind: "refused" });
   });
-
   it("repeats the machine's own words when it refuses a build", () => {
     expect(
       refusalDetail(
@@ -401,23 +382,19 @@ describe("ssh / scp invocations", () => {
       ),
     ).toBe("this runtime is too old");
   });
-
   it("falls back to whatever it did say, rather than inventing a reason", () => {
     expect(refusalDetail(502, "<html>Bad Gateway</html>")).toBe("<html>Bad Gateway</html>");
     expect(refusalDetail(403, "   ")).toContain("403");
   });
-
   it("leaves the scp destination unquoted — modern scp transfers over SFTP, taking it literally", () => {
     const args = scpArgs(target, ["/local/image.pack"], "/tmp/penguin-abc123");
     expect(args.at(-1)).toBe("build-box:/tmp/penguin-abc123");
   });
-
   it("quotes per shell: single quotes for sh, double for cmd.exe", () => {
     expect(shQuote("/tmp/it's here")).toBe(`'/tmp/it'\\''s here'`);
     expect(cmdQuote("C:\\Users\\First Last\\tmp")).toBe('"C:\\Users\\First Last\\tmp"');
     expect(() => cmdQuote('C:\\weird"path')).toThrow();
   });
-
   it("takes the installer on stdin, so a POSIX install costs ONE ssh handshake", () => {
     expect(runInstallScriptCommand("v0.2.4", { platform: "linux" }, RELEASE)).toEqual({
       command: `PENGUIN_INSTALL_DIR="$HOME/.penguin" PENGUIN_VERSION='v0.2.4' sh -s`,
@@ -428,7 +405,6 @@ describe("ssh / scp invocations", () => {
       'PENGUIN_INSTALL_DIR="$HOME/.penguin-dev"',
     );
   });
-
   it("a dev-profile install leaves the machine's `penguin` command with the release one", () => {
     // The installer repoints ~/.local/bin/penguin (or extends the user Path) at whatever it
     // just installed; from the dev profile that would hand a person typing `penguin` the dev
@@ -445,7 +421,6 @@ describe("ssh / scp invocations", () => {
       "no-modify-path",
     );
   });
-
   it("runs a Windows remote's copy from a path, and deletes it in the same command", () => {
     expect(
       runInstallScriptCommand(
@@ -464,7 +439,6 @@ describe("ssh / scp invocations", () => {
       scriptOnStdin: false,
     });
   });
-
   it("unpacks the streamed store into the hmr directory, the layer it was tarred from", () => {
     // install-server.ts tars `-C <root>/hmr harness.json store`, so the members are named
     // from THERE. Extracting into the data root instead lands them one directory above where
@@ -481,7 +455,6 @@ describe("ssh / scp invocations", () => {
     );
   });
 });
-
 describe("the release a server stands on, and what it installs", () => {
   const manifest = JSON.stringify({ name: "@prismshadow/penguin-cli", version: "0.2.4" });
   const works: string[] = [];
@@ -498,7 +471,6 @@ describe("the release a server stands on, and what it installs", () => {
     fs.writeFileSync(path.join(lib, "package.json"), manifest);
     return { work, lib, entry: path.join(lib, "dist", "penguin.js") };
   };
-
   it("a tarball install stands on the release its lib/ names, and installs no bare release", () => {
     const { work, lib, entry } = tarball();
     expect(installedRelease(entry)).toEqual({ version: "0.2.4", dir: lib });
@@ -506,7 +478,6 @@ describe("the release a server stands on, and what it installs", () => {
     // release, which would leave a machine with an empty store.
     expect(resolvePushPlan(work, entry)).toBeNull();
   });
-
   it("names the image its release ships beside the entry, and none when it ships none", () => {
     const { lib, entry } = tarball();
     expect(shippedImage(entry)).toBeNull();
@@ -516,7 +487,6 @@ describe("the release a server stands on, and what it installs", () => {
       body: path.join(lib, "dist", "install-image.gz"),
     });
   });
-
   it("a pushed server adds its hmr state, sha-suffixed", () => {
     const { work, entry } = tarball();
     const hmrDir = path.join(work, "data", "hmr");
@@ -525,7 +495,6 @@ describe("the release a server stands on, and what it installs", () => {
       platform: { bundle: "store/platform/cafe0123456789ab.mjs" },
     });
     fs.writeFileSync(path.join(hmrDir, "harness.json"), harness);
-
     expect(resolvePushPlan(path.join(work, "data"), entry)).toMatchObject({
       baseVersion: "0.2.4",
       harness,
@@ -533,7 +502,6 @@ describe("the release a server stands on, and what it installs", () => {
       version: "0.2.4+hmr.cafe01234567",
     });
   });
-
   it("names the harness, not its platform bundle: a web-only or CLI-only push is a new version, an assets-only one is not", () => {
     const { work, entry } = tarball();
     const hmrDir = path.join(work, "data", "hmr");
@@ -562,7 +530,6 @@ describe("the release a server stands on, and what it installs", () => {
     // Assets are what a harness loads, not the harness.
     expect(versionOf({ assets: { dir: "store/assets/2222222222222222" } })).toBe(base);
   });
-
   // Where electron-builder puts the app directory (asar off): beside the executable on Windows
   // and Linux, inside the bundle on macOS, whose resources directory is capitalized.
   it.each([
@@ -581,7 +548,6 @@ describe("the release a server stands on, and what it installs", () => {
         JSON.stringify({ name: "penguin-harness-desktop", version: "0.2.4" }),
       );
       fs.writeFileSync(path.join(appDir, "dist", "install-image.gz"), "x");
-
       const entry = path.join(appDir, "dist", "server.js");
       expect(installedRelease(entry)).toEqual({ version: "0.2.4", dir: appDir });
       expect(shippedImage(entry)).toEqual({
@@ -590,7 +556,6 @@ describe("the release a server stands on, and what it installs", () => {
       });
     },
   );
-
   it("a desktop SOURCE run stands on no release: packages/desktop is not under resources/", () => {
     const work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-plan-"));
     works.push(work);
@@ -601,18 +566,15 @@ describe("the release a server stands on, and what it installs", () => {
       JSON.stringify({ name: "@prismshadow/penguin-desktop", version: "0.2.4" }),
     );
     fs.writeFileSync(path.join(pkgDir, "dist", "install-image.gz"), "x");
-
     expect(installedRelease(path.join(pkgDir, "dist", "server.js"))).toBeNull();
     expect(shippedImage(path.join(pkgDir, "dist", "server.js"))).toBeNull();
   });
-
   it("a dev checkout stands on no release and answers null", () => {
     expect(installedRelease("/repo/packages/server/src/index.ts")).toBeNull();
     expect(installedRelease(undefined)).toBeNull();
     expect(resolvePushPlan(null, "/repo/packages/server/src/index.ts")).toBeNull();
   });
 });
-
 describe("shipping the installers", () => {
   /**
    * The push copies these files out of dist/; they are never imported, so nothing in the
@@ -626,7 +588,6 @@ describe("shipping the installers", () => {
     expect(fs.readFileSync(built, "utf8")).toBe(fs.readFileSync(source, "utf8"));
   });
 });
-
 describe("asking `penguin server status` in the machine's own dialect", () => {
   const target = { alias: "nas", user: "deploy" };
   const answered = {
@@ -643,7 +604,6 @@ describe("asking `penguin server status` in the machine's own dialect", () => {
     stderr: "",
     timedOut: false,
   };
-
   it("speaks cmd.exe to a Windows machine: no $HOME, node.exe, backslashes", () => {
     const command = readServerStateCommand("win32", RELEASE);
     expect(command).toContain("%USERPROFILE%\\.penguin\\node\\node.exe");
@@ -658,7 +618,6 @@ describe("asking `penguin server status` in the machine's own dialect", () => {
       'set "PENGUIN_HOME=%USERPROFILE%\\.penguin-dev\\data"',
     );
   });
-
   it("carries the profile to the far side, so a server started there reaches on in the same one", () => {
     // That server has a machines service of its own, and it reads its layout from
     // PENGUIN_PROFILE. Without the variable a dev-profile server would reach the NEXT
@@ -669,7 +628,6 @@ describe("asking `penguin server status` in the machine's own dialect", () => {
     expect(readServerStateCommand("linux", RELEASE)).toContain(" PENGUIN_PROFILE=release ");
     expect(startServerCommand(7371, DEV)).toContain(" PENGUIN_PROFILE=dev ");
   });
-
   it("a machine whose platform is on record is asked once, in that dialect", async () => {
     const asked: string[] = [];
     const probe = await probeServerState(
@@ -685,7 +643,6 @@ describe("asking `penguin server status` in the machine's own dialect", () => {
     expect(asked[0]).toContain("%USERPROFILE%");
     expect(probe.state).toMatchObject({ kind: "running", port: 7364 });
   });
-
   it("a machine whose platform is unknown is asked the POSIX way, then the Windows way", async () => {
     const asked: string[] = [];
     const probe = await probeServerState(
@@ -700,7 +657,6 @@ describe("asking `penguin server status` in the machine's own dialect", () => {
     expect(asked).toHaveLength(2);
     expect(probe).toMatchObject({ state: { kind: "running" }, machineId: "LNrJdHAZJ91G58i0" });
   });
-
   it("when neither dialect answers, what the POSIX attempt heard is what is reported", async () => {
     const refused = {
       code: 255,
@@ -714,7 +670,6 @@ describe("asking `penguin server status` in the machine's own dialect", () => {
       detail: expect.stringContaining("Connection refused"),
     });
   });
-
   it("a machine whose store holds no CLI is said to need installing again, not to run `penguin`", async () => {
     // What every release's `penguin-hmr` answers on a root nothing was installed into: its advice
     // is for a person at that machine's terminal, and the remedy from here is an install. Two
@@ -742,28 +697,23 @@ describe("asking `penguin server status` in the machine's own dialect", () => {
     }
   });
 });
-
 describe("reading what `penguin server status` answered", () => {
   const answer = (o: Record<string, unknown>) => JSON.stringify(o);
-
   it("takes the state and the id out of the machine's own JSON", () => {
     expect(
       parseProbe(answer({ running: true, port: 7364, pid: 42, machineId: "LNrJdHAZJ91G58i0" })),
     ).toEqual({ state: { kind: "running", port: 7364, pid: 42 }, machineId: "LNrJdHAZJ91G58i0" });
   });
-
   it("reads a machine with nothing serving, and one that has no id yet", () => {
     expect(parseProbe(answer({ running: false, port: null, pid: null, machineId: null }))).toEqual({
       state: { kind: "stopped" },
       machineId: null,
     });
   });
-
   it("finds the answer under a login shell's own banner", () => {
     const said = `Welcome to build-box!\n{ not json }\n${answer({ running: false })}\n`;
     expect(parseProbe(said).state).toEqual({ kind: "stopped" });
   });
-
   it("says it cannot tell rather than inventing a state out of a shape it does not know", () => {
     // Neither of these is a state any machine reported; both would be made up on this side.
     // A truthy string reads as up, and a claim of running carrying no port reads as down —
@@ -773,7 +723,6 @@ describe("reading what `penguin server status` answered", () => {
     const portless = answer({ running: true, machineId: "LNrJdHAZJ91G58i0" });
     expect(parseProbe(portless).state).toEqual({ kind: "unreachable", detail: portless });
   });
-
   it("says it cannot tell rather than 'stopped' when there is no answer at all", () => {
     // A build too old for the subcommand prints an error. Reading that as a well-formed "no"
     // would turn every such machine into a silently wrong one.
@@ -781,7 +730,6 @@ describe("reading what `penguin server status` answered", () => {
     expect(parseProbe(said).state).toEqual({ kind: "unreachable", detail: said });
   });
 });
-
 describe("startServerCommand", () => {
   it("survives nohup: the data root rides on `env`, never as a bare assignment nohup would run", () => {
     const command = startServerCommand(7371, DEV);
@@ -790,7 +738,6 @@ describe("startServerCommand", () => {
     expect(command).toContain("server --host 127.0.0.1 --port 7371");
     expect(command).toContain('"$HOME/.penguin-dev/data/server.log"');
   });
-
   it("prints the launched pid, and nothing else reads as one", () => {
     expect(startServerCommand(7371, DEV).endsWith("& echo $!")).toBe(true);
     expect(launchedPid("4242\n")).toBe(4242);
@@ -800,7 +747,6 @@ describe("startServerCommand", () => {
     expect(launchedPid("0\n")).toBeNull();
   });
 });
-
 // The command runs in a real POSIX shell against a home of its own: what is left on disk is the
 // behaviour. Windows machines are refused before this command is ever built (service.ts).
 describe.skipIf(process.platform === "win32")("removing the program from a machine", () => {
@@ -808,7 +754,6 @@ describe.skipIf(process.platform === "win32")("removing the program from a machi
   afterEach(() => {
     for (const home of homes.splice(0)) fs.rmSync(home, { recursive: true, force: true });
   });
-
   /** A home with an installed program in the layout's directory, data included. */
   const installedHome = (dir: string) => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-uninstall-"));
@@ -824,7 +769,6 @@ describe.skipIf(process.platform === "win32")("removing the program from a machi
     spawnSync("sh", ["-c", command], { env: { ...process.env, HOME: home }, encoding: "utf8" });
   const left = (home: string, dir: string) =>
     fs.existsSync(path.join(home, dir)) ? fs.readdirSync(path.join(home, dir)).sort() : null;
-
   it("removes the program and keeps its data", () => {
     const home = installedHome(".penguin-dev");
     const done = run(uninstallCommand(DEV, false), home);
@@ -833,31 +777,26 @@ describe.skipIf(process.platform === "win32")("removing the program from a machi
     expect(fs.existsSync(path.join(home, ".penguin-dev/data/hmr/file"))).toBe(true);
     expect(done.stdout).toContain("removed");
   });
-
   it("removes the data too when asked, and the directory it leaves empty", () => {
     const home = installedHome(".penguin-dev");
     expect(run(uninstallCommand(DEV, true), home).status).toBe(0);
     expect(left(home, ".penguin-dev")).toBeNull();
   });
-
   it("leaves what it did not install, and the directory that holds it", () => {
     const home = installedHome(".penguin-dev");
     fs.writeFileSync(path.join(home, ".penguin-dev", "notes.txt"), "mine");
     expect(run(uninstallCommand(DEV, true), home).status).toBe(0);
     expect(left(home, ".penguin-dev")).toEqual(["notes.txt"]);
   });
-
   it("takes the release's `penguin` command only while it still points at this program", () => {
     const ours = installedHome(".penguin");
     fs.symlinkSync(path.join(ours, ".penguin/bin/penguin"), path.join(ours, ".local/bin/penguin"));
     expect(run(uninstallCommand(RELEASE, false), ours).status).toBe(0);
     expect(fs.existsSync(path.join(ours, ".local/bin/penguin"))).toBe(false);
-
     const theirs = installedHome(".penguin");
     fs.symlinkSync("/opt/other/penguin", path.join(theirs, ".local/bin/penguin"));
     expect(run(uninstallCommand(RELEASE, false), theirs).status).toBe(0);
     expect(fs.readlinkSync(path.join(theirs, ".local/bin/penguin"))).toBe("/opt/other/penguin");
-
     // The dev layout never owned the command, whatever it points at.
     const dev = installedHome(".penguin-dev");
     fs.symlinkSync(
@@ -867,7 +806,6 @@ describe.skipIf(process.platform === "win32")("removing the program from a machi
     expect(run(uninstallCommand(DEV, false), dev).status).toBe(0);
     expect(fs.lstatSync(path.join(dev, ".local/bin/penguin")).isSymbolicLink()).toBe(true);
   });
-
   it("finds nothing to remove on a machine with nothing installed, and says so", () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-uninstall-"));
     homes.push(home);
@@ -876,7 +814,6 @@ describe.skipIf(process.platform === "win32")("removing the program from a machi
     expect(done.stdout).toContain("nothing installed");
   });
 });
-
 describe("startRemoteServer", () => {
   const target = { alias: "nas", user: "" };
   const said = (stdout: string) => ({ code: 0, stdout, stderr: "", timedOut: false });
@@ -887,7 +824,6 @@ describe("startRemoteServer", () => {
     return work;
   }
   afterEach(() => vi.useRealTimers());
-
   it("stops waiting once the launched process is gone, and hands back the log's words", async () => {
     // A port collision kills the server within a second. Waiting out the whole timeout
     // would keep the failure from a person for half a minute for nothing.
@@ -905,7 +841,6 @@ describe("startRemoteServer", () => {
     expect(result).toMatchObject({ ok: false, detail: expect.stringContaining("EADDRINUSE") });
     expect(asked.filter((c) => c.includes("server status"))).toHaveLength(1);
   });
-
   it("a start that dies on a taken port says so plainly, and a crash's stack becomes its error line", async () => {
     vi.useFakeTimers();
     const crash = [
@@ -929,7 +864,6 @@ describe("startRemoteServer", () => {
     expect(detail).toContain("Error: listen EADDRINUSE");
     expect(detail).not.toContain("setupListenHandle");
   });
-
   it("keeps waiting while the process is alive, and succeeds when a server answers", async () => {
     vi.useFakeTimers();
     let probes = 0;
@@ -948,7 +882,6 @@ describe("startRemoteServer", () => {
     expect(result).toEqual({ ok: true });
     expect(probes).toBe(2);
   });
-
   it("a liveness check that could not run is not a death", async () => {
     vi.useFakeTimers();
     let probes = 0;
@@ -967,7 +900,6 @@ describe("startRemoteServer", () => {
     expect(result).toEqual({ ok: true });
   });
 });
-
 describe("remote layout", () => {
   it("is the release installation unless PENGUIN_PROFILE says dev", () => {
     expect(profileFromEnv({})).toBe("release");
@@ -975,7 +907,6 @@ describe("remote layout", () => {
     expect(profileFromEnv({ PENGUIN_PROFILE: "dev" })).toBe("dev");
     expect(profileFromEnv({ PENGUIN_PROFILE: "anything-else" })).toBe("release");
   });
-
   it("keeps the two profiles apart on every axis: program, data root, port", () => {
     expect(RELEASE.programDir.posix).not.toBe(DEV.programDir.posix);
     expect(RELEASE.dataRoot.posix).not.toBe(DEV.dataRoot.posix);
@@ -983,7 +914,6 @@ describe("remote layout", () => {
     expect(RELEASE.defaultPort).not.toBe(DEV.defaultPort);
   });
 });
-
 describe("readPushedBuild", () => {
   it("hands on the native assets and the provenance, not only the three bundles", () => {
     // A platform resolves node-pty out of its assets directory and nowhere else; a hand-over
@@ -1026,7 +956,6 @@ describe("readPushedBuild", () => {
           source: { repo: "https://example.com/r.git", revision: "v1-3-gabc" },
         }),
       );
-
       const body = readPushedBuild(root);
       if (body === null) throw new Error("no body");
       const payload = JSON.parse(zlib.gunzipSync(body).toString("utf8")) as {
@@ -1050,7 +979,6 @@ describe("readPushedBuild", () => {
       fs.rmSync(root, { recursive: true, force: true });
     }
   });
-
   it("still hands on a build that was pushed without assets", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-handover-"));
     try {

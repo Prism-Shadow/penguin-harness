@@ -21,32 +21,30 @@ import type { AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { DesktopBrowserCommandMessage } from "../../src/api/types.js";
-import { BrowserActions } from "../../src/builtin-browser/actions.js";
-import { BrowserDriver } from "../../src/builtin-browser/driver.js";
-import { execExpression } from "../../src/builtin-browser/page-scripts/exec.js";
+import type { DesktopBrowserCommandMessage } from "../../../../packages/server/src/api/types.js";
+import { BrowserActions } from "../../../../plugins/browser/src/server/builtin-browser/actions.js";
+import { BrowserDriver } from "../../../../plugins/browser/src/server/builtin-browser/driver.js";
+import { execExpression } from "../../../../plugins/browser/src/server/builtin-browser/page-scripts/exec.js";
 import {
   DISPATCH_INPUT_EVENTS_SCRIPT,
   clickTargetScript,
   focusScript,
   pointTargetScript,
-} from "../../src/builtin-browser/page-scripts/input.js";
+} from "../../../../plugins/browser/src/server/builtin-browser/page-scripts/input.js";
 import {
   MONITOR_BEGIN_SCRIPT,
   MONITOR_END_SCRIPT,
   MONITOR_STOP_SCRIPT,
-} from "../../src/builtin-browser/page-scripts/monitor.js";
-import { scanScript } from "../../src/builtin-browser/page-scripts/simplify.js";
-import { ShellLink } from "../../src/builtin-browser/shell-link.js";
-import type { BrowserShellPort } from "../../src/builtin-browser/shell-link.js";
-import { TabRegistry } from "../../src/builtin-browser/tabs.js";
-
+} from "../../../../plugins/browser/src/server/builtin-browser/page-scripts/monitor.js";
+import { scanScript } from "../../../../plugins/browser/src/server/builtin-browser/page-scripts/simplify.js";
+import { ShellLink } from "../../../../plugins/browser/src/server/builtin-browser/shell-link.js";
+import { BrowserShellPort } from "../../../../plugins/browser/src/server/builtin-browser/shell-link.js";
+import { TabRegistry } from "../../../../plugins/browser/src/server/builtin-browser/tabs.js";
 /** Compiles `code` the way the driver wraps it, without running it. */
 function compiles(code: string): void {
   const outer = new Function(`return (async () => {\n${code}\n});`) as () => unknown;
   expect(typeof outer()).toBe("function");
 }
-
 describe("page scripts parse", () => {
   it("as the driver runs them", () => {
     for (const code of [
@@ -65,13 +63,11 @@ describe("page scripts parse", () => {
     }
   });
 });
-
 describe("exec's rules, run in Node (the parts that need no page)", () => {
   const run = async (code: string) =>
     JSON.parse(
       await (new Function(`return ${execExpression(code)};`) as () => Promise<string>)(),
     ) as unknown;
-
   it("hands back its outcome as JSON text", async () => {
     const text = await (
       new Function(`return ${execExpression("return 'x'")};`) as () => Promise<string>
@@ -86,20 +82,17 @@ describe("exec's rules, run in Node (the parts that need no page)", () => {
       data: "[unserializable: Do not know how to serialize a BigInt]",
     });
   });
-
   it("hands back the explicit return, or else the last expression", async () => {
     expect(await run("1 + 1")).toEqual({ ok: true, data: 2 });
     expect(await run("const x = 3;\nx * 2")).toEqual({ ok: true, data: 6 });
     expect(await run("return 'early'")).toEqual({ ok: true, data: "early" });
     expect(await run("await null;\n'after await'")).toEqual({ ok: true, data: "after await" });
   });
-
   it("runs a last line that returns after a statement as it is written", async () => {
     expect(await run("globalThis.__bbSide = 1; return 2")).toEqual({ ok: true, data: 2 });
     expect(await run("if (true) return 'yes'")).toEqual({ ok: true, data: "yes" });
     expect(await run("await null; return 'awaited'")).toEqual({ ok: true, data: "awaited" });
   });
-
   it("still returns the last line when its return is in a callback, a string or a comment", async () => {
     expect(await run("await Promise.resolve(2).then((v) => { return v * 2 })")).toEqual({
       ok: true,
@@ -109,9 +102,7 @@ describe("exec's rules, run in Node (the parts that need no page)", () => {
     expect(await run("await 5 // return 6")).toEqual({ ok: true, data: 5 });
   });
 });
-
 // --- a real Chromium -------------------------------------------------------
-
 function findChromium(): string | null {
   const fromEnv = process.env.PENGUIN_TEST_CHROMIUM;
   if (fromEnv !== undefined && fromEnv !== "" && fs.existsSync(fromEnv)) return fromEnv;
@@ -147,9 +138,7 @@ function findChromium(): string | null {
   }
   return null;
 }
-
 const CHROMIUM = findChromium();
-
 /**
  * The pause after an action before the page is measured. The product waits a second
  * (GenericAgent's sleep(1)) for a real site to react; these fixture pages react at once, so a
@@ -159,13 +148,11 @@ const CHROMIUM = findChromium();
  */
 const SETTLE_MS = 300;
 const TOAST_MS = 700;
-
 type CdpEventListener = (
   method: string,
   params: Record<string, unknown>,
   sessionId?: string,
 ) => void;
-
 /** A DevTools socket: one command at a time per id, flat sessions, events to listeners. */
 class Cdp {
   private seq = 0;
@@ -174,7 +161,6 @@ class Cdp {
     { resolve(v: unknown): void; reject(e: Error): void }
   >();
   private readonly eventListeners = new Set<CdpEventListener>();
-
   private constructor(private readonly ws: WebSocket) {
     ws.addEventListener("message", (event) => {
       const msg = JSON.parse(String(event.data)) as {
@@ -199,7 +185,6 @@ class Cdp {
       else pending.resolve(msg.result);
     });
   }
-
   static connect(url: string): Promise<Cdp> {
     return new Promise((resolve, reject) => {
       const ws = new WebSocket(url);
@@ -207,7 +192,6 @@ class Cdp {
       ws.addEventListener("error", () => reject(new Error(`cannot connect to ${url}`)));
     });
   }
-
   send(method: string, params: Record<string, unknown> = {}, sessionId?: string): Promise<unknown> {
     this.seq += 1;
     const id = this.seq;
@@ -216,16 +200,13 @@ class Cdp {
       this.ws.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
     });
   }
-
   onEvent(listener: CdpEventListener): void {
     this.eventListeners.add(listener);
   }
-
   close(): void {
     this.ws.close();
   }
 }
-
 /**
  * The shell, played by a forwarder: `cdp` goes to the page's session, as a guest's debugger
  * would, and the page's events that a command's `events` named come back as `cdp-event`s.
@@ -234,7 +215,6 @@ class ForwardingPort implements BrowserShellPort {
   private readonly listeners = new Set<(e: { data: unknown }) => void>();
   private relayed = new Set<string>();
   private tabId = 0;
-
   constructor(
     private readonly cdp: Cdp,
     private readonly sessionId: string,
@@ -247,15 +227,12 @@ class ForwardingPort implements BrowserShellPort {
       }
     });
   }
-
   on(_event: "message", listener: (e: { data: unknown }) => void): void {
     this.listeners.add(listener);
   }
-
   off(_event: "message", listener: (e: { data: unknown }) => void): void {
     this.listeners.delete(listener);
   }
-
   postMessage(message: unknown): void {
     const msg = message as DesktopBrowserCommandMessage;
     const answer = (frame: Record<string, unknown>) => {
@@ -278,9 +255,7 @@ class ForwardingPort implements BrowserShellPort {
     );
   }
 }
-
 const ORDER_COUNT = 40;
-
 const FIXTURE = `<!doctype html>
 <html><head><title>Fixture</title><style>.hidden{display:none} li{margin:4px 0}</style></head>
 <body>
@@ -321,14 +296,12 @@ ${Array.from(
   });
 </script>
 </body></html>`;
-
 /** Buttons that open dialogs, and where the page writes what the dialog answered. */
 const DIALOGS = `<!doctype html><html><head><title>Dialogs</title></head><body>
 <button id="save" onclick="alert('Saved'); document.getElementById('answer').textContent = 'after the alert'">Save</button>
 <button id="delete" onclick="document.getElementById('answer').textContent = String(confirm('Delete this item?'))">Delete</button>
 <div id="answer"></div>
 </body></html>`;
-
 /** Images whose addresses the scan shortens: a long file name, and a data: URL. */
 const IMAGES = `<!doctype html><html><head><title>Images</title></head><body><main>
 <h1>Pictures</h1>
@@ -336,7 +309,6 @@ const IMAGES = `<!doctype html><html><head><title>Images</title></head><body><ma
 <img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==" width="40" height="40" alt="pixel">
 <p id="note">Two pictures.</p>
 </main></body></html>`;
-
 const STRICT = `<!doctype html><html><head><title>Strict</title></head><body>
 <h1>Strict page</h1>
 <ul id="items">
@@ -348,7 +320,6 @@ ${Array.from(
 </ul>
 <div id="out"></div>
 </body></html>`;
-
 describe.skipIf(CHROMIUM === null)("page scripts in a real Chromium", () => {
   let browserProcess: ChildProcess | undefined;
   let profileDir = "";
@@ -361,7 +332,6 @@ describe.skipIf(CHROMIUM === null)("page scripts in a real Chromium", () => {
   const TAB = 1;
   /** Requests for the placeholders the scan writes into a copy's addresses. */
   const placeholderRequests: string[] = [];
-
   beforeAll(async () => {
     server = http.createServer((req, res) => {
       if (/__(url|img|link|data)__/.test(req.url ?? "")) placeholderRequests.push(req.url!);
@@ -380,7 +350,6 @@ describe.skipIf(CHROMIUM === null)("page scripts in a real Chromium", () => {
     });
     await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
     origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-
     profileDir = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-bb-chromium-"));
     const child = spawn(
       CHROMIUM!,
@@ -433,7 +402,6 @@ describe.skipIf(CHROMIUM === null)("page scripts in a real Chromium", () => {
       timing: { popupClaimMs: 0, settleMs: SETTLE_MS },
     });
   }, 60_000);
-
   afterAll(async () => {
     link?.dispose();
     cdp?.close();
@@ -447,11 +415,9 @@ describe.skipIf(CHROMIUM === null)("page scripts in a real Chromium", () => {
     await new Promise<void>((resolve) => server?.close(() => resolve()) ?? resolve());
     if (profileDir !== "") fs.rmSync(profileDir, { recursive: true, force: true, maxRetries: 5 });
   });
-
   const load = async () => {
     await actions.navigate(TAB, `${origin}/`);
   };
-
   it("scans the visible page, folds the long list and drops what is hidden", async () => {
     await load();
     const { content, truncated } = await actions.scan(TAB, {});
@@ -480,7 +446,6 @@ describe.skipIf(CHROMIUM === null)("page scripts in a real Chromium", () => {
     );
     expect(counted.value).toBe(ORDER_COUNT);
   }, 60_000);
-
   it("reads a page without making it load anything: shortened addresses are never requested", async () => {
     await actions.navigate(TAB, `${origin}/images`);
     placeholderRequests.length = 0;
@@ -496,28 +461,24 @@ describe.skipIf(CHROMIUM === null)("page scripts in a real Chromium", () => {
     await new Promise((resolve) => setTimeout(resolve, 500));
     expect(placeholderRequests).toEqual([]);
   }, 60_000);
-
   it("keeps the items that match the instruction when it folds the list", async () => {
     await load();
     const { content } = await actions.scan(TAB, { instruction: "Order #1020" });
     expect(content).toContain("Order #1020");
     expect(content).toMatch(new RegExp(`\\[FAKE ELEMENT\\] ${ORDER_COUNT - 1} more items hidden`));
   }, 60_000);
-
   it("truncates to the budget, and reads as text with fields marked", async () => {
     await load();
     const small = await actions.scan(TAB, { maxChars: 800 });
     expect(small.truncated).toBe(true);
     expect(small.content.length).toBeLessThanOrEqual(1_600);
     expect(small.content.length).toBeGreaterThan(0);
-
     const text = await actions.scan(TAB, { textOnly: true });
     expect(text.content).toContain("Your Orders");
     expect(text.content).toContain('[INPUT #q name=q type=text "Search orders"]');
     expect(text.content).not.toContain("must never reach the reader");
     expect(text.content).not.toContain("<");
   }, 60_000);
-
   it("runs scripts GenericAgent's way: last expression, await, DOM results, errors", async () => {
     await load();
     const run = (script: string) => actions.exec(TAB, script, { noMonitor: true });
@@ -535,7 +496,6 @@ describe.skipIf(CHROMIUM === null)("page scripts in a real Chromium", () => {
     expect(failed.status).toBe("failed");
     expect(failed.error).toMatch(/^TypeError: /);
   }, 60_000);
-
   it("reports the change a script made, and a toast that came and went", async () => {
     await load();
     const changed = await actions.exec(
@@ -545,7 +505,6 @@ describe.skipIf(CHROMIUM === null)("page scripts in a real Chromium", () => {
     expect(changed.status).toBe("success");
     expect(changed.diff?.changed).toBeGreaterThan(0);
     expect(changed.diff?.topChange).toContain("Changed by the script");
-
     // The product's own settle, so the monitor's sampling catches the toast in between.
     const monitored = new BrowserActions({
       driver,
@@ -562,13 +521,11 @@ describe.skipIf(CHROMIUM === null)("page scripts in a real Chromium", () => {
       `const t = document.createElement('div');\nt.textContent = ${JSON.stringify(message)};\ndocument.body.appendChild(t);\nsetTimeout(() => t.remove(), ${TOAST_MS});\nreturn 1`,
     );
     expect(shipped.transients).toContain(message.slice(0, 80));
-
     const quiet = await actions.exec(TAB, "return 1 + 1");
     expect(quiet.value).toBe(2);
     expect(quiet.diff).toEqual({ changed: 0 });
     expect(quiet.suggestion).toBe("No visible change on the page.");
   }, 60_000);
-
   it("types into a field and clicks with a trusted event", async () => {
     await load();
     const typed = await actions.type(TAB, { text: "headphones", selector: "#q" });
@@ -585,7 +542,6 @@ describe.skipIf(CHROMIUM === null)("page scripts in a real Chromium", () => {
       },
     );
     expect(trusted.value).toBe("true");
-
     const submitted = await actions.type(TAB, { text: "abc", selector: "#q2", submit: true });
     expect(submitted.status).toBe("success");
     const read = await actions.exec(
@@ -597,7 +553,6 @@ describe.skipIf(CHROMIUM === null)("page scripts in a real Chromium", () => {
     );
     expect(read.value).toBe("Submitted: abc");
   }, 60_000);
-
   it("answers the page's dialogs: an alert accepted, a confirm dismissed unless told", async () => {
     await actions.navigate(TAB, `${origin}/dialogs`);
     const answer = async () =>
@@ -622,7 +577,6 @@ describe.skipIf(CHROMIUM === null)("page scripts in a real Chromium", () => {
     ]);
     expect(await answer()).toBe("true");
   }, 60_000);
-
   it("reports a navigation the script caused as a reload", async () => {
     await load();
     const result = await actions.exec(TAB, `location.href = '${origin}/other'`);
@@ -630,7 +584,6 @@ describe.skipIf(CHROMIUM === null)("page scripts in a real Chromium", () => {
     const title = await actions.exec(TAB, "return document.title", { noMonitor: true });
     expect(title.value).toBe("Other");
   }, 60_000);
-
   it("works on a page that enforces Trusted Types and forbids eval", async () => {
     await actions.navigate(TAB, `${origin}/strict`);
     const scan = await actions.scan(TAB, {});
@@ -648,7 +601,6 @@ describe.skipIf(CHROMIUM === null)("page scripts in a real Chromium", () => {
     );
     expect(changed.diff?.topChange).toContain("Changed on the strict page");
   }, 60_000);
-
   it("takes screenshots", async () => {
     await load();
     const view = await actions.screenshot(TAB, {});

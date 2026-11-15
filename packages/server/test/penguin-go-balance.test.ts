@@ -16,20 +16,19 @@
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { MODEL_CATALOG } from "../src/model-catalog/index.js";
-import { ModelBalances, readBalance } from "../src/services/model-balance.js";
-import type { ModelBalanceDeps } from "../src/services/model-balance.js";
+import { ModelBalances } from "../../../plugins/models/src/server/index.js";
+import { readBalance } from "../../../plugins/models/src/server/services/model-balance.js";
 import { jsonResponse, stubFetch } from "./fixtures/fetch.js";
 import type { FetchFake } from "./fixtures/fetch.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
-
+import { ModelBalanceDeps } from "../../../plugins/models/src/server/services/model-balance.js"
 const KEY = "ep_go_group_secret";
 const REPLY = {
   user: { username: "private-go-account" },
   balance: { units: "110000000000000", currency: "CNY", displayCurrency: "USD", amount: 15.71 },
   key: { alias: "private-key-alias" },
 };
-
 describe.each([
   {
     name: "an older runtime's configuration",
@@ -59,7 +58,6 @@ describe.each([
     );
   const setKey = (apiKey: string) =>
     owner.put(`/api/projects/${projectId}/models/providers/penguin-go`, { apiKey });
-
   beforeAll(async () => {
     fake = stubFetch(() => {
       throw new Error("boot must not query an account");
@@ -92,7 +90,6 @@ describe.each([
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
   });
-
   it("boots the full platform and reads the group account at the authorization origin", async () => {
     expect((await owner.get("/api/version")).status).toBe(200);
     expect((await setKey(KEY)).status).toBe(200);
@@ -115,7 +112,6 @@ describe.each([
       ["GET", url, `Bearer ${KEY}`],
     ]);
   });
-
   it("borrows no environment key, the retired Go variable included: only the stored group key is sent", async () => {
     vi.stubEnv("PENGUIN_GO_API_KEY", "ep_go_env_secret");
     vi.stubEnv("OPENAI_API_KEY", "vendor-secret");
@@ -125,7 +121,6 @@ describe.each([
     expect(await (await read()).json()).toMatchObject({ ok: true, amount: "110.00" });
     expect(fake.calls.map((c) => c.headers.get("authorization"))).toEqual([`Bearer ${KEY}`]);
   });
-
   it("does not query with a model's own key or another provider's environment key", async () => {
     vi.stubEnv("OPENAI_API_KEY", "vendor-secret");
     vi.stubEnv("DEEPSEEK_API_KEY", "other-vendor-secret");
@@ -135,7 +130,6 @@ describe.each([
     expect(await (await read()).json()).toMatchObject({ ok: false, error: "no_key" });
     expect(fake.calls).toEqual([]);
   });
-
   it("reuses the reading until a forced refresh or a replacement group key", async () => {
     await setKey(KEY);
     const first = await (await read()).json();
@@ -148,7 +142,6 @@ describe.each([
     expect(fake.calls).toHaveLength(3);
     expect(fake.calls[2]!.headers.get("authorization")).toBe("Bearer ep_replacement_account");
   });
-
   it("reports invalid credentials without leaking the provider's response", async () => {
     await setKey(KEY);
     fake = stubFetch(() => jsonResponse({ error: `Invalid key ${KEY}` }, 401));
@@ -156,7 +149,6 @@ describe.each([
     expect(text).not.toContain(KEY);
     expect(JSON.parse(text)).toMatchObject({ ok: false, error: "upstream_failed", status: 401 });
   });
-
   it("reports malformed answers and transport failures instead of a zero balance", async () => {
     await setKey(KEY);
     fake = stubFetch(() => jsonResponse({ balance: { amount: 0 } }));
@@ -166,7 +158,6 @@ describe.each([
     });
     expect(await (await read(true)).json()).toMatchObject({ ok: false, error: "upstream_failed" });
   });
-
   it("lets a project member read the account while a stranger is refused", async () => {
     await setKey(KEY);
     const member = await provisionUser(t.app, "go_member");
@@ -181,10 +172,8 @@ describe.each([
     expect((await apiClient(t.app, stranger.cookie).get(endpoint)).status).toBe(404);
   });
 });
-
 describe("Penguin Go ledger readings", () => {
   afterEach(() => vi.unstubAllGlobals());
-
   it("keeps readings at the primary and secondary origins in separate cache entries", async () => {
     const fake = stubFetch((call) =>
       jsonResponse({
@@ -210,7 +199,6 @@ describe("Penguin Go ledger readings", () => {
       "https://token.penguin.ooo/api/me/by-key",
     ]);
   });
-
   it.each([
     ["0", "0.00"],
     ["-2500000000000", "-2.50"],
@@ -223,7 +211,6 @@ describe("Penguin Go ledger readings", () => {
       currency: "CNY",
     });
   });
-
   it.each([
     null,
     {},

@@ -8,7 +8,7 @@ import { describe, expect, it, afterEach } from "vitest";
 import { parseManifest } from "@prismshadow/penguin-core/kernel";
 import type { ModuleDef } from "@prismshadow/penguin-core/kernel";
 import { PluginHost } from "../src/plugin/host.js";
-import type { Settings, UiPrefsStore } from "../src/mechanisms/settings.js";
+import type { Settings, UiPrefsStore } from "../../../plugins/settings/src/server/index.js";
 import { createTestApp, loginAdmin, type TestApp } from "./helpers.js";
 
 const PKG = "@prismshadow/penguin-server";

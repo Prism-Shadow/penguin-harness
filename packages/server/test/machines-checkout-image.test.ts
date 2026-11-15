@@ -26,13 +26,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { readPushedBuild, writePushedBuild } from "../src/hmr/pushed-build.js";
 import type { PushedBuild } from "../src/hmr/pushed-build.js";
 import { readHarnessMeta } from "../src/harness-meta.js";
-import { deployPacker, findCheckout } from "../src/machines/checkout-image.js";
+import { deployPacker } from "../../../plugins/machines/src/server/checkout-image.js";
+import { findCheckout } from "../../../plugins/machines/src/server/checkout-image.js";
 // @ts-expect-error — a plain .mjs build script, no declarations.
 import { withoutCredentials } from "../../../scripts/build-git-stamp.mjs";
 import { waitFor } from "./helpers.js";
-
 const b64 = (text: string) => Buffer.from(text).toString("base64");
-
 const BUILD: PushedBuild = {
   platform: "export const hotPlatform = { id: 'checkout' };\n",
   cli: "export async function cli() { return 0; }\n",
@@ -49,7 +48,6 @@ const BUILD: PushedBuild = {
     revision: "v0.2.13-1-gabc",
   },
 };
-
 const temps: string[] = [];
 const temp = () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-checkout-image-"));
@@ -59,7 +57,6 @@ const temp = () => {
 afterEach(() => {
   for (const dir of temps.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
-
 /** Processes a scenario started, stopped here should the scenario fail to stop them. */
 const strays: number[] = [];
 const isRunning = (pid: number) => {
@@ -80,12 +77,10 @@ afterEach(() => {
     }
   }
 });
-
 describe("a build laid down as a store", () => {
   it("comes back whole through the hand-over's reader, and the hmr layer finds its CLI", async () => {
     const root = temp();
     const harness = await writePushedBuild(path.join(root, "hmr"), BUILD, new Date(0));
-
     const body = readPushedBuild(root);
     if (body === null) throw new Error("the store did not read back");
     const back = JSON.parse(zlib.gunzipSync(body).toString("utf8")) as PushedBuild;
@@ -96,7 +91,6 @@ describe("a build laid down as a store", () => {
     expect(back.assets?.files).toEqual(BUILD.assets?.files);
     // The helper a terminal is spawned through has to arrive runnable.
     expect(back.assets?.exec).toEqual(BUILD.assets?.exec);
-
     // What `penguin-hmr` runs on the machine that receives this directory.
     const meta = await readHarnessMeta(root);
     expect(meta.kind).toBe("meta");
@@ -110,7 +104,6 @@ describe("a build laid down as a store", () => {
       cli: { bundle: expect.stringMatching(/^store\/cli\//) },
     });
   });
-
   it.each([
     ["no web entry page", { ...BUILD, web: { files: { "app.js": b64("x") } } }],
     [
@@ -123,7 +116,6 @@ describe("a build laid down as a store", () => {
     expect(fs.existsSync(path.join(root, "hmr"))).toBe(false);
   });
 });
-
 describe("finding the checkout", () => {
   /** A pnpm workspace with a `scripts/deploy.mjs`, whose root package is named `name`. */
   const workspace = (name: string) => {
@@ -134,17 +126,14 @@ describe("finding the checkout", () => {
     fs.writeFileSync(path.join(repo, "scripts", "deploy.mjs"), "");
     return repo;
   };
-
   it("is found from any depth inside it, and nothing is found outside one", () => {
     const repo = workspace("penguin-harness");
     const deep = path.join(repo, "packages", "server", "src", "machines");
     fs.mkdirSync(deep, { recursive: true });
-
     expect(findCheckout(deep)).toBe(repo);
     expect(findCheckout(path.join(repo, "packages", "desktop", "dist"))).toBe(repo);
     expect(findCheckout(temp())).toBeNull();
   });
-
   it("a server installed into another pnpm workspace never takes that workspace's deploy script for its packer", () => {
     // `pnpm add @prismshadow/penguin-cli` in a project of one's own: the server sits under the
     // project's node_modules, and the project's own scripts/deploy.mjs deploys something else.
@@ -160,11 +149,9 @@ describe("finding the checkout", () => {
       "dist",
     );
     fs.mkdirSync(installed, { recursive: true });
-
     expect(findCheckout(installed)).toBeNull();
   });
 });
-
 describe("the packer", () => {
   /** A checkout whose packer is a stand-in script, run the way the real one is. */
   const checkoutWith = (script: string) => {
@@ -173,7 +160,6 @@ describe("the packer", () => {
     fs.writeFileSync(path.join(repo, "scripts", "deploy.mjs"), script);
     return repo;
   };
-
   it("passes its own narration on, and leaves the build in the file it was given", async () => {
     const repo = checkoutWith(
       [
@@ -187,14 +173,11 @@ describe("the packer", () => {
     );
     const out = path.join(temp(), "build.gz");
     const lines: string[] = [];
-
     const packed = await deployPacker(repo)(out, (line) => lines.push(line));
-
     expect(packed).toEqual({ ok: true });
     expect(lines).toEqual(["building the web dist…", "wrote 2 bundles"]);
     expect(fs.readFileSync(out, "utf8")).toBe("the build");
   });
-
   it("a build that runs out of time is stopped whole: nothing it started keeps running", async () => {
     const pidFile = path.join(temp(), "helper.pid");
     const repo = checkoutWith(
@@ -221,14 +204,11 @@ describe("the packer", () => {
     await started;
     const helper = Number(fs.readFileSync(pidFile, "utf8"));
     strays.push(helper);
-
     vi.runOnlyPendingTimers();
     vi.useRealTimers();
-
     expect(await packed).toMatchObject({ ok: false });
     await waitFor(() => !isRunning(helper), 5000);
   });
-
   it("a failed build is told in its last lines, as words — no terminal codes, no stack frames", async () => {
     const repo = checkoutWith(
       [
@@ -241,9 +221,7 @@ describe("the packer", () => {
         "process.exit(1);",
       ].join("\n"),
     );
-
     const packed = await deployPacker(repo)(path.join(temp(), "build.gz"), () => {});
-
     // What a person reads in the job and on the page: the reason, then what gave up.
     expect(packed).toEqual({
       ok: false,
@@ -256,7 +234,6 @@ describe("the packer", () => {
     });
   });
 });
-
 describe("the provenance a build records", () => {
   it.each([
     [
@@ -270,7 +247,6 @@ describe("the provenance a build records", () => {
   ])("a remote cloned with a credential is recorded without it (%s)", (remote, recorded) => {
     expect(withoutCredentials(remote)).toBe(recorded);
   });
-
   it.each([
     "git@github.com:Prism-Shadow/penguin-harness.git",
     "ssh://git@github.com/Prism-Shadow/penguin-harness.git",

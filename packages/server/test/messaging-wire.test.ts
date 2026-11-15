@@ -37,21 +37,21 @@ import { Readable } from "node:stream";
 import { Agent, getGlobalDispatcher, setGlobalDispatcher } from "undici";
 import type { Dispatcher } from "undici";
 import { describe, expect, it } from "vitest";
-import { FeishuApiError, createLarkSdk } from "../src/runtime/messaging/feishu-sdk.js";
-import { feishuCardOf } from "../src/runtime/messaging/feishu-card.js";
-import { messagingErrorKind } from "../src/runtime/messaging/error-kind.js";
+import { FeishuApiError, createLarkSdk } from "../../../plugins/messaging/src/server/index.js";
+import { feishuCardOf } from "../../../plugins/messaging/src/server/index.js";
+import { messagingErrorKind } from "../../../plugins/messaging/src/server/index.js";
 import {
   TelegramApiError,
   createTelegramTransport,
-} from "../src/runtime/messaging/telegram-api.js";
+} from "../../../plugins/messaging/src/server/index.js";
 import type {
   TelegramTransport,
   TelegramTransportOpts,
-} from "../src/runtime/messaging/telegram-api.js";
+} from "../../../plugins/messaging/src/server/index.js";
 import {
   MessagingMediaTooLargeError,
   MessagingPermissionError,
-} from "../src/runtime/messaging/media.js";
+} from "../../../plugins/messaging/src/server/index.js";
 import { fakeFetch } from "./fixtures/fetch.js";
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x01, 0x02, 0x03]);

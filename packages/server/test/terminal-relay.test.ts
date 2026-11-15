@@ -20,11 +20,9 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { WebSocketServer } from "ws";
 import type { RawData, WebSocket as WsSocket } from "ws";
-import {
-  isRemoteTerminalRef,
-  parseRemoteTerminalRef,
-  relayTerminalStream,
-} from "../src/machines/terminal-relay.js";
+import { isRemoteTerminalRef } from "../../../plugins/terminal/src/server/terminal-relay.js";
+import { parseRemoteTerminalRef } from "../../../plugins/terminal/src/server/terminal-relay.js";
+import { relayTerminalStream } from "../../../plugins/terminal/src/server/terminal-relay.js";
 
 describe("remote terminal references", () => {
   it("parses <terminalId>@<machineId>@<userId>", () => {
@@ -36,14 +34,12 @@ describe("remote terminal references", () => {
     });
     expect(isRemoteTerminalRef(ref!)).toBe(true);
   });
-
   it("is null for a plain local id, and for anything half-spelled", () => {
     expect(parseRemoteTerminalRef("6f4861fc-d64e-48d3-afad-89e1108e3e55")).toBeNull();
     expect(parseRemoteTerminalRef("t@m")).toBeNull();
     expect(parseRemoteTerminalRef("t@@u")).toBeNull();
     expect(parseRemoteTerminalRef("a@b@c@d")).toBeNull();
   });
-
   it("reads a percent-encoded separator too", () => {
     expect(parseRemoteTerminalRef("t%40m%40u")?.remote).toEqual({
       machineId: "m",
@@ -51,7 +47,6 @@ describe("remote terminal references", () => {
     });
   });
 });
-
 /**
  * The relay's own plumbing, against a real WebSocket server standing in for the machine.
  *
@@ -68,32 +63,26 @@ describe("relaying a viewer to a machine's stream", () => {
     bufferedAmount = 0;
     readonly received: string[] = [];
     closedWith: { code: number; reason: string } | null = null;
-
     send(data: RawData): void {
       this.received.push(data.toString());
     }
-
     close(code: number, reason: string): void {
       this.closedWith = { code, reason };
       this.readyState = 3;
       this.emit("close", code, Buffer.from(reason));
     }
-
     /** The browser going away — a pane closed, a reload, a dock reattaching. */
     drop(): void {
       this.readyState = 3;
       this.emit("close", 1001, Buffer.from("gone"));
     }
   }
-
   const ref = parseRemoteTerminalRef("t-1@m-1@admin")!;
   const url = new URL("http://localhost/api/terminals/t-1@m-1@admin/stream?cols=80&rows=24");
-
   let machine: WebSocketServer;
   let machinePort: number;
   /** Sockets the machine accepted, and every frame each of them was sent. */
   let accepted: { socket: WsSocket; frames: string[] }[];
-
   beforeEach(async () => {
     accepted = [];
     machine = new WebSocketServer({ host: "127.0.0.1", port: 0 });
@@ -105,21 +94,18 @@ describe("relaying a viewer to a machine's stream", () => {
     await once(machine, "listening");
     machinePort = (machine.address() as AddressInfo).port;
   });
-
   afterEach(async () => {
     // Sockets a test left open first: close() waits for every client, and a relayed stream
     // stays up exactly as a real one would.
     for (const client of machine.clients) client.terminate();
     await new Promise<void>((resolve) => machine.close(() => resolve()));
   });
-
   const depsFor = (
     target: Promise<{ agent: http.Agent; port: number; cookie: string } | null>,
   ) => ({
     proxyTarget: () => target,
     isAdmin: () => true,
   });
-
   /** Waits for `predicate`, giving up after `attempts` × 10 ms. */
   const settle = async (predicate: () => boolean, attempts = 100): Promise<void> => {
     for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -127,7 +113,6 @@ describe("relaying a viewer to a machine's stream", () => {
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
   };
-
   it("dials nobody when the viewer left while the machine was being reached", async () => {
     const viewer = new FakeViewer();
     let reached: (t: { agent: http.Agent; port: number; cookie: string }) => void = () => undefined;
@@ -152,7 +137,6 @@ describe("relaying a viewer to a machine's stream", () => {
     // the viewer's close was listened to from the start, this left one stream per pane.
     expect(accepted).toHaveLength(0);
   });
-
   it("holds the frames typed before the machine's stream opened", async () => {
     const viewer = new FakeViewer();
     await relayTerminalStream(
@@ -166,7 +150,6 @@ describe("relaying a viewer to a machine's stream", () => {
     viewer.emit("message", Buffer.from("resize 80x24"), true);
     await settle(() => (accepted[0]?.frames.length ?? 0) > 0);
     expect(accepted[0]?.frames).toEqual(["resize 80x24"]);
-
     // And the machine's output reaches the viewer once both ends are up.
     accepted[0]!.socket.send("hello");
     await settle(() => viewer.received.length > 0);

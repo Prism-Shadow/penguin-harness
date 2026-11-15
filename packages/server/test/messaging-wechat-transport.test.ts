@@ -32,9 +32,9 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
-import { messagingErrorKind } from "../src/runtime/messaging/error-kind.js";
-import { MessagingMediaTooLargeError } from "../src/runtime/messaging/media.js";
-import type { WeChatCredentials } from "../src/runtime/messaging/wechat-api.js";
+import { messagingErrorKind } from "../../../plugins/messaging/src/server/index.js";
+import { MessagingMediaTooLargeError } from "../../../plugins/messaging/src/server/index.js";
+import type { WeChatCredentials } from "../../../plugins/messaging/src/server/index.js";
 import {
   WECHAT_API_BASE,
   WECHAT_STALE_TOKEN_CODE,
@@ -43,7 +43,7 @@ import {
   createWeChatTransport,
   normalizeWeChatMessage,
   parseWeChatAesKey,
-} from "../src/runtime/messaging/wechat-api.js";
+} from "../../../plugins/messaging/src/server/index.js";
 import { jsonResponse, stubFetch } from "./fixtures/fetch.js";
 import type { FetchCall } from "./fixtures/fetch.js";
 

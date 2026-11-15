@@ -43,15 +43,7 @@ import type {
 } from "../src/api/types.js";
 import type { ChannelEvent } from "../src/runtime/channel.js";
 import { HttpError } from "../src/http/errors.js";
-import {
-  buildAuthorizeUrl,
-  codeChallenge,
-  createVerifier,
-  exchangeCode,
-  FLOW_TTL_MS,
-  ModelOAuthService,
-  openedMode,
-} from "../src/services/model-oauth-service.js";
+import {ModelOAuthService} from "../../../plugins/models/src/server/index.js";
 import { publicOrigin } from "../src/http/public-origin.js";
 import { fakeFetch, jsonResponse, stubFetch } from "./fixtures/fetch.js";
 import type { FetchFake } from "./fixtures/fetch.js";
@@ -59,16 +51,19 @@ import { sessionRow } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 import { wire } from "@prismshadow/penguin-core/kernel";
-
+import { FLOW_TTL_MS } from "../../../plugins/models/src/server/services/model-oauth-service.js";
+import { buildAuthorizeUrl } from "../../../plugins/models/src/server/services/model-oauth-service.js";
+import { codeChallenge } from "../../../plugins/models/src/server/services/model-oauth-service.js";
+import { createVerifier } from "../../../plugins/models/src/server/services/model-oauth-service.js";
+import { exchangeCode } from "../../../plugins/models/src/server/services/model-oauth-service.js";
+import { openedMode } from "../../../plugins/models/src/server/services/model-oauth-service.js";
 /** The catalog group under test; the flow exists only because this entry declares it. */
 const TOKENDANCE = providerInfo("tokendance")!;
-
 /**
  * How many models the minted key lands on — derived from the catalog rather than pinned, so
  * adding a row to this group does not fail three assertions that are not about the count.
  */
 const TOKENDANCE_MODELS = presetModelEntries().filter((m) => m.provider === "tokendance").length;
-
 /** A new Project's default model, which TokenDance's first key leaves in place. */
 const DEEPSEEK_FLASH = { provider: "deepseek", modelId: "deepseek-flash" };
 /** What TokenDance's first key offers a new Project. */
@@ -76,19 +71,16 @@ const DEFAULT_OFFER = {
   model: { provider: "tokendance", modelId: "deepseek-v4.1-flash" },
   current: DEEPSEEK_FLASH,
 };
-
 describe("PKCE derivation", () => {
   it("challenge is the unpadded base64url SHA-256 of the verifier (RFC 7636 vector)", () => {
     expect(codeChallenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk")).toBe(
       "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
     );
   });
-
   it("challenge carries no base64 padding or non-url characters", () => {
     const challenge = codeChallenge(createVerifier());
     expect(challenge).toMatch(/^[A-Za-z0-9_-]{43}$/);
   });
-
   it("verifier is inside the spec's 43-128 window and alphabet, and is not reused", () => {
     const a = createVerifier();
     const b = createVerifier();
@@ -97,10 +89,8 @@ describe("PKCE derivation", () => {
     expect(a).not.toBe(b);
   });
 });
-
 describe("authorize URL", () => {
   const challenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
-
   it("carries the callback URL, the app URL and the key name, all percent-encoded", () => {
     const url = buildAuthorizeUrl({
       oauth: TOKENDANCE.oauth!,
@@ -121,7 +111,6 @@ describe("authorize URL", () => {
     expect(url).toContain("callback_url=http%3A%2F%2F127.0.0.1%3A8123%2F");
     expect(url).not.toContain("?flow=abc-_1&code_challenge");
   });
-
   it("app_url is the harness's own stable URL, not the callback's ephemeral port", () => {
     const url = buildAuthorizeUrl({
       oauth: TOKENDANCE.oauth!,
@@ -131,7 +120,6 @@ describe("authorize URL", () => {
     expect(new URL(url).searchParams.get("app_url")).toBe(APP_URL);
     expect(new URL(url).searchParams.get("app_url")).not.toContain("51234");
   });
-
   it("manual mode omits the callback and still pins S256", () => {
     const q = new URL(buildAuthorizeUrl({ oauth: TOKENDANCE.oauth!, challenge })).searchParams;
     expect(q.has("callback_url")).toBe(false);
@@ -139,7 +127,6 @@ describe("authorize URL", () => {
     expect(q.get("code_challenge")).toBe(challenge);
   });
 });
-
 describe("code exchange", () => {
   const call = (impl: typeof fetch) =>
     exchangeCode({
@@ -148,7 +135,6 @@ describe("code exchange", () => {
       verifier: "the-verifier",
       fetchImpl: impl,
     });
-
   it("posts the code, the verifier and the method as JSON, and returns the minted key", async () => {
     const exchange = fakeFetch(() => jsonResponse({ key: "sk-minted" }));
     const res = await call(exchange.fetch);
@@ -160,7 +146,6 @@ describe("code exchange", () => {
       code_challenge_method: "S256",
     });
   });
-
   it("400 is a malformed authorization request; 403 is a rejected code", async () => {
     const fail = (status: number) =>
       call(fakeFetch(() => jsonResponse({ error: "no" }, status)).fetch);
@@ -168,7 +153,6 @@ describe("code exchange", () => {
     expect(await fail(403)).toEqual({ ok: false, error: "code_rejected" });
     expect(await fail(500)).toEqual({ ok: false, error: "upstream_failed" });
   });
-
   it("a 200 without a usable key is a failure, not a key", async () => {
     const answered = (response: Response) => call(fakeFetch(() => response).fetch);
     expect(await answered(jsonResponse({ key: "" }))).toEqual({
@@ -181,7 +165,6 @@ describe("code exchange", () => {
       error: "upstream_failed",
     });
   });
-
   it("a transport failure reports unreachable and carries no detail (the request holds the code)", async () => {
     const res = await call(
       fakeFetch(() => {
@@ -192,7 +175,6 @@ describe("code exchange", () => {
     expect(JSON.stringify(res)).not.toContain("sk-leak");
   });
 });
-
 describe("flow store", () => {
   let clock: number;
   let applied: { projectId: string; provider: string; apiKey: string }[];
@@ -202,7 +184,6 @@ describe("flow store", () => {
   const exchanged = () =>
     exchange.calls.map((call) => (JSON.parse(call.body) as { code: string }).code);
   let service: ModelOAuthService;
-
   const start = () =>
     service.start({
       projectId: "p1",
@@ -211,7 +192,6 @@ describe("flow store", () => {
       mode: "callback",
       callbackOrigin: "http://127.0.0.1:8123",
     });
-
   beforeEach(() => {
     clock = 1_700_000_000_000;
     applied = [];
@@ -225,7 +205,6 @@ describe("flow store", () => {
       now: () => clock,
     });
   });
-
   it("refuses a provider that declares no flow, and one that is not in the catalog at all", () => {
     for (const provider of ["deepseek", "custom", "not-a-provider"]) {
       expect(() =>
@@ -239,7 +218,6 @@ describe("flow store", () => {
       ).toThrow(HttpError);
     }
   });
-
   it("the callback URL keeps its query, so the flow id rides back with the code", () => {
     const { flowId, authorizeUrl } = start();
     expect(new URL(authorizeUrl).searchParams.get("callback_url")).toBe(
@@ -248,7 +226,6 @@ describe("flow store", () => {
     // Opaque and unguessable: 32 random bytes, base64url.
     expect(flowId).toMatch(/^[A-Za-z0-9_-]{43}$/);
   });
-
   it("a flow belongs to one user in one Project; anyone else sees a 404", async () => {
     const { flowId } = start();
     expect((await service.poll({ flowId, userId: "u1", projectId: "p1" })).status).toBe("pending");
@@ -262,7 +239,6 @@ describe("flow store", () => {
       HttpError,
     );
   });
-
   it("expires after ten minutes, and the expired flow is gone rather than failed", async () => {
     const { flowId } = start();
     clock += 10 * 60 * 1000 - 1;
@@ -275,7 +251,6 @@ describe("flow store", () => {
       service.complete({ flowId, userId: "u1", projectId: "p1", code: "c" }),
     ).rejects.toThrow(HttpError);
   });
-
   it("is single use: the second redemption is refused and the verifier is spent only once", async () => {
     const { flowId } = start();
     expect(await service.complete({ flowId, userId: "u1", projectId: "p1", code: "c" })).toEqual({
@@ -289,7 +264,6 @@ describe("flow store", () => {
     ).rejects.toThrow(HttpError);
     expect(applied).toHaveLength(1);
   });
-
   it("a failed exchange ends the flow and reports the mapped reason", async () => {
     service = wire(ModelOAuthService, {
       applyGroupKey: async () => ({ applied: 6 }),
@@ -304,7 +278,6 @@ describe("flow store", () => {
     const state = await service.poll({ flowId, userId: "u1", projectId: "p1" });
     expect(state).toEqual({ status: "error", provider: "tokendance", error: "code_rejected" });
   });
-
   it("a key that cannot be stored is reported as such, not as a success", async () => {
     service = wire(ModelOAuthService, {
       applyGroupKey: async () => {
@@ -322,7 +295,6 @@ describe("flow store", () => {
       "apply_failed",
     );
   });
-
   it("a deposited code is redeemed by the owner's poll, not by the deposit itself", async () => {
     const { flowId } = start();
     service.deposit({ flowId, projectId: "p1", code: "redirected-code" });
@@ -334,7 +306,6 @@ describe("flow store", () => {
     expect((await service.poll({ flowId, userId: "u1", projectId: "p1" })).applied).toBeUndefined();
     expect(applied).toHaveLength(1);
   });
-
   it("a manual flow has no redirect to receive, so it cannot be deposited into", () => {
     const { flowId } = service.start({
       projectId: "p1",
@@ -345,7 +316,6 @@ describe("flow store", () => {
     });
     expect(() => service.deposit({ flowId, projectId: "p1", code: "c" })).toThrow(HttpError);
   });
-
   it("the deposit slot holds one code: a second redirect neither overwrites it nor re-arms it", async () => {
     const { flowId } = start();
     service.deposit({ flowId, projectId: "p1", code: "first" });
@@ -356,7 +326,6 @@ describe("flow store", () => {
     expect(() => service.deposit({ flowId, projectId: "p1", code: "third" })).toThrow(HttpError);
     expect(exchanged()).toEqual(["first"]);
   });
-
   it("a deposited code that nobody polls for expires with the flow", async () => {
     const { flowId } = start();
     service.deposit({ flowId, projectId: "p1", code: "never-polled" });
@@ -368,7 +337,6 @@ describe("flow store", () => {
     expect(applied).toEqual([]);
   });
 });
-
 describe("callback origin", () => {
   it("follows the request's own URL when no proxy is trusted", () => {
     expect(publicOrigin("http://192.168.1.4:7364/api/x", {}, false)).toBe(
@@ -379,7 +347,6 @@ describe("callback origin", () => {
       publicOrigin("http://192.168.1.4:7364/api/x", { proto: "https", host: "evil.test" }, false),
     ).toBe("http://192.168.1.4:7364");
   });
-
   it("honours the forwarded pair once the deployment trusts it, one value each", () => {
     expect(
       publicOrigin(
@@ -400,7 +367,6 @@ describe("callback origin", () => {
     expect(publicOrigin("http://127.0.0.1:7364/api/x", {}, true)).toBe("http://127.0.0.1:7364");
   });
 });
-
 describe("opened mode", () => {
   it("keeps the redirect for HTTPS and for plain HTTP to a loopback host", () => {
     for (const origin of [
@@ -414,7 +380,6 @@ describe("opened mode", () => {
       expect(openedMode("callback", origin), origin).toBe("callback");
     }
   });
-
   it("opens a manual flow where the provider refuses to redirect: plain HTTP off loopback", () => {
     for (const origin of [
       "http://192.168.1.10:7364",
@@ -426,16 +391,13 @@ describe("opened mode", () => {
       expect(openedMode("callback", origin), origin).toBe("manual");
     }
   });
-
   it("never turns a manual request into a redirect", () => {
     expect(openedMode("manual", "http://localhost:7364")).toBe("manual");
   });
 });
-
 /** The route describes' app and the owner of every Project in it. */
 let t: TestApp;
 let owner: ReturnType<typeof apiClient>;
-
 beforeAll(async () => {
   t = await createTestApp();
   owner = apiClient(t.app, (await provisionUser(t.app, "owner_o")).cookie);
@@ -443,7 +405,6 @@ beforeAll(async () => {
 afterAll(async () => {
   await t.cleanup();
 });
-
 describe("model-oauth routes", () => {
   let member: ReturnType<typeof apiClient>;
   let projectId: string;
@@ -454,13 +415,10 @@ describe("model-oauth routes", () => {
       url: call.url,
       body: JSON.parse(call.body) as Record<string, unknown>,
     }));
-
   const base = () => `/api/projects/${projectId}/model-oauth`;
-
   beforeAll(async () => {
     member = apiClient(t.app, (await provisionUser(t.app, "member_m")).cookie);
   });
-
   // Every case runs its flows against a Project of its own.
   let projects = 0;
   beforeEach(async () => {
@@ -480,7 +438,6 @@ describe("model-oauth routes", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
-
   it("owner starts a flow; a member cannot, and neither can start one for a group with no flow", async () => {
     const res = await owner.post(`${base()}/start`, { provider: "tokendance" });
     expect(res.status).toBe(200);
@@ -493,21 +450,17 @@ describe("model-oauth routes", () => {
     expect(q.get("key_name")).toBe("PenguinHarness");
     expect(q.get("app_url")).toBe(APP_URL);
     expect(body.mode).toBe("callback");
-
     expect((await member.post(`${base()}/start`, { provider: "tokendance" })).status).toBe(403);
     expect((await owner.post(`${base()}/start`, { provider: "deepseek" })).status).toBe(400);
   });
-
   it("the callback deposits the code and the owner's poll redeems it, writing the group's key, which every model of the group uses", async () => {
     const started = (await (
       await owner.post(`${base()}/start`, { provider: "tokendance" })
     ).json()) as ModelOAuthStartResponse;
-
     // A subscribed tab of this Project must be told the credentials changed.
     t.deps.sessionsRepo.insert(sessionRow("td-live", { projectId, workspace: t.root }));
     const events: ChannelEvent[] = [];
     t.deps.channels.get("td-live").subscribe((e) => events.push(e));
-
     const cb = await owner.get(
       `${base()}/callback?flow=${encodeURIComponent(started.flowId)}&code=auth-code-1`,
     );
@@ -521,7 +474,6 @@ describe("model-oauth routes", () => {
     expect(page).not.toContain("http://");
     // The receiver only wrote the code onto the flow: no provider was called yet.
     expect(exchanges()).toHaveLength(0);
-
     // The owner's poll is what redeems it, and it reports the finished flow in the same tick.
     const status = (await (
       await owner.get(`${base()}/${started.flowId}`)
@@ -532,7 +484,6 @@ describe("model-oauth routes", () => {
       applied: TOKENDANCE_MODELS,
       defaultOffer: DEFAULT_OFFER,
     });
-
     // The exchange spoke the documented protocol, with a verifier this side never published.
     expect(exchanges()).toHaveLength(1);
     expect(exchanges()[0]!.url).toBe(TOKENDANCE.oauth!.exchangeUrl);
@@ -540,7 +491,6 @@ describe("model-oauth routes", () => {
     expect(exchanges()[0]!.body.code_challenge_method).toBe("S256");
     expect(String(exchanges()[0]!.body.code_verifier)).toMatch(/^[A-Za-z0-9._~-]{43,128}$/);
     expect(started.authorizeUrl).not.toContain(String(exchanges()[0]!.body.code_verifier));
-
     const models = (await (
       await owner.get(`/api/projects/${projectId}/models`)
     ).json()) as ModelsResponse;
@@ -557,11 +507,9 @@ describe("model-oauth routes", () => {
         .map(([id]) => id),
     ).toEqual(["tokendance"]);
     expect(JSON.stringify(models)).not.toContain("sk-oauth-minted-key-9911");
-
     // Stored once, for the group — not once per model.
     const cfg = await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
     expect(cfg.match(/sk-oauth-minted-key-9911/g)).toHaveLength(1);
-
     expect(
       events
         .filter((e) => e.event === "server_event")
@@ -580,7 +528,6 @@ describe("model-oauth routes", () => {
           (JSON.parse(e.data) as { type: string }).type === "credentials_updated",
       ),
     ).toHaveLength(1);
-
     // Replaying the same callback cannot spend the flow twice.
     const replay = await owner.get(
       `${base()}/callback?flow=${encodeURIComponent(started.flowId)}&code=auth-code-1`,
@@ -588,7 +535,6 @@ describe("model-oauth routes", () => {
     expect(replay.status).toBe(400);
     expect(exchanges()).toHaveLength(1);
   });
-
   it("a rejected code leaves the flow in error, reaches the dialog through the poll, and never touches the models", async () => {
     exchange = stubFetch(() => jsonResponse({ error: "invalid_code" }, 403));
     const started = (await (
@@ -598,7 +544,6 @@ describe("model-oauth routes", () => {
     const cb = await owner.get(`${base()}/callback?flow=${started.flowId}&code=stale`);
     expect(cb.status).toBe(200);
     expect(await cb.text()).toContain("Authorization received");
-
     // The failure surfaces where the dialog is looking, and the flow is left ended, not stuck.
     const status = (await (
       await owner.get(`${base()}/${started.flowId}`)
@@ -608,7 +553,6 @@ describe("model-oauth routes", () => {
     expect(
       (await (await owner.get(`${base()}/${started.flowId}`)).json()) as ModelOAuthStatusResponse,
     ).toEqual({ status: "error", provider: "tokendance", error: "code_rejected" });
-
     const models = (await (
       await owner.get(`/api/projects/${projectId}/models`)
     ).json()) as ModelsResponse;
@@ -617,7 +561,6 @@ describe("model-oauth routes", () => {
     }
     for (const m of models.models) expect(m.credential?.apiKeyMasked).toBeUndefined();
   });
-
   it("Disconnect clears the group key the flow wrote: the group's models stop using it, a model with its own key keeps it, and nothing else of the group changes", async () => {
     const started = (await (
       await owner.post(`${base()}/start`, { provider: "tokendance" })
@@ -641,7 +584,6 @@ describe("model-oauth routes", () => {
     const connected = (await (
       await owner.get(`/api/projects/${projectId}/models`)
     ).json()) as ModelsResponse;
-
     const res = await owner.put(`/api/projects/${projectId}/models/providers/tokendance`, {
       clearApiKey: true,
     });
@@ -660,7 +602,6 @@ describe("model-oauth routes", () => {
     expect(cfg).not.toContain("sk-oauth-minted-key-9911");
     expect(cfg).toContain("sk-td-own-row-0017");
   });
-
   it("a malformed callback link answers a page, not a stack trace", async () => {
     const res = await owner.get(`${base()}/callback?flow=&code=`);
     expect(res.status).toBe(400);
@@ -668,13 +609,11 @@ describe("model-oauth routes", () => {
     expect(await res.text()).toContain("Authorization failed");
     expect(exchanges()).toHaveLength(0);
   });
-
   it("manual mode drops the callback and redeems a pasted code instead", async () => {
     const started = (await (
       await owner.post(`${base()}/start`, { provider: "tokendance", mode: "manual" })
     ).json()) as ModelOAuthStartResponse;
     expect(new URL(started.authorizeUrl).searchParams.has("callback_url")).toBe(false);
-
     const res = await owner.post(`${base()}/${started.flowId}/code`, { code: "pasted-code" });
     expect(res.status).toBe(200);
     const body = (await res.json()) as ModelOAuthCodeResponse;
@@ -682,12 +621,10 @@ describe("model-oauth routes", () => {
     expect(body.applied).toBeGreaterThan(0);
     expect(body.defaultOffer).toEqual(DEFAULT_OFFER);
     expect(exchanges()[0]!.body.code).toBe("pasted-code");
-
     // Single use here too.
     const again = await owner.post(`${base()}/${started.flowId}/code`, { code: "pasted-code" });
     expect(again.status).toBe(409);
   });
-
   it("a redirect asked for over plain HTTP on a LAN address opens as manual, says so, and redeems a pasted code", async () => {
     const lan = (apiPath: string) => `http://192.168.1.10:7364${apiPath}`;
     const res = await owner.post(lan(`${base()}/start`), { provider: "tokendance" });
@@ -698,14 +635,12 @@ describe("model-oauth routes", () => {
     expect(q.has("callback_url")).toBe(false);
     expect(q.get("code_challenge_method")).toBe("S256");
     expect(q.get("code_challenge")).toMatch(/^[A-Za-z0-9_-]{43}$/);
-
     const redeemed = await owner.post(lan(`${base()}/${started.flowId}/code`), {
       code: "pasted-code",
     });
     expect(((await redeemed.json()) as ModelOAuthCodeResponse).ok).toBe(true);
     expect(exchanges()[0]!.body.code).toBe("pasted-code");
   });
-
   it("polling and redeeming both refuse a member, and 404 an unknown flow", async () => {
     const started = (await (
       await owner.post(`${base()}/start`, { provider: "tokendance" })
@@ -717,7 +652,6 @@ describe("model-oauth routes", () => {
     );
   });
 });
-
 /**
  * The redirect receiver's exemption from the session gate.
  *
@@ -741,7 +675,6 @@ describe("model-oauth callback without a session", () => {
   let otherProjectId: string;
   /** The provider's exchange endpoint, standing in for the global fetch. */
   let exchange: FetchFake;
-
   const base = (p = projectId) => `/api/projects/${p}/model-oauth`;
   /** The system browser the provider redirected: a request carrying no cookie at all. */
   const noSession = (apiPath: string, init?: RequestInit) => t.app.request(apiPath, init);
@@ -761,7 +694,6 @@ describe("model-oauth callback without a session", () => {
     const models = (await (await owner.get(`/api/projects/${p}/models`)).json()) as ModelsResponse;
     return models.providers.tokendance?.apiKeyMasked !== undefined;
   };
-
   /** A Project of the owner's. */
   const create = async (id: string): Promise<string> =>
     (
@@ -769,14 +701,12 @@ describe("model-oauth callback without a session", () => {
         await owner.post("/api/projects", { projectId: id, name: id })
       ).json()) as ProjectCreateResponse
     ).project.projectId;
-
   // The stranger, and another Project the owner also holds (a flow presented under it stores
   // nothing there, which no case changes), are the describe's; the flow's Project is per case.
   beforeAll(async () => {
     stranger = apiClient(t.app, (await provisionUser(t.app, "stranger_s")).cookie);
     otherProjectId = await create("owner_o-other");
   });
-
   let projects = 0;
   beforeEach(async () => {
     projects += 1;
@@ -790,7 +720,6 @@ describe("model-oauth callback without a session", () => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
-
   it("takes the code from the system browser, which carries no cookie, and writes nothing until the owner polls", async () => {
     // The desktop path: nothing but the flow id in the URL.
     const flowId = await startFlow();
@@ -802,11 +731,9 @@ describe("model-oauth callback without a session", () => {
     // Says nothing but where to look, session or no session.
     expect(page).not.toContain("sk-oauth-minted-key-9911");
     expect(page).not.toContain("auth-code-1");
-
     // Nothing was redeemed and nothing was stored: the route has no such authority.
     expect(exchange.calls).toHaveLength(0);
     expect(await groupHasKey()).toBe(false);
-
     // The owner's own poll is what spends the code and lands the key.
     expect(await poll(flowId)).toEqual({
       status: "done",
@@ -817,7 +744,6 @@ describe("model-oauth callback without a session", () => {
     expect(exchange.calls).toHaveLength(1);
     expect(await groupHasKey()).toBe(true);
   });
-
   it("still takes the redirect of a signed-in tab, which is the browser path", async () => {
     // The popup of the session that opened it was never broken and must not become so —
     // the cookie is simply not consulted here.
@@ -834,7 +760,6 @@ describe("model-oauth callback without a session", () => {
     expect(exchange.calls).toHaveLength(1);
     expect(await groupHasKey()).toBe(true);
   });
-
   it("lets another signed-in user deposit no more than a stranger, and land nothing", async () => {
     const flowId = await startFlow();
     // Their cookie is not consulted on this route, so their redirect is received like anyone's.
@@ -848,7 +773,6 @@ describe("model-oauth callback without a session", () => {
     expect((await poll(flowId)).status).toBe("done");
     expect(await groupHasKey()).toBe(true);
   });
-
   it("buys nothing for a flow id that does not exist", async () => {
     const res = await noSession(callback("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"));
     expect(res.status).toBe(400);
@@ -857,7 +781,6 @@ describe("model-oauth callback without a session", () => {
     expect(exchange.calls).toHaveLength(0);
     expect(await groupHasKey()).toBe(false);
   });
-
   it("cannot be redirected at a Project the flow does not belong to", async () => {
     const flowId = await startFlow();
     const res = await noSession(callback(flowId, "auth-code-1", otherProjectId));
@@ -869,7 +792,6 @@ describe("model-oauth callback without a session", () => {
     expect((await poll(flowId)).status).toBe("done");
     expect(await groupHasKey()).toBe(true);
   });
-
   it("refuses a flow past its ten-minute TTL", async () => {
     const flowId = await startFlow();
     // The service reads the clock through `Date.now()` at call time, so moving it is enough.
@@ -881,7 +803,6 @@ describe("model-oauth callback without a session", () => {
     vi.restoreAllMocks();
     expect(await groupHasKey()).toBe(false);
   });
-
   it("bounds a deposited code by the same TTL: an unpolled flow expires with it", async () => {
     const flowId = await startFlow();
     expect((await noSession(callback(flowId))).status).toBe(200);
@@ -892,7 +813,6 @@ describe("model-oauth callback without a session", () => {
     expect(exchange.calls).toHaveLength(0);
     expect(await groupHasKey()).toBe(false);
   });
-
   it("is single use: the redirect cannot be replayed, before or after the exchange", async () => {
     const flowId = await startFlow();
     expect((await noSession(callback(flowId))).status).toBe(200);
@@ -900,13 +820,11 @@ describe("model-oauth callback without a session", () => {
     const replay = await noSession(callback(flowId, "auth-code-2"));
     expect(replay.status).toBe(400);
     expect(await replay.text()).toContain("Authorization failed");
-
     expect((await poll(flowId)).status).toBe("done");
     expect((await noSession(callback(flowId))).status).toBe(400);
     // One code redeemed, one verifier spent — and it was the first code, not the replay's.
     expect(exchange.calls).toHaveLength(1);
   });
-
   it("deposits once when two redirects arrive together, and spends it once", async () => {
     const flowId = await startFlow();
     const both = await Promise.all([
@@ -918,7 +836,6 @@ describe("model-oauth callback without a session", () => {
     expect((await poll(flowId)).status).toBe("done");
     expect(exchange.calls).toHaveLength(1);
   });
-
   it("redeems a deposited code once when two polls arrive together", async () => {
     // The single-use property lives in the exchange claim now: the verifier and the code are
     // both nulled before the first await, so overlapping polls cannot both mint a key.
@@ -930,7 +847,6 @@ describe("model-oauth callback without a session", () => {
     for (const r of both) expect(r.status).not.toBe("error");
     expect(await groupHasKey()).toBe(true);
   });
-
   it("refuses the HEAD that Hono re-dispatches as a GET, leaving the flow unspent", async () => {
     const flowId = await startFlow();
     const head = await noSession(callback(flowId), { method: "HEAD" });
@@ -942,20 +858,17 @@ describe("model-oauth callback without a session", () => {
     expect(exchange.calls).toHaveLength(1);
     expect(await groupHasKey()).toBe(true);
   });
-
   it("has no redirect to receive for a flow that chose manual mode", async () => {
     const started = (await (
       await owner.post(`${base()}/start`, { provider: "tokendance", mode: "manual" })
     ).json()) as ModelOAuthStartResponse;
     // The deployment opted out: no callback URL was ever handed to the provider.
     expect(new URL(started.authorizeUrl).searchParams.has("callback_url")).toBe(false);
-
     const res = await noSession(callback(started.flowId));
     expect(res.status).toBe(400);
     expect(await res.text()).toContain("Authorization failed");
     expect(exchange.calls).toHaveLength(0);
     expect(await groupHasKey()).toBe(false);
-
     // The paste box that mode did opt into still redeems it.
     expect((await owner.post(`${base()}/${started.flowId}/code`, { code: "pasted" })).status).toBe(
       200,
@@ -963,7 +876,6 @@ describe("model-oauth callback without a session", () => {
     expect(exchange.calls).toHaveLength(1);
     expect(await groupHasKey()).toBe(true);
   });
-
   it("exempts exactly this literal path, and nothing around it", async () => {
     const flowId = await startFlow();
     // GET on the literal path is the exemption — and it beats the `:flowId` status route,

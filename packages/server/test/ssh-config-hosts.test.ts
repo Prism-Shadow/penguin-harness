@@ -5,15 +5,12 @@
  * change what ssh reads.
  */
 import { describe, expect, it } from "vitest";
-import {
-  findHostBlock,
-  renderHostBlock,
-  replaceHostBlock,
-  validateHostEntry,
-} from "../src/machines/ssh-config.js";
+import { findHostBlock } from "../../../plugins/machines/src/server/ssh-config.js";
+import { renderHostBlock } from "../../../plugins/machines/src/server/ssh-config.js";
+import { replaceHostBlock } from "../../../plugins/machines/src/server/ssh-config.js";
+import { validateHostEntry } from "../../../plugins/machines/src/server/ssh-config.js";
 
 const AT = new Date("2026-09-05T12:00:00.000Z");
-
 describe("validateHostEntry", () => {
   it("wants an alias and an address", () => {
     expect(validateHostEntry({ alias: "", hostName: "10.0.0.2" })).toEqual({
@@ -25,7 +22,6 @@ describe("validateHostEntry", () => {
       why: "required",
     });
   });
-
   it("refuses an alias that would be a pattern or would not survive as one word", () => {
     expect(validateHostEntry({ alias: "gpu-*", hostName: "h" })).toEqual({
       field: "alias",
@@ -40,7 +36,6 @@ describe("validateHostEntry", () => {
       why: "invalid",
     });
   });
-
   it("checks the optional fields only when given", () => {
     expect(
       validateHostEntry({ alias: "nas", hostName: "h", user: "", identityFile: "" }),
@@ -64,7 +59,6 @@ describe("validateHostEntry", () => {
     });
   });
 });
-
 describe("renderHostBlock", () => {
   it("writes the lines ssh reads, led by who wrote them and when, and nothing blank; a new host's key is accepted on first use", () => {
     expect(renderHostBlock({ alias: "nas", hostName: "10.0.0.2" }, AT)).toBe(
@@ -77,7 +71,6 @@ describe("renderHostBlock", () => {
       ].join("\n"),
     );
   });
-
   it("carries every option that was given, trimmed", () => {
     expect(
       renderHostBlock(
@@ -104,7 +97,6 @@ describe("renderHostBlock", () => {
     );
   });
 });
-
 const CONFIG = [
   "Host *",
   "  ServerAliveInterval 30",
@@ -123,7 +115,6 @@ const CONFIG = [
   "  HostName lab.example.net",
   "  ProxyJump bastion",
 ].join("\n");
-
 describe("findHostBlock", () => {
   it("reads back a block this app wrote, marker included, trailing blanks excluded", () => {
     expect(findHostBlock(CONFIG, "orchid-2")).toEqual({
@@ -133,7 +124,6 @@ describe("findHostBlock", () => {
       entry: { alias: "orchid-2", hostName: "10.0.0.9", user: "k", port: 2222 },
     });
   });
-
   it("finds a hand-written block but says it is not ours", () => {
     expect(findHostBlock(CONFIG, "lab")).toEqual({
       start: 13,
@@ -142,13 +132,11 @@ describe("findHostBlock", () => {
       entry: { alias: "lab", hostName: "lab.example.net" },
     });
   });
-
   it("does not match a line declaring several aliases, or an alias that is not there", () => {
     expect(findHostBlock(CONFIG, "nas")).toBeNull();
     expect(findHostBlock(CONFIG, "nope")).toBeNull();
   });
 });
-
 describe("replaceHostBlock", () => {
   it("swaps the block's lines for the new ones and leaves the rest of the file alone", () => {
     const found = findHostBlock(CONFIG, "orchid-2")!;

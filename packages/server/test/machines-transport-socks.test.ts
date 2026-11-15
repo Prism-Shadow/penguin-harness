@@ -10,8 +10,7 @@
 import http from "node:http";
 import net from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
-import { dialThroughSocks } from "../src/machines/transport/socks.js";
-
+import { dialThroughSocks } from "../../../plugins/machines/src/server/transport/socks.js";
 /**
  * Just enough SOCKS5 to answer a CONNECT: greet, connect, pipe. A refused port is answered with
  * a failure reply, or — `silentRefusal`, what ssh's `-D` does when the machine refuses the
@@ -69,13 +68,11 @@ function socksServer(
     ),
   );
 }
-
 describe("dialThroughSocks", () => {
   const cleanups: Array<() => void> = [];
   afterEach(() => {
     for (const c of cleanups.splice(0)) c();
   });
-
   it("reaches a port behind the SOCKS server and carries HTTP over it", async () => {
     const web = http.createServer((_req, res) => res.end("ok from behind"));
     await new Promise<void>((resolve) => web.listen(0, "127.0.0.1", resolve));
@@ -83,7 +80,6 @@ describe("dialThroughSocks", () => {
     const webPort = (web.address() as net.AddressInfo).port;
     const socks = await socksServer();
     cleanups.push(socks.close);
-
     const socket = await dialThroughSocks(socks.port, "127.0.0.1", webPort);
     const answer = await new Promise<string>((resolve) => {
       let text = "";
@@ -94,7 +90,6 @@ describe("dialThroughSocks", () => {
     expect(answer).toContain("ok from behind");
     expect(socks.requests).toEqual([webPort]);
   });
-
   it("fails in the SOCKS server's words when the port behind it refuses", async () => {
     const socks = await socksServer();
     cleanups.push(socks.close);
@@ -110,7 +105,6 @@ describe("dialThroughSocks", () => {
       /refused .*SOCKS reply 5/,
     );
   });
-
   it("fails at once when the session closes a refused channel without a word, as ssh does", async () => {
     const socks = await socksServer({ silentRefusal: true });
     cleanups.push(socks.close);
@@ -128,7 +122,6 @@ describe("dialThroughSocks", () => {
     // Not after the handshake's own timeout: the closed channel is the answer.
     expect(Date.now() - started).toBeLessThan(5_000);
   });
-
   it("fails when there is no SOCKS listener at all", async () => {
     const probe = net.createServer();
     const free = await new Promise<number>((resolve) =>

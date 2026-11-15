@@ -35,20 +35,18 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { MachineCheck } from "../src/api/types.js";
 import { openDatabase } from "@penguinharness/plugin-db/server";
 import { MachinesRepo } from "../src/db/repos/machines.js";
-import { MachinesService } from "../src/machines/service.js";
-import type { MachinesEffects } from "../src/machines/service.js";
-import { remoteLayoutFor } from "../src/machines/layout.js";
-import {
-  INSTALL_NEEDS_MB,
-  MIN_GLIBC,
-  RELEASE_SOURCES,
-  TERMINAL_GLIBC,
-  diagnoseCommand,
-  parseDiagnosis,
-} from "../src/machines/diagnose.js";
-import type { ExecResult } from "../src/machines/transport/index.js";
-import { makeTempRoot, waitFor } from "./helpers.js";
+import { MachinesService } from "../../../plugins/machines/src/server/index.js";
+import type { MachinesEffects } from "../../../plugins/machines/src/server/index.js";
+import { remoteLayoutFor } from "../../../plugins/machines/src/server/index.js";
 
+import { ExecResult } from "../../../plugins/machines/src/server/transport/exec.js";
+import { makeTempRoot, waitFor } from "./helpers.js";
+import { INSTALL_NEEDS_MB } from "../../../plugins/machines/src/server/diagnose.js";
+import { MIN_GLIBC } from "../../../plugins/machines/src/server/diagnose.js";
+import { RELEASE_SOURCES } from "../../../plugins/machines/src/server/diagnose.js";
+import { TERMINAL_GLIBC } from "../../../plugins/machines/src/server/diagnose.js";
+import { diagnoseCommand } from "../../../plugins/machines/src/server/diagnose.js";
+import { parseDiagnosis } from "../../../plugins/machines/src/server/diagnose.js";
 const DEV = remoteLayoutFor("dev");
 const LINUX_PROBE = "Linux x86_64\n---penguin---\n---penguin---\n";
 const said = (stdout: string, code = 0): ExecResult => ({
@@ -57,7 +55,6 @@ const said = (stdout: string, code = 0): ExecResult => ({
   stderr: "",
   timedOut: false,
 });
-
 /** A check command's answer: everything in place unless a test says otherwise. */
 function answer(
   over: Partial<
@@ -74,12 +71,10 @@ function answer(
   lines.push(`@@port ${over.port ?? "000 7"}`);
   return lines.join("\n") + "\n";
 }
-
 const roots: string[] = [];
 afterEach(() => {
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
 });
-
 /** A service whose machine answers through `runOn`; the commands it was sent are returned. */
 async function serviceFor(
   runOn: (command: string) => ExecResult,
@@ -112,7 +107,6 @@ async function serviceFor(
   );
   return { service, sent };
 }
-
 /** The checks of a diagnosis by id, for reading one at a time. */
 async function checksOf(
   runOn: (command: string) => ExecResult,
@@ -127,7 +121,6 @@ async function checksOf(
   >;
   return { byId, sent, result };
 }
-
 describe("the connection check", () => {
   it("passes every check on a Linux machine that has everything, naming who signed in", async () => {
     const { byId, result } = await checksOf((command) =>
@@ -145,7 +138,6 @@ describe("the connection check", () => {
     expect(byId.platform).toMatchObject({ os: "linux", arch: "x64" });
     expect(byId.port).toMatchObject({ port: DEV.defaultPort, holder: "free" });
   });
-
   it("fails ssh with its reason when the host key is unknown, skips the rest, and sends nothing more", async () => {
     const { byId, sent, result } = await checksOf(() =>
       said(
@@ -157,7 +149,6 @@ describe("the connection check", () => {
     expect(result.checks.slice(1).every((check) => check.state === "skip")).toBe(true);
     expect(sent).toHaveLength(1);
   });
-
   it("names a missing curl as a caveat and does not ask about the download; a missing tar fails", async () => {
     const { byId } = await checksOf((command) =>
       command.includes("@@who") ? said(answer({ missing: "curl" })) : said(LINUX_PROBE),
@@ -169,7 +160,6 @@ describe("the connection check", () => {
     );
     expect(noTar.byId.tools).toMatchObject({ state: "fail", missing: ["tar"] });
   });
-
   it("warns when neither source is in reach, and fails when both answer without the release", async () => {
     const out = await checksOf((command) =>
       command.includes("@@who")
@@ -193,7 +183,6 @@ describe("the connection check", () => {
       github: "missing",
     });
   });
-
   it("fails the disk below what an install needs, and warns with room for one install only", async () => {
     const low = await checksOf((command) =>
       command.includes("@@who") ? said(answer({ disk: String(100 * 1024) })) : said(LINUX_PROBE),
@@ -206,7 +195,6 @@ describe("the connection check", () => {
     );
     expect(tight.byId.disk.state).toBe("warn");
   });
-
   it("fails a port another program holds, and passes the one its own server holds", async () => {
     const taken = await checksOf((command) =>
       command.includes("@@who") ? said(answer({ port: "404 0" })) : said(LINUX_PROBE),
@@ -219,7 +207,6 @@ describe("the connection check", () => {
     );
     expect(ours.byId.port).toMatchObject({ state: "pass", holder: "penguin" });
   });
-
   it("fails a glibc older than the release's Node needs and a musl system, and warns about terminals on one in between", async () => {
     const old = await checksOf((command) =>
       command.includes("@@who") ? said(answer({ libc: "ldd (GNU libc) 2.17" })) : said(LINUX_PROBE),
@@ -251,7 +238,6 @@ describe("the connection check", () => {
     );
     expect(ubuntu.byId.platform.state).toBe("pass");
   });
-
   it("says a Windows machine is installable and skips the POSIX checks", async () => {
     const { byId, sent } = await checksOf(
       () => said("the connection to this machine ended: 'sh' is not recognized", 255),
@@ -268,7 +254,6 @@ describe("the connection check", () => {
     ).toEqual(["skip", "skip", "skip", "skip"]);
     expect(sent).toHaveLength(1);
   });
-
   it("refuses while a job works on the machine instead of queueing behind it", async () => {
     const install: { release?: () => void } = {};
     const { service } = await serviceFor(() => said(LINUX_PROBE), {
@@ -283,7 +268,6 @@ describe("the connection check", () => {
     install.release?.();
     await waitFor(() => service.jobs().every((job) => !job.running));
   });
-
   it("asks the sources the installer downloads from", () => {
     const here = path.dirname(fileURLToPath(import.meta.url));
     const script = fs.readFileSync(path.join(here, "..", "..", "..", "install.sh"), "utf8");
@@ -299,7 +283,6 @@ describe("the connection check", () => {
       github: vars.get("GITHUB_RELEASE_ROOT"),
     });
   });
-
   it.skipIf(process.platform === "win32")(
     "runs in a real POSIX shell, and reads a free port and the tools from it",
     async () => {

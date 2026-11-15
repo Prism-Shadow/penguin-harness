@@ -16,8 +16,8 @@ import {
 } from "@prismshadow/penguin-core/kernel";
 import type { Json } from "@prismshadow/penguin-core/kernel";
 import { HotResources } from "@prismshadow/penguin-hmr";
-import { TerminalManager } from "../src/terminal/manager.js";
-import type { TerminalSession } from "../src/terminal/session.js";
+import { TerminalManager } from "../../../plugins/terminal/src/server/index.js";
+import type { TerminalSession } from "../../../plugins/terminal/src/server/index.js";
 import { DECLARED_RESOURCES as PARKED, packagedPlatform } from "../src/hmr/platform.js";
 import {
   RESOURCE_IFACES_RESOURCE_ID,

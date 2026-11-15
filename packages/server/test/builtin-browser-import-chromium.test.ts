@@ -7,33 +7,13 @@
  */
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import {
-  listImportSources,
-  readCookies,
-  type CookieReadResult,
-} from "../src/builtin-browser/import/index.js";
-import {
-  DAY,
-  FakeMachine,
-  cbcKey,
-  chromeTime,
-  encryptCbc,
-  encryptGcm,
-  fakeDpapi,
-  nowSeconds,
-  wrappedKey,
-  writeChromiumCookies,
-  writeLocalState,
-  type ChromiumCookieFixture,
-} from "./builtin-browser-import-fixtures.js";
-
+import { DAY, FakeMachine, cbcKey, chromeTime, encryptCbc, encryptGcm, fakeDpapi, nowSeconds, wrappedKey, writeChromiumCookies, writeLocalState, type ChromiumCookieFixture } from "./builtin-browser-import-fixtures.js";
+import { CookieReadResult, listImportSources, readCookies } from "../../../plugins/browser/src/server/builtin-browser/import/index.js";
 let machine: FakeMachine;
 afterEach(() => machine.cleanup());
-
 const MAC_PASSWORD = "mac-keychain-password";
 const macKey = () => cbcKey(MAC_PASSWORD, 1003);
 const SECRETS = ["secret-session-value", "secret-token-value", "secret-plain-value"];
-
 /** A Chrome profile on macOS with these cookies; `security` answers with the password. */
 function macChrome(cookies: ChromiumCookieFixture[], version = 24): FakeMachine {
   machine = new FakeMachine("darwin");
@@ -42,19 +22,16 @@ function macChrome(cookies: ChromiumCookieFixture[], version = 24): FakeMachine 
   machine.helpers.set("security", () => `${MAC_PASSWORD}\n`);
   return machine;
 }
-
 async function importAll(domains?: string[]): Promise<CookieReadResult> {
   const env = machine.env();
   const [source] = listImportSources(env);
   return readCookies(source!, domains === undefined ? {} : { domains }, env);
 }
-
 function expectNoValues(result: CookieReadResult): void {
   for (const warning of result.warnings) {
     for (const secret of SECRETS) expect(warning).not.toContain(secret);
   }
 }
-
 describe("macOS (Keychain, AES-128-CBC, 1003 iterations)", () => {
   it("decrypts v10 values with the Keychain password and strips the version-24 host digest", async () => {
     const future = nowSeconds() + 30 * DAY;
@@ -106,7 +83,6 @@ describe("macOS (Keychain, AES-128-CBC, 1003 iterations)", () => {
       { file: "security", args: ["find-generic-password", "-w", "-s", "Chrome Safe Storage"] },
     ]);
   });
-
   it("reads a store older than version 24 without a digest", async () => {
     macChrome(
       [{ host: ".a.com", name: "n", encrypted: encryptCbc("v10", SECRETS[0]!, macKey()) }],
@@ -115,14 +91,12 @@ describe("macOS (Keychain, AES-128-CBC, 1003 iterations)", () => {
     const result = await importAll();
     expect(result.cookies.map((c) => c.value)).toEqual([SECRETS[0]]);
   });
-
   it("uses a plaintext value as-is and never asks the Keychain when nothing is encrypted", async () => {
     macChrome([{ host: ".a.com", name: "n", value: SECRETS[2] }]);
     const result = await importAll();
     expect(result.cookies.map((c) => c.value)).toEqual([SECRETS[2]]);
     expect(machine.calls).toEqual([]);
   });
-
   it("skips expired cookies and maps SameSite, downgrading an insecure None", async () => {
     macChrome([
       { host: ".a.com", name: "old", value: "x", expiresUtc: chromeTime(nowSeconds() - DAY) },
@@ -138,7 +112,6 @@ describe("macOS (Keychain, AES-128-CBC, 1003 iterations)", () => {
       ["unspecified", "unspecified"],
     ]);
   });
-
   it("skips the encrypted cookies with one warning when the Keychain refuses", async () => {
     macChrome([
       { host: ".a.com", name: "e1", encrypted: encryptCbc("v10", SECRETS[0]!, macKey(), ".a.com") },
@@ -156,7 +129,6 @@ describe("macOS (Keychain, AES-128-CBC, 1003 iterations)", () => {
     expect(result.warnings[0]).toContain("2 cookies");
     expectNoValues(result);
   });
-
   it("counts a value whose host digest does not match as undecryptable", async () => {
     macChrome([
       // Encrypted for another host: the digest check refuses it.
@@ -178,7 +150,6 @@ describe("macOS (Keychain, AES-128-CBC, 1003 iterations)", () => {
     expectNoValues(result);
   });
 });
-
 describe("the domains filter", () => {
   const hosts = [
     ".amazon.com",
@@ -188,7 +159,6 @@ describe("the domains filter", () => {
     ".google.com",
   ];
   const setup = () => macChrome(hosts.map((host, i) => ({ host, name: `c${i}`, value: "v" })));
-
   it("keeps a domain and its subdomains, and counts only what it keeps as found", async () => {
     setup();
     const result = await importAll(["amazon.com"]);
@@ -199,7 +169,6 @@ describe("the domains filter", () => {
       "smile.amazon.com",
     ]);
   });
-
   it("brings the parent domain's cookies along for a subdomain, and accepts pasted URLs", async () => {
     setup();
     const result = await importAll(["https://WWW.Amazon.com/your-orders", " ", ".google.com."]);
@@ -209,13 +178,11 @@ describe("the domains filter", () => {
       ".google.com",
     ]);
   });
-
   it("an empty list keeps everything", async () => {
     setup();
     expect((await importAll([])).found).toBe(hosts.length);
   });
 });
-
 describe("Linux (v10 peanuts, v11 keyring, one iteration)", () => {
   const KEYRING_PASSWORD = "keyring-password";
   function linuxChrome(cookies: ChromiumCookieFixture[], version = 24): FakeMachine {
@@ -224,7 +191,6 @@ describe("Linux (v10 peanuts, v11 keyring, one iteration)", () => {
     writeChromiumCookies(path.join(profile, "Cookies"), cookies, { version });
     return machine;
   }
-
   it("decrypts v10 with the fixed password and never asks the keyring for it", async () => {
     linuxChrome([
       {
@@ -237,7 +203,6 @@ describe("Linux (v10 peanuts, v11 keyring, one iteration)", () => {
     expect(result.cookies.map((c) => c.value)).toEqual([SECRETS[0]]);
     expect(machine.calls).toEqual([]);
   });
-
   it("leaves partitioned (CHIPS) cookies behind, counted as skipped", async () => {
     machine = new FakeMachine("linux");
     const profile = machine.path(".config", "google-chrome", "Default");
@@ -258,7 +223,6 @@ describe("Linux (v10 peanuts, v11 keyring, one iteration)", () => {
     expect(result.cookies.map((c) => c.name)).toEqual(["first-party"]);
     expect(result).toMatchObject({ found: 2, skipped: 1 });
   });
-
   it("decrypts v11 with the password secret-tool returns", async () => {
     linuxChrome(
       [
@@ -277,7 +241,6 @@ describe("Linux (v10 peanuts, v11 keyring, one iteration)", () => {
     const result = await importAll();
     expect(result.cookies.map((c) => c.value)).toEqual([SECRETS[1]]);
   });
-
   it("falls back to the empty password, as Chromium does without a keyring answer", async () => {
     linuxChrome([
       {
@@ -290,7 +253,6 @@ describe("Linux (v10 peanuts, v11 keyring, one iteration)", () => {
     expect(result).toMatchObject({ skipped: 0, warnings: [] });
     expect(result.cookies.map((c) => c.value)).toEqual([SECRETS[1]]);
   });
-
   it("skips v11 values with a warning when secret-tool cannot provide the key", async () => {
     linuxChrome([
       {
@@ -312,7 +274,6 @@ describe("Linux (v10 peanuts, v11 keyring, one iteration)", () => {
     ]);
     expectNoValues(result);
   });
-
   it("reads the pre-2019 column names", async () => {
     machine = new FakeMachine("linux");
     writeChromiumCookies(
@@ -335,7 +296,6 @@ describe("Linux (v10 peanuts, v11 keyring, one iteration)", () => {
     ]);
   });
 });
-
 describe("Windows (DPAPI-wrapped key, AES-256-GCM)", () => {
   const AES_KEY = Buffer.alloc(32, 7);
   function windowsChrome(cookies: ChromiumCookieFixture[], version = 24): FakeMachine {
@@ -351,7 +311,6 @@ describe("Windows (DPAPI-wrapped key, AES-256-GCM)", () => {
     );
     return machine;
   }
-
   it("unwraps the key through PowerShell with the blob on stdin, and decrypts v10 and v11", async () => {
     windowsChrome([
       { host: ".a.com", name: "v10", encrypted: encryptGcm("v10", SECRETS[0]!, AES_KEY, ".a.com") },
@@ -370,7 +329,6 @@ describe("Windows (DPAPI-wrapped key, AES-256-GCM)", () => {
     expect(call!.args.join(" ")).not.toContain(call!.input!);
     expect(call!.args.join(" ")).toContain("ProtectedData]::Unprotect");
   });
-
   it("skips app-bound (v20) values with one warning naming the count", async () => {
     windowsChrome([
       { host: ".a.com", name: "b1", encrypted: encryptGcm("v20", SECRETS[0]!, AES_KEY, ".a.com") },
@@ -385,7 +343,6 @@ describe("Windows (DPAPI-wrapped key, AES-256-GCM)", () => {
     ]);
     expectNoValues(result);
   });
-
   it("never runs PowerShell when every value is app-bound", async () => {
     windowsChrome([
       { host: ".a.com", name: "b1", encrypted: encryptGcm("v20", SECRETS[0]!, AES_KEY) },
@@ -393,7 +350,6 @@ describe("Windows (DPAPI-wrapped key, AES-256-GCM)", () => {
     await importAll();
     expect(machine.calls).toEqual([]);
   });
-
   it("skips with a warning when DPAPI refuses the key", async () => {
     windowsChrome([
       { host: ".a.com", name: "v10", encrypted: encryptGcm("v10", SECRETS[0]!, AES_KEY, ".a.com") },

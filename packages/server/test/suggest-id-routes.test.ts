@@ -19,7 +19,7 @@ import type {
   ProjectsResponse,
   SemanticIdSuggestResponse,
 } from "../src/api/types.js";
-import type { UtilityCompletion } from "../src/services/project-config-service.js";
+import type { UtilityCompletion } from "../../../plugins/projects/src/server/index.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 

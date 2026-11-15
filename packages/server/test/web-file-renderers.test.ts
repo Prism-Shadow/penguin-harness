@@ -11,10 +11,9 @@ import { parseManifest } from "@prismshadow/penguin-core/kernel";
 import type { ModuleDef } from "@prismshadow/penguin-core/kernel";
 import type { ContributionsResponse } from "../src/api/types.js";
 import { PluginHost } from "../src/plugin/host.js";
-import { WorkspaceFilesService } from "../src/services/workspace-files-service.js";
+import { WorkspaceFilesService } from "../../../plugins/projects/src/server/projects/workspace-files-service.js"
 import { apiClient, createTestApp, loginAdmin, makeTempRoot } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
-
 /** A plugin module that only contributes a file renderer rule. */
 const music: ModuleDef = {
   manifest: parseManifest({
@@ -30,21 +29,18 @@ const music: ModuleDef = {
   }),
   create: () => ({ api: {}, bind: {} }),
 };
-
 describe("web file renderers", () => {
   let t: TestApp | undefined;
   afterEach(async () => {
     await t?.cleanup();
     t = undefined;
   });
-
   it("serves a plugin's file renderer contribution, and none without the plugin", async () => {
     t = await createTestApp();
     const bare = apiClient(t.app, (await loginAdmin(t.app)).cookie);
     const none = (await (await bare.get("/api/contributions")).json()) as ContributionsResponse;
     expect(none.fileRenderers).toEqual([]);
     await t.cleanup();
-
     const host = new PluginHost();
     host.use({ specifier: "test-music", modules: [music], replaces: [] });
     t = await createTestApp({ plugins: host });
@@ -61,7 +57,6 @@ describe("web file renderers", () => {
       },
     ]);
   });
-
   it("reads a Workspace audio file with its audio content type", async () => {
     const ws = await makeTempRoot();
     try {

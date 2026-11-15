@@ -27,7 +27,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { EventEmitter } from "node:events";
 import type { Server } from "node:http";
-import { attachTerminalWebSocket } from "../src/terminal/ws.js";
+import { attachTerminalWebSocket } from "../../../plugins/terminal/src/server/index.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AgentApiKeyCreateResponse, MeResponse, ProjectsResponse } from "../src/api/types.js";
 import { bootAppDeps } from "../src/app.js";
@@ -40,7 +40,7 @@ import {
   jsonOnlyWrites,
 } from "../src/auth/middleware.js";
 import { Hono } from "hono";
-import { identityFrom } from "../src/terminal/identity.js";
+import { identityFrom } from "../../../plugins/terminal/src/server/index.js";
 import { mediaType } from "../src/http/media-type.js";
 import { handleError } from "../src/http/errors.js";
 import { generateInitialAdminPassword } from "../src/auth/service.js";

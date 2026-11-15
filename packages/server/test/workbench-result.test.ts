@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { AmspRecord } from "@prismshadow/penguin-core";
-import { workbenchResult } from "../src/workbenches/result.js";
+import { workbenchResult } from "../../../plugins/workbenches/src/server/workbenches/result.js"
 const message = (payload: object, origin?: string[]): AmspRecord =>
   ({
     timestamp: "2026-10-14T00:00:00Z",

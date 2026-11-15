@@ -4,18 +4,15 @@
  * can escape from, and disposal taking the listener off the port — the hot-swap guarantee.
  */
 import { describe, expect, it } from "vitest";
-import type { DesktopBrowserCommandMessage } from "../../src/api/types.js";
-import {
-  ShellLink,
-  ShellLinkError,
-  parseBrowserEvent,
-  parseBrowserReply,
-  parseTab,
-} from "../../src/builtin-browser/shell-link.js";
+import type { DesktopBrowserCommandMessage } from "../../../../packages/server/src/api/types.js";
+
 import { FakePort, FakeShell, tab } from "./fake-shell.js";
-
+import { ShellLink } from "../../../../plugins/browser/src/server/builtin-browser/shell-link.js";
+import { ShellLinkError } from "../../../../plugins/browser/src/server/builtin-browser/shell-link.js";
+import { parseBrowserEvent } from "../../../../plugins/browser/src/server/builtin-browser/shell-link.js";
+import { parseBrowserReply } from "../../../../plugins/browser/src/server/builtin-browser/shell-link.js";
+import { parseTab } from "../../../../plugins/browser/src/server/builtin-browser/shell-link.js";
 const lastCommand = (port: FakePort) => port.sent.at(-1) as DesktopBrowserCommandMessage;
-
 describe("ShellLink requests", () => {
   it("sends a command frame and resolves with the reply to its id", async () => {
     const port = new FakePort();
@@ -31,7 +28,6 @@ describe("ShellLink requests", () => {
     await expect(pending).resolves.toEqual({ tabs: [] });
     link.dispose();
   });
-
   it("gives each request its own id, and each generation its own prefix", () => {
     const port = new FakePort();
     const a = new ShellLink(port);
@@ -46,7 +42,6 @@ describe("ShellLink requests", () => {
     a.dispose();
     b.dispose();
   });
-
   it("rejects with the shell's error when it refuses", async () => {
     const port = new FakePort();
     const link = new ShellLink(port);
@@ -63,7 +58,6 @@ describe("ShellLink requests", () => {
     expect((err as ShellLinkError).message).toBe("no_such_tab");
     link.dispose();
   });
-
   it("times out a request the shell never answers", async () => {
     const port = new FakePort();
     const link = new ShellLink(port);
@@ -73,7 +67,6 @@ describe("ShellLink requests", () => {
     port.emit({ type: "desktop-browser-reply", id: lastCommand(port).id, ok: true, result: {} });
     link.dispose();
   });
-
   it("fails what is pending and leaves the port when disposed", async () => {
     const port = new FakePort();
     const link = new ShellLink(port);
@@ -86,7 +79,6 @@ describe("ShellLink requests", () => {
       ((await link.request({ op: "tabs" }).catch((e: unknown) => e)) as ShellLinkError).kind,
     ).toBe("closed");
   });
-
   it("falls back to removeListener on a port without off", () => {
     const port = new FakePort();
     const bare = {
@@ -100,7 +92,6 @@ describe("ShellLink requests", () => {
     expect(port.listenerCount).toBe(0);
   });
 });
-
 describe("ShellLink handshake", () => {
   it("connects on hello and runs the connect listeners before resolving", async () => {
     const shell = new FakeShell();
@@ -118,7 +109,6 @@ describe("ShellLink handshake", () => {
     expect(shell.commands.filter((c) => c.op === "hello")).toHaveLength(1);
     link.dispose();
   });
-
   it("shares one hello between concurrent callers", async () => {
     const shell = new FakeShell();
     const link = new ShellLink(shell.port);
@@ -127,7 +117,6 @@ describe("ShellLink handshake", () => {
     expect(shell.commands.filter((c) => c.op === "hello")).toHaveLength(1);
     link.dispose();
   });
-
   it("treats a silent shell as unsupported, answers from that for a while, and retries when forced", async () => {
     const shell = new FakeShell();
     shell.speaksBrowser = false;
@@ -143,7 +132,6 @@ describe("ShellLink handshake", () => {
     shell.speaksBrowser = true;
     await expect(link.handshake(true)).resolves.toBe(true);
     link.dispose();
-
     const later = new FakeShell();
     later.speaksBrowser = false;
     const again = new ShellLink(
@@ -158,7 +146,6 @@ describe("ShellLink handshake", () => {
     again.dispose();
   });
 });
-
 describe("ShellLink events", () => {
   it("fans validated events out to every listener, and drops malformed ones", () => {
     const shell = new FakeShell();
@@ -179,7 +166,6 @@ describe("ShellLink events", () => {
     expect(b).toEqual([{ kind: "tab", tab: tab(5) }]);
     link.dispose();
   });
-
   it("logs a listener that throws and goes on to the next, never throwing out of the port", () => {
     const shell = new FakeShell();
     const logs: string[] = [];
@@ -204,7 +190,6 @@ describe("ShellLink events", () => {
     link.dispose();
   });
 });
-
 describe("wire parsing", () => {
   it("reads tabs strictly and keeps only a non-empty favicon", () => {
     expect(parseTab(tab(1, { favicon: "https://a.test/f.ico" }))).toEqual(
@@ -214,7 +199,6 @@ describe("wire parsing", () => {
     expect(parseTab({ ...tab(1), loading: "no" })).toBeNull();
     expect(parseTab({ ...tab(1), id: 1.5 })).toBeNull();
   });
-
   it("drops a favicon too large to ride every tab list: a data: icon past 4 KB, an address past 2 KB", () => {
     const data = (n: number) => `data:image/png;base64,${"A".repeat(n)}`;
     expect(parseTab(tab(1, { favicon: data(3_000) }))?.favicon).toBe(data(3_000));
@@ -222,13 +206,11 @@ describe("wire parsing", () => {
     const long = `https://a.test/${"p".repeat(2_100)}.ico`;
     expect(parseTab(tab(1, { favicon: long }))?.favicon).toBeUndefined();
   });
-
   it("reads why a tab crashed, and nothing that is not a reason", () => {
     expect(parseTab(tab(1, { crashed: "oom" }))).toEqual(tab(1, { crashed: "oom" }));
     expect(parseTab({ ...tab(1), crashed: "Out of memory!" })).toEqual(tab(1));
     expect(parseTab({ ...tab(1), crashed: 3 })).toEqual(tab(1));
   });
-
   it("reads a crash and a measurement", () => {
     const event = (value: Record<string, unknown>) =>
       parseBrowserEvent({ type: "desktop-browser-event", event: value });
@@ -256,7 +238,6 @@ describe("wire parsing", () => {
     expect(event({ kind: "metrics", tabs: [{ tabId: 3, memoryKB: 1 }], totalKB: 1 })).toBeNull();
     expect(event({ kind: "metrics", tabs: {}, totalKB: 1 })).toBeNull();
   });
-
   it("reads open requests, background included", () => {
     expect(
       parseBrowserEvent({
@@ -271,7 +252,6 @@ describe("wire parsing", () => {
       }),
     ).toEqual({ kind: "open-request", url: "https://a.test/", openerTabId: 2 });
   });
-
   it("reads a relayed CDP event, its params an object whatever arrived", () => {
     const event = (value: Record<string, unknown>) =>
       parseBrowserEvent({ type: "desktop-browser-event", event: { kind: "cdp-event", ...value } });
@@ -290,7 +270,6 @@ describe("wire parsing", () => {
     });
     expect(event({ tabId: "3", method: "Page.frameNavigated" })).toBeNull();
   });
-
   it("reads replies and ignores everything else", () => {
     expect(
       parseBrowserReply({ type: "desktop-browser-reply", id: "1", ok: true, result: 2 }),

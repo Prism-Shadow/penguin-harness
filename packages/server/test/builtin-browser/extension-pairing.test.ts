@@ -18,8 +18,8 @@ import type {
   BrowserExtensionPairResponse,
   BrowserExtensionPairingResponse,
   BrowserExtensionsResponse,
-} from "../../src/api/types.js";
-import { PENGUIN_EXTENSION_ID } from "../../src/builtin-browser/extension-origin.js";
+} from "../../../../packages/server/src/api/types.js";
+import { PENGUIN_EXTENSION_ID } from "../../../../plugins/browser/src/server/builtin-browser/extension-origin.js";
 import { apiClient, createTestApp, provisionUser } from "../helpers.js";
 import type { TestApp } from "../helpers.js";
 

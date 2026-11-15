@@ -9,26 +9,24 @@ import { wire } from "@prismshadow/penguin-core/kernel";
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import type { ServerEvent } from "../src/api/types.js";
 import { openDatabase } from "@penguinharness/plugin-db/server";
-import { MembersRepo } from "../src/db/repos/members.js";
+import { MembersRepo } from "../../../plugins/projects/src/server/index.js";
 import { OrgCacheRepo } from "../src/db/repos/organizations.js";
-import { ProjectsRepo } from "../src/db/repos/projects.js";
-import { SessionsRepo } from "../src/db/repos/sessions.js";
-import { UsersRepo } from "../src/db/repos/users.js";
-import { OrgStore } from "../src/organization/store.js";
+import { ProjectsRepo } from "../../../plugins/projects/src/server/index.js";
+import { SessionsRepo } from "../../../plugins/sessions/src/server/index.js";
 import type { ErrorRecordArgs } from "../src/runtime/error-recorder.js";
-import { DEFAULT_EMPLOYEE_PLUGINS } from "../src/runtime/organization/deps.js";
-import type { OrgDeps } from "../src/runtime/organization/deps.js";
-import { OrganizationScheduler } from "../src/runtime/organization/scheduler.js";
-import { OrganizationService } from "../src/runtime/organization/service.js";
-import { ProjectConfigService } from "../src/services/project-config-service.js";
+import { DEFAULT_EMPLOYEE_PLUGINS } from "../../../plugins/company/src/server/runtime/deps.js";
+import { OrgDeps } from "../../../plugins/company/src/server/runtime/deps.js";
+import { OrgStore } from "../../../plugins/company/src/server/organization/store.js";
+import { OrganizationService } from "../../../plugins/company/src/server/runtime/service.js";
+import { ProjectConfigService } from "../../../plugins/projects/src/server/index.js";
+import { UsersRepo } from "../../../plugins/settings/src/server/repos/users.js"
 import { makeTempRoot } from "./helpers.js";
-
+import { OrganizationScheduler } from "../../../plugins/company/src/server/runtime/scheduler.js"
 export interface StartedTask {
   sessionId: string;
   text: string;
   queueIfBusy: boolean;
 }
-
 export interface OrgHarness {
   root: string;
   projectId: string;
@@ -60,7 +58,6 @@ export interface OrgHarness {
   /** The plugin library and the Agents' installed copies, as the fake gateway answers them. */
   plugins: FakePlugins;
 }
-
 /**
  * What the fake `agents` gateway knows about plugins: the version the library offers per
  * plugin name, the version each Agent carries (keyed `<agentId>:<plugin>`), the updates it was
@@ -74,15 +71,12 @@ export interface FakePlugins {
   updated: Array<{ agentId: string; plugin: string }>;
   failUpdates: Set<string>;
 }
-
 /** The version the fake library offers for every plugin an employee is hired with. */
 export const FAKE_LIBRARY_VERSION = "2026.09.14.1";
-
 function textOf(input: AmspRecord[]): string {
   const first = input[0] as { payload?: { text?: string } } | undefined;
   return first?.payload?.text ?? "";
 }
-
 export async function makeOrgHarness(opts: {
   projectId?: string;
   ownerUserId?: string;

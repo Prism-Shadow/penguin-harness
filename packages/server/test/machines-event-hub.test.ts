@@ -12,16 +12,14 @@ import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
 import { SseParser } from "./helpers/sse-parser.js";
 import type { SseEvent } from "../src/socket/sse-text.js";
-import { MachineEventHub } from "../src/machines/event-hub.js";
-import { machineEventsStream } from "../src/machines/aggregate-stream.js";
-import type { WatchedMachine } from "../src/machines/aggregate-stream.js";
-import { MachineSockets } from "../src/machines/machine-sockets.js";
-import { MachineSocketRelay } from "../src/machines/socket-relay.js";
-
+import { machineEventsStream } from "../../../plugins/machines/src/server/aggregate-stream.js";
+import { WatchedMachine } from "../../../plugins/machines/src/server/aggregate-stream.js";
+import { MachineSockets } from "../../../plugins/machines/src/server/machine-sockets.js";
+import { MachineEventHub } from "../../../plugins/machines/src/server/event-hub.js";
+import { MachineSocketRelay } from "../../../plugins/machines/src/server/socket-relay.js";
 const readerStops: Array<() => Promise<void>> = [];
 const machineStops: Array<() => Promise<void>> = [];
 const hubs: MachineEventHub[] = [];
-
 /** One call frame the machine received. */
 interface ScriptedCall {
   ws: WebSocket;
@@ -29,7 +27,6 @@ interface ScriptedCall {
   path: string;
   headers: Record<string, string>;
 }
-
 /**
  * A machine's socket endpoint, scripted: it opens every call it is given, records it, and pushes
  * whatever the test says — an event with an id, or the beat its `/api/events` writes itself. It
@@ -167,13 +164,11 @@ async function machine(options: { beatMs?: number } = {}) {
       }),
   };
 }
-
 /** Reads a Response body as SSE, so a test can wait for what a reader would have seen. */
 class Tap {
   readonly events: SseEvent[] = [];
   readonly #reader: ReadableStreamDefaultReader<Uint8Array>;
   #closed = false;
-
   constructor(stream: ReadableStream<Uint8Array>) {
     const reader = stream.getReader();
     this.#reader = reader;
@@ -195,22 +190,18 @@ class Tap {
       this.#closed = true;
     })();
   }
-
   /** The reader went away — the tab reloaded, or its network did. */
   async close(): Promise<void> {
     await this.#reader.cancel().catch(() => undefined);
   }
-
   /** The frames of one name, which is what these cases assert on (a heartbeat may sit anywhere). */
   frames(name: string): SseEvent[] {
     return this.events.filter((event) => event.event === name);
   }
-
   /** Control frames do not satisfy a wait for the scripted business events. */
   businessEvents(): SseEvent[] {
     return this.events.filter((event) => event.event !== "ping" && event.event !== "heartbeat");
   }
-
   async waitFor(count: number, ms = 3_000): Promise<SseEvent[]> {
     const until = Date.now() + ms;
     while (this.businessEvents().length < count && Date.now() < until) {
@@ -218,7 +209,6 @@ class Tap {
     }
     return this.businessEvents();
   }
-
   async waitClosed(ms = 3_000): Promise<boolean> {
     const until = Date.now() + ms;
     while (!this.#closed && Date.now() < until) {
@@ -226,12 +216,10 @@ class Tap {
     }
     return this.#closed;
   }
-
   get closed(): boolean {
     return this.#closed;
   }
 }
-
 /** What the hub and the relay are configured with here: beats and timeouts measured in tens of ms. */
 function setup() {
   const lines: string[] = [];
@@ -247,7 +235,6 @@ function setup() {
   const relay = new MachineSocketRelay(log, { sockets, events: hub });
   return { lines, log, sockets, hub, relay };
 }
-
 /** Polls until the condition holds or the time is up; the assertion after it says which. */
 async function waitUntil(condition: () => boolean, ms = 3_000): Promise<void> {
   const until = Date.now() + ms;
@@ -255,20 +242,17 @@ async function waitUntil(condition: () => boolean, ms = 3_000): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
 }
-
 const targetOf = (port: number) => ({
   agent: new http.Agent(),
   port,
   cookie: "penguin_session=x",
   session: 1,
 });
-
 /** A machine a tab watches whose connection is always the one given. */
 const watch = (machineId: string, target: ReturnType<typeof targetOf>): WatchedMachine => ({
   machineId,
   target: async () => target,
 });
-
 describe("the machine event hub", () => {
   afterEach(async () => {
     try {
@@ -278,13 +262,11 @@ describe("the machine event hub", () => {
       for (const stop of machineStops.splice(0)) await stop();
     }
   });
-
   it("subscribes ONCE per machine however many readers ask for its events", async () => {
     const m = await machine();
     machineStops.push(m.close);
     const { sockets, hub, relay } = setup();
     void sockets;
-
     const first = await relay.stream("m1", targetOf(m.port), {
       path: "/api/events",
       lastEventId: null,
@@ -300,7 +282,6 @@ describe("the machine event hub", () => {
     // The number the ticket is about: two readers, ONE upstream stream.
     expect(m.eventCalls()).toHaveLength(1);
     expect(hub.subscriptions).toBe(1);
-
     m.emit("3-1", { type: "credentials_updated" });
     expect((await a.waitFor(2)).map((event) => [event.id, event.event])).toContainEqual([
       "3-1",
@@ -310,13 +291,11 @@ describe("the machine event hub", () => {
     // Still one upstream stream after both readers have been served.
     expect(m.eventCalls()).toHaveLength(1);
   });
-
   it("serves a machine's stream in the machine's own words, and replays `last-event-id` from its buffer", async () => {
     const m = await machine();
     machineStops.push(m.close);
     const { relay } = setup();
     const target = targetOf(m.port);
-
     const res = await relay.stream("m1", target, { path: "/api/events", lastEventId: null });
     const tap = new Tap(res.body!);
     // A fresh reader is handed the handshake, as a channel's subscriber is.
@@ -328,30 +307,25 @@ describe("the machine event hub", () => {
       ["3-1", "server_event", '{"type":"session_state","sessionId":"s"}'],
       ["3-2", "server_event", '{"type":"session_state","sessionId":"s2"}'],
     ]);
-
     // A reader joining with an id the buffer still holds gets the gap, and no second upstream stream.
     const joined = await relay.stream("m1", target, { path: "/api/events", lastEventId: "3-1" });
     const tapJoined = new Tap(joined.body!);
     expect((await tapJoined.waitFor(1))[0]).toMatchObject({ id: "3-2", event: "server_event" });
     expect(m.eventCalls()).toHaveLength(1);
-
     // An id the buffer never held cannot be replayed: the reader is told to resync, like a channel's.
     const missed = await relay.stream("m1", target, { path: "/api/events", lastEventId: "9-9" });
     const tapMissed = new Tap(missed.body!);
     expect((await tapMissed.waitFor(1))[0]?.data).toBe('{"type":"resync_required"}');
   });
-
   it("ends an upstream that misses two beats and re-subscribes it from the machine's last event id", async () => {
     const m = await machine();
     machineStops.push(m.close);
     const { lines, relay } = setup();
     const target = targetOf(m.port);
-
     const res = await relay.stream("m1", target, { path: "/api/events", lastEventId: null });
     const tap = new Tap(res.body!);
     m.emit("3-1", { type: "credentials_updated" });
     await tap.waitFor(2);
-
     // The machine stops writing its beat while the socket keeps its own: the stream's silence is
     // the only thing that says so, and two beats of it is enough.
     m.stopBeats();
@@ -369,7 +343,6 @@ describe("the machine event hub", () => {
     m.emit("3-3", { type: "credentials_updated" });
     expect((await tap.waitFor(3)).map((event) => event.id)).toContain("3-3");
   });
-
   it("gives a tab ONE stream for every machine, each event tagged with the machine it came from", async () => {
     const a = await machine();
     const b = await machine();
@@ -379,7 +352,6 @@ describe("the machine event hub", () => {
       watch("mA", targetOf(a.port)),
       watch("mB", targetOf(b.port)),
     ];
-
     const tab = machineEventsStream(hub, () => sources, null, undefined, {
       heartbeatMs: 40,
     });
@@ -403,7 +375,6 @@ describe("the machine event hub", () => {
     expect(hub.subscriptions).toBe(2);
     expect(a.eventCalls()).toHaveLength(1);
     expect(b.eventCalls()).toHaveLength(1);
-
     const secondTab = machineEventsStream(hub, () => sources, null, undefined, {
       heartbeatMs: 40,
     });
@@ -427,13 +398,11 @@ describe("the machine event hub", () => {
     }
     expect(secondTap.frames("heartbeat").length).toBeGreaterThan(0);
   });
-
   it("answers an aggregate `last-event-id` from a buffer that outlived the stream it was written on", async () => {
     const m = await machine();
     machineStops.push(m.close);
     const { hub } = setup();
     const sources: WatchedMachine[] = [watch("mA", targetOf(m.port))];
-
     const first = machineEventsStream(hub, () => sources, null);
     const tap = new Tap(first.body!);
     await m.waitForCalls(1);
@@ -451,7 +420,6 @@ describe("the machine event hub", () => {
     }
     // The tab went away (a reload, a lost network): its stream ends, its id is what it brings back.
     await tap.close();
-
     const back = machineEventsStream(hub, () => sources, cursor ?? null);
     const backTap = new Tap(back.body!);
     const until3 = Date.now() + 3_000;
@@ -466,13 +434,11 @@ describe("the machine event hub", () => {
         event: { type: "session_created", projectId: "p", agentId: "a", sessionId: "s" },
       },
     ]);
-
     // An id from another generation (a restart, a hot push) is a miss, and says so.
     const stale = machineEventsStream(hub, () => sources, "deadbeef-7");
     const staleTap = new Tap(stale.body!);
     expect((await staleTap.waitFor(1))[0]?.data).toBe('{"type":"resync_required"}');
   });
-
   it("keeps dialling a machine a tab holds after a dial fails, and resumes it from its last event id", async () => {
     const m = await machine();
     machineStops.push(m.close);
@@ -484,7 +450,6 @@ describe("the machine event hub", () => {
     await m.waitForCalls(1);
     m.emit("1-1", { type: "credentials_updated" });
     await waitUntil(() => tap.frames("machine_event").length === 1);
-
     // The link goes down: the socket drops, and every dial after it times out unanswered.
     m.goDark();
     await waitUntil(() => failures().length > 0);
@@ -502,7 +467,6 @@ describe("the machine event hub", () => {
     expect(failures()).toHaveLength(1);
     expect(hub.subscriptions).toBe(1);
     expect(tap.closed).toBe(false);
-
     // The link comes back: the next dial connects on its own, and the stream resumes from the
     // machine's last event id, so the tab hears what the machine says next.
     m.comeBack();
@@ -517,13 +481,11 @@ describe("the machine event hub", () => {
       event: { type: "session_created", projectId: "p", agentId: "a", sessionId: "s" },
     });
     expect(failures()).toHaveLength(1);
-
     // The tab goes away: nobody holds the machine, and the hub stops dialling it.
     await tap.close();
     await waitUntil(() => hub.subscriptions === 0);
     expect(hub.subscriptions).toBe(0);
   }, 15_000);
-
   it("re-reads the machine's connection before dialling it again for a tab", async () => {
     const old = await machine();
     const replaced = await machine();
@@ -544,7 +506,6 @@ describe("the machine event hub", () => {
     await old.waitForCalls(1);
     old.emit("1-1", { type: "credentials_updated" });
     await waitUntil(() => tap.frames("machine_event").length === 1);
-
     old.goDark();
     await replaced.waitForCalls(1, 5_000);
     expect(asked).toBe(4);
@@ -552,7 +513,6 @@ describe("the machine event hub", () => {
     // No dial went to the old session after the one that found it dark.
     expect(old.upgrades).toBe(1);
   }, 15_000);
-
   it("attaches a machine connected after the tab opened, on the stream the tab already holds", async () => {
     const a = await machine();
     const b = await machine();
@@ -569,7 +529,6 @@ describe("the machine event hub", () => {
     await a.waitForCalls(1);
     expect(hub.subscriptions).toBe(1);
     expect(b.eventCalls()).toHaveLength(0);
-
     connected.set("mB", targetOf(b.port));
     await b.waitForCalls(1);
     expect(b.eventCalls()).toHaveLength(1);
@@ -588,7 +547,6 @@ describe("the machine event hub", () => {
     expect(a.upgrades).toBe(1);
     expect(b.upgrades).toBe(1);
   });
-
   it("attaches a watched machine once its connection can be read, and stops reading when the tab goes away", async () => {
     const m = await machine();
     machineStops.push(m.close);
@@ -617,7 +575,6 @@ describe("the machine event hub", () => {
     m.emit("1-1", { type: "credentials_updated" });
     await waitUntil(() => tap.frames("machine_event").length === 1);
     expect(JSON.parse(tap.frames("machine_event")[0]!.data)).toMatchObject({ machineId: "mA" });
-
     // The tab goes away: its machine is let go, and its list is not read again.
     await tap.close();
     await waitUntil(() => hub.subscriptions === 0);
@@ -626,13 +583,11 @@ describe("the machine event hub", () => {
     await new Promise((resolve) => setTimeout(resolve, 200));
     expect(reads).toBe(readsAtClose);
   });
-
   it("reports what each machine's socket is doing, for the Machines page", async () => {
     const m = await machine();
     machineStops.push(m.close);
     const { sockets, relay } = setup();
     expect(sockets.fact("m1")).toBeNull();
-
     const stream = await relay.stream("m1", targetOf(m.port), {
       path: "/api/events",
       lastEventId: null,
@@ -640,7 +595,6 @@ describe("the machine event hub", () => {
     new Tap(stream.body!); // Registered for cancellation before the machine is closed.
     expect(stream.status).toBe(200);
     expect(sockets.fact("m1")).toMatchObject({ state: "connected" });
-
     // A machine that answers the handshake with a status is not "connected": its program has no
     // socket, and the page has to be able to say so.
     const refusing = http.createServer((_req, res) => res.writeHead(404).end());

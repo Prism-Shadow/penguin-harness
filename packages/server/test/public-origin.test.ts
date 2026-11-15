@@ -21,7 +21,7 @@ import type { Server as HttpServer } from "node:http";
 import { WebSocket } from "ws";
 import type { BrowserExtensionPairingResponse, ModelOAuthStartResponse } from "../src/api/types.js";
 import { apiSocketPath } from "../src/socket/ref.js";
-import { attachTerminalWebSocket } from "../src/terminal/ws.js";
+import { attachTerminalWebSocket } from "../../../plugins/terminal/src/server/index.js";
 import { createDesktopApp, createTestApp, loginAdmin } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 

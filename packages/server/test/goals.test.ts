@@ -25,27 +25,20 @@ import { wire } from "@prismshadow/penguin-core/kernel";
 import type { DatabaseSync } from "node:sqlite";
 import {
   assistantText,
-  buildSkillsMessage,
-  createAgent,
   hookEvent,
-  hooksDir,
   imageUrlMessage,
-  installPlugin,
-  libraryPlugin,
-  saveProjectConfig,
-  sessionScratchpadDir,
   tokenUsage,
   userText,
-} from "@prismshadow/penguin-core";
-import type { OmniMessage, TokenCounts } from "@prismshadow/penguin-core";
+} from "@prismshadow/amsp";
+import type { AmspRecord as OmniMessage, TokenCounts } from "@prismshadow/penguin-core";
 import { openDatabase } from "@penguinharness/plugin-db/server";
-import { SessionsRepo } from "../src/db/repos/sessions.js";
-import type { SessionRow } from "../src/db/repos/sessions.js";
+import { SessionsRepo } from "../../../plugins/sessions/src/server/index.js";
+import type { SessionRow } from "../../../plugins/sessions/src/server/index.js";
 import { ChannelHub } from "../src/runtime/channel.js";
 import type { ChannelEvent } from "../src/runtime/channel.js";
 import { SessionManager, createCoreSessionLoader } from "../src/runtime/session-manager.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
-import { SessionSources } from "../src/runtime/session-sources.js";
+import { SessionSources } from "../../../plugins/sessions/src/server/index.js";
 import { fakeSession } from "./fixtures/session.js";
 import { makeTempRoot, waitFor } from "./helpers.js";
 import {
@@ -57,7 +50,13 @@ import {
   writeClockPackage,
 } from "./live-session.js";
 import type { MockLLM } from "./live-session.js";
-
+import { buildSkillsMessage } from "../../../plugins/sessions/src/web/chat/skill-use.js";
+import { createAgent } from "../../../packages/core/src/agent.js"
+import { hooksDir } from "../../../packages/core/src/state/paths.js"
+import { installPlugin } from "../../../packages/core/src/state/agent-state.js"
+import { libraryPlugin } from "../../../packages/core/src/plugin/library-reader.js"
+import { saveProjectConfig } from "../../../packages/core/src/state/project-config.js"
+import { sessionScratchpadDir } from "../../../packages/core/src/state/paths.js"
 const ROW: SessionRow = {
   sessionId: "session-1",
   projectId: "p1",
@@ -70,16 +69,13 @@ const ROW: SessionRow = {
   createdAt: "2026-07-06T00:00:00.000Z",
   lastActiveAt: "2026-07-06T00:00:00.000Z",
 };
-
 function usage(total: number): TokenCounts {
   return { cache_read: 0, cache_write: 0, output: 0, total };
 }
-
 /** A goal round's injected input, as the host records it: plain protocol text, stamped `sender: "harness"`. */
 function roundInput(round: number): OmniMessage {
   return userText(`goal round ${round} protocol lines`, "harness");
 }
-
 /** The goal hook's answer, as core records it: the file's state after the decision. */
 function goalHook(
   decision: "continue" | "stop",
@@ -95,18 +91,15 @@ function goalHook(
     output: { status, round, tokens_used: tokensUsed, budget },
   });
 }
-
 function serverEvents(events: ChannelEvent[]) {
   return events
     .filter((e) => e.event === "server_event")
     .map((e) => JSON.parse(e.data) as { type: string; [k: string]: unknown });
 }
-
 describe("SessionManager.startGoal", () => {
   let db: DatabaseSync;
   let sessions: SessionsRepo;
   let channels: ChannelHub;
-
   beforeEach(() => {
     db = openDatabase(":memory:");
     sessions = wire(SessionsRepo, { db: db });
@@ -117,9 +110,7 @@ describe("SessionManager.startGoal", () => {
     channels.dispose();
     db.close();
   });
-
   type RunOpts = Record<string, never>;
-
   /**
    * Fake session: `runUserPromptHook` answers the way the goal plugin's start script would
    * (round 1's protocol text, recorded with what it was asked), and `run` emits the goal
@@ -149,7 +140,6 @@ describe("SessionManager.startGoal", () => {
     });
     return Object.assign(session, { runOpts, runs, starts });
   }
-
   function makeManager(session: RuntimeSession): SessionManager {
     return new SessionManager({
       sessions,
@@ -160,7 +150,6 @@ describe("SessionManager.startGoal", () => {
       log: () => {},
     });
   }
-
   it("drives one goal-mode run, mapping the round inputs and the hook's answers to goal events", async () => {
     const text = buildSkillsMessage(["web-design"], "make it work");
     const session = goalFakeSession(() => [
@@ -175,14 +164,12 @@ describe("SessionManager.startGoal", () => {
     const manager = makeManager(session);
     const events: ChannelEvent[] = [];
     channels.get(ROW.sessionId).subscribe((e) => events.push(e));
-
     await manager.startGoal(ROW.sessionId, {
       messages: [userText(text)],
       objective: "make it work",
       budget: -1,
     });
     await waitFor(() => manager.statusOf(ROW.sessionId) === "idle");
-
     // The goal plugin's user_prompt hook is run with the objective and the budget, and one
     // run call carries the whole goal — the user's message then the hook's context stamped
     // as harness-injected, no extra run options: the plugin's stop hook drives the rounds
@@ -195,7 +182,6 @@ describe("SessionManager.startGoal", () => {
       [userText(text).payload, roundInput(1).payload],
     ]);
     expect(session.runOpts).toEqual([{}]);
-
     const server = serverEvents(events);
     // The published objective is the one the route passed (the user's own text, markers stripped).
     expect(server.find((e) => e.type === "goal_started")).toMatchObject({
@@ -212,7 +198,6 @@ describe("SessionManager.startGoal", () => {
       rounds: 2,
       used: 300,
     });
-
     // The inputs were published on the message stream (no `event:` name) for live viewers —
     // round 1 by startGoal itself (core never yields a run's initial input, and a page
     // already subscribed would otherwise miss it until a reload), round 2 off the stream:
@@ -230,7 +215,6 @@ describe("SessionManager.startGoal", () => {
       "harness",
     ]);
   });
-
   it("records the objective without the attached images: the display copy stays path-free", async () => {
     // Core folds the attached images into `[attached image: …]` lines inside the objective it
     // re-injects each round. The objective published here is the one shown to people — status
@@ -239,14 +223,12 @@ describe("SessionManager.startGoal", () => {
     const manager = makeManager(session);
     const events: ChannelEvent[] = [];
     channels.get(ROW.sessionId).subscribe((e) => events.push(e));
-
     await manager.startGoal(ROW.sessionId, {
       messages: [userText("Match this mockup"), imageUrlMessage("data:image/png;base64,aGk=")],
       objective: "Match this mockup",
       budget: -1,
     });
     await waitFor(() => manager.statusOf(ROW.sessionId) === "idle");
-
     // The whole input reaches core (the images included, then the protocol message) — only
     // the published objective differs.
     expect(session.runs[0]).toHaveLength(3);
@@ -254,7 +236,6 @@ describe("SessionManager.startGoal", () => {
       "Match this mockup",
     );
   });
-
   it("a background completion notice inside a round is not a round boundary", async () => {
     const notice = userText(
       "[background_task_done]\nkind: command\nid: proc-1\nstatus: completed\n[/background_task_done]\n\nBackground command finished",
@@ -278,7 +259,6 @@ describe("SessionManager.startGoal", () => {
     const rounds = serverEvents(events).filter((e) => e.type === "goal_round");
     expect(rounds).toEqual([expect.objectContaining({ round: 1 })]);
   });
-
   it("409s while a goal is running (mutual exclusion)", async () => {
     let release: () => void = () => {};
     const gate = new Promise<void>((r) => {
@@ -308,7 +288,6 @@ describe("SessionManager.startGoal", () => {
     release();
     await waitFor(() => manager.statusOf(ROW.sessionId) === "idle");
   });
-
   it("409s goal_plugin_not_installed when the Session has no goal user_prompt hook", async () => {
     const session = goalFakeSession(() => []);
     session.runUserPromptHook = async () => null;
@@ -322,7 +301,6 @@ describe("SessionManager.startGoal", () => {
     ).rejects.toMatchObject({ status: 409, code: "goal_plugin_not_installed" });
     expect(manager.statusOf(ROW.sessionId)).toBe("idle");
   });
-
   it("a throw after the terminal event does not publish a contradicting outcome", async () => {
     const session = goalFakeSession(() => []);
     session.run = async function* () {
@@ -332,18 +310,15 @@ describe("SessionManager.startGoal", () => {
     const manager = makeManager(session);
     const events: ChannelEvent[] = [];
     channels.get(ROW.sessionId).subscribe((e) => events.push(e));
-
     await manager.startGoal(ROW.sessionId, {
       messages: [userText("obj")],
       objective: "obj",
       budget: -1,
     });
     await waitFor(() => manager.statusOf(ROW.sessionId) === "idle");
-
     const finished = serverEvents(events).filter((e) => e.type === "goal_finished");
     expect(finished).toEqual([expect.objectContaining({ outcome: "complete", used: 42 })]);
   });
-
   it("closes the goal as aborted when the stream ends without the hook's terminal event", async () => {
     // A cut-off run (infrastructure failure upstream) must not leave the banner active.
     const session = goalFakeSession(() => [
@@ -353,14 +328,12 @@ describe("SessionManager.startGoal", () => {
     const manager = makeManager(session);
     const events: ChannelEvent[] = [];
     channels.get(ROW.sessionId).subscribe((e) => events.push(e));
-
     await manager.startGoal(ROW.sessionId, {
       messages: [userText("obj")],
       objective: "obj",
       budget: 1000,
     });
     await waitFor(() => manager.statusOf(ROW.sessionId) === "idle");
-
     expect(serverEvents(events).find((e) => e.type === "goal_finished")).toMatchObject({
       outcome: "aborted",
       rounds: 1,
@@ -368,7 +341,6 @@ describe("SessionManager.startGoal", () => {
     });
   });
 });
-
 /**
  * The goal package as the library installed it before user_prompt commands ran on every
  * Prompt: an older version, and no `trigger` on start.mjs.
@@ -381,7 +353,6 @@ const LEGACY_GOAL_MANIFEST = {
   pre_tool_use: [],
   user_prompt: [{ command: "start.mjs", timeout: 60 }],
 };
-
 for (const { installed, legacy } of [
   { installed: "the goal package the library ships", legacy: false },
   { installed: "a goal package from before user_prompt ran on every prompt", legacy: true },
@@ -399,7 +370,6 @@ for (const { installed, legacy } of [
       let manager: SessionManager;
       let sessionId: string;
       let events: ChannelEvent[];
-
       beforeEach(async () => {
         root = await makeTempRoot();
         mock = await startMockLLM();
@@ -468,7 +438,6 @@ for (const { installed, legacy } of [
         await mock.close();
         await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
       });
-
       const idle = () => waitFor(() => manager.statusOf(sessionId) === "idle", 20_000);
       /** The user texts published on the session's message stream, in order. */
       const published = () =>
@@ -477,7 +446,6 @@ for (const { installed, legacy } of [
         );
       const goalFile = () =>
         path.join(sessionScratchpadDir(root, PROJECT, AGENT, sessionId), "GOAL.json");
-
       it("a goal start runs the goal's start by name; the other package's context rides round 1 without counting as a round", async () => {
         await manager.startGoal(sessionId, {
           messages: [userText("raise coverage")],
@@ -485,7 +453,6 @@ for (const { installed, legacy } of [
           budget: 1,
         });
         await idle();
-
         // start.mjs wrote the goal file; round 1 spent the budget, so round 2 was the wrap-up.
         expect(JSON.parse(await fs.readFile(goalFile(), "utf8"))).toMatchObject({
           objective: "raise coverage",
@@ -499,14 +466,12 @@ for (const { installed, legacy } of [
         expect(texts[1]!.text).toContain("sent automatically by goal mode");
         expect(texts[2]!.text).toBe(clockContext("raise coverage"));
         expect(texts[3]!.text).toContain("reached its token budget");
-
         const server = serverEvents(events);
         expect(server.filter((e) => e.type === "goal_round").map((e) => e.round)).toEqual([1, 2]);
         expect(server.find((e) => e.type === "goal_finished")).toMatchObject({
           outcome: "budget_limited",
           rounds: 2,
         });
-
         // Round 1's request carries the three in that order. The wrap-up round starts from the
         // goal hook's input, which no user submitted: the package is not asked again.
         expect(mock.requests).toHaveLength(2);
@@ -519,11 +484,9 @@ for (const { installed, legacy } of [
         expect(at.every((i) => i >= 0)).toBe(true);
         expect(at).toEqual([...at].sort((a, b) => a - b));
       });
-
       it("an ordinary task starts no goal: the goal's start is not among the Prompt's hooks, the other package's is", async () => {
         await manager.startTask(sessionId, [userText("fix the typo")]);
         await idle();
-
         expect(published()).toEqual([
           { sender: "user", text: "fix the typo" },
           { sender: "harness", text: clockContext("fix the typo") },

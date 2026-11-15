@@ -13,7 +13,7 @@ import { HotResources } from "@prismshadow/penguin-hmr";
 import { PENGUIN_FAMILY, HMR_INTERFACES_RESOURCE_ID } from "../src/hmr/capabilities.js";
 import { packagedPlatform } from "../src/hmr/platform.js";
 import { PluginHost, PLUGINS_RESOURCE_ID } from "../src/plugin/host.js";
-import { SandboxService } from "../src/sandbox/index.js";
+import { SandboxService } from "../../../plugins/sandbox/src/server/index.js";
 import type {
   SandboxDimension,
   SandboxPolicy,

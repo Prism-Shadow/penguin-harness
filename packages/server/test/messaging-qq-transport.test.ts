@@ -32,16 +32,16 @@ import type {
   QQGatewayFrame,
   QQInboundEvent,
   QQSocket,
-} from "../src/runtime/messaging/qq-api.js";
+} from "../../../plugins/messaging/src/server/index.js";
 import {
   QQ_API_BASE,
   QQ_INTENT_GROUP_AND_C2C,
   MessagingConnectionClosedError,
   QQApiError,
   createQQTransport,
-} from "../src/runtime/messaging/qq-api.js";
-import { MessagingChannelError } from "../src/runtime/messaging/connector.js";
-import { messagingErrorKind } from "../src/runtime/messaging/error-kind.js";
+} from "../../../plugins/messaging/src/server/index.js";
+import { MessagingChannelError } from "../../../plugins/messaging/src/server/index.js";
+import { messagingErrorKind } from "../../../plugins/messaging/src/server/index.js";
 import { jsonResponse, stubFetch } from "./fixtures/fetch.js";
 import type { FetchCall } from "./fixtures/fetch.js";
 import { waitFor } from "./helpers.js";

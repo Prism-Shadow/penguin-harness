@@ -6,7 +6,7 @@
  * browser's listener off the port.
  */
 import { describe, expect, it } from "vitest";
-import type { BuiltinBrowserStatus } from "../../src/api/types.js";
+import type { BuiltinBrowserStatus } from "../../../../packages/server/src/api/types.js";
 import { userChannelKey } from "../../src/http/routes/events.js";
 import {
   apiClient,
