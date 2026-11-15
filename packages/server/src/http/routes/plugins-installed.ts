@@ -273,7 +273,10 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
       // lstat, not stat: the row exists because the LINK exists — a dangling link (the
       // author's directory deleted) stays a row and reports its fault. A symlink lstats
       // as a symlink (isDirectory is false on it), so both count.
-      const st = await fs.lstat(target).catch(() => null);
+      const st = await fs.lstat(target).catch((e: unknown) => {
+        console.log("DEBUG p263 lstat-err:", (e as Error).message, "target:", target);
+        return null;
+      });
       // DEBUG(p263)
       console.log("DEBUG p263 route:", JSON.stringify({ root: deps.root, name, spec, target, st: st ? { dir: st.isDirectory(), sym: st.isSymbolicLink() } : null }));
       if (st?.isDirectory() || st?.isSymbolicLink()) links.push([name, target] as const);
