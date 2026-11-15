@@ -538,48 +538,6 @@ function npmReason(stderr: string | undefined, err: Error): string {
 }
 
 /**
- * The npm command plugin installs run through, resolved once per process. Node's own
- * distribution ships npm beside the interpreter (`<execPath dir>/../lib/node_modules/npm` on
- * POSIX, `<execPath dir>/node_modules/npm` on Windows — the dist layout, not npm's installed
- * one), and that copy is the one every platform package and Docker image carries, because
- * the runtime bundles the official Node build. Only when this node has no npm of its own —
- * a system node split from npm by its distribution, or the universal package against a bare
- * interpreter — does the machine's own `npm` on PATH get asked, the way every other npm
- * consumer on the machine resolves it. Neither there, the error says so plainly: a refusal
- * the route renders as a failed install, not a crash.
- */
-let npmCommandCache: Promise<{ file: string; argv: readonly string[] }> | null = null;
-function npmCommand(): Promise<{ file: string; argv: readonly string[] }> {
-  npmCommandCache ??= (async () => {
-    // The layout the official dist unpacks to, relative to the running interpreter. A node
-    // installed another way (a distribution package, a version manager) need not carry it;
-    // the probe is stat, not assumption.
-    const bundled = path.join(
-      path.dirname(process.execPath),
-      ...(process.platform === "win32"
-        ? (["node_modules", "npm", "bin", "npm-cli.js"] as const)
-        : (["..", "lib", "node_modules", "npm", "bin", "npm-cli.js"] as const)),
-    );
-    if (
-      await fs
-        .access(bundled)
-        .then(() => true)
-        .catch(() => false)
-    ) {
-      // node itself runs the CLI: no batch file, no shell, every platform.
-      return { file: process.execPath, argv: [bundled] };
-    }
-    // The machine's npm. On Windows the PATH entry is a batch file, which node refuses to
-    // spawn directly (`spawn EINVAL`), so cmd.exe runs it — a real executable; `/d` skips
-    // AutoRun scripts, `/s /c` runs the rest as given, each argument quoted by Node.
-    return process.platform === "win32"
-      ? { file: "cmd.exe", argv: ["/d", "/s", "/c", "npm.cmd"] }
-      : { file: "npm", argv: [] };
-  })();
-  return npmCommandCache;
-}
-
-/**
  * Checks the bytes a channel served against the hash the index entry pins: npm's
  * `integrity` shape, `sha512-<base64>`. A mismatch, or an integrity that is not even
  * readable, refuses the install — the verified bytes are the only ones that install. Returns
