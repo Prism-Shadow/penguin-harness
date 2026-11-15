@@ -3,17 +3,18 @@
  * (plugin/registry.ts httpPluginRegistry for the index document, plugin/install.ts
  * installPluginChannel for the channel's release asset):
  *
- * - The index read tries the source's own URL first, then the deployment's mirrors in
- *   order; a connection failure, a timeout and a non-ok answer each hand the read to the
- *   next address, and a source exhausted on is reported with the failure it ended on.
+ * - The index read tries the source's own URL first, then the deployment's mirrors one at
+ *   a time in the order given; a connection failure, a timeout and a non-ok answer each
+ *   hand the read to the next address, and a source exhausted on is reported with the
+ *   failure it ended on. The order is fixed — the next read walks the same path, no
+ *   address is tried twice, and none is fetched after another has carried the read.
  * - A channel install does the same over the asset: the URL the index published first,
- *   then the mirrors that are releases of the same asset (channelMirrorsOf); what arrives
- *   is verified against the entry's sha512 exactly as the canonical URL's would be — a
- *   mirror serving tampered bytes is refused like any other source.
- * - A mirror that answers nothing usable is not itself a fallback for content: it only
- *   ever serves the same bytes the canonical address would have, pinned by the index.
- * - A channel whose URL is not a GitHub release download, or a mirror that is not a bare
- *   https origin, mirrors nothing; a deployment with no mirrors behaves as before.
+ *   then the mirrors the rules rewrite it into; what arrives is verified against the
+ *   entry's sha512 exactly as the canonical URL's would be — a mirror serving tampered
+ *   bytes is refused like any other source.
+ * - A rewrite rule maps a URL by capture; a rule that does not match the URL, or a URL
+ *   over the length cap, contributes nothing; a deployment with no mirrors behaves as
+ *   before.
  */
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -30,7 +31,10 @@ async function packTarball(name: string, version: string): Promise<Uint8Array> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-pkg-"));
   try {
     await fs.mkdir(path.join(dir, "package"), { recursive: true });
-    await fs.writeFile(path.join(dir, "package", "package.json"), JSON.stringify({ name, version }));
+    await fs.writeFile(
+      path.join(dir, "package", "package.json"),
+      JSON.stringify({ name, version }),
+    );
     await execFileAsync("tar", ["-czf", "asset.tgz", "package"], { cwd: dir });
     return new Uint8Array(await fs.readFile(path.join(dir, "asset.tgz")));
   } finally {
@@ -57,9 +61,10 @@ afterEach(async () => {
 });
 
 /** A fetch fake over a table of addresses; every miss is a refused connection. */
-function fakeFetch(
-  answers: Record<string, { status?: number; body?: string } | Error>,
-): { fetch: typeof fetch; hits: string[] } {
+function fakeFetch(answers: Record<string, { status?: number; body?: string } | Error>): {
+  fetch: typeof fetch;
+  hits: string[];
+} {
   const hits: string[] = [];
   const fetchImpl = (async (input: Parameters<typeof fetch>[0]) => {
     const url = String(input);
@@ -117,7 +122,11 @@ describe("httpPluginRegistry mirrors", () => {
     const mirror = "https://cdn-mirror.example/index.json";
     const registry = fakeFetch({ [url]: { status: 404 }, [mirror]: new TypeError("fetch failed") });
     await expect(
-      httpPluginRegistry([url, mirror], { fetchImpl: registry.fetch, attempts: 1, delay: noWait }).index(),
+      httpPluginRegistry([url, mirror], {
+        fetchImpl: registry.fetch,
+        attempts: 1,
+        delay: noWait,
+      }).index(),
     ).rejects.toThrow(/could not be fetched \(1 attempts\): fetch failed/);
   });
 
@@ -131,58 +140,50 @@ describe("httpPluginRegistry mirrors", () => {
   });
 });
 
-describe("happy eyeballs over the addresses", () => {
+describe("the read walks the addresses in order", () => {
   const entry = [
     { name: "acme", version: "1.0.0", description: "d", authors: ["a"], license: "MIT" },
   ];
 
-  it("a slow primary does not hold the read: the mirror answers within the stagger and wins", async () => {
+  it("the addresses are tried in the order given, once each, and none is re-fetched after a win", async () => {
     const url = "https://index.example/index.json";
     const mirror = "https://cdn-mirror.example/index.json";
-    const hits: string[] = [];
-    const fetchImpl = (async (input: Parameters<typeof fetch>[0]) => {
-      const address = String(input);
-      hits.push(address);
-      if (address === url) {
-        // The primary hangs past the stagger; the mirror answers fast.
-        return new Promise<Response>((resolve) =>
-          setTimeout(() => resolve(new Response(JSON.stringify(entry), { status: 200 })), 5_000),
-        );
-      }
-      return new Response(JSON.stringify(entry), { status: 200 });
-    }) as typeof fetch;
-    const entries = await httpPluginRegistry([url, mirror], {
-      fetchImpl,
+    const registry = fakeFetch({ [url]: { status: 503 }, [mirror]: { body: "[]" } });
+    const source = httpPluginRegistry([url, mirror], {
+      fetchImpl: registry.fetch,
       attempts: 1,
       delay: noWait,
-      timeoutMs: 10_000,
-    }).index();
-    expect(entries).toEqual(entry);
-    expect(hits).toEqual([url, mirror]);
-  });
-
-  it("the sticky winner starts first: after a mirror's win the next read hits only it", async () => {
-    const url = "https://index.example/index.json";
-    const mirror = "https://cdn-mirror.example/index.json";
-    const registry = fakeFetch({ [url]: new TypeError("fetch failed"), [mirror]: { body: "[]" } });
-    const source = httpPluginRegistry([url, mirror], { fetchImpl: registry.fetch, attempts: 1, delay: noWait });
+    });
     await source.index();
     expect(registry.hits).toEqual([url, mirror]);
+    // The order is fixed: the next read walks the same path, and the mirror's win does
+    // not put it first.
     registry.hits.length = 0;
     await source.index();
-    expect(registry.hits).toEqual([mirror]);
+    expect(registry.hits).toEqual([url, mirror]);
   });
 
-  it("every address dead: the sweep's failure is the last one's, without waiting out each window serially", async () => {
+  it("a source exhausted on reports the failure it ended on, with the addresses it named", async () => {
     const url = "https://index.example/index.json";
     const mirror = "https://cdn-mirror.example/index.json";
-    const registry = fakeFetch({ [url]: new TypeError("fetch failed"), [mirror]: new TypeError("fetch failed") });
-    const started = Date.now();
+    const registry = fakeFetch({ [url]: { status: 404 }, [mirror]: new TypeError("fetch failed") });
     await expect(
-      httpPluginRegistry([url, mirror], { fetchImpl: registry.fetch, attempts: 1, delay: noWait }).index(),
-    ).rejects.toThrow(/could not be fetched/);
-    // Staggered: the sweep costs roughly one window plus the stagger, not two windows.
-    expect(Date.now() - started).toBeLessThan(1_000);
+      httpPluginRegistry([url, mirror], {
+        fetchImpl: registry.fetch,
+        attempts: 1,
+        delay: noWait,
+      }).index(),
+    ).rejects.toThrow(/could not be fetched \(1 attempts\): fetch failed/);
+    expect(registry.hits).toEqual([url, mirror]);
+  });
+
+  it("a single address behaves as before: one URL, no address hop", async () => {
+    const url = "https://index.example/index.json";
+    const registry = fakeFetch({ [url]: { status: 503 } });
+    await expect(
+      httpPluginRegistry(url, { fetchImpl: registry.fetch, attempts: 1, delay: noWait }).index(),
+    ).rejects.toThrow(/answered HTTP 503/);
+    expect(registry.hits).toEqual([url]);
   });
 });
 
@@ -201,7 +202,8 @@ describe("channel mirrors", () => {
   it("installs from the mirror after the release URL failed, same verified bytes", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-cdn-"));
     roots.push(root);
-    const mirrorUrl = "https://cdn-mirror.example/acme/acme/releases/download/v1.0.0/acme-1.0.0.tgz";
+    const mirrorUrl =
+      "https://cdn-mirror.example/acme/acme/releases/download/v1.0.0/acme-1.0.0.tgz";
     const tarball = await packTarball("acme", "1.0.0");
     const bytes = new Uint8Array(tarball);
     const pinned = `sha512-${createHash("sha512").update(tarball).digest("base64")}`;
@@ -210,18 +212,25 @@ describe("channel mirrors", () => {
       if (url === channel().url) throw new TypeError("fetch failed");
       return new Response(bytes, { status: 200 });
     }) as typeof fetch;
-    const installed = await installPluginChannel(root, { ...channel([mirrorUrl]), integrity: pinned }, {
-      fetchImpl,
-    });
+    const installed = await installPluginChannel(
+      root,
+      { ...channel([mirrorUrl]), integrity: pinned },
+      {
+        fetchImpl,
+      },
+    );
     expect(installed).toEqual({ name: "acme", version: "1.0.0" });
   });
 
   it("refuses mirror bytes that do not match the entry's integrity", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-cdn-"));
     roots.push(root);
-    const mirrorUrl = "https://cdn-mirror.example/acme/acme/releases/download/v1.0.0/acme-1.0.0.tgz";
+    const mirrorUrl =
+      "https://cdn-mirror.example/acme/acme/releases/download/v1.0.0/acme-1.0.0.tgz";
     const fetchImpl = (async () =>
-      new Response(new Uint8Array(new TextEncoder().encode("tampered")), { status: 200 })) as typeof fetch;
+      new Response(new Uint8Array(new TextEncoder().encode("tampered")), {
+        status: 200,
+      })) as typeof fetch;
     await expect(installPluginChannel(root, channel([mirrorUrl]), { fetchImpl })).rejects.toThrow(
       PluginInstallError,
     );
@@ -233,7 +242,8 @@ describe("channel mirrors", () => {
   it("a source exhausted on is reported with the last address's failure", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-cdn-"));
     roots.push(root);
-    const mirrorUrl = "https://cdn-mirror.example/acme/acme/releases/download/v1.0.0/acme-1.0.0.tgz";
+    const mirrorUrl =
+      "https://cdn-mirror.example/acme/acme/releases/download/v1.0.0/acme-1.0.0.tgz";
     const fetchImpl = (async () => {
       throw new TypeError("fetch failed");
     }) as typeof fetch;
@@ -242,33 +252,67 @@ describe("channel mirrors", () => {
     );
   });
 
-  it("a mirror that won once starts first next time (sticky), and the timeout bounds a dead address", async () => {
+  it("the release URL is tried first, the mirrors after it, once each", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-cdn-"));
     roots.push(root);
-    const mirrorUrl = "https://cdn-mirror.example/acme/acme/releases/download/v1.0.0/acme-1.0.0.tgz";
+    const mirrorUrl =
+      "https://cdn-mirror.example/acme/acme/releases/download/v1.0.0/acme-1.0.0.tgz";
     const tarball = await packTarball("acme", "1.0.0");
     const pinned = `sha512-${createHash("sha512").update(tarball).digest("base64")}`;
     const bytes = new Uint8Array(tarball);
     const hits: string[] = [];
-    const fetchImpl = (async (input: Parameters<typeof fetch>[0]) => {
+    const fetchImpl = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const address = String(input);
       hits.push(address);
       if (address === mirrorUrl) return new Response(bytes, { status: 200 });
-      // The primary hangs past the stagger; the mirror answers and wins.
-      return new Promise<Response>((resolve) =>
-        setTimeout(() => resolve(new Response(bytes, { status: 200 })), 5_000),
-      );
+      // The release URL answers, then stalls mid-body: its headers said ok, its bytes
+      // never arrive — the download moves to the mirror all the same. A synthetic body
+      // is not wired to the abort signal, so the fake rejects on it instead, which is
+      // what the wire does to a stalled read when the window runs out.
+      return {
+        ok: true,
+        status: 200,
+        headers: new Headers({ "content-length": String(bytes.byteLength) }),
+        body: null,
+        arrayBuffer: () =>
+          new Promise<ArrayBuffer>((_, reject) =>
+            init?.signal?.addEventListener("abort", () =>
+              reject(new DOMException("This operation was aborted", "TimeoutError")),
+            ),
+          ),
+      } as unknown as Response;
     }) as typeof fetch;
     const chan = { ...channel([mirrorUrl]), integrity: pinned };
-    const installed = await installPluginChannel(root, chan, { fetchImpl });
+    const installed = await installPluginChannel(root, chan, { fetchImpl, timeoutMs: 50 });
     expect(installed).toEqual({ name: "acme", version: "1.0.0" });
-    expect(hits).toContain(mirrorUrl);
-    // Sticky: the next install of the same source starts at the mirror.
+    // Fixed order, one try per address: the release URL first, then the mirror, and the
+    // mirror's win does not put it first on the next install.
+    expect(hits).toEqual([channel().url, mirrorUrl]);
     hits.length = 0;
     const root2 = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-cdn-"));
     roots.push(root2);
-    await installPluginChannel(root2, chan, { fetchImpl });
-    expect(hits[0]).toBe(mirrorUrl);
+    await installPluginChannel(root2, chan, { fetchImpl, timeoutMs: 50 });
+    expect(hits).toEqual([channel().url, mirrorUrl]);
+  });
+
+  it("every address dead: the error names the addresses and the failure it ended on", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-cdn-"));
+    roots.push(root);
+    const mirrorUrl =
+      "https://cdn-mirror.example/acme/acme/releases/download/v1.0.0/acme-1.0.0.tgz";
+    const registry = fakeFetch({});
+    await expect(
+      installPluginChannel(
+        root,
+        { ...channel([mirrorUrl]), integrity: "sha512-xxx" },
+        {
+          fetchImpl: registry.fetch,
+          timeoutMs: 50,
+        },
+      ),
+    ).rejects.toThrow(
+      /could not fetch the release asset from any of https:\/\/github\.com\/acme\/acme\/releases\/download\/v1\.0\.0\/acme-1\.0\.0\.tgz, https:\/\/cdn-mirror\.example\/acme\/acme\/releases\/download\/v1\.0\.0\/acme-1\.0\.0\.tgz: fetch failed/,
+    );
   });
 
   it("a rewrite rule maps a URL by capture; a rule that does not match the URL stays out", () => {
@@ -278,7 +322,11 @@ describe("channel mirrors", () => {
         match: "^https:\\/\\/github\\.com\\/(.+)\\/(.+)\\/releases\\/download\\/(.+)$",
         rewrite: "https://gh-mirror.example/$1/$2/releases/download/$3",
       },
-      { kind: "rewrite", match: "^https:\\/\\/files\\.example\\/", rewrite: "https://elsewhere.example/" },
+      {
+        kind: "rewrite",
+        match: "^https:\\/\\/files\\.example\\/",
+        rewrite: "https://elsewhere.example/",
+      },
     ];
     expect(pluginProxyMirrors(channel().url, rules)).toEqual([
       "https://gh-mirror.example/acme/acme/releases/download/v1.0.0/acme-1.0.0.tgz",
@@ -291,9 +339,21 @@ describe("channel mirrors", () => {
 
   it("rules run in order, the canonical URL and duplicates never enter the mirror list", () => {
     const rules: PluginProxyRule[] = [
-      { kind: "rewrite", match: "^https:\\/\\/github\\.com\\/(.+)$", rewrite: "https://a.example/$1" },
-      { kind: "rewrite", match: "^https:\\/\\/github\\.com\\/acme\\/(.+)$", rewrite: "https://b.example/$1" },
-      { kind: "rewrite", match: "^https:\\/\\/github\\.com\\/(.+)$", rewrite: "https://a.example/$1" },
+      {
+        kind: "rewrite",
+        match: "^https:\\/\\/github\\.com\\/(.+)$",
+        rewrite: "https://a.example/$1",
+      },
+      {
+        kind: "rewrite",
+        match: "^https:\\/\\/github\\.com\\/acme\\/(.+)$",
+        rewrite: "https://b.example/$1",
+      },
+      {
+        kind: "rewrite",
+        match: "^https:\\/\\/github\\.com\\/(.+)$",
+        rewrite: "https://a.example/$1",
+      },
     ];
     expect(pluginProxyMirrors(channel().url, rules)).toEqual([
       "https://a.example/acme/acme/releases/download/v1.0.0/acme-1.0.0.tgz",
@@ -348,13 +408,22 @@ describe("deployment proxy config", () => {
 
   it("a rule of an unknown kind, a non-string field or a pattern that will not compile is a config error", () => {
     expect(() =>
-      resolveServerConfig({ PORT: "0", PENGUIN_PLUGIN_PROXY: JSON.stringify([{ kind: "page", match: "x", rewrite: "y" }]) }),
+      resolveServerConfig({
+        PORT: "0",
+        PENGUIN_PLUGIN_PROXY: JSON.stringify([{ kind: "page", match: "x", rewrite: "y" }]),
+      }),
     ).toThrow(/unknown rule kind/);
     expect(() =>
-      resolveServerConfig({ PORT: "0", PENGUIN_PLUGIN_PROXY: JSON.stringify([{ kind: "rewrite", match: 1, rewrite: "y" }]) }),
+      resolveServerConfig({
+        PORT: "0",
+        PENGUIN_PLUGIN_PROXY: JSON.stringify([{ kind: "rewrite", match: 1, rewrite: "y" }]),
+      }),
     ).toThrow(/string match and rewrite/);
     expect(() =>
-      resolveServerConfig({ PORT: "0", PENGUIN_PLUGIN_PROXY: JSON.stringify([{ kind: "rewrite", match: "(", rewrite: "y" }]) }),
+      resolveServerConfig({
+        PORT: "0",
+        PENGUIN_PLUGIN_PROXY: JSON.stringify([{ kind: "rewrite", match: "(", rewrite: "y" }]),
+      }),
     ).toThrow();
     // The ReDoS gate sits in the same parse: a catastrophic pattern is a boot error.
     expect(() =>

@@ -80,7 +80,6 @@ import {
   cachedRegistry,
   httpPluginRegistry,
   pluginProxyMirrors,
-  type PluginProxyRule,
   localPluginDisplay,
   mergeIndexes,
   withoutIcon,
@@ -90,6 +89,7 @@ import type {
   CachedRegistry,
   IndexDocumentEntry,
   IndexSnapshot,
+  PluginProxyRule,
   PluginRegistry,
 } from "../../plugin/registry.js";
 import { PACKAGE_NAME, pluginBases, resolvePluginPackage } from "../../plugin/loader.js";

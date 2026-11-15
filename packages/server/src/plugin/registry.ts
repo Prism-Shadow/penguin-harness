@@ -192,8 +192,7 @@ export interface IndexChannel {
   url: string;
   /**
    * The same asset behind this source's CDN mirrors, tried in order when `url` is
-   * unreachable; empty when the source carries no mirrors or the asset is not one the
-   * mirrors stand in for (see channelMirrorsOf).
+   * unreachable; absent when the deployment carries no rewrite rules for it.
    */
   mirrors?: string[];
 }
@@ -308,7 +307,12 @@ export function selectIndexChannel(
  */
 export function indexChannelLookup(
   indexUrl: string | null,
-  { fetchImpl = fetch, ttlMs = INDEX_CACHE_TTL_MS, now = Date.now, proxy = [] }: {
+  {
+    fetchImpl = fetch,
+    ttlMs = INDEX_CACHE_TTL_MS,
+    now = Date.now,
+    proxy = [],
+  }: {
     fetchImpl?: typeof fetch;
     ttlMs?: number;
     now?: Clock;
@@ -375,12 +379,6 @@ export const REWRITE_RESULT_MAX = 1024;
 export const PROXY_RULES_MAX = 32;
 /** A URL longer than this is not a URL; the rules are skipped for it rather than run. */
 export const REWRITE_URL_MAX = 2048;
-/**
- * Happy Eyeballs (RFC 8305): the next address's read starts this long after the previous
- * one — staggered, not serial, so a sweep's worst wait is this times the address count
- * plus one attempt window, not the sum of every address's full window.
- */
-export const INDEX_HEAD_START_MS = 250;
 
 export interface PluginProxyRule {
   /** The rule's type; "rewrite" maps a URL onto another shape via `match` and `rewrite`. */
@@ -424,10 +422,7 @@ export function rewriteRuleRisk(rule: PluginProxyRule): string | null {
  * not one; the rules are skipped for it — a bounded input is the second half of the ReDoS
  * gate (the first is the shape check at config parse, see rewriteRuleRisk).
  */
-export function pluginProxyMirrors(
-  url: string,
-  rules: readonly PluginProxyRule[],
-): string[] {
+export function pluginProxyMirrors(url: string, rules: readonly PluginProxyRule[]): string[] {
   if (url.length > REWRITE_URL_MAX) return [];
   const mirrors: string[] = [];
   for (const rule of rules) {
@@ -485,12 +480,14 @@ const backoff = (attempt: number) =>
 
 /**
  * A registry behind an `index.json` source: one canonical URL plus its CDN mirrors, tried
- * in order — the first address that answers carries the read, a failed one hands the read
- * to the next, and the last error is reported with every address it named.
- *
- * Within one address a connection that fails is tried again before the read moves on: the
- * document sits behind a CDN redirect, and the first hop out through a corporate proxy is
- * exactly the kind of thing that fails once and works a second later. What a server
+ * one at a time in the order given — the first address that serves the document carries the
+ * read, a failed one hands the read to the next, and a source exhausted on is reported with
+ * the failure it ended on. The order is fixed, every address is tried once per read, and
+ * nothing picks a winner by speed: the same deployment walks the same path read after read
+ * until an address actually fails (the text's trade — a predictable route over a measured
+ * one). Within one address a connection that fails is tried again before the read moves on:
+ * the document sits behind a CDN redirect, and the first hop out through a corporate proxy
+ * is exactly the kind of thing that fails once and works a second later. What a server
  * answered (a 404, a 503) is not retried — that is a fact about the source, not about the
  * wire — and it moves the read to the next address the same way a connection failure does:
  * an address that has nothing to serve is as dead as one that cannot be reached.
@@ -506,10 +503,6 @@ export function httpPluginRegistry(
   const timeoutMs = opts.timeoutMs ?? 15_000;
   const delay = opts.delay ?? backoff;
   const addresses = Array.isArray(indexUrl) ? [...indexUrl] : [indexUrl];
-  // The address that answered last time, tried first next time (sticky winner): the common
-  // case after a source's first success costs no failed-address waits at all. Per App, in
-  // memory — like curl's connection cache, it is rebuilt with one win after a restart.
-  let winner: string | null = null;
   // What the last 200 answered, so the next read can revalidate instead of re-downloading:
   // the etag goes back as If-None-Match, and the body's hash catches a CDN (GitHub Pages
   // among them) whose etag churns while the document does not.
@@ -549,84 +542,54 @@ export function httpPluginRegistry(
   // completion could rewind the etag a newer read had just advanced, and the next read would
   // revalidate against a header the server had already retired.
   const readOnce = async (): Promise<IndexDocumentEntry[]> => {
-    // Happy Eyeballs over the addresses (RFC 8305): they are tried staggered, not serial —
-    // the winner-address first, the rest each INDEX_HEAD_START_MS after the one before —
-    // and the first address that answers with a usable document wins; the others are left
-    // to finish against nothing. One sweep's worst wait is the stagger times the address
-    // count plus one attempt window, not the sum of every address's window. The sticky
-    // winner makes the common case cheaper still: after a source's first success, the read
-    // starts where it last succeeded, and the stagger never fires.
-    const order = winner === null ? addresses : [winner, ...addresses.filter((a) => a !== winner)];
-    let res: Response | null = null;
+    // The addresses in the order given, one at a time: the first one whose answer turns
+    // into a document carries the read. A connection failure or a non-ok answer moves on
+    // to the next address; an answer that stops halfway (a body that never arrives, a
+    // document that will not parse) does the same — the address has not served the
+    // document, whatever its headers said. The order is fixed, so the same deployment
+    // walks the same path read after read until an address actually fails, and no address
+    // is fetched twice or fetched again after another has won. All of them failed: the
+    // read reports the failure it ended on, which names the address it belongs to.
     let lastError: unknown = null;
-    if (order.length === 1) {
+    for (const address of addresses) {
+      let res: Response;
       try {
-        res = await requestAddress(order[0]!);
-      } catch (err) {
-        throw err;
-      }
-      if (res.ok || (res.status === 304 && revalidate !== null)) {
-        winner = order[0]!;
-      } else {
-        throw new Error(`plugin index from ${order[0]} answered HTTP ${res.status}`);
-      }
-    } else {
-      let pending = order.length;
-      const outcome = await new Promise<{ address: string; res: Response }>((resolve) => {
-        for (const [i, address] of order.entries()) {
-          setTimeout(() => {
-            void (async () => {
-              try {
-                const answer = await requestAddress(address);
-                // A non-ok answer is this address's news, not the read's: it does not win
-                // the race against a slower address that can serve the document.
-                if (answer.ok || (answer.status === 304 && revalidate !== null)) {
-                  resolve({ address, res: answer });
-                } else {
-                  lastError = new Error(`plugin index from ${address} answered HTTP ${answer.status}`);
-                }
-              } catch (err) {
-                lastError = err;
-              } finally {
-                pending -= 1;
-                if (pending === 0) resolve(null as unknown as { address: string; res: Response });
-              }
-            })();
-          }, i * INDEX_HEAD_START_MS);
+        res = await requestAddress(address);
+        if (!res.ok && !(res.status === 304 && revalidate !== null)) {
+          throw new Error(`plugin index from ${address} answered HTTP ${res.status}`);
         }
-      });
-      if (outcome !== null) {
-        winner = outcome.address;
-        res = outcome.res;
-      } else {
-        throw lastError;
+        // Unchanged since the last read: the document in hand stands, nothing re-parsed.
+        // The null check also narrows the write below for the type checker.
+        if (res.status === 304 && revalidate !== null) {
+          const fresh = res.headers.get("etag");
+          if (fresh !== null) revalidate = { ...revalidate, etag: fresh };
+          return revalidate.entries;
+        }
+        const text = await res.text();
+        const hash = createHash("sha256").update(text).digest("hex");
+        // The etag moved but the document did not — a Pages quirk this hash is here to
+        // catch. The new etag is kept so the next revalidation speaks the header the
+        // server last sent.
+        if (revalidate !== null && hash === revalidate.hash) {
+          revalidate = { ...revalidate, etag: res.headers.get("etag") };
+          return revalidate.entries;
+        }
+        let data: unknown;
+        try {
+          data = JSON.parse(text);
+        } catch (err) {
+          throw new Error(
+            `plugin index from ${address} is not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+        const entries = parsePluginIndex(data, address, { icons: "drop" });
+        revalidate = { etag: res.headers.get("etag"), hash, entries };
+        return entries;
+      } catch (err) {
+        lastError = err;
       }
     }
-    // Unchanged since the last read: the document in hand stands, nothing re-parsed.
-    if (res.status === 304 && revalidate !== null) {
-      const fresh = res.headers.get("etag");
-      if (fresh !== null) revalidate = { ...revalidate, etag: fresh };
-      return revalidate.entries;
-    }
-    const text = await res.text();
-    const hash = createHash("sha256").update(text).digest("hex");
-    // The etag moved but the document did not — a Pages quirk this hash is here to catch.
-    // The new etag is kept so the next revalidation speaks the header the server last sent.
-    if (revalidate !== null && hash === revalidate.hash) {
-      revalidate = { ...revalidate, etag: res.headers.get("etag") };
-      return revalidate.entries;
-    }
-    let data: unknown;
-    try {
-      data = JSON.parse(text);
-    } catch (err) {
-      throw new Error(
-        `plugin index from ${addresses[0]} is not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
-    const entries = parsePluginIndex(data, addresses[0]!, { icons: "drop" });
-    revalidate = { etag: res.headers.get("etag"), hash, entries };
-    return entries;
+    throw lastError;
   };
   // The queue itself: every read follows the one before it, and a read that fails does not
   // poison the chain — the failure is the caller's news, not the next read's state.
