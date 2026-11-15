@@ -3,7 +3,7 @@
  * summary (one entry per agent of the project) and the per-agent session listing.
  * DTO shapes come from this package's api types.
  */
-import type { AgentSummary, AgentsResponse, SessionInfo, SessionsResponse } from "../";
+import type { AgentSummary, AgentsResponse, SessionInfo, SessionsResponse } from "../api/types.js";
 import type { ServerClient } from "./client.js";
 
 const enc = encodeURIComponent;

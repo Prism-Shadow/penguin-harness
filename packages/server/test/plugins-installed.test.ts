@@ -14,7 +14,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import type { ModuleDef } from "@prismshadow/penguin-core/kernel";
 import { parseManifest } from "@prismshadow/penguin-core/kernel";
-import type { InstalledPluginsResponse, UsageErrorsPage } from "../src/";
+import type { InstalledPluginsResponse, UsageErrorsPage } from "../src/api/types.js";
 import { PluginHost } from "../src/plugin/host.js";
 import { PluginInstallError } from "../src/plugin/install.js";
 import { openPushSlip } from "../src/hmr/push-plugins.js";

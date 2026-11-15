@@ -19,7 +19,7 @@
  * A deployment's list is the builtin registry plus the published index (see
  * NIGHTLY_INDEX_URL), merged in http/routes/plugins.ts.
  */
-import type { PluginIndexEntry } from "../";
+import type { PluginIndexEntry } from "../api/types.js";
 import builtinIndex from "./builtin-index.json" with { type: "json" };
 import fs from "node:fs/promises";
 import path from "node:path";

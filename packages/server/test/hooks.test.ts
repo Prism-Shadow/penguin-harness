@@ -24,7 +24,12 @@ import { strToU8, unzipSync, zipSync } from "fflate";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { hooksDir } from "@prismshadow/penguin-core";
 import type { AmspRecord } from "@prismshadow/penguin-core";
-import type { AgentHooksResponse, MessagesResponse, ProjectCreateResponse, SessionCreateResponse } from "../src/";
+import type {
+  AgentHooksResponse,
+  MessagesResponse,
+  ProjectCreateResponse,
+  SessionCreateResponse,
+} from "../src/api/types.js";
 import type { ChannelEvent } from "../src/runtime/channel.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";

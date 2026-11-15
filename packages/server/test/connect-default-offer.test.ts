@@ -13,7 +13,12 @@
  *   Project no longer holds the row, and when the default already is a model of the group.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import type { ModelRefDto, ModelsResponse, ProjectCreateResponse, ProviderConnectionResponse } from "../src/";
+import type {
+  ModelRefDto,
+  ModelsResponse,
+  ProjectCreateResponse,
+  ProviderConnectionResponse,
+} from "../src/api/types.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 

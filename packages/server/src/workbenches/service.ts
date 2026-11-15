@@ -44,7 +44,7 @@ import type {
 import { agentDir, userText } from "@prismshadow/penguin-core";
 import type { IconImage } from "@prismshadow/penguin-core";
 import table from "../ifaces.json" with { type: "json" };
-import type { ServerEvent } from "../";
+import type { ServerEvent } from "@prismshadow/penguin-library-projects";
 import { HttpError } from "../http/errors.js";
 import type { Channels, Clock, Config, Hmr, Log, Paths } from "../hmr/capabilities.js";
 import { userChannelKey } from "../http/routes/events.js";

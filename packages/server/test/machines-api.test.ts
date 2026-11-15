@@ -83,7 +83,11 @@ import path from "node:path";
 import zlib from "node:zlib";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { VERSION } from "@prismshadow/penguin-core";
-import type { MachinesUseResponse, MachinesResponse, ModelsUpdateRequest } from "../src/";
+import type {
+  MachinesUseResponse,
+  MachinesResponse,
+  ModelsUpdateRequest,
+} from "../src/api/types.js";
 import type { DatabaseSync } from "node:sqlite";
 import { openDatabase } from "@prismshadow/penguin-library-db";
 import { MachinesRepo } from "@prismshadow/penguin-library-machines/repos/machines";

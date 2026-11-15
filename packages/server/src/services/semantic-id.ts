@@ -30,7 +30,7 @@
  * is never left with nothing to put in the box.
  */
 import { isValidId } from "@prismshadow/penguin-core";
-import type { SemanticIdKind } from "../";
+import type { SemanticIdKind } from "../api/types.js";
 import { PROJECT_ID_MAX_LENGTH, PROJECT_SUFFIX_PATTERN, SEMANTIC_ID_PATTERN } from "./ids.js";
 
 /** What a kind's id looks like: everything the generator, the sanitizer and the prompt need. */

@@ -17,8 +17,24 @@
  * file header.
  */
 import type { UsageGroupBy } from "@prismshadow/penguin-library-observability";
-import type { UsageQuery, UsageErrorsQuery, UsageErrorsClearQuery } from "@prismshadow/penguin-library-observability";
-import type { CostParts, UsageAgentSeries, UsageBucket, UsageErrors, UsageErrorsPage, UsageGranularity, UsageGroupRow, UsageModelSeries, UsageModelTotals, UsageResponse, UsageSeriesPoint } from "../";
+import type {
+  UsageQuery,
+  UsageErrorsQuery,
+  UsageErrorsClearQuery,
+} from "@prismshadow/penguin-library-observability";
+import type {
+  UsageAgentSeries,
+  UsageBucket,
+  UsageErrors,
+  UsageErrorsPage,
+  UsageGranularity,
+  UsageGroupRow,
+  UsageModelSeries,
+  UsageModelTotals,
+  UsageResponse,
+  UsageSeriesPoint,
+} from "@prismshadow/penguin-library-observability";
+import type { CostParts } from "@prismshadow/penguin-library-traces";
 import type { ErrorFilter } from "@prismshadow/penguin-library-observability/repos/errors";
 import { catalogEntryFor, offPeakAt, offPeakScheduledRefs } from "../model-catalog/catalog.js";
 import type {
@@ -38,7 +54,11 @@ import {
 import { badRequest } from "../http/validate.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Clock } from "../hmr/capabilities.js";
-import type { ErrorLog, UsageQueries, UsageStore } from "@prismshadow/penguin-library-observability";
+import type {
+  ErrorLog,
+  UsageQueries,
+  UsageStore,
+} from "@prismshadow/penguin-library-observability";
 import type { ProjectConfigStore } from "@prismshadow/penguin-library-projects";
 
 /**

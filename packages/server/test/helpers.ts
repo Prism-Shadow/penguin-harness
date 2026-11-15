@@ -16,28 +16,32 @@ import type { DatabaseSync } from "node:sqlite";
 import type { ServerHmrHost } from "../src/hmr/platform.js";
 import type { ChannelHub } from "../src/runtime/channel.js";
 import type { DesktopService } from "../src/services/desktop-service.js";
-import type { AuthService } from "../src/";
+import type { AuthService } from "../src/api/types.js";
 import type { AdminService } from "../src/services/admin-service.js";
 import type { ProjectService } from "../src/services/project-service.js";
 import { ShippedBuiltinBenchmarkSeeds } from "../src/services/project-service.js";
 import type { ProjectAccess } from "../src/services/project-access.js";
-import type { ProjectConfigService } from "../src/";
-import type { ModelOAuthService } from "../src/";
+import type { ProjectConfigService } from "../src/api/types.js";
+import type { ModelOAuthService } from "../src/api/types.js";
 import type { AgentService } from "../src/services/agent-service.js";
 import type { AgentConfigService } from "../src/services/agent-config-service.js";
 import type { MemoryService } from "../src/services/memory-service.js";
 import type { SessionService } from "../src/services/session-service.js";
-import type { PricingLookup, UsageService } from "../src/";
+import type { PricingLookup, UsageService } from "../src/api/types.js";
 import type { WorkspaceFilesService } from "../src/services/workspace-files-service.js";
 import type { PreviewTokenSigner } from "../src/services/preview-token.js";
 import type { BenchmarkService } from "../src/services/benchmark-service.js";
 import type { SnapshotService } from "../src/services/snapshot-service.js";
 import type { SessionsRepo } from "@prismshadow/penguin-library-sessions/repos/sessions";
 import type { UiPrefsRepo } from "@prismshadow/penguin-library-settings/repos/ui-prefs";
-import type { ServerSettingsRepo } from "@prismshadow/penguin-library-settings/repos/server-settings";
+import type {
+  ServerSettingsRepo,
+} from "@prismshadow/penguin-library-settings/repos/server-settings";
 import type { SchedulesRepo } from "@prismshadow/penguin-library-sessions/repos/schedules";
 import type { ErrorsRepo } from "@prismshadow/penguin-library-observability/repos/errors";
-import type { MessagingBindingsRepo } from "@prismshadow/penguin-library-messaging/repos/messaging-bindings";
+import type {
+  MessagingBindingsRepo,
+} from "@prismshadow/penguin-library-messaging/repos/messaging-bindings";
 import type { MessagingBridge } from "../src/runtime/messaging/bridge.js";
 import type { QQScanService, QQScanTransport } from "../src/runtime/messaging/qq-scan.js";
 import type { Scheduler } from "../src/runtime/scheduler.js";

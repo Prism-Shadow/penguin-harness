@@ -4,7 +4,7 @@
  * that the demo reaches it.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { PluginLibraryResponse } from "../src/";
+import type { PluginLibraryResponse } from "../src/api/types.js";
 import { apiClient, createTestApp, loginAdmin } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 

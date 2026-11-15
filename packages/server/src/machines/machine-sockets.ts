@@ -24,7 +24,7 @@
  */
 import http from "node:http";
 import { WebSocket } from "ws";
-import type { MachineSocketFact } from "../";
+import type { MachineSocketFact } from "../api/types.js";
 import { CREDIT_FLOW } from "../socket/frames.js";
 import type { EventFrame, ServerFrame } from "../socket/frames.js";
 import { apiSocketPath } from "../socket/ref.js";

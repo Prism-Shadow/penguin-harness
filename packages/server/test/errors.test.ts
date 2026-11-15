@@ -65,7 +65,7 @@ import {
   withOrigin,
 } from "@prismshadow/penguin-core";
 import type { AmspRecord, StopReason } from "@prismshadow/penguin-core";
-import type { ProjectCreateResponse, UsageErrorsPage, UsageResponse } from "../src/";
+import type { ProjectCreateResponse, UsageErrorsPage, UsageResponse } from "../src/api/types.js";
 import { openDatabase } from "@prismshadow/penguin-library-db";
 import { ErrorsRepo } from "@prismshadow/penguin-library-observability/repos/errors";
 import type { ErrorRecordInsert } from "@prismshadow/penguin-library-observability/repos/errors";

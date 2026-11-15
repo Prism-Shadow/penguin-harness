@@ -29,7 +29,7 @@
 import type { Context } from "hono";
 import { getCookie } from "hono/cookie";
 import { streamSSE } from "hono/streaming";
-import type { ServerEvent } from "../";
+import type { ServerEvent } from "@prismshadow/penguin-library-projects";
 import { HttpError } from "./errors.js";
 import type { Channel, ChannelEvent, ChannelListener } from "../runtime/channel.js";
 import type { LiveStreams } from "../auth/live-streams.js";

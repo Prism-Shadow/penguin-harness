@@ -38,7 +38,15 @@ import {
   userText,
 } from "@prismshadow/penguin-core";
 import type { AmspRecord } from "@prismshadow/penguin-core";
-import type { HistoryHave, HistoryLinesFrame, HistoryLinesWindow, HistoryMessage, HistoryPartFrame, HistoryStreamError, HistoryWindowPart } from "../src/";
+import type {
+  HistoryHave,
+  HistoryLinesFrame,
+  HistoryLinesWindow,
+  HistoryMessage,
+  HistoryPartFrame,
+  HistoryStreamError,
+  HistoryWindowPart,
+} from "../src/api/types.js";
 import { assembleWindow } from "../src/services/history-layout.js";
 import {
   anchorOf,

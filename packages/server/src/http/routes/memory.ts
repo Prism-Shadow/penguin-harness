@@ -31,7 +31,7 @@ export interface MemoryRouteDeps {
   memoryService: Memory;
   access: Access;
 }
-import type { MemoryImportMode } from "../../";
+import type { MemoryImportMode } from "../../api/types.js";
 import {
   badRequest,
   optionalBoolean,

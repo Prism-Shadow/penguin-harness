@@ -7,7 +7,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { atomicWriteFile } from "@prismshadow/penguin-core";
-import type { OrgChannelMessage, OrgTicketStatus } from "../";
+import type { OrgChannelMessage, OrgTicketStatus } from "../api/types.js";
 import type {
   CalendarEvent,
   ChannelConfig,

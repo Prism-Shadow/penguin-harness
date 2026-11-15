@@ -73,7 +73,7 @@ import type {
   AmspRecord,
   TextPayload,
 } from "@prismshadow/penguin-core";
-import type { ServerEvent } from "../src/";
+import type { ServerEvent } from "../src/api/types.js";
 import { openDatabase } from "@prismshadow/penguin-library-db";
 import { HttpError } from "../src/http/errors.js";
 import { SessionsRepo } from "@prismshadow/penguin-library-sessions/repos/sessions";

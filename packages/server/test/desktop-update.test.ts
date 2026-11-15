@@ -22,7 +22,11 @@ import {
   loginAdmin,
   provisionUser,
 } from "./helpers.js";
-import type { DesktopUpdateStatus, DesktopUpdateStatusResponse, ErrorBody } from "../src/";
+import type {
+  DesktopUpdateStatus,
+  DesktopUpdateStatusResponse,
+  ErrorBody,
+} from "../src/api/types.js";
 import { DesktopService } from "../src/services/desktop-service.js";
 import {
   parseUpdaterStatusMessage,

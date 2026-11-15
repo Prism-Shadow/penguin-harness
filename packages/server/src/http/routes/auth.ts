@@ -8,7 +8,7 @@
  */
 import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
-import type { AuthResponse } from "../../";
+import type { AuthResponse } from "../../api/types.js";
 import { cookieOptions, sessionCookieName, sessionCookies } from "../../auth/middleware.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { readJson, requireString } from "../validate.js";

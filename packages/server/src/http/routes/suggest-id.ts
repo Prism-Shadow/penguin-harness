@@ -26,12 +26,16 @@
  */
 import { Hono } from "hono";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { SemanticIdKind } from "../../";
+import type { SemanticIdKind } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { Log } from "../../hmr/capabilities.js";
 import type { AgentLifecycle, Benchmarks } from "../../mechanisms/agents.js";
 import type { Errors } from "@prismshadow/penguin-library-observability";
-import type { Access, ProjectConfigStore, ProjectLifecycle } from "@prismshadow/penguin-library-projects";
+import type {
+  Access,
+  ProjectConfigStore,
+  ProjectLifecycle,
+} from "@prismshadow/penguin-library-projects";
 import type { Settings } from "@prismshadow/penguin-library-settings";
 import type { OrgService } from "../../runtime/organization/service.js";
 import type { UtilityCompletion } from "@prismshadow/penguin-library-projects";

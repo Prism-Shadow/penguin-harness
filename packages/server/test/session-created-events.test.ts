@@ -13,7 +13,11 @@
  *   audience.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import type { ProjectCreateResponse, ServerEvent, SessionCreateResponse } from "../src/";
+import type {
+  ProjectCreateResponse,
+  ServerEvent,
+  SessionCreateResponse,
+} from "../src/api/types.js";
 import { userChannelKey } from "../src/http/routes/events.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";

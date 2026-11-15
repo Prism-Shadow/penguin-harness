@@ -10,7 +10,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { parseManifest } from "@prismshadow/penguin-core/kernel";
 import type { ModuleDef } from "@prismshadow/penguin-core/kernel";
-import type { PluginConfigEntry, PluginConfigResponse, SessionSandbox } from "../src/";
+import type { PluginConfigEntry, PluginConfigResponse, SessionSandbox } from "../src/api/types.js";
 import { PluginHost } from "../src/plugin/host.js";
 import type { SandboxService } from "../src/sandbox/service.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";

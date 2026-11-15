@@ -11,7 +11,7 @@
  * convenience, and a browser that saves one must never be refused because older ones piled up.
  */
 import { DRAFT_KINDS, DRAFT_VALUE_MAX_CHARS, DRAFTS_PATCH_MAX_ENTRIES } from "../api/types.js";
-import type { DraftKind } from "../";
+import type { DraftKind } from "../api/types.js";
 import { badRequest } from "../http/errors.js";
 import type { DraftWrite } from "@prismshadow/penguin-library-account-data";
 

@@ -12,7 +12,13 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { scheduleDir } from "@prismshadow/penguin-core";
-import type { AgentsResponse, ProjectCreateResponse, ProjectSchedulesResponse, ScheduleItem, SchedulesResponse } from "../src/";
+import type {
+  AgentsResponse,
+  ProjectCreateResponse,
+  ProjectSchedulesResponse,
+  ScheduleItem,
+  SchedulesResponse,
+} from "../src/api/types.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 

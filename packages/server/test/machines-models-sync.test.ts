@@ -26,7 +26,7 @@ import type { AddressInfo } from "node:net";
 import { describe, expect, it } from "vitest";
 import { serve } from "@hono/node-server";
 import type { ModelEntry } from "@prismshadow/penguin-core";
-import type { ModelsResponse, ModelsUpdateRequest } from "../src/";
+import type { ModelsResponse, ModelsUpdateRequest } from "../src/api/types.js";
 import { envSourced, planModelSync, syncModelsToMachine } from "../src/machines/models-sync.js";
 import type { LocalModels } from "../src/machines/models-sync.js";
 import { catalogEntryFor } from "../src/model-catalog/catalog.js";

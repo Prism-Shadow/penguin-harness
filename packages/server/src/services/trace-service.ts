@@ -34,9 +34,29 @@ import {
 } from "@prismshadow/penguin-core";
 import type { CompactionMode, AmspRecord } from "@prismshadow/penguin-core";
 import { promptLabel } from "./trace-prompt-label.js";
-import type { AgentTraceSessionEntry, AgentTracesResponse, RequestSpan, SessionCategory, SessionCategoryCounts, SessionContextParts, HistoryMessage, TracePosition, ToolCallSpan, TraceAnalysisResponse, TraceEventsResponse, TraceFileInfo, TraceImportResponse, TraceModelSegment, TraceOtherSpan, TraceTaskStats, TraceToolSpan, UsageTrendPointInTrace } from "../";
+import type { SessionCategoryCounts, HistoryMessage, TracePosition } from "../api/types.js";
+import type {
+  AgentTraceSessionEntry,
+  AgentTracesResponse,
+  RequestSpan,
+  SessionCategory,
+  SessionContextParts,
+  ToolCallSpan,
+  TraceAnalysisResponse,
+  TraceEventsResponse,
+  TraceFileInfo,
+  TraceImportResponse,
+  TraceModelSegment,
+  TraceOtherSpan,
+  TraceTaskStats,
+  TraceToolSpan,
+  UsageTrendPointInTrace,
+} from "@prismshadow/penguin-library-traces";
 import type { SessionRow } from "@prismshadow/penguin-library-sessions/repos/sessions";
-import type { TraceFileRow, TraceSessionRow } from "@prismshadow/penguin-library-traces/repos/trace-index";
+import type {
+  TraceFileRow,
+  TraceSessionRow,
+} from "@prismshadow/penguin-library-traces/repos/trace-index";
 import { HttpError } from "../http/errors.js";
 import { formatLocalDate } from "../internal/dates.js";
 import {

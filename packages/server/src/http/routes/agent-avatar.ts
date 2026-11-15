@@ -9,7 +9,7 @@
  */
 import { Hono } from "hono";
 import type { Context } from "hono";
-import type { AgentAvatarResponse } from "../../";
+import type { AgentAvatarResponse } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { AgentConfig } from "../../mechanisms/agents.js";
 import type { Access } from "@prismshadow/penguin-library-projects";

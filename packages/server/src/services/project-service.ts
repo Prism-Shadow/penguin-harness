@@ -19,7 +19,7 @@ import {
   type BuiltinBenchmark,
 } from "@prismshadow/penguin-core";
 import type { ProjectRole } from "@prismshadow/penguin-library-projects";
-import type { MemberInfo, ProjectSummary } from "../";
+import type { MemberInfo, ProjectSummary } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 import type { ProjectRow } from "@prismshadow/penguin-library-projects/repos/projects";
 import type { UserRow } from "@prismshadow/penguin-library-identity/repos/users";

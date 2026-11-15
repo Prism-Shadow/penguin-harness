@@ -28,7 +28,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import type { ProjectCreateResponse, SessionCreateResponse, WorkspaceFilesResponse, WorkspaceSearchResponse } from "../src/";
+import type {
+  ProjectCreateResponse,
+  SessionCreateResponse,
+  WorkspaceFilesResponse,
+  WorkspaceSearchResponse,
+} from "../src/api/types.js";
 import {
   apiClient,
   canCreateSymlink,

@@ -12,7 +12,7 @@
 import { createHash } from "node:crypto";
 import { ICON_CONTENT_TYPES } from "@prismshadow/penguin-core";
 import type { IconImage } from "@prismshadow/penguin-core";
-import type { IconRef } from "../";
+import type { IconRef } from "../api/types.js";
 import { HttpError } from "./errors.js";
 
 /** The headers every icon is answered with, beside its content type. */

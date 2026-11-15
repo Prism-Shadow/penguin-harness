@@ -17,7 +17,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { agentStateDir } from "@prismshadow/penguin-core";
-import type { WorkbenchInfo } from "../src/";
+import type { WorkbenchInfo } from "../src/api/types.js";
 import { webDistWithUiRuntime } from "./fixtures/workbench-runtime.js";
 import { apiClient, createTestApp, makeTempRoot, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";

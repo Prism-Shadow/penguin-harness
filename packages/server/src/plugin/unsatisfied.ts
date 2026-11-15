@@ -22,7 +22,7 @@ import {
   type ModuleTree,
   type Problem,
 } from "@prismshadow/penguin-core/kernel";
-import type { UnsatisfiedPlugin } from "../";
+import type { UnsatisfiedPlugin } from "../api/types.js";
 import type { LoadedPlugin } from "./host.js";
 
 /** What `boot` is given: the plugin modules and stand-ins left in. */

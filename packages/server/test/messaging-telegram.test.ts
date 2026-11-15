@@ -59,7 +59,12 @@ import {
 } from "@prismshadow/penguin-core";
 import type { ApproveFn, AmspRecord } from "@prismshadow/penguin-core";
 import { wire } from "@prismshadow/penguin-core/kernel";
-import type { FeishuBindingResponse, MessagingBindingsResponse, TelegramBindingResponse, TelegramTestResponse } from "../src/";
+import type {
+  FeishuBindingResponse,
+  MessagingBindingsResponse,
+  TelegramBindingResponse,
+  TelegramTestResponse,
+} from "../src/api/types.js";
 import { ProjectsRepo } from "@prismshadow/penguin-library-projects/repos/projects";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import { INLINE_IMAGE_MAX_BYTES } from "@prismshadow/penguin-library-settings/attachment-limits";

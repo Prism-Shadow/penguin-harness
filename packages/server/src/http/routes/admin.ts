@@ -4,7 +4,7 @@
  * GET|POST /api/admin/users, POST /api/admin/users/:userId/password, DELETE /api/admin/users/:userId.
  */
 import { Hono } from "hono";
-import type { AdminUserCreateResponse, AdminUsersResponse } from "../../";
+import type { AdminUserCreateResponse, AdminUsersResponse } from "../../api/types.js";
 import { HttpError } from "../errors.js";
 import { rejectInDesktopMode } from "./desktop.js";
 import type { DesktopService } from "../../services/desktop-service.js";

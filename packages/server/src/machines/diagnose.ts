@@ -20,7 +20,7 @@
  * check costs one round trip whatever the count. A Windows machine answers the probe and
  * nothing else: it can be installed on but not connected (transport/connection.ts).
  */
-import type { MachineCheck, MachineSourceReach } from "../";
+import type { MachineCheck, MachineSourceReach } from "../api/types.js";
 import type { RemoteIdentity } from "./detect.js";
 import type { RemoteLayout } from "./layout.js";
 import { explainSshFailure } from "./ssh-failure.js";

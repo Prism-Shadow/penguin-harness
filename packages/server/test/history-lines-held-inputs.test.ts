@@ -23,7 +23,7 @@ import {
   userText,
 } from "@prismshadow/penguin-core";
 import type { AmspRecord } from "@prismshadow/penguin-core";
-import type { HistoryLinesWindow } from "../src/";
+import type { HistoryLinesWindow } from "../src/api/types.js";
 import type { AppEnv } from "../src/auth/middleware.js";
 import { historyLinesRoutes } from "../src/http/routes/history-lines.js";
 import { sessionRow } from "./fixtures/session.js";

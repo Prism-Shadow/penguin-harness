@@ -22,7 +22,13 @@ import path from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { sessionMeta, userText } from "@prismshadow/penguin-core";
 import type { SessionSource } from "@prismshadow/penguin-core";
-import type { MeResponse, OrgSessionsResponse, ServerSettingsResponse, SessionResponse, SessionsResponse } from "../src/";
+import type {
+  MeResponse,
+  OrgSessionsResponse,
+  ServerSettingsResponse,
+  SessionResponse,
+  SessionsResponse,
+} from "../src/api/types.js";
 import { ORG_CONFIG_DEFAULTS } from "../src/organization/files.js";
 import { OrgStore } from "../src/organization/store.js";
 import type { OrganizationService } from "../src/runtime/organization/service.js";

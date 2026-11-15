@@ -25,7 +25,7 @@
  * - Given a missing or unknown channel, or an empty account id, the answer is 400.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import type { MessagingAccountHoldersResponse } from "../src/";
+import type { MessagingAccountHoldersResponse } from "../src/api/types.js";
 import { FakeFeishuSdk } from "./fixtures/feishu.js";
 import { appApi, fakeMachinesNode } from "./fixtures/machines.js";
 import type { FleetMachineDouble } from "./fixtures/machines.js";

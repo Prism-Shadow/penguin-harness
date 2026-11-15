@@ -9,7 +9,7 @@
  */
 import { createHash } from "node:crypto";
 import type { BigIntStats } from "node:fs";
-import type { HistoryFileKey, HistoryHave, HistoryHeldRange } from "../";
+import type { HistoryFileKey, HistoryHave, HistoryHeldRange } from "../api/types.js";
 
 /**
  * One `history-lines` call: what it reads — the newest `limit` units (`tail`), the units before

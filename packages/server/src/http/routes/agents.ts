@@ -14,7 +14,13 @@
  */
 import { Hono } from "hono";
 import { AGENT_AUTHORS } from "@prismshadow/penguin-core";
-import type { AgentCreateResponse, AgentDeleteResponse, AgentDeletionResponse, AgentsResponse, AgentSummary } from "../../";
+import type {
+  AgentCreateResponse,
+  AgentDeleteResponse,
+  AgentDeletionResponse,
+  AgentsResponse,
+  AgentSummary,
+} from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { OrgService } from "../../runtime/organization/service.js";
 import { HttpError } from "../errors.js";

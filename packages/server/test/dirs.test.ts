@@ -12,7 +12,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { DirListResponse, ProjectCreateResponse } from "../src/";
+import type { DirListResponse, ProjectCreateResponse } from "../src/api/types.js";
 import { dirReadError, normalizeRequestedDir } from "../src/http/routes/dirs.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";

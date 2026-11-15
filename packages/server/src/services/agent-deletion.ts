@@ -14,7 +14,7 @@
  * The employment guard lives here rather than in the Agent service because the organization
  * runtime already depends on that service; this module consumes both.
  */
-import type { AgentDeletionInfo, Employment } from "../";
+import type { AgentDeletionInfo, Employment } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 import { settleWithin } from "../http/settle.js";
 import type { UserDraftsStore } from "@prismshadow/penguin-library-account-data";

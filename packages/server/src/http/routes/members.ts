@@ -5,7 +5,7 @@
  * Desktop mode rejects the whole surface (single-user; 403 `desktop_single_user`).
  */
 import { Hono } from "hono";
-import type { MemberAddResponse, MembersResponse } from "../../";
+import type { MemberAddResponse, MembersResponse } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { rejectInDesktopMode } from "./desktop.js";
 import type { DesktopService } from "../../services/desktop-service.js";

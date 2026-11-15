@@ -26,7 +26,7 @@ import { Hono } from "hono";
 import fs from "node:fs";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { MeResponse, SessionCreateResponse } from "../src/";
+import type { MeResponse, SessionCreateResponse } from "../src/api/types.js";
 import { apiTokenPath, readApiToken, storeApiToken, tokensEqual } from "../src/auth/api-token.js";
 import { authMiddleware, bearerToken, SESSION_COOKIE } from "../src/auth/middleware.js";
 import { REMOTE_SESSION_TTL_MS } from "../src/auth/service.js";

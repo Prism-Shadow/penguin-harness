@@ -40,7 +40,8 @@ import {
   validateScheduleModelRef,
 } from "./schedule-store.js";
 import type { ScheduleConfigSource } from "./schedule-store.js";
-import type { ScheduleServerEvent, ScheduleStatus } from "../";
+import type { ScheduleStatus } from "../api/types.js";
+import type { ScheduleServerEvent } from "@prismshadow/penguin-library-projects";
 import { Component, Interface, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { userChannelKey } from "../http/routes/events.js";

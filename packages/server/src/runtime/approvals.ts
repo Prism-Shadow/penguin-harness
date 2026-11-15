@@ -23,7 +23,7 @@
  * Docs: /docs/tools § "Approval".
  */
 import type { ApprovalMode } from "@prismshadow/penguin-library-sessions";
-import type { ApprovalReason } from "../";
+import type { ApprovalReason } from "../api/types.js";
 import type {
   ApprovalDecision,
   ApproveFn,

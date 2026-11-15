@@ -48,6 +48,20 @@ export interface ModelRefDto {
 /** From packages/server (api/types.ts): the agent API tab's settings and the patch the
  * admin PATCH takes. The contract names them, so the types live with the contract. */
 
+/** One API key of an Agent, as listed: the secret itself is shown once, at creation, and never again. */
+export interface AgentApiKeyInfo {
+  keyId: string;
+  /** 1-64 characters, given by whoever created it. */
+  name: string;
+  /** The key's first 16 characters (`penguin_` + 8), enough to tell keys apart. */
+  prefix: string;
+  /** user_id of the Project owner who created it. */
+  createdBy: string;
+  createdAt: string;
+  /** Last run request that authenticated with it; null = never used. */
+  lastUsedAt: string | null;
+}
+
 export interface AgentApiSettings {
   /** The API tab's switch; off = every AMSP request for this Agent is 404 `agent_not_found`. */
   enabled: boolean;

@@ -40,7 +40,7 @@ import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-cor
 /** The node the host located for a key, typed with this package's commander. */
 const node = (command: CliCommandProgram): Command => command as Command;
 
-import type { ScheduleItem, SchedulesResponse } from "../../";
+import type { ScheduleItem, SchedulesResponse } from "../../api/types.js";
 import { resolveAgentId, resolveProjectId, ServerClient, shortSessionId } from "../client.js";
 import { resolveConnection } from "../connection.js";
 import { listAgents } from "../agents.js";

@@ -14,7 +14,7 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { userText } from "@prismshadow/penguin-core";
-import type { ProjectCreateResponse, VaultResponse } from "../src/";
+import type { ProjectCreateResponse, VaultResponse } from "../src/api/types.js";
 import { fakeSession, sessionRow, uniqueSessionId } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";

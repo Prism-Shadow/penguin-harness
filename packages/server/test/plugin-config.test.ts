@@ -6,7 +6,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { parseManifest } from "@prismshadow/penguin-core/kernel";
-import type { PluginConfigResponse } from "../src/";
+import type { PluginConfigResponse } from "../src/api/types.js";
 import {
   PluginConfigError,
   PluginConfigStore,

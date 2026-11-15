@@ -12,7 +12,7 @@ import zlib from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Hono } from "hono";
 import type { AppEnv } from "../src/auth/middleware.js";
-import type { UnsatisfiedPlugin } from "../src/";
+import type { UnsatisfiedPlugin } from "../src/api/types.js";
 import {
   LEAVE_OUT,
   PUSH_SLIP_RESOURCE_ID,

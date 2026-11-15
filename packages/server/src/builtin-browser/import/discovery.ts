@@ -12,7 +12,7 @@
 import type { Stats } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { BuiltinBrowserImportSource } from "../../";
+import type { BuiltinBrowserImportSource } from "../../api/types.js";
 import {
   CHROMIUM_BROWSERS,
   chromiumRoots,

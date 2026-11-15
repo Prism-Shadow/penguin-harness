@@ -39,7 +39,7 @@ import { promisify } from "node:util";
 import { libraryContributions, readPluginTable } from "@prismshadow/penguin-core";
 import type { LibraryContributions } from "@prismshadow/penguin-core";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { PluginIndexResponse } from "../src/";
+import type { PluginIndexResponse } from "../src/api/types.js";
 import type { PluginBase } from "../src/plugin/loader.js";
 import {
   INDEX_RETRY_MS,

@@ -19,7 +19,12 @@ import { Hono } from "hono";
 import { THINKING_LEVEL_NAMES, resolveModelRef } from "@prismshadow/penguin-core";
 import { assertWorkspaceAllowed } from "../../services/workspace-guard.js";
 import type { Context } from "hono";
-import type { AgentApiKeyCreateResponse, AgentApiKeyInfo, AgentApiResponse, ModelRefDto } from "../../";
+import type {
+  AgentApiKeyCreateResponse,
+  AgentApiKeyInfo,
+  AgentApiResponse,
+} from "../../api/types.js";
+import type { ModelRefDto } from "@prismshadow/penguin-library-agent-api";
 import { requireHuman } from "../../auth/middleware.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { mintAgentApiKey } from "../../amsp/keys.js";

@@ -29,7 +29,7 @@ import { EventEmitter } from "node:events";
 import type { Server } from "node:http";
 import { attachTerminalWebSocket } from "../src/terminal/ws.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { AgentApiKeyCreateResponse, MeResponse, ProjectsResponse } from "../src/";
+import type { AgentApiKeyCreateResponse, MeResponse, ProjectsResponse } from "../src/api/types.js";
 import { bootAppDeps } from "../src/app.js";
 import { hashPassword, ScryptHasher } from "../src/auth/password.js";
 import {

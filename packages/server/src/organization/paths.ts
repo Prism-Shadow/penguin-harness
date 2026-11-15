@@ -6,7 +6,7 @@
  */
 import path from "node:path";
 import { projectDir } from "@prismshadow/penguin-core";
-import type { OrgTicketStatus } from "../";
+import type { OrgTicketStatus } from "../api/types.js";
 
 /** The kanban columns in board order; each is a directory under `tickets/<yyyy-mm>/`. */
 export const ORG_TICKET_COLUMNS: readonly OrgTicketStatus[] = [

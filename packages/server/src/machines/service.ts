@@ -35,7 +35,24 @@ import {
   loadProjectConfig,
 } from "@prismshadow/penguin-core";
 import type { AmspRecord, ModelRef, ProjectConfig } from "@prismshadow/penguin-core";
-import type { SshHostSummary, MachineCheck, MachineConfigSync, MachineDiagnosis, MachineEnvOnly, MachineInfo, MachineSkippedModel, MachineJob, MachinePhase, MachineReconnect, MachineServerStatus, MachineSshFailure, MachineSocketFact, MachineUseRefusal, MachinesCheckoutImage, ServerEvent } from "../";
+import type {
+  SshHostSummary,
+  MachineCheck,
+  MachineConfigSync,
+  MachineDiagnosis,
+  MachineEnvOnly,
+  MachineInfo,
+  MachineSkippedModel,
+  MachineJob,
+  MachinePhase,
+  MachineReconnect,
+  MachineServerStatus,
+  MachineSshFailure,
+  MachineSocketFact,
+  MachineUseRefusal,
+  MachinesCheckoutImage,
+} from "../api/types.js";
+import type { ServerEvent } from "@prismshadow/penguin-library-projects";
 import { readServerLock } from "../lock.js";
 import { SESSION_COOKIE } from "../auth/middleware.js";
 import http from "node:http";

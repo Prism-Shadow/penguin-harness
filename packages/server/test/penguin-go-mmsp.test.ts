@@ -27,7 +27,7 @@ import {
   inlineData,
 } from "@prismshadow/penguin-core";
 import type { LLMOutcome, AmspRecord } from "@prismshadow/penguin-core";
-import type { ErrorBody, ModelsResponse } from "../src/";
+import type { ErrorBody, ModelsResponse } from "../src/api/types.js";
 import { PlatformAuthService, platformConnection } from "../src/services/platform-auth-service.js";
 import { migratePenguinGoRoutes } from "../src/services/project-config-migrations.js";
 import { fakeFetch, jsonResponse, stubFetch } from "./fixtures/fetch.js";

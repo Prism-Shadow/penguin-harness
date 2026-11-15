@@ -15,7 +15,7 @@
 import { createHash } from "node:crypto";
 import { Hono } from "hono";
 import { isValidId } from "@prismshadow/penguin-core";
-import type { ProjectSchedulesResponse, ScheduleItem, SchedulesResponse } from "../../";
+import type { ProjectSchedulesResponse, ScheduleItem, SchedulesResponse } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { ServerConfig } from "../../config.js";
 

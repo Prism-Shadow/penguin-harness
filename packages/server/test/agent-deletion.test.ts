@@ -12,7 +12,7 @@
  *   every Agent is released from the deleting state.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AgentDeletionInfo } from "../src/";
+import type { AgentDeletionInfo } from "../src/api/types.js";
 import { HttpError } from "../src/http/errors.js";
 import { removeAgents } from "../src/services/agent-deletion.js";
 

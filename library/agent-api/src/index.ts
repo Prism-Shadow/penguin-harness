@@ -11,5 +11,5 @@
  * - `./agent-api-repo` - the storing component.
  */
 export { AgentApi, AgentApiSettings, AgentApiUpdateRequest } from "./agent-api.js";
-export type { ModelRefDto } from "./agent-api.js";
+export type { AgentApiKeyInfo, ModelRefDto } from "./agent-api.js";
 export { AgentApiRepo } from "./agent-api-repo.js";

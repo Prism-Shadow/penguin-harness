@@ -33,7 +33,7 @@
  * the slowest one landed, which for a black-holed host is the whole timeout.
  */
 import { userAgent } from "@prismshadow/penguin-core";
-import type { ProxyProbeDto, ProxyProbeOutcome, ProxyProbeTargetDto } from "../";
+import type { ProxyProbeDto, ProxyProbeOutcome, ProxyProbeTargetDto } from "../api/types.js";
 
 /**
  * The targets, with the cheapest request that still proves the path: each host's

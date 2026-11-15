@@ -10,7 +10,7 @@
  */
 import { Hono } from "hono";
 import { agentDir, isValidId } from "@prismshadow/penguin-core";
-import type { AgentArchiveImportResponse, AgentArchiveQuery } from "../../";
+import type { AgentArchiveImportResponse, AgentArchiveQuery } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { formatLocalDate } from "../../internal/dates.js";
 import type { AgentConfig, AgentLifecycle, Snapshots } from "../../mechanisms/agents.js";

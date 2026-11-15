@@ -7,7 +7,7 @@
 import { describe, expect, it } from "vitest";
 import { LanguageService } from "../src/languages/service.js";
 import { languageRoutes } from "../src/http/routes/languages.js";
-import type { LanguageIndexResponse } from "../src/";
+import type { LanguageIndexResponse } from "../src/api/types.js";
 
 const GRAMMAR = { name: "typst", scopeName: "source.typst", patterns: [] };
 const TYPST = {

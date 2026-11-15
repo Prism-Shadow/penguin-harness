@@ -19,7 +19,11 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
 import { systemConfigPath } from "@prismshadow/penguin-core";
-import type { AgentConfigResponse, McpServerTestResponse, ProjectCreateResponse } from "../src/";
+import type {
+  AgentConfigResponse,
+  McpServerTestResponse,
+  ProjectCreateResponse,
+} from "../src/api/types.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 

@@ -12,7 +12,7 @@ import { stampThrough } from "./db-migrations-fixtures.js";
 import { SCHEMA_SQL } from "@prismshadow/penguin-library-db/schema";
 import { SessionsRepo } from "@prismshadow/penguin-library-sessions/repos/sessions";
 import type { SessionRow } from "@prismshadow/penguin-library-sessions/repos/sessions";
-import type { SessionSandbox } from "../src/";
+import type { SessionSandbox } from "../src/api/types.js";
 import { SandboxService } from "../src/sandbox/index.js";
 import { applySandboxPick, sessionSandboxOf } from "../src/services/session-service.js";
 

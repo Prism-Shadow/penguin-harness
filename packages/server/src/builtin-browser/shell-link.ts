@@ -18,7 +18,14 @@
  * port listener is an uncaught exception, which ends the server process (index.ts).
  */
 import { randomUUID } from "node:crypto";
-import type { BuiltinBrowserTab, BuiltinBrowserTabMetrics, DesktopBrowserCommand, DesktopBrowserCommandMessage, DesktopBrowserEvent, DesktopBrowserReplyMessage } from "../";
+import type {
+  BuiltinBrowserTab,
+  BuiltinBrowserTabMetrics,
+  DesktopBrowserCommand,
+  DesktopBrowserCommandMessage,
+  DesktopBrowserEvent,
+  DesktopBrowserReplyMessage,
+} from "../api/types.js";
 import type { ShellPort } from "../services/desktop-update-port.js";
 import { BUILTIN_CAPABILITIES, BrowserLinkError } from "./link.js";
 import type { BrowserLink } from "./link.js";

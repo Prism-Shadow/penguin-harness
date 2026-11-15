@@ -16,7 +16,11 @@
  */
 import { Hono } from "hono";
 import type { ModelOAuthMode } from "@prismshadow/penguin-library-projects";
-import type { ModelOAuthCodeResponse, ModelOAuthStartResponse, ModelOAuthStatusResponse } from "../../";
+import type {
+  ModelOAuthCodeResponse,
+  ModelOAuthStartResponse,
+  ModelOAuthStatusResponse,
+} from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { ServerConfig } from "../../config.js";
 import type { SessionManager } from "../../runtime/session-manager.js";

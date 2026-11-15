@@ -20,7 +20,16 @@ import { Hono } from "hono";
 import { setCookie } from "hono/cookie";
 import { createHash } from "node:crypto";
 import { AVATAR_MAX_CHARS, BACKGROUND_IMAGE_MAX_CHARS } from "../../api/types.js";
-import type { BackgroundImagePutResponse, BackgroundImageResponse, DraftsResponse, MeResponse, PrefsResponse, UiPrefs, UpdateProfileRequest, UpdateProfileResponse } from "../../";
+import type {
+  BackgroundImagePutResponse,
+  BackgroundImageResponse,
+  DraftsResponse,
+  MeResponse,
+  PrefsResponse,
+  UiPrefs,
+  UpdateProfileRequest,
+  UpdateProfileResponse,
+} from "../../api/types.js";
 import { toUserInfo } from "../../auth/service.js";
 import { cookieOptions, sessionCookieName } from "../../auth/middleware.js";
 import type { AppEnv } from "../../auth/middleware.js";
@@ -61,7 +70,10 @@ import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { Config, Desktop } from "../../hmr/capabilities.js";
 import type { Auth, Users } from "@prismshadow/penguin-library-identity";
 import type { Settings, UiPrefsStore } from "@prismshadow/penguin-library-settings";
-import type { BackgroundImageStore, UserDraftsStore } from "@prismshadow/penguin-library-account-data";
+import type {
+  BackgroundImageStore,
+  UserDraftsStore,
+} from "@prismshadow/penguin-library-account-data";
 
 /** Nickname bounds, counted in user-perceived code points so a CJK name is 32 characters, not 96. */
 const DISPLAY_NAME_MIN = 1;

@@ -9,7 +9,7 @@
  * happened, together with the groups as they stand afterwards.
  */
 import { Hono } from "hono";
-import type { PluginConfigActionResponse, PluginConfigResponse } from "../../";
+import type { PluginConfigActionResponse, PluginConfigResponse } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { PluginConfigError } from "../../plugin/config.js";
 import type { PluginConfigAdmin } from "../../plugin/config-page.js";

@@ -26,7 +26,7 @@ import {
   userText,
 } from "@prismshadow/penguin-core";
 import { elideHistoryRecord } from "@prismshadow/penguin-core/interfaces";
-import type { HistoryMessage, HistoryPage, MessagesResponse } from "../src/";
+import type { HistoryMessage, HistoryPage, MessagesResponse } from "../src/api/types.js";
 import {
   HELD_BYTES,
   HELD_BYTES_PER_USER,

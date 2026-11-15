@@ -8,7 +8,7 @@
  * assertion would pass with the wrong check firing.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { MeResponse, UpdateProfileResponse } from "../src/";
+import type { MeResponse, UpdateProfileResponse } from "../src/api/types.js";
 import {
   apiClient,
   createDesktopApp,

@@ -6,7 +6,50 @@ import path from "node:path";
  * lock, followed by an immediate reconcile pass so the change takes effect now; every
  * read is a projection of the files plus the live session state and the period's spend.
  */
-import type { OrgCalendarItem, OrgCalendarResponse, OrgCalendarUpsertRequest, OrgCalendarWriteResponse, SemanticIdSuggestRequest, SemanticIdSuggestResponse, OrgChannelCreateRequest, OrgChannelDetail, OrgChannelItem, OrgChannelMember, OrgChannelPatchRequest, OrgChannelsResponse, OrgChannelMessage, OrgChannelMessageSendRequest, OrgChannelMessagesResponse, Employment, UnreadableChart, OrgChartResponse, OrgDeskResponse, OrgEmployeeItem, OrgEmployeePatchRequest, OrgFinanceResponse, OrgHireRequest, OrgInbox, OrgSessionsResponse, OrgTicketCreateRequest, OrgTicketDetail, OrgTicketHistoryAction, OrgTicketItem, OrgTicketSessionItem, OrgTicketStatus, OrgTicketUpdateRequest, OrgTicketsResponse, OrganizationCreateRequest, OrganizationDetail, OrganizationPatchRequest, OrganizationSettings, OrganizationSummary, OrgLanguage, ScheduleStatus, OrgHandbookFileResponse, OrgHandbookFilesResponse } from "../../";
+import type {
+  OrgCalendarItem,
+  OrgCalendarResponse,
+  OrgCalendarUpsertRequest,
+  OrgCalendarWriteResponse,
+  SemanticIdSuggestRequest,
+  SemanticIdSuggestResponse,
+  OrgChannelCreateRequest,
+  OrgChannelDetail,
+  OrgChannelItem,
+  OrgChannelMember,
+  OrgChannelPatchRequest,
+  OrgChannelsResponse,
+  OrgChannelMessage,
+  OrgChannelMessageSendRequest,
+  OrgChannelMessagesResponse,
+  Employment,
+  UnreadableChart,
+  OrgChartResponse,
+  OrgDeskResponse,
+  OrgEmployeeItem,
+  OrgEmployeePatchRequest,
+  OrgFinanceResponse,
+  OrgHireRequest,
+  OrgInbox,
+  OrgSessionsResponse,
+  OrgTicketCreateRequest,
+  OrgTicketDetail,
+  OrgTicketHistoryAction,
+  OrgTicketItem,
+  OrgTicketSessionItem,
+  OrgTicketStatus,
+  OrgTicketUpdateRequest,
+  OrgTicketsResponse,
+  OrganizationCreateRequest,
+  OrganizationDetail,
+  OrganizationPatchRequest,
+  OrganizationSettings,
+  OrganizationSummary,
+  OrgLanguage,
+  ScheduleStatus,
+  OrgHandbookFileResponse,
+  OrgHandbookFilesResponse,
+} from "../../api/types.js";
 import { TICKET_SLUG_PATTERN } from "../../api/types.js";
 import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";

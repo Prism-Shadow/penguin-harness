@@ -22,7 +22,12 @@
  *   is the 404 a Project that does not exist answers.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import type { ProjectCreateResponse, SessionBatchPageRequest, SessionsBatchResponse, SessionsResponse } from "../src/";
+import type {
+  ProjectCreateResponse,
+  SessionBatchPageRequest,
+  SessionsBatchResponse,
+  SessionsResponse,
+} from "../src/api/types.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 

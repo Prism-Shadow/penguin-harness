@@ -45,7 +45,13 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import { agentDir } from "@prismshadow/penguin-core";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { AppCenterLayoutResponse, AppCenterResponse, WorkbenchAppCenterResponse, WorkbenchArchiveInstallResponse, WorkbenchesResponse } from "../";
+import type {
+  AppCenterLayoutResponse,
+  AppCenterResponse,
+  WorkbenchAppCenterResponse,
+  WorkbenchArchiveInstallResponse,
+  WorkbenchesResponse,
+} from "../api/types.js";
 import type { AppEnv } from "../auth/middleware.js";
 import type { Paths } from "../hmr/capabilities.js";
 import { HttpError } from "../http/errors.js";

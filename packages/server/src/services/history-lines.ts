@@ -31,7 +31,17 @@ import {
   ELIDE_BYTES,
   elideHistoryRecord,
 } from "@prismshadow/penguin-core/interfaces";
-import type { HistoryFileFact, HistoryHave, HistoryLinesFrame, HistoryLinesWindow, HistoryMessage, HistoryPartFrame, HistoryStreamError, HistoryStub, HistoryWindowPart } from "../";
+import type {
+  HistoryFileFact,
+  HistoryHave,
+  HistoryLinesFrame,
+  HistoryLinesWindow,
+  HistoryMessage,
+  HistoryPartFrame,
+  HistoryStreamError,
+  HistoryStub,
+  HistoryWindowPart,
+} from "../api/types.js";
 import type { SessionRow } from "@prismshadow/penguin-library-sessions/repos/sessions";
 import { HttpError } from "../http/errors.js";
 import type { EventSink } from "../http/event-stream.js";

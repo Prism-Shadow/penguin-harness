@@ -13,7 +13,11 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { DRAFT_VALUE_MAX_CHARS, DRAFTS_PATCH_MAX_ENTRIES } from "../src/api/types.js";
-import type { DraftsResponse, ProjectCreateResponse, SessionCreateResponse } from "../src/";
+import type {
+  DraftsResponse,
+  ProjectCreateResponse,
+  SessionCreateResponse,
+} from "../src/api/types.js";
 import { DRAFTS_MAX_COUNT } from "../src/services/user-drafts.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";

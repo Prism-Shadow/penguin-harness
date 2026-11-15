@@ -8,7 +8,7 @@
  * cannot be used to store something else under a known name. `null` clears a preference.
  */
 import { badRequest } from "../http/errors.js";
-import type { BackgroundSettingsDto } from "../";
+import type { BackgroundSettingsDto } from "../api/types.js";
 
 /** Preferences whose value is one token of the Web App's vocabulary. */
 const TOKEN_FIELDS = [

@@ -31,7 +31,15 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { isValidId } from "@prismshadow/penguin-core";
-import type { OrgApprovalMode, OrgLanguage, OrgStatus, OrgTicketPriority, OrgTicketStatus, OrganizationDeleteResponse, OrganizationsResponse } from "../../";
+import type {
+  OrgApprovalMode,
+  OrgLanguage,
+  OrgStatus,
+  OrgTicketPriority,
+  OrgTicketStatus,
+  OrganizationDeleteResponse,
+  OrganizationsResponse,
+} from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { SessionVia } from "@prismshadow/penguin-library-identity";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";

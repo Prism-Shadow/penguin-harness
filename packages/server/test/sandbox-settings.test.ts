@@ -11,7 +11,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { parseManifest } from "@prismshadow/penguin-core/kernel";
 import type { ModuleDef } from "@prismshadow/penguin-core/kernel";
 import type { SandboxPolicy } from "@prismshadow/penguin-core/plugin";
-import type { PluginConfigResponse } from "../src/";
+import type { PluginConfigResponse } from "../src/api/types.js";
 import type { PluginConfig } from "../src/plugin/config.js";
 import { PluginHost } from "../src/plugin/host.js";
 import type { SandboxService } from "../src/sandbox/service.js";

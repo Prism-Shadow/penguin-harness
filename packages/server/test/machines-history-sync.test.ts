@@ -50,7 +50,7 @@ import zlib from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
-import type { HistoryLinesWindow, HistoryProgress, TraceEventsResponse } from "../src/";
+import type { HistoryLinesWindow, HistoryProgress, TraceEventsResponse } from "../src/api/types.js";
 import { machineHistory } from "../src/machines/history-routes.js";
 import { MachineSockets, OWN_SILENCE_MAX_PERIODS } from "../src/machines/machine-sockets.js";
 import type { MachineSocket } from "../src/machines/machine-sockets.js";

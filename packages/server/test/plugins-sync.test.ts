@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { MachineApi } from "../src/machines/machine-api.js";
-import type { InstalledPluginsResponse } from "../src/";
+import type { InstalledPluginsResponse } from "../src/api/types.js";
 import { syncPluginsToMachine } from "../src/machines/plugins-sync.js";
 
 /** A machine whose list is whatever was last written to it. */

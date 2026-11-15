@@ -15,7 +15,7 @@ import { HttpError } from "../http/errors.js";
 import { normalizePenguinGoOrigin } from "../config.js";
 import { Config } from "../hmr/capabilities.js";
 import type { ProjectConfigStore } from "@prismshadow/penguin-library-projects";
-import type { DefaultModelOffer, PlatformAuthFlowStatusResponse } from "../";
+import type { DefaultModelOffer, PlatformAuthFlowStatusResponse } from "../api/types.js";
 import {
   PLATFORM_CLIENT_ID,
   type PlatformCatalogPricing,

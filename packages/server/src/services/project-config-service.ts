@@ -91,7 +91,33 @@ import type {
   ProviderConnectionShape,
   ProviderTable,
 } from "@prismshadow/penguin-core";
-import type { ChatDefaultsDto, CommandPolicyDto, DefaultModelOffer, CommandPolicyRuleDto, EndpointModelListRequest, EndpointModelListResponse, ModelEffectiveConnection, ModelInfo, ModelPricingDto, ModelProtocolDetectRequest, ModelProtocolDetectResponse, ModelRefDto, ModelsResponse, ModelsUpdateRequest, ModelTestRequest, ModelTestResponse, ModelVisionDetectRequest, ModelVisionDetectResponse, PresetSyncMode, PresetSyncResponse, ProviderConnectionDto, ProviderConnectionResponse, ProviderConnectionUpdate } from "../";
+import type {
+  DefaultModelOffer,
+  CommandPolicyRuleDto,
+  ModelEffectiveConnection,
+  ModelInfo,
+  ModelPricingDto,
+} from "../api/types.js";
+import type { ModelRefDto } from "@prismshadow/penguin-library-agent-api";
+import type {
+  ChatDefaultsDto,
+  CommandPolicyDto,
+  EndpointModelListRequest,
+  EndpointModelListResponse,
+  ModelProtocolDetectRequest,
+  ModelProtocolDetectResponse,
+  ModelTestRequest,
+  ModelTestResponse,
+  ModelVisionDetectRequest,
+  ModelVisionDetectResponse,
+  ModelsResponse,
+  ModelsUpdateRequest,
+  PresetSyncMode,
+  PresetSyncResponse,
+  ProviderConnectionDto,
+  ProviderConnectionResponse,
+  ProviderConnectionUpdate,
+} from "@prismshadow/penguin-library-projects";
 import { badRequest } from "../http/validate.js";
 import { HttpError } from "../http/errors.js";
 import { cacheable } from "../internal/mtime-gate.js";

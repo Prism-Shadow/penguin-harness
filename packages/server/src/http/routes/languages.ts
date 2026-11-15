@@ -11,7 +11,7 @@
 import { Hono } from "hono";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { LanguageIndexResponse } from "../../";
+import type { LanguageIndexResponse } from "../../api/types.js";
 import type { Languages } from "../../languages/service.js";
 
 export function languageRoutes(languages: () => Languages): Hono<AppEnv> {

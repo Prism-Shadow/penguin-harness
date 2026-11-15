@@ -13,7 +13,11 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { BACKGROUND_IMAGE_MAX_CHARS } from "../src/api/types.js";
-import type { BackgroundImagePutResponse, BackgroundImageResponse, PrefsResponse } from "../src/";
+import type {
+  BackgroundImagePutResponse,
+  BackgroundImageResponse,
+  PrefsResponse,
+} from "../src/api/types.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 

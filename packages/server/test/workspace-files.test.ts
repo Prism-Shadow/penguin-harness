@@ -40,7 +40,13 @@ import {
   SEARCH_MAX_QUERY_LEN,
   WorkspaceFilesService,
 } from "../src/services/workspace-files-service.js";
-import type { AgentCreateResponse, ErrorBody, ProjectCreateResponse, SessionCreateResponse, WorkspaceSearchResponse } from "../src/";
+import type {
+  AgentCreateResponse,
+  ErrorBody,
+  ProjectCreateResponse,
+  SessionCreateResponse,
+  WorkspaceSearchResponse,
+} from "../src/api/types.js";
 import {
   apiClient,
   canCreateSymlink,

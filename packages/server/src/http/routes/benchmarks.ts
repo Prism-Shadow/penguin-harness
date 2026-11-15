@@ -17,7 +17,12 @@
 import { Hono, type Context } from "hono";
 import { isValidId } from "@prismshadow/penguin-core";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { BenchmarkArchiveGitOrigin, BenchmarkArchiveImportResponse, BenchmarkCreateResponse, CaseMaterial } from "../../";
+import type {
+  BenchmarkArchiveGitOrigin,
+  BenchmarkArchiveImportResponse,
+  BenchmarkCreateResponse,
+  CaseMaterial,
+} from "../../api/types.js";
 import type { BenchmarkCaseInput } from "../../services/benchmark-service.js";
 import { benchmarkTooLarge } from "../../services/benchmark-archive.js";
 import { isHttpUrl } from "../../services/protocol-detect.js";
