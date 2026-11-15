@@ -112,7 +112,7 @@ import type { ProjectConfigStore, ProjectEvents } from "../mechanisms/projects.j
 import type { AgentState, SessionIndex, SessionOrigins } from "../mechanisms/sessions.js";
 import type { Errors, UsageRecording } from "../mechanisms/observability.js";
 import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
-import type { Settings } from "../mechanisms/settings.js";
+import type { Settings } from "@prismshadow/penguin-library-settings";
 import type { MessagingBindings } from "../mechanisms/messaging.js";
 import type { OrgCache } from "../mechanisms/organization.js";
 import { enabledMessagingChannel } from "./messaging/enabled-channel.js";

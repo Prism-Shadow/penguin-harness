@@ -59,7 +59,7 @@ import { mediaType } from "../http/media-type.js";
 import { badRequest, readJson, requireString, requireValidId } from "../http/validate.js";
 import type { AgentConfig } from "../mechanisms/agents.js";
 import type { Access, Projects } from "../mechanisms/projects.js";
-import type { UiPrefsStore } from "../mechanisms/settings.js";
+import type { UiPrefsStore } from "@prismshadow/penguin-library-settings";
 import { MAX_ARCHIVE_BYTES } from "../services/skill-import-limits.js";
 import type {
   WorkbenchRequest,

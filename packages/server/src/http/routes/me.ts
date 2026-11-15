@@ -64,12 +64,12 @@ import {
   MAX_ATTACHMENT_COUNT,
   MAX_ATTACHMENT_MB,
   MIN_ATTACHMENT_MB,
-} from "../../services/attachment-limits.js";
+} from "@prismshadow/penguin-library-settings/attachment-limits";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { Config, Desktop } from "../../hmr/capabilities.js";
 import type { Auth, Users } from "../../mechanisms/identity.js";
-import type { Settings, UiPrefsStore } from "../../mechanisms/settings.js";
+import type { Settings, UiPrefsStore } from "@prismshadow/penguin-library-settings";
 import type { BackgroundImageStore, UserDraftsStore } from "../../mechanisms/account-data.js";
 
 /** Nickname bounds, counted in user-perceived code points so a CJK name is 32 characters, not 96. */

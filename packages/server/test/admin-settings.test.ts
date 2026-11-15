@@ -41,7 +41,7 @@ import {
   DEFAULT_ATTACHMENT_TOTAL_MB,
   MAX_ATTACHMENT_MB,
   MIN_ATTACHMENT_MB,
-} from "../src/services/attachment-limits.js";
+} from "@prismshadow/penguin-library-settings/attachment-limits";
 import { fetchFailed, stubFetch } from "./fixtures/fetch.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";

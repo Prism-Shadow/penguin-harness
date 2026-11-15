@@ -6,7 +6,7 @@
 import { imageUrlMessage, userText } from "@prismshadow/penguin-core";
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import { badRequest } from "../http/validate.js";
-import { INLINE_IMAGE_MAX_BYTES, INLINE_IMAGE_MAX_MB } from "../services/attachment-limits.js";
+import { INLINE_IMAGE_MAX_BYTES, INLINE_IMAGE_MAX_MB } from "@prismshadow/penguin-library-settings/attachment-limits";
 
 /**
  * A base64 `data:` URL of an image: an `image/*` MIME, the `;base64,` marker, a non-empty body.

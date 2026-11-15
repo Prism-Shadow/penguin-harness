@@ -67,7 +67,7 @@ import type {
 } from "../src/api/types.js";
 import { ProjectsRepo } from "../src/db/repos/projects.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
-import { INLINE_IMAGE_MAX_BYTES } from "../src/services/attachment-limits.js";
+import { INLINE_IMAGE_MAX_BYTES } from "@prismshadow/penguin-library-settings/attachment-limits";
 import {
   MESSAGING_APPROVAL_NOTICE,
   MESSAGING_UNSUPPORTED_NOTICE,

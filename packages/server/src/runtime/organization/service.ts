@@ -67,7 +67,7 @@ import type {
 } from "../../mechanisms/projects.js";
 import type { MessagingBindings } from "../../mechanisms/messaging.js";
 import type { SessionIndex } from "../../mechanisms/sessions.js";
-import type { Settings } from "../../mechanisms/settings.js";
+import type { Settings } from "@prismshadow/penguin-library-settings";
 import type { Errors, UsageQueries } from "../../mechanisms/observability.js";
 import { OrgStore } from "../../organization/store.js";
 import { badRequest } from "../../http/validate.js";

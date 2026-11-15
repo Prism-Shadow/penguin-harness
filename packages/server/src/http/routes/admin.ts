@@ -16,7 +16,7 @@ import { adminSettingsRoutes } from "./admin-settings.js";
 import { adminPluginConfigRoutes } from "./admin-plugin-config.js";
 import { PluginConfigAdmin } from "../../plugin/config-page.js";
 import type { Admin } from "../../mechanisms/identity.js";
-import type { Settings } from "../../mechanisms/settings.js";
+import type { Settings } from "@prismshadow/penguin-library-settings";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface AdminRouteDeps {

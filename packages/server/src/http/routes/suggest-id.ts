@@ -32,7 +32,7 @@ import type { Log } from "../../hmr/capabilities.js";
 import type { AgentLifecycle, Benchmarks } from "../../mechanisms/agents.js";
 import type { Errors } from "../../mechanisms/observability.js";
 import type { Access, ProjectConfigStore, ProjectLifecycle } from "../../mechanisms/projects.js";
-import type { Settings } from "../../mechanisms/settings.js";
+import type { Settings } from "@prismshadow/penguin-library-settings";
 import type { OrgService } from "../../runtime/organization/service.js";
 import type { UtilityCompletion } from "../../services/project-config-service.js";
 import { SEMANTIC_ID_RULES, projectIdRule } from "../../services/semantic-id.js";
