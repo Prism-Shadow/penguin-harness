@@ -263,19 +263,20 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
       ]),
     ];
     // npm link's own records: the prefix manifest's `file:` dependencies naming a DIRECTORY
-    // are the author directories linked into the prefix (a `file:` naming a tarball is an
-    // uploaded zip's install, not a link). The row exists because the LINK in node_modules
-    // exists — lstat it, not the author directory it names: a dangling link (the author's
-    // directory deleted) stays a row and reports its fault. A symlink lstats as a symlink
-    // (isDirectory is false on it), so both count.
+    // are the author directories linked into the prefix — a `file:` naming a tarball under
+    // archives/ is an uploaded zip's install, not a link. The row exists because the LINK in
+    // node_modules exists — lstat it, not the author directory it names: a dangling link
+    // (the author's directory deleted) stays a row and reports its fault. A symlink lstats
+    // as a symlink (isDirectory is false on it), so both count.
     const links: (readonly [string, string])[] = [];
     for (const [name, spec] of Object.entries(await prefixDependencies(pluginsPrefix(deps.root)))) {
       if (!spec.startsWith("file:")) continue;
+      const dir = path.resolve(pluginsPrefix(deps.root), spec.slice("file:".length));
+      if (path.extname(dir) === ".tgz" || path.extname(dir) === ".tar.gz") continue;
       const st = await fs
         .lstat(installedPackageDir(pluginsPrefix(deps.root), name))
         .catch(() => null);
-      if (st?.isDirectory() || st?.isSymbolicLink())
-        links.push([name, path.resolve(pluginsPrefix(deps.root), spec.slice("file:".length))] as const);
+      if (st?.isDirectory() || st?.isSymbolicLink()) links.push([name, dir] as const);
     }
     for (const [name] of links) {
       if (!names.includes(name)) names.push(name);
