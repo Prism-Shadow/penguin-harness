@@ -233,6 +233,9 @@ importers:
 
   library/sessions:
     dependencies:
+      '@prismshadow/amsp':
+        specifier: workspace:*
+        version: link:../../packages/amsp
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
@@ -8059,6 +8062,7 @@ snapshots:
 
   '@prismshadow/penguin-library-sessions@file:library/sessions(supports-color@10.2.2)(ws@8.21.0)':
     dependencies:
+      '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)(ws@8.21.0)
     transitivePeerDependencies:
@@ -8071,6 +8075,7 @@ snapshots:
 
   '@prismshadow/penguin-library-sessions@file:library/sessions(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
     dependencies:
+      '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
     transitivePeerDependencies:
@@ -8083,6 +8088,7 @@ snapshots:
 
   '@prismshadow/penguin-library-sessions@file:library/sessions(ws@8.21.0)':
     dependencies:
+      '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/penguin-core': file:packages/core(ws@8.21.0)
       '@prismshadow/penguin-library-db': file:library/db(ws@8.21.0)
     transitivePeerDependencies:
