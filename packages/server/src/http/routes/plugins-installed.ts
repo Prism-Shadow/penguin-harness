@@ -270,7 +270,9 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     for (const [name, spec] of Object.entries(await prefixDependencies(pluginsPrefix(deps.root)))) {
       if (!spec.startsWith("file:")) continue;
       const target = path.resolve(pluginsPrefix(deps.root), spec.slice("file:".length));
-      if ((await fs.stat(target).catch(() => null))?.isDirectory()) links.push([name, target] as const);
+      // lstat, not stat: the row exists because the LINK exists — a dangling link (the
+      // author's directory deleted) stays a row and reports its fault.
+      if ((await fs.lstat(target).catch(() => null))?.isDirectory()) links.push([name, target] as const);
     }
     for (const [name] of links) {
       if (!names.includes(name)) names.push(name);
