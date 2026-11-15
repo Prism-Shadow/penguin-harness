@@ -19,7 +19,7 @@ import path from "node:path";
 import { agentDir, isSafeIconSvg } from "@prismshadow/penguin-core";
 import type { WorkbenchInfo } from "../src/api/types.js";
 import { MAIN_ICON } from "../src/workbenches/manifest.js";
-import { ADMIN_USER_ID, apiClient, createTestApp, provisionUser } from "./helpers.js";
+import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
 
 const PROJECT = "owner-wf";
 const AGENT = "default_agent";
@@ -126,7 +126,7 @@ async function coldWorkbenchApp(opts: { icon?: boolean } = {}) {
       );
     },
   });
-  const a = await provisionUser(t.app, ADMIN_USER_ID);
+  const a = await loginAdmin(t.app);
   const owner = apiClient(t.app, a.cookie);
   const dir = path.join(agentDir(t.root, DEFAULT_PROJECT, AGENT), "workbenches", "demo");
   return { t, owner, dir };
