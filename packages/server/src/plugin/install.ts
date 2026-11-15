@@ -36,6 +36,12 @@ const execFileAsync = promisify(execFile);
 
 /** Long enough for a cold registry fetch with dependencies; short enough not to hang a request. */
 const INSTALL_TIMEOUT_MS = 180_000;
+/** One address's window for the channel download: mirrors are tried in parallel after this. */
+const CHANNEL_TIMEOUT_MS = 15_000;
+/** Happy Eyeballs stagger: the next mirror's download starts this long after the one before. */
+const CHANNEL_HEAD_START_MS = 250;
+/** The asset address that downloaded last time, tried first next time (sticky winner). */
+let lastGoodAsset: { url: string; mirror: string | null } | null = null;
 
 /** `<root>/plugins`: the npm prefix this deployment installs plugins into. */
 export function pluginsPrefix(root: string): string {
@@ -57,6 +63,16 @@ export class PluginInstallError extends Error {
    * did not come from npm at all.
    */
   reason?: "unavailable" | "other";
+}
+
+/** An address answered HTTP with a non-ok status: the status and the address that answered it. */
+class StatusError extends Error {
+  constructor(
+    readonly status: number,
+    readonly address: string,
+  ) {
+    super(`${address} answered HTTP ${status}`);
+  }
 }
 
 /** A package npm put in the prefix: its name and the version it settled on. */
@@ -460,16 +476,85 @@ export async function installPluginChannel(
   } = {},
 ): Promise<InstalledPackage> {
   const prefix = await ensurePrefix(root);
+  // The asset's addresses in try order: the URL the index published first, then this
+  // source's CDN mirrors, raced with a stagger and per-address timeouts (see below).
+  // Mirrors change only where the bytes come from: what arrives is verified against the
+  // entry's integrity exactly as the canonical URL's would be, so a mirror serving
+  // tampered bytes is refused like any other source.
+  const addresses = [channel.url, ...(channel.mirrors ?? [])];
+  // Happy Eyeballs with a sticky winner (RFC 8305): the mirror that served this source
+  // last time starts first and the stagger never fires when it answers; otherwise the
+  // addresses are downloaded staggered, not serially, and the first that answers ok wins —
+  // a sweep's worst wait is the stagger times the address count plus one window, not the
+  // sum of every address's window. Each address carries its own timeout (an unreachable
+  // mirror costs one window, not a hang): the read is a race, so a slow address's answer
+  // is simply ignored once a faster one has won.
+  const ordered = (() => {
+    const hit =
+      lastGoodAsset !== null &&
+      lastGoodAsset.url === channel.url &&
+      lastGoodAsset.mirror !== null &&
+      addresses.includes(lastGoodAsset.mirror)
+        ? lastGoodAsset.mirror
+        : null;
+    return hit === null ? addresses : [hit, ...addresses.filter((a) => a !== hit)];
+  })();
   let res: Awaited<ReturnType<typeof fetch>>;
-  try {
-    res = await fetchImpl(channel.url, { redirect: "follow" });
-  } catch (err) {
-    throw new PluginInstallError(
-      `could not fetch the release asset ${channel.url}: ${err instanceof Error ? err.message : String(err)}`,
+  let lastError: unknown = null;
+  let lastStatus: number | null = null;
+  const download = async (address: string): Promise<Awaited<ReturnType<typeof fetch>>> => {
+    const attempt = await fetchImpl(address, {
+      redirect: "follow",
+      signal: AbortSignal.timeout(CHANNEL_TIMEOUT_MS),
+    });
+    if (!attempt.ok) throw new StatusError(attempt.status, address);
+    return attempt;
+  };
+  if (ordered.length === 1) {
+    try {
+      res = await download(ordered[0]!);
+      lastGoodAsset = { url: channel.url, mirror: null };
+    } catch (err) {
+      if (err instanceof StatusError) {
+        throw new PluginInstallError(`the release asset answered ${err.status}: ${err.address}`);
+      }
+      const why = err instanceof Error ? err.message : String(err);
+      throw new PluginInstallError(`could not fetch the release asset ${ordered[0]}: ${why}`);
+    }
+  } else {
+    let pending = ordered.length;
+    const won = await new Promise<{ address: string; res: Awaited<ReturnType<typeof fetch>> }>(
+      (resolve) => {
+        for (const [i, address] of ordered.entries()) {
+          setTimeout(() => {
+            void (async () => {
+              try {
+                const answer = await download(address);
+                resolve({ address, res: answer });
+              } catch (err) {
+                if (err instanceof StatusError) lastStatus = err.status;
+                else if (err instanceof Error) lastError = err;
+                else lastError = new Error(String(err));
+              } finally {
+                pending -= 1;
+                if (pending === 0) resolve(null as unknown as { address: string; res: Awaited<ReturnType<typeof fetch>> });
+              }
+            })();
+          }, i * CHANNEL_HEAD_START_MS);
+        }
+      },
     );
-  }
-  if (!res.ok) {
-    throw new PluginInstallError(`the release asset answered ${res.status}: ${channel.url}`);
+    if (won !== null) {
+      res = won.res;
+      lastGoodAsset = { url: channel.url, mirror: won.address === channel.url ? null : won.address };
+    } else if (lastStatus !== null) {
+      throw new PluginInstallError(
+        `the release asset answered ${lastStatus}: ${ordered.map((a) => a).join(", ")}`,
+      );
+    } else {
+      const why = lastError instanceof Error ? lastError.message : String(lastError);
+      throw new PluginInstallError(`could not fetch the release asset ${ordered[0]}: ${why}`);
+    }
   }
   const bytes = new Uint8Array(await readAsset(res, onProgress));
   const digest = verifyIntegrity(bytes, channel.integrity);

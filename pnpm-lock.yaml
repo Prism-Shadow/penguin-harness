@@ -744,12 +744,12 @@ importers:
       '@xterm/headless':
         specifier: ^5.5.0
         version: 5.5.0
-      css-tree:
-        specifier: ^3.2.1
-        version: 3.2.1
       commander:
         specifier: ^13.0.0
         version: 13.1.0
+      css-tree:
+        specifier: ^3.2.1
+        version: 3.2.1
       dotenv:
         specifier: ^17.0.0
         version: 17.4.2
@@ -768,6 +768,9 @@ importers:
       remark-parse:
         specifier: ^11.0.0
         version: 11.0.0(supports-color@10.2.2)
+      safe-regex:
+        specifier: ^2.1.1
+        version: 2.1.1
       smol-toml:
         specifier: ^1.9.1
         version: 1.9.1
@@ -1227,9 +1230,6 @@ importers:
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: file:packages/core(ws@8.21.0)
-
-
-
 
   plugins/goal:
     devDependencies:
@@ -2685,7 +2685,9 @@ packages:
   '@smithy/core@3.24.7':
     resolution: {integrity: sha512-KoUi4M1f3BG6kzN1FnCwL7oyFptTbyBJKjR6yhSib+JHRdUmM1o+VwsFtJ66NZCkCzVfJMWRHJNo0R0jznp0Pg==}
     engines: {node: '>=18.0.0'}
-    deprecated: Deprecated due to a bug in custom logger data redaction. See https://github.com/aws/aws-sdk-js-v3/issues/8393.
+    deprecated: |-
+      Deprecated due to a bug in custom logger data redaction. Upgrade to the latest version. If you used a custom logger with this
+        version, review your logs and rotate any credentials or other secrets. See https://github.com/aws/aws-sdk-js-v3/issues/8393.
 
   '@smithy/credential-provider-imds@4.3.9':
     resolution: {integrity: sha512-ZlfJ/4Fa3jYb+3eaohPfG9utX9HmdhFNcFtpoGAhUhdynAOmGXtmigbi7eEiONKM+ykHw8RwKuDEb85Lx7t7fA==}
@@ -5259,6 +5261,10 @@ packages:
   regex@6.1.0:
     resolution: {integrity: sha512-6VwtthbV4o/7+OaAF9I5L5V3llLEsoPyq9P1JVXkedTP33c7MfCG0/5NOPcSJn0TzXcG9YUrR0gQSWioew3LDg==}
 
+  regexp-tree@0.1.27:
+    resolution: {integrity: sha512-iETxpjK6YoRWJG5o6hXLwvjYAoW+FEZn9os0PD/b6AP6xQwsa/Y7lCVgIixBbUPMfhu+i2LtdeAqVTgGlQarfA==}
+    hasBin: true
+
   rehype-katex@7.0.1:
     resolution: {integrity: sha512-OiM2wrZ/wuhKkigASodFoo8wimG3H12LWQaH8qSPVJn9apWKFSH3YOCtbKpBorTVw/eI7cuT21XBbvwEswbIOA==}
 
@@ -5352,6 +5358,9 @@ packages:
 
   safe-buffer@5.2.1:
     resolution: {integrity: sha512-rp3So07KcdmmKbGvgaNxQSJr7bGVSVk5S9Eq1F+ppbRo70+YeaDxkw5Dd8NPN+GD6bjnYm2VuPuCXmpuYvmCXQ==}
+
+  safe-regex@2.1.1:
+    resolution: {integrity: sha512-rx+x8AMzKb5Q5lQ95Zoi6ZbJqwCLkqi3XuJXp5P3rT8OEc6sZCJG5AE5dU3lsgRr/F4Bs31jSlVN+j5KrsGu9A==}
 
   safer-buffer@2.1.2:
     resolution: {integrity: sha512-YZo3K82SD7Riyi0E1EQPojLz7kpepnSQI9IyPbHHg1XXXevb5dJI7tpyN2ADxGcQbHG7vcyRHk0cbwqcQriUtg==}
@@ -7389,6 +7398,7 @@ snapshots:
       '@prismshadow/mmsp': 0.5.6(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(ws@8.21.0)
       '@xterm/headless': 5.5.0
+      commander: 13.1.0
       css-tree: 3.2.1
       dotenv: 17.4.2
       fflate: 0.8.3
@@ -7396,6 +7406,7 @@ snapshots:
       isomorphic-git: 1.44.10
       node-pty: 1.1.0
       remark-parse: 11.0.0(supports-color@10.2.2)
+      safe-regex: 2.1.1
       smol-toml: 1.9.1
       tar: 7.5.22
       typescript: 5.9.3
@@ -7448,6 +7459,7 @@ snapshots:
       '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@xterm/headless': 5.5.0
+      commander: 13.1.0
       css-tree: 3.2.1
       dotenv: 17.4.2
       fflate: 0.8.3
@@ -7455,6 +7467,7 @@ snapshots:
       isomorphic-git: 1.44.10
       node-pty: 1.1.0
       remark-parse: 11.0.0(supports-color@10.2.2)
+      safe-regex: 2.1.1
       smol-toml: 1.9.1
       tar: 7.5.22
       typescript: 5.9.3
@@ -7507,6 +7520,7 @@ snapshots:
       '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@xterm/headless': 5.5.0
+      commander: 13.1.0
       css-tree: 3.2.1
       dotenv: 17.4.2
       fflate: 0.8.3
@@ -7514,6 +7528,7 @@ snapshots:
       isomorphic-git: 1.44.10
       node-pty: 1.1.0
       remark-parse: 11.0.0(supports-color@10.2.2)
+      safe-regex: 2.1.1
       smol-toml: 1.9.1
       tar: 7.5.22
       typescript: 5.9.3
@@ -10840,6 +10855,8 @@ snapshots:
     dependencies:
       regex-utilities: 2.3.0
 
+  regexp-tree@0.1.27: {}
+
   rehype-katex@7.0.1:
     dependencies:
       '@types/hast': 3.0.4
@@ -10993,6 +11010,10 @@ snapshots:
   safe-buffer@5.1.2: {}
 
   safe-buffer@5.2.1: {}
+
+  safe-regex@2.1.1:
+    dependencies:
+      regexp-tree: 0.1.27
 
   safer-buffer@2.1.2: {}
 

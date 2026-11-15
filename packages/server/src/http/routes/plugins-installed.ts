@@ -763,7 +763,9 @@ export class InstalledPluginRoutes {
       packages: this.packages,
       // The published index's github channels, for a name npm has no answer for; looked up
       // only then, cached at the listing's cadence (indexChannelLookup).
-      channelOf: indexChannelLookup(this.config.pluginIndexUrl ?? null),
+      channelOf: indexChannelLookup(this.config.pluginIndexUrl ?? null, {
+        proxy: this.config.pluginProxy ?? [],
+      }),
       // The plugin list rides the same trip the model config takes to a Project's machines.
       syncFleet: (projectId) => void this.machines.syncConfigEverywhere(projectId),
     });
