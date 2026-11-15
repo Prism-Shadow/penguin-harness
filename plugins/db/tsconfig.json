@@ -1,7 +1,54 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "rootDir": "."
+    "rootDir": ".",
+    "paths": {
+      "@prismshadow/penguin-server": [
+        "../../packages/server/src/index.ts"
+      ],
+      "@prismshadow/penguin-server/api": [
+        "../../packages/server/src/api/types.ts"
+      ],
+      "@prismshadow/penguin-server/hmr/capabilities": [
+        "../../packages/server/src/hmr/capabilities.ts"
+      ],
+      "@prismshadow/penguin-server/mechanisms/account-data": [
+        "../../packages/server/src/mechanisms/account-data.ts"
+      ],
+      "@prismshadow/penguin-server/mechanisms/agent-api": [
+        "../../packages/server/src/mechanisms/agent-api.ts"
+      ],
+      "@prismshadow/penguin-server/mechanisms/identity": [
+        "../../packages/server/src/mechanisms/identity.ts"
+      ],
+      "@prismshadow/penguin-server/mechanisms/messaging": [
+        "../../packages/server/src/mechanisms/messaging.ts"
+      ],
+      "@prismshadow/penguin-server/mechanisms/observability": [
+        "../../packages/server/src/mechanisms/observability.ts"
+      ],
+      "@prismshadow/penguin-server/mechanisms/organization": [
+        "../../packages/server/src/mechanisms/organization.ts"
+      ],
+      "@prismshadow/penguin-server/mechanisms/projects": [
+        "../../packages/server/src/mechanisms/projects.ts"
+      ],
+      "@prismshadow/penguin-server/mechanisms/sessions": [
+        "../../packages/server/src/mechanisms/sessions.ts"
+      ],
+      "@prismshadow/penguin-server/mechanisms/settings": [
+        "../../packages/server/src/mechanisms/settings.ts"
+      ],
+      "@prismshadow/penguin-server/mechanisms/traces": [
+        "../../packages/server/src/mechanisms/traces.ts"
+      ],
+      "@prismshadow/penguin-server/runtime/session-sources": [
+        "../../packages/server/src/runtime/session-sources.ts"
+      ]
+    }
   },
-  "include": ["src", "test"]
+  "include": [
+    "src",
+    "test"
+  ]
 }

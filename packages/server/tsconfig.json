@@ -1,7 +1,30 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "rootDir": "."
+    "rootDir": ".",
+    "paths": {
+      "@penguinharness/plugin-db": [
+        "../../plugins/db/src/index.ts"
+      ],
+      "@penguinharness/plugin-db/attachment-limits": [
+        "../../plugins/db/src/attachment-limits.ts"
+      ],
+      "@penguinharness/plugin-db/migrations": [
+        "../../plugins/db/src/migrations/index.ts"
+      ],
+      "@penguinharness/plugin-db/repos": [
+        "../../plugins/db/src/repos/index.ts"
+      ],
+      "@penguinharness/plugin-db/schema": [
+        "../../plugins/db/src/schema.ts"
+      ],
+      "@penguinharness/plugin-db/testing": [
+        "../../plugins/db/test/db-migrations-fixtures.ts"
+      ]
+    }
   },
-  "include": ["src", "test"]
+  "include": [
+    "src",
+    "test"
+  ]
 }
