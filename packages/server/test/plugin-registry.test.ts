@@ -1091,5 +1091,4 @@ describe("the route's own merge", () => {
     } finally {
       await rm(prefix, { recursive: true, force: true });
     }
-  });
 });
