@@ -19,11 +19,14 @@ import path from "node:path";
 import { agentDir, isSafeIconSvg } from "@prismshadow/penguin-core";
 import type { WorkbenchInfo } from "../src/api/types.js";
 import { MAIN_ICON } from "../src/workbenches/manifest.js";
-import { apiClient, createTestApp, provisionUser } from "./helpers.js";
+import { ADMIN_USER_ID, apiClient, createTestApp, provisionUser } from "./helpers.js";
 
 const PROJECT = "owner-wf";
 const AGENT = "default_agent";
 const BASE = `/api/projects/${PROJECT}/agents/${AGENT}/workbenches`;
+/** The seeded admin's own project, for the cold anonymous-read app (its workbench is pre-seeded). */
+const DEFAULT_PROJECT = "default_project";
+const COLD_BASE = `/api/projects/${DEFAULT_PROJECT}/agents/${AGENT}/workbenches`;
 const HOST_KEY = "@prismshadow/penguin-server#WorkbenchHost";
 const MAIN_KEY = "@prismshadow/penguin-server#WorkbenchMain";
 
@@ -93,24 +96,39 @@ async function assertDoesNotExit(p: string): Promise<void> {
   await expect(fs.access(p)).rejects.toThrow();
 }
 
-/**
- * An app with the owner's Project and a demo workbench (with or without an icon) in its
- * default Agent. The folder is written BEFORE the app boots (`beforeSeed`): a folder that
- * appears after boot goes through the first-workbench poller, which lists — and so compiles
- * and boots — it; one present at boot is watched without that first load.
- */
-async function workbenchApp(opts: { icon?: boolean; project?: string } = {}) {
-  const project = opts.project ?? PROJECT;
-  const t = await createTestApp({
-    beforeSeed: async (root) => {
-      await writeDemo(path.join(agentDir(root, project, AGENT), "workbenches", "demo"), opts);
-    },
-  });
+/** An app with the owner's Project and a demo workbench (with or without an icon) in its default Agent. */
+async function workbenchApp(opts: { icon?: boolean } = {}) {
+  const t = await createTestApp();
   const a = await provisionUser(t.app, "owner");
   const owner = apiClient(t.app, a.cookie);
-  const created = await owner.post("/api/projects", { projectId: project, name: "wf" });
+  const created = await owner.post("/api/projects", { projectId: PROJECT, name: "wf" });
   expect(created.status, await created.text()).toBe(201);
-  const dir = path.join(agentDir(t.root, project, AGENT), "workbenches", "demo");
+  const dir = path.join(agentDir(t.root, PROJECT, AGENT), "workbenches", "demo");
+  await writeDemo(dir, opts);
+  return { t, owner, dir };
+}
+
+/**
+ * A cold app for the anonymous-read case: the demo workbench is written BEFORE boot (under
+ * the seeded admin's own project — creating it here is why the POST route is not used: the
+ * project directory would already exist and the create would 409). A folder present at boot
+ * is watched, never polled-and-listed: the first-workbench poller only arms for a folder
+ * that appears after boot, and its appearing IS a compile+boot. Nothing here has ever asked
+ * the session-gated list, so a `.build/` in the folder after an anonymous manifest read
+ * would be the read's own doing.
+ */
+async function coldWorkbenchApp(opts: { icon?: boolean } = {}) {
+  const t = await createTestApp({
+    beforeSeed: async (root) => {
+      await writeDemo(
+        path.join(agentDir(root, DEFAULT_PROJECT, AGENT), "workbenches", "demo"),
+        opts,
+      );
+    },
+  });
+  const a = await provisionUser(t.app, ADMIN_USER_ID);
+  const owner = apiClient(t.app, a.cookie);
+  const dir = path.join(agentDir(t.root, DEFAULT_PROJECT, AGENT), "workbenches", "demo");
   return { t, owner, dir };
 }
 
@@ -327,18 +345,18 @@ describe("workbench manifest route", { timeout: 30_000 }, () => {
     // (the workbench has never been listed in this fresh app). The compile side of this
     // suite's own setup ran because a session-gated request listed the workbenches; what
     // this asserts is that the ANONYMOUS manifest read does none of that by itself.
-    const fresh = await workbenchApp({ icon: true, project: "owner-wf-cold" });
+    const fresh = await coldWorkbenchApp({ icon: true });
     try {
       const build = path.join(fresh.dir, ".build");
-      const res = await fresh.t.app.request(`${BASE}/demo/manifest.webmanifest`);
+      const res = await fresh.t.app.request(`${COLD_BASE}/demo/manifest.webmanifest`);
       expect(res.status).toBe(200);
       await assertDoesNotExit(build);
       // The registration the manifest answered from was the folder, not a loaded instance:
       // the session-gated list (which would compile and boot) was never asked.
-      const listed = await fresh.owner.get(`${BASE}`);
+      const listed = await fresh.owner.get(`${COLD_BASE}`);
       expect(listed.status).toBe(200);
       // And a second anonymous read answers again, still without a build on disk.
-      const again = await fresh.t.app.request(`${BASE}/demo/manifest.webmanifest`);
+      const again = await fresh.t.app.request(`${COLD_BASE}/demo/manifest.webmanifest`);
       expect(again.status).toBe(200);
       await assertDoesNotExit(build);
     } finally {
