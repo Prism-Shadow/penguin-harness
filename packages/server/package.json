@@ -125,7 +125,6 @@
     "hono": "^4.13.11",
     "isomorphic-git": "^1.44.0",
     "node-pty": "^1.1.0",
-    "npm": "^11.19.1",
     "remark-parse": "^11.0.0",
     "smol-toml": "^1.9.1",
     "tar": "^7.5.21",

@@ -103,15 +103,9 @@ export async function prefixDependencies(prefix: string): Promise<Record<string,
 }
 
 async function npm(prefix: string, args: readonly string[], cwd = prefix): Promise<string> {
-  const cli = await npmCli();
-  // `npm/bin/npm-cli.js` runs under THIS node (process.execPath), not whatever `npm` on the
-  // PATH would pick: the npm that ships with this runtime is the one the install semantics
-  // (the `file:` link flag, the manifest records) were verified against, and an ambient npm
-  // may be an older one whose behavior differs (verified on the build machine: npm 9 and
-  // npm 11 disagree about `install-links`). Spawning node itself is executable on every
-  // platform — the old batch-file workaround died with the bare `npm` name.
+  const command = await npmCommand();
   try {
-    const { stdout } = await execFileAsync(process.execPath, [cli, ...args], {
+    const { stdout } = await execFileAsync(command.file, [...command.argv, ...args], {
       cwd,
       timeout: INSTALL_TIMEOUT_MS,
       maxBuffer: 8 * 1024 * 1024,
@@ -119,9 +113,17 @@ async function npm(prefix: string, args: readonly string[], cwd = prefix): Promi
     });
     return stdout;
   } catch (err) {
-    const stderr = (err as { stderr?: string }).stderr;
-    const failure = new PluginInstallError(npmReason(stderr, err as Error));
-    failure.reason = npmFailureKind(stderr);
+    const error = err as Error & { code?: string; stderr?: string };
+    // A spawn failure with ENOENT is this machine having neither node-bundled npm nor one on
+    // PATH — the one "no npm here at all" outcome, said plainly rather than as a garbled
+    // "spawn npm ENOENT" leaking through npmReason's stderr reader.
+    if (error.code === "ENOENT" && !error.stderr) {
+      throw new PluginInstallError(
+        `npm, the installer of plugins, is not on this machine: this node carries none and none is on PATH`,
+      );
+    }
+    const failure = new PluginInstallError(npmReason(error.stderr, error));
+    failure.reason = npmFailureKind(error.stderr);
     throw failure;
   }
 }
@@ -438,54 +440,45 @@ function npmReason(stderr: string | undefined, err: Error): string {
 }
 
 /**
- * Where npm's own CLI lives, resolved like the platform resolves node-pty (the terminal's
- * pty-module): the npm SHIPPED with this runtime, never whatever `npm` a PATH happens to
- * carry — the ambient npm may be an older one whose install semantics differ (verified on
- * the build machine: npm 9 and npm 11 disagree about `install-links`), and a pushed bundle
- * or a desktop package must not depend on the machine having npm at all. Two places, in the
- * order a packaged runtime meets them:
- *
- * 1. This server's own dependency graph (`npm` is a regular dependency).
- * 2. The PROGRAM this process was started from (`process.argv[1]`): a pushed platform runs
- *    inside an installed release whose node_modules carried npm beside its own dependencies.
- *
- * The result is cached: npm's place does not move under a running process. Found nowhere, the
- * error says so plainly — a refusal the route renders as a failed install, not a crash.
+ * The npm command plugin installs run through, resolved once per process. Node's own
+ * distribution ships npm beside the interpreter (`<execPath dir>/../lib/node_modules/npm` on
+ * POSIX, `<execPath dir>/node_modules/npm` on Windows — the dist layout, not npm's installed
+ * one), and that copy is the one every platform package and Docker image carries, because
+ * the runtime bundles the official Node build. Only when this node has no npm of its own —
+ * a system node split from npm by its distribution, or the universal package against a bare
+ * interpreter — does the machine's own `npm` on PATH get asked, the way every other npm
+ * consumer on the machine resolves it. Neither there, the error says so plainly: a refusal
+ * the route renders as a failed install, not a crash.
  */
-let npmCliCache: Promise<string> | null = null;
-function npmCli(): Promise<string> {
-  npmCliCache ??= (async () => {
-    // npm's `exports` map only lets `npm/package.json` through (`npm/bin/npm-cli.js` is
-    // ERR_PACKAGE_PATH_NOT_EXPORTED), so the package directory is resolved through that
-    // export and the CLI entry is npm's own `bin` record beside it.
-    const places: readonly { label: string; base: string | null }[] = [
-      { label: "this server's own dependencies", base: import.meta.url },
-      {
-        label: "the installed program's dependencies",
-        base:
-          process.argv[1] !== undefined && path.isAbsolute(process.argv[1])
-            ? path.resolve(process.argv[1])
-            : null,
-      },
-    ];
-    for (const { label, base } of places) {
-      if (base === null) continue;
-      try {
-        const dir = path.dirname(createRequire(base).resolve("npm/package.json"));
-        const cli = path.join(dir, "bin", "npm-cli.js");
-        await fs.access(cli);
-        return cli;
-      } catch {
-        // The next place is asked; the tail of this error is only the summary.
-      }
-    }
-    throw new PluginInstallError(
-      `npm, the installer of plugins, does not ship with this runtime (looked for the npm package in ${places
-        .map((p) => p.label)
-        .join(", then ")})`,
+let npmCommandCache: Promise<{ file: string; argv: readonly string[] }> | null = null;
+function npmCommand(): Promise<{ file: string; argv: readonly string[] }> {
+  npmCommandCache ??= (async () => {
+    // The layout the official dist unpacks to, relative to the running interpreter. A node
+    // installed another way (a distribution package, a version manager) need not carry it;
+    // the probe is stat, not assumption.
+    const bundled = path.join(
+      path.dirname(process.execPath),
+      ...(process.platform === "win32"
+        ? (["node_modules", "npm", "bin", "npm-cli.js"] as const)
+        : (["..", "lib", "node_modules", "npm", "bin", "npm-cli.js"] as const)),
     );
+    if (
+      await fs
+        .access(bundled)
+        .then(() => true)
+        .catch(() => false)
+    ) {
+      // node itself runs the CLI: no batch file, no shell, every platform.
+      return { file: process.execPath, argv: [bundled] };
+    }
+    // The machine's npm. On Windows the PATH entry is a batch file, which node refuses to
+    // spawn directly (`spawn EINVAL`), so cmd.exe runs it — a real executable; `/d` skips
+    // AutoRun scripts, `/s /c` runs the rest as given, each argument quoted by Node.
+    return process.platform === "win32"
+      ? { file: "cmd.exe", argv: ["/d", "/s", "/c", "npm.cmd"] }
+      : { file: "npm", argv: [] };
   })();
-  return npmCliCache;
+  return npmCommandCache;
 }
 
 /**
