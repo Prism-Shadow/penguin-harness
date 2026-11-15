@@ -388,7 +388,11 @@ export abstract class Config extends Interface<ServerConfig>() {}
  * and migrations are library code — and the server re-exports it here so every
  * capability consumer keeps one import site.
  */
-export { Db } from "@prismshadow/penguin-library-db";
+import { Db } from "@prismshadow/penguin-library-db";
+
+/** Re-exported: the repos' `@Use() db!: Db` fields name this class, and the
+ * capability file is where every consumer imports it from. */
+export { Db };
 
 /** One SSE channel (the class in runtime/channel.ts satisfies this). */
 export type ChannelApi = Pick<
