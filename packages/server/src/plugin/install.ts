@@ -429,7 +429,9 @@ function npmReason(stderr: string | undefined, err: Error): string {
 let npmCliCache: Promise<string> | null = null;
 function npmCli(): Promise<string> {
   npmCliCache ??= (async () => {
-    const wanted = "npm/bin/npm-cli.js";
+    // npm's `exports` map only lets `npm/package.json` through (`npm/bin/npm-cli.js` is
+    // ERR_PACKAGE_PATH_NOT_EXPORTED), so the package directory is resolved through that
+    // export and the CLI entry is npm's own `bin` record beside it.
     const places: readonly { label: string; base: string | null }[] = [
       { label: "this server's own dependencies", base: import.meta.url },
       {
@@ -443,13 +445,16 @@ function npmCli(): Promise<string> {
     for (const { label, base } of places) {
       if (base === null) continue;
       try {
-        return createRequire(base).resolve(wanted);
+        const dir = path.dirname(createRequire(base).resolve("npm/package.json"));
+        const cli = path.join(dir, "bin", "npm-cli.js");
+        await fs.access(cli);
+        return cli;
       } catch {
         // The next place is asked; the tail of this error is only the summary.
       }
     }
     throw new PluginInstallError(
-      `npm, the installer of plugins, does not ship with this runtime (looked for ${wanted} in ${places
+      `npm, the installer of plugins, does not ship with this runtime (looked for the npm package in ${places
         .map((p) => p.label)
         .join(", then ")})`,
     );
