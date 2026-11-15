@@ -146,7 +146,11 @@ describe("lookups", () => {
     try {
       // A real 1×1 PNG: signature, IHDR, IDAT, IEND — what a renderer could actually decode.
       const png = validPngBytes();
-      await write(dir, { "icon.png": png, "icon.svg": "<svg xmlns=\"http://www.w3.org/2000/svg\"><rect/></svg>", "note.txt": "hello" });
+      await write(dir, {
+        "icon.png": png,
+        "icon.svg": '<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>',
+        "note.txt": "hello",
+      });
       // A declared .png: bytes base64-encoded, kind png.
       const pngIcon = readPluginIcon(dir, "icon.png");
       expect(pngIcon.warnings).toEqual([]);
@@ -156,7 +160,7 @@ describe("lookups", () => {
       const svgIcon = readPluginIcon(dir, "icon.svg");
       expect(svgIcon.warnings).toEqual([]);
       expect(svgIcon.kind).toBe("svg");
-      expect(svgIcon.icon).toBe("<svg xmlns=\"http://www.w3.org/2000/svg\"><rect/></svg>");
+      expect(svgIcon.icon).toBe('<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>');
       // A declared file that is neither .svg nor .png: refused, with the reason.
       const bad = readPluginIcon(dir, "note.txt");
       expect(bad.icon).toBeUndefined();
@@ -207,7 +211,14 @@ function validPngBytes(): Uint8Array {
   // (filter byte 0, then the single pixel) compressed here, never hand-assembled.
   const idat = deflateSync(Uint8Array.from([0, 0x7f]));
   return Uint8Array.from([
-    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+    0x89,
+    0x50,
+    0x4e,
+    0x47,
+    0x0d,
+    0x0a,
+    0x1a,
+    0x0a,
     ...chunk("IHDR", ihdr),
     ...chunk("IDAT", idat),
     ...chunk("IEND", new Uint8Array(0)),

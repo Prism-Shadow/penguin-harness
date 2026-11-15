@@ -42,7 +42,9 @@ afterEach(unmountAll);
 it("names the tab's manifest while mounted, the workbench's without a tab key", async () => {
   setPageLink("/manifest.webmanifest");
   const page = await mount(h(Page, { tabKey: "board" }));
-  expect(manifestHref()).toBe("/api/projects/p/agents/a/workbenches/demo/tabs/board/manifest.webmanifest");
+  expect(manifestHref()).toBe(
+    "/api/projects/p/agents/a/workbenches/demo/tabs/board/manifest.webmanifest",
+  );
   await page.rerender(h(Page, {}));
   // No tab key in the route: the workbench's own manifest (the first tab's face).
   expect(manifestHref()).toBe("/api/projects/p/agents/a/workbenches/demo/manifest.webmanifest");
@@ -54,7 +56,9 @@ it("adds the machine query for a remote machine's workbench", async () => {
     "/api/projects/p/agents/a/workbenches/demo/tabs/board/manifest.webmanifest?machine=m-1",
   );
   await page.rerender(h(Page, { tabKey: "board" }));
-  expect(manifestHref()).toBe("/api/projects/p/agents/a/workbenches/demo/tabs/board/manifest.webmanifest");
+  expect(manifestHref()).toBe(
+    "/api/projects/p/agents/a/workbenches/demo/tabs/board/manifest.webmanifest",
+  );
 });
 
 it("restores the main app's literal link on unmount, even on a page that arrived rewritten", async () => {
@@ -67,14 +71,18 @@ it("restores the main app's literal link on unmount, even on a page that arrived
   );
   // The arrival href is already the target; the link is left as it is — and the cleanup
   // still restores the MAIN app's link, not the arrival one.
-  expect(manifestHref()).toBe("/api/projects/p/agents/a/workbenches/demo/tabs/board/manifest.webmanifest");
+  expect(manifestHref()).toBe(
+    "/api/projects/p/agents/a/workbenches/demo/tabs/board/manifest.webmanifest",
+  );
   await page.unmount();
   expect(manifestHref()).toBe("/manifest.webmanifest");
 });
 
 it("restores the main link after leaving a page that arrived unrewritten (a pushed web)", async () => {
   const page = await mount(h(Page, { tabKey: "board", arriveAs: "/manifest.webmanifest" }));
-  expect(manifestHref()).toBe("/api/projects/p/agents/a/workbenches/demo/tabs/board/manifest.webmanifest");
+  expect(manifestHref()).toBe(
+    "/api/projects/p/agents/a/workbenches/demo/tabs/board/manifest.webmanifest",
+  );
   await page.unmount();
   expect(manifestHref()).toBe("/manifest.webmanifest");
 });

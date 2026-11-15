@@ -359,9 +359,12 @@ describe("workbench manifest route", { timeout: 30_000 }, () => {
       expect(listed.status).toBe(200);
       // The compile is a background job of the load; the build appears when it lands.
       // `fs.access` resolves with undefined, so the assertion is "the access succeeds".
-      await vi.waitFor(async () => {
-        await expect(fs.access(build)).resolves.toBeUndefined();
-      }, { timeout: 30_000 });
+      await vi.waitFor(
+        async () => {
+          await expect(fs.access(build)).resolves.toBeUndefined();
+        },
+        { timeout: 30_000 },
+      );
       // And a second anonymous read answers again — reading, not touching, what is there.
       const again = await fresh.t.app.request(`${COLD_BASE}/demo/manifest.webmanifest`);
       expect(again.status).toBe(200);

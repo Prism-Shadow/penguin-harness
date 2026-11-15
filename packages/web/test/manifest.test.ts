@@ -10,7 +10,12 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { appManifest, MANIFEST_FILE, manifestMiddleware, penguinManifest } from "../scripts/penguin-manifest";
+import {
+  appManifest,
+  MANIFEST_FILE,
+  manifestMiddleware,
+  penguinManifest,
+} from "../scripts/penguin-manifest";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const pkgDir = path.resolve(here, "..");
