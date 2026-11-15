@@ -413,7 +413,7 @@ importers:
         version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-server':
         specifier: workspace:*
-        version: file:packages/server(supports-color@10.2.2)
+        version: file:packages/server(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.3
@@ -572,7 +572,7 @@ importers:
         version: link:../../plugins/penguin-support
       '@penguinharness/plugin-db':
         specifier: workspace:*
-        version: file:plugins/db(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
+        version: link:../../plugins/db
       '@penguinharness/sandbox-bwrap':
         specifier: workspace:*
         version: link:../../plugins/sandbox-bwrap
@@ -707,7 +707,7 @@ importers:
         version: link:../../plugins/penguin-support
       '@penguinharness/plugin-db':
         specifier: workspace:*
-        version: file:plugins/db(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(zod@4.6.7)
+        version: link:../../plugins/db
       '@penguinharness/skill-porting':
         specifier: workspace:*
         version: link:../../plugins/skill-porting
@@ -1229,14 +1229,13 @@ importers:
         version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
 
   plugins/db:
-    dependencies:
-      '@prismshadow/penguin-server':
-        specifier: workspace:*
-        version: file:packages/server(supports-color@10.2.2)
     devDependencies:
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-server':
+        specifier: workspace:*
+        version: file:packages/server(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
       tsup:
         specifier: ^8.3.0
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
@@ -7125,70 +7124,7 @@ snapshots:
 
   '@penguinharness/penguin-support@file:plugins/penguin-support': {}
 
-  '@penguinharness/plugin-db@file:plugins/db':
-    dependencies:
-      '@prismshadow/penguin-server': file:packages/server
-    transitivePeerDependencies:
-      - '@modelcontextprotocol/sdk'
-      - bufferutil
-      - debug
-      - micromark
-      - micromark-util-types
-      - supports-color
-      - utf-8-validate
-      - zod
-
-  '@penguinharness/plugin-db@file:plugins/db(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(zod@4.6.7)':
-    dependencies:
-      '@prismshadow/penguin-server': file:packages/server(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(zod@4.6.7)
-    transitivePeerDependencies:
-      - '@modelcontextprotocol/sdk'
-      - bufferutil
-      - debug
-      - micromark
-      - micromark-util-types
-      - supports-color
-      - utf-8-validate
-      - zod
-
-  '@penguinharness/plugin-db@file:plugins/db(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)':
-    dependencies:
-      '@prismshadow/penguin-server': file:packages/server(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
-    transitivePeerDependencies:
-      - '@modelcontextprotocol/sdk'
-      - bufferutil
-      - debug
-      - micromark
-      - micromark-util-types
-      - supports-color
-      - utf-8-validate
-      - zod
-
-  '@penguinharness/plugin-db@file:plugins/db(supports-color@10.2.2)':
-    dependencies:
-      '@prismshadow/penguin-server': file:packages/server(supports-color@10.2.2)
-    transitivePeerDependencies:
-      - '@modelcontextprotocol/sdk'
-      - bufferutil
-      - debug
-      - micromark
-      - micromark-util-types
-      - supports-color
-      - utf-8-validate
-      - zod
-
-  '@penguinharness/plugin-db@file:plugins/db(supports-color@10.2.2)(zod@4.6.7)':
-    dependencies:
-      '@prismshadow/penguin-server': file:packages/server(supports-color@10.2.2)(zod@4.6.7)
-    transitivePeerDependencies:
-      - '@modelcontextprotocol/sdk'
-      - bufferutil
-      - debug
-      - micromark
-      - micromark-util-types
-      - supports-color
-      - utf-8-validate
-      - zod
+  '@penguinharness/plugin-db@file:plugins/db': {}
 
   '@penguinharness/skill-porting@file:plugins/skill-porting': {}
 
@@ -7370,7 +7306,7 @@ snapshots:
       '@prismshadow/a2ui': file:packages/a2ui
       '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
-      '@prismshadow/penguin-server': file:packages/server(supports-color@10.2.2)
+      '@prismshadow/penguin-server': file:packages/server(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
       commander: 13.1.0
       dotenv: 17.4.2
       fflate: 0.8.3
@@ -7507,67 +7443,6 @@ snapshots:
       - utf-8-validate
       - zod
 
-  '@prismshadow/penguin-server@file:packages/server(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(zod@4.6.7)':
-    dependencies:
-      '@hono/node-server': 2.0.12(hono@4.13.13)
-      '@larksuiteoapi/node-sdk': 1.73.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
-      '@penguinharness/a2ui': file:plugins/a2ui
-      '@penguinharness/ace-rsi-toolkit': file:plugins/ace-rsi-toolkit
-      '@penguinharness/agent-company': file:plugins/agent-company
-      '@penguinharness/agent-development': file:plugins/agent-development
-      '@penguinharness/agent-evaluation': file:plugins/agent-evaluation
-      '@penguinharness/ape-rsi-toolkit': file:plugins/ape-rsi-toolkit
-      '@penguinharness/awm-rsi-toolkit': file:plugins/awm-rsi-toolkit
-      '@penguinharness/browser-automation': file:plugins/browser-automation
-      '@penguinharness/continual-learning': file:plugins/continual-learning
-      '@penguinharness/data-analysis': file:plugins/data-analysis
-      '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
-      '@penguinharness/goal': file:plugins/goal
-      '@penguinharness/humanizer': file:plugins/humanizer
-      '@penguinharness/model-development': file:plugins/model-development
-      '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
-      '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
-      '@penguinharness/penguin-support': file:plugins/penguin-support
-      '@penguinharness/plugin-db': file:plugins/db(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(zod@4.6.7)
-      '@penguinharness/skill-porting': file:plugins/skill-porting
-      '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
-      '@penguinharness/skillopt-rsi-toolkit': file:plugins/skillopt-rsi-toolkit
-      '@penguinharness/software-development': file:plugins/software-development
-      '@penguinharness/trace-rsi-toolkit': file:plugins/trace-rsi-toolkit
-      '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
-      '@penguinharness/use-claude-code': file:plugins/use-claude-code
-      '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
-      '@prismshadow/a2ui': file:packages/a2ui
-      '@prismshadow/amsp': file:packages/amsp
-      '@prismshadow/chat-markdown': file:packages/chat-markdown(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
-      '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@xterm/headless': 5.5.0
-      commander: 13.1.0
-      css-tree: 3.2.1
-      dotenv: 17.4.2
-      fflate: 0.8.3
-      hono: 4.13.13
-      isomorphic-git: 1.44.10
-      node-pty: 1.1.0
-      remark-parse: 11.0.0(supports-color@10.2.2)
-      smol-toml: 1.9.1
-      tar: 7.5.22
-      typescript: 5.9.3
-      undici: 7.30.1
-      unified: 11.0.5
-      ws: 8.21.0
-      yaml: 2.9.0
-    transitivePeerDependencies:
-      - '@modelcontextprotocol/sdk'
-      - bufferutil
-      - debug
-      - micromark
-      - micromark-util-types
-      - supports-color
-      - utf-8-validate
-      - zod
-
   '@prismshadow/penguin-server@file:packages/server(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)':
     dependencies:
       '@hono/node-server': 2.0.12(hono@4.13.13)
@@ -7589,68 +7464,7 @@ snapshots:
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
       '@penguinharness/penguin-support': file:plugins/penguin-support
-      '@penguinharness/plugin-db': file:plugins/db(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
-      '@penguinharness/skill-porting': file:plugins/skill-porting
-      '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
-      '@penguinharness/skillopt-rsi-toolkit': file:plugins/skillopt-rsi-toolkit
-      '@penguinharness/software-development': file:plugins/software-development
-      '@penguinharness/trace-rsi-toolkit': file:plugins/trace-rsi-toolkit
-      '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
-      '@penguinharness/use-claude-code': file:plugins/use-claude-code
-      '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
-      '@prismshadow/a2ui': file:packages/a2ui
-      '@prismshadow/amsp': file:packages/amsp
-      '@prismshadow/chat-markdown': file:packages/chat-markdown(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
-      '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)
-      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
-      '@xterm/headless': 5.5.0
-      commander: 13.1.0
-      css-tree: 3.2.1
-      dotenv: 17.4.2
-      fflate: 0.8.3
-      hono: 4.13.13
-      isomorphic-git: 1.44.10
-      node-pty: 1.1.0
-      remark-parse: 11.0.0(supports-color@10.2.2)
-      smol-toml: 1.9.1
-      tar: 7.5.22
-      typescript: 5.9.3
-      undici: 7.30.1
-      unified: 11.0.5
-      ws: 8.21.0
-      yaml: 2.9.0
-    transitivePeerDependencies:
-      - '@modelcontextprotocol/sdk'
-      - bufferutil
-      - debug
-      - micromark
-      - micromark-util-types
-      - supports-color
-      - utf-8-validate
-      - zod
-
-  '@prismshadow/penguin-server@file:packages/server(supports-color@10.2.2)':
-    dependencies:
-      '@hono/node-server': 2.0.12(hono@4.13.13)
-      '@larksuiteoapi/node-sdk': 1.73.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
-      '@penguinharness/a2ui': file:plugins/a2ui
-      '@penguinharness/ace-rsi-toolkit': file:plugins/ace-rsi-toolkit
-      '@penguinharness/agent-company': file:plugins/agent-company
-      '@penguinharness/agent-development': file:plugins/agent-development
-      '@penguinharness/agent-evaluation': file:plugins/agent-evaluation
-      '@penguinharness/ape-rsi-toolkit': file:plugins/ape-rsi-toolkit
-      '@penguinharness/awm-rsi-toolkit': file:plugins/awm-rsi-toolkit
-      '@penguinharness/browser-automation': file:plugins/browser-automation
-      '@penguinharness/continual-learning': file:plugins/continual-learning
-      '@penguinharness/data-analysis': file:plugins/data-analysis
-      '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
-      '@penguinharness/goal': file:plugins/goal
-      '@penguinharness/humanizer': file:plugins/humanizer
-      '@penguinharness/model-development': file:plugins/model-development
-      '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
-      '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
-      '@penguinharness/penguin-support': file:plugins/penguin-support
-      '@penguinharness/plugin-db': file:plugins/db(supports-color@10.2.2)
+      '@penguinharness/plugin-db': file:plugins/db
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
       '@penguinharness/skillopt-rsi-toolkit': file:plugins/skillopt-rsi-toolkit
@@ -7711,7 +7525,7 @@ snapshots:
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
       '@penguinharness/penguin-support': file:plugins/penguin-support
-      '@penguinharness/plugin-db': file:plugins/db(supports-color@10.2.2)(zod@4.6.7)
+      '@penguinharness/plugin-db': file:plugins/db
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
       '@penguinharness/skillopt-rsi-toolkit': file:plugins/skillopt-rsi-toolkit
