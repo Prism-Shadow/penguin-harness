@@ -306,6 +306,12 @@ export type ThroughMachine = (
 /** The stand-in when no Machines service is wired in: every machine is simply unreachable. */
 const nullThroughMachine: ThroughMachine = () => Promise.resolve(null);
 
+/** A `WorkbenchNotFound` from the service is a 404 at the gate; anything else is its own error. */
+const notFound = (err: unknown): never => {
+  if (err instanceof WorkbenchNotFound) throw new HttpError(404, "not_found", err.message);
+  throw err;
+};
+
 /**
  * The install manifest on its own, auth-less gate: a browser fetching a manifest for
  * install carries no session for another host than the page's. It answers from the
@@ -430,11 +436,6 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
     deps.access.requireProjectAccess(c.var.user.userId, projectId);
     return { projectId, agentId };
   };
-  const notFound = (err: unknown): never => {
-    if (err instanceof WorkbenchNotFound) throw new HttpError(404, "not_found", err.message);
-    throw err;
-  };
-
   app.get("/", async (c) => {
     const { projectId, agentId } = scope(c);
     const workbenches = await deps.workbenches.list(projectId, agentId);
