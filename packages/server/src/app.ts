@@ -872,9 +872,16 @@ function registerStaticRoutes(app: Hono<AppEnv>, resolveSource: () => Promise<We
       file === path.join(base, "index.html")
         ? withWorkbenchManifestLink(content, reqPath)
         : content;
-    // A weak size+mtime validator, the classic disk-file shape — hashing every
-    // response would cost more than the 304s save.
-    const etag = `W/"${served.byteLength}-${Math.round(mtimeMs)}"`;
+    // A weak size+mtime validator, the classic disk-file shape — hashing every response
+    // would cost more than the 304s save. A rewritten page is where that shape lies: the
+    // rewrite retargets the manifest link per workbench and per tab, so equal-length
+    // rewrites of one file are different representations with the same size and mtime,
+    // and a validator held for one would wrongly 304 the other. Those carry a hash of
+    // the rewritten bytes instead (the same identity the in-memory branch hashes).
+    const etag =
+      served === content
+        ? `W/"${served.byteLength}-${Math.round(mtimeMs)}"`
+        : `W/"${createHash("sha256").update(served).digest("base64url").slice(0, 16)}"`;
     return staticResponse(c, served, path.relative(base, file).split(path.sep).join("/"), etag);
   });
 }

@@ -245,6 +245,22 @@ describe("web static caching, served from disk", () => {
     expect(html).toContain(
       'href="/api/projects/proj-1/agents/agent-1/workbenches/wb-9/manifest.webmanifest"',
     );
-    expect(page.headers.get("etag")).toMatch(/^W\/"\d+-\d+"$/);
+    expect(page.headers.get("etag")).toMatch(/^W\/"[A-Za-z0-9_-]{16}"$/);
+    // Equal-length rewrites of the same index.html are different representations: two tab
+    // pages whose rewritten links have the same byte length still carry distinct ETags —
+    // a validator held for one must not answer the other's If-None-Match with a 304.
+    const a = await t.app.request("/app/proj-1/agent-1/wb-9/tab-aa");
+    const b = await t.app.request("/app/proj-1/agent-1/wb-9/tab-bb");
+    expect((await a.text()).length).toBe((await b.text()).length);
+    expect(a.headers.get("etag")).toMatch(/^W\/"/);
+    expect(b.headers.get("etag")).toMatch(/^W\/"/);
+    expect(a.headers.get("etag")).not.toBe(b.headers.get("etag"));
+    const repeat = await t.app.request("/app/proj-1/agent-1/wb-9/tab-aa", {
+      headers: { "if-none-match": b.headers.get("etag")! },
+    });
+    expect(repeat.status).toBe(200);
+    // An unchanged non-rewritten path keeps the classic size+mtime validator.
+    const asset = await t.app.request("/assets/app.js");
+    expect(asset.headers.get("etag")).toMatch(/^W\/"\d+-\d+"$/);
   });
 });
