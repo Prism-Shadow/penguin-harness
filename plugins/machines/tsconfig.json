@@ -38,6 +38,24 @@
       ],
       "@penguinharness/plugin-db/server": [
         "../db/src/index.ts"
+      ],
+      "@penguinharness/plugin-usage/server": [
+        "../usage/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-machines/server/http/sse": [
+        "../../packages/server/src/http/sse.ts"
+      ],
+      "@penguinharness/plugin-machines/server/http/json-answer": [
+        "../../packages/server/src/http/json-answer.ts"
+      ],
+      "@penguinharness/plugin-machines/server/socket/stream-answer": [
+        "../../packages/server/src/socket/stream-answer.ts"
+      ],
+      "@penguinharness/plugin-projects/server": [
+        "../projects/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-workbenches/server": [
+        "../workbenches/src/server/index.ts"
       ]
     }
   },
