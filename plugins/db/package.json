@@ -48,7 +48,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
-    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json && tsup"
+    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --project ../../packages/server/tsconfig.json --out ifaces.json && tsup"
   },
   "dependencies": {
     "@prismshadow/penguin-server": "workspace:*"
