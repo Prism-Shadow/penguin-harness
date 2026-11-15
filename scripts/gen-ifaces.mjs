@@ -575,10 +575,23 @@ for (const project of projects) {
       return parts.slice(1).reduce((acc, p) => [acc, "|", p], parts[0]);
     }
     if (type.isIntersection()) {
-      const opaque = type.types.find((t) => t.getProperty("__opaque"));
-      if (opaque) {
-        notData = `'${checker.typeToString(type)}' is opaque`;
-        return null; // handled as opaque by exprOf
+      const marker = type.types.find((t) => t.getProperty("__opaque"));
+      if (marker) {
+        // An `Opaque<"Name", T>` crossing is not data (a host object behind it); in the table
+        // it is the opaque name — the same exit exprOf takes in a signature position. The
+        // parts the marker does not own name the host: the first one declared outside the
+        // marker wins, else the site the member is read at.
+        const parts = type.types.filter((t) => !t.getProperty("__opaque"));
+        const declaring = parts
+          .map(
+            (t) =>
+              (t.aliasSymbol ?? t.getSymbol())?.declarations?.[0]?.getSourceFile()?.fileName,
+          )
+          .find((f) => f !== undefined);
+        const name = checker.getNonNullableType(
+          checker.getTypeOfSymbol(marker.getProperty("__opaque")),
+        ).value;
+        return { opaque: opaqueId(name, declaring ?? atNode.getSourceFile().fileName) };
       }
       const parts = type.types.map((t) => dataOf(t, atNode, stack));
       if (parts.some((p) => p === null)) {
