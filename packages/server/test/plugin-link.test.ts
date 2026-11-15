@@ -162,6 +162,8 @@ describe("plugin link", () => {
     // than passing as a healthy install.
     await fs.rm(dir, { recursive: true, force: true });
     const gone = await view();
+    // DEBUG(p263): the whole gone row
+    console.log("DEBUG p263 rows:", JSON.stringify(gone.plugins.map((p) => ({ s: p.specifier, e: p.error, l: p.linked }))));
     const goneRow = gone.plugins.find((p) => p.specifier === "@acme/live");
     expect(goneRow?.error ?? "").toContain("@acme");
   });
