@@ -21,12 +21,6 @@ import type {
   PeakTier,
 } from "./repos/usage.js";
 import type {
-  UsageErrorsPage,
-  UsageGroupBy,
-  UsageResponse,
-  UsageModelTotals,
-} from "./repos/usage.js";
-import type {
   AbortPayload,
   ApprovalDecisionPayload,
   CompactionBeginPayload,
@@ -53,11 +47,6 @@ import type {
   ToolCallPayload,
   ToolListReadyPayload,
 } from "@prismshadow/penguin-core";
-import type {
-  UsageQuery,
-  UsageErrorsClearQuery,
-  UsageErrorsQuery,
-} from "./repos/usage.js";
 
 /** The vocabulary the storage and recording contracts name — from the server's
  * error recorder, usage recorder, usage service and api types. The contract names
@@ -210,6 +199,99 @@ export interface UsageResponse {
   agentIds: string[];
   /** List of Model paired references that have appeared in this Project (for the filter dropdown). */
   models: ModelRefDto[];
+}
+
+import type { ModelRefDto } from "@prismshadow/penguin-library-agent-api";
+
+/** From packages/server (api/types.ts): the usage response shapes. */
+
+export type UsageGranularity = "minute" | "hour" | "day" | "week" | "month";
+
+export interface UsageModelTotal {
+  provider: string;
+  modelId: string;
+  /** The three buckets summed (cache read + cache write + output), matching the cost center's Token figure. */
+  tokens: number;
+  requests: number;
+}
+
+export interface UsageErrorItem {
+  /** The latest of the records this row stands for. */
+  ts: string;
+  source: string;
+  code: string;
+  kind: string;
+  message: string;
+  /** How many records this row stands for (the panel's "×N"). */
+  count: number;
+  /** The earliest of them; equal to `ts` for a single record. */
+  firstTs: string;
+}
+
+export interface UsageBucket {
+  total: number;
+  requests: number;
+  /** Cost converted using current pricing at query time (USD); a partial sum when uncosted Models are included, null if none has pricing. */
+  cost: number | null;
+  /** Whether any Model has no pricing (its usage isn't included in cost; counted once pricing is added later). */
+  hasUncosted: boolean;
+}
+
+export interface UsageGroupRow {
+  /** Group key: date / agentId / modelId / sessionId. */
+  key: string;
+  /** Provider group when groupBy=model (rows are broken down by (provider, modelId); unset for other dimensions). */
+  provider?: string;
+  cacheRead: number;
+  cacheWrite: number;
+  output: number;
+  total: number;
+  requests: number;
+  cost: number | null;
+  /**
+   * `cost` split by pricing bucket, each record at the same rates, tier and promotion that
+   * priced it in `cost`. Present exactly when `cost` is not null; a row's unpriced usage is in
+   * neither.
+   */
+  costParts?: CostParts;
+  hasUncosted: boolean;
+}
+
+export interface UsageSeriesPoint {
+  bucket: string;
+  cacheRead: number;
+  cacheWrite: number;
+  output: number;
+  total: number;
+  /** Cost converted at query time (USD); null when no priced Model contributed. */
+  cost: number | null;
+  requests: number;
+  /** Successful requests in the bucket. */
+  completed: number;
+  /** Success-rate denominator: all requests minus aborted (a user interruption is not a model failure). */
+  denominator: number;
+}
+
+export interface UsageAgentSeries extends UsageEntitySeriesCounts {
+  agentId: string;
+}
+
+export interface UsageModelSeries extends UsageEntitySeriesCounts {
+  provider: string;
+  modelId: string;
+}
+
+export interface UsageErrors {
+  /** Filtered record count — also what a clear of the same filter takes (see {@link UsageErrorsClearResponse}). */
+  total: number;
+  /** Count of unexpected ones (500 / runtime exceptions) among them — the part the frontend highlights. */
+  unexpected: number;
+  /** The most frequent source · code (null when there are no errors). */
+  topCode: UsageErrorCount | null;
+  /** Most recent N rows (reverse chronological) — the first page; older ones come from `GET /usage/errors`. */
+  recent: UsageErrorItem[];
+  /** How many rows the table has for this filter (records folded per {@link UsageErrorItem}) — what the pager counts. */
+  rows: number;
 }
 
 /** ErrorLog: the mechanism ErrorsRepo implements. */

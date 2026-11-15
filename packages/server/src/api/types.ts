@@ -4588,37 +4588,12 @@ export interface CostParts {
   output: number;
 }
 
-export interface UsageBucket {
-  total: number;
-  requests: number;
-  /** Cost converted using current pricing at query time (USD); a partial sum when uncosted Models are included, null if none has pricing. */
-  cost: number | null;
-  /** Whether any Model has no pricing (its usage isn't included in cost; counted once pricing is added later). */
-  hasUncosted: boolean;
-}
 
-export interface UsageGroupRow {
-  /** Group key: date / agentId / modelId / sessionId. */
-  key: string;
-  /** Provider group when groupBy=model (rows are broken down by (provider, modelId); unset for other dimensions). */
-  provider?: string;
-  cacheRead: number;
-  cacheWrite: number;
-  output: number;
-  total: number;
-  requests: number;
-  cost: number | null;
-  /**
-   * `cost` split by pricing bucket, each record at the same rates, tier and promotion that
-   * priced it in `cost`. Present exactly when `cost` is not null; a row's unpriced usage is in
-   * neither.
-   */
-  costParts?: CostParts;
-  hasUncosted: boolean;
-}
+
+
 
 /** Time-series precision for the usage series (`granularity` query parameter). `minute` requires the `fromTs`/`toTs` window bounds. */
-export type UsageGranularity = "minute" | "hour" | "day" | "week" | "month";
+
 
 /**
  * One bucket of the usage time series (for the cost center's time-series charts).
@@ -4627,20 +4602,7 @@ export type UsageGranularity = "minute" | "hour" | "day" | "week" | "month";
  * `yyyy-mm-ddThh:mm` and hour `yyyy-mm-ddThh:00` (server-local clock), day
  * `yyyy-mm-dd`, week the ISO week's Monday `yyyy-mm-dd`, month `yyyy-mm`.
  */
-export interface UsageSeriesPoint {
-  bucket: string;
-  cacheRead: number;
-  cacheWrite: number;
-  output: number;
-  total: number;
-  /** Cost converted at query time (USD); null when no priced Model contributed. */
-  cost: number | null;
-  requests: number;
-  /** Successful requests in the bucket. */
-  completed: number;
-  /** Success-rate denominator: all requests minus aborted (a user interruption is not a model failure). */
-  denominator: number;
-}
+
 
 /**
  * One entity's per-bucket request and success counts, aligned index-for-index
@@ -4654,15 +4616,10 @@ export interface UsageEntitySeriesCounts {
 }
 
 /** Per-Agent counts per bucket. */
-export interface UsageAgentSeries extends UsageEntitySeriesCounts {
-  agentId: string;
-}
+
 
 /** Per-Model counts per bucket (entity identity is the (provider, modelId) pair). */
-export interface UsageModelSeries extends UsageEntitySeriesCounts {
-  provider: string;
-  modelId: string;
-}
+
 
 /**
  * Lifetime Token total for one Model, keyed by the (provider, modelId) pair. Deliberately
@@ -4670,13 +4627,7 @@ export interface UsageModelSeries extends UsageEntitySeriesCounts {
  * question with no window attached, and the models page that shows it carries no filters of its
  * own to honour. Models never used are absent rather than zero.
  */
-export interface UsageModelTotal {
-  provider: string;
-  modelId: string;
-  /** The three buckets summed (cache read + cache write + output), matching the cost center's Token figure. */
-  tokens: number;
-  requests: number;
-}
+
 
 /** Response of `GET /usage/model-totals`. */
 
@@ -4701,18 +4652,7 @@ export interface UsageErrorCount {
  * a source, code, kind and message. The day is the viewer's when the request carried
  * `utcOffsetMinutes`, and the server's own otherwise.
  */
-export interface UsageErrorItem {
-  /** The latest of the records this row stands for. */
-  ts: string;
-  source: string;
-  code: string;
-  kind: string;
-  message: string;
-  /** How many records this row stands for (the panel's "×N"). */
-  count: number;
-  /** The earliest of them; equal to `ts` for a single record. */
-  firstTs: string;
-}
+
 
 /**
  * Server-side error capture stats: not affected by the model
@@ -4722,18 +4662,7 @@ export interface UsageErrorItem {
  * chart, so it only has a total count, the most common error code, and the most recent N
  * items.
  */
-export interface UsageErrors {
-  /** Filtered record count — also what a clear of the same filter takes (see {@link UsageErrorsClearResponse}). */
-  total: number;
-  /** Count of unexpected ones (500 / runtime exceptions) among them — the part the frontend highlights. */
-  unexpected: number;
-  /** The most frequent source · code (null when there are no errors). */
-  topCode: UsageErrorCount | null;
-  /** Most recent N rows (reverse chronological) — the first page; older ones come from `GET /usage/errors`. */
-  recent: UsageErrorItem[];
-  /** How many rows the table has for this filter (records folded per {@link UsageErrorItem}) — what the pager counts. */
-  rows: number;
-}
+
 
 /**
  * GET /api/projects/:projectId/usage/errors — one page of the error detail table, newest
