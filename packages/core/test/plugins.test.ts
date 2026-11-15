@@ -53,6 +53,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { deflateSync } from "node:zlib";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { parse as parseYaml } from "yaml";
 import {
@@ -194,16 +195,17 @@ describe("lookups", () => {
 /** A real (decodable) 1×1 grayscale PNG, assembled from its chunk parts. */
 function validPngBytes(): Uint8Array {
   const chunk = (type: string, data: Uint8Array): Uint8Array => {
+    // A chunk header is a 4-byte big-endian length, then the type, the data and the CRC.
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(data.length);
     const body = Buffer.concat([Buffer.from(type, "latin1"), Buffer.from(data)]);
-    return Uint8Array.from([
-      ...Uint8Array.of(body.length).reverse(),
-      ...body,
-      ...crc32(body),
-    ]);
+    return Uint8Array.from([...length, ...body, ...crc32(body)]);
   };
   // IHDR: width 1, height 1, bit depth 8, color type 0 (grayscale), the rest zero.
   const ihdr = Uint8Array.from([0, 0, 0, 1, 0, 0, 0, 1, 8, 0, 0, 0, 0]);
-  const idat = Uint8Array.from([0x78, 0x9c, 0x63, 0x60, 0x60, 0x60, 0x00, 0x00, 0x00, 0x04, 0x00, 0x01]);
+  // IDAT: a zlib stream the renderer can actually inflate — one grayscale scanline
+  // (filter byte 0, then the single pixel) compressed here, never hand-assembled.
+  const idat = deflateSync(Uint8Array.from([0, 0x7f]));
   return Uint8Array.from([
     0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
     ...chunk("IHDR", ihdr),
@@ -212,7 +214,7 @@ function validPngBytes(): Uint8Array {
   ]);
 }
 
-/** The PNG chunk CRC (polynomial 0xedb88320), little-endian trailing bytes. */
+/** The PNG chunk CRC (polynomial 0xedb88320), stored big-endian as PNG lays it down. */
 function crc32(body: Buffer): Uint8Array {
   let crc = 0xffffffff;
   for (const byte of body) {
@@ -220,7 +222,12 @@ function crc32(body: Buffer): Uint8Array {
     for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
   }
   crc = ~crc >>> 0;
-  return Uint8Array.from([crc & 0xff, (crc >>> 8) & 0xff, (crc >>> 16) & 0xff, (crc >>> 24) & 0xff]);
+  return Uint8Array.from([
+    (crc >>> 24) & 0xff,
+    (crc >>> 16) & 0xff,
+    (crc >>> 8) & 0xff,
+    crc & 0xff,
+  ]);
 }
 
 /** Writes `files` under `dir` (paths relative to it; a Uint8Array is written as bytes). */
