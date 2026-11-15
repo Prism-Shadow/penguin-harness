@@ -52,6 +52,7 @@
  * restored on the previous list, and the answer is "did not take".
  */
 import { Hono } from "hono";
+import fs from "node:fs/promises";
 import path from "node:path";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { AppEnv } from "../../auth/middleware.js";
@@ -261,12 +262,16 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
         ...Object.values(tables.machines).flatMap((t) => Object.keys(t)),
       ]),
     ];
-    // npm link's own records: the prefix manifest's `file:` dependencies are the directories
-    // linked into the prefix, npm keeps them through its own re-entry, and each names the
-    // author's directory on this machine.
-    const links = Object.entries(await prefixDependencies(pluginsPrefix(deps.root)))
-      .filter(([, spec]) => spec.startsWith("link:"))
-      .map(([name, spec]) => [name, path.resolve(pluginsPrefix(deps.root), spec.slice("link:".length))] as const);
+    // npm link's own records: the prefix manifest's `file:` dependencies naming a DIRECTORY
+    // are the author directories linked into the prefix (a `file:` naming a tarball is an
+    // uploaded zip's install, not a link). npm keeps both through its own re-entry; a
+    // directory entry names the author's directory on this machine.
+    const links: (readonly [string, string])[] = [];
+    for (const [name, spec] of Object.entries(await prefixDependencies(pluginsPrefix(deps.root)))) {
+      if (!spec.startsWith("file:")) continue;
+      const target = path.resolve(pluginsPrefix(deps.root), spec.slice("file:".length));
+      if ((await fs.stat(target).catch(() => null))?.isDirectory()) links.push([name, target] as const);
+    }
     for (const [name] of links) {
       if (!names.includes(name)) names.push(name);
     }
@@ -735,7 +740,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     // A link goes with this verb too: `npm uninstall` takes a `file:` dependency out the same
     // way it takes any package out — the symlink and the manifest entry both go, the author's
     // directory stays. npm's uninstall is idempotent, so is this.
-    if ((await prefixDependencies(pluginsPrefix(deps.root)))[specifier]?.startsWith("link:")) {
+    if ((await prefixDependencies(pluginsPrefix(deps.root)))[specifier]?.startsWith("file:")) {
       if (!(await readPluginClosure(deps.root, deps.machineId)).includes(specifier)) {
         await deps.packages.remove(deps.root, specifier);
       }

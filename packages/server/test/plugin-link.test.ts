@@ -1,6 +1,6 @@
 /**
  * `penguin plugin link` — a local package directory linked into the data root's plugin prefix
- * the way npm itself does it: `npm install link:<dir>` records the directory as a `link:` dependency
+ * the way npm itself does it: `npm install link:<dir>` records the directory as a `file:` dependency
  * in the prefix's package.json and puts the link in node_modules, and the installed-plugins
  * surface reads the package fresh from disk and marks the row as linked. The link table IS the
  * prefix manifest's `file:` dependencies — nothing penguin keeps beside them.
@@ -75,8 +75,8 @@ describe("plugin link", () => {
     expect(linked).toMatchObject({ name: "@acme/local-one", version: "0.1.0" });
     // The manifest entry IS the link record: name → the author's directory, npm's own.
     const deps = await prefixDependencies(prefix());
-    expect(deps["@acme/local-one"]).toMatch(/^link:/);
-    expect(path.resolve(prefix(), deps["@acme/local-one"]!.slice("link:".length))).toBe(dir);
+    expect(deps["@acme/local-one"]).toMatch(/^file:/);
+    expect(path.resolve(prefix(), deps["@acme/local-one"]!.slice("file:".length))).toBe(dir);
     const target = path.join(prefix(), "node_modules", "@acme", "local-one");
     expect(existsSync(target)).toBe(true);
     if (process.platform !== "win32" && lstatSync(target).isSymbolicLink()) {
@@ -105,7 +105,7 @@ describe("plugin link", () => {
     const relinked = await linkPluginDirectory(t.root, second, true);
     expect(relinked).toMatchObject({ name: "@acme/dup", version: "0.2.0" });
     const deps = await prefixDependencies(prefix());
-    expect(path.resolve(prefix(), deps["@acme/dup"]!.slice("link:".length))).toBe(second);
+    expect(path.resolve(prefix(), deps["@acme/dup"]!.slice("file:".length))).toBe(second);
   });
 
   it("replacing an installed package with a link refuses unless --overwrite", async () => {
@@ -126,7 +126,7 @@ describe("plugin link", () => {
     );
     await expect(linkPluginDirectory(t.root, dir)).rejects.toBeInstanceOf(PluginInstallError);
     await expect(linkPluginDirectory(t.root, dir, true)).resolves.toMatchObject({ name: "@acme/over" });
-    expect((await prefixDependencies(prefix()))["@acme/over"]).toMatch(/^link:/);
+    expect((await prefixDependencies(prefix()))["@acme/over"]).toMatch(/^file:/);
   });
 
   it("the page marks the row linked, and reads the disk truth: an edit shows, a deletion fails honestly", async () => {

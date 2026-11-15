@@ -82,6 +82,18 @@ async function ensurePrefix(root: string): Promise<string> {
       `${JSON.stringify({ name: "penguin-plugins", private: true, version: "0.0.0" }, null, 2)}\n`,
     );
   }
+  // The prefix's own .npmrc pins `install-links=false` (npm 7+'s default is the other way):
+  // a `file:` directory dependency is reified as a symlink to the author's directory and
+  // STAYS one across npm's re-entries — without the pin npm copies the directory at link
+  // time, and a later install of anything else silently replaces the link with a frozen copy.
+  // It is npm's own config file in npm's own shape, so every npm run against this prefix —
+  // installs by name, tarball uploads, links — reads the same rule.
+  const npmrc = path.join(prefix, ".npmrc");
+  try {
+    await fs.access(npmrc);
+  } catch {
+    await fs.writeFile(npmrc, "install-links=false\n");
+  }
   return prefix;
 }
 
@@ -265,12 +277,12 @@ function packedFileName(stdout: string): string {
 
 /**
  * Links a local package directory into the prefix the way npm itself does it: `npm install
- * link:<dir>` records the directory as a `link:` dependency in the prefix's package.json and
- * reifies it as a symlink to the author's directory in node_modules — npm link's own shape.
- * Nothing here is penguin's own record — the manifest entry IS the link table (the route reads
- * it back as one), npm keeps the symlink and the entry in step through its own re-entry, and
- * `npm uninstall <name>` takes a link out the same way it takes any package out. The link is
- * npm's, so are its semantics.
+ * file:<dir>` records the directory as a `file:` dependency in the prefix's package.json and
+ * reifies it as a symlink to the author's directory (the prefix's .npmrc pins
+ * `install-links=false` — see ensurePrefix). Nothing here is penguin's own record — the
+ * manifest entry IS the link table (the route reads it back as one), npm keeps the symlink
+ * and the entry in step through its own re-entry, and `npm uninstall <name>` takes a link out
+ * the same way it takes any package out. The link is npm's, so are its semantics.
  *
  * The directory is vetted before npm is asked: its package.json must be readable and carry a
  * name npm accepts (the same rule the loader resolves by). An existing dependency under the
@@ -304,10 +316,9 @@ export async function linkPluginDirectory(
   }
   // Named relative to the prefix, so npm records the entry whatever path the data root
   // reaches the prefix through (see installPluginFiles, which records its tarball the same
-  // way). The `link:` protocol is npm's own link: npm reifies it as a symlink to the
-  // directory and keeps it there across its installs — unlike `file:`, which npm satisfies
-  // by copying the directory and so would freeze the author's tree at link time.
-  await install(prefix, `link:${relative(prefix, real)}`);
+  // way). The prefix's .npmrc makes npm reify the entry as a live symlink rather than a
+  // copy — the author's edits read through, which is what a link is for.
+  await install(prefix, `file:${relative(prefix, real)}`);
   return { name, version: await readInstalledVersion(prefix, name) };
 }
 
