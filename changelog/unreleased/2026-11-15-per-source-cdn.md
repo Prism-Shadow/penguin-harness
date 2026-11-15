@@ -1,0 +1,28 @@
+# The plugin install chain can reach GitHub through the deployment's own mirrors
+
+- **Date:** 2026-11-15
+- **Type:** feature
+- **Scope:** `server`
+
+[中文版](2026-11-15-per-source-cdn.zh.md)
+
+The two fetches of the plugin install chain — the index document (`index.json`) and the
+release asset an index entry's channel installs through — each had exactly one address, both
+on GitHub. A deployment that cannot reach it discovered no plugins and installed none. Both
+fetches now carry fallbacks: the deployment can configure proxy rules (`PENGUIN_PLUGIN_PROXY`,
+one JSON array) that rewrite a URL into the addresses a mirror serves the same bytes at, and
+each fetch tries its addresses one at a time in configuration order — the source's own URL
+first, then the rewritten ones — moving on at a connection failure, a timeout, a non-ok
+answer or an answer that stops halfway, and reporting which addresses were tried when none
+answered. Nothing picks a winner by speed, so the same deployment walks the same path until
+an address actually fails.
+
+A rule is Cloudflare-rewrite shaped: `kind` (`"rewrite"`), `match` (a JS regex over the whole
+URL) and `rewrite` (the result, `$1`–`$9` naming the capture groups). Rules are compiled and
+shape-checked when the config is parsed — a pattern whose worst case is not linear
+(`safe-regex`, against catastrophic backtracking: half of the inputs the rules run over are
+remote-controlled), a pattern or URL over the length caps, and a rule of an unknown kind all
+refuse at boot rather than at fetch time. A mirror changes only where the bytes come from:
+the index document goes through the same parser, the release asset is still verified against
+the entry's sha512 integrity, and a mirror serving tampered bytes is refused like any other
+source.
