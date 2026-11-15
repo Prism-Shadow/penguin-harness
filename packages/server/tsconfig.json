@@ -1,7 +1,6 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "rootDir": ".",
     "paths": {
       "@penguinharness/plugin-db": [
         "../../plugins/db/src/index.ts"
