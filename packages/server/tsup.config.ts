@@ -52,6 +52,21 @@ export default defineConfig({
     // renderer, approval parsing). The CLI's build collects their @Component contributions
     // and its commands import them back through this subpath.
     "cli/index": "src/cli/index.ts",
+    // The outward type faces the plugin packages compile against (plugin-db reads the
+    // Db capability and the mechanism types through them): declarations only — nothing
+    // imports their runtime form across the package boundary.
+    "hmr/capabilities": "src/hmr/capabilities.ts",
+    "mechanisms/identity": "src/mechanisms/identity.ts",
+    "mechanisms/projects": "src/mechanisms/projects.ts",
+    "mechanisms/settings": "src/mechanisms/settings.ts",
+    "mechanisms/sessions": "src/mechanisms/sessions.ts",
+    "mechanisms/observability": "src/mechanisms/observability.ts",
+    "mechanisms/messaging": "src/mechanisms/messaging.ts",
+    "mechanisms/organization": "src/mechanisms/organization.ts",
+    "mechanisms/traces": "src/mechanisms/traces.ts",
+    "mechanisms/account-data": "src/mechanisms/account-data.ts",
+    "mechanisms/agent-api": "src/mechanisms/agent-api.ts",
+    "runtime/session-sources": "src/runtime/session-sources.ts",
   },
   format: ["esm"],
   target: "node24",
