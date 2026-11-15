@@ -26,6 +26,7 @@
 import { execFile } from "node:child_process";
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import fs from "node:fs/promises";
+import { createRequire } from "node:module";
 import path, { relative } from "node:path";
 import { promisify } from "node:util";
 import { Component } from "@prismshadow/penguin-core/kernel";
@@ -82,18 +83,6 @@ async function ensurePrefix(root: string): Promise<string> {
       `${JSON.stringify({ name: "penguin-plugins", private: true, version: "0.0.0" }, null, 2)}\n`,
     );
   }
-  // The prefix's own .npmrc pins `install-links=false` (npm 7+'s default is the other way):
-  // a `file:` directory dependency is reified as a symlink to the author's directory and
-  // STAYS one across npm's re-entries — without the pin npm copies the directory at link
-  // time, and a later install of anything else silently replaces the link with a frozen copy.
-  // It is npm's own config file in npm's own shape, so every npm run against this prefix —
-  // installs by name, tarball uploads, links — reads the same rule.
-  const npmrc = path.join(prefix, ".npmrc");
-  try {
-    await fs.access(npmrc);
-  } catch {
-    await fs.writeFile(npmrc, "install-links=false\n");
-  }
   return prefix;
 }
 
@@ -114,16 +103,15 @@ export async function prefixDependencies(prefix: string): Promise<Record<string,
 }
 
 async function npm(prefix: string, args: readonly string[], cwd = prefix): Promise<string> {
+  const cli = await npmCli();
+  // `npm/bin/npm-cli.js` runs under THIS node (process.execPath), not whatever `npm` on the
+  // PATH would pick: the npm that ships with this runtime is the one the install semantics
+  // (the `file:` link flag, the manifest records) were verified against, and an ambient npm
+  // may be an older one whose behavior differs (verified on the build machine: npm 9 and
+  // npm 11 disagree about `install-links`). Spawning node itself is executable on every
+  // platform — the old batch-file workaround died with the bare `npm` name.
   try {
-    // On Windows npm is a batch file, and Node refuses to spawn one directly (`spawn EINVAL`)
-    // — every install, from a name, a link or a `file:` tarball, would fail there. cmd.exe is
-    // a real executable, so the line runs through it: `/d` skips the AutoRun scripts, and
-    // `/s /c` runs the rest as given, with each argument quoted by Node on the way in.
-    const [file, argv] =
-      process.platform === "win32"
-        ? (["cmd.exe", ["/d", "/s", "/c", npmCommand(), ...args]] as const)
-        : ([npmCommand(), [...args]] as const);
-    const { stdout } = await execFileAsync(file, argv, {
+    const { stdout } = await execFileAsync(process.execPath, [cli, ...args], {
       cwd,
       timeout: INSTALL_TIMEOUT_MS,
       maxBuffer: 8 * 1024 * 1024,
@@ -153,9 +141,8 @@ export function npmFailureKind(stderr: string | undefined): "unavailable" | "oth
 // `--install-links=false` on EVERY install: it is what makes npm reify a `file:` directory
 // dependency as a symlink to the author's directory instead of a copy (npm 7+ defaults the
 // other way). Every install carries the flag — a plain install that dropped it would silently
-// replace an existing link with a frozen copy — and a flag beats any config file: the same
-// command behaves the same whatever npm version the PATH resolves to. (The prefix's .npmrc
-// pins the same rule for anything else that runs npm there.)
+// replace an existing link with a frozen copy — and no config file is relied on: the same
+// command behaves the same whatever npm version ships with the runtime.
 const install = (prefix: string, spec: string) =>
   npm(prefix, [
     "install",
@@ -292,16 +279,16 @@ function packedFileName(stdout: string): string {
 /**
  * Links a local package directory into the prefix the way npm itself does it: `npm install
  * file:<dir>` records the directory as a `file:` dependency in the prefix's package.json and
- * reifies it as a symlink to the author's directory (the prefix's .npmrc pins
- * `install-links=false` — see ensurePrefix). Nothing here is penguin's own record — the
+ * reifies it as a symlink to the author's directory (every install runs with
+ * `--install-links=false` — see `install`). Nothing here is penguin's own record — the
  * manifest entry IS the link table (the route reads it back as one), npm keeps the symlink
  * and the entry in step through its own re-entry, and `npm uninstall <name>` takes a link out
  * the same way it takes any package out. The link is npm's, so are its semantics.
  *
  * The directory is vetted before npm is asked: its package.json must be readable and carry a
  * name npm accepts (the same rule the loader resolves by). An existing dependency under the
- * same name that is not a `link:` entry refuses unless `overwrite` — replacing an installed
- * package with a link is the operator's to confirm, the way a replacing install is.
+ * same name that is not itself this kind of link refuses unless `overwrite` — replacing an
+ * installed package with a link is the operator's to confirm, the way a replacing install is.
  */
 export async function linkPluginDirectory(
   root: string,
@@ -424,9 +411,50 @@ function npmReason(stderr: string | undefined, err: Error): string {
   return reason ?? err.message;
 }
 
-/** Windows resolves `npm` through npm.cmd; everywhere else the plain name is on PATH. */
-function npmCommand(): string {
-  return process.platform === "win32" ? "npm.cmd" : "npm";
+/**
+ * Where npm's own CLI lives, resolved like the platform resolves node-pty (the terminal's
+ * pty-module): the npm SHIPPED with this runtime, never whatever `npm` a PATH happens to
+ * carry — the ambient npm may be an older one whose install semantics differ (verified on
+ * the build machine: npm 9 and npm 11 disagree about `install-links`), and a pushed bundle
+ * or a desktop package must not depend on the machine having npm at all. Two places, in the
+ * order a packaged runtime meets them:
+ *
+ * 1. This server's own dependency graph (`npm` is a regular dependency).
+ * 2. The PROGRAM this process was started from (`process.argv[1]`): a pushed platform runs
+ *    inside an installed release whose node_modules carried npm beside its own dependencies.
+ *
+ * The result is cached: npm's place does not move under a running process. Found nowhere, the
+ * error says so plainly — a refusal the route renders as a failed install, not a crash.
+ */
+let npmCliCache: Promise<string> | null = null;
+function npmCli(): Promise<string> {
+  npmCliCache ??= (async () => {
+    const wanted = "npm/bin/npm-cli.js";
+    const places: readonly { label: string; base: string | null }[] = [
+      { label: "this server's own dependencies", base: import.meta.url },
+      {
+        label: "the installed program's dependencies",
+        base:
+          process.argv[1] !== undefined && path.isAbsolute(process.argv[1])
+            ? path.resolve(process.argv[1])
+            : null,
+      },
+    ];
+    for (const { label, base } of places) {
+      if (base === null) continue;
+      try {
+        return createRequire(base).resolve(wanted);
+      } catch {
+        // The next place is asked; the tail of this error is only the summary.
+      }
+    }
+    throw new PluginInstallError(
+      `npm, the installer of plugins, does not ship with this runtime (looked for ${wanted} in ${places
+        .map((p) => p.label)
+        .join(", then ")})`,
+    );
+  })();
+  return npmCliCache;
 }
 
 /**
