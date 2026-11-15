@@ -554,10 +554,7 @@ export function finalizeScan(state: ScanState): void {
 // ---------------------------------------------------------------------------
 
 /** A window cursor: shard file index + message ordinal within that shard's parsed array. */
-export interface MessageCursor {
-  fileIndex: number;
-  ordinal: number;
-}
+
 
 /**
  * `<fileIndex>:<ordinal>` — stable across requests and compaction: rotation always

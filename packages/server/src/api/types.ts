@@ -2186,7 +2186,7 @@ export interface SessionBackgroundTasks {
  * Session belongs to neither, whatever its marks: the list leaves it out of every category and
  * every total (a parent's Agent panel and company mode's own views open them).
  */
-export type SessionCategory = "active" | "archived";
+
 
 /** Per-category totals across an Agent's whole Session list (returned when the list is requested with counts). */
 export type SessionCategoryCounts = Record<SessionCategory, number>;
@@ -2510,19 +2510,14 @@ export interface SessionCreateResponse {
 }
 
 /** Immutable location of one record in a Session's append-only Trace. */
-export interface TracePosition {
-  /** Trace shard index (`001` on disk becomes `1`). */
-  fileIndex: number;
-  /** Zero-based record ordinal within the parsed shard. */
-  ordinal: number;
-}
+
 
 /**
  * History-only transport metadata; neither field is ever persisted into Trace JSONL.
  * `elided` names the bulky values the `history` stream sent as a preview (core's
  * history-elision.ts); `GET …/trace-body?ref=` returns each one whole.
  */
-export type HistoryMessage = AmspRecord & { tracePosition?: TracePosition; elided?: ElidedBody[] };
+
 
 export type { ElidedBody };
 
@@ -4036,14 +4031,7 @@ export type ScheduleServerEvent =
 // Trace browsing and performance analysis
 // ---------------------------------------------------------------------------
 
-export interface TraceFileInfo {
-  /** Trace file index (one file corresponds to one complete model context). */
-  index: number;
-  /** Date subdirectory it belongs to (yyyy-mm-dd). */
-  date: string;
-  sizeBytes: number;
-  mtime: string;
-}
+
 
 export interface SessionTracesResponse {
   files: TraceFileInfo[];
@@ -4083,26 +4071,7 @@ export interface ContextFileShare {
  * recorded in the same Trace shard has no tool to be attributed to). `topFiles` is the same
  * ranking narrowed to the three file tools and keyed by the file each call named.
  */
-export interface SessionContextParts {
-  systemPrompt: number;
-  toolDefs: number;
-  userMessages: number;
-  assistantMessages: number;
-  toolRequests: number;
-  toolResults: number;
-  /** Sum of the six parts. */
-  total: number;
-  /** Tools ranked by the context their traffic occupies, descending; at most five. */
-  topTools: ContextToolShare[];
-  /** Files ranked by the context their file-tool traffic occupies, descending; at most five. */
-  topFiles: ContextFileShare[];
-  /**
-   * A completed compaction closed the context these figures describe, and the next one has not
-   * been written yet: the composition is of what was compacted away, not of what the model now
-   * carries. The same state in which the chat page's context ring shows `—`.
-   */
-  contextClosed: boolean;
-}
+
 
 /** `GET /api/sessions/:id/context`: the message-derived composition plus where compaction will fire. */
 export interface SessionContextResponse extends SessionContextParts {
@@ -4115,16 +4084,7 @@ export interface SessionContextResponse extends SessionContextParts {
   compactionThreshold: number | null;
 }
 
-export interface TraceEventsResponse {
-  events: AmspRecord[];
-  offset: number;
-  limit: number;
-  /**
-   * Record count of the file (basis for pagination), in the ordinals `tracePosition` and the
-   * analysis' `messageFrom` / `messageTo` use: malformed lines are not records.
-   */
-  total: number;
-}
+
 
 /** Duration span of a single LLM Request (request_begin/request_end paired by proximity). */
 export interface RequestSpan {
@@ -4432,60 +4392,7 @@ export interface UsageTrendPointInTrace {
   sessionTotal: number;
 }
 
-export interface TraceAnalysisResponse {
-  /**
-   * Sum of all turns' durations (**including compaction turns**, same scope as `tasks` — the
-   * global figure is just the sum of the per-turn figures below; gaps between turns where the
-   * user is thinking or away are not counted). Computed server-side over the entire file: the
-   * frontend's events are paginated, so self-aggregation would undercount.
-   */
-  elapsedMs: number;
-  /**
-   * The file's model-API time: the sum of the turns' `llmMs` (human approval wait deducted,
-   * compaction requests included, so the scope matches `elapsedMs`).
-   */
-  apiMs: number;
-  /**
-   * The file's tool wall time: the sum of the turns' `toolMs` (parallel tools counted once
-   * within a turn). Summed per turn rather than unioned across the file, so the global figure
-   * stays the sum of the per-turn figures, exactly as `elapsedMs` is. May overlap `apiMs` —
-   * see `TraceTaskStats.toolMs`.
-   */
-  toolMs: number;
-  /**
-   * The file's cost in USD: the sum of the turns' `cost` (compaction turns included, the
-   * scope every total here shares). Absent exactly when the turns carry no `cost`.
-   */
-  cost?: number;
-  /**
-   * `cost` split by pricing bucket: every Request's Tokens at the rates and tier its share of
-   * `cost` was priced at, summed per bucket over the file. Present exactly when `cost` is; the
-   * turns carry no split.
-   */
-  costParts?: CostParts;
-  /**
-   * The model's context window as the file's head `session_meta` records it
-   * (`model_context_window`), for the context ring. The panel no longer reads every event, so the
-   * analysis carries it; absent when the head records none (an older server, or a file without
-   * one), and the panel then falls back as it always has.
-   */
-  modelContextWindow?: number | string;
-  requests: RequestSpan[];
-  /** Token / duration aggregated per Task (used directly by the Trace page's context ring and per-turn TPS). */
-  tasks: TraceTaskStats[];
-  toolCalls: ToolCallSpan[];
-  /** Execution timeline: model serial segments (LLM lane). */
-  modelSegments: TraceModelSegment[];
-  /** Execution timeline: each tool's approval/execution phases (independent lane, can overlap with model decoding). */
-  toolSpans: TraceToolSpan[];
-  /** Execution timeline: non-tool auxiliary phases (their own "other" lanes — currently the first run's MCP connect + discovery). */
-  otherSpans: TraceOtherSpan[];
-  /** Number of request_end events with status ∈ {timeout, malformed}. */
-  reconnectCount: number;
-  /** Number of compaction_begin events. */
-  compactionCount: number;
-  usageTrend: UsageTrendPointInTrace[];
-}
+
 
 export interface AgentTraceFileRef {
   index: number;
@@ -4544,31 +4451,14 @@ export interface AgentTraceSessionEntry {
  * the Agent's session groups (folder labels / workspace-mode group headers), and `dates`
  * stays empty (per-file stats are only taken for the returned page).
  */
-export interface AgentTracesResponse {
-  dates: AgentTraceDateGroup[];
-  /** Present only when the request paginates: the requested slice of Session groups, newest first. */
-  sessions?: AgentTraceSessionEntry[];
-  /** Present only when the request paginates: session-group count of the paged (category-filtered) set. */
-  totalSessions?: number;
-  /** Present only when the request paginates: per-category totals over all of the Agent's session groups. */
-  counts?: SessionCategoryCounts;
-  /** Present only when the request paginates: `counts` broken down by Workspace path ("" = unknown). */
-  workspaceCounts?: Record<string, SessionCategoryCounts>;
-}
+
 
 export interface TraceImportRequest {
   /** Base64 of the Trace file content (JSON Lines; the first record must be `session_meta`). */
   dataBase64: string;
 }
 
-export interface TraceImportResponse {
-  /** Session id taken from the imported file's `session_meta`. */
-  sessionId: string;
-  /** Allocated file index: always 1 — an import creates a new Session (a duplicate session id is rejected with 409 `trace_session_exists`). */
-  index: number;
-  /** Date directory the file landed in (local yyyy-mm-dd from the first record's timestamp, matching the Trace Writer's convention). */
-  date: string;
-}
+
 
 // ---------------------------------------------------------------------------
 // Usage and cost statistics
