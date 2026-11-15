@@ -19,11 +19,15 @@ import {
 } from "./icon-format.js";
 import type { IconFormat } from "./icon-format.js";
 import { isSafeIconSvg, isTintableSvg } from "./icon-svg.js";
+import type { Opaque } from "../kernel/markers.js";
+
+/** An icon's bytes, a host binary type the contract only names (`Opaque` in the generated table). */
+export type IconBytes = Opaque<"Uint8Array", Uint8Array>;
 
 /** An icon that reads clean: its format (from its bytes), its bytes, and whether it takes the text colour. */
 export interface IconImage {
   format: IconFormat;
-  bytes: Uint8Array;
+  bytes: IconBytes;
   /** A monochrome SVG (every paint `currentColor` or `none`): drawn as a mask in the text colour. Otherwise drawn as itself. */
   tint: boolean;
 }
