@@ -9,5 +9,6 @@
  * - `./organization` - the contract module on its own.
  * - `./organizations` - the storing component (the repo, flat in this package).
  */
-export { OrgCache, OrgCalendarOutcome, OrgTicketChange } from "./organization.js";
+export { OrgCache } from "./organization.js";
+export type { OrgCalendarOutcome, OrgTicketChange } from "./organization.js";
 export { OrgCacheRepo } from "./organizations.js";
