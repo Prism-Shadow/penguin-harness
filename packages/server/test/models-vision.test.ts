@@ -9,7 +9,7 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { catalogEntryFor } from "../src/model-catalog/index.js";
-import type { ModelsResponse, ProjectCreateResponse } from "../src/api/types.js";
+import type { ModelsResponse, ProjectCreateResponse } from "../src/";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 

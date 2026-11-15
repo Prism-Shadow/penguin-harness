@@ -38,14 +38,7 @@ import {
   skillsDir,
   usePushedPluginLibrary,
 } from "@prismshadow/penguin-core";
-import type {
-  AgentCreateResponse,
-  AgentsResponse,
-  AgentSkillsResponse,
-  PluginFilesResponse,
-  PluginLibraryResponse,
-  ProjectCreateResponse,
-} from "../src/api/types.js";
+import type { AgentCreateResponse, AgentsResponse, AgentSkillsResponse, PluginFilesResponse, PluginLibraryResponse, ProjectCreateResponse } from "../src/";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import { contentTable } from "./plugin-fixtures.js";
 import type { TestApp } from "./helpers.js";

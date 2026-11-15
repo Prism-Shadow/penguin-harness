@@ -27,21 +27,11 @@ import type {
   SpawnConfiner,
   ThinkingLevelName,
 } from "@prismshadow/penguin-core";
-import type {
-  ApprovalMode,
-  MessagingChannel,
-  SessionCategory,
-  SessionCategoryCounts,
-  SessionInfo,
-  SessionSandbox,
-  SessionSandboxPreset,
-  SessionSource,
-  ServerEvent,
-  UnavailableSandboxBackend,
-} from "../api/types.js";
+import type { ApprovalMode } from "@prismshadow/penguin-library-sessions";
+import type { MessagingChannel, SessionCategory, SessionCategoryCounts, SessionInfo, SessionSandbox, SessionSandboxPreset, SessionSource, ServerEvent, UnavailableSandboxBackend } from "../";
 import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
-import type { SessionRow } from "../db/repos/sessions.js";
+import type { SessionRow } from "@prismshadow/penguin-library-sessions/repos/sessions";
 import type { SessionManager } from "../runtime/session-manager.js";
 import {
   listCategory,
@@ -53,9 +43,9 @@ import {
 import type { ListingView } from "../runtime/session-sources.js";
 import { TraceIndexService, traceFilePath } from "./trace-index.js";
 import { matchesWorkspaceGroup } from "./workspace-group.js";
-import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
-import type { SessionIndex, SessionOrigins } from "../mechanisms/sessions.js";
-import type { ProjectConfigStore } from "../mechanisms/projects.js";
+import type { TraceIndex, TraceIndexStore } from "@prismshadow/penguin-library-traces";
+import type { SessionIndex, SessionOrigins } from "@prismshadow/penguin-library-sessions";
+import type { ProjectConfigStore } from "@prismshadow/penguin-library-projects";
 import type { SandboxDimension, SandboxSettings } from "@prismshadow/penguin-core/plugin";
 import { aboveSandboxCeiling } from "./sandbox-ceiling.js";
 

@@ -18,15 +18,12 @@
  *   state route's refusal names none: the holder may sit in a Project the caller cannot see.
  */
 import { Hono } from "hono";
-import type {
-  MessagingAccountHoldersResponse,
-  MessagingAccountsResponse,
-} from "../../api/types.js";
+import type { MessagingAccountHoldersResponse, MessagingAccountsResponse } from "../../";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { Machines } from "../../machines/service.js";
-import type { MessagingBindings } from "../../mechanisms/messaging.js";
-import type { Access } from "../../mechanisms/projects.js";
-import type { SessionIndex } from "../../mechanisms/sessions.js";
+import type { MessagingBindings } from "@prismshadow/penguin-library-messaging";
+import type { Access } from "@prismshadow/penguin-library-projects";
+import type { SessionIndex } from "@prismshadow/penguin-library-sessions";
 import {
   enabledAccounts,
   findAccountHolders,

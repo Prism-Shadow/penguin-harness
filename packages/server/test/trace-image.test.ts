@@ -24,7 +24,7 @@ import {
   userText,
 } from "@prismshadow/penguin-core";
 import type { AmspRecord } from "@prismshadow/penguin-core";
-import type { HistoryMessage, MessagesResponse } from "../src/api/types.js";
+import type { HistoryMessage, MessagesResponse } from "../src/";
 import { sessionRow, uniqueSessionId } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser, writeTraceFile } from "./helpers.js";
 import type { TestApp } from "./helpers.js";

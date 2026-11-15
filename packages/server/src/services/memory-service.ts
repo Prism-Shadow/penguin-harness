@@ -46,16 +46,7 @@ import {
   parseMemoryFrontmatter,
   readWorkspaceMarker,
 } from "@prismshadow/penguin-core";
-import type {
-  MemoryFileInfo,
-  MemoryFileResponse,
-  MemoryFilesResponse,
-  MemoryFolderFile,
-  MemoryImportMode,
-  MemoryImportResponse,
-  MemoryOverviewResponse,
-  MemoryScopeInfo,
-} from "../api/types.js";
+import type { MemoryFileInfo, MemoryFileResponse, MemoryFilesResponse, MemoryFolderFile, MemoryImportMode, MemoryImportResponse, MemoryOverviewResponse, MemoryScopeInfo } from "../";
 import { HttpError } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";

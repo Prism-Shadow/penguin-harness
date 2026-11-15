@@ -10,12 +10,12 @@
  */
 import { Hono } from "hono";
 import { agentDir, isValidId } from "@prismshadow/penguin-core";
-import type { AgentArchiveImportResponse, AgentArchiveQuery } from "../../api/types.js";
+import type { AgentArchiveImportResponse, AgentArchiveQuery } from "../../";
 import type { AppEnv } from "../../auth/middleware.js";
 import { formatLocalDate } from "../../internal/dates.js";
 import type { AgentConfig, AgentLifecycle, Snapshots } from "../../mechanisms/agents.js";
-import type { Access } from "../../mechanisms/projects.js";
-import type { Traces } from "../../mechanisms/traces.js";
+import type { Access } from "@prismshadow/penguin-library-projects";
+import type { Traces } from "@prismshadow/penguin-library-traces";
 import type { Workbenches } from "../../mechanisms/workbenches.js";
 import { exportAgent } from "../../services/agent-export.js";
 import type { AgentExportDeps } from "../../services/agent-export.js";

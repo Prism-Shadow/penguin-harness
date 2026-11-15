@@ -9,12 +9,7 @@ import type { FileHandle } from "node:fs/promises";
 import { constants as fsc } from "node:fs";
 import type { Stats } from "node:fs";
 import path from "node:path";
-import type {
-  WorkspaceFileEntry,
-  WorkspaceFilesResponse,
-  WorkspaceSearchHit,
-  WorkspaceSearchResponse,
-} from "../api/types.js";
+import type { WorkspaceFileEntry, WorkspaceFilesResponse, WorkspaceSearchHit, WorkspaceSearchResponse } from "../";
 import { HttpError } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
 import { Component } from "@prismshadow/penguin-core/kernel";

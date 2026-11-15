@@ -6,12 +6,12 @@
  * Any member can read (values masked); only the owner can modify; 404 if the Agent doesn't exist.
  */
 import { Hono } from "hono";
-import type { VaultEntryUpdate, VaultUpdateRequest } from "../../api/types.js";
+import type { VaultEntryUpdate, VaultUpdateRequest } from "../../";
 import type { AppEnv } from "../../auth/middleware.js";
 import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
 import type { SessionManager } from "../../runtime/session-manager.js";
 import type { AgentConfig } from "../../mechanisms/agents.js";
-import type { Access } from "../../mechanisms/projects.js";
+import type { Access } from "@prismshadow/penguin-library-projects";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface VaultRouteDeps {

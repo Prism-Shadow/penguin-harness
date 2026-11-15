@@ -18,12 +18,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import type {
-  AgentConfigResponse,
-  AgentMcpServersResponse,
-  AgentPluginsInstallResponse,
-  AgentSkillsResponse,
-} from "../src/api/types.js";
+import type { AgentConfigResponse, AgentMcpServersResponse, AgentPluginsInstallResponse, AgentSkillsResponse } from "../src/";
 import { apiClient, createTestApp, loginAdmin } from "./helpers.js";
 import { contentTable } from "./plugin-fixtures.js";
 import type { TestApp } from "./helpers.js";

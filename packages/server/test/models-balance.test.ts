@@ -17,7 +17,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MODEL_CATALOG } from "../src/model-catalog/index.js";
-import type { ModelBalanceResponse, ProjectCreateResponse } from "../src/api/types.js";
+import type { ModelBalanceResponse, ProjectCreateResponse } from "../src/";
 import {
   BALANCE_CACHE_MS,
   ModelBalances,

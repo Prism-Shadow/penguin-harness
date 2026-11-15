@@ -12,7 +12,7 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 import { mkdtemp, rm } from "node:fs/promises";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { EndpointModelListResponse, ProjectCreateResponse } from "../src/api/types.js";
+import type { EndpointModelListResponse, ProjectCreateResponse } from "../src/";
 import { ProjectConfigService } from "../src/services/project-config-service.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";

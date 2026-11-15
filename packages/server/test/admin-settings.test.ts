@@ -28,13 +28,7 @@
  * is always the fake, so no case depends on the network.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type {
-  ProxyProbeDto,
-  ProxyProbeResponse,
-  ProxyProbeTargetsResponse,
-  ServerSettings,
-  ServerSettingsResponse,
-} from "../src/api/types.js";
+import type { ProxyProbeDto, ProxyProbeResponse, ProxyProbeTargetsResponse, ServerSettings, ServerSettingsResponse } from "../src/";
 import { classifyProxyProbe } from "../src/services/proxy-probe.js";
 import {
   DEFAULT_ATTACHMENT_MAX_MB,

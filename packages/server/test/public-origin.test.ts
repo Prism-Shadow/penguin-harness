@@ -19,7 +19,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { serve } from "@hono/node-server";
 import type { Server as HttpServer } from "node:http";
 import { WebSocket } from "ws";
-import type { BrowserExtensionPairingResponse, ModelOAuthStartResponse } from "../src/api/types.js";
+import type { BrowserExtensionPairingResponse, ModelOAuthStartResponse } from "../src/";
 import { apiSocketPath } from "../src/socket/ref.js";
 import { attachTerminalWebSocket } from "../src/terminal/ws.js";
 import { createDesktopApp, createTestApp, loginAdmin } from "./helpers.js";

@@ -27,7 +27,7 @@ import {
   taskBegin,
 } from "@prismshadow/penguin-core";
 import type { AmspRecord } from "@prismshadow/penguin-core";
-import type { MessagesResponse } from "../src/api/types.js";
+import type { MessagesResponse } from "../src/";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import { adoptSession, fakeSession, uniqueSessionId } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser, waitFor, writeTraceFile } from "./helpers.js";

@@ -19,12 +19,7 @@ import { Hono } from "hono";
 import { THINKING_LEVEL_NAMES, resolveModelRef } from "@prismshadow/penguin-core";
 import { assertWorkspaceAllowed } from "../../services/workspace-guard.js";
 import type { Context } from "hono";
-import type {
-  AgentApiKeyCreateResponse,
-  AgentApiKeyInfo,
-  AgentApiResponse,
-  ModelRefDto,
-} from "../../api/types.js";
+import type { AgentApiKeyCreateResponse, AgentApiKeyInfo, AgentApiResponse, ModelRefDto } from "../../";
 import { requireHuman } from "../../auth/middleware.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { mintAgentApiKey } from "../../amsp/keys.js";
@@ -40,10 +35,10 @@ import {
   requireValidId,
 } from "../validate.js";
 import { APPROVAL_MODES } from "./sessions.js";
-import { DEFAULT_API_CONCURRENT_RUNS } from "../../mechanisms/agent-api.js";
-import type { AgentApi, AgentApiKeyRow } from "../../mechanisms/agent-api.js";
+import { DEFAULT_API_CONCURRENT_RUNS } from "@prismshadow/penguin-library-agent-api";
+import type { AgentApi, AgentApiKeyRow } from "@prismshadow/penguin-library-agent-api";
 import type { AgentConfig } from "../../mechanisms/agents.js";
-import type { ProjectConfigStore, Access } from "../../mechanisms/projects.js";
+import type { ProjectConfigStore, Access } from "@prismshadow/penguin-library-projects";
 import type { Settings } from "@prismshadow/penguin-library-settings";
 
 /** What this route group reaches — bound by its module (services/agent-routes.ts). */

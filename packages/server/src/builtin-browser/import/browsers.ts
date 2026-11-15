@@ -5,7 +5,7 @@
  * nothing here touches the filesystem.
  */
 import path from "node:path";
-import type { BuiltinBrowserImportBrowser } from "../../api/types.js";
+import type { BuiltinBrowserImportBrowser } from "../../";
 import type { ImportEnv } from "./index.js";
 
 export type ChromiumBrowserId = Exclude<BuiltinBrowserImportBrowser, "firefox">;

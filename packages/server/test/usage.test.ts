@@ -39,10 +39,10 @@ import {
 } from "@prismshadow/penguin-core";
 import type { SessionMetaPayload, TokenCounts } from "@prismshadow/penguin-core";
 import { ORIGIN_MODELS_MAX, UsageRecorder } from "../src/runtime/usage-recorder.js";
-import { ErrorsRepo } from "../src/db/repos/errors.js";
-import { UsageRepo } from "../src/db/repos/usage.js";
+import { ErrorsRepo } from "@prismshadow/penguin-library-observability/repos/errors";
+import { UsageRepo } from "@prismshadow/penguin-library-observability/repos/usage";
 import { UsageService } from "../src/services/usage-service.js";
-import type { PricingRates } from "../src/services/usage-service.js";
+import type { PricingRates } from "@prismshadow/penguin-library-projects";
 import { openDatabase } from "@prismshadow/penguin-library-db";
 import { enumerateBuckets, enumerateTsBuckets, formatLocalDate } from "../src/internal/dates.js";
 import { switchTimeZone } from "./helpers/time-zone.js";

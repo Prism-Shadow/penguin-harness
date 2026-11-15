@@ -38,14 +38,14 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { Hono } from "hono";
-import type { DirAccessResponse, DirEntryInfo, DirListResponse } from "../../api/types.js";
+import type { DirAccessResponse, DirEntryInfo, DirListResponse } from "../../";
 import type { AppEnv } from "../../auth/middleware.js";
 import { HttpError } from "../errors.js";
 import { requireValidId } from "../validate.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import { directorySkillsRoutes } from "./directory-skills.js";
 import type { Desktop, DesktopApi } from "../../hmr/capabilities.js";
-import type { Access } from "../../mechanisms/projects.js";
+import type { Access } from "@prismshadow/penguin-library-projects";
 import { discoverLocalPlaces, windowsHiddenNames } from "../../services/dir-places.js";
 
 /** What this route group reaches — bound by its module (src/modules). */

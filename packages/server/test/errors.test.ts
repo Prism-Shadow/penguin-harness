@@ -57,10 +57,10 @@ import {
   withOrigin,
 } from "@prismshadow/penguin-core";
 import type { AmspRecord, StopReason } from "@prismshadow/penguin-core";
-import type { ProjectCreateResponse, UsageErrorsPage, UsageResponse } from "../src/api/types.js";
+import type { ProjectCreateResponse, UsageErrorsPage, UsageResponse } from "../src/";
 import { openDatabase } from "@prismshadow/penguin-library-db";
-import { ErrorsRepo } from "../src/db/repos/errors.js";
-import type { ErrorRecordInsert } from "../src/db/repos/errors.js";
+import { ErrorsRepo } from "@prismshadow/penguin-library-observability/repos/errors";
+import type { ErrorRecordInsert } from "@prismshadow/penguin-library-observability/repos/errors";
 import { HttpError } from "../src/http/errors.js";
 import {
   DEDUP_KEYS_MAX,

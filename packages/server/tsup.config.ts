@@ -74,6 +74,17 @@ export default defineConfig({
     // server bundle alone, so its migrations and connection module ride in it.
     "@prismshadow/penguin-library-db",
     "@prismshadow/penguin-library-settings",
+    "@prismshadow/penguin-library-identity",
+    "@prismshadow/penguin-library-observability",
+    "@prismshadow/penguin-library-traces",
+    "@prismshadow/penguin-library-projects",
+    "@prismshadow/penguin-library-sessions",
+    "@prismshadow/penguin-library-messaging",
+    "@prismshadow/penguin-library-organization",
+    "@prismshadow/penguin-library-account-data",
+    "@prismshadow/penguin-library-agent-api",
+    "@prismshadow/penguin-library-machines",
+
     "@prismshadow/penguin-hmr",
     "@prismshadow/penguin-theme-pack",
     "@prismshadow/penguin-ui",

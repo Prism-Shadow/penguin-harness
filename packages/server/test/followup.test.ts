@@ -18,7 +18,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { approvalDecision, assistantText, toolCall, userText } from "@prismshadow/penguin-core";
 import type { ApproveFn, AmspRecord } from "@prismshadow/penguin-core";
-import type { TaskCreateResponse } from "../src/api/types.js";
+import type { TaskCreateResponse } from "../src/";
 import type { RecallStore } from "../src/runtime/session-manager.js";
 import { adoptSession, fakeSession, uniqueSessionId } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";

@@ -46,11 +46,7 @@ import os from "node:os";
 import path from "node:path";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { afterEach, describe, expect, it } from "vitest";
-import type {
-  InstalledPluginsResponse,
-  PluginLibraryResponse,
-  PluginIndexResponse,
-} from "../src/api/types.js";
+import type { InstalledPluginsResponse, PluginLibraryResponse, PluginIndexResponse } from "../src/";
 import {
   installPluginFiles,
   PluginInstallError,

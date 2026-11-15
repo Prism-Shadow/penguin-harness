@@ -56,11 +56,7 @@
  */
 import { userAgent } from "@prismshadow/penguin-core";
 import { clientEnvKey } from "../model-catalog/env-keys.js";
-import type {
-  ModelProtocolDetectResponse,
-  ModelProtocolProbeDto,
-  ProtocolProbeOutcome,
-} from "../api/types.js";
+import type { ModelProtocolDetectResponse, ModelProtocolProbeDto, ProtocolProbeOutcome } from "../";
 
 /**
  * The MMSP compatible client types detection probes (one generic protocol each), in the

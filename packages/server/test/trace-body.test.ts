@@ -22,7 +22,7 @@ import {
 } from "@prismshadow/penguin-core";
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import { encodeBodyRef } from "@prismshadow/penguin-core/interfaces";
-import type { HistoryRecords, ProjectCreateResponse } from "../src/api/types.js";
+import type { HistoryRecords, ProjectCreateResponse } from "../src/";
 import { sessionRow, uniqueSessionId } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser, writeTraceFile } from "./helpers.js";
 import type { TestApp } from "./helpers.js";

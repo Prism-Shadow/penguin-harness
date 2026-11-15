@@ -11,8 +11,9 @@
  */
 import { createHash } from "node:crypto";
 import { comparePluginVersions } from "@prismshadow/penguin-core";
-import type { OrgCalendarOutcome, OrgChannelMessage, OrgTicketChange } from "../../api/types.js";
-import type { SessionRow } from "../../db/repos/sessions.js";
+import type { OrgCalendarOutcome, OrgTicketChange } from "@prismshadow/penguin-library-organization";
+import type { OrgChannelMessage } from "../../";
+import type { SessionRow } from "@prismshadow/penguin-library-sessions/repos/sessions";
 import type { ChannelConfig, TicketDoc } from "../../organization/files.js";
 import { parseChannelMessageLine, serializeChannelMessageLine } from "../../organization/files.js";
 import { agentPrincipal, parsePrincipal, principalAgentId } from "../../organization/principal.js";

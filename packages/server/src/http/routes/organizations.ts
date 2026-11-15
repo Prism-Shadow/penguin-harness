@@ -31,26 +31,18 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { isValidId } from "@prismshadow/penguin-core";
-import type {
-  OrgApprovalMode,
-  OrgLanguage,
-  OrgStatus,
-  OrgTicketPriority,
-  OrgTicketStatus,
-  OrganizationDeleteResponse,
-  OrganizationsResponse,
-} from "../../api/types.js";
+import type { OrgApprovalMode, OrgLanguage, OrgStatus, OrgTicketPriority, OrgTicketStatus, OrganizationDeleteResponse, OrganizationsResponse } from "../../";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { SessionVia } from "../../auth/service.js";
+import type { SessionVia } from "@prismshadow/penguin-library-identity";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Settings } from "@prismshadow/penguin-library-settings";
-import type { ProjectLifecycle } from "../../mechanisms/projects.js";
+import type { ProjectLifecycle } from "@prismshadow/penguin-library-projects";
 import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
-import type { UserDraftsStore } from "../../mechanisms/account-data.js";
-import type { AgentApi } from "../../mechanisms/agent-api.js";
-import type { ErrorLog } from "../../mechanisms/observability.js";
-import type { Schedules, SessionIndex } from "../../mechanisms/sessions.js";
-import type { TraceIndex } from "../../mechanisms/traces.js";
+import type { UserDraftsStore } from "@prismshadow/penguin-library-account-data";
+import type { AgentApi } from "@prismshadow/penguin-library-agent-api";
+import type { ErrorLog } from "@prismshadow/penguin-library-observability";
+import type { Schedules, SessionIndex } from "@prismshadow/penguin-library-sessions";
+import type { TraceIndex } from "@prismshadow/penguin-library-traces";
 import type { Workbenches } from "../../mechanisms/workbenches.js";
 import type { Sessions } from "../../runtime/session-manager.js";
 import { deleteOrganizationWithAgents } from "../../services/organization-deletion.js";

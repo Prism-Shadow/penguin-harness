@@ -19,7 +19,7 @@ import {
   type ApproveFn,
   type AmspRecord,
 } from "@prismshadow/penguin-core";
-import type { ServerEvent } from "../src/api/types.js";
+import type { ServerEvent } from "../src/";
 import { userChannelKey } from "../src/http/routes/events.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import { adoptSession, fakeSession, uniqueSessionId } from "./fixtures/session.js";

@@ -18,7 +18,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import type { IfaceTable } from "@prismshadow/penguin-core/kernel";
-import type { IconRef } from "../src/api/types.js";
+import type { IconRef } from "../src/";
 import { WorkbenchService } from "../src/workbenches/service.js";
 import { apiClient, createTestApp, loginAdmin, writeTraceFile, type TestApp } from "./helpers.js";
 import { adoptSession, fakeSession, uniqueSessionId } from "./fixtures/session.js";

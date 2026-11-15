@@ -33,12 +33,7 @@
  *   turns an Agent's API on and the admin switch off.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type {
-  AgentApiKeyCreateResponse,
-  AgentApiResponse,
-  AgentsResponse,
-  ServerSettingsResponse,
-} from "../src/api/types.js";
+import type { AgentApiKeyCreateResponse, AgentApiResponse, AgentsResponse, ServerSettingsResponse } from "../src/";
 import {
   apiClient,
   createTestApp,

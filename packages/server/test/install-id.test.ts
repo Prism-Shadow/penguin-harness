@@ -12,7 +12,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { InstallResponse } from "../src/api/types.js";
+import type { InstallResponse } from "../src/";
 import { ensureInstallId, installIdPath, readInstallId } from "../src/install-id.js";
 import { createTestApp, loginAdmin, makeTempRoot } from "./helpers.js";
 import type { TestApp } from "./helpers.js";

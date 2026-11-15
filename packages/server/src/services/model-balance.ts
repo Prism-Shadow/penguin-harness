@@ -25,12 +25,7 @@ import { createHash } from "node:crypto";
 import { userAgent } from "@prismshadow/penguin-core";
 import { providerInfo } from "../model-catalog/catalog.js";
 import type { ModelProviderBalance } from "../model-catalog/catalog.js";
-import type {
-  ModelBalanceAmount,
-  ModelBalanceFailure,
-  ModelBalanceReading,
-  ModelBalanceResponse,
-} from "../api/types.js";
+import type { ModelBalanceAmount, ModelBalanceFailure, ModelBalanceReading, ModelBalanceResponse } from "../";
 
 /** How long a vendor may take to answer a balance request. */
 export const BALANCE_TIMEOUT_MS = 5_000;

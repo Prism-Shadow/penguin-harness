@@ -8,13 +8,7 @@
  * the far side answers (the shell throttles and holds a cookie store; the extension creates,
  * closes and focuses its own tabs), and the backend runtime branches on it.
  */
-import type {
-  BrowserBackend,
-  BrowserLinkCapabilities,
-  BuiltinBrowserUnavailableReason,
-  DesktopBrowserCommand,
-  DesktopBrowserEvent,
-} from "../api/types.js";
+import type { BrowserBackend, BrowserLinkCapabilities, BuiltinBrowserUnavailableReason, DesktopBrowserCommand, DesktopBrowserEvent } from "../";
 import { HttpError } from "../http/errors.js";
 
 export interface BrowserLink {

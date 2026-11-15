@@ -23,7 +23,7 @@ import {
   normalizeVersion,
   userAgent,
 } from "@prismshadow/penguin-core";
-import type { UpdateCheckResponse } from "../api/types.js";
+import type { UpdateCheckResponse } from "../";
 import { Bind, Component, Interface, Use } from "@prismshadow/penguin-core/kernel";
 import type { AppEnv } from "../auth/middleware.js";
 import type { Hono } from "hono";

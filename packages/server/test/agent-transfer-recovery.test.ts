@@ -25,7 +25,7 @@ import path from "node:path";
 import * as tar from "tar";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { agentDir, agentStateDir, agentVaultPath, snapshotsDir } from "@prismshadow/penguin-core";
-import type { AgentArchiveImportResponse } from "../src/api/types.js";
+import type { AgentArchiveImportResponse } from "../src/";
 import { apiClient, canCreateSymlink, createTestApp, loginAdmin } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 

@@ -91,31 +91,7 @@ import type {
   ProviderConnectionShape,
   ProviderTable,
 } from "@prismshadow/penguin-core";
-import type {
-  ChatDefaultsDto,
-  CommandPolicyDto,
-  DefaultModelOffer,
-  CommandPolicyRuleDto,
-  EndpointModelListRequest,
-  EndpointModelListResponse,
-  ModelEffectiveConnection,
-  ModelInfo,
-  ModelPricingDto,
-  ModelProtocolDetectRequest,
-  ModelProtocolDetectResponse,
-  ModelRefDto,
-  ModelsResponse,
-  ModelsUpdateRequest,
-  ModelTestRequest,
-  ModelTestResponse,
-  ModelVisionDetectRequest,
-  ModelVisionDetectResponse,
-  PresetSyncMode,
-  PresetSyncResponse,
-  ProviderConnectionDto,
-  ProviderConnectionResponse,
-  ProviderConnectionUpdate,
-} from "../api/types.js";
+import type { ChatDefaultsDto, CommandPolicyDto, DefaultModelOffer, CommandPolicyRuleDto, EndpointModelListRequest, EndpointModelListResponse, ModelEffectiveConnection, ModelInfo, ModelPricingDto, ModelProtocolDetectRequest, ModelProtocolDetectResponse, ModelRefDto, ModelsResponse, ModelsUpdateRequest, ModelTestRequest, ModelTestResponse, ModelVisionDetectRequest, ModelVisionDetectResponse, PresetSyncMode, PresetSyncResponse, ProviderConnectionDto, ProviderConnectionResponse, ProviderConnectionUpdate } from "../";
 import { badRequest } from "../http/validate.js";
 import { HttpError } from "../http/errors.js";
 import { cacheable } from "../internal/mtime-gate.js";
@@ -136,7 +112,7 @@ import {
   classifyVisionProbe,
   classifyVisionProbeError,
 } from "./vision-detect.js";
-import type { PricingRates, TieredRates } from "./usage-service.js";
+import type { PricingRates, TieredRates } from "@prismshadow/penguin-library-projects";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Config, Paths } from "../hmr/capabilities.js";
 import type {
@@ -146,7 +122,7 @@ import type {
   ModelProviderAuthTokens,
   ModelPromotions,
   ProjectConfigStore,
-} from "../mechanisms/projects.js";
+} from "@prismshadow/penguin-library-projects";
 
 export type RawTable = Record<string, unknown>;
 

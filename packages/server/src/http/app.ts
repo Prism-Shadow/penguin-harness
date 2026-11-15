@@ -20,9 +20,9 @@ import { jsonValidators } from "./json-validators.js";
 import { bodyLimitBytes } from "@prismshadow/penguin-library-settings/attachment-limits";
 import { isAgentImport, MAX_PACKAGE_BYTES } from "../services/agent-zip.js";
 import { declined } from "../hmr/hono-seam.js";
-import type { Auth, Users } from "../mechanisms/identity.js";
-import type { Access } from "../mechanisms/projects.js";
-import type { Errors } from "../mechanisms/observability.js";
+import type { Auth, Users } from "@prismshadow/penguin-library-identity";
+import type { Access } from "@prismshadow/penguin-library-projects";
+import type { Errors } from "@prismshadow/penguin-library-observability";
 import type { Settings } from "@prismshadow/penguin-library-settings";
 
 /**

@@ -8,17 +8,17 @@
  */
 import { randomBytes } from "node:crypto";
 import { tokensEqual } from "./api-token.js";
-import type { UserInfo } from "../api/types.js";
+import type { UserInfo } from "@prismshadow/penguin-library-identity";
 import { HttpError } from "../http/errors.js";
-import type { UserRow } from "../db/repos/users.js";
-import { sessionTokenHash } from "../db/repos/auth-sessions.js";
-import type { SessionViaValue, AuthSessionsRepo } from "../db/repos/auth-sessions.js";
+import type { UserRow } from "@prismshadow/penguin-library-identity/repos/users";
+import { sessionTokenHash } from "@prismshadow/penguin-library-identity/repos/auth-sessions";
+import type { SessionViaValue, AuthSessionsRepo } from "@prismshadow/penguin-library-identity/repos/auth-sessions";
 import type { AuthRuntimeState } from "./runtime-state.js";
 import { verifyAccountPassword, verifyPassword } from "./password.js";
 import type { PasswordHasher } from "./password.js";
 import { Component, Use, Interface } from "@prismshadow/penguin-core/kernel";
 import type { AuthState, Clock, Config } from "../hmr/capabilities.js";
-import type { Auth, AuthSessions, Users } from "../mechanisms/identity.js";
+import type { Auth, AuthSessions, Users } from "@prismshadow/penguin-library-identity";
 
 export const MIN_PASSWORD_LENGTH = 8;
 export const REMOTE_SESSION_TTL_MS = 60 * 60_000;
@@ -59,7 +59,7 @@ export function generateInitialAdminPassword(): string {
  * no desktop-only route, and changes the password only with the old one. "token" is the local
  * API token presented as a Bearer header, and nothing else. Anything else reads as "password".
  */
-export type SessionVia = "password" | "desktop" | "setup" | "remote" | "token";
+
 
 /** Row -> DTO. The two profile columns are omitted rather than sent as null when unset. */
 export function toUserInfo(row: UserRow): UserInfo {

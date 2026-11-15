@@ -13,7 +13,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { sessionMeta, toolCallOutput, userText } from "@prismshadow/penguin-core";
 import { encodeBodyRef } from "@prismshadow/penguin-core/interfaces";
-import type { ProjectCreateResponse } from "../src/api/types.js";
+import type { ProjectCreateResponse } from "../src/";
 import { sessionRow, uniqueSessionId } from "./fixtures/session.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser, writeTraceFile } from "./helpers.js";
 import type { TestApp } from "./helpers.js";

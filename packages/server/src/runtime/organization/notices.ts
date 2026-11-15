@@ -10,7 +10,7 @@
  * state — and the budget alerts. Ticket changes write no line here: the board is read from
  * the board, and a board that narrates itself buries the conversation.
  */
-import type { OrgChannelMessage, OrgChannelNotice } from "../../api/types.js";
+import type { OrgChannelMessage, OrgChannelNotice } from "../../";
 
 /** One system line: the English sentence and its structured twin. */
 export interface SystemLine {

@@ -20,11 +20,7 @@ import type {
   ApprovalReason,
   ApproveFn,
 } from "@prismshadow/penguin-core";
-import type {
-  ProjectCreateResponse,
-  ServerEvent,
-  SessionCreateResponse,
-} from "../src/api/types.js";
+import type { ProjectCreateResponse, ServerEvent, SessionCreateResponse } from "../src/";
 import type { RunOpts, RuntimeSession } from "../src/runtime/session-manager.js";
 import { adoptSession, fakeSession, uniqueSessionId } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";

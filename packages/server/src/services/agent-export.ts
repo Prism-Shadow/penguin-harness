@@ -15,10 +15,10 @@ import {
   parseTraceLines,
   tracesDir,
 } from "@prismshadow/penguin-core";
-import type { AgentArchiveQuery } from "../api/types.js";
+import type { AgentArchiveQuery } from "../";
 import { HttpError, badRequest } from "../http/errors.js";
-import type { SessionIndex } from "../mechanisms/sessions.js";
-import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
+import type { SessionIndex } from "@prismshadow/penguin-library-sessions";
+import type { TraceIndex, TraceIndexStore } from "@prismshadow/penguin-library-traces";
 import { STATE_FILE } from "../workbenches/store.js";
 import { MAX_ENTRIES, MAX_PACKAGE_BYTES, MAX_UNPACKED_BYTES } from "./agent-zip.js";
 import { isGitEntry, isLeftOut } from "./snapshot-service.js";

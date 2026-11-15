@@ -34,15 +34,7 @@
  */
 import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx, Slot } from "@prismshadow/penguin-core/kernel";
-import type {
-  PluginConfigEntry,
-  PluginConfigField,
-  PluginConfigOption,
-  PluginConfigPinColumn,
-  PluginConfigTableColumn,
-  PluginConfigTableRow,
-  PluginConfiguration,
-} from "../api/types.js";
+import type { PluginConfigEntry, PluginConfigField, PluginConfigOption, PluginConfigPinColumn, PluginConfigTableColumn, PluginConfigTableRow, PluginConfiguration } from "../";
 import { Settings } from "@prismshadow/penguin-library-settings";
 import { maskApiKey } from "../services/project-config-service.js";
 

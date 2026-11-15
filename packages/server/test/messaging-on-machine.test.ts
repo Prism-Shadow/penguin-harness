@@ -18,7 +18,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { assistantText } from "@prismshadow/penguin-core";
 import type { AmspRecord } from "@prismshadow/penguin-core";
-import type { MessagingBindingsResponse } from "../src/api/types.js";
+import type { MessagingBindingsResponse } from "../src/";
 import type {
   TelegramTransportOpts,
   TelegramUpdate,

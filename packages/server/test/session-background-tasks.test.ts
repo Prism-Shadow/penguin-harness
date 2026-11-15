@@ -13,7 +13,7 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { BackgroundCommandInfo, BackgroundSubagentInfo } from "@prismshadow/penguin-core";
-import type { ServerEvent, SessionResponse, SessionsResponse } from "../src/api/types.js";
+import type { ServerEvent, SessionResponse, SessionsResponse } from "../src/";
 import { userChannelKey } from "../src/http/routes/events.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import { adoptSession, fakeSession, sessionRow, uniqueSessionId } from "./fixtures/session.js";

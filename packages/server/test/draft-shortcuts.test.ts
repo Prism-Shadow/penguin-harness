@@ -15,7 +15,7 @@ import {
   DRAFT_SHORTCUT_PROMPT_MAX,
   DRAFT_SHORTCUT_TITLE_MAX,
 } from "../src/services/draft-shortcuts.js";
-import type { DraftShortcut } from "../src/api/types.js";
+import type { DraftShortcut } from "../src/";
 
 const shortcut = (id: string): DraftShortcut => ({
   id,

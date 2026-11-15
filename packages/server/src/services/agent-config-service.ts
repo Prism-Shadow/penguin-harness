@@ -48,21 +48,7 @@ import type {
   ThinkingLevelName,
   ToolDefinitionConfig,
 } from "@prismshadow/penguin-core";
-import type {
-  AgentConfigDto,
-  AgentConfigUpdateRequest,
-  AgentKernelUpdateResponse,
-  AgentModelConfigDto,
-  AgentCompactionConfigDto,
-  AgentMemoryConfigDto,
-  AgentHooksConfigDto,
-  AgentSchedulesConfigDto,
-  AgentSkillsConfigDto,
-  AgentVaultConfigDto,
-  VaultEntryInfo,
-  VaultResponse,
-  VaultUpdateRequest,
-} from "../api/types.js";
+import type { AgentConfigDto, AgentConfigUpdateRequest, AgentKernelUpdateResponse, AgentModelConfigDto, AgentCompactionConfigDto, AgentMemoryConfigDto, AgentHooksConfigDto, AgentSchedulesConfigDto, AgentSkillsConfigDto, AgentVaultConfigDto, VaultEntryInfo, VaultResponse, VaultUpdateRequest } from "../";
 import { HttpError } from "../http/errors.js";
 import {
   badRequest,

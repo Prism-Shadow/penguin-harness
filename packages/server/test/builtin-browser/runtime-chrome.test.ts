@@ -35,8 +35,8 @@ import { ExtensionPairing } from "../../src/builtin-browser/extension-pairing.js
 import { builtinBrowserRoutes } from "../../src/builtin-browser/routes.js";
 import { BuiltinBrowser } from "../../src/builtin-browser/service.js";
 import { openDatabase } from "@prismshadow/penguin-library-db";
-import { BrowserExtensionsRepo } from "../../src/db/repos/browser-extensions.js";
-import type { UserRow } from "../../src/db/repos/users.js";
+import { BrowserExtensionsRepo } from "@prismshadow/penguin-library-machines/repos/browser-extensions";
+import type { UserRow } from "@prismshadow/penguin-library-identity/repos/users";
 import { handleError } from "../../src/http/errors.js";
 import { FakeChrome } from "./fake-chrome.js";
 import { evaluated, expressionOf } from "./fake-shell.js";

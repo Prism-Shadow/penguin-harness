@@ -22,15 +22,7 @@
 import { randomBytes } from "node:crypto";
 import { elideHistoryRecord } from "@prismshadow/penguin-core/interfaces";
 import type { BodySource } from "@prismshadow/penguin-core/interfaces";
-import type {
-  HistoryMessage,
-  HistoryPage,
-  HistoryProgress,
-  HistoryRecords,
-  HistoryStreamError,
-  HistoryStreamEvent,
-  MessagesResponse,
-} from "../api/types.js";
+import type { HistoryMessage, HistoryPage, HistoryProgress, HistoryRecords, HistoryStreamError, HistoryStreamEvent, MessagesResponse } from "../";
 import { HttpError, badRequest } from "../http/errors.js";
 import { FRAME_TEXT_BUDGET } from "../socket/line-frames.js";
 import { messagesPageQuery } from "./session-history.js";

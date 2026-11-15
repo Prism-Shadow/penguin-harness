@@ -2,11 +2,7 @@
  * Project routes: GET|POST /api/projects, PATCH|DELETE /api/projects/:p.
  */
 import { Hono } from "hono";
-import type {
-  ProjectCreateResponse,
-  ProjectUpdateResponse,
-  ProjectsResponse,
-} from "../../api/types.js";
+import type { ProjectCreateResponse, ProjectUpdateResponse, ProjectsResponse } from "../../";
 import type { AppEnv } from "../../auth/middleware.js";
 import {
   badRequest,
@@ -19,7 +15,7 @@ import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Desktop } from "../../hmr/capabilities.js";
 import type { DesktopService } from "../../services/desktop-service.js";
 import { membersRoutes } from "./members.js";
-import type { ProjectLifecycle } from "../../mechanisms/projects.js";
+import type { ProjectLifecycle } from "@prismshadow/penguin-library-projects";
 import type { Machines } from "../../machines/service.js";
 
 /** What this route group reaches — bound by its module (src/modules). */

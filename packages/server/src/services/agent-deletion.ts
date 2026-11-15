@@ -14,15 +14,15 @@
  * The employment guard lives here rather than in the Agent service because the organization
  * runtime already depends on that service; this module consumes both.
  */
-import type { AgentDeletionInfo, Employment } from "../api/types.js";
+import type { AgentDeletionInfo, Employment } from "../";
 import { HttpError } from "../http/errors.js";
 import { settleWithin } from "../http/settle.js";
-import type { UserDraftsStore } from "../mechanisms/account-data.js";
-import type { AgentApi } from "../mechanisms/agent-api.js";
+import type { UserDraftsStore } from "@prismshadow/penguin-library-account-data";
+import type { AgentApi } from "@prismshadow/penguin-library-agent-api";
 import type { AgentConfig, AgentLifecycle } from "../mechanisms/agents.js";
-import type { ErrorLog } from "../mechanisms/observability.js";
-import type { Schedules, SessionIndex } from "../mechanisms/sessions.js";
-import type { TraceIndex } from "../mechanisms/traces.js";
+import type { ErrorLog } from "@prismshadow/penguin-library-observability";
+import type { Schedules, SessionIndex } from "@prismshadow/penguin-library-sessions";
+import type { TraceIndex } from "@prismshadow/penguin-library-traces";
 import type { Workbenches } from "../mechanisms/workbenches.js";
 import type { OrgService } from "../runtime/organization/service.js";
 import type { SessionManager } from "../runtime/session-manager.js";

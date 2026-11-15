@@ -16,7 +16,7 @@ import {
 } from "../../../scripts/deploy-unsatisfied-plugins.mjs";
 import { acceptsLeavingOut, answerPush, openPushSlip } from "../src/hmr/push-plugins.js";
 import { HotResources } from "@prismshadow/penguin-hmr";
-import type { UnsatisfiedPlugin } from "../src/api/types.js";
+import type { UnsatisfiedPlugin } from "../src/";
 
 const PLUGINS: UnsatisfiedPlugin[] = [
   { specifier: "@acme/partial", disabled: false, reason: "contributes to 'nowhere.slot'" },

@@ -24,14 +24,7 @@ import { effectiveConnection, providerConnectionShape } from "@prismshadow/pengu
 import { catalogEntryFor } from "../model-catalog/catalog.js";
 import { modelEnvironment } from "../model-catalog/env-keys.js";
 import type { ModelEntry, ModelRef, ProviderTable } from "@prismshadow/penguin-core";
-import type {
-  ModelInfo,
-  ModelRefDto,
-  ModelUpdateEntry,
-  ModelsResponse,
-  ModelsUpdateRequest,
-  ProviderConnectionUpdate,
-} from "../api/types.js";
+import type { ModelInfo, ModelRefDto, ModelUpdateEntry, ModelsResponse, ModelsUpdateRequest, ProviderConnectionUpdate } from "../";
 
 /** This side's half of the merge: a Project's configured models and groups, keys in plaintext. */
 export interface LocalModels {

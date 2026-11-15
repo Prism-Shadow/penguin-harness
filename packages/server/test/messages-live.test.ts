@@ -27,8 +27,8 @@ import {
   withOrigin,
 } from "@prismshadow/penguin-core";
 import type { ApproveFn, AmspRecord } from "@prismshadow/penguin-core";
-import type { MessagesResponse } from "../src/api/types.js";
-import type { SessionRow } from "../src/db/repos/sessions.js";
+import type { MessagesResponse } from "../src/";
+import type { SessionRow } from "@prismshadow/penguin-library-sessions/repos/sessions";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import { fakeSession, sessionRow, uniqueSessionId } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser, waitFor, writeTraceFile } from "./helpers.js";

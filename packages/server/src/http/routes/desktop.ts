@@ -15,11 +15,7 @@
 import { Hono } from "hono";
 import type { Context, MiddlewareHandler } from "hono";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
-import type {
-  DesktopTrayPatch,
-  DesktopTrayStatusResponse,
-  DesktopUpdateStatusResponse,
-} from "../../api/types.js";
+import type { DesktopTrayPatch, DesktopTrayStatusResponse, DesktopUpdateStatusResponse } from "../../";
 import { HttpError } from "../errors.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { Desktop } from "../../hmr/capabilities.js";

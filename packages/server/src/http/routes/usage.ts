@@ -16,16 +16,12 @@
  */
 import { Hono } from "hono";
 import type { Context } from "hono";
-import type {
-  UsageErrorKind,
-  UsageErrorsClearResponse,
-  UsageGranularity,
-  UsageGroupBy,
-} from "../../api/types.js";
+import type { UsageGroupBy } from "@prismshadow/penguin-library-observability";
+import type { UsageErrorKind, UsageErrorsClearResponse, UsageGranularity } from "../../";
 import type { AppEnv } from "../../auth/middleware.js";
 import { badRequest, optionalDateParam, paginationQuery, requireValidId } from "../validate.js";
-import type { UsageQueries } from "../../mechanisms/observability.js";
-import type { Access } from "../../mechanisms/projects.js";
+import type { UsageQueries } from "@prismshadow/penguin-library-observability";
+import type { Access } from "@prismshadow/penguin-library-projects";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface UsageRouteDeps {

@@ -13,7 +13,7 @@ import { Hono } from "hono";
 import { wire } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx, Contributed } from "@prismshadow/penguin-core/kernel";
 import type { AppEnv } from "../src/auth/middleware.js";
-import type { UserRow } from "../src/db/repos/users.js";
+import type { UserRow } from "@prismshadow/penguin-library-identity/repos/users";
 import { HttpModule } from "../src/http/app.js";
 import { WebModule } from "../src/http/routes/contributions.js";
 import {

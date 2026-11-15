@@ -1,0 +1,14 @@
+/**
+ * The agent-api domain as a library package: the AgentApi mechanism (the storage
+ * contract the agent_api repo implements), its settings/update vocabulary and the
+ * ModelRefDto pair. One package, no server dependencies - the repo takes the Db
+ * capability from @prismshadow/penguin-library-db and the approval vocabulary from
+ * @prismshadow/penguin-library-sessions.
+ *
+ * Subpaths:
+ * - `.` - the contract plus its vocabulary.
+ * - `./agent-api` - the contract module on its own.
+ * - `./agent-api-repo` - the storing component.
+ */
+export { AgentApi, AgentApiSettings, AgentApiUpdateRequest, ModelRefDto } from "./agent-api.js";
+export { AgentApiRepo } from "./agent-api-repo.js";

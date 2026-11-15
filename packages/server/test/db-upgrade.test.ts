@@ -37,9 +37,9 @@ import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { openDatabase } from "@prismshadow/penguin-library-db";
 import { SCHEMA_SQL } from "@prismshadow/penguin-library-db/schema";
-import { MessagingBindingsRepo } from "../src/db/repos/messaging-bindings.js";
-import { SessionsRepo } from "../src/db/repos/sessions.js";
-import type { SessionRow } from "../src/db/repos/sessions.js";
+import { MessagingBindingsRepo } from "@prismshadow/penguin-library-messaging/repos/messaging-bindings";
+import { SessionsRepo } from "@prismshadow/penguin-library-sessions/repos/sessions";
+import type { SessionRow } from "@prismshadow/penguin-library-sessions/repos/sessions";
 import { wire } from "@prismshadow/penguin-core/kernel";
 
 const sqlite = process.getBuiltinModule("node:sqlite");

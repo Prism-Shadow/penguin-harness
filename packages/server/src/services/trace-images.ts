@@ -19,7 +19,7 @@
  * stays inline, where it is as harmless as it always was.
  */
 import type { ImageUrlPayload, AmspRecord, ToolCallOutputPayload } from "@prismshadow/penguin-core";
-import type { HistoryMessage, TracePosition } from "../api/types.js";
+import type { HistoryMessage, TracePosition } from "../";
 
 /** Image types the trace-image route serves (core's own supported set). */
 const REFERENCED_IMAGE_MIMES: ReadonlySet<string> = new Set([

@@ -12,12 +12,8 @@
  * non-admin's Project rule depends on who asks), the ids to avoid, where a dead end is
  * recorded. The completion itself belongs to no Session and is not metered.
  */
-import type {
-  SemanticIdKind,
-  SemanticIdSuggestReason,
-  SemanticIdSuggestResponse,
-} from "../api/types.js";
-import type { UtilityCompletion } from "./project-config-service.js";
+import type { SemanticIdKind, SemanticIdSuggestReason, SemanticIdSuggestResponse } from "../";
+import type { UtilityCompletion } from "@prismshadow/penguin-library-projects";
 import { fallbackSemanticId, placeholderSemanticId, sanitizeSuggestedId } from "./semantic-id.js";
 import type { SemanticIdRule } from "./semantic-id.js";
 

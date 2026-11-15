@@ -44,7 +44,7 @@ export interface ErrorBody {
 export type ErrorDetails = Readonly<Record<string, string>>;
 
 /** Session approval mode (reuses the CLI enum). */
-export type ApprovalMode = "allow-all" | "deny-all" | "read-only" | "always-ask";
+
 
 /** Session run status: idle / Task in progress / compacting. */
 export type SessionStatus = "idle" | "running" | "compacting";
@@ -59,26 +59,7 @@ export type { SessionSource };
 // Authentication and users
 // ---------------------------------------------------------------------------
 
-export interface UserInfo {
-  /** Semantic id, i.e. login name: `^[a-z][a-z0-9_-]{1,31}$`, immutable after creation. */
-  userId: string;
-  /** Built-in admin (seeded at startup). */
-  isAdmin: boolean;
-  /** Still using the initial password (seeded/set by admin): frontend prompts the user to change it soon. */
-  passwordIsInitial: boolean;
-  /**
-   * Nickname the account chose (1-32 characters), shown wherever the id would otherwise be.
-   * Omitted when unset — every account that predates the Profile page starts without one, and
-   * a surface with no value falls back to `userId`.
-   */
-  displayName?: string;
-  /**
-   * Avatar as a `data:image/...;base64,` URL, at most 131072 characters. Omitted when unset,
-   * and a surface with no value draws the letter placeholder instead.
-   */
-  avatar?: string;
-  createdAt: string;
-}
+
 
 /**
  * PUT /api/me/profile — a patch, not a replacement: an absent field keeps what is stored,
@@ -579,7 +560,7 @@ export interface PrefsResponse {
 // Project and member authorization
 // ---------------------------------------------------------------------------
 
-export type ProjectRole = "owner" | "member";
+
 
 export interface ProjectSummary {
   projectId: string;
@@ -648,10 +629,7 @@ export interface MemberAddResponse {
  * `modelId` is the upstream request id, sent to MMSP as-is — `<provider>/<id>` string
  * concatenation is forbidden throughout the pipeline.
  */
-export interface ModelRefDto {
-  provider: string;
-  modelId: string;
-}
+
 
 /** Three pricing buckets, in USD per million tokens (unit is fixed at usd_per_mtok; not carried in the DTO). */
 export interface ModelPricingDto {
@@ -4583,7 +4561,7 @@ export interface TraceImportResponse {
 // Usage and cost statistics
 // ---------------------------------------------------------------------------
 
-export type UsageGroupBy = "date" | "agent" | "model" | "session";
+
 
 /**
  * A cost split by the three pricing buckets, in USD: cached input (`cacheRead`), uncached input
@@ -6796,9 +6774,9 @@ export type OrgEmployeeState = "running" | "idle" | "paused";
  */
 export type OrgTriggerKind = "init" | "event" | "mention" | "ticket_notice" | "ticket_work";
 /** The ticket changes an employee is told about, listed in the body of its next calendar sweep. */
-export type OrgTicketChange = "assigned" | "blocked" | "blocker_closed" | "done" | "rejected";
+
 /** What the last evaluation of a calendar event did. */
-export type OrgCalendarOutcome = "fired" | "queued" | "paused" | "missed" | "error";
+
 /**
  * The organization's working language: the language its handbook, its CEO's initialization
  * run, every employee brief and every desk and ticket run are written in. Detected from the

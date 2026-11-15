@@ -39,14 +39,8 @@ import {
 } from "@prismshadow/penguin-core";
 import { buildModelSwitchMessage, parseModelSwitchMessage } from "@prismshadow/amsp/markers";
 import type { AmspRecord, StopReason, TokenCounts } from "@prismshadow/penguin-core";
-import type {
-  ModelRefDto,
-  ServerEvent,
-  SessionContextResponse,
-  SessionResponse,
-  TaskCreateResponse,
-} from "../src/api/types.js";
-import type { SessionRow } from "../src/db/repos/sessions.js";
+import type { ModelRefDto, ServerEvent, SessionContextResponse, SessionResponse, TaskCreateResponse } from "../src/";
+import type { SessionRow } from "@prismshadow/penguin-library-sessions/repos/sessions";
 import { ORG_CONFIG_DEFAULTS } from "../src/organization/files.js";
 import { OrgStore } from "../src/organization/store.js";
 import type { RuntimeSession, SessionLoader } from "../src/runtime/session-manager.js";

@@ -16,11 +16,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { AmspRecord } from "@prismshadow/penguin-core";
-import type {
-  MessagesResponse,
-  MessagingBindingsResponse,
-  SessionCreateResponse,
-} from "../src/api/types.js";
+import type { MessagesResponse, MessagingBindingsResponse, SessionCreateResponse } from "../src/";
 import type {
   TelegramTransportOpts,
   TelegramUpdate,

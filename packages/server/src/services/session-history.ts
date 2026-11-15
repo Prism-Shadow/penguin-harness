@@ -18,17 +18,11 @@
  */
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import type { Context } from "hono";
-import type {
-  HistoryMessage,
-  SessionStatus,
-  MessagesLiveTail,
-  MessagesPageInfo,
-  MessagesResponse,
-} from "../api/types.js";
-import type { SessionRow } from "../db/repos/sessions.js";
+import type { HistoryMessage, SessionStatus, MessagesLiveTail, MessagesPageInfo, MessagesResponse } from "../";
+import type { SessionRow } from "@prismshadow/penguin-library-sessions/repos/sessions";
 import { badRequest, parseNonNegativeInt } from "../http/validate.js";
 import type { Channels } from "../hmr/capabilities.js";
-import type { Traces } from "../mechanisms/traces.js";
+import type { Traces } from "@prismshadow/penguin-library-traces";
 import { envelopeDigest } from "../runtime/live-tail.js";
 import type { RunStart } from "../runtime/live-tail.js";
 import type { SessionManager } from "../runtime/session-manager.js";

@@ -18,14 +18,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { agentStateDir, hooksDir, skillsDir } from "@prismshadow/penguin-core";
-import type {
-  AgentHooksResponse,
-  AgentMcpServersResponse,
-  AgentSkillsResponse,
-  PluginUninstallResponse,
-  WorkbenchInfo,
-  WorkbenchVersion,
-} from "../src/api/types.js";
+import type { AgentHooksResponse, AgentMcpServersResponse, AgentSkillsResponse, PluginUninstallResponse, WorkbenchInfo, WorkbenchVersion } from "../src/";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 import { contentTable, writePrefixPackage } from "./plugin-fixtures.js";

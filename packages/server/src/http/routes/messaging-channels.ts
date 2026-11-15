@@ -24,13 +24,9 @@
 import { HttpError } from "../errors.js";
 import { optionalBoolean } from "../validate.js";
 import { maskApiKey } from "../../services/project-config-service.js";
-import type { MessagingBindingRow } from "../../db/repos/messaging-bindings.js";
+import type { MessagingBindingRow } from "@prismshadow/penguin-library-messaging/repos/messaging-bindings";
 import type { MessagingChannel } from "../../runtime/messaging/connector.js";
-import type {
-  MessagingBindingCommon,
-  MessagingBindingInfo,
-  MessagingDeliveryPatch,
-} from "../../api/types.js";
+import type { MessagingBindingCommon, MessagingBindingInfo, MessagingDeliveryPatch } from "../../";
 
 /**
  * One channel's contribution to the shared HTTP surface.

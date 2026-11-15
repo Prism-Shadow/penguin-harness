@@ -82,11 +82,7 @@ import {
 } from "@prismshadow/penguin-core";
 import { RunCollector, readAmsp } from "@prismshadow/amsp";
 import type { AmspFrame, AmspRecord, RunResult } from "@prismshadow/amsp";
-import type {
-  AgentApiKeyCreateResponse,
-  AgentApiResponse,
-  SessionResponse,
-} from "../src/api/types.js";
+import type { AgentApiKeyCreateResponse, AgentApiResponse, SessionResponse } from "../src/";
 import { bodyLimitBytes } from "@prismshadow/penguin-library-settings/attachment-limits";
 import { apiClient, createTestApp, loginAdmin, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";

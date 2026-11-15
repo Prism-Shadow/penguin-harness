@@ -26,8 +26,8 @@ import type {
   ModelProviderAuthToken,
   ModelProviderAuthTokens,
   ProjectConfigStore,
-} from "../mechanisms/projects.js";
-import type { ModelScopeAuthFlowStatusResponse } from "../api/types.js";
+} from "@prismshadow/penguin-library-projects";
+import type { ModelScopeAuthFlowStatusResponse } from "../";
 
 /** Recorded by the bridge alongside the flow; it identifies the App but does not gate it. */
 export const MODELSCOPE_BRIDGE_CLIENT_ID = "penguin-harness";

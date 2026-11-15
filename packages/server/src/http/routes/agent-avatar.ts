@@ -9,10 +9,10 @@
  */
 import { Hono } from "hono";
 import type { Context } from "hono";
-import type { AgentAvatarResponse } from "../../api/types.js";
+import type { AgentAvatarResponse } from "../../";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { AgentConfig } from "../../mechanisms/agents.js";
-import type { Access } from "../../mechanisms/projects.js";
+import type { Access } from "@prismshadow/penguin-library-projects";
 import { parseAvatarDataUrl } from "../../services/avatar-file.js";
 import type { AvatarImage } from "../../services/avatar-file.js";
 import { agentAvatarRev, readAgentAvatar, writeAgentAvatar } from "../../services/agent-avatar.js";

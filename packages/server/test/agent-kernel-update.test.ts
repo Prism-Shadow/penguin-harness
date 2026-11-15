@@ -21,12 +21,7 @@ import {
   defaultSystemConfig,
   systemConfigPath,
 } from "@prismshadow/penguin-core";
-import type {
-  AgentConfigResponse,
-  AgentKernelUpdateResponse,
-  AgentsResponse,
-  ProjectCreateResponse,
-} from "../src/api/types.js";
+import type { AgentConfigResponse, AgentKernelUpdateResponse, AgentsResponse, ProjectCreateResponse } from "../src/";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 

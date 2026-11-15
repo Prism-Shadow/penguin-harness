@@ -16,7 +16,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { AgentsResponse, OrgStatus } from "../src/api/types.js";
+import type { AgentsResponse, OrgStatus } from "../src/";
 import { ORG_CONFIG_DEFAULTS } from "../src/organization/files.js";
 import type { OrgEmployee } from "../src/organization/files.js";
 import { OrgStore } from "../src/organization/store.js";

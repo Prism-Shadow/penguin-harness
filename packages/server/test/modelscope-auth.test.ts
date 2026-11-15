@@ -28,12 +28,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { presetModelEntries } from "../src/model-catalog/index.js";
-import type {
-  ModelScopeAuthFlowStatusResponse,
-  ModelScopeAuthStartResponse,
-  ModelsResponse,
-  ProjectCreateResponse,
-} from "../src/api/types.js";
+import type { ModelScopeAuthFlowStatusResponse, ModelScopeAuthStartResponse, ModelsResponse, ProjectCreateResponse } from "../src/";
 import {
   ModelScopeAuthService,
   modelscopeAccessToken,

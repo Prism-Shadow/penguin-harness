@@ -6,17 +6,13 @@
  */
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import { Interface } from "@prismshadow/penguin-core/kernel";
-import type {
-  ApprovalMode,
-  MessagingChannel,
-  ServerEvent,
-  SessionStatus,
-} from "../../api/types.js";
-import type { OrgCache } from "../../mechanisms/organization.js";
-import type { Members, ProjectConfigStore, Projects } from "../../mechanisms/projects.js";
-import type { SessionIndex } from "../../mechanisms/sessions.js";
+import type { ApprovalMode } from "@prismshadow/penguin-library-sessions";
+import type { MessagingChannel, ServerEvent, SessionStatus } from "../../";
+import type { OrgCache } from "@prismshadow/penguin-library-organization";
+import type { Members, ProjectConfigStore, Projects } from "@prismshadow/penguin-library-projects";
+import type { SessionIndex } from "@prismshadow/penguin-library-sessions";
 import type { OrgStore } from "../../organization/store.js";
-import type { UtilityCompletion } from "../../services/project-config-service.js";
+import type { UtilityCompletion } from "@prismshadow/penguin-library-projects";
 import type { ErrorSink } from "../error-recorder.js";
 
 /** The session manager as the runtime sees it: is a session busy, and start a Task on it. */

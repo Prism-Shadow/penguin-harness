@@ -38,11 +38,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { assistantText } from "@prismshadow/penguin-core";
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import { wire } from "@prismshadow/penguin-core/kernel";
-import type {
-  MessagingBindingsResponse,
-  WeChatBindingResponse,
-  WeChatTestResponse,
-} from "../src/api/types.js";
+import type { MessagingBindingsResponse, WeChatBindingResponse, WeChatTestResponse } from "../src/";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import {
   MESSAGING_TEST_MESSAGE,
@@ -77,8 +73,8 @@ import {
   wechatRetryDelayMs,
 } from "../src/runtime/messaging/wechat-connector.js";
 import { openDatabase } from "@prismshadow/penguin-library-db";
-import { MessagingBindingsRepo } from "../src/db/repos/messaging-bindings.js";
-import { MessagingConversationsRepo } from "../src/db/repos/messaging-conversations.js";
+import { MessagingBindingsRepo } from "@prismshadow/penguin-library-messaging/repos/messaging-bindings";
+import { MessagingConversationsRepo } from "@prismshadow/penguin-library-messaging/repos/messaging-conversations";
 import { forwardingTo } from "./fixtures/forwarding.js";
 import { fakeSession, sessionRow, uniqueSessionId } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";

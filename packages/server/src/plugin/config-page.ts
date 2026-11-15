@@ -9,12 +9,7 @@
  */
 import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx, Slot } from "@prismshadow/penguin-core/kernel";
-import type {
-  PluginConfigBackend,
-  PluginConfigEntry,
-  PluginConfigNotice,
-  PluginConfiguration,
-} from "../api/types.js";
+import type { PluginConfigBackend, PluginConfigEntry, PluginConfigNotice, PluginConfiguration } from "../";
 import {
   PluginConfig,
   PluginConfigEntries,

@@ -6,7 +6,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { AdminUsersResponse, MembersResponse } from "../src/api/types.js";
+import type { AdminUsersResponse, MembersResponse } from "../src/";
 import { apiClient, createTestApp, loginAdmin, loginUser, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 

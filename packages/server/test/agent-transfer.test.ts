@@ -46,11 +46,7 @@ async function pathsUnder(dir: string): Promise<string[]> {
   const entries = await fs.readdir(dir, { recursive: true });
   return entries.map((entry) => entry.replaceAll("\\", "/"));
 }
-import type {
-  AgentArchiveImportResponse,
-  ProjectCreateResponse,
-  VaultResponse,
-} from "../src/api/types.js";
+import type { AgentArchiveImportResponse, ProjectCreateResponse, VaultResponse } from "../src/";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 

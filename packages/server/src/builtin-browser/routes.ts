@@ -39,20 +39,7 @@
  */
 import { Hono } from "hono";
 import type { Context } from "hono";
-import type {
-  BrowserBackend,
-  BrowserBackendResponse,
-  BrowserExtensionPairingResponse,
-  BrowserExtensionPairResponse,
-  BrowserExtensionsResponse,
-  BuiltinBrowserHistoryResponse,
-  BuiltinBrowserImportResult,
-  BuiltinBrowserImportSourcesResponse,
-  BuiltinBrowserScreenshot,
-  BuiltinBrowserSettings,
-  BuiltinBrowserStatus,
-  BuiltinBrowserTab,
-} from "../api/types.js";
+import type { BrowserBackend, BrowserBackendResponse, BrowserExtensionPairingResponse, BrowserExtensionPairResponse, BrowserExtensionsResponse, BuiltinBrowserHistoryResponse, BuiltinBrowserImportResult, BuiltinBrowserImportSourcesResponse, BuiltinBrowserScreenshot, BuiltinBrowserSettings, BuiltinBrowserStatus, BuiltinBrowserTab } from "../";
 import { requireHuman } from "../auth/middleware.js";
 import type { AppEnv } from "../auth/middleware.js";
 import { HttpError, errorBody } from "../http/errors.js";

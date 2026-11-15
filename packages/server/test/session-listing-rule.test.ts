@@ -9,7 +9,7 @@
  * - A row whose Trace has not been read yet (no source known) is active, as a person's would be.
  */
 import { describe, expect, it } from "vitest";
-import type { SessionSource } from "../src/api/types.js";
+import type { SessionSource } from "../src/";
 import { listCategory } from "../src/runtime/session-sources.js";
 
 const unmarked = { archivedAt: null, keptAt: null };

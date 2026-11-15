@@ -31,7 +31,7 @@ export interface MemoryRouteDeps {
   memoryService: Memory;
   access: Access;
 }
-import type { MemoryImportMode } from "../../api/types.js";
+import type { MemoryImportMode } from "../../";
 import {
   badRequest,
   optionalBoolean,
@@ -41,7 +41,7 @@ import {
   requireValidId,
 } from "../validate.js";
 import type { Memory } from "../../mechanisms/agents.js";
-import type { Access } from "../../mechanisms/projects.js";
+import type { Access } from "@prismshadow/penguin-library-projects";
 
 const IMPORT_MODES: readonly MemoryImportMode[] = ["skip", "overwrite", "replace"];
 

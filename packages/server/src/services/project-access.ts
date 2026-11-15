@@ -6,11 +6,12 @@
  * project LIFECYCLE (delete, destroy) depends on — the two cannot live in one module
  * without a cycle. Lifecycle stays in ProjectService and delegates its checks here.
  */
-import type { ProjectRole, ProjectSummary } from "../api/types.js";
+import type { ProjectRole } from "@prismshadow/penguin-library-projects";
+import type { ProjectSummary } from "../";
 import { HttpError } from "../http/errors.js";
-import type { ProjectRow } from "../db/repos/projects.js";
+import type { ProjectRow } from "@prismshadow/penguin-library-projects/repos/projects";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Access, Members, ProjectConfigStore, Projects } from "../mechanisms/projects.js";
+import type { Access, Members, ProjectConfigStore, Projects } from "@prismshadow/penguin-library-projects";
 
 @Component()
 export class ProjectAccess implements Access {

@@ -21,7 +21,7 @@ import {
   loginAdmin,
   TEST_DESKTOP_TOKEN,
 } from "./helpers.js";
-import type { ErrorBody, MeResponse } from "../src/api/types.js";
+import type { ErrorBody, MeResponse } from "../src/";
 
 describe("desktop claim", () => {
   /** What a browser gets for a token this server will not honour: the login page, plus the advice it can give there. */

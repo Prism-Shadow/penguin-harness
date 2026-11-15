@@ -17,18 +17,13 @@ import {
   resolveMCPServer,
 } from "@prismshadow/penguin-core";
 import type { MCPServerConfig } from "@prismshadow/penguin-core";
-import type {
-  AgentConfigResponse,
-  AgentConfigUpdateRequest,
-  AgentKernelUpdateResponse,
-  McpServerTestResponse,
-} from "../../api/types.js";
+import type { AgentConfigResponse, AgentConfigUpdateRequest, AgentKernelUpdateResponse, McpServerTestResponse } from "../../";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { ServerConfig } from "../../config.js";
 import { badRequest, optionalString, readJson, requireValidId } from "../validate.js";
 import type { SessionManager } from "../../runtime/session-manager.js";
 import type { AgentConfig } from "../../mechanisms/agents.js";
-import type { Access } from "../../mechanisms/projects.js";
+import type { Access } from "@prismshadow/penguin-library-projects";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface AgentConfigRouteDeps {
