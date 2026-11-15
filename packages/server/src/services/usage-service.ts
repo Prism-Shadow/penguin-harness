@@ -17,6 +17,7 @@
  * file header.
  */
 import type { UsageGroupBy } from "@prismshadow/penguin-library-observability";
+import type { UsageQuery, UsageErrorsQuery, UsageErrorsClearQuery } from "@prismshadow/penguin-library-observability";
 import type { CostParts, UsageAgentSeries, UsageBucket, UsageErrors, UsageErrorsPage, UsageGranularity, UsageGroupRow, UsageModelSeries, UsageModelTotals, UsageResponse, UsageSeriesPoint } from "../";
 import type { ErrorFilter } from "@prismshadow/penguin-library-observability/repos/errors";
 import { catalogEntryFor, offPeakAt, offPeakScheduledRefs } from "../model-catalog/catalog.js";
@@ -74,52 +75,10 @@ export type PricingLookup = (
   modelId: string,
 ) => Promise<TieredRates | undefined>;
 
-export interface UsageQuery {
-  from?: string;
-  to?: string;
-  groupBy: UsageGroupBy;
-  /** Top-level filter: view by Agent (also used for groupBy=session drill-down). */
-  agentId?: string;
-  /** Top-level filter: view by Model (paired with modelId; the dropdown always sends them as a pair). */
-  provider?: string;
-  modelId?: string;
-  /** Whether to include unattributed errors: admin only (the route passes user.isAdmin), defaults to false. */
-  includeGlobalErrors?: boolean;
-  /** Time-series precision for `series` / `byAgentSeries` / `byModelSeries`; defaults to day. The route validates the value; the bucket count is capped here. */
-  granularity?: UsageGranularity;
-  /**
-   * Timestamp window bounds (ISO UTC), for the trailing "last hour" / "last 24
-   * hours" ranges whose edges are instants rather than calendar dates: they
-   * refine every range-scoped aggregate down to the window, and minute/hour
-   * series buckets are enumerated between them. `minute` requires them.
-   */
-  fromTs?: string;
-  toTs?: string;
-  /**
-   * The viewer's offset east of UTC, in minutes: the calendar day the error table folds a
-   * day's repeats by (see ErrorsRepo.recent). Nothing else in the response reads it; absent,
-   * the day is the server's own.
-   */
-  utcOffsetMinutes?: number;
-}
+
 
 /** One page of the error detail table (see {@link UsageService.queryErrors}). */
-export interface UsageErrorsQuery {
-  offset: number;
-  limit: number;
-  from?: string;
-  to?: string;
-  /** The trailing window narrowing those dates (see {@link UsageQuery}); both or neither. */
-  fromTs?: string;
-  toTs?: string;
-  agentId?: string;
-  /** Narrow to one category — `unexpected` (500s / runtime exceptions) or `expected`; absent counts both. */
-  kind?: string;
-  /** Admin only: include errors with no Project attribution (see the ErrorsRepo file header). */
-  includeGlobalErrors?: boolean;
-  /** The viewer's offset east of UTC, in minutes (see {@link UsageQuery}). */
-  utcOffsetMinutes?: number;
-}
+
 
 /**
  * What a clear removes (see {@link UsageService.clearErrors}): the panel's own range — dates,
@@ -127,15 +86,7 @@ export interface UsageErrorsQuery {
  * panel has. No `kind`: the panel offers no such control, so a clear has no narrowing the
  * reader could have seen.
  */
-export interface UsageErrorsClearQuery {
-  from?: string;
-  to?: string;
-  fromTs?: string;
-  toTs?: string;
-  agentId?: string;
-  /** Admin only, the value the caller's reads carry: an admin's clear takes the unattributed rows an admin's panel shows. */
-  includeGlobalErrors?: boolean;
-}
+
 
 /** The "model price" formula: the three buckets at the given rates (USD per million Tokens), in USD. */
 export function requestCostUsd(

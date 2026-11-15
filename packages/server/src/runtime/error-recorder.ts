@@ -55,27 +55,8 @@ import { formatLocalDate } from "../internal/dates.js";
 import { HttpError } from "../http/errors.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Clock } from "../hmr/capabilities.js";
-import type { ErrorLog, Errors } from "@prismshadow/penguin-library-observability";
-
-/** Capture-site source (maps one-to-one to error_records.source). */
-export type ErrorSource =
-  | "http"
-  | "organization"
-  | "session"
-  | "llm"
-  | "environment"
-  | "compaction"
-  | "usage"
-  | "title"
-  | "subagent"
-  | "process"
-  | "schedule"
-  | "messaging"
-  | "id_suggest"
-  | "plugin";
-
-/** Error classification: see file header — the criterion is "does a human need to step in". */
-export type ErrorKind = "expected" | "unexpected";
+import { ErrorLog, Errors } from "@prismshadow/penguin-library-observability";
+import type { ErrorSource, ErrorKind, ErrorRecordArgs } from "@prismshadow/penguin-library-observability";
 
 /** Attribution context (all optional: the login endpoint has no Project, and process-level fallback has no request at all). */
 export interface ErrorContext {
@@ -84,18 +65,7 @@ export interface ErrorContext {
   sessionId?: string;
 }
 
-export interface ErrorRecordArgs {
-  source: ErrorSource;
-  /** The caught error (unknown: the value caught may not be an Error; failures from the message stream pass the reason text directly). */
-  err: unknown;
-  ctx?: ErrorContext;
-  /** Semantic code (required for non-HTTP sources, e.g. session_run_failed); defaults to HttpError.code. */
-  code?: string;
-  /** HTTP status code; leave empty for non-HTTP sources. */
-  status?: number;
-  /** Explicit classification (see file header); defaults to inferring from `HttpError` — HTTP sources rely on this, other sources should pass it explicitly. */
-  kind?: ErrorKind;
-}
+
 
 /** Message truncation length (keep only a readable summary; the full stack is still logged). */
 export const MESSAGE_MAX = 500;
