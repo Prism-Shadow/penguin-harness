@@ -44,7 +44,7 @@ import { DEFAULT_API_CONCURRENT_RUNS } from "../../mechanisms/agent-api.js";
 import type { AgentApi, AgentApiKeyRow } from "../../mechanisms/agent-api.js";
 import type { AgentConfig } from "../../mechanisms/agents.js";
 import type { ProjectConfigStore, Access } from "../../mechanisms/projects.js";
-import type { Settings } from "../../mechanisms/settings.js";
+import type { Settings } from "@prismshadow/penguin-library-settings";
 
 /** What this route group reaches — bound by its module (services/agent-routes.ts). */
 export interface AgentApiRouteDeps {

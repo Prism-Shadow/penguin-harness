@@ -19,7 +19,7 @@ import { WebModule } from "../src/http/routes/contributions.js";
 import {
   DEFAULT_ATTACHMENT_MAX_MB,
   DEFAULT_ATTACHMENT_TOTAL_MB,
-} from "../src/services/attachment-limits.js";
+} from "@prismshadow/penguin-library-settings/attachment-limits";
 
 const TOKEN = "good-token";
 const USER = { userId: "u1", isAdmin: false };

@@ -128,8 +128,8 @@ import {
   INLINE_IMAGE_MAX_BYTES,
   INLINE_IMAGE_MAX_MB,
   toAttachmentLimits,
-} from "../../services/attachment-limits.js";
-import type { AttachmentLimits } from "../../services/attachment-limits.js";
+} from "@prismshadow/penguin-library-settings/attachment-limits";
+import type { AttachmentLimits } from "@prismshadow/penguin-library-settings/attachment-limits";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { Channels, Config, Desktop } from "../../hmr/capabilities.js";
@@ -169,7 +169,7 @@ import type { TraceIndex, TraceIndexStore, Traces } from "../../mechanisms/trace
 import type { FileReveal, WorkspaceFiles } from "../../mechanisms/workspace.js";
 import type { Machines } from "../../machines/service.js";
 import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
-import type { Settings } from "../../mechanisms/settings.js";
+import type { Settings } from "@prismshadow/penguin-library-settings";
 import type { UserDraftsStore } from "../../mechanisms/account-data.js";
 import type { LiveStreams } from "../../auth/live-streams.js";
 import type { Auth } from "../../mechanisms/identity.js";

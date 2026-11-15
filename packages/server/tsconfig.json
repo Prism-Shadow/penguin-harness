@@ -5,14 +5,29 @@
       "@prismshadow/penguin-library-db": [
         "../../library/db/src/index.ts"
       ],
-      "@prismshadow/penguin-library-db/schema": [
-        "../../library/db/src/schema.ts"
-      ],
       "@prismshadow/penguin-library-db/migrations": [
         "../../library/db/src/migrations/index.ts"
       ],
       "@prismshadow/penguin-library-db/migrations/runner": [
         "../../library/db/src/migrations/runner.ts"
+      ],
+      "@prismshadow/penguin-library-db/schema": [
+        "../../library/db/src/schema.ts"
+      ],
+      "@prismshadow/penguin-library-settings": [
+        "../../library/settings/src/index.ts"
+      ],
+      "@prismshadow/penguin-library-settings/attachment-limits": [
+        "../../library/settings/src/attachment-limits.ts"
+      ],
+      "@prismshadow/penguin-library-settings/repos": [
+        "../../library/settings/src/repos/index.ts"
+      ],
+      "@prismshadow/penguin-library-settings/repos/server-settings": [
+        "../../library/settings/src/repos/server-settings.ts"
+      ],
+      "@prismshadow/penguin-library-settings/repos/ui-prefs": [
+        "../../library/settings/src/repos/ui-prefs.ts"
       ]
     }
   },

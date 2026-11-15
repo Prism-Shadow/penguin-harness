@@ -43,7 +43,7 @@ import type {
 import type { AppEnv } from "../../auth/middleware.js";
 import type { SessionVia } from "../../auth/service.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Settings } from "../../mechanisms/settings.js";
+import type { Settings } from "@prismshadow/penguin-library-settings";
 import type { ProjectLifecycle } from "../../mechanisms/projects.js";
 import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
 import type { UserDraftsStore } from "../../mechanisms/account-data.js";

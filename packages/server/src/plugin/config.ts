@@ -43,7 +43,7 @@ import type {
   PluginConfigTableRow,
   PluginConfiguration,
 } from "../api/types.js";
-import { Settings } from "../mechanisms/settings.js";
+import { Settings } from "@prismshadow/penguin-library-settings";
 import { maskApiKey } from "../services/project-config-service.js";
 
 export type { PluginConfigField, PluginConfigNotice, PluginConfiguration } from "../api/types.js";

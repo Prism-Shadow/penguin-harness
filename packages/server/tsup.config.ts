@@ -73,6 +73,7 @@ export default defineConfig({
     // The domain libraries are server code by another address: a hot push ships the
     // server bundle alone, so its migrations and connection module ride in it.
     "@prismshadow/penguin-library-db",
+    "@prismshadow/penguin-library-settings",
     "@prismshadow/penguin-hmr",
     "@prismshadow/penguin-theme-pack",
     "@prismshadow/penguin-ui",

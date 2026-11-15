@@ -21,7 +21,7 @@ import type { AgentConfig } from "../mechanisms/agents.js";
 import type { Access } from "../mechanisms/projects.js";
 import type { Errors } from "../mechanisms/observability.js";
 import type { SessionIndex } from "../mechanisms/sessions.js";
-import type { Settings } from "../mechanisms/settings.js";
+import type { Settings } from "@prismshadow/penguin-library-settings";
 import type { Traces } from "../mechanisms/traces.js";
 import type { SessionManager, Sessions, SessionServiceIface } from "../runtime/session-manager.js";
 import type { SessionService } from "../services/session-service.js";
