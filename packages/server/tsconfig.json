@@ -1,7 +1,24 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "rootDir": "."
+    "rootDir": ".",
+    "paths": {
+      "@prismshadow/penguin-library-db": [
+        "../../library/db/src/index.ts"
+      ],
+      "@prismshadow/penguin-library-db/schema": [
+        "../../library/db/src/schema.ts"
+      ],
+      "@prismshadow/penguin-library-db/migrations": [
+        "../../library/db/src/migrations/index.ts"
+      ],
+      "@prismshadow/penguin-library-db/migrations/runner": [
+        "../../library/db/src/migrations/runner.ts"
+      ]
+    }
   },
-  "include": ["src", "test"]
+  "include": [
+    "src",
+    "test"
+  ]
 }
