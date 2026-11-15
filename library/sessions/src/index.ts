@@ -11,10 +11,5 @@
  * - `./sessions` - the contracts module on its own.
  * - `./repos` (and per-file) - the storing components.
  */
-export {
-  SessionIndex,
-  SessionDrivers,
-  SessionOrigins,
-  Schedules,
-  ApprovalMode,
-} from "./sessions.js";
+export { SessionIndex, SessionDrivers, SessionOrigins, Schedules } from "./sessions.js";
+export type { ApprovalMode } from "./sessions.js";
