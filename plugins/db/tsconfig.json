@@ -2,6 +2,21 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "paths": {
+      "@penguinharness/plugin-db": [
+        "./src/index.ts"
+      ],
+      "@penguinharness/plugin-db/attachment-limits": [
+        "./src/attachment-limits.ts"
+      ],
+      "@penguinharness/plugin-db/migrations": [
+        "./src/migrations/index.ts"
+      ],
+      "@penguinharness/plugin-db/repos": [
+        "./src/repos/index.ts"
+      ],
+      "@penguinharness/plugin-db/schema": [
+        "./src/schema.ts"
+      ],
       "@prismshadow/penguin-server": [
         "../../packages/server/src/index.ts"
       ],

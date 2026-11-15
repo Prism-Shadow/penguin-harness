@@ -19,7 +19,7 @@ import {
   migrate,
   rollbackTo,
 } from "../src/migrations/index.js";
-import * as runner from "../src/migrations/index.js";
+import * as runner from "../src/migrations/runner.js";
 import {
   columns,
   contents,
