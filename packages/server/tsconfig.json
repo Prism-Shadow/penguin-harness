@@ -19,6 +19,42 @@
       ],
       "@penguinharness/plugin-db/testing": [
         "../../plugins/db/test/db-migrations-fixtures.ts"
+      ],
+      "@prismshadow/penguin-server/hmr/capabilities": [
+        "src/hmr/capabilities.ts"
+      ],
+      "@prismshadow/penguin-server/mechanisms/account-data": [
+        "src/mechanisms/account-data.ts"
+      ],
+      "@prismshadow/penguin-server/mechanisms/agent-api": [
+        "src/mechanisms/agent-api.ts"
+      ],
+      "@prismshadow/penguin-server/mechanisms/identity": [
+        "src/mechanisms/identity.ts"
+      ],
+      "@prismshadow/penguin-server/mechanisms/messaging": [
+        "src/mechanisms/messaging.ts"
+      ],
+      "@prismshadow/penguin-server/mechanisms/observability": [
+        "src/mechanisms/observability.ts"
+      ],
+      "@prismshadow/penguin-server/mechanisms/organization": [
+        "src/mechanisms/organization.ts"
+      ],
+      "@prismshadow/penguin-server/mechanisms/projects": [
+        "src/mechanisms/projects.ts"
+      ],
+      "@prismshadow/penguin-server/mechanisms/sessions": [
+        "src/mechanisms/sessions.ts"
+      ],
+      "@prismshadow/penguin-server/mechanisms/settings": [
+        "src/mechanisms/settings.ts"
+      ],
+      "@prismshadow/penguin-server/mechanisms/traces": [
+        "src/mechanisms/traces.ts"
+      ],
+      "@prismshadow/penguin-server/runtime/session-sources": [
+        "src/runtime/session-sources.ts"
       ]
     }
   },
