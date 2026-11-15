@@ -86,7 +86,9 @@ describe("plugin link", () => {
     // The manifest entry IS the link record: name → the author's directory, npm's own.
     const deps = await prefixDependencies(prefix());
     expect(deps["@acme/local-one"]).toMatch(/^file:/);
-    expect(path.resolve(await fs.realpath(prefix()), deps["@acme/local-one"]!.slice("file:".length))).toBe(dir);
+    expect(
+      path.resolve(await fs.realpath(prefix()), deps["@acme/local-one"]!.slice("file:".length)),
+    ).toBe(dir);
     const target = path.join(prefix(), "node_modules", "@acme", "local-one");
     expect(existsSync(target)).toBe(true);
     if (process.platform !== "win32" && lstatSync(target).isSymbolicLink()) {
@@ -115,7 +117,9 @@ describe("plugin link", () => {
     const relinked = await linkPluginDirectory(t.root, second, true);
     expect(relinked).toMatchObject({ name: "@acme/dup", version: "0.2.0" });
     const deps = await prefixDependencies(prefix());
-    expect(path.resolve(await fs.realpath(prefix()), deps["@acme/dup"]!.slice("file:".length))).toBe(second);
+    expect(
+      path.resolve(await fs.realpath(prefix()), deps["@acme/dup"]!.slice("file:".length)),
+    ).toBe(second);
   });
 
   it("replacing an installed package with a link refuses unless --overwrite", async () => {
