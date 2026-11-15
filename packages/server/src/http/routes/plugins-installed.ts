@@ -274,6 +274,8 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
       // author's directory deleted) stays a row and reports its fault. A symlink lstats
       // as a symlink (isDirectory is false on it), so both count.
       const st = await fs.lstat(target).catch(() => null);
+      // DEBUG(p263)
+      console.log("DEBUG p263 route:", JSON.stringify({ root: deps.root, name, spec, target, st: st ? { dir: st.isDirectory(), sym: st.isSymbolicLink() } : null }));
       if (st?.isDirectory() || st?.isSymbolicLink()) links.push([name, target] as const);
     }
     for (const [name] of links) {
