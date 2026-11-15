@@ -97,7 +97,7 @@ import { takePushSlip } from "./push-plugins.js";
 import type { PushSlip } from "./push-plugins.js";
 import type { Errors } from "../mechanisms/observability.js";
 import type { UnsatisfiedPlugin } from "../api/types.js";
-import { migrate } from "../db/migrations/index.js";
+import { migrate } from "@prismshadow/penguin-library-db/migrations";
 import { MachinesRepo } from "../db/repos/machines.js";
 import type { Auth } from "../mechanisms/identity.js";
 

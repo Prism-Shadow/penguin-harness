@@ -51,7 +51,7 @@ import {
   type ProxyControl,
 } from "./hmr/capabilities.js";
 import { ensureCliShim, resolveCli, shimFromResolution } from "./services/cli-shim.js";
-import { openDatabase } from "./db/database.js";
+import { openDatabase } from "@prismshadow/penguin-library-db";
 import { MachinesRepo } from "./db/repos/machines.js";
 import { ErrorsRepo } from "./db/repos/errors.js";
 import { MessagingBindingsRepo } from "./db/repos/messaging-bindings.js";

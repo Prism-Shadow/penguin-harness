@@ -18,7 +18,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { VERSION } from "@prismshadow/penguin-core";
 import type { DatabaseSync } from "node:sqlite";
 import { HotResources } from "@prismshadow/penguin-hmr";
-import { openDatabase } from "../src/db/database.js";
+import { openDatabase } from "@prismshadow/penguin-library-db";
 import { MachinesRepo } from "../src/db/repos/machines.js";
 import { MachinesService } from "../src/machines/service.js";
 import type { MachinesEffects, SettleTimeouts } from "../src/machines/service.js";

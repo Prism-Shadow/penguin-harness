@@ -117,6 +117,7 @@
     "@prismshadow/chat-markdown": "workspace:*",
     "@prismshadow/mmsp": "^0.5.6",
     "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/penguin-library-db": "workspace:*",
     "@xterm/headless": "^5.5.0",
     "css-tree": "^3.2.1",
     "commander": "^13.0.0",

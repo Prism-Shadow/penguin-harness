@@ -382,13 +382,13 @@ export function claimHmrCapabilities(resources: Resources): HmrClaim {
 /** The process configuration object — one per process; the listen callback writes the real port into it. */
 export abstract class Config extends Interface<ServerConfig>() {}
 
-/** The SQLite handle (single-writer, one per process). Statements are host objects. */
-@Interface()
-export abstract class Db {
-  abstract prepare(sql: string): Opaque<"StatementSync", ReturnType<DatabaseSync["prepare"]>>;
-  abstract exec(sql: string): void;
-  abstract close(): void;
-}
+/**
+ * The SQLite handle (single-writer, one per process). Statements are host objects.
+ * The contract lives in the library package (`library/db`) — the database, its schema
+ * and migrations are library code — and the server re-exports it here so every
+ * capability consumer keeps one import site.
+ */
+export { Db } from "@prismshadow/penguin-library-db";
 
 /** One SSE channel (the class in runtime/channel.ts satisfies this). */
 export type ChannelApi = Pick<

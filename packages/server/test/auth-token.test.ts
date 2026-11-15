@@ -35,7 +35,7 @@ import { wire } from "@prismshadow/penguin-core/kernel";
 import { CLI_TOKEN_MAX_TTL_MS, mintApiToken, mintApiTokenOnceSeeded } from "../src/auth-token.js";
 import type { MintTokenResult, SeedWait } from "../src/auth-token.js";
 import { SESSION_COOKIE } from "../src/auth/middleware.js";
-import { openDatabase, openExistingDatabase } from "../src/db/database.js";
+import { openDatabase, openExistingDatabase } from "@prismshadow/penguin-library-db";
 import { UsersRepo } from "../src/db/repos/users.js";
 import { acquireServerLock, releaseServerLock } from "../src/lock.js";
 import { apiClient, createTestApp, makeTempRoot } from "./helpers.js";

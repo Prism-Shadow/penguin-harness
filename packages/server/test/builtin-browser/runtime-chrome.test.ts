@@ -34,7 +34,7 @@ import type { AppEnv } from "../../src/auth/middleware.js";
 import { ExtensionPairing } from "../../src/builtin-browser/extension-pairing.js";
 import { builtinBrowserRoutes } from "../../src/builtin-browser/routes.js";
 import { BuiltinBrowser } from "../../src/builtin-browser/service.js";
-import { openDatabase } from "../../src/db/database.js";
+import { openDatabase } from "@prismshadow/penguin-library-db";
 import { BrowserExtensionsRepo } from "../../src/db/repos/browser-extensions.js";
 import type { UserRow } from "../../src/db/repos/users.js";
 import { handleError } from "../../src/http/errors.js";
