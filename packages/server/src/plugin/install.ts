@@ -315,12 +315,38 @@ export async function linkPluginDirectory(
       `${name} is installed in the prefix at ${existing}; pass --overwrite to replace it with a link.`,
     );
   }
-  // Named relative to the prefix, so npm records the entry whatever path the data root
-  // reaches the prefix through (see installPluginFiles, which records its tarball the same
-  // way). The prefix's .npmrc makes npm reify the entry as a live symlink rather than a
-  // copy — the author's edits read through, which is what a link is for.
-  await install(prefix, `file:${relative(prefix, real)}`);
+  // Named relative to the prefix's REAL path — npm resolves a `file:` spec against the real
+  // prefix, and the two diverge wherever a symlink sits on the way to the data root (macOS's
+  // temp directory is /var/folders over a /private/var/folders real body; npm failing to open
+  // the directory there is "syscall open", with the reason line never naming the path). npm
+  // then records the entry relative to that same real path (see installPluginFiles, whose
+  // tarball install is recorded the same way).
+  const realPrefix = await fs.realpath(prefix).catch(() => prefix);
+  await install(prefix, `file:${relative(realPrefix, real)}`);
   return { name, version: await readInstalledVersion(prefix, name) };
+}
+
+/**
+ * The prefix's link table, as npm itself keeps it: every `file:` dependency whose spec names
+ * a DIRECTORY (a `file:` naming a tarball under archives/ is an uploaded zip's install, not a
+ * link) and whose node_modules entry exists — lstat it, not the directory it names: a dangling
+ * link (the author's directory deleted) stays in the table and the page reports its fault. A
+ * symlink lstats as a symlink (isDirectory is false on it), so both count. Specs are resolved
+ * against the prefix's real path, the one npm records them relative to (see
+ * linkPluginDirectory): on macOS the logical path and the real one diverge through the temp
+ * directory's symlink, and only the real path walks back to the author's directory.
+ */
+export async function linkedPackages(prefix: string): Promise<Map<string, string>> {
+  const table = new Map<string, string>();
+  const realPrefix = await fs.realpath(prefix).catch(() => prefix);
+  for (const [name, spec] of Object.entries(await prefixDependencies(prefix))) {
+    if (!spec.startsWith("file:")) continue;
+    const dir = path.resolve(realPrefix, spec.slice("file:".length));
+    if (/\.tgz$|\.tar\.gz$/.test(dir)) continue;
+    const st = await fs.lstat(installedPackageDir(prefix, name)).catch(() => null);
+    if (st?.isDirectory() || st?.isSymbolicLink()) table.set(name, dir);
+  }
+  return table;
 }
 
 async function readPackageName(manifest: string): Promise<string> {

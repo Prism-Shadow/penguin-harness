@@ -52,7 +52,6 @@
  * restored on the previous list, and the answer is "did not take".
  */
 import { Hono } from "hono";
-import fs from "node:fs/promises";
 import path from "node:path";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { AppEnv } from "../../auth/middleware.js";
@@ -88,9 +87,9 @@ import {
   installedPackageDir,
   installPluginChannel,
   linkPluginDirectory,
+  linkedPackages,
   PluginInstallError,
   pluginsPrefix,
-  prefixDependencies,
   readInstalledVersion,
   type InstalledPackage,
 } from "../../plugin/install.js";
@@ -262,26 +261,15 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
         ...Object.values(tables.machines).flatMap((t) => Object.keys(t)),
       ]),
     ];
-    // npm link's own records: the prefix manifest's `file:` dependencies naming a DIRECTORY
-    // are the author directories linked into the prefix — a `file:` naming a tarball under
-    // archives/ is an uploaded zip's install, not a link. The row exists because the LINK in
-    // node_modules exists — lstat it, not the author directory it names: a dangling link
-    // (the author's directory deleted) stays a row and reports its fault. A symlink lstats
-    // as a symlink (isDirectory is false on it), so both count.
-    const links: (readonly [string, string])[] = [];
-    for (const [name, spec] of Object.entries(await prefixDependencies(pluginsPrefix(deps.root)))) {
-      if (!spec.startsWith("file:")) continue;
-      const dir = path.resolve(pluginsPrefix(deps.root), spec.slice("file:".length));
-      if (path.extname(dir) === ".tgz" || path.extname(dir) === ".tar.gz") continue;
-      const st = await fs
-        .lstat(installedPackageDir(pluginsPrefix(deps.root), name))
-        .catch(() => null);
-      if (st?.isDirectory() || st?.isSymbolicLink()) links.push([name, dir] as const);
-    }
+    // npm link's own records: the prefix manifest's `file:` dependencies naming a directory
+    // whose node_modules entry exists (linkedPackages: a `file:` naming a tarball is an
+    // uploaded zip's install, not a link; a dangling link stays in the table so its row
+    // reports its fault).
+    const links = await linkedPackages(pluginsPrefix(deps.root));
     for (const [name] of links) {
       if (!names.includes(name)) names.push(name);
     }
-    const linkTable = new Map(links);
+    const linkTable = links;
     const { loaded, skipped, unsatisfied } = deps.running();
     const bases = pluginBases(deps.root, deps.assetsDir());
     // `builtin` on a row is where the package CAME FROM, a tag, not a second way of being
@@ -743,8 +731,10 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     const machineId = machineOf(c.req.query("machineId"));
     // A link goes with this verb too: `npm uninstall` takes a `file:` dependency out the same
     // way it takes any package out — the symlink and the manifest entry both go, the author's
-    // directory stays. npm's uninstall is idempotent, so is this.
-    if ((await prefixDependencies(pluginsPrefix(deps.root)))[specifier]?.startsWith("file:")) {
+    // directory stays. npm's uninstall is idempotent, so is this. An uploaded zip's tarball
+    // install is also a `file:` dependency, but it is not a LINK (linkedPackages leaves it
+    // out) — it goes through the Project-table removal below like any install.
+    if ((await linkedPackages(pluginsPrefix(deps.root))).has(specifier)) {
       if (!(await readPluginClosure(deps.root, deps.machineId)).includes(specifier)) {
         await deps.packages.remove(deps.root, specifier);
       }
