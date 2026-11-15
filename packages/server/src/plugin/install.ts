@@ -25,6 +25,7 @@
  */
 import { execFile } from "node:child_process";
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
+import { accessSync, constants as fsConstants, existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import { createRequire } from "node:module";
 import path, { relative } from "node:path";
@@ -102,6 +103,111 @@ export async function prefixDependencies(prefix: string): Promise<Record<string,
   }
 }
 
+/**
+ * How to run npm, resolved once per process: an ordered list of spawnable commands, built by
+ * asking the file system what is really here rather than assuming where npm lives. The shape
+ * mirrors cross-spawn's (the resolver every npm-spawning tool sits on): locate first, spawn
+ * second, and never guess an extension or a layout.
+ *
+ * 1. The npm SHIPPED beside this interpreter. Node's official distribution carries npm in a
+ *    fixed layout (`<execPath dir>/../lib/node_modules/npm` on POSIX, `<execPath dir>/node_modules/npm`
+ *    on Windows — node.exe sits at the archive root), and the layout survives every
+ *    distribution that unpacks the dist unchanged: the platform packages and Docker images,
+ *    and the version managers, whose PATH shims are links into exactly this tree. Probed,
+ *    not assumed. Running the CLI through node itself avoids every batch-file question.
+ * 2. Whatever `npm` this machine puts on PATH — the way every other npm consumer here
+ *    resolves it. Debian splits npm out of its node package, so the layout above can be
+ *    absent on a machine that has npm; the PATH form covers it. Located by a PATH scan
+ *    (PATHEXT extensions on Windows — the shim is npm.cmd on node-installed machines,
+ *    npm.exe under scoop — a bare executable elsewhere), not by guessing one spelling; the
+ *    command itself stays the plain `npm` name, which the system then resolves the same way
+ *    it would for any other consumer.
+ *
+ * A candidate is offered only when its file is proven present, so a failed install never
+ * reads as "npm is missing" when npm ran and failed: a broken npm surfaces through the
+ * install's own error, in npm's own words. Nothing here runs a probe install — existence is
+ * checkable without starting a process, and `npm --version` would prove nothing the check
+ * does not.
+ */
+
+/** Where a PATH-resolved npm lives, if this machine has one; null when it does not. */
+function npmOnPath(): string | null {
+  for (const dir of (process.env.PATH ?? "").split(path.delimiter)) {
+    if (dir === "") continue;
+    if (process.platform === "win32") {
+      // The extensions cmd.exe itself resolves `npm` through (PATHEXT's spawnable subset).
+      for (const ext of (process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";")) {
+        const shim = path.join(dir, `npm${ext.toLowerCase()}`);
+        if (existsSync(shim)) return shim;
+      }
+    } else {
+      const shim = path.join(dir, "npm");
+      if (existsSync(shim) && accessSync(shim, fsConstants.X_OK) === undefined) return shim;
+    }
+  }
+  return null;
+}
+
+interface NpmCommand {
+  /** What this candidate is, in the error shown when nothing is found. */
+  label: string;
+  /** The spawn executable and the args every install command is appended to. */
+  file: string;
+  argv: readonly string[];
+}
+
+const npmCandidates = (): { candidates: readonly NpmCommand[]; notes: readonly string[] } => {
+  // The layout the official dist unpacks to, relative to the running interpreter.
+  const bundled = path.join(
+    path.dirname(process.execPath),
+    ...(process.platform === "win32"
+      ? (["node_modules", "npm", "bin", "npm-cli.js"] as const)
+      : (["..", "lib", "node_modules", "npm", "bin", "npm-cli.js"] as const)),
+  );
+  const candidates: NpmCommand[] = [];
+  const notes: string[] = [];
+  if (existsSync(bundled)) {
+    // node itself runs the CLI: no batch file, no shell, every platform.
+    candidates.push({
+      label: `the npm beside this node (${bundled})`,
+      file: process.execPath,
+      argv: [bundled],
+    });
+  } else {
+    notes.push(`no npm beside this node (${bundled})`);
+  }
+  const onPath = npmOnPath();
+  if (onPath !== null) {
+    // On Windows the PATH entry is a batch file, which node refuses to spawn directly
+    // (`spawn EINVAL`), so cmd.exe runs it — a real executable; `/d` skips AutoRun scripts,
+    // `/s /c` runs the rest as given, each argument quoted by Node (the same line
+    // cross-spawn builds for cmd shims). The bare `npm` name, so cmd.exe resolves it as it
+    // would for any consumer, whatever shim form the machine carries.
+    candidates.push(
+      process.platform === "win32"
+        ? { label: `npm on PATH (${onPath})`, file: "cmd.exe", argv: ["/d", "/s", "/c", "npm"] }
+        : { label: `npm on PATH (${onPath})`, file: "npm", argv: [] },
+    );
+  } else {
+    notes.push("no npm on PATH");
+  }
+  return { candidates, notes };
+};
+
+let npmCommandCache: Promise<NpmCommand> | null = null;
+function npmCommand(): Promise<NpmCommand> {
+  // Resolved once: the chosen npm does not move under a running process.
+  npmCommandCache ??= (async () => {
+    const { candidates, notes } = npmCandidates();
+    const [candidate] = candidates;
+    if (candidate !== undefined) return candidate;
+    throw new PluginInstallError(
+      `npm, the installer of plugins, is not on this machine (${notes.join("; ")})`,
+    );
+  })();
+  return npmCommandCache;
+}
+
 async function npm(prefix: string, args: readonly string[], cwd = prefix): Promise<string> {
   const command = await npmCommand();
   try {
@@ -114,14 +220,6 @@ async function npm(prefix: string, args: readonly string[], cwd = prefix): Promi
     return stdout;
   } catch (err) {
     const error = err as Error & { code?: string; stderr?: string };
-    // A spawn failure with ENOENT is this machine having neither node-bundled npm nor one on
-    // PATH — the one "no npm here at all" outcome, said plainly rather than as a garbled
-    // "spawn npm ENOENT" leaking through npmReason's stderr reader.
-    if (error.code === "ENOENT" && !error.stderr) {
-      throw new PluginInstallError(
-        `npm, the installer of plugins, is not on this machine: this node carries none and none is on PATH`,
-      );
-    }
     const failure = new PluginInstallError(npmReason(error.stderr, error));
     failure.reason = npmFailureKind(error.stderr);
     throw failure;
