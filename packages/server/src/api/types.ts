@@ -4679,9 +4679,7 @@ export interface UsageModelTotal {
 }
 
 /** Response of `GET /usage/model-totals`. */
-export interface UsageModelTotals {
-  totals: UsageModelTotal[];
-}
+
 
 /**
  * The two categories an error record is filed under: `unexpected` is a 500 or an unforeseen
@@ -4748,13 +4746,7 @@ export interface UsageErrors {
  * with `limit=1` instead of pulling the whole dashboard aggregate. `utcOffsetMinutes` (minutes
  * east of UTC, the dashboard takes it too) says whose calendar day a row's records share.
  */
-export interface UsageErrorsPage {
-  items: UsageErrorItem[];
-  /** Filtered record count — the occurrences, which is what the cost-center badge counts. */
-  total: number;
-  /** Filtered row count (records folded per {@link UsageErrorItem}), so the caller knows when it has reached the end. */
-  rows: number;
-}
+
 
 /**
  * DELETE /api/projects/:projectId/usage/errors — empties the error table for the filter the
@@ -4773,42 +4765,7 @@ export interface UsageErrorsClearResponse {
   deleted: number;
 }
 
-export interface UsageResponse {
-  summary: {
-    today: UsageBucket;
-    last7d: UsageBucket;
-    total: UsageBucket;
-  };
-  groupBy: UsageGroupBy;
-  groups: UsageGroupRow[];
-  /** Effective precision of `series` (the validated `granularity` query parameter; defaults to day). */
-  granularity: UsageGranularity;
-  /**
-   * Usage time series over the requested from/to range (defaulting to the last 30
-   * days), zero-filled at `granularity`; affected by agent/model filters. Carries
-   * everything the time-series charts draw: Token buckets, cost, request count,
-   * and per-bucket success counts.
-   */
-  series: UsageSeriesPoint[];
-  /**
-   * Per-Agent counts per bucket, aligned index-for-index with `series`, sorted
-   * by total requests descending. Unaffected by the agent filter — the by-Agent
-   * chart draws the whole breakdown — but affected by date/model filters.
-   */
-  byAgentSeries: UsageAgentSeries[];
-  /**
-   * Per-Model counts per bucket, aligned index-for-index with `series`, sorted
-   * by total requests descending. Unaffected by the model filter — the by-Model
-   * chart draws the whole breakdown — but affected by date/agent filters.
-   */
-  byModelSeries: UsageModelSeries[];
-  /** Server-side error capture stats (affected by date/agent filters; unaffected by model filter). */
-  errors: UsageErrors;
-  /** List of Agent ids that have appeared in this Project (for the filter dropdown; unaffected by current filters). */
-  agentIds: string[];
-  /** List of Model paired references that have appeared in this Project (for the filter dropdown). */
-  models: ModelRefDto[];
-}
+
 
 // ---------------------------------------------------------------------------
 // Schedule

@@ -22,16 +22,7 @@ import type { UsageRecording, UsageStore } from "@prismshadow/penguin-library-ob
 import type { Projects } from "../mechanisms/projects.js";
 
 /** Attribution context for one record (top-level Session scope). */
-export interface UsageContext {
-  projectId: string;
-  agentId: string;
-  /** Top-level Session id (the current actual id after self-heal). */
-  sessionId: string;
-  /** Vendor grouping for the top-level Session's model (paired with modelId; the fallback attribution when the origin mapping has no hit). */
-  provider: string;
-  /** Upstream model_id of the top-level Session (paired with provider). */
-  modelId: string;
-}
+
 
 /** Cap on the subagent attribution mapping: over the limit, evicts the oldest by insertion order (an evicted entry falls back to the main Session's Model attribution). */
 export const ORIGIN_MODELS_MAX = 1000;
