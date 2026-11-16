@@ -3,6 +3,7 @@
 - **Date:** 2026-11-16
 - **Type:** fix
 - **Scope:** `plugins`, `server`, `docs`
+- **PR:** [#1570](https://github.com/Prism-Shadow/penguin-harness/pull/1570)
 - **Issue:** [#1524](https://github.com/Prism-Shadow/penguin-harness/issues/1524)
 
 [English](2026-11-16-wsl-host-runtime-goal-start.md)
