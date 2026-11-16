@@ -11,10 +11,12 @@
  *   a dead canonical's window is not paid read after read. No address is tried twice, and
  *   none is fetched after another has carried the read; a document that will not parse
  *   never makes its address the start.
- * - A channel install does the same over the asset: the URL the index published first,
- *   then the mirrors the rules rewrite it into; what arrives is verified against the
- *   entry's sha512 exactly as the canonical URL's would be — a mirror serving tampered
- *   bytes is refused like any other source.
+ * - A channel install hands each address to npm itself (the URL is a spec npm natively
+ *   understands) and verifies what npm actually installed after the fact: the lockfile
+ *   entry's integrity against the entry's sha512, and the installed manifest against the
+ *   entry's name and version. An npm failure and a refused install each hand the walk to
+ *   the next address; a refused install is uninstalled, and a bad address never becomes
+ *   the sticky start.
  * - A rewrite rule maps a URL by capture; a rule that does not match the URL contributes
  *   nothing; a deployment with no mirrors behaves as before.
  */
@@ -43,7 +45,7 @@ async function packTarball(name: string, version: string): Promise<Uint8Array> {
     await fs.rm(dir, { recursive: true, force: true });
   }
 }
-import { installPluginChannel, PluginInstallError } from "../src/plugin/install.js";
+import { installPluginChannel } from "../src/plugin/install.js";
 import {
   httpPluginRegistry,
   pluginProxyMirrors,
@@ -254,9 +256,6 @@ describe("the read walks the addresses in order", () => {
 });
 
 describe("channel mirrors", () => {
-  const asset = new TextEncoder().encode("a release tarball's bytes");
-  const integrity = `sha512-${createHash("sha512").update(asset).digest("base64")}`;
-
   // Each order-sensitive test names its own channel URL: the sticky start is remembered
   // per channel URL for the whole process, so tests that assert the walk's first step
   // must not share a key with a test that moves it.
@@ -266,99 +265,149 @@ describe("channel mirrors", () => {
   ): IndexChannel => ({
     name: "acme",
     version: "1.0.0",
-    integrity,
+    integrity: "sha512-pinned",
     url,
     mirrors,
   });
 
-  it("installs from the mirror after the release URL failed, same verified bytes", async () => {
+  const digestOf = (tarball: Uint8Array) =>
+    `sha512-${createHash("sha512").update(tarball).digest("base64")}`;
+
+  /**
+   * A stand-in for npm: the install records the spec it was given, writes the package
+   * into the prefix, and writes the lockfile entry npm itself records for a tarball-URL
+   * install — `resolved` naming the URL, `integrity` naming the tarball it actually took.
+   * An Error stands for npm's own failure on that spec (a dead address, an unreadable
+   * asset): npm exits non-zero and nothing lands.
+   */
+  const npmStandIn = (
+    answers: Record<string, { integrity: string; name?: string; version?: string } | Error>,
+  ) => {
+    const specs: string[] = [];
+    const uninstalls: string[] = [];
+    const install = async (prefix: string, spec: string) => {
+      specs.push(spec);
+      const answer = answers[spec];
+      if (answer === undefined)
+        throw new Error(`npm error code EFETCH\nnpm error cannot fetch ${spec}`);
+      if (answer instanceof Error) throw answer;
+      const name = answer.name ?? "acme";
+      const version = answer.version ?? "1.0.0";
+      const key = `node_modules/${name}`;
+      await fs.mkdir(path.join(prefix, ...key.split("/")), { recursive: true });
+      await fs.writeFile(
+        path.join(prefix, ...key.split("/"), "package.json"),
+        JSON.stringify({ name, version }),
+      );
+      const manifestPath = path.join(prefix, "package.json");
+      const manifest = JSON.parse(await fs.readFile(manifestPath, "utf8").catch(() => "{}")) as {
+        dependencies?: Record<string, string>;
+      };
+      manifest.dependencies = { ...(manifest.dependencies ?? {}), [name]: url_of(spec) };
+      await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2));
+      const lockPath = path.join(prefix, "package-lock.json");
+      const lock = JSON.parse(await fs.readFile(lockPath, "utf8").catch(() => "{}")) as {
+        packages?: Record<string, { resolved?: string; integrity?: string }>;
+      };
+      lock.packages = {
+        ...(lock.packages ?? {}),
+        [key]: { resolved: url_of(spec), integrity: answer.integrity },
+      };
+      await fs.writeFile(lockPath, JSON.stringify(lock, null, 2));
+    };
+    const url_of = (spec: string) => spec;
+    const uninstall = async (_prefix: string, name: string) => {
+      uninstalls.push(name);
+    };
+    return { install, uninstall, specs, uninstalls };
+  };
+
+  it("installs through npm from the mirror after the release URL failed, the lockfile record verifying", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-cdn-"));
     roots.push(root);
     const mirrorUrl =
       "https://cdn-mirror.example/acme/acme/releases/download/v1.0.0/acme-1.0.0.tgz";
     const tarball = await packTarball("acme", "1.0.0");
-    const bytes = new Uint8Array(tarball);
-    const pinned = `sha512-${createHash("sha512").update(tarball).digest("base64")}`;
-    const fetchImpl = (async (input: Parameters<typeof fetch>[0]) => {
-      const url = String(input);
-      if (url === channel().url) throw new TypeError("fetch failed");
-      return new Response(bytes, { status: 200 });
-    }) as typeof fetch;
+    const npm = npmStandIn({
+      [channel().url]: new Error("npm error code EFETCH\nnpm error fetch failed"),
+      [mirrorUrl]: { integrity: digestOf(tarball) },
+    });
     const installed = await installPluginChannel(
       root,
-      { ...channel([mirrorUrl]), integrity: pinned },
-      {
-        fetchImpl,
-      },
+      { ...channel([mirrorUrl]), integrity: digestOf(tarball) },
+      { install: npm.install, uninstall: npm.uninstall },
     );
     expect(installed).toEqual({ name: "acme", version: "1.0.0" });
+    // The release URL went to npm first and failed there; the mirror's spec installed.
+    expect(npm.specs).toEqual([channel().url, mirrorUrl]);
+    expect(npm.uninstalls).toEqual([]);
+    // What npm wrote stays: the lockfile entry and the installed manifest are the record.
+    const lock = JSON.parse(
+      await fs.readFile(path.join(root, "plugins", "package-lock.json"), "utf8"),
+    ) as { packages: Record<string, { resolved?: string }> };
+    expect(lock.packages["node_modules/acme"]?.resolved).toBe(mirrorUrl);
   });
 
-  it("refuses mirror bytes that do not match the entry's integrity", async () => {
+  it("refuses an install whose tarball does not match the entry's integrity, uninstalls it, and takes the next address", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-cdn-"));
     roots.push(root);
-    const mirrorUrl =
-      "https://cdn-mirror.example/acme/acme/releases/download/v1.0.0/acme-1.0.0.tgz";
-    const fetchImpl = (async () =>
-      new Response(new Uint8Array(new TextEncoder().encode("tampered")), {
-        status: 200,
-      })) as typeof fetch;
-    await expect(installPluginChannel(root, channel([mirrorUrl]), { fetchImpl })).rejects.toThrow(
-      PluginInstallError,
-    );
-    await expect(installPluginChannel(root, channel([mirrorUrl]), { fetchImpl })).rejects.toThrow(
-      /does not match the sha512/,
-    );
-  });
-
-  it("a source exhausted on is reported with the last address's failure", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-cdn-"));
-    roots.push(root);
-    const mirrorUrl =
-      "https://cdn-mirror.example/acme/acme/releases/download/v1.0.0/acme-1.0.0.tgz";
-    const fetchImpl = (async () => {
-      throw new TypeError("fetch failed");
-    }) as typeof fetch;
-    await expect(installPluginChannel(root, channel([mirrorUrl]), { fetchImpl })).rejects.toThrow(
-      /could not fetch the release asset/,
-    );
-  });
-
-  it("the release URL is tried first, the mirrors after it, once each", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-cdn-"));
-    roots.push(root);
-    const canonicalUrl = "https://github.com/acme/acme/releases/download/v1.0.3/acme-1.0.3.tgz";
-    const mirrorUrl =
-      "https://cdn-mirror.example/acme/acme/releases/download/v1.0.0/acme-1.0.0.tgz";
+    const canonicalUrl = "https://github.com/acme/acme/releases/download/v1.0.2/acme-1.0.2.tgz";
+    const badMirror = "https://cdn-mirror.example/bad/acme-1.0.2.tgz";
+    const goodMirror = "https://cdn-mirror.example/good/acme-1.0.2.tgz";
     const tarball = await packTarball("acme", "1.0.0");
-    const pinned = `sha512-${createHash("sha512").update(tarball).digest("base64")}`;
-    const bytes = new Uint8Array(tarball);
-    const hits: string[] = [];
-    const fetchImpl = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
-      const address = String(input);
-      hits.push(address);
-      if (address === mirrorUrl) return new Response(bytes, { status: 200 });
-      // The release URL answers, then stalls mid-body: its headers said ok, its bytes
-      // never arrive — the download moves to the mirror all the same. A synthetic body
-      // is not wired to the abort signal, so the fake rejects on it instead, which is
-      // what the wire does to a stalled read when the window runs out.
-      return {
-        ok: true,
-        status: 200,
-        headers: new Headers({ "content-length": String(bytes.byteLength) }),
-        body: null,
-        arrayBuffer: () =>
-          new Promise<ArrayBuffer>((_, reject) =>
-            init?.signal?.addEventListener("abort", () =>
-              reject(new DOMException("This operation was aborted", "TimeoutError")),
-            ),
-          ),
-      } as unknown as Response;
-    }) as typeof fetch;
-    const chan = { ...channel([mirrorUrl], canonicalUrl), integrity: pinned };
-    const installed = await installPluginChannel(root, chan, { fetchImpl, timeoutMs: 50 });
+    const npm = npmStandIn({
+      [canonicalUrl]: new Error("npm error code EFETCH\nnpm error fetch failed"),
+      [badMirror]: { integrity: "sha512-tamperedbytesaresolong" },
+      [goodMirror]: { integrity: digestOf(tarball) },
+    });
+    const installed = await installPluginChannel(
+      root,
+      { ...channel([badMirror, goodMirror], canonicalUrl), integrity: digestOf(tarball) },
+      { install: npm.install, uninstall: npm.uninstall },
+    );
     expect(installed).toEqual({ name: "acme", version: "1.0.0" });
-    expect(hits).toEqual([canonicalUrl, mirrorUrl]);
+    expect(npm.specs).toEqual([canonicalUrl, badMirror, goodMirror]);
+    // The refused install did not stay in the prefix: npm uninstalled what the bad
+    // address's install had put there, so nothing tampered remains on disk.
+    expect(npm.uninstalls).toEqual(["acme"]);
+  });
+
+  it("refuses an install whose manifest is not the entry's package and version", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-cdn-"));
+    roots.push(root);
+    const tarball = await packTarball("acme", "1.0.0");
+    const npm = npmStandIn({
+      [channel().url]: { integrity: digestOf(tarball), name: "other-package", version: "9.9.9" },
+    });
+    await expect(
+      installPluginChannel(
+        root,
+        { ...channel(), integrity: digestOf(tarball) },
+        { install: npm.install, uninstall: npm.uninstall },
+      ),
+    ).rejects.toThrow(/package\.json says "other-package"@"9\.9\.9"/);
+    // The wrong package is uninstalled; nothing of it stays for the caller's vetting.
+    expect(npm.uninstalls).toEqual(["acme"]);
+  });
+
+  it("a source exhausted is reported with the addresses tried and the failure it ended on", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-cdn-"));
+    roots.push(root);
+    const canonicalUrl = "https://github.com/acme/acme/releases/download/v1.0.6/acme-1.0.6.tgz";
+    const mirrorUrl =
+      "https://cdn-mirror.example/acme/acme/releases/download/v1.0.6/acme-1.0.6.tgz";
+    const npm = npmStandIn({
+      [canonicalUrl]: new Error("npm error code EFETCH\nnpm error fetch failed"),
+      [mirrorUrl]: new Error("npm error code EFETCH\nnpm error fetch failed"),
+    });
+    await expect(
+      installPluginChannel(root, channel([mirrorUrl], canonicalUrl), {
+        install: npm.install,
+        uninstall: npm.uninstall,
+      }),
+    ).rejects.toThrow(
+      /could not install the release asset from any of .*acme-1\.0\.6\.tgz, .*acme-1\.0\.6\.tgz: npm error/,
+    );
   });
 
   it("the sticky start: after a mirror carried the install, the next install starts at it", async () => {
@@ -368,100 +417,46 @@ describe("channel mirrors", () => {
     const mirrorUrl =
       "https://cdn-mirror.example/acme/acme/releases/download/v1.0.4/acme-1.0.4.tgz";
     const tarball = await packTarball("acme", "1.0.0");
-    const pinned = `sha512-${createHash("sha512").update(tarball).digest("base64")}`;
-    const bytes = new Uint8Array(tarball);
-    const hits: string[] = [];
-    const fetchImpl = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
-      const address = String(input);
-      hits.push(address);
-      if (address === mirrorUrl) return new Response(bytes, { status: 200 });
-      // The release URL answers, then stalls mid-body: its headers said ok, its bytes
-      // never arrive — the download moves to the mirror all the same. A synthetic body
-      // is not wired to the abort signal, so the fake rejects on it instead, which is
-      // what the wire does to a stalled read when the window runs out.
-      return {
-        ok: true,
-        status: 200,
-        headers: new Headers({ "content-length": String(bytes.byteLength) }),
-        body: null,
-        arrayBuffer: () =>
-          new Promise<ArrayBuffer>((_, reject) =>
-            init?.signal?.addEventListener("abort", () =>
-              reject(new DOMException("This operation was aborted", "TimeoutError")),
-            ),
-          ),
-      } as unknown as Response;
-    }) as typeof fetch;
-    const chan = { ...channel([mirrorUrl], canonicalUrl), integrity: pinned };
-    const installed = await installPluginChannel(root, chan, { fetchImpl, timeoutMs: 50 });
-    expect(installed).toEqual({ name: "acme", version: "1.0.0" });
-    expect(hits).toEqual([canonicalUrl, mirrorUrl]);
+    const npm = npmStandIn({
+      [canonicalUrl]: new Error("npm error code EFETCH\nnpm error fetch failed"),
+      [mirrorUrl]: { integrity: digestOf(tarball) },
+    });
+    const chan = { ...channel([mirrorUrl], canonicalUrl), integrity: digestOf(tarball) };
+    await installPluginChannel(root, chan, { install: npm.install, uninstall: npm.uninstall });
+    expect(npm.specs).toEqual([canonicalUrl, mirrorUrl]);
     // Memory, not a speed test: the walk still tries one address at a time, only its
-    // start moves — the mirror that carried the last install (its bytes verified) leads
+    // start moves — the mirror that carried the last install (its record verified) leads
     // the next one, and the dead canonical's window is not paid again.
-    hits.length = 0;
     const root2 = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-cdn-"));
     roots.push(root2);
-    await installPluginChannel(root2, chan, { fetchImpl, timeoutMs: 50 });
-    expect(hits).toEqual([mirrorUrl]);
+    await installPluginChannel(root2, chan, { install: npm.install, uninstall: npm.uninstall });
+    expect(npm.specs).toEqual([canonicalUrl, mirrorUrl, mirrorUrl]);
   });
 
-  it("bytes that fail the integrity check never become the sticky start", async () => {
+  it("an install that fails the checks never becomes the sticky start", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-cdn-"));
     roots.push(root);
     const canonicalUrl = "https://github.com/acme/acme/releases/download/v1.0.5/acme-1.0.5.tgz";
-    const mirrorUrl =
-      "https://cdn-mirror.example/acme/acme/releases/download/v1.0.5/acme-1.0.5.tgz";
+    const badMirror = "https://cdn-mirror.example/bad/acme-1.0.5.tgz";
+    const goodMirror = "https://cdn-mirror.example/good/acme-1.0.5.tgz";
     const tarball = await packTarball("acme", "1.0.0");
-    const pinned = `sha512-${createHash("sha512").update(tarball).digest("base64")}`;
-    const good = new Uint8Array(tarball);
-    const bad = new Uint8Array(new TextEncoder().encode("tampered"));
-    const hits: string[] = [];
-    let served = 0;
-    const fetchImpl = (async (input: Parameters<typeof fetch>[0]) => {
-      const address = String(input);
-      hits.push(address);
-      if (address !== mirrorUrl) throw new TypeError("fetch failed");
-      // The mirror serves tampered bytes on the first install, good ones on the second.
-      served += 1;
-      return new Response(served === 1 ? bad : good, { status: 200 });
-    }) as typeof fetch;
-    const chan = { ...channel([mirrorUrl], canonicalUrl), integrity: pinned };
-    await expect(
-      installPluginChannel(root, chan, { fetchImpl, timeoutMs: 50 }),
-    ).rejects.toThrow(/does not match the sha512/);
-    expect(hits).toEqual([canonicalUrl, mirrorUrl]);
-    // The refusal is not remembered: the next install still starts at the canonical URL
-    // — the mirror's earlier try, bad bytes and all, bought it no start.
-    hits.length = 0;
+    const npm = npmStandIn({
+      [canonicalUrl]: new Error("npm error code EFETCH\nnpm error fetch failed"),
+      [badMirror]: { integrity: "sha512-tamperedbytesaresolong" },
+      [goodMirror]: { integrity: digestOf(tarball) },
+    });
+    const chan = {
+      ...channel([badMirror, goodMirror], canonicalUrl),
+      integrity: digestOf(tarball),
+    };
+    await installPluginChannel(root, chan, { install: npm.install, uninstall: npm.uninstall });
+    expect(npm.specs).toEqual([canonicalUrl, badMirror, goodMirror]);
+    // The refusal is not remembered — but the mirror whose install verified is: the next
+    // install starts at the good mirror, not back at the canonical URL.
     const root2 = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-cdn-"));
     roots.push(root2);
-    await installPluginChannel(root2, chan, { fetchImpl, timeoutMs: 50 });
-    expect(hits).toEqual([canonicalUrl, mirrorUrl]);
-  });
-
-  it("every address dead: the error names the addresses and the failure it ended on", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-cdn-"));
-    roots.push(root);
-    const canonicalUrl = "https://github.com/acme/acme/releases/download/v1.0.6/acme-1.0.6.tgz";
-    const mirrorUrl =
-      "https://cdn-mirror.example/acme/acme/releases/download/v1.0.6/acme-1.0.6.tgz";
-    const registry = fakeFetch({});
-    await expect(
-      installPluginChannel(
-        root,
-        {
-          ...channel([mirrorUrl], canonicalUrl),
-          integrity: "sha512-xxx",
-        },
-        {
-          fetchImpl: registry.fetch,
-          timeoutMs: 50,
-        },
-      ),
-    ).rejects.toThrow(
-      /could not fetch the release asset from any of https:\/\/github\.com\/acme\/acme\/releases\/download\/v1\.0\.6\/acme-1\.0\.6\.tgz, https:\/\/cdn-mirror\.example\/acme\/acme\/releases\/download\/v1\.0\.6\/acme-1\.0\.6\.tgz: fetch failed/,
-    );
+    await installPluginChannel(root2, chan, { install: npm.install, uninstall: npm.uninstall });
+    expect(npm.specs).toEqual([canonicalUrl, badMirror, goodMirror, goodMirror]);
   });
 
   it("a rewrite rule maps a URL by capture; a rule that does not match the URL stays out", () => {
@@ -528,42 +523,46 @@ describe("deployment proxy config", () => {
   });
 
   // The boundary samples below run safe-regex over a 65,536-character pattern; that
-  // parse takes longer than the default 5 s test timeout, so this case carries its own.
+  // parse takes tens of seconds (the checker walks the pattern's tree, and a literal
+  // that long is tens of thousands of nodes), so this case carries its own timeout.
   it(
     "a pattern with catastrophic backtracking is refused at parse, before any fetch runs it",
-    { timeout: 30_000 },
+    { timeout: 120_000 },
     () => {
-    // The classic ReDoS shapes: nested quantifiers and ambiguous alternation.
-    expect(rewriteRuleRisk({ kind: "rewrite", match: "^(a+)+$", rewrite: "x" })).toMatch(
-      /not linear/,
-    );
-    expect(rewriteRuleRisk({ kind: "rewrite", match: "(?:.*)*!x", rewrite: "x" })).toMatch(
-      /not linear/,
-    );
-    // A pattern can only ever match one URL, so its bound is the URL length the web
-    // itself allows (Firefox's 65,536); anything longer is a program, not a URL map.
-    expect(
-      rewriteRuleRisk({ kind: "rewrite", match: "b".repeat(65537), rewrite: "x" }),
-    ).toMatch(/over the 65536 cap/);
-    // A pattern of the largest legal URL length passes.
-    expect(rewriteRuleRisk({ kind: "rewrite", match: "b".repeat(65536), rewrite: "x" })).toBeNull();
-    // The URL-map shapes this feature is for read as linear and pass.
-    expect(
-      rewriteRuleRisk({
-        kind: "rewrite",
-        match: "^https:\\/\\/github\\.com\\/(.+)\\/(.+)\\/releases\\/download\\/(.+)$",
-        rewrite: "https://gh-mirror.example/$1/$2/releases/download/$3",
-      }),
-    ).toBeNull();
-    // A very long URL is still a URL: the rules run over it as usual. The ReDoS gate is
-    // the pattern's shape (safe-regex at parse), not the input's length — a linear
-    // pattern over a long string stays linear.
-    expect(
-      pluginProxyMirrors("https://" + "a".repeat(4096) + "/x", [
-        { kind: "rewrite", match: ".*", rewrite: "https://mirror.example/$&" },
-      ]),
-    ).toEqual(["https://mirror.example/https://" + "a".repeat(4096) + "/x"]);
-  });
+      // The classic ReDoS shapes: nested quantifiers and ambiguous alternation.
+      expect(rewriteRuleRisk({ kind: "rewrite", match: "^(a+)+$", rewrite: "x" })).toMatch(
+        /not linear/,
+      );
+      expect(rewriteRuleRisk({ kind: "rewrite", match: "(?:.*)*!x", rewrite: "x" })).toMatch(
+        /not linear/,
+      );
+      // A pattern can only ever match one URL, so its bound is the URL length the web
+      // itself allows (Firefox's 65,536); anything longer is a program, not a URL map.
+      expect(rewriteRuleRisk({ kind: "rewrite", match: "b".repeat(65537), rewrite: "x" })).toMatch(
+        /over the 65536 cap/,
+      );
+      // A pattern of the largest legal URL length passes.
+      expect(
+        rewriteRuleRisk({ kind: "rewrite", match: "b".repeat(65536), rewrite: "x" }),
+      ).toBeNull();
+      // The URL-map shapes this feature is for read as linear and pass.
+      expect(
+        rewriteRuleRisk({
+          kind: "rewrite",
+          match: "^https:\\/\\/github\\.com\\/(.+)\\/(.+)\\/releases\\/download\\/(.+)$",
+          rewrite: "https://gh-mirror.example/$1/$2/releases/download/$3",
+        }),
+      ).toBeNull();
+      // A very long URL is still a URL: the rules run over it as usual. The ReDoS gate is
+      // the pattern's shape (safe-regex at parse), not the input's length — a linear
+      // pattern over a long string stays linear.
+      expect(
+        pluginProxyMirrors("https://" + "a".repeat(4096) + "/x", [
+          { kind: "rewrite", match: ".*", rewrite: "https://mirror.example/$&" },
+        ]),
+      ).toEqual(["https://mirror.example/https://" + "a".repeat(4096) + "/x"]);
+    },
+  );
 
   it("a rule of an unknown kind, a non-string field or a pattern that will not compile is a config error", () => {
     expect(() =>

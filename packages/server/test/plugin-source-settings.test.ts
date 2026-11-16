@@ -35,9 +35,7 @@ describe("npmRegistryOf", () => {
   });
 
   it("a mirror's https URL passes as is", () => {
-    expect(npmRegistryOf("https://registry.npmmirror.com")).toBe(
-      "https://registry.npmmirror.com",
-    );
+    expect(npmRegistryOf("https://registry.npmmirror.com")).toBe("https://registry.npmmirror.com");
   });
 
   it("a value that is neither passes nothing rather than something malformed", () => {
@@ -70,9 +68,7 @@ describe("the registry flag rides the installer's npm runs", () => {
         saved.push(undefined);
         setNpmRegistry("https://registry.invalid");
         // npm fails naming the registry it was pointed at: the flag reached the command line.
-        await expect(installPluginSource(root, "@acme/notes")).rejects.toThrow(
-          /registry\.invalid/,
-        );
+        await expect(installPluginSource(root, "@acme/notes")).rejects.toThrow(/registry\.invalid/);
         for (const [key, value] of Object.entries(env)) {
           if (value === undefined) delete process.env[key];
           else process.env[key] = value;

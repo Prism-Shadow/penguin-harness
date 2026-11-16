@@ -611,21 +611,14 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     if (!(c.req.header("accept") ?? "").includes("text/event-stream")) {
       return c.json(await performInstall(projectId, source, machineId));
     }
-    // The same install, read as it arrives: the channel's download in `download` events (the
-    // percent steps installPluginChannel reports), `npm` once the bytes are in, the finished
-    // list as `result`. A failure that the JSON answer would have carried as a status rides
-    // as an `error` event with that status, so the page raises the same error either way.
+    // The same install, read as it arrives: `npm` while npm works (npm's own download is
+    // npm's to report), `result` the finished list. A failure that the JSON answer would
+    // have carried as a status rides as an `error` event with that status, so the page
+    // raises the same error either way.
     return eventStream(c, async (sink) => {
       try {
-        await sink.send("download", null, JSON.stringify({ received: 0, total: null }));
-        const next = await performInstall(
-          projectId,
-          source,
-          machineId,
-          (received, total) =>
-            void sink.send("download", null, JSON.stringify({ received, total })),
-        );
         await sink.send("npm", null, "{}");
+        const next = await performInstall(projectId, source, machineId);
         await sink.send("result", null, JSON.stringify(next));
       } catch (err) {
         const [status, code, message] =
