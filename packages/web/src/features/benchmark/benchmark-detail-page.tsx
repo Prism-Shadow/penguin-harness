@@ -32,7 +32,7 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useProject } from "../../state/project";
-import { downloadArchive } from "../agents/archive-download";
+import { downloadArchive } from "../agents";
 import { BenchmarkDetail } from "./benchmark-detail";
 import { benchmarkPath } from "./benchmark-prompts";
 import { useBenchmarksAcross } from "./benchmark-sources";
@@ -228,7 +228,7 @@ export function BenchmarkDetailPage() {
 
   /**
    * Export: the package of the copy this page describes — this server's when it holds one, else
-   * the first machine's — through the Skills tab's download, so a refusal is a toast rather than
+   * the first machine's — through a Skill row's download, so a refusal is a toast rather than
    * a saved error file.
    */
   const exportBenchmark = async () => {

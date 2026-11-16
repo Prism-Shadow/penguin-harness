@@ -3,16 +3,8 @@
  * document bundles and what the platform has, and the line the chrome prints.
  */
 import { describe, expect, it } from "vitest";
-import {
-  faceInUse,
-  familiesOf,
-  FONT_ROLES,
-  formatFontReadout,
-  isGenericFamily,
-} from "../src/app/fonts";
+import { faceInUse, familiesOf, formatFontReadout, isGenericFamily } from "../src/app/fonts";
 import type { Declared, FaceProbe } from "../src/app/fonts";
-import { zh } from "../src/strings";
-import { en } from "../src/strings-en";
 
 /** A document that bundles `bundled`, has given up on `failed`, on a platform that has `installed`. */
 function probe(
@@ -26,14 +18,6 @@ function probe(
 }
 
 describe("the font readout", () => {
-  it("reads the sans, CJK and mono tokens", () => {
-    expect(FONT_ROLES).toEqual({
-      latin: "--ui-font-sans",
-      cjk: "--ui-font-cjk",
-      mono: "--ui-font-mono",
-    });
-  });
-
   it("splits a stack into unquoted families, in order", () => {
     expect(familiesOf(`"Mona Sans Variable", "MiSans", system-ui, sans-serif`)).toEqual([
       "Mona Sans Variable",
@@ -85,25 +69,20 @@ describe("the font readout", () => {
     );
   });
 
-  it("prints the three roles and the size in the chrome's language, the platform in words", () => {
+  it("prints the three roles and the size in the caller's words, the platform in words too", () => {
+    const labels = { latin: "Latin", cjk: "CJK", mono: "Mono", system: "System" };
     const readout = {
       latin: "Mona Sans Variable",
       cjk: "MiSans",
       mono: "JetBrains Mono Variable",
       px: 16,
     };
-    expect(formatFontReadout(readout, en.readout)).toBe(
+    expect(formatFontReadout(readout, labels)).toBe(
       "Latin Mona Sans Variable · CJK MiSans · Mono JetBrains Mono Variable · 16px",
     );
-    expect(formatFontReadout(readout, zh.readout)).toBe(
-      "英文 Mona Sans Variable · 中文 MiSans · 等宽 JetBrains Mono Variable · 16px",
-    );
     const platform = { latin: null, cjk: null, mono: null, px: 15 };
-    expect(formatFontReadout(platform, en.readout)).toBe(
+    expect(formatFontReadout(platform, labels)).toBe(
       "Latin System · CJK System · Mono System · 15px",
-    );
-    expect(formatFontReadout(platform, zh.readout)).toBe(
-      "英文 系统 · 中文 系统 · 等宽 系统 · 15px",
     );
   });
 });

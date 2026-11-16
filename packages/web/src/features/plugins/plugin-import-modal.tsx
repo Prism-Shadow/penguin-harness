@@ -4,8 +4,8 @@
  * typed input, and an install in flight holds the dialog open. Examples only fill the source;
  * the folded prompt becomes a new chat draft when requested.
  */
-import { useState } from "react";
-import type { ChangeEvent } from "react";
+import { useState, type ChangeEvent } from "react";
+
 import type { PluginInstallOutcome } from "@prismshadow/penguin-server/api";
 import {
   Button,

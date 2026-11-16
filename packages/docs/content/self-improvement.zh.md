@@ -208,7 +208,7 @@ Benchmark 的**包**是 `benchmark_config.toml` 加上各题目录。`scoreboard
 `scoreboard.yaml` 里的每条评估记录都带时间戳，并包含：
 
 - `agent_id`：这次评估测试的 Agent。它与 `model_id`、`thinking_level` 一起组成这条记录的**标签**。趋势图以时间为横轴、分数为纵轴，每个标签画一条线，只有同一标签下的分数才可比。Agent State 的 `version` 不属于标签：同一个 Agent 在同一 Runtime 下的历次版本，正是这张图要展示的趋势，所以它们共用一条线，每个点的悬停提示里写着对应的版本。评估记录还不带 Agent 的时期写下的记录，读作未标注，归入图表的灰色系列。
-- 评估 Runtime：`provider`、`model_id` 和 `thinking_level`。对于基线，用户指定的 `(provider, model_id)` 模型对优先，否则沿用 Builder Session 的模型对；评估中心**评估**标签页发起的评估同样沿用其评估会话的模型对；优化则沿用 Reference 的 Runtime。`thinking_level` 从 Target Agent 的配置读取，不依赖 Trace 元数据。
+- 评估 Runtime：`provider`、`model_id` 和 `thinking_level`。对于基线，用户指定的 `(provider, model_id)` 模型对优先，否则沿用 Builder Session 的模型对；评估中心**评估**标签页发起的评估用**被测智能体使用的模型**选定的模型对，由提示词带上；优化则沿用 Reference 的 Runtime，从**优化**标签页发起时提示词点名被测模型，Reference 取这个模型对上的评估。`thinking_level` 从 Target Agent 的配置读取，不依赖 Trace 元数据。
 - `summary_title` 和 `summary`：这一轮的结论和下一轮的假设。
 - 由模型写入的分数、成本和耗时平均值。题目级的值是各次运行的平均，评估级的值是各道题目的平均。单次运行的成本保留记录时的精度。成本平均值忽略 `null`，只有所有参与计算的成本都未知时才为 `null`。分数保留两位小数，成本平均值保留六位小数，`duration_ms` 为整数。
 - 每道题目的逐次运行明细：每次运行记录 `score`、`cost`、`duration_ms` 和 `session_id`。
@@ -227,9 +227,9 @@ Benchmark 的**包**是 `benchmark_config.toml` 加上各题目录。`scoreboard
 
 Optimizer 改动 Reference State 之前，会先确保 Reference 版本对应的 `<agent>/snapshots/v<version>.tar.gz` 存在。已有快照就直接复用；没有就把 `agent_state/` 打包成一个，打包时排除 Vault（`.vault.toml`），密钥永远不会进入快照。它从不覆盖同一版本已有的快照；如果创建不了快照，就在改动任何东西之前停下。落选的 Candidate 在同一轮内回滚：Optimizer 恢复原来的文件和版本号，并删除 Candidate 新建的文件。
 
-在 Web App 中，Agent 的设置页向所有成员提供**导出快照**，向 Project owner 提供**导入快照**。导入会整体替换 Agent State，版本号取包内的 `version`，并保留当前的 Vault。导入之前，当前 State 会重新打包成一个单独的备份 `<agent>/snapshots/import-backup-v<version>-<time>-<random>.tar.gz`，从不覆盖已有文件，也不属于 `v<version>.tar.gz` 快照：同一版本的旧快照既不会被沿用，也不会被覆盖。工作台的版本历史位于 Agent State 之外，导入不会改动它。导入的版本不比当前版本新时，需要先确认。智能体页面的创建对话框也可以直接用导出的快照包新建 Agent（**从快照初始化**）：新 Agent 以包内的状态和版本起步，无需确认。
+用包覆盖 Agent（见[导出和导入 Agent](/agents#导出和导入-agent)）只有 Project owner 能做。它替换 Agent State 中包所带的部分（包里没有的部件沿用现有内容），版本号取包内的 `version`，并保留当前的 Vault。导入之前，当前 State 会重新打包成一个单独的备份 `<agent>/snapshots/import-backup-v<version>-<time>-<random>.tar.gz`，从不覆盖已有文件，也不属于 `v<version>.tar.gz` 快照：同一版本的旧快照既不会被沿用，也不会被覆盖。工作台的版本历史位于 Agent State 之外，导入不会改动它。以新 id 导入时新建 Agent，以包内的状态和版本起步，不写备份。
 
-只有 `agent_state/` 是真实目录、且其中所有符号链接都解析在 `agent_state/` 之内的包才会被接受；链接指向 `agent_state/` 之外或指向不存在目标的包，以及 `system_config.yaml` 无法读取的包，都会被拒绝。导入时若现行 Vault 无法读取，则在触碰 State 之前停止。替换失败且无法恢复原 State 时，原 State 与 Vault 保留在该 Agent 目录下的导入暂存目录中，服务端日志会给出其路径。
+zip 包不能含任何链接。`.tar.gz` 包只有在 `agent_state/` 是真实目录、且其中所有符号链接都解析在 `agent_state/` 之内时才会被接受；链接指向 `agent_state/` 之外或指向不存在目标的包，以及 `system_config.yaml` 无法读取的包，都会被拒绝。导入时若现行 Vault 无法读取，则在触碰 State 之前停止。替换失败且无法恢复原 State 时，原 State 与 Vault 保留在该 Agent 目录下的导入暂存目录中，服务端日志会给出其路径。
 
 ## 可审计性
 

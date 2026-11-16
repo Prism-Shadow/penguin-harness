@@ -9,7 +9,8 @@
  *   leaves the dialog and the typing.
  * - An untouched dialog closes at once.
  * - A created Agent closes the dialog and the page goes on to it without asking: the form was
- *   saved, so the navigation that follows finds nothing unsaved.
+ *   saved, so the navigation that follows finds nothing unsaved. A person filled it, so the
+ *   Agent is created with `user` as its author.
  * - A refused create keeps the dialog open with the reason under the id, still unsaved.
  * - A picked plugin with a stdio MCP server asks before anything is created, showing the command
  *   it runs on this server; confirming creates the Agent with the plugin.
@@ -198,8 +199,10 @@ describe("creating an Agent", () => {
     expect(promptOpen()).toBe(false);
     expect(dialogs()).toEqual([]);
     expect(hasUnsaved()).toBe(false);
+    // A person filled the dialog: the Agent records them as its author.
     expect(server.writes(`/api/projects/${PROJECT_ID}/agents`)[0]!.body).toEqual({
       agentId: "writer",
+      author: "user",
       name: "Writer",
     });
   });
@@ -221,6 +224,7 @@ describe("creating an Agent", () => {
     await waitFor(() => whereIs(router) === "/agents");
     expect(server.writes(`/api/projects/${PROJECT_ID}/agents`)[0]!.body).toEqual({
       agentId: "writer",
+      author: "user",
       plugins: ["mail"],
     });
   });
@@ -247,7 +251,7 @@ describe("creating an Agent", () => {
     await waitFor(() => whereIs(router) === "/agents/trainer?machine=gpu1");
     const writes = server.writes(`/api/projects/${PROJECT_ID}/agents`);
     expect(writes.map((w) => [w.machine, w.body])).toEqual([
-      ["gpu1", { agentId: "trainer", plugins: ["gpu-tools"] }],
+      ["gpu1", { agentId: "trainer", author: "user", plugins: ["gpu-tools"] }],
     ]);
     expect(server.machineAgents("gpu1")).toContain("trainer");
   });
@@ -266,6 +270,7 @@ describe("creating an Agent", () => {
     await waitFor(() => server.writes(`/api/projects/${PROJECT_ID}/agents`).length === 1);
     expect(server.writes(`/api/projects/${PROJECT_ID}/agents`)[0]!.body).toEqual({
       agentId: "writer",
+      author: "user",
     });
   });
 

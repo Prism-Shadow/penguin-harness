@@ -558,12 +558,12 @@ describe(
       const pkg = path.join(agentStateDir(t.root, PROJECT, source.agentId), "workbenches", "pkg");
       await fs.mkdir(pkg, { recursive: true });
       await fs.writeFile(path.join(pkg, "package.json"), JSON.stringify({ name: "Pkg" }));
-      const archive = Buffer.from(await (await owner.get(`${source.route}/export`)).arrayBuffer());
-      const imported = await owner.post(`${route}/import`, {
-        dataBase64: archive.toString("base64"),
-        confirm: true,
-      });
-      expect(imported.status, await imported.text()).toBe(200);
+      const importPath = `/api/projects/${PROJECT}/agents/import?agentId=${agentId}&overwrite=1`;
+      const archive = new Uint8Array(
+        await (await owner.get(`${source.route}/archive`)).arrayBuffer(),
+      );
+      const imported = await owner.upload(importPath, archive);
+      expect(imported.status, await imported.text()).toBe(201);
       // What the Agent had is in the backup taken before its state was replaced.
       const snapshots = snapshotsDir(t.root, PROJECT, agentId);
       const [backup] = (await fs.readdir(snapshots)).filter((f) => f.startsWith("import-backup-"));
@@ -579,12 +579,9 @@ describe(
       expect((await listOf(route)).map((w) => w.id)).toEqual(["pkg"]);
       // A State without workbenches: a write through the old place right after still lands.
       const empty = await newAgent();
-      const bare = Buffer.from(await (await owner.get(`${empty.route}/export`)).arrayBuffer());
-      const again = await owner.post(`${route}/import`, {
-        dataBase64: bare.toString("base64"),
-        confirm: true,
-      });
-      expect(again.status, await again.text()).toBe(200);
+      const bare = new Uint8Array(await (await owner.get(`${empty.route}/archive`)).arrayBuffer());
+      const again = await owner.upload(importPath, bare);
+      expect(again.status, await again.text()).toBe(201);
       await fs.mkdir(oldPlace(dir, "after"), { recursive: true });
       await fs.writeFile(oldPlace(dir, "after", "package.json"), JSON.stringify({ name: "A" }));
       expect(await fs.readFile(inState(dir, "after", "package.json"), "utf8")).toContain("A");

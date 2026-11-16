@@ -18,7 +18,7 @@
  * menu does not offer it.
  */
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
-import { Button, EmptyState } from "@prismshadow/penguin-ui";
+import { Button, EmptyState, useWindowShown } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { isBlankUrl, isWebUrl } from "./address";
 import {
@@ -141,14 +141,20 @@ function BrowserSurface({ state, active }: { state: BrowserState; active: boolea
   const addressRef = useRef<HTMLInputElement | null>(null);
 
   // The slot is where the layer puts the page on screen; it says so only while this panel is
-  // the tab its dock shows (a hidden dock or another tab in front parks the page instead).
+  // the tab its dock shows and its window is on screen (a hidden dock, another tab in front, or a
+  // workbench tab shown over the Chat window parks the page instead: the page is laid over the
+  // slot from outside the window, so hiding the window does not hide it).
   const slotRef = useRef<HTMLDivElement | null>(null);
   const [slotId] = useState(() => Symbol("builtin-browser-slot"));
+  const windowShown = useWindowShown();
   useLayoutEffect(() => {
     const element = slotRef.current;
     return element === null ? undefined : registerSlot(slotId, element);
   }, [slotId]);
-  useLayoutEffect(() => setSlotVisible(slotId, active), [slotId, active]);
+  useLayoutEffect(
+    () => setSlotVisible(slotId, active && windowShown),
+    [slotId, active, windowShown],
+  );
 
   // A blank tab coming on screen waits for an address, so the address bar takes the focus,
   // unless the user is typing somewhere else. It is decided once this window hosts the tab's

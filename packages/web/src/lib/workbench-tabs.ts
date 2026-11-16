@@ -49,6 +49,17 @@ export interface WorkbenchUpdatedDetail {
   agentId: string;
 }
 
+/**
+ * Dispatched on `window` when the server starts loading a workbench's files (the watcher saw an
+ * edit, or a list or a reload asked for it). The App Center listens, to show the tile building;
+ * the end of the load is the WORKBENCH_UPDATED_EVENT above.
+ */
+export const WORKBENCH_BUILDING_EVENT = "penguin:workbench-building";
+
+export interface WorkbenchBuildingDetail extends WorkbenchUpdatedDetail {
+  workbenchId: string;
+}
+
 export function workbenchesBase(projectId: string, agentId: string): string {
   return `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/workbenches`;
 }
@@ -77,6 +88,21 @@ export function workbenchNoticesOf(workbenches: readonly WorkbenchInfo[]): Workb
   return workbenches
     .filter((w) => w.tabs.length === 0 && (w.error !== null || (w.hints ?? []).length > 0))
     .map((w) => ({ workbenchId: w.id, error: w.error, hints: w.hints ?? [] }));
+}
+
+/**
+ * The workbenches that run, out of an Agent's list: none while the Agent-wide switch is off, and
+ * of the rest each only while its own switch is on. A switched-off workbench is still listed by
+ * the server (its settings row needs it) but loads nothing, so nothing outside the settings may
+ * offer it: no tab, no notice, no full page. A server older than the switches sends neither
+ * flag, and everything it lists runs.
+ */
+export function runningWorkbenches(list: {
+  workbenches: readonly WorkbenchInfo[];
+  enabled?: boolean;
+}): WorkbenchInfo[] {
+  if (list.enabled === false) return [];
+  return list.workbenches.filter((w) => w.enabled !== false);
 }
 
 export function workbenchTabsOf(

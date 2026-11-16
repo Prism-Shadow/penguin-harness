@@ -1,28 +1,30 @@
 /**
- * Whole-scope transfer for the Memory tab: reading a downloaded document back in, and working
- * out what one import mode would cost before it is sent. Pure — mirrors memory-chat-prompts.ts,
- * exported for unit tests.
+ * Whole-scope transfer for the Memory tab: turning a picked file into an import, and reading
+ * what a refused import says is at stake. Pure — mirrors memory-chat-prompts.ts, exported for
+ * unit tests.
  *
- * The plan below is a preview, not the decision: the server runs the same policy over the
- * directory as it is at that moment, and refuses a destructive import that arrives without
- * confirmation. What this buys is a confirmation that can name the memories at stake instead of
- * asking the user to agree to an unknown.
+ * The export is a zip of the group's folder, so a picked zip goes up as it is (base64, as the
+ * Skill and workbench archives travel) and the server, which reads it, is the one to check it
+ * and to plan the import: an import that would destroy something comes back as a 409 naming
+ * the memories at stake, and the tab asks about exactly those before it sends `confirm`. A JSON
+ * file is a version 1 document an earlier version exported; it still imports.
  *
  * Read `S` inside the functions, never at module top level: the dictionary binding is swapped
  * on language switch.
  */
-import type {
-  MemoryImportMode,
-  MemoryScopeExport,
-  MemoryTransferFile,
-} from "@prismshadow/penguin-server/api";
+import type { MemoryImportRequest, MemoryScopeExport } from "@prismshadow/penguin-server/api";
+import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 
-/** Format marker of a scope document, typed against the DTO so this literal cannot drift from the server's. */
+/** Format marker of a version 1 document, typed against the DTO so this literal cannot drift from the server's. */
 const SCOPE_FORMAT: MemoryScopeExport["format"] = "penguin-memory-scope";
+/**
+ * The JSON document an export wrote before the zip; the server still imports it. Retired with
+ * the server's reader at 1.0 (server services/memory-transfer-document.ts says what goes).
+ */
 const SCOPE_FORMAT_VERSION: MemoryScopeExport["version"] = 1;
 
-/** A picked file that is not a scope document. Its message is already localized, so callers toast it as is. */
+/** A picked file that is neither a zip nor a version 1 document. Its message is already localized, so callers toast it as is. */
 export class MemoryDocumentError extends Error {
   constructor(message: string) {
     super(message);
@@ -30,20 +32,37 @@ export class MemoryDocumentError extends Error {
   }
 }
 
-function isTransferFile(value: unknown): value is MemoryTransferFile {
+/** What a picked file uploads as: exactly one of a zip and a version 1 document. */
+export type MemoryUpload = Pick<MemoryImportRequest, "dataBase64" | "payload">;
+
+/** A zip's magic bytes, `PK`. */
+const isZip = (bytes: Uint8Array): boolean => bytes[0] === 0x50 && bytes[1] === 0x4b;
+
+/** Base64 of some bytes, a chunk at a time so a large zip never builds one huge argument list. */
+function toBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(binary);
+}
+
+function isTransferFile(value: unknown): boolean {
   if (value === null || typeof value !== "object") return false;
   const entry = value as Record<string, unknown>;
   return typeof entry.name === "string" && typeof entry.content === "string";
 }
 
 /**
- * Reads a picked file's text as a scope document. Only the shape is checked here — names, sizes
- * and counts are the server's to enforce, and a second copy of those bounds would only drift.
+ * Reads a picked file as an import. A zip goes up whole; anything else must be a version 1 JSON
+ * document, of which only the shape is checked here — names, sizes and counts are the server's to
+ * enforce, and a second copy of those bounds would only drift.
  */
-export function parseMemoryScopeDocument(text: string): MemoryScopeExport {
+export function memoryUploadOf(bytes: Uint8Array): MemoryUpload {
+  if (isZip(bytes)) return { dataBase64: toBase64(bytes) };
   let parsed: unknown;
   try {
-    parsed = JSON.parse(text);
+    parsed = JSON.parse(new TextDecoder().decode(bytes));
   } catch {
     throw new MemoryDocumentError(S.memory.importInvalidFile);
   }
@@ -60,77 +79,38 @@ export function parseMemoryScopeDocument(text: string): MemoryScopeExport {
   if (doc.files.length === 0 && typeof doc.index !== "string") {
     throw new MemoryDocumentError(S.memory.importEmptyFile);
   }
-  return doc as unknown as MemoryScopeExport;
+  return { payload: doc as unknown as MemoryScopeExport };
 }
 
-/** What the scope holds right now, as the tab already knows it. */
-export interface MemoryScopeState {
-  /** File names listed in the group. */
-  names: readonly string[];
-  /** Whether the scope has a `MEMORY.md` index. */
-  hasIndex: boolean;
-}
-
-/** What one import mode would do to that scope, name by name. */
+/** What an import would cost the group, as the server named it when it asked for confirmation. */
 export interface MemoryImportPlan {
-  /** Memories the scope does not have yet. */
-  added: string[];
-  /** Memories whose content the file would replace. */
+  /** Memories whose topic and folder the file would replace. */
   overwritten: string[];
-  /** Memories left as they are, because the scope already has that name. */
-  skipped: string[];
-  /** Memories deleted, because the file does not carry them. */
+  /** Memories deleted because the file does not carry them (`<folder>/` for a folder with no topic). */
   removed: string[];
-  /** Whether the scope's existing index would be replaced wholesale. */
+  /** Whether the group's existing index would be replaced wholesale. */
   replacesIndex: boolean;
-  /** Whether anything would be lost — the one question the confirmation exists to ask. */
-  destroys: boolean;
 }
 
-export function planMemoryImport(
-  doc: MemoryScopeExport,
-  scope: MemoryScopeState,
-  mode: MemoryImportMode,
-): MemoryImportPlan {
-  const present = new Set(scope.names);
-  const carried = new Set(doc.files.map((f) => f.name));
-  const collides = doc.files.filter((f) => present.has(f.name)).map((f) => f.name);
-  const added = doc.files.filter((f) => !present.has(f.name)).map((f) => f.name);
-  const overwritten = mode === "skip" ? [] : collides;
-  const skipped = mode === "skip" ? collides : [];
-  const removed = mode === "replace" ? [...present].filter((name) => !carried.has(name)) : [];
-  const replacesIndex = mode === "replace" && scope.hasIndex && doc.index !== null;
-  return {
-    added,
-    overwritten,
-    skipped,
-    removed,
-    replacesIndex,
-    destroys: overwritten.length > 0 || removed.length > 0 || replacesIndex,
-  };
-}
-
-/** `YYYYMMDD-HHmm` in the viewer's local time, or null when the ISO string is unreadable. */
-function fileNameStamp(exportedAt: string): string | null {
-  const d = new Date(exportedAt);
-  if (Number.isNaN(d.getTime())) return null;
-  const p = (n: number): string => String(n).padStart(2, "0");
-  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
+/** A details field the server wrote as a JSON array of names; empty when it is anything else. */
+function namesIn(raw: string | undefined): string[] {
+  try {
+    const value: unknown = JSON.parse(raw ?? "[]");
+    return Array.isArray(value) ? value.filter((n): n is string => typeof n === "string") : [];
+  } catch {
+    return [];
+  }
 }
 
 /**
- * File name of a downloaded scope document: Agent, scope, and the document's own `exportedAt`
- * rendered in the viewer's local time, so repeated exports of one scope stay apart in a
- * downloads folder. Same `<agent>-<scope>-memory-<stamp>.json` pattern as the export route's
- * Content-Disposition, whose stamp renders on the server's clock instead.
+ * The plan a refused import carries (409 `memory_import_confirm_required`), for the confirmation
+ * to name; null for any other error, which the caller reports as it is.
  */
-export function memoryDocumentFileName(
-  agentId: string,
-  scopeKey: string,
-  exportedAt: string,
-): string {
-  const stamp = fileNameStamp(exportedAt);
-  return stamp === null
-    ? `${agentId}-${scopeKey}-memory.json`
-    : `${agentId}-${scopeKey}-memory-${stamp}.json`;
+export function importConfirmPlan(err: unknown): MemoryImportPlan | null {
+  if (!(err instanceof ApiError) || err.code !== "memory_import_confirm_required") return null;
+  return {
+    overwritten: namesIn(err.details?.overwritten),
+    removed: namesIn(err.details?.removed),
+    replacesIndex: err.details?.replacesIndex === "true",
+  };
 }

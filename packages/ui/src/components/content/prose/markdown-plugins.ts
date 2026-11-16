@@ -50,11 +50,10 @@
  * after a closer is fine. What the rule gives up is a formula glued to a word, `$i$th`, which
  * stays text (`$i$-th` and `\(i\)th` render).
  */
-import remarkGfm from "remark-gfm";
+import { remarkChatMarkdown } from "@prismshadow/chat-markdown";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import type { Options } from "react-markdown";
-import { remarkAutolinkBoundary } from "./remark-autolink-boundary";
 import { remarkLiteralTildes } from "./remark-literal-tildes";
 import { rehypeMarkdownTables } from "./markdown-table";
 import { rehypeMathPunctuation } from "./math-punctuation";
@@ -97,12 +96,16 @@ const KATEX_OPTIONS = {
   maxSize: 5,
 } as const;
 
-/** The remark (Markdown -> mdast) stage. */
+/**
+ * The remark (Markdown -> mdast) stage. It reads a reply in the chat dialect
+ * (packages/chat-markdown) — GFM, with a bare URL made of ASCII URL characters only and
+ * CJK-friendly emphasis — which the server's chat channels parse with too, so a reply links and
+ * bolds the same characters in the transcript and in every chat.
+ */
 export const REMARK_PLUGINS: PluginList = [
-  remarkGfm,
+  remarkChatMarkdown,
   // Strikethrough is shown as the tildes the model typed (see remark-literal-tildes.ts).
   remarkLiteralTildes,
-  remarkAutolinkBoundary,
   // `$$` only; a lone `$` is the next plugin's, under its guarded rule.
   [remarkMath, { singleDollarTextMath: false }],
   // After remark-math, so its construct is tried first at `$` (see math-single-dollar.ts).
@@ -110,14 +113,6 @@ export const REMARK_PLUGINS: PluginList = [
   remarkMathBrackets,
   remarkMathDollars,
 ];
-
-/**
- * The remark stage of the public sites' articles (`SiteMarkdown`): GitHub-flavoured Markdown and
- * nothing else. Their posts and pages are first-party Markdown written for GitHub's renderer —
- * strikethrough means strikethrough, a `$` is a shell prompt, and their links are written as
- * links — so the extras above, which answer model output, would change how they read.
- */
-export const SITE_REMARK_PLUGINS: PluginList = [remarkGfm];
 
 /** react-markdown's rehype plugin-list type. */
 type RehypePluginList = NonNullable<Options["rehypePlugins"]>;
@@ -170,11 +165,3 @@ export const STREAMING_REHYPE_PLUGINS: RehypePluginList = [
   rehypeSingleDollarEdge,
   rehypeMathPunctuation,
 ];
-
-/**
- * The rehype stage of the public sites' articles (`SiteMarkdown`): the table pass, so a table on
- * the docs site or the blog is boxed and classified the way a chat reply's is. A host that brings
- * its own rehype stage (the blog's raw HTML) gets the pass appended after it, so a table written
- * as raw HTML is shaped too.
- */
-export const SITE_REHYPE_PLUGINS: RehypePluginList = [rehypeMarkdownTables];

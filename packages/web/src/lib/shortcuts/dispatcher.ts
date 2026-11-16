@@ -12,6 +12,7 @@
  */
 import { matchShortcut } from "./match";
 import { currentPlatform } from "./platform";
+import { commandById } from "./registry";
 import { keymap } from "./store";
 import type { CommandId } from "./types";
 
@@ -70,9 +71,9 @@ export function setShortcutBlocker(fn: (() => boolean) | null): void {
  */
 export function handleShortcutKeydown(event: KeyboardEvent): void {
   if (event.defaultPrevented) return;
-  if (blocker?.() === true) return;
   const id = matchShortcut(event, keymap(), ["global"], currentPlatform());
   if (id === null) return;
+  if (blocker?.() === true && commandById(id).overDialogs !== true) return;
   if (event.repeat) {
     if (hasCommandHandler(id)) event.preventDefault();
     return;

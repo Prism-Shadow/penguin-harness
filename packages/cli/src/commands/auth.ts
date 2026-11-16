@@ -17,6 +17,7 @@
 import { mintApiTokenOnceSeeded } from "@prismshadow/penguin-server/auth-token";
 import { liveServerLock } from "@prismshadow/penguin-server/lock";
 import type { Command } from "commander";
+import type { Messages } from "@prismshadow/penguin-server/cli";
 import {
   call,
   clearSession,
@@ -26,9 +27,10 @@ import {
   sessionFile,
   tokenFromSetCookie,
   writeSession,
-} from "../auth-session.js";
-import { resolveRootOption } from "../root-option.js";
-import type { Messages } from "../i18n.js";
+  resolveRootOption,
+} from "@prismshadow/penguin-server/cli";
+import { Bind, Component } from "@prismshadow/penguin-core/kernel";
+import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/cli";
 
 /**
  * Must match the server's SESSION_COOKIE — the name a login's Set-Cookie carries for a client
@@ -44,6 +46,9 @@ const DEFAULT_USER = "admin";
  * anchors on this rather than on position, so nothing the shell prints on its own can be
  * mistaken for a credential.
  */
+
+/** The node the host located for a key, typed with this package's commander. */
+const node = (command: CliCommandProgram): Command => command as Command;
 export const TOKEN_MARK = "---penguin-auth-token---";
 
 /**
@@ -88,9 +93,7 @@ function fail(message: string): void {
   process.exitCode = 1;
 }
 
-export function registerAuthCommand(program: Command, t: Messages): void {
-  const auth = program.command("auth").description(t.auth.desc);
-
+export function registerAuthCommand(auth: Command, t: Messages): void {
   auth
     .command("login")
     .description(t.auth.loginDesc)
@@ -256,4 +259,30 @@ export function registerAuthCommand(program: Command, t: Messages): void {
       if (opts.mark) process.stdout.write(TOKEN_MARK + "\n");
       process.stdout.write(result.token + "\n");
     });
+}
+
+/** `penguin auth`. */
+@Component({
+  contributes: {
+    "CliCommandsModule.commands": [
+      {
+        id: "cli.auth",
+        key: "auth",
+        summary: {
+          en: "Sign in to a PenguinHarness server from the terminal",
+          zh: "在终端里登录 PenguinHarness 服务",
+        },
+      },
+    ],
+  },
+})
+export class AuthCommand {
+  @Bind("cli.auth") command!: CliCommandCode<Messages>;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerAuthCommand(node(command), ctx.messages);
+      },
+    };
+  }
 }

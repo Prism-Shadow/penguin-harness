@@ -14,6 +14,12 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import {
+  buildContextSummaryText,
+  transcribeRequestError,
+  transcribeUserInput,
+} from "@prismshadow/amsp/markers";
 import { createAgent } from "../src/index.js";
 import {
   abortEvent,
@@ -33,7 +39,7 @@ import {
 import type { AmspRecord, TokenCounts } from "@prismshadow/amsp/records";
 import { GenerativeModel, groupHistoryToUniMessages } from "../src/llm/index.js";
 import { findLatestTraceFile, readTrace } from "../src/trace/index.js";
-import { agentsMdPath, tracesDir } from "../src/state/paths.js";
+import { agentsMdPath, systemConfigPath, tracesDir } from "../src/state/paths.js";
 import { stubProviderKeys } from "./provider-keys.js";
 import { seedProject } from "./seeded-project.js";
 
@@ -467,6 +473,95 @@ describe("agent.resumeSession", () => {
       // The summary is what the next run sends, and nothing of the closed context is replayed.
       expect(session.hasPendingInput()).toBe(true);
       expect(session.resumedHistory).toEqual([]);
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("a file closed by a compaction that completed without a summary stays closed: the restart has the hand-off note pending", async () => {
+    // The compaction's request was refused, so it completed with the error pair and the next
+    // context opens with the note built from this file, not with the closed context replayed.
+    const agent = await createAgent({});
+    await writeTraceFile(tmpRoot, SID, [
+      metaFor(SID, workspace),
+      taskBegin(),
+      userText("q1"),
+      requestBegin(),
+      assistantText("a1"),
+      requestEnd("completed"),
+      tokenUsage(usage(150), usage(150)),
+      compactionBegin({ reason: "context", mode: "summarize", context: 150, turns: 1 }),
+      userText("COMPACT NOW"),
+      requestBegin(),
+      requestEnd("fatal", { errorCode: "rejected", errorMessage: "prompt is too long" }),
+      compactionEnd({
+        reason: "context",
+        mode: "summarize",
+        status: "completed",
+        attempt: 1,
+        errorCode: "rejected",
+        errorMessage: "prompt is too long",
+      }),
+      taskEnd(),
+    ]);
+
+    const session = await agent.resumeSession({ sessionId: SID });
+    try {
+      expect(session.compactability()).toBe("just_compacted");
+      expect(session.hasPendingInput()).toBe(true);
+      expect(session.resumedHistory).toEqual([]);
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("the hand-off note a restart rebuilds is the template in the Agent's config at resume, filled from the closed file", async () => {
+    // The closed file's context opens for the first time at the restart, so a template edited
+    // on disk after the compaction ended is the one its note is filled from.
+    const agent = await createAgent({});
+    const closed = await writeTraceFile(tmpRoot, SID, [
+      metaFor(SID, workspace),
+      userText("q1"),
+      requestBegin(),
+      assistantText("a1"),
+      requestEnd("completed"),
+      tokenUsage(usage(150), usage(150)),
+      compactionBegin({ reason: "context", mode: "summarize", context: 150, turns: 1 }),
+      userText("COMPACT NOW"),
+      requestBegin(),
+      requestEnd("fatal", { errorCode: "rejected", errorMessage: "prompt is too long" }),
+      compactionEnd({
+        reason: "context",
+        mode: "summarize",
+        status: "completed",
+        attempt: 1,
+        errorCode: "rejected",
+        errorMessage: "prompt is too long",
+      }),
+    ]);
+    const configFile = systemConfigPath(tmpRoot, "default_project", "default_agent");
+    const config = parseYaml(await fs.readFile(configFile, "utf8")) as {
+      compaction: Record<string, unknown>;
+    };
+    config.compaction.handoff_note =
+      "Edited note.\n{{ERROR}}\n{{USER_MESSAGES}}\nSee {{TRACE_PATH}}";
+    await fs.writeFile(configFile, stringifyYaml(config), "utf8");
+
+    const session = await agent.resumeSession({ sessionId: SID });
+    try {
+      const pending = (
+        session as unknown as { engineDeps: { initialState?: { pendingSummary?: AmspRecord } } }
+      ).engineDeps.initialState?.pendingSummary;
+      expect((pending?.payload as { text?: string }).text).toBe(
+        buildContextSummaryText(
+          [
+            "Edited note.",
+            transcribeRequestError("rejected", "prompt is too long"),
+            transcribeUserInput("q1"),
+            `See ${closed}`,
+          ].join("\n"),
+        ),
+      );
     } finally {
       session.dispose();
     }

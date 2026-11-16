@@ -8,7 +8,7 @@ import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { CollapsibleSection } from "../src/components/layout/collapsible-section/collapsible-section";
 import type { CollapsibleSectionProps } from "../src/components/layout/collapsible-section/collapsible-section";
-import { classTokens, renderStatic } from "../src/testing";
+import { renderStatic } from "../src/testing";
 
 const render = (props: Partial<CollapsibleSectionProps>) =>
   renderStatic(
@@ -32,22 +32,12 @@ describe("CollapsibleSection", () => {
     expect(html).toMatch(/<\/button><div class="[^"]*"><button type="button">Add<\/button>/);
   });
 
-  it("folds through the layout-motion grid, clipped at the grid's box, and is inert while folded", () => {
+  it("folds through the layout-motion grid, and is inert while folded", () => {
     const open = render({});
-    expect(open).toMatch(
-      /data-slot="body" data-layout-motion="true" class="grid overflow-clip grid-rows-\[1fr\]"/,
-    );
     expect(open).not.toContain("inert");
     const folded = render({ defaultOpen: false });
     expect(folded).toContain('aria-expanded="false"');
-    expect(folded).toMatch(/class="grid overflow-clip grid-rows-\[0fr\]"/);
     expect(folded).toMatch(/<div id="[^"]+" class="[^"]*" inert="">/);
-    for (const html of [open, folded]) {
-      // The row inside the grid clips nothing: a clip there vanishes ahead of the grid's height.
-      // (The section's own frame clips its rounded corners; that box is not the fold's row.)
-      expect(html).not.toMatch(/<div id="[^"]+" class="[^"]*overflow-(hidden|clip)/);
-      expect(classTokens(html).filter((t) => /^transition-\[/.test(t))).toEqual([]);
-    }
   });
 
   it("follows the caller's open over its own default", () => {

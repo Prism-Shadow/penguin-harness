@@ -1,0 +1,30 @@
+{
+  "api": 1,
+  "id": "modern",
+  "names": { "zh": "白领", "en": "Frost" },
+  "version": "1.0.0",
+  "base": "modern",
+  "modes": ["light", "dark"],
+  "swatches": {
+    "light": { "canvas": "#fafafa", "ink": "#232527", "accent": "#232527" },
+    "dark": { "canvas": "#1b1c1e", "ink": "#e4e4e5", "accent": "#f5f5f6" }
+  },
+  "accent": {
+    "own": { "light": "#232527", "dark": "#f5f5f6" },
+    "presets": [
+      { "id": "forest", "swatch": "#006838" },
+      { "id": "ocean", "swatch": "#3b6ea8" },
+      { "id": "clay", "swatch": "#b8552f" },
+      { "id": "plum", "swatch": "#7a4d8f" },
+      { "id": "honey", "swatch": "#96660f" },
+      { "id": "slate", "swatch": "#5c6470" }
+    ]
+  },
+  "fonts": {
+    "sans": "MiSans",
+    "ui": "MiSans",
+    "mono": "JetBrains Mono Variable",
+    "cjk": "MiSans",
+    "display": "MiSans"
+  }
+}
