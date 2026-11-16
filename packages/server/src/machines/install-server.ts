@@ -798,7 +798,7 @@ async function carryOver(
       },
     };
   }
-  const bytes = fs.readFileSync(fetched.file);
+  const bytes = await fs.promises.readFile(fetched.file);
   const archive = `${scratch}/${path.basename(fetched.file)}`;
   say(`Sending release ${version} (${(bytes.byteLength / 1048576).toFixed(1)} MB)…`);
   const sent = await conn.stream(`cat > "${archive}"`, {

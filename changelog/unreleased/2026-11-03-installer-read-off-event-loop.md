@@ -1,15 +1,11 @@
-# Installing a machine reads the installer without parking the server
+# Installing a machine no longer parks the server while it reads the install files
 
 - **Date:** 2026-11-03
 - **Type:** fix
 - **Scope:** `server`
+- **PR:** [#1492](https://github.com/Prism-Shadow/penguin-harness/pull/1492)
 - **Issue:** [#1435](https://github.com/Prism-Shadow/penguin-harness/issues/1435)
 
 [中文版](2026-11-03-installer-read-off-event-loop.zh.md)
 
-`installOnRemote` read the installer asset with `fs.readFileSync` inside the request path. The read of that asset — tens to hundreds of megabytes, possibly on a slow or network-mounted directory — now goes through `fs.promises.readFile`, so the server's event loop keeps answering other requests while an install is being prepared.
-
-## Details
-
-- The read keeps its existing failure shape: a missing or unreadable installer still ends the install at the `prepare the installer` step with the filesystem's own message.
-- A regression test parks the read on a FIFO installer asset and checks that a timer still fires before the bytes are fed, then lets the install run on over its channel to the `installed` outcome.
+A machine install read two files synchronously on its request path: the installer script, and, for a machine that cannot reach GitHub or the release mirror, the release package this server fetched to send over ssh (tens of megabytes). Both reads went through `fs.promises.readFile`, so the server kept answering other requests while an install was being prepared. A missing or unreadable installer still ended the install at the `prepare the installer` step with the filesystem's own message.
