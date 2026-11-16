@@ -18,6 +18,8 @@
  * - A code card mutes `#` comment lines only, and its copy button names the action.
  * - The site bar lists every page once, in the shared order, under the host's words, and marks
  *   the landing page's download page current when it is opened with a trailing slash.
+ * - Its row ends in a closed "More" menu holding AMSP and the gallery, which reads as current
+ *   while one of them is; the phone menu lists those two under "More" as a named group.
  */
 import { createElement as h } from "react";
 import type { ReactElement } from "react";
@@ -25,7 +27,7 @@ import { describe, expect, it } from "vitest";
 import { SiteCodeCard } from "../src/components/site/site-code-card";
 import { SiteFooter } from "../src/components/site/site-footer";
 import { SiteNavLinks } from "../src/components/site/site-header";
-import type { SiteLinkProps } from "../src/components/site/site-header";
+import type { SiteLinkProps } from "../src/components/site/site-link";
 import { landingPageAt, siteNavLinks } from "../src/components/site/site-nav";
 import type { SiteNavLabels } from "../src/components/site/site-nav";
 import { highlightSiteCode } from "../src/components/site/site-highlight";
@@ -233,26 +235,33 @@ describe("the site bar", () => {
     leaderboards: "Leaderboards",
     amsp: "AMSP",
     docs: "Docs",
-    gallery: "Gallery",
+    gallery: "Theme Packs",
+    more: "More",
     github: "GitHub",
     openMenu: "Open menu",
     closeMenu: "Close menu",
   };
 
-  const anchorsAt = (pathname: string) => {
-    const links = siteNavLinks({ siteRoot: "/", labels, current: landingPageAt(pathname) });
-    const html = renderStatic(h(SiteNavLinks, { links }));
-    return [...html.matchAll(/<a ([^>]*)>([^<]*)<\/a>/g)].map(([, attrs, text]) => ({
+  const barAt = (pathname: string, mobile = false) =>
+    renderStatic(
+      h(SiteNavLinks, {
+        links: siteNavLinks({ siteRoot: "/", labels, current: landingPageAt(pathname) }),
+        mobile,
+      }),
+    );
+  const anchorsAt = (pathname: string, mobile = false) =>
+    [...barAt(pathname, mobile).matchAll(/<a ([^>]*)>([^<]*)<\/a>/g)].map(([, attrs, text]) => ({
       text,
       current: attrs!.includes('aria-current="page"'),
     }));
-  };
+  /** The "More" trigger in the row, as `<button …>More`. */
+  const moreTriggerAt = (pathname: string) => /<button [^>]*>More/.exec(barAt(pathname))?.[0];
   const currentAt = (pathname: string) =>
     anchorsAt(pathname)
       .filter((anchor) => anchor.current)
       .map((anchor) => anchor.text);
 
-  it("lists every page in order and marks /download/ as the download page", () => {
+  it("lists the row's pages in order, ends it in a closed More menu, and marks /download/", () => {
     expect(anchorsAt("/download/").map((anchor) => anchor.text)).toEqual([
       "Home",
       "Blog",
@@ -260,11 +269,30 @@ describe("the site bar", () => {
       "Plugins",
       "Benchmarks",
       "Leaderboards",
-      "AMSP",
       "Docs",
-      "Gallery",
     ]);
+    expect(moreTriggerAt("/download/")).toContain('aria-expanded="false"');
+    expect(moreTriggerAt("/download/")).not.toContain("data-current");
     expect(currentAt("/download/")).toEqual(["Download"]);
+  });
+
+  it("marks More as current on the AMSP page, and AMSP inside it in the phone menu", () => {
+    expect(moreTriggerAt("/amsp")).toContain("data-current");
+    expect(currentAt("/amsp")).toEqual([]);
+    const group =
+      /<div role="group" aria-labelledby="([^"]+)"[^>]*><span id="\1"[^>]*>More<\/span>(.*?)<\/div>/.exec(
+        barAt("/amsp", true),
+      );
+    expect(group).not.toBeNull();
+    expect(
+      [...group![2]!.matchAll(/<a ([^>]*)>([^<]*)<\/a>/g)].map(([, attrs, text]) => [
+        text,
+        attrs!.includes('aria-current="page"'),
+      ]),
+    ).toEqual([
+      ["AMSP", true],
+      ["Theme Packs", false],
+    ]);
   });
 
   it("marks a list page as current on its detail pages, and nothing on a lookalike path", () => {

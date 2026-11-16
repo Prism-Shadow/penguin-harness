@@ -28,7 +28,8 @@ export const en: Strings = {
     leaderboards: "Leaderboards",
     amsp: "AMSP",
     docs: "Docs",
-    gallery: "Gallery",
+    gallery: "Theme Packs",
+    more: "More",
     github: "GitHub",
     openMenu: "Open menu",
     closeMenu: "Close menu",
@@ -172,7 +173,7 @@ export const en: Strings = {
   },
 
   live: {
-    open: "Open in the gallery",
+    open: "Open in Theme Packs",
     loading: "Loading the live demo…",
     evolutionFrame: "A self-evolution round in a conversation (live demo)",
   },

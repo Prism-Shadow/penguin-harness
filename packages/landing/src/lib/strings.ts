@@ -27,7 +27,8 @@ export const zh = {
     leaderboards: "榜单",
     amsp: "AMSP",
     docs: "文档",
-    gallery: "画廊",
+    gallery: "主题包",
+    more: "更多",
     github: "GitHub",
     openMenu: "打开菜单",
     closeMenu: "关闭菜单",
@@ -173,8 +174,8 @@ export const zh = {
 
   /** A live frame's window bar and its stand-in (components/live-app-frame.tsx). */
   live: {
-    /** The link to the same screen in the component gallery, full size. */
-    open: "在画廊中打开",
+    /** The link to the same screen in the component gallery (Theme Packs), full size. */
+    open: "在主题包中打开",
     loading: "正在载入实时演示…",
     evolutionFrame: "一轮自进化的对话（实时演示）",
   },
