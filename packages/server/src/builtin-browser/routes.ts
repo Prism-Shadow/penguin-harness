@@ -425,9 +425,9 @@ export function builtinBrowserRoutes(
     return c.json({ result });
   });
 
-  app.get("/import/sources", (c) =>
+  app.get("/import/sources", async (c) =>
     c.json({
-      sources: browser.listImportSources(queryActor(c)),
+      sources: await browser.listImportSources(queryActor(c)),
     } satisfies BuiltinBrowserImportSourcesResponse),
   );
 
