@@ -1448,6 +1448,7 @@ export const en: GalleryStrings = {
         "| Setting | Value |\n| --- | --- |\n| Model | `gpt-5.6-luna` |\n| Approval | Ask before writing files |\n| Sandbox | Workspace only |\n| Context window | 400k tokens |",
       code: "Code",
       surface: "Code surface: line numbers, no frame",
+      surfaceLong: "A long file, wrapped: chunks of 100 lines, each drawn as it nears the view",
       diff: "Diff",
       unified: "Unified",
       split: "Side by side",
