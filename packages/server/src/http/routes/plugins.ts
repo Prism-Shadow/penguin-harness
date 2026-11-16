@@ -448,8 +448,18 @@ async function prefixEntries(
 
 export function pluginRegistryRoutes(options: PluginRoutesOptions = {}): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
-  // Built once per App, so the cache outlives a request rather than being rebuilt per page load.
-  const registries = options.registries ?? resolveRegistries(options);
+  // The sources are read per listing, from the plugin-index settings group; the registries
+  // for the list as last read are kept until the list changes, so the caches (and the park)
+  // outlive a listing that changes nothing and a save rebuilds them without a restart.
+  let current: { urls: string; registries: readonly PluginRegistry[] } | null = null;
+  const registries = (): readonly PluginRegistry[] => {
+    if (options.registries !== undefined) return options.registries;
+    const urls = (options.indexUrl?.() ?? []).join(" ");
+    if (current === null || current.urls !== urls) {
+      current = { urls, registries: resolveRegistries(options) };
+    }
+    return current.registries;
+  };
   const bases = options.bases ?? (() => []);
   const prefix = options.prefix ?? (() => null);
 
