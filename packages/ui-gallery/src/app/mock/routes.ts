@@ -117,6 +117,7 @@ import type {
   SessionInfo,
   SessionProcessesResponse,
   SessionResponse,
+  SessionsArchiveResponse,
   SessionsBatchResponse,
   SessionsResponse,
   SessionTracesResponse,
@@ -1144,6 +1145,21 @@ router
       return { agentId, ok: true, ...page };
     });
     return { results };
+  })
+  // The sidebar's "delete workspace": every active, own row of one Workspace group is archived.
+  .post("/api/projects/:projectId/sessions/archive", ({ store, body }): SessionsArchiveResponse => {
+    const group = record(body).workspaceGroup;
+    if (typeof group !== "string" || group.trim() === "") {
+      fail(400, "bad_request", "workspaceGroup must be a non-empty string.");
+    }
+    let done = 0;
+    for (const row of store.f.sessions) {
+      if (categoryOf(row) !== "active" || isOrgRow(row)) continue;
+      if (group === "temp" ? !isTemp(row.workspace) : row.workspace !== group) continue;
+      store.patchSession(row.sessionId, { archived: true });
+      done += 1;
+    }
+    return { done };
   })
   .get("/api/projects/:projectId/dirs", ({ store, query }): DirListResponse => {
     const path = query.get("path") || "/home/demo";

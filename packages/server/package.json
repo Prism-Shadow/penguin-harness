@@ -65,6 +65,10 @@
     "./plugin": {
       "types": "./dist/plugin/index.d.ts",
       "import": "./dist/plugin/index.js"
+    },
+    "./cli": {
+      "types": "./dist/cli/index.d.ts",
+      "import": "./dist/cli/index.js"
     }
   },
   "main": "./dist/index.js",
@@ -100,6 +104,7 @@
     "@penguinharness/openskill-rsi-toolkit": "workspace:*",
     "@penguinharness/opro-rsi-toolkit": "workspace:*",
     "@penguinharness/penguin-support": "workspace:*",
+    "@penguinharness/rrsi-rsi-toolkit": "workspace:*",
     "@penguinharness/skill-porting": "workspace:*",
     "@penguinharness/skilladam-rsi-toolkit": "workspace:*",
     "@penguinharness/skillopt-rsi-toolkit": "workspace:*",

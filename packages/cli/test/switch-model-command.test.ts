@@ -4,7 +4,7 @@ import {
   parseSwitchModelCommand,
   switchModelRefusal,
 } from "../src/switch-model-command.js";
-import { getMessages } from "../src/i18n.js";
+import { getMessages } from "@prismshadow/penguin-server/cli";
 
 describe("parseSwitchModelCommand", () => {
   it("bare /switch-model asks to show the current model", () => {

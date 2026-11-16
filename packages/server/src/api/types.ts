@@ -2420,6 +2420,17 @@ export interface SessionsBatchResponse {
   results: SessionBatchResult[];
 }
 
+/** POST /api/projects/:p/sessions/archive — archives every active Session of one Workspace group. */
+export interface SessionsArchiveRequest {
+  /** The group's path, or the merged temporary group's sentinel (`temp`) — the list's `workspaceGroup`. */
+  workspaceGroup: string;
+}
+
+export interface SessionsArchiveResponse {
+  /** Sessions this call archived. */
+  done: number;
+}
+
 /** Server directory browsing (the Workspace picker): starts from the home directory by default, can navigate up to the root. */
 export interface DirEntryInfo {
   name: string;

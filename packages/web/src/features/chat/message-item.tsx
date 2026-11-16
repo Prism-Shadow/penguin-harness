@@ -229,8 +229,14 @@ function ReconnectLine({
       <RetryRunButton onRetry={retry} />
     ) : null;
   // A status region, so a change of phase is announced; the seconds are not (CountdownText).
+  // Inside a work group (`!item.gaveUp`) the row matches the horizontal inset of the thinking and
+  // tool rows; a ladder that gave up sits outside the group on the transcript's own margin.
   return (
-    <div role="status" data-retry-phase={notice.phase}>
+    <div
+      role="status"
+      data-retry-phase={notice.phase}
+      className={item.gaveUp ? undefined : "px-3 py-0.5"}
+    >
       <MessageBubble
         variant="notice"
         actions={lineActions(

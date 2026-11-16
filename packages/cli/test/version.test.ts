@@ -14,7 +14,7 @@ import type { VersionReport } from "@prismshadow/penguin-core";
 import { versionReport } from "@prismshadow/penguin-server/version-report";
 import { registerVersionCommand } from "../src/commands/version.js";
 import { cli } from "../src/index.js";
-import { getMessages } from "../src/i18n.js";
+import { getMessages } from "@prismshadow/penguin-server/cli";
 
 /** Collects everything `body` writes to stdout, alongside whatever it returns. */
 async function captureStdout<T>(body: () => Promise<T>): Promise<{ out: string; result: T }> {

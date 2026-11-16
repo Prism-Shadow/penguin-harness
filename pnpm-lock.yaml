@@ -207,6 +207,9 @@ importers:
       '@penguinharness/penguin-support':
         specifier: workspace:*
         version: link:../../plugins/penguin-support
+      '@penguinharness/rrsi-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/rrsi-rsi-toolkit
       '@penguinharness/skill-porting':
         specifier: workspace:*
         version: link:../../plugins/skill-porting
@@ -383,6 +386,9 @@ importers:
       '@penguinharness/penguin-support':
         specifier: workspace:*
         version: link:../../plugins/penguin-support
+      '@penguinharness/rrsi-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/rrsi-rsi-toolkit
       '@penguinharness/skill-porting':
         specifier: workspace:*
         version: link:../../plugins/skill-porting
@@ -576,6 +582,9 @@ importers:
       '@penguinharness/penguin-support':
         specifier: workspace:*
         version: link:../../plugins/penguin-support
+      '@penguinharness/rrsi-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/rrsi-rsi-toolkit
       '@penguinharness/sandbox-bwrap':
         specifier: workspace:*
         version: link:../../plugins/sandbox-bwrap
@@ -711,6 +720,9 @@ importers:
       '@penguinharness/penguin-support':
         specifier: workspace:*
         version: link:../../plugins/penguin-support
+      '@penguinharness/rrsi-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/rrsi-rsi-toolkit
       '@penguinharness/skill-porting':
         specifier: workspace:*
         version: link:../../plugins/skill-porting
@@ -1286,6 +1298,12 @@ importers:
         version: file:packages/core(ws@8.21.0)
 
   plugins/penguin-support:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
+
+  plugins/rrsi-rsi-toolkit:
     devDependencies:
       '@prismshadow/penguin-core':
         specifier: workspace:*
@@ -2433,6 +2451,9 @@ packages:
 
   '@penguinharness/penguin-support@file:plugins/penguin-support':
     resolution: {directory: plugins/penguin-support, type: directory}
+
+  '@penguinharness/rrsi-rsi-toolkit@file:plugins/rrsi-rsi-toolkit':
+    resolution: {directory: plugins/rrsi-rsi-toolkit, type: directory}
 
   '@penguinharness/skill-porting@file:plugins/skill-porting':
     resolution: {directory: plugins/skill-porting, type: directory}
@@ -7125,6 +7146,8 @@ snapshots:
 
   '@penguinharness/penguin-support@file:plugins/penguin-support': {}
 
+  '@penguinharness/rrsi-rsi-toolkit@file:plugins/rrsi-rsi-toolkit': {}
+
   '@penguinharness/skill-porting@file:plugins/skill-porting': {}
 
   '@penguinharness/skilladam-rsi-toolkit@file:plugins/skilladam-rsi-toolkit': {}
@@ -7248,6 +7271,7 @@ snapshots:
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
       '@penguinharness/penguin-support': file:plugins/penguin-support
+      '@penguinharness/rrsi-rsi-toolkit': file:plugins/rrsi-rsi-toolkit
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
       '@penguinharness/skillopt-rsi-toolkit': file:plugins/skillopt-rsi-toolkit
@@ -7297,6 +7321,7 @@ snapshots:
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
       '@penguinharness/penguin-support': file:plugins/penguin-support
+      '@penguinharness/rrsi-rsi-toolkit': file:plugins/rrsi-rsi-toolkit
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
       '@penguinharness/skillopt-rsi-toolkit': file:plugins/skillopt-rsi-toolkit
@@ -7406,6 +7431,7 @@ snapshots:
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
       '@penguinharness/penguin-support': file:plugins/penguin-support
+      '@penguinharness/rrsi-rsi-toolkit': file:plugins/rrsi-rsi-toolkit
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
       '@penguinharness/skillopt-rsi-toolkit': file:plugins/skillopt-rsi-toolkit
@@ -7466,6 +7492,7 @@ snapshots:
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
       '@penguinharness/penguin-support': file:plugins/penguin-support
+      '@penguinharness/rrsi-rsi-toolkit': file:plugins/rrsi-rsi-toolkit
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
       '@penguinharness/skillopt-rsi-toolkit': file:plugins/skillopt-rsi-toolkit
@@ -7526,6 +7553,7 @@ snapshots:
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
       '@penguinharness/penguin-support': file:plugins/penguin-support
+      '@penguinharness/rrsi-rsi-toolkit': file:plugins/rrsi-rsi-toolkit
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
       '@penguinharness/skillopt-rsi-toolkit': file:plugins/skillopt-rsi-toolkit

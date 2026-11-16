@@ -49,6 +49,7 @@ export function BenchmarksPage() {
   return (
     <HubList
       title={S.hub.benchmarks.title}
+      description={S.hub.benchmarks.description}
       source={{ href: BENCHMARK_REPO_URL, label: "Prism-Shadow/penguin-harness-benchmark" }}
       items={benchmarks}
       keyOf={(benchmark) => benchmark.id}
