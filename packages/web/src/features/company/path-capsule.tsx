@@ -13,10 +13,11 @@
  * parser already decided holds: a path inside a fenced block or a link's label stays as it is,
  * and a path the parser split — `__init__` read as emphasis — is left whole as text rather than
  * capsuled in part. A link whose destination is a data path, the `[label](…)` a writer cites a
- * file with, becomes one capsule reading its label. A path written with `\` is the exception to
- * taking the parser's text: it took some of its separators for escapes, so its capsule takes the
- * path from the source (spellAsWritten). A capsule reaches React as `<samp>`: no Markdown syntax
- * and no KaTeX output produces one, so claiming it in the components map collides with nothing.
+ * file with, becomes one capsule reading its label (outside a conversation, whose links open their
+ * file already). A path written with `\` is the exception to taking the parser's text: it took
+ * some of its separators for escapes, so its capsule takes the path from the source
+ * (spellAsWritten). A capsule reaches React as `<samp>`: no Markdown syntax and no KaTeX output
+ * produces one, so claiming it in the components map collides with nothing.
  */
 import { useMemo, type ReactNode } from "react";
 
@@ -129,7 +130,16 @@ function sourceOf(node: MdNode, source: string): string {
   return start === undefined || end === undefined ? (node.value ?? "") : source.slice(start, end);
 }
 
-function walk(parent: MdNode, scope: PathScope, source: string): void {
+/**
+ * What the pass works with: the Project, and whether a link into it becomes a capsule. A
+ * conversation keeps its links (`links: false`): there a link to a Workspace file already opens
+ * it in the Files panel, which a capsule's copy would take away.
+ */
+interface CapsuleScope extends PathScope {
+  links?: boolean;
+}
+
+function walk(parent: MdNode, scope: CapsuleScope, source: string): void {
   const children = parent.children;
   if (!children) return;
   for (let i = 0; i < children.length; i += 1) {
@@ -139,7 +149,7 @@ function walk(parent: MdNode, scope: PathScope, source: string): void {
       if (path !== null) children[i] = capsuleNode(path);
       continue;
     }
-    if (node.type === "link" && typeof node.url === "string") {
+    if (scope.links !== false && node.type === "link" && typeof node.url === "string") {
       const path = codePath(node.url, scope);
       if (path !== null) {
         const label = plainText(node).trim();
@@ -184,7 +194,7 @@ function walk(parent: MdNode, scope: PathScope, source: string): void {
 }
 
 /** The remark pass: data paths in prose and whole-path inline code become capsule nodes. */
-export function remarkPathCapsules(scope: PathScope) {
+export function remarkPathCapsules(scope: CapsuleScope) {
   return (tree: MdNode, file: { value?: unknown }): void =>
     walk(tree, scope, String(file.value ?? ""));
 }
@@ -217,8 +227,8 @@ export function PathMarkdown({ text, scope }: { text: string; scope: PathScope }
 
 /**
  * Draws the data paths in every Markdown body below as capsules: an organization's conversations
- * (a desk, a ticket session), whose replies cite the organization's files. `projectId` null draws
- * them as written.
+ * (a desk, a ticket session), whose replies cite the organization's files. Its links stay links.
+ * `projectId` null draws them as written.
  */
 export function PathCapsulesProvider({
   projectId,
@@ -231,7 +241,10 @@ export function PathCapsulesProvider({
     () =>
       projectId === null
         ? null
-        : { plugins: [[remarkPathCapsules, { projectId }]], components: PATH_COMPONENTS },
+        : {
+            plugins: [[remarkPathCapsules, { projectId, links: false }]],
+            components: PATH_COMPONENTS,
+          },
     [projectId],
   );
   return <MdExtensionsProvider extensions={extensions}>{children}</MdExtensionsProvider>;

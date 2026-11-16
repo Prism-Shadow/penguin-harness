@@ -12,6 +12,6 @@ A file an employee cites in a channel message or in an organization's conversati
 
 ## Details
 
-- CommonMark reads no link in `[label](<app_data_dir>/…)`, since a destination that opens with `<` ends at the first `>`. The capsule pass reads the citation from the text the parser left. A Markdown link whose destination is a path in the Project's data directory becomes a labelled capsule too. Every other link stays a link.
+- CommonMark reads no link in `[label](<app_data_dir>/…)`, since a destination that opens with `<` ends at the first `>`. The capsule pass reads the citation from the text the parser left. In channels and tickets, a Markdown link whose destination is a path in the Project's data directory becomes a labelled capsule too. A conversation keeps its links, so a link to a Workspace file still opens in the Files panel. Every other link stays a link.
 - Paths in other conversations are drawn as before.
 - The UI package's `Md` takes extra remark passes and element overrides from `MdExtensionsProvider`, so a surface can reach Markdown drawn deep inside a package component.

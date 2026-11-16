@@ -8,7 +8,8 @@
  * A writer may name the path: `[label](<app_data_dir>/…)`, which CommonMark leaves as text, and a
  * Markdown link whose destination is a data path both draw one capsule reading the label, while a
  * link anywhere else stays a link. An organization's conversation draws its replies' paths the
- * same way through PathCapsulesProvider, and any other conversation leaves them as written.
+ * same way through PathCapsulesProvider but keeps its links, and any other conversation leaves
+ * them as written.
  */
 import { describe, expect, it } from "vitest";
 import { createElement } from "react";
@@ -348,7 +349,8 @@ describe("ticket Markdown with capsules", () => {
 });
 
 describe("an organization's conversation", () => {
-  const reply = `Done. [Report](${LAB}/workspace/report.md) and ${LAB}/workspace/data/`;
+  const linked = "/home/ada/.penguin/data/default_project/organizations/co_lab/workspace/plan.md";
+  const reply = `Done. [Report](${LAB}/workspace/report.md) and ${LAB}/workspace/data/, [plan](${linked})`;
   const render = (projectId: string | null) =>
     renderToStaticMarkup(
       createElement(PathCapsulesProvider, {
@@ -362,6 +364,10 @@ describe("an organization's conversation", () => {
     expect(capsuleCount(html)).toBe(2);
     expect(html).toContain(">Report</span></button>");
     expect(html).toContain(">data</span></button>");
+  });
+
+  it("keeps a Markdown link a link, so a link into the Workspace still opens in the Files panel", () => {
+    expect(render("default_project")).toContain(`href="${linked}"`);
   });
 
   it("leaves them as written in any other conversation", () => {
