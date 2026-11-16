@@ -924,7 +924,9 @@ export class SessionManager {
     childSessionId: string,
     messages: AmspRecord[],
   ): Promise<SubagentMessageOutcome> {
-    const entry = await this.ensureEntry(sessionId);
+    // Loaded under the lock every other load takes: two concurrent loads would leave two
+    // runtimes, and the one dropped from the table would escape the Session's deletion.
+    const entry = await this.withLock(sessionId, () => this.ensureEntry(sessionId));
     entry.lastActivityMs = Date.now();
     const childRow = this.deps.sessions.findById(childSessionId);
     const resume =
@@ -2052,9 +2054,14 @@ export class SessionManager {
    * settles, so interrupt cleanup never races a dying environment. Deleting a Session /
    * Agent / Project is the one intent that must also end the background processes the
    * conversation started (a dev server surviving its deleted conversation is
-   * unreachable from every UI, running forever).
+   * unreachable from every UI, running forever). Subagent children are not the drive's:
+   * their rounds stop at once, or they go on sending requests while it settles. Resolves
+   * once the drive and the children's cancellation writes are done.
    */
   private disposeRemoved(entry: RuntimeEntry): Promise<void> {
+    for (const child of entry.session.listBackgroundSubagents?.() ?? []) {
+      entry.session.abortBackgroundSubagentRun?.(child.sessionId);
+    }
     const dispose = (): void | Promise<void> => entry.session.dispose?.();
     return entry.running ? entry.running.then(dispose, dispose) : Promise.resolve(dispose());
   }
@@ -2352,14 +2359,10 @@ export class SessionManager {
       this.entries.delete(sessionId);
       discardedBackgroundTasks = existing.backgroundTasks;
     }
+    const notFound = (): HttpError =>
+      new HttpError(404, "session_not_found", "Session does not exist or you do not have access.");
     const row = this.deps.sessions.findById(sessionId);
-    if (!row) {
-      throw new HttpError(
-        404,
-        "session_not_found",
-        "Session does not exist or you do not have access.",
-      );
-    }
+    if (!row) throw notFound();
     await this.refreshProviderCredentialIfNeeded(row);
     // Captured before the (awaited) load: an invalidation racing with the load leaves
     // this entry stale, so the access after next rebuilds it with the new values.
@@ -2380,9 +2383,12 @@ export class SessionManager {
     // don't rebuild the entry (avoids reviving an orphaned Trace).
     this.assertSessionNotDeleting(row.sessionId);
     this.assertAgentNotDeleting(row.sessionId);
+    // A deletion can also begin and end within one load: the row is the last word.
+    const current = this.deps.sessions.findById(row.sessionId);
+    if (current === null) throw notFound();
     // A thinking-level PATCH that landed during the (awaited) load updated the row but found
     // no entry to assign, and the loader applied the snapshot's level: re-read the pin.
-    const pin = this.deps.sessions.findById(row.sessionId)?.thinkingLevel;
+    const pin = current.thinkingLevel;
     if (pin && pin !== row.thinkingLevel) session.thinkingLevel = pin;
     let currentId = row.sessionId;
     if (session.sessionId !== row.sessionId) {

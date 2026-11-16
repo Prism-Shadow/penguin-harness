@@ -84,8 +84,8 @@ export class ManagedSubagentSession {
   private readonly textBuffer = new CappedTextBuffer(OUTPUT_BUFFER_CAP, "earlier subagent output");
 
   private isRunning = false;
-  private runCompletion: Promise<void> = Promise.resolve();
-  private handleDisposal: Promise<void> | null = null;
+  /** The current round, then the handle's release after a kill: what whenSettled resolves on. */
+  private settled: Promise<void> = Promise.resolve();
   private exitInfo: SubagentExit | null = null;
   private killed = false;
 
@@ -176,14 +176,12 @@ export class ManagedSubagentSession {
     this.reportCurrentRun = opts?.suppressDoneReport !== true;
     this.runCtrl = new AbortController();
     this.notifyState();
-    this.runCompletion = this.pump(messages, this.runCtrl);
-    // Hosts observe cleanup errors through whenSettled; background pumps have no caller.
-    void this.runCompletion.catch(() => {});
+    this.settled = this.pump(messages, this.runCtrl);
   }
 
-  /** Waits for the current round's Trace writes and resource cleanup to finish. */
+  /** Resolves once the current round has finished writing, its release after a kill included. */
   whenSettled(): Promise<void> {
-    return this.runCompletion;
+    return this.settled;
   }
 
   /**
@@ -352,26 +350,13 @@ export class ManagedSubagentSession {
     this.abortCtrl.abort();
     for (const req of [...this.approvals]) this.settle(req, "deny");
     // If running, released by pump's finally after it finishes; otherwise released immediately.
-    if (!this.isRunning) this.runCompletion = this.disposeHandle();
+    if (!this.isRunning) this.settled = Promise.resolve(this.handle.dispose());
     this.wakeSignal.notify();
   }
 
   /** Synchronous hard-kill path: the child Session runs in-process with no separate OS resources, so this is equivalent to `kill`. */
   killHard(): void {
     this.kill();
-  }
-
-  /** Starts release synchronously, but retains asynchronous descendant cleanup for callers. */
-  private disposeHandle(): Promise<void> {
-    if (!this.handleDisposal) {
-      try {
-        this.handleDisposal = Promise.resolve(this.handle.dispose());
-      } catch (error) {
-        this.handleDisposal = Promise.reject(error);
-      }
-      void this.handleDisposal.catch(() => {});
-    }
-    return this.handleDisposal;
   }
 
   // -------------------------------------------------------------------------
@@ -453,7 +438,8 @@ export class ManagedSubagentSession {
       this.exitInfo = { status: "failed", note: `[subagent error: ${message}]` };
     } finally {
       try {
-        if (this.killed) await this.disposeHandle();
+        // The round is over only once the killed child's own release (its children's) is.
+        if (this.killed) await this.handle.dispose();
       } finally {
         this.isRunning = false;
         this.wakeSignal.notify();

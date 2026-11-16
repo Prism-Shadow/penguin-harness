@@ -9,6 +9,7 @@
  * - A billed request with an abnormal finish counts once; its unbilled retry still counts separately.
  * - Interleaved main and child sessions cannot suppress each other's failed requests.
  * - Compaction usage without streamed request boundaries does not hide the next request's failure.
+ * - A request that outlives its Project's deletion records nothing.
  * - A compaction's own requests, streamed inside its span (tool rounds included), are billed by
  *   their usage alone: a failed attempt is the compaction's failure, no failed request row, and
  *   the request after the span is recorded as ever.
@@ -82,15 +83,34 @@ function meta(sessionId: string, modelId: string, provider = "custom"): SessionM
 describe("usage-recorder", () => {
   let db: DatabaseSync;
   let repo: UsageRepo;
+  /** The Projects the recorder finds (its one read of them). */
+  let existing: Set<string>;
+  const projects = {
+    findById: (projectId: string) => (existing.has(projectId) ? { projectId } : null),
+  };
 
   beforeEach(() => {
     db = openDatabase(":memory:");
     repo = wire(UsageRepo, { db: db });
+    existing = new Set([CTX.projectId]);
   });
   afterEach(() => db.close());
 
+  it("a request that outlives its Project's deletion records nothing, its usage nor its failure", async () => {
+    // The deletion waits a bounded time for the Project's runs and then drops its rows: what
+    // lands later would outlive the Project, and count for a new one given the same id.
+    const rec = wire(UsageRecorder, { usage: repo, projects, clock: { now: () => new Date() } });
+    await rec.record(CTX, requestBegin());
+    existing.delete(CTX.projectId);
+    await rec.record(CTX, tokenUsage(counts(12), counts(12)));
+    await rec.record(CTX, requestEnd("completed"));
+    await rec.record(CTX, requestBegin());
+    await rec.record(CTX, requestEnd("retryable", { errorCode: "network" }));
+    expect(db.prepare("SELECT * FROM usage_records").all()).toEqual([]);
+  });
+
   it("token_usage → one row (the request bucket; only Tokens persisted, never cost)", async () => {
-    const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
+    const rec = wire(UsageRecorder, { usage: repo, projects, clock: { now: () => new Date() } });
     await rec.record(CTX, tokenUsage(counts(1000), counts(115)));
     const rows = db.prepare("SELECT * FROM usage_records").all();
     expect(rows).toHaveLength(1);
@@ -103,7 +123,7 @@ describe("usage-recorder", () => {
   });
 
   it("a request cut off at its output cap is metered by its token_usage and adds no failure row; a failed one adds a 0-token row", async () => {
-    const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
+    const rec = wire(UsageRecorder, { usage: repo, projects, clock: { now: () => new Date() } });
     await rec.record(CTX, tokenUsage(counts(500), counts(500)));
     await rec.record(
       CTX,
@@ -122,7 +142,7 @@ describe("usage-recorder", () => {
   });
 
   it("a sub-session's session_meta registers the origin→model mapping; token_usage is attributed via it", async () => {
-    const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
+    const rec = wire(UsageRecorder, { usage: repo, projects, clock: { now: () => new Date() } });
     const childMeta = withOrigin(
       sessionMeta(meta("session-child", "child-model")),
       "session-child",
@@ -136,7 +156,7 @@ describe("usage-recorder", () => {
   });
 
   it("counts a billed abnormal finish once and records its unbilled retry separately", async () => {
-    const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
+    const rec = wire(UsageRecorder, { usage: repo, projects, clock: { now: () => new Date() } });
     await rec.record(CTX, requestBegin());
     await rec.record(CTX, tokenUsage(counts(115), counts(115)));
     // GenerativeModel reports usage even when an unknown finish reason returns malformed.
@@ -153,7 +173,7 @@ describe("usage-recorder", () => {
   it.each(["another session", "child session"])(
     "keeps metering separate from an interleaved %s",
     async (kind) => {
-      const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
+      const rec = wire(UsageRecorder, { usage: repo, projects, clock: { now: () => new Date() } });
       const otherCtx = kind === "another session" ? { ...CTX, sessionId: "session-other" } : CTX;
       const other = (msg: Parameters<UsageRecorder["record"]>[1]) =>
         kind === "child session" ? withOrigin(msg, "session-child") : msg;
@@ -170,7 +190,7 @@ describe("usage-recorder", () => {
   );
 
   it("keeps a failure after compaction usage without streamed request boundaries", async () => {
-    const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
+    const rec = wire(UsageRecorder, { usage: repo, projects, clock: { now: () => new Date() } });
     // Compaction streams token_usage, but its request_begin/request_end stay in the Trace.
     await rec.record(CTX, tokenUsage(counts(115), counts(115)));
     await rec.record(CTX, requestBegin());
@@ -182,7 +202,7 @@ describe("usage-recorder", () => {
   });
 
   it("bills a compaction's requests by their usage alone, and records the request after its span as ever", async () => {
-    const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
+    const rec = wire(UsageRecorder, { usage: repo, projects, clock: { now: () => new Date() } });
     for (const msg of [
       compactionBegin({ reason: "manual", mode: "summarize", context: 900, turns: 2 }),
       // A tool round's request, then a summary attempt the transport dropped, then the summary.
@@ -208,20 +228,20 @@ describe("usage-recorder", () => {
   });
 
   it("falls back to the main Session's Model when the origin mapping is missing", async () => {
-    const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
+    const rec = wire(UsageRecorder, { usage: repo, projects, clock: { now: () => new Date() } });
     await rec.record(CTX, withOrigin(tokenUsage(counts(5), counts(5)), "session-unknown"));
     const row = db.prepare("SELECT model_id FROM usage_records").get()!;
     expect(row.model_id).toBe("main-model");
   });
 
   it("non-token_usage messages are a no-op", async () => {
-    const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
+    const rec = wire(UsageRecorder, { usage: repo, projects, clock: { now: () => new Date() } });
     await rec.record(CTX, sessionMeta(meta("session-main", "main-model")));
     expect(db.prepare("SELECT COUNT(*) AS n FROM usage_records").get()!.n).toBe(0);
   });
 
   it("the origin mapping is capped: past the limit the earliest entry is evicted and falls back to the main Session's Model", async () => {
-    const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
+    const rec = wire(UsageRecorder, { usage: repo, projects, clock: { now: () => new Date() } });
     for (let i = 0; i <= ORIGIN_MODELS_MAX; i++) {
       // ORIGIN_MODELS_MAX + 1 entries total: the earliest, sub-0, gets evicted.
       await rec.record(CTX, withOrigin(sessionMeta(meta(`sub-${i}`, "sub-model")), `sub-${i}`));
