@@ -783,6 +783,9 @@ importers:
       unified:
         specifier: ^11.0.5
         version: 11.0.5
+      which:
+        specifier: ^5.0.0
+        version: 5.0.0
       ws:
         specifier: ^8.18.3
         version: 8.21.0
@@ -7401,6 +7404,7 @@ snapshots:
       typescript: 5.9.3
       undici: 7.30.1
       unified: 11.0.5
+      which: 5.0.0
       ws: 8.21.0
       yaml: 2.9.0
     transitivePeerDependencies:
@@ -7461,6 +7465,7 @@ snapshots:
       typescript: 5.9.3
       undici: 7.30.1
       unified: 11.0.5
+      which: 5.0.0
       ws: 8.21.0
       yaml: 2.9.0
     transitivePeerDependencies:
@@ -7521,6 +7526,7 @@ snapshots:
       typescript: 5.9.3
       undici: 7.30.1
       unified: 11.0.5
+      which: 5.0.0
       ws: 8.21.0
       yaml: 2.9.0
     transitivePeerDependencies:
