@@ -15,6 +15,26 @@ import type { Strings } from "./strings";
 export const en: Strings = {
   appName: "PenguinHarness",
 
+  /** The floating chat the pet opens (features/pet-chat), and its element picker. */
+  petChat: {
+    title: "Penguin Assistant",
+    defaultName: "the pet",
+    sessions: "Past conversations",
+    untitled: "New chat",
+    noSessions: "No past conversations yet.",
+    resize: "Resize the window",
+    pick: "Pick element",
+    pickHint: "Click the element to send to the assistant",
+    pickRefused: "Password fields cannot be picked",
+    pickCancel: "Cancel",
+    pickEscape: "Esc to cancel",
+    sent: "Sent the picked element to the assistant",
+    preparing: "Preparing the conversation…",
+    close: "Close",
+    noProject: "Open a Project before chatting with the assistant.",
+    failed: "Could not open the assistant",
+  },
+
   nav: {
     chat: "Chat",
     newChat: "New chat",

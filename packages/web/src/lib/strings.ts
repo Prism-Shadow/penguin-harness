@@ -23,6 +23,27 @@ import type { AgentAuthor, SemanticIdSuggestReason } from "@prismshadow/penguin-
 export const zh = {
   appName: "PenguinHarness",
 
+  /** The floating chat the pet opens (features/pet-chat), and its element picker. */
+  petChat: {
+    title: "Penguin 助手",
+    /** The window's title until the pet has a name of its own (the pet's default name). */
+    defaultName: "宠物",
+    sessions: "历史对话",
+    untitled: "新对话",
+    noSessions: "还没有历史对话。",
+    resize: "调整窗口大小",
+    pick: "选择元素",
+    pickHint: "点击要发给助手的元素",
+    pickRefused: "密码框不会被选中",
+    pickCancel: "取消",
+    pickEscape: "Esc 取消",
+    sent: "已把选中的元素发给助手",
+    preparing: "正在准备对话…",
+    close: "关闭",
+    noProject: "先打开一个项目，再和助手聊天。",
+    failed: "没能打开助手",
+  },
+
   nav: {
     chat: "对话",
     newChat: "新建对话",

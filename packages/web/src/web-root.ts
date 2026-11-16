@@ -48,6 +48,8 @@ import { DockModule } from "./features/dock/module";
 import { WorkspaceModule } from "./features/workspace/module";
 import { TracesModule } from "./features/traces/module";
 import { AudioModule } from "./features/audio/module";
+import { PlatformUiWebModule } from "./features/platform-ui/module";
+import { PetChatModule } from "./features/pet-chat/module";
 
 @Module({
   children: [
@@ -76,6 +78,8 @@ import { AudioModule } from "./features/audio/module";
     WorkspaceModule,
     TracesModule,
     AudioModule,
+    PlatformUiWebModule,
+    PetChatModule,
   ],
 })
 export class WebRoot {}

@@ -8,7 +8,7 @@ import { renderMainChatBody } from "./body/main-chat-body";
 import { renderMainChatDialogs } from "./session/main-chat-dialogs";
 
 /** Composition only: one controller, original guard, exact main render fragments. */
-export function ChatPage() {
+export function ChatPage({ embed = false }: { embed?: boolean } = {}) {
   const controller = useChatController();
   /** The session tabs whose window is shown over Chat, each with how to show Chat again. */
   const [shownOver, setShownOver] = useState<ReadonlyMap<string, () => void>>(() => new Map());
@@ -87,13 +87,14 @@ export function ChatPage() {
         {/* The Chat window. data-dock-host: the docks' edge bands, drop preview and the bottom
             dock's height ratio all measure it (dock-drag.tsx / dock-panel.tsx). */}
         <AppWindow shown={chatShown} data-dock-host>
-          {renderMainChatToolbar(view)}
+          {!embed && renderMainChatToolbar(view)}
           {renderMainChatBody(view)}
         </AppWindow>
         {/* The session tabs' windows (SessionTabProps.windows): no box of its own, so each
             window covers the stack like Chat does. */}
         <div ref={setWindows} className="contents" />
       </WindowStack>
+
       {renderMainChatDialogs(view)}
     </WallpaperSurface>
   );
