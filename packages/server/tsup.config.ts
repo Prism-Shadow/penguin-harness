@@ -47,6 +47,11 @@ export default defineConfig({
     // this bundle entirely — they are configuration resolved from the installation,
     // not platform capability.
     "plugin/index": "src/plugin/index.ts",
+    // "./cli": the five resource commands (agent/project/schedule/cost/config) and the
+    // server-backed command code they share (connection client, sign-in session, table
+    // renderer, approval parsing). The CLI's build collects their @Component contributions
+    // and its commands import them back through this subpath.
+    "cli/index": "src/cli/index.ts",
   },
   format: ["esm"],
   target: "node24",

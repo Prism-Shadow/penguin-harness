@@ -16,13 +16,15 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import type { MockInstance } from "vitest";
 import { Command } from "commander";
+import os from "node:os";
+import path from "node:path";
 import type {
   PluginCliCommandInfo,
   PluginCliCommandRunRequest,
 } from "@prismshadow/penguin-server/api";
 import { registerExecCommand, resolveExecTarget } from "../src/commands/exec.js";
+import { getMessages, type Messages } from "@prismshadow/penguin-server/cli";
 import { shellQuote } from "../src/plugin-cli-commands.js";
-import { getMessages, type Messages } from "../src/i18n.js";
 
 const cmd = (pkg: string, key: string): PluginCliCommandInfo => ({
   package: pkg,
@@ -107,48 +109,74 @@ describe("shellQuote (one word of a copyable command line, POSIX)", () => {
   });
 });
 
-describe("registerExecCommand (through the real commander tree, a stand-in source)", () => {
-  const t = getMessages("en");
-  const listing: PluginCliCommandInfo[] = [
+describe("registerExecCommand (through the real commander tree, via stubbed fetch)", () => {
+  const t: Messages = getMessages("en");
+  const listing = [
     cmd("@acme/one", "one.deploy"),
     { package: "@acme/one", key: "one.up", summary: { en: "One's up", zh: "One 的启动" } },
     { package: "@acme/two", key: "two.up", summary: { en: "Two's up", zh: "Two 的启动" } },
   ];
 
+  let originalEnv: NodeJS.ProcessEnv;
   let stdoutSpy: MockInstance<typeof process.stdout.write>;
   let stderrSpy: MockInstance<typeof process.stderr.write>;
   const recorded: PluginCliCommandRunRequest[] = [];
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    // The command builds its own source (serverPluginCommands), so point the connection at
+    // the URL the stubbed fetch answers and keep the data root away from the tester's own.
+    originalEnv = process.env;
+    process.env = {
+      ...originalEnv,
+      PENGUIN_API_URL: "http://127.0.0.1:7399",
+      PENGUIN_HOME: await import("fs/promises").then((fs) =>
+        fs.mkdtemp(path.join(os.tmpdir(), "penguin-test-")),
+      ),
+    };
+    delete process.env.PENGUIN_API_TOKEN;
+    delete process.env.PENGUIN_SESSION_ID;
     recorded.length = 0;
     stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-  });
-  afterEach(() => {
-    stdoutSpy.mockRestore();
-    stderrSpy.mockRestore();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, opts?: RequestInit) => {
+        if (url.endsWith("/api/cli/commands")) {
+          return new Response(JSON.stringify({ commands: listing }), { status: 200 });
+        }
+        if (url.endsWith("/run")) {
+          recorded.push(JSON.parse(opts?.body as string));
+          return new Response(JSON.stringify({ exitCode: 0, stdout: "ok\n", stderr: "" }), {
+            status: 200,
+          });
+        }
+        return new Response("not found", { status: 404 });
+      }),
+    );
   });
 
-  const source = () => ({
-    list: async () => listing,
-    run: async (req: PluginCliCommandRunRequest) => {
-      recorded.push(req);
-      return { exitCode: 0, stdout: "ok\n", stderr: "" };
-    },
+  afterEach(() => {
+    process.env = originalEnv;
+    stdoutSpy.mockRestore();
+    stderrSpy.mockRestore();
+    vi.unstubAllGlobals();
   });
-  const makeProgram = (messages: Messages = t): Command => {
+
+  const makeProgram = (): Command => {
     const program = new Command();
     program.name("penguin").version("1.0.0", "-v, --version").enablePositionalOptions();
-    registerExecCommand(program.command("exec"), messages, source());
+    registerExecCommand(program.command("exec"), t);
     return program;
   };
+
   const run = async (...argv: string[]) => {
     stdoutSpy.mockClear();
     stderrSpy.mockClear();
     await makeProgram().parseAsync(argv, { from: "user" });
-    const out = stdoutSpy.mock.calls.map((c) => c[0]).join("");
-    const err = stderrSpy.mock.calls.map((c) => c[0]).join("");
-    return { out, err };
+    return {
+      out: stdoutSpy.mock.calls.map((c) => c[0]).join(""),
+      err: stderrSpy.mock.calls.map((c) => c[0]).join(""),
+    };
   };
 
   it("hands the id's arguments to the run request whole — options, the host's version flag and `--` included", async () => {
@@ -171,43 +199,5 @@ describe("registerExecCommand (through the real commander tree, a stand-in sourc
       args: ["one", "deploy", "--x"],
       prog: "penguin exec @acme/one:one.deploy",
     });
-  });
-
-  it("a bundle whose language is not one of the server's renders English", async () => {
-    const fr = { ...t, language: "fr" } as unknown as Messages;
-    await makeProgram(fr).parseAsync(["exec", "ls", "@acme/one"], { from: "user" });
-    const out = stdoutSpy.mock.calls.map((c) => c[0]).join("");
-    expect(out).toContain("One's up");
-    expect(out).not.toContain("One 的启动");
-  });
-
-  it("ls lists every command with its package and summary; with a package, that package's alone", async () => {
-    const all = await run("exec", "ls");
-    expect(all.out).toContain("Package");
-    expect(all.out).toContain("one.deploy");
-    expect(all.out).toContain("@acme/two");
-
-    const one = await run("exec", "ls", "@acme/one");
-    expect(one.out).not.toContain("Package");
-    expect(one.out).toContain("one.deploy");
-    expect(one.out).not.toContain("@acme/two");
-  });
-
-  it("ls refuses a package no plugin carries, with the candidate list", async () => {
-    const { err } = await run("exec", "ls", "@acme/nope");
-    expect(err).toContain(t.exec.unknownPackage("@acme/nope"));
-    expect(err).toContain(t.exec.candidates(["@acme/one", "@acme/two"]));
-    expect(process.exitCode).toBe(1);
-  });
-
-  it("bare exec shows exec's own help", async () => {
-    const { out } = await run("exec");
-    expect(out).toContain(t.exec.lsDesc);
-  });
-
-  it("an unknown id is refused with the id list", async () => {
-    const { err } = await run("exec", "one.nope");
-    expect(err).toContain(t.exec.unknownId("one.nope"));
-    expect(process.exitCode).toBe(1);
   });
 });

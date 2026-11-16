@@ -27,7 +27,8 @@ export const zh = {
     leaderboards: "榜单",
     amsp: "AMSP",
     docs: "文档",
-    gallery: "画廊",
+    gallery: "主题包",
+    more: "更多",
     github: "GitHub",
     openMenu: "打开菜单",
     closeMenu: "关闭菜单",
@@ -59,7 +60,7 @@ export const zh = {
       reachEnd: "",
     },
     /** The grey line under the slogan. */
-    subtitle: "免费、稳定的 Agent 自进化框架",
+    subtitle: "开箱即用的 Agent 自进化框架",
     downloadCta: "下载桌面版",
     cliInstall: "命令行安装",
     stats: [
@@ -173,8 +174,8 @@ export const zh = {
 
   /** A live frame's window bar and its stand-in (components/live-app-frame.tsx). */
   live: {
-    /** The link to the same screen in the component gallery, full size. */
-    open: "在画廊中打开",
+    /** The link to the same screen in the component gallery (Theme Packs), full size. */
+    open: "在主题包中打开",
     loading: "正在载入实时演示…",
     evolutionFrame: "一轮自进化的对话（实时演示）",
   },
@@ -385,7 +386,7 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
   },
 
   footer: {
-    tagline: "免费、稳定的 Agent 自进化框架",
+    tagline: "开箱即用的 Agent 自进化框架",
     product: "产品",
     resources: "资源",
     quickstart: "快速开始",

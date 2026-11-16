@@ -55,18 +55,26 @@ export function useMainSidebarGroupMode(scope: ReturnType<typeof useMainSidebarN
   const [registeredWorkspaces, setRegisteredWorkspaces] = useState<readonly WorkspaceEntry[]>(() =>
     loadWorkspaceRegistry(currentProjectId),
   );
-  /** Registered Workspace being renamed (alias edit; null = none) and the alias being typed. The machine is half of which directory this is. */
+  /** Workspace group being renamed (alias edit; null = none) and the alias being typed. The machine is half of which directory this is. */
   const [renamingWorkspace, setRenamingWorkspace] = useState<{
     path: string;
     machineId: string | null;
   } | null>(null);
   const [workspaceAliasText, setWorkspaceAliasText] = useState("");
-  /** Registered Workspace pending removal confirmation (null = none); label = the group's displayed name for the confirm copy. */
+  /**
+   * Workspace group pending its delete confirmation (null = none): label = the group's displayed
+   * name for the confirm copy, key = its workspaceGroupKey, count = the active conversations the
+   * confirm says will be archived.
+   */
   const [deletingWorkspace, setDeletingWorkspace] = useState<{
     path: string;
     machineId: string | null;
     label: string;
+    key: string;
+    count: number;
   } | null>(null);
+  /** The confirmed delete is archiving the group's conversations on the server. */
+  const [deletingWorkspaceBusy, setDeletingWorkspaceBusy] = useState(false);
   return {
     ...scope,
     groupMode,
@@ -92,5 +100,7 @@ export function useMainSidebarGroupMode(scope: ReturnType<typeof useMainSidebarN
     setWorkspaceAliasText,
     deletingWorkspace,
     setDeletingWorkspace,
+    deletingWorkspaceBusy,
+    setDeletingWorkspaceBusy,
   };
 }

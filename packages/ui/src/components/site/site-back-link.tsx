@@ -6,7 +6,7 @@
  * text stays the parent's name.
  */
 import type { ReactNode } from "react";
-import type { SiteLinkProps } from "./site-header";
+import type { SiteLinkProps } from "./site-link";
 import { ArrowRightIcon } from "./site-icons";
 
 export function SiteBackLink({
