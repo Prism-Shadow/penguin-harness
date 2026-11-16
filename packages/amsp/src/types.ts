@@ -124,6 +124,8 @@ export interface MessagesResponse {
     /** Pass back as `before` for the window before this one; absent at the beginning. */
     before?: string;
     earlierTurns: number;
+    /** The Tasks the window holds, counted as the window was cut; absent from a server older than it. */
+    units?: number;
     prior: Record<string, number>;
     /** The model of the context the window starts in. */
     contextModel?: { provider: string; modelId: string };

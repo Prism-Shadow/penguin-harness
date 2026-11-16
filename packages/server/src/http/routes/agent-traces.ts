@@ -100,7 +100,7 @@ export function agentTracesRoutes(deps: AgentTracesRouteDeps): Hono<AppEnv> {
     return c.json(await deps.traceService.analyze(projectId, agentId, sessionId, index));
   });
 
-  // Raw-file download (any member, like the snapshot export): the file is served verbatim
+  // Raw-file download (any member, like the Agent export): the file is served verbatim
   // as an attachment, so what's downloaded can be re-imported byte-compatibly.
   app.get("/:sessionId/:index/download", async (c) => {
     const projectId = requireValidId(c, "projectId");

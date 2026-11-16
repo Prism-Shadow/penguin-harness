@@ -5,19 +5,22 @@
  *
  * Theming comes from the shared UI package (@prismshadow/penguin-ui): `theme.css` declares the
  * `dark` variant, the cascade layers, the token → utility bridge and the base rules that read
- * tokens (body colours and fonts, focus ring, selection, scrollbars); each `themes/*.css` holds
- * one theme's values, including the gray bridge the palette classes below resolve through. This
- * file keeps what is the app's own: the brand scale, layout invariants, animations and the
- * unlayered content rules.
+ * tokens (body colours and fonts, focus ring, selection, scrollbars); each theme pack's
+ * `themes/<id>/index.css` holds one theme's values, including the gray bridge the palette classes
+ * below resolve through, the base pack (Frost) first. This file keeps what is the app's own: the
+ * brand scale, layout invariants, animations and the unlayered content rules.
  *
- * Stacking-context convention (to avoid contexts masking each other): chrome (top bar/navigation) does not
- * create a stacking context; dropdown/user menus use z-40; modal and drawer overlays use z-50.
+ * Stacking: every z-index names a layer of the UI package's scale (`z-<layer>`, layers.css), whose
+ * header holds the order. Chrome (top bar, navigation) creates no stacking context; each window
+ * (the Chat window, a Workbench window, the full-page workbench) is one, and every overlay is
+ * portaled to `document.body` above them.
  */
 @import "tailwindcss";
 @import "@prismshadow/penguin-ui/theme.css";
-@import "@prismshadow/penguin-ui/themes/github.css";
-@import "@prismshadow/penguin-ui/themes/modern.css";
-@import "@prismshadow/penguin-ui/themes/geek.css";
+@import "@prismshadow/penguin-ui/themes/modern/index.css";
+@import "@prismshadow/penguin-ui/themes/github/index.css";
+@import "@prismshadow/penguin-ui/themes/geek/index.css";
+@import "@prismshadow/penguin-ui/themes/doodle/index.css";
 @import "@prismshadow/penguin-ui/fonts.css";
 
 /* Tailwind scans the Vite root only: the package's components carry class strings too. The test
@@ -52,15 +55,15 @@
   #root {
     height: 100%;
   }
-  /* The desktop window's drag handle (index.html): a transparent strip over the title-bar band,
-     zero tall in a browser. Every page keeps its own controls out of the band, so the strip has
-     nothing to give way to; it is first in the document and first in paint order all the same,
-     so a control laid over it later could still opt out with `no-drag`. */
+  /* The desktop window's drag handle (index.html): a transparent strip over the title band,
+     zero tall in a browser, on every page — the sign-in page and a full-page Workbench draw no
+     band of their own. Anything clickable over it opts out with no-drag: the band's controls and
+     the window buttons do (`data-window-drag` in the UI package's window-band.css). */
   .window-drag-strip {
     position: fixed;
     inset: 0 0 auto;
-    height: env(titlebar-area-height, 0px);
-    z-index: -1;
+    height: var(--window-band-height, 0px);
+    z-index: var(--layer-behind);
     -webkit-app-region: drag;
     app-region: drag;
   }
@@ -78,7 +81,7 @@
      clipping box (the docked panels' clipping windows), where forcing a containing block is
      more likely to surprise than to help. Declared in `base`, so an explicit
      absolute/fixed/sticky utility on the same element still wins; `position: relative` at
-     `z-index: auto` creates no stacking context, so the convention in the file header holds. */
+     `z-index: auto` creates no stacking context, so the stacking in the file header holds. */
   .overflow-auto,
   .overflow-x-auto,
   .overflow-y-auto,
@@ -86,14 +89,6 @@
   .overflow-x-scroll,
   .overflow-y-scroll {
     position: relative;
-  }
-  /* Hide the native scrollbar (replaced with custom controls, e.g. zoom/pan sliders in trace viewing). */
-  .no-scrollbar {
-    scrollbar-width: none;
-    -ms-overflow-style: none;
-  }
-  .no-scrollbar::-webkit-scrollbar {
-    display: none;
   }
 }
 
@@ -104,6 +99,10 @@
 }
 
 /* ---------- Animations (160-280ms ease, slight entrance offset + subtle scale) ---------- */
+
+/* The entrances and exits the shared components name (`anim-pop`, `anim-fade`, `anim-msg`, the
+   toast, drawer and launcher-fan classes) live in the UI package beside its other motion rules:
+   packages/ui/src/animations.css, imported by theme.css. These are the app's own. */
 
 @keyframes rise-in {
   from {
@@ -116,63 +115,10 @@
   }
 }
 
-@keyframes pop-in {
-  from {
-    opacity: 0;
-    transform: scale(0.96);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-@keyframes fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes msg-in {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-@keyframes drawer-in-left {
-  from {
-    transform: translateX(-100%);
-  }
-  to {
-    transform: none;
-  }
-}
-
-@keyframes drawer-in-right {
-  from {
-    transform: translateX(100%);
-  }
-  to {
-    transform: none;
-  }
-}
-
 /* Login card entrance (used only on the login page; in-app pages skip entrance animations to avoid a
    transform ancestor hijacking fixed-positioned overlays). */
 .anim-rise {
   animation: rise-in 280ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
-}
-/* Dropdown menu / popover entrance. */
-.anim-pop {
-  animation: pop-in 120ms ease-out both;
 }
 /* A status icon replaced by the next one (the composer's permission level): the new icon turns
    and grows in from small, so the change is seen rather than blinked. */
@@ -194,78 +140,6 @@
   display: block;
   animation: icon-swap 260ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
 }
-/* Top toast overlay: slides in from above / slides up while fading out. */
-@keyframes toast-in {
-  from {
-    opacity: 0;
-    transform: translateY(-10px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-@keyframes toast-out {
-  from {
-    opacity: 1;
-    transform: none;
-  }
-  to {
-    opacity: 0;
-    transform: translateY(-8px) scale(0.98);
-  }
-}
-.anim-toast-in {
-  animation: toast-in 180ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
-}
-.anim-toast-out {
-  animation: toast-out 160ms ease-in both;
-}
-
-/* Overlay fade-in. */
-.anim-fade {
-  animation: fade-in 120ms ease-out both;
-}
-
-/* The dock launcher's fan (features/dock/dock-launcher.tsx): entries spring out of the ball
-   onto their places on the arc with a slight overshoot, and fold back into it without one.
-   Every entry's box sits ON the ball's centre; `--fan-x` / `--fan-y` are its own offset from
-   there, set per entry, and that translate is also the entry's resting inline transform — so
-   the reduced-motion block below, which drops the animation outright, leaves each entry
-   standing on the arc instead of collapsed onto the ball or hidden. */
-@keyframes launcher-fan-in {
-  from {
-    opacity: 0;
-    transform: translate(0, 0) scale(0.5);
-  }
-  to {
-    opacity: 1;
-    transform: translate(var(--fan-x, 0px), var(--fan-y, 0px));
-  }
-}
-@keyframes launcher-fan-out {
-  from {
-    opacity: 1;
-    transform: translate(var(--fan-x, 0px), var(--fan-y, 0px));
-  }
-  to {
-    opacity: 0;
-    transform: translate(0, 0) scale(0.5);
-  }
-}
-.launcher-fan-in {
-  animation: launcher-fan-in 260ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
-}
-.launcher-fan-out {
-  animation: launcher-fan-out 140ms ease-in both;
-}
-/* Message item entrance. It fills backwards only, as the theme's own entrances do: an entrance
-   held at its end would keep a transform on every message, and a transformed box turns the fixed
-   backgrounds inside it into scrolling ones (a stuck work-group row's copy of the wallpaper). */
-.anim-msg {
-  animation: msg-in 180ms ease-out backwards;
-}
-
 /* Outline jump feedback: a soft brand wash fading out over the landed-on message. Applied by
    conversation-outline.tsx to the [data-outline-anchor] wrapper via classList — deliberately
    outside React's managed props, so stream re-renders don't strip it mid-flash. */
@@ -291,13 +165,6 @@
 }
 .dark .outline-flash {
   animation-name: outline-flash-dark;
-}
-/* Drawer slide-in. */
-.anim-drawer-left {
-  animation: drawer-in-left 240ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
-}
-.anim-drawer-right {
-  animation: drawer-in-right 240ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
 }
 
 /* Truncated-title scroll reveal (#309, sidebar conversation rows; truncated.tsx attaches the

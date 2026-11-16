@@ -237,7 +237,11 @@ export function modelOAuthRoutes(deps: ModelOauthRouteDeps): Hono<AppEnv> {
       return c.json({ ok: false, error: result.error } satisfies ModelOAuthCodeResponse);
     }
     credentialsChanged(deps, projectId);
-    return c.json({ ok: true, applied: result.applied } satisfies ModelOAuthCodeResponse);
+    return c.json({
+      ok: true,
+      applied: result.applied,
+      ...(result.defaultOffer !== undefined ? { defaultOffer: result.defaultOffer } : {}),
+    } satisfies ModelOAuthCodeResponse);
   });
 
   // Poll target while the user is authorizing in the other tab, and where a redirect flow's
@@ -262,6 +266,7 @@ export function modelOAuthRoutes(deps: ModelOauthRouteDeps): Hono<AppEnv> {
       status: state.status,
       provider: state.provider,
       ...(state.applied !== undefined ? { applied: state.applied } : {}),
+      ...(state.defaultOffer !== undefined ? { defaultOffer: state.defaultOffer } : {}),
       ...(state.error !== undefined ? { error: state.error } : {}),
     } satisfies ModelOAuthStatusResponse);
   });

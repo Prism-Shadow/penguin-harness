@@ -420,9 +420,10 @@ export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
     return c.json(state(c));
   });
 
-  // A person's Stop retrying: the streak stops where it stands and waits for a Retry. Nothing to
-  // stop (the machine is up, or the streak already stopped) is not an error: a press that crossed
-  // the attempt that ended it answers the list as it now stands.
+  // A person's Stop retrying: the streak stops where it stands and waits for a Retry, and the
+  // attempt under way is cut, so every verb can start on the machine at once. Nothing to stop
+  // (the machine is up, or the streak already stopped) is not an error: a press that crossed the
+  // attempt that ended it answers the list as it now stands.
   app.post("/:machineId/stop-reconnecting", (c) => {
     const answer = deps.machines.stopReconnecting(c.req.param("machineId"));
     if (!answer.ok) {

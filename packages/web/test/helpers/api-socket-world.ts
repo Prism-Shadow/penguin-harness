@@ -61,6 +61,13 @@ class ApiSocketWorld {
       if (stream.path === path) stream.handlers.onServerEvent(event, null);
     }
   }
+
+  /** One named event (`filled`, `progress`, …) on every stream whose path holds `pathPart`. */
+  emit(pathPart: string, name: string, data: unknown): void {
+    for (const stream of [...this.streams]) {
+      if (stream.path.includes(pathPart)) stream.handlers.onEvent?.(name, data, null);
+    }
+  }
 }
 
 /** The one world a suite's socket mock and its page helpers share. */

@@ -7,9 +7,10 @@
  *   dialog is what it opens; Settings opens it too;
  * - starts a conversation in the machine's temporary workspace with Use, opening nothing, while
  *   the machine is connected; otherwise Use waits and the card says why in words, not on a hover —
- *   and while a job moves there, its stepper says what is happening instead;
+ *   a server stopped only when it is, not connected for one out of reach — and while a job moves
+ *   there, its stepper says what is happening instead;
  * - while the server brings the machine back, says in its middle where that stands — the attempt
- *   of how many and the countdown to it, the last failure behind a "?", Retry now and Stop
+ *   of how many and the countdown to it, the last failure after it in sight, Retry now and Stop
  *   retrying — and after the automatic attempts stopped, that they failed, with Retry; each press
  *   asks the page for its own request; a refused password says the fix and offers nothing;
  * - asks to delete the machine with its trash button, never while a job is on its way;
@@ -19,13 +20,15 @@
  *
  * The dialog
  * - lays its verbs out in one toolbar, each asking its page for its own verb: Enable and Update
- *   for the whole pipeline, Stop or Start, Restart, Sync config, Configure SSH, Uninstall;
+ *   for the whole pipeline, Stop or Start, Restart, Sync config, Configure SSH, Reinstall,
+ *   Uninstall;
  * - says when the config was last synced, or why that failed, and lists what it could not carry:
  *   models keyed from this server's environment, models the machine would not take;
  * - greys a verb that cannot run and says why in one sentence under the toolbar, never on a
  *   hover; holds every verb while a request is in flight, the sentence unchanged;
  * - explains a failure: the step it stopped at, in the far side's own words, what the server's
- *   connection check found, then Retry — and Force install only when the failure offers it;
+ *   connection check found, then Retry — and, only when installing again may mend it, a line
+ *   pointing at the toolbar's Reinstall, the one way to reinstall;
  * - says, while the server brings a machine back, where that stands with its presses (Retry asks
  *   the page to reconnect, Stop retrying to stop; none for a refused password), for how long, the
  *   last failure in full, and what the automatic check found;
@@ -50,8 +53,8 @@
  * rendered to static markup and read back as a tree (test/helpers/markup.ts). The dialog's verbs are found by their `data-verb`,
  * its steps by their `data-step`, the card's buttons by their `data-action`, never by their words.
  */
-import { createElement, isValidElement } from "react";
-import type { ReactElement, ReactNode } from "react";
+import { createElement, isValidElement, type ReactElement, type ReactNode } from "react";
+
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type {
@@ -62,17 +65,19 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import * as ui from "@prismshadow/penguin-ui";
 import { Button, RuledSection } from "@prismshadow/penguin-ui";
-import { MachineCard, machineMark } from "../src/features/machines/machine-card";
-import type { MachineCardProps } from "../src/features/machines/machine-card";
+import {
+  MachineCard,
+  machineMark,
+  type MachineCardProps,
+} from "../src/features/machines/machine-card";
 import {
   JobSteps,
   LogFold,
   MachineDetailBody,
+  type MachineDetailBodyProps,
+  type MachineVerb,
 } from "../src/features/machines/machine-detail-dialog";
-import type {
-  MachineDetailBodyProps,
-  MachineVerb,
-} from "../src/features/machines/machine-detail-dialog";
+
 import { machineChip } from "../src/features/machines/machine-detail-view";
 import { readMachine, updateNotice } from "../src/features/machines/machines-view";
 import { formatShortDateTime } from "../src/lib/format";
@@ -436,6 +441,7 @@ describe("a machine's card", () => {
     const why = S.machines.card.why;
     const cases: [MachineInfo, MachineJob | null, string][] = [
       [stopped, null, why.stopped],
+      [unreachable, null, why.notConnected],
       [added, null, why.notInstalled],
       [stopped, failedJob(stopped, true), why.failed],
     ];
@@ -446,17 +452,16 @@ describe("a machine's card", () => {
     }
   });
 
-  it("while the server brings the machine back, counts down in its middle to the attempt of how many, the last failure behind a ?; Retry now and Stop retrying each ask the page", () => {
+  it("while the server brings the machine back, counts down in its middle to the attempt of how many, the last failure in sight; Retry now and Stop retrying each ask the page", () => {
     const shown = card(comingBack);
     expect(shown.retry).toMatchObject({
       phase: "waiting",
       label: S.machines.retry.trying(4, 5),
       reason: S.machines.check.ssh.refused("mini"),
-      reasonTitle: S.machines.retry.lastFailure,
     });
     expect(shown.html).toContain("data-retry-countdown");
-    // The failure is the "?"'s, not a line of the card.
-    expect(seenText(readMarkup(shown.html))).not.toContain(S.machines.check.ssh.refused("mini"));
+    // The failure is on the card's line, not behind a hover.
+    expect(seenText(readMarkup(shown.html))).toContain(S.machines.check.ssh.refused("mini"));
     expect(shown.waits).toBeNull();
     expect(shown.buttons.get("use")!.props.disabled).toBe(true);
     expect(shown.retry?.retry?.label).toBe(S.machines.retry.retryNow);
@@ -478,7 +483,6 @@ describe("a machine's card", () => {
       phase: "gaveUp",
       label: S.machines.retry.gaveUp(5),
       reason: S.machines.check.ssh.refused("lab-2"),
-      reasonTitle: S.machines.retry.lastFailure,
       retry: { label: S.machines.retry.retry },
       secondary: null,
     });
@@ -541,6 +545,7 @@ describe("the Machine dialog", () => {
       "stop",
       "restart",
       "configure",
+      "reinstall",
       "uninstall",
     ]);
     const asks: [string, MachineVerb][] = [
@@ -548,6 +553,7 @@ describe("the Machine dialog", () => {
       ["stop", "stop"],
       ["restart", "restart"],
       ["configure", "configure"],
+      ["reinstall", "reinstall"],
       ["uninstall", "uninstall"],
     ];
     for (const [verb, page] of asks) {
@@ -646,16 +652,20 @@ describe("the Machine dialog", () => {
     }
   });
 
-  it("explains a failure: the step, the far side's words, then Retry — and Force install only when offered", () => {
-    const { tree, verbs, onAct } = dialog(stopped, failedJob(stopped, true));
+  it("explains a failure: the step, the far side's words, then Retry — and points at Reinstall only when it may mend it", () => {
+    const { tree, html, verbs, onAct } = dialog(stopped, failedJob(stopped, true));
     expect(words(tree)).toContain(NO_ANSWER);
     const marked = tree.filter((el) => el.type === "li" && el.props["data-state"] === "failed");
     expect(marked.map((el) => el.props["data-step"])).toEqual(["restart"]);
     verbs.get("retry")!.press();
     expect(onAct).toHaveBeenCalledWith("use");
-    verbs.get("replaceProgram")!.press();
-    expect(onAct).toHaveBeenCalledWith("replaceProgram");
-    expect(dialog(stopped, failedJob(stopped, false)).verbs.has("replaceProgram")).toBe(false);
+    // One way to reinstall: the toolbar's, which the failure points at in words.
+    expect(seenText(readMarkup(html))).toContain(S.machines.detail.reinstallHint);
+    expect([...verbsOf(section(tree, S.machines.detail.progress)!).keys()]).toEqual(["retry"]);
+    verbs.get("reinstall")!.press();
+    expect(onAct).toHaveBeenCalledWith("reinstall");
+    const plain = dialog(stopped, failedJob(stopped, false)).html;
+    expect(seenText(readMarkup(plain))).not.toContain(S.machines.detail.reinstallHint);
   });
 
   it("says what the server's connection check found after a failure, or that it is still checking", () => {

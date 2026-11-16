@@ -1,0 +1,38 @@
+/*
+ * The user's accent presets (`pack.json`, `accent.presets`): five pens — the marker's orange, the
+ * ballpoint's blue, grass green, a red crayon and grape. A preset sets `--ui-accent` and nothing
+ * else: hover, active, wash, tint and line derive from it in tokens.css, and the label ink is the
+ * theme's for the mode — paper under a light pen, the dark ink under a pen lifted for dark paper.
+ * A highlighter yellow was left out: as a mark (a switch, a radio) it is under 3:1 on paper. The
+ * selectors match only Doodle's id, so a preset another theme lists paints nothing here.
+ */
+:root[data-theme="doodle"][data-accent="marker"] {
+  --ui-accent: #bb4f27;
+}
+:root[data-theme="doodle"][data-accent="marker"].dark {
+  --ui-accent: #e58a5e;
+}
+:root[data-theme="doodle"][data-accent="ballpoint"] {
+  --ui-accent: #2c4f9e;
+}
+:root[data-theme="doodle"][data-accent="ballpoint"].dark {
+  --ui-accent: #8fb0ec;
+}
+:root[data-theme="doodle"][data-accent="grass"] {
+  --ui-accent: #2f6b45;
+}
+:root[data-theme="doodle"][data-accent="grass"].dark {
+  --ui-accent: #7fc193;
+}
+:root[data-theme="doodle"][data-accent="crayon"] {
+  --ui-accent: #b3261e;
+}
+:root[data-theme="doodle"][data-accent="crayon"].dark {
+  --ui-accent: #ff8a7a;
+}
+:root[data-theme="doodle"][data-accent="grape"] {
+  --ui-accent: #6a46b8;
+}
+:root[data-theme="doodle"][data-accent="grape"].dark {
+  --ui-accent: #b49ae9;
+}

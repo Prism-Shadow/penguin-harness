@@ -17,10 +17,12 @@ import {
   DownloadIcon,
   ExternalLinkIcon,
   ModelProviderLogo,
+  AirplaneIcon,
   TerminalIcon,
 } from "../components/icons";
 import { ExternalLink, ExternalLinkScope } from "../components/external-link";
 import { LiveAppFrame } from "../components/live-app-frame";
+import { useVisibleActivity } from "../lib/visible-activity";
 
 /**
  * An entry of a text catalogue row: plain text on the page, no box of its own — the row is a
@@ -58,9 +60,7 @@ function CatalogRow({
         <span className="text-2xl leading-none font-semibold tracking-tight text-brand-600 tabular-nums dark:text-brand-300">
           {count}
         </span>
-        <span className="text-xs font-semibold tracking-wide text-gray-500 dark:text-gray-400">
-          {label}
-        </span>
+        <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">{label}</span>
       </dt>
       {/* Spaced by margin, not `gap`: a gap on the subgrid would override the catalogue's own. */}
       <dd className="mt-2.5 sm:mt-0">
@@ -74,28 +74,57 @@ function CatalogRow({
   );
 }
 
+function HeroWord({ text, variant }: { text: string; variant: "growth" | "reach" }) {
+  return (
+    <span className={`hero-word hero-word-${variant}`}>
+      <span className="hero-word-ink">{text}</span>
+      <span className="hero-word-trace" aria-hidden="true">
+        <span className="hero-word-flight">
+          <span className="hero-word-trail" />
+          <AirplaneIcon className="hero-word-plane" />
+        </span>
+      </span>
+    </span>
+  );
+}
+
 export function Hero() {
   const { locale } = useSiteLocale();
+  const { ref: motion, active } = useVisibleActivity<HTMLParagraphElement>();
   return (
     <section className="relative overflow-hidden">
       <div className="hero-dots pointer-events-none absolute inset-0" aria-hidden="true" />
       <div className="relative mx-auto max-w-6xl px-4 pt-12 pb-12 text-center sm:px-6 sm:pt-24 sm:pb-14">
-        <h1 className="anim-rise flex items-center justify-center gap-2.5 sm:gap-3.5">
+        <h1
+          id="home-top"
+          tabIndex={-1}
+          className="anim-rise flex items-center justify-center gap-2.5 sm:gap-3.5"
+        >
           <img
             src={`${import.meta.env.BASE_URL}penguin-logo.svg`}
             alt=""
             className="h-12 w-12 sm:h-16 sm:w-16"
           />
-          <span className="text-[1.7rem] font-semibold tracking-tight sm:text-4xl">
-            {S.siteName}
-          </span>
+          <span className="text-2xl font-semibold tracking-tight sm:text-4xl">{S.siteName}</span>
         </h1>
 
         <p
-          className="hero-positioning anim-rise mx-auto mt-6 leading-tight font-semibold tracking-[-0.035em] text-balance break-keep [overflow-wrap:break-word]"
+          ref={motion}
+          className={`hero-positioning anim-rise mx-auto mt-6 font-semibold tracking-[-0.035em] text-balance break-keep [overflow-wrap:break-word] ${active ? "" : "hero-motion-paused"}`}
           style={{ animationDelay: "70ms" }}
         >
-          {S.hero.positioning}
+          <span className="hero-positioning-clause">
+            {S.hero.positioning.growthLead}
+            <HeroWord text={S.hero.positioning.growth} variant="growth" />
+            {S.hero.positioning.growthEnd}
+          </span>
+          {S.hero.positioning.separator}
+          <wbr />
+          <span className="hero-positioning-clause">
+            {S.hero.positioning.reachLead}
+            <HeroWord text={S.hero.positioning.reach} variant="reach" />
+            {S.hero.positioning.reachEnd}
+          </span>
         </p>
 
         <p
@@ -115,7 +144,7 @@ export function Hero() {
           >
             <DownloadIcon className="h-4 w-4" />
             <span>{S.hero.downloadCta}</span>
-            <span className="border-l border-white/25 pl-2 text-xs font-medium text-white/70 tabular-nums dark:border-gray-900/20 dark:text-gray-900/60">
+            <span className="text-xs font-medium text-gray-400 tabular-nums dark:text-gray-600">
               {RELEASE_VERSION}
             </span>
           </Link>
@@ -129,15 +158,15 @@ export function Hero() {
         </div>
 
         <dl
-          className="anim-rise mx-auto mt-10 grid max-w-5xl gap-y-5 sm:mt-12 sm:grid-cols-3 sm:gap-x-6"
+          className="anim-rise mx-auto mt-10 grid max-w-5xl grid-cols-3 gap-x-3 sm:mt-12 sm:gap-x-6"
           style={{ animationDelay: "250ms" }}
         >
           {S.hero.stats.map((stat) => (
             <div key={stat.value} className="min-w-0">
-              <dt className="mx-auto mt-1 max-w-64 text-xs leading-5 text-gray-500 dark:text-gray-400">
+              <dt className="mx-auto mt-1 min-h-8 max-w-64 text-xs leading-4 text-gray-500 sm:min-h-0 sm:leading-5 dark:text-gray-400">
                 {stat.label}
               </dt>
-              <dd className="hero-stat-value mx-auto mt-0.5 text-xl leading-tight font-semibold tracking-tight text-balance text-gray-900 sm:text-[22px] dark:text-gray-100">
+              <dd className="hero-stat-value mx-auto mt-0.5 text-base leading-tight font-semibold tracking-tight text-balance text-gray-900 sm:text-xl dark:text-gray-100">
                 {stat.value}
               </dd>
             </div>
@@ -198,10 +227,10 @@ export function Hero() {
               delay={380}
               listClassName="gap-x-5 gap-y-1.5"
             >
-              {BENCHMARKS.map((benchmark, index) => (
+              {BENCHMARKS.map((benchmark) => (
                 <li key={benchmark.href}>
                   <ExternalLink href={benchmark.href} className={ENTRY_LINK}>
-                    {S.hero.benchmarkKinds[index]}
+                    {S.hero.benchmarkKinds[benchmark.kind]}
                     <ExternalLinkIcon className="h-3 w-3 text-gray-400 dark:text-gray-500" />
                   </ExternalLink>
                 </li>
@@ -212,7 +241,8 @@ export function Hero() {
 
         <LiveAppFrame
           surface="chat-new"
-          title={S.showcase.start}
+          autoplay="evolution"
+          title={S.live.evolutionFrame}
           className="anim-rise mx-auto mt-14 max-w-6xl text-left sm:mt-16"
         />
       </div>

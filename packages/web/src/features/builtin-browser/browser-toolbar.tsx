@@ -9,8 +9,8 @@
  * named by a tooltip below it. The agent mark and the load warning are icons with their tooltip,
  * never a text badge.
  */
-import { useState } from "react";
-import type { ReactNode, Ref } from "react";
+import { useState, type ReactNode, type Ref } from "react";
+
 import type { BuiltinBrowserTab } from "@prismshadow/penguin-server/api";
 import {
   WallpaperSurface,

@@ -20,8 +20,8 @@
  * conversation visible (found by walking the origin chain); the graph simply has no
  * highlighted node.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+
 import { useNavigate } from "react-router";
 import type {
   ApprovalMode,
@@ -44,14 +44,14 @@ import {
 } from "@prismshadow/penguin-ui";
 import { ApiError } from "../../api/client";
 import { abortSubagent, messageSubagent, patchSession } from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
 import type { NestedSessionMeta, StreamModel } from "../../lib/amsp/stream-model";
-import { ChatInput } from "./chat-input";
-import type { ComposerControl } from "./chat-input";
+import { ChatInput, type ComposerControl } from "./chat-input";
+
 import type { PermissionPick } from "../../lib/permission-level";
 import { noteSessionSeen } from "../../lib/session-seen";
 import { machineForSession } from "../../lib/session-machines";
+import { useAgentAvatarSrc } from "../../lib/agent-avatar";
 import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import {
@@ -60,13 +60,14 @@ import {
   modelAtOrigin,
   resolveAgentLabel,
   shortSessionId,
+  type TopologyNode,
 } from "./agent-topology";
-import type { TopologyNode } from "./agent-topology";
+
 import { AgentTopologyView } from "./agent-topology-view";
-import { MessageStream } from "./message-stream";
-import type { StreamRenderContext } from "./message-stream";
+import { MessageStream, type StreamRenderContext } from "./message-stream";
 import { useAgentSkills } from "./use-agent-skills";
 import type { ComposerReference } from "../../lib/workspace-tree";
+import { toastApiError } from "../../lib/toast-api-error";
 
 interface Selection {
   sessionId: string;
@@ -115,6 +116,7 @@ export function SubagentsView({
   parentThinkingLevel: string;
 }) {
   const { agents, setCurrentAgentId } = useProject();
+  const avatarSrc = useAgentAvatarSrc();
   const { sessions } = useSessions();
   const navigate = useNavigate();
   const [selected, setSelected] = useState<Selection | null>(null);
@@ -172,6 +174,16 @@ export function SubagentsView({
     // Last-resort label is the short session id, not a generic word: two unknown children must stay distinguishable in the graph.
     return resolveAgentLabel(node, agents, sessions) ?? shortSessionId(node.sessionId);
   };
+  /** A node's Agent's own picture, the Agent found as the label finds it (the root is this Session's). */
+  const avatarFor = (node: TopologyNode): string | undefined => {
+    const agentId =
+      node.depth === 0
+        ? session.agentId
+        : (node.agentId ?? sessions.find((s) => s.sessionId === node.sessionId)?.agentId);
+    return agentId === undefined
+      ? undefined
+      : avatarSrc(agentId, machineForSession(node.sessionId));
+  };
 
   const isRoot = active !== null && active.origin.length === 0;
   const activeNode = active ? (nodes.find((n) => n.sessionId === active.sessionId) ?? null) : null;
@@ -221,6 +233,7 @@ export function SubagentsView({
               nodes={nodes}
               selectedId={active?.sessionId ?? null}
               labelFor={labelFor}
+              avatarFor={avatarFor}
               onSelect={(node) => setSelected({ sessionId: node.sessionId, origin: node.origin })}
             />
           </div>
@@ -252,8 +265,8 @@ export function SubagentsView({
           <div className="flex shrink-0 items-center gap-2 border-b border-gray-100 px-3 py-1.5 dark:border-gray-800/60">
             <AgentAvatar
               id={activeModel.meta?.agentId ?? active.sessionId}
-              name={activeLabel}
               size={16}
+              src={avatarSrc(activeModel.meta?.agentId ?? "", machineForSession(active.sessionId))}
             />
             <span className="min-w-0 truncate text-xs font-semibold text-gray-700 dark:text-gray-300">
               {activeLabel}
@@ -390,7 +403,7 @@ function SubagentComposer({
     setTurnLevel(level);
     void patchSession(childSessionId, {
       thinkingLevel: level as SessionPatchRequest["thinkingLevel"],
-    }).catch((err: unknown) => toastError(apiErrorText(err)));
+    }).catch((err: unknown) => toastApiError(err));
   };
 
   const modelRef = meta ? { provider: meta.provider, modelId: meta.modelId } : null;

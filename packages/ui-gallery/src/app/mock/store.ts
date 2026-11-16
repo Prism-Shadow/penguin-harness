@@ -14,8 +14,17 @@ import type { DemoFixtures } from "./fixtures";
 import { harnessTranscript, orgDeskTranscript } from "./harness-transcript";
 import { IDS } from "./ids";
 import { raiseNotices } from "./notices";
-import { rsiEvaluatorTranscript, rsiTestTranscript, rsiTranscript } from "./rsi-transcript";
+import {
+  rsiEvaluatorTranscript,
+  rsiPrompt,
+  rsiTestTranscript,
+  rsiTitle,
+  rsiTranscript,
+  RSI_WORKSPACE,
+} from "./rsi-transcript";
 import { streamScript } from "./stream-script";
+import { evolutionReply } from "./evolution-reply";
+import { EvolutionClock } from "../evolution-clock";
 import {
   abortEvent,
   approvalDecision,
@@ -96,11 +105,12 @@ interface Live {
   transcript: Transcript;
   channel: Channel;
   /** Timers of a running script, cleared on abort or dispose. */
-  timers: number[];
+  timers: (() => void)[];
   /** The history length the looping reply rewinds to (the streaming Session only). */
   loopFrom?: number;
   /** A stop left the turn held: the next message carries it, or a Retry resends it alone. */
   held?: boolean;
+  evolution?: boolean;
 }
 
 export class DemoStore {
@@ -109,13 +119,24 @@ export class DemoStore {
   /** Signed in as the fixtures' admin, or nobody. */
   signedIn: boolean;
   readonly userChannel = new Channel();
+  readonly evolutionPlayback = new EvolutionClock();
   private readonly live = new Map<string, Live>();
   private created = 0;
 
-  constructor(lang: Lang, now: number, signedIn: boolean, notices = false) {
+  constructor(
+    lang: Lang,
+    now: number,
+    signedIn: boolean,
+    notices = false,
+    private readonly evolutionDemo = false,
+  ) {
     this.lang = lang;
     this.signedIn = signedIn;
     this.f = buildFixtures(lang, now);
+    if (evolutionDemo) {
+      this.f.chatDefaults.agentId = IDS.agents.general;
+      this.f.chatDefaults.workspace = RSI_WORKSPACE;
+    }
     if (notices) raiseNotices(this.f);
     const ref = DEFAULT_MODEL;
     const seeded: Record<string, Transcript> = {
@@ -240,6 +261,16 @@ export class DemoStore {
     return true;
   }
 
+  /** Discard only the completed automatic round before the walkthrough starts its next one. */
+  clearEvolutionRounds(): void {
+    for (const [sessionId, live] of this.live) {
+      const row = this.session(sessionId);
+      if (!live.evolution || row?.status !== "idle") continue;
+      this.deleteSession(sessionId);
+      this.userChannel.event({ type: "session_deleted", sessionId, projectId: row.projectId });
+    }
+  }
+
   patchSession(sessionId: string, patch: Partial<SessionInfo>): SessionInfo | undefined {
     const row = this.session(sessionId);
     if (!row) return undefined;
@@ -262,7 +293,13 @@ export class DemoStore {
     const row = this.session(sessionId);
     live.channel.event({ type: "task_state", state: row?.status ?? "idle" }, handlers);
     const pending = live.transcript.pendingApproval;
-    if (pending) live.channel.event({ type: "approval_request", toolCall: pending }, handlers);
+    const reason = live.transcript.pendingReason;
+    if (pending) {
+      live.channel.event(
+        { type: "approval_request", toolCall: pending, ...(reason ? { reason } : {}) },
+        handlers,
+      );
+    }
     for (const goal of live.transcript.goalEvents ?? []) live.channel.event(goal, handlers);
     if (sessionId === IDS.sessions.thinking) this.keepThinking(live);
     if (sessionId === IDS.sessions.streaming) this.keepStreaming(sessionId, live);
@@ -288,13 +325,18 @@ export class DemoStore {
   }
 
   private schedule(live: Live, at: number, run: () => void): void {
-    live.timers.push(setTimeout(run, at) as unknown as number);
+    if (live.evolution) {
+      live.timers.push(this.evolutionPlayback.schedule(run, at));
+    } else {
+      const timer = setTimeout(run, at);
+      live.timers.push(() => clearTimeout(timer));
+    }
   }
 
   private stopScript(sessionId: string): void {
     const live = this.live.get(sessionId);
     if (!live) return;
-    for (const timer of live.timers) clearTimeout(timer);
+    for (const cancel of live.timers) cancel();
     live.timers = [];
   }
 
@@ -389,6 +431,11 @@ export class DemoStore {
     if (!live || !row) return false;
     if (row.status !== "idle") return false;
     const firstTurn = live.transcript.history.length === 0;
+    live.evolution =
+      this.evolutionDemo &&
+      firstTurn &&
+      row.agentId === IDS.agents.general &&
+      text === rsiPrompt(this.lang);
     this.stopScript(sessionId);
     delete live.held;
     this.setStatus(sessionId, "running");
@@ -414,11 +461,29 @@ export class DemoStore {
   /** The scripted reply of a running Task, then the Session settles (titled on its first turn). */
   private playReply(sessionId: string, live: Live, firstTurn: boolean): void {
     const callId = `call_${Date.now().toString(36)}`;
-    const steps = scriptedReply(this.lang, callId);
-    for (const step of steps) this.schedule(live, step.at, () => this.emit(live, step.msg));
+    const steps = live.evolution
+      ? evolutionReply(this.lang, Date.now(), DEFAULT_MODEL)
+      : scriptedReply(this.lang, callId);
+    for (const step of steps)
+      this.schedule(live, step.at, () => {
+        if (live.evolution && !step.msg.origin) {
+          const p = payloadOf(step.msg);
+          if (p?.type === "partial_text") {
+            if (p.event_type === "start")
+              live.transcript.openText = { startedAt: Date.now(), text: "" };
+            else if (p.event_type === "delta" && live.transcript.openText)
+              live.transcript.openText.text += p.text;
+            else if (p.event_type === "stop") delete live.transcript.openText;
+          }
+        }
+        this.emit(live, step.msg);
+      });
     const last = steps[steps.length - 1]?.at ?? 0;
     this.schedule(live, last + 200, () => {
-      if (firstTurn) this.patchSession(sessionId, { title: replyTitle(this.lang) });
+      if (firstTurn)
+        this.patchSession(sessionId, {
+          title: live.evolution ? rsiTitle(this.lang) : replyTitle(this.lang),
+        });
       this.setStatus(sessionId, "idle");
       live.timers = [];
     });
@@ -496,6 +561,7 @@ export class DemoStore {
   }
 
   dispose(): void {
+    this.evolutionPlayback.dispose();
     for (const id of this.live.keys()) this.stopScript(id);
   }
 }
@@ -512,6 +578,7 @@ interface StoreInit {
   signedIn: boolean;
   /** Raise the notices a conversation can carry (notices.ts). */
   notices?: boolean;
+  evolutionDemo?: boolean;
 }
 
 /** The store the frame's language and sign-in state ask for; created once per document. */
@@ -522,6 +589,7 @@ export function getStore(init?: StoreInit): DemoStore {
       Date.now(),
       init?.signedIn ?? true,
       init?.notices ?? false,
+      init?.evolutionDemo ?? false,
     );
   }
   return current;
@@ -530,6 +598,12 @@ export function getStore(init?: StoreInit): DemoStore {
 /** A fresh store (tests, and a frame that re-seeds itself). */
 export function resetStore(init: StoreInit & { now?: number }): DemoStore {
   current?.dispose();
-  current = new DemoStore(init.lang, init.now ?? Date.now(), init.signedIn, init.notices ?? false);
+  current = new DemoStore(
+    init.lang,
+    init.now ?? Date.now(),
+    init.signedIn,
+    init.notices ?? false,
+    init.evolutionDemo ?? false,
+  );
   return current;
 }

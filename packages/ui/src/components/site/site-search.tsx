@@ -230,7 +230,7 @@ export function SiteSearchDialog<Result extends SiteSearchResult>({
 
   return (
     <div
-      className="site-search-backdrop anim-fade fixed inset-0 z-50 flex items-start justify-center px-3 pt-[10vh] sm:px-6 sm:pt-[14vh]"
+      className="site-search-backdrop anim-fade fixed inset-0 z-modal flex items-start justify-center px-3 pt-[10vh] sm:px-6 sm:pt-[14vh]"
       onMouseDown={onBackdropMouseDown}
     >
       <div

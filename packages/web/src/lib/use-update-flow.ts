@@ -46,6 +46,7 @@ import {
   useDesktopUpdate,
 } from "./use-desktop-update";
 import { useAuth } from "../state/auth";
+import { toastApiError } from "./toast-api-error";
 
 /** How often the running self-update job is asked where it is. */
 const JOB_POLL_MS = 1_000;
@@ -131,7 +132,7 @@ export async function checkForUpdates(): Promise<void> {
     else if (outcome.kind === "found") toastSuccess(S.update.foundNew(outcome.latestVersion));
     else toastSuccess(S.update.upToDate);
   } catch (e) {
-    if (!quiet()) toastError(apiErrorText(e));
+    if (!quiet()) toastApiError(e);
   } finally {
     store.setState({ checking: false });
   }

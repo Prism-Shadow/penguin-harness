@@ -1,0 +1,42 @@
+{
+  "name": "@prismshadow/a2ui",
+  "version": "0.2.18",
+  "type": "module",
+  "description": "A2UI: the grammar of the rich blocks a PenguinHarness reply carries (choices, forms, steps, charts, widgets): catalog types and limits, fence discovery, validation, scoring, the text fallback and the fill texts. Pure TypeScript with no dependencies, for Node 24 and browsers.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "packages/a2ui"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "sideEffects": false,
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "build": "tsup"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.0",
+    "vitest": "^4.1.12"
+  },
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

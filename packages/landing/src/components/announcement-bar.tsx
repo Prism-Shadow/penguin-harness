@@ -16,7 +16,7 @@ import { ArrowRightIcon } from "./icons";
 const ROTATE_MS = 6000;
 
 const LINK_CLASS =
-  "inline-flex min-w-0 items-center gap-1.5 text-[13px] font-medium text-brand-800 underline-offset-2 hover:underline dark:text-brand-200";
+  "inline-flex min-w-0 items-center gap-1.5 text-sm font-medium text-brand-800 underline-offset-2 hover:underline dark:text-brand-200";
 
 const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
 
@@ -79,7 +79,7 @@ export function AnnouncementBar() {
       onMouseLeave={() => setHovered(false)}
       onFocusCapture={() => setFocused(true)}
       onBlurCapture={() => setFocused(false)}
-      className="border-b border-brand-100 bg-brand-50 dark:border-brand-950 dark:bg-brand-950/50"
+      className="bg-brand-50 dark:bg-brand-950/50"
     >
       <div className="mx-auto h-9 max-w-6xl px-4 sm:px-6">
         {/* Clip inside the horizontal padding. Otherwise the next slide peeks through

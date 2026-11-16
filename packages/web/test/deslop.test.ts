@@ -28,8 +28,10 @@ import {
   allowlistProblems,
   analyzeFile,
   deslopHits,
+  type DeslopAllowlist,
+  type DeslopPolicy,
 } from "../../ui/src/testing/deslop";
-import type { DeslopAllowlist, DeslopPolicy } from "../../ui/src/testing/deslop";
+
 import { expectEveryRootScanned, scanSources } from "./helpers/roots";
 
 const SCAN = scanSources();
@@ -57,10 +59,28 @@ const POLICY: DeslopPolicy = {
  * wave that moves or rebuilds the file (A-architecture §7: W1 marks and actions, W2 forms, W3
  * overlays, W4 layout, navigation, notices and data display, W5 content, W6 chat, W7 files, shell
  * and dock, W8 charts). `Wn+Wm` splits an entry between two.
- * `W10` is the follow-up sweep of the code that landed on main while the waves were in flight.
+ * `W10` is the follow-up sweep of the code that landed on main while the waves were in flight;
+ * it also takes rule 24's middle-dot separators, which were counted when the rule arrived.
  */
 const ALLOWLIST: DeslopAllowlist = {
   "features/terminal/terminal-appearance.ts": { 9: [1, "W10"] },
+  "components/account/app-info-dialog.tsx": { 24: [1, "W10"] },
+  "features/agents/agent-settings-page.tsx": { 24: [3, "W10"] },
+  "features/benchmark/benchmark-detail.tsx": { 24: [1, "W10"] },
+  "features/chat/archived-session-stub.tsx": { 24: [1, "W10"] },
+  "features/company/channel-view.tsx": { 24: [1, "W10"] },
+  "features/company/employee-dialogs.tsx": { 24: [1, "W10"] },
+  "features/company/finance-page.tsx": { 24: [1, "W10"] },
+  "features/company/overview-page.tsx": { 24: [1, "W10"] },
+  "features/company/ticket-dialog.tsx": { 24: [3, "W10"] },
+  "features/machines/machine-detail-dialog.tsx": { 24: [1, "W10"] },
+  "features/models/group-balance.tsx": { 24: [2, "W10"] },
+  "features/models/preset-sync.tsx": { 24: [1, "W10"] },
+  "features/plugins/plugin-detail.tsx": { 24: [2, "W10"] },
+  "features/settings/proxy-section.tsx": { 24: [1, "W10"] },
+  "features/traces/trace-panel.tsx": { 24: [2, "W10"] },
+  "lib/strings-en.ts": { 24: [34, "W10"] },
+  "lib/strings.ts": { 24: [34, "W10"] },
 };
 
 /**
@@ -88,21 +108,21 @@ const TOKENS_ONLY: readonly string[] = [
   "features/chat/harness-banner.tsx",
   "features/chat/mcp-connect-banner.tsx",
   "features/chat/message-item.tsx",
-  "features/chat/model-picker-modal.tsx",
   "features/chat/org-trigger-banner.tsx",
   "features/chat/scheduled-banner.tsx",
   "features/chat/skills-banner.tsx",
   "features/chat/task-stats-line.tsx",
-  "features/chat/workspace-finder.tsx",
-  "features/chat/workspace-finder-model.ts",
-  "features/chat/workspace-select.tsx",
   "features/company/handbook-page.tsx",
+  "features/model-picker/model-picker-modal.tsx",
   "features/settings/browser-section.tsx",
   "features/settings/chrome-extension-section.tsx",
   "features/settings/shortcut-recorder.tsx",
   "features/settings/shortcuts-section.tsx",
   "features/settings/trace-import-row.tsx",
   "features/terminal/terminal-keybar.tsx",
+  "features/workspace/workspace-finder.tsx",
+  "features/workspace/workspace-finder-model.ts",
+  "features/workspace/workspace-select.tsx",
 ];
 
 const WAVES = /^W(?:1a?|1b|10|[2-9])(?:\+W(?:1a?|1b|10|[2-9]))*$/;

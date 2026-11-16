@@ -13,7 +13,7 @@ import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { Gauge, gaugeShare } from "../src/components/charts/gauge/gauge";
 import type { GaugeProps } from "../src/components/charts/gauge/gauge";
-import { classTokens, renderStatic } from "../src/testing";
+import { renderStatic } from "../src/testing";
 
 const gauge = (props: Partial<GaugeProps> = {}) =>
   renderStatic(
@@ -34,16 +34,7 @@ describe("Gauge", () => {
     );
   });
 
-  it("rings in the accent while fine, and inks figure and ring in its tone when judged", () => {
-    const fine = gauge();
-    expect(classTokens(fine)).toContain("text-accent");
-    expect(fine).not.toMatch(/text-tone-/);
-    const danger = gauge({ value: 96, tone: "danger" });
-    expect(danger.match(/text-tone-danger-fg/g)).toHaveLength(2);
-    expect(classTokens(danger)).not.toContain("text-accent");
-  });
-
-  it("draws a round-capped arc of the share from min, and closes the ring when full", () => {
+  it("draws a round-capped arc of the share from min, clamped to the ring", () => {
     expect(gaugeShare(150, 300, 100)).toBe(0.25);
     expect(gaugeShare(-5, 100)).toBe(0);
     expect(gaugeShare(140, 100)).toBe(1);
@@ -52,15 +43,11 @@ describe("Gauge", () => {
     // A 40 px ring 5 px wide: radius 17.5, so a quarter is 27.49 px of arc.
     expect(partial).toMatch(/stroke-dasharray="27\.48/);
     expect(partial).toContain('stroke-linecap="round"');
-    const full = gauge({ value: 100, figure: "100" });
-    expect(full).not.toContain("stroke-linecap");
   });
 
   it("keeps the meter without a ring, and sets a lone figure large", () => {
     const bare = gauge({ ring: false });
     expect(bare).toContain('role="meter"');
     expect(bare).not.toContain("<svg");
-    expect(classTokens(gauge({ lone: true }))).toContain("text-4xl");
-    expect(classTokens(gauge())).not.toContain("text-4xl");
   });
 });

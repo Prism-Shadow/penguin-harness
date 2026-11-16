@@ -35,7 +35,7 @@ PenguinHarness 可以用一句话概括为**统一、稳定的 Agent 自进化�
 | --- | --- |
 | **Simplest Is the Best** | 在干净的底层接口之上刻意保持极简的工具集：更少的工具调用、更少的 Token，高效完成复杂任务。 |
 | **Harness for Building Agents** | 借助 PenguinHarness SDK，由 Agent 从零开始为你自主构建完整的 Agent 应用。 |
-| **Harness for Recursive Self-Improvement** | 借助 RSI 工具包（默认循环、OPRO、APE、ACE 与 AWM），Agent 评估并优化自己，随着时间递归进化；见[自我进化](/self-improvement)。 |
+| **Harness for Recursive Self-Improvement** | 借助 RSI 工具包（默认循环、OPRO、APE、ACE、AWM、SkillAdam、OpenSkill 与 TRACE），Agent 评估并优化自己，随着时间递归进化；见[自我进化](/self-improvement)。 |
 
 ## 设计信条
 

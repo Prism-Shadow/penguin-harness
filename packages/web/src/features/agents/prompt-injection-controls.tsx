@@ -1,6 +1,6 @@
 /**
- * Shared enable-switch (and, where the feature has one, prompt) controls for the Skills /
- * Vault / Schedules / Hooks tabs, mirroring the Memory tab's layout: an enable-switch card
+ * Shared enable-switch (and, where the feature has one, prompt) controls for the skills and
+ * hooks switches of the Plugins tab and for the Vault / Schedules tabs, mirroring the Memory tab's layout: an enable-switch card
  * (label + switch, the memory tab's exact card shape) that writes immediately (so toggling
  * never drags an unfinished prompt edit along), an amber alert when the template lacks the
  * feature's section placeholder — with one-click insert, or one-click migration when the
@@ -16,8 +16,8 @@
  * Exposed as a hook returning render slots because the pieces straddle the host tab's own
  * content: the switch and alert sit above it, the prompt editor below. The hook owns the config
  * state; the tab seeds it via `applyConfig` from the getAgentConfig response it loads in
- * parallel with its own data. `canEdit` carries the host tab's permission model (member-level on
- * Skills, owner-only on Vault / Schedules / Hooks).
+ * parallel with its own data. `canEdit` carries the host tab's permission model (owner-only on
+ * every tab that uses it).
  *
  * The prompt is a typed form (the settings commit model): a draft against the stored prompt
  * that only Save writes, Save live only while the two differ, Reset to put the stored text back,
@@ -25,8 +25,8 @@
  * the config at once and move the stored prompt the draft is compared with; what is being typed
  * stays as typed.
  */
-import { useCallback, useRef, useState } from "react";
-import type { ReactNode, RefObject } from "react";
+import { useCallback, useRef, useState, type ReactNode, type RefObject } from "react";
+
 import type {
   AgentConfigDto,
   AgentHooksConfigDto,
@@ -41,15 +41,15 @@ import {
   Notice,
   Textarea,
   ToggleRow,
-  toastError,
   toastSuccess,
   useFormDraft,
 } from "@prismshadow/penguin-ui";
+import type { ToggleRowVariant } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { useProject } from "../../state/project";
 import { useAgentLocation } from "../../lib/agent-location";
+import { toastApiError } from "../../lib/toast-api-error";
 
 export type PromptInjectionFeature = "skills" | "vault" | "schedules" | "hooks";
 
@@ -111,6 +111,7 @@ export function usePromptInjection({
   feature,
   strings,
   canEdit,
+  toggleVariant = "card",
   onConfigChanged,
 }: {
   agentId: string;
@@ -118,6 +119,8 @@ export function usePromptInjection({
   strings: ToggleStrings | PromptInjectionStrings;
   /** The host tab's permission model: false renders everything read-only (switch disabled, buttons hidden, prompt not saveable). */
   canEdit: boolean;
+  /** The switch's frame: a card of its own (the default), or a row in the host's ruled list of switches. */
+  toggleVariant?: ToggleRowVariant;
   /** Config writes happen here directly, so the settings page must refetch its own copy — otherwise a later Prompt-tab save from stale data would silently revert them. */
   onConfigChanged?: (() => void) | undefined;
 }): {
@@ -181,7 +184,7 @@ export function usePromptInjection({
       toastSuccess(strings.savedToast ?? S.agent.savedTakesEffect);
       onConfigChanged?.();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setSwitchBusy(false);
     }
@@ -206,7 +209,7 @@ export function usePromptInjection({
       toastSuccess(S.agent.savedTakesEffect);
       onConfigChanged?.();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     }
   };
 
@@ -227,7 +230,7 @@ export function usePromptInjection({
       toastSuccess(S.agent.savedTakesEffect);
       onConfigChanged?.();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setSaving(false);
     }
@@ -235,7 +238,7 @@ export function usePromptInjection({
 
   const toggleCard = state !== null && (
     <ToggleRow
-      variant="card"
+      variant={toggleVariant}
       label={strings.enable}
       info={strings.enableHint}
       checked={state.enabled}

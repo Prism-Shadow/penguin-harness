@@ -13,7 +13,8 @@
  * text normalized the way the sync script writes it (LF endings, no trailing spaces, one final
  * newline).
  *
- * Fonts arrive as dependencies, with one exception the manifest `src/fonts/vendored-fonts.json`
+ * Fonts arrive as dependencies (development ones: the build copies their files into `dist/fonts/`),
+ * with one exception the manifest `src/fonts/vendored-fonts.json`
  * declares: a font with no package (MiSans) is vendored as woff2 slices in its own directory, and its
  * licence is the licensor's own text, transcribed into `LICENSES/` by hand and naming its title. Any
  * other font binary checked into the package is refused, and a TTF or OTF is refused everywhere — the
@@ -58,10 +59,12 @@ const vendoredFontOf = (rel: string) => vendoredManifest.find((font) => rel.star
 
 const manifest = JSON.parse(readFileSync(join(PACKAGE_DIR, "package.json"), "utf8")) as {
   dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
 };
-const fontDependencies = Object.keys(manifest.dependencies ?? {}).filter((name) =>
-  FONT_PACKAGE.test(name),
-);
+const fontDependencies = Object.keys({
+  ...manifest.dependencies,
+  ...manifest.devDependencies,
+}).filter((name) => FONT_PACKAGE.test(name));
 const family = (dependency: string) => FONT_PACKAGE.exec(dependency)![1]!;
 
 interface FontReference {
@@ -76,13 +79,17 @@ interface FontReference {
 }
 
 /**
- * Every `url()` and `@import` in the fonts CSS, placed: a bare `@scope/name/…` specifier, or a
- * relative path that climbs into `node_modules/@scope/name/…`, lands in that package; a relative
- * path to one of our own sheets lands in none.
+ * Every `url()` and `@import` in the fonts CSS — `fonts/` and the theme packs, whose `fonts.css`
+ * `fonts/index.css` imports — placed: a bare `@scope/name/…` specifier, or a relative path that
+ * climbs into `node_modules/@scope/name/…`, lands in that package; a relative path to one of our
+ * own sheets lands in none.
  */
 function fontReferences(): FontReference[] {
   if (!existsSync(FONTS_DIR)) return [];
-  const scan = scanSourceRoots({ fonts: FONTS_DIR }, { repoRoot: REPO_ROOT, extensions: [".css"] });
+  const scan = scanSourceRoots(
+    { fonts: FONTS_DIR, themes: join(SRC_DIR, "themes") },
+    { repoRoot: REPO_ROOT, extensions: [".css"] },
+  );
   const refs: FontReference[] = [];
   const place = (file: { id: string; path: string }, specifier: string) => {
     if (specifier.startsWith("data:")) return;
@@ -117,10 +124,13 @@ function fontReferences(): FontReference[] {
   return refs;
 }
 
-/** Font binaries checked into the package itself (node_modules excluded), package-relative with `/`. */
+/**
+ * Font binaries checked into the package itself, package-relative with `/`: not node_modules, and
+ * not the build's copies in dist/.
+ */
 function fontBinaries(dir = PACKAGE_DIR, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
-    if (name === "node_modules") continue;
+    if (name === "node_modules" || (dir === PACKAGE_DIR && name === "dist")) continue;
     const path = join(dir, name);
     if (statSync(path).isDirectory()) fontBinaries(path, out);
     else if (FONT_FILE.test(name)) out.push(relative(PACKAGE_DIR, path).split(sep).join("/"));

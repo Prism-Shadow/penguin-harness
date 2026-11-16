@@ -108,13 +108,15 @@ interface Block {
 }
 
 /**
- * Regions currently in the document, in DOM order, skipping the ones that are not displayed
- * and any that nest inside another region (their text is already covered by the outer one).
+ * Regions currently in the document, in DOM order, skipping the ones that are not displayed,
+ * the ones inside an inert subtree — a window another one is shown over, a closed dock: laid out,
+ * but off the screen — and any that nest inside another region (their text is already covered
+ * by the outer one).
  */
 export function findRegions(root: ParentNode = document): FindRegion[] {
   const regions: FindRegion[] = [];
   for (const element of root.querySelectorAll<HTMLElement>(`[${REGION_ATTR}]`)) {
-    if (!displayed(element)) continue;
+    if (!displayed(element) || element.closest("[inert]") !== null) continue;
     if (element.parentElement?.closest(`[${REGION_ATTR}]`) != null) continue;
     regions.push({ kind: element.dataset["findRegion"] ?? "", element });
   }

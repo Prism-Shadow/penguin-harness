@@ -7,7 +7,7 @@
   content: "";
   position: fixed;
   inset: 0;
-  z-index: -1;
+  z-index: var(--layer-behind);
   pointer-events: none;
   background-image: var(--boot-wallpaper-image);
   background-size: var(--boot-wallpaper-size);
@@ -32,13 +32,13 @@
 .ui-shell[data-wallpaper] [data-wallpaper-layer] {
   position: fixed;
   inset: 0;
-  z-index: -1;
+  z-index: var(--layer-behind);
   pointer-events: none;
 }
 .ui-shell[data-wallpaper] .ui-glass[data-glass="navigation"] {
   position: absolute;
   inset: 0;
-  z-index: -1;
+  z-index: var(--layer-behind);
   pointer-events: none;
   background-color: color-mix(in srgb, var(--ui-surface-muted) 18%, transparent);
   -webkit-backdrop-filter: blur(16px);
@@ -87,6 +87,9 @@
     --wallpaper-selected-fill: color-mix(in srgb, var(--ui-fg) 8%, transparent);
     --wallpaper-well-fill: color-mix(in srgb, var(--ui-fg) 3%, transparent);
     --wallpaper-choice-fill: color-mix(in srgb, var(--ui-surface) 40%, transparent);
+    /* The code gutter has no fill (prose.css), so on the image its numbers take the secondary
+       ink rather than the theme's faint gutter grey, which a busy image washes out. */
+    --ui-code-gutter: var(--ui-fg-muted);
   }
   .ui-shell[data-wallpaper]
     [data-wallpaper-surface="panel"]:not([role="dialog"] *)
@@ -129,7 +132,7 @@
         display: block;
         position: absolute;
         inset: 0;
-        z-index: -1;
+        z-index: var(--layer-behind);
         pointer-events: none;
         background-color: var(--ui-canvas);
       }
@@ -170,15 +173,6 @@
     backdrop-filter: none;
   }
 }
-/* A tone strip (a notice, or any strip that names its tone the same way) keeps its tone on the
-   image at half its tint; the ink is unchanged. It sits in the theme layer, below a theme's own
-   notice recipe (later in the layer and more specific): Frost lays its card on the panel fill,
-   Console paints nothing. A pressed notice is a toast, which floats and keeps its surface. */
-@layer ui-theme {
-  @media not (prefers-reduced-transparency: reduce) {
-    .ui-shell[data-wallpaper]
-      :where([data-wallpaper-surface="tone"]:not(button, [role="dialog"] *)) {
-      background-color: color-mix(in srgb, var(--_tone-bg) 50%, transparent);
-    }
-  }
-}
+/* A tone strip on the image keeps its tone at half its tint: that rule is a foundation default
+   under every theme's own notice recipe, so it lives in theme.css's `ui-base` block, beside the
+   tone tints it reads. This file opens no cascade layer — the first one opened fixes the order. */

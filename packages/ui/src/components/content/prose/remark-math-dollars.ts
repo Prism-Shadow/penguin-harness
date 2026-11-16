@@ -5,8 +5,9 @@
  * formula, `$$` alone on a line — is display. Everything else is its *text* construct, which is
  * inline whatever the run length: `$$E=mc^2$$` on one line, and `text $$E=mc^2$$ text`, both come
  * out as inline math. That is a run-length rule, not a TeX one. In TeX `$$` has meant display since
- * plain TeX, `$` alone means inline, and single-dollar math is off here — so a `$$` pair in this
- * app can only have been meant as display, and models emit it on one line constantly.
+ * plain TeX and `$` alone means inline, which is how this app reads them too (`$…$` is
+ * math-single-dollar.ts) — so a `$$` pair can only have been meant as display, and models emit it
+ * on one line constantly.
  *
  * Leaving it inline had a layout cost as well as a typographic one. KaTeX sets
  * `.katex .base { white-space: nowrap }`, so a long single-line `$$…$$` is one unbreakable run.
@@ -14,10 +15,11 @@
  * separate guard in prose.css, and even caught it is still typeset cramped — inline mode uses
  * small integrals, small sums and squeezed fractions for a formula the author centred.
  *
- * So every text-math node opened by a dollar run is re-classed to display, which is also what makes
- * `$$…$$` and `\[…\]` behave identically (see remark-math-brackets.ts). The delimiter is read back
- * from the source rather than from the class list, because `remark-math` and `remarkMathBrackets`
- * both produce `inlineMath` nodes and only the source separates them.
+ * So every text-math node opened by a run of two or more dollars is re-classed to display, which
+ * is also what makes `$$…$$` and `\[…\]` behave identically (see remark-math-brackets.ts). The
+ * delimiter is read back from the source rather than from the class list, because `remark-math`,
+ * `remarkMathSingleDollar` and `remarkMathBrackets` all produce `inlineMath` nodes and only the
+ * source separates them.
  */
 
 /**
@@ -31,7 +33,8 @@ interface Node {
   children?: Node[];
 }
 
-const DOLLAR = "$";
+/** The shortest dollar run that opens display math. */
+const DISPLAY_RUN = "$$";
 const INLINE_CLASS = "math-inline";
 const DISPLAY_CLASS = "math-display";
 
@@ -39,8 +42,9 @@ const DISPLAY_CLASS = "math-display";
 function promote(node: Node, source: string): void {
   if (node.type !== "inlineMath") return;
   const offset = node.position?.start?.offset;
-  // `\(…\)` and `\[…\]` are `inlineMath` too, and already carry the class they want.
-  if (offset === undefined || source[offset] !== DOLLAR) return;
+  // `\(…\)`, `\[…\]` and a single-dollar `$…$` are `inlineMath` too, and already carry the class
+  // they want.
+  if (offset === undefined || !source.startsWith(DISPLAY_RUN, offset)) return;
   const className = node.data?.hProperties?.className;
   if (!Array.isArray(className)) return;
   const index = className.indexOf(INLINE_CLASS);

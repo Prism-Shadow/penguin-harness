@@ -35,6 +35,10 @@ export function galleryUrl(locale: "zh" | "en"): string {
 }
 
 /** The AMSP page's outside links: the SDK on npm and its source, and MMSP's own site. */
+/** Where the Plugins page reads its packages: this repository's plugins/ directory. */
+export const PLUGINS_SOURCE = `${REPO_URL}/tree/main/plugins`;
+/** Where the Benchmarks and Leaderboards pages read their files. */
+export const BENCHMARK_REPO_URL = "https://github.com/Prism-Shadow/penguin-harness-benchmark";
 export const AMSP_NPM_URL = "https://www.npmjs.com/package/@prismshadow/amsp";
 export const AMSP_SOURCE_URL = `${REPO_URL}/tree/main/packages/amsp`;
 export const MMSP_URL = "https://mmsp.penguin.ooo/";
@@ -98,40 +102,6 @@ export const CLI_INSTALLERS: Record<"linux" | "macos" | "windows", CliInstaller[
   ],
   windows: [{ file: "penguin-win32-x64.zip", variant: "x64" }],
 };
-
-/**
- * Heavy marketing media lives in the sibling `penguin-harness-community` repo rather than
- * in this one, so that assets only the landing site ever renders stay out of the clone of
- * everyone who builds the product. Served by raw.githubusercontent with
- * `access-control-allow-origin: *` and a 5-minute cache; a GitHub outage degrades the site
- * to missing media, which is the accepted trade for not carrying the bytes here.
- */
-const COMMUNITY_RAW =
-  "https://github.com/Prism-Shadow/penguin-harness-community/raw/refs/heads/main";
-
-/**
- * Demo videos: several megabytes each — committing them here would multiply what every
- * contributor clones. raw.githubusercontent sends
- * `accept-ranges: bytes`, so seeking works. The `application/octet-stream` content type
- * does not block playback — `nosniff` is only enforced for scripts and styles, and
- * `<video>` sniffs the container itself (verified in Chromium).
- * Pair every embed with a poster and `preload="none"`: nothing is fetched until play.
- */
-export const demoVideoUrl = (name: string): string => `${COMMUNITY_RAW}/videos/${name}.mp4`;
-
-/**
- * Blog images: a few hundred KB per post, forever, since a published post's screenshots
- * are never deleted — the one asset class whose growth is unbounded in the number of posts
- * written. Hosting them in the community repo keeps that growth out of this history.
- *
- * The post Markdown deliberately does *not* spell these URLs out. Bodies keep writing the
- * portable `/blog-assets/<name>` path (both `![alt](…)` and the raw `<img src="…">` tags
- * some posts use), and the renderer resolves it here at render time — see the `img`
- * adapter in src/pages/blog-post.tsx. One source of truth for where the images are hosted,
- * Markdown that stays readable and diffable, and moving the host again is a one-line
- * change instead of a sweep over every post.
- */
-export const blogAssetUrl = (name: string): string => `${COMMUNITY_RAW}/blog-assets/${name}`;
 
 /** API key consoles (same URLs the in-app Models page links to). */
 export const DEEPSEEK_KEYS_URL = "https://platform.deepseek.com/api_keys";

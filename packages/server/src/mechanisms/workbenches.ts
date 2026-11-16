@@ -11,11 +11,14 @@
  *   under `/api/projects/:p/agents/:a/workbenches/:id/api/*`, which the workbench's own UI
  *   (served from its `ui/` folder) calls.
  *
- * `Workbenches` is the platform-side mechanism the routes drive: list, reload, dispatch,
- * serve a UI file, and the version history every successful load appends to — which is
- * what makes an Agent's own edits to its workbench reversible.
+ * `Workbenches` is the platform-side mechanism the routes drive: list, reload, switch on and
+ * off, dispatch, serve a UI file (and the page runtime compiled pages import), and the version
+ * history every successful load commits to the Agent State repository — which is what makes an
+ * Agent's own edits to its workbench reversible.
  */
+import type { IconImage } from "@prismshadow/penguin-core";
 import { Interface } from "@prismshadow/penguin-core/kernel";
+import type { IconRef } from "../api/types.js";
 
 /** A request the workbench's handler receives (the HTTP shape, minus the transport). */
 export interface WorkbenchRequest {
@@ -158,17 +161,76 @@ export interface WorkbenchTab {
   renderer: WorkbenchTabRenderer;
 }
 
+/**
+ * How a workbench asks to appear in its Project's App Center: `penguin.appCenter` in its own
+ * package.json, beside `penguin.version` and `penguin.modules`. Absent, or `show: false`, the
+ * workbench has no shortcut there.
+ */
+export interface WorkbenchAppCenter {
+  show: boolean;
+  /** At most 60 characters; the first tab's title, else the package name, when absent. */
+  title?: string;
+  /** At most 60 characters; the first tab's `titleZh` when absent. */
+  titleZh?: string;
+  /**
+   * An image file under `ui/`, at most 256 KB: SVG, PNG, JPEG, WebP, GIF or AVIF, its extension
+   * naming the format its bytes are, and an SVG holding no script, handler or outside reference.
+   * A letter tile when absent.
+   */
+  icon?: string;
+  /** The key of the tab the shortcut opens; the first tab when absent. */
+  tab?: string;
+}
+
+/** One tile of the App Center: a workbench whose manifest asks to be shown. */
+export interface AppCenterShortcut {
+  agentId: string;
+  agentName: string;
+  workbenchId: string;
+  title: string;
+  titleZh?: string;
+  /**
+   * The declared icon: `url` is its route under the workbench with the image's content revision
+   * (`…/app-center/icon?rev=<hash>`), so a changed icon is a new URL, and `tint` says whether it
+   * is a monochrome SVG drawn in the text colour. Absent without a declared icon that reads clean.
+   */
+  icon?: IconRef;
+  /** The full page the tile opens: /app/<projectId>/<agentId>/<workbenchId>[/<tab>]. */
+  path: string;
+  /** The tab the shortcut opens when the declaration names one; else the workbench's first. */
+  tab?: string;
+  /**
+   * Where its build stands on this server: "building" while a load of its files is under way or
+   * queued, "failed" when the last load recorded in `.build/status.json` failed, else "ready"
+   * (a workbench this process has not loaded yet is ready: opening it loads it).
+   */
+  build: "ready" | "building" | "failed";
+  /** With build "failed": the load error `.build/status.json` records. */
+  error?: string;
+}
+
+/**
+ * One workbench as the server holds it. One that does not run (its own switch or the Agent-wide
+ * one is off) is listed from its folder alone, never loaded for the listing: `revision` and
+ * `uiRev` are its source's as it stands on disk (so history still marks the current version),
+ * `tabs` and `hints` are empty, `error` is null (nothing was tried) and `loadedAt` is null;
+ * `appCenter` and `icon` are read from its package.json as for one that runs.
+ */
 export interface WorkbenchInfo {
   id: string;
   name: string;
   version: string | null;
-  /** Content revision of the whole folder (what history records). */
+  /** git's tree id (12 hex) of the folder's source: what history records. */
   revision: string;
   /** Content revision of `ui/`: the cache key of the workbench's pages. Null when it has no `ui/`. */
   uiRev: string | null;
   /** The tabs of the instance that is SERVING — the previous one's while `error` is set. */
   tabs: WorkbenchTab[];
-  loadedAt: string;
+  /**
+   * When the serving instance (or the failed attempt, with none serving) was loaded; null while
+   * the workbench does not run.
+   */
+  loadedAt: string | null;
   /** The boot error when the current files do not load (the previous instance, if any, keeps serving). */
   error: string | null;
   /**
@@ -176,52 +238,180 @@ export interface WorkbenchInfo {
    * — pages under `ui/` that no tab shows, say. Never a failure: `error` is that.
    */
   hints: string[];
+  /** What the current package.json declares for the App Center; absent when nothing, or nothing valid (a hint says why). */
+  appCenter?: WorkbenchAppCenter;
+  /**
+   * The icon that declaration names, shown in the App Center or not: the same `IconRef` its
+   * shortcut carries (the icon route with the image's revision). Absent without one that reads clean.
+   */
+  icon?: IconRef;
+  /**
+   * Its own switch: false while a `.disabled` marker sits in its folder. It runs only while this
+   * and the Agent-wide switch (`WorkbenchesResponse.enabled`) are both on; a disabled one is not
+   * loaded, serves nothing and shows no tab, but is still listed here. Absent from a server that
+   * predates the switches, which the Web reads as "no switch to show".
+   */
+  enabled?: boolean;
 }
 
+/**
+ * What the HTML of a compiled page is served with: the page runtime's import map and its
+ * stylesheet, each a file of the runtime (`…/workbenches/:id/sdk/ui/<file>`).
+ */
+export interface WorkbenchUiRuntime {
+  /** Bare specifier → the runtime file it loads. */
+  imports: Record<string, string>;
+  stylesheet: string;
+}
+
+/** A file of a workbench's pages, as `uiFile` finds it. */
+export interface WorkbenchUiFile {
+  /** Absolute path: a file under `ui/`, or the `.js` a TSX page compiled to under `.build/`. */
+  path: string;
+  /**
+   * Set on an HTML page of a workbench whose pages are compiled: the runtime its import map
+   * names. Null on every file served exactly as it is on disk.
+   */
+  compiled: WorkbenchUiRuntime | null;
+}
+
+/** A file of this server's page runtime, with a strong validator of its bytes. */
+export interface WorkbenchUiRuntimeFile {
+  body: Uint8Array;
+  etag: string;
+}
+
+/** A version of a workbench: a commit of the Agent State repository that changed its folder. */
 export interface WorkbenchVersion {
+  /** The folder's revision at that commit (`WorkbenchInfo.revision` when it was loaded). */
   revision: string;
+  /** The commit (12 hex) in `<agentDir>/agent_state.git`. */
+  commit: string;
   savedAt: string;
-  name: string;
-  version: string | null;
-  uiRev: string | null;
-  /** The files of that version (relative paths), for display. */
-  files: string[];
 }
 
+/**
+ * Every route that serves a workbench refuses one that does not run — its own switch or the
+ * Agent-wide one is off — with 409 `workbench_disabled`: its pages, the page runtime, its API,
+ * a reload. Listing, history, rollback (source only), export and removal still work.
+ */
 @Interface()
 export abstract class Workbenches {
+  /** Every workbench of the Agent, disabled ones included; the ones that run are loaded when stale. */
   abstract list(projectId: string, agentId: string): Promise<WorkbenchInfo[]>;
+  /** The Agent-wide switch: false while `.disabled` sits beside the workbench folders. */
+  abstract agentEnabled(projectId: string, agentId: string): Promise<boolean>;
+  /** Loads the folder now; one that does not run is refused (409 `workbench_disabled`). */
   abstract reload(projectId: string, agentId: string, workbenchId: string): Promise<WorkbenchInfo>;
+  /**
+   * After its source was written (an archive import): loads it as `reload` does when it runs,
+   * and otherwise answers it as it stands, not loaded.
+   */
+  abstract reloadIfEnabled(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+  ): Promise<WorkbenchInfo>;
+  /**
+   * Sets one workbench's own switch. Off unloads it at once (its subscriptions end with its
+   * tree); on loads it, unless the Agent-wide switch is off. The Project's users hear
+   * `workbench_updated`.
+   */
+  abstract setEnabled(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+    enabled: boolean,
+  ): Promise<WorkbenchInfo>;
+  /**
+   * Sets the Agent-wide switch, leaving each workbench's own as it is: off unloads every
+   * workbench of the Agent at once, on loads the ones whose own switch is on. Answers the
+   * listing after the change; each workbench is announced as `workbench_updated`.
+   */
+  abstract setAgentEnabled(
+    projectId: string,
+    agentId: string,
+    enabled: boolean,
+  ): Promise<{ workbenches: WorkbenchInfo[]; enabled: boolean }>;
   abstract dispatch(
     projectId: string,
     agentId: string,
     workbenchId: string,
     request: WorkbenchRequest,
   ): Promise<WorkbenchResponse>;
-  /** Absolute path of a file under the workbench's `ui/`, or null when absent/unsafe. */
+  /**
+   * A file of the workbench's `ui/`: the one on disk, else — for a `.js` a TSX page compiles
+   * to — what the serving instance emitted. Null when absent or unsafe.
+   */
   abstract uiFile(
     projectId: string,
     agentId: string,
     workbenchId: string,
     rel: string,
-  ): Promise<string | null>;
+  ): Promise<WorkbenchUiFile | null>;
+  /**
+   * A file of the page runtime this server serves compiled pages with (React and the shared
+   * components), under a workbench that exists; null otherwise.
+   */
+  abstract uiRuntimeFile(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+    rel: string,
+  ): Promise<WorkbenchUiRuntimeFile | null>;
   abstract history(
     projectId: string,
     agentId: string,
     workbenchId: string,
   ): Promise<WorkbenchVersion[]>;
+  /** Restores a version's source; it is loaded (and recorded as the newest version) only when it runs. */
   abstract rollback(
     projectId: string,
     agentId: string,
     workbenchId: string,
     revision: string,
   ): Promise<WorkbenchInfo>;
-  /** Deletes the folder and its recorded versions; the instance goes with them. */
+  /**
+   * Deletes the folder, state and switch included, and records the removal; its earlier
+   * versions are no longer listed. The instance goes with it.
+   */
   abstract remove(projectId: string, agentId: string, workbenchId: string): Promise<void>;
   /**
-   * Lets go of everything held for one Agent before its folder is deleted: the folder watcher,
-   * pending reloads, loads in flight and the loaded instances. A later listing takes them up
-   * again, so an Agent whose deletion is then refused loses nothing.
+   * The App Center of a Project: a shortcut for every workbench of its Agents on this server
+   * whose manifest asks to be shown, in Agent list order and by title within an Agent. Read from
+   * the manifests, each one's last load status and the loads under way — nothing is loaded or
+   * compiled. From then on the Agents' folders are watched, so an edit loads and is announced.
+   */
+  abstract appCenter(projectId: string): Promise<AppCenterShortcut[]>;
+  /**
+   * The icon a workbench's App Center declaration names, read and checked again; null when the
+   * workbench is unknown, its declaration does not hold up, or it names no icon.
+   */
+  abstract appCenterIcon(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+  ): Promise<IconImage | null>;
+  /**
+   * Rewrites `penguin.appCenter.show` in the workbench's package.json, and nothing else of it,
+   * then reloads the workbench — which records the edit as a version like any other.
+   */
+  abstract setAppCenter(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+    show: boolean,
+  ): Promise<WorkbenchInfo>;
+  /**
+   * Lets go of everything held for one Agent before its folder is deleted or its State is
+   * replaced: the folder watcher, pending reloads, loads in flight and the loaded instances. A
+   * later listing takes them up again, so an Agent whose deletion is then refused loses nothing.
    */
   abstract releaseAgent(projectId: string, agentId: string): Promise<void>;
+  /**
+   * Runs `work` (an Agent State import) with the Agent's workbenches released as by
+   * `releaseAgent` and kept so until it settles: a request for them meanwhile waits for the end
+   * instead of watching or loading the directory being replaced.
+   */
+  abstract whileReleased<T>(projectId: string, agentId: string, work: () => Promise<T>): Promise<T>;
 }

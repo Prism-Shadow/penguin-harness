@@ -41,12 +41,18 @@
  * development mode's chat input reads: a line of hint below the composer is read once and
  * then costs a row of the stream on every later visit.
  */
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type {
-  ClipboardEvent as ReactClipboardEvent,
-  DragEvent as ReactDragEvent,
-  KeyboardEvent as ReactKeyboardEvent,
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ClipboardEvent as ReactClipboardEvent,
+  type DragEvent as ReactDragEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
+
 import { Button, Dropdown, ICON_GAP, MenuLabel, noAutofill } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { fitTextarea } from "../../lib/textarea-fit";
@@ -56,8 +62,10 @@ import {
   mentionLabel,
   mentionQueryAt,
   rankMentionCandidates,
+  type MentionCandidate,
+  type MentionKind,
 } from "./channel-mentions";
-import type { MentionCandidate, MentionKind } from "./channel-mentions";
+
 import {
   EMPTY_DRAFT,
   MENTION_CLIP_TYPE,
@@ -75,8 +83,10 @@ import {
   mentionDeletedByKey,
   parseClip,
   serializeClip,
+  type DraftClip,
+  type DraftHistory,
+  type MentionDraft,
 } from "./mention-draft";
-import type { DraftClip, DraftHistory, MentionDraft } from "./mention-draft";
 
 /**
  * The box grows with the draft up to this many pixels, then scrolls inside — the same cap the

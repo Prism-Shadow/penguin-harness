@@ -2,10 +2,12 @@
  * Resolves every contract token in every theme × mode, as the browser computes it — and, on the
  * same footing, each theme's accent presets.
  *
- * The theme files select on `:root[data-theme]`, `:root.dark` and `:root[data-accent]`, so a
- * theme only takes effect on a document root. The probe therefore copies the page's own CSS into a
- * hidden, same-origin blank frame and flips that frame's root through the theme × mode pairs (and
- * the accent presets), reading each token with `getComputedStyle` — synchronous, and nothing on
+ * The theme packs select on the root — the base's values on the bare `:root`, every other pack's
+ * on `:root[data-theme]`, with `:root.dark` and `:root[data-accent]` — so a theme only takes
+ * effect on a document root. The probe therefore copies the page's own CSS into a hidden,
+ * same-origin blank frame and flips that frame's root through the theme × mode pairs (and the
+ * accent presets) with the package's own `applyThemeAttributes`, reading each token with
+ * `getComputedStyle` — synchronous, and nothing on
  * the visible page restyles. A custom property's computed value has its `var()` references
  * substituted, so `--ui-accent-line: var(--ui-accent)` comes back as the colour it points at; an
  * undefined token comes back as the empty string.

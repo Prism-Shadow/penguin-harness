@@ -51,7 +51,7 @@ case "$cmd" in
     for dir in plugins/*/; do
       (cd "$dir" && npm version --no-git-tag-version --allow-same-version "$V" >/dev/null)
     done
-    for p in amsp core server cli; do
+    for p in amsp a2ui chat-markdown core ui server cli; do
       (cd "packages/$p" && npm version --no-git-tag-version --allow-same-version "$V" >/dev/null)
     done
     # The server embeds an index of the sandbox backends it ships, each at the version its
@@ -68,6 +68,8 @@ case "$cmd" in
     ;;
   test)
     pnpm --filter @prismshadow/amsp test
+    pnpm --filter @prismshadow/a2ui test
+    pnpm --filter @prismshadow/chat-markdown test
     pnpm --filter @prismshadow/penguin-core test
     pnpm --filter @prismshadow/penguin-server test
     pnpm --filter @prismshadow/penguin-cli test
@@ -81,6 +83,8 @@ case "$cmd" in
     pnpm --filter @prismshadow/penguin-server gen:ifaces
     pnpm --filter @prismshadow/penguin-server exec vitest run \
       test/plugin-registry.test.ts test/version.test.ts test/deploy-same-build.test.ts
+    # The same for the CLI's table, which its command module imports.
+    pnpm --filter @prismshadow/penguin-cli gen:ifaces
     pnpm --filter @prismshadow/penguin-cli exec vitest run test/version.test.ts
     ;;
   *)

@@ -5,14 +5,17 @@
  * Info column has three lines: title line (small avatar + bold name + agentId); single-line
  * truncated description; and a stats line — icon + number only (Session count / tool count) plus
  * relative time (today/yesterday/n days ago), with meaning folded into the hover title; the
- * tool / skill / hook / memory / vault-key / schedule counts deep-link to the settings page's
- * matching tab (?tab=tools|skills|hooks|memory|vault|schedules) and appear in the settings tabs'
- * order.
+ * tool / skill / hook / workbench / memory / vault-key / schedule counts deep-link to the settings
+ * page's matching tab (?tab=tools|plugins|memory|vault|schedules; skills, hook packages and
+ * workbenches are all on Plugins) and appear in the settings tabs' order. A workbench counts
+ * whether or not it is switched on, as a Skill or a hook package counts whatever its switch says:
+ * the count is what the Plugins tab lists.
  * A click anywhere on a card's body goes to the Agent's settings page (lib/card-open.ts), and every
  * control inside it acts on its own; the Agent's name is the link to that page, the keyboard's way in.
  * Buttons sit to the right of the sparkline: "New Chat" (draft state, same as sidebar group
  * header) and "Settings" (goes to settings page) show text labels; "Usage" (deep links via
- * ?agentId= to the usage center) and "Delete" (with confirmation; built-in Agents show a
+ * ?agentId= to the usage center), "Export" (agent-export-dialog.tsx) and "Delete" (with
+ * confirmation; built-in Agents show a
  * non-interactive light gray placeholder with an undeletable tooltip) are square icon buttons
  * (tooltip shows the full name); "Create Agent" (create-agent-dialog.tsx) fills in name +
  * description and picks what the new Agent starts with — plugins from the library (each one's
@@ -30,20 +33,26 @@
  * answered from the first paint, greyed and inert without the plug until it answers in this page
  * load (lib/machine-agent-lists.ts); back on the page later they are live at once.
  *
+ * The list is grouped by who made each Agent unless the reader picks no grouping, a choice this
+ * browser remembers (agent-groups.ts): collapsible sections in the Plugins page's shape, each
+ * card unframed inside its section, employees filed under their author. With no grouping the
+ * list is one column, the organizations' employees in a ruled section after it.
+ *
  * The list is read again after a delete or a kernel update with the old one on screen: the
  * skeleton only stands in while no list of the Project has arrived yet. A delete answers once the
  * Agent has left every list; its files are removed in the background, on a progress card that
  * appears when that takes a while (agent-deletion-progress.ts).
  */
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+
 import { Link, useLocation, useNavigate } from "react-router";
-import type { AgentSummary } from "@prismshadow/penguin-server/api";
+import type { AgentAuthor, AgentSummary } from "@prismshadow/penguin-server/api";
 import {
   AgentAvatar,
   Pill,
   Button,
   Card,
+  CollapsibleSection,
   ConfirmModal,
   EmptyState,
   GlyphIcon,
@@ -54,6 +63,7 @@ import {
   PageFrame,
   PageHeader,
   RuledSection,
+  Select,
   Skeleton,
   SkeletonCard,
   Sparkline,
@@ -64,33 +74,47 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
+import { useAgentAvatarSrc } from "../../lib/agent-avatar";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { cardBodyClick } from "../../lib/card-open";
 import { formatDateTime, formatRelativeDays } from "../../lib/format";
 import { useDocumentTitle } from "../../lib/use-document-title";
-import { useUpdateBadges } from "../../lib/use-update-badges";
-import { dismissTodo } from "../../lib/todo-dismissals";
-import { bulkOutcome, failedList, firstFailure, noticeCounts } from "../../lib/bulk-update";
+import {
+  useUpdateBadges,
+  dismissTodo,
+  bulkOutcome,
+  failedList,
+  firstFailure,
+  noticeCounts,
+} from "../todos";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
 import { STAT_ICONS } from "../../lib/stat-icons";
-import { DRAFT_SESSION_ID } from "../chat/chat-page";
-import { prepareNewChatDraft } from "../chat/new-chat";
-import { AiCreateModal } from "../ai-create";
-import { AiCreateButtons } from "../ai-create/ai-create-buttons";
+import { DRAFT_SESSION_ID, prepareNewChatDraft } from "../chat";
+import { AiCreateModal, AiCreateButtons } from "../ai-create";
 import { agentKey, agentSettingsPath } from "../../lib/agent-location";
 import { mixAgents, useMachineAgents } from "../../lib/machine-agent-lists";
 import type { PlacedAgent } from "../../lib/machine-agent-lists";
 import { toneInk } from "../../lib/tone";
-import { employmentsOf, splitByEmployment } from "./agent-employment";
+import { employmentsOf, splitByEmployment } from "../../lib/agent-employment";
+import { isBuiltinAgent } from "../../lib/builtin-agents";
+import {
+  AGENT_GROUP_BYS,
+  groupByAuthor,
+  initialAgentsGroupBy,
+  initialFoldedAuthors,
+  storeAgentsGroupBy,
+  storeFoldedAuthors,
+  type AgentGroupBy,
+} from "./agent-groups";
 import { CreateAgentDialog, pluginPickItems } from "./create-agent-dialog";
-import { followAgentDeletion } from "./agent-deletion-progress";
+import { AgentExportDialog } from "./agent-export-dialog";
+import { AgentImportDialog } from "./agent-import-dialog";
+import { followAgentDeletion } from "../../lib/agent-deletion-progress";
 import type { PluginPickItem } from "./create-agent-dialog";
-
-/** Built-in Agents; the server also rejects deletion, so no delete entry point is shown here. */
-const BUILTIN_AGENT_IDS = new Set(["default_agent", "penguin_support"]);
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** Card button icons (24x24 line path, rendered via GlyphIcon). */
 const CARD_ICONS = {
@@ -144,17 +168,22 @@ export function AgentApiMark({ enabled }: { enabled: boolean }) {
 export function AgentCard({
   onOpen,
   dimmed = false,
+  framed = true,
   children,
 }: {
   /** Enters the Agent's settings page; null for one that cannot be reached right now. */
   onOpen: (() => void) | null;
   /** Greyed: a machine's Agent as last seen, while that machine cannot be asked or has not answered yet. */
   dimmed?: boolean;
+  /** False inside a group's section, which owns the frame: the card is then marked by its hover fill. */
+  framed?: boolean;
   children: ReactNode;
 }) {
   return (
     <Card
       padding="md"
+      framed={framed}
+      data-agent-card=""
       interactive={onOpen !== null}
       className={`flex flex-wrap items-center gap-x-6 gap-y-2 ${dimmed ? "opacity-60" : ""}`}
       {...(onOpen === null ? {} : { onClick: cardBodyClick(onOpen) })}
@@ -202,14 +231,34 @@ export function AgentsPage() {
   const { locale } = useLocale();
   const { user } = useAuth();
   const { currentProject, agents, agentsLoading, reloadAgents, setCurrentAgentId } = useProject();
+  const avatarSrc = useAgentAvatarSrc();
   /** Header search, the Models page's shape: name, id and description, case-insensitive. */
   const [query, setQuery] = useState("");
+  /** The header's grouping select and the folded author sections, both remembered per browser. */
+  const [groupBy, setGroupBy] = useState<AgentGroupBy>(() => initialAgentsGroupBy());
+  const [folded, setFolded] = useState<ReadonlySet<AgentAuthor>>(() => initialFoldedAuthors());
+  const chooseGroupBy = (by: AgentGroupBy) => {
+    setGroupBy(by);
+    storeAgentsGroupBy(by);
+  };
+  const toggleFold = (author: AgentAuthor) =>
+    setFolded((prev) => {
+      const next = new Set(prev);
+      if (next.has(author)) next.delete(author);
+      else next.add(author);
+      storeFoldedAuthors(next);
+      return next;
+    });
   /** The kernel trail's raised badge, or undefined — the notice under the title acts on it or clears it. */
   const kernelTodo = useUpdateBadges().todos.agents;
   /** The bulk kernel update's confirmation is open. */
   const [kernelConfirmOpen, setKernelConfirmOpen] = useState(false);
   const [kernelRunning, setKernelRunning] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  /** The header's "Import agent" dialog. */
+  const [importOpen, setImportOpen] = useState(false);
+  /** The card whose export icon opened the export dialog. */
+  const [exporting, setExporting] = useState<PlacedAgent | null>(null);
   /** The "Create with AI" dialog, a separate surface from the form above: neither path is a step of the other. */
   const [aiOpen, setAiOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -333,16 +382,17 @@ export function AgentsPage() {
    * filters both.
    */
   const sections = useMemo(() => splitByEmployment(shownAgents, (row) => row.agent), [shownAgents]);
+  /** The same Agents by who made them, for the grouping by author: employees go with their author. */
+  const authorGroups = useMemo(() => groupByAuthor(shownAgents, (row) => row.agent), [shownAgents]);
 
   /**
    * Stat icon click: same navigation as the "Settings" button plus `?tab=` so the settings
-   * page lands directly on the matching tab (unknown keys fall back to Overview there, so
-   * "skills" is harmless until the Skills tab ships).
+   * page lands directly on the matching tab — the Skill, hook package and workbench counts on
+   * the Plugins tab, where all three are listed.
    */
   const openSettingsTab = (
     agentId: string,
-    tab:
-      "overview" | "tools" | "vault" | "schedules" | "skills" | "hooks" | "workbenches" | "memory",
+    tab: "overview" | "tools" | "vault" | "schedules" | "plugins" | "memory",
     machineId: string | null = null,
   ) => {
     // The current Agent is one of THIS server's: a machine's Agent never becomes it.
@@ -426,7 +476,7 @@ export function AgentsPage() {
     try {
       await reloadAgents();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setKernelRunning(false);
       setKernelConfirmOpen(false);
@@ -438,8 +488,8 @@ export function AgentsPage() {
    * Agent — every control then acts on that machine, and while the machine cannot be reached the
    * card is greyed and inert, its controls disabled with the reason — and null for this server's.
    */
-  const renderCard = ({ agent: a, on }: PlacedAgent) => {
-    const builtin = BUILTIN_AGENT_IDS.has(a.agentId);
+  const renderCard = ({ agent: a, on }: PlacedAgent, framed = true) => {
+    const builtin = isBuiltinAgent(a.agentId);
     const machineId = on?.machine.machineId ?? null;
     /** Whether the server holding the Agent can be acted on right now (this one always can). */
     const reachable = on === null || on.live;
@@ -461,6 +511,7 @@ export function AgentsPage() {
         key={agentKey(machineId, a.agentId)}
         onOpen={reachable ? () => openSettings(a.agentId, machineId) : null}
         dimmed={!reachable}
+        framed={framed}
       >
         {/* Info column: once it can't fit within 14rem, everything after it
                     (sparkline/buttons) wraps as a whole. The avatar counts as the first line
@@ -471,9 +522,9 @@ export function AgentsPage() {
           <div className="flex items-center gap-2">
             <AgentAvatar
               id={a.agentId}
-              name={agentDisplayName(a)}
               size={18}
               className="shrink-0 rounded"
+              src={avatarSrc(a.agentId, machineId)}
             />
             <AgentNameLink
               agentId={a.agentId}
@@ -564,10 +615,10 @@ export function AgentsPage() {
             {(
               [
                 ["tools", STAT_ICONS.toolCalls, a.toolCount, S.agent.toolCount(a.toolCount)],
-                ["skills", CARD_ICONS.skills, a.skillCount, S.skills.skillCount(a.skillCount)],
-                ["hooks", ICONS.fishHook, a.hookCount, S.hooks.hookCount(a.hookCount)],
+                ["plugins", CARD_ICONS.skills, a.skillCount, S.skills.skillCount(a.skillCount)],
+                ["plugins", ICONS.fishHook, a.hookCount, S.hooks.hookCount(a.hookCount)],
                 [
-                  "workbenches",
+                  "plugins",
                   ICONS.anvil,
                   a.workbenchCount ?? 0,
                   S.workbenches.count(a.workbenchCount ?? 0),
@@ -588,7 +639,8 @@ export function AgentsPage() {
               ] as const
             ).map(([tab, glyph, count, label]) => (
               <button
-                key={tab}
+                // Three counts open the Plugins tab, so the tab is no key; each count's glyph is.
+                key={glyph}
                 type="button"
                 className={STAT_LINK_CLASS}
                 disabled={!reachable}
@@ -660,6 +712,19 @@ export function AgentsPage() {
               className="text-gray-600 dark:text-gray-300"
             />
           </Button>
+          <Button
+            size="icon"
+            title={offReason ?? S.agent.exportAgent}
+            aria-label={S.agent.exportAgent}
+            disabled={!reachable}
+            onClick={() => setExporting({ agent: a, on })}
+          >
+            <GlyphIcon
+              d={ICONS.download}
+              size={ICON_SIZE.iconButton}
+              className="text-gray-600 dark:text-gray-300"
+            />
+          </Button>
           {/* Built-in Agents can't be deleted: shown as a non-button light gray
                       placeholder (no border/background, no hover response, disabled cursor,
                       explained via tooltip); the transparent border keeps the same box size as
@@ -699,6 +764,19 @@ export function AgentsPage() {
     );
   };
 
+  /**
+   * Until the Project has an agent of its own, the list ends in the AI path's call to action: the
+   * built-in default is not one the user set up. Hidden while searching (the list itself is being
+   * filtered).
+   */
+  const firstAgentCall = !searching && agents.every((a) => isBuiltinAgent(a.agentId)) && (
+    <EmptyState
+      title={S.agent.firstAgentTitle}
+      description={S.agent.firstAgentDesc}
+      action={<AiCreateButtons size="sm" onAi={() => setAiOpen(true)} onManual={openCreate} />}
+    />
+  );
+
   return (
     <PageFrame>
       {/* The title row and the notice under it share one header block, so the gap below it (to
@@ -711,15 +789,37 @@ export function AgentsPage() {
         title={S.agent.listTitle}
         actions={
           <>
-            <div className="min-w-0 flex-1 sm:w-56 sm:flex-none">
-              <Input
-                size="sm"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder={S.agent.searchPlaceholder}
-              />
+            {/* The search box and the grouping select share a line on a phone, the box taking
+                what the select leaves; the Plugins page header has the same pair. */}
+            <div className="flex min-w-0 basis-full items-center gap-2 sm:basis-auto">
+              <div className="min-w-0 flex-1 sm:w-56 sm:flex-none">
+                <Input
+                  size="sm"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder={S.agent.searchPlaceholder}
+                />
+              </div>
+              <div className="w-40 shrink-0">
+                <Select
+                  size="sm"
+                  aria-label={S.agent.groupByLabel}
+                  value={groupBy}
+                  onChange={(e) => chooseGroupBy(e.target.value as AgentGroupBy)}
+                >
+                  {AGENT_GROUP_BYS.map((by) => (
+                    <option key={by} value={by}>
+                      {S.agent.groupBy[by]}
+                    </option>
+                  ))}
+                </Select>
+              </div>
             </div>
             <AiCreateButtons onAi={() => setAiOpen(true)} onManual={openCreate} />
+            <Button size="sm" onClick={() => setImportOpen(true)}>
+              <GlyphIcon d={ICONS.upload} />
+              {S.agent.importAgent}
+            </Button>
           </>
         }
       >
@@ -759,6 +859,23 @@ export function AgentsPage() {
         </div>
       ) : shownAgents.length === 0 ? (
         <EmptyState title={query.trim() === "" ? S.common.none : S.agent.searchEmpty} />
+      ) : groupBy === "author" ? (
+        /* One collapsible section per author, the Plugins page's grouping: a search opens every
+           section it leaves, since a match folded away would read as a missing one. */
+        <div className="space-y-3">
+          {authorGroups.map(({ author, items }) => (
+            <CollapsibleSection
+              key={author}
+              title={S.agent.authorGroups[author]}
+              meta={S.agent.agentCount(items.length)}
+              open={searching || !folded.has(author)}
+              onOpenChange={() => toggleFold(author)}
+            >
+              <div className="space-y-2 p-2">{items.map((row) => renderCard(row, false))}</div>
+            </CollapsibleSection>
+          ))}
+          {firstAgentCall}
+        </div>
       ) : (
         /* GitHub-repo-list-style single column: separate cards with row spacing; each row is
            one horizontal band of "info | sparkline | button group", with the info column
@@ -767,19 +884,8 @@ export function AgentsPage() {
            own, shown only when there is one to list. */
         <>
           <div className="space-y-3">
-            {sections.agents.map(renderCard)}
-            {/* Until the Project has an agent of its own, the list ends in the AI path's call to
-              action: the built-in default is not one the user set up. Hidden while searching
-              (the list itself is being filtered). */}
-            {query.trim() === "" && agents.every((a) => BUILTIN_AGENT_IDS.has(a.agentId)) && (
-              <EmptyState
-                title={S.agent.firstAgentTitle}
-                description={S.agent.firstAgentDesc}
-                action={
-                  <AiCreateButtons size="sm" onAi={() => setAiOpen(true)} onManual={openCreate} />
-                }
-              />
-            )}
+            {sections.agents.map((row) => renderCard(row))}
+            {firstAgentCall}
           </div>
           {sections.employees.length > 0 && (
             <RuledSection
@@ -788,7 +894,7 @@ export function AgentsPage() {
               info={S.agent.employeesSectionInfo}
               className={sections.agents.length > 0 ? "mt-8" : ""}
             >
-              <div className="space-y-3">{sections.employees.map(renderCard)}</div>
+              <div className="space-y-3">{sections.employees.map((row) => renderCard(row))}</div>
             </RuledSection>
           )}
         </>
@@ -803,8 +909,29 @@ export function AgentsPage() {
           .filter((list) => list.machine.link === "connected")
           .map((list) => ({ value: list.machine.machineId, label: list.machine.label }))}
         onClose={() => setCreateOpen(false)}
+        onImport={() => {
+          setCreateOpen(false);
+          setImportOpen(true);
+        }}
         onCreated={onCreated}
       />
+
+      {projectId && importOpen && (
+        <AgentImportDialog
+          projectId={projectId}
+          machineId={null}
+          onClose={() => setImportOpen(false)}
+        />
+      )}
+      {projectId && exporting !== null && (
+        <AgentExportDialog
+          projectId={projectId}
+          agentId={exporting.agent.agentId}
+          agentName={agentDisplayName(exporting.agent)}
+          machineId={exporting.on?.machine.machineId ?? null}
+          onClose={() => setExporting(null)}
+        />
+      )}
 
       {/* The AI path, its own dialog rather than a mode of the form above: the draft plus the
           fixed tail lands in a new conversation with the Project's default agent, which runs the

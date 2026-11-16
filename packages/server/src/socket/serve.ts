@@ -26,7 +26,7 @@
 import type { WebSocket } from "ws";
 import { API_SOCKET_PATH, sessionKindPath } from "../api/types.js";
 import { declined } from "../hmr/hono-seam.js";
-import { CALL_HEADERS, parseClientFrame } from "./frames.js";
+import { CALL_HEADERS, CREDIT_FLOW, parseClientFrame } from "./frames.js";
 import type { CallFrame, ServerFrame } from "./frames.js";
 import { StreamAnswer } from "./stream-answer.js";
 
@@ -96,6 +96,8 @@ const errorBody = (code: string, message: string) => ({ error: { code, message }
 export function serveApiSocket(ws: WebSocket, deps: ApiSocketDeps): void {
   /** In-flight calls by id; a streaming call stays here until its answer is over. */
   const inflight = new Map<number, AbortController>();
+  /** The stream answers among them, for the acks a credit-flow call is paced by. */
+  const answers = new Map<number, StreamAnswer>();
   let alive = true;
 
   const send = (frame: ServerFrame): void => {
@@ -125,6 +127,15 @@ export function serveApiSocket(ws: WebSocket, deps: ApiSocketDeps): void {
   ws.on("pong", () => {
     alive = true;
   });
+  // A peer that pings us hears this socket: the hub pings a machine only while it still hears
+  // that machine's link. On a slow link our own ping waits behind everything queued ahead of it
+  // (a page's worth of history is most of a beat at 10 KB/s), so its pong can come back later
+  // than a beat while the peer is receiving all along — dropping it then would cut a live link.
+  // A dead link carries no pings, so the check above still ends it; a browser cannot send
+  // protocol pings, so nothing changes for one.
+  ws.on("ping", () => {
+    alive = true;
+  });
 
   ws.on("message", (data, isBinary) => {
     alive = true; // traffic is proof of life too
@@ -136,16 +147,24 @@ export function serveApiSocket(ws: WebSocket, deps: ApiSocketDeps): void {
       inflight.get(frame.id)?.abort();
       return;
     }
+    if ("ack" in frame) {
+      answers.get(frame.id)?.ack(frame.ack);
+      return;
+    }
     if (inflight.has(frame.id)) return ws.close(1002, `call id ${frame.id} is in flight`);
     const controller = new AbortController();
     inflight.set(frame.id, controller);
-    void dispatch(frame, controller).finally(() => inflight.delete(frame.id));
+    void dispatch(frame, controller).finally(() => {
+      inflight.delete(frame.id);
+      answers.delete(frame.id);
+    });
   });
 
   ws.on("close", () => {
     clearInterval(heartbeat);
     for (const controller of inflight.values()) controller.abort();
     inflight.clear();
+    answers.clear();
   });
   ws.on("error", (err) => deps.log(`[socket] ${err.message}`));
 
@@ -178,8 +197,11 @@ export function serveApiSocket(ws: WebSocket, deps: ApiSocketDeps): void {
     // answer the stream directly (stream-answer.ts). Every other call is made as any call
     // is, and whatever Response comes back is framed below.
     const answer = (headers["accept"] ?? "").includes("text/event-stream")
-      ? new StreamAnswer(id, send, controller, () => ws.bufferedAmount > HIGH_WATER_BYTES)
+      ? new StreamAnswer(id, send, controller, () => ws.bufferedAmount > HIGH_WATER_BYTES, {
+          credit: headers["x-flow"] === CREDIT_FLOW,
+        })
       : null;
+    if (answer !== null) answers.set(id, answer);
     let res: Response;
     try {
       res = await (answer === null ? deps.fetch(request) : deps.fetchStream(request, answer));
@@ -200,11 +222,11 @@ export function serveApiSocket(ws: WebSocket, deps: ApiSocketDeps): void {
       await res.body?.cancel().catch(() => undefined);
       return;
     }
-    await answerOnce(id, res);
+    await answerOnce(id, res, controller.signal);
   }
 
   /** Frames a Response a route answered without streaming, as any call's answer. */
-  async function answerOnce(id: number, res: Response): Promise<void> {
+  async function answerOnce(id: number, res: Response, signal: AbortSignal): Promise<void> {
     if (isDeclined(res)) {
       // Not the platform's to answer: not this transport's to carry either.
       httpRequired(id);
@@ -214,6 +236,9 @@ export function serveApiSocket(ws: WebSocket, deps: ApiSocketDeps): void {
     // (a download) does not ride this transport — the client falls back to HTTP on 415.
     const type = res.headers.get("content-type") ?? "";
     const text = await res.text().catch(() => "");
+    // Released while the body was read (a cancel, the socket closing): the caller has given
+    // the call up, and an answer now would be a wrong one — a 200 with whatever was read.
+    if (signal.aborted) return;
     let parsed: unknown = null;
     if (text !== "") {
       if (type.includes("json")) {

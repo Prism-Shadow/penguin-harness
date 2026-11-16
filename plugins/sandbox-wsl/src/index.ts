@@ -393,6 +393,21 @@ export class SandboxWslStatus {
 
 @Component({
   contributes: {
+    // How the Plugins page shows this backend (read from ifaces.json, never by booting it).
+    "PluginLibraryModule.cards": [
+      {
+        id: "sandbox-wsl.card",
+        title: "Windows Sandbox",
+        titleZh: "Windows 沙箱",
+        descriptionZh:
+          "PenguinHarness 在 Windows 上的 WSL 沙箱后端：命令在专用的 WSL2 发行版中经 bubblewrap 运行，并关闭 Windows 互操作。",
+        shortDescription: "Windows: run commands in a confined WSL2 distro.",
+        shortDescriptionZh: "Windows：在受限的 WSL2 发行版中运行命令。",
+        category: "sandbox",
+        icon: "icon.svg",
+        preinstall: false,
+      },
+    ],
     "SandboxModule.providers": [
       {
         id: "sandbox-wsl.provider",

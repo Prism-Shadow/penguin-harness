@@ -8,10 +8,13 @@
  * - `MessageBubble` is the chrome, in three variants: `user`, the prompt's text in a bubble
  *   tinted by the accent; `steering`, a smaller bordered chip on the same tint for a steer, marked
  *   by the person glyph and a short label, with the images and files it carried inside it; and
- *   `notice`, a quiet mono line — an abort, a failed request, a reconnect with its controls — in
- *   the muted ink or, for a reconnect, the attention ink. The person's own words sit on the
- *   accent's tint, so they follow the accent the person chose; with the theme's own accent that
- *   tint is a gray.
+ *   `notice`, a quiet mono line — an abort, a model request retrying or failed — in the muted
+ *   ink: a bracketed label and its cause ("[Aborted]: …"), a long text clamped to three lines
+ *   with an Expand, and its presses as bracketed text actions after it ("[Retry]"). A line the
+ *   caller composes (a countdown in it) stays one run of text. The two boxed variants, the
+ *   person's own words, carry the `ui-edge` hook, so a theme that draws the edge of what a
+ *   person wrote draws theirs. The person's own words sit on the accent's tint, so they follow
+ *   the accent the person chose; with the theme's own accent that tint is a gray.
  * - `MessageAttachments` holds what a prompt carried, above its text: the images and the files,
  *   each an `AttachmentList` row (attachments.tsx), in the order the composer showed them.
  * - `MessageMeta` is the footer: the time and a copy button. From `sm` up it is invisible but
@@ -27,6 +30,7 @@
  */
 import type { ReactNode } from "react";
 import { CopyButton } from "../../actions/copy-button/copy-button";
+import { ClampedText } from "../../content/clamped-text/clamped-text";
 import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
 import { ICONS } from "../../icons/icons";
 
@@ -63,7 +67,7 @@ export interface MessageBubbleProps {
   attachments?: ReactNode;
   /** `notice`: `neutral` for an abort or a failed request, `attention` for a reconnect. */
   tone?: "neutral" | "attention";
-  /** `notice`: controls at the end of the line (retry now, give up). */
+  /** `notice`: text actions at the end of the line (Retry). */
   actions?: ReactNode;
 }
 
@@ -78,7 +82,7 @@ export function MessageBubble({
   switch (variant) {
     case "user":
       return (
-        <div className={`${WIDTH} rounded-lg bg-accent-tint px-4 py-2.5`}>
+        <div className={`ui-edge ${WIDTH} rounded-lg bg-accent-tint px-4 py-2.5`}>
           <p className="wrap-anywhere font-sans whitespace-pre-wrap text-base leading-relaxed text-fg">
             {children}
           </p>
@@ -87,7 +91,7 @@ export function MessageBubble({
     case "steering":
       return (
         <div
-          className={`flex ${WIDTH} flex-col gap-1.5 rounded-md border border-line-emphasis bg-accent-tint px-3 py-1.5`}
+          className={`ui-edge flex ${WIDTH} flex-col gap-1.5 rounded-md border border-line-emphasis bg-accent-tint px-3 py-1.5`}
         >
           <div className="flex items-start gap-1.5">
             <GlyphIcon d={ICONS.user} className="mt-1 shrink-0 text-fg-subtle" />
@@ -108,9 +112,14 @@ export function MessageBubble({
             tone === "attention" ? "text-tone-attention-fg" : "text-fg-muted"
           } ${actions !== undefined ? "flex flex-wrap items-center gap-x-2 gap-y-1" : ""}`}
         >
-          {children}
+          {typeof children === "string" ? (
+            <ClampedText>{children}</ClampedText>
+          ) : (
+            // One flex item, so the parts of a composed line do not take the row's gaps.
+            <span className="min-w-0">{children}</span>
+          )}
           {actions !== undefined && (
-            <span className="flex shrink-0 items-center gap-1.5">{actions}</span>
+            <span className="flex shrink-0 items-center gap-3">{actions}</span>
           )}
         </p>
       );

@@ -1,6 +1,6 @@
 /**
  * The Workspace finder every Workspace picker opens; its decisions live in
- * features/chat/workspace-finder-model.ts.
+ * features/workspace/workspace-finder-model.ts.
  *
  * - Breadcrumbs split a posix path from the root and keep a drive root whole.
  * - History goes back and forward, a new visit drops what was ahead, and reloading the folder
@@ -58,8 +58,10 @@ import {
   tempWorkspacePath,
   typeSelectIndex,
   visibleEntries,
-} from "../src/features/chat/workspace-finder-model";
-import type { AccessAsk, DeniedBox } from "../src/features/chat/workspace-finder-model";
+  type AccessAsk,
+  type DeniedBox,
+} from "../src/features/workspace/workspace-finder-model";
+
 import { memoryStorage } from "./helpers/storage";
 
 const dir = (name: string, kind: "dir" | "file" = "dir"): DirEntryInfo => ({
