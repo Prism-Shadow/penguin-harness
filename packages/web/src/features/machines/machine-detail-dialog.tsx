@@ -80,8 +80,9 @@ import {
   type StepState,
   type ToolbarItem,
   type ToolbarVerb,
+  type VerbContext,
+  type VerbGroup,
 } from "./machine-detail-view";
-import type { VerbContext, VerbGroup } from "./machine-detail-view";
 import { outOfDate, readMachine, socketReading } from "./machines-view";
 
 /** Everything the dialog can ask its page to do for the machine. */

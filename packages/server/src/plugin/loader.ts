@@ -30,12 +30,12 @@ import {
   IFACES_FILE,
   parsePluginTables,
   projectConfigPath,
+  type PluginDeclaration,
   type PluginTables,
   readPluginTable,
 } from "@prismshadow/penguin-core";
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { findPackageJSON } from "node:module";
-import type { PluginDeclaration } from "@prismshadow/penguin-core";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type {
@@ -155,11 +155,7 @@ export async function readProjectPluginList(
 }
 
 /** What one Project asks `machineId` to run, name → requirement, in the order it wrote them. */
-async function readProjectPluginTable(
-  root: string,
-  projectId: string,
-  machineId: string | null,
-) {
+async function readProjectPluginTable(root: string, projectId: string, machineId: string | null) {
   const tables = await readProjectPluginTables(root, projectId);
   return tables === undefined ? {} : effectivePluginTable(tables, machineId);
 }
