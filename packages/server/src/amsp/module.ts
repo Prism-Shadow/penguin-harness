@@ -14,7 +14,7 @@
 import { Bind, Component, Module, Use } from "@prismshadow/penguin-core/kernel";
 import type { Hono } from "hono";
 import type { AppEnv } from "../auth/middleware.js";
-import { AgentApiRepo } from "@prismshadow/penguin-library-agent-api/repos/agent-api";
+import { AgentApiRepo } from "@prismshadow/penguin-library-agent-api/agent-api-repo";
 import type { Channels, Clock, Log } from "../hmr/capabilities.js";
 import { AgentApi } from "@prismshadow/penguin-library-agent-api";
 import type { AgentConfig } from "../mechanisms/agents.js";
