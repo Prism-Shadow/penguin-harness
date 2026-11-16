@@ -345,7 +345,7 @@ The dashed marker on the bar is the compaction threshold. The hatched stretch pa
 2. Release, or press Enter. The **Change the compaction threshold** dialog opens, and you can still edit the number. Esc cancels.
 3. Confirm. The threshold is saved to the agent and applies to this conversation at once, even mid-run.
 
-A value above the model's window is accepted, with a note that the window's size is what takes effect. When the model's window is already smaller than the agent's threshold, a notice above the composer says so, with **Open agent settings** and **Dismiss**.
+A value above the model's window is accepted, with a note that the window's size is what takes effect. When the model's window is already smaller than the agent's threshold, a notice above the composer says so, with **Open agent settings** and **Dismiss**. The same place tells you when the provider refused a request and the conversation went on from a Trace hand-off note: the model's context window is probably set larger than the provider serves, so correct it or lower the threshold (see [When the provider refuses a request](/configuration#when-the-provider-refuses-a-request)). Only one of the two notices shows at a time.
 
 ## Organize the conversation list
 

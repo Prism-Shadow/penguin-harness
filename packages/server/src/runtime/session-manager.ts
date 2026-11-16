@@ -197,10 +197,16 @@ export type RunOpts = {
   signal: AbortSignal;
 };
 
+/** The target pair plus a run's options (`approve` answers the compaction's tool rounds). */
+export interface SwitchModelOpts extends RunOpts {
+  provider: string;
+  modelId: string;
+}
+
 export interface RuntimeSession {
   readonly sessionId: string;
   run(newMessages: AmspRecord[], opts: RunOpts): AsyncGenerator<AmspRecord>;
-  compact(opts: { signal: AbortSignal }): AsyncGenerator<AmspRecord>;
+  compact(opts: RunOpts): AsyncGenerator<AmspRecord>;
   /**
    * The running context's model (core `Session.provider` / `Session.modelId`, getters over
    * the context's session_meta): the row's pair at creation, moved by each in-session switch
@@ -217,11 +223,7 @@ export interface RuntimeSession {
    * switches without streaming anything. Optional: test fakes may omit it, reading as
    * "switching is not available".
    */
-  switchModel?(opts: {
-    provider: string;
-    modelId: string;
-    signal: AbortSignal;
-  }): AsyncGenerator<AmspRecord, StopReason>;
+  switchModel?(opts: SwitchModelOpts): AsyncGenerator<AmspRecord, StopReason>;
   /**
    * The Session's thinking level (core `Session.thinkingLevel`, plain state): soft-limited —
    * an assignment applies from the Session's very next LLM request. Optional: test fakes may
@@ -1573,7 +1575,9 @@ export class SessionManager {
       entry.abort = ac;
       entry.lastActivityMs = Date.now();
       this.publishState(entry, "compacting");
-      const gen = entry.session.compact({ signal: ac.signal });
+      // The compaction's tool rounds are approved like a Task's calls: under always-ask a
+      // hand-off file write waits for the user's click, as any write would.
+      const gen = entry.session.compact({ approve: this.entryApprove(entry), signal: ac.signal });
       entry.running = this.drive(entry, gen);
       return { sessionId: entry.sessionId };
     });
@@ -1651,7 +1655,11 @@ export class SessionManager {
         this.entries.delete(entry.sessionId);
       };
       const ac = new AbortController();
-      const gen = entry.session.switchModel({ ...ref, signal: ac.signal });
+      const gen = entry.session.switchModel({
+        ...ref,
+        approve: this.entryApprove(entry),
+        signal: ac.signal,
+      });
       const head = gen.next();
       const settled = (): void => {
         entry.abort = null;
@@ -2554,6 +2562,9 @@ export class SessionManager {
       },
       entry.session.contextOpenPending?.() === true,
     );
+    // Inside a main-session compaction span: its requests are not the run's first request (the
+    // engine writes no run input ahead of them).
+    let compacting = false;
     try {
       for await (const msg of gen) {
         echo.before(msg);
@@ -2637,13 +2648,15 @@ export class SessionManager {
           if (bt === "mcp_connect_begin" || bt === "mcp_connect_end" || bt === "tool_list_ready") {
             entry.pendingBootstrap.push(msg);
           }
+          if (bt === "compaction_begin") compacting = true;
+          else if (bt === "compaction_end") compacting = false;
           // First request of the run: the engine writes input → bootstrap records → tool
           // list to the Trace BEFORE issuing the request, so both holds are persisted by
           // now — end them here rather than at idle. Holding for the whole run would
           // outlive the messages endpoint's tail-window dedup: once the Task appends
           // more records than the window, the input would be judged "not yet in the
           // Trace" and served a second time at the end of history.
-          if (bt === "request_begin") {
+          if (bt === "request_begin" && !compacting) {
             entry.pendingInputs = [];
             entry.pendingBootstrap = [];
           }
