@@ -84,6 +84,7 @@ import {
   mergeIndexes,
   withoutIcon,
 } from "../../plugin/registry.js";
+import { indexMirrorRules } from "../../plugin/mirror-settings.js";
 import type {
   CachedRegistry,
   IndexDocumentEntry,

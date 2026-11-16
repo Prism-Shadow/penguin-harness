@@ -253,7 +253,7 @@ describe("/api/admin/plugin-config", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as PluginConfigResponse;
     // The sandbox's group is ordered ahead of the rest; the server's own groups follow it
-    // (sources 1, then the index's and the mirrors' cards) and the packages' groups come last.
+    // (sources 1, the index's card, mirrors 2) and the packages' groups come last.
     expect(body.plugins.map((p) => p.name)).toEqual([
       "sandbox",
       "plugin-sources",

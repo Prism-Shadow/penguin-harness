@@ -52,9 +52,14 @@ import {
   rewriteRuleRisk,
   type IndexChannel,
   type PluginProxyRule,
-  PLUGIN_DEFAULT_PROXY_RULES,
 } from "../src/plugin/registry.js";
-import { resolveServerConfig } from "../src/config.js";
+import {
+  MIRROR_RULES,
+  MIRROR_IDS,
+  indexMirrorRules,
+  mirrorRulesOf,
+  setIndexMirrors,
+} from "../src/plugin/mirror-settings.js";
 
 const noWait = async () => undefined;
 
@@ -506,20 +511,27 @@ describe("channel mirrors", () => {
   });
 });
 
-describe("deployment proxy config", () => {
-  const rules = [
-    {
-      kind: "rewrite",
-      match: "^https:\\/\\/github\\.com\\/(.+)$",
-      rewrite: "https://gh-mirror.example/$1",
-    },
-  ];
-
-  it("PENGUIN_PLUGIN_PROXY reads a JSON rule array in order; unset reads the built-in set (empty)", () => {
-    const env = { PORT: "0", PENGUIN_PLUGIN_PROXY: JSON.stringify(rules) };
-    expect(resolveServerConfig(env).pluginProxy).toEqual(rules);
-    expect(PLUGIN_DEFAULT_PROXY_RULES).toEqual([]);
-    expect(resolveServerConfig({ PORT: "0" }).pluginProxy).toEqual([...PLUGIN_DEFAULT_PROXY_RULES]);
+describe("plugin mirrors, as a settings group", () => {
+  it("the user's choice runs the chosen mirrors' rules in try order; the default runs none", () => {
+    expect(indexMirrorRules()).toEqual([]);
+    setIndexMirrors(mirrorRulesOf(["npm-registry", "github-proxy"]));
+    try {
+      // The npm registry mirror first, the GitHub content proxy second: the choice's order.
+      expect(indexMirrorRules()).toEqual([
+        {
+          kind: "rewrite",
+          match: "^https:\\/\\/registry\\.npmjs\\.org\\/(.+)$",
+          rewrite: "https://registry.npmmirror.com/$1",
+        },
+        {
+          kind: "rewrite",
+          match: "^https:\\/\\/github\\.com\\/(.+)$",
+          rewrite: "https://gh-proxy.com/https://github.com/$1",
+        },
+      ]);
+    } finally {
+      setIndexMirrors([]);
+    }
   });
 
   // The boundary samples below run safe-regex over a 65,536-character pattern; that
@@ -563,32 +575,47 @@ describe("deployment proxy config", () => {
       ).toEqual(["https://mirror.example/https://" + "a".repeat(4096) + "/x"]);
     },
   );
+  it("an unknown mirror id, a non-array or a stale document contributes nothing", () => {
+    expect(mirrorRulesOf(["no-such-mirror"])).toEqual([]);
+    expect(mirrorRulesOf("npm-registry")).toEqual([]);
+    expect(mirrorRulesOf(undefined)).toEqual([]);
+    expect(mirrorRulesOf([1, "github-proxy"])).toEqual(
+      MIRROR_RULES[MIRROR_IDS.indexOf("github-proxy")],
+    );
+    setIndexMirrors(mirrorRulesOf(["github-raw"]));
+    try {
+      // jsDelivr serves a repository's files at its tag: raw URLs map onto the /gh/ shape.
+      expect(indexMirrorRules()).toEqual([
+        {
+          kind: "rewrite",
+          match: "^https:\\/\\/raw\\.githubusercontent\\.com\\/([^/]+)\\/([^/]+)\\/(.*)$",
+          rewrite: "https://fastly.jsdelivr.net/gh/$1/$2@$3",
+        },
+      ]);
+    } finally {
+      setIndexMirrors([]);
+    }
+  });
+>>>>>>> 14ba6f87e4 (feat(plugins): the channel install hands the release URL to npm itself and verifies what it installed after the fact)
 
-  it("a rule of an unknown kind, a non-string field or a pattern that will not compile is a config error", () => {
-    expect(() =>
-      resolveServerConfig({
-        PORT: "0",
-        PENGUIN_PLUGIN_PROXY: JSON.stringify([{ kind: "page", match: "x", rewrite: "y" }]),
-      }),
-    ).toThrow(/unknown rule kind/);
-    expect(() =>
-      resolveServerConfig({
-        PORT: "0",
-        PENGUIN_PLUGIN_PROXY: JSON.stringify([{ kind: "rewrite", match: 1, rewrite: "y" }]),
-      }),
-    ).toThrow(/string match and rewrite/);
-    expect(() =>
-      resolveServerConfig({
-        PORT: "0",
-        PENGUIN_PLUGIN_PROXY: JSON.stringify([{ kind: "rewrite", match: "(", rewrite: "y" }]),
-      }),
-    ).toThrow();
-    // The ReDoS gate sits in the same parse: a catastrophic pattern is a boot error.
-    expect(() =>
-      resolveServerConfig({
-        PORT: "0",
-        PENGUIN_PLUGIN_PROXY: JSON.stringify([{ kind: "rewrite", match: "^(a+)+$", rewrite: "y" }]),
-      }),
-    ).toThrow(/not linear/);
+  // The built-in rules run over real URLs the way the fetches will: each rewrite lands on
+  // the mirror's own shape, and a URL none of them match contributes nothing.
+  it("the built-in rules rewrite the URLs they are for", () => {
+    for (const rules of MIRROR_RULES) {
+      for (const rule of rules) expect(rewriteRuleRisk(rule)).toBeNull();
+    }
+    expect(
+      pluginProxyMirrors("https://registry.npmjs.org/acme/-/acme-1.0.0.tgz", MIRROR_RULES[0]),
+    ).toEqual(["https://registry.npmmirror.com/acme/-/acme-1.0.0.tgz"]);
+    expect(
+      pluginProxyMirrors(
+        "https://raw.githubusercontent.com/acme/acme/main/README.md",
+        MIRROR_RULES[1],
+      ),
+    ).toEqual(["https://fastly.jsdelivr.net/gh/acme/acme@main/README.md"]);
+    expect(
+      pluginProxyMirrors("https://github.com/acme/acme/releases/download/v1.0.0/acme.tgz", MIRROR_RULES[2]),
+    ).toEqual(["https://gh-proxy.com/https://github.com/acme/acme/releases/download/v1.0.0/acme.tgz"]);
+    expect(pluginProxyMirrors("https://example.com/x", MIRROR_RULES[0])).toEqual([]);
   });
 });
