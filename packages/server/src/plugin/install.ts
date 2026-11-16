@@ -25,12 +25,13 @@
  */
 import { execFile } from "node:child_process";
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
-import { accessSync, constants as fsConstants, existsSync } from "node:fs";
+import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import { createRequire } from "node:module";
 import path, { relative } from "node:path";
 import { promisify } from "node:util";
 import { Component } from "@prismshadow/penguin-core/kernel";
+import { which } from "which";
 import type { PluginPackages } from "../mechanisms/plugins.js";
 import type { IndexChannel } from "./registry.js";
 const execFileAsync = promisify(execFile);
@@ -117,11 +118,12 @@ export async function prefixDependencies(prefix: string): Promise<Record<string,
  *    not assumed. Running the CLI through node itself avoids every batch-file question.
  * 2. Whatever `npm` this machine puts on PATH — the way every other npm consumer here
  *    resolves it. Debian splits npm out of its node package, so the layout above can be
- *    absent on a machine that has npm; the PATH form covers it. Located by a PATH scan
- *    (PATHEXT extensions on Windows — the shim is npm.cmd on node-installed machines,
- *    npm.exe under scoop — a bare executable elsewhere), not by guessing one spelling; the
- *    command itself stays the plain `npm` name, which the system then resolves the same way
- *    it would for any other consumer.
+ *    absent on a machine that has npm; the PATH form covers it. Located with `which`, the
+ *    resolver cross-spawn itself sits on: it walks PATH under PATHEXT on Windows (npm.cmd
+ *    on node-installed machines, npm.exe under scoop) and checks executability on POSIX —
+ *    the quirks a hand-rolled scan forgets, settled once in a package every resolver here
+ *    already trusts. The command itself stays the plain `npm` name, which the system then
+ *    resolves the same way it would for any other consumer.
  *
  * A candidate is offered only when its file is proven present, so a failed install never
  * reads as "npm is missing" when npm ran and failed: a broken npm surfaces through the
@@ -129,24 +131,6 @@ export async function prefixDependencies(prefix: string): Promise<Record<string,
  * checkable without starting a process, and `npm --version` would prove nothing the check
  * does not.
  */
-
-/** Where a PATH-resolved npm lives, if this machine has one; null when it does not. */
-function npmOnPath(): string | null {
-  for (const dir of (process.env.PATH ?? "").split(path.delimiter)) {
-    if (dir === "") continue;
-    if (process.platform === "win32") {
-      // The extensions cmd.exe itself resolves `npm` through (PATHEXT's spawnable subset).
-      for (const ext of (process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";")) {
-        const shim = path.join(dir, `npm${ext.toLowerCase()}`);
-        if (existsSync(shim)) return shim;
-      }
-    } else {
-      const shim = path.join(dir, "npm");
-      if (existsSync(shim) && accessSync(shim, fsConstants.X_OK) === undefined) return shim;
-    }
-  }
-  return null;
-}
 
 interface NpmCommand {
   /** What this candidate is, in the error shown when nothing is found. */
@@ -176,7 +160,7 @@ const npmCandidates = (): { candidates: readonly NpmCommand[]; notes: readonly s
   } else {
     notes.push(`no npm beside this node (${bundled})`);
   }
-  const onPath = npmOnPath();
+  const onPath = which("npm", { nothrow: true });
   if (onPath !== null) {
     // On Windows the PATH entry is a batch file, which node refuses to spawn directly
     // (`spawn EINVAL`), so cmd.exe runs it — a real executable; `/d` skips AutoRun scripts,
