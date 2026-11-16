@@ -328,13 +328,24 @@ export function indexChannelLookup(
     if (urls.length === 0) return { channel: null, fault: null };
     const at = now();
     if (cache === null || at - cache.at > ttlMs || cache.urls !== urls.join(" ")) {
+      // The sources merge first-come-first-served, as the listing's mergeIndexes does: the
+      // first source to register a name provides every row for it — the whole entry rides
+      // that first registration, no field merging — and a later source listing the same
+      // name contributes nothing. A source that answers nothing registers nothing, so the
+      // next source to actually list the name is the one whose rows answer.
       const entries: IndexDocumentEntry[] = [];
       const mirrors = indexMirrorRules();
+      const registered = new Set<string>();
       for (const url of urls) {
         try {
-          entries.push(
-            ...(await httpPluginRegistry([url, ...pluginProxyMirrors(url, mirrors)], { fetchImpl }).index()),
-          );
+          for (const entry of await httpPluginRegistry(
+            [url, ...pluginProxyMirrors(url, mirrors)],
+            { fetchImpl },
+          ).index()) {
+            if (registered.has(entry.name)) continue;
+            registered.add(entry.name);
+            entries.push(entry);
+          }
         } catch {
           // A dead source shortens the rows this lookup sees; it does not fail the lookup.
         }

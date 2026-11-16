@@ -346,6 +346,33 @@ describe("indexChannelLookup", () => {
     expect(await lookup("@penguinharness/language-typst")).toEqual({ channel: null, fault: null });
   });
 
+  it("the first source to register a name provides it; a later source's same-name rows add nothing", async () => {
+    // The second source lists the same package newer, with its own channel and integrity:
+    // the first registration wins whole, so neither its rows nor its channel reach the pool.
+    const later = [
+      { ...entry(), version: "0.0.3", channels: [{ kind: "github" as const, url: "https://github.com/o/later/releases/download/v0.0.3/x.tgz" }] },
+      { ...entry(), name: "@penguinharness/second-only" },
+    ];
+    const fetchImpl = vi.fn(async (input: unknown) =>
+      String(input).startsWith("https://first.example/")
+        ? Response.json([entry()])
+        : Response.json(later),
+    );
+    let time = 0;
+    const lookup = indexChannelLookup(
+      () => ["https://first.example/index.json", "https://second.example/index.json"],
+      { fetchImpl: fetchImpl as unknown as typeof fetch, now: () => time },
+    );
+    expect(await lookup("@penguinharness/language-typst")).toEqual({ channel, fault: null });
+    // A version only the later source carries is not in the merged pool: the first
+    // registration's rows are the package's rows.
+    const miss = await lookup("@penguinharness/language-typst", "0.0.3");
+    expect(miss.channel).toBeNull();
+    expect(miss.fault).toMatch(/no version of it matches 0\.0\.3/);
+    // A package the first source does not list comes from the second.
+    expect(await lookup("@penguinharness/second-only")).toEqual({ channel, fault: null });
+  });
+
   it("answers no channel when no published index is configured", async () => {
     const lookup = indexChannelLookup(() => []);
     expect(await lookup("@penguinharness/language-typst")).toEqual({ channel: null, fault: null });
