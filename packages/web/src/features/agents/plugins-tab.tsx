@@ -4,9 +4,10 @@
  * workbenches`, plugins-subpages.ts):
  *
  * - **Plugins** (agent-plugins-page.tsx): the Agent's plugins and the ones the library could still
- *   give it, as the Plugins page's cards — install and update for any member, uninstall for the
- *   Project owner — with a search box and "Open the Plugins page", which opens that page with this
- *   Agent as the current one. A plugin's detail is addressable (`&plugin=<name>`).
+ *   give it, one compact row each as on the Hooks sub-page — install and update for any member,
+ *   uninstall for the Project owner — with a search box and "Open the Plugins page", which opens
+ *   that page with this Agent as the current one. A plugin's detail is addressable
+ *   (`&plugin=<name>`).
  * - **Skills**: "Enable skills", the alert under it, every Skill on the Agent, then the skills
  *   prompt it governs.
  * - **Hooks**: "Enable hooks", and every hook package.

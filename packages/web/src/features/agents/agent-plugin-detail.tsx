@@ -11,8 +11,9 @@
  *   server's target and what it waits for, with the owner's Set up while it misses vault keys);
  * - a part the library ships and the Agent lacks, muted, marked "Missing".
  *
- * Its footer holds the card's actions. A plugin gone from the library has no README or files to
- * show: its detail is its status, what the Agent carries of it, and the owner's Uninstall.
+ * Its footer holds the row's actions, each with its word. A plugin gone from the library has no
+ * README or files to show: its detail is its status, what the Agent carries of it, and the owner's
+ * Uninstall.
  */
 import { useState } from "react";
 import type { ReactNode } from "react";
@@ -39,7 +40,7 @@ import {
   type PluginRow,
 } from "../plugins";
 import type { AgentPluginActions } from "./agent-plugin-actions";
-import { AgentStatusMark, agentPluginActions } from "./agent-plugin-card";
+import { AgentStatusMark, agentPluginActions } from "./agent-plugin-row";
 import type { PluginsSubPage } from "./plugins-subpages";
 
 /** Where each kind of part is managed. */
@@ -244,7 +245,7 @@ export function AgentPluginDetail({
   onManage: (to: PluginsSubPage | "tools") => void;
   onReload: () => void;
 }) {
-  const footer = agentPluginActions(entry, title, isOwner, actions, "footer");
+  const footer = agentPluginActions(entry, title, isOwner, actions);
   const { missing } = entry;
   const carried =
     hasParts(entry.parts) ||

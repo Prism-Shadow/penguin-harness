@@ -1,7 +1,7 @@
 /**
- * The Agent settings Plugins tab's Plugins sub-page: the Agent's plugins, read like the Plugins
- * page because it is built from the same pieces — its cards (`EntityCard`, agent-plugin-card.tsx),
- * its detail dialog (agent-plugin-detail.tsx) and its search (`rowMatches`).
+ * The Agent settings Plugins tab's Plugins sub-page: the Agent's plugins as one column of compact
+ * rows, the shape of the Hooks sub-page's list (agent-plugin-row.tsx), with the Plugins page's
+ * detail dialog (agent-plugin-detail.tsx), status marks and search (`rowMatches`).
  *
  * Two sections, the Plugins page's group heads (a name and a count, folding, both open; both open
  * while the search box holds anything):
@@ -12,25 +12,19 @@
  *   ship a Skill, a hook package, an MCP server or a workbench; a package of server modules alone
  *   is the Plugins page's.
  *
- * Inside a section the cards are in name order, two to a row where there is room. A section the
- * search leaves empty is not drawn; nothing installed says so above Available, and a library with
- * nothing for an Agent beside nothing installed is one sentence. While the first read is out,
- * placeholder cards stand where the cards will be. The Agent's own parts are no cards: they are
- * rows on the kind sub-pages.
+ * Inside a section the rows are in name order, one per line. A section the search leaves empty is
+ * not drawn; nothing installed says so above Available, and a library with nothing for an Agent
+ * beside nothing installed is one sentence. While the first read is out, placeholder rows stand
+ * where the rows will be. The Agent's own parts are not listed here: they are rows on the kind
+ * sub-pages.
  *
- * A card's body opens its detail, and the address names it (`&plugin=<name>`), so a detail can be
+ * A row's name opens its detail, and the address names it (`&plugin=<name>`), so a detail can be
  * linked to; closing it, or switching sub-page, drops the name.
  */
 import { useState } from "react";
 import type { ReactNode } from "react";
 import type { AgentPluginsInstallResponse, PluginGroupItem } from "@prismshadow/penguin-server/api";
-import {
-  CollapsibleSection,
-  EntityCardGrid,
-  SettingsEmpty,
-  Skeleton,
-  SkeletonCard,
-} from "@prismshadow/penguin-ui";
+import { CollapsibleSection, SettingsEmpty, SkeletonList } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import {
   installsOf,
@@ -43,11 +37,11 @@ import {
   type PluginRow,
 } from "../plugins";
 import { agentPluginTitle, useAgentPluginActions } from "./agent-plugin-actions";
-import { AgentPluginCard } from "./agent-plugin-card";
+import { AgentPluginRow } from "./agent-plugin-row";
 import { AgentPluginDetail } from "./agent-plugin-detail";
 import type { PluginsSubPage } from "./plugins-subpages";
 
-/** The two sections a card can be in. */
+/** The two sections a row can be in. */
 type Section = "installed" | "available";
 
 export function AgentPluginsPage({
@@ -104,18 +98,8 @@ export function AgentPluginsPage({
   });
 
   if (library === null || catalog === null) {
-    // The Plugins page's placeholder cards.
-    return (
-      <EntityCardGrid>
-        {Array.from({ length: 4 }, (_, i) => (
-          <SkeletonCard key={i} className="p-4">
-            <Skeleton className="h-4 w-32" />
-            <Skeleton className="mt-2 h-4 w-3/4" />
-            <Skeleton className="mt-3 h-6 w-36" />
-          </SkeletonCard>
-        ))}
-      </EntityCardGrid>
-    );
+    // The rows' placeholders, as the kind sub-pages' lists show them.
+    return <SkeletonList rows={4} />;
   }
 
   const rows = new Map<string, PluginRow>(pluginRows(library, []).map((row) => [row.name, row]));
@@ -144,14 +128,12 @@ export function AgentPluginsPage({
   ];
   const shown = sections.filter((section) => section.entries.length > 0);
 
-  const card = (entry: AgentPluginGroup) => (
-    <AgentPluginCard
+  const rowOf = (entry: AgentPluginGroup) => (
+    <AgentPluginRow
       key={entry.name}
       entry={entry}
       row={entry.plugin === null ? undefined : rows.get(entry.name)}
       title={agentPluginTitle(entry, locale)}
-      locale={locale}
-      categoryTitle={categoryOf(entry)}
       installs={installs}
       isOwner={isOwner}
       actions={actions}
@@ -191,7 +173,7 @@ export function AgentPluginsPage({
               })
             }
           >
-            <EntityCardGrid>{section.entries.map(card)}</EntityCardGrid>
+            <ul aria-label={section.title}>{section.entries.map(rowOf)}</ul>
           </CollapsibleSection>
         ))}
       </div>

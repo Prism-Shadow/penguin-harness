@@ -1,33 +1,35 @@
 /**
- * One plugin's card on the Agent settings Plugins sub-page: the Plugins page's card
- * (`EntityCard`), filled for this one Agent.
+ * One plugin's row on the Agent settings Plugins sub-page: the shared list row (`ListRow`), the
+ * shape of a hook package's row on the Hooks sub-page, kept to one line.
  *
- * - The plugin's tile, its display name (the plugin's name on hover) and its short description;
- *   a plugin gone from the library has only its name, and says why it cannot be updated.
- * - The facts line: the npm version, the plugin's status on this Agent — its glyph in the
- *   status's tone, the word in muted ink, the meaning on hover — with the marks of its MCP
- *   servers when they wait for vault keys or a sign-in, and what of it the card is about: the
- *   parts on the Agent for an installed plugin, the parts the library ships for an available one.
- * - The tags: its category, and whether the build ships it or an admin installed it here.
- * - The actions: Install for an available plugin; Update while an installed one is behind the
- *   library or missing a part; the owner's Uninstall, the glyph alone at the card's width.
+ * - The plugin's tile, then its display name with — right after it — its status on this Agent:
+ *   the glyph in the status's tone, the word in muted ink, the meaning on hover; and the marks of
+ *   its MCP servers while they wait for vault keys or a sign-in. No description and no tags: the
+ *   detail says the rest.
+ * - The npm version, quiet, then the actions: Install for an available plugin; Update while an
+ *   installed one is behind the library or missing a part; the owner's Uninstall, the glyph alone
+ *   as on a hook package's row.
  *
- * A click on the card's body opens the detail, as its title does; a press on an action is the
- * action's alone.
+ * The name is the row's button: it opens the detail. A press on an action is the action's alone.
  */
 import type { ReactNode } from "react";
-import { EntityCard, EntityCardAction, ICONS, ICON_GAP, StatusMark } from "@prismshadow/penguin-ui";
+import {
+  Button,
+  EntityCardAction,
+  GlyphIcon,
+  ICONS,
+  ICON_GAP,
+  ICON_SIZE,
+  IconButton,
+  ListRow,
+  StatusMark,
+} from "@prismshadow/penguin-ui";
 import type { ToneName } from "@prismshadow/penguin-ui";
-import { cardBodyClick } from "../../lib/card-open";
 import { S } from "../../lib/strings";
 import {
   McpServerMarks,
-  PluginTag,
   pluginMcpState,
-  rowBuiltin,
   rowIcon,
-  rowInstalledOnServer,
-  rowShortDescription,
   rowVersion,
   type AgentInstalls,
   type AgentPluginGroup,
@@ -59,26 +61,6 @@ export function AgentStatusMark({ status }: { status: AgentPluginStatus }) {
   );
 }
 
-/** The parts a card summarises: the Agent's own for a plugin on it, the library's for one to install. */
-export function partSummaryOf(entry: AgentPluginGroup): string {
-  if (entry.status === "available" && entry.plugin !== null) {
-    const { skills, hooks, mcpServers, workbenches } = entry.plugin;
-    return S.agentPlugins.partSummary(
-      skills.length,
-      hooks.length > 0,
-      mcpServers.length,
-      workbenches?.length ?? 0,
-    );
-  }
-  const { skills, hooks, mcpServers, workbenches } = entry.parts;
-  return S.agentPlugins.partSummary(
-    skills.length,
-    hooks.length > 0,
-    mcpServers.length,
-    workbenches.length,
-  );
-}
-
 /**
  * The status mark, and right after it the marks of the plugin's MCP servers on this Agent while
  * they wait for vault keys (who sets them, said on hover) or a sign-in.
@@ -94,7 +76,8 @@ export function StatusWithMcp({
 }) {
   const mcp = entry.plugin === null ? null : pluginMcpState(entry.plugin, installs);
   return (
-    <span className={`inline-flex shrink-0 items-center ${ICON_GAP.row}`}>
+    // The status word reads as a quiet fact beside the name, as it does on a facts line.
+    <span className={`inline-flex shrink-0 items-center ${ICON_GAP.row} text-xs text-fg-muted`}>
       <AgentStatusMark status={entry.status} />
       {mcp !== null && (mcp.missingKeys.length > 0 || mcp.signIn) && (
         <McpServerMarks
@@ -107,16 +90,12 @@ export function StatusWithMcp({
   );
 }
 
-/**
- * A plugin's actions, on its card (`words="wide"`: the glyph alone at a card's width, the word
- * as its tooltip; the main action always worded) or in its detail's footer (`"always"`).
- */
+/** A plugin's actions in its detail's footer, each with its word. */
 export function agentPluginActions(
   entry: AgentPluginGroup,
   title: string,
   isOwner: boolean,
   actions: AgentPluginActions,
-  where: "card" | "footer",
 ): ReactNode[] {
   const out: ReactNode[] = [];
   const busy = actions.running === entry.name;
@@ -159,7 +138,7 @@ export function agentPluginActions(
         glyph={ICONS.trash}
         label={S.skills.uninstall}
         name={`${S.skills.uninstall} ${title}`}
-        words={where === "card" ? "wide" : "always"}
+        words="always"
         busy={busy}
         disabled={disabled}
         onClick={() => actions.uninstall(entry)}
@@ -169,12 +148,55 @@ export function agentPluginActions(
   return out;
 }
 
-export function AgentPluginCard({
+/**
+ * A plugin's actions on its row: Install or Update in words, the row's main action, and the
+ * owner's Uninstall as the glyph alone, as a hook package's row has it.
+ */
+function rowActions(
+  entry: AgentPluginGroup,
+  title: string,
+  isOwner: boolean,
+  actions: AgentPluginActions,
+): ReactNode {
+  const busy = actions.running === entry.name;
+  const disabled = actions.running !== null;
+  const worded = (glyph: string, label: string, run: () => void) => (
+    <Button
+      size="sm"
+      leading={<GlyphIcon d={glyph} size={ICON_SIZE.iconButton} />}
+      loading={busy}
+      disabled={disabled}
+      aria-label={`${label} ${title}`}
+      onClick={run}
+    >
+      {label}
+    </Button>
+  );
+  return (
+    <>
+      {entry.status === "available" &&
+        worded(ICONS.download, S.skills.install, () => actions.install(entry))}
+      {(entry.status === "update" || entry.status === "incomplete") &&
+        worded(ICONS.rotateCw, S.skills.updateAction, () => actions.update(entry))}
+      {isOwner && entry.status !== "available" && (
+        <IconButton
+          variant="danger"
+          label={`${S.skills.uninstall} ${title}`}
+          title={S.skills.uninstall}
+          disabled={disabled}
+          onClick={() => actions.uninstall(entry)}
+        >
+          <GlyphIcon d={ICONS.trash} size={ICON_SIZE.iconButton} />
+        </IconButton>
+      )}
+    </>
+  );
+}
+
+export function AgentPluginRow({
   entry,
   row,
   title,
-  locale,
-  categoryTitle,
   installs,
   isOwner,
   actions,
@@ -184,73 +206,30 @@ export function AgentPluginCard({
   /** The library's row of the plugin; undefined once it left the library. */
   row: PluginRow | undefined;
   title: string;
-  locale: "zh" | "en";
-  /** The library category's title; undefined once the plugin left the library. */
-  categoryTitle: string | undefined;
   installs: AgentInstalls | undefined;
   isOwner: boolean;
   actions: AgentPluginActions;
   onOpen: () => void;
 }) {
   const version = row === undefined ? undefined : rowVersion(row);
-  const summary = partSummaryOf(entry);
-  const meta: ReactNode[] = [];
-  if (version !== undefined) {
-    meta.push(
-      <span key="version" className="shrink-0 font-mono">
-        v{version}
-      </span>,
-    );
-  }
-  meta.push(<StatusWithMcp key="status" entry={entry} installs={installs} isOwner={isOwner} />);
-  if (summary !== "") {
-    meta.push(
-      <span key="parts" className="min-w-0 truncate">
-        {summary}
-      </span>,
-    );
-  }
-  const tags: ReactNode[] = [];
-  if (categoryTitle !== undefined) tags.push(<PluginTag key="category">{categoryTitle}</PluginTag>);
-  if (row !== undefined && rowBuiltin(row)) {
-    tags.push(
-      <PluginTag key="builtin" title={S.plugins.libraryBuiltinHint}>
-        {S.plugins.builtin}
-      </PluginTag>,
-    );
-  }
-  if (row !== undefined && rowInstalledOnServer(row)) {
-    tags.push(
-      <PluginTag key="installed" title={S.plugins.installedOnServerHint}>
-        {S.plugins.installedOnServer}
-      </PluginTag>,
-    );
-  }
   return (
-    <EntityCard
-      framed={false}
-      data-plugin={entry.name}
-      lead={
+    <ListRow
+      as="li"
+      leading={
         <SkillTile
           icon={row === undefined ? undefined : rowIcon(row)}
           name={entry.name}
           fallback={ICONS.puzzle}
-          size={36}
-          glyph={20}
+          // One line of text beside it: the tile is a size down from the two-line rows'.
+          size={28}
+          glyph={16}
         />
       }
       title={title}
-      titleHint={entry.name}
-      description={
-        row === undefined
-          ? S.agentPlugins.statusHint["not-in-library"]
-          : rowShortDescription(row, locale)
-      }
-      meta={meta}
-      tags={tags}
-      actions={agentPluginActions(entry, title, isOwner, actions, "card")}
-      onOpen={onOpen}
-      onBodyClick={cardBodyClick(onOpen)}
+      titleTrail={<StatusWithMcp entry={entry} installs={installs} isOwner={isOwner} />}
+      meta={version === undefined ? undefined : `v${version}`}
+      trailing={rowActions(entry, title, isOwner, actions)}
+      onClick={onOpen}
     />
   );
 }

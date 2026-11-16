@@ -108,7 +108,7 @@ To see the Skills installed on one agent, open **Agents**, select the agent, and
 - **Enable skills** controls whether the agent's system prompt lists the installed Skills. With it off, the agent is not told which Skills exist, but Skills you select in a chat still work. Only the Project owner can change it and the **Skills prompt**.
 - **Skills prompt** is the text that introduces the Skill list in the system prompt. Its `{{SKILL_METADATA}}` placeholder becomes one line per installed Skill.
 
-To update a plugin's Skills, select **Update** on the plugin's card on the **Plugins** sub-page, or update it on the **Plugins** page. Install plugins from the library on either of them.
+To update a plugin's Skills, select **Update** on the plugin's row on the **Plugins** sub-page, or update it on the **Plugins** page. Install plugins from the library on either of them.
 
 ### Import a Skill
 

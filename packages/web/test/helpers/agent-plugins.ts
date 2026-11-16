@@ -153,29 +153,42 @@ export function rowOf(name: string): HTMLLIElement {
   return found;
 }
 
-/** The plugin card named `name` (the plugin's name, not its title). */
-export function cardOf(name: string): HTMLElement {
-  const found = document.querySelector<HTMLElement>(`[data-plugin="${name}"]`);
-  if (found === null) throw new Error(`no card for ${JSON.stringify(name)}`);
+/** The plugin rows on screen, every section's. */
+const pluginRows = (): HTMLLIElement[] => [
+  ...document.querySelectorAll<HTMLLIElement>("section ul[aria-label] > li"),
+];
+
+/** A plugin row's name: its button, which opens the detail. */
+export const pluginRowButton = (title: string): HTMLButtonElement =>
+  pluginRow(title).querySelector("button")!;
+
+/** The plugin row named `title` (the plugin's display name), or null when none is listed. */
+export function findPluginRow(title: string): HTMLLIElement | null {
+  return (
+    pluginRows().find((li) => li.querySelector("button")?.textContent?.trim() === title) ?? null
+  );
+}
+
+/** The plugin row named `title`. */
+export function pluginRow(title: string): HTMLLIElement {
+  const found = findPluginRow(title);
+  if (found === null) throw new Error(`no plugin row named ${JSON.stringify(title)}`);
   return found;
 }
 
-/** Opens a plugin's detail the way a reader does: the card's title, the body's button. */
-export const cardButton = (name: string): HTMLButtonElement =>
-  cardOf(name).querySelector("button")!;
+/** The names of the plugin rows on screen, top to bottom. */
+export const pluginRowTitles = (): string[] =>
+  pluginRows().map((li) => li.querySelector("button")?.textContent?.trim() ?? "");
 
-/** The titles of the sections of cards on screen. */
+/** The titles of the sections of plugin rows on screen. */
 export const sectionTitles = (): string[] =>
   [...document.querySelectorAll('section [data-slot="head"] button > span:first-child')].map(
     (span) => span.textContent?.trim() ?? "",
   );
 
-/** The title of the section (Installed / Available) a plugin's card is listed in. */
-export function sectionOf(name: string): string | undefined {
-  const section = cardOf(name).closest("section");
-  return section
-    ?.querySelector('[data-slot="head"] button > span:first-child')
-    ?.textContent?.trim();
+/** The title of the section (Installed / Available) a plugin's row is listed in. */
+export function sectionOf(title: string): string | undefined {
+  return pluginRow(title).closest("ul")?.getAttribute("aria-label") ?? undefined;
 }
 
 /** Every DELETE the page sent, by path. */

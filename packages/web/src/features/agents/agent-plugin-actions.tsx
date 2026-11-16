@@ -1,6 +1,6 @@
 /**
  * The writes of the Agent settings Plugins sub-page — installing, updating and (the Project
- * owner's) uninstalling one library plugin on this Agent — as one hook the cards and the detail's
+ * owner's) uninstalling one library plugin on this Agent — as one hook the rows and the detail's
  * footer share, with the confirmations each asks first:
  *
  * - Install, any member's: at once, unless the plugin brings a stdio server the Agent does not
@@ -13,7 +13,7 @@
  *   with why, and nothing left to remove counts as done.
  *
  * One write runs at a time: its button shows it running and the others take no press. Nothing
- * moves before the server answers — the card changes section when the lists read again land.
+ * moves before the server answers — the row changes section when the lists read again land.
  * A failed write is said in a toast (a machine older than the request needs an update) and its
  * dialog stays open; nothing is read again.
  */
@@ -56,7 +56,7 @@ export interface AgentPluginActions {
   install: (entry: AgentPluginGroup) => void;
   update: (entry: AgentPluginGroup) => void;
   uninstall: (entry: AgentPluginGroup) => void;
-  /** The confirmations; render them once, beside the cards. */
+  /** The confirmations; render them once, beside the rows. */
   modals: ReactNode;
 }
 

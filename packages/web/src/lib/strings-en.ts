@@ -3408,16 +3408,6 @@ export const en: Strings = {
     availableSection: "Available",
     installedEmpty: "No plugins on this agent yet.",
     libraryEmpty: "The plugin library has nothing an agent can take yet.",
-    /** What a plugin brought to this agent, beside its name: "3 skills, hooks, 1 workbench". */
-    partSummary: (skills: number, hooks: boolean, mcp: number, workbenches: number): string =>
-      [
-        skills === 0 ? "" : skills === 1 ? "1 skill" : `${skills} skills`,
-        hooks ? "hooks" : "",
-        mcp === 0 ? "" : mcp === 1 ? "1 MCP server" : `${mcp} MCP servers`,
-        workbenches === 0 ? "" : workbenches === 1 ? "1 workbench" : `${workbenches} workbenches`,
-      ]
-        .filter((part) => part !== "")
-        .join(", "),
     /** A plugin's status on this agent, and what it means on hover. */
     status: {
       installed: "Installed",

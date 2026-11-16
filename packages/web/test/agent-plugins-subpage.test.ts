@@ -1,29 +1,29 @@
 // @vitest-environment jsdom
 /**
  * The Plugins sub-page of the Agent settings Plugins tab (features/agents/agent-plugins-page.tsx
- * and its card, detail and writes): the Agent's plugins as the Plugins page's cards, in two
- * sections, with install, update and uninstall for this one Agent.
+ * and its row, detail and writes): the Agent's plugins as one column of rows, in two sections,
+ * with install, update and uninstall for this one Agent.
  *
  * - Given an Agent with all of Charts and a library that also has Notes kit, Charts is listed
- *   under Installed and Notes kit under Available; the user's own Skill is no card.
- * - Given a member installs Notes kit, one install naming it alone is sent, its card moves to
- *   Installed, and no card offers Uninstall.
+ *   under Installed and Notes kit under Available; the user's own Skill is no row of its own here.
+ * - Given a member installs Notes kit, one install naming it alone is sent, its row moves to
+ *   Installed, and no row offers Uninstall.
  * - Given a plugin with a stdio server, Install asks first, naming the command; cancelling writes
  *   nothing.
  * - Given the owner uninstalls Charts, the confirmation names each of its parts and warns that
  *   its workbench's data goes too; cancelling writes nothing, confirming sends one DELETE for the
  *   plugin and none for a part, and Charts moves to Available.
  * - Given the server could not remove one part, the toast names it with the reason.
- * - Given a plugin missing a part, its card reads Incomplete with Update; Update asks first, then
+ * - Given a plugin missing a part, its row reads Incomplete with Update; Update asks first, then
  *   reinstalls it from the library.
  * - Given a machine older than the uninstall, its 404 reads as the machine needing an update, and
- *   the card stays where it was.
+ *   the row stays where it was.
  * - Given a machine's Agent, the library, the detail's files and an install all go to that machine.
- * - Given a card is pressed, its detail opens and the address names the plugin; "On this agent"
+ * - Given a row's name is pressed, its detail opens and the address names the plugin; "On this agent"
  *   lists its Skill, hook package, MCP server and workbench, and "Manage in Skills" lands on the
  *   Skills sub-page with the dialog closed.
  * - Given an address naming a plugin, its detail is open; one naming nothing is dropped.
- * - Given a search, only the cards it matches and their sections show; one matching nothing says
+ * - Given a search, only the rows it matches and their sections show; one matching nothing says
  *   so.
  * - Given an install here, the Plugins page opened next counts this Agent on that plugin without
  *   asking the Agent again.
@@ -41,10 +41,12 @@ import {
   AGENT_PATH,
   CHARTS,
   NOTES_KIT,
-  cardButton,
-  cardOf,
   deletes,
+  findPluginRow,
   openAgentPlugins,
+  pluginRow,
+  pluginRowButton,
+  pluginRowTitles,
   sectionOf,
   sectionTitles,
   subPageButton,
@@ -109,16 +111,16 @@ describe("the Plugins sub-page of an Agent's settings", () => {
 
   it("lists the plugins the Agent carries under Installed and the library's others under Available", async () => {
     await openAgentPlugins();
-    expect(sectionOf("charts")).toBe(INSTALLED);
-    expect(sectionOf("notes-kit")).toBe(AVAILABLE);
-    expect(document.querySelector('[data-plugin="notes"]')).toBeNull();
+    expect(sectionOf("Charts")).toBe(INSTALLED);
+    expect(sectionOf("Notes kit")).toBe(AVAILABLE);
+    expect(findPluginRow("notes")).toBeNull();
   });
 
   it("lets a member install a plugin, which moves to Installed, and offers a member no Uninstall", async () => {
     const { server } = await openAgentPlugins({ role: "member" });
     expect(hasButton(`${en.skills.uninstall} Charts`)).toBe(false);
     await click(button(`${en.skills.install} Notes kit`));
-    await waitFor(() => sectionOf("notes-kit") === INSTALLED);
+    await waitFor(() => sectionOf("Notes kit") === INSTALLED);
     expect(server.writes().map((r) => [r.method, r.path, r.body])).toEqual([
       ["POST", `${AGENT_PATH}/plugins`, { names: ["notes-kit"] }],
     ]);
@@ -154,7 +156,7 @@ describe("the Plugins sub-page of an Agent's settings", () => {
 
     await click(button(`${en.skills.uninstall} Charts`));
     await click(buttonIn(topDialog(), en.skills.uninstall));
-    await waitFor(() => sectionOf("charts") === AVAILABLE);
+    await waitFor(() => sectionOf("Charts") === AVAILABLE);
     expect(deletes(server)).toEqual([`${AGENT_PATH}/plugins/charts`]);
     expect(dialogs()).toEqual([]);
     expect(toasts("error")).toEqual([]);
@@ -173,7 +175,7 @@ describe("the Plugins sub-page of an Agent's settings", () => {
 
   it("reads a plugin missing a part as Incomplete, and its Update asks before it reinstalls", async () => {
     const { server } = await openAgentPlugins({ hooks: [] });
-    expect(cardOf("charts").textContent).toContain(en.agentPlugins.status.incomplete);
+    expect(pluginRow("Charts").textContent).toContain(en.agentPlugins.status.incomplete);
     await click(button(`${en.skills.updateAction} Charts`));
     expect(server.writes()).toEqual([]);
     await click(buttonIn(topDialog(), en.skills.updateAction));
@@ -185,7 +187,7 @@ describe("the Plugins sub-page of an Agent's settings", () => {
     });
   });
 
-  it("says a machine older than the uninstall needs an update, and the card stays", async () => {
+  it("says a machine older than the uninstall needs an update, and the row stays", async () => {
     const { server } = await openAgentPlugins({
       at: `${PAGE}?tab=plugins&machine=gpu1`,
       machines: [GPU],
@@ -198,7 +200,7 @@ describe("the Plugins sub-page of an Agent's settings", () => {
     expect(server.writes().map((r) => [r.method, r.machine, r.path])).toEqual([
       ["DELETE", "gpu1", `${AGENT_PATH}/plugins/charts`],
     ]);
-    expect(sectionOf("charts")).toBe(INSTALLED);
+    expect(sectionOf("Charts")).toBe(INSTALLED);
   });
 
   it("asks a machine's Agent's machine for the library, the detail's files and the install", async () => {
@@ -206,7 +208,7 @@ describe("the Plugins sub-page of an Agent's settings", () => {
       at: `${PAGE}?tab=plugins&machine=gpu1`,
       machines: [GPU],
     });
-    await click(cardButton("charts"));
+    await click(pluginRowButton("Charts"));
     await waitFor(() => server.requests().some((r) => r.path === "/api/plugins/charts/files"));
     await pressScrim();
     await click(button(`${en.skills.install} Notes kit`));
@@ -224,9 +226,9 @@ describe("the Plugins sub-page of an Agent's settings", () => {
     ]);
   });
 
-  it("opens a card's detail at an address of its own, lists what the Agent carries, and leads to where each kind is managed", async () => {
+  it("opens a row's detail at an address of its own, lists what the Agent carries, and leads to where each kind is managed", async () => {
     const { router } = await openAgentPlugins();
-    await click(cardButton("charts"));
+    await click(pluginRowButton("Charts"));
     await waitFor(() => dialogs().length === 1);
     expect(whereIs(router)).toBe(`${PAGE}?tab=plugins&plugin=charts`);
     const detail = topDialog();
@@ -256,15 +258,15 @@ describe("the Plugins sub-page of an Agent's settings", () => {
     expect(dialogs()).toEqual([]);
   });
 
-  it("shows only the cards a search matches, in their sections, and says when nothing does", async () => {
+  it("shows only the rows a search matches, in their sections, and says when nothing does", async () => {
     await openAgentPlugins();
     await type(field(en.plugins.searchPlaceholder), "chart");
-    expect(sectionOf("charts")).toBe(INSTALLED);
-    expect(document.querySelector('[data-plugin="notes-kit"]')).toBeNull();
+    expect(sectionOf("Charts")).toBe(INSTALLED);
+    expect(findPluginRow("Notes kit")).toBeNull();
     expect(sectionTitles()).toEqual([INSTALLED]);
 
     await type(field(en.plugins.searchPlaceholder), "nothing like it");
-    expect(document.querySelector("[data-plugin]")).toBeNull();
+    expect(pluginRowTitles()).toEqual([]);
     expect(document.body.textContent).toContain(en.plugins.noMatch);
   });
 
@@ -273,7 +275,7 @@ describe("the Plugins sub-page of an Agent's settings", () => {
       extra: [{ path: "/plugins", element: h(PluginsPage) }],
     });
     await click(button(`${en.skills.install} Notes kit`));
-    await waitFor(() => sectionOf("notes-kit") === INSTALLED);
+    await waitFor(() => sectionOf("Notes kit") === INSTALLED);
     const asked = () =>
       server.requests().filter((r) => r.method === "GET" && r.path === `${AGENT_PATH}/plugins`)
         .length;

@@ -3603,16 +3603,6 @@ export const zh = {
     availableSection: "可安装",
     installedEmpty: "这个 Agent 还没有装插件。",
     libraryEmpty: "插件库里还没有可以装到 Agent 上的插件。",
-    /** What a plugin brought to this Agent, beside its name: "3 个技能、钩子、1 个工作台". */
-    partSummary: (skills: number, hooks: boolean, mcp: number, workbenches: number): string =>
-      [
-        skills > 0 ? `${skills} 个技能` : "",
-        hooks ? "钩子" : "",
-        mcp > 0 ? `${mcp} 个 MCP 服务器` : "",
-        workbenches > 0 ? `${workbenches} 个工作台` : "",
-      ]
-        .filter((part) => part !== "")
-        .join("、"),
     /** A plugin's status on this Agent, and what it means on hover. */
     status: {
       installed: "已安装",
