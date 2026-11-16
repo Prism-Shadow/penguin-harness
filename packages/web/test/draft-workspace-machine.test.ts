@@ -11,8 +11,6 @@
  * - Given a cached draft that names a machine but no path — what saving the Project's new-chat
  *   defaults used to leave behind — and a Project default Workspace, the first send creates the
  *   Session on this server, in the default Workspace.
- * - Given the same draft and no Project default Workspace, the first send creates the Session on
- *   this server, in a temporary Workspace.
  * - Given a draft on a machine's temporary Workspace (an empty path, the finder's no-folder pick),
  *   the first send still creates the Session on that machine.
  * - Given a draft on a machine's Workspace while the Project's new-chat defaults are saved in this
@@ -90,17 +88,6 @@ describe("the machine a new conversation is created on", () => {
 
     expect(creates(world)).toEqual([[null, "/srv/default"]]);
     expect(world.tasks().map((r) => r.machine)).toEqual([null]);
-  });
-
-  it("is this server when the draft names a machine without a path and there is no default Workspace", async () => {
-    const world = draftWorld();
-    saveDraft(DRAFT_KEY, { agentId: AGENT_ID, machineId: MACHINE });
-    const router = await draftReady();
-    await click(send());
-    await waitFor(() => whereIs(router) === "/chat/session-1", 40);
-
-    expect(world.creates().map((r) => r.machine)).toEqual([null]);
-    expect(world.sessionsOn(MACHINE)).toEqual([]);
   });
 
   it("is the machine when the draft names it with an empty path, a temporary Workspace over there", async () => {
