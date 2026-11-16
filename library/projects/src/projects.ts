@@ -609,5 +609,28 @@ export type CompanyServerEvent =
   /** A work run (desk session) or ticket session was started by the organization scheduler or a ticket start. */
   | {
       type: "org_run";
-
-
+      projectId: string;
+      orgId: string;
+      agentId: string;
+      sessionId: string;
+      kind: OrgTriggerKind;
+    }
+  /** A new channel message (mentions included, so the client can tell whether it is addressed). */
+  | {
+      type: "org_channel";
+      projectId: string;
+      orgId: string;
+      channelId: string;
+      message: OrgChannelMessage;
+    }
+  /** A ticket's status, owner, blocked state or contributing sessions changed. */
+  | { type: "org_ticket"; projectId: string; orgId: string; ticketId: string; change: string }
+  /** Budget warning, pause or resume for an employee. */
+  | {
+      type: "org_budget";
+      projectId: string;
+      orgId: string;
+      agentId: string;
+      state: "warned" | "paused" | "resumed";
+      ratio: number;
+    };

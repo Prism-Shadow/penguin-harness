@@ -51,13 +51,16 @@
     "build": "tsup"
   },
   "dependencies": {
+    "@prismshadow/amsp": "workspace:*",
     "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/penguin-library-agent-api": "workspace:*",
     "@prismshadow/penguin-library-db": "workspace:*",
     "@prismshadow/penguin-library-identity": "workspace:*",
     "@prismshadow/penguin-library-machines": "workspace:*",
     "@prismshadow/penguin-library-models": "workspace:*",
     "@prismshadow/penguin-library-organization": "workspace:*",
     "@prismshadow/penguin-library-sessions": "workspace:*",
+    "@prismshadow/penguin-library-traces": "workspace:*",
     "@prismshadow/penguin-library-workbenches": "workspace:*"
   },
   "devDependencies": {
