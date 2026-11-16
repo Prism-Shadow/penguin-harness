@@ -173,7 +173,8 @@ describe("session-index", () => {
     // Stand in for a run that advanced the stamp while the PATCH was in flight: the route
     // reads its row before awaiting, so without a re-read the response would carry — and
     // the web store would adopt — a value older than what is on disk.
-    const advanced = "2027-01-01T00:00:00.000Z";
+    // A day past its creation, so the stamp moves forward whatever today's date is.
+    const advanced = new Date(Date.parse(session.createdAt) + 86_400_000).toISOString();
     t.deps.sessionsRepo.touchLastActive(session.sessionId, advanced);
     const patched = (await (
       await api.patch(`/api/sessions/${session.sessionId}`, { title: "renamed" })
@@ -764,9 +765,12 @@ describe("session-index", () => {
     // pass has not stamped yet: the same predicate must catch it through `orgId`.
     const desk = "session-2027-01-01-09-00-00-0abc0011";
     const ticket = "session-2027-01-01-09-30-00-0abc0012";
+    // Stamped a day ahead of now, so they stay the newest rows whatever today's date is.
+    const deskAt = new Date(Date.now() + 86_400_000).toISOString();
+    const ticketAt = new Date(Date.now() + 86_400_000 + 30 * 60_000).toISOString();
     for (const [sessionId, createdAt, client] of [
-      [desk, "2027-01-01T09:00:00.000Z", "org"],
-      [ticket, "2027-01-01T09:30:00.000Z", undefined],
+      [desk, deskAt, "org"],
+      [ticket, ticketAt, undefined],
     ] as const) {
       t.deps.sessionsRepo.insert({
         sessionId,
@@ -798,7 +802,7 @@ describe("session-index", () => {
     expect(ids(full)).toEqual([ticket, own]);
     expect(full.counts!.active).toBe(2);
     expect(full.workspaceCounts!["/tmp/w-org"]!.active).toBe(1);
-    expect(full.workspaceLatest!["/tmp/w-org"]).toBe("2027-01-01T09:30:00.000Z");
+    expect(full.workspaceLatest!["/tmp/w-org"]).toBe(ticketAt);
 
     // With it, the organization's rows are gone from every part of the answer at once — a
     // total or a stamp that still counted them would conjure their Workspace as a group.

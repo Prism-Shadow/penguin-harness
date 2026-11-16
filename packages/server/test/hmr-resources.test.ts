@@ -351,16 +351,15 @@ describe("runtime capability handshake", () => {
   it("names no config member added after runtimes shipped, so an older runtime still claims", () => {
     // Naming one would refuse every installed runtime that predates it, and a push can never
     // replace the runtime. These are optional on ServerConfig and defaulted by their consumer.
-    for (const later of ["cliEntry", "penguinGoOrigin", "modelscopeBridgeUrl"]) {
-      expect(HMR_INTERFACES.config).not.toContain(later);
-    }
-    // A runtime that published exactly today's list minus nothing more: the pre-#716 shape.
+    const later = ["cliEntry", "penguinGoOrigin", "modelscopeBridgeUrl"];
+    // A runtime from before them: its config and its published list both lack them.
+    const older = HMR_INTERFACES.config.filter((m) => !later.includes(m));
     const r = new HotResources();
     stubCaps(r);
     r.register(HMR_CONFIG_RESOURCE_ID, {
-      ...Object.fromEntries(HMR_INTERFACES.config.map((m) => [m, () => undefined])),
+      ...Object.fromEntries(older.map((m) => [m, () => undefined])),
     });
-    r.register(HMR_INTERFACES_RESOURCE_ID, { ...HMR_INTERFACES });
+    r.register(HMR_INTERFACES_RESOURCE_ID, { ...HMR_INTERFACES, config: older });
     expect(claimHmrCapabilities(r)).toMatchObject({ kind: "claimed" });
   });
 

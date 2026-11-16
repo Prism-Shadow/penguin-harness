@@ -14,7 +14,7 @@
  *
  * Nothing here logs or returns a password; only the derived keys leave, to the decryptor.
  */
-import fs from "node:fs";
+import fs from "node:fs/promises";
 import path from "node:path";
 import type { ChromiumBrowser } from "./browsers.js";
 import { deriveCbcKey } from "./chromium-decrypt.js";
@@ -104,7 +104,7 @@ async function loadCookieKeys(
 async function dpapiKey(root: string, env: ImportEnv): Promise<Buffer | null> {
   let encoded: unknown;
   try {
-    const state = JSON.parse(fs.readFileSync(path.join(root, "Local State"), "utf8")) as {
+    const state = JSON.parse(await fs.readFile(path.join(root, "Local State"), "utf8")) as {
       os_crypt?: { encrypted_key?: unknown };
     };
     encoded = state.os_crypt?.encrypted_key;

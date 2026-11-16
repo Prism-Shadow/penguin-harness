@@ -31,6 +31,7 @@ export const SURFACE_IDS = [
   "agents",
   "agent-settings",
   "schedules",
+  "apps",
   "plugins",
   "models",
   "machines",
@@ -39,6 +40,7 @@ export const SURFACE_IDS = [
   "benchmark-detail",
   "settings",
   "settings-appearance",
+  "desktop-window",
   "login",
 ] as const;
 export type SurfaceId = (typeof SURFACE_IDS)[number];
@@ -54,6 +56,8 @@ export interface Surface {
   /** Start signed out: the frame lands on the login page and signs in from there. */
   signedOut?: true;
   open?: SurfaceOpen;
+  /** Frame the app as the desktop shell's main window on this platform (the title band). */
+  window?: "darwin" | "win32" | "linux";
 }
 
 export const SURFACES: readonly Surface[] = [
@@ -70,6 +74,7 @@ export const SURFACES: readonly Surface[] = [
   { id: "agents", group: "workbench", route: "/agents" },
   { id: "agent-settings", group: "workbench", route: "/agents/docs-expert" },
   { id: "schedules", group: "workbench", route: "/agents/docs-expert?tab=schedules" },
+  { id: "apps", group: "workbench", route: "/apps" },
   { id: "plugins", group: "resources", route: "/plugins" },
   { id: "models", group: "resources", route: "/models" },
   { id: "machines", group: "resources", route: "/machines" },
@@ -83,6 +88,8 @@ export const SURFACES: readonly Surface[] = [
     route: "/chat/s-hooks-index",
     open: "settings.appearance",
   },
+  // A page whose scroller fills the main column, so its scrollbar runs to the window's corner.
+  { id: "desktop-window", group: "system", route: "/plugins", window: "win32" },
   { id: "login", group: "system", route: "/login", signedOut: true },
 ];
 

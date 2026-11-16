@@ -17,6 +17,7 @@ import type { FontReadout } from "../app/fonts";
 import type { Surface } from "../app/surfaces";
 import { BASE } from "../lib/location";
 import { useGallery } from "../state";
+import { useText } from "../text";
 import { Fit } from "./fit";
 import { readFrameFonts, reportFrameFonts } from "./font-readout";
 
@@ -38,6 +39,7 @@ export function useFrameSrc(surface: Surface, theme: ThemeId): string {
       route: surface.route,
       ...(surface.signedOut ? { signedOut: true } : {}),
       ...(surface.open ? { open: surface.open } : {}),
+      ...(surface.window ? { window: surface.window } : {}),
     },
   );
 }
@@ -54,6 +56,7 @@ export function AppFrame({
   reloadKey?: number;
 }) {
   const { S, state } = useGallery();
+  const text = useText();
   const src = useFrameSrc(surface, state.theme);
   const phone = state.view === "phone";
   const size = phone ? PHONE_FRAME : APP_FRAME;
@@ -85,7 +88,7 @@ export function AppFrame({
       key={`${src}#${reloadKey}`}
       ref={frame}
       className="g-app-frame"
-      title={S.frame.frameOf(S.rail.themeNames[state.theme])}
+      title={S.frame.frameOf(text.theme(state.theme))}
       src={src}
       width={size.width}
       height={size.height}

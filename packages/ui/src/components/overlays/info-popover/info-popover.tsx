@@ -20,8 +20,9 @@
  * usePortalPanel, so no ancestor's overflow can clip it (a modal body, a horizontally scrolling
  * table) and it closes on outside click / Esc / a scroll that moves the trigger / resize. Esc
  * there is captured and its propagation stopped, which is what lets one Esc dismiss this
- * popover while an enclosing Modal stays open. z-[60] for the same reason OptionMenu uses it:
- * a portaled node sits in the root stacking context and must clear the modal overlay's z-50.
+ * popover while an enclosing Modal stays open. It takes the `popover` layer for the same reason
+ * OptionMenu does: a portaled node sits in the root stacking context and must clear a dialog's
+ * `modal` layer.
  *
  * The trigger's accessible name is the interface's "More info" (`UiStrings.moreInfo`), with the
  * subject folded in when the caller names one (`UiStrings.moreInfoAbout`). It carries no tooltip:
@@ -108,7 +109,7 @@ export function InfoPopover({
               width: "max-content",
               maxWidth: PANEL_MAX_WIDTH,
             }}
-            className="ui-glass anim-pop z-[60] max-h-[70vh] overflow-y-auto rounded-md border border-line bg-overlay px-3 py-2 text-xs leading-relaxed text-fg-muted shadow-lg"
+            className="ui-glass anim-pop z-popover max-h-[70vh] overflow-y-auto rounded-md border border-line bg-overlay px-3 py-2 text-xs leading-relaxed text-fg-muted shadow-lg"
           >
             {children}
           </div>,

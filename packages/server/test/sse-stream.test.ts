@@ -2,7 +2,8 @@
  * The Session SSE endpoint (FD-1 / FD-2) and the user event stream.
  *
  * - A new subscription's first frame is always the task_state snapshot: idle when idle; when
- *   running, `running` followed by the replay of pending approvals.
+ *   running, `running` followed by the replay of pending approvals, each with the reason it
+ *   was asked for when a command-policy rule asked.
  * - The opening frames end with the heartbeat: a `ping` event with `data: {}` and no id.
  * - A Last-Event-ID from another epoch gets resync_required first, then the snapshot; one that
  *   hits the replay buffer gets the later events, then the snapshot, and so does the same id
@@ -14,7 +15,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { approvalDecision, assistantText, toolCall, userText } from "@prismshadow/penguin-core";
 import type { ApproveFn, AmspRecord } from "@prismshadow/penguin-core";
 import type { SessionRow } from "../src/db/repos/sessions.js";
-import type { RuntimeSession } from "../src/runtime/session-manager.js";
+import type { RunOpts, RuntimeSession } from "../src/runtime/session-manager.js";
 import { fakeSession, sessionRow, uniqueSessionId } from "./fixtures/session.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
@@ -125,6 +126,31 @@ describe("sse-stream", () => {
     };
     expect(approval.type).toBe("approval_request");
     expect(approval.toolCall.payload.tool_call_id).toBe("tc-sse");
+
+    t.deps.manager.abortTask(SID);
+    await waitFor(() => t.deps.manager.statusOf(SID) === "idle");
+  });
+
+  it("FD-1: a pending approval a command-policy rule asked for is replayed with its reason", async () => {
+    t.deps.manager.adopt(
+      row,
+      fakeSession(SID, {
+        async *run(_input: AmspRecord[], opts: RunOpts) {
+          const tc = toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-ask" });
+          yield tc;
+          const reason = { kind: "policy", rule: "package-publish" } as const;
+          yield approvalDecision(await opts.approve(tc, { reason }), "tc-ask");
+        },
+      }),
+    );
+    await t.deps.manager.startTask(SID, [userText("go")]);
+    await waitFor(() => t.deps.manager.pendingApprovalCount(SID) === 1);
+
+    const frames = await readSseFrames(await getStream(), 2);
+    expect(JSON.parse(frames[1]!.data)).toMatchObject({
+      type: "approval_request",
+      reason: { kind: "policy", rule: "package-publish" },
+    });
 
     t.deps.manager.abortTask(SID);
     await waitFor(() => t.deps.manager.statusOf(SID) === "idle");

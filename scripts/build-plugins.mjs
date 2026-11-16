@@ -131,7 +131,7 @@ function run(name, args, cwd) {
 
 /**
  * What a plugin's pack depends on: its sources, its manifest (`package.json`, whose `penguin`
- * block its card on the Plugins page reads, with `icon.svg`), its README, its build config —
+ * block its card on the Plugins page reads, with its `icon.<ext>`), its README, its build config —
  * and every other directory the package SHIPS.
  *
  * That last part is not decoration. A plugin may carry files its code never imports (the Windows
@@ -140,7 +140,8 @@ function run(name, args, cwd) {
  * fix nobody could find on the host was a file that had never left this machine.
  */
 async function sourceHash(dir, into) {
-  for (const rel of ["package.json", "icon.svg", "README.md", "tsup.config.ts"]) {
+  const icons = ["svg", "png", "webp", "avif", "jpg", "jpeg", "gif"].map((ext) => `icon.${ext}`);
+  for (const rel of ["package.json", ...icons, "README.md", "tsup.config.ts"]) {
     const file = path.join(dir, rel);
     if (fs.existsSync(file))
       into

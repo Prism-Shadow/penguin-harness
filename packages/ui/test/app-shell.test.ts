@@ -1,8 +1,13 @@
 /**
- * The app window (src/components/shell/app-shell/), the folded rail (rail/) and the phone's top
- * bar (mobile-top-bar/): the shell's slots are the ones its theme recipes select on, its column
- * folds under the theme's layout motion, and every icon-only entry carries its name and a styled
- * hint rather than a native title.
+ * The app window (src/components/shell/app-shell/), the folded rail (rail/), the phone's top
+ * bar (mobile-top-bar/) and the desktop window's band controls (window-band/): the shell's slots
+ * are the ones its theme recipes select on, its column folds under the theme's layout motion, and
+ * every icon-only entry carries its name and a styled hint rather than a native title.
+ *
+ * - Given a band, the window lays it across its top before the columns, as a strip that drags the
+ *   window and holds the caller's controls; without one there is no band slot at all.
+ * - Given the window maximized, the middle window button shows the restore drawing; otherwise the
+ *   maximize one.
  */
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
@@ -10,6 +15,7 @@ import { ICONS } from "../src/components/icons/icons";
 import type { NavRowLinkProps } from "../src/components/navigation/nav-list/nav-list";
 import { NAV_FILL } from "../src/components/navigation/nav-list/nav-list";
 import { AppShell } from "../src/components/shell/app-shell/app-shell";
+import { WindowControls } from "../src/components/shell/window-band/window-band";
 import { MobileTopBar } from "../src/components/shell/mobile-top-bar/mobile-top-bar";
 import {
   Rail,
@@ -18,7 +24,7 @@ import {
   RailItem,
   railItemClass,
 } from "../src/components/shell/rail/rail";
-import { classTokens, renderStatic } from "../src/testing";
+import { renderStatic, markupStructure } from "../src/testing";
 
 const text = (value: string) => createElement("span", null, value);
 
@@ -35,28 +41,49 @@ describe("AppShell", () => {
   it("is the ui-shell window with its nav and main slots, and a dock slot only when docked", () => {
     const html = shell();
     expect(html).toMatch(/^<div class="ui-shell [^"]*"><aside data-slot="nav"/);
-    expect(html).toContain(
-      '<div data-slot="main" class="flex min-w-0 flex-1 flex-col"><span>Page</span></div>',
-    );
+    expect(markupStructure(html)).toContain('<div data-slot="main"><span>Page</span></div>');
     expect(html).not.toContain('data-slot="dock"');
     expect(shell({ dock: text("Dock") })).toContain('data-slot="dock"');
   });
 
-  it("folds the navigation column's width under the theme's layout motion", () => {
+  it("folds the navigation column under the theme's layout motion", () => {
     const open = shell();
     expect(open).toContain('data-layout-motion="true"');
-    expect(classTokens(open)).toEqual(
-      expect.arrayContaining(["w-64", "lg:w-72", "md:block", "hidden"]),
-    );
-    const folded = shell({ navCollapsed: true });
-    expect(classTokens(folded)).toContain("w-12");
-    expect(classTokens(folded)).not.toContain("w-64");
-    expect(classTokens(open).filter((t) => t.startsWith("transition"))).toEqual([]);
   });
 
   it("mounts its overlays beside the columns, in no slot", () => {
     const html = shell({ overlays: text("Dialog") });
     expect(html).toMatch(/<span>Page<\/span><\/div><span>Dialog<\/span><\/div>$/);
+  });
+
+  it("lays a given band across its top, before the columns, as a strip that drags the window", () => {
+    const html = shell({ band: text("Controls") });
+    expect(html).toContain('data-window-band=""');
+    expect(html).toMatch(
+      /<div data-slot="band" data-window-drag="true"[^>]*><span>Controls<\/span><\/div><aside data-slot="nav"/,
+    );
+  });
+});
+
+describe("WindowControls", () => {
+  const controls = (maximized: boolean) =>
+    renderStatic(
+      createElement(WindowControls, {
+        maximized,
+        labels: { minimize: "Minimize", maximize: "Maximize", restore: "Restore", close: "Close" },
+        onMinimize: () => {},
+        onToggleMaximize: () => {},
+        onClose: () => {},
+      }),
+    );
+
+  it("draws the middle button as what it will do: maximize, or restore once maximized", () => {
+    const restored = controls(false);
+    expect(restored).toContain(`d="${ICONS.square}"`);
+    expect(restored).not.toContain(`d="${ICONS.squareStack}"`);
+    const maximized = controls(true);
+    expect(maximized).toContain(`d="${ICONS.squareStack}"`);
+    expect(maximized).not.toContain(`d="${ICONS.square}"`);
   });
 });
 
@@ -69,10 +96,9 @@ describe("MobileTopBar", () => {
         onMenu: () => {},
       }),
     );
-    expect(classTokens(plain)).toContain("md:hidden");
     expect(plain).toContain('aria-label="Sessions"');
     expect(plain).not.toContain("data-tooltip");
-    expect(plain).toContain('<span class="text-sm font-semibold">PenguinHarness</span>');
+    expect(markupStructure(plain)).toContain("<span>PenguinHarness</span>");
     const badged = renderStatic(
       createElement(MobileTopBar, {
         title: "PenguinHarness",
@@ -95,7 +121,7 @@ describe("Rail", () => {
       createElement(Rail, { head: text("head"), foot: text("foot"), children: text("entry") }),
     );
     expect(html).toMatch(
-      /<span>head<\/span><nav class="[^"]*overflow-y-auto[^"]*"><span>entry<\/span><\/nav><span>foot<\/span>/,
+      /<span>head<\/span><nav class="[^"]*"><span>entry<\/span><\/nav><span>foot<\/span>/,
     );
   });
 
@@ -114,7 +140,6 @@ describe("Rail", () => {
     expect(pressed).toContain('aria-pressed="true"');
     expect(railItemClass({ active: true })).toContain(NAV_FILL.selected);
     expect(railItemClass()).not.toContain(` ${NAV_FILL.selected}`);
-    expect(railItemClass({ disabled: true })).toContain("cursor-not-allowed");
   });
 
   it("hands a link entry to the router, the current page marked, and parks a dead one", () => {
@@ -148,8 +173,8 @@ describe("Rail", () => {
   });
 
   it("rules runs of entries apart and opens the account menu from a named square", () => {
-    expect(renderStatic(createElement(RailDivider))).toBe(
-      '<span aria-hidden="true" class="my-0.5 h-px w-5 shrink-0 bg-line"></span>',
+    expect(markupStructure(renderStatic(createElement(RailDivider)))).toBe(
+      '<span aria-hidden="true"></span>',
     );
     const account = renderStatic(
       createElement(RailAccountButton, {

@@ -139,38 +139,38 @@ describe("parseCssRules", () => {
 });
 
 describe("theme file analysis", () => {
-  const grays = GRAY_STEPS.map((step) => `--color-gray-${step}: #808080;`).join("\n");
+  const bridge = [
+    "--color-white: #ffffff;",
+    ...GRAY_STEPS.map((s) => `--color-gray-${s}: #808080;`),
+  ];
+  const grays = bridge.join("\n");
   const rule = (selector: string, body: string) => `${selector} {\n${body}\n}`;
   const complete = (value = "#123456") => TOKEN_NAMES.map((n) => `${n}: ${value};`).join("\n");
-  /** The base rule carries the gray bridge; the dark rule only what it is given. */
-  const modern = (
-    light: string,
-    dark: string,
-    wrap = (s: string) => `@layer ui-theme {\n${s}\n}`,
-  ) =>
+  /** A pack other than the base: its rules on its own root, in `ui-theme`. The base rule carries the gray bridge. */
+  const geek = (light: string, dark: string, wrap = (s: string) => `@layer ui-theme {\n${s}\n}`) =>
     wrap(
       [
-        rule(':root[data-theme="modern"]', `${light}\n${grays}`),
-        rule(':root[data-theme="modern"].dark', dark),
+        rule(':root[data-theme="geek"]', `${light}\n${grays}`),
+        rule(':root[data-theme="geek"].dark', dark),
       ].join("\n"),
     );
 
   it("accepts a complete file", () => {
-    const analysis = analyzeThemeFile(modern(complete(), complete("#654321")), "modern");
+    const analysis = analyzeThemeFile(geek(complete(), complete("#654321")), "geek");
     expect(analysis.declaresTokens).toBe(true);
     expect(analysis.isStub).toBe(false);
     expect(analysis.structure).toEqual([]);
     expect(contractProblems(analysis, "light")).toEqual([]);
     expect(contractProblems(analysis, "dark")).toEqual([]);
     expect(darkRepeats(analysis)).toEqual([]);
-    expect(analysis.modes.light.size).toBe(TOKEN_NAMES.length + GRAY_STEPS.length);
+    expect(analysis.modes.light.size).toBe(TOKEN_NAMES.length + bridge.length);
     expect(analysis.modes.dark.size).toBe(TOKEN_NAMES.length);
   });
 
   it("completes dark from the base rule, and flags a dark value that repeats the base one", () => {
     const analysis = analyzeThemeFile(
-      modern(complete(), "--ui-canvas: #000000;\n--ui-fg: #123456;\n--color-gray-50: #808080;"),
-      "modern",
+      geek(complete(), "--ui-canvas: #000000;\n--ui-fg: #123456;\n--color-gray-50: #808080;"),
+      "geek",
     );
     expect(contractProblems(analysis, "dark")).toEqual([]);
     expect(modeDeclarations(analysis, "dark").get("--ui-canvas")).toBe("#000000");
@@ -180,7 +180,7 @@ describe("theme file analysis", () => {
 
   it("names a missing token, an extra one and an unknown variable per mode", () => {
     const light = complete().replace("--ui-canvas: #123456;", "--ui-bogus: #fff;");
-    const analysis = analyzeThemeFile(modern(light, "--brand-thing: 1;"), "modern");
+    const analysis = analyzeThemeFile(geek(light, "--brand-thing: 1;"), "geek");
     expect(contractProblems(analysis, "light")).toEqual([
       `missing 1 of ${TOKEN_NAMES.length}: --ui-canvas`,
       "--ui-bogus is not in tokens.ts — add it to the contract or remove it",
@@ -195,46 +195,95 @@ describe("theme file analysis", () => {
 
   it("flags a dangling token reference and an incomplete gray bridge", () => {
     const light = complete().replace("--ui-fg: #123456;", "--ui-fg: var(--ui-ink);");
-    const css = modern(light, complete()).replace("--color-gray-500: #808080;", "");
-    const analysis = analyzeThemeFile(css, "modern");
+    const css = geek(light, complete())
+      .replace("--color-gray-500: #808080;", "")
+      .replace("--color-white: #ffffff;", "");
+    const analysis = analyzeThemeFile(css, "geek");
     expect(contractProblems(analysis, "light")).toEqual([
       "--ui-fg reads --ui-ink, which is not a contract token",
-      "the gray bridge is incomplete — re-point --color-gray-500",
+      "the gray bridge is incomplete — re-point --color-white, --color-gray-500",
     ]);
+  });
+
+  it("lets a pack built on the base leave names to it, and still refuses a name outside the contract", () => {
+    const partial = analyzeThemeFile(
+      geek("--ui-canvas: #f6f1e7;\n--ui-bogus: 1px;", "--ui-canvas: #1c1a17;"),
+      "geek",
+    );
+    expect(contractProblems(partial, "light", { complete: false })).toEqual([
+      "--ui-bogus is not in tokens.ts — add it to the contract or remove it",
+    ]);
+    expect(contractProblems(partial, "light")[0]).toMatch(/^missing \d+ of /);
   });
 
   it("flags tokens outside the canonical rules, outside the layer, and declared twice", () => {
     const wrongSelector = analyzeThemeFile(
-      `@layer ui-theme { [data-theme="modern"] { --ui-canvas: #fff; } }`,
-      "modern",
+      `@layer ui-theme { [data-theme="geek"] { --ui-canvas: #fff; } }`,
+      "geek",
     );
     expect(wrongSelector.structure).toEqual([
       expect.stringContaining("declares --ui-canvas — tokens belong in the canonical rules"),
     ]);
     const unlayered = analyzeThemeFile(
-      modern(complete(), complete(), (s) => s),
-      "modern",
+      geek(complete(), complete(), (s) => s),
+      "geek",
     );
     expect(unlayered.structure).toEqual([
       expect.stringContaining("the light rule sits in top level"),
       expect.stringContaining("the dark rule sits in top level"),
     ]);
-    const twice = analyzeThemeFile(
-      modern(`${complete()}\n--ui-canvas: #fff;`, complete()),
-      "modern",
-    );
+    const twice = analyzeThemeFile(geek(`${complete()}\n--ui-canvas: #fff;`, complete()), "geek");
     expect(twice.structure).toEqual([
       expect.stringMatching(/--ui-canvas is declared again for light \(first at line \d+\)/),
     ]);
   });
 
-  it("gives the default theme its attribute-less selectors and no gray-bridge duty", () => {
-    const github = analyzeThemeFile(
-      `@layer ui-theme {\n:root, :root[data-theme="github"] {\n${complete()}\n}\n:root.dark, :root[data-theme="github"].dark {\n${complete()}\n}\n}`,
+  it("gives the base its bare-root rules in ui-base, and no pack a bare-root co-selector", () => {
+    const base = analyzeThemeFile(
+      `@layer ui-base {\n:root {\n${complete()}\n${grays}\n}\n:root.dark {\n${complete("#654321")}\n}\n}`,
+      "modern",
+    );
+    expect(base.structure).toEqual([]);
+    expect(contractProblems(base, "dark")).toEqual([]);
+    // The base in a pack's layer would sit over every pack.
+    const raised = analyzeThemeFile(
+      `@layer ui-theme {\n:root {\n--ui-canvas: #fff;\n}\n}`,
+      "modern",
+    );
+    expect(raised.structure).toEqual([
+      expect.stringContaining("must sit directly in `@layer ui-base`"),
+    ]);
+    // Primer's old fallback co-selectors would paint a bare root in Primer's values.
+    const fallback = analyzeThemeFile(
+      `@layer ui-theme {\n:root, :root[data-theme="github"] {\n--ui-canvas: #fff;\n}\n}`,
       "github",
     );
-    expect(github.structure).toEqual([]);
-    expect(contractProblems(github, "dark")).toEqual([]);
+    expect(fallback.structure).toEqual([
+      expect.stringContaining("declares --ui-canvas — tokens belong in the canonical rules"),
+    ]);
+  });
+
+  it("reads a pack's files in the layer its index serves each one in", () => {
+    const sources = [
+      {
+        file: "tokens.css",
+        css: rule(':root[data-theme="geek"]', "--ui-canvas: #fff;"),
+        layer: "ui-theme",
+      },
+      {
+        file: "accents.css",
+        css: rule(':root[data-theme="geek"][data-accent="orange"]', "--ui-accent: #e32a01;"),
+        layer: "ui-accent",
+      },
+      { file: "recipes.css", css: rule(':root[data-theme="geek"]', "--ui-fg: #000;"), layer: null },
+    ];
+    const analysis = analyzeThemeFile(sources, "geek");
+    expect(analysis.modes.light.get("--ui-canvas")).toBe("#fff");
+    expect(analysis.accents.get("orange")?.light.get("--ui-accent")).toBe("#e32a01");
+    // A file served in no layer is named by its path in the problem.
+    expect(analysis.structure).toEqual([
+      expect.stringMatching(/^recipes\.css line 1: the light rule sits in top level/),
+    ]);
   });
 
   it("tells a stub from a file whose tokens were deleted", () => {
@@ -242,27 +291,29 @@ describe("theme file analysis", () => {
     expect(analyzeThemeFile("/** Console. */\n@layer ui-theme {}", "geek").isStub).toBe(false);
   });
 
-  it("resolves var() through the cascade the selectors produce", () => {
-    const github = analyzeThemeFile(
-      `@layer ui-theme {
-        :root, :root[data-theme="github"] { --color-gray-900: #101828; --ui-fg: var(--color-gray-900); --ui-line: var(--ui-missing, #d1d5dc); }
-        :root.dark, :root[data-theme="github"].dark { --color-gray-900: #0d0d0d; }
+  it("resolves var() through the cascade the layers produce", () => {
+    const base = analyzeThemeFile(
+      `@layer ui-base {
+        :root { --color-gray-900: #101828; --ui-fg: var(--color-gray-900); --ui-line: var(--ui-missing, #d1d5dc); --ui-canvas: #fafafa; }
+        :root.dark { --color-gray-900: #0d0d0d; --ui-canvas: #1b1c1e; }
       }`,
-      "github",
-    );
-    const modernTheme = analyzeThemeFile(
-      `@layer ui-theme { :root[data-theme="modern"] { --ui-surface: var(--color-gray-900); } }`,
       "modern",
     );
-    // A dark value this theme leaves alone falls back to its own light rule's declaration…
-    expect(resolveThemeValue("--ui-fg", "dark", github, github)).toBe("#0d0d0d");
-    // …with fallbacks honoured, and the default theme's rules reachable from any other theme.
-    expect(resolveThemeValue("--ui-line", "light", github, github)).toBe("#d1d5dc");
-    expect(resolveThemeValue("--ui-surface", "light", modernTheme, github)).toBe("#101828");
-    expect(resolveThemeValue("--ui-canvas", "light", modernTheme, github)).toBeNull();
+    const pack = analyzeThemeFile(
+      `@layer ui-theme { :root[data-theme="geek"] { --ui-surface: var(--color-gray-900); --ui-canvas: #fbfafa; } }`,
+      "geek",
+    );
+    // A dark value the base leaves alone falls back to its own light rule's declaration…
+    expect(resolveThemeValue("--ui-fg", "dark", base, base)).toBe("#0d0d0d");
+    // …with fallbacks honoured, and the base's rules reachable from any pack.
+    expect(resolveThemeValue("--ui-line", "light", base, base)).toBe("#d1d5dc");
+    expect(resolveThemeValue("--ui-surface", "light", pack, base)).toBe("#101828");
+    // A pack's light value outranks the base's dark one: the pack's layer is above the base's.
+    expect(resolveThemeValue("--ui-canvas", "dark", pack, base)).toBe("#fbfafa");
+    expect(resolveThemeValue("--ui-shadow-flat", "light", pack, base)).toBeNull();
     const cycle = analyzeThemeFile(
-      `@layer ui-theme { :root { --ui-fg: var(--ui-fg-muted); --ui-fg-muted: var(--ui-fg); } }`,
-      "github",
+      `@layer ui-base { :root { --ui-fg: var(--ui-fg-muted); --ui-fg-muted: var(--ui-fg); } }`,
+      "modern",
     );
     expect(resolveThemeValue("--ui-fg", "light", cycle, cycle)).toBeNull();
   });

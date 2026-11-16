@@ -36,6 +36,7 @@ export const RSI_TOOLKITS = [
   { plugin: "skillopt-rsi-toolkit", label: "SkillOpt", href: "https://arxiv.org/abs/2605.23904" },
   { plugin: "openskill-rsi-toolkit", label: "OpenSkill", href: "https://arxiv.org/abs/2606.06741" },
   { plugin: "trace-rsi-toolkit", label: "TRACE", href: "https://arxiv.org/abs/2608.22793" },
+  { plugin: "rrsi-rsi-toolkit", label: "RRSI", href: "https://arxiv.org/abs/2609.24972" },
 ] as const satisfies ReadonlyArray<{ plugin: string; label: string; href: string | null }>;
 
 /**

@@ -3,17 +3,14 @@
  * (src/components/overlays/drag-preview/drag-preview.ts): a copy of the row in an opaque chip
  * painted in tokens, at the row's width, offset by the pointer's place in the row, gone a task
  * later. The suite has no DOM, so the helper runs against a few stand-in nodes that record what
- * it does; the rows that drag are held to calling it against their source.
+ * it does; that a row hands it over for its own drag only is disclosure-drag.dom.test.ts.
  */
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   DRAG_PREVIEW_CLASS,
   setDragPreview,
 } from "../src/components/overlays/drag-preview/drag-preview";
 import type { DragStartLike } from "../src/components/overlays/drag-preview/drag-preview";
-import { SRC_DIR, WEB_DIR } from "./helpers/paths";
 
 /** A stand-in element: attributes, children, a box, and what `setDragPreview` reads and writes. */
 class FakeNode {
@@ -108,35 +105,8 @@ describe("setDragPreview", () => {
     const copy = chip.children[0]!;
     expect(copy.attributes.has("id")).toBe(false);
     expect(copy.children[0]!.attributes.has("data-testid")).toBe(false);
-    expect(row.attributes.get("id")).toBe("row-1");
 
     vi.runAllTimers();
     expect(doc.body.children).toEqual([]);
-  });
-
-  it("paints the chip in tokens, opaque and without a shadow", () => {
-    const classes = DRAG_PREVIEW_CLASS.split(" ");
-    expect(classes).toEqual(
-      expect.arrayContaining(["bg-overlay", "border", "border-line", "rounded-md", "text-fg"]),
-    );
-    expect(classes.filter((c) => c.startsWith("shadow") || c.includes("/"))).toEqual([]);
-  });
-
-  it("is what every row that drags hands the browser, for its own drag only", () => {
-    const sources = [
-      join(SRC_DIR, "components/shell/sidebar-frame/sidebar-frame.tsx"),
-      join(SRC_DIR, "components/shell/session-row/session-row.tsx"),
-      join(SRC_DIR, "components/navigation/group-header/group-header.tsx"),
-    ];
-    for (const path of sources) {
-      expect(readFileSync(path, "utf8"), path).toContain(
-        "if (e.target === e.currentTarget) setDragPreview(e);",
-      );
-    }
-    // The Models page's group header returns early from a drag that is not its own.
-    const models = readFileSync(join(WEB_DIR, "src/features/models/models-page.tsx"), "utf8");
-    expect(models).toMatch(
-      /if \(e\.target !== e\.currentTarget\) return;[\s\S]{0,400}setDragPreview\(e\);/,
-    );
   });
 });

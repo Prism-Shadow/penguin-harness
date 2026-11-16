@@ -439,6 +439,16 @@ export const ICONS = {
   rectangle: "M4 5h16v14H4z",
   /** The same frame with a check inside it. */
   rectangleCheck: "M4 5h16v14H4zM8 12l3 3 5-6",
+  /**
+   * A square as wide as `cross` and as high: a window filling the screen, the maximize button
+   * among the window controls.
+   */
+  square: "M6 6h12v12H6z",
+  /**
+   * A smaller square in front of a second one, offset up and to the right, whose hidden edges
+   * are not drawn: a window to be brought back to its own size, the restore button.
+   */
+  squareStack: "M6 9h9v9H6zM9 9V6h9v9h-3",
   /** An anvil: the Agent Workbench. */
   anvil: "M3 7h5V4h13v5l-4 3v3l3 4v1H6v-1l3-4v-3H8c-3 0-5-2-5-5Z M8 7h13 M9 15h8",
   /** A browser window: the rounded frame, its chrome bar and two dots on the bar. */

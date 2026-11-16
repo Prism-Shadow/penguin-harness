@@ -73,9 +73,12 @@ describe("tsup build target", () => {
   });
 
   it("is the same Node version everywhere", () => {
+    // Which version is the engines rule's to say (below); this one only asks that there is one.
     const targets = tsupPackages.map(({ name, configPath }) => [name, declaredTarget(configPath)]);
+    const first = targets[0]![1];
+    expect(first, "a tsup config declares no nodeNN target").not.toBeNull();
     expect(Object.fromEntries(targets)).toEqual(
-      Object.fromEntries(tsupPackages.map(({ name }) => [name, "node24"])),
+      Object.fromEntries(tsupPackages.map(({ name }) => [name, first])),
     );
   });
 

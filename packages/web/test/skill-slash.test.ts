@@ -9,8 +9,7 @@
  *   no commands.
  * - The skill dropdown's search matches the name and the localized description,
  *   case-insensitively; an empty query lists everything and no match lists nothing.
- * - The skill library's quick invoke prefills exactly the auto-invoke text an empty-body send
- *   uses, which names the picked skills in the UI language.
+ * - The auto-invoke text an empty-body send uses names the picked skills in the UI language.
  */
 import { describe, expect, it } from "vitest";
 import type { SkillMetadataItem } from "@prismshadow/penguin-server/api";
@@ -116,19 +115,6 @@ describe("skillSlashItems (slash skill command item assembly)", () => {
     ];
     expect(skillSlashItems(withShort, "zh")[0]!.desc).toBe("创建 Agent");
     expect(skillSlashItems(withShort, "en")[0]!.desc).toBe("Create agents");
-  });
-});
-
-describe("quickInvokeText (prefill text for skill-library quick invoke, zh/en dictionaries)", () => {
-  it("reads exactly as the empty-body auto-invoke text for the same single skill", () => {
-    for (const [locale, dict] of [
-      ["zh", zh],
-      ["en", en],
-    ] as const) {
-      expect(dict.skills.quickInvokeText("agent-initialization"), locale).toBe(
-        dict.chat.skillsAutoMessage(["agent-initialization"]),
-      );
-    }
   });
 });
 

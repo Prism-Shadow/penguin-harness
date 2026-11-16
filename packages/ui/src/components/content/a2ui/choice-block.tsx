@@ -25,12 +25,12 @@
  * Read-only (the default — an older reply, a Trace), the options stay on screen with every
  * control disabled and no fill button: the question is still part of the record. Once the reply
  * has been answered, the options the message that answered it names are picked (`answeredWith`,
- * core's `parseChoicePick`), so a reload still shows the pick; an answer the reader wrote
+ * A2UI's `parseChoicePick`), so a reload still shows the pick; an answer the reader wrote
  * themselves, or any other message, picks nothing.
  */
 import { useId, useMemo, useState } from "react";
-import { choiceFillText, parseChoicePick } from "@prismshadow/penguin-core/a2ui";
-import type { A2uiChoice, A2uiOption } from "@prismshadow/penguin-core/a2ui";
+import { choiceFillText, parseChoicePick } from "@prismshadow/a2ui";
+import type { A2uiChoice, A2uiOption } from "@prismshadow/a2ui";
 import { ICON_SIZE } from "../../../icon-scale";
 import { useUiStrings } from "../../../strings";
 import type { A2uiStrings } from "../../../strings";

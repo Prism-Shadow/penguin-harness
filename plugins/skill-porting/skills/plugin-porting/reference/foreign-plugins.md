@@ -63,14 +63,14 @@ targets are `package.json` fields or files of the package.
 | license, keywords | same | same | same, plus `penguin-plugin` and `ported` |
 | category | `interface.category` | marketplace `category` | card `category`: Developer Tools / Developer / DevOps / Cloud → `software-development`; Productivity / Office / Communication / Project Management / Writing → `office-productivity`; AI / Machine Learning / Data / Agents → `ai-app-development`; else omitted (Other) |
 | default prompt | `interface.defaultPrompt[0]` | — | card `quickStart.prompt` |
-| icon | `interface.composerIcon` (SVG) | — | `icon.svg` + card `icon`; a PNG `logo` is not used |
+| icon | `interface.composerIcon` (SVG), else `interface.logo` (PNG) | — | `icon.svg` or `icon.png` + card `icon` |
 | skills | `skills` (default `./skills/`) | `skills`, default `skills/`, else a root `SKILL.md` | `skills/<dir>/` normalised by `scripts/normalize-skills.mjs`, each declared by `scripts/write-module.mjs` |
 | commands | `commands/*.md` | `commands/*.md` | dropped when the body only routes to a skill; otherwise a skill of its own |
 | agents | — | `agents/*.md` | dropped (a procedural one may be folded into a skill's body) |
 | hooks | — | `hooks/` | dropped: not the PenguinHarness hook protocol |
 | MCP servers | `.mcp.json` | `mcpServers` (inline, or `.mcp.json`) | the module's MCP server entries, by `scripts/port-mcp.mjs` (rules below) and `scripts/write-module.mjs`; listed in the README header with what each needs |
 | apps, LSP | `.app.json` | `lspServers` | dropped, named in the README: `.app.json` holds ChatGPT hosted-app connector ids (`connector_…`), which resolve only inside ChatGPT's app runtime — there is nothing to connect to from outside |
-| root assets | `assets/` | — | only the SVG icon is taken |
+| root assets | `assets/` | — | only the icon is taken |
 | README | `README.md` | `README.md` | kept, under the generated header |
 
 ## MCP server shapes

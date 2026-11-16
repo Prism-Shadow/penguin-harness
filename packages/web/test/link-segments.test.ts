@@ -1,6 +1,11 @@
 /**
  * linkSegments (src/lib/link-segments.ts): a description's web addresses become links, stopping
  * at brackets and trailing punctuation in either script, and the text around them is kept whole.
+ *
+ * - Given English or Chinese prose around an address, the address is the link and the brackets
+ *   and full stops around it stay text.
+ * - Given Chinese text glued to an address with no space or punctuation between, the address
+ *   ends at its last ASCII character and the Chinese stays text.
  */
 import { describe, expect, it } from "vitest";
 import { linkSegments } from "../src/lib/link-segments";
@@ -24,5 +29,13 @@ describe("linkSegments", () => {
       { kind: "text", text: "." },
     ]);
     expect(linkSegments("no address here")).toEqual([{ kind: "text", text: "no address here" }]);
+  });
+
+  it("ends an address before Chinese text glued to it", () => {
+    expect(linkSegments("详见https://arxiv.org/abs/2309.03409中的附录")).toEqual([
+      { kind: "text", text: "详见" },
+      { kind: "link", href: "https://arxiv.org/abs/2309.03409" },
+      { kind: "text", text: "中的附录" },
+    ]);
   });
 });
