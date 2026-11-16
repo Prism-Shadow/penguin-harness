@@ -3,6 +3,7 @@
 - **Date:** 2026-11-16
 - **Type:** fix
 - **Scope:** `chat-markdown`
+- **PR:** [#1568](https://github.com/Prism-Shadow/penguin-harness/pull/1568)
 - **Issue:** [#1500](https://github.com/Prism-Shadow/penguin-harness/issues/1500)
 
 [中文版](2026-11-16-chat-bold-after-punctuation.zh.md)
