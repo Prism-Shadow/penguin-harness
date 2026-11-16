@@ -48,7 +48,7 @@ import { ORIGIN_MODELS_MAX, UsageRecorder } from "../src/runtime/usage-recorder.
 import { ErrorsRepo } from "@prismshadow/penguin-library-observability/repos/errors";
 import { UsageRepo } from "@prismshadow/penguin-library-observability/repos/usage";
 import { UsageService } from "../src/services/usage-service.js";
-import type { PricingRates } from "@prismshadow/penguin-library-projects";
+import type { PricingRates } from "../src/services/usage-service.js";
 import { openDatabase } from "@prismshadow/penguin-library-db";
 import { enumerateBuckets, enumerateTsBuckets, formatLocalDate } from "../src/internal/dates.js";
 import { switchTimeZone } from "./helpers/time-zone.js";

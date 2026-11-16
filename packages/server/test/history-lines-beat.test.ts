@@ -16,7 +16,7 @@ import { historyLinesRoutes } from "../src/http/routes/history-lines.js";
 import type { HistoryLinesRouteDeps } from "../src/http/routes/history-lines.js";
 import { HISTORY_LINES_BEAT_MS } from "../src/services/history-lines.js";
 import { initialScanState } from "../src/services/message-window.js";
-import type { HistoryWindowRead } from "../src/services/trace-service.js";
+import type { HistoryWindowRead } from "@prismshadow/penguin-library-traces";
 import { sessionRow } from "./fixtures/session.js";
 
 describe("history-lines while it plans", () => {

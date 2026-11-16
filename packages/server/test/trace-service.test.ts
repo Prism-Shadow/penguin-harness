@@ -60,7 +60,7 @@ import { ErrorsRepo } from "@prismshadow/penguin-library-observability/repos/err
 import { UsageRepo } from "@prismshadow/penguin-library-observability/repos/usage";
 import { SessionSources } from "../src/runtime/session-sources.js";
 import { UsageService } from "../src/services/usage-service.js";
-import type { PricingLookup } from "../src/api/types.js";
+import type { PricingLookup } from "../src/services/usage-service.js";
 import { makeTempRoot, makeTraceHarness, writeTraceFile } from "./helpers.js";
 
 const P = "project-t";

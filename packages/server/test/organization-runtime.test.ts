@@ -30,7 +30,7 @@ import { OrgStore } from "../src/organization/store.js";
 import { parseChannelConfig, serializeCalendarEvent } from "../src/organization/files.js";
 import { DEFAULT_CHANNEL_ID, ticketPath } from "../src/organization/paths.js";
 import { zonedDate } from "../src/organization/zoned.js";
-import type { ErrorRecordArgs } from "../src/runtime/error-recorder.js";
+import type { ErrorRecordArgs } from "@prismshadow/penguin-library-observability";
 import { DEFAULT_EMPLOYEE_PLUGINS } from "../src/runtime/organization/deps.js";
 import type { OrgDeps } from "../src/runtime/organization/deps.js";
 import { OrganizationScheduler } from "../src/runtime/organization/scheduler.js";

@@ -32,7 +32,7 @@ import { ProjectsRepo } from "@prismshadow/penguin-library-projects/repos/projec
 import { SchedulesRepo } from "@prismshadow/penguin-library-sessions/repos/schedules";
 import { SessionsRepo } from "@prismshadow/penguin-library-sessions/repos/sessions";
 import { UsersRepo } from "@prismshadow/penguin-library-identity/repos/users";
-import type { ErrorRecordArgs } from "../src/runtime/error-recorder.js";
+import type { ErrorRecordArgs } from "@prismshadow/penguin-library-observability";
 import type { ScheduleSessionCreator, ScheduleTaskRunner } from "../src/runtime/scheduler.js";
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import { Scheduler } from "../src/runtime/scheduler.js";

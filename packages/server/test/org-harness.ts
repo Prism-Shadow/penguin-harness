@@ -15,7 +15,7 @@ import { ProjectsRepo } from "@prismshadow/penguin-library-projects/repos/projec
 import { SessionsRepo } from "@prismshadow/penguin-library-sessions/repos/sessions";
 import { UsersRepo } from "@prismshadow/penguin-library-identity/repos/users";
 import { OrgStore } from "../src/organization/store.js";
-import type { ErrorRecordArgs } from "../src/runtime/error-recorder.js";
+import type { ErrorRecordArgs } from "@prismshadow/penguin-library-observability";
 import { DEFAULT_EMPLOYEE_PLUGINS } from "../src/runtime/organization/deps.js";
 import type { OrgDeps } from "../src/runtime/organization/deps.js";
 import { OrganizationScheduler } from "../src/runtime/organization/scheduler.js";
