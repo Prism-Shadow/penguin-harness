@@ -225,7 +225,7 @@ interface EnvironmentInterface {
   listTools(): Promise<ToolDefinition[]>;
   executeTool(request: ToolExecutionRequest): AsyncGenerator<AmspRecord>;
   toolPermission(name: string): "r" | "rw" | undefined;   // for frontend approval-mode decisions
-  dispose?(): void;                                        // release runtime resources; idempotent
+  dispose?(): void | Promise<void>;                        // release runtime resources; resolves once subagent children have finished writing; idempotent
 }
 ```
 
