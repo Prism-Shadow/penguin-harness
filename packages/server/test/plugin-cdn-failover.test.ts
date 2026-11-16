@@ -6,8 +6,11 @@
  * - The index read tries the source's own URL first, then the deployment's mirrors one at
  *   a time in the order given; a connection failure, a timeout and a non-ok answer each
  *   hand the read to the next address, and a source exhausted on is reported with the
- *   failure it ended on. The order is fixed — the next read walks the same path, no
- *   address is tried twice, and none is fetched after another has carried the read.
+ *   failure it ended on. The start of the order is where the last read succeeded (the
+ *   sticky start): the next read begins at the address that carried the previous one, so
+ *   a dead canonical's window is not paid read after read. No address is tried twice, and
+ *   none is fetched after another has carried the read; a document that will not parse
+ *   never makes its address the start.
  * - A channel install does the same over the asset: the URL the index published first,
  *   then the mirrors the rules rewrite it into; what arrives is verified against the
  *   entry's sha512 exactly as the canonical URL's would be — a mirror serving tampered
@@ -64,6 +67,7 @@ afterEach(async () => {
 function fakeFetch(answers: Record<string, { status?: number; body?: string } | Error>): {
   fetch: typeof fetch;
   hits: string[];
+  answers: Record<string, { status?: number; body?: string } | Error>;
 } {
   const hits: string[] = [];
   const fetchImpl = (async (input: Parameters<typeof fetch>[0]) => {
@@ -74,7 +78,7 @@ function fakeFetch(answers: Record<string, { status?: number; body?: string } | 
     if (answer instanceof Error) throw answer;
     return new Response(answer.body ?? "", { status: answer.status ?? 200 });
   }) as typeof fetch;
-  return { fetch: fetchImpl, hits };
+  return { fetch: fetchImpl, hits, answers };
 }
 
 describe("httpPluginRegistry mirrors", () => {
@@ -145,7 +149,7 @@ describe("the read walks the addresses in order", () => {
     { name: "acme", version: "1.0.0", description: "d", authors: ["a"], license: "MIT" },
   ];
 
-  it("the addresses are tried in the order given, once each, and none is re-fetched after a win", async () => {
+  it("the addresses are tried in the order given, once each, none re-fetched within one read", async () => {
     const url = "https://index.example/index.json";
     const mirror = "https://cdn-mirror.example/index.json";
     const registry = fakeFetch({ [url]: { status: 503 }, [mirror]: { body: "[]" } });
@@ -156,11 +160,9 @@ describe("the read walks the addresses in order", () => {
     });
     await source.index();
     expect(registry.hits).toEqual([url, mirror]);
-    // The order is fixed: the next read walks the same path, and the mirror's win does
-    // not put it first.
-    registry.hits.length = 0;
-    await source.index();
-    expect(registry.hits).toEqual([url, mirror]);
+    // One try per address per read, even when the read had to walk: the mirror's win
+    // does not re-fetch the addresses that came before it within the same read.
+    expect(new Set(registry.hits).size).toBe(registry.hits.length);
   });
 
   it("a source exhausted on reports the failure it ended on, with the addresses it named", async () => {
@@ -174,6 +176,71 @@ describe("the read walks the addresses in order", () => {
         delay: noWait,
       }).index(),
     ).rejects.toThrow(/could not be fetched \(1 attempts\): fetch failed/);
+    expect(registry.hits).toEqual([url, mirror]);
+  });
+
+  it("the sticky start: after a mirror served the read, the next read starts at it", async () => {
+    const url = "https://index.example/index.json";
+    const mirror = "https://cdn-mirror.example/index.json";
+    const registry = fakeFetch({ [url]: { status: 503 }, [mirror]: { body: "[]" } });
+    const source = httpPluginRegistry([url, mirror], {
+      fetchImpl: registry.fetch,
+      attempts: 1,
+      delay: noWait,
+    });
+    await source.index();
+    expect(registry.hits).toEqual([url, mirror]);
+    // Memory, not a speed test: the walk still tries one address at a time, only its
+    // start moves — the mirror that carried the last read leads the next one.
+    registry.hits.length = 0;
+    await source.index();
+    expect(registry.hits).toEqual([mirror]);
+  });
+
+  it("a dead sticky start hands the walk back to the configured order within the same read", async () => {
+    const url = "https://index.example/index.json";
+    const mirror = "https://cdn-mirror.example/index.json";
+    const registry = fakeFetch({ [url]: { status: 503 }, [mirror]: { body: "[]" } });
+    const source = httpPluginRegistry([url, mirror], {
+      fetchImpl: registry.fetch,
+      attempts: 1,
+      delay: noWait,
+    });
+    await source.index();
+    expect(registry.hits).toEqual([url, mirror]);
+    // The mirror goes dead after its win: the next read still starts at it, pays one
+    // window, and the configured order carries the read from there.
+    registry.answers[url] = { body: "[]" };
+    registry.answers[mirror] = new TypeError("fetch failed");
+    registry.hits.length = 0;
+    const entries = await source.index();
+    expect(entries).toEqual([]);
+    expect(registry.hits).toEqual([mirror, url]);
+    // And the start follows the address that now serves the document.
+    registry.hits.length = 0;
+    await source.index();
+    expect(registry.hits).toEqual([url]);
+  });
+
+  it("a bad document never becomes the sticky start: the next read starts over", async () => {
+    const url = "https://index.example/index.json";
+    const mirror = "https://cdn-mirror.example/index.json";
+    const registry = fakeFetch({
+      [url]: { status: 503 },
+      [mirror]: { body: "not json" },
+    });
+    const source = httpPluginRegistry([url, mirror], {
+      fetchImpl: registry.fetch,
+      attempts: 1,
+      delay: noWait,
+    });
+    await expect(source.index()).rejects.toThrow(/not valid JSON/);
+    expect(registry.hits).toEqual([url, mirror]);
+    // The mirror answered but its document was refused: nothing is remembered, the next
+    // read starts over at the configured order.
+    registry.answers[mirror] = { body: "[]" };
+    registry.hits.length = 0;
+    await source.index();
     expect(registry.hits).toEqual([url, mirror]);
   });
 
@@ -191,11 +258,17 @@ describe("channel mirrors", () => {
   const asset = new TextEncoder().encode("a release tarball's bytes");
   const integrity = `sha512-${createHash("sha512").update(asset).digest("base64")}`;
 
-  const channel = (mirrors?: string[]): IndexChannel => ({
+  // Each order-sensitive test names its own channel URL: the sticky start is remembered
+  // per channel URL for the whole process, so tests that assert the walk's first step
+  // must not share a key with a test that moves it.
+  const channel = (
+    mirrors?: string[],
+    url = "https://github.com/acme/acme/releases/download/v1.0.0/acme-1.0.0.tgz",
+  ): IndexChannel => ({
     name: "acme",
     version: "1.0.0",
     integrity,
-    url: "https://github.com/acme/acme/releases/download/v1.0.0/acme-1.0.0.tgz",
+    url,
     mirrors,
   });
 
@@ -255,6 +328,7 @@ describe("channel mirrors", () => {
   it("the release URL is tried first, the mirrors after it, once each", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-cdn-"));
     roots.push(root);
+    const canonicalUrl = "https://github.com/acme/acme/releases/download/v1.0.3/acme-1.0.3.tgz";
     const mirrorUrl =
       "https://cdn-mirror.example/acme/acme/releases/download/v1.0.0/acme-1.0.0.tgz";
     const tarball = await packTarball("acme", "1.0.0");
@@ -282,36 +356,112 @@ describe("channel mirrors", () => {
           ),
       } as unknown as Response;
     }) as typeof fetch;
-    const chan = { ...channel([mirrorUrl]), integrity: pinned };
+    const chan = { ...channel([mirrorUrl], canonicalUrl), integrity: pinned };
     const installed = await installPluginChannel(root, chan, { fetchImpl, timeoutMs: 50 });
     expect(installed).toEqual({ name: "acme", version: "1.0.0" });
-    // Fixed order, one try per address: the release URL first, then the mirror, and the
-    // mirror's win does not put it first on the next install.
-    expect(hits).toEqual([channel().url, mirrorUrl]);
+    expect(hits).toEqual([canonicalUrl, mirrorUrl]);
+  });
+
+  it("the sticky start: after a mirror carried the install, the next install starts at it", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-cdn-"));
+    roots.push(root);
+    const canonicalUrl = "https://github.com/acme/acme/releases/download/v1.0.4/acme-1.0.4.tgz";
+    const mirrorUrl =
+      "https://cdn-mirror.example/acme/acme/releases/download/v1.0.4/acme-1.0.4.tgz";
+    const tarball = await packTarball("acme", "1.0.0");
+    const pinned = `sha512-${createHash("sha512").update(tarball).digest("base64")}`;
+    const bytes = new Uint8Array(tarball);
+    const hits: string[] = [];
+    const fetchImpl = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const address = String(input);
+      hits.push(address);
+      if (address === mirrorUrl) return new Response(bytes, { status: 200 });
+      // The release URL answers, then stalls mid-body: its headers said ok, its bytes
+      // never arrive — the download moves to the mirror all the same. A synthetic body
+      // is not wired to the abort signal, so the fake rejects on it instead, which is
+      // what the wire does to a stalled read when the window runs out.
+      return {
+        ok: true,
+        status: 200,
+        headers: new Headers({ "content-length": String(bytes.byteLength) }),
+        body: null,
+        arrayBuffer: () =>
+          new Promise<ArrayBuffer>((_, reject) =>
+            init?.signal?.addEventListener("abort", () =>
+              reject(new DOMException("This operation was aborted", "TimeoutError")),
+            ),
+          ),
+      } as unknown as Response;
+    }) as typeof fetch;
+    const chan = { ...channel([mirrorUrl], canonicalUrl), integrity: pinned };
+    const installed = await installPluginChannel(root, chan, { fetchImpl, timeoutMs: 50 });
+    expect(installed).toEqual({ name: "acme", version: "1.0.0" });
+    expect(hits).toEqual([canonicalUrl, mirrorUrl]);
+    // Memory, not a speed test: the walk still tries one address at a time, only its
+    // start moves — the mirror that carried the last install (its bytes verified) leads
+    // the next one, and the dead canonical's window is not paid again.
     hits.length = 0;
     const root2 = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-cdn-"));
     roots.push(root2);
     await installPluginChannel(root2, chan, { fetchImpl, timeoutMs: 50 });
-    expect(hits).toEqual([channel().url, mirrorUrl]);
+    expect(hits).toEqual([mirrorUrl]);
+  });
+
+  it("bytes that fail the integrity check never become the sticky start", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-cdn-"));
+    roots.push(root);
+    const canonicalUrl = "https://github.com/acme/acme/releases/download/v1.0.5/acme-1.0.5.tgz";
+    const mirrorUrl =
+      "https://cdn-mirror.example/acme/acme/releases/download/v1.0.5/acme-1.0.5.tgz";
+    const tarball = await packTarball("acme", "1.0.0");
+    const pinned = `sha512-${createHash("sha512").update(tarball).digest("base64")}`;
+    const good = new Uint8Array(tarball);
+    const bad = new Uint8Array(new TextEncoder().encode("tampered"));
+    const hits: string[] = [];
+    let served = 0;
+    const fetchImpl = (async (input: Parameters<typeof fetch>[0]) => {
+      const address = String(input);
+      hits.push(address);
+      if (address !== mirrorUrl) throw new TypeError("fetch failed");
+      // The mirror serves tampered bytes on the first install, good ones on the second.
+      served += 1;
+      return new Response(served === 1 ? bad : good, { status: 200 });
+    }) as typeof fetch;
+    const chan = { ...channel([mirrorUrl], canonicalUrl), integrity: pinned };
+    await expect(
+      installPluginChannel(root, chan, { fetchImpl, timeoutMs: 50 }),
+    ).rejects.toThrow(/does not match the sha512/);
+    expect(hits).toEqual([canonicalUrl, mirrorUrl]);
+    // The refusal is not remembered: the next install still starts at the canonical URL
+    // — the mirror's earlier try, bad bytes and all, bought it no start.
+    hits.length = 0;
+    const root2 = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-cdn-"));
+    roots.push(root2);
+    await installPluginChannel(root2, chan, { fetchImpl, timeoutMs: 50 });
+    expect(hits).toEqual([canonicalUrl, mirrorUrl]);
   });
 
   it("every address dead: the error names the addresses and the failure it ended on", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-cdn-"));
     roots.push(root);
+    const canonicalUrl = "https://github.com/acme/acme/releases/download/v1.0.6/acme-1.0.6.tgz";
     const mirrorUrl =
-      "https://cdn-mirror.example/acme/acme/releases/download/v1.0.0/acme-1.0.0.tgz";
+      "https://cdn-mirror.example/acme/acme/releases/download/v1.0.6/acme-1.0.6.tgz";
     const registry = fakeFetch({});
     await expect(
       installPluginChannel(
         root,
-        { ...channel([mirrorUrl]), integrity: "sha512-xxx" },
+        {
+          ...channel([mirrorUrl], canonicalUrl),
+          integrity: "sha512-xxx",
+        },
         {
           fetchImpl: registry.fetch,
           timeoutMs: 50,
         },
       ),
     ).rejects.toThrow(
-      /could not fetch the release asset from any of https:\/\/github\.com\/acme\/acme\/releases\/download\/v1\.0\.0\/acme-1\.0\.0\.tgz, https:\/\/cdn-mirror\.example\/acme\/acme\/releases\/download\/v1\.0\.0\/acme-1\.0\.0\.tgz: fetch failed/,
+      /could not fetch the release asset from any of https:\/\/github\.com\/acme\/acme\/releases\/download\/v1\.0\.6\/acme-1\.0\.6\.tgz, https:\/\/cdn-mirror\.example\/acme\/acme\/releases\/download\/v1\.0\.6\/acme-1\.0\.6\.tgz: fetch failed/,
     );
   });
 
