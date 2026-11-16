@@ -371,14 +371,14 @@ export function indexChannelLookup(
  * a rule applies to. A rule of another kind is not a rewrite and is skipped here; the
  * config parse refuses it, so reaching this point means the rule list was hand-built.
  */
-/** A rewrite pattern longer than this is not a URL map, it is a program; refused at parse. */
-export const REWRITE_PATTERN_MAX = 256;
-/** The result of a rewrite is built from the input plus the template; both are bounded. */
-export const REWRITE_RESULT_MAX = 1024;
+/**
+ * A rewrite pattern can only ever match one URL, so its length is bounded by the URL
+ * length the web itself allows — Firefox's 65,536-character limit, the largest of the
+ * mainstream browsers. Anything a URL can carry, the pattern may name; refused at parse.
+ */
+export const REWRITE_PATTERN_MAX = 65536;
 /** The rule list a deployment carries; more than this is a misconfiguration, not a proxy. */
 export const PROXY_RULES_MAX = 32;
-/** A URL longer than this is not a URL; the rules are skipped for it rather than run. */
-export const REWRITE_URL_MAX = 2048;
 
 export interface PluginProxyRule {
   /** The rule's type; "rewrite" maps a URL onto another shape via `match` and `rewrite`. */
@@ -405,9 +405,6 @@ export function rewriteRuleRisk(rule: PluginProxyRule): string | null {
   if (rule.match.length > REWRITE_PATTERN_MAX) {
     return `the pattern is ${rule.match.length} characters, over the ${REWRITE_PATTERN_MAX} cap`;
   }
-  if (rule.rewrite.length > REWRITE_RESULT_MAX) {
-    return `the rewrite is ${rule.rewrite.length} characters, over the ${REWRITE_RESULT_MAX} cap`;
-  }
   if (!safeRegex(rule.match)) {
     return "the pattern's worst case is not linear (catastrophic backtracking); narrow it or drop it";
   }
@@ -418,12 +415,9 @@ export function rewriteRuleRisk(rule: PluginProxyRule): string | null {
  * The addresses `rules` rewrite `url` into, in rule order: every rewrite rule whose `match`
  * matches contributes its `rewrite` result. A rule that matches but rewrites to the same
  * URL contributes nothing (it would only repeat the canonical address), and duplicates
- * collapse — the first rule to produce an address owns it. A URL over the length cap is
- * not one; the rules are skipped for it — a bounded input is the second half of the ReDoS
- * gate (the first is the shape check at config parse, see rewriteRuleRisk).
+ * collapse — the first rule to produce an address owns it.
  */
 export function pluginProxyMirrors(url: string, rules: readonly PluginProxyRule[]): string[] {
-  if (url.length > REWRITE_URL_MAX) return [];
   const mirrors: string[] = [];
   for (const rule of rules) {
     if (rule.kind !== "rewrite") continue;
