@@ -369,8 +369,12 @@ describe("indexChannelLookup", () => {
     const miss = await lookup("@penguinharness/language-typst", "0.0.3");
     expect(miss.channel).toBeNull();
     expect(miss.fault).toMatch(/no version of it matches 0\.0\.3/);
-    // A package the first source does not list comes from the second.
-    expect(await lookup("@penguinharness/second-only")).toEqual({ channel, fault: null });
+    // A package the first source does not list comes from the second: its channel names the
+    // entry that declares it.
+    expect(await lookup("@penguinharness/second-only")).toEqual({
+      channel: { ...channel, name: "@penguinharness/second-only" },
+      fault: null,
+    });
   });
 
   it("answers no channel when no published index is configured", async () => {
