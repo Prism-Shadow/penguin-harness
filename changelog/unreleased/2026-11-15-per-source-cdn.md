@@ -32,3 +32,8 @@ refuse at boot rather than at fetch time. A mirror changes only where the bytes 
 the index document goes through the same parser, the release asset is still verified against
 the entry's sha512 integrity, and a mirror serving tampered bytes is refused like any other
 source.
+
+Where npm fetches the packages themselves from is a choice on the Settings page (Plugin
+sources): the official registry first and default, a named mirror beside it. The installer
+rides the choice as `--registry` on every npm run it makes; unset, npm's own configuration
+stands, exactly as before.

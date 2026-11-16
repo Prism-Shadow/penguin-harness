@@ -252,15 +252,14 @@ describe("/api/admin/plugin-config", () => {
     const res = await admin.get("/api/admin/plugin-config");
     expect(res.status).toBe(200);
     const body = (await res.json()) as PluginConfigResponse;
-    // The sandbox's group is ordered ahead of the rest.
-    expect(body.plugins[0]!.name).toBe("sandbox");
-    expect(body.plugins.slice(1)).toEqual([
-      {
-        name: "acme-bot",
-        configuration: SCHEMA,
-        values: { agent: "default_agent", enabled: true },
-      },
+    // The sandbox's group is ordered ahead of the rest; the server's own Plugin sources
+    // group (order 1) sits between it and the packages' groups.
+    expect(body.plugins.map((p) => p.name)).toEqual([
+      "sandbox",
+      "plugin-sources",
+      "acme-bot",
     ]);
+    expect(body.plugins[0]!.name).toBe("sandbox");
     const member = apiClient(t.app, (await provisionUser(t.app, "member")).cookie);
     expect((await member.get("/api/admin/plugin-config")).status).toBe(403);
     expect(

@@ -33,8 +33,12 @@ export function npmRegistryOf(value: unknown): string | undefined {
   contributes: {
     "PluginConfigProvider.groups": [
       {
-        id: PLUGIN_SOURCES_GROUP,
-        order: 0,
+        // Written out, not named from a constant: a contribution is data the host reads
+        // without running the package.
+        id: "plugin-sources",
+        // After the sandbox's group (order 0): the sandbox card leads the page, and this
+        // one follows it.
+        order: 1,
         title: "Plugin sources",
         titleZh: "插件源",
         description:
