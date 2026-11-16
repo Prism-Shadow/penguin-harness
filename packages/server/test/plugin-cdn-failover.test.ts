@@ -538,12 +538,10 @@ describe("deployment proxy config", () => {
     // A pattern can only ever match one URL, so its bound is the URL length the web
     // itself allows (Firefox's 65,536); anything longer is a program, not a URL map.
     expect(
-      rewriteRuleRisk({ kind: "rewrite", match: "^a".padEnd(65537, "b") + "$", rewrite: "x" }),
+      rewriteRuleRisk({ kind: "rewrite", match: "b".repeat(65537), rewrite: "x" }),
     ).toMatch(/over the 65536 cap/);
     // A pattern of the largest legal URL length passes.
-    expect(
-      rewriteRuleRisk({ kind: "rewrite", match: "^a".padEnd(65536, "b") + "$", rewrite: "x" }),
-    ).toBeNull();
+    expect(rewriteRuleRisk({ kind: "rewrite", match: "b".repeat(65536), rewrite: "x" })).toBeNull();
     // The URL-map shapes this feature is for read as linear and pass.
     expect(
       rewriteRuleRisk({
