@@ -6,7 +6,8 @@
  * format — what the `custom` provider's `claude-4-8` is read with: a text, or a tool call when
  * the script says so — and records each request body, so a test can check what the model was
  * sent. A script can also hold a reply back until a promise settles, or refuse the request with
- * an HTTP 400 as a provider does. Point a model entry's `base_url` at its `url`.
+ * an HTTP 4xx as a provider does (400 unless the script names another status). Point a model
+ * entry's `base_url` at its `url`.
  */
 import fs from "node:fs/promises";
 import http from "node:http";
@@ -24,11 +25,22 @@ export interface MockLLM {
   close(): Promise<void>;
 }
 
-/** One answer: its text, a tool call (`input` is the call's arguments), or a refusal (HTTP 400). */
+/**
+ * One answer: its text, a tool call (`input` is the call's arguments), or a refusal — HTTP 400
+ * unless `status` names another 4xx.
+ */
 export type MockReply =
   | string
   | { toolUse: { id: string; name: string; input: Record<string, unknown> } }
-  | { refuse: { message: string } };
+  | { refuse: { message: string; status?: number } };
+
+/** The Messages API's error type for a refusal's status, as its error body names it. */
+const ERROR_TYPES: Record<number, string> = {
+  400: "invalid_request_error",
+  401: "authentication_error",
+  403: "permission_error",
+  404: "not_found_error",
+};
 
 /**
  * Starts the endpoint; `reply` is the n-th answer (1-based), and `hold`, when given, a promise
@@ -52,11 +64,12 @@ export async function startMockLLM(
       const answer = reply(n);
       if (typeof answer !== "string" && "refuse" in answer) {
         // The Messages API's error body: the client reads the status; the text rides along.
-        res.writeHead(400, { "content-type": "application/json" });
+        const status = answer.refuse.status ?? 400;
+        res.writeHead(status, { "content-type": "application/json" });
         res.end(
           JSON.stringify({
             type: "error",
-            error: { type: "invalid_request_error", message: answer.refuse.message },
+            error: { type: ERROR_TYPES[status] ?? "api_error", message: answer.refuse.message },
           }),
         );
         return;

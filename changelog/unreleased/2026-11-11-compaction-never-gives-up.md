@@ -4,6 +4,7 @@
 - **Type:** feature
 - **Scope:** `core`, `amsp`, `server`, `web`, `cli`
 - **PR:** [#1491](https://github.com/Prism-Shadow/penguin-harness/pull/1491)
+- **Issue:** [#1557](https://github.com/Prism-Shadow/penguin-harness/issues/1557)
 
 [中文版](2026-11-11-compaction-never-gives-up.zh.md)
 
@@ -24,7 +25,7 @@ A `summarize` compaction can now save detail worth more than a paragraph to hand
 - The next context opens with the hand-off note. The default `compaction.handoff_note` says why there is no summary, in the provider's words when it refused a request, and not to rebuild the same input; quotes the compacted context's first user message and its last three, cut at 1,500 characters, and the last completed turn's text with its last four tool calls and outputs, cut at 500; names the Trace file and the hand-off directory; and asks the model to carry on. Building it makes no model call and cannot fail.
 - A compaction request the provider refuses, whatever the code (an unauthorised or unavailable compacting model included), and a reply cut at the output limit, take this fallback at once.
 - Such a compaction ends `compaction_end{status: completed}` carrying the unified error pair (`error_code` / `error_message`) of the last failure. Replay reads that pair to rebuild the note from the file, with the `handoff_note` in force at resume. A completed end without the pair replays as before.
-- A model switch whose summary cannot be had opens the target with its `[model_switch_from]` block, as before.
+- A model switch whose summary cannot be had, the compacting model's refusal included (401, 403 or any other code), opens the target with its `[model_switch_from]` block, as before, so a Session whose provider no longer serves its model can still move to another.
 - The next context is opened before `compaction_end` is written, so the Trace never records a completed compaction for a context that does not exist. When the Agent State cannot be read at a same-model rotation, the next context reopens the configuration in force and one line goes to stderr. When no next context can be opened, the compaction ends `fatal`, the old context stays current, and a run in the middle of a Task ends with `RunCutoff{kind: "compaction_failure"}`. A model switch in that case keeps its model, and `session.switchModel` returns `fatal` instead of throwing.
 
 ## A refused request hands off

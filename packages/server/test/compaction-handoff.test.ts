@@ -28,11 +28,25 @@
  * - Given an Agent config broken before a model switch, the target's context cannot be opened:
  *   the switch ends `fatal`, the Session keeps its model and its context, one `compaction_failed`
  *   row is recorded, and the Session is idle and runs its next Task on the model it was on.
+ *
+ * A model switch away from a model that can no longer be used (issue #1557), the target working:
+ * - Given the model being left refuses the summary request (HTTP 401, 403), the switch still
+ *   lands on the target: the compaction ends `completed` with the provider's error, the file left
+ *   keeps every record it had, the target's file opens with the `[model_switch_from]` block naming
+ *   it, the row moves, one expected `compaction_degraded` row is recorded, and the Session is idle
+ *   and runs its next Task on the target, which opens with that block.
+ * - Given the model being left was removed from the Project config, or its key deleted, it is sent
+ *   nothing: no compaction pair, the file left untouched, the target's file opens with the block,
+ *   and the next Task runs on the target.
+ * - Given a compaction on a model that refuses it, the context is handed off in place; a switch
+ *   after it sends that model nothing more and the target opens with the hand-off note.
+ * - Given a switch the user stops while the model being left is still answering, the Session
+ *   keeps its model and goes idle; the next attempt, refused by that model, lands on the target.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { buildContextSummaryText } from "@prismshadow/amsp/markers";
+import { buildContextSummaryText, parseModelSwitchMessage } from "@prismshadow/amsp/markers";
 import { wire } from "@prismshadow/penguin-core/kernel";
 import type { DatabaseSync } from "node:sqlite";
 import {
@@ -45,7 +59,11 @@ import {
   userText,
 } from "@prismshadow/penguin-core";
 import type { AmspRecord } from "@prismshadow/penguin-core";
-import type { ProjectCreateResponse, SessionCreateResponse } from "../src/api/types.js";
+import type {
+  ModelRefDto,
+  ProjectCreateResponse,
+  SessionCreateResponse,
+} from "../src/api/types.js";
 import { openDatabase } from "../src/db/database.js";
 import { SessionsRepo } from "../src/db/repos/sessions.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
@@ -287,26 +305,36 @@ describe("a compaction's outcome on the whole app", { timeout: 30_000 }, () => {
   let workspace: string;
   /** What the n-th request of the test is answered with. */
   let script: (n: number) => MockReply;
+  /** What the n-th request waits for after its first event, if anything. */
+  let hold: (n: number) => Promise<void> | undefined;
+  /** The model the Session starts on, and the one a switch moves it to. */
+  const SOURCE: ModelRefDto = { provider: "custom", modelId: MOCK_MODEL_ID };
+  const TARGET: ModelRefDto = { provider: "custom", modelId: TARGET_MODEL_ID };
+  /** A model entry on the loopback endpoint, with its key. */
+  const entry = (modelId: string) => ({
+    provider: "custom",
+    modelId,
+    clientType: "ant-messages",
+    apiKey: "sk-mock",
+    baseUrl: mock.url,
+    contextWindow: 200_000,
+  });
 
   beforeEach(async () => {
     script = (n) => `reply ${n}`;
-    mock = await startMockLLM((n) => script(n));
+    hold = () => undefined;
+    mock = await startMockLLM(
+      (n) => script(n),
+      (n) => hold(n),
+    );
     t = await createTestApp({ titles: { maybeGenerate: () => {} } });
     api = apiClient(t.app, (await provisionUser(t.app, "compactor")).cookie);
     const created = (await (
       await api.post("/api/projects", { projectId: "compactor-outcomes", name: "Outcomes" })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
-    const entry = (modelId: string) => ({
-      provider: "custom",
-      modelId,
-      clientType: "ant-messages",
-      apiKey: "sk-mock",
-      baseUrl: mock.url,
-      contextWindow: 200_000,
-    });
     const models = await api.put(`/api/projects/${projectId}/models`, {
-      defaultModel: { provider: "custom", modelId: MOCK_MODEL_ID },
+      defaultModel: SOURCE,
       models: [entry(MOCK_MODEL_ID), entry(TARGET_MODEL_ID)],
     });
     expect(models.status, await models.text()).toBe(200);
@@ -373,6 +401,28 @@ describe("a compaction's outcome on the whole app", { timeout: 30_000 }, () => {
   /** The Project's errors panel: each row's source, code, kind and how many records it stands for. */
   const errorRows = () =>
     t.deps.errorsRepo.recent(projectId).map((r) => [r.source, r.code, r.kind, r.count]);
+  /** Asks for a switch to the target; it streams (202), and the Session is idle once it ends. */
+  async function switchToTarget(sessionId: string): Promise<void> {
+    const res = await api.post(`/api/sessions/${sessionId}/switch-model`, TARGET);
+    expect(res.status, await res.text()).toBe(202);
+    await idle(sessionId);
+  }
+  /** The model a Trace file's `session_meta` names. */
+  const modelOf = (records: AmspRecord[]): ModelRefDto => {
+    const meta = records.find((r) => r.type === "session_meta")!.payload as {
+      provider: string;
+      model_id: string;
+    };
+    return { provider: meta.provider, modelId: meta.model_id };
+  };
+  /** The in-place `[model_switch_from]` block among a Trace file's user texts, parsed, and its text. */
+  function switchHandoffOf(records: AmspRecord[]) {
+    for (const { text } of userTexts(records)) {
+      const origin = parseModelSwitchMessage(text);
+      if (origin) return { origin, text };
+    }
+    return undefined;
+  }
 
   it("a model that refuses the compaction request: the Task still reaches its end on a next context that opens with a hand-off note naming the file it closed, and the errors panel holds one expected context_refused row", async () => {
     const notes = path.join(workspace, "notes.md");
@@ -511,5 +561,208 @@ describe("a compaction's outcome on the whole app", { timeout: 30_000 }, () => {
     expect(requestText(mock.requests[2]!)).toContain("plan the release");
     expect(requestText(mock.requests[2]!)).toContain("still there?");
     expect(billed()).toEqual([MOCK_MODEL_ID, MOCK_MODEL_ID, MOCK_MODEL_ID]);
+  });
+
+  describe("a model switch away from a model that can no longer be used (issue #1557)", () => {
+    const DENIED = "this organization may not use the model";
+    /**
+     * The model being left answers the Task's first request and refuses every later one with
+     * `refusal`; the target answers.
+     */
+    const leftRefuses =
+      (refusal: MockReply) =>
+      (n: number): MockReply => {
+        if (mock.requests[n - 1]!.model === TARGET_MODEL_ID) return `on the target ${n}`;
+        return n === 1 ? "planned" : refusal;
+      };
+
+    it.each([
+      { status: 401, code: "auth", message: "invalid x-api-key" },
+      { status: 403, code: "denied", message: DENIED },
+    ])(
+      "the model being left refuses the summary request (HTTP $status): the switch lands on the target by Trace hand-off, the file left keeps its records, and the next Task runs on the target",
+      async ({ status, code, message }) => {
+        script = leftRefuses({ refuse: { message, status } });
+        const sessionId = await openSession();
+        await runTask(sessionId, "plan the release");
+        const [left] = await traceFiles(sessionId);
+        const feed = listen(sessionId);
+
+        await switchToTarget(sessionId);
+
+        // One summary request, to the model being left, refused; the target was sent nothing.
+        expect(mock.requests.map((r) => r.model)).toEqual([MOCK_MODEL_ID, MOCK_MODEL_ID]);
+        expect(lastCompactionEnd(feed())).toMatchObject({
+          reason: "manual",
+          status: "completed",
+          error_code: code,
+        });
+        // The file left keeps every record it had, closed by the pair.
+        const files = await traceFiles(sessionId);
+        expect(files).toHaveLength(2);
+        expect(files[0]!.path).toBe(left!.path);
+        expect(files[0]!.records.slice(0, left!.records.length)).toEqual(left!.records);
+        expect(lastCompactionEnd(files[0]!.records)).toMatchObject({
+          status: "completed",
+          error_code: code,
+        });
+        // The target's file opens on the target with the block naming the file left; the stream
+        // ends with that file's meta and the block, and the row has moved.
+        expect(modelOf(files[1]!.records)).toEqual(TARGET);
+        const handoff = switchHandoffOf(files[1]!.records)!;
+        expect(handoff.origin).toMatchObject({
+          sessionId,
+          tracePath: left!.path,
+          prevProvider: SOURCE.provider,
+          prevModelId: SOURCE.modelId,
+        });
+        expect(feed().map(kindOf).slice(-2)).toEqual(["session_meta", "text"]);
+        expect(t.deps.sessionsRepo.findById(sessionId)).toMatchObject(TARGET);
+        expect(errorRows()).toEqual([["compaction", "compaction_degraded", "expected", 1]]);
+
+        // Idle and usable: the next Task runs on the target, opening with the block and carrying
+        // nothing else of the old context.
+        await runTask(sessionId, "carry on");
+        const next = mock.requests[2]!;
+        expect(next.model).toBe(TARGET_MODEL_ID);
+        expect(requestText(next)).toContain(JSON.stringify(handoff.text).slice(1, -1));
+        expect(requestText(next)).toContain("carry on");
+        expect(requestText(next)).not.toContain("plan the release");
+      },
+    );
+
+    it.each([
+      {
+        change: "removed from the Project config",
+        defaultModel: TARGET,
+        models: () => [entry(TARGET_MODEL_ID)],
+      },
+      {
+        change: "left without its key",
+        defaultModel: SOURCE,
+        // No key sent (an undefined field leaves the body), and the stored one cleared.
+        models: () => [
+          { ...entry(MOCK_MODEL_ID), apiKey: undefined, clearApiKey: true },
+          entry(TARGET_MODEL_ID),
+        ],
+      },
+    ])(
+      "a model $change is sent nothing: no compaction pair, the file left untouched, the target's file opens with the block, and the next Task runs on the target",
+      async ({ defaultModel, models }) => {
+        const sessionId = await openSession();
+        await runTask(sessionId, "plan the release");
+        const [left] = await traceFiles(sessionId);
+        const put = await api.put(`/api/projects/${projectId}/models`, {
+          defaultModel,
+          models: models(),
+        });
+        expect(put.status, await put.text()).toBe(200);
+        const feed = listen(sessionId);
+
+        await switchToTarget(sessionId);
+
+        expect(mock.requests.map((r) => r.model)).toEqual([MOCK_MODEL_ID]);
+        expect(feed().map(kindOf)).not.toContain("compaction_begin");
+        expect(feed().map(kindOf).slice(-2)).toEqual(["session_meta", "text"]);
+        const files = await traceFiles(sessionId);
+        expect(files).toHaveLength(2);
+        expect(files[0]).toEqual(left);
+        expect(modelOf(files[1]!.records)).toEqual(TARGET);
+        const handoff = switchHandoffOf(files[1]!.records)!;
+        expect(handoff.origin).toMatchObject({
+          sessionId,
+          tracePath: left!.path,
+          prevModelId: SOURCE.modelId,
+        });
+        expect(t.deps.sessionsRepo.findById(sessionId)).toMatchObject(TARGET);
+
+        await runTask(sessionId, "carry on");
+        expect(mock.requests[1]!.model).toBe(TARGET_MODEL_ID);
+        expect(requestText(mock.requests[1]!)).toContain(JSON.stringify(handoff.text).slice(1, -1));
+      },
+    );
+
+    it("a compaction on a model that refuses it hands the context off in place, and a switch after it sends that model nothing more: the target opens with the hand-off note", async () => {
+      script = leftRefuses({ refuse: { message: DENIED, status: 403 } });
+      const sessionId = await openSession();
+      await runTask(sessionId, "plan the release");
+      const compacted = await api.post(`/api/sessions/${sessionId}/compact`);
+      expect(compacted.status).toBe(202);
+      await idle(sessionId);
+      const [left] = await traceFiles(sessionId);
+      expect(lastCompactionEnd(left!.records)).toMatchObject({
+        status: "completed",
+        error_code: "denied",
+      });
+      const feed = listen(sessionId);
+
+      await switchToTarget(sessionId);
+
+      // The refused compaction request is the last one the model being left was sent.
+      expect(mock.requests.map((r) => r.model)).toEqual([MOCK_MODEL_ID, MOCK_MODEL_ID]);
+      expect(feed().map(kindOf)).not.toContain("compaction_begin");
+      const files = await traceFiles(sessionId);
+      expect(files).toHaveLength(2);
+      expect(files[0]).toEqual(left);
+      expect(modelOf(files[1]!.records)).toEqual(TARGET);
+      const note = openingOf(files[1]!.records)!;
+      expect(note).toContain(left!.path);
+      expect(t.deps.sessionsRepo.findById(sessionId)).toMatchObject(TARGET);
+
+      await runTask(sessionId, "carry on");
+      expect(mock.requests[2]!.model).toBe(TARGET_MODEL_ID);
+      expect(requestText(mock.requests[2]!)).toContain(JSON.stringify(note).slice(1, -1));
+    });
+
+    it("a switch the user stops while the model being left is still answering keeps that model and goes idle; the next attempt, refused by that model, lands on the target", async () => {
+      let release: () => void = () => {};
+      const answering = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      hold = (n) => (n === 2 ? answering : undefined);
+      const refused = leftRefuses({ refuse: { message: DENIED, status: 403 } });
+      script = (n) => (n === 2 ? "[summary]\nNever delivered.\n[/summary]" : refused(n));
+      const sessionId = await openSession();
+      await runTask(sessionId, "plan the release");
+      const feed = listen(sessionId);
+
+      const first = await api.post(`/api/sessions/${sessionId}/switch-model`, TARGET);
+      expect(first.status).toBe(202);
+      await waitFor(
+        () => mock.requests.length === 2 && t.deps.manager.statusOf(sessionId) === "compacting",
+        20_000,
+      );
+      expect((await api.post(`/api/sessions/${sessionId}/abort`)).status).toBe(202);
+      await idle(sessionId);
+      release();
+
+      expect(lastCompactionEnd(feed())).toMatchObject({ status: "aborted" });
+      expect(feed().map(kindOf)).not.toContain("session_meta");
+      expect(await traceFiles(sessionId)).toHaveLength(1);
+      expect(t.deps.sessionsRepo.findById(sessionId)).toMatchObject(SOURCE);
+
+      await switchToTarget(sessionId);
+
+      expect(mock.requests.map((r) => r.model)).toEqual([
+        MOCK_MODEL_ID,
+        MOCK_MODEL_ID,
+        MOCK_MODEL_ID,
+      ]);
+      expect(lastCompactionEnd(feed())).toMatchObject({
+        status: "completed",
+        error_code: "denied",
+      });
+      const files = await traceFiles(sessionId);
+      expect(files).toHaveLength(2);
+      expect(modelOf(files[1]!.records)).toEqual(TARGET);
+      expect(switchHandoffOf(files[1]!.records)?.origin).toMatchObject({
+        sessionId,
+        tracePath: files[0]!.path,
+      });
+      expect(t.deps.sessionsRepo.findById(sessionId)).toMatchObject(TARGET);
+
+      await runTask(sessionId, "carry on");
+      expect(mock.requests[3]!.model).toBe(TARGET_MODEL_ID);
+    });
   });
 });

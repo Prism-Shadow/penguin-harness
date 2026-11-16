@@ -4,6 +4,7 @@
 - **Type:** feature
 - **Scope:** `core`, `amsp`, `server`, `web`, `cli`
 - **PR:** [#1491](https://github.com/Prism-Shadow/penguin-harness/pull/1491)
+- **Issue:** [#1557](https://github.com/Prism-Shadow/penguin-harness/issues/1557)
 
 [English](2026-11-11-compaction-never-gives-up.md)
 
@@ -24,7 +25,7 @@
 - 新上下文以交接说明开头。默认的 `compaction.handoff_note` 说明没有摘要的原因（Provider 拒绝了请求时用它的原话），并提醒不要重建同样的输入；引述被压缩上下文的第一条与最后三条用户消息（各至多 1,500 字符），以及最后完成的一轮的文本与其最后四个工具调用和输出（各至多 500 字符）；点名 Trace 文件与交接目录；最后请模型接着做。构造它不调用模型，不会失败。
 - 压缩请求被 Provider 拒绝时，不论错误码（含压缩所用模型鉴权失败或不可用），以及回复停在输出上限时，都立即走这条退路。
 - 这样的压缩以 `compaction_end{status: completed}` 收尾，并携带最后一次失败的统一错误对（`error_code` / `error_message`）。重放据此按恢复时的 `handoff_note` 由文件重建交接说明；不带错误对的 `completed` 照旧重放。
-- 模型切换取不到摘要时，照旧以 `[model_switch_from]` 块开在目标模型上。
+- 模型切换取不到摘要时（压缩所用的模型拒绝请求亦然，无论 401、403 还是其他错误码），照旧以 `[model_switch_from]` 块开在目标模型上，Session 因此在服务商不再提供其模型时仍能换到别的模型。
 - 下一个上下文在写 `compaction_end` 之前开启，Trace 因此不会为一个并不存在的上下文记下压缩完成。同模型轮换时读不出 Agent State，新上下文沿用正在生效的配置重新开启，stderr 记一行。下一个上下文无法开启时，压缩以 `fatal` 收尾，旧上下文保持为当前上下文，Task 中途的运行以 `RunCutoff{kind: "compaction_failure"}` 结束；模型切换此时保持原模型，`session.switchModel` 返回 `fatal` 而不抛出。
 
 ## 被拒的请求交接
