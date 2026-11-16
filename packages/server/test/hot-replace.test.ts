@@ -11,7 +11,7 @@ import { PluginHost } from "../src/plugin/host.js";
 import type { Settings, UiPrefsStore } from "@prismshadow/penguin-library-settings";
 import { createTestApp, loginAdmin, type TestApp } from "./helpers.js";
 
-const PKG = "@prismshadow/penguin-server";
+const LIB = "@prismshadow/penguin-library-settings";
 
 function replacing(
   name: string,
@@ -75,7 +75,7 @@ describe("hot replacement by a plugin", () => {
     const settings = memorySettings(7);
     t = await createTestApp({
       plugins: hostWith(
-        replacing("ServerSettingsRepo", { Settings: `${PKG}#Settings` }, { Settings: settings }),
+        replacing("ServerSettingsRepo", { Settings: `${LIB}#Settings` }, { Settings: settings }),
       ),
     });
     // The node and the group's export are the stand-in itself …
@@ -96,7 +96,7 @@ describe("hot replacement by a plugin", () => {
     await expect(
       createTestApp({
         plugins: hostWith(
-          replacing("ServerSettingsRepo", { Settings: `${PKG}#Settings` }, { Settings: hollow }),
+          replacing("ServerSettingsRepo", { Settings: `${LIB}#Settings` }, { Settings: hollow }),
         ),
       }),
     ).rejects.toThrow(
@@ -114,7 +114,7 @@ describe("hot replacement by a plugin", () => {
     const stand = memorySettings(9);
     t = await createTestApp({
       plugins: hostWith(
-        replacing("ServerSettingsRepo", { Settings: `${PKG}#Nope` }, { Settings: stand }),
+        replacing("ServerSettingsRepo", { Settings: `${LIB}#Nope` }, { Settings: stand }),
       ),
     });
     expect(t.deps.tree.api("ServerSettingsRepo", "Settings")).not.toBe(stand);
@@ -131,17 +131,17 @@ describe("hot replacement by a plugin", () => {
       manifest: parseManifest({
         name: "SettingsModule",
         requires: {},
-        provides: { Settings: `${PKG}#Settings`, UiPrefsStore: `${PKG}#UiPrefsStore` },
+        provides: { Settings: `${LIB}#Settings`, UiPrefsStore: `${LIB}#UiPrefsStore` },
         exports: ["Settings", "UiPrefsStore"],
         contributes: {},
         children: ["MemorySettings", "MemoryPrefs"],
       }),
       create: () => ({ api: {} }),
       children: [
-        replacing("MemorySettings", { Settings: `${PKG}#Settings` }, { Settings: settings }),
+        replacing("MemorySettings", { Settings: `${LIB}#Settings` }, { Settings: settings }),
         replacing(
           "MemoryPrefs",
-          { UiPrefsStore: `${PKG}#UiPrefsStore` },
+          { UiPrefsStore: `${LIB}#UiPrefsStore` },
           { UiPrefsStore: uiPrefs },
         ),
       ],
@@ -162,7 +162,7 @@ describe("hot replacement by a plugin", () => {
     const host = hostWith(
       replacing(
         "ServerSettingsRepo",
-        { Settings: `${PKG}#Settings` },
+        { Settings: `${LIB}#Settings` },
         { Settings: memorySettings() },
       ),
     );
@@ -173,7 +173,7 @@ describe("hot replacement by a plugin", () => {
         replaces: [
           replacing(
             "ServerSettingsRepo",
-            { Settings: `${PKG}#Settings` },
+            { Settings: `${LIB}#Settings` },
             { Settings: memorySettings() },
           ),
         ],
