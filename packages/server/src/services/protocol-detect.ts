@@ -60,7 +60,7 @@ import type {
   ModelProtocolProbeDto,
   ProtocolProbeOutcome,
 } from "@prismshadow/penguin-library-models";
-import type { ModelProtocolDetectResponse } from "@prismshadow/penguin-library-projects";
+import type { ModelProtocolDetectResponse } from "@prismshadow/penguin-library-models";
 
 /**
  * The MMSP compatible client types detection probes (one generic protocol each), in the

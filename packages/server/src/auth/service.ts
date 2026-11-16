@@ -12,6 +12,7 @@ import type { UserInfo } from "@prismshadow/penguin-library-identity";
 import { HttpError } from "../http/errors.js";
 import type { UserRow } from "@prismshadow/penguin-library-identity/repos/users";
 import { sessionTokenHash } from "@prismshadow/penguin-library-identity/repos/auth-sessions";
+import type { SessionVia } from "@prismshadow/penguin-library-identity";
 import type { SessionViaValue, AuthSessionsRepo } from "@prismshadow/penguin-library-identity/repos/auth-sessions";
 import type { AuthRuntimeState } from "./runtime-state.js";
 import { verifyAccountPassword, verifyPassword } from "./password.js";

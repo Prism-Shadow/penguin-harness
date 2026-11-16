@@ -66,7 +66,7 @@ import {
   sumCostParts,
   ZERO_COST_PARTS,
 } from "./usage-service.js";
-import type { TieredRates } from "%s";
+import type { TieredRates } from "@prismshadow/penguin-library-models";
 import type { PricingLookup } from "./usage-service.js";
 import type { ProjectConfigStore } from "@prismshadow/penguin-library-projects";
 import {
@@ -79,19 +79,24 @@ import {
   scanMessages,
   serializePrefix,
 } from "./message-window.js";
+import type { ChildAggregate, ScanState } from "./message-window.js";
 import type {
-  ChildAggregate,
+  ForkTraceResult,
+  HistoryTraceFile,
+  HistoryWindowRead,
+  ImportedSession,
   MessageCursor,
-  ScanState,
+  MessagesPageRequest,
+  MessagesPageResult,
+  RecordSource,
   WindowPriorStats,
-} from "./message-window.js";
+} from "@prismshadow/penguin-library-traces";
 import { buildContextBreakdown, emptyContextBreakdown } from "./context-breakdown.js";
 import { sessionIdCreatedAt } from "./session-service.js";
 import { listCategory, listingMarksOf, readRecordedSource } from "../runtime/session-sources.js";
 import { TraceIndexService, traceFilePath } from "./trace-index.js";
 import { TraceLineIndex } from "./trace-line-index.js";
 import type { TraceLineIndexEntry } from "./trace-line-index.js";
-import type { RecordSource } from "./history-layout.js";
 import { fileIdentityOf } from "./history-wire.js";
 import { traceRecordImage, withImagesByReference } from "./trace-images.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";

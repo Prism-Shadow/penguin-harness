@@ -31,7 +31,8 @@ import { HttpError } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { DefaultModelOffer } from "../api/types.js";
-import type { GroupKeyApplied, ProjectConfigStore } from "@prismshadow/penguin-library-projects";
+import type { ProjectConfigStore } from "@prismshadow/penguin-library-projects";
+import type { GroupKeyApplied } from "@prismshadow/penguin-library-models";
 import type { ModelOAuth } from "@prismshadow/penguin-library-models";
 
 /** How the user gets the authorization code back to the harness. */

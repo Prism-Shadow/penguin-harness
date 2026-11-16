@@ -117,7 +117,7 @@ import type {
   ProviderConnectionDto,
   ProviderConnectionResponse,
   ProviderConnectionUpdate,
-} from "@prismshadow/penguin-library-projects";
+} from "@prismshadow/penguin-library-models";
 import { badRequest } from "../http/validate.js";
 import { HttpError } from "../http/errors.js";
 import { cacheable } from "../internal/mtime-gate.js";
@@ -138,10 +138,11 @@ import {
   classifyVisionProbe,
   classifyVisionProbeError,
 } from "./vision-detect.js";
-import type { PricingRates, TieredRates } from "@prismshadow/penguin-library-projects";
+import type { PricingRates, TieredRates } from "@prismshadow/penguin-library-models";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Config, Paths } from "../hmr/capabilities.js";
-import type { GroupKeyApplied, ProjectConfigStore } from "@prismshadow/penguin-library-projects";
+import type { ProjectConfigStore } from "@prismshadow/penguin-library-projects";
+import type { GroupKeyApplied } from "@prismshadow/penguin-library-models";
 import type {
   ModelPromotion,
   ModelProviderAuthToken,

@@ -41,7 +41,8 @@ import {
 } from "../validate.js";
 import { APPROVAL_MODES } from "./sessions.js";
 import { DEFAULT_API_CONCURRENT_RUNS } from "@prismshadow/penguin-library-agent-api";
-import type { AgentApi, AgentApiKeyRow } from "@prismshadow/penguin-library-agent-api";
+import type { AgentApi } from "@prismshadow/penguin-library-agent-api";
+import type { AgentApiKeyRow } from "@prismshadow/penguin-library-agent-api/agent-api";
 import type { AgentConfig } from "../../mechanisms/agents.js";
 import type { ProjectConfigStore, Access } from "@prismshadow/penguin-library-projects";
 import type { Settings } from "@prismshadow/penguin-library-settings";

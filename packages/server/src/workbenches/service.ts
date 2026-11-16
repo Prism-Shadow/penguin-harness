@@ -53,6 +53,7 @@ import type { AgentIndex, Members, Projects } from "@prismshadow/penguin-library
 import type { Traces } from "@prismshadow/penguin-library-traces";
 import { workbenchResult } from "./result.js";
 import type { SessionIndex } from "@prismshadow/penguin-library-sessions";
+import type { Workbenches } from "../mechanisms/workbenches.js";
 import type {
   AppCenterShortcut,
   WorkbenchTabIcon,
@@ -66,8 +67,7 @@ import type {
   WorkbenchUiRuntime,
   WorkbenchUiRuntimeFile,
   WorkbenchVersion,
-  Workbenches,
-} from "../mechanisms/workbenches.js";
+} from "@prismshadow/penguin-library-workbenches";
 import { ScheduleSessionCreator, ScheduleTaskRunner } from "../runtime/scheduler.js";
 import {
   agentShortcuts,

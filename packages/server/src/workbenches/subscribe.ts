@@ -22,7 +22,7 @@
  */
 import type { Channels } from "../hmr/capabilities.js";
 import { isAmspRecord } from "../http/sse.js";
-import type { WorkbenchRecord } from "../mechanisms/workbenches.js";
+import type { WorkbenchRecord } from "@prismshadow/penguin-library-workbenches";
 
 /** An idle Session's subscription that has seen nothing for this long ends: the hub's own idle window. */
 export const IDLE_RELEASE_MS = 30 * 60 * 1000;

@@ -52,6 +52,7 @@ import {
   parseModelSwitchMessage,
 } from "@prismshadow/amsp/markers";
 import type { AmspRecord } from "@prismshadow/penguin-core";
+import type { MessageCursor, WindowPriorStats } from "@prismshadow/penguin-library-traces";
 
 /** Bump when any counting/boundary rule changes: cached page_stats records with an older version are recomputed. */
 export const CACHE_VERSION = 4;

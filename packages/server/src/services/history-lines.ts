@@ -70,7 +70,7 @@ import {
   pageLimit,
 } from "./session-history.js";
 import { withImagesByReference } from "./trace-images.js";
-import type { HistoryTraceFile, HistoryWindowRead } from "./trace-service.js";
+import type { HistoryTraceFile, HistoryWindowRead } from "@prismshadow/penguin-library-traces";
 
 /** A machine-leg stream beats this often while it waits on credit or disk. */
 export const HISTORY_LINES_BEAT_MS = 5_000;

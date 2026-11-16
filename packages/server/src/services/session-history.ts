@@ -31,7 +31,7 @@ import type { RunStart } from "../runtime/live-tail.js";
 import type { SessionManager } from "../runtime/session-manager.js";
 import { decodeCursor } from "./message-window.js";
 import { withImagesByReference } from "./trace-images.js";
-import type { MessagesPageRequest, MessagesPageResult } from "./trace-service.js";
+import type { MessagesPageRequest, MessagesPageResult } from "@prismshadow/penguin-library-traces";
 
 export interface SessionHistoryDeps {
   traceService: Pick<Traces, "readMessages" | "readMessagesPage" | "readTraceImage">;

@@ -23,7 +23,7 @@ import type { AppEnv } from "../auth/middleware.js";
 import { bearerToken } from "../auth/middleware.js";
 import type { SessionRow } from "@prismshadow/penguin-library-sessions/repos/sessions";
 import { HttpError } from "../http/errors.js";
-import type { AgentApi, AgentApiRow } from "@prismshadow/penguin-library-agent-api";
+import type { AgentApi, AgentApiRow } from "@prismshadow/penguin-library-agent-api/agent-api";
 import type { AgentConfig } from "../mechanisms/agents.js";
 import type { SessionIndex } from "@prismshadow/penguin-library-sessions";
 import type { Settings } from "@prismshadow/penguin-library-settings";

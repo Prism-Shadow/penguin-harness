@@ -10,3 +10,4 @@
  * - `./repos` (and per-file) - the storing components.
  */
 export { UserDraftsStore, BackgroundImageStore } from "./account-data.js";
+export type { DraftWrite } from "./account-data.js";

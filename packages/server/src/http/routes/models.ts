@@ -23,8 +23,8 @@ import type {
   ModelsUpdateRequest,
   PresetSyncMode,
   ProviderConnectionUpdate,
-  ServerEvent,
-} from "@prismshadow/penguin-library-projects";
+} from "@prismshadow/penguin-library-models";
+import type { ServerEvent } from "@prismshadow/penguin-library-projects";
 import type { AppEnv } from "../../auth/middleware.js";
 import { badRequest, pathParam, readJson, requireString, requireValidId } from "../validate.js";
 import { HttpError } from "../errors.js";

@@ -15,7 +15,7 @@
  * passing through the browser. A caller only ever holds an opaque flow id and a status.
  */
 import { Hono } from "hono";
-import type { ModelOAuthMode } from "@prismshadow/penguin-library-projects";
+import type { ModelOAuthMode } from "@prismshadow/penguin-library-models";
 import type {
   ModelOAuthCodeResponse,
   ModelOAuthStartResponse,
@@ -37,7 +37,8 @@ import { publicOriginOf } from "../public-origin.js";
 import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
 import { modelConfigChanged } from "./models.js";
 import type { ModelsRouteDeps } from "./models.js";
-import type { Access, ModelOAuth } from "@prismshadow/penguin-library-projects";
+import type { Access } from "@prismshadow/penguin-library-projects";
+import type { ModelOAuth } from "@prismshadow/penguin-library-models";
 
 /** Flow ids are base64url (`randomBytes(32)`); reject anything else before it reaches the store. */
 const FLOW_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;

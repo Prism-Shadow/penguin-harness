@@ -29,11 +29,7 @@ import type {
   ModelUpdateEntry,
 } from "@prismshadow/penguin-library-models";
 import type { ModelRefDto } from "@prismshadow/penguin-library-agent-api";
-import type {
-  ModelsResponse,
-  ModelsUpdateRequest,
-  ProviderConnectionUpdate,
-} from "@prismshadow/penguin-library-projects";
+import type { ModelsResponse, ModelsUpdateRequest, ProviderConnectionUpdate } from "@prismshadow/penguin-library-models";
 
 /** This side's half of the merge: a Project's configured models and groups, keys in plaintext. */
 export interface LocalModels {
