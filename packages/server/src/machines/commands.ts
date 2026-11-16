@@ -229,11 +229,10 @@ export function startServerCommand(port: number, layout: RemoteLayout): string {
   const root = layout.dataRoot.posix;
   // --host is PINNED, not defaulted: the CLI falls back to the HOST environment variable when
   // it is omitted, so a login shell carrying HOST=0.0.0.0 would put that machine's server on
-  // every interface. This side only ever reaches it through the one session, at loopback
-  // on the far end, so binding wider is exposure with nothing asking for it.
-  return `mkdir -p "${root}" && nohup ${remotePenguin("linux", layout)} server --host 127.0.0.1 --port ${port} >> "${root}/server.log" 2>&1 < /dev/null & echo $!`;
   // every interface. This side only ever reaches it as a channel inside the ssh session, at
   // loopback on the far end, so binding wider is exposure with nothing asking for it.
+  // `setsid` when it exists: the server runs in a session of its own, so a dropped ssh
+  // session does not hang it up (the first session leader is the launched process itself).
   return `mkdir -p "${root}" && PENGUIN_SETSID=$(command -v setsid || true); $PENGUIN_SETSID nohup ${remotePenguin("linux", layout)} server --host 127.0.0.1 --port ${port} >> "${root}/server.log" 2>&1 < /dev/null & echo $!`;
 }
 

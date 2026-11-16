@@ -306,6 +306,11 @@ interface Reconnecting {
   diagnosis: MachineDiagnosis | null;
   /** The failure the diagnosis was taken for: a different one is checked again. */
   diagnosedFor: string | null;
+  /**
+   * The stored password was refused (or the host takes none): no attempt runs until a password
+   * is saved for the machine again or removed — retrying it would lock the account.
+   */
+  waitsForPassword?: true;
 }
 
 /**
@@ -2379,6 +2384,7 @@ export class MachinesService {
         ok: false,
         step: "connect",
         message: probed.state.detail,
+        ...this.#sshCause(target, probed.state.detail),
       };
     }
     // The refusal startConnect made from the record, made again from what was just heard: an
@@ -2460,6 +2466,7 @@ export class MachinesService {
         ok: false,
         step: "connect",
         message: connection.detail,
+        ...this.#sshCause(target, connection.detail),
       };
     }
     const connectedAt = this.#effects.now().toISOString();
@@ -2899,6 +2906,7 @@ export class MachinesService {
       lastError: state.lastError,
       ...(state.sshReason === undefined ? {} : { sshReason: state.sshReason }),
       diagnosis: state.diagnosis,
+      ...(state.waitsForPassword === true ? { waitsForPassword: true as const } : {}),
     };
   }
 
@@ -2980,6 +2988,15 @@ export class MachinesService {
       state.sshReason = result.sshReason;
     } else {
       delete state.sshReason;
+    }
+    // A stored password refused, or a host that takes none: another try would only add to an
+    // account's failed sign-ins, and could lock it. Nothing runs until a password is saved for it
+    // again or removed (#passwordChanged); the refusal is its own explanation, so no check either.
+    if (state.sshReason === "password-rejected" || state.sshReason === "password-not-offered") {
+      state.waitsForPassword = true;
+      state.nextAt = null;
+      this.#changed();
+      return;
     }
     // A host key, a key file, a refused key or the ssh config: the next try would fail the same
     // way until someone fixes it, and the sentence for the reason already says how — no check.
@@ -3564,6 +3581,7 @@ export class MachinesService {
         step: "check",
         message: `could not reach that machine, so ${nothing}: ${probed.state.detail}`,
         canReplaceProgram: false,
+        ...this.#sshCause(target, probed.state.detail),
       };
     }
     // From here the machine is to stay stopped: nothing may bring it back while its server goes
