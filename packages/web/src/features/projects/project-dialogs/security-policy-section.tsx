@@ -70,7 +70,9 @@ export function RuleEditor({
       name: initial?.name ?? "",
       pattern: initial?.pattern ?? "",
       desc: initial?.description ?? "",
-      action: initial?.action ?? ("deny" as CommandPolicyActionDto),
+      // A new rule asks first, as every factory rule does; an existing rule opens on what it
+      // does now, and one stored without an action refuses.
+      action: initial === null ? ("ask" as CommandPolicyActionDto) : (initial.action ?? "deny"),
     },
     {
       ...(scope !== undefined ? { scope } : {}),

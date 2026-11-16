@@ -32,6 +32,12 @@ function hit(cmd: string, policy?: CommandPolicyConfig): string | null {
   return evaluateCommandPolicy(cmd, policy)?.rule ?? null;
 }
 
+/**
+ * A Project's own rule that refuses `rm -rf`. Every factory rule asks, so a refusal is always
+ * something a Project chose.
+ */
+const DENY_RM: CommandPolicyConfig = { rules: [{ name: "no-rm-rf", pattern: "rm -rf" }] };
+
 describe("command policy factory rules", () => {
   it("catches rm with recursive+force in every spelling", () => {
     for (const cmd of [
@@ -365,11 +371,20 @@ describe("factory rule metadata", () => {
 });
 
 /**
- * The factory `ask` rules: the commonest commands that act beyond this machine and are hard to
- * take back are put to a person, and their routine neighbours are not.
+ * Every factory rule asks: a destructive command and the commonest commands that act beyond this
+ * machine are put to a person rather than refused, and their routine neighbours are not.
  */
-describe("command policy factory ask rules", () => {
+describe("command policy factory rules ask", () => {
   it.each([
+    ["rm -rf /tmp/x", "rm-recursive-force"],
+    ["sudo mkfs.ext4 /dev/sdb1", "mkfs"],
+    ["dd if=/dev/zero of=/dev/sda bs=1M", "dd-to-block-device"],
+    [":(){ :|:& };:", "fork-bomb"],
+    ["echo x > /dev/sda", "overwrite-block-device"],
+    ["Remove-Item -Recurse -Force C:\\data", "windows-recursive-delete"],
+    ["format C: /q", "windows-format-volume"],
+    ["Clear-Disk -Number 0 -RemoveData", "windows-disk-overwrite"],
+    ["%0|%0", "windows-fork-bomb"],
     ["gh pr merge 12 --squash", "gh-pr-merge-close"],
     ["gh pr close 7", "gh-pr-merge-close"],
     ["cd repo && gh pr merge 3 --admin", "gh-pr-merge-close"],
@@ -462,12 +477,15 @@ describe("withCommandPolicy (the approval-boundary wrapper)", () => {
   const call = (cmd: string, name = "exec_command"): AmspRecord =>
     toolCall({ name, arguments: JSON.stringify({ cmd }), toolCallId: "c1" });
 
-  it("refuses a vetoed call without consulting the wrapped callback", async () => {
+  it("refuses a call a project deny rule matches without consulting the wrapped callback", async () => {
     let asked = 0;
-    const guarded = withCommandPolicy(async () => {
-      asked += 1;
-      return "allow";
-    });
+    const guarded = withCommandPolicy(
+      async () => {
+        asked += 1;
+        return "allow";
+      },
+      () => DENY_RM,
+    );
 
     const outcome = await guarded(call("rm -rf /tmp/x") as never);
 
@@ -489,10 +507,13 @@ describe("withCommandPolicy (the approval-boundary wrapper)", () => {
 
   it("refuses typed keystrokes too, so a launched shell is not a way around it", async () => {
     let asked = 0;
-    const guarded = withCommandPolicy(async () => {
-      asked += 1;
-      return "allow";
-    });
+    const guarded = withCommandPolicy(
+      async () => {
+        asked += 1;
+        return "allow";
+      },
+      () => DENY_RM,
+    );
     const typed = (chars: string): AmspRecord =>
       toolCall({
         name: "input_command",
@@ -517,22 +538,35 @@ describe("withCommandPolicy (the approval-boundary wrapper)", () => {
   it("consults the policy source at every decision, so a mid-run rotation swaps what later calls see", async () => {
     // The source answers with the running context's policy from memory; consulting it per
     // call is what hands the tool calls after a mid-run rotation the new context's policy.
-    let policy: { enabled: boolean } = { enabled: false };
+    let policy: CommandPolicyConfig = { enabled: false };
     const guarded = withCommandPolicy(
       async () => "allow",
       () => policy,
     );
     expect(await guarded(call("rm -rf /") as never)).toBe("allow");
-    policy = { enabled: true };
+    policy = DENY_RM;
     expect(await guarded(call("rm -rf /") as never)).toBe("forbidden");
-    // A source that cannot be read fails toward the factory rules, never toward allow.
-    const failing = withCommandPolicy(
-      async () => "allow",
-      () => {
-        throw new Error("unreadable");
-      },
-    );
-    expect(await failing(call("rm -rf /") as never)).toBe("forbidden");
+  });
+
+  it("with no project policy, a destructive command goes to a person instead of being refused", async () => {
+    const seen: (ApprovalContext | undefined)[] = [];
+    // The host stands for allow-all: yes by mode, but a person (who says no) when told why.
+    const host: ApproveFn = async (_tc, context) => {
+      seen.push(context);
+      return context?.reason === undefined ? "allow" : "deny";
+    };
+    // No source, and a source that cannot be read, both fall to the factory rules — which ask.
+    const guarded = withCommandPolicy(host);
+    const failing = withCommandPolicy(host, () => {
+      throw new Error("unreadable");
+    });
+
+    expect(await guarded(call("rm -rf /") as never)).toBe("deny");
+    expect(await failing(call("mkfs.ext4 /dev/sdb1") as never)).toBe("deny");
+    expect(seen).toEqual([
+      { reason: { kind: "policy", rule: "rm-recursive-force" } },
+      { reason: { kind: "policy", rule: "mkfs" } },
+    ]);
   });
 
   it("hands an ask hit to the callback with the policy reason, and an ordinary call with none", async () => {
@@ -598,7 +632,7 @@ describe("Session applies the policy at the approval boundary", () => {
     source: "user",
   });
 
-  it("denies a vetoed command under allow-all, and the tool never reaches the Environment", async () => {
+  it("a project deny rule refuses a command under allow-all, and the tool never reaches the Environment", async () => {
     let approveCalls = 0;
     let executed = 0;
     let secondInput: AmspRecord[] | null = null;
@@ -631,13 +665,14 @@ describe("Session applies the policy at the approval boundary", () => {
       approveCalls += 1;
       return "allow";
     };
-    // No commandPolicy in the config: the factory rule set applies, on.
+    // The Project switched its rm rule to refuse.
     const session = new Session({
       meta: meta(),
       bootstrap: async () => ({ llm }),
       environment,
       imagesDir: path.join(tmp, "images"),
       modelHasVision: true,
+      commandPolicy: () => DENY_RM,
     });
 
     const all: AmspRecord[] = [];
@@ -714,67 +749,73 @@ describe("Session applies the policy at the approval boundary", () => {
     expect(executedCmd).toBe("rm -rf ./build");
   });
 
-  it("under allow-all, an ask hit reaches the host with the policy reason, and the person's answer is the recorded decision", async () => {
-    let approveCalls = 0;
-    let executed = 0;
-    const asked: string[] = [];
-    let turn = 0;
-    const llm: LLMInterface = {
-      async *streamGenerate(): AsyncGenerator<AmspRecord, LLMOutcome> {
-        if (turn++ === 0) {
-          yield toolCall({
-            name: "exec_command",
-            arguments: JSON.stringify({ cmd: "gh pr merge 42 --squash" }),
-            toolCallId: "call_merge",
-          });
+  it.each([
+    ["gh pr merge 42 --squash", "gh-pr-merge-close"],
+    ["rm -rf /tmp/definitely-not-run", "rm-recursive-force"],
+  ])(
+    "under allow-all, `%s` reaches the host with the policy reason, and the person's answer is the recorded decision",
+    async (cmd, rule) => {
+      let approveCalls = 0;
+      let executed = 0;
+      const asked: string[] = [];
+      let turn = 0;
+      const llm: LLMInterface = {
+        async *streamGenerate(): AsyncGenerator<AmspRecord, LLMOutcome> {
+          if (turn++ === 0) {
+            yield toolCall({
+              name: "exec_command",
+              arguments: JSON.stringify({ cmd }),
+              toolCallId: "call_ask",
+            });
+            return { status: "completed" };
+          }
+          yield assistantText("I will ask first.");
           return { status: "completed" };
-        }
-        yield assistantText("I will ask before merging.");
-        return { status: "completed" };
-      },
-    };
-    const environment: EnvironmentInterface = {
-      listTools: async () => [],
-      // eslint-disable-next-line require-yield
-      executeTool: async function* () {
-        executed += 1;
-        throw new Error("a call the person refused must never be executed");
-      },
-      toolPermission: () => undefined,
-    };
-    // No commandPolicy in the config: the factory rule set applies, its ask rules included.
-    const session = new Session({
-      meta: meta(),
-      bootstrap: async () => ({ llm }),
-      environment,
-      imagesDir: path.join(tmp, "images"),
-      modelHasVision: true,
-    });
+        },
+      };
+      const environment: EnvironmentInterface = {
+        listTools: async () => [],
+        // eslint-disable-next-line require-yield
+        executeTool: async function* () {
+          executed += 1;
+          throw new Error("a call the person refused must never be executed");
+        },
+        toolPermission: () => undefined,
+      };
+      // No commandPolicy in the config: the factory rule set applies, its ask rules included.
+      const session = new Session({
+        meta: meta(),
+        bootstrap: async () => ({ llm }),
+        environment,
+        imagesDir: path.join(tmp, "images"),
+        modelHasVision: true,
+      });
 
-    const all: AmspRecord[] = [];
-    for await (const msg of session.run([userText("merge it")], {
-      // The host stands for allow-all: yes by mode, but a person (who says no) when told why.
-      approve: async (_tc, context) => {
-        if (context?.reason !== undefined) {
-          asked.push(context.reason.rule);
-          return "deny";
-        }
-        approveCalls += 1;
-        return "allow";
-      },
-    })) {
-      all.push(msg);
-    }
+      const all: AmspRecord[] = [];
+      for await (const msg of session.run([userText("go ahead")], {
+        // The host stands for allow-all: yes by mode, but a person (who says no) when told why.
+        approve: async (_tc, context) => {
+          if (context?.reason !== undefined) {
+            asked.push(context.reason.rule);
+            return "deny";
+          }
+          approveCalls += 1;
+          return "allow";
+        },
+      })) {
+        all.push(msg);
+      }
 
-    expect(asked).toEqual(["gh-pr-merge-close"]);
-    expect(approveCalls).toBe(0);
-    expect(executed).toBe(0);
-    const decision = all.find(
-      (m) => (m.payload as { type?: string }).type === "approval_decision",
-    )!;
-    // A person's answer, recorded as one: not the policy's own "forbidden".
-    expect((decision.payload as { decision?: string }).decision).toBe("deny");
-  });
+      expect(asked).toEqual([rule]);
+      expect(approveCalls).toBe(0);
+      expect(executed).toBe(0);
+      const decision = all.find(
+        (m) => (m.payload as { type?: string }).type === "approval_decision",
+      )!;
+      // A person's answer, recorded as one: not the policy's own "forbidden".
+      expect((decision.payload as { decision?: string }).decision).toBe("deny");
+    },
+  );
 
   it("wraps the host's fallback sink for child approvals, so a child's ask hit arrives with its reason", async () => {
     let fallback: ApproveFn | undefined;
@@ -795,6 +836,12 @@ describe("Session applies the policy at the approval boundary", () => {
       environment,
       imagesDir: path.join(tmp, "images"),
       modelHasVision: true,
+      commandPolicy: () => ({
+        rules: [
+          { name: "ask-publish", pattern: "\\bpublish\\b", action: "ask" },
+          ...DENY_RM.rules!,
+        ],
+      }),
     });
     const reasons: (string | undefined)[] = [];
     session.setSubagentApprovalFallback(async (_tc, context) => {
@@ -812,7 +859,7 @@ describe("Session applies the policy at the approval boundary", () => {
     expect(await fallback!(childCall("ls") as never)).toBe("allow");
     // The host heard of the ask hit with its reason and of the plain call without one; the
     // deny hit never reached it.
-    expect(reasons).toEqual(["package-publish", undefined]);
+    expect(reasons).toEqual(["ask-publish", undefined]);
   });
 
   it("a subagent's ask hit reaches the host through the approve it inherits, with its reason", async () => {
