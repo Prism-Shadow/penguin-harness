@@ -333,7 +333,7 @@ export function WheelColumn({
       onPointerMove={onPointerMove}
       onPointerUp={endDrag}
       onPointerCancel={endDrag}
-      className={`no-scrollbar relative h-40 overflow-y-auto overscroll-contain rounded-md outline-none focus-visible:[outline:var(--ui-focus-ring)] focus-visible:[outline-offset:var(--ui-focus-ring-offset)] ${
+      className={`group/wheel no-scrollbar relative h-40 overflow-y-auto overscroll-contain outline-none ${
         dragging ? "cursor-grabbing" : "cursor-grab snap-y snap-mandatory"
       } ${className}`}
     >
@@ -346,8 +346,12 @@ export function WheelColumn({
           data-row=""
           aria-hidden
           onClick={() => press(row)}
-          className={`flex h-8 snap-center items-center justify-center whitespace-nowrap tabular-nums transition-colors duration-150 ${
-            row === index ? "font-medium text-fg" : "text-fg-subtle hover:text-fg-muted"
+          // The keyboard's ring marks the row in the band, inside it (the scroller clips past its
+          // edges), rather than the whole five-row column.
+          className={`flex h-8 snap-center items-center justify-center whitespace-nowrap rounded-md tabular-nums transition-colors duration-150 ${
+            row === index
+              ? "font-medium text-fg group-focus-visible/wheel:[outline:var(--ui-focus-ring)] group-focus-visible/wheel:[outline-offset:-2px]"
+              : "text-fg-subtle hover:text-fg-muted"
           }`}
         >
           {option.label}
