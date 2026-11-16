@@ -4,6 +4,7 @@
  * widest cell; CJK display width is approximated as 2 columns per non-halfwidth code
  * point so zh titles keep the grid aligned.
  */
+import { formatLocalDate } from "../internal/dates.js";
 
 /** Approximate terminal display width (CJK and fullwidth forms count as 2). */
 export function displayWidth(text: string): number {
@@ -45,7 +46,9 @@ export function renderTable(header: string[], rows: string[][]): string {
 
 /**
  * Compact relative time for list rows ("now", "5m", "3h", "2d", else yyyy-mm-dd) —
- * digits + a unit letter, deliberately language-neutral.
+ * digits + a unit letter, deliberately language-neutral. The date is the reader's own
+ * calendar day, the one `--days` counts in: the instant is a `...Z` stamp, and its date part
+ * names the UTC day — a row last active at 07:00 on the 31st in UTC+8 would read as the 30th.
  */
 export function relativeTime(iso: string, now: Date = new Date()): string {
   const then = Date.parse(iso);
@@ -55,7 +58,7 @@ export function relativeTime(iso: string, now: Date = new Date()): string {
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
   if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
   if (seconds < 14 * 86400) return `${Math.floor(seconds / 86400)}d`;
-  return new Date(then).toISOString().slice(0, 10);
+  return formatLocalDate(new Date(then));
 }
 
 /** Converts a token count to a human-readable abbreviation: 1234->1.2k, 1500000->1.5M, 2e9->2B, <1000 unchanged. */
