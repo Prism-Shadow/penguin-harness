@@ -31,7 +31,10 @@ import { createRequire } from "node:module";
 import path, { relative } from "node:path";
 import { promisify } from "node:util";
 import { Component } from "@prismshadow/penguin-core/kernel";
-import { which } from "which";
+// `which` is CommonJS exporting the function itself (module.exports = which, plus
+// which.sync): the default import IS the function, and the sync form is what the
+// candidates check uses — a path answer or null, never a thrown ENOENT.
+import which from "which";
 import type { PluginPackages } from "../mechanisms/plugins.js";
 import type { IndexChannel } from "./registry.js";
 const execFileAsync = promisify(execFile);
@@ -160,7 +163,7 @@ const npmCandidates = (): { candidates: readonly NpmCommand[]; notes: readonly s
   } else {
     notes.push(`no npm beside this node (${bundled})`);
   }
-  const onPath = which("npm", { nothrow: true });
+  const onPath = which.sync("npm", { nothrow: true });
   if (onPath !== null) {
     // On Windows the PATH entry is a batch file, which node refuses to spawn directly
     // (`spawn EINVAL`), so cmd.exe runs it — a real executable; `/d` skips AutoRun scripts,
