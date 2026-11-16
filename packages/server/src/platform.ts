@@ -147,6 +147,7 @@ import { PluginRegistryRoutes, PluginRoutes } from "./http/routes/plugins.js";
 import { InstalledPluginRoutes } from "./http/routes/plugins-installed.js";
 import { NpmPluginPackages } from "./plugin/install.js";
 import { PluginSourceSettings } from "./plugin/source-settings.js";
+import { PluginMirrorSettings } from "./plugin/mirror-settings.js";
 import { PluginLibraryModule } from "./plugin/library-module.js";
 import { PluginUiRoutes } from "./http/routes/plugin-ui.js";
 import { SuggestIdRoutes } from "./http/routes/suggest-id.js";
@@ -428,7 +429,7 @@ export class PluginConfigModule {}
  * sits above it — the same shape the sandbox settings' module has.
  */
 @Module({
-  children: [PluginSourceSettings],
+  children: [PluginSourceSettings, PluginMirrorSettings],
   exports: [],
 })
 export class PluginSourceSettingsModule {}

@@ -85,6 +85,7 @@ import {
   withoutIcon,
   NIGHTLY_INDEX_URL,
 } from "../../plugin/registry.js";
+import { indexMirrorRules } from "../../plugin/mirror-settings.js";
 import type {
   CachedRegistry,
   IndexDocumentEntry,
@@ -395,8 +396,8 @@ export interface PluginRoutesOptions {
    * Undefined = unset, which reads the index repository's published document.
    */
   indexUrl?: string | null;
-  /** The deployment's proxy rules for the published index, tried after its own URL. */
-  proxy?: PluginProxyRule[];
+  /** The mirrors the published index's fetches try after its own URL. */
+  proxy?: readonly PluginProxyRule[];
   /** Where packages are on this machine (plugin/loader.ts's pluginBases): for the builtin readmes, and for every listed package's own display fields (localPluginDisplay). */
   bases?: () => readonly PluginBase[];
   /** Overrides the resolved source list entirely; tests pass registries directly. */
@@ -625,7 +626,7 @@ export class PluginRegistryRoutes {
     const parked = (context as { index?: IndexSnapshot } | null)?.index;
     this.routes = pluginRegistryRoutes({
       indexUrl: this.config.pluginIndexUrl,
-      proxy: this.config.pluginProxy ?? [],
+      proxy: indexMirrorRules(),
       // Read per request: a push moves the shipped prefix to a new assets directory.
       bases: () => pluginBases(this.config.root, this.hmr.assetsDir()),
       prefix: () => pluginsPrefix(this.config.root),

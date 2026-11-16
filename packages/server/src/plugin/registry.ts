@@ -377,8 +377,6 @@ export function indexChannelLookup(
  * mainstream browsers. Anything a URL can carry, the pattern may name; refused at parse.
  */
 export const REWRITE_PATTERN_MAX = 65536;
-/** The rule list a deployment carries; more than this is a misconfiguration, not a proxy. */
-export const PROXY_RULES_MAX = 32;
 
 export interface PluginProxyRule {
   /** The rule's type; "rewrite" maps a URL onto another shape via `match` and `rewrite`. */
@@ -637,13 +635,11 @@ export const NIGHTLY_INDEX_URL =
   "https://github.com/Prism-Shadow/penguin-extensions/releases/download/nightly/index.json";
 
 /**
- * The proxy rules a deployment with no proxy config of its own falls back to, in rule
- * order — the built-in set a deployment overrides with PENGUIN_PLUGIN_PROXY.
- * Empty by default: naming the endpoints is a deployment's call (which third-party
- * services to lean on for GitHub Pages, GitHub Releases and npm in its region), not this
- * constant's — a default here would be a service choice made without the deployer.
+ * The mirrors the two fetches try after the source's own URL come from a user's setting
+ * (Settings → Plugins → Plugin mirrors, plugin/mirror-settings.ts) — which third-party
+ * services to lean on is a service choice a user makes, applied through that group's
+ * watch, not a constant here.
  */
-export const PLUGIN_DEFAULT_PROXY_RULES: readonly PluginProxyRule[] = [];
 
 /** Wall-clock reader, injectable so a cache's TTL is deterministic in tests. */
 export type Clock = () => number;

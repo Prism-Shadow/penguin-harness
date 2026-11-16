@@ -2,9 +2,8 @@
  * Where the plugins install from, as a settings group: the npm registry `npm install` runs
  * against is declared on `PluginConfigProvider.groups` like any module's settings, drawn on
  * the Settings dialog's Plugins page and stored under `plugin-config:plugin-sources`, so a
- * restart keeps it. The channel fetches (the published index and its tarball URLs) have
- * their own deployment-level configuration (`PENGUIN_PLUGIN_PROXY`); this group is what a
- * user — not a deployer — can reach.
+ * restart keeps it. The published index's CDN mirrors have their own group
+ * (plugin/mirror-settings.ts); this group is what a user — not a deployer — reaches.
  *
  * `PluginSourceSettings` declares the group and applies what is stored to the installer —
  * on boot and after every save (the watch, so an edit lands without a restart). The default

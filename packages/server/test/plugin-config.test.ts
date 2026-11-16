@@ -253,10 +253,11 @@ describe("/api/admin/plugin-config", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as PluginConfigResponse;
     // The sandbox's group is ordered ahead of the rest; the server's own Plugin sources
-    // group (order 1) sits between it and the packages' groups.
+    // (order 1) and Plugin mirrors (order 2) groups sit between it and the packages' groups.
     expect(body.plugins.map((p) => p.name)).toEqual([
       "sandbox",
       "plugin-sources",
+      "plugin-mirrors",
       "acme-bot",
     ]);
     expect(body.plugins[0]!.name).toBe("sandbox");
