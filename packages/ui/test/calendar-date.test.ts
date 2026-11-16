@@ -34,14 +34,17 @@ const day = (value: string) => {
   return parsed;
 };
 
-const realZone = process.env.TZ;
+/**
+ * The runner's own zone, by name: a test that moves the reader puts it back by setting this name,
+ * since deleting `TZ` again does not restore the zone on Windows.
+ */
+const RUNNER_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
 /** Node re-reads `TZ` on every call, so this puts the reader in `zone` until the test ends. */
 const inZone = (zone: string) => {
   process.env.TZ = zone;
 };
 afterEach(() => {
-  if (realZone === undefined) delete process.env.TZ;
-  else process.env.TZ = realZone;
+  process.env.TZ = RUNNER_ZONE;
 });
 
 describe("values", () => {

@@ -1570,6 +1570,8 @@ export const en: Strings = {
     dayPeriod: "AM/PM",
     time: "Time",
     pickEnd: "Pick the end date",
+    rangeSeparator: " – ",
+    done: "Done",
   },
 
   common: {

@@ -196,6 +196,10 @@ export interface DateStrings {
   time: string;
   /** A range calendar's line once its first end is picked. */
   pickEnd: string;
+  /** What joins a span's two dates: "-" in Chinese, an en dash with spaces in English. */
+  rangeSeparator: string;
+  /** The press that closes a picker whose panel stays open while it is used (a time, a date and time). */
+  done: string;
 }
 
 export interface UiStrings {
@@ -384,6 +388,8 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
     dayPeriod: "AM/PM",
     time: "Time",
     pickEnd: "Pick the end date",
+    rangeSeparator: " – ",
+    done: "Done",
   },
 };
 

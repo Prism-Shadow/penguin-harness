@@ -43,6 +43,8 @@ export interface TimeWheelsProps {
   strings: DateStrings;
   /** The hour wheel takes the keyboard focus when drawn. */
   autoFocus?: boolean;
+  /** Enter on any wheel, once its row is taken: the picker closes, as a press on Done does. */
+  onEnter?: () => void;
 }
 
 export function TimeWheels({
@@ -53,9 +55,11 @@ export function TimeWheels({
   locale,
   strings,
   autoFocus = false,
+  onEnter,
 }: TimeWheelsProps) {
   const minute = (
     <WheelColumn
+      onEnter={onEnter}
       key="minute"
       label={strings.minute}
       options={minuteOptions(minuteStep, time.minute)}
@@ -68,6 +72,7 @@ export function TimeWheels({
       <div className="relative flex items-center justify-center gap-2">
         <WheelBand />
         <WheelColumn
+          onEnter={onEnter}
           label={strings.hour}
           options={HOURS_24}
           value={time.hour}
@@ -82,6 +87,7 @@ export function TimeWheels({
   const [am, pm] = dayPeriodNames(locale);
   const hour = (
     <WheelColumn
+      onEnter={onEnter}
       key="hour"
       label={strings.hour}
       options={HOURS_12}
@@ -92,6 +98,7 @@ export function TimeWheels({
   );
   const period = (
     <WheelColumn
+      onEnter={onEnter}
       key="period"
       label={strings.dayPeriod}
       options={[

@@ -10,8 +10,9 @@
  *   Today is closed when today is outside, and the focus opens on the nearest day inside.
  * - Given the keyboard, the arrows carry the focus across the month's edge and the month with it,
  *   Page Up goes back a month, End goes to the week's last day, Enter writes the focused day.
- * - Given the title pressed, a month and a year typed on its wheels bring that month back to the
- *   grid.
+ * - Given the title pressed, a month typed on its wheel hands the keys to the year wheel, and
+ *   Enter brings the grid back on that month with its day in the focus; pressing the title again
+ *   leaves the wheels too.
  * - Given Escape, the panel closes and a dialog around the field stays open; a press outside
  *   closes it too.
  * - Given the clear cross, the field is emptied.
@@ -21,17 +22,23 @@
  * - Given two presses in either order, the earlier day is the start; nothing is written until the
  *   second, and a panel closed between them writes nothing.
  * - Given a preset pressed, its span is written with its id, and the preset shows pressed after.
+ * - Given a span held, the calendar opens on the month of its end.
  *
  * Time
  * - Given a 12-hour locale, the hour wheel takes the focus, ↑ steps it, typed digits jump to an
  *   hour, and the day-period wheel turns the clock to the afternoon.
  * - Given a 24-hour locale, there is no day-period wheel and the hours run 00–23.
  * - Given a minute step, the minute wheel stops at its last step.
+ * - Given "1430" typed as the panel opens, the hour takes 14, the minute wheel takes over and
+ *   takes 30, and Enter closes the panel.
+ * - Given a mouse wheel, one notch moves one row; a trackpad's small deltas move a row once they
+ *   add up to its height; the event is the wheel's, so nothing behind it scrolls.
  * - Given a scroll, the wheel writes the row in the band only once it has been still.
  *
  * Date and time
  * - Given an empty field, a day pressed is written with the clock now on the minute step and the
- *   panel stays open; the time pill swaps in the wheels, which write the time on that day.
+ *   panel stays open; the time pill swaps in the wheels, which write the time on that day; Done
+ *   closes the panel.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, createElement, useState } from "react";
@@ -58,15 +65,19 @@ const ZH: UiStrings = {
   dates: { ...EN, locale: "zh-CN", hour: "小时", minute: "分钟" },
 };
 
-const realZone = process.env.TZ;
+/**
+ * The runner's own zone, by name. A test that moves the reader puts it back by setting this name:
+ * deleting `TZ` again does not restore the zone on Windows, where every later test would then read
+ * its clock in one zone and build its dates in another.
+ */
+const RUNNER_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"], now: NOW });
 });
 afterEach(async () => {
   await unmountAll();
   vi.useRealTimers();
-  if (realZone === undefined) delete process.env.TZ;
-  else process.env.TZ = realZone;
+  process.env.TZ = RUNNER_ZONE;
 });
 
 // --- the page -------------------------------------------------------------------------------
@@ -197,7 +208,7 @@ describe("a date field", () => {
     expect(panel()).toBeNull();
   });
 
-  it("brings the month typed on the title's wheels back to the grid", async () => {
+  it("jumps to the month typed on the title's wheels, Enter bringing the grid back", async () => {
     const field = dateField("");
     await mount(field.element);
     await press(trigger());
@@ -205,13 +216,26 @@ describe("a date field", () => {
     await press(title);
     expect(title.getAttribute("aria-expanded")).toBe("true");
     expect(focused()).toBe(wheel(EN.month));
-    await type(wheel(EN.month)!, "3");
-    await type(wheel(EN.year)!, "2028");
-    await press(buttonNamed(EN.fieldName(EN.chooseMonth, "March 2028")));
+    // "3" can name no longer month, so the year wheel takes the keys that follow.
+    await type(focused(), "3");
+    expect(focused()).toBe(wheel(EN.year));
+    await type(focused(), "2028");
+    await key(focused(), "Enter");
     expect(wheel(EN.month)).toBeNull();
     expect(shownMonth()).toBe("March 2028");
+    expect(focused().textContent).toBe("12");
     await press(day(29));
     expect(field.writes).toEqual([["2028-03-29"]]);
+  });
+
+  it("leaves the title's wheels when the title is pressed again", async () => {
+    await mount(dateField("").element);
+    await press(trigger());
+    await press(buttonNamed(EN.fieldName(EN.chooseMonth, "November 2026")));
+    await key(focused(), "PageDown");
+    await press(buttonNamed(EN.fieldName(EN.chooseMonth, "June 2026")));
+    expect(wheel(EN.month)).toBeNull();
+    expect(shownMonth()).toBe("June 2026");
   });
 
   it("closes on Escape and leaves the dialog around it open, and on a press outside", async () => {
@@ -272,7 +296,7 @@ describe("a date-range field", () => {
     await press(day(10));
     expect(field.writes).toEqual([[{ from: "2026-11-10", to: "2026-11-20" }]]);
     expect(panel()).toBeNull();
-    expect(trigger().textContent?.replace(/\s/g, " ")).toBe("Nov 10 – 20, 2026");
+    expect(trigger().textContent?.replace(/\s/g, " ")).toBe("Nov 10, 2026 – Nov 20, 2026");
   });
 
   it("writes nothing when the panel closes between the two presses", async () => {
@@ -298,6 +322,15 @@ describe("a date-range field", () => {
     await press(trigger());
     expect(buttonNamed("Last 7 days").getAttribute("aria-pressed")).toBe("true");
     expect(buttonNamed("Last 30 days").getAttribute("aria-pressed")).toBe("false");
+  });
+});
+
+describe("a date-range field's calendar", () => {
+  it("opens on the month of the span's end, where a recent span is picked from", async () => {
+    await mount(rangeField({ from: "2026-08-20", to: "2026-11-05" }).element);
+    await press(trigger());
+    expect(shownMonth()).toBe("November 2026");
+    expect(focused().textContent).toBe("5");
   });
 });
 
@@ -340,6 +373,46 @@ describe("a time field", () => {
     await key(minute, "ArrowUp");
     await key(minute, "ArrowUp");
     expect(field.writes).toEqual([["09:45"]]);
+  });
+
+  it("takes 1430 typed straight away as 14:30, the minute wheel taking over, Enter closing", async () => {
+    const field = timeField("09:05", { hourCycle: "h23" });
+    await mount(field.element);
+    await press(trigger());
+    expect(focused()).toBe(wheel(EN.hour));
+    await type(focused(), "14");
+    // An hour can be nothing longer than "14": the minute wheel takes the next keys.
+    expect(focused()).toBe(wheel(EN.minute));
+    await type(focused(), "30");
+    expect(field.writes.at(-1)).toEqual(["14:30"]);
+    expect(trigger().textContent).toBe("14:30");
+    await key(focused(), "Enter");
+    expect(panel()).toBeNull();
+    expect(focused()).toBe(trigger());
+  });
+
+  it("moves one row a mouse-wheel notch, and one row per row's height of trackpad travel", async () => {
+    const field = timeField("09:30", { hourCycle: "h23" });
+    await mount(field.element);
+    await press(trigger());
+    const hour = wheel(EN.hour)!;
+    // The wheel opened with hour 9 in the band: nine rows down.
+    const row = hour.scrollTop / 9;
+    const scroll = (deltaY: number, deltaMode = 0) =>
+      new WheelEvent("wheel", { deltaY, deltaMode, bubbles: true, cancelable: true });
+    const notch = scroll(100);
+    await fire(hour, notch);
+    // Taken by the wheel: neither the panel nor the page behind it scrolls.
+    expect(notch.defaultPrevented).toBe(true);
+    expect(field.writes).toEqual([["10:30"]]);
+    await fire(hour, scroll(-3, 1));
+    expect(field.writes).toEqual([["10:30"], ["09:30"]]);
+    // Small deltas add up: nothing moves until they make a row.
+    await fire(hour, scroll(row * 0.4));
+    await fire(hour, scroll(row * 0.4));
+    expect(field.writes).toHaveLength(2);
+    await fire(hour, scroll(row * 0.4));
+    expect(field.writes.at(-1)).toEqual(["10:30"]);
   });
 
   it("writes the row a scroll leaves in the band, once the wheel is still", async () => {
@@ -385,5 +458,9 @@ describe("a date-and-time field", () => {
     await press(pill);
     expect(wheel(EN.hour)).toBeNull();
     expect(day(20).getAttribute("aria-label")).toBe("Friday, November 20, 2026");
+    // The panel stays for the time; Done is the way out.
+    await press(buttonNamed(EN.done));
+    expect(panel()).toBeNull();
+    expect(focused()).toBe(trigger());
   });
 });

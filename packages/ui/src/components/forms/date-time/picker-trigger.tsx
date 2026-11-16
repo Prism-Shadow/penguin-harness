@@ -33,7 +33,7 @@ export interface PickerPanelState {
   open: boolean;
   /** Opens or closes the panel from the trigger. */
   toggle: () => void;
-  /** Closes the panel, handing the focus back to the trigger if it was inside. */
+  /** Closes the panel, handing the focus back to the trigger if it was inside or lost. */
   close: () => void;
   triggerRef: RefObject<HTMLButtonElement | null>;
   panelRef: RefObject<HTMLDivElement | null>;
@@ -57,8 +57,12 @@ export function usePickerPanel(estimatedHeight: number, width: number): PickerPa
     estimatedHeight,
     panelWidth: width,
   });
+  // The focus goes back to the field when it was in the panel, or nowhere: a wheel that held it
+  // is gone once the pill swaps the calendar back. Focus somewhere else on the page stays there.
   const close = useCallback(() => {
-    const inside = panelRef.current?.contains(document.activeElement) ?? false;
+    const active = document.activeElement;
+    const lost = active === null || active === document.body;
+    const inside = lost || (panelRef.current?.contains(active) ?? false);
     setOpen(false);
     if (inside) triggerRef.current?.focus();
   }, [panelRef, triggerRef]);
@@ -97,7 +101,8 @@ export interface PickerFieldProps {
 const PAD: Record<ControlSize, string> = { sm: "py-1 pl-2 pr-7", base: "py-2 pl-3 pr-9" };
 /** Where the mark sits, and how large it is, per rung. */
 const MARK_AT: Record<ControlSize, string> = { sm: "right-2", base: "right-3" };
-const CLEAR_AT: Record<ControlSize, string> = { sm: "right-1", base: "right-2" };
+/** The clear cross's place: its press target is at least 24px square (p-1.5 round the mark). */
+const CLEAR_AT: Record<ControlSize, string> = { sm: "right-0.5", base: "right-1.5" };
 const MARK_SIZE: Record<ControlSize, number> = {
   sm: ICON_SIZE.inlineGlyph,
   base: ICON_SIZE.rowLead,
@@ -189,7 +194,7 @@ export function PickerTrigger({
             type="button"
             aria-label={strings.clear}
             onClick={onClear}
-            className={`absolute top-1/2 -translate-y-1/2 ${CLEAR_AT[size]} flex items-center justify-center rounded-sm p-1 text-fg-subtle transition-colors duration-150 hover:text-fg`}
+            className={`absolute top-1/2 -translate-y-1/2 ${CLEAR_AT[size]} flex items-center justify-center rounded-sm p-1.5 text-fg-subtle transition-colors duration-150 hover:text-fg`}
           >
             <CloseIcon size={MARK_SIZE[size]} />
           </button>
