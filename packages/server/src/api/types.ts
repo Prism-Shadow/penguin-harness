@@ -41,6 +41,7 @@ import type {
   ScheduleServerEvent,
   ServerEvent,
   CommandPolicyDto,
+  GoalServerEvent,
 } from "@prismshadow/penguin-library-projects";
 import type {
   DefaultModelOffer,
@@ -1672,6 +1673,7 @@ export type {
   ScheduleServerEvent,
   ServerEvent,
   CommandPolicyDto,
+  GoalServerEvent,
   ChatDefaultsDto,
   ProjectRole,
   ProjectSummary,
