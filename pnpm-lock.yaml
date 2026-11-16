@@ -179,6 +179,9 @@ importers:
       '@prismshadow/penguin-library-agent-api':
         specifier: workspace:*
         version: link:../agent-api
+      '@prismshadow/penguin-library-db':
+        specifier: workspace:*
+        version: link:../db
     devDependencies:
       tsup:
         specifier: ^8.3.0
@@ -7952,6 +7955,7 @@ snapshots:
     dependencies:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-library-agent-api': file:library/agent-api(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)(ws@8.21.0)
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
       - bufferutil
@@ -7964,6 +7968,7 @@ snapshots:
     dependencies:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-agent-api': file:library/agent-api(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
       - bufferutil
@@ -7976,6 +7981,7 @@ snapshots:
     dependencies:
       '@prismshadow/penguin-core': file:packages/core(ws@8.21.0)
       '@prismshadow/penguin-library-agent-api': file:library/agent-api(ws@8.21.0)
+      '@prismshadow/penguin-library-db': file:library/db(ws@8.21.0)
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
       - bufferutil
