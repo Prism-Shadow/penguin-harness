@@ -539,7 +539,7 @@ describe("workbench archives", { timeout: 30_000 }, () => {
     const winner = answers[0]!.status === 201 ? "first" : "second";
     expect(
       (await filesUnder(folder("race_agent", "todo"))).filter((rel) => !rel.startsWith(".")),
-    ).toEqual([`${winner}.ts`, "package.json"]);
+    ).toEqual(["package.json", `${winner}.ts`]);
   });
 
   it("an entry over the per-file cap is refused without being inflated, and a folder over the caps does not export", async () => {
