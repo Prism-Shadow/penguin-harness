@@ -130,6 +130,7 @@
     "@prismshadow/penguin-library-sessions": "workspace:*",
     "@prismshadow/penguin-library-settings": "workspace:*",
     "@prismshadow/penguin-library-traces": "workspace:*",
+    "@prismshadow/penguin-library-workbenches": "workspace:*",
     "@xterm/headless": "^5.5.0",
     "commander": "^13.0.0",
     "css-tree": "^3.2.1",

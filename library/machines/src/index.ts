@@ -10,3 +10,4 @@
  */
 export * from "./machines.js";
 export * from "./browser-extensions.js";
+export * from "./builtin-browser-vocab.js";

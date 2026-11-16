@@ -23,7 +23,7 @@ import type {
 // Build/harness identity is not an interface contract — it ships from the barrel (core's version-info.ts).
 import type { HarnessInfo, VersionReport, HarnessHistory } from "@prismshadow/penguin-core";
 import type { IfacesDiff } from "@prismshadow/penguin-hmr";
-import type { AppCenterShortcut, WorkbenchInfo } from "../mechanisms/workbenches.js";
+import type { AppCenterShortcut, WorkbenchInfo } from "@prismshadow/penguin-library-workbenches";
 // The vocabulary whose ownership moved to the domain libraries (the contracts name it):
 // the server's own API DTOs reference these, and the Web App reads them through this
 // module's exports, so each is imported and re-exported — the server→library direction
@@ -104,6 +104,9 @@ import type {
   UsageModelTotals,
   UsageResponse,
   UsageSeriesPoint,
+  UsageEntitySeriesCounts,
+  UsageErrorCount,
+  ErrorContext,
 } from "@prismshadow/penguin-library-observability";
 import type {
   SessionStatus,
@@ -119,7 +122,28 @@ import type {
   ApprovalMode,
 } from "@prismshadow/penguin-library-sessions";
 import type { UserInfo } from "@prismshadow/penguin-library-identity";
-import type { OrgCalendarOutcome } from "@prismshadow/penguin-library-organization";
+import type {
+  OrgChannelMessage,
+  OrgChannelNotice,
+  OrgChannelNoticeKind,
+  OrgTriggerKind,
+} from "@prismshadow/penguin-library-organization";
+import type {
+  BrowserBackend,
+  BrowserExtensionRecord,
+  BrowserHello,
+  BuiltinBrowserAction,
+  BuiltinBrowserLoadWarning,
+  BuiltinBrowserMetrics,
+  BuiltinBrowserServerEvent,
+  BuiltinBrowserTab,
+  BuiltinBrowserTabMetrics,
+  DesktopBrowserCommand,
+  DesktopBrowserCommandMessage,
+  DesktopBrowserCookie,
+  DesktopBrowserReplyMessage,
+} from "@prismshadow/penguin-library-machines";
+import type { CompanyServerEvent } from "@prismshadow/penguin-library-projects";
 
 // ---------------------------------------------------------------------------
 // General
@@ -1682,6 +1706,27 @@ export type {
   UsageModelTotals,
   UsageResponse,
   UsageSeriesPoint,
+  OrgChannelMessage,
+  OrgChannelNotice,
+  OrgChannelNoticeKind,
+  OrgTriggerKind,
+  CompanyServerEvent,
+  BrowserBackend,
+  BrowserExtensionRecord,
+  BrowserHello,
+  BuiltinBrowserAction,
+  BuiltinBrowserLoadWarning,
+  BuiltinBrowserMetrics,
+  BuiltinBrowserServerEvent,
+  BuiltinBrowserTab,
+  BuiltinBrowserTabMetrics,
+  DesktopBrowserCommand,
+  DesktopBrowserCommandMessage,
+  DesktopBrowserCookie,
+  DesktopBrowserReplyMessage,
+  UsageEntitySeriesCounts,
+  UsageErrorCount,
+  ErrorContext,
   UserInfo,
   ApprovalMode,
   SessionStatus,
@@ -3852,16 +3897,6 @@ export interface TraceImportRequest {
  */
 
 
-/**
- * One entity's per-bucket request and success counts, aligned index-for-index
- * with `series` (the requests-and-success-rate chart draws one such entity —
- * or stacks them all). `denominator` excludes aborted, same as elsewhere.
- */
-export interface UsageEntitySeriesCounts {
-  requests: number[];
-  completed: number[];
-  denominator: number[];
-}
 
 /** Per-Agent counts per bucket. */
 
@@ -3887,13 +3922,6 @@ export interface UsageEntitySeriesCounts {
  */
 export type UsageErrorKind = "unexpected" | "expected";
 
-/** Occurrence count of an error for a given source · code (the "most common" metric in the stats center's error panel). */
-export interface UsageErrorCount {
-  source: string;
-  code: string;
-  kind: string;
-  count: number;
-}
 
 /**
  * One row of the stats center's error panel table: the records of one calendar day that share
@@ -4920,7 +4948,7 @@ export type {
   WorkbenchRequest,
   WorkbenchResponse,
   WorkbenchRecord,
-} from "../mechanisms/workbenches.js";
+} from "@prismshadow/penguin-library-workbenches";
 
 /** GET /api/version/history: the harness versions this data root has committed, newest first. */
 export type VersionHistoryResponse = HarnessHistory;
@@ -5914,12 +5942,6 @@ export type OrgTicketStatus = "proposed" | "in_progress" | "review" | "done" | "
 export type OrgTicketPriority = "P0" | "P1" | "P2";
 /** Live employee state: running when the desk or any ticket session has a Task in progress; paused when budget-paused. */
 export type OrgEmployeeState = "running" | "idle" | "paused";
-/**
- * The trigger kinds an `[org_trigger]` block carries. `ticket_notice` is read-only: a ticket
- * change starts no run of its own, so nothing writes that kind any more, and it stays in the
- * union because Traces recorded while it did still carry it.
- */
-export type OrgTriggerKind = "init" | "event" | "mention" | "ticket_notice" | "ticket_work";
 /** The ticket changes an employee is told about, listed in the body of its next calendar sweep. */
 
 /** What the last evaluation of a calendar event did. */
@@ -6172,57 +6194,8 @@ export interface OrgTicketsResponse {
   invalidFiles: Array<{ path: string; error: string }>;
 }
 
-/**
- * What a `system` line records, structured: the kind of event and its parameters, so a client
- * renders the sentence in the reader's language and with the principals' display names instead
- * of showing the English `text` verbatim. `text` stays the English sentence (the CLI, older
- * clients and the file itself read it); `notice` is the same fact for a client that can do better.
- */
-export type OrgChannelNoticeKind =
-  | "employee_joined"
-  | "employee_left"
-  | "channel_created"
-  | "channel_archived"
-  | "channel_unarchived"
-  | "channel_joined"
-  | "channel_invited"
-  | "channel_left"
-  | "channel_removed"
-  | "budget_warned"
-  | "budget_paused"
-  /**
-   * Legacy, read-only: ticket changes no longer write into a channel — the board is read from
-   * the board and the overview's inbox. These three kinds stay so the lines already in an
-   * organization's message files keep rendering; nothing writes them any more.
-   */
-  | "ticket_blocked"
-  | "ticket_done"
-  | "ticket_rejected";
 
-/**
- * The parameters each kind carries, all strings: principals as `agent:<id>` / `user:<id>`
- * (`agent`, `principal`, `by`, `reportsTo`), a ticket as `ticket` + `title`, a budget event as
- * `agent`, `period`, `percent`, `cost`, `budget`.
- */
-export interface OrgChannelNotice {
-  kind: OrgChannelNoticeKind;
-  params: Record<string, string>;
-}
 
-export interface OrgChannelMessage {
-  id: string;
-  /** ISO 8601 UTC. */
-  time: string;
-  /** `agent:<id>` / `user:<id>` / `system`. */
-  sender: string;
-  hop: number;
-  text: string;
-  /** Principals mentioned, `all` included. */
-  mentions: string[];
-  refs?: { ticket?: string; session?: string; replyTo?: string };
-  /** Present on `system` lines the server wrote with a structured notice; absent on lines from before the field existed. */
-  notice?: OrgChannelNotice;
-}
 
 /**
  * One channel as the API reports it. The all-hands channel (`default_channel`,
@@ -6682,17 +6655,6 @@ export interface OrgHandbookFileWriteRequest {
   content: string;
 }
 
-/** Company-mode notifications on the user-level event stream (best effort; the query routes carry the durable state). */
-export type CompanyServerEvent =
-  /** A work run (desk session) or ticket session was started by the organization scheduler or a ticket start. */
-  | {
-      type: "org_run";
-      projectId: string;
-      orgId: string;
-      agentId: string;
-      sessionId: string;
-      kind: OrgTriggerKind;
-    }
   /** A new channel message (mentions included, so the client can tell whether it is addressed). */
   | {
       type: "org_channel";
@@ -7182,15 +7144,6 @@ export interface InstalledPluginsResponse {
   restartPending: boolean;
 }
 
-// ---------------------------------------------------------------------------
-// The agent browser, two backends behind one link (see builtin-browser/): the desktop's
-// built-in browser — Electron <webview> guests in the persist:penguin-browser partition,
-// driven over CDP by the shell on the server's behalf — and the user's own Chrome, driven
-// through the PenguinHarness Browser extension over a WebSocket the extension opens.
-// ---------------------------------------------------------------------------
-
-/** The browser an agent drives: the desktop's built-in one, or the user's own Chrome. */
-export type BrowserBackend = "builtin" | "chrome";
 
 /**
  * What a backend's link can do. The shell cannot create tabs (the Web App's <webview> does) and
@@ -7206,31 +7159,6 @@ export interface BrowserLinkCapabilities {
   cookieStore: boolean;
 }
 
-/**
- * One tab of the agent browser. Built-in: a guest page, `id` its webContents id. Chrome: a tab
- * the extension drives (one it created in the Penguin tab group, or one the user added), `id`
- * Chrome's tab id; `canGoBack`/`canGoForward` are always false there (the tabs API cannot read
- * them).
- */
-export interface BuiltinBrowserTab {
-  id: number;
-  /** The built-in tab belongs to this conversation; absent for pages opened outside a conversation. */
-  sessionId?: string;
-  /** Electron storage partition, shared only within this tab's Project. */
-  partition?: string;
-  url: string;
-  title: string;
-  loading: boolean;
-  canGoBack: boolean;
-  canGoForward: boolean;
-  favicon?: string;
-  /**
-   * Present while the page's renderer is gone, with Electron's reason (`crashed`, `oom`,
-   * `killed`, …): the panel shows the crash until the page is reloaded, and an agent action on
-   * the tab answers 409 `tab_crashed`.
-   */
-  crashed?: string;
-}
 
 /**
  * Why the agent browser cannot be driven. Built-in: not under the desktop shell, a shell too old
@@ -7282,17 +7210,6 @@ export interface BrowserBackendResponse {
   choices: BrowserBackend[];
 }
 
-/** One Chrome paired to the caller's account (a row of `browser_extensions`). */
-export interface BrowserExtensionRecord {
-  id: string;
-  /** As the extension names itself, e.g. "Chrome 130 on macOS". */
-  name: string;
-  version: string;
-  createdAt: string;
-  lastSeenAt: string | null;
-  /** Whether this one holds the caller's connection now (one at a time per user). */
-  connected: boolean;
-}
 
 /** GET /api/builtin-browser/extension. */
 export interface BrowserExtensionsResponse {
@@ -7355,45 +7272,8 @@ export interface BrowserExtensionPairResponse {
  */
 export type BrowserExtensionCloseCode = 4001 | 4003 | 4005 | 4008 | 4009;
 
-/** One tab's share of the built-in browser's load, as the shell last measured it. */
-export interface BuiltinBrowserTabMetrics {
-  tabId: number;
-  /** The memory held by the processes behind the page (its own and its cross-site frames'), KB. */
-  memoryKB: number;
-  /** Their CPU use since the previous measurement, in percent of one core. */
-  cpuPercent: number;
-}
 
-/** Why the built-in browser should be lighter. */
-export type BuiltinBrowserLoadWarning =
-  /** Its pages together hold more memory than they should. */
-  | "memory"
-  /** This computer is running out of memory. */
-  | "low_system_memory"
-  /** More tabs are open than the browser should hold. */
-  | "many_tabs";
 
-/**
- * The built-in browser's load: GET /status's `metrics`, and the `builtin_browser_metrics` event
- * after each of the shell's measurements (every ~10 s while tabs are open, and soon after one
- * closes). The thresholds are the server's; the UI and the CLI only word what it concluded.
- */
-export interface BuiltinBrowserMetrics {
-  /** When the server received the measurement (epoch ms). */
-  at: number;
-  tabs: BuiltinBrowserTabMetrics[];
-  /** All the pages' memory, a process two tabs share counted once, KB. */
-  totalKB: number;
-  /**
-   * This computer's memory, KB. Absent on macOS, whose free count leaves out the memory it would
-   * readily hand back, so that "free" there reads as nearly none on a healthy machine.
-   */
-  system?: { freeKB: number; totalKB: number };
-  /** What to warn about now; empty when all is well. */
-  warnings: BuiltinBrowserLoadWarning[];
-  /** While a memory warning stands: the tabs holding the most memory, heaviest first. */
-  heavyTabIds: number[];
-}
 
 /** GET /api/builtin-browser/tabs. */
 export interface BuiltinBrowserTabsResponse {
@@ -7516,25 +7396,7 @@ export interface BuiltinBrowserSettings {
   homepage: string | null;
 }
 
-export type BuiltinBrowserAction =
-  "navigate" | "scan" | "exec" | "click" | "type" | "screenshot" | "cdp";
 
-/**
- * User-channel events of the agent browser. The built-in backend's go to every admin; a chrome
- * backend's go to the user whose Chrome it is, as do `builtin_browser_backend` and
- * `builtin_browser_extension`.
- */
-export type BuiltinBrowserServerEvent =
-  /**
-   * A backend's whole tab list. `backend` names whose: a desktop admin hears both the built-in
-   * browser's and their own Chrome's, and the two lists must not overwrite each other.
-   */
-  | {
-      type: "builtin_browser_tabs";
-      tabs: BuiltinBrowserTab[];
-      activeTabId: number | null;
-      backend: BrowserBackend;
-    }
   /** Create a guest for `url`, then POST /tabs/claim with `requestId` once it has a webContents id. */
   | {
       type: "builtin_browser_open";
@@ -7566,28 +7428,7 @@ export type BuiltinBrowserServerEvent =
       extension?: BrowserExtensionRecord;
     };
 
-/** A cookie as the shell writes it (Electron's CookiesSetDetails). */
-export interface DesktopBrowserCookie {
-  url: string;
-  name: string;
-  value: string;
-  domain?: string;
-  path?: string;
-  secure?: boolean;
-  httpOnly?: boolean;
-  /** Unix seconds; absent = session cookie. */
-  expirationDate?: number;
-  sameSite?: "unspecified" | "no_restriction" | "lax" | "strict";
-}
 
-/**
- * Server → browser link: what the shell (built-in) or the extension (chrome) does with its tabs.
- * Mechanism only — the product logic stays on the server. The names are historical: the same
- * envelopes travel the extension's WebSocket as JSON text frames.
- */
-export type DesktopBrowserCommand =
-  /** Reply: a BrowserHello. An older shell never answers. */
-  | { op: "hello" }
   /** Reply: `{ tabs: BuiltinBrowserTab[] }`. */
   | { op: "tabs" }
   /**
@@ -7627,30 +7468,8 @@ export type DesktopBrowserCommand =
   /** Chrome only. Reply: `{}`. Sent every 20 s; the traffic keeps the MV3 service worker alive. */
   | { op: "ping" };
 
-/**
- * The `hello` reply. Built-in: `{ version: 1, partition }` (an older shell sends no `backend`).
- * Chrome: `{ version: 1, backend: "chrome", extension }`; any other version is closed 4005.
- */
-export interface BrowserHello {
-  version: 1;
-  backend?: BrowserBackend;
-  partition?: string;
-  extension?: { version: string; chrome: string; name: string };
-}
 
-export interface DesktopBrowserCommandMessage {
-  type: "desktop-browser-command";
-  id: string;
-  command: DesktopBrowserCommand;
-}
 
-export interface DesktopBrowserReplyMessage {
-  type: "desktop-browser-reply";
-  id: string;
-  ok: boolean;
-  result?: unknown;
-  error?: string;
-}
 
 export type DesktopBrowserEvent =
   | { kind: "tab"; tab: BuiltinBrowserTab }

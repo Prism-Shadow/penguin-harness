@@ -48,8 +48,9 @@
   },
   "dependencies": {
     "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/penguin-library-agent-api": "workspace:*",
     "@prismshadow/penguin-library-db": "workspace:*",
-    "@prismshadow/penguin-library-agent-api": "workspace:*"
+    "@prismshadow/penguin-library-traces": "workspace:*"
   },
   "devDependencies": {
     "tsup": "^8.3.0",

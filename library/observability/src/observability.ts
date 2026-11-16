@@ -3,6 +3,7 @@
  */
 import { Interface } from "@prismshadow/penguin-core/kernel";
 import type { Opaque } from "@prismshadow/penguin-core/kernel";
+import type { CostParts } from "@prismshadow/penguin-library-traces";
 import type {
   ErrorCodeCount,
   ErrorFilter,
@@ -382,4 +383,26 @@ export abstract class UsageQueries {
     fromTs: string,
     toTs: string,
   ): Promise<Array<{ date: string; cost: number }>>;
+}
+
+/** One entity's per-bucket request and success counts, aligned index-for-index with `series` (the requests-and-success-rate chart draws one such entity — or stacks them all). `denominator` excludes aborted, same as elsewhere. */
+export interface UsageEntitySeriesCounts {
+  requests: number[];
+  completed: number[];
+  denominator: number[];
+}
+
+/** Occurrence count of an error for a given source · code (the "most common" metric in the stats center's error panel). */
+export interface UsageErrorCount {
+  source: string;
+  code: string;
+  kind: string;
+  count: number;
+}
+
+/** Where an error was captured (was api/types.ts's; the Errors contract names it). */
+export interface ErrorContext {
+  projectId?: string;
+  agentId?: string;
+  sessionId?: string;
 }

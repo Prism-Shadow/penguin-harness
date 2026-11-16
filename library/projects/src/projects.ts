@@ -49,6 +49,11 @@ import type {
 } from "@prismshadow/penguin-core";
 import type { AmspRecord, ToolCallPayload, ThinkingLevelName } from "@prismshadow/penguin-core";
 import type { SessionSource } from "@prismshadow/amsp";
+import type { OrgChannelMessage, OrgTriggerKind } from "@prismshadow/penguin-library-organization";
+import type {
+  BuiltinBrowserServerEvent,
+} from "@prismshadow/penguin-library-machines";
+import type { WorkbenchInfo } from "@prismshadow/penguin-library-workbenches";
 import type { ModelRefDto } from "@prismshadow/penguin-library-agent-api";
 import type { TraceFileInfo } from "@prismshadow/penguin-library-traces";
 import type {
@@ -599,3 +604,10 @@ export abstract class ProjectConfigStore {
 export abstract class ProjectEvents {
   abstract notifyProjectUsers(projectId: string, event: ServerEvent): void;
 }
+
+export type CompanyServerEvent =
+  /** A work run (desk session) or ticket session was started by the organization scheduler or a ticket start. */
+  | {
+      type: "org_run";
+
+

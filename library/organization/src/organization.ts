@@ -22,3 +22,51 @@ export abstract class OrgCache extends Interface<
     orgIdsOfProject(projectId: string): Opaque<"OrgIdsBySession", Map<string, string>>;
   }
 >() {}
+
+// ---------------------------------------------------------------------------
+// Channel vocabulary (was api/types.ts's; the CompanyServerEvent names them)
+// ---------------------------------------------------------------------------
+
+export type OrgChannelNoticeKind =
+  | "employee_joined"
+  | "employee_left"
+  | "channel_created"
+  | "channel_archived"
+  | "channel_unarchived"
+  | "channel_joined"
+  | "channel_invited"
+  | "channel_left"
+  | "channel_removed"
+  | "budget_warned"
+  | "budget_paused"
+  /**
+   * Legacy, read-only: ticket changes no longer write into a channel — the board is read from
+   * the board and the overview's inbox. These three kinds stay so the lines already in an
+   * organization's message files keep rendering; nothing writes them any more.
+   */
+  | "ticket_blocked"
+  | "ticket_done"
+  | "ticket_rejected";
+
+export interface OrgChannelNotice {
+  kind: OrgChannelNoticeKind;
+  params: Record<string, string>;
+}
+
+export interface OrgChannelMessage {
+  id: string;
+  /** ISO 8601 UTC. */
+  time: string;
+  /** `agent:<id>` / `user:<id>` / `system`. */
+  sender: string;
+  hop: number;
+  text: string;
+  /** Principals mentioned, `all` included. */
+  mentions: string[];
+  refs?: { ticket?: string; session?: string; replyTo?: string };
+  /** Present on `system` lines the server wrote with a structured notice; absent on lines from before the field existed. */
+  notice?: OrgChannelNotice;
+}
+
+/** The org scheduler's trigger kinds (an org_run event names which one started the run). */
+export type OrgTriggerKind = "init" | "event" | "mention" | "ticket_notice" | "ticket_work";
