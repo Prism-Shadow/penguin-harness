@@ -17,6 +17,12 @@ answer or an answer that stops halfway, and reporting which addresses were tried
 answered. Nothing picks a winner by speed, so the same deployment walks the same path until
 an address actually fails.
 
+The start of that order follows success: each fetch begins at the address that answered last
+(the one whose document parsed, the one whose bytes verified), so a deployment whose canonical
+address is dead does not pay its window on every fetch. This is memory, not a speed test — no
+probe, no measuring; a start that has died hands the walk back to the configured order inside
+the same fetch, and an address whose document or bytes are refused is never remembered.
+
 A rule is Cloudflare-rewrite shaped: `kind` (`"rewrite"`), `match` (a JS regex over the whole
 URL) and `rewrite` (the result, `$1`–`$9` naming the capture groups). Rules are compiled and
 shape-checked when the config is parsed — a pattern whose worst case is not linear
