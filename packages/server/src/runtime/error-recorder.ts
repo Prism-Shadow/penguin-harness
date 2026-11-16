@@ -59,7 +59,7 @@ import { ErrorLog, Errors } from "@prismshadow/penguin-library-observability";
 import type { ErrorSource, ErrorKind, ErrorRecordArgs } from "@prismshadow/penguin-library-observability";
 
 /** Attribution context (all optional: the login endpoint has no Project, and process-level fallback has no request at all). Lives with the Errors contract (library/observability); re-exported for the recorder's callers. */
-export type { ErrorContext };
+export type { ErrorContext } from "@prismshadow/penguin-library-observability";
 
 
 
