@@ -24,7 +24,10 @@ import { effectiveConnection, providerConnectionShape } from "@prismshadow/pengu
 import { catalogEntryFor } from "../model-catalog/catalog.js";
 import { modelEnvironment } from "../model-catalog/env-keys.js";
 import type { ModelEntry, ModelRef, ProviderTable } from "@prismshadow/penguin-core";
-import type { ModelInfo, ModelUpdateEntry } from "../api/types.js";
+import type {
+  ModelInfo,
+  ModelUpdateEntry,
+} from "@prismshadow/penguin-library-models";
 import type { ModelRefDto } from "@prismshadow/penguin-library-agent-api";
 import type {
   ModelsResponse,

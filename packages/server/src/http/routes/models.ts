@@ -10,11 +10,10 @@
  */
 import { Hono } from "hono";
 import { providerInfo } from "../../model-catalog/catalog.js";
+import type { DefaultModelResponse, ModelBalanceResponse } from "../../api/types.js";
 import type {
-  DefaultModelResponse,
-  ModelBalanceResponse,
   ModelUpdateEntry,
-} from "../../api/types.js";
+} from "@prismshadow/penguin-library-models";
 import type { ModelRefDto } from "@prismshadow/penguin-library-agent-api";
 import type {
   EndpointModelListRequest,

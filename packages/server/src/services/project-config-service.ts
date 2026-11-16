@@ -91,13 +91,13 @@ import type {
   ProviderConnectionShape,
   ProviderTable,
 } from "@prismshadow/penguin-core";
+import type { CommandPolicyRuleDto } from "../api/types.js";
 import type {
   DefaultModelOffer,
-  CommandPolicyRuleDto,
   ModelEffectiveConnection,
   ModelInfo,
   ModelPricingDto,
-} from "../api/types.js";
+} from "@prismshadow/penguin-library-models";
 import type { ModelRefDto } from "@prismshadow/penguin-library-agent-api";
 import type {
   ChatDefaultsDto,

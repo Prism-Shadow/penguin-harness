@@ -53,6 +53,18 @@
       "@prismshadow/penguin-library-identity/repos/users": [
         "../../library/identity/src/repos/users.ts"
       ],
+      "@prismshadow/penguin-library-models": [
+        "../../library/models/src/index.ts"
+      ],
+      "@prismshadow/penguin-library-models/models": [
+        "../../library/models/src/models.ts"
+      ],
+      "@prismshadow/penguin-library-models/repos/model-promotions": [
+        "../../library/models/src/repos/model-promotions.ts"
+      ],
+      "@prismshadow/penguin-library-models/repos/model-provider-auth-tokens": [
+        "../../library/models/src/repos/model-provider-auth-tokens.ts"
+      ],
       "@prismshadow/penguin-library-machines": [
         "../../library/machines/src/index.ts"
       ],

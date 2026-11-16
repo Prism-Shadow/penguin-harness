@@ -40,14 +40,6 @@
       "types": "./dist/repos/agents.d.ts",
       "import": "./dist/repos/agents.js"
     },
-    "./repos/model-promotions": {
-      "types": "./dist/repos/model-promotions.d.ts",
-      "import": "./dist/repos/model-promotions.js"
-    },
-    "./repos/model-provider-auth-tokens": {
-      "types": "./dist/repos/model-provider-auth-tokens.d.ts",
-      "import": "./dist/repos/model-provider-auth-tokens.js"
-    },
     "./repos": {
       "types": "./dist/repos/index.d.ts",
       "import": "./dist/repos/index.js"
@@ -61,7 +53,8 @@
   "dependencies": {
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-library-db": "workspace:*",
-    "@prismshadow/penguin-library-identity": "workspace:*"
+    "@prismshadow/penguin-library-identity": "workspace:*",
+    "@prismshadow/penguin-library-models": "workspace:*"
   },
   "devDependencies": {
     "tsup": "^8.3.0",
