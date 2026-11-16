@@ -3,6 +3,7 @@
 - **Date:** 2026-11-16
 - **Type:** fix
 - **Scope:** `server`
+- **PR:** [#1565](https://github.com/Prism-Shadow/penguin-harness/pull/1565)
 - **Issue:** [#1437](https://github.com/Prism-Shadow/penguin-harness/issues/1437)
 
 [中文版](2026-11-16-browser-import-async.zh.md)
