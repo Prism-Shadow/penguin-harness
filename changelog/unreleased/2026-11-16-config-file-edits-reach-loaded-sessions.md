@@ -3,6 +3,7 @@
 - **Date:** 2026-11-16
 - **Type:** fix
 - **Scope:** `server`
+- **PR:** [#1569](https://github.com/Prism-Shadow/penguin-harness/pull/1569)
 - **Issue:** [#1558](https://github.com/Prism-Shadow/penguin-harness/issues/1558)
 
 [中文版](2026-11-16-config-file-edits-reach-loaded-sessions.zh.md)
