@@ -143,12 +143,13 @@ export function MonthCalendar({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedKey]);
 
-  // A key moved the focus: the day it landed on takes the keyboard focus once it is drawn.
+  // A key moved the focus (or Enter left the wheels): the focused day takes the keyboard focus
+  // once it is drawn.
   useEffect(() => {
-    if (!moveFocus.current) return;
+    if (!moveFocus.current || wheels) return;
     moveFocus.current = false;
     gridRef.current?.querySelector<HTMLElement>('button[tabindex="0"]')?.focus();
-  }, [focus]);
+  }, [focus, wheels]);
 
   const onGridKey = (event: KeyboardEvent<HTMLDivElement>) => {
     // Enter picks the focused day on the key itself, the grid's pick and not each button's own
@@ -183,6 +184,11 @@ export function MonthCalendar({
     value: fromYear + i,
     label: yearName(fromYear + i, locale),
   }));
+  // Enter on a wheel brings the grid back on the month the wheels hold, its day in the focus.
+  const leaveWheels = () => {
+    moveFocus.current = true;
+    setWheels(false);
+  };
   const monthWheel = (
     <WheelColumn
       key="month"
@@ -192,6 +198,7 @@ export function MonthCalendar({
       onChange={(month) => setMonth(visible.year, month)}
       className="w-24"
       autoFocus
+      onEnter={leaveWheels}
     />
   );
   const yearWheel = (
@@ -202,6 +209,7 @@ export function MonthCalendar({
       value={visible.year}
       onChange={(year) => setMonth(year, visible.month)}
       className="w-24"
+      onEnter={leaveWheels}
     />
   );
 

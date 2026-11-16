@@ -3,7 +3,8 @@
  * row under it holding Today and the time as a pill. A press on a day writes that day with the
  * time the field holds — or, while it holds none, the reader's clock now on the minute step — and
  * keeps the panel open for the time. The pill swaps the calendar for the time wheels in the same
- * room, the hour wheel taking the focus, and swaps it back; every turn writes at once.
+ * room, the hour wheel taking the focus, and swaps it back; every turn writes at once. Done, or
+ * Enter on a wheel, closes the panel, as does a press outside or Escape.
  *
  * The value is the native `datetime-local` input's `YYYY-MM-DDTHH:mm`, local and without a zone,
  * "" while empty. `min` and `max` (the same format, each included) fade the days outside their
@@ -110,6 +111,7 @@ export function DateTimeField({
                 locale={locale}
                 strings={strings}
                 autoFocus
+                onEnter={picker.close}
               />
             ) : undefined
           }
@@ -136,6 +138,9 @@ export function DateTimeField({
             >
               {formatTime(time, locale, cycle)}
             </button>
+            <Button variant="ghost" size="sm" onClick={picker.close}>
+              {strings.done}
+            </Button>
           </span>
         </PickerFoot>
       </PickerPanel>

@@ -1704,6 +1704,10 @@ export const zh = {
     time: "时间",
     /** Read out once a range's first end is picked. */
     pickEnd: "请选择结束日期",
+    /** What joins a span's two dates (2026年11月1日-2026年11月16日). */
+    rangeSeparator: "-",
+    /** Closes a time or date-and-time picker, whose panel stays open while it is used. */
+    done: "完成",
   },
 
   common: {

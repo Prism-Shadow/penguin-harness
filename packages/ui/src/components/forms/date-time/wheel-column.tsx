@@ -6,19 +6,24 @@
  *
  * Every way of turning it ends on a value:
  *
- * - a scroll — a mouse wheel, a trackpad, a finger — runs natively with `scroll-snap`, and once
- *   the column has been still for a moment the row in the band is the new value;
+ * - a mouse wheel moves it one row a notch, and a trackpad one row for every row's height its
+ *   fingers travel, so a value can be landed on; neither scrolls the page or the panel behind;
+ * - a finger scrolls it natively with `scroll-snap`, and once the column has been still for a
+ *   moment the row in the band is the new value;
  * - a mouse drags it (a mouse has no native drag scroll), and on release it snaps to the nearest
  *   row and takes it;
  * - a press on a row takes that row, and a press on the row in the band takes it as it is — the
  *   way to accept a value the picker opened on;
  * - the keyboard steps it as a spin button does: ↑ / ↓ one row, Page Up / Page Down five, Home
- *   and End the ends, Enter takes the row in the band, and typed digits or letters jump to the row
- *   whose number or name they spell ("1", "4" is 14; "p" is PM).
+ *   and End the ends; typed digits or letters jump to the row whose number or name they spell
+ *   ("1", "4" is 14; "p" is PM), and once what is typed can name no longer value the focus moves
+ *   on to the next wheel of the row, so "1430" sets an hour and a minute; Enter takes the row in
+ *   the band and hands over to the caller (`onEnter`: close the picker, leave the wheels).
  *
- * A press and a key report the value at once and the column scrolls to it after; a scroll reports
- * it when it settles, and only if it moved. A value that changes from outside scrolls the column
- * to it, at once on first draw and smoothly after (at once under reduced motion).
+ * A notch, a press and a key report the value at once and the column scrolls to it after; a
+ * finger's scroll reports it when it settles, and only if it moved. A value that changes from
+ * outside scrolls the column to it, at once on first draw and smoothly after (at once under
+ * reduced motion).
  *
  * The column is a `spinbutton` named by the caller, whose value text is the row's label; the rows
  * are drawing only. Its rows are the theme's spacing (`h-8`) tall: the height is read off a row
@@ -45,6 +50,8 @@ export interface WheelColumnProps {
   className?: string;
   /** Takes the keyboard focus when it is drawn: the first wheel of a picker that opens on it. */
   autoFocus?: boolean;
+  /** Enter, after the row in the band is taken: what the picker does next. */
+  onEnter?: () => void;
 }
 
 /** How long a scrolled column must be still before its row counts as picked (ms). */
@@ -55,6 +62,11 @@ const TYPEAHEAD_MS = 800;
 const DRAG_SLOP = 4;
 /** Rows a Page Up or Page Down moves. */
 const PAGE_ROWS = 5;
+/**
+ * A wheel event this large in pixels is a mouse wheel's notch (browsers send about 100 a notch),
+ * which moves one row; smaller ones are a trackpad's, summed until they make a row.
+ */
+const NOTCH_PX = 40;
 
 const clamp = (n: number, low: number, high: number) => Math.min(high, Math.max(low, n));
 
@@ -66,6 +78,26 @@ export function typedOption(
   if (/^\d+$/.test(typed)) return options.find((option) => option.value === Number(typed));
   const text = typed.toLowerCase();
   return options.find((option) => option.label.toLowerCase().startsWith(text));
+}
+
+/**
+ * Whether typing more could still name another row than `match`: some other row's number or label
+ * starts with what is typed and runs longer ("1" may yet be 10–12 on a 12-hour clock; "14" is all
+ * an hour can be). While it could, the focus stays; once it cannot, it moves on.
+ */
+export function typedMayGoOn(
+  options: readonly WheelOption[],
+  typed: string,
+  match: WheelOption,
+): boolean {
+  const text = typed.toLowerCase();
+  return options.some(
+    (option) =>
+      option !== match &&
+      [String(option.value), option.label.toLowerCase()].some(
+        (name) => name.length > text.length && name.startsWith(text),
+      ),
+  );
 }
 
 /**
@@ -88,6 +120,7 @@ export function WheelColumn({
   onChange,
   className = "w-14",
   autoFocus = false,
+  onEnter,
 }: WheelColumnProps) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const reducedMotion = usePrefersReducedMotion();
@@ -105,6 +138,10 @@ export function WheelColumn({
   const draggedLast = useRef(false);
   const typed = useRef({ text: "", at: 0 });
   const drawn = useRef(false);
+  // The row a run of wheel events has moved to before the value it reported comes back, so two
+  // notches between renders move two rows; and what a trackpad has travelled short of a row.
+  const aimed = useRef<number | null>(null);
+  const travelled = useRef(0);
 
   const rowHeight = (): number => {
     const row = scrollerRef.current?.querySelector<HTMLElement>("[data-row]");
@@ -143,11 +180,50 @@ export function WheelColumn({
   // The value in the band follows the value from outside: at once when the column is first
   // drawn, smoothly after. A scroll that settled on the value has already put it there.
   useLayoutEffect(() => {
+    aimed.current = null;
     if (drag.current?.moved === true) return;
     scrollToRow(index, drawn.current);
     drawn.current = true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index]);
+
+  // The wheel is handled here, not left to the scroller: a native notch scrolls about three rows
+  // and `scroll-snap` lands wherever that ends, so no value next to the band could be reached.
+  // Not passive, so the page and the panel behind do not scroll with it.
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (scroller === null) return;
+    const onWheel = (event: WheelEvent) => {
+      if (event.deltaY === 0) return;
+      event.preventDefault();
+      const { options: rows, value: held, onChange: report } = latest.current;
+      const row = rowHeight();
+      const pixels = event.deltaY * (event.deltaMode === 0 ? 1 : row);
+      let steps: number;
+      if (event.deltaMode !== 0 || Math.abs(pixels) >= NOTCH_PX) {
+        steps = Math.sign(pixels);
+        travelled.current = 0;
+      } else {
+        travelled.current += pixels;
+        steps = Math.trunc(travelled.current / row);
+        travelled.current -= steps * row;
+      }
+      if (steps === 0) return;
+      const at =
+        aimed.current ??
+        Math.max(
+          0,
+          rows.findIndex((option) => option.value === held),
+        );
+      const next = clamp(at + steps, 0, rows.length - 1);
+      aimed.current = next;
+      const option = rows[next];
+      if (option !== undefined && option.value !== held) report(option.value);
+    };
+    scroller.addEventListener("wheel", onWheel, { passive: false });
+    return () => scroller.removeEventListener("wheel", onWheel);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (autoFocus) scrollerRef.current?.focus({ preventScroll: true });
@@ -220,6 +296,7 @@ export function WheelColumn({
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       if (current !== undefined) onChange(current.value);
+      if (event.key === "Enter") onEnter?.();
       return;
     }
     if (event.key.length !== 1 || event.key.trim() === "") return;
@@ -230,6 +307,14 @@ export function WheelColumn({
     if (match === undefined) return;
     event.preventDefault();
     if (match.value !== value) onChange(match.value);
+    if (typedMayGoOn(options, text, match)) return;
+    // Nothing longer can be typed here: the next wheel of the row takes the keys that follow.
+    typed.current = { text: "", at: 0 };
+    const self = event.currentTarget;
+    const wheels = [
+      ...(self.parentElement?.querySelectorAll<HTMLElement>(':scope > [role="spinbutton"]') ?? []),
+    ];
+    wheels[wheels.indexOf(self) + 1]?.focus({ preventScroll: true });
   };
 
   return (

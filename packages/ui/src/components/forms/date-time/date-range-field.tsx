@@ -1,6 +1,8 @@
 /**
- * A date-range field: the picker trigger, showing the span the way the locale writes one
- * (2026年11月1日至12日, Nov 1 – 12, 2026), and one month calendar in its panel picking both ends.
+ * A date-range field: the picker trigger, showing the span as its two dates in full
+ * (2026年11月1日-2026年11月16日, Nov 1, 2026 – Nov 16, 2026), and one month calendar in its panel
+ * picking both ends. The calendar opens on the month of the span's end, where a recent span — the
+ * last 30 or 90 days — is picked from.
  * The first press on a day sets one end; the span then follows the pointer (or the keyboard's
  * focus) on a flat band; the second press sets the other end — in either order, the earlier day
  * always the start — writes the span and closes the panel. A panel closed between the two presses
@@ -107,7 +109,7 @@ export function DateRangeField({
         shown={
           held === null
             ? (placeholder ?? strings.pickRange)
-            : formatDateRange(held.from, held.to, locale)
+            : formatDateRange(held.from, held.to, locale, strings.rangeSeparator)
         }
         empty={held === null}
         glyph={ICONS.calendar}
@@ -127,7 +129,7 @@ export function DateRangeField({
           range={drawn}
           min={parseDate(min ?? "")}
           max={parseDate(max ?? "")}
-          initial={held?.from ?? today}
+          initial={held?.to ?? today}
           onPick={pick}
           onPoint={(day) => {
             if (anchor !== null) setPoint(day);

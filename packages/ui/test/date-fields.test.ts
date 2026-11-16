@@ -3,7 +3,8 @@
  * before it is opened. Static markup; the open panels are date-picker.dom.test.ts's.
  *
  * - Given a date, a time, a moment and a span, each field shows it the way the reader's locale
- *   writes it — 2026年11月12日 / Nov 12, 2026, 14:30 / 2:30 PM — and the time follows the
+ *   writes it — 2026年11月12日 / Nov 12, 2026, 14:30 / 2:30 PM, a span as its two dates in full
+ *   joined by the language's mark (2026年11月1日-2026年11月12日) — and the time follows the
  *   locale's clock unless the field names one.
  * - Given nothing picked, the field shows the picker's placeholder, or the caller's.
  * - Given an optional field holding a value, the clear cross stands in for the calendar mark; an
@@ -31,6 +32,7 @@ const ZH: UiStrings = {
     pickDate: "选择日期",
     clear: "清除",
     fieldName: (label, shown) => `${label}：${shown}`,
+    rangeSeparator: "-",
   },
 };
 
@@ -64,19 +66,19 @@ describe("what a field shows", () => {
       to: "2026-11-12",
       onChange: noop,
     });
-    expect(draw(span)).toContain(">Nov 1 – 12, 2026<");
-    expect(draw(span, ZH)).toContain(">2026年11月1日至12日<");
+    expect(draw(span)).toContain(">Nov 1, 2026 – Nov 12, 2026<");
+    expect(draw(span, ZH)).toContain(">2026年11月1日-2026年11月12日<");
   });
 
-  it("writes a span as the locale shares its two ends: the year and the month only once", () => {
+  it("writes a span as its two dates in full, joined by the language's mark", () => {
     const span = (from: string, to: string) =>
       createElement(DateRangeField, { from, to, onChange: noop });
-    expect(draw(span("2026-10-28", "2026-11-03"), ZH)).toContain(">2026年10月28日至11月3日<");
-    expect(draw(span("2026-12-28", "2027-01-03"), ZH)).toContain(">2026年12月28日至2027年1月3日<");
+    expect(draw(span("2026-10-28", "2026-11-03"), ZH)).toContain(">2026年10月28日-2026年11月3日<");
+    expect(draw(span("2026-12-28", "2027-01-03"), ZH)).toContain(">2026年12月28日-2027年1月3日<");
+    expect(draw(span("2026-10-28", "2026-11-03"))).toContain(">Oct 28, 2026 – Nov 3, 2026<");
+    // One day reads as that day; a span written end first still reads from its start.
     expect(draw(span("2026-11-12", "2026-11-12"), ZH)).toContain(">2026年11月12日<");
-    expect(draw(span("2026-10-28", "2026-11-03"))).toContain(">Oct 28 – Nov 3, 2026<");
-    // A span written end first still reads from its start.
-    expect(draw(span("2026-11-12", "2026-11-01"))).toContain(">Nov 1 – 12, 2026<");
+    expect(draw(span("2026-11-12", "2026-11-01"))).toContain(">Nov 1, 2026 – Nov 12, 2026<");
   });
 
   it("follows the clock a time field names over the locale's", () => {

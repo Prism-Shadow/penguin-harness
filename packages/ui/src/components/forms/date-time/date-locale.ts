@@ -113,48 +113,19 @@ export function formatDateTime(
 }
 
 /**
- * A span of days the way the locale writes one, sharing what the two ends share:
- * 2026年11月1日至12日, Nov 1 – 12, 2026. One day reads as that day.
- *
- * Chinese is joined here: the engines' range format writes every zh-CN span in slashes
- * (2026/11/1 – 2026/11/12), whatever parts it is asked for. An engine without `formatRange` joins
- * the same way, with a dash.
+ * A span of days as its two ends, each written in full as a single date is, joined by the
+ * language's own mark: 2026年11月1日-2026年11月16日, Nov 1, 2026 – Nov 16, 2026. Both ends whole,
+ * so the reader never has to carry a year or a month over from one end to the other. One day
+ * reads as that day.
  */
-export function formatDateRange(from: CalendarDate, to: CalendarDate, locale: string): string {
-  const format = formatter(locale, DATE_PARTS);
-  const chinese = locale.toLowerCase().startsWith("zh");
-  if (!chinese && typeof format.formatRange === "function") {
-    return format.formatRange(instant(from), instant(to));
-  }
-  return joinedRange(format, from, to, chinese ? "至" : " – ");
-}
-
-/**
- * The first end in full, then the second without the year — and the month — it shares with the
- * first, where the locale writes those first: 2026年11月1日至12日, 2026年10月28日至11月3日.
- */
-function joinedRange(
-  format: Intl.DateTimeFormat,
+export function formatDateRange(
   from: CalendarDate,
   to: CalendarDate,
+  locale: string,
   separator: string,
 ): string {
-  const start = format.format(instant(from));
-  if (compareDates(from, to) === 0) return start;
-  const parts = format.formatToParts(instant(to));
-  let at = 0;
-  const drop = (type: Intl.DateTimeFormatPartTypes) => {
-    if (parts[at]?.type !== type) return;
-    at += parts[at + 1]?.type === "literal" ? 2 : 1;
-  };
-  if (from.year === to.year) {
-    drop("year");
-    if (from.month === to.month) drop("month");
-  }
-  return `${start}${separator}${parts
-    .slice(at)
-    .map((part) => part.value)
-    .join("")}`;
+  if (compareDates(from, to) === 0) return formatDate(from, locale);
+  return `${formatDate(from, locale)}${separator}${formatDate(to, locale)}`;
 }
 
 /** A weekday column's heading, short and in full, in the order the locale's week runs. */

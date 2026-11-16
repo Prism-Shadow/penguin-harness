@@ -1,8 +1,9 @@
 /**
  * A time field: the picker trigger, and the time wheels in its panel, the hour wheel taking the
- * focus. Every turn of a wheel writes the time at once; the panel closes as any popover does.
- * An empty field opens on the reader's clock now (on the minute step), and a press on the row in
- * the band, or Enter, takes that time as it is. The clock face is the locale's (2:30 PM for
+ * focus, so "1430" typed straight away sets 14:30. Every turn of a wheel writes the time at once;
+ * Done or Enter closes the panel, as does a press outside or Escape. An empty field opens on the
+ * reader's clock now (on the minute step), and a press on the row in the band, or Enter, takes
+ * that time as it is. The clock face is the locale's (2:30 PM for
  * en-US, 14:30 for zh-CN) unless `hourCycle` names one.
  *
  * The value is the native time input's `HH:mm`, "" while empty; `min` and `max` (the same format,
@@ -15,7 +16,8 @@ import { clockOf, floorToStep, parseTime, timeValue } from "./calendar-date";
 import type { ClockTime } from "./calendar-date";
 import { formatTime, hourCycleOf } from "./date-locale";
 import type { HourCycle } from "./date-locale";
-import { PickerPanel } from "./picker-panel";
+import { Button } from "../../actions/button/button";
+import { PickerFoot, PickerPanel } from "./picker-panel";
 import { PickerTrigger, usePickerPanel } from "./picker-trigger";
 import type { PickerFieldProps } from "./picker-trigger";
 import { TimeWheels } from "./time-wheels";
@@ -99,7 +101,13 @@ export function TimeField({
           locale={strings.locale}
           strings={strings}
           autoFocus
+          onEnter={picker.close}
         />
+        <PickerFoot>
+          <Button variant="ghost" size="sm" className="ml-auto" onClick={picker.close}>
+            {strings.done}
+          </Button>
+        </PickerFoot>
       </PickerPanel>
     </>
   );
