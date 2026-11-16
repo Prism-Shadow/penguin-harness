@@ -10,6 +10,6 @@ The Plugins page reads one published index today, and a deployment that also run
 
 ## Details
 
-- The sources merge into one listing first-come-first-served: the first address that registers a package provides its whole entry — description, icon, versions and install channels — and a later address listing the same package adds nothing. An address that cannot be read is named in `failures` while the rest still list.
+- The sources merge into one listing first-come-first-served: the first address that registers a package provides its whole entry — description, versions and install channels — and a later address listing the same package adds nothing. An address that cannot be read is named in `failures` while the rest still list.
 - The install face resolves a package's release channel over the same list with the same rule: the first registration of a package owns every row for it, so what an install fetches is what the listing shows.
 - An address may be `http` as well as `https` — an internal mirror or a self-hosted catalogue. The integrity hash an entry is installed by comes from the entry itself, so an address adds no way around the verification.

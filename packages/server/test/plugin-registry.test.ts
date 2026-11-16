@@ -57,7 +57,7 @@ import {
 import { indexUrlsOf } from "../src/plugin/index-config.js";
 import type { IndexDocumentEntry, PluginRegistry } from "../src/plugin/registry.js";
 import { pluginRegistryRoutes } from "../src/http/routes/plugins.js";
-import { fakeFetch, fetchFailed, jsonResponse } from "./fixtures/fetch.js";
+import { fakeFetch, fetchFailed, jsonResponse, stubFetch } from "./fixtures/fetch.js";
 import { apiClient, createTestApp, loginAdmin } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 import { contentTable } from "./plugin-fixtures.js";
@@ -965,10 +965,28 @@ describe("the route's own merge", () => {
     const routes = pluginRegistryRoutes({
       indexUrl: () => [url],
       fetchImpl: offline.fetch,
-      seed: { at: Date.now(), entries: [{ ...published, icon: '<svg onload="alert(1)"></svg>' }] },
+      seed: {
+        at: Date.now(),
+        url,
+        entries: [{ ...published, icon: '<svg onload="alert(1)"></svg>' }],
+      },
     });
     const body = (await (await routes.request("/")).json()) as PluginIndexResponse;
     expect(body.plugins.find((entry) => entry.name === published.name)).toEqual(published);
+  });
+
+  it("a parked document without its URL seeds nothing", async () => {
+    // A snapshot that does not name its source (a v1 park, before snapshots carried the
+    // URL) cannot be told apart from one of another source: it seeds no registry, so the
+    // configured source answers cold from its own fetch.
+    const served = fakeFetch(() => jsonResponse([published]));
+    const routes = pluginRegistryRoutes({
+      indexUrl: () => ["https://registry.example/index.json"],
+      fetchImpl: served.fetch,
+      seed: { at: Date.now(), entries: [published] },
+    });
+    const body = (await (await routes.request("/")).json()) as PluginIndexResponse;
+    expect(body.plugins.find((entry) => entry.name === published.name)).toBeUndefined();
   });
 
   it("a parked document seeds only the source it was fetched from", async () => {
@@ -989,6 +1007,59 @@ describe("the route's own merge", () => {
     });
     const body = (await (await routes.request("/")).json()) as PluginIndexResponse;
     expect(body.plugins.find((entry) => entry.name === published.name)).toBeUndefined();
+  });
+
+  it("the park carries the URL through the platform's swap: v1 dropped, v2 same URL kept, v2 other URL not reused", async () => {
+    // Component-level, on a real App: the PluginRegistryRoutes module boots with its
+    // dependencies there, so the platform's park (what a swap hands the successor) really
+    // carries the module's document. The migration chain is what keeps a v1 park (no URL)
+    // from seeding anything and a v2 park from seeding another source.
+    const parkedSelf = (t: TestApp) => {
+      const parked = t.boot.instance.api.park() as {
+        modules?: {
+          PluginRegistryRoutes?: { self?: { index?: { url?: string; entries?: unknown } } | null };
+        };
+      };
+      // The module's park() returns { index }: the snapshot rides under self.index.
+      return parked.modules?.PluginRegistryRoutes?.self?.index ?? undefined;
+    };
+    // A listing first, so the module's cache (and its URL) exists at all: the sources come
+    // from the settings group, and the module's cache follows them per listing.
+    // The module boots on the real App without a fetchImpl, so the registry reads the
+    // global fetch (the same stand-in the fixtures install elsewhere): the fake answers
+    // both sources the test configures, one document each.
+    const fake = stubFetch(() => jsonResponse([published]));
+    const t = await createTestApp();
+    try {
+      // A listing first, so the module's cache (and its URL) exists at all.
+      const admin = await loginAdmin(t.app);
+      const client = apiClient(t.app, admin.cookie);
+      await client.put("/api/admin/plugin-config", {
+        name: "plugin-index",
+        values: { published: true, sources: ["https://same.example/index.json"] },
+      });
+      // A listing answers in hand while the fetch runs behind it, so wait for the fetch to
+      // land before reading the park (the second listing carries the source's entries).
+      await (await client.get("/api/plugins/registry")).json();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await (await client.get("/api/plugins/registry")).json();
+      // v2, the same URL: the park names it.
+      const same = parkedSelf(t);
+      expect(same?.url).toBe("https://same.example/index.json");
+      // v2, another URL: the module's cache follows the sources, and the parked snapshot
+      // names the new one — nothing of the old source rides under the new URL.
+      await client.put("/api/admin/plugin-config", {
+        name: "plugin-index",
+        values: { published: true, sources: ["https://other.example/index.json"] },
+      });
+      await (await client.get("/api/plugins/registry")).json();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await (await client.get("/api/plugins/registry")).json();
+      expect(parkedSelf(t)?.url).toBe("https://other.example/index.json");
+    } finally {
+      vi.unstubAllGlobals();
+      await t.cleanup();
+    }
   });
 
   describe("with a published index on a slow or unreachable network", () => {

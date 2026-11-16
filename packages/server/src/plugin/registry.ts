@@ -304,8 +304,9 @@ export function selectIndexChannel(
  * version the requested one (when the caller has one) selects — fetched at most once
  * per TTL (the same cadence the Plugins page reads at) and consulted only when npm has
  * already failed on the name — installs are rare, so no standing fetch. The sources are read
- * in the configured order and their rows are concatenated, the first source's row for a
- * `name@version` staying the one the selection sees. A source that is down contributes no
+ * in the configured order and merged first-come-first-served: the first source to register a
+ * package provides every version row for it, and a later source listing the same package adds
+ * nothing (the listing's mergeIndexes rule). A source that is down contributes no
  * rows: the npm failure is the news then, not the index's silence.
  */
 export function indexChannelLookup(
@@ -730,7 +731,10 @@ export function cachedRegistry(
       .index()
       .then(
         (entries) => {
-          good = { at: now(), entries };
+          // The snapshot names the source it was fetched from: what a successor parks (and
+          // seeds) carries its URL, so a saved change of the sources cannot hand the old
+          // source's entries to the new one.
+          good = { at: now(), entries, url: inner.source };
           failed = null;
           return entries;
         },

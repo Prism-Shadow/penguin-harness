@@ -605,10 +605,12 @@ function resolveRegistries(options: PluginRoutesOptions): PluginRegistry[] {
     cachedRegistry(
       httpPluginRegistry([url, ...pluginProxyMirrors(url, mirrors)], { fetchImpl }),
       {
-        seed:
-          i === 0 && seed !== null && (seed.url === undefined || seed.url === url)
-            ? { at: seed.at, entries: seed.entries.map(withoutIcon) }
-            : null,
+        // Only a snapshot the same URL fetched seeds this registry: a parked document without
+        // its URL (a v1 park, before snapshots named their source) seeds nothing, since which
+        // source it came from is unknown.
+        seed: i === 0 && seed !== null && seed.url === url
+          ? { at: seed.at, entries: seed.entries.map(withoutIcon) }
+          : null,
       },
     ),
   );
@@ -665,9 +667,10 @@ export class PluginRegistryRoutes {
 
   park(): Json {
     const index = this.cache?.snapshot() ?? null;
-    if (index === null || this.cacheUrl === null) return null;
-    // The parked document names the source it came from, so a successor seeds only the
-    // same URL's registry — a saved change of the sources starts the new one cold.
-    return { index: { ...index, url: this.cacheUrl } } as unknown as Json;
+    if (index === null) return null;
+    // The snapshot names the source it was fetched from (cachedRegistry stamps it), so a
+    // successor seeds only the same URL's registry — a saved change of the sources starts
+    // the new one cold.
+    return { index } as unknown as Json;
   }
 }
