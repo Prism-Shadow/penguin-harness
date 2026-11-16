@@ -38,7 +38,7 @@ export interface AdminSettingsRouteDeps {
   serverSettingsRepo: Settings;
 }
 import { applyProxySettings, normalizeProxyUrl } from "../../net/proxy.js";
-import None{
+import {
   MAX_ATTACHMENT_MB,
   MIN_ATTACHMENT_MB,
 } from "@prismshadow/penguin-library-settings/attachment-limits";

@@ -22,10 +22,10 @@ import type { ClassCtx, Opaque } from "@prismshadow/penguin-core/kernel";
 import type { Hono } from "hono";
 import type { BrowserBackend, BuiltinBrowserServerEvent, UiPrefs } from "../api/types.js";
 import type { AppEnv } from "../auth/middleware.js";
-import None{
+import {
   BrowserExtensionsRepo,
 } from "@prismshadow/penguin-library-machines/repos/browser-extensions";
-import None{
+import {
   BROWSER_EXTENSIONS_KEY,
 } from "@prismshadow/penguin-library-settings/repos/server-settings";
 import type { Channels, Clock, Config, Db, Desktop, Log, Paths } from "../hmr/capabilities.js";

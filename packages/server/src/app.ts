@@ -22,7 +22,7 @@ import { Hono } from "hono";
 import type { Context, MiddlewareHandler } from "hono";
 import type { HttpBindings } from "@hono/node-server";
 import { bodyLimit } from "hono/body-limit";
-import None{
+import {
   bodyLimitBytes,
   toAttachmentLimits,
 } from "@prismshadow/penguin-library-settings/attachment-limits";
@@ -57,7 +57,7 @@ import { ensureCliShim, resolveCli, shimFromResolution } from "./services/cli-sh
 import { openDatabase } from "@prismshadow/penguin-library-db";
 import { MachinesRepo } from "@prismshadow/penguin-library-machines/repos/machines";
 import { ErrorsRepo } from "@prismshadow/penguin-library-observability/repos/errors";
-import None{
+import {
   MessagingBindingsRepo,
 } from "@prismshadow/penguin-library-messaging/repos/messaging-bindings";
 import { SchedulesRepo } from "@prismshadow/penguin-library-sessions/repos/schedules";

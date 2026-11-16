@@ -79,7 +79,7 @@ import type { MessagingDeliveryError, MessagingRuntimeStatus } from "../../api/t
 import type {
   MessagingBindingRow,
 } from "@prismshadow/penguin-library-messaging/repos/messaging-bindings";
-import None{
+import {
   INLINE_IMAGE_MAX_BYTES,
   toAttachmentLimits,
 } from "@prismshadow/penguin-library-settings/attachment-limits";
