@@ -208,14 +208,14 @@ export abstract class AgentState extends Interface<{
   /** The live Session runtimes, keyed by Session id. The entry shape is the server
    * runtime's own (session-manager's RuntimeEntry) — opaque here: the contract carries
    * the map's identity and size, the runtime owns its rows. */
-  readonly entries: Map<string, Opaque<"RuntimeEntry">>;
+  readonly entries: Map<string, unknown>;
   readonly childRoots: Map<string, string>;
   readonly locks: Map<string, Promise<unknown>>;
   readonly deletingAgents: Set<string>;
   readonly deletingSessions: Set<string>;
   readonly agentGenerations: Map<string, number>;
   /** The live fragment log: the server runtime's LiveTail, opaque to this contract. */
-  readonly liveTail: Opaque<"LiveTail">;
+  readonly liveTail: unknown;
   /** The generation working on this state right now; every generation points it at itself when it takes the state over. */
   current: RunStarter | null;
 }>() {}
