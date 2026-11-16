@@ -487,8 +487,6 @@ describe("applyUserEvent forwarding", () => {
         sessionId: "s",
         kind: "init",
       };
-import type { CompanyStreamEvent } from "../src/features/company/company-state";
-
     } finally {
       stop();
     }
@@ -500,8 +498,6 @@ import type { CompanyStreamEvent } from "../src/features/company/company-state";
     const company = createCompanyStore();
     const stop = subscribeCompanyResync(() => company.getState().resync());
     try {
-import type { CompanyStreamEvent } from "../src/features/company/company-state";
-
       // `runs` re-reads the sessions route; `orgs` the organization list and the open chart;
       // `proposals` the index a lost proposal event would have moved.
       expect(company.getState().versions).toEqual({
