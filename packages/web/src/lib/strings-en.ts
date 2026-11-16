@@ -3760,16 +3760,22 @@ export const en: Strings = {
     sortManual: "Manual order",
     sortRecent: "Most recent",
     newWorkspaceEntity: "New workspace",
-    /** A Workspace group's overflow (… right of the header "+"): browse its files; a registry-backed group adds alias rename + sidebar-only removal. */
+    /** A Workspace group's overflow (… right of the header "+"): every single-directory group can browse its files, be renamed, and be deleted (its active conversations archived). */
     workspaceMenu: "Workspace options",
     renameWorkspace: "Rename workspace",
     renameWorkspaceLabel: "Name",
     renameWorkspaceHint: "Leave empty to use the folder name",
-    deleteWorkspace: "Remove workspace",
+    deleteWorkspace: "Delete workspace",
     /** A Workspace group's "more" menu: the dock's Files panel on that directory. */
     browseWorkspaceFiles: "Browse files",
-    deleteWorkspaceConfirm: (name: string) =>
-      `Remove "${name}"? This only removes the workspace group from the sidebar — the directory on disk and existing chats are untouched, and it can be re-added anytime.`,
+    deleteWorkspaceConfirm: (name: string, count: number) =>
+      count > 0
+        ? `Delete workspace "${name}"? Its ${count === 1 ? "1 chat" : `${count} chats`} will be archived; files on disk are not touched. Unarchive any of them under Archived chats and the workspace comes back.`
+        : `Delete workspace "${name}"? It leaves the sidebar; files on disk are not touched.`,
+    deleteWorkspaceArchived: (count: number) =>
+      `Archived ${count === 1 ? "1 chat" : `${count} chats`}. Unarchive them under Archived chats.`,
+    deleteWorkspaceMachineOutdated: (machine: string) =>
+      `PenguinHarness on ${machine} is too old to delete a workspace. Update it on the Machines page first.`,
     tempWorkspaces: "Temporary workspaces",
     onMachine: (name: string, machine: string) => `${name} [SSH: ${machine}]`,
     machineTag: (machine: string) => `[SSH: ${machine}]`,
