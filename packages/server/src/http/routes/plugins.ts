@@ -403,8 +403,8 @@ export interface PluginRoutesOptions {
   fetchImpl?: typeof fetch;
   /** The published index as the previous App last fetched it (see PluginRegistryRoutes.park). */
   seed?: IndexSnapshot | null;
-  /** Receives the published index's cache, so its document can be parked. */
-  onCache?: (cache: CachedRegistry) => void;
+  /** Receives the published index's cache and the URL it reads, so its document can be parked with its source. */
+  onCache?: (cache: CachedRegistry, url: string) => void;
   /** This server's plugin prefix (`<root>/plugins`), whose server modules from a link or a zip the listing adds; none without it. */
   prefix?: () => string | null;
 }
@@ -594,9 +594,10 @@ function resolveRegistries(options: PluginRoutesOptions): PluginRegistry[] {
   if (urls.length === 0) return [builtin];
   // The parked document goes through the remote rule too: it was fetched by a previous App,
   // which may not have dropped the icons. The park carries one snapshot — the first
-  // configured source's, the primary published index — so the seed and the parking hook
-  // ride that one; a further source starts its own cache cold and answers its first fetch
-  // like any first page load.
+  // configured source's, the primary published index — named by the URL it was fetched
+  // from, and it seeds only that URL's registry: a saved change of the sources must not
+  // hand the old source's entries to the new one. A further source starts its own cache
+  // cold and answers its first fetch like any first page load.
   const seed = options.seed ?? null;
   const fetchImpl = options.fetchImpl ?? fetch;
   const mirrors = indexMirrorRules();
@@ -605,11 +606,13 @@ function resolveRegistries(options: PluginRoutesOptions): PluginRegistry[] {
       httpPluginRegistry([url, ...pluginProxyMirrors(url, mirrors)], { fetchImpl }),
       {
         seed:
-          i === 0 && seed !== null ? { at: seed.at, entries: seed.entries.map(withoutIcon) } : null,
+          i === 0 && seed !== null && (seed.url === undefined || seed.url === url)
+            ? { at: seed.at, entries: seed.entries.map(withoutIcon) }
+            : null,
       },
     ),
   );
-  if (remote.length > 0) options.onCache?.(remote[0]!);
+  if (remote.length > 0) options.onCache?.(remote[0]!, urls[0]!);
   return [builtin, ...remote];
 }
 
@@ -631,8 +634,8 @@ function resolveRegistries(options: PluginRoutesOptions): PluginRegistry[] {
     ],
   },
   context: {
-    version: 1,
-    schema: { "index?": { at: "number", entries: "unknown[]" } },
+    version: 2,
+    schema: { "index?": { at: "number", entries: "unknown[]", "url?": "string" } },
   },
 })
 export class PluginRegistryRoutes {
@@ -641,6 +644,10 @@ export class PluginRegistryRoutes {
   @Use() private readonly sources!: IndexSources;
   @Bind("PluginRegistryRoutes.routes") routes!: Hono<AppEnv>;
   private cache: CachedRegistry | null = null;
+  private cacheUrl: string | null = null;
+  /** v1 parked without the snapshot's source URL; v2 names it. A v1 snapshot seeds nothing —
+   * which source it came from is unknown, so handing it to a configured source is unsafe. */
+  migrations = { 1: () => null };
   setup(_ctx: ClassCtx, context: Json) {
     const parked = (context as { index?: IndexSnapshot } | null)?.index;
     this.routes = pluginRegistryRoutes({
@@ -649,14 +656,18 @@ export class PluginRegistryRoutes {
       bases: () => pluginBases(this.config.root, this.hmr.assetsDir()),
       prefix: () => pluginsPrefix(this.config.root),
       seed: parked ?? null,
-      onCache: (cache) => {
+      onCache: (cache, url) => {
         this.cache = cache;
+        this.cacheUrl = url;
       },
     });
   }
 
   park(): Json {
     const index = this.cache?.snapshot() ?? null;
-    return index === null ? null : ({ index } as unknown as Json);
+    if (index === null || this.cacheUrl === null) return null;
+    // The parked document names the source it came from, so a successor seeds only the
+    // same URL's registry — a saved change of the sources starts the new one cold.
+    return { index: { ...index, url: this.cacheUrl } } as unknown as Json;
   }
 }

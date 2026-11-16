@@ -331,36 +331,38 @@ export function indexChannelLookup(
       // The sources merge first-come-first-served, as the listing's mergeIndexes does: the
       // first source to register a name provides every row for it — the whole entry rides
       // that first registration, no field merging — and a later source listing the same
-      // name contributes nothing. A source that answers nothing registers nothing, so the
-      // next source to actually list the name is the one whose rows answer.
-      const entries: IndexDocumentEntry[] = [];
+      // name contributes nothing. The registration happens per SOURCE, not per row, so a
+      // source's own several versions of a package all land (the request's version picks
+      // among them, as selectIndexChannel does for a single-source index); a source that
+      // answers nothing registers nothing, so the next source to actually list the name is
+      // the one whose rows answer.
+      const rows: IndexDocumentEntry[] = [];
       const mirrors = indexMirrorRules();
       const registered = new Set<string>();
       for (const url of urls) {
         try {
-          for (const entry of await httpPluginRegistry(
+          const fromSource = await httpPluginRegistry(
             [url, ...pluginProxyMirrors(url, mirrors)],
             { fetchImpl },
-          ).index()) {
-            if (registered.has(entry.name)) continue;
-            registered.add(entry.name);
-            entries.push(entry);
-          }
+          ).index();
+          const fresh = fromSource.filter((entry) => !registered.has(entry.name));
+          for (const entry of fresh) registered.add(entry.name);
+          rows.push(...fresh);
         } catch {
           // A dead source shortens the rows this lookup sees; it does not fail the lookup.
         }
       }
       const byName = new Map<string, IndexDocumentEntry[]>();
-      for (const entry of entries) {
-        const rows = byName.get(entry.name);
-        if (rows === undefined) byName.set(entry.name, [entry]);
-        else rows.push(entry);
+      for (const entry of rows) {
+        const same = byName.get(entry.name);
+        if (same === undefined) byName.set(entry.name, [entry]);
+        else same.push(entry);
       }
       cache = { at, urls: urls.join(" "), byName };
     }
-    const rows = cache.byName.get(name);
-    if (rows === undefined) return { channel: null, fault: null };
-    const picked = selectIndexChannel(rows, version);
+    const pool = cache.byName.get(name);
+    if (pool === undefined) return { channel: null, fault: null };
+    const picked = selectIndexChannel(pool, version);
     if (picked.channel !== null) {
       const mirrors = pluginProxyMirrors(picked.channel.url, indexMirrorRules());
       if (mirrors.length > 0) picked.channel = { ...picked.channel, mirrors };
@@ -692,6 +694,8 @@ export interface IndexSnapshot {
   /** When the document was fetched (ms since the epoch). */
   at: number;
   entries: IndexDocumentEntry[];
+  /** The URL the document was fetched from; a successor only seeds the same URL's registry. */
+  url?: string;
 }
 
 /** A cached registry also hands out its last good document, for a successor to start from. */

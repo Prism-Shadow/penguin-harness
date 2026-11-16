@@ -564,6 +564,10 @@ async function bootTestApp(
     throw error;
   }
   const deps = flattenForTests(boot);
+  // Off by default: no test may reach the network to list plugins. The stored document turns
+  // the plugin-index group's switch off (the routes read it per request, so a test that
+  // exercises the index saves the values it wants and they apply at once).
+  deps.serverSettingsRepo.set("plugin-config:plugin-index", JSON.stringify({ published: false }));
   // The seed hashes and discards; tests know the password only because the config injects it.
   // With a null override there is nothing to know, and such tests never password-login.
   const adminPassword = config.seedAdminPassword ?? TEST_ADMIN_PASSWORD;

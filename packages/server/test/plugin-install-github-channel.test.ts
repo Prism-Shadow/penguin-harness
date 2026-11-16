@@ -377,6 +377,33 @@ describe("indexChannelLookup", () => {
     });
   });
 
+  it("the owning source's own several versions all stay in the pool", async () => {
+    // The first source lists two versions of the package; the second lists the name newer.
+    // Every version the first registration carries answers, and "newest" stays inside it.
+    const older = { ...entry(), version: "0.0.1" };
+    const later = [{ ...entry(), version: "9.9.9" }];
+    const fetchImpl = vi.fn(async (input: unknown) =>
+      String(input).startsWith("https://first.example/")
+        ? Response.json([older, entry()])
+        : Response.json(later),
+    );
+    let time = 0;
+    const lookup = indexChannelLookup(
+      () => ["https://first.example/index.json", "https://second.example/index.json"],
+      { fetchImpl: fetchImpl as unknown as typeof fetch, now: () => time },
+    );
+    // No version: the owning source's newest row — the later source's 9.9.9 never joins.
+    expect(await lookup("@penguinharness/language-typst")).toEqual({
+      channel: { ...channel, version: "0.0.2" },
+      fault: null,
+    });
+    // A pinned older version resolves inside the owning source's rows.
+    expect(await lookup("@penguinharness/language-typst", "0.0.1")).toEqual({
+      channel: { ...channel, version: "0.0.1" },
+      fault: null,
+    });
+  });
+
   it("answers no channel when no published index is configured", async () => {
     const lookup = indexChannelLookup(() => []);
     expect(await lookup("@penguinharness/language-typst")).toEqual({ channel: null, fault: null });

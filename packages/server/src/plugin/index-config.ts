@@ -40,9 +40,9 @@ export function indexUrlsOf(doc: Record<string, unknown>): string[] {
         title: "Plugin index",
         titleZh: "插件索引",
         description:
-          "The plugin catalogues this deployment lists and installs from: one index.json document per address, tried in the order written, the earlier address winning a package a later one also lists. Clearing every address lists the packages that ship with this server only; the integrity hash an entry is installed by comes from the entry itself, so adding an address adds no way around it.",
+          "The plugin catalogues this deployment lists and installs from: one index.json document per address, tried in the order written, the earlier address winning a package a later one also lists. With the switch on and no address saved, the published index this release ships with is read; turning the switch off lists the packages that ship with this server only, and no outbound request.",
         descriptionZh:
-          "本部署列出与安装插件时读取的目录：每个地址一份 index.json，按书写顺序尝试，同一插件由更靠前的地址提供。清空全部地址则只列出随本服务器内置的插件；安装校验用的是条目自带的完整性哈希，添加地址不产生绕过它的路径。",
+          "本部署列出与安装插件时读取的目录：每个地址一份 index.json，按书写顺序尝试，同一插件由更靠前的地址提供。开关打开且未填地址时，读取随本版本发布的索引；关闭开关则只列随本服务器内置的插件，且不发出任何网络请求。",
         switch: "published",
         properties: {
           published: {

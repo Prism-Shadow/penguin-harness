@@ -263,7 +263,9 @@ describe("/api/admin/plugin-config", () => {
     ]);
     expect(body.plugins[0]!.name).toBe("sandbox");
     const index = body.plugins.find((p) => p.name === "plugin-index")!;
-    expect(index.values).toEqual({ published: true, sources: [] });
+    // The test app stores the switch off (no test may reach the network to list plugins);
+    // the declared default beside it stays on.
+    expect(index.values).toEqual({ published: false, sources: [] });
     const mirrors = body.plugins.find((p) => p.name === "plugin-mirrors")!;
     expect(mirrors.values).toEqual({ mirrors: [] });
     expect(body.plugins.filter((p) => p.name === "acme-bot")).toEqual([
