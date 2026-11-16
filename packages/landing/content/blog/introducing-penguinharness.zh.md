@@ -110,7 +110,7 @@ PenguinHarness 为以下模型提供了预置配置：
 
 - [Discord](https://discord.gg/eFHKqqcU3D)：与我们和其他开发者实时交流。
 - [X（Twitter）](https://x.com/code_hiyouga)：关注最新动态。
-- [微信群](https://github.com/Prism-Shadow/penguin-harness-community/blob/main/wechat/group.jpg)：中文社区讨论。
+- [微信群](https://github.com/Prism-Shadow/penguin-harness-community/blob/main/assets/wechat/penguin.jpg)：中文社区讨论。
 - [GitHub](https://github.com/Prism-Shadow/penguin-harness)：Star、Issue 和 PR 都欢迎。
 
 ## 快速开始

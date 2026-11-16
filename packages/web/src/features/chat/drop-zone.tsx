@@ -26,8 +26,8 @@
  * The overlay is the UI package's `DropOverlay` veil, pure feedback: `pointer-events-none` (so
  * it never becomes the drag target itself and the hit test keeps seeing the real element
  * underneath), `aria-hidden` — it exists only during a pointer drag, and the accessible entry
- * point stays the "+" menu — and `absolute inset-0` portaled into the region, on the overlay z
- * tier (z-50).
+ * point stays the "+" menu — and `absolute inset-0` portaled into the region, on the
+ * `window-overlay` layer.
  *
  * Interplay with the app-shell guard (see lib/file-drop.ts): over the chat area this
  * component claims the drag — preventDefault on dragover plus a copy cursor — so the guard's
@@ -36,8 +36,8 @@
  * while non-file drags keep their native behavior. Both orders of the two window listeners
  * converge on the same outcome, so mount order cannot matter.
  */
-import { createContext, useContext, useEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+
 import { createPortal } from "react-dom";
 import { DropOverlay, ICONS } from "@prismshadow/penguin-ui";
 import { dropRegionAction, isFileDrag } from "../../lib/file-drop";

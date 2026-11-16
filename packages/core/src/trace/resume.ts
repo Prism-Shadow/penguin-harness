@@ -39,6 +39,11 @@ import {
   toolCallOutput,
   userText,
 } from "@prismshadow/amsp/records";
+import {
+  buildCompactionHandoff,
+  closingSpan,
+  lastCompletedReply,
+} from "../engine/compaction-carry.js";
 import { replaceInputImages } from "../engine/rejected-images.js";
 import type {
   CompactionBeginPayload,
@@ -300,11 +305,18 @@ function toolCallOutputId(msg: AmspRecord): string | null {
   return p.type === "tool_call_output" ? (p.tool_call_id ?? null) : null;
 }
 
+export interface ResumeTraceOptions {
+  /** Absolute path of the file `messages` were read from, which the rebuilt opening names. */
+  tracePath?: string;
+  /** The hand-off note's template in force at resume (see CompactionSettings.handoffNote). */
+  handoffNote?: string;
+}
+
 /**
  * Replay a Trace file (the current context), reconstructing history and carry-over input.
  * Input is the message sequence parsed by `readTraceTolerant`.
  */
-export function resumeTrace(messages: AmspRecord[]): ResumeResult {
+export function resumeTrace(messages: AmspRecord[], opts: ResumeTraceOptions = {}): ResumeResult {
   const meta = (messages.find(isSessionMeta) as SessionMetaMessage | undefined) ?? null;
   const sessionTokens = lastSessionTokens(messages);
   const lastRequestTotal = lastRequestTotalOf(messages);
@@ -330,20 +342,32 @@ export function resumeTrace(messages: AmspRecord[]): ResumeResult {
         meta,
       };
       if (p.mode !== "summarize") return result;
-      // Reconstruct the summary from the compaction request's output (the assistant text of
-      // the last completed Request). Always rebuilt in the current [context_summary] form —
-      // extractSummary itself still accepts the old <summary> tags an old Trace may contain.
-      const summaryText = extractSummary(lastCompletedRequestText(messages));
-      if (summaryText !== "") {
-        result.pendingSummary = userText(buildContextSummaryText(summaryText));
+      // The opening the live engine wrote, rebuilt by the functions it used (compaction-carry).
+      const { tracePath, handoffNote } = opts;
+      if (p.error_code === undefined && p.error_message === undefined) {
+        // A full summary: the text of the span's last completed Request, even an empty one (an
+        // earlier one is a tool round's reply, never the summary). Always rebuilt in the current
+        // [context_summary] form — extractSummary itself still accepts the old <summary> tags an
+        // old Trace may contain.
+        const summaryText = extractSummary(lastCompletedReply(closingSpan(messages)));
+        if (summaryText !== "") {
+          result.pendingSummary = userText(buildContextSummaryText(summaryText, tracePath));
+          return result;
+        }
+        // The compaction output extracts to an **empty** summary: only a pre-#83 engine could
+        // have written such a "completed" closure (a compaction never adopts an empty
+        // summary, which would erase the task state). Void the closure and fall through to
+        // turn-by-turn replay — the original context this file still holds is restored, and
+        // the committed compaction turn stays in history like any committed turn.
+      } else {
+        // The error pair: the hand-off note, from the template in force at resume (see
+        // CompactionEndPayload). A refused ordinary request's own input is not resent: the note
+        // quotes it.
+        result.pendingSummary = userText(
+          buildCompactionHandoff(messages, { tracePath, template: handoffNote }),
+        );
         return result;
       }
-      // The compaction output extracts to an **empty** summary: only a pre-#83 engine could
-      // have written such a "completed" closure (compaction now fails instead of committing an
-      // empty summary, which would erase the task state). Mirror the current contract: void
-      // the closure and fall through to turn-by-turn replay — the original context this file
-      // still holds is restored, and the committed compaction turn stays in history like any
-      // committed turn.
     }
   }
 
@@ -435,8 +459,8 @@ export function resumeTrace(messages: AmspRecord[]): ResumeResult {
         }
         // A committed request inside a compaction span enters history as usual (MMSP
         // committed it — e.g. an invalid-summary attempt of a compaction that then failed),
-        // but does not count as a Session turn: in-process only runTurn increments the
-        // counter, never runCompactionRequest.
+        // but does not count as a Session turn: in-process runTurn counts a turn only for a
+        // request outside a compaction span (`span` unset).
         if (!inCompaction) sessionTurns += 1;
         snapshot = [];
         outputs = [];
@@ -561,34 +585,4 @@ function lastRequestTotalOf(messages: AmspRecord[]): number {
     if (p.type === "token_usage" && p.request) return p.request.total;
   }
   return 0;
-}
-
-/** Concatenated assistant text of the last completed Request (on compaction closure, this is the compaction request's output). */
-function lastCompletedRequestText(messages: AmspRecord[]): string {
-  let text = "";
-  let current = "";
-  let inRequest = false;
-  for (const msg of messages) {
-    if (isRequestBegin(msg)) {
-      inRequest = true;
-      current = "";
-      continue;
-    }
-    if (isRequestEnd(msg)) {
-      {
-        // A completed request with empty text still overwrites (we take the text of “the last
-        // completed request”, even if empty) — otherwise a textless compaction output would fall
-        // back to an earlier turn's normal reply and get mistakenly injected as the summary. The
-        // caller treats the resulting empty extract as a void closure (a pre-#83 trace shape)
-        // and replays the original context instead.
-        if (msg.payload.status === "completed") text = current;
-        inRequest = false;
-      }
-      continue;
-    }
-    if (!inRequest || !isCompleteModelMessage(msg)) continue;
-    const p = msg.payload as { type?: string; role?: string; text?: string };
-    if (p.type === "text" && p.role === "assistant" && p.text) current += p.text;
-  }
-  return text;
 }

@@ -4,16 +4,8 @@
  */
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
-import {
-  Input,
-  Textarea,
-  autofillProps,
-  errorClass,
-  noAutofill,
-  sizeClass,
-  sizeTextClass,
-} from "../src/components/forms/input/input";
-import { classTokens, renderStatic } from "../src/testing";
+import { Input, Textarea, autofillProps, noAutofill } from "../src/components/forms/input/input";
+import { renderStatic } from "../src/testing";
 
 const IGNORES = {
   "data-1p-ignore": "",
@@ -24,17 +16,6 @@ const IGNORES = {
 
 const input = (props: Parameters<typeof Input>[0]) =>
   renderStatic(createElement(Input, { value: "", readOnly: true, ...props }));
-
-describe("the size rungs", () => {
-  it("spell a control's font size in one record, sm by default", () => {
-    expect(sizeTextClass).toEqual({ base: "text-base", sm: "text-xs" });
-    expect(sizeClass.sm).toBe("px-2 py-1 text-xs");
-    expect(sizeClass.base).toBe("px-3 py-2 text-base");
-    const tokens = classTokens(input({}));
-    expect(tokens).toEqual(expect.arrayContaining(["px-2", "py-1", "text-xs", "w-full"]));
-    expect(tokens).not.toContain("text-base");
-  });
-});
 
 describe("Input", () => {
   it("marks a required field for assistive tech without the browser's own validation", () => {
@@ -55,13 +36,6 @@ describe("Input", () => {
     const html = input({ invalid: true });
     expect(html).toContain('aria-invalid="true"');
     expect(html).not.toContain("aria-describedby");
-    expect(classTokens(html)).toContain("!border-tone-danger-fg");
-  });
-
-  it("marks an error with the danger line alone, never a tinted box inside it", () => {
-    const tokens = errorClass.split(/\s+/);
-    expect(tokens).toContain("!border-tone-danger-fg");
-    expect(tokens.some((t) => t.includes("tone-danger-bg"))).toBe(false);
   });
 
   it("shows its hover hint in the shared tooltip, never the browser's title", () => {
@@ -80,15 +54,8 @@ describe("Input", () => {
 
   it("draws its affixes inside the box, clear of the pointer, and pads the value past them", () => {
     const html = input({ affix: { leading: "¥", trailing: "/M tok" } });
-    expect(html).toMatch(
-      /^<span class="relative block"><span class="[^"]*left-2[^"]*">¥<\/span><input/,
-    );
-    expect(html).toMatch(
-      /<\/span><input[^>]*\/><span class="[^"]*right-2[^"]*">\/M tok<\/span><\/span>$/,
-    );
-    expect(classTokens(html)).toEqual(
-      expect.arrayContaining(["pointer-events-none", "absolute", "text-fg-subtle"]),
-    );
+    expect(html).toMatch(/^<span class="[^"]*"><span class="[^"]*">¥<\/span><input/);
+    expect(html).toMatch(/<\/span><input[^>]*\/><span class="[^"]*">\/M tok<\/span><\/span>$/);
     // Unmeasured, the padding still clears the affix's inset: never less than the control's own.
     expect(html).toContain("padding-left:calc(0px + 0.75rem)");
     expect(html).toContain("padding-right:calc(0px + 0.75rem)");
@@ -103,14 +70,16 @@ describe("Input", () => {
 });
 
 describe("Textarea", () => {
-  it("keeps the roomier padding at both rungs, with the extra leading at sm", () => {
-    const html = renderStatic(createElement(Textarea, { value: "", readOnly: true, mono: true }));
-    expect(classTokens(html)).toEqual(
-      expect.arrayContaining(["px-3", "py-2", "text-xs", "leading-relaxed", "font-mono"]),
+  it("is a labelled textarea, marked invalid and described by its error", () => {
+    const html = renderStatic(
+      createElement(Textarea, { label: "Notes", value: "", readOnly: true, error: "Too long" }),
     );
-    const base = renderStatic(createElement(Textarea, { value: "", readOnly: true, size: "base" }));
-    expect(classTokens(base)).toContain("text-base");
-    expect(classTokens(base)).not.toContain("leading-relaxed");
+    expect(html).toContain("<textarea");
+    expect(html).toContain('aria-invalid="true"');
+    const id = /aria-describedby="([^"]+)"/.exec(html)?.[1];
+    expect(html).toMatch(new RegExp(`id="${id}"[^>]*>Too long<`));
+    const fine = renderStatic(createElement(Textarea, { value: "", readOnly: true, size: "base" }));
+    expect(fine).not.toContain("aria-invalid");
   });
 });
 

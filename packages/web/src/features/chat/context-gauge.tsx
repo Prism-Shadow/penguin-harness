@@ -66,8 +66,8 @@
  * streaming reply leaves it open. It opens upward on its own: the composer sits at the bottom of
  * the page, so there is never room below.
  */
-import { useEffect, useId, useRef, useState } from "react";
-import type { RefObject } from "react";
+import { useEffect, useId, useRef, useState, type RefObject } from "react";
+
 import { createPortal } from "react-dom";
 import type { SessionContextResponse } from "@prismshadow/penguin-server/api";
 import {
@@ -91,8 +91,7 @@ import {
 } from "../../lib/context";
 import { formatPercent, humanizeTokens } from "../../lib/format";
 import { S } from "../../lib/strings";
-import { contextComposition } from "./context-parts";
-import type { ContextPartKey } from "./context-parts";
+import { contextComposition, type ContextPartKey } from "./context-parts";
 
 /**
  * Panel geometry. The width is applied inline rather than as a `w-*` class because the same
@@ -259,7 +258,7 @@ export function ContextGauge({
               maxWidth: PANEL_MAX_WIDTH,
               maxHeight: PANEL_MAX_HEIGHT,
             }}
-            className="anim-pop z-[60] overflow-y-auto rounded-md border border-gray-200 bg-white p-3 text-xs shadow-lg dark:border-gray-700 dark:bg-gray-900"
+            className="anim-pop z-popover overflow-y-auto rounded-md border border-gray-200 bg-white p-3 text-xs shadow-lg dark:border-gray-700 dark:bg-gray-900"
           >
             <ContextPanel
               sessionId={sessionId}

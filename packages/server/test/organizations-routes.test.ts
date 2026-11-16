@@ -207,7 +207,7 @@ describe("organization routes", () => {
     calls.length = 0;
     expect((await apiClient(t.app, mira.cookie).delete(path)).status).toBe(403);
     expect(calls).toEqual([]);
-    expect((await owner.delete(path)).status).toBe(204);
+    expect((await owner.delete(path)).status).toBe(200);
     expect(calls.at(-1)).toEqual({ method: "delete", args: [ownerProject, "acme"] });
     const patch = await owner.patch(`/api/projects/${ownerProject}/organizations/acme`, {
       status: "paused",

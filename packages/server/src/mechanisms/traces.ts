@@ -44,6 +44,7 @@ import type {
 import type {
   ForkTraceResult,
   HistoryTraceFile,
+  ImportedSession,
   HistoryWindowRead,
   MessagesPageRequest,
   MessagesPageResult,
@@ -219,4 +220,9 @@ export abstract class Traces {
     agentId: string,
     content: string,
   ): Promise<TraceImportResponse>;
+  abstract importSessions(
+    projectId: string,
+    agentId: string,
+    sessions: readonly ImportedSession[],
+  ): Promise<{ imported: number; skipped: string[] }>;
 }

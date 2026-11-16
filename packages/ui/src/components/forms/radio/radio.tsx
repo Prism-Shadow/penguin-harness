@@ -8,6 +8,9 @@
  * A radio group is for a small, always-visible choice whose options each need a sentence (an
  * import mode and what it does to existing data). A short choice without explanations is a
  * `Segmented`; a long one is a `Select`.
+ *
+ * Both forms of the disc carry the `ui-edge` hook, so a theme that draws its boxes' edges by hand
+ * draws this one, native or drawn, the same way.
  */
 import { useId } from "react";
 import type { InputHTMLAttributes, ReactNode } from "react";
@@ -62,7 +65,7 @@ export function RadioDisc({ on, className = "" }: { on: boolean; className?: str
   return (
     <span
       aria-hidden
-      className={`relative inline-block ${DISC_SHAPE} ${on ? DISC_ON : DISC_OFF} ${className}`}
+      className={`relative inline-block ${DISC_SHAPE} ${on ? DISC_ON : DISC_OFF} ui-edge ${className}`}
     >
       {on && <DiscDot />}
     </span>
@@ -98,7 +101,7 @@ export function Radio({
         onChange={(event) => {
           if (event.target.checked) onChange();
         }}
-        className={`${DISC_SHAPE} ${NATIVE} ${
+        className={`ui-edge ${DISC_SHAPE} ${NATIVE} ${
           checked ? DISC_ON : `${DISC_OFF} hover:border-fg-subtle`
         }`}
         {...rest}

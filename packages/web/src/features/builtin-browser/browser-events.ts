@@ -50,3 +50,19 @@ export function subscribeBuiltinBrowserResync(listener: () => void): () => void 
     resyncListeners.delete(listener);
   };
 }
+import type { UserEventHandler } from "../../state/user-events";
+
+/**
+ * The browser's handler on the user event stream (main semantics kept: only this server's
+ * browser is on screen, so a machine's events and resyncs never touch it — the candidate's
+ * server-parameterized version does not guard; this resolution guards inside the handler
+ * against main's single-server browser-events API).
+ */
+export const builtinBrowserUserEvents: UserEventHandler = {
+  event: (ev, source) => {
+    if (source === null && isBuiltinBrowserEvent(ev)) publishBuiltinBrowserEvent(ev);
+  },
+  resync: (source) => {
+    if (source === null) publishBuiltinBrowserResync();
+  },
+};

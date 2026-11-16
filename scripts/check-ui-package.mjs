@@ -14,12 +14,15 @@
  * 3. LICENSE is there, and each bundled font's licence beside the fonts.
  * 4. Installed into a project, a TSX file passing components valid props compiles under `tsc`
  *    and each line of one passing a wrong prop (the package's own type, and a dependency's) fails
- *    with TS2322; the rolled-up declarations themselves check, and none names
- *    `@prismshadow/a2ui` (bundled, a devDependency) or `@prismshadow/penguin-core`.
+ *    with TS2322; the rolled-up declarations themselves check, and none names a package the
+ *    build bundles (`@prismshadow/a2ui`, `@prismshadow/chat-markdown`, both devDependencies) or
+ *    `@prismshadow/penguin-core`.
  * 5. Components rendered with `react-dom/server` use only classes `styles.css` has a rule for.
  * 6. The runtime's manifest names files that exist, its modules import nothing a page's import
  *    map does not resolve, every module its declarations import is in its types tree, and those
  *    types give the same `tsc` results with the options the server compiles a page with.
+ * 7. `styles.css` names the theme layers first in cascade order: `ui-base`, `ui-theme`,
+ *    `ui-accent`, `ui-font`.
  *
  * Run after `pnpm --filter @prismshadow/penguin-ui build`, with the root LICENSE copied into
  * packages/ui/ as the release does before it publishes. Linux and macOS (it unpacks with `tar`).
@@ -238,11 +241,15 @@ try {
     },
     declarations,
   );
+  // The packages the build bundles are devDependencies, and core is no dependency at all: a
+  // declaration that named one would send a consumer's compiler to a package the tarball does
+  // not depend on.
+  const foreign = ["@prismshadow/a2ui", "@prismshadow/chat-markdown", "@prismshadow/penguin-core"];
   check(4, "a project's tsc accepts a valid prop and refuses a wrong one", [
     ...verdict(npmResult),
     ...declarations.flatMap((file) => {
       const text = readFileSync(file, "utf8");
-      return ["@prismshadow/a2ui", "@prismshadow/penguin-core"]
+      return foreign
         .filter((name) => text.includes(name))
         .map((name) => `${relative(installed, file)} names ${name}`);
     }),
@@ -265,6 +272,9 @@ try {
     pathToFileURL(fromProject.resolve("react-dom/server")).href
   );
   const lib = await import(pathToFileURL(join(installed, "dist/index.js")).href);
+  // A style hook is anatomy a theme pack may give a recipe or leave alone (a section hook has no
+  // rule in any built-in pack), so a hook class is no class without a rule.
+  const hooks = new Set(lib.HOOKS);
   const noop = () => {};
   const samples = {
     Button: ["primary", "secondary", "danger", "ghost", "link"].map((variant) =>
@@ -319,7 +329,14 @@ try {
     for (const cls of new Set(classes)) {
       // Tailwind's `group` and `peer` mark an element for a variant on another, and the markers
       // name an element for code that looks for it: none has a rule of its own.
-      if (/^(?:group|peer)(?:\/[\w-]+)?$/.test(cls) || MARKERS.has(cls) || ruled.has(cls)) continue;
+      if (
+        /^(?:group|peer)(?:\/[\w-]+)?$/.test(cls) ||
+        MARKERS.has(cls) ||
+        hooks.has(cls) ||
+        ruled.has(cls)
+      ) {
+        continue;
+      }
       unruled.push(`${name}: .${cls} has no rule in styles.css`);
     }
   }
@@ -403,6 +420,25 @@ try {
     ...unresolved,
     ...verdict(pageResult),
   ]);
+
+  // --- the theme layers --------------------------------------------------------------------
+  // A layer's place is where the sheet first names it, so the built sheet must name the four
+  // theme layers first in cascade order: the base under the packs, the presets over them, the
+  // font pairing last. (packages/ui/test/cascade-layers.test.ts holds the sources to it.)
+  const layerOrder = [];
+  for (const m of css.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/@layer\s+([^{;]+)[{;]/g)) {
+    for (const layer of m[1].split(",").map((s) => s.trim())) {
+      if (layer.startsWith("ui-") && !layerOrder.includes(layer)) layerOrder.push(layer);
+    }
+  }
+  const wantLayers = ["ui-base", "ui-theme", "ui-accent", "ui-font"];
+  check(
+    7,
+    "styles.css names the theme layers in cascade order",
+    layerOrder.join(",") === wantLayers.join(",")
+      ? []
+      : [`styles.css names ${layerOrder.join(", ")}; want ${wantLayers.join(", ")}`],
+  );
 } finally {
   rmSync(work, { recursive: true, force: true });
 }

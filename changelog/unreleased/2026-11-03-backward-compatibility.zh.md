@@ -41,7 +41,7 @@
 
 ### 保留期限
 
-Workbench 维护者保留这段代码与链接直到下一个大版本（1.0），并在该版本的发布准备中移除：`packages/server/src/workbenches/migrate-state.ts`、它在 `migrateWorkbenches`（`migrate.ts`）中的调用与 `test/workbench-state-migration.test.ts`；Workflow 转换已于 0.3 移除，因此 `migrateWorkbenches` 本身及其所有等待点（`workbenches/service.ts`、`services/agent-service.ts`、`http/routes/plugins.ts`、`http/routes/agent-transfer.ts`）也一并移除。这些都不随 0.3 的 Workflow 转换一起删除。1.0 的移除步骤同时删除 `<agentDir>/workbenches` 处指向 `agent_state/workbenches` 的遗留链接，因此没有任何东西比代码存在得更久。备份永远不会被代码删除。
+Workbench 维护者保留这段代码与链接直到下一个大版本（1.0），并在该版本的发布准备中移除：`packages/server/src/workbenches/migrate-state.ts`、它在 `migrateWorkbenches`（`migrate.ts`）中的调用与 `test/workbench-state-migration.test.ts`；Workflow 转换已于 0.3 移除，因此 `migrateWorkbenches` 本身及其所有等待点（`workbenches/service.ts`、`services/agent-service.ts`、`http/routes/plugins.ts`、`http/routes/agent-archive.ts`）也一并移除。这些都不随 0.3 的 Workflow 转换一起删除。1.0 的移除步骤同时删除 `<agentDir>/workbenches` 处指向 `agent_state/workbenches` 的遗留链接，因此没有任何东西比代码存在得更久。备份永远不会被代码删除。
 
 ## 兼容性
 

@@ -35,6 +35,7 @@ import type {
   SessionProcessesResponse,
   SessionResponse,
   SessionsResponse,
+  SessionsArchiveResponse,
   SessionsBatchResponse,
   SubagentMessageResponse,
   RetryNowResponse,
@@ -54,6 +55,7 @@ import { assertWorkspaceAllowed } from "../../services/workspace-guard.js";
 import { isGoalOutcome } from "../../runtime/goal-events.js";
 import { deleteSessionTree } from "../../services/session-deletion.js";
 import type { SessionDeletionDeps } from "../../services/session-deletion.js";
+import { archiveWorkspaceGroup } from "../../services/workspace-archive.js";
 import { HttpError } from "../errors.js";
 import { sseEndpoint, streamRevocation } from "../sse.js";
 import {
@@ -652,6 +654,39 @@ export function sessionsBatchRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
   return app;
 }
 
+/**
+ * Project-level entry: POST /api/projects/:p/sessions/archive — the sidebar's "delete
+ * workspace". Archives every active Session of one Workspace group (services/workspace-archive.ts),
+ * the rows the sidebar has not loaded included, in one request: the sidebar holds ten rows a
+ * group, and a group can hold hundreds. A group on a machine is asked of that machine through
+ * the proxy, which archives its own Sessions.
+ */
+export function sessionsArchiveRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
+  const app = new Hono<AppEnv>();
+
+  app.post("/", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
+    const { workspaceGroup } = await readJson(c);
+    if (typeof workspaceGroup !== "string" || workspaceGroup.trim() === "") {
+      throw badRequest("workspaceGroup must be a non-empty string.");
+    }
+    const done = await archiveWorkspaceGroup(
+      {
+        sessions: deps.sessionsRepo,
+        activeRows: (p, agentId, view) => deps.sessionService.activeRows(p, agentId, view),
+        notifyProjectUsers: (p, event) => deps.projectEvents.notifyProjectUsers(p, event),
+      },
+      projectId,
+      workspaceGroup,
+      listingViewOfRequest(c),
+    );
+    return c.json({ done } satisfies SessionsArchiveResponse);
+  });
+
+  return app;
+}
+
 /** Agent-level entry: /api/projects/:p/agents/:a/sessions. */
 export function agentSessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
@@ -1124,6 +1159,7 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
         type: "approval_request" as const,
         toolCall: p.toolCall,
         ...(p.origin !== undefined ? { origin: p.origin } : {}),
+        ...(p.reason !== undefined ? { reason: p.reason } : {}),
       })),
     ];
     return sseEndpoint(c, channel, {
@@ -1141,6 +1177,12 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     const interrupt = body.interrupt === true;
     if (interrupt && (goal || body.queueIfBusy === true)) {
       throw badRequest("interrupt cannot be combined with queueIfBusy or goal.");
+    }
+    // Steer-if-busy hands the input to the running Task, so it can neither stop that Task nor
+    // open a goal; with queueIfBusy it is redundant (a Session it cannot steer queues anyway).
+    const steerIfBusy = body.steerIfBusy === true;
+    if (steerIfBusy && (interrupt || goal)) {
+      throw badRequest("steerIfBusy cannot be combined with interrupt or goal.");
     }
     // A person starting a run is who it acts for; the API token is an agent (or a tool) on
     // somebody's behalf, and leaves the Session's driver as it was.
@@ -1187,7 +1229,7 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     // running, without queueIfBusy — never writes bytes it would then have to take back. The
     // authoritative check still runs under the Session lock inside startTask; this one is
     // lock-free and may pass on a race, which the cleanup below covers.
-    deps.manager.assertCanAcceptTask(row.sessionId, { queueIfBusy, interrupt });
+    deps.manager.assertCanAcceptTask(row.sessionId, { queueIfBusy, interrupt, steerIfBusy });
     // File attachments land in this Session's scratchpad (deleted along with the Session) and
     // are handed to the model as `[attached file: <path>]` lines on the message text. Written
     // even when the task ends up queued as a follow-up: the queued input must be complete, and
@@ -1201,17 +1243,27 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       row.sessionId,
     );
     try {
-      if (driver !== null) deps.drivers?.note(row.sessionId, driver);
+      // Steering starts no run, so a steered message leaves the driver as it was (as POST /steer
+      // does): with steerIfBusy the note waits for the outcome.
+      if (driver !== null && !steerIfBusy) deps.drivers?.note(row.sessionId, driver);
       // 202: the Task executes on the server, decoupled from the SSE connection; sessionId is the current actual id (the new id after self-heal).
-      const { sessionId, queued } = await deps.manager.startTask(row.sessionId, input, {
+      const { sessionId, queued, steered } = await deps.manager.startTask(row.sessionId, input, {
         queueIfBusy,
         interrupt,
-        // Original content, kept while the input waits in the follow-up queue so a recall
-        // (DELETE /follow-ups/:id) can hand it back; unused when the task starts directly.
+        steerIfBusy,
+        // Original content, kept while the input waits in the follow-up queue (or as undelivered
+        // steering) so a recall (DELETE /follow-ups/:id, DELETE /steer/:id) can hand it back;
+        // unused when the task starts directly.
         recall: recallStore(parsed.texts.join("\n"), parsed.images, parsed.attachments, written),
       });
-      if (driver !== null && sessionId !== row.sessionId) deps.drivers?.note(sessionId, driver);
-      return c.json({ sessionId, queued } satisfies TaskCreateResponse, 202);
+      if (driver !== null && steered !== true) {
+        if (steerIfBusy) deps.drivers?.note(row.sessionId, driver);
+        if (sessionId !== row.sessionId) deps.drivers?.note(sessionId, driver);
+      }
+      return c.json(
+        { sessionId, queued, ...(steered ? { steered } : {}) } satisfies TaskCreateResponse,
+        202,
+      );
     } catch (err) {
       // The Task never started, so nothing references these files and nothing will ever clean
       // them up — and the Web keeps the chips on failure, so the user's retry would otherwise
@@ -1782,6 +1834,12 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
         order: 255,
       },
       {
+        id: "session-api.sessions-archive",
+        prefix: "/api/projects/:projectId/sessions/archive",
+        auth: "user",
+        order: 256,
+      },
+      {
         id: "session-api.usage",
         prefix: "/api/projects/:projectId/usage",
         auth: "user",
@@ -1856,6 +1914,7 @@ export class SessionApiRoutes {
   @Bind("session-api.vault") vaultRoutes!: Hono<AppEnv>;
   @Bind("session-api.agent-sessions") agentSessionsRoutes!: Hono<AppEnv>;
   @Bind("session-api.sessions-batch") sessionsBatchRoutes!: Hono<AppEnv>;
+  @Bind("session-api.sessions-archive") sessionsArchiveRoutes!: Hono<AppEnv>;
   @Bind("session-api.usage") usageRoutes!: Hono<AppEnv>;
   @Bind("session-api.workspace-files") workspaceFilesRoutes!: Hono<AppEnv>;
   @Bind("session-api.sessions") sessionsRoutes!: Hono<AppEnv>;
@@ -1959,6 +2018,7 @@ export class SessionApiRoutes {
     this.vaultRoutes = vaultRoutes({ agentConfigService, manager, access });
     this.agentSessionsRoutes = agentSessionsRoutes(sessionsDeps);
     this.sessionsBatchRoutes = sessionsBatchRoutes(sessionsDeps);
+    this.sessionsArchiveRoutes = sessionsArchiveRoutes(sessionsDeps);
     this.usageRoutes = usageRoutes({ access, usageService: this.usage });
     this.workspaceFilesRoutes = workspaceFilesRoutes({
       access,

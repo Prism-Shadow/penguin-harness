@@ -1,0 +1,43 @@
+/*
+ * The user's accent presets (`pack.json`, `accent.presets`): E2B's orange, the accent the
+ * theme shipped with before its own went black and white, then five terminal hues — phosphor
+ * green, cyan, magenta, gold, cobalt — each deep in light for the theme's white label and bright
+ * in dark for its black ink, the way the theme's dark fills are. A preset sets `--ui-accent` and
+ * nothing else — hover, active, wash, tint and line derive from it in tokens.css, and the label
+ * ink is the theme's for the mode — so each preset is one value per mode; the
+ * orange holds across modes (black ink on it clears 4.5:1 in dark) and has no dark rule. The
+ * selectors match only Console's root, so a preset another theme lists paints nothing here.
+ */
+:root[data-theme="geek"][data-accent="orange"] {
+  --ui-accent: #e32a01;
+}
+:root[data-theme="geek"][data-accent="phosphor"] {
+  --ui-accent: #1f7a1f;
+}
+:root[data-theme="geek"][data-accent="phosphor"].dark {
+  --ui-accent: #3ddc84;
+}
+:root[data-theme="geek"][data-accent="cyan"] {
+  --ui-accent: #0e7490;
+}
+:root[data-theme="geek"][data-accent="cyan"].dark {
+  --ui-accent: #22d3ee;
+}
+:root[data-theme="geek"][data-accent="magenta"] {
+  --ui-accent: #b0177e;
+}
+:root[data-theme="geek"][data-accent="magenta"].dark {
+  --ui-accent: #ff6ac1;
+}
+:root[data-theme="geek"][data-accent="gold"] {
+  --ui-accent: #8a6d00;
+}
+:root[data-theme="geek"][data-accent="gold"].dark {
+  --ui-accent: #f2c230;
+}
+:root[data-theme="geek"][data-accent="cobalt"] {
+  --ui-accent: #003ee9;
+}
+:root[data-theme="geek"][data-accent="cobalt"].dark {
+  --ui-accent: #5696fd;
+}

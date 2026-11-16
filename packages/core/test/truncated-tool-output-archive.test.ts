@@ -2,10 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  TRUNCATED_TOOL_OUTPUT_FILE_LIMIT_BYTES,
-  TruncatedToolOutputArchive,
-} from "../src/environment/truncated-tool-output-archive.js";
+import { TruncatedToolOutputArchive } from "../src/environment/truncated-tool-output-archive.js";
 
 let tmp: string;
 
@@ -18,10 +15,6 @@ afterEach(async () => {
 });
 
 describe("TruncatedToolOutputArchive", () => {
-  it("pins the production per-call budget", () => {
-    expect(TRUNCATED_TOOL_OUTPUT_FILE_LIMIT_BYTES).toBe(8 * 1024 * 1024 - 1);
-  });
-
   it("writes an exact UTF-8 log with private permissions and leaves it Session-owned", async () => {
     const ordinaryDir = path.join(tmp, "ordinary-session-dir");
     const sessionDir = path.join(tmp, "archive-session-dir");

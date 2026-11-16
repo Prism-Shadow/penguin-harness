@@ -25,6 +25,10 @@
       "types": "./dist/plugin/index.d.ts",
       "import": "./dist/plugin/index.js"
     },
+    "./cli": {
+      "types": "./dist/cli/index.d.ts",
+      "import": "./dist/cli/index.js"
+    },
     "./context-limits": {
       "types": "./dist/llm/context-limits.d.ts",
       "import": "./dist/llm/context-limits.js"

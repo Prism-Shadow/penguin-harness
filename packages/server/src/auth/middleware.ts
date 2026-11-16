@@ -31,12 +31,10 @@ import type { OriginRule } from "../http/public-origin.js";
 import type { UserRow } from "../db/repos/users.js";
 import type { SessionVia } from "./service.js";
 import type { Auth } from "../mechanisms/identity.js";
+import { SESSION_COOKIE } from "../api/types.js";
 
-/**
- * The session cookie's name as every non-browser client spells it: the CLI, and a server
- * speaking to a machine it holds, each with a cookie jar of its own.
- */
-export const SESSION_COOKIE = "penguin_session";
+/** The session cookie's name as every non-browser client spells it (declared in the API contract). */
+export { SESSION_COOKIE };
 
 /** Browsers share cookies across ports; non-browser jars retain the legacy plain name. */
 export function sessionCookieName(requestUrl: string | URL, browser: boolean): string {

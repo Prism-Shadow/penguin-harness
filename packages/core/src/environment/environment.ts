@@ -515,8 +515,12 @@ export class Environment implements EnvironmentInterface {
 
   /** Attaches the host's session-lifetime fallback approval sink for child sessions (see EnvironmentInterface.setSubagentApprovalFallback). */
   setSubagentApprovalFallback(approve: ApproveFn): void {
-    this.subagentSessions.setApprovalFallback((toolCall) =>
-      this.bgDisposed ? Promise.resolve("deny") : approve(toolCall),
+    this.subagentSessions.setApprovalFallback((toolCall, context) =>
+      this.bgDisposed
+        ? Promise.resolve("deny")
+        : context === undefined
+          ? approve(toolCall)
+          : approve(toolCall, context),
     );
   }
 
