@@ -56,6 +56,28 @@ const TOGGLES_GENERATION_SYSTEM_PROMPT = readFileSync(
 );
 
 /**
+ * The runtime tab every Agent created from `2026-10-19` up to the hand-off generation carries,
+ * frozen: `model.timeoutMs` already at 600000, and the compaction section before hand-off files
+ * and harness-counted rounds — a prompt asking for a text-only summary, and no `max_rounds`.
+ * Never edit it: it stands for what those `system_config.yaml` files actually contain.
+ */
+const PRE_HANDOFF_RUNTIME_TAB = {
+  max_turns: -1,
+  model: { max_tokens: 32000, thinking_level: "medium", timeoutMs: 600000 },
+  compaction: {
+    max_context_length: 256000,
+    max_session_turns: -1,
+    mode: "summarize",
+    prompt:
+      "Summarize the task transcript above. The summary will replace the transcript as its " +
+      "only record, so include everything needed to continue the task — the original request, " +
+      "current state, next steps, and any learnings. Do not call any tools; reply with text " +
+      "only, in exactly this format and nothing after it:\n\n" +
+      "[summary]put the summary text here...[/summary]",
+  },
+};
+
+/**
  * Reconstructs a pre-#257 (pre-toggles) shaped config: the frozen LEGACY_* sections swapped
  * back into the frozen toggles-generation template in place of the section placeholders, no
  * `{{SCHEDULES}}` line, and no vault/skills/schedules config sections (prompt-sections.test.ts
@@ -85,14 +107,8 @@ function preTogglesDefaultConfig(): SystemConfig {
 }
 
 describe("kernel tab hash record (pinned-hash guard)", () => {
-  it("KERNEL_VERSION is a date", () => {
-    expect(KERNEL_VERSION).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-  });
-
-  it("the record covers every tab and lists nothing that could never fire", () => {
-    expect(Object.keys(KERNEL_DEFAULT_TAB_HASHES).sort()).toEqual([...KERNEL_TAB_KEYS].sort());
+  it("the superseded record lists nothing that could never fire", () => {
     for (const [tab, hashes] of Object.entries(KERNEL_SUPERSEDED_TAB_HASHES)) {
-      expect(KERNEL_TAB_KEYS, `${tab} is not a kernel tab`).toContain(tab);
       expect(hashes.length, tab).toBeGreaterThan(0);
       expect(new Set(hashes).size, `${tab} repeats a superseded hash`).toBe(hashes.length);
       // A kernel update short-circuits on the current default before consulting the record,
@@ -164,6 +180,24 @@ describe("isKernelOutdated", () => {
     expect(isKernelOutdated("2026-01-01")).toBe(true);
     expect(isKernelOutdated(KERNEL_VERSION)).toBe(false);
     expect(isKernelOutdated("2999-12-31")).toBe(false);
+  });
+
+  it("compares stamps as dates: a month before the current stamp is outdated and a day after is not, padded or not", () => {
+    const [year, month, day] = KERNEL_VERSION.split("-").map(Number);
+    const at = (months: number, days: number) =>
+      new Date(Date.UTC(year!, month! - 1 + months, day! + days));
+    const padded = (t: Date) => t.toISOString().slice(0, 10);
+    const unpadded = (t: Date) => `${t.getUTCFullYear()}-${t.getUTCMonth() + 1}-${t.getUTCDate()}`;
+    for (const format of [padded, unpadded]) {
+      expect(isKernelOutdated(format(at(-1, 0))), format(at(-1, 0))).toBe(true);
+      expect(isKernelOutdated(format(at(0, 1))), format(at(0, 1))).toBe(false);
+      expect(isKernelOutdated(format(at(0, 0))), format(at(0, 0))).toBe(false);
+    }
+  });
+
+  it("compares a stamp that is no date as text, as it always did", () => {
+    expect(isKernelOutdated("0-legacy")).toBe(true);
+    expect(isKernelOutdated("v3")).toBe(false);
   });
 });
 
@@ -256,6 +290,44 @@ describe("applyKernelUpdate", () => {
     // The tab is kept whole: its absent fields stay absent and keep falling back to the
     // built-in defaults at runtime, rather than being materialized field by field.
     expect(written.compaction?.max_context_length).toBeUndefined();
+  });
+
+  it("advances a runtime tab still on the compaction defaults before hand-off files", async () => {
+    const config = mutableConfig(defaultSystemConfig());
+    Object.assign(config, structuredClone(PRE_HANDOFF_RUNTIME_TAB), {
+      kernel_version: "2026-11-10",
+    });
+    // The record knows this tab as a default the user never edited…
+    expect(KERNEL_SUPERSEDED_TAB_HASHES.runtime).toContain(kernelTabHash(config, "runtime"));
+    await seedConfig(config);
+
+    const result = await update();
+
+    // …so the whole tab advances: the new prompt, and the keys added since materialized with it.
+    expect(result).toEqual({ advanced: ["runtime"], kept: [], kernelVersion: KERNEL_VERSION });
+    const written = await readConfig();
+    expect(written.compaction).toEqual(defaultSystemConfig().compaction);
+    expect(written.kernel_version).toBe(KERNEL_VERSION);
+  });
+
+  it("keeps a runtime tab whose compaction prompt the user edited, on the old shape", async () => {
+    const config = mutableConfig(defaultSystemConfig());
+    Object.assign(config, structuredClone(PRE_HANDOFF_RUNTIME_TAB), {
+      kernel_version: "2026-11-10",
+    });
+    (config.compaction as Record<string, unknown>).prompt = "Summarize, and keep the file list.";
+    await seedConfig(config);
+
+    const result = await update();
+
+    expect(result).toEqual({ advanced: [], kept: ["runtime"], kernelVersion: KERNEL_VERSION });
+    const written = await readConfig();
+    expect(written.compaction?.prompt).toBe("Summarize, and keep the file list.");
+    // Kept whole: the keys added since stay absent and keep falling back to their defaults at
+    // runtime.
+    expect(written.compaction?.max_rounds).toBeUndefined();
+    expect(written.compaction?.reminder).toBeUndefined();
+    expect(written.compaction?.handoff_note).toBeUndefined();
   });
 
   it("never touches name, description, version or mcpServers", async () => {

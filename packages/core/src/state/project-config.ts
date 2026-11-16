@@ -33,6 +33,7 @@ import type {
   CommandPolicyRule,
   ThinkingLevelName,
 } from "../interfaces/index.js";
+import { SUBAGENT_THINKING_LEVELS } from "../interfaces/index.js";
 import { atomicWriteFile } from "../internal/atomic-write.js";
 import { DEFAULT_COMMAND_POLICY_RULES } from "./command-policy-defaults.js";
 import { canonicalClientType, sameClientType } from "./client-type.js";
@@ -154,15 +155,12 @@ export type ChatApprovalMode = (typeof CHAT_APPROVAL_MODES)[number];
  * Thinking levels storable in `[default_chat]`: the selectable tiers only — never
  * `"none"` (the project default is a fallback for Agents without an explicit level, and
  * "no thinking" is not offered as a default; see the web picker's SELECTABLE_THINKING_LEVELS).
+ * One ladder with the levels `run_subagent` takes (SUBAGENT_THINKING_LEVELS), so the two cannot
+ * disagree.
  */
 export type DefaultChatThinkingLevel = Exclude<ThinkingLevelName, "none">;
-export const DEFAULT_CHAT_THINKING_LEVELS: readonly DefaultChatThinkingLevel[] = [
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-];
+export const DEFAULT_CHAT_THINKING_LEVELS: readonly DefaultChatThinkingLevel[] =
+  SUBAGENT_THINKING_LEVELS;
 
 /**
  * New-chat defaults (`[default_chat]`): per-Project prefill for newly created chats.
@@ -607,7 +605,8 @@ function parseDefaultChat(value: unknown): ProjectChatDefaults | undefined {
  * that is not an array reads as absent, i.e. the factory set. A present array is the
  * literal list — invalid entries are dropped individually, which can narrow the deny set,
  * but the write paths validate up front and the file is never hand-edited by design, so
- * this only fires for hand-placed data.
+ * this only fires for hand-placed data. A rule's `action` other than `"deny"` / `"ask"`
+ * reads as absent, i.e. `deny` (the safe direction again).
  *
  * Exported for the server's ProjectConfigService, which holds a cached parse of the same
  * file — the same sharing rule as projectConfigFromTable, so the two paths can never
@@ -752,6 +751,7 @@ export function parseCommandPolicy(value: unknown): CommandPolicyConfig | undefi
           ? { description: r.description }
           : {}),
         ...(typeof r.enabled === "boolean" ? { enabled: r.enabled } : {}),
+        ...(r.action === "deny" || r.action === "ask" ? { action: r.action } : {}),
       });
     }
     out.rules = rules;

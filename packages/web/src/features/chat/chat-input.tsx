@@ -81,8 +81,13 @@ import {
   useMemo,
   useRef,
   useState,
+  type ChangeEvent,
+  type ClipboardEvent,
+  type KeyboardEvent,
+  type ReactNode,
+  type RefObject,
 } from "react";
-import type { ChangeEvent, ClipboardEvent, KeyboardEvent, ReactNode, RefObject } from "react";
+
 import type {
   AgentSummary,
   ApprovalMode,
@@ -121,9 +126,12 @@ import {
   noAutofill,
   toastError,
   toastInfo,
+  type MenuSelectOption,
+  type TagInputChip,
 } from "@prismshadow/penguin-ui";
-import type { MenuSelectOption, TagInputChip } from "@prismshadow/penguin-ui";
+
 import { S } from "../../lib/strings";
+import { useAgentAvatarSrc } from "../../lib/agent-avatar";
 import { formatBytes, humanizeTokens } from "../../lib/format";
 import { fitTextarea } from "../../lib/textarea-fit";
 import { useLocale } from "../../state/locale";
@@ -131,18 +139,26 @@ import { useAuth } from "../../state/auth";
 import { agentDisplayName } from "../../state/project";
 import { PermissionSelect } from "./permission-select";
 import type { PermissionPick } from "../../lib/permission-level";
-import { SkillIcon } from "../skills/skill-icon-view";
-import { SkillPickList } from "../skills/skill-pick-list";
-import { toggleSkillName } from "../skills/skill-selection";
-import { sameModelRef } from "../models/model-grouping";
+import { SkillIcon, SkillPickList, toggleSkillName } from "../skills";
+import { sameModelRef } from "../models";
 import { filterAgents, stagedSendRoute } from "./agent-handoff";
-import { employeesLast, isEmployee } from "../agents/agent-employment";
-import { ModelCatalogSelect, modelLabel } from "./model-select";
-import { ModelPickerModal } from "./model-picker-modal";
+import { employeesLast, isEmployee } from "../agents";
+import {
+  ModelCatalogSelect,
+  ModelPickerModal,
+  SELECTABLE_THINKING_LEVELS,
+  ThinkingLevelSelect,
+  modelLabel,
+  thinkingLevelLabel,
+} from "../model-picker";
 import { sessionModelPickerDisabled } from "./model-switch";
 import { matchSlash, removeSlashToken } from "./slash-token";
-import { ThinkingLevelSelect } from "./thinking-level-select";
-import { BOOK_ICON, buildSkillsMessage, localizedShortText, skillSlashItems } from "./skill-use";
+import {
+  BOOK_ICON,
+  buildSkillsMessage,
+  localizedShortText,
+  skillSlashItems,
+} from "../../lib/skill-use";
 import { GOAL_ICON, UNLIMITED_BUDGET, parseBudgetInput } from "./goal-use";
 import { useGoalPluginGate } from "./goal-plugin-gate";
 import type { GoalPluginGate } from "./goal-plugin-gate";
@@ -153,12 +169,13 @@ import {
   caretOnLastLine,
   historyStepBack,
   historyStepForward,
+  type HistoryStep,
 } from "./input-history";
-import type { HistoryStep } from "./input-history";
+
 import { isStopAction, midRunAction } from "./composer-send";
+import { composerNotice } from "./composer-notice";
 import { FileDropZone } from "./drop-zone";
 import { ContextGauge } from "./context-gauge";
-import { modelWindowBelowCompactionLimit } from "../../lib/context";
 import { splitDroppedFiles } from "../../lib/file-drop";
 import { isLongPaste, longPasteFileName } from "../../lib/long-paste";
 import { splitBySize } from "../../lib/upload-limits";
@@ -180,8 +197,11 @@ function AgentMenuList({
   agents,
   currentAgentId,
   onPick,
+  avatarSrc,
 }: {
   agents: AgentSummary[];
+  /** Each Agent's own picture (lib/agent-avatar.ts), on the machine the list lives on. */
+  avatarSrc: (agentId: string) => string | undefined;
   /** The Agent this conversation already belongs to (marked ✓); undefined while it is unknown. */
   currentAgentId?: string;
   onPick: (agent: AgentSummary) => void;
@@ -203,9 +223,9 @@ function AgentMenuList({
         <>
           <AgentAvatar
             id={a.agentId}
-            name={agentDisplayName(a)}
             size={16}
             className="shrink-0 rounded"
+            src={avatarSrc(a.agentId)}
           />
           <span className="shrink-0 font-mono text-gray-800 dark:text-gray-200">{a.agentId}</span>
           {a.name && a.name !== a.agentId && (
@@ -538,15 +558,13 @@ export interface ComposerControl {
 }
 
 /**
- * Small-window notices already put down, keyed Session + model, for the rest of the tab session.
+ * Attention notices already put down, for the rest of the tab session (keys: `composerNotice`).
  *
  * Module state rather than storage: the notice reports a live mismatch between two settings, so
  * a dismissal should not outlive the tab that saw it — reopening the app after changing either
- * side deserves a fresh answer. Keyed by model as well as Session because switching the
- * conversation onto another model is exactly the case where the mismatch may no longer hold, or
- * may hold with different numbers.
+ * side deserves a fresh answer.
  */
-const dismissedWindowNotices = new Set<string>();
+const dismissedNotices = new Set<string>();
 
 export function ChatInput({
   status,
@@ -579,6 +597,7 @@ export function ChatInput({
   compactionLimit,
   onChangeCompactionLimit,
   onOpenAgentSettings,
+  refusalHandoff,
   contextNow,
   contextStale = false,
   sessionId,
@@ -590,6 +609,7 @@ export function ChatInput({
   modeSaving,
   autoFocus,
   agents,
+  agentsMachineId = null,
   currentAgentId,
   skills,
   initialSkills,
@@ -756,8 +776,10 @@ export function ChatInput({
   compactionLimit?: number;
   /** Writes a new compaction threshold to the Session's Agent and re-reads `compactionLimit` from it: what the context panel's threshold cutter commits through. Absent wherever no Agent config is at hand, leaving the cutter a readout. */
   onChangeCompactionLimit?: (maxContextLength: number) => Promise<void>;
-  /** Opens the Session Agent's settings, where the compaction threshold is edited: the small-window notice's action. */
+  /** Opens the Session Agent's settings, where the compaction threshold is edited: the attention notice's action. */
   onOpenAgentSettings?: () => void;
+  /** The Session's refusal hand-off occurrence (`refusalHandoffOccurrence`), raising its notice; absent off session state. */
+  refusalHandoff?: string | null;
   /** Current context usage (total of the most recent main-session Request). */
   contextNow: number;
   /** After a successful compaction, before the next regular Request reports usage: usage is **unknown** (not 0); the ring is drawn empty and the value shown as `—`. */
@@ -787,6 +809,8 @@ export function ChatInput({
   autoFocus?: boolean;
   /** Agent list of the current Project: the `/agent` command's candidates (without any, the command isn't offered). */
   agents: AgentSummary[];
+  /** The machine `agents` lives on, for their pictures; null (the default) for this server. */
+  agentsMachineId?: string | null;
   /** The Agent this composer already belongs to (the Session's, or the draft's selection): marked as the current entry in the `/agent` picker. */
   currentAgentId?: string;
   /**
@@ -863,6 +887,7 @@ export function ChatInput({
   controlRef?: RefObject<ComposerControl | null>;
 }) {
   const { locale } = useLocale();
+  const avatarSrc = useAgentAvatarSrc();
   // Admin-settable, delivered on /api/me: the pre-flight checks below and the numbers in their
   // messages both come from here, so what the composer refuses is exactly what the server would.
   const { uploadLimits } = useAuth();
@@ -1105,26 +1130,17 @@ export function ChatInput({
     const m = models?.find((x) => sameModelRef(x, modelRef));
     return m ? modelLabel(m) : (modelRef?.modelId ?? "…");
   })();
-  // The model cannot hold what the Agent is configured to compact at. Raised only in session
-  // state, where a Session id gives the dismissal a key and `/compact` is available to act on
-  // the advice; the draft composer has neither.
-  const windowNoticeKey =
-    sessionId !== undefined && modelRef
-      ? `${sessionId}\u0000${modelRef.provider}\u0000${modelRef.modelId}`
-      : null;
-  const [windowNoticeDismissed, setWindowNoticeDismissed] = useState(false);
-  // Re-read on every key change (a `/model` fork, a new Session) so a dismissal that belongs to
-  // another pairing never suppresses this one, and one that belongs to this pairing survives a
-  // trip away and back.
-  useEffect(() => {
-    setWindowNoticeDismissed(
-      windowNoticeKey !== null && dismissedWindowNotices.has(windowNoticeKey),
-    );
-  }, [windowNoticeKey]);
-  const windowNoticeOpen =
-    windowNoticeKey !== null &&
-    !windowNoticeDismissed &&
-    modelWindowBelowCompactionLimit(contextWindow, compactionLimit);
+  // Read from the module set at every render, so a dismissal survives a trip away and back and
+  // never suppresses another Session's or model's notice; a dismissal bumps the counter to render.
+  const [, setDismissals] = useState(0);
+  const attention = composerNotice({
+    sessionId,
+    model: modelRef,
+    refusalHandoff,
+    contextWindow,
+    compactionLimit,
+    dismissed: dismissedNotices,
+  });
   // The Agent the threshold confirmation is about to name. Its display name where it has one,
   // else the id, which is the same fallback the `/agent` picker draws rows with.
   const currentAgent = agents.find((a) => a.agentId === currentAgentId);
@@ -2031,9 +2047,9 @@ export function ChatInput({
             glyph: (
               <AgentAvatar
                 id={target.agentId}
-                name={agentDisplayName(target)}
                 size={13}
                 className="shrink-0 rounded-sm"
+                src={avatarSrc(target.agentId, agentsMachineId)}
               />
             ),
             tooltip: S.chat.handoffTargetTitle(agentDisplayName(target)),
@@ -2209,17 +2225,17 @@ export function ChatInput({
             agents={agents}
             {...(currentAgentId !== undefined ? { currentAgentId } : {})}
             onPick={pickHandoffTarget}
+            avatarSrc={(agentId) => avatarSrc(agentId, agentsMachineId)}
           />
         </SlashPicker>
       )}
 
-      {/* The Agent's compaction threshold is above what this model can hold, so compaction fires
-          at the window's edge instead of at the number the user set. Amber rather than muted
+      {/* A setting needs changing (`composerNotice` says which). Amber rather than muted
           body text like the notices below it: the other two describe what the composer is about
           to do, this one asks for a settings change, and `attention` is the tone for a thing
           waiting on the user. Dismissible, because keeping the threshold high on purpose is a
           legitimate answer and a notice with no way down stops being read. */}
-      {windowNoticeOpen && contextWindow !== undefined && compactionLimit !== undefined && (
+      {attention !== null && (
         // The shared notice: its buttons keep their labels whole, so where the sentence would
         // be left a few characters a line beside them (a phone at a large text size), they
         // drop to a row of their own instead.
@@ -2229,8 +2245,8 @@ export function ChatInput({
           dismiss={{
             label: S.chat.contextWindowUnderThresholdDismiss,
             onClick: () => {
-              if (windowNoticeKey !== null) dismissedWindowNotices.add(windowNoticeKey);
-              setWindowNoticeDismissed(true);
+              dismissedNotices.add(attention.key);
+              setDismissals((n) => n + 1);
             },
           }}
           {...(onOpenAgentSettings
@@ -2242,10 +2258,12 @@ export function ChatInput({
               }
             : {})}
         >
-          {S.chat.contextWindowUnderThreshold(
-            humanizeTokens(contextWindow),
-            humanizeTokens(compactionLimit),
-          )}
+          {attention.kind === "refused"
+            ? S.chat.contextRefusedHandoff
+            : S.chat.contextWindowUnderThreshold(
+                humanizeTokens(attention.window),
+                humanizeTokens(attention.threshold),
+              )}
         </Notice>
       )}
 

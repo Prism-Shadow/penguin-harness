@@ -8,7 +8,7 @@ Install the `penguin` command with one line, configure a model, and run your fir
 ## Before you begin
 
 - Linux or macOS (x64 or arm64), or Windows 10 or later (x64) with PowerShell 5.1 or later. The installers for these platforms bundle an official Node.js runtime, so you don't need Node.js on the machine.
-- Node.js >= 24, if you install with npm, build from source, or use another platform.
+- Node.js >= 24, if you install with npm, build from source, or use another platform. On an older Node the CLI and the server stop at start and name the version they found.
 - An API key for one model provider.
 
 ## Install the CLI

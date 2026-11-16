@@ -19,6 +19,7 @@ import type {
   SkillContribution,
   WorkbenchContribution,
 } from "./library.js";
+import { ICON_EXTENSIONS_TEXT, iconFormatOfName } from "./icon-format.js";
 import { PLUGIN_NAME_PATTERN, PLUGIN_VERSION_PATTERN } from "./package-json.js";
 import type { PluginTable } from "./table.js";
 
@@ -146,8 +147,11 @@ function readCard(table: PluginTable, warnings: string[]): LibraryContributions[
   }
   const icon = text(entry.icon, `${at}.icon`, warnings);
   if (icon !== undefined) {
-    if (/\.svg$/i.test(icon)) card.icon = icon;
-    else warnings.push(`${at}.icon must be the path of an .svg file in the package; ignored`);
+    if (iconFormatOfName(icon) !== null) card.icon = icon;
+    else
+      warnings.push(
+        `${at}.icon must be the path of a ${ICON_EXTENSIONS_TEXT} file in the package; ignored`,
+      );
   }
   if (entry.preinstall !== undefined) {
     if (typeof entry.preinstall === "boolean") card.preinstall = entry.preinstall;

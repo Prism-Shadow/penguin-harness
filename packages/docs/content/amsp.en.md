@@ -224,8 +224,9 @@ Inside the stream, a failure is a record's `error_code` and `error_message`: on 
 | `malformed` | The model's response failed to parse or was cut short |
 | `output_truncated` | The model's response stopped at its output limit: not committed, and retried |
 | `auth` | The provider refused the credentials |
-| `rejected` | The provider refused the request for good (parameters, quota) |
-| `image_rejected` | The provider rejected (4xx) a request whose input holds images; the engine takes any such rejection as the images' and reads nothing out of the wording. The images are replaced with a fixed note and the request retried at once, the provider's error quoted in the retry's `[request_error]` line (`retryable` with `retry_in_ms: 0`) |
+| `rejected` | The provider refused the request as sent (HTTP 400, 413, 415 or 422), for instance its parameters or its length. On a context that has completed a turn the engine hands the context off and sends the turn again (`retryable` with `retry_in_ms: 0`, then a compaction span with no request) |
+| `denied` | The provider will not serve this account or model: any other definitive 4xx, such as 402 (balance), 403 (permission) or 404 (no such model) |
+| `image_rejected` | The provider refused (`rejected`) a request whose input holds images; the engine takes any such refusal as the images' and reads nothing out of the wording. The images are replaced with a fixed note and the request retried at once, the provider's error quoted in the retry's `[request_error]` line (`retryable` with `retry_in_ms: 0`) |
 | `unsupported` | The request asked for something the model cannot do |
 | `invalid_input` | The input could not be assembled into a request |
 | `connect_failed` | An MCP server failed to connect |

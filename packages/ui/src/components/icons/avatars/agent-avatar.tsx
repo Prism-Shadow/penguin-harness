@@ -1,48 +1,85 @@
 /**
- * An agent's avatar: its initial as coloured ink on a light tinted tile (the letter-tile style
- * `ProviderLogo` also draws for user-defined model groups).
+ * An Agent's avatar: its own picture when it has one (`src`), else its default avatar — the
+ * Agent mascot, the smiling ball penguin, painted in the Agent's colours (agent-avatar-variants.tsx,
+ * agent-palette.ts). The default is what an Agent is drawn as wherever it has no picture of its
+ * own, and wherever its picture fails to load.
  *
- * The colour hashes the agent's id — not its display name — so it survives renames; the initial
- * comes from the display name when the caller has one, falling back to the id. The ink follows
- * the colour scheme through one `light-dark()` value, keeping ≥ 4.5:1 on the tile for every hue
- * in both modes (see `avatar.ts`).
+ * The default is drawn in every theme's style at once and carries the `ui-avatar` hook: each
+ * drawing is a direct child `<g data-variant="…">`, the foundation shows the `flat` one, and a
+ * pack with a drawing of its own swaps it in from its recipes — so the avatar follows a theme
+ * switch the moment the root's attribute changes, and a theme without a drawing shows Primer's.
+ * The component never asks which theme is active. `variant` pins one drawing whatever the theme
+ * (a theme preview, the gallery's board), and then the hook is left off.
+ *
+ * A picture is the host of the same hook, so a theme that treats the avatar's box treats both
+ * alike. It keeps the Agent's tile — the flat drawing's rounded square, at the rendered size —
+ * rather than an account's circle, so an Agent and a person stay told apart at a glance.
+ *
+ * The colour hashes the Agent's id — never its display name — so it survives renames, and every
+ * drawing paints the same colours and the same smiling face, so it survives theme switches too. No
+ * initial is drawn: every place an avatar sits shows the Agent's name beside it or on hover, and
+ * at the 14–18 px most avatars are drawn at, a letter and a penguin do not both fit.
  */
-import { avatarInitial, avatarTile } from "./avatar";
+import { useState } from "react";
+import { AGENT_AVATAR_VARIANTS, AGENT_AVATAR_VARIANT_NAMES } from "./agent-avatar-variants";
+import type { AgentAvatarVariant } from "./agent-avatar-variants";
+import { agentColors } from "./agent-palette";
+
+/** The Agent tile's corner at `size` px: the flat drawing's `rx="5"` on its 24-unit box. */
+export const agentTileRadius = (size: number): number => (size * 5) / 24;
 
 export function AgentAvatar({
   id,
-  name,
   size = 18,
   className,
+  variant,
+  src,
 }: {
   id: string;
-  /** Display name supplying the initial; omitted, the id's initial is used. */
-  name?: string;
   size?: number;
   className?: string;
+  /** One drawing whatever the theme; omitted, the active theme's. */
+  variant?: AgentAvatarVariant;
+  /** The Agent's own picture, as a URL; absent — or once it fails to load — the default is drawn. */
+  src?: string | undefined;
 }) {
-  const tile = avatarTile(id);
+  /** The picture that failed to load: a new `src` is tried afresh. */
+  const [failed, setFailed] = useState<string | null>(null);
+  const hook = variant === undefined ? "ui-avatar" : "";
+  if (src !== undefined && src !== failed) {
+    return (
+      // Decorative, like the drawing: the name beside the avatar is what names the Agent.
+      <img
+        src={src}
+        alt=""
+        width={size}
+        height={size}
+        draggable={false}
+        onError={() => setFailed(src)}
+        className={`${hook} object-cover ${className ?? ""}`}
+        style={{ width: size, height: size, borderRadius: agentTileRadius(size) }}
+      />
+    );
+  }
+  const colors = agentColors(id);
+  const drawn = variant === undefined ? AGENT_AVATAR_VARIANT_NAMES : [variant];
   return (
     <svg
       width={size}
       height={size}
       viewBox="0 0 24 24"
-      className={className}
+      className={`${hook} ${className ?? ""}`}
       aria-hidden
       role="img"
     >
-      <rect x="0" y="0" width="24" height="24" rx="5" fill={tile.bg} />
-      <text
-        x="12"
-        y="12"
-        textAnchor="middle"
-        dominantBaseline="central"
-        fontSize="13"
-        fontWeight="700"
-        style={{ fill: tile.ink }}
-      >
-        {avatarInitial(name ?? "", id)}
-      </text>
+      {drawn.map((name) => {
+        const Drawing = AGENT_AVATAR_VARIANTS[name];
+        return (
+          <g key={name} data-variant={name}>
+            <Drawing colors={colors} size={size} />
+          </g>
+        );
+      })}
     </svg>
   );
 }

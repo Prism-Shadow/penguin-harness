@@ -5,8 +5,6 @@
  * both inks the tile's one `light-dark()` value carries keep ≥ 4.5:1 against the tinted tile over
  * every surface the themes declare, for all 360 hues.
  */
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   avatarHue,
@@ -14,19 +12,18 @@ import {
   avatarTile,
   avatarTileOfHue,
 } from "../src/components/icons/avatars/avatar";
-import { DEFAULT_THEME_ID, THEME_IDS, THEME_MODES } from "../src/tokens";
+import { INITIAL_THEME_ID, THEME_IDS, THEME_MODES } from "../src/tokens";
 import type { ThemeId, ThemeModeName } from "../src/tokens";
 import {
   BLACK,
   WHITE,
-  analyzeThemeFile,
+  analyzePack,
   composite,
   contrastRatio,
   parseColor,
   resolveThemeValue,
 } from "../src/testing";
 import type { ThemeFileAnalysis } from "../src/testing";
-import { SRC_DIR } from "./helpers/paths";
 
 describe("avatarHue / avatarTile", () => {
   it("is deterministic for the same key", () => {
@@ -94,10 +91,10 @@ describe("avatarInitial", () => {
 // ---- WCAG contrast of the initial ink on the tinted tile (every theme, both modes, all hues) ----
 
 /**
- * The surfaces a tile sits on, per theme and mode, read from the theme files: the page, a card
+ * The surfaces a tile sits on, per theme and mode, read from the theme packs: the page, a card
  * and the muted fill of a list, plus the gray steps the app still paints list grounds, row hovers
  * and selected rows with (white, gray-50 and gray-100 in light; gray-900, 800 and 700 in dark). A
- * theme that declares no gray bridge of its own falls back to the default theme's, as the
+ * pack that declares no gray bridge of its own falls back to the base's (Frost's), as the
  * cascade does.
  */
 const SURFACES: Readonly<Record<ThemeModeName, readonly string[]>> = {
@@ -120,30 +117,28 @@ const SURFACES: Readonly<Record<ThemeModeName, readonly string[]>> = {
 };
 
 function themeAnalysis(id: ThemeId): ThemeFileAnalysis | null {
-  const path = join(SRC_DIR, "themes", `${id}.css`);
-  if (!existsSync(path)) return null;
-  const analysis = analyzeThemeFile(readFileSync(path, "utf8"), id);
+  const analysis = analyzePack(id);
   return analysis.isStub ? null : analysis;
 }
 
 describe("avatarTile contrast (WCAG AA)", () => {
-  const defaultTheme = themeAnalysis(DEFAULT_THEME_ID);
+  const baseTheme = themeAnalysis(INITIAL_THEME_ID);
 
-  it("reads the default theme", () => {
-    expect(defaultTheme).not.toBeNull();
+  it("reads the base theme", () => {
+    expect(baseTheme).not.toBeNull();
   });
 
   for (const id of THEME_IDS) {
     const theme = themeAnalysis(id);
-    if (theme === null || defaultTheme === null) {
-      it.skip(`${id} — PENDING: themes/${id}.css declares no tokens yet`, () => {});
+    if (theme === null || baseTheme === null) {
+      it.skip(`${id} — PENDING: themes/${id}/ declares no tokens yet`, () => {});
       continue;
     }
     for (const mode of THEME_MODES) {
       it(`${id} ${mode}: the initial keeps ≥ 4.5:1 on the tile, for every hue on every surface`, () => {
         const failures: string[] = [];
         const surfaces = SURFACES[mode].flatMap((name) => {
-          const value = resolveThemeValue(name, mode, theme, defaultTheme);
+          const value = resolveThemeValue(name, mode, theme, baseTheme);
           const color = value === null ? null : parseColor(value);
           if (color === null) {
             failures.push(`${name} does not resolve to a colour (${String(value)})`);

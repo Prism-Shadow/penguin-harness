@@ -1,34 +1,65 @@
 /**
  * `penguin-hmr`: the CLI currently pushed to this machine's HMR store, instead of the
  * one built into this binary. Use `penguin` when nothing is pushed.
+ *
+ * What runs is the shared answer in the server's command-shim module,
+ * `@prismshadow/penguin-server/cli-shim` — the same answer the `penguin` written into this
+ * data root's `bin/` runs under, and now the same shape: the record names the entry and the
+ * bundle, and both faces act on what it says. This loader reports a fault by name:
+ * `record-unsupported` when the record predates recorded entries (one push or install
+ * rewrites it), `cli-unloadable` when the pushed CLI cannot be loaded, and a sentence of
+ * its own when nothing is pushed here.
  */
 // First import on purpose, as in penguin.ts: the pushed CLI bundle this entry loads
 // reaches node:sqlite the same way (see warnings.ts).
 import "./warnings.js";
 import "dotenv/config";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { resolveRoot } from "@prismshadow/penguin-core";
-import { readPushedCli } from "@prismshadow/penguin-server/hmr/manifest";
+import { exitBelowNodeFloor } from "./node-floor-check.js";
+import { resolveCli } from "@prismshadow/penguin-server/cli-shim";
 
-export async function loadPushedCli(root: string): Promise<(argv: string[]) => Promise<number>> {
-  const pushed = await readPushedCli(root);
-  // A root that pushed no CLI and a root whose record names one it cannot produce are
-  // different problems, and only one of them is fixed by running `penguin` instead.
-  if (pushed.kind === "none") throw new Error(`no CLI pushed to ${root}; use \`penguin\` instead`);
-  if (pushed.kind === "broken")
-    throw new Error(`the CLI pushed to ${root} is unusable: ${pushed.reason}`);
-  const bundlePath = pushed.file;
+/** This file: the loader's own entry, which resolution answers with. */
+const SELF_ENTRY = fileURLToPath(import.meta.url);
+
+export async function loadCli(
+  root: string,
+  /** The entry resolution answers for: this module. A test names a fixture instead. */
+  selfEntry: string = SELF_ENTRY,
+): Promise<(argv: string[]) => Promise<number>> {
+  const answer = await resolveCli({ callerEntry: selfEntry, root });
+  // A fault is reported by name: it says which part of the installation is broken, where a
+  // wrapper that only said "no CLI pushed" would hide the difference.
+  if (answer.kind === "fault") throw new Error(`${answer.fault}: ${answer.detail}`);
+  // An entry with no bundle means nothing is pushed here: this entry exists to run the
+  // pushed CLI, and there is none to run.
+  if (answer.bundle === null) {
+    throw new Error(`own-entry: nothing is pushed to ${root}; use \`penguin\` instead`);
+  }
+  const bundlePath = answer.bundle;
   // Cache-busted: a re-push writes a new file, but the same path may be reused.
-  const mod = (await import(`${pathToFileURL(bundlePath).href}?v=${Date.now()}`)) as {
-    cli?: (argv: string[]) => Promise<number>;
-  };
-  if (typeof mod.cli !== "function") throw new Error(`${bundlePath} does not export 'cli'`);
+  let mod: { cli?: (argv: string[]) => Promise<number> };
+  try {
+    mod = (await import(`${pathToFileURL(bundlePath).href}?v=${Date.now()}`)) as {
+      cli?: (argv: string[]) => Promise<number>;
+    };
+  } catch (err) {
+    // A loader that is present but cannot load its CLI reports this as its first act; the
+    // push gate and the release assertion turn a failed probe into the same name.
+    throw new Error(
+      `cli-unloadable: ${bundlePath}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  if (typeof mod.cli !== "function") {
+    throw new Error(`cli-unloadable: ${bundlePath} does not export 'cli'`);
+  }
   return mod.cli;
 }
 
-/** Only when run as the entry point, so tests can import loadPushedCli. */
+/** Only when run as the entry point, so tests can import loadCli. */
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  loadPushedCli(resolveRoot())
+  exitBelowNodeFloor();
+  loadCli(resolveRoot())
     .then((cli) => cli(process.argv.slice(2)))
     .then((code) => {
       process.exitCode = code;

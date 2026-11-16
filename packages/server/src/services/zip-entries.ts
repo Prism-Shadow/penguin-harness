@@ -1,7 +1,8 @@
 /**
  * What a zip's entries are, beyond the bytes fflate hands back: the names no disk keeps as they
- * are, and the entries recorded as something other than a regular file or a directory. Shared by
- * the archive imports that write an upload's entries to disk as files.
+ * are, the names a disk that ignores letter case takes for one, and the entries recorded as
+ * something other than a regular file or a directory. Shared by the archive imports that write an
+ * upload's entries to disk as files.
  */
 import { strFromU8 } from "fflate";
 
@@ -46,4 +47,33 @@ export function specialEntries(zip: Uint8Array): string[] {
     at += 46 + nameLength + extraLength + commentLength;
   }
   return found;
+}
+
+/**
+ * Every path a copy will hold, as a disk that ignores letter case and Unicode normal form (macOS,
+ * Windows) sees it: two entries it takes for one would land one over the other, and a file where
+ * another entry needs a directory would fail the write half-way. `invalid` makes the refusal.
+ */
+export function assertDistinctPaths(paths: Iterable<string>, invalid: (m: string) => Error): void {
+  const claimed = new Map<string, { path: string; directory: boolean }>();
+  const claim = (p: string, directory: boolean): void => {
+    const key = p.normalize("NFC").toLowerCase();
+    const prior = claimed.get(key);
+    if (prior === undefined) {
+      claimed.set(key, { path: p, directory });
+    } else if (prior.directory !== directory) {
+      throw invalid(
+        `Invalid zip entry path (a file where a directory must be): ${directory ? prior.path : p}`,
+      );
+    } else if (prior.path !== p) {
+      throw invalid(
+        `Invalid zip entry path (the same name as ${prior.path} where letter case is ignored): ${p}`,
+      );
+    }
+  };
+  for (const rel of paths) {
+    const segments = rel.split("/");
+    for (let i = 1; i < segments.length; i++) claim(segments.slice(0, i).join("/"), true);
+    claim(rel, false);
+  }
 }

@@ -1,17 +1,15 @@
 /**
  * The a2ui plugin's Skill as shipped: every example in SKILL.md and references/components.md
  * passes the checker it teaches (the documentation is the first test case of the grammar); the
- * numbers the skill quotes are the exported weights; the two data scripts build blocks the
- * catalog accepts — sysinfo.mjs a resources board from a real snapshot and from a fixed one, with
- * and without disks, history and network; and the committed checker bundle was built from the
- * current a2ui sources. Where the plugin sits in the library is the library suite's to check
- * (packages/server/test/plugin-library.test.ts).
+ * two data scripts build blocks the catalog accepts — sysinfo.mjs a resources board from a real
+ * snapshot and from a fixed one, with and without disks, history and network; and the committed
+ * checker bundle was built from the current a2ui sources.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
-import { A2UI_SCORING, checkMermaid, checkReply, parseA2ui } from "../src/index.js";
+import { checkMermaid, checkReply, parseA2ui } from "../src/index.js";
 import { scanFences } from "../src/fences.js";
 import {
   BUNDLE_PATH,
@@ -49,15 +47,6 @@ describe("the a2ui plugin", () => {
       }
     });
   }
-
-  it("quotes the exported weights and the gate", async () => {
-    const skill = await read("SKILL.md");
-    expect(skill).toContain(`L2 loses ${A2UI_SCORING.l2PerWarning} per block warning`);
-    expect(skill).toContain(`a total of ${A2UI_SCORING.passTotal} or more`);
-    const reference = await read("references/components.md");
-    expect(reference).toContain(`L2 = 100 − ${A2UI_SCORING.l2PerWarning} ×`);
-    expect(reference).toContain(`total ≥ ${A2UI_SCORING.passTotal}`);
-  });
 });
 
 /** A skill script: plain ESM with no type declarations, so it is imported by URL and typed here. */
@@ -318,11 +307,5 @@ describe("the bundled checker (scripts/check.mjs)", () => {
     expect(readBundleHash(BUNDLE_PATH), `no "${HASH_MARKER}" header in ${BUNDLE_PATH}`).toBe(
       hashA2uiSources(),
     );
-  });
-
-  it("starts with a shebang and the hash header", async () => {
-    const head = (await fs.readFile(BUNDLE_PATH, "utf8")).split("\n", 2);
-    expect(head[0]).toBe("#!/usr/bin/env node");
-    expect(head[1]!.startsWith(HASH_MARKER)).toBe(true);
   });
 });

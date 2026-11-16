@@ -8,10 +8,9 @@
  * Each card and each Skill's metadata is spelled here (the card as the plugin's src/index.ts
  * declares it; the Skill as its SKILL.md names, describes and versions it): the gallery does not
  * build the plugins' tables, and the SKILL.md bodies are too large to bundle into every frame for
- * one line each. test/library-plugins.test.ts holds the toolkits, and every plugin's Skills, to
- * the plugins directory and core's category manifest.
+ * one line each.
  */
-import type { PluginItem, SkillMetadataItem } from "@prismshadow/penguin-server/api";
+import type { IconRef, PluginItem, SkillMetadataItem } from "@prismshadow/penguin-server/api";
 import aceIcon from "../../../../../plugins/ace-rsi-toolkit/icon.svg?raw";
 import acePkg from "../../../../../plugins/ace-rsi-toolkit/package.json";
 import evaluationIcon from "../../../../../plugins/agent-evaluation/icon.svg?raw";
@@ -202,8 +201,17 @@ const CARDS: Record<string, Card> = {
   },
 };
 
+/**
+ * A shipped icon as a listing names it. The server names a route serving the file; the gallery
+ * has no server, so the file's own text is the image, as a data URL. Every shipped icon is
+ * monochrome line art in currentColor, which the server marks to take the text colour.
+ */
+export function shippedIcon(svg: string): IconRef {
+  return { url: `data:image/svg+xml,${encodeURIComponent(svg.trim())}`, tint: true };
+}
+
 /** A library plugin as GET /api/plugins lists one this build ships. */
-function libraryPlugin(manifest: Manifest, icon: string, skills: SkillMetadataItem[]): PluginItem {
+function libraryPlugin(manifest: Manifest, svg: string, skills: SkillMetadataItem[]): PluginItem {
   const name = manifest.name.replace(/^@[^/]+\//, "");
   return {
     name,
@@ -216,7 +224,7 @@ function libraryPlugin(manifest: Manifest, icon: string, skills: SkillMetadataIt
     repository: "https://github.com/Prism-Shadow/penguin-harness",
     skills,
     hooks: [],
-    icon,
+    icon: shippedIcon(svg),
     mcpServers: [],
   };
 }
@@ -237,25 +245,28 @@ export function rsiToolkitPlugins(): PluginItem[] {
       skill(
         "ace-rsi-toolkit",
         "Run ACE (Agentic Context Engineering, Zhang et al. 2025) on an agent the sequential offline way - a Reflector reads each training Trace, a Curator adds the lessons to a playbook of rules the agent reads before every task, and the final playbook is measured on a published Benchmark.",
+        "2026.11.05.1",
       ),
     ]),
     libraryPlugin(apePkg, apeIcon, [
       skill(
         "ape-rsi-toolkit",
         "Reproduce APE (Large Language Models are Human-Level Prompt Engineers, Zhou et al. 2022) on an agent and a frozen Benchmark, or on the house-style brief demo task shipped with this Skill: induce instructions from input/output examples, measure each one, keep the best.",
-        "2026.10.31.1",
+        "2026.11.05.1",
       ),
     ]),
     libraryPlugin(awmPkg, awmIcon, [
       skill(
         "awm-rsi-toolkit",
         "Run AWM (Agent Workflow Memory, Wang et al. 2024) on an agent - induce reusable workflows from its successful trajectories, online over a training stream or offline from supplied experiences, then freeze the workflow memory and measure it on a published Benchmark.",
+        "2026.11.05.1",
       ),
     ]),
     libraryPlugin(defaultPkg, defaultIcon, [
       skill(
         "agent-optimization",
         "Improve an Agent State through versioned scores and score-linked Traces from a frozen Benchmark.",
+        "2026.11.05.1",
       ),
     ]),
     libraryPlugin(openskillPkg, openskillIcon, [
@@ -269,7 +280,7 @@ export function rsiToolkitPlugins(): PluginItem[] {
       skill(
         "opro-rsi-toolkit",
         "Reproduce OPRO (Large Language Models as Optimizers, Yang et al. 2023) on an agent and a frozen Benchmark, or on the precise-summary demo task shipped with this Skill: propose instructions from the scored history, measure each one, keep the best.",
-        "2026.10.31.1",
+        "2026.11.05.1",
       ),
     ]),
     libraryPlugin(skilladamPkg, skilladamIcon, [

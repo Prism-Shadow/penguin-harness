@@ -23,6 +23,9 @@
  * so the theme's layout motion moves it (Primer an ease over 200 ms, Frost a longer glide,
  * Console four steps; none under reduced motion). A transform transition is the motion files'
  * alone.
+ *
+ * The track carries the `ui-edge` hook, so a theme that draws the edge of what a person presses
+ * draws the track's capsule too.
  */
 import type { ButtonHTMLAttributes } from "react";
 
@@ -43,7 +46,7 @@ export function Switch({ checked, onChange, disabled, className, title, ...rest 
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={
-        "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full px-0.5 " +
+        "ui-edge relative inline-flex h-5 w-9 shrink-0 items-center rounded-full px-0.5 " +
         "inset-ring inset-ring-fg/10 transition-colors duration-200 ease-out " +
         "focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 " +
         "disabled:cursor-not-allowed disabled:opacity-60 " +

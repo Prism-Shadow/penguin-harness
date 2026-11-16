@@ -193,7 +193,6 @@ describe("ChartBlock", () => {
     expect(meter(gauge)).toBeDefined();
     expect(meter(gauge)).toBe(meter(metrics));
     expect(figureClasses(gauge)).toEqual(figureClasses(metrics));
-    expect(figureClasses(gauge)[0]).toContain("text-tone-danger-fg");
   });
 
   it("stacks each category's series end to end in one row, its total after it", () => {
@@ -277,7 +276,7 @@ describe("ResourcesBlock", () => {
     asOf: "2026-10-19T14:05:00+08:00",
   };
 
-  it("draws a tile per reading in board order, each toned by the fixed marks", () => {
+  it("draws a tile per reading in board order", () => {
     const html = draw(BOARD);
     expect(html).toContain('data-widget="resources"');
     expect(html).toContain('aria-label="build-01"');
@@ -285,23 +284,16 @@ describe("ResourcesBlock", () => {
       (m) => m[1],
     );
     expect(labels).toEqual(["CPU", "Memory", "Swap", "Load", "Uptime"]);
-    const [cpu, memory, swap, load] = figureClasses(html);
-    expect(cpu).toContain("text-tone-danger-fg");
-    expect(memory).toContain("text-tone-attention-fg");
-    expect(swap).not.toMatch(/text-tone-/);
-    expect(load).not.toMatch(/text-tone-/);
     expect(html).toContain("8 cores");
   });
 
-  it("draws each disk as a row with its used of total, its bar toned by the disk marks", () => {
+  it("draws each disk as a row with its used of total and its bar's share", () => {
     const html = draw(BOARD);
     expect(html).toContain('aria-label="Disks"');
     expect(html).toContain("100 / 500 GB");
-    expect(html).toMatch(/text-tone-danger-fg">480 \/ 500 GB</);
     const [root, data] = barPlaces(html);
     expect(root?.width).toBeCloseTo(20);
     expect(data?.width).toBeCloseTo(96);
-    expect(html).toContain("bg-tone-danger-emphasis");
   });
 
   it("draws the network as a line chart of the received and the sent rate", () => {

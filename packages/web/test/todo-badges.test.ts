@@ -15,8 +15,9 @@ import {
   presetUpdateTodo,
   raisedTodo,
   unexpectedErrorTodo,
+  type Todo,
 } from "../src/lib/todo-badges";
-import type { Todo } from "../src/lib/todo-badges";
+
 import { parseTodoDismissMap, withDismissal } from "../src/lib/todo-dismissals";
 
 /** Just the field the plugins gate reads (the gate takes a Pick, so the fixture can be one too). */

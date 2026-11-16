@@ -14,8 +14,8 @@
  * Workspace pill.
  */
 import { useSyncExternalStore } from "react";
-import { ICONS, PanelsToolbar } from "@prismshadow/penguin-ui";
-import type { PanelsToolbarToggle } from "@prismshadow/penguin-ui";
+import { ICONS, PanelsToolbar, type PanelsToolbarToggle } from "@prismshadow/penguin-ui";
+
 import { S } from "../../lib/strings";
 import { useShortcutTitle } from "../../lib/shortcuts/use-keymap";
 import {
@@ -27,8 +27,8 @@ import {
   subscribeDock,
   toggleDock,
   type DockPosition,
-} from "../dock/dock-state";
-import { panelLabel } from "../dock/panel-meta";
+  panelLabel,
+} from "../dock";
 
 export interface DockTogglesProps {
   /** A pending approval inside a subagent: amber dot beside the agents tab's dock toggle. */

@@ -1,6 +1,7 @@
 /**
  * Each theme's default faces, for the fonts page's table: the package states them
- * (`THEME_FONTS`, kept in step with the theme sheets by the package's own test) as display names,
+ * (`THEME_FONTS`, read from each pack's manifest, which the package's own test holds to the
+ * pack's stacks) as display names,
  * the same names the pairing options carry; a role the theme leaves to the platform is
  * `SYSTEM_FONT`, which the page prints in its own words.
  */

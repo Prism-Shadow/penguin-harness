@@ -1,7 +1,7 @@
 /**
  * The gallery's own bar, under the site navbar (site/nav.tsx), one row: the gallery's pages —
  * Overview, Surfaces, Foundations, Fonts, the current one ruled underneath — on the left; on the
- * right the theme under test (by its display name), then a button opening the rest in a popover:
+ * right the theme under test, then a button opening the rest in a popover:
  * accent (the active theme's own presets, each painted in its colour, after the theme's own),
  * text size (the five steps by name), the Latin and CJK font pairings, the viewport, and under
  * them the fonts the framed app is actually set in. Every control writes the URL, and the frames
@@ -10,6 +10,13 @@
  *
  * On a phone the page links scroll sideways if they do not fit, and the theme moves into the
  * popover.
+ *
+ * The theme control is a pack switcher: one segment per built-in pack in the registry
+ * (`THEME_IDS`, the ids of `BUILTIN_PACKS` in its order), named by the pack's manifest, so a pack
+ * is offered the day it is registered. A pack an admin imported (the demo server's `paper`) is
+ * listed on Foundations › Theme packs, not here: the frames cannot load one yet — their pre-paint
+ * script has no imported-pack branch on a static site, and the framed app's theme state reads an
+ * imported id as Frost until it reads the cached pack list.
  */
 import { THEME_IDS } from "@prismshadow/penguin-ui";
 import type { ReactNode } from "react";
