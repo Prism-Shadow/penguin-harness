@@ -1,53 +1,42 @@
 /**
  * The hub's marks: the tinted tile a card and a page lead with, and the small tags under a page
- * title. A plugin's tile carries its own icon.svg, drawn as a mask so it takes the tile's ink in
- * both themes (the icons stroke `currentColor`, which an <img> would render black); a benchmark
- * or a leaderboard carries a glyph for its kind.
+ * title. A plugin's tile carries its own icon through the shared `ImageIcon`: a monochrome SVG as
+ * a mask, so it takes the tile's ink in both themes (an <img> would render its `currentColor`
+ * black), any other image as itself; a benchmark or a leaderboard carries a glyph for its kind,
+ * and so does a plugin without an icon.
  */
 import type { ReactNode } from "react";
-import { SiteGlyph } from "@prismshadow/penguin-ui/site";
-import type { SiteGlyphName } from "@prismshadow/penguin-ui/site";
+import { ImageIcon, SiteGlyph } from "@prismshadow/penguin-ui/site";
+import type { ImageIconSource, SiteGlyphName } from "@prismshadow/penguin-ui/site";
 import { TONE_TAG, TONE_TILE } from "../../lib/hub/tones";
 import type { HubTone } from "../../lib/hub/tones";
 
+/** A tile's box, and its mark: the glyph's classes and the image's edge in px (the same size). */
 const TILE = {
-  md: { box: "h-10 w-10 rounded-lg", mark: "h-5 w-5" },
-  lg: { box: "h-14 w-14 rounded-xl", mark: "h-7 w-7" },
+  md: { box: "h-10 w-10 rounded-lg", mark: "h-5 w-5", px: 20 },
+  lg: { box: "h-14 w-14 rounded-xl", mark: "h-7 w-7", px: 28 },
 } as const;
 
 export function HubTile({
   tone,
-  src,
+  icon,
   glyph,
   size = "md",
 }: {
   tone: HubTone;
-  /** A plugin's icon (a data URL); otherwise `glyph` is drawn. */
-  src?: string;
+  /** A plugin's icon; without one, or when it does not load, `glyph` is drawn. */
+  icon?: ImageIconSource;
   glyph?: SiteGlyphName;
   size?: keyof typeof TILE;
 }) {
-  const { box, mark } = TILE[size];
+  const { box, mark, px } = TILE[size];
+  const fallback = glyph && <SiteGlyph name={glyph} className={mark} strokeWidth={1.75} />;
   return (
     <span
       aria-hidden
       className={`flex ${box} shrink-0 items-center justify-center ${TONE_TILE[tone]}`}
     >
-      {src ? (
-        <span
-          className={`${mark} bg-current`}
-          style={{
-            maskImage: `url("${src}")`,
-            WebkitMaskImage: `url("${src}")`,
-            maskSize: "contain",
-            WebkitMaskSize: "contain",
-            maskRepeat: "no-repeat",
-            WebkitMaskRepeat: "no-repeat",
-          }}
-        />
-      ) : (
-        glyph && <SiteGlyph name={glyph} className={mark} strokeWidth={1.75} />
-      )}
+      <ImageIcon icon={icon} size={px} fallback={fallback} />
     </span>
   );
 }

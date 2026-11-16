@@ -75,6 +75,7 @@ interface SessionSpec {
   sessionId?: string;
   trace?: TraceSink;
   compaction?: CompactionSettings;
+  compactionToolGate?: ConstructorParameters<typeof Session>[0]["compactionToolGate"];
   openNextContext?: ConstructorParameters<typeof Session>[0]["openNextContext"];
   initialEngineState?: ConstructorParameters<typeof Session>[0]["initialEngineState"];
   metaAlreadyWritten?: boolean;
@@ -90,6 +91,7 @@ function makeSession(spec: SessionSpec): Session {
     modelHasVision: true,
     ...(spec.trace ? { trace: spec.trace } : {}),
     ...(spec.compaction ? { compaction: spec.compaction } : {}),
+    ...(spec.compactionToolGate ? { compactionToolGate: spec.compactionToolGate } : {}),
     ...(spec.openNextContext ? { openNextContext: spec.openNextContext } : {}),
     ...(spec.initialEngineState ? { initialEngineState: spec.initialEngineState } : {}),
     ...(spec.metaAlreadyWritten ? { metaAlreadyWritten: true } : {}),
@@ -489,6 +491,73 @@ describe("the prompt cache across a Session's lifecycle", () => {
     expect(usages[4]!.cache_read_input_tokens, report).toBe(prefixTokens(order[3]!));
   });
 
+  it("a compaction's tool round reads the whole prefix back, and so does the summary request after it", async () => {
+    const { order, onRequest } = ordering();
+    await driveCompaction(onRequest, { withRound: true });
+
+    expect(order.map((request) => request.label)).toEqual([
+      "context 1",
+      "context 1",
+      "context 1",
+      "context 1",
+      "context 2",
+      "context 2",
+    ]);
+    const usages = replay(order);
+    const reason =
+      "the context reopened and no breakpoint sits after the system prompt, so the fixed " +
+      "prefix the new context resends is not addressable either";
+    expectHits(order, usages, new Map([[4, reason]]));
+    const report = formatCacheReport(order, usages);
+    // The round runs on the same object with the same config: it reads the turn it follows in
+    // full, and the summary request reads the round in full — each costs only what it appends.
+    expect(usages[2]!.cache_read_input_tokens, report).toBe(prefixTokens(order[1]!));
+    expect(usages[3]!.cache_read_input_tokens, report).toBe(prefixTokens(order[2]!));
+  });
+
+  it("after a hand-off the old model receives no further request, and the new context's first request is the same miss, for the same reason, as after a summary", async () => {
+    const { order, onRequest } = ordering();
+    await driveCompaction(onRequest, { handOff: true });
+
+    expect(order.map((request) => request.label)).toEqual([
+      "context 1",
+      "context 1",
+      "context 1",
+      "context 2",
+      "context 2",
+    ]);
+    const usages = replay(order);
+    const reason =
+      "the context reopened and no breakpoint sits after the system prompt, so the fixed " +
+      "prefix the new context resends is not addressable either";
+    expectHits(order, usages, new Map([[3, reason]]));
+    const report = formatCacheReport(order, usages);
+    expect(usages[3]!.cache_read_input_tokens, report).toBe(0);
+    expect(usages[3]!.cache_creation_input_tokens, report).toBe(prefixTokens(order[3]!));
+    expect(usages[4]!.cache_read_input_tokens, report).toBe(prefixTokens(order[3]!));
+  });
+
+  it("after a refused request hands off the old model receives no further request, and the new context's first request is the same miss, for the same reason, as after a summary", async () => {
+    const { order, onRequest } = ordering();
+    await driveRefusalHandOff(onRequest);
+
+    expect(order.map((request) => request.label)).toEqual([
+      "context 1",
+      "context 1",
+      "context 2",
+      "context 2",
+    ]);
+    const usages = replay(order);
+    const reason =
+      "the context reopened and no breakpoint sits after the system prompt, so the fixed " +
+      "prefix the new context resends is not addressable either";
+    expectHits(order, usages, new Map([[2, reason]]));
+    const report = formatCacheReport(order, usages);
+    expect(usages[2]!.cache_read_input_tokens, report).toBe(0);
+    expect(usages[2]!.cache_creation_input_tokens, report).toBe(prefixTokens(order[2]!));
+    expect(usages[3]!.cache_read_input_tokens, report).toBe(prefixTokens(order[2]!));
+  });
+
   it("a model switch reads 0 on the new model — a new cache line — then hits from there", async () => {
     const { order, onRequest } = ordering();
     await driveModelSwitch(onRequest);
@@ -535,15 +604,35 @@ async function driveThinkingMove(onRequest: (request: RecordedRequest) => void):
   await collect(session.run([userText("task three")], { approve: allowAll }));
 }
 
-/** One Session whose second task crosses the compaction threshold and opens a new context. */
-async function driveCompaction(onRequest: (request: RecordedRequest) => void): Promise<void> {
+/**
+ * One Session whose second task crosses the compaction threshold and opens a new context — with
+ * a summary, after a tool round, or (`handOff`) with the hand-off note the harness writes when
+ * the provider refuses the compaction request.
+ */
+async function driveCompaction(
+  onRequest: (request: RecordedRequest) => void,
+  opts: { withRound?: boolean; handOff?: boolean } = {},
+): Promise<void> {
   const first = recordingModel(
     modelConfig(),
     [
       { text: "First answer.", promptTokens: 20 },
       // Over the compaction threshold at the task's wrap-up round.
       { text: "Second answer.", promptTokens: 150 },
-      { text: "[summary]the distilled summary[/summary]", promptTokens: 160 },
+      // With a round, the compaction request first reads a hand-off file back.
+      ...(opts.withRound
+        ? [
+            {
+              toolCalls: [
+                { id: "call_h1", name: "read_file", args: { path: "/scratch/handoff/plan.md" } },
+              ],
+              promptTokens: 160,
+            },
+          ]
+        : []),
+      opts.handOff
+        ? { promptTokens: 160, outcome: "rejected" as const }
+        : { text: "[summary]the distilled summary[/summary]", promptTokens: 160 },
     ],
     { label: "context 1", onRequest },
   );
@@ -555,13 +644,40 @@ async function driveCompaction(onRequest: (request: RecordedRequest) => void): P
   const session = makeSession({
     llm: first.model,
     environment: fakeEnvironment,
-    compaction: compactionSettings(),
+    compaction: compactionSettings(opts.withRound ? { maxRounds: 3 } : {}),
+    ...(opts.withRound ? { compactionToolGate: () => ({ allow: true }) } : {}),
     openNextContext: () => ({ llm: second.model }),
   });
   await collect(session.run([userText("task one")], { approve: allowAll }));
   await collect(session.run([userText("task two")], { approve: allowAll }));
   await collect(session.run([userText("task three")], { approve: allowAll }));
   await collect(session.run([userText("task four")], { approve: allowAll }));
+}
+
+/**
+ * One Session: a task on the first context, the next task's request refused by the provider
+ * there (an HTTP 400) and handed off, and a task on the context that opens.
+ */
+async function driveRefusalHandOff(onRequest: (request: RecordedRequest) => void): Promise<void> {
+  const first = recordingModel(
+    modelConfig(),
+    [{ text: "First answer.", promptTokens: 20 }, { outcome: "rejected" }],
+    { label: "context 1", onRequest },
+  );
+  const second = recordingModel(
+    modelConfig(),
+    [{ text: "Carried on from the note." }, { text: "And on from there." }],
+    { label: "context 2", onRequest },
+  );
+  const session = makeSession({
+    llm: first.model,
+    environment: fakeEnvironment,
+    compaction: compactionSettings(),
+    openNextContext: () => ({ llm: second.model }),
+  });
+  await collect(session.run([userText("task one")], { approve: allowAll }));
+  await collect(session.run([userText("task two")], { approve: allowAll }));
+  await collect(session.run([userText("task three")], { approve: allowAll }));
 }
 
 /** The model the switch scenario moves to. */

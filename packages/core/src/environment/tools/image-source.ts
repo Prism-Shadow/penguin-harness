@@ -124,7 +124,9 @@ export async function looksLikeImageFile(
 export function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   const kb = bytes / 1024;
-  if (kb < 1024) return `${kb.toFixed(1)} kB`;
+  // The unit is picked from the rounded value: 1048570 bytes is 1023.99 kB, which reads 1024.0
+  // at one decimal and has to carry into 1.0 MB.
+  if (Number(kb.toFixed(1)) < 1024) return `${kb.toFixed(1)} kB`;
   return `${(kb / 1024).toFixed(1)} MB`;
 }
 

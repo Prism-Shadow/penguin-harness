@@ -12,7 +12,7 @@ import {
   parseModelSwitchMessage,
   parseScheduledMessage,
 } from "./agent-handoff";
-import { parseSkillsMessage } from "./skill-use";
+import { parseSkillsMessage } from "../../lib/skill-use";
 import { parseOrgTriggerMessage } from "./org-trigger";
 import { splitAttachments } from "../../lib/attachments";
 

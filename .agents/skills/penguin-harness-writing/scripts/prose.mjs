@@ -5641,7 +5641,7 @@ function runUnstrip(o) {
   );
   if (shots.length) {
     note(
-      `${shots.join(", ")}: not .png, so strip needs --assets <community>/blog-assets to keep it`,
+      `${shots.join(", ")}: not .png, so strip needs --assets <community>/assets/blog-assets to keep it`,
     );
   }
   if (path.basename(path.resolve(dir)) !== slug) {

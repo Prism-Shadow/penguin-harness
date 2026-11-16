@@ -18,8 +18,8 @@
  * path from the source (spellAsWritten). A capsule reaches React as `<samp>`: no Markdown syntax
  * and no KaTeX output produces one, so claiming it in the components map collides with nothing.
  */
-import { useMemo } from "react";
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
+
 import type { Components, Options } from "react-markdown";
 import {
   CopiedStatus,
@@ -33,8 +33,14 @@ import {
 import type { MdExtensions } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { STAT_ICONS } from "../../lib/stat-icons";
-import { codePath, pathKind, pathLabel, spellAsWritten, splitPaths } from "./path-capsules";
-import type { PathScope } from "./path-capsules";
+import {
+  codePath,
+  pathKind,
+  pathLabel,
+  spellAsWritten,
+  splitPaths,
+  type PathScope,
+} from "./path-capsules";
 
 /** One data path as a capsule, reading `label` when the writer named it. */
 export function PathCapsule({ path, label }: { path: string; label?: string }) {

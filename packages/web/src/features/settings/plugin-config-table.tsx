@@ -26,14 +26,14 @@ import type {
   PluginConfigField,
   PluginConfigTableColumn,
 } from "@prismshadow/penguin-server/api";
-import { Button, InfoPopover } from "@prismshadow/penguin-ui";
+import { Button, InfoPopover, layer } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import type { Locale } from "../../state/locale";
-import { localizedText } from "../chat/skill-use";
+import { localizedText } from "../../lib/skill-use";
 import type { TableDraft } from "./plugin-config-draft";
-import { Cell, rowHelp } from "./plugin-config-field-cell";
-import type { DrawnRow } from "./plugin-config-field-cell";
+import { Cell, rowHelp, type DrawnRow } from "./plugin-config-field-cell";
+
 import { RowMenu, rowActions } from "./plugin-config-row-menu";
 import { RowGrip } from "./plugin-config-table-cells";
 
@@ -339,7 +339,11 @@ export function ConfigTable({
                   // Lifted while dragged: it follows the pointer by transform, above the rest.
                   style={
                     dragging
-                      ? { transform: `translateY(${dy}px)`, position: "relative", zIndex: 1 }
+                      ? {
+                          transform: `translateY(${dy}px)`,
+                          position: "relative",
+                          zIndex: layer("raised"),
+                        }
                       : undefined
                   }
                   className={`border-t border-line-muted ${dragging ? "bg-surface shadow-lg" : "transition-colors duration-150 hover:bg-surface-muted/60"} ${lineAbove ? "[&>td]:border-t-2 [&>td]:border-t-accent" : ""} ${lineBelow ? "[&>td]:border-b-2 [&>td]:border-b-accent" : ""}`}

@@ -19,10 +19,9 @@
  * The rules §3 leaves to review — two badges per row, spacing steps per kind of child, nesting
  * across components, copy voice — are not here; the frontend skill carries them.
  */
-import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { THEME_IDS, THEME_MODES } from "../src/tokens";
+import { THEME_MODES } from "../src/tokens";
 import {
   DESLOP_CHECKS,
   DESLOP_RULE_NUMBERS,
@@ -30,14 +29,18 @@ import {
   LABEL_COMPONENTS,
   PAGE_HEADER_COMPONENTS,
   TABULAR_COMPONENTS,
+  THEMES_DIR,
   allowlistProblems,
   analyzeFile,
-  analyzeThemeFile,
+  analyzePack,
   deslopHits,
   isClassShaped,
   matchesPolicyPath,
   modeDeclarations,
+  packFolders,
+  packRuleHits,
   parseClassToken,
+  readPackSources,
   scanSourceRoots,
   unscannedRoots,
 } from "../src/testing";
@@ -45,6 +48,7 @@ import type {
   DeslopAllowlist,
   DeslopPolicy,
   DeslopRule,
+  PackRule,
   SourceFile,
   ThemeFileAnalysis,
 } from "../src/testing";
@@ -66,10 +70,11 @@ const POLICY: DeslopPolicy = {
   pulseHomes: ["dot.tsx", "skeleton.tsx", "streaming-caret.tsx"],
   // Rule 11: the one Spinner (K-redesign §5.1).
   spinnerHomes: ["components/icons/spinner/spinner.tsx"],
-  // Rule 20: tokens only; hex colours in the avatar palette and in the contract, whose accent
-  // presets carry the swatch a picker paints for a preset the active theme does not apply.
+  // Rule 20: tokens only; hex colours in the avatar palettes (the letter tiles', the Agent
+  // mascot's). The swatches a picker paints for a theme and its presets live in each pack's
+  // manifest (`pack.json`), which is data, not source.
   tokensOnly: true,
-  hexHomes: ["avatar.ts", "tokens.ts"],
+  hexHomes: ["avatar.ts", "agent-palette.ts"],
 };
 
 /**
@@ -153,6 +158,84 @@ describe("de-slop rules over packages/ui/src", () => {
   }
 });
 
+describe("the cleanliness rules over every pack folder (R1, R2, R5–R11)", () => {
+  /**
+   * What each built-in pack's stylesheets held when the rules came in, by pack file and rule: a
+   * pack may lose a hit, never gain one, and an entry shrinks in the change that removes a hit. A
+   * pack not listed here — every pack after these three — holds none.
+   */
+  const HELD: Readonly<Record<string, Partial<Record<PackRule, number>>>> = {
+    // Console: its tree's `└` and block marks on a step's mark slot, its label and notice set
+    // on the small rung, its own row and field spacing, and its mono, tracked, crisp chart.
+    "geek/recipes.css": { R5: 3, R7: 15, R9: 7 },
+    // Frost, the base: its dialog, menu, shell, tree and field spacing and its tight display
+    // tracking, the floating notice's shadows, the area fade under a line, the tab bar's ease.
+    "modern/recipes.css": { R7: 14, R8: 3, R9: 2, R11: 1 },
+  };
+
+  const probe = (css: string) =>
+    packRuleHits([{ file: "recipes.css", css, layer: "ui-theme" }]).map((hit) => hit.rule);
+
+  it("recognise each shape they refuse, and pass the ones they allow — exercised on known sources", () => {
+    const x = ':root[data-theme="x"]';
+    expect(probe(`${x} .ui-frame { background-image: url("art/paper.png"); }`)).toEqual(["R1"]);
+    expect(probe(`${x} .ui-glass { background-image: url("art/slip.png"); }`)).toEqual([]);
+    expect(probe(`${x} .ui-frame { clip-path: polygon(0 0, 100% 0, 50% 100%); }`)).toEqual(["R1"]);
+    // An image or a shape laid through a private property is read through it.
+    const pen = `${x} { --_pen: url("data:image/png;base64,AA=="); --_cut: shape(from 0 0, close); }`;
+    expect(probe(`${pen} ${x} .ui-frame { border-image: var(--_pen) 9 / 9px; }`)).toEqual(["R1"]);
+    expect(probe(`${pen} ${x} .ui-frame { clip-path: var(--_cut); }`)).toEqual(["R1"]);
+    expect(
+      probe(`${pen} ${x} .ui-edge { border-image: var(--_pen) 9; clip-path: var(--_cut); }`),
+    ).toEqual([]);
+    expect(
+      probe(`${pen} ${x} section[aria-live] .ui-notice { border-image: var(--_pen) 9; }`),
+    ).toEqual([]);
+    expect(probe(`${x} .ui-edge { box-shadow: 0 0 0 1px red; }`)).toEqual(["R8"]);
+    expect(probe(`${x} .row::before { content: ""; border-left: 2px solid; }`)).toEqual(["R5"]);
+    expect(probe(`${x} .ui-tree [data-depth]::before { content: ""; }`)).toEqual([]);
+    expect(probe(`${x} .row::after { content: none; }`)).toEqual([]);
+    expect(probe(`${x} [aria-current="page"] { outline: 2px solid; color: red; }`)).toEqual([
+      "R6",
+      "R8",
+    ]);
+    expect(probe(`${x} .ui-activity:not([data-state="error"]) .mark { color: red; }`)).toEqual([]);
+    expect(probe(`${x} .ui-activity[data-state="done"] .label { transform: none; }`)).toEqual([
+      "R6",
+    ]);
+    expect(probe(`${x} .title { font-size: 1.1rem; padding-inline: 2px; }`)).toEqual(["R7", "R7"]);
+    expect(probe(`${x} .ui-notice { box-shadow: 0 1px 0 red; }`)).toEqual(["R8"]);
+    expect(probe(`${x} button:focus-visible { outline: 2px solid; }`)).toEqual([]);
+    expect(
+      probe(`${x} .ui-chart rect { fill: url(#hatch); filter: blur(1px); stroke: red; }`),
+    ).toEqual(["R9", "R9"]);
+    expect(probe(`${x}.dark .row { color: red; }`)).toEqual(["R10"]);
+    expect(probe(`${x} .row { color: blue; } ${x}.dark .row { color: red; }`)).toEqual([]);
+    expect(probe(`${x} .row:hover { transition: color 150ms; }`)).toEqual(["R11"]);
+    expect(probe(`${x} .ui-live { animation-duration: 1s; }`)).toEqual([]);
+    expect(probe(`${x} { --ui-canvas: #fff; }`)).toEqual([]);
+    expect(probe("@keyframes x-wobble { from { padding: 1px; } }")).toEqual([]);
+  });
+
+  for (const id of packFolders()) {
+    it(`${id}: adds nothing the rules refuse past what it held when they came in`, () => {
+      const hits = packRuleHits(readPackSources(join(THEMES_DIR, id)));
+      const counts: Record<string, Partial<Record<PackRule, number>>> = {};
+      for (const hit of hits) {
+        const file = (counts[`${id}/${hit.file}`] ??= {});
+        file[hit.rule] = (file[hit.rule] ?? 0) + 1;
+      }
+      const held = Object.fromEntries(
+        Object.entries(HELD).filter(([file]) => file.startsWith(`${id}/`)),
+      );
+      expect(
+        counts,
+        hits.map((hit) => `\n  ${id}/${hit.file}:${hit.line} ${hit.rule} ${hit.found}`).join(""),
+      ).toEqual(held);
+    });
+  }
+});
+
 describe("theme values the rules reach", () => {
   // §2.4: a theme may uppercase its h1 (through .ui-display) and h6, the group-label rung
   // (through .ui-eyebrow); nothing between is uppercased. Headings are set in the theme's chrome
@@ -162,13 +245,11 @@ describe("theme values the rules reach", () => {
   // heading rung reaches a mono face only by reading `--ui-font-ui`, so a theme that wants mono
   // titles says so once, in the face, and a component still never writes `font-mono` on a label
   // (rule 16). The reading face stays proportional in every theme: prose is not set in mono.
-  const themes = THEME_IDS.map((id) => {
-    const rel = `themes/${id}.css`;
-    const path = join(SRC_DIR, rel);
-    const analysis: ThemeFileAnalysis | null = existsSync(path)
-      ? analyzeThemeFile(readFileSync(path, "utf8"), id)
-      : null;
-    return { id, rel, analysis };
+  // Every pack folder, not the registry's list: a pack's values are held to the rules the moment
+  // its folder exists.
+  const themes = packFolders().map((id) => {
+    const analysis: ThemeFileAnalysis | null = analyzePack(id);
+    return { id, rel: `themes/${id}/`, analysis };
   });
   const MONO = /--ui-font-mono|monospace/;
   for (const { id, rel, analysis } of themes) {
@@ -650,7 +731,7 @@ describe("the rule checks, on known shapes", () => {
     expect(
       tsx('<i className="bg-gray-100 dark:bg-surface text-white" style={{ color: "#2563eb" }} />'),
     ).toEqual(["20:bg-gray-100", "20:dark:bg-surface", "20:text-white", "20:#2563eb"]);
-    expect(found("tokens.ts", 'export const C = "#2563eb";')).toEqual([]);
+    expect(found("avatar.ts", 'export const C = "#2563eb";')).toEqual([]);
     expect(found("screens/p.tsx", 'export const L = "trace file #001";')).toEqual([]);
     expect(
       found("x.tsx", 'export const X = () => <i className="bg-gray-100" />;', PALETTE_OK),

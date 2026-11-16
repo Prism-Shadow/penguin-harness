@@ -158,6 +158,12 @@ function rewriteForkText(
     if (value.startsWith(`${source}/`)) return `${target}${value.slice(source.length)}`;
     return null;
   };
+  // A compaction summary names files of the Session it was written in: the hand-off files in
+  // its scratchpad, and its last line the compacted context's Trace file. The fork copied the
+  // whole scratchpad and has its own copy of every Trace file, so both are the fork's there.
+  if (text.startsWith("[context_summary]")) {
+    return rewriteSummaryPaths(text, sourceScratchpad, forkScratchpad, sessions);
+  }
   // An in-session model switch's Trace handoff names the Session itself and one of its Trace
   // files: in the fork it names the fork and the fork's copy of that file, or the fork would
   // read it as a /model block pointing at the Session it was cut from.
@@ -189,6 +195,40 @@ function rewriteForkText(
       return line;
     })
     .join("\n");
+}
+
+/**
+ * A `[context_summary]` text with the source Session's paths made the fork's: every Trace file
+ * named after the source Session (`<source>_NNN.jsonl`; the fork's copies keep the date folder
+ * and the index), and the source scratchpad directory in each spelling a summary carries — the
+ * native one, the model-visible one the compaction Prompt hands the model, and the native one
+ * as a quoted `[tool_call]` line's JSON arguments spell it (doubled backslashes on Windows).
+ */
+export function rewriteSummaryPaths(
+  text: string,
+  sourceScratchpad: string,
+  forkScratchpad: string,
+  sessions: { source: string; fork: string },
+): string {
+  // The JSON spelling goes first: it is the longest, so no shorter spelling is replaced inside it.
+  const spellings = new Map<string, string>([
+    [jsonSpelling(sourceScratchpad), jsonSpelling(forkScratchpad)],
+    [sourceScratchpad, forkScratchpad],
+    [modelVisiblePath(sourceScratchpad), modelVisiblePath(forkScratchpad)],
+  ]);
+  let out = text;
+  for (const [source, target] of spellings) out = out.split(source).join(target);
+  const traceFile = new RegExp(`${escapeRegExp(sessions.source)}(_\\d{3}\\.jsonl)`, "g");
+  return out.replace(traceFile, `${sessions.fork}$1`);
+}
+
+/** `value` as it reads inside a JSON string literal (backslashes and quotes escaped). */
+function jsonSpelling(value: string): string {
+  return JSON.stringify(value).slice(1, -1);
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function positioned(
@@ -347,6 +387,12 @@ export interface TraceSessionIndex {
   findById?(sessionId: string): SessionRow | null;
   /** Registers an imported Trace as a Session of the receiving Agent (see importTraceFile); optional for the same reason. */
   insertOrIgnore?(row: SessionRow): void;
+}
+
+/** One Session's Trace files to import: each one's date directory, index and content. */
+export interface ImportedSession {
+  sessionId: string;
+  files: readonly { date: string; index: number; body: string }[];
 }
 
 /** TraceService wiring (the trace-file index is required: every listing/locating path serves from it — no directory walks). */
@@ -2184,50 +2230,86 @@ export class TraceService implements Traces {
     if (typeof sessionId !== "string" || !IMPORT_SESSION_ID_RE.test(sessionId)) {
       throw invalid("session_meta carries a missing or invalid session_id.");
     }
-    const duplicate = () =>
-      new HttpError(
+    const ts = Date.parse(first.timestamp);
+    const date = formatLocalDate(Number.isNaN(ts) ? new Date() : new Date(ts));
+    // Normalize to exactly one trailing newline (the JSONL convention the writer follows).
+    const body = content.replace(/\n+$/, "") + "\n";
+    const { skipped } = await this.importSessions(projectId, agentId, [
+      { sessionId, files: [{ date, index: 1, body }] },
+    ]);
+    if (skipped.length > 0) {
+      throw new HttpError(
         409,
         "trace_session_exists",
         `A Session with id ${sessionId} already exists here; a duplicate Trace cannot be imported.`,
       );
-    // A Session id is the identity everywhere — the sessions table keys on it, the frontend
-    // dedupes rows by it, and /chat/:sessionId routes by it — so the check spans the whole
-    // install, not just the receiving Agent. Importing the same Trace under a second Agent
-    // used to "succeed" into a Session nothing could own: no row could be inserted beside
-    // the existing one, and the list folded the two into a single conversation, leaving a
-    // group's count one above the rows it could ever show.
-    if ((await this.locateAll(projectId, agentId, sessionId)).length > 0) throw duplicate();
-    if (this.sessions?.findById?.(sessionId)) throw duplicate();
-    const ts = Date.parse(first.timestamp);
-    const date = formatLocalDate(Number.isNaN(ts) ? new Date() : new Date(ts));
-    const index = 1;
-    const dir = path.join(tracesDir(this.root, projectId, agentId), date);
-    await fs.mkdir(dir, { recursive: true });
-    const file = path.join(dir, `${sessionId}_${String(index).padStart(3, "0")}.jsonl`);
-    const body = content.replace(/\n+$/, "") + "\n";
+    }
+    return { sessionId, index: 1, date };
+  }
+
+  /**
+   * Lands Sessions' Trace files in the Agent's traces/<date>/ under their own indexes and
+   * registers each once as a Session of this Agent. A Session id is the identity everywhere —
+   * the sessions table keys on it, the frontend dedupes rows by it, /chat/:sessionId routes by
+   * it — so one whose id is anywhere in the install is skipped: a second copy would be a Session
+   * nothing could own.
+   */
+  async importSessions(
+    projectId: string,
+    agentId: string,
+    sessions: readonly ImportedSession[],
+  ): Promise<{ imported: number; skipped: string[] }> {
+    // One forced pass for the whole set: the index is never the authority for absence.
+    await this.index.reconcileAgent(projectId, agentId, { force: true });
+    const skipped: string[] = [];
+    for (const { sessionId, files } of sessions) {
+      const taken =
+        this.store.listFilesBySession(projectId, agentId, sessionId).length > 0 ||
+        this.sessions?.findById?.(sessionId);
+      if (taken || !(await this.writeShards(projectId, agentId, sessionId, files))) {
+        skipped.push(sessionId);
+        continue;
+      }
+      // Write-time registration, from the bytes in hand (no re-read). The earliest shard goes
+      // last: the Session's facts are the ones its head names.
+      for (const file of [...files].sort((a, b) => b.index - a.index)) {
+        this.index.registerImportedFile({
+          projectId,
+          agentId,
+          sessionId,
+          fileIndex: file.index,
+          date: file.date,
+          sizeBytes: Buffer.byteLength(file.body, "utf8"),
+          records: parseTraceLines(file.body),
+        });
+      }
+      this.indexImportedSession(projectId, agentId, sessionId);
+    }
+    return { imported: sessions.length - skipped.length, skipped };
+  }
+
+  /** Writes one Session's shards whole or not at all; false when one exists (`wx`: one racer wins). */
+  private async writeShards(
+    projectId: string,
+    agentId: string,
+    sessionId: string,
+    files: ImportedSession["files"],
+  ): Promise<boolean> {
+    const written: string[] = [];
     try {
-      // Normalize to exactly one trailing newline (the JSONL convention the writer
-      // follows). `wx` closes the check-then-write race: two concurrent imports of the
-      // same new session id both pass the locateAll check, but only one can create the
-      // file — the loser's EEXIST maps to the same 409 as the pre-check.
-      await fs.writeFile(file, body, { encoding: "utf8", flag: "wx" });
+      for (const { date, index, body } of files) {
+        const dir = path.join(tracesDir(this.root, projectId, agentId), date);
+        await fs.mkdir(dir, { recursive: true });
+        const file = path.join(dir, `${sessionId}_${String(index).padStart(3, "0")}.jsonl`);
+        await fs.writeFile(file, body, { encoding: "utf8", flag: "wx" });
+        written.push(file);
+      }
+      return true;
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === "EEXIST") throw duplicate();
+      await Promise.all(written.map((file) => fs.rm(file, { force: true }).catch(() => {})));
+      if ((err as NodeJS.ErrnoException).code === "EEXIST") return false;
       throw err;
     }
-    // Write-time registration: this path knows the file's identity and already holds the
-    // parsed records, so the index row + session facts land synchronously (no re-read).
-    this.index.registerImportedFile({
-      projectId,
-      agentId,
-      sessionId,
-      fileIndex: index,
-      date,
-      sizeBytes: Buffer.byteLength(body, "utf8"),
-      records,
-    });
-    this.indexImportedSession(projectId, agentId, sessionId);
-    return { sessionId, index, date };
   }
 
   /**

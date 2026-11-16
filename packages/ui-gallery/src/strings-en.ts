@@ -16,7 +16,8 @@ export const en: GalleryStrings = {
       leaderboards: "Leaderboards",
       amsp: "AMSP",
       docs: "Docs",
-      gallery: "Gallery",
+      gallery: "Theme Packs",
+      more: "More",
       github: "GitHub",
       openMenu: "Open menu",
       closeMenu: "Close menu",
@@ -133,6 +134,12 @@ export const en: GalleryStrings = {
         "The Agent settings' schedule tab: periods, next fire time, the bound Session and model.",
       how: "Agents › Agent settings › the Schedules tab.",
     },
+    apps: {
+      title: "App Center",
+      description:
+        "The Project's home screen of apps: icon-and-name tiles in each build state (ready, building, failed), a folder holding two apps, and New folder in the header.",
+      how: "Sidebar › App Center; New folder in the header opens the dialog that names a folder and checks its apps; right-click a tile or the empty space for its menu, drag tiles to reorder them or stack them into a folder.",
+    },
     plugins: {
       title: "Plugins",
       description: "Every plugin by category, to regroup or search; a card opens its details.",
@@ -180,6 +187,12 @@ export const en: GalleryStrings = {
         "The settings dialog on its Appearance page: theme, mode, accent, the five text sizes and the font pairing — where theme switching lives.",
       how: "The account menu at the bottom of the sidebar › Settings › Appearance.",
     },
+    "desktop-window": {
+      title: "Desktop window",
+      description:
+        "The desktop app's main window: the title band in the sidebar's colour, the sidebar toggle and back and forward at its start, the window buttons at its end; the main column sits flush against the window's edges, ruled off from the band and the sidebar alike, its scrollbar running to the window's corner.",
+      how: "The desktop app's main window on Windows or Linux; a browser has no title band.",
+    },
     login: {
       title: "Login",
       description:
@@ -188,7 +201,7 @@ export const en: GalleryStrings = {
     },
   },
   home: {
-    eyebrow: "Surface gallery",
+    eyebrow: "Theme Packs",
     title: "Penguin UI",
     lead: "The real Web App, running in three themes, two modes, five text sizes, the font pairings and two languages — on an in-browser demo API, fully clickable.",
     app: "The app",
@@ -205,7 +218,6 @@ export const en: GalleryStrings = {
   },
   rail: {
     theme: "Theme",
-    themeNames: { github: "Primer", modern: "Frost", geek: "Console" },
     accent: "Accent",
     accentTheme: "Theme's own",
     size: "Size",
@@ -248,6 +260,22 @@ export const en: GalleryStrings = {
     unset: "unset",
   },
   foundations: {
+    packs: {
+      intro:
+        "Every built-in pack in the registry, and the packs an admin imported on the demo's server, each with its manifest (pack.json): names, what it builds on, version, the theme API it targets, the swatches a picker draws and the face each font role puts first.",
+      name: "Name",
+      base: "Builds on",
+      version: "Version",
+      api: "Theme API",
+      swatches: "Swatches",
+      fonts: "Fonts",
+      isBase: "The base",
+      onFrost: "Frost",
+      foundation: "Foundation",
+      imported: "Imported",
+      importedHint: "A pack imported on the demo's server, read from GET /api/themes",
+      fontRoles: { sans: "reading", ui: "UI", cjk: "CJK", mono: "mono", display: "display" },
+    },
     surfaces: "Surfaces",
     inks: "Inks",
     lines: "Lines",
@@ -291,14 +319,14 @@ export const en: GalleryStrings = {
       secondary: "Cancel",
       input: "Search sessions",
       badge: "Running",
-      menuTier: "z-[60] menu",
+      menuTier: "z-popover menu",
       menuItems: ["Pin", "Rename", "Move to…"],
-      backdropTier: "z-50 dialog",
+      backdropTier: "z-modal dialog",
       dialogTitle: "Delete this session?",
       dialogBody: "Its transcript and Trace files are deleted with it.",
       cancel: "Cancel",
       confirm: "Delete",
-      toastTier: "z-[100] toast",
+      toastTier: "z-toast toast",
       toast: "Exported Trace #001",
     },
     radius: "Radius",
@@ -377,11 +405,22 @@ export const en: GalleryStrings = {
       "ui-chart": "a chart: its grid, axes, lines, areas, bars and points",
       "ui-widget":
         "a reading in a reply taken in at a glance: weather, a clock, a countdown, metrics",
+      "ui-edge":
+        "the edge of a box a person presses, types into or wrote: a boxed button, a text field or select, a checkbox, a radio, a switch, the start page's pickers and their own message bubble",
+      "ui-start":
+        "the start page (a new conversation) as a whole: the brand, three counts, the composer and the example folders",
+      "ui-library": "the model library: a provider's group box and the model cards in it",
+      "ui-ledger":
+        "figures set apart as a ledger: the usage summary cards, a company KPI tile, a Benchmark card's score",
+      "ui-empty": "an empty state: its art, title, description and action",
+      "ui-run": "the run indicator in a conversation's toolbar: the glyph and the word Running",
       "ui-scrim": "the dimmed layer behind a dialog, drawer or sheet",
       "ui-stream":
         "text that is still streaming (a reply, thinking, a summary, a tool's output): each theme decides how new text appears",
       "ui-glyph":
         "an icon each theme draws its own way: line (Primer), duotone line (Frost) or pixel art (Console)",
+      "ui-avatar":
+        "an agent's default avatar each theme draws its own way: one smiling ball penguin, on a rounded square (Primer), a circle (Frost, Doodle) or in pixel art (Console)",
     },
     hookSamples: {
       menu: ["Pin", "Rename", "Delete"],
@@ -440,7 +479,7 @@ export const en: GalleryStrings = {
       buttons: {
         title: "Buttons",
         description:
-          "Five variants, five sizes and the icon button; disabled and loading; links and keyboard hints.",
+          "Five variants, five sizes and the icon button; disabled and loading; links and keyboard hints; the floating ball that drags to an edge and tucks away.",
       },
       inputs: {
         title: "Inputs and forms",
@@ -450,7 +489,7 @@ export const en: GalleryStrings = {
       pickers: {
         title: "Pickers",
         description:
-          "Select, control sizes, segmented control, slider and choice group, switch and toggle rows, swatches, option menu, dropdown and menu rows.",
+          "Select, control sizes, segmented control, slider and choice group, switch and toggle rows, swatches, option menu, dropdown, context menu and menu rows.",
       },
       toasts: {
         title: "Toasts",
@@ -498,12 +537,13 @@ export const en: GalleryStrings = {
       },
       avatars: {
         title: "Avatars",
-        description: "The user and agent avatars at their sizes, and a stack of them.",
+        description:
+          "The user avatar at its sizes; the agent avatar in every theme's drawing across its colours; a stack of them.",
       },
       site: {
         title: "Public site",
         description:
-          "What the landing page and the docs share: the footer, the code card and copy button, pills, an article's contents, the docs sidebar, search, the external-link confirmation and article prose.",
+          "What the landing page and the docs share: the navigation bar, the footer, the code card and copy button, pills, the data pages' controls, an article's contents, the docs sidebar, search, the external-link confirmation and article prose.",
       },
       files: {
         title: "Files",
@@ -543,6 +583,11 @@ export const en: GalleryStrings = {
         title: "Attachments",
         description:
           "Images and files attached in a conversation: staged in the composer, in the message once sent, in a steer's chip, at phone width, with long names and when an image fails to load.",
+      },
+      packs: {
+        title: "Theme packs",
+        description:
+          "Each pack's manifest: names, what it builds on, version, theme API, swatches and fonts.",
       },
       colour: {
         title: "Colour",
@@ -587,6 +632,14 @@ export const en: GalleryStrings = {
       external: "All releases",
       keys: "Keyboard hints",
       shortcuts: [["Ctrl", "K"], ["Ctrl", "`"], ["Esc"]],
+      ball: "Floating ball",
+      ballHint:
+        "Drag it to the left or right edge and let go to dock it there; push it past the edge or press × to tuck it away, and the handle on the edge brings it back. The caller stores where it rests.",
+      ballLabel: "Exit full screen",
+      ballTuck: "Tuck to the edge",
+      ballShow: "Show the exit button",
+      ballReadout: (side: "left" | "right", percent: number, tucked: boolean, presses: number) =>
+        `${side} edge, ${percent}% down${tucked ? ", tucked" : ""} · pressed ${presses === 1 ? "once" : `${presses} times`}`,
     },
     inputs: {
       basics: "Inputs",
@@ -694,6 +747,12 @@ export const en: GalleryStrings = {
         },
       ],
       dropdown: "Dropdown",
+      contextMenu: "Context menu",
+      contextMenuHint:
+        "A right-click, Shift+F10, the ContextMenu key or a press and hold on touch opens it; Esc closes it and hands focus back to the target.",
+      contextMenuTarget: "Right-click here",
+      contextOpen: "Open",
+      contextFullScreen: "Open full screen",
       menu: "More actions",
       menuPin: "Pin",
       menuRename: "Rename",
@@ -814,6 +873,7 @@ export const en: GalleryStrings = {
       pagedGroups: { app: "App", you: "Account" },
       pages: { general: "General", appearance: "Appearance", account: "Profile" },
       pageBody: "The current page's settings go here.",
+      pageRow: (n: number) => `Setting ${n}`,
       appearanceInfo: "Theme, accent and density apply to this browser only.",
       drawer: "Drawer",
       openDrawer: "Open a drawer",
@@ -1125,6 +1185,15 @@ export const en: GalleryStrings = {
     avatars: {
       user: "User avatar",
       agent: "Agent avatar",
+      agentAside: "The active theme's drawing for twelve agents, one in each colour",
+      variants: "Every theme's drawing",
+      variantsAside:
+        "One smiling ball penguin, drawn once per theme; the colour follows the agent alone",
+      sizeCaption: (px) => `${px}px`,
+      picture: "An agent's own picture",
+      pictureAside:
+        "An uploaded picture keeps the agent's rounded tile; one that fails to load draws the default",
+      pictureBroken: "Fails to load",
       stack: "Avatar stack",
       stackShown: (shown, total) => `${shown} of ${total} shown`,
       userNames: ["admin", "Demo admin"],
@@ -1135,13 +1204,16 @@ export const en: GalleryStrings = {
       ],
     },
     site: {
+      nav: "Navigation bar",
+      navHint:
+        "Shared by the three sites: More ends the row and holds AMSP and Theme Packs; it opens on hover or a press, and reads as current while one of them is. The phone menu lists the two set in under More.",
       footer: "Footer",
       footerHint:
         "The landing page's brand and link columns; the docs' single line of copyright and links.",
-      tagline: "Unified and Stable RSI Framework.",
+      tagline: "Out-of-the-Box RSI Framework.",
       columns: [
         { title: "Product", links: ["Cases", "Quick start", "Blog", "Download"] },
-        { title: "Resources", links: ["GitHub repository", "Docs", "Gallery"] },
+        { title: "Resources", links: ["GitHub repository", "Docs", "Theme Packs"] },
       ],
       lineLinks: ["Home", "GitHub repository", "Apache-2.0 License"],
       copyright: "© 2026 Prism Shadow. Open source under Apache-2.0.",
@@ -1160,6 +1232,22 @@ export const en: GalleryStrings = {
         teal: "Perspectives",
         neutral: "Release notes",
       },
+      dataPage: "Data pages",
+      dataPageHint:
+        "Shared by the Plugins, Benchmarks and Leaderboards pages: the link back to the list, the segmented view switch, the toolbar's menu buttons and the data table. A menu button the current view has no use for greys out in place, so the toolbar holds still when the view changes.",
+      dataBack: "Plugins",
+      dataBackLabel: "Back to Plugins",
+      dataViews: "Views",
+      dataViewOptions: { table: "Table", pareto: "Pareto", waffle: "Waffle" },
+      dataFilter: "Filter",
+      dataColumns: "Columns",
+      dataColumnsHint: "Columns apply to the table",
+      dataHead: { rank: "Rank", name: "Algorithm", score: "Score", cost: "Cost" },
+      dataRows: [
+        ["SkillOpt RSI toolkit", "70.3", "$1.86"],
+        ["SkillAdam RSI toolkit", "69.0", "$1.96"],
+        ["Baseline", "56.3", "$2.38"],
+      ],
       article: "Article",
       articleHint:
         "The prose blog posts and doc pages share. Headings carry anchors, fenced code is highlighted, and tab groups and callouts are the docs' Markdown extensions; its contents sit on the right.",

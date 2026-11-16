@@ -149,7 +149,7 @@ export function ContextRingButton({
               width: PANEL_WIDTH,
               maxWidth: "calc(100vw - 32px)",
             }}
-            className="anim-pop z-[60] max-h-[70vh] overflow-y-auto rounded-md border border-line bg-overlay p-3 text-xs shadow-lg"
+            className="anim-pop z-popover max-h-[70vh] overflow-y-auto rounded-md border border-line bg-overlay p-3 text-xs shadow-lg"
           >
             <KeyValue size="xs">
               {readings.rows.map((r) => (

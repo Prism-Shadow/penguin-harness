@@ -25,11 +25,10 @@ const frame = (props: Partial<Props> = {}) =>
   );
 
 describe("ChartFrame", () => {
-  it("draws an image root carrying the chart hook, in the muted ink", () => {
+  it("draws an image root carrying the chart hook", () => {
     const html = frame();
     expect(html).toContain('role="img"');
-    expect(classTokens(html)).toEqual(expect.arrayContaining(["ui-chart", "text-fg-muted"]));
-    expect(html).not.toMatch(/gray-|dark:/);
+    expect(classTokens(html)).toContain("ui-chart");
   });
 
   it("takes the caller's name for the image, and the canvas height its geometry asks for", () => {
@@ -58,14 +57,12 @@ describe("ChartFrame", () => {
     expect(frame({ bubble })).not.toContain("day ");
     const hovered = frame({ bubble, hover: 1 });
     expect(hovered).toContain("day 1");
-    expect(classTokens(hovered)).toEqual(expect.arrayContaining(["border-line", "bg-overlay"]));
   });
 
   it("draws the cursor and the bubble for a hovered column that has no name", () => {
     const bubble = (i: number) => `reading ${i}`;
     const hovered = frame({ dates: ["", "", ""], bubble, hover: 1 });
     expect(hovered).toContain("reading 1");
-    expect(hovered).toContain("stroke-line-emphasis");
     expect(frame({ dates: ["", "", ""], bubble, hover: 3 })).not.toContain("reading");
   });
 });

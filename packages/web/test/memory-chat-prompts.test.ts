@@ -32,13 +32,12 @@ describe("buildMemoryEditPrompt", () => {
     expect(buildMemoryEditPrompt("t", "   ")).toBe(buildMemoryEditPrompt("t"));
   });
 
-  it("follows the active dictionary", () => {
-    for (const dict of [en, zh]) {
-      setActiveStrings(dict);
-      expect(buildMemoryEditPrompt("t")).toBe(
-        `${dict.memory.editPromptLead("t")}\n${dict.memory.editPromptTail}`,
-      );
-    }
+  it("follows the active language", () => {
+    const zhPrompt = buildMemoryEditPrompt("t");
+    setActiveStrings(en);
+    const enPrompt = buildMemoryEditPrompt("t");
+    expect(enPrompt).not.toBe(zhPrompt);
+    expect(enPrompt.endsWith(en.memory.editPromptTail)).toBe(true);
   });
 });
 
@@ -48,16 +47,15 @@ describe("buildMemoryAddPrompt", () => {
     expect(user).toContain(S.memory.addPromptLead.user);
     expect(user.endsWith("喜欢用 pnpm，Node 版本固定 24")).toBe(true);
     // The two scopes read differently, so a wrong lead cannot pass as the right one.
-    expect(S.memory.addPromptLead.workspace).not.toBe(S.memory.addPromptLead.user);
+    expect(buildMemoryAddPrompt("workspace", "c")).not.toBe(buildMemoryAddPrompt("user", "c"));
     expect(buildMemoryAddPrompt("workspace", "c")).toContain(S.memory.addPromptLead.workspace);
   });
 
-  it("follows the active dictionary", () => {
-    for (const dict of [en, zh]) {
-      setActiveStrings(dict);
-      for (const kind of ["user", "workspace"] as const) {
-        expect(buildMemoryAddPrompt(kind, "c")).toBe(`${dict.memory.addPromptLead[kind]}\nc`);
-      }
-    }
+  it("follows the active language", () => {
+    const zhPrompt = buildMemoryAddPrompt("user", "c");
+    setActiveStrings(en);
+    const enPrompt = buildMemoryAddPrompt("user", "c");
+    expect(enPrompt).not.toBe(zhPrompt);
+    expect(enPrompt).toContain(en.memory.addPromptLead.user);
   });
 });

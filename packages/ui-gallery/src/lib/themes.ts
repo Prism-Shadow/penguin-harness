@@ -5,9 +5,8 @@
  * bundled faces (the same in both languages) and the two words — the theme's own, the platform's
  * — that the dictionaries carry. The ids are the package's own, stored and quoted as they are.
  *
- * Theme display names are chrome copy and live in the dictionaries (`S.rail.themeNames`): 通用 /
- * 白领 / 极客 in Chinese, Primer / Frost / Console in English. Ids (`github` / `modern` / `geek`)
- * stay in URLs and file names.
+ * A theme's display name is its pack's (`names` in `pack.json`, read through `useText().theme`),
+ * one per language. Ids (`modern` / `github` / …) stay in URLs and file names.
  */
 import {
   FONT_CJK_OPTIONS,

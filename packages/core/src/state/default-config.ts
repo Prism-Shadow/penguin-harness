@@ -116,7 +116,18 @@ export interface CompactionConfig {
   mode?: CompactionMode;
   /** Prompt template for summarize compaction; defaults to the built-in value (editable config, not hardcoded). */
   prompt?: string;
+  /** Replies without the summary the harness answers (tool calls, then `reminder`) before it opens the next context with `handoff_note`; defaults to {@link DEFAULT_COMPACTION_MAX_ROUNDS}, <=0 answers none. */
+  max_rounds?: number;
+  /** The line sent after each tool round of a summarize compaction; defaults to {@link DEFAULT_COMPACTION_REMINDER}, blank sends none. */
+  reminder?: string;
+  /** The note a context opens with when no summary could be had; defaults to {@link DEFAULT_COMPACTION_HANDOFF_NOTE}, blank gives the quoted data alone. */
+  handoff_note?: string;
 }
+
+/** Tool rounds a summarize compaction may take when `compaction.max_rounds` is absent. */
+export const DEFAULT_COMPACTION_MAX_ROUNDS = 8;
+/** Inside `compaction.prompt`, `reminder` and `handoff_note`: the absolute path of this Session's scratchpad directory. */
+export const COMPACTION_SCRATCHPAD_PLACEHOLDER = "{{SCRATCHPAD_DIR}}";
 
 /**
  * Memory config (the `memory` section of `system_config.yaml`). Both prompts are editable on
@@ -223,15 +234,16 @@ export const MEMORY_INDEX_MAX_CHARS = 25_000;
  * Built-in default Memory Prompt: the always-injected half of the `{{MEMORY}}` block, in
  * template-example form — a fenced frontmatter example, what is worth saving, the index
  * contract (the line cap and a per-line length hint, so the model keeps the index short
- * before ever hitting the code-side caps) and the hygiene rules, then the User scope section
- * with its index. Stored
+ * before ever hitting the code-side caps) and the hygiene rules, the scripts a fact may keep
+ * (where they live, how they are described and run, and the trust they carry), then the User
+ * scope section with its index. Stored
  * per-Agent in `system_config.yaml` and editable on the Web App's Memory tab. The User
  * directory is literal text in the template's angle-bracket convention (resolved from the
  * Environment section by the model, like the Skills paths) — the only injection point is the
  * index itself.
  */
 export const DEFAULT_MEMORY_PROMPT = `# Memory
-Your long-term record across sessions: Markdown files you maintain with the file tools, in the directories below (they exist). One file per fact, with frontmatter:
+Your long-term record across sessions: Markdown facts — and the scripts they keep — you maintain with the file tools, in the directories below (they exist). One file per fact, with frontmatter:
 
 \`\`\`markdown
 ---
@@ -250,6 +262,8 @@ updated_at: <YYYY-MM-DD>
 **Never** what code, config or git history states, unconfirmed guesses, transcript excerpts — asked anyway, save the non-obvious part. Anything else is savable if the user wants it; anyone who reaches this agent reads it all.
 
 **Index:** each \`MEMORY.md\` lists its memories one line each (\`- [Title](file.md) — hook\`, ~150 chars, no content), updated with the file — deletions included. Only the first ${MEMORY_INDEX_MAX_LINES} lines are injected: merge overlaps, drop stale entries. Before saving, check the index and extend the file that covers the subject; delete memories that prove wrong.
+
+**Scripts:** a program you would otherwise rewrite — a parser, a report generator, a checker — is kept by the fact it serves, in a folder named after that fact's file (\`csv-tools.md\` keeps \`csv-tools/\`): any number of files, any language, no dependencies beyond their interpreter. List them in that fact's own body, each with what it does, how to run it and a relative link (\`[dedupe.py](csv-tools/dedupe.py) — drops duplicate rows; args: <in> <out>\`), never in \`MEMORY.md\`, which keeps one line per fact; delete the folder with its fact. Run a script with the shell tool by absolute path through its interpreter (files have no execute bit). It is code every later session may run and every Project member can read: keep secrets in the vault, never in a file, and read a script before running one you did not write in this session.
 
 ## User memory
 What holds wherever you work; every one of your sessions reads it.
@@ -367,6 +381,25 @@ Current tasks:
 ${SCHEDULE_LIST_PLACEHOLDER}`;
 
 /**
+ * Who made an Agent: a person in the Web App (`user`), an agent working in a Session (`agent`),
+ * or company mode creating an organization's CEO or a new hire (`company`). Recorded at creation
+ * and editable afterwards; it says nothing about what the Agent may do.
+ */
+export type AgentAuthor = "user" | "agent" | "company";
+
+/** Every author, in the order the Agents page lists their groups. */
+export const AGENT_AUTHORS: readonly AgentAuthor[] = ["user", "agent", "company"];
+
+/**
+ * The author a stored config means: its `author` when that is one of the three, `user`
+ * otherwise. A missing field is the common case — every Agent made before the field existed,
+ * and every Agent the SDK or the CLI creates without a server.
+ */
+export function agentAuthorOf(config: { author?: unknown }): AgentAuthor {
+  return AGENT_AUTHORS.find((author) => author === config.author) ?? "user";
+}
+
+/**
  * System-level config for Agent State, serialized as `system_config.yaml`.
  * Docs: /docs/configuration § "Agent config".
  */
@@ -375,6 +408,8 @@ export interface SystemConfig {
   name?: string;
   /** Agent description. */
   description?: string;
+  /** Who made the Agent (see AgentAuthor); read through `agentAuthorOf`, absent means `user`. */
+  author?: AgentAuthor;
   /** Agent State version number: a natural number, 1 on creation, incremented on successful optimization; a missing field is treated as 1. */
   version?: number;
   /**
@@ -450,6 +485,7 @@ Communicate with the user precisely and concisely, yet with warmth, and always r
 
 # Tool use
 - Work from evidence, not memory: inspect the real files and environment and run real commands. Run a command or edit a file yourself rather than pasting it for the user to apply, unless they ask to see it.
+- Before an action that is hard to undo or reaches beyond this machine — merging or closing a pull request, pushing to the default branch or force-pushing, releasing, publishing a package, deleting what the user owns — get the user's go-ahead in this conversation, unless they authorized it durably (in AGENTS.md, a memory, or the task itself). A yes covers only the step it was given for; one from another conversation or a compaction summary does not carry over. Look before you destroy anything.
 - Never guess a name. A path, command flag, package, API or URL you have not seen in this environment is looked up before you use it.
 - Send independent tool calls together in one turn — several file reads, unrelated checks — they run concurrently; a call that needs an earlier result, or writes the same file as another, waits for the next turn.
 - Run commands non-interactively (\`-y\`/\`--yes\` for installers and scaffolders; no editors, pagers or REPLs): a command waiting for input is stuck, not slow — feed it the input or kill it instead of polling.
@@ -591,20 +627,58 @@ export function insertSchedulesPlaceholder(template: string): string {
 }
 
 /**
- * Built-in default compaction Prompt (summarize mode): tells the model the summary will
- * replace the transcript as its only record (so it must include everything needed to
- * continue the task) and that no tools may be called. The format is shown as a concrete
+ * Built-in default compaction Prompt (summarize mode): a summary in fixed sections, with detail
+ * worth more than a paragraph saved to hand-off files in the Session's scratchpad. It names no
+ * round limit of its own (`max_rounds` is the harness's). The format is shown as a concrete
  * example rather than described in prose — some models treat the tags as a "title" and
  * write the body after the closing tag (issue #170); extraction salvages that shape, but
  * generating it right beats repairing it. Persisted per-agent in system_config.yaml —
  * existing agents keep their stored prompt.
  */
-export const DEFAULT_COMPACTION_PROMPT =
-  "Summarize the task transcript above. The summary will replace the transcript as its " +
-  "only record, so include everything needed to continue the task — the original request, " +
-  "current state, next steps, and any learnings. Do not call any tools; reply with text " +
-  "only, in exactly this format and nothing after it:\n\n" +
-  "[summary]put the summary text here...[/summary]";
+export const DEFAULT_COMPACTION_PROMPT = `The context window is nearly full. Compact the transcript above into a hand-off for the next context window, where this transcript will no longer be visible.
+
+Reply with the summary in exactly the format below, and nothing after its closing tag. When there is detail worth more than a paragraph (a plan, findings, a decision log, data, drafts), also save it to files under ${COMPACTION_SCRATCHPAD_PLACEHOLDER}/handoff/ with write_file or edit_file (absolute paths), in the same reply as the summary when you can. Give each hand-off file a new name rather than overwriting an earlier one, so nothing has to be read first; a file that already exists must be read before it is overwritten. Only read_file, and write_file/edit_file inside that scratchpad, work now: no commands, no other writes.
+
+Aim to be done within about three tool rounds, and in one reply when you can: put the calls a step needs into the same reply instead of one call per reply. You do not have to count rounds. After each one the harness says how many you have used, and it stops running tool calls when the compaction has gone on too long. Name every hand-off file by its absolute path and do not repeat its content.
+
+[summary]
+## Request
+The user's request and intent, in their own words where the wording matters.
+## Decisions and constraints
+What the user decided, authorized or ruled out, with the why. Consent does not carry into the next context: anything that needs a go-ahead is asked again there.
+## Progress
+What is done and verified, with file paths; what is in progress and where it stands.
+## Errors and fixes
+Errors met, what fixed them, and what not to repeat.
+## Files
+Workspace files that matter (read or changed), and every hand-off file, each with its absolute path and one line on what it holds.
+## Next steps
+The remaining work in order, and the exact next action.
+[/summary]`;
+
+/** Built-in default `compaction.reminder`: `{{ROUNDS_USED}}` and `{{ROUNDS_LEFT}}` are filled when it is sent. */
+export const DEFAULT_COMPACTION_REMINDER =
+  "Tool round {{ROUNDS_USED}} done. Reply with the summary as soon as the hand-off files are written.";
+
+/**
+ * Built-in default `compaction.handoff_note`: `{{ERROR}}`, `{{USER_MESSAGES}}`, `{{LAST_TURN}}`
+ * and `{{TRACE_PATH}}` are filled from the closing Trace file.
+ */
+export const DEFAULT_COMPACTION_HANDOFF_NOTE = `No summary of the earlier conversation could be written, so the harness wrote this note in its place. That conversation is no longer in your context; what is quoted below is copied from its Trace file, shortened where marked.
+
+Why there is no summary (if it is about size, do not rebuild the same input: read large files and outputs in parts):
+{{ERROR}}
+
+The user's messages, oldest first:
+{{USER_MESSAGES}}
+
+The last completed turn:
+{{LAST_TURN}}
+
+Trace file (JSONL, one record per line): {{TRACE_PATH}}
+Hand-off files written earlier, if any, are under ${COMPACTION_SCRATCHPAD_PLACEHOLDER}/handoff/.
+
+Carry on with the task from where it stopped. Consent does not carry over: anything that needed a go-ahead is asked again.`;
 
 /**
  * Default built-in system tools: file reading/editing/writing first, then bash execution
@@ -930,11 +1004,15 @@ export function defaultSystemConfig(): SystemConfig {
       // the answer starts. 120s, and later 300s, cut such requests off mid-thought.
       timeoutMs: 600000,
     },
+    // Key order is the order a compaction uses them in.
     compaction: {
       max_context_length: DEFAULT_MAX_CONTEXT_LENGTH,
       max_session_turns: -1,
       mode: "summarize",
       prompt: DEFAULT_COMPACTION_PROMPT,
+      max_rounds: DEFAULT_COMPACTION_MAX_ROUNDS,
+      reminder: DEFAULT_COMPACTION_REMINDER,
+      handoff_note: DEFAULT_COMPACTION_HANDOFF_NOTE,
     },
     memory: {
       enabled: true,

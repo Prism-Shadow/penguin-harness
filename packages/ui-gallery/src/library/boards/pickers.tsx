@@ -1,8 +1,8 @@
 /**
  * 选择器: the package's Select, Segmented, Slider, ChoiceGroup, Switch, ToggleRow, SwatchPicker,
- * OptionMenu and Dropdown, each holding its own choice, and the Menu rows at both densities. The
- * control sizes group sets a Select beside an Input and a Button of the same rung: one row, one
- * height. The choice groups show every shape and mode — chips that act on a press, chips that
+ * OptionMenu, Dropdown and ContextMenu, each holding its own choice, and the Menu rows at both
+ * densities. The control sizes group sets a Select beside an Input and a Button of the same rung:
+ * one row, one height. The choice groups show every shape and mode — chips that act on a press, chips that
  * toggle, cards led by the disc with a muted "Other…", checkbox cards — and an answered one, closed.
  */
 import { useState } from "react";
@@ -12,6 +12,7 @@ import {
   Button,
   ChevronDown,
   ChoiceGroup,
+  ContextMenu,
   Dropdown,
   FieldLegend,
   GlyphIcon,
@@ -337,6 +338,35 @@ export function PickersBoard() {
               />
             </Menu>
           </Dropdown>
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.contextMenu} aside={t.contextMenuHint}>
+        {/* A target of its own: right-click it, focus it and press Shift+F10 or the ContextMenu
+            key, or press and hold it on a touch screen. */}
+        <div className="lib-row">
+          <ContextMenu
+            label={t.contextMenuTarget}
+            items={(close) => (
+              <>
+                <MenuItem glyph={ICONS.appWindow} label={t.contextOpen} onSelect={close} />
+                <MenuItem glyph={ICONS.cornersOut} label={t.contextFullScreen} onSelect={close} />
+                <MenuSeparator />
+                <MenuItem glyph={ICONS.folder} label={t.menuMove} onSelect={close} />
+                <MenuItem glyph={ICONS.pencil} label={t.menuRename} onSelect={close} />
+              </>
+            )}
+          >
+            {(target) => (
+              <button
+                ref={target.ref}
+                {...target.props}
+                type="button"
+                className="rounded-lg border border-dashed border-line px-6 py-4 text-sm text-fg-muted"
+              >
+                {t.contextMenuTarget}
+              </button>
+            )}
+          </ContextMenu>
         </div>
       </BoardGroup>
       <BoardGroup title={t.menuRows} aside={t.menuRowsHint}>
