@@ -239,9 +239,15 @@ importers:
 
   library/projects:
     dependencies:
+      '@prismshadow/amsp':
+        specifier: workspace:*
+        version: link:../../packages/amsp
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-library-agent-api':
+        specifier: workspace:*
+        version: link:../agent-api
       '@prismshadow/penguin-library-db':
         specifier: workspace:*
         version: link:../db
@@ -260,6 +266,9 @@ importers:
       '@prismshadow/penguin-library-sessions':
         specifier: workspace:*
         version: link:../sessions
+      '@prismshadow/penguin-library-traces':
+        specifier: workspace:*
+        version: link:../traces
       '@prismshadow/penguin-library-workbenches':
         specifier: workspace:*
         version: link:../workbenches
@@ -8135,13 +8144,16 @@ snapshots:
 
   '@prismshadow/penguin-library-projects@file:library/projects(supports-color@10.2.2)(ws@8.21.0)':
     dependencies:
+      '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-library-agent-api': file:library/agent-api(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-library-identity': file:library/identity(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-library-machines': file:library/machines(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-library-models': file:library/models(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-library-organization': file:library/organization(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-library-sessions': file:library/sessions(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-library-traces': file:library/traces(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-library-workbenches': file:library/workbenches
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
@@ -8153,13 +8165,16 @@ snapshots:
 
   '@prismshadow/penguin-library-projects@file:library/projects(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
     dependencies:
+      '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-agent-api': file:library/agent-api(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-identity': file:library/identity(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-machines': file:library/machines(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-models': file:library/models(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-organization': file:library/organization(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-sessions': file:library/sessions(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-traces': file:library/traces(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-workbenches': file:library/workbenches
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
@@ -8171,13 +8186,16 @@ snapshots:
 
   '@prismshadow/penguin-library-projects@file:library/projects(ws@8.21.0)':
     dependencies:
+      '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/penguin-core': file:packages/core(ws@8.21.0)
+      '@prismshadow/penguin-library-agent-api': file:library/agent-api(ws@8.21.0)
       '@prismshadow/penguin-library-db': file:library/db(ws@8.21.0)
       '@prismshadow/penguin-library-identity': file:library/identity(ws@8.21.0)
       '@prismshadow/penguin-library-machines': file:library/machines(ws@8.21.0)
       '@prismshadow/penguin-library-models': file:library/models(ws@8.21.0)
       '@prismshadow/penguin-library-organization': file:library/organization(ws@8.21.0)
       '@prismshadow/penguin-library-sessions': file:library/sessions(ws@8.21.0)
+      '@prismshadow/penguin-library-traces': file:library/traces(ws@8.21.0)
       '@prismshadow/penguin-library-workbenches': file:library/workbenches
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
