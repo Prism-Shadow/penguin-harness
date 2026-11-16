@@ -88,7 +88,12 @@ describe("an open Session stream after its reader loses access", () => {
     const sid = await sharedSession();
     const frames: ServerFrame[] = [];
     const controller = new AbortController();
-    const answer = new StreamAnswer(1, (frame) => frames.push(frame), controller, () => false);
+    const answer = new StreamAnswer(
+      1,
+      (frame) => frames.push(frame),
+      controller,
+      () => false,
+    );
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
     try {
       const request = new Request(`http://localhost/api/sessions/${sid}/amsp`, {
