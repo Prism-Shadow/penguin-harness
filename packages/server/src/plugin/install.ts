@@ -118,6 +118,19 @@ export async function prefixDependencies(prefix: string): Promise<Record<string,
 }
 
 /**
+ * The registry URL the installer's npm runs are pointed at, set by the Plugin sources
+ * settings group (see source-settings.ts). Undefined — the default — passes nothing: npm's
+ * own configuration (its .npmrc chain, the ambient environment) answers, exactly as before
+ * the group existed. Set, it rides every npm run of the installer as `--registry`, which
+ * overrides that chain for the plugins' installs without touching how npm is configured on
+ * the machine.
+ */
+let npmRegistry: string | undefined = undefined;
+
+/** The settings group sets (or clears) the registry the installer's npm runs are pointed at. */
+export function setNpmRegistry(url: string | undefined): void {
+  npmRegistry = url;
+}
  * How to run npm, resolved once per process: an ordered list of spawnable commands, built by
  * asking the file system what is really here rather than assuming where npm lives. The shape
  * mirrors cross-spawn's (the resolver every npm-spawning tool sits on): locate first, spawn
@@ -242,6 +255,7 @@ export function npmFailureKind(stderr: string | undefined): "unavailable" | "oth
 // command behaves the same whatever npm version ships with the runtime.
 const install = (prefix: string, spec: string) =>
   npm(prefix, [
+    ...(npmRegistry !== undefined ? [`--registry=${npmRegistry}`] : []),
     "install",
     "--no-audit",
     "--no-fund",
