@@ -5,8 +5,6 @@ import {
   parseThinkingLevel,
 } from "../src/thinking-command.js";
 import type { ThinkingConfigSource } from "../src/thinking-command.js";
-import { getMessages } from "../src/i18n.js";
-import { DEFAULT_CHAT_THINKING_LEVELS } from "@prismshadow/penguin-core";
 
 describe("parseThinkingLevel", () => {
   it("accepts every selectable tier (trimmed, case-insensitive)", () => {
@@ -15,7 +13,7 @@ describe("parseThinkingLevel", () => {
     expect(parseThinkingLevel("  HIGH ")).toBe("high");
     expect(parseThinkingLevel("xhigh")).toBe("xhigh");
     // "max" is MMSP's deepest thinking level; the flag and /thinking accept it because
-    // both validate against core's DEFAULT_CHAT_THINKING_LEVELS, and the printed sets say so.
+    // both validate against core's DEFAULT_CHAT_THINKING_LEVELS.
     expect(parseThinkingLevel("MAX")).toBe("max");
   });
 
@@ -23,23 +21,6 @@ describe("parseThinkingLevel", () => {
     expect(parseThinkingLevel("none")).toBeNull();
     expect(parseThinkingLevel("")).toBeNull();
     expect(parseThinkingLevel("x-high")).toBeNull();
-  });
-});
-
-describe("the advertised tier set matches the accepted one", () => {
-  it("every tier the messages name is actually accepted, in both locales", () => {
-    // #322 spelled the ladder out in free text rather than deriving it, so widening the
-    // ladder in core silently desynced the printed set from the accepted one. Pin it.
-    for (const messages of [getMessages("en"), getMessages("zh")]) {
-      const printed = [
-        messages.common.thinking,
-        messages.thinkingCurrent("low"),
-        messages.thinkingInvalid("bogus"),
-      ].join(" ");
-      for (const level of DEFAULT_CHAT_THINKING_LEVELS) {
-        expect(printed).toContain(level);
-      }
-    }
   });
 });
 

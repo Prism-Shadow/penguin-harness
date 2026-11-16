@@ -12,8 +12,10 @@
  *   pnpm --filter @prismshadow/penguin-ui sync:font-licenses           rewrite the mirror
  *   pnpm --filter @prismshadow/penguin-ui sync:font-licenses --check   exit 1 on any drift, write nothing
  *
- * A font package is any `@fontsource/*` or `@fontsource-variable/*` dependency. Its file is named
- * after the package without its scope, so `@fontsource-variable/mona-sans` → `mona-sans.txt`.
+ * A font package is any `@fontsource/*` or `@fontsource-variable/*` dependency, development ones
+ * included: the published package carries copies of the files (`dist/fonts/`), not the dependency.
+ * Its file is named after the package without its scope, so `@fontsource-variable/mona-sans` →
+ * `mona-sans.txt`.
  *
  * A font with no package (`src/fonts/vendored-fonts.json`: MiSans, whose slices
  * `scripts/build-misans.py` cuts from Xiaomi's download) keeps a licence text transcribed from the
@@ -37,7 +39,7 @@ const vendored = new Map(
 );
 
 const manifest = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8"));
-const fontPackages = Object.keys(manifest.dependencies ?? {})
+const fontPackages = Object.keys({ ...manifest.dependencies, ...manifest.devDependencies })
   .filter((name) => /^@fontsource(-variable)?\//.test(name))
   .sort();
 

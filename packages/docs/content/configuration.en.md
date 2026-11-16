@@ -29,7 +29,7 @@ The CLI and the server load a `.env` file from the working directory on startup.
 
 Notes:
 
-- `PENGUIN_TRUST_PROXY`: set it behind a reverse proxy that terminates TLS. The proxy must overwrite `x-forwarded-proto` with `https`, and either keep the external `Host` header unchanged or overwrite `x-forwarded-host` with it; the server reads the first value of each. From them it takes the address the browser is on, its [public origin](/security#network-surface): session cookies are marked `Secure`, a write's `Origin` is checked against it, the hot-update network gate sees HTTPS, and a model provider's authorization redirects back to it. Without the setting, every write the Web App makes, signing in included, is refused with `403` `cross_origin_write`. The desktop app's embedded server sets it itself, because it listens on loopback only and is reached from outside only through the Penguin Remote relay, whose client should overwrite `x-forwarded-proto` with `https` and `x-forwarded-host` with the public host, each as a single value.
+- `PENGUIN_TRUST_PROXY`: set it behind a reverse proxy that terminates TLS. The proxy must keep the external `Host` header unchanged and overwrite `x-forwarded-proto` with `https`, and should overwrite `x-forwarded-host` with the external host or strip it. The server counts each header only as a single value: a list, which a proxy that appends instead of overwriting produces, is not trusted, and neither is a malformed value. From them it takes the address the browser is on, its [public origin](/security#network-surface): session cookies are marked `Secure`, the hot-update network gate sees HTTPS, and a model provider's authorization redirects back to it. A write's `Origin` is checked against the forwarded scheme with the unchanged `Host`. Without the setting, or when the proxy rewrites `Host` or appends to `x-forwarded-proto`, every write the Web App makes, signing in included, is refused with `403` `cross_origin_write`. Serve the external host with HSTS too. The desktop app's embedded server sets it itself, because it listens on loopback only and is reached from outside only through the Penguin Remote relay, whose client should keep the public host as `Host` and overwrite `x-forwarded-proto` with `https` and `x-forwarded-host` with the public host, each as a single value.
 - `PENGUIN_SEED_ADMIN_PASSWORD`: without it, the seed generates a random password that is hashed and discarded unseen, and you claim the account through the first-login link.
 - `PENGUIN_GO_ORIGIN`: server configuration, not an endpoint the browser can name. It must be a bare HTTPS origin; plain HTTP is accepted only for `localhost`, `127.0.0.1` and `[::1]`, for integration environments. A path, credentials, a query string or a fragment is rejected at startup. See [Connect an account](/models#connect-an-account).
 - `MODELSCOPE_BRIDGE_URL`: server configuration like `PENGUIN_GO_ORIGIN`, not an endpoint the browser can name. It must be an HTTPS address with no credentials, query string or fragment. Unlike `PENGUIN_GO_ORIGIN`, a path prefix **is** allowed, because the production bridge lives under `https://go.penguin.ooo/modelscope`. See [Connect an account](/models#connect-an-account).
@@ -82,7 +82,7 @@ A model's base URL, protocol and API key each resolve from the Project config al
 | zhipu | `ZAI_API_KEY` | `ZAI_BASE_URL` |
 | moonshot | `MOONSHOT_API_KEY` | `MOONSHOT_BASE_URL` |
 
-A new Project writes no `base_url` for these seven first-party groups, so their keyless models read these variables; a group or model whose base URL is the vendor's default endpoint reads them too. The gateway groups (openrouter, fireworks, siliconflow, atlascloud, tokendance, opencode-go, qwen-pay-as-you-go, qwen-token-plan, modelscope) carry the gateway's base URL on their group, so their models need a key in the file: their OpenAI-compatible client would read `OPENAI_*` (or `ANTHROPIC_*` for opencode-go's Anthropic Messages models), which holds your OpenAI or Anthropic key. A custom or user-created model with no base URL anywhere reads its protocol client's pair, `OPENAI_*` for the OpenAI-compatible protocols, and its requests go to that client's default endpoint (`https://api.openai.com/v1`) unless `OPENAI_BASE_URL` is set. The vllm group's client reads vLLM's own pair, `VLLM_API_KEY` and `VLLM_BASE_URL`, and never `OPENAI_*`: a new Project writes `http://127.0.0.1:8000/v1`, where `vllm serve` answers by default, as the group's base URL, and a vllm model with no base URL anywhere goes to `VLLM_BASE_URL`, else to that same address. Penguin Go and ModelScope take their key from the group's connection only: connect the group from its header, or paste the key in its group settings. `PENGUIN_GO_API_KEY` and `PENGUIN_GO_BASE_URL` are no longer read; if you set only those, reconnect Penguin Go from its group header or paste the key. MiniMax's official Responses client uses `MINIMAX_*`; the built-in MiniMax preset carries no base URL and reaches the official endpoint through that client's default. A model on the `mmsp` client (an MMSP server) or the `openai-chat-vllm-adapter` client (a vLLM server) with a `base_url` and no `api_key` is sent no key, which is what a server started without one takes; the vLLM client sends vLLM's placeholder key `EMPTY`. For provider groups and the built-in model catalog, see [Models & Providers](/models).
+A new Project writes no `base_url` for these seven first-party groups, so their keyless models read these variables; a group or model whose base URL is the vendor's default endpoint reads them too. The gateway groups (openrouter, fireworks, siliconflow, atlascloud, runcrate, tokendance, opencode-go, qwen-pay-as-you-go, qwen-token-plan, modelscope) carry the gateway's base URL on their group, so their models need a key in the file: their OpenAI-compatible client would read `OPENAI_*` (or `ANTHROPIC_*` for opencode-go's Anthropic Messages models), which holds your OpenAI or Anthropic key. A custom or user-created model with no base URL anywhere reads its protocol client's pair, `OPENAI_*` for the OpenAI-compatible protocols, and its requests go to that client's default endpoint (`https://api.openai.com/v1`) unless `OPENAI_BASE_URL` is set. The vllm group's client reads vLLM's own pair, `VLLM_API_KEY` and `VLLM_BASE_URL`, and never `OPENAI_*`: a new Project writes `http://127.0.0.1:8000/v1`, where `vllm serve` answers by default, as the group's base URL, and a vllm model with no base URL anywhere goes to `VLLM_BASE_URL`, else to that same address. Penguin Go and ModelScope take their key from the group's connection only: connect the group from its header, or paste the key in its group settings. `PENGUIN_GO_API_KEY` and `PENGUIN_GO_BASE_URL` are no longer read; if you set only those, reconnect Penguin Go from its group header or paste the key. MiniMax's official Responses client uses `MINIMAX_*`; the built-in MiniMax preset carries no base URL and reaches the official endpoint through that client's default. A model on the `mmsp` client (an MMSP server) or the `openai-chat-vllm-adapter` client (a vLLM server) with a `base_url` and no `api_key` is sent no key, which is what a server started without one takes; the vLLM client sends vLLM's placeholder key `EMPTY`. For provider groups and the built-in model catalog, see [Models & Providers](/models).
 
 ## Project config
 
@@ -94,7 +94,7 @@ A new Project writes no `base_url` for these seven first-party groups, so their 
 | `default_model` | pair | — | Paired `{ provider, model_id }` reference to the default model; must point to an entry in `models` |
 | `vision_model` | pair | — | The vision model that reads images for text-only models (`read_file` hands images to it); a paired reference |
 | `[default_chat]` | table | — | Prefilled defaults for new chats; see [New chat defaults](#new-chat-defaults) |
-| `[command_policy]` | table | Factory set | Deny rules for shell commands, applied ahead of the approval mode; see [Command policy](#command-policy) |
+| `[command_policy]` | table | Factory set | Ask and deny rules for shell commands, applied ahead of the approval mode; see [Command policy](#command-policy) |
 | `[plugins]` | table | — | The server plugins the Project asks for; see [Plugins](#plugins) |
 | `[providers.<id>]` | table | — | A group's connection, which its models follow; see [Group connections](#group-connections) |
 | `[[models]]` | array of tables | — | The available model entries |
@@ -217,21 +217,22 @@ The Plugins page does not offer package-global Delete plugin, which would remove
 
 ## Command policy
 
-The `[command_policy]` block is the Project's guardrail for shell commands: a list of deny rules applied at the approval boundary itself.
+The `[command_policy]` block is the Project's guardrail for shell commands: a list of rules applied at the approval boundary itself. A rule either refuses a matching command (`deny`) or holds it until a person allows it (`ask`).
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
 | `enabled` | boolean | On | Master switch; stored only as `enabled = false` |
-| `[[command_policy.rules]]` | array of tables | The factory set | The deny rules, matched in order. A stored empty list means no rules; an absent list means the factory set |
+| `[[command_policy.rules]]` | array of tables | The factory set | The rules. A stored empty list means no rules; an absent list means the factory set |
 
 Each rule has these keys:
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
 | `name` | string | — | Identifies the rule in the settings UI |
-| `pattern` | string | — | JavaScript regex source, matched against the whitespace-normalized command |
+| `pattern` | string | — | JavaScript regex source, matched against the whitespace-normalized command. It must compile on the server's runtime: a stored rule whose pattern does not is skipped when commands are matched, logged once, and marked on the settings page |
 | `description` | string | — | Optional description |
 | `enabled` | boolean | On | Per-rule switch |
+| `action` | `"deny"` \| `"ask"` | `"deny"` | What a hit does: `deny` refuses the call; `ask` puts it to a person whatever the approval mode. Stored only as `action = "ask"` |
 
 ```toml
 [command_policy]
@@ -241,6 +242,13 @@ enabled = true
 name = "rm-recursive-force"
 pattern = "…" # seeded from the factory set
 description = "rm with recursive + force flags in one command (rm -rf and friends)"
+action = "ask"
+
+[[command_policy.rules]]
+name = "gh-pr-merge-close"
+pattern = "…" # seeded from the factory set
+description = "gh pr merge / close — a pull request is merged or closed only with a person's go-ahead"
+action = "ask"
 
 [[command_policy.rules]]
 name = "no-force-push"
@@ -253,9 +261,12 @@ Manage the policy on the **Security policy** tab of **Project settings** in the 
 ### Enforcement
 
 - **What it checks:** both tools that reach a shell: `exec_command`'s `cmd` (the launch) and `input_command`'s `chars` (what gets typed into a running command).
-- **When it applies:** `Session.run` wraps the injected approval callback with the policy, so a hit is rejected before the host is asked, under every approval mode, allow-all included.
-- **What the model sees:** the fixed line `Tool call denied by policy.`, distinct from a person's cancellation, so the model changes course.
-- **Hooks:** the policy outranks a [pre-tool-use hook's](/agent-loop#pre-tool-use-hooks) `allow`. A vetoed call stays forbidden whatever an installed hook answers.
+- **When it applies:** `Session.run` wraps the injected approval callback with the policy, under every approval mode, allow-all included. A `deny` hit is rejected before the host is asked. An `ask` hit goes to the host's approval callback with a policy reason, which puts it to a person instead of answering by approval mode (see [Tools & Approval](/tools#approval)). The approval card then says which rule asked.
+- **Which rule wins:** a `deny` hit outranks an `ask` hit wherever the two sit in the list, so adding an `ask` rule never turns a refusal into a question. Among rules with the same action, the first match in list order is the one a decision names.
+- **What the model sees:** for a `deny` hit, the fixed line `Tool call denied by policy.`, distinct from a person's cancellation, so the model changes course. For an `ask` hit, the person's answer, recorded like any other approval.
+- **Hooks:** the policy outranks a [pre-tool-use hook's](/agent-loop#pre-tool-use-hooks) `allow`. A call a `deny` rule matches stays forbidden, and a call an `ask` rule matches still goes to a person, whatever an installed hook answers.
+- **Subagents:** a child Session applies the same policy to the callback it inherits, which is the parent's, so an `ask` hit inside a subagent reaches the same person with its reason.
+- **Unattended Sessions:** an organization's desk and ticket Sessions have nobody to ask, so an `ask` hit there is denied at once. `deny-all` denies it too.
 - **Where it lives:** in the Project config, not in Agent State, so an agent that edits its own configuration through its settings cannot reach it.
 - **When edits apply:** the policy is a strict-tier runtime parameter, read once when a model context opens. An edit reaches a running Session at its next rotation (compaction) and new conversations at once.
 
@@ -263,7 +274,9 @@ Manage the policy on the **Security policy** tab of **Project settings** in the 
 
 The rules are **plain data with no special tiers**. The factory set is seeded into each new Project exactly like the model presets: copied in at creation and never rewritten afterward. Every rule can then be edited, disabled or deleted, and you can add your own. A Project created before the seeding (no stored `rules` list) behaves as the factory set until its first saved edit writes the list. On the settings page, **Restore defaults** loads the factory set back into the editor, and saving writes it.
 
-The factory set is deliberately small. It covers commands whose verbatim execution is destructive with no undo:
+Because seeded rules are never rewritten, a change to the factory set in a later release does not reach a Project that already stores its list. A Project whose stored list came from an earlier factory set keeps it as stored, `deny` rules included, until **Restore defaults** replaces the whole list (custom rules included) once you save. A Project that never saved its list reads as the current factory set.
+
+The factory set is deliberately small, and every rule in it asks: a hit waits for a person's go-ahead, whatever the approval mode, instead of being refused. A rule added on the settings page starts on **Ask** too. To refuse a command outright, switch its rule to **Deny**. A host whose approval callback ignores the policy reason, such as an SDK callback that answers by mode alone, decides these hits like any other call; the server puts them to a person. The first rules cover commands whose verbatim execution is destructive with no undo:
 
 - `rm` with both a recursive and a force flag
 - `mkfs`
@@ -277,6 +290,18 @@ Four more rules cover the same ground in Windows spellings, since `exec_command`
 - a volume format (`format C:`, `Format-Volume`)
 - a raw disk overwrite (`\\.\PhysicalDriveN`, `Clear-Disk`)
 - the cmd fork bomb
+
+Five more follow them. Each covers a command that acts beyond this machine and is hard to take back, but is also routine work a person may well want done:
+
+| Rule | Matches |
+| --- | --- |
+| `gh-pr-merge-close` | `gh pr merge`, `gh pr close` |
+| `gh-release` | `gh release create`, `delete`, `edit` |
+| `git-push-force` | `git push` with `-f`, `--force` or `--force-with-lease` |
+| `git-push-default-branch` | `git push` to `main` or `master`, as a target or a refspec's destination. A bare `git push` names no target, so it cannot be told apart and is left to the agent's prompt |
+| `package-publish` | `npm publish`, `pnpm publish`, `yarn publish` |
+
+They match text, like every rule: `gh pr merge --help` and `npm publish --dry-run` ask too (one click), and the same action through an alias, a script or an API call walks past. The default system prompt's `# Tool use` section asks the agent to get a go-ahead for these actions and the wider class they belong to.
 
 ### Matching
 
@@ -298,7 +323,7 @@ The command policy is an **accident guardrail, not a security boundary**. This i
 - **Commands not on the list are not covered.** `shred`, `wipefs`, `find -delete`, `git clean -xfd` and `chmod -R 000 /` match no factory rule. Add your own rules for what your Project cares about.
 - **It is not a filesystem permission.** A tool that writes arbitrary paths can still rewrite the config file itself, and the change takes effect at the next rotation.
 
-What the policy does buy: a destructive one-liner does not run by accident, through either tool that reaches a shell, in POSIX or Windows spelling, under any approval mode. That is a speed bump, and a speed bump is worth having in front of an irreversible command. For an actual boundary, a process that cannot reach the rest of the filesystem whatever it runs, the mechanism is confinement (bubblewrap, dsh), a separate layer this policy complements rather than replaces.
+What the policy does buy: a destructive one-liner does not run without a person's go-ahead, through either tool that reaches a shell, in POSIX or Windows spelling, under any approval mode. That is a speed bump, and a speed bump is worth having in front of an irreversible command. For an actual boundary, a process that cannot reach the rest of the filesystem whatever it runs, the mechanism is confinement (bubblewrap, dsh), a separate layer this policy complements rather than replaces.
 
 ## Agent config
 
@@ -308,6 +333,7 @@ What the policy does buy: a destructive one-liner does not run by accident, thro
 | --- | --- | --- |
 | `name` | — | Agent display name; falls back to the id |
 | `description` | — | Agent description |
+| `author` | `user` | Who created the agent: `user`, `agent` or `company` |
 | `version` | `1` | Agent State version (a natural number), incremented on each successful optimization |
 | `kernel_version` | The current kernel version | Which generation of the built-in defaults the config is based on (a date string) |
 | `system_prompt` | Built-in template | Required; the only template with placeholder substitution |
@@ -319,6 +345,9 @@ What the policy does buy: a destructive one-liner does not run by accident, thro
 | `compaction.max_session_turns` | `-1` | Cumulative Session turn threshold |
 | `compaction.mode` | `summarize` | `summarize` / `discard` |
 | `compaction.prompt` | Built-in template | Prompt used for summarize compaction |
+| `compaction.max_rounds` | `8` | How many times the harness asks again before the summary |
+| `compaction.reminder` | Built-in line | Sent behind the tool outputs each time the harness asks again |
+| `compaction.handoff_note` | Built-in template | The note the next context opens with when no summary could be had |
 | `memory.enabled` | `true` | Whether Memory enters the context and Memory directories are prepared |
 | `memory.prompt` | Built-in template | The always-injected half of the `{{MEMORY}}` block; carries `{{USER_MEMORY_INDEX}}` |
 | `memory.workspace_prompt` | Built-in template | Appended only in a persistent Workspace; carries `{{WORKSPACE_MEMORY_INDEX}}` and `{{WORKSPACE_MEMORY_DIR}}` |
@@ -334,14 +363,17 @@ What the policy does buy: a destructive one-liner does not run by accident, thro
 
 ### Field details
 
+- `author`: `user` for an agent a person created in the Web App, `agent` for one an agent created (**Create with AI**, or `penguin agent create` run inside a conversation), `company` for one company mode created. A missing or unknown value reads as `user`. You can change it on the **Overview** tab, and the **Agents** page can group by it.
 - `kernel_version`: stamped at creation, when defaults are restored and at a kernel update. It is unrelated to `version` and never changed by your edits. A missing value means the config predates the mechanism, which counts as outdated.
 - `max_turns`: `-1` means unlimited; a positive integer caps the Task.
 - `model.max_tokens`: `-1` means no cap (the provider default). Each request clamps the effective value to the model's `context_window` minus the estimated input, so a small-window model is never asked for more than fits.
 - `model.thinking_level`: `none` / `low` / `medium` / `high` / `xhigh` / `max`. The level is fixed for a model context, so a change lands at the next compaction. Without this field, the Project's `[default_chat]` `thinking_level` applies, then `medium`.
 - `model.timeoutMs`: the longest wait for the next upstream event, reset by every event. It is not a cap on the request's total duration. It bounds the wait to connect and receive the first event, and the gaps between events. A model that keeps its reasoning off the wire spends its whole thinking phase inside that first gap, and so does a model behind a relay that consumes the thinking stream upstream and sends nothing until the answer starts. The default leaves room for both.
-- `compaction.max_context_length`: the effective threshold is the smaller of this value and the model's `context_window` − 2048. A small-window model therefore compacts inside its window, while a window above 258048 fires at this number. An entry with no `context_window` assumes a 128000 window.
+- `compaction.max_context_length`: the effective threshold is the smaller of this value and the model's `context_window` minus a reserve of an eighth of the window, at least 8192 and at most 32768 tokens, which leaves the compaction room for its own request and the summary. A small-window model therefore compacts inside its window (a 32k window at 24,576, a 200k one at 175,000), while a window of 288,768 or more fires at this number. An entry with no `context_window` assumes a 128000 window, i.e. 112,000. `0` or less turns this trigger off; a request the provider refuses as sent still hands the context off (see [When the provider refuses a request](#when-the-provider-refuses-a-request)).
 - `compaction.max_session_turns`: `-1` means unlimited.
-- `*.prompt`: each section prompt is editable on its settings tab: both Memory prompts on **Memory**, `vault.prompt` on **Vault**, `skills.prompt` on **Skills**, and `schedules.prompt` on **Schedules**.
+- `compaction.max_rounds`: a ceiling, not a plan. The harness counts the rounds, not the model; the default Prompt asks for about three and names no limit. `0` or less asks nothing again, so a first reply that is not the summary ends with the hand-off note: pair it with a Prompt that asks for text only. Each round re-reads the cached context at the cache-read price, about 0.75 M cached tokens per compaction at three rounds of a 250k context.
+- `compaction.prompt`, `compaction.reminder`, `compaction.handoff_note`: see [How a summarize compaction runs](#how-a-summarize-compaction-runs).
+- `*.prompt`: each section prompt is editable on its settings tab: both Memory prompts on **Memory**, `vault.prompt` on **Vault**, `skills.prompt` on **Plugins**, and `schedules.prompt` on **Schedules**.
 - `vault.enabled`: when off, values are still injected into subprocess environments; the model just does not see the key-name list.
 - `skills.enabled`: when off, installed Skills can still be invoked explicitly with `[use_skills]`.
 - `schedules.enabled`: when off, the server still fires tasks; the model just is not taught the task system.
@@ -349,7 +381,7 @@ What the policy does buy: a destructive one-liner does not run by accident, thro
 - `tools.builtin`: each entry has `name` / `description` / `parameters` / `permission` (`r` or `rw`) / `forModel` / `timeoutMs` / `maxOutputLength` / `call_description`. `call_description` is the per-tool switch for the `description` call argument, which is required while on; missing means kept.
 - `tools.mcpServers`: the transport is `stdio`, `http` or `sse`, and discovered tools join the toolset as `mcp__<server>__<tool>`. `config.permission` (`auto` / `r` / `rw`, default `auto`) fixes the approval level of every tool of that server instead of trusting its `readOnlyHint`. A string value in `config` may hold a `${KEY}` reference to a Vault key, filled in when the server connects; see [Vault references](/tools#vault-references). `plugin` names the plugin whose install wrote the entry: reinstalling or uninstalling that plugin touches exactly the entries carrying its name, and an entry without the field is your own. Removing the field makes the entry yours, after which the plugin reads as not installed and installing it again is refused while the name is taken. See [MCP Servers](/tools#mcp-servers).
 
-The four `compaction.*` fields are the one part of this file a running conversation does not wait for. The engine re-reads the section at every compaction checkpoint (after each request reports its token usage, and on a manual `/compact`), so a saved change applies to Sessions already running. Everything else is read when a model context opens and lands at the next compaction. In the Web App you can also [change the threshold](/chat#change-the-compaction-threshold) from the context panel by dragging the dashed cutter on its bar.
+The seven `compaction.*` fields are the one part of this file a running conversation does not wait for. The engine re-reads the section at every compaction checkpoint (after each request reports its token usage, and on a manual `/compact`), so a saved change applies to Sessions already running; a compaction keeps the section it started with, and an edit saved while it runs applies from the next one. Everything else is read when a model context opens and lands at the next compaction. In the Web App you can also [change the threshold](/chat#change-the-compaction-threshold) from the context panel by dragging the dashed cutter on its bar.
 
 For tool permissions and approval semantics, see [Tools & Approval](/tools).
 
@@ -376,25 +408,53 @@ compaction:
   max_context_length: 256000
   max_session_turns: -1
   mode: summarize
+  max_rounds: 8
 
 # Omitting the whole tools section = the full default toolset. Writing tools.builtin
 # REPLACES the default list wholesale: carry the complete definition (including the
 # parameters JSON Schema) for every tool you keep — see Tools & Approval.
 ```
 
+### How a summarize compaction runs
+
+When the context reaches `max_context_length` (or `max_session_turns`), the harness appends `prompt` to the running context. Each reply is read once. If it holds the summary, the next context opens with it. If not, the harness answers the reply's tool calls — `read_file`, and `write_file` / `edit_file` inside the Session's scratchpad, run; anything else gets an error — appends `reminder`, and reads the next reply, at most `max_rounds` times. A reply that is still not the summary after that, or a request that fails for good (refused, cut at the output limit, or still failing after the usual retries), ends the compaction with `handoff_note`: the next context opens with that note, filled from the Trace file, without another model request. Either way the Task continues. Every line the harness sends is also in the closed Trace file, in order. See [Compaction](/agent-loop#compaction).
+
+The harness fills these placeholders:
+
+| Placeholder | In | Filled with |
+| --- | --- | --- |
+| `{{SCRATCHPAD_DIR}}` | all three | The Session's scratchpad, absolute, when the section is read |
+| `{{ROUNDS_USED}}` | `reminder` | The rounds used, the one just answered included |
+| `{{ROUNDS_LEFT}}` | `reminder` | `max_rounds` minus the rounds used (the default does not use it) |
+| `{{ERROR}}` | `handoff_note` | Why there is no summary: the error pair the compaction ended with, as one `[request_error code="…"]…[/request_error]` line, the message cut at 500 characters |
+| `{{USER_MESSAGES}}` | `handoff_note` | The compacted context's first user message and its last three, one `[user_input]` line each, cut at 1,500 characters, with a line saying how many were left out between |
+| `{{LAST_TURN}}` | `handoff_note` | The last completed request before the compaction: its text and its last four tool calls with their outputs, each cut at 500 characters |
+| `{{TRACE_PATH}}` | `handoff_note` | The absolute path of the Trace file the compaction closed |
+
+A placeholder with nothing to quote reads `(not recorded)`. A blank text means no prose from the harness: a blank `reminder` sends a round's tool outputs alone, so an empty reply, which leaves nothing to send, ends with the note; a blank `handoff_note` gives the four quoted values, one per line. A key missing from the file reads as its default: a file written before `max_rounds`, `reminder` and `handoff_note` existed runs on their defaults and keeps a `prompt` edited there; the new keys appear in the file once a [kernel update](#kernel-updates) or a restore of defaults rewrites the section.
+
+### When the provider refuses a request
+
+A provider that refuses a request on a context it accepted before (HTTP 400, 413, 415 or 422) usually means the context has outgrown the model's real window: the model entry's `context_window` is larger than what the provider serves, so compaction was set to fire later than the provider allows. The conversation carries on from a Trace hand-off note (see [A refused request hands off](/agent-loop#a-refused-request-hands-off)), and the Web App marks the compaction row and raises a notice above the composer; the CLI's completion line says the same. Fix one of the two numbers:
+
+- **Correct the model's context window** to what the provider really serves: edit the model on the Models page (**Details** › **Context window**, see [Edit or delete a model](/models#edit-or-delete-a-model)), or the entry's `context_window` in the [model entries](#model-entries). For a self-hosted server, that is its configured maximum, such as vLLM's `--max-model-len`.
+- **Lower the agent's compaction threshold**, `compaction.max_context_length`, in the agent settings or by dragging the dashed marker in the context panel (see [Change the compaction threshold](/chat#change-the-compaction-threshold)). It applies to the running conversation at once.
+
+The same advice appears when a compaction's summary was cut off at the output limit: too little room was left under the window for the compaction itself.
+
 ### Kernel updates
 
 An existing agent always runs with its on-disk config as written; newer code defaults are never merged in automatically. When the built-in defaults change substantively, the config's `kernel_version` falls behind the current kernel, and the settings page and the agents list show an update hint. Two actions on the settings overview adopt the current defaults.
 
-**Update kernel** is a lossless merge, done one settings tab at a time (**System Prompt**, **Runtime**, **Tools**, **Skills**, **Memory**, **Vault**, **Schedules**):
+**Update kernel** is a lossless merge, done one settings tab at a time (**System Prompt**, **Runtime**, **Tools**, the Skills settings on **Plugins**, **Memory**, **Vault**, **Schedules**):
 
 - A tab the config lacks entirely, or one whose hash still matches a *recorded* generation's built-in default, is rewritten from the current defaults. This is also how tools added by a later version reach an existing agent.
 - A tab you have changed in any way stays unchanged **in full** and is listed in the result. If you edit one built-in tool, the whole **Tools** tab is kept: tools you added and tools you deleted both survive, and that tab stops following new defaults until you restore defaults.
-- `name`, `description`, `version`, `hooks` and `tools.mcpServers` belong to no tab and are never touched.
+- `name`, `description`, `author`, `version`, `hooks` and `tools.mcpServers` belong to no tab and are never touched.
 - The config is then stamped with the current `kernel_version`.
 - Matching is **conservative**: only a tab whose hash matches a recorded generation counts as an old default. A tab from a generation too old to be recorded is kept as if customized.
 
-**Restore default configuration** works like a Skill update: it overwrites the configuration with the current defaults and keeps only `name`, `description` and `version`. Everything else is replaced, including a custom system prompt, the tool list, the model and compaction settings, and MCP Servers, the ones a plugin installed included (**Manage installs** on the **Plugins** page puts those back). Use it as the full refresh when the kernel update's conservative matching leaves fields behind.
+**Restore default configuration** works like a Skill update: it overwrites the configuration with the current defaults and keeps only `name`, `description`, `author` and `version`. Everything else is replaced, including a custom system prompt, the tool list, the model and compaction settings, and MCP Servers, the ones a plugin installed included (**Manage installs** on the **Plugins** page puts those back). Use it as the full refresh when the kernel update's conservative matching leaves fields behind.
 
 For developers:
 
@@ -456,13 +516,17 @@ agent_state/memory/
 └── my-app-a81f32c4/              # one Workspace
     ├── .workspace                # the Workspace path this key stands for
     ├── MEMORY.md
-    └── testing-conventions.md
+    ├── testing-conventions.md
+    ├── csv-tools.md
+    └── csv-tools/                # optional: the scripts csv-tools.md keeps
+        ├── dedupe.py
+        └── lib/io.py
 ```
 
 Each scope has its own `MEMORY.md` index, and different agents never share Memory, even in the same Workspace. Because Memory lives in Agent State, it travels with export, import and snapshots.
 
 > [!WARNING]
-> Every Project member who can reach the agent can read its Memory. Keep credentials and sensitive personal data out of it.
+> Every Project member who can reach the agent can read its Memory, scripts included. Keep credentials and sensitive personal data out of it.
 
 To read or delete memories, or to ask the agent to edit them, use the **Memory** tab of the [agent settings](/agents).
 
@@ -506,6 +570,24 @@ The prompt rules out:
 
 Anything else can be saved if the user wants it. For corrections and decisions, the model adds **Why:** and **How to apply:** lines. A memory that proves wrong is deleted together with its index line. Dates are written absolute (`YYYY-MM-DD`), because relative dates mean nothing to a later Session.
 
+### Scripts
+
+A memory can keep scripts: programs the agent would otherwise write again, such as a parser, a report generator or a checker. They sit in a folder named after the memory's file without `.md`, beside it: `csv-tools.md` keeps `csv-tools/`. The folder holds any number of files, in any language and with any extension, in subfolders if the scripts need them. A memory has no folder until the agent writes its first file there.
+
+The default Memory prompt tells the model to:
+
+- keep the files free of dependencies beyond their interpreter
+- list the files in the memory's own body, each with what it does, how to run it and a relative link such as `[dedupe.py](csv-tools/dedupe.py)`, and never in `MEMORY.md`, which keeps one line per memory
+- run a script with `exec_command`, by absolute path through its interpreter (`python3`, `node`, `bash` and so on), because the file tools write files without the execute bit
+- delete the folder together with its memory
+- read a script before running one it did not write in the current Session, and keep secrets in the vault, never in a file
+
+Scripts have no tool of their own. A run is an ordinary `exec_command`, shown in the conversation like any other command, and the Session's sandbox, approval mode and command policy apply to it. Writing a script needs full access, as any write to Memory does: a confining [sandbox](/settings#sandbox) keeps Agent State read-only.
+
+A script carries the trust of a Skill the agent wrote for itself. Every later Session of the agent may run it, and every Project member who can reach the agent can read it on the **Memory** tab, under the memory that keeps it. A folder with no memory of its name beside it belongs to no memory; the tab lists its files apart, under **Files without a memory**.
+
+An agent created before scripts existed keeps its stored Memory prompt, which does not mention them, until a [kernel update](#kernel-updates) brings in the current one.
+
 ### Injection
 
 Only the indexes reach the context, through the template's `{{MEMORY}}` placeholder. Each `MEMORY.md` lists its scope's memories one per line, as `- [Title](file.md) — hook` with links relative to the scope directory. The model updates the index together with the file, deletions included, so the two never disagree.
@@ -522,7 +604,7 @@ Limits:
 - A blank index injects an explicit "nothing saved yet" note.
 - Injection is capped at 200 lines per scope (one memory per line by convention), then at 25,000 characters total as a backstop for an index with a few enormous lines. Past a cap, a truncation note tells the model to open the full `MEMORY.md` itself. The file on disk is never touched.
 - The default Memory prompt states the line cap and asks for index lines under about 150 characters, so the model keeps the index short before it reaches the caps. The character backstop exists only in code.
-- The model reads topic bodies on demand.
+- The model reads topic bodies and the files they keep on demand.
 
 The two halves are separate config keys because substitution has no conditionals. A temporary Workspace must never receive the Workspace section (its directory line and the rule for choosing a scope), so that half is simply not appended there. The harness only decides where Memory lives and keeps writes inside it. Deciding what is worth keeping, splitting topics and maintaining the indexes is the model's job, done with the ordinary file tools.
 

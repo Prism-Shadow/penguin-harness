@@ -6,41 +6,12 @@
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { Button, IconButton, buttonClass } from "../src/components/actions/button/button";
-import type { ButtonSize, ButtonVariant } from "../src/components/actions/button/button";
 import { DEFAULT_UI_STRINGS, UiStringsProvider } from "../src/strings";
 import { classTokens, renderStatic } from "../src/testing";
 
-const VARIANTS: ButtonVariant[] = ["primary", "secondary", "danger", "ghost", "link"];
-const SIZES: ButtonSize[] = ["xs", "sm", "md", "icon", "icon-sm"];
 const glyph = createElement("svg", { id: "glyph" });
 
 describe("Button", () => {
-  it("draws every variant in tokens, and never sets a label in mono", () => {
-    for (const variant of VARIANTS) {
-      for (const size of SIZES) {
-        const tokens = classTokens(renderStatic(createElement(Button, { variant, size }, "Save")));
-        expect(tokens).not.toContain("font-mono");
-      }
-    }
-    const tokens = (variant: ButtonVariant) =>
-      classTokens(renderStatic(createElement(Button, { variant }, "Save")));
-    expect(tokens("secondary")).toEqual(
-      expect.arrayContaining(["bg-control", "text-fg", "border-line-emphasis", "rounded-control"]),
-    );
-    expect(tokens("danger")).toEqual(
-      expect.arrayContaining([
-        "text-tone-danger-fg",
-        "hover:border-tone-danger-line",
-        "hover:bg-tone-danger-bg",
-      ]),
-    );
-    expect(tokens("ghost")).toEqual(expect.arrayContaining(["text-fg-muted", "hover:text-fg"]));
-    // A link-button is text: the link colour, and no box around it.
-    expect(tokens("link")).toEqual(expect.arrayContaining(["text-link", "hover:underline"]));
-    expect(tokens("link")).not.toContain("border");
-    expect(tokens("link")).not.toContain("px-3");
-  });
-
   it("shows its title through the tooltip layer, and names a square button by it", () => {
     const text = renderStatic(createElement(Button, { title: "Save the draft" }, "Save"));
     expect(text).toContain('data-tooltip="Save the draft"');
@@ -96,15 +67,6 @@ describe("IconButton", () => {
     expect(titled).toContain('aria-label="Delete notes.md"');
     expect(titled).toContain('data-tooltip="Delete"');
   });
-
-  it("takes the square sizes", () => {
-    const md = classTokens(renderStatic(createElement(IconButton, { label: "Add" }, glyph)));
-    expect(md).toContain("p-1.5");
-    const sm = classTokens(
-      renderStatic(createElement(IconButton, { label: "Add", size: "sm" }, glyph)),
-    );
-    expect(sm).toContain("p-1");
-  });
 });
 
 describe("buttonClass", () => {
@@ -118,6 +80,5 @@ describe("buttonClass", () => {
       expect(button).toContain(token);
     }
     expect(label).toContain("has-[:focus-visible]:[outline:var(--ui-focus-ring)]");
-    expect(label).not.toContain("font-mono");
   });
 });

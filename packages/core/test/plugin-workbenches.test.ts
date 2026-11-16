@@ -13,20 +13,57 @@ import path from "node:path";
 import { afterEach, beforeEach, expect, it } from "vitest";
 import {
   installPlugin,
-  libraryPlugin,
   listInstalledWorkbenches,
   readLibraryPackage,
   isLibraryPackage,
   assertPluginWorkbenchesInstallable,
 } from "../src/index.js";
+import type { LibraryPlugin } from "../src/index.js";
+import { pluginPackage, skillFile, writeFiles } from "./helpers/plugin-packages.js";
 let root: string;
 const project = "default_project",
   agent = "custom_support";
-const plugin = () => structuredClone(libraryPlugin("penguin-support")!);
+
+/** The support workbench app's sources: its own manifest, a page and the script it loads. */
+const SUPPORT_APP = {
+  "package.json": JSON.stringify({
+    name: "penguin-support-workbench",
+    version: "1.0.0",
+    type: "module",
+    penguin: {
+      version: "2026.10.14.1",
+      modules: [
+        { name: "Workbench", provides: { main: "@prismshadow/penguin-server#WorkbenchMain" } },
+      ],
+    },
+  }),
+  "ui/index.html": '<!doctype html><script type="module" src="./app.js"></script>\n',
+  "ui/app.js": "export {};\n",
+};
+
+/** A support plugin as the library reads it: a Skill and the support workbench, declared in its table. */
+let supportPlugin: LibraryPlugin;
+const plugin = () => structuredClone(supportPlugin);
 const base = () => path.join(root, project, "agents", agent);
-const dir = () => path.join(base(), "workbenches/support");
+const dir = () => path.join(base(), "agent_state/workbenches/support");
 beforeEach(async () => {
   root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-plugin-wb-"));
+  const pkg = path.join(root, "penguin-support");
+  await writeFiles(pkg, {
+    ...pluginPackage(
+      { name: "@penguinharness/penguin-support", description: "Support." },
+      { skills: ["penguin-support"], workbenches: ["support"] },
+    ),
+    "skills/penguin-support/SKILL.md": skillFile(
+      "penguin-support",
+      "2026.10.14.1",
+      "Answer from https://penguin.ooo/docs/.\n",
+    ),
+    ...Object.fromEntries(
+      Object.entries(SUPPORT_APP).map(([rel, text]) => [`workbenches/support/${rel}`, text]),
+    ),
+  });
+  supportPlugin = readLibraryPackage(pkg);
 });
 afterEach(async () => {
   await fs.rm(root, { recursive: true, force: true });
@@ -36,10 +73,13 @@ it("installs a plugin's runnable workbench and Skill on an ordinary Agent", asyn
   expect(
     (await listInstalledWorkbenches(root, project, agent)).map((w) => [w.name, w.plugin]),
   ).toEqual([["support", "penguin-support"]]);
-  expect(await fs.readFile(path.join(dir(), "ui/index.html"), "utf8")).toContain("./app.js");
+  for (const [rel, text] of Object.entries(plugin().workbenches![0]!.files)) {
+    expect(await fs.readFile(path.join(dir(), rel), "utf8"), rel).toBe(text);
+  }
+  const [skill] = plugin().skills;
   expect(
-    await fs.readFile(path.join(base(), "agent_state/skills/penguin-support/SKILL.md"), "utf8"),
-  ).toContain("https://penguin.ooo/docs/");
+    await fs.readFile(path.join(base(), "agent_state/skills", skill!.name, "SKILL.md"), "utf8"),
+  ).toBe(skill!.content);
 });
 it("updates source and removes retired files while keeping state, history and local additions", async () => {
   const original = plugin();
@@ -110,11 +150,7 @@ it("retries an interrupted install owned by the same plugin", async () => {
 it("loads workbench-only packages and leaves unsafe payloads out of the library", async () => {
   const pkg = path.join(root, "package");
   const wb = path.join(pkg, "workbenches/support");
-  await fs.mkdir(wb, { recursive: true });
-  await fs.writeFile(
-    path.join(pkg, "package.json"),
-    JSON.stringify({ name: "example-workbench", version: "1.0.0" }),
-  );
+  await writeFiles(pkg, pluginPackage({ name: "example-workbench" }, { workbenches: ["support"] }));
   for (const [rel, text] of Object.entries(plugin().workbenches![0]!.files)) {
     await fs.mkdir(path.dirname(path.join(wb, rel)), { recursive: true });
     await fs.writeFile(path.join(wb, rel), text);

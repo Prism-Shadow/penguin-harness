@@ -1,0 +1,35 @@
+{
+  "name": "@penguinharness/trace-rsi-toolkit",
+  "version": "0.2.18",
+  "description": "The TRACE RSI Toolkit: organize container training and evaluation, refine a modular skill bank from contrasting trajectories, and test the checkpoint selected by training scores.",
+  "keywords": [
+    "penguin-plugin",
+    "penguinharness",
+    "skills"
+  ],
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Prism-Shadow",
+    "url": "https://github.com/Prism-Shadow"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "plugins/trace-rsi-toolkit"
+  },
+  "files": [
+    "icon.svg",
+    "skills",
+    "ifaces.json",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json"
+  },
+  "devDependencies": {
+    "@prismshadow/penguin-core": "workspace:*"
+  }
+}

@@ -13,8 +13,8 @@
  */
 import { Chevron, ICON_GAP, ICON_SIZE, Pill, RuledSection } from "@prismshadow/penguin-ui";
 import { formatYearMonthDay } from "../../lib/format";
-import { noteLines, releaseNotesNewestFirst } from "../../lib/release-notes";
-import type { ReleaseNote } from "../../lib/release-notes";
+import { noteLines, releaseNotesNewestFirst, type ReleaseNote } from "../../lib/release-notes";
+
 import { S } from "../../lib/strings";
 
 export function ReleaseNotesList({

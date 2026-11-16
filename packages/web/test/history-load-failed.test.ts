@@ -4,21 +4,25 @@
  * (features/chat/history-load-failed.tsx), for a conversation on a machine and on this server.
  *
  * - Given a conversation on a machine the server is bringing back, the transcript names the
- *   machine by its alias and says it is reconnecting, with the countdown to the next attempt; the
- *   transport's error — the machine's internal id, the SOCKS port — is not on screen until the
- *   details fold is opened.
- * - Given that, Retry now asks the server to try the machine now, and the status follows the
+ *   machine by its alias and says it is reconnecting, with the countdown to the next attempt and
+ *   Go to Machines under it; the transport's error — the machine's internal id, the SOCKS port —
+ *   is not on screen until the details fold is opened.
+ * - Given that, Retry now asks the server to try the machine now, and the row follows the
  *   answer to the attempt running; a refused retry is said and the press can be made again.
+ * - Given that, Stop retrying asks the server to stop, and the row follows the answer to stopped,
+ *   offering Retry.
  * - Given the machine connected again, the history is read again on its own, once.
  * - Given a machine whose server is stopped (nothing is bringing it back), the transcript says
- *   so by its alias, and its Retry reads the history again.
- * - Given a conversation on this server, the read's own error is shown with a Retry.
+ *   so by its alias, and Go to Machines opens the Machines page.
+ * - Given a conversation on this server, the read's own error is shown with a Retry; when the read
+ *   failed on a defect (the server's converged 500), Report stands beside Retry, and not for an
+ *   expected failure (the network gone).
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createElement as h } from "react";
 import type { MachineInfo, MachinesResponse } from "@prismshadow/penguin-server/api";
 import { ADMIN_ME } from "./helpers/admin-settings";
-import { button, click, mount, settle, unmountAll, waitFor } from "./helpers/dom";
+import { button, click, hasButton, mount, settle, unmountAll, waitFor } from "./helpers/dom";
 import { apiError, json, stubFetch } from "./helpers/fetch";
 import type { FetchRequest } from "./helpers/fetch";
 
@@ -32,7 +36,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-type Link = "waiting" | "trying" | "connected" | "stopped";
+type Link = "waiting" | "trying" | "cancelled" | "connected" | "stopped";
 
 /** The Project's machine list with `box` in the state the test sets. */
 function machineList(link: Link): MachinesResponse {
@@ -50,8 +54,9 @@ function machineList(link: Link): MachinesResponse {
           reconnect: {
             since: "2026-10-19T23:16:00.000Z",
             attempts: 1,
-            maxAttempts: 8,
+            maxAttempts: 5,
             nextAt: link === "waiting" ? new Date(Date.now() + 40_000).toISOString() : null,
+            ...(link === "cancelled" ? { gaveUp: "cancelled" } : {}),
             lastError: null,
             diagnosis: null,
           },
@@ -92,6 +97,13 @@ function server(initial: Link) {
       state.link = "trying";
       return json(machineList("trying"));
     }
+    if (
+      request.method === "POST" &&
+      request.path === `/api/projects/${PROJECT}/machines/ssh%3Abox/stop-reconnecting`
+    ) {
+      state.link = "cancelled";
+      return json(machineList("cancelled"));
+    }
     return apiError(404, "not_found");
   });
   return { state, fetch };
@@ -110,34 +122,43 @@ async function fresh() {
     auth: await import("../src/state/auth"),
     project: await import("../src/state/project"),
     sessionMachines: await import("../src/lib/session-machines"),
+    router: await import("react-router"),
   };
 }
 
 type Modules = Awaited<ReturnType<typeof fresh>>;
 
-async function open(modules: Modules, onRetry: () => void) {
-  const mounted = await mount(
+/** The transcript on a chat route, beside the Machines page it can open. */
+async function open(modules: Modules, onRetry: () => void, cause?: unknown) {
+  const router = modules.router.createMemoryRouter(
+    [
+      {
+        path: "/chat",
+        element: h(modules.failed.HistoryLoadFailed, {
+          projectId: PROJECT,
+          sessionId: SESSION,
+          error: TRANSPORT_ERROR,
+          cause,
+          onRetry,
+        }),
+      },
+      { path: "/machines", element: h("p", null, "Machines page") },
+    ],
+    { initialEntries: ["/chat"] },
+  );
+  await mount(
     h(
       modules.auth.AuthProvider,
       null,
       h(
         modules.project.ProjectProvider,
         null,
-        h(
-          modules.machines.MachinesProvider,
-          null,
-          h(modules.failed.HistoryLoadFailed, {
-            projectId: PROJECT,
-            sessionId: SESSION,
-            error: TRANSPORT_ERROR,
-            onRetry,
-          }),
-        ),
+        h(modules.machines.MachinesProvider, null, h(modules.router.RouterProvider, { router })),
       ),
     ),
   );
   await settle();
-  return mounted;
+  return router;
 }
 
 /** What a reader sees: the text outside every `hidden` subtree. */
@@ -151,7 +172,7 @@ const reconnectPosts = (requests: readonly FetchRequest[]) =>
   requests.filter((r) => r.method === "POST" && r.path.endsWith("/reconnect"));
 
 describe("a conversation's history that could not be read", () => {
-  it("names the machine and its reconnect, and keeps the transport's error in the fold", async () => {
+  it("names the machine and its reconnect with Go to Machines under it, and keeps the transport's error in the fold", async () => {
     server("waiting");
     const modules = await fresh();
     modules.sessionMachines.rememberSessionMachine(SESSION, MACHINE);
@@ -163,6 +184,11 @@ describe("a conversation's history that could not be read", () => {
       "waiting",
     );
     expect(document.querySelector("[data-retry-countdown]")).not.toBeNull();
+    expect(
+      document
+        .querySelector("[data-retry-phase]")!
+        .compareDocumentPosition(button(words.openMachines)),
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(visibleText()).not.toContain(MACHINE);
     expect(visibleText()).not.toContain("SOCKS");
     expect(visibleText()).not.toContain(modules.en.chat.historyLoadFailed);
@@ -192,6 +218,26 @@ describe("a conversation's history that could not be read", () => {
     );
   });
 
+  it("asks the server to stop retrying, and follows its answer to stopped, offering Retry", async () => {
+    const s = server("waiting");
+    const modules = await fresh();
+    modules.sessionMachines.rememberSessionMachine(SESSION, MACHINE);
+    await open(modules, vi.fn());
+    const r = modules.en.machines.retry;
+    await waitFor(() => visibleText().includes(r.stop));
+
+    await click(button(r.stop));
+    expect(
+      s.fetch.requests.filter((q) => q.method === "POST" && q.path.endsWith("/stop-reconnecting")),
+    ).toHaveLength(1);
+    await waitFor(() => visibleText().includes(r.cancelled));
+    expect(document.querySelector("[data-retry-phase]")?.getAttribute("data-retry-phase")).toBe(
+      "cancelled",
+    );
+    expect(button(r.retry).disabled).toBe(false);
+    expect(visibleText()).not.toContain(r.stop);
+  });
+
   it("reads the history again on its own once the machine is connected, once", async () => {
     const s = server("trying");
     const modules = await fresh();
@@ -209,18 +255,18 @@ describe("a conversation's history that could not be read", () => {
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 
-  it("says a stopped machine's server is stopped, and its Retry reads the history again", async () => {
+  it("says a stopped machine's server is stopped, and Go to Machines opens the Machines page", async () => {
     server("stopped");
     const modules = await fresh();
     modules.sessionMachines.rememberSessionMachine(SESSION, MACHINE);
-    const onRetry = vi.fn();
-    await open(modules, onRetry);
-    await waitFor(() => visibleText().includes(modules.en.chat.machineAway.stopped("box")));
+    const router = await open(modules, vi.fn());
+    const words = modules.en.chat.machineAway;
+    await waitFor(() => visibleText().includes(words.stopped("box")));
 
     expect(document.querySelector("[data-retry-phase]")).toBeNull();
     expect(visibleText()).not.toContain(MACHINE);
-    await click(button(modules.en.common.retry));
-    expect(onRetry).toHaveBeenCalledTimes(1);
+    await click(button(words.openMachines));
+    expect(router.state.location.pathname).toBe("/machines");
   });
 
   it("shows the read's own error with a Retry for a conversation on this server", async () => {
@@ -234,5 +280,17 @@ describe("a conversation's history that could not be read", () => {
     expect(document.querySelector("[data-retry-phase]")).toBeNull();
     await click(button(modules.en.common.retry));
     expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it.each<[string, unknown, boolean]>([
+    ["the server's converged 500", { name: "ApiError", status: 500, code: "internal" }, true],
+    ["the network gone", { name: "ApiError", status: 0, code: "network_error" }, false],
+  ])("for a read that failed on %s, offers Report beside Retry: %s", async (_, cause, offered) => {
+    server("waiting");
+    const modules = await fresh();
+    await open(modules, vi.fn(), cause);
+    await waitFor(() => visibleText().includes(modules.en.chat.historyLoadFailed));
+    expect(hasButton(modules.en.report.action)).toBe(offered);
+    expect(hasButton(modules.en.common.retry)).toBe(true);
   });
 });

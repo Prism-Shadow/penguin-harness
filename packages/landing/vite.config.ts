@@ -8,6 +8,10 @@
  * (`blogFrontmatter`, scripts/frontmatter-plugin.ts); each body is a chunk of its own, loaded
  * when its post is opened (src/lib/blog.ts).
  *
+ * The Plugins, Benchmarks and Leaderboards pages read their records at build time from the
+ * repository's plugins/ and a fresh clone of penguin-harness-benchmark (`hubData`,
+ * scripts/hub-plugin.ts); PENGUIN_BENCHMARK_REPO names a local checkout instead.
+ *
  * The home page frames the component gallery at `/gallery/`, which only the assembled site
  * serves. In dev, `/gallery/` is passed through to the gallery's own dev server, run under that
  * base beside this one (`BASE_PATH=/gallery/ pnpm dev:gallery`; see README).
@@ -16,10 +20,11 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
 import { blogFrontmatter } from "./scripts/frontmatter-plugin";
+import { hubData } from "./scripts/hub-plugin";
 
 export default defineConfig({
   base: process.env.BASE_PATH ?? "/",
-  plugins: [blogFrontmatter(), react(), tailwindcss()],
+  plugins: [blogFrontmatter(), hubData(), react(), tailwindcss()],
   // Fixed PenguinHarness dev ports (stand alone — only the main server default is
   // shared, as DEFAULT_SERVER_PORT in core; vite configs cannot import core TS): this
   // server's, and the gallery's, whose frames the home page shows.

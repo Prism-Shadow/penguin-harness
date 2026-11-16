@@ -1,5 +1,6 @@
 /**
- * 对话框: Modal, ConfirmModal in both tones, PagedDialog, Drawer, Sheet, the Lightbox and the
+ * 对话框: Modal, ConfirmModal in both tones, PagedDialog (a page longer than the dialog, with its
+ * foot), Drawer, Sheet, the Lightbox and the
  * CommandPalette, each opened from a button (the lightbox from its thumbnail) and closed as the app
  * closes it. The palette's actions open the board's other dialogs, the way an app action opens its
  * own overlay once the palette has gone.
@@ -13,6 +14,7 @@ import {
   Input,
   Modal,
   PagedDialog,
+  PagedDialogFoot,
   Sheet,
   ZoomableImage,
 } from "@prismshadow/penguin-ui";
@@ -121,7 +123,26 @@ export function DialogsBoard() {
           active={page}
           onSelect={setPage}
         >
-          <p className="text-sm">{t.pageBody}</p>
+          {page === "general" ? (
+            // A page longer than the dialog: the pane scrolls under its heading while the rail
+            // stays put, and the foot keeps Save at the dialog's bottom edge.
+            <>
+              <ul className="divide-y divide-line-muted text-sm">
+                {Array.from({ length: 24 }, (_, i) => (
+                  <li key={i} className="py-2.5">
+                    {t.pageRow(i + 1)}
+                  </li>
+                ))}
+              </ul>
+              <PagedDialogFoot className="flex justify-end">
+                <Button size="sm" variant="primary" onClick={() => setPaged(false)}>
+                  {t.save}
+                </Button>
+              </PagedDialogFoot>
+            </>
+          ) : (
+            <p className="text-sm">{t.pageBody}</p>
+          )}
         </PagedDialog>
       </BoardGroup>
       <BoardGroup title={t.drawer}>

@@ -96,6 +96,8 @@ A new chat creates its Session when you send the first message, not when it star
 
 With `--resume`, the original Session fixes the Workspace and model, so `--workspace`, `--model-id` and `--provider` cannot override them; to change the model, use `/switch-model` inside the resumed chat. `--thinking` is still accepted: it re-pins the existing Session from its next LLM request. Changing the level mid-context costs the provider's cached context, so compact first. On exit, if the Session has any history, the REPL prints a copy-pastable `penguin chat --resume <sessionId>` command.
 
+The chat shows every run of its Session, whoever started it. A Session can still be running when you resume it, for example when the terminal that started its Task was closed. The chat then shows the history, then the run so far, and follows the run until it ends before it gives you the prompt. A run started elsewhere while the chat waits at its prompt, in the Web App or another terminal, is shown the same way, its input included. While a run is shown, typing steers it, Ctrl-C stops it, an approval it is waiting on is asked in the chat, and `/exit` leaves the chat while the run goes on. A message sent while the Session compacts waits for the compaction and then runs. Following a run under way needs a server of the same version: with an older one the chat says so in a dim line and shows only the history and what streams from then on.
+
 On a terminal, the REPL marks its prompts with OSC 133 semantic prompt sequences, the ones shells emit for shell integration: `A` and `B` around the `> ` prompt, `C` when a submitted prompt's turn starts, and `D;0` when it ends (`D;1` after an error). A terminal that supports them can jump between prompts and select one turn's output, and a program that runs the chat in a terminal of its own can tell when it is back at its prompt. Other terminals ignore them, and none are written unless both stdin and stdout are a terminal and `TERM` is not `dumb`. The marks are advisory: model output reaches the terminal unfiltered and can contain the same sequences.
 
 ### In-REPL commands
@@ -109,7 +111,7 @@ On a terminal, the REPL marks its prompts with OSC 133 semantic prompt sequences
 | `/thinking` | Shows this Session's thinking level: the level pinned by `--thinking` or `/thinking`, else the agent's configured level. |
 | `/thinking <level>` | Pins the Session's thinking level (`low` / `medium` / `high` / `xhigh` / `max`); before the first message, the Session is created pinned to it. The level is never written back to the agent config. |
 | `/switch-model` | Shows this Session's current model. |
-| `/switch-model <provider> <model_id>` | Switches this Session's model in place. The context is summarized on the current model first, even when the agent's compaction mode is `discard`, and the conversation continues on the new model; a compaction that fails or is interrupted keeps the current model. A Session that has not run yet switches without compacting, and before the first message the Session is created on the target. The target must be in the Project's model config (`penguin config model list`); the two arguments are whitespace-separated, and a model id may contain `/`. |
+| `/switch-model <provider> <model_id>` | Switches this Session's model in place. The context is summarized on the current model first, even when the agent's compaction mode is `discard`, and the conversation continues on the new model. When the current model is unavailable or the compaction fails, the new model gets the path of the conversation's Trace file instead of a summary, and a line names that file; a compaction you interrupt keeps the current model. A Session that has not run yet switches without compacting, and before the first message the Session is created on the target. The target must be in the Project's model config (`penguin config model list`); the two arguments are whitespace-separated, and a model id may contain `/`. |
 | `/verbose` | Switches between collapsed and full tool output. |
 | `/exit`, `/quit` | Quits. |
 
@@ -246,7 +248,7 @@ penguin session rename 402a2e24 -t "Q3 release prep" --json
 
 ## penguin agent
 
-`agent ls` lists the Project's agents with their id, name, session count and description. `agent create` creates an agent. `agent api` manages an agent's API; see [penguin agent api](#penguin-agent-api).
+`agent ls` lists the Project's agents with their id, name, session count and description. `agent create` creates an agent. `agent export` and `agent import` move an agent as a zip of its directory; see [penguin agent export and import](#penguin-agent-export-and-import). `agent api` manages an agent's API; see [penguin agent api](#penguin-agent-api).
 
 ```bash
 penguin agent ls [--project-id <id>] [--json] [--server <url>]
@@ -259,12 +261,30 @@ Options of `agent create`:
 | --- | --- | --- |
 | `--agent-id <id>` | The agent id, which is also its directory name. Required. | — |
 | `--name <name>` / `--description <text>` | Display name and description. | — |
+| `--author <author>` | Who is creating the agent: `user`, `agent` or `company`. | `agent` inside a conversation, otherwise `user` |
 | `--plugins <names>` | Comma-separated library plugin names to preinstall, each with its Skills and hook package. Unknown names are rejected before anything is created. | — |
 | `--project-id <id>` / `--json` / `--server <url>` | See [Global conventions](#global-conventions). | — |
 
 ```bash
 penguin agent ls
 penguin agent create --agent-id helper --name "Helper" --plugins software-development,goal
+```
+
+### penguin agent export and import
+
+```bash
+penguin agent export <agent-id> [--out <file>] [--no-skills] [--no-hooks] [--no-memory] [--no-workbenches] [--no-workbench-data] [--schedules] [--traces none|last:<N>|<from>..<to>] [--project-id <id>] [--json] [--server <url>]
+penguin agent import <file.zip|file.tar.gz|directory> [--agent-id <id>] [--overwrite] [--project-id <id>] [--json] [--server <url>]
+```
+
+`export` saves the agent as `<agent-id>-<yyyymmdd>.zip`, or as `--out` says, with the same defaults as the Web App's dialog: every part but the scheduled tasks, and no Traces. `--traces last:<N>` takes the N most recently active Sessions (1–500), each with the subagent Sessions it started; `--traces 2026-10-01..2026-10-31` takes the Sessions in those date folders. The vault never travels. See [Export and import an agent](/agents#export-and-import-an-agent).
+
+`import` uploads a zip, or a `.tar.gz` snapshot package until 1.0, as it is. A directory is an agent's directory, holding `agent_state/` and, if any, `traces/`; it is zipped under its own name, without `node_modules` or `.git`. The id is `--agent-id`, else the zip's top-level folder or the directory's name. A taken id is refused with the way to overwrite it: `--overwrite` replaces that agent's State after a backup snapshot, and only the Project owner may. The command prints whether the agent was created or overwritten, its version, and the Sessions skipped because this server already has them.
+
+```bash
+penguin agent export helper --traces last:20
+penguin agent import helper-20261109.zip --agent-id helper_copy
+penguin agent import ./ported/my_agent
 ```
 
 ### penguin agent api
@@ -325,7 +345,7 @@ penguin project ls
 Installs and removes the plugins on the server, which is an admin's to do: the CLI calls with the server's local API token, which is the admin's, so an agent can install a plugin it has reviewed in a conversation. Each command takes `--project-id` (defaulting to `PENGUIN_PROJECT_ID`, then `default_project`), `--json` and `--server`.
 
 - `penguin plugin install <specifier>` installs a plugin on the server: an npm package name, optionally with a version, range or tag (`@scope/name`, `name@1.2.0`), or an https link to a git repository or a tarball (`https://github.com/o/r`, `github:o/r#v1`). The server refuses anything else, such as a path that is not a package directory, an `http:` link or a link to a folder inside a repository. A plugin of Skills, hooks or MCP servers joins the plugin library, and you install it on an agent from the **Plugins** page. A plugin of server modules is also listed for the Project and loaded at once, which stops the agent runs in progress on the server.
-- `penguin plugin install <directory>` installs a plugin package from a local directory that holds a `package.json` (a directory wins over an npm name spelled the same). The CLI first reads it with the plugin library's own reader and stops, sending nothing, when the library would refuse it; it then zips the directory without `node_modules`, `.git` and `.npmrc` and uploads it the way **Upload a zip** does. When the server holds another version of the package, the command says so; add `--overwrite` to replace it. A package may carry MCP servers alone, declared in `penguin.mcp_servers`; after the upload the command prints one line per server the package carries, with its name, transport and target: the URL, or the command a stdio server runs on the server. This is how an agent installs a plugin it has ported; see [Import and export plugins](/skills#import-and-export-plugins).
+- `penguin plugin install <directory>` installs a plugin package from a local directory that holds a `package.json` (a directory wins over an npm name spelled the same). The package must be built: its `ifaces.json` is what the server reads, so run the package's build first (`npm install`, then `npm run build`, which runs `penguin-gen-ifaces`); a directory without one is refused before anything is sent. The CLI then reads it with the plugin library's own reader and stops, sending nothing, when the library would refuse it; it then zips the directory without `node_modules`, `.git` and `.npmrc` and uploads it the way **Upload a zip** does. When the server holds another version of the package, the command says so; add `--overwrite` to replace it. A package may carry MCP servers alone, declared as `mcpServers` contributions in its `src/index.ts`; after the upload the command prints one line per server the package carries, with its name, transport and target: the URL, or the command a stdio server runs on the server. This is how an agent installs a plugin it has ported; see [Import and export plugins](/skills#import-and-export-plugins).
 - `penguin plugin remove <name>` removes the plugin from the Project, and from the server once no other Project lists it.
 - `penguin plugin list` (or `ls`) lists the server modules the Project lists, with their state on this server, and the plugins of Skills, hooks or MCP servers installed on the server.
 
@@ -713,7 +733,7 @@ penguin config model add --provider vllm --base-url http://10.0.0.5:8000/v1 --cl
 - The CLI never derives `--provider` from the model id. Gateways resell vendor models under their upstream ids, so a guessed group could write the credential onto another vendor's endpoint. Use `custom` for any endpoint outside the built-in groups.
 - A new entry stores `--client-type`, `--base-url` and `--api-key` only when you pass them. Left out, each follows the group, and with no group value the client's default; the built-in catalog is not read. A new Project's file already holds the gateways' endpoints and protocols, Penguin Go's relay URL, and `vllm`'s `openai-chat-vllm-adapter` and local base URL `http://127.0.0.1:8000/v1`, on their groups. A `custom` or user-defined entry whose group sets no protocol gets `openai-chat`. Updating an existing entry changes these fields only when you pass the flags; a `--clear-*` flag removes the entry's own value, after which it follows the group.
 - Re-adding a removed preset this way stores only what you pass; **Add new models** on the Models page brings it back with its catalog protocol and endpoint.
-- Only `custom`, `vllm`, `openrouter`, `tokendance`, `siliconflow`, `atlascloud` and user-defined groups take models added by hand. In every other built-in group a new entry must be one of that group's catalog rows; anything else is refused with "cannot be added", as the Models page and its API refuse it. Entries a group already holds update as usual.
+- Only `custom`, `vllm`, `openrouter`, `tokendance`, `siliconflow`, `atlascloud`, `runcrate` and user-defined groups take models added by hand. In every other built-in group a new entry must be one of that group's catalog rows; anything else is refused with "cannot be added", as the Models page and its API refuse it. Entries a group already holds update as usual.
 - `penguin-go`'s protocol is fixed to `mmsp`, as on the Models page and its API: any other `--client-type` is refused, unless it is the value the entry or group already stores, and so is `--clear-client-type` on the group.
 - Turning on `--fast-mode` for a model whose MMSP client rejects the parameter still writes the entry, but prints a warning on stderr.
 - In both forms, a field you do not name is left as it is, each set/clear pair is exclusive, and an empty value is refused: remove a value with its `--clear-*` flag.
@@ -765,6 +785,26 @@ penguin config lang en
 ```
 
 Sets the CLI's interface language (`en` or `zh`) by writing `PENGUIN_LANG` into your shell's startup file. In an interactive terminal the command then offers to open a new shell so the setting takes effect; otherwise it prints how to apply it. On Windows the command is refused, because there is no POSIX shell startup file to write.
+
+## penguin exec
+
+Runs a plugin's command on the server. A plugin contributes commands the way it contributes anything else: a class whose `contributes["PluginCliCommandsProvider.commands"]` entry is the command's data half — a `key` (the command path, `a.b.c` answering `penguin a b c ARGS`) and a one-line summary in each language — and whose `@Bind(entry.id)` field is its code half. The commands live in the server's tree, so the CLI lists them from the server (`GET /api/cli/commands`) and asks the server to run one (`POST /api/cli/commands/run`); running a plugin's code is an admin operation, which the CLI's local API token carries, as for `penguin plugin install`.
+
+```bash
+penguin exec <id> [args...]
+penguin exec <package>:<id> [args...]
+```
+
+The first word that names none of the CLI's own commands is looked up among the plugins before the CLI reports an unknown command: the server's listing of plugin commands is matched against it, one package answering runs, and the run's output and exit code are the caller's own. A server that is not running is left alone — the lookup asks only a server that already runs, and one that answers nothing leaves the command line to the CLI's own parse.
+
+Two or more plugins answering the same words is ambiguous: the report lists one copyable `penguin exec <package>:<id> …` line per candidate (the original argv shell-quoted) and exits with code 2, nothing runs.
+
+`penguin exec <id>` names the command directly by its dotted id — `sandbox.wsl.restart`, two segments or more — resolved exactly against the listing: no prefix, suffix or short-form matching. Every option after the id, `--help` included, belongs to the plugin command. When two plugins contribute the same id, the full npm package names it: `penguin exec <package>:<id>`, scope included. `penguin exec ls [package]` lists the ids the plugins contribute, summaries beside them. A server that is not running is started, as for any command that needs one.
+
+```bash
+penguin exec sandbox.wsl.restart --prod
+penguin exec @penguinharness/sandbox-wsl:sandbox.wsl.restart   # when ids collide
+```
 
 ## penguin server / penguin web
 
@@ -904,7 +944,7 @@ When run interactively, `login` asks for the account first and then the password
 
 ### penguin auth token
 
-`token` takes no password at all. It writes a session row straight into the data root's `web.db`, and what authorizes it is that you can read and write that root, which already holds every credential the token could reach. That makes `token` the tool of the **data root owner**: on a multi-user deployment the root belongs to the OS account that runs the server, and everyone else signs in with `auth login`. It fails when no server has ever run on the data root, since there is no `web.db` to write to yet. Use it where there is no password to give:
+`token` takes no password at all. It writes a session row straight into the data root's `web.db`, and what authorizes it is that you can read and write that root, which already holds every credential the token could reach. That makes `token` the tool of the **data root owner**: on a multi-user deployment the root belongs to the OS account that runs the server, and everyone else signs in with `auth login`. It fails when no server has ever run on the data root, since there is no `web.db` to write to yet. If a server is still starting there, with its port answering but its accounts not yet created, `token` waits up to 20 seconds for them instead of failing. Use it where there is no password to give:
 
 - A machine whose admin password someone set by hand.
 - A script that must not hold a password.

@@ -46,7 +46,7 @@ import { WindowsUpdater, WindowsUpdateVerificationError } from "./windows-update
 const autoUpdater =
   process.platform === "win32" ? new WindowsUpdater() : electronUpdater.autoUpdater;
 
-/** First check runs after this delay: booting the server and the window comes first. */
+/** First check runs this long after the main window is shown: what the window shows comes first. */
 const FIRST_CHECK_DELAY_MS = 20_000;
 /** Subsequent automatic checks. */
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
@@ -173,6 +173,40 @@ async function refreshUpdateFeedOnce(): Promise<void> {
 function scheduleChecks(): void {
   setTimeout(() => void check(), FIRST_CHECK_DELAY_MS).unref();
   setInterval(() => void check(), CHECK_INTERVAL_MS).unref();
+}
+
+/**
+ * The automatic schedule waits for the main window: the update feed is chosen over the network
+ * (the OSS mirror, GitHub), and nothing of that may run while the app is launching. An app
+ * started straight into the tray shows no window, so the schedule starts anyway once this
+ * long has passed since the updater was wired. Whichever comes first starts it, once. A
+ * "Check for Updates…" the person asks for runs whenever it is asked.
+ */
+const START_WITHOUT_WINDOW_MS = 10 * 60 * 1000;
+
+let scheduleReleased = false;
+let startAfterRelease: (() => void) | null = null;
+let releaseFallback: ReturnType<typeof setTimeout> | null = null;
+
+function whenWindowShown(start: () => void): void {
+  if (scheduleReleased) start();
+  else startAfterRelease = start;
+}
+
+/** Lets the automatic schedule start: the window was shown, or the wait for it ran out. Only the first call counts. */
+function releaseSchedule(): void {
+  if (scheduleReleased) return;
+  scheduleReleased = true;
+  if (releaseFallback !== null) clearTimeout(releaseFallback);
+  releaseFallback = null;
+  const start = startAfterRelease;
+  startAfterRelease = null;
+  start?.();
+}
+
+/** The main window is on screen: the automatic update schedule may start. */
+export function noteMainWindowShown(): void {
+  releaseSchedule();
 }
 
 // --- status relay (the account-menu row's data source) -----------------------
@@ -303,8 +337,10 @@ export function updatesAvailableInThisForm(): boolean {
 }
 
 /**
- * Wires the updater and starts the automatic schedule. Safe to call in any form: an
- * unsupported one (dev run, deb install) only logs why it is standing down.
+ * Wires the updater, and starts the automatic schedule once the main window is shown
+ * ({@link noteMainWindowShown}) — or, with no window shown, once the wait for one runs out.
+ * Safe to call in any form: an unsupported one (dev run, deb install) only logs why it is
+ * standing down.
  */
 export function initUpdater(getWindow: () => BrowserWindow | null): void {
   const support = updateSupport({
@@ -317,6 +353,10 @@ export function initUpdater(getWindow: () => BrowserWindow | null): void {
     log(`disabled (${support.reason})`);
     emitStatus({ kind: "unsupported", reason: support.reason });
     return;
+  }
+  if (!scheduleReleased && releaseFallback === null) {
+    releaseFallback = setTimeout(releaseSchedule, START_WITHOUT_WINDOW_MS);
+    releaseFallback.unref();
   }
 
   // Explicit download, explicit install: the user decides both when to fetch and when to
@@ -389,7 +429,7 @@ export function initUpdater(getWindow: () => BrowserWindow | null): void {
     feedRefreshMode = "static";
     setGenericFeed(override, null);
     log(`feed override: ${override}`);
-    scheduleChecks();
+    whenWindowShown(scheduleChecks);
     return;
   }
 
@@ -405,13 +445,13 @@ export function initUpdater(getWindow: () => BrowserWindow | null): void {
     feedRefreshMode = "github";
     setGitHubFeed();
     log("selected GitHub update feed");
-    scheduleChecks();
+    whenWindowShown(scheduleChecks);
     return;
   }
 
   if (config.source === "oss") {
     feedRefreshMode = "oss";
-    void refreshUpdateFeed().finally(scheduleChecks);
+    whenWindowShown(() => void refreshUpdateFeed().finally(scheduleChecks));
     return;
   }
 
@@ -419,12 +459,12 @@ export function initUpdater(getWindow: () => BrowserWindow | null): void {
     feedRefreshMode = "github";
     setGitHubFeed();
     log("selected GitHub update feed");
-    scheduleChecks();
+    whenWindowShown(scheduleChecks);
     return;
   }
 
   feedRefreshMode = "auto-probe";
-  void refreshUpdateFeed().finally(scheduleChecks);
+  whenWindowShown(() => void refreshUpdateFeed().finally(scheduleChecks));
 }
 
 async function check(): Promise<void> {

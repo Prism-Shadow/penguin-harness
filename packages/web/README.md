@@ -33,7 +33,7 @@ The proxy target defaults to `http://127.0.0.1:7368` — the development backend
 pnpm --filter @prismshadow/penguin-web typecheck
 pnpm --filter @prismshadow/penguin-web test        # vitest (pure logic)
 pnpm --filter @prismshadow/penguin-web test:e2e    # Playwright against a mock LLM
-pnpm --filter @prismshadow/penguin-web build       # vite build → dist/
+pnpm --filter @prismshadow/penguin-ui --filter @prismshadow/penguin-web build   # ui's runtime, then vite build → dist/
 ```
 
 ## Production

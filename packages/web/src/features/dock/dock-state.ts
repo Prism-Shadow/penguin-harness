@@ -68,7 +68,6 @@ export type { PanelId };
 
 export type DockTab = { kind: "panel"; panel: PanelId };
 
-/** Stable identity of a tab ("agents", "terminal", …) — the stored form. */
 export function tabKey(tab: DockTab): string {
   return tab.panel;
 }

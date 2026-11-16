@@ -9,6 +9,24 @@ import type { ReleaseNote } from "./release-notes";
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: "0.2.18",
+    date: "2026-10-27",
+    zh: [
+      "设置和未发送的草稿跟着账号走，主题、语言和草稿在每个浏览器和桌面应用里都一致。",
+      "工作台页面能实时跟随 Agent，PenguinHarness 问答助手边写边显示答案。",
+      "页面先显示本服务器保存的内容，不用等远程机器或互联网。",
+      "机器重连和模型请求重试合并到一行，随时可以停止。",
+      "删除大型 Agent 不再卡死应用，连接 TokenDance 后会回到你之前打开的地址。",
+    ],
+    en: [
+      "Settings and unsent drafts follow your account, so every browser and the desktop app show the same theme, language and drafts.",
+      "Workbench pages can follow their agent live, and PenguinHarness Support shows the answer as it is written.",
+      "Pages show what this server holds first, without waiting for remote machines or the internet.",
+      "Machine reconnects and model request retries share one row, and you can stop them at any time.",
+      "Deleting a large agent no longer freezes the app, and connecting TokenDance returns you to the address you opened.",
+    ],
+  },
+  {
     version: "0.2.17",
     date: "2026-10-26",
     zh: [

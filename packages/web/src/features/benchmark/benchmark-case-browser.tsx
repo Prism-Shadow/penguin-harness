@@ -10,15 +10,20 @@
  * back off before asking for a path inside it. The statement's own README opens by itself once
  * its listing arrives, so the dialog lands on what the case is about.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+
 import type {
   BenchmarkCaseSummary,
   CaseMaterial,
   WorkspaceFileEntry,
 } from "@prismshadow/penguin-server/api";
-import { FileBrowser, Pill } from "@prismshadow/penguin-ui";
-import type { FileBrowserPreview, FileTreeRow, TreeToggle } from "@prismshadow/penguin-ui";
+import {
+  FileBrowser,
+  Pill,
+  type FileBrowserPreview,
+  type FileTreeRow,
+  type TreeToggle,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
 import { joinWorkspacePath } from "../../lib/file-path";
@@ -33,8 +38,8 @@ import {
   parentDir,
   previewKindOf,
   withExpanded,
+  type Listings,
 } from "../../lib/workspace-tree";
-import type { Listings } from "../../lib/workspace-tree";
 
 /** One row of the case tree: a shared tree row, which material it came from, and a file's size. */
 export interface CaseTreeRow extends FileTreeRow {

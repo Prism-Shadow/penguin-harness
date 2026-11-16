@@ -114,7 +114,7 @@ function RadialDiagram() {
         x={374}
         y={38}
         textAnchor="middle"
-        className="fill-brand-800 text-[14px] font-semibold dark:fill-brand-200"
+        className="fill-brand-800 text-sm font-semibold dark:fill-brand-200"
       >
         {S.pillars.root}
       </text>
@@ -137,7 +137,7 @@ function RadialDiagram() {
               x={cx}
               y={148}
               textAnchor="middle"
-              className="fill-gray-900 text-[12.5px] font-semibold dark:fill-gray-100"
+              className="fill-gray-900 text-xs font-semibold dark:fill-gray-100"
             >
               {item.concept}
             </text>
@@ -158,7 +158,7 @@ export function Pillars() {
           {p.items.map((item, i) => (
             <article
               key={item.concept}
-              className="flex flex-col rounded-xl bg-gray-50 p-6 dark:bg-gray-900/60"
+              className="flex flex-col rounded-xl bg-gray-50 p-6 dark:bg-gray-900"
             >
               <h3 className="text-lg leading-snug font-semibold tracking-tight text-balance break-keep [overflow-wrap:break-word]">
                 {item.title}
@@ -168,10 +168,10 @@ export function Pillars() {
               </p>
               <a
                 href={`${DOCS_URL}${DOCS_PAGES[i] ?? ""}`}
-                className="group mt-auto inline-flex w-fit items-center gap-1.5 pt-4 text-sm font-medium text-brand-700 hover:text-brand-600 dark:text-brand-300 dark:hover:text-brand-200"
+                className="mt-auto inline-flex w-fit items-center gap-1.5 pt-4 text-sm font-medium text-brand-700 hover:text-brand-600 dark:text-brand-300 dark:hover:text-brand-200"
               >
                 {item.link}
-                <ArrowRightIcon className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                <ArrowRightIcon className="h-4 w-4" />
               </a>
             </article>
           ))}

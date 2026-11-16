@@ -15,7 +15,7 @@ import { NIGHTLY_INDEX_URL } from "./plugin/registry.js";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_SERVER_PORT, resolveRoot } from "@prismshadow/penguin-core";
 import { PENGUIN_GO_BASE_URL } from "./model-catalog/catalog.js";
-import { resolveCliLaunch, type CliLaunch } from "./services/cli-shim.js";
+import { offeredCli, type CliLaunch } from "./services/cli-shim.js";
 
 export interface ServerConfig {
   /** Local data root directory (shared with the SDK/CLI). */
@@ -89,14 +89,17 @@ export interface ServerConfig {
    */
   portFile: string | null;
   /**
-   * Trust `x-forwarded-proto` from the request (PENGUIN_TRUST_PROXY=1). Off by default:
-   * the header is caller-supplied, so on a non-loopback bind an untrusted caller could
-   * set it to `https` to walk through the hot-update network gate (hmr/routes.ts) while
-   * actually speaking plaintext — or get session cookies stamped `Secure` over plain HTTP,
-   * which the browser then never sends back (a sign-in that never takes). Enable this only
-   * behind a reverse proxy that terminates TLS and either sets or strips the header itself
-   * before it reaches this process; an HTTPS deployment that leaves it off issues session
-   * cookies WITHOUT the `Secure` flag (auth/middleware.ts cookieOptions).
+   * Trust `x-forwarded-proto` and `x-forwarded-host` from the request (PENGUIN_TRUST_PROXY=1),
+   * each only as a single value (http/public-origin.ts). Off by default: the headers are
+   * caller-supplied, so on a non-loopback bind an untrusted caller could set the scheme to
+   * `https` to walk through the hot-update network gate (hmr/routes.ts) while actually speaking
+   * plaintext, get session cookies stamped `Secure` over plain HTTP, which the browser then never
+   * sends back (a sign-in that never takes), or choose where a provider's authorization
+   * redirects. Enable this only behind a reverse proxy that terminates TLS, keeps `Host`,
+   * overwrites `x-forwarded-proto` with one value and overwrites or strips `x-forwarded-host`
+   * before the request reaches this process. The origin check reads the scheme alone, with the
+   * raw `Host`. An HTTPS deployment that leaves it off issues session cookies WITHOUT the
+   * `Secure` flag (auth/middleware.ts cookieOptions). The desktop shell always sets it.
    */
   trustProxy: boolean;
   /**
@@ -105,7 +108,7 @@ export interface ServerConfig {
    * `PENGUIN_CLI_ENTRY` when set: `penguin server|web` exports its own entry there, and the
    * desktop shell passes the bundled one to the server it forks. Otherwise, on a server running
    * from a checkout, that checkout's CLI: its source while the server runs from source, else its
-   * build (resolveCliLaunch). Null = no CLI to offer; see cliLaunch for why.
+   * build (offeredCli). Null = no CLI to offer; see cliLaunch for why.
    *
    * Related to but wider than the self-update endpoint's use of the same variable
    * (http/routes/version.ts), which accepts only an INSTALLED entry it can re-run as
@@ -157,17 +160,17 @@ function defaultWebDist(): string {
 }
 
 /**
- * The CLI this server offers (services/cli-shim.ts resolveCliLaunch), looked up from this
+ * The CLI this server offers (services/cli-shim.ts offeredCli), looked up from this
  * module's own location: `packages/server/src/…` under tsx — TypeScript source, so the
  * checkout's CLI source is offered — `packages/server/dist/…` when built, the desktop shell's
  * bundle in a source desktop run, all reached by the same walk to the workspace root.
  */
 function cliLaunchFor(env: NodeJS.ProcessEnv): CliLaunch {
   const here = fileURLToPath(import.meta.url);
-  return resolveCliLaunch({
-    explicit: env.PENGUIN_CLI_ENTRY,
+  return offeredCli({
+    explicitEntry: env.PENGUIN_CLI_ENTRY,
     moduleDir: path.dirname(here),
-    source: /\.[cm]?tsx?$/.test(here),
+    runsFromSource: /\.[cm]?tsx?$/.test(here),
     electron: process.versions.electron !== undefined,
   });
 }

@@ -57,6 +57,10 @@ const builtPlugins = await buildBuiltinPlugins({ log: (m) => console.log(`[build
 await stagePrefix(builtPlugins, path.join(pkgDir, "plugins"));
 
 const repoRoot = path.resolve(pkgDir, "..", "..");
+const { stageBenchmarks } = await import(
+  pathToFileURL(path.join(repoRoot, "scripts/build-benchmarks.mjs")).href
+);
+await stageBenchmarks(path.join(distDir, "builtin-benchmarks"));
 const { FAR_SIDE_SCRIPTS } = await import(
   pathToFileURL(path.join(repoRoot, "scripts", "far-side-scripts.mjs")).href
 );

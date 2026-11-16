@@ -8,6 +8,8 @@
  * - A code nobody mapped still falls back to the server's message; a non-ApiError reads as the
  *   generic failure.
  * - A numeric Retry-After header survives onto the ApiError.
+ * - A machine that did not answer (`machine_no_answer`: the hub's lookup, or any machine read the
+ *   socket gave up on — files, lists, settings) is said about the machine, not a conversation.
  * - An answer that is not the server's (no JSON) says what answered instead of blaming the
  *   server: a web page from a dev server or reverse proxy that did not forward the request, or a
  *   proxy's gateway answer. For a machine's Agents, that is the sentence the new-chat page shows.
@@ -29,6 +31,15 @@ afterEach(() => {
 });
 
 describe("apiErrorText", () => {
+  it("says a machine that did not answer about the machine, whatever was being read", () => {
+    for (const dict of [ZH, EN]) {
+      setActiveStrings(dict);
+      const text = apiErrorText(new ApiError(0, "machine_no_answer", "RAW ENGLISH SERVER MESSAGE"));
+      expect(text).not.toBe("RAW ENGLISH SERVER MESSAGE");
+      expect(text).not.toMatch(/conversation|对话/i);
+    }
+  });
+
   it("localizes each compaction refusal separately in both locales", () => {
     const codes = ["compaction_not_configured", "nothing_to_compact", "already_compacted"];
 
@@ -129,42 +140,80 @@ describe("an answer that is not the server's", () => {
   };
 
   it("names a web page in place of a machine's Agents, rather than a failure of the machine", async () => {
-    // A dev server that does not forward /server/… serves the SPA's index.html, status 200.
+    // A dev server that does not forward /server/… serves the SPA's index.html, status 200. The
+    // socket carries a text/* answer as its text (server/src/socket/serve.ts answerOnce), and the
+    // client judges it by the same rule it judges a Response: a page answered, so the machine's
+    // list never takes the page for the Agents it asked about.
     const fake = stubFetch(() => page(200));
-    for (const dict of [ZH, EN]) {
+    for (const [attempt, dict] of [ZH, EN].entries()) {
       setActiveStrings(dict);
       const err = await failureOf(
         apiFetch("/api/projects/default_project/agents", { server: "m1" }),
       );
       expect(fake.requests.at(-1)?.machine).toBe("m1");
+      // One request per attempt: the answer rode the socket, nothing was asked again over HTTP.
+      expect(fake.requests).toHaveLength(attempt + 1);
       expect(err).toMatchObject({ status: 200, code: "not_the_server" });
+      expect(apiErrorText(err)).toBe(S.errors.notTheServer.page(200));
       expect(composerLine(err)).toBe(S.machines.composer.failed(S.errors.notTheServer.page(200)));
       expect(composerLine(err)).not.toContain(S.common.unknownError);
     }
   });
 
   it("says a proxy answered when a gateway status comes back without the server's JSON", async () => {
-    stubFetch(() => page(502));
-    setActiveStrings(ZH);
-    const gateway = await failureOf(
-      apiFetch("/api/projects/default_project/agents", { server: "m1" }),
-    );
-    expect(gateway).toMatchObject({ status: 502, code: "not_the_server" });
-    expect(apiErrorText(gateway)).toBe(S.errors.notTheServer.proxy(502));
+    // A gateway's own page is text/*, which the socket carries as text. A socket answer carries
+    // no proxy header (only content-type, retry-after and etag), so the proxy is named by its
+    // status alone there — every gateway status a proxy answers with, not just the first.
+    for (const status of [502, 503, 504]) {
+      const fake = stubFetch(() => page(status));
+      setActiveStrings(ZH);
+      const gateway = await failureOf(
+        apiFetch("/api/projects/default_project/agents", { server: "m1" }),
+      );
+      expect(fake.requests).toHaveLength(1);
+      expect(gateway).toMatchObject({ status, code: "not_the_server" });
+      expect(apiErrorText(gateway)).toBe(S.errors.notTheServer.proxy(status));
+    }
 
-    // Any status, when the answer carries a proxy's own header.
+    // Any status, when the answer carries a proxy's own header — a header only an HTTP answer
+    // has, read where the client reads the Response itself (`/api/me`).
     stubFetch(() => page(403, { via: "1.1 squid" }));
     const forbidden = await failureOf(apiFetch("/api/me"));
     expect(apiErrorText(forbidden)).toBe(S.errors.notTheServer.proxy(403));
   });
 
   it("names the status and type of anything else that is not JSON, an empty answer included", async () => {
+    // Over HTTP the client reads the Response itself: an empty 404 is "not the server's answer".
     stubFetch(() => new Response(null, { status: 404 }));
     setActiveStrings(EN);
-    const empty = await failureOf(
+    const empty = await failureOf(apiFetch("/api/me"));
+    expect(apiErrorText(empty)).toBe(S.errors.notTheServer.other(404, ""));
+
+    // On the socket an empty body keeps its status with a null body instead (answerOnce), so a
+    // 404 there is the server's own status without an envelope: the generic failure, no fetch.
+    const socket = stubFetch(() => new Response(null, { status: 404 }));
+    const carried = await failureOf(
       apiFetch("/api/projects/default_project/agents", { method: "POST" }),
     );
-    expect(apiErrorText(empty)).toBe(S.errors.notTheServer.other(404, ""));
+    expect(socket.requests).toHaveLength(1);
+    expect(carried).toMatchObject({
+      status: 404,
+      code: "http_error",
+      message: S.common.unknownError,
+    });
+
+    // A text body the socket does carry, of a type that names neither a page nor a gateway: the
+    // status and the type are the answer's name, as on HTTP.
+    const plainSocket = stubFetch(
+      () =>
+        new Response("upstream says no", {
+          status: 400,
+          headers: { "content-type": "text/plain" },
+        }),
+    );
+    const carriedPlain = await failureOf(apiFetch("/api/projects/default_project/agents"));
+    expect(plainSocket.requests).toHaveLength(1);
+    expect(apiErrorText(carriedPlain)).toBe(S.errors.notTheServer.other(400, "text/plain"));
 
     stubFetch(
       () =>
@@ -175,6 +224,45 @@ describe("an answer that is not the server's", () => {
     );
     const plain = await failureOf(apiFetch("/api/me"));
     expect(apiErrorText(plain)).toBe(S.errors.notTheServer.other(400, "text/plain"));
+  });
+
+  it("carries a JSON-labelled body it cannot parse as the text it is", async () => {
+    // answerOnce parses a `json` content type, and keeps the raw text when that parse fails: the
+    // answer still rides the socket once, without a second fetch.
+    const fake = stubFetch(
+      () =>
+        new Response("not json", {
+          status: 500,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+    setActiveStrings(EN);
+    const carried = await failureOf(apiFetch("/api/projects/default_project/agents"));
+    expect(fake.requests).toHaveLength(1);
+    expect(carried).toMatchObject({
+      status: 500,
+      code: "http_error",
+      message: S.common.unknownError,
+    });
+  });
+
+  it("refuses a body of a type the socket cannot carry, and reads it over HTTP", async () => {
+    // Not JSON, not text/*: a download. The socket answers 415 `unsupported_transport` and the
+    // client asks the same URL over HTTP, where the answer to a non-JSON body is not the server's.
+    const fake = stubFetch(
+      () =>
+        new Response("binary bytes", {
+          status: 200,
+          headers: { "content-type": "application/octet-stream" },
+        }),
+    );
+    setActiveStrings(EN);
+    const refused = await failureOf(apiFetch("/api/projects/default_project/agents"));
+    expect(fake.requests).toHaveLength(2);
+    expect(refused).toMatchObject({ status: 200, code: "not_the_server" });
+    expect(apiErrorText(refused)).toBe(
+      S.errors.notTheServer.other(200, "application/octet-stream"),
+    );
   });
 
   it("leaves the server's own errors as they were, JSON without an error code included", async () => {

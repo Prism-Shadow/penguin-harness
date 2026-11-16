@@ -291,6 +291,21 @@ export function createPenguinBwrapProvider(internals: PenguinBwrapInternals = {}
  */
 @Component({
   contributes: {
+    // How the Plugins page shows this backend (read from ifaces.json, never by booting it).
+    "PluginLibraryModule.cards": [
+      {
+        id: "sandbox-bwrap.card",
+        title: "Linux Sandbox",
+        titleZh: "Linux 沙箱",
+        descriptionZh:
+          "PenguinHarness 的 Bubblewrap 沙箱后端：在 Linux 上限制文件写入，并提供网络隔离与路径屏蔽。",
+        shortDescription: "Linux: confine file writes, cut the network, mask paths.",
+        shortDescriptionZh: "Linux：限制文件写入、断开网络、屏蔽路径。",
+        category: "sandbox",
+        icon: "icon.svg",
+        preinstall: false,
+      },
+    ],
     "SandboxModule.providers": [
       {
         id: "sandbox-bwrap.provider",

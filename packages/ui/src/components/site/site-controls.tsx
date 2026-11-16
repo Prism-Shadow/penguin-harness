@@ -3,14 +3,7 @@ import { useEffect, useState } from "react";
 import { CheckLineIcon } from "../icons/marks/marks";
 import { Dropdown } from "../overlays/dropdown/dropdown";
 import { Menu, MenuRow } from "../overlays/menu/menu";
-import {
-  GitHubIcon,
-  GlobeIcon,
-  ChevronDownIcon,
-  SunIcon,
-  MoonIcon,
-  MonitorIcon,
-} from "./site-icons";
+import { GitHubIcon, GlobeIcon, SunIcon, MoonIcon, MonitorIcon } from "./site-icons";
 
 export type SiteThemeMode = "light" | "dark" | "system";
 export type SiteLangPref = "en" | "zh" | "system";
@@ -72,7 +65,6 @@ export function SiteLanguageMenu({
         >
           <GlobeIcon className="h-[18px] w-[18px]" />
           <span className="hidden sm:inline">{labels[value]}</span>
-          <ChevronDownIcon className="h-3.5 w-3.5" />
         </button>
       }
     >
@@ -124,7 +116,7 @@ export function SiteGitHubLink({
     return () => controller.abort();
   }, [apiUrl]);
   const count = stars?.toLocaleString("en-US");
-  const name = count ? `${label} · ${count} stars` : label;
+  const name = count ? `${label}, ${count} stars` : label;
   return (
     <a
       href={href}

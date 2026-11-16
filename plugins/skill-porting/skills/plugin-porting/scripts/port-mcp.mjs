@@ -1,17 +1,19 @@
 #!/usr/bin/env node
-// Turns the MCP servers of a Codex or Claude Code plugin into the `penguin.mcp_servers` of a
-// PenguinHarness plugin package.
+// Turns the MCP servers of a Codex or Claude Code plugin into the `PluginLibraryModule.mcpServers`
+// contribution entries of a PenguinHarness plugin package.
 //
-//   node port-mcp.mjs <source dir> [--root <upstream folder url>]
+//   node port-mcp.mjs <source dir> [--plugin <name>] [--root <upstream folder url>]
 //                     [--oauth <server>]... [--bearer <server>[=KEY]]...
 //
 // The servers are read from `.codex-plugin/plugin.json`'s `mcpServers` file (default
 // `.mcp.json`), from `.claude-plugin/plugin.json`'s `mcpServers` (a file or an inline map), or
 // from a root `.mcp.json`; a map with or without the `mcpServers` wrapper. It prints
-// `{ "mcp_servers": [...], "notes": [...] }`: paste `mcp_servers` into the package.json's
-// `penguin` block and the notes into the README. Values a server needs from the user become
-// `${KEY}` references to the Agent's vault, each listed in the server's `setup`; the package
-// never carries a value. Rules:
+// `{ "mcpServers": [...], "notes": [...] }`: each entry is `{ id, name, config, setup? }`, its id
+// `<plugin>.mcp.<name>` (the plugin name is `--plugin`, else the upstream manifest's `name`, else
+// the source folder's; write-module.mjs declares the entries in the package's module, and a
+// setup key may gain a Chinese `labelZh` there); the notes go into the README. Values a server
+// needs from the user become `${KEY}` references to the Agent's vault, each listed in the
+// server's `setup`; the package never carries a value. Rules:
 // - the server's name is its key lower-cased, `[^a-z0-9_-]` → `-`, starting with a letter or a
 //   digit; a name taken twice gets `-2`, `-3`, …;
 // - `type: "http"` / `"sse"` + `url` → that transport (the URL must be http(s), and its host
@@ -54,7 +56,7 @@ const flagValues = (flag) => {
 };
 if (src === undefined || src.startsWith("--")) {
   console.error(
-    "usage: node port-mcp.mjs <source dir> [--root <upstream folder url>] [--oauth <server>]... [--bearer <server>[=KEY]]...",
+    "usage: node port-mcp.mjs <source dir> [--plugin <name>] [--root <upstream folder url>] [--oauth <server>]... [--bearer <server>[=KEY]]...",
   );
   process.exit(2);
 }
@@ -125,10 +127,27 @@ function findServers() {
   return null;
 }
 
+/** The plugin a server's id is prefixed with: `--plugin`, else the upstream manifest's name, else the folder's, lower-cased to a plugin name. */
+function pluginName() {
+  const given = flagValues("--plugin")[0];
+  if (given !== undefined) return given;
+  for (const manifest of [".codex-plugin/plugin.json", ".claude-plugin/plugin.json"]) {
+    if (!exists(manifest)) continue;
+    const { name } = readJson(manifest);
+    if (typeof name === "string" && name.trim() !== "") return name;
+  }
+  return path.basename(path.resolve(src));
+}
+const plugin =
+  pluginName()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, "-")
+    .replace(/^[^a-z0-9]+/, "") || "plugin";
+
 const notes = [];
 const found = findServers();
 if (found === null) {
-  console.log(JSON.stringify({ mcp_servers: [], notes: ["the plugin declares no MCP servers"] }));
+  console.log(JSON.stringify({ mcpServers: [], notes: ["the plugin declares no MCP servers"] }));
   process.exit(0);
 }
 if (found.missing) notes.push(`${found.from} is named by the manifest but is not in the plugin`);
@@ -378,7 +397,12 @@ for (const [id, spec] of Object.entries(upstream)) {
 
   taken.add(name);
   notes.push(...carried);
-  servers.push({ name, config, ...(setup.length > 0 ? { setup } : {}) });
+  servers.push({
+    id: `${plugin}.mcp.${name}`,
+    name,
+    config,
+    ...(setup.length > 0 ? { setup } : {}),
+  });
 }
 
-console.log(JSON.stringify({ mcp_servers: servers, notes }, null, 2));
+console.log(JSON.stringify({ mcpServers: servers, notes }, null, 2));

@@ -11,6 +11,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { hubRoutes as hubRouteList, loadHub } from "./hub/hub.mjs";
 
 /** Production origin, no trailing slash. Override for a staging deploy. */
 export const SITE_ORIGIN = (process.env.SITE_ORIGIN ?? "https://penguin.ooo").replace(/\/+$/, "");
@@ -80,6 +81,18 @@ const AMSP_META = {
  */
 export function pageRoutes() {
   return [{ route: "/download/" }, { route: "/amsp/", meta: AMSP_META }];
+}
+
+/**
+ * The Plugins, Benchmarks and Leaderboards pages: each list and one page per entry, read from the
+ * same files the build read (the benchmark repository's clone the build just made, or
+ * PENGUIN_BENCHMARK_REPO). Each shell names its page; the share image is the site's own.
+ */
+export function hubRoutes() {
+  return hubRouteList(loadHub()).map(({ route, title, description }) => ({
+    route,
+    meta: { title, description, image: "/og-cover.png", imageAlt: "PenguinHarness" },
+  }));
 }
 
 /** Blog routes, one per post plus the list page. */

@@ -1,7 +1,10 @@
 /**
  * Appearance page: the look-and-feel preferences. Theme, light or dark, accent, text size and
  * font pairing come first, since each restyles the whole app. Everything applies on the spot
- * (the theme store persists per browser), so there is no Save button. The terminal keeps its
+ * (the theme store persists per browser), so there is no Save button. The theme row offers the
+ * built-in packs and then the packs an admin imported on this server; the theme packs themselves
+ * are listed, exported, imported and removed in their own group at the foot of the page
+ * (theme-packs-section.tsx). The terminal keeps its
  * own theme row because plenty of people pin a dark terminal inside a light app; it follows
  * the app unless pinned (see TerminalThemeMode). The workbench launcher's row is here rather
  * than with the chat's own settings because it is the same kind of choice: whether a piece of
@@ -18,32 +21,75 @@ import {
   Select,
   SettingsGroup,
   SwatchPicker,
-  THEME_IDS,
+  TextAction,
   ToggleRow,
 } from "@prismshadow/penguin-ui";
 import { FONT_CJK_OPTIONS, FONT_LATIN_OPTIONS, TEXT_SIZES } from "@prismshadow/penguin-ui/boot";
 import { S } from "../../lib/strings";
 import * as api from "../../api/endpoints";
 import { isDesktopShellWindow } from "../../lib/account-menu";
+import { useThemePackList } from "../../lib/account-sync/theme-packs";
 import { useInstantSetting } from "../../lib/instant-setting";
 import {
   launcherHiddenVersion,
   readLauncherHidden,
   subscribeLauncherHidden,
   writeLauncherHidden,
-} from "../dock/dock-launcher-state";
+} from "../dock";
 import { useAuth } from "../../state/auth";
-import { accentSwatches, useTheme } from "../../state/theme";
-import type {
-  FontCjk,
-  FontLatin,
-  TerminalThemeMode,
-  TextSize,
-  ThemeId,
-  ThemeMode,
+import { useLocale } from "../../state/locale";
+import {
+  accentSwatches,
+  useTheme,
+  type FontCjk,
+  type FontLatin,
+  type TerminalThemeMode,
+  type TextSize,
+  type ThemeMode,
 } from "../../state/theme";
+import { shownTheme, themeEntries, themeName } from "../../state/theme-entries";
 import { FONT_FOLLOWS_THEME, effectiveAccent } from "../../state/theme-prefs";
 import { BackgroundControls } from "./background-controls";
+import { ThemePacksSection } from "./theme-packs-section";
+
+/**
+ * The theme row's control. The built-in themes alone are segments, as they have always been. Once
+ * the server offers imported packs the row is a select: a pack's name is whatever its author chose,
+ * and segments that grow with each name and each pack overflow the row at phone width.
+ */
+function ThemePicker({
+  options,
+  segments,
+  value,
+  onChange,
+}: {
+  options: ReadonlyArray<{ value: string; label: string }>;
+  /** Every option is a built-in theme. */
+  segments: boolean;
+  value: string;
+  onChange: (next: string) => void;
+}) {
+  // One column per built-in theme, on one line.
+  if (segments) return <Segmented options={options} value={value} onChange={onChange} cols={4} />;
+  return (
+    <span className="w-40 min-w-0">
+      <Select
+        aria-label={S.settings.theme}
+        value={value}
+        onChange={(e) => {
+          const next = options.find((option) => option.value === e.target.value);
+          if (next) onChange(next.value);
+        }}
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </Select>
+    </span>
+  );
+}
 
 /**
  * A font select's choices: the theme's own face first — it is the default, and the named faces
@@ -124,7 +170,13 @@ export function AppearanceSection() {
     toolAliases,
     setToolAliases,
     dark,
+    theme,
+    appliedTheme,
+    themePackFailed,
+    retryThemePack,
   } = useTheme();
+  const { locale } = useLocale();
+  const packs = useThemePackList().value ?? [];
   // The fan's "hide launcher" entry writes the same preference, so this row follows it.
   useSyncExternalStore(subscribeLauncherHidden, launcherHiddenVersion);
   const launcherShown = !readLauncherHidden();
@@ -165,81 +217,105 @@ export function AppearanceSection() {
     { value: "light", label: S.settings.themeLight },
     { value: "dark", label: S.settings.themeDark },
   ];
-  const themeIdOptions: ReadonlyArray<{ value: ThemeId; label: string }> = THEME_IDS.map((id) => ({
-    value: id,
-    label: S.settings.themeNames[id],
+  const offered = themeEntries(packs).filter((entry) => entry.loadable);
+  const themeIdOptions = offered.map((entry) => ({
+    value: entry.id,
+    label: themeName(entry, locale),
   }));
+  // While the chosen pack's stylesheet is not in, the row says what shows instead.
+  const failedHint =
+    themePackFailed === null ? undefined : (
+      <>
+        {S.settings.themePackFailed(
+          themeName(theme, locale),
+          themeName(shownTheme(appliedTheme.id, packs), locale),
+        )}{" "}
+        <TextAction onClick={retryThemePack}>{S.common.retry}</TextAction>
+      </>
+    );
   const textSizeOptions: ReadonlyArray<{ value: TextSize; label: string }> = TEXT_SIZES.map(
     (size) => ({ value: size, label: S.settings.textSizeNames[size] }),
   );
 
   return (
-    <SettingsGroup>
-      <PrefRow label={S.settings.theme} info={S.settings.themeInfo}>
-        <Segmented options={themeIdOptions} value={themeId} onChange={setThemeId} />
-      </PrefRow>
-      <PrefRow label={S.settings.colorMode} info={S.settings.colorModeInfo}>
-        <Segmented options={themeOptions} value={mode} onChange={setMode} />
-      </PrefRow>
-      {/* The swatches are the active theme's own; a stored preset it does not list is shown
+    <div className="space-y-6">
+      <SettingsGroup>
+        <PrefRow label={S.settings.theme} info={S.settings.themeInfo} hint={failedHint}>
+          <ThemePicker
+            options={themeIdOptions}
+            segments={offered.every((entry) => entry.builtin)}
+            value={themeId}
+            onChange={setThemeId}
+          />
+        </PrefRow>
+        <PrefRow label={S.settings.colorMode} info={S.settings.colorModeInfo}>
+          <Segmented options={themeOptions} value={mode} onChange={setMode} />
+        </PrefRow>
+        {/* The swatches are the active theme's own; a stored preset it does not list is shown
           as the theme's own accent, which is what the page paints, and comes back with the
           theme that lists it. */}
-      <PrefRow label={S.settings.accent} info={S.settings.accentInfo}>
-        <SwatchPicker
-          options={accentSwatches(themeId, dark).map((swatch) => ({
-            ...swatch,
-            label: S.settings.accentNames[swatch.value] ?? swatch.value,
-          }))}
-          value={effectiveAccent(themeId, accent)}
-          onChange={setAccent}
-        />
-      </PrefRow>
-      <BackgroundControls />
-      <PrefRow label={S.settings.fontSize} info={S.settings.fontSizeInfo}>
-        <Segmented options={textSizeOptions} value={textSize} onChange={setTextSize} cols={5} />
-      </PrefRow>
-      <PrefRow label={S.settings.fonts} info={S.settings.fontsInfo}>
-        {/* One line always: the pair shrinks rather than wraps (a wrapped pair read as two
+        <PrefRow label={S.settings.accent} info={S.settings.accentInfo}>
+          <SwatchPicker
+            options={accentSwatches(theme, dark).map((swatch) => ({
+              ...swatch,
+              label: S.settings.accentNames[swatch.value] ?? swatch.value,
+            }))}
+            value={effectiveAccent(theme, accent)}
+            onChange={setAccent}
+          />
+        </PrefRow>
+        <BackgroundControls />
+        <PrefRow label={S.settings.fontSize} info={S.settings.fontSizeInfo}>
+          <Segmented options={textSizeOptions} value={textSize} onChange={setTextSize} cols={5} />
+        </PrefRow>
+        <PrefRow label={S.settings.fonts} info={S.settings.fontsInfo}>
+          {/* One line always: the pair shrinks rather than wraps (a wrapped pair read as two
             settings under the stacked label a theme may give this row). */}
-        <div className="flex min-w-0 items-center justify-end gap-x-3">
-          <FontSelect<FontLatin>
-            name={S.settings.fontLatin}
-            value={fontLatin}
-            choices={fontChoices(FONT_LATIN_OPTIONS)}
-            onChange={setFontLatin}
+          <div className="flex min-w-0 items-center justify-end gap-x-3">
+            <FontSelect<FontLatin>
+              name={S.settings.fontLatin}
+              value={fontLatin}
+              choices={fontChoices(FONT_LATIN_OPTIONS)}
+              onChange={setFontLatin}
+            />
+            <FontSelect<FontCjk>
+              name={S.settings.fontCjk}
+              value={fontCjk}
+              choices={fontChoices(FONT_CJK_OPTIONS)}
+              onChange={setFontCjk}
+            />
+          </div>
+        </PrefRow>
+        <PrefRow label={S.settings.terminalTheme} info={S.settings.terminalThemeInfo}>
+          <Segmented
+            options={terminalThemeOptions}
+            value={terminalMode}
+            onChange={setTerminalMode}
           />
-          <FontSelect<FontCjk>
-            name={S.settings.fontCjk}
-            value={fontCjk}
-            choices={fontChoices(FONT_CJK_OPTIONS)}
-            onChange={setFontCjk}
-          />
-        </div>
-      </PrefRow>
-      <PrefRow label={S.settings.terminalTheme} info={S.settings.terminalThemeInfo}>
-        <Segmented options={terminalThemeOptions} value={terminalMode} onChange={setTerminalMode} />
-      </PrefRow>
-      <ToggleRow
-        label={S.settings.launcher}
-        info={S.settings.launcherInfo}
-        checked={launcherShown}
-        onChange={(shown) => writeLauncherHidden(!shown)}
-      />
-      <ToggleRow
-        label={S.settings.toolAliases}
-        info={S.settings.toolAliasesInfo}
-        checked={toolAliases}
-        onChange={setToolAliases}
-      />
-      {offersTrayIcon && (
+        </PrefRow>
         <ToggleRow
-          label={S.settings.trayIcon}
-          info={S.settings.trayIconInfo}
-          checked={tray.value}
-          onChange={(next) => void tray.set(next)}
-          disabled={tray.busy}
+          label={S.settings.launcher}
+          info={S.settings.launcherInfo}
+          checked={launcherShown}
+          onChange={(shown) => writeLauncherHidden(!shown)}
         />
-      )}
-    </SettingsGroup>
+        <ToggleRow
+          label={S.settings.toolAliases}
+          info={S.settings.toolAliasesInfo}
+          checked={toolAliases}
+          onChange={setToolAliases}
+        />
+        {offersTrayIcon && (
+          <ToggleRow
+            label={S.settings.trayIcon}
+            info={S.settings.trayIconInfo}
+            checked={tray.value}
+            onChange={(next) => void tray.set(next)}
+            disabled={tray.busy}
+          />
+        )}
+      </SettingsGroup>
+      <ThemePacksSection />
+    </div>
   );
 }

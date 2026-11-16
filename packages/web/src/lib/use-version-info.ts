@@ -17,6 +17,7 @@
 import { useEffect, useState } from "react";
 import type { UpdateCheckResponse, VersionResponse } from "@prismshadow/penguin-server/api";
 import * as api from "../api/endpoints";
+import { useLocalShown } from "./local-first";
 
 let versionCache: VersionResponse | null = null;
 let versionPromise: Promise<VersionResponse> | null = null;
@@ -106,6 +107,17 @@ export function useVersionInfo(active: boolean): VersionInfo {
         versionPromise = null;
       });
 
+    return () => {
+      cancelled = true;
+    };
+  }, [active]);
+
+  // The release check asks the internet (through this server): it waits until this window's own
+  // content is on screen, and never holds any of it.
+  const shown = useLocalShown();
+  useEffect(() => {
+    if (!active || !shown) return;
+    let cancelled = false;
     updatePromise ??= api.checkUpdate().then((res) => {
       updateCache = res;
       notifyAll();
@@ -122,7 +134,7 @@ export function useVersionInfo(active: boolean): VersionInfo {
     return () => {
       cancelled = true;
     };
-  }, [active]);
+  }, [active, shown]);
 
   return { version, update };
 }

@@ -20,8 +20,7 @@
  * a close means the transition would start a frame late.
  */
 import { useEffect, useRef, useState } from "react";
-import type { DockView } from "./dock-state";
-import { instantVersion } from "./dock-state";
+import { type DockView, instantVersion } from "./dock-state";
 
 /**
  * The one duration of the dock choreography: the expand and collapse transitions and the

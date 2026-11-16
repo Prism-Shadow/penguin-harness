@@ -4,6 +4,7 @@
 
 每个版本一行简述。逐版本的细节见 [`changelog/<version>/`](changelog/)。
 
+- **0.2.18** — 2026-10-27。基于 0.2.17 的修复版本。设置和未发送的草稿跟随账号，不再绑定浏览器。工作台页面通过 AMSP 实时跟随 Agent。本地页面不再等待远程机器或互联网。另外：机器重连和模型请求重试合并为一行；后台删除 Agent；TokenDance 重定向到浏览器自身地址；成本中心不再重复计数请求；SDK 读取历史记录时会重试。([细则](changelog/0.2.18/))
 - **0.2.17** — 2026-10-26。Agent API 流式输出 Session 本身的记录，供 `@prismshadow/amsp` SDK 读取。回复里可以带统计图与表单。Trace 视图重做了。远程机器上的对话会读取那台机器自己的 Agent、Session、记忆和模型。另外：MMSP 0.5.6 带上了 Kimi K3.1 Pro；Markdown 阅读器支持目录和在文档中查找；终端的作用域限于所属对话。0.2.16 及更早的 Windows 桌面应用需要手动安装一次 0.2.17。([细则](changelog/0.2.17/))
 - **0.2.16** — 2026-10-14。Agent Workbench、内置 PenguinHarness 问答助手、Gemini 4 Argon 与 GPT-6 Luna、本地背景图片，以及按 Project 隔离的浏览器登录状态。([细则](changelog/0.2.16/))
 - **0.2.15** — 2026-10-13。PenguinHarness 成为 Agent 自进化框架：五个 RSI 算法（默认的「试跑、反思、提升」循环，以及 OPRO、APE、ACE 与 AWM）以插件形式提供。每个新建 Project 自带七个内置 Benchmark：PenguinHarness Benchmark Sec A 至 Sec E，以及 GDPevo Train 与 Test，均以 Harbor task 形式在 Docker 中运行。Agent 新增了：浏览器（桌面端的内置浏览器，或通过 PenguinHarness Browser 扩展接入你自己的 Chrome）、带可交互界面的回复（A2UI）、自己的热更新 Workflow 页面、通过 ssh 在远程机器上运行的对话，以及每个 Agent 的 HTTP API 和 `@prismshadow/amsp` 客户端。此外还有：三套主题，默认 Frost；统一的插件市场，支持导入与导出；每个安装都自带沙箱；热更新不再中断运行中的 Task；对话内切换模型；模型接入改用 MMSP 0.5.2。0.2.14 曾为同一批改动打过标签：它的发布流程在 npm 任务的测试步骤就失败了，npm、Docker Hub 与 Release 页面都没有产出——因此 0.2.14 只是一个 tag，本目录中没有它。([详情](changelog/0.2.15/))

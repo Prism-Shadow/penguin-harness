@@ -263,7 +263,7 @@ describe("Agent API settings", () => {
     const { secret } = (await (
       await owner.post(`${tab("short_lived")}/keys`, { name: "k" })
     ).json()) as AgentApiKeyCreateResponse;
-    expect((await owner.delete(`/api/projects/${projectId}/agents/short_lived`)).status).toBe(204);
+    expect((await owner.delete(`/api/projects/${projectId}/agents/short_lived`)).status).toBe(202);
 
     await owner.post(`/api/projects/${projectId}/agents`, { agentId: "short_lived" });
     expect(await read(owner, "short_lived")).toEqual({

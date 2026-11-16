@@ -33,13 +33,11 @@ import {
   Modal,
   PlusIcon,
   Textarea,
-  toastError,
   useFormDraft,
   useGuardedClose,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import {
   ExampleFolderRow,
   ExampleRowGlyph,
@@ -57,8 +55,10 @@ import {
   removeShortcut,
   shortcutDraftError,
   upsertShortcut,
+  type ShortcutDraft,
+  type UserShortcut,
 } from "./user-shortcuts";
-import type { ShortcutDraft, UserShortcut } from "./user-shortcuts";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /**
  * Folder id for the user's shortcuts. Not a member of EXAMPLE_FOLDERS: that registry is the
@@ -144,7 +144,7 @@ export function ShortcutsFolder({
     setShortcuts(next);
     api.putPrefs({ draftShortcuts: next }).catch((e: unknown) => {
       setShortcuts(rollback);
-      toastError(apiErrorText(e));
+      toastApiError(e);
     });
   }, []);
 
@@ -161,7 +161,7 @@ export function ShortcutsFolder({
     try {
       await api.putPrefs({ draftShortcuts: list });
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
       return false;
     }
     setShortcuts(list);
@@ -184,13 +184,14 @@ export function ShortcutsFolder({
       {open && (
         /* No fixed height and no scroll: SHORTCUT_MAX_COUNT bounds this folder to a built-in
            folder's height plus the New-shortcut row. */
-        <div className={examplePanelClass}>
+        <div data-slot="rows" className={examplePanelClass}>
           {loaded && (
             <ul className="space-y-1.5">
               {shortcuts.map((shortcut) => (
                 <li key={shortcut.id} className="flex items-center gap-1">
                   <button
                     type="button"
+                    data-slot="row"
                     data-tooltip={`${shortcut.title}\n${S.chat.exampleFillHint}`}
                     onClick={() => onFill(shortcut.prompt)}
                     className={`flex min-w-0 flex-1 items-center ${ICON_GAP.menu} ${exampleRowClass}`}
@@ -218,6 +219,7 @@ export function ShortcutsFolder({
                 <li>
                   <button
                     type="button"
+                    data-slot="row"
                     data-tooltip={S.chat.shortcuts.newFromComposer}
                     onClick={startCreate}
                     className={`flex w-full items-center ${ICON_GAP.menu} ${exampleRowClass}`}

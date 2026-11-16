@@ -5,6 +5,9 @@
  *   the dock's window while the page keeps the slot's size, offset by what the clip cuts off.
  * - With no slot, an empty one, or nothing of it visible, the page parks far off-screen at a
  *   real size; the size a page was last shown at is remembered, a parked page's is not.
+ * - A dock surface lifted to fullscreen over the slot (the bottom dock climbing over the right
+ *   one) takes what it covers off the frame, edge first, and parks a page it covers whole; one
+ *   that only meets a corner leaves the page as it is.
  * - Edges snap to whole pixels (edges rounded, not sizes), so a slot and its frame never open
  *   a seam; rectangles intersect, reporting no overlap as null.
  * - A frame that computes the same boxes writes nothing.
@@ -60,6 +63,47 @@ describe("slotPlacement", () => {
     expect(slotPlacement(slot, [{ left: 0, top: 0, width: 100, height: 100 }], park)).toEqual(
       parkedPlacement(park),
     );
+  });
+
+  it("cuts what a lifted surface of the other dock covers, from the edge it climbs over", () => {
+    // The bottom dock on its way to fullscreen: its box has climbed to y=500 across the whole
+    // area, over the lower part of the right dock's slot.
+    const climbing = { left: 300, top: 500, width: 980, height: 400 };
+    const placement = slotPlacement(slot, [viewport], DEFAULT_PARK_SIZE, [climbing]);
+    expect(placement.frame).toEqual({ left: 800, top: 100, width: 480, height: 400 });
+    expect(placement.view).toEqual({ left: 0, top: 0, width: 480, height: 700 });
+    // Arrived: it covers the slot whole, and the page parks.
+    const arrived = { left: 300, top: 60, width: 980, height: 840 };
+    expect(slotPlacement(slot, [viewport], DEFAULT_PARK_SIZE, [arrived]).shown).toBe(false);
+  });
+
+  it("cuts from whichever edge a cover reaches across, and ignores one beside the slot", () => {
+    const place = (cover: { left: number; top: number; width: number; height: number }) =>
+      slotPlacement(slot, [viewport], DEFAULT_PARK_SIZE, [cover]).frame;
+    expect(place({ left: 700, top: 0, width: 700, height: 300 })).toEqual({
+      left: 800,
+      top: 300,
+      width: 480,
+      height: 500,
+    });
+    expect(place({ left: 1000, top: 0, width: 400, height: 900 })).toEqual({
+      left: 800,
+      top: 100,
+      width: 200,
+      height: 700,
+    });
+    expect(place({ left: 0, top: 0, width: 900, height: 900 })).toEqual({
+      left: 900,
+      top: 100,
+      width: 380,
+      height: 700,
+    });
+    expect(place({ left: 0, top: 0, width: 800, height: 900 })).toEqual(slot);
+  });
+
+  it("leaves the page whole under a cover that only meets a corner of it", () => {
+    const corner = { left: 1200, top: 700, width: 200, height: 200 };
+    expect(slotPlacement(slot, [viewport], DEFAULT_PARK_SIZE, [corner]).frame).toEqual(slot);
   });
 
   it("snaps edges to whole pixels, so a slot and its frame never open a seam", () => {

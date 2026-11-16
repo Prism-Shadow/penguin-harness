@@ -13,9 +13,9 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AgentPluginsInstallResponse } from "@prismshadow/penguin-server/api";
-import { toastError } from "@prismshadow/penguin-ui";
+
 import { getAgentPlugins, installAgentPlugins } from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** The library plugin goal mode runs on; its hook package carries the same name. */
 export const GOAL_PLUGIN = "goal";
@@ -95,7 +95,7 @@ export function useGoalPluginGate(
       const installed = await gate.install();
       if (asked.current === ask) setStatus(installed ? "installed" : "missing");
     } catch (err) {
-      toastError(apiErrorText(err));
+      toastApiError(err);
       if (asked.current === ask) setStatus("missing");
     }
   }, [gate]);

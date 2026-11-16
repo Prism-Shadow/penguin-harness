@@ -1,0 +1,11 @@
+{
+  "name": "@prismshadow/penguin-ui",
+  "version": "0.0.0-fixture",
+  "type": "module",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts"
+    }
+  }
+}

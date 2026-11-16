@@ -127,23 +127,25 @@ export function MachinesBoard() {
     card("mini", "reconnecting", {
       retry: {
         phase: "waiting",
-        label: r.failed(3, 8),
+        label: r.trying(4, 5),
         nextAt,
-        countdown: r.countdown,
+        countdown: (s) => r.waiting(s, 4, 5),
+        reason: r.refused("mini"),
         retry: { label: r.retryNow, onClick: noop },
+        secondary: { label: r.stop, onClick: noop },
       },
     }),
-    card("lab-2", "reconnectStopped", {
+    card("lab-2", "reconnectFailed", {
       retry: {
         phase: "gaveUp",
-        label: r.gaveUp(8),
+        label: r.gaveUp(5),
         reason: r.refused("lab-2"),
         retry: { label: r.retry, onClick: noop },
       },
     }),
     card("edge-1", "unreachable", {
       status: { state: "unreachable", label: t.states.unreachable, reason: SSH_SAID },
-      waits: t.waits.stopped,
+      waits: t.waits.notConnected,
     }),
     card("office-2", "notConnected", {
       facts: facts(false, { port: true }),
@@ -167,7 +169,7 @@ export function MachinesBoard() {
       waits: t.waits.notInstalled,
     }),
     card("win-box", "installedOnly", { waits: t.waits.windows }),
-    card("fresh", "unknown", { waits: t.waits.stopped }),
+    card("fresh", "unknown", { waits: t.waits.notConnected }),
   ];
 
   return (
@@ -226,6 +228,13 @@ export function MachinesBoard() {
               verb: "configure",
               label: t.verbs.configure,
               glyph: ICONS.slidersHorizontal,
+              primary: false,
+              held: false,
+            },
+            {
+              verb: "reinstall",
+              label: t.verbs.reinstall,
+              glyph: ICONS.download,
               primary: false,
               held: false,
             },

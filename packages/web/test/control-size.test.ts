@@ -25,8 +25,13 @@
  */
 import { describe, expect, it } from "vitest";
 import ts from "typescript";
-import { expectEveryRootScanned, expectSingleHome, scanSources, sourceFile } from "./helpers/roots";
-import type { SourceFile } from "./helpers/roots";
+import {
+  expectEveryRootScanned,
+  expectSingleHome,
+  scanSources,
+  sourceFile,
+  type SourceFile,
+} from "./helpers/roots";
 
 /** Web and the shared UI package: a control that moves keeps its call sites under this check. */
 const SCAN = scanSources();
@@ -182,6 +187,7 @@ const DIALOG_BODY_MODULES = new Set([
   "features/settings/proxy-section.tsx",
   "features/settings/shortcut-recorder.tsx",
   "features/settings/shortcuts-section.tsx",
+  "features/settings/theme-packs-section.tsx",
   "features/settings/trace-import-row.tsx",
   "features/settings/uploads-section.tsx",
   "features/admin/admin-users-page.tsx",

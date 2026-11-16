@@ -437,11 +437,11 @@ describe("auth", () => {
     }
   });
 
-  it("uses forwarded schemes only behind a trusted proxy, the first value, and ignores malformed ones", async () => {
+  it("uses forwarded schemes only behind a trusted proxy and rejects malformed values", async () => {
     for (const trustProxy of [false, true]) {
       const app = new Hono();
       app.onError(handleError);
-      app.use("*", sameOriginWrites(trustProxy));
+      app.use("*", sameOriginWrites({ trustProxy, acceptOwnOrigin: false }));
       app.post("/", (c) => c.body(null, 204));
       const write = (forwarded: string, origin = "https://example.com") =>
         app.request("http://example.com/", {
@@ -453,12 +453,13 @@ describe("auth", () => {
             "content-type": "application/json",
           },
         });
-      // Node sees the HTTP proxy hop; the external scheme it reports is authoritative only
-      // when the deployment explicitly trusts that proxy, and in a chain the first value is the
-      // hop facing the browser. A value that is no scheme leaves the connection's own (http).
+      // Node sees the HTTP proxy hop; its external scheme is authoritative only when the
+      // deployment explicitly trusts that proxy, and only as one value: a list is what an
+      // appending proxy makes of a client's own header.
       expect((await write("https")).status).toBe(trustProxy ? 204 : 403);
-      expect((await write("https,http")).status).toBe(trustProxy ? 204 : 403);
+      expect((await write("https,http")).status).toBe(403);
       expect((await write("ftp")).status).toBe(403);
+      expect((await write("ftp", "http://example.com")).status).toBe(trustProxy ? 403 : 204);
       expect((await write("http", "http://example.com:8443")).status).toBe(403);
     }
   });

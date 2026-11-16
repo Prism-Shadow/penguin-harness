@@ -23,8 +23,10 @@ import { bootAppDeps, createApp } from "./app.js";
 import { HmrHost, hmrMain } from "@prismshadow/penguin-hmr";
 import type { Hmr } from "@prismshadow/penguin-hmr";
 import type { Instance } from "@prismshadow/penguin-core/kernel";
+import { nodeFloorRefusal } from "@prismshadow/penguin-core";
 import { packagedPlatform } from "./hmr/platform.js";
 import { startingResponse } from "./hmr/starting.js";
+import { carriedBody, syncCarriedImage } from "./carried-image.js";
 import type { PlatformApi, ServerHmrHost } from "./hmr/platform.js";
 import type { ServerBoot } from "./app.js";
 import { ADMIN_USER_ID } from "./auth/service.js";
@@ -34,6 +36,7 @@ import { applyProxySettings, installGlobalProxyDispatcher } from "./net/proxy.js
 import { PluginHost } from "./plugin/host.js";
 import { loadPlugins } from "./plugin/loader.js";
 import { attachTerminalWebSocket } from "./terminal/ws.js";
+import { originRule } from "./http/public-origin.js";
 import { attachExtensionWebSocket } from "./builtin-browser/extension-ws.js";
 import type { ExtensionGate } from "./builtin-browser/extension-ws.js";
 import { loopbackHostRoles } from "./services/preview-token.js";
@@ -51,11 +54,17 @@ import type { Auth } from "./mechanisms/identity.js";
  */
 async function main(): Promise<void> {
   const server = new PenguinServer();
+  server.requireNodeFloor();
   server.loadEnv();
   server.installProxy();
   server.readConfig();
   await server.ensureSoleInstance();
   server.listen();
+  // Reconcile only after this process owns the root (the lock was acquired in listen):
+  // a start that lost the ownership race exits at ensureSoleInstance before touching the
+  // root, so a reconciling copy can never interleave with a live server's push — the
+  // record a push just committed is never overwritten by a losing start's store.
+  await server.syncCarriedImage();
   // The HMR layer's entry (packages/hmr's main.ts) owns the frozen operations: which
   // generation a request goes to, how a push lands, what happens when one fails. The
   // product hands it the host, what to refresh once a generation is current, and its own
@@ -132,6 +141,19 @@ class PenguinServer {
   }
 
   /** `.env` may itself define HTTP_PROXY, so it is loaded before the dispatcher reads one. */
+  /**
+   * Refuses a Node below the floor before anything else runs: `engines` is advice, and a
+   * source checkout's `pnpm dev` (or an npm-installed CLI starting this server) runs on
+   * whatever Node the machine has, where the program fails later and less clearly (see core's
+   * node-floor.ts). The desktop app's server runs on Electron's own Node, above the floor.
+   */
+  requireNodeFloor(): void {
+    const refusal = nodeFloorRefusal();
+    if (refusal === null) return;
+    console.error(refusal);
+    process.exit(EXIT_NODE_BELOW_FLOOR);
+  }
+
   loadEnv(): void {
     loadDotenv({ quiet: true });
   }
@@ -150,6 +172,34 @@ class PenguinServer {
   /** Resolves the process configuration, which comes from the environment only (config.ts). */
   readConfig(): void {
     this.config = resolveServerConfig();
+  }
+
+  /**
+   * The root's record, reconciled against the harness image this program carries — before
+   * anything reads the root (the lock file lives beside the record, the HMR restore reads
+   * it, the CLI shim names it). A start that cannot copy says so on the console and
+   * continues: the root keeps whatever record it had, which is what the reconciliation
+   * promises (a pushed record is never touched; an unreadable one is left to be reported).
+   *
+   * Called only after listen() has acquired this root's lock (see main): the process that
+   * reconciles is the one that owns the root, so the copy cannot interleave with a live
+   * server's push — the losing start never reaches this line.
+   */
+  async syncCarriedImage(): Promise<void> {
+    const outcome = await syncCarriedImage(this.config.root, carriedBody());
+    switch (outcome.kind) {
+      case "copied":
+        console.log(
+          `[server] harness image copied into ${this.config.root}` +
+            (outcome.source.revision ? ` (${outcome.source.revision})` : ""),
+        );
+        break;
+      case "failed":
+        console.warn(`[server] could not copy the harness image: ${outcome.detail}`);
+        break;
+      default:
+        break; // current / kept / absent are the ordinary no-news answers
+    }
   }
 
   /**
@@ -193,7 +243,7 @@ class PenguinServer {
       }
     }
     for (const [specifier, reason] of result.failed) {
-      console.warn(`[plugins] skipped ${specifier}: ${reason}`);
+      console.error(`[plugins] skipped ${specifier}: ${reason}`);
     }
   }
 
@@ -350,7 +400,9 @@ class PenguinServer {
     // `penguin server|web` run, or tests) wires nothing.
     if (this.deps.desktop !== null) {
       const shellPort = shellPortOf(process);
-      if (shellPort !== null) wireShellUpdatePort(this.deps.desktop, shellPort);
+      if (shellPort !== null) {
+        wireShellUpdatePort(this.deps.desktop, shellPort, this.deps.shellFrames);
+      }
     }
 
     // Process-level error fallback: once a background fire-and-forget promise (title
@@ -506,7 +558,7 @@ class PenguinServer {
     const auth = () => this.auth();
     return {
       hmr: this.deps.hmr,
-      trustProxy: this.deps.config.trustProxy,
+      ...originRule(this.deps.config),
       // A getter: the upgrade handler asks per handshake, and gets the current generation's.
       get authService() {
         return auth();
@@ -572,6 +624,9 @@ class PenguinServer {
 
 /** Exit code for "another server already owns this data root" (see lock.ts). */
 const EXIT_ALREADY_RUNNING = 3;
+
+/** Exit code for a Node below the floor (core's node-floor.ts): a plain failure. */
+const EXIT_NODE_BELOW_FLOOR = 1;
 
 /** Port announcement (PENGUIN_PORT_FILE): tmp + rename, so a polling reader never sees a partial write. */
 function writePortFile(file: string, port: number): void {

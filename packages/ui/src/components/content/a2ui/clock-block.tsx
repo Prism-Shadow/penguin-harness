@@ -9,7 +9,7 @@
  * when the reader asked for less motion; the digits keep counting, since text is not motion.
  * Nothing is announced as it changes: a reading every second would be noise.
  */
-import type { A2uiClock, A2uiClockZone, A2uiLang } from "@prismshadow/penguin-core/a2ui";
+import type { A2uiClock, A2uiClockZone, A2uiLang } from "@prismshadow/a2ui";
 import { useUiStrings } from "../../../strings";
 import type { A2uiStrings } from "../../../strings";
 import { offsetLabel, timeParts, zoneCity } from "./time-format";

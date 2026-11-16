@@ -5,7 +5,7 @@
  * and lowered the way its build would lower it, so the fixture exercises the same
  * decorators the host reads.
  */
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import ts from "typescript";
 
@@ -76,4 +76,96 @@ export async function writeClassPackage(dir: string, pkg: ClassPackage): Promise
     "utf8",
   );
   return entry;
+}
+
+/** What a package of content declares (core plugin/library.ts); each entry gets the id the shipped plugins use. */
+export interface PluginContent {
+  card?: Record<string, unknown>;
+  /** Skill names, each at `skills/<name>`. */
+  skills?: string[];
+  /** The hook package: its `version` and commands, at `hooks/`. */
+  hooks?: Record<string, unknown>;
+  mcpServers?: Array<Record<string, unknown>>;
+  workbenches?: string[];
+}
+
+/**
+ * The `ifaces.json` gen-ifaces writes for a package whose one component declares `content` to
+ * the plugin library's slots — what a content plugin's build leaves beside its package.json.
+ */
+export function contentTable(packageName: string, content: PluginContent): string {
+  const plugin = packageName.slice(packageName.lastIndexOf("/") + 1);
+  const contributes: Record<string, Array<Record<string, unknown>>> = {};
+  if (content.card !== undefined)
+    contributes["PluginLibraryModule.cards"] = [{ id: `${plugin}.card`, ...content.card }];
+  if (content.skills !== undefined)
+    contributes["PluginLibraryModule.skills"] = content.skills.map((name) => ({
+      id: `${plugin}.skill.${name}`,
+      name,
+      path: `skills/${name}`,
+    }));
+  if (content.hooks !== undefined)
+    contributes["PluginLibraryModule.hooks"] = [
+      { id: `${plugin}.hooks`, path: "hooks", ...content.hooks },
+    ];
+  if (content.mcpServers !== undefined)
+    contributes["PluginLibraryModule.mcpServers"] = content.mcpServers.map((server) => ({
+      id: `${plugin}.mcp.${String(server.name)}`,
+      ...server,
+    }));
+  if (content.workbenches !== undefined)
+    contributes["PluginLibraryModule.workbenches"] = content.workbenches.map((name) => ({
+      id: `${plugin}.workbench.${name}`,
+      name,
+      path: `workbenches/${name}`,
+    }));
+  const key = `${packageName}#Content`;
+  return JSON.stringify({
+    ifaces: { [key]: { name: "Content", methods: {}, slots: {} } },
+    types: {},
+    modules: {
+      Content: {
+        name: "Content",
+        kind: "component",
+        requires: {},
+        provides: { Content: key },
+        contributes,
+        children: [],
+      },
+    },
+    plugin: { modules: ["Content"], replaces: [] },
+  });
+}
+
+/**
+ * Writes `files` (paths relative to the package directory) as package `packageName` in the
+ * data root's plugin prefix and lists it there, as an admin's install leaves it: the library
+ * then carries it. Earlier packages written this way stay listed.
+ */
+export async function writePrefixPackage(
+  root: string,
+  packageName: string,
+  files: Record<string, string>,
+): Promise<string> {
+  const prefix = path.join(root, "plugins");
+  const dir = path.join(prefix, "node_modules", ...packageName.split("/"));
+  for (const [rel, body] of Object.entries(files)) {
+    await mkdir(path.dirname(path.join(dir, rel)), { recursive: true });
+    await writeFile(path.join(dir, rel), body, "utf8");
+  }
+  const manifest = path.join(prefix, "package.json");
+  const listed = await readFile(manifest, "utf8").then(
+    (text) => JSON.parse(text) as { dependencies?: Record<string, string> },
+    () => ({ dependencies: {} }),
+  );
+  await writeFile(
+    manifest,
+    JSON.stringify({
+      name: "penguin-plugins",
+      private: true,
+      dependencies: { ...listed.dependencies, [packageName]: "*" },
+    }),
+    "utf8",
+  );
+  return dir;
 }

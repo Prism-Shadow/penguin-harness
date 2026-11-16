@@ -122,7 +122,8 @@ export interface GenerativeModelParameters {
  *   - `fatal`: a failure no retry can fix — a provider 4xx rejection (invalid request or
  *     quota; 408/429 stay retryable), a credentials failure (see `isAuthenticationError`),
  *     or a deterministic client-side rejection thrown before any network I/O (fast mode on
- *     a model without a fast tier). The engine stops the run and surfaces `errorMessage`;
+ *     a model without a fast tier). The engine stops the run and surfaces `errorMessage`
+ *     (save a 4xx coded `rejected`, see `providerRejectionCode`, which it may answer itself);
  *     the fix is a config or credential change, then a new request (only the model
  *     reference is fixed at Session creation — credentials come from the current Project
  *     config, so a key update lets the Session continue).
@@ -146,6 +147,13 @@ export interface LLMOutcome {
    */
   errorMessage?: string;
 }
+
+/**
+ * How many attempts a single turn's request may make at most, the first one included, unless
+ * the engine is given its own ceiling (`maxTurnAttempts`). A host that numbers a retry ladder
+ * ("attempt 3/10") reads it from here, so the count it shows is the engine's.
+ */
+export const DEFAULT_MAX_TURN_ATTEMPTS = 10;
 
 /** Complete tool calls an implementation closed because their request ended early (see `markInterruptedToolCall`). */
 const interruptedToolCalls = new WeakSet<AmspRecord>();

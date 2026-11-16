@@ -17,8 +17,11 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { BUILTIN_BENCHMARKS } from "./builtin-benchmarks-data.js";
-import { writeBuiltinBenchmark, type BuiltinBenchmark } from "./builtin-benchmarks.js";
+import {
+  readBuiltinBenchmarks,
+  writeBuiltinBenchmark,
+  type BuiltinBenchmark,
+} from "./builtin-benchmarks.js";
 import { EXAMPLE_BENCHMARK_ID, writeExampleBenchmark } from "./example-benchmark.js";
 import { benchmarksDir } from "./paths.js";
 
@@ -170,19 +173,19 @@ async function swapIn(incoming: string, target: string): Promise<void> {
 
 /**
  * The Benchmarks every new Project starts with: the example and the built-in ones. `builtins`
- * defaults to the shipped definitions. Called only where a Project is created (the server's
+ * defaults to the shipped packages. Called only where a Project is created (the server's
  * project-service); an id whose directory exists is skipped, never written into.
  */
 export async function provisionProjectBenchmarks(
   root: string,
   projectId: string,
-  builtins: readonly BuiltinBenchmark[] = BUILTIN_BENCHMARKS,
+  builtins?: readonly BuiltinBenchmark[],
 ): Promise<void> {
   const dir = benchmarksDir(root, projectId);
   await fs.mkdir(dir, { recursive: true });
   const seeds: BenchmarkSeed[] = [
     { id: EXAMPLE_BENCHMARK_ID, write: writeExampleBenchmark },
-    ...builtins.map((bench) => ({
+    ...(builtins ?? (await readBuiltinBenchmarks())).map((bench) => ({
       id: bench.id,
       write: (benchDir: string) => writeBuiltinBenchmark(benchDir, bench),
     })),

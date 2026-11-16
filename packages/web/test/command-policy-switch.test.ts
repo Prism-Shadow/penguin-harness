@@ -14,7 +14,7 @@ import { createElement as h } from "react";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { UnsavedPrompt } from "../src/lib/unsaved/unsaved-prompt";
-import { ProjectSettingsDialog } from "../src/components/layout/project-dialogs";
+import { ProjectSettingsDialog } from "../src/features/projects/project-dialogs/project-settings-dialog";
 import { AuthProvider } from "../src/state/auth";
 import { ProjectProvider } from "../src/state/project";
 import { FACTORY_RULE, projectSettingsServer } from "./helpers/project-settings";

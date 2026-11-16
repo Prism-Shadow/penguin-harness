@@ -9,8 +9,9 @@
  * the fetch no better. Two dozen held browser connections per reload wave, several waves:
  * `net::ERR_INSUFFICIENT_RESOURCES`, down to the avatars.
  *
- * The socket is replaced at the module seam (its own behaviour is api-socket.test.ts'); the
- * client and the sessions store run for real against it and a counted `fetch`.
+ * The socket is replaced at the seam the app imports (test/socket-stand-in.ts, see
+ * vitest.config.ts; its own behaviour is api-socket.test.ts'); the client and the sessions
+ * store run for real against it and a counted `fetch`.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as SocketModule from "../src/api/socket";
@@ -32,7 +33,7 @@ const hub = vi.hoisted(() => ({
   timeoutError: (() => new Error("socket_timeout")) as (live: boolean) => Error,
 }));
 
-vi.mock("../src/api/socket", async (importActual) => {
+vi.mock("../test/socket-stand-in", async (importActual) => {
   const actual = await importActual<typeof SocketModule>();
   const Real = (actual as { SocketTimeoutError?: new (live: boolean) => Error }).SocketTimeoutError;
   hub.timeoutError = (live) => (Real ? new Real(live) : new Error("socket_timeout"));

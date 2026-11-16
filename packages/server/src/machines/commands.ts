@@ -55,6 +55,12 @@ export interface RemoteTarget {
    * reaches ssh only through that child's environment (transport/login.ts).
    */
   password?: PasswordLogin;
+  /**
+   * Present when the target was built for this server's own automatic work on the machine (a
+   * reconnect attempt, a connection check, a hand-over): aborted when that work is cut, which
+   * ends the command it has running and answers every later one without starting it.
+   */
+  signal?: AbortSignal;
 }
 
 /** How a machine that signs in with a password gets it to ssh. */

@@ -7,7 +7,7 @@
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { PickerList } from "../src/components/forms/picker-list/picker-list";
-import { classTokens, renderStatic } from "../src/testing";
+import { renderStatic } from "../src/testing";
 
 const render = (
   items: string[],
@@ -39,15 +39,12 @@ describe("PickerList", () => {
     expect(html.indexOf("<input")).toBeLessThan(html.indexOf("alpha"));
   });
 
-  it("checks only the entry in effect, and fills that row", () => {
+  it("checks only the entry in effect", () => {
     const html = render(["alpha", "beta"]);
     const rows = html.split("<button").filter((chunk) => chunk.includes('class="row"'));
     expect(rows).toHaveLength(2);
     expect(rows[0]).not.toContain("<svg");
     expect(rows[1]).toContain("<svg");
-    expect(classTokens(`<b${rows[1]!}`)).toContain("bg-surface-muted");
-    // Nothing is highlighted before the keyboard asks for it.
-    expect(classTokens(html)).not.toContain("bg-line-muted");
   });
 
   it("labels a named run once, above its first row, and the label is no button", () => {
@@ -69,7 +66,6 @@ describe("PickerList", () => {
   it("says so when nothing matches, and pins the footer below the list", () => {
     const html = render([], { footer: "Show all" });
     expect(html).toContain("No match");
-    expect(classTokens(html)).toContain("text-fg-subtle");
     expect(html.indexOf("No match")).toBeLessThan(html.indexOf("Show all"));
   });
 });

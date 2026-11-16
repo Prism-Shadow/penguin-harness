@@ -10,17 +10,12 @@
  */
 import { useEffect, useState } from "react";
 import type { ServerSettingsResponse } from "@prismshadow/penguin-server/api";
-import {
-  ConfirmModal,
-  SettingsGroup,
-  SettingsSection,
-  ToggleRow,
-  toastError,
-} from "@prismshadow/penguin-ui";
+import { ConfirmModal, SettingsGroup, SettingsSection, ToggleRow } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** Turns the switch off on the server. Reached only through the confirm. */
 const switchOffExtensions = (): Promise<ServerSettingsResponse> =>
@@ -82,7 +77,7 @@ export function ChromeExtensionSection() {
         setEnabled(res.settings.browserExtensionsEnabled);
       })
       .catch((e: unknown) => {
-        if (!cancelled) toastError(apiErrorText(e));
+        if (!cancelled) toastApiError(e);
       });
     return () => {
       cancelled = true;

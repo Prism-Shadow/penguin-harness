@@ -25,7 +25,7 @@ export function CopyPromptButton({ compact = false }: { compact?: boolean }) {
     if (await writeSiteClipboard(S.amsp.agentPrompt(guide))) setCopied(true);
   };
 
-  const size = compact ? "h-8 px-3 text-xs font-semibold" : "h-11 px-5 text-[15px] font-medium";
+  const size = compact ? "h-8 px-3 text-xs font-semibold" : "h-11 px-5 text-sm font-medium";
   return (
     <>
       <button

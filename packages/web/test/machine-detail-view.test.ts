@@ -13,12 +13,12 @@
  *   than greyed; then its server is stopped while it is kept connected, started once it is not;
  *   restarted — the primary for a machine whose server needs a restart, unless an update is on
  *   offer, which restarts it anyway; its config synced, only while it is connected on this
- *   server's build; its ssh host configured; the program uninstalled. This server's own entry has
- *   none.
- * - A verb waits for one reason, and one sentence says it, naming every verb it holds: a job on
- *   its way holds all but the ssh form; a machine being brought back holds stopping, restarting
- *   and uninstalling; a stopped server holds restarting; no build to install holds enabling. No
- *   verb waiting, no sentence.
+ *   server's build; its ssh host configured; the program installed again, whatever version it
+ *   carries; the program uninstalled. This server's own entry has none.
+ * - A verb waits for one reason, and one sentence says it: a job on its way holds all but the ssh
+ *   form; a machine being brought back holds stopping, restarting and uninstalling — until the
+ *   streak stopped, when nothing waits on it; a stopped server holds restarting; no build to
+ *   install holds enabling and reinstalling. No verb waiting, no sentence.
  * - A job's steps are its own: a queued job has every step still to come; a running one is on its
  *   phase with the earlier steps done; one that finished well is a single line; a failed one is
  *   marked failed at its phase, named in words, with the far side's own words — and a step the
@@ -61,10 +61,11 @@ import {
   machineToolbar,
   programDirOf,
   reconnectView,
+  type Fact,
 } from "../src/features/machines/machine-detail-view";
-import type { Fact } from "../src/features/machines/machine-detail-view";
-import { readingTone } from "../src/features/machines/machines-view";
-import type { MachineReading } from "../src/features/machines/machines-view";
+
+import { readingTone, type MachineReading } from "../src/features/machines/machines-view";
+
 import { formatDateTime, formatShortDateTime } from "../src/lib/format";
 import { S } from "../src/lib/strings";
 
@@ -90,13 +91,21 @@ const reconnecting: Extract<MachineReading, { kind: "reconnecting" }> = {
   attempts: 2,
   maxAttempts: 8,
   nextAt: "2026-10-10T07:51:00.000Z",
+  message: "nas refused the connection.",
+};
+const reconnectFailed: Extract<MachineReading, { kind: "reconnectFailed" }> = {
+  kind: "reconnectFailed",
+  why: "attempts",
+  since: "2026-10-10T07:50:00.000Z",
+  attempts: 5,
+  maxAttempts: 5,
+  message: "nas refused the connection.",
 };
 const reconnectStopped: Extract<MachineReading, { kind: "reconnectStopped" }> = {
   kind: "reconnectStopped",
-  why: "attempts",
   since: "2026-10-10T07:50:00.000Z",
-  attempts: 8,
-  maxAttempts: 8,
+  attempts: 2,
+  maxAttempts: 5,
   message: "nas refused the connection.",
 };
 const ready: MachineReading = { kind: "ready", port: 7364 };
@@ -106,6 +115,7 @@ const READINGS: MachineReading[] = [
   { kind: "queued" },
   working,
   reconnecting,
+  reconnectFailed,
   reconnectStopped,
   failed,
   ready,
@@ -134,6 +144,7 @@ describe("the status chip", () => {
           "unreachable",
           "working",
           "reconnecting",
+          "reconnectFailed",
           "reconnectStopped",
           "behind",
           "restartNeeded",
@@ -207,7 +218,14 @@ describe("the toolbar", () => {
       .map((i) => i.verb);
 
   it("offers a connected machine its verbs in one row, none of them twice and none of them waiting", () => {
-    expect(verbs(machine())).toEqual(["stop", "restart", "syncConfig", "configure", "uninstall"]);
+    expect(verbs(machine())).toEqual([
+      "stop",
+      "restart",
+      "syncConfig",
+      "configure",
+      "reinstall",
+      "uninstall",
+    ]);
     expect(machineToolbar(machine(), null, IMAGE, false).sentence).toBeNull();
   });
 
@@ -219,6 +237,7 @@ describe("the toolbar", () => {
       "stop",
       "restart",
       "configure",
+      "reinstall",
       "uninstall",
     ]);
     expect(bar.items[0]).toMatchObject({ primary: true, held: null });
@@ -250,26 +269,43 @@ describe("the toolbar", () => {
       keepConnected: undefined,
       status: { state: "stopped", checkedAt: "2026-10-10T07:59:00.000Z" },
     });
-    expect(verbs(stopped)).toEqual(["start", "restart", "configure", "uninstall"]);
+    expect(verbs(stopped)).toEqual(["start", "restart", "configure", "reinstall", "uninstall"]);
     expect(heldOf(stopped)).toEqual(["restart"]);
     expect(machineToolbar(stopped, null, IMAGE, false).sentence).toBe(
       S.machines.detail.held.stopped,
     );
   });
 
-  it("holds what needs the machine while it is being brought back, and says why in one sentence", () => {
+  it("holds what needs the machine while it is being brought back, and says why in one sentence; once that stopped, nothing waits", () => {
     const away = machine({ reconnect: lost });
     expect(heldOf(away)).toEqual(["stop", "restart", "uninstall"]);
     expect(machineToolbar(away, null, IMAGE, false).sentence).toBe(
       S.machines.detail.held.unreachable,
     );
+    for (const gaveUp of ["cancelled", "attempts", "ssh"] as const) {
+      const stopped = machine({ reconnect: { ...lost, nextAt: null, gaveUp } });
+      expect(heldOf(stopped), gaveUp).toEqual([]);
+      expect(machineToolbar(stopped, null, IMAGE, false).sentence, gaveUp).toBeNull();
+    }
   });
 
   it("holds every verb but the ssh form while a job is on its way", () => {
     const running = job({ running: true, phase: "install" });
-    expect(heldOf(machine(), running)).toEqual(["stop", "restart", "syncConfig", "uninstall"]);
+    expect(heldOf(machine(), running)).toEqual([
+      "stop",
+      "restart",
+      "syncConfig",
+      "reinstall",
+      "uninstall",
+    ]);
     const behind = machine({ installed: { version: "0.2.12", at: "2026-09-20T08:00:00.000Z" } });
-    expect(heldOf(behind, running)).toEqual(["update", "stop", "restart", "uninstall"]);
+    expect(heldOf(behind, running)).toEqual([
+      "update",
+      "stop",
+      "restart",
+      "reinstall",
+      "uninstall",
+    ]);
     expect(machineToolbar(behind, running, IMAGE, false).sentence).toBe(
       S.machines.detail.held.moving,
     );
@@ -434,9 +470,9 @@ describe("a machine being brought back", () => {
     expect(reconnectView(machine({ reconnect: lost }), "en", NOW)).toMatchObject({
       status: {
         phase: "waiting",
-        label: S.machines.retry.failed(3, 8),
+        label: S.machines.retry.trying(4, 8),
         nextAtMs: Date.parse(lost.nextAt!),
-        canRetry: true,
+        offers: { retryNow: true, stop: true, retry: false },
       },
       lasting: "10 minutes",
       lastError: lost.lastError,
@@ -445,13 +481,24 @@ describe("a machine being brought back", () => {
     });
     const view = (over: Partial<MachineReconnect>) =>
       reconnectView(machine({ reconnect: { ...lost, nextAt: null, ...over } }), "en", NOW)?.status;
-    // An attempt under way: nothing to press.
-    expect(view({})).toMatchObject({ phase: "trying", canRetry: false });
-    // Stopped: the Retry starts again; a refused password offers none, the fix is its SSH settings.
-    expect(view({ gaveUp: "attempts" })).toMatchObject({ phase: "gaveUp", canRetry: true });
+    // An attempt under way: only Stop retrying.
+    expect(view({})).toMatchObject({
+      phase: "trying",
+      offers: { retryNow: false, stop: true, retry: false },
+    });
+    // Stopped, by its limit or by a person: the Retry starts again; a refused password offers
+    // nothing, the fix is its SSH settings.
+    expect(view({ gaveUp: "attempts" })).toMatchObject({
+      phase: "gaveUp",
+      offers: { retry: true },
+    });
+    expect(view({ gaveUp: "cancelled" })).toMatchObject({
+      phase: "cancelled",
+      offers: { retry: true },
+    });
     expect(view({ waitsForPassword: true, sshReason: "password-rejected" })).toMatchObject({
       phase: "blocked",
-      canRetry: false,
+      offers: { retryNow: false, stop: false, retry: false },
     });
   });
 

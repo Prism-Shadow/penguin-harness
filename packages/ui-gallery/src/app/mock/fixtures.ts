@@ -9,6 +9,8 @@
  */
 import type {
   AgentApiSettings,
+  AppCenterResponse,
+  AppCenterShortcut,
   AgentConfigResponse,
   AgentSummary,
   BenchmarkCaseSummary,
@@ -24,6 +26,7 @@ import type {
   MeResponse,
   MemberInfo,
   MemoryFileResponse,
+  MemoryFolderFile,
   MemoryOverviewResponse,
   ModelEffectiveConnection,
   ModelInfo,
@@ -59,19 +62,13 @@ import {
   presetProviderTable,
 } from "../../../../server/dist/model-catalog.js";
 import { effectiveConnection } from "../../../../core/dist/state/model-connection.js";
-// The built-in Benchmarks as core writes them into a new Project: their cards and their cases.
-import {
-  BENCHMARK_REPO,
-  BENCHMARK_RUN_RULES,
-  BUILTIN_BENCHMARKS,
-  HARBOR_AGENT,
-  HARBOR_VERSION,
-} from "../../../../core/dist/state/builtin-benchmarks-data.js";
+// The Benchmark files fetched for this build, shared with Project provisioning.
+import bundledBenchmarks from "../../../../../node_modules/.cache/penguin-benchmarks/catalog.json";
 // The AMSP wire types, by path: the gallery reads them as types only and takes no dependency.
 import type { AmspRecord } from "../../../../amsp/src/types";
 import { harnessTimeline, orgDeskTimeline, SWITCHED_MODEL } from "./harness-transcript";
 import { IDS } from "./ids";
-import { agentEvaluationPlugin, rsiToolkitPlugins } from "./library-plugins";
+import { agentEvaluationPlugin, rsiToolkitPlugins, shippedIcon } from "./library-plugins";
 import {
   docsAgentsMd,
   RSI_ROUND,
@@ -92,8 +89,14 @@ import type { ModelRef } from "./transcripts";
 // Helpers
 // ---------------------------------------------------------------------------------------------
 
-/** One built-in Benchmark, as core's data module holds it. */
-type BuiltinBenchmark = (typeof BUILTIN_BENCHMARKS)[number];
+/** The package metadata and README texts prepared for the browser at build time. */
+type BuiltinBenchmark = Pick<
+  BenchmarkSummary,
+  "id" | "title" | "description" | "descriptionZh" | "version"
+> & {
+  cases: Array<{ id: string; title: string; statement: string; rubric: string }>;
+};
+const BUILTIN_BENCHMARKS = bundledBenchmarks as BuiltinBenchmark[];
 
 /**
  * What a model is used with, as GET /models reports it: its own values, else its group's
@@ -154,6 +157,13 @@ export const DEFAULT_MODEL: ModelRef = {
 // Rows
 // ---------------------------------------------------------------------------------------------
 
+/** A file a demo memory keeps in its folder, with its text: what the file route reads back. */
+export interface DemoKeptFile {
+  scopeKey: string;
+  file: MemoryFolderFile;
+  content: string;
+}
+
 export interface DemoFixtures {
   lang: Lang;
   now: number;
@@ -171,7 +181,11 @@ export interface DemoFixtures {
   schedules: ProjectScheduleItem[];
   library: PluginLibraryResponse;
   pluginFiles: Record<string, Record<string, string>>;
-  installed: Record<string, { skills: SkillMetadataItem[]; hooks: HookItem[] }>;
+  /** Per Agent: its Skills and hook packages, and whether its Agent-wide workbench switch is off. */
+  installed: Record<
+    string,
+    { skills: SkillMetadataItem[]; hooks: HookItem[]; workbenchesOff?: boolean }
+  >;
   installedPlugins: InstalledPluginsResponse;
   pluginIndex: PluginIndexResponse;
   readmes: Record<string, string>;
@@ -181,7 +195,15 @@ export interface DemoFixtures {
   machines: MachinesResponse;
   version: VersionResponse;
   update: UpdateCheckResponse;
-  memory: Record<string, { overview: MemoryOverviewResponse; files: MemoryFileResponse[] }>;
+  memory: Record<
+    string,
+    {
+      overview: MemoryOverviewResponse;
+      files: MemoryFileResponse[];
+      /** The files the topics keep in their folders (`<topic>/<path>`), each with its text. */
+      folderFiles: DemoKeptFile[];
+    }
+  >;
   vault: Record<string, VaultResponse>;
   /** Each Agent's public API settings, keyed by Agent id; an Agent missing here never had them set. */
   agentApi: Record<string, AgentApiSettings>;
@@ -194,6 +216,8 @@ export interface DemoFixtures {
   context: SessionContextResponse;
   usage: UsageDay[];
   usageErrors: UsageErrorItem[];
+  /** The App Center: a tile in each build state, and a folder in the viewer's arrangement. */
+  appCenter: AppCenterResponse;
 }
 
 /** One day of one Agent on one model, the grain the usage routes aggregate from. */
@@ -251,6 +275,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         "回答关于 Claude Code 文档的问题，每条结论都引用语料库里的真实文件。",
         "Answers questions about the Claude Code docs, citing a real corpus file for every claim.",
       ),
+      author: "user",
       createdAt: iso(ago(90)),
       // The self-evolution round's accepted candidate: its version, written when the round edited it.
       updatedAt: iso(rsi.evaluatedAt),
@@ -277,6 +302,8 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         "从变更日志起草发布说明，中英各一份。",
         "Drafts release notes from the changelog, in both languages.",
       ),
+      // Made by the general agent through "Create with AI", so the list shows a second group.
+      author: "agent",
       createdAt: iso(ago(40)),
       updatedAt: iso(ago(6)),
       activeSessionCount: 0,
@@ -337,6 +364,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     config: {
       name: agent.name,
       description: agent.description,
+      author: agent.author ?? "user",
       version: agent.version,
       kernelVersion: agent.kernelOutdated ? "2026-08-20" : "2026-09-11",
       kernelLatest: "2026-09-11",
@@ -998,9 +1026,11 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     restartPending: false,
   };
   // The sandbox backends' cards: their rows carry the bilingual descriptions and the shield
-  // icons the packages' own package.json (its `penguin` block) and icon hold.
+  // icons the packages' own cards (declared in each backend's src/index.ts) and icons hold.
   const shield = (inner: string) =>
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5.2c0 4.4-3 8.2-7 9.8-4-1.6-7-5.4-7-9.8V6l7-3z" />${inner}</svg>`;
+    shippedIcon(
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5.2c0 4.4-3 8.2-7 9.8-4-1.6-7-5.4-7-9.8V6l7-3z" />${inner}</svg>`,
+    );
   const pluginIndex: PluginIndexResponse = {
     plugins: [
       {
@@ -1174,88 +1204,6 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     ),
   ];
 
-  // The built-in Benchmarks, as core writes them into a new Project: every case is a Harbor task
-  // whose statement and rubric are text only. The writer is core's (builtin-benchmarks.ts), kept
-  // private there beside the file system, so the two texts are spelled again here, word for word.
-  const builtinCaseId = (index: number, task: string) =>
-    `CASE-${String(index).padStart(3, "0")}-${task}`;
-  const taskPath = (bench: BuiltinBenchmark) => `benchmarks/${bench.repoDir}/tasks`;
-  const repoLink = (bench: BuiltinBenchmark, kind: "tree" | "blob", rel: string) =>
-    `${BENCHMARK_REPO}/${kind}/${bench.ref}/${rel}`;
-  const shellWord = (text: string) => `'${text.replace(/'/g, "'\\''")}'`;
-  const builtinStatement = (
-    bench: BuiltinBenchmark,
-    item: BuiltinBenchmark["cases"][number],
-  ): string => {
-    const offline = bench.agentNetwork === "no-network";
-    const facts = [
-      `- Benchmark: ${bench.title} — ${bench.source} · Category: ${item.category}` +
-        (item.expertHours !== undefined ? ` · Expert estimate: ${item.expertHours} h` : ""),
-      `- Task: \`${item.task}\` in ${repoLink(bench, "tree", `${taskPath(bench)}/${item.task}`)}`,
-      `- Upstream: ${bench.upstream.url} (${bench.upstream.license})` +
-        (item.upstreamTask !== undefined ? `, ${item.upstreamTask}` : ""),
-      `- Container: ${item.cpus} CPU, ${item.memoryMb / 1024} GB RAM, CPU only · Agent network: ` +
-        (offline ? "none, except the model provider's API host" : "public") +
-        ` · Verifier: ${bench.verifier}`,
-    ];
-    const command = [
-      'export PYTHONPATH="$PWD/agents"',
-      `uvx --from harbor==${HARBOR_VERSION} harbor run -p ${taskPath(bench)} -i ${item.task} \\`,
-      `  -a ${HARBOR_AGENT} -m <provider>/<model_id> \\`,
-      "  --ak thinking=<level> --ak penguin_version=<penguin version> \\",
-      `  --ak run_timeout=${bench.runTimeout} --ak max_turns=${bench.maxTurns} \\`,
-      ...(bench.timeBudgetNote !== undefined
-        ? [`  --ak time_budget_note=${shellWord(bench.timeBudgetNote)} \\`]
-        : []),
-      ...(offline ? ["  --allow-agent-host <model provider API host> \\"] : []),
-      ...(bench.sharedNetwork
-        ? ["  --extra-docker-compose tools/docker/shared-network.yaml \\"]
-        : []),
-      "  --agent-setup-timeout-multiplier 2.5 -k 1 -n 1 --job-name <job name> -o <jobs dir> -y",
-    ];
-    return [
-      `# ${item.title}`,
-      "",
-      item.summary,
-      "",
-      ...facts,
-      "",
-      "## How this case is run",
-      "",
-      "This case does not run in a Workspace. It is a Harbor task: the evaluator runs it in Docker " +
-        `with Harbor ${HARBOR_VERSION} and the PenguinHarness adapter from the repository above, ` +
-        `following that repository's rules for agents — ${repoLink(bench, "blob", BENCHMARK_RUN_RULES)} — ` +
-        `from the root of a checkout at commit \`${bench.ref}\`:`,
-      "",
-      "```bash",
-      ...command,
-      "```",
-      "",
-      `Caps: the agent is stopped at ${bench.runTimeout} and after ${bench.maxTurns} turns. Run at ` +
-        "most four trials at a time on one machine. Prerequisites on the evaluating machine: Docker " +
-        `with Compose v2; uv; network access to ${bench.downloads}, nodejs.org, the npm registry and ` +
-        "the model provider; the model under test configured in this machine's PenguinHarness with " +
-        "its API key saved (the adapter copies that one entry into the container, outside the " +
-        "trial's log directory)." +
-        (bench.note !== undefined ? ` ${bench.note}` : ""),
-      "",
-      "The score is the verifier's reward × 100: " +
-        (bench.grader?.scale ??
-          "a pass (1) scores 100, a fail (0) scores 0, and a fractional reward r scores 100·r") +
-        ". An evaluation from the Evaluation Center keeps every trial under this Benchmark's " +
-        "`.jobs/` directory and records its Session id as `harbor:<trial name>`.",
-      "",
-      ...(bench.results !== undefined
-        ? [
-            `Measured results of PenguinHarness on these tasks: ${repoLink(bench, "blob", bench.results)}`,
-            "",
-          ]
-        : []),
-    ].join("\n");
-  };
-  const builtinRubric = (bench: BuiltinBenchmark) =>
-    `# Scoring rubric (max 100 points)\n\n- 100 pts: the Harbor verifier's reward for this trial (\`/logs/verifier/reward.txt\` or the \`reward\` key of \`reward.json\`) multiplied by 100. The task's own ${bench.grader !== undefined ? "grader decides" : "tests decide"}; there is no manual judging and no partial credit beyond what the verifier itself reports.\n`;
-
   /**
    * The one built-in Benchmark the docs Agent has been through: one Harbor trial per case, the
    * verifier passing three of them. A run's Session id names its trial (`harbor:<trial>`).
@@ -1264,11 +1212,13 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     const rnd = seeded(4040);
     const cases = bench.cases.map((item, i) => {
       const score = i === 0 || i === 3 || i === 7 ? 100 : 0;
-      const trial = `${item.task.slice(0, 22)}__${Math.floor(rnd() * 36 ** 7)
+      const trial = `${item.id.replace(/^CASE-\d+-/, "").slice(0, 22)}__${Math.floor(
+        rnd() * 36 ** 7,
+      )
         .toString(36)
         .padStart(7, "0")}`;
       return caseRecord(
-        builtinCaseId(i + 1, item.task),
+        item.id,
         score,
         Math.round((0.04 + rnd() * 0.06) * 10_000) / 10_000,
         420_000 + Math.round(rnd() * 600_000),
@@ -1345,8 +1295,8 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     ],
   };
   for (const bench of BUILTIN_BENCHMARKS) {
-    benchmarkCases[bench.id] = bench.cases.map((item, i) => ({
-      id: builtinCaseId(i + 1, item.task),
+    benchmarkCases[bench.id] = bench.cases.map((item) => ({
+      id: item.id,
       title: item.title,
     }));
   }
@@ -1366,10 +1316,10 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
   }
   // A Harbor case is text only: what the task is, where its folder is, and how it is launched.
   for (const bench of BUILTIN_BENCHMARKS) {
-    bench.cases.forEach((item, i) => {
-      caseFiles[`${bench.id}/${builtinCaseId(i + 1, item.task)}`] = {
-        statement: { "README.md": builtinStatement(bench, item) },
-        rubric: { "README.md": builtinRubric(bench) },
+    bench.cases.forEach((item) => {
+      caseFiles[`${bench.id}/${item.id}`] = {
+        statement: { "README.md": item.statement },
+        rubric: { "README.md": item.rubric },
       };
     });
   }
@@ -1478,6 +1428,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     description: string,
     content: string,
     days: number,
+    kept: DemoKeptFile[] = [],
   ): MemoryFileResponse => ({
     scopeKey,
     file: {
@@ -1487,10 +1438,43 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       updatedAt: dayKey(ago(days)),
       size: content.length,
       modifiedAt: iso(ago(days)),
+      files: kept.map((k) => k.file),
     },
     content,
   });
+  /** A file a topic keeps in its folder: `filePath` is `<topic>/<path>`. */
+  const keptFile = (
+    scopeKey: string,
+    filePath: string,
+    content: string,
+    days: number,
+  ): DemoKeptFile => ({
+    scopeKey,
+    file: { path: filePath, size: content.length, modifiedAt: iso(ago(days)) },
+    content,
+  });
   const workspaceScope = "docs-expert-4f2a9c";
+  // The corpus topic keeps the checker it describes, a folder of its own beside it.
+  const corpusFiles = [
+    keptFile(
+      workspaceScope,
+      "corpus-layout/broken-links.py",
+      [
+        "# Usage: python3 broken-links.py <docs-dir>",
+        "# Prints every relative Markdown link under <docs-dir> whose target file is missing.",
+        "import pathlib, re, sys",
+        "",
+        "root = pathlib.Path(sys.argv[1])",
+        'link = re.compile(r"\\]\\(([^)#\\s]+\\.md)")',
+        'for page in sorted(root.rglob("*.md")):',
+        '    for target in link.findall(page.read_text(encoding="utf-8")):',
+        "        if not (page.parent / target).exists():",
+        '            print(f"{page.relative_to(root)}: {target}")',
+        "",
+      ].join("\n"),
+      2,
+    ),
+  ];
   const memory: DemoFixtures["memory"] = {
     [IDS.agents.docs]: {
       overview: {
@@ -1539,10 +1523,12 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
           "corpus-layout.md",
           L("语料库结构", "Corpus layout"),
           L("corpus/ 下按上游仓库分目录。", "corpus/ is split by upstream repository."),
-          `---\nname: ${L("语料库结构", "Corpus layout")}\nupdated_at: ${dayKey(ago(2))}\n---\n\ncorpus/claude-code-docs/ · corpus/penguin-docs/\n`,
+          `---\nname: ${L("语料库结构", "Corpus layout")}\nupdated_at: ${dayKey(ago(2))}\n---\n\ncorpus/claude-code-docs/ · corpus/penguin-docs/\n\n${L("检查失效链接：", "Check for broken links:")} [broken-links.py](corpus-layout/broken-links.py) — python3 broken-links.py <docs-dir>\n`,
           2,
+          corpusFiles,
         ),
       ],
+      folderFiles: corpusFiles,
     },
     [IDS.agents.notes]: {
       overview: {
@@ -1552,6 +1538,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         scopes: [{ scopeKey: "user", kind: "user", fileCount: 0, hasIndex: false }],
       },
       files: [],
+      folderFiles: [],
     },
     [IDS.agents.general]: {
       overview: {
@@ -1561,6 +1548,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         scopes: [{ scopeKey: "user", kind: "user", fileCount: 0, hasIndex: false }],
       },
       files: [],
+      folderFiles: [],
     },
   };
 
@@ -1679,10 +1667,11 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       enabled: true,
     },
     {
-      name: "no-force-push",
+      name: "git-push-force",
       pattern: "git\\s+push\\s+.*--force",
-      description: L("强制推送", "Force pushing"),
+      description: L("强制推送会改写共享历史", "A force-push rewrites shared history"),
       enabled: true,
+      action: "ask",
     },
     {
       name: "no-curl-pipe-sh",
@@ -1889,6 +1878,57 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     },
   ];
 
+  const shortcut = (
+    agent: AgentSummary,
+    workbenchId: string,
+    title: string,
+    titleZh: string,
+    build: AppCenterShortcut["build"] = "ready",
+    error?: string,
+  ): AppCenterShortcut => ({
+    agentId: agent.agentId,
+    agentName: agent.name ?? agent.agentId,
+    workbenchId,
+    title,
+    titleZh,
+    path: `/app/${IDS.project}/${agent.agentId}/${workbenchId}`,
+    build,
+    ...(error !== undefined ? { error } : {}),
+  });
+  const [docsAgent, notesAgent, generalAgent] = [agents[0]!, agents[1]!, agents[2]!];
+  const appCenter: AppCenterResponse = {
+    shortcuts: [
+      shortcut(docsAgent, "corpus-search", "Corpus search", "语料检索"),
+      shortcut(docsAgent, "citation-check", "Citation check", "引用核对", "building"),
+      shortcut(notesAgent, "changelog-board", "Changelog board", "变更看板"),
+      shortcut(
+        notesAgent,
+        "release-calendar",
+        "Release calendar",
+        "发布日历",
+        "failed",
+        "src/index.ts:12:7 TS2322 Type 'string' is not assignable to type 'number'.",
+      ),
+      shortcut(generalAgent, "daily-todos", "Daily to-dos", "每日待办"),
+      shortcut(generalAgent, "expenses", "Expense log", "报销登记"),
+    ],
+    layout: {
+      v: 1,
+      items: [
+        { type: "app", app: `${docsAgent.agentId}/corpus-search` },
+        {
+          type: "folder",
+          id: "release",
+          name: L("发布", "Release"),
+          apps: [`${notesAgent.agentId}/changelog-board`, `${notesAgent.agentId}/release-calendar`],
+        },
+        { type: "app", app: `${docsAgent.agentId}/citation-check` },
+        { type: "app", app: `${generalAgent.agentId}/daily-todos` },
+        { type: "app", app: `${generalAgent.agentId}/expenses` },
+      ],
+    },
+  };
+
   return {
     lang,
     now,
@@ -1962,6 +2002,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     context,
     usage,
     usageErrors,
+    appCenter,
   };
 }
 

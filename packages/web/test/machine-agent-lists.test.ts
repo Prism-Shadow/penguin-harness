@@ -21,7 +21,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createElement as h } from "react";
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
-import { setActiveStrings, zh } from "../src/lib/strings";
+import { S, setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import {
   mixAgents,
@@ -29,6 +29,7 @@ import {
   useMachineAgents,
 } from "../src/lib/machine-agent-lists";
 import type { MachineAgents } from "../src/lib/machine-agent-lists";
+import { remoteAgentsEmpty } from "../src/lib/machine-link";
 import { publishMachinesChanged } from "../src/state/machines";
 import { useProject } from "../src/state/project";
 import { PROJECT_ID, agentServer, mountAgentApp } from "./helpers/agent-app";
@@ -183,6 +184,25 @@ describe("each machine's Agent list", () => {
     await run(() => publishMachineAgentsChanged("gpu1"));
     await waitFor(() => shown("gpu-box")?.startsWith("not live") === true);
     expect(shown("gpu-box")).toMatch(/^not live \(.*gpu1 did not answer\): default_agent,helper$/);
+    expect(listReads(server, "gpu1")).toBe(2);
+  });
+
+  it("takes a web page a machine answered for a failure, and keeps the list it had", async () => {
+    const server = await openProbe([GPU]);
+    await waitFor(() => shown("gpu-box") === "live: default_agent,helper");
+
+    // Something in front of the machine serves a page instead of forwarding the read. The page
+    // rides the socket as text, and the client judges it as it judges any answer that is not the
+    // server's: the machine did not answer, with the page's sentence as the reason. What the
+    // probe renders is its last known Agents — a string never reaches the list where a list of
+    // Agents belongs (the `.map` in the probe is the render that would break).
+    server.pageNext("gpu1", /\/agents$/);
+    await run(() => publishMachineAgentsChanged("gpu1"));
+    const page = S.errors.notTheServer.page(200);
+    await waitFor(() => shown("gpu-box")?.startsWith("not live") === true);
+    expect(shown("gpu-box")).toBe(
+      `not live (${remoteAgentsEmpty("connected", page)}): default_agent,helper`,
+    );
     expect(listReads(server, "gpu1")).toBe(2);
   });
 

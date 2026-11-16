@@ -199,16 +199,16 @@ Cookie 设置为 HttpOnly 和 SameSite=Lax。请求确实是 https，或者**受
 
 ### 网络暴露面
 
-服务器默认绑定 `127.0.0.1`。对外暴露（`HOST=0.0.0.0`）属于部署层面的决定，必须放在 TLS 终结之后。这样的部署需要设置 `PENGUIN_TRUST_PROXY=1`，代理要把 `x-forwarded-proto` 覆盖为 `https`，并把外部主机名传进来：要么原样转发 `Host` 请求头，要么用它覆盖 `x-forwarded-host`。缺任何一条，浏览器的每个写请求（包括登录）都会被 `403` `cross_origin_write` 拒绝。
+服务器默认绑定 `127.0.0.1`。对外暴露（`HOST=0.0.0.0`）属于部署层面的决定，必须放在 TLS 终结之后。这样的部署需要设置 `PENGUIN_TRUST_PROXY=1`，代理要原样转发外部的 `Host` 请求头，并把 `x-forwarded-proto` 覆盖为 `https`，只带一个值。缺任何一条，浏览器的每个写请求（包括登录）都会被 `403` `cross_origin_write` 拒绝。代理还应当用外部主机名覆盖 `x-forwarded-host`，或者干脆删掉它：不少代理保留 `Host`，却把客户端自己送来的 `x-forwarded-host` 原样转发。外部主机名也应当启用 HSTS，让浏览器永远不去加载它的 `http://` 页面：浏览器网络路径上的任何人都能冒充它提供这样的页面。
 
-浏览器所在的地址是服务器的**公共源**（public origin）。代理受信任时，协议取自 `x-forwarded-proto`，主机取自 `x-forwarded-host`，没有时取 `Host`，各取第一个值；不受信任时，就是连接本身的协议与 `Host` 请求头。下文的来源检查拿写请求的 `Origin` 与它比对，服务器交还给浏览器的地址也都以它为准：模型厂商授权后的跳转地址，以及 Chrome 扩展配对时连接的地址。
+浏览器所在的地址是服务器的**公共源**（public origin）。代理受信任时，协议取自 `x-forwarded-proto`，主机取自 `x-forwarded-host`，没有时取 `Host`。每个头都只认单个值：`https, http` 这样的列表（代理追加而不是覆盖时就会出现）一律忽略，`http`、`https` 以外的协议，或者不是裸 `host[:port]` 的主机，也同样忽略。代理不受信任时，公共源就是连接本身的协议与 `Host` 请求头。服务器交还给浏览器的地址都以它为准：模型厂商授权后的跳转地址，以及 Chrome 扩展配对时连接的地址。下文的来源检查读得更少：只取转发的协议，配上原样的 `Host`，从不读 `x-forwarded-host`；代理受信任时，转发头不是单个值的写请求直接拒绝。
 
-桌面应用内嵌的服务端信任这两个转发头。它只监听回环地址，只有本机进程能连上；网页也无法在跨源请求（那需要一次服务器从不放行的预检）或 WebSocket 握手里设置这些头。从外部访问它只有 Penguin Remote 中继一条路，中继在它前面终结 TLS。中继的最后一跳，即用户机器上的 Penguin Remote 客户端，应当把 `X-Forwarded-Proto` 覆盖为 `https`、把 `X-Forwarded-Host` 覆盖为公网主机名，各只带一个值，服务器由此看到浏览器所在的 `https://` 地址。
+桌面应用内嵌的服务端信任这两个转发头。它只监听回环地址，但这挡不住所有网页：域名被重新绑定（DNS rebinding）到 `127.0.0.1` 的页面，以及回环预览主机上的预览页，都能连上它的端口，并在各自的同源请求里设置任意请求头。它们都拿不到 App 的会话 Cookie，而把预览主机挡在 API 之外的那道检查只读原始的 `Host`，从不读转发头。其他源的页面无法在跨源请求（那需要一次服务器从不放行的预检）或 WebSocket 握手里设置这些转发头。从外部访问这个服务端只有 Penguin Remote 中继一条路，中继在它前面终结 TLS。中继的最后一跳，即用户机器上的 Penguin Remote 客户端，应当让 `Host` 保持为公网主机名，并把 `X-Forwarded-Proto` 覆盖为 `https`、把 `X-Forwarded-Host` 覆盖为公网主机名，各只带一个值，服务器由此看到浏览器所在的 `https://` 地址。
 
-过渡期内，`Origin` 等于请求自身来源（连接的协议加 `Host`）的写请求同样放行。公共源之前发布的桌面端只拿 `Origin` 与这个来源比对，所以中继的一跳（目前是 Penguin Remote 客户端）在 `Origin` 指向隧道自己的主机时，把浏览器的 `https://` 改写成 `http://`。0.3.0 之前，客户端不再改写 `Origin`，改为发送那两个转发头；从 0.3.0 起，服务器只认公共源。
+过渡期内，仅在桌面应用的服务端上，`Origin` 等于请求自身来源（连接的协议加 `Host`）的写请求同样放行。公共源之前发布的桌面端只拿 `Origin` 与这个来源比对，所以中继的一跳（目前是 Penguin Remote 客户端）在 `Origin` 指向隧道自己的主机时，把浏览器的 `https://` 改写成 `http://`。其他服务端只认公共源。在终结 TLS 的代理之后，请求自身的来源是公网主机上的 `http://`：浏览器网络路径上的任何人都能提供这个页面，而 `SameSite` 不区分 `http://` 与 `https://` 的浏览器，会让它发出的 WebSocket 握手和不带请求体的写请求带上会话 Cookie，这两种请求都不经过预检。0.3.0 之前，客户端不再改写 `Origin`，改为发送那两个转发头；从 0.3.0 起，桌面端也只认公共源。
 
 API 只在规范的应用主机名下应答，这样用户生成的预览内容与应用的 cookie 就处于不同的浏览器源（origin）。
 
-针对跨站请求伪造，共有三层相互独立的防线：SameSite=Lax 的 Cookie、写请求的来源检查，以及 Content-Type 检查。SameSite=Lax 的 Cookie 阻止其他站点上的页面借用会话。来源检查用 `403` `cross_origin_write` 拒绝来自其他源的写请求。之所以需要这项检查，是因为 `SameSite` 把同一主机的另一个端口视为同一站点，否则本机其他程序提供的页面就能借用会话。Content-Type 检查会拒绝 HTML 表单能产生的那些类型的写请求，也会拒绝带请求体却没有 `Content-Type` 的写请求；两种拒绝都返回 `415` `unsupported_media_type`。
+针对跨站请求伪造，共有三层相互独立的防线：SameSite=Lax 的 Cookie、写请求的来源检查，以及 Content-Type 检查。SameSite=Lax 的 Cookie 阻止其他站点上的页面借用会话。来源检查用 `403` `cross_origin_write` 拒绝来自其他源的写请求。浏览器发送 `Sec-Fetch-Site` 时，检查还要求它的值是 `same-origin`；这个头由浏览器自己算出，协议也计算在内。API socket 与终端的握手遵守同样两条规则。之所以需要这项检查，是因为 `SameSite` 把同一主机的另一个端口视为同一站点，否则本机其他程序提供的页面就能借用会话；有些浏览器还把同一主机的 `http://` 与 `https://` 视为同一站点。Content-Type 检查会拒绝 HTML 表单能产生的那些类型的写请求，也会拒绝带请求体却没有 `Content-Type` 的写请求；两种拒绝都返回 `415` `unsupported_media_type`。
 
 有两种写请求不受来源检查的约束：`/api/amsp/v1` 下携带 `Authorization: Bearer …` 密钥的 Agent API 写请求，由 Agent API 自己的校验判定；浏览器扩展的配对请求，服务器只对来自扩展自身来源的请求作答。
