@@ -5314,7 +5314,7 @@ Scenarios:
     total: "Total",
     tokens: "Tokens",
     requests: "Requests",
-    customRange: "Custom date range",
+    rangeDates: "Start and end dates",
     colCacheRead: "cache_read",
     colCacheWrite: "cache_write",
     colOutput: "output",

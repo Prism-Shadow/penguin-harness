@@ -5579,8 +5579,8 @@ Benchmark：
     total: "累计",
     tokens: "Token",
     requests: "Requests",
-    /** The custom range picker's name: it has no visible title in the header's row of filters. */
-    customRange: "自定义日期范围",
+    /** The range picker's name: it has no visible title in the header's row of filters. */
+    rangeDates: "起止日期",
     colCacheRead: "缓存命中",
     colCacheWrite: "缓存未命中",
     colOutput: "输出",

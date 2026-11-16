@@ -1,7 +1,8 @@
 /**
  * Cost and usage center:
  * top filters for Agent / Model + a date-range preset (trailing last hour /
- * last 24 hours, calendar 7/30/90 days, or a custom range from the range picker);
+ * last 24 hours, calendar 7/30/90 days, or a custom range), the calendar ranges' dates shown in
+ * the range picker beside it, where two presses pick a custom range;
  * the range alone decides the time-series precision, so there is no second
  * control for it (controls have no external title — the explanation is
  * written into the dropdown options themselves);
@@ -54,6 +55,7 @@ import { RequestsChart, TokenBarChart, TokenLegend, type TokenLegendKey } from "
 import {
   compactCounts,
   compactSeries,
+  isoDate,
   presetDefaultGranularity,
   presetRange,
   presetTsWindow,
@@ -368,7 +370,8 @@ export function UsagePage() {
                 ))}
               </Select>
             </div>
-            {/* Date range: trailing windows and quick presets, with "custom" revealing the two date inputs */}
+            {/* Date range: the trailing windows, the calendar presets and a custom pair, picked in
+                the range field beside it */}
             <div className="w-28">
               <Select
                 size="sm"
@@ -393,16 +396,19 @@ export function UsagePage() {
                 <option value="custom">{S.usage.rangeCustom}</option>
               </Select>
             </div>
-            {preset === "custom" && (
-              /* One range picker for the custom pair; its presets are the calendar ones above,
-                 and picking one switches the range back to it. */
-              <div className="w-56">
+            {preset !== "1h" && preset !== "1d" && (
+              /* The calendar range's own dates, beside every calendar preset and the custom pair:
+                 two presses on it pick a custom range, and its presets are the calendar ones in
+                 the Select, so picking one switches the range back to it. A trailing window has
+                 no dates of its own to show. Wide enough for two full dates. */
+              <div className="w-60">
                 <DateRangeField
                   size="sm"
-                  aria-label={S.usage.customRange}
+                  aria-label={S.usage.rangeDates}
                   required
                   from={from}
                   to={to}
+                  max={isoDate(new Date())}
                   presets={CALENDAR_PRESETS.map((id) => ({
                     id,
                     label: S.usage[PRESET_LABEL[id]],
