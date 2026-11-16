@@ -251,6 +251,21 @@ export async function loadDshAdaptor(host: DshLoadHost = {}): Promise<SandboxPro
  */
 @Component({
   contributes: {
+    // How the Plugins page shows this backend (read from ifaces.json, never by booting it).
+    "PluginLibraryModule.cards": [
+      {
+        id: "sandbox-dsh.card",
+        title: "DSH Sandbox",
+        titleZh: "DSH 沙箱",
+        descriptionZh:
+          "PenguinHarness 的 DeepSeek Harness 沙箱适配器：把 DSH 的本地后端链接入本框架自己的沙箱接口。",
+        shortDescription: "Linux, macOS and Windows: confine file writes only.",
+        shortDescriptionZh: "Linux、macOS 与 Windows：只限制文件写入。",
+        category: "sandbox",
+        icon: "icon.svg",
+        preinstall: false,
+      },
+    ],
     "SandboxModule.providers": [
       { id: "sandbox-dsh.provider", name: "dsh-local", dimensions: ["fs-write"] },
     ],

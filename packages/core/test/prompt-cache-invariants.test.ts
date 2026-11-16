@@ -52,6 +52,9 @@ import type {
 
 const metaMessage = sessionMeta(META);
 
+/** What a model switch opens the next context with when it cannot summarize (opaque to the engine). */
+const HANDOFF = userText("[model_switch_from]\nread the trace file\n[/model_switch_from]");
+
 /** Everything in a request's config that takes part in the cached prefix. */
 function configFingerprint(request: RecordedRequest): string {
   const copy: Record<string, unknown> = { ...request.wireConfig };
@@ -61,6 +64,14 @@ function configFingerprint(request: RecordedRequest): string {
 
 const effortOf = (request: RecordedRequest): string | undefined =>
   (request.wireConfig.output_config as { effort?: string } | undefined)?.effort;
+
+/** Drains a generator and gives back what it returned. */
+async function finish<R>(gen: AsyncGenerator<unknown, R>): Promise<R> {
+  for (;;) {
+    const res = await gen.next();
+    if (res.done) return res.value;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -279,6 +290,112 @@ describe("prompt-cache invariants of request assembly", () => {
     expect(configFingerprint(first.requests[1]!)).toBe(configFingerprint(first.requests[0]!));
   });
 
+  it("a compaction tool round extends the turn it follows, and the summary request extends the round", async () => {
+    const first = recordingModel(modelConfig(), [
+      // Over the compaction threshold at the task's wrap-up round.
+      { text: "First answer.", promptTokens: 150 },
+      // The compaction request answers with a tool round (a hand-off file read back)...
+      {
+        toolCalls: [
+          { id: "call_h1", name: "read_file", args: { path: "/scratch/handoff/plan.md" } },
+        ],
+        promptTokens: 160,
+      },
+      // ...and the request the round's outputs make writes the summary.
+      { text: "[summary]the distilled summary[/summary]", promptTokens: 170 },
+    ]);
+    const second = recordingModel(modelConfig(), [{ text: "Carried on from the summary." }]);
+    const engine = new ContextEngine({
+      llm: first.model,
+      environment: fakeEnvironment,
+      compaction: compactionSettings({ maxRounds: 3, reminder: "Round done." }),
+      compactionToolGate: () => ({ allow: true }),
+      openNextContext: () => ({ llm: second.model }),
+    });
+
+    await collect(engine.run([userText("task one")], { approve: allowAll }));
+
+    expect(first.requests).toHaveLength(3);
+    const reasons = diagnoseSeries(first.requests);
+    expect(reasons, formatDiagnostics(first.requests, reasons)).toEqual([
+      { type: "none" },
+      { type: "none" },
+    ]);
+    // The round's request appends one user turn: the tool results and the round line, no
+    // prompt again.
+    const appended = wireMessage(first.requests[2]!, -1);
+    expect(appended.role).toBe("user");
+    expect(blockTypes(appended)).toEqual(["tool_result", "text"]);
+    expect(new Set(first.requests.map(configFingerprint)).size).toBe(1);
+  });
+
+  it("a reminder after refused tool calls extends the request it follows, with no prompt again", async () => {
+    const first = recordingModel(modelConfig(), [
+      { text: "First answer.", promptTokens: 150 },
+      // No gate: the call is refused, and the model is reminded.
+      {
+        toolCalls: [{ id: "call_x", name: "read_file", args: { path: "/ws/a.ts" } }],
+        promptTokens: 160,
+      },
+      { text: "[summary]the distilled summary[/summary]", promptTokens: 170 },
+    ]);
+    const second = recordingModel(modelConfig(), [{ text: "Carried on from the summary." }]);
+    const engine = new ContextEngine({
+      llm: first.model,
+      environment: fakeEnvironment,
+      compaction: compactionSettings({ maxRounds: 1, reminder: "Round done." }),
+      openNextContext: () => ({ llm: second.model }),
+    });
+
+    await collect(engine.run([userText("task one")], { approve: allowAll }));
+
+    expect(first.requests).toHaveLength(3);
+    const reasons = diagnoseSeries(first.requests);
+    expect(reasons, formatDiagnostics(first.requests, reasons)).toEqual([
+      { type: "none" },
+      { type: "none" },
+    ]);
+    // One appended user turn: the refusal answering the call, then the reminder.
+    const appended = wireMessage(first.requests[2]!, -1);
+    expect(appended.role).toBe("user");
+    expect(blockTypes(appended)).toEqual(["tool_result", "text"]);
+    expect(JSON.stringify(appended)).not.toContain(COMPACTION_PROMPT);
+    expect(new Set(first.requests.map(configFingerprint)).size).toBe(1);
+  });
+
+  it("a summary with writes makes exactly one request on the old model", async () => {
+    const first = recordingModel(modelConfig(), [
+      { text: "First answer.", promptTokens: 150 },
+      {
+        text: "[summary]the distilled summary[/summary]",
+        toolCalls: [
+          {
+            id: "call_w1",
+            name: "write_file",
+            args: { file_path: "/scratch/handoff/plan.md", content: "the plan" },
+          },
+        ],
+        promptTokens: 160,
+      },
+    ]);
+    const second = recordingModel(modelConfig(), [{ text: "Carried on from the summary." }]);
+    const engine = new ContextEngine({
+      llm: first.model,
+      environment: fakeEnvironment,
+      compaction: compactionSettings({ maxRounds: 3 }),
+      compactionToolGate: () => ({ allow: true }),
+      openNextContext: () => ({ llm: second.model }),
+    });
+
+    await collect(engine.run([userText("task one")], { approve: allowAll }));
+    await collect(engine.run([userText("task two")], { approve: allowAll }));
+
+    expect(first.requests).toHaveLength(2);
+    const reasons = diagnoseSeries(first.requests);
+    expect(reasons, formatDiagnostics(first.requests, reasons)).toEqual([{ type: "none" }]);
+    expect(second.requests).toHaveLength(1);
+  });
+
   it("a model switch's compaction request extends the turn it follows on the old model; the new model's first request is a new line carrying its id", async () => {
     const target = "claude-opus-4-7";
     const first = recordingModel(modelConfig(), [
@@ -355,9 +472,7 @@ describe("prompt-cache invariants of request assembly", () => {
       const payload = res.value.payload as { type?: string; event_type?: string };
       if (payload.type === "partial_text" && payload.event_type === "delta") controller.abort();
     }
-    await expect(collect(engine.switchContext())).rejects.toThrow(
-      "the target's context could not be assembled",
-    );
+    expect(await finish(engine.switchContext())).toBe("fatal");
     await collect(engine.run([userText("task two")], { approve: allowAll }));
 
     expect(aborted).toBe("aborted");
@@ -378,5 +493,94 @@ describe("prompt-cache invariants of request assembly", () => {
     const last = wireMessage(first.requests[3]!, -1);
     expect(last.role).toBe("user");
     expect(last.content.at(-1)!.text).toBe("task two");
+  });
+
+  it("a model switch that cannot summarize hands over by Trace path: an unreachable old model is sent nothing, a failed summary only extends its line, and the target's first request opens with the handoff", async () => {
+    const target = "claude-opus-4-7";
+    const run = async (
+      script: ScriptedReply[],
+      summarize: boolean,
+    ): Promise<{ first: RecordedRequest[]; second: RecordedRequest[] }> => {
+      const first = recordingModel(modelConfig(), script);
+      const second = recordingModel(modelConfig({ modelId: target }), [{ text: "Read it." }]);
+      const engine = new ContextEngine({
+        llm: first.model,
+        environment: fakeEnvironment,
+        compaction: compactionSettings(),
+        // One summary attempt: its transport drop ends the compaction at once.
+        compactionMaxReconnects: 0,
+        openNextContext: () => ({ llm: second.model }),
+      });
+      await collect(engine.run([userText("task one")], { approve: allowAll }));
+      await collect(
+        summarize ? engine.switchContext(undefined, HANDOFF) : engine.handOverContext(HANDOFF),
+      );
+      await collect(engine.run([userText("task two")], { approve: allowAll }));
+      return { first: first.requests, second: second.requests };
+    };
+
+    // The old model is known unreachable: the switch sends it nothing at all.
+    const unreachable = await run([{ text: "First answer.", promptTokens: 20 }], false);
+    // The summary request fails on the old model: one ordinary compaction request, extending
+    // the turn it follows, and nothing about the target in it.
+    const failed = await run(
+      [
+        { text: "First answer.", promptTokens: 20 },
+        { text: "[summary]half", promptTokens: 30, outcome: "retryable-after-text" },
+      ],
+      true,
+    );
+
+    expect(unreachable.first).toHaveLength(1);
+    expect(failed.first).toHaveLength(2);
+    const reasons = diagnoseSeries(failed.first);
+    expect(reasons, formatDiagnostics(failed.first, reasons)).toEqual([{ type: "none" }]);
+    expect(configFingerprint(failed.first[1]!)).toBe(configFingerprint(failed.first[0]!));
+    expect(wireMessage(failed.first[1]!, -1).content[0]!.text).toBe(COMPACTION_PROMPT);
+    for (const { second } of [unreachable, failed]) {
+      // A new cache line on the target, opening with the handoff where a summary would be.
+      expect(second).toHaveLength(1);
+      expect(second[0]!.wireConfig.model).toBe(target);
+      const opening = wireMessage(second[0]!, 0);
+      expect(opening.role).toBe("user");
+      expect(opening.content.map((b) => b.text)).toEqual([
+        (HANDOFF.payload as { text: string }).text,
+        "task two",
+      ]);
+    }
+  });
+
+  it("a summary that fails and then a target that cannot be opened leave the old model's line intact: the next request still extends the last one", async () => {
+    const first = recordingModel(modelConfig(), [
+      { text: "First answer.", promptTokens: 20 },
+      { text: "[summary]half", promptTokens: 30, outcome: "retryable-after-text" },
+      { text: "Second answer.", promptTokens: 40 },
+    ]);
+    const engine = new ContextEngine({
+      llm: first.model,
+      environment: fakeEnvironment,
+      compaction: compactionSettings(),
+      compactionMaxReconnects: 0,
+      openNextContext: () => {
+        throw new Error("the target's context could not be assembled");
+      },
+    });
+
+    await collect(engine.run([userText("task one")], { approve: allowAll }));
+    expect(await finish(engine.switchContext(undefined, HANDOFF))).toBe("fatal");
+    await collect(engine.run([userText("task two")], { approve: allowAll }));
+
+    // The turn, the failed summary request, the next turn — all on the old model. The summary
+    // request extended the turn; nothing of it was committed, so the next turn extends the turn
+    // too. Neither the handoff nor anything of the target reached the wire.
+    expect(first.requests).toHaveLength(3);
+    const [turn, summary, next] = first.requests as [
+      RecordedRequest,
+      RecordedRequest,
+      RecordedRequest,
+    ];
+    expect(diagnoseCacheMiss(turn, summary)).toEqual({ type: "none" });
+    expect(diagnoseCacheMiss(turn, next)).toEqual({ type: "none" });
+    expect(JSON.stringify(first.requests.map((r) => r.wire))).not.toContain("model_switch_from");
   });
 });

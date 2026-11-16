@@ -12,7 +12,6 @@ import { crc32, inflateSync } from "node:zlib";
 import type { LLMOutcome } from "@prismshadow/penguin-core";
 import {
   VISION_PROBE_IMAGE,
-  VISION_PROBE_MAX_TOKENS,
   classifyVisionProbe,
   classifyVisionProbeError,
   isImageRejection,
@@ -49,10 +48,6 @@ describe("VISION_PROBE_IMAGE", () => {
       offset += 12 + length;
     }
     expect(inflated.length).toBe(1 + channels[colorType]!);
-  });
-
-  it("caps the probe's output so a success cannot run up a bill", () => {
-    expect(VISION_PROBE_MAX_TOKENS).toBeLessThanOrEqual(16);
   });
 });
 

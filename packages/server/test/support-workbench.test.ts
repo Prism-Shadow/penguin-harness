@@ -1,5 +1,6 @@
 /**
- * Given a fresh default Project, its support Agent contributes a working tab without setup.
+ * Given a fresh default Project, its support Agent contributes a working tab without setup, and
+ * the workbench is on the Project's App Center with its icon.
  * Given persisted in-progress tickets after a restart, GET reconciles final answers once and stops
  * following their Sessions; failed/foreign jobs never receive an older or another Project's
  * answer. Reload preserves the ticket history.
@@ -17,6 +18,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import type { IfaceTable } from "@prismshadow/penguin-core/kernel";
+import type { IconRef } from "../src/api/types.js";
 import { WorkbenchService } from "../src/workbenches/service.js";
 import { apiClient, createTestApp, loginAdmin, writeTraceFile, type TestApp } from "./helpers.js";
 import { adoptSession, fakeSession, uniqueSessionId } from "./fixtures/session.js";
@@ -58,7 +60,10 @@ describe("built-in support workbench", { timeout: 30000 }, () => {
   beforeAll(async () => {
     t = await createTestApp({
       beforeSeed: async (root) => {
-        const dir = path.join(root, "default_project/agents/penguin_support/workbenches/support");
+        const dir = path.join(
+          root,
+          "default_project/agents/penguin_support/agent_state/workbenches/support",
+        );
         await fs.mkdir(dir, { recursive: true });
         await fs.writeFile(
           path.join(dir, "state.json"),
@@ -110,6 +115,21 @@ describe("built-in support workbench", { timeout: 30000 }, () => {
     expect(body.workbenches[0]?.error).toBeNull();
     expect(body.workbenches[0]?.tabs.map((t) => t.key)).toEqual(["support"]);
     expect((await admin.get(`${BASE}/ui/index.html`)).status).toBe(200);
+    // It is on the default Project's App Center from the start, with an icon that is served.
+    const center = (await (await admin.get("/api/projects/default_project/app-center")).json()) as {
+      shortcuts: Array<{ agentId: string; workbenchId: string; icon?: IconRef; path: string }>;
+    };
+    const tile = center.shortcuts.find((s) => s.agentId === "penguin_support");
+    expect(tile).toMatchObject({
+      workbenchId: "support",
+      path: "/app/default_project/penguin_support/support",
+    });
+    // An image from the icon route, never the file under ui/ served as a page of this origin.
+    expect(tile!.icon!.url).toMatch(new RegExp(`^${BASE}/app-center/icon\\?rev=[0-9a-f]+$`));
+    const icon = await admin.get(tile!.icon!.url);
+    expect(icon.status).toBe(200);
+    expect(icon.headers.get("content-type")).toBe("image/svg+xml");
+    expect(icon.headers.get("content-security-policy")).toContain("sandbox");
     expect(
       (await admin.delete("/api/projects/default_project/agents/penguin_support")).status,
     ).toBe(409);
@@ -186,7 +206,10 @@ describe("built-in support workbench", { timeout: 30000 }, () => {
     expect(await list.json()).toMatchObject({
       workbenches: [{ error: null, tabs: [{ key: "support" }] }],
     });
-    const disk = path.join(t.root, "default_project/agents/plugin_support/workbenches/support");
+    const disk = path.join(
+      t.root,
+      "default_project/agents/plugin_support/agent_state/workbenches/support",
+    );
     const state = JSON.stringify({
       tickets: [{ id: "saved", title: "Keep", status: "resolved", messages: [] }],
     });
@@ -217,7 +240,10 @@ describe("built-in support workbench", { timeout: 30000 }, () => {
   it("refuses a conflicting workbench without installing the support Skill", async () => {
     const agent = "/api/projects/default_project/agents/conflict_support";
     await admin.post("/api/projects/default_project/agents", { agentId: "conflict_support" });
-    const dir = path.join(t.root, "default_project/agents/conflict_support/workbenches/support");
+    const dir = path.join(
+      t.root,
+      "default_project/agents/conflict_support/agent_state/workbenches/support",
+    );
     await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(path.join(dir, "package.json"), "{}");
     expect((await admin.post(`${agent}/plugins`, { names: ["penguin-support"] })).status).toBe(409);
@@ -230,7 +256,8 @@ describe("support workbench following a question live", { timeout: 30000 }, () =
   /** When set, the model holds its next answer until this settles. */
   let hold: Promise<void> | undefined;
   const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-  const dir = () => path.join(t.root, "default_project/agents/penguin_support/workbenches/support");
+  const dir = () =>
+    path.join(t.root, "default_project/agents/penguin_support/agent_state/workbenches/support");
   /** The ticket as saved on disk, never read through GET. */
   const saved = async (id: string) =>
     (

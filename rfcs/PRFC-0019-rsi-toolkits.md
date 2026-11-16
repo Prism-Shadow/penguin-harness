@@ -2,8 +2,8 @@
 
 [中文版](PRFC-0019-rsi-toolkits.zh.md)
 
-> **Source**: `rfcs/PRFC-0019-rsi-toolkits.md` from the design repository [penguin-harness-design](https://github.com/Prism-Shadow/penguin-harness-design) — landed (default branch `main`, commit [`ac673a24`](https://github.com/Prism-Shadow/penguin-harness-design/commit/ac673a245eec78d6afca35e260dce28b2a3ab3ac)).
-> **Rev**: v1.0.0 (migrated into the main repository); the conventions for this surface are in [README.md](README.md), and changes from version to version are recorded in `## Changes` at the end.
+> **Source**: `rfcs/PRFC-0019-rsi-toolkits.md` from the design repository [penguin-harness-design](https://github.com/Prism-Shadow/penguin-harness-design) — the revision of design PR [#421](https://github.com/Prism-Shadow/penguin-harness-design/pull/421) (plugin library content as module contributions), which lands on the default branch `main` before this mirror; the previous rev took the landed commit [`ac673a24`](https://github.com/Prism-Shadow/penguin-harness-design/commit/ac673a245eec78d6afca35e260dce28b2a3ab3ac).
+> **Rev**: v1.1.0; the conventions for this surface are in [README.md](README.md), and changes from version to version are recorded in `## Changes` at the end.
 
 - Feature Name: `rsi_toolkits`
 - Start Date: 2026-10-10
@@ -102,7 +102,7 @@ The Web App does not hard-code the list of toolkits and Benchmarks. The draft pa
 
 ### "Method" choice
 
-The "Method" dropdown is generated when the "Use" dialog opens, from the plugin library's `rsi` category, one item per plugin: the name is taken from the manifest's `title` / `title_zh` (defaulting to package name), the description from `short_description(_zh)` (defaulting to `description(_zh)`). The five built-in toolkits do not write `title`, and the dropdown displays package names like the plugin marketplace. `default-rsi-toolkit` is identified by package name as the default loop: listed first, form and footer are as before, pre-selects `agent-optimization` and `agent-evaluation`. Each other plugin runs per the original paper's procedure, using the Skill that is: first, the Skill named after the plugin, second, the first and plugin-provided in quick start pre-selection, third, the plugin's only Skill; if none settle, the plugin does not enter the dropdown. When the plugin library has not yet been read, reading fails, or the category is empty, the dropdown is disabled with a reason stated, the form treats Default, and the "Evaluation" tab is unaffected. When a non-Default method is selected, the footer fixedly briefs that Skill on test_agent_id, benchmark_id, and runs, requiring it to run per the original paper's procedure, measured via its own evaluation reference, recording each complete evaluation with the same label, not mentioning `agent-evaluation`, `run_subagent`, or round limits; pre-selected Skill is only that Skill. Tests verify only this mapping rule (ordering, Skill selection, taking names and descriptions by language, fallback on read failure), and run once across the toolkits actually bundled in the repo, guaranteeing each maps to one item.
+The "Method" dropdown is generated when the "Use" dialog opens, from the plugin library's `rsi` category, one item per plugin: the name is taken from the card contribution's `title` / `titleZh` (defaulting to package name), the description from `shortDescription` / `shortDescriptionZh` (defaulting to npm's `description` / the card's `descriptionZh`). The five built-in toolkits do not write `title`, and the dropdown displays package names like the plugin marketplace. `default-rsi-toolkit` is identified by package name as the default loop: listed first, form and footer are as before, pre-selects `agent-optimization` and `agent-evaluation`. Each other plugin runs per the original paper's procedure, using the Skill that is: first, the Skill named after the plugin, second, the first and plugin-provided in quick start pre-selection, third, the plugin's only Skill; if none settle, the plugin does not enter the dropdown. When the plugin library has not yet been read, reading fails, or the category is empty, the dropdown is disabled with a reason stated, the form treats Default, and the "Evaluation" tab is unaffected. When a non-Default method is selected, the footer fixedly briefs that Skill on test_agent_id, benchmark_id, and runs, requiring it to run per the original paper's procedure, measured via its own evaluation reference, recording each complete evaluation with the same label, not mentioning `agent-evaluation`, `run_subagent`, or round limits; pre-selected Skill is only that Skill. Tests verify only this mapping rule (ordering, Skill selection, taking names and descriptions by language, fallback on read failure), and run once across the toolkits actually bundled in the repo, guaranteeing each maps to one item.
 
 ### Benchmark reproduction
 
@@ -161,6 +161,10 @@ Installed Skill copies match by Skill name, not plugin name: existing Agents wor
 - Server-side evaluation executor replaces reference copies in each toolkit.
 
 ## Changes
+
+### v1.1.0
+
+- Updated: § "Method" choice takes each item's name and description from the plugin's card contribution (`title` / `titleZh`, `shortDescription` / `shortDescriptionZh`), defaulting to npm's `description` and the card's `descriptionZh` (design PR [#421](https://github.com/Prism-Shadow/penguin-harness-design/pull/421)).
 
 ### v1.0.0
 

@@ -161,7 +161,7 @@ export function LiveAppFrame({
         <div className="flex shrink-0 items-center gap-2">
           <a
             href={open}
-            className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium whitespace-nowrap text-gray-500 transition-colors hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
+            className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium whitespace-nowrap text-gray-500 transition-colors hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
           >
             {S.live.open}
             <ArrowUpRightIcon className="h-3 w-3" />

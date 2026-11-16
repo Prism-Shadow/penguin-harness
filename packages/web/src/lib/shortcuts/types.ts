@@ -24,8 +24,7 @@ export type ShortcutScope = "global" | "terminal" | "editor";
 export type ShortcutGroup = "general" | "panels" | "terminal" | "editor";
 
 /**
- * The rebindable commands. `palette.toggle` is owned by the command palette; its id and default
- * are reserved here so the settings page lists it before the palette lands.
+ * The rebindable commands. `palette.toggle` is owned by the command palette (src/rescue/palette.tsx).
  */
 export type CommandId =
   | "palette.toggle"
@@ -63,6 +62,8 @@ export interface ShortcutCommand {
   id: CommandId;
   scope: ShortcutScope;
   group: ShortcutGroup;
+  /** Allows the recovery palette to run over an open dialog or menu. */
+  overDialogs?: true;
   /**
    * Serialized chords ("Mod+Shift+KeyW"); null = unbound by default. `default` covers every
    * platform without an entry of its own.

@@ -1,10 +1,11 @@
 import { useState } from "react";
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
 import { AgentAvatar, GlyphIcon, ICON_SIZE, ICONS, PickerDialog } from "@prismshadow/penguin-ui";
+import { useAgentAvatarSrc } from "../../lib/agent-avatar";
 import { S } from "../../lib/strings";
 import { agentDisplayName } from "../../state/project";
-import { pillClass } from "../chat/workspace-select";
-import { employeesLast, isEmployee } from "./agent-employment";
+import { pillClass } from "../workspace";
+import { employeesLast, isEmployee } from "../../lib/agent-employment";
 
 /** A searchable Agent chooser; the dialog owns its background, scroll and focus. */
 export function AgentSelect({
@@ -12,12 +13,16 @@ export function AgentSelect({
   selected,
   onSelect,
   empty,
+  machineId = null,
 }: {
   agents: AgentSummary[];
   selected: AgentSummary | null;
   onSelect: (agent: AgentSummary) => void;
   empty: string;
+  /** The machine `agents` lives on, for their pictures; null for this server. */
+  machineId?: string | null;
 }) {
+  const avatarSrc = useAgentAvatarSrc();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const needle = query.trim().toLocaleLowerCase();
@@ -33,7 +38,7 @@ export function AgentSelect({
         aria-label={S.chat.chooseAgent}
         data-tooltip={S.chat.chooseAgent}
         aria-haspopup="dialog"
-        className={pillClass}
+        className={`ui-edge ${pillClass}`}
         onClick={() => {
           setQuery("");
           setOpen(true);
@@ -42,9 +47,9 @@ export function AgentSelect({
         {selected && (
           <AgentAvatar
             id={selected.agentId}
-            name={agentDisplayName(selected)}
             size={16}
             className="shrink-0 rounded"
+            src={avatarSrc(selected.agentId, machineId)}
           />
         )}
         <span className="min-w-0 truncate">
@@ -71,9 +76,9 @@ export function AgentSelect({
           <>
             <AgentAvatar
               id={agent.agentId}
-              name={agentDisplayName(agent)}
               size={20}
               className="shrink-0 rounded"
+              src={avatarSrc(agent.agentId, machineId)}
             />
             <span
               className="min-w-0 flex-1 truncate"

@@ -35,9 +35,12 @@ import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
 import { S } from "../../lib/strings";
-import { switchBrowserBackend } from "../builtin-browser/browser-actions";
-import { browserState, subscribeBrowser } from "../builtin-browser/browser-store";
-import { PairingDialog } from "../builtin-browser/pairing-dialog";
+import {
+  switchBrowserBackend,
+  browserState,
+  subscribeBrowser,
+  PairingDialog,
+} from "../builtin-browser";
 
 /** Forgets a paired Chrome on the server; true once it is gone. Reached only through the confirm. */
 const revokeChrome = async (record: BrowserExtensionRecord): Promise<boolean> => {

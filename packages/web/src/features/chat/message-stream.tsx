@@ -7,26 +7,41 @@
  * own context menu (Copy / Add to conversation; open the link or copy its address — see
  * stream-selection-menu.tsx).
  */
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { ComponentProps, ReactNode, RefObject } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ComponentProps,
+  type ReactNode,
+  type RefObject,
+} from "react";
+
 import {
   A2uiActionsProvider,
   EmptyState,
   GlyphIcon,
   ICONS,
-  Spinner,
+  MessageBubble,
+  ReportIssueAction,
+  TextAction,
+  exceptionReport,
+  isSeriousError,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import type { ChatItem } from "../../lib/amsp/stream-model";
 import type { MemoryChangeRow } from "../../lib/amsp/memory-changes";
 import type { TaskStats } from "../../lib/amsp/task-stats";
-import type { PendingApproval } from "./use-session-stream";
+import type { ElidedBodies, HistoryTransfer, PendingApproval } from "./use-session-stream";
 import { MessageItem } from "./message-item";
+import type { RequestFailure } from "./request-failure-report";
 import { parseUserMessageBody } from "./user-message-body";
 import { interactiveReplyIndex } from "./a2ui-reply";
 import { readOnlyActions } from "./a2ui-answered";
-import { WorkspaceLinksProvider } from "./workspace-links";
+import { WorkspaceLinksProvider } from "../workspace";
 import { SessionWorkGroup, isWorkItem } from "./work-group";
+import { ElidedBodiesContext } from "./elided-body";
+import { HistoryTransferLine } from "./history-loading";
 import { createStreamFollow, followToBottom, stickToBottom } from "./stream-follow";
 import type { StreamFollow } from "./stream-follow";
 import type { ForkTarget } from "./task-stats-line";
@@ -85,6 +100,12 @@ export interface StreamRenderContext {
    */
   onRetry?: () => Promise<void>;
   /**
+   * Opens a failed or retrying model request's details — 「[详情]」 on its line: a report to copy
+   * or to file as a GitHub issue. On every level (a subagent's request fails the same way). The
+   * action does not render if this isn't wired up.
+   */
+  onShowFailure?: (failure: RequestFailure) => void;
+  /**
    * Opens the Files panel and navigates to this file (a file-summary card's row, or a link in
    * the stream's Markdown naming a Workspace file; takes a Workspace-relative path). The card
    * doesn't render and links keep opening a new tab if this isn't wired up. Must be stable:
@@ -117,6 +138,11 @@ export interface StreamRenderContext {
    * Markdown, so a fresh object per render would re-render every block on every stream frame.
    */
   a2uiActions?: A2uiActions;
+  /**
+   * Unfolds the values a history window carried folded (a tool's output, a long argument, a
+   * thinking block) when their row is opened. Absent, a folded row keeps its preview.
+   */
+  bodies?: ElidedBodies;
 }
 
 /**
@@ -290,9 +316,22 @@ export interface OlderHistoryControls {
   loading: boolean;
   /** The last backfill failed (retry row); null = fine. */
   error: string | null;
+  /** What the failed backfill threw: a defect (not the reader's to fix) offers 「[报告问题]」. */
+  errorCause?: unknown;
   /** Number of windows already prepended: the prepend signal for scroll anchoring, and >0 gates the beginning-of-history marker (a session that fit one window shows no extra chrome). */
   prependedCount: number;
   onLoad: () => void;
+  /**
+   * Reads running behind the transcript: an older window coming over (its progress replaces the
+   * spinner), and the rest of the conversation syncing behind the first paint (a line in the
+   * row while nothing else is in it). Absent or null for a Session on this server.
+   */
+  transfer?: Pick<HistoryTransfer, "older" | "fill">;
+  /**
+   * A window was loaded because the reader scrolled up past the Tasks the conversation opened
+   * on: only then does reaching the beginning say so. Absent = true (every window counts).
+   */
+  beyondTail?: boolean;
 }
 
 /** Distance from the top (px) at which scrolling starts fetching the previous history window. */
@@ -591,6 +630,13 @@ export function MessageStream({
     syncJump();
   };
 
+  // A read behind the transcript says so in the row (an older window loading, or the sync behind
+  // the first paint); a failure keeps the row's retry. The row itself stands only where there
+  // is history above, so a conversation that fits one window never gains or loses it.
+  const reading =
+    older !== undefined &&
+    (older.loading || (older.error === null && (older.transfer?.fill ?? null) !== null));
+
   return (
     <div className="relative h-full min-h-0">
       <div
@@ -621,29 +667,45 @@ export function MessageStream({
         className="anim-fade h-full overflow-y-auto px-4 py-4 md:px-6"
       >
         <div className="mx-auto max-w-3xl">
-          {/* Top-of-history affordance: spinner while the previous window loads, a click-to-retry
-              row after a failure, and — once at least one window was backfilled — a quiet
+          {/* Top-of-history affordance: spinner while the previous window loads, a notice with
+              Retry after a failure, and — once at least one window was backfilled — a quiet
               beginning-of-conversation marker when there is nothing older. Idle-with-more shows
               nothing — scrolling near the top triggers the fetch by itself — but the row keeps
               its height the moment there IS history above: a spinner that took space only
               while spinning pushed the transcript down by its own height, and the prepend's
               anchoring could not give that back. */}
           {older && items.length > 0 && (older.hasMore || older.prependedCount > 0) && (
-            <div className="flex h-7 items-center justify-center">
-              {older.loading ? (
-                <span className="flex items-center gap-2 py-1 text-xs text-gray-400 dark:text-gray-500">
-                  <Spinner size="sm" label={S.common.loading} />
-                  {S.chat.loadingEarlier}
-                </span>
+            <div className="flex min-h-7 items-center justify-center">
+              {reading ? (
+                <HistoryTransferLine
+                  loading={older.loading}
+                  older={older.transfer?.older ?? null}
+                  fill={older.transfer?.fill ?? null}
+                />
               ) : older.error !== null ? (
-                <button
-                  type="button"
-                  onClick={older.onLoad}
-                  className="whitespace-nowrap py-1 text-xs text-red-600 transition-colors duration-150 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                // A notice line like the transcript's others, the error in it and Retry after it
+                // — not a red sentence that is itself the button. A press that starts no load
+                // (the stream is rebuilding after a reconnect) leaves Retry pressable.
+                <MessageBubble
+                  variant="notice"
+                  actions={
+                    <>
+                      <TextAction onClick={older.onLoad}>{S.common.retry}</TextAction>
+                      {isSeriousError(older.errorCause) && (
+                        <ReportIssueAction
+                          report={() =>
+                            exceptionReport(older.errorCause, {
+                              what: "earlier messages of the conversation could not be loaded",
+                            })
+                          }
+                        />
+                      )}
+                    </>
+                  }
                 >
-                  {S.chat.loadEarlierRetry}
-                </button>
-              ) : !older.hasMore && older.prependedCount > 0 ? (
+                  {S.chat.loadEarlierFailed(older.error)}
+                </MessageBubble>
+              ) : !older.hasMore && older.prependedCount > 0 && older.beyondTail !== false ? (
                 <span className="py-1 text-xs text-gray-400 dark:text-gray-500">
                   {S.chat.historyBeginning}
                 </span>
@@ -657,7 +719,9 @@ export function MessageStream({
             // Workspace: they open in its Files panel rather than a new tab (see workspace-links.tsx).
             <WorkspaceLinksProvider workspace={ctx.workspace ?? null} onOpenFile={ctx.onOpenFile}>
               <FindRevealContext.Provider value={revealedForFind}>
-                <MessageItems items={items} ctx={ctx} />
+                <ElidedBodiesContext.Provider value={ctx.bodies ?? null}>
+                  <MessageItems items={items} ctx={ctx} />
+                </ElidedBodiesContext.Provider>
               </FindRevealContext.Provider>
             </WorkspaceLinksProvider>
           )}
@@ -674,7 +738,7 @@ export function MessageStream({
           aria-label={S.chat.jumpToLatest}
           data-tooltip={S.chat.jumpToLatest}
           onClick={jumpToLatest}
-          className="anim-pop absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-full border border-gray-300 bg-white p-1.5 text-gray-500 shadow-sm transition-colors duration-150 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+          className="anim-pop absolute bottom-3 left-1/2 z-raised -translate-x-1/2 rounded-full border border-gray-300 bg-white p-1.5 text-gray-500 shadow-sm transition-colors duration-150 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
         >
           <GlyphIcon d={ICONS.arrowDown} size={16} />
         </button>

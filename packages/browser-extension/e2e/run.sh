@@ -28,7 +28,8 @@ if [ "$MODE" = "real" ] && [ "${SKIP_BUILD:-0}" != "1" ]; then
   [ -f "$ROOT/packages/server/dist/index.js" ] ||
     (cd "$ROOT" && pnpm --filter @prismshadow/penguin-core build && pnpm --filter @prismshadow/penguin-server build)
   [ -f "$ROOT/packages/cli/dist/penguin.js" ] || (cd "$ROOT" && pnpm --filter @prismshadow/penguin-cli build)
-  [ -f "$ROOT/packages/web/dist/index.html" ] || (cd "$ROOT" && pnpm --filter @prismshadow/penguin-web build)
+  [ -f "$ROOT/packages/web/dist/index.html" ] ||
+    (cd "$ROOT" && pnpm --filter @prismshadow/penguin-ui --filter @prismshadow/penguin-web build)
 fi
 
 node scripts/build.mjs

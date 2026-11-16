@@ -15,8 +15,8 @@
  * draft beside it stays as it was.
  */
 import { useState } from "react";
-import { toastError } from "@prismshadow/penguin-ui";
-import { apiErrorText } from "./api-error";
+
+import { toastApiError } from "./toast-api-error";
 
 export interface InstantSetting<T> {
   /** What the control shows: the value being written, else the stored one. */
@@ -39,7 +39,7 @@ export function useInstantSetting<T>(
       await write(next);
       return true;
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
       return false;
     } finally {
       setPending(null);

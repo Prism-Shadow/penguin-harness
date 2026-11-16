@@ -4,7 +4,7 @@
  * the sections, the router link (`renderLink`) and, for a mobile drawer, `onNavigate` to close it.
  */
 import type { ReactNode } from "react";
-import type { SiteLinkProps } from "./site-header";
+import type { SiteLinkProps } from "./site-link";
 import { SiteSearchButton } from "./site-search";
 
 export interface SiteSidebarItem {
@@ -64,7 +64,7 @@ export function SiteSidebarNav({
       )}
       {sections.map((section) => (
         <div key={section.id} className="mb-6">
-          <p className="site-eyebrow ui-eyebrow mb-2">{section.title}</p>
+          <p className="site-eyebrow mb-2">{section.title}</p>
           <ul className="site-rail-list site-rail-tight">
             {section.items.map((item) => (
               <li key={item.id}>

@@ -23,6 +23,7 @@ import type {
   OrgChannelMessageSendRequest,
   OrgChannelMessagesResponse,
   Employment,
+  UnreadableChart,
   OrgChartResponse,
   OrgDeskResponse,
   OrgEmployeeItem,
@@ -118,7 +119,8 @@ import { DEFAULT_EMPLOYEE_PLUGINS, OrgRuns, OrgSessions, employeePlugins } from 
 import type { OrgDeps } from "./deps.js";
 import { loadOrg, orgEmployeeNames, projectUserIds, sharedWorkspace } from "./model.js";
 import type { LoadedOrg } from "./model.js";
-import { parseAvatarDataUrl, readAvatar, writeAvatar } from "../../organization/avatars.js";
+import { readAvatar, readAvatarRev, writeAvatar } from "../../organization/avatars.js";
+import { parseAvatarDataUrl } from "../../services/avatar-file.js";
 import { employeeNameProblem, findMentions } from "../../organization/names.js";
 import type { MentionHandle } from "../../organization/names.js";
 import {
@@ -154,6 +156,14 @@ export interface Actor {
   userId: string;
   sessionId?: string;
   agentId?: string;
+}
+
+/** Who the Project's organizations employ, and which of them cannot say (see `employmentCensus`). */
+export interface EmploymentCensus {
+  /** By Agent id, as `employments` answers it. */
+  employments: Record<string, Employment[]>;
+  /** The organizations whose `org_chart.yaml` is missing or does not parse, with their names. */
+  unreadableCharts: UnreadableChart[];
 }
 
 const notFound = (orgId: string): HttpError =>
@@ -316,20 +326,31 @@ export class OrganizationService {
    * read it with `Object.hasOwn`, as an Agent id may be any word, `constructor` included.
    */
   async employments(projectId: string): Promise<Record<string, Employment[]>> {
-    const out: Record<string, Employment[]> = {};
+    return (await this.employmentCensus(projectId)).employments;
+  }
+
+  /**
+   * {@link employments}, and the organizations whose `org_chart.yaml` is missing or does not
+   * parse: beyond their CEO, whom they employ is unknown. Deleting an organization with its
+   * Agents reads both, and keeps an employee it cannot prove is employed nowhere else.
+   */
+  async employmentCensus(projectId: string): Promise<EmploymentCensus> {
+    const employments: Record<string, Employment[]> = {};
+    const unreadableCharts: UnreadableChart[] = [];
     const add = (agentId: string, employment: Employment) => {
-      if (Object.hasOwn(out, agentId)) out[agentId]!.push(employment);
-      else out[agentId] = [employment];
+      if (Object.hasOwn(employments, agentId)) employments[agentId]!.push(employment);
+      else employments[agentId] = [employment];
     };
     for (const orgId of await this.deps.store.listOrgIds(projectId)) {
       const org = await loadOrg(this.deps, projectId, orgId);
       if (org === null) continue;
+      if (org.chartUnreadable === true) unreadableCharts.push({ orgId, orgName: org.config.name });
       const base = { orgId, orgName: org.config.name, status: org.config.status };
       for (const e of org.chart.employees) add(e.agentId, { ...base, title: e.title });
       const ceo = ceoAgentId(orgId);
       if (!org.byId.has(ceo)) add(ceo, { ...base, title: "CEO" });
     }
-    return out;
+    return { employments, unreadableCharts };
   }
 
   /** The organizations employing one Agent (see `employments`); empty when none does. */
@@ -677,11 +698,12 @@ export class OrganizationService {
    * with it, since a new organization under the same id must not inherit
    * another's read cursors, calendar state or pending notices.
    *
-   * What it had is left exactly as it is. Its employees stay Agents of the Project, with
-   * everything they learned. Its desk and ticket Sessions stay too, still marked as an
-   * organization's (`client = org`), so they do not spill into development mode's list;
-   * with the organization gone no page lists them either, which is the price of not
-   * deleting conversations along with a company.
+   * What it had is left exactly as it is: deleting its employees' Agents too is the route's
+   * choice, made after this (services/organization-deletion.ts). Here its employees stay
+   * Agents of the Project, with everything they learned. Its desk and ticket Sessions stay
+   * too, still marked as an organization's (`client = org`), so they do not spill into
+   * development mode's list; with the organization gone no page lists them either, which is
+   * the price of not deleting conversations along with a company.
    *
    * Under the organization's lock, so a pass in flight finishes first and the next one finds
    * no directory — the same state a hand-removed directory always was.
@@ -793,7 +815,7 @@ export class OrganizationService {
         ledgerDesk !== undefined && this.deps.sessions.findById(ledgerDesk.sessionId) !== null
           ? ledgerDesk
           : undefined;
-      const avatarRev = (await readAvatar(org.dir, e.agentId))?.rev;
+      const avatarRev = await readAvatarRev(org.dir, e.agentId);
       out.push({
         agentId: e.agentId,
         name: names.get(e.agentId) ?? e.agentId,
@@ -2746,13 +2768,13 @@ function initBody(org: LoadedOrg): string {
       "如果上面的使命说的是「镜像一家现实公司」——为现实同事各建一个数字分身、公司只负责传话——就改按 `company-mirror` Skill 行事，跳过下面这份清单。如果使命是做科研——跑实验、给出结论、写论文——下面的清单照常适用，另按 `company-research` Skill 补两件事：至少招一名不审自己稿的专职审稿人；任何实验循环开始前，负责人都要先在全员频道向董事会申请到资源额度。",
       "",
       "你是一家全新组织的 CEO，这是它的初始化运行。重要的事由董事会拍板，你负责提案。凡是动到这台机器、要花钱或触及组织之外的事——重负载计算、付费服务、公共工作区之外的写入、不可逆操作、缺少的凭据——每名员工（包括你）都先在全员频道请示董事会再动手（`company-employee` 的「What you may not decide alone」一节）。按顺序完成下面几件事：",
-      `1. 读手册。然后在全员频道里给董事会（${board}）写一份提案——\`penguin org channel send -m "@${board} …"\`——写清你对使命的理解、打算开的工作线与首批工单、打算招募的角色（先人事与财务）及其预算——所有人都用组织的 Model，组织未指定时用 Project 的默认 Model，除非使命为某个角色另行指定，提案里不要提 Model——以及公共工作区怎么划分。以明确的问题结尾，然后结束本轮：董事会答复之前不招人、不排日程、不开工单。`,
+      `1. 读手册。然后在全员频道里给董事会（${board}）写一份提案——\`penguin org channel send -m "@${board} …"\`——写清你对使命的理解、打算开的工作线与首批工单、打算招募的角色（先人事与财务）及其预算——所有人都用组织的 Model，组织未指定时用 Project 的默认 Model，除非使命为某个角色另行指定，提案里不要提 Model——以及公共工作区怎么划分。这是唯一可以写长的消息，因为它承载整个方案；除篇幅外仍按 \`company-employee\` 的「Writing a channel message」写：开头就是编了号的问题，每个都能用一个词或一个短清单回答；之后每部分一小节，用要点而不是成段的文字。然后结束本轮：董事会答复之前不招人、不排日程、不开工单。`,
       `2. 答复会以提及或本会话消息的形式到来。董事会确认后，先招人事与财务——\`penguin org hire --new-agent ${org.orgId}_hr --title HR --reports-to ${ceo} --duties "…"\`，\`${org.orgId}_finance\` 同理——再招确认过的其他角色。`,
       "3. 按确认的方案划分公共工作区。你自己在 `ceo/` 里工作，招募时不给 `--workspace` 的员工落在以其 Agent id 命名的子目录里，公共工作区的根目录只放大家共读的共享输入、不是任何人的工位。要换个分区名字再单独分配（`penguin org employee set <agent_id> --workspace <子目录>`）；相对子目录会在分配时自动建好。",
       "4. 把你自己、人事与财务排进日历（`penguin org calendar add …`），做成轮值表而不是广播：你每天 09:00，人事每三天 10:00，财务每周 16:00（组织时区，写成带偏移量的 ISO 时刻，绝不用 `--start-at now`），此后每招一人就给它一个各自不同的时点。",
       "5. 把确认过的工单开进 `proposed`（`penguin org ticket create …`）：一个项目级目标一张父工单，每条工作线一张子工单。接受一张工单进入 `in_progress` 时就指派负责人（`penguin org ticket assign <id> --owner agent:<员工>`）：那名员工的工位会在下一次巡检时接手并发起工单会话。只有工单的负责人可以为它发起会话，所以你只为自己名下的工单执行 `penguin org ticket start <id>`；工位只负责调度与跟踪，绝不在工位上做工单本身的活。",
       "6. 每条工作线开一个频道（`penguin org channel create ch_<工作线> --name …`）并邀请它的负责人（`penguin org channel invite ch_<工作线> agent:<agent_id>`），免得一条线索淹没全员频道。",
-      `7. 在全员频道里向董事会汇报并 @${board}，如果还需要拍板，就点明下一个决定。`,
+      `7. 在全员频道里用一条简短的消息向董事会汇报并 @${board}：确认的方案已落实，与提案不同的地方，以及还需要拍板的下一个决定（如果有）。招募、工作区、日程、频道与工单在组织的各个页面上都看得到，不要逐项列出。`,
     ].join("\n");
   }
   return [
@@ -2761,13 +2783,13 @@ function initBody(org: LoadedOrg): string {
     "If the mission above says the organization MIRRORS a real company — one digital twin per real colleague, a company that only relays between people — follow the `company-mirror` skill instead and skip the checklist below. If it is a research mission — experiments to run, results to claim, papers to write — the checklist applies and the `company-research` skill adds two things: at least one dedicated reviewer who authors nothing it reviews, and no experiment loop before its owner has an approved resource envelope from the board.",
     "",
     'You are the CEO of a brand-new organization and this is its initialization run. The board decides the important things; you propose. Whatever touches this machine, spends money or reaches outside the organization — heavy compute, paid services, writing outside the shared workspace, anything irreversible, a missing credential — every employee, you included, asks the board in the all-hands channel before it starts (`company-employee`, "What you may not decide alone"). Work through the following, in order:',
-    `1. Read the handbook. Then write ONE proposal to the board (${board}) in the all-hands channel — \`penguin org channel send -m "@${board} …"\` — with your reading of the mission, the streams and first tickets you intend to file, the roles you intend to hire (HR and finance first) with budgets — every one on the organization's model, or the Project's default model when the organization names none, unless the mission asked for a particular one on a role, so propose no models — and how you will split the shared workspace. End with the explicit question and END THIS RUN: hire nothing, schedule nothing and file nothing before the board answers.`,
+    `1. Read the handbook. Then write ONE proposal to the board (${board}) in the all-hands channel — \`penguin org channel send -m "@${board} …"\` — with your reading of the mission, the streams and first tickets you intend to file, the roles you intend to hire (HR and finance first) with budgets — every one on the organization's model, or the Project's default model when the organization names none, unless the mission asked for a particular one on a role, so propose no models — and how you will split the shared workspace. It is the one message that may run long, since it carries the whole plan; apart from its length it follows \`company-employee\` "Writing a channel message": your questions first, numbered, each answerable in a word or a short list; then one short section per part of the plan, in bullets rather than paragraphs. Then END THIS RUN: hire nothing, schedule nothing and file nothing before the board answers.`,
     `2. The answer arrives as a mention or in this conversation. Once the board confirms, hire HR and finance first — \`penguin org hire --new-agent ${org.orgId}_hr --title HR --reports-to ${ceo} --duties "…"\` and the same for \`${org.orgId}_finance\` — then the confirmed roles.`,
     "3. Partition the shared workspace as confirmed. You already work in `ceo/`, and a hire given no `--workspace` lands in a sub-directory named after its Agent id; the root of the shared workspace holds the shared inputs everyone reads and is nobody's desk. Assign a different sub-directory where a partition should be named for the stream rather than the employee (`penguin org employee set <agent_id> --workspace <sub-directory>`); a relative sub-directory is created when you assign it.",
     "4. Put yourself, HR and finance on the calendar (`penguin org calendar add …`) as a rota, not a broadcast: you daily at 09:00, HR every three days at 10:00, finance weekly at 16:00 (organization timezone, ISO instants with the offset — never `--start-at now`), and give every later hire its own distinct hour.",
     "5. File the confirmed tickets in `proposed` (`penguin org ticket create …`): one parent ticket for the project-level goal and children per stream. Assign an owner as you accept one into `in_progress` (`penguin org ticket assign <id> --owner agent:<employee>`): that employee's desk picks it up in its next sweep and starts the ticket session itself. Only a ticket's owner may start its sessions, so run `penguin org ticket start <id>` for the tickets you own yourself — the desk schedules and tracks, and never does the ticket work itself.",
     "6. Open one channel per stream (`penguin org channel create ch_<stream> --name …`) and invite its owner (`penguin org channel invite ch_<stream> agent:<agent_id>`), so a stream's thread does not drown the all-hands channel.",
-    `7. Report to the board in the all-hands channel, mentioning @${board}, and name the next decision you need, if any.`,
+    `7. Report to the board in one short message in the all-hands channel, mentioning @${board}: that the confirmed plan is in place, anything that turned out differently from what you proposed, and the next decision you need, if any. The hires, the workspace split, the calendar, the channels and the tickets are on the organization's pages; do not list them.`,
   ].join("\n");
 }
 
@@ -2817,6 +2839,7 @@ export abstract class OrgService extends Interface<
   Pick<
     OrganizationService,
     | "employments"
+    | "employmentCensus"
     | "employersOf"
     | "list"
     | "create"
@@ -2917,8 +2940,14 @@ export class OrganizationModule {
       agents: {
         exists: async (projectId, agentId) =>
           agentsRepo.exists(projectId, agentId) || agentConfig.exists(projectId, agentId),
+        // Every Agent company mode creates — an organization's CEO, a new hire — is its own.
         create: async (projectId, agentId, name, description, plugins) => {
-          await agentService.createAgent(projectId, agentId, name, description, plugins);
+          await agentService.createAgent(projectId, agentId, {
+            ...(name !== undefined ? { name } : {}),
+            ...(description !== undefined ? { description } : {}),
+            author: "company",
+            plugins,
+          });
         },
         displayName: async (projectId, agentId) =>
           (await agentConfig.readCardMeta(projectId, agentId)).name ?? agentId,

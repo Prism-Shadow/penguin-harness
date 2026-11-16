@@ -12,7 +12,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import Markdown from "react-markdown";
 import { MdImage, REHYPE_PLUGINS, REMARK_PLUGINS } from "../src/pages/blog-post";
-import { blogAssetUrl } from "../src/lib/links";
+import { blogAssetUrl } from "../src/lib/community-assets";
 
 const render = (markdown: string) =>
   renderToStaticMarkup(

@@ -4,27 +4,35 @@
  *
  * The layout is core's (see core's state/memory.ts): one directory per scope holding Markdown
  * topic files and that scope's own `MEMORY.md` index — `memory/user/` for the User scope and
- * `memory/<workspace_key>/` for each Workspace. The User scope is addressed through the same
- * `scopeKey` parameter as any Workspace (`USER_SCOPE_KEY`), so it needs no routes of its own;
- * the one difference is that it may be created on demand, since it belongs to the Agent rather
- * than to a Session that has run.
+ * `memory/<workspace_key>/` for each Workspace. A topic may keep files — reusable scripts, any
+ * number, at any depth — in a folder named after it without the `.md` (`csv-tools/` beside
+ * `csv-tools.md`); the topic and its folder are one memory, listed, deleted and moved together,
+ * and the index lists the topic only. A folder with no topic of its name beside it belongs to no
+ * memory: it is listed apart so nothing in the scope is hidden. The User scope is addressed
+ * through the same `scopeKey` parameter as any Workspace (`USER_SCOPE_KEY`), so it needs no
+ * routes of its own; the one difference is that it may be created on demand, since it belongs to
+ * the Agent rather than to a Session that has run.
  *
  * Per-file content changes go through a chat Session where the model edits the same files,
  * keeping frontmatter and index in step; this service's own writes are the mechanical ones a
  * model cannot be asked for. Deleting a topic file drops its `](<file>)` index lines, so the
- * index never lists a file that is gone. Whole-scope import writes the files a transfer
- * document carries and adds their index lines, the same invariant read the other way: the
- * index never omits a file that arrived. Only the indexes enter the model's context (core's
+ * index never lists a file that is gone. Whole-scope import writes the files a zip of a scope
+ * folder carries (memory-archive.ts) and adds their topics' index lines, the same invariant read
+ * the other way: the index never omits a topic that arrived. Only the indexes enter the model's context (core's
  * state/memory.ts), so an unindexed topic file would be a file the Agent never reads.
  *
  * This service never invents paths from client input — a request names an `agentId`, a
- * `scopeKey` and a file name inside that scope, each validated against a character rule and
- * then re-checked for containment after resolution, so neither `..` nor a symlink can reach
- * outside the Agent's Memory directory.
+ * `scopeKey` and a file inside that scope, each validated against a character rule and then
+ * re-checked for containment after resolution, so neither `..` nor a symlink can reach outside
+ * the Agent's Memory directory. A kept file's path is walked segment by segment with lstat, so
+ * a folder or file planted as a symlink is never followed; its text is read only up to the
+ * per-file bound below, and only as UTF-8.
  *
  * Files are the source of truth and are read fresh on every request (they are small, requests
  * are rare, and the model edits the same files from its side).
  */
+import { isUtf8 } from "node:buffer";
+import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
@@ -40,54 +48,35 @@ import {
 } from "@prismshadow/penguin-core";
 import type {
   MemoryFileInfo,
-  MemoryFilesResponse,
   MemoryFileResponse,
+  MemoryFilesResponse,
+  MemoryFolderFile,
   MemoryImportMode,
   MemoryImportResponse,
   MemoryOverviewResponse,
-  MemoryScopeExport,
   MemoryScopeInfo,
-  MemoryTransferFile,
 } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Config, Paths } from "../hmr/capabilities.js";
 import type { AgentConfig, Memory } from "../mechanisms/agents.js";
+import {
+  type ImportedMemory,
+  type MemoryImportSet,
+  parseMemoryArchive,
+  zipMemoryArchive,
+} from "./memory-archive.js";
+import { parseTransferDocument } from "./memory-transfer-document.js";
+
+/**
+ * Bytes of a kept file's text the read route hands out. A script past 512KB is not one a person
+ * reads in a panel; the file stays listed, and it travels in the zip export like any other.
+ */
+const MEMORY_FILE_MAX_BYTES = 512 * 1024;
 
 /** Scope directory names: what core's key generator produces (a safe base may start with `_`), plus the leeway of a hand-made directory. Excludes `.`/`..` and any separator, so the name can never climb out of `memory/`. */
 const SCOPE_KEY_PATTERN = /^[A-Za-z0-9_][A-Za-z0-9._-]*$/;
-
-/** The transfer document's format marker, checked before anything in it is believed. Typed against the DTO so the two literals cannot drift apart. */
-const SCOPE_FORMAT: MemoryScopeExport["format"] = "penguin-memory-scope";
-
-/** The document version this reader accepts. A later format bumps it and states its own compatibility. */
-const SCOPE_FORMAT_VERSION: MemoryScopeExport["version"] = 1;
-
-/**
- * What one import may carry.
- *
- * These are Memory's own numbers, not the attachment budget's: an attachment is an opaque blob
- * handed to the model's file tools, while a memory is Markdown the model wrote for itself to
- * re-read, and 100MB of it would be a scope no index could describe. The request as a whole is
- * already bounded by the API body cap before any of this runs — what follows bounds what one
- * scope directory can be made to hold.
- */
-/** Topic files one document may carry. A scope the model keeps by hand runs to tens of files, so this is far past ordinary use and still a directory that lists. */
-const MAX_IMPORT_FILES = 500;
-
-/** Bytes of one file's text (UTF-8), the index included. A memory that does not fit in 512KB of Markdown is not a memory. */
-const MAX_IMPORT_FILE_BYTES = 512 * 1024;
-
-/** Bytes across the whole document: one scope directory's total. */
-const MAX_IMPORT_TOTAL_BYTES = 8 * 1024 * 1024;
-
-/**
- * Bytes of one file name. The name rule says nothing about length, and a name longer than the
- * filesystem's own limit for a path component fails at the write with ENAMETOOLONG — a 500 for
- * what is plainly a bad request. 255 is that limit on ext4, APFS and NTFS alike.
- */
-const MAX_IMPORT_NAME_BYTES = 255;
 
 /**
  * Matches an index line's Markdown link to one file — `](file)`, `](./file)`, `](<file>)`,
@@ -99,114 +88,185 @@ function indexLinkPattern(fileName: string): RegExp {
   return new RegExp(`\\]\\(\\s*<?(?:\\./)?${escaped}>?\\s*(?:"[^"]*"\\s*)?\\)`);
 }
 
+/** Whether a name could be one path component inside a scope: not empty, not a dotfile (the Harness's own and every temporary write are), and no path separator. */
+export function isPlainName(name: string): boolean {
+  return name.length > 0 && !name.startsWith(".") && !/[/\\]/.test(name);
+}
+
 /**
  * Whether a name is a topic file: any Markdown file that is not a dotfile (`.workspace` is the
  * Harness's), carries no path separator, and is not the index under any casing — macOS and
  * Windows resolve `memory.md` to `MEMORY.md`. The model writes these files with the ordinary
  * file tools, so non-ASCII names are as legitimate as kebab-case ones; the same rule guards
- * client-supplied names, with containment re-checked after resolution. Exported so the Agent
- * list's memory count (agent-service) shares this one definition of "a memory".
+ * client-supplied names, with containment re-checked after resolution.
  */
 export function isTopicFileName(name: string): boolean {
   return (
-    name.length > 0 &&
-    !name.startsWith(".") &&
-    !/[/\\]/.test(name) &&
+    isPlainName(name) &&
     name.toLowerCase().endsWith(".md") &&
     name.toLowerCase() !== MEMORY_INDEX_FILENAME.toLowerCase()
   );
 }
 
+/** The folder a topic keeps its files in: its file name without the `.md`. */
+function topicFolderName(topicName: string): string {
+  return topicName.slice(0, -".md".length);
+}
+
 /**
- * Orders topic file names identically on every host. `localeCompare` is deliberately not used
- * here: with no locale argument it follows the server's own locale, so the same scope listed its
- * files one way under `en_US.UTF-8` and another under `zh_CN.UTF-8` — and that order is what an
- * export document carries. Case-folded first, so `Alpha.md` still sorts between `a.md` and
- * `beta.md` rather than jumping ahead of both as raw code units would; ties then fall back to
- * code units so the order is total. `toLowerCase`, never `toLocaleLowerCase` — the locale-aware
- * one would put the dependency straight back.
+ * Orders file names identically on every host. `localeCompare` is deliberately not used here:
+ * with no locale argument it follows the server's own locale, so the same scope listed its files
+ * one way under `en_US.UTF-8` and another under `zh_CN.UTF-8` — and that order is the order an
+ * export zip carries. Case-folded first, so `Alpha.md` still sorts between `a.md` and `beta.md`
+ * rather than jumping ahead of both as raw code units would; ties then fall back to code units so
+ * the order is total. `toLowerCase`, never `toLocaleLowerCase` — the locale-aware one would put
+ * the dependency straight back.
  */
-function compareTopicFileNames(a: string, b: string): number {
+function compareFileNames(a: string, b: string): number {
   const foldedA = a.toLowerCase();
   const foldedB = b.toLowerCase();
   if (foldedA !== foldedB) return foldedA < foldedB ? -1 : 1;
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
+/** A directory's entries with plain names, in the host-independent order; none when it cannot be read. Dirents never follow a symlink. */
+async function plainEntries(dir: string): Promise<Dirent[]> {
+  try {
+    return (await fs.readdir(dir, { withFileTypes: true }))
+      .filter((e) => isPlainName(e.name))
+      .sort((a, b) => compareFileNames(a.name, b.name));
+  } catch {
+    return [];
+  }
+}
+
 /**
- * Validates a transfer document on its way to the server's disk.
- *
- * Everything here is untrusted: the document may have been hand-written, produced by another
- * tool, or crafted. So the shape is checked field by field before any of it is believed, and the
- * result carries only what was verified — the entry names are handed to the same `resolveFile`
- * check that guards every other write, which is what keeps one definition of "a legal memory
- * file name" in the service.
- *
- * Refuses, with the reason: a foreign or future format, entries that are not text, a name that
- * carries a NUL or is longer than a path component may be (both of which the filesystem layer
- * would throw on rather than reject), the same name twice, and any of the size bounds.
+ * Every regular file under one folder of a scope, depth first, each directory's entries in name
+ * order. A symlink — to a file or to a folder — is neither: it is skipped, never followed, so a
+ * listing cannot be led outside the scope. Dotfiles and dot-folders stay out like everywhere else.
  */
-function parseTransferDocument(payload: unknown): {
-  index: string | null;
-  files: MemoryTransferFile[];
-} {
-  if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
-    throw badRequest("payload must be a Memory scope export object.");
-  }
-  const doc = payload as Record<string, unknown>;
-  if (doc.format !== SCOPE_FORMAT) {
-    throw badRequest(`payload.format must be "${SCOPE_FORMAT}".`);
-  }
-  if (doc.version !== SCOPE_FORMAT_VERSION) {
-    throw badRequest(`payload.version must be ${SCOPE_FORMAT_VERSION}.`);
-  }
-  if (!Array.isArray(doc.files)) throw badRequest("payload.files must be an array.");
-  if (doc.files.length > MAX_IMPORT_FILES) {
-    throw badRequest(`payload.files must hold at most ${MAX_IMPORT_FILES} entries.`);
-  }
-  let total = 0;
-  const measure = (text: string, label: string): void => {
-    if (text.includes("\u0000")) throw badRequest(`${label} must be text.`);
-    const bytes = Buffer.byteLength(text, "utf8");
-    if (bytes > MAX_IMPORT_FILE_BYTES) {
-      throw badRequest(`${label} exceeds the ${MAX_IMPORT_FILE_BYTES / 1024}KB limit.`);
-    }
-    total += bytes;
-    if (total > MAX_IMPORT_TOTAL_BYTES) {
-      throw badRequest(
-        `payload exceeds the ${MAX_IMPORT_TOTAL_BYTES / (1024 * 1024)}MB total limit.`,
-      );
+async function folderFiles(scopeDir: string, folder: string): Promise<MemoryFolderFile[]> {
+  const files: MemoryFolderFile[] = [];
+  const walk = async (rel: string): Promise<void> => {
+    for (const entry of await plainEntries(path.join(scopeDir, rel))) {
+      const child = `${rel}/${entry.name}`;
+      if (entry.isDirectory()) {
+        await walk(child);
+      } else if (entry.isFile()) {
+        try {
+          const stat = await fs.lstat(path.join(scopeDir, child));
+          if (stat.isFile()) {
+            files.push({ path: child, size: stat.size, modifiedAt: stat.mtime.toISOString() });
+          }
+        } catch {
+          // Raced with a delete: leave it out of the listing.
+        }
+      }
     }
   };
+  await walk(folder);
+  return files;
+}
 
-  let index: string | null = null;
-  if (doc.index !== null && doc.index !== undefined) {
-    if (typeof doc.index !== "string") throw badRequest("payload.index must be a string or null.");
-    measure(doc.index, "payload.index");
-    index = doc.index;
-  }
+/** What one scope directory holds: its topic files, and every real folder beside them with the files under it. */
+interface ScopeScan {
+  topics: string[];
+  folders: Map<string, MemoryFolderFile[]>;
+}
 
-  const files: MemoryTransferFile[] = [];
-  const seen = new Set<string>();
-  for (const entry of doc.files) {
-    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
-      throw badRequest("Each payload.files entry must be an object.");
-    }
-    const { name, content } = entry as Record<string, unknown>;
-    if (typeof name !== "string") throw badRequest("Each payload.files entry needs a name.");
-    if (typeof content !== "string") {
-      throw badRequest(`Content of ${name} must be a string.`);
-    }
-    if (name.includes("\u0000")) throw badRequest("A file name must be text.");
-    if (Buffer.byteLength(name, "utf8") > MAX_IMPORT_NAME_BYTES) {
-      throw badRequest(`A file name must be at most ${MAX_IMPORT_NAME_BYTES} bytes.`);
-    }
-    if (seen.has(name)) throw badRequest(`payload.files names ${name} twice.`);
-    seen.add(name);
-    measure(content, `Content of ${name}`);
-    files.push({ name, content });
+async function scanScope(dir: string): Promise<ScopeScan> {
+  const entries = await plainEntries(dir);
+  const topics = entries.filter((e) => e.isFile() && isTopicFileName(e.name)).map((e) => e.name);
+  const folders = new Map<string, MemoryFolderFile[]>();
+  for (const entry of entries) {
+    if (entry.isDirectory()) folders.set(entry.name, await folderFiles(dir, entry.name));
   }
-  return { index, files };
+  return { topics, folders };
+}
+
+/**
+ * The scan's folders that belong to no topic: no `<folder>.md` beside them, and at least one file
+ * to list. A folder holding nothing listable (empty, or only dotfiles and links) shows nothing and
+ * holds nothing an import could lose, so it counts as no folder at all.
+ */
+function orphanFolders(scan: ScopeScan): string[] {
+  const kept = new Set(scan.topics.map(topicFolderName));
+  return [...scan.folders.entries()]
+    .filter(([folder, files]) => !kept.has(folder) && files.length > 0)
+    .map(([folder]) => folder);
+}
+
+/**
+ * Whether every folder on the way to a file to be written is a real directory or not there yet,
+ * and the file's own place is not a directory — lstat throughout, so a link planted anywhere on
+ * the way (a topic's folder, or a folder inside it) is never written through.
+ */
+async function writablePath(dir: string, target: string): Promise<boolean> {
+  const segments = path.relative(dir, target).split(path.sep);
+  let at = dir;
+  for (const segment of segments.slice(0, -1)) {
+    at = path.join(at, segment);
+    const state = await directoryState(at);
+    if (state === "invalid") return false;
+    if (state === "absent") return true;
+  }
+  return (await directoryState(target)) !== "directory";
+}
+
+/** Topic files of one scope: regular Markdown files only — the index, the `.workspace` marker, folders and symlinks (dirents that are not regular files) all stay out. */
+async function topicFileNames(dir: string): Promise<string[]> {
+  return (await plainEntries(dir))
+    .filter((e) => e.isFile() && isTopicFileName(e.name))
+    .map((e) => e.name);
+}
+
+/** A kept file's text as the routes may hand it out, or why it may not be. */
+type BoundedText =
+  | { ok: true; content: string; size: number; mtime: Date }
+  | { ok: false; reason: "too_large" | "not_text"; size: number; mtime: Date };
+
+/**
+ * Reads a kept file for a reader that needs its text: its text, or the reason it is withheld —
+ * over the per-file bound (decided from the size, before reading), or not UTF-8 text. A NUL byte
+ * counts as not text: valid UTF-8 can hold one, and a file that does is binary to anyone reading
+ * it in a panel. Null when it is absent or not a regular file (lstat).
+ */
+async function readBoundedText(target: string): Promise<BoundedText | null> {
+  try {
+    const stat = await fs.lstat(target);
+    if (!stat.isFile()) return null;
+    if (stat.size > MEMORY_FILE_MAX_BYTES) {
+      return { ok: false, reason: "too_large", size: stat.size, mtime: stat.mtime };
+    }
+    const bytes = await fs.readFile(target);
+    if (!isUtf8(bytes) || bytes.includes(0)) {
+      return { ok: false, reason: "not_text", size: stat.size, mtime: stat.mtime };
+    }
+    return { ok: true, content: bytes.toString("utf8"), size: stat.size, mtime: stat.mtime };
+  } catch {
+    return null;
+  }
+}
+
+/** What stands at a path: a real directory, nothing, or something else (a file, a symlink) that must not be written through. */
+async function directoryState(target: string): Promise<"directory" | "absent" | "invalid"> {
+  try {
+    return (await fs.lstat(target)).isDirectory() ? "directory" : "invalid";
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === "ENOENT" ? "absent" : "invalid";
+  }
+}
+
+/** Removes a topic's folder when it is a real directory; anything else at that name (a file, a symlink) is not the topic's folder and is left alone. */
+async function removeFolder(target: string): Promise<void> {
+  if ((await directoryState(target)) !== "directory") return;
+  // fs.rm unlinks a symlink inside the tree rather than following it.
+  await fs.rm(target, { recursive: true, force: true });
+}
+
+/** How an import names a memory: its topic file, or `<folder>/` for a folder carried without one. */
+function memoryName(memory: ImportedMemory): string {
+  return memory.topic?.name ?? `${memory.stem}/`;
 }
 
 @Component()
@@ -251,7 +311,7 @@ export class MemoryService implements Memory {
   /**
    * The scope directories under `memory/`: the User scope first — always listed, even before it
    * exists on disk, so a memory can be filed there without waiting for a Session to create it —
-   * then the Workspaces, newest activity first (one with no topic file yet sorts last, by key).
+   * then the Workspaces, newest activity first (one with no memory yet sorts last, by key).
    */
   async listScopes(projectId: string, agentId: string): Promise<MemoryScopeInfo[]> {
     const base = memoryDir(this.root, projectId, agentId);
@@ -281,14 +341,16 @@ export class MemoryService implements Memory {
     key: string,
     kind: MemoryScopeInfo["kind"],
   ): Promise<MemoryScopeInfo> {
-    const files = await this.topicFileNames(dir);
+    const scan = await scanScope(dir);
     let latest = 0;
-    for (const name of files) {
+    for (const name of scan.topics) {
       try {
-        const stat = await fs.stat(path.join(dir, name));
-        latest = Math.max(latest, stat.mtimeMs);
+        latest = Math.max(latest, (await fs.stat(path.join(dir, name))).mtimeMs);
       } catch {
         // Raced with a delete: leave it out of the timestamp.
+      }
+      for (const file of scan.folders.get(topicFolderName(name)) ?? []) {
+        latest = Math.max(latest, Date.parse(file.modifiedAt));
       }
     }
     const workspacePath = kind === "workspace" ? await readWorkspaceMarker(dir) : undefined;
@@ -296,7 +358,7 @@ export class MemoryService implements Memory {
       scopeKey: key,
       kind,
       ...(workspacePath !== undefined ? { workspacePath } : {}),
-      fileCount: files.length,
+      fileCount: scan.topics.length,
       hasIndex: await this.hasIndexFile(dir),
       ...(latest > 0 ? { updatedAt: new Date(latest).toISOString() } : {}),
     };
@@ -315,41 +377,38 @@ export class MemoryService implements Memory {
     }
   }
 
-  /** Topic files of one scope: regular Markdown files only — the index, the `.workspace` marker, stray directories and symlinks (dirents that are not regular files) all stay out. */
-  private async topicFileNames(dir: string): Promise<string[]> {
-    try {
-      return (await fs.readdir(dir, { withFileTypes: true }))
-        .filter((e) => e.isFile() && isTopicFileName(e.name))
-        .map((e) => e.name)
-        .sort(compareTopicFileNames);
-    } catch {
-      return [];
-    }
-  }
-
+  /** One scope's topic files with their frontmatter and the files each keeps, then the files that belong to no topic. */
   async listFiles(
     projectId: string,
     agentId: string,
     scopeKey: string,
   ): Promise<MemoryFilesResponse> {
     const dir = await this.requireScopeDir(projectId, agentId, scopeKey);
-    const names = await this.topicFileNames(dir);
+    const scan = await scanScope(dir);
     const files: MemoryFileInfo[] = [];
-    for (const name of names) {
-      const info = await this.fileInfo(dir, name);
+    for (const name of scan.topics) {
+      const info = await this.fileInfo(dir, name, scan.folders.get(topicFolderName(name)) ?? []);
       if (info) files.push(info);
     }
-    return { scopeKey, files };
+    const orphanFiles = orphanFolders(scan).flatMap((folder) => scan.folders.get(folder) ?? []);
+    return { scopeKey, files, orphanFiles };
   }
 
+  /**
+   * One memory file's content, by its path in the scope: a topic (one segment) with the files it
+   * keeps, or a kept file (`<folder>/<path>`). A kept file is handed out only as text and only up
+   * to the per-file bound: past it the answer is 413, and a file that is not UTF-8 text is 415,
+   * each saying why — the listing still shows the file, so its owner can see it is there.
+   */
   async readFile(
     projectId: string,
     agentId: string,
     scopeKey: string,
-    fileName: string,
+    filePath: string,
   ): Promise<MemoryFileResponse> {
     const dir = await this.requireScopeDir(projectId, agentId, scopeKey);
-    const target = this.resolveFile(dir, fileName);
+    if (filePath.includes("/")) return this.readKeptFile(dir, scopeKey, filePath);
+    const target = this.resolveFile(dir, filePath);
     try {
       // lstat, not stat: a symlink planted among the topic files (the model can create one with
       // its file tools) must not lead the read outside the Memory directory. A non-regular file
@@ -357,131 +416,226 @@ export class MemoryService implements Memory {
       const stat = await fs.lstat(target);
       if (!stat.isFile()) throw new Error("not a regular file");
       const content = await fs.readFile(target, "utf8");
+      const kept = await folderFiles(dir, topicFolderName(filePath));
       return {
         scopeKey,
-        file: this.describe(fileName, content, stat.size, stat.mtime),
+        file: this.describe(filePath, content, stat.size, stat.mtime, kept),
         content,
       };
     } catch {
-      throw new HttpError(404, "memory_file_not_found", `Memory file not found: ${fileName}`);
+      throw this.fileNotFound(filePath);
     }
   }
 
-  /**
-   * The whole scope as one transfer document: every topic file plus the scope's own `MEMORY.md`.
-   *
-   * JSON rather than an archive, because the payload is entirely UTF-8 Markdown and the import
-   * side of it is an untrusted write into the Agent's Memory directory: a JSON document carries
-   * no paths, no permissions and no compression, so its entries can go through the same per-file
-   * name check every other write here uses, with nothing to unpack first.
-   *
-   * Unreadable entries are left out rather than failing the export, as elsewhere in this service.
-   * The size bounds below apply to import only — an export reports what the directory actually
-   * holds, and a scope grown past them is exactly the thing its owner needs to see.
-   */
-  async exportScope(
-    projectId: string,
-    agentId: string,
+  private async readKeptFile(
+    dir: string,
     scopeKey: string,
-  ): Promise<MemoryScopeExport> {
-    const dir = await this.requireScopeDir(projectId, agentId, scopeKey);
-    const files: MemoryTransferFile[] = [];
-    for (const name of await this.topicFileNames(dir)) {
-      const content = await this.readTextFile(path.join(dir, name));
-      if (content !== null) files.push({ name, content });
+    filePath: string,
+  ): Promise<MemoryFileResponse> {
+    const target = await this.requireFolderFile(dir, filePath);
+    const read = await readBoundedText(target);
+    if (read === null) throw this.fileNotFound(filePath);
+    if (!read.ok) {
+      throw read.reason === "too_large"
+        ? new HttpError(
+            413,
+            "memory_file_too_large",
+            `${filePath} is ${Math.ceil(read.size / 1024)} KB; a kept file is shown up to ${MEMORY_FILE_MAX_BYTES / 1024} KB.`,
+          )
+        : new HttpError(415, "memory_file_not_text", `${filePath} is not UTF-8 text.`);
     }
-    const kind = scopeKey === USER_SCOPE_KEY ? "user" : "workspace";
-    const workspacePath = kind === "workspace" ? await readWorkspaceMarker(dir) : undefined;
     return {
-      format: SCOPE_FORMAT,
-      version: SCOPE_FORMAT_VERSION,
       scopeKey,
-      kind,
-      ...(workspacePath !== undefined ? { workspacePath } : {}),
-      exportedAt: new Date().toISOString(),
-      index: (await this.hasIndexFile(dir))
-        ? await this.readTextFile(path.join(dir, MEMORY_INDEX_FILENAME))
-        : null,
-      files,
+      file: {
+        name: filePath,
+        title: filePath,
+        description: "",
+        size: read.size,
+        modifiedAt: read.mtime.toISOString(),
+        files: [],
+      },
+      content: read.content,
     };
   }
 
   /**
-   * Writes a transfer document into one scope.
+   * The whole scope as a zip of its folder (memory-archive.ts): `MEMORY.md`, every topic file,
+   * and every folder's files — a topic's scripts and a folder no topic keeps alike — each as the
+   * file it is on disk, binary or not. Dot entries (the `.workspace` marker, a temporary write)
+   * and links stay out, as everywhere else in this service, and so does a file that vanished
+   * between the listing and the read. Past the import's caps the answer is 413, so every export
+   * imports.
+   */
+  async exportScope(projectId: string, agentId: string, scopeKey: string): Promise<Uint8Array> {
+    const dir = await this.requireScopeDir(projectId, agentId, scopeKey);
+    const scan = await scanScope(dir);
+    const paths = [
+      ...((await this.hasIndexFile(dir)) ? [MEMORY_INDEX_FILENAME] : []),
+      ...scan.topics,
+      ...[...scan.folders.values()].flat().map((file) => file.path),
+    ];
+    const files = new Map<string, Uint8Array>();
+    for (const rel of paths) {
+      const data = await this.readRegularFile(path.join(dir, rel));
+      if (data !== null) files.set(rel, data);
+    }
+    return zipMemoryArchive(files);
+  }
+
+  /**
+   * Writes an import into one scope: a zip of a scope folder (`dataBase64`), or a version 1 JSON
+   * document (`payload`, from before the zip; see memory-transfer-document.ts).
    *
-   * The default mode keeps every file already on disk and writes only names the scope does not
+   * A memory is a topic file and the folder of its name, so every decision below is made per
+   * memory; a folder with no topic beside it is a memory of its own, named `<folder>/`. The
+   * default mode keeps every memory already on disk and writes only memories the scope does not
    * have, so an import can never cost the user a memory they did not agree to lose. `overwrite`
-   * replaces a same-named file's content and `replace` additionally deletes what the document
-   * does not carry; both are refused with 409 unless `confirm` is set — but only when they would
-   * actually destroy something, since a confirmation that names nothing is just a click.
+   * replaces a memory the import carries — topic and folder, since the topic's text describes
+   * that folder's files — and `replace` additionally deletes every memory the import does not
+   * carry. Both destructive modes are refused with 409 unless `confirm` is set — but only when
+   * they would actually destroy something, since a confirmation that names nothing is just a
+   * click. The refusal's `details` name what is at stake, so a client can ask about exactly that.
    *
-   * The index follows the files. A scope with no index takes the document's; `replace` takes it
+   * The index follows the files. A scope with no index takes the import's; `replace` takes it
    * too (the whole scope is being replaced); a merge keeps the index that is there and appends
-   * the document's lines for the files this import added, because only the indexes enter the
-   * model's context and an unindexed memory is one the Agent never reads.
+   * the import's lines for the topics it wrote, because only the indexes enter the model's
+   * context and an unindexed memory is one the Agent never reads. Only topic lines are ever
+   * added or pruned: a topic's files are listed in its own text, never in `MEMORY.md`.
+   *
+   * A non-directory standing at a memory's folder — a planted symlink, a file — or on the way to
+   * one of its files refuses the import with 409 before anything is written, rather than writing
+   * through it.
    */
   async importScope(
     projectId: string,
     agentId: string,
     scopeKey: string,
-    request: { mode: MemoryImportMode; confirm: boolean; payload: unknown },
+    request: { mode: MemoryImportMode; confirm: boolean; payload?: unknown; dataBase64?: string },
   ): Promise<MemoryImportResponse> {
     const dir = await this.requireScopeDir(projectId, agentId, scopeKey);
-    const { index, files } = parseTransferDocument(request.payload);
-    // Names are resolved before anything is written, so a document with one bad entry writes
-    // nothing at all rather than half of itself.
-    const planned = files.map((f) => ({ ...f, target: this.resolveFile(dir, f.name) }));
+    const set: MemoryImportSet =
+      request.dataBase64 !== undefined
+        ? parseMemoryArchive(Buffer.from(request.dataBase64, "base64"), {
+            isTopicFileName,
+            isPlainName,
+          })
+        : parseTransferDocument(request.payload);
+    // Names and paths are resolved before anything is written, so an import with one bad entry
+    // writes nothing at all rather than half of itself.
+    const planned = set.memories.map((memory) => ({
+      memory,
+      name: memoryName(memory),
+      topicTarget: memory.topic === null ? null : this.resolveFile(dir, memory.topic.name),
+      files: [...memory.files].map(([rel, data]) => ({
+        data,
+        target: this.resolveFolderPath(dir, `${memory.stem}/${rel}`),
+      })),
+    }));
 
-    const present = new Set(await this.topicFileNames(dir));
-    const carried = new Set(files.map((f) => f.name));
-    const collides = files.filter((f) => present.has(f.name)).map((f) => f.name);
-    const removed =
-      request.mode === "replace" ? [...present].filter((name) => !carried.has(name)) : [];
-    const overwritten = request.mode === "skip" ? [] : collides;
-    const skipped = request.mode === "skip" ? collides : [];
-    // `replace` takes the document's index over the scope's own, which is the user's text too.
+    // What the scope holds, memory by memory: a topic (with or without its folder), or a folder
+    // with no topic.
+    const scan = await scanScope(dir);
+    const present = new Map<string, { topic: string | null; name: string }>();
+    for (const topic of scan.topics) present.set(topicFolderName(topic), { topic, name: topic });
+    for (const folder of orphanFolders(scan))
+      present.set(folder, { topic: null, name: `${folder}/` });
+    const carried = new Set(set.memories.map((m) => m.stem));
+    const collides = planned.filter((p) => present.has(p.memory.stem));
+    const removedStems =
+      request.mode === "replace" ? [...present.keys()].filter((stem) => !carried.has(stem)) : [];
+    const removed = removedStems.map((stem) => present.get(stem)!.name);
+    // A collision is named for what the scope holds, which is what is kept or replaced.
+    const collidesNames = collides.map((p) => present.get(p.memory.stem)!.name);
+    const overwritten = request.mode === "skip" ? [] : collidesNames;
+    const skipped = request.mode === "skip" ? collidesNames : [];
+    const writes =
+      request.mode === "skip" ? planned.filter((p) => !present.has(p.memory.stem)) : planned;
+    // A memory replaced here has its folder cleared first, so only the folder itself must be a
+    // real directory; one written beside what is there must have a clear path to every file.
+    const clears = (p: (typeof planned)[number]): boolean =>
+      request.mode !== "skip" && present.has(p.memory.stem);
+
+    for (const p of writes) {
+      if (p.files.length === 0) continue;
+      const folder = path.join(dir, p.memory.stem);
+      const clear = clears(p)
+        ? (await directoryState(folder)) !== "invalid"
+        : (await Promise.all(p.files.map((f) => writablePath(dir, f.target)))).every(Boolean);
+      if (!clear) {
+        throw new HttpError(
+          409,
+          "memory_folder_not_a_directory",
+          `${p.memory.stem} in ${scopeKey} is not a directory all the way down, so the files of ${p.name} cannot be imported.`,
+        );
+      }
+    }
+    // `replace` takes the import's index over the scope's own, which is the user's text too.
     const replacesIndex =
-      request.mode === "replace" && index !== null && (await this.hasIndexFile(dir));
+      request.mode === "replace" && set.index !== null && (await this.hasIndexFile(dir));
     if (!request.confirm && (overwritten.length > 0 || removed.length > 0 || replacesIndex)) {
       throw new HttpError(
         409,
         "memory_import_confirm_required",
         `This import would overwrite ${overwritten.length} and delete ${removed.length} memories in ${scopeKey}` +
           `${replacesIndex ? `, and replace its ${MEMORY_INDEX_FILENAME}` : ""}. Repeat it with confirm set.`,
+        undefined,
+        {
+          overwritten: JSON.stringify(overwritten),
+          removed: JSON.stringify(removed),
+          replacesIndex: String(replacesIndex),
+        },
       );
     }
 
     const added: string[] = [];
-    for (const file of planned) {
-      if (request.mode === "skip" && present.has(file.name)) continue;
-      await this.writeScopeFile(file.target, file.content);
-      if (!present.has(file.name)) added.push(file.name);
+    const dropped: string[] = [];
+    for (const p of writes) {
+      if (clears(p)) {
+        await removeFolder(path.join(dir, p.memory.stem));
+        // The import's version of this memory carries a topic of another name, or none at all.
+        const onDisk = present.get(p.memory.stem)!.topic;
+        if (onDisk !== null && onDisk !== p.memory.topic?.name) {
+          await fs.unlink(path.join(dir, onDisk)).catch(() => undefined);
+          dropped.push(onDisk);
+        }
+      }
+      if (p.topicTarget !== null) await this.writeScopeFile(p.topicTarget, p.memory.topic!.content);
+      for (const file of p.files) {
+        await fs.mkdir(path.dirname(file.target), { recursive: true });
+        await this.writeScopeFile(file.target, file.data);
+      }
+      if (!present.has(p.memory.stem)) added.push(p.name);
     }
-    for (const name of removed) {
-      await fs.unlink(path.join(dir, name)).catch(() => {
-        // Raced with a delete from a Session: the file is gone either way.
-      });
+    for (const stem of removedStems) {
+      const topic = present.get(stem)!.topic;
+      if (topic !== null) {
+        await fs.unlink(path.join(dir, topic)).catch(() => {
+          // Raced with a delete from a Session: the file is gone either way.
+        });
+        dropped.push(topic);
+      }
+      await removeFolder(path.join(dir, stem));
     }
 
-    const written = [...added, ...overwritten];
+    const written = writes.flatMap((p) => (p.memory.topic === null ? [] : [p.memory.topic.name]));
     let indexWritten = false;
-    if (index !== null) {
+    if (set.index !== null) {
       if (replacesIndex || !(await this.hasIndexFile(dir))) {
-        await this.writeScopeFile(path.join(dir, MEMORY_INDEX_FILENAME), index);
+        await this.writeScopeFile(path.join(dir, MEMORY_INDEX_FILENAME), set.index);
         indexWritten = true;
       } else {
-        indexWritten = await this.extendIndex(dir, index, written);
+        indexWritten = await this.extendIndex(dir, set.index, written);
       }
     }
-    // Whatever the index now says, it must not list a file this import deleted.
-    for (const name of removed) await this.pruneIndexLines(dir, name);
+    // Whatever the index now says, it must not list a topic this import deleted.
+    for (const topic of dropped) await this.pruneIndexLines(dir, topic);
 
     return { scopeKey, mode: request.mode, added, overwritten, skipped, removed, indexWritten };
   }
 
   /**
-   * Appends the document's index lines for the files this import wrote: a line linking a written
-   * file that the scope's index does not already link is added at the end, in the document's own
+   * Appends the import's index lines for the topics it wrote: a line linking a written topic that
+   * the scope's index does not already link is added at the end, in the import's own
    * order. Nothing else is touched — the mirror image of pruneIndexLines, so between them the
    * index lists neither a file that is gone nor omits one that arrived.
    */
@@ -505,49 +659,85 @@ export class MemoryService implements Memory {
 
   /**
    * The write path for every change this service makes to Memory content, shared by the imported
-   * topic files and the index.
+   * topic files, the files they keep and the index.
    *
-   * The target has already been through `resolveFile` (or is the reserved index name, which is
-   * never client-supplied), so it names a file directly inside this scope. The write goes to a
-   * temporary dotfile — invisible to every topic listing — and is renamed over the target, so a
-   * reader never sees a half-written memory. Symlinks are deliberately not followed: the Memory
-   * directory is model-writable, and a link planted at a topic's name would otherwise carry the
+   * The target has already been through `resolveFile` or `resolveFolderPath` (or is the reserved
+   * index name, which is never client-supplied), so it names a file inside this scope. The write
+   * goes to a temporary dotfile — invisible to every listing — and is renamed over the target, so
+   * a reader never sees a half-written memory. Symlinks are deliberately not followed: the Memory
+   * directory is model-writable, and a link planted at a memory's name would otherwise carry the
    * write out of it. Replacing the link keeps the write inside the scope.
    */
-  private async writeScopeFile(target: string, content: string): Promise<void> {
+  private async writeScopeFile(target: string, content: string | Uint8Array): Promise<void> {
     await atomicWriteFile(target, content);
   }
 
   /** Reads a regular file as text, null when it is absent, unreadable, or not a regular file (lstat, so a symlink is never followed). */
   private async readTextFile(target: string): Promise<string | null> {
+    const data = await this.readRegularFile(target);
+    return data === null ? null : Buffer.from(data).toString("utf8");
+  }
+
+  /** Reads a regular file's bytes, null when it is absent, unreadable, or not a regular file (lstat). */
+  private async readRegularFile(target: string): Promise<Uint8Array | null> {
     try {
       if (!(await fs.lstat(target)).isFile()) return null;
-      return await fs.readFile(target, "utf8");
+      return new Uint8Array(await fs.readFile(target));
     } catch {
       return null;
     }
   }
 
   /**
-   * Deletes a topic file and mechanically drops its lines from the scope's `MEMORY.md`: any
-   * line whose Markdown link target is exactly this file (`](<file>)`) goes; a mention of the
-   * name in ordinary prose, or a link to a different file, survives. This is the only write the
-   * API performs on Memory content — everything else is the model's, through a chat Session.
+   * Deletes a memory file by its path in the scope. A topic goes with its folder, and its lines
+   * are mechanically dropped from the scope's `MEMORY.md`: any line whose Markdown link target is
+   * exactly this file (`](<file>)`) goes; a mention of the name in ordinary prose, or a link to a
+   * different file, survives. A kept file (`<folder>/<path>`) goes alone, with every folder above
+   * it that this left empty up to the scope — so deleting a topic's last file leaves no empty
+   * folder behind; the topic's text and the index are the model's and stay as they are. Besides
+   * an import, these are the only writes the API performs on Memory content — everything else is
+   * the model's, through a chat Session.
    */
   async deleteFile(
     projectId: string,
     agentId: string,
     scopeKey: string,
-    fileName: string,
+    filePath: string,
   ): Promise<void> {
     const dir = await this.requireScopeDir(projectId, agentId, scopeKey);
-    const target = this.resolveFile(dir, fileName);
+    if (filePath.includes("/")) {
+      const target = await this.requireFolderFile(dir, filePath);
+      try {
+        await fs.unlink(target);
+      } catch {
+        throw this.fileNotFound(filePath);
+      }
+      for (let parent = path.dirname(target); parent !== dir; parent = path.dirname(parent)) {
+        try {
+          await fs.rmdir(parent);
+        } catch {
+          break; // Not empty (or raced): everything above it is not empty either.
+        }
+      }
+      return;
+    }
+    const target = this.resolveFile(dir, filePath);
+    let isTopic: boolean;
+    try {
+      isTopic = (await fs.lstat(target)).isFile();
+    } catch {
+      throw this.fileNotFound(filePath);
+    }
+    // The folder goes first: a failure there leaves the topic listed with what it still keeps,
+    // never a folder that has lost its topic. A link standing at the topic's name is no topic,
+    // so it is unlinked alone.
+    if (isTopic) await removeFolder(path.join(dir, topicFolderName(filePath)));
     try {
       await fs.unlink(target);
     } catch {
-      throw new HttpError(404, "memory_file_not_found", `Memory file not found: ${fileName}`);
+      throw this.fileNotFound(filePath);
     }
-    await this.pruneIndexLines(dir, fileName);
+    await this.pruneIndexLines(dir, filePath);
   }
 
   /** Removes index lines linking to a deleted file. Best-effort: a missing or unreadable index is left alone. */
@@ -566,21 +756,31 @@ export class MemoryService implements Memory {
     await this.writeScopeFile(indexPath, kept.join("\n"));
   }
 
-  private async fileInfo(dir: string, name: string): Promise<MemoryFileInfo | null> {
+  private async fileInfo(
+    dir: string,
+    name: string,
+    kept: MemoryFolderFile[],
+  ): Promise<MemoryFileInfo | null> {
     try {
       const [content, stat] = await Promise.all([
         fs.readFile(path.join(dir, name), "utf8"),
         fs.stat(path.join(dir, name)),
       ]);
-      return this.describe(name, content, stat.size, stat.mtime);
+      return this.describe(name, content, stat.size, stat.mtime, kept);
     } catch {
       // Raced with a delete, or not readable: leave it out of the listing rather than failing the request.
       return null;
     }
   }
 
-  /** One listing entry: frontmatter (falling back to the file name for an unparsed file) plus file stats. */
-  private describe(name: string, content: string, size: number, mtime: Date): MemoryFileInfo {
+  /** One topic's listing entry: frontmatter (falling back to the file name for an unparsed file), file stats, and the files it keeps. */
+  private describe(
+    name: string,
+    content: string,
+    size: number,
+    mtime: Date,
+    kept: MemoryFolderFile[],
+  ): MemoryFileInfo {
     const meta = parseMemoryFrontmatter(content, name);
     return {
       name,
@@ -589,6 +789,7 @@ export class MemoryService implements Memory {
       ...(meta?.updatedAt !== undefined ? { updatedAt: meta.updatedAt } : {}),
       size,
       modifiedAt: mtime.toISOString(),
+      files: kept,
     };
   }
 
@@ -655,14 +856,14 @@ export class MemoryService implements Memory {
   }
 
   /**
-   * The absolute path of a topic file inside a scope directory. The name must pass the
-   * character rule, must not be the reserved index name, and the joined path is checked
-   * for containment — belt and braces, since the rule already excludes separators.
+   * Resolves a client- or import-supplied topic name to its path inside a scope directory: the
+   * name must pass the topic-file rule (which already excludes every separator and the reserved
+   * index name), and the joined path is checked for containment — belt and braces.
    */
   private resolveFile(dir: string, fileName: string): string {
     if (!isTopicFileName(fileName)) {
       throw badRequest(
-        `File name must be a Markdown topic file — no path, no leading dot, and not the ${MEMORY_INDEX_FILENAME} index.`,
+        `File must be a Markdown topic file name — no path, no leading dot, and not the ${MEMORY_INDEX_FILENAME} index.`,
       );
     }
     const target = path.join(dir, fileName);
@@ -671,5 +872,50 @@ export class MemoryService implements Memory {
       throw badRequest("File name must not contain a path.");
     }
     return target;
+  }
+
+  /**
+   * Resolves a kept file's scope-relative path (`<folder>/<path>`) to its place inside a scope
+   * directory: at least a folder and a file, `/`-separated, every segment under the same rule as
+   * a name (no leading dot — which also rules out `.` and `..` — and no other separator), and the
+   * joined path checked for containment.
+   */
+  private resolveFolderPath(dir: string, filePath: string): string {
+    const segments = filePath.split("/");
+    if (segments.length < 2 || !segments.every(isPlainName)) {
+      throw badRequest(
+        "A kept file's path must be <folder>/<file>, every part without a leading dot or a backslash.",
+      );
+    }
+    const target = path.join(dir, ...segments);
+    if (path.relative(dir, target) !== segments.join(path.sep)) {
+      throw badRequest("A kept file's path must stay inside its scope.");
+    }
+    return target;
+  }
+
+  /**
+   * A kept file that exists, by its scope-relative path: every folder on the way must be a real
+   * directory and the file a regular file, each checked with lstat — so neither a folder nor the
+   * file planted as a symlink can carry a read or a delete outside the scope. 404 otherwise.
+   */
+  private async requireFolderFile(dir: string, filePath: string): Promise<string> {
+    const target = this.resolveFolderPath(dir, filePath);
+    const segments = filePath.split("/");
+    let at = dir;
+    try {
+      for (const segment of segments.slice(0, -1)) {
+        at = path.join(at, segment);
+        if (!(await fs.lstat(at)).isDirectory()) throw new Error("not a folder");
+      }
+      if (!(await fs.lstat(target)).isFile()) throw new Error("not a file");
+    } catch {
+      throw this.fileNotFound(filePath);
+    }
+    return target;
+  }
+
+  private fileNotFound(filePath: string): HttpError {
+    return new HttpError(404, "memory_file_not_found", `Memory file not found: ${filePath}`);
   }
 }

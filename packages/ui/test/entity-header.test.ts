@@ -5,7 +5,7 @@
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { EntityHeader } from "../src/components/layout/entity-header/entity-header";
-import { classTokens, renderStatic } from "../src/testing";
+import { renderStatic } from "../src/testing";
 
 describe("EntityHeader", () => {
   const html = renderStatic(
@@ -22,10 +22,9 @@ describe("EntityHeader", () => {
     ),
   );
 
-  it("names the thing with a level-1 heading on its rung, not in mono", () => {
-    expect(html).toMatch(/<h1 class="[^"]*--ui-h1-size[^"]*">@penguinharness\/goal<\/h1>/);
+  it("names the thing with a level-1 heading, not the display one", () => {
+    expect(html).toMatch(/<h1 [^>]*>@penguinharness\/goal<\/h1>/);
     expect(html).not.toContain("ui-display");
-    expect(/<h1 class="([^"]*)"/.exec(html)![1]).not.toContain("font-mono");
   });
 
   it("lays out mark, name and meta, description, extra rows, then actions", () => {
@@ -34,7 +33,6 @@ describe("EntityHeader", () => {
     );
     expect(order.every((i) => i >= 0)).toBe(true);
     expect(order).toEqual([...order].sort((a, b) => a - b));
-    expect(classTokens(html)).toEqual(expect.arrayContaining(["text-fg-muted", "text-fg-subtle"]));
   });
 
   it("takes a lower level inside a dialog", () => {

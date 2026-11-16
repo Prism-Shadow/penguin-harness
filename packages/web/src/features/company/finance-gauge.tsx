@@ -7,11 +7,11 @@
  * the ratio and capped at a full circle when spend is over the budget; without a budget the track
  * stands alone. `SpendMeter` is the spend tree's bar, which carries its own percent.
  */
-import { Ring } from "@prismshadow/penguin-ui";
-import type { ToneName } from "@prismshadow/penguin-ui";
+import { Ring, type ToneName } from "@prismshadow/penguin-ui";
+
 import { formatPercent } from "../../lib/format";
-import { toneDot, toneInk } from "../../lib/tone";
-import type { Tone } from "../../lib/tone";
+import { toneDot, toneInk, type Tone } from "../../lib/tone";
+
 import { budgetTone } from "./finance-tree";
 
 /** The budget tones in the ring's words (a gauge without a budget draws no arc to ink). */

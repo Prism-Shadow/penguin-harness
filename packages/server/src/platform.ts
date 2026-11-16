@@ -48,6 +48,7 @@ import { WeChatTransportProvider } from "./runtime/messaging/wechat-connector.js
 import { WeChatScanTransportProvider } from "./runtime/messaging/wechat-scan.js";
 import { PluginConfig, PluginConfigProvider } from "./plugin/config.js";
 import { PluginConfigAdmin, PluginConfigPage } from "./plugin/config-page.js";
+import { PluginCliCommandsProvider } from "./plugin/cli-commands.js";
 import {
   CoreSessionLoaders,
   DefaultTitleGenerators,
@@ -124,6 +125,8 @@ import { OrgRoutes } from "./http/routes/organizations.js";
 import { OrgRuns, OrgSessions } from "./runtime/organization/deps.js";
 import { TerminalRelay } from "./machines/terminal-relay.js";
 import { SessionForwardRoutes } from "./machines/session-forward.js";
+import { HistoryLinesRoutes } from "./http/routes/history-lines.js";
+import { HistoryRoutes } from "./http/routes/history.js";
 import { ProjectAdminRoutes } from "./http/routes/projects.js";
 import { AdminRoutes } from "./http/routes/admin.js";
 import { MeRoutes } from "./http/routes/me.js";
@@ -135,6 +138,7 @@ import {
   DesktopTrayRoutes,
   DesktopUpdateRoutes,
 } from "./http/routes/desktop.js";
+import { CommandRoutes } from "./http/routes/command.js";
 import { InstallRoutes } from "./http/routes/install.js";
 import { HandshakeRoutes } from "./http/routes/handshake.js";
 import { HmrRoutes } from "./hmr/routes.js";
@@ -142,6 +146,8 @@ import { EventsRoutes } from "./http/routes/events.js";
 import { PluginRegistryRoutes, PluginRoutes } from "./http/routes/plugins.js";
 import { InstalledPluginRoutes } from "./http/routes/plugins-installed.js";
 import { NpmPluginPackages } from "./plugin/install.js";
+import { PluginLibraryModule } from "./plugin/library-module.js";
+import { PluginUiRoutes } from "./http/routes/plugin-ui.js";
 import { SuggestIdRoutes } from "./http/routes/suggest-id.js";
 import { LanguageRoutes } from "./http/routes/languages.js";
 import { Languages, LanguagesModule } from "./languages/service.js";
@@ -170,6 +176,7 @@ import {
 import { Workbenches } from "./mechanisms/workbenches.js";
 import { WorkbenchService } from "./workbenches/service.js";
 import { WorkbenchRoutes } from "./workbenches/routes.js";
+import { ThemeRoutes } from "./http/routes/themes.js";
 import {
   ErrorLog,
   Errors,
@@ -498,6 +505,7 @@ export class CompanyModule {}
     VersionRoutes,
     HmrRoutes,
     DesktopRoutes,
+    CommandRoutes,
     DesktopUpdateRoutes,
     DesktopTrayRoutes,
     DesktopPrivacySettingsRoutes,
@@ -505,6 +513,8 @@ export class CompanyModule {}
     PluginRegistryRoutes,
     NpmPluginPackages,
     InstalledPluginRoutes,
+    PluginCliCommandsProvider,
+    PluginUiRoutes,
     SuggestIdRoutes,
     LanguagesModule,
     LanguageRoutes,
@@ -518,6 +528,16 @@ export class ApiModule {}
   exports: [Workbenches],
 })
 export class WorkbenchesModule {}
+
+/**
+ * The server's theme packs: the store under the data root and the routes over it. Its own group:
+ * nothing else reads the store, and a pack is a per-server web resource, not a plugin.
+ */
+@Module({
+  children: [ThemeRoutes],
+  exports: [],
+})
+export class ThemesModule {}
 
 /** The root: provides nothing and requires nothing; it exists so the groups have a scope to see each other in. */
 @Module({
@@ -536,13 +556,17 @@ export class WorkbenchesModule {}
     MessagingHubModule,
     CompanyModule,
     ApiModule,
+    PluginLibraryModule,
     SandboxModule,
     SandboxSettingsModule,
     TerminalModule,
     MachinesModule,
     TerminalRelay,
     SessionForwardRoutes,
+    HistoryRoutes,
+    HistoryLinesRoutes,
     WorkbenchesModule,
+    ThemesModule,
     BuiltinBrowserModule,
     AgentApiModule,
     Startup,

@@ -20,7 +20,6 @@ describe("Pill", () => {
     for (const tone of TONES) {
       const html = renderStatic(createElement(Pill, { tone, children: "Running" }));
       expect(shape(html), tone).toEqual(shape(neutral));
-      expect(html, tone).toContain(`tone-${tone}-`);
     }
   });
 

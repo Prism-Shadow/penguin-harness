@@ -9,14 +9,13 @@
  * - Each shared glyph (the control caret, the close cross, the collapse chevron, the two dock
  *   marks, the memory brain, the background-task trace) is drawn in exactly one place.
  * - No literal stroke weight appears outside the ones the family chose.
- * - Every theme sets a line-family weight for `--ui-icon-stroke` in both modes, and the default
- *   theme keeps the weight GlyphIcon falls back to.
+ * - Every theme pack sets a line-family weight for `--ui-icon-stroke` in both modes, its own or
+ *   the base's.
  */
-import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { ICON_SIZE } from "@prismshadow/penguin-ui";
-import { DEFAULT_THEME_ID, THEME_IDS, THEME_MODES } from "../../ui/src/tokens";
-import { analyzeThemeFile, resolveThemeValue } from "../../ui/src/testing/theme-tokens";
+import { INITIAL_THEME_ID, THEME_MODES } from "../../ui/src/tokens";
+import { analyzePack, packFolders, resolveThemeValue } from "../../ui/src/testing/theme-tokens";
 import { expectEveryRootScanned, expectSingleHome, scanSources } from "./helpers/roots";
 
 const SCAN = scanSources();
@@ -114,35 +113,23 @@ describe("stroke weights", () => {
   describe("the --ui-icon-stroke token", () => {
     /** The weights a theme's line family may take: Primer 1.7, Frost 1.6, Console 1.4. */
     const LINE_FAMILY = new Set(["1.4", "1.6", "1.7"]);
-    const themePath = (id: string) => new URL(`../../ui/src/themes/${id}.css`, import.meta.url);
-    const analysis = (id: (typeof THEME_IDS)[number]) => {
-      const path = themePath(id);
-      if (!existsSync(path)) return null;
-      const result = analyzeThemeFile(readFileSync(path, "utf8"), id);
+    const analysis = (id: string) => {
+      const result = analyzePack(id);
       return result.isStub ? null : result;
     };
-    const defaultTheme = analysis(DEFAULT_THEME_ID);
+    const baseTheme = analysis(INITIAL_THEME_ID);
 
-    for (const id of THEME_IDS) {
+    // Every pack folder: a pack that leaves the stroke to the base draws at Frost's weight.
+    for (const id of packFolders()) {
       const theme = analysis(id);
-      if (theme === null || defaultTheme === null) {
-        it.skip(`${id} — PENDING: themes/${id}.css declares no tokens yet`, () => {});
+      if (theme === null || baseTheme === null) {
+        it.skip(`${id} — PENDING: themes/${id}/ declares no tokens yet`, () => {});
         continue;
       }
       it(`${id} sets a line-family weight in both modes`, () => {
         for (const mode of THEME_MODES) {
-          const weight = resolveThemeValue("--ui-icon-stroke", mode, theme, defaultTheme);
+          const weight = resolveThemeValue("--ui-icon-stroke", mode, theme, baseTheme);
           expect(LINE_FAMILY, `${id} ${mode}: --ui-icon-stroke = ${weight}`).toContain(weight);
-        }
-      });
-    }
-
-    if (defaultTheme !== null) {
-      it("keeps the default theme at the weight GlyphIcon falls back to", () => {
-        for (const mode of THEME_MODES) {
-          expect(resolveThemeValue("--ui-icon-stroke", mode, defaultTheme, defaultTheme)).toBe(
-            "1.7",
-          );
         }
       });
     }

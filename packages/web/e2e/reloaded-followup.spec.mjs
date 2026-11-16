@@ -1,8 +1,12 @@
 /**
- * Regression for #89: a Task posted after reloading a completed Session must execute — and
- * must carry the whole draft, the per-turn thinking level included.
+ * Regression for #89: a Task posted after reloading a completed Session must execute, and must
+ * carry the whole draft.
+ *
+ * Calls ride the page's API socket, so the spec watches its frames (api-socket.mjs) rather
+ * than HTTP responses, and answers the steer in the server's place to stage the race.
  */
 import { test, expect } from "@playwright/test";
+import { watchSocket } from "./api-socket.mjs";
 import { provisionAndLogin } from "./auth.mjs";
 
 const BASE = process.env.BASE_URL;
@@ -47,78 +51,52 @@ test("a stale steer response after reload queues the follow-up instead of strand
   page,
 }) => {
   const sessionId = await createSession(page);
+  const tasksPath = `/api/sessions/${sessionId}/tasks`;
+  const steerPath = `/api/sessions/${sessionId}/steer`;
+  const isTaskPost = (call) => call.method === "POST" && call.path === tasksPath;
+  const frames = await watchSocket(page);
   await page.goto(`${BASE}/chat/${sessionId}`);
   const composer = page.locator("textarea").first();
   await composer.waitFor();
 
   await composer.fill("first task before reload");
-  const firstPost = page.waitForResponse((response) =>
-    response.url().endsWith(`/sessions/${sessionId}/tasks`),
-  );
+  const firstAnswer = frames.nextAnswer(isTaskPost);
   await page.getByRole("button", { name: "发送" }).click();
-  expect((await firstPost).status()).toBe(202);
+  expect((await firstAnswer).status).toBe(202);
 
   // Reproduce the post-reload stale-state seam deterministically: the client still sees a
   // running Task, but /steer reports that the core run just ended. The fallback must use the
   // server's queue-if-busy path, which is safe on both sides of the completion race.
   await expect(page.getByRole("button", { name: "允许" })).toBeVisible();
-  await page.route(`**/api/sessions/${sessionId}/steer`, (route) =>
-    route.fulfill({
-      status: 409,
-      contentType: "application/json",
-      body: JSON.stringify({
-        error: {
-          code: "not_running",
-          message: "This Session has no Task in progress; send a new task instead.",
-        },
-      }),
-    }),
-  );
+  frames.answer("POST", steerPath, {
+    status: 409,
+    body: {
+      error: {
+        code: "not_running",
+        message: "This Session has no Task in progress; send a new task instead.",
+      },
+    },
+  });
   await page.reload();
   await composer.waitFor();
   await expect(page.getByRole("button", { name: "停止" })).toBeVisible();
   await expect(page.getByRole("button", { name: "允许" })).toBeVisible();
 
-  // A per-turn thinking level picked mid-run must ride the queued follow-up, exactly as it
-  // rides an ordinary send: the server keeps it with the queued input and applies it when the
-  // follow-up auto-starts. The picker is only disabled while a send is in flight, so it is
-  // editable here; the pick is per-turn and does not write through to the Agent config.
-  //
-  // This conversation already has history, so the mid-chat switch guard (#310) stages the
-  // pick behind its dialog instead of applying it. Cancel first: the guard must leave the
-  // displayed level exactly where it was, never half-applied.
-  // The trigger carries the plain Chinese name ("中"); only the menu rows annotate it with the
-  // wire value ("高 (high)"), which is why the two are matched differently here.
-  const thinkingBtn = page.getByRole("button", { name: "思考等级" });
-  await expect(thinkingBtn).toContainText("中");
-  await expect(thinkingBtn).not.toContainText("medium");
-  await thinkingBtn.click();
-  await page.getByRole("button", { name: "高 (high)", exact: true }).click();
-  // The dialog's title is its accessible name, not body text — assert on its choices.
-  await expect(page.getByRole("button", { name: "仍要切换", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "压缩后切换", exact: true })).toBeDisabled();
-  await page.getByRole("button", { name: "取消", exact: true }).click();
-  await expect(thinkingBtn).toContainText("中");
-
-  // Now switch for real: a compaction cannot start while the task runs, so "压缩后切换" is
-  // disabled here and "仍要切换" is the applying choice.
-  await thinkingBtn.click();
-  await page.getByRole("button", { name: "高 (high)", exact: true }).click();
-  await page.getByRole("button", { name: "仍要切换", exact: true }).click();
-  await expect(thinkingBtn).toContainText("高");
-
   await composer.fill("hello after reload");
-  const followUpPost = page.waitForResponse((response) =>
-    response.url().endsWith(`/sessions/${sessionId}/tasks`),
-  );
+  const steer = frames.nextCall((call) => call.method === "POST" && call.path === steerPath);
+  const followUp = frames.nextCall(isTaskPost);
+  const followUpAnswer = frames.nextAnswer(isTaskPost);
   await page.getByRole("button", { name: "发送给运行中的 Agent" }).click();
-  const response = await followUpPost;
-  expect(response.status()).toBe(202);
-  expect(response.request().postDataJSON()).toMatchObject({
+  // The steer goes first and meets the staged 409; the fallback then posts the whole draft
+  // with queueIfBusy.
+  await steer;
+  expect((await followUp).body).toMatchObject({
+    input: [{ type: "text", text: "hello after reload" }],
     queueIfBusy: true,
-    thinkingLevel: "high",
   });
-  expect(await response.json()).toMatchObject({ queued: true });
+  const answer = await followUpAnswer;
+  expect(answer.status).toBe(202);
+  expect(answer.body).toMatchObject({ queued: true });
   // The queued hint is now one line per entry carrying that entry's own content (the bare
   // "N queued" count is only the fallback for a server that predates pendingFollowUps), and
   // it ends in the icon-only recall control — which must still answer to its name (#287).

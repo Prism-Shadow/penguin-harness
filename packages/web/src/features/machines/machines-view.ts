@@ -415,10 +415,8 @@ export interface RetryReading {
   label: string;
   /** While waiting: the sentence for the seconds left; null otherwise. */
   countdown: ((seconds: number) => string) | null;
-  /** Behind the row's "?": the last failure, or the fix; null when there is nothing to explain. */
+  /** After the row's sentence: the last failure, or the fix; null when there is nothing to explain. */
   reason: string | null;
-  /** The "?" panel's title over the reason ("Last failure"); null when the reason is the fix. */
-  reasonTitle: string | null;
   /** When the next attempt runs, in epoch ms, while one is waited for; null otherwise. */
   nextAtMs: number | null;
   /** The presses on offer: Retry now and Stop retrying while it runs, Retry once it stopped. */
@@ -443,13 +441,13 @@ export function retryReading(reading: MachineReading, alias: string): RetryReadi
     case "reconnecting": {
       const n = reading.attempts + 1;
       const m = reading.maxAttempts;
-      const failure = lastFailure(reading.message);
+      const reason = reading.message;
       return reading.nextAt === null
         ? {
             phase: "trying",
             label: r.trying(n, m),
             countdown: null,
-            ...failure,
+            reason,
             nextAtMs: null,
             offers: RUNNING,
           }
@@ -457,7 +455,7 @@ export function retryReading(reading: MachineReading, alias: string): RetryReadi
             phase: "waiting",
             label: r.trying(n, m),
             countdown: (seconds) => r.waiting(seconds, n, m),
-            ...failure,
+            reason,
             nextAtMs: Date.parse(reading.nextAt),
             offers: WAITING,
           };
@@ -470,7 +468,6 @@ export function retryReading(reading: MachineReading, alias: string): RetryReadi
             countdown: null,
             // The sentence for an ssh refusal is its fix already.
             reason: reading.message,
-            reasonTitle: null,
             nextAtMs: null,
             offers: STOPPED,
           }
@@ -478,7 +475,7 @@ export function retryReading(reading: MachineReading, alias: string): RetryReadi
             phase: "gaveUp",
             label: r.gaveUp(reading.maxAttempts),
             countdown: null,
-            ...lastFailure(reading.message),
+            reason: reading.message,
             nextAtMs: null,
             offers: STOPPED,
           };
@@ -487,7 +484,7 @@ export function retryReading(reading: MachineReading, alias: string): RetryReadi
         phase: "cancelled",
         label: r.cancelled,
         countdown: null,
-        ...lastFailure(reading.message),
+        reason: reading.message,
         nextAtMs: null,
         offers: STOPPED,
       };
@@ -498,23 +495,12 @@ export function retryReading(reading: MachineReading, alias: string): RetryReadi
         countdown: null,
         // What to do about it, not only that it happened.
         reason: S.machines.check.ssh[reading.reason](alias),
-        reasonTitle: null,
         nextAtMs: null,
         offers: NOTHING,
       };
     default:
       return null;
   }
-}
-
-/** The last failure behind the "?", under its title; nothing before the first one. */
-function lastFailure(message: string | null): {
-  reason: string | null;
-  reasonTitle: string | null;
-} {
-  return message === null
-    ? { reason: null, reasonTitle: null }
-    : { reason: message, reasonTitle: S.machines.retry.lastFailure };
 }
 
 /**

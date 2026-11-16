@@ -133,8 +133,9 @@ ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1
 
 # `<pkg>...` selects a package together with its workspace dependencies, so the CLI filter
 # pulls core, server and the @penguinharness/* plugin packages in topological order; web is
-# named separately because nothing depends on it — its dist is what web/ ships. The rest of
-# the workspace (desktop, docs, landing) is installed but never built.
+# named separately because nothing depends on it — its dist is what web/ ships — and so is the
+# UI package, whose Workbench runtime the web build copies in. The rest of the workspace
+# (desktop, docs, landing) is installed but never built.
 #
 # --config.verify-deps-before-run goes BEFORE the command: after it, pnpm forwards the flag
 # to the script instead of reading it. The check wants a terminal to prompt at, and a Docker
@@ -143,6 +144,7 @@ RUN set -eux; \
     pnpm install --frozen-lockfile; \
     pnpm --config.verify-deps-before-run=false \
       --filter "@prismshadow/penguin-cli..." \
+      --filter "@prismshadow/penguin-ui" \
       --filter "@prismshadow/penguin-web" \
       build
 
@@ -155,6 +157,12 @@ RUN set -eux; \
     pnpm --config.node-linker=hoisted --filter @prismshadow/penguin-cli --prod deploy "$PWD/out/penguin/lib"; \
     rm -f out/penguin/lib/pnpm-workspace.yaml; \
     cp -r packages/web/dist out/penguin/web; \
+    # The harness image this image carries (carried-image.ts): the same store a release
+    # tarball ships as lib/dist/hmr/, packed from these very sources — a root
+    # the container serves is reconciled against it at every start, so a fresh PENGUIN_HOME
+    # holds a harness.json from its first boot, pushed CLI included.
+    node scripts/pack-carried-store.mjs out/penguin/lib/dist/hmr; \
+    test -s out/penguin/lib/dist/hmr/harness.json; \
     mkdir -p /opt/penguin; \
     mv out/penguin/lib /opt/penguin/lib; \
     mv out/penguin/web /opt/penguin/web; \

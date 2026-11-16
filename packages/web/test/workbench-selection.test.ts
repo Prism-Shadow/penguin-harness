@@ -4,13 +4,16 @@
  * - Changing Agent hides previous tabs immediately and ignores their late response.
  * - A full-app return restores its tab after loading; a fresh chat route starts on Chat.
  * - Removing the selected tab forgets it even if a later refresh brings it back.
+ * - A workbench switched off offers no tab, and neither does any while the Agent-wide switch is
+ *   off; switched back on, its tab returns. A server older than the switches says neither, and
+ *   its workbench keeps its tab.
  */
 import { createElement as h } from "react";
 import { afterEach, expect, it } from "vitest";
 import { useWorkbenchTabs } from "../src/features/workbenches/workbench-tabs";
 import { WORKBENCH_UPDATED_EVENT } from "../src/lib/workbench-tabs";
 import { json, stubFetch } from "./helpers/fetch";
-import { button, click, mount, run, unmountAll } from "./helpers/dom";
+import { button, click, mount, run, settle, unmountAll } from "./helpers/dom";
 
 const result = {
   workbenches: [
@@ -95,4 +98,27 @@ it("does not reopen a removed tab when it later reappears", async () => {
   await run(refresh);
   expect(button("Board")).toBeTruthy();
   expect(selected()).toBe("chat");
+});
+it("offers no tab for a switched-off workbench, nor for any while the Agent-wide switch is off", async () => {
+  const [demo] = result.workbenches;
+  const fetch = stubFetch(() =>
+    json({ workbenches: [{ ...demo, enabled: false }], enabled: true }),
+  );
+  await mount(h(Page, { agent: "support" }));
+  await settle();
+  const refresh = () =>
+    window.dispatchEvent(
+      new CustomEvent(WORKBENCH_UPDATED_EVENT, { detail: { projectId: "p", agentId: "support" } }),
+    );
+  expect(fetch.requests).toHaveLength(1);
+  expect(document.querySelector("button")).toBeNull();
+  fetch.answer(() => json({ workbenches: [{ ...demo, enabled: true }], enabled: false }));
+  await run(refresh);
+  expect(document.querySelector("button")).toBeNull();
+  fetch.answer(() => json({ workbenches: [{ ...demo, enabled: true }], enabled: true }));
+  await run(refresh);
+  expect(button("Board")).toBeTruthy();
+  fetch.answer(() => json(result));
+  await run(refresh);
+  expect(button("Board")).toBeTruthy();
 });

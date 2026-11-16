@@ -1,9 +1,10 @@
 /**
- * App root: ClipboardWriter -> CodeHighlighter -> Locale -> Theme -> Background -> Auth -> LocaleScope ->
- * Router provider composition, with the app-wide overlays (toasts, tooltips, the unsaved-changes
- * prompt) beside the router. The shared UI package's copy controls get the app's clipboard
+ * App root component: ClipboardWriter -> CodeHighlighter -> Locale -> Theme -> Background -> Auth -> LocaleScope ->
+ * the shell's root (the router, from the booted module tree — see web-root.ts) provider
+ * composition, with the app-wide overlays (toasts, tooltips, the unsaved-changes prompt)
+ * beside the router. The shared UI package's copy controls get the app's clipboard
  * writer, and every code surface of the package gets the app's worker-backed code highlighter
- * (features/chat/code-highlight.ts).
+ * (lib/highlight/code-highlight.ts).
  * LocaleScope (a remount boundary) sits inside AuthProvider: switching language rebuilds the UI tree without
  * re-fetching auth, avoiding a full-screen white flash from RequireAuth briefly seeing user=undefined.
  * Also installs the app-wide file-drop guard: a file dropped outside the chat area — the only
@@ -11,12 +12,17 @@
  * default navigate-to-file, which would silently replace the running app and any unsent draft.
  * The guard is deliberately silent: no overlay, no attachment, no toast. It does not make a
  * drop on the sidebar do something; it makes it do nothing.
+ * In the desktop shell's window the window's own buttons sit beside the router too
+ * (`WindowChrome`), so every page has them and no crashed route can take them away.
  */
-import { useEffect } from "react";
+import { useEffect, type ComponentType } from "react";
+
 import {
   ClipboardWriterProvider,
   CodeHighlighterProvider,
+  CrashBoundary,
   ProgressToasts,
+  ReportHost,
   Toaster,
   TooltipLayer,
 } from "@prismshadow/penguin-ui";
@@ -24,17 +30,30 @@ import { LocaleProvider, LocaleScope } from "./state/locale";
 import { ThemeProvider } from "./state/theme";
 import { BackgroundProvider } from "./state/background";
 import { AuthProvider } from "./state/auth";
-import { AppRouter } from "./router";
+import type { AppRouterProps } from "./web-app/router";
 import { UnsavedPrompt } from "./lib/unsaved/unsaved-prompt";
+import { RescuePalette } from "./rescue/palette";
+import { SafeModeMarker } from "./rescue/safe-mode-marker";
+import { ErrorBoundary } from "./rescue/error-boundary";
+import { RescuePanel } from "./rescue/rescue-panel";
 import { writeClipboard } from "./lib/clipboard";
+import { ReportEnvironmentSync } from "./lib/report-environment";
 import { guardWindowDragOver, guardWindowDrop } from "./lib/file-drop";
-import { highlightCode } from "./features/chat/code-highlight";
+import { highlightCode } from "./lib/highlight/code-highlight";
+import { WindowChrome } from "./web-app/window-chrome";
 
 /**
- * `initialPath`: mount the app on an in-memory router opened at that path instead of the
- * browser's address bar (see AppRouter) — for a host document that frames the app.
+ * `Root`: the shell's root component, which `bootWeb()` returns. `initialPath`: mount the app on
+ * an in-memory router opened at that path instead of the browser's address bar (see AppRouter)
+ * — for a host document that frames the app.
  */
-export function App({ initialPath }: { initialPath?: string } = {}) {
+export function App({
+  Root,
+  initialPath,
+}: {
+  Root: ComponentType<AppRouterProps>;
+  initialPath?: string;
+}) {
   // The guard reads `defaultPrevented` rather than assuming it runs last: the chat area's
   // drop zone is a window listener too, so the two fire in registration order. Both orders
   // converge — whichever runs second either finds the drag already claimed and bails, or
@@ -55,9 +74,29 @@ export function App({ initialPath }: { initialPath?: string } = {}) {
             <BackgroundProvider>
               <AuthProvider>
                 <LocaleScope>
-                  <AppRouter {...(initialPath === undefined ? {} : { initialPath })} />
-                  {/* Top toast overlay: portaled to body, z-index above modals, shared site-wide. */}
+                  {/* What every problem report knows of where it ran. */}
+                  <ReportEnvironmentSync />
+                  {/* The rescue boundary renders the rescue panel (safe mode, reload) first;
+                      CrashBoundary is the last line against a blank window if even the rescue
+                      panel crashes. */}
+                  <CrashBoundary className="h-dvh">
+                    <ErrorBoundary fallback={(error) => <RescuePanel error={error} />}>
+                      <Root {...(initialPath === undefined ? {} : { initialPath })} />
+                    </ErrorBoundary>
+                  </CrashBoundary>
+                  <ErrorBoundary fallback={() => null}>
+                    <SafeModeMarker />
+                  </ErrorBoundary>
+                  {/* The workbench palette's full-page exit (open the rescue panel over
+                      everything): mounted at the root, outside the page tree, so it works on
+                      every route and survives the page that opened the workbench going away. */}
+                  <ErrorBoundary fallback={() => null}>
+                    <RescuePalette />
+                  </ErrorBoundary>
+                  {/* Top toast overlay: portaled to body on the `toast` layer, above dialogs, shared site-wide. */}
                   <Toaster />
+                  {/* The problem report opened from a toast, a notice or a crash: one dialog. */}
+                  <ReportHost />
                   {/* Long operations' progress cards, bottom right (an Agent's files being removed). */}
                   <ProgressToasts />
                   {/* The one "discard unsaved changes?" prompt every leave asks through, and the
@@ -66,6 +105,8 @@ export function App({ initialPath }: { initialPath?: string } = {}) {
                   <UnsavedPrompt />
                   {/* The hover hints of every `data-tooltip` element: one listener set, one panel. */}
                   <TooltipLayer />
+                  {/* The desktop window's buttons and its band's height; nothing in a browser. */}
+                  <WindowChrome />
                 </LocaleScope>
               </AuthProvider>
             </BackgroundProvider>

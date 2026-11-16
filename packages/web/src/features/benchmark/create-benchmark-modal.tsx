@@ -34,7 +34,7 @@ import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { toneInk } from "../../lib/tone";
-import { SemanticIdField } from "../semantic-id/semantic-id-field";
+import { SemanticIdField } from "../semantic-id";
 import { ID_PATTERN, caseId, isValidRuns } from "./benchmark-prompts";
 
 interface CaseDraft {
