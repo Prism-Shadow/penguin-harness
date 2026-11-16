@@ -13,4 +13,5 @@
 export { AgentApi } from "./agent-api.js";
 export type { AgentApiSettings, AgentApiUpdateRequest } from "./agent-api.js";
 export type { AgentApiKeyInfo, ModelRefDto } from "./agent-api.js";
-export { AgentApiRepo, DEFAULT_API_CONCURRENT_RUNS } from "./agent-api-repo.js";
+export { AgentApiRepo } from "./agent-api-repo.js";
+export { DEFAULT_API_CONCURRENT_RUNS } from "./agent-api.js";
