@@ -4,6 +4,7 @@
  * widest cell; CJK display width is approximated as 2 columns per non-halfwidth code
  * point so zh titles keep the grid aligned.
  */
+import { formatLocalDate } from "../internal/dates.js";
 
 /** Approximate terminal display width (CJK and fullwidth forms count as 2). */
 export function displayWidth(text: string): number {
@@ -57,9 +58,7 @@ export function relativeTime(iso: string, now: Date = new Date()): string {
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
   if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
   if (seconds < 14 * 86400) return `${Math.floor(seconds / 86400)}d`;
-  const day = new Date(then);
-  const pad = (n: number): string => String(n).padStart(2, "0");
-  return `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}`;
+  return formatLocalDate(new Date(then));
 }
 
 /** Converts a token count to a human-readable abbreviation: 1234->1.2k, 1500000->1.5M, 2e9->2B, <1000 unchanged. */

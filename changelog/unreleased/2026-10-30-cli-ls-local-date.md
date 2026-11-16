@@ -11,4 +11,4 @@ The LAST column of `penguin session ls` showed a row older than two weeks as its
 
 ## Details
 
-- `relativeTime` in `packages/server/src/cli/table.ts` formatted the date from the local year, month and day instead of the timestamp's UTC date part. The short forms (`now`, `5m`, `3h`, `2d`) were unchanged.
+- `relativeTime` in `packages/server/src/cli/table.ts` formatted the date with the server's `formatLocalDate` (the local year, month and day) instead of taking the timestamp's UTC date part. The short forms (`now`, `5m`, `3h`, `2d`) were unchanged.
