@@ -19,6 +19,7 @@ import { formatLocalDate } from "../internal/dates.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Clock } from "../hmr/capabilities.js";
 import type { UsageRecording, UsageStore } from "../mechanisms/observability.js";
+import type { Projects } from "../mechanisms/projects.js";
 
 /** Attribution context for one record (top-level Session scope). */
 export interface UsageContext {
@@ -49,6 +50,7 @@ export class UsageRecorder implements UsageRecording {
 
   @Use() private readonly usage!: UsageStore;
   @Use() private readonly clock!: Clock;
+  @Use() private readonly projects!: Projects;
 
   /** Standalone usage (such as titles) is billed without metering the Session's active request. */
   async record(
@@ -95,6 +97,10 @@ export class UsageRecorder implements UsageRecording {
     }
     const metered = this.requests.get(requestSessionId) === true;
     if (payload.type === "request_end") this.requests.delete(requestSessionId);
+    // A request that outlived its Project's deletion (past the deletion's wait) is billed to
+    // nothing: its row would outlive the Project, and count for a later one given its id.
+    const billable = payload.type === "token_usage" || payload.type === "request_end";
+    if (billable && this.projects.findById(ctx.projectId) === null) return;
     // Empty origin → main session's Model; otherwise look up the mapping, falling back to the main Session's Model (paired) on a miss.
     const ref =
       originSessionId === null

@@ -225,7 +225,7 @@ interface EnvironmentInterface {
   listTools(): Promise<ToolDefinition[]>;
   executeTool(request: ToolExecutionRequest): AsyncGenerator<AmspRecord>;
   toolPermission(name: string): "r" | "rw" | undefined;   // for frontend approval-mode decisions
-  dispose?(): void;                                        // release runtime resources; idempotent
+  dispose?(): void | Promise<void>;                        // release runtime resources; resolves once subagent children have finished writing; idempotent
 }
 ```
 
@@ -393,7 +393,7 @@ interface SubagentHandle {
   }): AsyncGenerator<AmspRecord, RunCutoff | null>; // returns null when the round completed
   steer?(messages: AmspRecord[]): boolean; // queue a steering message for a running round; false when none is running
   setThinkingLevel?(level: ThinkingLevelName): void; // pin the child's thinking level from its next request
-  dispose(): void;        // release the child Session's runtime resources; idempotent
+  dispose(): void | Promise<void>; // release the child Session's runtime resources; idempotent
 }
 ```
 

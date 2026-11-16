@@ -84,6 +84,8 @@ export class ManagedSubagentSession {
   private readonly textBuffer = new CappedTextBuffer(OUTPUT_BUFFER_CAP, "earlier subagent output");
 
   private isRunning = false;
+  /** The current round, then the handle's release after a kill: what whenSettled resolves on. */
+  private settled: Promise<void> = Promise.resolve();
   private exitInfo: SubagentExit | null = null;
   private killed = false;
 
@@ -174,7 +176,12 @@ export class ManagedSubagentSession {
     this.reportCurrentRun = opts?.suppressDoneReport !== true;
     this.runCtrl = new AbortController();
     this.notifyState();
-    void this.pump(messages, this.runCtrl);
+    this.settled = this.pump(messages, this.runCtrl);
+  }
+
+  /** Resolves once the current round has finished writing, its release after a kill included. */
+  whenSettled(): Promise<void> {
+    return this.settled;
   }
 
   /**
@@ -343,7 +350,7 @@ export class ManagedSubagentSession {
     this.abortCtrl.abort();
     for (const req of [...this.approvals]) this.settle(req, "deny");
     // If running, released by pump's finally after it finishes; otherwise released immediately.
-    if (!this.isRunning) this.handle.dispose();
+    if (!this.isRunning) this.settled = Promise.resolve(this.handle.dispose());
     this.wakeSignal.notify();
   }
 
@@ -430,11 +437,15 @@ export class ManagedSubagentSession {
       const message = err instanceof Error ? err.message : String(err);
       this.exitInfo = { status: "failed", note: `[subagent error: ${message}]` };
     } finally {
-      this.isRunning = false;
-      if (this.killed) this.handle.dispose();
-      this.wakeSignal.notify();
-      this.notifyState();
-      this.fireSettleWatcher();
+      try {
+        // The round is over only once the killed child's own release (its children's) is.
+        if (this.killed) await this.handle.dispose();
+      } finally {
+        this.isRunning = false;
+        this.wakeSignal.notify();
+        this.notifyState();
+        this.fireSettleWatcher();
+      }
     }
   }
 

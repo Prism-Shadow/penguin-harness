@@ -321,7 +321,7 @@ export interface RuntimeSession {
   /** Subscribes background-task state changes (core `Session.onBackgroundState`): the manager re-counts the live registries and publishes `session_background` when the counts moved. Optional. */
   onBackgroundState?(listener: () => void): void;
   /** Releases environment resources — kills the remaining background processes (core `Session.dispose`). Optional, idempotent. */
-  dispose?(): void;
+  dispose?(): void | Promise<void>;
 }
 
 /** The underlying loader behind get-or-resume-or-heal. */
@@ -924,7 +924,9 @@ export class SessionManager {
     childSessionId: string,
     messages: AmspRecord[],
   ): Promise<SubagentMessageOutcome> {
-    const entry = await this.ensureEntry(sessionId);
+    // Loaded under the lock every other load takes: two concurrent loads would leave two
+    // runtimes, and the one dropped from the table would escape the Session's deletion.
+    const entry = await this.withLock(sessionId, () => this.ensureEntry(sessionId));
     entry.lastActivityMs = Date.now();
     const childRow = this.deps.sessions.findById(childSessionId);
     const resume =
@@ -2052,17 +2054,21 @@ export class SessionManager {
    * settles, so interrupt cleanup never races a dying environment. Deleting a Session /
    * Agent / Project is the one intent that must also end the background processes the
    * conversation started (a dev server surviving its deleted conversation is
-   * unreachable from every UI, running forever).
+   * unreachable from every UI, running forever). Subagent children are not the drive's:
+   * their rounds stop at once, or they go on sending requests while it settles. Resolves
+   * once the drive and the children's cancellation writes are done.
    */
-  private disposeRemoved(entry: RuntimeEntry): void {
-    const dispose = (): void => entry.session.dispose?.();
-    if (entry.running) void entry.running.then(dispose, dispose);
-    else dispose();
+  private disposeRemoved(entry: RuntimeEntry): Promise<void> {
+    for (const child of entry.session.listBackgroundSubagents?.() ?? []) {
+      entry.session.abortBackgroundSubagentRun?.(child.sessionId);
+    }
+    const dispose = (): void | Promise<void> => entry.session.dispose?.();
+    return entry.running ? entry.running.then(dispose, dispose) : Promise.resolve(dispose());
   }
 
   /**
    * Before deleting a Project, converge all its active runs and clear them out of the
-   * active table. Returns the in-flight drive Promises of the affected entries: the
+   * active table. Returns the drive and background-cleanup Promises of the affected entries: the
    * caller (deleteProject) should await them before removing the directory, so that
    * interrupt-cleanup Trace writes don't recreate the directory after deletion.
    */
@@ -2072,9 +2078,8 @@ export class SessionManager {
       if (entry.projectId !== projectId) continue;
       entry.approvals.denyAll();
       entry.abort?.abort();
-      if (entry.running) runnings.push(entry.running);
       this.entries.delete(key);
-      this.disposeRemoved(entry);
+      runnings.push(this.disposeRemoved(entry));
     }
     return runnings;
   }
@@ -2095,9 +2100,8 @@ export class SessionManager {
       if (entry.projectId !== projectId || entry.agentId !== agentId) continue;
       entry.approvals.denyAll();
       entry.abort?.abort();
-      if (entry.running) runnings.push(entry.running);
       this.entries.delete(key);
-      this.disposeRemoved(entry);
+      runnings.push(this.disposeRemoved(entry));
     }
     return runnings;
   }
@@ -2114,7 +2118,7 @@ export class SessionManager {
    * a new task recreates the entry and Trace file, reviving an already-deleted Session
    * between the abort snapshot and the file removal. The caller must call
    * endSessionDeletion once deletion finishes (success or failure). Returns the
-   * in-flight drive Promise: the caller should await it before deleting the Trace file,
+   * drive and background-cleanup Promise: the caller should await it before deleting the Trace file,
    * so cleanup writes don't recreate the file.
    */
   beginSessionDeletion(sessionId: string): Promise<void>[] {
@@ -2124,8 +2128,7 @@ export class SessionManager {
     entry.approvals.denyAll();
     entry.abort?.abort();
     this.entries.delete(sessionId);
-    this.disposeRemoved(entry);
-    return entry.running ? [entry.running] : [];
+    return [this.disposeRemoved(entry)];
   }
 
   endSessionDeletion(sessionId: string): void {
@@ -2155,16 +2158,13 @@ export class SessionManager {
     for (const entry of this.entries.values()) {
       entry.approvals.denyAll();
       entry.abort?.abort();
-      if (entry.running) pending.push(entry.running);
       // Suspend means the environment too: dispose kills the Session's remaining
       // background processes (a dev server the conversation started, etc.). Without
       // this, a hot swap orphans them — the OS process keeps running while the next
       // App's freshly resumed Session starts with an empty process list, so the stop
       // control has gone blind. Sequenced after the in-flight drive settles, the same
       // ordering disposeRemoved uses.
-      const dispose = (): void => entry.session.dispose?.();
-      if (entry.running) void entry.running.then(dispose, dispose);
-      else dispose();
+      pending.push(this.disposeRemoved(entry));
     }
     this.entries.clear();
     if (pending.length === 0) return;
@@ -2359,14 +2359,10 @@ export class SessionManager {
       this.entries.delete(sessionId);
       discardedBackgroundTasks = existing.backgroundTasks;
     }
+    const notFound = (): HttpError =>
+      new HttpError(404, "session_not_found", "Session does not exist or you do not have access.");
     const row = this.deps.sessions.findById(sessionId);
-    if (!row) {
-      throw new HttpError(
-        404,
-        "session_not_found",
-        "Session does not exist or you do not have access.",
-      );
-    }
+    if (!row) throw notFound();
     await this.refreshProviderCredentialIfNeeded(row);
     // Captured before the (awaited) load: an invalidation racing with the load leaves
     // this entry stale, so the access after next rebuilds it with the new values.
@@ -2387,9 +2383,12 @@ export class SessionManager {
     // don't rebuild the entry (avoids reviving an orphaned Trace).
     this.assertSessionNotDeleting(row.sessionId);
     this.assertAgentNotDeleting(row.sessionId);
+    // A deletion can also begin and end within one load: the row is the last word.
+    const current = this.deps.sessions.findById(row.sessionId);
+    if (current === null) throw notFound();
     // A thinking-level PATCH that landed during the (awaited) load updated the row but found
     // no entry to assign, and the loader applied the snapshot's level: re-read the pin.
-    const pin = this.deps.sessions.findById(row.sessionId)?.thinkingLevel;
+    const pin = current.thinkingLevel;
     if (pin && pin !== row.thinkingLevel) session.thinkingLevel = pin;
     let currentId = row.sessionId;
     if (session.sessionId !== row.sessionId) {
