@@ -43,6 +43,7 @@ import type { PluginIndexResponse } from "../src/api/types.js";
 import type { PluginBase } from "../src/plugin/loader.js";
 import {
   INDEX_RETRY_MS,
+  NIGHTLY_INDEX_URL,
   builtinPluginRegistry,
   cachedRegistry,
   compareSemver,
@@ -53,7 +54,7 @@ import {
   parsePluginIndex,
   selectIndexChannel,
 } from "../src/plugin/registry.js";
-import { indexUrlsOf, NIGHTLY_INDEX_URL } from "../src/plugin/index-config.js";
+import { indexUrlsOf } from "../src/plugin/index-config.js";
 import type { IndexDocumentEntry, PluginRegistry } from "../src/plugin/registry.js";
 import { pluginRegistryRoutes } from "../src/http/routes/plugins.js";
 import { fakeFetch, fetchFailed, jsonResponse } from "./fixtures/fetch.js";

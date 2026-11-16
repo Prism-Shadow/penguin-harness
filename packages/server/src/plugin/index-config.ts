@@ -66,6 +66,7 @@ export function indexUrlsOf(doc: Record<string, unknown>): string[] {
               "要读取的 index.json 地址，按书写顺序尝试。留空则读取随本版本发布的索引。",
             hint: "One https URL per line.",
             hintZh: "每行一个 https 地址。",
+            default: [],
             pattern: "^https://\\S+$",
             patternErrorMessage: "must be an https URL",
           },

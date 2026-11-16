@@ -470,7 +470,7 @@ export function pluginRegistryRoutes(options: PluginRoutesOptions = {}): Hono<Ap
    * own join on a later read, once the cache has them.
    */
   const listing = async () => {
-    const { entries, failures, pending } = await mergeIndexes(registries, {
+    const { entries, failures, pending } = await mergeIndexes(registries(), {
       waitForNetwork: false,
     });
     const own = await prefixEntries(prefix(), new Set(entries.map((e) => e.name)));
@@ -534,7 +534,7 @@ export function pluginRegistryRoutes(options: PluginRoutesOptions = {}): Hono<Ap
     }
     // First source that has one. Only the builtin registry carries readmes today: the shared
     // index format has no readme location, so a remote source has none to offer.
-    for (const registry of registries) {
+    for (const registry of registries()) {
       const readme = await registry.readme(name).catch(() => null);
       if (readme !== null) {
         const body: PluginReadmeResponse = { name, readme };
