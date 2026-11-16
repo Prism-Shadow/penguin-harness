@@ -24,36 +24,28 @@
   app-region: no-drag;
 }
 
-/* The app window with a band (`AppShell`'s `band`): the band and every gap around the main column
-   take the navigation column's colour, and the main column is a card inset from the band and the
-   window's right and bottom edges. The colour is laid over the theme's own field rather than in
-   place of it, so a translucent column colour (Frost's milky glass) comes out exactly as it does
-   on the column; the column itself then paints nothing, and draws no edge, since the card's own
-   edge separates the two. With a custom background the image shows through instead, as it does
-   behind the column's glass. Unlayered, like wallpaper.css, so it wins over a theme's recipe for
-   the same columns. */
+/* The app window with a band (`AppShell`'s `band`): the band takes the navigation column's colour
+   and the two read as one surface, laid over the theme's own field rather than in place of it, so
+   a translucent column colour (Frost's milky glass) comes out on the band exactly as it does on
+   the column; the column itself then paints nothing. With a custom background the image shows
+   through instead, as it does behind the column's glass.
+
+   The main column is framed as it is in a browser, by the theme's shell tokens: the same
+   `--ui-shell-gap` and `--ui-shell-radius` a theme pack would set to float it (every built-in
+   theme keeps both at zero), and no corner of the window's own. So it sits flush against the
+   window's right and bottom edges like the navigation column against the left, a scroller's
+   scrollbar reaches the window's corner whole, and the band is ruled off from it by the line that
+   rules it off from the navigation column. Unlayered, like wallpaper.css, so it wins over a
+   theme's recipe for the same columns. */
 .ui-shell[data-window-band]:not([data-wallpaper]) {
   box-shadow: inset 0 0 0 100vmax var(--ui-shell-nav-bg);
 }
 .ui-shell[data-window-band] > [data-slot="nav"] {
-  border-color: transparent;
   background-color: transparent;
-  box-shadow: none;
 }
-.ui-shell[data-window-band] > [data-slot="main"] {
-  margin-block: calc(var(--ui-space-unit) * 1.5);
-  margin-inline: calc(var(--ui-space-unit) * 1.5);
-  border: 1px solid var(--ui-shell-line);
-  border-radius: var(--ui-radius-lg);
-  overflow: clip;
+.ui-shell[data-window-band] > :is([data-slot="main"], [data-slot="dock"]) {
+  border-top: 1px solid var(--ui-shell-line);
 }
-.ui-shell[data-window-band]:not([data-wallpaper]) > [data-slot="main"] {
+.ui-shell[data-window-band]:not([data-wallpaper]) > :is([data-slot="main"], [data-slot="dock"]) {
   background-color: var(--ui-shell-main-bg);
-}
-/* Beside the navigation column the card starts at the column's edge, which is already a gap of
-   the column's colour; below `md` the column is hidden, and the card keeps its gap on that side too. */
-@media (min-width: 48rem) {
-  .ui-shell[data-window-band] > [data-slot="nav"] + [data-slot="main"] {
-    margin-inline-start: 0;
-  }
 }

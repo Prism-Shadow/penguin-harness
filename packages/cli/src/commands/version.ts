@@ -22,7 +22,11 @@ import type { Command } from "commander";
 import { buildInfo, resolveRoot } from "@prismshadow/penguin-core";
 import { versionReport } from "@prismshadow/penguin-server/version-report";
 import type { Messages } from "@prismshadow/penguin-server/cli";
+import { Bind, Component } from "@prismshadow/penguin-core/kernel";
+import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/cli";
 
+/** The node the host located for a key, typed with this package's commander. */
+const node = (command: CliCommandProgram): Command => command as Command;
 export function registerVersionCommand(version: Command, t: Messages): void {
   version
     .option("--json", t.version.json)
@@ -36,4 +40,30 @@ export function registerVersionCommand(version: Command, t: Messages): void {
       const root = options.root !== undefined ? path.resolve(options.root) : resolveRoot();
       process.stdout.write(`${JSON.stringify(await versionReport(root), null, 2)}\n`);
     });
+}
+
+/** `penguin version`. */
+@Component({
+  contributes: {
+    "CliCommandsModule.commands": [
+      {
+        id: "cli.version",
+        key: "version",
+        summary: {
+          en: "Show which build is running",
+          zh: "显示当前运行的是哪个构建",
+        },
+      },
+    ],
+  },
+})
+export class VersionCommand {
+  @Bind("cli.version") command!: CliCommandCode<Messages>;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerVersionCommand(node(command), ctx.messages);
+      },
+    };
+  }
 }
