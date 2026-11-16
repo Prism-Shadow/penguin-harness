@@ -141,14 +141,13 @@ import {
 import type { PricingRates, TieredRates } from "@prismshadow/penguin-library-projects";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Config, Paths } from "../hmr/capabilities.js";
+import type { GroupKeyApplied, ProjectConfigStore } from "@prismshadow/penguin-library-projects";
 import type {
-  GroupKeyApplied,
   ModelPromotion,
   ModelProviderAuthToken,
   ModelProviderAuthTokens,
   ModelPromotions,
-  ProjectConfigStore,
-} from "@prismshadow/penguin-library-projects";
+} from "@prismshadow/penguin-library-models";
 
 export type RawTable = Record<string, unknown>;
 

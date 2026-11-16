@@ -91,7 +91,6 @@ import type {
   ModelPromotion,
   ModelProviderAuthToken,
 } from "@prismshadow/penguin-library-models";
-import { ModelPromotions, ModelProviderAuthTokens, ModelOAuth } from "@prismshadow/penguin-library-models";
 
 
 
@@ -583,16 +582,6 @@ export abstract class ProjectConfigStore {
 }
 
 
-
-/** Per-Project model promotions (web.db `model_promotions`). */
-@Interface()
-
-
-/** Server-side OAuth refresh metadata for provider groups (web.db `model_provider_auth_tokens`). */
-@Interface()
-
-/** ModelOAuth: the mechanism ModelOAuthService implements. */
-@Interface()
 
 /**
  * ProjectEvents: the mechanism ProjectNotifier implements — a user-level event to everyone

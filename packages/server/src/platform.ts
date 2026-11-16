@@ -159,13 +159,12 @@ import {
   Access,
   AgentIndex,
   Members,
-  ModelOAuth,
-  ModelProviderAuthTokens,
   ProjectConfigStore,
   ProjectEvents,
   ProjectLifecycle,
   Projects,
 } from "@prismshadow/penguin-library-projects";
+import { ModelOAuth, ModelProviderAuthTokens } from "@prismshadow/penguin-library-models";
 import {
   AgentState,
   Schedules,

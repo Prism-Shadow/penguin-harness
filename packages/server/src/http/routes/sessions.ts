@@ -152,10 +152,10 @@ import { ArchivedSessionsService } from "../../services/archived-sessions-servic
 import { PreviewTokens } from "./preview.js";
 import type {
   Access,
-  ModelOAuth,
   ProjectConfigStore,
   ProjectEvents,
 } from "@prismshadow/penguin-library-projects";
+import type { ModelOAuth } from "@prismshadow/penguin-library-models";
 import type { PlatformAuth } from "../../services/platform-auth-service.js";
 import type { ModelScopeAuth } from "../../services/modelscope-auth-service.js";
 import type {
