@@ -1,4 +1,5 @@
 /** Public-site chrome and content. Import without the application theme or bundled fonts. */
+@import "./layers.css";
 @import "./cursors.css";
 @import "./site-content.css";
 @import "./site-prose.css";
@@ -60,7 +61,7 @@
   .site-ui-header {
     position: sticky;
     top: 0;
-    z-index: 40;
+    z-index: var(--layer-window-overlay);
     border-bottom: 1px solid var(--site-line);
   }
   .site-ui-brand {
@@ -84,7 +85,7 @@
   }
   .site-ui-nav-link {
     position: relative;
-    z-index: 1;
+    z-index: var(--layer-raised);
     flex-shrink: 0;
     padding: 6px 8px;
     border-radius: 6px;
@@ -99,10 +100,20 @@
   .site-ui-nav-link:hover {
     color: var(--site-ink);
   }
-  .site-ui-nav-link[aria-current="page"] {
+  .site-ui-nav-link[aria-current="page"],
+  .site-ui-nav-link[data-current] {
     background: #000;
     color: #fff;
     box-shadow: 0 0 0 1px var(--site-active-line);
+  }
+  /* A group's trigger in the row: the row's link, with a chevron for the menu it opens. */
+  .site-ui-nav-menu {
+    flex-shrink: 0;
+  }
+  .site-ui-nav-more {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
   }
   .site-ui-highlight {
     position: absolute;
@@ -134,6 +145,22 @@
   }
   .site-ui-mobile-links .site-ui-nav-link:not([aria-current]):hover {
     background: var(--site-hover);
+  }
+  /* A group in the phone menu spans the grid: its name, then its pages set in under it. */
+  .site-ui-mobile-group {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
+  }
+  .site-ui-mobile-group-label {
+    grid-column: 1 / -1;
+    padding: 6px 10px 0;
+    color: var(--site-muted);
+    font-size: 12px;
+  }
+  .site-ui-mobile-group .site-ui-nav-link {
+    margin-left: 12px;
   }
   .site-ui-icon-button,
   .site-ui-language-trigger,
@@ -185,7 +212,8 @@
       grid-template-rows: 0fr;
     }
   }
-  @media (min-width: 768px) {
+  /* The link row needs the room of all its entries; below it the menu button carries them. */
+  @media (min-width: 1024px) {
     .site-ui-desktop-links {
       display: flex;
     }
@@ -202,7 +230,8 @@
   backdrop-filter: blur(8px);
   border-color: var(--site-line);
 }
-.site-ui-language-panel {
+.site-ui-language-panel,
+.site-ui-nav-menu-panel {
   width: 144px;
   border: 1px solid var(--site-line);
   border-radius: 8px;
@@ -210,6 +239,20 @@
   box-shadow:
     0 10px 15px -3px rgb(0 0 0 / 0.1),
     0 4px 6px -4px rgb(0 0 0 / 0.1);
+  backdrop-filter: none;
+  animation: none;
+}
+.site-ui-menu-panel {
+  width: 16rem;
+  padding: 6px;
+  border: 1px solid var(--site-line);
+  border-radius: 8px;
+  background: var(--site-surface);
+  box-shadow:
+    0 10px 15px -3px rgb(0 0 0 / 0.1),
+    0 4px 6px -4px rgb(0 0 0 / 0.1);
+  font-size: 14px;
+  line-height: 20px;
   backdrop-filter: none;
   animation: none;
 }
@@ -224,6 +267,31 @@
 }
 .site-ui-language-check {
   color: var(--site-accent);
+}
+/* A group's menu, as wide as its longest page. */
+.site-ui-nav-menu-panel {
+  width: auto;
+  min-width: 144px;
+}
+.site-ui-nav-menu-item {
+  display: block;
+  padding: 6px 12px;
+  color: var(--site-ink);
+  font-size: 14px;
+  white-space: nowrap;
+  cursor: default;
+  transition: background-color var(--site-dur-fast) ease-out;
+}
+.site-ui-nav-menu-item:hover,
+.site-ui-nav-menu-item[aria-current="page"] {
+  background: var(--site-pill);
+}
+.site-ui-nav-menu-item[aria-current="page"] {
+  font-weight: 500;
+}
+/* Inset, so the panel's own clipping does not cut the ring off. */
+.site-ui .site-ui-nav-menu-item:focus-visible {
+  outline-offset: -3px;
 }
 .site-ui .ui-glyph > [data-set] {
   display: none;

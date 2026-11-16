@@ -19,8 +19,8 @@
  * still opens its own event; its 「新建日程」 hint is lifted back above them, on a line of the
  * cell reserved for it, so a day that already has events still says what its empty space does.
  */
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router";
 import type {
@@ -45,7 +45,6 @@ import {
   Switch,
   Textarea,
   toastAttention,
-  toastError,
   toastSuccess,
   useFormDraft,
   useGuardedClose,
@@ -57,10 +56,10 @@ import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { employeeColor } from "../../lib/category-colors";
-import { toneInk } from "../../lib/tone";
-import type { Tone } from "../../lib/tone";
+import { toneInk, type Tone } from "../../lib/tone";
+
 import { useAuth } from "../../state/auth";
-import { useCompany } from "../../state/company";
+import { useCompany } from "./company-state";
 import { OrgPage, useOrg } from "./org-layout";
 import {
   cadenceOf,
@@ -76,9 +75,14 @@ import {
   toLocalInput,
   viewRange,
   weekDays,
+  type Cadence,
+  type CalendarView,
+  type EventInstance,
+  type GridDay,
 } from "./calendar-geom";
-import type { Cadence, CalendarView, EventInstance, GridDay } from "./calendar-geom";
+
 import { dismissHint, hintKey, isHintDismissed } from "./page-hints";
+import { toastApiError } from "../../lib/toast-api-error";
 
 const OUTCOME_TONE: Record<OrgCalendarOutcome, Tone> = {
   fired: "success",
@@ -135,12 +139,12 @@ const CREATE_SLOT_CLASS =
  * hidden until its own slot is hovered or focused — a chip covering part of the slot takes the
  * pointer itself, so the hint only ever answers for the bare part of a slot.
  *
- * It draws on the top layer (`z-10`), above the chips its own slot lies under, because a slot
+ * It draws on the `raised` layer, above the chips its own slot lies under, because a slot
  * with events in it is exactly where the hint was needed and exactly where it used to be
  * covered. That it never intercepts a click is `pointer-events-none`, not the stacking order:
  * a click anywhere over the hint still reaches whatever is under it.
  *
- * The call site positions it — and so has to position it, since `z-10` only applies to a
+ * The call site positions it — and so has to position it, since a layer only applies to a
  * positioned element — and says how it stays readable over what it now covers: a month cell
  * reserves its last line for it, an hour row centres it over the chips on a translucent
  * backdrop.
@@ -148,7 +152,7 @@ const CREATE_SLOT_CLASS =
 function CreateSlotHint({ className = "" }: { className?: string }) {
   return (
     <span
-      className={`pointer-events-none z-10 inline-flex items-center ${ICON_GAP.tight} text-xs leading-4 text-gray-500 opacity-0 transition-opacity duration-150 group-hover/slot:opacity-100 group-focus-visible/slot:opacity-100 dark:text-gray-400 ${className}`}
+      className={`pointer-events-none z-raised inline-flex items-center ${ICON_GAP.tight} text-xs leading-4 text-gray-500 opacity-0 transition-opacity duration-150 group-hover/slot:opacity-100 group-focus-visible/slot:opacity-100 dark:text-gray-400 ${className}`}
     >
       <GlyphIcon d={ICONS.plus} size={ICON_SIZE.inlineGlyph} />
       {S.company.calendar.create}
@@ -333,7 +337,7 @@ export function CalendarPage() {
       void load();
       return true;
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
       return false;
     } finally {
       setBusy(false);
@@ -349,7 +353,7 @@ export function CalendarPage() {
       setOpened(null);
       void load();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
     }
@@ -361,7 +365,7 @@ export function CalendarPage() {
       const desk = await api.getOrgDesk(projectId, orgId, agentId);
       navigate(`/chat/${desk.sessionId}`);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     }
   };
 
@@ -572,7 +576,7 @@ export function CalendarPage() {
         {isToday && (
           <div
             aria-hidden
-            className="pointer-events-none absolute inset-x-0 z-10 flex items-center"
+            className="pointer-events-none absolute inset-x-0 z-raised flex items-center"
             style={{ top: dayFraction(now) * HOUR_PX * 24 - 1 }}
           >
             <span className="-ml-1 h-2 w-2 rounded-full bg-accent" />
@@ -1133,7 +1137,7 @@ function DayOverflow({
               left: position.left,
               width: DAY_PANEL_WIDTH,
             }}
-            className="anim-pop z-[60] flex max-h-[70vh] max-w-[calc(100vw-2rem)] flex-col rounded-md border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900"
+            className="anim-pop z-popover flex max-h-[70vh] max-w-[calc(100vw-2rem)] flex-col rounded-md border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900"
           >
             <div className="flex items-center justify-between gap-2 border-b border-gray-100 px-2 py-1.5 dark:border-gray-800">
               <span className="truncate text-xs font-medium tabular-nums text-gray-700 dark:text-gray-200">

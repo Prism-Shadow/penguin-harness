@@ -64,10 +64,10 @@ export class ImportSourceNotFoundError extends Error {
   }
 }
 
-export function listImportSources(
+export async function listImportSources(
   env: ImportEnv = systemImportEnv(),
-): BuiltinBrowserImportSource[] {
-  return discoverProfiles(env).map((profile) => profile.source);
+): Promise<BuiltinBrowserImportSource[]> {
+  return (await discoverProfiles(env)).map((profile) => profile.source);
 }
 
 export async function readCookies(
@@ -75,7 +75,7 @@ export async function readCookies(
   opts: { domains?: string[] },
   env: ImportEnv = systemImportEnv(),
 ): Promise<CookieReadResult> {
-  const profile = requireProfile(source, env);
+  const profile = await requireProfile(source, env);
   const domains = normalizeDomains(opts.domains);
   return profile.source.browser === "firefox"
     ? readFirefoxCookies(profile, domains, env)
@@ -86,15 +86,18 @@ export async function readHistory(
   source: BuiltinBrowserImportSource,
   env: ImportEnv = systemImportEnv(),
 ): Promise<HistoryReadResult> {
-  return readProfileHistory(requireProfile(source, env), env);
+  return readProfileHistory(await requireProfile(source, env), env);
 }
 
 /**
  * The source's profile as discovered now: its files are located again rather than taken from
  * the caller, so a source can only ever name a profile discovery would list.
  */
-function requireProfile(source: BuiltinBrowserImportSource, env: ImportEnv): DiscoveredProfile {
-  const profile = findProfile(source.id, env);
+async function requireProfile(
+  source: BuiltinBrowserImportSource,
+  env: ImportEnv,
+): Promise<DiscoveredProfile> {
+  const profile = await findProfile(source.id, env);
   if (profile === undefined) throw new ImportSourceNotFoundError(source.id);
   return profile;
 }

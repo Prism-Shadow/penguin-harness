@@ -56,7 +56,7 @@ export function Scenarios() {
                 // Cards are 92% wide in a shared cell: the front one holds the left
                 // edge; the covered one shifts its own 8.7% (= the container's 8%)
                 // so exactly that strip peeks past the front card's right edge.
-                className={`col-start-1 row-start-1 w-[92%] overflow-hidden rounded-2xl border bg-white transition-all duration-500 dark:bg-gray-900 ${
+                className={`col-start-1 row-start-1 w-[92%] overflow-hidden rounded-2xl border bg-white transition-[translate,scale,opacity] duration-300 ease-out dark:bg-gray-900 ${
                   front
                     ? "z-10 translate-x-0 border-gray-200 opacity-100 dark:border-gray-800"
                     : "z-0 translate-x-[8.7%] scale-[0.96] cursor-default border-gray-200/70 opacity-60 dark:border-gray-800/70"
@@ -71,7 +71,7 @@ export function Scenarios() {
                   />
                   <figcaption className="p-5 sm:p-7 md:flex md:flex-1 md:flex-col md:justify-center md:p-12">
                     <h3 className="text-xl font-semibold sm:text-2xl">{c.title}</h3>
-                    <p className="mt-4 text-[15px] leading-7 text-gray-600 dark:text-gray-400">
+                    <p className="mt-4 text-base leading-7 text-gray-600 dark:text-gray-400">
                       {c.body}
                     </p>
                   </figcaption>
@@ -90,7 +90,7 @@ export function Scenarios() {
               aria-label={c.title}
               aria-current={i === active}
               onClick={() => setActive(i)}
-              className={`h-1.5 rounded-full transition-all duration-300 ${
+              className={`h-1.5 rounded-full transition-[width,background-color] duration-200 ${
                 i === active
                   ? "w-6 bg-gray-800 dark:bg-gray-200"
                   : "w-3 bg-gray-300 hover:bg-gray-400 dark:bg-gray-700 dark:hover:bg-gray-500"

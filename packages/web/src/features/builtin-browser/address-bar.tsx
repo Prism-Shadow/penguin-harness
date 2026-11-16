@@ -10,8 +10,15 @@
  * The list is portaled at viewport coordinates, above the page it hangs over — a `<webview>`
  * is a layer of its own, and an in-flow list would be drawn under it.
  */
-import { useEffect, useId, useRef, useState } from "react";
-import type { KeyboardEvent as ReactKeyboardEvent, Ref } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type Ref,
+} from "react";
+
 import { createPortal } from "react-dom";
 import type { BuiltinBrowserHistoryEntry } from "@prismshadow/penguin-server/api";
 import { noAutofill, sizeTextClass } from "@prismshadow/penguin-ui";
@@ -195,7 +202,7 @@ export function AddressBar({
               left: anchor.left,
               width: anchor.width,
             }}
-            className="anim-pop z-[60] max-h-80 overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
+            className="anim-pop z-popover max-h-80 overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
           >
             {suggestions.map((entry, index) => (
               <li

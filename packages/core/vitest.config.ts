@@ -29,6 +29,9 @@
  * individual test costs nothing when everything passes and rescues the runs that would
  * otherwise be re-triggered by hand; a real regression fails all three attempts. POSIX
  * keeps 0 so a flake introduced there is seen the first time.
+ *
+ * `setupFiles`: core has no plugin library of its own (test/setup/library-host.ts names an
+ * empty one for every test file).
  */
 import { defineConfig } from "vitest/config";
 
@@ -37,6 +40,7 @@ export default defineConfig({
     environment: "node",
     testTimeout: process.platform === "win32" ? 120_000 : 5_000,
     retry: process.platform === "win32" ? 2 : process.platform === "darwin" ? 1 : 0,
+    setupFiles: ["test/setup/library-host.ts"],
     coverage: { provider: "v8", include: ["src/**"] },
   },
 });

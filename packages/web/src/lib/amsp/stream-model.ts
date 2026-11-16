@@ -37,7 +37,7 @@
  *     segmentation; the request's thinking and the summary's own text (live
  *     partial_thinking / partial_text fragments, or the span's complete thinking
  *     and assistant text on rebuild) accumulate onto the running compaction
- *     banner instead (issue #290);
+ *     banner instead (issue #290), and its tool calls become cards on it (CompactionItem.work);
  *     user text prefixed with `[context_summary]` is a compaction-summary
  *     injection, treated as internal input (not rendered, doesn't start a new Task).
  *   - Task segmentation: a complete text/image message on the main
@@ -96,10 +96,16 @@ import {
   resetTaskCounters,
   trackMainUsage,
   trackSubagentUsage,
+  type TaskStats,
+  type TaskStatsTracker,
 } from "./task-stats";
-import type { TaskStats, TaskStatsTracker } from "./task-stats";
-import { classifyMemoryPath, mergeMemoryChanges } from "./memory-changes";
-import type { MemoryChangeEntry, MemoryChangeRow } from "./memory-changes";
+
+import {
+  classifyMemoryPath,
+  mergeMemoryChanges,
+  type MemoryChangeEntry,
+  type MemoryChangeRow,
+} from "./memory-changes";
 
 // ---------------------------------------------------------------------------
 // View model types
@@ -300,13 +306,25 @@ export interface AbortItem {
  * A run-ending LLM failure, from a `request_end` with status `fatal` (an LLM failure
  * produces no abort event — the request_end is its terminal record).
  */
-export interface LlmErrorItem {
+export interface LlmErrorItem extends RequestFailureFacts {
   kind: "llm_error";
   id: number;
   /** Machine-readable cause (request_end.error_code). */
   errorCode?: string;
-  /** The provider's own error text (request_end.error_message), shown verbatim. */
+  /** The provider's own error text (request_end.error_message), shown in the failure details. */
   errorMessage?: string;
+  /** The request's ordinal within its retry run (request_end.attempt); absent on a first try and in old Traces. */
+  attempt?: number;
+}
+
+/**
+ * What a failed request's details report beyond its record, read from the records around it:
+ * the model its context was opened on (`StreamModel.contextModel` when the request ended; absent
+ * when no `session_meta` had said which yet) and when it ended (the request_end's timestamp).
+ */
+export interface RequestFailureFacts {
+  model?: { provider: string; modelId: string };
+  atMs?: number;
 }
 
 /** `retryable` is the live protocol; failed/timeout/malformed are legacy Trace spellings kept for replay. */
@@ -319,7 +337,7 @@ function isReconnectStatus(status: string | undefined): status is ReconnectStatu
 }
 
 /** An LLM Request ending retryable → the engine retries carrying the content already produced. */
-export interface ReconnectItem {
+export interface ReconnectItem extends RequestFailureFacts {
   kind: "reconnect";
   id: number;
   /** Trigger status (legacy Traces carry the finer pre-convergence spellings). */
@@ -332,7 +350,7 @@ export interface ReconnectItem {
   gaveUp?: boolean;
   /** Machine-readable cause (request_end.error_code); the cause wording localizes from it. */
   errorCode?: string;
-  /** The final failure's detail (request_end.error_message), rendered in the gave-up state. */
+  /** The latest failure's detail (request_end.error_message), shown in the failure details. */
   errorMessage?: string;
   /**
    * The engine's planned wait before the next attempt (request_end.retry_in_ms; absent
@@ -358,6 +376,8 @@ export interface CompactionItem {
   /** True between begin and end (renders a "compaction in progress" banner). */
   running: boolean;
   status?: StopReason;
+  /** compaction_end.error_code; either half of the pair on a `completed` end: no full summary (compactionDegraded). */
+  errorCode?: string;
   /** Last failure detail from compaction_end.error_message (its share of the RetryDetail block; present on failed ends from new cores). */
   errorMessage?: string;
   /** The begin message's timestamp (ms); ticks the running row and anchors durationMs. */
@@ -370,8 +390,16 @@ export interface CompactionItem {
    * replay from the span's complete assistant text — the banner shows the summary being
    * written and keeps it readable after a reload. Raw model output (summary tags included;
    * the banner strips them for display); absent when nothing streamed (e.g. discard mode).
+   * Each of the span's requests starts it over (only the last one's text is the summary), and
+   * an end carrying the error pair drops it: that draft is not what the next context opened with.
    */
   summaryText?: string;
+  /**
+   * The compaction's tool calls, run or refused, one transcript tool card each (registered in
+   * `toolCards`, so an approval finds it): never transcript items nor the Task's tool time, and
+   * dropped with the drafts when the compaction does not complete.
+   */
+  work?: ToolCallItem[];
   /**
    * Raw text of the thinking the compaction request produced ahead of its summary:
    * accumulated live from the span's own partial_thinking fragments, and rebuilt identically
@@ -397,8 +425,8 @@ export interface CompactionItem {
    * the complete message's own time settles it — the ThinkingItem convention (see
    * `settleThinkingDuration`), so a reload lands within a message hop of the live numbers.
    *
-   * A retried compaction concatenates every attempt into one draft (`thinkingText` and
-   * `summaryText` both), so a start is recorded once and a later stop only extends the settled
+   * A compaction of several requests concatenates their thinking into one draft (`summaryText`
+   * starts over instead), so a start is recorded once and a later stop only extends the settled
    * value: the wall time covers the whole span that produced the prose on screen, the failed
    * attempts and the gaps between them included. Timing the last attempt alone would print a
    * short number against text it did not write.
@@ -797,7 +825,9 @@ export function pushMessage(model: StreamModel, msg: AmspRecord, nowMs: number =
     // reads the identical content back from the span's complete thinking and assistant text
     // — both accumulate onto the running banner, so a reload shows the same text the live
     // viewer watched being written.
-    if (model.stats.compactionActive) {
+    // A tool round's records take the transcript's path below.
+    const type = (msg.payload as { type?: string }).type ?? "";
+    if (model.stats.compactionActive && !/^(partial_)?tool_call(_output)?$/.test(type)) {
       touchTask(model, msg.timestamp);
       const tsMs = tsOf(msg.timestamp);
       if (isPartialPayload(msg.payload)) {
@@ -1629,7 +1659,7 @@ function handleComplete(
       settleToolDuration(card, tsOf(timestamp), model.stats);
       // This turn owes the model its results, so a compaction triggering now is mid-Task
       // and the round is not over (see turnToolOutputs).
-      model.turnToolOutputs = true;
+      if (!model.stats.compactionActive) model.turnToolOutputs = true;
       return;
     }
     // inline_data / inline_thinking: same convention as the CLI's history rendering — not shown for now.
@@ -1733,7 +1763,7 @@ function settleToolDuration(
   // The execution half alone feeds the session's tool wall time: the generation half above is
   // the model streaming arguments and is already inside taskLlmMs. Settling twice (a streamed
   // stop, then the complete message) is harmless — the intervals are unioned, not summed.
-  if (stats) addToolExecution(stats, execStart, endMs);
+  if (stats && !stats.compactionActive) addToolExecution(stats, execStart, endMs);
 }
 
 /**
@@ -1786,7 +1816,10 @@ function createToolCard(
     }
   }
   model.toolCards.set(init.toolCallId, item);
-  model.items.push(item);
+  // A compaction's tool round goes on its banner (CompactionItem.work), not the transcript.
+  const banner = model.stats.compactionActive ? findLastRunningCompaction(model) : null;
+  if (banner) (banner.work ??= []).push(item);
+  else model.items.push(item);
   return item;
 }
 
@@ -1916,24 +1949,40 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
     case "compaction_end": {
       // status decides whether context usage is cleared: when not completed, the original context is kept (see endCompaction).
       endCompaction(model.stats, p.status);
+      // A refused request announced a resend at once and its hand-off then could not open the
+      // next context: that resend will never go out, so the retry line waiting on it settles.
+      if (p.status === "fatal") {
+        const waiting = findLastWaitingReconnect(model);
+        if (waiting) waiting.gaveUp = true;
+      }
+      const degraded =
+        p.status === "completed" && (p.error_code !== undefined || p.error_message !== undefined);
       const item = findLastRunningCompaction(model);
       if (item) {
         item.running = false;
         item.status = p.status;
+        if (p.error_code !== undefined) item.errorCode = p.error_code;
         if (p.error_message !== undefined) item.errorMessage = p.error_message;
         if (tsMs !== undefined && item.beginTsMs !== undefined) {
           item.durationMs = Math.max(0, tsMs - item.beginTsMs);
+        }
+        if (degraded) {
+          delete item.summaryText;
+          delete item.summaryStartedAtMs;
         }
         // The result section runs for as long as the row does, so its wall time ends here too.
         if (tsMs !== undefined && item.summaryStartedAtMs !== undefined) {
           item.summaryDurationMs = Math.max(0, tsMs - item.summaryStartedAtMs);
         }
+        // A call card that never got its output will not get one now.
+        for (const card of item.work ?? []) if (!card.outputComplete) settleUnfinishedCard(card);
         // A compaction that did not complete produced no summary — only a half-written
         // draft that was never adopted (a user quitting mid-compaction is the common case,
         // closed as `failed` when the session next loads). Discard it, and the thinking that
         // led to it, rather than leave a truncated summary on screen implying the context
         // was replaced by it.
         if (p.status !== "completed") {
+          delete item.work;
           delete item.summaryText;
           delete item.thinkingText;
           delete item.thinkingStreaming;
@@ -1956,6 +2005,7 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
           mode: p.mode,
           running: false,
           status: p.status,
+          ...(p.error_code !== undefined ? { errorCode: p.error_code } : {}),
           ...(p.error_message !== undefined ? { errorMessage: p.error_message } : {}),
         };
         model.items.push(created);
@@ -1963,6 +2013,16 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       return;
     }
     case "request_begin": {
+      // A compaction's request starts its summary over (CompactionItem.summaryText); it is
+      // neither timed nor the resend a waiting reconnect hint announced.
+      if (model.stats.compactionActive) {
+        const item = findLastRunningCompaction(model);
+        if (item) {
+          delete item.summaryText;
+          delete item.summaryStartedAtMs;
+        }
+        return;
+      }
       // A retry request was sent: mark the waiting reconnect hint as resent (a no-op when there's no such item before a normal first request).
       const waiting = findLastWaitingReconnect(model);
       if (waiting) waiting.retrying = true;
@@ -1981,9 +2041,12 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       // produced, rendering a retry hint (with the attempt number); the terminal
       // statuses aren't rendered (Request duration is covered by Trace performance
       // analysis) and reset the consecutive-failure count. request events
-      // within a compaction range (only visible during history rebuild)
+      // within a compaction range (a call one cut short settles as in a turn)
       // are neither rendered nor counted — the compaction process only exposes the compaction event pair to the Human.
-      if (model.stats.compactionActive) return;
+      if (model.stats.compactionActive) {
+        settleCutShortCalls(model, p.status === "completed");
+        return;
+      }
       // Pairs with request_begin to compute this Request's wall-clock
       // duration, deducts the human approval wait, and adds the result to
       // this Task's LLM time (for output TPS) — this duration includes tool
@@ -2016,11 +2079,16 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       // A fatal end stops the run — no abort event follows; this request_end is the
       // terminal record, rendered as an error banner.
       if (p.status === "fatal") {
-        const item: LlmErrorItem = { kind: "llm_error", id: nextId(model) };
+        const item: LlmErrorItem = {
+          kind: "llm_error",
+          id: nextId(model),
+          ...failureFacts(model, tsMs),
+        };
         if (typeof p.error_code === "string") item.errorCode = p.error_code;
         if (typeof p.error_message === "string" && p.error_message) {
           item.errorMessage = p.error_message;
         }
+        if (typeof p.attempt === "number") item.attempt = p.attempt;
         model.items.push(item);
         return;
       }
@@ -2035,6 +2103,7 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
           // Traces written before the field existed lack it (rendered as attempt 1).
           attempt: p.attempt ?? 1,
           retrying: false,
+          ...failureFacts(model, tsMs),
         };
         if (typeof p.error_code === "string") item.errorCode = p.error_code;
         if (typeof p.error_message === "string" && p.error_message) {
@@ -2071,6 +2140,15 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       return;
     }
   }
+}
+
+/** The model the running context was opened on and the record's time, for a failed request's details. */
+function failureFacts(model: StreamModel, tsMs: number | undefined): RequestFailureFacts {
+  const held = model.contextModel;
+  return {
+    ...(held !== null ? { model: { provider: held.provider, modelId: held.modelId } } : {}),
+    ...(tsMs !== undefined ? { atMs: tsMs } : {}),
+  };
 }
 
 function findLastRunningMcpConnect(model: StreamModel): McpConnectItem | null {
@@ -2575,5 +2653,15 @@ export function discardFragmentFor(model: StreamModel, msg: AmspRecord): void {
 
 function removeItem(model: StreamModel, item: ChatItem): void {
   const idx = model.items.indexOf(item);
-  if (idx >= 0) model.items.splice(idx, 1);
+  if (idx >= 0) {
+    model.items.splice(idx, 1);
+    return;
+  }
+  // A compaction's work card lives in its banner, not the transcript.
+  if (item.kind !== "tool_call") return;
+  for (const it of model.items) {
+    if (it.kind !== "compaction" || !it.work) continue;
+    const at = it.work.indexOf(item);
+    if (at >= 0) it.work.splice(at, 1);
+  }
 }

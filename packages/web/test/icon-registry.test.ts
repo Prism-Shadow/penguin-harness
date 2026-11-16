@@ -30,15 +30,17 @@ const SCAN = scanSources([".ts", ".tsx"]);
 
 /**
  * Files whose drawings are not registry glyphs, by repo-relative id: the small marks drawn as
- * components on grids and stroke weights of their own, the provider logos, and the icon sets —
- * a registry glyph's other drawings (its Octicon, its pixel grid, its duotone body), keyed by
- * the glyph's name and never drawn on their own.
+ * components on grids and stroke weights of their own, the provider logos, the Agent mascot
+ * (filled character art, one drawing per theme), and the icon sets — a registry glyph's other
+ * drawings (its Octicon, its pixel grid, its duotone body), keyed by the glyph's name and never
+ * drawn on their own.
  */
 const OWN_DRAWINGS: ReadonlySet<string> = new Set([
   "packages/ui/src/components/icons/marks/marks.tsx",
   "packages/ui/src/components/icons/chevron/chevron.tsx",
   "packages/ui/src/components/icons/logos/provider-logo.tsx",
   "packages/ui/src/components/icons/logos/github-logo.tsx",
+  "packages/ui/src/components/icons/avatars/agent-avatar-variants.tsx",
   "packages/ui/src/components/icons/sets/octicons.ts",
   "packages/ui/src/components/icons/sets/pixel.ts",
   "packages/ui/src/components/icons/sets/duotone.ts",

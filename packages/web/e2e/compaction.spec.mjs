@@ -13,8 +13,8 @@
  * `compaction.max_context_length` is pinned between "below the first request" and "above the
  * second request (which carries the tool result)", so compaction happens once, at the end of
  * the round. The threshold is set on the **Agent config** rather than derived from the model's
- * context window: the engine's window-derived cap (`context_window - 2048`, and windows under
- * 4096 are ignored as implausible) cannot express a threshold this small.
+ * context window: the engine's window-derived cap (`context_window - compactionReserve(window)`,
+ * and windows under 4096 are ignored as implausible) cannot express a threshold this small.
  */
 import { test, expect } from "@playwright/test";
 import { provisionAndLogin } from "./auth.mjs";

@@ -36,18 +36,17 @@ import {
   Skeleton,
   Spinner,
   TransferProgress,
-  toastError,
   useCountdown,
   useElapsedPast,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
 import { transferAmount } from "../../lib/history/transfer-amount";
 import { machineForSession } from "../../lib/session-machines";
 import { S } from "../../lib/strings";
 import { useMachines } from "../../state/machines";
 import { retryStatus } from "../machines/machine-card";
 import { machineAway } from "./machine-away";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** How long a read may take before its progress replaces the skeleton. */
 const SKELETON_MS = 1_000;
@@ -182,7 +181,7 @@ export function HistoryLoading({
     try {
       machines.accept(await send(projectId, entry.id));
     } catch (err) {
-      toastError(apiErrorText(err));
+      toastApiError(err);
       throw err;
     }
   };

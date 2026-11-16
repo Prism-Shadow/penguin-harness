@@ -17,8 +17,13 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { encode } from "uqr";
 import type { QQBindingInfo, QQScanPollResponse } from "@prismshadow/penguin-server/api";
 import { ApiError } from "../src/api/client";
-import { QQScanConnect, QrCode, qqScanStep } from "../src/features/messaging/qq-scan-connect";
-import type { QQScanTally } from "../src/features/messaging/qq-scan-connect";
+import {
+  QQScanConnect,
+  QrCode,
+  qqScanStep,
+  type QQScanTally,
+} from "../src/features/messaging/qq-scan-connect";
+
 import { S } from "../src/lib/strings";
 
 const QR_URL = "https://q.qq.com/qqbot/openclaw/connect.html?task_id=t-1&source=&_wv=2";

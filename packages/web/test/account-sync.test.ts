@@ -9,7 +9,8 @@
  *   not hold leaves the cache, which reads as the default — except a field with an edit the
  *   account has not acknowledged, which keeps the cached value and goes up again. The cached
  *   image is fetched only when its id is not the account's, and dropped when the account has
- *   none.
+ *   none. A theme id this build does not ship is cached as the account holds it and reads as the
+ *   initial theme.
  * - A cached draft key maps to the account's `<kind>:<id>` key and back for every kind, a user
  *   named "session" included; another user's key maps to nothing.
  * - Given a first sign-in, cached drafts the account lacks go up, except form answers (their keys
@@ -19,7 +20,10 @@
  * - Signed in: an edit is cached at once and reaches the account after the debounce; one whose
  *   send failed stays pending across a reload and wins over the account's older value at the next
  *   sign-in.
+ * - At sign-in the server's imported theme packs are cached beside the preferences, so the
+ *   account's choice of one reads as that pack; a read that fails leaves the last list cached.
  */
+import { INITIAL_THEME_ID } from "@prismshadow/penguin-ui";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { writeCached } from "../src/lib/account-sync/cache";
 import { accountKeyOf, cacheKeyOf, planDrafts } from "../src/lib/account-sync/drafts";
@@ -32,6 +36,8 @@ import {
   stopAccountSync,
   syncPendingKey,
 } from "../src/lib/account-sync/sync";
+import { resetReadStores } from "../src/lib/read-store";
+import { readThemePrefs } from "../src/state/theme-prefs";
 import { apiError, json, stubFetch } from "./helpers/fetch";
 import { memoryStorage, stubLocalStorage } from "./helpers/storage";
 
@@ -73,6 +79,23 @@ describe("reading the account's preferences into the cache", () => {
     ]);
     expect(plan.upload).toEqual(["lang"]);
     expect(plan.image).toBe("fetch");
+  });
+
+  it("caches a theme this build does not ship as the account holds it, and paints the initial theme", () => {
+    // A pack another build of the server imported, or one since removed: the account's choice is
+    // cached as it is, so it survives this browser, and reading it falls back without a write.
+    const storage = cached();
+    const plan = planPrefs({ themeId: "sakura" }, storage, {
+      importing: false,
+      pending: new Set(),
+    });
+    expect(plan.cache).toContainEqual(["penguin.themeId", "sakura"]);
+    for (const [key, value] of plan.cache) {
+      if (value === null) storage.removeItem(key);
+      else storage.setItem(key, value);
+    }
+    expect(readThemePrefs(storage).themeId).toBe(INITIAL_THEME_ID);
+    expect(storage.getItem("penguin.themeId")).toBe("sakura");
   });
 
   it("fetches the image only when it is not the cached one, and drops it when the account has none", () => {
@@ -191,5 +214,53 @@ describe("carrying edits to the account", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(prefs.themeId).toBe("geek");
     expect(store.getItem(syncPendingKey("ann"))).toBeNull();
+  });
+});
+
+describe("the server's theme packs at sign-in", () => {
+  afterEach(() => {
+    stopAccountSync();
+    resetReadStores();
+  });
+
+  const PAPER = {
+    id: "paper",
+    names: { zh: "纸页", en: "Paper" },
+    version: "1.0.0",
+    api: 1,
+    base: "modern",
+    modes: ["light", "dark"],
+    swatches: {
+      light: { canvas: "#f6f1e7", ink: "#2b2521", accent: "#2b2521" },
+      dark: { canvas: "#1c1a17", ink: "#ece4d6", accent: "#ece4d6" },
+    },
+    accent: { own: { light: "#2b2521", dark: "#ece4d6" }, presets: [] },
+    fonts: { sans: "MiSans", ui: "MiSans", mono: "MiSans", cjk: "MiSans", display: "MiSans" },
+    href: "/api/themes/paper/files/index.css?v=5e1f0c2a",
+    v: "5e1f0c2a",
+  };
+
+  it("caches the list beside the account's choice, and keeps the last list when a read fails", async () => {
+    const store = stubLocalStorage(memoryStorage({ [PREFS_IMPORTED_KEY]: "1" }));
+    let down = false;
+    stubFetch((req) => {
+      if (req.path === "/api/me/prefs") return json({ prefs: { themeId: "paper" } });
+      if (req.path === "/api/me/drafts") return json({ drafts: {} });
+      if (req.path === "/api/themes")
+        return down ? apiError(503, "unavailable") : json({ themes: [PAPER] });
+      return apiError(404, "not_found");
+    });
+
+    await startAccountSync("ann");
+    expect(JSON.parse(store.getItem("penguin.themePacks")!)).toEqual([PAPER]);
+    expect(readThemePrefs(store).themeId).toBe("paper");
+
+    // The next page load, with the server's list out of reach.
+    stopAccountSync();
+    resetReadStores();
+    down = true;
+    await startAccountSync("ann");
+    expect(JSON.parse(store.getItem("penguin.themePacks")!)).toEqual([PAPER]);
+    expect(readThemePrefs(store).themeId).toBe("paper");
   });
 });

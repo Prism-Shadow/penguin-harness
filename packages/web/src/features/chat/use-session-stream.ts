@@ -109,6 +109,8 @@ export interface SessionStreamState {
   resolveApproval: (key: string) => void;
   /** History load failure message (paired with retry to show a retry entry point). */
   error: string | null;
+  /** What the failed load threw, for judging whether it is a defect worth a report; null with no failure. */
+  errorCause: unknown;
   /** Re-fetch history (only meaningful after a load failure). */
   retry: () => void;
   /**
@@ -135,6 +137,7 @@ const IDLE_OLDER: OlderHistoryState = {
   hasMore: false,
   loading: false,
   error: null,
+  errorCause: null,
   beyondTail: false,
 };
 const NO_TRANSFER: HistoryTransfer = { window: null, older: null, fill: null };
@@ -153,7 +156,12 @@ export function useSessionStream(
   const [returnedSteering, setReturnedSteering] = useState<PendingSteeringInfo[]>([]);
   const [pendingFollowUps, setPendingFollowUps] = useState<PendingFollowUpInfo[]>([]);
   const [subagents, setSubagents] = useState<SubagentRuntimeInfo[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setErrorText] = useState<string | null>(null);
+  const [errorCause, setErrorCause] = useState<unknown>(null);
+  const setError = useCallback((message: string | null, cause?: unknown) => {
+    setErrorText(message);
+    setErrorCause(message === null ? null : (cause ?? null));
+  }, []);
   const [pendingTick, setPendingTick] = useState(0);
   const [goal, setGoal] = useState<GoalBannerState | null>(null);
   const [describes, setDescribes] = useState<string | null>(sessionId);
@@ -401,6 +409,7 @@ export function useSessionStream(
     markLocalDecision,
     resolveApproval,
     error,
+    errorCause,
     retry,
     transfer,
     retryNow,

@@ -34,22 +34,22 @@ import {
   UserAvatar,
   menuPanelClass,
   noAutofill,
-  toastError,
   toastSuccess,
   usePortalPanel,
+  type AvatarStackItem,
 } from "@prismshadow/penguin-ui";
-import type { AvatarStackItem } from "@prismshadow/penguin-ui";
+
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { useProject } from "../../state/project";
 import { Truncated } from "../../components/ui/truncated";
-import { EmployeeAvatar, FACE_PX } from "./employee-avatar";
+import { EmployeeAvatar, FACE_PX, useEmployeeAvatarSrc } from "./employee-avatar";
 import { ChannelTextDialog } from "./channel-dialogs";
 import { channelGlyph } from "./channel-sidebar";
-import { channelLabel, inviteCandidates, isAllHands } from "./channel-list";
-import type { InviteCandidate } from "./channel-list";
+import { channelLabel, inviteCandidates, isAllHands, type InviteCandidate } from "./channel-list";
+
 import { parsePrincipal } from "./principals";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** Opening a desk session (the open door): the member popover's employee rows, and the org chart's node menu. */
 export const DESK_ICON = ICONS.doorOpen;
@@ -77,9 +77,7 @@ function MemberAvatar({ member, size }: { member: OrgChannelMember; size: number
   if (item.kind === "user") {
     return <UserAvatar userId={item.id} displayName={item.name} size={size} />;
   }
-  return (
-    <EmployeeAvatar id={item.id} name={item.name} size={size} className="shrink-0 rounded-md" />
-  );
+  return <EmployeeAvatar id={item.id} size={size} className="shrink-0 rounded-md" />;
 }
 
 /** The member list: who is in the channel, with an employee's desk session one click away. */
@@ -95,6 +93,7 @@ function MemberPopover({
   openingDesk: string | null;
 }) {
   const [open, setOpen] = useState(false);
+  const pictureOf = useEmployeeAvatarSrc();
   const { triggerRef, panelRef, position } = usePortalPanel({
     open,
     onClose: () => setOpen(false),
@@ -116,7 +115,11 @@ function MemberPopover({
       >
         {/* The first few only: the count beside the stack already says how many there are. */}
         <AvatarStack
-          items={members.slice(0, AVATAR_STACK).map(memberAvatarItem)}
+          items={members.slice(0, AVATAR_STACK).map((member) => {
+            const item = memberAvatarItem(member);
+            const src = item.kind === "user" ? undefined : pictureOf(item.id);
+            return src === undefined ? item : { ...item, src };
+          })}
           size={ICON_SIZE.groupHeaderAvatar}
         />
         <span className="tabular-nums">{S.company.channels.memberCount(members.length)}</span>
@@ -135,7 +138,7 @@ function MemberPopover({
               left: position.left,
               width: PANEL_WIDTH,
             }}
-            className={`${menuPanelClass} z-[60] max-h-[60vh]`}
+            className={`${menuPanelClass} z-popover max-h-[60vh]`}
           >
             {members.length === 0 ? (
               <p className="px-2.5 py-1.5 text-xs text-gray-400 dark:text-gray-500">
@@ -315,7 +318,7 @@ export function ChannelHeader({
       setCurrentAgentId(agentId);
       navigate(`/chat/${desk.sessionId}`);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setOpeningDesk(null);
     }
@@ -330,7 +333,7 @@ export function ChannelHeader({
       toastSuccess(S.company.channels.invited(candidate.name));
       onChanged();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
     }
@@ -344,7 +347,7 @@ export function ChannelHeader({
       toastSuccess(S.company.channels.left);
       onChanged();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
     }
@@ -358,7 +361,7 @@ export function ChannelHeader({
       toastSuccess(archived ? S.company.channels.archived : S.company.channels.unarchived);
       onChanged();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
     }

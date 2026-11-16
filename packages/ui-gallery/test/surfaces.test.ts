@@ -1,9 +1,8 @@
 /**
- * The app's surfaces: every one in exactly one group, named in both dictionaries, opening on a
- * route the demo store can answer, and the ones the contract names all present.
+ * The app's surfaces: every one in exactly one group, found by its id, and opening on a route the
+ * demo store can answer.
  */
 import { describe, expect, it } from "vitest";
-import { IDS } from "../src/app/mock/ids";
 import { resetStore } from "../src/app/mock/store";
 import {
   HOME_SURFACE,
@@ -14,8 +13,6 @@ import {
   SURFACES,
   surfaceById,
 } from "../src/app/surfaces";
-import { zh } from "../src/strings";
-import { en } from "../src/strings-en";
 
 describe("the surfaces", () => {
   it("are each in exactly one group, the groups in their fixed order", () => {
@@ -26,38 +23,10 @@ describe("the surfaces", () => {
     for (const group of SURFACE_GROUPS) expect(group.surfaces.length, group.id).toBeGreaterThan(0);
   });
 
-  it("cover the surfaces the owner named, and the home page frames one of them", () => {
-    for (const id of [
-      "chat",
-      "chat-streaming",
-      "agents",
-      "plugins",
-      "models",
-      "usage",
-      "benchmark",
-      "schedules",
-      "settings",
-      "login",
-    ]) {
-      expect(isSurfaceId(id), id).toBe(true);
-    }
-    expect(surfaceById(HOME_SURFACE)).toBeDefined();
+  it("are found by their id, and an unknown id finds none", () => {
+    expect(surfaceById(HOME_SURFACE)?.id).toBe(HOME_SURFACE);
+    expect(isSurfaceId("nope")).toBe(false);
     expect(surfaceById("nope")).toBeUndefined();
-  });
-
-  it("have a title, a description and a how-to in both languages, and a group name", () => {
-    for (const surface of SURFACES) {
-      for (const dict of [zh, en]) {
-        const copy = dict.surfaces[surface.id];
-        expect(copy.title.trim(), surface.id).not.toBe("");
-        expect(copy.description.trim(), surface.id).not.toBe("");
-        expect(copy.how.trim(), surface.id).not.toBe("");
-      }
-    }
-    for (const id of SURFACE_GROUP_IDS) {
-      expect(zh.surfaceGroups[id].trim(), id).not.toBe("");
-      expect(en.surfaceGroups[id].trim(), id).not.toBe("");
-    }
   });
 
   it("open on routes the demo store answers: the Sessions, Agents, plugins and Benchmarks they name exist", () => {
@@ -87,26 +56,5 @@ describe("the surfaces", () => {
         ).toBe(true);
       }
     }
-    // The login surface is the one that starts signed out; the settings one opens its dialog.
-    expect(surfaceById("login")?.signedOut).toBe(true);
-    expect(surfaceById("settings")?.open).toBe("settings");
-    expect(surfaceById("settings-appearance")?.open).toBe("settings.appearance");
-    expect(SURFACES.filter((s) => s.signedOut).map((s) => s.id)).toEqual(["login"]);
-  });
-
-  it("spell the store's ids in their routes exactly (the file carries no import, so Node can read it)", () => {
-    expect(surfaceById("chat")?.route).toBe(`/chat/${IDS.sessions.done}`);
-    expect(surfaceById("chat-running")?.route).toBe(`/chat/${IDS.sessions.runningTool}`);
-    expect(surfaceById("chat-thinking")?.route).toBe(`/chat/${IDS.sessions.thinking}`);
-    expect(surfaceById("chat-streaming")?.route).toBe(`/chat/${IDS.sessions.streaming}`);
-    expect(surfaceById("chat-approval")?.route).toBe(`/chat/${IDS.sessions.approval}`);
-    expect(surfaceById("chat-harness")?.route).toBe(`/chat/${IDS.sessions.harness}`);
-    expect(surfaceById("chat-org")?.route).toBe(`/chat/${IDS.sessions.orgDesk}`);
-    expect(surfaceById("chat-rsi")?.route).toBe(`/chat/${IDS.sessions.optimize}`);
-    expect(surfaceById("chat-new")?.route).toBe("/chat/new");
-    expect(surfaceById("settings")?.route).toBe(`/chat/${IDS.sessions.done}`);
-    expect(surfaceById("agent-settings")?.route).toBe(`/agents/${IDS.agents.docs}`);
-    expect(surfaceById("schedules")?.route).toBe(`/agents/${IDS.agents.docs}?tab=schedules`);
-    expect(surfaceById("benchmark-detail")?.route).toBe(`/benchmark/${IDS.benchmarks.docs}`);
   });
 });

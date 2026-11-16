@@ -76,6 +76,11 @@ export async function apiFetchWithMeta<T>(
   return { data: answer.body as T, serverNowMs };
 }
 
+/** The app's `apiUpload`: the router's answer to the POST, which never reads the file. */
+export async function apiUpload<T>(path: string): Promise<T> {
+  return apiFetch<T>(path, { method: "POST" });
+}
+
 export interface ApiFetchStreamOptions {
   method?: "GET" | "POST";
   body?: unknown;

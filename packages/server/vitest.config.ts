@@ -74,7 +74,7 @@ export default defineConfig({
     // Everything a run writes under the OS temp directory stays in one directory of its own,
     // which teardown reports on and removes; every file sweeps the temp roots it was handed.
     globalSetup: ["test/setup/run-temp-dir.ts"],
-    setupFiles: ["test/setup/temp-roots.ts"],
+    setupFiles: ["test/setup/temp-roots.ts", "test/setup/library-host.ts"],
     // `vitest run --coverage` maps every file under src/, loaded by a test or not.
     coverage: {
       provider: "v8",

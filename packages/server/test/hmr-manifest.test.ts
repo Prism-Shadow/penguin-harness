@@ -7,6 +7,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { readHarnessMeta } from "../src/harness-meta.js";
 import { readHarnessInfo, readPushedCli, resolveCliBundlePath } from "../src/hmr/manifest.js";
 
 async function makeRoot(): Promise<string> {
@@ -18,6 +19,47 @@ async function writeManifest(root: string, manifest: unknown): Promise<void> {
   await fs.mkdir(hmrDir, { recursive: true });
   await fs.writeFile(path.join(hmrDir, "harness.json"), JSON.stringify(manifest));
 }
+
+describe("readHarnessMeta: nothing pushed and a record it cannot read are different answers", () => {
+  let root: string | undefined;
+  afterEach(async () => {
+    if (root) await fs.rm(root, { recursive: true, force: true });
+    root = undefined;
+  });
+
+  it("is `none` for a fresh root with no harness.json at all", async () => {
+    root = await makeRoot();
+    await expect(readHarnessMeta(root)).resolves.toEqual({ kind: "none" });
+  });
+
+  it("is `none` for a record that carries no committed version", async () => {
+    root = await makeRoot();
+    await writeManifest(root, { pushedAt: "2026-08-20T10:15:00.000Z" });
+    await expect(readHarnessMeta(root)).resolves.toEqual({ kind: "none" });
+  });
+
+  it("is `broken`, naming the file, for a harness.json that will not parse", async () => {
+    root = await makeRoot();
+    await fs.mkdir(path.join(root, "hmr"), { recursive: true });
+    await fs.writeFile(path.join(root, "hmr", "harness.json"), "{ not json");
+    const meta = await readHarnessMeta(root);
+    expect(meta.kind).toBe("broken");
+    expect(meta.kind === "broken" && meta.reason).toMatch(/harness\.json is not readable JSON/);
+  });
+
+  it("is the record for a legitimate manifest, pointers and provenance as written", async () => {
+    root = await makeRoot();
+    const manifest = {
+      platform: { bundle: "store/platform/dead00.mjs" },
+      cli: { bundle: "store/cli/abc123.mjs" },
+      web: { manifest: "store/web/cafe01.webz" },
+      source: { repo: "https://example.com/penguin.git", revision: "v0.2.3-7-gabc1234-dirty" },
+      pushedAt: "2026-08-20T10:15:00.000Z",
+    };
+    await writeManifest(root, manifest);
+    await expect(readHarnessMeta(root)).resolves.toEqual({ kind: "meta", manifest });
+  });
+});
 
 describe("readPushedCli: nothing pushed and a record it cannot produce are different answers", () => {
   let root: string | undefined;

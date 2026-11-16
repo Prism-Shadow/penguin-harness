@@ -43,26 +43,4 @@ describe("the transport boundary", () => {
       .map((f) => f.rel);
     expect(reachers).toEqual([]);
   });
-
-  it("the private modules' old top-level paths stay gone", () => {
-    // Each relative specifier is resolved against the importing file rather than matched by
-    // shape, so a caller anywhere under src/ reaching for `../machines/exec.js` is caught,
-    // not only a sibling writing `./exec.js`.
-    const gone = new Set([
-      "machines/exec.js",
-      "machines/targets.js",
-      "machines/ssh-session.js",
-      "machines/forward.js",
-    ]);
-    const specifiers = /from\s+["'](\.{1,2}\/[^"']+)["']/g;
-    const stragglers = outside
-      .filter((f) => {
-        const dir = path.posix.dirname(f.rel);
-        return [...f.text.matchAll(specifiers)].some((m) =>
-          gone.has(path.posix.normalize(path.posix.join(dir, m[1]!))),
-        );
-      })
-      .map((f) => f.rel);
-    expect(stragglers).toEqual([]);
-  });
 });

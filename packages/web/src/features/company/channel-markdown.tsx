@@ -19,8 +19,8 @@
  * machine value beside its human-readable label". Who is reading comes from context rather than
  * props, because the components map has to be a module constant.
  */
-import { createContext, useContext, useMemo } from "react";
-import type { ReactNode } from "react";
+import { createContext, useContext, useMemo, type ReactNode } from "react";
+
 import type { Components, Options } from "react-markdown";
 import { Md } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";

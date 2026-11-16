@@ -3,7 +3,7 @@
  * authoritative state while streaming (history-closing decision), the generation guard
  * against rebuild re-entrancy during replay, resync rebuild (clears the pending table +
  * keeps localDecisions), approval re-delivery keyed by origin composite key + missing
- * card backfill — and, for a call a history window folded, the whole call the approval carries in
+ * card backfill, the command-policy rule an approval names — and, for a call a history window folded, the whole call the approval carries in
  * place of the folded copy — the local answer time an optimistic resolveApproval stamps, and
  * history load failure/retry.
  *
@@ -38,6 +38,8 @@
  *   a window rebuilt under a new id replaces the one in part: every record lands once.
  * - Given a stream that lost frames, it is read again from scratch, a couple of times, and then
  *   the load fails with an error rather than a window with a hole in it.
+ * - Given a read the server failed, the page is handed what failed with its words, so only the
+ *   server's converged error (`internal`) offers a report, never a code the server named.
  * - Given a stream that closes a window it never began (the server ends the stream after `done`),
  *   it is closed and read again, never left for the socket to re-issue for ever.
  * - Given a live event equal to a history record that came folded (a long thinking block), the
@@ -66,6 +68,7 @@
  * - Given a reconnect, rebuilding the tail preserves its updates without duplicating them.
  */
 import { describe, expect, it } from "vitest";
+import { isSeriousError } from "@prismshadow/penguin-ui";
 import {
   approvalDecision,
   assistantText,
@@ -81,8 +84,10 @@ import {
   toolCallOutput,
   userText,
   withOrigin,
+  type AmspRecord,
+  type TokenCounts,
 } from "@prismshadow/amsp";
-import type { AmspRecord, TokenCounts } from "@prismshadow/amsp";
+
 import type {
   HistoryMessage,
   MessagesLiveTail,
@@ -151,6 +156,8 @@ interface Harness {
   ) => void;
   /** Fails the oldest open window read. */
   rejectLoad: (err: Error) => void;
+  /** What each reported failure threw, beside its words (`errors`). */
+  causes: unknown[];
   /** Answers the oldest open older-window read (`before`). */
   resolveOlder: (messages: AmspRecord[], page: MessagesPageInfo) => void;
   /** Fails the oldest open older-window read. */
@@ -167,6 +174,7 @@ function createHarness(): Harness {
   const returnedSteering: PendingSteeringInfo[][] = [];
   const pendingFollowUps: PendingFollowUpInfo[][] = [];
   const errors: Array<string | null> = [];
+  const causes: unknown[] = [];
   const loadings: boolean[] = [];
   const transfers: HistoryTransfer[] = [];
   const controller = createStreamController({
@@ -179,7 +187,10 @@ function createHarness(): Harness {
     onReturnedSteering: (items) => returnedSteering.push(items),
     onPendingFollowUps: (items) => pendingFollowUps.push(items),
     onLoading: (l) => loadings.push(l),
-    onError: (e) => errors.push(e),
+    onError: (e, cause) => {
+      errors.push(e);
+      causes.push(cause);
+    },
     onModelChange: () => {},
     onPendingChange: () => {},
     now: () => 1_000_000,
@@ -192,6 +203,7 @@ function createHarness(): Harness {
     returnedSteering,
     pendingFollowUps,
     errors,
+    causes,
     loadings,
     transfers,
     loadCalls: () => stream.reads.length,
@@ -430,6 +442,27 @@ describe("approval re-delivery (origin composite key + missing-card backfill)", 
     h.controller.handleServer({ type: "approval_request", toolCall: tc });
     expect(h.controller.model.items.filter((i) => i.kind === "tool_call")).toHaveLength(1);
     expect(h.controller.pendingApprovals.has(approvalKey(undefined, "t2"))).toBe(true);
+  });
+
+  it("an approval a command-policy rule asked for keeps the rule, for the card to name", async () => {
+    const h = createHarness();
+    const p = h.controller.load();
+    h.resolveLoad([]);
+    await p;
+    const tc = toolCall({
+      name: "exec_command",
+      arguments: '{"cmd":"npm publish"}',
+      toolCallId: "t3",
+    });
+    h.controller.handleServer({
+      type: "approval_request",
+      toolCall: tc,
+      reason: { kind: "policy", rule: "package-publish" },
+    });
+    expect(h.controller.pendingApprovals.get(approvalKey(undefined, "t3"))?.reason).toEqual({
+      kind: "policy",
+      rule: "package-publish",
+    });
   });
 
   it("a pending approval re-delivered after a reload shows the whole call it asks about, not the folded history copy", async () => {
@@ -708,6 +741,7 @@ describe("windowed history: tail-first load + scroll-up backfill", () => {
       hasMore: true,
       loading: false,
       error: null,
+      errorCause: null,
       beyondTail: false,
     });
     // Then each scroll to the top asks for 20 more.
@@ -845,6 +879,7 @@ describe("windowed history: tail-first load + scroll-up backfill", () => {
       hasMore: false,
       loading: false,
       error: null,
+      errorCause: null,
       beyondTail: false,
     });
     expect(h.controller.outlineOffset).toBe(0);
@@ -1291,6 +1326,8 @@ describe("windowed history: tail-first load + scroll-up backfill", () => {
       hasMore: true,
       loading: false,
       error: "boom",
+      // What failed, kept beside its words for judging whether it is a defect.
+      errorCause: expect.objectContaining({ code: "test_failure" }),
       beyondTail: false,
     });
     expect(h.controller.prefixItems).toHaveLength(0);
@@ -1570,6 +1607,20 @@ describe("history load failure and retry (#6)", () => {
     expect(h.errors[h.errors.length - 1]).toBeNull();
     // The idle snapshot in the buffer isn't lost: the history-closing stats row is produced.
     expect(h.controller.model.items.some((i) => i.kind === "task_stats")).toBe(true);
+  });
+
+  it("hands the page what a failed read threw, so only the server's converged error offers a report", async () => {
+    for (const [code, serious] of [
+      ["internal", true],
+      ["machine_unreachable", false],
+    ] as const) {
+      const h = createHarness();
+      const p = h.controller.load();
+      h.stream.fail(h.stream.next(isWindowRead), "the read failed", code);
+      await p;
+      expect(h.errors.at(-1)).not.toBeNull();
+      expect(isSeriousError(h.causes.at(-1))).toBe(serious);
+    }
   });
 
   it("retry without a failure is a no-op (history is not replayed twice)", async () => {

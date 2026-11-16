@@ -5,7 +5,9 @@
  * THE ACCOUNT IS THE TRUTH; THE CACHE IS FOR THE FIRST FRAME. On sign-in — a page load with a
  * session, or a login — {@link startAccountSync} reads the account's preferences and drafts and
  * writes them into the cache before the signed-in app renders (the auth provider waits for it),
- * so the theme does not flash and every composer mounts with the account's draft. The wait is
+ * so the theme does not flash and every composer mounts with the account's draft. The server's
+ * imported theme packs are read beside them (theme-packs.ts), so a stored pack is linked in the
+ * same render that adopts the account's choice of it. The wait is
  * bounded: past {@link SYNC_WAIT_MS} the app renders from the cache as it stands, and drafts that
  * arrive later are not applied over composers already on screen (preferences still are: their
  * providers re-read). From then on an edit is written to the cache at once — typing never waits
@@ -32,6 +34,7 @@ import { DRAFTS_PATCH_MAX_ENTRIES, DRAFT_VALUE_MAX_CHARS } from "@prismshadow/pe
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { noteAccountApplied, subscribeCachedWrites } from "./cache";
+import { readThemePacks } from "./theme-packs";
 import { accountKeyOf, accountValueOf, cacheKeyOf, planDrafts } from "./drafts";
 import {
   BACKGROUND_IMAGE,
@@ -402,9 +405,12 @@ export async function startAccountSync(userId: string): Promise<boolean> {
       if (state === s && s.draftsOpen) applyDrafts(s, res.drafts);
     })
     .catch(failed);
+  // The server's list, not the account's: it never fails the sign-in, and a failed read leaves
+  // the cached list standing.
+  const themesRead = readThemePacks();
   let timer: ReturnType<typeof setTimeout> | undefined;
   await Promise.race([
-    Promise.all([prefsRead, draftsRead]),
+    Promise.all([prefsRead, draftsRead, themesRead]),
     new Promise<void>((resolve) => {
       timer = setTimeout(resolve, SYNC_WAIT_MS);
     }),

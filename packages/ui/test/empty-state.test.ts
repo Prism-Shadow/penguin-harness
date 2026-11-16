@@ -5,23 +5,19 @@
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { EmptyState, SettingsEmpty } from "../src/components/feedback/empty-state/empty-state";
-import { classTokens, renderStatic } from "../src/testing";
+import { renderStatic } from "../src/testing";
+import { childElements, elementsOf, readMarkup } from "./helpers/markup";
 
 describe("EmptyState", () => {
-  it("shows the caller's title and description in the muted ink, and no frame", () => {
+  it("shows the caller's title and description", () => {
     const html = renderStatic(
       createElement(EmptyState, { title: "No sessions yet", description: "Send a message." }),
     );
     expect(html).toContain(">No sessions yet</p>");
     expect(html).toContain(">Send a message.</p>");
-    const tokens = classTokens(html);
-    expect(tokens).toContain("text-fg-muted");
-    expect(tokens).not.toContain("border-dashed");
-    expect(html).not.toMatch(/gray-|dark:/);
   });
 
   it("renders the action only when given one", () => {
-    expect(renderStatic(createElement(EmptyState, { title: "Empty" }))).not.toContain("mt-2");
     const html = renderStatic(
       createElement(EmptyState, {
         title: "Empty",
@@ -31,18 +27,16 @@ describe("EmptyState", () => {
     expect(html).toContain('<button type="button">Create</button>');
   });
 
-  it("draws the slot form in a dashed frame, its message on the small subtle rung", () => {
-    const html = renderStatic(createElement(EmptyState, { title: "Nothing here", dashed: true }));
-    expect(classTokens(html)).toEqual(
-      expect.arrayContaining([
-        "border",
-        "border-dashed",
-        "border-line",
-        "min-h-24",
-        "text-xs",
-        "text-fg-subtle",
-      ]),
-    );
+  it("holds a page's art above its title, one hidden drawing per style, and none in a slot", () => {
+    const page = renderStatic(createElement(EmptyState, { title: "Empty" }));
+    // The art says nothing the words do not: hidden from assistive tech, and before the title.
+    const art = elementsOf(readMarkup(page)).find((e) => e.attrs["data-slot"] === "art");
+    expect(art?.attrs["aria-hidden"]).toBe("true");
+    const drawings = childElements(art!).map((e) => e.attrs["data-set"]);
+    expect(drawings.sort()).toEqual(["doodle", "line"]);
+    expect(page.indexOf('data-slot="art"')).toBeLessThan(page.indexOf(">Empty</p>"));
+    const slot = renderStatic(createElement(EmptyState, { title: "Empty", dashed: true }));
+    expect(slot).not.toContain('data-slot="art"');
   });
 });
 

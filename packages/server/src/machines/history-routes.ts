@@ -274,6 +274,20 @@ export class MachineHistory {
     return null;
   }
 
+  /**
+   * What every read the copy answers alone does beside its answer: the Session and the
+   * descendants its group names count as read now (the copy keeps it a week from that, and
+   * evicts the least recently read first), and the machine is asked behind the answer whether
+   * the Session is still there.
+   */
+  async #answeredFromCopy(machineId: string, sessionId: string): Promise<void> {
+    this.#sync.check(machineId, sessionId);
+    const group = await this.#cache.groupSessions(machineId, sessionId);
+    // A read time that cannot be written leaves the copy to expire from the one before it; the
+    // answer stands.
+    await this.#cache.touch(machineId, group).catch(() => undefined);
+  }
+
   #rememberProject(machineId: string, sessionId: string, projectId: string): void {
     const key = `${machineId}\0${sessionId}`;
     this.#projects.delete(key);
@@ -384,7 +398,7 @@ export class MachineHistory {
       }
       const k = historyFileKey(named.agentId, named.sessionId, named.fileIndex);
       const held = await this.#cache.records(machineId, k, named.ordinal, named.ordinal + 1);
-      if (held !== null) this.#sync.check(machineId, sessionId);
+      if (held !== null) await this.#answeredFromCopy(machineId, sessionId);
       let record = held?.[0]?.record ?? null;
       let fetched: { totalBytes: number } | null = null;
       if (record === null) {
@@ -414,7 +428,7 @@ export class MachineHistory {
     const held = await this.#cache.records(machineId, k, ordinal, ordinal + 1);
     const image = held?.[0] !== undefined ? traceRecordImage(held[0].record, slot) : null;
     if (image === null) return null;
-    this.#sync.check(machineId, sessionId);
+    await this.#answeredFromCopy(machineId, sessionId);
     return new Response(new Uint8Array(image.bytes), {
       status: 200,
       headers: {
@@ -443,7 +457,7 @@ export class MachineHistory {
     if (to > count.held) return null;
     const held = await this.#cache.records(machineId, k, from, to);
     if (held === null) return null;
-    this.#sync.check(machineId, sessionId);
+    await this.#answeredFromCopy(machineId, sessionId);
     return Response.json({
       events: held.map((entry) => entry.record),
       offset,
@@ -466,7 +480,7 @@ export class MachineHistory {
     if (records === null) return null;
     // Whether it is still there is asked behind the answer; only a Project not known yet is
     // waited for (it cannot be priced without one), once per TTL.
-    this.#sync.check(machineId, sessionId);
+    await this.#answeredFromCopy(machineId, sessionId);
     let projectId = this.#projects.get(`${machineId}\0${sessionId}`) ?? null;
     if (projectId === null) {
       const fact = await this.#sync.sessionOn(machineId, sessionId);

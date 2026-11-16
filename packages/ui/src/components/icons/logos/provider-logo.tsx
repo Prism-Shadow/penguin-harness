@@ -10,7 +10,8 @@
  * reproduction of a trademark); ModelScope uses its official pixel mark flattened to currentColor; vLLM uses
  * its official mark from the
  * project's media kit, its two brand colours flattened to currentColor like
- * Qwen's gradient; OpenCode Go uses the pixel "G" of its "go" wordmark, as OpenCode's
+ * Qwen's gradient; Runcrate uses the `>_` prompt of its app icon, traced from the brand PNG
+ * with the tile dropped; OpenCode Go uses the pixel "G" of its "go" wordmark, as OpenCode's
  * own model registry (models.dev) publishes it for the group; custom models use a generic
  * cube. All are pure paths, no external image assets.
  *
@@ -98,6 +99,20 @@ const GLYPHS: Record<string, Glyph> = {
   // not a reproduction of a trademark.
   atlascloud: {
     path: <path d="M2 19 8 7l4 7 3-5 7 10Z" />,
+  },
+  runcrate: {
+    // Runcrate publishes its mark only as a raster app icon: a `>_` prompt on a blue tile.
+    // The prompt is traced from that PNG (the chevron's round caps and outer join, the
+    // underscore's soft corners) with the tile and its colours dropped, like TokenDance's
+    // backdrop below. The viewBox is cropped to the ink, so at 1.43:1 it letterboxes top and
+    // bottom in a square box, as the other wide marks do.
+    viewBox: "0 0 13.35 9.35",
+    path: (
+      <>
+        <path d="M1.45.25 5.2 4a.85.85 0 0 1 0 1.2L1.45 8.95a.85.85 0 0 1-1.2-1.2L3.4 4.6.25 1.45a.85.85 0 0 1 1.2-1.2Z" />
+        <path d="M6.35 7.75h6.5a.5.5 0 0 1 .5.5v.6a.5.5 0 0 1-.5.5h-6.5a.5.5 0 0 1-.5-.5v-.6a.5.5 0 0 1 .5-.5Z" />
+      </>
+    ),
   },
   tokendance: {
     // The official TokenDance mark, taken from the brand SVG with its black rounded-square

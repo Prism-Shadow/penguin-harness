@@ -26,11 +26,18 @@
  * line starts read as NUL is a hole, whatever its sidecar says — and records only by the count
  * the caller expects; anything else is null, and the caller asks the machine.
  *
- * BOUNDS. Each copy counts its highest offset held, not the bytes in it: a copy of a file's tail
- * is not sparse on every disk (NTFS fills the extent). Past `capBytes`, when a stream ends, the
- * least recently read Sessions go first — never one an open job holds — until the cache is back
- * under 80 % of the cap. Eviction and a machine's removal take each file's own turn, so a commit
- * in flight finishes or is refused, never written into a directory being removed.
+ * BOUNDS. A Session's copy is kept for `retainMs` (a week) from its last read — a window, a
+ * body, the Trace panel or an image, whether the machine was asked or the copy answered alone —
+ * and is then deleted, never one an open job holds; a machine directory that leaves empty goes
+ * too. The read time is kept in memory and written into the Session's sidecars (`lastReadAt`) at
+ * most once an hour, which a day-granular rule can afford, so a restart counts from the read and
+ * never from the restart. The check runs when the cache opens and then whenever the sync asks
+ * (history-sync.ts: as a generation starts, after a stream ends, about once a day). Each copy
+ * also counts its highest offset held, not the bytes in it: a copy of a file's tail is not sparse
+ * on every disk (NTFS fills the extent). Past `capBytes`, when a stream ends, the least recently
+ * read Sessions go first — never one an open job holds — until the cache is back under 80 % of
+ * the cap. Expiry, eviction and a machine's removal take each file's own turn, so a commit in
+ * flight finishes or is refused, never written into a directory being removed.
  */
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
@@ -58,6 +65,10 @@ import { LineCommitter, frameBytes } from "../socket/line-frames.js";
 export const TRACE_CACHE_FORMAT = 2;
 /** How many bytes of copies the cache keeps across machines (plan D1). */
 export const TRACE_CACHE_CAP_BYTES = 1024 ** 3;
+/** How long a Session's copy is kept since it was last read (spec 05). */
+export const TRACE_CACHE_RETAIN_MS = 7 * 24 * 60 * 60 * 1000;
+/** A Session's read time reaches its sidecars at most this often: the retention counts days. */
+const READ_WRITE_EVERY_MS = 60 * 60 * 1000;
 /** Eviction stops once the cache is back under this share of its cap. */
 const EVICT_TO = 0.8;
 /** How long a removal keeps trying past a file another handle still holds (Windows). */
@@ -67,6 +78,7 @@ const NEWLINE = 0x0a;
 const SCAN_CHUNK = 1024 * 1024;
 /** What a `have` may take of the machine's ceiling, leaving room for the rest of the query. */
 export const HAVE_BUDGET_CHARS = HAVE_MAX_CHARS - 2048;
+const NOTHING_HELD: ReadonlySet<string> = new Set();
 
 /** The directory name of an id: a hash, so no id can collide with another or misname a path. */
 export const dirNameOf = (id: string): string =>
@@ -193,6 +205,8 @@ async function rmEventually(target: string): Promise<void> {
 export interface TraceCacheOptions {
   /** Bytes of copies kept across machines. */
   capBytes?: number;
+  /** How long a Session's copy is kept since its last read (TRACE_CACHE_RETAIN_MS). */
+  retainMs?: number;
   now?: () => number;
   /** Test observability: every byte range read from a copy, as [start, end). */
   observeRead?: (start: number, end: number) => void;
@@ -218,15 +232,19 @@ export interface HaveRequest {
 export class TraceCache {
   readonly #root: string;
   readonly #capBytes: number;
+  readonly #retainMs: number;
   readonly #now: () => number;
   readonly #observeRead: ((start: number, end: number) => void) | undefined;
   readonly #haveBudget: number;
   /** Loaded files, by `<machineId>\0<k>`. */
   readonly #files = new Map<string, FileState>();
-  /** What each Session directory counts toward the cap, and when it was read, by `<machineId>\0<sessionId>`. */
+  /**
+   * What each Session directory counts toward the cap, when it was read, and the latest read
+   * time its sidecars hold, by `<machineId>\0<sessionId>`.
+   */
   readonly #dirs = new Map<
     string,
-    { machineId: string; sessionId: string; bytes: number; lastReadAt: number }
+    { machineId: string; sessionId: string; bytes: number; lastReadAt: number; writtenAt: number }
   >();
   /** One write at a time per file. */
   readonly #chains = new Map<string, Promise<unknown>>();
@@ -235,6 +253,7 @@ export class TraceCache {
   constructor(root: string, options: TraceCacheOptions = {}) {
     this.#root = root;
     this.#capBytes = options.capBytes ?? TRACE_CACHE_CAP_BYTES;
+    this.#retainMs = options.retainMs ?? TRACE_CACHE_RETAIN_MS;
     this.#now = options.now ?? Date.now;
     this.#observeRead = options.observeRead;
     this.#haveBudget = options.haveBudgetChars ?? HAVE_BUDGET_CHARS;
@@ -279,12 +298,19 @@ export class TraceCache {
           const sidecar = await this.#readSidecar(path.join(dir, name));
           const file = sidecar === null ? null : parseHistoryFileKey(sidecar.k);
           if (sidecar === null || file === null) continue;
-          const usage = this.#usage(sidecar.machineId, file.sessionId);
+          // Read when its sidecars last said so, never "now": a restart is no read.
+          const readAt = sidecar.lastReadAt;
+          const usage = this.#usage(sidecar.machineId, file.sessionId, readAt);
           usage.bytes += extentOf(sidecar.runs);
-          usage.lastReadAt = Math.max(usage.lastReadAt, sidecar.lastReadAt);
+          usage.lastReadAt = Math.max(usage.lastReadAt, readAt);
+          usage.writtenAt = Math.max(usage.writtenAt, readAt);
         }
       }
     }
+    // What a past run left unread for the retention goes before any use: nothing has run on
+    // the cache yet, so no job holds anything. A copy that cannot be removed now is tried again
+    // by the next pass, and the cache opens all the same.
+    await this.#expire(() => NOTHING_HELD).catch(() => undefined);
   }
 
   async #list(dir: string): Promise<string[]> {
@@ -311,11 +337,16 @@ export class TraceCache {
     }
   }
 
-  #usage(machineId: string, sessionId: string): { bytes: number; lastReadAt: number } {
+  /** A Session directory's count, made on first mention as read at `readAt` (now, unless its sidecars say when). */
+  #usage(
+    machineId: string,
+    sessionId: string,
+    readAt = this.#now(),
+  ): { bytes: number; lastReadAt: number; writtenAt: number } {
     const key = `${machineId}\0${sessionId}`;
     let usage = this.#dirs.get(key);
     if (usage === undefined) {
-      usage = { machineId, sessionId, bytes: 0, lastReadAt: this.#now() };
+      usage = { machineId, sessionId, bytes: 0, lastReadAt: readAt, writtenAt: readAt };
       this.#dirs.set(key, usage);
     }
     return usage;
@@ -459,8 +490,11 @@ export class TraceCache {
         sidecar.size = fact.size;
         sidecar.records = fact.records;
         sidecar.final = fact.final;
+        // A stream names the file: the Session is being read, and this write keeps the time.
         sidecar.lastReadAt = this.#now();
         await this.#writeSidecar(state);
+        const usage = this.#usage(machineId, state.sessionId);
+        usage.writtenAt = Math.max(usage.writtenAt, sidecar.lastReadAt);
       });
     }
     if (!whole) return;
@@ -495,14 +529,21 @@ export class TraceCache {
   async #groupFiles(machineId: string, sessionId: string): Promise<FileState[]> {
     const out: FileState[] = [];
     for (const member of await this.groupSessions(machineId, sessionId)) {
-      const dir = this.#sessionDir(machineId, member);
-      for (const name of (await this.#list(dir)).sort()) {
-        if (!name.endsWith(".jsonl.json")) continue;
-        const sidecar = await this.#readSidecar(path.join(dir, name));
-        if (sidecar === null || sidecar.machineId !== machineId) continue;
-        const state = await this.#state(machineId, sidecar.k, false);
-        if (state !== null && !state.dead) out.push(state);
-      }
+      out.push(...(await this.#sessionFiles(machineId, member)));
+    }
+    return out;
+  }
+
+  /** One Session's own files the copy holds, each loaded from its sidecar on first use. */
+  async #sessionFiles(machineId: string, sessionId: string): Promise<FileState[]> {
+    const out: FileState[] = [];
+    const dir = this.#sessionDir(machineId, sessionId);
+    for (const name of (await this.#list(dir)).sort()) {
+      if (!name.endsWith(".jsonl.json")) continue;
+      const sidecar = await this.#readSidecar(path.join(dir, name));
+      if (sidecar === null || sidecar.machineId !== machineId) continue;
+      const state = await this.#state(machineId, sidecar.k, false);
+      if (state !== null && !state.dead) out.push(state);
     }
     return out;
   }
@@ -948,10 +989,39 @@ export class TraceCache {
     }
   }
 
-  /** Marks Sessions as read now: eviction takes the least recently read first. */
-  touch(machineId: string, sessionIds: readonly string[]): void {
+  /**
+   * Marks Sessions as read now: eviction takes the least recently read first, and each copy is
+   * kept for `retainMs` from it. The time is marked at once; it reaches a Session's sidecars at
+   * most once an hour, so a restart keeps it, and that write is what the promise answers for.
+   */
+  touch(machineId: string, sessionIds: readonly string[]): Promise<void> {
     const now = this.#now();
-    for (const sessionId of sessionIds) this.#usage(machineId, sessionId).lastReadAt = now;
+    const due: string[] = [];
+    for (const sessionId of sessionIds) {
+      const usage = this.#usage(machineId, sessionId);
+      usage.lastReadAt = now;
+      if (now - usage.writtenAt < READ_WRITE_EVERY_MS) continue;
+      usage.writtenAt = now;
+      due.push(sessionId);
+    }
+    return due.length === 0 ? Promise.resolve() : this.#writeReadTime(machineId, due, now);
+  }
+
+  /** Writes `at` as the read time of every sidecar of the Sessions (a later one stays). */
+  async #writeReadTime(
+    machineId: string,
+    sessionIds: readonly string[],
+    at: number,
+  ): Promise<void> {
+    await this.#ready;
+    for (const sessionId of sessionIds) {
+      for (const state of await this.#sessionFiles(machineId, sessionId)) {
+        await this.#serial(state, async () => {
+          state.sidecar.lastReadAt = Math.max(state.sidecar.lastReadAt, at);
+          await this.#writeSidecar(state);
+        });
+      }
+    }
   }
 
   /** Bytes the copies count toward the cap (each file's highest offset held). */
@@ -981,6 +1051,41 @@ export class TraceCache {
         (key) => key === `${usage.machineId}\0${usage.sessionId}`,
       );
       total -= bytes;
+    }
+  }
+
+  /**
+   * Deletes the copy of every Session not read for `retainMs`, never one `held` names
+   * (`<machineId>\0<sessionId>`, the ones open jobs use — asked again before each copy goes, as
+   * a job may open while the pass runs), and the machine directories that leaves empty. A server
+   * that never cached anything has no directory, and this makes none.
+   */
+  async expire(held: () => ReadonlySet<string>): Promise<void> {
+    if (this.#opened === null && !(await this.#exists())) return;
+    await this.#ready;
+    await this.#expire(held);
+  }
+
+  async #expire(held: () => ReadonlySet<string>): Promise<void> {
+    const emptied = new Set<string>();
+    for (const key of [...this.#dirs.keys()]) {
+      // Judged as it is now: gone meanwhile (another pass, an eviction), read since, or held.
+      const usage = this.#dirs.get(key);
+      if (usage === undefined || this.#now() - usage.lastReadAt < this.#retainMs) continue;
+      if (held().has(key)) continue;
+      await this.#remove(
+        (state) => state.machineId === usage.machineId && state.sessionId === usage.sessionId,
+        this.#sessionDir(usage.machineId, usage.sessionId),
+        (counted) => counted === key,
+      );
+      emptied.add(usage.machineId);
+    }
+    for (const machineId of emptied) {
+      try {
+        await fs.rmdir(path.join(this.#root, dirNameOf(machineId)));
+      } catch {
+        // Not empty (another of its Sessions, one being made), or gone already: left as it is.
+      }
     }
   }
 

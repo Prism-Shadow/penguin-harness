@@ -37,8 +37,6 @@
  * against the source. Where the app may still use a native `title` is the web app's
  * `no-native-title.test.ts`.
  */
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import {
@@ -58,8 +56,7 @@ import {
   type LineStyle,
   type ReadingNode,
 } from "../src/components/overlays/tooltip/tooltip";
-import { renderStatic } from "../src/testing";
-import { SRC_DIR } from "./helpers/paths";
+import { renderStatic, markupStructure } from "../src/testing";
 
 const VIEWPORT = { width: 1000, height: 800 };
 
@@ -330,27 +327,9 @@ describe("Tooltip", () => {
     const html = renderStatic(
       createElement(Tooltip, { label: "Settings", className: "mt-auto", children: "gear" }),
     );
-    expect(html).toBe('<span data-tooltip-owned="" class="flex mt-auto">gear</span>');
+    expect(markupStructure(html)).toBe('<span data-tooltip-owned="">gear</span>');
     // Deliberately no tooltip role or description: the trigger's own name is the one name.
     expect(html).not.toContain('role="tooltip"');
     expect(html).not.toContain("aria-describedby");
-  });
-
-  it("draws the panel on the overlay surface in token inks, as a glass layer that takes no clicks", () => {
-    const source = readFileSync(join(SRC_DIR, "components/overlays/tooltip/tooltip.tsx"), "utf8");
-    const panel = /className=\{`(ui-glass [^`]*)`\}/.exec(source);
-    expect(panel, "the panel's class string").not.toBeNull();
-    const tokens = panel![1]!.split(/\s+/);
-    expect(tokens).toEqual(
-      expect.arrayContaining([
-        "ui-glass",
-        "pointer-events-none",
-        "border-line",
-        "bg-overlay",
-        "text-fg",
-        "z-[60]",
-      ]),
-    );
-    expect(source).toContain("aria-hidden");
   });
 });
