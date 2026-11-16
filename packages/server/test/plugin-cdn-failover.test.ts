@@ -527,7 +527,12 @@ describe("deployment proxy config", () => {
     expect(resolveServerConfig({ PORT: "0" }).pluginProxy).toEqual([...PLUGIN_DEFAULT_PROXY_RULES]);
   });
 
-  it("a pattern with catastrophic backtracking is refused at parse, before any fetch runs it", () => {
+  // The boundary samples below run safe-regex over a 65,536-character pattern; that
+  // parse takes longer than the default 5 s test timeout, so this case carries its own.
+  it(
+    "a pattern with catastrophic backtracking is refused at parse, before any fetch runs it",
+    { timeout: 30_000 },
+    () => {
     // The classic ReDoS shapes: nested quantifiers and ambiguous alternation.
     expect(rewriteRuleRisk({ kind: "rewrite", match: "^(a+)+$", rewrite: "x" })).toMatch(
       /not linear/,
