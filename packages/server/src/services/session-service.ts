@@ -838,6 +838,9 @@ export class SessionService {
       modelId = def.model_id;
       provider = def.provider;
     }
+    // The runtime adopted below is built on the config as of this look, so a later edit is
+    // told apart from it (see noticeModelConfigEdit).
+    await this.deps.manager.noticeModelConfigEdit(args.projectId);
     const agent = await createAgent({
       root: this.deps.root,
       projectId: args.projectId,
