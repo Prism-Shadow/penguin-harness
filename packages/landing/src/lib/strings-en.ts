@@ -1028,7 +1028,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
         {
           topic: "Setup",
           now: "CEO posts a setup proposal in the all-hands channel",
-          spec: 'Five steps, one per screen: the workspace and what the lead read in it, the mission, how a ticket goes (whether deliveries are verified), the patrol, and how the agents write to you, with a preview. Everything has a default, and the last three are written to "How we work" in the handbook. The lead\'s proposed tickets are accepted in its conversation, one by one or all at once',
+          spec: 'Five steps, one per screen: what the company does, the team (engineering, operations and research, one part each, any of them dropped), how a ticket goes (whether deliveries are verified), the patrol, and how the agents write to you, with a preview. Everything has a default, and the last three are written to "How we work" in the handbook. The lead\'s proposed tickets are accepted in its conversation, one by one or all at once',
         },
         {
           topic: "Calendar and finance",

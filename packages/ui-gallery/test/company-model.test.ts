@@ -5,11 +5,13 @@
  * - Given a ticket, it waits on a person only while proposed, in review, or blocked by a person,
  *   and the inbox lists it in exactly one view: the reader's triage first, then what waits, what
  *   an agent has, and what is settled.
- * - Given the first sentence, the lead answers with its first tasks as proposals only, and nothing
- *   has a session; an empty sentence starts nothing; the company works in the workspace it was
- *   started on, and as it was set up: the verifier joins when every delivery is to be verified
- *   (and a task accepted then is verified), the patrol runs as chosen or not at all beside the
- *   weekly retrospective, and how-we-work.md is in the handbook.
+ * - Given the first sentence, the lead answers with its survey and each staffed part's first task
+ *   as proposals only, and nothing has a session; an empty sentence, or a team with no part,
+ *   starts nothing; the company is set up as chosen: one employee per part, the verifier joins
+ *   when every delivery is to be verified (and a task accepted then is verified), the patrol runs
+ *   as chosen or not at all beside the weekly retrospective, finding only what someone on the
+ *   team can do, what is said to the lead goes to the first part, and how-we-work.md is in the
+ *   handbook.
  * - Given the lead's first proposals, accepting them all at once does what accepting each does,
  *   and leaves alone one already decided; once every one of them is decided, accepted or not, the
  *   lead says setting up is settled, once, and not before.
@@ -79,6 +81,7 @@ import {
   triageTicket,
   weekState,
 } from "../src/company/model";
+import { PARTS } from "../src/company/fixtures";
 import { DEFAULT_SETTINGS } from "../src/company/model";
 import type { CompanyState, Ticket } from "../src/company/model";
 import { inboxViewOf, waitOf } from "../src/company/spec";
@@ -134,12 +137,12 @@ describe("the waiting rule and the inbox views", () => {
     const state = weekState();
     const counts = inboxCounts(state);
     expect(Object.values(counts).reduce((a, b) => a + b)).toBe(state.tickets.length);
-    expect(counts.waiting).toBe(3);
+    expect(counts.waiting).toBe(4);
     expect(
       ticketsIn(state, "waiting")
         .map((ticket) => waitOf(ticket))
         .sort(),
-    ).toEqual(["accept", "answer", "review"]);
+    ).toEqual(["accept", "answer", "review", "review"]);
   });
 });
 
@@ -154,7 +157,13 @@ describe("setting a company up", () => {
     const state = startCompany(freshState(), "Look after the repository");
     expect(state.stage).toBe("running");
     expect(state.mission).toBe("Look after the repository");
-    expect(state.tickets.map((ticket) => ticket.kind)).toEqual(["task", "task"]);
+    expect(state.tickets.map((ticket) => ticket.id)).toEqual([
+      "survey",
+      "flaky",
+      "release",
+      "evals",
+    ]);
+    expect(state.tickets.every((ticket) => ticket.kind === "task")).toBe(true);
     expect(state.tickets.every((ticket) => waitOf(ticket) === "accept" && ticket.unread)).toBe(
       true,
     );
@@ -165,20 +174,20 @@ describe("setting a company up", () => {
   it("sets the company up as chosen: the verifier, the patrol, and how-we-work.md", () => {
     const chosen = startCompany(freshState(), "Look after the repository");
     expect(chosen.settings).toEqual(DEFAULT_SETTINGS);
-    expect(chosen.roles).toEqual(["engineer", "verifier"]);
+    expect(chosen.roles).toEqual(["engineer", "writer", "researcher", "verifier"]);
     expect(chosen.schedules).toEqual([
       { id: "retro", auto: false },
       { id: "patrol", auto: false },
     ]);
     expect(chosen.handbook.map((entry) => entry.path)).toContain("how-we-work.md");
 
-    const quiet = startCompany(freshState(), "Look after the repository", "harness", quietCompany);
+    const quiet = startCompany(freshState(), "Look after the repository", PARTS, quietCompany);
     expect(quiet.settings).toEqual(quietCompany);
-    expect(quiet.roles).toEqual(["engineer"]);
+    expect(quiet.roles).toEqual(["engineer", "writer", "researcher"]);
     expect(quiet.schedules).toEqual([{ id: "retro", auto: false }]);
     expect(letTimePass(quiet).events).toEqual([]);
 
-    const busy = startCompany(freshState(), "Look after the repository", "harness", {
+    const busy = startCompany(freshState(), "Look after the repository", PARTS, {
       ...DEFAULT_SETTINGS,
       patrol: "auto",
     });
@@ -189,7 +198,7 @@ describe("setting a company up", () => {
     const verified = acceptTicket(startCompany(freshState(), "Look after the repo"), "flaky");
     expect(get(verified, "flaky").verifier).toBe("verifier");
     const unverified = acceptTicket(
-      startCompany(freshState(), "Look after the repo", "harness", quietCompany),
+      startCompany(freshState(), "Look after the repo", PARTS, quietCompany),
       "flaky",
     );
     expect(get(unverified, "flaky").verifier).toBeNull();
@@ -201,8 +210,15 @@ describe("setting a company up", () => {
     expect(transcript(state, "survey")).toEqual(["brief"]);
   });
 
-  it("works in the workspace it was started on", () => {
-    expect(startCompany(freshState(), "Keep the docs right", "site").workspace).toBe("site");
+  it("staffs only the parts it was started with, and starts nothing with none", () => {
+    expect(startCompany(freshState(), "Run the docs", [])).toEqual(freshState());
+    const state = startCompany(freshState(), "Run the docs", ["writer"]);
+    expect(state.roles).toEqual(["writer", "verifier"]);
+    expect(state.tickets.map((ticket) => ticket.id)).toEqual(["survey", "release"]);
+    // The patrol finds only what the writer can do; the code's flaky test and lint are not its.
+    expect(state.pool).toEqual(["discussion"]);
+    const said = sayToLead(state, "Answer the new questions");
+    expect(get(said, "said-1")).toMatchObject({ owner: "writer", verifier: "verifier" });
   });
 
   it("accepts all the first proposals at once as it accepts each, leaving a decided one alone", () => {
@@ -218,7 +234,7 @@ describe("setting a company up", () => {
     const settled = (state: CompanyState) =>
       state.chat.filter((line) => line.from === "lead" && line.line === "settled");
     let state = startCompany(freshState(), "Look after the repository");
-    state = acceptTicket(state, "survey");
+    state = acceptTickets(state, ["survey", "release", "evals"]);
     expect(settled(state)).toEqual([]);
     state = rejectTicket(state, "flaky");
     expect(settled(state)).toEqual([{ from: "lead", line: "settled", tickets: [] }]);
@@ -465,7 +481,7 @@ describe("a ticket with a verifier", () => {
   });
 
   it("goes straight to the person when no verifier is on the team", () => {
-    const started = startCompany(freshState(), "Look after the repo", "harness", {
+    const started = startCompany(freshState(), "Look after the repo", PARTS, {
       ...DEFAULT_SETTINGS,
       verify: false,
     });
@@ -484,7 +500,9 @@ describe("which sessions are live", () => {
       liveSessions(state).map((session) => [session.ticket, sessionStatus(state, session)]),
     ).toEqual([
       ["jitter", "running"],
+      ["evals", "running"],
       ["connection", "review"],
+      ["release", "review"],
       ["csv", "answer"],
     ]);
   });
@@ -537,7 +555,7 @@ describe("the handbook", () => {
     expect(filedFor(rejectTicket(proposed, "skill"), "skill")).toEqual([]);
     const accepted = acceptTicket(proposed, "skill");
     expect(get(accepted, "skill").status).toBe("done");
-    expect(accepted.handbook.at(-1)).toMatchObject({ kind: "skill", installedOn: "engineer" });
+    expect(accepted.handbook.at(-1)).toMatchObject({ kind: "skill", installedOn: "writer" });
     expect(accepted.handbook.find((entry) => entry.ticket === "docs")?.mergedInto).toBe(
       accepted.handbook.at(-1)!.path,
     );
@@ -565,15 +583,17 @@ describe("an employee learning on its own", () => {
 });
 
 /** The week with everything open settled and accepted, so the next pass runs a schedule. */
-function quiet() {
-  let state = approveTicket(weekState(), "connection");
+function quiet(): CompanyState {
+  let state = approveTicket(approveTicket(weekState(), "connection"), "release");
   state = rejectTicket(state, "flaky");
   state = answerTicket(state, "csv", 0);
-  // Only until both deliveries are in: one more pass would run a schedule.
-  while (get(state, "csv").status !== "review" || get(state, "jitter").status !== "review") {
+  const working = ["csv", "jitter", "evals"];
+  // Only until every delivery is in: one more pass would run a schedule.
+  while (working.some((id) => get(state, id).status !== "review")) {
     state = letTimePass(state).state;
   }
-  return approveTicket(approveTicket(state, "csv"), "jitter");
+  // One find left for the patrol, so a run after it has nothing to do.
+  return { ...working.reduce((done, id) => approveTicket(done, id), state), pool: ["lint"] };
 }
 
 describe("retrospectives", () => {
@@ -664,10 +684,12 @@ describe("the order of a view", () => {
     const state = weekState();
     expect(ticketsIn(state, "waiting").map((ticket) => ticket.id)).toEqual([
       "connection",
+      "release",
       "csv",
       "flaky",
     ]);
     expect(ticketsIn(state, "handled").map((ticket) => ticket.id)).toEqual([
+      "community",
       "skill",
       "docs",
       "types",

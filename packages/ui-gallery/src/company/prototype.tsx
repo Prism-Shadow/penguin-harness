@@ -167,7 +167,7 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
   const waiting = inboxCounts(state).waiting;
   const open =
     pane === "ticket" ? state.tickets.find((ticket) => ticket.id === selected) : undefined;
-  const orgName = W.workspaces[state.workspace].org;
+  const orgName = W.org;
 
   const sidebar = (
     <SidebarFrame
@@ -213,8 +213,8 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
   if (!running) {
     body = (
       <SetupPage
-        onStart={(mission, workspace, settings) =>
-          setState((current) => startCompany(current, mission, workspace, settings))
+        onStart={(mission, parts, settings) =>
+          setState((current) => startCompany(current, mission, parts, settings))
         }
       />
     );

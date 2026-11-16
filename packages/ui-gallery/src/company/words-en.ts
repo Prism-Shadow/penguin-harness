@@ -14,7 +14,7 @@ export const en: Words = {
       round === null ? `${name} · ${role}` : `${name} · ${role} ${round}`,
     pick: "Pick a ticket on the left.",
     notStarted:
-      "The company hasn't started. Pick a workspace and what to look after, and the lead proposes a few tickets for you to decide.",
+      "The company hasn't started. Say what it does and pick the team, and the lead proposes a few tickets for you to decide.",
     you: "You",
     openMenu: "Open navigation",
   },
@@ -24,17 +24,30 @@ export const en: Words = {
       name: "Iris Vale",
       title: "Lead",
       duties:
-        "Triage requests, file tickets, and dispatch work; propose schedules and staffing. Writes no code.",
+        "Take requests, file tickets and hand each to whoever owns that part; propose schedules and hires. Does none of the work itself.",
     },
     engineer: {
       name: "Mara Lind",
       title: "Engineer",
-      duties: "Write code and fix defects; submit pull requests with tests.",
+      duties: "Owns the code: fixes defects, builds features, submits pull requests with tests.",
+    },
+    writer: {
+      name: "June Hale",
+      title: "Operations",
+      duties:
+        "Owns content and community: writes the release notes, the blog and the docs; answers and sorts community questions.",
+    },
+    researcher: {
+      name: "Ren Okafor",
+      title: "Researcher",
+      duties:
+        "Owns evaluation: runs new models on the eval set first, follows the papers, writes it up.",
     },
     verifier: {
       name: "Theo Park",
-      title: "Verification engineer",
-      duties: "Run every delivery locally before your review; reproduce reported issues.",
+      title: "Verifier",
+      duties:
+        "Checks every delivery against its acceptance criteria: runs code, checks an article's facts and links, reruns the numbers.",
     },
   },
   sources: {
@@ -44,7 +57,7 @@ export const en: Words = {
     retro: "Retrospective",
   },
   waits: { accept: "To accept", answer: "To answer", review: "To review" },
-  roles: { build: "Build", verify: "Verify" },
+  roles: { build: "Work", verify: "Verify" },
   views: {
     waiting: "Waiting",
     working: "In progress",
@@ -96,7 +109,7 @@ export const en: Words = {
     restore: "Restore to inbox",
     waitingFirst: "This ticket is waiting on you: act on it before deferring or archiving it.",
     saidGoal: "What you told the lead.",
-    saidProgress: "Code inspection complete; starting implementation.",
+    saidProgress: "Read what it needs; starting the work.",
     saidResult: "Work complete; submitted for review.",
     saidFound: "Did not pass verification; sent back for changes.",
     verifier: "Verifier",
@@ -105,14 +118,14 @@ export const en: Words = {
   },
   lead: {
     title: "Lead",
-    info: "Permanent coordinator agent. Receives requests and files tickets for work sessions; does not write code directly.",
+    info: "The standing coordinator agent. It takes requests, files them as tickets and hands each to the employee who owns that part, to do in a work session. It does none of the work itself.",
     placeholder: "Enter request, press Enter to send",
     send: "Send",
     acceptAll: "Accept all",
     empty: "No messages yet. Send a request to generate tickets.",
     lines: {
       proposals:
-        'I\'ve read it, and written how you want the company to work to "How we work" in the handbook. Two things to start with; only what you accept starts:',
+        'I\'ve read it, and written how you want the company to work to "How we work" in the handbook. A few things to start with; only what you accept starts:',
       settled:
         'All decided. From now on, only tickets that need you to accept, answer or review reach "Waiting". Nothing else interrupts you.',
       filed:
@@ -121,22 +134,60 @@ export const en: Words = {
   },
   setup: {
     title: "Start a company",
-    body: "Pick a workspace and the lead reads it first. Next, it suggests what the company should look after from what it read. Every step has a default, so you can go straight through.",
-    workspace: "Workspace",
-    workspaceInfo: "The folder the employees work in. By default, this Project's workspace.",
-    read: "What the lead read",
-    readInfo:
-      "Once you pick a workspace, the lead reads its README, issues and CI runs. It changes no file and opens no work session.",
-    mission: "What the company looks after",
-    missionBody: "The lead suggests three things from what it read. You can also write your own.",
+    body: "Say what the company does first. The lead proposes a team from that, each employee owning one part. Every step has a default, so you can go straight through.",
+    missions: [
+      {
+        label:
+          "Run PenguinHarness: keep up the code, write the release notes and the blog, answer the community, evaluate new models",
+        why: "One each for engineering, operations and research",
+      },
+      {
+        label: "Keep up PenguinHarness's code: fix defects, keep CI green",
+        why: "Engineering only",
+      },
+      {
+        label: "Run PenguinHarness's content and community: release notes, blog, answers",
+        why: "Operations only",
+      },
+      {
+        label: "Evaluate models with PenguinHarness: compare them and write it up",
+        why: "Research and operations",
+      },
+    ],
     own: "Write your own",
-    ownPlaceholder: "Example: maintain the repository, find and fix defects",
+    ownPlaceholder:
+      "Example: run an open-source project, keep up the code, write the docs, answer the community",
+    team: {
+      title: "One part each",
+      body: (workspace: string) =>
+        `The lead read the workspace, ${workspace}, and proposes these people for what you chose. You can drop any of them, or add one back.`,
+      lead: "Always on: takes requests, hands out tickets",
+      line: (watches: string, read: string) => `Sources: ${watches} · The lead read: ${read}`,
+      none: "Keep at least one part, or no one does the work.",
+    },
+    parts: {
+      engineer: {
+        name: "Engineering",
+        watches: "issues and CI",
+        read: "6 bugs have no owner; 2 of the last 10 CI runs failed",
+      },
+      writer: {
+        name: "Operations",
+        watches: "the docs, the blog and community discussions",
+        read: "The English docs changed 9 more times than the Chinese; 3 community questions have no reply",
+      },
+      researcher: {
+        name: "Research",
+        watches: "the eval set and newly released models",
+        read: "Two models came out last month and have not been run on the eval set",
+      },
+    },
     defaults:
       'Steps 3 to 5 are written to "How we work" in the handbook, which every employee reads before it starts. The company is named after the workspace folder and uses the Project\'s default model. You can change all of this later.',
     start: "Start the company",
     steps: {
-      workspace: "Workspace",
       mission: "Mission",
+      team: "Team",
       flow: "Tickets",
       schedules: "Schedules",
       style: "Writing",
@@ -159,7 +210,7 @@ export const en: Words = {
         title: "Verify",
         label: "Verify every delivery",
         on: (name: string) =>
-          `${name} runs every delivery first. If it fails, it goes back to the builder without reaching you.`,
+          `${name} checks every delivery against its acceptance criteria first: runs the code, checks an article's facts and links. If it fails, it goes back to its owner without reaching you.`,
         off: "Deliveries come straight to you for review, unverified.",
       },
       review: {
@@ -169,11 +220,11 @@ export const en: Words = {
     },
     schedules: {
       title: "When the lead looks for work",
-      body: "The lead looks over the workspace on a schedule, without being asked. You decide what happens to what the patrol finds.",
+      body: "The lead looks over each part's sources on a schedule, without being asked. You decide what happens to what the patrol finds.",
       patrol: "Daily patrol",
-      patrolWhen: "New issues and CI, daily at 09:00",
+      patrolWhen: (sources: string) => `Daily at 09:00: ${sources}`,
       patrolHint: {
-        off: "The lead does not look. You can turn it on later on the schedules page.",
+        off: "The lead does not look on its own. You can turn it on later on the schedules page.",
         propose: "What it finds is filed as a ticket that waits for you to accept it.",
         auto: "What it finds starts work at once, and reaches you only for review.",
       },
@@ -195,65 +246,26 @@ export const en: Words = {
       question: "Asks you",
       result: "Result",
       steps: [
-        "Reproduced locally: 3 failures in 20 runs.",
-        "Found the cause: the test's wait is too short for large exports.",
-        "The wait now scales with the file size; running it 50 times in a row.",
+        "Sorted the 23 pull requests merged in this release into 5 groups.",
+        "The draft is written, in both languages.",
+        "Checking every pull request link.",
       ],
       milestone: 1,
       ask: {
-        options: "How should the wait be set?",
-        open: "How would you like the wait to be set?",
-        choices: ["Scale it with the file size", "Raise it to 60 seconds for all"],
+        options: "Which part should the release notes open with?",
+        open: "What would you like the release notes to open with?",
+        choices: ["The breaking changes", "The new features"],
         recommended: "Recommended",
       },
-      points: ["The wait scales with the file size", "50 runs in a row pass"],
+      points: [
+        "The 2 breaking changes come first, each with its migration steps",
+        "The other 21 pull requests in 5 groups, one sentence each",
+      ],
       prose:
-        "The wait was fixed at 10 seconds, so large exports often timed out. It now scales with the file size, and 50 runs in a row pass.",
+        "This release has 2 breaking changes. They come first, each with its migration steps. The other 21 pull requests are sorted into 5 groups by what a user notices, one sentence each.",
     },
   },
-  workspaces: {
-    harness: {
-      org: "Harness Care",
-      read: [
-        "A pnpm monorepo: 9 packages, about 2,500 tests",
-        "37 open issues on GitHub, 6 of them labelled bug",
-        "2 of the last 10 CI runs failed, both on the same test",
-      ],
-      missions: [
-        {
-          label: "Maintain the repository: find and fix defects",
-          why: "6 bugs have no owner, and CI is unstable",
-        },
-        {
-          label: "Triage new issues daily and fix the clear defects",
-          why: "About 10 new issues a week",
-        },
-        { label: "Fix the flaky test first", why: "It failed the last 2 CI runs" },
-      ],
-    },
-    site: {
-      org: "Site Care",
-      read: [
-        "A Vite static site: docs in English and Chinese, 86 pages",
-        "12 open issues, most of them errors in the docs",
-        "In the last month, the English pages changed 9 times more than the Chinese ones",
-      ],
-      missions: [
-        {
-          label: "Maintain the docs: fix errors, keep both languages in step",
-          why: "The Chinese pages are 9 changes behind",
-        },
-        {
-          label: "Read new issues daily and fix the docs errors",
-          why: "Most of the 12 issues are errors",
-        },
-        {
-          label: "Check that every page's example code runs",
-          why: "3 issues are examples that fail",
-        },
-      ],
-    },
-  },
+  org: "PenguinHarness",
   team: {
     total: (tokens: string, cost: string) =>
       `${tokens} Tokens · ${cost} across the company this month`,
@@ -298,7 +310,7 @@ export const en: Words = {
   schedule: {
     info: "Schedules file tickets on a timer. The patrol can be off, propose what it finds, or start work on it; the retrospective only proposes.",
     names: {
-      patrol: "Daily patrol: new issues and CI",
+      patrol: "Daily patrol: what is new in each part",
       retro: "Weekly retrospective: last week's closed tickets",
     },
     when: { patrol: "Daily at 09:00", retro: "Mondays at 09:00" },
@@ -400,41 +412,85 @@ export const en: Words = {
       result: "Lint reports no warning.",
     },
     survey: {
-      title: "Take stock of the repository",
-      gist: "Read the code, the recent issues and CI, and write one page on where it stands.",
-      acceptance: ["One page at most", "The three things most worth doing first"],
+      title: "Take stock of the project",
+      gist: "Read the code, the issues, CI, the docs and the community discussions, and write one page on where it stands.",
+      acceptance: ["One page at most", "For each part, what is most worth doing first"],
       progress: [
-        "Read the issues and CI runs of the last 30 days.",
-        "Wrote the page, with the three things most worth doing first.",
+        "Read the issues, CI runs and community discussions of the last 30 days.",
+        "Wrote the page, with what is most worth doing first in each part.",
       ],
-      result: "One page on where the repository stands, in the handbook.",
+      result: "One page on where the project stands, in the handbook.",
     },
     patrol: {
-      title: "Daily patrol: new issues and CI at 09:00",
-      gist: "Each day it reads the new issues and CI results and files what it finds as tickets.",
+      title: "Daily patrol: new issues, CI and the community at 09:00",
+      gist: "Each day it reads the new issues, the CI results and the community discussions, and files what needs doing as tickets.",
       acceptance: ["It only proposes at first; whether to do each is yours to decide"],
       progress: [],
     },
     verifier: {
       title: "Add a dedicated verifier",
-      gist: "Another agent tries every delivery by hand before it comes to you for review.",
-      acceptance: ["The agent that writes the code is not the one that verifies it"],
+      gist: "Another employee checks every delivery against its acceptance criteria before it comes to you for review.",
+      acceptance: ["The employee who does the work is not the one who verifies it"],
       progress: [],
     },
     skill: {
       title: "Distill a skill: keep both languages of the docs in step",
-      gist: "“Correct the port in the quickstart” was sent back once for changing one language only. Write the checks down as a skill and install it for Mara Lind.",
+      gist: "“Correct the port in the quickstart” was sent back once for changing one language only. Write the checks down as a skill and install it for June Hale.",
       acceptance: [
         "The skill says to check both languages after a change",
-        "It is installed for the engineer who edits the docs",
+        "It is installed for the operations employee who owns the docs",
       ],
       progress: [],
     },
     patrolScope: {
       title: "Stop the patrol proposing dependency upgrades",
-      gist: "You rejected the patrol's “Bump @types/node”. From now on dependencies are upgraded only when you ask; the patrol looks at issues and CI only.",
+      gist: "You rejected the patrol's “Bump @types/node”. From now on dependencies are upgraded only when you ask, and the patrol no longer checks dependency versions.",
       acceptance: ["The patrol schedule's prompt no longer checks dependencies"],
       progress: [],
+    },
+    release: {
+      title: "Write the 0.3 release notes",
+      gist: "Turn the 23 pull requests merged in this release into release notes a user can read, in both languages.",
+      acceptance: [
+        "Breaking changes come first, with migration steps",
+        "Every link points to its pull request",
+      ],
+      progress: [
+        "Sorted the 23 pull requests merged in this release into 5 groups.",
+        "The draft is written, in both languages.",
+        "Fixed: the two links now point to their pull requests.",
+      ],
+      found:
+        "Two links point to the wrong pull request: the connection test's points to the CSV export's.",
+      result: "The release notes are written, with every link checked in both languages.",
+    },
+    community: {
+      title: "Sort this week's community questions",
+      gist: "Group this week's questions from the discussions and the chat groups, and add the common ones to the docs.",
+      acceptance: ["Each group links its original posts"],
+      progress: ["Sorted 14 questions into 4 groups; the docs already answer 3 of them."],
+      result: "Sorted. The group the docs do not cover has a ticket of its own.",
+    },
+    discussion: {
+      title: "Answer 3 community questions nobody has answered",
+      gist: "Three questions in the discussions have had no reply for two days, all about first-time setup.",
+      acceptance: ["Each reply links the docs page that answers it"],
+      progress: ["Answered all 3, each with a link to the quickstart."],
+      result: "All 3 questions are answered.",
+    },
+    evals: {
+      title: "Compare two new models on the eval set",
+      gist: "The two models released last month have not been run on the eval set. Run them first, then decide whether to add them to the model catalog.",
+      acceptance: [
+        "3 runs per model, with the mean score and the spread",
+        "The Trace of every run attached",
+      ],
+      progress: [
+        "Ran each model 3 times and recorded the scores.",
+        "The report is written: one scores 4 points above the current default, at 30% more cost.",
+      ],
+      result:
+        "The report is written. Whether to add it to the model catalog is a ticket of its own for you.",
     },
   },
   handbook: {
@@ -481,7 +537,7 @@ export const en: Words = {
     howWeWork: {
       verify: {
         on: (name: string) =>
-          `${name} runs every delivery first; only one that passes comes to you for review.`,
+          `${name} checks every delivery against its acceptance criteria first; only one that passes comes to you for review.`,
         off: "Deliveries come straight to you for review, unverified.",
       },
       patrol: {
@@ -521,11 +577,12 @@ export const en: Words = {
         ],
       },
       state: {
-        title: "State of the repository",
+        title: "State of the project",
         body: [
-          "42 new issues in the last 30 days, 9 of them about the export.",
-          "CI failures cluster in the export test: 3 of the last 20 runs, from a timeout that is too short.",
-          "The three things to do first: fix the flaky export test, add a connection test to first-time setup, export CSV.",
+          "Code: 42 new issues in the last 30 days, 9 of them about the export. 3 of the last 20 CI runs failed, all on the export test's timeout.",
+          "Content and community: the English docs changed 9 more times than the Chinese; 3 community questions have had no reply for two days.",
+          "Evaluation: the two models released last month have not been run on the eval set.",
+          "To do first: fix the export test, write the 0.3 release notes, evaluate the two new models.",
         ],
       },
       docsLesson: {

@@ -2,7 +2,8 @@
  * A ticket's words, read from the dictionary by what the ticket holds. A sample ticket shows its
  * fixture's words; one the reader asked for shows their own sentence and a few generic lines.
  */
-import { USD_PER_MILLION_TOKENS } from "./fixtures";
+import { PARTS, USD_PER_MILLION_TOKENS } from "./fixtures";
+import type { Part } from "./fixtures";
 import type { Ticket } from "./model";
 import type { TicketWords, Words } from "./words";
 
@@ -57,3 +58,9 @@ export function tokens(usd: number): string {
   if (count >= 1_000) return `${Math.round(count / 1_000)}K`;
   return String(Math.round(count));
 }
+
+/** What the patrol reads: each staffed part's sources, in the parts' order. */
+export const sourcesOf = (parts: readonly Part[], W: Words): string =>
+  PARTS.filter((part) => parts.includes(part))
+    .map((part) => W.setup.parts[part].watches)
+    .join(W.handbook.join);

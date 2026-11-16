@@ -4,7 +4,7 @@
  * ticket's section titles, the board's columns) are read from the Web App's dictionary instead,
  * so the prototype says them as the app does. `tickets` is keyed by fixtures.ts.
  */
-import type { FixtureId, HandbookDocId } from "./fixtures";
+import type { FixtureId, HandbookDocId, Part } from "./fixtures";
 
 export interface TicketWords {
   title: string;
@@ -33,7 +33,7 @@ export const zh = {
     sessionTab: (name: string, role: string, round: number | null) =>
       round === null ? `${name} · ${role}` : `${name} · ${role} ${round}`,
     pick: "在左栏选一张工单。",
-    notStarted: "公司还没开。选好工作区和关注的事，主理会提几张工单给你定。",
+    notStarted: "公司还没开。定好做什么和团队，主理会提几张工单给你定。",
     you: "你",
     openMenu: "打开导航",
   },
@@ -44,17 +44,27 @@ export const zh = {
     lead: {
       name: "顾言",
       title: "主理",
-      duties: "接收需求，建立并分派工单；提议日程与招募，不编写代码。",
+      duties: "接需求、建工单，分派给负责那一块的人；提议日程和招人，自己不动手。",
     },
     engineer: {
       name: "沈知远",
       title: "工程师",
-      duties: "编写代码、修复缺陷，提交包含测试的 PR。",
+      duties: "管代码：修缺陷、做功能，提交带测试的 PR。",
+    },
+    writer: {
+      name: "许南星",
+      title: "运营",
+      duties: "管内容和社区：写发版说明、博客和文档，回答并整理社区问题。",
+    },
+    researcher: {
+      name: "周以宁",
+      title: "研究员",
+      duties: "管评测：新模型先在评测集上跑一遍，跟进相关论文，写成报告。",
     },
     verifier: {
       name: "林清越",
-      title: "验证工程师",
-      duties: "实机运行验证交付物并复现问题，确认后提交验收。",
+      title: "验证",
+      duties: "对照验收标准检查每份交付：代码实机跑，文章核对事实和链接，数字重跑一遍。",
     },
   },
   sources: {
@@ -65,7 +75,7 @@ export const zh = {
   },
   waits: { accept: "待接受", answer: "待回答", review: "待验收" },
   /** What a work session does on its ticket. */
-  roles: { build: "开发", verify: "验证" },
+  roles: { build: "干活", verify: "验证" },
   views: { waiting: "等你", working: "进行中", later: "稍后", handled: "已处理", archived: "归档" },
   inbox: {
     empty: {
@@ -109,7 +119,7 @@ export const zh = {
     restore: "移回收件箱",
     waitingFirst: "这张工单在等你，处理后才能稍后或归档。",
     saidGoal: "你对主理说的原话。",
-    saidProgress: "完成代码分析，开始实现。",
+    saidProgress: "相关内容已看完，开始动手。",
     saidResult: "任务完成，提交验收。",
     saidFound: "验证没通过，退回修改。",
     verifier: "验证",
@@ -118,14 +128,14 @@ export const zh = {
   },
   lead: {
     title: "主理",
-    info: "常驻调度 Agent。负责接收需求、拆解工单并分派给工作会话，不编写代码。",
+    info: "常驻的调度 Agent。接需求、拆成工单，交给负责那一块的员工在工作会话里做，自己不动手。",
     placeholder: "输入需求，Enter 发送",
     send: "发送",
     acceptAll: "全部接受",
     empty: "暂无对话。输入需求后，主理将自动创建工单。",
     lines: {
       proposals:
-        "读完了，你定的运作方式也已写进手册的「公司怎么运作」。先提两件事，你接受的才会开始：",
+        "读完了，你定的运作方式也已写进手册的「公司怎么运作」。先提这几件事，你接受的才会开始：",
       settled:
         "都定了。从现在起，只有需要你接受、回答或验收的工单会出现在「等你」里，其余的不打扰你。",
       filed: "已生成工单并启动工作会话。遇到疑问或完成后将通知收件箱。",
@@ -133,21 +143,50 @@ export const zh = {
   },
   setup: {
     title: "开一家公司",
-    body: "选好工作区，主理先读一遍，下一步按读到的建议公司关注什么。每一步都选好了默认值，可以一路点下一步。",
-    workspace: "工作区",
-    workspaceInfo: "员工共同工作的目录，默认是这个 Project 的工作区。",
-    read: "主理读到的",
-    readInfo: "选好工作区后，主理只读 README、issue 和 CI 记录，不改文件，也不开工作会话。",
-    mission: "公司关注什么",
-    missionBody: "主理按读到的建议了三件，也可以自己写。",
+    body: "先说公司做什么。主理据此提出团队，每人管一块。每一步都选好了默认值，可以一路点下一步。",
+    missions: [
+      {
+        label: "运营 PenguinHarness：维护代码、写发版说明和博客、回答社区问题、评测新模型",
+        why: "研发、运营、研究各一人",
+      },
+      { label: "维护 PenguinHarness 的代码：修缺陷、守住 CI", why: "只要研发" },
+      { label: "做 PenguinHarness 的内容和社区：发版说明、博客、答疑", why: "只要运营" },
+      { label: "用 PenguinHarness 做评测研究：对比模型，写成报告", why: "研究和运营" },
+    ],
     own: "自己写",
-    ownPlaceholder: "例如：维护代码库，排查问题、修复缺陷",
+    ownPlaceholder: "例如：运营一个开源项目，维护代码、写文档、回答社区问题",
+    team: {
+      title: "每人管一块",
+      body: (workspace: string) =>
+        `主理读了工作区 ${workspace}，按你定的事提了这几个人。可以去掉，也可以加回来。`,
+      lead: "常驻，接需求、分派工单",
+      /** A part's sources, and what the lead read there. */
+      line: (watches: string, read: string) => `来源：${watches} · 主理读到：${read}`,
+      none: "至少留一块，公司才有人干活。",
+    },
+    parts: {
+      engineer: {
+        name: "研发",
+        watches: "issue 和 CI",
+        read: "6 个 bug 没人修，CI 最近 10 次有 2 次失败",
+      },
+      writer: {
+        name: "运营",
+        watches: "文档、博客和社区讨论",
+        read: "英文文档比中文多改了 9 次，社区里 3 个问题没人回",
+      },
+      researcher: {
+        name: "研究",
+        watches: "评测集和新发布的模型",
+        read: "上个月新出的两个模型还没在评测集上跑过",
+      },
+    } satisfies Record<Part, { name: string; watches: string; read: string }>,
     defaults:
       "第 3 到 5 步的选择会写进手册里的「公司怎么运作」，每个员工开工前都读。公司名取工作区的文件夹名，模型用 Project 默认的。这些之后都能改。",
     start: "开公司",
     steps: {
-      workspace: "工作区",
-      mission: "关注什么",
+      mission: "做什么",
+      team: "团队",
       flow: "工单怎么走",
       schedules: "日程",
       style: "说话方式",
@@ -166,18 +205,19 @@ export const zh = {
       verify: {
         title: "验证",
         label: "交付先验证",
-        on: (name: string) => `交付先由${name}实机跑一遍，不通过就退回给开发，不打扰你。`,
+        on: (name: string) =>
+          `交付先由${name}对照验收标准检查：代码实机跑，文章核对事实和链接。不通过就退回给负责的人，不打扰你。`,
         off: "交付不经验证，直接交给你验收。",
       },
       review: { title: "验收", body: "你接受，或附一句话打回。打回的原因记进手册，下次先检查。" },
     },
     schedules: {
       title: "主理自己找事做",
-      body: "主理按日程自己看工作区，不用你开口。巡检的发现怎么处理由你定。",
+      body: "主理按日程看各块的来源，不用你开口。巡检的发现怎么处理由你定。",
       patrol: "每日巡检",
-      patrolWhen: "每天 09:00 看新 issue 和 CI",
+      patrolWhen: (sources: string) => `每天 09:00，来源：${sources}`,
       patrolHint: {
-        off: "主理不看工作区。之后可以在日程页打开。",
+        off: "主理不主动看。之后可以在日程页打开。",
         propose: "发现的问题提成工单，等你接受。",
         auto: "发现的问题直接开工，做完才找你验收。",
       },
@@ -198,51 +238,24 @@ export const zh = {
       question: "问你",
       result: "结果",
       steps: [
-        "已在本地复现：20 次里失败 3 次。",
-        "已定位根因：大文件导出时，测试的等待超时偏低。",
-        "等待超时已改为按文件大小计算，正在连续跑 50 次。",
+        "已整理这一版合并的 23 个 PR，分成 5 组。",
+        "初稿写完，中英两版都有。",
+        "正在逐条核对 PR 链接。",
       ],
       milestone: 1,
       ask: {
-        options: "等待超时怎么定？",
-        open: "等待超时你希望怎么定？",
-        choices: ["按文件大小计算", "统一放宽到 60 秒"],
+        options: "发版说明先写哪部分？",
+        open: "发版说明的开头你希望写什么？",
+        choices: ["先写不兼容的改动", "先写新功能"],
         recommended: "推荐",
       },
-      points: ["等待超时改为按文件大小计算", "连续运行 50 次全部通过"],
+      points: ["2 处不兼容的改动放在最前，各附迁移步骤", "其余 21 个 PR 按 5 组写，每条一句话"],
       prose:
-        "等待超时原来固定为 10 秒，大文件导出常常超时。现在按文件大小计算，连续运行 50 次全部通过。",
+        "这一版有 2 处不兼容的改动，放在最前面，各附了迁移步骤。其余 21 个 PR 按用户能感知的变化分成 5 组，每条一句话。",
     },
   },
-  /** What the lead reads in each workspace, and the missions it suggests from that. */
-  workspaces: {
-    harness: {
-      org: "Harness 维护组",
-      read: [
-        "pnpm monorepo，9 个包，约 2,500 个测试",
-        "GitHub 上 37 个未关闭的 issue，6 个标了 bug",
-        "CI 最近 10 次有 2 次失败，都卡在同一个测试上",
-      ],
-      missions: [
-        { label: "维护代码库：排查问题、修复缺陷", why: "6 个 bug 没人修，CI 也不稳" },
-        { label: "每天整理新 issue，修掉明确的缺陷", why: "每周新增约 10 个 issue" },
-        { label: "先修好不稳定的测试", why: "最近 2 次 CI 失败都是它" },
-      ],
-    },
-    site: {
-      org: "官网维护组",
-      read: [
-        "Vite 静态站，中英两套文档，共 86 页",
-        "12 个未关闭的 issue，大多是文档错漏",
-        "最近一个月，英文页比中文页多改了 9 次",
-      ],
-      missions: [
-        { label: "维护文档：修正错漏，中英同步", why: "中文页落后英文页 9 次修改" },
-        { label: "每天看新 issue，修掉文档错漏", why: "12 个 issue 大多是错漏" },
-        { label: "检查每页的示例代码能不能跑", why: "issue 里有 3 个是示例跑不通" },
-      ],
-    },
-  },
+  /** The sample company: it runs PenguinHarness. */
+  org: "PenguinHarness",
   team: {
     total: (tokens: string, cost: string) => `全公司本月 ${tokens} Token · ${cost}`,
     title: "团队",
@@ -283,7 +296,7 @@ export const zh = {
   },
   schedule: {
     info: "日程定期生成工单。巡检可以关掉、只提议，或直接开工；复盘只提议。",
-    names: { patrol: "每日巡检：看新 issue 和 CI", retro: "每周复盘：回看上周关闭的工单" },
+    names: { patrol: "每日巡检：看各块有什么新情况", retro: "每周复盘：回看上周关闭的工单" },
     when: { patrol: "每天 09:00", retro: "每周一 09:00" },
     modes: { off: "不巡检", propose: "仅提议", auto: "直接开工" },
     autoOn: "直接开工",
@@ -377,38 +390,74 @@ export const zh = {
       result: "lint 告警全部消除。",
     },
     survey: {
-      title: "摸清代码库现状",
-      gist: "梳理代码库、近期 issue 及 CI 运行记录，整理单页现状报告。",
-      acceptance: ["报告篇幅控制在一页内", "梳理出优先级最高的三项改进"],
+      title: "摸清项目现状",
+      gist: "读一遍代码、issue、CI、文档和社区讨论，整理一页现状报告。",
+      acceptance: ["报告不超过一页", "每一块列出最该先做的事"],
       progress: [
-        "已分析近 30 天的 issue 与 CI 记录。",
-        "完成单页报告编写，列出优先级最高的三项任务。",
+        "已看完近 30 天的 issue、CI 记录和社区讨论。",
+        "单页报告写完，每一块列出了最该先做的事。",
       ],
-      result: "代码库现状报告已归档至手册。",
+      result: "项目现状报告已记进手册。",
     },
     patrol: {
-      title: "每日巡检：每天 09:00 看新 issue 和 CI",
-      gist: "每日定时检查新增 issue 与 CI 运行状态，将异常项生成工单。",
+      title: "每日巡检：每天 09:00 看新 issue、CI 和社区",
+      gist: "每天定时看新 issue、CI 和社区讨论，要处理的提成工单。",
       acceptance: ["初期仅生成提议工单，做不做由你决定"],
       progress: [],
     },
     verifier: {
       title: "加一名专职验证",
-      gist: "交付物先由独立 Agent 实机运行验证，确认无误后再交给你验收。",
-      acceptance: ["代码实现与验证由不同 Agent 分开执行"],
+      gist: "交付先由另一名员工对照验收标准检查，确认无误再交给你验收。",
+      acceptance: ["干活和验证由不同的员工做"],
       progress: [],
     },
     skill: {
       title: "提炼技能：中英文档同步修改",
-      gist: "工单「修正快速开始里的端口号」曾因遗漏英文更新被打回。将双语核对步骤提炼为技能并配置给沈知远。",
-      acceptance: ["技能明确要求修改后双语同步核对", "配置给负责文档维护的工程师"],
+      gist: "工单「修正快速开始里的端口号」曾因漏改英文被打回。把中英核对的步骤提炼成技能，配置给许南星。",
+      acceptance: ["技能要求改完后中英两版逐段核对", "配置给负责文档的运营"],
       progress: [],
     },
     patrolScope: {
       title: "巡检不再提议依赖升级",
-      gist: "巡检生成的依赖升级工单已被驳回。后续依赖升级仅在你提出时执行，巡检范围限定为 issue 与 CI。",
+      gist: "巡检提的依赖升级工单被驳回了。以后依赖升级只在你提出时做，巡检不再看依赖版本。",
       acceptance: ["调整巡检日程提示词，移除依赖版本检查"],
       progress: [],
+    },
+    release: {
+      title: "写 0.3 的发版说明",
+      gist: "把这一版合并的 23 个 PR 写成用户读得懂的发版说明，中英各一份。",
+      acceptance: ["不兼容的改动放在最前，附迁移步骤", "每条链接指向对应的 PR"],
+      progress: [
+        "已整理这一版合并的 23 个 PR，分成 5 组。",
+        "初稿写完，中英两版都有。",
+        "已修正：两条链接改回对应的 PR。",
+      ],
+      found: "有两条链接指错了 PR：「连接测试」那条指到了 CSV 导出的 PR。",
+      result: "发版说明写好了，中英两版的链接都已核对。",
+    },
+    community: {
+      title: "整理本周社区问题",
+      gist: "把社区讨论和群里本周的问题归成几类，常问的补进文档。",
+      acceptance: ["每类附上原帖链接"],
+      progress: ["本周 14 个问题归成 4 类，其中 3 类已有文档可答。"],
+      result: "整理完了，缺文档的那一类另提了工单。",
+    },
+    discussion: {
+      title: "回复社区里 3 个没人回的问题",
+      gist: "社区讨论里有 3 个问题两天没人回，都和首次配置有关。",
+      acceptance: ["每个回复附上对应文档的链接"],
+      progress: ["3 个问题都回复了，附上了快速开始的链接。"],
+      result: "3 个问题都已回复。",
+    },
+    evals: {
+      title: "在评测集上对比两个新模型",
+      gist: "上个月新出的两个模型还没在评测集上跑过。先跑一遍，再决定要不要加进模型目录。",
+      acceptance: ["每个模型跑 3 次，报告平均分和波动", "附上每次运行的 Trace"],
+      progress: [
+        "两个模型各跑完 3 次，分数已记下。",
+        "报告写完：其中一个比现在的默认模型高 4 分，花费多 30%。",
+      ],
+      result: "报告写完了。要不要加进模型目录，另提工单给你定。",
     },
   } satisfies Record<FixtureId, TicketWords>,
   handbook: {
@@ -453,7 +502,7 @@ export const zh = {
     /** how-we-work.md, written from the company's settings. */
     howWeWork: {
       verify: {
-        on: (name: string) => `交付先由${name}实机验证，通过后才交给你验收。`,
+        on: (name: string) => `交付先由${name}对照验收标准检查，通过后才交给你验收。`,
         off: "交付直接交给你验收，不经验证。",
       },
       patrol: {
@@ -484,11 +533,12 @@ export const zh = {
         ],
       },
       state: {
-        title: "代码库现状",
+        title: "项目现状",
         body: [
-          "近 30 天新增 42 个 issue，其中 9 个与导出相关。",
-          "CI 失败集中于导出测试：最近 20 次运行中失败 3 次，因等待超时过短。",
-          "建议优先处理：修复偶发失败的导出测试、首次配置增加连接测试、导出支持 CSV。",
+          "代码：近 30 天新增 42 个 issue，9 个和导出有关。CI 最近 20 次失败 3 次，都卡在导出测试的等待超时上。",
+          "内容和社区：英文文档比中文多改了 9 次；社区里 3 个问题两天没人回。",
+          "评测：上个月新出的两个模型还没在评测集上跑过。",
+          "建议先做：修好导出测试、写 0.3 的发版说明、评测两个新模型。",
         ],
       },
       docsLesson: {

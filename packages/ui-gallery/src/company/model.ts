@@ -38,15 +38,8 @@
  *   Nothing about the company changes until the person accepts it; a skill accepted absorbs the
  *   lesson it came from, so the handbook every employee reads stays short.
  */
-import { EMPLOYEES, FIXTURES, RETRO_PROPOSALS, SAID_SCRIPT } from "./fixtures";
-import type {
-  Byline,
-  FixtureId,
-  HandbookDocId,
-  ScriptStep,
-  TicketKind,
-  WorkspaceId,
-} from "./fixtures";
+import { EMPLOYEES, FIRST_TASK, FIXTURES, PARTS, RETRO_PROPOSALS, SAID_SCRIPT } from "./fixtures";
+import type { Byline, FixtureId, HandbookDocId, Part, ScriptStep, TicketKind } from "./fixtures";
 import { inboxViewOf, INBOX_VIEWS, waitOf } from "./spec";
 import type { InboxView, TicketState, Triage } from "./spec";
 
@@ -194,7 +187,7 @@ export interface Metrics {
 const FIXED_DOCS: Record<HandbookDocId, { path: string; kind: HandbookKind }> = {
   readme: { path: "README.md", kind: "index" },
   howWeWork: { path: "how-we-work.md", kind: "index" },
-  state: { path: "state-of-the-repo.md", kind: "doc" },
+  state: { path: "state-of-the-project.md", kind: "doc" },
   docsLesson: { path: "lessons/docs-both-languages.md", kind: "lesson" },
   bilingualSkill: { path: "skills/bilingual-docs/SKILL.md", kind: "skill" },
 };
@@ -268,8 +261,6 @@ export type ChatLine =
 export interface CompanyState {
   /** Before the first sentence, or after it. */
   stage: "setup" | "running";
-  /** The folder the company works in, chosen at setup. */
-  workspace: WorkspaceId;
   /** How it works and how its agents write, chosen at setup. */
   settings: CompanySettings;
   /** What the person asked the company to look after; null in the staged week. */
@@ -279,7 +270,7 @@ export interface CompanyState {
   /** Every work session, oldest first. */
   sessions: WorkSession[];
   schedules: Schedule[];
-  /** The employees besides the lead, in the order they joined. */
+  /** The employees besides the lead, in the order they joined: the parts it staffs, then the verifier. */
   roles: Byline[];
   /** The handbook's files, oldest first. */
   handbook: HandbookEntry[];
@@ -380,21 +371,20 @@ function replay(target: Ticket, roles: Byline[]): WorkSession[] {
 export function freshState(): CompanyState {
   return {
     stage: "setup",
-    workspace: "harness",
     settings: DEFAULT_SETTINGS,
     mission: null,
     tickets: [],
     sessions: [],
     schedules: [{ id: "retro", auto: false }],
     lastRun: null,
-    // Until it starts, the company has the lead and one engineer; its settings may add the verifier.
-    roles: ["engineer"],
+    // Until it starts, the company has only the lead; setting it up staffs its parts.
+    roles: [],
     handbook: [fixedEntry("readme", null)],
     closed: [],
     retros: [],
     learned: [],
     chat: [],
-    pool: ["flaky", "lint"],
+    pool: ["flaky", "lint", "discussion"],
     said: 0,
   };
 }
@@ -432,12 +422,27 @@ export function weekState(): CompanyState {
       unread: false,
     }),
     ticketOf("skill", "retro", { status: "done", unread: false }),
+    ticketOf("community", "patrol", {
+      status: "done",
+      step: 2,
+      progress: 1,
+      delivered: true,
+      unread: false,
+    }),
     ticketOf("jitter", "person", working({ step: 1, progress: 1 })),
+    ticketOf("evals", "lead", working({ step: 1, progress: 1 })),
     ticketOf("connection", "person", {
       status: "review",
       step: 4,
       progress: 2,
       delivered: true,
+    }),
+    ticketOf("release", "person", {
+      status: "review",
+      step: 7,
+      progress: 3,
+      delivered: true,
+      findings: [""],
     }),
     ticketOf(
       "csv",
@@ -446,10 +451,9 @@ export function weekState(): CompanyState {
     ),
     ticketOf("flaky", "patrol"),
   ];
-  const roles: Byline[] = ["engineer", "verifier"];
+  const roles: Byline[] = ["engineer", "writer", "researcher", "verifier"];
   return {
     stage: "running",
-    workspace: "harness",
     settings: DEFAULT_SETTINGS,
     mission: null,
     tickets,
@@ -470,17 +474,17 @@ export function weekState(): CompanyState {
       fixedEntry("state", "survey"),
       { ...fixedEntry("docsLesson", "docs"), mergedInto: FIXED_DOCS.bilingualSkill.path },
       { path: "retros/1.md", kind: "retro", ticket: null, doc: null, retro: 1 },
-      fixedEntry("bilingualSkill", "skill", "engineer"),
+      fixedEntry("bilingualSkill", "skill", "writer"),
     ],
     // The first retrospective looked back over the first five closed tickets and proposed the skill.
-    closed: ["patrol", "verifier", "survey", "docs", "types", "skill", "timeout"],
+    closed: ["patrol", "verifier", "survey", "docs", "types", "skill", "timeout", "community"],
     retros: [{ n: 1, from: 0, upTo: 5, proposals: ["skill"] }],
-    learned: [{ byline: "engineer", ticket: "docs" }],
+    learned: [{ byline: "writer", ticket: "docs" }],
     chat: [
       { from: "person", about: "csv" },
       { from: "lead", line: "filed", tickets: ["csv"] },
     ],
-    pool: ["lint"],
+    pool: ["lint", "discussion"],
     said: 0,
   };
 }
@@ -596,33 +600,35 @@ const staffed = (state: CompanyState, ticket: Ticket): Ticket =>
     : ticket;
 
 /**
- * Starting the company: what it looks after, in which workspace, and how it works. The choices
- * take effect at once, as the person made them: the verifier joins if every delivery is to be
- * verified, the patrol is scheduled unless it is off, and how-we-work.md is written for every
- * employee to read. The lead has already read the workspace, so it answers with its first tasks
- * as proposals; nothing starts until the person accepts it.
+ * Starting the company: what it looks after, the parts it staffs, and how it works. The choices
+ * take effect at once, as the person made them: one employee joins for each part, the verifier
+ * joins too if every delivery is to be verified, the patrol is scheduled unless it is off, and
+ * how-we-work.md is written for every employee to read. The lead has already read the workspace,
+ * so it answers with its own survey and each part's first task as proposals; nothing starts until
+ * the person accepts it. A company with no part has no one to do the work, and does not start.
  */
 export function startCompany(
   state: CompanyState,
   mission: string,
-  workspace: WorkspaceId = state.workspace,
+  parts: readonly Part[] = PARTS,
   settings: CompanySettings = state.settings,
 ): CompanyState {
   const said = mission.trim();
-  if (state.stage !== "setup" || said === "") return state;
-  const proposals: FixtureId[] = ["survey", "flaky"];
+  if (state.stage !== "setup" || said === "" || parts.length === 0) return state;
+  const staffedParts = PARTS.filter((part) => parts.includes(part));
+  const roles: Byline[] = settings.verify ? [...staffedParts, "verifier"] : [...staffedParts];
+  const proposals: FixtureId[] = ["survey", ...staffedParts.map((part) => FIRST_TASK[part])];
   return {
     ...state,
     stage: "running",
-    workspace,
     settings,
     mission: said,
-    roles: settings.verify ? ["engineer", "verifier"] : ["engineer"],
+    roles,
     schedules: patrolled(state.schedules, settings.patrol),
     handbook: [...state.handbook, fixedEntry("howWeWork", null)],
     tickets: proposals.map((id) => ticketOf(id, "lead")),
-    // The lead proposed the flaky test itself; the patrol finds what is left.
-    pool: state.pool.filter((id) => !proposals.includes(id)),
+    // The patrol finds what is left, and only what someone on the team can do.
+    pool: state.pool.filter((id) => !proposals.includes(id) && roles.includes(FIXTURES[id].owner)),
     chat: [
       { from: "person", text: said },
       { from: "lead", line: "proposals", tickets: proposals },
@@ -857,7 +863,8 @@ export function sayToLead(state: CompanyState, text: string): CompanyState {
     id,
     fixture: null,
     title: said,
-    owner: "engineer",
+    // The lead hands it to the first part the company staffs.
+    owner: state.roles.find((role) => role !== "verifier") ?? "lead",
     verifier: state.roles.includes("verifier") ? "verifier" : null,
     priority: "P2",
   };

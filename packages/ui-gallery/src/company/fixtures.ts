@@ -1,5 +1,7 @@
 /**
- * The sample work the prototype is staged with: thirteen tickets' worth of facts that are not
+ * The sample company runs PenguinHarness itself: its code, its docs, blog and community, and the
+ * evaluation of new models, one employee to each part. The sample work it is staged with is
+ * seventeen tickets' worth of facts that are not
  * language (what kind of thing each is, who does it, the steps its work session takes when the
  * reader lets time pass). Their words are the dictionaries' `tickets`, keyed by the same ids.
  * Everything is fictional; no agent runs.
@@ -17,7 +19,11 @@ export type FixtureId =
   | "patrol"
   | "verifier"
   | "skill"
-  | "patrolScope";
+  | "patrolScope"
+  | "release"
+  | "community"
+  | "discussion"
+  | "evals";
 
 /**
  * What accepting a ticket sets going: work, a skill the lead distilled, installed for the employee
@@ -35,12 +41,42 @@ export type TicketKind = "task" | "schedule" | "role" | "skill" | "change";
 export type HandbookDocId = "readme" | "howWeWork" | "state" | "docsLesson" | "bilingualSkill";
 
 /** Whose byline a ticket carries: one of the company's employees. */
-export type Byline = "lead" | "engineer" | "verifier";
+export type Byline = "lead" | "engineer" | "writer" | "researcher" | "verifier";
+
+/**
+ * A part of the work one employee owns: engineering (the code), operations (the docs, the blog,
+ * the community) and research (evaluating models, following the papers). A company staffs the
+ * parts its mission needs; the verifier is not a part, it checks the parts' deliveries when the
+ * company verifies them.
+ */
+export type Part = "engineer" | "writer" | "researcher";
+export const PARTS: readonly Part[] = ["engineer", "writer", "researcher"];
+
+/** The folder the company works in: the Project's workspace. */
+export const WORKSPACE = "~/code/penguin-harness";
+
+/**
+ * The missions the setup page suggests, as the parts each needs; their words are the
+ * dictionaries' `setup.missions`, in the same order. The first is the sample company's own.
+ */
+export const MISSION_PARTS: readonly (readonly Part[])[] = [
+  ["engineer", "writer", "researcher"],
+  ["engineer"],
+  ["writer"],
+  ["researcher", "writer"],
+];
+
+/** The task the lead proposes first for each part it staffs, beside its own survey. */
+export const FIRST_TASK: Record<Part, FixtureId> = {
+  engineer: "flaky",
+  writer: "release",
+  researcher: "evals",
+};
 
 /**
  * An employee, apart from its words: its Agent id and who it reports to. The id picks the
- * avatar's colour; these three fall a third of the wheel apart, so
- * no two employees share a colour.
+ * avatar's colour; these five fall at least a sixth of the wheel apart, so no two employees
+ * share a colour.
  * Its name, title and duties are the dictionaries' `people`. The lead is the one that stays up;
  * the others work only in the sessions of the tickets they own.
  */
@@ -59,6 +95,8 @@ export const USD_PER_MILLION_TOKENS = 3;
 export const EMPLOYEES: Record<Byline, Employee> = {
   lead: { agentId: "harness-lead", reportsTo: null },
   engineer: { agentId: "org-engineer", reportsTo: "lead" },
+  writer: { agentId: "org-community", reportsTo: "lead" },
+  researcher: { agentId: "org-study", reportsTo: "lead" },
   verifier: { agentId: "org-verifier", reportsTo: "lead" },
 };
 
@@ -142,7 +180,7 @@ export const FIXTURES: Record<FixtureId, Fixture> = {
   },
   docs: {
     kind: "task",
-    owner: "engineer",
+    owner: "writer",
     priority: "P2",
     script: ["progress", "deliver"],
     deliverable: "pull/121",
@@ -169,7 +207,7 @@ export const FIXTURES: Record<FixtureId, Fixture> = {
     owner: "lead",
     priority: "P1",
     script: ["progress", "progress", "deliver"],
-    deliverable: "handbook/state-of-the-repo.md",
+    deliverable: "handbook/state-of-the-project.md",
     handbook: "state",
     cost: 2.6,
   },
@@ -182,28 +220,48 @@ export const FIXTURES: Record<FixtureId, Fixture> = {
     script: [],
     cost: 0,
     handbook: "bilingualSkill",
-    installsOn: "engineer",
+    installsOn: "writer",
     merges: "docsLesson",
   },
   patrolScope: { kind: "change", owner: "lead", priority: "P2", script: [], cost: 0 },
+  release: {
+    kind: "task",
+    owner: "writer",
+    priority: "P1",
+    script: ["progress", "progress", "deliver"],
+    deliverable: "changelog/0.3.md",
+    cost: 2.3,
+    verifiedBy: "verifier",
+    finds: true,
+  },
+  community: {
+    kind: "task",
+    owner: "writer",
+    priority: "P2",
+    script: ["progress", "deliver"],
+    deliverable: "reports/community-week-46.md",
+    cost: 1.1,
+  },
+  discussion: {
+    kind: "task",
+    owner: "writer",
+    priority: "P2",
+    script: ["progress", "deliver"],
+    cost: 0.6,
+  },
+  evals: {
+    kind: "task",
+    owner: "researcher",
+    priority: "P1",
+    script: ["progress", "progress", "deliver"],
+    deliverable: "reports/new-models-eval.md",
+    cost: 6.4,
+    verifiedBy: "verifier",
+  },
 };
 
 /** What the sample's retrospectives propose, by retrospective: the first, then the second. */
 export const RETRO_PROPOSALS: readonly (readonly FixtureId[])[] = [["skill"], ["patrolScope"]];
-
-/**
- * The folders a company can work in: the Project's workspaces, as the setup page offers them. What
- * the lead reads in each, and the missions it suggests from that, are the dictionaries'
- * `workspaces`, keyed by the same ids. The first is the one a new company is offered first.
- */
-export const WORKSPACES = ["harness", "site"] as const;
-export type WorkspaceId = (typeof WORKSPACES)[number];
-
-/** Each workspace's folder. */
-export const WORKSPACE_PATH: Record<WorkspaceId, string> = {
-  harness: "~/code/penguin-harness",
-  site: "~/code/penguin-site",
-};
 
 /** The steps of a ticket the reader asked for in their own words. */
 export const SAID_SCRIPT: readonly ScriptStep[] = ["progress", "deliver"];

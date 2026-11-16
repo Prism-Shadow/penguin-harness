@@ -2,12 +2,15 @@
  * Setting a company up, one question per screen, every choice already made so the reader can go
  * straight through, and every choice on screen so nothing about the company runs unseen.
  *
- * 1. Workspace: the Project's workspace, and what the lead read in it.
- * 2. Mission: what the lead suggests from what it read, or the reader's own words. Changing the
- *    workspace changes what was read and what is suggested.
+ * 1. Mission: what the company does, picked from the lead's suggestions or in the reader's own
+ *    words. A company is not one kind of work: a mission names the parts it needs.
+ * 2. Team: one employee to each part (engineering, operations, research), each with what it
+ *    owns, what it watches and what the lead read there; the reader drops or adds parts. The
+ *    lead is always on; the verifier is set in the next step, where it sits on a ticket's way.
  * 3. How a ticket goes: its four stops, with the one stop the reader can switch (verification)
  *    where it sits, and the rule of when the company reaches them.
- * 4. Schedules: what the daily patrol does with what it finds; the weekly retrospective.
+ * 4. Schedules: what the daily patrol does with what it finds in the parts' sources; the weekly
+ *    retrospective.
  * 5. How the agents write to the reader, beside a sample ticket written that way.
  *
  * Steps 3 to 5 go into the handbook's how-we-work.md, which every employee reads. Each step keeps
@@ -23,14 +26,15 @@ import {
   PageFrame,
   RadioDisc,
   Segmented,
-  Select,
   Switch,
   Textarea,
 } from "@prismshadow/penguin-ui";
-import { WORKSPACE_PATH, WORKSPACES } from "./fixtures";
-import type { WorkspaceId } from "./fixtures";
+import { MISSION_PARTS, PARTS, WORKSPACE } from "./fixtures";
+import type { Part } from "./fixtures";
 import { DEFAULT_SETTINGS } from "./model";
 import type { CompanySettings, PatrolMode } from "./model";
+import { PersonAvatar } from "./people";
+import { sourcesOf } from "./text";
 import { useWords } from "./use-words";
 
 const QUIET = "text-fg-muted";
@@ -39,7 +43,7 @@ const LABEL = "text-xs font-semibold text-fg-muted";
 /** The option that stands for the reader's own words, among the lead's suggestions. */
 const OWN = "own";
 
-const STEPS = ["workspace", "mission", "flow", "schedules", "style"] as const;
+const STEPS = ["mission", "team", "flow", "schedules", "style"] as const;
 type Step = (typeof STEPS)[number];
 
 function Steps({ step }: { step: Step }) {
@@ -144,87 +148,35 @@ function StepForm({
   );
 }
 
-function WorkspaceStep({
-  workspace,
-  onWorkspace,
+function MissionStep({
+  choice,
+  onChoice,
+  own,
+  onOwn,
+  mission,
   focus,
   onNext,
 }: {
-  workspace: WorkspaceId;
-  onWorkspace: (workspace: WorkspaceId) => void;
+  choice: string;
+  onChoice: (choice: string) => void;
+  own: string;
+  onOwn: (own: string) => void;
+  mission: string;
   focus: boolean;
   onNext: () => void;
 }) {
   const W = useWords();
   return (
     <StepForm onSubmit={onNext}>
-      <Intro step="workspace" title={W.setup.title} body={W.setup.body} focus={focus} />
-      <div className="mt-8 space-y-5">
-        <Select
-          label={W.setup.workspace}
-          info={W.setup.workspaceInfo}
-          value={workspace}
-          onChange={(event) => onWorkspace(event.target.value as WorkspaceId)}
-        >
-          {WORKSPACES.map((id) => (
-            <option key={id} value={id}>
-              {WORKSPACE_PATH[id]}
-            </option>
-          ))}
-        </Select>
-        <section aria-label={W.setup.read}>
-          <h2 className={`flex items-center gap-1 ${LABEL}`}>
-            {W.setup.read}
-            <InfoPopover label={W.setup.read}>{W.setup.readInfo}</InfoPopover>
-          </h2>
-          <ul className="mt-2 space-y-1 text-sm text-fg">
-            {W.workspaces[workspace].read.map((line) => (
-              <li key={line} className="flex gap-2">
-                <span aria-hidden="true" className="text-fg-subtle">
-                  ·
-                </span>
-                {line}
-              </li>
-            ))}
-          </ul>
-        </section>
-      </div>
-      <Foot next={W.setup.next} />
-    </StepForm>
-  );
-}
-
-function MissionStep({
-  workspace,
-  choice,
-  onChoice,
-  own,
-  onOwn,
-  mission,
-  onBack,
-  onNext,
-}: {
-  workspace: WorkspaceId;
-  choice: string;
-  onChoice: (choice: string) => void;
-  own: string;
-  onOwn: (own: string) => void;
-  mission: string;
-  onBack: () => void;
-  onNext: () => void;
-}) {
-  const W = useWords();
-  return (
-    <StepForm onSubmit={onNext}>
-      <Intro step="mission" title={W.setup.mission} body={W.setup.missionBody} focus />
+      <Intro step="mission" title={W.setup.title} body={W.setup.body} focus={focus} />
       <ChoiceGroup
         shape="card"
-        aria-label={W.setup.mission}
+        aria-label={W.setup.title}
         className="mt-8"
         value={choice}
         onChange={onChoice}
         options={[
-          ...W.workspaces[workspace].missions.map((option, i) => ({
+          ...W.setup.missions.map((option, i) => ({
             value: String(i),
             label: option.label,
             description: option.why,
@@ -245,7 +197,74 @@ function MissionStep({
           />
         </div>
       )}
-      <Foot onBack={onBack} next={W.setup.next} disabled={mission.trim() === ""} />
+      <Foot next={W.setup.next} disabled={mission.trim() === ""} />
+    </StepForm>
+  );
+}
+
+function TeamStep({
+  parts,
+  onParts,
+  onBack,
+  onNext,
+}: {
+  parts: readonly Part[];
+  onParts: (parts: Part[]) => void;
+  onBack: () => void;
+  onNext: () => void;
+}) {
+  const W = useWords();
+  const T = W.setup.team;
+  const lead = W.people.lead;
+  return (
+    <StepForm wide onSubmit={onNext}>
+      <Intro step="team" title={T.title} body={T.body(WORKSPACE)} focus />
+      <div className="mt-8 flex items-start gap-3 border-b border-line px-4 pb-4">
+        <span className="mt-0.5 shrink-0">
+          <PersonAvatar byline="lead" size={18} />
+        </span>
+        <span className="min-w-0">
+          <span className="block text-sm text-fg">
+            {lead.title}
+            <span className={`ml-2 ${QUIET}`}>{lead.name}</span>
+          </span>
+          <span className={`block text-sm ${QUIET}`}>{T.lead}</span>
+        </span>
+      </div>
+      <ChoiceGroup
+        multiple
+        shape="card"
+        aria-label={T.title}
+        className="mt-4"
+        value={parts}
+        onChange={(chosen) => onParts(chosen as Part[])}
+        options={PARTS.map((part) => {
+          const words = W.setup.parts[part];
+          const person = W.people[part];
+          return {
+            value: part,
+            label: (
+              <span className="flex items-center gap-2">
+                <PersonAvatar byline={part} size={18} />
+                {words.name}
+                <span className={`font-normal ${QUIET}`}>{person.name}</span>
+              </span>
+            ),
+            description: (
+              <>
+                <span className="block">{person.duties}</span>
+                <span className="mt-1 block text-xs">{T.line(words.watches, words.read)}</span>
+              </>
+            ),
+          };
+        })}
+      />
+      <Foot
+        onBack={onBack}
+        next={W.setup.next}
+        disabled={parts.length === 0}
+        {...(parts.length === 0 ? { note: T.none } : {})}
+      />
     </StepForm>
   );
 }
@@ -299,7 +318,7 @@ function Preview({ settings }: { settings: CompanySettings }) {
   return (
     <figure className="rounded-md border border-line bg-surface p-4 text-sm">
       <figcaption className={LABEL}>{P.title}</figcaption>
-      <p className="mt-2 font-medium text-fg">{W.tickets.flaky.title}</p>
+      <p className="mt-2 font-medium text-fg">{W.tickets.release.title}</p>
       <p className={`mt-3 ${LABEL}`}>{P.progress}</p>
       <ul className="mt-1 space-y-1 text-fg">
         {steps.map((line) => (
@@ -336,6 +355,8 @@ function Preview({ settings }: { settings: CompanySettings }) {
 /** What every step after the first takes: the settings, and the ways back and on. */
 interface SettingsStep {
   settings: CompanySettings;
+  /** The parts the company staffs, whose sources the patrol reads. */
+  parts: readonly Part[];
   set: (patch: Partial<CompanySettings>) => void;
   onBack: () => void;
   onNext: () => void;
@@ -376,7 +397,7 @@ function FlowStep({ settings, set, onBack, onNext }: SettingsStep) {
   );
 }
 
-function SchedulesStep({ settings, set, onBack, onNext }: SettingsStep) {
+function SchedulesStep({ settings, parts, set, onBack, onNext }: SettingsStep) {
   const W = useWords();
   const S = W.setup.schedules;
   const patrolId = useId();
@@ -387,7 +408,7 @@ function SchedulesStep({ settings, set, onBack, onNext }: SettingsStep) {
         <section>
           <h2 id={patrolId} className={LABEL}>
             {S.patrol}
-            <span className="ml-2 font-normal">{S.patrolWhen}</span>
+            <span className="ml-2 font-normal">{S.patrolWhen(sourcesOf(parts, W))}</span>
           </h2>
           <ChoiceGroup
             shape="card"
@@ -470,62 +491,55 @@ function StyleStep({ settings, set, onBack, onNext }: SettingsStep) {
 export function SetupPage({
   onStart,
 }: {
-  onStart: (mission: string, workspace: WorkspaceId, settings: CompanySettings) => void;
+  onStart: (mission: string, parts: readonly Part[], settings: CompanySettings) => void;
 }) {
   const W = useWords();
-  const [step, setStep] = useState<Step>("workspace");
+  const [step, setStep] = useState<Step>("mission");
   // The first screen takes no focus when the page opens; coming back to it, it does.
   const [moved, setMoved] = useState(false);
-  const [workspace, setWorkspace] = useState<WorkspaceId>(WORKSPACES[0]);
   const [choice, setChoice] = useState("0");
   const [own, setOwn] = useState("");
+  const [parts, setParts] = useState<readonly Part[]>(MISSION_PARTS[0] ?? PARTS);
   const [settings, setSettings] = useState<CompanySettings>(DEFAULT_SETTINGS);
-  const mission =
-    choice === OWN ? own : (W.workspaces[workspace].missions[Number(choice)]?.label ?? "");
+  const mission = choice === OWN ? own : (W.setup.missions[Number(choice)]?.label ?? "");
   const go = (to: Step) => {
     setMoved(true);
     setStep(to);
   };
   const at = STEPS.indexOf(step);
-  const back = () => go(STEPS[at - 1] ?? "workspace");
+  const back = () => go(STEPS[at - 1] ?? "mission");
   const next = () => {
     const to = STEPS[at + 1];
-    if (to === undefined) onStart(mission, workspace, settings);
+    if (to === undefined) onStart(mission, parts, settings);
     else go(to);
   };
   const settingsStep: SettingsStep = {
     settings,
+    parts,
     set: (patch) => setSettings((current) => ({ ...current, ...patch })),
     onBack: back,
     onNext: next,
   };
   let screen: ReactNode;
-  if (step === "workspace") {
+  if (step === "mission") {
     screen = (
-      <WorkspaceStep
-        workspace={workspace}
-        onWorkspace={(chosen) => {
-          setWorkspace(chosen);
-          // What was suggested belongs to the old workspace; the reader's own words stay.
-          if (choice !== OWN) setChoice("0");
+      <MissionStep
+        choice={choice}
+        onChoice={(chosen) => {
+          setChoice(chosen);
+          // A suggestion names the parts it needs; the reader's own words leave the lead to
+          // propose every part.
+          setParts(chosen === OWN ? PARTS : (MISSION_PARTS[Number(chosen)] ?? PARTS));
         }}
+        own={own}
+        onOwn={setOwn}
+        mission={mission}
         focus={moved}
         onNext={next}
       />
     );
-  } else if (step === "mission") {
-    screen = (
-      <MissionStep
-        workspace={workspace}
-        choice={choice}
-        onChoice={setChoice}
-        own={own}
-        onOwn={setOwn}
-        mission={mission}
-        onBack={back}
-        onNext={next}
-      />
-    );
+  } else if (step === "team") {
+    screen = <TeamStep parts={parts} onParts={setParts} onBack={back} onNext={next} />;
   } else if (step === "flow") {
     screen = <FlowStep {...settingsStep} />;
   } else if (step === "schedules") {
