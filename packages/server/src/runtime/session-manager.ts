@@ -3104,7 +3104,7 @@ export class SessionsModule {
   @Use() private readonly settings!: Settings;
   @Use() private readonly sessionsRepo!: SessionIndex;
   @Use() private readonly sources!: SessionOrigins;
-  @Use() private readonly state!: AgentStateStore;
+  @Use() private readonly state!: AgentState;
   @Use() private readonly recorder!: UsageRecording;
   @Use() private readonly errors!: Errors;
   @Use() private readonly modelScopeAuth!: ModelScopeAuth;
@@ -3215,7 +3215,7 @@ export class SessionsModule {
       notifyProjectUsers,
     });
     const manager = new SessionManager({
-      state: this.state,
+      state: this.state as AgentStateStore,
       sessions: sessionsRepo,
       channels,
       root: config.root,
