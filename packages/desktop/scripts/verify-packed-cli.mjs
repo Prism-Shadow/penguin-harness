@@ -20,7 +20,9 @@
  * and the install image (the harness a machine runs, in the hot push's format) beside it,
  * and the app's own package.json naming this build's version — the release a machine
  * downloads. None of them is imported by anything, so an app without them builds, starts
- * and runs its CLI, and only an install on a machine fails.
+ * and runs its CLI, and only an install on a machine fails. So is the main window's preload, a
+ * bundle nothing imports either: an app without it starts, and its Windows and Linux windows
+ * have no button to minimize, maximize or close them.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -123,6 +125,9 @@ for (const app of dirs) {
     "bin/penguin.cmd",
     "dist/penguin.js",
     "dist/server.js",
+    // The main window's preload, a bundle of its own (tsup.config.ts): without it Windows and
+    // Linux windows have no minimize, maximize or close button at all.
+    "dist/preload.cjs",
     ...FAR_SIDE_SCRIPTS.map(({ name }) => `dist/${name}`),
     "dist/install-image.gz",
     "web-dist/index.html",

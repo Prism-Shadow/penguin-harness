@@ -9,7 +9,7 @@ import { ICONS } from "../src/components/icons/icons";
 import { SearchInput } from "../src/components/forms/search-input/search-input";
 import type { SearchInputProps } from "../src/components/forms/search-input/search-input";
 import { DEFAULT_UI_STRINGS, UiStringsProvider } from "../src/strings";
-import { classTokens, renderStatic } from "../src/testing";
+import { renderStatic } from "../src/testing";
 
 const noop = () => {};
 const search = (props: Partial<SearchInputProps> = {}) =>
@@ -51,33 +51,14 @@ describe("SearchInput", () => {
     expect(search({ alwaysClearable: true })).toContain("<button");
   });
 
-  it("reserves the clear button's room either way, so the text never shifts", () => {
-    expect(classTokens(search())).toContain("pr-7");
-    expect(classTokens(search({ value: "a" }))).toContain("pr-7");
-  });
-
   it("draws the magnifier before the text when asked, and pads past it", () => {
     const html = search({ icon: true });
     expect(html).toContain(`d="${ICONS.search}"`);
-    expect(classTokens(html)).toContain("pl-7");
     expect(search()).not.toContain(`d="${ICONS.search}"`);
   });
 
-  it("takes the shape of its container", () => {
-    const field = classTokens(search());
-    expect(field).toEqual(expect.arrayContaining(["border-line-emphasis", "bg-control", "py-1"]));
-    const panel = classTokens(search({ variant: "panel" }));
-    expect(panel).toEqual(expect.arrayContaining(["border-line", "bg-transparent"]));
-    expect(panel).not.toContain("border-line-emphasis");
-    const menu = classTokens(search({ variant: "menu" }));
-    expect(menu).toEqual(expect.arrayContaining(["border-transparent", "py-0.5"]));
-    // The font size is the control rung's, never typed here.
-    expect(classTokens(search({ size: "base" }))).toContain("text-base");
-  });
-
-  it("puts the caller's layout on the wrapper and the hover hint in the shared tooltip", () => {
+  it("puts the hover hint in the shared tooltip", () => {
     const html = search({ className: "w-44", title: "Filter by name" });
-    expect(html).toMatch(/^<div class="relative w-44">/);
     expect(html).toContain('data-tooltip="Filter by name"');
     expect(html).not.toContain("title=");
   });

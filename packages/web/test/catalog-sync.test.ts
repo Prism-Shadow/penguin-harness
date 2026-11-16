@@ -19,7 +19,7 @@ import {
   presetModelEntries,
 } from "@prismshadow/penguin-server/model-catalog";
 import type { ModelInfo } from "@prismshadow/penguin-server/api";
-import { catalogDelta } from "../src/features/models/catalog-sync";
+import { catalogDelta } from "../src/lib/model-catalog-sync";
 import { presetUpdateTodo } from "../src/lib/todo-badges";
 
 const PRESETS = presetModelEntries();

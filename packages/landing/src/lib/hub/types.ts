@@ -23,8 +23,8 @@ export interface PluginSummary {
   version: string;
   author?: HubAuthor;
   preinstall: boolean;
-  /** The package's icon.svg as a data URL, drawn as a mask so it takes the text colour. */
-  icon?: string;
+  /** The package's icon as a data URL; `tint` (a monochrome SVG) draws it as a mask in the tile's ink. */
+  icon?: { url: string; tint: boolean };
   skillCount: number;
   hookCount: number;
   workbenchCount: number;

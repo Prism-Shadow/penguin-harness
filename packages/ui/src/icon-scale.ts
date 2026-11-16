@@ -47,6 +47,10 @@ export const ICON_SIZE = {
   launcherBall: 22,
   /** A fan entry of the floating launcher: a glyph alone in a round button one rung under the ball. */
   launcherEntry: 19,
+  /** The cross on a floating ball's corner that puts it away: a 20px button overhanging the ball. */
+  launcherDismiss: 10,
+  /** The chevron on the slim handle a put-away floating ball leaves on its edge. */
+  launcherHandle: 12,
   /** The rotating collapse chevron. */
   chevron: 14,
   /** The collapse chevron in a dense row (an 11px folder row, a banner). */

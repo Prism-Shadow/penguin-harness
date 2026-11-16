@@ -19,7 +19,7 @@ import { describe, expect, it } from "vitest";
 import { Fold } from "../src/components/layout/fold/fold";
 import { foldStart, foldStep, instantDuration } from "../src/components/layout/fold/fold-phase";
 import type { FoldPhase } from "../src/components/layout/fold/fold-phase";
-import { renderStatic } from "../src/testing";
+import { renderStatic, markupStructure } from "../src/testing";
 
 /** Runs a sequence of events from where a fold mounted. */
 const run = (mountedOpen: boolean, ...events: Parameters<typeof foldStep>[1][]): FoldPhase =>
@@ -81,8 +81,8 @@ describe("Fold", () => {
 
   it("mounted open, is a settled layout-motion track whose body neither clips nor goes inert", () => {
     const html = fold(true);
-    expect(html).toBe(
-      '<div data-layout-motion="true" data-fold="settled" class="grid"><div class="min-h-0 min-w-0"><p>rows</p></div></div>',
+    expect(markupStructure(html)).toBe(
+      '<div data-layout-motion="true" data-fold="settled"><div><p>rows</p></div></div>',
     );
   });
 

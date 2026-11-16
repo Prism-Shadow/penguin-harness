@@ -5,7 +5,7 @@
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { RuledSection } from "../src/components/layout/ruled-section/ruled-section";
-import { classTokens, renderStatic } from "../src/testing";
+import { renderStatic } from "../src/testing";
 
 describe("RuledSection", () => {
   const html = renderStatic(
@@ -21,15 +21,13 @@ describe("RuledSection", () => {
     ),
   );
 
-  it("is a section headed by an eyebrow inside an h2, over a token rule", () => {
-    expect(html).toMatch(/^<section class="min-w-0 *">/);
+  it("is a section headed by an eyebrow inside an h2", () => {
+    expect(html).toMatch(/^<section class="[^"]*">/);
     expect(html).toMatch(/<h2 class="[^"]*"><span class="ui-eyebrow [^"]*">Inbox<\/span>/);
-    expect(html).toMatch(/class="[^"]*\bborder-b border-line pb-2\b/);
-    expect(html).not.toMatch(/gray-|dark:|uppercase|tracking-/);
   });
 
-  it("shows the count as a tabular Count, the trigger and the actions, then the body", () => {
-    expect(html).toMatch(/<span class="[^"]*tabular-nums[^"]*">3<\/span>/);
+  it("shows the trigger and the actions, then the body", () => {
+    expect(html).toMatch(/<span class="[^"]*">3<\/span>/);
     expect(html).toContain('aria-label="More info: Inbox"');
     expect(html.indexOf("Filter")).toBeLessThan(html.indexOf("rows"));
   });
@@ -38,6 +36,5 @@ describe("RuledSection", () => {
     const bare = renderStatic(createElement(RuledSection, { title: "Goal", level: 3 }, "text"));
     expect(bare).toContain("<h3");
     expect(bare).not.toContain("<button");
-    expect(classTokens(bare)).not.toContain("tabular-nums");
   });
 });

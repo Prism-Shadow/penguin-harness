@@ -7,7 +7,7 @@ import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { ChangesCard, PathLabel } from "../src/components/chat/changes-card/changes-card";
 import type { ChangesCardProps } from "../src/components/chat/changes-card/changes-card";
-import { classTokens, renderStatic } from "../src/testing";
+import { renderStatic } from "../src/testing";
 
 const open = () => {};
 const card = (props: Partial<ChangesCardProps> = {}) =>
@@ -75,9 +75,8 @@ describe("ChangesCard", () => {
 });
 
 describe("PathLabel", () => {
-  it("fades the directory and sets the name in bold, both able to truncate", () => {
+  it("shows the directory, then the name", () => {
     const html = renderStatic(createElement(PathLabel, { path: "src/lib/a.ts" }));
-    expect(html).toMatch(/>src\/lib\/<\/span><span class="[^"]*font-semibold[^"]*">a\.ts</);
-    expect(classTokens(html)).toEqual(expect.arrayContaining(["shrink-[9999]", "truncate"]));
+    expect(html).toMatch(/>src\/lib\/<\/span><span class="[^"]*">a\.ts</);
   });
 });

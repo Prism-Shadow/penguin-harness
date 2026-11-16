@@ -1,0 +1,30 @@
+{
+  "api": 1,
+  "id": "geek",
+  "names": { "zh": "极客", "en": "Console" },
+  "version": "1.0.0",
+  "base": "foundation",
+  "modes": ["light", "dark"],
+  "swatches": {
+    "light": { "canvas": "#fbfafa", "ink": "#1d1d1f", "accent": "#1d1d1f" },
+    "dark": { "canvas": "#131010", "ink": "#d9d4d3", "accent": "#f4f2f2" }
+  },
+  "accent": {
+    "own": { "light": "#1d1d1f", "dark": "#f4f2f2" },
+    "presets": [
+      { "id": "orange", "swatch": "#e32a01" },
+      { "id": "phosphor", "swatch": "#1f7a1f" },
+      { "id": "cyan", "swatch": "#0e7490" },
+      { "id": "magenta", "swatch": "#b0177e" },
+      { "id": "gold", "swatch": "#8a6d00" },
+      { "id": "cobalt", "swatch": "#003ee9" }
+    ]
+  },
+  "fonts": {
+    "sans": "IBM Plex Sans Variable",
+    "ui": "IBM Plex Sans Variable",
+    "mono": "JetBrains Mono Variable",
+    "cjk": "Noto Sans SC Variable",
+    "display": "IBM Plex Sans Variable"
+  }
+}

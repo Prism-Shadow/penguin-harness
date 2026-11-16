@@ -67,20 +67,36 @@ const WHAT = [
 
 describe("a boot that meets plugins its build cannot run", () => {
   afterEach(() => vi.restoreAllMocks());
-  const quiet = () => vi.spyOn(console, "warn").mockImplementation(() => {});
+  const quiet = () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    return null;
+  };
+  /** Disabled plugins go to console.error; ones running without part of themselves only console.log. */
+  const said = (error: ReturnType<typeof vi.spyOn>, log: ReturnType<typeof vi.spyOn>) => [
+    ...error.mock.calls.map((c: unknown[]) => String(c[0])),
+    ...log.mock.calls.map((c: unknown[]) => String(c[0])),
+  ];
 
   it("nobody waiting (a cold start): boots without them and says so on the host and in the log", async () => {
-    const warn = quiet();
+    quiet();
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
     const { resources, host } = kernelWithUnsatisfied();
     const inst = await bootOn(resources);
     try {
       expect(inst.api.info()).toMatchObject({ impl: "packaged" });
       expect([...host.unsatisfied().values()]).toEqual(WHAT);
-      const said = warn.mock.calls.map((c) => String(c[0]));
-      expect(said.some((l) => /plugin '@acme\/unmet' left out of this generation/.test(l))).toBe(
+      expect(
+        said(error, log).some((l) => /plugin '@acme\/unmet' left out of this generation/.test(l)),
+      ).toBe(true);
+      expect(said(error, log).some((l) => /plugin '@acme\/partial' runs without/.test(l))).toBe(
         true,
       );
-      expect(said.some((l) => /plugin '@acme\/partial' runs without/.test(l))).toBe(true);
+      // The disabled one failed to load (console.error); the partial one is only said (console.log).
+      expect(error.mock.calls.some((c) => /@acme\/unmet/.test(String(c[0])))).toBe(true);
+      expect(log.mock.calls.some((c) => /@acme\/partial/.test(String(c[0])))).toBe(true);
     } finally {
       inst.dispose();
     }

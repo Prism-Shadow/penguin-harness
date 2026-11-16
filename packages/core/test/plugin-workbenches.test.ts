@@ -73,10 +73,13 @@ it("installs a plugin's runnable workbench and Skill on an ordinary Agent", asyn
   expect(
     (await listInstalledWorkbenches(root, project, agent)).map((w) => [w.name, w.plugin]),
   ).toEqual([["support", "penguin-support"]]);
-  expect(await fs.readFile(path.join(dir(), "ui/index.html"), "utf8")).toContain("./app.js");
+  for (const [rel, text] of Object.entries(plugin().workbenches![0]!.files)) {
+    expect(await fs.readFile(path.join(dir(), rel), "utf8"), rel).toBe(text);
+  }
+  const [skill] = plugin().skills;
   expect(
-    await fs.readFile(path.join(base(), "agent_state/skills/penguin-support/SKILL.md"), "utf8"),
-  ).toContain("https://penguin.ooo/docs/");
+    await fs.readFile(path.join(base(), "agent_state/skills", skill!.name, "SKILL.md"), "utf8"),
+  ).toBe(skill!.content);
 });
 it("updates source and removes retired files while keeping state, history and local additions", async () => {
   const original = plugin();

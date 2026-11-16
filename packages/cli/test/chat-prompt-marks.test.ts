@@ -15,7 +15,7 @@ import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Command } from "commander";
 import { registerChatCommand } from "../src/commands/chat.js";
-import { getMessages } from "../src/i18n.js";
+import { getMessages } from "@prismshadow/penguin-server/cli";
 import { FakeServer } from "./fake-server.js";
 
 const ENTER = "\r";
@@ -78,7 +78,7 @@ async function runChat(lines: string[], ends: Ends): Promise<string> {
   try {
     const program = new Command();
     program.exitOverride();
-    registerChatCommand(program, getMessages("en"));
+    registerChatCommand(program.command("chat"), getMessages("en"));
     const done = program.parseAsync(["node", "penguin", "chat"]);
     for (let i = 0; i < lines.length; i++) {
       await Promise.race([readyFor(i + 1), done]);

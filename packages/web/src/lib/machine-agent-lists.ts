@@ -318,6 +318,44 @@ export function useMachineAgents(projectId: string | null): {
 }
 
 /**
+ * Every installed machine's Agents as they are held right now — what a page last read there, or
+ * what storage remembers — without asking any machine. For a reader that only looks an Agent up
+ * (its picture, lib/agent-avatar.ts) on surfaces that never list a machine's Agents themselves:
+ * it must not add a request per mount, and it follows the lists as the pages that read them
+ * update the store.
+ */
+export function useHeldMachineAgents(
+  projectId: string | null,
+): ReadonlyMap<string, readonly AgentSummary[]> {
+  const machines = useMachines();
+  const ids =
+    projectId === null
+      ? []
+      : agentMachines(machines.state, machines.settled).map((m) => m.machineId);
+  const states = useReads(
+    agentLists,
+    projectId === null
+      ? []
+      : ids.map((machineId) => ({
+          key: agentListKey(projectId, machineId),
+          run: () => fetchMachineAgents(projectId, machineId),
+          enabled: false,
+        })),
+  );
+  const idsKey = ids.join(",");
+  return useMemo(
+    () =>
+      new Map(
+        (idsKey === "" ? [] : idsKey.split(",")).map((id, i) => [
+          id,
+          states[i]?.value ?? NO_AGENTS,
+        ]),
+      ),
+    [idsKey, states],
+  );
+}
+
+/**
  * The store's read for callers outside React (the sessions store): dedupes with the pages' reads,
  * remembers the answer. A list the machine answered in this page load, with no write or absence
  * since, is answered from the store; otherwise the machine is asked, joining a read already in

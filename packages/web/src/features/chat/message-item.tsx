@@ -33,6 +33,7 @@ import { attachmentFileName, splitAttachments } from "../../lib/attachments";
 import { routedUrl } from "../../lib/session-machines";
 import type { ChatItem, ReconnectItem } from "../../lib/amsp/stream-model";
 import { MessageFilesCard } from "./message-files-card";
+import { ReplyTrailer } from "./reply-files-provider";
 import { MemoryChangesCard } from "./memory-changes-card";
 import { fatalFailure, ladderFailure, llmErrorNotice, requestNotice } from "./request-notice";
 import { SessionThinking } from "./thinking-block";
@@ -53,7 +54,7 @@ import {
   parseModelSwitchMessage,
   parseScheduledMessage,
 } from "./agent-handoff";
-import { parseSkillsMessage } from "./skill-use";
+import { parseSkillsMessage } from "../../lib/skill-use";
 import { TaskStatsLine } from "./task-stats-line";
 import type { StreamRenderContext } from "./message-stream";
 
@@ -228,8 +229,14 @@ function ReconnectLine({
       <RetryRunButton onRetry={retry} />
     ) : null;
   // A status region, so a change of phase is announced; the seconds are not (CountdownText).
+  // Inside a work group (`!item.gaveUp`) the row matches the horizontal inset of the thinking and
+  // tool rows; a ladder that gave up sits outside the group on the transcript's own margin.
   return (
-    <div role="status" data-retry-phase={notice.phase}>
+    <div
+      role="status"
+      data-retry-phase={notice.phase}
+      className={item.gaveUp ? undefined : "px-3 py-0.5"}
+    >
       <MessageBubble
         variant="notice"
         actions={lineActions(
@@ -392,18 +399,21 @@ export function MessageItem({
       // The body (Markdown, caret, the theme's reveal) is AssistantText; a nested reply's files
       // card follows the text once it is fully revealed. How the Request ended is not the
       // text's to say: the retry line, error banner or stop marker that follows says it.
+      // ReplyTrailer: a linked Workspace file's renderer below its paragraph (reply-files-provider.tsx).
       return (
-        <AssistantText text={item.text} streaming={item.streaming}>
-          {/* Nested models don't produce task_stats, so preserve their existing message-level file summaries. The root conversation renders one aggregated card from task_stats instead. */}
-          {ctx.origin.length > 0 && !item.streaming && ctx.onOpenFile && ctx.statFiles && (
-            <MessageFilesCard
-              text={item.text}
-              workspace={ctx.workspace ?? null}
-              statFiles={ctx.statFiles}
-              onOpenFile={ctx.onOpenFile}
-            />
-          )}
-        </AssistantText>
+        <ReplyTrailer>
+          <AssistantText text={item.text} streaming={item.streaming}>
+            {/* Nested models don't produce task_stats, so preserve their existing message-level file summaries. The root conversation renders one aggregated card from task_stats instead. */}
+            {ctx.origin.length > 0 && !item.streaming && ctx.onOpenFile && ctx.statFiles && (
+              <MessageFilesCard
+                text={item.text}
+                workspace={ctx.workspace ?? null}
+                statFiles={ctx.statFiles}
+                onOpenFile={ctx.onOpenFile}
+              />
+            )}
+          </AssistantText>
+        </ReplyTrailer>
       );
     case "thinking":
       return <SessionThinking item={item} />;
@@ -453,7 +463,7 @@ export function MessageItem({
     case "reconnect":
       return <ReconnectLine item={item} ctx={ctx} last={last} />;
     case "compaction":
-      return <CompactionBanner item={item} />;
+      return <CompactionBanner item={item} ctx={ctx} />;
     case "model_change": {
       // A slim divider between two contexts on different models (an in-session model switch),
       // named by model id: it renders from the Trace alone, so a model removed from the

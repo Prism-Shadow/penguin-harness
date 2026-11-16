@@ -7,7 +7,8 @@
  * channel suites; nothing here sends anything.
  *
  * - Parsing reads GFM (tables, task lists) and never throws; only schemes a chat can open are
- *   safe link targets.
+ *   safe link targets. A bare URL ends where the Web App ends it — before CJK text or full-width
+ *   punctuation — so a bold span closing right after it is bold in the chat too.
  * - Telegram gets its inline tags, fenced blocks in pre/code with the language, headings as
  *   bold lines, list markers as text, tables in pre, rules as text and images as links, the
  *   model's own HTML escaped and a link target's quotes escaped in the href.
@@ -46,6 +47,16 @@ describe("parseMarkdown", () => {
     for (const text of ["", "   ", "**unclosed", "```\nno end", "| broken |"]) {
       expect(() => parseMarkdown(text)).not.toThrow();
     }
+  });
+
+  it("links each bare URL in Chinese prose on its own, and keeps the bold around the first", () => {
+    // The report behind the shared dialect, as a Telegram chat receives it: the same links and
+    // the same bold the Web App renders (packages/chat-markdown/test/chat-markdown.test.ts).
+    const blog = "http://localhost:7367/blog/keeping-the-prompt-cache-hot";
+    expect(telegramHtmlOf(`**http://localhost:7367/**，要看的博文：${blog}`)).toBe(
+      '<b><a href="http://localhost:7367/">http://localhost:7367/</a></b>，要看的博文：' +
+        `<a href="${blog}">${blog}</a>`,
+    );
   });
 });
 

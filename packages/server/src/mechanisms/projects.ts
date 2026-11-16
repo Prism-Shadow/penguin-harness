@@ -8,6 +8,7 @@ import type { AgentRow } from "../db/repos/agents.js";
 import type {
   ChatDefaultsDto,
   CommandPolicyDto,
+  DefaultModelOffer,
   EndpointModelListRequest,
   EndpointModelListResponse,
   MemberInfo,
@@ -23,6 +24,7 @@ import type {
   PresetSyncMode,
   PresetSyncResponse,
   ProjectRole,
+  ProviderConnectionResponse,
   ProviderConnectionUpdate,
   ProjectSummary,
   ServerEvent,
@@ -141,7 +143,13 @@ export abstract class ProjectConfigStore {
     projectId: string,
     req: {
       enabled?: boolean;
-      rules: { name: string; pattern: string; description?: string; enabled?: boolean }[];
+      rules: {
+        name: string;
+        pattern: string;
+        description?: string;
+        enabled?: boolean;
+        action?: "deny" | "ask";
+      }[];
     },
   ): Promise<CommandPolicyDto>;
   abstract getPricing(
@@ -165,16 +173,26 @@ export abstract class ProjectConfigStore {
   ): Promise<EndpointModelListResponse>;
   abstract getModels(projectId: string): Promise<ModelsResponse>;
   abstract updateModels(projectId: string, req: ModelsUpdateRequest): Promise<ModelsResponse>;
-  /** One group's `[providers.<id>]` connection, merged per field; rows are never touched. */
+  /**
+   * One group's `[providers.<id>]` connection, merged per field; rows are never touched. The
+   * group's first key reports its connect default as `defaultOffer`; the default is untouched.
+   */
   abstract setProviderConnection(
     projectId: string,
     provider: string,
     patch: ProviderConnectionUpdate,
-  ): Promise<ModelsResponse>;
+  ): Promise<ProviderConnectionResponse>;
   /** "Add new models" (`add`) or "Restore defaults" (`restore`) against the built-in catalog. */
   abstract syncPresets(projectId: string, mode: PresetSyncMode): Promise<PresetSyncResponse>;
-  /** Writes the group key; resolves to how many of the group's rows use it (none of their own). */
-  abstract setGroupApiKey(projectId: string, provider: string, apiKey: string): Promise<number>;
+  /**
+   * Writes the group key; resolves to how many of the group's rows use it (none of their own),
+   * and the connect default the group's first key offers as the default model.
+   */
+  abstract setGroupApiKey(
+    projectId: string,
+    provider: string,
+    apiKey: string,
+  ): Promise<GroupKeyApplied>;
   abstract setGroupApiKeyWithProviderAuthToken(
     projectId: string,
     provider: string,
@@ -207,6 +225,12 @@ export abstract class ProjectConfigStore {
     applyKeyToExisting: boolean,
   ): Promise<PlatformModelApplyResult>;
   abstract completeOnce(projectId: string, prompt: string): Promise<UtilityCompletion>;
+}
+
+/** A group key written: how many of the group's rows use it, and the default it offers, if any. */
+export interface GroupKeyApplied {
+  applied: number;
+  defaultOffer?: DefaultModelOffer;
 }
 
 export interface ModelPromotion {
@@ -261,13 +285,14 @@ export abstract class ModelOAuth {
     provider: string;
     error?: ModelOAuthErrorCode;
     applied?: number;
+    defaultOffer?: DefaultModelOffer;
   }>;
   abstract complete(input: {
     flowId: string;
     userId: string;
     projectId: string;
     code: string;
-  }): Promise<{ ok: true; applied: number } | { ok: false; error: ModelOAuthErrorCode }>;
+  }): Promise<({ ok: true } & GroupKeyApplied) | { ok: false; error: ModelOAuthErrorCode }>;
 }
 
 /**

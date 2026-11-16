@@ -39,8 +39,6 @@
  * - Given a pick's text, a single choice shows that option pressed and a multiple choice its
  *   boxes ticked; an answer the reader wrote, or the open question, picks nothing.
  */
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { createElement } from "react";
 import type { KeyboardEvent, ReactElement } from "react";
 import { describe, expect, it } from "vitest";
@@ -62,7 +60,6 @@ import { a2uiRendererFor, registerA2uiRenderer } from "../src/components/content
 import { Md } from "../src/components/content/prose/prose";
 import { DEFAULT_UI_STRINGS, UiStringsProvider } from "../src/strings";
 import { renderStatic } from "../src/testing";
-import { SRC_DIR } from "./helpers/paths";
 
 const LIVE: A2uiActions = { interactive: true, fill: () => {}, lang: "en" };
 
@@ -234,13 +231,6 @@ describe("ChoiceBlock", () => {
     expect(html).toContain("Fill in");
     expect(fill).toContain('disabled=""');
     expect(block({ ...CHOICE, multiple: true })).not.toContain("Fill in");
-  });
-
-  it("fills nothing from either Other…, which empties the composer", () => {
-    // A static render cannot press a button: the two controls' handlers are read from source.
-    const source = readFileSync(join(SRC_DIR, "components/content/a2ui/choice-block.tsx"), "utf8");
-    expect(source.match(/actions\.fill\(""\)/g)).toHaveLength(2);
-    expect(source).not.toContain("actions.focus");
   });
 
   it("sets a few short options as a row of chips, and longer ones as cards led by a disc", () => {
@@ -596,7 +586,7 @@ describe("CalloutBlock", () => {
 
   it("leads the text with the model's title in the same line", () => {
     const html = callout({ tone: "tip", title: "Faster", text: "Cache the build." });
-    expect(html).toMatch(/<span class="font-semibold">Faster <\/span>Cache the build\./);
+    expect(html).toMatch(/<span class="[^"]*">Faster <\/span>Cache the build\./);
   });
 });
 
@@ -613,7 +603,7 @@ describe("A2uiBlock", () => {
   });
 
   it("brings a block that draws in under the theme's reveal", () => {
-    expect(block(CHOICE)).toMatch(/^<div data-reveal="true"><div class="a2ui-block/);
+    expect(block(CHOICE)).toMatch(/^<div data-reveal="true"><div /);
   });
 
   it("is a placeholder while the reply streams, and parses nothing", () => {

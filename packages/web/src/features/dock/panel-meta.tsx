@@ -7,8 +7,7 @@
  */
 import type { ReactNode } from "react";
 import { GlyphIcon, ICON_SIZE } from "@prismshadow/penguin-ui";
-import { panelGlyphPath, panelLabel } from "./panel-registry";
-import type { PanelId } from "./panel-registry";
+import { panelGlyphPath, panelLabel, type PanelId } from "./panel-registry";
 
 export { panelGlyphPath, panelLabel };
 
