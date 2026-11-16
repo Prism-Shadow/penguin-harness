@@ -253,7 +253,7 @@ interface HandedAgentState {
 /** Registry id of the handed-over Agent state — in the `agent:` group, so a build that does not declare the group stops the runs behind it. */
 const AGENT_STATE_RESOURCE_ID = "agent:state";
 /** The AgentState interface's key in the generated table. */
-const AGENT_STATE_IFACE = "@prismshadow/penguin-server#AgentState";
+const AGENT_STATE_IFACE = "@prismshadow/penguin-library-sessions#AgentState";
 /**
  * What a Session whose Task a swap had to stop is started again with. The stopped turn
  * itself comes back through core's carry-over (`[turn_aborted]`); this only says why.
