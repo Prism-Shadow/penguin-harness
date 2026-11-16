@@ -227,9 +227,14 @@
   counter-reset: code-line var(--chunk-start);
 }
 /* An editor's textarea lies on these lines and lays its own text out whole: every line has to be
-   where that text is, so none stands at an expected size. */
+   where that text is, so none stands at an expected size. Without the containment the lines
+   share the block's one count: a first line's reset would hold for that line alone, its siblings
+   keeping the count they inherit, so no line resets it. */
 .code-overlaid .line-chunk {
   content-visibility: visible;
+}
+.code-overlaid .line-chunk > .line:first-child {
+  counter-reset: none;
 }
 .code-lines .line::before {
   content: counter(code-line);
