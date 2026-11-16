@@ -46,12 +46,6 @@
  * all only when the output stream supports color (see `supportsColor`): piped output, e.g. a
  * nested `penguin run` driven through `exec_command`, must stay plain (#102).
  */
-import {
-  isEventMessage,
-  isModelMessage,
-  parseInPlaceModelSwitch,
-  parseUserSteeringText,
-} from "@prismshadow/penguin-core";
 import type {
   AbortPayload,
   ApprovalDecision,
@@ -75,12 +69,20 @@ import type {
   ToolDefinition,
   ToolListReadyPayload,
 } from "@prismshadow/penguin-core";
+import {
+  isEventMessage,
+  isHarnessInput,
+  isModelMessage,
+  parseInPlaceModelSwitch,
+  parseUserSteeringText,
+} from "@prismshadow/penguin-core";
+
 import { toFallbackMarkdown } from "@prismshadow/a2ui";
 import { A2uiStreamFilter } from "./a2ui-stream.js";
 import { renderFileToolApprovalPayload, renderPartialToolCall } from "./tool-render.js";
 import { ToolOutputCollapser, collapseLines } from "./output-collapse.js";
-import { defaultMessages } from "./i18n.js";
-import type { Messages } from "./i18n.js";
+import type { Messages } from "@prismshadow/penguin-server/cli";
+import { defaultMessages, humanizeTokens } from "@prismshadow/penguin-server/cli";
 
 /** The ANSI codes the renderer uses; the plain palette maps every code to "" so all writes degrade to uncolored text with no further branching. */
 export interface Palette {
@@ -164,22 +166,6 @@ function callTag(toolCallId: string, origin?: readonly MessageOrigin[]): string 
   return origin && origin.length > 0 ? `agent-${shortId(origin[origin.length - 1]!)}-${tid}` : tid;
 }
 
-/** Converts a token count to a human-readable abbreviation: 1234->1.2k, 1500000->1.5M, 2e9->2B, <1000 unchanged. */
-export function humanizeTokens(n: number): string {
-  const abs = Math.abs(n);
-  if (abs < 1000) return `${n}`;
-  // The unit is picked from the rounded value, not the raw one: 999950 renders as `1000.0` k at
-  // one decimal, which has to carry into `1M` rather than print `1000k`.
-  if (fitsThousand(n / 1000)) return `${trimZero(n / 1000)}k`;
-  if (fitsThousand(n / 1_000_000)) return `${trimZero(n / 1_000_000)}M`;
-  return `${trimZero(n / 1_000_000_000)}B`;
-}
-
-/** True while the one-decimal rendering of `v` stays under 1000: 999.94 does, 999.95 does not. */
-function fitsThousand(v: number): boolean {
-  return Math.abs(Number(v.toFixed(1))) < 1000;
-}
-
 /** Keeps one decimal place but drops a trailing `.0`. */
 function trimZero(v: number): string {
   const s = v.toFixed(1);
@@ -222,6 +208,13 @@ export interface RenderOptions {
    * REPL turns it on unless `--verbose`.
    */
   collapseToolOutput?: boolean;
+  /**
+   * Print the input a run opens with (`> text`), as history shows it. The chat REPL follows
+   * runs it did not start — another surface's, or one under way when it resumed — whose input
+   * nobody typed on this screen; its own message is on the screen already (see expectInput).
+   * Off for `penguin run`, whose input is its argument.
+   */
+  echoInput?: boolean;
 }
 
 /**
@@ -359,6 +352,10 @@ export class StreamRenderer {
   private readonly c: Palette;
   /** Collapse long tool outputs to head/tail + a dim elision marker (see RenderOptions); toggled live by the chat REPL's `/verbose`. */
   private collapseToolOutput: boolean;
+  /** Print a run's input (see RenderOptions.echoInput). */
+  private readonly echoInput: boolean;
+  /** The message this screen just sent, whose echoed input is not printed again (expectInput). */
+  private expectedInput: string | null = null;
   /** Per-stream collapse state (keyed by tool_call_id), created lazily on the first output delta; settled and dropped at the stream's stop (endTask settles leftovers of aborted streams). */
   private readonly toolOutCollapsers = new Map<string, ToolOutputCollapser>();
 
@@ -504,6 +501,15 @@ export class StreamRenderer {
     this.t = t;
     this.c = paletteFor(out);
     this.collapseToolOutput = opts.collapseToolOutput === true;
+    this.echoInput = opts.echoInput === true;
+  }
+
+  /**
+   * The text this screen just sent as a message: its input record, when the run echoes it, is
+   * not printed again under the line typed. Null forgets it (the message did not start a run).
+   */
+  expectInput(text: string | null): void {
+    this.expectedInput = text;
   }
 
   /**
@@ -786,9 +792,25 @@ export class StreamRenderer {
               this.out.write(`${dim(this.t.switchModelHandedOver(handover.tracePath), this.c)}\n`);
               this.lastLineKey = null;
             }
+            if (steering === null && handover === null && this.echoInput && !isHarnessInput(msg)) {
+              if (this.expectedInput === p.text) {
+                this.expectedInput = null;
+              } else {
+                this.finishLine();
+                this.out.write(`\n> ${p.text}\n`);
+                this.lastLineKey = null;
+              }
+            }
           }
           return;
         }
+        case "image_url":
+          if (this.echoInput && (payload as { role?: string }).role === "user") {
+            this.finishLine();
+            this.out.write(`\n> ${dim("[image]", this.c)}\n`);
+            this.lastLineKey = null;
+          }
+          return;
         default:
           return;
       }
@@ -796,6 +818,21 @@ export class StreamRenderer {
 
     if (isEventMessage(msg)) {
       const payload = msg.payload;
+      // A compaction's own requests and tool-round decisions print nothing (no retry, error or
+      // decision line); a decision an approval prompt already printed is forgotten as below.
+      if (
+        this.compactionActive &&
+        (payload.type === "request_begin" ||
+          payload.type === "request_end" ||
+          payload.type === "approval_decision")
+      ) {
+        if (payload.type === "approval_decision") {
+          this.renderedDecisions.delete(
+            this.callLineKey((payload as ApprovalDecisionPayload).tool_call_id),
+          );
+        }
+        return;
+      }
       if (payload.type === "token_usage") {
         // Accumulate this task's usage, printed together when the task ends (endTask),
         // not shown after every tool call/round.
@@ -918,6 +955,18 @@ export class StreamRenderer {
         const p = payload as CompactionEndPayload;
         this.finishLine();
         this.compactionActive = false;
+        // Completed with the error pair: no full summary. A refusal or a summary cut off at the
+        // output limit means too little room was left for it.
+        const degraded =
+          p.status === "completed" && (p.error_code !== undefined || p.error_message !== undefined)
+            ? { room: p.error_code === "rejected" || p.error_code === "output_truncated" }
+            : undefined;
+        // A refused request's announced resend that its hand-off then prevented never goes out.
+        if (p.status === "fatal") {
+          this.pendingRetry = null;
+          this.pendingRetryAttempt = undefined;
+          this.pendingRetryCode = undefined;
+        }
         // Same accounting as the stats line: total = Session cumulative (parent + child), delta = usage of this compaction.
         const tokens =
           this.compactionTokens > 0
@@ -928,7 +977,7 @@ export class StreamRenderer {
             : undefined;
         this.compactionTokens = 0;
         this.out.write(
-          `${dim(this.t.compactionStop(p.mode, p.status, tokens, p.error_message), this.c)}\n`,
+          `${dim(this.t.compactionStop(p.mode, p.status, tokens, p.error_message, degraded), this.c)}\n`,
         );
         this.lastLineKey = null;
       } else if (payload.type === "mcp_connect_begin") {
@@ -1100,6 +1149,9 @@ export class StreamRenderer {
   }
 
   private handlePartialToolCall(p: PartialToolCallPayload): void {
+    // A compaction's tool round prints nothing (an approval prompt still renders the call it
+    // asks about, through beginUserPrompt).
+    if (this.compactionActive) return;
     // The call line was already rendered in place from the complete message at approval time: skip the whole late-arriving streaming copy (clean up the buffer on stop).
     if (this.ensuredCallLines.has(this.callLineKey(p.tool_call_id))) {
       if (p.event_type === "stop") this.partialToolCalls.delete(p.tool_call_id);
@@ -1155,6 +1207,7 @@ export class StreamRenderer {
   }
 
   private handlePartialToolOutput(p: PartialToolCallOutputPayload): void {
+    if (this.compactionActive) return; // a compaction tool round's output: see above
     const label = this.outputLabel(p.tool_call_id);
     const name = this.toolNames.get(p.tool_call_id);
     const colorDiff = name !== undefined && DIFF_OUTPUT_TOOLS.has(name);

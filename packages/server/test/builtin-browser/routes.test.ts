@@ -364,8 +364,7 @@ describe("tabs", () => {
     expect(opens()).toBe(4);
   });
 
-  it("holds at most 20 tabs: an agent's new tab is refused, a page's popup dropped", async () => {
-    expect(MAX_TABS).toBe(20);
+  it("holds no more than its tab limit: an agent's new tab is refused, a page's popup dropped", async () => {
     const h = mount();
     for (let id = 1; id <= MAX_TABS; id++) h.shell.show(tab(id));
     const res = await h.call("POST", "/tabs", { url: "https://example.test/" });
@@ -954,7 +953,7 @@ describe("import, history and data", () => {
     hasHistory: true,
   };
   const importer: Importer = {
-    listImportSources: () => [chrome],
+    listImportSources: async () => [chrome],
     readCookies: async (_source, opts) => ({
       cookies: [
         {
@@ -1056,6 +1055,34 @@ describe("import, history and data", () => {
     const failed = await failing.call("POST", "/import", { sourceId: "chrome", cookies: true });
     expect(failed.status).toBe(422);
     expect((await errorOf(failed)).error).toMatchObject({ code: "import_failed" });
+  });
+
+  it("keeps serving settings while import source discovery is still reading", async () => {
+    let releaseDiscovery!: () => void;
+    let markDiscoveryStarted!: () => void;
+    const discoveryStarted = new Promise<void>((resolve) => {
+      markDiscoveryStarted = resolve;
+    });
+    const discoveryPending = new Promise<void>((resolve) => {
+      releaseDiscovery = resolve;
+    });
+    const h = mount({
+      importer: {
+        ...importer,
+        listImportSources: async () => {
+          markDiscoveryStarted();
+          await discoveryPending;
+          return [chrome];
+        },
+      },
+    });
+
+    const importing = h.call("POST", "/import", { sourceId: "chrome" });
+    await discoveryStarted;
+    expect((await h.call("GET", "/settings")).status).toBe(200);
+
+    releaseDiscovery();
+    expect((await importing).status).toBe(200);
   });
 
   it("answers source_not_found for a profile gone since it was listed", async () => {

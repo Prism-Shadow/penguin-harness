@@ -6,6 +6,10 @@
  *   then it is shown by its id and described by its npm description; given one whose table
  *   declares Skills, a hook package and an icon, then it lists exactly what it declares — not a
  *   Skill folder no entry names, nor what a module its default export leaves out contributes.
+ * - Given a plugin package whose icon is a line drawing in currentColor, and one whose icon is a
+ *   PNG at its root, when the hub is read, then the first is carried to be drawn in the tile's
+ *   ink and the second as itself; given an icon whose bytes are not the format its name says,
+ *   then the build fails naming the file.
  * - Given a plugin package that was never built (no ifaces.json), when the hub is read, then the
  *   build fails naming that file.
  * - Given a benchmark whose id differs from its folder, when the hub is read, then the build fails
@@ -42,7 +46,7 @@ afterEach(() => {
 });
 
 /** A temp tree from `{ "relative/path": contents }`. */
-function tree(files: Record<string, string>): string {
+function tree(files: Record<string, string | Uint8Array>): string {
   const root = mkdtempSync(join(tmpdir(), "hub-"));
   roots.push(root);
   for (const [path, text] of Object.entries(files)) {
@@ -181,7 +185,7 @@ function repo(extra: Record<string, string> = {}) {
   });
 }
 
-function plugins() {
+function plugins(extra: Record<string, string | Uint8Array> = {}) {
   return tree({
     "toolkit/package.json": plugin("toolkit"),
     "toolkit/ifaces.json": table({
@@ -203,7 +207,8 @@ function plugins() {
         ],
       },
     }),
-    "toolkit/icon.svg": '<svg viewBox="0 0 24 24"><path d="M1 1h2"/></svg>',
+    "toolkit/icon.svg":
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M1 1h2"/></svg>',
     "toolkit/skills/learn/SKILL.md":
       "---\nname: learn\ndescription: Learn from scores.\n---\n# Learn",
     "toolkit/skills/spare/SKILL.md": "---\nname: spare\ndescription: Spare.\n---\n# Spare",
@@ -212,8 +217,17 @@ function plugins() {
     "plain/ifaces.json": table({
       Plugin: { "PluginLibraryModule.cards": [{ id: "plain.card", category: "rsi" }] },
     }),
+    "photo/package.json": plugin("photo"),
+    "photo/ifaces.json": table({
+      Plugin: { "PluginLibraryModule.cards": [{ id: "photo.card", category: "rsi" }] },
+    }),
+    "photo/icon.png": PNG,
+    ...extra,
   });
 }
+
+/** The first bytes of a PNG: as much of one as its format is told by. */
+const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]);
 
 const mean2 = `  - op: mean\n    args:\n${leaf("exp-1")}${leaf("exp-2")}`;
 
@@ -230,11 +244,27 @@ describe("the hub readers", () => {
     const toolkit = hub.details.plugin["toolkit"]!;
     expect(toolkit.skills).toEqual([{ name: "learn", description: "Learn from scores." }]);
     expect(toolkit.hooks).toEqual(["stop"]);
-    expect(toolkit.icon).toMatch(/^data:image\/svg\+xml,/);
+    expect(plain.icon).toBeUndefined();
     expect(hub.index.plugins.find((p) => p.id === "toolkit")).toMatchObject({
       skillCount: 1,
       hookCount: 1,
     });
+  });
+
+  it("carries a line icon to take the tile's ink and a PNG icon as itself, and fails on a mislabelled one", () => {
+    const hub = loadHub({ repo: repo(), pluginsDir: plugins() });
+    expect(hub.details.plugin["toolkit"]!.icon).toEqual({
+      url: expect.stringMatching(/^data:image\/svg\+xml,/),
+      tint: true,
+    });
+    expect(hub.details.plugin["photo"]!.icon).toEqual({
+      url: `data:image/png;base64,${Buffer.from(PNG).toString("base64")}`,
+      tint: false,
+    });
+    const mislabelled = plugins({ "photo/icon.png": "<svg></svg>" });
+    expect(() => loadHub({ repo: repo(), pluginsDir: mislabelled })).toThrow(
+      /photo[/\\]icon\.png: its bytes are not the image format its name says/,
+    );
   });
 
   it("fails the build on a plugin package that was never built", () => {

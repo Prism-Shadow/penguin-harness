@@ -269,7 +269,7 @@ export function Sheet({
 
   if (!mounted) return null;
   return (
-    <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label={title}>
+    <div className="fixed inset-0 z-modal" role="dialog" aria-modal="true" aria-label={title}>
       <div
         ref={scrimRef}
         // ui-scrim: the dimmed layer behind the sheet; a theme may blur the page through it.
@@ -279,7 +279,7 @@ export function Sheet({
       />
       <div
         ref={panelRef}
-        className={`absolute inset-x-0 bottom-0 flex h-[calc(92dvh-env(titlebar-area-height,0px))] flex-col overflow-hidden rounded-t-2xl border-t border-line bg-surface shadow-[var(--ui-shadow-drawer)] ${
+        className={`absolute inset-x-0 bottom-0 flex h-[calc(92dvh-var(--window-band-height,0px))] flex-col overflow-hidden rounded-t-2xl border-t border-line bg-surface shadow-[var(--ui-shadow-drawer)] ${
           reduced ? "anim-fade" : ""
         }`}
         style={{ transform: "translate3d(0, 100%, 0)" }}

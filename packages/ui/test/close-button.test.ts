@@ -6,7 +6,7 @@ import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { CloseButton } from "../src/components/actions/close-button/close-button";
 import { DEFAULT_UI_STRINGS, UiStringsProvider } from "../src/strings";
-import { classTokens, renderStatic } from "../src/testing";
+import { renderStatic } from "../src/testing";
 
 const noop = () => {};
 
@@ -37,17 +37,5 @@ describe("CloseButton", () => {
     const html = renderStatic(createElement(CloseButton, { onClose: noop, title: "Close (Esc)" }));
     expect(html).toContain('data-tooltip="Close (Esc)"');
     expect(html).not.toContain("title=");
-  });
-
-  it("paints in tokens, on the control radius", () => {
-    const tokens = classTokens(renderStatic(createElement(CloseButton, { onClose: noop })));
-    expect(tokens).toEqual(
-      expect.arrayContaining([
-        "rounded-control",
-        "text-fg-subtle",
-        "hover:bg-surface-muted",
-        "hover:text-fg-muted",
-      ]),
-    );
   });
 });

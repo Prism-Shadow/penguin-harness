@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Command } from "commander";
 import { partialToolCall, partialToolCallOutput, type AmspRecord } from "@prismshadow/penguin-core";
 import { registerChatCommand } from "../src/commands/chat.js";
-import { getMessages } from "../src/i18n.js";
+import { getMessages } from "@prismshadow/penguin-server/cli";
 import { FakeServer } from "./fake-server.js";
 
 const t = getMessages("en");
@@ -54,7 +54,7 @@ async function driveChat(lines: string[], argv: string[] = []): Promise<string> 
   try {
     const program = new Command();
     program.exitOverride();
-    registerChatCommand(program, t);
+    registerChatCommand(program.command("chat"), t);
     const done = program.parseAsync(["node", "penguin", "chat", ...argv]);
     for (let i = 0; i < lines.length; i++) {
       await Promise.race([waitForPrompt(i + 1), done]);

@@ -17,7 +17,9 @@
  * - The routes: only the owner starts, polls and redeems; the key lands once, as the group's key
  *   every model of the group uses, and the Project's open Session channels hear
  *   credentials_updated; a rejected code reaches the dialog through the poll and touches no
- *   model; a malformed link answers a page. Disconnect (clearing the group key) is all it
+ *   model; a malformed link answers a page. TokenDance's first key offers its DeepSeek V4.1
+ *   Flash as the default (connect-default-offer.test.ts has the rule) on every done answer of
+ *   the poll, like the redeemed code's, and leaves the default as it was. Disconnect (clearing the group key) is all it
  *   takes to undo it: no state of the flow outlives it, and models with their own key keep it.
  * - The redirect receiver answers without a session: the flow id buys a deposit and nothing
  *   more — not for another user, an unknown flow, another Project, a stale or replayed flow,
@@ -66,6 +68,14 @@ const TOKENDANCE = providerInfo("tokendance")!;
  * adding a row to this group does not fail three assertions that are not about the count.
  */
 const TOKENDANCE_MODELS = presetModelEntries().filter((m) => m.provider === "tokendance").length;
+
+/** A new Project's default model, which TokenDance's first key leaves in place. */
+const DEEPSEEK_FLASH = { provider: "deepseek", modelId: "deepseek-flash" };
+/** What TokenDance's first key offers a new Project. */
+const DEFAULT_OFFER = {
+  model: { provider: "tokendance", modelId: "deepseek-v4.1-flash" },
+  current: DEEPSEEK_FLASH,
+};
 
 describe("PKCE derivation", () => {
   it("challenge is the unpadded base64url SHA-256 of the verifier (RFC 7636 vector)", () => {
@@ -209,7 +219,7 @@ describe("flow store", () => {
     service = wire(ModelOAuthService, {
       applyGroupKey: async (projectId: string, provider: string, apiKey: string) => {
         applied.push({ projectId, provider, apiKey });
-        return 6;
+        return { applied: 6 };
       },
       fetchImpl: exchange.fetch,
       now: () => clock,
@@ -282,7 +292,7 @@ describe("flow store", () => {
 
   it("a failed exchange ends the flow and reports the mapped reason", async () => {
     service = wire(ModelOAuthService, {
-      applyGroupKey: async () => 6,
+      applyGroupKey: async () => ({ applied: 6 }),
       fetchImpl: fakeFetch(() => jsonResponse({}, 403)).fetch,
       now: () => clock,
     });
@@ -516,7 +526,12 @@ describe("model-oauth routes", () => {
     const status = (await (
       await owner.get(`${base()}/${started.flowId}`)
     ).json()) as ModelOAuthStatusResponse;
-    expect(status).toEqual({ status: "done", provider: "tokendance", applied: TOKENDANCE_MODELS });
+    expect(status).toEqual({
+      status: "done",
+      provider: "tokendance",
+      applied: TOKENDANCE_MODELS,
+      defaultOffer: DEFAULT_OFFER,
+    });
 
     // The exchange spoke the documented protocol, with a verifier this side never published.
     expect(exchanges()).toHaveLength(1);
@@ -533,6 +548,8 @@ describe("model-oauth routes", () => {
     expect(group.length).toBeGreaterThan(0);
     expect(models.providers.tokendance?.apiKeyMasked).toBeTruthy();
     for (const m of group) expect(m.effective.apiKeySource).toBe("provider");
+    // The offer is only an offer: the default is the one the Project had.
+    expect(models.defaultModel).toEqual(DEEPSEEK_FLASH);
     // Only that group, and never in plaintext.
     expect(
       Object.entries(models.providers)
@@ -554,6 +571,7 @@ describe("model-oauth routes", () => {
     expect(await (await owner.get(`${base()}/${started.flowId}`)).json()).toEqual({
       status: "done",
       provider: "tokendance",
+      defaultOffer: DEFAULT_OFFER,
     });
     expect(
       events.filter(
@@ -662,6 +680,7 @@ describe("model-oauth routes", () => {
     const body = (await res.json()) as ModelOAuthCodeResponse;
     expect(body.ok).toBe(true);
     expect(body.applied).toBeGreaterThan(0);
+    expect(body.defaultOffer).toEqual(DEFAULT_OFFER);
     expect(exchanges()[0]!.body.code).toBe("pasted-code");
 
     // Single use here too.
@@ -793,6 +812,7 @@ describe("model-oauth callback without a session", () => {
       status: "done",
       provider: "tokendance",
       applied: TOKENDANCE_MODELS,
+      defaultOffer: DEFAULT_OFFER,
     });
     expect(exchange.calls).toHaveLength(1);
     expect(await groupHasKey()).toBe(true);
@@ -809,6 +829,7 @@ describe("model-oauth callback without a session", () => {
       status: "done",
       provider: "tokendance",
       applied: TOKENDANCE_MODELS,
+      defaultOffer: DEFAULT_OFFER,
     });
     expect(exchange.calls).toHaveLength(1);
     expect(await groupHasKey()).toBe(true);

@@ -7,6 +7,8 @@
  *   <agentStateDir>/workbenches/<id>/state.json     the workbench's own document (WorkbenchHost.getState)
  *   <agentStateDir>/workbenches/<id>/.harness/      the types it was written against (harness-types.ts)
  *   <agentStateDir>/workbenches/<id>/.build/        its emitted code, per revision (compile.ts)
+ *   <agentStateDir>/workbenches/<id>/.disabled      present: this workbench is switched off
+ *   <agentStateDir>/workbenches/.disabled           present: every workbench of the Agent is
  *
  * The folder's source is every file except `state.json` (the state is the workbench's data,
  * not its code, and survives a rollback untouched), `node_modules` and the dot entries, which
@@ -22,6 +24,32 @@ import { blobOid, isGitName, treeId, type SourceFile } from "./repo.js";
 
 export const STATE_FILE = "state.json";
 export const UI_DIR = "ui";
+/**
+ * An empty file that switches workbenches off: in a workbench's folder, that one; beside the
+ * folders, all of the Agent's. A dot entry, so it is no part of the source, a version or an
+ * export, the watcher does not react to it, and a plugin update or an archive import (which
+ * replace source only) leaves it where it is.
+ */
+export const DISABLED_MARKER = ".disabled";
+
+/** Whether `dir` (a workbench's folder, or the folder of all of them) holds the off marker. */
+export async function isSwitchedOff(dir: string): Promise<boolean> {
+  return fs.lstat(path.join(dir, DISABLED_MARKER)).then(
+    () => true,
+    () => false,
+  );
+}
+
+/** Removes the off marker from `dir`, or writes it there (creating `dir` when it is missing). */
+export async function writeSwitch(dir: string, on: boolean): Promise<void> {
+  const marker = path.join(dir, DISABLED_MARKER);
+  if (on) {
+    await fs.rm(marker, { force: true });
+    return;
+  }
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(marker, "");
+}
 
 export interface WorkbenchFolder {
   id: string;

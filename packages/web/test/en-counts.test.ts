@@ -3,8 +3,8 @@
  *
  * - A user-defined model group exists only through its rows and often holds a single model, so
  *   deleting it or speed-testing it names "1 model", not "1 models".
- * - A memory export can carry a single memory, and the import dialog then says "1 memory", in the
- *   file line and in the overwrite and delete warnings.
+ * - A memory import can put a single memory at stake, and the confirmation then says "1 memory"
+ *   in the overwrite and delete warnings.
  */
 import { describe, expect, it } from "vitest";
 import { en } from "../src/lib/strings-en";
@@ -28,8 +28,6 @@ describe("English counts of one", () => {
   });
 
   it("the memory import dialog names one memory in the singular", () => {
-    expect(en.memory.importFile("notes.json", 1)).toBe("notes.json — 1 memory");
-    expect(en.memory.importFile("notes.json", 4)).toBe("notes.json — 4 memories");
     expect(en.memory.importWillOverwrite(["style"])).toBe("1 memory will be overwritten: style");
     expect(en.memory.importWillOverwrite(["a", "b"])).toBe("2 memories will be overwritten: a, b");
     expect(en.memory.importWillRemove(["style"])).toBe("1 memory will be deleted: style");

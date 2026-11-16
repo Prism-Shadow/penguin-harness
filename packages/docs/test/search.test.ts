@@ -46,6 +46,36 @@ const docs: DocPage[] = [
     body: ["## Vault", "", "Store secrets outside the project."].join("\n"),
   },
 ];
+/** A records page: identifier headings, fenced blocks that hold heading-like lines, a long section. */
+const RECORDS_PAGE: DocPage = {
+  slug: "amsp-records",
+  lang: "zh",
+  title: "AMSP 记录",
+  description: "",
+  body: [
+    "## session_meta",
+    "",
+    "每个 Session 的第一条记录。",
+    "",
+    "```text",
+    "## not_a_heading",
+    "~~~",
+    "## still_not_a_heading",
+    "```",
+    "",
+    "## model_msg：流式分片",
+    "",
+    `${"分片按顺序到达，每一片都带着它的事件类型。".repeat(6)} 正文分片的类型是 partial_text，${"它们拼起来就是完整的消息。".repeat(12)}`,
+    "",
+    "## origin: the Subagent chain",
+    "",
+    "Each record names its parent in parent_id.",
+    "",
+    "## event_msg: the event chain",
+    "",
+    "Each record names its parent in parent_id.",
+  ].join("\n"),
+};
 const contentDir = join(__dirname, "..", "content");
 const contentFiles = ["zh", "en"].flatMap((lang) => DOC_SLUGS.map((slug) => `${slug}.${lang}.md`));
 
@@ -162,30 +192,39 @@ describe("docs search", () => {
     expect(searchRecords(records, "partial_tool_call_output")).toHaveLength(1);
   });
 
-  it("finds identifier headings from the real AMSP records documentation", () => {
-    for (const lang of ["en", "zh"] as const) {
-      const { meta, body } = parseFrontmatter(
-        readFileSync(join(contentDir, `amsp-records.${lang}.md`), "utf8"),
-      );
-      const records = buildSearchRecords([
-        {
-          slug: "amsp-records",
-          lang,
-          title: meta.title ?? "AMSP Records",
-          description: meta.description ?? "",
-          body,
-        },
-      ]);
-
-      for (const heading of ["session_meta", "model_msg", "event_msg", "origin"]) {
-        expect(
-          searchRecords(records, heading, 50).some((result) =>
-            result.record.heading.startsWith(heading),
-          ),
-          `${heading} should resolve to its real ${lang} heading`,
-        ).toBe(true);
-      }
+  it("finds an identifier heading by its exact spelling, a colon-led subtitle after it", () => {
+    const records = buildSearchRecords([RECORDS_PAGE]);
+    for (const heading of ["session_meta", "model_msg", "origin"]) {
+      expect(
+        searchRecords(records, heading, 50).some((result) =>
+          result.record.heading.startsWith(heading),
+        ),
+        heading,
+      ).toBe(true);
     }
+  });
+
+  it("keeps a heading written inside a fenced block, nested fences included, out of the sections", () => {
+    const headings = buildSearchRecords([RECORDS_PAGE]).map((record) => record.heading);
+    expect(headings).not.toContain("not_a_heading");
+    expect(headings).not.toContain("still_not_a_heading");
+    expect(headings).toContain("event_msg: the event chain");
+  });
+
+  it("cuts a long section's snippet around the match, marking what it leaves out", () => {
+    const [hit] = searchRecords(buildSearchRecords([RECORDS_PAGE]), "partial_text");
+    expect(hit?.record.heading).toBe("model_msg：流式分片");
+    expect(hit?.snippet.startsWith("…")).toBe(true);
+    expect(hit?.snippet.endsWith("…")).toBe(true);
+    expect(hit?.snippet).toContain("partial_text");
+  });
+
+  it("ranks equally good matches in page order", () => {
+    const results = searchRecords(buildSearchRecords([RECORDS_PAGE]), "parent_id");
+    expect(results.map((result) => result.record.heading)).toEqual([
+      "origin: the Subagent chain",
+      "event_msg: the event chain",
+    ]);
   });
 
   it("preserves visible underscore identifiers across every documentation file", () => {

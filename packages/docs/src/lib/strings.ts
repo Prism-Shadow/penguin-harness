@@ -5,6 +5,8 @@
  * SiteLocaleProvider (app.tsx), which calls `setActiveStrings`, and SiteLocaleScope remounts
  * the tree keyed by locale — keep `S.x` reads inside components. Doc page bodies are Markdown files under content/, not here.
  */
+import type { DocsSectionDef } from "./nav";
+
 export const zh = {
   siteName: "PenguinHarness",
 
@@ -19,7 +21,8 @@ export const zh = {
     leaderboards: "榜单",
     amsp: "AMSP",
     docs: "文档",
-    gallery: "画廊",
+    gallery: "主题包",
+    more: "更多",
     github: "GitHub",
     openMenu: "打开菜单",
     closeMenu: "关闭菜单",
@@ -45,7 +48,7 @@ export const zh = {
     advanced: "进阶功能",
     design: "工作原理",
     reference: "参考",
-  } as Record<string, string>,
+  } satisfies Record<DocsSectionDef["id"], string>,
 
   doc: {
     toc: "本页目录",

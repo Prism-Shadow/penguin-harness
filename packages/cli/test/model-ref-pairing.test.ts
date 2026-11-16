@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Command } from "commander";
 import { registerChatCommand } from "../src/commands/chat.js";
 import { registerRunCommand } from "../src/commands/run.js";
-import { getMessages } from "../src/i18n.js";
+import { getMessages } from "@prismshadow/penguin-server/cli";
 
 // The --resume case below reaches createAgent, which initializes Agent state on disk; point
 // the data root at a throwaway directory so no test ever writes to the real ~/.penguin/data.
@@ -35,10 +35,11 @@ afterEach(async () => {
 async function runCommand(
   register: (program: Command, t: ReturnType<typeof getMessages>) => void,
   args: string[],
+  name = "run",
 ): Promise<{ out: string; err: string; code: number }> {
   const program = new Command();
   program.exitOverride();
-  register(program, getMessages("en"));
+  register(program.command(name), getMessages("en"));
   const out: string[] = [];
   const err: string[] = [];
   const outSpy = vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
@@ -86,19 +87,21 @@ describe("run: --model-id and --provider must be given together", () => {
 
 describe("chat: --model-id and --provider must be given together", () => {
   it("--model-id without --provider: error on stderr, exit code 1", async () => {
-    const bad = await runCommand(registerChatCommand, ["chat", "--model-id", "deepseek-v4-flash"]);
+    const bad = await runCommand(
+      registerChatCommand,
+      ["chat", "--model-id", "deepseek-v4-flash"],
+      "chat",
+    );
     expect(bad.code).toBe(1);
     expect(bad.err).toContain("--model-id and --provider must be given together");
   });
 
   it("--resume plus a lone --model-id keeps the more specific resume error", async () => {
-    const bad = await runCommand(registerChatCommand, [
+    const bad = await runCommand(
+      registerChatCommand,
+      ["chat", "--resume", "sess-1", "--model-id", "deepseek-v4-flash"],
       "chat",
-      "--resume",
-      "sess-1",
-      "--model-id",
-      "deepseek-v4-flash",
-    ]);
+    );
     expect(bad.code).toBe(1);
     expect(bad.out).toContain("--resume does not accept");
     expect(`${bad.out}${bad.err}`).not.toContain("must be given together");

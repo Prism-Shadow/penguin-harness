@@ -20,6 +20,11 @@ export interface LoadedOrg {
   byId: Map<string, OrgEmployee>;
   /** Set when a root file fails validation; the organization is then read-only for the scheduler. */
   invalid?: string;
+  /**
+   * Set when `org_chart.yaml` is missing or does not parse: `chart` is then empty, so who the
+   * organization employs beyond its CEO is unknown rather than nobody.
+   */
+  chartUnreadable?: true;
 }
 
 /** Reads config, chart and ledger; null when the directory is not an organization. */
@@ -51,14 +56,17 @@ export async function loadOrg(
   }
   const chartFile = await deps.store.readChart(dir, orgId);
   let chart: OrgChart;
+  let chartUnreadable = false;
   if (chartFile === null) {
     problems.push("org_chart.yaml is missing");
     chart = { employees: [] };
+    chartUnreadable = true;
   } else if (chartFile.parsed.ok) {
     chart = chartFile.parsed.value;
   } else {
     problems.push(`org_chart.yaml: ${chartFile.parsed.error}`);
     chart = { employees: [] };
+    chartUnreadable = true;
   }
   const desksFile = await deps.store.readDesks(dir);
   let desks: Desks = {};
@@ -73,6 +81,7 @@ export async function loadOrg(
     desks,
     byId: new Map(chart.employees.map((e) => [e.agentId, e])),
     ...(problems.length > 0 ? { invalid: problems.join("; ") } : {}),
+    ...(chartUnreadable ? { chartUnreadable: true as const } : {}),
   };
 }
 

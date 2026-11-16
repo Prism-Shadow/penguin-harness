@@ -40,9 +40,15 @@
  *   argument, a thinking block) as a preview; `loadBodies` fetches the whole of an
  *   item's folded values when the reader unfolds it and puts them in place.
  */
-import { isEventMessage, isPartialPayload } from "@prismshadow/amsp";
-import type { AmspRecord, ToolCallPayload } from "@prismshadow/amsp";
+import {
+  isEventMessage,
+  isPartialPayload,
+  type AmspRecord,
+  type ToolCallPayload,
+} from "@prismshadow/amsp";
+
 import type {
+  ApprovalReason,
   GoalServerEvent,
   HistoryProgress,
   MessagesLiveTail,
@@ -71,14 +77,20 @@ import {
   pushMessage,
   pushMessages,
   registerLocalDecision,
+  type BodyLoad,
+  type ChatItem,
+  type StreamModel,
+  type ThinkingItem,
+  type ToolCallItem,
 } from "./stream-model";
-import type { BodyLoad, ChatItem, StreamModel, ThinkingItem, ToolCallItem } from "./stream-model";
 import { seedPriorStats } from "./task-stats";
 
 /** A single pending approval (keyed by approvalKey(origin, toolCallId)). */
 export interface PendingApproval {
   toolCall: AmspRecord<ToolCallPayload>;
   origin?: string[];
+  /** Why it asks when the approval mode did not send it (a command-policy `ask` rule). */
+  reason?: ApprovalReason;
 }
 
 /** Buffered stream event; `id` is the SSE event id (`<epoch>-<seq>`, null when unknown); `seeded` marks a live-tail fragment injected at replay time (never carried over into a later round's buffer — the new round refetches fresh fragments). */
@@ -619,6 +631,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
         const toolCallId = ev.toolCall.payload.tool_call_id;
         const entry: PendingApproval = { toolCall: ev.toolCall };
         if (ev.origin) entry.origin = ev.origin;
+        if (ev.reason) entry.reason = ev.reason;
         pending.set(approvalKey(ev.origin, toolCallId), entry);
         adoptEarlierChild(ev.origin);
         const card = findToolCard(model, ev.origin, toolCallId);

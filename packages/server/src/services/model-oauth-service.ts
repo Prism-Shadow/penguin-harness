@@ -30,7 +30,8 @@ import type { ModelProviderOAuth } from "../model-catalog/catalog.js";
 import { HttpError } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { ModelOAuth, ProjectConfigStore } from "../mechanisms/projects.js";
+import type { DefaultModelOffer } from "../api/types.js";
+import type { GroupKeyApplied, ModelOAuth, ProjectConfigStore } from "../mechanisms/projects.js";
 
 /** How the user gets the authorization code back to the harness. */
 export type ModelOAuthMode = "callback" | "manual";
@@ -74,6 +75,12 @@ interface Flow {
   status: ModelOAuthStatus;
   /** Machine-readable failure reason, mirrored to the Web App so it can localize. */
   errorCode?: ModelOAuthErrorCode;
+  /**
+   * The default the minted key offers, kept for every `done` answer rather than the redeeming
+   * one alone: two overlapping polls can answer out of order, and the page asks about it only if
+   * one of them carries it.
+   */
+  defaultOffer?: DefaultModelOffer;
 }
 
 /**
@@ -231,12 +238,12 @@ export async function exchangeCode(input: {
   return { ok: true, key };
 }
 
-/** Writes a minted key as one provider group's key; returns how many of its rows use it. */
+/** Writes a minted key as one provider group's key; returns how many of its rows use it, and the default it offers. */
 export type ApplyGroupKey = (
   projectId: string,
   provider: string,
   apiKey: string,
-) => Promise<number>;
+) => Promise<GroupKeyApplied>;
 
 @Component()
 export class ModelOAuthService implements ModelOAuth {
@@ -362,6 +369,7 @@ export class ModelOAuthService implements ModelOAuth {
     provider: string;
     error?: ModelOAuthErrorCode;
     applied?: number;
+    defaultOffer?: DefaultModelOffer;
   }> {
     const flow = this.require(input);
     // Reading the code and claiming it inside `redeem` is one synchronous stretch, so two
@@ -373,6 +381,7 @@ export class ModelOAuthService implements ModelOAuth {
       provider: flow.provider,
       ...(flow.errorCode !== undefined ? { error: flow.errorCode } : {}),
       ...(result?.ok === true ? { applied: result.applied } : {}),
+      ...(flow.defaultOffer !== undefined ? { defaultOffer: flow.defaultOffer } : {}),
     };
   }
 
@@ -386,7 +395,7 @@ export class ModelOAuthService implements ModelOAuth {
     userId: string;
     projectId: string;
     code: string;
-  }): Promise<{ ok: true; applied: number } | { ok: false; error: ModelOAuthErrorCode }> {
+  }): Promise<({ ok: true } & GroupKeyApplied) | { ok: false; error: ModelOAuthErrorCode }> {
     return this.redeem(this.require(input), input.code);
   }
 
@@ -403,7 +412,7 @@ export class ModelOAuthService implements ModelOAuth {
   private async redeem(
     flow: Flow,
     code: string,
-  ): Promise<{ ok: true; applied: number } | { ok: false; error: ModelOAuthErrorCode }> {
+  ): Promise<({ ok: true } & GroupKeyApplied) | { ok: false; error: ModelOAuthErrorCode }> {
     const verifier = flow.verifier;
     if (flow.status !== "pending" || verifier === null) {
       throw new HttpError(
@@ -425,16 +434,17 @@ export class ModelOAuthService implements ModelOAuth {
       flow.errorCode = result.error;
       return { ok: false, error: result.error };
     }
-    let applied: number;
+    let written: GroupKeyApplied;
     try {
-      applied = await this.applyGroupKey(flow.projectId, flow.provider, result.key);
+      written = await this.applyGroupKey(flow.projectId, flow.provider, result.key);
     } catch {
       flow.status = "error";
       flow.errorCode = "apply_failed";
       return { ok: false, error: "apply_failed" };
     }
     flow.status = "done";
-    return { ok: true, applied };
+    flow.defaultOffer = written.defaultOffer;
+    return { ok: true, ...written };
   }
 
   /**
