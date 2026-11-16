@@ -1,15 +1,19 @@
 /**
- * Setting a company up, in two steps, every choice already made so the reader can go straight
- * through, and every choice on screen so nothing about the company runs unseen.
+ * Setting a company up, one question per screen, every choice already made so the reader can go
+ * straight through, and every choice on screen so nothing about the company runs unseen.
  *
- * 1. What it does: the Project's workspace, what the lead read in it, and the mission it suggests
- *    from that. Changing the workspace changes what was read and what is suggested.
- * 2. How it works: the way a ticket goes, drawn as its four stops, with the one stop the reader
- *    can switch (verification) where it sits and the rule of when the company reaches them; the
- *    schedules; and how the agents write to the reader, beside a sample ticket written that way.
- *    All of it goes into the handbook's how-we-work.md, which every employee reads.
+ * 1. Workspace: the Project's workspace, and what the lead read in it.
+ * 2. Mission: what the lead suggests from what it read, or the reader's own words. Changing the
+ *    workspace changes what was read and what is suggested.
+ * 3. How a ticket goes: its four stops, with the one stop the reader can switch (verification)
+ *    where it sits, and the rule of when the company reaches them.
+ * 4. Schedules: what the daily patrol does with what it finds; the weekly retrospective.
+ * 5. How the agents write to the reader, beside a sample ticket written that way.
+ *
+ * Steps 3 to 5 go into the handbook's how-we-work.md, which every employee reads. Each step keeps
+ * its choices when the reader goes back, and the company starts only from the last.
  */
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import {
   Button,
@@ -35,30 +39,53 @@ const LABEL = "text-xs font-semibold text-fg-muted";
 /** The option that stands for the reader's own words, among the lead's suggestions. */
 const OWN = "own";
 
-type Step = "what" | "how";
+const STEPS = ["workspace", "mission", "flow", "schedules", "style"] as const;
+type Step = (typeof STEPS)[number];
 
 function Steps({ step }: { step: Step }) {
   const W = useWords();
   return (
-    <ol className="flex items-center justify-center gap-3 text-xs">
-      {(["what", "how"] as const).map((id, i) => (
-        <li
-          key={id}
-          aria-current={id === step ? "step" : undefined}
-          className={`flex items-center gap-1.5 ${id === step ? "font-semibold text-fg" : QUIET}`}
-        >
-          {i > 0 && <span aria-hidden="true" className="mr-1.5 h-px w-6 bg-line" />}
-          <span className="tabular-nums">{i + 1}</span>
-          {W.setup.steps[id]}
-        </li>
-      ))}
+    <ol className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs">
+      {STEPS.map((id, i) => {
+        const current = id === step;
+        return (
+          <li
+            key={id}
+            aria-current={current ? "step" : undefined}
+            className={`flex items-center gap-1.5 ${current ? "font-semibold text-fg" : QUIET}`}
+          >
+            {i > 0 && <span aria-hidden="true" className="mr-1.5 h-px w-4 bg-line sm:w-6" />}
+            <span className="tabular-nums">{i + 1}</span>
+            {/* On a phone only the step on screen is named; the others keep their number. */}
+            <span className={current ? "" : "sr-only sm:not-sr-only"}>{W.setup.steps[id]}</span>
+          </li>
+        );
+      })}
     </ol>
   );
 }
 
-function Intro({ step, title, body }: { step: Step; title: string; body: string }) {
+/**
+ * A step's head: where the reader is, the step's question, and a line on it. A step the reader
+ * moved to takes the focus, so the screen reads from its top and a screen reader starts there.
+ */
+function Intro({
+  step,
+  title,
+  body,
+  focus,
+}: {
+  step: Step;
+  title: string;
+  body: string;
+  focus: boolean;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (focus) ref.current?.focus();
+  }, [focus]);
   return (
-    <div className="text-center">
+    <div ref={ref} tabIndex={-1} className="text-center outline-none">
       <Steps step={step} />
       <Heading level={1} display className="mt-5">
         {title}
@@ -68,36 +95,71 @@ function Intro({ step, title, body }: { step: Step; title: string; body: string 
   );
 }
 
-function WhatStep({
+/** A step's foot: back, a note, and the way on. */
+function Foot({
+  onBack,
+  note,
+  next,
+  disabled = false,
+}: {
+  onBack?: () => void;
+  note?: string;
+  next: string;
+  disabled?: boolean;
+}) {
+  const W = useWords();
+  return (
+    <div className="mt-6 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line pt-4">
+      {onBack !== undefined && (
+        <Button size="sm" variant="ghost" onClick={onBack}>
+          {W.setup.back}
+        </Button>
+      )}
+      {note !== undefined && <p className={`min-w-0 flex-1 basis-56 text-xs ${QUIET}`}>{note}</p>}
+      <Button size="sm" variant="primary" type="submit" disabled={disabled} className="ml-auto">
+        {next}
+      </Button>
+    </div>
+  );
+}
+
+/** One step's screen: a form whose submit moves on. */
+function StepForm({
+  wide = false,
+  onSubmit,
+  children,
+}: {
+  wide?: boolean;
+  onSubmit: () => void;
+  children: ReactNode;
+}) {
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    onSubmit();
+  };
+  return (
+    <form onSubmit={submit} className={`mx-auto w-full py-6 ${wide ? "max-w-3xl" : "max-w-xl"}`}>
+      {children}
+    </form>
+  );
+}
+
+function WorkspaceStep({
   workspace,
   onWorkspace,
-  choice,
-  onChoice,
-  own,
-  onOwn,
-  mission,
+  focus,
   onNext,
 }: {
   workspace: WorkspaceId;
   onWorkspace: (workspace: WorkspaceId) => void;
-  choice: string;
-  onChoice: (choice: string) => void;
-  own: string;
-  onOwn: (own: string) => void;
-  mission: string;
+  focus: boolean;
   onNext: () => void;
 }) {
   const W = useWords();
-  const words = W.workspaces[workspace];
-  const missionId = useId();
-  const next = (event: FormEvent) => {
-    event.preventDefault();
-    onNext();
-  };
   return (
-    <form onSubmit={next} className="mx-auto w-full max-w-xl py-6">
-      <Intro step="what" title={W.setup.title} body={W.setup.body} />
-      <div className="mt-6 space-y-5">
+    <StepForm onSubmit={onNext}>
+      <Intro step="workspace" title={W.setup.title} body={W.setup.body} focus={focus} />
+      <div className="mt-8 space-y-5">
         <Select
           label={W.setup.workspace}
           info={W.setup.workspaceInfo}
@@ -116,7 +178,7 @@ function WhatStep({
             <InfoPopover label={W.setup.read}>{W.setup.readInfo}</InfoPopover>
           </h2>
           <ul className="mt-2 space-y-1 text-sm text-fg">
-            {words.read.map((line) => (
+            {W.workspaces[workspace].read.map((line) => (
               <li key={line} className="flex gap-2">
                 <span aria-hidden="true" className="text-fg-subtle">
                   ·
@@ -126,46 +188,65 @@ function WhatStep({
             ))}
           </ul>
         </section>
-        <section>
-          <h2 id={missionId} className={LABEL}>
-            {W.setup.mission}
-          </h2>
-          <ChoiceGroup
-            shape="card"
-            aria-labelledby={missionId}
-            className="mt-2"
-            value={choice}
-            onChange={onChoice}
-            options={[
-              ...words.missions.map((option, i) => ({
-                value: String(i),
-                label: option.label,
-                description: option.why,
-              })),
-              { value: OWN, label: W.setup.own, muted: true },
-            ]}
+      </div>
+      <Foot next={W.setup.next} />
+    </StepForm>
+  );
+}
+
+function MissionStep({
+  workspace,
+  choice,
+  onChoice,
+  own,
+  onOwn,
+  mission,
+  onBack,
+  onNext,
+}: {
+  workspace: WorkspaceId;
+  choice: string;
+  onChoice: (choice: string) => void;
+  own: string;
+  onOwn: (own: string) => void;
+  mission: string;
+  onBack: () => void;
+  onNext: () => void;
+}) {
+  const W = useWords();
+  return (
+    <StepForm onSubmit={onNext}>
+      <Intro step="mission" title={W.setup.mission} body={W.setup.missionBody} focus />
+      <ChoiceGroup
+        shape="card"
+        aria-label={W.setup.mission}
+        className="mt-8"
+        value={choice}
+        onChange={onChoice}
+        options={[
+          ...W.workspaces[workspace].missions.map((option, i) => ({
+            value: String(i),
+            label: option.label,
+            description: option.why,
+          })),
+          { value: OWN, label: W.setup.own, muted: true },
+        ]}
+      />
+      {choice === OWN && (
+        <div className="mt-2">
+          <Textarea
+            size="sm"
+            rows={2}
+            autoFocus
+            aria-label={W.setup.own}
+            placeholder={W.setup.ownPlaceholder}
+            value={own}
+            onChange={(event) => onOwn(event.target.value)}
           />
-          {choice === OWN && (
-            <div className="mt-2">
-              <Textarea
-                size="sm"
-                rows={2}
-                autoFocus
-                aria-label={W.setup.own}
-                placeholder={W.setup.ownPlaceholder}
-                value={own}
-                onChange={(event) => onOwn(event.target.value)}
-              />
-            </div>
-          )}
-        </section>
-      </div>
-      <div className="mt-5 flex justify-end border-t border-line pt-4">
-        <Button size="sm" variant="primary" type="submit" disabled={mission.trim() === ""}>
-          {W.setup.next}
-        </Button>
-      </div>
-    </form>
+        </div>
+      )}
+      <Foot onBack={onBack} next={W.setup.next} disabled={mission.trim() === ""} />
+    </StepForm>
   );
 }
 
@@ -197,16 +278,6 @@ function Stop({
         <span className={`mt-0.5 block text-sm ${QUIET}`}>{children}</span>
       </span>
     </li>
-  );
-}
-
-/** A setting's row: its name, and the control that sets it. */
-function Row({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5">
-      <span className="text-sm text-fg">{label}</span>
-      <div className="w-full sm:w-64">{children}</div>
-    </div>
   );
 }
 
@@ -262,135 +333,137 @@ function Preview({ settings }: { settings: CompanySettings }) {
   );
 }
 
-function HowStep({
-  settings,
-  onSettings,
-  onBack,
-  onStart,
-}: {
+/** What every step after the first takes: the settings, and the ways back and on. */
+interface SettingsStep {
   settings: CompanySettings;
-  onSettings: (settings: CompanySettings) => void;
+  set: (patch: Partial<CompanySettings>) => void;
   onBack: () => void;
-  onStart: () => void;
-}) {
+  onNext: () => void;
+}
+
+function FlowStep({ settings, set, onBack, onNext }: SettingsStep) {
   const W = useWords();
   const F = W.setup.flow;
-  const S = W.setup.schedules;
-  const T = W.setup.style;
-  const set = (patch: Partial<CompanySettings>) => onSettings({ ...settings, ...patch });
-  const start = (event: FormEvent) => {
-    event.preventDefault();
-    onStart();
-  };
   return (
-    <form onSubmit={start} className="mx-auto w-full max-w-3xl py-6">
-      <Intro step="how" title={W.setup.howTitle} body={W.setup.howBody} />
-      <div className="mt-8 space-y-8">
-        <section aria-label={F.title}>
-          <h2 className={LABEL}>{F.title}</h2>
-          <ol className="mt-3">
-            <Stop n={1} title={F.propose.title}>
-              {F.propose.body}
-            </Stop>
-            <Stop n={2} title={F.work.title}>
-              {F.work.body}
-            </Stop>
-            <Stop
-              n={3}
-              title={F.verify.title}
-              aside={
-                <label className={`flex items-center gap-2 text-xs ${QUIET}`}>
-                  {F.verify.label}
-                  <Switch checked={settings.verify} onChange={(verify) => set({ verify })} />
-                </label>
-              }
-            >
-              {settings.verify ? F.verify.on(W.people.verifier.name) : F.verify.off}
-            </Stop>
-            <Stop n={4} title={F.review.title} last>
-              {F.review.body}
-            </Stop>
-          </ol>
-          <p className="mt-3 border-l-2 border-line pl-3 text-sm text-fg">{F.note}</p>
-        </section>
+    <StepForm onSubmit={onNext}>
+      <Intro step="flow" title={F.title} body={F.body} focus />
+      <ol className="mt-8">
+        <Stop n={1} title={F.propose.title}>
+          {F.propose.body}
+        </Stop>
+        <Stop n={2} title={F.work.title}>
+          {F.work.body}
+        </Stop>
+        <Stop
+          n={3}
+          title={F.verify.title}
+          aside={
+            <label className={`flex items-center gap-2 text-xs ${QUIET}`}>
+              {F.verify.label}
+              <Switch checked={settings.verify} onChange={(verify) => set({ verify })} />
+            </label>
+          }
+        >
+          {settings.verify ? F.verify.on(W.people.verifier.name) : F.verify.off}
+        </Stop>
+        <Stop n={4} title={F.review.title} last>
+          {F.review.body}
+        </Stop>
+      </ol>
+      <p className="mt-5 border-l-2 border-line pl-3 text-sm text-fg">{F.note}</p>
+      <Foot onBack={onBack} next={W.setup.next} />
+    </StepForm>
+  );
+}
 
-        <section aria-label={S.title} className="space-y-4">
-          <h2 className={LABEL}>{S.title}</h2>
-          <div>
-            <Row label={`${S.patrol} · ${S.patrolWhen}`}>
-              <Segmented<PatrolMode>
-                cols={3}
-                value={settings.patrol}
-                onChange={(patrol) => set({ patrol })}
-                options={(["off", "propose", "auto"] as const).map((mode) => ({
-                  value: mode,
-                  label: W.schedule.modes[mode],
-                }))}
-              />
-            </Row>
-            <p className={`mt-1 text-xs ${QUIET}`}>{S.patrolHint[settings.patrol]}</p>
-          </div>
-          <div>
-            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
-              <span className="text-sm text-fg">{`${S.retro} · ${S.retroWhen}`}</span>
-              <span className={`text-xs ${QUIET}`}>{W.schedule.autoOff}</span>
-            </div>
-            <p className={`mt-1 text-xs ${QUIET}`}>{S.retroHint}</p>
-          </div>
+function SchedulesStep({ settings, set, onBack, onNext }: SettingsStep) {
+  const W = useWords();
+  const S = W.setup.schedules;
+  const patrolId = useId();
+  return (
+    <StepForm onSubmit={onNext}>
+      <Intro step="schedules" title={S.title} body={S.body} focus />
+      <div className="mt-8 space-y-6">
+        <section>
+          <h2 id={patrolId} className={LABEL}>
+            {S.patrol}
+            <span className="ml-2 font-normal">{S.patrolWhen}</span>
+          </h2>
+          <ChoiceGroup
+            shape="card"
+            aria-labelledby={patrolId}
+            className="mt-2"
+            value={settings.patrol}
+            onChange={(patrol) => set({ patrol: patrol as PatrolMode })}
+            options={(["off", "propose", "auto"] as const).map((mode) => ({
+              value: mode,
+              label: W.schedule.modes[mode],
+              description: S.patrolHint[mode],
+            }))}
+          />
         </section>
-
-        <section aria-label={T.title}>
-          <h2 className={LABEL}>{T.title}</h2>
-          <div className="mt-3 grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-            <div className="space-y-3">
-              <StyleRow label={T.record.label}>
-                <Segmented<CompanySettings["record"]>
-                  cols={2}
-                  value={settings.record}
-                  onChange={(record) => set({ record })}
-                  options={[
-                    { value: "points", label: T.record.points },
-                    { value: "prose", label: T.record.prose },
-                  ]}
-                />
-              </StyleRow>
-              <StyleRow label={T.ask.label}>
-                <Segmented<CompanySettings["ask"]>
-                  cols={2}
-                  value={settings.ask}
-                  onChange={(ask) => set({ ask })}
-                  options={[
-                    { value: "options", label: T.ask.options },
-                    { value: "open", label: T.ask.open },
-                  ]}
-                />
-              </StyleRow>
-              <StyleRow label={T.progress.label}>
-                <Segmented<CompanySettings["progress"]>
-                  cols={2}
-                  value={settings.progress}
-                  onChange={(progress) => set({ progress })}
-                  options={[
-                    { value: "milestones", label: T.progress.milestones },
-                    { value: "every", label: T.progress.every },
-                  ]}
-                />
-              </StyleRow>
-            </div>
-            <Preview settings={settings} />
+        <section aria-label={S.retro}>
+          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+            <h2 className={LABEL}>
+              {S.retro}
+              <span className="ml-2 font-normal">{S.retroWhen}</span>
+            </h2>
+            <span className={`text-xs ${QUIET}`}>{W.schedule.autoOff}</span>
           </div>
+          <p className={`mt-1 text-sm ${QUIET}`}>{S.retroHint}</p>
         </section>
       </div>
-      <div className="mt-8 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line pt-4">
-        <Button size="sm" variant="ghost" onClick={onBack}>
-          {W.setup.back}
-        </Button>
-        <p className={`min-w-0 flex-1 basis-56 text-xs ${QUIET}`}>{W.setup.defaults}</p>
-        <Button size="sm" variant="primary" type="submit">
-          {W.setup.start}
-        </Button>
+      <Foot onBack={onBack} next={W.setup.next} />
+    </StepForm>
+  );
+}
+
+function StyleStep({ settings, set, onBack, onNext }: SettingsStep) {
+  const W = useWords();
+  const T = W.setup.style;
+  return (
+    <StepForm wide onSubmit={onNext}>
+      <Intro step="style" title={T.title} body={T.body} focus />
+      <div className="mt-8 grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <div className="space-y-3">
+          <StyleRow label={T.record.label}>
+            <Segmented<CompanySettings["record"]>
+              cols={2}
+              value={settings.record}
+              onChange={(record) => set({ record })}
+              options={[
+                { value: "points", label: T.record.points },
+                { value: "prose", label: T.record.prose },
+              ]}
+            />
+          </StyleRow>
+          <StyleRow label={T.ask.label}>
+            <Segmented<CompanySettings["ask"]>
+              cols={2}
+              value={settings.ask}
+              onChange={(ask) => set({ ask })}
+              options={[
+                { value: "options", label: T.ask.options },
+                { value: "open", label: T.ask.open },
+              ]}
+            />
+          </StyleRow>
+          <StyleRow label={T.progress.label}>
+            <Segmented<CompanySettings["progress"]>
+              cols={2}
+              value={settings.progress}
+              onChange={(progress) => set({ progress })}
+              options={[
+                { value: "milestones", label: T.progress.milestones },
+                { value: "every", label: T.progress.every },
+              ]}
+            />
+          </StyleRow>
+        </div>
+        <Preview settings={settings} />
       </div>
-    </form>
+      <Foot onBack={onBack} note={W.setup.defaults} next={W.setup.start} />
+    </StepForm>
   );
 }
 
@@ -400,38 +473,68 @@ export function SetupPage({
   onStart: (mission: string, workspace: WorkspaceId, settings: CompanySettings) => void;
 }) {
   const W = useWords();
-  const [step, setStep] = useState<Step>("what");
+  const [step, setStep] = useState<Step>("workspace");
+  // The first screen takes no focus when the page opens; coming back to it, it does.
+  const [moved, setMoved] = useState(false);
   const [workspace, setWorkspace] = useState<WorkspaceId>(WORKSPACES[0]);
   const [choice, setChoice] = useState("0");
   const [own, setOwn] = useState("");
   const [settings, setSettings] = useState<CompanySettings>(DEFAULT_SETTINGS);
   const mission =
     choice === OWN ? own : (W.workspaces[workspace].missions[Number(choice)]?.label ?? "");
+  const go = (to: Step) => {
+    setMoved(true);
+    setStep(to);
+  };
+  const at = STEPS.indexOf(step);
+  const back = () => go(STEPS[at - 1] ?? "workspace");
+  const next = () => {
+    const to = STEPS[at + 1];
+    if (to === undefined) onStart(mission, workspace, settings);
+    else go(to);
+  };
+  const settingsStep: SettingsStep = {
+    settings,
+    set: (patch) => setSettings((current) => ({ ...current, ...patch })),
+    onBack: back,
+    onNext: next,
+  };
+  let screen: ReactNode;
+  if (step === "workspace") {
+    screen = (
+      <WorkspaceStep
+        workspace={workspace}
+        onWorkspace={(chosen) => {
+          setWorkspace(chosen);
+          // What was suggested belongs to the old workspace; the reader's own words stay.
+          if (choice !== OWN) setChoice("0");
+        }}
+        focus={moved}
+        onNext={next}
+      />
+    );
+  } else if (step === "mission") {
+    screen = (
+      <MissionStep
+        workspace={workspace}
+        choice={choice}
+        onChoice={setChoice}
+        own={own}
+        onOwn={setOwn}
+        mission={mission}
+        onBack={back}
+        onNext={next}
+      />
+    );
+  } else if (step === "flow") {
+    screen = <FlowStep {...settingsStep} />;
+  } else if (step === "schedules") {
+    screen = <SchedulesStep {...settingsStep} />;
+  } else {
+    screen = <StyleStep {...settingsStep} />;
+  }
   return (
-    <PageFrame width="full" contentClassName="flex min-h-full flex-col justify-center">
-      {step === "what" ? (
-        <WhatStep
-          workspace={workspace}
-          onWorkspace={(next) => {
-            setWorkspace(next);
-            // What was suggested belongs to the old workspace; the reader's own words stay.
-            if (choice !== OWN) setChoice("0");
-          }}
-          choice={choice}
-          onChoice={setChoice}
-          own={own}
-          onOwn={setOwn}
-          mission={mission}
-          onNext={() => setStep("how")}
-        />
-      ) : (
-        <HowStep
-          settings={settings}
-          onSettings={setSettings}
-          onBack={() => setStep("what")}
-          onStart={() => onStart(mission, workspace, settings)}
-        />
-      )}
-    </PageFrame>
+    // Top-aligned, so the step bar stays where it is from one screen to the next.
+    <PageFrame width="full">{screen}</PageFrame>
   );
 }

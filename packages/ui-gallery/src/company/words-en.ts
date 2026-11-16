@@ -121,26 +121,31 @@ export const en: Words = {
   },
   setup: {
     title: "Start a company",
-    body: "Pick a workspace. The lead reads it first, then suggests what the company should look after. Everything has a default, so you can start right away.",
+    body: "Pick a workspace and the lead reads it first. Next, it suggests what the company should look after from what it read. Every step has a default, so you can go straight through.",
     workspace: "Workspace",
     workspaceInfo: "The folder the employees work in. By default, this Project's workspace.",
     read: "What the lead read",
     readInfo:
       "Once you pick a workspace, the lead reads its README, issues and CI runs. It changes no file and opens no work session.",
     mission: "What the company looks after",
+    missionBody: "The lead suggests three things from what it read. You can also write your own.",
     own: "Write your own",
     ownPlaceholder: "Example: maintain the repository, find and fix defects",
     defaults:
-      "The company is named after the workspace folder and uses the Project's default model. You can change both in settings later.",
+      'Steps 3 to 5 are written to "How we work" in the handbook, which every employee reads before it starts. The company is named after the workspace folder and uses the Project\'s default model. You can change all of this later.',
     start: "Start the company",
-    steps: { what: "What it does", how: "How it works" },
+    steps: {
+      workspace: "Workspace",
+      mission: "Mission",
+      flow: "Tickets",
+      schedules: "Schedules",
+      style: "Writing",
+    },
     next: "Next",
     back: "Back",
-    howTitle: "Decide how the company works",
-    howBody:
-      'This is written to "How we work" in the handbook, which every employee reads before it starts. Everything has a default, and you can change it any time.',
     flow: {
       title: "How a ticket goes",
+      body: "A ticket passes four stops from proposal to review. You can turn off the verify stop.",
       note: "Only proposals, questions and reviews reach you. Nothing else interrupts you.",
       propose: {
         title: "Propose",
@@ -163,11 +168,12 @@ export const en: Words = {
       },
     },
     schedules: {
-      title: "Schedules",
+      title: "When the lead looks for work",
+      body: "The lead looks over the workspace on a schedule, without being asked. You decide what happens to what the patrol finds.",
       patrol: "Daily patrol",
       patrolWhen: "New issues and CI, daily at 09:00",
       patrolHint: {
-        off: "No patrol. You can turn it on later on the schedules page.",
+        off: "The lead does not look. You can turn it on later on the schedules page.",
         propose: "What it finds is filed as a ticket that waits for you to accept it.",
         auto: "What it finds starts work at once, and reaches you only for review.",
       },
@@ -177,7 +183,8 @@ export const en: Words = {
         "It looks back over last week's closed tickets and files what to change as tickets for you. It only proposes; it changes nothing itself.",
     },
     style: {
-      title: "How it writes to you",
+      title: "How the employees write to you",
+      body: "Change an option and the sample ticket beside it is rewritten that way.",
       record: { label: "Ticket record", points: "Points", prose: "Prose" },
       ask: { label: "Questions", options: "Options and a pick", open: "Just the question" },
       progress: { label: "Progress", milestones: "Milestones", every: "Every step" },

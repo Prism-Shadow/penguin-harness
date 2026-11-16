@@ -133,24 +133,30 @@ export const zh = {
   },
   setup: {
     title: "开一家公司",
-    body: "选好工作区，主理先读一遍，再建议公司关注什么。都已选好默认值，可以直接开始。",
+    body: "选好工作区，主理先读一遍，下一步按读到的建议公司关注什么。每一步都选好了默认值，可以一路点下一步。",
     workspace: "工作区",
     workspaceInfo: "员工共同工作的目录，默认是这个 Project 的工作区。",
     read: "主理读到的",
     readInfo: "选好工作区后，主理只读 README、issue 和 CI 记录，不改文件，也不开工作会话。",
     mission: "公司关注什么",
+    missionBody: "主理按读到的建议了三件，也可以自己写。",
     own: "自己写",
     ownPlaceholder: "例如：维护代码库，排查问题、修复缺陷",
-    defaults: "公司名取工作区的文件夹名，模型用 Project 默认的，开了以后都能在设置里改。",
+    defaults:
+      "第 3 到 5 步的选择会写进手册里的「公司怎么运作」，每个员工开工前都读。公司名取工作区的文件夹名，模型用 Project 默认的。这些之后都能改。",
     start: "开公司",
-    steps: { what: "做什么", how: "怎么运作" },
+    steps: {
+      workspace: "工作区",
+      mission: "关注什么",
+      flow: "工单怎么走",
+      schedules: "日程",
+      style: "说话方式",
+    },
     next: "下一步",
     back: "上一步",
-    howTitle: "定好公司怎么运作",
-    howBody:
-      "这些会写进手册里的「公司怎么运作」，每个员工开工前都会读。默认值已选好，之后随时能改。",
     flow: {
       title: "一张工单怎么走",
+      body: "从提议到验收经过四站。验证这一站可以关掉。",
       note: "只有提议、提问和验收这三处会找你，其余的不打扰你。",
       propose: { title: "提议", body: "主理把要做的事提成工单，你接受才开始。" },
       work: {
@@ -166,11 +172,12 @@ export const zh = {
       review: { title: "验收", body: "你接受，或附一句话打回。打回的原因记进手册，下次先检查。" },
     },
     schedules: {
-      title: "日程",
+      title: "主理自己找事做",
+      body: "主理按日程自己看工作区，不用你开口。巡检的发现怎么处理由你定。",
       patrol: "每日巡检",
       patrolWhen: "每天 09:00 看新 issue 和 CI",
       patrolHint: {
-        off: "不巡检。之后可以在日程页打开。",
+        off: "主理不看工作区。之后可以在日程页打开。",
         propose: "发现的问题提成工单，等你接受。",
         auto: "发现的问题直接开工，做完才找你验收。",
       },
@@ -179,7 +186,8 @@ export const zh = {
       retroHint: "回看上周关闭的工单，要改的提成工单给你。复盘只提议，不会自己改。",
     },
     style: {
-      title: "怎么跟你说话",
+      title: "员工怎么跟你说话",
+      body: "改一个选项，旁边的示例工单就按新的写法写。",
       record: { label: "工单记录", points: "要点", prose: "段落" },
       ask: { label: "提问", options: "给选项和推荐", open: "只提问题" },
       progress: { label: "进展", milestones: "关键节点", every: "每一步" },
