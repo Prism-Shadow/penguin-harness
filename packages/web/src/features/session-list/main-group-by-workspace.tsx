@@ -27,7 +27,6 @@ export function renderMainGroupByWorkspace(scope: MainSidebarState) {
     groupDragProps,
     newChat,
     machineNameOf,
-    registeredKeys,
     openRenameWorkspace,
     renderGroupBody,
     onNavigate,
@@ -98,26 +97,26 @@ export function renderMainGroupByWorkspace(scope: MainSidebarState) {
                 >
                   <Icon d={ICONS.plus} size={ICON_SIZE.groupHeaderAction} />
                 </button>
-                {/* A group that is one directory (not the merged temporary group):
-                              the overflow right of the "+" — browse its files, and, for a
-                              manually-added (registry-backed) Workspace, rename the alias or
-                              remove it from the sidebar (session-derived groups have no
-                              registry entry for those two to act on). */}
+                {/* A group that is one directory (not the merged temporary group), whether
+                              it was added by hand or formed by its conversations, here or on a
+                              machine: the overflow right of the "+" — browse its files, rename it
+                              (naming an unregistered group registers it), and delete it, which
+                              archives its active conversations. The count the confirm names is
+                              the group's whole active share, never the search-filtered rows. */}
                 {fullPath !== null && (
                   <GroupOverflowMenu
                     target={{ path: fullPath, machineId: group.machineId }}
                     host={{ newChat, ...(onNavigate ? { onNavigate } : {}) }}
-                    {...(registeredKeys.has(group.key)
-                      ? {
-                          onRename: () => openRenameWorkspace(fullPath, group.machineId),
-                          onDelete: () =>
-                            setDeletingWorkspace({
-                              path: fullPath,
-                              machineId: group.machineId,
-                              label: group.label,
-                            }),
-                        }
-                      : {})}
+                    onRename={() => openRenameWorkspace(fullPath, group.machineId)}
+                    onDelete={() =>
+                      setDeletingWorkspace({
+                        path: fullPath,
+                        machineId: group.machineId,
+                        label: group.label,
+                        key: group.key,
+                        count: Math.max(counts?.totals.active ?? 0, group.sessions.length),
+                      })
+                    }
                   />
                 )}
               </>

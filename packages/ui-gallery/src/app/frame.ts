@@ -16,7 +16,8 @@
  *
  * Two more params serve the screenshot script and the browser checks, and the gallery's own pages
  * set neither: `wallpaper` (with `wallpaperSettings`) seeds a custom background the same way, and
- * `notices=1` raises the notices a conversation can carry.
+ * `notices=1` raises the notices a conversation can carry. `window=<platform>` frames the app as
+ * the desktop shell's main window (the desktop-window surface sets it).
  *
  * A page outside the gallery frames the same document with `embeddedFrameSrc`: it names only the
  * theme, the mode and the language, and adds `embed=1`, which makes the app the guest of that
@@ -66,6 +67,13 @@ export const BACKGROUND_SEEDED_KEYS: Readonly<Record<string, string>> = {
   wallpaperSettings: BACKGROUND_STORAGE_KEYS.settings,
 };
 
+/** The desktop shell's platforms, as its window bridge names them. */
+export const WINDOW_PLATFORMS = ["darwin", "win32", "linux"] as const;
+export type WindowPlatform = (typeof WINDOW_PLATFORMS)[number];
+
+/** The desktop shell's title band height in CSS px (packages/desktop/src/title-bar.ts). */
+const WINDOW_BAND_HEIGHT = 36;
+
 /** What the gallery tells a frame, besides the app route. */
 export interface FramePrefs {
   theme: string;
@@ -98,6 +106,12 @@ export interface FrameTarget {
    * composer (mock/notices.ts).
    */
   notices?: boolean;
+  /**
+   * Frame the app as the desktop shell's main window on this platform: the frame is handed a
+   * stand-in for the shell's window bridge before the app boots, so the app draws its title band
+   * (and, off macOS, its window buttons) as it does in the desktop app. The buttons do nothing.
+   */
+  window?: WindowPlatform;
 }
 
 /** The frame's URL: the document, then the target and the preferences as query params. */
@@ -110,6 +124,7 @@ export function appFrameSrc(base: string, prefs: FramePrefs, target: FrameTarget
   if (target.embedded) params.set("embed", "1");
   if (target.autoplay) params.set("autoplay", target.autoplay);
   if (target.notices) params.set("notices", "1");
+  if (target.window) params.set("window", target.window);
   return `${base}${APP_FRAME_PATH}?${params.toString()}`;
 }
 
@@ -146,6 +161,7 @@ export function parseFrameParams(search: string): FrameParams {
   const params = new URLSearchParams(search);
   const route = params.get("route");
   const open = params.get("open");
+  const platform = WINDOW_PLATFORMS.find((p) => p === params.get("window"));
   return {
     route: route && route.startsWith("/") ? route : "/chat",
     lang: params.get("lang") === "zh" ? "zh" : "en",
@@ -158,6 +174,7 @@ export function parseFrameParams(search: string): FrameParams {
       ? { autoplay: "evolution" as const }
       : {}),
     ...(params.get("notices") === "1" ? { notices: true } : {}),
+    ...(platform !== undefined ? { window: platform } : {}),
   };
 }
 
@@ -165,7 +182,9 @@ export function parseFrameParams(search: string): FrameParams {
  * The inline script that gives the frame document its own storage, seeded from the URL. A
  * classic, dependency-free IIFE, generated from `SEEDED_KEYS` and `BACKGROUND_SEEDED_KEYS` so the
  * keys can never drift from the app's. It must run before the app's boot script, which reads the
- * same storage.
+ * same storage. When the URL names a desktop platform it also hands the document the stand-in
+ * window bridge (`window.penguinWindow`, the shape `lib/window-bridge.ts` reads), before any of
+ * the app's modules look for it.
  */
 export function storageSeedScript(): string {
   return (
@@ -180,6 +199,10 @@ export function storageSeedScript(): string {
     `var S=${JSON.stringify({ ...SEEDED_KEYS, ...BACKGROUND_SEEDED_KEYS })},` +
     "q=new URLSearchParams(location.search),seed={};" +
     "for(var p in S){var v=q.get(p);if(v)seed[S[p]]=v}" +
+    `var w=q.get("window");if(${JSON.stringify(WINDOW_PLATFORMS)}.indexOf(w)>=0)` +
+    `window.penguinWindow={platform:w,bandHeight:${WINDOW_BAND_HEIGHT},` +
+    "isMaximized:function(){return false},onMaximizedChange:function(){return function(){}}," +
+    "minimize:function(){},toggleMaximize:function(){},close:function(){}};" +
     'Object.defineProperty(window,"localStorage",{value:store(seed),configurable:true});' +
     'Object.defineProperty(window,"sessionStorage",{value:store({}),configurable:true});' +
     "})()"

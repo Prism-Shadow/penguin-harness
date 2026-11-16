@@ -1,5 +1,6 @@
 import { sessionActivity, sessionBackgroundTasks } from "../../../lib/session-activity";
 import { bucketCostUsd } from "../../../lib/amsp/task-stats";
+import { refusalHandoffOccurrence } from "../../../lib/amsp/compaction-summary";
 import { agentDisplayName } from "../../../state/project";
 import { modelTaskStartCount } from "../agent-topology";
 import { ChatInput } from "../chat-input";
@@ -153,6 +154,7 @@ export function createMainChatView(
       onOpenAgentSettings={() =>
         navigate(agentPagePath(selected.agentId, machineForSession(selected.sessionId), "runtime"))
       }
+      refusalHandoff={refusalHandoffOccurrence(stream.model.items)}
       contextNow={stream.model.stats.contextNow}
       contextStale={stream.model.stats.contextStale}
       sessionId={selected.sessionId}

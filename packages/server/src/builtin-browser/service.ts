@@ -466,9 +466,9 @@ export class BuiltinBrowser {
 
   // --- the built-in browser's import, history, data -------------------------------
 
-  listImportSources(actor: Actor): BuiltinBrowserImportSource[] {
+  async listImportSources(actor: Actor): Promise<BuiltinBrowserImportSource[]> {
     this.builtinOnly(actor, "Importing from another browser");
-    return this.importer.listImportSources();
+    return await this.importer.listImportSources();
   }
 
   /**
@@ -481,7 +481,7 @@ export class BuiltinBrowser {
     req: BuiltinBrowserImportRequest,
   ): Promise<BuiltinBrowserImportResult> {
     this.builtinOnly(actor, "Importing from another browser");
-    const sources = this.importer.listImportSources();
+    const sources = await this.importer.listImportSources();
     const source =
       sources.find((s) => s.id === req.sourceId) ?? sources.find((s) => s.browser === req.sourceId);
     if (source === undefined) throw sourceNotFound(req.sourceId);

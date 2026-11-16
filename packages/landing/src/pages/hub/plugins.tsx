@@ -63,6 +63,7 @@ export function PluginsPage() {
   return (
     <HubList
       title={S.hub.plugins.title}
+      description={S.hub.plugins.description}
       source={{ href: PLUGINS_SOURCE, label: "Prism-Shadow/penguin-harness/plugins" }}
       items={plugins}
       keyOf={(plugin) => plugin.id}
