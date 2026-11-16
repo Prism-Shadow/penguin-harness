@@ -883,7 +883,10 @@ describe("the published index source", () => {
       indexUrl: () => urls,
       fetchImpl: fakeFetch(() => jsonResponse([published])).fetch,
     });
-    // The first listing reads the one configured source.
+    // The first listing answers at once from what is in hand; the fetch lands behind it and
+    // the next listing carries the source's entries.
+    await routes.request("/");
+    await new Promise((resolve) => setTimeout(resolve, 0));
     const withSource = (await (await routes.request("/")).json()) as PluginIndexResponse;
     expect(withSource.plugins.map((p) => p.name)).toContain(published.name);
     // Clearing the list (the switch off) drops it on the next listing, builtin entries alone.
