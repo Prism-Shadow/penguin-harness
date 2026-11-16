@@ -146,6 +146,7 @@ import { EventsRoutes } from "./http/routes/events.js";
 import { PluginRegistryRoutes, PluginRoutes } from "./http/routes/plugins.js";
 import { InstalledPluginRoutes } from "./http/routes/plugins-installed.js";
 import { NpmPluginPackages } from "./plugin/install.js";
+import { PluginSourceSettings } from "./plugin/source-settings.js";
 import { PluginLibraryModule } from "./plugin/library-module.js";
 import { PluginUiRoutes } from "./http/routes/plugin-ui.js";
 import { SuggestIdRoutes } from "./http/routes/suggest-id.js";
@@ -422,6 +423,17 @@ export class AccountDataModule {}
 export class PluginConfigModule {}
 
 /**
+ * Plugin sources as a group of their own: the settings node declares the group and applies
+ * it to the installer, and needs plugin configuration (and through it the database), so it
+ * sits above it — the same shape the sandbox settings' module has.
+ */
+@Module({
+  children: [PluginSourceSettings],
+  exports: [],
+})
+export class PluginSourceSettingsModule {}
+
+/**
  * Sandbox settings as a group of their own: the sandbox service boots on the capability-free
  * floor, while its settings group and the node applying it need plugin configuration (and
  * through it the database), so they sit above it.
@@ -546,6 +558,7 @@ export class ThemesModule {}
     SettingsModule,
     AccountDataModule,
     PluginConfigModule,
+    PluginSourceSettingsModule,
     IdentityModule,
     ProjectsModule,
     SessionRuntimeModule,

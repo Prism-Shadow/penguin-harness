@@ -109,6 +109,21 @@ export async function prefixDependencies(prefix: string): Promise<Record<string,
   }
 }
 
+/**
+ * The registry URL the installer's npm runs are pointed at, set by the Plugin sources
+ * settings group (see source-settings.ts). Undefined — the default — passes nothing: npm's
+ * own configuration (its .npmrc chain, the ambient environment) answers, exactly as before
+ * the group existed. Set, it rides every npm run of the installer as `--registry`, which
+ * overrides that chain for the plugins' installs without touching how npm is configured on
+ * the machine.
+ */
+let npmRegistry: string | undefined = undefined;
+
+/** The settings group sets (or clears) the registry the installer's npm runs are pointed at. */
+export function setNpmRegistry(url: string | undefined): void {
+  npmRegistry = url;
+}
+
 async function npm(prefix: string, args: readonly string[], cwd = prefix): Promise<string> {
   try {
     // On Windows npm is a batch file, and Node refuses to spawn one directly (`spawn EINVAL`)
@@ -147,7 +162,15 @@ export function npmFailureKind(stderr: string | undefined): "unavailable" | "oth
 }
 
 const install = (prefix: string, spec: string) =>
-  npm(prefix, ["install", "--no-audit", "--no-fund", "--omit=dev", "--", spec]);
+  npm(prefix, [
+    ...(npmRegistry !== undefined ? [`--registry=${npmRegistry}`] : []),
+    "install",
+    "--no-audit",
+    "--no-fund",
+    "--omit=dev",
+    "--",
+    spec,
+  ]);
 
 /**
  * Installs (or upgrades) one package into the root's plugin prefix. Returns the version npm
