@@ -2,8 +2,8 @@
  * A ticket's words, read from the dictionary by what the ticket holds. A sample ticket shows its
  * fixture's words; one the reader asked for shows their own sentence and a few generic lines.
  */
-import { PARTS, USD_PER_MILLION_TOKENS } from "./fixtures";
-import type { Part } from "./fixtures";
+import { USD_PER_MILLION_TOKENS } from "./fixtures";
+import type { Role } from "./fixtures";
 import type { Ticket } from "./model";
 import type { TicketWords, Words } from "./words";
 
@@ -59,8 +59,22 @@ export function tokens(usd: number): string {
   return String(Math.round(count));
 }
 
-/** What the patrol reads: each staffed part's sources, in the parts' order. */
-export const sourcesOf = (parts: readonly Part[], W: Words): string =>
-  PARTS.filter((part) => parts.includes(part))
-    .map((part) => W.setup.parts[part].watches)
+/** A role's words: the reader's own where they wrote them, else its draft's. */
+export function roleWords(
+  role: Role,
+  W: Words,
+): { title: string; duties: string; sources: string } {
+  const draft = role.draft === null ? null : W.drafts[role.draft];
+  return {
+    title: role.title ?? draft?.title ?? "",
+    duties: role.duties ?? draft?.duties ?? "",
+    sources: draft?.sources ?? "",
+  };
+}
+
+/** What the patrol reads: the sources of every role on the team, in the team's order. */
+export const sourcesOf = (staff: readonly Role[], W: Words): string =>
+  staff
+    .map((role) => roleWords(role, W).sources)
+    .filter((sources) => sources !== "")
     .join(W.handbook.join);

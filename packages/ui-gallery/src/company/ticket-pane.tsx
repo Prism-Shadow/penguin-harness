@@ -22,7 +22,7 @@ import { FIXTURES } from "./fixtures";
 import type { SessionStatus, Ticket, WorkSession } from "./model";
 import { Deliverable, NeedsYou } from "./needs-you";
 import type { TicketActions } from "./needs-you";
-import { PersonName } from "./people";
+import { PersonName, usePerson } from "./people";
 import { SessionConversation } from "./session-page";
 import { waitOf } from "./spec";
 import {
@@ -83,6 +83,7 @@ export function TicketPane({
   onOpenHandbook: (path: string) => void;
 }) {
   const W = useWords();
+  const person = usePerson();
   const T = S.company.tickets;
   const shown = sessions.find((session) => session.id === tab);
   return (
@@ -122,7 +123,7 @@ export function TicketPane({
                 const round = same.length > 1 ? same.indexOf(session) + 1 : null;
                 return {
                   key: session.id,
-                  label: W.nav.sessionTab(W.people[session.by].name, W.roles[session.role], round),
+                  label: W.nav.sessionTab(person(session.by).name, W.roles[session.role], round),
                 };
               }),
             ]}

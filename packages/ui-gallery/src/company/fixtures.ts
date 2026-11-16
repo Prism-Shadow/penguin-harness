@@ -40,14 +40,16 @@ export type TicketKind = "task" | "schedule" | "role" | "skill" | "change";
  */
 export type HandbookDocId = "readme" | "howWeWork" | "state" | "docsLesson" | "bilingualSkill";
 
-/** Whose byline a ticket carries: one of the company's employees. */
-export type Byline = "lead" | "engineer" | "writer" | "researcher" | "verifier";
+/**
+ * Whose byline a ticket carries: one of the company's employees. The lead and the verifier are
+ * every company's; any other is a role the lead drafted from the mission, by its id.
+ */
+export type Byline = string;
 
 /**
- * A part of the work one employee owns: engineering (the code), operations (the docs, the blog,
- * the community) and research (evaluating models, following the papers). A company staffs the
- * parts its mission needs; the verifier is not a part, it checks the parts' deliveries when the
- * company verifies them.
+ * The kind of work a role does, as the sample data knows it: code, writing (content, docs,
+ * community) or research. A role is the reader's to name and describe; its part only says which
+ * of the sample's tickets it takes. A role the reader adds has none, and takes none.
  */
 export type Part = "engineer" | "writer" | "researcher";
 export const PARTS: readonly Part[] = ["engineer", "writer", "researcher"];
@@ -56,26 +58,121 @@ export const PARTS: readonly Part[] = ["engineer", "writer", "researcher"];
 export const WORKSPACE = "~/code/penguin-harness";
 
 /**
- * The broad directions the setup page offers a company, as the shipped company mode's example
- * missions are offered: a name, one line, and a whole mission to start from. Their words are
- * the dictionaries' `setup.templates`. Each names the fewest parts its mission needs; the reader
- * adds the others if they want them.
+ * Every employee is named after a penguin species: the Emperor leads, Chinstrap verifies, and the
+ * roles the lead drafts take the others in this order. The species' names are the dictionaries'
+ * `species`.
  */
-export const TEMPLATES = ["code", "content", "research"] as const;
-export type TemplateId = (typeof TEMPLATES)[number];
-export const TEMPLATE_PARTS: Record<TemplateId, readonly Part[]> = {
-  code: ["engineer"],
-  content: ["writer"],
-  research: ["researcher"],
+export type Species =
+  "emperor" | "chinstrap" | "gentoo" | "littleBlue" | "adelie" | "king" | "rockhopper" | "macaroni";
+export const ROLE_SPECIES: readonly Species[] = [
+  "gentoo",
+  "littleBlue",
+  "adelie",
+  "king",
+  "rockhopper",
+  "macaroni",
+];
+
+/**
+ * Each species' Agent id, which picks its avatar's colour; no two of the first five share one.
+ */
+export const AGENT_ID: Record<Species, string> = {
+  emperor: "harness-lead",
+  chinstrap: "org-verifier",
+  gentoo: "org-engineer",
+  littleBlue: "org-community",
+  adelie: "org-study",
+  king: "org-scout",
+  rockhopper: "org-analyst",
+  macaroni: "org-comms",
 };
 
 /**
- * The parts a mission the reader wrote calls for, as the lead would read it: each part whose
- * words (the dictionaries' `setup.keywords`) the mission uses, in the parts' order.
+ * The roles the lead can draft from a mission, and the kind of work each does. Their title,
+ * duties and sources are the dictionaries' `drafts`; the words in a mission that call for each
+ * are `setup.keywords`.
  */
-export function partsFor(mission: string, keywords: Record<Part, readonly string[]>): Part[] {
+export type DraftId =
+  | "engineer"
+  | "operations"
+  | "editor"
+  | "community"
+  | "docs"
+  | "digest"
+  | "researcher"
+  | "analyst"
+  | "assistant";
+export const DRAFT_PART: Record<DraftId, Part> = {
+  engineer: "engineer",
+  operations: "writer",
+  editor: "writer",
+  community: "writer",
+  docs: "writer",
+  digest: "writer",
+  researcher: "researcher",
+  analyst: "researcher",
+  assistant: "writer",
+};
+
+/**
+ * A role on the team besides the lead and the verifier: its id, its penguin, what it was drafted
+ * as, and what the reader made of it. Its title and duties are the draft's unless the reader
+ * wrote their own.
+ */
+export interface Role {
+  id: Byline;
+  species: Species;
+  draft: DraftId | null;
+  part: Part | null;
+  title?: string;
+  duties?: string;
+}
+
+/** The roles drafted, as the team: each takes the next species, and its draft's id. */
+export const staffFrom = (drafts: readonly DraftId[]): Role[] =>
+  drafts.map((draft, i) => ({
+    id: draft,
+    species: ROLE_SPECIES[i] ?? "macaroni",
+    draft,
+    part: DRAFT_PART[draft],
+  }));
+
+/** The sample week's team: one role for each kind of work. */
+export const WEEK_STAFF: readonly Role[] = [
+  { id: "engineer", species: "gentoo", draft: "engineer", part: "engineer" },
+  { id: "writer", species: "littleBlue", draft: "operations", part: "writer" },
+  { id: "researcher", species: "adelie", draft: "researcher", part: "researcher" },
+];
+
+/**
+ * The broad directions the setup page offers a company, as the shipped company mode's example
+ * missions are offered: a name, one line, and a whole mission to start from. Their words are
+ * the dictionaries' `setup.templates`. Each drafts the fewest roles its mission needs.
+ */
+export const TEMPLATES = ["code", "content", "research"] as const;
+export type TemplateId = (typeof TEMPLATES)[number];
+export const TEMPLATE_DRAFTS: Record<TemplateId, readonly DraftId[]> = {
+  code: ["engineer"],
+  content: ["editor", "community"],
+  research: ["researcher"],
+};
+
+/** The most roles the lead drafts from a mission of the reader's own. */
+const MOST_DRAFTED = 3;
+
+/**
+ * The roles a mission the reader wrote calls for, as the lead would draft them: each role whose
+ * words the mission uses, in the drafts' order, at most three; with none, one assistant.
+ */
+export function draftsFor(
+  mission: string,
+  keywords: Partial<Record<DraftId, readonly string[]>>,
+): DraftId[] {
   const said = mission.toLowerCase();
-  return PARTS.filter((part) => keywords[part].some((word) => said.includes(word.toLowerCase())));
+  const drafts = (Object.keys(DRAFT_PART) as DraftId[]).filter((draft) =>
+    (keywords[draft] ?? []).some((word) => said.includes(word.toLowerCase())),
+  );
+  return drafts.length === 0 ? ["assistant"] : drafts.slice(0, MOST_DRAFTED);
 }
 
 /** The task the lead proposes first for each part it staffs, beside its own survey. */
@@ -86,31 +183,10 @@ export const FIRST_TASK: Record<Part, FixtureId> = {
 };
 
 /**
- * An employee, apart from its words: its Agent id and who it reports to. The id picks the
- * avatar's colour; these five fall at least a sixth of the wheel apart, so no two employees
- * share a colour.
- * Its name, title and duties are the dictionaries' `people`. The lead is the one that stays up;
- * the others work only in the sessions of the tickets they own.
- */
-export interface Employee {
-  agentId: string;
-  reportsTo: Byline | null;
-}
-
-/**
  * What a million Tokens cost in the sample, input, output and cache together, in US dollars. A
  * ticket's cost is its fixture's; its Tokens are read back from it at this price.
  */
 export const USD_PER_MILLION_TOKENS = 3;
-
-/** The company's employees, the lead first. */
-export const EMPLOYEES: Record<Byline, Employee> = {
-  lead: { agentId: "harness-lead", reportsTo: null },
-  engineer: { agentId: "org-engineer", reportsTo: "lead" },
-  writer: { agentId: "org-community", reportsTo: "lead" },
-  researcher: { agentId: "org-study", reportsTo: "lead" },
-  verifier: { agentId: "org-verifier", reportsTo: "lead" },
-};
 
 /**
  * One step a ticket's work takes. The building session notes progress, stops on its one question,
@@ -121,9 +197,15 @@ export const EMPLOYEES: Record<Byline, Employee> = {
  */
 export type ScriptStep = "progress" | "ask" | "deliver" | "handoff" | "found" | "verified";
 
+/**
+ * Who does a sample ticket: the lead, the verifier, or whichever role on the team does that kind
+ * of work.
+ */
+export type FixtureOwner = "lead" | "verifier" | Part;
+
 export interface Fixture {
   kind: TicketKind;
-  owner: Byline;
+  owner: FixtureOwner;
   priority: "P0" | "P1" | "P2";
   /** The steps of its work, in order. A schedule or a role has none: accepting it is the whole of it. */
   script: readonly ScriptStep[];
@@ -135,12 +217,12 @@ export interface Fixture {
   cost: number;
   /** The handbook document it adds once it is done. */
   handbook?: HandbookDocId;
-  /** Who a skill is installed for, once accepted. */
-  installsOn?: Byline;
+  /** The kind of work a skill is for: installed for the role that does it, once accepted. */
+  installsOn?: Part;
   /** The lesson a skill absorbs: once it is installed, the lesson leaves the handbook's index. */
   merges?: HandbookDocId;
-  /** Who verifies its delivery before the person sees it, while that employee is on the team. */
-  verifiedBy?: Byline;
+  /** Its delivery is verified before the person sees it, while the verifier is on the team. */
+  verified?: boolean;
   /** Its first verification finds something to fix. */
   finds?: boolean;
 }
@@ -154,7 +236,7 @@ export const FIXTURES: Record<FixtureId, Fixture> = {
     recommended: 0,
     deliverable: "pull/128",
     cost: 4.2,
-    verifiedBy: "verifier",
+    verified: true,
     finds: true,
   },
   connection: {
@@ -164,7 +246,7 @@ export const FIXTURES: Record<FixtureId, Fixture> = {
     script: ["progress", "progress", "deliver"],
     deliverable: "pull/126",
     cost: 3.1,
-    verifiedBy: "verifier",
+    verified: true,
   },
   flaky: {
     kind: "task",
@@ -173,7 +255,7 @@ export const FIXTURES: Record<FixtureId, Fixture> = {
     script: ["progress", "deliver"],
     deliverable: "pull/129",
     cost: 1.8,
-    verifiedBy: "verifier",
+    verified: true,
   },
   jitter: {
     kind: "task",
@@ -243,7 +325,7 @@ export const FIXTURES: Record<FixtureId, Fixture> = {
     script: ["progress", "progress", "deliver"],
     deliverable: "changelog/0.3.md",
     cost: 2.3,
-    verifiedBy: "verifier",
+    verified: true,
     finds: true,
   },
   community: {
@@ -268,7 +350,7 @@ export const FIXTURES: Record<FixtureId, Fixture> = {
     script: ["progress", "progress", "deliver"],
     deliverable: "reports/new-models-eval.md",
     cost: 6.4,
-    verifiedBy: "verifier",
+    verified: true,
   },
 };
 

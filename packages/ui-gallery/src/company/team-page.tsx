@@ -7,14 +7,13 @@
  */
 import { Button, PageFrame, PageHeader, Pill } from "@prismshadow/penguin-ui";
 import { TitleButton } from "../../../web/src/features/company/shared";
-import { EMPLOYEES } from "./fixtures";
 import type { Byline } from "./fixtures";
 import { costOf, employeeMetrics, liveSessions, sessionStatus, spendOf } from "./model";
 import type { CompanyState } from "./model";
 import { waitOf } from "./spec";
 import { money, titleOf, tokens } from "./text";
 import { SessionStatusPill } from "./needs-you";
-import { PersonAvatar } from "./people";
+import { PersonAvatar, usePerson } from "./people";
 import { useWords } from "./use-words";
 
 const QUIET = "text-fg-muted";
@@ -29,6 +28,7 @@ export function TeamPage({
   onOpenSession: (id: string) => void;
 }) {
   const W = useWords();
+  const person = usePerson();
   const team: Byline[] = ["lead", ...state.roles];
   // A role proposal still waiting on the reader: the person it would bring in.
   const proposed = state.tickets.some(
@@ -60,11 +60,11 @@ export function TeamPage({
             <PersonAvatar byline={byline} size={32} />
             <div className="min-w-0 flex-1">
               <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span className="text-sm font-semibold">{W.people[byline].name}</span>
-                <span className={`text-sm ${QUIET}`}>{W.people[byline].title}</span>
+                <span className="text-sm font-semibold">{person(byline).name}</span>
+                <span className={`text-sm ${QUIET}`}>{person(byline).title}</span>
                 <Pill tone="attention">{W.team.pending}</Pill>
               </p>
-              <p className="mt-1 text-sm text-fg">{W.people[byline].duties}</p>
+              <p className="mt-1 text-sm text-fg">{person(byline).duties}</p>
               <p className={`mt-1 text-xs ${QUIET}`}>{W.team.pendingNote}</p>
             </div>
           </li>
@@ -84,8 +84,10 @@ function Member({
   onOpenSession: (id: string) => void;
 }) {
   const W = useWords();
-  const person = W.people[byline];
-  const employee = EMPLOYEES[byline];
+  const who = usePerson();
+  const person = who(byline);
+  // Everyone reports to the lead, who stands on its own.
+  const reportsTo = byline === "lead" ? null : "lead";
   const owned = state.tickets.filter((ticket) => ticket.owner === byline);
   const spent = owned.reduce((sum, ticket) => sum + costOf(state, ticket), 0);
   const metrics = employeeMetrics(state, byline);
@@ -113,15 +115,13 @@ function Member({
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span className="text-sm font-semibold">{person.name}</span>
           <span className={`text-sm ${QUIET}`}>{person.title}</span>
-          {employee.reportsTo === null && <Pill>{W.team.standing}</Pill>}
+          {reportsTo === null && <Pill>{W.team.standing}</Pill>}
           <span className={`ml-auto text-xs tabular-nums ${QUIET}`}>
             {W.team.usage(tokens(spent), money(spent))}
           </span>
         </div>
         <p className={`mt-0.5 flex flex-wrap gap-x-3 text-xs ${QUIET}`}>
-          {employee.reportsTo !== null && (
-            <span>{W.team.reportsTo(W.people[employee.reportsTo].name)}</span>
-          )}
+          {reportsTo !== null && <span>{W.team.reportsTo(who(reportsTo).name)}</span>}
           <span>
             {metrics.accepted === 0
               ? W.team.noMetrics

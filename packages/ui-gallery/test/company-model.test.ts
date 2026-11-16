@@ -5,15 +5,16 @@
  * - Given a ticket, it waits on a person only while proposed, in review, or blocked by a person,
  *   and the inbox lists it in exactly one view: the reader's triage first, then what waits, what
  *   an agent has, and what is settled.
- * - Given the first sentence, the lead answers with its survey and each staffed part's first task
- *   as proposals only, and nothing has a session; an empty sentence, or a team with no part,
- *   starts nothing; the company is set up as chosen: one employee per part, the verifier joins
- *   when every delivery is to be verified (and a task accepted then is verified), the patrol runs
- *   as chosen or not at all beside the weekly retrospective, finding only what someone on the
- *   team can do, what is said to the lead goes to the first part, and how-we-work.md is in the
- *   handbook.
- * - Given a mission the reader wrote, the lead proposes only the parts its words call for, in the
- *   parts' order, and none for a mission that calls for no part.
+ * - Given the first sentence, the lead answers with its survey and a first task for each kind of
+ *   work the team does, as proposals only, and nothing has a session; an empty sentence, or a
+ *   team with no role, starts nothing; the company is set up as chosen: its roles join as the
+ *   reader left them, a role the reader added among them, the verifier joins when every delivery
+ *   is to be verified (and a task accepted then is verified), the patrol runs as chosen or not at
+ *   all beside the weekly retrospective, finding only what someone on the team can do, a sample
+ *   task goes to the first role doing its kind of work, what is said to the lead goes to the
+ *   first role, and how-we-work.md is in the handbook.
+ * - Given a mission the reader wrote, the lead drafts only the roles its words call for, in the
+ *   drafts' order and at most three, and one assistant for a mission that calls for none.
  * - Given the lead's first proposals, accepting them all at once does what accepting each does,
  *   and leaves alone one already decided; once every one of them is decided, accepted or not, the
  *   lead says setting up is settled, once, and not before.
@@ -83,7 +84,7 @@ import {
   triageTicket,
   weekState,
 } from "../src/company/model";
-import { PARTS, partsFor } from "../src/company/fixtures";
+import { draftsFor, staffFrom, WEEK_STAFF } from "../src/company/fixtures";
 import { DEFAULT_SETTINGS } from "../src/company/model";
 import type { CompanyState, Ticket } from "../src/company/model";
 import { inboxViewOf, waitOf } from "../src/company/spec";
@@ -183,13 +184,13 @@ describe("setting a company up", () => {
     ]);
     expect(chosen.handbook.map((entry) => entry.path)).toContain("how-we-work.md");
 
-    const quiet = startCompany(freshState(), "Look after the repository", PARTS, quietCompany);
+    const quiet = startCompany(freshState(), "Look after the repository", WEEK_STAFF, quietCompany);
     expect(quiet.settings).toEqual(quietCompany);
     expect(quiet.roles).toEqual(["engineer", "writer", "researcher"]);
     expect(quiet.schedules).toEqual([{ id: "retro", auto: false }]);
     expect(letTimePass(quiet).events).toEqual([]);
 
-    const busy = startCompany(freshState(), "Look after the repository", PARTS, {
+    const busy = startCompany(freshState(), "Look after the repository", WEEK_STAFF, {
       ...DEFAULT_SETTINGS,
       patrol: "auto",
     });
@@ -200,7 +201,7 @@ describe("setting a company up", () => {
     const verified = acceptTicket(startCompany(freshState(), "Look after the repo"), "flaky");
     expect(get(verified, "flaky").verifier).toBe("verifier");
     const unverified = acceptTicket(
-      startCompany(freshState(), "Look after the repo", PARTS, quietCompany),
+      startCompany(freshState(), "Look after the repo", WEEK_STAFF, quietCompany),
       "flaky",
     );
     expect(get(unverified, "flaky").verifier).toBeNull();
@@ -212,15 +213,31 @@ describe("setting a company up", () => {
     expect(transcript(state, "survey")).toEqual(["brief"]);
   });
 
-  it("staffs only the parts it was started with, and starts nothing with none", () => {
+  it("staffs the roles it was started with, and starts nothing with none", () => {
     expect(startCompany(freshState(), "Run the docs", [])).toEqual(freshState());
-    const state = startCompany(freshState(), "Run the docs", ["writer"]);
-    expect(state.roles).toEqual(["writer", "verifier"]);
-    expect(state.tickets.map((ticket) => ticket.id)).toEqual(["survey", "release"]);
-    // The patrol finds only what the writer can do; the code's flaky test and lint are not its.
+    const translator = {
+      id: "own-1",
+      species: "king",
+      draft: null,
+      part: null,
+      title: "Translator",
+      duties: "Translates the docs",
+    } as const;
+    const state = startCompany(freshState(), "Run the docs", [
+      ...staffFrom(["docs", "digest"]),
+      translator,
+    ]);
+    expect(state.roles).toEqual(["docs", "digest", "own-1", "verifier"]);
+    expect(state.staff.map((role) => role.species)).toEqual(["gentoo", "littleBlue", "king"]);
+    // Writing is the only kind of sample work this team does: its first task goes to the first
+    // role that writes, and the patrol finds only writing, not the code's flaky test or lint.
+    expect(state.tickets.map((ticket) => [ticket.id, ticket.owner])).toEqual([
+      ["survey", "lead"],
+      ["release", "docs"],
+    ]);
     expect(state.pool).toEqual(["discussion"]);
     const said = sayToLead(state, "Answer the new questions");
-    expect(get(said, "said-1")).toMatchObject({ owner: "writer", verifier: "verifier" });
+    expect(get(said, "said-1")).toMatchObject({ owner: "docs", verifier: "verifier" });
   });
 
   it("accepts all the first proposals at once as it accepts each, leaving a decided one alone", () => {
@@ -252,25 +269,29 @@ describe("setting a company up", () => {
   });
 });
 
-describe("proposing a team for a mission the reader wrote", () => {
+describe("drafting roles for a mission the reader wrote", () => {
   const keywords = {
     engineer: ["code", "CI"],
-    writer: ["docs", "digest"],
+    docs: ["docs"],
+    digest: ["digest"],
     researcher: ["experiment"],
+    analyst: ["data"],
   };
 
-  it("proposes only the parts the mission's words call for, in the parts' order", () => {
-    expect(partsFor("Maintain the Docs site and send a weekly digest", keywords)).toEqual([
-      "writer",
+  it("drafts only the roles the mission's words call for, in the drafts' order", () => {
+    expect(draftsFor("Maintain the Docs site and send a weekly digest", keywords)).toEqual([
+      "docs",
+      "digest",
     ]);
-    expect(partsFor("Run an experiment, then fix the code it needs", keywords)).toEqual([
+    expect(draftsFor("Run an experiment, then fix the code it needs", keywords)).toEqual([
       "engineer",
       "researcher",
     ]);
   });
 
-  it("proposes no part for a mission that calls for none", () => {
-    expect(partsFor("Sell lemonade", keywords)).toEqual([]);
+  it("drafts at most three roles, and one assistant for a mission that calls for none", () => {
+    expect(draftsFor("Code, docs, digest, experiment and data", keywords)).toHaveLength(3);
+    expect(draftsFor("Sell lemonade", keywords)).toEqual(["assistant"]);
   });
 });
 
@@ -505,7 +526,7 @@ describe("a ticket with a verifier", () => {
   });
 
   it("goes straight to the person when no verifier is on the team", () => {
-    const started = startCompany(freshState(), "Look after the repo", PARTS, {
+    const started = startCompany(freshState(), "Look after the repo", WEEK_STAFF, {
       ...DEFAULT_SETTINGS,
       verify: false,
     });

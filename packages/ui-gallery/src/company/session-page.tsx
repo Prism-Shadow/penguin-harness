@@ -27,6 +27,7 @@ import {
   returnOf,
   titleOf,
 } from "./text";
+import { usePerson } from "./people";
 import { useWords } from "./use-words";
 
 const QUIET = "text-fg-muted";
@@ -134,7 +135,8 @@ function Message({
 }) {
   const W = useWords();
   const deliverable = ticket.fixture === null ? undefined : FIXTURES[ticket.fixture].deliverable;
-  const verifier = ticket.verifier === null ? "" : W.people[ticket.verifier].name;
+  const person = usePerson();
+  const verifier = ticket.verifier === null ? "" : person(ticket.verifier).name;
   const delivery = (
     <>
       <p>{superseded ? W.ticket.saidResult : resultOf(ticket, W)}</p>
@@ -162,7 +164,7 @@ function Message({
     // What the verifying session is handed: the delivery, from the employee who built it.
     return (
       <div className={`border-l-2 border-line pl-3 ${BODY}`}>
-        <p className={`text-xs ${QUIET}`}>{W.session.handed(W.people[ticket.owner].name)}</p>
+        <p className={`text-xs ${QUIET}`}>{W.session.handed(person(ticket.owner).name)}</p>
         {delivery}
       </div>
     );

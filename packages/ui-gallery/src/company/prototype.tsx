@@ -54,6 +54,7 @@ import { entryWords, HandbookPage } from "./handbook-page";
 import { InboxList, PinnedRows } from "./inbox-list";
 import type { TicketActions } from "./needs-you";
 import { BoardPage, LeadPage, SchedulesPage } from "./pages";
+import { StaffProvider } from "./people";
 import { SetupPage } from "./setup-page";
 import { TeamPage } from "./team-page";
 import { titleOf } from "./text";
@@ -216,9 +217,9 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
   if (!running) {
     body = (
       <SetupPage
-        onStart={(name, mission, parts, settings) => {
+        onStart={(name, mission, staff, settings) => {
           setNamed(name);
-          setState((current) => startCompany(current, mission, parts, settings));
+          setState((current) => startCompany(current, mission, staff, settings));
         }}
       />
     );
@@ -280,32 +281,35 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
   }
 
   return (
-    <AppShell
-      nav={sidebar}
-      overlays={
-        <Drawer open={menuOpen} side="left" onClose={() => setMenuOpen(false)}>
-          {sidebar}
-        </Drawer>
-      }
-    >
-      <MobileTopBar
-        title={orgName}
-        menuLabel={W.nav.openMenu}
-        onMenu={() => setMenuOpen(true)}
-        {...(waiting > 0 ? { menuBadge: <Pill tone="attention">{waiting}</Pill> } : {})}
-      />
-      <main className="flex min-h-0 flex-1 flex-col overflow-y-auto">{body}</main>
-      {running && (
-        <div
-          data-slot="prototype-bar"
-          className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-t border-line px-4 py-2 text-xs text-fg-muted"
-        >
-          <span className="min-w-0 flex-1">{W.pass.hint}</span>
-          <Button size="sm" onClick={pass}>
-            {W.pass.button}
-          </Button>
-        </div>
-      )}
-    </AppShell>
+    // Every byline under it is read on this company's team.
+    <StaffProvider value={state.staff}>
+      <AppShell
+        nav={sidebar}
+        overlays={
+          <Drawer open={menuOpen} side="left" onClose={() => setMenuOpen(false)}>
+            {sidebar}
+          </Drawer>
+        }
+      >
+        <MobileTopBar
+          title={orgName}
+          menuLabel={W.nav.openMenu}
+          onMenu={() => setMenuOpen(true)}
+          {...(waiting > 0 ? { menuBadge: <Pill tone="attention">{waiting}</Pill> } : {})}
+        />
+        <main className="flex min-h-0 flex-1 flex-col overflow-y-auto">{body}</main>
+        {running && (
+          <div
+            data-slot="prototype-bar"
+            className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-t border-line px-4 py-2 text-xs text-fg-muted"
+          >
+            <span className="min-w-0 flex-1">{W.pass.hint}</span>
+            <Button size="sm" onClick={pass}>
+              {W.pass.button}
+            </Button>
+          </div>
+        )}
+      </AppShell>
+    </StaffProvider>
   );
 }

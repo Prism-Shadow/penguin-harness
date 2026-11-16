@@ -4,7 +4,7 @@
  * ticket's section titles, the board's columns) are read from the Web App's dictionary instead,
  * so the prototype says them as the app does. `tickets` is keyed by fixtures.ts.
  */
-import type { FixtureId, HandbookDocId, Part } from "./fixtures";
+import type { DraftId, FixtureId, HandbookDocId, Species } from "./fixtures";
 
 export interface TicketWords {
   title: string;
@@ -39,34 +39,76 @@ export const zh = {
   },
   /** An employee as one line of text, where a name alone would not say who it is. */
   who: (name: string, title: string) => `${name}（${title}）`,
-  /** Each employee: a name, a title, and what it is responsible for. */
+  /** Every company's two standing employees: a title, and what each is responsible for. */
   people: {
     lead: {
-      name: "帝企鹅",
       title: "主理",
-      duties: "接需求、建工单，分派给负责那一块的人；提议日程和招人，自己不动手。",
-    },
-    engineer: {
-      name: "巴布亚企鹅",
-      title: "工程师",
-      duties: "管代码：修缺陷、做功能，提交带测试的 PR。",
-    },
-    writer: {
-      name: "小蓝企鹅",
-      title: "运营",
-      duties: "管内容和社区：写文章、视频脚本、发版说明和文档，回复读者，整理社区问题。",
-    },
-    researcher: {
-      name: "阿德利企鹅",
-      title: "研究员",
-      duties: "管研究：设计实验、跑评测、读论文，写成报告。",
+      duties: "接需求、建工单，分派给负责的人；提议日程和招人，自己不动手。",
     },
     verifier: {
-      name: "帽带企鹅",
       title: "验证",
       duties: "对照验收标准检查每份交付：代码实机跑，文章核对事实和链接，数字重跑一遍。",
     },
   },
+  /** Every employee is named after a penguin species. */
+  species: {
+    emperor: "帝企鹅",
+    chinstrap: "帽带企鹅",
+    gentoo: "巴布亚企鹅",
+    littleBlue: "小蓝企鹅",
+    adelie: "阿德利企鹅",
+    king: "王企鹅",
+    rockhopper: "跳岩企鹅",
+    macaroni: "马可罗尼企鹅",
+  } satisfies Record<Species, string>,
+  /** The roles the lead can draft from a mission: a title, what it does, and what it watches. */
+  drafts: {
+    engineer: {
+      title: "工程师",
+      duties: "修缺陷、做功能，提交带测试的 PR。",
+      sources: "issue 和 CI",
+    },
+    operations: {
+      title: "运营",
+      duties: "写文章、发版说明和文档，回复读者，整理社区问题。",
+      sources: "文档、博客和社区讨论",
+    },
+    editor: {
+      title: "内容编辑",
+      duties: "按选题写文章和视频脚本，发布前核对事实和链接。",
+      sources: "选题表和已发内容",
+    },
+    community: {
+      title: "社区运营",
+      duties: "回复读者的问题，每周汇总一次社区反馈。",
+      sources: "社区讨论和读者留言",
+    },
+    docs: {
+      title: "文档维护",
+      duties: "改正文档里的错漏，给新功能补页面，中英两版同步。",
+      sources: "文档站和相关 issue",
+    },
+    digest: {
+      title: "更新摘要编辑",
+      duties: "每周把合并的改动和新发布写成一期摘要。",
+      sources: "合并的 PR 和发版记录",
+    },
+    researcher: {
+      title: "研究员",
+      duties: "设计并跑实验，结果记进日志，写成报告。",
+      sources: "实验日志、评测集和相关论文",
+    },
+    analyst: {
+      title: "数据分析",
+      duties: "整理数据，回答使命里要看的数字，写成图表和结论。",
+      sources: "数据表和日志",
+    },
+    assistant: {
+      title: "助理",
+      duties: "按使命做事，拿不准的先问你。",
+      sources: "工作区",
+    },
+  } satisfies Record<DraftId, { title: string; duties: string; sources: string }>,
   sources: {
     person: "你提出",
     patrol: "每日巡检",
@@ -173,38 +215,31 @@ export const zh = {
     mission: "使命",
     missionInfo: "一句话说明公司做什么。主理按它提出团队和第一批工单，之后能在设置里改。",
     missionPlaceholder: "例如：为 PenguinHarness 维护文档站，并每周发布一期更新摘要",
-    /** Words in a mission that call for a part, for a mission the reader wrote themselves. */
+    /** Words in a mission that call for each role, for a mission the reader wrote. */
     keywords: {
-      engineer: ["代码", "仓库", "缺陷", "bug", "issue", "CI", "测试", "功能"],
-      writer: ["内容", "文章", "文档", "博客", "视频", "社区", "读者", "摘要", "运营"],
-      researcher: ["研究", "实验", "评测", "论文", "模型", "数据", "调研"],
-    } satisfies Record<Part, readonly string[]>,
+      engineer: ["代码", "仓库", "缺陷", "bug", "CI", "测试", "功能"],
+      editor: ["文章", "视频", "脚本", "选题", "公众号", "内容"],
+      community: ["社区", "读者", "用户反馈", "答疑", "回复"],
+      docs: ["文档"],
+      digest: ["摘要", "周报", "月报", "更新"],
+      researcher: ["研究", "实验", "评测", "论文", "模型"],
+      analyst: ["数据", "分析", "报表", "指标"],
+    } satisfies Partial<Record<DraftId, readonly string[]>>,
     team: {
       title: "要哪几个人",
       body: (workspace: string) =>
-        `主理读了使命和工作区 ${workspace}。勾上的是它提的人，尽量少；其余的需要时再加。`,
+        `主理读了使命和工作区 ${workspace}，拟了这几个角色，人尽量少。名字和职责都能改，也可以去掉或加人。`,
       lead: "常驻，接需求、分派工单",
-      /** A part's sources, and what the lead read there. */
-      line: (watches: string, read: string) => `来源：${watches} · 主理读到：${read}`,
-      none: "至少选一个人，公司才有人干活。",
+      roleTitle: "职位",
+      roleDuties: "负责什么",
+      sources: (sources: string) => `来源：${sources}`,
+      remove: (name: string) => `去掉${name}`,
+      add: "加一个角色",
+      addPlaceholder: "例如：翻译",
+      dutiesPlaceholder: "这个角色负责什么",
+      none: "至少留一个角色，公司才有人干活。",
+      untitled: "每个角色都要有职位。",
     },
-    parts: {
-      engineer: {
-        name: "研发",
-        watches: "issue 和 CI",
-        read: "6 个 bug 没人修，CI 最近 10 次有 2 次失败",
-      },
-      writer: {
-        name: "运营",
-        watches: "文档、博客和社区讨论",
-        read: "英文文档比中文多改了 9 次，社区里 3 个问题没人回",
-      },
-      researcher: {
-        name: "研究",
-        watches: "实验日志、评测集和相关论文",
-        read: "上个月新出的两个模型还没在评测集上跑过",
-      },
-    } satisfies Record<Part, { name: string; watches: string; read: string }>,
     defaults:
       "第 3 到 5 步的选择会写进手册里的「公司怎么运作」，每个员工开工前都读。公司名取所选方向的名字，模型用 Project 默认的。这些之后都能改。",
     start: "开公司",

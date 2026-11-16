@@ -21,33 +21,75 @@ export const en: Words = {
   who: (name: string, title: string) => `${name} (${title})`,
   people: {
     lead: {
-      name: "Emperor",
       title: "Lead",
       duties:
-        "Take requests, file tickets and hand each to whoever owns that part; propose schedules and hires. Does none of the work itself.",
-    },
-    engineer: {
-      name: "Gentoo",
-      title: "Engineer",
-      duties: "Owns the code: fixes defects, builds features, submits pull requests with tests.",
-    },
-    writer: {
-      name: "Little Blue",
-      title: "Operations",
-      duties:
-        "Owns content and community: writes articles, video scripts, release notes and docs; answers readers and sorts community questions.",
-    },
-    researcher: {
-      name: "Adélie",
-      title: "Researcher",
-      duties:
-        "Owns research: designs experiments, runs evaluations, reads the papers, writes it up.",
+        "Takes requests, files tickets and hands each to whoever owns it; proposes schedules and hires. Does none of the work itself.",
     },
     verifier: {
-      name: "Chinstrap",
       title: "Verifier",
       duties:
         "Checks every delivery against its acceptance criteria: runs code, checks an article's facts and links, reruns the numbers.",
+    },
+  },
+  species: {
+    emperor: "Emperor",
+    chinstrap: "Chinstrap",
+    gentoo: "Gentoo",
+    littleBlue: "Little Blue",
+    adelie: "Adélie",
+    king: "King",
+    rockhopper: "Rockhopper",
+    macaroni: "Macaroni",
+  },
+  drafts: {
+    engineer: {
+      title: "Engineer",
+      duties: "Fixes defects, builds features, submits pull requests with tests.",
+      sources: "issues and CI",
+    },
+    operations: {
+      title: "Operations",
+      duties:
+        "Writes articles, release notes and docs; answers readers and sorts community questions.",
+      sources: "the docs, the blog and community discussions",
+    },
+    editor: {
+      title: "Content editor",
+      duties:
+        "Writes articles and video scripts from the topic list; checks facts and links before publishing.",
+      sources: "the topic list and what was published",
+    },
+    community: {
+      title: "Community manager",
+      duties: "Answers readers' questions and sums up the community's feedback every week.",
+      sources: "community discussions and readers' comments",
+    },
+    docs: {
+      title: "Docs maintainer",
+      duties:
+        "Fixes errors in the docs, adds pages for new features, keeps both languages in step.",
+      sources: "the docs site and its issues",
+    },
+    digest: {
+      title: "Digest editor",
+      duties: "Writes up the week's merged changes and releases as one digest.",
+      sources: "merged pull requests and release notes",
+    },
+    researcher: {
+      title: "Researcher",
+      duties: "Designs and runs experiments, logs the results, writes them up.",
+      sources: "experiment logs, the eval set and the papers",
+    },
+    analyst: {
+      title: "Data analyst",
+      duties:
+        "Prepares the data, answers the numbers the mission asks about, writes charts and conclusions.",
+      sources: "data tables and logs",
+    },
+    assistant: {
+      title: "Assistant",
+      duties: "Does what the mission says, and asks you first when unsure.",
+      sources: "the workspace",
     },
   },
   sources: {
@@ -165,34 +207,28 @@ export const en: Words = {
     missionPlaceholder:
       "Example: maintain the docs site for PenguinHarness and publish an update digest every week",
     keywords: {
-      engineer: ["code", "repo", "defect", "bug", "issue", "CI", "test", "feature"],
-      writer: ["content", "article", "docs", "blog", "video", "community", "reader", "digest"],
-      researcher: ["research", "experiment", "eval", "paper", "model", "data", "study"],
+      engineer: ["code", "repo", "defect", "bug", "CI", "test", "feature"],
+      editor: ["article", "video", "script", "topic", "content"],
+      community: ["community", "reader", "feedback", "answer"],
+      docs: ["docs", "documentation"],
+      digest: ["digest", "newsletter", "weekly update"],
+      researcher: ["research", "experiment", "eval", "paper", "model"],
+      analyst: ["data", "analys", "report", "metric"],
     },
     team: {
       title: "Who the company needs",
       body: (workspace: string) =>
-        `The lead read the mission and the workspace, ${workspace}. The ticked ones are who it proposes, as few as it can; add the others when you need them.`,
+        `The lead read the mission and the workspace, ${workspace}, and drafted these roles, as few as it can. Rename them, rewrite their duties, drop one or add your own.`,
       lead: "Always on: takes requests, hands out tickets",
-      line: (watches: string, read: string) => `Sources: ${watches} · The lead read: ${read}`,
-      none: "Pick at least one, or no one does the work.",
-    },
-    parts: {
-      engineer: {
-        name: "Engineering",
-        watches: "issues and CI",
-        read: "6 bugs have no owner; 2 of the last 10 CI runs failed",
-      },
-      writer: {
-        name: "Operations",
-        watches: "the docs, the blog and community discussions",
-        read: "The English docs changed 9 more times than the Chinese; 3 community questions have no reply",
-      },
-      researcher: {
-        name: "Research",
-        watches: "experiment logs, the eval set and the papers",
-        read: "Two models came out last month and have not been run on the eval set",
-      },
+      roleTitle: "Title",
+      roleDuties: "Duties",
+      sources: (sources: string) => `Sources: ${sources}`,
+      remove: (name: string) => `Drop ${name}`,
+      add: "Add a role",
+      addPlaceholder: "Example: Translator",
+      dutiesPlaceholder: "What this role does",
+      none: "Keep at least one role, or no one does the work.",
+      untitled: "Every role needs a title.",
     },
     defaults:
       'Steps 3 to 5 are written to "How we work" in the handbook, which every employee reads before it starts. The company is named after the direction you picked and uses the Project\'s default model. You can change all of this later.',

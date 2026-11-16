@@ -5,10 +5,10 @@
  * 1. Mission: a broad direction first, as the shipped company mode offers its example companies
  *    (code upkeep, content and community, a research lab, or the reader's own), which fills in
  *    a whole mission the reader rewrites as they need.
- * 2. Team: the lead proposes the fewest employees the mission needs, one to each part it calls
- *    for (engineering, operations, research), each with what it owns, its sources and what the
- *    lead read there; the reader adds or drops parts. The lead is always on; the verifier is set
- *    in the next step, where it sits on a ticket's way.
+ * 2. Team: the lead drafts the roles the mission needs, as few as it can, each named after a
+ *    penguin species, with its title, its duties and its sources; the reader renames them,
+ *    rewrites their duties, drops them or adds their own. The lead is always on; the verifier is
+ *    set in the next step, where it sits on a ticket's way.
  * 3. How a ticket goes: its four stops, with the one stop the reader can switch (verification)
  *    where it sits, and the rule of when the company reaches them.
  * 4. Schedules: what the daily patrol does with what it finds in the parts' sources; the weekly
@@ -23,20 +23,30 @@ import type { FormEvent, ReactNode } from "react";
 import {
   Button,
   ChoiceGroup,
+  CloseIcon,
   Heading,
+  IconButton,
   InfoPopover,
+  Input,
   PageFrame,
   RadioDisc,
   Segmented,
   Switch,
   Textarea,
 } from "@prismshadow/penguin-ui";
-import { PARTS, partsFor, TEMPLATE_PARTS, TEMPLATES, WORKSPACE } from "./fixtures";
-import type { Part, TemplateId } from "./fixtures";
+import {
+  draftsFor,
+  ROLE_SPECIES,
+  staffFrom,
+  TEMPLATE_DRAFTS,
+  TEMPLATES,
+  WORKSPACE,
+} from "./fixtures";
+import type { Role, TemplateId } from "./fixtures";
 import { DEFAULT_SETTINGS } from "./model";
 import type { CompanySettings, PatrolMode } from "./model";
-import { PersonAvatar } from "./people";
-import { sourcesOf } from "./text";
+import { SpeciesAvatar } from "./people";
+import { roleWords, sourcesOf } from "./text";
 import { useWords } from "./use-words";
 
 const QUIET = "text-fg-muted";
@@ -208,68 +218,116 @@ function MissionStep({
   );
 }
 
+/** A team the company can start with: at least one role, and every role with a title. */
+const staffed = (staff: readonly Role[], W: ReturnType<typeof useWords>): boolean =>
+  staff.length > 0 && staff.every((role) => roleWords(role, W).title.trim() !== "");
+
 function TeamStep({
-  parts,
-  onParts,
+  staff,
+  onStaff,
   onBack,
   onNext,
 }: {
-  parts: readonly Part[];
-  onParts: (parts: Part[]) => void;
+  staff: readonly Role[];
+  onStaff: (staff: Role[]) => void;
   onBack: () => void;
   onNext: () => void;
 }) {
   const W = useWords();
   const T = W.setup.team;
   const lead = W.people.lead;
+  const change = (id: string, patch: Partial<Role>) =>
+    onStaff(staff.map((role) => (role.id === id ? { ...role, ...patch } : role)));
+  // A role the reader adds takes the next penguin no one on the team is.
+  const free = ROLE_SPECIES.find((species) => !staff.some((role) => role.species === species));
+  const add = () => {
+    if (free === undefined) return;
+    const n = staff.filter((role) => role.draft === null).length + 1;
+    onStaff([
+      ...staff,
+      { id: `own-${n}`, species: free, draft: null, part: null, title: "", duties: "" },
+    ]);
+  };
+  const ready = staffed(staff, W);
+  let note: string | undefined;
+  if (staff.length === 0) note = T.none;
+  else if (!ready) note = T.untitled;
   return (
     <StepForm wide onSubmit={onNext}>
       <Intro step="team" title={T.title} body={T.body(WORKSPACE)} focus />
-      <div className="mt-8 flex items-start gap-3 border-b border-line px-4 pb-4">
-        <span className="mt-0.5 shrink-0">
-          <PersonAvatar byline="lead" size={18} />
-        </span>
-        <span className="min-w-0">
-          <span className="block text-sm text-fg">
-            {lead.title}
-            <span className={`ml-2 ${QUIET}`}>{lead.name}</span>
+      <ul className="mt-8 divide-y divide-line border-y border-line">
+        <li className="flex items-start gap-3 py-3">
+          <span className="mt-0.5 shrink-0">
+            <SpeciesAvatar species="emperor" size={20} />
           </span>
-          <span className={`block text-sm ${QUIET}`}>{T.lead}</span>
-        </span>
-      </div>
-      <ChoiceGroup
-        multiple
-        shape="card"
-        aria-label={T.title}
-        className="mt-4"
-        value={parts}
-        onChange={(chosen) => onParts(chosen as Part[])}
-        options={PARTS.map((part) => {
-          const words = W.setup.parts[part];
-          const person = W.people[part];
-          return {
-            value: part,
-            label: (
-              <span className="flex items-center gap-2">
-                <PersonAvatar byline={part} size={18} />
-                {words.name}
-                <span className={`font-normal ${QUIET}`}>{person.name}</span>
+          <span className="min-w-0">
+            <span className="block text-sm text-fg">
+              {W.species.emperor}
+              <span className={`ml-2 ${QUIET}`}>{lead.title}</span>
+            </span>
+            <span className={`block text-sm ${QUIET}`}>{T.lead}</span>
+          </span>
+        </li>
+        {staff.map((role) => {
+          const words = roleWords(role, W);
+          const name = W.species[role.species];
+          return (
+            <li key={role.id} className="flex items-start gap-3 py-3">
+              <span className="mt-1.5 shrink-0">
+                <SpeciesAvatar species={role.species} size={20} />
               </span>
-            ),
-            description: (
-              <>
-                <span className="block">{person.duties}</span>
-                <span className="mt-1 block text-xs">{T.line(words.watches, words.read)}</span>
-              </>
-            ),
-          };
+              <div className="grid min-w-0 flex-1 gap-2 sm:grid-cols-[10rem_minmax(0,1fr)]">
+                <div className="min-w-0">
+                  <span className="block text-xs text-fg-muted">{name}</span>
+                  <Input
+                    size="sm"
+                    aria-label={`${name} · ${T.roleTitle}`}
+                    placeholder={T.addPlaceholder}
+                    value={words.title}
+                    onChange={(event) => change(role.id, { title: event.target.value })}
+                  />
+                </div>
+                <div className="min-w-0">
+                  <span className="block text-xs text-fg-muted">{T.roleDuties}</span>
+                  <Textarea
+                    size="sm"
+                    rows={2}
+                    aria-label={`${name} · ${T.roleDuties}`}
+                    placeholder={T.dutiesPlaceholder}
+                    value={words.duties}
+                    onChange={(event) => change(role.id, { duties: event.target.value })}
+                  />
+                  {words.sources !== "" && (
+                    <span className="mt-1 block text-xs text-fg-muted">
+                      {T.sources(words.sources)}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <span className="mt-5 shrink-0">
+                <IconButton
+                  size="sm"
+                  variant="ghost"
+                  label={T.remove(name)}
+                  onClick={() => onStaff(staff.filter((other) => other.id !== role.id))}
+                >
+                  <CloseIcon />
+                </IconButton>
+              </span>
+            </li>
+          );
         })}
-      />
+      </ul>
+      {free !== undefined && (
+        <Button size="sm" variant="ghost" className="mt-2" onClick={add}>
+          {T.add}
+        </Button>
+      )}
       <Foot
         onBack={onBack}
         next={W.setup.next}
-        disabled={parts.length === 0}
-        {...(parts.length === 0 ? { note: T.none } : {})}
+        disabled={!ready}
+        {...(note !== undefined ? { note } : {})}
       />
     </StepForm>
   );
@@ -361,8 +419,8 @@ function Preview({ settings }: { settings: CompanySettings }) {
 /** What every step after the first takes: the settings, and the ways back and on. */
 interface SettingsStep {
   settings: CompanySettings;
-  /** The parts the company staffs, whose sources the patrol reads. */
-  parts: readonly Part[];
+  /** The company's roles, whose sources the patrol reads. */
+  staff: readonly Role[];
   set: (patch: Partial<CompanySettings>) => void;
   onBack: () => void;
   onNext: () => void;
@@ -391,7 +449,7 @@ function FlowStep({ settings, set, onBack, onNext }: SettingsStep) {
             </label>
           }
         >
-          {settings.verify ? F.verify.on(W.people.verifier.name) : F.verify.off}
+          {settings.verify ? F.verify.on(W.species.chinstrap) : F.verify.off}
         </Stop>
         <Stop n={4} title={F.review.title} last>
           {F.review.body}
@@ -403,7 +461,7 @@ function FlowStep({ settings, set, onBack, onNext }: SettingsStep) {
   );
 }
 
-function SchedulesStep({ settings, parts, set, onBack, onNext }: SettingsStep) {
+function SchedulesStep({ settings, staff, set, onBack, onNext }: SettingsStep) {
   const W = useWords();
   const S = W.setup.schedules;
   const patrolId = useId();
@@ -414,7 +472,7 @@ function SchedulesStep({ settings, parts, set, onBack, onNext }: SettingsStep) {
         <section>
           <h2 id={patrolId} className={LABEL}>
             {S.patrol}
-            <span className="ml-2 font-normal">{S.patrolWhen(sourcesOf(parts, W))}</span>
+            <span className="ml-2 font-normal">{S.patrolWhen(sourcesOf(staff, W))}</span>
           </h2>
           <ChoiceGroup
             shape="card"
@@ -500,7 +558,7 @@ export function SetupPage({
   onStart: (
     name: string,
     mission: string,
-    parts: readonly Part[],
+    staff: readonly Role[],
     settings: CompanySettings,
   ) => void;
 }) {
@@ -510,7 +568,7 @@ export function SetupPage({
   const [moved, setMoved] = useState(false);
   const [choice, setChoice] = useState<Choice>(TEMPLATES[0]);
   const [mission, setMission] = useState(W.setup.templates[TEMPLATES[0]].mission);
-  const [parts, setParts] = useState<readonly Part[]>(TEMPLATE_PARTS[TEMPLATES[0]]);
+  const [staff, setStaff] = useState<Role[]>(() => staffFrom(TEMPLATE_DRAFTS[TEMPLATES[0]]));
   /** The mission the team was last proposed for, so going back without changing it keeps the team. */
   const [proposedFor, setProposedFor] = useState(mission);
   const [settings, setSettings] = useState<CompanySettings>(DEFAULT_SETTINGS);
@@ -523,22 +581,24 @@ export function SetupPage({
   const back = () => go(STEPS[at - 1] ?? "mission");
   const next = () => {
     const to = STEPS[at + 1];
-    if (to === undefined) onStart(name, mission.trim(), parts, settings);
+    if (to === undefined) onStart(name, mission.trim(), staff, settings);
     else go(to);
   };
-  // Leaving the mission, the lead proposes the team for it: a direction's own parts, or, for a
-  // mission of the reader's own, the parts its words call for. An unchanged mission keeps the
+  // Leaving the mission, the lead drafts the team for it: a direction's own roles, or, for a
+  // mission of the reader's own, the roles its words call for. An unchanged mission keeps the
   // team the reader may have changed.
   const fromMission = () => {
     if (mission !== proposedFor) {
-      setParts(choice === OWN ? partsFor(mission, W.setup.keywords) : TEMPLATE_PARTS[choice]);
+      setStaff(
+        staffFrom(choice === OWN ? draftsFor(mission, W.setup.keywords) : TEMPLATE_DRAFTS[choice]),
+      );
       setProposedFor(mission);
     }
     next();
   };
   const settingsStep: SettingsStep = {
     settings,
-    parts,
+    staff,
     set: (patch) => setSettings((current) => ({ ...current, ...patch })),
     onBack: back,
     onNext: next,
@@ -561,7 +621,7 @@ export function SetupPage({
       />
     );
   } else if (step === "team") {
-    screen = <TeamStep parts={parts} onParts={setParts} onBack={back} onNext={next} />;
+    screen = <TeamStep staff={staff} onStaff={setStaff} onBack={back} onNext={next} />;
   } else if (step === "flow") {
     screen = <FlowStep {...settingsStep} />;
   } else if (step === "schedules") {

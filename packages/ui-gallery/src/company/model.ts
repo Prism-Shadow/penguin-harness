@@ -38,8 +38,16 @@
  *   Nothing about the company changes until the person accepts it; a skill accepted absorbs the
  *   lesson it came from, so the handbook every employee reads stays short.
  */
-import { EMPLOYEES, FIRST_TASK, FIXTURES, PARTS, RETRO_PROPOSALS, SAID_SCRIPT } from "./fixtures";
-import type { Byline, FixtureId, HandbookDocId, Part, ScriptStep, TicketKind } from "./fixtures";
+import { FIRST_TASK, FIXTURES, PARTS, RETRO_PROPOSALS, SAID_SCRIPT, WEEK_STAFF } from "./fixtures";
+import type {
+  Byline,
+  FixtureId,
+  FixtureOwner,
+  HandbookDocId,
+  Role,
+  ScriptStep,
+  TicketKind,
+} from "./fixtures";
 import { inboxViewOf, INBOX_VIEWS, waitOf } from "./spec";
 import type { InboxView, TicketState, Triage } from "./spec";
 
@@ -272,6 +280,8 @@ export interface CompanyState {
   schedules: Schedule[];
   /** The employees besides the lead, in the order they joined: the parts it staffs, then the verifier. */
   roles: Byline[];
+  /** The roles besides the lead and the verifier, as the lead drafted them and the reader made them. */
+  staff: Role[];
   /** The handbook's files, oldest first. */
   handbook: HandbookEntry[];
   /** The schedule that ran last, so the next quiet pass runs the one after it. */
@@ -293,15 +303,30 @@ export interface PassEvent {
   id: string;
 }
 
-function ticketOf(id: FixtureId, source: Source, patch: Partial<Ticket> = {}): Ticket {
+/** Who does a sample ticket on this team: the lead, the verifier, or the role doing that kind of work. */
+function ownerOn(staff: readonly Role[], owner: FixtureOwner): Byline | null {
+  if (owner === "lead" || owner === "verifier") return owner;
+  return staff.find((role) => role.part === owner)?.id ?? null;
+}
+
+/** Someone on the team can do this sample ticket. */
+const doable = (staff: readonly Role[], id: FixtureId): boolean =>
+  ownerOn(staff, FIXTURES[id].owner) !== null;
+
+function ticketOf(
+  id: FixtureId,
+  source: Source,
+  patch: Partial<Ticket> = {},
+  staff: readonly Role[] = WEEK_STAFF,
+): Ticket {
   const fixture = FIXTURES[id];
   return {
     id,
     fixture: id,
     title: null,
     kind: fixture.kind,
-    owner: fixture.owner,
-    verifier: fixture.verifiedBy ?? null,
+    owner: ownerOn(staff, fixture.owner) ?? "lead",
+    verifier: fixture.verified === true ? "verifier" : null,
     priority: fixture.priority,
     source,
     status: "proposed",
@@ -379,6 +404,7 @@ export function freshState(): CompanyState {
     lastRun: null,
     // Until it starts, the company has only the lead; setting it up staffs its parts.
     roles: [],
+    staff: [],
     handbook: [fixedEntry("readme", null)],
     closed: [],
     retros: [],
@@ -451,7 +477,7 @@ export function weekState(): CompanyState {
     ),
     ticketOf("flaky", "patrol"),
   ];
-  const roles: Byline[] = ["engineer", "writer", "researcher", "verifier"];
+  const roles: Byline[] = [...WEEK_STAFF.map((role) => role.id), "verifier"];
   return {
     stage: "running",
     settings: DEFAULT_SETTINGS,
@@ -468,6 +494,7 @@ export function weekState(): CompanyState {
     // The patrol ran last; the next quiet pass is the week's retrospective.
     lastRun: "patrol",
     roles,
+    staff: [...WEEK_STAFF],
     handbook: [
       fixedEntry("readme", null),
       fixedEntry("howWeWork", null),
@@ -600,35 +627,38 @@ const staffed = (state: CompanyState, ticket: Ticket): Ticket =>
     : ticket;
 
 /**
- * Starting the company: what it looks after, the parts it staffs, and how it works. The choices
- * take effect at once, as the person made them: one employee joins for each part, the verifier
+ * Starting the company: what it looks after, the roles the lead drafted from that (as the person
+ * left them), and how it works. The choices take effect at once: the roles join, the verifier
  * joins too if every delivery is to be verified, the patrol is scheduled unless it is off, and
  * how-we-work.md is written for every employee to read. The lead has already read the workspace,
- * so it answers with its own survey and each part's first task as proposals; nothing starts until
- * the person accepts it. A company with no part has no one to do the work, and does not start.
+ * so it answers with its own survey and a first task for each kind of work the team does, as
+ * proposals; nothing starts until the person accepts it. A company with no role has no one to do
+ * the work, and does not start.
  */
 export function startCompany(
   state: CompanyState,
   mission: string,
-  parts: readonly Part[] = PARTS,
+  staff: readonly Role[] = WEEK_STAFF,
   settings: CompanySettings = state.settings,
 ): CompanyState {
   const said = mission.trim();
-  if (state.stage !== "setup" || said === "" || parts.length === 0) return state;
-  const staffedParts = PARTS.filter((part) => parts.includes(part));
-  const roles: Byline[] = settings.verify ? [...staffedParts, "verifier"] : [...staffedParts];
-  const proposals: FixtureId[] = ["survey", ...staffedParts.map((part) => FIRST_TASK[part])];
+  if (state.stage !== "setup" || said === "" || staff.length === 0) return state;
+  const ids = staff.map((role) => role.id);
+  const roles: Byline[] = settings.verify ? [...ids, "verifier"] : ids;
+  const kinds = PARTS.filter((part) => staff.some((role) => role.part === part));
+  const proposals: FixtureId[] = ["survey", ...kinds.map((part) => FIRST_TASK[part])];
   return {
     ...state,
     stage: "running",
     settings,
     mission: said,
     roles,
+    staff: [...staff],
     schedules: patrolled(state.schedules, settings.patrol),
     handbook: [...state.handbook, fixedEntry("howWeWork", null)],
-    tickets: proposals.map((id) => ticketOf(id, "lead")),
+    tickets: proposals.map((id) => ticketOf(id, "lead", {}, staff)),
     // The patrol finds what is left, and only what someone on the team can do.
-    pool: state.pool.filter((id) => !proposals.includes(id) && roles.includes(FIXTURES[id].owner)),
+    pool: state.pool.filter((id) => !proposals.includes(id) && doable(staff, id)),
     chat: [
       { from: "person", text: said },
       { from: "lead", line: "proposals", tickets: proposals },
@@ -686,7 +716,8 @@ function acceptOne(state: CompanyState, id: string): CompanyState {
   const settled = close(withTicket(state, id, { status: "done", unread: false }), id);
   const fixture = FIXTURES[ticket.fixture];
   if (ticket.kind === "skill" && fixture.handbook !== undefined) {
-    const skill = fixedEntry(fixture.handbook, id, fixture.installsOn);
+    const on = fixture.installsOn === undefined ? null : ownerOn(state.staff, fixture.installsOn);
+    const skill = fixedEntry(fixture.handbook, id, on ?? undefined);
     // The lesson the skill was distilled from leaves the index: the skill now carries it.
     const handbook = settled.handbook.map((entry) =>
       fixture.merges !== undefined && entry.doc === fixture.merges
@@ -864,7 +895,7 @@ export function sayToLead(state: CompanyState, text: string): CompanyState {
     fixture: null,
     title: said,
     // The lead hands it to the first part the company staffs.
-    owner: state.roles.find((role) => role !== "verifier") ?? "lead",
+    owner: state.staff[0]?.id ?? "lead",
     verifier: state.roles.includes("verifier") ? "verifier" : null,
     priority: "P2",
   };
@@ -1020,7 +1051,7 @@ function runSchedule(
   }
   const found = state.pool[0];
   if (found === undefined) return null;
-  const proposed = ticketOf(found, "patrol");
+  const proposed = ticketOf(found, "patrol", {}, state.staff);
   const filed = schedule.auto ? { ...staffed(state, proposed), ...working() } : proposed;
   const next = { ...state, tickets: [...state.tickets, filed], pool: state.pool.slice(1) };
   return {
@@ -1039,7 +1070,7 @@ function lookBack(state: CompanyState): CompanyState {
   const proposals = (RETRO_PROPOSALS[n - 1] ?? []).filter((id) => find(state, id) === undefined);
   return {
     ...state,
-    tickets: [...state.tickets, ...proposals.map((id) => ticketOf(id, "retro"))],
+    tickets: [...state.tickets, ...proposals.map((id) => ticketOf(id, "retro", {}, state.staff))],
     retros: [...state.retros, { n, from, upTo: state.closed.length, proposals }],
     handbook: [
       ...state.handbook,

@@ -16,7 +16,7 @@ import { TitleButton } from "../../../web/src/features/company/shared";
 import { FIXTURES } from "./fixtures";
 import { metricsOf, windowOf } from "./model";
 import type { CompanyState, HandbookEntry, HandbookKind } from "./model";
-import { PersonName } from "./people";
+import { PersonName, personOf } from "./people";
 import { money, optionsOf, questionOf, returnOf, titleOf } from "./text";
 
 import { useWords } from "./use-words";
@@ -62,7 +62,7 @@ function howWeWork(state: CompanyState, W: Words): { title: string; body: string
   return {
     title: W.handbook.docs.howWeWork.title,
     body: [
-      s.verify ? H.verify.on(W.people.verifier.name) : H.verify.off,
+      s.verify ? H.verify.on(W.species.chinstrap) : H.verify.off,
       H.patrol[s.patrol],
       H.retro,
       H.record[s.record],
@@ -108,7 +108,8 @@ function retroWords(n: number, state: CompanyState, W: Words): { title: string; 
     // What the last one's accepted skills did: the tickets their employee closed in this window.
     for (const id of last.proposals) {
       const ticket = state.tickets.find((candidate) => candidate.id === id);
-      const on = ticket?.fixture == null ? undefined : FIXTURES[ticket.fixture].installsOn;
+      const kind = ticket?.fixture == null ? undefined : FIXTURES[ticket.fixture].installsOn;
+      const on = state.staff.find((role) => role.part === kind)?.id;
       if (ticket === undefined || ticket.status !== "done" || on === undefined) continue;
       const theirs = metricsOf(
         state,
@@ -117,7 +118,12 @@ function retroWords(n: number, state: CompanyState, W: Words): { title: string; 
         ),
       );
       body.push(
-        H.retroEffect(titleOf(ticket, W), W.people[on].name, theirs.closed, theirs.sendBacks),
+        H.retroEffect(
+          titleOf(ticket, W),
+          personOf(state.staff, on, W).name,
+          theirs.closed,
+          theirs.sendBacks,
+        ),
       );
     }
   }
