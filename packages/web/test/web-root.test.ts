@@ -76,6 +76,8 @@ import { en } from "../src/lib/strings-en";
 import { glyphOf } from "../src/lib/nav-icons";
 import { AgentsPage } from "../src/features/agents/agents-page";
 import { TerminalPage, TerminalDockRuntime } from "../src/features/terminal";
+import { PlatformUiLayer } from "../src/features/platform-ui/layer";
+import { PetChatWindow } from "../src/features/pet-chat/chat-window";
 import { OrgRoutes } from "../src/features/company/org-routes";
 import { HomeRedirect } from "../src/features/company/home-redirect";
 import { ChatPage } from "../src/features/chat/chat-page";
@@ -206,6 +208,7 @@ describe("the booted page table", () => {
       "/terminal",
       "/app/:projectId/:agentId/:workbenchId",
       "/app/:projectId/:agentId/:workbenchId/:tabKey",
+      "/pet-chat/:sessionId",
     ]);
   });
 
@@ -330,6 +333,8 @@ describe("the booted shell slots", () => {
       ShortcutRuntime,
       SettingsLayer,
       BuiltinBrowserLayer,
+      PlatformUiLayer,
+      PetChatWindow,
       DockScope,
     ]);
   });

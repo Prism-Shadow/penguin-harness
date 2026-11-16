@@ -138,6 +138,18 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.petChat.geom",
+    scope: "browser",
+    why: "The floating chat window's place and size on this display — pure appearance.",
+  },
+  {
+    kind: "family",
+    key: "penguin.petChat.session.",
+    scope: "browser",
+    why: "Which chat session the floating chat had open, per Project — a pointer this browser follows, not data of the root's.",
+  },
+  {
+    kind: "exact",
     key: "penguin.textSize",
     scope: "browser",
     why: "Root text size (five steps) — a readability preference of this display.",

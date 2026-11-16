@@ -472,6 +472,8 @@ export const ICONS = {
   cornersOut: "M9 3H3v6M15 3h6v6M15 21h6v-6M9 21H3v-6",
   /** The same four corner brackets turned inward. */
   cornersIn: "M3 9h6V3M21 9h-6V3M21 15h-6v6M3 15h6v6",
+  /** Two short strokes of a corner handle: the grip a panel is resized by. */
+  resizeHandle: "M9 3.5 L3.5 9 M9 6.5 L6.5 9",
   /** One box over two, joined by a bus (lucide network). */
   network: "M9 3h6v5H9zM2 16h6v5H2zM16 16h6v5h-6zM5 16v-3h14v3M12 13V8",
   /** Three nodes: a trunk, and a branch curving off it to a node of its own (lucide git-branch). */

@@ -25,6 +25,7 @@ import type { PointerEvent as ReactPointerEvent } from "react";
 import {
   Button,
   ChevronDown,
+  ICONS,
   Dropdown,
   Menu,
   MenuLabel,
@@ -368,7 +369,7 @@ function PetChatFrame({
     <div
       data-platform-ui-overlay=""
       style={{ left: geom.x, top: geom.y, width: geom.w, height: geom.h }}
-      className="fixed z-50 flex flex-col overflow-hidden rounded-xl bg-surface shadow-2xl"
+      className="fixed z-50 flex flex-col overflow-hidden rounded-xl bg-surface shadow-lg"
     >
       <div
         className="flex touch-none select-none items-center gap-2 border-b border-line px-3 py-2"
@@ -468,9 +469,9 @@ function PetChatFrame({
       >
         <svg viewBox="0 0 10 10" className="h-2.5 w-2.5" aria-hidden="true">
           <path
-            d="M9 3.5 L3.5 9 M9 6.5 L6.5 9"
+            d={ICONS.resizeHandle}
             stroke="currentColor"
-            strokeWidth="1.2"
+            strokeWidth="1.5"
             strokeLinecap="round"
             fill="none"
           />

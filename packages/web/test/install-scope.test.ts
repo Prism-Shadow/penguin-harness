@@ -131,6 +131,8 @@ const UNCLASSIFIED_ON_PURPOSE: Record<string, string> = {
     "sessionStorage: scoped to one tab's history, so it cannot outlive a data root",
   "penguin.safeMode":
     "sessionStorage: scoped to one tab's safe mode, so it cannot outlive a data root",
+  "penguin.platformUi.pageId":
+    "sessionStorage: this tab's id on the platform UI bridge, so it cannot outlive the tab",
 };
 
 /**
