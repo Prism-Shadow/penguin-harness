@@ -851,8 +851,9 @@ export class SessionManager {
     // This generation works on the state from here on: whatever a run that is still going
     // under an earlier generation starts when it ends, it starts through this one.
     state.current = {
-      startQueuedFollowUp: (sessionId) => this.startQueuedFollowUp(sessionId),
-      startBackgroundNoticeTask: (sessionId) => this.startBackgroundNoticeTask(sessionId),
+      startQueuedFollowUp: (sessionId: string) => this.startQueuedFollowUp(sessionId),
+      startBackgroundNoticeTask: (sessionId: string) =>
+        this.startBackgroundNoticeTask(sessionId),
     };
     this.entries = state.entries;
     this.childRoots = state.childRoots;

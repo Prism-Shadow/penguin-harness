@@ -17,6 +17,7 @@ export {
   UsageRecording,
   UsageQueries,
 } from "./observability.js";
+export type { UsageContext } from "./observability.js";
 export type {
   UsageGroupBy,
   UsageQuery,
