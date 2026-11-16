@@ -7,7 +7,7 @@
  */
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Db } from "@prismshadow/penguin-library-db";
-import type { ModelProviderAuthToken, ModelProviderAuthTokens } from "../projects.js";
+import type { ModelProviderAuthToken, ModelProviderAuthTokens } from "../models.js";
 
 @Component()
 export class ModelProviderAuthTokensRepo implements ModelProviderAuthTokens {

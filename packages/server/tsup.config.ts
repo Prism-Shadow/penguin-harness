@@ -84,6 +84,7 @@ export default defineConfig({
     "@prismshadow/penguin-library-account-data",
     "@prismshadow/penguin-library-agent-api",
     "@prismshadow/penguin-library-machines",
+    "@prismshadow/penguin-library-models",
 
     "@prismshadow/penguin-hmr",
     "@prismshadow/penguin-theme-pack",

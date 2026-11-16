@@ -73,8 +73,8 @@ import { UserDraftsRepo } from "@prismshadow/penguin-library-account-data/repos/
 import { BackgroundImagesRepo } from "@prismshadow/penguin-library-account-data/repos/background-images";
 import { SessionsRepo } from "@prismshadow/penguin-library-sessions/repos/sessions";
 import { ProjectsRepo } from "@prismshadow/penguin-library-projects/repos/projects";
-import { ModelPromotionsRepo } from "@prismshadow/penguin-library-projects/repos/model-promotions";
-import { ModelProviderAuthTokensRepo } from "@prismshadow/penguin-library-projects/repos/model-provider-auth-tokens";
+import { ModelPromotionsRepo } from "@prismshadow/penguin-library-models/repos/model-promotions";
+import { ModelProviderAuthTokensRepo } from "@prismshadow/penguin-library-models/repos/model-provider-auth-tokens";
 import { MembersRepo } from "@prismshadow/penguin-library-projects/repos/members";
 import { AgentsRepo } from "@prismshadow/penguin-library-projects/repos/agents";
 import { UsageRepo } from "@prismshadow/penguin-library-observability/repos/usage";

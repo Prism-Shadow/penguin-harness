@@ -9,7 +9,7 @@
  */
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Db } from "@prismshadow/penguin-library-db";
-import type { ModelPromotion, ModelPromotions } from "../projects.js";
+import type { ModelPromotion, ModelPromotions } from "../models.js";
 
 @Component()
 export class ModelPromotionsRepo implements ModelPromotions {

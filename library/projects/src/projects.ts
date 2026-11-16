@@ -18,6 +18,35 @@ import type {
   PluginTables,
   ProjectConfig,
 } from "@prismshadow/penguin-core";
+import type { ModelRefDto } from "@prismshadow/penguin-library-agent-api";
+import type { TraceFileInfo } from "@prismshadow/penguin-library-traces";
+import type {
+  PricingRates,
+  TieredRates,
+  PlatformCatalogModel,
+  PlatformModelCatalog,
+  PlatformModelApplyResult,
+  DefaultModelOffer,
+  EndpointModelListRequest,
+  EndpointModelListResponse,
+  ModelProtocolDetectRequest,
+  ModelProtocolDetectResponse,
+  ModelTestRequest,
+  ModelTestResponse,
+  ModelVisionDetectRequest,
+  ModelVisionDetectResponse,
+  ModelsResponse,
+  ModelsUpdateRequest,
+  PresetSyncMode,
+  ProviderConnectionUpdate,
+  ProviderConnectionDto,
+  ProviderConnectionResponse,
+  PresetSyncResponse,
+  GroupKeyApplied,
+  ModelPromotion,
+  ModelProviderAuthToken,
+} from "@prismshadow/penguin-library-models";
+import { ModelPromotions, ModelProviderAuthTokens, ModelOAuth } from "@prismshadow/penguin-library-models";
 
 
 
@@ -35,79 +64,15 @@ export type UtilityCompletion =
       error: string;
     };
 
-/** From packages/server (services/usage-service.ts): the pricing lookup's buckets. */
-export interface PricingRates {
-  cacheRead: number;
-  cacheWrite: number;
-  output: number;
-}
 
-/** From packages/server (services/usage-service.ts): peak/off-peak pricing. */
-export interface TieredRates {
-  peak: PricingRates;
-  offPeak: PricingRates;
-}
 
-/** From packages/server (services/platform-auth-types.ts): the pricing unit row. */
-export interface PlatformCatalogPricing {
-  unit: "usd_per_mtok";
-  cacheRead: number;
-  cacheWrite: number;
-  output: number;
-}
 
-/** From packages/server (services/platform-auth-types.ts): a platform model, normalized. */
-export interface PlatformCatalogModel {
-  modelId: string;
-  displayName: string;
-  contextWindow: number;
-  supportsVision: boolean;
-  /**
-   * List price, which is what a Project stores: the platform's `listPricing` when it runs a
-   * promotion on the model, its billed `pricing` otherwise.
-   */
-  pricing: PlatformCatalogPricing;
-  /** Fraction off `pricing` the platform is running (0.5 = half price); absent when none. */
-  discount?: number;
-  baseUrl: string;
-  clientType: "mmsp";
-}
 
-/** From packages/server (services/platform-auth-types.ts): the platform's model catalog. */
-export interface PlatformModelCatalog {
-  models: PlatformCatalogModel[];
-}
 
-/** From packages/server (services/platform-auth-types.ts): the catalog merge result. */
-export interface PlatformModelApplyResult {
-  added: number;
-  updated: number;
-  applied: number;
-  defaultOffer?: DefaultModelOffer;
-}
 
-/** From packages/server (services/model-oauth-service.ts): the OAuth flow's vocabulary. */
-export type ModelOAuthErrorCode =
-  /** The authorization request itself was malformed (bad callback URL, incomplete PKCE). */
-  | "invalid_request"
-  /** The code is unknown, expired, already redeemed, or was minted for another verifier. */
-  | "code_rejected"
-  /** The provider answered, but not with a usable key. */
-  | "upstream_failed"
-  /** The provider could not be reached at all. */
-  | "unreachable"
-  /** A key was minted but could not be written into the Project's models. */
-  | "apply_failed";
 
-export type ModelOAuthMode = "callback" | "manual";
 
-export interface ModelOAuthStartResult {
-  flowId: string;
-  authorizeUrl: string;
-  mode: ModelOAuthMode;
-}
 
-export type ModelOAuthStatus = "pending" | "done" | "error";
 
 /** From packages/server (api/types.ts): the project/model plumbing DTOs - the contracts
  * name them, so the types live with the contract. */
@@ -141,30 +106,8 @@ export interface ChatDefaultsDto {
   sandbox?: SessionSandbox;
 }
 
-export interface DefaultModelOffer {
-  /** The model offered as the default. */
-  model: ModelRefDto;
-  /** The default the Project stores now, outside the group; absent when it has none. */
-  current?: ModelRefDto;
-}
 
-export interface EndpointModelListRequest {
-  /** Endpoint base URL (as typed in the add-group dialog). */
-  baseUrl: string;
-  /** MMSP client type to speak (normally a detected generic protocol; whole-endpoint listings need one). */
-  clientType: string;
-  /** Newly entered API key (plaintext); omitted = the SDK's environment fallback for the protocol. */
-  apiKey?: string;
-}
 
-export interface EndpointModelListResponse {
-  ok: boolean;
-  /** The model ids the endpoint serves, in the order the endpoint returned them (ok only). */
-  models?: string[];
-  /** The routed client has no models endpoint (MMSP UnsupportedOperationError) — callers offer the manual path. */
-  unsupported?: boolean;
-  message?: string;
-}
 
 export interface MemberInfo {
   userId: string;
@@ -172,125 +115,14 @@ export interface MemberInfo {
   createdAt: string;
 }
 
-export interface ModelProtocolDetectRequest {
-  /** Base URL to probe (as typed in the form); each probe appends its protocol path. */
-  baseUrl: string;
-  /** Newly entered API key (plaintext); used for probe auth if provided. Detection also works keyless: a protocol-shaped 401/403 still proves the route. */
-  apiKey?: string;
-  /** "Clear saved API key" is checked: do not fall back to the stored key (probe the current draft). */
-  clearApiKey?: boolean;
-  /**
-   * Optional paired reference: when it names a stored entry and no apiKey is given, that
-   * entry's saved key backs the probes (mirrors the connectivity test), else its group's.
-   * `provider` may be sent without `modelId` (the group settings dialog has no model): the
-   * group key backs the probes.
-   */
-  provider?: string;
-  modelId?: string;
-}
 
-export interface ModelProtocolDetectResponse {
-  /** The first protocol an endpoint serves (an MMSP client type); absent when none of the three matched. */
-  detected?: string;
-  /**
-   * The base URL the detected protocol answered at — the typed URL normalized (endpoint
-   * path stripped, repeated `/v1` collapsed) and possibly with a trailing `/v1` added or
-   * removed, so `https://host/v1/chat/completions` comes back as `https://host/v1`.
-   * Present only alongside `detected`; callers write it back into their base URL field,
-   * since that is where the protocol is served.
-   */
-  baseUrl?: string;
-  probes: ModelProtocolProbeDto[];
-}
 
-export interface ModelTestRequest {
-  /** Provider group of the model under test (paired with modelId). */
-  provider: string;
-  /** Upstream id of the model under test (sent to MMSP as-is). */
-  modelId: string;
-  /** Newly entered API key (plaintext); used for the test if provided. */
-  apiKey?: string;
-  /** "Clear saved API key" is checked: the test does **not** fall back to the stored key (tests against the current draft). */
-  clearApiKey?: boolean;
-  /** Speed-test mode: raises the probe's output cap (16 -> 64 tokens) so TTFT/TPS are measurable; costs a little more quota. */
-  speed?: boolean;
-  /**
-   * base URL (not secret; the frontend always sends the form's current value): a string
-   * means use it, `null` means explicitly clear it (no fallback to the stored value),
-   * `undefined` means fall back to the stored value only when not provided.
-   */
-  baseUrl?: string | null;
-  /** MMSP client type; required for an unsaved custom model whose id begins with no known vendor family (otherwise it can't be routed). */
-  clientType?: string;
-  /**
-   * Test with fast mode (the frontend always sends the form's current value, so an unsaved
-   * toggle — either direction — is what gets tested); omitted falls back to the stored
-   * annotation. Lets "Test connection" surface a fast-mode rejection before saving.
-   */
-  fastMode?: boolean;
-}
 
-export interface ModelTestResponse {
-  ok: boolean;
-  latencyMs?: number;
-  /** Time from request start to the first streamed content (thinking or text), ms. */
-  ttftMs?: number;
-  /**
-   * Output tokens per second over the streaming window (first content -> stream end), 1dp.
-   * Omitted unless the sample is large enough to mean anything: a reply of a few tokens is
-   * dominated by the final chunk's round trip, so the rate it yields tracks network jitter
-   * rather than the model. Callers render TTFT alone in that case.
-   */
-  tps?: number;
-  message?: string;
-}
 
-export interface ModelVisionDetectRequest {
-  provider: string;
-  modelId: string;
-  /** Newly entered API key (plaintext); the stored one backs the probe when omitted. */
-  apiKey?: string;
-  /** "Clear saved API key" is checked: do not fall back to the stored key. */
-  clearApiKey?: boolean;
-  /** Form's current base URL; null means "explicitly none" (as in the connectivity test). */
-  baseUrl?: string | null;
-  /** Protocol to speak, when the form has one; otherwise the stored/auto-routed client. */
-  clientType?: string;
-}
 
-export interface ModelVisionDetectResponse {
-  outcome: ModelVisionOutcome;
-  message?: string;
-}
 
-export interface ModelsResponse {
-  /** Paired reference to the default Model. */
-  defaultModel?: ModelRefDto;
-  /** Vision model used as a proxy reader for read_file (describes images when the session model has vision=false). */
-  visionModel?: ModelRefDto;
-  /**
-   * When the Project's model/credential config last changed (ISO; the config file's mtime,
-   * so it survives restarts). The web's auth-dead gate compares it against the last auth
-   * abort: an abort OLDER than the last credential update no longer disables the composer
-   * (the key was fixed since). Absent when the Project has no config file yet.
-   */
-  updatedAt?: string;
-  /** Every group's stored connection (`[providers.<id>]`), keyed by provider id; a group with none is absent. */
-  providers: Record<string, ProviderConnectionDto>;
-  models: ModelInfo[];
-}
 
-export interface ModelsUpdateRequest {
-  /** Must be included in models (matched by paired reference). */
-  defaultModel?: ModelRefDto;
-  /** Vision model used as a proxy reader for read_file: must be included in models and not annotated vision=false; omitted keeps the existing value. */
-  visionModel?: ModelRefDto;
-  /** Group connection changes, merged per provider; a provider absent here keeps its table. */
-  providers?: Record<string, ProviderConnectionUpdate>;
-  models: ModelUpdateEntry[];
-}
 
-export type PresetSyncMode = "add" | "restore";
 
 export interface ProjectSummary {
   projectId: string;
@@ -302,38 +134,9 @@ export interface ProjectSummary {
   createdAt: string;
 }
 
-export interface ProviderConnectionUpdate {
-  /** `null` clears it; omitted keeps it. */
-  baseUrl?: string | null;
-  /**
-   * `null` or `""` clears it; omitted keeps it. Any group takes one: a row that stores its own
-   * protocol keeps it.
-   */
-  clientType?: string | null;
-  /** A non-empty key; sets `createdAt`. Rows with their own key keep it. */
-  apiKey?: string;
-  /** When true, clears the group key (rows with their own key keep it). */
-  clearApiKey?: boolean;
-}
 
-export interface ProviderConnectionDto {
-  baseUrl?: string;
-  clientType?: string;
-  apiKeyMasked?: string;
-  /** When the group key was written (ISO 8601). */
-  createdAt?: string;
-}
 
-export interface ProviderConnectionResponse extends ModelsResponse {
-  defaultOffer?: DefaultModelOffer;
-}
 
-export interface PresetSyncResponse extends ModelsResponse {
-  /** Preset rows added (both modes). */
-  added: number;
-  /** Preset rows the Project already had that `restore` changed (0 for `add`). */
-  restored: number;
-}
 
 export type ServerEvent =
   /**
@@ -734,73 +537,17 @@ export abstract class ProjectConfigStore {
   abstract completeOnce(projectId: string, prompt: string): Promise<UtilityCompletion>;
 }
 
-/** A group key written: how many of the group's rows use it, and the default it offers, if any. */
-export interface GroupKeyApplied {
-  applied: number;
-  defaultOffer?: DefaultModelOffer;
-}
 
-export interface ModelPromotion {
-  provider: string;
-  modelId: string;
-  discount: number;
-}
 
 /** Per-Project model promotions (web.db `model_promotions`). */
 @Interface()
-export abstract class ModelPromotions {
-  abstract get(projectId: string, provider: string, modelId: string): number | undefined;
-  abstract list(projectId: string): ModelPromotion[];
-  /** Replaces every promotion of the Project, in one transaction. */
-  abstract replaceAll(projectId: string, rows: readonly ModelPromotion[]): void;
-  /** Replaces the promotions of one provider group, in one transaction. */
-  abstract replaceProvider(
-    projectId: string,
-    provider: string,
-    rows: readonly ModelPromotion[],
-  ): void;
-}
 
-export interface ModelProviderAuthToken {
-  provider: string;
-  refreshToken: string;
-  accessTokenExpiresAt?: string;
-  updatedAt: string;
-}
 
 /** Server-side OAuth refresh metadata for provider groups (web.db `model_provider_auth_tokens`). */
 @Interface()
-export abstract class ModelProviderAuthTokens {
-  abstract get(projectId: string, provider: string): ModelProviderAuthToken | undefined;
-  abstract upsert(projectId: string, row: Omit<ModelProviderAuthToken, "updatedAt">): void;
-  abstract delete(projectId: string, provider: string): void;
-}
 
 /** ModelOAuth: the mechanism ModelOAuthService implements. */
 @Interface()
-export abstract class ModelOAuth {
-  abstract start(input: {
-    projectId: string;
-    userId: string;
-    provider: string;
-    mode: ModelOAuthMode;
-    callbackOrigin: string;
-  }): ModelOAuthStartResult;
-  abstract deposit(input: { flowId: string; projectId: string; code: string }): void;
-  abstract poll(input: { flowId: string; userId: string; projectId: string }): Promise<{
-    status: ModelOAuthStatus;
-    provider: string;
-    error?: ModelOAuthErrorCode;
-    applied?: number;
-    defaultOffer?: DefaultModelOffer;
-  }>;
-  abstract complete(input: {
-    flowId: string;
-    userId: string;
-    projectId: string;
-    code: string;
-  }): Promise<({ ok: true } & GroupKeyApplied) | { ok: false; error: ModelOAuthErrorCode }>;
-}
 
 /**
  * ProjectEvents: the mechanism ProjectNotifier implements — a user-level event to everyone
