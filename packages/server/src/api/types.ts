@@ -124,6 +124,7 @@ import type {
 } from "@prismshadow/penguin-library-sessions";
 import type { UserInfo } from "@prismshadow/penguin-library-identity";
 import type {
+  OrgCalendarOutcome,
   OrgChannelMessage,
   OrgChannelNotice,
   OrgChannelNoticeKind,
@@ -737,12 +738,6 @@ export interface MemberAddResponse {
  */
 
 
-/** Three pricing buckets, in USD per million tokens (unit is fixed at usd_per_mtok; not carried in the DTO). */
-export interface ModelPricingDto {
-  cacheRead: number;
-  cacheWrite: number;
-  output: number;
-}
 
 /**
  * One group's `[providers.<id>]` connection as the page reads it: the values the GROUP stores
@@ -761,91 +756,8 @@ export type ConnectionSourceDto = "model" | "provider" | "none";
  * The row's own values stay in `clientType` / `credential` (what the form edits); this is for
  * display.
  */
-export interface ModelEffectiveConnection {
-  baseUrl?: string;
-  baseUrlSource: ConnectionSourceDto;
-  clientType?: string;
-  clientTypeSource: ConnectionSourceDto;
-  /**
-   * `env` = no key in the file, and MMSP's routed client reads its own variable for the row's
-   * endpoint (no base URL, or the client's default endpoint) — reported when that variable
-   * holds a value here (`envKeyMasked`), `none` otherwise.
-   */
-  apiKeySource: "model" | "provider" | "env" | "none";
-  /** Mask of the key the row would use, whichever source; absent when none. */
-  apiKeyMasked?: string;
-}
 
-/** Read-only credential display: masked key and creation time; plaintext is never sent. */
-export interface CredentialInfo {
-  apiKeyMasked?: string;
-  baseUrl?: string;
-  createdAt?: string;
-}
 
-export interface ModelInfo {
-  /** Provider group id (anthropic / openai / …, see core's MODEL_PROVIDERS; custom models use `custom`). */
-  provider: string;
-  /** Upstream model id (the request id actually sent to MMSP); paired with `provider` forms the entry's unique key. */
-  modelId: string;
-  /**
-   * Display name: explicit TOML field (user-edited) takes priority, then the built-in catalog;
-   * falls back to unset (frontend shows modelId). The empty string is reported as such and
-   * means the user cleared the name on a model the catalog does name — render it as modelId,
-   * and send it back unchanged, since absent would ask for the catalog's name instead.
-   */
-  displayName?: string;
-  contextWindow?: number;
-  /**
-   * The row's OWN MMSP client type (`openai-chat`, `openai-responses`, etc.) — an override of
-   * its group's; absent = the row follows its group (see `effective`).
-   */
-  clientType?: string;
-  /**
-   * Whether image input (vision/multimodal) is supported: the TOML `vision` annotation only
-   * (a new Project writes `false` where the catalog says so); absent = unset, treated as
-   * supported. The catalog is not consulted.
-   */
-  vision?: boolean;
-  /**
-   * Per-model max output tokens (TOML `max_tokens` annotation; user-only, never preset by the
-   * built-in catalog): when set it wins over the Agent's `system_config.model.max_tokens`;
-   * unset = inherit the Agent value. Lets a small-context model cap its output below the
-   * seeded per-Agent default (32000), which cannot fit into e.g. a 32k context window.
-   */
-  maxTokens?: number;
-  /**
-   * Per-model fast mode (TOML `fast_mode` annotation; user-only, never preset by the
-   * built-in catalog): when true, session requests opt into the provider's faster serving
-   * tier at premium pricing (MMSP UniConfig `fast_mode`). Only `true` is reported;
-   * unset = off. Models without a fast tier reject requests carrying it.
-   */
-  fastMode?: boolean;
-  pricing?: ModelPricingDto;
-  /** Running promotion for this row — a fraction in (0, 1) off `pricing`, which is the list price — read from web.db. Absent when the row has none. */
-  discount?: number;
-  /**
-   * Environment variable name the entry falls back to when api_key is empty (e.g.
-   * ANTHROPIC_API_KEY): only for a row with no key in the file whose routed MMSP client reads
-   * that variable for its endpoint — no base URL on the row or its group, or the client's own
-   * default endpoint. Unset for a row with a key (its own or a group key that reaches it), a row
-   * sent to any other base URL (a gateway, Penguin Go, ModelScope, a vendor's second host or a
-   * proxy), or an id nothing routes.
-   */
-  envKey?: string;
-  /**
-   * Masked preview (same rule as `credential.apiKeyMasked`) of the value the server process
-   * currently holds for `envKey` — the plaintext is never serialized. Absent = the variable is
-   * unset or empty, or the entry gets no fallback. Reported only when no row or group key
-   * reaches the row.
-   */
-  envKeyMasked?: string;
-  /** The row's OWN key (masked) and base URL — overrides of its group's; see `effective`. */
-  credential?: CredentialInfo;
-  /** The connection the row is actually used with, and where each value comes from. */
-  effective: ModelEffectiveConnection;
-  isDefault: boolean;
-}
 
 
 
@@ -866,51 +778,6 @@ export interface ModelInfo {
 /** `PUT /models/providers/:provider`: the table as it now stands, and the default offered, if any. */
 
 
-/** PUT full-table replace semantics: models not present are deleted; omitting apiKey = keep existing value. Key = (provider, modelId). */
-export interface ModelUpdateEntry {
-  /** Provider group (an independent entry field, always submitted with the request). */
-  provider: string;
-  /** Upstream model id (sent to MMSP as-is). */
-  modelId: string;
-  /**
-   * Display name; the server does not persist it when it matches the built-in catalog (keeps
-   * the config file clean). Absent and empty are different requests: absent inherits whatever
-   * the catalog calls the model, the empty string records that the user cleared the name.
-   */
-  displayName?: string;
-  /**
-   * The pair reference this entry was renamed from (provided when either the group or the
-   * upstream id changes): the server uses this to migrate the original entry's credential
-   * and unknown fields to the new key — otherwise a full-table replace would delete the
-   * original entry along with its credential.
-   */
-  renamedFrom?: ModelRefDto;
-  contextWindow?: number;
-  /**
-   * Empty string/omitted = the row stores none: it follows its group's protocol, else MMSP
-   * routes by the vendor family the modelId begins with.
-   */
-  clientType?: string;
-  /** Whether image input (vision/multimodal) is supported; omitted = supported (not persisted). */
-  vision?: boolean;
-  /** Per-model max output tokens, a positive integer (wins over the Agent config); omitted = inherit the Agent value (the annotation is cleared). */
-  maxTokens?: number;
-  /** Per-model fast mode: only `true` is persisted; omitted or `false` clears the annotation (absent = off). */
-  fastMode?: boolean;
-  pricing?: ModelPricingDto;
-  /**
-   * Promotion to store for this row, a fraction in (0, 1) off `pricing`; `null` clears it. Omitted
-   * keeps the stored promotion — unless this entry renames the row or changes its pricing, which
-   * clears it.
-   */
-  discount?: number | null;
-  /** Providing it overwrites and updates createdAt; omitting it keeps the existing value. */
-  apiKey?: string;
-  /** When true, clears the stored api_key. */
-  clearApiKey?: boolean;
-  /** null clears it; omitted keeps the existing value. */
-  baseUrl?: string | null;
-}
 
 
 
@@ -957,7 +824,6 @@ export interface PresetSyncRequest {
  * error); `failed` = the probe never got a usable answer (auth, network, an unrelated
  * error), so nothing about the capability was learned and the setting is left alone.
  */
-export type ModelVisionOutcome = "supported" | "unsupported" | "failed";
 
 /** Vision probe result; `message` carries the truncated provider error for the failed case. */
 
@@ -985,19 +851,8 @@ export type ModelVisionOutcome = "supported" | "unsupported" | "failed";
  * `junk` = HTML / non-JSON / JSON matching no API shape; `timeout` / `network_error` =
  * the request itself failed.
  */
-export type ProtocolProbeOutcome =
-  "served" | "route_missing" | "server_error" | "junk" | "timeout" | "network_error";
 
 /** One probe, for debugging display: the probed URL derives from baseUrl only (never contains the key). */
-export interface ModelProtocolProbeDto {
-  /** MMSP client type this probe stands for (`openai-responses` / `ant-messages` / `openai-chat`). */
-  clientType: string;
-  /** Full URL probed (base URL + the protocol's path). */
-  url: string;
-  outcome: ProtocolProbeOutcome;
-  /** HTTP status, when a response arrived at all. */
-  status?: number;
-}
 
 /**
  * Detection result: probes run sequentially over the candidate base URLs derived from the
@@ -1033,13 +888,6 @@ export interface DefaultModelResponse {
   defaultModel: ModelRefDto;
 }
 
-/** One balance in one currency. */
-export interface ModelBalanceAmount {
-  /** Decimal string in `currency`'s major unit, as the vendor states it (TokenDance's micro-yuan are converted to yuan). */
-  amount: string;
-  /** ISO 4217 code: `CNY`, `USD`, … */
-  currency: string;
-}
 
 /**
  * Why a group's balance could not be read:
@@ -1049,7 +897,6 @@ export interface ModelBalanceAmount {
  * - `upstream_failed`: the vendor could not be reached in time, refused the request, or answered
  *   without a readable balance.
  */
-export type ModelBalanceErrorCode = "unsupported" | "no_key" | "upstream_failed";
 
 /**
  * GET /api/projects/:p/models/balance?provider=<group>[&force=1] (Project member): the account
