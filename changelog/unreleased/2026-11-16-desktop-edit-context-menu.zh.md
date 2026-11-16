@@ -3,6 +3,7 @@
 - **Date:** 2026-11-16
 - **Type:** fix
 - **Scope:** `desktop`
+- **PR:** [#1567](https://github.com/Prism-Shadow/penguin-harness/pull/1567)
 - **Issue:** [#1522](https://github.com/Prism-Shadow/penguin-harness/issues/1522)
 
 [English](2026-11-16-desktop-edit-context-menu.md)
