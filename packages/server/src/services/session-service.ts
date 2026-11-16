@@ -179,7 +179,7 @@ export interface ActivityCursor {
   sessionId: string;
 }
 
-/** One row the listing rule files as archived (SessionService.archivedRows). */
+/** One row the listing rule files in a category (SessionService.archivedRows, activeRows). */
 export interface ArchivedRow {
   row: SessionRow;
   /** The source the row was classified by; absent while its Trace head is unread. */
@@ -653,12 +653,32 @@ export class SessionService {
     agentId: string,
     view?: ListingView,
   ): Promise<ArchivedRow[]> {
+    return this.rowsInCategory(projectId, agentId, "archived", view);
+  }
+
+  /**
+   * The sidebar's share of the Agent (services/workspace-archive.ts, the "delete workspace"
+   * route): every row the listing rule files as active — the rows `listSessions` serves with
+   * `category: "active"` and `excludeOrg`, classified the same way, loaded or not. `view` is
+   * who reads it, as for listSessions.
+   */
+  async activeRows(projectId: string, agentId: string, view?: ListingView): Promise<SessionRow[]> {
+    return (await this.rowsInCategory(projectId, agentId, "active", view)).map(({ row }) => row);
+  }
+
+  /** The walk archivedRows and activeRows share: the Agent's own rows in one category. */
+  private async rowsInCategory(
+    projectId: string,
+    agentId: string,
+    category: SessionCategory,
+    view?: ListingView,
+  ): Promise<ArchivedRow[]> {
     const { rows, traces } = await this.walkRows(projectId, agentId, true);
     const out: ArchivedRow[] = [];
     for (const row of rows.values()) {
       const hasTrace = traces ? traces.has(row.sessionId) : row.hasTrace === true;
       const source = await this.sourceOf(row, hasTrace, view);
-      if (listCategory(source, listingMarksOf(row)) !== "archived") continue;
+      if (listCategory(source, listingMarksOf(row)) !== category) continue;
       out.push({ row, hasTrace, ...(source !== undefined ? { source } : {}) });
     }
     return out;

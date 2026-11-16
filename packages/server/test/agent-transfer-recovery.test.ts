@@ -5,7 +5,7 @@
  *   at nothing or was absolute, the import is a 400 and the Agent's State, vault and folder are
  *   as they were.
  * - Given a package with a relative link inside agent_state, an Agent created from it reads
- *   through the link, and its export creates a second Agent that keeps the link.
+ *   through the link.
  * - Given a current vault that cannot be read, the import fails before the State is touched;
  *   once the vault is readable again the retry imports and the vault survives.
  * - Given the new State cannot be moved in, the previous State and vault are put back and the
@@ -14,9 +14,9 @@
  *   in the import's staging directory and the server log names it; moving it back by hand lets
  *   the retry import with the vault intact.
  * - Given a committed import whose staging directory cannot be removed, the import still reports
- *   its version, the log names the leftover, and an unconfirmed re-import is a 409.
- * - Given snapshot packing fails, no .tmp- file is left beside the snapshots and the next export
- *   succeeds.
+ *   its version and the log names the leftover.
+ * - Given the backup's packing fails, no .tmp- file is left beside the snapshots and the next
+ *   import succeeds.
  *
  * Failures are injected at one boundary, `node:fs/promises`; every other call goes through.
  */
@@ -25,7 +25,7 @@ import path from "node:path";
 import * as tar from "tar";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { agentDir, agentStateDir, agentVaultPath, snapshotsDir } from "@prismshadow/penguin-core";
-import type { AgentImportResponse } from "../src/api/types.js";
+import type { AgentArchiveImportResponse } from "../src/api/types.js";
 import { apiClient, canCreateSymlink, createTestApp, loginAdmin } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -64,19 +64,23 @@ describe("Agent State import recovery", () => {
   const created: string[] = [];
   let ids = 0;
   let packages = 0;
-  let candidate: { dataBase64: string };
+  let candidate: Buffer;
+  const importPath = (id: string, overwrite = true) =>
+    `/api/projects/${projectId}/agents/import?agentId=${id}${overwrite ? "&overwrite=1" : ""}`;
 
   async function pack(build: (src: string) => Promise<void>, entries = ["agent_state"]) {
     const src = path.join(t.root, `package_${++packages}`);
     await fs.mkdir(src, { recursive: true });
     await build(src);
     await tar.create({ gzip: true, cwd: src, file: `${src}.tar.gz` }, entries);
-    return (await fs.readFile(`${src}.tar.gz`)).toString("base64");
+    return fs.readFile(`${src}.tar.gz`);
   }
 
-  async function createAgent(dataBase64?: string) {
+  async function createAgent(pkg?: Buffer) {
     const id = `recovery_${++ids}`;
-    const res = await admin.post(`/api/projects/${projectId}/agents`, { agentId: id, dataBase64 });
+    const res = pkg
+      ? await admin.upload(importPath(id, false), pkg)
+      : await admin.post(`/api/projects/${projectId}/agents`, { agentId: id });
     expect(res.status).toBe(201);
     created.push(id);
     const base = `/api/projects/${projectId}/agents/${id}`;
@@ -101,7 +105,7 @@ describe("Agent State import recovery", () => {
   beforeAll(async () => {
     t = await createTestApp({ log: (line) => logged.push(line) });
     admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
-    candidate = { dataBase64: await pack(writeCandidate) };
+    candidate = await pack(writeCandidate);
   });
   afterAll(async () => {
     await t.cleanup();
@@ -155,9 +159,8 @@ describe("Agent State import recovery", () => {
       "a package where $name is refused and the Agent is untouched",
       async ({ build, entries }) => {
         const agent = await agentWithVault();
-        const dataBase64 = await pack(build, entries);
 
-        const res = await admin.post(`${agent.base}/import`, { dataBase64 });
+        const res = await admin.upload(importPath(agent.id), await pack(build, entries));
 
         expect(res.status).toBe(400);
         expect(await fs.readFile(path.join(agent.state, "system_config.yaml"), "utf8")).toBe(
@@ -168,8 +171,8 @@ describe("Agent State import recovery", () => {
       },
     );
 
-    it("a relative link inside agent_state survives creating an Agent, its export and a second creation", async () => {
-      const dataBase64 = await pack(async (src) => {
+    it("a relative link inside agent_state survives creating an Agent", async () => {
+      const pkg = await pack(async (src) => {
         await writeCandidate(src);
         await fs.mkdir(path.join(src, "agent_state", "guidance"));
         await fs.writeFile(path.join(src, "agent_state", "guidance", "SKILL.md"), "# Guidance\n");
@@ -178,18 +181,10 @@ describe("Agent State import recovery", () => {
       });
       const linkOf = (state: string) => path.join(state, "skills", "linked");
 
-      const first = await createAgent(dataBase64);
-      await expect(fs.readFile(path.join(linkOf(first.state), "SKILL.md"), "utf8")).resolves.toBe(
-        "# Guidance\n",
-      );
-      const exported = await admin.get(`${first.base}/export`);
-      expect(exported.status).toBe(200);
-      const second = await createAgent(
-        Buffer.from(await exported.arrayBuffer()).toString("base64"),
-      );
+      const created = await createAgent(pkg);
 
-      expect((await fs.lstat(linkOf(second.state))).isSymbolicLink()).toBe(true);
-      await expect(fs.readFile(path.join(linkOf(second.state), "SKILL.md"), "utf8")).resolves.toBe(
+      expect((await fs.lstat(linkOf(created.state))).isSymbolicLink()).toBe(true);
+      await expect(fs.readFile(path.join(linkOf(created.state), "SKILL.md"), "utf8")).resolves.toBe(
         "# Guidance\n",
       );
     });
@@ -202,7 +197,7 @@ describe("Agent State import recovery", () => {
     await fs.writeFile(path.join(agent.vault, "entry"), "inside");
     vi.spyOn(console, "error").mockImplementation(() => {});
 
-    expect((await admin.post(`${agent.base}/import`, candidate)).status).toBe(500);
+    expect((await admin.upload(importPath(agent.id), candidate)).status).toBe(500);
     expect(await fs.readFile(path.join(agent.state, "system_config.yaml"), "utf8")).toBe(
       agent.config,
     );
@@ -211,7 +206,7 @@ describe("Agent State import recovery", () => {
 
     await fs.rm(agent.vault, { recursive: true });
     await fs.writeFile(agent.vault, agent.vaultBytes);
-    expect((await admin.post(`${agent.base}/import`, candidate)).status).toBe(200);
+    expect((await admin.upload(importPath(agent.id), candidate)).status).toBe(201);
     expect(await fs.readFile(agent.vault)).toEqual(agent.vaultBytes);
   });
 
@@ -223,14 +218,14 @@ describe("Agent State import recovery", () => {
     );
     vi.spyOn(console, "error").mockImplementation(() => {});
 
-    expect((await admin.post(`${agent.base}/import`, candidate)).status).toBe(500);
+    expect((await admin.upload(importPath(agent.id), candidate)).status).toBe(500);
     expect(await fs.readFile(path.join(agent.state, "system_config.yaml"), "utf8")).toBe(
       agent.config,
     );
     expect(await fs.readFile(agent.vault)).toEqual(agent.vaultBytes);
     expect(await stagingOf(agent.id)).toEqual([]);
 
-    expect((await admin.post(`${agent.base}/import`, candidate)).status).toBe(200);
+    expect((await admin.upload(importPath(agent.id), candidate)).status).toBe(201);
   });
 
   it("when the new State cannot be moved in and the old one cannot be moved back, both stay in staging and the log names it", async () => {
@@ -238,7 +233,7 @@ describe("Agent State import recovery", () => {
     failRename("EACCES", (_from, to) => to.endsWith(path.join(agent.id, "agent_state")));
     const errors = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    expect((await admin.post(`${agent.base}/import`, candidate)).status).toBe(500);
+    expect((await admin.upload(importPath(agent.id), candidate)).status).toBe(500);
     expect(errors.mock.calls.flat().join("\n")).toContain("replaced-agent_state");
     const staging = await stagingOf(agent.id);
     expect(staging).toHaveLength(1);
@@ -251,7 +246,7 @@ describe("Agent State import recovery", () => {
     vi.restoreAllMocks();
     await fs.rename(trash, agent.state);
     await fs.rm(kept, { recursive: true });
-    expect((await admin.post(`${agent.base}/import`, candidate)).status).toBe(200);
+    expect((await admin.upload(importPath(agent.id), candidate)).status).toBe(201);
     expect(await fs.readFile(agent.vault)).toEqual(agent.vaultBytes);
   });
 
@@ -264,20 +259,18 @@ describe("Agent State import recovery", () => {
         : realRm(p, opts),
     );
 
-    const res = await admin.post(`${agent.base}/import`, candidate);
+    const res = await admin.upload(importPath(agent.id), candidate);
 
-    expect(res.status).toBe(200);
-    expect(((await res.json()) as AgentImportResponse).version).toBe(2);
+    expect(res.status).toBe(201);
+    expect(((await res.json()) as AgentArchiveImportResponse).version).toBe(2);
     expect(await fs.readFile(path.join(agent.state, "lesson.md"), "utf8")).toBe(
       "Keep this lesson\n",
     );
     expect(await fs.readFile(agent.vault)).toEqual(agent.vaultBytes);
     expect(logged.some((line) => line.includes(".import-"))).toBe(true);
-    // It was committed: the same package again is "not newer", not a second import.
-    expect((await admin.post(`${agent.base}/import`, candidate)).status).toBe(409);
   });
 
-  it("a snapshot whose packing fails leaves no .tmp- file, and the next export succeeds", async () => {
+  it("a backup whose packing fails leaves no .tmp- file, and the next import succeeds", async () => {
     const agent = await createAgent();
     failRename(
       "ENOSPC",
@@ -285,12 +278,10 @@ describe("Agent State import recovery", () => {
     );
     vi.spyOn(console, "error").mockImplementation(() => {});
 
-    expect((await admin.get(`${agent.base}/export`)).status).toBe(500);
+    expect((await admin.upload(importPath(agent.id), candidate)).status).toBe(500);
     const dir = snapshotsDir(t.root, projectId, agent.id);
     expect((await fs.readdir(dir)).filter((n) => n.includes(".tmp-"))).toEqual([]);
 
-    const res = await admin.get(`${agent.base}/export`);
-    expect(res.status).toBe(200);
-    expect(res.headers.get("content-disposition")).toContain(`${agent.id}-v1.tar.gz`);
+    expect((await admin.upload(importPath(agent.id), candidate)).status).toBe(201);
   });
 });

@@ -1,12 +1,19 @@
 /**
  * Agent-scoped workbench routes, mounted at /api/projects/:projectId/agents/:agentId/workbenches:
  *
- *   GET    /                       the Agent's workbenches (loads any that changed on disk)
+ *   GET    /                       the Agent's workbenches, disabled ones included, and the
+ *                                  Agent-wide switch (loads any that run and changed on disk)
+ *   PUT    /enabled {enabled}      the Agent-wide switch (owner only): off unloads them all
  *   POST   /archive {dataBase64, overwrite?}  import one workbench's source from a zip, then load it
  *   GET    /:id/archive            the workbench's source as a zip, which imports back unchanged
+ *   PUT    /:id/enabled {enabled}  one workbench's own switch (owner only): off unloads it
  *   POST   /:id/reload             re-import the folder now (the watcher does this on change too)
  *   GET    /:id/history            the versions that loaded, newest first
  *   POST   /:id/rollback {revision} restore that version's files and reload
+ *   PATCH  /:id/app-center {show}  set `penguin.appCenter.show` in its package.json and reload
+ *   GET    /:id/app-center/icon    the image its App Center declaration names, re-checked and
+ *                                  served as icons are (../http/icon-response.ts); 404
+ *                                  `icon_not_found` when it names none that reads clean
  *   DELETE /:id                    remove the folder and its state; its history is no longer listed
  *   GET    /:id/ui/*               a file of the workbench's `ui/` (the pages its tabs name), or
  *                                  the `.js` a TSX page compiled to (see compile-ui.ts)
@@ -17,28 +24,53 @@
  *                                  content type when the handler names one (see respond)
  *
  * Every route requires access to the Project; the UI and api routes are what the
- * workbench's own page (an iframe in the Web App, same-origin cookie auth) talks to.
+ * workbench's own page (an iframe in the Web App, same-origin cookie auth) talks to. A
+ * workbench that does not run (either switch off) is refused by every route that serves it —
+ * ui, sdk, api, reload — with 409 `workbench_disabled`; an import or a rollback writes its
+ * source without loading it.
+ *
+ * The App Center is Project-wide, mounted at /api/projects/:projectId/app-center:
+ *
+ *   GET    /                       every shown workbench of the Project's Agents on this server
+ *                                  (manifests and load status only: nothing is compiled), and the
+ *                                  viewer's own arrangement of them
+ *   PUT    /layout {layout}        replace the viewer's arrangement; null restores the server's
+ *                                  order (see app-center-layout.ts)
  */
 import fs from "node:fs/promises";
 import path from "node:path";
 import { zipSync } from "fflate";
 import { Hono } from "hono";
+import type { Context } from "hono";
 import { agentDir } from "@prismshadow/penguin-core";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { WorkbenchArchiveInstallResponse } from "../api/types.js";
+import type {
+  AppCenterLayoutResponse,
+  AppCenterResponse,
+  WorkbenchAppCenterResponse,
+  WorkbenchArchiveInstallResponse,
+  WorkbenchesResponse,
+} from "../api/types.js";
 import type { AppEnv } from "../auth/middleware.js";
 import type { Paths } from "../hmr/capabilities.js";
 import { HttpError } from "../http/errors.js";
+import { iconResponse } from "../http/icon-response.js";
 import { mediaType } from "../http/media-type.js";
 import { badRequest, readJson, requireString, requireValidId } from "../http/validate.js";
 import type { AgentConfig } from "../mechanisms/agents.js";
-import type { Access } from "../mechanisms/projects.js";
+import type { Access, Projects } from "../mechanisms/projects.js";
+import type { UiPrefsStore } from "../mechanisms/settings.js";
 import { MAX_ARCHIVE_BYTES } from "../services/skill-import-limits.js";
 import type {
   WorkbenchRequest,
   WorkbenchResponse,
   Workbenches,
 } from "../mechanisms/workbenches.js";
+import {
+  parseAppCenterLayout,
+  readAppCenterLayout,
+  writeAppCenterLayout,
+} from "./app-center-layout.js";
 import {
   collectWorkbenchArchive,
   folderNameFor,
@@ -49,7 +81,7 @@ import {
 import { migrateWorkbenches } from "./migrate.js";
 import { withUiRuntime } from "./page-html.js";
 import { etagMatches, isPageSdkName, PAGE_SDK_CONTENT_TYPE, pageSdkFile } from "./page-sdk.js";
-import { WorkbenchNotFound } from "./service.js";
+import { WorkbenchDisabled, WorkbenchNotFound } from "./service.js";
 import { isWorkbenchId, readFolder, workbenchesDir } from "./store.js";
 
 const MIME: Record<string, string> = {
@@ -259,7 +291,33 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
 
   app.get("/", async (c) => {
     const { projectId, agentId } = scope(c);
-    return c.json({ workbenches: await deps.workbenches.list(projectId, agentId) });
+    const workbenches = await deps.workbenches.list(projectId, agentId);
+    const enabled = await deps.workbenches.agentEnabled(projectId, agentId);
+    return c.json({ workbenches, enabled } satisfies WorkbenchesResponse);
+  });
+
+  /** A switch is the owner's, like the Agent's other settings switches. */
+  const switchRequest = async (c: Context<AppEnv>) => {
+    const { projectId, agentId } = scope(c);
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
+    await deps.agentConfig.requireExists(projectId, agentId);
+    const body = await readJson(c);
+    if (typeof body.enabled !== "boolean") throw badRequest("enabled must be a boolean.");
+    return { projectId, agentId, enabled: body.enabled };
+  };
+
+  app.put("/enabled", async (c) => {
+    const { projectId, agentId, enabled } = await switchRequest(c);
+    const listing = await deps.workbenches.setAgentEnabled(projectId, agentId, enabled);
+    return c.json(listing satisfies WorkbenchesResponse);
+  });
+
+  app.put("/:id/enabled", async (c) => {
+    const { projectId, agentId, enabled } = await switchRequest(c);
+    const workbench = await deps.workbenches
+      .setEnabled(projectId, agentId, c.req.param("id"), enabled)
+      .catch(notFound);
+    return c.json({ workbench });
   });
 
   /**
@@ -314,7 +372,7 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
         });
       }
       await writeWorkbenchSource(dir, parsed.files);
-      return deps.workbenches.reload(projectId, agentId, id).catch(notFound);
+      return deps.workbenches.reloadIfEnabled(projectId, agentId, id).catch(notFound);
     });
     return c.json({ workbench } satisfies WorkbenchArchiveInstallResponse, 201);
   });
@@ -362,6 +420,25 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
       .rollback(projectId, agentId, c.req.param("id"), body.revision)
       .catch(notFound);
     return c.json({ workbench });
+  });
+
+  // The App Center switch: member-level, like reload and remove. The answer is the workbench as
+  // the reload left it, its `appCenter` read back from the file.
+  app.patch("/:id/app-center", async (c) => {
+    const { projectId, agentId } = scope(c);
+    const body = await readJson(c);
+    if (typeof body.show !== "boolean") throw badRequest("show must be true or false");
+    const workbench = await deps.workbenches
+      .setAppCenter(projectId, agentId, c.req.param("id"), body.show)
+      .catch(notFound);
+    return c.json({ workbench } satisfies WorkbenchAppCenterResponse);
+  });
+
+  // The URL a shortcut carries names the image's revision (`?rev=`): the answer is kept for good.
+  app.get("/:id/app-center/icon", async (c) => {
+    const { projectId, agentId } = scope(c);
+    const icon = await deps.workbenches.appCenterIcon(projectId, agentId, c.req.param("id"));
+    return iconResponse(icon ?? undefined);
   });
 
   app.delete("/:id", async (c) => {
@@ -416,16 +493,19 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
   });
 
   // The same files for every workbench, but only under one that exists: a page of another
-  // Project, or of a workbench since removed, gets the 404 its own files would.
+  // Project, or of a workbench since removed, gets the 404 its own files would, and one that
+  // is turned off the 409 its own files would.
   app.get("/:id/sdk/:file", async (c) => {
     const { projectId, agentId } = scope(c);
     const id = c.req.param("id");
     const name = c.req.param("file");
-    if (
-      !isPageSdkName(name) ||
-      !(await deps.workbenches.list(projectId, agentId)).some((w) => w.id === id)
-    )
-      throw new HttpError(404, "not_found", "No such workbench, or no such file in its sdk/.");
+    const missing = () =>
+      new HttpError(404, "not_found", "No such workbench, or no such file in its sdk/.");
+    if (!isPageSdkName(name)) throw missing();
+    const workbench = (await deps.workbenches.list(projectId, agentId)).find((w) => w.id === id);
+    if (workbench === undefined) throw missing();
+    if (workbench.enabled === false || !(await deps.workbenches.agentEnabled(projectId, agentId)))
+      throw new WorkbenchDisabled(id);
     const { body, etag } = await pageSdkFile(name);
     const headers = { "content-type": PAGE_SDK_CONTENT_TYPE, "cache-control": "no-cache", etag };
     if (etagMatches(c.req.header("if-none-match"), etag)) return c.body(null, 304, headers);
@@ -461,12 +541,55 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
   return app;
 }
 
+export interface AppCenterRouteDeps extends Pick<WorkbenchRouteDeps, "access" | "workbenches"> {
+  /** Where each viewer's arrangement is kept: their ui_prefs. */
+  prefs: UiPrefsStore;
+  projects: Pick<Projects, "findById">;
+}
+
+/**
+ * The Project's App Center: the shortcut list and the viewer's arrangement of it (mounted at
+ * /api/projects/:projectId/app-center). Arranging is anyone's who may open it, since it changes
+ * only what they see.
+ */
+export function appCenterRoutes(deps: AppCenterRouteDeps) {
+  const app = new Hono<AppEnv>();
+  app.get("/", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const { userId } = c.var.user;
+    deps.access.requireProjectAccess(userId, projectId);
+    return c.json({
+      shortcuts: await deps.workbenches.appCenter(projectId),
+      layout: readAppCenterLayout(deps.prefs, userId, projectId),
+    } satisfies AppCenterResponse);
+  });
+  app.put("/layout", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const { userId } = c.var.user;
+    deps.access.requireProjectAccess(userId, projectId);
+    const body = await readJson(c);
+    if (body.layout === undefined)
+      throw badRequest("Request body must name layout (null restores the server's order).");
+    const layout = body.layout === null ? null : parseAppCenterLayout(body.layout);
+    const exists = (id: string) => deps.projects.findById(id) !== null;
+    writeAppCenterLayout(deps.prefs, userId, projectId, layout, exists);
+    return c.json({ layout } satisfies AppCenterLayoutResponse);
+  });
+  return app;
+}
+
 @Component({
   contributes: {
     "HttpModule.routes": [
       {
         id: "WorkbenchesModule.routes",
         prefix: "/api/projects/:projectId/agents/:agentId/workbenches",
+        auth: "user",
+        order: 20,
+      },
+      {
+        id: "WorkbenchesModule.appCenterRoutes",
+        prefix: "/api/projects/:projectId/app-center",
         auth: "user",
         order: 20,
       },
@@ -478,13 +601,22 @@ export class WorkbenchRoutes {
   @Use() private readonly workbenches!: Workbenches;
   @Use() private readonly paths!: Paths;
   @Use() private readonly agentConfig!: AgentConfig;
+  @Use() private readonly prefs!: UiPrefsStore;
+  @Use() private readonly projects!: Projects;
   @Bind("WorkbenchesModule.routes") routes!: Hono<AppEnv>;
+  @Bind("WorkbenchesModule.appCenterRoutes") appCenterRoutes!: Hono<AppEnv>;
   setup() {
     this.routes = workbenchRoutes({
       access: this.access,
       workbenches: this.workbenches,
       root: this.paths.root,
       agentConfig: this.agentConfig,
+    });
+    this.appCenterRoutes = appCenterRoutes({
+      access: this.access,
+      workbenches: this.workbenches,
+      prefs: this.prefs,
+      projects: this.projects,
     });
   }
 }

@@ -7,8 +7,7 @@
  * one way out, which prefills a new conversation and leaves pressing Send to the reader.
  */
 import { useProject } from "../../state/project";
-import { AiCreateModal } from "../ai-create";
-import type { AiExample } from "../ai-create";
+import { AiCreateModal, type AiExample } from "../ai-create";
 
 export interface AskAiModalProps {
   open: boolean;

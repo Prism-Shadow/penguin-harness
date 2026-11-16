@@ -104,19 +104,26 @@ export async function probeServerState(
 }
 
 /**
- * What a machine's `penguin-hmr` says when its data root's store holds no CLI it can run
+ * The sentences a machine's `penguin-hmr` said when its data root's store held no CLI it
+ * could run, in the releases that shipped before the named reports
  * (packages/cli/src/penguin-hmr.ts): `no CLI pushed to <root>; use \`penguin\` instead`, or
- * `the CLI pushed to <root> is unusable: <why>`. Every release ships that entry with these
- * words, and an install is what puts a CLI there — so this is the one far-side answer whose
- * remedy is known here, and the advice to run `penguin` is not one a person on the Machines
- * page can take.
+ * `the CLI pushed to <root> is unusable: <why>`.
  */
-const NO_PUSHED_CLI =
+const SENTENCE_NO_CLI_TO_RUN =
   /^(no CLI pushed to \S.*; use `penguin` instead|the CLI pushed to \S.* is unusable: .*)$/m;
 
+/**
+ * The named reports the loader answers with now — `<name>: <detail>`, one line — and the
+ * sentence older releases shipped: a root nothing was installed into, or one whose record
+ * says nothing usable. Both need one remedy, an install from this page.
+ */
+const NAMED_NO_CLI_TO_RUN = /^(?:own-entry|record-unsupported|cli-unloadable): .*$/m;
+
 /** The page's sentence for a machine whose store has no CLI to run, with the far side's words after it. */
-export function noPushedCliDetail(said: string): string | null {
-  const line = NO_PUSHED_CLI.exec(said)?.[0];
+export function noCliToRunDetail(said: string): string | null {
+  // Both dialects: machines outlive releases, and a page that read only one would fall silent
+  // on the half of the fleet that speaks the other.
+  const line = SENTENCE_NO_CLI_TO_RUN.exec(said)?.[0] ?? NAMED_NO_CLI_TO_RUN.exec(said)?.[0];
   return line === undefined
     ? null
     : "PenguinHarness is installed on that machine without the build this server runs there, so it cannot be started or asked anything. Install it again from this page (Update, or Reinstall): that puts the build there. " +
@@ -140,7 +147,7 @@ async function probeIn(
       state: {
         kind: "unreachable",
         detail:
-          detail === "" ? "ssh exited without a message." : (noPushedCliDetail(detail) ?? detail),
+          detail === "" ? "ssh exited without a message." : (noCliToRunDetail(detail) ?? detail),
       },
       machineId: null,
     };

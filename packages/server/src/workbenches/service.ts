@@ -21,7 +21,13 @@
  * cache, and every successful load commits the folder to the Agent State repository
  * (./repo.ts) as a version the Agent (or the user) can roll back to. A watcher on the Agent
  * State's `workbenches/` folder reloads on change, debounced, and the users of the Project
- * hear `workbench_updated` on their event stream.
+ * hear `workbench_building` when a load starts and `workbench_updated` when it ends.
+ *
+ * Two switches decide whether a workbench runs, each an empty marker file (./store.ts): its own
+ * (`<id>/.disabled`) and the Agent's (`workbenches/.disabled`). Only with both off-markers absent
+ * is it loaded; otherwise it is listed from its folder, every serving route refuses it, and no
+ * listing, watcher event or request loads it. The markers are dot entries the watcher ignores,
+ * so a switch takes effect through setEnabled / setAgentEnabled, which unload or load at once.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -36,16 +42,19 @@ import type {
   ModuleTree,
 } from "@prismshadow/penguin-core/kernel";
 import { agentDir, userText } from "@prismshadow/penguin-core";
+import type { IconImage } from "@prismshadow/penguin-core";
 import table from "../ifaces.json" with { type: "json" };
 import type { ServerEvent } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 import type { Channels, Clock, Config, Hmr, Log, Paths } from "../hmr/capabilities.js";
 import { userChannelKey } from "../http/routes/events.js";
+import type { AgentConfig } from "../mechanisms/agents.js";
 import type { AgentIndex, Members, Projects } from "../mechanisms/projects.js";
 import type { Traces } from "../mechanisms/traces.js";
 import { workbenchResult } from "./result.js";
 import type { SessionIndex } from "../mechanisms/sessions.js";
 import type {
+  AppCenterShortcut,
   WorkbenchInfo,
   WorkbenchInput,
   WorkbenchRecord,
@@ -59,9 +68,24 @@ import type {
   Workbenches,
 } from "../mechanisms/workbenches.js";
 import { ScheduleSessionCreator, ScheduleTaskRunner } from "../runtime/scheduler.js";
+import {
+  agentShortcuts,
+  appCenterIconRef,
+  AppCenterManifestInvalid,
+  readAppCenterIcon,
+  readAppCenterManifest,
+  writeAppCenterShow,
+  type AppCenterManifest,
+} from "./app-center.js";
 import { migrateWorkbenches } from "./migrate.js";
 import { WorkbenchSubscriptions } from "./subscribe.js";
-import { BUILD_DIR, compileWorkbench, pruneBuilds, writeLoadStatus } from "./compile.js";
+import {
+  BUILD_DIR,
+  compileWorkbench,
+  pruneBuilds,
+  readLoadStatus,
+  writeLoadStatus,
+} from "./compile.js";
 import { compileWorkbenchUi, hasTsxPages, type UiBuild } from "./compile-ui.js";
 import { installHarnessTypes, readHarnessTable } from "./harness-types.js";
 import { checkIfaces, ifaceQuestions } from "../plugin/iface-check.js";
@@ -70,6 +94,7 @@ import { openUiRuntime, requireUiRuntime, type UiRuntime, type WebFiles } from "
 import { AgentStateRepo, agentStateRepoDir } from "./repo.js";
 import {
   isSafeRelPath,
+  isSwitchedOff,
   isTempName,
   isWorkbenchId,
   listFolders,
@@ -81,6 +106,7 @@ import {
   UI_DIR,
   workbenchesDir,
   writeState,
+  writeSwitch,
   type WorkbenchFolder,
 } from "./store.js";
 
@@ -109,6 +135,8 @@ interface Loaded {
    * the previous one's while `error` is set — or null when its pages are served as written.
    */
   uiBuild: string | null;
+  /** What the folder's package.json declares for the App Center, as read for this load. */
+  appCenter: AppCenterManifest;
 }
 
 function key(projectId: string, agentId: string, workbenchId: string): string {
@@ -270,6 +298,7 @@ export class WorkbenchService implements Workbenches {
   @Use() private readonly projects!: Projects;
   @Use() private readonly hmr!: Hmr;
   @Use() private readonly agents!: AgentIndex;
+  @Use() private readonly agentConfig!: AgentConfig;
   @Use() private readonly sessionIndex!: SessionIndex;
   @Use() private readonly traces!: Traces;
   @Use() private readonly runner!: ScheduleTaskRunner;
@@ -337,15 +366,15 @@ export class WorkbenchService implements Workbenches {
   async list(projectId: string, agentId: string): Promise<WorkbenchInfo[]> {
     await this.migrate(projectId, agentId);
     this.watch(projectId, agentId);
-    const folders = await listFolders(workbenchesDir(this.paths.root, projectId, agentId));
+    const base = workbenchesDir(this.paths.root, projectId, agentId);
+    const folders = await listFolders(base);
+    const all = !(await isSwitchedOff(base));
     const out: WorkbenchInfo[] = [];
     for (const folder of folders) {
-      const current = this.loaded.get(key(projectId, agentId, folder.id));
-      const fresh =
-        current && current.folder.revision === folder.revision
-          ? current
-          : await this.load(projectId, agentId, folder);
-      out.push(this.info(folder.id, fresh));
+      const { info, unloaded } = await this.settle(projectId, agentId, folder, all);
+      // A marker written by hand is only seen here: what it unloaded is news to open pages.
+      if (unloaded) this.notify(projectId, agentId, info);
+      out.push(info);
     }
     // Folders that went away drop their instances.
     const alive = new Set(folders.map((f) => key(projectId, agentId, f.id)));
@@ -357,9 +386,69 @@ export class WorkbenchService implements Workbenches {
     return out;
   }
 
+  async agentEnabled(projectId: string, agentId: string): Promise<boolean> {
+    await this.migrate(projectId, agentId);
+    return !(await isSwitchedOff(workbenchesDir(this.paths.root, projectId, agentId)));
+  }
+
   async reload(projectId: string, agentId: string, workbenchId: string): Promise<WorkbenchInfo> {
     const folder = await this.folder(projectId, agentId, workbenchId);
-    return this.info(workbenchId, await this.load(projectId, agentId, folder));
+    if (!(await this.runs(projectId, agentId, folder))) throw new WorkbenchDisabled(workbenchId);
+    return this.info(projectId, agentId, workbenchId, await this.load(projectId, agentId, folder));
+  }
+
+  async reloadIfEnabled(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+  ): Promise<WorkbenchInfo> {
+    const folder = await this.folder(projectId, agentId, workbenchId);
+    if (await this.runs(projectId, agentId, folder)) {
+      try {
+        return this.info(
+          projectId,
+          agentId,
+          workbenchId,
+          await this.load(projectId, agentId, folder),
+        );
+      } catch (err) {
+        // Switched off while it loaded: answered as it stands, like any other that does not run.
+        if (!(err instanceof WorkbenchDisabled)) throw err;
+      }
+    }
+    return (await this.settle(projectId, agentId, folder, false)).info;
+  }
+
+  async setEnabled(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+    enabled: boolean,
+  ): Promise<WorkbenchInfo> {
+    const folder = await this.folder(projectId, agentId, workbenchId);
+    await writeSwitch(folder.dir, enabled);
+    const all = await this.agentEnabled(projectId, agentId);
+    const { info, loaded } = await this.settle(projectId, agentId, folder, all);
+    // A load announces itself; anything else is announced here, so open pages follow the switch.
+    if (!loaded) this.notify(projectId, agentId, info);
+    return info;
+  }
+
+  async setAgentEnabled(
+    projectId: string,
+    agentId: string,
+    enabled: boolean,
+  ): Promise<{ workbenches: WorkbenchInfo[]; enabled: boolean }> {
+    await this.migrate(projectId, agentId);
+    const base = workbenchesDir(this.paths.root, projectId, agentId);
+    await writeSwitch(base, enabled);
+    const workbenches: WorkbenchInfo[] = [];
+    for (const folder of await listFolders(base)) {
+      const { info, loaded } = await this.settle(projectId, agentId, folder, enabled);
+      if (!loaded) this.notify(projectId, agentId, info);
+      workbenches.push(info);
+    }
+    return { workbenches, enabled };
   }
 
   /**
@@ -369,6 +458,10 @@ export class WorkbenchService implements Workbenches {
    * a load's own reads of the folder), and reloading on those tore the tree down under the
    * request that had just written its state, or loaded the same folder twice over. The
    * revision is the content hash, so an edit always differs.
+   *
+   * A workbench this process has not loaded is compared with the revision its status file says
+   * last loaded: the App Center watches Agents whose workbenches it only reads, and its own
+   * reads would otherwise compile, on Windows, every workbench it lists.
    */
   private async reloadIfChanged(
     projectId: string,
@@ -376,10 +469,11 @@ export class WorkbenchService implements Workbenches {
     workbenchId: string,
   ): Promise<void> {
     const folder = await this.folder(projectId, agentId, workbenchId);
+    if (!(await this.runs(projectId, agentId, folder))) return;
     const k = key(projectId, agentId, workbenchId);
     const current = this.loading.has(k)
       ? this.loadingRevision.get(k)
-      : this.loaded.get(k)?.folder.revision;
+      : (this.loaded.get(k)?.folder.revision ?? (await readLoadStatus(folder.dir))?.revision);
     if (current === folder.revision) return;
     await this.load(projectId, agentId, folder);
   }
@@ -405,9 +499,10 @@ export class WorkbenchService implements Workbenches {
   ): Promise<WorkbenchUiFile | null> {
     if (!isWorkbenchId(workbenchId)) return null;
     await this.migrate(projectId, agentId);
+    const dir = path.join(workbenchesDir(this.paths.root, projectId, agentId), workbenchId);
+    await this.refuseIfOff(projectId, agentId, workbenchId, dir);
     // No default document: which page a tab shows is what its contribution says.
     if (!isSafeRelPath(rel)) return null;
-    const dir = path.join(workbenchesDir(this.paths.root, projectId, agentId), workbenchId);
     const onDisk = path.join(dir, UI_DIR, rel);
     if (await isFile(onDisk)) {
       // Only a page needs to know whether it is compiled; every other file is served as it is.
@@ -434,6 +529,7 @@ export class WorkbenchService implements Workbenches {
     const dir = path.join(workbenchesDir(this.paths.root, projectId, agentId), workbenchId);
     // A folder without package.json is not a workbench (./store.ts).
     if (!(await isFile(path.join(dir, "package.json")))) return null;
+    await this.refuseIfOff(projectId, agentId, workbenchId, dir);
     return (await this.runtime()?.file(rel)) ?? null;
   }
 
@@ -461,9 +557,10 @@ export class WorkbenchService implements Workbenches {
       this.repo(projectId, agentId).filesAt(repoPath(workbenchId), revision),
     );
     if (!files) throw new WorkbenchNotFound("no such version");
-    // The load this triggers records the restored files as the newest version.
+    // The load this triggers records the restored files as the newest version; a workbench
+    // that does not run takes the files only, and records them when it next loads.
     await restoreSource(folder, files);
-    return this.reload(projectId, agentId, workbenchId);
+    return this.reloadIfEnabled(projectId, agentId, workbenchId);
   }
 
   async remove(projectId: string, agentId: string, workbenchId: string): Promise<void> {
@@ -496,6 +593,68 @@ export class WorkbenchService implements Workbenches {
       this.log.line(`[workbenches] ${k}: removal not recorded: ${messageOf(err)}`);
     }
     this.forget(projectId, agentId, workbenchId);
+  }
+
+  async appCenter(projectId: string): Promise<AppCenterShortcut[]> {
+    const out: AppCenterShortcut[] = [];
+    // The index's order is the Agents list's (created, then id); a row whose folder is no longer
+    // an Agent is not one the list shows either.
+    for (const row of this.agents.list(projectId)) {
+      const { agentId } = row;
+      if (!(await this.agentConfig.exists(projectId, agentId))) continue;
+      // One Agent whose older layout cannot be moved is left out, not the whole App Center.
+      try {
+        await this.migrate(projectId, agentId);
+      } catch (err) {
+        this.log.line(`[workbenches] ${projectId}/${agentId}: ${messageOf(err)}`);
+        continue;
+      }
+      // An edit made while the App Center is open loads, and the load is announced.
+      this.watch(projectId, agentId);
+      const base = workbenchesDir(this.paths.root, projectId, agentId);
+      // With the Agent-wide switch off none of its workbenches runs, so none has a tile.
+      if (await isSwitchedOff(base)) continue;
+      const agentName = (await this.agentConfig.readCardMeta(projectId, agentId)).name ?? agentId;
+      out.push(
+        ...(await agentShortcuts(projectId, { agentId, agentName }, base, (workbenchId) =>
+          this.building(key(projectId, agentId, workbenchId)),
+        )),
+      );
+    }
+    return out;
+  }
+
+  async appCenterIcon(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+  ): Promise<IconImage | null> {
+    if (!isWorkbenchId(workbenchId)) return null;
+    await this.migrate(projectId, agentId);
+    const dir = path.join(workbenchesDir(this.paths.root, projectId, agentId), workbenchId);
+    return readAppCenterIcon(dir, workbenchId);
+  }
+
+  async setAppCenter(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+    show: boolean,
+  ): Promise<WorkbenchInfo> {
+    const folder = await this.folder(projectId, agentId, workbenchId);
+    try {
+      await writeAppCenterShow(folder.dir, show);
+    } catch (err) {
+      if (!(err instanceof AppCenterManifestInvalid)) throw err;
+      throw new HttpError(
+        409,
+        "workbench_manifest_invalid",
+        `The workbench's ${err.message}, so it cannot be changed from here.`,
+      );
+    }
+    // The watcher sees the same edit; a load of the revision just written is shared, not repeated.
+    // One that does not run is written all the same and answered from its folder.
+    return this.reloadIfEnabled(projectId, agentId, workbenchId);
   }
 
   async releaseAgent(projectId: string, agentId: string): Promise<void> {
@@ -535,6 +694,16 @@ export class WorkbenchService implements Workbenches {
   }
 
   // ---- internals ------------------------------------------------------------------
+
+  /**
+   * A load of the workbench is under way or queued behind another. The watcher's settle window
+   * does not count: a change event there may turn out to change nothing (Windows reports one
+   * when a file is read), and then no load starts and no event follows to end it.
+   * `workbench_building` marks the start of every load that does run.
+   */
+  private building(k: string): boolean {
+    return this.loading.has(k);
+  }
 
   private async folder(
     projectId: string,
@@ -594,13 +763,16 @@ export class WorkbenchService implements Workbenches {
 
   private async current(projectId: string, agentId: string, workbenchId: string): Promise<Loaded> {
     const folder = await this.folder(projectId, agentId, workbenchId);
+    if (!(await this.runs(projectId, agentId, folder))) throw new WorkbenchDisabled(workbenchId);
     const k = key(projectId, agentId, workbenchId);
     const existing = this.loaded.get(k);
     if (existing && existing.folder.revision === folder.revision) return existing;
     return this.load(projectId, agentId, folder);
   }
 
-  private info(id: string, l: Loaded): WorkbenchInfo {
+  /** A loaded instance, which runs, so both its switches are on. */
+  private info(projectId: string, agentId: string, id: string, l: Loaded): WorkbenchInfo {
+    const { icon } = l.appCenter;
     return {
       id,
       name: l.folder.pkg.name,
@@ -610,8 +782,123 @@ export class WorkbenchService implements Workbenches {
       tabs: l.tabs,
       loadedAt: l.loadedAt,
       error: l.error,
-      hints: loadHints(l.folder.uiRev, l.tabs, l.error),
+      hints: hintsOf(l),
+      enabled: true,
+      ...(l.appCenter.appCenter !== undefined ? { appCenter: l.appCenter.appCenter } : {}),
+      ...(icon !== undefined ? { icon: appCenterIconRef(projectId, agentId, id, icon) } : {}),
     };
+  }
+
+  /** One that does not run, from its folder alone (see WorkbenchInfo). */
+  private idleInfo(
+    projectId: string,
+    agentId: string,
+    folder: WorkbenchFolder,
+    enabled: boolean,
+    declared: AppCenterManifest,
+  ): WorkbenchInfo {
+    const { appCenter, icon } = declared;
+    return {
+      id: folder.id,
+      name: folder.pkg.name,
+      version: folder.pkg.version,
+      revision: folder.revision,
+      uiRev: folder.uiRev,
+      tabs: [],
+      loadedAt: null,
+      error: null,
+      hints: [],
+      enabled,
+      ...(appCenter !== undefined ? { appCenter } : {}),
+      ...(icon !== undefined
+        ? { icon: appCenterIconRef(projectId, agentId, folder.id, icon) }
+        : {}),
+    };
+  }
+
+  /** Whether the workbench runs: neither its own off-marker nor the Agent's is there. */
+  private async runs(
+    projectId: string,
+    agentId: string,
+    folder: WorkbenchFolder,
+  ): Promise<boolean> {
+    return (
+      !(await isSwitchedOff(workbenchesDir(this.paths.root, projectId, agentId))) &&
+      !(await isSwitchedOff(folder.dir))
+    );
+  }
+
+  /** A workbench that exists and does not run is refused; a missing one is left to the caller's 404. */
+  private async refuseIfOff(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+    dir: string,
+  ): Promise<void> {
+    if (!(await isFile(path.join(dir, "package.json")))) return;
+    const base = workbenchesDir(this.paths.root, projectId, agentId);
+    if ((await isSwitchedOff(base)) || (await isSwitchedOff(dir))) {
+      throw new WorkbenchDisabled(workbenchId);
+    }
+  }
+
+  /**
+   * Brings one workbench in line with its switches (`all` is the Agent's): when it runs, loaded
+   * unless the loaded instance already has this revision; otherwise unloaded, after any load in
+   * flight has finished, and answered from its folder. `loaded` says a load ran (and announced
+   * itself), `unloaded` that an instance was let go.
+   */
+  private async settle(
+    projectId: string,
+    agentId: string,
+    folder: WorkbenchFolder,
+    all: boolean,
+  ): Promise<{ info: WorkbenchInfo; loaded: boolean; unloaded: boolean }> {
+    const k = key(projectId, agentId, folder.id);
+    const own = !(await isSwitchedOff(folder.dir));
+    if (own && all) {
+      const current = this.loaded.get(k);
+      if (current && current.folder.revision === folder.revision) {
+        return {
+          info: this.info(projectId, agentId, folder.id, current),
+          loaded: false,
+          unloaded: false,
+        };
+      }
+      try {
+        const fresh = await this.load(projectId, agentId, folder);
+        return {
+          info: this.info(projectId, agentId, folder.id, fresh),
+          loaded: true,
+          unloaded: false,
+        };
+      } catch (err) {
+        if (!(err instanceof WorkbenchDisabled)) throw err;
+      }
+    }
+    // A load that started before the switch went off still lands; it is let go with the rest.
+    await this.loading.get(k)?.catch(() => undefined);
+    const unloaded = this.unload(k);
+    const info = this.idleInfo(
+      projectId,
+      agentId,
+      folder,
+      !(await isSwitchedOff(folder.dir)),
+      await readAppCenterManifest(folder.dir, folder.id),
+    );
+    return { info, loaded: false, unloaded };
+  }
+
+  /** Lets go of a loaded instance — its tree, and with it its subscriptions — and a pending reload. */
+  private unload(k: string): boolean {
+    const t = this.pending.get(k);
+    if (t) clearTimeout(t);
+    this.pending.delete(k);
+    const loaded = this.loaded.get(k);
+    if (!loaded) return false;
+    loaded.tree?.dispose();
+    this.loaded.delete(k);
+    return true;
   }
 
   /**
@@ -630,11 +917,21 @@ export class WorkbenchService implements Workbenches {
       .catch(() => undefined)
       .then(async () => {
         const current = (await readFolder(folder.dir, folder.id)) ?? folder;
+        // Checked in the queue, after the loads before it: a switch turned off since this was
+        // asked for is what wins (setEnabled waits for every load queued before its marker).
+        if (!(await this.runs(projectId, agentId, current))) throw new WorkbenchDisabled(folder.id);
         if (this.loading.get(k) === run) this.loadingRevision.set(k, current.revision);
         return this.loadNow(projectId, agentId, current);
       });
     this.loading.set(k, run);
     this.loadingRevision.set(k, folder.revision);
+    // Once per run: a caller that shares the run above hears nothing new.
+    this.publish(projectId, {
+      type: "workbench_building",
+      projectId,
+      agentId,
+      workbenchId: folder.id,
+    });
     void run
       .finally(() => {
         if (this.loading.get(k) === run) {
@@ -662,6 +959,8 @@ export class WorkbenchService implements Workbenches {
     let subscriptions: WorkbenchSubscriptions | null = null;
     /** Its compiled pages, emitted aside until the load has succeeded. */
     let pages: UiBuild | null = null;
+    // Read whether or not the load succeeds: what the files declare is not the serving instance's.
+    const appCenter = await readAppCenterManifest(folder.dir, folder.id);
     try {
       const manifests = await readManifests(folder);
       const tabs = contributedTabs(manifests, uiBase(projectId, agentId, folder.id));
@@ -741,6 +1040,7 @@ export class WorkbenchService implements Workbenches {
         loadedAt,
         error: null,
         uiBuild: pages === null ? null : folder.revision,
+        appCenter,
       };
       // Recording the version is bookkeeping around a load that has already succeeded, so it
       // cannot be inside the try that decides whether the load failed: a repository that
@@ -793,6 +1093,7 @@ export class WorkbenchService implements Workbenches {
         loadedAt: previous?.loadedAt ?? loadedAt,
         error,
         uiBuild: previous?.uiBuild ?? null,
+        appCenter,
       };
     }
     if (this.disposed) {
@@ -804,10 +1105,10 @@ export class WorkbenchService implements Workbenches {
       checkedAt: loadedAt,
       error: next.error,
       tabs: next.tabs.map((tab) => tab.key),
-      hints: loadHints(folder.uiRev, next.tabs, next.error),
+      hints: hintsOf(next),
     });
     this.loaded.set(k, next);
-    this.notify(projectId, agentId, this.info(folder.id, next));
+    this.notify(projectId, agentId, this.info(projectId, agentId, folder.id, next));
     return next;
   }
 
@@ -887,12 +1188,7 @@ export class WorkbenchService implements Workbenches {
 
   /** Drops a workbench's instance and tells the Project's users it is gone. */
   private forget(projectId: string, agentId: string, workbenchId: string): void {
-    const k = key(projectId, agentId, workbenchId);
-    const t = this.pending.get(k);
-    if (t) clearTimeout(t);
-    this.pending.delete(k);
-    this.loaded.get(k)?.tree?.dispose();
-    this.loaded.delete(k);
+    this.unload(key(projectId, agentId, workbenchId));
     this.publish(projectId, { type: "workbench_removed", projectId, agentId, workbenchId });
   }
 
@@ -994,6 +1290,8 @@ export class WorkbenchService implements Workbenches {
             this.forget(projectId, agentId, workbenchId);
             return;
           }
+          // Switched off between the check and the load: nothing to do.
+          if (err instanceof WorkbenchDisabled) return;
           this.log.line(`[workbenches] ${k}: ${messageOf(err)}`);
         });
       }, WATCH_SETTLE_MS),
@@ -1002,6 +1300,23 @@ export class WorkbenchService implements Workbenches {
 }
 
 export class WorkbenchNotFound extends Error {}
+
+/** A load's hints: the ones about what it serves, then the App Center declaration's. */
+function hintsOf(l: Loaded): string[] {
+  const hints = loadHints(l.folder.uiRev, l.tabs, l.error);
+  return l.appCenter.hint === null ? hints : [...hints, l.appCenter.hint];
+}
+
+/** A workbench that exists but does not run: its own switch or the Agent's is off. */
+export class WorkbenchDisabled extends HttpError {
+  constructor(workbenchId: string) {
+    super(
+      409,
+      "workbench_disabled",
+      `The workbench ${workbenchId} is turned off; turn it on in the Agent's settings to use it.`,
+    );
+  }
+}
 
 /** Where a workbench's `ui/` is served from (./routes.ts). */
 function uiBase(projectId: string, agentId: string, workbenchId: string): string {

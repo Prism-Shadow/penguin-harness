@@ -4,7 +4,7 @@
  * the sections, the router link (`renderLink`) and, for a mobile drawer, `onNavigate` to close it.
  */
 import type { ReactNode } from "react";
-import type { SiteLinkProps } from "./site-header";
+import type { SiteLinkProps } from "./site-link";
 import { SiteSearchButton } from "./site-search";
 
 export interface SiteSidebarItem {

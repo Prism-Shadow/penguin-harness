@@ -4,7 +4,9 @@
 import "./warnings.js";
 import "dotenv/config";
 import { cli } from "./index.js";
+import { exitBelowNodeFloor } from "./node-floor-check.js";
 
+exitBelowNodeFloor();
 cli(process.argv.slice(2))
   .then((code) => {
     process.exitCode = code;

@@ -18,7 +18,7 @@
  */
 import { DEFAULT_CHAT_THINKING_LEVELS } from "@prismshadow/penguin-core";
 import type { DefaultChatThinkingLevel, ThinkingLevelName } from "@prismshadow/penguin-core";
-import type { Messages } from "./i18n.js";
+import type { Messages } from "@prismshadow/penguin-server/cli";
 
 /** Parses one level token (trimmed, case-insensitive); null when it is not a selectable level. */
 export function parseThinkingLevel(text: string): DefaultChatThinkingLevel | null {
@@ -65,7 +65,7 @@ export interface ThinkingConfigSource {
 /**
  * The level a Session created without an explicit `thinkingLevel` runs at — the SAME chain
  * core resolves at Session creation (core/src/agent.ts `configuredThinkingLevel`, the single
- * rule; the web draft picker mirrors it too in features/chat/thinking-level.ts — keep the
+ * rule; the web draft picker mirrors it too in features/model-picker/thinking-level.ts — keep the
  * sites in sync): the Agent's explicit `model.thinking_level` > the Project's
  * `default_chat.thinking_level` > the built-in "medium". Used only for DISPLAY (`/thinking`
  * with no argument); runs without an override simply omit the parameter so core's own

@@ -14,6 +14,9 @@ export default defineConfig({
     // A row's effective connection and credential rule: no Node dependency and no catalog
     // data, so the Web App bundles the same answers the server and the CLI compute.
     "src/state/model-connection.ts",
+    // The CLI command contract: the data and code halves of one `penguin` command,
+    // shared by the CLI's own table and the server's plugin slot.
+    "src/cli/index.ts",
     // Window/threshold arithmetic plus its two defaults: pure numbers, no Node dependency, so
     // the web app can bundle the compaction-threshold derivation its context ring fills against.
     "src/llm/context-limits.ts",

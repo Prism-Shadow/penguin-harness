@@ -6,18 +6,15 @@
  * mounted through its collapse — so the most recently shown slot wins.
  *
  * With the slot comes what the layer needs to place a page over it: the ancestors that clip it,
- * and whether it sits inside a fullscreen dock surface, in which case the page must float above
- * the surface's layer rather than under it. Both are read from the DOM once per slot and cached;
- * the one thing that changes them while a slot stays mounted is the surface lifting off to cover
- * the page or returning (the dock's content box becomes `fixed` and its placeholder stops
- * clipping it), and the dock drops the caches at each step of that flip (`invalidateSlotClips`).
+ * read from the DOM once per slot and cached. The one thing that changes them while a slot stays
+ * mounted is the surface lifting off to fullscreen or returning (the dock's content box becomes
+ * `fixed` and its placeholder stops clipping it), and the dock drops the caches at each step of
+ * that flip (`invalidateSlotClips`).
  */
 
 interface SlotGeometry {
   /** Ancestors that clip the slot, innermost first. */
   clips: HTMLElement[];
-  /** The slot is inside a fullscreen dock surface: its page paints above the surface's layer. */
-  lifted: boolean;
 }
 
 interface SlotEntry {
@@ -79,7 +76,7 @@ export function hasVisibleSlot(): boolean {
 }
 
 /**
- * Drops every slot's cached clip chain and lift flag, to be re-read from the DOM on next use.
+ * Drops every slot's cached clip chain, to be re-read from the DOM on next use.
  * Called by the dock surface after the DOM has changed around the slots — at each step of its
  * fullscreen phase (lifting, full, returning, back in the flow), once that step has been
  * committed: the attribute and the fixed box exist only from the commit on, and the box stays
@@ -108,10 +105,7 @@ function clippingAncestors(element: HTMLElement): HTMLElement[] {
 }
 
 function readGeometry(element: HTMLElement): SlotGeometry {
-  return {
-    clips: clippingAncestors(element),
-    lifted: element.closest("[data-fullscreen]") !== null,
-  };
+  return { clips: clippingAncestors(element) };
 }
 
 /** The slot on screen, with what the layer needs to place a page over it. */
@@ -120,8 +114,7 @@ export interface VisibleSlot extends SlotGeometry {
 }
 
 /**
- * The slot on screen, with the ancestors that clip it and whether its page must float above the
- * fullscreen layer; null when no browser panel is showing.
+ * The slot on screen, with the ancestors that clip it; null when no browser panel is showing.
  */
 export function visibleSlot(): VisibleSlot | null {
   let best: SlotEntry | null = null;
@@ -130,5 +123,5 @@ export function visibleSlot(): VisibleSlot | null {
   }
   if (best === null) return null;
   best.geometry ??= readGeometry(best.element);
-  return { element: best.element, clips: best.geometry.clips, lifted: best.geometry.lifted };
+  return { element: best.element, clips: best.geometry.clips };
 }

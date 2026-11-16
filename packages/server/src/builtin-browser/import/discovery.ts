@@ -9,7 +9,8 @@
  * same profile id from two directories — typically one migrated copy of the other. The one
  * whose stores changed most recently is kept: that is the copy in use.
  */
-import fs from "node:fs";
+import type { Stats } from "node:fs";
+import fs from "node:fs/promises";
 import path from "node:path";
 import type { BuiltinBrowserImportSource } from "../../api/types.js";
 import {
@@ -33,48 +34,59 @@ export interface DiscoveredProfile {
 
 const PROFILE_DIR = /^(Default|Profile \d+)$/;
 
-export function discoverProfiles(env: ImportEnv): DiscoveredProfile[] {
-  const found = [
-    ...CHROMIUM_BROWSERS.flatMap((browser) =>
-      chromiumRoots(browser, env).flatMap((root) => chromiumProfiles(browser, root)),
-    ),
-    ...firefoxRoots(env).flatMap((root) => firefoxProfiles(root)),
-  ];
+export async function discoverProfiles(env: ImportEnv): Promise<DiscoveredProfile[]> {
+  const found: DiscoveredProfile[] = [];
+  for (const browser of CHROMIUM_BROWSERS) {
+    for (const root of chromiumRoots(browser, env)) {
+      found.push(...(await chromiumProfiles(browser, root)));
+    }
+  }
+  for (const root of firefoxRoots(env)) found.push(...(await firefoxProfiles(root)));
   return newestPerId(found);
 }
 
-export function findProfile(sourceId: string, env: ImportEnv): DiscoveredProfile | undefined {
-  return discoverProfiles(env).find((p) => p.source.id === sourceId);
+export async function findProfile(
+  sourceId: string,
+  env: ImportEnv,
+): Promise<DiscoveredProfile | undefined> {
+  return (await discoverProfiles(env)).find((p) => p.source.id === sourceId);
 }
 
 // ---------------------------------------------------------------------------
 // Chromium family
 // ---------------------------------------------------------------------------
 
-function chromiumProfiles(browser: ChromiumBrowser, root: string): DiscoveredProfile[] {
-  if (!isDirectory(root)) return [];
-  const names = profileNames(root);
+async function chromiumProfiles(
+  browser: ChromiumBrowser,
+  root: string,
+): Promise<DiscoveredProfile[]> {
+  if (!(await isDirectory(root))) return [];
+  const names = await profileNames(root);
   const dirs = new Set(names.keys());
-  for (const entry of readDir(root)) if (PROFILE_DIR.test(entry)) dirs.add(entry);
-  const profiles = [...dirs]
-    .sort(byProfileOrder)
-    .map((dir) => chromiumProfile(browser, root, dir, path.join(root, dir), names.get(dir)))
-    .filter((p): p is DiscoveredProfile => p !== null);
+  for (const entry of await readDir(root)) if (PROFILE_DIR.test(entry)) dirs.add(entry);
+  const profiles: DiscoveredProfile[] = [];
+  for (const dir of [...dirs].sort(byProfileOrder)) {
+    const profile = await chromiumProfile(browser, root, dir, path.join(root, dir), names.get(dir));
+    if (profile !== null) profiles.push(profile);
+  }
   if (profiles.length > 0) return profiles;
   // Opera's layout: the user-data directory is the one profile.
-  const single = chromiumProfile(browser, root, "Default", root, undefined);
+  const single = await chromiumProfile(browser, root, "Default", root, undefined);
   return single === null ? [] : [single];
 }
 
-function chromiumProfile(
+async function chromiumProfile(
   browser: ChromiumBrowser,
   root: string,
   profile: string,
   dir: string,
   displayName: string | undefined,
-): DiscoveredProfile | null {
-  const cookiesFile = firstFile([path.join(dir, "Network", "Cookies"), path.join(dir, "Cookies")]);
-  const historyFile = firstFile([path.join(dir, "History")]);
+): Promise<DiscoveredProfile | null> {
+  const cookiesFile = await firstFile([
+    path.join(dir, "Network", "Cookies"),
+    path.join(dir, "Cookies"),
+  ]);
+  const historyFile = await firstFile([path.join(dir, "History")]);
   if (cookiesFile === null && historyFile === null) return null;
   return {
     source: {
@@ -94,9 +106,9 @@ function chromiumProfile(
 }
 
 /** `Local State`'s profile directory → display name map; empty when the file is missing or unreadable. */
-function profileNames(root: string): Map<string, string> {
+async function profileNames(root: string): Promise<Map<string, string>> {
   const names = new Map<string, string>();
-  const state = readJson(path.join(root, "Local State")) as {
+  const state = (await readJson(path.join(root, "Local State"))) as {
     profile?: { info_cache?: Record<string, { name?: unknown }> };
   } | null;
   for (const [dir, info] of Object.entries(state?.profile?.info_cache ?? {})) {
@@ -123,30 +135,32 @@ function byProfileOrder(a: string, b: string): number {
 // Firefox
 // ---------------------------------------------------------------------------
 
-function firefoxProfiles(root: string): DiscoveredProfile[] {
-  const ini = readText(path.join(root, "profiles.ini"));
+async function firefoxProfiles(root: string): Promise<DiscoveredProfile[]> {
+  const ini = await readText(path.join(root, "profiles.ini"));
   if (ini === null) return [];
   const sections = parseIni(ini);
   // The profile an install starts with: `Default=` of an [Install…] section, else Default=1.
   const installDefaults = new Set(
     sections.filter((s) => s.name.startsWith("Install")).map((s) => s.values.Default ?? ""),
   );
-  const profiles = sections
-    .filter((s) => /^Profile\d+$/.test(s.name) && s.values.Path)
-    .map((s) => {
-      const rel = s.values.Path!;
-      const isDefault = installDefaults.has(rel) || s.values.Default === "1";
-      const dir = s.values.IsRelative === "0" ? rel : path.join(root, ...rel.split("/"));
-      return { profile: firefoxProfile(dir, s.values.Name), isDefault };
-    });
+  const profiles: Array<{ profile: DiscoveredProfile | null; isDefault: boolean }> = [];
+  for (const section of sections.filter((s) => /^Profile\d+$/.test(s.name) && s.values.Path)) {
+    const rel = section.values.Path!;
+    const isDefault = installDefaults.has(rel) || section.values.Default === "1";
+    const dir = section.values.IsRelative === "0" ? rel : path.join(root, ...rel.split("/"));
+    profiles.push({ profile: await firefoxProfile(dir, section.values.Name), isDefault });
+  }
   return [...profiles.filter((p) => p.isDefault), ...profiles.filter((p) => !p.isDefault)].flatMap(
     (p) => (p.profile === null ? [] : [p.profile]),
   );
 }
 
-function firefoxProfile(dir: string, name: string | undefined): DiscoveredProfile | null {
-  const cookiesFile = firstFile([path.join(dir, "cookies.sqlite")]);
-  const historyFile = firstFile([path.join(dir, "places.sqlite")]);
+async function firefoxProfile(
+  dir: string,
+  name: string | undefined,
+): Promise<DiscoveredProfile | null> {
+  const cookiesFile = await firstFile([path.join(dir, "cookies.sqlite")]);
+  const historyFile = await firstFile([path.join(dir, "places.sqlite")]);
   if (cookiesFile === null && historyFile === null) return null;
   const profile = path.basename(dir);
   return {
@@ -193,11 +207,11 @@ function parseIni(text: string): IniSection[] {
 // ---------------------------------------------------------------------------
 
 /** Keeps one profile per id: the one whose stores were written most recently. */
-function newestPerId(profiles: DiscoveredProfile[]): DiscoveredProfile[] {
+async function newestPerId(profiles: DiscoveredProfile[]): Promise<DiscoveredProfile[]> {
   const byId = new Map<string, DiscoveredProfile>();
   for (const profile of profiles) {
     const held = byId.get(profile.source.id);
-    if (held === undefined || lastWrite(profile) > lastWrite(held)) {
+    if (held === undefined || (await lastWrite(profile)) > (await lastWrite(held))) {
       byId.set(profile.source.id, profile);
     }
   }
@@ -205,49 +219,54 @@ function newestPerId(profiles: DiscoveredProfile[]): DiscoveredProfile[] {
   return [...byId.values()];
 }
 
-function lastWrite(profile: DiscoveredProfile): number {
+async function lastWrite(profile: DiscoveredProfile): Promise<number> {
   return Math.max(
     0,
-    ...[profile.cookiesFile, profile.historyFile].map((file) =>
-      file === null ? 0 : (statOrNull(file)?.mtimeMs ?? 0),
-    ),
+    ...(await Promise.all(
+      [profile.cookiesFile, profile.historyFile].map(async (file) =>
+        file === null ? 0 : ((await statOrNull(file))?.mtimeMs ?? 0),
+      ),
+    )),
   );
 }
 
-function firstFile(candidates: string[]): string | null {
-  return candidates.find((file) => statOrNull(file)?.isFile() === true) ?? null;
+async function firstFile(candidates: string[]): Promise<string | null> {
+  for (const file of candidates) {
+    if ((await statOrNull(file))?.isFile() === true) return file;
+  }
+  return null;
 }
 
-function isDirectory(dir: string): boolean {
-  return statOrNull(dir)?.isDirectory() === true;
+async function isDirectory(dir: string): Promise<boolean> {
+  return (await statOrNull(dir))?.isDirectory() === true;
 }
 
-function statOrNull(file: string): fs.Stats | null {
+async function statOrNull(file: string): Promise<Stats | null> {
   try {
-    return fs.statSync(file);
+    return await fs.stat(file);
   } catch {
     return null;
   }
 }
 
-function readDir(dir: string): string[] {
+async function readDir(dir: string): Promise<string[]> {
   try {
-    return fs.readdirSync(dir);
+    return await fs.readdir(dir);
   } catch {
     return [];
   }
 }
 
-function readText(file: string): string | null {
+async function readText(file: string): Promise<string | null> {
   try {
-    return fs.readFileSync(file, "utf8");
+    return await fs.readFile(file, "utf8");
   } catch {
     return null;
   }
 }
 
-function readJson(file: string): unknown {
-  const text = readText(file);
+async function readJson(file: string): Promise<unknown> {
+  const text = await readText(file);
   if (text === null) return null;
   try {
     return JSON.parse(text) as unknown;
