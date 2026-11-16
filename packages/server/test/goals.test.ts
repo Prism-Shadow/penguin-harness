@@ -10,6 +10,8 @@
  * - An Agent without the goal hook package is a 409 goal_plugin_not_installed before its
  *   Session is loaded; with the package on disk but no goal start hook in the Session, the
  *   same 409 comes after the load.
+ * - A start hook that fails (the sandbox refusing its script included) is a 409
+ *   goal_start_failed naming the reason; the Session stays idle and takes the next Task.
  * - A throw after the terminal event publishes no contradicting outcome; a stream that ends
  *   without the terminal event closes the goal as aborted.
  *
@@ -360,6 +362,28 @@ describe("SessionManager.startGoal", () => {
     expect(loads.count).toBe(1);
     expect(manager.statusOf(ROW.sessionId)).toBe("idle");
     await removeTempRoot(root);
+  });
+
+  it("a start hook that fails is a 409 goal_start_failed with its reason, and the Session stays usable", async () => {
+    const session = goalFakeSession(() => []);
+    // The WSL backend's refusal, as core reports a confiner that throws.
+    session.runUserPromptHook = async () => {
+      throw new Error("sandbox: penguin-wsl cannot run C:\\hooks\\goal\\start.mjs");
+    };
+    const manager = makeManager(session);
+    const start = manager.startGoal(ROW.sessionId, {
+      messages: [userText("obj")],
+      objective: "obj",
+      budget: -1,
+    });
+    await expect(start).rejects.toMatchObject({ status: 409, code: "goal_start_failed" });
+    await expect(start).rejects.toThrow(
+      "sandbox: penguin-wsl cannot run C:\\hooks\\goal\\start.mjs",
+    );
+    expect(manager.statusOf(ROW.sessionId)).toBe("idle");
+    await manager.startTask(ROW.sessionId, [userText("x")]);
+    await waitFor(() => manager.statusOf(ROW.sessionId) === "idle");
+    expect(session.runs).toHaveLength(1);
   });
 
   it("a throw after the terminal event does not publish a contradicting outcome", async () => {

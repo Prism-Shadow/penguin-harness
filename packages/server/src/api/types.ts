@@ -3017,7 +3017,8 @@ export interface TaskCreateRequest {
    * them) and the Session's installed `goal` hook package drives round after round until the
    * goal reaches a terminal state. `budget` is the token budget (uncached input + output);
    * omitted or -1 = unlimited. Requires the goal plugin installed on the Agent — 409
-   * `goal_plugin_not_installed` otherwise.
+   * `goal_plugin_not_installed` otherwise; a start hook that fails (its script errs or times
+   * out, or the sandbox refuses to run it) is 409 `goal_start_failed` with the reason.
    */
   goal?: { budget?: number };
 }
