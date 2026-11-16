@@ -15,7 +15,6 @@
  */
 import type { CompactionMode, AmspRecord, SessionSource, ToolCallPayload } from "@prismshadow/amsp";
 import type {
-  ApprovalReason as CoreApprovalReason,
   ElidedBody,
   MCPServerConfig,
   ThinkingLevelName,
@@ -106,8 +105,20 @@ import type {
   UsageResponse,
   UsageSeriesPoint,
 } from "@prismshadow/penguin-library-observability";
+import type {
+  SessionStatus,
+  PendingSteeringInfo,
+  PendingFollowUpInfo,
+  SubagentRuntimeInfo,
+  SessionSandbox,
+  SessionSandboxMode,
+  SessionSandboxNetwork,
+  SessionSandboxPreset,
+  UnavailableSandboxBackend,
+  ApprovalReason,
+  ApprovalMode,
+} from "@prismshadow/penguin-library-sessions";
 import type { UserInfo } from "@prismshadow/penguin-library-identity";
-import type { ApprovalMode } from "@prismshadow/penguin-library-sessions";
 import type { OrgCalendarOutcome } from "@prismshadow/penguin-library-organization";
 
 // ---------------------------------------------------------------------------
@@ -130,8 +141,6 @@ export type ErrorDetails = Readonly<Record<string, string>>;
 /** Session approval mode (reuses the CLI enum). */
 
 
-/** Session run status: idle / Task in progress / compacting. */
-export type SessionStatus = "idle" | "running" | "compacting";
 
 /**
  * What kind of conversation a Session is (`user` / `api` / `schedule` / `subagent` / `cli` / `company` / `workbench`):
@@ -1243,7 +1252,7 @@ export interface CommandPolicyRuleDto {
  * `ask` rule matched the call (`rule` is its name). Core's own type, the reason its policy
  * wrapper hands the approve callback, carried to the card as it is.
  */
-export type ApprovalReason = CoreApprovalReason;
+// ApprovalReason is the sessions library's alias of core's CoreApprovalReason (imported and re-exported below).
 
 // ---------------------------------------------------------------------------
 // Vault environment variables (Agent-level: agent_state/.vault.toml)
@@ -1675,6 +1684,16 @@ export type {
   UsageSeriesPoint,
   UserInfo,
   ApprovalMode,
+  SessionStatus,
+  PendingSteeringInfo,
+  PendingFollowUpInfo,
+  SubagentRuntimeInfo,
+  SessionSandbox,
+  SessionSandboxMode,
+  SessionSandboxNetwork,
+  SessionSandboxPreset,
+  UnavailableSandboxBackend,
+  ApprovalReason,
   OrgCalendarOutcome,
   DefaultModelOffer,
   EndpointModelListRequest,
@@ -1887,112 +1906,10 @@ export interface MemoryImportResponse {
   indexWritten: boolean;
 }
 
-// ---------------------------------------------------------------------------
-// Session
-// ---------------------------------------------------------------------------
 
-/** How far a Session's commands may reach the filesystem (the sandbox's confinement mode). */
-export type SessionSandboxMode = "read-only" | "workspace-write" | "danger-full-access";
 
-/**
- * The part of a Session's sandbox policy a person picks from the composer: the filesystem
- * mode and the network level. The Session keeps its own copy — taken from the server's
- * Sandbox settings when it was created — so editing those settings only changes what NEW
- * Sessions start with.
- */
-export interface SessionSandbox {
-  mode: SessionSandboxMode;
-  /** `open` = unrestricted, `local` = only the host's localhost, `none` = no network. */
-  network: SessionSandboxNetwork;
-  /**
-   * Response only, ignored in requests: whether a sandbox backend on this server can enforce
-   * the `read-only` and `workspace-write` modes. False on a deployment with no backend
-   * installed, where either mode would refuse every command: the composer shows them greyed
-   * out, saying no backend is installed.
-   */
-  confinementSupported?: boolean;
-  /** Response only, ignored in requests: the same for the `none` network level. */
-  noNetworkSupported?: boolean;
-  /**
-   * Response only, ignored in requests: whether a sandbox backend on this server can enforce
-   * the `local` level. When false the composer shows it greyed out, and picking it is refused
-   * (400 `sandbox_unsupported`).
-   */
-  localNetworkSupported?: boolean;
-  /** Response only, ignored in requests: whether a backend here can enforce `masksPaths`. */
-  maskPathsSupported?: boolean;
-  /**
-   * Response only, ignored in requests: true when this policy hides paths (the Sandbox card's
-   * masked paths, kept by every pick). Where `maskPathsSupported` is false, every level then
-   * refuses every command, and the composer says so.
-   */
-  masksPaths?: boolean;
-  /**
-   * Response only, ignored in requests: the names of the sandbox backends in use here, which the
-   * composer names when a level is beyond what they enforce. Absent with none in use.
-   */
-  backendsInUse?: string[];
-  /**
-   * Response only, ignored in requests: the sandbox backends that are enabled here but failed
-   * to load or failed their check (a WSL distro not set up, a wrong program path), each with
-   * why. A backend for another platform is not listed. With none mounted and one listed, the
-   * composer marks the confining levels unavailable and gives the first one's reason.
-   */
-  unavailableBackends?: UnavailableSandboxBackend[];
-  /**
-   * Response only, ignored in requests: the server's sandbox presets (the Sandbox card's table),
-   * in table order, disabled rows included. The composer lists the enabled ones and names the
-   * Session's level by the first row matching its mode, network and approval mode. A server
-   * that does not report it gets the composer's built-in table.
-   */
-  presets?: SessionSandboxPreset[];
-  /**
-   * Response only, ignored in requests: true when this Session's policy holds something the
-   * presets do not show — masked paths, or the temp directory not writable.
-   */
-  advanced?: boolean;
-  /**
-   * Response only, chat defaults only: the approval mode a new Session starts with when its
-   * request names none — the Sandbox card's default preset's, while the switch is on. Absent:
-   * the server's own fallback (`allow-all`).
-   */
-  defaultApprovalMode?: ApprovalMode;
-  /**
-   * Response only, ignored in requests: the Sandbox card's switch on this server — whether new
-   * Sessions start confined. Off, the composer offers the approval modes alone (a Session keeps
-   * its own policy either way). A server that does not report it is read as on.
-   */
-  switchOn?: boolean;
-}
 
-/** One sandbox preset: a named mode, network level and approval mode. */
-export interface SessionSandboxPreset {
-  id: string;
-  /** The name an administrator gave it, or its declared English name. */
-  name: string;
-  /** Its declared Chinese name, while it has not been renamed. */
-  nameZh?: string;
-  /** Whether the composer's menu lists it. */
-  enabled: boolean;
-  mode: SessionSandboxMode;
-  network: SessionSandboxNetwork;
-  approvalMode: ApprovalMode;
-  /**
-   * Response-only: its file mode or network is wider than the server's sandbox settings (the
-   * ceiling for non-admins), so a non-admin's pick of it is refused with `403 sandbox_forbidden`.
-   * The same comparison as that refusal; absent when it is within them.
-   */
-  aboveCeiling?: true;
-}
 
-/** An enabled sandbox backend that is not in use on this server, and why. */
-export interface UnavailableSandboxBackend {
-  name: string;
-  reason: string;
-}
-
-/** The network levels, widest first. */
-export type SessionSandboxNetwork = "open" | "local" | "none";
 
 export interface SessionInfo {
   sessionId: string;
@@ -3013,56 +2930,8 @@ export interface SteerRequest {
   files?: { fileName: string; dataUrl: string }[];
 }
 
-/**
- * One steering message queued on the server but not yet delivered to the model (delivery
- * happens at the next input assembly between turns). Carried on `task_state` events and the
- * SSE subscribe snapshot so the composer's "steering queued" hint — including what was sent —
- * survives reloads; entries leave the list as their `[user_steering]` message appears on the
- * stream, and the whole list drops when the run exits (core discards undelivered steering).
- */
-export interface PendingSteeringInfo {
-  /** Server-assigned id, stable for the entry's queued lifetime: the handle DELETE /steer/:steerId recalls it by. */
-  id: string;
-  /** The message text as accepted (trimmed); may be empty when images/files carry the message. */
-  text: string;
-  /** Number of images that rode along. */
-  images: number;
-  /** Number of file attachments that rode along. */
-  files: number;
-}
 
-/**
- * One follow-up task queued with `queueIfBusy` but not yet auto-started. Carried on
- * `task_state` events and the SSE subscribe snapshot (like `pendingSteering`) so the
- * composer can show each queued message's content with a recall affordance; entries leave
- * the list when they auto-start on idle — or when DELETE /follow-ups/:followUpId recalls one.
- */
-export interface PendingFollowUpInfo {
-  /** Server-assigned id, stable for the entry's queued lifetime: the handle DELETE /follow-ups/:followUpId recalls it by. */
-  id: string;
-  /** The queued input's text parts, joined; may be empty when images/files carry the message. */
-  text: string;
-  /** Number of images in the queued input. */
-  images: number;
-  /** Number of file attachments in the queued input. */
-  files: number;
-  /** An interrupt waiting for the run it aborted to settle: it starts first, and no other interrupt can move it. */
-  interrupt?: true;
-}
 
-/**
- * One live subagent child of a session's runtime, carried on `task_state` events and the SSE
- * subscribe snapshot: the child Session id (the origin hop the stream already correlates by),
- * its background registry handle (null while it only lives inside a foreground collect
- * window), and whether a round is currently running. Only an ACTIVE parent runtime reports
- * children — after a server restart the in-process children are gone, and the empty list is
- * the truth.
- */
-export interface SubagentRuntimeInfo {
-  sessionId: string;
-  subagentId: string | null;
-  running: boolean;
-}
 
 /**
  * Response of POST /api/sessions/:sessionId/subagents/:childSessionId/message — a user input

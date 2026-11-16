@@ -8,9 +8,145 @@ import type { SessionRow } from "./repos/sessions.js";
 import type { ThinkingLevelName } from "@prismshadow/penguin-core";
 import type { SandboxSettings } from "@prismshadow/penguin-core/plugin";
 import type { ScheduleStateRow } from "./repos/schedules.js";
+import type { ApprovalReason as CoreApprovalReason } from "@prismshadow/penguin-core/interfaces";
 
 /** From packages/server: ApprovalMode (was api/types.ts). The contract names it, so the type lives with the contract. */
 export type ApprovalMode = "allow-all" | "deny-all" | "read-only" | "always-ask";
+
+// ---------------------------------------------------------------------------
+// Session runtime vocabulary (was api/types.ts's; the ServerEvent names them,
+// so the words live with the contract)
+// ---------------------------------------------------------------------------
+
+/** The run state a Session's row flips through. */
+export type SessionStatus = "idle" | "running" | "compacting";
+
+export interface PendingSteeringInfo {
+  /** Server-assigned id, stable for the entry's queued lifetime: the handle DELETE /steer/:steerId recalls it by. */
+  id: string;
+  /** The message text as accepted (trimmed); may be empty when images/files carry the message. */
+  text: string;
+  /** Number of images that rode along. */
+  images: number;
+  /** Number of file attachments that rode along. */
+  files: number;
+}
+
+export interface PendingFollowUpInfo {
+  /** Server-assigned id, stable for the entry's queued lifetime: the handle DELETE /follow-ups/:followUpId recalls it by. */
+  id: string;
+  /** The queued input's text parts, joined; may be empty when images/files carry the message. */
+  text: string;
+  /** Number of images in the queued input. */
+  images: number;
+  /** Number of file attachments in the queued input. */
+  files: number;
+  /** An interrupt waiting for the run it aborted to settle: it starts first, and no other interrupt can move it. */
+  interrupt?: true;
+}
+
+export interface SubagentRuntimeInfo {
+  sessionId: string;
+  subagentId: string | null;
+  running: boolean;
+}
+
+export type SessionSandboxMode = "read-only" | "workspace-write" | "danger-full-access";
+
+export type SessionSandboxNetwork = "open" | "local" | "none";
+
+export interface UnavailableSandboxBackend {
+  name: string;
+  reason: string;
+}
+
+export interface SessionSandboxPreset {
+  id: string;
+  /** The name an administrator gave it, or its declared English name. */
+  name: string;
+  /** Its declared Chinese name, while it has not been renamed. */
+  nameZh?: string;
+  /** Whether the composer's menu lists it. */
+  enabled: boolean;
+  mode: SessionSandboxMode;
+  network: SessionSandboxNetwork;
+  approvalMode: ApprovalMode;
+  /**
+   * Response-only: its file mode or network is wider than the server's sandbox settings (the
+   * ceiling for non-admins), so a non-admin's pick of it is refused with `403 sandbox_forbidden`.
+   * The same comparison as that refusal; absent when it is within them.
+   */
+  aboveCeiling?: true;
+}
+
+export interface SessionSandbox {
+  mode: SessionSandboxMode;
+  /** `open` = unrestricted, `local` = only the host's localhost, `none` = no network. */
+  network: SessionSandboxNetwork;
+  /**
+   * Response only, ignored in requests: whether a sandbox backend on this server can enforce
+   * the `read-only` and `workspace-write` modes. False on a deployment with no backend
+   * installed, where either mode would refuse every command: the composer shows them greyed
+   * out, saying no backend is installed.
+   */
+  confinementSupported?: boolean;
+  /** Response only, ignored in requests: the same for the `none` network level. */
+  noNetworkSupported?: boolean;
+  /**
+   * Response only, ignored in requests: whether a sandbox backend on this server can enforce
+   * the `local` level. When false the composer shows it greyed out, and picking it is refused
+   * (400 `sandbox_unsupported`).
+   */
+  localNetworkSupported?: boolean;
+  /** Response only, ignored in requests: whether a backend here can enforce `masksPaths`. */
+  maskPathsSupported?: boolean;
+  /**
+   * Response only, ignored in requests: true when this policy hides paths (the Sandbox card's
+   * masked paths, kept by every pick). Where `maskPathsSupported` is false, every level then
+   * refuses every command, and the composer says so.
+   */
+  masksPaths?: boolean;
+  /**
+   * Response only, ignored in requests: the names of the sandbox backends in use here, which the
+   * composer names when a level is beyond what they enforce. Absent with none in use.
+   */
+  backendsInUse?: string[];
+  /**
+   * Response only, ignored in requests: the sandbox backends that are enabled here but failed
+   * to load or failed their check (a WSL distro not set up, a wrong program path), each with
+   * why. A backend for another platform is not listed. With none mounted and one listed, the
+   * composer marks the confining levels unavailable and gives the first one's reason.
+   */
+  unavailableBackends?: UnavailableSandboxBackend[];
+  /**
+   * Response only, ignored in requests: the server's sandbox presets (the Sandbox card's table),
+   * in table order, disabled rows included. The composer lists the enabled ones and names the
+   * Session's level by the first row matching its mode, network and approval mode. A server
+   * that does not report it gets the composer's built-in table.
+   */
+  presets?: SessionSandboxPreset[];
+  /**
+   * Response only, ignored in requests: true when this Session's policy holds something the
+   * presets do not show — masked paths, or the temp directory not writable.
+   */
+  advanced?: boolean;
+  /**
+   * Response only, chat defaults only: the approval mode a new Session starts with when its
+   * request names none — the Sandbox card's default preset's, while the switch is on. Absent:
+   * the server's own fallback (`allow-all`).
+   */
+  defaultApprovalMode?: ApprovalMode;
+  /**
+   * Response only, ignored in requests: the Sandbox card's switch on this server — whether new
+   * Sessions start confined. Off, the composer offers the approval modes alone (a Session keeps
+   * its own policy either way). A server that does not report it is read as on.
+   */
+  switchOn?: boolean;
+}
+
+/** The approval vocabulary a decision cites (core's type, aliased here so the contract names it). */
+export type ApprovalReason = CoreApprovalReason;
+
 
 /** SessionIndex: the mechanism SessionsRepo implements. */
 @Interface()
