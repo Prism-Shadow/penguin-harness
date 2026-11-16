@@ -96,6 +96,8 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
   const [tab, setTab] = useState<TicketTab>("record");
   const [handbookPath, setHandbookPath] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  /** The name of a company the reader started; null for the sample week. */
+  const [named, setNamed] = useState<string | null>(null);
   // Bumped each time the reader asks for the lead, so its box takes the focus again.
   const [talkTurn, setTalkTurn] = useState(0);
 
@@ -167,7 +169,8 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
   const waiting = inboxCounts(state).waiting;
   const open =
     pane === "ticket" ? state.tickets.find((ticket) => ticket.id === selected) : undefined;
-  const orgName = W.org;
+  // The sample week is the sample company; one the reader starts is named by their choice.
+  const orgName = named ?? (running ? W.org : W.setup.newOrg);
 
   const sidebar = (
     <SidebarFrame
@@ -213,9 +216,10 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
   if (!running) {
     body = (
       <SetupPage
-        onStart={(mission, parts, settings) =>
-          setState((current) => startCompany(current, mission, parts, settings))
-        }
+        onStart={(name, mission, parts, settings) => {
+          setNamed(name);
+          setState((current) => startCompany(current, mission, parts, settings));
+        }}
       />
     );
   } else if (pane === "lead") {

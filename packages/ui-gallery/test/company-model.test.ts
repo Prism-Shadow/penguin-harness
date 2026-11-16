@@ -12,6 +12,8 @@
  *   as chosen or not at all beside the weekly retrospective, finding only what someone on the
  *   team can do, what is said to the lead goes to the first part, and how-we-work.md is in the
  *   handbook.
+ * - Given a mission the reader wrote, the lead proposes only the parts its words call for, in the
+ *   parts' order, and none for a mission that calls for no part.
  * - Given the lead's first proposals, accepting them all at once does what accepting each does,
  *   and leaves alone one already decided; once every one of them is decided, accepted or not, the
  *   lead says setting up is settled, once, and not before.
@@ -81,7 +83,7 @@ import {
   triageTicket,
   weekState,
 } from "../src/company/model";
-import { PARTS } from "../src/company/fixtures";
+import { PARTS, partsFor } from "../src/company/fixtures";
 import { DEFAULT_SETTINGS } from "../src/company/model";
 import type { CompanyState, Ticket } from "../src/company/model";
 import { inboxViewOf, waitOf } from "../src/company/spec";
@@ -247,6 +249,28 @@ describe("setting a company up", () => {
     expect(get(state, "survey")).toMatchObject({ status: "rejected", unread: false });
     expect(sessionCount(state, "survey")).toBe(0);
     expect(inboxViewOf(get(state, "survey"))).toBe("handled");
+  });
+});
+
+describe("proposing a team for a mission the reader wrote", () => {
+  const keywords = {
+    engineer: ["code", "CI"],
+    writer: ["docs", "digest"],
+    researcher: ["experiment"],
+  };
+
+  it("proposes only the parts the mission's words call for, in the parts' order", () => {
+    expect(partsFor("Maintain the Docs site and send a weekly digest", keywords)).toEqual([
+      "writer",
+    ]);
+    expect(partsFor("Run an experiment, then fix the code it needs", keywords)).toEqual([
+      "engineer",
+      "researcher",
+    ]);
+  });
+
+  it("proposes no part for a mission that calls for none", () => {
+    expect(partsFor("Sell lemonade", keywords)).toEqual([]);
   });
 });
 

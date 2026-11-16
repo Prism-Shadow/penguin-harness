@@ -14,7 +14,7 @@ export const en: Words = {
       round === null ? `${name} · ${role}` : `${name} · ${role} ${round}`,
     pick: "Pick a ticket on the left.",
     notStarted:
-      "The company hasn't started. Say what it does and pick the team, and the lead proposes a few tickets for you to decide.",
+      "The company hasn't started. Set its mission and team, and the lead proposes a few tickets for you to decide.",
     you: "You",
     openMenu: "Open navigation",
   },
@@ -35,13 +35,13 @@ export const en: Words = {
       name: "June Hale",
       title: "Operations",
       duties:
-        "Owns content and community: writes the release notes, the blog and the docs; answers and sorts community questions.",
+        "Owns content and community: writes articles, video scripts, release notes and docs; answers readers and sorts community questions.",
     },
     researcher: {
       name: "Ren Okafor",
       title: "Researcher",
       duties:
-        "Owns evaluation: runs new models on the eval set first, follows the papers, writes it up.",
+        "Owns research: designs experiments, runs evaluations, reads the papers, writes it up.",
     },
     verifier: {
       name: "Theo Park",
@@ -134,36 +134,48 @@ export const en: Words = {
   },
   setup: {
     title: "Start a company",
-    body: "Say what the company does first. The lead proposes a team from that, each employee owning one part. Every step has a default, so you can go straight through.",
-    missions: [
-      {
-        label:
-          "Run PenguinHarness: keep up the code, write the release notes and the blog, answer the community, evaluate new models",
-        why: "One each for engineering, operations and research",
+    body: "Pick the company's broad direction first, then rewrite its mission as you need. The lead proposes a team from the mission, as small as it can be.",
+    templates: {
+      code: {
+        name: "Code upkeep",
+        summary: "Fix defects, triage issues, keep CI green",
+        mission:
+          "Keep up this code repository: read the new issues and CI every day, fix the clear defects, and ship every fix with a test.",
       },
-      {
-        label: "Keep up PenguinHarness's code: fix defects, keep CI green",
-        why: "Engineering only",
+      content: {
+        name: "Content and community",
+        summary: "Write articles and video scripts, answer readers, sum up feedback",
+        mission:
+          "Run content and community: write articles and video scripts from the topic list, check facts and links before publishing, answer readers' questions, and sum up the community's feedback every week.",
       },
-      {
-        label: "Run PenguinHarness's content and community: release notes, blog, answers",
-        why: "Operations only",
+      research: {
+        name: "Research lab",
+        summary: "Fix the metrics, run experiments, write a report or paper",
+        mission:
+          "Do research: fix the evaluation and its metrics first, run one experiment at a time, log every result, keep only the changes that improve it, and write it up as a report or a paper.",
       },
-      {
-        label: "Evaluate models with PenguinHarness: compare them and write it up",
-        why: "Research and operations",
-      },
-    ],
+    },
     own: "Write your own",
-    ownPlaceholder:
-      "Example: run an open-source project, keep up the code, write the docs, answer the community",
+    ownSummary: "Start from one sentence; the lead proposes the team from it",
+    ownName: "My company",
+    newOrg: "New company",
+    mission: "Mission",
+    missionInfo:
+      "One sentence on what the company does. The lead proposes the team and the first tickets from it; you can change it in settings later.",
+    missionPlaceholder:
+      "Example: maintain the docs site for PenguinHarness and publish an update digest every week",
+    keywords: {
+      engineer: ["code", "repo", "defect", "bug", "issue", "CI", "test", "feature"],
+      writer: ["content", "article", "docs", "blog", "video", "community", "reader", "digest"],
+      researcher: ["research", "experiment", "eval", "paper", "model", "data", "study"],
+    },
     team: {
-      title: "One part each",
+      title: "Who the company needs",
       body: (workspace: string) =>
-        `The lead read the workspace, ${workspace}, and proposes these people for what you chose. You can drop any of them, or add one back.`,
+        `The lead read the mission and the workspace, ${workspace}. The ticked ones are who it proposes, as few as it can; add the others when you need them.`,
       lead: "Always on: takes requests, hands out tickets",
       line: (watches: string, read: string) => `Sources: ${watches} · The lead read: ${read}`,
-      none: "Keep at least one part, or no one does the work.",
+      none: "Pick at least one, or no one does the work.",
     },
     parts: {
       engineer: {
@@ -178,12 +190,12 @@ export const en: Words = {
       },
       researcher: {
         name: "Research",
-        watches: "the eval set and newly released models",
+        watches: "experiment logs, the eval set and the papers",
         read: "Two models came out last month and have not been run on the eval set",
       },
     },
     defaults:
-      'Steps 3 to 5 are written to "How we work" in the handbook, which every employee reads before it starts. The company is named after the workspace folder and uses the Project\'s default model. You can change all of this later.',
+      'Steps 3 to 5 are written to "How we work" in the handbook, which every employee reads before it starts. The company is named after the direction you picked and uses the Project\'s default model. You can change all of this later.',
     start: "Start the company",
     steps: {
       mission: "Mission",
@@ -413,10 +425,10 @@ export const en: Words = {
     },
     survey: {
       title: "Take stock of the project",
-      gist: "Read the code, the issues, CI, the docs and the community discussions, and write one page on where it stands.",
+      gist: "Read the workspace and each part's sources, and write one page on where it stands.",
       acceptance: ["One page at most", "For each part, what is most worth doing first"],
       progress: [
-        "Read the issues, CI runs and community discussions of the last 30 days.",
+        "Read the workspace and each part's sources from the last 30 days.",
         "Wrote the page, with what is most worth doing first in each part.",
       ],
       result: "One page on where the project stands, in the handbook.",

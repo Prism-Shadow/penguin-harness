@@ -1,6 +1,6 @@
 /**
- * The sample company runs PenguinHarness itself: its code, its docs, blog and community, and the
- * evaluation of new models, one employee to each part. The sample work it is staged with is
+ * The sample company, a week in, keeps up PenguinHarness: its code, its docs, blog and community,
+ * and the evaluation of new models, one employee to each part. The sample work it is staged with is
  * seventeen tickets' worth of facts that are not
  * language (what kind of thing each is, who does it, the steps its work session takes when the
  * reader lets time pass). Their words are the dictionaries' `tickets`, keyed by the same ids.
@@ -56,15 +56,27 @@ export const PARTS: readonly Part[] = ["engineer", "writer", "researcher"];
 export const WORKSPACE = "~/code/penguin-harness";
 
 /**
- * The missions the setup page suggests, as the parts each needs; their words are the
- * dictionaries' `setup.missions`, in the same order. The first is the sample company's own.
+ * The broad directions the setup page offers a company, as the shipped company mode's example
+ * missions are offered: a name, one line, and a whole mission to start from. Their words are
+ * the dictionaries' `setup.templates`. Each names the fewest parts its mission needs; the reader
+ * adds the others if they want them.
  */
-export const MISSION_PARTS: readonly (readonly Part[])[] = [
-  ["engineer", "writer", "researcher"],
-  ["engineer"],
-  ["writer"],
-  ["researcher", "writer"],
-];
+export const TEMPLATES = ["code", "content", "research"] as const;
+export type TemplateId = (typeof TEMPLATES)[number];
+export const TEMPLATE_PARTS: Record<TemplateId, readonly Part[]> = {
+  code: ["engineer"],
+  content: ["writer"],
+  research: ["researcher"],
+};
+
+/**
+ * The parts a mission the reader wrote calls for, as the lead would read it: each part whose
+ * words (the dictionaries' `setup.keywords`) the mission uses, in the parts' order.
+ */
+export function partsFor(mission: string, keywords: Record<Part, readonly string[]>): Part[] {
+  const said = mission.toLowerCase();
+  return PARTS.filter((part) => keywords[part].some((word) => said.includes(word.toLowerCase())));
+}
 
 /** The task the lead proposes first for each part it staffs, beside its own survey. */
 export const FIRST_TASK: Record<Part, FixtureId> = {

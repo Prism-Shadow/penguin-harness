@@ -33,7 +33,7 @@ export const zh = {
     sessionTab: (name: string, role: string, round: number | null) =>
       round === null ? `${name} · ${role}` : `${name} · ${role} ${round}`,
     pick: "在左栏选一张工单。",
-    notStarted: "公司还没开。定好做什么和团队，主理会提几张工单给你定。",
+    notStarted: "公司还没开。定好使命和团队，主理会提几张工单给你定。",
     you: "你",
     openMenu: "打开导航",
   },
@@ -54,12 +54,12 @@ export const zh = {
     writer: {
       name: "许南星",
       title: "运营",
-      duties: "管内容和社区：写发版说明、博客和文档，回答并整理社区问题。",
+      duties: "管内容和社区：写文章、视频脚本、发版说明和文档，回复读者，整理社区问题。",
     },
     researcher: {
       name: "周以宁",
       title: "研究员",
-      duties: "管评测：新模型先在评测集上跑一遍，跟进相关论文，写成报告。",
+      duties: "管研究：设计实验、跑评测、读论文，写成报告。",
     },
     verifier: {
       name: "林清越",
@@ -143,26 +143,50 @@ export const zh = {
   },
   setup: {
     title: "开一家公司",
-    body: "先说公司做什么。主理据此提出团队，每人管一块。每一步都选好了默认值，可以一路点下一步。",
-    missions: [
-      {
-        label: "运营 PenguinHarness：维护代码、写发版说明和博客、回答社区问题、评测新模型",
-        why: "研发、运营、研究各一人",
+    body: "先选公司的大方向，再按需要改写使命。主理按使命提出团队，人尽量少。",
+    /** The broad directions a company can take: a name, one line, and the mission it fills in. */
+    templates: {
+      code: {
+        name: "代码维护",
+        summary: "修缺陷、整理 issue、守住 CI",
+        mission: "维护这个代码仓库：每天看新 issue 和 CI，修掉明确的缺陷，每个修复都带测试。",
       },
-      { label: "维护 PenguinHarness 的代码：修缺陷、守住 CI", why: "只要研发" },
-      { label: "做 PenguinHarness 的内容和社区：发版说明、博客、答疑", why: "只要运营" },
-      { label: "用 PenguinHarness 做评测研究：对比模型，写成报告", why: "研究和运营" },
-    ],
+      content: {
+        name: "内容运营",
+        summary: "写文章和视频脚本，回复读者，汇总反馈",
+        mission:
+          "运营内容和社区：按选题写文章和视频脚本，发布前核对事实和链接，回复读者的问题，每周汇总一次社区反馈。",
+      },
+      research: {
+        name: "研究实验",
+        summary: "定好指标，跑实验，写成报告或论文",
+        mission:
+          "做研究：先固定评测和指标，再逐个跑实验，结果记进日志，只保留有提升的改动，最后写成报告或论文。",
+      },
+    },
     own: "自己写",
-    ownPlaceholder: "例如：运营一个开源项目，维护代码、写文档、回答社区问题",
+    ownSummary: "从一句使命开始，主理按它提人",
+    /** The company's name when the reader writes their own mission. */
+    ownName: "我的公司",
+    /** The sidebar's name for a company not started yet. */
+    newOrg: "新公司",
+    mission: "使命",
+    missionInfo: "一句话说明公司做什么。主理按它提出团队和第一批工单，之后能在设置里改。",
+    missionPlaceholder: "例如：为 PenguinHarness 维护文档站，并每周发布一期更新摘要",
+    /** Words in a mission that call for a part, for a mission the reader wrote themselves. */
+    keywords: {
+      engineer: ["代码", "仓库", "缺陷", "bug", "issue", "CI", "测试", "功能"],
+      writer: ["内容", "文章", "文档", "博客", "视频", "社区", "读者", "摘要", "运营"],
+      researcher: ["研究", "实验", "评测", "论文", "模型", "数据", "调研"],
+    } satisfies Record<Part, readonly string[]>,
     team: {
-      title: "每人管一块",
+      title: "要哪几个人",
       body: (workspace: string) =>
-        `主理读了工作区 ${workspace}，按你定的事提了这几个人。可以去掉，也可以加回来。`,
+        `主理读了使命和工作区 ${workspace}。勾上的是它提的人，尽量少；其余的需要时再加。`,
       lead: "常驻，接需求、分派工单",
       /** A part's sources, and what the lead read there. */
       line: (watches: string, read: string) => `来源：${watches} · 主理读到：${read}`,
-      none: "至少留一块，公司才有人干活。",
+      none: "至少选一个人，公司才有人干活。",
     },
     parts: {
       engineer: {
@@ -177,12 +201,12 @@ export const zh = {
       },
       researcher: {
         name: "研究",
-        watches: "评测集和新发布的模型",
+        watches: "实验日志、评测集和相关论文",
         read: "上个月新出的两个模型还没在评测集上跑过",
       },
     } satisfies Record<Part, { name: string; watches: string; read: string }>,
     defaults:
-      "第 3 到 5 步的选择会写进手册里的「公司怎么运作」，每个员工开工前都读。公司名取工作区的文件夹名，模型用 Project 默认的。这些之后都能改。",
+      "第 3 到 5 步的选择会写进手册里的「公司怎么运作」，每个员工开工前都读。公司名取所选方向的名字，模型用 Project 默认的。这些之后都能改。",
     start: "开公司",
     steps: {
       mission: "做什么",
@@ -391,12 +415,9 @@ export const zh = {
     },
     survey: {
       title: "摸清项目现状",
-      gist: "读一遍代码、issue、CI、文档和社区讨论，整理一页现状报告。",
+      gist: "读一遍工作区和团队各块的来源，整理一页现状报告。",
       acceptance: ["报告不超过一页", "每一块列出最该先做的事"],
-      progress: [
-        "已看完近 30 天的 issue、CI 记录和社区讨论。",
-        "单页报告写完，每一块列出了最该先做的事。",
-      ],
+      progress: ["已看完工作区和各块近 30 天的来源。", "单页报告写完，每一块列出了最该先做的事。"],
       result: "项目现状报告已记进手册。",
     },
     patrol: {

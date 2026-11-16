@@ -2,11 +2,13 @@
  * Setting a company up, one question per screen, every choice already made so the reader can go
  * straight through, and every choice on screen so nothing about the company runs unseen.
  *
- * 1. Mission: what the company does, picked from the lead's suggestions or in the reader's own
- *    words. A company is not one kind of work: a mission names the parts it needs.
- * 2. Team: one employee to each part (engineering, operations, research), each with what it
- *    owns, what it watches and what the lead read there; the reader drops or adds parts. The
- *    lead is always on; the verifier is set in the next step, where it sits on a ticket's way.
+ * 1. Mission: a broad direction first, as the shipped company mode offers its example companies
+ *    (code upkeep, content and community, a research lab, or the reader's own), which fills in
+ *    a whole mission the reader rewrites as they need.
+ * 2. Team: the lead proposes the fewest employees the mission needs, one to each part it calls
+ *    for (engineering, operations, research), each with what it owns, its sources and what the
+ *    lead read there; the reader adds or drops parts. The lead is always on; the verifier is set
+ *    in the next step, where it sits on a ticket's way.
  * 3. How a ticket goes: its four stops, with the one stop the reader can switch (verification)
  *    where it sits, and the rule of when the company reaches them.
  * 4. Schedules: what the daily patrol does with what it finds in the parts' sources; the weekly
@@ -29,8 +31,8 @@ import {
   Switch,
   Textarea,
 } from "@prismshadow/penguin-ui";
-import { MISSION_PARTS, PARTS, WORKSPACE } from "./fixtures";
-import type { Part } from "./fixtures";
+import { PARTS, partsFor, TEMPLATE_PARTS, TEMPLATES, WORKSPACE } from "./fixtures";
+import type { Part, TemplateId } from "./fixtures";
 import { DEFAULT_SETTINGS } from "./model";
 import type { CompanySettings, PatrolMode } from "./model";
 import { PersonAvatar } from "./people";
@@ -40,8 +42,9 @@ import { useWords } from "./use-words";
 const QUIET = "text-fg-muted";
 const LABEL = "text-xs font-semibold text-fg-muted";
 
-/** The option that stands for the reader's own words, among the lead's suggestions. */
+/** The option that stands for the reader's own words, beside the broad directions. */
 const OWN = "own";
+type Choice = TemplateId | typeof OWN;
 
 const STEPS = ["mission", "team", "flow", "schedules", "style"] as const;
 type Step = (typeof STEPS)[number];
@@ -151,21 +154,20 @@ function StepForm({
 function MissionStep({
   choice,
   onChoice,
-  own,
-  onOwn,
   mission,
+  onMission,
   focus,
   onNext,
 }: {
-  choice: string;
-  onChoice: (choice: string) => void;
-  own: string;
-  onOwn: (own: string) => void;
+  choice: Choice;
+  onChoice: (choice: Choice) => void;
   mission: string;
+  onMission: (mission: string) => void;
   focus: boolean;
   onNext: () => void;
 }) {
   const W = useWords();
+  const missionRef = useRef<HTMLTextAreaElement>(null);
   return (
     <StepForm onSubmit={onNext}>
       <Intro step="mission" title={W.setup.title} body={W.setup.body} focus={focus} />
@@ -174,29 +176,33 @@ function MissionStep({
         aria-label={W.setup.title}
         className="mt-8"
         value={choice}
-        onChange={onChoice}
+        onChange={(chosen) => {
+          onChoice(chosen as Choice);
+          // Writing one's own starts in the mission, which is empty for it.
+          if (chosen === OWN) missionRef.current?.focus();
+        }}
         options={[
-          ...W.setup.missions.map((option, i) => ({
-            value: String(i),
-            label: option.label,
-            description: option.why,
+          ...TEMPLATES.map((id) => ({
+            value: id,
+            label: W.setup.templates[id].name,
+            description: W.setup.templates[id].summary,
           })),
-          { value: OWN, label: W.setup.own, muted: true },
+          { value: OWN, label: W.setup.own, description: W.setup.ownSummary, muted: true },
         ]}
       />
-      {choice === OWN && (
-        <div className="mt-2">
-          <Textarea
-            size="sm"
-            rows={2}
-            autoFocus
-            aria-label={W.setup.own}
-            placeholder={W.setup.ownPlaceholder}
-            value={own}
-            onChange={(event) => onOwn(event.target.value)}
-          />
-        </div>
-      )}
+      <div className="mt-5">
+        <Textarea
+          ref={missionRef}
+          label={W.setup.mission}
+          info={W.setup.missionInfo}
+          required
+          size="sm"
+          rows={3}
+          placeholder={W.setup.missionPlaceholder}
+          value={mission}
+          onChange={(event) => onMission(event.target.value)}
+        />
+      </div>
       <Foot next={W.setup.next} disabled={mission.trim() === ""} />
     </StepForm>
   );
@@ -491,17 +497,24 @@ function StyleStep({ settings, set, onBack, onNext }: SettingsStep) {
 export function SetupPage({
   onStart,
 }: {
-  onStart: (mission: string, parts: readonly Part[], settings: CompanySettings) => void;
+  onStart: (
+    name: string,
+    mission: string,
+    parts: readonly Part[],
+    settings: CompanySettings,
+  ) => void;
 }) {
   const W = useWords();
   const [step, setStep] = useState<Step>("mission");
   // The first screen takes no focus when the page opens; coming back to it, it does.
   const [moved, setMoved] = useState(false);
-  const [choice, setChoice] = useState("0");
-  const [own, setOwn] = useState("");
-  const [parts, setParts] = useState<readonly Part[]>(MISSION_PARTS[0] ?? PARTS);
+  const [choice, setChoice] = useState<Choice>(TEMPLATES[0]);
+  const [mission, setMission] = useState(W.setup.templates[TEMPLATES[0]].mission);
+  const [parts, setParts] = useState<readonly Part[]>(TEMPLATE_PARTS[TEMPLATES[0]]);
+  /** The mission the team was last proposed for, so going back without changing it keeps the team. */
+  const [proposedFor, setProposedFor] = useState(mission);
   const [settings, setSettings] = useState<CompanySettings>(DEFAULT_SETTINGS);
-  const mission = choice === OWN ? own : (W.setup.missions[Number(choice)]?.label ?? "");
+  const name = choice === OWN ? W.setup.ownName : W.setup.templates[choice].name;
   const go = (to: Step) => {
     setMoved(true);
     setStep(to);
@@ -510,8 +523,18 @@ export function SetupPage({
   const back = () => go(STEPS[at - 1] ?? "mission");
   const next = () => {
     const to = STEPS[at + 1];
-    if (to === undefined) onStart(mission, parts, settings);
+    if (to === undefined) onStart(name, mission.trim(), parts, settings);
     else go(to);
+  };
+  // Leaving the mission, the lead proposes the team for it: a direction's own parts, or, for a
+  // mission of the reader's own, the parts its words call for. An unchanged mission keeps the
+  // team the reader may have changed.
+  const fromMission = () => {
+    if (mission !== proposedFor) {
+      setParts(choice === OWN ? partsFor(mission, W.setup.keywords) : TEMPLATE_PARTS[choice]);
+      setProposedFor(mission);
+    }
+    next();
   };
   const settingsStep: SettingsStep = {
     settings,
@@ -527,15 +550,14 @@ export function SetupPage({
         choice={choice}
         onChoice={(chosen) => {
           setChoice(chosen);
-          // A suggestion names the parts it needs; the reader's own words leave the lead to
-          // propose every part.
-          setParts(chosen === OWN ? PARTS : (MISSION_PARTS[Number(chosen)] ?? PARTS));
+          // A direction fills in its whole mission, to be rewritten as the reader needs; their
+          // own starts empty.
+          setMission(chosen === OWN ? "" : W.setup.templates[chosen].mission);
         }}
-        own={own}
-        onOwn={setOwn}
         mission={mission}
+        onMission={setMission}
         focus={moved}
-        onNext={next}
+        onNext={fromMission}
       />
     );
   } else if (step === "team") {
