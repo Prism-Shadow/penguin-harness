@@ -186,6 +186,12 @@ export const en: GalleryStrings = {
         "The settings dialog on its Appearance page: theme, mode, accent, the five text sizes and the font pairing — where theme switching lives.",
       how: "The account menu at the bottom of the sidebar › Settings › Appearance.",
     },
+    "desktop-window": {
+      title: "Desktop window",
+      description:
+        "The desktop app's main window: the title band in the sidebar's colour, the sidebar toggle and back and forward at its start, the window buttons at its end; the main column sits flush against the window's edges, ruled off from the band and the sidebar alike, its scrollbar running to the window's corner.",
+      how: "The desktop app's main window on Windows or Linux; a browser has no title band.",
+    },
     login: {
       title: "Login",
       description:
