@@ -26,4 +26,7 @@ export type {
   UsageAgentSeries,
   UsageResponse,
   UsageGranularity,
+  UsageEntitySeriesCounts,
+  UsageErrorCount,
+  ErrorContext,
 } from "./observability.js";
