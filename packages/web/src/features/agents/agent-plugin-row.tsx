@@ -2,9 +2,10 @@
  * One plugin's row on the Agent settings Plugins sub-page: the shared list row (`ListRow`), the
  * shape of a hook package's row on the Hooks sub-page, kept to one line.
  *
- * - The plugin's tile, then its display name with — right after it — its status on this Agent:
- *   the glyph in the status's tone, the word in muted ink, the meaning on hover; and the marks of
- *   its MCP servers while they wait for vault keys or a sign-in. No description and no tags: the
+ * - The plugin's tile, then its display name with — right after it — its status on this Agent
+ *   where the section does not already say it (Update available, Incomplete, Not in library: the
+ *   glyph in the status's tone, the word in muted ink, the meaning on hover), and the marks of its
+ *   MCP servers while they wait for vault keys or a sign-in. No description and no tags: the
  *   detail says the rest.
  * - The npm version, quiet, then the actions: Install for an available plugin; Update while an
  *   installed one is behind the library or missing a part; the owner's Uninstall, the glyph alone
@@ -61,9 +62,13 @@ export function AgentStatusMark({ status }: { status: AgentPluginStatus }) {
   );
 }
 
+/** The statuses a row's section already names: Installed and Available say nothing more there. */
+const SAID_BY_SECTION: ReadonlySet<AgentPluginStatus> = new Set(["installed", "available"]);
+
 /**
- * The status mark, and right after it the marks of the plugin's MCP servers on this Agent while
- * they wait for vault keys (who sets them, said on hover) or a sign-in.
+ * The status mark, where it says more than the section the row sits in, and right after it the
+ * marks of the plugin's MCP servers on this Agent while they wait for vault keys (who sets them,
+ * said on hover) or a sign-in. Nothing when there is neither.
  */
 export function StatusWithMcp({
   entry,
@@ -75,11 +80,14 @@ export function StatusWithMcp({
   isOwner: boolean;
 }) {
   const mcp = entry.plugin === null ? null : pluginMcpState(entry.plugin, installs);
+  const waiting = mcp !== null && (mcp.missingKeys.length > 0 || mcp.signIn);
+  const status = !SAID_BY_SECTION.has(entry.status);
+  if (!status && !waiting) return null;
   return (
     // The status word reads as a quiet fact beside the name, as it does on a facts line.
     <span className={`inline-flex shrink-0 items-center ${ICON_GAP.row} text-xs text-fg-muted`}>
-      <AgentStatusMark status={entry.status} />
-      {mcp !== null && (mcp.missingKeys.length > 0 || mcp.signIn) && (
+      {status && <AgentStatusMark status={entry.status} />}
+      {mcp !== null && waiting && (
         <McpServerMarks
           keys={mcp.missingKeys}
           where={isOwner ? S.plugins.mcpSetUpWhere : S.plugins.mcpSetUpByOwner}
