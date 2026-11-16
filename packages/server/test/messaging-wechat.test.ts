@@ -77,10 +77,10 @@ import {
   wechatRetryDelayMs,
 } from "../src/runtime/messaging/wechat-connector.js";
 import { openDatabase } from "@prismshadow/penguin-library-db";
-import None{
+import {
   MessagingBindingsRepo,
 } from "@prismshadow/penguin-library-messaging/repos/messaging-bindings";
-import None{
+import {
   MessagingConversationsRepo,
 } from "@prismshadow/penguin-library-messaging/repos/messaging-conversations";
 import { forwardingTo } from "./fixtures/forwarding.js";

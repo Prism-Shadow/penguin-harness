@@ -21,6 +21,7 @@ export {
 } from "./sessions.js";
 export type {
   ApprovalMode,
+  RunStarter,
   SessionStatus,
   PendingSteeringInfo,
   PendingFollowUpInfo,
