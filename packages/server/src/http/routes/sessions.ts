@@ -29,6 +29,17 @@ import type { ApprovalMode } from "@prismshadow/penguin-library-sessions";
 import type { FilesStatResponse, GoalResponse, GoalStateView, RecalledMessageResponse, SessionBatchResult, SessionContextResponse, SessionCreateResponse, SessionForkResponse, SessionProcessesResponse, SessionResponse, SessionsResponse, SessionsBatchResponse, SubagentMessageResponse, RetryNowResponse, TaskCreateResponse } from "../../api/types.js";
 import type {
   SessionSandbox,
+} from "@prismshadow/penguin-library-sessions";
+import type { ServerEvent } from "@prismshadow/penguin-library-projects";
+import type { FilesStatResponse, GoalResponse, GoalStateView, RecalledMessageResponse, SessionBatchResult, SessionContextResponse, SessionCreateResponse, SessionForkResponse, SessionProcessesResponse, SessionResponse, SessionsResponse, SessionsBatchResponse, SubagentMessageResponse, RetryNowResponse, TaskCreateResponse } from "../../api/types.js";
+import type {
+  SessionSandbox,
+<<<<<<< HEAD
+||||||| parent of 2520e97b3f (fix(libraries): the session runtime vocabulary joins the sessions library — SessionStatus, the steering/follow-up/subagent views, the sandbox family and ApprovalReason move beside the contract that names them (chat defaults in the projects library import the sandbox), the server imports them back and api/types keeps re-exporting for the Web App and CLI; the lockfile gains the models package)
+} from "../../api/types.js";
+=======
+} from "@prismshadow/penguin-library-sessions";
+>>>>>>> 2520e97b3f (fix(libraries): the session runtime vocabulary joins the sessions library — SessionStatus, the steering/follow-up/subagent views, the sandbox family and ApprovalReason move beside the contract that names them (chat defaults in the projects library import the sandbox), the server imports them back and api/types keeps re-exporting for the Web App and CLI; the lockfile gains the models package)
 import type { ServerEvent } from "@prismshadow/penguin-library-projects";
 import type { SessionCategory } from "@prismshadow/penguin-library-traces";
 import { compactionThresholdFor } from "../../services/context-breakdown.js";

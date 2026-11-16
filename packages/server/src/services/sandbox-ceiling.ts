@@ -6,7 +6,9 @@
  * a non-admin what the server will refuse.
  */
 import type { SandboxSettings } from "@prismshadow/penguin-core/plugin";
-import type { SessionSandbox } from "../api/types.js";
+import type {
+  SessionSandbox,
+} from "@prismshadow/penguin-library-sessions";
 
 const SANDBOX_MODE_RANK: Record<SandboxSettings["mode"], number> = {
   "read-only": 0,

@@ -69,12 +69,12 @@ import type {
   ThinkingLevelName,
   ToolDetachResult,
 } from "@prismshadow/penguin-core";
+import type { SessionBackgroundTasks } from "../api/types.js";
 import type {
   PendingFollowUpInfo,
   PendingSteeringInfo,
-  SessionBackgroundTasks,
   SessionStatus,
-} from "../api/types.js";
+} from "@prismshadow/penguin-library-sessions";
 import type { ModelRefDto } from "@prismshadow/penguin-library-agent-api";
 import type { ServerEvent } from "@prismshadow/penguin-library-projects";
 import type { RecallableFile } from "../services/task-attachments.js";

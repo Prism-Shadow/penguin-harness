@@ -8,6 +8,35 @@ import type { AgentRow } from "./repos/agents.js";
 
 import type { UserRow } from "@prismshadow/penguin-library-identity";
 
+/**
+ * What a command-policy hit does: `deny` refuses the call outright; `ask` puts it to a person
+ * whatever the approval mode (deny-all still denies).
+ */
+export type CommandPolicyActionDto = "deny" | "ask";
+
+/**
+ * One rule of the sandbox command policy — plain project-editable data. The factory rules
+ * are seeded into new projects and carry no special status thereafter: every rule can be
+ * edited, disabled, or deleted.
+ */
+export interface CommandPolicyRuleDto {
+  name: string;
+  /** JavaScript regex source, matched against the whitespace-normalized command. */
+  pattern: string;
+  /** What the rule catches (free text). */
+  description?: string;
+  /** Per-rule switch, effective value (defaults on). */
+  enabled: boolean;
+  /** What a hit does; absent = `deny` (served only for an `ask` rule, as it is stored). */
+  action?: CommandPolicyActionDto;
+  /**
+   * Read-only, served only for a stored rule whose pattern this server's engine cannot
+   * compile: the engine's reason. Such a rule is skipped when commands are matched, so the
+   * settings page marks it; a PUT ignores the field (and refuses the pattern).
+   */
+  patternError?: string;
+}
+
 /** The roles a Project membership carries (was api/types.ts's Project authorization section). */
 export type ProjectRole = "owner" | "member";
 
@@ -18,8 +47,19 @@ import type {
   PluginTables,
   ProjectConfig,
 } from "@prismshadow/penguin-core";
+import type { AmspRecord, ToolCallPayload, ThinkingLevelName } from "@prismshadow/penguin-core";
+import type { SessionSource } from "@prismshadow/amsp";
 import type { ModelRefDto } from "@prismshadow/penguin-library-agent-api";
 import type { TraceFileInfo } from "@prismshadow/penguin-library-traces";
+import type {
+  SessionSandbox,
+  SessionStatus,
+  PendingSteeringInfo,
+  PendingFollowUpInfo,
+  SubagentRuntimeInfo,
+  ApprovalReason,
+  ApprovalMode,
+} from "@prismshadow/penguin-library-sessions";
 import type {
   PricingRates,
   TieredRates,

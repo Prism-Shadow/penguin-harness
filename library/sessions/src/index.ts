@@ -12,4 +12,16 @@
  * - `./repos` (and per-file) - the storing components.
  */
 export { SessionIndex, SessionDrivers, SessionOrigins, Schedules } from "./sessions.js";
-export type { ApprovalMode } from "./sessions.js";
+export type {
+  ApprovalMode,
+  SessionStatus,
+  PendingSteeringInfo,
+  PendingFollowUpInfo,
+  SubagentRuntimeInfo,
+  SessionSandbox,
+  SessionSandboxMode,
+  SessionSandboxNetwork,
+  SessionSandboxPreset,
+  UnavailableSandboxBackend,
+  ApprovalReason,
+} from "./sessions.js";
