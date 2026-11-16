@@ -8,13 +8,18 @@
  *
  * - Every `<ReactMarkdown>` is given both shared plugin lists, taken from the shared module (the
  *   package's own module inside the UI package, the package entry in the Web App).
- * - No source file imports the underlying remark/rehype plugins itself.
+ * - No source file imports the underlying remark/rehype plugins itself, other than the two shared
+ *   modules: the chat pipeline and the public sites' lists (site-markdown-plugins.ts, kept apart
+ *   so the site entry never loads the chat dialect).
  */
 import { describe, expect, it } from "vitest";
 import { expectEveryRootScanned, scanSources } from "./helpers/roots";
 
 const SCAN = scanSources([".ts", ".tsx"]);
-const SHARED_MODULE = "packages/ui/src/components/content/prose/markdown-plugins.ts";
+const SHARED_MODULES = new Set([
+  "packages/ui/src/components/content/prose/markdown-plugins.ts",
+  "packages/ui/src/components/content/prose/site-markdown-plugins.ts",
+]);
 
 /** Where a renderer in each root takes the lists from. */
 const HOME: Record<string, string> = {
@@ -49,7 +54,7 @@ describe("the Markdown pipeline every renderer shares", () => {
   it("leaves the underlying plugins to the shared module", () => {
     // The quotes are the point: a file may name a plugin in a comment, not import one.
     const offenders = SCAN.files
-      .filter((file) => file.id !== SHARED_MODULE)
+      .filter((file) => !SHARED_MODULES.has(file.id))
       .filter((file) =>
         ["remark-gfm", "remark-math", "rehype-katex"].some((plugin) =>
           file.text.includes(`from "${plugin}"`),

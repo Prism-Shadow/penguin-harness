@@ -7,9 +7,10 @@
  */
 @import "tailwindcss";
 @import "@prismshadow/penguin-ui/theme.css";
-@import "@prismshadow/penguin-ui/themes/github.css";
-@import "@prismshadow/penguin-ui/themes/modern.css";
-@import "@prismshadow/penguin-ui/themes/geek.css";
+@import "@prismshadow/penguin-ui/themes/modern/index.css";
+@import "@prismshadow/penguin-ui/themes/github/index.css";
+@import "@prismshadow/penguin-ui/themes/geek/index.css";
+@import "@prismshadow/penguin-ui/themes/doodle/index.css";
 @import "@prismshadow/penguin-ui/fonts.css";
 @import "./chrome.css";
 @import "./site/site.css";

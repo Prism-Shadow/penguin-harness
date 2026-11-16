@@ -13,11 +13,16 @@
  * An unattended Session takes that one route differently: there is no frontend to ask, so
  * the call is denied on the spot instead of suspending forever (see `unattended` below).
  *
+ * A call a command-policy `ask` rule matched never reaches the mode: core hands it to the
+ * same callback with a policy reason (`context.reason`), and the callback takes the manual
+ * route under every mode but deny-all (still a denial) — with the reason on the pending
+ * entry, so the card can say why it asks.
+ *
  * Every approval decision re-reads the current approval_mode (`getMode` reads the DB),
  * so mode changes take effect immediately.
  * Docs: /docs/tools § "Approval".
  */
-import type { ApprovalMode } from "../api/types.js";
+import type { ApprovalMode, ApprovalReason } from "../api/types.js";
 import type {
   ApprovalDecision,
   ApproveFn,
@@ -28,6 +33,8 @@ import type {
 export interface PendingApproval {
   toolCall: AmspRecord<ToolCallPayload>;
   origin?: string[];
+  /** Why the call asks, when the mode did not send it here (a command-policy `ask` rule). */
+  reason?: ApprovalReason;
 }
 
 interface PendingEntry extends PendingApproval {
@@ -38,7 +45,7 @@ interface PendingEntry extends PendingApproval {
 export interface Approvals {
   readonly size: number;
   list(): PendingApproval[];
-  wait(toolCall: AmspRecord<ToolCallPayload>): Promise<ApprovalDecision>;
+  wait(toolCall: AmspRecord<ToolCallPayload>, reason?: ApprovalReason): Promise<ApprovalDecision>;
   decide(toolCallId: string, decision: ApprovalDecision): boolean;
   denyAll(): void;
   denyMain(): void;
@@ -62,14 +69,15 @@ export class ApprovalRegistry implements Approvals {
 
   /** All currently pending approvals (for subscription replay). */
   list(): PendingApproval[] {
-    return [...this.pending.values()].map(({ toolCall, origin }) => ({
+    return [...this.pending.values()].map(({ toolCall, origin, reason }) => ({
       toolCall,
       ...(origin !== undefined ? { origin } : {}),
+      ...(reason !== undefined ? { reason } : {}),
     }));
   }
 
   /** Register and wait for a decision. Re-registering the same id (defensive) resolves the old entry as deny. */
-  wait(toolCall: AmspRecord<ToolCallPayload>): Promise<ApprovalDecision> {
+  wait(toolCall: AmspRecord<ToolCallPayload>, reason?: ApprovalReason): Promise<ApprovalDecision> {
     const id = toolCall.payload.tool_call_id;
     return this.batch(
       () =>
@@ -78,6 +86,7 @@ export class ApprovalRegistry implements Approvals {
           const entry: PendingEntry = {
             toolCall,
             ...(toolCall.origin !== undefined ? { origin: toolCall.origin } : {}),
+            ...(reason !== undefined ? { reason } : {}),
             resolve: (decision) => {
               if (this.pending.get(id) !== entry) return;
               this.pending.delete(id);
@@ -141,7 +150,10 @@ export class ApprovalRegistry implements Approvals {
  * Build the approve callback: re-reads the approval mode on every call; when routed to
  * manual approval, registers a pending entry and suspends after pushing an
  * `approval_request` server event via `publishRequest` — unless the Session is unattended,
- * in which case that one route answers deny immediately.
+ * in which case that one route answers deny immediately. A call core hands over with a
+ * policy reason (a command-policy `ask` rule matched it) takes the manual route under every
+ * mode — allow-all and read-only included — except deny-all, which still denies; the reason
+ * rides on the request.
  */
 export function makeApprove(args: {
   getMode: () => ApprovalMode;
@@ -155,23 +167,34 @@ export function makeApprove(args: {
    * mode. It changes exactly one route: a call the mode would hand to a person is denied at
    * once instead of parking for an answer that is never coming, and no `approval_request`
    * is pushed. The automatic answers (allow-all, deny-all, read-only's read tools) and the
-   * command policy's veto are untouched — they never asked anyone in the first place.
+   * command policy's veto are untouched — they never asked anyone in the first place. A
+   * command-policy `ask` hit takes the manual route too, so an unattended Session denies it
+   * at once: nobody is there to give the go-ahead.
    * Absent (development mode) keeps the suspending behaviour.
    */
   unattended?: () => boolean;
 }): ApproveFn {
   const { getMode, toolPermission, registry, publishRequest, unattended } = args;
-  const manual = (toolCall: AmspRecord<ToolCallPayload>): Promise<ApprovalDecision> => {
+  const manual = (
+    toolCall: AmspRecord<ToolCallPayload>,
+    reason?: ApprovalReason,
+  ): Promise<ApprovalDecision> => {
     if (unattended?.() === true) return Promise.resolve<ApprovalDecision>("deny");
-    const promise = registry.wait(toolCall);
+    const promise = registry.wait(toolCall, reason);
     publishRequest({
       toolCall,
       ...(toolCall.origin !== undefined ? { origin: toolCall.origin } : {}),
+      ...(reason !== undefined ? { reason } : {}),
     });
     return promise;
   };
-  return async (toolCall) => {
-    switch (getMode()) {
+  return async (toolCall, context) => {
+    const mode = getMode();
+    // The Project's security policy wants a person: the mode's automatic yes does not apply.
+    if (context?.reason !== undefined) {
+      return mode === "deny-all" ? "deny" : manual(toolCall, context.reason);
+    }
+    switch (mode) {
       case "allow-all":
         return "allow";
       case "deny-all":

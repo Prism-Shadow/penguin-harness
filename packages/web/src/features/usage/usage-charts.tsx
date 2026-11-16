@@ -56,8 +56,11 @@ import {
   seriesPoints,
   stackSegments,
   useChartWidth,
+  type ChartPaint,
+  type LegendItem,
+  type TokenBucketKey,
 } from "@prismshadow/penguin-ui";
-import type { ChartPaint, LegendItem, TokenBucketKey } from "@prismshadow/penguin-ui";
+
 import { S } from "../../lib/strings";
 import { formatPercent, humanizeTokens } from "../../lib/format";
 import { NEUTRAL_SERIES } from "../../lib/category-colors";
@@ -71,7 +74,7 @@ import {
   sumCounts,
   type EntityCounts,
   type EntitySeries,
-} from "./usage-controls";
+} from "../../lib/usage-controls";
 
 /** Empty state for a chart card (defaults to "no usage records yet"; the errors chart passes its own copy). */
 export function Empty({ text }: { text?: string }) {

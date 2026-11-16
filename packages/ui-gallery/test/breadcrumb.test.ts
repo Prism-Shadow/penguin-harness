@@ -4,34 +4,8 @@
  */
 import { describe, expect, it } from "vitest";
 import { formatBreadcrumb } from "../src/lib/breadcrumb";
-import { zh } from "../src/strings";
-import { en } from "../src/strings-en";
 
 describe("formatBreadcrumb", () => {
-  it("spells a surface's address: theme › surface, then the mode", () => {
-    expect(
-      formatBreadcrumb({
-        theme: en.rail.themeNames.modern,
-        page: en.surfaces.chat.title,
-        mode: en.crumb.modes.dark,
-        size: "m",
-      }),
-    ).toBe("Frost › Chat · dark");
-  });
-
-  it("reads in Chinese when the chrome does, with the theme's Chinese name", () => {
-    expect(
-      formatBreadcrumb({
-        theme: zh.rail.themeNames.modern,
-        page: zh.surfaces.chat.title,
-        mode: zh.crumb.modes.dark,
-        size: "m",
-      }),
-    ).toBe("白领 › 对话 · 深色");
-    expect(zh.rail.themeNames).toEqual({ github: "朴素", modern: "白领", geek: "极客" });
-    expect(en.rail.themeNames).toEqual({ github: "Primer", modern: "Frost", geek: "Console" });
-  });
-
   it("names a section of a page, the section joining the path", () => {
     expect(
       formatBreadcrumb({

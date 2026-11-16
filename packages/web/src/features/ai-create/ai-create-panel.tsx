@@ -5,8 +5,8 @@
  * expert can take it elsewhere. Controlled and embeddable: AiCreateModal wraps it in a dialog, a
  * page may inline it. It sends nothing itself.
  */
-import { useLayoutEffect, useRef } from "react";
-import type { ReactNode } from "react";
+import { useLayoutEffect, useRef, type ReactNode } from "react";
+
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
 import { CopyButton, HelpFold, Select, Textarea } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";

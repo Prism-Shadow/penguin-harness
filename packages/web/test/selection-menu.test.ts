@@ -30,8 +30,9 @@ import {
   opensSelectionMenu,
   selectionEndAnchor,
   streamMenuContent,
+  type SelectionMenuRequest,
+  type StreamMenuRequest,
 } from "../src/lib/selection-menu";
-import type { SelectionMenuRequest, StreamMenuRequest } from "../src/lib/selection-menu";
 import { takesSelectionCopy } from "../src/lib/selection-copy";
 
 /** A right-click on a selection of reply text: the case the menu exists for. */

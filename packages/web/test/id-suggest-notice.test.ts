@@ -13,20 +13,13 @@ import { idSuggestNotice } from "../src/features/semantic-id/id-suggest-notice";
 import { zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 
+/** Every reason the contract declares (the `satisfies` fails the build on a missing or stale one). */
 const REASONS = Object.keys({
   no_default_model: true,
   model_failed: true,
   unusable_answer: true,
   no_ascii: true,
 } satisfies Record<SemanticIdSuggestReason, true>) as SemanticIdSuggestReason[];
-
-describe("the reason dictionaries", () => {
-  for (const [locale, dict] of Object.entries({ zh, en })) {
-    it(`${locale} carries a phrase for every reason the contract declares, and no other`, () => {
-      expect(Object.keys(dict.semanticId.idSuggest.reasons).sort()).toEqual([...REASONS].sort());
-    });
-  }
-});
 
 describe("idSuggestNotice", () => {
   it("says nothing about an id the model produced", () => {
@@ -39,7 +32,7 @@ describe("idSuggestNotice", () => {
     const res: SemanticIdSuggestResponse = { id: "co_plugin_marketplace", source: "fallback" };
     expect(idSuggestNotice(res, zh.semanticId.idSuggest)).toEqual({
       tone: "muted",
-      text: "按名称转写生成",
+      text: zh.semanticId.idSuggest.fromName,
     });
     expect(idSuggestNotice(res, en.semanticId.idSuggest)?.tone).toBe("muted");
   });

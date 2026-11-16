@@ -45,9 +45,10 @@ export interface ScriptedReply {
   promptTokens?: number;
   /**
    * How the request ends: cleanly, with a transport drop after the text (the engine
-   * reconnects), or hanging after the text until the caller's signal aborts it.
+   * reconnects), hanging after the text until the caller's signal aborts it, or refused by the
+   * provider before anything streams (an HTTP 400).
    */
-  outcome?: "completed" | "retryable-after-text" | "abort-after-text";
+  outcome?: "completed" | "retryable-after-text" | "abort-after-text" | "rejected";
 }
 
 // ---- What a recording holds -----------------------------------------------
@@ -174,6 +175,10 @@ function untilAborted(signal?: AbortSignal): Promise<void> {
 async function* replyEvents(reply: ScriptedReply, signal?: AbortSignal): AsyncGenerator<UniEvent> {
   const promptTokens = reply.promptTokens ?? DEFAULT_PROMPT_TOKENS;
   if (signal?.aborted) return;
+  if (reply.outcome === "rejected") {
+    // A definitive client error: nothing streams, nothing is committed or billed.
+    throw Object.assign(new Error("400 the request was rejected"), { status: 400 });
+  }
   yield usage(
     {
       cached_tokens: SCRIPTED_CACHED_TOKENS,

@@ -531,7 +531,10 @@ async function createInner(
     const what = disabled
       ? `left out of this generation: ${reason}`
       : `runs without the contributions this platform has no slot for: ${reason}`;
-    console.warn(`[platform] plugin '${specifier}' ${what}`);
+    // A plugin left out of this generation failed to load — an error. One that runs without
+    // some of its contributions is only said, not complained about.
+    if (disabled) console.error(`[platform] plugin '${specifier}' ${what}`);
+    else console.log(`[platform] plugin '${specifier}' ${what}`);
     errors?.record({
       source: "plugin",
       code: `unsatisfied:${specifier}`,

@@ -1,0 +1,475 @@
+/*
+ * Style hooks (hooks.ts). A component opts into a hook with its class; this theme decides what
+ * the hook does. These rules sit in `ui-theme`, after Tailwind's `utilities`, so a hook wins over
+ * the utilities its component also carries — that is what lets `.ui-live` re-time an
+ * `animate-spin` and `.ui-frame` redraw a card's box.
+ *
+ * Console gives a recipe to: eyebrow (its ink; the rung is theme.css's), display, live, frame,
+ * underline-nav, shell, icon-decor, tree, field, activity, notice, chart, stream, glyph,
+ * widget, avatar.
+ * `.ui-glass` and `.ui-scrim` are no-ops here: the overlay is opaque through the glass tokens,
+ * and the page behind a dialog is dimmed, not blurred. The manifest says `base: "foundation"`,
+ * so none of Frost's recipes apply under Console: a hook without a recipe here is the host's own
+ * classes, as it is in Primer.
+ */
+
+/* Group label on the h6 rung (theme.css): the chrome face, uppercase, tracked — and muted. */
+:root[data-theme="geek"] .ui-eyebrow {
+  color: var(--ui-fg-muted);
+}
+
+/* The page's one display title: the chrome face at its bold cut, sentence case, no tracking.
+   Han glyphs need a little more leading than the Latin bold. */
+:root[data-theme="geek"] .ui-display {
+  font-family: var(--ui-font-ui);
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0;
+}
+:root[data-theme="geek"] .ui-display:lang(zh) {
+  line-height: 1.25;
+}
+
+/* Stepped live signals: the busy dot blinks, the caret is a block, the spinner ticks. */
+:root[data-theme="geek"] .ui-live {
+  animation-timing-function: var(--ui-live-timing);
+}
+:root[data-theme="geek"] .ui-live[data-live="dot"] {
+  animation: ui-geek-signal 1.25s var(--ui-live-timing) infinite;
+}
+:root[data-theme="geek"] .ui-live[data-live="spinner"] {
+  animation-timing-function: steps(8, end);
+}
+:root[data-theme="geek"] .ui-live[data-live="caret"] {
+  display: inline-block;
+  width: 0.6ch;
+  height: 1em;
+  vertical-align: text-bottom;
+  overflow: hidden;
+  background-color: currentColor;
+  -webkit-text-fill-color: transparent;
+  animation: ui-geek-signal 1s var(--ui-live-timing) infinite;
+}
+@keyframes ui-geek-signal {
+  50% {
+    opacity: 0.2;
+  }
+}
+
+/* A frame is a plain hairline box on the page: one rule round it, one under its head and over
+   its foot, one between panes, no fill of its own, head text in the chrome face. (A first
+   pass drew a TUI box with the title standing in the top rule; it was decoration and went.)
+   The parts are selected through `:where()`, which adds no specificity, so the boxless rules
+   further down — a frame that holds a tree or sits in one — can take every part of it back. */
+:root[data-theme="geek"] .ui-frame {
+  border: var(--ui-border-w) solid var(--ui-line);
+  border-radius: 0;
+  background-color: transparent;
+}
+:root[data-theme="geek"] .ui-frame > :where([data-slot="head"]) {
+  border-bottom: var(--ui-border-w) solid var(--ui-line);
+  background-color: transparent;
+  font-family: var(--ui-font-ui);
+}
+:root[data-theme="geek"] .ui-frame > :where([data-slot="foot"]) {
+  border-top: var(--ui-border-w) solid var(--ui-line);
+}
+:root[data-theme="geek"] .ui-frame :where([data-slot="pane"] + [data-slot="pane"]) {
+  border-left: var(--ui-border-w) solid var(--ui-line);
+}
+
+/* Tabs: a 2px ink rule under the selected tab, opencode's underline; no hover bar. */
+:root[data-theme="geek"] .ui-underline-nav [role="tab"] {
+  position: relative;
+  /* The ink rule below is the only marker: the host's own bottom border (and its hover bar)
+     gives way. */
+  border-bottom-color: transparent;
+}
+:root[data-theme="geek"] .ui-underline-nav [role="tab"]::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  bottom: -1px;
+  height: 2px;
+  background-color: transparent;
+  pointer-events: none;
+}
+:root[data-theme="geek"] .ui-underline-nav [role="tab"][aria-selected="true"]::after {
+  background-color: var(--ui-fg);
+}
+
+/* The app window: full bleed on the page, the navigation column ruled off the main column by
+   one hairline (and a dock column, when there is one, ruled off on its other side), no corner
+   anywhere, and a `>` in the accent before the selected navigation row — a nav entry or the
+   open session — standing in the row's own inline padding (two space units, the narrowest
+   row's) at the small rung, so the row's content does not move. */
+:root[data-theme="geek"] .ui-shell {
+  background-color: var(--ui-shell-field);
+  border-radius: 0;
+}
+:root[data-theme="geek"] .ui-shell > [data-slot="nav"] {
+  background-color: var(--ui-shell-nav-bg);
+  border-inline-end: var(--ui-border-w) solid var(--ui-shell-line);
+}
+:root[data-theme="geek"] .ui-shell > [data-slot="main"] {
+  background-color: var(--ui-shell-main-bg);
+}
+:root[data-theme="geek"] .ui-shell > [data-slot="dock"] {
+  border-inline-start: var(--ui-border-w) solid var(--ui-shell-line);
+}
+/* The selected navigation row — a nav entry or the open session — is marked quietly: the
+   bold cut over the host's own selected fill, no glyph (a first pass hung an accent `>` before
+   it; the owner asked for it to go). The bold cut is wider than the regular, but a row's label
+   starts the row and is the last thing in its flow (a trailing mark is positioned), so it
+   grows only toward the row's free end, and a label that fills the row truncates a little
+   earlier; nothing else in the row moves. */
+:root[data-theme="geek"] .ui-shell [data-slot="nav"] [aria-current="page"] {
+  font-weight: var(--ui-weight-strong);
+}
+
+/* Decorative icons are not drawn: a navigation row is its label, a group header its eyebrow, a
+   menu row its verb, and the selected row is marked by its weight alone. Icons that carry
+   information (status marks, file kinds, tool glyphs, avatars) never take the hook and stay. */
+:root[data-theme="geek"] .ui-icon-decor {
+  display: none;
+}
+
+/* Icons are pixel drawings: every glyph that has one (the registry's and the marks') shows its
+   16x16 drawing on crisp edges in place of the line drawing, the way claude.dev draws its
+   marks. From a 13px box up the drawing keeps one cell to a CSS pixel and may spill a pixel or
+   two past the box, so the box must not clip it. */
+:root[data-theme="geek"] .ui-glyph {
+  overflow: visible;
+}
+:root[data-theme="geek"] .ui-glyph > [data-set="line"] {
+  display: none;
+}
+:root[data-theme="geek"] .ui-glyph > [data-set="pixel"] {
+  display: inline;
+}
+
+/* Nested rows hang off `└` elbows, the way claude.dev prints its tree, and the box goes: the
+   host's border, fill, corner and shadow turn off, and so do the rules it draws between its
+   rows. Each row past the roots indents on the tree tokens and draws one elbow on its parent's
+   column, half an indent before its own content — a rule from the row's top to its middle
+   with a short tick at the end. No `│` runs between siblings and none continues alongside a
+   branch: the indent already says the level, and every rule not drawn is a line less. Nothing
+   here is a glyph in the markup. */
+:root[data-theme="geek"] .ui-tree {
+  border-color: transparent;
+  border-radius: 0;
+  background-color: transparent;
+  box-shadow: none;
+}
+:root[data-theme="geek"] .ui-tree > [data-depth],
+:root[data-theme="geek"] .ui-tree > [data-branch] {
+  border-color: transparent;
+}
+:root[data-theme="geek"] .ui-tree [data-depth]:not([data-branch]) {
+  position: relative;
+  padding-inline-start: calc(var(--ui-tree-inset) + var(--ui-tree-indent) * var(--_depth));
+}
+:root[data-theme="geek"] .ui-tree [data-depth]:not([data-branch], [data-depth="0"])::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  height: 50%;
+  inset-inline-start: calc(var(--ui-tree-inset) + var(--ui-tree-indent) * (var(--_depth) - 0.5));
+  width: calc(var(--ui-tree-indent) * 0.5 - 0.1875rem);
+  border-inline-start: var(--ui-border-w) solid var(--ui-tree-guide);
+  border-bottom: var(--ui-border-w) solid var(--ui-tree-guide);
+  pointer-events: none;
+}
+
+/* A frame headed by a step of the agent's work (a work group, open or collapsed — collapsed
+   it has no tree, so the head is what names it) or holding a tree, or sitting inside one (a
+   tool card hung off an elbow), gives up the box: no rule on it or on any part (the host's
+   own rules between head and body included), so the rows hang off the head, or the card off
+   its elbow, by the connector rules alone. A frame standing on its own keeps its box. */
+:root[data-theme="geek"] .ui-frame:has(> .ui-tree, > .ui-activity),
+:root[data-theme="geek"] .ui-tree .ui-frame,
+:root[data-theme="geek"] .ui-frame:has(> .ui-tree, > .ui-activity) > *,
+:root[data-theme="geek"] .ui-tree .ui-frame > * {
+  border: 0;
+}
+
+/* A labelled control row is a table row: a fixed label column, the control left-aligned in the
+   next column at its own width (a switch, a segmented control, a group of selects), the hint
+   under the control. The label keeps the host's offset onto the row's first line and may wrap
+   in its fixed column, its first line still on the control's; rows separate by the host's own
+   rules, so a page of them reads like a table. */
+:root[data-theme="geek"] .ui-field {
+  display: grid;
+  grid-template-columns: var(--ui-field-label-w) minmax(0, 1fr);
+  column-gap: var(--ui-field-gap);
+  row-gap: var(--ui-stack-0);
+  align-items: start;
+}
+:root[data-theme="geek"] .ui-field > [data-slot="label"] {
+  grid-row: 1;
+  grid-column: 1;
+  min-width: 0;
+  white-space: normal;
+}
+:root[data-theme="geek"] .ui-field > [data-slot="control"] {
+  grid-row: 1;
+  grid-column: 2;
+  justify-content: flex-start;
+  min-width: 0;
+  max-width: 100%;
+}
+:root[data-theme="geek"] .ui-field > [data-slot="hint"] {
+  grid-column: 2;
+}
+
+/* Work in progress, as a transcript (claude.dev's tree and progress line): the row is no box —
+   no border, no corner, no shadow, and the rule a list draws above it goes with the border —
+   its label is the mono face at the small rung, uppercase and tracked like an eyebrow, muted
+   once the step is done and the body ink while it runs (the danger ink when it failed), the
+   detail (a path, an argument preview, a duration) is muted in the host's own face (the host
+   sets a duration or a step count in mono and a description in the sans). The progress slot
+   stays hidden, as the host leaves it: the spinner and the ticking duration already say a step
+   is running (the owner dropped the block bar, 2026-09-30). A step in a work group hangs off
+   the `└` its tree row draws, so no connector is added here. The slots are found anywhere
+   inside the row (a card nests them in its own button). */
+:root[data-theme="geek"] .ui-activity {
+  border-color: transparent;
+  border-radius: 0;
+  box-shadow: none;
+}
+/* In a boxless work group the header and the rows are painted in the page's own colour: they
+   stick while their bodies scroll, so they must stay opaque, and on the page that fill is
+   invisible in every state. A row inside a frame that keeps its box keeps its own fill. */
+:root[data-theme="geek"] .ui-frame:has(> .ui-tree, > .ui-activity) > [data-slot="head"],
+:root[data-theme="geek"] .ui-tree .ui-activity {
+  background-color: var(--ui-canvas);
+}
+/* A hover changes the ink alone — the label steps up to the body ink — so the group looks the
+   same at rest, hovered, open and stuck; no fill moves. Only a row that does something answers
+   the pointer: a harness note or a server with nothing to open stays as it is. */
+:root[data-theme="geek"]
+  .ui-frame:has(> .ui-tree, > .ui-activity)
+  > [data-slot="head"]:is(button, :has(button)):hover
+  [data-slot="label"],
+:root[data-theme="geek"] .ui-tree .ui-activity:is(button, :has(button)):hover [data-slot="label"] {
+  color: var(--ui-fg);
+}
+:root[data-theme="geek"] .ui-activity [data-slot="label"] {
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-text-small-size);
+  font-weight: var(--ui-weight-body);
+  letter-spacing: var(--ui-tracking-label);
+  text-transform: uppercase;
+  color: var(--ui-fg-muted);
+}
+:root[data-theme="geek"] .ui-activity[data-state="running"] [data-slot="label"] {
+  color: var(--ui-fg);
+}
+:root[data-theme="geek"] .ui-activity[data-state="error"] [data-slot="label"] {
+  color: var(--ui-tone-danger-fg);
+}
+/* Folds: the leading mark is the fold — ▸ closed, ▾ open, in the row's state ink (subtle when
+   settled, danger on error). While the row runs its spinner stays; the
+   chevrons go. */
+:root[data-theme="geek"] .ui-activity :is([data-slot="toggle"], [data-slot="toggle-end"]) {
+  display: none;
+}
+:root[data-theme="geek"]
+  .ui-activity:has([data-slot="toggle"]):not([data-state="running"])
+  [data-slot="mark"]
+  > * {
+  display: none;
+}
+:root[data-theme="geek"]
+  .ui-activity:has([data-slot="toggle"]):not([data-state="running"])
+  [data-slot="mark"]::before {
+  content: "▸";
+  display: inline-block;
+  width: 1em;
+  line-height: 1;
+  text-align: center;
+  color: var(--ui-fg-subtle);
+}
+:root[data-theme="geek"]
+  :is(.ui-activity[aria-expanded="true"], .ui-activity:has(> [aria-expanded="true"])):has(
+    [data-slot="toggle"]
+  ):not([data-state="running"])
+  [data-slot="mark"]::before {
+  content: "▾";
+}
+:root[data-theme="geek"] .ui-activity[data-state="error"] [data-slot="mark"]::before {
+  color: var(--ui-tone-danger-fg);
+}
+:root[data-theme="geek"] .ui-activity [data-slot="detail"] {
+  font-size: var(--ui-text-small-size);
+  color: var(--ui-fg-muted);
+}
+/* A reply still arriving is typed out behind a block cursor, the way a terminal prints (the
+   reveal paces it a character at a time): the stream's caret is a solid cell in the body
+   ink, one character of the chrome's mono face wide, with the host's own glyph painted out.
+   While the text so far ends in a paragraph, that paragraph runs in — it lays out inline
+   with the caret after it — so the cursor sits right after its last character; after a list
+   the last item draws the cell itself (below); after a table or a code block it waits at the
+   start of the next line, like a prompt. The cursor
+   blinks in the theme's stepped live signal, and nothing else moves: no veil, no fade. Under
+   reduced motion it holds still (theme.css). */
+:root[data-theme="geek"] .ui-stream[data-state="streaming"] > p:has(+ [data-slot="caret"]) {
+  display: inline;
+}
+/* After a list the cursor belongs at the end of its last item, not on a line of its own: the
+   item draws the block cell itself, and the host's caret slot steps aside. */
+:root[data-theme="geek"]
+  .ui-stream[data-state="streaming"]
+  > :is(ul, ol):has(+ [data-slot="caret"])
+  > li:last-child::after {
+  content: "";
+  display: inline-block;
+  inline-size: 1ch;
+  block-size: 1.2em;
+  margin-inline-start: 1px;
+  vertical-align: text-bottom;
+  background-color: var(--ui-fg);
+  animation: ui-geek-signal 1s var(--ui-live-timing) infinite;
+}
+:root[data-theme="geek"] .ui-stream[data-state="streaming"] > :is(ul, ol) + [data-slot="caret"] {
+  display: none;
+}
+:root[data-theme="geek"] .ui-stream > [data-slot="caret"] {
+  display: inline-block;
+  inline-size: 1ch;
+  block-size: 1.2em;
+  vertical-align: text-bottom;
+  overflow: hidden;
+  font-family: var(--ui-font-ui);
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  background-color: var(--ui-fg);
+  animation: ui-geek-signal 1s var(--ui-live-timing) infinite;
+}
+
+/* A notice is a status line, the way a console prints one: a bracketed tone tag in the tone's
+   ink — `[ OK ]`, `[WARN]`, `[FAIL]` — in the mono face at the start, the message beside it
+   in the reading face, nothing round it and nothing painted under it (the tone tints are
+   clear here), so it lies on the page or on a custom background alike; a toast takes the
+   page's own colour where it floats over content. The tag stands out of the flow —
+   absolutely at the row's inset, the host padded for it — because a host lays its body and
+   actions out as a flex row, and a tag in the flow would be a third item pushing the body to
+   the middle. Every tag is six characters, so in the mono face all five are one width, and
+   the fixed 4rem column holds each of them with room to spare. A toast is the same line inside
+   one hairline, so it has an edge where it floats. (Two earlier passes — a coloured left rule,
+   then a solid tone block — were decoration and went.) */
+:root[data-theme="geek"] .ui-notice {
+  position: relative;
+  padding-inline-start: calc(4rem + var(--ui-row-px));
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  color: var(--ui-fg);
+  font-family: var(--ui-font-sans);
+}
+:root[data-theme="geek"] button.ui-notice {
+  border: var(--ui-border-w) solid var(--ui-line-emphasis);
+  background-color: var(--ui-canvas);
+}
+/* The host's own leading mark gives way to the tag: two marks would say the same thing. */
+:root[data-theme="geek"] .ui-notice [data-slot="icon"] {
+  display: none;
+}
+:root[data-theme="geek"] .ui-notice::before {
+  content: "[INFO]";
+  position: absolute;
+  inset-inline-start: var(--ui-row-px);
+  inset-block: 0;
+  display: flex;
+  align-items: center;
+  color: var(--_tone-fg);
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-text-small-size);
+  font-weight: var(--ui-weight-strong);
+}
+:root[data-theme="geek"] .ui-notice[data-tone="success"]::before {
+  content: "[ OK ]";
+}
+:root[data-theme="geek"] .ui-notice[data-tone="warning"]::before {
+  content: "[WARN]";
+}
+:root[data-theme="geek"] .ui-notice[data-tone="danger"]::before {
+  content: "[FAIL]";
+}
+:root[data-theme="geek"] .ui-notice[data-tone="neutral"]::before {
+  content: "[NOTE]";
+}
+
+/* Charts are drawn like a terminal plot: a dashed grid on crisp pixels, axis labels in the
+   mono face as tracked capitals, 1px lines with hard joins and ends, square points, and
+   thin solid bars outlined in the ink (the tokens say so; an earlier stripe hatch was
+   decoration and went). The chart primitives write every colour, width, radius and opacity
+   the tokens hold; the recipe owns only what a token cannot: dashes, joins and caps, pixel
+   alignment, the label face. A grid line is SVG in the usage charts and an HTML lane track
+   in the Trace timeline, so its rule carries both spellings — a dashed stroke, and a dashed
+   rule under a lane with no fill — and an engine ignores the one that does not apply. */
+:root[data-theme="geek"] .ui-chart [data-part="grid"] {
+  background-color: transparent;
+  border-bottom: var(--ui-border-w) dashed var(--ui-line-emphasis);
+}
+/* Dashes and pixel alignment are for the grid's straight rules — the SVG lines, and the HTML
+   lane rule above — never the donut's track, a circle that is a grid part too and stays a
+   solid ring (dashed it read as stitching; without anti-aliasing it is a staircase). */
+:root[data-theme="geek"] .ui-chart line[data-part="grid"] {
+  stroke-dasharray: 2 3;
+}
+:root[data-theme="geek"] .ui-chart line:is([data-part="grid"], [data-part="axis"]) {
+  shape-rendering: crispEdges;
+}
+/* The axis part is both the tick text and the axis-break marks: the face rules reach the text
+   alone, so a line never picks up a font. */
+:root[data-theme="geek"] .ui-chart text:is([data-part="axis"], [data-part="label"]) {
+  font-family: var(--ui-font-mono);
+  letter-spacing: var(--ui-tracking-label);
+  text-transform: uppercase;
+}
+:root[data-theme="geek"] .ui-chart :is(path, polyline)[data-part="series"] {
+  stroke-linejoin: miter;
+  stroke-linecap: butt;
+}
+/* A point is a rect the chart rounds to a circle by its `rx`; squared off here. */
+:root[data-theme="geek"] .ui-chart [data-part="point"] {
+  rx: 0;
+  shape-rendering: crispEdges;
+}
+
+/* Widgets as text-first panels: a hairline box with a ruled head, no fill anywhere, numerals in
+   the mono face (a reading is data), the illustration with square caps on crisp edges, and its
+   loops stepping (the live timing token) rather than gliding. */
+:root[data-theme="geek"] .ui-widget {
+  border: var(--ui-border-w) solid var(--ui-line);
+  border-radius: 0;
+  background-color: transparent;
+}
+:root[data-theme="geek"] .ui-widget > [data-slot="head"] {
+  padding-bottom: calc(var(--ui-space-unit) * 2);
+  border-bottom: var(--ui-border-w) solid var(--ui-line);
+}
+:root[data-theme="geek"] .ui-widget [data-tile] {
+  border: var(--ui-border-w) solid var(--ui-line);
+  border-radius: 0;
+  background-color: transparent;
+}
+:root[data-theme="geek"] .ui-widget [data-figure] {
+  font-family: var(--ui-font-mono);
+  letter-spacing: var(--ui-tracking-mono);
+}
+:root[data-theme="geek"] .ui-widget [data-art] {
+  stroke-linecap: butt;
+  stroke-linejoin: miter;
+  shape-rendering: crispEdges;
+}
+
+/* An Agent's avatar is the pixel drawing, like the icons: the ball penguin on whole pixels from
+   16 px up, on a square tile. */
+:root[data-theme="geek"] .ui-avatar > [data-variant="flat"] {
+  display: none;
+}
+:root[data-theme="geek"] .ui-avatar > [data-variant="pixel"] {
+  display: inline;
+}

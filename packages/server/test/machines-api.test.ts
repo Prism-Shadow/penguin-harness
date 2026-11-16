@@ -101,7 +101,7 @@ import type { PushPlan, RemoteInstallOutcome } from "../src/machines/install-ser
 import type { RemoteIdentity } from "../src/machines/detect.js";
 import type { CheckoutPacker } from "../src/machines/checkout-image.js";
 import { readPushedBuild } from "../src/hmr/pushed-build.js";
-import { readPushedCli } from "../src/hmr/manifest.js";
+import { readHarnessMeta } from "../src/harness-meta.js";
 import type { PushedBuild } from "../src/hmr/pushed-build.js";
 import {
   apiClient,
@@ -3919,9 +3919,12 @@ describe("machines API", () => {
         cli: CHECKOUT_BUILD.cli,
         web: CHECKOUT_BUILD.web,
       });
-      const cli = await readPushedCli(image);
-      expect(cli.kind).toBe("bundle");
-      expect(fs.readFileSync((cli as { file: string }).file, "utf8")).toBe(CHECKOUT_BUILD.cli);
+      const meta = await readHarnessMeta(image);
+      expect(meta.kind).toBe("meta");
+      if (meta.kind === "meta")
+        expect(fs.readFileSync(path.join(image, "hmr", meta.manifest.cli!.bundle!), "utf8")).toBe(
+          CHECKOUT_BUILD.cli,
+        );
       expect(fs.existsSync(path.join(machinesRoot, "hmr"))).toBe(false);
 
       expect(recordsInStore()["ssh:nas"]?.version).toBe(version);

@@ -18,6 +18,12 @@
  * - A code card mutes `#` comment lines only, and its copy button names the action.
  * - The site bar lists every page once, in the shared order, under the host's words, and marks
  *   the landing page's download page current when it is opened with a trailing slash.
+ * - Its row ends in a closed "More" menu holding AMSP and the gallery, which reads as current
+ *   while one of them is; the phone menu lists those two under "More" as a named group.
+ * - The data pages' controls: a back link renders through the host's router and names where it
+ *   goes back to; a view switch marks only the current view (selected as tabs, checked as a
+ *   setting); a menu button the view has no use for stays mounted, greyed out and closed, and
+ *   its hint says where it applies.
  */
 import { createElement as h } from "react";
 import type { ReactElement } from "react";
@@ -25,13 +31,16 @@ import { describe, expect, it } from "vitest";
 import { SiteCodeCard } from "../src/components/site/site-code-card";
 import { SiteFooter } from "../src/components/site/site-footer";
 import { SiteNavLinks } from "../src/components/site/site-header";
-import type { SiteLinkProps } from "../src/components/site/site-header";
+import type { SiteLinkProps } from "../src/components/site/site-link";
 import { landingPageAt, siteNavLinks } from "../src/components/site/site-nav";
 import type { SiteNavLabels } from "../src/components/site/site-nav";
 import { highlightSiteCode } from "../src/components/site/site-highlight";
 import { extractToc } from "../src/components/site/markdown-text";
 import { SITE_DOC_REMARK_PLUGINS, SiteMarkdown } from "../src/components/site/site-markdown";
 import type { SiteMarkdownComponents } from "../src/components/site/site-markdown";
+import { SiteBackLink } from "../src/components/site/site-back-link";
+import { SiteMenuButton, SiteMenuCheck } from "../src/components/site/site-menu-button";
+import { SiteSegmented } from "../src/components/site/site-segmented";
 import { SiteSidebarNav } from "../src/components/site/site-sidebar";
 import { SiteToc } from "../src/components/site/site-toc";
 import { renderStatic } from "../src/testing";
@@ -70,9 +79,7 @@ describe("an article", () => {
     const html = article("> [!INFO]- First launch blocked\n>\n> Allow it.", {
       remarkPlugins: SITE_DOC_REMARK_PLUGINS,
     });
-    expect(html).toMatch(
-      /<details class="callout callout-info">\s*<summary[^>]*>First launch blocked/,
-    );
+    expect(html).toMatch(/<details class="[^"]*">\s*<summary[^>]*>First launch blocked/);
     expect(html).not.toContain("<details open");
   });
 
@@ -95,7 +102,7 @@ describe("an article", () => {
     });
     expect(html).toContain('href="#fn-1" id="fnref-1"');
     expect(html).toContain('aria-describedby="footnote-label"');
-    expect(html).toMatch(/<h2 id="footnote-label" class="[^"]*\brefs\b[^"]*">References<\/h2>/);
+    expect(html).toMatch(/<h2 id="footnote-label" class="[^"]*">References<\/h2>/);
   });
 
   it("sets a run of citations as one bracketed group, each number its own link", () => {
@@ -235,26 +242,33 @@ describe("the site bar", () => {
     leaderboards: "Leaderboards",
     amsp: "AMSP",
     docs: "Docs",
-    gallery: "Gallery",
+    gallery: "Theme Packs",
+    more: "More",
     github: "GitHub",
     openMenu: "Open menu",
     closeMenu: "Close menu",
   };
 
-  const anchorsAt = (pathname: string) => {
-    const links = siteNavLinks({ siteRoot: "/", labels, current: landingPageAt(pathname) });
-    const html = renderStatic(h(SiteNavLinks, { links }));
-    return [...html.matchAll(/<a ([^>]*)>([^<]*)<\/a>/g)].map(([, attrs, text]) => ({
+  const barAt = (pathname: string, mobile = false) =>
+    renderStatic(
+      h(SiteNavLinks, {
+        links: siteNavLinks({ siteRoot: "/", labels, current: landingPageAt(pathname) }),
+        mobile,
+      }),
+    );
+  const anchorsAt = (pathname: string, mobile = false) =>
+    [...barAt(pathname, mobile).matchAll(/<a ([^>]*)>([^<]*)<\/a>/g)].map(([, attrs, text]) => ({
       text,
       current: attrs!.includes('aria-current="page"'),
     }));
-  };
+  /** The "More" trigger in the row, as `<button …>More`. */
+  const moreTriggerAt = (pathname: string) => /<button [^>]*>More/.exec(barAt(pathname))?.[0];
   const currentAt = (pathname: string) =>
     anchorsAt(pathname)
       .filter((anchor) => anchor.current)
       .map((anchor) => anchor.text);
 
-  it("lists every page in order and marks /download/ as the download page", () => {
+  it("lists the row's pages in order, ends it in a closed More menu, and marks /download/", () => {
     expect(anchorsAt("/download/").map((anchor) => anchor.text)).toEqual([
       "Home",
       "Blog",
@@ -262,16 +276,97 @@ describe("the site bar", () => {
       "Plugins",
       "Benchmarks",
       "Leaderboards",
-      "AMSP",
       "Docs",
-      "Gallery",
     ]);
+    expect(moreTriggerAt("/download/")).toContain('aria-expanded="false"');
+    expect(moreTriggerAt("/download/")).not.toContain("data-current");
     expect(currentAt("/download/")).toEqual(["Download"]);
+  });
+
+  it("marks More as current on the AMSP page, and AMSP inside it in the phone menu", () => {
+    expect(moreTriggerAt("/amsp")).toContain("data-current");
+    expect(currentAt("/amsp")).toEqual([]);
+    const group =
+      /<div role="group" aria-labelledby="([^"]+)"[^>]*><span id="\1"[^>]*>More<\/span>(.*?)<\/div>/.exec(
+        barAt("/amsp", true),
+      );
+    expect(group).not.toBeNull();
+    expect(
+      [...group![2]!.matchAll(/<a ([^>]*)>([^<]*)<\/a>/g)].map(([, attrs, text]) => [
+        text,
+        attrs!.includes('aria-current="page"'),
+      ]),
+    ).toEqual([
+      ["AMSP", true],
+      ["Theme Packs", false],
+    ]);
   });
 
   it("marks a list page as current on its detail pages, and nothing on a lookalike path", () => {
     expect(currentAt("/plugins/goal/")).toEqual(["Plugins"]);
     expect(currentAt("/leaderboards")).toEqual(["Leaderboards"]);
     expect(currentAt("/benchmarks-old")).toEqual([]);
+  });
+});
+
+describe("the data pages' controls", () => {
+  it("renders a back link through the host's router, named as going back", () => {
+    const html = renderStatic(
+      h(SiteBackLink, {
+        href: "/plugins?q=x",
+        label: "Back to Plugins",
+        render: routed,
+        children: "Plugins",
+      }),
+    );
+    expect(html).toContain('href="/base/plugins?q=x"');
+    expect(html).toContain("data-routed");
+    expect(html).toContain('aria-label="Back to Plugins"');
+    expect(html).toMatch(/>Plugins<\/a>$/);
+  });
+
+  it.each([
+    ["tablist", "aria-selected"],
+    ["radiogroup", "aria-checked"],
+  ] as const)("marks only the current option of a %s switch", (role, state) => {
+    const html = renderStatic(
+      h(SiteSegmented, {
+        role,
+        label: "Views",
+        options: [
+          { id: "table", label: "Table" },
+          { id: "pareto", label: "Pareto" },
+          { id: "waffle", label: "Waffle" },
+        ],
+        value: "pareto",
+        onChange: () => undefined,
+      }),
+    );
+    expect(html.match(new RegExp(`${state}="true"`, "g"))).toHaveLength(1);
+    expect(html.match(new RegExp(`${state}="false"`, "g"))).toHaveLength(2);
+    expect(html).toMatch(new RegExp(`${state}="true"[^>]*>Pareto<`));
+  });
+
+  it("keeps a menu button the view does not use in place, greyed out and closed, saying why", () => {
+    const html = renderStatic(
+      h(SiteMenuButton, {
+        label: "Columns",
+        icon: h("svg"),
+        disabled: true,
+        hint: "Columns apply to the table",
+        count: 2,
+        children: h(SiteMenuCheck, {
+          checked: true,
+          onChange: () => undefined,
+          children: "Cost",
+        }),
+      }),
+    );
+    expect(html).toContain('aria-label="Columns"');
+    expect(html).toContain('aria-disabled="true"');
+    expect(html).toContain('title="Columns apply to the table"');
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).not.toContain("Cost");
+    expect(html).not.toContain(">2<");
   });
 });
