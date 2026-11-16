@@ -114,6 +114,7 @@ export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSoc
         .find((a) => a.auth !== null) ?? null;
     if (!authed?.auth) return refuse(socket, 401, "Unauthorized");
     const userId = authed.auth.user.userId;
+    // What the API socket re-asks of the handshake's login (socket/serve.ts).
     const sessionIsLive = () => deps.authService.sessionIsLive(authed.token);
 
     // The platform may be mid-swap; ensure() resolves the instance that owns the
@@ -121,7 +122,6 @@ export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSoc
     void deps.hmr
       .ensure()
       .then((platform) => {
-        if (!sessionIsLive()) return refuse(socket, 401, "Unauthorized");
         if (apiSocket) {
           // No terminal lookup: the socket carries the whole API as the cookie's user.
           const ref = apiSocketRef(userId, sessionIsLive);

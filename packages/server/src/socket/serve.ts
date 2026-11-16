@@ -66,7 +66,10 @@ function callable(path: string): boolean {
 }
 
 export interface ApiSocketDeps {
-  /** The handshake's original login must remain valid; checking never extends its expiry. */
+  /**
+   * Whether the login the handshake authenticated still exists and has not expired; asking never
+   * renews it. Re-asked before every call and on every beat, as the SSE heartbeat re-asks it.
+   */
   sessionIsLive: () => boolean;
   /** The platform's routes, entered as the socket's user (Http.fetchAs). */
   fetch: (request: Request) => Promise<Response>;
@@ -102,6 +105,8 @@ export function serveApiSocket(ws: WebSocket, deps: ApiSocketDeps): void {
   const answers = new Map<number, StreamAnswer>();
   let alive = true;
   let revoked = false;
+  // A signed-out login ends the socket, its calls and streams with it: HTTP would refuse its
+  // next request, and so does this transport of the same routes.
   const authorized = (): boolean => {
     if (revoked) return false;
     if (deps.sessionIsLive()) return true;
@@ -112,7 +117,6 @@ export function serveApiSocket(ws: WebSocket, deps: ApiSocketDeps): void {
   };
 
   const send = (frame: ServerFrame): void => {
-    if (!authorized()) return;
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(frame));
   };
 
