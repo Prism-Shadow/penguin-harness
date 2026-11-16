@@ -15,9 +15,8 @@
  *   then the mirrors the rules rewrite it into; what arrives is verified against the
  *   entry's sha512 exactly as the canonical URL's would be — a mirror serving tampered
  *   bytes is refused like any other source.
- * - A rewrite rule maps a URL by capture; a rule that does not match the URL, or a URL
- *   over the length cap, contributes nothing; a deployment with no mirrors behaves as
- *   before.
+ * - A rewrite rule maps a URL by capture; a rule that does not match the URL contributes
+ *   nothing; a deployment with no mirrors behaves as before.
  */
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -536,10 +535,15 @@ describe("deployment proxy config", () => {
     expect(rewriteRuleRisk({ kind: "rewrite", match: "(?:.*)*!x", rewrite: "x" })).toMatch(
       /not linear/,
     );
-    // A pattern over the length cap is a program, not a URL map.
+    // A pattern can only ever match one URL, so its bound is the URL length the web
+    // itself allows (Firefox's 65,536); anything longer is a program, not a URL map.
     expect(
-      rewriteRuleRisk({ kind: "rewrite", match: "^a".padEnd(300, "b") + "$", rewrite: "x" }),
-    ).toMatch(/over the 256 cap/);
+      rewriteRuleRisk({ kind: "rewrite", match: "^a".padEnd(65537, "b") + "$", rewrite: "x" }),
+    ).toMatch(/over the 65536 cap/);
+    // A pattern of the largest legal URL length passes.
+    expect(
+      rewriteRuleRisk({ kind: "rewrite", match: "^a".padEnd(65536, "b") + "$", rewrite: "x" }),
+    ).toBeNull();
     // The URL-map shapes this feature is for read as linear and pass.
     expect(
       rewriteRuleRisk({
@@ -548,12 +552,14 @@ describe("deployment proxy config", () => {
         rewrite: "https://gh-mirror.example/$1/$2/releases/download/$3",
       }),
     ).toBeNull();
-    // A URL over the length cap is skipped at run time, whatever the rules say.
+    // A very long URL is still a URL: the rules run over it as usual. The ReDoS gate is
+    // the pattern's shape (safe-regex at parse), not the input's length — a linear
+    // pattern over a long string stays linear.
     expect(
       pluginProxyMirrors("https://" + "a".repeat(4096) + "/x", [
-        { kind: "rewrite", match: ".*", rewrite: "https://mirror.example/$0" },
+        { kind: "rewrite", match: ".*", rewrite: "https://mirror.example/$&" },
       ]),
-    ).toEqual([]);
+    ).toEqual(["https://mirror.example/https://" + "a".repeat(4096) + "/x"]);
   });
 
   it("a rule of an unknown kind, a non-string field or a pattern that will not compile is a config error", () => {
