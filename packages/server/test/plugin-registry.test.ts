@@ -52,7 +52,7 @@ import {
 import { pickIndexEntry } from "../src/api/plugin-pick.js";
 import type { PluginRegistry } from "../src/plugin/registry.js";
 import { storePackage } from "../src/plugin/store.js";
-import { integrityOf } from "./plugin-fixtures.js";
+import { contentTable, integrityOf } from "./plugin-fixtures.js";
 import { activatePlugins } from "../src/plugin/activation.js";
 import { resolveServerConfig } from "../src/config.js";
 import { pluginRegistryRoutes } from "../src/http/routes/plugins.js";
@@ -60,7 +60,6 @@ import { fakeFetch, fetchFailed, jsonResponse } from "./fixtures/fetch.js";
 import { apiClient, createTestApp, loginAdmin } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 import { manifestOf } from "../../../scripts/plugin-entry.mjs";
-import { contentTable } from "./plugin-fixtures.js";
 
 const hash = (digit: string) =>
   `sha512-${Buffer.alloc(64, digit.charCodeAt(0)).toString("base64")}`;

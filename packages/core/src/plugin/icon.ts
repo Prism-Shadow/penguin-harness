@@ -78,8 +78,7 @@ export function readPluginIcon(
       kind: "svg",
     };
   }
-  if (!stat.isFile())
-    return { warnings: [`${key} is not a plain file; ignored`], kind: "svg" };
+  if (!stat.isFile()) return { warnings: [`${key} is not a plain file; ignored`], kind: "svg" };
   if (stat.size > MAX_PLUGIN_ICON_BYTES) {
     return {
       warnings: [`${key} is larger than ${MAX_PLUGIN_ICON_BYTES / 1024} KiB; ignored`],

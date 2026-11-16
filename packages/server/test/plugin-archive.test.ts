@@ -56,7 +56,12 @@ import {
   PluginInstallError,
   type InstalledPackage,
 } from "../src/plugin/install.js";
-import { contentTable, integrityOf, writeClassPackage, writeShippedIndex } from "./plugin-fixtures.js";
+import {
+  contentTable,
+  integrityOf,
+  writeClassPackage,
+  writeShippedIndex,
+} from "./plugin-fixtures.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser, tokenClient } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 import { peakRssGrowth, zeroDirectoryZip } from "./zip-bomb-fixtures.js";

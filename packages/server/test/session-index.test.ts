@@ -898,9 +898,7 @@ describe("session-index", () => {
     // The head answer rides alongside the index rows, never instead of them, and never twice:
     // the whole stream stays free of one id twice.
     const whole = await list("?sessionIdPrefix=session-");
-    expect(ids(whole)).toEqual(
-      expect.arrayContaining([created, cliOrphan, userOrphan]),
-    );
+    expect(ids(whole)).toEqual(expect.arrayContaining([created, cliOrphan, userOrphan]));
     expect(new Set(ids(whole)).size).toBe(ids(whole).length);
 
     // A page the index rows fill leaves no room for the trace-only rows: the asked page size

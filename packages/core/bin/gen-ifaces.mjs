@@ -1194,7 +1194,9 @@ for (const project of projects) {
         : undefined;
     const sym = sym0 && sym0.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(sym0) : sym0;
     if (sym && componentKeyBySymbol.has(sym)) return componentKeyBySymbol.get(sym);
-    const decl = sym?.declarations?.find((d) => isInterfaceClassDecl(d) || isPublishedInterfaceDecl(d));
+    const decl = sym?.declarations?.find(
+      (d) => isInterfaceClassDecl(d) || isPublishedInterfaceDecl(d),
+    );
     if (!decl) {
       errors.push(
         `${file}: a @Use/@Provide field's type must be a @Component class or an interface class (@Interface(), or extends Interface<…>()) (got '${typeNode?.getText() ?? "?"}')`,
