@@ -204,7 +204,7 @@ A channel is read by people scanning it between other things, and a message that
 - **No hedging boilerplate**: no "pending", "subject to", "see the dashboard for the latest", "this does not mean". Write a caveat only when it would change the reader's decision, as one plain sentence. What is still unverified belongs in a progress line on the ticket.
 - **A channel message is not your final answer.** Your final answer reports the run to whoever started it. A channel gets only what someone else must know or do.
 - **Markdown renders**: bullets, `**bold**` for the one thing that must not be missed, links. Use no headings and no tables; content that needs them is a document.
-- **Cite a file with a label**: `[Weekly submissions](<app_data_dir>/organizations/co_lab/workspace/growth/weekly-submissions.md)`. The reader sees the label and opens the file from the message; the full path stays in it for the next run. The label is a few words saying what the file is, not its file name. A bare path still works, and reads as its file name.
+- **Cite a file with a label**: `[Weekly submissions](<app_data_dir>/organizations/co_lab/workspace/growth/weekly-submissions.md)`. The reader sees the label, the full path on hover; the full path stays in the message for the next run. The label is a few words saying what the file is, not its file name. A bare path still works, and reads as its file name.
 - **Pass a multi-line message through a quoted heredoc**, so the shell leaves the `$`, backticks and quotes inside it alone:
 
 ```bash

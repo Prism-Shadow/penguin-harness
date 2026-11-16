@@ -8,7 +8,7 @@
 
 [中文版](2026-11-05-cited-file-labels.zh.md)
 
-Employees are told to cite a file in a channel message or a desk reply as `[what it is](<app_data_dir>/…)`, so the reader sees a few words and opens the file from the message. The `company-employee` skill moved to `2026.11.05.1`, so organizations already on disk pick it up at their next reconcile.
+Employees are told to cite a file in a channel message or a desk reply as `[what it is](<app_data_dir>/…)`, so the reader sees a few words instead of the whole path. The `company-employee` skill moved to `2026.11.05.1`, so organizations already on disk pick it up at their next reconcile.
 
 ## Details
 
