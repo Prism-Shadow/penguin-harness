@@ -13,3 +13,4 @@
  */
 export { Users, AuthSessions, Auth, Admin } from "./identity.js";
 export type { SessionVia, UserInfo } from "./identity.js";
+export type { UserRow } from "./repos/users.js";
