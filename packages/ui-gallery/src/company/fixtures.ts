@@ -189,5 +189,19 @@ export const FIXTURES: Record<FixtureId, Fixture> = {
 /** What the sample's retrospectives propose, by retrospective: the first, then the second. */
 export const RETRO_PROPOSALS: readonly (readonly FixtureId[])[] = [["skill"], ["patrolScope"]];
 
+/**
+ * The folders a company can work in: the Project's workspaces, as the setup page offers them. What
+ * the lead reads in each, and the missions it suggests from that, are the dictionaries'
+ * `workspaces`, keyed by the same ids. The first is the one a new company is offered first.
+ */
+export const WORKSPACES = ["harness", "site"] as const;
+export type WorkspaceId = (typeof WORKSPACES)[number];
+
+/** Each workspace's folder. */
+export const WORKSPACE_PATH: Record<WorkspaceId, string> = {
+  harness: "~/code/penguin-harness",
+  site: "~/code/penguin-site",
+};
+
 /** The steps of a ticket the reader asked for in their own words. */
 export const SAID_SCRIPT: readonly ScriptStep[] = ["progress", "deliver"];

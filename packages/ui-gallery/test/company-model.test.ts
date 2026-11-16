@@ -7,7 +7,10 @@
  *   an agent has, and what is settled.
  * - Given the first sentence, the lead answers with proposals only: nothing has a session, the
  *   only schedule is the weekly retrospective, with nothing to look back on yet, and the team is the lead and one engineer until a proposed role is accepted;
- *   an empty sentence starts nothing.
+ *   an empty sentence starts nothing; the company works in the workspace it was started on.
+ * - Given the lead's first proposals, accepting them all at once does what accepting each does,
+ *   and leaves alone one already decided; once every one of them is decided, accepted or not, the
+ *   lead says setting up is settled, once, and not before.
  * - Given a proposal, accepting a task starts its work, accepting a schedule switches it on, and
  *   accepting a role adds its byline; rejecting it starts nothing and keeps it on record.
  * - Given time passing, a ticket turns unread only on the step that leaves it waiting on the
@@ -52,6 +55,7 @@
 import { describe, expect, it } from "vitest";
 import {
   acceptTicket,
+  acceptTickets,
   answerTicket,
   approveTicket,
   metricsOf,
@@ -168,6 +172,37 @@ describe("setting a company up", () => {
     ]);
     state = acceptTicket(state, "verifier");
     expect(state.roles).toEqual(["engineer", "verifier"]);
+  });
+
+  it("works in the workspace it was started on", () => {
+    expect(startCompany(freshState(), "Keep the docs right", "site").workspace).toBe("site");
+  });
+
+  it("accepts all the first proposals at once as it accepts each, leaving a decided one alone", () => {
+    const started = rejectTicket(
+      startCompany(freshState(), "Look after the repository"),
+      "verifier",
+    );
+    const all = acceptTickets(started, ["patrol", "survey", "verifier"]);
+    const each = acceptTicket(acceptTicket(started, "patrol"), "survey");
+    expect(all.tickets).toEqual(each.tickets);
+    expect(all.sessions).toEqual(each.sessions);
+    expect(all.schedules).toEqual(each.schedules);
+    expect(all.roles).toEqual(["engineer"]);
+    expect(get(all, "verifier").status).toBe("rejected");
+  });
+
+  it("says setting up is settled once every first proposal is decided, and only once", () => {
+    const settled = (state: CompanyState) =>
+      state.chat.filter((line) => line.from === "lead" && line.line === "settled");
+    let state = startCompany(freshState(), "Look after the repository");
+    state = acceptTicket(state, "survey");
+    state = rejectTicket(state, "patrol");
+    expect(settled(state)).toEqual([]);
+    state = acceptTicket(state, "verifier");
+    expect(settled(state)).toEqual([{ from: "lead", line: "settled", tickets: [] }]);
+    state = acceptTickets(sayToLead(state, "Fix the login page"), ["said-1"]);
+    expect(settled(state)).toHaveLength(1);
   });
 
   it("keeps a rejected proposal on record with nothing started", () => {

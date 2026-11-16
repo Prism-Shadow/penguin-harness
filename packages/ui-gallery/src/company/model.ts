@@ -39,7 +39,14 @@
  *   lesson it came from, so the handbook every employee reads stays short.
  */
 import { EMPLOYEES, FIXTURES, RETRO_PROPOSALS, SAID_SCRIPT } from "./fixtures";
-import type { Byline, FixtureId, HandbookDocId, ScriptStep, TicketKind } from "./fixtures";
+import type {
+  Byline,
+  FixtureId,
+  HandbookDocId,
+  ScriptStep,
+  TicketKind,
+  WorkspaceId,
+} from "./fixtures";
 import { inboxViewOf, INBOX_VIEWS, waitOf } from "./spec";
 import type { InboxView, TicketState, Triage } from "./spec";
 
@@ -217,8 +224,11 @@ export interface Schedule {
   auto: boolean;
 }
 
-/** What the lead says in its conversation: a line of the dictionary, about some tickets. */
-export type LeadLine = "proposals" | "filed";
+/**
+ * What the lead says in its conversation: a line of the dictionary, about some tickets. Its first
+ * proposals, then, once each of them is decided, that the setup is settled; a ticket it filed.
+ */
+export type LeadLine = "proposals" | "settled" | "filed";
 
 /** A line of the conversation: the person's own words (or, staged, a ticket's request), or the lead's. */
 export type ChatLine =
@@ -229,7 +239,9 @@ export type ChatLine =
 export interface CompanyState {
   /** Before the first sentence, or after it. */
   stage: "setup" | "running";
-  /** What the person asked the company to look after; null for the sample's own, a dictionary line. */
+  /** The folder the company works in, chosen at setup. */
+  workspace: WorkspaceId;
+  /** What the person asked the company to look after; null in the staged week. */
   mission: string | null;
   /** Oldest first. */
   tickets: Ticket[];
@@ -337,6 +349,7 @@ function replay(target: Ticket, roles: Byline[]): WorkSession[] {
 export function freshState(): CompanyState {
   return {
     stage: "setup",
+    workspace: "harness",
     mission: null,
     tickets: [],
     sessions: [],
@@ -404,6 +417,7 @@ export function weekState(): CompanyState {
   const roles: Byline[] = ["engineer", "verifier"];
   return {
     stage: "running",
+    workspace: "harness",
     mission: null,
     tickets,
     // The sessions of every ticket whose work has started, their conversations as far as the work.
@@ -548,16 +562,22 @@ const staffed = (state: CompanyState, ticket: Ticket): Ticket =>
     : ticket;
 
 /**
- * The first sentence. The lead answers with proposals, one thing each: a patrol schedule, a first
- * task, a dedicated role. Nothing starts until the person accepts it.
+ * The first sentence, with the workspace it is about. The lead has already read that workspace, so
+ * it answers with proposals, one thing each: a patrol schedule, a first task, a dedicated role.
+ * Nothing starts until the person accepts it.
  */
-export function startCompany(state: CompanyState, mission: string): CompanyState {
+export function startCompany(
+  state: CompanyState,
+  mission: string,
+  workspace: WorkspaceId = state.workspace,
+): CompanyState {
   const said = mission.trim();
   if (state.stage !== "setup" || said === "") return state;
   const proposals: FixtureId[] = ["patrol", "survey", "verifier"];
   return {
     ...state,
     stage: "running",
+    workspace,
     mission: said,
     tickets: proposals.map((id) => ticketOf(id, "lead")),
     chat: [
@@ -588,6 +608,10 @@ const file = (state: CompanyState, entry: HandbookEntry): CompanyState => ({
  * skill is filed in the handbook and installed for its employee.
  */
 export function acceptTicket(state: CompanyState, id: string): CompanyState {
+  return settle(acceptOne(state, id));
+}
+
+function acceptOne(state: CompanyState, id: string): CompanyState {
   const ticket = find(state, id);
   if (ticket === undefined || waitOf(ticket) !== "accept" || ticket.fixture === null) return state;
   if (ticket.kind === "task") {
@@ -617,7 +641,35 @@ export function acceptTicket(state: CompanyState, id: string): CompanyState {
 export function rejectTicket(state: CompanyState, id: string): CompanyState {
   const ticket = find(state, id);
   if (ticket === undefined || waitOf(ticket) !== "accept") return state;
-  return close(withTicket(state, id, { status: "rejected", unread: false }), id);
+  return settle(close(withTicket(state, id, { status: "rejected", unread: false }), id));
+}
+
+/**
+ * Accept several proposals at once, as the lead's first answer offers: each is accepted as it
+ * would be on its own, and any that no longer waits to be accepted is left as it is.
+ */
+export function acceptTickets(state: CompanyState, ids: readonly string[]): CompanyState {
+  return settle(ids.reduce(acceptOne, state));
+}
+
+/**
+ * Once every proposal of the lead's first answer is decided, the lead says so, once: setting up
+ * is over, and from here on only what waits on the person reaches them. The proposals above it
+ * already show how each was decided, so it names no ticket.
+ */
+function settle(state: CompanyState): CompanyState {
+  const first = state.chat.find(
+    (line): line is Extract<ChatLine, { from: "lead" }> =>
+      line.from === "lead" && line.line === "proposals",
+  );
+  if (first === undefined) return state;
+  if (state.chat.some((line) => line.from === "lead" && line.line === "settled")) return state;
+  const open = first.tickets.some((id) => {
+    const ticket = find(state, id);
+    return ticket !== undefined && waitOf(ticket) === "accept";
+  });
+  if (open) return state;
+  return { ...state, chat: [...state.chat, { from: "lead", line: "settled", tickets: [] }] };
 }
 
 /**

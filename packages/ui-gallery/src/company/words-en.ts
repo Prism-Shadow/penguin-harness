@@ -2,11 +2,6 @@
 import type { Words } from "./words";
 
 export const en: Words = {
-  org: {
-    name: "Harness Care",
-    mission:
-      "Maintain the penguin-harness repository: identify issues, fix defects, and guide new users through setup.",
-  },
   nav: {
     inbox: "Inbox",
     talk: "Tell the lead…",
@@ -19,7 +14,7 @@ export const en: Words = {
       round === null ? `${name} · ${role}` : `${name} · ${role} ${round}`,
     pick: "Pick a ticket on the left.",
     notStarted:
-      "The company has not started. Say what you care about and the lead proposes a few tickets.",
+      "The company hasn't started. Pick a workspace and what to look after, and the lead proposes a few tickets for you to decide.",
     you: "You",
     openMenu: "Open navigation",
   },
@@ -113,25 +108,73 @@ export const en: Words = {
     info: "Permanent coordinator agent. Receives requests and files tickets for work sessions; does not write code directly.",
     placeholder: "Enter request, press Enter to send",
     send: "Send",
+    acceptAll: "Accept all",
     empty: "No messages yet. Send a request to generate tickets.",
     lines: {
-      proposals:
-        "Generated three proposed tickets in your inbox. Review each one; execution starts upon acceptance.",
+      proposals: "I've read it. Three things to start with; only what you accept starts:",
+      settled:
+        'All decided. From now on, only tickets that need you to accept, answer or review reach "Waiting". Nothing else interrupts you.',
       filed:
         "Ticket created and work session started. Notifications will arrive on questions or completion.",
     },
   },
   setup: {
-    title: "Define focus area",
-    body: "State a primary objective. The lead will generate proposed tickets for review without group chats or lengthy proposals.",
-    placeholder: "Example: maintain penguin-harness repository, identify issues, and fix defects",
-    start: "Start",
-    examples: [
-      "Maintain penguin-harness repository: identify issues, fix defects",
-      "Triage new issues daily and fix straightforward bugs",
-      "Streamline first-time user setup",
-    ],
-    examplesLabel: "Examples",
+    title: "Start a company",
+    body: "Pick a workspace. The lead reads it first, then suggests what the company should look after. Everything has a default, so you can start right away.",
+    workspace: "Workspace",
+    workspaceInfo: "The folder the employees work in. By default, this Project's workspace.",
+    read: "What the lead read",
+    readInfo:
+      "Once you pick a workspace, the lead reads its README, issues and CI runs. It changes no file and opens no work session.",
+    mission: "What the company looks after",
+    own: "Write your own",
+    ownPlaceholder: "Example: maintain the repository, find and fix defects",
+    defaults:
+      "The company is named after the workspace folder and uses the Project's default model. You can change both in settings later.",
+    start: "Start the company",
+  },
+  workspaces: {
+    harness: {
+      org: "Harness Care",
+      read: [
+        "A pnpm monorepo: 9 packages, about 2,500 tests",
+        "37 open issues on GitHub, 6 of them labelled bug",
+        "2 of the last 10 CI runs failed, both on the same test",
+      ],
+      missions: [
+        {
+          label: "Maintain the repository: find and fix defects",
+          why: "6 bugs have no owner, and CI is unstable",
+        },
+        {
+          label: "Triage new issues daily and fix the clear defects",
+          why: "About 10 new issues a week",
+        },
+        { label: "Fix the flaky test first", why: "It failed the last 2 CI runs" },
+      ],
+    },
+    site: {
+      org: "Site Care",
+      read: [
+        "A Vite static site: docs in English and Chinese, 86 pages",
+        "12 open issues, most of them errors in the docs",
+        "In the last month, the English pages changed 9 times more than the Chinese ones",
+      ],
+      missions: [
+        {
+          label: "Maintain the docs: fix errors, keep both languages in step",
+          why: "The Chinese pages are 9 changes behind",
+        },
+        {
+          label: "Read new issues daily and fix the docs errors",
+          why: "Most of the 12 issues are errors",
+        },
+        {
+          label: "Check that every page's example code runs",
+          why: "3 issues are examples that fail",
+        },
+      ],
+    },
   },
   team: {
     total: (tokens: string, cost: string) =>

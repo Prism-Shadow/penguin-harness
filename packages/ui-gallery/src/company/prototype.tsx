@@ -29,6 +29,7 @@ import { OrgStatusPill } from "../../../web/src/features/company/shared";
 import type { CompanyStart } from "./frame";
 import {
   acceptTicket,
+  acceptTickets,
   answerTicket,
   approveTicket,
   costOf,
@@ -165,7 +166,7 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
   const waiting = inboxCounts(state).waiting;
   const open =
     pane === "ticket" ? state.tickets.find((ticket) => ticket.id === selected) : undefined;
-  const orgName = W.org.name;
+  const orgName = W.workspaces[state.workspace].org;
 
   const sidebar = (
     <SidebarFrame
@@ -210,7 +211,11 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
   let body: ReactNode;
   if (!running) {
     body = (
-      <SetupPage onStart={(mission) => setState((current) => startCompany(current, mission))} />
+      <SetupPage
+        onStart={(mission, workspace) =>
+          setState((current) => startCompany(current, mission, workspace))
+        }
+      />
     );
   } else if (pane === "lead") {
     body = (
@@ -220,6 +225,11 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
         focus={talkTurn > 0}
         onSay={(text) => setState((current) => sayToLead(current, text))}
         onOpen={(id) => openTicket(id)}
+        actions={{
+          accept: actions.accept,
+          reject: actions.reject,
+          acceptAll: (ids) => setState((current) => acceptTickets(current, ids)),
+        }}
       />
     );
   } else if (pane === "schedules") {

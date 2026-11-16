@@ -22,10 +22,6 @@ export interface TicketWords {
 }
 
 export const zh = {
-  org: {
-    name: "Harness 维护组",
-    mission: "维护 penguin-harness 代码库：排查问题、修复缺陷，让新用户顺利完成首次配置。",
-  },
   nav: {
     inbox: "收件箱",
     talk: "对主理说…",
@@ -37,7 +33,7 @@ export const zh = {
     sessionTab: (name: string, role: string, round: number | null) =>
       round === null ? `${name} · ${role}` : `${name} · ${role} ${round}`,
     pick: "在左栏选一张工单。",
-    notStarted: "公司还没开始。说一句你关心的事，主理会提几张工单。",
+    notStarted: "公司还没开。选好工作区和关注的事，主理会提几张工单给你定。",
     you: "你",
     openMenu: "打开导航",
   },
@@ -125,23 +121,56 @@ export const zh = {
     info: "常驻调度 Agent。负责接收需求、拆解工单并分派给工作会话，不编写代码。",
     placeholder: "输入需求，Enter 发送",
     send: "发送",
+    acceptAll: "全部接受",
     empty: "暂无对话。输入需求后，主理将自动创建工单。",
     lines: {
-      proposals: "已在收件箱中生成三项提议工单。你逐项决定，接受的才会开始。",
+      proposals: "读完了。先提三件事，你接受的才会开始：",
+      settled:
+        "都定了。从现在起，只有需要你接受、回答或验收的工单会出现在「等你」里，其余的不打扰你。",
       filed: "已生成工单并启动工作会话。遇到疑问或完成后将通知收件箱。",
     },
   },
   setup: {
-    title: "设定关注目标",
-    body: "输入需要关注的目标。主理将生成提议工单供逐项确认，无需长篇提案或群聊沟通。",
-    placeholder: "例如：维护 penguin-harness 代码库，排查问题与修复缺陷",
-    start: "开始",
-    examples: [
-      "维护 penguin-harness 代码库：排查问题、修复缺陷",
-      "每日整理新 issue 并修复明确缺陷",
-      "优化新用户首次配置流程",
-    ],
-    examplesLabel: "示例",
+    title: "开一家公司",
+    body: "选好工作区，主理先读一遍，再建议公司关注什么。都已选好默认值，可以直接开始。",
+    workspace: "工作区",
+    workspaceInfo: "员工共同工作的目录，默认是这个 Project 的工作区。",
+    read: "主理读到的",
+    readInfo: "选好工作区后，主理只读 README、issue 和 CI 记录，不改文件，也不开工作会话。",
+    mission: "公司关注什么",
+    own: "自己写",
+    ownPlaceholder: "例如：维护代码库，排查问题、修复缺陷",
+    defaults: "公司名取工作区的文件夹名，模型用 Project 默认的，开了以后都能在设置里改。",
+    start: "开公司",
+  },
+  /** What the lead reads in each workspace, and the missions it suggests from that. */
+  workspaces: {
+    harness: {
+      org: "Harness 维护组",
+      read: [
+        "pnpm monorepo，9 个包，约 2,500 个测试",
+        "GitHub 上 37 个未关闭的 issue，6 个标了 bug",
+        "CI 最近 10 次有 2 次失败，都卡在同一个测试上",
+      ],
+      missions: [
+        { label: "维护代码库：排查问题、修复缺陷", why: "6 个 bug 没人修，CI 也不稳" },
+        { label: "每天整理新 issue，修掉明确的缺陷", why: "每周新增约 10 个 issue" },
+        { label: "先修好不稳定的测试", why: "最近 2 次 CI 失败都是它" },
+      ],
+    },
+    site: {
+      org: "官网维护组",
+      read: [
+        "Vite 静态站，中英两套文档，共 86 页",
+        "12 个未关闭的 issue，大多是文档错漏",
+        "最近一个月，英文页比中文页多改了 9 次",
+      ],
+      missions: [
+        { label: "维护文档：修正错漏，中英同步", why: "中文页落后英文页 9 次修改" },
+        { label: "每天看新 issue，修掉文档错漏", why: "12 个 issue 大多是错漏" },
+        { label: "检查每页的示例代码能不能跑", why: "issue 里有 3 个是示例跑不通" },
+      ],
+    },
   },
   team: {
     total: (tokens: string, cost: string) => `全公司本月 ${tokens} Token · ${cost}`,

@@ -5,26 +5,32 @@
  * - The lead is the one conversation: what the reader says becomes a ticket, and the lead's
  *   lines name tickets, never the work.
  * - The board is the shipped five columns, unchanged; a card that waits says what for.
- * - Setting up asks one sentence, in the frame of the shipped empty landing.
+ * - Setting up is one page with every choice made: the workspace, what the lead read in it, and
+ *   the mission it suggests; the lead's first answer takes its proposals one by one or all at once.
  */
-import { useState } from "react";
+import { useId, useState } from "react";
 import type { FormEvent } from "react";
 import {
   Button,
+  ChoiceGroup,
   GlyphIcon,
   Heading,
   ICONS,
   ICON_SIZE,
+  InfoPopover,
   MessageBubble,
   PageFrame,
   PageHeader,
   RuledSection,
+  Select,
   Switch,
   Textarea,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../../web/src/lib/strings";
 import { PriorityBadge, TitleButton } from "../../../web/src/features/company/shared";
 import { toneDot } from "../../../web/src/lib/tone";
+import { WORKSPACE_PATH, WORKSPACES } from "./fixtures";
+import type { WorkspaceId } from "./fixtures";
 import type { ChatLine, CompanyState, ScheduleId } from "./model";
 import { TICKET_STATUSES, waitOf } from "./spec";
 import type { TicketStatus } from "./spec";
@@ -75,14 +81,23 @@ export function SchedulesPage({
   );
 }
 
+/** What the reader can do to a proposal from the lead's conversation. */
+export interface ProposalActions {
+  accept: (id: string) => void;
+  reject: (id: string) => void;
+  acceptAll: (ids: readonly string[]) => void;
+}
+
 function ChatMessage({
   line,
   state,
   onOpen,
+  actions,
 }: {
   line: ChatLine;
   state: CompanyState;
   onOpen: (id: string) => void;
+  actions: ProposalActions;
 }) {
   const W = useWords();
   const ticketOf = (id: string) => state.tickets.find((ticket) => ticket.id === id);
@@ -96,24 +111,63 @@ function ChatMessage({
       </div>
     );
   }
+  const tickets = line.tickets.flatMap((id) => {
+    const ticket = ticketOf(id);
+    return ticket === undefined ? [] : [ticket];
+  });
+  // The lead's first answer is decided where it is said: each proposal, or all that still wait.
+  const deciding = line.line === "proposals";
+  const open = deciding ? tickets.filter((ticket) => waitOf(ticket) === "accept") : [];
   return (
     <div className="text-sm leading-relaxed text-fg">
       <p>{W.lead.lines[line.line]}</p>
-      <ul className="mt-2 space-y-1">
-        {line.tickets.flatMap((id) => {
-          const ticket = ticketOf(id);
-          return ticket === undefined
-            ? []
-            : [
-                <li key={id} className="flex items-center gap-2">
-                  <Standing ticket={ticket} />
-                  <TitleButton className="truncate" onClick={() => onOpen(id)}>
-                    {titleOf(ticket, W)}
-                  </TitleButton>
-                </li>,
-              ];
-        })}
+      <ul
+        className={deciding ? "mt-3 divide-y divide-line border-y border-line" : "mt-2 space-y-1"}
+      >
+        {tickets.map((ticket) => (
+          <li
+            key={ticket.id}
+            className={
+              deciding
+                ? "flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5"
+                : "flex items-center gap-2"
+            }
+          >
+            <span
+              className={deciding ? "min-w-0 flex-1 basis-60" : "flex min-w-0 items-center gap-2"}
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <Standing ticket={ticket} />
+                <TitleButton className="truncate" onClick={() => onOpen(ticket.id)}>
+                  {titleOf(ticket, W)}
+                </TitleButton>
+              </span>
+              {deciding && <span className={`block text-xs ${QUIET}`}>{gistOf(ticket, W)}</span>}
+            </span>
+            {deciding && waitOf(ticket) === "accept" && (
+              <span className="flex shrink-0 gap-2">
+                <Button size="sm" onClick={() => actions.reject(ticket.id)}>
+                  {W.ticket.reject}
+                </Button>
+                <Button size="sm" onClick={() => actions.accept(ticket.id)}>
+                  {W.ticket.accept}
+                </Button>
+              </span>
+            )}
+          </li>
+        ))}
       </ul>
+      {open.length > 1 && (
+        <div className="mt-3 flex justify-end">
+          <Button
+            size="sm"
+            variant="primary"
+            onClick={() => actions.acceptAll(open.map((ticket) => ticket.id))}
+          >
+            {W.lead.acceptAll}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -123,12 +177,14 @@ export function LeadPage({
   focus = false,
   onSay,
   onOpen,
+  actions,
 }: {
   state: CompanyState;
   /** The reader asked for the lead: its box takes the focus. */
   focus?: boolean;
   onSay: (text: string) => void;
   onOpen: (id: string) => void;
+  actions: ProposalActions;
 }) {
   const W = useWords();
   const [draft, setDraft] = useState("");
@@ -153,7 +209,7 @@ export function LeadPage({
             <p className={`text-xs ${QUIET}`}>{W.lead.empty}</p>
           ) : (
             state.chat.map((line, i) => (
-              <ChatMessage key={i} line={line} state={state} onOpen={onOpen} />
+              <ChatMessage key={i} line={line} state={state} onOpen={onOpen} actions={actions} />
             ))
           )}
         </div>
@@ -257,47 +313,111 @@ export function BoardPage({
   );
 }
 
-export function SetupPage({ onStart }: { onStart: (mission: string) => void }) {
+/** The option that stands for the reader's own words, among the lead's suggestions. */
+const OWN = "own";
+
+/**
+ * Setting a company up, on one page with every choice already made: the Project's first workspace,
+ * what the lead read in it, and the first mission the lead suggests from that. One press starts
+ * the company; changing the workspace changes what was read and what is suggested.
+ */
+export function SetupPage({
+  onStart,
+}: {
+  onStart: (mission: string, workspace: WorkspaceId) => void;
+}) {
   const W = useWords();
-  const [mission, setMission] = useState("");
+  const [workspace, setWorkspace] = useState<WorkspaceId>(WORKSPACES[0]);
+  const [choice, setChoice] = useState("0");
+  const [own, setOwn] = useState("");
+  const words = W.workspaces[workspace];
+  const mission = choice === OWN ? own : (words.missions[Number(choice)]?.label ?? "");
+  const missionId = useId();
   const start = (event: FormEvent) => {
     event.preventDefault();
-    onStart(mission);
+    onStart(mission, workspace);
   };
   return (
     <PageFrame width="full" contentClassName="flex min-h-full flex-col justify-center">
-      <form onSubmit={start} className="mx-auto w-full max-w-xl py-8 text-center md:py-14">
-        <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-line-muted text-fg-muted">
-          <GlyphIcon d={ICONS.building} size={ICON_SIZE.sectionMark + 6} />
-        </span>
-        <Heading level={1} display className="mt-4">
-          {W.setup.title}
-        </Heading>
-        <p className="mx-auto mt-2 max-w-xl text-sm text-fg-muted">{W.setup.body}</p>
-        <div className="mt-6 text-left">
-          <Textarea
-            size="sm"
-            rows={3}
-            aria-label={W.setup.title}
-            placeholder={W.setup.placeholder}
-            value={mission}
-            onChange={(event) => setMission(event.target.value)}
-          />
+      <form onSubmit={start} className="mx-auto w-full max-w-xl py-6">
+        <div className="text-center">
+          <Heading level={1} display>
+            {W.setup.title}
+          </Heading>
+          <p className="mx-auto mt-2 max-w-xl text-sm text-fg-muted">{W.setup.body}</p>
         </div>
-        <div className="mt-3 flex justify-end">
+        <div className="mt-6 space-y-5">
+          <Select
+            label={W.setup.workspace}
+            info={W.setup.workspaceInfo}
+            value={workspace}
+            onChange={(event) => {
+              setWorkspace(event.target.value as WorkspaceId);
+              // What was suggested belongs to the old workspace; the reader's own words stay.
+              if (choice !== OWN) setChoice("0");
+            }}
+          >
+            {WORKSPACES.map((id) => (
+              <option key={id} value={id}>
+                {WORKSPACE_PATH[id]}
+              </option>
+            ))}
+          </Select>
+          <section aria-label={W.setup.read}>
+            <h2 className="flex items-center gap-1 text-xs font-semibold text-fg-muted">
+              {W.setup.read}
+              <InfoPopover label={W.setup.read}>{W.setup.readInfo}</InfoPopover>
+            </h2>
+            <ul className="mt-2 space-y-1 text-sm text-fg">
+              {words.read.map((line) => (
+                <li key={line} className="flex gap-2">
+                  <span aria-hidden="true" className="text-fg-subtle">
+                    ·
+                  </span>
+                  {line}
+                </li>
+              ))}
+            </ul>
+          </section>
+          <section>
+            <h2 id={missionId} className="text-xs font-semibold text-fg-muted">
+              {W.setup.mission}
+            </h2>
+            <ChoiceGroup
+              shape="card"
+              aria-labelledby={missionId}
+              className="mt-2"
+              value={choice}
+              onChange={setChoice}
+              options={[
+                ...words.missions.map((option, i) => ({
+                  value: String(i),
+                  label: option.label,
+                  description: option.why,
+                })),
+                { value: OWN, label: W.setup.own, muted: true },
+              ]}
+            />
+            {choice === OWN && (
+              <div className="mt-2">
+                <Textarea
+                  size="sm"
+                  rows={2}
+                  autoFocus
+                  aria-label={W.setup.own}
+                  placeholder={W.setup.ownPlaceholder}
+                  value={own}
+                  onChange={(event) => setOwn(event.target.value)}
+                />
+              </div>
+            )}
+          </section>
+        </div>
+        <div className="mt-5 flex flex-wrap items-center justify-end gap-x-4 gap-y-2 border-t border-line pt-4">
+          <p className={`min-w-0 flex-1 basis-64 text-xs ${QUIET}`}>{W.setup.defaults}</p>
           <Button size="sm" variant="primary" type="submit" disabled={mission.trim() === ""}>
             {W.setup.start}
           </Button>
-        </div>
-        <div className="mt-8 text-left">
-          <p className={`text-xs font-semibold ${QUIET}`}>{W.setup.examplesLabel}</p>
-          <ul className="mt-2 space-y-1.5 text-sm">
-            {W.setup.examples.map((example) => (
-              <li key={example}>
-                <TitleButton onClick={() => setMission(example)}>{example}</TitleButton>
-              </li>
-            ))}
-          </ul>
         </div>
       </form>
     </PageFrame>
