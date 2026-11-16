@@ -99,9 +99,8 @@ import type {
   ModelPricingDto,
 } from "@prismshadow/penguin-library-models";
 import type { ModelRefDto } from "@prismshadow/penguin-library-agent-api";
+import type { ChatDefaultsDto, CommandPolicyDto } from "@prismshadow/penguin-library-projects";
 import type {
-  ChatDefaultsDto,
-  CommandPolicyDto,
   EndpointModelListRequest,
   EndpointModelListResponse,
   ModelProtocolDetectRequest,

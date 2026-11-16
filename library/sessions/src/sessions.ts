@@ -2,7 +2,6 @@
  * The sessions mechanisms: what a node may require, declared apart from what implements it.
  */
 import { Interface } from "@prismshadow/penguin-core/kernel";
-import type { Opaque } from "@prismshadow/penguin-core/kernel";
 import type { SessionSource } from "@prismshadow/amsp";
 import type { SessionRow } from "./repos/sessions.js";
 import type { ThinkingLevelName } from "@prismshadow/penguin-core";
@@ -297,7 +296,8 @@ export abstract class Schedules {
 /** Scheduling: the mechanism Scheduler implements. */
 @Interface()
 export abstract class Scheduling {
-  abstract readonly files: Opaque<"ScheduleFileCache">;
+  /** The runtime's schedule-file cache (schedule-store's ScheduleFileCache), opaque to this contract. */
+  abstract readonly files: unknown;
   abstract start(): Promise<void>;
   abstract stop(): void;
   abstract tickOnce(): Promise<void>;
