@@ -43,7 +43,7 @@ import {
   sayToLead,
   sessionsOf,
   sessionStatus,
-  setScheduleAuto,
+  setPatrol,
   startCompany,
   ticketsIn,
   triageTicket,
@@ -53,7 +53,8 @@ import type { CompanyState } from "./model";
 import { entryWords, HandbookPage } from "./handbook-page";
 import { InboxList, PinnedRows } from "./inbox-list";
 import type { TicketActions } from "./needs-you";
-import { BoardPage, LeadPage, SchedulesPage, SetupPage } from "./pages";
+import { BoardPage, LeadPage, SchedulesPage } from "./pages";
+import { SetupPage } from "./setup-page";
 import { TeamPage } from "./team-page";
 import { titleOf } from "./text";
 import { TicketPane } from "./ticket-pane";
@@ -212,8 +213,8 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
   if (!running) {
     body = (
       <SetupPage
-        onStart={(mission, workspace) =>
-          setState((current) => startCompany(current, mission, workspace))
+        onStart={(mission, workspace, settings) =>
+          setState((current) => startCompany(current, mission, workspace, settings))
         }
       />
     );
@@ -236,7 +237,7 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
     body = (
       <SchedulesPage
         state={state}
-        onAuto={(id, auto) => setState((current) => setScheduleAuto(current, id, auto))}
+        onPatrol={(mode) => setState((current) => setPatrol(current, mode))}
       />
     );
   } else if (pane === "board") {

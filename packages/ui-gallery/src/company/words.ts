@@ -124,7 +124,8 @@ export const zh = {
     acceptAll: "全部接受",
     empty: "暂无对话。输入需求后，主理将自动创建工单。",
     lines: {
-      proposals: "读完了。先提三件事，你接受的才会开始：",
+      proposals:
+        "读完了，你定的运作方式也已写进手册的「公司怎么运作」。先提两件事，你接受的才会开始：",
       settled:
         "都定了。从现在起，只有需要你接受、回答或验收的工单会出现在「等你」里，其余的不打扰你。",
       filed: "已生成工单并启动工作会话。遇到疑问或完成后将通知收件箱。",
@@ -142,6 +143,68 @@ export const zh = {
     ownPlaceholder: "例如：维护代码库，排查问题、修复缺陷",
     defaults: "公司名取工作区的文件夹名，模型用 Project 默认的，开了以后都能在设置里改。",
     start: "开公司",
+    steps: { what: "做什么", how: "怎么运作" },
+    next: "下一步",
+    back: "上一步",
+    howTitle: "定好公司怎么运作",
+    howBody:
+      "这些会写进手册里的「公司怎么运作」，每个员工开工前都会读。默认值已选好，之后随时能改。",
+    flow: {
+      title: "一张工单怎么走",
+      note: "只有提议、提问和验收这三处会找你，其余的不打扰你。",
+      propose: { title: "提议", body: "主理把要做的事提成工单，你接受才开始。" },
+      work: {
+        title: "干活",
+        body: "员工在自己的工作会话里做。拿不准的事只问你一个问题，工作停下等你回答。",
+      },
+      verify: {
+        title: "验证",
+        label: "交付先验证",
+        on: (name: string) => `交付先由${name}实机跑一遍，不通过就退回给开发，不打扰你。`,
+        off: "交付不经验证，直接交给你验收。",
+      },
+      review: { title: "验收", body: "你接受，或附一句话打回。打回的原因记进手册，下次先检查。" },
+    },
+    schedules: {
+      title: "日程",
+      patrol: "每日巡检",
+      patrolWhen: "每天 09:00 看新 issue 和 CI",
+      patrolHint: {
+        off: "不巡检。之后可以在日程页打开。",
+        propose: "发现的问题提成工单，等你接受。",
+        auto: "发现的问题直接开工，做完才找你验收。",
+      },
+      retro: "每周复盘",
+      retroWhen: "每周一 09:00",
+      retroHint: "回看上周关闭的工单，要改的提成工单给你。复盘只提议，不会自己改。",
+    },
+    style: {
+      title: "怎么跟你说话",
+      record: { label: "工单记录", points: "要点", prose: "段落" },
+      ask: { label: "提问", options: "给选项和推荐", open: "只提问题" },
+      progress: { label: "进展", milestones: "关键节点", every: "每一步" },
+    },
+    preview: {
+      title: "预览：一张工单会这样写",
+      progress: "进展",
+      question: "问你",
+      result: "结果",
+      steps: [
+        "已在本地复现：20 次里失败 3 次。",
+        "已定位根因：大文件导出时，测试的等待超时偏低。",
+        "等待超时已改为按文件大小计算，正在连续跑 50 次。",
+      ],
+      milestone: 1,
+      ask: {
+        options: "等待超时怎么定？",
+        open: "等待超时你希望怎么定？",
+        choices: ["按文件大小计算", "统一放宽到 60 秒"],
+        recommended: "推荐",
+      },
+      points: ["等待超时改为按文件大小计算", "连续运行 50 次全部通过"],
+      prose:
+        "等待超时原来固定为 10 秒，大文件导出常常超时。现在按文件大小计算，连续运行 50 次全部通过。",
+    },
   },
   /** What the lead reads in each workspace, and the missions it suggests from that. */
   workspaces: {
@@ -211,10 +274,10 @@ export const zh = {
     send: "发送",
   },
   schedule: {
-    info: "日程定期生成工单。初始为提议模式，开启自动开工后生成的工单将直接执行。",
+    info: "日程定期生成工单。巡检可以关掉、只提议，或直接开工；复盘只提议。",
     names: { patrol: "每日巡检：看新 issue 和 CI", retro: "每周复盘：回看上周关闭的工单" },
     when: { patrol: "每天 09:00", retro: "每周一 09:00" },
-    auto: "生成工单后直接开工",
+    modes: { off: "不巡检", propose: "仅提议", auto: "直接开工" },
     autoOn: "直接开工",
     autoOff: "仅提议",
   },
@@ -379,7 +442,28 @@ export const zh = {
     decisionBody: (label: string) => `采纳方案「${label}」。`,
     lessonTitle: (title: string) => `打回：${title}`,
     lessonAfter: "下次同类工单交付前，先检查这一点。",
+    /** how-we-work.md, written from the company's settings. */
+    howWeWork: {
+      verify: {
+        on: (name: string) => `交付先由${name}实机验证，通过后才交给你验收。`,
+        off: "交付直接交给你验收，不经验证。",
+      },
+      patrol: {
+        off: "不巡检。",
+        propose: "每日巡检发现的问题提成工单，等你接受。",
+        auto: "每日巡检发现的问题直接开工，做完才找你验收。",
+      },
+      retro: "每周一复盘，要改的提成工单，等你接受。",
+      record: { points: "工单记录写成要点。", prose: "工单记录写成完整的段落。" },
+      ask: {
+        options: "提问时给两三个选项，标出推荐的那个。",
+        open: "提问时只提问题，不预设选项。",
+      },
+      progress: { milestones: "进展只记关键节点。", every: "进展每一步都记。" },
+      change: "要改这些，告诉主理；巡检也可以直接在日程页改。",
+    },
     docs: {
+      howWeWork: { title: "公司怎么运作", body: [] as string[] },
       readme: {
         title: "手册目录",
         body: [

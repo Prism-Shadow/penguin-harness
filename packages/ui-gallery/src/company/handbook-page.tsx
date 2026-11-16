@@ -34,6 +34,7 @@ export function entryWords(
   W: Words,
 ): { title: string; body: string[] } {
   if (entry.kind === "retro") return retroWords(entry.retro ?? 0, state, W);
+  if (entry.doc === "howWeWork") return howWeWork(state, W);
   if (entry.doc !== null) {
     const doc = W.handbook.docs[entry.doc];
     return { title: doc.title, body: [...doc.body] };
@@ -51,6 +52,24 @@ export function entryWords(
   return {
     title: W.handbook.lessonTitle(titleOf(ticket, W)),
     body: [returnOf(ticket, note, W), W.handbook.lessonAfter],
+  };
+}
+
+/** how-we-work.md, written from the company's settings: what every employee reads first. */
+function howWeWork(state: CompanyState, W: Words): { title: string; body: string[] } {
+  const H = W.handbook.howWeWork;
+  const s = state.settings;
+  return {
+    title: W.handbook.docs.howWeWork.title,
+    body: [
+      s.verify ? H.verify.on(W.people.verifier.name) : H.verify.off,
+      H.patrol[s.patrol],
+      H.retro,
+      H.record[s.record],
+      H.ask[s.ask],
+      H.progress[s.progress],
+      H.change,
+    ],
   };
 }
 

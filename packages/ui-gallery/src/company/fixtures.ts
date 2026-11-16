@@ -20,17 +20,19 @@ export type FixtureId =
   | "patrolScope";
 
 /**
- * What accepting a ticket sets going: work, a patrol schedule, a dedicated role, a skill the lead
- * distilled, installed for the employee who needs it, or a change a retrospective proposed to how
- * the company works (a duty, a schedule's scope), applied as written.
+ * What accepting a ticket sets going: work, a skill the lead distilled, installed for the employee
+ * who needs it, or a change a retrospective proposed to how the company works (a duty, a
+ * schedule's scope), applied as written. A patrol schedule and a dedicated role are in the staged
+ * week's history only: a new company sets both up as it starts (model.ts `startCompany`).
  */
 export type TicketKind = "task" | "schedule" | "role" | "skill" | "change";
 
 /**
  * The handbook's fixed documents, whose words are the dictionaries' `handbook.docs`. Decisions
- * and lessons are written from their tickets instead (model.ts).
+ * and lessons are written from their tickets instead (model.ts), and how-we-work.md from the
+ * company's settings.
  */
-export type HandbookDocId = "readme" | "state" | "docsLesson" | "bilingualSkill";
+export type HandbookDocId = "readme" | "howWeWork" | "state" | "docsLesson" | "bilingualSkill";
 
 /** Whose byline a ticket carries: one of the company's employees. */
 export type Byline = "lead" | "engineer" | "verifier";

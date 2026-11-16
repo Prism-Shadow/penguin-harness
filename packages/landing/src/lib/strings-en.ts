@@ -1028,7 +1028,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
         {
           topic: "Setup",
           now: "CEO posts a setup proposal in the all-hands channel",
-          spec: "One page with defaults for the workspace and the goal; the lead reads the workspace before it suggests. Accept its proposed tickets in the conversation, one by one or all at once",
+          spec: 'Two steps: what the company does (the workspace, what the lead read in it, the goal), then how it works (how a ticket goes, whether deliveries are verified, the patrol, how the agents write to you, with a preview). Everything has a default and is written to "How we work" in the handbook. The lead\'s proposed tickets are accepted in its conversation, one by one or all at once',
         },
         {
           topic: "Calendar and finance",

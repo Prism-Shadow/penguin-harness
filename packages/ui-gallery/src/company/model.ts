@@ -193,6 +193,7 @@ export interface Metrics {
 /** The fixed documents' paths and kinds. */
 const FIXED_DOCS: Record<HandbookDocId, { path: string; kind: HandbookKind }> = {
   readme: { path: "README.md", kind: "index" },
+  howWeWork: { path: "how-we-work.md", kind: "index" },
   state: { path: "state-of-the-repo.md", kind: "doc" },
   docsLesson: { path: "lessons/docs-both-languages.md", kind: "lesson" },
   bilingualSkill: { path: "skills/bilingual-docs/SKILL.md", kind: "skill" },
@@ -224,6 +225,34 @@ export interface Schedule {
   auto: boolean;
 }
 
+/** How the daily patrol runs: not at all, filing what it finds as proposals, or starting work on it. */
+export type PatrolMode = "off" | "propose" | "auto";
+
+/**
+ * How the company works and how its agents write to the person, chosen when it is set up and
+ * written to the handbook's how-we-work.md, which every employee reads. The flow's two choices
+ * shape the company itself: whether a verifier checks every delivery before the person reviews
+ * it, and how the patrol runs. The other three are how the agents write: a ticket's record as
+ * points or as prose, a question with options and a recommendation or as a plain question, and
+ * progress noted at milestones or at every step.
+ */
+export interface CompanySettings {
+  verify: boolean;
+  patrol: PatrolMode;
+  record: "points" | "prose";
+  ask: "options" | "open";
+  progress: "milestones" | "every";
+}
+
+/** What a new company is offered: the choices that keep the person in charge with the least noise. */
+export const DEFAULT_SETTINGS: CompanySettings = {
+  verify: true,
+  patrol: "propose",
+  record: "points",
+  ask: "options",
+  progress: "milestones",
+};
+
 /**
  * What the lead says in its conversation: a line of the dictionary, about some tickets. Its first
  * proposals, then, once each of them is decided, that the setup is settled; a ticket it filed.
@@ -241,6 +270,8 @@ export interface CompanyState {
   stage: "setup" | "running";
   /** The folder the company works in, chosen at setup. */
   workspace: WorkspaceId;
+  /** How it works and how its agents write, chosen at setup. */
+  settings: CompanySettings;
   /** What the person asked the company to look after; null in the staged week. */
   mission: string | null;
   /** Oldest first. */
@@ -350,12 +381,13 @@ export function freshState(): CompanyState {
   return {
     stage: "setup",
     workspace: "harness",
+    settings: DEFAULT_SETTINGS,
     mission: null,
     tickets: [],
     sessions: [],
     schedules: [{ id: "retro", auto: false }],
     lastRun: null,
-    // A company starts with the lead and one engineer; anyone else joins by an accepted proposal.
+    // Until it starts, the company has the lead and one engineer; its settings may add the verifier.
     roles: ["engineer"],
     handbook: [fixedEntry("readme", null)],
     closed: [],
@@ -418,6 +450,7 @@ export function weekState(): CompanyState {
   return {
     stage: "running",
     workspace: "harness",
+    settings: DEFAULT_SETTINGS,
     mission: null,
     tickets,
     // The sessions of every ticket whose work has started, their conversations as far as the work.
@@ -433,6 +466,7 @@ export function weekState(): CompanyState {
     roles,
     handbook: [
       fixedEntry("readme", null),
+      fixedEntry("howWeWork", null),
       fixedEntry("state", "survey"),
       { ...fixedEntry("docsLesson", "docs"), mergedInto: FIXED_DOCS.bilingualSkill.path },
       { path: "retros/1.md", kind: "retro", ticket: null, doc: null, retro: 1 },
@@ -562,28 +596,53 @@ const staffed = (state: CompanyState, ticket: Ticket): Ticket =>
     : ticket;
 
 /**
- * The first sentence, with the workspace it is about. The lead has already read that workspace, so
- * it answers with proposals, one thing each: a patrol schedule, a first task, a dedicated role.
- * Nothing starts until the person accepts it.
+ * Starting the company: what it looks after, in which workspace, and how it works. The choices
+ * take effect at once, as the person made them: the verifier joins if every delivery is to be
+ * verified, the patrol is scheduled unless it is off, and how-we-work.md is written for every
+ * employee to read. The lead has already read the workspace, so it answers with its first tasks
+ * as proposals; nothing starts until the person accepts it.
  */
 export function startCompany(
   state: CompanyState,
   mission: string,
   workspace: WorkspaceId = state.workspace,
+  settings: CompanySettings = state.settings,
 ): CompanyState {
   const said = mission.trim();
   if (state.stage !== "setup" || said === "") return state;
-  const proposals: FixtureId[] = ["patrol", "survey", "verifier"];
+  const proposals: FixtureId[] = ["survey", "flaky"];
   return {
     ...state,
     stage: "running",
     workspace,
+    settings,
     mission: said,
+    roles: settings.verify ? ["engineer", "verifier"] : ["engineer"],
+    schedules: patrolled(state.schedules, settings.patrol),
+    handbook: [...state.handbook, fixedEntry("howWeWork", null)],
     tickets: proposals.map((id) => ticketOf(id, "lead")),
+    // The lead proposed the flaky test itself; the patrol finds what is left.
+    pool: state.pool.filter((id) => !proposals.includes(id)),
     chat: [
       { from: "person", text: said },
       { from: "lead", line: "proposals", tickets: proposals },
     ],
+  };
+}
+
+/** The schedules with the patrol run as given: left out when it is off. */
+function patrolled(schedules: readonly Schedule[], mode: PatrolMode): Schedule[] {
+  const others = schedules.filter((schedule) => schedule.id !== "patrol");
+  return mode === "off" ? others : [...others, { id: "patrol", auto: mode === "auto" }];
+}
+
+/** How the patrol runs, as the person sets it on the schedules page; how-we-work.md follows. */
+export function setPatrol(state: CompanyState, mode: PatrolMode): CompanyState {
+  if (state.stage !== "running") return state;
+  return {
+    ...state,
+    settings: { ...state.settings, patrol: mode },
+    schedules: patrolled(state.schedules, mode),
   };
 }
 
@@ -604,8 +663,8 @@ const file = (state: CompanyState, entry: HandbookEntry): CompanyState => ({
 });
 
 /**
- * Accept a proposal: a task's work session opens, a schedule is switched on, a role joins, or a
- * skill is filed in the handbook and installed for its employee.
+ * Accept a proposal: a task's work session opens, or a skill is filed in the handbook and
+ * installed for its employee; a change is done as written.
  */
 export function acceptTicket(state: CompanyState, id: string): CompanyState {
   return settle(acceptOne(state, id));
@@ -620,9 +679,6 @@ function acceptOne(state: CompanyState, id: string): CompanyState {
   }
   const settled = close(withTicket(state, id, { status: "done", unread: false }), id);
   const fixture = FIXTURES[ticket.fixture];
-  if (ticket.kind === "schedule") {
-    return { ...settled, schedules: [...state.schedules, { id: "patrol", auto: false }] };
-  }
   if (ticket.kind === "skill" && fixture.handbook !== undefined) {
     const skill = fixedEntry(fixture.handbook, id, fixture.installsOn);
     // The lesson the skill was distilled from leaves the index: the skill now carries it.
@@ -633,8 +689,7 @@ function acceptOne(state: CompanyState, id: string): CompanyState {
     );
     return file({ ...settled, handbook }, skill);
   }
-  if (ticket.kind === "change") return settled;
-  return { ...settled, roles: [...state.roles, "verifier"] };
+  return settled;
 }
 
 /** Reject a proposal. The ticket stays on record. */
@@ -820,17 +875,6 @@ export function sayToLead(state: CompanyState, text: string): CompanyState {
     id,
     "build",
   );
-}
-
-/** Whether a schedule's tickets start work directly. */
-export function setScheduleAuto(state: CompanyState, id: ScheduleId, auto: boolean): CompanyState {
-  if (id === "retro") return state;
-  return {
-    ...state,
-    schedules: state.schedules.map((schedule) =>
-      schedule.id === id ? { ...schedule, auto } : schedule,
-    ),
-  };
 }
 
 /**

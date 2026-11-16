@@ -5,33 +5,24 @@
  * - The lead is the one conversation: what the reader says becomes a ticket, and the lead's
  *   lines name tickets, never the work.
  * - The board is the shipped five columns, unchanged; a card that waits says what for.
- * - Setting up is one page with every choice made: the workspace, what the lead read in it, and
- *   the mission it suggests; the lead's first answer takes its proposals one by one or all at once.
+ * - The lead's first answer takes its proposals one by one, or all at once. Setting up is
+ *   setup-page.tsx.
  */
-import { useId, useState } from "react";
-import type { FormEvent } from "react";
+import { useState } from "react";
+import type { FormEvent, ReactNode } from "react";
 import {
   Button,
-  ChoiceGroup,
-  GlyphIcon,
-  Heading,
-  ICONS,
   ICON_SIZE,
-  InfoPopover,
   MessageBubble,
   PageFrame,
   PageHeader,
-  RuledSection,
-  Select,
-  Switch,
+  Segmented,
   Textarea,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../../web/src/lib/strings";
 import { PriorityBadge, TitleButton } from "../../../web/src/features/company/shared";
 import { toneDot } from "../../../web/src/lib/tone";
-import { WORKSPACE_PATH, WORKSPACES } from "./fixtures";
-import type { WorkspaceId } from "./fixtures";
-import type { ChatLine, CompanyState, ScheduleId } from "./model";
+import type { ChatLine, CompanyState, PatrolMode, ScheduleId } from "./model";
 import { TICKET_STATUSES, waitOf } from "./spec";
 import type { TicketStatus } from "./spec";
 import { PersonAvatar, PersonName } from "./people";
@@ -42,40 +33,46 @@ import { useWords } from "./use-words";
 const QUIET = "text-fg-muted";
 
 /**
- * The schedules, where the inbox column's schedule rows open: when each runs, and for the patrol,
- * whether its tickets start work directly. A retrospective's proposals always wait for the reader.
+ * The schedules, where the inbox column's schedule rows open: when each runs, and how the patrol
+ * runs, the same three ways the setup offered (off, proposing, or starting work). A
+ * retrospective's proposals always wait for the reader.
  */
 export function SchedulesPage({
   state,
-  onAuto,
+  onPatrol,
 }: {
   state: CompanyState;
-  onAuto: (id: ScheduleId, auto: boolean) => void;
+  onPatrol: (mode: PatrolMode) => void;
 }) {
   const W = useWords();
+  const row = (id: ScheduleId, control: ReactNode) => (
+    <li key={id} className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2.5 text-sm">
+      <span className="min-w-0 flex-1">
+        <span className="block truncate">{W.schedule.names[id]}</span>
+        <span className={`block text-xs ${QUIET}`}>{W.schedule.when[id]}</span>
+      </span>
+      {control}
+    </li>
+  );
   return (
     <PageFrame width="lg">
       <PageHeader title={W.inbox.schedules} info={W.schedule.info} />
       <ul className="divide-y divide-line">
-        {state.schedules.map((schedule) => (
-          <li
-            key={schedule.id}
-            className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5 text-sm"
-          >
-            <span className="min-w-0 flex-1">
-              <span className="block truncate">{W.schedule.names[schedule.id]}</span>
-              <span className={`block text-xs ${QUIET}`}>{W.schedule.when[schedule.id]}</span>
-            </span>
-            {schedule.id === "retro" ? (
-              <span className={`shrink-0 text-xs ${QUIET}`}>{W.schedule.autoOff}</span>
-            ) : (
-              <label className="flex shrink-0 items-center gap-2 text-xs text-fg-muted">
-                {W.schedule.auto}
-                <Switch checked={schedule.auto} onChange={(auto) => onAuto(schedule.id, auto)} />
-              </label>
-            )}
-          </li>
-        ))}
+        {row("retro", <span className={`shrink-0 text-xs ${QUIET}`}>{W.schedule.autoOff}</span>)}
+        {row(
+          "patrol",
+          <div className="w-full sm:w-72">
+            <Segmented<PatrolMode>
+              cols={3}
+              value={state.settings.patrol}
+              onChange={onPatrol}
+              options={(["off", "propose", "auto"] as const).map((mode) => ({
+                value: mode,
+                label: W.schedule.modes[mode],
+              }))}
+            />
+          </div>,
+        )}
       </ul>
     </PageFrame>
   );
@@ -309,117 +306,6 @@ export function BoardPage({
           );
         })}
       </div>
-    </PageFrame>
-  );
-}
-
-/** The option that stands for the reader's own words, among the lead's suggestions. */
-const OWN = "own";
-
-/**
- * Setting a company up, on one page with every choice already made: the Project's first workspace,
- * what the lead read in it, and the first mission the lead suggests from that. One press starts
- * the company; changing the workspace changes what was read and what is suggested.
- */
-export function SetupPage({
-  onStart,
-}: {
-  onStart: (mission: string, workspace: WorkspaceId) => void;
-}) {
-  const W = useWords();
-  const [workspace, setWorkspace] = useState<WorkspaceId>(WORKSPACES[0]);
-  const [choice, setChoice] = useState("0");
-  const [own, setOwn] = useState("");
-  const words = W.workspaces[workspace];
-  const mission = choice === OWN ? own : (words.missions[Number(choice)]?.label ?? "");
-  const missionId = useId();
-  const start = (event: FormEvent) => {
-    event.preventDefault();
-    onStart(mission, workspace);
-  };
-  return (
-    <PageFrame width="full" contentClassName="flex min-h-full flex-col justify-center">
-      <form onSubmit={start} className="mx-auto w-full max-w-xl py-6">
-        <div className="text-center">
-          <Heading level={1} display>
-            {W.setup.title}
-          </Heading>
-          <p className="mx-auto mt-2 max-w-xl text-sm text-fg-muted">{W.setup.body}</p>
-        </div>
-        <div className="mt-6 space-y-5">
-          <Select
-            label={W.setup.workspace}
-            info={W.setup.workspaceInfo}
-            value={workspace}
-            onChange={(event) => {
-              setWorkspace(event.target.value as WorkspaceId);
-              // What was suggested belongs to the old workspace; the reader's own words stay.
-              if (choice !== OWN) setChoice("0");
-            }}
-          >
-            {WORKSPACES.map((id) => (
-              <option key={id} value={id}>
-                {WORKSPACE_PATH[id]}
-              </option>
-            ))}
-          </Select>
-          <section aria-label={W.setup.read}>
-            <h2 className="flex items-center gap-1 text-xs font-semibold text-fg-muted">
-              {W.setup.read}
-              <InfoPopover label={W.setup.read}>{W.setup.readInfo}</InfoPopover>
-            </h2>
-            <ul className="mt-2 space-y-1 text-sm text-fg">
-              {words.read.map((line) => (
-                <li key={line} className="flex gap-2">
-                  <span aria-hidden="true" className="text-fg-subtle">
-                    ·
-                  </span>
-                  {line}
-                </li>
-              ))}
-            </ul>
-          </section>
-          <section>
-            <h2 id={missionId} className="text-xs font-semibold text-fg-muted">
-              {W.setup.mission}
-            </h2>
-            <ChoiceGroup
-              shape="card"
-              aria-labelledby={missionId}
-              className="mt-2"
-              value={choice}
-              onChange={setChoice}
-              options={[
-                ...words.missions.map((option, i) => ({
-                  value: String(i),
-                  label: option.label,
-                  description: option.why,
-                })),
-                { value: OWN, label: W.setup.own, muted: true },
-              ]}
-            />
-            {choice === OWN && (
-              <div className="mt-2">
-                <Textarea
-                  size="sm"
-                  rows={2}
-                  autoFocus
-                  aria-label={W.setup.own}
-                  placeholder={W.setup.ownPlaceholder}
-                  value={own}
-                  onChange={(event) => setOwn(event.target.value)}
-                />
-              </div>
-            )}
-          </section>
-        </div>
-        <div className="mt-5 flex flex-wrap items-center justify-end gap-x-4 gap-y-2 border-t border-line pt-4">
-          <p className={`min-w-0 flex-1 basis-64 text-xs ${QUIET}`}>{W.setup.defaults}</p>
-          <Button size="sm" variant="primary" type="submit" disabled={mission.trim() === ""}>
-            {W.setup.start}
-          </Button>
-        </div>
-      </form>
     </PageFrame>
   );
 }

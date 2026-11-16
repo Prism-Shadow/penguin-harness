@@ -111,7 +111,8 @@ export const en: Words = {
     acceptAll: "Accept all",
     empty: "No messages yet. Send a request to generate tickets.",
     lines: {
-      proposals: "I've read it. Three things to start with; only what you accept starts:",
+      proposals:
+        'I\'ve read it, and written how you want the company to work to "How we work" in the handbook. Two things to start with; only what you accept starts:',
       settled:
         'All decided. From now on, only tickets that need you to accept, answer or review reach "Waiting". Nothing else interrupts you.',
       filed:
@@ -132,6 +133,76 @@ export const en: Words = {
     defaults:
       "The company is named after the workspace folder and uses the Project's default model. You can change both in settings later.",
     start: "Start the company",
+    steps: { what: "What it does", how: "How it works" },
+    next: "Next",
+    back: "Back",
+    howTitle: "Decide how the company works",
+    howBody:
+      'This is written to "How we work" in the handbook, which every employee reads before it starts. Everything has a default, and you can change it any time.',
+    flow: {
+      title: "How a ticket goes",
+      note: "Only proposals, questions and reviews reach you. Nothing else interrupts you.",
+      propose: {
+        title: "Propose",
+        body: "The lead files what needs doing as a ticket. It starts only when you accept it.",
+      },
+      work: {
+        title: "Work",
+        body: "An employee works in its own work session. When it is unsure, it asks you one question and waits for your answer.",
+      },
+      verify: {
+        title: "Verify",
+        label: "Verify every delivery",
+        on: (name: string) =>
+          `${name} runs every delivery first. If it fails, it goes back to the builder without reaching you.`,
+        off: "Deliveries come straight to you for review, unverified.",
+      },
+      review: {
+        title: "Review",
+        body: "You accept it, or send it back with a note. The reason goes into the handbook, to be checked next time.",
+      },
+    },
+    schedules: {
+      title: "Schedules",
+      patrol: "Daily patrol",
+      patrolWhen: "New issues and CI, daily at 09:00",
+      patrolHint: {
+        off: "No patrol. You can turn it on later on the schedules page.",
+        propose: "What it finds is filed as a ticket that waits for you to accept it.",
+        auto: "What it finds starts work at once, and reaches you only for review.",
+      },
+      retro: "Weekly retrospective",
+      retroWhen: "Mondays at 09:00",
+      retroHint:
+        "It looks back over last week's closed tickets and files what to change as tickets for you. It only proposes; it changes nothing itself.",
+    },
+    style: {
+      title: "How it writes to you",
+      record: { label: "Ticket record", points: "Points", prose: "Prose" },
+      ask: { label: "Questions", options: "Options and a pick", open: "Just the question" },
+      progress: { label: "Progress", milestones: "Milestones", every: "Every step" },
+    },
+    preview: {
+      title: "Preview: how a ticket will read",
+      progress: "Progress",
+      question: "Asks you",
+      result: "Result",
+      steps: [
+        "Reproduced locally: 3 failures in 20 runs.",
+        "Found the cause: the test's wait is too short for large exports.",
+        "The wait now scales with the file size; running it 50 times in a row.",
+      ],
+      milestone: 1,
+      ask: {
+        options: "How should the wait be set?",
+        open: "How would you like the wait to be set?",
+        choices: ["Scale it with the file size", "Raise it to 60 seconds for all"],
+        recommended: "Recommended",
+      },
+      points: ["The wait scales with the file size", "50 runs in a row pass"],
+      prose:
+        "The wait was fixed at 10 seconds, so large exports often timed out. It now scales with the file size, and 50 runs in a row pass.",
+    },
   },
   workspaces: {
     harness: {
@@ -218,13 +289,13 @@ export const en: Words = {
     send: "Send",
   },
   schedule: {
-    info: "Schedules trigger tickets on a recurring timer. Defaults to proposal mode; auto-start can be turned on once you trust it.",
+    info: "Schedules file tickets on a timer. The patrol can be off, propose what it finds, or start work on it; the retrospective only proposes.",
     names: {
       patrol: "Daily patrol: new issues and CI",
       retro: "Weekly retrospective: last week's closed tickets",
     },
     when: { patrol: "Daily at 09:00", retro: "Mondays at 09:00" },
-    auto: "Auto-start generated tickets",
+    modes: { off: "Off", propose: "Propose only", auto: "Auto-start" },
     autoOn: "Auto-start",
     autoOff: "Proposal only",
   },
@@ -400,7 +471,37 @@ export const en: Words = {
     retroNothing: "Nothing to change this time.",
     quote: (title: string) => `“${title}”`,
     join: ", ",
+    howWeWork: {
+      verify: {
+        on: (name: string) =>
+          `${name} runs every delivery first; only one that passes comes to you for review.`,
+        off: "Deliveries come straight to you for review, unverified.",
+      },
+      patrol: {
+        off: "No daily patrol.",
+        propose:
+          "What the daily patrol finds is filed as a ticket that waits for you to accept it.",
+        auto: "What the daily patrol finds starts work at once, and reaches you only for review.",
+      },
+      retro:
+        "A retrospective every Monday; what it wants to change is filed as tickets for you to accept.",
+      record: {
+        points: "Ticket records are written as points.",
+        prose: "Ticket records are written as full paragraphs.",
+      },
+      ask: {
+        options: "A question offers two or three options and marks the recommended one.",
+        open: "A question is asked on its own, with no options.",
+      },
+      progress: {
+        milestones: "Progress is noted at milestones only.",
+        every: "Progress is noted at every step.",
+      },
+      change:
+        "To change any of this, tell the lead; the patrol can also be changed on the schedules page.",
+    },
     docs: {
+      howWeWork: { title: "How we work", body: [] as string[] },
       readme: {
         title: "Handbook index",
         body: [
