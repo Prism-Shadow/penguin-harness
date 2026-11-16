@@ -3,6 +3,7 @@
 - **Date:** 2026-11-16
 - **Type:** fix
 - **Scope:** `ui`, `web`
+- **PR:** [#1571](https://github.com/Prism-Shadow/penguin-harness/pull/1571)
 - **Breaking:** yes — `@prismshadow/penguin-ui` no longer exports `EditorScroll`; `WorkspaceFileEditor`'s `initialScroll` takes a `CodePlace`
 
 [中文版](2026-11-16-file-viewer-large-files.zh.md)
