@@ -43,6 +43,14 @@ const execFileAsync = promisify(execFile);
 const INSTALL_TIMEOUT_MS = 180_000;
 /** One address's window for the channel download: a dead address costs this, not a hang. */
 const CHANNEL_TIMEOUT_MS = 15_000;
+/**
+ * The asset address that last downloaded in full and verified for each channel URL, tried
+ * first next time. Memory, not a speed test: the walk still tries one address at a time in
+ * a fixed order, only its start moves. A dead canonical would otherwise cost its window on
+ * every install; starting where the last install succeeded returns the common case to one
+ * address. Keyed by the channel URL, so two sources' assets never lend each other's start.
+ */
+const lastGoodAsset = new Map<string, string>();
 
 /** `<root>/plugins`: the npm prefix this deployment installs plugins into. */
 export function pluginsPrefix(root: string): string {
@@ -645,23 +653,30 @@ export async function installPluginChannel(
   } = {},
 ): Promise<InstalledPackage> {
   const prefix = await ensurePrefix(root);
-  // The asset's addresses in try order: the URL the index published first, then this
-  // source's CDN mirrors. Mirrors change only where the bytes come from: what arrives is
-  // verified against the entry's integrity exactly as the canonical URL's would be, so a
-  // mirror serving tampered bytes is refused like any other source.
-  const addresses = [channel.url, ...(channel.mirrors ?? [])];
+  // The asset's addresses in try order: the sticky start first (the address that last
+  // downloaded and verified for this channel URL), then the URL the index published and
+  // this source's CDN mirrors in their configured order. Mirrors change only where the
+  // bytes come from: what arrives is verified against the entry's integrity exactly as
+  // the canonical URL's would be, so a mirror serving tampered bytes is refused like any
+  // other source — and never becomes the sticky start.
+  const canonical = [channel.url, ...(channel.mirrors ?? [])];
+  const remembered = lastGoodAsset.get(channel.url);
+  const addresses =
+    remembered !== undefined && canonical.includes(remembered) && remembered !== channel.url
+      ? [remembered, ...canonical.filter((address) => address !== remembered)]
+      : canonical;
   // One address at a time, in the order given: the first address whose download reads out
   // in full carries the install. A connection failure or a non-ok answer moves on to the
   // next address; an answer that stops halfway (a body that never arrives) does the same —
-  // the address has not served the asset, whatever its headers said. The order is fixed,
-  // every address is tried once per install, and nothing picks a winner by speed: the same
-  // deployment walks the same path install after install until an address actually fails.
-  // Each address carries its own timeout, so a dead one costs one window, not a hang. All
-  // of them failed: the error names the addresses that were tried and the failure it
-  // ended on.
+  // the address has not served the asset, whatever its headers said. The walk still tries
+  // one address at a time in a fixed order, only its start moves. Each address carries its
+  // own timeout, so a dead one costs one window, not a hang. All of them failed: the error
+  // names the addresses that were tried and the failure it ended on.
   let lastError: unknown = null;
   let lastStatus: { status: number; address: string } | null = null;
   let bytes: Uint8Array | null = null;
+  // The address the bytes came from, remembered only after they verify (see below).
+  let winner: string | null = null;
   for (const address of addresses) {
     try {
       const attempt = await fetchImpl(address, {
@@ -677,6 +692,7 @@ export async function installPluginChannel(
       // The read is part of the address's try: an answer that stops halfway (a body that
       // never arrives) is a failure of this address, and the download moves on.
       bytes = new Uint8Array(await readAsset(attempt, onProgress));
+      winner = address;
       break;
     } catch (err) {
       lastError = err;
@@ -694,6 +710,10 @@ export async function installPluginChannel(
     );
   }
   const digest = verifyIntegrity(bytes, channel.integrity);
+  // The download carried the install, the bytes are the entry's own: from now on this
+  // address is where the next install of this channel starts. An address whose bytes
+  // fail the integrity check throws above and is never remembered.
+  if (winner !== null && winner !== channel.url) lastGoodAsset.set(channel.url, winner);
   const archives = path.join(prefix, ARCHIVES_DIR);
   await fs.mkdir(archives, { recursive: true });
   const staging = path.join(archives, `.tmp-${randomUUID()}.tgz`);

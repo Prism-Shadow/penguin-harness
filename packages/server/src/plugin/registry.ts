@@ -480,12 +480,14 @@ const backoff = (attempt: number) =>
 
 /**
  * A registry behind an `index.json` source: one canonical URL plus its CDN mirrors, tried
- * one at a time in the order given — the first address that serves the document carries the
+ * one at a time in try order — the first address that serves the document carries the
  * read, a failed one hands the read to the next, and a source exhausted on is reported with
- * the failure it ended on. The order is fixed, every address is tried once per read, and
- * nothing picks a winner by speed: the same deployment walks the same path read after read
- * until an address actually fails (the text's trade — a predictable route over a measured
- * one). Within one address a connection that fails is tried again before the read moves on:
+ * the failure it ended on. The start of the order is where the last read succeeded (see
+ * `sticky` below), so a deployment whose canonical address is dead does not pay its window
+ * on every read; apart from that start the order is the configured one, every address is
+ * tried once per read, and nothing is measured: no probe, no speed test — the walk only
+ * remembers where it succeeded last. Within one address a connection that fails is tried
+ * again before the read moves on:
  * the document sits behind a CDN redirect, and the first hop out through a corporate proxy
  * is exactly the kind of thing that fails once and works a second later. What a server
  * answered (a 404, a 503) is not retried — that is a fact about the source, not about the
@@ -508,6 +510,17 @@ export function httpPluginRegistry(
   // among them) whose etag churns while the document does not.
   let revalidate: { etag: string | null; hash: string; entries: IndexDocumentEntry[] } | null =
     null;
+  // The address that served the document last, tried first next time. Memory, not a speed
+  // test: the walk still tries one address at a time in a fixed order, only its start
+  // moves — the configured order among the rest is untouched. A source whose first address
+  // is dead would otherwise pay its window on every read forever; starting where the last
+  // read succeeded returns the common case to one address, and a sticky address that has
+  // died hands the walk back to the configured order inside the same read.
+  let sticky: string | null = null;
+  const ordered = (): readonly string[] => {
+    if (sticky === null || !addresses.includes(sticky)) return addresses;
+    return [sticky, ...addresses.filter((address) => address !== sticky)];
+  };
   // One address, its connection-level retries. A connection failure (refused, reset,
   // timeout) is tried again before the read moves on; what the fetch itself answered is
   // returned as is — the caller decides whether an answer is worth another address.
@@ -542,16 +555,15 @@ export function httpPluginRegistry(
   // completion could rewind the etag a newer read had just advanced, and the next read would
   // revalidate against a header the server had already retired.
   const readOnce = async (): Promise<IndexDocumentEntry[]> => {
-    // The addresses in the order given, one at a time: the first one whose answer turns
-    // into a document carries the read. A connection failure or a non-ok answer moves on
-    // to the next address; an answer that stops halfway (a body that never arrives, a
-    // document that will not parse) does the same — the address has not served the
-    // document, whatever its headers said. The order is fixed, so the same deployment
-    // walks the same path read after read until an address actually fails, and no address
-    // is fetched twice or fetched again after another has won. All of them failed: the
-    // read reports the failure it ended on, which names the address it belongs to.
+    // The addresses in try order (the sticky start first, see `ordered`), one at a time:
+    // the first one whose answer turns into a document carries the read. A connection
+    // failure or a non-ok answer moves on to the next address; an answer that stops
+    // halfway (a body that never arrives, a document that will not parse) does the same —
+    // the address has not served the document, whatever its headers said. No address is
+    // fetched twice or fetched again after another has won. All of them failed: the read
+    // reports the failure it ended on, which names the address it belongs to.
     let lastError: unknown = null;
-    for (const address of addresses) {
+    for (const address of ordered()) {
       let res: Response;
       try {
         res = await requestAddress(address);
@@ -563,6 +575,8 @@ export function httpPluginRegistry(
         if (res.status === 304 && revalidate !== null) {
           const fresh = res.headers.get("etag");
           if (fresh !== null) revalidate = { ...revalidate, etag: fresh };
+          // The address served the read (a revalidation is still a served document).
+          sticky = address;
           return revalidate.entries;
         }
         const text = await res.text();
@@ -572,6 +586,7 @@ export function httpPluginRegistry(
         // server last sent.
         if (revalidate !== null && hash === revalidate.hash) {
           revalidate = { ...revalidate, etag: res.headers.get("etag") };
+          sticky = address;
           return revalidate.entries;
         }
         let data: unknown;
@@ -584,6 +599,9 @@ export function httpPluginRegistry(
         }
         const entries = parsePluginIndex(data, address, { icons: "drop" });
         revalidate = { etag: res.headers.get("etag"), hash, entries };
+        // Content verified by the same parser as before — a mirror wins nothing by
+        // serving bytes the validator refuses. Only now is the address remembered.
+        sticky = address;
         return entries;
       } catch (err) {
         lastError = err;
