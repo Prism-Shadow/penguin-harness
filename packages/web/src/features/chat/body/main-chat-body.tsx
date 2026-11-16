@@ -12,7 +12,7 @@ import { MachineRestartNotice } from "../machine-restart-notice";
 import { DockPanel, DockLauncher, measureComposer } from "../../dock";
 import { ChatDockProvider } from "../session/main-dock-context";
 import { ReplyFilesProvider } from "../reply-files-provider";
-import { PathCapsulesProvider } from "../../company/path-capsule";
+import { PathCapsulesProvider } from "../../company";
 import { ArchivedSessionStub } from "../archived-session-stub";
 import type { MainChatView } from "./main-chat-view";
 
