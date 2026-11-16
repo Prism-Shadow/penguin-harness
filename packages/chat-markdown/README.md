@@ -13,7 +13,8 @@ changes, both made while parsing:
   end, so in `**http://localhost:7367/**，见下文` the link ends at `/` and the bold closes.
 - Emphasis follows the CJK-friendly flanking rule
   ([`micromark-extension-cjk-friendly`](https://github.com/tats-u/markdown-cjk-friendly)), so
-  `**粗体（注）**后面` is bold.
+  `**粗体（注）**后面` is bold, and a run of two or more `*` right after `. , : ; ! ? ) ] }` may
+  close whatever follows, so `**Confirmed.**Next` is bold too.
 
 ```ts
 import { remarkChatMarkdown } from "@prismshadow/chat-markdown";
