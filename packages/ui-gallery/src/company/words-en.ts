@@ -21,30 +21,30 @@ export const en: Words = {
   who: (name: string, title: string) => `${name} (${title})`,
   people: {
     lead: {
-      name: "Iris Vale",
+      name: "Emperor",
       title: "Lead",
       duties:
         "Take requests, file tickets and hand each to whoever owns that part; propose schedules and hires. Does none of the work itself.",
     },
     engineer: {
-      name: "Mara Lind",
+      name: "Gentoo",
       title: "Engineer",
       duties: "Owns the code: fixes defects, builds features, submits pull requests with tests.",
     },
     writer: {
-      name: "June Hale",
+      name: "Little Blue",
       title: "Operations",
       duties:
         "Owns content and community: writes articles, video scripts, release notes and docs; answers readers and sorts community questions.",
     },
     researcher: {
-      name: "Ren Okafor",
+      name: "Adélie",
       title: "Researcher",
       duties:
         "Owns research: designs experiments, runs evaluations, reads the papers, writes it up.",
     },
     verifier: {
-      name: "Theo Park",
+      name: "Chinstrap",
       title: "Verifier",
       duties:
         "Checks every delivery against its acceptance criteria: runs code, checks an article's facts and links, reruns the numbers.",
@@ -447,7 +447,7 @@ export const en: Words = {
     },
     skill: {
       title: "Distill a skill: keep both languages of the docs in step",
-      gist: "“Correct the port in the quickstart” was sent back once for changing one language only. Write the checks down as a skill and install it for June Hale.",
+      gist: "“Correct the port in the quickstart” was sent back once for changing one language only. Write the checks down as a skill and install it for Little Blue.",
       acceptance: [
         "The skill says to check both languages after a change",
         "It is installed for the operations employee who owns the docs",

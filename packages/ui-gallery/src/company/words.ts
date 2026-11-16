@@ -42,27 +42,27 @@ export const zh = {
   /** Each employee: a name, a title, and what it is responsible for. */
   people: {
     lead: {
-      name: "顾言",
+      name: "帝企鹅",
       title: "主理",
       duties: "接需求、建工单，分派给负责那一块的人；提议日程和招人，自己不动手。",
     },
     engineer: {
-      name: "沈知远",
+      name: "巴布亚企鹅",
       title: "工程师",
       duties: "管代码：修缺陷、做功能，提交带测试的 PR。",
     },
     writer: {
-      name: "许南星",
+      name: "小蓝企鹅",
       title: "运营",
       duties: "管内容和社区：写文章、视频脚本、发版说明和文档，回复读者，整理社区问题。",
     },
     researcher: {
-      name: "周以宁",
+      name: "阿德利企鹅",
       title: "研究员",
       duties: "管研究：设计实验、跑评测、读论文，写成报告。",
     },
     verifier: {
-      name: "林清越",
+      name: "帽带企鹅",
       title: "验证",
       duties: "对照验收标准检查每份交付：代码实机跑，文章核对事实和链接，数字重跑一遍。",
     },
@@ -434,7 +434,7 @@ export const zh = {
     },
     skill: {
       title: "提炼技能：中英文档同步修改",
-      gist: "工单「修正快速开始里的端口号」曾因漏改英文被打回。把中英核对的步骤提炼成技能，配置给许南星。",
+      gist: "工单「修正快速开始里的端口号」曾因漏改英文被打回。把中英核对的步骤提炼成技能，配置给小蓝企鹅。",
       acceptance: ["技能要求改完后中英两版逐段核对", "配置给负责文档的运营"],
       progress: [],
     },
