@@ -28,6 +28,14 @@
       "import": "./dist/builtin-browser-vocab.js"
     },
     "./package.json": "./package.json",
+    "./repos/machines": {
+      "types": "./dist/machines.d.ts",
+      "import": "./dist/machines.js"
+    },
+    "./repos/browser-extensions": {
+      "types": "./dist/browser-extensions.d.ts",
+      "import": "./dist/browser-extensions.js"
+    },
     "./repos": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"

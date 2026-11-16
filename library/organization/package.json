@@ -28,6 +28,10 @@
       "types": "./dist/organization.d.ts",
       "import": "./dist/organization.js"
     },
+    "./repos/organizations": {
+      "types": "./dist/organizations.d.ts",
+      "import": "./dist/organizations.js"
+    },
     "./repos": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
