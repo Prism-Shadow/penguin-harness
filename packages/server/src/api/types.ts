@@ -6673,25 +6673,6 @@ export interface OrgHandbookFileWriteRequest {
   content: string;
 }
 
-  /** A new channel message (mentions included, so the client can tell whether it is addressed). */
-  | {
-      type: "org_channel";
-      projectId: string;
-      orgId: string;
-      channelId: string;
-      message: OrgChannelMessage;
-    }
-  /** A ticket's status, owner, blocked state or contributing sessions changed. */
-  | { type: "org_ticket"; projectId: string; orgId: string; ticketId: string; change: string }
-  /** Budget warning, pause or resume for an employee. */
-  | {
-      type: "org_budget";
-      projectId: string;
-      orgId: string;
-      agentId: string;
-      state: "warned" | "paused" | "resumed";
-      ratio: number;
-    };
 
 // ---------------------------------------------------------------------------
 // Web contributions (GET /api/contributions)
@@ -7420,81 +7401,6 @@ export interface BuiltinBrowserSettings {
    */
   homepage: string | null;
 }
-
-
-  /** Create a guest for `url`, then POST /tabs/claim with `requestId` once it has a webContents id. */
-  | {
-      type: "builtin_browser_open";
-      partition?: string;
-      requestId: string;
-      url: string;
-      activate: boolean;
-      openerTabId?: number;
-      sessionId?: string;
-    }
-  | { type: "builtin_browser_close"; tabId: number }
-  /** A draft or healed conversation acquired its permanent id. */
-  | { type: "builtin_browser_session"; fromSessionId: string; sessionId: string }
-  | {
-      type: "builtin_browser_activity";
-      tabId: number;
-      busy: boolean;
-      action: BuiltinBrowserAction;
-      sessionId?: string;
-    }
-  /** The shell measured the browser's load (see BuiltinBrowserMetrics). */
-  | { type: "builtin_browser_metrics"; metrics: BuiltinBrowserMetrics }
-  /** The user switched backend (PUT /backend); every window of theirs follows. */
-  | { type: "builtin_browser_backend"; backend: BrowserBackend }
-  /** The user's Chrome connected, went away, was replaced by another Chrome of theirs, or was revoked. */
-  | {
-      type: "builtin_browser_extension";
-      state: "connected" | "disconnected" | "replaced" | "revoked";
-      extension?: BrowserExtensionRecord;
-    };
-
-
-  /** Reply: `{ tabs: BuiltinBrowserTab[] }`. */
-  | { op: "tabs" }
-  /**
-   * Reply: the CDP method's result object. `events` names the tab's CDP events the shell relays
-   * from then on, as `cdp-event`s: it replaces the list before (empty relays none), and is set
-   * before the command runs, so an event the command itself causes is not missed. Without it
-   * the list stays as it is.
-   */
-  | {
-      op: "cdp";
-      tabId: number;
-      method: string;
-      params?: Record<string, unknown>;
-      events?: string[];
-    }
-  /** Reply: `{ set: number; failed: number; errors: string[] }` (at most 10 errors). */
-  | { op: "set-cookies"; cookies: DesktopBrowserCookie[]; partition?: string }
-  /** Reply: `{}`. */
-  | { op: "clear-data"; storages: ("cookies" | "cache" | "storage")[]; partition?: string }
-  /**
-   * Reply: `{}`. The tabs whose pages may be throttled while out of sight (Electron's background
-   * throttling, applied at once); every other tab runs at full speed. It replaces the list
-   * before. A tab is unthrottled until a command lists it, so a server that never sends one
-   * changes nothing. A shell older than this command answers `unknown_op`.
-   */
-  | { op: "throttle"; tabIds: number[] }
-  /**
-   * Chrome only (the shell answers `unknown_op`). Reply: `{ tab: BuiltinBrowserTab }`. A tab at
-   * `url` (http(s) or about:blank, checked by the server) in the extension's Penguin tab group;
-   * `activate` asks for it to be the selected tab of its window.
-   */
-  | { op: "open-tab"; url: string; activate: boolean }
-  /** Chrome only. Reply: `{}`. Closes a tab the extension drives. */
-  | { op: "close-tab"; tabId: number }
-  /** Chrome only. Reply: `{}`. Shows the tab in the user's Chrome (selects it, focuses its window). */
-  | { op: "activate-tab"; tabId: number }
-  /** Chrome only. Reply: `{}`. Sent every 20 s; the traffic keeps the MV3 service worker alive. */
-  | { op: "ping" };
-
-
-
 
 export type DesktopBrowserEvent =
   | { kind: "tab"; tab: BuiltinBrowserTab }
