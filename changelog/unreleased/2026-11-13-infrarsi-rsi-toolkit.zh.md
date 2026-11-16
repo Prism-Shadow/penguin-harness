@@ -3,6 +3,7 @@
 - **Date:** 2026-11-13
 - **Type:** feature
 - **Scope:** `plugins`, `skills`, `docs`, `landing`
+- **PR:** [#1551](https://github.com/Prism-Shadow/penguin-harness/pull/1551)
 - **Issue:** [penguin-harness-community #71](https://github.com/Prism-Shadow/penguin-harness-community/issues/71)
 
 [English](2026-11-13-infrarsi-rsi-toolkit.md)
