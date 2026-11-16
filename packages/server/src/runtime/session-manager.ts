@@ -93,7 +93,7 @@ import type { LiveRun, LiveTail } from "./live-tail.js";
 import { unrunSource } from "./session-sources.js";
 import { StreamErrorWatcher } from "./stream-error-watcher.js";
 import type { TitleNotifier } from "./title-generator.js";
-import type { UsageContext } from "./usage-recorder.js";
+import type { UsageContext } from "@prismshadow/penguin-library-observability";
 import { Component, Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { SessionService as SessionServiceImpl } from "../services/session-service.js";
 import type { ClassCtx, Json, Opaque } from "@prismshadow/penguin-core/kernel";
@@ -481,7 +481,7 @@ export interface UsageRecorderLike {
 
 export interface SessionManagerDeps {
   /** The in-memory state this manager works on (see agent-state.ts). Optional: a manager built without one — unit tests — gets an empty state of its own. */
-  state?: AgentState;
+  state?: AgentStateStore;
   sessions: SessionIndex;
   channels: ChannelHub;
   loader: SessionLoader;
@@ -811,7 +811,7 @@ function isPlainText(role: "user" | "assistant") {
 export class SessionManager {
   // The state fields below are the AgentState component's (see agent-state.ts): this
   // class keeps its logic and its names, the component keeps the memory.
-  private readonly state: AgentState;
+  private readonly state: AgentStateStore;
   private readonly entries: Map<string, RuntimeEntry>;
   /**
    * Each registered subagent Session's ROOT Session: a subagent runs under its root's
@@ -846,7 +846,7 @@ export class SessionManager {
   private readonly now: () => Date;
 
   constructor(private readonly deps: SessionManagerDeps) {
-    const state = deps.state ?? new AgentStateStore();
+    const state: AgentStateStore = deps.state ?? new AgentStateStore();
     this.state = state;
     // This generation works on the state from here on: whatever a run that is still going
     // under an earlier generation starts when it ends, it starts through this one.
@@ -3103,7 +3103,7 @@ export class SessionsModule {
   @Use() private readonly settings!: Settings;
   @Use() private readonly sessionsRepo!: SessionIndex;
   @Use() private readonly sources!: SessionOrigins;
-  @Use() private readonly state!: AgentState;
+  @Use() private readonly state!: AgentStateStore;
   @Use() private readonly recorder!: UsageRecording;
   @Use() private readonly errors!: Errors;
   @Use() private readonly modelScopeAuth!: ModelScopeAuth;
