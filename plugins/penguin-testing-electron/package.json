@@ -1,0 +1,37 @@
+{
+  "name": "@penguinharness/penguin-testing-electron",
+  "version": "0.1.0",
+  "description": "Drive a real harness desktop shell (Electron) end to end: launch the current checkout or a given build, set the instance up from the current harness's config and vault, install the plugin under test, run its TestUnit components in the shell, and remove them afterwards.",
+  "keywords": [
+    "penguin-plugin",
+    "penguinharness",
+    "skills"
+  ],
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Prism-Shadow",
+    "url": "https://github.com/Prism-Shadow"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "plugins/penguin-testing-electron"
+  },
+  "files": [
+    "skills",
+    "ifaces.json",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json"
+  },
+  "devDependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/skills": "workspace:*",
+    "vitest": "^4.1.12"
+  }
+}
