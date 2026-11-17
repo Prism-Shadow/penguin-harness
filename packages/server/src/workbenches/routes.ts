@@ -334,14 +334,16 @@ export function manifestRoutes(
     tabKey: string | undefined,
     machineId: string | undefined,
   ): Promise<string | Response> => {
-    // A manifest of a remote machine: what THAT gate answers, verbatim — status included
-    // (it generated the route with its own server's project/agent ids; the start_url's
-    // machine query is what points the installed app back at that machine).
+    // A manifest of a remote machine: what THAT gate answers, status included (it generated
+    // the route with its own server's project/agent ids). The remote gate names no machine
+    // in its start_url — only the hop knows which machine this is — so this side writes the
+    // machine query into the start_url and scope before handing the manifest on: the
+    // installed app must open the workbench ON THAT machine, not on this one.
     if (machineId !== undefined) {
       const remote = await throughMachine(projectId, agentId, machineId, id, tabKey);
       if (remote === null)
         throw new HttpError(503, "not_connected", `No live forward to ${machineId}.`);
-      return remote;
+      return withMachineInStartUrl(remote, machineId);
     }
     const info = await workbenches.describe(projectId, agentId, id).catch(notFound);
     const tab = tabKey === undefined ? undefined : info.tabs.find((t) => t.key === tabKey);
@@ -358,6 +360,41 @@ export function manifestRoutes(
   const machineOf = (c: { req: { query(name: string): string | undefined } }) => {
     const machine = c.req.query("machine");
     return machine === undefined || machine === "" ? undefined : machine;
+  };
+  /**
+   * The forwarded answer's headers minus the ones that describe the body: the body may be
+   * replaced (the machine query rides the start_url), so the old length and validator must
+   * not ride along — the runtime recomputes or regenerates both. Everything else does.
+   */
+  const passAlong = (remote: Response): Headers => {
+    const headers = new Headers(remote.headers);
+    headers.delete("content-length");
+    headers.delete("etag");
+    return headers;
+  };
+  /**
+   * A forwarded manifest of a remote machine, with the machine written into its `start_url`
+   * and `scope` (they share one string). The remote gate generated the manifest for its own
+   * server — its start_url names no machine, because only the hop that asked knows which
+   * machine the workbench lives on. Anything the body of which is not a manifest with a
+   * start_url (an error answer, a shape the hop did not expect) passes through as-is.
+   */
+  const withMachineInStartUrl = async (remote: Response, machineId: string): Promise<Response> => {
+    if (!remote.ok) return remote;
+    const text = await remote.text();
+    let manifest: { start_url?: string; scope?: string };
+    try {
+      manifest = JSON.parse(text) as { start_url?: string; scope?: string };
+    } catch {
+      return new Response(text, { status: remote.status, headers: passAlong(remote) });
+    }
+    if (typeof manifest.start_url !== "string")
+      return new Response(text, { status: remote.status, headers: passAlong(remote) });
+    const url = new URL(manifest.start_url, "http://localhost");
+    url.searchParams.set("machine", machineId);
+    const withMachine = url.pathname + url.search;
+    const body = JSON.stringify({ ...manifest, start_url: withMachine, scope: withMachine });
+    return new Response(body, { status: remote.status, headers: passAlong(remote) });
   };
   // One manifest per workbench, and one per tab: the tab's own names the tab as the app —
   // its title (or its declared shortName) and its own full-page route as start_url/scope.
