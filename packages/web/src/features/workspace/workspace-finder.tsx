@@ -18,6 +18,11 @@
  * Ctrl+L, Alt+D and F4 edit the address off the Mac, and F5 refreshes everywhere instead of
  * reloading the app.
  *
+ * New folder is Finder's: no toolbar button, but the first row of the menu on the list's empty
+ * space (the folder on screen), and ⇧⌘N — Ctrl+Shift+N, Explorer's, elsewhere. A browser keeps
+ * that chord for a private window and never hands it to the page, so the menu names it only in
+ * the desktop app, where it arrives.
+ *
  * It is a Modal like any other dialog, so it stacks on the dialogs that host the form variant
  * without anything of its own: Modal portals to body (a later modal sits above an earlier one in
  * DOM order) and joins the shared Escape stack, so one Escape closes the finder and leaves the
@@ -148,6 +153,7 @@ const PLACE_ICON: Record<Place["key"], string> = {
 };
 
 const MENU_ICON: Record<FinderMenuItem, string> = {
+  newFolder: ICONS.folderPlus,
   open: ICONS.folderOpen,
   choose: ICONS.check,
   addToQuickAccess: ICONS.pin,
@@ -725,6 +731,10 @@ export function WorkspaceFinder({
   const runMenuItem = (item: FinderMenuItem, target: FinderMenuTarget) => {
     closeMenu();
     switch (item) {
+      case "newFolder":
+        // The name field takes focus as it opens, so the list does not take it back.
+        beginNewFolder();
+        return;
       case "open":
         if (target.machine === machine) load(target.path);
         else switchMachine(target.machine, target.path);
@@ -751,6 +761,8 @@ export function WorkspaceFinder({
 
   const menuLabel = (item: FinderMenuItem, target: FinderMenuTarget): string => {
     switch (item) {
+      case "newFolder":
+        return S.files.newFolder;
       case "open":
         return f.open;
       case "choose":
@@ -764,6 +776,19 @@ export function WorkspaceFinder({
       case "refresh":
         return f.refresh;
     }
+  };
+
+  /**
+   * The folder on screen, as the list's empty space stands for it: the one listed, or the one
+   * whose listing failed — still somewhere, whose menu says why nothing can be made in it.
+   * Nothing before the first answer lands.
+   */
+  const hereTarget = (): FinderMenuTarget | null => {
+    if (view.listing !== null) return { kind: "here", path: view.listing.path, machine };
+    if (view.error !== null && view.path !== "") {
+      return { kind: "here", path: view.path, machine, unreadable: true };
+    }
+    return null;
   };
 
   /**
@@ -782,8 +807,8 @@ export function WorkspaceFinder({
     if (el === null) return null;
     const path = el.dataset.finderPath;
     if (path === undefined) {
-      const here = view.listing?.path;
-      return here === undefined ? null : { target: { kind: "here", path: here, machine }, el };
+      const here = hereTarget();
+      return here === null ? null : { target: here, el };
     }
     const on = el.dataset.finderMachine;
     return {
@@ -840,9 +865,7 @@ export function WorkspaceFinder({
     const target: FinderMenuTarget | null =
       selectedEntry !== null
         ? { kind: isFolder(selectedEntry) ? "folder" : "file", path: selectedEntry.path, machine }
-        : view.listing !== null
-          ? { kind: "here", path: view.listing.path, machine }
-          : null;
+        : hereTarget();
     if (target === null) return;
     menu.rowRef(el);
     setMenuTarget(target);
@@ -893,6 +916,9 @@ export function WorkspaceFinder({
         return;
       case "refresh":
         refresh();
+        return;
+      case "newFolder":
+        beginNewFolder();
         return;
     }
   };
@@ -1190,6 +1216,8 @@ export function WorkspaceFinder({
 
   const shortcut = (mac: string, other: string) => (isMac ? mac : other);
   const editChord = shortcut("⌘⇧G", "Ctrl+Shift+G");
+  /** The hint beside the menu's New folder: only where the chord reaches the page (see the header). */
+  const newFolderChord = inShell ? shortcut("⇧⌘N", "Ctrl+Shift+N") : undefined;
   const parentPath = view.listing?.parent ?? parentOf(view.path);
 
   /**
@@ -1426,23 +1454,6 @@ export function WorkspaceFinder({
           className={`${controlBase} h-8 w-20 pl-7 pr-2 text-sm placeholder:text-fg-subtle sm:w-40`}
         />
       </label>
-      {/* New folder, inside the folder on screen: the toolbar's one command, at its far end
-          apart from the navigation glyphs. A glyph like them, with its name in the hint: the
-          dialog is no wider on a large screen than on a small one, and a word here takes the
-          room the path needs. A folder that could not be read has nowhere to make one — the
-          box below says why, and the hint says what that means here — and while a listing is
-          on its way, the folder it would go in is about to change. */}
-      <button
-        type="button"
-        className={navButtonClass}
-        disabled={currentFolder === null || loading}
-        aria-label={S.files.newFolder}
-        data-tooltip={permissionDenied ? f.newFolderDenied : S.files.newFolder}
-        data-tooltip-extra={permissionDenied}
-        onClick={beginNewFolder}
-      >
-        <GlyphIcon d={ICONS.folderPlus} size={ICON_SIZE.iconButton} />
-      </button>
     </div>
   );
 
@@ -1782,14 +1793,26 @@ export function WorkspaceFinder({
         >
           <Menu density="sm">
             {finderMenuItems(menuTarget, inQuickAccess(menuTarget.path, menuTarget.machine)).map(
-              (item) => (
-                <MenuItem
-                  key={item}
-                  glyph={MENU_ICON[item]}
-                  label={menuLabel(item, menuTarget)}
-                  onSelect={() => runMenuItem(item, menuTarget)}
-                />
-              ),
+              (item) => {
+                const newFolderItem = item === "newFolder";
+                const unreadable = newFolderItem && menuTarget.unreadable === true;
+                return (
+                  <MenuItem
+                    key={item}
+                    glyph={MENU_ICON[item]}
+                    label={menuLabel(item, menuTarget)}
+                    // A folder that could not be read has nowhere to make one, and the row says
+                    // so under its name; while a listing is on its way, the folder it would go
+                    // in is about to change.
+                    disabled={newFolderItem && (unreadable || loading)}
+                    {...(unreadable ? { description: f.newFolderDenied } : {})}
+                    {...(newFolderItem && newFolderChord !== undefined
+                      ? { trailing: newFolderChord }
+                      : {})}
+                    onSelect={() => runMenuItem(item, menuTarget)}
+                  />
+                );
+              },
             )}
           </Menu>
         </Dropdown>
