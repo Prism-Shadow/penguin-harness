@@ -68,6 +68,7 @@ import {
   BrowserWindow,
   dialog,
   ipcMain,
+  Menu,
   session,
   shell,
 } from "electron";
@@ -91,6 +92,7 @@ import { openAppWindow, parseOpenWindowRequest } from "./app-window.js";
 import { createBuiltinBrowserShell } from "./builtin-browser.js";
 import { installCliCommand, ensureCliCommand, currentCliInstallKind } from "./cli-install.js";
 import { logLine, logServerOutput, startDesktopLog, stopDesktopLog } from "./desktop-log.js";
+import { editMenuItems, runEditAction } from "./edit-menu.js";
 import { handleFolderAccessFrame } from "./folder-access.js";
 import type { FolderAccessFrameDeps } from "./folder-access.js";
 import { applyLoginShellEnv } from "./login-shell-env.js";
@@ -237,6 +239,35 @@ function hideMenuBar(target: BrowserWindow): void {
 }
 
 /**
+ * Electron draws no right-click menu, and a browser's is what the Web App leaves its fields
+ * and its unclaimed selections to; so the shell offers the edit group there (edit-menu.ts),
+ * in the Web App's language. A page that draws its own menu (the conversation, the Files
+ * panel, the terminal) calls `preventDefault` on `contextmenu`, and then Electron raises no
+ * `context-menu` at all, so the two never stack. The `<webview>` guests are other contents
+ * with a menu of their own (builtin-browser.ts).
+ */
+function offerEditMenu(target: BrowserWindow): void {
+  const contents = target.webContents;
+  contents.on("context-menu", (_event, params) => {
+    const items = editMenuItems({
+      locale: trayLocale,
+      isEditable: params.isEditable,
+      selectionText: params.selectionText,
+      editFlags: params.editFlags,
+    });
+    if (items.length === 0) return;
+    Menu.buildFromTemplate(
+      items.map((item) => ({
+        label: item.label,
+        click: () => {
+          if (!contents.isDestroyed()) runEditAction(contents, item.action);
+        },
+      })),
+    ).popup({ window: target });
+  });
+}
+
+/**
  * DevTools as its own window (`detach`) rather than a pane: a console error is usually being
  * copied out to someone else, and a docked panel reflows the page under it while that happens.
  *
@@ -314,6 +345,7 @@ function createWindow(url: string): void {
   // allowed here is one that HTML can open too — a hidden one, it could own outright.
   win.webContents.setWindowOpenHandler(({ url: target }) => openWindowFor(target, iconPath));
   hideMenuBar(win);
+  offerEditMenu(win);
   win.webContents.on("did-create-window", (child) => guardOpenedWindow(child, iconPath));
   win.webContents.on("will-navigate", (event, target) => {
     if (!isAppUrl(target, appOrigin)) {
@@ -415,6 +447,7 @@ function openWindowFor(target: string, iconPath: string | null): WindowOpenHandl
  */
 function guardOpenedWindow(child: BrowserWindow, iconPath: string | null): void {
   hideMenuBar(child);
+  offerEditMenu(child);
   child.center();
   child.webContents.on("content-bounds-updated", (event) => event.preventDefault());
   child.webContents.setWindowOpenHandler(({ url: target }) => openWindowFor(target, iconPath));

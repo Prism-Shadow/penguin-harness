@@ -55,6 +55,7 @@ import {
   userAgentForPage,
 } from "./builtin-browser-rules.js";
 import type { GuestMenuAction, GuestUserAgents } from "./builtin-browser-rules.js";
+import { runEditAction } from "./edit-menu.js";
 import type { TrayLocale } from "./tray-menu.js";
 import { urlForLog } from "./util.js";
 
@@ -567,16 +568,10 @@ export function createBuiltinBrowserShell(opts: BuiltinBrowserShellOptions): Bui
         clipboard.writeText(params.srcURL);
         return;
       case "cut":
-        wc.cut();
-        return;
       case "copy":
-        wc.copy();
-        return;
       case "paste":
-        wc.paste();
-        return;
       case "select-all":
-        wc.selectAll();
+        runEditAction(wc, action);
         return;
       case "inspect":
         wc.inspectElement(params.x, params.y);
