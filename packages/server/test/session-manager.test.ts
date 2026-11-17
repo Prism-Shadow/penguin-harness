@@ -76,8 +76,8 @@ import type {
 import type { ServerEvent } from "../src/api/types.js";
 import { openDatabase } from "@prismshadow/penguin-library-db";
 import { HttpError } from "../src/http/errors.js";
-import { SessionsRepo } from "@prismshadow/penguin-library-sessions/repos/sessions";
-import type { SessionRow } from "@prismshadow/penguin-library-sessions/repos/sessions";
+import { SessionsRepo } from "@prismshadow/penguin-library-session/repos/sessions";
+import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
 import { ChannelHub } from "../src/runtime/channel.js";
 import type { ChannelEvent } from "../src/runtime/channel.js";
 import type { ErrorSink } from "../src/runtime/error-recorder.js";

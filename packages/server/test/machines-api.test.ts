@@ -90,7 +90,7 @@ import type {
 } from "../src/api/types.js";
 import type { DatabaseSync } from "node:sqlite";
 import { openDatabase } from "@prismshadow/penguin-library-db";
-import { MachinesRepo } from "@prismshadow/penguin-library-machines/repos/machines";
+import { MachinesRepo } from "@prismshadow/penguin-library-machine/machine";
 import { MachineAnswers } from "../src/machines/answer-cache.js";
 import { MachinesService } from "../src/machines/service.js";
 import { TraceCache, dirNameOf } from "../src/machines/trace-cache.js";

@@ -40,7 +40,7 @@ import type {
 } from "../api/types.js";
 import type {
   BrowserExtensionStore,
-} from "@prismshadow/penguin-library-machines/repos/browser-extensions";
+} from "@prismshadow/penguin-library-machine/browser-extensions";
 import { HttpError } from "../http/errors.js";
 import { BrowserBackendRuntime } from "./backend-runtime.js";
 import type { BrowserTiming } from "./backend-runtime.js";

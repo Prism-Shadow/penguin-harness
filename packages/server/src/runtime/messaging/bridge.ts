@@ -82,8 +82,8 @@ import type {
 import {
   INLINE_IMAGE_MAX_BYTES,
   toAttachmentLimits,
-} from "@prismshadow/penguin-library-settings/attachment-limits";
-import type { AttachmentLimits } from "@prismshadow/penguin-library-settings/attachment-limits";
+} from "@prismshadow/penguin-library-setting/attachment-limits";
+import type { AttachmentLimits } from "@prismshadow/penguin-library-setting/attachment-limits";
 import { attachFilesToInput, removeAttachments } from "../../services/task-attachments.js";
 import type { AttachedFiles, TaskAttachment } from "../../services/task-attachments.js";
 import type { ChannelEvent, ChannelHub } from "../channel.js";
@@ -125,11 +125,11 @@ import { WeChatScanService } from "./wechat-scan.js";
 import type { WeChatScanTransportHandle } from "./wechat-scan.js";
 import { sessionMessagingRoutes } from "../../http/routes/messaging.js";
 import type { Channels, Clock, Log, Paths } from "../../hmr/capabilities.js";
-import type { Access } from "@prismshadow/penguin-library-projects";
-import type { SessionIndex } from "@prismshadow/penguin-library-sessions";
+import type { Access } from "@prismshadow/penguin-library-project";
+import type { SessionIndex } from "@prismshadow/penguin-library-session";
 import type { Errors } from "@prismshadow/penguin-library-observability";
 import type { WorkspaceFiles } from "../../mechanisms/workspace.js";
-import type { Settings } from "@prismshadow/penguin-library-settings";
+import type { Settings } from "@prismshadow/penguin-library-setting";
 import type { MessagingBindings } from "@prismshadow/penguin-library-messaging";
 
 /**

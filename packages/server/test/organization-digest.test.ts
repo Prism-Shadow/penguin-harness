@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { OrgTicketChange } from "@prismshadow/penguin-library-organization";
-import type { OrgDeskNoticeRow } from "@prismshadow/penguin-library-organization/repos/organizations";
+import type { OrgDeskNoticeRow } from "@prismshadow/penguin-library-organization/organizations";
 import type { TicketDoc } from "../src/organization/files.js";
 import { deskDigest } from "../src/runtime/organization/digest.js";
 import type { DigestTicket } from "../src/runtime/organization/digest.js";

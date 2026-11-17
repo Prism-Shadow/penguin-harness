@@ -28,9 +28,9 @@ import {
   sameOriginSite,
 } from "../http/public-origin.js";
 import type { OriginRule } from "../http/public-origin.js";
-import type { UserRow } from "@prismshadow/penguin-library-identity/repos/users";
-import type { SessionVia } from "@prismshadow/penguin-library-identity";
-import type { Auth } from "@prismshadow/penguin-library-identity";
+import type { UserRow } from "@prismshadow/penguin-library-auth/repos/users";
+import type { SessionVia } from "@prismshadow/penguin-library-auth";
+import type { Auth } from "@prismshadow/penguin-library-auth";
 import { SESSION_COOKIE } from "../api/types.js";
 
 /** The session cookie's name as every non-browser client spells it (declared in the API contract). */

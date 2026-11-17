@@ -28,7 +28,7 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import { agentsDir, buildScheduledMessage, userText } from "@prismshadow/penguin-core";
-import type { ScheduleStateRow } from "@prismshadow/penguin-library-sessions/repos/schedules";
+import type { ScheduleStateRow } from "@prismshadow/penguin-library-session/repos/schedules";
 import { cacheable, statMtime } from "../internal/mtime-gate.js";
 import type { ErrorSink } from "./error-recorder.js";
 import type { ScheduleDefinition } from "./schedule-file.js";
@@ -41,7 +41,7 @@ import {
 } from "./schedule-store.js";
 import type { ScheduleConfigSource } from "./schedule-store.js";
 import type { ScheduleStatus } from "../api/types.js";
-import type { ScheduleServerEvent } from "@prismshadow/penguin-library-projects";
+import type { ScheduleServerEvent } from "@prismshadow/penguin-library-project";
 import { Component, Interface, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { userChannelKey } from "../http/routes/events.js";
@@ -51,8 +51,8 @@ import type {
   Scheduling,
   SessionDrivers,
   SessionIndex,
-} from "@prismshadow/penguin-library-sessions";
-import type { ProjectConfigStore, Projects } from "@prismshadow/penguin-library-projects";
+} from "@prismshadow/penguin-library-session";
+import type { ProjectConfigStore, Projects } from "@prismshadow/penguin-library-project";
 import type { Errors } from "@prismshadow/penguin-library-observability";
 
 /** Reconcile and fire-check interval (min period is 5m, so 30s granularity is plenty). */

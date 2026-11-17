@@ -8,7 +8,7 @@
 import type { SandboxSettings } from "@prismshadow/penguin-core/plugin";
 import type {
   SessionSandbox,
-} from "@prismshadow/penguin-library-sessions";
+} from "@prismshadow/penguin-library-session";
 
 const SANDBOX_MODE_RANK: Record<SandboxSettings["mode"], number> = {
   "read-only": 0,

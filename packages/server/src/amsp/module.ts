@@ -18,11 +18,11 @@ import { AgentApiRepo } from "@prismshadow/penguin-library-agent-api/agent-api-r
 import type { Channels, Clock, Log } from "../hmr/capabilities.js";
 import { AgentApi } from "@prismshadow/penguin-library-agent-api";
 import type { AgentConfig } from "../mechanisms/agents.js";
-import type { Access } from "@prismshadow/penguin-library-projects";
+import type { Access } from "@prismshadow/penguin-library-project";
 import type { Errors } from "@prismshadow/penguin-library-observability";
-import type { SessionIndex } from "@prismshadow/penguin-library-sessions";
-import type { Settings } from "@prismshadow/penguin-library-settings";
-import type { Traces } from "@prismshadow/penguin-library-traces";
+import type { SessionIndex } from "@prismshadow/penguin-library-session";
+import type { Settings } from "@prismshadow/penguin-library-setting";
+import type { Traces } from "@prismshadow/penguin-library-trace";
 import type { SessionManager, Sessions, SessionServiceIface } from "../runtime/session-manager.js";
 import type { SessionService } from "../services/session-service.js";
 import { amspRoutes } from "./routes.js";

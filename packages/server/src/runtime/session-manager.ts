@@ -74,13 +74,13 @@ import type {
   PendingFollowUpInfo,
   PendingSteeringInfo,
   SessionStatus,
-} from "@prismshadow/penguin-library-sessions";
+} from "@prismshadow/penguin-library-session";
 import type { ModelRefDto } from "@prismshadow/penguin-library-agent-api";
-import type { ServerEvent } from "@prismshadow/penguin-library-projects";
+import type { ServerEvent } from "@prismshadow/penguin-library-project";
 import type { RecallableFile } from "../services/task-attachments.js";
 import { cliShimDir } from "../services/cli-shim.js";
 import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
-import type { SessionRow } from "@prismshadow/penguin-library-sessions/repos/sessions";
+import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
 import { ApprovalRegistry, makeApprove } from "./approvals.js";
 import { goalOutcomeOf, goalProgressOf } from "./goal-events.js";
 import { InputEcho } from "./input-echo.js";
@@ -108,15 +108,15 @@ import { loopbackHostRoles } from "../services/preview-token.js";
 import { agentNoProxy } from "../net/proxy.js";
 import type { SandboxService } from "../sandbox/service.js";
 import type { AuthState, Channels, Clock, Config, Log } from "../hmr/capabilities.js";
-import type { ProjectConfigStore, ProjectEvents } from "@prismshadow/penguin-library-projects";
+import type { ProjectConfigStore, ProjectEvents } from "@prismshadow/penguin-library-project";
 import type {
   AgentState,
   SessionIndex,
   SessionOrigins,
-} from "@prismshadow/penguin-library-sessions";
+} from "@prismshadow/penguin-library-session";
 import type { Errors, UsageRecording } from "@prismshadow/penguin-library-observability";
-import type { TraceIndex, TraceIndexStore } from "@prismshadow/penguin-library-traces";
-import type { Settings } from "@prismshadow/penguin-library-settings";
+import type { TraceIndex, TraceIndexStore } from "@prismshadow/penguin-library-trace";
+import type { Settings } from "@prismshadow/penguin-library-setting";
 import type { MessagingBindings } from "@prismshadow/penguin-library-messaging";
 import type { OrgCache } from "@prismshadow/penguin-library-organization";
 import { enabledMessagingChannel } from "./messaging/enabled-channel.js";

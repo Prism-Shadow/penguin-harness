@@ -5,7 +5,7 @@
  * turns every exposed Agent off and invalidates every key.
  */
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { ApprovalMode } from "@prismshadow/penguin-library-sessions";
+import type { ApprovalMode } from "@prismshadow/penguin-library-session";
 import { DEFAULT_API_CONCURRENT_RUNS } from "./agent-api.js";
 import type { Db } from "@prismshadow/penguin-library-db";
 import type {

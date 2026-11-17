@@ -8,11 +8,11 @@
  * publish through this, so the audience rule is written once.
  */
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { ServerEvent } from "@prismshadow/penguin-library-projects";
+import type { ServerEvent } from "@prismshadow/penguin-library-project";
 import type { Channels } from "../hmr/capabilities.js";
 import type { ChannelHub } from "../runtime/channel.js";
 import { userChannelKey } from "../http/routes/events.js";
-import type { Members, ProjectEvents, Projects } from "@prismshadow/penguin-library-projects";
+import type { Members, ProjectEvents, Projects } from "@prismshadow/penguin-library-project";
 
 @Component()
 export class ProjectNotifier implements ProjectEvents {

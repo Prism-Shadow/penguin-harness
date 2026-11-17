@@ -35,7 +35,7 @@ import type {
   WorkbenchResult,
   WorkbenchRecord,
   IconRef,
-} from "@prismshadow/penguin-library-workbenches";
+} from "@prismshadow/penguin-library-workbench";
 
 
 

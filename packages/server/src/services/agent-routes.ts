@@ -17,10 +17,10 @@ import type {
   Memory,
   Snapshots,
 } from "../mechanisms/agents.js";
-import type { Access, ProjectConfigStore } from "@prismshadow/penguin-library-projects";
-import type { Settings } from "@prismshadow/penguin-library-settings";
-import type { SessionIndex } from "@prismshadow/penguin-library-sessions";
-import type { TraceIndex, TraceIndexStore, Traces } from "@prismshadow/penguin-library-traces";
+import type { Access, ProjectConfigStore } from "@prismshadow/penguin-library-project";
+import type { Settings } from "@prismshadow/penguin-library-setting";
+import type { SessionIndex } from "@prismshadow/penguin-library-session";
+import type { TraceIndex, TraceIndexStore, Traces } from "@prismshadow/penguin-library-trace";
 import type { Workbenches } from "../mechanisms/workbenches.js";
 
 /**

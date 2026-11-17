@@ -7,8 +7,8 @@
  * `session_forbidden`. A hub reads its machines as their admin, and drops its copy of a Session
  * the machine says does not exist: a refusal must not read as a deletion.
  */
-import type { SessionRow } from "@prismshadow/penguin-library-sessions/repos/sessions";
-import type { Access } from "@prismshadow/penguin-library-projects";
+import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
+import type { Access } from "@prismshadow/penguin-library-project";
 import { HttpError } from "./errors.js";
 
 /** `row` (the Session the path names, or null), for a caller who may read it; else the refusal. */

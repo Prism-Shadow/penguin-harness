@@ -44,15 +44,15 @@ import type {
 import { agentDir, userText } from "@prismshadow/penguin-core";
 import type { IconImage } from "@prismshadow/penguin-core";
 import table from "../ifaces.json" with { type: "json" };
-import type { ServerEvent } from "@prismshadow/penguin-library-projects";
+import type { ServerEvent } from "@prismshadow/penguin-library-project";
 import { HttpError } from "../http/errors.js";
 import type { Channels, Clock, Config, Hmr, Log, Paths } from "../hmr/capabilities.js";
 import { userChannelKey } from "../http/routes/events.js";
 import type { AgentConfig } from "../mechanisms/agents.js";
-import type { AgentIndex, Members, Projects } from "@prismshadow/penguin-library-projects";
-import type { Traces } from "@prismshadow/penguin-library-traces";
+import type { AgentIndex, Members, Projects } from "@prismshadow/penguin-library-project";
+import type { Traces } from "@prismshadow/penguin-library-trace";
 import { workbenchResult } from "./result.js";
-import type { SessionIndex } from "@prismshadow/penguin-library-sessions";
+import type { SessionIndex } from "@prismshadow/penguin-library-session";
 import type { Workbenches } from "../mechanisms/workbenches.js";
 import type {
   AppCenterShortcut,
@@ -67,7 +67,7 @@ import type {
   WorkbenchUiRuntime,
   WorkbenchUiRuntimeFile,
   WorkbenchVersion,
-} from "@prismshadow/penguin-library-workbenches";
+} from "@prismshadow/penguin-library-workbench";
 import { ScheduleSessionCreator, ScheduleTaskRunner } from "../runtime/scheduler.js";
 import {
   agentShortcuts,

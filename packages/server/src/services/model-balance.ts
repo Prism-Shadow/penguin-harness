@@ -28,7 +28,7 @@ import type { ModelProviderBalance } from "../model-catalog/catalog.js";
 import type { ModelBalanceFailure, ModelBalanceReading, ModelBalanceResponse } from "../api/types.js";
 import type {
   ModelBalanceAmount,
-} from "@prismshadow/penguin-library-models";
+} from "@prismshadow/penguin-library-model";
 
 /** How long a vendor may take to answer a balance request. */
 export const BALANCE_TIMEOUT_MS = 5_000;

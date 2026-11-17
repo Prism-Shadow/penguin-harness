@@ -2,20 +2,20 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "paths": {
-      "@prismshadow/penguin-library-account-data": [
-        "../../library/account-data/src/index.ts"
+      "@prismshadow/penguin-library-auth": [
+        "../../library/auth/src/index.ts"
       ],
-      "@prismshadow/penguin-library-account-data/account-data": [
-        "../../library/account-data/src/account-data.ts"
+      "@prismshadow/penguin-library-auth/account-data": [
+        "../../library/auth/src/account-data.ts"
       ],
-      "@prismshadow/penguin-library-account-data/repos": [
-        "../../library/account-data/src/repos/index.ts"
+      "@prismshadow/penguin-library-auth/repos": [
+        "../../library/auth/src/repos/index.ts"
       ],
-      "@prismshadow/penguin-library-account-data/repos/background-images": [
-        "../../library/account-data/src/repos/background-images.ts"
+      "@prismshadow/penguin-library-auth/repos/background-images": [
+        "../../library/auth/src/repos/background-images.ts"
       ],
-      "@prismshadow/penguin-library-account-data/repos/user-drafts": [
-        "../../library/account-data/src/repos/user-drafts.ts"
+      "@prismshadow/penguin-library-auth/repos/user-drafts": [
+        "../../library/auth/src/repos/user-drafts.ts"
       ],
       "@prismshadow/penguin-library-agent-api": [
         "../../library/agent-api/src/index.ts"
@@ -38,47 +38,47 @@
       "@prismshadow/penguin-library-db/schema": [
         "../../library/db/src/schema.ts"
       ],
-      "@prismshadow/penguin-library-identity": [
-        "../../library/identity/src/index.ts"
+      "@prismshadow/penguin-library-auth": [
+        "../../library/auth/src/index.ts"
       ],
-      "@prismshadow/penguin-library-identity/identity": [
-        "../../library/identity/src/identity.ts"
+      "@prismshadow/penguin-library-auth/auth": [
+        "../../library/auth/src/auth.ts"
       ],
-      "@prismshadow/penguin-library-identity/repos": [
-        "../../library/identity/src/repos/index.ts"
+      "@prismshadow/penguin-library-auth/repos": [
+        "../../library/auth/src/repos/index.ts"
       ],
-      "@prismshadow/penguin-library-identity/repos/auth-sessions": [
-        "../../library/identity/src/repos/auth-sessions.ts"
+      "@prismshadow/penguin-library-auth/repos/auth-sessions": [
+        "../../library/auth/src/repos/auth-sessions.ts"
       ],
-      "@prismshadow/penguin-library-identity/repos/users": [
-        "../../library/identity/src/repos/users.ts"
+      "@prismshadow/penguin-library-auth/repos/users": [
+        "../../library/auth/src/repos/users.ts"
       ],
-      "@prismshadow/penguin-library-workbenches": [
-        "../../library/workbenches/src/index.ts"
+      "@prismshadow/penguin-library-workbench": [
+        "../../library/workbench/src/index.ts"
       ],
-      "@prismshadow/penguin-library-workbenches/workbenches": [
-        "../../library/workbenches/src/workbenches.ts"
+      "@prismshadow/penguin-library-workbench/workbench": [
+        "../../library/workbench/src/workbench.ts"
       ],
-      "@prismshadow/penguin-library-models": [
-        "../../library/models/src/index.ts"
+      "@prismshadow/penguin-library-model": [
+        "../../library/model/src/index.ts"
       ],
-      "@prismshadow/penguin-library-models/models": [
-        "../../library/models/src/models.ts"
+      "@prismshadow/penguin-library-model/model": [
+        "../../library/model/src/model.ts"
       ],
-      "@prismshadow/penguin-library-models/repos/model-promotions": [
-        "../../library/models/src/repos/model-promotions.ts"
+      "@prismshadow/penguin-library-model/repos/model-promotions": [
+        "../../library/model/src/repos/model-promotions.ts"
       ],
-      "@prismshadow/penguin-library-models/repos/model-provider-auth-tokens": [
-        "../../library/models/src/repos/model-provider-auth-tokens.ts"
+      "@prismshadow/penguin-library-model/repos/model-provider-auth-tokens": [
+        "../../library/model/src/repos/model-provider-auth-tokens.ts"
       ],
-      "@prismshadow/penguin-library-machines": [
-        "../../library/machines/src/index.ts"
+      "@prismshadow/penguin-library-machine": [
+        "../../library/machine/src/index.ts"
       ],
-      "@prismshadow/penguin-library-machines/browser-extensions": [
-        "../../library/machines/src/browser-extensions.ts"
+      "@prismshadow/penguin-library-machine/browser-extensions": [
+        "../../library/machine/src/browser-extensions.ts"
       ],
-      "@prismshadow/penguin-library-machines/machines": [
-        "../../library/machines/src/machines.ts"
+      "@prismshadow/penguin-library-machine/machine": [
+        "../../library/machine/src/machine.ts"
       ],
       "@prismshadow/penguin-library-messaging": [
         "../../library/messaging/src/index.ts"
@@ -119,71 +119,65 @@
       "@prismshadow/penguin-library-organization/organizations": [
         "../../library/organization/src/organizations.ts"
       ],
-      "@prismshadow/penguin-library-projects": [
-        "../../library/projects/src/index.ts"
+      "@prismshadow/penguin-library-project": [
+        "../../library/project/src/index.ts"
       ],
-      "@prismshadow/penguin-library-projects/projects": [
-        "../../library/projects/src/projects.ts"
+      "@prismshadow/penguin-library-project/project": [
+        "../../library/project/src/project.ts"
       ],
-      "@prismshadow/penguin-library-projects/repos": [
-        "../../library/projects/src/repos/index.ts"
+      "@prismshadow/penguin-library-project/repos": [
+        "../../library/project/src/repos/index.ts"
       ],
-      "@prismshadow/penguin-library-projects/repos/agents": [
-        "../../library/projects/src/repos/agents.ts"
+      "@prismshadow/penguin-library-project/repos/agents": [
+        "../../library/project/src/repos/agents.ts"
       ],
-      "@prismshadow/penguin-library-projects/repos/members": [
-        "../../library/projects/src/repos/members.ts"
+      "@prismshadow/penguin-library-project/repos/members": [
+        "../../library/project/src/repos/members.ts"
       ],
-      "@prismshadow/penguin-library-projects/repos/model-promotions": [
-        "../../library/projects/src/repos/model-promotions.ts"
+      "@prismshadow/penguin-library-project/repos/projects": [
+        "../../library/project/src/repos/projects.ts"
       ],
-      "@prismshadow/penguin-library-projects/repos/model-provider-auth-tokens": [
-        "../../library/projects/src/repos/model-provider-auth-tokens.ts"
+      "@prismshadow/penguin-library-session": [
+        "../../library/session/src/index.ts"
       ],
-      "@prismshadow/penguin-library-projects/repos/projects": [
-        "../../library/projects/src/repos/projects.ts"
+      "@prismshadow/penguin-library-session/repos": [
+        "../../library/session/src/repos/index.ts"
       ],
-      "@prismshadow/penguin-library-sessions": [
-        "../../library/sessions/src/index.ts"
+      "@prismshadow/penguin-library-session/repos/schedules": [
+        "../../library/session/src/repos/schedules.ts"
       ],
-      "@prismshadow/penguin-library-sessions/repos": [
-        "../../library/sessions/src/repos/index.ts"
+      "@prismshadow/penguin-library-session/repos/sessions": [
+        "../../library/session/src/repos/sessions.ts"
       ],
-      "@prismshadow/penguin-library-sessions/repos/schedules": [
-        "../../library/sessions/src/repos/schedules.ts"
+      "@prismshadow/penguin-library-session/session": [
+        "../../library/session/src/session.ts"
       ],
-      "@prismshadow/penguin-library-sessions/repos/sessions": [
-        "../../library/sessions/src/repos/sessions.ts"
+      "@prismshadow/penguin-library-setting": [
+        "../../library/setting/src/index.ts"
       ],
-      "@prismshadow/penguin-library-sessions/sessions": [
-        "../../library/sessions/src/sessions.ts"
+      "@prismshadow/penguin-library-setting/attachment-limits": [
+        "../../library/setting/src/attachment-limits.ts"
       ],
-      "@prismshadow/penguin-library-settings": [
-        "../../library/settings/src/index.ts"
+      "@prismshadow/penguin-library-setting/repos": [
+        "../../library/setting/src/repos/index.ts"
       ],
-      "@prismshadow/penguin-library-settings/attachment-limits": [
-        "../../library/settings/src/attachment-limits.ts"
+      "@prismshadow/penguin-library-setting/repos/server-settings": [
+        "../../library/setting/src/repos/server-settings.ts"
       ],
-      "@prismshadow/penguin-library-settings/repos": [
-        "../../library/settings/src/repos/index.ts"
+      "@prismshadow/penguin-library-setting/repos/ui-prefs": [
+        "../../library/setting/src/repos/ui-prefs.ts"
       ],
-      "@prismshadow/penguin-library-settings/repos/server-settings": [
-        "../../library/settings/src/repos/server-settings.ts"
+      "@prismshadow/penguin-library-trace": [
+        "../../library/trace/src/index.ts"
       ],
-      "@prismshadow/penguin-library-settings/repos/ui-prefs": [
-        "../../library/settings/src/repos/ui-prefs.ts"
+      "@prismshadow/penguin-library-trace/repos": [
+        "../../library/trace/src/repos/index.ts"
       ],
-      "@prismshadow/penguin-library-traces": [
-        "../../library/traces/src/index.ts"
+      "@prismshadow/penguin-library-trace/repos/trace-index": [
+        "../../library/trace/src/repos/trace-index.ts"
       ],
-      "@prismshadow/penguin-library-traces/repos": [
-        "../../library/traces/src/repos/index.ts"
-      ],
-      "@prismshadow/penguin-library-traces/repos/trace-index": [
-        "../../library/traces/src/repos/trace-index.ts"
-      ],
-      "@prismshadow/penguin-library-traces/traces": [
-        "../../library/traces/src/traces.ts"
+      "@prismshadow/penguin-library-trace/trace": [
+        "../../library/trace/src/trace.ts"
       ]
     }
   },

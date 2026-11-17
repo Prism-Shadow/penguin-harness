@@ -13,10 +13,10 @@
  * means "unknown": the list path resolves it from the Trace once per process lifetime.
  */
 import type { SessionSource } from "../api/types.js";
-import type { SessionCategory } from "@prismshadow/penguin-library-traces";
-import type { SessionRow } from "@prismshadow/penguin-library-sessions/repos/sessions";
+import type { SessionCategory } from "@prismshadow/penguin-library-trace";
+import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
 import { Component } from "@prismshadow/penguin-core/kernel";
-import type { SessionOrigins } from "@prismshadow/penguin-library-sessions";
+import type { SessionOrigins } from "@prismshadow/penguin-library-session";
 
 /**
  * What a Session's Trace head records as its source: one of the sources, or `null` for a head

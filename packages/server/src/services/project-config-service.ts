@@ -97,9 +97,9 @@ import type {
   ModelEffectiveConnection,
   ModelInfo,
   ModelPricingDto,
-} from "@prismshadow/penguin-library-models";
+} from "@prismshadow/penguin-library-model";
 import type { ModelRefDto } from "@prismshadow/penguin-library-agent-api";
-import type { ChatDefaultsDto, CommandPolicyDto } from "@prismshadow/penguin-library-projects";
+import type { ChatDefaultsDto, CommandPolicyDto } from "@prismshadow/penguin-library-project";
 import type {
   EndpointModelListRequest,
   EndpointModelListResponse,
@@ -116,7 +116,7 @@ import type {
   ProviderConnectionDto,
   ProviderConnectionResponse,
   ProviderConnectionUpdate,
-} from "@prismshadow/penguin-library-models";
+} from "@prismshadow/penguin-library-model";
 import { badRequest } from "../http/validate.js";
 import { HttpError } from "../http/errors.js";
 import { cacheable } from "../internal/mtime-gate.js";
@@ -137,17 +137,17 @@ import {
   classifyVisionProbe,
   classifyVisionProbeError,
 } from "./vision-detect.js";
-import type { PricingRates, TieredRates } from "@prismshadow/penguin-library-models";
+import type { PricingRates, TieredRates } from "@prismshadow/penguin-library-model";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Config, Paths } from "../hmr/capabilities.js";
-import type { ProjectConfigStore } from "@prismshadow/penguin-library-projects";
-import type { GroupKeyApplied } from "@prismshadow/penguin-library-models";
+import type { ProjectConfigStore } from "@prismshadow/penguin-library-project";
+import type { GroupKeyApplied } from "@prismshadow/penguin-library-model";
 import type {
   ModelPromotion,
   ModelProviderAuthToken,
   ModelProviderAuthTokens,
   ModelPromotions,
-} from "@prismshadow/penguin-library-models";
+} from "@prismshadow/penguin-library-model";
 
 export type RawTable = Record<string, unknown>;
 

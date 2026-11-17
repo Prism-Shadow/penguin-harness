@@ -24,16 +24,16 @@ import type { BrowserBackend, BuiltinBrowserServerEvent, UiPrefs } from "../api/
 import type { AppEnv } from "../auth/middleware.js";
 import {
   BrowserExtensionsRepo,
-} from "@prismshadow/penguin-library-machines/repos/browser-extensions";
+} from "@prismshadow/penguin-library-machine/browser-extensions";
 import {
   BROWSER_EXTENSIONS_KEY,
-} from "@prismshadow/penguin-library-settings/repos/server-settings";
+} from "@prismshadow/penguin-library-setting/repos/server-settings";
 import type { Channels, Clock, Config, Db, Desktop, Log, Paths } from "../hmr/capabilities.js";
 import { userChannelKey } from "../http/routes/events.js";
 import { ensureInstallId } from "../install-id.js";
-import type { Users } from "@prismshadow/penguin-library-identity";
-import type { SessionDrivers, SessionIndex } from "@prismshadow/penguin-library-sessions";
-import type { Settings, UiPrefsStore } from "@prismshadow/penguin-library-settings";
+import type { Users } from "@prismshadow/penguin-library-auth";
+import type { SessionDrivers, SessionIndex } from "@prismshadow/penguin-library-session";
+import type { Settings, UiPrefsStore } from "@prismshadow/penguin-library-setting";
 import { shellPortOf } from "../services/desktop-update-port.js";
 import type { BrowserExtensionAdmission } from "./extension-hub.js";
 import type { ExtensionSocket } from "./extension-link.js";

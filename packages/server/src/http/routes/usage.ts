@@ -22,7 +22,7 @@ import type { UsageGranularity } from "@prismshadow/penguin-library-observabilit
 import type { AppEnv } from "../../auth/middleware.js";
 import { badRequest, optionalDateParam, paginationQuery, requireValidId } from "../validate.js";
 import type { UsageQueries } from "@prismshadow/penguin-library-observability";
-import type { Access } from "@prismshadow/penguin-library-projects";
+import type { Access } from "@prismshadow/penguin-library-project";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface UsageRouteDeps {

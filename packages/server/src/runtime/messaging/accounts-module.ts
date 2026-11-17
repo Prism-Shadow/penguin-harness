@@ -12,8 +12,8 @@ import {
 } from "../../http/routes/messaging-accounts.js";
 import type { Machines } from "../../machines/service.js";
 import type { MessagingBindings } from "@prismshadow/penguin-library-messaging";
-import type { Access } from "@prismshadow/penguin-library-projects";
-import type { SessionIndex } from "@prismshadow/penguin-library-sessions";
+import type { Access } from "@prismshadow/penguin-library-project";
+import type { SessionIndex } from "@prismshadow/penguin-library-session";
 
 @Module({
   contributes: {

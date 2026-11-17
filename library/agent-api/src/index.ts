@@ -3,7 +3,7 @@
  * contract the agent_api repo implements), its settings/update vocabulary and the
  * ModelRefDto pair. One package, no server dependencies - the repo takes the Db
  * capability from @prismshadow/penguin-library-db and the approval vocabulary from
- * @prismshadow/penguin-library-sessions.
+ * @prismshadow/penguin-library-session.
  *
  * Subpaths:
  * - `.` - the contract plus its vocabulary.

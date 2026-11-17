@@ -8,7 +8,7 @@ import { requestBegin, requestEnd, withOrigin } from "@prismshadow/penguin-core"
 import type { SessionTitleResult } from "@prismshadow/penguin-core";
 import { wire } from "@prismshadow/penguin-core/kernel";
 import { openDatabase } from "@prismshadow/penguin-library-db";
-import { SessionsRepo } from "@prismshadow/penguin-library-sessions/repos/sessions";
+import { SessionsRepo } from "@prismshadow/penguin-library-session/repos/sessions";
 import { UsageRepo } from "@prismshadow/penguin-library-observability/repos/usage";
 import { ChannelHub } from "../src/runtime/channel.js";
 import { TitleGenerator } from "../src/runtime/title-generator.js";

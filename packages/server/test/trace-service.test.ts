@@ -53,7 +53,7 @@ import type {
 // must keep reading them, so these fixtures write them through a cast.
 const legacyEnd = (status: string) => requestEnd(status as StopReason);
 import type { TraceService } from "../src/services/trace-service.js";
-import type { SessionRow } from "@prismshadow/penguin-library-sessions/repos/sessions";
+import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
 import { openDatabase } from "@prismshadow/penguin-library-db";
 import { wire } from "@prismshadow/penguin-core/kernel";
 import { ErrorsRepo } from "@prismshadow/penguin-library-observability/repos/errors";

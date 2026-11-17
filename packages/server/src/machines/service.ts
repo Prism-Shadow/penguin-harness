@@ -52,7 +52,7 @@ import type {
   MachineUseRefusal,
   MachinesCheckoutImage,
 } from "../api/types.js";
-import type { ServerEvent } from "@prismshadow/penguin-library-projects";
+import type { ServerEvent } from "@prismshadow/penguin-library-project";
 import { readServerLock } from "../lock.js";
 import { SESSION_COOKIE } from "../auth/middleware.js";
 import http from "node:http";
@@ -121,7 +121,7 @@ import { machineApi } from "./machine-api.js";
 import type { MachineApi } from "./machine-api.js";
 import { ADOPTED_AT_HEADER } from "../runtime/session-sources.js";
 import { startRemoteServer, stopRemoteServer } from "./server-control.js";
-import type { MachineRow } from "@prismshadow/penguin-library-machines/repos/machines";
+import type { MachineRow } from "@prismshadow/penguin-library-machine/machine";
 import { Interface, Bind, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { AppEnv } from "../auth/middleware.js";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
@@ -141,14 +141,14 @@ import type { HandshakeReading } from "./handshake.js";
 import { machineSessionForward } from "./session-forward.js";
 import type { MachineSessionForward } from "./session-forward.js";
 import { HttpError } from "../http/errors.js";
-import type { Access, Projects } from "@prismshadow/penguin-library-projects";
+import type { Access, Projects } from "@prismshadow/penguin-library-project";
 import { Hono } from "hono";
 import type { Context } from "hono";
-import { MachinesRepo } from "@prismshadow/penguin-library-machines/repos/machines";
+import { MachinesRepo } from "@prismshadow/penguin-library-machine/machine";
 import type { DatabaseSync } from "node:sqlite";
 import type { Channels, Db, Hmr, Paths, ResourceGroups } from "../hmr/capabilities.js";
-import type { Auth, Users } from "@prismshadow/penguin-library-identity";
-import type { Traces } from "@prismshadow/penguin-library-traces";
+import type { Auth, Users } from "@prismshadow/penguin-library-auth";
+import type { Traces } from "@prismshadow/penguin-library-trace";
 import type { LiveStreams } from "../auth/live-streams.js";
 import { streamRevocation } from "../http/sse.js";
 import type { SseRevocation } from "../http/sse.js";

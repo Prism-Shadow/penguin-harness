@@ -35,10 +35,10 @@ import type {
   Access,
   ProjectConfigStore,
   ProjectLifecycle,
-} from "@prismshadow/penguin-library-projects";
-import type { Settings } from "@prismshadow/penguin-library-settings";
+} from "@prismshadow/penguin-library-project";
+import type { Settings } from "@prismshadow/penguin-library-setting";
 import type { OrgService } from "../../runtime/organization/service.js";
-import type { UtilityCompletion } from "@prismshadow/penguin-library-projects";
+import type { UtilityCompletion } from "@prismshadow/penguin-library-project";
 import { SEMANTIC_ID_RULES, projectIdRule } from "../../services/semantic-id.js";
 import { suggestSemanticId } from "../../services/semantic-id-suggest.js";
 import { HttpError } from "../errors.js";

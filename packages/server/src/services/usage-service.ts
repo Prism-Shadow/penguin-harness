@@ -34,7 +34,7 @@ import type {
   UsageResponse,
   UsageSeriesPoint,
 } from "@prismshadow/penguin-library-observability";
-import type { CostParts } from "@prismshadow/penguin-library-traces";
+import type { CostParts } from "@prismshadow/penguin-library-trace";
 import type { ErrorFilter } from "@prismshadow/penguin-library-observability/repos/errors";
 import { catalogEntryFor, offPeakAt, offPeakScheduledRefs } from "../model-catalog/catalog.js";
 import type {
@@ -59,7 +59,7 @@ import type {
   UsageQueries,
   UsageStore,
 } from "@prismshadow/penguin-library-observability";
-import type { ProjectConfigStore } from "@prismshadow/penguin-library-projects";
+import type { ProjectConfigStore } from "@prismshadow/penguin-library-project";
 
 /**
  * Number of most-recent rows kept in the error detail table. Also the page size the whole

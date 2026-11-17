@@ -11,12 +11,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 import type { AppEnv } from "../src/auth/middleware.js";
-import type { SessionRow } from "@prismshadow/penguin-library-sessions/repos/sessions";
+import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
 import { historyLinesRoutes } from "../src/http/routes/history-lines.js";
 import type { HistoryLinesRouteDeps } from "../src/http/routes/history-lines.js";
 import { HISTORY_LINES_BEAT_MS } from "../src/services/history-lines.js";
 import { initialScanState } from "../src/services/message-window.js";
-import type { HistoryWindowRead } from "@prismshadow/penguin-library-traces";
+import type { HistoryWindowRead } from "@prismshadow/penguin-library-trace";
 import { sessionRow } from "./fixtures/session.js";
 
 describe("history-lines while it plans", () => {

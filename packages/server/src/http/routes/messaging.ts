@@ -75,7 +75,7 @@ import type { AppEnv } from "../../auth/middleware.js";
 import type {
   MessagingBindingRow,
 } from "@prismshadow/penguin-library-messaging/repos/messaging-bindings";
-import type { SessionRow } from "@prismshadow/penguin-library-sessions/repos/sessions";
+import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
 import { FEISHU_DEFAULT_DOMAIN, feishuConfigOf } from "../../runtime/messaging/feishu-connector.js";
 import { telegramBotIdOf } from "../../runtime/messaging/telegram-connector.js";
 import { maskApiKey } from "../../services/project-config-service.js";
@@ -101,8 +101,8 @@ import type { WeChatScanService } from "../../runtime/messaging/wechat-scan.js";
 import type { MessagingBridge } from "../../runtime/messaging/bridge.js";
 import type { QQScanService } from "../../runtime/messaging/qq-scan.js";
 import type { MessagingBindings } from "@prismshadow/penguin-library-messaging";
-import type { SessionIndex } from "@prismshadow/penguin-library-sessions";
-import type { Access } from "@prismshadow/penguin-library-projects";
+import type { SessionIndex } from "@prismshadow/penguin-library-session";
+import type { Access } from "@prismshadow/penguin-library-project";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface MessagingRouteDeps {

@@ -7,7 +7,7 @@
  * `adoptSession` indexes a Session row and adopts the fake as its runtime, the state a Session
  * is in right after it was opened, so the routes, the bridge and the manager can drive it.
  */
-import type { SessionRow } from "@prismshadow/penguin-library-sessions/repos/sessions";
+import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
 import type { RuntimeSession } from "../../src/runtime/session-manager.js";
 import type { TestDeps } from "../helpers.js";
 

@@ -8,18 +8,18 @@
  */
 import { randomBytes } from "node:crypto";
 import { tokensEqual } from "./api-token.js";
-import type { UserInfo } from "@prismshadow/penguin-library-identity";
+import type { UserInfo } from "@prismshadow/penguin-library-auth";
 import { HttpError } from "../http/errors.js";
-import type { UserRow } from "@prismshadow/penguin-library-identity/repos/users";
-import { sessionTokenHash } from "@prismshadow/penguin-library-identity/repos/auth-sessions";
-import type { SessionVia } from "@prismshadow/penguin-library-identity";
-import type { SessionViaValue, AuthSessionsRepo } from "@prismshadow/penguin-library-identity/repos/auth-sessions";
+import type { UserRow } from "@prismshadow/penguin-library-auth/repos/users";
+import { sessionTokenHash } from "@prismshadow/penguin-library-auth/repos/auth-sessions";
+import type { SessionVia } from "@prismshadow/penguin-library-auth";
+import type { SessionViaValue, AuthSessionsRepo } from "@prismshadow/penguin-library-auth/repos/auth-sessions";
 import type { AuthRuntimeState } from "./runtime-state.js";
 import { verifyAccountPassword, verifyPassword } from "./password.js";
 import type { PasswordHasher } from "./password.js";
 import { Component, Use, Interface } from "@prismshadow/penguin-core/kernel";
 import type { AuthState, Clock, Config } from "../hmr/capabilities.js";
-import type { Auth, AuthSessions, Users } from "@prismshadow/penguin-library-identity";
+import type { Auth, AuthSessions, Users } from "@prismshadow/penguin-library-auth";
 
 export const MIN_PASSWORD_LENGTH = 8;
 export const REMOTE_SESSION_TTL_MS = 60 * 60_000;

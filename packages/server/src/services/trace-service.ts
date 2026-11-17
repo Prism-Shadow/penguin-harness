@@ -51,12 +51,12 @@ import type {
   TraceTaskStats,
   TraceToolSpan,
   UsageTrendPointInTrace,
-} from "@prismshadow/penguin-library-traces";
-import type { SessionRow } from "@prismshadow/penguin-library-sessions/repos/sessions";
+} from "@prismshadow/penguin-library-trace";
+import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
 import type {
   TraceFileRow,
   TraceSessionRow,
-} from "@prismshadow/penguin-library-traces/repos/trace-index";
+} from "@prismshadow/penguin-library-trace/repos/trace-index";
 import { HttpError } from "../http/errors.js";
 import { formatLocalDate } from "../internal/dates.js";
 import {
@@ -66,9 +66,9 @@ import {
   sumCostParts,
   ZERO_COST_PARTS,
 } from "./usage-service.js";
-import type { TieredRates } from "@prismshadow/penguin-library-models";
+import type { TieredRates } from "@prismshadow/penguin-library-model";
 import type { PricingLookup } from "./usage-service.js";
-import type { ProjectConfigStore } from "@prismshadow/penguin-library-projects";
+import type { ProjectConfigStore } from "@prismshadow/penguin-library-project";
 import {
   cloneScanState,
   deserializePrefix,
@@ -90,7 +90,7 @@ import type {
   MessagesPageResult,
   RecordSource,
   WindowPriorStats,
-} from "@prismshadow/penguin-library-traces";
+} from "@prismshadow/penguin-library-trace";
 import { buildContextBreakdown, emptyContextBreakdown } from "./context-breakdown.js";
 import { sessionIdCreatedAt } from "./session-service.js";
 import { listCategory, listingMarksOf, readRecordedSource } from "../runtime/session-sources.js";
@@ -102,8 +102,8 @@ import { traceRecordImage, withImagesByReference } from "./trace-images.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import { elideHistoryRecord } from "@prismshadow/penguin-core/interfaces";
 import type { Paths } from "../hmr/capabilities.js";
-import type { TraceIndex, TraceIndexStore, Traces } from "@prismshadow/penguin-library-traces";
-import type { SessionIndex, SessionOrigins } from "@prismshadow/penguin-library-sessions";
+import type { TraceIndex, TraceIndexStore, Traces } from "@prismshadow/penguin-library-trace";
+import type { SessionIndex, SessionOrigins } from "@prismshadow/penguin-library-session";
 
 const TRACE_FILE_RE = /^(.+)_(\d{3})\.jsonl$/;
 

@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 import { LiveStreamRegistry } from "../src/auth/live-streams.js";
 import { SESSION_COOKIE } from "../src/auth/middleware.js";
-import { sessionTokenHash } from "@prismshadow/penguin-library-identity/repos/auth-sessions";
+import { sessionTokenHash } from "@prismshadow/penguin-library-auth/repos/auth-sessions";
 import { Channel } from "../src/runtime/channel.js";
 import { sseEndpoint } from "../src/http/sse.js";
 import { createTestApp, loginAdmin } from "./helpers.js";

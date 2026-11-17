@@ -27,9 +27,9 @@ import {
   scratchpadDir,
 } from "@prismshadow/penguin-core";
 import type { AmspRecord } from "@prismshadow/penguin-core";
-import type { SessionRow } from "@prismshadow/penguin-library-sessions/repos/sessions";
+import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
-import { MAX_ATTACHMENT_COUNT } from "@prismshadow/penguin-library-settings/attachment-limits";
+import { MAX_ATTACHMENT_COUNT } from "@prismshadow/penguin-library-setting/attachment-limits";
 import { adoptSession, fakeSession, sessionRow, uniqueSessionId } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";

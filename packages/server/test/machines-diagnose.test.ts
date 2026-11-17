@@ -34,7 +34,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import type { MachineCheck } from "../src/api/types.js";
 import { openDatabase } from "@prismshadow/penguin-library-db";
-import { MachinesRepo } from "@prismshadow/penguin-library-machines/repos/machines";
+import { MachinesRepo } from "@prismshadow/penguin-library-machine/machine";
 import { MachinesService } from "../src/machines/service.js";
 import type { MachinesEffects } from "../src/machines/service.js";
 import { remoteLayoutFor } from "../src/machines/layout.js";

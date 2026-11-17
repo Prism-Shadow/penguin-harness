@@ -32,7 +32,7 @@ import { authMiddleware, bearerToken, SESSION_COOKIE } from "../src/auth/middlew
 import { REMOTE_SESSION_TTL_MS } from "../src/auth/service.js";
 import { remoteRoutes } from "../src/http/routes/remote.js";
 import { handleError } from "../src/http/errors.js";
-import { sessionTokenHash } from "@prismshadow/penguin-library-identity/repos/auth-sessions";
+import { sessionTokenHash } from "@prismshadow/penguin-library-auth/repos/auth-sessions";
 import {
   apiClient,
   cookieFrom,

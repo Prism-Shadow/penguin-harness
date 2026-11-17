@@ -3,7 +3,7 @@
  */
 import { Interface } from "@prismshadow/penguin-core/kernel";
 import type { Opaque } from "@prismshadow/penguin-core/kernel";
-import type { CostParts } from "@prismshadow/penguin-library-traces";
+import type { CostParts } from "@prismshadow/penguin-library-trace";
 import type {
   ErrorCodeCount,
   ErrorFilter,

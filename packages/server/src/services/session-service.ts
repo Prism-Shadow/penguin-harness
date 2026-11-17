@@ -27,18 +27,18 @@ import type {
   SpawnConfiner,
   ThinkingLevelName,
 } from "@prismshadow/penguin-core";
-import type { ApprovalMode } from "@prismshadow/penguin-library-sessions";
+import type { ApprovalMode } from "@prismshadow/penguin-library-session";
 import type { MessagingChannel, SessionCategoryCounts, SessionInfo, SessionSource } from "../api/types.js";
 import type {
   SessionSandbox,
   SessionSandboxPreset,
   UnavailableSandboxBackend,
-} from "@prismshadow/penguin-library-sessions";
-import type { ServerEvent } from "@prismshadow/penguin-library-projects";
-import type { SessionCategory } from "@prismshadow/penguin-library-traces";
+} from "@prismshadow/penguin-library-session";
+import type { ServerEvent } from "@prismshadow/penguin-library-project";
+import type { SessionCategory } from "@prismshadow/penguin-library-trace";
 import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
-import type { SessionRow } from "@prismshadow/penguin-library-sessions/repos/sessions";
+import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
 import type { SessionManager } from "../runtime/session-manager.js";
 import {
   listCategory,
@@ -50,9 +50,9 @@ import {
 import type { ListingView } from "../runtime/session-sources.js";
 import { TraceIndexService, traceFilePath } from "./trace-index.js";
 import { matchesWorkspaceGroup } from "./workspace-group.js";
-import type { TraceIndex, TraceIndexStore } from "@prismshadow/penguin-library-traces";
-import type { SessionIndex, SessionOrigins } from "@prismshadow/penguin-library-sessions";
-import type { ProjectConfigStore } from "@prismshadow/penguin-library-projects";
+import type { TraceIndex, TraceIndexStore } from "@prismshadow/penguin-library-trace";
+import type { SessionIndex, SessionOrigins } from "@prismshadow/penguin-library-session";
+import type { ProjectConfigStore } from "@prismshadow/penguin-library-project";
 import type { SandboxDimension, SandboxSettings } from "@prismshadow/penguin-core/plugin";
 import { aboveSandboxCeiling } from "./sandbox-ceiling.js";
 

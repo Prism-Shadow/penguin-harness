@@ -24,7 +24,7 @@
  */
 import { Hono } from "hono";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { SessionCategory, TraceImportResponse } from "@prismshadow/penguin-library-traces";
+import type { SessionCategory, TraceImportResponse } from "@prismshadow/penguin-library-trace";
 import {
   badRequest,
   optionalPagingQuery,
@@ -35,8 +35,8 @@ import {
   requireValidId,
 } from "../validate.js";
 import type { AgentConfig } from "../../mechanisms/agents.js";
-import type { Traces } from "@prismshadow/penguin-library-traces";
-import type { Access } from "@prismshadow/penguin-library-projects";
+import type { Traces } from "@prismshadow/penguin-library-trace";
+import type { Access } from "@prismshadow/penguin-library-project";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface AgentTracesRouteDeps {

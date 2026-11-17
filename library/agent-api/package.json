@@ -24,17 +24,13 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
-    "./agent-api": {
-      "types": "./dist/agent-api.d.ts",
-      "import": "./dist/agent-api.js"
-    },
     "./agent-api-repo": {
       "types": "./dist/agent-api-repo.d.ts",
       "import": "./dist/agent-api-repo.js"
     },
-    "./repos": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+    "./agent-api": {
+      "types": "./dist/agent-api.d.ts",
+      "import": "./dist/agent-api.js"
     }
   },
   "scripts": {
@@ -45,7 +41,7 @@
   "dependencies": {
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-library-db": "workspace:*",
-    "@prismshadow/penguin-library-sessions": "workspace:*"
+    "@prismshadow/penguin-library-session": "workspace:*"
   },
   "devDependencies": {
     "tsup": "^8.3.0",

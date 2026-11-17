@@ -64,10 +64,10 @@ import type {
   Members,
   ProjectConfigStore,
   Projects,
-} from "@prismshadow/penguin-library-projects";
+} from "@prismshadow/penguin-library-project";
 import type { MessagingBindings } from "@prismshadow/penguin-library-messaging";
-import type { SessionIndex } from "@prismshadow/penguin-library-sessions";
-import type { Settings } from "@prismshadow/penguin-library-settings";
+import type { SessionIndex } from "@prismshadow/penguin-library-session";
+import type { Settings } from "@prismshadow/penguin-library-setting";
 import type { Errors, UsageQueries } from "@prismshadow/penguin-library-observability";
 import { OrgStore } from "../../organization/store.js";
 import { badRequest } from "../../http/validate.js";

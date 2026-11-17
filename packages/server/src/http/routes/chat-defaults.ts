@@ -9,14 +9,14 @@ import { Hono } from "hono";
 import { DEFAULT_CHAT_THINKING_LEVELS, isValidId } from "@prismshadow/penguin-core";
 import type {
   SessionSandbox,
-} from "@prismshadow/penguin-library-sessions";
-import type { ChatDefaultsDto } from "@prismshadow/penguin-library-projects";
+} from "@prismshadow/penguin-library-session";
+import type { ChatDefaultsDto } from "@prismshadow/penguin-library-project";
 import type { AppEnv } from "../../auth/middleware.js";
 import { HttpError } from "../errors.js";
 import { optionalEnum, optionalString, readJson, requireValidId } from "../validate.js";
 import { APPROVAL_MODES } from "./sessions.js";
 import type { AgentConfig } from "../../mechanisms/agents.js";
-import type { Access, ProjectConfigStore } from "@prismshadow/penguin-library-projects";
+import type { Access, ProjectConfigStore } from "@prismshadow/penguin-library-project";
 import type { Machines } from "../../machines/service.js";
 
 /** What this route group reaches — bound by its module (src/modules). */

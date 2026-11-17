@@ -79,12 +79,12 @@ import type { ApproveFn, AmspRecord } from "@prismshadow/penguin-core";
 import { toFallbackMarkdown } from "@prismshadow/a2ui";
 import { wire } from "@prismshadow/penguin-core/kernel";
 import type { FeishuBindingResponse, FeishuTestResponse } from "../src/api/types.js";
-import { ProjectsRepo } from "@prismshadow/penguin-library-projects/repos/projects";
+import { ProjectsRepo } from "@prismshadow/penguin-library-project/repos/projects";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import {
   INLINE_IMAGE_MAX_BYTES,
   toAttachmentLimits,
-} from "@prismshadow/penguin-library-settings/attachment-limits";
+} from "@prismshadow/penguin-library-setting/attachment-limits";
 import { MESSAGE_MAX } from "../src/runtime/error-recorder.js";
 import {
   MESSAGING_APPROVAL_NOTICE,

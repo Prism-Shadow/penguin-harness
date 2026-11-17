@@ -39,7 +39,7 @@ import { assembleWindow, windowLayout } from "../src/services/history-layout.js"
 import type { LineOffsets } from "../src/services/history-layout.js";
 import { decodeCursor } from "../src/services/message-window.js";
 import type { TraceService } from "../src/services/trace-service.js";
-import type { HistoryWindowRead } from "@prismshadow/penguin-library-traces";
+import type { HistoryWindowRead } from "@prismshadow/penguin-library-trace";
 import { historyFileKey } from "../src/services/history-wire.js";
 import { makeTempRoot, makeTraceHarness, removeTempRoot } from "./helpers.js";
 

@@ -15,7 +15,7 @@ import { Hono } from "hono";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import { authMiddleware } from "../auth/middleware.js";
 import type { AppEnv } from "../auth/middleware.js";
-import type { Auth } from "@prismshadow/penguin-library-identity";
+import type { Auth } from "@prismshadow/penguin-library-auth";
 import { HttpError } from "../http/errors.js";
 import { publicOriginOf } from "../http/public-origin.js";
 import { Channels, Config, Hmr, HmrControl } from "./capabilities.js";

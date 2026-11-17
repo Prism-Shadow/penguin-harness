@@ -99,4 +99,4 @@ export type {
   SessionResponse,
   SessionsResponse,
 } from "../api/types.js";
-import type { ModelsResponse } from "@prismshadow/penguin-library-models";
+import type { ModelsResponse } from "@prismshadow/penguin-library-model";

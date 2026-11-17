@@ -44,8 +44,8 @@ import { DEFAULT_API_CONCURRENT_RUNS } from "@prismshadow/penguin-library-agent-
 import type { AgentApi } from "@prismshadow/penguin-library-agent-api";
 import type { AgentApiKeyRow } from "@prismshadow/penguin-library-agent-api/agent-api";
 import type { AgentConfig } from "../../mechanisms/agents.js";
-import type { ProjectConfigStore, Access } from "@prismshadow/penguin-library-projects";
-import type { Settings } from "@prismshadow/penguin-library-settings";
+import type { ProjectConfigStore, Access } from "@prismshadow/penguin-library-project";
+import type { Settings } from "@prismshadow/penguin-library-setting";
 
 /** What this route group reaches — bound by its module (services/agent-routes.ts). */
 export interface AgentApiRouteDeps {
