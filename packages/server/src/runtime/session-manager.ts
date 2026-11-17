@@ -496,6 +496,8 @@ export interface SessionManagerDeps {
   errors?: ErrorSink;
   /** Provider auth refresh (optional for tests that do not exercise external model credentials). */
   modelScopeAuth?: ModelScopeAuth;
+  /** The Project config's mtime-gated reads, for noticing edits made outside this server (optional like `modelScopeAuth`). */
+  projectConfig?: Pick<ProjectConfigStore, "readRaw">;
   log?: (line: string) => void;
   /** Goal run-state persistence (optional like `titles`: without it, goals run but leave no restorable record). */
   /**
@@ -831,6 +833,8 @@ export class SessionManager {
   private readonly keptLoaded = new Set<string>();
   /** Per-Agent config generation (key = agentKey), bumped by invalidateAgentRuntimes when a Project's credentials change. */
   private readonly agentGenerations: Map<string, number>;
+  /** Each Project's model config as last seen (see noticeModelConfigEdit). */
+  private readonly modelConfigSeen = new Map<string, { table: unknown; models: string }>();
   /** Open streaming fragments and the current run's records (fed by drive, served to GET /messages; see live-tail.ts). */
   private readonly liveTail: LiveTail;
   private readonly sweepTimer: NodeJS.Timeout;
@@ -1160,6 +1164,29 @@ export class SessionManager {
       if (e.projectId === projectId) agentIds.add(e.agentId);
     }
     for (const agentId of agentIds) this.invalidateAgentRuntimes(projectId, agentId);
+  }
+
+  /**
+   * The same invalidation for a model change written to the Project config file by anyone
+   * else — the CLI, a hand edit, another process on this data root. Called before a runtime
+   * is built or reused; one stat while the file is unchanged. Only the model keys are
+   * compared, by content: a rename or a chat-defaults edit must not rebuild runtimes, and a
+   * fresh mtime re-reads the file without meaning it changed. A Project's first look only
+   * records — there is nothing to compare it with.
+   */
+  async noticeModelConfigEdit(projectId: string): Promise<void> {
+    // An unreadable file is the load's to report.
+    const table = await this.deps.projectConfig?.readRaw(projectId).catch(() => undefined);
+    const seen = this.modelConfigSeen.get(projectId);
+    if (table === undefined || table === seen?.table) return;
+    const models = JSON.stringify([
+      table.models,
+      table.providers,
+      table.default_model,
+      table.vision_model,
+    ]);
+    this.modelConfigSeen.set(projectId, { table, models });
+    if (seen !== undefined && seen.models !== models) this.invalidateProjectRuntimes(projectId);
   }
 
   // —— Task / compaction drive ——
@@ -2319,6 +2346,8 @@ export class SessionManager {
       provider: row.provider,
     });
     if (refreshed?.changed) this.invalidateProjectRuntimes(row.projectId);
+    // After the refresh: what it wrote to the file is then already this look's.
+    await this.noticeModelConfigEdit(row.projectId);
   }
 
   /** get-or-resume-or-heal: use directly on an active-table hit; otherwise load via the loader, updating the index's primary key when it answers another id. */
@@ -3186,6 +3215,7 @@ export class SessionsModule {
       recorder,
       errors,
       modelScopeAuth: this.modelScopeAuth,
+      projectConfig,
       titles,
       log,
       notifyProjectUsers,

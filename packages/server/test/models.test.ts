@@ -60,7 +60,8 @@
  *   Its request names PenguinHarness and its version as the whole User-Agent, whichever SDK
  *   the protocol runs on. The vision probe asks for a handful of tokens and sends no tools.
  * - A PUT invalidates the Project's cached Session runtimes (reads do not), tells the Project's
- *   open Session channels only, and GET/PUT report the file's updatedAt.
+ *   open Session channels only, and GET/PUT report the file's updatedAt. A model change another
+ *   writer (the CLI) makes to the file does the same at the next Task; a rename does not.
  *
  * One app per describe; every case works in a Project of its own.
  */
@@ -69,7 +70,13 @@ import type { AddressInfo } from "node:net";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { renderProjectConfigToml, userText, VERSION } from "@prismshadow/penguin-core";
+import {
+  addModel,
+  renderProjectConfigToml,
+  setProviderConnection,
+  userText,
+  VERSION,
+} from "@prismshadow/penguin-core";
 import {
   MODEL_CATALOG,
   PENGUIN_GO_BASE_URL,
@@ -2946,6 +2953,57 @@ describe("models update reaches loaded sessions (invalidation + live unlock)", (
     await t.deps.manager.startTask("models-sess-1", [userText("d")]);
     await waitFor(idle);
     expect(loads).toBe(2);
+  });
+
+  it("a model written to the config file by another writer reaches a loaded Session at its next Task; an edit that changes no model does not", async () => {
+    insertSession("models-sess-cli", projectId);
+    const idle = () => t.deps.manager.statusOf("models-sess-cli") === "idle";
+    const task = async (text: string) => {
+      await t.deps.manager.startTask("models-sess-cli", [userText(text)]);
+      await waitFor(idle);
+    };
+
+    await task("a");
+    expect(loads).toBe(1);
+    // The CLI's own writer (`penguin config model add`), not this server's route.
+    await addModel(t.root, projectId, { provider: "custom", model_id: "m-cli", api_key: "sk-cli" });
+    await task("b");
+    expect(loads).toBe(2);
+    await task("c");
+    expect(loads).toBe(2);
+    expect((await api.patch(`/api/projects/${projectId}`, { name: "renamed" })).status).toBe(200);
+    await task("d");
+    expect(loads).toBe(2);
+  });
+
+  it("a group connection written by another writer after a Session is created reaches its first Task", async () => {
+    // A protocol of its own: core builds the new Session's client to check it.
+    const put = await api.put(`/api/projects/${projectId}/models`, {
+      defaultModel: { provider: "custom", modelId: "m-inv" },
+      models: [
+        {
+          provider: "custom",
+          modelId: "m-inv",
+          apiKey: "sk-created-000444",
+          clientType: "openai-chat",
+        },
+      ],
+    });
+    expect(put.status).toBe(200);
+    const created = await api.post(`/api/projects/${projectId}/agents/default_agent/sessions`, {
+      provider: "custom",
+      modelId: "m-inv",
+    });
+    expect(created.status).toBe(201);
+    const { session } = (await created.json()) as SessionCreateResponse;
+    expect(loads).toBe(0);
+
+    await setProviderConnection(t.root, projectId, "custom", {
+      base_url: "https://gateway.example/v1",
+    });
+    await t.deps.manager.startTask(session.sessionId, [userText("a")]);
+    await waitFor(() => t.deps.manager.statusOf(session.sessionId) === "idle");
+    expect(loads).toBe(1);
   });
 
   it("PUT publishes credentials_updated to the Project's existing session channels only", async () => {
