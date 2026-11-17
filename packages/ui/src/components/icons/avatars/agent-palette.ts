@@ -9,15 +9,22 @@
  * lightness, are easier to tell apart there than 360 hues, half of which sit within a few degrees
  * of another.
  *
- * Each slot paints the ball penguin in one colour family, five roles per mode: the tile it sits
- * on, its coat (the dark hood, body and flippers), its face, the marks drawn on the face (eyes,
- * beak, a smile) and its cheeks' blush. In light mode the coat is the slot's dark ink, the face is
- * the pale tile showing through, and the marks are the ink again. In dark mode the penguin keeps a
- * real penguin's colouring rather than inverting it: a mid-tone coat on the deep tile, a near-white
- * tinted face, and the marks in the tile's deep colour — light eyes on a dark face read as a
- * stare. The coat keeps ≥ 3:1 on its tile and against every theme's page surfaces (a graphic,
- * WCAG non-text contrast), and the marks keep ≥ 4.5:1 on the face — checked for every slot, theme
- * and mode in test/agent-palette.test.ts.
+ * Each slot paints the penguin in one colour family, five roles per mode: the tile it sits on, its
+ * coat (the hood and body), its face, the marks drawn on the face (the eyes) and its cheeks'
+ * blush. In light mode the coat is the slot's dark ink, the face is the pale tile showing through,
+ * and the marks are the ink again. In dark mode the penguin keeps a real penguin's colouring
+ * rather than inverting it: a mid-tone coat on the deep tile, a near-white tinted face, and the
+ * marks in the tile's deep colour — light eyes on a dark face read as a stare. The coat keeps
+ * ≥ 3:1 on its tile and against every theme's page surfaces (a graphic, WCAG non-text contrast),
+ * and the marks keep ≥ 4.5:1 on the face — checked for every slot, theme and mode in
+ * test/agent-palette.test.ts.
+ *
+ * Two colours come from outside the slot's own family. The beak is one orange for every slot and
+ * both modes: it is what says "penguin" at 14 px, and a beak in the slot's own hue reads as a
+ * nose. What the penguin wears (agent-accessory.ts) is painted in the blush of the slot opposite
+ * on the wheel: within one family nothing is left that stands off the coat, the face and the tile
+ * at once, in both modes, and a hue from across the wheel does. Neither carries meaning, so
+ * neither is held to a contrast floor.
  *
  * The values were picked in OKLCH: the twelve hues spaced evenly by eye (25°, 52°, … 356°), the
  * tile at L 0.955 / C 0.03 in light and L 0.30 / C 0.045 in dark, the ink at C 0.15 / 0.13 with
@@ -39,11 +46,11 @@ export interface ModePair {
 export interface AgentSlotColors {
   /** The ground the penguin sits on. */
   tile: ModePair;
-  /** The coat: the hood, body and flippers. */
+  /** The coat: the hood and body. */
   coat: ModePair;
   /** The face. */
   face: ModePair;
-  /** What is drawn on the face: the eyes, the beak, a smile. */
+  /** What is drawn on the face: the eyes. */
   mark: ModePair;
   /** The cheeks. */
   blush: ModePair;
@@ -154,21 +161,31 @@ export function agentSlot(id: string): number {
   return Math.round(avatarHue(id) / 30) % AGENT_PALETTE.length;
 }
 
-/** What a drawing paints with: each value follows the colour scheme the theme sets on the root. */
-export type AgentColors = Readonly<Record<keyof AgentSlotColors, string>>;
+/** The beak: one orange in every slot and both modes. */
+export const AGENT_BEAK = "#e07b12";
+
+/**
+ * What a drawing paints with: the slot's five colours, the beak, and the accent what the penguin
+ * wears is painted in. Each value follows the colour scheme the theme sets on the root.
+ */
+export type AgentColors = Readonly<Record<keyof AgentSlotColors | "beak" | "accent", string>>;
 
 /** Two hex colours as one `light-dark()` value. */
 const perMode = (pair: ModePair): string => `light-dark(${pair.light}, ${pair.dark})`;
 
 /** The colours a slot is drawn in. */
 export function agentColorsOfSlot(slot: number): AgentColors {
-  const colors = AGENT_PALETTE[slot % AGENT_PALETTE.length]!;
+  const count = AGENT_PALETTE.length;
+  const colors = AGENT_PALETTE[slot % count]!;
+  const opposite = AGENT_PALETTE[(slot + count / 2) % count]!;
   return {
     tile: perMode(colors.tile),
     coat: perMode(colors.coat),
     face: perMode(colors.face),
     mark: perMode(colors.mark),
     blush: perMode(colors.blush),
+    beak: AGENT_BEAK,
+    accent: perMode(opposite.blush),
   };
 }
 

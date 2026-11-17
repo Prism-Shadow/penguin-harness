@@ -1,21 +1,25 @@
 /**
- * The Agent mascot — the ball penguin: one round shape that is the whole penguin, a dark hood over
- * a broad pale face, two small nub flippers, and a smile — drawn once per theme's visual language.
- * Every Agent wears the same smiling face; only its colour is its own. Every drawing has the same
- * anatomy on the same 24-unit box, so the character is recognisably one across themes: a tile in
- * the Agent's hue, and on it the penguin in that hue's five colours (agent-palette.ts) — coat,
- * face, the marks on the face (eyes, beak, smile) and the blush. No letter is drawn.
+ * The Agent mascot — a round penguin chick seen close up: one ball that is the whole penguin,
+ * resting on the tile's bottom edge, a dark hood over a broad pale face that runs down into the
+ * belly, a feather tuft, two big eyes, an open orange beak and blushing cheeks — drawn once per
+ * theme's visual language. Every Agent has the same face, and the same face at every size; its
+ * colours are its own (agent-palette.ts), and so is what it wears (agent-accessory.ts). Every
+ * drawing has the same anatomy on the same 24-unit box, so the character is recognisably one
+ * across themes. No letter is drawn.
  *
- * The face is one broad heart with a small widow's peak, its edge well clear of the eyes, so no
- * eye sits in a ring of its own; the eyes are small bead dots, with a small beak and a smile under
- * it. The smile reads at every size: below 32 px the face is two bold dots and one wide, clearly
- * curved smile, without the beak — beak and thin smile there blur into a speck or fuse into a bar;
- * from 32 px up it is the bead eyes, the beak and the smile under it. The blush shows from 20 px
- * and a catch-light in the eyes from 48 px.
+ * The ball fills the tile rather than floating in it: the face is what a 14 px avatar has room
+ * for, so the tile shows only above the head and in the corners. The face is one broad heart with
+ * a small widow's peak, open at the bottom, so the coat is a hood and two sides, not a ring around
+ * the face. The eyes sit low and wide, each with a catch-light from 24 px and a second from 48 px;
+ * the cheeks blush from 20 px.
+ *
+ * The ball is one exact circle that touches the tile's bottom edge and stays inside a round tile,
+ * and whatever the ball cuts — the belly, a scarf — ends on that circle's own arc. Nothing is
+ * clipped, so a theme may cut the avatar's box to a shape of its own and lose only the edge.
  *
  * - `flat` (Primer): the rounded-square tile.
- * - `soft` (Frost, and every pack on it — Doodle too): a round tile, the penguin a touch smaller
- *   inside it. Flat fills still: no gradient and no glow.
+ * - `soft` (Frost, and every pack on it — Doodle too): a round tile. Flat fills still: no gradient
+ *   and no glow.
  * - `pixel` (Console): a 16x16 pixel drawing on a square tile, on crisp edges. From 16 px up the
  *   cells are laid out on whole CSS pixels (one, two, three to a cell) and centred; below 16 px no
  *   placement keeps sixteen cells whole, so the drawing scales to the box and is antialiased
@@ -26,99 +30,171 @@
  */
 // deslop-ignore-file 24: the mascot is the cartoon character the owner asked for (2026-11-04), drawn in code per theme like the icon sets.
 import type { ReactNode } from "react";
+import type { AgentAccessory } from "./agent-accessory";
 import type { AgentColors } from "./agent-palette";
 
 export interface AgentDrawingProps {
   colors: AgentColors;
+  /** What the Agent wears. */
+  accessory: AgentAccessory;
   /** The avatar's rendered side, in CSS px: the face's detail and the pixel layout follow it. */
   size: number;
 }
 
 /** From this rendered size up the cheeks carry their blush. */
 const BLUSH_PX = 20;
-/** Below this rendered size the face is drawn in its small form: no beak, a bolder smile. */
-const SMALL_FACE_PX = 32;
 /** From this rendered size up the eyes carry a catch-light. */
-const GLINT_PX = 48;
+const GLINT_PX = 24;
+/** From this rendered size up the eyes carry a second, smaller catch-light. */
+const SPARKLE_PX = 48;
 
-function Blush({ colors }: Pick<AgentDrawingProps, "colors">) {
-  return (
-    <g style={{ fill: colors.blush }}>
-      <ellipse cx="7.9" cy="15" rx="1.15" ry="0.75" />
-      <ellipse cx="16.1" cy="15" rx="1.15" ry="0.75" />
-    </g>
-  );
-}
+/** What covers the top of the head, where the tuft would stand. */
+const HEADWEAR: ReadonlySet<AgentAccessory> = new Set(["beanie", "cap", "headphones", "sprout"]);
 
-/** The face from 32 px up: bead eyes, a small beak with a smile under it, and the blush. */
-function Face({ colors, size }: AgentDrawingProps) {
+const round4 = (value: number) => Math.round(value * 1e4) / 1e4;
+
+/** Where the eyes sit: the left one's centre, and the right one's x. */
+const EYE = { x: 8.2, y: 13.9, mirror: 15.8 } as const;
+
+/** The eyes: two tall ovals, `scale` their size (smaller behind glasses), and their catch-lights. */
+function Eyes({
+  colors,
+  size,
+  scale,
+}: Pick<AgentDrawingProps, "colors" | "size"> & { scale: number }) {
+  const at = [EYE.x, EYE.mirror];
+  /** A length on the eye, at its scale. */
+  const k = (length: number) => round4(length * scale);
   return (
     <>
-      <Blush colors={colors} />
       <g style={{ fill: colors.mark }}>
-        <ellipse cx="9" cy="12.6" rx="1" ry="1.28" />
-        <ellipse cx="15" cy="12.6" rx="1" ry="1.28" />
-        <path d="M11 13.63Q12 13.18 13 13.63Q12.36 14.84 12 14.92Q11.64 14.84 11 13.63Z" />
+        {at.map((x) => (
+          <ellipse key={x} cx={x} cy={EYE.y} rx={k(1.8)} ry={k(2.3)} />
+        ))}
       </g>
       {size >= GLINT_PX && (
         <g style={{ fill: colors.face }}>
-          <circle cx="9.32" cy="12.1" r="0.33" />
-          <circle cx="15.32" cy="12.1" r="0.33" />
+          {at.map((x) => (
+            <circle key={x} cx={round4(x + k(0.65))} cy={round4(EYE.y - k(0.9))} r={k(0.65)} />
+          ))}
+          {size >= SPARKLE_PX &&
+            at.map((x) => (
+              <circle key={-x} cx={round4(x - k(0.65))} cy={round4(EYE.y + k(1))} r={k(0.32)} />
+            ))}
         </g>
       )}
-      <path
-        d="M10.6 15.95Q12 17.25 13.4 15.95"
-        fill="none"
-        strokeWidth="1"
-        strokeLinecap="round"
-        style={{ stroke: colors.mark }}
-      />
     </>
   );
 }
 
 /**
- * The face below 32 px: two bold dots, so each lands on whole dark pixels, and one wide, clearly
- * curved smile in place of the beak and the thin smile under it, which there blur into a speck or
- * fuse into a bar; the blush from 20 px up.
+ * What the penguin wears, over the finished penguin, in the accent colour. A scarf ends on the
+ * ball's own arc; headwear sits a little proud of the ball, inside a round tile.
  */
-function SmallFace({ colors, size }: AgentDrawingProps) {
-  return (
-    <>
-      {size >= BLUSH_PX && <Blush colors={colors} />}
-      <g style={{ fill: colors.mark }}>
-        <ellipse cx="9" cy="12" rx="1.35" ry="1.6" />
-        <ellipse cx="15" cy="12" rx="1.35" ry="1.6" />
-      </g>
-      <path
-        d="M9.9 15.1Q12 18 14.1 15.1"
-        fill="none"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        style={{ stroke: colors.mark }}
-      />
-    </>
-  );
+function Accessory({ colors, accessory }: Pick<AgentDrawingProps, "colors" | "accessory">) {
+  const fill = { fill: colors.accent };
+  const line = { stroke: colors.accent };
+  switch (accessory) {
+    case "scarf":
+      return (
+        <path
+          d="M3.23 19Q12 22.2 20.77 19A10.2 10.2 0 0 1 17.79 22.2Q12 24.6 6.21 22.2A10.2 10.2 0 0 1 3.23 19Z"
+          style={fill}
+        />
+      );
+    case "beanie":
+      return (
+        <>
+          <g style={fill}>
+            <circle cx="12" cy="2.1" r="1.7" />
+            <path d="M2.9 8.6C3.4 5 7 2.6 12 2.6C17 2.6 20.6 5 21.1 8.6Z" />
+          </g>
+          <rect x="2.4" y="7.2" width="19.2" height="2.7" rx="1.35" style={{ fill: colors.face }} />
+        </>
+      );
+    case "cap":
+      return (
+        <g style={fill}>
+          <path d="M3.3 8.5C3.8 4.7 7.2 2.7 12 2.7C16.8 2.7 20.2 4.7 20.7 8.5Z" />
+          <path d="M11.5 7.4H22.1Q23.2 7.4 23.2 8.5Q23.2 9.6 22.1 9.6H11.5Z" />
+        </g>
+      );
+    case "headphones":
+      return (
+        <>
+          <path
+            d="M2.9 13C2.9 6.5 6.7 2.6 12 2.6C17.3 2.6 21.1 6.5 21.1 13"
+            fill="none"
+            strokeWidth="1.5"
+            style={line}
+          />
+          <g style={fill}>
+            <rect x="0.9" y="11.3" width="3.6" height="5.8" rx="1.7" />
+            <rect x="19.5" y="11.3" width="3.6" height="5.8" rx="1.7" />
+          </g>
+        </>
+      );
+    case "sprout":
+      return (
+        <>
+          <path d="M12 5V2.6" fill="none" strokeWidth="1" style={line} />
+          <g style={fill}>
+            <path d="M12 3.4C9.9 3.6 8.2 2.5 7.8 0.8C10.1 0.3 11.8 1.5 12 3.4Z" />
+            <path d="M12 3.4C14.1 3.6 15.8 2.5 16.2 0.8C13.9 0.3 12.2 1.5 12 3.4Z" />
+          </g>
+        </>
+      );
+    case "bow":
+      return (
+        <g style={fill}>
+          <path d="M16.6 5.6L12.9 3.2Q12.3 5.9 13.5 8.2Z" />
+          <path d="M16.6 5.6L20.6 4.4Q21.4 7 20 9.2Z" />
+          <circle cx="16.6" cy="5.6" r="1.15" />
+        </g>
+      );
+    case "glasses":
+      return (
+        <g fill="none" strokeWidth="1" style={line}>
+          <circle cx={EYE.x} cy={EYE.y} r="3.05" />
+          <circle cx={EYE.mirror} cy={EYE.y} r="3.05" />
+          <path d="M11.25 13.5Q12 13 12.75 13.5" />
+        </g>
+      );
+    case "none":
+      return null;
+  }
 }
 
-/** The ball and its face, on the 24-unit box. */
-function BallPenguin({ colors, size }: AgentDrawingProps) {
+/** The penguin on the 24-unit box: the ball (centre 12 13.8, radius 10.2) and everything on it. */
+function Penguin({ colors, accessory, size }: AgentDrawingProps) {
   return (
     <>
-      <g style={{ fill: colors.coat }}>
-        <ellipse cx="3.75" cy="15.2" rx="1" ry="1.7" transform="rotate(28 3.75 15.2)" />
-        <ellipse cx="20.25" cy="15.2" rx="1" ry="1.7" transform="rotate(-28 20.25 15.2)" />
-        <circle cx="12" cy="12.3" r="8.8" />
-      </g>
+      <circle cx="12" cy="13.8" r="10.2" style={{ fill: colors.coat }} />
+      {!HEADWEAR.has(accessory) && (
+        <path
+          d="M11.3 4C10.9 2.9 11.3 2 12.2 1.5M12.7 3.9C12.9 3.1 13.5 2.6 14.2 2.5"
+          fill="none"
+          strokeWidth="1"
+          strokeLinecap="round"
+          style={{ stroke: colors.coat }}
+        />
+      )}
       <path
-        d="M12 7.9C10.4 6.3 5.8 6.8 5.5 11.8C5.2 16.6 8.4 18.9 12 18.9C15.6 18.9 18.8 16.6 18.5 11.8C18.2 6.8 13.6 6.3 12 7.9Z"
+        d="M12 9.7C11.1 8.2 9.1 7.6 7.4 8.4C5.4 9.3 4.4 11.5 4.4 13.9C4.4 17.6 5.6 20.6 7.21 22.81A10.2 10.2 0 0 0 16.79 22.81C18.4 20.6 19.6 17.6 19.6 13.9C19.6 11.5 18.6 9.3 16.6 8.4C14.9 7.6 12.9 8.2 12 9.7Z"
         style={{ fill: colors.face }}
       />
-      {size < SMALL_FACE_PX ? (
-        <SmallFace colors={colors} size={size} />
-      ) : (
-        <Face colors={colors} size={size} />
+      {size >= BLUSH_PX && (
+        <g style={{ fill: colors.blush }}>
+          <ellipse cx="6.3" cy="17.3" rx="1.3" ry="0.85" />
+          <ellipse cx="17.7" cy="17.3" rx="1.3" ry="0.85" />
+        </g>
       )}
+      <Eyes colors={colors} size={size} scale={accessory === "glasses" ? 0.8 : 1} />
+      <path
+        d="M9.7 16.2Q12 15.7 14.3 16.2Q14.5 16.3 14.4 16.7Q13.9 19.1 12 19.1Q10.1 19.1 9.6 16.7Q9.5 16.3 9.7 16.2Z"
+        style={{ fill: colors.beak }}
+      />
+      <Accessory colors={colors} accessory={accessory} />
     </>
   );
 }
@@ -127,7 +203,7 @@ function FlatPenguin(props: AgentDrawingProps) {
   return (
     <>
       <rect width="24" height="24" rx="5" style={{ fill: props.colors.tile }} />
-      <BallPenguin {...props} />
+      <Penguin {...props} />
     </>
   );
 }
@@ -136,19 +212,15 @@ function SoftPenguin(props: AgentDrawingProps) {
   return (
     <>
       <circle cx="12" cy="12" r="12" style={{ fill: props.colors.tile }} />
-      {/* A touch smaller, about the ball's middle, so the flippers clear the round tile. */}
-      <g transform="translate(0.48 0.496) scale(0.96)">
-        <BallPenguin {...props} />
-      </g>
+      <Penguin {...props} />
     </>
   );
 }
 
 /**
- * The pixel penguin, 16 rows of 16 cells: `#` the coat, `o` the face, `x` a mark (eye, beak,
- * smile), `c` a cheek (the face below 20 px) and `.` the tile. Row 0 is the top; rows 7 and 8 hold
- * the eyes, row 9 the beak, and rows 10 and 11 the smile, a row clear of the beak so the two never
- * close into an "o". The cells are crisp from 16 px, so the smile reads there as it does larger.
+ * The pixel penguin, 16 rows of 16 cells: `#` the coat, `o` the face, `x` an eye, `c` a cheek (the
+ * face below 20 px), `b` the beak, `a` what it wears and `.` the tile. Row 0 is the top; rows 8
+ * and 9 hold the eyes and rows 10 and 11 the beak. The cells are crisp from 16 px.
  */
 const PIXEL_PENGUIN = [
   "................",
@@ -156,33 +228,116 @@ const PIXEL_PENGUIN = [
   ".....######.....",
   "...##########...",
   "..############..",
-  ".###ooo##ooo###.",
+  ".####oo##oo####.",
+  ".###oooooooo###.",
   ".##oooooooooo##.",
-  ".##oxooooooxo##.",
-  ".##oxooooooxo##.",
-  "###coooxxoooc###",
-  "###ooxooooxoo###",
-  ".##oooxxxxooo##.",
-  "..###oooooo###..",
-  "...##########...",
-  ".....######.....",
-  "................",
+  ".##oxxooooxxo##.",
+  ".##oxxooooxxo##.",
+  ".##cooobboooc##.",
+  ".##oooobboooo##.",
+  ".##oooooooooo##.",
+  "..##oooooooo##..",
+  "...##oooooo##...",
+  "....#oooooo#....",
 ] as const;
 
-type PixelPaint = "coat" | "face" | "mark" | "blush";
+/** Rows laid over the penguin from `top` down: a cell other than `.` replaces the one under it. */
+interface PixelOverlay {
+  top: number;
+  rows: readonly string[];
+}
+
+/** The feather tuft, where nothing covers the head. */
+const PIXEL_TUFT: PixelOverlay = { top: 0, rows: ["........#.......", ".......#........"] };
+
+/** What the pixel penguin wears. */
+const PIXEL_ACCESSORIES: Readonly<Record<AgentAccessory, PixelOverlay | null>> = {
+  none: null,
+  scarf: {
+    top: 12,
+    rows: [".aa..........aa.", "..aaaaaaaaaaaa..", "....aaaaaaaa...."],
+  },
+  beanie: {
+    top: 0,
+    rows: [
+      ".......aa.......",
+      ".....aaaaaa.....",
+      "...aaaaaaaaaa...",
+      "..aaaaaaaaaaaa..",
+      ".oooooooooooooo.",
+    ],
+  },
+  cap: {
+    top: 1,
+    rows: [".....aaaaaa.....", "...aaaaaaaaaa...", "..aaaaaaaaaaaa..", "..aaaaaaaaaaaaaa"],
+  },
+  headphones: {
+    top: 1,
+    rows: [
+      ".....aaaaaa.....",
+      "...aa......aa...",
+      "..a..........a..",
+      ".a............a.",
+      ".a............a.",
+      "a..............a",
+      "aa............aa",
+      "aa............aa",
+      "aa............aa",
+      "aa............aa",
+    ],
+  },
+  sprout: {
+    top: 0,
+    rows: [".....aa..aa.....", "......aaaa......", ".......aa......."],
+  },
+  bow: {
+    top: 2,
+    rows: [".........aa..aa.", ".........aaaaaa.", ".........aa..aa."],
+  },
+  glasses: {
+    top: 7,
+    rows: ["...aaaaaaaaaa...", "...a..a..a..a...", "...a..a..a..a...", "....aa....aa...."],
+  },
+};
+
+/** The penguin's grid with `overlay` laid over it. */
+function overlaid(grid: readonly string[], overlay: PixelOverlay | null): readonly string[] {
+  if (overlay === null) return grid;
+  return grid.map((row, y) => {
+    const over = overlay.rows[y - overlay.top];
+    if (over === undefined) return row;
+    return Array.from(row, (cell, x) => (over[x] === "." ? cell : over[x]!)).join("");
+  });
+}
+
+/** The pixel penguin as each accessory dresses it, with the tuft wherever the head is bare. */
+const PIXEL_GRIDS = Object.fromEntries(
+  Object.entries(PIXEL_ACCESSORIES).map(([accessory, overlay]) => [
+    accessory,
+    overlaid(
+      HEADWEAR.has(accessory as AgentAccessory)
+        ? PIXEL_PENGUIN
+        : overlaid(PIXEL_PENGUIN, PIXEL_TUFT),
+      overlay,
+    ),
+  ]),
+) as Readonly<Record<AgentAccessory, readonly string[]>>;
+
+type PixelPaint = "coat" | "face" | "mark" | "blush" | "beak" | "accent";
 
 const PIXEL_PAINT: Readonly<Record<string, PixelPaint>> = {
   "#": "coat",
   o: "face",
   x: "mark",
-  c: "blush",
+  b: "beak",
+  a: "accent",
 };
 
 /** Each paint's cells as path data in the 16-cell space: a rectangle per run of cells. */
-function pixelRuns(grid: readonly string[], blush: boolean): Partial<Record<PixelPaint, string>> {
+function pixelRuns(grid: readonly string[], size: number): Partial<Record<PixelPaint, string>> {
   const paintOf = (cell: string): PixelPaint | undefined => {
-    const paint = PIXEL_PAINT[cell];
-    return paint === "blush" && !blush ? "face" : paint;
+    if (cell === "c") return size >= BLUSH_PX ? "blush" : "face";
+    return PIXEL_PAINT[cell];
   };
   const runs: Partial<Record<PixelPaint, string>> = {};
   grid.forEach((row, y) => {
@@ -203,8 +358,6 @@ function pixelRuns(grid: readonly string[], blush: boolean): Partial<Record<Pixe
 /** The cells a side. */
 const PIXEL_CELLS = 16;
 
-const round4 = (value: number) => Math.round(value * 1e4) / 1e4;
-
 /**
  * Where the pixel penguin sits in the 24-unit box at `size` px: from 16 px up, whole CSS pixels
  * to a cell and centred on whole pixels; below, scaled to the box.
@@ -217,11 +370,11 @@ function pixelPlacement(size: number): { transform: string; crisp: boolean } {
   return { transform: `translate(${at} ${at}) scale(${round4(cell * unit)})`, crisp: true };
 }
 
-const PIXEL_ORDER: readonly PixelPaint[] = ["coat", "face", "blush", "mark"];
+const PIXEL_ORDER: readonly PixelPaint[] = ["coat", "face", "blush", "beak", "accent", "mark"];
 
-function PixelPenguin({ colors, size }: AgentDrawingProps) {
+function PixelPenguin({ colors, accessory, size }: AgentDrawingProps) {
   const { transform, crisp } = pixelPlacement(size);
-  const runs = pixelRuns(PIXEL_PENGUIN, size >= BLUSH_PX);
+  const runs = pixelRuns(PIXEL_GRIDS[accessory], size);
   return (
     <>
       <rect width="24" height="24" style={{ fill: colors.tile }} />
