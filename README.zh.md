@@ -69,6 +69,7 @@ PenguinHarness 是开源的 Agent 自进化（recursive self-improvement, RSI）
 | `openskill-rsi-toolkit` | [OpenSkill](https://arxiv.org/abs/2606.06741)：先通过外部检索与独立虚拟验证构建技能，再评测冻结的 State |
 | `trace-rsi-toolkit` | [TRACE](https://arxiv.org/abs/2608.22793)：对比成功与失败轨迹，进化技能库并测量一致性 |
 | `rrsi-rsi-toolkit` | [RRSI](https://arxiv.org/abs/2609.24972)：退火收紧修改预算，测量前先由 Critic 过滤基准过拟合，Pruner 报告不再挣得位置的组件，选择只看噪声下限与 token 成本 |
+| `skillweaver-rsi-toolkit` | [SkillWeaver](https://arxiv.org/abs/2504.07079)：自主探索网站发现技能，打磨成经过测试的 API 脚本 |
 
 每个新建的 Project 都自带十七个 Benchmark，以 Harbor 任务的形式跑在 Docker 里：PenguinHarness Benchmark Sec A 到 Sec E（来自 rag-bench-essential、DeepSWE、AutomationBench、Terminal-Bench-Science 和 Terminal-Bench），以及 GDPEVO Essential 六个场景各自的 Train/Test 对，共十二个 GDPEVO Essential 条目。更多 Benchmark 见 [penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark)。
 
@@ -138,7 +139,7 @@ Agent 还能编写并优化自己的 Skill（[文档](https://penguin.ooo/docs/s
 
 | 分类 | 插件                                                                       |
 | -------------------- | ----------------------------------------------------------------------------- |
-| Agent 自进化 | `default-rsi-toolkit`, `opro-rsi-toolkit`, `ape-rsi-toolkit`, `ace-rsi-toolkit`, `awm-rsi-toolkit`, `skilladam-rsi-toolkit`, `skillopt-rsi-toolkit`, `openskill-rsi-toolkit`, `trace-rsi-toolkit`, `rrsi-rsi-toolkit` |
+| Agent 自进化 | `default-rsi-toolkit`, `opro-rsi-toolkit`, `ape-rsi-toolkit`, `ace-rsi-toolkit`, `awm-rsi-toolkit`, `skilladam-rsi-toolkit`, `skillopt-rsi-toolkit`, `openskill-rsi-toolkit`, `trace-rsi-toolkit`, `rrsi-rsi-toolkit`, `skillweaver-rsi-toolkit` |
 | 办公效率 | `a2ui`, `data-analysis`, `use-firecrawl`, `browser-automation`, `use-bento-slides`, `humanizer`, `goal`, `continual-learning`, `trace-lookup`, `agent-company`, `penguin-support` |
 | 软件开发 | `software-development`, `use-claude-code` |
 | AI 应用开发 | `agent-development`, `agent-evaluation`, `model-development`, `skill-porting` |
