@@ -23,6 +23,7 @@ import type {
   GoalServerEvent,
   ProjectRole,
   CompanyServerEvent,
+  SessionTracesResponse,
 } from "@prismshadow/penguin-library-project";
 import type { CompactionMode, AmspRecord, SessionSource, ToolCallPayload } from "@prismshadow/amsp";
 import type {
@@ -109,6 +110,8 @@ import type {
   UsageEntitySeriesCounts,
   UsageErrorCount,
   ErrorContext,
+  UsageErrorItem,
+  UsageGroupBy,
 } from "@prismshadow/penguin-library-observability";
 import type {
   SessionStatus,
@@ -1497,6 +1500,7 @@ export type {
   SessionCategory,
   SessionCategoryCounts,
   SessionContextParts,
+  SessionTracesResponse,
   ToolCallSpan,
   TraceAnalysisResponse,
   TraceEventsResponse,
@@ -1507,6 +1511,8 @@ export type {
   TracePosition,
   TraceTaskStats,
   TraceToolSpan,
+  UsageErrorItem,
+  UsageGroupBy,
   UsageTrendPointInTrace,
   UsageAgentSeries,
   UsageBucket,
