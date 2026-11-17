@@ -373,7 +373,7 @@ What the policy does buy: a destructive one-liner does not run without a person'
 - `compaction.max_session_turns`: `-1` means unlimited.
 - `compaction.max_rounds`: a ceiling, not a plan. The harness counts the rounds, not the model; the default Prompt asks for about three and names no limit. `0` or less asks nothing again, so a first reply that is not the summary ends with the hand-off note: pair it with a Prompt that asks for text only. Each round re-reads the cached context at the cache-read price, about 0.75 M cached tokens per compaction at three rounds of a 250k context.
 - `compaction.prompt`, `compaction.reminder`, `compaction.handoff_note`: see [How a summarize compaction runs](#how-a-summarize-compaction-runs).
-- `*.prompt`: each section prompt is editable on its settings tab: both Memory prompts on **Memory**, `vault.prompt` on **Vault**, `skills.prompt` on **Plugins**, and `schedules.prompt` on **Schedules**.
+- `*.prompt`: each section prompt is editable on its settings tab: both Memory prompts on **Memory**, `vault.prompt` on **Vault**, `skills.prompt` on the **Skills** sub-page of **Plugins**, and `schedules.prompt` on **Schedules**.
 - `vault.enabled`: when off, values are still injected into subprocess environments; the model just does not see the key-name list.
 - `skills.enabled`: when off, installed Skills can still be invoked explicitly with `[use_skills]`.
 - `schedules.enabled`: when off, the server still fires tasks; the model just is not taught the task system.
@@ -446,7 +446,7 @@ The same advice appears when a compaction's summary was cut off at the output li
 
 An existing agent always runs with its on-disk config as written; newer code defaults are never merged in automatically. When the built-in defaults change substantively, the config's `kernel_version` falls behind the current kernel, and the settings page and the agents list show an update hint. Two actions on the settings overview adopt the current defaults.
 
-**Update kernel** is a lossless merge, done one settings tab at a time (**System Prompt**, **Runtime**, **Tools**, the Skills settings on **Plugins**, **Memory**, **Vault**, **Schedules**):
+**Update kernel** is a lossless merge, done one settings tab at a time (**System Prompt**, **Runtime**, **Tools**, the Skills settings on the **Skills** sub-page of **Plugins**, **Memory**, **Vault**, **Schedules**):
 
 - A tab the config lacks entirely, or one whose hash still matches a *recorded* generation's built-in default, is rewritten from the current defaults. This is also how tools added by a later version reach an existing agent.
 - A tab you have changed in any way stays unchanged **in full** and is listed in the result. If you edit one built-in tool, the whole **Tools** tab is kept: tools you added and tools you deleted both survive, and that tab stops following new defaults until you restore defaults.

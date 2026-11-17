@@ -197,7 +197,7 @@ export function AppCenterPage() {
           openFullScreen: (app) => openFullScreen(app, APP_CENTER_PATH),
           showError: setErrorOf,
           viewInSettings: (app) =>
-            void navigate(agentSettingsPath(app.shortcut.agentId, null, "plugins")),
+            void navigate(agentSettingsPath(app.shortcut.agentId, null, "workbenches")),
           removeFromAppCenter: (app) =>
             void api
               .setWorkbenchAppCenter(

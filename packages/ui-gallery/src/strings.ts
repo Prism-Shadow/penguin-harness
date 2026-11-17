@@ -1947,9 +1947,11 @@ export const zh = {
       factMissingHint: "插件库里的这个部件不在这个 Agent 上。点「更新」把它装回来。",
       trailRows: "标题后的标记",
       trailRowsHint:
-        "标记与标签紧跟标题、在同一行，保持原宽；行太窄时折到标题下方。插件装进来的部件带拼图标记，悬停说明来源，点击打开该插件。",
+        "标记与标签紧跟标题、在同一行，保持原宽；行太窄时折到标题下方。点击行的名称或空白处打开该行，行内控件只做各自的事。插件装进来的部件带拼图标记，悬停说明来源，点击在下方的插件列表中定位该插件：那一行滚到视野中部、获得焦点，以强调色描边高亮约 2 秒后淡出。",
       trailListLabel: "钩子包",
-      trailFromPlugin: (plugin: string) => `由插件 ${plugin} 安装`,
+      trailFromPlugin: (plugin: string) => `由插件 ${plugin} 安装，点击在下方列表中定位`,
+      trailPluginsCaption: "拼图标记指向的插件列表",
+      trailPluginsLabel: "插件",
       trailDescriptions: [
         "每个 Task 结束后整理这次对话里值得记下的经验。",
         "在每轮回复前提醒模型当前的目标。",

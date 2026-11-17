@@ -21,6 +21,7 @@ export { PluginDetailModal } from "./plugin-detail";
 export {
   PluginStatusMark,
   PluginTag,
+  pluginTags,
   rowBuiltin,
   rowIcon,
   rowInstalledOnServer,
@@ -36,4 +37,4 @@ export type { PluginRow } from "./plugin-groups";
 
 export { agentPluginGroups, hasParts } from "./agent-plugin-groups";
 
-export type { AgentPluginGroup, AgentPluginStatus } from "./agent-plugin-groups";
+export type { AgentPluginGroup, AgentPluginGroups, AgentPluginStatus } from "./agent-plugin-groups";

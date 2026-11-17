@@ -1,21 +1,26 @@
 /**
- * The workbenches of one Agent on its settings page's Plugins tab (plugins-tab.tsx): the row each
- * workbench shows in its plugin's group or among the user's own — broken and handler-only
- * packages included — and the "Import workbench" dialog. The files are the truth, so the tab
- * reads its lists again after every action.
+ * The workbenches of one Agent on its settings page's Plugins tab, Workbenches sub-page
+ * (plugins-tab.tsx): the row each workbench shows — broken and handler-only packages included —
+ * and the "Import workbench" dialog. The files are the truth, so the tab reads its lists again
+ * after every action.
  *
  * A row says what its controls do (workbench-row.tsx): its two switches carry their words
- * ("Enable", "App Center"), "Open" is a text button, and the rest — reload, version history,
- * export, remove — are the rows of its "More" menu.
+ * ("Enable", "Show in the App Center"), "Open" is a text button and the way into the app, and the
+ * rest — the App Center setting again as a checkable row, reload, version history, export,
+ * remove — are the rows of its "More" menu. The title, and a click anywhere else on the row that
+ * is not one of its controls, opens the workbench's own files read-only (part-files-dialog.tsx).
+ * A workbench a plugin installed carries the puzzle mark after its title, naming the plugin and
+ * pointing at its row on the Plugins sub-page, and its removal says which plugin installed it.
  *
  * - The Enable switch is the Project owner's and commits at once; while the Agent-wide "Enable
  *   workbenches" is off every row's switch is greyed at its own value, and a server older than
  *   the switches gets none. A workbench that does not run (its own switch or the Agent-wide one
  *   is off) has nothing to open or reload; its history, restore, export and removal stay.
- * - The App Center switch, on a row of an Agent on this server (the App Center lists those
- *   only), commits at once too: it rewrites `penguin.appCenter.show` in the workbench's
- *   package.json, and the reload that follows (none while it does not run) records the edit as
- *   a version. A refused write puts the switch back where the file says.
+ * - The App Center setting, on a row of an Agent on this server (the App Center lists those
+ *   only), commits at once too, from the switch or from the menu's row — one setting, two
+ *   controls: it rewrites `penguin.appCenter.show` in the workbench's package.json, and the
+ *   reload that follows (none while it does not run) records the edit as a version. A refused
+ *   write puts both back where the file says.
  *
  * Everything but the Enable switch is member-level, matching the workbench routes, and goes to
  * the server the Agent lives on.
@@ -29,8 +34,16 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { useNavigate } from "react-router";
-import type { IconRef, WorkbenchInfo, WorkbenchVersion } from "@prismshadow/penguin-server/api";
-import { Button, ConfirmModal, ListRow, Modal, Switch } from "@prismshadow/penguin-ui";
+import type { WorkbenchInfo, WorkbenchVersion } from "@prismshadow/penguin-server/api";
+import {
+  Button,
+  ConfirmModal,
+  GlyphAction,
+  ICONS,
+  ListRow,
+  Modal,
+  Switch,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { formatDateTime } from "../../lib/format";
 import { useInstantSetting } from "../../lib/instant-setting";
@@ -44,7 +57,15 @@ import { toastApiError } from "../../lib/toast-api-error";
 import { downloadArchive } from "./archive-download";
 import { ChatOrZipImportDialog } from "./chat-or-zip-import-dialog";
 import { buildWorkbenchImportPrompt } from "./workbench-import";
-import { AppCenterToggle, LabelledSwitch, WorkbenchMark, WorkbenchRowMenu } from "./workbench-row";
+import { cardBodyClick } from "../../lib/card-open";
+import type { PartRef, PartSource } from "./plugins-subpages";
+import {
+  AppCenterToggle,
+  LabelledSwitch,
+  WorkbenchMark,
+  WorkbenchRowMenu,
+  type AppCenterControl,
+} from "./workbench-row";
 
 /** The row of the newest version holding the workbench's current files; -1 when none does. */
 function currentVersionAt(history: { workbench: WorkbenchInfo; versions: WorkbenchVersion[] }) {
@@ -62,6 +83,12 @@ export interface WorkbenchRowsOptions {
   allEnabled: boolean | undefined;
   /** The switches are the Project owner's. */
   canSwitch: boolean;
+  /** The plugin that installed a workbench, by its id; undefined for the user's own. */
+  sourceOf: (id: string) => PartSource | undefined;
+  /** Opens a part's own files: the row's body, and its name for the keyboard. */
+  onOpenFiles: (part: PartRef) => void;
+  /** Shows the plugin a part came from on the Plugins sub-page: its row marked, no detail opened. */
+  onShowPlugin: (plugin: string) => void;
 }
 
 /**
@@ -107,17 +134,19 @@ function WorkbenchSwitch({
 }
 
 /**
- * One workbench's App Center switch: `penguin.appCenter.show` in its package.json, written at once
- * and adopted from the answer, rolled back with a toast when refused.
+ * One workbench's App Center setting: `penguin.appCenter.show` in its package.json, written at
+ * once and adopted from the answer, rolled back with a toast when refused. The row draws it twice
+ * — its switch and its More menu's row — so it hands the one setting to `children`, and both
+ * controls share one write, one optimistic value and one rollback.
  */
-function WorkbenchAppCenterSwitch({
+function WorkbenchAppCenter({
   workbench,
-  title,
   options,
+  children,
 }: {
   workbench: WorkbenchInfo;
-  title: string;
   options: WorkbenchRowsOptions;
+  children: (appCenter: AppCenterControl) => ReactNode;
 }) {
   const { currentProject } = useProject();
   const projectId = currentProject?.projectId ?? null;
@@ -132,26 +161,23 @@ function WorkbenchAppCenterSwitch({
     );
     options.onSwitched(res.workbench);
   });
-  return (
-    <AppCenterToggle
-      title={title}
-      checked={setting.value}
-      disabled={setting.busy}
-      onChange={(show) => void setting.set(show)}
-    />
-  );
+  return children({
+    checked: setting.value,
+    disabled: setting.busy,
+    onChange: (show) => void setting.set(show),
+  });
 }
 
 /**
  * The rows of an Agent's workbenches, and the history dialog and the confirmation (restore,
- * remove) they share. `icon` on a row is its plugin's icon, shown when the workbench declares no
- * App Center icon of its own; the anvil without either.
+ * remove) they share. A row shows the icon of the plugin it came from when the workbench declares
+ * no App Center icon of its own; the anvil without either.
  */
 export function useWorkbenchRows(options: WorkbenchRowsOptions): {
-  row: (workbench: WorkbenchInfo, icon?: IconRef) => ReactNode;
+  row: (workbench: WorkbenchInfo) => ReactNode;
   modals: ReactNode;
 } {
-  const { agentId, onChanged } = options;
+  const { agentId, onChanged, sourceOf, onOpenFiles, onShowPlugin } = options;
   const { currentProject } = useProject();
   const projectId = currentProject?.projectId ?? null;
   /** The machine the Agent lives on, where its workbenches are; null for this server. */
@@ -190,86 +216,107 @@ export function useWorkbenchRows(options: WorkbenchRowsOptions): {
     }
   };
 
-  const row = (workbench: WorkbenchInfo, icon?: IconRef) => {
+  const row = (workbench: WorkbenchInfo) => {
     const first = workbenchTabsOf([workbench])[0];
     const title = first ? localizedText(locale, first.title, first.titleZh) : workbench.name;
     /** A switched-off workbench loads nothing: there is no page to open and nothing to reload. */
     const running = options.allEnabled !== false && workbench.enabled !== false;
     const { enabled } = workbench;
+    const source = sourceOf(workbench.id);
+    // The body opens the workbench's files; "Open" stays the way into the app.
+    const open = () => onOpenFiles({ kind: "workbench", name: workbench.id, title });
+    /** The row's controls, with the App Center setting when the row has one. */
+    const controls = (appCenter: AppCenterControl | undefined) => (
+      <>
+        {enabled !== undefined && (
+          <WorkbenchSwitch workbench={{ ...workbench, enabled }} title={title} options={options} />
+        )}
+        {appCenter !== undefined && <AppCenterToggle title={title} {...appCenter} />}
+        {first && running && projectId && (
+          <Button
+            size="sm"
+            aria-label={`${S.workbenches.open} ${title}`}
+            onClick={() =>
+              void navigate("/chat/new", {
+                state: {
+                  agentId,
+                  workspace: "",
+                  // A machine's Agent runs there: its temporary Workspace on it.
+                  ...(machineId !== null ? { machineId } : {}),
+                  workbench: {
+                    projectId,
+                    agentId,
+                    tabId: first.tabId,
+                    machineId,
+                  },
+                },
+              })
+            }
+          >
+            {S.workbenches.openAction}
+          </Button>
+        )}
+        <WorkbenchRowMenu
+          title={title}
+          disabled={busy}
+          appCenter={appCenter}
+          onReload={
+            running
+              ? () =>
+                  void act(() => api.reloadWorkbench(projectId!, agentId, workbench.id, machineId))
+              : undefined
+          }
+          onHistory={() =>
+            void act(async () =>
+              setHistory({
+                workbench,
+                versions: (
+                  await api.getWorkbenchHistory(projectId!, agentId, workbench.id, machineId)
+                ).versions,
+              }),
+            )
+          }
+          onExport={() => void exportWorkbench(workbench)}
+          onRemove={() => setConfirm({ workbench })}
+        />
+      </>
+    );
     return (
       <ListRow
         key={`workbench:${workbench.id}`}
         as="li"
-        leading={<WorkbenchMark workbench={workbench} pluginIcon={icon} />}
+        leading={<WorkbenchMark workbench={workbench} pluginIcon={source?.icon} />}
         title={title}
+        onClick={open}
+        onBodyClick={cardBodyClick(open)}
+        titleTrail={
+          source !== undefined && (
+            <GlyphAction
+              glyph={ICONS.puzzle}
+              label={S.agentPlugins.partSource(source.title)}
+              onClick={() => onShowPlugin(source.name)}
+            />
+          )
+        }
         description={workbench.error ?? workbench.id}
         meta={workbench.version ? `v${workbench.version}` : undefined}
         trailing={
-          <>
-            {enabled !== undefined && (
-              <WorkbenchSwitch
-                workbench={{ ...workbench, enabled }}
-                title={title}
-                options={options}
-              />
-            )}
-            {machineId === null && (
-              <WorkbenchAppCenterSwitch workbench={workbench} title={title} options={options} />
-            )}
-            {first && running && projectId && (
-              <Button
-                size="sm"
-                aria-label={`${S.workbenches.open} ${title}`}
-                onClick={() =>
-                  void navigate("/chat/new", {
-                    state: {
-                      agentId,
-                      workspace: "",
-                      // A machine's Agent runs there: its temporary Workspace on it.
-                      ...(machineId !== null ? { machineId } : {}),
-                      workbench: {
-                        projectId,
-                        agentId,
-                        tabId: first.tabId,
-                        machineId,
-                      },
-                    },
-                  })
-                }
-              >
-                {S.workbenches.openAction}
-              </Button>
-            )}
-            <WorkbenchRowMenu
-              title={title}
-              disabled={busy}
-              onReload={
-                running
-                  ? () =>
-                      void act(() =>
-                        api.reloadWorkbench(projectId!, agentId, workbench.id, machineId),
-                      )
-                  : undefined
-              }
-              onHistory={() =>
-                void act(async () =>
-                  setHistory({
-                    workbench,
-                    versions: (
-                      await api.getWorkbenchHistory(projectId!, agentId, workbench.id, machineId)
-                    ).versions,
-                  }),
-                )
-              }
-              onExport={() => void exportWorkbench(workbench)}
-              onRemove={() => setConfirm({ workbench })}
-            />
-          </>
+          // The App Center lists this server's Agents only: a machine's row has no such setting.
+          machineId === null ? (
+            <WorkbenchAppCenter workbench={workbench} options={options}>
+              {controls}
+            </WorkbenchAppCenter>
+          ) : (
+            controls(undefined)
+          )
         }
       />
     );
   };
 
+  /** The plugin the workbench being removed came from: the confirmation says where to get it back. */
+  const removingSource =
+    confirm !== null && confirm.revision === undefined ? sourceOf(confirm.workbench.id) : undefined;
   const modals = projectId !== null && (
     <>
       <Modal
@@ -333,9 +380,16 @@ export function useWorkbenchRows(options: WorkbenchRowsOptions): {
           })
         }
       >
-        {confirm?.revision
-          ? S.workbenches.restoreConfirm(confirm.revision)
-          : S.workbenches.removeConfirm}
+        {confirm?.revision ? (
+          S.workbenches.restoreConfirm(confirm.revision)
+        ) : (
+          <div className="space-y-2">
+            <p>{S.workbenches.removeConfirm}</p>
+            {removingSource !== undefined && (
+              <p>{S.agentPlugins.partFromPluginNote(removingSource.title)}</p>
+            )}
+          </div>
+        )}
       </ConfirmModal>
     </>
   );
@@ -361,7 +415,7 @@ export function WorkbenchImportDialog({
   agentId: string;
   machineId: string | null;
   onClose: () => void;
-  /** A zip landed, as its load left the workbench: the tab closes the dialog and reads the lists again. */
+  /** A zip landed, as its load left the workbench: the sub-page closes the dialog and reads the lists again. */
   onImported: (workbench: WorkbenchInfo) => void;
 }) {
   return (

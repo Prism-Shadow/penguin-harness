@@ -1,7 +1,8 @@
 /**
  * 数据: the table framed on its own and bare inside a card at the small density, entity cards in a
  * section's grid (and the same grid in a narrow column), the facts line, a detail's fact rows,
- * list rows plain and opening what they name, rows with marks after their title, a list loading
+ * list rows plain and opening what they name, rows with marks after their title (whose puzzle
+ * marks its plugin's row in a list under them), a list loading
  * and empty, rows whose text runs far past a narrow card (one of them trailed), label/value pairs
  * at both rungs, and a running job's log — all from the package.
  */
@@ -37,6 +38,7 @@ import {
   TableHead,
   TableHeaderCell,
   TableRow,
+  useMarkedRow,
 } from "@prismshadow/penguin-ui";
 import { BoardGroup } from "../../foundations/shared";
 import { useGallery } from "../../state";
@@ -88,6 +90,8 @@ const HOOK_PACKAGES = [
   { name: "goal", points: ["user_prompt", "stop"], version: "2026.09.20.1", plugin: "Goal" },
   { name: "my-lint-reminder", points: ["stop"], version: "", plugin: null },
 ] as const;
+/** The plugins the hook packages came from, as the list a puzzle points into. */
+const TRAIL_PLUGINS = ["Continual learning", "Goal"] as const;
 
 /** A mark of a row's end: a glyph in a tone's ink, its sentence as its name and its hover. */
 function Mark({ glyph, sentence }: { glyph: string; sentence: string }) {
@@ -109,6 +113,8 @@ const LOG = [
 export function DataBoard() {
   const { S } = useGallery();
   const t = S.library.data;
+  /** The plugin row a hook package's puzzle last pointed at, marked for a moment. */
+  const { marked: markedPlugin, mark: markPlugin } = useMarkedRow<string>();
 
   /**
    * The section's four cards: installed, an update behind (the dot on its button), available with
@@ -364,19 +370,22 @@ export function DataBoard() {
       <BoardGroup title={t.trailRows} aside={t.trailRowsHint}>
         <div className="lib-stack lib-stack-wide">
           <SettingsList label={t.trailListLabel}>
-            {HOOK_PACKAGES.map((pkg, i) => (
+            {HOOK_PACKAGES.map(({ plugin, ...pkg }, i) => (
               <ListRow
                 key={pkg.name}
                 as="li"
                 leading={<AgentAvatar id={pkg.name} size={32} />}
                 title={<span className="font-mono">{pkg.name}</span>}
+                // The name and the rest of the row open the package; its controls keep their own.
+                onClick={() => {}}
+                onBodyClick={() => {}}
                 titleTrail={
                   <>
-                    {pkg.plugin !== null && (
+                    {plugin !== null && (
                       <GlyphAction
                         glyph={ICONS.puzzle}
-                        label={t.trailFromPlugin(pkg.plugin)}
-                        onClick={() => {}}
+                        label={t.trailFromPlugin(plugin)}
+                        onClick={() => markPlugin(plugin)}
                       />
                     )}
                     {pkg.points.map((point) => (
@@ -398,6 +407,20 @@ export function DataBoard() {
                     </IconButton>
                   </>
                 }
+              />
+            ))}
+          </SettingsList>
+          <span className="lib-caption">{t.trailPluginsCaption}</span>
+          <SettingsList label={t.trailPluginsLabel}>
+            {TRAIL_PLUGINS.map((plugin) => (
+              <ListRow
+                key={plugin}
+                as="li"
+                leading={<AgentAvatar id={plugin} size={28} />}
+                title={plugin}
+                onClick={() => {}}
+                onBodyClick={() => {}}
+                marked={markedPlugin === plugin}
               />
             ))}
           </SettingsList>
