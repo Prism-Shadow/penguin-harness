@@ -3,6 +3,7 @@
 - **Date:** 2026-11-17
 - **Type:** feature
 - **Scope:** `plugins`, `docs`
+- **PR:** [#1585](https://github.com/Prism-Shadow/penguin-harness/pull/1585)
 
 [中文版](2026-11-17-bento-slides-workbench.zh.md)
 
