@@ -3,6 +3,7 @@
 - **Date:** 2026-11-17
 - **Type:** fix
 - **Scope:** `ui`, `ui-gallery`
+- **PR:** [#1576](https://github.com/Prism-Shadow/penguin-harness/pull/1576)
 
 [中文版](2026-11-17-files-tree-search-narrow.zh.md)
 
