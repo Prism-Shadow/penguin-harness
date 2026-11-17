@@ -261,7 +261,7 @@
 }
 /* A phone's single column: the card lies down — the cover a thumbnail beside the title and the
    description — so a list of thirty is a few screens long, not thirty covers tall. */
-@container showcase-grid (max-width: 30rem) {
+@container showcase-grid (width < 29rem) {
   .showcase-grid > .showcase-card > .showcase-card-open {
     flex-direction: row;
     align-items: flex-start;
