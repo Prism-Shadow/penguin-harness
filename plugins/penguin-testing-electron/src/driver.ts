@@ -71,13 +71,19 @@ export async function launchHarness(options: LaunchOptions = {}): Promise<Harnes
     penguinHome,
     chromeDir,
     async install(pluginDir: string) {
-      const out = spawnSync("node", ["--run", "link"], { cwd: pluginDir, encoding: "utf8" });
-      if (out.status !== 0) {
-        throw new Error(`install: linking ${pluginDir} failed: ${out.stderr.trim()}`);
-      }
+      const name = path.basename(pluginDir);
+      const target = path.join(penguinHome, "plugins", "node_modules", name);
+      await import("node:fs").then((fs) =>
+        fs.promises.cp(pluginDir, target, { recursive: true, force: true }),
+      );
     },
     async remove(pluginName: string) {
-      void pluginName;
+      await import("node:fs").then((fs) =>
+        fs.promises.rm(path.join(penguinHome, "plugins", "node_modules", pluginName), {
+          recursive: true,
+          force: true,
+        }),
+      );
     },
   };
 }
