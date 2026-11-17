@@ -372,6 +372,7 @@ export class FakeServer {
     library: Json[];
     install: (specifier: string) => { status?: number; body: unknown };
     archive: (body: Json) => { status?: number; body: unknown };
+    link: (body: Json) => { status?: number; body: unknown };
   } = {
     listed: [],
     library: [],
@@ -384,6 +385,10 @@ export class FakeServer {
     archive: () => ({
       status: 201,
       body: { installed: { name: "@acme/notes", version: "1.0.0", library: true, modules: false } },
+    }),
+    link: () => ({
+      status: 201,
+      body: { installed: { name: "@acme/notes", version: null, library: true, modules: false } },
     }),
   };
 
@@ -1874,7 +1879,9 @@ export class FakeServer {
         groups: [{ id: "other", title: "Other", plugins: this.plugins.library }],
       });
     }
-    const pluginsMatch = /^\/api\/projects\/([^/]+)\/plugins\/installed(\/archive)?$/.exec(apiPath);
+    const pluginsMatch = /^\/api\/projects\/([^/]+)\/plugins\/installed(\/archive|\/link)?$/.exec(
+      apiPath,
+    );
     if (pluginsMatch) {
       const view = () => ({
         plugins: this.plugins.listed,
@@ -1883,8 +1890,16 @@ export class FakeServer {
         machineId: "Self000000000000",
         restartPending: false,
       });
-      if (pluginsMatch[2] !== undefined) {
+      if (pluginsMatch[2] === "/archive") {
         const answer = this.plugins.archive(body ?? {});
+        const status = answer.status ?? 201;
+        return this.json(
+          status < 300 ? { ...view(), ...(answer.body as Json) } : answer.body,
+          status,
+        );
+      }
+      if (pluginsMatch[2] === "/link") {
+        const answer = this.plugins.link(body ?? {});
         const status = answer.status ?? 201;
         return this.json(
           status < 300 ? { ...view(), ...(answer.body as Json) } : answer.body,

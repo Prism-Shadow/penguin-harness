@@ -320,3 +320,142 @@ describe("penguin plugin remove and list", () => {
     expect(out()).not.toContain("@penguinharness/a2ui");
   });
 });
+
+describe("penguin plugin link", () => {
+  const works: string[] = [];
+  afterEach(async () => {
+    for (const dir of works.splice(0)) {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  async function packageDir(files: Record<string, string>): Promise<string> {
+    const work = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-cli-link-"));
+    works.push(work);
+    const dir = path.join(work, "plugin");
+    for (const [rel, text] of Object.entries(files)) {
+      await fs.mkdir(path.dirname(path.join(dir, rel)), { recursive: true });
+      await fs.writeFile(path.join(dir, rel), text);
+    }
+    return dir;
+  }
+
+  it("prints the newly linked plugin's linkPath when another linked plugin is already installed", async () => {
+    const dir = await packageDir({
+      "package.json": JSON.stringify({
+        name: "@acme/second",
+        version: "0.2.0",
+        main: "dist/index.js",
+      }),
+      "dist/index.js": "export {};\n",
+      "ifaces.json": JSON.stringify({
+        ifaces: { "@acme/second#Mod": { name: "Mod", methods: {}, slots: {} } },
+        types: {},
+        modules: {
+          Mod: {
+            name: "Mod",
+            kind: "component",
+            requires: {},
+            provides: { Mod: "@acme/second#Mod" },
+            contributes: {},
+            children: [],
+          },
+        },
+        plugin: { modules: ["Mod"], replaces: [] },
+      }),
+    });
+    const firstPath = path.join(path.dirname(dir), "first-linked");
+    server.plugins.listed = [
+      {
+        specifier: "@acme/first",
+        active: true,
+        builtin: false,
+        modules: ["First"],
+        replaces: [],
+        linked: true,
+        linkPath: firstPath,
+        everywhere: false,
+        machines: [],
+        here: false,
+      },
+      {
+        specifier: "@acme/second",
+        active: false,
+        builtin: false,
+        modules: ["Mod"],
+        replaces: [],
+        linked: true,
+        linkPath: dir,
+        everywhere: false,
+        machines: [],
+        here: false,
+      },
+    ];
+    server.plugins.link = () => ({
+      status: 201,
+      body: { installed: { name: "@acme/second", version: null, library: false, modules: true } },
+    });
+
+    expect(await cli(["plugin", "link", dir])).toBe(0);
+    expect(out()).toContain(t.plugin.linked(dir));
+    expect(out()).not.toContain(firstPath);
+  });
+
+  it("links a library-only plugin directory without requiring server modules", async () => {
+    const dir = await packageDir({
+      "package.json": JSON.stringify({
+        name: "@acme/notes",
+        version: "1.0.0",
+        description: "Take notes.",
+      }),
+      "ifaces.json": table("@acme/notes", {
+        "PluginLibraryModule.skills": [
+          { id: "notes.skill.notes", name: "notes", path: "skills/notes" },
+        ],
+      }),
+      "skills/notes/SKILL.md":
+        "---\nname: notes\ndescription: Take notes.\nversion: 2026.10.10.1\n---\n\nBody.\n",
+    });
+    server.plugins.listed = [
+      {
+        specifier: "@acme/notes",
+        active: false,
+        builtin: false,
+        modules: [],
+        replaces: [],
+        linked: true,
+        linkPath: dir,
+        everywhere: false,
+        machines: [],
+        here: false,
+      },
+    ];
+    server.plugins.link = () => ({
+      status: 201,
+      body: { installed: { name: "@acme/notes", version: null, library: true, modules: false } },
+    });
+
+    expect(await cli(["plugin", "link", dir])).toBe(0);
+    const post = server.requests.find((r) => r.path.endsWith("/plugins/installed/link"));
+    expect(post?.body).toEqual({ dir });
+    expect(out()).toContain(t.plugin.linked(dir));
+  });
+
+  it("refuses a directory that is never built or has malformed ifaces.json without posting", async () => {
+    const unbuilt = await packageDir({
+      "package.json": JSON.stringify({ name: "@acme/unbuilt", version: "0.1.0" }),
+    });
+    expect(await cli(["plugin", "link", unbuilt])).not.toBe(0);
+    expect(stderr.join("")).toContain(t.plugin.dirNotBuilt(unbuilt));
+
+    stderr.length = 0;
+    const malformed = await packageDir({
+      "package.json": JSON.stringify({ name: "@acme/bad", version: "0.1.0" }),
+      "ifaces.json": "{not json",
+    });
+    expect(await cli(["plugin", "link", malformed])).not.toBe(0);
+    expect(stderr.join("")).toContain(t.plugin.dirRefused(malformed, ""));
+    expect(stderr.join("")).not.toContain(t.plugin.dirNotBuilt(malformed));
+    expect(server.requests.filter((r) => r.method === "POST")).toEqual([]);
+  });
+});
