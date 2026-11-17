@@ -2,7 +2,7 @@
 
 - **Date:** 2026-11-17
 - **Type:** feature
-- **Scope:** `plugins`, `server`, `docs`
+- **Scope:** `plugins`, `server`, `desktop`, `docs`
 - **PR:** [#1587](https://github.com/Prism-Shadow/penguin-harness/pull/1587)
 
 [中文版](2026-11-17-english-piglet-workbenches.zh.md)
@@ -16,4 +16,4 @@ The plugin library ships two more app-only plugins, `english-workbench` (English
 - Piggy Sticker World is a sticker-scene game: 208 stickers on 13 scenes, 10 themed levels, daily goals, blind boxes and saved works exported as PNG. Its piglet is a new, original emoji-style character drawn in SVG, in every pose and expression the game uses, and level 8 is named 「月亮下的加餐时间」 (Moonlight Snack Time).
 - Both apps show a Chinese or an English interface after the device language; a switch changes it in place and remembers the choice. English Learning Workbench translates its interface and help; the English it teaches stays as written.
 - Progress is kept in the workbench's own state, separately for each Agent, so it follows the Agent from one browser to another; uninstalling the plugin deletes it.
-- The server's library test counts a workbench as a plugin's part, beside a Skill or a hook package.
+- The server's library test counts a workbench as a plugin's part, beside a Skill or a hook package, and the desktop build's packed-app check accepts a plugin that ships only workbenches.

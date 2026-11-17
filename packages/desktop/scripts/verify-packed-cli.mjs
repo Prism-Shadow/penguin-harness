@@ -112,12 +112,15 @@ for (const app of dirs) {
   // The plugin library travels as electron-builder's collected dependencies, at the app root's
   // node_modules: the packed server resolves each package by name from there, and a plugin
   // that did not make it in is simply absent from every Agent's library, with nothing else
-  // failing. Each one is its manifest (package.json) beside the skills or hooks it ships.
+  // failing. Each one is its manifest (package.json) beside the skills, hooks or workbenches it
+  // ships (an app-only plugin carries workbenches alone).
   const pluginFiles = pluginNames.map((name) => `node_modules/${name}/package.json`);
   for (const name of pluginNames) {
-    const content = ["skills", "hooks"].map((sub) => path.join(app, "node_modules", name, sub));
+    const content = ["skills", "hooks", "workbenches"].map((sub) =>
+      path.join(app, "node_modules", name, sub),
+    );
     if (!content.some((dir) => fs.existsSync(dir))) {
-      problems.push(`${app}: node_modules/${name} carries neither skills/ nor hooks/.`);
+      problems.push(`${app}: node_modules/${name} carries no skills/, hooks/ or workbenches/.`);
     }
   }
   for (const rel of [

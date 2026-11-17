@@ -2,7 +2,7 @@
 
 - **Date:** 2026-11-17
 - **Type:** feature
-- **Scope:** `plugins`, `server`, `docs`
+- **Scope:** `plugins`, `server`, `desktop`, `docs`
 - **PR:** [#1587](https://github.com/Prism-Shadow/penguin-harness/pull/1587)
 
 [English](2026-11-17-english-piglet-workbenches.md)
@@ -16,4 +16,4 @@
 - 猪猪的摸鱼小世界是贴纸造景小游戏：208 张贴纸、13 个场景、10 个主题关卡，另有每日目标、盲盒与可导出 PNG 的作品。小猪换成了全新的原创 emoji 风格形象，以 SVG 绘制，覆盖游戏用到的每个姿势和表情；第 8 关改名为「月亮下的加餐时间」（Moonlight Snack Time）。
 - 两个应用都按设备语言显示中文或英文界面，切换按钮当场生效并记住选择。英语学习工作台只翻译界面与帮助，所教的英文保持原文。
 - 进度按 Agent 分别保存在工作台自己的状态里，换一个浏览器也能看到；卸载插件会删除这些进度。
-- 服务端的插件库测试把 Workbench 算作插件的组成部分，与 Skill、钩子包并列。
+- 服务端的插件库测试把 Workbench 算作插件的组成部分，与 Skill、钩子包并列；桌面端构建对打包产物的检查也接受只带 Workbench 的插件。
