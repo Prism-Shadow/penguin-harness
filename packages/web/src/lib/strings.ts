@@ -1696,8 +1696,6 @@ export const zh = {
     clear: "清除",
     previousMonth: "上个月",
     nextMonth: "下个月",
-    /** The month title's name: pressing it swaps the grid for month and year wheels. */
-    chooseMonth: "选择年月",
     month: "月份",
     year: "年份",
     hour: "小时",
@@ -1707,6 +1705,12 @@ export const zh = {
     time: "时间",
     /** Read out once a range's first end is picked. */
     pickEnd: "请选择结束日期",
+    /** A range headline's two ends while they are not picked. */
+    startDate: "开始日期",
+    endDate: "结束日期",
+    /** A range picker's two actions: nothing is written until the second. */
+    cancel: "取消",
+    confirm: "确定",
     /** What joins a span's two dates (2026年11月1日-2026年11月16日). */
     rangeSeparator: "-",
     /** Closes a time or date-and-time picker, whose panel stays open while it is used. */

@@ -1,9 +1,9 @@
 /**
  * 输入与表单: Input, Textarea and PasswordInput on the shared field scaffolding, with hint, info,
  * error and in-field affixes; the number input with its stepper, at a bound, closed and refused;
- * the date, time, date-and-time and date-range pickers, with a range's presets, a required, a
- * bounded, a refused and a closed date, a time on a 15-minute step and one on a 12-hour clock; the
- * search box in its three shapes; checkboxes and radio groups.
+ * the date, time, date-and-time and date-range pickers, with a required, a bounded, a refused and
+ * a closed date, a time on a 15-minute step and one on a 12-hour clock; the search box in its three
+ * shapes; checkboxes and radio groups.
  */
 import { useState } from "react";
 import type { DateRangeValue } from "@prismshadow/penguin-ui";
@@ -196,11 +196,6 @@ export function InputsBoard() {
             from={span.from}
             to={span.to}
             onChange={setSpan}
-            presets={[
-              { id: "7d", label: t.range7d, ...lastDays(7) },
-              { id: "30d", label: t.range30d, ...lastDays(30) },
-              { id: "90d", label: t.range90d, ...lastDays(90) },
-            ]}
           />
         </div>
       </BoardGroup>

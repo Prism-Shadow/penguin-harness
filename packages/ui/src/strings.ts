@@ -183,9 +183,7 @@ export interface DateStrings {
   /** The calendar head's steps to the month before and after. */
   previousMonth: string;
   nextMonth: string;
-  /** The month title's name: pressing it swaps the grid for month and year wheels. */
-  chooseMonth: string;
-  /** The wheels' names. */
+  /** The calendar head's two menus, and a date-and-time picker's wheels. */
   month: string;
   year: string;
   hour: string;
@@ -196,6 +194,12 @@ export interface DateStrings {
   time: string;
   /** A range calendar's line once its first end is picked. */
   pickEnd: string;
+  /** A range headline's two ends while they are not picked. */
+  startDate: string;
+  endDate: string;
+  /** A range picker's two actions: nothing is written until the second. */
+  cancel: string;
+  confirm: string;
   /** What joins a span's two dates: "-" in Chinese, an en dash with spaces in English. */
   rangeSeparator: string;
   /** The press that closes a picker whose panel stays open while it is used (a time, a date and time). */
@@ -380,7 +384,6 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
     clear: "Clear",
     previousMonth: "Previous month",
     nextMonth: "Next month",
-    chooseMonth: "Choose month and year",
     month: "Month",
     year: "Year",
     hour: "Hour",
@@ -388,6 +391,10 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
     dayPeriod: "AM/PM",
     time: "Time",
     pickEnd: "Pick the end date",
+    startDate: "Start date",
+    endDate: "End date",
+    cancel: "Cancel",
+    confirm: "OK",
     rangeSeparator: " – ",
     done: "Done",
   },

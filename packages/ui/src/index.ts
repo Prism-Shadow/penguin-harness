@@ -359,7 +359,6 @@ export type { DateTimeFieldProps } from "./components/forms/date-time/date-time-
 export { DateRangeField } from "./components/forms/date-time/date-range-field";
 export type {
   DateRangeFieldProps,
-  DateRangePreset,
   DateRangeValue,
 } from "./components/forms/date-time/date-range-field";
 export type { PickerFieldProps } from "./components/forms/date-time/picker-trigger";
