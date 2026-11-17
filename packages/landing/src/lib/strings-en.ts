@@ -461,6 +461,29 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
       extensions: "Hooks and workbenches",
       skillCount: (n: number) => (n === 1 ? "1 Skill" : `${n} Skills`),
       preinstalled: "Preinstalled",
+      /** The market's curation: the carousel's eyebrow and a card's tag. */
+      selected: "Selected",
+      /** The selected carousel's accessible name. */
+      selectedPlugins: "Selected plugins",
+      viewDetails: "View details",
+      sortSelected: "Selected first",
+      /** The order by install count, offered when the market document carries counts. */
+      sortPopular: "Popular",
+      screenshots: "Screenshots",
+      whatItInstalls: "What it installs",
+      getPenguin: "Get PenguinHarness",
+      source: "Source",
+      carousel: {
+        previous: "Previous",
+        next: "Next",
+        pause: "Pause rotation",
+        play: "Resume rotation",
+        position: (index: number, count: number) => `${index} of ${count}`,
+      },
+      /** The leaderboards whose entries ran a plugin (an RSI toolkit's algorithm). */
+      measuredBy: "Leaderboards that measured it",
+      /** A part's kind on a plugin's page, under "What it installs". */
+      partKinds: { skill: "Skill", hook: "Hook", workbench: "Workbench" },
     },
     benchmarks: {
       title: "Benchmarks",

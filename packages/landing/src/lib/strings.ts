@@ -458,6 +458,29 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
       extensions: "Hooks 与工作台",
       skillCount: (n: number) => `${n} 个 Skill`,
       preinstalled: "默认预装",
+      /** The market's curation: the carousel's eyebrow and a card's tag. */
+      selected: "精选",
+      /** The selected carousel's accessible name. */
+      selectedPlugins: "精选插件",
+      viewDetails: "查看详情",
+      sortSelected: "精选优先",
+      /** The order by install count, offered when the market document carries counts. */
+      sortPopular: "热门",
+      screenshots: "截图",
+      whatItInstalls: "包含内容",
+      getPenguin: "获取 PenguinHarness",
+      source: "源码",
+      carousel: {
+        previous: "上一个",
+        next: "下一个",
+        pause: "暂停轮播",
+        play: "继续轮播",
+        position: (index: number, count: number) => `第 ${index} 个，共 ${count} 个`,
+      },
+      /** The leaderboards whose entries ran a plugin (an RSI toolkit's algorithm). */
+      measuredBy: "测评过它的榜单",
+      /** A part's kind on a plugin's page, under "What it installs". */
+      partKinds: { skill: "Skill", hook: "Hook", workbench: "工作台" },
     },
     benchmarks: {
       title: "评估集",
