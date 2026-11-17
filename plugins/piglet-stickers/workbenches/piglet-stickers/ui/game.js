@@ -558,7 +558,10 @@ function afterStudio() {
   stage.addEventListener("pointercancel", onUp);
   stage.addEventListener("wheel", onWheel, { passive: false });
   stage.addEventListener("dblclick", (e) => {
-    const el = e.target.closest(".item");
+    // pointerdown captures the pointer on the stage for dragging, and a captured pointer's
+    // clicks are delivered to the stage itself: find the sticker under the pointer instead.
+    const hit = document.elementFromPoint(e.clientX, e.clientY);
+    const el = e.target.closest(".item") || (hit && hit.closest(".item"));
     if (!el) return;
     const it = S.doc.items.find((i) => i.uid === el.dataset.uid);
     if (it && BY_ID[it.sid].cat === "pig") cycleFace(it);
