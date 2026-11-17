@@ -369,3 +369,154 @@ describe("the file tools through the helper", () => {
     }
   });
 });
+
+describe("WSL UNC paths through the helper", () => {
+  const linuxWorkerWrapper = `
+const root = process.argv[1];
+const workerSource = process.argv[2];
+Object.defineProperty(process, "platform", { value: "linux" });
+const fsp = require("node:fs/promises");
+const nodePath = require("node:path");
+const Module = require("node:module");
+const origLoad = Module._load;
+Module._load = function (request, parent, isMain) {
+  if (request === "node:path" || request === "path") return nodePath.posix;
+  return origLoad.apply(this, arguments);
+};
+const map = (p) => {
+  if (process.platform === "win32") return p;
+  if (p === "/home/ws" || p.startsWith("/home/ws/")) {
+    const rel = p.slice("/home/ws".length).replace(/^\\/+/, "");
+    return rel ? nodePath.join(root, ...rel.split("/")) : root;
+  }
+  if (p === "/mnt/c/ws" || p.startsWith("/mnt/c/ws/")) {
+    const rel = p.slice("/mnt/c/ws".length).replace(/^\\/+/, "");
+    return rel ? nodePath.join(root, ...rel.split("/")) : root;
+  }
+  if (p === "/") return root;
+  throw Object.assign(new Error("ENOENT: no such file or directory, open '" + p + "'"), { code: "ENOENT" });
+};
+const orig = {
+  stat: fsp.stat.bind(fsp),
+  lstat: fsp.lstat.bind(fsp),
+  readFile: fsp.readFile.bind(fsp),
+  open: fsp.open.bind(fsp),
+  readdir: fsp.readdir.bind(fsp),
+  realpath: fsp.realpath.bind(fsp),
+  readlink: fsp.readlink.bind(fsp),
+  mkdir: fsp.mkdir.bind(fsp),
+  writeFile: fsp.writeFile.bind(fsp),
+  rename: fsp.rename.bind(fsp),
+  rm: fsp.rm.bind(fsp),
+};
+fsp.stat = (p) => orig.stat(map(p));
+fsp.lstat = (p) => orig.lstat(map(p));
+fsp.readFile = (p, ...rest) => orig.readFile(map(p), ...rest);
+fsp.open = (p, ...rest) => orig.open(map(p), ...rest);
+fsp.readdir = (p, ...rest) => orig.readdir(map(p), ...rest);
+fsp.mkdir = (p, ...rest) => orig.mkdir(map(p), ...rest);
+fsp.writeFile = (p, ...rest) => orig.writeFile(map(p), ...rest);
+fsp.rename = (a, b) => orig.rename(map(a), map(b));
+fsp.rm = (p, ...rest) => orig.rm(map(p), ...rest);
+fsp.realpath = async (p) => {
+  if (p === "/home/ws/link.txt") return "/home/ws/note.txt";
+  if (p === "/home/ws/root-link") return "/";
+  if (p === "/mnt/c/ws/link.txt") return "/mnt/c/ws/sub/note.txt";
+  map(p);
+  return p;
+};
+fsp.readlink = async (p) => {
+  if (p === "/home/ws/link.txt") return "/home/ws/note.txt";
+  if (p === "/home/ws/rel-link.txt" || p === "/mnt/c/ws/rel-link.txt") return "note.txt";
+  if (p === "C:\\\\ws\\\\posix-link.txt") return "/mnt/c/ws/note.txt";
+  throw Object.assign(new Error("EINVAL: invalid argument, readlink '" + p + "'"), { code: "EINVAL" });
+};
+new Function(workerSource)();
+`;
+
+  function linuxHost(
+    wslDistroName?: string,
+    platform: NodeJS.Platform = "linux",
+  ): { host: SandboxedFsHost; port: FsPort } {
+    const [, , source] = fsWorkerArgv();
+    const host = new SandboxedFsHost();
+    const env: Record<string, string> = {};
+    if (wslDistroName !== undefined) env.WSL_DISTRO_NAME = wslDistroName;
+    else env.WSL_DISTRO_NAME = "";
+    const script = linuxWorkerWrapper.replace('"linux"', JSON.stringify(platform));
+    const port = host.portFor({
+      argv: [process.execPath, "-e", script, tmp, source!],
+      env,
+    });
+    return { host, port };
+  }
+
+  it("maps wsl.localhost, wsl$, and extended UNC paths for the active distro and restores host spelling", async () => {
+    const { host, port } = linuxHost("Ubuntu");
+    try {
+      await port.mkdir("\\\\wsl.localhost\\Ubuntu\\home\\ws\\sub");
+      await port.writeFileAtomic(
+        "\\\\wsl.localhost\\Ubuntu\\home\\ws\\sub\\note.txt",
+        Buffer.from("hello wsl\n"),
+        {},
+      );
+      expect(await readFile(path.join(tmp, "sub", "note.txt"), "utf8")).toBe("hello wsl\n");
+      expect((await port.readFile("\\\\wsl$\\ubuntu\\home\\ws\\sub\\note.txt")).toString()).toBe(
+        "hello wsl\n",
+      );
+      expect(
+        (
+          await port.readRange("\\\\?\\UNC\\wsl.localhost\\Ubuntu\\home\\ws\\sub\\note.txt", 6, 3)
+        ).toString(),
+      ).toBe("wsl");
+      expect((await port.stat("\\\\wsl.localhost\\Ubuntu")).isDirectory).toBe(true);
+      expect(await port.readdir("\\\\wsl.localhost\\Ubuntu\\home\\ws\\sub")).toEqual([
+        { name: "note.txt", isFile: true, isDirectory: false },
+      ]);
+      expect(await port.realpath("\\\\wsl.localhost\\Ubuntu\\home\\ws\\link.txt")).toBe(
+        "\\\\wsl.localhost\\Ubuntu\\home\\ws\\note.txt",
+      );
+      expect(await port.readlink("//wsl$/Ubuntu/home/ws/link.txt")).toBe(
+        "\\\\wsl$\\Ubuntu\\home\\ws\\note.txt",
+      );
+      expect(await port.realpath("\\\\wsl.localhost\\Ubuntu\\home\\ws\\root-link")).toBe(
+        "\\\\wsl.localhost\\Ubuntu\\",
+      );
+      expect(await port.readlink("\\\\wsl.localhost\\Ubuntu\\home\\ws\\rel-link.txt")).toBe(
+        "note.txt",
+      );
+      expect((await port.readFile("C:\\ws\\sub\\note.txt")).toString()).toBe("hello wsl\n");
+      expect(await port.realpath("C:\\ws\\link.txt")).toBe("C:\\ws\\sub\\note.txt");
+      expect(await port.readlink("C:\\ws\\rel-link.txt")).toBe("note.txt");
+    } finally {
+      host.dispose();
+    }
+
+    const win = linuxHost("Ubuntu", "win32");
+    try {
+      expect(await win.port.readlink("C:\\ws\\posix-link.txt")).toBe("/mnt/c/ws/note.txt");
+    } finally {
+      win.host.dispose();
+    }
+  });
+
+  it("does not map UNC paths from another distro or when WSL_DISTRO_NAME is unset", async () => {
+    const mismatched = linuxHost("Ubuntu");
+    try {
+      await expect(
+        mismatched.port.stat("\\\\wsl.localhost\\Debian\\home\\ws"),
+      ).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      mismatched.host.dispose();
+    }
+
+    const unset = linuxHost();
+    try {
+      await expect(unset.port.stat("\\\\wsl.localhost\\Ubuntu\\home\\ws")).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    } finally {
+      unset.host.dispose();
+    }
+  });
+});

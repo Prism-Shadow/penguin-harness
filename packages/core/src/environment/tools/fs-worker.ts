@@ -33,18 +33,38 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const readline = require("node:readline");
 const linux = process.platform !== "win32";
+const distro = process.env.WSL_DISTRO_NAME || "";
 const DRIVE = /^([A-Za-z]):[\\/](.*)$/;
+const WSL_UNC =
+  /^([\\/]{2}(?:\?[\\/]UNC[\\/])?(?:wsl\.localhost|wsl\$)[\\/]([^\\/]+))(?:[\\/](.*))?$/i;
 function toLocal(p) {
-  const m = linux ? DRIVE.exec(p) : null;
-  if (!m) return p;
-  const rest = m[2].split(/[\\/]+/).filter(Boolean);
-  return ["/mnt/" + m[1].toLowerCase()].concat(rest).join("/");
+  if (!linux) return p;
+  const d = DRIVE.exec(p);
+  if (d) {
+    const rest = d[2].split(/[\\/]+/).filter(Boolean);
+    return ["/mnt/" + d[1].toLowerCase()].concat(rest).join("/");
+  }
+  const u = WSL_UNC.exec(p);
+  if (u && distro && u[2].toLowerCase() === distro.toLowerCase()) {
+    const rest = (u[3] || "").split(/[\\/]+/).filter(Boolean);
+    return "/" + rest.join("/");
+  }
+  return p;
 }
 function fromLocal(p, like) {
-  if (!linux || !DRIVE.test(like)) return p;
-  const m = /^\/mnt\/([a-z])(?:\/(.*))?$/.exec(p);
-  if (!m) return p;
-  return m[1].toUpperCase() + ":\\" + (m[2] || "").split("/").join("\\");
+  if (!linux) return p;
+  if (DRIVE.test(like)) {
+    const m = /^\/mnt\/([a-z])(?:\/(.*))?$/.exec(p);
+    if (!m) return p;
+    return m[1].toUpperCase() + ":\\" + (m[2] || "").split("/").join("\\");
+  }
+  const u = WSL_UNC.exec(like);
+  if (u && distro && u[2].toLowerCase() === distro.toLowerCase() && p.startsWith("/")) {
+    const tail = p.slice(1).split("/").filter(Boolean).join("\\");
+    const root = u[1].replace(/\//g, "\\");
+    return tail ? root + "\\" + tail : root + "\\";
+  }
+  return p;
 }
 async function writeAtomic(target, content, mode, followSymlinks) {
   let dest = target;
