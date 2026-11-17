@@ -16,7 +16,7 @@ import type { Plugin } from "@prismshadow/penguin-core/plugin";
           "Bento 幻灯片：AI PPT 工作台里，你在编辑器中修改文稿的同时，Agent 修改同一份文稿，双方的修改都会保留；Skill 也能在工作区里编写自成一体的 .bento.html 文稿。",
         shortDescription: "Edit slide decks with the Agent, live.",
         shortDescriptionZh: "和 Agent 一起实时编辑幻灯片。",
-        category: "office-productivity",
+        category: "utilities",
         icon: "icon.svg",
         quickStart: {
           prompt:

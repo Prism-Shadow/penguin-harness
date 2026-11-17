@@ -18,3 +18,4 @@
 - `bento-slides` Skill（`2026.11.17.1`）合并了工作台自带的 Skill：覆盖工作台里的文稿（所在位置、每一步一次读改写、保留 id）与独立的 `.bento.html` 文件；工作台已安装且请求未指名文件时优先在工作台里制作；并随附 Bento 的 Agent 指南（`references/bento-agents.md`，指南 1.2.13，原样），不再让 Agent 下载。
 - 插件卡片以两种语言描述这两部分，快速开始在工作台里制作一份文稿。插件新增 `README.md`、`README.zh.md` 与 `THIRD-PARTY-NOTICES.md`，以及合并逻辑与处理器的测试。内置插件表与「Skill 与插件」文档页的「Workbench 插件」一节介绍了该工作台。
 - 设计：[penguin-harness-design#470](https://github.com/Prism-Shadow/penguin-harness-design/pull/470)。基于工作台文件 [#1579](https://github.com/Prism-Shadow/penguin-harness/pull/1579)。
+- 可以给新文稿命名，从空白页或三页项目简报开始，在工作台内演示，并下载可编辑的 PowerPoint (.pptx)。HTML 源稿保留 Bento 动画，可重新导入继续编辑。

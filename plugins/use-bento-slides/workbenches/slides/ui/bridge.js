@@ -6,7 +6,7 @@
 // written to be read as text and placed in the frame's HTML: one function, no imports. `token`
 // names this mounting of the editor, so a message from a frame the page has since replaced is
 // told apart.
-export function bridge(token) {
+export function bridge(token, locale) {
   var TAG = "__slides";
   var POLL_MS = 400;
   var EDIT_WAIT_MS = 20000;
@@ -49,6 +49,8 @@ export function bridge(token) {
     var doc = window.bento.read();
     var now = signature(doc);
     if (!announced) {
+      const language = window.bento.i18n;
+      if (language && language.locale() !== locale) language.setLocale(locale);
       announced = true;
       last = now;
       post({ type: "ready", doc: doc, version: (window.bento.updates || {}).version || null });
@@ -109,6 +111,7 @@ export function bridge(token) {
     if (data.type === "read" && ready())
       post({ type: "read", id: data.id, doc: window.bento.read() });
   });
+  tick();
   setInterval(tick, POLL_MS);
   ["pointerup", "keyup", "paste", "drop", "focusout"].forEach(function (name) {
     document.addEventListener(

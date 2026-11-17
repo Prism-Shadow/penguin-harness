@@ -41,3 +41,6 @@ playwright-report/
 # vendored verbatim from upstream (see the dev skill's reference/ai-slop.md); kept byte-identical
 # so a refresh is a plain copy
 .agents/skills/penguin-harness-dev/reference/ai-slop/
+
+# Browser distribution from pptxgenjs, kept byte-for-byte for the offline workbench export.
+plugins/use-bento-slides/workbenches/slides/ui/vendor/pptxgen-4.0.1.bundle.js

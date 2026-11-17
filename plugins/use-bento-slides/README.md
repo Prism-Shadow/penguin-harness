@@ -13,9 +13,9 @@ Make slide decks with [Bento Slides](https://bento.page), a slide editor whose d
 - **Ask in plain words.** The rail beside the editor sends your request to the Agent together with the slide you are on and the elements you selected, so "make this a bar chart of the numbers" means this slide.
 - **Both of you edit one deck.** A deck is one file. The editor saves your changes to it and the Agent edits it with its own tools; whichever side saved last is loaded into the other within a second. Asking from the ordinary chat works the same way: the Agent writes the same file.
 - **Both sides' edits are kept.** When the Agent saves while you have unsaved changes, your changes are replayed on top of its version, element by element. If you both changed the same property, yours is kept, the workbench says so, and the Agent's version goes to the deck's **History**, from which any version can be restored.
-- **Decks you can take away.** **Export** gives a self-contained `.bento.html` that opens in any browser with the editor inside it. **Import** takes one back, or a deck's `.json`.
+- **Decks you can take away.** **PowerPoint** downloads an editable .pptx with native text, shapes, tables and supported charts. For the original animations, media and editor, **Download HTML** gives a self-contained `.bento.html` that opens in any browser with the editor inside it. **Import** takes one back, or a deck's `.json`.
 
-To start, open the **Slides** tab beside the Agent's chat, or the **AI PPT** tile in the App Center. Describe a deck and choose **Create with AI**, or open the sample deck. Then click a slide, type a change in the rail on the right, and keep editing while the Agent works.
+To start, open the **Slides** tab beside the Agent's chat, or the **AI PPT** tile in the App Center. Describe a deck and choose **Create with AI**, choose a blank deck or a three-slide project brief, or open the sample deck. Use **Present** to play the current deck. Then click a slide, type a change in the rail on the right, and keep editing while the Agent works.
 
 ## Your data
 

@@ -7,6 +7,7 @@
 //     with whatever the person did meanwhile replayed on top (./sync.js).
 // The editor never talks to anything but this page: its frame has no origin of its own and a
 // policy that allows no connection, so the Bento runtime cannot reach the network or the app.
+import { exportPowerPoint } from "./powerpoint.js";
 import { bridge } from "./bridge.js";
 import { draftOf, emptyLive, foldLive } from "./live.js";
 import { S, locale } from "./strings.js";
@@ -44,6 +45,13 @@ const frame = $("editor");
 
 document.documentElement.lang = locale === "zh" ? "zh-CN" : "en";
 for (const el of document.querySelectorAll("[data-copy]")) el.textContent = S[el.dataset.copy];
+frame.title = S.frameTitle;
+frame.parentElement.setAttribute("aria-label", S.frameTitle);
+$("player-frame").title = S.present;
+$("player").setAttribute("aria-label", S.present);
+$("rail-toggle").setAttribute("aria-controls", "rail");
+app.dataset.rail = matchMedia("(max-width: 850px)").matches ? "off" : "on";
+$("rail-toggle").setAttribute("aria-pressed", String(app.dataset.rail === "on"));
 $("prompt").placeholder = S.promptPlaceholder;
 $("start-prompt").placeholder = S.startPlaceholder;
 
@@ -155,7 +163,9 @@ function renderDeckMenu() {
 /** The Bento runtime with `doc` in it, the frame's policy, and the bridge that reports to us. */
 function editorHtml(doc, token) {
   const policy = `<meta http-equiv="Content-Security-Policy" content="${FRAME_POLICY}">`;
-  const script = `<script>(${bridge.toString()})(${JSON.stringify(token)})</` + "script>";
+  const script =
+    `<script>(${bridge.toString()})(${JSON.stringify(token)},${JSON.stringify(locale === "zh" ? "zh-Hans" : "en")})</` +
+    "script>";
   return htmlWithDeck(runtime, doc)
     .replace(/<head>/i, `<head>${policy}`)
     .replace(/<\/body>/i, `${script}</body>`);
@@ -165,21 +175,37 @@ let loads = 0;
 const waiting = new Map();
 /** Hands the editor a document; resolves with what it held just before and what it shows now. */
 function loadIntoEditor(o, doc) {
+  return frameRequest(o, { type: "load", json: JSON.stringify(doc) });
+}
+
+function frameRequest(o, request) {
   const id = ++loads;
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       waiting.delete(id);
-      reject(new Error("the editor did not take the document"));
+      reject(new Error(S.transferFailed));
     }, LOAD_TIMEOUT_MS);
     waiting.set(id, (message) => {
       clearTimeout(timer);
       resolve(message);
     });
-    frame.contentWindow.postMessage(
-      { [TAG]: 1, token: o.token, type: "load", id, json: JSON.stringify(doc) },
-      "*",
-    );
+    frame.contentWindow.postMessage({ [TAG]: 1, token: o.token, id, ...request }, "*");
   });
+}
+
+async function currentDocument(o) {
+  return o.ready ? (await frameRequest(o, { type: "read" })).doc : o.mine;
+}
+
+async function savedSnapshot(o) {
+  const doc = await currentDocument(o);
+  if (open !== o) throw new Error(S.transferFailed);
+  if (o.ready && !o.gone) {
+    o.mine = doc;
+    clearTimeout(o.timer);
+    await inTurn(o, () => save(o));
+  }
+  return doc;
 }
 
 window.addEventListener("message", (event) => {
@@ -190,12 +216,13 @@ window.addEventListener("message", (event) => {
     open.shown = message.doc;
     open.mine = message.doc;
     open.ready = true;
+    frame.inert = false;
     setSync("synced");
     void refreshDecks();
   } else if (message.type === "changed") {
     open.mine = message.doc;
     scheduleSave(open);
-  } else if (message.type === "loaded") {
+  } else if (message.type === "loaded" || message.type === "read") {
     waiting.get(message.id)?.(message);
     waiting.delete(message.id);
   } else if (message.type === "cursor") {
@@ -347,8 +374,20 @@ function deckGone(o) {
 
 // ---- decks --------------------------------------------------------------------------------
 
+let opening = 0;
 async function openDeck(id) {
+  const next = ++opening;
+  const previous = open;
+  if (previous?.ready && !previous.gone) {
+    const latest = await currentDocument(previous);
+    if (next !== opening) return;
+    previous.mine = latest;
+    clearTimeout(previous.timer);
+    await inTurn(previous, () => save(previous));
+    if (next !== opening || unsaved(previous).length) return;
+  }
   const current = await getJson(`/decks/${id}`);
+  if (next !== opening) return;
   let doc;
   try {
     doc = parseDeck(current.text);
@@ -378,6 +417,7 @@ async function openDeck(id) {
   setView("deck");
   setSync("");
   $("deck-title").textContent = doc.title || S.untitled;
+  frame.inert = true;
   frame.srcdoc = editorHtml(doc, open.token);
   try {
     localStorage.setItem(`${location.pathname}#deck`, id);
@@ -425,7 +465,7 @@ const blankDeck = (title) => ({
           h: 160,
           rotation: 0,
           opacity: 1,
-          html: title,
+          html: title.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;"),
           fontSize: 72,
           fontFamily: "system-ui, sans-serif",
           fontWeight: 800,
@@ -451,14 +491,18 @@ async function importFile(file) {
 
 async function exportDeck() {
   if (open === null) return;
-  const doc = open.mine ?? open.base;
-  const name = `${(doc.title || "deck").replace(/[\\/:*?"<>|]+/g, " ").trim() || "deck"}.bento.html`;
+  const doc = await savedSnapshot(open);
+  await downloadDeck(doc.title, "bento.html", htmlWithDeck(runtime, doc));
+}
+
+async function downloadDeck(title, suffix, bytes) {
+  const name = `${(title || "deck").replace(/[\\/:*?"<>|]+/g, " ").trim() || "deck"}.${suffix}`;
   const res = await api(`/export?name=${encodeURIComponent(name)}`, {
     method: "POST",
     headers: { "content-type": "application/octet-stream" },
-    body: htmlWithDeck(runtime, doc),
+    body: bytes,
   });
-  if (!res.ok) return;
+  if (!res.ok) throw new Error(S.transferFailed);
   const link = document.createElement("a");
   link.href = `../api/${(await res.json()).href}`;
   link.download = name;
@@ -741,14 +785,92 @@ $("history-menu").onclick = (event) => {
 document.addEventListener("click", (event) => {
   if (!event.target.closest(".deck-pick, .history-pick")) closeMenus();
 });
-$("new").onclick = () => void createDeck(S.untitled, blankDeck(S.untitled));
+function newPresentation() {
+  $("create-name").value = S.untitled;
+  $("create-layout").value = "blank";
+  $("create-dialog").showModal();
+  $("create-name").select();
+}
+$("new").onclick = newPresentation;
+$("create-cancel").onclick = () => $("create-dialog").close();
+$("create-form").onsubmit = async (event) => {
+  event.preventDefault();
+  const name = $("create-name").value.trim();
+  if (!name) return $("create-name").focus();
+  const doc = blankDeck(name);
+  if ($("create-layout").value === "brief") {
+    for (const [heading, body] of S.brief) {
+      const slide = blankDeck(heading).slides[0];
+      slide.id = "s" + (doc.slides.length + 1);
+      slide.elements[0].y = 96;
+      slide.elements.push({
+        ...slide.elements[0],
+        id: "body",
+        role: "body",
+        y: 320,
+        h: 220,
+        html: body,
+        fontSize: 42,
+        fontWeight: 400,
+      });
+      doc.slides.push(slide);
+    }
+  }
+  const submit = $("create-form").querySelector('[type="submit"]');
+  submit.disabled = true;
+  try {
+    await createDeck(name, doc);
+    $("create-dialog").close();
+  } catch {
+    $("create-dialog").close();
+    notice(S.transferFailed);
+  } finally {
+    submit.disabled = false;
+  }
+};
+$("present").onclick = async () => {
+  if (!open) return;
+  try {
+    const doc = await savedSnapshot(open);
+    $("player-title").textContent = doc.title;
+    const launch =
+      '<script>const start=()=>{const go=document.querySelector(".ed-playgo");if(go){loaded.disconnect();go.click();}};const loaded=new MutationObserver(start);loaded.observe(document.body,{childList:true,subtree:true});start();</' +
+      "script>";
+    $("player-frame").srcdoc = htmlWithDeck(runtime, { ...doc, readonly: true })
+      .replace(
+        /<head>/i,
+        `<head><meta http-equiv="Content-Security-Policy" content="${FRAME_POLICY}">`,
+      )
+      .replace(/<\/body>/i, launch + "</body>");
+    $("player").showModal();
+    $("player-frame").focus();
+  } catch {
+    notice(S.transferFailed);
+  }
+};
+$("player-close").onclick = () => $("player").close();
+$("player").onclose = () => {
+  $("player-frame").removeAttribute("srcdoc");
+};
 $("import").onclick = $("start-import").onclick = () => $("file").click();
 $("file").onchange = () => {
   const [file] = $("file").files;
   $("file").value = "";
   if (file) void importFile(file);
 };
-$("export").onclick = () => void exportDeck();
+$("pptx").onclick = async () => {
+  if (!open) return;
+  $("pptx").disabled = true;
+  try {
+    const doc = await savedSnapshot(open);
+    await downloadDeck(doc.title, "pptx", await exportPowerPoint(doc));
+  } catch (e) {
+    notice(e.message === "unsupportedPowerPoint" ? S.unsupportedPowerPoint : S.transferFailed);
+  } finally {
+    $("pptx").disabled = false;
+  }
+};
+$("export").onclick = () => void exportDeck().catch(() => notice(S.transferFailed));
 $("rail-toggle").onclick = () => {
   const off = app.dataset.rail !== "off";
   app.dataset.rail = off ? "off" : "on";
@@ -774,9 +896,44 @@ $("rail-reset").onclick = async () => {
 };
 $("start-sample").onclick = async () => {
   const doc = parseDeck(await (await fetch("sample.bento.json")).text());
+  if (locale === "zh") {
+    doc.title = "用四页了解 PenguinHarness";
+    const [cover, overview, chart, start] = doc.slides;
+    cover.notes = "读出标题，给观众一点时间思考。";
+    cover.elements.find((e) => e.id === "headline").html = "越用越懂你工作的智能体";
+    overview.notes = "用三句话概括智能体能做什么。";
+    const labels = {
+      headline: "它能做什么",
+      "card-1-title": "动手执行",
+      "card-1-body": "在你的工作区里，使用你选择的工具、技能和沙盒完成任务。",
+      "card-2-title": "记住经验",
+      "card-2-body": "在智能体状态中保留技能、记忆和应用，下次继续用。",
+      "card-3-title": "积累改进",
+      "card-3-body": "在基准测试上验证每次调整，只保留得分更高的改动。",
+    };
+    for (const element of overview.elements)
+      if (labels[element.id]) element.html = labels[element.id];
+    chart.notes = "图中是示例分数，可以请智能体换成自己的数据。";
+    chart.elements.find((e) => e.id === "headline").html = "每轮改进的得分";
+    const option = chart.elements.find((e) => e.id === "chart").option;
+    option.xAxis.data = ["第 0 轮", "第 1 轮", "第 2 轮", "第 3 轮"];
+    option.series[0].name = "示例得分";
+    start.notes = "最后介绍上手的三个步骤。";
+    const steps = [
+      "开始使用",
+      "<b>1.</b> 安装桌面应用或命令行工具。",
+      "<b>2.</b> 添加模型，开始一次对话。",
+      "<b>3.</b> 从插件市场安装你需要的工具。",
+    ];
+    start.elements
+      .filter((e) => e.type === "text")
+      .forEach((e, index) => {
+        e.html = steps[index];
+      });
+  }
   await createDeck(doc.title, doc);
 };
-$("start-blank").onclick = () => void createDeck(S.untitled, blankDeck(S.untitled));
+$("start-blank").onclick = newPresentation;
 $("start-ask").onsubmit = async (event) => {
   event.preventDefault();
   const text = $("start-prompt").value.trim();

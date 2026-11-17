@@ -322,7 +322,9 @@ export default {
                     const token = crypto.randomUUID();
                     exports.set(token, {
                       name,
-                      type: "text/html; charset=utf-8",
+                      type: name.endsWith(".pptx")
+                        ? "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                        : "text/html; charset=utf-8",
                       bytes: req.bytes,
                       at: Date.now(),
                     });

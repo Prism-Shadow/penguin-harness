@@ -37,6 +37,8 @@
         <span class="grow"></span>
         <button id="new" type="button" data-copy="newDeck"></button>
         <button id="import" type="button" data-copy="importDeck"></button>
+        <button id="present" type="button" data-copy="present"></button>
+        <button id="pptx" type="button" data-copy="pptx"></button>
         <button id="export" type="button" data-copy="exportDeck"></button>
         <div class="history-pick">
           <button
@@ -100,6 +102,33 @@
           <button id="start-import" type="button" data-copy="importDeck"></button>
         </div>
       </section>
+
+      <dialog id="create-dialog" aria-labelledby="create-heading">
+        <form id="create-form">
+          <h2 id="create-heading" data-copy="newTitle"></h2>
+          <label
+            ><span data-copy="deckName"></span
+            ><input id="create-name" maxlength="120" required autofocus
+          /></label>
+          <label
+            ><span data-copy="layout"></span
+            ><select id="create-layout">
+              <option value="blank" data-copy="blankDeck"></option>
+              <option value="brief" data-copy="projectBrief"></option></select
+          ></label>
+          <div class="dialog-actions">
+            <button id="create-cancel" type="button" data-copy="cancel"></button
+            ><button type="submit" class="wb-primary" data-copy="create"></button>
+          </div>
+        </form>
+      </dialog>
+      <dialog id="player" aria-label="Presentation">
+        <header>
+          <strong id="player-title"></strong
+          ><button id="player-close" type="button" data-copy="backToEdit"></button>
+        </header>
+        <iframe id="player-frame" title="Presentation" sandbox="allow-scripts"></iframe>
+      </dialog>
 
       <section class="unsupported" role="alert">
         <h1 data-copy="unsupportedTitle"></h1>
