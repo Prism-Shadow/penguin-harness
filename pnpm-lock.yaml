@@ -1311,6 +1311,9 @@ importers:
 
   plugins/penguin-testing-electron:
     devDependencies:
+      '@playwright/test':
+        specifier: ^1.61.1
+        version: 1.61.1
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: file:packages/core(ws@8.21.0)
