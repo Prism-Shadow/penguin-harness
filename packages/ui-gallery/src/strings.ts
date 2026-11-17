@@ -9,7 +9,13 @@
  * the component library's topics (src/library/topics.ts), in both dictionaries. Every table keyed
  * by an id `satisfies` a `Record` over that id, so the compiler checks each covers every id.
  */
-import type { HookName, StreamReveal, TextVariant, ToneName } from "@prismshadow/penguin-ui";
+import type {
+  AgentAccessory,
+  HookName,
+  StreamReveal,
+  TextVariant,
+  ToneName,
+} from "@prismshadow/penguin-ui";
 import type { TextSize } from "@prismshadow/penguin-ui/boot";
 import type { A2uiSpec } from "@prismshadow/a2ui";
 import type { SurfaceGroupId, SurfaceId } from "./app/surfaces";
@@ -444,7 +450,7 @@ export const zh = {
       "ui-glyph":
         "按主题换画法的图标：朴素为线性画法，白领为线性画法衬淡色块（双色调），极客为像素画",
       "ui-avatar":
-        "按主题换画法的智能体缺省头像：同一只笑脸圆球企鹅，朴素为圆角方块，白领与卡通为圆形，极客为像素画",
+        "按主题换画法的智能体缺省头像：同一只细棕线勾勒的蛋形小企鹅，朴素为圆角方块，白领与卡通为圆形，极客为像素画",
       "ui-showcase": "封面陈列：封面卡片、精选轮播、榜单与产品页首屏",
     } satisfies Record<HookName, string>,
     hookSamples: {
@@ -1213,9 +1219,21 @@ export const zh = {
     avatars: {
       user: "用户头像",
       agent: "智能体头像",
-      agentAside: "当前主题的画法：十二个智能体，颜色各一",
+      agentAside: "当前主题的画法：十二个智能体，颜色各一，配饰依次轮换",
+      wear: "智能体的配饰",
+      wearAside: "八选一，与颜色一样由智能体的 id 决定；配饰取色相环对面那一格的颜色",
+      accessories: {
+        none: "无",
+        scarf: "围巾",
+        beanie: "毛线帽",
+        cap: "鸭舌帽",
+        headphones: "耳机",
+        sprout: "小芽",
+        bow: "蝴蝶结",
+        glasses: "眼镜",
+      } satisfies Record<AgentAccessory, string>,
       variants: "各主题的画法",
-      variantsAside: "同一只笑脸圆球企鹅，每套主题一种画法；颜色只随智能体",
+      variantsAside: "同一只蛋形小企鹅，每套主题一种画法；颜色与配饰只随智能体",
       sizeCaption: (px: number) => `${px}px`,
       picture: "智能体自己的图片",
       pictureAside: "上传的图片保持智能体的圆角方块；读不出来时画缺省头像",
@@ -1353,6 +1371,13 @@ export const zh = {
       wrap: "自动换行",
       crumbs: "路径条",
       crumbsHint: "放不下时，开头的几段收进一个「…」，文件名最后让位",
+      narrow: "窄树窗格",
+      narrowHint:
+        "放不下搜索框时收为放大镜按钮，点击即横跨标题行展开；框内为空时按 Esc 或失焦即收回",
+      narrowFolded: "收起",
+      narrowQuery: "框内有搜索词：一直保留",
+      refresh: "刷新",
+      upload: "上传",
       menu: "文件菜单",
       menuFile: "文件",
       menuFolder: "文件夹",

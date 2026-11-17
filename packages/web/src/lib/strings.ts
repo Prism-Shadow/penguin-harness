@@ -3980,8 +3980,6 @@ export const zh = {
       newFolderPlaceholder: "输入名称，按 Enter 新建",
       /** Accessible name of the × that closes the new-folder row. */
       newFolderCancel: "取消新建文件夹",
-      /** The toolbar's New folder while the folder on screen could not be read. */
-      newFolderDenied: "无法读取此文件夹，不能在这里新建",
       /** Under the new-folder field: a character this machine does not allow in a name. */
       newFolderInvalid: (chars: string): string => `名称不能包含 ${chars}`,
       newFolderHidden: "以「.」开头的是隐藏文件夹，这里不会列出，请换个名称",
