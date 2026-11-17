@@ -416,7 +416,9 @@ describe("a loaded workbench", { timeout: 30_000 }, () => {
         await waitFor(() => t.deps.manager.statusOf(opened.sessionId) === "idle", 20_000);
         const answered = mock.requests
           .map(requestText)
-          .find((text) => text.includes('"tool_result"') && text.includes(`toolu_${mode ?? "default"}`));
+          .find(
+            (text) => text.includes('"tool_result"') && text.includes(`toolu_${mode ?? "default"}`),
+          );
         return { opened, toolResult: answered ?? null };
       };
 
