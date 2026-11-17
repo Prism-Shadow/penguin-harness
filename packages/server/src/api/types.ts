@@ -113,6 +113,7 @@ import type {
   UsageGroupRow,
   UsageModelSeries,
   UsageModelTotals,
+  UsageModelTotal,
   UsageResponse,
   UsageSeriesPoint,
   UsageEntitySeriesCounts,
