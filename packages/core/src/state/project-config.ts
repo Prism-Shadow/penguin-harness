@@ -199,6 +199,10 @@ export interface ProviderConnection {
 /** Every group's connection defaults, keyed by provider id. */
 export type ProviderTable = Record<string, ProviderConnection>;
 
+/** Project model references used by workbenches and the tools CLI. */
+export const MODEL_CAPABILITIES = ["search", "fetch", "image", "video", "tts", "stt"] as const;
+export type ModelCapability = (typeof MODEL_CAPABILITIES)[number];
+
 /**
  * Project-level config.
  * Docs: /docs/configuration § "Project config".
@@ -215,6 +219,8 @@ export interface ProjectConfig {
    * default — models that don't support images won't be able to read images.
    */
   vision_model?: ModelRef;
+  capability_models?: Partial<Record<ModelCapability, ModelRef>>;
+  voice_polish?: { enabled: boolean; model?: ModelRef };
   /**
    * New-chat defaults block; absent by default (`defaultProjectConfig` never includes it —
    * absent = the pre-existing behavior). Loaded tolerantly: invalid values drop per key.
@@ -775,6 +781,20 @@ export function projectConfigFromTable(
 ): ProjectConfig {
   const defaultModel = parseRefField(file, "default_model", parsed.default_model);
   const visionModel = parseRefField(file, "vision_model", parsed.vision_model);
+  const capabilityModels: Partial<Record<ModelCapability, ModelRef>> = {};
+  if (isTable(parsed.capability_models)) {
+    for (const key of MODEL_CAPABILITIES) {
+      const ref = parseRefField(file, `capability_models.${key}`, parsed.capability_models[key]);
+      if (ref) capabilityModels[key] = ref;
+    }
+  }
+  const polish = parsed.voice_polish;
+  const voicePolish = isTable(polish)
+    ? {
+        enabled: polish.enabled === true,
+        model: parseRefField(file, "voice_polish.model", polish.model),
+      }
+    : undefined;
   const defaultChat = parseDefaultChat(parsed.default_chat);
   const commandPolicy = parseCommandPolicy(parsed.command_policy);
   const plugins = parsePluginTables(parsed.plugins);
@@ -783,6 +803,8 @@ export function projectConfigFromTable(
     ...(parsed.name !== undefined ? { name: parsed.name as string } : {}),
     ...(defaultModel !== undefined ? { default_model: defaultModel } : {}),
     ...(visionModel !== undefined ? { vision_model: visionModel } : {}),
+    ...(Object.keys(capabilityModels).length ? { capability_models: capabilityModels } : {}),
+    ...(voicePolish ? { voice_polish: voicePolish } : {}),
     ...(defaultChat !== undefined ? { default_chat: defaultChat } : {}),
     ...(commandPolicy !== undefined ? { command_policy: commandPolicy } : {}),
     ...(plugins !== undefined ? { plugins } : {}),
@@ -1164,6 +1186,14 @@ export async function removeModel(
   cfg.models.splice(idx, 1);
   if (cfg.default_model && sameModelRef(cfg.default_model, ref)) {
     delete cfg.default_model;
+  }
+  for (const key of MODEL_CAPABILITIES) {
+    const bound = cfg.capability_models?.[key];
+    if (bound && sameModelRef(bound, ref)) delete cfg.capability_models![key];
+  }
+  if (cfg.voice_polish?.model && sameModelRef(cfg.voice_polish.model, ref)) {
+    delete cfg.voice_polish.model;
+    cfg.voice_polish.enabled = false;
   }
   if (cfg.vision_model && sameModelRef(cfg.vision_model, ref)) {
     delete cfg.vision_model;
