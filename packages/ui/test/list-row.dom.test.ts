@@ -74,7 +74,7 @@ it("brings the row a jump lands on into view, focuses its button and marks it un
   expect(marked()).toEqual([row("notes")]);
 
   await act(async () => {
-    vi.advanceTimersByTime(1600);
+    vi.advanceTimersByTime(2000);
   });
   expect(marked()).toEqual([]);
 });

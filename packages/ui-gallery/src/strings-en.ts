@@ -2003,7 +2003,7 @@ export const en: GalleryStrings = {
         "The library ships this part and the agent does not have it. Update puts it back.",
       trailRows: "Marks after the title",
       trailRowsHint:
-        "Marks and chips follow the title on its line and keep their width; when the row is too narrow they wrap under it. A click on the row's name or anywhere else on it opens the row; its controls keep their own clicks. A part a plugin installed carries the puzzle mark: hover names the plugin, and a click finds it in the plugin list below, whose row scrolls into view, takes the focus and is highlighted for a moment.",
+        "Marks and chips follow the title on its line and keep their width; when the row is too narrow they wrap under it. A click on the row's name or anywhere else on it opens the row; its controls keep their own clicks. A part a plugin installed carries the puzzle mark: hover names the plugin, and a click finds it in the plugin list below, whose row scrolls to the middle of the view, takes the focus and wears an accent ring for about 2 s, then fades.",
       trailListLabel: "Hook packages",
       trailFromPlugin: (plugin) =>
         `Installed by the ${plugin} plugin. Click to find it in the list below.`,

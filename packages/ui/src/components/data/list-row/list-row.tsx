@@ -10,11 +10,16 @@
  * entity card's does.
  *
  * A jump that lands on a row — "show me where this came from" — marks it (`marked`): the row
- * brings itself into view, its button takes the focus, and it wears the accent wash while the
- * mark lasts. The wash is a state, not an animation, so reduced motion shows it all the same; the
- * focus is what carries it for a reader who cannot see the colour, and it stands in for the focus
- * the jump took away from the control that started it. {@link useMarkedRow} names the row and
- * clears the mark after a moment.
+ * scrolls to the middle of its scroller (at once, never smoothly), its button takes the focus, and
+ * it wears the accent wash inside a 2px inset accent ring while the mark lasts — the ring is what
+ * reads in a theme whose accent is neutral, where the wash alone is a shade off hover. The mark is
+ * a state, not an animation: it holds, then the ring fades on the theme's slow duration as it
+ * goes, and under reduced motion it simply goes. The focus is what carries it for a reader who
+ * cannot see the colour, and it stands in for the focus the jump took away from the control that
+ * started it. {@link useMarkedRow} names the row and clears the mark after two seconds.
+ *
+ * Every row carries the ring at rest, transparent: an inset shadow cannot interpolate to the
+ * plain no-shadow value, so only the ring's colour changes between the states, and it fades.
  *
  * The text gives way and the actions never do. Title and description truncate to one line each,
  * whatever their length, and a cut-off line shows whole on hover through the app's tooltip layer,
@@ -135,7 +140,7 @@ export interface ListRowProps {
   onClick?: () => void;
   /** A click on the row's own surface; the caller decides what counts as the body (the web app's lib/card-open.ts), as an EntityCard's does. `onClick` stays the keyboard's way in. */
   onBodyClick?: MouseEventHandler<HTMLElement>;
-  /** A jump landed on this row. When it turns on (or the row mounts with it on) the row brings itself into view and its own button takes the focus; while on, the row wears the accent wash and `data-marked`. A state, not an animation. The caller turns it off (useMarkedRow). */
+  /** A jump landed on this row. When it turns on (or the row mounts with it on) the row scrolls to the middle of its scroller and its own button takes the focus; while on, the row wears the accent wash inside an inset accent ring, and `data-marked`. A state, not an animation. The caller turns it off (useMarkedRow). */
   marked?: boolean;
   /** `li` inside a `ul` or `ol`; a `div` otherwise (the default). */
   as?: "div" | "li";
@@ -143,9 +148,9 @@ export interface ListRowProps {
 }
 
 /** How long a jump's mark stays on the row it landed on. */
-const MARK_MS = 1600;
+const MARK_MS = 2000;
 
-/** Which row of a list a jump just landed on: `mark(key)` names it, and the name clears itself after MARK_MS (1600). Marking again starts the moment over. */
+/** Which row of a list a jump just landed on: `mark(key)` names it, and the name clears itself after MARK_MS (2000). Marking again starts the moment over. */
 export function useMarkedRow<K>(): { marked: K | null; mark: (key: K) => void } {
   // Boxed, so marking the same key again is a new state and restarts the timer.
   const [state, setState] = useState<{ key: K } | null>(null);
@@ -181,7 +186,8 @@ export function ListRow({
   }, []);
   useEffect(() => {
     if (!marked) return;
-    rowRef.current?.scrollIntoView({ block: "nearest" });
+    // No `behavior`: the jump is instant, whatever the reader's motion setting.
+    rowRef.current?.scrollIntoView({ block: "center" });
     buttonRef.current?.focus({ preventScroll: true });
   }, [marked]);
   const trailed = titleTrail !== undefined && titleTrail !== null && titleTrail !== false;
@@ -229,8 +235,13 @@ export function ListRow({
       ref={setRow}
       onClick={onBodyClick}
       {...(marked ? { "data-marked": "" } : {})}
-      className={`flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line-muted px-3 py-2.5 transition-colors last:border-b-0 ${
-        marked ? "bg-accent-muted" : "hover:bg-surface-muted"
+      // The wash follows hover at the fast duration; the mark's ring fades on the slow one. A
+      // marked row rounds its corners, so the ring stays inside a card that does not clip (the
+      // first or last row of its rounded frame).
+      className={`flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line-muted px-3 py-2.5 ring-2 ring-inset transition-[background-color,box-shadow] duration-[var(--ui-dur-fast),var(--ui-dur-slow)] motion-reduce:transition-none last:border-b-0 ${
+        marked
+          ? "rounded-sm bg-accent-muted ring-accent"
+          : "ring-transparent hover:bg-surface-muted"
       } ${className}`}
     >
       {onClick !== undefined && !titleButton ? (
