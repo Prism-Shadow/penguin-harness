@@ -152,13 +152,30 @@ export type WorkbenchTabRenderer = { iframe: { src: string } } | { builtin: stri
  * manifest `renderer.iframe.src` is a path inside the workbench folder, under `ui/`; in a
  * `WorkbenchInfo` it is the URL that file is served from.
  */
+/** A tab's app icon: an SVG's markup, or a PNG's bytes base64-encoded — the manifest picks the media type. */
+export interface WorkbenchTabIcon {
+  kind: "svg" | "png";
+  data: string;
+}
+
 export interface WorkbenchTab {
   id: string;
   /** Unique within the workbench; the tab's stable name (it appears in the full-page URL). */
   key: string;
   title: string;
   titleZh?: string;
+  /**
+   * The launcher label when this tab installs as its own app (`/app/…/<key>` and its own
+   * manifest): shown under the home-screen icon. Falls back to the tab's `title` when
+   * absent — a blank declaration means that fallback, never an empty label.
+   */
+  shortName?: string;
   renderer: WorkbenchTabRenderer;
+  /**
+   * The tab's app icon (what the manifest contributed): the first tab that names one is the
+   * workbench's PWA app icon. The tab strip draws no icon.
+   */
+  icon?: WorkbenchTabIcon;
 }
 
 /**
@@ -301,7 +318,17 @@ export abstract class Workbenches {
   abstract list(projectId: string, agentId: string): Promise<WorkbenchInfo[]>;
   /** The Agent-wide switch: false while `.disabled` sits beside the workbench folders. */
   abstract agentEnabled(projectId: string, agentId: string): Promise<boolean>;
-  /** Loads the folder now; one that does not run is refused (409 `workbench_disabled`). */
+  /**
+   * One workbench's registration, read from its folder alone — no migrate, no watcher, no
+   * load (a 404 `WorkbenchNotFound` for an unknown id). The auth-less install-manifest gate
+   * answers from this: an anonymous request must not be able to run the folder's
+   * compile/boot lifecycle, only look at its `package.json`.
+   */
+  abstract describe(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+  ): Promise<WorkbenchInfo>;
   abstract reload(projectId: string, agentId: string, workbenchId: string): Promise<WorkbenchInfo>;
   /**
    * After its source was written (an archive import): loads it as `reload` does when it runs,
@@ -359,6 +386,16 @@ export abstract class Workbenches {
     workbenchId: string,
     rel: string,
   ): Promise<WorkbenchUiRuntimeFile | null>;
+  /**
+   * The workbench's plugin icon (`.svg` markup or `.png` bytes base64-encoded), from its
+   * `package.json#penguin.icon`; null when it ships none or the read refuses it. The PWA
+   * manifest inlines it; the session tabs default to it.
+   */
+  abstract iconSvg(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+  ): Promise<{ kind: "svg" | "png"; data: string } | null>;
   abstract history(
     projectId: string,
     agentId: string,

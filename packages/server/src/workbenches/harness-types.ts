@@ -100,6 +100,11 @@ headers, declare its return type (\`Promise<WorkbenchResponse>\`) so they are no
       "renderer": { "iframe": { "src": "ui/index.html" } } }
   ]
 }
+// icon (optional): { "kind": "svg", "data": "<svg ..." } or { "kind": "png", "data": "<base64>" } —
+// the FIRST tab that names one is this workbench's app icon (what installing carries); the
+// tab strip itself draws no icon.
+// shortName (optional): the launcher label when the tab installs as its own app
+// (/app/…/<key>, its own manifest); absent or blank it means the title.
 \`\`\`
 
 One entry per tab, beside the chat of this Agent; \`key\` is unique in the workbench; \`src\` is a

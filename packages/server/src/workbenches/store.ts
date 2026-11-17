@@ -21,6 +21,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { removeLeftovers } from "./leftovers.js";
 import { blobOid, isGitName, treeId, type SourceFile } from "./repo.js";
+import { agentDir, readPluginIcon } from "@prismshadow/penguin-core";
 
 export const STATE_FILE = "state.json";
 export const UI_DIR = "ui";
@@ -61,6 +62,14 @@ export interface WorkbenchFolder {
   revision: string;
   uiRev: string | null;
   pkg: { name: string; version: string | null };
+  /**
+   * The plugin icon (from `package.json#penguin.icon`, `icon.svg` at the root by default),
+   * read through core's own reader: an SVG's markup or a PNG's bytes base64-encoded — safe
+   * by the same face every plugin icon passes. An icon in one of the reader's other image
+   * formats (jpeg, webp, gif, avif) stays out of this face: the manifest keeps svg and png.
+   * Null when the workbench ships none or it is refused.
+   */
+  iconSvg: { kind: "svg" | "png"; data: string } | null;
 }
 
 export { workbenchesDir } from "@prismshadow/penguin-core";
@@ -143,7 +152,7 @@ export async function readFolder(dir: string, id: string): Promise<WorkbenchFold
   } catch {
     return null;
   }
-  let pkg: { name?: unknown; version?: unknown } = {};
+  let pkg: { name?: unknown; version?: unknown; penguin?: { icon?: unknown } } = {};
   try {
     pkg = JSON.parse(raw) as typeof pkg;
   } catch {
@@ -167,6 +176,18 @@ export async function readFolder(dir: string, id: string): Promise<WorkbenchFold
       name: typeof pkg.name === "string" && pkg.name !== "" ? pkg.name : id,
       version: typeof pkg.version === "string" ? pkg.version : null,
     },
+    iconSvg: ((icon) => {
+      if (icon === undefined) return null;
+      // The manifest face keeps two of the reader's formats: an SVG as its markup (already
+      // sanitized by the reader), a PNG as its bytes base64-encoded.
+      if (icon.format === "svg") return { kind: "svg", data: new TextDecoder().decode(icon.bytes) };
+      if (icon.format === "png")
+        return { kind: "png", data: Buffer.from(icon.bytes).toString("base64") };
+      return null;
+    })(
+      readPluginIcon(dir, typeof pkg.penguin?.icon === "string" ? pkg.penguin.icon : undefined)
+        .icon,
+    ),
   };
 }
 

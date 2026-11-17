@@ -17,6 +17,7 @@
  *   DELETE /:id                    remove the folder and its state; its history is no longer listed
  *   GET    /:id/ui/*               a file of the workbench's `ui/` (the pages its tabs name), or
  *                                  the `.js` a TSX page compiled to (see compile-ui.ts)
+ *   GET    /:id/manifest.webmanifest  the workbench's PWA manifest (see manifest.ts)
  *   GET    /:id/sdk/ui/*           the page runtime compiled pages import (see ui-runtime.ts)
  *   GET    /:id/sdk/amsp.js        the page SDK: AMSP's browser build (see page-sdk.ts)
  *   GET    /:id/sdk/workbench.js   the page SDK: that build plus this server's signed-in door
@@ -61,6 +62,9 @@ import type { AgentConfig } from "../mechanisms/agents.js";
 import type { Access, Projects } from "../mechanisms/projects.js";
 import type { UiPrefsStore } from "../mechanisms/settings.js";
 import { MAX_ARCHIVE_BYTES } from "../services/skill-import-limits.js";
+import { forwardToMachine } from "../machines/proxy.js";
+import { MachineSocketRelay } from "../machines/socket-relay.js";
+import type { Machines } from "../machines/service.js";
 import type {
   WorkbenchRequest,
   WorkbenchResponse,
@@ -81,7 +85,8 @@ import {
 import { migrateWorkbenches } from "./migrate.js";
 import { withUiRuntime } from "./page-html.js";
 import { etagMatches, isPageSdkName, PAGE_SDK_CONTENT_TYPE, pageSdkFile } from "./page-sdk.js";
-import { WorkbenchDisabled, WorkbenchNotFound } from "./service.js";
+import { WorkbenchDisabled, contributedAppIcon, WorkbenchNotFound } from "./service.js";
+import { workbenchManifest } from "./manifest.js";
 import { isWorkbenchId, readFolder, workbenchesDir } from "./store.js";
 
 const MIME: Record<string, string> = {
@@ -123,6 +128,12 @@ const tooLarge = () =>
     "payload_too_large",
     `A workbench request body is at most ${MAX_BODY_BYTES} bytes`,
   );
+
+/** The headers both manifest routes answer with (see manifestRoutes). */
+const MANIFEST_HEADERS = {
+  "content-type": "application/manifest+json; charset=utf-8",
+  "cache-control": "no-cache",
+} as const;
 
 const isJson = (contentType: string | undefined): boolean => {
   if (contentType === undefined) return true;
@@ -272,6 +283,142 @@ export interface WorkbenchRouteDeps {
   agentConfig: Pick<AgentConfig, "requireExists">;
 }
 
+/**
+ * How the auth-less gate reaches a remote machine's identical gate: a forward through the
+ * machine's connection (built in setup from the Machines service, the machine proxy's own
+ * identity), answering the remote's Response verbatim — its status included, so an unknown
+ * workbench THERE is the 404 it is there. Null only when there is no live forward to the
+ * machine (the gate answers 503, the proxy's own answer for it).
+ */
+export type ThroughMachine = (
+  projectId: string,
+  agentId: string,
+  machineId: string,
+  workbenchId: string,
+  tabKey: string | undefined,
+) => Promise<Response | null>;
+
+/** The stand-in when no Machines service is wired in: every machine is simply unreachable. */
+const nullThroughMachine: ThroughMachine = () => Promise.resolve(null);
+
+/** A `WorkbenchNotFound` from the service is a 404 at the gate; anything else is its own error. */
+const notFound = (err: unknown): never => {
+  if (err instanceof WorkbenchNotFound) throw new HttpError(404, "not_found", err.message);
+  throw err;
+};
+
+/**
+ * The install manifest on its own, auth-less gate: a browser fetching a manifest for
+ * install carries no session for another host than the page's. It answers from the
+ * workbench's own folder — its name, version, tabs and icon — nothing per-user, and it runs
+ * no lifecycle: the read is `describe` (no migrate, no watcher, no compile/boot), so an
+ * anonymous request can only look at a package.json, and its 404 for a missing workbench
+ * says no more than the session-gated routes do.
+ *
+ * A workbench of a remote machine is named by `?machine=<id>` (the same query the app page
+ * reads): the local gate hops to THAT machine's identical auth-less gate over the machine's
+ * connection and answers with what it returned, with the machine named in `start_url` so the
+ * installed app opens the tab there. The browser's cookies never cross — the identity is the
+ * machine proxy's own (this server's admin session, minted over its ssh access to the
+ * machine).
+ */
+export function manifestRoutes(
+  workbenches: Workbenches,
+  throughMachine: ThroughMachine = nullThroughMachine,
+): Hono<AppEnv> {
+  const app = new Hono<AppEnv>();
+  const manifest = async (
+    projectId: string,
+    agentId: string,
+    id: string,
+    tabKey: string | undefined,
+    machineId: string | undefined,
+  ): Promise<string | Response> => {
+    // A manifest of a remote machine: what THAT gate answers, verbatim — status included
+    // (it generated the route with its own server's project/agent ids; the start_url's
+    // machine query is what points the installed app back at that machine).
+    if (machineId !== undefined) {
+      const remote = await throughMachine(projectId, agentId, machineId, id, tabKey);
+      if (remote === null)
+        throw new HttpError(503, "not_connected", `No live forward to ${machineId}.`);
+      return remote;
+    }
+    const info = await workbenches.describe(projectId, agentId, id).catch(notFound);
+    const tab = tabKey === undefined ? undefined : info.tabs.find((t) => t.key === tabKey);
+    if (tabKey !== undefined && tab === undefined)
+      throw new HttpError(404, "not_found", "No such tab on the workbench.");
+    // The icon of the tab this manifest is about — the first tab for the whole-workbench
+    // one (its name and page anchor the first tab, so its icon does too) — then the
+    // workbench's own plugin icon, then the main app's penguin.
+    const icon =
+      contributedAppIcon(tab === undefined ? info.tabs.slice(0, 1) : [tab]) ??
+      (await workbenches.iconSvg(projectId, agentId, id));
+    return JSON.stringify(workbenchManifest(projectId, agentId, info, icon, tabKey, machineId));
+  };
+  const machineOf = (c: { req: { query(name: string): string | undefined } }) => {
+    const machine = c.req.query("machine");
+    return machine === undefined || machine === "" ? undefined : machine;
+  };
+  // One manifest per workbench, and one per tab: the tab's own names the tab as the app —
+  // its title (or its declared shortName) and its own full-page route as start_url/scope.
+  app.get("/:id/manifest.webmanifest", async (c) => {
+    const projectId = requireValidId(c as never, "projectId");
+    const agentId = requireValidId(c as never, "agentId");
+    const body = await manifest(projectId, agentId, c.req.param("id"), undefined, machineOf(c));
+    if (body instanceof Response) return body;
+    return c.body(body, 200, MANIFEST_HEADERS);
+  });
+  app.get("/:id/tabs/:tabKey/manifest.webmanifest", async (c) => {
+    const projectId = requireValidId(c as never, "projectId");
+    const agentId = requireValidId(c as never, "agentId");
+    const body = await manifest(
+      projectId,
+      agentId,
+      c.req.param("id"),
+      c.req.param("tabKey"),
+      machineOf(c),
+    );
+    if (body instanceof Response) return body;
+    return c.body(body, 200, MANIFEST_HEADERS);
+  });
+  return app;
+}
+
+/**
+ * One manifest request to a remote machine's identical auth-less gate: the machine proxy's
+ * forward (this server's admin session on that machine, cookies dropped) answering the
+ * manifest's JSON body verbatim — null when there is no live forward to the machine (the
+ * gate answers 503, the proxy's own answer for it). The query's `machine` parameter is not
+ * forwarded: on THAT server the request is a local one.
+ */
+async function manifestThroughMachine(deps: {
+  machines: Machines;
+  projectId: string;
+  agentId: string;
+  machineId: string;
+  id: string;
+  tabKey: string | undefined;
+}): Promise<Response | null> {
+  const target = await deps.machines.proxyTarget(deps.machineId).catch(() => null);
+  if (target === null) return null;
+  const remotePath =
+    `/api/projects/${encodeURIComponent(deps.projectId)}` +
+    `/agents/${encodeURIComponent(deps.agentId)}` +
+    `/workbenches/${encodeURIComponent(deps.id)}` +
+    (deps.tabKey === undefined ? "" : `/tabs/${encodeURIComponent(deps.tabKey)}`) +
+    "/manifest.webmanifest";
+  const request = new Request(`http://localhost${remotePath}`, { method: "GET" });
+  const response = await forwardToMachine(
+    request,
+    { machineId: deps.machineId, remotePath },
+    target,
+    // No stream can be asked here (a manifest is a JSON GET), so a fresh relay stands in —
+    // the shared one lives with the machines service, which this read does not reach.
+    new MachineSocketRelay((line) => console.log(line)),
+  );
+  return response;
+}
+
 export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
@@ -284,11 +431,6 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
     deps.access.requireProjectAccess(c.var.user.userId, projectId);
     return { projectId, agentId };
   };
-  const notFound = (err: unknown): never => {
-    if (err instanceof WorkbenchNotFound) throw new HttpError(404, "not_found", err.message);
-    throw err;
-  };
-
   app.get("/", async (c) => {
     const { projectId, agentId } = scope(c);
     const workbenches = await deps.workbenches.list(projectId, agentId);
@@ -492,6 +634,10 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
     return new Response(file.body, { status: 200, headers });
   });
 
+  // The install manifest is served by the auth-less gate mounted ahead of this one
+  // (`WorkbenchManifestModule.routes`, the `manifestRoutes` sub-app above) — the browser
+  // fetching a manifest for install carries no session for another host than the page's.
+
   // The same files for every workbench, but only under one that exists: a page of another
   // Project, or of a workbench since removed, gets the 404 its own files would, and one that
   // is turned off the 409 its own files would.
@@ -582,6 +728,12 @@ export function appCenterRoutes(deps: AppCenterRouteDeps) {
   contributes: {
     "HttpModule.routes": [
       {
+        id: "WorkbenchManifestModule.routes",
+        prefix: "/api/projects/:projectId/agents/:agentId/workbenches",
+        auth: "none",
+        order: 19,
+      },
+      {
         id: "WorkbenchesModule.routes",
         prefix: "/api/projects/:projectId/agents/:agentId/workbenches",
         auth: "user",
@@ -603,8 +755,11 @@ export class WorkbenchRoutes {
   @Use() private readonly agentConfig!: AgentConfig;
   @Use() private readonly prefs!: UiPrefsStore;
   @Use() private readonly projects!: Projects;
+  @Use() private readonly machines!: Machines;
   @Bind("WorkbenchesModule.routes") routes!: Hono<AppEnv>;
   @Bind("WorkbenchesModule.appCenterRoutes") appCenterRoutes!: Hono<AppEnv>;
+  /** The manifest on its own auth-less gate, ahead of the session gate — see manifestRoutes. */
+  @Bind("WorkbenchManifestModule.routes") manifestRoutes!: Hono<AppEnv>;
   setup() {
     this.routes = workbenchRoutes({
       access: this.access,
@@ -618,5 +773,21 @@ export class WorkbenchRoutes {
       prefs: this.prefs,
       projects: this.projects,
     });
+    // The manifest answers without a session (see manifestRoutes): it reads only the
+    // workbench's own registration — its name, version, tabs and icon — nothing per-user.
+    // A remote machine's manifest rides the same forward the machine proxy uses: this
+    // server's admin session, minted over its ssh access to that machine.
+    this.manifestRoutes = manifestRoutes(
+      this.workbenches,
+      (projectId, agentId, machineId, id, tabKey) =>
+        manifestThroughMachine({
+          machines: this.machines,
+          projectId,
+          agentId,
+          machineId,
+          id,
+          tabKey,
+        }),
+    );
   }
 }

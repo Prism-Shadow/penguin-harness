@@ -176,12 +176,22 @@ async function writtenAgainst(dir: string, edit: (table: IfaceTable) => void): P
   await fs.writeFile(file, JSON.stringify(table));
 }
 
-/** Writes the demo workbench into `dir`: its manifest, its handler and its one page. */
+/** Writes the demo workbench into `dir`: its manifest, its handler, its one page and its PNG icon. */
 async function writeDemo(dir: string): Promise<void> {
   await fs.mkdir(path.join(dir, "ui"), { recursive: true });
-  await fs.writeFile(path.join(dir, "package.json"), packageJson());
   await fs.writeFile(path.join(dir, "index.ts"), indexSource("hello"));
   await fs.writeFile(path.join(dir, "ui", "index.html"), "<h1>demo v1</h1>");
+  await fs.writeFile(path.join(dir, "package.json"), packageJsonWithPenguinIcon());
+}
+
+/** The demo's package.json (no icon of its own; the manifest falls back to the penguin SVG). */
+function packageJsonWithPenguinIcon(): string {
+  return JSON.stringify({
+    name: "Demo",
+    version: "1.0.0",
+    type: "module",
+    penguin: { modules: [MANIFEST] },
+  });
 }
 
 /** An app with the owner's Project and the demo workbench written into its default Agent. */
@@ -231,7 +241,10 @@ describe("a loaded workbench", { timeout: 30_000 }, () => {
     expect(wf!.uiRev).toMatch(/^[0-9a-f]{12}$/);
     // The tab is the contribution, its page path turned into the URL it is served from.
     expect(wf!.tabs).toEqual([
-      { ...TAB, renderer: { iframe: { src: `${BASE}/demo/ui/index.html` } } },
+      {
+        ...TAB,
+        renderer: { iframe: { src: `${BASE}/demo/ui/index.html` } },
+      },
     ]);
     // The emitted code lives in a dot-directory: no part of the revision or the versions.
     // Beside it, what the load came to — the Agent's only view of it is its own files.
@@ -828,6 +841,39 @@ describe("editing a workbench", { timeout: 30_000 }, () => {
     await list();
     await writeContributions({ "WebModule.sessionTabs": [{ ...TAB, title: 7 }] });
     expect(await reloadError()).toContain("module tree rejected");
+  });
+
+  it("carries a tab's icon through as data, though the strip draws no icon", async () => {
+    // The icon is the app's icon for installing (the manifest takes the first tab that
+    // names one); it rides on the resolved tab as data, whatever the strip shows.
+    await list();
+    const icon = { kind: "svg", data: '<svg xmlns="http://www.w3.org/2000/svg"/>' };
+    await writeContributions({ "WebModule.sessionTabs": [{ ...TAB, icon }] });
+    const reloaded = await reload();
+    expect(reloaded.error).toBeNull();
+    expect(reloaded.tabs[0]).toMatchObject({ key: TAB.key, icon });
+  });
+
+  it("carries a tab's declared shortName, blank or absent meaning the title", async () => {
+    // The launcher label when the tab installs as its own app: declared it overrides the
+    // title for short_name; blank or of another type it means nothing, never an empty label.
+    await list();
+    await writeContributions({
+      "WebModule.sessionTabs": [
+        { ...TAB, shortName: "Brd" },
+        { ...TAB, id: "demo.stats", key: "stats", title: "Stats", shortName: "  " },
+      ],
+    });
+    const reloaded = await reload();
+    expect(reloaded.error).toBeNull();
+    const tabs = reloaded.tabs as { key: string; shortName?: string }[];
+    expect(tabs.find((t) => t.key === "board")!.shortName).toBe("Brd");
+    expect(tabs.find((t) => t.key === "stats")).not.toHaveProperty("shortName");
+    // And of another type it is dropped, not carried as a wrong-typed field.
+    await writeContributions({ "WebModule.sessionTabs": [{ ...TAB, shortName: 7 }] });
+    const typed = await reload();
+    expect(typed.error).toBeNull();
+    expect(typed.tabs[0]).not.toHaveProperty("shortName");
   });
 
   it("hints at pages with no tab and clears the hint when a tab is added", async () => {
