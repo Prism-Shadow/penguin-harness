@@ -30,4 +30,5 @@ export type {
   UsageEntitySeriesCounts,
   UsageErrorCount,
   ErrorContext,
+  UsageErrorItem,
 } from "./observability.js";
