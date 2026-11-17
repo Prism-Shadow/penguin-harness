@@ -7,9 +7,9 @@
  *   shown records nothing.
  * - The list hides dot-names and what the machine marks hidden, and puts folders first;
  *   type-to-select finds a folder by prefix and arrow keys skip files, stopping at the ends.
- * - The keyboard map reads the Finder chords with ⌘ on a Mac and Ctrl elsewhere, leaving Enter
- *   and Home/End to a text field; Explorer's address keys work off the Mac, and F5 refreshes
- *   everywhere.
+ * - The keyboard map reads the Finder chords with ⌘ on a Mac and Ctrl elsewhere (⇧⌘N, Explorer's
+ *   Ctrl+Shift+N, makes a folder), leaving Enter and Home/End to a text field; Explorer's
+ *   address keys work off the Mac, and F5 refreshes everywhere.
  * - Quick access takes the standard folders the machine resolved itself, or else finds each
  *   platform's by name (Windows ignoring case), takes the user's additions and removals (a
  *   default included), and stores them per machine, reading anything unreadable as none.
@@ -17,7 +17,9 @@
  *   Windows drive by its label or its type and then its letter, a Linux root as the file
  *   system, anything else by its own name.
  * - The context menu offers open, choose, Quick access and copy on a folder, copy only on a
- *   file, and acts on the open folder (with Refresh) from the list's empty space.
+ *   file, and acts on the open folder from the list's empty space, New folder first and Refresh
+ *   last; over a folder that could not be read it keeps only New folder (to say why it cannot
+ *   be used), copy and Refresh.
  * - Recent folds the newest Session per Workspace across Agents, leaving temporary ones out;
  *   "go to" resolves ~ against the machine's home, and a bare drive to its root.
  * - A folder the server may not read gets a box of its own: the desktop app's access request
@@ -160,6 +162,8 @@ describe("keyboard map", () => {
     expect(finderKeyAction(key("]", { ctrl: true }), false, true)).toBe("forward");
     expect(finderKeyAction(key("G", { meta: true, shift: true }), true, false)).toBe("goto");
     expect(finderKeyAction(key("ArrowDown", { meta: true }), true, true)).toBe("open");
+    expect(finderKeyAction(key("N", { meta: true, shift: true }), true, true)).toBe("newFolder");
+    expect(finderKeyAction(key("N", { ctrl: true, shift: true }), false, false)).toBe("newFolder");
   });
 
   it("leaves Enter and Home/End to a text field, but lets Up/Down steer the list", () => {
@@ -400,13 +404,19 @@ describe("the context menu", () => {
     expect(finderMenuItems({ ...folder, kind: "file" }, false)).toEqual(["copyPath"]);
   });
 
-  it("acts on the open folder from the list's empty space, with Refresh", () => {
+  it("acts on the open folder from the list's empty space, New folder first and Refresh last", () => {
     expect(finderMenuItems({ kind: "here", path: "/p", machine: null }, false)).toEqual([
+      "newFolder",
       "choose",
       "addToQuickAccess",
       "copyPath",
       "refresh",
     ]);
+  });
+
+  it("over a folder that could not be read, offers nothing that needs its listing", () => {
+    const here = { kind: "here" as const, path: "/p", machine: null, unreadable: true };
+    expect(finderMenuItems(here, false)).toEqual(["newFolder", "copyPath", "refresh"]);
   });
 });
 
