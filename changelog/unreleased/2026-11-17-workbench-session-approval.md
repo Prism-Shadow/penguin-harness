@@ -3,6 +3,7 @@
 - **Date:** 2026-11-17
 - **Type:** feat
 - **Scope:** `server`, `plugins`, `docs`
+- **PR:** [#1588](https://github.com/Prism-Shadow/penguin-harness/pull/1588)
 
 [中文版](2026-11-17-workbench-session-approval.zh.md)
 
