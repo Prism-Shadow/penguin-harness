@@ -1,2 +1,2 @@
-export * from "./session.js";
+export * from "./sessions.js";
 export * from "./schedules.js";
