@@ -142,31 +142,15 @@ export async function launchHarness(options: LaunchOptions = {}): Promise<Harnes
     penguinHome,
     chromeDir,
     async install(pluginDir: string) {
-      // Through the instance's own management surface — never a bare copy into the plugin
-      // prefix. The package directory is zipped (fflate, the same library the server's
-      // archive reader uses) and uploaded; the route installs it via npm, lists it in the
-      // project's table and applies (the loader flips a generation, so the next load
-      // carries it).
-      const { readdirSync, statSync, readFileSync } = await import("node:fs");
-      const { zipSync } = await import("fflate");
-      const files: Record<string, Uint8Array> = {};
-      const walk = (dir: string, prefix: string) => {
-        for (const entry of readdirSync(dir)) {
-          const full = path.join(dir, entry);
-          if (statSync(full).isDirectory()) {
-            walk(full, `${prefix}${entry}/`);
-          } else {
-            files[`${prefix}${entry}`] = new Uint8Array(readFileSync(full));
-          }
-        }
-      };
-      walk(pluginDir, "");
-      const zipped = zipSync(files);
-      const dataBase64 = Buffer.from(zipped).toString("base64");
-      const response = await fetch(`${base}/api/projects/${project}/plugins/installed/archive`, {
+      // Through the instance's own management surface, and by LINK (the same verb the
+      // author-facing `penguin plugin link` uses): the directory is referenced in place,
+      // no packaging, no copying — the author edits and the next load reads the edit.
+      // The route links the directory into the plugin prefix, lists it in the project's
+      // table and applies (the loader flips a generation, so the next load carries it).
+      const response = await fetch(`${base}/api/projects/${project}/plugins/installed/link`, {
         method: "POST",
         headers: { ...authHeaders, "content-type": "application/json" },
-        body: JSON.stringify({ dataBase64, overwrite: true }),
+        body: JSON.stringify({ dir: pluginDir, overwrite: true }),
       });
       if (!response.ok) {
         const detail = await response.text().catch(() => "");
