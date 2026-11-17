@@ -1,13 +1,16 @@
-// Resolves the generator from the sample package, wherever the checkout root sits.
-// (The sample lives nested inside plugins/penguin-testing-electron/test/e2e/, so a
-// repo-relative script path would be brittle; resolve the core package instead.)
-const { createRequire } = require("node:module");
+// The generator bin, resolved without npm's module tree: the sample is a self-contained
+// fixture package, so its build must not assume node_modules around it. Walk up to the
+// checkout root (the directory holding packages/) and run core's bin from there.
 const path = require("node:path");
-const req = createRequire(__filename);
-let bin;
-try {
-  bin = path.join(path.dirname(req.resolve("@prismshadow/penguin-core/package.json")), "bin", "gen-ifaces.mjs");
-} catch {
-  bin = path.join(__dirname, "../../../../../packages/core/bin/gen-ifaces.mjs");
+const { existsSync } = require("node:fs");
+let dir = __dirname;
+while (dir !== path.dirname(dir)) {
+  const candidate = path.join(dir, "packages", "core", "bin", "gen-ifaces.mjs");
+  if (existsSync(candidate)) {
+    require(candidate);
+    process.exit(0);
+  }
+  dir = path.dirname(dir);
 }
-require(bin);
+console.error("gen-ifaces: could not find packages/core from", __dirname);
+process.exit(1);
