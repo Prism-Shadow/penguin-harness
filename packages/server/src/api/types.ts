@@ -5336,6 +5336,8 @@ export interface QuickStartItem {
   skills?: string[];
   /** Open the draft in goal mode. */
   goal?: boolean;
+  /** Open the demo as a read-only planning discussion. */
+  plan?: boolean;
 }
 
 export interface PluginGroupItem {

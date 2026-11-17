@@ -7,6 +7,7 @@ export function usePlanMode(
   sessionId: string | undefined,
   status: SessionStatus,
   language: "zh" | "en",
+  initialPlan: boolean,
 ) {
   const [plan, setPlan] = useState<SessionPlan | null>(null);
   const [pending, setPending] = useState(false);
@@ -14,9 +15,9 @@ export function usePlanMode(
   const current = useRef(sessionId);
   current.current = sessionId;
   useEffect(() => {
-    setPlan(null);
+    setPlan(!sessionId && initialPlan ? { proposal: null } : null);
     setPending(false);
-  }, [sessionId]);
+  }, [sessionId, initialPlan]);
   const refresh = useCallback(() => {
     if (!sessionId) return;
     const id = ++request.current;

@@ -14,6 +14,7 @@ import type { Plugin } from "@prismshadow/penguin-core/plugin";
         category: "office-productivity",
         icon: "icon.svg",
         quickStart: {
+          plan: true,
           prompt:
             "Help me plan a migration. Ask which systems and constraints matter before drafting it.",
           promptZh: "帮我规划一次迁移。请先问清涉及哪些系统和限制，再起草方案。",

@@ -616,6 +616,7 @@ export function ChatInput({
   skills,
   initialSkills,
   initialGoal,
+  initialPlan = false,
   goalPlugin = null,
   onSkillsChange,
   onHandoff,
@@ -836,6 +837,7 @@ export function ChatInput({
   initialSkills?: string[];
   /** Start in goal mode (a plugin's quick start whose demo is a goal): read once on mount. */
   initialGoal?: boolean;
+  initialPlan?: boolean;
   /**
    * The goal plugin check for the Agent this composer sends to (goal-plugin-gate.ts): while the
    * goal chip is engaged and the plugin is missing, a notice above the input offers to install
@@ -973,7 +975,7 @@ export function ChatInput({
     goalBudget !== null && goalBudget !== UNLIMITED_BUDGET
       ? S.chat.goalBudgetValue(humanizeTokens(goalBudget))
       : S.chat.goalBudgetUnlimited;
-  const planning = usePlanMode(sessionId, status, locale);
+  const planning = usePlanMode(sessionId, status, locale, initialPlan);
   const planOn = planning.plan !== null;
   const planGate = useGoalPluginGate(goalPlugin, planOn, "plan");
   const goalGate = useGoalPluginGate(goalPlugin, goalOn);
