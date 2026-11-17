@@ -37,7 +37,8 @@ it.each(["main", "child"])(
       lastActiveAt: "2026-10-26T00:00:00Z",
     });
     const usage = wire(UsageRepo, { db });
-    const recorder = wire(UsageRecorder, { usage, clock: { now: () => new Date() } });
+    const projects = { findById: (projectId: string) => ({ projectId }) };
+    const recorder = wire(UsageRecorder, { usage, projects, clock: { now: () => new Date() } });
     let finishModel!: (result: SessionTitleResult) => void;
     const model = new Promise<SessionTitleResult>((resolve) => (finishModel = resolve));
     let titleFinished!: () => void;

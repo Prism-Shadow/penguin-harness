@@ -71,7 +71,7 @@ export class SubagentSessionManager {
     this.approvalFallback = approve;
     for (const session of [...this.live]) {
       if (session.disposed) {
-        this.live.delete(session);
+        this.dropDisposed(session);
         continue;
       }
       session.setFallbackApprovalSink(approve);
@@ -88,7 +88,7 @@ export class SubagentSessionManager {
     let found: ManagedSubagentSession | undefined;
     for (const session of [...this.live]) {
       if (session.disposed) {
-        this.live.delete(session);
+        this.dropDisposed(session);
         continue;
       }
       if (session.sessionId === sessionId) found = session;
@@ -103,7 +103,7 @@ export class SubagentSessionManager {
     const out: BackgroundSubagentInfo[] = [];
     for (const session of [...this.live]) {
       if (session.disposed) {
-        this.live.delete(session);
+        this.dropDisposed(session);
         continue;
       }
       out.push({
@@ -167,8 +167,20 @@ export class SubagentSessionManager {
     return this.registry.get(subagentId);
   }
 
-  /** Disposes: removes the fallback registration and finalizes all sessions (the process 'exit' fallback is hooked by the registry itself). Idempotent. */
-  dispose(): void {
+  /** A killed session leaves the index once its round has wound down: until then dispose still waits for it. */
+  private dropDisposed(session: ManagedSubagentSession): void {
+    if (!session.running) this.live.delete(session);
+  }
+
+  /**
+   * Disposes: removes the fallback registration and kills every session — registered, still in
+   * a foreground window, or killed and still winding down — and resolves once each has finished
+   * writing (the process 'exit' fallback is hooked by the registry itself). Idempotent.
+   */
+  dispose(): Promise<void> {
+    const children = new Set([...this.live, ...this.registry.list().map(({ task }) => task)]);
     this.registry.dispose();
+    for (const child of children) child.kill();
+    return Promise.allSettled([...children].map((child) => child.whenSettled())).then(() => {});
   }
 }

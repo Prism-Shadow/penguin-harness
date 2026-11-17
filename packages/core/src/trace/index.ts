@@ -7,4 +7,9 @@ export {
   readTraceTolerant,
   resumeTrace,
 } from "./resume.js";
-export type { LocatedTraceFile, ParseTraceLinesOptions, ResumeResult } from "./resume.js";
+export type {
+  LocatedTraceFile,
+  ParseTraceLinesOptions,
+  ResumeResult,
+  ResumeTraceOptions,
+} from "./resume.js";

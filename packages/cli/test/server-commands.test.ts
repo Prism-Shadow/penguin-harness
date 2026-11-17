@@ -234,6 +234,16 @@ describe("penguin session ls", () => {
     expect(out()).toContain(run.sessionId.slice(-8));
   });
 
+  it("cuts a long title before an emoji that straddles the 40th character", async () => {
+    // A cut between an emoji's two UTF-16 halves would print a lone half, which shows as `�`.
+    server.addSession({
+      sessionId: "session-2026-08-25-10-00-00-e3010001",
+      title: `${"x".repeat(39)}\u{1F680} and more`,
+    });
+    expect(await cli(["session", "ls"])).toBe(0);
+    expect(out()).toContain(`${"x".repeat(39)}  `);
+  });
+
   it("--json prints the raw rows", async () => {
     server.addSession({});
     await cli(["session", "ls", "--json"]);

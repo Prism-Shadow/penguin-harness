@@ -50,6 +50,7 @@ import {
   Skeleton,
   toastSuccess,
   type ChannelSender,
+  WallpaperSurface,
 } from "@prismshadow/penguin-ui";
 
 import * as api from "../../api/endpoints";
@@ -591,7 +592,7 @@ export function ChannelView() {
               timeLabel={S.company.channels.sentAt(at)}
               footer={renderRefs(m)}
             >
-              <ChannelMessageBody text={m.text} />
+              <ChannelMessageBody text={m.text} projectId={projectId} />
             </ChannelBubble>
           );
         })}
@@ -603,7 +604,7 @@ export function ChannelView() {
 
   return (
     <ChannelReaderProvider reader={reader}>
-      <div className="flex h-full min-h-0 flex-col bg-white dark:bg-gray-950">
+      <WallpaperSurface className="flex h-full min-h-0 flex-col bg-white dark:bg-gray-950">
         <ChannelHeader
           projectId={projectId}
           orgId={orgId}
@@ -735,7 +736,7 @@ export function ChannelView() {
           onClose={() => setConfirmJoin(false)}
           onConfirm={() => void join()}
         />
-      </div>
+      </WallpaperSurface>
     </ChannelReaderProvider>
   );
 }

@@ -5,7 +5,13 @@
  */
 import { useEffect, useState } from "react";
 import { Link, useLocation, useParams } from "react-router";
-import { ChevronDownIcon, Fold, SiteGlyph, useSiteLocale } from "@prismshadow/penguin-ui/site";
+import {
+  ChevronDownIcon,
+  Fold,
+  SiteGlyph,
+  SiteSegmented,
+  useSiteLocale,
+} from "@prismshadow/penguin-ui/site";
 import {
   AuthorName,
   CountTitle,
@@ -31,8 +37,8 @@ const TONE = KIND_TONE.benchmark;
 export function BenchmarkPage() {
   const { id = "" } = useParams();
   const benchmark = useHubDetail("benchmark", id);
-  if (benchmark === undefined) return <HubPending />;
-  if (benchmark === null) return <HubMissing listHref="/benchmarks" />;
+  if (benchmark === undefined) return <HubPending kind="benchmark" />;
+  if (benchmark === null) return <HubMissing kind="benchmark" />;
   return <BenchmarkView benchmark={benchmark} />;
 }
 
@@ -62,6 +68,7 @@ function BenchmarkView({ benchmark }: { benchmark: BenchmarkDetail }) {
 
   return (
     <HubDetail
+      kind="benchmark"
       lead={<HubTile tone={benchmarkTone(benchmark.id)} glyph="target" size="lg" />}
       title={title}
       subtitle={benchmark.id}
@@ -185,28 +192,13 @@ function TaskRow({
           <div className="px-4 pb-5 sm:px-5">
             <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
               {parts.length > 1 ? (
-                <div
+                <SiteSegmented
                   role="tablist"
-                  aria-label={t.taskParts}
-                  className="inline-flex rounded-lg border border-gray-200 p-0.5 dark:border-gray-700"
-                >
-                  {parts.map((candidate) => (
-                    <button
-                      key={candidate}
-                      type="button"
-                      role="tab"
-                      aria-selected={candidate === part}
-                      onClick={() => setChosen(candidate)}
-                      className={`rounded-md px-2.5 py-1 text-sm whitespace-nowrap transition-colors ${
-                        candidate === part
-                          ? "bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
-                          : "text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
-                      }`}
-                    >
-                      {t[candidate]}
-                    </button>
-                  ))}
-                </div>
+                  label={t.taskParts}
+                  options={parts.map((id) => ({ id, label: t[id] }))}
+                  value={part!}
+                  onChange={setChosen}
+                />
               ) : (
                 <span />
               )}

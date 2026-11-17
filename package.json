@@ -19,7 +19,7 @@
     "build": "pnpm -r build && pnpm link:cli",
     "link:cli": "node scripts/dev-cli-link/link.mjs",
     "penguin": "node scripts/run-with-env.mjs --unset=PENGUIN_CLI_ENTRY PENGUIN_HOME=~/.penguin/dev-data-cli PENGUIN_PROFILE=dev PORT=7369 -- tsx packages/cli/src/penguin.ts",
-    "dev": "concurrently -n server,web -c cyan,magenta \"pnpm dev:server\" \"pnpm dev:web\"",
+    "dev": "node scripts/run-with-env.mjs PENGUIN_DEV_APP_PORT=7365 -- concurrently -n server,web -c cyan,magenta \"pnpm dev:server\" \"pnpm dev:web\"",
     "dev:server": "pnpm --filter @prismshadow/penguin-server dev",
     "dev:web": "node scripts/dev-prebuild.mjs && pnpm --filter @prismshadow/penguin-web dev",
     "dev:docs": "node scripts/dev-prebuild.mjs --install-only && pnpm --filter @prismshadow/penguin-docs dev",

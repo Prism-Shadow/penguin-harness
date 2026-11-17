@@ -39,7 +39,7 @@ function linuxFirefox(): string {
   return path.join(root, "k3y.default-release");
 }
 
-const firstSource = () => listImportSources(machine.env())[0]!;
+const firstSource = async () => (await listImportSources(machine.env()))[0]!;
 
 describe("Firefox cookies", () => {
   it("reads expiry in seconds or milliseconds by magnitude and maps SameSite", async () => {
@@ -51,7 +51,7 @@ describe("Firefox cookies", () => {
       { host: ".github.com", name: "none", value: "c", expiry: future, sameSite: 0 },
       { host: ".github.com", name: "insecure-none", value: "d", expiry: future, secure: false },
     ]);
-    const result = await readCookies(firstSource(), {}, machine.env());
+    const result = await readCookies(await firstSource(), {}, machine.env());
     expect(result).toMatchObject({ found: 4, skipped: 0, warnings: [] });
     expect(result.cookies.map((c) => [c.name, c.expirationDate, c.sameSite, c.domain])).toEqual([
       ["seconds", future, "lax", ".github.com"],
@@ -84,7 +84,11 @@ describe("Firefox cookies", () => {
       },
       { host: ".ebay.com", name: "other-site", value: "e", expiry: future },
     ]);
-    const result = await readCookies(firstSource(), { domains: ["amazon.com"] }, machine.env());
+    const result = await readCookies(
+      await firstSource(),
+      { domains: ["amazon.com"] },
+      machine.env(),
+    );
     expect(result).toMatchObject({ found: 4, skipped: 3 });
     expect(result.cookies.map((c) => c.name)).toEqual(["live"]);
   });
@@ -110,7 +114,7 @@ describe("history", () => {
         { url: "https://ads.example/frame", title: "frame", visitedAt: t, hidden: true },
       ],
     );
-    const result = await readHistory(firstSource(), machine.env());
+    const result = await readHistory(await firstSource(), machine.env());
     expect(result.warnings).toEqual([]);
     expect(result.entries).toEqual([
       {
@@ -145,7 +149,7 @@ describe("history", () => {
       { url: "https://bookmark.only/", title: "Bookmark", visitedAt: null },
       { url: "about:config", title: "config", visitedAt: t },
     ]);
-    const result = await readHistory(firstSource(), machine.env());
+    const result = await readHistory(await firstSource(), machine.env());
     expect(result.entries).toEqual([
       {
         url: "https://developer.mozilla.org/",
@@ -167,7 +171,7 @@ describe("history", () => {
         visitedAt: t - i,
       })),
     );
-    const { entries } = await readHistory(firstSource(), machine.env());
+    const { entries } = await readHistory(await firstSource(), machine.env());
     expect(entries).toHaveLength(HISTORY_LIMIT);
     expect(entries[0]!.url).toBe("https://site.example/0");
     expect(entries.at(-1)!.url).toBe(`https://site.example/${HISTORY_LIMIT - 1}`);
@@ -194,7 +198,7 @@ describe("the private copy", () => {
       expect(fs.existsSync(`${file}-wal`)).toBe(true);
       const before = fs.readFileSync(file);
 
-      const result = await readCookies(firstSource(), {}, machine.env());
+      const result = await readCookies(await firstSource(), {}, machine.env());
       expect(result.cookies.map((c) => c.name).sort()).toEqual(["checkpointed", "in-wal"]);
       expect(fs.readdirSync(machine.tmp)).toEqual([]);
       expect(fs.readFileSync(file).equals(before)).toBe(true);
@@ -209,7 +213,7 @@ describe("the private copy", () => {
       { host: ".a.com", name: "n", value: "1" },
     ]);
     const env = { ...machine.env(), tmpdir: path.join(machine.root, "no-such-dir") };
-    const result = await readCookies(listImportSources(env)[0]!, {}, env);
+    const result = await readCookies((await listImportSources(env))[0]!, {}, env);
     expect(result).toEqual({
       cookies: [],
       found: 0,
