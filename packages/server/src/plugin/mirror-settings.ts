@@ -129,9 +129,21 @@ export function mirrorRulesOf(value: unknown): readonly PluginProxyRule[] {
             // server still holds a list of ids and `mirrorRulesOf` filters what it reads.
             items: {
               options: [
-                { value: "npm-registry", title: "npm registry mirror (npmmirror)", titleZh: "npm registry 镜像（npmmirror）" },
-                { value: "github-raw", title: "GitHub raw via jsDelivr (fastly)", titleZh: "GitHub raw 经 jsDelivr（fastly）" },
-                { value: "github-proxy", title: "GitHub proxy (gh-proxy.com)", titleZh: "GitHub 代理（gh-proxy.com）" },
+                {
+                  value: "npm-registry",
+                  title: "npm registry mirror (npmmirror)",
+                  titleZh: "npm registry 镜像（npmmirror）",
+                },
+                {
+                  value: "github-raw",
+                  title: "GitHub raw via jsDelivr (fastly)",
+                  titleZh: "GitHub raw 经 jsDelivr（fastly）",
+                },
+                {
+                  value: "github-proxy",
+                  title: "GitHub proxy (gh-proxy.com)",
+                  titleZh: "GitHub 代理（gh-proxy.com）",
+                },
               ],
             },
             // The ids the group knows; the page draws them as the choices a line can be.

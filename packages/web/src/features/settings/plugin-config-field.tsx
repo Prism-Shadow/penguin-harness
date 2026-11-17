@@ -7,13 +7,7 @@
  * motion.
  */
 import type { PluginConfigEntry, PluginConfigField } from "@prismshadow/penguin-server/api";
-import {
-  Checkbox,
-  Input,
-  PasswordInput,
-  Select,
-  ToggleRow,
-} from "@prismshadow/penguin-ui";
+import { Checkbox, Input, PasswordInput, Select, ToggleRow } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import type { Locale } from "../../state/locale";
 import { localizedText } from "../../lib/skill-use";

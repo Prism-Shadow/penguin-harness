@@ -5,8 +5,7 @@
  * the lines joined with newlines — so the save, the validation and what the server stores
  * are exactly what they were: a string array, trimmed and de-duplicated there.
  */
-import { Button, GlyphIcon, ICONS, Input, Select } from "@prismshadow/penguin-ui";
-import { ICON_SIZE } from "@prismshadow/penguin-ui";
+import { Button, GlyphIcon, ICONS, ICON_SIZE, Input, Select } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import type { Locale } from "../../state/locale";
 import { localizedText } from "../../lib/skill-use";
@@ -32,7 +31,8 @@ export function ConfigListEditor({
     en === undefined ? undefined : localizedText(locale, en, zh);
   const hint = localized(field.hint, field.hintZh);
   const info = localized(field.description, field.descriptionZh);
-  const disclosed = info !== undefined ? { info, infoLabel: localized(field.title, field.titleZh) ?? "" } : {};
+  const disclosed =
+    info !== undefined ? { info, infoLabel: localized(field.title, field.titleZh) ?? "" } : {};
   const options = field.items?.options;
   const lines = typeof value === "string" && value !== "" ? value.split("\n") : [];
   const set = (next: string[]) => onChange(next.join("\n"));
@@ -49,7 +49,11 @@ export function ConfigListEditor({
       <div className="text-sm font-medium">
         {label}
         {info !== undefined && (
-          <span className="ml-2 cursor-help text-xs font-normal text-fg-muted" title={info}>
+          <span
+            className="ml-2 cursor-help text-xs font-normal text-fg-muted"
+            data-tooltip={info}
+            aria-label={`${label}: ${info}`}
+          >
             ?
           </span>
         )}
@@ -132,7 +136,9 @@ export function ConfigListEditor({
           {S.settings.pluginListAdd}
         </Button>
         {(hint !== undefined || error !== undefined) && (
-          <div className={`text-xs ${error !== undefined ? "text-red-600 dark:text-red-400" : "text-fg-muted"}`}>
+          <div
+            className={`text-xs ${error !== undefined ? "text-red-600 dark:text-red-400" : "text-fg-muted"}`}
+          >
             {error ?? hint}
           </div>
         )}

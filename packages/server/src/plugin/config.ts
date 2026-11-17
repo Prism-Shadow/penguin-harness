@@ -540,7 +540,9 @@ export function parsePluginConfiguration(
       }
       if (items.options !== undefined) {
         // The same check an enum's options get: the page draws a picker from them.
-        field.items = { options: parseOptions(items.options, `${where}: configuration.properties.${name}.items`) };
+        field.items = {
+          options: parseOptions(items.options, `${where}: configuration.properties.${name}.items`),
+        };
       }
     }
     if (field.type === "number") {

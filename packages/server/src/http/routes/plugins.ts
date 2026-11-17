@@ -602,18 +602,15 @@ function resolveRegistries(options: PluginRoutesOptions): PluginRegistry[] {
   const fetchImpl = options.fetchImpl ?? fetch;
   const mirrors = indexMirrorRules();
   const remote = urls.map((url, i) =>
-    cachedRegistry(
-      httpPluginRegistry([url, ...pluginProxyMirrors(url, mirrors)], { fetchImpl }),
-      {
-        // Only a snapshot the same URL fetched seeds this registry: a parked document without
-        // its URL (a v1 park, before snapshots named their source) seeds nothing, since which
-        // source it came from is unknown.
-        seed:
-          i === 0 && seed !== null && seed.url === url
-            ? { at: seed.at, entries: seed.entries.map(withoutIcon) }
-            : null,
-      },
-    ),
+    cachedRegistry(httpPluginRegistry([url, ...pluginProxyMirrors(url, mirrors)], { fetchImpl }), {
+      // Only a snapshot the same URL fetched seeds this registry: a parked document without
+      // its URL (a v1 park, before snapshots named their source) seeds nothing, since which
+      // source it came from is unknown.
+      seed:
+        i === 0 && seed !== null && seed.url === url
+          ? { at: seed.at, entries: seed.entries.map(withoutIcon) }
+          : null,
+    }),
   );
   if (remote.length > 0) options.onCache?.(remote[0]!, urls[0]!);
   return [builtin, ...remote];

@@ -342,10 +342,9 @@ export function indexChannelLookup(
       const registered = new Set<string>();
       for (const url of urls) {
         try {
-          const fromSource = await httpPluginRegistry(
-            [url, ...pluginProxyMirrors(url, mirrors)],
-            { fetchImpl },
-          ).index();
+          const fromSource = await httpPluginRegistry([url, ...pluginProxyMirrors(url, mirrors)], {
+            fetchImpl,
+          }).index();
           const fresh = fromSource.filter((entry) => !registered.has(entry.name));
           for (const entry of fresh) registered.add(entry.name);
           rows.push(...fresh);
