@@ -61,6 +61,7 @@ const EXCLUDE = `# Written by PenguinHarness for git run by a person with --work
 node_modules/
 *.penguin-tmp*
 workbenches/*/state.json
+workbenches/*/.files/
 `;
 
 /** The Agent State repository of the Agent whose directory this is. */

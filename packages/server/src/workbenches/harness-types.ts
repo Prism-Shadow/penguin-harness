@@ -129,7 +129,20 @@ check: \`const sdk = "../sdk/workbench.js"; await import(sdk)\`.
 snapshot: \`running\`, \`completed\` with the final \`text\`, or \`failed\` with an \`error\`.
 Persist the Session id with \`host.setState\`, then poll from GET requests until terminal. Do not
 mark a running snapshot failed because its text is empty. Store small reports in host state;
-keep uploaded files outside this watched source directory. Never edit state.json by hand.
+keep uploaded files in \`.files/\` (below), never among the source. Never edit state.json by hand.
+
+## Files shared with the Agent
+
+\`host.listFiles()\`, \`readFile(path)\`, \`writeFile(path, data)\` and \`removeFile(path)\` work on
+\`.files/\` in this folder: documents BOTH the handler and the Agent write, the Agent with its own
+file tools. Use it for what the user edits in the page and asks the Agent to change: one file on
+disk, each side reading what the other wrote last. It is not source: a write reloads nothing and
+enters no version, and a rollback or a plugin update leaves it alone. \`host.filePath(path)\` is
+the file's path on this machine: name it when a run asks the Agent to edit the file. To notice the
+Agent's writes, call \`listFiles()\` on a timer while a page is connected and compare \`mtimeMs\`
+and \`size\`. Paths are \`/\`-separated and stay inside the folder; links are never followed; a file
+is at most 50 MB. A \`plugin.d.ts\` here without \`listFiles\` predates it; delete \`.harness/\` to
+take it.
 
 ## A Session that only talks
 

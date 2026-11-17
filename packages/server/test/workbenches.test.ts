@@ -7,6 +7,8 @@
  *   under ui/ (no default document, nothing outside it) and dispatches to its handler, and its
  *   state persists on disk across a reload.
  * - Its own state write is not an edit: the revision holds and nothing is left staged.
+ * - It shares `.files/` with its Agent: the handler's write is a file on disk at the path the
+ *   host names, the Agent's write is listed and read by the handler, and neither reloads it.
  * - With a configured model credential, it opens and runs Sessions the SDK's way, inside
  *   its own Project only, with allow-all: nobody is there to answer an ask. Its Sessions
  *   are archived with workbench provenance, including before their first run after a restart.
@@ -166,6 +168,16 @@ export default {
                   const headers: Record<string, string> = { location: "page" };
                   return { status: 302, headers };
                 }
+                if (req.path === "/files" && req.method === "POST") {
+                  // The page saves a document the Agent edits with its own file tools.
+                  const written = await host.writeFile("decks/a.json", JSON.stringify(req.body));
+                  return { body: { written, at: host.filePath("decks/a.json") } };
+                }
+                if (req.path === "/files") {
+                  const notes = await host.readFile("notes/agent.md");
+                  const files = (await host.listFiles()).map((file) => file.path);
+                  return { body: { files, notes: notes === null ? null : Array.from(notes, (b) => String.fromCharCode(b)).join("") } };
+                }
                 if (req.path === "/count" && req.method === "POST") {
                   const n = (((host.getState() ?? {}) as { count?: number }).count ?? 0) + 1;
                   await host.setState({ count: n });
@@ -319,6 +331,38 @@ describe("a loaded workbench", { timeout: 30_000 }, () => {
     expect(after!.loadedAt).toBe(before!.loadedAt);
     const left = (await fs.readdir(dir)).filter((n) => n.includes("tmp"));
     expect(left).toEqual([]);
+  });
+
+  it("shares a folder of files with its Agent: each side reads what the other wrote, and neither write is an edit", async () => {
+    const [before] = await list();
+
+    const saved = await owner.post(`${BASE}/demo/api/files`, { title: "A" });
+    expect(saved.status).toBe(200);
+    const { written, at } = (await saved.json()) as {
+      written: { path: string; size: number; mtimeMs: number };
+      at: string;
+    };
+    expect(written).toMatchObject({ path: "decks/a.json", size: 13 });
+    // The path the host names is where the Agent finds the handler's write.
+    const deck = path.join(dir, ".files", "decks", "a.json");
+    expect(await fs.realpath(at)).toBe(await fs.realpath(deck));
+    expect(await fs.readFile(deck, "utf8")).toBe('{"title":"A"}');
+
+    // The Agent writes a second file with its own file tools.
+    await fs.mkdir(path.join(dir, ".files", "notes"), { recursive: true });
+    await fs.writeFile(path.join(dir, ".files", "notes", "agent.md"), "from the Agent");
+    const listed = await owner.get(`${BASE}/demo/api/files`);
+    expect(await listed.json()).toEqual({
+      files: ["decks/a.json", "notes/agent.md"],
+      notes: "from the Agent",
+    });
+
+    // Past the watcher's settle time, the same load still serves: no reload, no new version.
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    const [after] = await list();
+    expect(after!.revision).toBe(before!.revision);
+    expect(after!.loadedAt).toBe(before!.loadedAt);
+    expect(after!.error).toBeNull();
   });
 
   it("opens and runs Sessions the SDK's way, inside its own Project only", async () => {
