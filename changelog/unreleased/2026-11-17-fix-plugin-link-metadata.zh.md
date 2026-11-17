@@ -3,6 +3,7 @@
 - **Date:** 2026-11-17
 - **Type:** fix
 - **Scope:** `server`, `cli`
+- **PR:** [#1600](https://github.com/Prism-Shadow/penguin-harness/pull/1600)
 
 [English](2026-11-17-fix-plugin-link-metadata.md)
 
