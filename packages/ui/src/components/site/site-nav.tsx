@@ -7,7 +7,8 @@ import { useEscLayer } from "../overlays/esc-layers/esc-layers";
 import { SiteGitHubLink, SiteLanguageMenu, SiteThemeToggle } from "./site-controls";
 import type { SiteLangPref, SiteThemeMode } from "./site-controls";
 import { SiteHeader } from "./site-header";
-import type { SiteLink, SiteLinkProps } from "./site-header";
+import { isSiteLinkGroup } from "./site-link";
+import type { SiteLink, SiteLinkProps, SiteNavItem } from "./site-link";
 
 /** The pages every site's bar links to, in the order it shows them. */
 export const SITE_PAGES = [
@@ -17,14 +18,20 @@ export const SITE_PAGES = [
   "plugins",
   "benchmarks",
   "leaderboards",
-  "amsp",
   "docs",
+  "amsp",
   "gallery",
 ] as const;
 export type SitePage = (typeof SITE_PAGES)[number];
 
-/** A host's words for the bar: one per page, plus the GitHub link's and the menu button's. */
-export type SiteNavLabels = Record<SitePage | "github" | "openMenu" | "closeMenu", string>;
+/** The pages the bar gathers under one "More" entry, which ends its row. */
+const MORE_PAGES: readonly SitePage[] = ["amsp", "gallery"];
+
+/**
+ * A host's words for the bar: one per page, the "More" entry's, and the GitHub link's and the
+ * menu button's.
+ */
+export type SiteNavLabels = Record<SitePage | "more" | "github" | "openMenu" | "closeMenu", string>;
 
 /**
  * Where each page sits under the site root. The landing page's own pages carry no trailing slash,
@@ -64,7 +71,10 @@ export interface SiteLinkOverride {
   render?: (props: SiteLinkProps) => ReactNode;
 }
 
-/** The bar's links, in page order, with `current` marked as the page being read. */
+/**
+ * The bar's entries, in page order, with `current` marked as the page being read: each page of
+ * the row, then the "More" group holding the rest.
+ */
 export function siteNavLinks({
   siteRoot,
   labels,
@@ -76,14 +86,18 @@ export function siteNavLinks({
   labels: SiteNavLabels;
   current: SitePage | null;
   overrides?: Partial<Record<SitePage, SiteLinkOverride>>;
-}): SiteLink[] {
-  return SITE_PAGES.map((id) => ({
+}): SiteNavItem[] {
+  const link = (id: SitePage): SiteLink => ({
     id,
     href: `${siteRoot}${PAGE_PATHS[id]}`,
     label: labels[id],
     active: id === current,
     ...overrides[id],
-  }));
+  });
+  return [
+    ...SITE_PAGES.filter((id) => !MORE_PAGES.includes(id)).map(link),
+    { id: "more", label: labels.more, links: MORE_PAGES.map(link) },
+  ];
 }
 
 /** Escape closes an open site menu, unless a menu opened above it (the language menu) is on top. */
@@ -107,7 +121,7 @@ export function SiteNav({
   name: string;
   logo: string;
   labels: SiteNavLabels;
-  links: readonly SiteLink[];
+  links: readonly SiteNavItem[];
   /** The logo's link; the home page's link unless the host needs its own (one that closes a menu). */
   home?: SiteLink;
   language: {
@@ -135,7 +149,10 @@ export function SiteNav({
     <SiteHeader
       name={name}
       logo={logo}
-      home={home ?? links.find((link) => link.id === "home")!}
+      home={
+        home ??
+        links.find((link): link is SiteLink => !isSiteLinkGroup(link) && link.id === "home")!
+      }
       links={links}
       actions={
         <>

@@ -66,6 +66,7 @@ import {
   rowBuiltin,
   rowInstalledOnServer,
   rowIcon,
+  rowLinked,
   rowShortDescription,
   rowTitle,
   rowVersion,
@@ -434,6 +435,14 @@ export function PluginCard(props: PluginCardProps) {
     tags.push(
       <PluginTag key="installed" title={S.plugins.installedOnServerHint}>
         {S.plugins.installedOnServer}
+      </PluginTag>,
+    );
+  }
+  const linked = rowLinked(row);
+  if (linked !== null) {
+    tags.push(
+      <PluginTag key="linked" title={S.plugins.linkedHint(linked.linkPath)}>
+        {S.plugins.linkedTag}
       </PluginTag>,
     );
   }

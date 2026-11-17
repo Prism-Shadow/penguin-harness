@@ -23,11 +23,11 @@ import {
   resolveProjectId,
   ServerClient,
   shortSessionId,
-} from "../client.js";
+} from "@prismshadow/penguin-server/cli";
 import { getSessionMessages, resolveSessionTarget } from "../server-session.js";
 import { SessionStream, nextFrameOrDeadline } from "../server-task.js";
 import type { AmspRecord } from "@prismshadow/penguin-core";
-import type { Messages } from "../i18n.js";
+import type { Messages } from "@prismshadow/penguin-server/cli";
 
 /** Registers `log` under the `penguin session` group (see session.ts). */
 export function registerLogCommand(session: Command, t: Messages): void {

@@ -1,32 +1,36 @@
 /**
- * The month calendar every date picker opens, after iOS's: a head with the month and year and the
- * two month steps, a row of weekdays in the order the locale's week runs (Monday first for zh-CN,
- * Sunday for en-US), and six weeks of days, always six so the grid keeps its height from one month
- * to the next. A day is a disc: the picked day filled with the accent, today in the accent's ink
- * and weight inside a hairline ring of it, a day outside the bounds faded and not pickable, and the
- * days of the months on either side left blank. A range draws its two ends as discs and the days
- * between them on one flat band.
+ * The month calendar every date picker opens, after Material 3's: a head with a month menu and a
+ * year menu (in the order the locale names them: 2026年 11月, November 2026) and the two month
+ * steps, a row of weekdays in the order the locale's week runs (Monday first for zh-CN, Sunday
+ * for en-US), each as its narrow name with the whole one on hover, and six weeks of days, always
+ * six so the grid keeps its height from one month to the next. A day takes the theme's control
+ * shape (a disc in Frost, a square in Console): the picked day filled with the accent, today in
+ * the accent's ink and weight inside a hairline ring of it, a day outside the bounds faded and
+ * not pickable, and the days of the months on either side left blank. A range draws its two ends
+ * filled and the days between them on one flat band.
  *
- * Pressing the title swaps the grid for a month wheel and a year wheel in its place (its chevron
- * turns to say so), and pressing it again brings back the grid on the month the wheels hold. A new
- * month arrives under the theme's reveal (`data-reveal`): Frost fades it in, Console jumps, and
- * reduced motion shows it at once.
+ * Pressing a menu's button swaps the grid for that menu in its place (calendar-menu.tsx): the
+ * twelve months, or the years the bounds allow. A press on one brings back the grid on it, the
+ * focus on its day; pressing the button again leaves the menu as it was. A new month arrives
+ * under the theme's reveal (`data-reveal`): Frost fades it in, Console jumps, and reduced motion
+ * shows it at once.
  *
  * The grid follows the ARIA date-grid pattern: one Tab stop on the focused day, the arrows, Home
  * and End, Page Up and Page Down (with Shift, a year) moving the focus and the month with it
  * (calendar-keys.ts), Enter or Space picking. Each day is named in full ("Thursday, November 12,
- * 2026"), the picked days carry `aria-selected`, and today `aria-current="date"`.
+ * 2026"), the picked days carry `aria-selected`, and today `aria-current="date"`; the grid itself
+ * is named by its month.
  *
  * `cover` lays something over the whole calendar, which keeps its size underneath: the
  * date-and-time picker's time wheels sit there, so swapping between the two never resizes the
  * panel.
  */
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import { ICON_SIZE } from "../../../icon-scale";
 import type { DateStrings } from "../../../strings";
 import { IconButton } from "../../actions/button/button";
-import { Chevron } from "../../icons/chevron/chevron";
+import { ChevronFlip } from "../../icons/chevron/chevron";
 import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
 import { ICONS } from "../../icons/icons";
 import {
@@ -42,6 +46,7 @@ import {
 } from "./calendar-date";
 import type { CalendarDate, CalendarMonth } from "./calendar-date";
 import { gridKeyTarget } from "./calendar-keys";
+import { CalendarMenu } from "./calendar-menu";
 import {
   firstDayOfWeek,
   formatDayName,
@@ -51,7 +56,6 @@ import {
   yearFirst,
   yearName,
 } from "./date-locale";
-import { WheelBand, WheelColumn } from "./wheel-column";
 
 /** A span of days, its ends in order. */
 export interface DayRange {
@@ -102,6 +106,23 @@ const BAND: Record<"from" | "to" | "inside", string> = {
   inside: "inset-x-0",
 };
 
+/**
+ * The band a day of a range draws, if any. An end's half band reaches toward the other end, so an
+ * end at the edge of its week, with that half on the outer side (the start on a week's last day,
+ * the end on its first), draws none: the band carries on in the row above or below, and a half
+ * here would hang outside the grid.
+ */
+function bandAt(
+  place: ReturnType<typeof rangePlace>,
+  range: DayRange | null,
+  column: number,
+): "from" | "to" | "inside" | null {
+  if (place === null || range === null || sameDate(range.from, range.to)) return null;
+  if (place === "from" && column === 6) return null;
+  if (place === "to" && column === 0) return null;
+  return place;
+}
+
 export function MonthCalendar({
   locale,
   strings,
@@ -117,12 +138,12 @@ export function MonthCalendar({
 }: MonthCalendarProps) {
   const firstDay = firstDayOfWeek(locale);
   const [focus, setFocus] = useState(() => clampDate(initial, min, max));
-  const [wheels, setWheels] = useState(false);
+  // The menu the head has open in the grid's place: the months, the years, or neither.
+  const [menu, setMenu] = useState<"month" | "year" | null>(null);
   // Months moved since the calendar opened: the first month is drawn, every later one revealed.
   const [moves, setMoves] = useState(0);
   const moveFocus = useRef(false);
   const gridRef = useRef<HTMLDivElement>(null);
-  const titleId = useId();
   const visible: CalendarMonth = { year: focus.year, month: focus.month };
 
   const goTo = (next: CalendarDate, keyboard: boolean) => {
@@ -143,13 +164,13 @@ export function MonthCalendar({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedKey]);
 
-  // A key moved the focus (or Enter left the wheels): the focused day takes the keyboard focus
-  // once it is drawn.
+  // A key moved the focus (or a menu's pick brought the grid back): the focused day takes the
+  // keyboard focus once it is drawn.
   useEffect(() => {
-    if (!moveFocus.current || wheels) return;
+    if (!moveFocus.current || menu !== null) return;
     moveFocus.current = false;
     gridRef.current?.querySelector<HTMLElement>('button[tabindex="0"]')?.focus();
-  }, [focus, wheels]);
+  }, [focus, menu]);
 
   const onGridKey = (event: KeyboardEvent<HTMLDivElement>) => {
     // Enter picks the focused day on the key itself, the grid's pick and not each button's own
@@ -175,8 +196,6 @@ export function MonthCalendar({
   const title = formatMonthTitle(visible, locale);
   const weekdays = weekdayNames(locale, firstDay);
 
-  const setMonth = (year: number, month: number) =>
-    goTo({ year, month, day: Math.min(focus.day, daysInMonth(year, month)) }, false);
   const months = monthNames(locale).map((name, i) => ({ value: i + 1, label: name }));
   const fromYear = Math.min(min?.year ?? today.year - YEAR_SPAN, visible.year);
   const toYear = Math.max(max?.year ?? today.year + YEAR_SPAN, visible.year);
@@ -184,44 +203,40 @@ export function MonthCalendar({
     value: fromYear + i,
     label: yearName(fromYear + i, locale),
   }));
-  // Enter on a wheel brings the grid back on the month the wheels hold, its day in the focus.
-  const leaveWheels = () => {
+  // A menu's pick brings the grid back on that month, its day in the focus.
+  const takeMonth = (year: number, month: number) => {
+    goTo({ year, month, day: Math.min(focus.day, daysInMonth(year, month)) }, false);
     moveFocus.current = true;
-    setWheels(false);
+    setMenu(null);
   };
-  const monthWheel = (
-    <WheelColumn
-      key="month"
-      label={strings.month}
-      options={months}
-      value={visible.month}
-      onChange={(month) => setMonth(visible.year, month)}
-      className="w-24"
-      autoFocus
-      onEnter={leaveWheels}
-    />
+  const menuButton = (kind: "month" | "year", name: string, shown: string) => (
+    <button
+      key={kind}
+      type="button"
+      aria-haspopup="listbox"
+      aria-expanded={menu === kind}
+      aria-label={strings.fieldName(name, shown)}
+      onClick={() => setMenu((open) => (open === kind ? null : kind))}
+      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-control px-1.5 py-1 font-semibold text-fg transition-colors duration-150 hover:bg-control-hover ${
+        menu === kind ? "bg-control-hover" : ""
+      }`}
+    >
+      {shown}
+      <ChevronFlip up={menu === kind} size={ICON_SIZE.caretDense} className="text-fg-muted" />
+    </button>
   );
-  const yearWheel = (
-    <WheelColumn
-      key="year"
-      label={strings.year}
-      options={years}
-      value={visible.year}
-      onChange={(year) => setMonth(year, visible.month)}
-      className="w-24"
-      onEnter={leaveWheels}
-    />
-  );
+  const monthButton = menuButton("month", strings.month, months[visible.month - 1]!.label);
+  const yearButton = menuButton("year", strings.year, yearName(visible.year, locale));
 
-  const day = (date: CalendarDate) => {
+  // `column` is the day's place in its week row, 0 to 6.
+  const day = (date: CalendarDate, column: number) => {
     if (!inMonth(date, visible))
       return <span key={dateValue(date)} role="gridcell" className="h-9" />;
     const enabled = withinBounds(date, min, max);
     const place = rangePlace(date, range);
     const picked = sameDate(date, selected) || place === "from" || place === "to";
     const isToday = sameDate(date, today);
-    const band =
-      place === null || (range !== null && sameDate(range.from, range.to)) ? null : place;
+    const band = bandAt(place, range, column);
     const look = picked
       ? "bg-accent font-medium text-accent-fg"
       : !enabled
@@ -229,8 +244,8 @@ export function MonthCalendar({
         : isToday
           ? // The accent's ink alone is the body's own under a neutral accent (Frost's, Console's),
             // so today also takes a hairline ring in the accent's line.
-            "font-semibold text-accent ring-1 ring-inset ring-accent-line hover:bg-surface-muted"
-          : "text-fg hover:bg-surface-muted";
+            "font-semibold text-accent ring-1 ring-inset ring-accent-line hover:bg-control-hover"
+          : "text-fg hover:bg-control-hover";
     return (
       <div
         key={dateValue(date)}
@@ -255,7 +270,7 @@ export function MonthCalendar({
             onPick(date);
           }}
           onMouseEnter={() => onPoint?.(date)}
-          className={`relative size-8 rounded-full text-sm tabular-nums transition-colors duration-150 ${look}`}
+          className={`relative size-8 rounded-control text-sm tabular-nums transition-colors duration-150 ${look}`}
         >
           {date.day}
         </button>
@@ -266,17 +281,10 @@ export function MonthCalendar({
   const calendar = (
     <>
       <div className="flex items-center justify-between gap-2 pb-2">
-        <button
-          type="button"
-          aria-expanded={wheels}
-          aria-label={strings.fieldName(strings.chooseMonth, title)}
-          onClick={() => setWheels((open) => !open)}
-          className="inline-flex items-center gap-1 whitespace-nowrap rounded-control px-1.5 py-1 font-semibold text-fg transition-colors duration-150 hover:bg-surface-muted"
-        >
-          <span id={titleId}>{title}</span>
-          <Chevron open={wheels} size={ICON_SIZE.chevronDense} className="text-accent" />
-        </button>
-        <span className={`flex items-center gap-1 ${wheels ? "invisible" : ""}`}>
+        <span className="flex items-center gap-1">
+          {yearFirst(locale) ? [yearButton, monthButton] : [monthButton, yearButton]}
+        </span>
+        <span className={`flex items-center gap-1 ${menu !== null ? "invisible" : ""}`}>
           <IconButton
             size="sm"
             variant="ghost"
@@ -301,10 +309,10 @@ export function MonthCalendar({
         <div
           ref={gridRef}
           role="grid"
-          aria-labelledby={titleId}
+          aria-label={title}
           onKeyDown={onGridKey}
-          className={wheels ? "invisible" : undefined}
-          {...(wheels ? { inert: true, "aria-hidden": true } : {})}
+          className={menu !== null ? "invisible" : undefined}
+          {...(menu !== null ? { inert: true, "aria-hidden": true } : {})}
         >
           <div role="rowgroup">
             <div role="row" className="grid grid-cols-7">
@@ -313,6 +321,8 @@ export function MonthCalendar({
                   key={weekday.long}
                   role="columnheader"
                   aria-label={weekday.long}
+                  data-tooltip={weekday.long}
+                  data-tooltip-extra
                   className="flex h-6 items-center justify-center text-xs text-fg-subtle"
                 >
                   {weekday.short}
@@ -323,17 +333,30 @@ export function MonthCalendar({
           <div key={monthKey(visible)} role="rowgroup" data-reveal={moves > 0 ? "" : undefined}>
             {monthWeeks(visible, firstDay).map((week) => (
               <div key={dateValue(week[0]!)} role="row" className="grid grid-cols-7">
-                {week.map(day)}
+                {week.map((date, column) => day(date, column))}
               </div>
             ))}
           </div>
         </div>
-        {wheels && (
-          <div className="absolute inset-0 flex items-center">
-            <div className="relative flex w-full items-center justify-center gap-2">
-              <WheelBand />
-              {yearFirst(locale) ? [yearWheel, monthWheel] : [monthWheel, yearWheel]}
-            </div>
+        {menu !== null && (
+          <div className="absolute inset-0">
+            {menu === "month" ? (
+              <CalendarMenu
+                key="month"
+                label={strings.month}
+                options={months}
+                value={visible.month}
+                onPick={(month) => takeMonth(visible.year, month)}
+              />
+            ) : (
+              <CalendarMenu
+                key="year"
+                label={strings.year}
+                options={years}
+                value={visible.year}
+                onPick={(year) => takeMonth(year, visible.month)}
+              />
+            )}
           </div>
         )}
       </div>

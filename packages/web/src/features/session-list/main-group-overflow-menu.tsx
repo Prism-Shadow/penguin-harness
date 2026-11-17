@@ -13,13 +13,13 @@ export function GroupOverflowMenu({
 }: {
   target: WorkspaceTarget;
   host: WorkspaceEntryHost;
-  onRename?: () => void;
-  onDelete?: () => void;
+  onRename: () => void;
+  onDelete: () => void;
 }) {
   const extensions = useContext(MainRowExtensions);
   if (extensions === null) throw new Error("Workspace menu mounted outside contributed list");
   const [open, setOpen] = useState(false);
-  /** Close first, then act (the rename modal opens on top; the delete is immediate). */
+  /** Close first, then act (the rename dialog or the delete confirmation opens on top). */
   const item = (fn: () => void) => () => {
     setOpen(false);
     fn();
@@ -61,17 +61,13 @@ export function GroupOverflowMenu({
             onSelect={item(() => entry.run(target, host))}
           />
         ))}
-        {onRename !== undefined && (
-          <MenuItem glyph={ICONS.pencil} label={S.chat.renameWorkspace} onSelect={item(onRename)} />
-        )}
-        {onDelete !== undefined && (
-          <MenuItem
-            glyph={ICONS.trash}
-            label={S.chat.deleteWorkspace}
-            danger
-            onSelect={item(onDelete)}
-          />
-        )}
+        <MenuItem glyph={ICONS.pencil} label={S.chat.renameWorkspace} onSelect={item(onRename)} />
+        <MenuItem
+          glyph={ICONS.trash}
+          label={S.chat.deleteWorkspace}
+          danger
+          onSelect={item(onDelete)}
+        />
       </Menu>
     </Dropdown>
   );

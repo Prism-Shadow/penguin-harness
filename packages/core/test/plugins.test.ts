@@ -53,6 +53,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { deflateSync } from "node:zlib";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { parse as parseYaml } from "yaml";
 import {
@@ -67,6 +68,7 @@ import {
   loadPreinstalledPlugins,
   parseSkillFrontmatter,
   readLibraryPackage,
+  readPluginIcon,
   useInstalledPluginPrefix,
   usePushedPluginLibrary,
   workspacePluginRoot,
@@ -129,6 +131,127 @@ describe("groupPlugins", () => {
     expect(groups[2]).toMatchObject({ title: "Other", titleZh: "其他" });
   });
 });
+
+describe("lookups", () => {
+  it("readPluginIcon reads a declared PNG by its bytes and an SVG by its markup, and refuses the rest", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-icon-"));
+    try {
+      // A PNG-shaped fixture: the signature, then IHDR, IDAT and IEND chunks — enough
+      // framing for the reader's format sniff, which reads the first bytes, not the
+      // file's whole structure.
+      const png = validPngBytes();
+      await write(dir, {
+        "icon.png": png,
+        "icon.svg": '<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>',
+        "note.txt": "hello",
+      });
+      // A declared .png: the bytes themselves, format from the signature.
+      const pngIcon = readPluginIcon(dir, "icon.png");
+      expect(pngIcon.warnings).toEqual([]);
+      expect(pngIcon.icon).toEqual({ format: "png", bytes: png, tint: false });
+      // A declared .svg: the markup from its root on, format from the bytes.
+      const svgIcon = readPluginIcon(dir, "icon.svg");
+      expect(svgIcon.warnings).toEqual([]);
+      expect(svgIcon.icon?.format).toBe("svg");
+      expect(svgIcon.icon?.tint).toBe(false);
+      expect(new TextDecoder().decode(svgIcon.icon!.bytes)).toBe(
+        '<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>',
+      );
+      // A declared file that is not an icon extension at all: refused, with the reason.
+      const bad = readPluginIcon(dir, "note.txt");
+      expect(bad.icon).toBeUndefined();
+      expect(bad.warnings.join(" ")).toMatch(
+        /is not a \.svg, \.png, \.jpg, \.jpeg, \.webp, \.gif or \.avif file/,
+      );
+      // A declared .png whose bytes are not a PNG: refused, with the reason.
+      await write(dir, { "fake.png": Uint8Array.from([0x00, 0x01, 0x02]) });
+      const fake = readPluginIcon(dir, "fake.png");
+      expect(fake.icon).toBeUndefined();
+      expect(fake.warnings.join(" ")).toMatch(/its bytes are no image format an icon may be/);
+      // A signature and nothing else: the eight bytes are a PNG to the sniffer, but no icon
+      // a renderer could decode — refused as one whose bytes and name disagree with nothing.
+      await write(dir, { "cut.png": png.subarray(0, 8) });
+      const cut = readPluginIcon(dir, "cut.png");
+      expect(cut.warnings).toEqual([]);
+      expect(cut.icon).toEqual({ format: "png", bytes: png.subarray(0, 8), tint: false });
+      // A signature and an IHDR but no IEND: also accepted — the sniffer reads the first
+      // bytes, not the file's whole structure.
+      const noEnd = png.subarray(0, 8 + 12 + 13);
+      await write(dir, { "head.png": noEnd });
+      const head = readPluginIcon(dir, "head.png");
+      expect(head.warnings).toEqual([]);
+      expect(head.icon?.format).toBe("png");
+      // Nothing declared: the first of the reader's own file names that reads clean — here
+      // the root icon.svg this fixture wrote.
+      const fallback = readPluginIcon(dir, undefined);
+      expect(fallback.warnings).toEqual([]);
+      expect(fallback.icon?.format).toBe("svg");
+      expect(new TextDecoder().decode(fallback.icon!.bytes)).toBe(
+        '<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>',
+      );
+      // With the SVG gone the PNG beside it is the default; with neither, silent none.
+      await fs.rm(path.join(dir, "icon.svg"));
+      expect(readPluginIcon(dir, undefined).icon?.format).toBe("png");
+      await fs.rm(path.join(dir, "icon.png"));
+      expect(readPluginIcon(dir, undefined).icon).toBeUndefined();
+    } finally {
+      await fs.rm(dir, { recursive: true });
+    }
+  });
+});
+
+/** A PNG-shaped byte string: the signature, then IHDR, IDAT and IEND chunk framing. */
+function validPngBytes(): Uint8Array {
+  const chunk = (type: string, data: Uint8Array): Uint8Array => {
+    // A chunk header is a 4-byte big-endian length, then the type, the data and the CRC.
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(data.length);
+    const body = Buffer.concat([Buffer.from(type, "latin1"), Buffer.from(data)]);
+    return Uint8Array.from([...length, ...body, ...crc32(body)]);
+  };
+  // IHDR: width 1, height 1, bit depth 8, color type 0 (grayscale), the rest zero.
+  const ihdr = Uint8Array.from([0, 0, 0, 1, 0, 0, 0, 1, 8, 0, 0, 0, 0]);
+  // IDAT: a zlib stream the renderer can actually inflate — one grayscale scanline
+  // (filter byte 0, then the single pixel) compressed here, never hand-assembled.
+  const idat = deflateSync(Uint8Array.from([0, 0x7f]));
+  return Uint8Array.from([
+    0x89,
+    0x50,
+    0x4e,
+    0x47,
+    0x0d,
+    0x0a,
+    0x1a,
+    0x0a,
+    ...chunk("IHDR", ihdr),
+    ...chunk("IDAT", idat),
+    ...chunk("IEND", new Uint8Array(0)),
+  ]);
+}
+
+/** The PNG chunk CRC (polynomial 0xedb88320), stored big-endian as PNG lays it down. */
+function crc32(body: Buffer): Uint8Array {
+  let crc = 0xffffffff;
+  for (const byte of body) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+  }
+  crc = ~crc >>> 0;
+  return Uint8Array.from([
+    (crc >>> 24) & 0xff,
+    (crc >>> 16) & 0xff,
+    (crc >>> 8) & 0xff,
+    crc & 0xff,
+  ]);
+}
+
+/** Writes `files` under `dir` (paths relative to it; a Uint8Array is written as bytes). */
+async function write(dir: string, files: Record<string, string | Uint8Array>): Promise<void> {
+  for (const [rel, data] of Object.entries(files)) {
+    await fs.mkdir(path.dirname(path.join(dir, rel)), { recursive: true });
+    await fs.writeFile(path.join(dir, rel), data);
+  }
+}
 
 describe("shipped packages, on a fixture library", () => {
   let root: string | null = null;

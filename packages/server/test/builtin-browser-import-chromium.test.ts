@@ -45,7 +45,7 @@ function macChrome(cookies: ChromiumCookieFixture[], version = 24): FakeMachine 
 
 async function importAll(domains?: string[]): Promise<CookieReadResult> {
   const env = machine.env();
-  const [source] = listImportSources(env);
+  const [source] = await listImportSources(env);
   return readCookies(source!, domains === undefined ? {} : { domains }, env);
 }
 

@@ -10,18 +10,19 @@
  *   Today is closed when today is outside, and the focus opens on the nearest day inside.
  * - Given the keyboard, the arrows carry the focus across the month's edge and the month with it,
  *   Page Up goes back a month, End goes to the week's last day, Enter writes the focused day.
- * - Given the title pressed, a month typed on its wheel hands the keys to the year wheel, and
- *   Enter brings the grid back on that month with its day in the focus; pressing the title again
- *   leaves the wheels too.
+ * - Given the head's month or year button pressed, its menu opens on the month or year in view
+ *   with the arrows moving its focus, and a press on one brings the grid back there with its day
+ *   in the focus; pressing the button again leaves the menu and the month as they were.
  * - Given Escape, the panel closes and a dialog around the field stays open; a press outside
  *   closes it too.
  * - Given the clear cross, the field is emptied.
  * - Given a reader west of Greenwich late in the evening, today and Today are the reader's date.
  *
  * Range
- * - Given two presses in either order, the earlier day is the start; nothing is written until the
- *   second, and a panel closed between them writes nothing.
- * - Given a preset pressed, its span is written with its id, and the preset shows pressed after.
+ * - Given two presses in either order, the earlier day is the start and the headline reads the
+ *   span; nothing is written until OK, which is held back while only one end is pressed.
+ * - Given Escape or Cancel, half-way or with both ends pressed, nothing is written; a third press
+ *   starts the span over.
  * - Given a span held, the calendar opens on the month of its end.
  *
  * Time
@@ -128,9 +129,8 @@ const trigger = () => document.querySelector<HTMLButtonElement>('button[aria-has
 /** The picker's panel: the dialog that is not a modal one. */
 const panel = () => document.querySelector<HTMLElement>('[role="dialog"]:not([aria-modal])');
 const grid = () => panel()!.querySelector<HTMLElement>('[role="grid"]')!;
-/** The month the grid shows, as its title reads it. */
-const shownMonth = () =>
-  document.getElementById(grid().getAttribute("aria-labelledby")!)!.textContent;
+/** The month the grid shows, as its name reads it. */
+const shownMonth = () => grid().getAttribute("aria-label");
 /** The day button reading `n` in the month on show. */
 const day = (n: number) =>
   [...grid().querySelectorAll<HTMLButtonElement>("button")].find(
@@ -142,6 +142,13 @@ const buttonNamed = (name: string) =>
   )!;
 const wheel = (name: string) =>
   panel()!.querySelector<HTMLElement>(`[role="spinbutton"][aria-label="${name}"]`);
+/** The open month or year menu, and the option reading `label` in it. */
+const menu = (name: string) =>
+  panel()!.querySelector<HTMLElement>(`[role="listbox"][aria-label="${name}"]`);
+const option = (label: string) =>
+  [...panel()!.querySelectorAll<HTMLElement>('[role="option"]')].find(
+    (each) => each.textContent === label,
+  )!;
 const focused = () => document.activeElement as HTMLElement;
 
 const press = async (element: Element) => {
@@ -208,34 +215,40 @@ describe("a date field", () => {
     expect(panel()).toBeNull();
   });
 
-  it("jumps to the month typed on the title's wheels, Enter bringing the grid back", async () => {
+  it("takes a month and a year from the head's menus, the grid coming back on them", async () => {
     const field = dateField("");
     await mount(field.element);
     await press(trigger());
-    const title = buttonNamed(EN.fieldName(EN.chooseMonth, "November 2026"));
-    await press(title);
-    expect(title.getAttribute("aria-expanded")).toBe("true");
-    expect(focused()).toBe(wheel(EN.month));
-    // "3" can name no longer month, so the year wheel takes the keys that follow.
-    await type(focused(), "3");
-    expect(focused()).toBe(wheel(EN.year));
-    await type(focused(), "2028");
-    await key(focused(), "Enter");
-    expect(wheel(EN.month)).toBeNull();
-    expect(shownMonth()).toBe("March 2028");
+    const month = buttonNamed(EN.fieldName(EN.month, "November"));
+    await press(month);
+    expect(month.getAttribute("aria-expanded")).toBe("true");
+    expect(focused()).toBe(option("November"));
+    // Three to a row: down is the month a row on, right the next one.
+    await key(focused(), "ArrowUp");
+    expect(focused()).toBe(option("August"));
+    await key(focused(), "ArrowRight");
+    expect(focused()).toBe(option("September"));
+    await press(option("March"));
+    expect(menu(EN.month)).toBeNull();
+    expect(shownMonth()).toBe("March 2026");
     expect(focused().textContent).toBe("12");
+    await press(buttonNamed(EN.fieldName(EN.year, "2026")));
+    expect(focused()).toBe(option("2026"));
+    await press(option("2028"));
+    expect(shownMonth()).toBe("March 2028");
     await press(day(29));
     expect(field.writes).toEqual([["2028-03-29"]]);
   });
 
-  it("leaves the title's wheels when the title is pressed again", async () => {
+  it("leaves a menu when its button is pressed again", async () => {
     await mount(dateField("").element);
     await press(trigger());
-    await press(buttonNamed(EN.fieldName(EN.chooseMonth, "November 2026")));
-    await key(focused(), "PageDown");
-    await press(buttonNamed(EN.fieldName(EN.chooseMonth, "June 2026")));
-    expect(wheel(EN.month)).toBeNull();
-    expect(shownMonth()).toBe("June 2026");
+    await press(buttonNamed(EN.fieldName(EN.month, "November")));
+    await key(focused(), "End");
+    expect(focused()).toBe(option("December"));
+    await press(buttonNamed(EN.fieldName(EN.month, "November")));
+    expect(menu(EN.month)).toBeNull();
+    expect(shownMonth()).toBe("November 2026");
   });
 
   it("closes on Escape and leaves the dialog around it open, and on a press outside", async () => {
@@ -281,47 +294,50 @@ describe("a date field", () => {
 // --- range ----------------------------------------------------------------------------------
 
 describe("a date-range field", () => {
-  const presets = [
-    { id: "7d", label: "Last 7 days", from: "2026-11-06", to: "2026-11-12" },
-    { id: "30d", label: "Last 30 days", from: "2026-10-14", to: "2026-11-12" },
-  ];
+  /** The headline over the calendar: the span as it stands. */
+  const headline = () => panel()!.querySelector("p")!.textContent?.replace(/\s/g, " ");
 
-  it("takes the earlier of two presses as the start, writing only on the second", async () => {
+  it("takes the earlier of two presses as the start, writing only on OK", async () => {
     const field = rangeField({ from: "", to: "" });
     await mount(field.element);
     await press(trigger());
+    expect(headline()).toBe("Start date – End date");
+    expect(buttonNamed(EN.confirm).disabled).toBe(true);
     await press(day(20));
+    expect(headline()).toBe("Nov 20, 2026 – End date");
+    expect(buttonNamed(EN.confirm).disabled).toBe(true);
+    await press(day(10));
+    expect(headline()).toBe("Nov 10, 2026 – Nov 20, 2026");
     expect(field.writes).toEqual([]);
     expect(panel()).not.toBeNull();
-    await press(day(10));
+    await press(buttonNamed(EN.confirm));
     expect(field.writes).toEqual([[{ from: "2026-11-10", to: "2026-11-20" }]]);
     expect(panel()).toBeNull();
+    expect(focused()).toBe(trigger());
     expect(trigger().textContent?.replace(/\s/g, " ")).toBe("Nov 10, 2026 – Nov 20, 2026");
   });
 
-  it("writes nothing when the panel closes between the two presses", async () => {
+  it("writes nothing on Escape or Cancel, and starts over on a third press", async () => {
     const field = rangeField({ from: "2026-11-01", to: "2026-11-05" });
     await mount(field.element);
     await press(trigger());
     await press(day(20));
     await key(focused(), "Escape");
+    await press(trigger());
+    expect(headline()).toBe("Nov 1, 2026 – Nov 5, 2026");
+    await press(day(10));
+    await press(day(12));
+    await press(buttonNamed(EN.cancel));
     expect(field.writes).toEqual([]);
+    expect(panel()).toBeNull();
     await press(trigger());
     await press(day(10));
     await press(day(12));
-    expect(field.writes).toEqual([[{ from: "2026-11-10", to: "2026-11-12" }]]);
-  });
-
-  it("writes a preset with its id, and shows it pressed after", async () => {
-    const field = rangeField({ from: "2026-11-01", to: "2026-11-05" }, { presets });
-    await mount(field.element);
-    await press(trigger());
-    await press(buttonNamed("Last 7 days"));
-    expect(field.writes).toEqual([[{ from: "2026-11-06", to: "2026-11-12" }, "7d"]]);
-    expect(panel()).toBeNull();
-    await press(trigger());
-    expect(buttonNamed("Last 7 days").getAttribute("aria-pressed")).toBe("true");
-    expect(buttonNamed("Last 30 days").getAttribute("aria-pressed")).toBe("false");
+    await press(day(18));
+    expect(headline()).toBe("Nov 18, 2026 – End date");
+    await press(day(24));
+    await press(buttonNamed(EN.confirm));
+    expect(field.writes).toEqual([[{ from: "2026-11-18", to: "2026-11-24" }]]);
   });
 });
 

@@ -25,9 +25,17 @@ import { MessageItem } from "./message-item";
 import type { StreamRenderContext } from "./message-stream";
 import { summarizeWork } from "./work-summary";
 
-/** Item kinds that belong in the group: thinking and tool calls (subagent cards are nested inside the run_subagent tool card, not listed separately). */
+/**
+ * Item kinds that belong in the group: thinking, tool calls, and retry notices whose ladder did
+ * not give up (keeping an in-turn retry inside the work group instead of splitting it in two; a
+ * ladder that gave up ended the run and stays outside at the end of the turn).
+ */
 export function isWorkItem(item: ChatItem): boolean {
-  return item.kind === "thinking" || item.kind === "tool_call";
+  return (
+    item.kind === "thinking" ||
+    item.kind === "tool_call" ||
+    (item.kind === "reconnect" && !item.gaveUp)
+  );
 }
 
 /** Whether an item is still in progress (drives spinner display): streaming, executing, or has a pending approval. */
@@ -39,6 +47,11 @@ function itemActive(item: ChatItem, ctx: StreamRenderContext): boolean {
     return ctx.pendingApprovals.has(approvalKey(ctx.origin, item.toolCallId));
   }
   return false;
+}
+
+/** Whether a retry notice inside the group is waiting or sending its next attempt. */
+function hasWaitingRetry(items: ChatItem[]): boolean {
+  return items.some((it) => it.kind === "reconnect" && !it.gaveUp && !it.retrying);
 }
 
 /** Whether the group contains a pending approval (used to force it open, ensuring the approval buttons stay reachable). */
@@ -58,12 +71,13 @@ export function useWorkGroupState(
   // Whether any item is in flight right now — also the only window in which the group's span is
   // still growing, which the duration display depends on.
   const stepRunning = items.some((it) => itemActive(it, ctx));
+  const waitingRetry = hasWaitingRetry(items);
   // Last segment + Task running = the model might still call another tool → Running, even with
   // no active item right now.
-  const running = (isLast && ctx.taskRunning) || stepRunning;
+  const running = (isLast && ctx.taskRunning) || stepRunning || waitingRetry;
   // `pending` forces the body open without touching the group's own open state, so the reader's
-  // choice is back once the reason is gone: an approval waiting inside, or a search of this
-  // region, which can only see the rows while they are mounted.
+  // choice is back once the reason is gone: an approval or retry waiting inside, or a search of
+  // this region, which can only see the rows while they are mounted.
   const revealedForFind = useContext(FindRevealContext);
   const { steps, durationMs, startMs } = summarizeWork(items);
   return {
@@ -77,7 +91,7 @@ export function useWorkGroupState(
     ...(steps > 0 ? { count: S.chat.workGroupSteps(steps) } : {}),
     ...(startMs !== undefined ? { startMs } : {}),
     durationMs,
-    pending: hasPendingApproval(items, ctx) || revealedForFind,
+    pending: hasPendingApproval(items, ctx) || waitingRetry || revealedForFind,
   };
 }
 

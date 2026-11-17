@@ -12,14 +12,15 @@
  * size, line height, letter spacing, tab size, padding, wrap mode — and those are stated once,
  * for both layers, in `.code-surface`.
  *
- * The editor keeps its place the way a code editor does. It opens where the source view was
- * scrolled to (`initialScroll` — the scroll box reserves the same scrollbar gutter as the
- * preview's, so one offset means one line in both), with the caret at the start of the first
- * line wholly in view and focus taken without scrolling: pressing Edit moves nothing. A save
- * leaves it mounted, so the caret, the selection and the scroll stay as they were. And when the
- * text is replaced from outside — the caller swapping in the file an Agent rewrote under a clean
- * editor — the caret keeps its line and column (clamped to the new text) and the scroll stays
- * put, where a browser setting a textarea's value would throw the caret to the end.
+ * The editor keeps its place the way a code editor does. It opens with the line the source view
+ * had at its top at the same distance from the edge (`initialScroll`, a line and not a pixel
+ * offset, since the two lay out off-screen lines differently: code-place.ts), with the caret at
+ * the start of the first line wholly in view and focus taken without scrolling: pressing Edit
+ * moves nothing. A save leaves it mounted, so the caret, the selection and the scroll stay as
+ * they were. And when the text is replaced from outside — the caller swapping in the file an
+ * Agent rewrote under a clean editor — the caret keeps its line and column (clamped to the new
+ * text) and the scroll stays put, where a browser setting a textarea's value would throw the
+ * caret to the end.
  *
  * No spell-check or autocorrect, and the save shortcut saves (the caller's binding, ⌘S / Ctrl+S
  * when it names none) — the browser's own "save page" default is suppressed while the focus is
@@ -31,16 +32,12 @@ import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from "react";
 import { CodeSurface } from "../code-block/code-block";
 import { languageForFileName } from "../code-block/code-languages";
+import { readCodePlace, restoreCodePlace } from "../code-block/code-place";
+import type { CodePlace } from "../code-block/code-place";
 import { caretAfterReplace, lineStartOffset } from "./caret";
 
 /** Quiet period before re-highlighting, so a keystroke costs a re-render and not a tokenize. */
 const EDIT_HIGHLIGHT_SETTLE_MS = 200;
-
-/** A scroll box's position. */
-export interface EditorScroll {
-  top: number;
-  left: number;
-}
 
 /** Ctrl+S or ⌘S without Alt: the save key when the caller names no binding. */
 function isDefaultSaveKey(event: KeyboardEvent): boolean {
@@ -53,12 +50,8 @@ function isDefaultSaveKey(event: KeyboardEvent): boolean {
  * when focus comes back from a dialog — the very jump the opening position is there to avoid.
  */
 function firstVisibleLine(box: HTMLElement): number {
-  const top = box.getBoundingClientRect().top;
-  const lines = box.querySelectorAll(".code-surface .line");
-  for (let i = 0; i < lines.length; i += 1) {
-    if (lines[i]!.getBoundingClientRect().top >= top - 1) return i;
-  }
-  return 0;
+  const { line, inset } = readCodePlace(box);
+  return line < 0 ? 0 : inset < -1 ? line + 1 : line;
 }
 
 export function WorkspaceFileEditor({
@@ -85,8 +78,8 @@ export function WorkspaceFileEditor({
    * rather than a stalled editor; the caller bounds it only by what a load can put here.
    */
   highlight?: boolean;
-  /** Where the source view was scrolled when Edit was pressed; the editor opens there. */
-  initialScroll?: EditorScroll;
+  /** Where the source view was when Edit was pressed; the editor opens there. */
+  initialScroll?: CodePlace;
   /** The scroll box, for a caller that hands the position back to the source view on the way out. */
   hostRef?: RefObject<HTMLDivElement | null>;
   onChange: (next: string) => void;
@@ -111,16 +104,13 @@ export function WorkspaceFileEditor({
   // textarea's text is transparent — so the layers swap for the length of the composition.
   const [composing, setComposing] = useState(false);
 
-  // Opening: the source view's scroll, the caret at the start of the first line wholly in view,
+  // Opening: the source view's place, the caret at the start of the first line wholly in view,
   // and focus taken without scrolling to wherever the caret would otherwise have been.
   useLayoutEffect(() => {
     const box = host.current;
     const textarea = ref.current;
     if (box === null || textarea === null) return;
-    if (initialScroll !== undefined) {
-      box.scrollTop = initialScroll.top;
-      box.scrollLeft = initialScroll.left;
-    }
+    if (initialScroll !== undefined) restoreCodePlace(box, initialScroll);
     const caret = lineStartOffset(textarea.value, firstVisibleLine(box));
     textarea.setSelectionRange(caret, caret);
     textarea.focus({ preventScroll: true });

@@ -135,7 +135,7 @@ export interface WeekdayName {
 }
 
 export function weekdayNames(locale: string, firstDay: Weekday): WeekdayName[] {
-  const short = formatter(locale, { weekday: "short" });
+  const short = formatter(locale, { weekday: "narrow" });
   const long = formatter(locale, { weekday: "long" });
   // 4 January 2026 is a Sunday: walking from it gives each weekday by its `getUTCDay` number.
   return Array.from({ length: 7 }, (_, i) => {

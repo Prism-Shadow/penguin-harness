@@ -68,6 +68,7 @@ import {
   BrowserWindow,
   dialog,
   ipcMain,
+  Menu,
   session,
   shell,
 } from "electron";
@@ -87,9 +88,11 @@ import type { SignInFailure } from "./attach-session.js";
 import { embeddedCliEntry } from "./launcher.js";
 import { webDistEntry, webDistFor } from "./web-dist.js";
 import { resolveTrayIcon, resolveWindowIcon } from "./app-icon.js";
+import { openAppWindow, parseOpenWindowRequest } from "./app-window.js";
 import { createBuiltinBrowserShell } from "./builtin-browser.js";
 import { installCliCommand, ensureCliCommand, currentCliInstallKind } from "./cli-install.js";
 import { logLine, logServerOutput, startDesktopLog, stopDesktopLog } from "./desktop-log.js";
+import { editMenuItems, runEditAction } from "./edit-menu.js";
 import { handleFolderAccessFrame } from "./folder-access.js";
 import type { FolderAccessFrameDeps } from "./folder-access.js";
 import { applyLoginShellEnv } from "./login-shell-env.js";
@@ -236,6 +239,35 @@ function hideMenuBar(target: BrowserWindow): void {
 }
 
 /**
+ * Electron draws no right-click menu, and a browser's is what the Web App leaves its fields
+ * and its unclaimed selections to; so the shell offers the edit group there (edit-menu.ts),
+ * in the Web App's language. A page that draws its own menu (the conversation, the Files
+ * panel, the terminal) calls `preventDefault` on `contextmenu`, and then Electron raises no
+ * `context-menu` at all, so the two never stack. The `<webview>` guests are other contents
+ * with a menu of their own (builtin-browser.ts).
+ */
+function offerEditMenu(target: BrowserWindow): void {
+  const contents = target.webContents;
+  contents.on("context-menu", (_event, params) => {
+    const items = editMenuItems({
+      locale: trayLocale,
+      isEditable: params.isEditable,
+      selectionText: params.selectionText,
+      editFlags: params.editFlags,
+    });
+    if (items.length === 0) return;
+    Menu.buildFromTemplate(
+      items.map((item) => ({
+        label: item.label,
+        click: () => {
+          if (!contents.isDestroyed()) runEditAction(contents, item.action);
+        },
+      })),
+    ).popup({ window: target });
+  });
+}
+
+/**
  * DevTools as its own window (`detach`) rather than a pane: a console error is usually being
  * copied out to someone else, and a docked panel reflows the page under it while that happens.
  *
@@ -302,21 +334,8 @@ function createWindow(url: string): void {
   win.on("closed", () => {
     win = null;
   });
-  // The page refused to unload: the Web App holds unsaved edits and asked through its
-  // beforeunload listener. Electron draws nothing for that and simply cancels the close, so the
-  // shell asks in the page's place — over the window, shown first, since a Quit from the tray
-  // may find it hidden — and lets the page go only on "discard" (see unload-prompt.ts).
-  const host = win;
-  host.webContents.on("will-prevent-unload", (event) => {
-    if (host.isDestroyed()) return;
-    host.show();
-    const answer = afterUnloadAnswer(
-      dialog.showMessageBoxSync(host, unloadPrompt(trayLocale, app.name)),
-      quitting,
-    );
-    quitting = answer.quitting;
-    if (answer.unload) event.preventDefault();
-  });
+  // Unsaved edits ask before the window goes (see armUnloadPrompt).
+  armUnloadPrompt(win);
   // New windows, from this window and from every window it opens, go through one rule
   // (classifyWindowOpen): only the Workspace preview hand-off, a preview page and a detached
   // terminal get a window of this app; other sites go to the system browser; anything else
@@ -326,6 +345,7 @@ function createWindow(url: string): void {
   // allowed here is one that HTML can open too — a hidden one, it could own outright.
   win.webContents.setWindowOpenHandler(({ url: target }) => openWindowFor(target, iconPath));
   hideMenuBar(win);
+  offerEditMenu(win);
   win.webContents.on("did-create-window", (child) => guardOpenedWindow(child, iconPath));
   win.webContents.on("will-navigate", (event, target) => {
     if (!isAppUrl(target, appOrigin)) {
@@ -427,6 +447,7 @@ function openWindowFor(target: string, iconPath: string | null): WindowOpenHandl
  */
 function guardOpenedWindow(child: BrowserWindow, iconPath: string | null): void {
   hideMenuBar(child);
+  offerEditMenu(child);
   child.center();
   child.webContents.on("content-bounds-updated", (event) => event.preventDefault());
   child.webContents.setWindowOpenHandler(({ url: target }) => openWindowFor(target, iconPath));
@@ -450,6 +471,28 @@ function guardOpenedWindow(child: BrowserWindow, iconPath: string | null): void 
       event.preventDefault();
       openInSystem(target);
     }
+  });
+}
+
+/**
+ * Unsaved edits ask before the window goes: the Web App holds a `beforeunload` listener for
+ * exactly as long as a form is dirty, and Electron draws nothing for that — without an answer
+ * here it cancels the close silently. The shell asks in the page's place, over the window
+ * (shown first, since a Quit from the tray may find it hidden), and lets the page go only on
+ * "discard" (see unload-prompt.ts). The main window and every window of the full App — New
+ * Window opens one — arm this; a preview or terminal window hosts no editor, so nothing there
+ * ever asks.
+ */
+function armUnloadPrompt(host: BrowserWindow): void {
+  host.webContents.on("will-prevent-unload", (event) => {
+    if (host.isDestroyed()) return;
+    host.show();
+    const answer = afterUnloadAnswer(
+      dialog.showMessageBoxSync(host, unloadPrompt(trayLocale, app.name)),
+      quitting,
+    );
+    quitting = answer.quitting;
+    if (answer.unload) event.preventDefault();
   });
 }
 
@@ -658,6 +701,23 @@ function wireShellRelay(child: EmbeddedServer["child"]): void {
   child.on("message", (message: unknown) => {
     if (builtinBrowser.handle(message)) return;
     if (handleFolderAccessFrame(message, folderAccess)) return;
+    if (parseOpenWindowRequest(message)) {
+      const iconPath = resolveWindowIcon(app.getAppPath(), process.platform);
+      openAppWindow({
+        origin: appOrigin,
+        iconPath,
+        create: (options) => new BrowserWindow(options),
+        guard: (child) => {
+          guardOpenedWindow(child, iconPath);
+          // A window of the full App can hold unsaved edits like the main one can: answer the
+          // page's refusal the same way instead of letting Electron cancel the close silently.
+          armUnloadPrompt(child);
+        },
+        load: (child, url) => child.loadURL(url),
+        log: logLine,
+      });
+      return;
+    }
     const action = parseUpdaterCommand(message);
     if (action !== null) {
       handleUpdaterCommand(action);

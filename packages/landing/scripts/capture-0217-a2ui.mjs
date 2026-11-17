@@ -23,7 +23,7 @@
  * moment, so the replies' `asOf` times and the conversation's own times agree.
  *
  * Output: $SHOT_SCRATCH/out (default packages/landing/.blog-assets/, gitignored). The PNGs are
- * quantized afterwards and hosted in the community repo's blog-assets/.
+ * quantized afterwards and hosted in the community repo's assets/blog-assets/.
  *
  * Prereqs: a built tree (`pnpm -r build`) and Playwright's chromium. Run from the repo:
  *   node packages/landing/scripts/capture-0217-a2ui.mjs [--dump <dir>]

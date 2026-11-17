@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Command } from "commander";
 import { registerChatCommand } from "../src/commands/chat.js";
 import { registerRunCommand } from "../src/commands/run.js";
-import { getMessages } from "../src/i18n.js";
+import { getMessages } from "@prismshadow/penguin-server/cli";
 
 // The --resume case below reaches createAgent, which initializes Agent state on disk; point
 // the data root at a throwaway directory so no test ever writes to the real ~/.penguin/data.

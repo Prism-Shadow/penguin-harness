@@ -16,7 +16,8 @@ export const en: GalleryStrings = {
       leaderboards: "Leaderboards",
       amsp: "AMSP",
       docs: "Docs",
-      gallery: "Gallery",
+      gallery: "Theme Packs",
+      more: "More",
       github: "GitHub",
       openMenu: "Open menu",
       closeMenu: "Close menu",
@@ -186,6 +187,12 @@ export const en: GalleryStrings = {
         "The settings dialog on its Appearance page: theme, mode, accent, the five text sizes and the font pairing — where theme switching lives.",
       how: "The account menu at the bottom of the sidebar › Settings › Appearance.",
     },
+    "desktop-window": {
+      title: "Desktop window",
+      description:
+        "The desktop app's main window: the title band in the sidebar's colour, the sidebar toggle and back and forward at its start, the window buttons at its end; the main column sits flush against the window's edges, ruled off from the band and the sidebar alike, its scrollbar running to the window's corner.",
+      how: "The desktop app's main window on Windows or Linux; a browser has no title band.",
+    },
     login: {
       title: "Login",
       description:
@@ -194,7 +201,7 @@ export const en: GalleryStrings = {
     },
   },
   home: {
-    eyebrow: "Surface gallery",
+    eyebrow: "Theme Packs",
     title: "Penguin UI",
     lead: "The real Web App, running in three themes, two modes, five text sizes, the font pairings and two languages — on an in-browser demo API, fully clickable.",
     app: "The app",
@@ -472,7 +479,7 @@ export const en: GalleryStrings = {
       buttons: {
         title: "Buttons",
         description:
-          "Five variants, five sizes and the icon button; disabled and loading; links and keyboard hints.",
+          "Five variants, five sizes and the icon button; disabled and loading; links and keyboard hints; the floating ball that drags to an edge and tucks away.",
       },
       inputs: {
         title: "Inputs and forms",
@@ -536,7 +543,7 @@ export const en: GalleryStrings = {
       site: {
         title: "Public site",
         description:
-          "What the landing page and the docs share: the footer, the code card and copy button, pills, an article's contents, the docs sidebar, search, the external-link confirmation and article prose.",
+          "What the landing page and the docs share: the navigation bar, the footer, the code card and copy button, pills, the data pages' controls, an article's contents, the docs sidebar, search, the external-link confirmation and article prose.",
       },
       files: {
         title: "Files",
@@ -625,6 +632,14 @@ export const en: GalleryStrings = {
       external: "All releases",
       keys: "Keyboard hints",
       shortcuts: [["Ctrl", "K"], ["Ctrl", "`"], ["Esc"]],
+      ball: "Floating ball",
+      ballHint:
+        "Drag it to the left or right edge and let go to dock it there; push it past the edge or press × to tuck it away, and the handle on the edge brings it back. The caller stores where it rests.",
+      ballLabel: "Exit full screen",
+      ballTuck: "Tuck to the edge",
+      ballShow: "Show the exit button",
+      ballReadout: (side: "left" | "right", percent: number, tucked: boolean, presses: number) =>
+        `${side} edge, ${percent}% down${tucked ? ", tucked" : ""} · pressed ${presses === 1 ? "once" : `${presses} times`}`,
     },
     inputs: {
       basics: "Inputs",
@@ -688,9 +703,6 @@ export const en: GalleryStrings = {
       dateTimeLocal: "Next run",
       dateRange: "Date range",
       rangeLabel: "Reporting period",
-      range7d: "Last 7 days",
-      range30d: "Last 30 days",
-      range90d: "Last 90 days",
       dateStates: "Date and time states",
       dateRequired: "Due date",
       dateBounded: "A day this month",
@@ -873,6 +885,7 @@ export const en: GalleryStrings = {
       pagedGroups: { app: "App", you: "Account" },
       pages: { general: "General", appearance: "Appearance", account: "Profile" },
       pageBody: "The current page's settings go here.",
+      pageRow: (n: number) => `Setting ${n}`,
       appearanceInfo: "Theme, accent and density apply to this browser only.",
       drawer: "Drawer",
       openDrawer: "Open a drawer",
@@ -1203,13 +1216,16 @@ export const en: GalleryStrings = {
       ],
     },
     site: {
+      nav: "Navigation bar",
+      navHint:
+        "Shared by the three sites: More ends the row and holds AMSP and Theme Packs; it opens on hover or a press, and reads as current while one of them is. The phone menu lists the two set in under More.",
       footer: "Footer",
       footerHint:
         "The landing page's brand and link columns; the docs' single line of copyright and links.",
-      tagline: "Unified and Stable RSI Framework.",
+      tagline: "Out-of-the-Box RSI Framework.",
       columns: [
         { title: "Product", links: ["Cases", "Quick start", "Blog", "Download"] },
-        { title: "Resources", links: ["GitHub repository", "Docs", "Gallery"] },
+        { title: "Resources", links: ["GitHub repository", "Docs", "Theme Packs"] },
       ],
       lineLinks: ["Home", "GitHub repository", "Apache-2.0 License"],
       copyright: "© 2026 Prism Shadow. Open source under Apache-2.0.",
@@ -1228,6 +1244,22 @@ export const en: GalleryStrings = {
         teal: "Perspectives",
         neutral: "Release notes",
       },
+      dataPage: "Data pages",
+      dataPageHint:
+        "Shared by the Plugins, Benchmarks and Leaderboards pages: the link back to the list, the segmented view switch, the toolbar's menu buttons and the data table. A menu button the current view has no use for greys out in place, so the toolbar holds still when the view changes.",
+      dataBack: "Plugins",
+      dataBackLabel: "Back to Plugins",
+      dataViews: "Views",
+      dataViewOptions: { table: "Table", pareto: "Pareto", waffle: "Waffle" },
+      dataFilter: "Filter",
+      dataColumns: "Columns",
+      dataColumnsHint: "Columns apply to the table",
+      dataHead: { rank: "Rank", name: "Algorithm", score: "Score", cost: "Cost" },
+      dataRows: [
+        ["SkillOpt RSI toolkit", "70.3", "$1.86"],
+        ["SkillAdam RSI toolkit", "69.0", "$1.96"],
+        ["Baseline", "56.3", "$2.38"],
+      ],
       article: "Article",
       articleHint:
         "The prose blog posts and doc pages share. Headings carry anchors, fenced code is highlighted, and tab groups and callouts are the docs' Markdown extensions; its contents sit on the right.",
@@ -1428,6 +1460,7 @@ export const en: GalleryStrings = {
         "| Setting | Value |\n| --- | --- |\n| Model | `gpt-5.6-luna` |\n| Approval | Ask before writing files |\n| Sandbox | Workspace only |\n| Context window | 400k tokens |",
       code: "Code",
       surface: "Code surface: line numbers, no frame",
+      surfaceLong: "A long file, wrapped: chunks of 100 lines, each drawn as it nears the view",
       diff: "Diff",
       unified: "Unified",
       split: "Side by side",

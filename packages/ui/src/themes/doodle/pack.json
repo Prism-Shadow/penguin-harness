@@ -6,7 +6,7 @@
   "base": "modern",
   "modes": ["light", "dark"],
   "swatches": {
-    "light": { "canvas": "#f6f1e7", "ink": "#2b2521", "accent": "#2b2521" },
+    "light": { "canvas": "#fbf9f4", "ink": "#2b2521", "accent": "#2b2521" },
     "dark": { "canvas": "#1c1a17", "ink": "#efe8dc", "accent": "#ece5d6" }
   },
   "accent": {

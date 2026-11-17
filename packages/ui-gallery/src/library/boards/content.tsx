@@ -5,8 +5,9 @@
  * Markdown reader over a long document under a title row that holds its outline and find buttons,
  * as the app's hosts place them (wide, with the outline as a rail, and narrow, with the outline
  * behind its button; the find opens from the button or with Mod+F inside the reader, in the title
- * row's place), a code block and a bare code surface with its gutter, the diff viewer unified,
- * side by side and read from a patch, and a reply carrying A2UI blocks — all from the package.
+ * row's place), a code block, a bare code surface with its gutter and a long wrapped one in a
+ * scroll box, the diff viewer unified, side by side and read from a patch, and a reply carrying
+ * A2UI blocks — all from the package.
  * Code is highlighted by the highlighter the frame provides, as in the app.
  *
  * The A2UI reply carries every block the catalog has, in each of its layouts: the four widgets
@@ -56,6 +57,21 @@ const CODE = `export function greet(name: string, excited = false): string {
   return \`Hello, \${name}\${mark}\`;
 }
 `;
+
+/** A file of several chunks of lines (CodeSurface draws them by 100), some long enough to wrap. */
+const LONG_CODE = Array.from(
+  { length: 40 },
+  (_, i) => `/**
+ * Step ${i + 1} folds a run of readings into one figure: each reading is weighted by how recent it is, the weights are normalised to sum to one, and the result is rounded to two places.
+ */
+export function step${i + 1}(readings: readonly number[]): number {
+  const weights = readings.map((_, at) => at + 1);
+  const sum = weights.reduce((a, b) => a + b, 0);
+  const total = readings.reduce((acc, value, at) => acc + (value * weights[at]!) / sum, 0);
+  return Math.round(total * 100) / 100;
+}
+`,
+).join("\n");
 
 const BEFORE = `import { readFile } from "node:fs/promises";
 
@@ -234,6 +250,12 @@ export function ContentBoard() {
           <span className="lib-caption">{t.surface}</span>
           <div className="lib-box text-xs leading-relaxed">
             <CodeSurface language="ts" code={CODE} lineNumbers />
+          </div>
+          <span className="lib-caption">{t.surfaceLong}</span>
+          <div className="lib-box">
+            <div className="h-[22rem] overflow-auto text-xs leading-relaxed">
+              <CodeSurface language="ts" code={LONG_CODE} lineNumbers wrap />
+            </div>
           </div>
         </div>
       </BoardGroup>

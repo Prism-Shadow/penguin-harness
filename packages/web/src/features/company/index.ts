@@ -7,3 +7,5 @@ export { useCompany } from "./company-state";
 export { parseOrgKey } from "../../lib/company-nav";
 
 export { switchDeskModel } from "./desk-model";
+
+export { PathCapsulesProvider } from "./path-capsule";

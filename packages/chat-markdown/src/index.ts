@@ -12,14 +12,15 @@
  *   right after it can still close the bold it belongs to.
  * - **Emphasis** follows the CJK-friendly flanking rule (`micromark-extension-cjk-friendly`):
  *   under CommonMark's own rule a `**` between punctuation and a CJK character cannot close,
- *   which leaves `**粗体（注）**后面` and `请**打开 http://…/**查看` unbolded.
+ *   which leaves `**粗体（注）**后面` and `请**打开 http://…/**查看` unbolded. A run of two or
+ *   more `*` right after `. , : ; ! ? ) ] }` may close whatever follows (emphasis.ts), so
+ *   `**Confirmed.**Next` is bold too.
  *
  * Strikethrough is still parsed: each host shows its tildes as written, in a pass of its own.
  *
  * Browser-safe: the server imports it as a dependency, and packages/ui bundles it into its
  * published modules. remark-parse is the host's; this only registers extensions on it.
  */
-import { cjkFriendlyExtension } from "micromark-extension-cjk-friendly";
 import { gfmFootnote } from "micromark-extension-gfm-footnote";
 import { gfmStrikethrough } from "micromark-extension-gfm-strikethrough";
 import { gfmTable } from "micromark-extension-gfm-table";
@@ -29,6 +30,7 @@ import { gfmStrikethroughFromMarkdown } from "mdast-util-gfm-strikethrough";
 import { gfmTableFromMarkdown } from "mdast-util-gfm-table";
 import { gfmTaskListItemFromMarkdown } from "mdast-util-gfm-task-list-item";
 import { bareUrlFromMarkdown, bareUrlSyntax } from "./bare-url.js";
+import { emphasisSyntax } from "./emphasis.js";
 
 /**
  * The `this.data()` bag unified plugins share to register parser extensions. `settings` is
@@ -54,7 +56,7 @@ export function remarkChatMarkdown(this: { data(): ProcessorData }): undefined {
     gfmTaskListItem(),
     // Before the URL constructs, so that at `_` an email address is tried before emphasis, as
     // under GFM: micromark tries a later extension's constructs first.
-    cjkFriendlyExtension(),
+    emphasisSyntax(),
     bareUrlSyntax,
   );
   (data.fromMarkdownExtensions ??= []).push(

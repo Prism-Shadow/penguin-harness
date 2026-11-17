@@ -103,6 +103,10 @@ const HOSTS: Readonly<Record<(typeof HOOKS)[number], readonly string[]>> = {
     // conversation with content moving underneath.
     "LauncherBall",
     "LauncherFan",
+    // The same ball floating over a page (FloatingBall): the × that tucks it away, and the
+    // handle it leaves on the edge, on the ball's glass.
+    "LauncherDismiss",
+    "LauncherEdgeHandle",
     // A plugin or skill tile (`data-glass="tile"`): the one glass that does not float.
     "SkillTile",
   ],
@@ -170,9 +174,18 @@ const HOSTS: Readonly<Record<(typeof HOOKS)[number], readonly string[]>> = {
     "PieChart",
     "ScatterChart",
   ],
-  // The dimmed backdrop (2026-09-30): a sibling behind a sheet or drawer, or the full-viewport
-  // overlay a modal, the command palette, the harness overlay and the lightbox sit in.
-  "ui-scrim": ["Modal", "Sheet", "Drawer", "CommandPalette", "HarnessHistoryOverlay", "Lightbox"],
+  // The dimmed backdrop (2026-09-30): a sibling behind a sheet, a drawer or a picker's phone
+  // sheet, or the full-viewport overlay a modal, the command palette, the harness overlay and
+  // the lightbox sit in.
+  "ui-scrim": [
+    "Modal",
+    "Sheet",
+    "Drawer",
+    "CommandPalette",
+    "HarnessHistoryOverlay",
+    "Lightbox",
+    "PickerPanel",
+  ],
   // Text as it arrives (2026-09-30): the one streaming body (2026-10-03) — the reply through
   // AssistantText, a thinking row's text, a compaction's summary and a tool call's output.
   "ui-stream": ["StreamText"],

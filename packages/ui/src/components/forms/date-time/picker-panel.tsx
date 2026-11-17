@@ -1,10 +1,12 @@
 /**
- * The panel a date or time picker opens: a small non-modal dialog portaled to the body and placed
- * against its trigger by `usePortalPanel` (through the trigger's `usePickerPanel`, which holds
- * the open state), so no ancestor's overflow clips it — a dialog's
+ * The panel a date or time picker opens: a small dialog portaled to the body and placed against
+ * its trigger by `usePortalPanel` (through the trigger's `usePickerPanel`, which holds the open
+ * state), so no ancestor's overflow clips it — a dialog's
  * scrolling body, a reply in the transcript — and it takes the `popover` layer over an open
  * dialog. It hangs under the trigger and opens above it when there is no room below, held inside
- * the viewport; on a phone (under 640px) it is a full-width sheet along the bottom edge instead.
+ * the viewport; on a phone (under 640px) it is a modal sheet along the bottom edge instead, as
+ * Material 3 makes a picker modal on a compact window: over a scrim, and headed by the field's
+ * title, since the field itself may be out of sight behind it.
  *
  * It closes on a press outside, on Escape (captured and stopped, so a dialog around the field
  * stays open), on a scroll that moves the trigger and on a resize — the portal hook's rules — and
@@ -86,20 +88,42 @@ export function PickerPanel({
         maxHeight: Math.max(0, room),
       };
 
-  return createPortal(
+  const panel = (
     <div
       ref={panelRef}
       id={panelId}
       role="dialog"
       aria-label={label}
+      aria-modal={sheet || undefined}
       onKeyDown={onKeyDown}
       style={{ position: "fixed", ...place }}
       className={`ui-glass anim-pop z-popover overflow-y-auto rounded-md border border-line bg-overlay p-3 text-sm text-fg shadow-lg ${
         sheet ? "" : widthClass
       }`}
     >
-      {sheet ? <div className={`mx-auto max-w-full ${widthClass}`}>{children}</div> : children}
-    </div>,
+      {sheet ? (
+        <div className={`mx-auto max-w-full ${widthClass}`}>
+          {/* The field is out of sight behind the scrim: the sheet says whose it is. */}
+          <p className="pb-2 text-xs text-fg-muted">{label}</p>
+          {children}
+        </div>
+      ) : (
+        children
+      )}
+    </div>
+  );
+  return createPortal(
+    sheet ? (
+      <>
+        <div
+          aria-hidden
+          className="ui-scrim anim-fade fixed inset-0 z-popover bg-[var(--ui-overlay-backdrop)]"
+        />
+        {panel}
+      </>
+    ) : (
+      panel
+    ),
     document.body,
   );
 }
