@@ -46,6 +46,7 @@ import {
   settle,
   unmountAll,
   waitFor,
+  spokenText,
   watchText,
 } from "./helpers/dom";
 import { json } from "./helpers/fetch";
@@ -94,7 +95,12 @@ const MACHINE_HELPER = `${AGENT_ID} ${en.chat.machineTag("gpu-box")}`;
 
 const STATUS = '[data-plugin="charts"] [data-testid="plugin-status"]';
 const USED_BY = '[data-plugin="charts"] [data-testid="plugin-used-by"]';
-const textOf = (selector: string) => document.querySelector(selector)?.textContent ?? null;
+/** What a reader is told a mark says: the cover card draws its words for assistive technology. */
+const textOf = (selector: string) => {
+  const node = document.querySelector(selector);
+  return node === null ? null : spokenText(node);
+};
+const watchSpoken = (selector: string) => watchText(selector, spokenText);
 const hintOf = (selector: string) =>
   document.querySelector(selector)?.getAttribute("data-tooltip") ?? "";
 
@@ -104,12 +110,7 @@ const headerControls = () =>
   [...document.querySelectorAll("button")]
     .map((b) => b.getAttribute("aria-label") ?? b.textContent?.trim() ?? "")
     .filter((name) =>
-      [
-        en.plugins.groupByLabel,
-        en.plugins.viewMachine,
-        en.plugins.importPlugin,
-        en.plugins.openSettings,
-      ].includes(name),
+      [en.plugins.viewMachine, en.plugins.importPlugin, en.plugins.openSettings].includes(name),
     );
 /** The entries of the open machine picker. */
 const pickerEntries = () =>
@@ -177,8 +178,8 @@ describe("the plugin market while a machine connects, fails or blinks", () => {
   it("reads Installed, used by 1, while the machine is held, then used by 2 once it answers", async () => {
     const { server } = await serverWithCharts(true);
     const gpu = server.hold("gpu1");
-    const status = watchText(STATUS);
-    const usedBy = watchText(USED_BY);
+    const status = watchSpoken(STATUS);
+    const usedBy = watchSpoken(USED_BY);
     await openPage();
     await waitFor(() => textOf(USED_BY) === USED_BY_1, 40);
     for (let i = 0; i < 5; i++) await settle();
@@ -197,8 +198,8 @@ describe("the plugin market while a machine connects, fails or blinks", () => {
     rememberMachineAgents(PROJECT_ID, "gpu1", [GPU_HELPER]);
     rememberAgentInstalls(PROJECT_ID, "gpu1", AGENT_ID, machineInstalls!);
     server.failNext("gpu1", new RegExp(`^/api/projects/${PROJECT_ID}/agents$`));
-    const status = watchText(STATUS);
-    const usedBy = watchText(USED_BY);
+    const status = watchSpoken(STATUS);
+    const usedBy = watchSpoken(USED_BY);
     await openPage();
     await waitFor(() => listReads(server, "gpu1") >= 1 && hintOf(STATUS).includes(LAST_SEEN), 40);
     expect(status.texts()).toEqual([INSTALLED]);
@@ -227,8 +228,8 @@ describe("the plugin market while a machine connects, fails or blinks", () => {
     const { server } = await serverWithCharts(true);
     await openPage();
     await waitFor(() => textOf(USED_BY) === USED_BY_2, 40);
-    const status = watchText(STATUS);
-    const usedBy = watchText(USED_BY);
+    const status = watchSpoken(STATUS);
+    const usedBy = watchSpoken(USED_BY);
     const localReads = installsReads(server, null);
 
     await setReachable(server, false);
@@ -251,8 +252,8 @@ describe("the plugin market while a machine connects, fails or blinks", () => {
 
     vi.setSystemTime(Date.now() + 3_000);
     const localReads = installsReads(server, null);
-    const status = watchText(STATUS);
-    const usedBy = watchText(USED_BY);
+    const status = watchSpoken(STATUS);
+    const usedBy = watchSpoken(USED_BY);
     await run(() => router.navigate("/plugins"));
     expect(textOf(STATUS)).toBe(INSTALLED);
     expect(textOf(USED_BY)).toBe(USED_BY_2);
@@ -290,7 +291,6 @@ describe("the plugin market while a machine connects, fails or blinks", () => {
     await waitFor(() => hasButton(en.plugins.viewMachine) && textOf(STATUS) !== null, 40);
     const controls = headerControls();
     expect(controls).toEqual([
-      en.plugins.groupByLabel,
       en.plugins.viewMachine,
       en.plugins.importPlugin,
       en.plugins.openSettings,

@@ -294,9 +294,9 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
-    key: "penguin.pluginsGroupsFolded",
+    key: "penguin.pluginsSort",
     scope: "browser",
-    why: "Which of the Plugins page's sections are folded, keyed by grouping and category, status or contents id; those ids ship with the build and name nothing on the server.",
+    why: "How the Plugins page orders its cards (selected first, recently updated, most used, name) — the MODE, valid against any root.",
   },
   {
     kind: "exact",

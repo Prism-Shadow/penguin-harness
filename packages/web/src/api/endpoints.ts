@@ -193,6 +193,7 @@ import type {
   SessionProcessesResponse,
   SessionResponse,
   PluginIndexResponse,
+  PluginMarketResponse,
   PluginConfigResponse,
   PluginConfigActionResponse,
   PluginConfigUpdateRequest,
@@ -1991,6 +1992,9 @@ export const uninstallAgentPlugin = (
 
 /** Plugin index (available to any logged-in user): the merged index of every configured registry. */
 export const getPluginIndex = () => apiFetch<PluginIndexResponse>("/api/plugins/registry");
+
+/** The market's curation (any logged-in user): the selected plugins, which may lead, and the art. */
+export const getPluginMarket = () => apiFetch<PluginMarketResponse>("/api/plugins/market");
 
 /** Languages plugins contributed; the grammars themselves are fetched by the highlighter. */
 export const getLanguages = () => apiFetch<LanguageIndexResponse>("/api/languages");

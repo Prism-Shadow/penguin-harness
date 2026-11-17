@@ -84,7 +84,11 @@ import {
 } from "../src/features/plugins/plugin-groups";
 import { PluginStatusMark, rowTitle, webLink } from "../src/features/plugins/plugin-marks";
 import type { PluginStatus } from "../src/features/plugins/plugin-status";
-import { IncompatibleNotice, PluginsHeaderActions } from "../src/features/plugins/plugins-page";
+import {
+  IncompatibleNotice,
+  PluginsHeaderActions,
+  PluginsListControls,
+} from "../src/features/plugins/plugins-page";
 import { setActiveStrings } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { LocaleProvider } from "../src/state/locale";
@@ -128,8 +132,6 @@ type HeaderProps = Parameters<typeof PluginsHeaderActions>[0];
 const headerProps = (overrides: Partial<HeaderProps> = {}): HeaderProps => ({
   query: "",
   onQuery: () => undefined,
-  groupBy: "category",
-  onGroupBy: () => undefined,
   isAdmin: false,
   machinePicker: null,
   onOpenSettings: () => undefined,
@@ -139,24 +141,19 @@ const headerProps = (overrides: Partial<HeaderProps> = {}): HeaderProps => ({
 const header = (isAdmin: boolean) => inLocale(PluginsHeaderActions, headerProps({ isAdmin }));
 
 describe("the plugins page header", () => {
-  it("offers a member the search box and the grouping select, and neither Import plugin nor Settings", () => {
+  it("offers a member the search box, and neither Import plugin nor Settings", () => {
     const html = header(false);
     expect(html).toContain(`aria-label="${en.plugins.searchPlaceholder}"`);
-    expect(buttonText(html, en.plugins.groupByLabel)).toBe(en.plugins.groupBy.category);
+    expect(html).not.toContain(`aria-label="${en.plugins.groupByLabel}"`);
     expect(buttonWords(html)).not.toContain(en.plugins.importPlugin);
     expect(buttonWords(html)).not.toContain(en.plugins.openSettings);
   });
 
-  it("offers an admin, after the search box and the grouping select, Import plugin and then Settings", () => {
+  it("offers an admin, after the search box, Import plugin and then Settings", () => {
     const html = header(true);
     const search = html.indexOf(`aria-label="${en.plugins.searchPlaceholder}"`);
     expect(search).toBeGreaterThanOrEqual(0);
-    expect(html.indexOf(`aria-label="${en.plugins.groupByLabel}"`)).toBeGreaterThan(search);
-    expect(buttonWords(html)).toEqual([
-      en.plugins.groupBy.category,
-      en.plugins.importPlugin,
-      en.plugins.openSettings,
-    ]);
+    expect(buttonWords(html)).toEqual([en.plugins.importPlugin, en.plugins.openSettings]);
   });
 });
 
@@ -358,10 +355,20 @@ describe("the grouping select", () => {
     });
   };
 
-  it("choosing to group by status in the header regroups the cards by status", () => {
+  const controls = (overrides: Partial<Parameters<typeof PluginsListControls>[0]> = {}) => ({
+    groupBy: "category" as PluginGroupBy,
+    onGroupBy: () => undefined,
+    sort: "featured" as const,
+    sorts: ["featured", "recent", "used", "name"] as const,
+    onSort: () => undefined,
+    locale: "en" as const,
+    ...overrides,
+  });
+
+  it("choosing to group by status at the tab row's end regroups the cards by status", () => {
     let chosen: PluginGroupBy = "category";
-    const tree = PluginsHeaderActions(
-      headerProps({
+    const tree = PluginsListControls(
+      controls({
         onGroupBy: (by) => {
           chosen = by;
         },
@@ -375,7 +382,7 @@ describe("the grouping select", () => {
   });
 
   it("shows the chosen grouping as its own phrase, under a name that says what it groups", () => {
-    const html = inLocale(PluginsHeaderActions, headerProps({ groupBy: "status" }));
+    const html = inLocale(PluginsListControls, controls({ groupBy: "status" }));
     expect(buttonText(html, en.plugins.groupByLabel)).toBe(en.plugins.groupBy.status);
   });
 });
@@ -409,7 +416,8 @@ describe("the detail dialog", () => {
     const html = sections(moduleRow("active"), { kind: "text", text: "# Requirements\n\nLinux." });
     expect(html).toContain("Bubblewrap sandbox backend.");
     expect(html).toContain("Requirements");
-    expect(html).toContain(BWRAP.name);
+    // The package name as it reads: the facts row lets a line break after the scope's slash.
+    expect(html.replace(/\/ /g, "/")).toContain(BWRAP.name);
     expect(html).not.toContain(en.plugins.detailFiles);
   });
 
@@ -481,10 +489,14 @@ describe("a plugin's display name", () => {
     expect(onCard).not.toMatch(/\bnotes\b/);
     expect(rowTitle(titled, "en")).toBe("Notes Pro");
     expect(rowTitle(titled, "zh")).toBe("笔记专业版");
-    expect(sections(titled, { kind: "none" })).toContain("@acme/notes");
-    // Without a display name the plugin's name stands, and no package line joins it.
+    // Counted as the name reads: the facts row lets a line break after the scope's slash.
+    const times = (text: string, part: string) => text.replace(/\/ /g, "/").split(part).length - 1;
+    // The package is the line under a display name, and a row of the facts column.
+    expect(times(sections(titled, { kind: "none" }), "@acme/notes")).toBe(2);
+    // Without a display name the plugin's name stands, and no package line joins it: the
+    // package is named in the facts column alone.
     expect(rowTitle(libraryRow, "en")).toBe("data-analysis");
-    expect(sections(libraryRow, { kind: "none" })).not.toContain(LIBRARY.package);
+    expect(times(sections(libraryRow, { kind: "none" }), LIBRARY.package)).toBe(1);
   });
 });
 
@@ -550,7 +562,9 @@ describe("the package's own details in the dialog", () => {
         repository: "javascript:alert(1)",
       },
     });
-    expect(text(html)).toContain("Acme Labs · MIT");
+    // Each in its own row of the facts column, under its label.
+    expect(text(html)).toContain(`${en.plugins.fact.author} Acme Labs`);
+    expect(text(html)).toContain(`${en.plugins.fact.license} MIT`);
     expect(links(html)).toEqual([
       { href: "https://acme.example/notes", name: en.plugins.detailHomepage, apart: true },
     ]);
@@ -564,7 +578,9 @@ describe("the package's own details in the dialog", () => {
       { href: "https://github.com/acme/notes", name: en.plugins.detailRepository, apart: true },
     ]);
     // A server module's come from its index entry; a package with none of them links nowhere.
-    expect(text(details(moduleRow("none", false)))).toContain("Prism Shadow · Apache-2.0");
+    const moduleFacts = text(details(moduleRow("none", false)));
+    expect(moduleFacts).toContain(`${en.plugins.fact.author} Prism Shadow`);
+    expect(moduleFacts).toContain(`${en.plugins.fact.license} Apache-2.0`);
     expect(links(details(libraryRow))).toEqual([]);
   });
 

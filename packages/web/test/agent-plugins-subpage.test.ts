@@ -61,6 +61,7 @@ import {
   field,
   hasButton,
   pressScrim,
+  spokenText,
   type,
   unmountAll,
   waitFor,
@@ -301,7 +302,7 @@ describe("the Plugins sub-page of an Agent's settings", () => {
     await waitFor(() => whereIs(router) === "/plugins");
     const usedBy = '[data-plugin="notes-kit"] [data-testid="plugin-used-by"]';
     await waitFor(() => document.querySelector(usedBy) !== null);
-    expect(document.querySelector(usedBy)?.textContent).toBe(en.plugins.usedByAgents(1));
+    expect(spokenText(document.querySelector(usedBy)!)).toBe(en.plugins.usedByAgents(1));
     expect(asked()).toBe(before);
   });
 });

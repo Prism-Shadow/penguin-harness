@@ -3449,6 +3449,65 @@ export const zh = {
       lastSeenOn: (n: number) => `（含 ${n} 个在不可达机器上的 Agent，按上次看到）`,
     },
     noMatch: "没有匹配的插件。",
+    /** The search matched nothing in the tab on show, but matches plugins in other tabs. */
+    noMatchHere: (n: number) => `当前标签下没有匹配的插件，全部插件中有 ${n} 个匹配。`,
+    showAllResults: "在全部中查看",
+    /** A plugin the market's curation selects: the carousel's eyebrow and a card's tag. */
+    selected: "精选",
+    /** The selected carousel's accessible name. */
+    selectedLabel: "精选插件",
+    viewDetails: "查看详情",
+    /** The first tab of the market: every plugin, whatever the grouping. */
+    tabAll: "全部",
+    /** The sort select: its accessible name and its options. */
+    sortLabel: "排序",
+    sort: {
+      featured: "精选优先",
+      recent: "最近更新",
+      used: "本项目在用最多",
+      name: "名称",
+      popular: "热门",
+    },
+    /** The ranking beside the grid: its heading, its two boards, and each figure in full words. */
+    ranking: {
+      title: "插件榜单",
+      popular: "热门",
+      rising: "飙升",
+      installs: (n: string) => `${n} 次安装`,
+      weekly: (n: string) => `本周新增 ${n} 次安装`,
+    },
+    /** The selected carousel's controls. */
+    carousel: {
+      previous: "上一个",
+      next: "下一个",
+      pause: "暂停轮播",
+      play: "继续轮播",
+      position: (i: number, n: number) => `第 ${i} 个，共 ${n} 个`,
+    },
+    /** A plugin's workbench installed on an Agent of this server: opens it in the App Center. */
+    openApp: "打开",
+    openAppHint: "在应用中心打开",
+    /** The detail's sections: its screenshots, what it installs, and its quick start. */
+    detailScreenshots: "截图",
+    detailIncludes: "包含内容",
+    detailQuickStart: "快速开始",
+    quickStartSkills: (names: string) => `预选技能：${names}`,
+    /** The kind of one part a plugin installs, beside its name. */
+    partKind: {
+      skill: "技能",
+      hook: "钩子",
+      mcp: "MCP 服务器",
+      workbench: "工作台",
+    },
+    /** The detail's column of facts: each row's label. */
+    fact: {
+      version: "版本",
+      category: "类别",
+      author: "作者",
+      license: "许可证",
+      package: "包名",
+      links: "链接",
+    },
     /** The description of a shipped package the registry has no entry for. */
     shippedNoEntry: "随本次构建自带；市场里还没有它的条目。",
     /** In place of the description of a package that carries none. */
@@ -3463,7 +3522,6 @@ export const zh = {
     detailDescription: "说明",
     detailFiles: "文件",
     detailSkills: "技能",
-    detailWorkbenches: "工作台",
     uninstallWorkbenchRecords: "其工作台及保存的记录也会被删除。",
     detailHooks: "钩子",
     /** The detail dialog's section of the MCP servers a plugin installs into an Agent's tools. */

@@ -1,8 +1,9 @@
 /**
- * A plugin's detail on the Agent settings Plugins sub-page: the Plugins page's detail dialog
- * (`PluginDetailModal`) with this Agent's status in its header, the README and the files read
- * from the server the Agent lives on, no "used by" count, and one section of its own after the
- * About — **On this agent**, what of the plugin the Agent carries:
+ * A plugin's detail on the Agent settings Plugins sub-page: the Plugins page's product page
+ * (`PluginDetailModal`) with this Agent's status on its facts line, the market's cover and
+ * screenshots for the plugin's package (this server's curation, as the market reads it), the
+ * README and the files read from the server the Agent lives on, no "used by" count, and one
+ * section of its own after the About — **On this agent**, what of the plugin the Agent carries:
  *
  * - one group per kind it has a part (or a missing part) of — Skills, the hook package, MCP
  *   servers, workbenches — each headed by its kind and, at the head's end, the way to where that
@@ -27,14 +28,20 @@ import {
   Pill,
   RuledSection,
 } from "@prismshadow/penguin-ui";
+import * as api from "../../api/endpoints";
+import { useRead } from "../../lib/read-store";
 import { S } from "../../lib/strings";
 import { BOOK_ICON, localizedText } from "../../lib/skill-use";
 import { workbenchTabsOf } from "../../lib/workbench-tabs";
 import {
+  MARKET_KEY,
   McpServerMarks,
   McpSetUpModal,
   PluginDetailModal,
+  artOf,
   hasParts,
+  isSelected,
+  pluginMarket,
   type AgentPluginGroup,
   type AgentTarget,
   type PluginRow,
@@ -246,6 +253,9 @@ export function AgentPluginDetail({
   onReload: () => void;
 }) {
   const footer = agentPluginActions(entry, title, isOwner, actions);
+  // The market's curation, as the Plugins page last read it: the same cover here as there. A
+  // server without one (404) leaves the generated cover.
+  const market = useRead(pluginMarket, MARKET_KEY, () => api.getPluginMarket()).value;
   const { missing } = entry;
   const carried =
     hasParts(entry.parts) ||
@@ -285,6 +295,8 @@ export function AgentPluginDetail({
       row={row}
       machineId={target.machineId}
       head={{ status: <AgentStatusMark status={entry.status} />, categoryTitle, usedBy: null }}
+      art={artOf(market, row)}
+      selected={isSelected(market, row)}
       afterAbout={parts}
       footer={footer.length > 0 ? <>{footer}</> : null}
       onClose={onClose}

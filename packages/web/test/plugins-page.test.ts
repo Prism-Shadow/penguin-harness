@@ -10,14 +10,16 @@
  * - Rows are grouped by category until the reader picks another grouping — in the categories'
  *   order, Agent Sandbox after the library's and Other last — and the same rows regroup by
  *   status (what wants a look first), by contents, or into one untitled section. The grouping
- *   and the folded sections are remembered per browser; nothing usable stored reads as
- *   category with nothing folded.
+ *   is remembered per browser; nothing usable stored reads as category.
  * - The search box narrows the rows to those whose names, descriptions (in either language) or
  *   keywords hold the query, whatever its case; a query nothing holds leaves none. A plugin's
  *   display name, in either language, finds it too, and so do its MCP servers' names and
  *   targets.
  * - Grouped by contents, a plugin of MCP servers alone sits under MCP servers; one that also
  *   ships Skills stays with the Skills.
+ * - Grouped by contents, a package the index lists and this server does not have yet sits
+ *   where its keywords say (a workbench plugin under Workbenches); one whose keywords say
+ *   nothing of it stays under Server modules.
  * - The "update all" plan is empty when no Agent is behind, sends one request per Agent with
  *   every plugin it is behind on, and counts distinct plugins as the notice does.
  * - The incompatible-only filter is off until this browser turns it on, and a flip reaches every
@@ -31,15 +33,12 @@ import type {
   PluginItem,
 } from "@prismshadow/penguin-server/api";
 import {
-  foldKey,
   groupRows,
-  initialFoldedGroups,
   initialPluginsGroupBy,
   moduleParts,
   pluginCategories,
   pluginRows,
   rowMatches,
-  storeFoldedGroups,
   storePluginsGroupBy,
   type PluginRow,
   type PluginView,
@@ -333,18 +332,14 @@ describe("grouping", () => {
     expect(none[0]!.rows).toHaveLength(rows.length);
   });
 
-  it("remembers the grouping and the folded sections in this browser, and survives storage it cannot use", () => {
+  it("remembers the grouping in this browser, and survives storage it cannot use", () => {
     const storage = memoryStorage();
     storePluginsGroupBy("status", storage);
-    storeFoldedGroups(new Set([foldKey("category", "sandbox")]), storage);
     expect(initialPluginsGroupBy(storage)).toBe("status");
-    expect([...initialFoldedGroups(storage)]).toEqual(["category:sandbox"]);
 
     const garbage = memoryStorage();
     garbage.setItem("penguin.pluginsGroupBy", "by-color");
-    garbage.setItem("penguin.pluginsGroupsFolded", "{not json");
     expect(initialPluginsGroupBy(garbage)).toBe("category");
-    expect(initialFoldedGroups(garbage).size).toBe(0);
     const blocked = {
       getItem: () => {
         throw new Error("blocked");
@@ -417,6 +412,28 @@ describe("a plugin of MCP servers", () => {
     const keep = (query: string) => rows.filter((row) => rowMatches(row, query)).map((r) => r.name);
     expect(keep("gmailmcp")).toEqual(["gmail"]);
     expect(keep("cloudflare-api")).toEqual(["cloudflare"]);
+  });
+});
+
+describe("a package the index lists before this server has it", () => {
+  it("sits under contents its keywords name, and under Server modules when they name none", () => {
+    const listed = (name: string, keywords: string[]) => ({
+      specifier: `@acme/${name}`,
+      entry: { ...sandbox(name, ["office-productivity"]), name: `@acme/${name}`, keywords },
+      state: "none" as const,
+      shipped: false,
+    });
+    const rows = pluginRows(GROUPS, [
+      listed("perler-studio", ["workbenches", "skills"]),
+      listed("flashcards", ["education", "skills"]),
+      listed("feishu", ["messaging"]),
+    ]).filter((row) => row.module !== undefined);
+    const groups = groupRows(rows, () => "available", "kind", pluginCategories(GROUPS, "en"));
+    expect(titles(groups)).toEqual([
+      ["Skills", ["flashcards"]],
+      ["Workbenches", ["perler-studio"]],
+      ["Server modules", ["feishu"]],
+    ]);
   });
 });
 

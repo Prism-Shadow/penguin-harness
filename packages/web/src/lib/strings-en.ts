@@ -3245,6 +3245,68 @@ export const en: Strings = {
           : ` (incl. ${n} agents on machines out of reach, as last seen)`,
     },
     noMatch: "No plugin matches that.",
+    /** The search matched nothing in the tab on show, but matches plugins in other tabs. */
+    noMatchHere: (n: number) =>
+      n === 1
+        ? "No plugin in this tab matches; 1 does across all plugins."
+        : `No plugin in this tab matches; ${n} do across all plugins.`,
+    showAllResults: "Show all results",
+    /** A plugin the market's curation selects: the carousel's eyebrow and a card's tag. */
+    selected: "Selected",
+    /** The selected carousel's accessible name. */
+    selectedLabel: "Selected plugins",
+    viewDetails: "View details",
+    /** The first tab of the market: every plugin, whatever the grouping. */
+    tabAll: "All",
+    /** The sort select: its accessible name and its options. */
+    sortLabel: "Sort",
+    sort: {
+      featured: "Selected first",
+      recent: "Recently updated",
+      used: "Most used in this Project",
+      name: "Name",
+      popular: "Popular",
+    },
+    /** The ranking beside the grid: its heading, its two boards, and each figure in full words. */
+    ranking: {
+      title: "Plugin rankings",
+      popular: "Popular",
+      rising: "Rising",
+      installs: (n: string) => `${n} installs`,
+      weekly: (n: string) => `${n} new installs this week`,
+    },
+    /** The selected carousel's controls. */
+    carousel: {
+      previous: "Previous",
+      next: "Next",
+      pause: "Pause rotation",
+      play: "Resume rotation",
+      position: (i: number, n: number) => `${i} of ${n}`,
+    },
+    /** A plugin's workbench installed on an Agent of this server: opens it in the App Center. */
+    openApp: "Open",
+    openAppHint: "Open in the App Center",
+    /** The detail's sections: its screenshots, what it installs, and its quick start. */
+    detailScreenshots: "Screenshots",
+    detailIncludes: "What it installs",
+    detailQuickStart: "Quick start",
+    quickStartSkills: (names: string) => `Selects the Skills: ${names}`,
+    /** The kind of one part a plugin installs, beside its name. */
+    partKind: {
+      skill: "Skill",
+      hook: "Hook",
+      mcp: "MCP server",
+      workbench: "Workbench",
+    },
+    /** The detail's column of facts: each row's label. */
+    fact: {
+      version: "Version",
+      category: "Category",
+      author: "Author",
+      license: "License",
+      package: "Package",
+      links: "Links",
+    },
     /** The description of a shipped package the registry has no entry for. */
     shippedNoEntry: "Ships with this build; the registry has no entry for it yet.",
     /** In place of the description of a package that carries none. */
@@ -3257,7 +3319,6 @@ export const en: Strings = {
     detailDescription: "About",
     detailFiles: "Files",
     detailSkills: "Skills",
-    detailWorkbenches: "Workbenches",
     uninstallWorkbenchRecords: "Its workbenches and saved records will also be deleted.",
     detailHooks: "Hooks",
     detailMcpServers: "MCP servers",

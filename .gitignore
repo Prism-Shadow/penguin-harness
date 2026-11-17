@@ -36,6 +36,9 @@ coverage/
 packages/web/test-results/
 # component gallery screenshots (scripts/shots.mjs); never committed
 packages/ui-gallery/shots/
+# the plugin market's pictures, copied from the community repository's assets/plugins/ to try
+# the gallery's market with them; they live in that repository, never here
+packages/ui-gallery/market-assets/
 packages/web/playwright-report/
 
 # blog images staged locally by the landing capture/render scripts, then uploaded to
