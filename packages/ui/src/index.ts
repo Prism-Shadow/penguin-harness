@@ -141,6 +141,7 @@ export * from "./components/content/prose/markdown-plugins";
 export * from "./components/content/prose/site-markdown-plugins";
 export * from "./components/content/code-block/code-block";
 export * from "./components/content/code-block/code-languages";
+export * from "./components/content/code-block/code-place";
 export * from "./components/content/typography/typography";
 export * from "./components/content/clamped-text/clamped-text";
 export * from "./components/content/diff-viewer/diff-viewer";

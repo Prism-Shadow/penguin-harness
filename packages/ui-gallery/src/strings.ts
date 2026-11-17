@@ -1412,6 +1412,7 @@ export const zh = {
         "| 设置 | 取值 |\n| --- | --- |\n| 模型 | `gpt-5.6-luna` |\n| 审批 | 写文件前询问 |\n| 沙箱 | 仅限工作区 |\n| 上下文窗口 | 400k Token |",
       code: "代码",
       surface: "代码面：行号，无外框",
+      surfaceLong: "长文件，自动换行：每 100 行一块，滚到附近才绘制",
       diff: "差异",
       unified: "合并视图",
       split: "并排视图",

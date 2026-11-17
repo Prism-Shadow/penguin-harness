@@ -2,8 +2,8 @@
  * DiffViewer and its model (diff.ts): the line diff is a shortest edit script, changes group into
  * hunks with their context and `diff -u` headers, paired lines mark the words that changed, a patch
  * is read as given, the split view pairs removed with added lines, and highlighted markup cuts into
- * lines. The component is rendered once, unhighlighted — the highlight lands in an effect, which
- * static markup never runs.
+ * lines (code-lines.ts, shared with the code surface). The component is rendered once,
+ * unhighlighted — the highlight lands in an effect, which static markup never runs.
  */
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
@@ -13,11 +13,11 @@ import {
   diffTexts,
   editScript,
   parsePatch,
-  splitHighlightedLines,
   splitLines,
   splitRows,
   wordMarks,
 } from "../src/components/content/diff-viewer/diff";
+import { splitHighlightedLines } from "../src/components/content/code-block/code-lines";
 import { DiffViewer } from "../src/components/content/diff-viewer/diff-viewer";
 import { classTokens, renderStatic } from "../src/testing";
 
