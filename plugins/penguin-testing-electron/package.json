@@ -18,6 +18,7 @@
     "directory": "plugins/penguin-testing-electron"
   },
   "files": [
+    "icon.svg",
     "skills",
     "ifaces.json",
     "LICENSE"
