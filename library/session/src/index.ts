@@ -8,7 +8,7 @@
  *
  * Subpaths:
  * - `.` - the mechanism contracts plus ApprovalMode.
- * - `./sessions` - the contracts module on its own.
+ * - `./session` - the contracts module on its own.
  * - `./repos` (and per-file) - the storing components.
  */
 export {

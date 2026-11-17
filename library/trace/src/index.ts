@@ -6,7 +6,7 @@
  *
  * Subpaths:
  * - `.` - the contracts.
- * - `./traces` - the contracts module on its own.
+ * - `./trace` - the contracts module on its own.
  * - `./repos` - the trace-index storing component.
  */
 export * from "./trace.js";

@@ -4,6 +4,6 @@
  *
  * Subpaths:
  * - `.` - the vocabulary.
- * - `./workbenches` - the vocabulary module on its own.
+ * - `./workbench` - the vocabulary module on its own.
  */
 export * from "./workbench.js";

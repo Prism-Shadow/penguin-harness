@@ -24,7 +24,15 @@ import type {
   ProjectRole,
   CompanyServerEvent,
   SessionTracesResponse,
+  MachineServerEvent,
 } from "@prismshadow/penguin-library-project";
+import type {
+  ContextToolShare,
+  AgentTraceFileRef,
+  AgentTraceSessionGroup,
+  AgentTraceDateGroup,
+  AgentTraceSessionFile,
+} from "@prismshadow/penguin-library-trace";
 import type { CompactionMode, AmspRecord, SessionSource, ToolCallPayload } from "@prismshadow/amsp";
 import type {
   ElidedBody,
@@ -132,6 +140,7 @@ import type {
   OrgChannelMessage,
   OrgChannelNotice,
   OrgChannelNoticeKind,
+  OrgTicketChange,
   OrgTriggerKind,
 } from "@prismshadow/penguin-library-organization";
 import type {
@@ -1487,12 +1496,18 @@ export type {
   ServerEvent,
   CommandPolicyDto,
   GoalServerEvent,
+  MachineServerEvent,
   ChatDefaultsDto,
   ProjectRole,
   ProjectSummary,
   MemberInfo,
   AgentTraceSessionEntry,
   AgentTracesResponse,
+  ContextToolShare,
+  AgentTraceFileRef,
+  AgentTraceSessionGroup,
+  AgentTraceDateGroup,
+  AgentTraceSessionFile,
   ContextFileShare,
   CostParts,
   HistoryMessage,
@@ -1522,6 +1537,7 @@ export type {
   UsageGroupRow,
   UsageModelSeries,
   UsageModelTotals,
+  UsageModelTotal,
   UsageResponse,
   UsageSeriesPoint,
   OrgChannelMessage,
@@ -1558,6 +1574,7 @@ export type {
   UnavailableSandboxBackend,
   ApprovalReason,
   OrgCalendarOutcome,
+  OrgTicketChange,
   DefaultModelOffer,
   EndpointModelListRequest,
   EndpointModelListResponse,

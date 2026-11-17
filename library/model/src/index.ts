@@ -7,7 +7,7 @@
  *
  * Subpaths:
  * - `.` - the vocabulary plus the mechanisms.
- * - `./models` - the vocabulary module on its own.
+ * - `./model` - the vocabulary module on its own.
  * - `./repos/model-promotions`, `./repos/model-provider-auth-tokens` - the storing components.
  */
 export type {

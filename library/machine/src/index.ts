@@ -6,7 +6,7 @@
  *
  * Subpaths:
  * - `.` - the row shape and the repo classes.
- * - `./machines` / `./browser-extensions` - each module on its own.
+ * - `./machine` / `./browser-extensions` - each module on its own.
  */
 export * from "./machine.js";
 export * from "./browser-extensions.js";

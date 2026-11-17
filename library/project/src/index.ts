@@ -8,7 +8,7 @@
  *
  * Subpaths:
  * - `.` - the mechanism contracts and the DTOs they name.
- * - `./projects` - the contracts module on its own.
+ * - `./project` - the contracts module on its own.
  * - `./repos` (and per-file) - the storing components.
  */
 export * from "./project.js";
