@@ -158,7 +158,6 @@ export async function launchHarness(options: LaunchOptions = {}): Promise<Harnes
           `install: the instance refused ${pluginDir} (${response.status}): ${detail.slice(0, 400)}`,
         );
       }
-      await import("node:fs").then((fs) => fs.promises.rm(tarball, { force: true }));
     },
     async remove(pluginName: string) {
       const response = await fetch(
