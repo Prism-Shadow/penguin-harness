@@ -3,6 +3,7 @@
 - **Date:** 2026-11-17
 - **Type:** feature
 - **Scope:** `ui`, `ui-gallery`, `web`
+- **PR:** [#1578](https://github.com/Prism-Shadow/penguin-harness/pull/1578)
 
 [中文版](2026-11-17-doodle-material-3.zh.md)
 
