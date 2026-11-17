@@ -10,6 +10,35 @@
  * pairing of request_begin/end, tool call duration pairing, reconnect / compaction
  * counts, and Token trend.
  */
+import type {
+  AgentTraceSessionEntry,
+  AgentTracesResponse,
+  RequestSpan,
+  SessionCategory,
+  SessionContextParts,
+  ToolCallSpan,
+  TraceAnalysisResponse,
+  TraceEventsResponse,
+  TraceFileInfo,
+  TraceImportResponse,
+  TraceModelSegment,
+  TraceOtherSpan,
+  TraceTaskStats,
+  TraceToolSpan,
+  UsageTrendPointInTrace,
+  ForkTraceResult,
+  HistoryTraceFile,
+  HistoryWindowRead,
+  ImportedSession,
+  MessageCursor,
+  MessagesPageRequest,
+  MessagesPageResult,
+  RecordSource,
+  WindowPriorStats,
+  TraceIndex,
+  TraceIndexStore,
+  Traces,
+} from "@prismshadow/penguin-library-trace";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -35,23 +64,6 @@ import {
 import type { CompactionMode, AmspRecord } from "@prismshadow/penguin-core";
 import { promptLabel } from "./trace-prompt-label.js";
 import type { SessionCategoryCounts, HistoryMessage, TracePosition } from "../api/types.js";
-import type {
-  AgentTraceSessionEntry,
-  AgentTracesResponse,
-  RequestSpan,
-  SessionCategory,
-  SessionContextParts,
-  ToolCallSpan,
-  TraceAnalysisResponse,
-  TraceEventsResponse,
-  TraceFileInfo,
-  TraceImportResponse,
-  TraceModelSegment,
-  TraceOtherSpan,
-  TraceTaskStats,
-  TraceToolSpan,
-  UsageTrendPointInTrace,
-} from "@prismshadow/penguin-library-trace";
 import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
 import type {
   TraceFileRow,
@@ -80,17 +92,6 @@ import {
   serializePrefix,
 } from "./message-window.js";
 import type { ChildAggregate, ScanState } from "./message-window.js";
-import type {
-  ForkTraceResult,
-  HistoryTraceFile,
-  HistoryWindowRead,
-  ImportedSession,
-  MessageCursor,
-  MessagesPageRequest,
-  MessagesPageResult,
-  RecordSource,
-  WindowPriorStats,
-} from "@prismshadow/penguin-library-trace";
 import { buildContextBreakdown, emptyContextBreakdown } from "./context-breakdown.js";
 import { sessionIdCreatedAt } from "./session-service.js";
 import { listCategory, listingMarksOf, readRecordedSource } from "../runtime/session-sources.js";
@@ -102,7 +103,6 @@ import { traceRecordImage, withImagesByReference } from "./trace-images.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import { elideHistoryRecord } from "@prismshadow/penguin-core/interfaces";
 import type { Paths } from "../hmr/capabilities.js";
-import type { TraceIndex, TraceIndexStore, Traces } from "@prismshadow/penguin-library-trace";
 import type { SessionIndex, SessionOrigins } from "@prismshadow/penguin-library-session";
 
 const TRACE_FILE_RE = /^(.+)_(\d{3})\.jsonl$/;

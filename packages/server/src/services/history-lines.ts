@@ -25,6 +25,11 @@
  * held partial line that does not validate is simply sent whole. Bytes past a file's last
  * `\n` are never sent: a record that is still an unterminated tail rides the window as a stub.
  */
+import type {
+  Traces,
+  HistoryTraceFile,
+  HistoryWindowRead,
+} from "@prismshadow/penguin-library-trace";
 import fs from "node:fs/promises";
 import {
   decodeBodyRef,
@@ -47,7 +52,6 @@ import { HttpError } from "../http/errors.js";
 import type { EventSink } from "../http/event-stream.js";
 import { badRequest } from "../http/validate.js";
 import type { Channels } from "../hmr/capabilities.js";
-import type { Traces } from "@prismshadow/penguin-library-trace";
 import type { Sessions } from "../runtime/session-manager.js";
 import { FRAME_TEXT_BUDGET, lineFrames, partFrames } from "../socket/line-frames.js";
 import type { LineFrame, PartFrame } from "../socket/line-frames.js";
@@ -70,7 +74,6 @@ import {
   pageLimit,
 } from "./session-history.js";
 import { withImagesByReference } from "./trace-images.js";
-import type { HistoryTraceFile, HistoryWindowRead } from "@prismshadow/penguin-library-trace";
 
 /** A machine-leg stream beats this often while it waits on credit or disk. */
 export const HISTORY_LINES_BEAT_MS = 5_000;

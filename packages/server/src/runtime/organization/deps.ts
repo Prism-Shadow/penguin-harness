@@ -4,17 +4,23 @@
  * usage pricing, the file store and the caches. app.ts binds the real services; tests bind
  * doubles — the same shape the schedule scheduler uses.
  */
+import type {
+  ApprovalMode,
+  SessionStatus,
+  SessionIndex,
+} from "@prismshadow/penguin-library-session";
+import type {
+  ServerEvent,
+  Members,
+  ProjectConfigStore,
+  Projects,
+  UtilityCompletion,
+} from "@prismshadow/penguin-library-project";
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import { Interface } from "@prismshadow/penguin-core/kernel";
-import type { ApprovalMode } from "@prismshadow/penguin-library-session";
 import type { MessagingChannel } from "../../api/types.js";
-import type { SessionStatus } from "@prismshadow/penguin-library-session";
-import type { ServerEvent } from "@prismshadow/penguin-library-project";
 import type { OrgCache } from "@prismshadow/penguin-library-organization";
-import type { Members, ProjectConfigStore, Projects } from "@prismshadow/penguin-library-project";
-import type { SessionIndex } from "@prismshadow/penguin-library-session";
 import type { OrgStore } from "../../organization/store.js";
-import type { UtilityCompletion } from "@prismshadow/penguin-library-project";
 import type { ErrorSink } from "../error-recorder.js";
 
 /** The session manager as the runtime sees it: is a session busy, and start a Task on it. */

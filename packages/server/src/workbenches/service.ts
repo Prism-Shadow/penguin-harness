@@ -29,6 +29,12 @@
  * listing, watcher event or request loads it. The markers are dot entries the watcher ignores,
  * so a switch takes effect through setEnabled / setAgentEnabled, which unload or load at once.
  */
+import type {
+  ServerEvent,
+  AgentIndex,
+  Members,
+  Projects,
+} from "@prismshadow/penguin-library-project";
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -44,12 +50,10 @@ import type {
 import { agentDir, userText } from "@prismshadow/penguin-core";
 import type { IconImage } from "@prismshadow/penguin-core";
 import table from "../ifaces.json" with { type: "json" };
-import type { ServerEvent } from "@prismshadow/penguin-library-project";
 import { HttpError } from "../http/errors.js";
 import type { Channels, Clock, Config, Hmr, Log, Paths } from "../hmr/capabilities.js";
 import { userChannelKey } from "../http/routes/events.js";
 import type { AgentConfig } from "../mechanisms/agents.js";
-import type { AgentIndex, Members, Projects } from "@prismshadow/penguin-library-project";
 import type { Traces } from "@prismshadow/penguin-library-trace";
 import { workbenchResult } from "./result.js";
 import type { SessionIndex } from "@prismshadow/penguin-library-session";

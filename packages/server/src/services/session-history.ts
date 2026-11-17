@@ -16,6 +16,11 @@
  * carries the current run's records, and the read's records stop where that run starts
  * (`cutBeforeRun`).
  */
+import type {
+  Traces,
+  MessagesPageRequest,
+  MessagesPageResult,
+} from "@prismshadow/penguin-library-trace";
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import type { Context } from "hono";
 import type {
@@ -28,13 +33,11 @@ import type { SessionStatus } from "@prismshadow/penguin-library-session";
 import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
 import { badRequest, parseNonNegativeInt } from "../http/validate.js";
 import type { Channels } from "../hmr/capabilities.js";
-import type { Traces } from "@prismshadow/penguin-library-trace";
 import { envelopeDigest } from "../runtime/live-tail.js";
 import type { RunStart } from "../runtime/live-tail.js";
 import type { SessionManager } from "../runtime/session-manager.js";
 import { decodeCursor } from "./message-window.js";
 import { withImagesByReference } from "./trace-images.js";
-import type { MessagesPageRequest, MessagesPageResult } from "@prismshadow/penguin-library-trace";
 
 export interface SessionHistoryDeps {
   traceService: Pick<Traces, "readMessages" | "readMessagesPage" | "readTraceImage">;

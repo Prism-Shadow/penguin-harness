@@ -34,6 +34,24 @@
  * `SessionLoader`: production uses the core SDK (createCoreSessionLoader), tests inject
  * a fake Session (issuing no real LLM requests).
  */
+import type {
+  PendingFollowUpInfo,
+  PendingSteeringInfo,
+  SessionStatus,
+  AgentState,
+  SessionIndex,
+  SessionOrigins,
+} from "@prismshadow/penguin-library-session";
+import type {
+  ServerEvent,
+  ProjectConfigStore,
+  ProjectEvents,
+} from "@prismshadow/penguin-library-project";
+import type {
+  UsageContext,
+  Errors,
+  UsageRecording,
+} from "@prismshadow/penguin-library-observability";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -70,13 +88,7 @@ import type {
   ToolDetachResult,
 } from "@prismshadow/penguin-core";
 import type { SessionBackgroundTasks } from "../api/types.js";
-import type {
-  PendingFollowUpInfo,
-  PendingSteeringInfo,
-  SessionStatus,
-} from "@prismshadow/penguin-library-session";
 import type { ModelRefDto } from "@prismshadow/penguin-library-agent-api";
-import type { ServerEvent } from "@prismshadow/penguin-library-project";
 import type { RecallableFile } from "../services/task-attachments.js";
 import { cliShimDir } from "../services/cli-shim.js";
 import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
@@ -93,7 +105,6 @@ import type { LiveRun, LiveTail } from "./live-tail.js";
 import { unrunSource } from "./session-sources.js";
 import { StreamErrorWatcher } from "./stream-error-watcher.js";
 import type { TitleNotifier } from "./title-generator.js";
-import type { UsageContext } from "@prismshadow/penguin-library-observability";
 import { Component, Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { SessionService as SessionServiceImpl } from "../services/session-service.js";
 import type { ClassCtx, Json, Opaque } from "@prismshadow/penguin-core/kernel";
@@ -108,13 +119,6 @@ import { loopbackHostRoles } from "../services/preview-token.js";
 import { agentNoProxy } from "../net/proxy.js";
 import type { SandboxService } from "../sandbox/service.js";
 import type { AuthState, Channels, Clock, Config, Log } from "../hmr/capabilities.js";
-import type { ProjectConfigStore, ProjectEvents } from "@prismshadow/penguin-library-project";
-import type {
-  AgentState,
-  SessionIndex,
-  SessionOrigins,
-} from "@prismshadow/penguin-library-session";
-import type { Errors, UsageRecording } from "@prismshadow/penguin-library-observability";
 import type { TraceIndex, TraceIndexStore } from "@prismshadow/penguin-library-trace";
 import type { Settings } from "@prismshadow/penguin-library-setting";
 import type { MessagingBindings } from "@prismshadow/penguin-library-messaging";

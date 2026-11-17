@@ -10,6 +10,16 @@
  * Also handles Project create / list / delete, member authorization, and initial
  * Project provisioning at signup.
  */
+import type {
+  ProjectRole,
+  Access,
+  AgentIndex,
+  Members,
+  ProjectConfigStore,
+  ProjectLifecycle,
+  Projects,
+} from "@prismshadow/penguin-library-project";
+import type { Users, UserDraftsStore } from "@prismshadow/penguin-library-auth";
 import fs from "node:fs/promises";
 import {
   DEFAULT_PROJECT_ID,
@@ -18,7 +28,6 @@ import {
   provisionProjectBenchmarks,
   type BuiltinBenchmark,
 } from "@prismshadow/penguin-core";
-import type { ProjectRole } from "@prismshadow/penguin-library-project";
 import type { MemberInfo, ProjectSummary } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 import type { ProjectRow } from "@prismshadow/penguin-library-project/repos/projects";
@@ -32,21 +41,11 @@ import {
 } from "./ids.js";
 import { Component, Use, Interface } from "@prismshadow/penguin-core/kernel";
 import type { Config, Paths } from "../hmr/capabilities.js";
-import type {
-  Access,
-  AgentIndex,
-  Members,
-  ProjectConfigStore,
-  ProjectLifecycle,
-  Projects,
-} from "@prismshadow/penguin-library-project";
-import type { Users } from "@prismshadow/penguin-library-auth";
 import type { Schedules, SessionIndex } from "@prismshadow/penguin-library-session";
 import type { ErrorLog, UsageStore } from "@prismshadow/penguin-library-observability";
 import type { TraceIndex } from "@prismshadow/penguin-library-trace";
 import type { OrgCache } from "@prismshadow/penguin-library-organization";
 import type { AgentApi } from "@prismshadow/penguin-library-agent-api";
-import type { UserDraftsStore } from "@prismshadow/penguin-library-auth";
 
 /** Fallback timeout for waiting on runs to settle before deleting a Project. */
 const ABORT_SETTLE_TIMEOUT_MS = 5000;

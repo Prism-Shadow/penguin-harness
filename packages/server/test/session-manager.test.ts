@@ -40,6 +40,7 @@
  *   alone (never from a compaction); a subagent's fires at registration from its spawning
  *   prompt.
  */
+import type { ErrorRecordArgs, UsageContext } from "@prismshadow/penguin-library-observability";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { DatabaseSync } from "node:sqlite";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -81,12 +82,10 @@ import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sess
 import { ChannelHub } from "../src/runtime/channel.js";
 import type { ChannelEvent } from "../src/runtime/channel.js";
 import type { ErrorSink } from "../src/runtime/error-recorder.js";
-import type { ErrorRecordArgs } from "@prismshadow/penguin-library-observability";
 import { SessionManager, FOLLOW_UP_QUEUE_LIMIT } from "../src/runtime/session-manager.js";
 import type { RuntimeSession, SessionLoader } from "../src/runtime/session-manager.js";
 import { SessionSources } from "../src/runtime/session-sources.js";
 import type { TitleRequest } from "../src/runtime/title-generator.js";
-import type { UsageContext } from "@prismshadow/penguin-library-observability";
 import { fakeSession } from "./fixtures/session.js";
 import { waitFor } from "./helpers.js";
 import { wire } from "@prismshadow/penguin-core/kernel";

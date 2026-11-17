@@ -16,13 +16,11 @@
  * errors with no Project context) are visible only to admins, see the ErrorsRepo
  * file header.
  */
-import type { UsageGroupBy } from "@prismshadow/penguin-library-observability";
 import type {
+  UsageGroupBy,
   UsageQuery,
   UsageErrorsQuery,
   UsageErrorsClearQuery,
-} from "@prismshadow/penguin-library-observability";
-import type {
   UsageAgentSeries,
   UsageBucket,
   UsageErrors,
@@ -33,6 +31,9 @@ import type {
   UsageModelTotals,
   UsageResponse,
   UsageSeriesPoint,
+  ErrorLog,
+  UsageQueries,
+  UsageStore,
 } from "@prismshadow/penguin-library-observability";
 import type { CostParts } from "@prismshadow/penguin-library-trace";
 import type { ErrorFilter } from "@prismshadow/penguin-library-observability/repos/errors";
@@ -54,11 +55,6 @@ import {
 import { badRequest } from "../http/validate.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Clock } from "../hmr/capabilities.js";
-import type {
-  ErrorLog,
-  UsageQueries,
-  UsageStore,
-} from "@prismshadow/penguin-library-observability";
 import type { ProjectConfigStore } from "@prismshadow/penguin-library-project";
 
 /**

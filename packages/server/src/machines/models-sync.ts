@@ -19,18 +19,19 @@
  * A value this server takes from its own environment (an API key, a base URL) is not in the
  * config and so never travels; `envSourced` names each one, for the sync to say so.
  */
+import type {
+  ModelInfo,
+  ModelUpdateEntry,
+  ModelsResponse,
+  ModelsUpdateRequest,
+  ProviderConnectionUpdate,
+} from "@prismshadow/penguin-library-model";
 import type { MachineApi } from "./machine-api.js";
 import { effectiveConnection, providerConnectionShape } from "@prismshadow/penguin-core";
 import { catalogEntryFor } from "../model-catalog/catalog.js";
 import { modelEnvironment } from "../model-catalog/env-keys.js";
 import type { ModelEntry, ModelRef, ProviderTable } from "@prismshadow/penguin-core";
-import type { ModelInfo, ModelUpdateEntry } from "@prismshadow/penguin-library-model";
 import type { ModelRefDto } from "@prismshadow/penguin-library-agent-api";
-import type {
-  ModelsResponse,
-  ModelsUpdateRequest,
-  ProviderConnectionUpdate,
-} from "@prismshadow/penguin-library-model";
 
 /** This side's half of the merge: a Project's configured models and groups, keys in plaintext. */
 export interface LocalModels {

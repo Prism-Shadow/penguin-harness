@@ -13,6 +13,7 @@
  * version rather than with this build. Swap semantics for anything the platform holds that
  * is not parked is a HARD STOP: approvals deny, runs abort, the scheduler dies with its App.
  */
+import type { ServerEvent, Access } from "@prismshadow/penguin-library-project";
 import { createHash } from "node:crypto";
 import zlib from "node:zlib";
 import fs from "node:fs";
@@ -148,7 +149,6 @@ import { TraceIndexRepo } from "@prismshadow/penguin-library-trace/repos/trace-i
 import { UsageRepo } from "@prismshadow/penguin-library-observability/repos/usage";
 import { adminUsersRoutes } from "./http/routes/admin.js";
 import { adminSettingsRoutes } from "./http/routes/admin-settings.js";
-import type { ServerEvent } from "@prismshadow/penguin-library-project";
 import { meRoutes } from "./http/routes/me.js";
 import { eventsRoutes, userChannelKey } from "./http/routes/events.js";
 import { projectsRoutes } from "./http/routes/projects.js";
@@ -180,7 +180,6 @@ import { MachinesService } from "./machines/service.js";
 import { wire } from "@prismshadow/penguin-core/kernel";
 import type { Settings } from "@prismshadow/penguin-library-setting";
 import type { Errors } from "@prismshadow/penguin-library-observability";
-import type { Access } from "@prismshadow/penguin-library-project";
 import type { Auth } from "@prismshadow/penguin-library-auth";
 
 /**

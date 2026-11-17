@@ -154,7 +154,6 @@ import { LanguageRoutes } from "./http/routes/languages.js";
 import { Languages, LanguagesModule } from "./languages/service.js";
 import { TerminalModule } from "./terminal/manager.js";
 import { SessionApiRoutes } from "./http/routes/sessions.js";
-import { Admin, Auth, AuthSessions, Users } from "@prismshadow/penguin-library-auth";
 import {
   Access,
   AgentIndex,
@@ -188,7 +187,14 @@ import { TraceIndex, TraceIndexStore, Traces } from "@prismshadow/penguin-librar
 import { AgentConfig, AgentLifecycle, Benchmarks, Memory, Snapshots } from "./mechanisms/agents.js";
 import { FileReveal, WorkspaceFiles } from "./mechanisms/workspace.js";
 import { Settings, UiPrefsStore } from "@prismshadow/penguin-library-setting";
-import { BackgroundImageStore, UserDraftsStore } from "@prismshadow/penguin-library-auth";
+import {
+  Admin,
+  Auth,
+  AuthSessions,
+  Users,
+  BackgroundImageStore,
+  UserDraftsStore,
+} from "@prismshadow/penguin-library-auth";
 import { MessagingBindings } from "@prismshadow/penguin-library-messaging";
 import { OrgCache } from "@prismshadow/penguin-library-organization";
 import { PreviewModule, PreviewTokens } from "./http/routes/preview.js";

@@ -13,6 +13,20 @@
  * Project's default reference, 400 if there is none); the new Session is
  * added to session-manager's active table (state idle).
  */
+import type {
+  SessionCategory,
+  TraceIndex,
+  TraceIndexStore,
+} from "@prismshadow/penguin-library-trace";
+import type {
+  ApprovalMode,
+  SessionSandbox,
+  SessionSandboxPreset,
+  UnavailableSandboxBackend,
+  SessionIndex,
+  SessionOrigins,
+} from "@prismshadow/penguin-library-session";
+import type { ServerEvent, ProjectConfigStore } from "@prismshadow/penguin-library-project";
 import fs from "node:fs/promises";
 import {
   agentsDir,
@@ -27,20 +41,12 @@ import type {
   SpawnConfiner,
   ThinkingLevelName,
 } from "@prismshadow/penguin-core";
-import type { ApprovalMode } from "@prismshadow/penguin-library-session";
 import type {
   MessagingChannel,
   SessionCategoryCounts,
   SessionInfo,
   SessionSource,
 } from "../api/types.js";
-import type {
-  SessionSandbox,
-  SessionSandboxPreset,
-  UnavailableSandboxBackend,
-} from "@prismshadow/penguin-library-session";
-import type { ServerEvent } from "@prismshadow/penguin-library-project";
-import type { SessionCategory } from "@prismshadow/penguin-library-trace";
 import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
 import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
@@ -55,9 +61,6 @@ import {
 import type { ListingView } from "../runtime/session-sources.js";
 import { TraceIndexService, traceFilePath } from "./trace-index.js";
 import { matchesWorkspaceGroup } from "./workspace-group.js";
-import type { TraceIndex, TraceIndexStore } from "@prismshadow/penguin-library-trace";
-import type { SessionIndex, SessionOrigins } from "@prismshadow/penguin-library-session";
-import type { ProjectConfigStore } from "@prismshadow/penguin-library-project";
 import type { SandboxDimension, SandboxSettings } from "@prismshadow/penguin-core/plugin";
 import { aboveSandboxCeiling } from "./sandbox-ceiling.js";
 

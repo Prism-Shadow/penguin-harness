@@ -14,14 +14,16 @@
  * an admin's clear also takes the unattributed rows an admin's read shows);
  * GET /api/projects/:p/usage/model-totals — lifetime Token total per Model, unfiltered.
  */
+import type {
+  UsageGroupBy,
+  UsageGranularity,
+  UsageQueries,
+} from "@prismshadow/penguin-library-observability";
 import { Hono } from "hono";
 import type { Context } from "hono";
-import type { UsageGroupBy } from "@prismshadow/penguin-library-observability";
 import type { UsageErrorKind, UsageErrorsClearResponse } from "../../api/types.js";
-import type { UsageGranularity } from "@prismshadow/penguin-library-observability";
 import type { AppEnv } from "../../auth/middleware.js";
 import { badRequest, optionalDateParam, paginationQuery, requireValidId } from "../validate.js";
-import type { UsageQueries } from "@prismshadow/penguin-library-observability";
 import type { Access } from "@prismshadow/penguin-library-project";
 
 /** What this route group reaches — bound by its module (src/modules). */

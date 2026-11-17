@@ -24,6 +24,7 @@
  * `elsewhere` rather than hidden: adopting it costs a row, while re-installing costs a
  * 30 MB transfer to reach the same place.
  */
+import type { ServerEvent, Access, Projects } from "@prismshadow/penguin-library-project";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -52,7 +53,6 @@ import type {
   MachineUseRefusal,
   MachinesCheckoutImage,
 } from "../api/types.js";
-import type { ServerEvent } from "@prismshadow/penguin-library-project";
 import { readServerLock } from "../lock.js";
 import { SESSION_COOKIE } from "../auth/middleware.js";
 import http from "node:http";
@@ -141,7 +141,6 @@ import type { HandshakeReading } from "./handshake.js";
 import { machineSessionForward } from "./session-forward.js";
 import type { MachineSessionForward } from "./session-forward.js";
 import { HttpError } from "../http/errors.js";
-import type { Access, Projects } from "@prismshadow/penguin-library-project";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { MachinesRepo } from "@prismshadow/penguin-library-machine/machine";

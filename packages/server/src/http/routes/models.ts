@@ -8,12 +8,9 @@
  * URL-encoding issues), GET /api/projects/:p/models/balance. Any member can read (api_key is
  * masked) and read a group's balance; only the owner can modify, test, or detect.
  */
-import { Hono } from "hono";
-import { providerInfo } from "../../model-catalog/catalog.js";
-import type { DefaultModelResponse, ModelBalanceResponse } from "../../api/types.js";
-import type { ModelUpdateEntry } from "@prismshadow/penguin-library-model";
-import type { ModelRefDto } from "@prismshadow/penguin-library-agent-api";
+import type { ServerEvent, Access, ProjectConfigStore } from "@prismshadow/penguin-library-project";
 import type {
+  ModelUpdateEntry,
   EndpointModelListRequest,
   ModelProtocolDetectRequest,
   ModelTestRequest,
@@ -22,7 +19,10 @@ import type {
   PresetSyncMode,
   ProviderConnectionUpdate,
 } from "@prismshadow/penguin-library-model";
-import type { ServerEvent } from "@prismshadow/penguin-library-project";
+import { Hono } from "hono";
+import { providerInfo } from "../../model-catalog/catalog.js";
+import type { DefaultModelResponse, ModelBalanceResponse } from "../../api/types.js";
+import type { ModelRefDto } from "@prismshadow/penguin-library-agent-api";
 import type { AppEnv } from "../../auth/middleware.js";
 import { badRequest, pathParam, readJson, requireString, requireValidId } from "../validate.js";
 import { HttpError } from "../errors.js";
@@ -30,7 +30,6 @@ import { isHttpUrl } from "../../services/protocol-detect.js";
 import type { ChannelHub } from "../../runtime/channel.js";
 import type { SessionManager } from "../../runtime/session-manager.js";
 import type { SessionIndex } from "@prismshadow/penguin-library-session";
-import type { Access, ProjectConfigStore } from "@prismshadow/penguin-library-project";
 import type { Machines } from "../../machines/service.js";
 import { ModelBalances } from "../../services/model-balance.js";
 

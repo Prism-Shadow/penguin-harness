@@ -25,6 +25,11 @@
  * so an unchanged tree ticks with zero readdir/readFile — manual edits are still
  * picked up next tick because every edit variant moves an mtime the gate stats.
  */
+import type {
+  ScheduleServerEvent,
+  ProjectConfigStore,
+  Projects,
+} from "@prismshadow/penguin-library-project";
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import { agentsDir, buildScheduledMessage, userText } from "@prismshadow/penguin-core";
@@ -41,7 +46,6 @@ import {
 } from "./schedule-store.js";
 import type { ScheduleConfigSource } from "./schedule-store.js";
 import type { ScheduleStatus } from "../api/types.js";
-import type { ScheduleServerEvent } from "@prismshadow/penguin-library-project";
 import { Component, Interface, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { userChannelKey } from "../http/routes/events.js";
@@ -52,7 +56,6 @@ import type {
   SessionDrivers,
   SessionIndex,
 } from "@prismshadow/penguin-library-session";
-import type { ProjectConfigStore, Projects } from "@prismshadow/penguin-library-project";
 import type { Errors } from "@prismshadow/penguin-library-observability";
 
 /** Reconcile and fire-check interval (min period is 5m, so 30s granularity is plenty). */

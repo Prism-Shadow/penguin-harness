@@ -14,8 +14,8 @@
  * this process, and the minted key goes straight into the Project's model config without
  * passing through the browser. A caller only ever holds an opaque flow id and a status.
  */
+import type { ModelOAuthMode, ModelOAuth } from "@prismshadow/penguin-library-model";
 import { Hono } from "hono";
-import type { ModelOAuthMode } from "@prismshadow/penguin-library-model";
 import type {
   ModelOAuthCodeResponse,
   ModelOAuthStartResponse,
@@ -38,7 +38,6 @@ import { badRequest, readJson, requireString, requireValidId } from "../validate
 import { modelConfigChanged } from "./models.js";
 import type { ModelsRouteDeps } from "./models.js";
 import type { Access } from "@prismshadow/penguin-library-project";
-import type { ModelOAuth } from "@prismshadow/penguin-library-model";
 
 /** Flow ids are base64url (`randomBytes(32)`); reject anything else before it reaches the store. */
 const FLOW_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;

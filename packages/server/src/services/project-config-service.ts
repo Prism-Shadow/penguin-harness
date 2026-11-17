@@ -27,6 +27,39 @@
  * caught by the stat. The cached table is shared between callers and must be treated
  * as immutable — every mutating method here copies before changing.
  */
+import type {
+  ChatDefaultsDto,
+  CommandPolicyDto,
+  ProjectConfigStore,
+} from "@prismshadow/penguin-library-project";
+import type {
+  DefaultModelOffer,
+  ModelEffectiveConnection,
+  ModelInfo,
+  ModelPricingDto,
+  EndpointModelListRequest,
+  EndpointModelListResponse,
+  ModelProtocolDetectRequest,
+  ModelProtocolDetectResponse,
+  ModelTestRequest,
+  ModelTestResponse,
+  ModelVisionDetectRequest,
+  ModelVisionDetectResponse,
+  ModelsResponse,
+  ModelsUpdateRequest,
+  PresetSyncMode,
+  PresetSyncResponse,
+  ProviderConnectionDto,
+  ProviderConnectionResponse,
+  ProviderConnectionUpdate,
+  PricingRates,
+  TieredRates,
+  GroupKeyApplied,
+  ModelPromotion,
+  ModelProviderAuthToken,
+  ModelProviderAuthTokens,
+  ModelPromotions,
+} from "@prismshadow/penguin-library-model";
 import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -92,31 +125,7 @@ import type {
   ProviderTable,
 } from "@prismshadow/penguin-core";
 import type { CommandPolicyRuleDto } from "../api/types.js";
-import type {
-  DefaultModelOffer,
-  ModelEffectiveConnection,
-  ModelInfo,
-  ModelPricingDto,
-} from "@prismshadow/penguin-library-model";
 import type { ModelRefDto } from "@prismshadow/penguin-library-agent-api";
-import type { ChatDefaultsDto, CommandPolicyDto } from "@prismshadow/penguin-library-project";
-import type {
-  EndpointModelListRequest,
-  EndpointModelListResponse,
-  ModelProtocolDetectRequest,
-  ModelProtocolDetectResponse,
-  ModelTestRequest,
-  ModelTestResponse,
-  ModelVisionDetectRequest,
-  ModelVisionDetectResponse,
-  ModelsResponse,
-  ModelsUpdateRequest,
-  PresetSyncMode,
-  PresetSyncResponse,
-  ProviderConnectionDto,
-  ProviderConnectionResponse,
-  ProviderConnectionUpdate,
-} from "@prismshadow/penguin-library-model";
 import { badRequest } from "../http/validate.js";
 import { HttpError } from "../http/errors.js";
 import { cacheable } from "../internal/mtime-gate.js";
@@ -137,17 +146,8 @@ import {
   classifyVisionProbe,
   classifyVisionProbeError,
 } from "./vision-detect.js";
-import type { PricingRates, TieredRates } from "@prismshadow/penguin-library-model";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Config, Paths } from "../hmr/capabilities.js";
-import type { ProjectConfigStore } from "@prismshadow/penguin-library-project";
-import type { GroupKeyApplied } from "@prismshadow/penguin-library-model";
-import type {
-  ModelPromotion,
-  ModelProviderAuthToken,
-  ModelProviderAuthTokens,
-  ModelPromotions,
-} from "@prismshadow/penguin-library-model";
 
 export type RawTable = Record<string, unknown>;
 

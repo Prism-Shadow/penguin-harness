@@ -13,6 +13,17 @@
  * Docs: packages/docs/content/server-api.{zh,en}.md (site path /docs/server-api) is the
  * public route/SSE reference for this contract — keep it in sync when changing DTOs.
  */
+import type {
+  ChatDefaultsDto,
+  MemberInfo,
+  ProjectSummary,
+  ScheduleServerEvent,
+  ServerEvent,
+  CommandPolicyDto,
+  GoalServerEvent,
+  ProjectRole,
+  CompanyServerEvent,
+} from "@prismshadow/penguin-library-project";
 import type { CompactionMode, AmspRecord, SessionSource, ToolCallPayload } from "@prismshadow/amsp";
 import type {
   ElidedBody,
@@ -34,15 +45,6 @@ import type {
   AgentApiUpdateRequest,
   ModelRefDto,
 } from "@prismshadow/penguin-library-agent-api";
-import type {
-  ChatDefaultsDto,
-  MemberInfo,
-  ProjectSummary,
-  ScheduleServerEvent,
-  ServerEvent,
-  CommandPolicyDto,
-  GoalServerEvent,
-} from "@prismshadow/penguin-library-project";
 import type {
   DefaultModelOffer,
   EndpointModelListRequest,
@@ -71,7 +73,6 @@ import type {
   ModelEffectiveConnection,
   CredentialInfo,
 } from "@prismshadow/penguin-library-model";
-import type { ProjectRole } from "@prismshadow/penguin-library-project";
 import type {
   AgentTraceSessionEntry,
   AgentTracesResponse,
@@ -145,7 +146,6 @@ import type {
   DesktopBrowserCookie,
   DesktopBrowserReplyMessage,
 } from "@prismshadow/penguin-library-machine";
-import type { CompanyServerEvent } from "@prismshadow/penguin-library-project";
 
 // ---------------------------------------------------------------------------
 // General

@@ -28,6 +28,7 @@
  * control environment), so the file records the employee rather than the token's user — see
  * {@link callerSessionId} for why only the control environment may make that claim.
  */
+import type { SessionVia, UserDraftsStore } from "@prismshadow/penguin-library-auth";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { isValidId } from "@prismshadow/penguin-core";
@@ -41,12 +42,10 @@ import type {
   OrganizationsResponse,
 } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { SessionVia } from "@prismshadow/penguin-library-auth";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Settings } from "@prismshadow/penguin-library-setting";
 import type { ProjectLifecycle } from "@prismshadow/penguin-library-project";
 import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
-import type { UserDraftsStore } from "@prismshadow/penguin-library-auth";
 import type { AgentApi } from "@prismshadow/penguin-library-agent-api";
 import type { ErrorLog } from "@prismshadow/penguin-library-observability";
 import type { Schedules, SessionIndex } from "@prismshadow/penguin-library-session";
