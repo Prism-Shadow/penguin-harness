@@ -38,6 +38,7 @@ export function indexUrlsOf(doc: Record<string, unknown>): string[] {
         // A section of the download area's card (download-area.ts), between the sources'
         // section and the mirrors': the address list is what the mirrors serve.
         parent: "download-area",
+        order: 2,
         title: "Plugin index",
         titleZh: "插件索引",
         description:

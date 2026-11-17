@@ -38,6 +38,9 @@ export function npmRegistryOf(value: unknown): string | undefined {
         // A section of the download area's card (download-area.ts): drawn inside it under
         // this title, saved under its own key.
         parent: "download-area",
+        // The section's place inside the card: the registry first, then the index's
+        // address list, then the mirrors that serve them.
+        order: 1,
         title: "Plugin sources",
         titleZh: "插件源",
         description:

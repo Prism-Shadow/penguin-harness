@@ -106,6 +106,7 @@ export function mirrorRulesOf(value: unknown): readonly PluginProxyRule[] {
         // A section of the download area's card (download-area.ts), after the plugin-index
         // section: both sections lead with the sources.
         parent: "download-area",
+        order: 3,
         title: "Plugin mirrors",
         titleZh: "插件镜像",
         description:
