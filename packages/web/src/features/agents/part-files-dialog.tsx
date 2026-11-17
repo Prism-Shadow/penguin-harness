@@ -38,6 +38,9 @@ export function PartFilesDialog({
         headerFallback={part.name}
         lead={PART_LEAD[part.kind]}
         skip={hidden}
+        // A SKILL.md's frontmatter is what the row already says (name, description, version):
+        // the preview reads its body, as the plugin detail's Files section does.
+        stripFrontmatter
       />
     </Modal>
   );

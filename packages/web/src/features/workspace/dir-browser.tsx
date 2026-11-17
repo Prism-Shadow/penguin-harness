@@ -11,7 +11,8 @@
  *   about its kind (a script with no extension, a LICENSE) is read only when its first bytes look
  *   like text, and offered as a download otherwise. Images and PDFs load from their own URLs.
  * - A relative link in a Markdown file opens its target in place and reveals its row.
- * - Entries the caller `skip`s are never listed.
+ * - Entries the caller `skip`s are never listed; with `stripFrontmatter`, a Markdown preview reads
+ *   the body under a leading frontmatter block.
  * - Another directory is another browser: a changed scope starts over with nothing carried.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -46,6 +47,8 @@ export interface DirBrowserProps {
   lead?: readonly string[];
   /** Entries left out of the tree. */
   skip?: (entry: WorkspaceFileEntry) => boolean;
+  /** Markdown previews drop a leading frontmatter block: the caller shows those fields already. */
+  stripFrontmatter?: boolean;
 }
 
 /** A directory read in the shared read-only FileBrowser: listed one level at a time through the Files panel's routes, a file previewed on the right. Nothing here writes. */
@@ -54,7 +57,13 @@ export function DirBrowser(props: DirBrowserProps): ReactElement {
   return <DirBrowserBody key={filesScopeKey(props.scope)} {...props} />;
 }
 
-function DirBrowserBody({ scope, headerFallback, lead, skip }: DirBrowserProps) {
+function DirBrowserBody({
+  scope,
+  headerFallback,
+  lead,
+  skip,
+  stripFrontmatter = false,
+}: DirBrowserProps) {
   // The key above pins the scope for this instance's life; the caller builds a fresh object
   // every render, so the API is built once rather than from each one.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -217,6 +226,7 @@ function DirBrowserBody({ scope, headerFallback, lead, skip }: DirBrowserProps) 
       truncatedLabel={S.files.previewTruncated}
       unsupportedLabel={S.files.previewUnsupported}
       downloadLabel={S.files.download}
+      stripFrontmatter={stripFrontmatter}
       resolveRef={resolveRef}
       isFindKey={readerFind.isFindKey}
       findShortcut={readerFind.findShortcut}
