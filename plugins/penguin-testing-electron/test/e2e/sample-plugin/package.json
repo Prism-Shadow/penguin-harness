@@ -4,7 +4,7 @@
   "private": true,
   "description": "Minimal plugin under test for the penguin-testing-electron e2e case: one TestUnit component.",
   "scripts": {
-    "build": "node ../gen-ifaces.cjs --project tsconfig.json --out ifaces.json && tsup"
+    "build": "node ../../../../../../packages/core/bin/gen-ifaces.mjs --project tsconfig.json --out ifaces.json && tsup"
   },
   "main": "./dist/index.js",
   "type": "module",

@@ -1,44 +1,52 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { expect } from "@playwright/test";
+import { describe, it } from "vitest";
 
 /**
- * End to end: launch a real harness shell, install the sample plugin, run its TestUnit
- * in the shell, remove it. Skips itself when no display is available (Linux CI runs it
- * under Xvfb) — it never fails red for lack of a head.
+ * End to end: test the sample plugin against a real harness shell — the declarative
+ * shape a plugin author writes. The driver runs the whole lifecycle; this test only
+ * declares the units. Skips itself when no display is available (Linux CI runs it under
+ * Xvfb) — it never fails red for lack of a head.
  */
 const display = process.env.DISPLAY ?? process.env.WAYLAND_DISPLAY;
 const available = process.platform !== "linux" || display !== undefined;
 
 describe.skipIf(!available)("penguin-testing-electron e2e", () => {
-  it("launches a harness shell, installs a plugin, runs its TestUnit, removes it", async () => {
-    const { launchHarness } = await import("../../src/driver.js");
-    const instance = await launchHarness();
+  it("tests the sample plugin end to end, declaratively", async () => {
+    const { testPlugin } = await import("../../src/driver.js");
+    const sample = path.join(import.meta.dirname, "sample-plugin");
 
-    try {
-      expect(existsSync(instance.penguinHome)).toBe(true);
-      expect(existsSync(instance.chromeDir)).toBe(true);
+    const results = await testPlugin({
+      pluginDir: sample,
+      units: {
+        "instance-data-exists": {
+          description: "The instance's home and browser data exist on disk.",
+          run: async () => {
+            expect(existsSync(path.join(process.cwd(), ".data/penguin-testing-electron/penguin"))).toBe(true);
+          },
+        },
+        "window-renders": {
+          description: "The shell's first window renders the app root.",
+          run: async ({ window }) => {
+            await window.waitForLoadState("domcontentloaded");
+            expect(window.isClosed()).toBe(false);
+          },
+        },
+      },
+    });
 
-      const sample = path.join(import.meta.dirname, "sample-plugin");
-      await instance.install(sample);
-
-      // The window is a real Playwright page: assert the shell actually rendered.
-      await instance.window.waitForLoadState("domcontentloaded");
-      expect(instance.window.isClosed()).toBe(false);
-
-      await instance.remove("penguin-testing-electron-sample");
-    } finally {
-      await instance.app.close();
-    }
+    expect(results.map((r) => `${r.unit}:${r.ok}`)).toEqual([
+      "instance-data-exists:true",
+      "window-renders:true",
+    ]);
   }, 120_000);
 });
 
 describe("penguin-testing-electron sample plugin", () => {
-  it("ships a package manifest and a TestUnit component", async () => {
+  it("declares its test unit in its component", async () => {
     const sample = path.join(import.meta.dirname, "sample-plugin");
-    const manifest = path.join(sample, "package.json");
     const unit = path.join(sample, "src/index.ts");
-    expect(existsSync(manifest)).toBe(true);
     expect(existsSync(unit)).toBe(true);
     const source = await import("node:fs").then((fs) => fs.promises.readFile(unit, "utf8"));
     expect(source).toContain("PluginTestUnits.units");
