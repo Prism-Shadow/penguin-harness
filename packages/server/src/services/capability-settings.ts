@@ -25,6 +25,7 @@ function destination(row: ModelEntry, config: ProjectConfig): Capability | "chat
     providerConnectionShape(config.providers?.[row.provider]),
   );
   const client = routedClientType(row.model_id, conn.clientType);
+  if (!client) return undefined;
   if (client === "openai-image") return "image";
   if (client === "openai-speech" || client === "deepseek-speech") return "tts";
   if (client === "openai-transcription" || client === "deepseek-transcription") return "stt";
@@ -100,8 +101,11 @@ export function applyCapabilitySettings(config: ProjectConfig, patch: Capability
   }
   const voice = { ...current.voicePolish, ...patch.voicePolish };
   if (voice.model) requireCandidate("chat", voice.model);
-  if (voice.enabled && !voice.model && !config.default_model)
-    throw badRequest("Choose a model for transcript editing or configure a default chat model.");
+  if (voice.enabled && !voice.model) {
+    if (!config.default_model)
+      throw badRequest("Choose a model for transcript editing or configure a default chat model.");
+    requireCandidate("chat", dto(config.default_model));
+  }
   return {
     capability_models: bindings,
     voice_polish: {
