@@ -16,20 +16,12 @@
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { encodePng, pngPixels, rasterize } from "./raster-strokes.mjs";
 
 const RECIPES = fileURLToPath(new URL("../src/themes/doodle/recipes.css", import.meta.url));
 const ROOT = ':root[data-theme="doodle"]';
 
-/** Inks, per mode: warm roasted cocoa marker ink in light, warm cream chalk in dark. */
-const INK = {
-  ink: { light: "#382820", dark: "#e3d8c6" },
-  danger: { light: "#b3261e", dark: "#ff8f7f" },
-  blue: { light: "#8f2d3d", dark: "#f78fa0" },
-};
-
-/** The fill a floating slip is painted in: `--ui-overlay`. */
-const OVERLAY = { light: "#fffdf9", dark: "#26211d" };
+const INK = { light: "#51394e", dark: "#ead9e6" };
+const OVERLAY = { light: "#fffbf7", dark: "#322a36" };
 
 /** The shadow under a slip: a warm cocoa sticker offset shadow and soft warm aura. */
 const SHADOW = {
@@ -40,110 +32,15 @@ const SHADOW = {
 /** The margin a glass image keeps round its outline for the shadow; the recipes' outset. */
 const MARGIN = 12;
 
-/**
- * Plump, smooth cartoon shapes with high `arcSteps` and gentle felt-tip `wander` so stretched
- * controls and wide inputs never show polygonal corners or smeared runs.
- */
-const SHAPES = {
-  control: {
-    size: 44,
-    slice: 14,
-    radius: 10,
-    stroke: 2,
-    seed: 5,
-    arcSteps: 8,
-    wander: { run: 0.35, arc: 0.22 },
-    tail: true,
-    bitmap: true,
-    clip: true,
-  },
-  bubble: {
-    size: 56,
-    slice: 20,
-    radius: [18, 18, 5, 18],
-    stroke: 2.1,
-    seed: 11,
-    arcSteps: 8,
-    wander: { run: 0.38, arc: 0.25 },
-    tail: true,
-    bitmap: true,
-    clip: true,
-  },
-  pill: {
-    size: 56,
-    slice: 22,
-    radius: 20,
-    stroke: 2.1,
-    seed: 17,
-    arcSteps: 10,
-    wander: { run: 0.32, arc: 0.2 },
-    bitmap: true,
-  },
-  bead: {
-    size: 34,
-    slice: 13,
-    radius: 11,
-    stroke: 1.9,
-    seed: 29,
-    arcSteps: 8,
-    wander: { run: 0.28, arc: 0.18 },
-    bitmap: true,
-  },
-  box: {
-    size: 20,
-    slice: 7,
-    radius: 4,
-    stroke: 1.8,
-    seed: 23,
-    arcSteps: 6,
-    wander: { run: 0.28, arc: 0.2 },
-    clip: true,
-  },
-  fab: {
-    size: 52,
-    slice: 18,
-    radius: 14,
-    stroke: 2.2,
-    seed: 37,
-    arcSteps: 8,
-    wander: { run: 0.35, arc: 0.22 },
-    tail: true,
-    clip: true,
-  },
-};
-
-/** The slips of what floats: the outline, its fill and its shadow in one image. */
-const SLIPS = {
-  label: {
-    size: 32,
-    slice: 11,
-    radius: 7,
-    stroke: 1.9,
-    seed: 5,
-    arcSteps: 6,
-    wander: { run: 0.35, arc: 0.22 },
-    tail: true,
-  },
-  slip: {
-    size: 54,
-    slice: 18,
-    radius: 14,
-    stroke: 2,
-    seed: 41,
-    arcSteps: 8,
-    wander: { run: 0.35, arc: 0.22 },
-    tail: true,
-  },
-  sheet: {
-    size: 72,
-    slice: 28,
-    radius: 24,
-    stroke: 2.2,
-    seed: 43,
-    arcSteps: 10,
-    wander: { run: 0.35, arc: 0.22 },
-    tail: true,
-  },
+const LABEL = {
+  size: 32,
+  slice: 11,
+  radius: 7,
+  stroke: 1.9,
+  seed: 5,
+  arcSteps: 6,
+  wander: { run: 0.35, arc: 0.22 },
+  tail: true,
 };
 
 const INSET = 2;
@@ -224,35 +121,8 @@ function linePath(shape) {
   };
 }
 
-function lineLines(shape) {
-  const points = outline(shape);
-  return [
-    { points, closed: true },
-    ...(shape.tail ? [{ points: tail(points, shape), closed: false }] : []),
-  ];
-}
-
 const svg = (size, inner) =>
   `<svg xmlns='http://www.w3.org/2000/svg' width='${size}' height='${size}'>${inner}</svg>`;
-
-function stroke(shape, ink) {
-  const lines = lineLines(shape);
-  if (shape.bitmap) {
-    const data = encodePng(
-      rasterize({ size: shape.size, scale: 2, width: shape.stroke, lines }),
-      ink,
-    );
-    return `image-set(url("data:image/png;base64,${data.toString("base64")}") 2x)`;
-  }
-  const d = lines.map(({ points, closed }) => polyline(points) + (closed ? "Z" : "")).join("");
-  return url(
-    svg(
-      shape.size,
-      `<path d='${d}' fill='none' stroke='${ink}' stroke-width='${shape.stroke}' ` +
-        `stroke-linecap='round' stroke-linejoin='round'/>`,
-    ),
-  );
-}
 
 function glass(shape, ink, mode) {
   const { size, radius } = shape;
@@ -274,23 +144,6 @@ function glass(shape, ink, mode) {
     size + 2 * MARGIN,
     `<g transform='translate(${MARGIN} ${MARGIN})'>${shadow}${line}</g>`,
   );
-}
-
-function coord(v, { size, slice }) {
-  if (v <= slice) return `${f(v)}px`;
-  if (v >= size - slice) {
-    const d = f(size - v);
-    return d === 0 ? "100%" : `calc(100% ${d < 0 ? "+" : "-"} ${Math.abs(d)}px)`;
-  }
-  const t = (v - slice) / (size - 2 * slice);
-  const px = f(slice * (1 - 2 * t));
-  return `calc(${f(t * 100)}% ${px < 0 ? "-" : "+"} ${Math.abs(px)}px)`;
-}
-
-function clip(shape) {
-  const points = outline(shape, shape.stroke / 2 + 0.25);
-  const [first, ...rest] = points.map(([x, y]) => `${coord(x, shape)} ${coord(y, shape)}`);
-  return `shape(from ${first}, ${rest.map((p) => `line to ${p}`).join(", ")}, close)`;
 }
 
 const encode = (text) =>
@@ -336,29 +189,8 @@ function clover(notch = 42.6, steps = 14) {
 }
 
 function properties(mode) {
-  const ink = (name) => INK[name][mode];
-  const { control, bubble, pill, bead, box, fab } = SHAPES;
-  const props = [
-    ["--_stroke-control", stroke(control, ink("ink"))],
-    ["--_stroke-control-danger", stroke(control, ink("danger"))],
-    ["--_stroke-control-focus", stroke(control, ink("blue"))],
-    ["--_stroke-bubble", stroke(bubble, ink("ink"))],
-    ["--_stroke-pill", stroke(pill, ink("ink"))],
-    ["--_stroke-pill-danger", stroke(pill, ink("danger"))],
-    ["--_stroke-bead", stroke(bead, ink("ink"))],
-    ["--_stroke-box", stroke(box, ink("ink"))],
-    ["--_stroke-fab", stroke(fab, ink("ink"))],
-    ["--_glass-label", url(glass(SLIPS.label, ink("ink"), mode))],
-    ["--_glass-slip", url(glass(SLIPS.slip, ink("ink"), mode))],
-    ["--_glass-sheet", url(glass(SLIPS.sheet, ink("ink"), mode))],
-    ["--_glass-sheet-focus", url(glass(SLIPS.sheet, ink("blue"), mode))],
-  ];
-  if (mode === "light") {
-    for (const [name, shape] of Object.entries(SHAPES)) {
-      if (shape.clip) props.push([`--_clip-${name}`, clip(shape)]);
-    }
-    props.push(["--_clip-cookie", cookie()], ["--_clip-clover", clover()]);
-  }
+  const props = [["--_glass-label", url(glass(LABEL, INK[mode], mode))]];
+  if (mode === "light") props.push(["--_clip-cookie", cookie()], ["--_clip-clover", clover()]);
   return props;
 }
 
@@ -376,13 +208,7 @@ function block() {
   ].join("\n");
 }
 
-const squash = (text) =>
-  text
-    .replace(/\s+/g, "")
-    .replace(
-      /data:image\/png;base64,([A-Za-z0-9+/=]+)/g,
-      (_, data) => `png:${pngPixels(Buffer.from(data, "base64"))}`,
-    );
+const squash = (text) => text.replace(/\s+/g, "");
 
 const text = readFileSync(RECIPES, "utf8");
 const start = text.indexOf(BEGIN);

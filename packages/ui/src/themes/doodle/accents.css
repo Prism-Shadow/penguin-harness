@@ -8,7 +8,7 @@
  * preset another theme lists paints nothing here.
  */
 :root[data-theme="doodle"][data-accent="ink"] {
-  --ui-accent: #32241d;
+  --ui-accent: #402e40;
 }
 :root[data-theme="doodle"][data-accent="ink"].dark {
   --ui-accent: #ebe2d3;

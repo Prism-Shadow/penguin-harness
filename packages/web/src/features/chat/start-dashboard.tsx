@@ -162,7 +162,10 @@ function StartBrand() {
           page, where white meets white. Its corner is the asset's own (the drawing clips at 24% of
           the side), not the theme's radius scale, which would make it a circle in Frost and a
           square in Console: the mark keeps one shape everywhere. */}
-      <div className="relative col-start-1 row-span-2 row-start-1 aspect-square max-h-24 justify-self-start self-stretch">
+      <div
+        data-slot="brand-mark"
+        className="relative col-start-1 row-span-2 row-start-1 aspect-square max-h-24 justify-self-start self-stretch"
+      >
         <PenguinLogo
           src={PENGUIN_LOGO_URL}
           className="absolute inset-0 h-full w-full rounded-[24%] ring-1 ring-line-muted"

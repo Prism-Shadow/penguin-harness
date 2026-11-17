@@ -256,7 +256,9 @@ export function NavRow({
           {typeof glyph === "string" ? <GlyphIcon d={glyph} size={GLYPH_SIZE[density]} /> : glyph}
         </span>
       )}
-      <span className="min-w-0 truncate">{label}</span>
+      <span data-slot={primary ? "label" : undefined} className="min-w-0 truncate">
+        {label}
+      </span>
       {badge !== undefined && <span className="ml-auto flex shrink-0 items-center">{badge}</span>}
     </>
   );

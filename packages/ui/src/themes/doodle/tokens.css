@@ -1,59 +1,47 @@
 /**
- * Doodle (`doodle`, 卡通) — Picture-book & character-goods stationery (Koupenchan, Mofusand,
- * Chiikawa, pixiv), drawn by hand.
- *
- * - Surfaces: a sunny butter-biscuit desk pad (`--ui-shell-field`), a warm vanilla milk-paper page
- *   (`--ui-canvas`: `#fdfaf2`), crisp pure white sticker cards (`--ui-surface`: `#ffffff`), and
- *   warm custard-cream grouped containers (`--ui-surface-muted`), replacing cold office greys with
- *   warm stationery paper and sticker stock.
- * - Ink & lines: warm roasted cocoa-espresso marker ink (`#32241d`) and caramel-biscuit rules
- *   (`#d4bfa4` / `#8f7560`), never cold charcoal or grey.
- * - Accent: a cheerful strawberry-berry marker (`#c23b4e` in light, `#f78fa0` in dark) by default,
- *   with five stationery presets in `accents.css`.
- * - Badges & icons: badges wear bold lettering (`700`), and decorative icons wear nine kawaii
- *   marker hues with a rich `0.32` duotone fill (`--ui-icon-duo-opacity`) and `1.7` round strokes.
- * - Charts: plump rounded bars (`6px` radius, `0.65` fill) outlined in cocoa ink (`1.75px`), with
- *   `2.5px` smooth curves and `4px` points.
+ * Doodle stationery. Cream paper and mint cover stock, with berry pen in light mode
+ * and pale ink on plum paper in dark mode. The navigation and welcome desk share the
+ * pencil-riding penguin. The accent presets live in accents.css.
  */
 :root[data-theme="doodle"] {
   /* ---- Gray bridge: a warm stationery ramp from vanilla paper through biscuit to roasted cocoa
      ink. white = the crisp sticker surface. ---- */
   --color-white: var(--ui-surface);
-  --color-gray-50: #fdfaf2;
+  --color-gray-50: #fffaf4;
   --color-gray-100: #f7f0df;
   --color-gray-200: #eadbc3;
   --color-gray-300: #d6c2a5;
   --color-gray-400: #a68f78;
-  --color-gray-500: #786252;
-  --color-gray-600: #634e40;
+  --color-gray-500: #766372;
+  --color-gray-600: #654f60;
   --color-gray-700: #4f3d32;
   --color-gray-800: #3d2e25;
-  --color-gray-900: #32241d;
+  --color-gray-900: #402e40;
   --color-gray-950: #211712;
 
-  /* ---- Colour — surfaces: warm milk-vanilla paper (`#fdfaf2`) and crisp white sticker stock
+  /* ---- Colour — surfaces: warm milk-vanilla paper (`#fffaf4`) and crisp white sticker stock
      (`#ffffff`); grouped rows and chips sit on warm custard-biscuit cream kissed by the pen. ---- */
-  --ui-canvas: #fdfaf2;
+  --ui-canvas: #fffaf4;
   --ui-surface: #ffffff;
   --ui-surface-muted: color-mix(in srgb, var(--ui-accent) 3%, #fbf5e8);
   --ui-fill-neutral: color-mix(in srgb, var(--ui-accent) 7%, #f0e4ce);
   --ui-inset: #f6efe0;
-  --ui-overlay: #fffdf9;
+  --ui-overlay: #fffaf6;
   --ui-overlay-backdrop: rgb(50 36 29 / 0.38);
 
-  /* ---- Colour — text: warm espresso-cocoa picture-book ink ---- */
-  --ui-fg: #32241d;
+  /* ---- Colour — text: berry ink on paper ---- */
+  --ui-fg: #402e40;
   --ui-fg-emphasis: var(--ui-fg);
-  --ui-fg-muted: #634e40;
-  --ui-fg-subtle: #786252;
+  --ui-fg-muted: #654f60;
+  --ui-fg-subtle: #766372;
   --ui-fg-link: #1f62b0;
   --ui-fg-link-hover: #164987;
   --ui-link-decoration: none;
 
-  /* ---- Colour — lines: warm caramel-biscuit and cocoa marker rules ---- */
-  --ui-line: #d4bfa4;
+  /* ---- Colour — lines: soft pink and plum rules ---- */
+  --ui-line: #ddc7cf;
   --ui-line-muted: color-mix(in srgb, var(--ui-accent) 14%, #f5ebd6);
-  --ui-line-emphasis: #8f7560;
+  --ui-line-emphasis: #907285;
   --ui-divider: #e3d2ba;
 
   /* ---- Colour — accent: cheerful strawberry-berry marker under a cream label; the family derives
@@ -61,7 +49,7 @@
   --ui-accent: #c23b4e;
   --ui-accent-hover: color-mix(in srgb, var(--ui-accent) 86%, #000000);
   --ui-accent-active: color-mix(in srgb, var(--ui-accent) 74%, #000000);
-  --ui-accent-fg: #fffdf9;
+  --ui-accent-fg: #fffaf6;
   --ui-accent-muted: color-mix(in srgb, var(--ui-accent) 16%, transparent);
   --ui-accent-tint: color-mix(in srgb, var(--ui-accent) 16%, var(--ui-canvas));
   --ui-accent-line: color-mix(in srgb, var(--ui-accent) 42%, transparent);
@@ -71,32 +59,32 @@
   --ui-tone-success-bg: #e3f3e6;
   --ui-tone-success-line: #86c497;
   --ui-tone-success-emphasis: #266b3e;
-  --ui-tone-success-emphasis-fg: #fffdf9;
+  --ui-tone-success-emphasis-fg: #fffaf6;
   --ui-tone-attention-fg: #855600;
   --ui-tone-attention-bg: #fff0c2;
   --ui-tone-attention-line: #e0b24c;
   --ui-tone-attention-emphasis: #dc9a1e;
-  --ui-tone-attention-emphasis-fg: #32241d;
+  --ui-tone-attention-emphasis-fg: #402e40;
   --ui-tone-danger-fg: #b3261e;
   --ui-tone-danger-bg: #fde2de;
   --ui-tone-danger-line: #e8958a;
   --ui-tone-danger-emphasis: #b3261e;
-  --ui-tone-danger-emphasis-fg: #fffdf9;
+  --ui-tone-danger-emphasis-fg: #fffaf6;
   --ui-tone-done-fg: #6842b5;
   --ui-tone-done-bg: #efe6fc;
   --ui-tone-done-line: #baa0ee;
   --ui-tone-done-emphasis: #6842b5;
-  --ui-tone-done-emphasis-fg: #fffdf9;
-  --ui-tone-neutral-fg: #634e40;
+  --ui-tone-done-emphasis-fg: #fffaf6;
+  --ui-tone-neutral-fg: #654f60;
   --ui-tone-neutral-bg: color-mix(in srgb, var(--ui-accent) 10%, #f5ebd6);
-  --ui-tone-neutral-line: #d4bfa4;
-  --ui-tone-neutral-emphasis: #634e40;
-  --ui-tone-neutral-emphasis-fg: #fffdf9;
+  --ui-tone-neutral-line: #ddc7cf;
+  --ui-tone-neutral-emphasis: #654f60;
+  --ui-tone-neutral-emphasis-fg: #fffaf6;
   --ui-tone-info-fg: #1f5da8;
   --ui-tone-info-bg: #e0eefb;
   --ui-tone-info-line: #8ec0ee;
   --ui-tone-info-emphasis: #1f5da8;
-  --ui-tone-info-emphasis-fg: #fffdf9;
+  --ui-tone-info-emphasis-fg: #fffaf6;
 
   /* ---- Colour — marks: cheerful coral-tangerine notification dot ---- */
   --ui-mark-new: #e85838;
@@ -115,7 +103,7 @@
   --ui-chart-cache-write: #3888d4;
   --ui-chart-output: #1f5591;
   --ui-chart-grid: #e8dac4;
-  --ui-chart-axis: #786252;
+  --ui-chart-axis: #766372;
   --ui-chart-bar-fill: 0.65;
   --ui-chart-bar-radius: 6px;
   --ui-chart-line-width: 2.5px;
@@ -160,7 +148,7 @@
 
   /* ---- Shell: a warm butter-biscuit stationery pad (`--ui-shell-field`) with the vanilla paper
      sheet (`--ui-canvas`) laid over it on a plump top-left corner ---- */
-  --ui-shell-field: color-mix(in srgb, var(--ui-accent) 6%, #f6ebd4);
+  --ui-shell-field: color-mix(in srgb, var(--ui-accent) 6%, #d9ebe5);
   --ui-shell-nav-bg: transparent;
   --ui-shell-main-bg: var(--ui-canvas);
   --ui-shell-line: transparent;
@@ -278,7 +266,7 @@
   /* ---- Gray bridge ---- */
   --color-white: #ffffff;
   --color-gray-50: #f7f0e4;
-  --color-gray-100: #f1e9dc;
+  --color-gray-100: #f9eff6;
   --color-gray-200: #dbd1c2;
   --color-gray-300: #cdc2b2;
   --color-gray-400: #c0b5a4;
@@ -286,20 +274,20 @@
   --color-gray-600: #665c50;
   --color-gray-700: #403932;
   --color-gray-800: #352f29;
-  --color-gray-900: #231f1b;
-  --color-gray-950: #1c1916;
+  --color-gray-900: #2a2532;
+  --color-gray-950: #211d29;
 
   /* ---- Colour — surfaces ---- */
-  --ui-canvas: #1c1916;
-  --ui-surface: #231f1b;
+  --ui-canvas: #211d29;
+  --ui-surface: #2a2532;
   --ui-surface-muted: color-mix(in srgb, var(--ui-accent) 5%, #28231e);
   --ui-fill-neutral: color-mix(in srgb, var(--ui-accent) 7%, #352f29);
   --ui-inset: #171412;
-  --ui-overlay: #26211d;
+  --ui-overlay: #312936;
   --ui-overlay-backdrop: rgb(0 0 0 / 0.55);
 
   /* ---- Colour — text ---- */
-  --ui-fg: #f1e9dc;
+  --ui-fg: #f9eff6;
   --ui-fg-emphasis: #f7f0e4;
   --ui-fg-muted: #c0b5a4;
   --ui-fg-subtle: #a39888;
@@ -316,7 +304,7 @@
   --ui-accent: #f78fa0;
   --ui-accent-hover: color-mix(in srgb, var(--ui-accent) 86%, #ffffff);
   --ui-accent-active: color-mix(in srgb, var(--ui-accent) 88%, #000000);
-  --ui-accent-fg: #1c1916;
+  --ui-accent-fg: #211d29;
   --ui-accent-muted: color-mix(in srgb, var(--ui-accent) 10%, transparent);
   --ui-accent-tint: color-mix(in srgb, var(--ui-accent) 10%, var(--ui-canvas));
   --ui-accent-line: color-mix(in srgb, var(--ui-accent) 45%, transparent);
@@ -326,32 +314,32 @@
   --ui-tone-success-bg: #243328;
   --ui-tone-success-line: #4d805c;
   --ui-tone-success-emphasis: #86cf9b;
-  --ui-tone-success-emphasis-fg: #1c1916;
+  --ui-tone-success-emphasis-fg: #211d29;
   --ui-tone-attention-fg: #f0bc5e;
   --ui-tone-attention-bg: #3b301e;
   --ui-tone-attention-line: #8f6d2c;
   --ui-tone-attention-emphasis: #f0bc5e;
-  --ui-tone-attention-emphasis-fg: #1c1916;
+  --ui-tone-attention-emphasis-fg: #211d29;
   --ui-tone-danger-fg: #ff8f7f;
   --ui-tone-danger-bg: #3d2522;
   --ui-tone-danger-line: #9c4a40;
   --ui-tone-danger-emphasis: #ff8f7f;
-  --ui-tone-danger-emphasis-fg: #1c1916;
+  --ui-tone-danger-emphasis-fg: #211d29;
   --ui-tone-done-fg: #bfa6f2;
   --ui-tone-done-bg: #2f293c;
   --ui-tone-done-line: #6d5a99;
   --ui-tone-done-emphasis: #bfa6f2;
-  --ui-tone-done-emphasis-fg: #1c1916;
+  --ui-tone-done-emphasis-fg: #211d29;
   --ui-tone-neutral-fg: #c0b5a4;
   --ui-tone-neutral-bg: color-mix(in srgb, var(--ui-accent) 10%, #332d27);
   --ui-tone-neutral-line: #5c5349;
   --ui-tone-neutral-emphasis: #c0b5a4;
-  --ui-tone-neutral-emphasis-fg: #1c1916;
+  --ui-tone-neutral-emphasis-fg: #211d29;
   --ui-tone-info-fg: #8fc0f2;
   --ui-tone-info-bg: #222e3c;
   --ui-tone-info-line: #4a6d96;
   --ui-tone-info-emphasis: #8fc0f2;
-  --ui-tone-info-emphasis-fg: #1c1916;
+  --ui-tone-info-emphasis-fg: #211d29;
 
   /* ---- Charts ---- */
   --ui-chart-1: #b59df2;
@@ -380,7 +368,7 @@
   --ui-diff-hunk-bg: rgb(143 192 242 / 0.14);
 
   /* ---- Shell ---- */
-  --ui-shell-field: color-mix(in srgb, var(--ui-accent) 4%, #26211c);
+  --ui-shell-field: color-mix(in srgb, var(--ui-accent) 4%, #2e3540);
 
   /* ---- Elevation ---- */
   --ui-shadow-raised: 0 2px 0 rgb(0 0 0 / 0.45);

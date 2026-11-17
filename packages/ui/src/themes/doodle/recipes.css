@@ -1,288 +1,12 @@
-/*
- * Doodle's hook recipes (hooks.ts), served in `ui-theme` over Frost's.
- *
- * Inspired by Japanese character-goods & picture-book stationery websites (Koupenchan, Mofusand,
- * Chiikawa, pixiv):
- * - Warm butter-biscuit stationery pad (`ui-shell`) with a crisp milk-vanilla paper sheet bordered
- *   in warm caramel-cocoa, and a crisp white sticker pill for the active navigation row.
- * - Sunny butter-gold hero button (`ui-action`) and warm custard-pastel tonal buttons & active
- *   segments (`ui-segmented` inside a recessed biscuit pill well).
- * - Plump, smooth felt-tip marker outlines (`ui-edge`) with crisp white sticker fills on inputs,
- *   selects and triggers.
- * - Crisp white picture-book cards (`ui-frame`) with 2px warm caramel-cocoa borders and a warm
- *   butter-cream header band (`[data-slot="head"]`) parted by a dashed notebook rule; warm cream
- *   notebook blocks for the agent's work groups (`ui-activity`) with visible scribble & check marks.
- * - Warm custard-cream settings strips (`ui-field`), widgets (`ui-widget`), tonal callout notices
- *   (`ui-notice`), dashed tree guides (`ui-tree`), and sticker cards across the start page
- *   (`ui-start`), model library (`ui-library`) and ledgers (`ui-ledger`).
- * - Decorative icons (`ui-icon-decor`) keep their nine kawaii marker hues (`--ui-icon-tint-*`) with
- *   rich duotone fills (`--ui-icon-duo-opacity: 0.32`).
+/**
+ * Doodle stationery: a mint notebook cover, cream paper, original penguin stickers
+ * and a plum night palette. Native rounded borders contain painted controls. The
+ * tooltip uses one drawn outline and fill; avatars and tiles keep their die cuts.
  */
 
 /* draw-doodle-edges.mjs: begin generated block, do not edit by hand */
 :root[data-theme="doodle"] {
-  --_stroke-control: image-set(
-    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFgAAABYBAMAAACDuy0HAAAAMFBMVEU4KCA4KCA4KCA4KCA4KCA4KCA4KCA4KCA4KCA4KCA4KCA4KCA4KCA4KCA4KCA4KCA6bPtzAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAACeElEQVR42t2Xz2sTQRTHZ3eSGAiUnD2kAf+B6lIRD21BvHgwKZJLD9pLwYOgIAUPirk5UGi9CKUXT14CEs9iiUdverKgxtWbPa34C026+crM7DazbXfnbWkPOpcsm09evvN9b2ffY+yQ61Rdf3LvYqt1pZ5BuncDDF8IsbHpQ6/360KIzvry1D621EPqejW3J24GC4TNBHw18V3/eafzNDDvmLFP6nvDJSGW450509eFeNC6syH38GPMFtSeRk+qB27dWQAwDr0m2e1mqlPnjdBFYOfs7awM3ByHrgHt7HSVgF/RZc/Unxp6Mf5Z2waXgE+Rih173TQiHV18s8NlhMpk4JYddrUfZYoK+f8PGWMV/KTADbxhjE1QJDM2qbDZyBTLqig77uMZBT6BgcrfIgUuSO8coE56nIEqK2q3rYtLo4tKCyWFueCBFD4kwr+llvDoYSXXwYgOM+Do4YKqZJkZUlJCeuT8sEu0TgXleeAC7XnVMLWQWKDqmQj7mMoHc6pmDYd02CVWnU4eMYOHgKWW/xp+nQfuovnPwT3MUVh9zBGt06WcCz7GE2lEhzn51aZg2kszhklu6PPFPwZYvdqYT0u3hru0fkN3Rw18p8ATCqvQjtFJfNV9HcXoNbzUx2Ob4pymruGzHa4hrGrpBNG9yIYyVOdoa3q0VsdXfmeu2d1+p2YNzYPdffEAf7LhGWP2uAxsZfUR5wJDKA+A7dRycm4goXNGDkCP6syVI5IQSxfikcmb9k6vAgmZ7mM1L300h7G+b0xiiRw797JGvMH8HmWXglT2y/7NF1eA8J0cRUUnHk1H/Q99/+2BRvEzxrXn0d4eqesvqDNG32YnfpkAAAAASUVORK5CYII=")
-      2x
-  );
-  --_stroke-control-danger: image-set(
-    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFgAAABYBAMAAACDuy0HAAAAMFBMVEWzJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh5kTHtcAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAACeElEQVR42t2Xz2sTQRTHZ3eSGAiUnD2kAf+B6lIRD21BvHgwKZJLD9pLwYOgIAUPirk5UGi9CKUXT14CEs9iiUdverKgxtWbPa34C026+crM7DazbXfnbWkPOpcsm09evvN9b2ffY+yQ61Rdf3LvYqt1pZ5BuncDDF8IsbHpQ6/360KIzvry1D621EPqejW3J24GC4TNBHw18V3/eafzNDDvmLFP6nvDJSGW450509eFeNC6syH38GPMFtSeRk+qB27dWQAwDr0m2e1mqlPnjdBFYOfs7awM3ByHrgHt7HSVgF/RZc/Unxp6Mf5Z2waXgE+Rih173TQiHV18s8NlhMpk4JYddrUfZYoK+f8PGWMV/KTADbxhjE1QJDM2qbDZyBTLqig77uMZBT6BgcrfIgUuSO8coE56nIEqK2q3rYtLo4tKCyWFueCBFD4kwr+llvDoYSXXwYgOM+Do4YKqZJkZUlJCeuT8sEu0TgXleeAC7XnVMLWQWKDqmQj7mMoHc6pmDYd02CVWnU4eMYOHgKWW/xp+nQfuovnPwT3MUVh9zBGt06WcCz7GE2lEhzn51aZg2kszhklu6PPFPwZYvdqYT0u3hru0fkN3Rw18p8ATCqvQjtFJfNV9HcXoNbzUx2Ob4pymruGzHa4hrGrpBNG9yIYyVOdoa3q0VsdXfmeu2d1+p2YNzYPdffEAf7LhGWP2uAxsZfUR5wJDKA+A7dRycm4goXNGDkCP6syVI5IQSxfikcmb9k6vAgmZ7mM1L300h7G+b0xiiRw797JGvMH8HmWXglT2y/7NF1eA8J0cRUUnHk1H/Q99/+2BRvEzxrXn0d4eqesvqDNG32YnfpkAAAAASUVORK5CYII=")
-      2x
-  );
-  --_stroke-control-focus: image-set(
-    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFgAAABYBAMAAACDuy0HAAAAMFBMVEWPLT2PLT2PLT2PLT2PLT2PLT2PLT2PLT2PLT2PLT2PLT2PLT2PLT2PLT2PLT2PLT2gKsqkAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAACeElEQVR42t2Xz2sTQRTHZ3eSGAiUnD2kAf+B6lIRD21BvHgwKZJLD9pLwYOgIAUPirk5UGi9CKUXT14CEs9iiUdverKgxtWbPa34C026+crM7DazbXfnbWkPOpcsm09evvN9b2ffY+yQ61Rdf3LvYqt1pZ5BuncDDF8IsbHpQ6/360KIzvry1D621EPqejW3J24GC4TNBHw18V3/eafzNDDvmLFP6nvDJSGW450509eFeNC6syH38GPMFtSeRk+qB27dWQAwDr0m2e1mqlPnjdBFYOfs7awM3ByHrgHt7HSVgF/RZc/Unxp6Mf5Z2waXgE+Rih173TQiHV18s8NlhMpk4JYddrUfZYoK+f8PGWMV/KTADbxhjE1QJDM2qbDZyBTLqig77uMZBT6BgcrfIgUuSO8coE56nIEqK2q3rYtLo4tKCyWFueCBFD4kwr+llvDoYSXXwYgOM+Do4YKqZJkZUlJCeuT8sEu0TgXleeAC7XnVMLWQWKDqmQj7mMoHc6pmDYd02CVWnU4eMYOHgKWW/xp+nQfuovnPwT3MUVh9zBGt06WcCz7GE2lEhzn51aZg2kszhklu6PPFPwZYvdqYT0u3hru0fkN3Rw18p8ATCqvQjtFJfNV9HcXoNbzUx2Ob4pymruGzHa4hrGrpBNG9yIYyVOdoa3q0VsdXfmeu2d1+p2YNzYPdffEAf7LhGWP2uAxsZfUR5wJDKA+A7dRycm4goXNGDkCP6syVI5IQSxfikcmb9k6vAgmZ7mM1L300h7G+b0xiiRw797JGvMH8HmWXglT2y/7NF1eA8J0cRUUnHk1H/Q99/+2BRvEzxrXn0d4eqesvqDNG32YnfpkAAAAASUVORK5CYII=")
-      2x
-  );
-  --_stroke-bubble: image-set(
-    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHAAAABwBAMAAAA0zul4AAAAMFBMVEU4KCA4KCA4KCA4KCA4KCA4KCA4KCA4KCA4KCA4KCA4KCA4KCA4KCA4KCA4KCA4KCA6bPtzAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAADeUlEQVR42sWYz2sTQRTHZ/NDmthowXM1IHhRbGixN20v1WOjhYKCtuAfYBEK3loPxW1A47mIqRdtF2s8iRQ0vQmCVFFE0LKoFxFk/YE1SZN8ZWc2m2yzyc4bRd+lu539ZN+8n7OPsb8n4Xk9Yyyd7+HXI7quT4/JYCOnLXCprhrGhrhE5c6pAGzwMdrIm+EOWPQm2kvtdk/bza3XNVvWM6ar8MqGo3ypDanlBGXoaftuMKPr0/18JXTiBl/65E+e5YsPkr6Lkav24mu/pYMA3n0+2dYAB/IAXvkYxgKKnf1rk1Mt/84BW8mAyCgA5e3bPARU00HBETGBl62K3goOqy6g5v35CWBTJiDPAT+b70MWqimpBDCB5ge7pRS1JQ588Ji0LJt0OVQbho0CL2TBncB99+awV/GOoplNcVKQM6mQY423RIFFeTDSeDrRvN9gyeKHe7VJKWZ76y4IAWsUsKu+yTjBptyu9U0OoUQrvDl8d/6+p4F9jk0szNLAOLYcv6RoYBSw3RdDldhcNGCSMbYroEb5SJ6bddSxEUEu4Bs36hoV3MfrR55qVLtgFNXAOA+ZAh3s4o40fcp6gOzgHjSRpoIRQA0MA0lVMMUY1MGUAsj+LRhSVZX9ESh8ogYyBTDNoqjRQZODVTVQpIgSWFYBZ1lM7Y2TTlIqqBoWZVkpcobVYnWdXnNE0OQoJ4d616nxev6cDtoGnaG3ABE0WbqqMR40eVynt4CiatP55YQPURK8zVn0uipAhZqT4HuEyhuLaqqKjqzQdOL/DZxSjZxFNTCrCiqklQAn6IkswFF8VQOHVME++rFTgLu936DyYDf9hCxAhT4nQIWWLMAQ/fQgElkhkx2wQI45B5zhVZJeOlgveZPCOPZBmahrzDlw5Ki61l3fS63J9UNVBMSUdGMmS/zYdQ+OCWIbcIMt7J21SJ5zxAdhhQS6URoHrUa61V8zUaEczBpfgKMtc7OO0jiNRSzUhhX2yNhRoJSUD4BGWmgmUEpJZ0fFM8RCWY7UvBmctYeyF2XAXvA5gBuAfKD7JHij2vo2r4f46Lm6PNfvPDBwZFzPXBlr1n/PyKWFFWDL63Ttmv+8+ouhc1l45EyhWz13xoKMfPTx0D0Jzn8wejzzrDFT31g17ppe6O1D/XLbPB0Q4lhg//j8ylPDMIyluTH6N2qL/AasRAVNMckV1QAAAABJRU5ErkJggg==")
-      2x
-  );
-  --_stroke-pill: image-set(
-    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHAAAABwBAMAAAA0zul4AAAAMFBMVEU4KCA4KCA4KCA4KCA4KCA4KCA4KCA4KCA4KCA4KCA4KCA4KCA4KCA4KCA4KCA4KCA6bPtzAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAADhklEQVR42r2Yz2sTQRTHJz+aJq2tgQqCQulN8GCLsRcPTbyqpRVdtXhIPAgerK2/QBSxCkooovUviAehGNH4D0j05kVavYhFu4InT8Ef9Ufa3a/MbHaTbHez86aauewyu599+37MzHuPsX88+jRN047fOpxkfUlJZMuVYvH1MhrGh0cXg7EdT+A1Vi8EcCfgN74MtcBC1+ovfuTjeaPQjD9XEG8s5fP5U/b3U6nUnmOzOp83cn7gWQDm/D6vT05w1LjhzY3yZyd9Phq+y7/qSW4DUPW3QGiSk3MeT3SgOhBk8dX1092AkWntqwMAXq6bLcGcDoqOvYDhDsAE8Dk4rkaAN66pApAJBiMVt8gE8ENmBYwAz9wCczJgRMcfl8CfcotuV7OEsqRAxiJNOsWlBTKWhVkPk7SUSR0hdfMsyJnUVmvFvo0BM/JgP8ykc2sk5cEO4IHjxBXKzlmyXw+5oyHQlYaj4gAFjAHWet+EKm2X12tKpmkqMnYPX2vXTzRwsBZnOuZoYBfW+CVq60rx5IAIPoN6BlbEWurBbypYEo4fpES4NaaEOaeoRrVllZ2YlR6WdsA4FYwLf5C9wf1hbAAMqYIR4qJqBFnbwJgqmOBgWEHHuDjS2+lHSz2FkIsASSWJFqMGZtRAnaunBubUwAV+LrZVotCxQvejBeptB5V/VS1yNgCGVUGVrUOAUVWwg36uWnbpVAXjhJSzCeySTo5dIC3ndLK/IX4izyjsciKFUAQL9BygA6ZI5RRA7sLrWFRLHtL4RgW7RZ3UK1+s2GOzyHC7qQkyY2Mi040JExFT5EXLKdSVXLZS4wo1AsK1I5Wck8drRVKamrD21qrWHqpZs/gurp3iRCfZ5oW9umaIayNn5+akoOtxHJ+2ChDZUcCvetk7Lc9FUVORsZBO+df+huRvjPKvZedPReNBumZtejfk6mC0XhkNDQTeNJF0Zay5DROV7llkXclmVvIg6HRLiEk2ggpwl7dyraftWGdFqd5TRPcwYgG4H+wKj8o/gcDG3ChgZrxCCcZ4QDsPb71bQzDO+R+mZwCfMnwn774+9FtMJQBrPhvwQU6+P+T1aKLCm6S+MTIpWsGvjuy2fm74dLGYz1/StMtP+bx501///Q2t52VX27ra0nJbdb9297uALTRy1RNbOy+xGd2xpZpL+dniY94vn5csMcPD2tHbWor9l/EXFBfdbEcEmYwAAAAASUVORK5CYII=")
-      2x
-  );
-  --_stroke-pill-danger: image-set(
-    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHAAAABwBAMAAAA0zul4AAAAMFBMVEWzJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh5kTHtcAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAADhklEQVR42r2Yz2sTQRTHJz+aJq2tgQqCQulN8GCLsRcPTbyqpRVdtXhIPAgerK2/QBSxCkooovUviAehGNH4D0j05kVavYhFu4InT8Ef9Ufa3a/MbHaTbHez86aauewyu599+37MzHuPsX88+jRN047fOpxkfUlJZMuVYvH1MhrGh0cXg7EdT+A1Vi8EcCfgN74MtcBC1+ovfuTjeaPQjD9XEG8s5fP5U/b3U6nUnmOzOp83cn7gWQDm/D6vT05w1LjhzY3yZyd9Phq+y7/qSW4DUPW3QGiSk3MeT3SgOhBk8dX1092AkWntqwMAXq6bLcGcDoqOvYDhDsAE8Dk4rkaAN66pApAJBiMVt8gE8ENmBYwAz9wCczJgRMcfl8CfcotuV7OEsqRAxiJNOsWlBTKWhVkPk7SUSR0hdfMsyJnUVmvFvo0BM/JgP8ykc2sk5cEO4IHjxBXKzlmyXw+5oyHQlYaj4gAFjAHWet+EKm2X12tKpmkqMnYPX2vXTzRwsBZnOuZoYBfW+CVq60rx5IAIPoN6BlbEWurBbypYEo4fpES4NaaEOaeoRrVllZ2YlR6WdsA4FYwLf5C9wf1hbAAMqYIR4qJqBFnbwJgqmOBgWEHHuDjS2+lHSz2FkIsASSWJFqMGZtRAnaunBubUwAV+LrZVotCxQvejBeptB5V/VS1yNgCGVUGVrUOAUVWwg36uWnbpVAXjhJSzCeySTo5dIC3ndLK/IX4izyjsciKFUAQL9BygA6ZI5RRA7sLrWFRLHtL4RgW7RZ3UK1+s2GOzyHC7qQkyY2Mi040JExFT5EXLKdSVXLZS4wo1AsK1I5Wck8drRVKamrD21qrWHqpZs/gurp3iRCfZ5oW9umaIayNn5+akoOtxHJ+2ChDZUcCvetk7Lc9FUVORsZBO+df+huRvjPKvZedPReNBumZtejfk6mC0XhkNDQTeNJF0Zay5DROV7llkXclmVvIg6HRLiEk2ggpwl7dyraftWGdFqd5TRPcwYgG4H+wKj8o/gcDG3ChgZrxCCcZ4QDsPb71bQzDO+R+mZwCfMnwn774+9FtMJQBrPhvwQU6+P+T1aKLCm6S+MTIpWsGvjuy2fm74dLGYz1/StMtP+bx501///Q2t52VX27ra0nJbdb9297uALTRy1RNbOy+xGd2xpZpL+dniY94vn5csMcPD2tHbWor9l/EXFBfdbEcEmYwAAAAASUVORK5CYII=")
-      2x
-  );
-  --_stroke-bead: image-set(
-    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEQAAABEBAMAAADKPY6BAAAAMFBMVEU4KCA4KCA4KCA4KCA4KCA4KCA4KCA4KCA4KCA4KCA4KCA4KCA4KCA4KCA4KCA4KCA6bPtzAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAACMElEQVR42qWWsU/bQBTGbYIhpGmVhTVE6sAGkSzGivwFVVRhqRNhBBYq/gFYkDK0Sit1giGMtFKVzl2ydyBIXWiXA9TOQQhKCYk/uHfn2I7vzqC+IXKSn/2+9927e7asx8dz13XdsubPzOu9g10Gil87hSQw/RaxGHwcJSa6GI0PccJhwc3fPu1+PvjCL/1qlLDblH/BcwNdawzoRfW8BPqv4s+1m8CP8GsWGFQTBTIg/LEBbCdrzAJXQx74rTKqBj9Q8xT9gtJLhn152cSZ2u/FIFMmKmtEzUBc5NHTrSmTZWzgVIfUhASb4Y0OeYIbWp4goaomgNeaCw1KRovEPMO5HlnEEUna1yN5StHUuSKE9ihd2TLoFUgpDenASkPYA5CBARkjX2FCRA4zQvWakQZ3zSjXanNLjNZZXT94lL6iW9JcSfFl3CjXwT/58T9IhmsxI1RRCtJGWa6lYQEqaQvQ5buEmbousM7g7jgpNfauI5FyGtIwI9f3XbelOgrDQ+iKtu2JacNeDLetJmZo2ztUuiY28F4YWDHskYpo8q86YlKuThGXOmRe6szqF7IlE9hd3TnlILC1hr9qpDhstxywoiLsFrkiS+upRskLhHbMxWZcZGTdhL3VUYy1CQZhrYgpoD/SErMM+BP9YRnwabzbfNBmPO8dgNtYO47xQe1/r9c7+Llab4mpXk17IUiO5dl2nDhWtKu9fsjvpdeF4/qm7hxY8ErWtOctFR75XnQHviSCnRk71GAAAAAASUVORK5CYII=")
-      2x
-  );
-  --_stroke-box: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20'%3E%3Cpath d='M5.9 1.9L7.6 2L9.3 2.2L10.7 2.1L12.2 2.2L14 2.1L15 2.1L15.9 2.7L16.9 3.1L17.4 4L17.8 5L17.9 6L18.1 5.9L17.7 7.6L18 9.4L18.2 10.9L18 12.6L17.9 14L17.7 15L17.4 16L16.9 16.9L16 17.5L15 17.9L14 17.9L13.8 18.2L12.3 17.8L10.9 18.2L9 18L7.6 18.1L6 18.2L5 17.7L4.1 17.4L3.2 16.8L2.7 15.9L2.1 15.1L2 14L2.2 13.8L2 12.3L1.8 10.9L2 9L1.9 7.3L1.9 6L2.3 5L2.7 4.1L3 3L4 2.6L4.9 1.9L6 2.2Z' fill='none' stroke='%23382820' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  --_stroke-fab: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='52' height='52'%3E%3Cpath d='M15.8 2.1L19.8 1.7L23.7 1.9L27.9 2L31.9 2.1L36 2L38.7 2.5L41.4 3L43.7 4.5L45.9 6.1L47.7 8.2L48.9 10.7L49.9 13.2L50 16L50 15.7L49.9 19.8L50.3 23.9L50.1 27.8L50.3 31.9L50.2 36L49.6 38.7L49 41.4L47.5 43.7L46 46L43.8 47.7L41.4 49L38.7 49.6L36 50L35.8 50.3L31.9 49.7L27.9 49.9L23.9 49.7L20.2 50.3L16 49.9L13.3 49.8L10.7 48.8L8.1 47.8L6 46L4.4 43.7L3.1 41.3L2.1 38.8L2.2 36L1.9 35.9L1.9 31.7L2 27.7L1.8 24L2.1 19.8L2.1 16L2.1 13.2L2.9 10.6L4.3 8.2L6 6L8.3 4.4L10.6 2.9L13.3 2.4L16 1.8ZM12.1 3.7L17.6 2' fill='none' stroke='%23382820' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  --_glass-label: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56'%3E%3Cg transform='translate(12 12)'%3E%3Cg fill='none' stroke='%23382820'%3E%3Cg stroke-opacity='0.24'%3E%3Crect x='2' y='4' width='28' height='28' rx='7' stroke-width='2'/%3E%3C/g%3E%3Cg stroke-opacity='0.036'%3E%3Crect x='2' y='6' width='28' height='28' rx='7' stroke-width='3'/%3E%3Crect x='2' y='6' width='28' height='28' rx='7' stroke-width='5.5'/%3E%3Crect x='2' y='6' width='28' height='28' rx='7' stroke-width='8'/%3E%3Crect x='2' y='6' width='28' height='28' rx='7' stroke-width='10.5'/%3E%3Crect x='2' y='6' width='28' height='28' rx='7' stroke-width='13'/%3E%3C/g%3E%3C/g%3E%3Cpath d='M8.8 2.2L11.6 2.2L14.8 1.9L17.4 1.8L19.9 2.3L23 2.2L24.8 2.4L26.5 2.9L28 4L28.9 5.6L29.9 7.1L30 9L29.9 9.3L29.7 12.1L29.9 14.8L30.1 17.5L30 20.5L30 23L29.8 24.8L29 26.4L27.9 27.9L26.6 29.2L24.8 29.6L23 30L23.3 29.8L20.5 29.8L17.4 29.9L14.9 30L11.7 30.1L9 29.8L7.2 29.6L5.6 28.9L4.2 27.8L2.8 26.6L2.3 24.8L2.2 23L2 22.8L1.9 19.9L2.1 17.2L1.9 14.6L2.1 11.7L1.9 9L2.4 7.2L3 5.6L4.2 4.2L5.5 2.9L7.1 2.1L9 1.8Z' fill='%23fffdf9' stroke='%23382820' stroke-width='1.9' stroke-linejoin='round'/%3E%3Cpath d='M5.1 3.8L10.6 2.1' fill='none' stroke='%23382820' stroke-width='1.9' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E");
-  --_glass-slip: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='78' height='78'%3E%3Cg transform='translate(12 12)'%3E%3Cg fill='none' stroke='%23382820'%3E%3Cg stroke-opacity='0.24'%3E%3Crect x='2' y='4' width='50' height='50' rx='14' stroke-width='2'/%3E%3C/g%3E%3Cg stroke-opacity='0.036'%3E%3Crect x='2' y='6' width='50' height='50' rx='14' stroke-width='3'/%3E%3Crect x='2' y='6' width='50' height='50' rx='14' stroke-width='5.5'/%3E%3Crect x='2' y='6' width='50' height='50' rx='14' stroke-width='8'/%3E%3Crect x='2' y='6' width='50' height='50' rx='14' stroke-width='10.5'/%3E%3Crect x='2' y='6' width='50' height='50' rx='14' stroke-width='13'/%3E%3C/g%3E%3C/g%3E%3Cpath d='M15.8 2.3L20.7 1.8L24.9 1.8L28.9 1.8L33.5 2.3L38 2L40.8 2.1L43.4 3L45.9 4.2L47.9 6.1L49.7 8.2L51.1 10.6L51.9 13.2L52.1 16L51.7 16.3L52.1 20.7L51.8 25L51.9 29.2L51.7 33.7L52 38L51.7 40.7L50.9 43.3L49.8 45.9L47.8 47.8L45.7 49.6L43.4 50.9L40.8 51.8L38 52.2L38.2 52.1L33.4 52L29.2 52.1L25 51.7L20.3 52.2L16 52L13.3 51.5L10.7 50.7L8.2 49.6L6 48L4.4 45.8L3 43.4L2.3 40.7L1.8 38L2.1 38L2.3 33.7L2.2 28.9L2.2 25L1.8 20.1L2.1 16L2.1 13.2L3 10.6L4.4 8.2L5.9 5.9L8.2 4.3L10.6 3L13.3 2.3L16 2.2Z' fill='%23fffdf9' stroke='%23382820' stroke-width='2' stroke-linejoin='round'/%3E%3Cpath d='M12.1 3.9L17.6 2.2' fill='none' stroke='%23382820' stroke-width='2' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E");
-  --_glass-sheet: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='96' height='96'%3E%3Cg transform='translate(12 12)'%3E%3Cg fill='none' stroke='%23382820'%3E%3Cg stroke-opacity='0.24'%3E%3Crect x='2' y='4' width='68' height='68' rx='24' stroke-width='2'/%3E%3C/g%3E%3Cg stroke-opacity='0.036'%3E%3Crect x='2' y='6' width='68' height='68' rx='24' stroke-width='3'/%3E%3Crect x='2' y='6' width='68' height='68' rx='24' stroke-width='5.5'/%3E%3Crect x='2' y='6' width='68' height='68' rx='24' stroke-width='8'/%3E%3Crect x='2' y='6' width='68' height='68' rx='24' stroke-width='10.5'/%3E%3Crect x='2' y='6' width='68' height='68' rx='24' stroke-width='13'/%3E%3C/g%3E%3C/g%3E%3Cpath d='M25.8 1.8L29.8 1.8L33.7 2.2L38.3 1.7L41.9 1.7L46 2.1L49.7 2.4L53.4 3.1L57 4.5L60.2 6.5L63 9L65.3 11.9L67.6 15L68.7 18.6L69.8 22.2L69.9 26L70.2 25.8L69.9 29.7L69.8 34.2L70.1 37.8L70.1 42.1L70.1 46L69.8 49.8L68.8 53.4L67.2 56.8L65.3 60.1L63 63L60.1 65.4L56.9 67.4L53.5 69L49.8 69.8L46 69.9L46.1 70.2L41.7 69.7L37.8 69.9L33.7 70.2L29.9 69.7L26 69.8L22.3 69.5L18.6 68.7L15.1 67.3L11.8 65.6L8.9 63.1L6.7 60L4.7 56.8L3 53.5L2.1 49.8L2.2 46L1.7 45.9L2.1 42L2.1 38L2.3 34.2L1.7 30L1.8 26L2.1 22.2L3.3 18.6L4.4 15L6.7 12L9.1 9.1L11.9 6.6L15.1 4.6L18.5 3L22.2 2.2L26 2Z' fill='%23fffdf9' stroke='%23382820' stroke-width='2.2' stroke-linejoin='round'/%3E%3Cpath d='M22.1 3.4L27.6 1.7' fill='none' stroke='%23382820' stroke-width='2.2' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E");
-  --_glass-sheet-focus: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='96' height='96'%3E%3Cg transform='translate(12 12)'%3E%3Cg fill='none' stroke='%23382820'%3E%3Cg stroke-opacity='0.24'%3E%3Crect x='2' y='4' width='68' height='68' rx='24' stroke-width='2'/%3E%3C/g%3E%3Cg stroke-opacity='0.036'%3E%3Crect x='2' y='6' width='68' height='68' rx='24' stroke-width='3'/%3E%3Crect x='2' y='6' width='68' height='68' rx='24' stroke-width='5.5'/%3E%3Crect x='2' y='6' width='68' height='68' rx='24' stroke-width='8'/%3E%3Crect x='2' y='6' width='68' height='68' rx='24' stroke-width='10.5'/%3E%3Crect x='2' y='6' width='68' height='68' rx='24' stroke-width='13'/%3E%3C/g%3E%3C/g%3E%3Cpath d='M25.8 1.8L29.8 1.8L33.7 2.2L38.3 1.7L41.9 1.7L46 2.1L49.7 2.4L53.4 3.1L57 4.5L60.2 6.5L63 9L65.3 11.9L67.6 15L68.7 18.6L69.8 22.2L69.9 26L70.2 25.8L69.9 29.7L69.8 34.2L70.1 37.8L70.1 42.1L70.1 46L69.8 49.8L68.8 53.4L67.2 56.8L65.3 60.1L63 63L60.1 65.4L56.9 67.4L53.5 69L49.8 69.8L46 69.9L46.1 70.2L41.7 69.7L37.8 69.9L33.7 70.2L29.9 69.7L26 69.8L22.3 69.5L18.6 68.7L15.1 67.3L11.8 65.6L8.9 63.1L6.7 60L4.7 56.8L3 53.5L2.1 49.8L2.2 46L1.7 45.9L2.1 42L2.1 38L2.3 34.2L1.7 30L1.8 26L2.1 22.2L3.3 18.6L4.4 15L6.7 12L9.1 9.1L11.9 6.6L15.1 4.6L18.5 3L22.2 2.2L26 2Z' fill='%23fffdf9' stroke='%238f2d3d' stroke-width='2.2' stroke-linejoin='round'/%3E%3Cpath d='M22.1 3.4L27.6 1.7' fill='none' stroke='%238f2d3d' stroke-width='2.2' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E");
-  --_clip-control: shape(
-    from 11.82px 0.91px,
-    line to calc(11.38% + 10.81px) 1px,
-    line to calc(38.45% + 3.23px) 0.65px,
-    line to calc(62.5% - 3.5px) 0.55px,
-    line to calc(85.54% - 9.95px) 1.01px,
-    line to calc(100% - 12px) 0.94px,
-    line to calc(100% - 9.83px) 1.11px,
-    line to calc(100% - 7.7px) 1.61px,
-    line to calc(100% - 5.71px) 2.59px,
-    line to calc(100% - 4.15px) 4.15px,
-    line to calc(100% - 2.52px) 5.67px,
-    line to calc(100% - 1.62px) 7.7px,
-    line to calc(100% - 1.01px) 9.81px,
-    line to calc(100% - 0.58px) 12px,
-    line to calc(100% - 1.04px) 12.34px,
-    line to calc(100% - 0.85px) calc(13.6% + 10.19px),
-    line to calc(100% - 0.68px) calc(37.93% + 3.38px),
-    line to calc(100% - 0.77px) calc(64.6% - 4.09px),
-    line to calc(100% - 0.79px) calc(87.51% - 10.5px),
-    line to calc(100% - 0.87px) calc(100% - 12px),
-    line to calc(100% - 1.06px) calc(100% - 9.82px),
-    line to calc(100% - 1.49px) calc(100% - 7.64px),
-    line to calc(100% - 2.76px) calc(100% - 5.83px),
-    line to calc(100% - 4.07px) calc(100% - 4.07px),
-    line to calc(100% - 5.63px) calc(100% - 2.47px),
-    line to calc(100% - 7.74px) calc(100% - 1.71px),
-    line to calc(100% - 9.77px) calc(100% - 0.8px),
-    line to calc(100% - 12px) calc(100% - 0.85px),
-    line to calc(100% - 12.02px) calc(100% - 0.89px),
-    line to calc(89.2% - 10.97px) calc(100% - 0.73px),
-    line to calc(62.03% - 3.37px) calc(100% - 0.68px),
-    line to calc(35.76% + 3.99px) calc(100% - 0.99px),
-    line to calc(10.66% + 11.01px) calc(100% - 1px),
-    line to 12px calc(100% - 0.63px),
-    line to 9.82px calc(100% - 1.06px),
-    line to 7.76px calc(100% - 1.77px),
-    line to 5.76px calc(100% - 2.66px),
-    line to 4.15px calc(100% - 4.15px),
-    line to 2.7px calc(100% - 5.78px),
-    line to 1.81px calc(100% - 7.78px),
-    line to 0.89px calc(100% - 9.79px),
-    line to 0.86px calc(100% - 12px),
-    line to 0.61px calc(100% - 11.95px),
-    line to 0.9px calc(87.05% - 10.37px),
-    line to 0.85px calc(60.95% - 3.07px),
-    line to 0.56px calc(35.72% + 4px),
-    line to 0.8px calc(14.33% + 9.99px),
-    line to 0.55px 12px,
-    line to 1.14px 9.84px,
-    line to 1.61px 7.7px,
-    line to 2.77px 5.83px,
-    line to 4.06px 4.06px,
-    line to 5.85px 2.8px,
-    line to 7.67px 1.55px,
-    line to 9.78px 0.84px,
-    line to 12px 0.64px,
-    close
-  );
-  --_clip-bubble: shape(
-    from 19.8px 0.53px,
-    line to calc(19.29% + 12.28px) 0.38px,
-    line to calc(41.02% + 3.59px) 0.96px,
-    line to calc(58.03% - 3.21px) 0.87px,
-    line to calc(78.12% - 11.25px) 0.48px,
-    line to calc(100% - 20px) 0.56px,
-    line to calc(100% - 16.26px) 1.18px,
-    line to calc(100% - 12.64px) 2.23px,
-    line to calc(100% - 9.32px) 4.01px,
-    line to calc(100% - 6.35px) 6.35px,
-    line to calc(100% - 3.89px) 9.24px,
-    line to calc(100% - 2.22px) 12.63px,
-    line to calc(100% - 1.08px) 16.24px,
-    line to calc(100% - 0.62px) 20px,
-    line to calc(100% - 0.78px) 19.72px,
-    line to calc(100% - 0.52px) calc(37.55% + 4.98px),
-    line to calc(100% - 1.05px) calc(71.57% - 8.63px),
-    line to calc(100% - 0.98px) calc(100% - 18.54px),
-    line to calc(100% - 1.04px) calc(100% - 12.91px),
-    line to calc(100% - 0.49px) calc(100% - 7px),
-    line to calc(100% - 0.67px) calc(100% - 5.74px),
-    line to calc(100% - 1.07px) calc(100% - 4.55px),
-    line to calc(100% - 1.57px) calc(100% - 3.37px),
-    line to calc(100% - 2.71px) calc(100% - 2.71px),
-    line to calc(100% - 3.54px) calc(100% - 1.82px),
-    line to calc(100% - 4.54px) calc(100% - 1.05px),
-    line to calc(100% - 5.82px) calc(100% - 1.05px),
-    line to calc(100% - 7px) calc(100% - 0.84px),
-    line to calc(100% - 6.73px) calc(100% - 0.95px),
-    line to calc(100% - 12.97px) calc(100% - 0.42px),
-    line to calc(100% - 18.41px) calc(100% - 0.37px),
-    line to calc(73.57% - 9.43px) calc(100% - 0.96px),
-    line to calc(36.07% + 5.57px) calc(100% - 0.63px),
-    line to 20px calc(100% - 0.66px),
-    line to 16.24px calc(100% - 1.11px),
-    line to 12.66px calc(100% - 2.28px),
-    line to 9.24px calc(100% - 3.9px),
-    line to 6.37px calc(100% - 6.37px),
-    line to 4.14px calc(100% - 9.4px),
-    line to 2.05px calc(100% - 12.56px),
-    line to 1.25px calc(100% - 16.27px),
-    line to 0.93px calc(100% - 20px),
-    line to 0.85px calc(99.53% - 19.81px),
-    line to 0.76px calc(78.95% - 11.58px),
-    line to 1.08px calc(58.3% - 3.32px),
-    line to 0.44px calc(37.82% + 4.87px),
-    line to 0.71px calc(18.95% + 12.42px),
-    line to 0.79px calc(0% + 20px),
-    line to 0.96px 16.21px,
-    line to 2.16px 12.61px,
-    line to 4.08px 9.36px,
-    line to 6.34px 6.34px,
-    line to 9.36px 4.08px,
-    line to 12.59px 2.11px,
-    line to 16.25px 1.13px,
-    line to 20px 0.88px,
-    close
-  );
-  --_clip-box: shape(
-    from 5.86px 0.77px,
-    line to calc(10.63% + 5.51px) 0.86px,
-    line to calc(38.65% + 1.59px) 1.03px,
-    line to calc(61.07% - 1.55px) 0.97px,
-    line to calc(87.28% - 5.22px) 1.08px,
-    line to calc(100% - 6px) 0.96px,
-    line to calc(100% - 4.67px) 1.03px,
-    line to calc(100% - 3.51px) 1.68px,
-    line to calc(100% - 2.28px) 2.28px,
-    line to calc(100% - 1.62px) 3.47px,
-    line to calc(100% - 1.13px) 4.69px,
-    line to calc(100% - 0.96px) 6px,
-    line to calc(100% - 0.76px) 5.86px,
-    line to calc(100% - 1.11px) calc(9.25% + 5.7px),
-    line to calc(100% - 0.86px) calc(39.61% + 1.45px),
-    line to calc(100% - 0.63px) calc(65.32% - 2.14px),
-    line to calc(100% - 0.89px) calc(92.5% - 5.95px),
-    line to calc(100% - 0.95px) calc(100% - 6px),
-    line to calc(100% - 1.19px) calc(100% - 4.71px),
-    line to calc(100% - 1.6px) calc(100% - 3.46px),
-    line to calc(100% - 2.26px) calc(100% - 2.26px),
-    line to calc(100% - 3.41px) calc(100% - 1.51px),
-    line to calc(100% - 4.66px) calc(100% - 1.02px),
-    line to calc(100% - 6px) calc(100% - 0.92px),
-    line to calc(100% - 6.21px) calc(100% - 0.65px),
-    line to calc(88.23% - 5.35px) calc(100% - 1.09px),
-    line to calc(64.65% - 2.05px) calc(100% - 0.61px),
-    line to calc(32.68% + 2.42px) calc(100% - 0.82px),
-    line to calc(9.68% + 5.64px) calc(100% - 0.78px),
-    line to 6px calc(100% - 0.66px),
-    line to 4.7px calc(100% - 1.16px),
-    line to 3.48px calc(100% - 1.63px),
-    line to 2.36px calc(100% - 2.36px),
-    line to 1.66px calc(100% - 3.5px),
-    line to 0.96px calc(100% - 4.65px),
-    line to 0.83px calc(100% - 6px),
-    line to 1.09px calc(100% - 6.25px),
-    line to 0.81px calc(87.87% - 5.3px),
-    line to 0.61px calc(64.43% - 2.02px),
-    line to 0.83px calc(32.62% + 2.43px),
-    line to 0.75px calc(5.74% + 6.2px),
-    line to 0.77px 6px,
-    line to 1.17px 4.7px,
-    line to 1.7px 3.52px,
-    line to 2.24px 2.24px,
-    line to 3.44px 1.57px,
-    line to 4.62px 0.83px,
-    line to 6px 1.02px,
-    close
-  );
-  --_clip-fab: shape(
-    from 15.83px 0.74px,
-    line to calc(10.99% + 14.05px) 0.33px,
-    line to calc(35.5% + 5.22px) 0.5px,
-    line to calc(61.59% - 4.17px) 0.68px,
-    line to calc(86.76% - 13.23px) 0.8px,
-    line to calc(100% - 16px) 0.61px,
-    line to calc(100% - 13.04px) 1.13px,
-    line to calc(100% - 10.08px) 1.71px,
-    line to calc(100% - 7.57px) 3.38px,
-    line to calc(100% - 5.16px) 5.16px,
-    line to calc(100% - 3.14px) 7.41px,
-    line to calc(100% - 1.87px) 10.15px,
-    line to calc(100% - 0.78px) 12.97px,
-    line to calc(100% - 0.68px) 16px,
-    line to calc(100% - 0.68px) 15.72px,
-    line to calc(100% - 0.74px) calc(11.18% + 13.97px),
-    line to calc(100% - 0.37px) calc(36.87% + 4.73px),
-    line to calc(100% - 0.57px) calc(61.01% - 3.96px),
-    line to calc(100% - 0.3px) calc(87.14% - 13.37px),
-    line to calc(100% - 0.44px) calc(100% - 16px),
-    line to calc(100% - 1.12px) calc(100% - 13.04px),
-    line to calc(100% - 1.71px) calc(100% - 10.08px),
-    line to calc(100% - 3.41px) calc(100% - 7.59px),
-    line to calc(100% - 5.05px) calc(100% - 5.05px),
-    line to calc(100% - 7.42px) calc(100% - 3.17px),
-    line to calc(100% - 10.08px) calc(100% - 1.71px),
-    line to calc(100% - 13.02px) calc(100% - 1.03px),
-    line to calc(100% - 16px) calc(100% - 0.61px),
-    line to calc(100% - 16.2px) calc(100% - 0.31px),
-    line to calc(86.75% - 13.23px) calc(100% - 1px),
-    line to calc(61.63% - 4.19px) calc(100% - 0.71px),
-    line to calc(37.18% + 4.61px) calc(100% - 0.91px),
-    line to calc(13.74% + 13.05px) calc(100% - 0.38px),
-    line to 16px calc(100% - 0.73px),
-    line to 13px calc(100% - 0.89px),
-    line to 10.17px calc(100% - 1.92px),
-    line to 7.36px calc(100% - 3.06px),
-    line to 5.06px calc(100% - 5.06px),
-    line to 3.28px calc(100% - 7.5px),
-    line to 1.87px calc(100% - 10.15px),
-    line to 0.8px calc(100% - 12.98px),
-    line to 0.81px calc(100% - 16px),
-    line to 0.56px calc(100% - 16.11px),
-    line to 0.55px calc(85.76% - 12.87px),
-    line to 0.66px calc(60.89% - 3.92px),
-    line to 0.44px calc(37.41% + 4.53px),
-    line to 0.74px calc(11.07% + 14.02px),
-    line to 0.74px 16px,
-    line to 0.8px 12.98px,
-    line to 1.63px 10.05px,
-    line to 3.15px 7.41px,
-    line to 5.01px 5.01px,
-    line to 7.51px 3.29px,
-    line to 10.06px 1.65px,
-    line to 13.02px 1.04px,
-    line to 16px 0.49px,
-    close
-  );
+  --_glass-label: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56'%3E%3Cg transform='translate(12 12)'%3E%3Cg fill='none' stroke='%23382820'%3E%3Cg stroke-opacity='0.24'%3E%3Crect x='2' y='4' width='28' height='28' rx='7' stroke-width='2'/%3E%3C/g%3E%3Cg stroke-opacity='0.036'%3E%3Crect x='2' y='6' width='28' height='28' rx='7' stroke-width='3'/%3E%3Crect x='2' y='6' width='28' height='28' rx='7' stroke-width='5.5'/%3E%3Crect x='2' y='6' width='28' height='28' rx='7' stroke-width='8'/%3E%3Crect x='2' y='6' width='28' height='28' rx='7' stroke-width='10.5'/%3E%3Crect x='2' y='6' width='28' height='28' rx='7' stroke-width='13'/%3E%3C/g%3E%3C/g%3E%3Cpath d='M8.8 2.2L11.6 2.2L14.8 1.9L17.4 1.8L19.9 2.3L23 2.2L24.8 2.4L26.5 2.9L28 4L28.9 5.6L29.9 7.1L30 9L29.9 9.3L29.7 12.1L29.9 14.8L30.1 17.5L30 20.5L30 23L29.8 24.8L29 26.4L27.9 27.9L26.6 29.2L24.8 29.6L23 30L23.3 29.8L20.5 29.8L17.4 29.9L14.9 30L11.7 30.1L9 29.8L7.2 29.6L5.6 28.9L4.2 27.8L2.8 26.6L2.3 24.8L2.2 23L2 22.8L1.9 19.9L2.1 17.2L1.9 14.6L2.1 11.7L1.9 9L2.4 7.2L3 5.6L4.2 4.2L5.5 2.9L7.1 2.1L9 1.8Z' fill='%23fffbf7' stroke='%2351394e' stroke-width='1.9' stroke-linejoin='round'/%3E%3Cpath d='M5.1 3.8L10.6 2.1' fill='none' stroke='%2351394e' stroke-width='1.9' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E");
   --_clip-cookie: polygon(
     50% 0%,
     54.23% 1.65%,
@@ -417,191 +141,119 @@
   );
 }
 :root[data-theme="doodle"].dark {
-  --_stroke-control: image-set(
-    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFgAAABYBAMAAACDuy0HAAAAMFBMVEXj2Mbj2Mbj2Mbj2Mbj2Mbj2Mbj2Mbj2Mbj2Mbj2Mbj2Mbj2Mbj2Mbj2Mbj2Mbj2MYjdEdhAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAACeElEQVR42t2Xz2sTQRTHZ3eSGAiUnD2kAf+B6lIRD21BvHgwKZJLD9pLwYOgIAUPirk5UGi9CKUXT14CEs9iiUdverKgxtWbPa34C026+crM7DazbXfnbWkPOpcsm09evvN9b2ffY+yQ61Rdf3LvYqt1pZ5BuncDDF8IsbHpQ6/360KIzvry1D621EPqejW3J24GC4TNBHw18V3/eafzNDDvmLFP6nvDJSGW450509eFeNC6syH38GPMFtSeRk+qB27dWQAwDr0m2e1mqlPnjdBFYOfs7awM3ByHrgHt7HSVgF/RZc/Unxp6Mf5Z2waXgE+Rih173TQiHV18s8NlhMpk4JYddrUfZYoK+f8PGWMV/KTADbxhjE1QJDM2qbDZyBTLqig77uMZBT6BgcrfIgUuSO8coE56nIEqK2q3rYtLo4tKCyWFueCBFD4kwr+llvDoYSXXwYgOM+Do4YKqZJkZUlJCeuT8sEu0TgXleeAC7XnVMLWQWKDqmQj7mMoHc6pmDYd02CVWnU4eMYOHgKWW/xp+nQfuovnPwT3MUVh9zBGt06WcCz7GE2lEhzn51aZg2kszhklu6PPFPwZYvdqYT0u3hru0fkN3Rw18p8ATCqvQjtFJfNV9HcXoNbzUx2Ob4pymruGzHa4hrGrpBNG9yIYyVOdoa3q0VsdXfmeu2d1+p2YNzYPdffEAf7LhGWP2uAxsZfUR5wJDKA+A7dRycm4goXNGDkCP6syVI5IQSxfikcmb9k6vAgmZ7mM1L300h7G+b0xiiRw797JGvMH8HmWXglT2y/7NF1eA8J0cRUUnHk1H/Q99/+2BRvEzxrXn0d4eqesvqDNG32YnfpkAAAAASUVORK5CYII=")
-      2x
-  );
-  --_stroke-control-danger: image-set(
-    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFgAAABYBAMAAACDuy0HAAAAMFBMVEX/j3//j3//j3//j3//j3//j3//j3//j3//j3//j3//j3//j3//j3//j3//j3//j3+e/5WQAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAACeElEQVR42t2Xz2sTQRTHZ3eSGAiUnD2kAf+B6lIRD21BvHgwKZJLD9pLwYOgIAUPirk5UGi9CKUXT14CEs9iiUdverKgxtWbPa34C026+crM7DazbXfnbWkPOpcsm09evvN9b2ffY+yQ61Rdf3LvYqt1pZ5BuncDDF8IsbHpQ6/360KIzvry1D621EPqejW3J24GC4TNBHw18V3/eafzNDDvmLFP6nvDJSGW450509eFeNC6syH38GPMFtSeRk+qB27dWQAwDr0m2e1mqlPnjdBFYOfs7awM3ByHrgHt7HSVgF/RZc/Unxp6Mf5Z2waXgE+Rih173TQiHV18s8NlhMpk4JYddrUfZYoK+f8PGWMV/KTADbxhjE1QJDM2qbDZyBTLqig77uMZBT6BgcrfIgUuSO8coE56nIEqK2q3rYtLo4tKCyWFueCBFD4kwr+llvDoYSXXwYgOM+Do4YKqZJkZUlJCeuT8sEu0TgXleeAC7XnVMLWQWKDqmQj7mMoHc6pmDYd02CVWnU4eMYOHgKWW/xp+nQfuovnPwT3MUVh9zBGt06WcCz7GE2lEhzn51aZg2kszhklu6PPFPwZYvdqYT0u3hru0fkN3Rw18p8ATCqvQjtFJfNV9HcXoNbzUx2Ob4pymruGzHa4hrGrpBNG9yIYyVOdoa3q0VsdXfmeu2d1+p2YNzYPdffEAf7LhGWP2uAxsZfUR5wJDKA+A7dRycm4goXNGDkCP6syVI5IQSxfikcmb9k6vAgmZ7mM1L300h7G+b0xiiRw797JGvMH8HmWXglT2y/7NF1eA8J0cRUUnHk1H/Q99/+2BRvEzxrXn0d4eqesvqDNG32YnfpkAAAAASUVORK5CYII=")
-      2x
-  );
-  --_stroke-control-focus: image-set(
-    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFgAAABYBAMAAACDuy0HAAAAMFBMVEX3j6D3j6D3j6D3j6D3j6D3j6D3j6D3j6D3j6D3j6D3j6D3j6D3j6D3j6D3j6D3j6Bjs40tAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAACeElEQVR42t2Xz2sTQRTHZ3eSGAiUnD2kAf+B6lIRD21BvHgwKZJLD9pLwYOgIAUPirk5UGi9CKUXT14CEs9iiUdverKgxtWbPa34C026+crM7DazbXfnbWkPOpcsm09evvN9b2ffY+yQ61Rdf3LvYqt1pZ5BuncDDF8IsbHpQ6/360KIzvry1D621EPqejW3J24GC4TNBHw18V3/eafzNDDvmLFP6nvDJSGW450509eFeNC6syH38GPMFtSeRk+qB27dWQAwDr0m2e1mqlPnjdBFYOfs7awM3ByHrgHt7HSVgF/RZc/Unxp6Mf5Z2waXgE+Rih173TQiHV18s8NlhMpk4JYddrUfZYoK+f8PGWMV/KTADbxhjE1QJDM2qbDZyBTLqig77uMZBT6BgcrfIgUuSO8coE56nIEqK2q3rYtLo4tKCyWFueCBFD4kwr+llvDoYSXXwYgOM+Do4YKqZJkZUlJCeuT8sEu0TgXleeAC7XnVMLWQWKDqmQj7mMoHc6pmDYd02CVWnU4eMYOHgKWW/xp+nQfuovnPwT3MUVh9zBGt06WcCz7GE2lEhzn51aZg2kszhklu6PPFPwZYvdqYT0u3hru0fkN3Rw18p8ATCqvQjtFJfNV9HcXoNbzUx2Ob4pymruGzHa4hrGrpBNG9yIYyVOdoa3q0VsdXfmeu2d1+p2YNzYPdffEAf7LhGWP2uAxsZfUR5wJDKA+A7dRycm4goXNGDkCP6syVI5IQSxfikcmb9k6vAgmZ7mM1L300h7G+b0xiiRw797JGvMH8HmWXglT2y/7NF1eA8J0cRUUnHk1H/Q99/+2BRvEzxrXn0d4eqesvqDNG32YnfpkAAAAASUVORK5CYII=")
-      2x
-  );
-  --_stroke-bubble: image-set(
-    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHAAAABwBAMAAAA0zul4AAAAMFBMVEXj2Mbj2Mbj2Mbj2Mbj2Mbj2Mbj2Mbj2Mbj2Mbj2Mbj2Mbj2Mbj2Mbj2Mbj2Mbj2MYjdEdhAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAADeUlEQVR42sWYz2sTQRTHZ/NDmthowXM1IHhRbGixN20v1WOjhYKCtuAfYBEK3loPxW1A47mIqRdtF2s8iRQ0vQmCVFFE0LKoFxFk/YE1SZN8ZWc2m2yzyc4bRd+lu539ZN+8n7OPsb8n4Xk9Yyyd7+HXI7quT4/JYCOnLXCprhrGhrhE5c6pAGzwMdrIm+EOWPQm2kvtdk/bza3XNVvWM6ar8MqGo3ypDanlBGXoaftuMKPr0/18JXTiBl/65E+e5YsPkr6Lkav24mu/pYMA3n0+2dYAB/IAXvkYxgKKnf1rk1Mt/84BW8mAyCgA5e3bPARU00HBETGBl62K3goOqy6g5v35CWBTJiDPAT+b70MWqimpBDCB5ge7pRS1JQ588Ji0LJt0OVQbho0CL2TBncB99+awV/GOoplNcVKQM6mQY423RIFFeTDSeDrRvN9gyeKHe7VJKWZ76y4IAWsUsKu+yTjBptyu9U0OoUQrvDl8d/6+p4F9jk0szNLAOLYcv6RoYBSw3RdDldhcNGCSMbYroEb5SJ6bddSxEUEu4Bs36hoV3MfrR55qVLtgFNXAOA+ZAh3s4o40fcp6gOzgHjSRpoIRQA0MA0lVMMUY1MGUAsj+LRhSVZX9ESh8ogYyBTDNoqjRQZODVTVQpIgSWFYBZ1lM7Y2TTlIqqBoWZVkpcobVYnWdXnNE0OQoJ4d616nxev6cDtoGnaG3ABE0WbqqMR40eVynt4CiatP55YQPURK8zVn0uipAhZqT4HuEyhuLaqqKjqzQdOL/DZxSjZxFNTCrCiqklQAn6IkswFF8VQOHVME++rFTgLu936DyYDf9hCxAhT4nQIWWLMAQ/fQgElkhkx2wQI45B5zhVZJeOlgveZPCOPZBmahrzDlw5Ki61l3fS63J9UNVBMSUdGMmS/zYdQ+OCWIbcIMt7J21SJ5zxAdhhQS6URoHrUa61V8zUaEczBpfgKMtc7OO0jiNRSzUhhX2yNhRoJSUD4BGWmgmUEpJZ0fFM8RCWY7UvBmctYeyF2XAXvA5gBuAfKD7JHij2vo2r4f46Lm6PNfvPDBwZFzPXBlr1n/PyKWFFWDL63Ttmv+8+ouhc1l45EyhWz13xoKMfPTx0D0Jzn8wejzzrDFT31g17ppe6O1D/XLbPB0Q4lhg//j8ylPDMIyluTH6N2qL/AasRAVNMckV1QAAAABJRU5ErkJggg==")
-      2x
-  );
-  --_stroke-pill: image-set(
-    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHAAAABwBAMAAAA0zul4AAAAMFBMVEXj2Mbj2Mbj2Mbj2Mbj2Mbj2Mbj2Mbj2Mbj2Mbj2Mbj2Mbj2Mbj2Mbj2Mbj2Mbj2MYjdEdhAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAADhklEQVR42r2Yz2sTQRTHJz+aJq2tgQqCQulN8GCLsRcPTbyqpRVdtXhIPAgerK2/QBSxCkooovUviAehGNH4D0j05kVavYhFu4InT8Ef9Ufa3a/MbHaTbHez86aauewyu599+37MzHuPsX88+jRN047fOpxkfUlJZMuVYvH1MhrGh0cXg7EdT+A1Vi8EcCfgN74MtcBC1+ovfuTjeaPQjD9XEG8s5fP5U/b3U6nUnmOzOp83cn7gWQDm/D6vT05w1LjhzY3yZyd9Phq+y7/qSW4DUPW3QGiSk3MeT3SgOhBk8dX1092AkWntqwMAXq6bLcGcDoqOvYDhDsAE8Dk4rkaAN66pApAJBiMVt8gE8ENmBYwAz9wCczJgRMcfl8CfcotuV7OEsqRAxiJNOsWlBTKWhVkPk7SUSR0hdfMsyJnUVmvFvo0BM/JgP8ykc2sk5cEO4IHjxBXKzlmyXw+5oyHQlYaj4gAFjAHWet+EKm2X12tKpmkqMnYPX2vXTzRwsBZnOuZoYBfW+CVq60rx5IAIPoN6BlbEWurBbypYEo4fpES4NaaEOaeoRrVllZ2YlR6WdsA4FYwLf5C9wf1hbAAMqYIR4qJqBFnbwJgqmOBgWEHHuDjS2+lHSz2FkIsASSWJFqMGZtRAnaunBubUwAV+LrZVotCxQvejBeptB5V/VS1yNgCGVUGVrUOAUVWwg36uWnbpVAXjhJSzCeySTo5dIC3ndLK/IX4izyjsciKFUAQL9BygA6ZI5RRA7sLrWFRLHtL4RgW7RZ3UK1+s2GOzyHC7qQkyY2Mi040JExFT5EXLKdSVXLZS4wo1AsK1I5Wck8drRVKamrD21qrWHqpZs/gurp3iRCfZ5oW9umaIayNn5+akoOtxHJ+2ChDZUcCvetk7Lc9FUVORsZBO+df+huRvjPKvZedPReNBumZtejfk6mC0XhkNDQTeNJF0Zay5DROV7llkXclmVvIg6HRLiEk2ggpwl7dyraftWGdFqd5TRPcwYgG4H+wKj8o/gcDG3ChgZrxCCcZ4QDsPb71bQzDO+R+mZwCfMnwn774+9FtMJQBrPhvwQU6+P+T1aKLCm6S+MTIpWsGvjuy2fm74dLGYz1/StMtP+bx501///Q2t52VX27ra0nJbdb9297uALTRy1RNbOy+xGd2xpZpL+dniY94vn5csMcPD2tHbWor9l/EXFBfdbEcEmYwAAAAASUVORK5CYII=")
-      2x
-  );
-  --_stroke-pill-danger: image-set(
-    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHAAAABwBAMAAAA0zul4AAAAMFBMVEX/j3//j3//j3//j3//j3//j3//j3//j3//j3//j3//j3//j3//j3//j3//j3//j3+e/5WQAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAADhklEQVR42r2Yz2sTQRTHJz+aJq2tgQqCQulN8GCLsRcPTbyqpRVdtXhIPAgerK2/QBSxCkooovUviAehGNH4D0j05kVavYhFu4InT8Ef9Ufa3a/MbHaTbHez86aauewyu599+37MzHuPsX88+jRN047fOpxkfUlJZMuVYvH1MhrGh0cXg7EdT+A1Vi8EcCfgN74MtcBC1+ovfuTjeaPQjD9XEG8s5fP5U/b3U6nUnmOzOp83cn7gWQDm/D6vT05w1LjhzY3yZyd9Phq+y7/qSW4DUPW3QGiSk3MeT3SgOhBk8dX1092AkWntqwMAXq6bLcGcDoqOvYDhDsAE8Dk4rkaAN66pApAJBiMVt8gE8ENmBYwAz9wCczJgRMcfl8CfcotuV7OEsqRAxiJNOsWlBTKWhVkPk7SUSR0hdfMsyJnUVmvFvo0BM/JgP8ykc2sk5cEO4IHjxBXKzlmyXw+5oyHQlYaj4gAFjAHWet+EKm2X12tKpmkqMnYPX2vXTzRwsBZnOuZoYBfW+CVq60rx5IAIPoN6BlbEWurBbypYEo4fpES4NaaEOaeoRrVllZ2YlR6WdsA4FYwLf5C9wf1hbAAMqYIR4qJqBFnbwJgqmOBgWEHHuDjS2+lHSz2FkIsASSWJFqMGZtRAnaunBubUwAV+LrZVotCxQvejBeptB5V/VS1yNgCGVUGVrUOAUVWwg36uWnbpVAXjhJSzCeySTo5dIC3ndLK/IX4izyjsciKFUAQL9BygA6ZI5RRA7sLrWFRLHtL4RgW7RZ3UK1+s2GOzyHC7qQkyY2Mi040JExFT5EXLKdSVXLZS4wo1AsK1I5Wck8drRVKamrD21qrWHqpZs/gurp3iRCfZ5oW9umaIayNn5+akoOtxHJ+2ChDZUcCvetk7Lc9FUVORsZBO+df+huRvjPKvZedPReNBumZtejfk6mC0XhkNDQTeNJF0Zay5DROV7llkXclmVvIg6HRLiEk2ggpwl7dyraftWGdFqd5TRPcwYgG4H+wKj8o/gcDG3ChgZrxCCcZ4QDsPb71bQzDO+R+mZwCfMnwn774+9FtMJQBrPhvwQU6+P+T1aKLCm6S+MTIpWsGvjuy2fm74dLGYz1/StMtP+bx501///Q2t52VX27ra0nJbdb9297uALTRy1RNbOy+xGd2xpZpL+dniY94vn5csMcPD2tHbWor9l/EXFBfdbEcEmYwAAAAASUVORK5CYII=")
-      2x
-  );
-  --_stroke-bead: image-set(
-    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEQAAABEBAMAAADKPY6BAAAAMFBMVEXj2Mbj2Mbj2Mbj2Mbj2Mbj2Mbj2Mbj2Mbj2Mbj2Mbj2Mbj2Mbj2Mbj2Mbj2Mbj2MYjdEdhAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAACMElEQVR42qWWsU/bQBTGbYIhpGmVhTVE6sAGkSzGivwFVVRhqRNhBBYq/gFYkDK0Sit1giGMtFKVzl2ydyBIXWiXA9TOQQhKCYk/uHfn2I7vzqC+IXKSn/2+9927e7asx8dz13XdsubPzOu9g10Gil87hSQw/RaxGHwcJSa6GI0PccJhwc3fPu1+PvjCL/1qlLDblH/BcwNdawzoRfW8BPqv4s+1m8CP8GsWGFQTBTIg/LEBbCdrzAJXQx74rTKqBj9Q8xT9gtJLhn152cSZ2u/FIFMmKmtEzUBc5NHTrSmTZWzgVIfUhASb4Y0OeYIbWp4goaomgNeaCw1KRovEPMO5HlnEEUna1yN5StHUuSKE9ihd2TLoFUgpDenASkPYA5CBARkjX2FCRA4zQvWakQZ3zSjXanNLjNZZXT94lL6iW9JcSfFl3CjXwT/58T9IhmsxI1RRCtJGWa6lYQEqaQvQ5buEmbousM7g7jgpNfauI5FyGtIwI9f3XbelOgrDQ+iKtu2JacNeDLetJmZo2ztUuiY28F4YWDHskYpo8q86YlKuThGXOmRe6szqF7IlE9hd3TnlILC1hr9qpDhstxywoiLsFrkiS+upRskLhHbMxWZcZGTdhL3VUYy1CQZhrYgpoD/SErMM+BP9YRnwabzbfNBmPO8dgNtYO47xQe1/r9c7+Llab4mpXk17IUiO5dl2nDhWtKu9fsjvpdeF4/qm7hxY8ErWtOctFR75XnQHviSCnRk71GAAAAAASUVORK5CYII=")
-      2x
-  );
-  --_stroke-box: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20'%3E%3Cpath d='M5.9 1.9L7.6 2L9.3 2.2L10.7 2.1L12.2 2.2L14 2.1L15 2.1L15.9 2.7L16.9 3.1L17.4 4L17.8 5L17.9 6L18.1 5.9L17.7 7.6L18 9.4L18.2 10.9L18 12.6L17.9 14L17.7 15L17.4 16L16.9 16.9L16 17.5L15 17.9L14 17.9L13.8 18.2L12.3 17.8L10.9 18.2L9 18L7.6 18.1L6 18.2L5 17.7L4.1 17.4L3.2 16.8L2.7 15.9L2.1 15.1L2 14L2.2 13.8L2 12.3L1.8 10.9L2 9L1.9 7.3L1.9 6L2.3 5L2.7 4.1L3 3L4 2.6L4.9 1.9L6 2.2Z' fill='none' stroke='%23e3d8c6' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  --_stroke-fab: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='52' height='52'%3E%3Cpath d='M15.8 2.1L19.8 1.7L23.7 1.9L27.9 2L31.9 2.1L36 2L38.7 2.5L41.4 3L43.7 4.5L45.9 6.1L47.7 8.2L48.9 10.7L49.9 13.2L50 16L50 15.7L49.9 19.8L50.3 23.9L50.1 27.8L50.3 31.9L50.2 36L49.6 38.7L49 41.4L47.5 43.7L46 46L43.8 47.7L41.4 49L38.7 49.6L36 50L35.8 50.3L31.9 49.7L27.9 49.9L23.9 49.7L20.2 50.3L16 49.9L13.3 49.8L10.7 48.8L8.1 47.8L6 46L4.4 43.7L3.1 41.3L2.1 38.8L2.2 36L1.9 35.9L1.9 31.7L2 27.7L1.8 24L2.1 19.8L2.1 16L2.1 13.2L2.9 10.6L4.3 8.2L6 6L8.3 4.4L10.6 2.9L13.3 2.4L16 1.8ZM12.1 3.7L17.6 2' fill='none' stroke='%23e3d8c6' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  --_glass-label: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56'%3E%3Cg transform='translate(12 12)'%3E%3Cg fill='none' stroke='%23000000'%3E%3Cg stroke-opacity='0.55'%3E%3Crect x='2' y='4' width='28' height='28' rx='7' stroke-width='2'/%3E%3C/g%3E%3Cg stroke-opacity='0.075'%3E%3Crect x='2' y='6' width='28' height='28' rx='7' stroke-width='3'/%3E%3Crect x='2' y='6' width='28' height='28' rx='7' stroke-width='5.5'/%3E%3Crect x='2' y='6' width='28' height='28' rx='7' stroke-width='8'/%3E%3Crect x='2' y='6' width='28' height='28' rx='7' stroke-width='10.5'/%3E%3Crect x='2' y='6' width='28' height='28' rx='7' stroke-width='13'/%3E%3C/g%3E%3C/g%3E%3Cpath d='M8.8 2.2L11.6 2.2L14.8 1.9L17.4 1.8L19.9 2.3L23 2.2L24.8 2.4L26.5 2.9L28 4L28.9 5.6L29.9 7.1L30 9L29.9 9.3L29.7 12.1L29.9 14.8L30.1 17.5L30 20.5L30 23L29.8 24.8L29 26.4L27.9 27.9L26.6 29.2L24.8 29.6L23 30L23.3 29.8L20.5 29.8L17.4 29.9L14.9 30L11.7 30.1L9 29.8L7.2 29.6L5.6 28.9L4.2 27.8L2.8 26.6L2.3 24.8L2.2 23L2 22.8L1.9 19.9L2.1 17.2L1.9 14.6L2.1 11.7L1.9 9L2.4 7.2L3 5.6L4.2 4.2L5.5 2.9L7.1 2.1L9 1.8Z' fill='%2326211d' stroke='%23e3d8c6' stroke-width='1.9' stroke-linejoin='round'/%3E%3Cpath d='M5.1 3.8L10.6 2.1' fill='none' stroke='%23e3d8c6' stroke-width='1.9' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E");
-  --_glass-slip: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='78' height='78'%3E%3Cg transform='translate(12 12)'%3E%3Cg fill='none' stroke='%23000000'%3E%3Cg stroke-opacity='0.55'%3E%3Crect x='2' y='4' width='50' height='50' rx='14' stroke-width='2'/%3E%3C/g%3E%3Cg stroke-opacity='0.075'%3E%3Crect x='2' y='6' width='50' height='50' rx='14' stroke-width='3'/%3E%3Crect x='2' y='6' width='50' height='50' rx='14' stroke-width='5.5'/%3E%3Crect x='2' y='6' width='50' height='50' rx='14' stroke-width='8'/%3E%3Crect x='2' y='6' width='50' height='50' rx='14' stroke-width='10.5'/%3E%3Crect x='2' y='6' width='50' height='50' rx='14' stroke-width='13'/%3E%3C/g%3E%3C/g%3E%3Cpath d='M15.8 2.3L20.7 1.8L24.9 1.8L28.9 1.8L33.5 2.3L38 2L40.8 2.1L43.4 3L45.9 4.2L47.9 6.1L49.7 8.2L51.1 10.6L51.9 13.2L52.1 16L51.7 16.3L52.1 20.7L51.8 25L51.9 29.2L51.7 33.7L52 38L51.7 40.7L50.9 43.3L49.8 45.9L47.8 47.8L45.7 49.6L43.4 50.9L40.8 51.8L38 52.2L38.2 52.1L33.4 52L29.2 52.1L25 51.7L20.3 52.2L16 52L13.3 51.5L10.7 50.7L8.2 49.6L6 48L4.4 45.8L3 43.4L2.3 40.7L1.8 38L2.1 38L2.3 33.7L2.2 28.9L2.2 25L1.8 20.1L2.1 16L2.1 13.2L3 10.6L4.4 8.2L5.9 5.9L8.2 4.3L10.6 3L13.3 2.3L16 2.2Z' fill='%2326211d' stroke='%23e3d8c6' stroke-width='2' stroke-linejoin='round'/%3E%3Cpath d='M12.1 3.9L17.6 2.2' fill='none' stroke='%23e3d8c6' stroke-width='2' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E");
-  --_glass-sheet: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='96' height='96'%3E%3Cg transform='translate(12 12)'%3E%3Cg fill='none' stroke='%23000000'%3E%3Cg stroke-opacity='0.55'%3E%3Crect x='2' y='4' width='68' height='68' rx='24' stroke-width='2'/%3E%3C/g%3E%3Cg stroke-opacity='0.075'%3E%3Crect x='2' y='6' width='68' height='68' rx='24' stroke-width='3'/%3E%3Crect x='2' y='6' width='68' height='68' rx='24' stroke-width='5.5'/%3E%3Crect x='2' y='6' width='68' height='68' rx='24' stroke-width='8'/%3E%3Crect x='2' y='6' width='68' height='68' rx='24' stroke-width='10.5'/%3E%3Crect x='2' y='6' width='68' height='68' rx='24' stroke-width='13'/%3E%3C/g%3E%3C/g%3E%3Cpath d='M25.8 1.8L29.8 1.8L33.7 2.2L38.3 1.7L41.9 1.7L46 2.1L49.7 2.4L53.4 3.1L57 4.5L60.2 6.5L63 9L65.3 11.9L67.6 15L68.7 18.6L69.8 22.2L69.9 26L70.2 25.8L69.9 29.7L69.8 34.2L70.1 37.8L70.1 42.1L70.1 46L69.8 49.8L68.8 53.4L67.2 56.8L65.3 60.1L63 63L60.1 65.4L56.9 67.4L53.5 69L49.8 69.8L46 69.9L46.1 70.2L41.7 69.7L37.8 69.9L33.7 70.2L29.9 69.7L26 69.8L22.3 69.5L18.6 68.7L15.1 67.3L11.8 65.6L8.9 63.1L6.7 60L4.7 56.8L3 53.5L2.1 49.8L2.2 46L1.7 45.9L2.1 42L2.1 38L2.3 34.2L1.7 30L1.8 26L2.1 22.2L3.3 18.6L4.4 15L6.7 12L9.1 9.1L11.9 6.6L15.1 4.6L18.5 3L22.2 2.2L26 2Z' fill='%2326211d' stroke='%23e3d8c6' stroke-width='2.2' stroke-linejoin='round'/%3E%3Cpath d='M22.1 3.4L27.6 1.7' fill='none' stroke='%23e3d8c6' stroke-width='2.2' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E");
-  --_glass-sheet-focus: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='96' height='96'%3E%3Cg transform='translate(12 12)'%3E%3Cg fill='none' stroke='%23000000'%3E%3Cg stroke-opacity='0.55'%3E%3Crect x='2' y='4' width='68' height='68' rx='24' stroke-width='2'/%3E%3C/g%3E%3Cg stroke-opacity='0.075'%3E%3Crect x='2' y='6' width='68' height='68' rx='24' stroke-width='3'/%3E%3Crect x='2' y='6' width='68' height='68' rx='24' stroke-width='5.5'/%3E%3Crect x='2' y='6' width='68' height='68' rx='24' stroke-width='8'/%3E%3Crect x='2' y='6' width='68' height='68' rx='24' stroke-width='10.5'/%3E%3Crect x='2' y='6' width='68' height='68' rx='24' stroke-width='13'/%3E%3C/g%3E%3C/g%3E%3Cpath d='M25.8 1.8L29.8 1.8L33.7 2.2L38.3 1.7L41.9 1.7L46 2.1L49.7 2.4L53.4 3.1L57 4.5L60.2 6.5L63 9L65.3 11.9L67.6 15L68.7 18.6L69.8 22.2L69.9 26L70.2 25.8L69.9 29.7L69.8 34.2L70.1 37.8L70.1 42.1L70.1 46L69.8 49.8L68.8 53.4L67.2 56.8L65.3 60.1L63 63L60.1 65.4L56.9 67.4L53.5 69L49.8 69.8L46 69.9L46.1 70.2L41.7 69.7L37.8 69.9L33.7 70.2L29.9 69.7L26 69.8L22.3 69.5L18.6 68.7L15.1 67.3L11.8 65.6L8.9 63.1L6.7 60L4.7 56.8L3 53.5L2.1 49.8L2.2 46L1.7 45.9L2.1 42L2.1 38L2.3 34.2L1.7 30L1.8 26L2.1 22.2L3.3 18.6L4.4 15L6.7 12L9.1 9.1L11.9 6.6L15.1 4.6L18.5 3L22.2 2.2L26 2Z' fill='%2326211d' stroke='%23f78fa0' stroke-width='2.2' stroke-linejoin='round'/%3E%3Cpath d='M22.1 3.4L27.6 1.7' fill='none' stroke='%23f78fa0' stroke-width='2.2' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E");
+  --_glass-label: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56'%3E%3Cg transform='translate(12 12)'%3E%3Cg fill='none' stroke='%23000000'%3E%3Cg stroke-opacity='0.55'%3E%3Crect x='2' y='4' width='28' height='28' rx='7' stroke-width='2'/%3E%3C/g%3E%3Cg stroke-opacity='0.075'%3E%3Crect x='2' y='6' width='28' height='28' rx='7' stroke-width='3'/%3E%3Crect x='2' y='6' width='28' height='28' rx='7' stroke-width='5.5'/%3E%3Crect x='2' y='6' width='28' height='28' rx='7' stroke-width='8'/%3E%3Crect x='2' y='6' width='28' height='28' rx='7' stroke-width='10.5'/%3E%3Crect x='2' y='6' width='28' height='28' rx='7' stroke-width='13'/%3E%3C/g%3E%3C/g%3E%3Cpath d='M8.8 2.2L11.6 2.2L14.8 1.9L17.4 1.8L19.9 2.3L23 2.2L24.8 2.4L26.5 2.9L28 4L28.9 5.6L29.9 7.1L30 9L29.9 9.3L29.7 12.1L29.9 14.8L30.1 17.5L30 20.5L30 23L29.8 24.8L29 26.4L27.9 27.9L26.6 29.2L24.8 29.6L23 30L23.3 29.8L20.5 29.8L17.4 29.9L14.9 30L11.7 30.1L9 29.8L7.2 29.6L5.6 28.9L4.2 27.8L2.8 26.6L2.3 24.8L2.2 23L2 22.8L1.9 19.9L2.1 17.2L1.9 14.6L2.1 11.7L1.9 9L2.4 7.2L3 5.6L4.2 4.2L5.5 2.9L7.1 2.1L9 1.8Z' fill='%23322a36' stroke='%23ead9e6' stroke-width='1.9' stroke-linejoin='round'/%3E%3Cpath d='M5.1 3.8L10.6 2.1' fill='none' stroke='%23ead9e6' stroke-width='1.9' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E");
 }
 /* draw-doodle-edges.mjs: end generated block */
 
 /* Private mode-aware stationery containers & sticker shadows. */
 :root[data-theme="doodle"] {
-  --_container: color-mix(in srgb, var(--ui-accent) 14%, #fff3c2);
-  --_container-hover: color-mix(in srgb, var(--ui-accent) 22%, #ffe898);
-  --_action-bg: color-mix(in srgb, var(--ui-accent) 16%, #ffea96);
-  --_action-hover: color-mix(in srgb, var(--ui-accent) 24%, #ffe066);
-  --_card: color-mix(in srgb, var(--ui-accent) 5%, #fbf3e2);
-  --_head-bg: color-mix(in srgb, var(--ui-accent) 8%, #faefd8);
-  --_field-bg: color-mix(in srgb, var(--ui-accent) 5%, #f9f1de);
-  --_well: color-mix(in srgb, var(--ui-accent) 8%, #efe3cc);
+  --_pen: #62495a;
+  --_paper-shadow: #dec9cd;
+  --_container: color-mix(in srgb, var(--ui-accent) 14%, #ffe5dc);
+  --_container-hover: color-mix(in srgb, var(--ui-accent) 22%, #f8cdd4);
+  --_action-bg: color-mix(in srgb, var(--ui-accent) 16%, #ffd3dc);
+  --_action-hover: color-mix(in srgb, var(--ui-accent) 24%, #ffc3cd);
+  --_card: color-mix(in srgb, var(--ui-accent) 5%, #fff7f0);
+  --_head-bg: color-mix(in srgb, var(--ui-accent) 8%, #e4f2ed);
+  --_field-bg: color-mix(in srgb, var(--ui-accent) 5%, #fff7ef);
+  --_well: color-mix(in srgb, var(--ui-accent) 8%, #e9e3f2);
   --_nav-active: #ffffff;
   --_sticker-ring: inset 0 0 0 1.5px var(--ui-line), 0 2px 0 var(--ui-line);
 }
 :root[data-theme="doodle"].dark {
-  --_container: color-mix(in srgb, var(--ui-accent) 24%, #2f2820);
-  --_container-hover: color-mix(in srgb, var(--ui-accent) 32%, #362e24);
-  --_action-bg: color-mix(in srgb, var(--ui-accent) 28%, #382e22);
-  --_action-hover: color-mix(in srgb, var(--ui-accent) 36%, #403426);
-  --_card: color-mix(in srgb, var(--ui-accent) 5%, #26211c);
-  --_head-bg: color-mix(in srgb, var(--ui-accent) 8%, #2c2620);
-  --_field-bg: color-mix(in srgb, var(--ui-accent) 5%, #28231e);
-  --_well: color-mix(in srgb, var(--ui-accent) 8%, #181512);
-  --_nav-active: color-mix(in srgb, var(--ui-accent) 16%, #332d27);
+  --_pen: #ae92a8;
+  --_paper-shadow: #191520;
+  --_container: color-mix(in srgb, var(--ui-accent) 24%, #3b3048);
+  --_container-hover: color-mix(in srgb, var(--ui-accent) 32%, #44354b);
+  --_action-bg: color-mix(in srgb, var(--ui-accent) 28%, #4c354b);
+  --_action-hover: color-mix(in srgb, var(--ui-accent) 36%, #543c53);
+  --_card: color-mix(in srgb, var(--ui-accent) 5%, #2d2934);
+  --_head-bg: color-mix(in srgb, var(--ui-accent) 8%, #334041);
+  --_field-bg: color-mix(in srgb, var(--ui-accent) 5%, #302b35);
+  --_well: color-mix(in srgb, var(--ui-accent) 8%, #24212e);
+  --_nav-active: color-mix(in srgb, var(--ui-accent) 16%, #3e3546);
   --_sticker-ring: inset 0 0 0 1.5px var(--ui-line), 0 2px 0 rgb(0 0 0 / 0.35);
 }
 
+/* A single rounded border owns the paper fill and its ink at every size and zoom.
+   The floating hint and the avatar retain their drawn stationery silhouettes. */
 @media (forced-colors: none) {
-  /* The pen line: plump, smooth rounded cartoon shapes. */
-  :root[data-theme="doodle"] :where(.ui-edge) {
-    border-style: solid;
-    border-width: 1px;
+  :root[data-theme="doodle"] :where(.ui-edge, .ui-action, .ui-segmented) {
+    border: 1.5px solid var(--_pen);
     background-clip: padding-box;
-    border-image: var(--_stroke-bubble) 20 / 20px / 0 stretch;
   }
-  :root[data-theme="doodle"] :where(button, input, textarea, select, [role="combobox"]).ui-edge,
-  :root[data-theme="doodle"] .ui-edge:where(:has(> :is(input, textarea))) {
-    border-image: var(--_stroke-control) 14 / 14px / 0 stretch;
+  :root[data-theme="doodle"] :where(button, input, textarea, select, [role="combobox"]).ui-edge {
+    border-radius: 0.85rem 1.05rem 0.9rem 0.95rem;
   }
-  :root[data-theme="doodle"] :where(button[data-variant]).ui-edge,
-  :root[data-theme="doodle"] .ui-edge:where(.rounded-\[var\(--ui-radius-pill\)\]) {
+  :root[data-theme="doodle"] .ui-edge:where(button[data-variant], .rounded-full, [role="switch"]),
+  :root[data-theme="doodle"] .ui-segmented > button {
     border-radius: 9999px;
-    border-image: var(--_stroke-pill) 22 / 9999px / 0 stretch;
   }
-  :root[data-theme="doodle"] .ui-edge:where(.rounded-full) {
-    border-radius: 9999px;
-    border-image: var(--_stroke-bead) 13 / 9999px / 0 stretch;
-  }
-  :root[data-theme="doodle"]
-    .ui-edge:where(input[type="checkbox"], span[aria-hidden="true"]:not(.rounded-full)) {
-    border-image: var(--_stroke-box) 7 / 7px / 0 stretch;
+  :root[data-theme="doodle"] .ui-edge[role="switch"] {
+    overflow: hidden;
+    border-width: 1px;
   }
   :root[data-theme="doodle"] .ui-edge:where([aria-invalid="true"], :has(> [aria-invalid="true"])) {
-    border-image-source: var(--_stroke-control-danger);
-  }
-  /* A segmented control: recessed biscuit well, with the active option drawn as a crisp sticker capsule. */
-  :root[data-theme="doodle"] .ui-segmented > button {
-    border: 1px solid transparent;
-  }
-  :root[data-theme="doodle"] .ui-segmented > button[aria-pressed="true"] {
-    border-radius: 9999px;
-    border-image: var(--_stroke-pill) 22 / 9999px / 0 stretch;
-  }
-  /* The navigation's primary action: the FAB's plump corner, drawn. */
-  :root[data-theme="doodle"] .ui-action {
-    border-style: solid;
-    border-width: 1px;
-    background-clip: padding-box;
-    border-image: var(--_stroke-fab) 18 / 18px / 0 stretch;
-  }
-  :root[data-theme="doodle"] button.ui-edge[data-variant="danger"]:hover {
-    border-image-source: var(--_stroke-pill-danger);
-  }
-
-  /* What floats: a die-cut paper slip with its fill, marker outline and warm sticker shadow. */
-  :root[data-theme="doodle"] .ui-glass:not([data-glass], .site-ui-header) {
-    border-style: solid;
-    border-width: 1px;
-    background-color: transparent;
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-    box-shadow: none;
-    border-image: var(--_glass-slip) 30 fill / 30px / 12px stretch;
+    border-color: var(--ui-tone-danger-fg);
   }
   :root[data-theme="doodle"]
-    .ui-glass:not([data-glass]):where([role="tooltip"], [aria-hidden="true"]) {
-    border-image: var(--_glass-label) 23 fill / 23px / 12px stretch;
+    :where(.ui-action, button.ui-edge, .ui-segmented > button):focus-visible {
+    outline: 2px solid var(--ui-accent);
+    outline-offset: 2px;
+  }
+  :root[data-theme="doodle"] :where(input, textarea, select).ui-edge:focus,
+  :root[data-theme="doodle"] .ui-edge:has(> :is(input, textarea):focus),
+  :root[data-theme="doodle"] .ui-glass[data-slot="composer"]:focus-within {
+    border-color: var(--ui-accent);
+  }
+  :root[data-theme="doodle"] .ui-action {
+    border: 2px solid var(--_pen);
+    border-radius: 1rem 1.25rem 1.1rem 0.85rem;
+  }
+  :root[data-theme="doodle"] .ui-segmented > button {
+    border: 1px solid transparent;
+    background-clip: padding-box;
+  }
+  :root[data-theme="doodle"] .ui-segmented > button[aria-pressed="true"] {
+    border-color: var(--_pen);
+  }
+  :root[data-theme="doodle"] .ui-glass:not([data-glass], .site-ui-header) {
+    border: 1.5px solid var(--_pen);
+    border-radius: 1rem 1.15rem 1rem 1.2rem;
+    background-color: var(--ui-overlay);
+    background-clip: padding-box;
+    backdrop-filter: none;
+    box-shadow: 1px 3px 0 var(--_paper-shadow);
   }
   :root[data-theme="doodle"]
     .ui-glass:not([data-glass]):where([role="dialog"], [data-slot="composer"]) {
-    border-radius: 1.5rem;
-    border-image: var(--_glass-sheet) 40 fill / 40px / 12px stretch;
-  }
-  :root[data-theme="doodle"] .ui-glass:not([data-glass])[data-slot="composer"]:focus-within {
-    border-image-source: var(--_glass-sheet-focus);
+    border-radius: 1.35rem 1.65rem 1.4rem 1.6rem;
   }
   :root[data-theme="doodle"] .ui-glass:not([data-glass]):where(.rounded-full) {
-    background-color: var(--ui-overlay);
-    background-clip: padding-box;
-    border-image: var(--_stroke-pill) 22 / 9999px / 0 stretch;
+    border-radius: 9999px;
   }
-  :root[data-theme="doodle"] [aria-live] > :has(> .ui-notice) {
-    background-color: transparent;
-  }
-  :root[data-theme="doodle"] [aria-live] .ui-notice {
+  :root[data-theme="doodle"] .ui-glass:not([data-glass])[role="tooltip"] {
+    background: transparent;
     border-color: transparent;
-    background-color: transparent;
     box-shadow: none;
-    border-image: var(--_glass-slip) 30 fill / 30px / 12px stretch;
+    border-image: var(--_glass-label) 23 fill / 23px / 12px stretch;
   }
-
+  :root[data-theme="doodle"] .ui-action:has([data-slot="label"]) {
+    background-image: url("./art/pencil-penguin.webp");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    background-size: auto 88%;
+  }
+  :root[data-theme="doodle"] .ui-action > [data-slot="label"] {
+    max-inline-size: calc(100% - 4rem);
+  }
+  :root[data-theme="doodle"] .ui-start [data-slot="brand"] [data-slot="brand-mark"] {
+    background: url("./art/pencil-penguin.webp") center / contain no-repeat;
+  }
+  :root[data-theme="doodle"] .ui-start [data-slot="brand"] [data-slot="brand-mark"] > * {
+    opacity: 0;
+  }
   @supports (clip-path: shape(from 0px 0px, line to 1px 1px, close)) {
-    :root[data-theme="doodle"] :where(.ui-edge) {
-      border-radius: 0;
-      background-clip: border-box;
-      clip-path: var(--_clip-bubble);
-    }
-    :root[data-theme="doodle"] :where(button, input, textarea, select, [role="combobox"]).ui-edge,
-    :root[data-theme="doodle"] .ui-edge:where(:has(> :is(input, textarea))) {
-      clip-path: var(--_clip-control);
-    }
-    :root[data-theme="doodle"] :where(button[data-variant]).ui-edge,
-    :root[data-theme="doodle"] .ui-edge:where(.rounded-\[var\(--ui-radius-pill\)\], .rounded-full) {
-      border-radius: 9999px;
-      background-clip: padding-box;
-      clip-path: none;
-    }
-    :root[data-theme="doodle"]
-      .ui-edge:where(input[type="checkbox"], span[aria-hidden="true"]:not(.rounded-full)) {
-      border-radius: 0;
-      background-clip: border-box;
-      clip-path: var(--_clip-box);
-    }
-    :root[data-theme="doodle"] .ui-action {
-      border-radius: 0;
-      background-clip: border-box;
-      clip-path: var(--_clip-fab);
-    }
-    :root[data-theme="doodle"] .ui-edge:has(.ui-glass:not([data-glass])),
-    :root[data-theme="doodle"] .ui-action:focus-visible,
-    :root[data-theme="doodle"]
-      .ui-edge:focus-visible:not(
-        :where(input:not([type="checkbox"], [type="radio"]), textarea, select)
-      ) {
-      border-radius: revert-layer;
-      background-clip: padding-box;
-      clip-path: none;
-    }
-
     :root[data-theme="doodle"] .ui-avatar {
       clip-path: var(--_clip-cookie);
     }
@@ -609,17 +261,7 @@
       clip-path: var(--_clip-clover);
     }
   }
-
-  :root[data-theme="doodle"]
-    :where(input:not([type="checkbox"], [type="radio"]), textarea, select).ui-edge:focus,
-  :root[data-theme="doodle"] .ui-edge:where(:has(> :is(input, textarea):focus)) {
-    border-image-source: var(--_stroke-control-focus);
-    box-shadow: none;
-  }
 }
-
-/* Text inputs, selects and triggers sit on crisp white sticker stock so they pop off both the
-   milk-vanilla page and warm custard settings cards. */
 :root[data-theme="doodle"]
   :where(input:not([type="checkbox"], [type="radio"]), textarea, select, [role="combobox"]).ui-edge,
 :root[data-theme="doodle"] .ui-edge:where(:has(> :is(input, textarea))) {
@@ -656,7 +298,7 @@
   background-color: var(--_nav-active);
 }
 
-/* The navigation's primary action ("New chat"): a sunny butter-gold sticker button. */
+/* The navigation's primary action ("New chat"): a pink sticker with its pencil-riding penguin. */
 :root[data-theme="doodle"] .ui-action {
   padding-block: calc(var(--ui-space-unit) * 2.5);
   margin-block-end: var(--ui-stack-0);

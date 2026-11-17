@@ -6,13 +6,13 @@
   "base": "modern",
   "modes": ["light", "dark"],
   "swatches": {
-    "light": { "canvas": "#fdfaf2", "ink": "#32241d", "accent": "#c23b4e" },
-    "dark": { "canvas": "#1c1916", "ink": "#f1e9dc", "accent": "#f78fa0" }
+    "light": { "canvas": "#fffaf4", "ink": "#402e40", "accent": "#c23b4e" },
+    "dark": { "canvas": "#211d29", "ink": "#f9eff6", "accent": "#f78fa0" }
   },
   "accent": {
     "own": { "light": "#c23b4e", "dark": "#f78fa0" },
     "presets": [
-      { "id": "ink", "swatch": "#32241d" },
+      { "id": "ink", "swatch": "#402e40" },
       { "id": "marker", "swatch": "#bf501e" },
       { "id": "grass", "swatch": "#297343" },
       { "id": "crayon", "swatch": "#b52a22" },
