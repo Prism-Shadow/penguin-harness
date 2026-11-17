@@ -103,8 +103,9 @@ export function mirrorRulesOf(value: unknown): readonly PluginProxyRule[] {
         // Written out, not named from a constant: a contribution is data the host reads
         // without running the package.
         id: "plugin-mirrors",
-        // After the plugin-sources group (order 1): both cards lead with the sources card.
-        order: 2,
+        // A section of the download area's card (download-area.ts), after the plugin-index
+        // section: both sections lead with the sources.
+        parent: "download-area",
         title: "Plugin mirrors",
         titleZh: "插件镜像",
         description:
@@ -123,6 +124,15 @@ export function mirrorRulesOf(value: unknown): readonly PluginProxyRule[] {
             hint: "One mirror per line, tried top to bottom.",
             hintZh: "每行一个镜像，从上到下依次尝试。",
             default: [],
+            // The page draws one picker per entry from these choices (items.options); the
+            // server still holds a list of ids and `mirrorRulesOf` filters what it reads.
+            items: {
+              options: [
+                { value: "npm-registry", title: "npm registry mirror (npmmirror)", titleZh: "npm registry 镜像（npmmirror）" },
+                { value: "github-raw", title: "GitHub raw via jsDelivr (fastly)", titleZh: "GitHub raw 经 jsDelivr（fastly）" },
+                { value: "github-proxy", title: "GitHub proxy (gh-proxy.com)", titleZh: "GitHub 代理（gh-proxy.com）" },
+              ],
+            },
             // The ids the group knows; the page draws them as the choices a line can be.
             maxItems: 3,
           },

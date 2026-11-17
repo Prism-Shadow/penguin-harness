@@ -35,9 +35,9 @@ export function npmRegistryOf(value: unknown): string | undefined {
         // Written out, not named from a constant: a contribution is data the host reads
         // without running the package.
         id: "plugin-sources",
-        // After the sandbox's group (order 0): the sandbox card leads the page, and this
-        // one follows it.
-        order: 1,
+        // A section of the download area's card (download-area.ts): drawn inside it under
+        // this title, saved under its own key.
+        parent: "download-area",
         title: "Plugin sources",
         titleZh: "插件源",
         description:

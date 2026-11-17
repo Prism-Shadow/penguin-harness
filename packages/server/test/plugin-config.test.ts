@@ -252,22 +252,34 @@ describe("/api/admin/plugin-config", () => {
     const res = await admin.get("/api/admin/plugin-config");
     expect(res.status).toBe(200);
     const body = (await res.json()) as PluginConfigResponse;
-    // The sandbox's group is ordered ahead of the rest; the server's own groups follow it
-    // (sources 1, the index's card, mirrors 2) and the packages' groups come last.
+    // The download area leads the page (order 0); the sandbox's group and the packages'
+    // groups follow it. The three sections ride inside the download area's card as its
+    // children, each saved under its own key.
     expect(body.plugins.map((p) => p.name)).toEqual([
-      "sandbox",
+      "download-area",
       "plugin-sources",
       "plugin-index",
       "plugin-mirrors",
+      "sandbox",
       "acme-bot",
     ]);
-    expect(body.plugins[0]!.name).toBe("sandbox");
+    expect(body.plugins[0]!.name).toBe("download-area");
+    const sources = body.plugins.find((p) => p.name === "plugin-sources")!;
+    expect(sources.parent).toBe("download-area");
     const index = body.plugins.find((p) => p.name === "plugin-index")!;
     // The test app stores an emptied list (no test may reach the network to list plugins);
     // the declared default beside it carries the release's published index.
     expect(index.values).toEqual({ sources: [] });
+    expect(index.parent).toBe("download-area");
     const mirrors = body.plugins.find((p) => p.name === "plugin-mirrors")!;
     expect(mirrors.values).toEqual({ mirrors: [] });
+    // The mirror entries are chosen from the built-in mirrors' fixed set.
+    expect(mirrors.configuration.properties.mirrors?.items?.options?.map((o) => o.value)).toEqual([
+      "npm-registry",
+      "github-raw",
+      "github-proxy",
+    ]);
+    expect(mirrors.parent).toBe("download-area");
     expect(body.plugins.filter((p) => p.name === "acme-bot")).toEqual([
       {
         name: "acme-bot",

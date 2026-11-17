@@ -148,6 +148,7 @@ import { EventsRoutes } from "./http/routes/events.js";
 import { PluginRegistryRoutes, PluginRoutes } from "./http/routes/plugins.js";
 import { InstalledPluginRoutes } from "./http/routes/plugins-installed.js";
 import { NpmPluginPackages } from "./plugin/install.js";
+import { DownloadAreaSettings } from "./plugin/download-area.js";
 import { PluginSourceSettings } from "./plugin/source-settings.js";
 import { PluginMirrorSettings } from "./plugin/mirror-settings.js";
 import { PluginLibraryModule } from "./plugin/library-module.js";
@@ -431,7 +432,7 @@ export class PluginConfigModule {}
  * sits above it — the same shape the sandbox settings' module has.
  */
 @Module({
-  children: [PluginSourceSettings, PluginMirrorSettings],
+  children: [DownloadAreaSettings, PluginSourceSettings, PluginMirrorSettings],
   exports: [],
 })
 export class PluginSourceSettingsModule {}

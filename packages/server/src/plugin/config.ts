@@ -533,6 +533,16 @@ export function parsePluginConfiguration(
       }
       field.maxItems = f.maxItems;
     }
+    if (field.type === "list" && f.items !== undefined) {
+      const items = (f.items ?? {}) as Record<string, unknown>;
+      if (typeof items !== "object" || Array.isArray(items)) {
+        throw new Error(`${where}: configuration.properties.${name}.items must be an object`);
+      }
+      if (items.options !== undefined) {
+        // The same check an enum's options get: the page draws a picker from them.
+        field.items = { options: parseOptions(items.options, `${where}: configuration.properties.${name}.items`) };
+      }
+    }
     if (field.type === "number") {
       for (const key of ["minimum", "maximum"] as const) {
         const v = f[key];

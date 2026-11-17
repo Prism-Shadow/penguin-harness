@@ -35,9 +35,9 @@ export function indexUrlsOf(doc: Record<string, unknown>): string[] {
     "PluginConfigProvider.groups": [
       {
         id: "plugin-index",
-        // Between the sources' group (order 1) and the mirrors' (order 2): the address list
-        // is what the mirrors serve, so the cards read in that order.
-        order: 1,
+        // A section of the download area's card (download-area.ts), between the sources'
+        // section and the mirrors': the address list is what the mirrors serve.
+        parent: "download-area",
         title: "Plugin index",
         titleZh: "插件索引",
         description:
