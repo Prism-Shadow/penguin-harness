@@ -45,15 +45,15 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const isRecord = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 
 /** A count the popularity block gives: a whole number, not negative. */
-const isCount = (value) => Number.isInteger(value) && value >= 0;
+const isCount = (value) => Number.isSafeInteger(value) && value >= 0;
 
 /**
  * A market document as the site reads it, or an error naming `source` and the rule it breaks:
  * schema 1; an `updated` date; `hero` and `selected` lists of distinct names within their caps,
  * every hero also selected; `plugins` whose pictures are paths by the rule above, whose tones are
- * `#rrggbb`, whose captions are strings, with at most six screenshots each; and, when present,
- * `popularity` naming its `source` and when it was `generatedAt`, its `items` each package's
- * `installs` and `weekly` counts. Keys schema 1 does not define are dropped.
+ * `#rrggbb`, whose captions are strings, with at most six screenshots each. An optional
+ * `popularity` block is kept when it reads and dropped when it does not, never failing the
+ * document (readPopularity). Keys schema 1 does not define are dropped.
  */
 export function parseMarketDocument(data, source) {
   const fail = (rule) => {
@@ -139,27 +139,29 @@ export function parseMarketDocument(data, source) {
     }
     plugins.set(name, entry);
   }
-  return { hero, selected, plugins, popularity: readPopularity(data.popularity, fail) };
+  return { hero, selected, plugins, popularity: readPopularity(data.popularity) };
 }
 
-/** The document's `popularity` block as package name → `{ installs, weekly }`; absent, undefined. */
-function readPopularity(block, fail) {
-  if (block === undefined) return undefined;
-  if (!isRecord(block)) fail("has `popularity` that is not an object");
-  if (typeof block.source !== "string" || block.source === "") {
-    fail("has no `popularity.source` name");
+/**
+ * The document's `popularity` block as package name → `{ installs, weekly }`, or undefined when it
+ * has none or one that does not read: `source` "placeholder" or "live", a `generatedAt` date, and
+ * `items` by package name, each whole, non-negative counts with `weekly` at most `installs`.
+ * Lenient where the rest is strict, as on the server: a block that breaks a rule is dropped whole
+ * and the document still stands. The numbers published today are placeholders (`source:
+ * "placeholder"`), to be replaced by a real install count with `source: "live"`.
+ */
+function readPopularity(block) {
+  if (!isRecord(block) || (block.source !== "placeholder" && block.source !== "live")) {
+    return undefined;
   }
-  if (typeof block.generatedAt !== "string" || block.generatedAt === "") {
-    fail("has no `popularity.generatedAt` time");
-  }
-  if (!isRecord(block.items)) fail("has no `popularity.items` object");
+  if (typeof block.generatedAt !== "string" || !DATE.test(block.generatedAt)) return undefined;
+  if (!isRecord(block.items)) return undefined;
   const items = new Map();
   for (const [name, item] of Object.entries(block.items)) {
-    const at = `popularity.items[${JSON.stringify(name)}]`;
-    if (!isRecord(item) || !isCount(item.installs) || !isCount(item.weekly)) {
-      fail(`has ${at} without whole \`installs\` and \`weekly\` counts`);
-    }
-    items.set(name, { installs: item.installs, weekly: item.weekly });
+    if (name === "" || !isRecord(item)) return undefined;
+    const { installs, weekly } = item;
+    if (!isCount(installs) || !isCount(weekly) || weekly > installs) return undefined;
+    items.set(name, { installs, weekly });
   }
   return items;
 }

@@ -18,8 +18,9 @@
  *   plugin's summary carries its cover and the mark, and its screenshots reach its detail but not
  *   the list; a plugin it does not name carries none of them.
  * - Given a market document with a popularity block, when the hub is read, then each plugin it
- *   counts carries its install and weekly counts and the rest carry none; given a count that is not
- *   a whole number, then the document is not used and the embedded one stands.
+ *   counts carries its install and weekly counts and the rest carry none; given a block that does
+ *   not read (a count that is not a whole number), then no plugin is counted and the document's
+ *   selection still stands.
  * - Given a published market document that cannot be read (the network fails, it is missing, it
  *   is not JSON, it names another schema), when a build reads the hub, then the embedded document
  *   stands and the build log says so; an earlier run's copy is not served by a build, but is by
@@ -413,26 +414,29 @@ describe("the hub readers", () => {
   });
 
   it("gives the plugins the document counts their installs and weekly installs", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const popularity = (items: object) => ({
       ...MARKET,
-      popularity: { source: "placeholder", generatedAt: "2026-11-17T00:00:00Z", items },
+      popularity: { source: "placeholder", generatedAt: "2026-11-17", items },
     });
-    const counted = popularity({
-      "@penguinharness/toolkit": { installs: 120, weekly: 7 },
-      "@penguinharness/ghost": { installs: 1, weekly: 1 },
-    });
-    const published = await fetched({ [MARKET_DOCUMENT_URL]: counted, [PLUGIN_INDEX_URL]: [] });
-    const hub = load({ repo: repo(), pluginsDir: plugins(), published });
-    const byId = (id: string) => hub.index.plugins.find((p) => p.id === id)!;
-    expect(byId("toolkit").popularity).toEqual({ installs: 120, weekly: 7 });
-    expect(byId("plain")).not.toHaveProperty("popularity");
+    const read = async (doc: object) => {
+      const published = await fetched({ [MARKET_DOCUMENT_URL]: doc, [PLUGIN_INDEX_URL]: [] });
+      const hub = load({ repo: repo(), pluginsDir: plugins(), published });
+      return { hub, byId: (id: string) => hub.index.plugins.find((p) => p.id === id)! };
+    };
+    const counted = await read(
+      popularity({
+        "@penguinharness/toolkit": { installs: 120, weekly: 7 },
+        "@penguinharness/ghost": { installs: 1, weekly: 1 },
+      }),
+    );
+    expect(counted.byId("toolkit").popularity).toEqual({ installs: 120, weekly: 7 });
+    expect(counted.byId("plain")).not.toHaveProperty("popularity");
 
-    const fractional = popularity({ "@penguinharness/toolkit": { installs: 1.5, weekly: 0 } });
-    const fallback = await fetched({ [MARKET_DOCUMENT_URL]: fractional, [PLUGIN_INDEX_URL]: [] });
-    const again = load({ repo: repo(), pluginsDir: plugins(), published: fallback });
-    expect(again.index.market.selected).toEqual(["photo"]);
-    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/popularity\.items/));
+    const fractional = await read(
+      popularity({ "@penguinharness/toolkit": { installs: 1.5, weekly: 0 } }),
+    );
+    expect(fractional.hub.index.plugins.some((p) => p.popularity !== undefined)).toBe(false);
+    expect(fractional.hub.index.market.selected).toEqual(["plain", "toolkit"]);
   });
 
   it("falls back to the embedded market document when the published one cannot be read", async () => {
