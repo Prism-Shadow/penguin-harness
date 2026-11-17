@@ -11,7 +11,7 @@
  * The package holds itself to the rules outright. Where a rule names a home — the one spinner
  * file, the motion files, the pulse of a dot or a skeleton — it is in {@link POLICY}; an occurrence
  * a later wave removes goes in {@link ALLOWLIST} with that wave, and only the chart marks' label
- * sizes are there.
+ * sizes and the facts line's middle dot (moved in from the web app with its W10 entry) are there.
  *
  * A rule with nothing to read on this branch is a named skip, never a pass: the markup rules wait
  * for the first `.tsx` (the screens, #763; the modules, #764; the components, W1), and the
@@ -84,6 +84,9 @@ const POLICY: DeslopPolicy = {
  */
 const ALLOWLIST: DeslopAllowlist = {
   "components/charts/marks/marks.tsx": { 23: [2, "chart type size"] },
+  // The facts line's middle dot came over from the Plugins page with the line itself
+  // (web's plugin-detail.tsx entry shrank by one); it leaves with that page's other dots.
+  "components/data/meta-line/meta-line.tsx": { 24: [1, "W10"] },
 };
 
 /** Not UI: the test machinery spells the patterns the rules look for, and hooks.ts is a list. */
