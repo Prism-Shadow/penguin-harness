@@ -1,9 +1,9 @@
 /**
  * An Agent's avatar: its own picture when it has one (`src`), else its default avatar — the
- * Agent mascot, a round penguin chick, painted in the Agent's colours and wearing the Agent's
- * accessory (agent-avatar-variants.tsx, agent-palette.ts, agent-accessory.ts). The default is what
- * an Agent is drawn as wherever it has no picture of its own, and wherever its picture fails to
- * load.
+ * Agent mascot, a small egg-shaped kawaii penguin, painted in the Agent's colours and wearing the
+ * Agent's accessory (agent-avatar-variants.tsx, agent-palette.ts, agent-accessory.ts). The default
+ * is what an Agent is drawn as wherever it has no picture of its own, and wherever its picture
+ * fails to load.
  *
  * The default is drawn in every theme's style at once and carries the `ui-avatar` hook: each
  * drawing is a direct child `<g data-variant="…">`, the foundation shows the `flat` one, and a

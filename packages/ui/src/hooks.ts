@@ -285,7 +285,7 @@
  * rules, so a recipe or a utility that fills the mark otherwise still has the mark's colour to
  * outline it in.
  *
- * `ui-avatar` (2026-11-04) is an Agent's default avatar, a round penguin chick, drawn once per
+ * `ui-avatar` (2026-11-04) is an Agent's default avatar, a small kawaii penguin, drawn once per
  * theme's language like a glyph: the foundation shows the `flat` drawing and hides the rest, the
  * base (Frost, and Doodle on it) swaps in `soft` and Console `pixel`, and Primer — and any pack
  * with no drawing of its own — keeps `flat`. Every drawing paints the Agent's palette slot and

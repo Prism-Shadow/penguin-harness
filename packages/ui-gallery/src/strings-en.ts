@@ -420,7 +420,7 @@ export const en: GalleryStrings = {
       "ui-glyph":
         "an icon each theme draws its own way: line (Primer), duotone line (Frost) or pixel art (Console)",
       "ui-avatar":
-        "an agent's default avatar each theme draws its own way: one round penguin chick, on a rounded square (Primer), a circle (Frost, Doodle) or in pixel art (Console)",
+        "an agent's default avatar each theme draws its own way: one small egg-shaped penguin drawn in a thin brown line, on a rounded square (Primer), a circle (Frost, Doodle) or in pixel art (Console)",
     },
     hookSamples: {
       menu: ["Pin", "Rename", "Delete"],
@@ -1252,7 +1252,7 @@ export const en: GalleryStrings = {
       },
       variants: "Every theme's drawing",
       variantsAside:
-        "One round penguin chick, drawn once per theme; the colour and the accessory follow the agent alone",
+        "One small egg-shaped penguin, drawn once per theme; the colour and the accessory follow the agent alone",
       sizeCaption: (px) => `${px}px`,
       picture: "An agent's own picture",
       pictureAside:
