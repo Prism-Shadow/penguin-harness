@@ -4,12 +4,13 @@
  *   GET /api/plugins/market/asset?path=…&rev=…     # one picture the current document names, as an image
  *
  * The document is the published one once it has answered, else the one embedded in this build
- * (plugin/market.ts). Every picture it names is served by this server from what it fetched and
- * kept (plugin/market-pictures.ts), never by the page from another host. The picture route
- * answers only a path the current document names — a cover, its thumbnail, an icon, a screenshot
- * — so it is not a proxy: any other path is 404 and nothing is fetched. A picture that cannot be
- * had is 404 too, which the page answers with the cover it draws itself. `rev` is only the
- * picture's cache key.
+ * (plugin/market.ts). Every picture it names is served by this server, never by the page from
+ * another host: a built-in plugin's cover from the copy shipped in this build when the embedded
+ * document names that path (plugin/market-covers.ts), anything else from what the server fetched
+ * and kept (plugin/market-pictures.ts). The picture route answers only a path the current
+ * document names — a cover, its thumbnail, an icon, a screenshot — so it is not a proxy: any
+ * other path is 404 and nothing is fetched. A picture that cannot be had is 404 too, which the
+ * page answers with the cover it draws itself. `rev` is only the picture's cache key.
  *
  * A component of its own beside PluginRegistryRoutes: the market reads none of the index's state,
  * and a plugin's rows are matched to its art by package name in the page.
@@ -19,8 +20,9 @@ import { ICON_CONTENT_TYPES } from "@prismshadow/penguin-core";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx, Json } from "@prismshadow/penguin-core/kernel";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { Config, Log } from "../../hmr/capabilities.js";
+import type { Config, Hmr, Log } from "../../hmr/capabilities.js";
 import {
+  embeddedMarketDocument,
   marketPicturePaths,
   marketResponse,
   marketSource,
@@ -30,6 +32,7 @@ import {
 import type { MarketSnapshot, MarketSource } from "../../plugin/market.js";
 import { marketPictureDir, marketPictures } from "../../plugin/market-pictures.js";
 import type { MarketPicture, MarketPictures } from "../../plugin/market-pictures.js";
+import { bundledCoversDir, readBundledPicture } from "../../plugin/market-covers.js";
 import { errorBody } from "../errors.js";
 
 /** The headers a picture is answered with, beside its content type. */
@@ -46,13 +49,18 @@ function pictureResponse(picture: MarketPicture): Response {
   });
 }
 
-/** The two routes over a document source and a picture cache (both built by the caller). */
+/**
+ * The two routes over a document source, a picture cache and the folder of covers this build
+ * ships (`bundled`, read on first need; null when there is none). All three are built by the caller.
+ */
 export function pluginMarketRoutes({
   source,
   pictures,
+  bundled = () => null,
 }: {
   source: MarketSource;
   pictures: MarketPictures;
+  bundled?: () => string | null;
 }): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   app.get("/", async (c) => c.json(marketResponse(await source.read())));
@@ -66,6 +74,13 @@ export function pluginMarketRoutes({
     const { document } = await source.read();
     if (!marketPicturePaths(document).has(path)) {
       return c.json(errorBody("not_found", "The plugin market names no such picture."), 404);
+    }
+    // A path the embedded document names may be a cover this build ships: served as shipped,
+    // with no fetch, which is what holds offline and with the published document off.
+    if (marketPicturePaths(embeddedMarketDocument()).has(path)) {
+      const dir = bundled();
+      const shipped = dir === null ? null : await readBundledPicture(dir, path);
+      if (shipped !== null) return pictureResponse(shipped);
     }
     // Either document's paths sit beside the published one, of which the embedded is a copy. With
     // the published document off there is nowhere to fetch from, and nothing was ever kept.
@@ -120,6 +135,7 @@ function reseed(parked: unknown): MarketSnapshot | null {
 export class PluginMarketRoutes {
   @Use() private readonly config!: Config;
   @Use() private readonly log!: Log;
+  @Use() private readonly hmr!: Hmr;
   @Bind("PluginMarketRoutes.routes") routes!: Hono<AppEnv>;
   private source: MarketSource | null = null;
 
@@ -138,9 +154,14 @@ export class PluginMarketRoutes {
       seed: reseed((context as { market?: unknown } | null)?.market),
       onFailure: (message) => log(`[plugin-market] ${message}`),
     });
+    // Found once per App, on the first picture asked for: a push brings a new App with its own
+    // assets, and looking may unpack them.
+    let covers: string | null | undefined;
     this.routes = pluginMarketRoutes({
       source: this.source,
       pictures: marketPictures({ dir: marketPictureDir(this.config.root), proxy, log }),
+      bundled: () =>
+        covers === undefined ? (covers = bundledCoversDir(this.hmr.assetsDir())) : covers,
     });
   }
 

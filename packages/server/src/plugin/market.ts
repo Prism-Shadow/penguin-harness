@@ -15,11 +15,13 @@
  * Strict on what it reads (parseMarketDocument): a document that breaks a rule, or names a schema
  * other than 1, is not used at all and the embedded one stands. A future schema is published under
  * a new file name, so this server keeps reading the schema-1 document. Unknown keys are ignored.
- * Nothing in the document is a count, a rank or a rating, and no field for one exists.
+ * Selection is an editorial choice, never a rank. The one block of numbers, `popularity`, is
+ * optional and read leniently (readPopularity): PLACEHOLDER install counts today, to be replaced
+ * by a real install-count API.
  */
 import { createHash } from "node:crypto";
 import { userAgent } from "@prismshadow/penguin-core";
-import type { PluginArt, PluginMarketResponse } from "../api/types.js";
+import type { MarketPopularity, PluginArt, PluginMarketResponse } from "../api/types.js";
 import builtinMarket from "./builtin-market.json" with { type: "json" };
 import { pluginProxyMirrors } from "./registry.js";
 import type { PluginProxyRule } from "./registry.js";
@@ -57,6 +59,8 @@ export interface MarketDocument {
   hero: string[];
   /** Package names of the selected plugins, in display order. */
   selected: string[];
+  /** Install counts by package name, when the document carries a block that reads (readPopularity). */
+  popularity?: MarketPopularity;
   plugins: Record<string, MarketDocumentPlugin>;
 }
 
@@ -79,13 +83,49 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
+const isCount = (value: unknown): value is number =>
+  typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+
+/**
+ * The document's `popularity` block, or undefined when it has none or one that does not read:
+ * `source` "placeholder" or "live", a `generatedAt` date, and `items` by package name, each
+ * `{ installs, weekly }` of non-negative integers with weekly at most installs. Lenient where the
+ * rest of the parser is strict: a block that breaks a rule is dropped whole, and the document,
+ * its selection and its pictures still stand.
+ *
+ * PLACEHOLDER: the numbers the community repository publishes today are generated with a fixed
+ * seed (`source: "placeholder"`), not counted. Replace them with a real install-count API later;
+ * it publishes the same shape with `source: "live"`, and nothing here has to change.
+ */
+function readPopularity(value: unknown): MarketPopularity | undefined {
+  if (!isRecord(value) || (value.source !== "placeholder" && value.source !== "live")) {
+    return undefined;
+  }
+  if (typeof value.generatedAt !== "string" || !DATE.test(value.generatedAt)) return undefined;
+  if (!isRecord(value.items)) return undefined;
+  const items: [string, { installs: number; weekly: number }][] = [];
+  for (const [name, item] of Object.entries(value.items)) {
+    if (name === "" || !isRecord(item)) return undefined;
+    const { installs, weekly } = item;
+    if (!isCount(installs) || !isCount(weekly) || weekly > installs) return undefined;
+    items.push([name, { installs, weekly }]);
+  }
+  return {
+    source: value.source,
+    generatedAt: value.generatedAt,
+    items: Object.fromEntries(items),
+  };
+}
+
 /**
  * Reads a market document, or throws naming the source and the rule it breaks: schema 1; an
  * `updated` date; `hero` and `selected` lists of distinct, non-empty names within their caps, with
  * every hero also selected; `plugins` an object whose entries' pictures are paths by the rule
  * above, whose tones are `#rrggbb`, whose captions are strings, with at most six screenshots each.
- * A name no server lists is not an error — the reader skips it. Keys schema 1 does not define are
- * dropped from the result, so neither the listing nor a parked copy carries them.
+ * A name no server lists is not an error — the reader skips it. An optional `popularity` block is
+ * kept when it reads and dropped when it does not, never failing the document (readPopularity).
+ * Keys schema 1 does not define are dropped from the result, so neither the listing nor a parked
+ * copy carries them.
  */
 export function parseMarketDocument(data: unknown, source: string): MarketDocument {
   const fail = (rule: string): never => {
@@ -177,8 +217,16 @@ export function parseMarketDocument(data: unknown, source: string): MarketDocume
       return [name, entry];
     },
   );
+  const popularity = readPopularity(data.popularity);
   // fromEntries defines each name as an own key, `__proto__` included, rather than assigning it.
-  return { schema: 1, updated: data.updated, hero, selected, plugins: Object.fromEntries(plugins) };
+  return {
+    schema: 1,
+    updated: data.updated,
+    hero,
+    selected,
+    ...(popularity !== undefined ? { popularity } : {}),
+    plugins: Object.fromEntries(plugins),
+  };
 }
 
 let embedded: MarketDocument | null = null;
@@ -459,5 +507,7 @@ export function marketResponse({ document, source }: MarketRead): PluginMarketRe
     selected: [...document.selected],
     art: Object.fromEntries(art),
     source,
+    // Placeholder numbers today, passed through as the document has them (readPopularity).
+    ...(document.popularity !== undefined ? { popularity: document.popularity } : {}),
   };
 }
