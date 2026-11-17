@@ -1,9 +1,10 @@
 /**
  * The driver library: test a plugin against a real harness desktop shell (Electron), end
- * to end. The user declares what to test; the driver runs the whole lifecycle — launch
- * the shell, set the instance up, link the plugin in through the instance's own
- * management surface, wait for it to load, run the declared units, remove the plugin and
- * close the shell — and reports each unit's result.
+ * to end. The caller hands the units over as MODULES — `@Component` classes with a
+ * `run(context)` method, the same unit the harness itself is built from — and the driver
+ * runs the whole lifecycle: launch the shell, set the instance up, link the plugin in
+ * through the instance's own management surface, wait for it to load, run the units,
+ * remove the plugin and close the shell — and reports each unit's result.
  *
  * The window handle is a standard Playwright `Page`, so every locator and `expect`
  * assertion from `@playwright/test` works unchanged inside a unit.
@@ -11,23 +12,32 @@
 import { spawnSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
+import { moduleMetaOf } from "@prismshadow/penguin-core/kernel";
+import type { ModuleClass, Plugin } from "@prismshadow/penguin-core/plugin";
 
-/** One declared test unit: what the plugin under test promises about the real shell. */
-export interface TestUnit {
-  description?: string;
-  run: (context: TestContext) => Promise<void>;
-}
-
-/** What a unit sees: the shell's first window as a standard Playwright page. */
+/** What a unit's `run` receives: the shell's first window as a standard Playwright page. */
 export interface TestContext {
   window: import("@playwright/test").Page;
+}
+
+/**
+ * The contract a test unit satisfies: a `@Component` (or `@Module`) class with a `run`
+ * method, executed by the driver in the caller's process. The class's name — the module
+ * name — is the unit's name in the results.
+ */
+export interface TestUnit {
+  run: (context: TestContext) => Promise<void> | void;
 }
 
 export interface TestPluginOptions {
   /** Path to the plugin package under test (its directory). */
   pluginDir: string;
-  /** The units to run, by name. */
-  units: Record<string, TestUnit>;
+  /**
+   * The units to run, as modules: `@Component` classes with a `run(context)` method —
+   * as a list, or as the plugin package's default export shape (`{ modules }`). Classes
+   * without a `run` are ignored, so the whole module list can go in as is.
+   */
+  units: readonly ModuleClass[] | Plugin;
   /** Path to the harness checkout or build whose desktop shell to launch. Defaults to the current git root. */
   root?: string;
   /** Where the instance keeps its data: `<base>/penguin` and `<base>/chrome`. Defaults to `<gitRoot>/.data/penguin-testing-electron`. */
@@ -203,16 +213,37 @@ export async function testPlugin(options: TestPluginOptions): Promise<TestResult
       throw new Error(`testPlugin: ${pluginName} never became active on the instance`);
     }
 
-    // Run the declared units, each in its own try so one failure does not hide the rest.
+    // Collect the units: the modules the caller handed over, filtered to those that
+    // declare `run` — so a plugin's whole module list can go in as is. Each must be a
+    // real module (a decorated class), the unit the harness itself is built from, and
+    // concrete: the driver instantiates it and calls `run` with the context.
+    const classes: readonly ModuleClass[] = Array.isArray(options.units)
+      ? options.units
+      : (options.units.modules ?? []);
+    const units: Array<{ name: string; run: (context: TestContext) => Promise<void> | void }> = [];
+    for (const cls of classes) {
+      const proto = cls.prototype as { run?: TestUnit["run"] };
+      if (typeof proto.run !== "function") continue;
+      const meta = moduleMetaOf(cls); // throws when the class is not a @Module / @Component
+      const instance = new (cls as unknown as new () => TestUnit)();
+      units.push({ name: meta.name, run: (context) => instance.run(context) });
+    }
+    if (units.length === 0) {
+      throw new Error(
+        "testPlugin: no units among the given modules — a unit is a @Component class with a run(context) method",
+      );
+    }
+
+    // Run the units, each in its own try so one failure does not hide the rest.
     const results: TestResult[] = [];
-    for (const [name, unit] of Object.entries(options.units)) {
+    for (const unit of units) {
       const started = Date.now();
       try {
         await unit.run({ window });
-        results.push({ unit: name, ok: true, durationMs: Date.now() - started });
+        results.push({ unit: unit.name, ok: true, durationMs: Date.now() - started });
       } catch (err) {
         results.push({
-          unit: name,
+          unit: unit.name,
           ok: false,
           error: err instanceof Error ? err.message : String(err),
           durationMs: Date.now() - started,

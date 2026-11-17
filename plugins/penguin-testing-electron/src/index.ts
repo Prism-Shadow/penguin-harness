@@ -14,16 +14,16 @@ import type { Plugin } from "@prismshadow/penguin-core/plugin";
         title: "Penguin Testing Electron",
         titleZh: "Penguin Electron 测试",
         descriptionZh:
-          "驱动真实的 harness 桌面壳（Electron）做端到端验证：起当前检出或指定版本的实例、从当前 harness 的配置与保险库完成 setup、装入被测插件、在壳里执行其 TestUnit 测试单元、测完移除还原。",
+          "驱动真实的 harness 桌面壳（Electron）做端到端验证：起当前检出或指定版本的实例、从当前 harness 的配置与保险库完成 setup、装入被测插件、把测试单元（@Component 模块）跑在真实壳里、测完移除还原。",
         shortDescription:
-          "Drive a real harness shell end to end: launch, set up, install the plugin under test, run its TestUnits.",
-        shortDescriptionZh: "起真实壳、装入被测插件、跑 TestUnit、测完还原。",
+          "Drive a real harness shell end to end: launch, set up, install the plugin under test, run its test-unit modules in the shell.",
+        shortDescriptionZh: "起真实壳、装入被测插件、把测试单元模块跑在壳里、测完还原。",
         category: "software-development",
         icon: "icon.svg",
         quickStart: {
           prompt:
-            "Launch a harness instance and run the TestUnits of the plugin in plugins/sandbox-dsh.",
-          promptZh: "起一个 harness 实例，跑 plugins/sandbox-dsh 里插件的 TestUnit。",
+            "Launch a harness instance and run the test units of the plugin in plugins/sandbox-dsh.",
+          promptZh: "起一个 harness 实例，跑 plugins/sandbox-dsh 里插件的测试单元。",
           skills: ["penguin-testing-electron"],
         },
       },
