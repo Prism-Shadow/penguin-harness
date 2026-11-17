@@ -1378,6 +1378,13 @@ export const en: GalleryStrings = {
       crumbs: "Path strip",
       crumbsHint:
         "When the path does not fit, its leading parts fold into one “…”; the file name gives way last",
+      narrow: "Narrow tree pane",
+      narrowHint:
+        "With no room for its search box, the box folds into a magnifier that opens it across the header row; an empty box folds back on Esc or blur",
+      narrowFolded: "Folded",
+      narrowQuery: "Holding a query: stays open",
+      refresh: "Refresh",
+      upload: "Upload",
       menu: "File menu",
       menuFile: "File",
       menuFolder: "Folder",
