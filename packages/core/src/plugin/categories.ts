@@ -35,6 +35,8 @@ export const PLUGIN_CATEGORIES: PluginCategory[] = [
   { id: "software-development", title: "Software Development", titleZh: "软件开发" },
   { id: "ai-app-development", title: "AI App Development", titleZh: "AI 应用开发" },
   { id: "learning-life", title: "Learning & Life", titleZh: "学习与生活" },
+  { id: "utilities", title: "Utilities", titleZh: "实用工具" },
+  { id: "entertainment", title: "Entertainment", titleZh: "娱乐" },
   { id: "sandbox", title: "Agent Sandbox", titleZh: "Agent 运行沙箱" },
 ];
 
