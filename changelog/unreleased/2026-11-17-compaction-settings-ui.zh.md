@@ -3,7 +3,7 @@
 - **Date:** 2026-11-17
 - **Type:** feature
 - **Scope:** `server`, `web`, `docs`, `ui-gallery`
-- **PR:** [#PR_NUMBER](https://github.com/Prism-Shadow/penguin-harness/pull/PR_NUMBER)
+- **PR:** [#1591](https://github.com/Prism-Shadow/penguin-harness/pull/1591)
 
 [English](2026-11-17-compaction-settings-ui.md)
 
