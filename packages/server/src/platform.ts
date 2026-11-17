@@ -151,6 +151,7 @@ import { PluginSourceSettings } from "./plugin/source-settings.js";
 import { PluginLibraryModule } from "./plugin/library-module.js";
 import { PluginUiRoutes } from "./http/routes/plugin-ui.js";
 import { SuggestIdRoutes } from "./http/routes/suggest-id.js";
+import { PluginMarketRoutes } from "./http/routes/plugin-market.js";
 import { LanguageRoutes } from "./http/routes/languages.js";
 import { Languages, LanguagesModule } from "./languages/service.js";
 import { TerminalModule } from "./terminal/manager.js";
@@ -529,6 +530,7 @@ export class CompanyModule {}
     InstalledPluginRoutes,
     PluginCliCommandsProvider,
     PluginUiRoutes,
+    PluginMarketRoutes,
     SuggestIdRoutes,
     LanguagesModule,
     LanguageRoutes,

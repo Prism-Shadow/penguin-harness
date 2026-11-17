@@ -22,6 +22,7 @@ import { fileURLToPath } from "node:url";
 import { DEFAULT_SERVER_PORT, resolveRoot } from "@prismshadow/penguin-core";
 import { PENGUIN_GO_BASE_URL } from "./model-catalog/catalog.js";
 import { offeredCli, type CliLaunch } from "./services/cli-shim.js";
+import { resolvePluginMarketUrl } from "./plugin/market.js";
 
 export interface ServerConfig {
   /** Local data root directory (shared with the SDK/CLI). */
@@ -117,6 +118,16 @@ export interface ServerConfig {
    * `Secure` flag (auth/middleware.ts cookieOptions). The desktop shell always sets it.
    */
   trustProxy: boolean;
+  /**
+   * The published plugin market document this deployment reads (PENGUIN_PLUGIN_MARKET), or null
+   * for the one embedded in the build alone. Unset = the community repository's; `off` = no
+   * outbound request for the market, its document or its pictures; any other value replaces the
+   * URL, and the pictures are read beside it (plugin/market.ts).
+   *
+   * OPTIONAL like `pluginIndexUrl`: a runtime older than this field publishes none, and the
+   * market then reads the variable from its own process environment (http/routes/plugin-market.ts).
+   */
+  pluginMarketUrl?: string | null;
   /**
    * The CLI entry script this harness offers as `penguin` to the Agents it runs and in its
    * terminals — the file the `<root>/bin/penguin` shim runs (see services/cli-shim.ts).
@@ -357,6 +368,7 @@ export function resolveServerConfig(env: NodeJS.ProcessEnv = process.env): Serve
     desktopToken,
     portFile: env.PENGUIN_PORT_FILE?.trim() || null,
     trustProxy: env.PENGUIN_TRUST_PROXY === "1",
+    pluginMarketUrl: resolvePluginMarketUrl(env.PENGUIN_PLUGIN_MARKET),
     cliEntry: cli.entry,
     cliLaunch: {
       execArgs: cli.execArgs,
