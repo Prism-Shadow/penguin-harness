@@ -2,8 +2,8 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { expect } from "@playwright/test";
 import { Component } from "@prismshadow/penguin-core/plugin";
-import { gitRoot } from "../../src/driver.js";
-import type { TestContext } from "../../src/driver.js";
+import { gitRoot } from "../../../src/driver.js";
+import type { TestContext } from "../../../src/driver.js";
 
 /**
  * The sample plugin's test units — components, the unit the harness itself is built from,
