@@ -22,7 +22,7 @@ An Actor submits its candidate and actual action/selection records, then finishe
 
 Keep the bank unchanged until all task × A attempts finish. Later feedback stays separate from observations available before actions. Even an unchanged bank gets fresh prescribed attempts; old answers and measurements are not new samples. Record attempt/session identity, task, bank digest, candidate digest, actions, selected skills and feedback.
 
-Collect H1 with the empty bank, bootstrap B0, measure B0, then evolve and measure B1…BR. With five tasks, A=2 and R=2 this is four batches of ten Actor sessions, not three independent training runs.
+Collect H1 with the empty bank, bootstrap B0, measure B0, then evolve and measure B1…BR. For N training tasks, A attempts per task and R evolution rounds, one training run executes `(R + 2)` batches of `N × A` Actor sessions.
 
 ## Initialize
 
@@ -83,7 +83,7 @@ Continue evolution from the just-published bank even if its score falls; do not 
 Select separately for each group, only after every planned H1, B0…BR batch is complete. The default is `selection: best_train`, an experiment adaptation fixed before training.
 
 - Eligible candidates are the validated B0…BR banks with their complete prescribed training measurements; H1 is a baseline, not a candidate. Empty learned content in B0 is still valid.
-- Rank by the mean normalized training score across all tasks and all prescribed repetitions, using unrounded scores. Do not use best-of-A, full-success count, or only the five exported answers. If several stages among B0…BR have an identical bank hash, treat them as one candidate and pool their distinct complete batches with equal weight per task/attempt; never count the same measurement twice.
+- Rank by the mean normalized training score across all tasks and all prescribed repetitions, using unrounded scores. Do not use best-of-A, full-success count, or only the exported final answers. If several stages among B0…BR have an identical bank hash, treat them as one candidate and pool their distinct complete batches with equal weight per task/attempt; never count the same measurement twice.
 - Break an exact tie by earliest originating stage (B0 before B1, etc.). Fix this rule before learning. Record that earliest stage as the selected stage for an unchanged bank appearing in multiple batches.
 - Save `OUT/selection.yaml`: rule, all candidate stage labels/hashes/means, evidence references and counts, selected stage/hash, tie-break and completion status. Keep all stage snapshots and training scores, including the last stage even when it loses.
 - A user may explicitly request `selection: final` before the experiment, which selects BR (B0 for R=0). Never change selection or add training attempts in response to test results.

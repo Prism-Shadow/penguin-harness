@@ -4,7 +4,7 @@ Resolve the Project from the Penguin Environment's App Data Dir. Read the select
 
 For repository-backed tasks, use the full 40-character lowercase commit named by the Case. Its Task link, run-rules link and checkout instruction must agree. Record the repository and commit and reuse that checkout throughout the experiment. A user-specified task version selects a matching package. Display packages may be obtained from `main`; task execution follows their declared commit.
 
-Record the experiment/report version, actual Harness, runner, Benchmark, model and toolkit versions, thinking levels, selected Cases, budgets and resource limits. Prefer user-specified versions and record a model revision when exposed. Use one output directory per independent training unit and distinct output paths for each practice attempt and test repetition.
+Record the experiment/report version, actual Harness, runner, Benchmark, model and toolkit versions, thinking levels, selected Cases, budgets and resource limits. Prefer user-specified versions and record a model revision when exposed. Use separate output directories for each requested construction run and distinct output paths for each practice attempt and test repetition.
 
 ## Base State and construction inputs
 
