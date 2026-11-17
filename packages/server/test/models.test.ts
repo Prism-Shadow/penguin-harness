@@ -1045,7 +1045,10 @@ describe("default_project presets", () => {
     // Its models follow its endpoint and carry the protocol it lacks; other groups get theirs.
     for (const row of body.models.filter((m) => m.provider === "openrouter")) {
       expect(row.credential, row.modelId).toBeUndefined();
-      expect(row.clientType, row.modelId).toBe(catalogGroupConnection("openrouter")!.client_type);
+      expect(row.clientType, row.modelId).toBe(
+        MODEL_CATALOG.find((m) => m.provider === "openrouter" && m.modelId === row.modelId)!
+          .clientType,
+      );
       expect(row.effective.baseUrl, row.modelId).toBe("https://or-proxy.example/v1");
     }
     expect(body.providers.tokendance).toBeDefined();

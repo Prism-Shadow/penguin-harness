@@ -81,7 +81,6 @@ import type {
 } from "./session.js";
 import {
   createTempWorkspace,
-  cacheSessionId,
   formatSessionId,
   isSessionIdToken,
   mcpConnectOutcome,
@@ -1506,7 +1505,6 @@ export class Agent {
         // model that rejects it.
         ...(entry.fast_mode === true ? { fastMode: true } : {}),
         ...(context.thinkingLevel !== undefined ? { thinkingLevel: context.thinkingLevel } : {}),
-        cacheSessionId: cacheSessionId(this.state.projectId, this.state.agentId, sessionId),
         sessionId,
         ...(context.requestTimeoutMs !== undefined
           ? { requestTimeoutMs: context.requestTimeoutMs }
