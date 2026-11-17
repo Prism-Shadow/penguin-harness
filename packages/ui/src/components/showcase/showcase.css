@@ -852,7 +852,8 @@
   list-style: none;
 }
 /* The title's opener stretches over its row (`::after`), so the rank and the thumbnail open it
-   too; the tags and the figure stand above it, for their own hover hints. */
+   too; the tags and the figure stand above it, for their own hover hints — positioned and later
+   in the row, they paint over the stretched box without a z-index of their own. */
 .showcase-ranking-row {
   position: relative;
   display: grid;
@@ -933,7 +934,6 @@
 }
 .showcase-ranking-tags {
   position: relative;
-  z-index: 1;
   display: flex;
   min-width: 0;
   flex-wrap: wrap;
@@ -943,7 +943,6 @@
 }
 .showcase-ranking-count {
   position: relative;
-  z-index: 1;
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
