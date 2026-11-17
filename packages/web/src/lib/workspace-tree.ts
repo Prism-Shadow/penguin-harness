@@ -48,6 +48,21 @@ export function baseName(path: string): string {
   return i >= 0 ? path.slice(i + 1) : path;
 }
 
+/**
+ * A reference written inside a file (a Markdown image's src, a link's href), resolved against the
+ * directory that file sits in: `./` and `../` are walked (clamped at the root when they would go
+ * past it), and a leading "/" is the root itself.
+ */
+export function resolveRelative(baseDir: string, ref: string): string {
+  const out = ref.startsWith("/") || baseDir === "" ? [] : baseDir.split("/");
+  for (const segment of ref.split("/")) {
+    if (segment === "" || segment === ".") continue;
+    if (segment === "..") out.pop();
+    else out.push(segment);
+  }
+  return out.join("/");
+}
+
 /** Whether `path` is `dir` itself or lies inside it. */
 export function isWithin(path: string, dir: string): boolean {
   return path === dir || path.startsWith(`${dir}/`);

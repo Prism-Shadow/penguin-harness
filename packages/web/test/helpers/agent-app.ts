@@ -16,7 +16,9 @@
  * {@link AgentServer.refuseNext}, or read back what was written with {@link AgentServer.writes}.
  *
  * What the Agent carries besides is the suite's too (`parts`): Skills, hook packages, MCP server
- * entries and the install receipts naming each workbench's plugin. Uninstalling a plugin takes
+ * entries and the install receipts naming each workbench's plugin. The files on its disk a suite
+ * names (`files`) read through the Files panel's directory routes: a directory's root listing and
+ * a file's content with its version; any other directory is not found. Uninstalling a plugin takes
  * away what the server would — the Skills its library entry contributes, the hook package of its
  * name, the MCP entries and workbenches recording it — and reports any part the suite names in
  * `uninstallFailures` as not removed; uninstalling one Skill or hook package takes that one. A server `older` than the workbench switches lists no
@@ -105,6 +107,7 @@ import type {
   WorkbenchVersion,
   VaultEntryInfo,
   VaultUpdateRequest,
+  WorkspaceFilesResponse,
 } from "@prismshadow/penguin-server/api";
 import { AuthProvider } from "../../src/state/auth";
 import { LocaleProvider } from "../../src/state/locale";
@@ -345,6 +348,11 @@ export function agentServer(
     apiKeys?: AgentApiKeyInfo[];
     /** This server's organizations (by default none); their employees join its Agents. */
     organizations?: FakeOrganization[];
+    /**
+     * Directories the Files panel's directory routes can read (by default none): absolute
+     * directory → root-level file name → its text. Any other directory is not found.
+     */
+    files?: Record<string, Record<string, string>>;
   } = {},
 ): AgentServer {
   const installKey = (machineId: string | null, agentId: string) => `${machineId ?? ""}/${agentId}`;
@@ -888,6 +896,29 @@ export function agentServer(
     if (path === `/api/projects/${PROJECT_ID}/app-center/layout` && method === "PUT") {
       appCenterLayout = (request.body as { layout: AppCenterLayout | null }).layout;
       return json({ layout: appCenterLayout });
+    }
+    if (path.startsWith(`/api/projects/${PROJECT_ID}/workspace-files`) && method === "GET") {
+      const dir = options.files?.[request.query.get("workspace") ?? ""];
+      if (dir === undefined) return apiError(400, "workspace_not_found");
+      const at = request.query.get("path") ?? "";
+      if (path.endsWith("/content")) {
+        const text = dir[at];
+        if (text === undefined) return apiError(404, "not_found");
+        return new Response(text, {
+          headers: { "content-type": "text/plain; charset=utf-8", etag: '"v1"' },
+        });
+      }
+      // Root-level files only: nothing below the root is held.
+      const entries = at !== "" ? [] : Object.entries(dir);
+      return json({
+        path: at,
+        entries: entries.map(([name, text]) => ({
+          name,
+          kind: "file" as const,
+          sizeBytes: new TextEncoder().encode(text).length,
+          mtime: "2026-11-16T00:00:00Z",
+        })),
+      } satisfies WorkspaceFilesResponse);
     }
     const pluginPath = /^\/api\/projects\/[^/]+\/agents\/([^/]+)\/plugins\/([^/]+)$/.exec(path);
     if (pluginPath !== null && method === "DELETE" && !options.older) {

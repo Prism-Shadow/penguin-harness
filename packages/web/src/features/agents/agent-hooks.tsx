@@ -7,11 +7,13 @@
  *
  * A row is the shared list row, read like a Skill's: the icon of the plugin the package came
  * from (the hook glyph when it has none), then the package name with — right beside it — the
- * puzzle mark naming the plugin that installed it, when one did, and the hook points it answers
- * at (one bare chip each — `stop`, `user_prompt` — wrapping under the name), its localized
- * description below, then the version, export and uninstall. Export downloads the installed
- * directory as a zip; uninstall confirms first, and says which plugin installed the package when
- * one did. Both are member-level, matching the hooks routes.
+ * puzzle mark naming the plugin that installed it, when one did (a press points at that plugin's
+ * row on the Plugins sub-page), and the hook points it answers at (one bare chip each — `stop`,
+ * `user_prompt` — wrapping under the name), its localized description below, then the version,
+ * export and uninstall. The name, and a click anywhere else on the row that is not one of its
+ * controls, opens the package's own files read-only (part-files-dialog.tsx). Export downloads the
+ * installed directory as a zip; uninstall confirms first, and says which plugin installed the
+ * package when one did. Both are member-level, matching the hooks routes.
  *
  * The "Import hook" dialog is the Skills import's (chat-or-zip-import-dialog.tsx) with its two
  * paths: the recommended chat import (a source field taking a URL / repo / local path /
@@ -45,27 +47,32 @@ import { downloadArchive } from "./archive-download";
 import { ChatOrZipImportDialog } from "./chat-or-zip-import-dialog";
 import { buildHookImportPrompt } from "./hook-import";
 import { toastApiError } from "../../lib/toast-api-error";
-import type { PartSource } from "./plugins-subpages";
+import { cardBodyClick } from "../../lib/card-open";
+import type { PartRef, PartSource } from "./plugins-subpages";
 
 /**
  * The rows of an Agent's hook packages and the one uninstall confirmation they share. `agentName`
  * names the Agent in the confirmation and the toast; `onChanged` reads the tab's lists again
- * after an uninstall; `sourceOf` names the plugin a package came from, whose detail
- * `onOpenPlugin` opens.
+ * after an uninstall; `sourceOf` names the plugin a package came from, which `onShowPlugin`
+ * points at.
  */
 export function useHookRows({
   agentId,
   agentName,
   onChanged,
   sourceOf,
-  onOpenPlugin,
+  onOpenFiles,
+  onShowPlugin,
 }: {
   agentId: string;
   agentName: string;
   onChanged: () => Promise<void>;
   /** The plugin that installed a hook package, by its name; undefined for the user's own. */
   sourceOf: (name: string) => PartSource | undefined;
-  onOpenPlugin: (plugin: string) => void;
+  /** Opens a part's own files: the row's body, and its name for the keyboard. */
+  onOpenFiles: (part: PartRef) => void;
+  /** Shows the plugin a part came from on the Plugins sub-page: its row marked, no detail opened. */
+  onShowPlugin: (plugin: string) => void;
 }): { row: (hook: HookItem) => ReactNode; modals: ReactNode } {
   const { locale } = useLocale();
   const { currentProject } = useProject();
@@ -105,6 +112,7 @@ export function useHookRows({
   const row = (hook: HookItem) => {
     const description = localizedText(locale, hook.description, hook.descriptionZh);
     const source = sourceOf(hook.name);
+    const open = () => onOpenFiles({ kind: "hook", name: hook.name, title: hook.name });
     return (
       <ListRow
         key={`hook:${hook.name}`}
@@ -115,6 +123,8 @@ export function useHookRows({
             {hook.name}
           </span>
         }
+        onClick={open}
+        onBodyClick={cardBodyClick(open)}
         // The plugin's mark, then the hook points it answers at: bare point names that wrap
         // under the name rather than truncating.
         titleTrail={
@@ -122,8 +132,8 @@ export function useHookRows({
             {source !== undefined && (
               <GlyphAction
                 glyph={ICONS.puzzle}
-                label={S.agent.mcpInstalledBy(source.title)}
-                onClick={() => onOpenPlugin(source.name)}
+                label={S.agentPlugins.partSource(source.title)}
+                onClick={() => onShowPlugin(source.name)}
               />
             )}
             {hook.events.map((event) => (

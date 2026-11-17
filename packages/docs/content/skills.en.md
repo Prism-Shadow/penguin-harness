@@ -102,7 +102,7 @@ The **Skills** menu lists only the Skills installed on the current agent, and it
 
 ## Manage an agent's Skills
 
-To see the Skills installed on one agent, open **Agents**, select the agent, and open the **Skills** sub-page of the **Plugins** tab. Every Skill is listed there; one from a plugin shows a puzzle icon after its name, which names the plugin and opens it.
+To see the Skills installed on one agent, open **Agents**, select the agent, and open the **Skills** sub-page of the **Plugins** tab. Every Skill is listed there; select one to read its files read-only. One from a plugin shows a puzzle icon after its name, which names the plugin and highlights its row on the **Plugins** sub-page.
 
 - Each row shows a Skill's name, short description and version, with two actions: **Export** downloads the Skill as a zip file, and **Uninstall** deletes its directory.
 - **Enable skills** controls whether the agent's system prompt lists the installed Skills. With it off, the agent is not told which Skills exist, but Skills you select in a chat still work. Only the Project owner can change it and the **Skills prompt**.

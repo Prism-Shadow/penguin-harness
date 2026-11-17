@@ -15,11 +15,13 @@
  *   every workbench.
  *
  * The three kind sub-pages are flat lists: a plugin's parts and the user's own side by side, each
- * part a plugin installed marked after its name with the puzzle that names the plugin and opens
- * its detail (agent-skills.tsx, agent-hooks.tsx, agent-workbenches.tsx). Each has its own Import
- * at the bar's end. The switches are written at once and are the Project owner's alone (a member
- * sees their state). MCP servers have no sub-page: a plugin's are listed in its detail, and they
- * are edited on the Tools tab.
+ * part a plugin installed marked after its name with the puzzle that names the plugin and points
+ * at it — the Plugins sub-page opens with the plugin's row marked, and no detail opens
+ * (agent-skills.tsx, agent-hooks.tsx, agent-workbenches.tsx). A row itself opens the part's own
+ * files read-only, from its directory in the Agent State (part-files-dialog.tsx). Each has its
+ * own Import at the bar's end. The switches are written at once and are the Project owner's
+ * alone (a member sees their state). MCP servers have no sub-page: a plugin's are listed in its
+ * detail, and they are edited on the Tools tab.
  *
  * The bar and the fold under it are drawn in every state of the page, so nothing in them moves
  * when an answer lands. One read serves all four sub-pages: the Agent's plugin lists, its
@@ -47,6 +49,7 @@ import {
   ToggleRow,
   toastError,
   toastSuccess,
+  useMarkedRow,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
@@ -75,9 +78,11 @@ import { AgentPluginsPage } from "./agent-plugins-page";
 import { HookImportDialog, useHookRows } from "./agent-hooks";
 import { SkillImportDialog, useSkillRows } from "./agent-skills";
 import { WorkbenchImportDialog, useWorkbenchRows } from "./agent-workbenches";
+import { PartFilesDialog } from "./part-files-dialog";
 import {
   PLUGINS_SUBPAGES,
   PLUGIN_PARAM,
+  type PartRef,
   type PartSource,
   type PluginsSubPage,
 } from "./plugins-subpages";
@@ -89,6 +94,8 @@ interface Lists {
   workbenches: WorkbenchesResponse;
   /** The library by category: the Plugins sub-page's tags name them. */
   library: PluginGroupItem[];
+  /** The Agent State's absolute path on that server: where a part's files are. */
+  stateDir: string;
 }
 
 /** Which import dialog is open. */
@@ -158,6 +165,10 @@ export function PluginsTab({
   const [importing, setImporting] = useState<ImportKind | null>(null);
   /** The Plugins sub-page's search: what is on screen, narrowed; not remembered. */
   const [query, setQuery] = useState("");
+  /** The part whose files are open, read-only. */
+  const [openPart, setOpenPart] = useState<PartRef | null>(null);
+  /** The plugin a part's puzzle last pointed at: its row on the Plugins sub-page, for a moment. */
+  const { marked: markedPlugin, mark: markPlugin } = useMarkedRow<string>();
 
   /** The newest read: an answer to an older one is not taken. */
   const asked = useRef(0);
@@ -177,7 +188,7 @@ export function PluginsTab({
       agentInstalls.accept(installsKey(projectId, machineId, agentId), installed);
       // The Plugins page reads this server's library alone.
       if (machineId === null) pluginLibrary.accept(LIBRARY_KEY, library);
-      setLists({ installed, workbenches, library: library.groups });
+      setLists({ installed, workbenches, library: library.groups, stateDir: config.stateDir });
       setError(null);
     } catch (e) {
       if (asked.current === mine) setError(apiErrorText(e));
@@ -280,19 +291,28 @@ export function PluginsTab({
     if (!listed) closePlugin();
   }, [listed, closePlugin]);
 
+  /** A part's puzzle: the Plugins sub-page, its search cleared, the plugin's row marked. No detail opens. */
+  const showPlugin = (name: string) => {
+    setQuery("");
+    markPlugin(name);
+    onSubPage("plugins");
+  };
+
   const skillRows = useSkillRows({
     agentId,
     agentName,
     onChanged: changed,
     sourceOf: (name) => sources.skills.get(name),
-    onOpenPlugin: openPlugin,
+    onOpenFiles: setOpenPart,
+    onShowPlugin: showPlugin,
   });
   const hookRows = useHookRows({
     agentId,
     agentName,
     onChanged: changed,
     sourceOf: (name) => sources.hooks.get(name),
-    onOpenPlugin: openPlugin,
+    onOpenFiles: setOpenPart,
+    onShowPlugin: showPlugin,
   });
   const allEnabled = lists?.workbenches.enabled;
   const workbenchRows = useWorkbenchRows({
@@ -315,7 +335,8 @@ export function PluginsTab({
     allEnabled,
     canSwitch: isOwner,
     sourceOf: (id) => sources.workbenches.get(id),
-    onOpenPlugin: openPlugin,
+    onOpenFiles: setOpenPart,
+    onShowPlugin: showPlugin,
   });
 
   /** The Agent-wide workbench switch: written alone, its answer the whole list. */
@@ -382,6 +403,7 @@ export function PluginsTab({
         catalog={catalog}
         query={query}
         openName={openName}
+        marked={markedPlugin}
         onOpen={openPlugin}
         onClose={closePlugin}
         onManage={onSubPage}
@@ -470,6 +492,16 @@ export function PluginsTab({
       {skillRows.modals}
       {hookRows.modals}
       {workbenchRows.modals}
+
+      {openPart !== null && lists !== null && (
+        <PartFilesDialog
+          projectId={projectId}
+          machineId={machineId}
+          stateDir={lists.stateDir}
+          part={openPart}
+          onClose={() => setOpenPart(null)}
+        />
+      )}
 
       {importing === "skill" && (
         <SkillImportDialog

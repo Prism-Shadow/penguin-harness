@@ -1190,12 +1190,11 @@ export const en: Strings = {
     importOverwriteAction: "Overwrite",
     /** The row's More menu: downloads the workbench's source as a zip. */
     exportWorkbench: "Export",
-    /** The row's switch (its accessible name, with the title): whether the workbench has a shortcut in the App Center. */
+    /** Whether the workbench has a shortcut in the App Center: the words beside the row's switch (which flip it too), its accessible name with the title, and the More menu's checkable row. */
     showInAppCenter: "Show in the App Center",
+    /** The switch's words' tooltip: what showing in the App Center means, and what the switch writes. */
     showInAppCenterHint:
-      "Show a shortcut to this workbench in the App Center. This rewrites its package.json and is recorded as a version.",
-    /** The words beside the row's switch, which flip it too. */
-    appCenterLabel: "App Center",
+      "When on, this workbench appears as an app on the App Center page: every member of the Project sees its icon there and opens it with one click, without starting a chat first. Turning it off only takes the shortcut off the App Center; the workbench, its data and its versions are untouched. Flipping the switch rewrites penguin.appCenter.show in the workbench's package.json and is recorded as a version.",
     /** The row's text button: opens the workbench beside a new chat. */
     openAction: "Open",
     /** The row's "⋯" button, which holds its other actions. */
@@ -1210,7 +1209,7 @@ export const en: Strings = {
     loading: "Loading…",
     emptyTitle: "The App Center is empty",
     empty:
-      "A workbench is a page an agent hosts beside the chat, and it can also open full page. Once an agent creates a workbench and its row in the agent's settings has the “App Center” switch on, it appears here.",
+      "A workbench is a page an agent hosts beside the chat, and it can also open full page. Once an agent creates a workbench and its row in the agent's settings has the “Show in the App Center” switch on, it appears here.",
     /** A tile whose current files failed to load: it still opens, and its menu shows the error. */
     broken: "Failed to load",
     /** A tile whose app is still being built: it opens once the build is done. */
@@ -3401,7 +3400,7 @@ export const en: Strings = {
       hooks:
         "Every hook package on this agent: scripts the harness runs at the loop's hook points, such as after every Task. Uninstalling deletes the package's directory.",
       workbenches:
-        "Every workbench on this agent. Open one, reload it, look through its versions, export or remove it, or turn it off and keep its data.",
+        'Every workbench on this agent. Open one, reload it, look through its versions, export or remove it, or turn it off and keep its data. "Show in the App Center" puts a workbench on the App Center page as an app.',
     },
     /** The fold's second paragraph for a member: what only the owner can do on that sub-page. */
     readOnly: {
@@ -3468,6 +3467,9 @@ export const en: Strings = {
     /** The removal of a part a plugin installed: where it can be put back. */
     partFromPluginNote: (plugin: string) =>
       `The ${plugin} plugin installed it; Update on the Plugins sub-page puts it back.`,
+    /** The puzzle mark after a part's name: its accessible name and tooltip, saying what a press does. */
+    partSource: (plugin: string) =>
+      `Installed by plugin ${plugin}. Click to locate it on the Plugins sub-page.`,
     /** Each kind sub-page's list with no row. */
     skillsEmpty: "No skills on this agent yet.",
     hooksEmpty: "No hook packages on this agent yet.",

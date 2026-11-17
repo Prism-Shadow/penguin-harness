@@ -8,7 +8,11 @@
  *   package is listed with the mark of the plugin that installed it, "Enable hooks" is shown, and
  *   neither a Skill row nor "Enable skills" is.
  * - Given `?tab=skills`, the plugin's Skill carries the mark naming Charts and the user's own
- *   Skill carries none; pressing the mark lands on the Plugins sub-page with Charts' detail open.
+ *   Skill carries none; pressing the mark lands on the Plugins sub-page with Charts' row marked
+ *   and focused, and no detail open.
+ * - Given a Skill, a hook package or a workbench, a click on its row (not on its name) opens a
+ *   dialog titled with the part over the part's own folder in the Agent State, its lead file
+ *   listed and previewed; every read names that folder, and nothing is written.
  * - Given the owner uninstalls a Skill a plugin installed, the confirmation also says which plugin
  *   installed it; the user's own Skill's does not.
  * - Given a member, each sub-page's switch shows its state greyed and nothing is written.
@@ -29,7 +33,10 @@ import type { FakeMachine } from "./helpers/agent-app";
 import {
   AGENT_PATH,
   CHARTS,
+  findPluginRow,
   openAgentPlugins,
+  pluginRow,
+  pluginRowButton,
   rowOf,
   subPageButton,
 } from "./helpers/agent-plugins";
@@ -47,7 +54,7 @@ import {
 } from "./helpers/dom";
 
 const PAGE = `/agents/${AGENT_ID}`;
-const MARK = en.agent.mcpInstalledBy("Charts");
+const MARK = en.agentPlugins.partSource("Charts");
 const GPU: FakeMachine = {
   machineId: "gpu1",
   alias: "gpu-box",
@@ -87,7 +94,7 @@ describe("the kind sub-pages of the Plugins tab", () => {
     expect(hasButton(`${en.skills.uninstall} notes`)).toBe(false);
   });
 
-  it("marks the Skill a plugin installed and not the user's own, and the mark opens the plugin", async () => {
+  it("marks the Skill a plugin installed and not the user's own, and the mark points at the plugin's row", async () => {
     const { router } = await openAgentPlugins({
       at: `${PAGE}?tab=skills`,
       ready: () => hasButton(`${en.skills.uninstall} notes`),
@@ -96,13 +103,90 @@ describe("the kind sub-pages of the Plugins tab", () => {
     expect(markOf(rowOf("notes"))).toBeNull();
 
     await click(markOf(rowOf("chart"))!);
-    await waitFor(() => dialogs().length === 1);
-    expect(whereIs(router)).toBe(`${PAGE}?tab=plugins&plugin=charts`);
+    await waitFor(() => findPluginRow("Charts") !== null);
+    expect(whereIs(router)).toBe(`${PAGE}?tab=plugins`);
+    expect(dialogs()).toEqual([]);
     expect(subPageButton(en.agentPlugins.subPages.plugins).getAttribute("aria-pressed")).toBe(
       "true",
     );
-    expect(topDialog().textContent).toContain(en.agentPlugins.onAgentTitle);
+    expect(document.activeElement).toBe(pluginRowButton("Charts"));
+    expect([...document.querySelectorAll("[data-marked]")]).toEqual([pluginRow("Charts")]);
   });
+
+  it.each<{
+    kind: string;
+    tab: string;
+    /** A button on screen once the sub-page's list is in. */
+    ready: string;
+    row: string;
+    /** The row's description line: a click there is on the row's body. */
+    body: string;
+    folder: string;
+    files: Record<string, string>;
+    lead: string;
+    /** Text the preview shows once the lead file is read. */
+    shows: string;
+  }>([
+    {
+      kind: "Skill",
+      tab: "skills",
+      ready: `${en.skills.uninstall} notes`,
+      row: "chart",
+      body: "Draw a chart",
+      folder: "skills/chart",
+      files: { "SKILL.md": "Draws a chart from a table.", "chart.py": "print(1)" },
+      lead: "SKILL.md",
+      shows: "Draws a chart from a table.",
+    },
+    {
+      kind: "hook package",
+      tab: "hooks",
+      ready: `${en.hooks.exportHook} charts`,
+      row: "charts",
+      body: "Checks charts",
+      folder: "hooks/charts",
+      // No README: the manifest is what it opens on.
+      files: { "hooks.json": '{ "stop": "lint-the-chart" }', "check.sh": "exit 0" },
+      lead: "hooks.json",
+      shows: "lint-the-chart",
+    },
+    {
+      kind: "workbench",
+      tab: "workbenches",
+      ready: `${en.workbenches.more} Board`,
+      row: "Board",
+      body: "board",
+      folder: "workbenches/board",
+      files: { "README.md": "A board of charts.", "package.json": "{}" },
+      lead: "README.md",
+      shows: "A board of charts.",
+    },
+  ])(
+    "opens a $kind's own files read-only from a click on its row",
+    async ({ tab, ready, row, body, folder, files, lead, shows }) => {
+      const workspace = `/data/agents/${AGENT_ID}/${folder}`;
+      const { server } = await openAgentPlugins({
+        at: `${PAGE}?tab=${tab}`,
+        ready: () => hasButton(ready),
+        files: { [workspace]: files },
+      });
+      const description = [...rowOf(row).querySelectorAll("span")].find(
+        (span) => span.children.length === 0 && span.textContent === body,
+      )!;
+      await click(description);
+      await waitFor(() => dialogs().length === 1 && topDialog().textContent!.includes(shows));
+
+      const title = document.getElementById(topDialog().getAttribute("aria-labelledby")!);
+      expect(title?.textContent).toBe(row);
+      const listed = [...topDialog().querySelectorAll('[role="treeitem"]')].map(
+        (item) => item.textContent ?? "",
+      );
+      expect(listed.some((text) => text.includes(lead))).toBe(true);
+      const reads = server.fetch.requests.filter((r) => r.path.includes("/workspace-files"));
+      expect(new Set(reads.map((r) => r.query.get("workspace")))).toEqual(new Set([workspace]));
+      expect(server.writes()).toEqual([]);
+    },
+  );
 
   it("says which plugin installed a Skill before uninstalling it, and nothing of the kind for the user's own", async () => {
     const { server } = await openAgentPlugins({

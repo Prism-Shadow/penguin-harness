@@ -6,13 +6,16 @@
  * - The mark is the workbench's own App Center icon when its manifest names one that reads clean
  *   (an image the server serves; a monochrome one drawn in the tile's ink), else its plugin's
  *   icon on the tile, else the anvil tile.
- * - A switch sits in a `<label>` whose word flips it too ("Enable", "App Center"); a longer hint
- *   — what the App Center switch does to the package.json — is the label's tooltip.
+ * - A switch sits in a `<label>` whose words flip it too ("Enable", "Show in the App Center"); a
+ *   longer hint — what showing in the App Center means, and what the switch does to the
+ *   package.json — is the label's tooltip.
  * - "More" is the portaled `Dropdown` with the `Menu` family's rows, as every row menu in the
- *   app: Reload (while the workbench runs), Version history and Export, then Remove in the danger
+ *   app: first, on a row that has it, "Show in the App Center" as a checkable row — the same
+ *   setting as the row's switch (`AppCenterControl`), so picking it writes at once — then a rule,
+ *   Reload (while the workbench runs), Version history and Export, then Remove in the danger
  *   tone. Opening focuses the first row, the arrow keys move, Enter picks, and Esc closes this
- *   menu only and hands focus back to its button. The menu acts through the rows' owner: Remove
- *   still asks there first.
+ *   menu only and hands focus back to its button. A pick closes the menu; the menu acts through
+ *   the rows' owner: Remove still asks there first.
  */
 import { useState } from "react";
 import type { ReactNode } from "react";
@@ -86,22 +89,26 @@ export function LabelledSwitch({
   );
 }
 
+/** One workbench's App Center setting, as a control shows it. */
+export interface AppCenterControl {
+  checked: boolean;
+  disabled: boolean;
+  onChange: (show: boolean) => void;
+}
+
 /** The App Center switch, its words beside it; a click on either flips it. */
 export function AppCenterToggle({
   title,
   checked,
   disabled,
   onChange,
-}: {
+}: AppCenterControl & {
   /** The row's title, for the switch's accessible name. */
   title: string;
-  checked: boolean;
-  disabled: boolean;
-  onChange: (show: boolean) => void;
 }) {
   return (
     <LabelledSwitch
-      text={S.workbenches.appCenterLabel}
+      text={S.workbenches.showInAppCenter}
       hint={S.workbenches.showInAppCenterHint}
       disabled={disabled}
     >
@@ -118,6 +125,7 @@ export function AppCenterToggle({
 export function WorkbenchRowMenu({
   title,
   disabled,
+  appCenter,
   onReload,
   onHistory,
   onExport,
@@ -126,6 +134,8 @@ export function WorkbenchRowMenu({
   /** The row's title, for the button's and the menu's accessible name. */
   title: string;
   disabled: boolean;
+  /** The row's App Center setting, drawn as the menu's first, checkable row; absent on a machine's Agent. */
+  appCenter?: AppCenterControl | undefined;
   /** Absent while the workbench does not run: there is nothing to reload. */
   onReload?: (() => void) | undefined;
   onHistory: () => void;
@@ -144,7 +154,7 @@ export function WorkbenchRowMenu({
     <Dropdown
       open={open}
       setOpen={setOpen}
-      menuClass="w-48"
+      menuClass="w-56"
       portal={{ direction: "down", align: "right" }}
       button={
         <IconButton
@@ -162,6 +172,18 @@ export function WorkbenchRowMenu({
       }
     >
       <Menu label={label} density="sm" className="py-1">
+        {appCenter !== undefined && (
+          <>
+            <MenuItem
+              glyph={ICONS.tiles}
+              label={S.workbenches.showInAppCenter}
+              checked={appCenter.checked}
+              disabled={appCenter.disabled}
+              onSelect={pick(() => appCenter.onChange(!appCenter.checked))}
+            />
+            <MenuSeparator />
+          </>
+        )}
         {onReload !== undefined && (
           <MenuItem glyph={ICONS.refresh} label={S.workbenches.reload} onSelect={pick(onReload)} />
         )}

@@ -11,7 +11,9 @@
  *   installed one is behind the library or missing a part; the owner's Uninstall, the glyph alone
  *   as on a hook package's row.
  *
- * The name is the row's button: it opens the detail. A press on an action is the action's alone.
+ * The name is the row's button: it opens the detail, and so does a click anywhere else on the row
+ * that is not one of its controls (lib/card-open.ts). A press on an action is the action's alone.
+ * A part's puzzle on another sub-page lands here: the plugin's row is marked for a moment.
  */
 import type { ReactNode } from "react";
 import {
@@ -26,6 +28,7 @@ import {
   StatusMark,
 } from "@prismshadow/penguin-ui";
 import type { ToneName } from "@prismshadow/penguin-ui";
+import { cardBodyClick } from "../../lib/card-open";
 import { S } from "../../lib/strings";
 import {
   McpServerMarks,
@@ -208,6 +211,7 @@ export function AgentPluginRow({
   installs,
   isOwner,
   actions,
+  marked,
   onOpen,
 }: {
   entry: AgentPluginGroup;
@@ -217,6 +221,8 @@ export function AgentPluginRow({
   installs: AgentInstalls | undefined;
   isOwner: boolean;
   actions: AgentPluginActions;
+  /** A part's puzzle just pointed here. */
+  marked: boolean;
   onOpen: () => void;
 }) {
   const version = row === undefined ? undefined : rowVersion(row);
@@ -238,6 +244,8 @@ export function AgentPluginRow({
       meta={version === undefined ? undefined : `v${version}`}
       trailing={rowActions(entry, title, isOwner, actions)}
       onClick={onOpen}
+      onBodyClick={cardBodyClick(onOpen)}
+      marked={marked}
     />
   );
 }

@@ -6,7 +6,9 @@
  *
  * A row leads with the icon of the plugin the Skill came from (the book glyph when it has none),
  * then the name — followed, for a Skill a plugin installed, by the puzzle mark that names the
- * plugin and opens its detail — the localized short description and the version; its actions
+ * plugin and points at its row on the Plugins sub-page — the localized short description and the
+ * version. The name, and a click anywhere else on the row that is not one of its controls, opens
+ * the Skill's own files read-only (part-files-dialog.tsx); its actions
  * export the installed directory as a zip (which round-trips through the import) and uninstall
  * it, which confirms first since it deletes the whole directory, local edits included, and says
  * which plugin installed it when one did. Both are member-level, matching the skills routes.
@@ -43,26 +45,31 @@ import { downloadArchive } from "./archive-download";
 import { ChatOrZipImportDialog } from "./chat-or-zip-import-dialog";
 import { buildImportPrompt } from "./skill-import-source";
 import { toastApiError } from "../../lib/toast-api-error";
-import type { PartSource } from "./plugins-subpages";
+import { cardBodyClick } from "../../lib/card-open";
+import type { PartRef, PartSource } from "./plugins-subpages";
 
 /**
  * The rows of an Agent's Skills and the one uninstall confirmation they share. `agentName` names
  * the Agent in the confirmation and the toast; `onChanged` reads the tab's lists again after an
- * uninstall; `sourceOf` names the plugin a Skill came from, whose detail `onOpenPlugin` opens.
+ * uninstall; `sourceOf` names the plugin a Skill came from, which `onShowPlugin` points at.
  */
 export function useSkillRows({
   agentId,
   agentName,
   onChanged,
   sourceOf,
-  onOpenPlugin,
+  onOpenFiles,
+  onShowPlugin,
 }: {
   agentId: string;
   agentName: string;
   onChanged: () => Promise<void>;
   /** The plugin that installed a Skill, by its name; undefined for the user's own. */
   sourceOf: (name: string) => PartSource | undefined;
-  onOpenPlugin: (plugin: string) => void;
+  /** Opens a part's own files: the row's body, and its name for the keyboard. */
+  onOpenFiles: (part: PartRef) => void;
+  /** Shows the plugin a part came from on the Plugins sub-page: its row marked, no detail opened. */
+  onShowPlugin: (plugin: string) => void;
 }): { row: (skill: SkillMetadataItem) => ReactNode; modals: ReactNode } {
   const { locale } = useLocale();
   const { currentProject } = useProject();
@@ -101,6 +108,7 @@ export function useSkillRows({
 
   const row = (skill: SkillMetadataItem) => {
     const source = sourceOf(skill.name);
+    const open = () => onOpenFiles({ kind: "skill", name: skill.name, title: skill.name });
     return (
       <ListRow
         key={`skill:${skill.name}`}
@@ -111,12 +119,14 @@ export function useSkillRows({
             {skill.name}
           </span>
         }
+        onClick={open}
+        onBodyClick={cardBodyClick(open)}
         titleTrail={
           source !== undefined && (
             <GlyphAction
               glyph={ICONS.puzzle}
-              label={S.agent.mcpInstalledBy(source.title)}
-              onClick={() => onOpenPlugin(source.name)}
+              label={S.agentPlugins.partSource(source.title)}
+              onClick={() => onShowPlugin(source.name)}
             />
           )
         }

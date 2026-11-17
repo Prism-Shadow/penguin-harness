@@ -10,6 +10,8 @@
  *   which then says the Agent has no workbench.
  * - The row's switches carry their words. The App Center switch commits on click, from the switch
  *   or from its words; a refused write leaves it where the file says.
+ * - The More menu's first row is the same App Center setting, checkable: picking it writes at once
+ *   and the row's switch follows.
  * - The row leads with the workbench's own App Center icon when it has one, else no image.
  */
 import { createElement as h } from "react";
@@ -131,7 +133,7 @@ it("asks before removing from the More menu: a cancel deletes nothing, a confirm
 it("names both switches beside them, and flips the App Center one from its words; a refused write leaves it where the file says", async () => {
   const { server } = await open();
   const words = () => appCenterSwitch().closest("label")!;
-  expect(words().textContent).toBe(en.workbenches.appCenterLabel);
+  expect(words().textContent).toBe(en.workbenches.showInAppCenter);
   expect(switchNamed(en.workbenches.enableOne("Support")).closest("label")?.textContent).toBe(
     en.workbenches.enableLabel,
   );
@@ -154,6 +156,24 @@ it("names both switches beside them, and flips the App Center one from its words
       .filter((request) => request.path.endsWith("/app-center"))
       .map((request) => request.body),
   ).toEqual([{ show: true }, { show: true }, { show: false }]);
+});
+it("shows the workbench in the App Center from the More menu's checkable row, and the row's switch follows", async () => {
+  const { server } = await open();
+  const menuRow = async () => {
+    await click(button(`${en.workbenches.more} Support`));
+    return menuItem(en.workbenches.showInAppCenter);
+  };
+  expect((await menuRow()).getAttribute("aria-checked")).toBe("false");
+  await click(menuItem(en.workbenches.showInAppCenter));
+  await waitFor(() => appCenterSwitch().getAttribute("aria-checked") === "true");
+  await waitFor(() => !appCenterSwitch().disabled);
+  expect(
+    server
+      .writes()
+      .filter((request) => request.path.endsWith("/app-center"))
+      .map((request) => [request.method, request.body]),
+  ).toEqual([["PATCH", { show: true }]]);
+  expect((await menuRow()).getAttribute("aria-checked")).toBe("true");
 });
 const row = () => appCenterSwitch().closest("li")!;
 it("leads the row with the workbench's own App Center icon", async () => {

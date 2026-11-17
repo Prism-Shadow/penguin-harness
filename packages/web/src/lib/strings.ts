@@ -1323,12 +1323,11 @@ export const zh = {
     importOverwriteAction: "覆盖导入",
     /** The row's More menu: downloads the workbench's source as a zip. */
     exportWorkbench: "打包导出",
-    /** The row's switch (its accessible name, with the title): whether the workbench has a shortcut in the App Center. */
-    showInAppCenter: "显示在应用中心",
+    /** Whether the workbench has a shortcut in the App Center: the words beside the row's switch (which flip it too), its accessible name with the title, and the More menu's checkable row. */
+    showInAppCenter: "展示到应用中心",
+    /** The switch's words' tooltip: what showing in the App Center means, and what the switch writes. */
     showInAppCenterHint:
-      "在应用中心显示这个工作台的快捷入口；会改写它的 package.json，并记为一个版本。",
-    /** The words beside the row's switch, which flip it too. */
-    appCenterLabel: "应用中心",
+      "打开后，这个工作台会作为一个应用出现在「应用中心」页面：Project 的每个成员都能在那里看到它的图标，点一下即可打开使用，不必先进入对话。关闭只是把入口从应用中心撤下，工作台本身、它的数据与历史版本都不受影响。拨动开关会改写工作台 package.json 中的 penguin.appCenter.show，并记为一个版本。",
     /** The row's text button: opens the workbench beside a new chat. */
     openAction: "打开",
     /** The row's "⋯" button, which holds its other actions. */
@@ -1343,7 +1342,7 @@ export const zh = {
     loading: "加载中…",
     emptyTitle: "应用中心还是空的",
     empty:
-      "Workbench 是由 Agent 托管、嵌在对话旁的页面，也可以整页打开。Agent 创建 Workbench，并在 Agent 设置的工作台行打开「应用中心」开关后，它就会出现在这里。",
+      "Workbench 是由 Agent 托管、嵌在对话旁的页面，也可以整页打开。Agent 创建 Workbench，并在 Agent 设置的工作台行打开「展示到应用中心」开关后，它就会出现在这里。",
     /** A tile whose current files failed to load: it still opens, and its menu shows the error. */
     broken: "加载失败",
     /** A tile whose app is still being built: it opens once the build is done. */
@@ -3596,7 +3595,7 @@ export const zh = {
       hooks:
         "这个 Agent 的全部钩子包：harness 在循环的钩子点运行的脚本，例如每个 Task 结束后。卸载会删除整个钩子包目录。",
       workbenches:
-        "这个 Agent 的全部工作台。可以打开、重新加载、查看历史版本、导出或移除，也可以只关掉它而保留数据。",
+        "这个 Agent 的全部工作台。可以打开、重新加载、查看历史版本、导出或移除，也可以只关掉它而保留数据。「展示到应用中心」把工作台作为应用放到应用中心页面。",
     },
     /** The fold's second paragraph for a member: what only the owner can do on that sub-page. */
     readOnly: {
@@ -3660,6 +3659,8 @@ export const zh = {
     /** The removal of a part a plugin installed: where it can be put back. */
     partFromPluginNote: (plugin: string) =>
       `它由插件 ${plugin} 安装，之后可以在「插件」里点「更新」装回。`,
+    /** The puzzle mark after a part's name: its accessible name and tooltip, saying what a press does. */
+    partSource: (plugin: string) => `由插件 ${plugin} 安装，点击在「插件」子页面中定位`,
     /** Each kind sub-page's list with no row. */
     skillsEmpty: "这个 Agent 还没有技能。",
     hooksEmpty: "这个 Agent 还没有钩子包。",

@@ -18,8 +18,11 @@
  * where the rows will be. The Agent's own parts are not listed here: they are rows on the kind
  * sub-pages.
  *
- * A row's name opens its detail, and the address names it (`&plugin=<name>`), so a detail can be
- * linked to; closing it, or switching sub-page, drops the name.
+ * A row's name, or a click anywhere else on the row that is not one of its controls, opens its
+ * detail, and the address names it (`&plugin=<name>`), so a detail can be linked to; closing it,
+ * or switching sub-page, drops the name. A part's puzzle on another sub-page opens this one with
+ * the plugin's row `marked`: the page mounts afresh on every switch, so both sections are open
+ * and the row is there to bring into view.
  */
 import { useState } from "react";
 import type { ReactNode } from "react";
@@ -55,6 +58,7 @@ export function AgentPluginsPage({
   catalog,
   query,
   openName,
+  marked,
   onOpen,
   onClose,
   onManage,
@@ -77,6 +81,8 @@ export function AgentPluginsPage({
   query: string;
   /** The plugin whose detail the address names; null when none is open. */
   openName: string | null;
+  /** The plugin a part's puzzle just pointed at, whose row is marked; null otherwise. */
+  marked: string | null;
   onOpen: (plugin: string) => void;
   onClose: () => void;
   /** Goes where a kind of part is managed, which closes the detail. */
@@ -137,6 +143,7 @@ export function AgentPluginsPage({
       installs={installs}
       isOwner={isOwner}
       actions={actions}
+      marked={entry.name === marked}
       onOpen={() => onOpen(entry.name)}
     />
   );
