@@ -92,7 +92,6 @@ import type {
   PluginRegistry,
 } from "../../plugin/registry.js";
 import { IndexSources } from "../../plugin/index-config.js";
-import { indexMirrorRules } from "../../plugin/mirror-settings.js";
 import { PACKAGE_NAME, pluginBases, resolvePluginPackage } from "../../plugin/loader.js";
 import type { PluginBase } from "../../plugin/loader.js";
 import { installedPackageDir, pluginsPrefix, prefixDependencies } from "../../plugin/install.js";
