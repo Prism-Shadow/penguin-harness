@@ -8,8 +8,9 @@ test.use({
   launchOptions: { args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"] },
 });
 const base = process.env.BASE_URL;
-const first = { provider: "first", modelId: "same" };
-const second = { provider: "second", modelId: "same" };
+const first = { provider: "custom", modelId: "deepseek-asr" };
+const second = { provider: "deepseek", modelId: "deepseek-asr" };
+const speaker = { provider: "custom", modelId: "deepseek-tts" };
 const chat = { provider: "custom", modelId: "claude-4-8" };
 
 for (const lang of ["zh", "en"]) {
@@ -22,34 +23,29 @@ for (const lang of ["zh", "en"]) {
       data: {
         defaultModel: chat,
         models: [
+          ...[first, second, speaker].map((ref) => ({
+            ...ref,
+            clientType: "mmsp",
+            contextWindow: 32000,
+            apiKey: "local-test",
+            baseUrl: process.env.MOCK_URL,
+          })),
           { ...chat, contextWindow: 200000, apiKey: "sk-mock", baseUrl: process.env.MOCK_URL },
         ],
       },
     });
     expect(saved.ok()).toBeTruthy();
-    const candidates = {
-      stt: [first, second],
-      tts: [first],
-      chat: [chat],
-      image: [],
-      video: [],
-      search: [],
-      fetch: [],
-    };
-    let bindings = { tts: first };
-    let voicePolish = { enabled: true, model: chat };
+    const configUrl = base + "/api/projects/" + project + "/capabilities";
+    const assigned = await page.request.patch(configUrl, {
+      data: { bindings: { tts: speaker }, voicePolish: { enabled: true, model: chat } },
+    });
+    expect(assigned.ok(), await assigned.text()).toBeTruthy();
+    const selected = async () =>
+      (await (await page.request.get(configUrl)).json()).bindings.stt?.provider;
     const raw = lang === "zh" ? "周五三点在西湖" : "Meet at West Lake at 3";
     let polishWorks = false,
       captureCount = 0,
       playbackCount = 0;
-    await page.route("**/api/projects/*/capabilities", async (route) => {
-      if (route.request().method() === "PATCH") {
-        const patch = route.request().postDataJSON();
-        bindings = { ...bindings, ...patch.bindings };
-        voicePolish = { ...voicePolish, ...patch.voicePolish };
-      }
-      await route.fulfill({ json: { bindings, candidates, voicePolish } });
-    });
     await page.route("**/capabilities/stt/run", async (route) => {
       const { audio } = route.request().postDataJSON();
       expect(audio.mimeType).toMatch(/^audio\//);
@@ -120,12 +116,12 @@ for (const lang of ["zh", "en"]) {
       await field.click();
       await page.getByRole("option", { name: label, exact: true }).click();
     };
-    await select("same · second");
-    await expect.poll(() => bindings.stt?.provider).toBe("second");
+    await select("deepseek-asr · deepseek");
+    await expect.poll(selected).toBe("deepseek");
     await select(lang === "zh" ? "未指定" : "Not assigned");
-    await expect.poll(() => bindings.stt).toBe(null);
-    await select("same · first");
-    await expect.poll(() => bindings.stt?.provider).toBe("first");
+    await expect.poll(selected).toBeUndefined();
+    await select("deepseek-asr · custom");
+    await expect.poll(selected).toBe("custom");
     if (process.env.VOICE_EVIDENCE)
       await page.screenshot({ path: process.env.VOICE_EVIDENCE + "/" + lang + "-models.png" });
     await page.keyboard.press("Escape");
@@ -255,11 +251,19 @@ test("speech uses the project's real MMSP routes and records each selected model
     expect(JSON.stringify(capabilities)).not.toContain("local-voice-test");
     const settings = await page.request.patch(api + "/capabilities", {
       data: {
-        bindings: { tts: ref("deepseek-tts"), stt: ref("deepseek-asr") },
+        bindings: { tts: ref("deepseek-tts") },
         voicePolish: { enabled: true, model: ref("deepseek-flash") },
       },
     });
     expect(settings.ok(), await settings.text()).toBeTruthy();
+    await page.goto(base + "/models");
+    await page.getByRole("button", { name: "CLI and voice models", exact: true }).click();
+    await page.getByRole("button", { name: /^Speech transcription/ }).click();
+    await page.getByRole("option", { name: "deepseek-asr · custom", exact: true }).click();
+    await expect
+      .poll(async () => (await (await page.request.get(api + "/capabilities")).json()).bindings.stt)
+      .toEqual(ref("deepseek-asr"));
+    await page.keyboard.press("Escape");
     await page.goto(base + "/chat/new");
     await page.getByRole("button", { name: "Dictate", exact: true }).click();
     const finish = page.getByRole("button", { name: "Finish recording and transcribe" });
