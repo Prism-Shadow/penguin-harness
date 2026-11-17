@@ -27,14 +27,6 @@ import type {
   MachineServerEvent,
 } from "@prismshadow/penguin-library-project";
 import type {
-  ContextToolShare,
-  AgentTraceFileRef,
-  AgentTraceSessionGroup,
-  AgentTraceDateGroup,
-  AgentTraceSessionFile,
-} from "@prismshadow/penguin-library-trace";
-import type { CompactionMode, AmspRecord, SessionSource, ToolCallPayload } from "@prismshadow/amsp";
-import type {
   ElidedBody,
   MCPServerConfig,
   ThinkingLevelName,
@@ -83,6 +75,11 @@ import type {
   CredentialInfo,
 } from "@prismshadow/penguin-library-model";
 import type {
+  ContextToolShare,
+  AgentTraceFileRef,
+  AgentTraceSessionGroup,
+  AgentTraceDateGroup,
+  AgentTraceSessionFile,
   AgentTraceSessionEntry,
   AgentTracesResponse,
   ContextFileShare,
