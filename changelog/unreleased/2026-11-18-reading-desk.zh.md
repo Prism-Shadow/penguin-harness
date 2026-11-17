@@ -3,6 +3,7 @@
 - **Date:** 2026-11-18
 - **Type:** feature
 - **Scope:** `plugins`, `reading-desk`
+- **PR:** [#1594](https://github.com/Prism-Shadow/penguin-harness/pull/1594)
 
 [English](2026-11-18-reading-desk.md)
 
