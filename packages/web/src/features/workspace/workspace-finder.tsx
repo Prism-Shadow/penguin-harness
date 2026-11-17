@@ -1788,7 +1788,10 @@ export function WorkspaceFinder({
             return place?.querySelector<HTMLElement>("button") ?? listRef.current;
           }}
           className="contents"
-          menuClass="w-max min-w-40 max-w-[calc(100vw-2rem)]"
+          // Wider than any row it offers, so no row sets the width: a panel sized to its widest
+          // row can come out a fraction of a pixel short at a fractional root font size, and that
+          // row's label then truncates (or its note wraps a character) for want of nothing.
+          menuClass="w-max min-w-48 max-w-[calc(100vw-2rem)]"
           button={null}
         >
           <Menu density="sm">
@@ -1802,10 +1805,10 @@ export function WorkspaceFinder({
                     glyph={MENU_ICON[item]}
                     label={menuLabel(item, menuTarget)}
                     // A folder that could not be read has nowhere to make one, and the row says
-                    // so under its name; while a listing is on its way, the folder it would go
-                    // in is about to change.
+                    // so under its name, in the words of the box on screen; while a listing is on
+                    // its way, the folder it would go in is about to change.
                     disabled={newFolderItem && (unreadable || loading)}
-                    {...(unreadable ? { description: f.newFolderDenied } : {})}
+                    {...(unreadable ? { description: f.deniedTitle } : {})}
                     {...(newFolderItem && newFolderChord !== undefined
                       ? { trailing: newFolderChord }
                       : {})}

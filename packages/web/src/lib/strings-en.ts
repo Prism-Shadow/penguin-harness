@@ -3764,8 +3764,6 @@ export const en: Strings = {
       newFolderPlaceholder: "Type a name, then press Enter",
       /** Accessible name of the × that closes the new-folder row. */
       newFolderCancel: "Cancel new folder",
-      /** Under the context menu's New folder while the folder on screen could not be read. */
-      newFolderDenied: "This folder can't be read, so nothing can be made in it here",
       /** Under the new-folder field: a character this machine does not allow in a name. */
       newFolderInvalid: (chars: string): string => `A name can't contain ${chars}`,
       newFolderHidden:

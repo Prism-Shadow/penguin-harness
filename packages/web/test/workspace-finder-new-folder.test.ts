@@ -469,7 +469,7 @@ describe("new folder in the Workspace finder", () => {
 
     await rightClickList();
     expect(newFolderItem().disabled).toBe(true);
-    expect(newFolderItem().textContent).toContain(S.chat.finder.newFolderDenied);
+    expect(newFolderItem().textContent).toContain(S.chat.finder.deniedTitle);
   });
 
   it("from the keyboard, the list's menu key offers New folder first, and Ctrl+Shift+N opens the row outright", async () => {
