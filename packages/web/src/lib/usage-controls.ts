@@ -15,7 +15,7 @@ import type { UsageGranularity, UsageSeriesPoint } from "@prismshadow/penguin-se
 import { cacheHitRate } from "./format";
 import { SERIES_COLORS } from "./category-colors";
 
-/** Quick range choices; `1h`/`1d` are trailing timestamp windows, the rest calendar ranges (`custom` is a pair picked in the range picker, which shows every calendar range's dates). */
+/** Quick range choices; `1h`/`1d` are trailing timestamp windows, the rest calendar ranges (`custom` reveals the range picker its pair is picked in). */
 export type RangePreset = "1h" | "1d" | "7d" | "30d" | "90d" | "custom";
 
 /** Calendar-preset day counts (today inclusive). */

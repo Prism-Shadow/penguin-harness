@@ -1,8 +1,8 @@
 /**
  * Cost and usage center:
  * top filters for Agent / Model + a date-range preset (trailing last hour /
- * last 24 hours, calendar 7/30/90 days, or a custom range), the calendar ranges' dates shown in
- * the range picker beside it, where two presses pick a custom range;
+ * last 24 hours, calendar 7/30/90 days, or a custom range, whose two dates are picked in the
+ * range picker that shows beside it only then);
  * the range alone decides the time-series precision, so there is no second
  * control for it (controls have no external title — the explanation is
  * written into the dropdown options themselves);
@@ -64,10 +64,6 @@ import {
   type RangePreset,
 } from "../../lib/usage-controls";
 import { ErrorsPanel } from "./errors-panel";
-
-/** The calendar presets, which the custom range's picker also offers, and their labels. */
-const CALENDAR_PRESETS = ["7d", "30d", "90d"] as const;
-const PRESET_LABEL = { "7d": "range7d", "30d": "range30d", "90d": "range90d" } as const;
 
 /** A summary card's stat row: name on the left, value on the right — each item on its own row, so a narrow card no longer crams them into one wrapping line. */
 function SummaryRow({
@@ -370,8 +366,8 @@ export function UsagePage() {
                 ))}
               </Select>
             </div>
-            {/* Date range: the trailing windows, the calendar presets and a custom pair, picked in
-                the range field beside it */}
+            {/* Date range: the trailing windows, the calendar presets, and "custom", which reveals
+                the range field */}
             <div className="w-28">
               <Select
                 size="sm"
@@ -396,11 +392,10 @@ export function UsagePage() {
                 <option value="custom">{S.usage.rangeCustom}</option>
               </Select>
             </div>
-            {preset !== "1h" && preset !== "1d" && (
-              /* The calendar range's own dates, beside every calendar preset and the custom pair:
-                 two presses on it pick a custom range, and its presets are the calendar ones in
-                 the Select, so picking one switches the range back to it. A trailing window has
-                 no dates of its own to show. Wide enough for two full dates. */
+            {preset === "custom" && (
+              /* The custom range's two dates, shown only while the range is the custom one: a
+                 preset names its own span in the Select, so it has nothing to pick here. Wide
+                 enough for two full dates. */
               <div className="w-60">
                 <DateRangeField
                   size="sm"
@@ -409,15 +404,7 @@ export function UsagePage() {
                   from={from}
                   to={to}
                   max={isoDate(new Date())}
-                  presets={CALENDAR_PRESETS.map((id) => ({
-                    id,
-                    label: S.usage[PRESET_LABEL[id]],
-                    ...presetRange(id, new Date()),
-                  }))}
-                  onChange={(range, picked) => {
-                    const calendar = CALENDAR_PRESETS.find((id) => id === picked);
-                    applyRange(calendar ?? "custom", range.from, range.to);
-                  }}
+                  onChange={(range) => applyRange("custom", range.from, range.to)}
                 />
               </div>
             )}

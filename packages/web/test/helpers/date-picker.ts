@@ -1,7 +1,7 @@
 /**
  * Drives the shared UI package's date and time pickers the way a person does: open the field,
- * turn the month and year wheels under the calendar's title to the month, press the day, and type
- * the hour and the minute on the time wheels. The pickers speak the package's English words in
+ * pick the year and the month from the calendar head's menus, press the day, and type the hour
+ * and the minute on the time wheels. The pickers speak the package's English words in
  * these suites, which mount no strings provider.
  */
 import { act } from "react";
@@ -9,6 +9,12 @@ import { DEFAULT_UI_STRINGS } from "@prismshadow/penguin-ui";
 import { click } from "./dom";
 
 const WORDS = DEFAULT_UI_STRINGS.dates;
+/** The month menu's options, as the package's English names them. */
+const MONTHS = Array.from({ length: 12 }, (_, month) =>
+  new Intl.DateTimeFormat(WORDS.locale, { month: "long", timeZone: "UTC" }).format(
+    Date.UTC(2026, month, 1),
+  ),
+);
 
 /** The picker in `scope` titled `title`: its name is the title and what it shows. */
 export function pickerIn(scope: ParentNode, title: string): HTMLButtonElement {
@@ -48,13 +54,22 @@ async function typeKeys(target: Element | null, text: string): Promise<void> {
   }
 }
 
-/** Turns the open calendar to the month of `date` and presses its day. */
+/** Presses the option reading `label` in the menu the calendar's head has open. */
+async function pickOption(label: string): Promise<void> {
+  const found = [...panel().querySelectorAll<HTMLElement>('[role="option"]')].find(
+    (option) => option.textContent === label,
+  );
+  if (found === undefined) throw new Error(`no ${JSON.stringify(label)} in the open menu`);
+  await click(found);
+}
+
+/** Turns the open calendar to the month of `date` through its year and month menus and presses its day. */
 async function pickDay(date: string): Promise<void> {
   const [year, month, day] = date.split("-").map(Number) as [number, number, number];
-  await click(buttonStarting(panel(), WORDS.chooseMonth));
-  await typeKeys(wheel(WORDS.year), String(year));
-  await typeKeys(wheel(WORDS.month), String(month));
-  await click(buttonStarting(panel(), WORDS.chooseMonth));
+  await click(buttonStarting(panel(), `${WORDS.year}: `));
+  await pickOption(String(year));
+  await click(buttonStarting(panel(), `${WORDS.month}: `));
+  await pickOption(MONTHS[month - 1]!);
   const grid = panel().querySelector('[role="grid"]');
   const button = [...(grid?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find(
     (each) => each.textContent === String(day),
