@@ -5,10 +5,9 @@
  *   penguin exec @penguinharness/sandbox-wsl:sandbox.wsl.restart   (when ids collide)
  *
  * The id is the dotted key the command contributes (`a.b.c` — the segments its plugin
- * answers `penguin a b c ARGS` with). A bare id is two segments or more, and it resolves
- * exactly: no prefix, suffix or short-form matching. When two plugins contribute the same
- * id, the full npm package names it — `<package>:<id>`, scope included; nothing shorter
- * does, and the prefixed form may name a single-segment key of its package. `ls`
+ * answers `penguin a b c ARGS` with), at least two segments, and it resolves exactly: no
+ * prefix, suffix or short-form matching. When two plugins contribute the same id, the full
+ * npm package names it — `<package>:<id>`, scope included; nothing shorter does. `ls`
  * lists what the plugins contribute, in the style of `penguin agent ls`:
  *
  *   penguin exec ls                 (every plugin command, grouped per package)
@@ -22,13 +21,11 @@
  */
 import type { Command } from "commander";
 import type { PluginCliCommandInfo } from "@prismshadow/penguin-server/api";
-import type { Language, Messages } from "../i18n.js";
-import { renderTable } from "../table.js";
-import {
-  serverPluginCommands,
-  writeRun,
-  type PluginCommandSource,
-} from "../plugin-cli-commands.js";
+import type { Language, Messages } from "@prismshadow/penguin-server/cli";
+import { renderTable } from "@prismshadow/penguin-server/cli";
+import { serverPluginCommands, writeRun } from "../plugin-cli-commands.js";
+import { Bind, Component } from "@prismshadow/penguin-core/kernel";
+import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/cli";
 
 /**
  * The language the server-side surfaces come in: a command summary is `{ en, zh }` and the
@@ -81,12 +78,7 @@ export function resolveExecTarget(
 }
 
 /** Fills in `penguin exec`, on the node the host located by the command's key. */
-export function registerExecCommand(
-  exec: Command,
-  t: Messages,
-  // The host's own source; the tests hand a stand-in (see plugin-cli-commands.ts).
-  source: PluginCommandSource = serverPluginCommands({ autoStart: true }, t),
-): void {
+export function registerExecCommand(exec: Command, t: Messages): void {
   // The id's own options belong to the plugin command: no `--help` of ours, no option
   // parsing — everything after the id is handed to the server as it was typed. The
   // pass-through needs `enablePositionalOptions` on the root (see the host), without which
@@ -104,6 +96,7 @@ export function registerExecCommand(
         exec.outputHelp();
         return;
       }
+      const source = serverPluginCommands({ autoStart: true }, t);
       const commands = await source.list();
       const resolution = resolveExecTarget(commands, args[0]!);
       if ("invalidId" in resolution) {
@@ -148,6 +141,7 @@ export function registerExecCommand(
     .description(t.exec.lsDesc)
     .argument("[package]", t.exec.lsPackageArg)
     .action(async (pkg?: string) => {
+      const source = serverPluginCommands({ autoStart: true }, t);
       const commands = await source.list();
       if (pkg !== undefined && !packagesOf(commands).includes(pkg)) {
         process.stderr.write(
@@ -172,4 +166,33 @@ export function registerExecCommand(
         ),
       );
     });
+}
+
+/** The node the host located for a key, typed with this package's commander. */
+const node = (command: CliCommandProgram): Command => command as Command;
+
+/** `penguin exec`. */
+@Component({
+  contributes: {
+    "CliCommandsModule.commands": [
+      {
+        id: "cli.exec",
+        key: "exec",
+        summary: {
+          en: "Run a plugin command on the server by its dotted id (`penguin exec ls` lists what the plugins contribute)",
+          zh: "按点分 id 在服务端执行插件命令（`penguin exec ls` 列出各插件贡献的命令）",
+        },
+      },
+    ],
+  },
+})
+export class ExecCommand {
+  @Bind("cli.exec") command!: CliCommandCode<Messages>;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerExecCommand(node(command), ctx.messages);
+      },
+    };
+  }
 }

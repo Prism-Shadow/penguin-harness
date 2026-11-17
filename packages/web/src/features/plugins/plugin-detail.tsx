@@ -72,6 +72,7 @@ import {
   rowDescription,
   rowHasDescription,
   rowIcon,
+  rowLinked,
   rowTitle,
   rowVersion,
   type PluginDetails,
@@ -320,6 +321,11 @@ export function PluginDetailSections({
                 {S.plugins.installedOnServer}
               </PluginTag>
             )}
+            {rowLinked(row) !== null && (
+              <PluginTag title={S.plugins.linkedHint(rowLinked(row)!.linkPath)}>
+                {S.plugins.linkedTag}
+              </PluginTag>
+            )}
             {/* The hook points the package answers at: bare point names (`stop`, `user_prompt`) — identifiers, not copy. */}
             {(row.library?.hooks ?? []).map((event) => (
               <Badge key={event} variant="outline">
@@ -345,6 +351,12 @@ export function PluginDetailSections({
           )}
           {row.module?.shared === true && (
             <PluginTag title={S.plugins.sharedHint}>{S.plugins.sharedTag}</PluginTag>
+          )}
+          {rowLinked(row) !== null && (
+            <div className="mt-2 flex min-w-0 items-center gap-1 text-xs text-fg-muted">
+              <span className="shrink-0">{S.plugins.linkedDirectory}</span>
+              <span className="min-w-0 truncate font-mono">{rowLinked(row)!.linkPath}</span>
+            </div>
           )}
           <PackageDetailsLine details={rowDetails(row)} />
         </div>

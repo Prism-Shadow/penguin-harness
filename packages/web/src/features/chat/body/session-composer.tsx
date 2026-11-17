@@ -20,6 +20,7 @@ import { ChatInput, type ComposerControl } from "../chat-input";
 import { approvalModeChoices } from "../approval-mode";
 import { agentPagePath } from "../session/main-chat-dock";
 import { machineForSession } from "../../../lib/session-machines";
+import { refusalHandoffOccurrence } from "../../../lib/amsp/compaction-summary";
 import type { DraftCache } from "../draft-cache";
 import type { SessionStreamState } from "../use-session-stream";
 
@@ -138,6 +139,7 @@ export function SessionComposer({
       onOpenAgentSettings={() =>
         navigate(agentPagePath(selected.agentId, machineForSession(selected.sessionId), "runtime"))
       }
+      refusalHandoff={refusalHandoffOccurrence(stream.model.items)}
       contextNow={stream.model.stats.contextNow}
       contextStale={stream.model.stats.contextStale}
       sessionId={selected.sessionId}

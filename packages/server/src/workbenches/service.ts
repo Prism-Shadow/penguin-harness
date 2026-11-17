@@ -55,6 +55,7 @@ import { workbenchResult } from "./result.js";
 import type { SessionIndex } from "../mechanisms/sessions.js";
 import type {
   AppCenterShortcut,
+  WorkbenchTabIcon,
   WorkbenchInfo,
   WorkbenchInput,
   WorkbenchRecord,
@@ -220,6 +221,11 @@ function contributedTabs(manifests: readonly Manifest[], uiBase: string): Workbe
   for (const m of manifests) {
     for (const entry of m.contributes[`${WEB_MODULE}.${TABS_SLOT}`] ?? []) {
       const tab = entry as unknown as WorkbenchTab;
+      // A declared launcher label survives only when it is a non-blank string; anything else
+      // falls back to the tab's title at manifest time.
+      const declared = (entry as { shortName?: unknown }).shortName;
+      if (typeof declared === "string" && declared.trim() !== "") tab.shortName = declared.trim();
+      else delete tab.shortName;
       if (keys.has(tab.key)) {
         throw new Error(
           `contribution '${tab.id}': another tab of this workbench already has the key '${tab.key}'`,
@@ -241,10 +247,22 @@ function contributedTabs(manifests: readonly Manifest[], uiBase: string): Workbe
         .split("/")
         .map(encodeURIComponent)
         .join("/");
-      tabs.push({ ...tab, renderer: { iframe: { src: `${uiBase}/${rest}` } } });
+      tabs.push({
+        ...tab,
+        renderer: { iframe: { src: `${uiBase}/${rest}` } },
+      });
     }
   }
   return tabs;
+}
+
+/**
+ * The workbench's app icon for its PWA manifest: the icon of the first tab that names one
+ * (the tab is the thing a person opens and installs), else null — the manifest falls back to
+ * the workbench's own plugin icon, then the main app's penguin.
+ */
+export function contributedAppIcon(tabs: readonly WorkbenchTab[]): WorkbenchTabIcon | null {
+  return tabs.find((t) => t.icon !== undefined)?.icon ?? null;
 }
 
 /** Pairs the manifests with the emitted default export, by name. */
@@ -391,6 +409,42 @@ export class WorkbenchService implements Workbenches {
     return !(await isSwitchedOff(workbenchesDir(this.paths.root, projectId, agentId)));
   }
 
+  /**
+   * What the install manifest needs, read from the folder alone — NO migrate, NO watcher,
+   * NO load: an anonymous request (the manifest's auth-less gate) must not be able to run
+   * the folder's compile/boot lifecycle, only look at its `package.json`. The registration
+   * here is the folder's declaration, not a loaded instance: tabs carry their renderer as
+   * declared, `loadedAt` is this read's time, `error`/`hints` stay empty — the manifest uses
+   * none of them, and anything that wants the live instance asks {@link list}.
+   */
+  async describe(projectId: string, agentId: string, workbenchId: string): Promise<WorkbenchInfo> {
+    if (!isWorkbenchId(workbenchId)) throw new WorkbenchNotFound("no such workbench");
+    const folder = await readFolder(
+      path.join(workbenchesDir(this.paths.root, projectId, agentId), workbenchId),
+      workbenchId,
+    );
+    if (folder === null) throw new WorkbenchNotFound("no such workbench");
+    let tabs: WorkbenchTab[];
+    try {
+      tabs = contributedTabs(await readManifests(folder), uiBase(projectId, agentId, folder.id));
+    } catch {
+      // A folder that declares nothing loadable is not a workbench the manifest can name:
+      // the same 404 the session-gated routes answer for an unknown id.
+      throw new WorkbenchNotFound("no such workbench");
+    }
+    return {
+      id: folder.id,
+      name: folder.pkg.name,
+      version: folder.pkg.version,
+      revision: folder.revision,
+      uiRev: folder.uiRev,
+      tabs,
+      loadedAt: this.clock.now().toISOString(),
+      error: null,
+      hints: [],
+    };
+  }
+
   async reload(projectId: string, agentId: string, workbenchId: string): Promise<WorkbenchInfo> {
     const folder = await this.folder(projectId, agentId, workbenchId);
     if (!(await this.runs(projectId, agentId, folder))) throw new WorkbenchDisabled(workbenchId);
@@ -531,6 +585,20 @@ export class WorkbenchService implements Workbenches {
     if (!(await isFile(path.join(dir, "package.json")))) return null;
     await this.refuseIfOff(projectId, agentId, workbenchId, dir);
     return (await this.runtime()?.file(rel)) ?? null;
+  }
+
+  async iconSvg(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+  ): Promise<{ kind: "svg" | "png"; data: string } | null> {
+    if (!isWorkbenchId(workbenchId)) return null;
+    await this.migrate(projectId, agentId);
+    const folder = await readFolder(
+      path.join(workbenchesDir(this.paths.root, projectId, agentId), workbenchId),
+      workbenchId,
+    );
+    return folder?.iconSvg ?? null;
   }
 
   async history(

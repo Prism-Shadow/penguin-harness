@@ -35,6 +35,7 @@ import type {
   SessionProcessesResponse,
   SessionResponse,
   SessionsResponse,
+  SessionsArchiveResponse,
   SessionsBatchResponse,
   SubagentMessageResponse,
   RetryNowResponse,
@@ -54,6 +55,7 @@ import { assertWorkspaceAllowed } from "../../services/workspace-guard.js";
 import { isGoalOutcome } from "../../runtime/goal-events.js";
 import { deleteSessionTree } from "../../services/session-deletion.js";
 import type { SessionDeletionDeps } from "../../services/session-deletion.js";
+import { archiveWorkspaceGroup } from "../../services/workspace-archive.js";
 import { HttpError } from "../errors.js";
 import { sseEndpoint, streamRevocation } from "../sse.js";
 import {
@@ -647,6 +649,39 @@ export function sessionsBatchRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       }
     }
     return c.json({ results } satisfies SessionsBatchResponse);
+  });
+
+  return app;
+}
+
+/**
+ * Project-level entry: POST /api/projects/:p/sessions/archive — the sidebar's "delete
+ * workspace". Archives every active Session of one Workspace group (services/workspace-archive.ts),
+ * the rows the sidebar has not loaded included, in one request: the sidebar holds ten rows a
+ * group, and a group can hold hundreds. A group on a machine is asked of that machine through
+ * the proxy, which archives its own Sessions.
+ */
+export function sessionsArchiveRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
+  const app = new Hono<AppEnv>();
+
+  app.post("/", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
+    const { workspaceGroup } = await readJson(c);
+    if (typeof workspaceGroup !== "string" || workspaceGroup.trim() === "") {
+      throw badRequest("workspaceGroup must be a non-empty string.");
+    }
+    const done = await archiveWorkspaceGroup(
+      {
+        sessions: deps.sessionsRepo,
+        activeRows: (p, agentId, view) => deps.sessionService.activeRows(p, agentId, view),
+        notifyProjectUsers: (p, event) => deps.projectEvents.notifyProjectUsers(p, event),
+      },
+      projectId,
+      workspaceGroup,
+      listingViewOfRequest(c),
+    );
+    return c.json({ done } satisfies SessionsArchiveResponse);
   });
 
   return app;
@@ -1799,6 +1834,12 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
         order: 255,
       },
       {
+        id: "session-api.sessions-archive",
+        prefix: "/api/projects/:projectId/sessions/archive",
+        auth: "user",
+        order: 256,
+      },
+      {
         id: "session-api.usage",
         prefix: "/api/projects/:projectId/usage",
         auth: "user",
@@ -1873,6 +1914,7 @@ export class SessionApiRoutes {
   @Bind("session-api.vault") vaultRoutes!: Hono<AppEnv>;
   @Bind("session-api.agent-sessions") agentSessionsRoutes!: Hono<AppEnv>;
   @Bind("session-api.sessions-batch") sessionsBatchRoutes!: Hono<AppEnv>;
+  @Bind("session-api.sessions-archive") sessionsArchiveRoutes!: Hono<AppEnv>;
   @Bind("session-api.usage") usageRoutes!: Hono<AppEnv>;
   @Bind("session-api.workspace-files") workspaceFilesRoutes!: Hono<AppEnv>;
   @Bind("session-api.sessions") sessionsRoutes!: Hono<AppEnv>;
@@ -1976,6 +2018,7 @@ export class SessionApiRoutes {
     this.vaultRoutes = vaultRoutes({ agentConfigService, manager, access });
     this.agentSessionsRoutes = agentSessionsRoutes(sessionsDeps);
     this.sessionsBatchRoutes = sessionsBatchRoutes(sessionsDeps);
+    this.sessionsArchiveRoutes = sessionsArchiveRoutes(sessionsDeps);
     this.usageRoutes = usageRoutes({ access, usageService: this.usage });
     this.workspaceFilesRoutes = workspaceFilesRoutes({
       access,

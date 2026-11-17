@@ -1,6 +1,8 @@
 /**
  * 公开站点: what the landing page and the docs share from `@prismshadow/penguin-ui/site` — the
- * footer in both shapes, the code card and the copy button's looks, the category pills, an
+ * navigation bar's More menu and the bar's pages as the phone menu lists them, the footer in both
+ * shapes, the code card and the copy button's looks, the category pills, the data pages' controls
+ * (back link, view switch, toolbar menu buttons, data table), an
  * article in the shared prose with its contents beside it, the docs sidebar, the search dialog
  * and the external-link confirmation. The site's own palette (site.css), not the theme under
  * test: a public page looks the same whatever the gallery previews.
@@ -14,9 +16,19 @@ import {
   SiteCopyButton,
   SiteExternalLink,
   SiteExternalLinkScope,
+  SiteBackLink,
   SiteFooter,
+  isSiteLinkGroup,
+  SiteGlyph,
   SiteMarkdown,
+  SiteMenuButton,
+  SiteMenuCheck,
+  SITE_PAGES,
+  SiteNavLinks,
+  siteNavLinks,
+  SiteNavMenu,
   SitePill,
+  SiteSegmented,
   SiteSearchButton,
   SiteSearchDialog,
   SiteSidebarNav,
@@ -25,7 +37,9 @@ import {
   useActiveTocEntry,
 } from "@prismshadow/penguin-ui/site";
 import type {
+  SiteLinkOverride,
   SiteLinkProps,
+  SitePage,
   SitePillTone,
   SiteSearchRange,
   SiteSearchResult,
@@ -34,11 +48,17 @@ import { BoardGroup } from "../../foundations/shared";
 import { useGallery } from "../../state";
 
 const PILL_TONES: readonly SitePillTone[] = ["brand", "brand-outline", "teal", "neutral"];
+const VIEWS = ["table", "pareto", "waffle"] as const;
 
 /** Board links go nowhere: the board shows the link, the sites route it. */
 function inertLink(props: SiteLinkProps) {
   return <a {...props} onClick={(event) => event.preventDefault()} />;
 }
+
+/** Every page of the bar, inert. */
+const INERT_PAGES = Object.fromEntries(
+  SITE_PAGES.map((id) => [id, { href: "#", render: inertLink }]),
+) as Partial<Record<SitePage, SiteLinkOverride>>;
 
 /** Every case-insensitive occurrence of the query, for the sample results' marks. */
 function matches(text: string, query: string): SiteSearchRange[] {
@@ -58,6 +78,15 @@ export function SiteBoard() {
   const { S } = useGallery();
   const t = S.library.site;
   const [searchOpen, setSearchOpen] = useState(false);
+  const [view, setView] = useState<(typeof VIEWS)[number]>("table");
+  const [picked, setPicked] = useState<ReadonlySet<string>>(() => new Set([t.dataRows[0]![0]]));
+  const togglePicked = (name: string) =>
+    setPicked((current) => {
+      const next = new Set(current);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const toc = useMemo(() => extractToc(t.articleBody), [t.articleBody]);
   const { activeId, pinTo } = useActiveTocEntry(toc);
@@ -76,6 +105,13 @@ export function SiteBoard() {
         : [],
     [results],
   );
+  // AMSP is the page being read, so the More entry that holds it reads as current.
+  const navLinks = siteNavLinks({
+    siteRoot: "#",
+    labels: S.sitebar.nav,
+    current: "amsp",
+    overrides: INERT_PAGES,
+  });
   const openSearch = (trigger: HTMLElement) => {
     returnFocusRef.current = trigger;
     setSearchOpen(true);
@@ -83,6 +119,19 @@ export function SiteBoard() {
 
   return (
     <div className="gf-board">
+      <BoardGroup title={t.nav} aside={t.navHint}>
+        {/* The More menu on its own: the bar's row only shows from 1024 px, wider than this
+            board's frame usually is. The phone menu's list shows below that width. */}
+        <div className="site-ui lib-stack lib-stack-wide">
+          <div className="lib-row">
+            {navLinks.filter(isSiteLinkGroup).map((group) => (
+              <SiteNavMenu key={group.id} group={group} />
+            ))}
+          </div>
+          <SiteNavLinks links={navLinks} mobile />
+        </div>
+      </BoardGroup>
+
       <BoardGroup title={t.footer} aside={t.footerHint}>
         <div className="lib-stack lib-stack-wide">
           <SiteFooter
@@ -142,6 +191,74 @@ export function SiteBoard() {
               {t.pillTones[tone]}
             </SitePill>
           ))}
+        </div>
+      </BoardGroup>
+
+      <BoardGroup title={t.dataPage} aside={t.dataPageHint}>
+        <div className="lib-stack">
+          <SiteBackLink href="#" label={t.dataBackLabel} render={inertLink}>
+            {t.dataBack}
+          </SiteBackLink>
+          <div className="flex flex-wrap items-center gap-2">
+            <SiteSegmented
+              role="tablist"
+              label={t.dataViews}
+              options={VIEWS.map((id) => ({ id, label: t.dataViewOptions[id] }))}
+              value={view}
+              onChange={setView}
+            />
+            <SiteMenuButton
+              label={t.dataFilter}
+              icon={<SiteGlyph name="slidersHorizontal" />}
+              count={picked.size}
+            >
+              {t.dataRows.map(([name]) => (
+                <SiteMenuCheck
+                  key={name}
+                  checked={picked.has(name)}
+                  onChange={() => togglePicked(name)}
+                >
+                  {name}
+                </SiteMenuCheck>
+              ))}
+            </SiteMenuButton>
+            <SiteMenuButton
+              label={t.dataColumns}
+              icon={<SiteGlyph name="tiles" />}
+              disabled={view !== "table"}
+              hint={t.dataColumnsHint}
+            >
+              {Object.values(t.dataHead).map((name) => (
+                <SiteMenuCheck key={name} checked onChange={() => undefined}>
+                  {name}
+                </SiteMenuCheck>
+              ))}
+            </SiteMenuButton>
+          </div>
+          <table className="site-table max-w-md">
+            <thead>
+              <tr>
+                <th scope="col">{t.dataHead.rank}</th>
+                <th scope="col">{t.dataHead.name}</th>
+                <th scope="col" data-num>
+                  {t.dataHead.score}
+                </th>
+                <th scope="col" data-num>
+                  {t.dataHead.cost}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {t.dataRows.map(([name, score, cost], index) => (
+                <tr key={name}>
+                  <td data-num>{index + 1}</td>
+                  <td>{name}</td>
+                  <td data-num>{score}</td>
+                  <td data-num>{cost}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </BoardGroup>
 

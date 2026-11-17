@@ -76,10 +76,13 @@ export function toLinuxPath(windowsPath: string, distro?: string): string | null
 /**
  * The Linux program a Windows argv's first element means. The harness resolves its shell on
  * Windows as `bash` (Git Bash on PATH) or a full path to `bash.exe`; inside the distro that is
- * the distro's own bash. Anything else is looked up by its bare name on the distro's PATH —
- * a Windows program cannot run there at all, since interop is off.
+ * the distro's own bash. The host's own runtime (`hostRuntime`, in the desktop app the app's
+ * executable) is the distro's `node`, whatever its file is called. Anything else is looked up
+ * by its bare name on the distro's PATH — a Windows program cannot run there at all, since
+ * interop is off.
  */
-export function linuxProgram(command: string): string {
+export function linuxProgram(command: string, hostRuntime?: string): string {
+  if (command === hostRuntime) return "node";
   const base = path.win32.basename(command).replace(/\.exe$/i, "");
   const lower = base.toLowerCase();
   if (lower === "bash") return "/bin/bash";

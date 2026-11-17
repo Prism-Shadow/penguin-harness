@@ -117,6 +117,15 @@ describe("read_file on an image — session model views images (no describer)", 
     expect(text).toBe(`image/png, ${PNG_1X1.length} B`);
   });
 
+  it("carries a size that rounds up to 1024 kB into MB in the note", async () => {
+    // 1,048,570 bytes is 1023.99 kB, which one decimal would print as 1024.0 kB.
+    const near = Buffer.alloc(1024 * 1024 - 6);
+    PNG_1X1.copy(near);
+    await writeFile(path.join(tmp, "near.png"), near);
+    const { text } = await run({ file_path: "near.png" }, tmp);
+    expect(text).toBe("image/png, 1.0 MB");
+  });
+
   it("recognizes an image by its magic number whatever the extension says", async () => {
     await writeFile(path.join(tmp, "notes.txt"), PNG_1X1); // PNG bytes under a text extension
     const { result } = await run({ file_path: "notes.txt" }, tmp);
