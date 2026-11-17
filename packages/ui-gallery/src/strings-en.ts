@@ -422,7 +422,7 @@ export const en: GalleryStrings = {
       "ui-avatar":
         "an agent's default avatar each theme draws its own way: one smiling ball penguin, on a rounded square (Primer), a circle (Frost, Doodle) or in pixel art (Console)",
       "ui-showcase":
-        "a cover-led showcase: a cover card, the selected carousel, a product page's hero",
+        "a cover-led showcase: a cover card, the selected carousel, a ranking, a product page's hero",
     },
     hookSamples: {
       menu: ["Pin", "Rename", "Delete"],
@@ -594,7 +594,7 @@ export const en: GalleryStrings = {
       showcase: {
         title: "Showcase",
         description:
-          "The plugin market's shared modules: the generated cover in every hue and motif, a picture loading, loaded and failing, cover cards, the selected carousel and a product page's parts.",
+          "The plugin market's shared modules: the generated cover in every hue and motif, a picture loading, loaded and failing, cover cards, the selected carousel, the ranking beside the grid and a product page's parts.",
       },
       packs: {
         title: "Theme packs",
@@ -2355,6 +2355,25 @@ export const en: GalleryStrings = {
         license: "License",
         package: "Package",
       },
+      ranking: "Ranking",
+      rankingHint:
+        "The ranking beside the grid: a right column where there is room, under the grid where there is not. Two boards to switch between; the top three ranks sit on a tinted chip, and a figure says itself in full on hover. Every row opens its plugin.",
+      rankingTitle: "Plugin rankings",
+      popular: "Popular",
+      rising: "Rising",
+      installCount: (n: string) => `${n} installs`,
+      weeklyCount: (n: string) => `${n} new installs this week`,
+      rankingNames: [
+        "Browser Automation",
+        "A2UI Interactive Answers",
+        "Humanizer",
+        "Firecrawl Search",
+        "Bento Slides",
+        "Agent Company",
+        "Goal Mode",
+        "PenguinHarness Q&A Assistant",
+        "Data Analysis",
+      ] as readonly string[],
     },
   },
 };

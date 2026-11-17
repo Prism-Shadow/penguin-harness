@@ -445,7 +445,7 @@ export const zh = {
         "按主题换画法的图标：朴素为线性画法，白领为线性画法衬淡色块（双色调），极客为像素画",
       "ui-avatar":
         "按主题换画法的智能体缺省头像：同一只笑脸圆球企鹅，朴素为圆角方块，白领与卡通为圆形，极客为像素画",
-      "ui-showcase": "封面陈列：封面卡片、精选轮播与产品页首屏",
+      "ui-showcase": "封面陈列：封面卡片、精选轮播、榜单与产品页首屏",
     } satisfies Record<HookName, string>,
     hookSamples: {
       menu: ["置顶", "重命名", "删除"] as readonly string[],
@@ -602,7 +602,7 @@ export const zh = {
       showcase: {
         title: "封面陈列",
         description:
-          "插件市场共用的陈列模块：各色调与底纹的生成封面，图片加载中、已加载与加载失败，封面卡片、精选轮播与产品页的各个部分。",
+          "插件市场共用的陈列模块：各色调与底纹的生成封面，图片加载中、已加载与加载失败，封面卡片、精选轮播、网格旁的榜单与产品页的各个部分。",
       },
       packs: {
         title: "主题包",
@@ -2280,6 +2280,25 @@ export const zh = {
         license: "许可证",
         package: "包名",
       },
+      ranking: "榜单",
+      rankingHint:
+        "网格旁的排行：宽时在右侧一栏，窄时落到网格下方。两个榜可切换，前三名的名次在着色的底上，数字悬停时给出全称；点开任一行即是该插件。",
+      rankingTitle: "插件榜单",
+      popular: "热门",
+      rising: "飙升",
+      installCount: (n: string) => `${n} 次安装`,
+      weeklyCount: (n: string) => `本周新增 ${n} 次安装`,
+      rankingNames: [
+        "浏览器自动化",
+        "A2UI 交互式回答",
+        "去 AI 味写作",
+        "Firecrawl 搜索",
+        "Bento 幻灯片",
+        "智能体公司",
+        "目标模式",
+        "PenguinHarness 问答助手",
+        "数据分析",
+      ] as readonly string[],
     },
   },
 };
