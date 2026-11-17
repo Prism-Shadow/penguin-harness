@@ -1,7 +1,7 @@
 /**
  * The sessions mechanisms: what a node may require, declared apart from what implements it.
  */
-import { Interface } from "@prismshadow/penguin-core/kernel";
+import { Interface, Opaque } from "@prismshadow/penguin-core/kernel";
 import type { SessionSource } from "@prismshadow/amsp";
 import type { SessionRow } from "./repos/sessions.js";
 import type { ThinkingLevelName } from "@prismshadow/penguin-core";
@@ -245,6 +245,8 @@ export interface ScheduleDefinition {
   workspace?: string;
   /** Model for new-Session mode (upstream id, always paired with provider; omit both for the Project's default reference). */
   modelId?: string;
+  /** Provider for new-Session mode: the model reference's other half, always paired with modelId. */
+  provider?: string;
 }
 
 /** From packages/server (runtime/scheduler.ts): the in-memory view of a registered task. */
@@ -295,8 +297,8 @@ export abstract class Schedules {
 /** Scheduling: the mechanism Scheduler implements. */
 @Interface()
 export abstract class Scheduling {
-  /** The runtime's schedule-file cache (schedule-store's ScheduleFileCache), opaque to this contract. */
-  abstract readonly files: unknown;
+  /** The runtime's schedule-file cache (the server's ScheduleFileCache class, compared by name). */
+  abstract readonly files: Opaque<"ScheduleFileCache">;
   abstract start(): Promise<void>;
   abstract stop(): void;
   abstract tickOnce(): Promise<void>;
