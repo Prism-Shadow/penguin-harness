@@ -33,6 +33,8 @@ import {
   ProductParts,
   ProductPrompt,
   ProductSection,
+  Segmented,
+  useShowcaseLayout,
   ShowcaseCarousel,
   ShowcaseGrid,
   ShowcaseRanking,
@@ -85,6 +87,7 @@ function Specimen({ caption, children }: { caption: string; children: ReactNode 
 export function ShowcaseBoard() {
   const { state, mode, S } = useGallery();
   const t = S.library.showcase;
+  const [layout, setLayout] = useShowcaseLayout("penguin.gallery.showcaseLayout");
   const tag = (words: string) => (
     <Badge key={words} variant="soft">
       {words}
@@ -208,7 +211,18 @@ export function ShowcaseBoard() {
       </BoardGroup>
 
       <BoardGroup title={t.cards} aside={t.cardsHint}>
-        <ShowcaseGrid>
+        <div className="mb-3 flex justify-end">
+          <Segmented
+            cols={2}
+            value={layout}
+            onChange={setLayout}
+            options={[
+              { value: "cards", label: t.cardView },
+              { value: "list", label: t.listView },
+            ]}
+          />
+        </div>
+        <ShowcaseGrid layout={layout}>
           <CoverCard
             cover={
               <Cover seed="goal" hue="green" icon={plugIcon(ICONS_BY_PLUGIN.goal)} logo={LOGO} />

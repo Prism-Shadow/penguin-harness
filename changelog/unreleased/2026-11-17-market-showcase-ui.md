@@ -20,3 +20,5 @@ The UI package gained the modules the plugin market is built from, in the Web Ap
 - New style hook `ui-showcase` on `Cover`, `CoverCard`, `ShowcaseCarousel`, `ProductHero` and `ShowcaseRanking`, with their parts named in `data-part`. No built-in theme draws it yet.
 - `ImageIcon` takes `size="fill"` to fill a square parent.
 - The component gallery gained a Showcase board (every hue with every motif, the states, the cards, the carousel, the ranking with and without its note, and a product page), a plugin market group on the public-site board, and the hook's line on the hooks board.
+
+- Cover cards can also appear as compact rows with the same actions and detail links.

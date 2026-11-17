@@ -1813,6 +1813,8 @@ export const zh = {
       back: "返回列表",
       search: "搜索智能体",
       create: "新建",
+      cardView: "卡片",
+      listView: "列表",
       cards: "卡片",
       padded: "带内边距：标题行在内容上方",
       cardTitle: "本月花费",

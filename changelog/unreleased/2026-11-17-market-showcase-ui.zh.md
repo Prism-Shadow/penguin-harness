@@ -20,3 +20,5 @@ UI 包新增插件市场所用的一组模块，Web App 与公开站点共用：
 - 新增样式钩子 `ui-showcase`，挂在 `Cover`、`CoverCard`、`ShowcaseCarousel`、`ProductHero` 与 `ShowcaseRanking` 上，各部分以 `data-part` 标出。内置主题暂未为它绘制样式。
 - `ImageIcon` 新增 `size="fill"`，填满方形父元素。
 - 组件画廊新增「封面陈列」一板（每种色调配每种底纹、各种状态、卡片、轮播、带与不带说明的榜单，以及产品页），「公开站点」板新增插件市场一组，钩子板新增该钩子的说明。
+
+- 封面卡片可切换成单列紧凑列表，操作和详情入口都保留。
