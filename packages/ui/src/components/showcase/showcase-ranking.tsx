@@ -6,11 +6,17 @@
  * the rest are plain figures, so the top of the board reads at a glance without a colour per
  * place.
  *
+ * A `note` stands at the end of the heading's line in the muted ink, on the small rung: a word
+ * about the figures themselves ("Sample data" while they are placeholders), never a badge or a
+ * tone. Its `noteHint` is the sentence behind it, on hover and for assistive technology.
+ *
  * The title is the row's opener — a link when the host gives an `href` (the public site), a
  * button otherwise (the Web App) — and it stretches over the whole row, so the thumbnail and
  * the figure open it too while the reader tabs through one stop per row. The figure is the
  * host's own wording, shortened as it likes ("1.2k"); `countLabel` says it in full, on hover and
- * for assistive technology. The tabs follow the WAI-ARIA tabs pattern: arrow keys, Home and End
+ * for assistive technology. A hover hint shows through the app's tooltip layer (`data-tooltip`)
+ * unless the host says it has none (`hints="title"`, the public site): then it is the browser's
+ * own `title`. The tabs follow the WAI-ARIA tabs pattern: arrow keys, Home and End
  * move between boards, and only the chosen tab is a tab stop.
  *
  * `ShowcaseSplit` is the ranking's place: beside the grid as a right column when the split's own
@@ -51,14 +57,39 @@ export interface RankingBoard {
   entries: readonly RankingEntry[];
 }
 
+/**
+ * How the panel's hover hints show: `tooltip` through the app's one tooltip layer
+ * (`data-tooltip`), `title` as the browser's own, for a host that mounts no tooltip layer.
+ */
+export type RankingHints = "tooltip" | "title";
+
 export interface ShowcaseRankingProps {
   /** The panel's heading ("Rankings"). */
   title: string;
+  /** A quiet word at the end of the heading's line about the figures ("Sample data"). */
+  note?: string;
+  /** The sentence behind the note, on hover and for assistive technology. */
+  noteHint?: string;
   boards: readonly RankingBoard[];
   /** How many rows a board shows at most. */
   limit?: number;
   level?: 2 | 3;
+  /** How hover hints show; `title` for a host with no tooltip layer (the public site). */
+  hints?: RankingHints;
   className?: string;
+}
+
+/**
+ * The attributes that put `hint` on an element's hover, by the host's way of showing one; a
+ * `sentence` takes the tooltip's prose panel rather than a label's narrow one.
+ */
+function hintProps(hint: string, hints: RankingHints, sentence = false) {
+  if (hints === "title") return { title: hint };
+  return {
+    "data-tooltip": hint,
+    "data-tooltip-extra": true,
+    ...(sentence ? { "data-tooltip-content": "text" } : {}),
+  };
 }
 
 /** The rows a board shows unless the host asks for another count. */
@@ -75,9 +106,12 @@ function nextBoard(key: string, at: number, count: number): number | null {
 
 export function ShowcaseRanking({
   title,
+  note,
+  noteHint,
   boards,
   limit = RANKING_LIMIT,
   level = 2,
+  hints = "tooltip",
   className = "",
 }: ShowcaseRankingProps) {
   const id = useId();
@@ -123,11 +157,7 @@ export function ShowcaseRanking({
               {entry.tags !== undefined && entry.tags.length > 0 && (
                 <span className="showcase-ranking-tags">{entry.tags}</span>
               )}
-              <span
-                className="showcase-ranking-count"
-                data-tooltip={entry.countLabel}
-                data-tooltip-extra
-              >
+              <span className="showcase-ranking-count" {...hintProps(entry.countLabel, hints)}>
                 {board.mark}
                 <span aria-hidden>{entry.count}</span>
                 <span className="showcase-hidden">{entry.countLabel}</span>
@@ -145,9 +175,21 @@ export function ShowcaseRanking({
       data-part="ranking"
       aria-labelledby={`${id}-title`}
     >
-      <Title id={`${id}-title`} className="showcase-ranking-title">
-        {title}
-      </Title>
+      <div className="showcase-ranking-head">
+        <Title id={`${id}-title`} className="showcase-ranking-title">
+          {title}
+        </Title>
+        {note !== undefined && note !== "" && (
+          <span
+            className="showcase-ranking-note"
+            {...(noteHint !== undefined ? hintProps(noteHint, hints, true) : {})}
+          >
+            {/* With a hint, assistive technology hears the hint's sentence, which says the note. */}
+            <span aria-hidden={noteHint !== undefined || undefined}>{note}</span>
+            {noteHint !== undefined && <span className="showcase-hidden">{noteHint}</span>}
+          </span>
+        )}
+      </div>
       {tabbed ? (
         <>
           <div role="tablist" aria-labelledby={`${id}-title`} className="showcase-ranking-tabs">

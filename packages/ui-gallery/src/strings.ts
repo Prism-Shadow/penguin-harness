@@ -2284,6 +2284,9 @@ export const zh = {
       rankingHint:
         "网格旁的排行：宽时在右侧一栏，窄时落到网格下方。两个榜可切换，前三名的名次在着色的底上，数字悬停时给出全称；点开任一行即是该插件。",
       rankingTitle: "插件榜单",
+      rankingNote: "示例数据",
+      rankingNoteHint: "接入真实安装量之前，这里的数字均为示例数据。",
+      rankingNoteCaption: "数字还是占位数据时：标题行末一句淡色说明，悬停给出原委",
       popular: "热门",
       rising: "飙升",
       installCount: (n: string) => `${n} 次安装`,

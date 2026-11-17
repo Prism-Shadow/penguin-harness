@@ -814,10 +814,25 @@
   background: var(--showcase-surface, transparent);
   color: var(--showcase-fg, inherit);
 }
+/* The heading's line: the title, and a note about the figures at its end, which drops under the
+   title when the two do not fit side by side. */
+.showcase-ranking-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.125rem 0.75rem;
+}
 .showcase-ranking-title {
   margin: 0;
   font-size: 0.9375rem;
   font-weight: 600;
+}
+.showcase-ranking-note {
+  position: relative;
+  color: var(--showcase-fg-muted, color-mix(in srgb, currentColor 62%, transparent));
+  font-size: var(--showcase-text-xs, 0.75rem);
+  font-weight: 400;
 }
 .showcase-ranking-tabs {
   display: flex;
