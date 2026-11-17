@@ -3,6 +3,7 @@
 - **Date:** 2026-11-17
 - **Type:** feat
 - **Scope:** `plugins`, `docs`
+- **PR:** [#1590](https://github.com/Prism-Shadow/penguin-harness/pull/1590)
 
 [English](2026-11-17-plugin-character-chat.md)
 
