@@ -6,17 +6,17 @@
   "base": "modern",
   "modes": ["light", "dark"],
   "swatches": {
-    "light": { "canvas": "#fbf9f4", "ink": "#2b2521", "accent": "#2c4f9e" },
-    "dark": { "canvas": "#1c1a17", "ink": "#efe8dc", "accent": "#8fb0ec" }
+    "light": { "canvas": "#fdfaf2", "ink": "#32241d", "accent": "#c23b4e" },
+    "dark": { "canvas": "#1c1916", "ink": "#f1e9dc", "accent": "#f78fa0" }
   },
   "accent": {
-    "own": { "light": "#2c4f9e", "dark": "#8fb0ec" },
+    "own": { "light": "#c23b4e", "dark": "#f78fa0" },
     "presets": [
-      { "id": "ink", "swatch": "#2b2521" },
-      { "id": "marker", "swatch": "#bb4f27" },
-      { "id": "grass", "swatch": "#2f6b45" },
-      { "id": "crayon", "swatch": "#b3261e" },
-      { "id": "grape", "swatch": "#6a46b8" }
+      { "id": "ink", "swatch": "#32241d" },
+      { "id": "marker", "swatch": "#bf501e" },
+      { "id": "grass", "swatch": "#297343" },
+      { "id": "crayon", "swatch": "#b52a22" },
+      { "id": "grape", "swatch": "#6d43b8" }
     ]
   },
   "fonts": {

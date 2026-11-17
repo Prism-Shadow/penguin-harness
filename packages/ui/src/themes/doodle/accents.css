@@ -1,40 +1,38 @@
 /*
- * The user's accent presets (`pack.json`, `accent.presets`): five pens — the ink the pack drew
- * everything in until the ballpoint became its own pen, the marker's orange, grass green, a red
- * crayon and grape. A preset sets `--ui-accent` and nothing else: hover, active, wash, tint and
- * line derive from it in tokens.css, the containers the recipes fill derive from it there, and
- * the label ink is the theme's for the mode — paper under a light pen, the dark ink under a pen
- * lifted for dark paper. A highlighter yellow was left out: as a mark (a switch, a radio) it is
- * under 3:1 on paper. The selectors match only Doodle's id, so a preset another theme lists
- * paints nothing here — and a stored `ballpoint`, no longer listed, paints the pack's own pen,
- * the same blue.
+ * The user's accent presets (`pack.json`, `accent.presets`): five picture-book markers — the
+ * warm cocoa ink the outlines are drawn in, tangerine marker orange, clover grass green, a
+ * scarlet red crayon and taro grape. A preset sets `--ui-accent` and nothing else: hover, active,
+ * wash, tint and line derive from it in tokens.css, the containers the recipes fill derive from it
+ * there, and the label ink is the theme's for the mode — warm cream under a light marker, the dark
+ * cocoa ink under a pastel chalk lifted for dark paper. The selectors match only Doodle's id, so a
+ * preset another theme lists paints nothing here.
  */
 :root[data-theme="doodle"][data-accent="ink"] {
-  --ui-accent: #2b2521;
+  --ui-accent: #32241d;
 }
 :root[data-theme="doodle"][data-accent="ink"].dark {
-  --ui-accent: #ece5d6;
+  --ui-accent: #ebe2d3;
 }
 :root[data-theme="doodle"][data-accent="marker"] {
-  --ui-accent: #bb4f27;
+  --ui-accent: #bf501e;
 }
 :root[data-theme="doodle"][data-accent="marker"].dark {
-  --ui-accent: #e58a5e;
+  --ui-accent: #ec9060;
 }
 :root[data-theme="doodle"][data-accent="grass"] {
-  --ui-accent: #2f6b45;
+  --ui-accent: #297343;
 }
 :root[data-theme="doodle"][data-accent="grass"].dark {
   --ui-accent: #7fc193;
 }
 :root[data-theme="doodle"][data-accent="crayon"] {
-  --ui-accent: #b3261e;
+  --ui-accent: #b52a22;
 }
 :root[data-theme="doodle"][data-accent="crayon"].dark {
   --ui-accent: #ff8a7a;
 }
 :root[data-theme="doodle"][data-accent="grape"] {
-  --ui-accent: #6a46b8;
+  --ui-accent: #6d43b8;
 }
 :root[data-theme="doodle"][data-accent="grape"].dark {
   --ui-accent: #b49ae9;

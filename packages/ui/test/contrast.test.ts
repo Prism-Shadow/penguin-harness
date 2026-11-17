@@ -106,10 +106,10 @@ const ACCENT_PAIRS: readonly Pair[] = [
 ];
 
 /**
- * The packs that draw their decorative icons in the accent (Doodle's one pen): there the accent is
- * a mark on the navigation column too, in every preset the pack lists.
+ * The packs that draw their decorative icons in the accent: there the accent is a mark on the
+ * navigation column too, in every preset the pack lists.
  */
-const ACCENT_ICON_PACKS: readonly ThemeId[] = ["doodle"];
+const ACCENT_ICON_PACKS: readonly ThemeId[] = [];
 const accentPairs = (id: ThemeId): readonly Pair[] =>
   ACCENT_ICON_PACKS.includes(id)
     ? [...ACCENT_PAIRS, { fg: "--ui-accent", bg: "--ui-shell-nav-bg", min: 3 }]
