@@ -141,12 +141,14 @@ export function ShowcaseGrid({
 export function CoverCardSkeleton() {
   return (
     <div className="showcase showcase-card" data-part="card" aria-hidden>
-      <div className="showcase-cover" data-part="cover" data-state="loading" data-hue="slate" />
-      <span className="showcase-card-body">
-        <span className="showcase-skeleton" style={{ width: "45%" }} />
-        <span className="showcase-skeleton" style={{ width: "85%", marginTop: "0.5rem" }} />
-        <span className="showcase-skeleton" style={{ width: "60%", marginTop: "0.375rem" }} />
-      </span>
+      <div className="showcase-card-open">
+        <div className="showcase-cover" data-part="cover" data-state="loading" data-hue="slate" />
+        <span className="showcase-card-body">
+          <span className="showcase-skeleton" style={{ width: "45%" }} />
+          <span className="showcase-skeleton" style={{ width: "85%", marginTop: "0.5rem" }} />
+          <span className="showcase-skeleton" style={{ width: "60%", marginTop: "0.375rem" }} />
+        </span>
+      </div>
     </div>
   );
 }
