@@ -35,8 +35,9 @@
    opens one of these layers (a test holds both, on the built sheet).
 
    - ui-base: the foundation defaults below (the eyebrow and display rules, the notice inks, the
-     tree's depth ladder, the glyph set, the stream veil, a tone strip on an image) and the base
-     pack, Frost: its values on the bare root and its recipes on `data-theme-base="modern"`.
+     tree's depth ladder, the glyph set, the stream veil, a tone strip on an image), the showcase
+     family's sheet and its map onto the tokens, and the base pack, Frost: its values on the bare
+     root and its recipes on `data-theme-base="modern"`.
    - ui-theme: every other pack's values and recipes. A pack's declaration beats the base's by
      layer whatever the specificity, so a pack's light rule beats Frost's dark rule for a name the
      pack sets, and a name it leaves out shows Frost's.
@@ -58,6 +59,10 @@
 @import "./window-band.css";
 @import "./cursors.css";
 @import "./animations.css";
+/* The showcase family's sheet (components/showcase/showcase.css), served in ui-base like the
+   foundation's own rules: a pack's `ui-showcase` recipe in ui-theme overrides it, and the map of
+   its properties onto the tokens is below. */
+@import "./components/showcase/showcase.css" layer(ui-base);
 
 /* How far a `ui-stream` host's newest lines are veiled, 0 to 1 (Frost multiplies it into its
    mask), private to the recipes (not a token) and registered as a number so a transition can
@@ -606,6 +611,42 @@
   }
   .ui-display {
     color: var(--ui-fg-emphasis);
+  }
+
+  /* The showcase family (components/showcase/showcase.css) names no token: this maps its
+     properties onto the theme's, so a cover card, the selected carousel and a product page take
+     every theme's surfaces, lines, radii, text rungs and icon tints in both modes. A generated
+     cover's field is a wash of its hue over the surface; a dark theme takes a little more of
+     the hue, so the field still reads as a colour against a near-black surface. */
+  .showcase {
+    --showcase-surface: var(--ui-surface);
+    --showcase-surface-muted: var(--ui-surface-muted);
+    --showcase-line: var(--ui-line);
+    --showcase-line-muted: var(--ui-line-muted);
+    --showcase-line-strong: var(--ui-line-emphasis);
+    --showcase-line-w: var(--ui-border-w);
+    --showcase-fg: var(--ui-fg);
+    --showcase-fg-muted: var(--ui-fg-muted);
+    --showcase-accent: var(--ui-accent);
+    --showcase-radius: var(--ui-radius-lg);
+    --showcase-radius-sm: var(--ui-radius-md);
+    --showcase-text-sm: var(--ui-text-body-size);
+    --showcase-text-xs: var(--ui-text-small-size);
+    --showcase-font-mono: var(--ui-font-mono);
+    --showcase-dur: var(--ui-dur-fast);
+    --showcase-hue-blue: var(--ui-icon-tint-blue);
+    --showcase-hue-violet: var(--ui-icon-tint-violet);
+    --showcase-hue-pink: var(--ui-icon-tint-pink);
+    --showcase-hue-red: var(--ui-icon-tint-red);
+    --showcase-hue-orange: var(--ui-icon-tint-orange);
+    --showcase-hue-amber: var(--ui-icon-tint-amber);
+    --showcase-hue-green: var(--ui-icon-tint-green);
+    --showcase-hue-teal: var(--ui-icon-tint-teal);
+    --showcase-hue-slate: var(--ui-icon-tint-slate);
+    --showcase-field-mix: 14%;
+  }
+  .dark .showcase {
+    --showcase-field-mix: 22%;
   }
 
   /* A notice's tone as one ink every theme's recipe reads: the tone tokens keyed by the hook's

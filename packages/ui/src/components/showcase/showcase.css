@@ -1,0 +1,816 @@
+/*
+ * The showcase family: the cover, the cover card and its grid, the selected carousel, and a
+ * product page's parts. One look for the Web App's plugin market and the public site's.
+ *
+ * Palette-agnostic on purpose, like the Markdown table sheet: every colour, radius and text
+ * rung reads a `--showcase-*` custom property, falling back to a tint of the text's own ink
+ * (`currentColor`), so the same rules hold on the app's four themes in both modes and on the
+ * sites' own palette. A host maps the properties onto its tokens once, on `.showcase` (the app's
+ * theme foundation, the sites' content sheet); nothing here names a token of either.
+ *
+ * The components do not import this sheet; the two host sheets do, into a cascade layer:
+ * theme.css into `ui-base`, so a pack's `ui-showcase` recipe in `ui-theme` overrides any rule
+ * here, and site.css into `components`, so a page's utilities do. The sheet itself stays
+ * unlayered, like every component sheet.
+ *
+ *   --showcase-surface / -surface-muted     a card's fill; a set-apart block's
+ *   --showcase-line / -line-muted / -line-strong / -line-w
+ *   --showcase-fg / -fg-muted               a title's ink; a description's
+ *   --showcase-accent                       the slide on show's bar
+ *   --showcase-radius / -radius-sm          a card, a cover on its own; a thumbnail, a control
+ *   --showcase-text-sm / -text-xs           the body and the small rung
+ *   --showcase-font-mono                    a package name
+ *   --showcase-hue-<blue|violet|pink|red|orange|amber|green|teal|slate>
+ *   --showcase-field-mix                    how much of the hue a generated cover's field takes
+ *   --showcase-dur                          hover and fade timing
+ *
+ * A generated cover measures itself (container units), so its tile, icon and mark keep their
+ * proportions from a rail thumbnail to a page hero. The grid and the carousel measure the
+ * column they stand in, never the viewport: in a single phone-width column a card lies down
+ * (cover as a thumbnail beside its text) and the carousel's controls drop under its rail.
+ */
+
+/* ------------------------------------------------------------------ cover */
+
+.showcase-cover {
+  --_hue: var(--showcase-hue, currentColor);
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  container-type: inline-size;
+  background: var(
+    --showcase-cover-tone,
+    color-mix(in oklab, var(--_hue) var(--showcase-field-mix, 14%), var(--showcase-surface, Canvas))
+  );
+  color: var(--_hue);
+}
+.showcase-cover[data-hue="blue"] {
+  --showcase-hue: var(--showcase-hue-blue);
+}
+.showcase-cover[data-hue="violet"] {
+  --showcase-hue: var(--showcase-hue-violet);
+}
+.showcase-cover[data-hue="pink"] {
+  --showcase-hue: var(--showcase-hue-pink);
+}
+.showcase-cover[data-hue="red"] {
+  --showcase-hue: var(--showcase-hue-red);
+}
+.showcase-cover[data-hue="orange"] {
+  --showcase-hue: var(--showcase-hue-orange);
+}
+.showcase-cover[data-hue="amber"] {
+  --showcase-hue: var(--showcase-hue-amber);
+}
+.showcase-cover[data-hue="green"] {
+  --showcase-hue: var(--showcase-hue-green);
+}
+.showcase-cover[data-hue="teal"] {
+  --showcase-hue: var(--showcase-hue-teal);
+}
+.showcase-cover[data-hue="slate"] {
+  --showcase-hue: var(--showcase-hue-slate);
+}
+.showcase-cover > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity var(--showcase-dur, 150ms) ease-out;
+}
+.showcase-cover[data-state="loaded"] > img {
+  opacity: 1;
+}
+
+.showcase-art {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+.showcase-art-motif {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.3;
+  /* On the 160 × 90 field, so the lines thicken with the cover: a hairline on a rail thumbnail,
+     a firm line on a hero. */
+  stroke-width: 0.7;
+}
+.showcase-art-tile {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 23cqw;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border: var(--showcase-line-w, 1px) solid color-mix(in oklab, var(--_hue) 30%, transparent);
+  border-radius: 24%;
+  background: var(--showcase-surface, Canvas);
+}
+.showcase-art-icon {
+  display: block;
+  width: 52%;
+  aspect-ratio: 1;
+}
+.showcase-art-icon > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.showcase-art-logo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.showcase-art-mark {
+  position: absolute;
+  bottom: 4.5cqw;
+  left: 4.5cqw;
+  width: 7.5cqw;
+  aspect-ratio: 1;
+  border-radius: 24%;
+}
+
+/* ------------------------------------------------------------------- card */
+
+.showcase-card {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  overflow: clip;
+  border: var(--showcase-line-w, 1px) solid
+    var(--showcase-line, color-mix(in srgb, currentColor 14%, transparent));
+  border-radius: var(--showcase-radius, 0.75rem);
+  background: var(--showcase-surface, transparent);
+  color: var(--showcase-fg, inherit);
+  transition: border-color var(--showcase-dur, 150ms) ease-out;
+}
+.showcase-card:hover {
+  border-color: var(--showcase-line-strong, color-mix(in srgb, currentColor 32%, transparent));
+}
+.showcase-card-open {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  text-decoration: none;
+}
+.showcase-card-open:focus-visible {
+  outline-offset: -3px;
+}
+.showcase-card-body {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  padding: 0.75rem 0.875rem 0.875rem;
+}
+.showcase-card-open:not(:last-child) > .showcase-card-body {
+  padding-bottom: 0;
+}
+.showcase-card-title {
+  overflow: hidden;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.showcase-card-desc {
+  display: -webkit-box;
+  min-height: 2.9em;
+  margin-top: 0.25rem;
+  overflow: hidden;
+  color: var(--showcase-fg-muted, color-mix(in srgb, currentColor 62%, transparent));
+  font-size: var(--showcase-text-sm, 0.8125rem);
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+/* The tag line takes the foot's whole width; the facts and the controls share the line under it.
+   Controls beside the tags would squeeze them into wrapping, and the feet of one grid row would
+   stop lining up. */
+.showcase-card-foot {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 0.875rem 0.75rem;
+}
+.showcase-card-foot > .showcase-card-tags {
+  grid-column: 1 / -1;
+}
+.showcase-card-foot > .showcase-card-meta {
+  grid-column: 1;
+}
+.showcase-card-foot > .showcase-card-actions {
+  grid-column: 2;
+}
+.showcase-card-tags {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: var(--showcase-text-xs, 0.75rem);
+}
+.showcase-card-meta {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--showcase-fg-muted, color-mix(in srgb, currentColor 62%, transparent));
+  font-size: var(--showcase-text-xs, 0.75rem);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.showcase-card-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.25rem;
+}
+.showcase-skeleton {
+  display: block;
+  height: 0.75rem;
+  border-radius: 0.25rem;
+  background: color-mix(in srgb, currentColor 9%, transparent);
+}
+
+.showcase-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr));
+  gap: 1rem;
+  /* Named, so the phone rule below reads the grid's width even when a card is a container of
+     its own (the Web App's card is one, for its controls). */
+  container: showcase-grid / inline-size;
+}
+/* A phone's single column: the card lies down — the cover a thumbnail beside the title and the
+   description — so a list of thirty is a few screens long, not thirty covers tall. */
+@container showcase-grid (max-width: 30rem) {
+  .showcase-grid > .showcase-card > .showcase-card-open {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.75rem 0.75rem 0;
+  }
+  .showcase-grid > .showcase-card > .showcase-card-open:last-child {
+    padding-bottom: 0.75rem;
+  }
+  .showcase-grid > .showcase-card > .showcase-card-open > .showcase-cover {
+    width: 7.5rem;
+    flex: none;
+    border-radius: var(--showcase-radius-sm, 0.5rem);
+  }
+  .showcase-grid > .showcase-card > .showcase-card-open > .showcase-card-body {
+    flex: 1;
+    padding: 0;
+  }
+  .showcase-grid > .showcase-card .showcase-card-desc {
+    min-height: 0;
+  }
+  .showcase-grid > .showcase-card > .showcase-card-foot {
+    padding: 0.5rem 0.75rem 0.75rem;
+  }
+}
+
+/* --------------------------------------------------------------- carousel */
+
+.showcase-carousel {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.875rem;
+  container-type: inline-size;
+  padding: 1rem;
+  border: var(--showcase-line-w, 1px) solid
+    var(--showcase-line, color-mix(in srgb, currentColor 14%, transparent));
+  border-radius: var(--showcase-radius, 0.75rem);
+  background: var(--showcase-surface, transparent);
+  color: var(--showcase-fg, inherit);
+}
+.showcase-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+}
+.showcase-hero-media {
+  min-width: 0;
+}
+.showcase-hero-cover {
+  display: block;
+  width: 100%;
+  overflow: clip;
+  padding: 0;
+  border: var(--showcase-line-w, 1px) solid
+    var(--showcase-line, color-mix(in srgb, currentColor 14%, transparent));
+  border-radius: var(--showcase-radius-sm, 0.5rem);
+  background: none;
+}
+.showcase-hero-text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+.showcase-eyebrow {
+  margin: 0;
+  color: var(--showcase-fg-muted, color-mix(in srgb, currentColor 62%, transparent));
+  font-size: var(--showcase-text-xs, 0.75rem);
+  font-weight: 600;
+}
+/* The name takes up to two lines, and the heading holds two whether it needs them or not. */
+.showcase-hero-heading {
+  display: flex;
+  min-width: 0;
+  min-height: 3.4375rem;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+.showcase-hero-title {
+  display: -webkit-box;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: 1.375rem;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+/* Fixed line counts: a slide with less to say takes the same room, so nothing under it moves. */
+.showcase-hero-tagline {
+  display: -webkit-box;
+  min-height: 3em;
+  margin: 0.625rem 0 0;
+  overflow: hidden;
+  font-size: 1rem;
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+.showcase-hero-desc {
+  display: -webkit-box;
+  min-height: 4.65em;
+  margin: 0.5rem 0 0;
+  overflow: hidden;
+  color: var(--showcase-fg-muted, color-mix(in srgb, currentColor 62%, transparent));
+  font-size: var(--showcase-text-sm, 0.8125rem);
+  line-height: 1.55;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+}
+.showcase-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+@container (min-width: 44rem) {
+  .showcase-hero {
+    grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr);
+    align-items: center;
+    gap: 1.75rem;
+  }
+  .showcase-hero-heading {
+    min-height: 4.0625rem;
+  }
+  .showcase-hero-title {
+    font-size: 1.625rem;
+  }
+  .showcase-hero-text {
+    padding-right: 0.5rem;
+  }
+}
+
+.showcase-rail-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.75rem;
+}
+/* On a phone the rail takes the row and the controls sit under it, at the end. */
+@container (max-width: 30rem) {
+  .showcase-rail-row {
+    flex-wrap: wrap;
+    row-gap: 0.25rem;
+  }
+  .showcase-rail-row > .showcase-rail {
+    flex-basis: 100%;
+  }
+  .showcase-rail > .showcase-rail-item {
+    width: 6.75rem;
+  }
+  .showcase-controls {
+    margin-left: auto;
+  }
+}
+.showcase-rail {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  gap: 0.625rem;
+  overflow-x: auto;
+  padding: 2px;
+  scrollbar-width: none;
+}
+.showcase-rail-item {
+  display: flex;
+  width: 8.25rem;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--showcase-fg-muted, color-mix(in srgb, currentColor 62%, transparent));
+  font: inherit;
+  text-align: start;
+  opacity: 0.74;
+  transition: opacity var(--showcase-dur, 150ms) ease-out;
+}
+.showcase-rail-item:hover,
+.showcase-rail-item[aria-current="true"] {
+  opacity: 1;
+}
+.showcase-rail-item[aria-current="true"] {
+  color: var(--showcase-fg, inherit);
+}
+.showcase-rail-item > .showcase-cover {
+  border: var(--showcase-line-w, 1px) solid
+    var(--showcase-line, color-mix(in srgb, currentColor 14%, transparent));
+  border-radius: var(--showcase-radius-sm, 0.5rem);
+}
+.showcase-rail-title {
+  overflow: hidden;
+  font-size: var(--showcase-text-xs, 0.75rem);
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.showcase-rail-track {
+  display: block;
+  height: 2px;
+  overflow: hidden;
+  border-radius: 2px;
+}
+.showcase-rail-item[aria-current="true"] > .showcase-rail-track {
+  background: var(--showcase-line, color-mix(in srgb, currentColor 14%, transparent));
+}
+.showcase-rail-bar {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--showcase-accent, currentColor);
+  transform-origin: left center;
+}
+.showcase-rail-bar[data-running] {
+  animation: showcase-stay linear both;
+}
+.showcase-controls {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.125rem;
+}
+.showcase-control {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--showcase-radius-sm, 0.5rem);
+  background: none;
+  color: var(--showcase-fg-muted, color-mix(in srgb, currentColor 62%, transparent));
+  transition:
+    background-color var(--showcase-dur, 150ms) ease-out,
+    color var(--showcase-dur, 150ms) ease-out;
+}
+.showcase-control:hover {
+  background: var(--showcase-surface-muted, color-mix(in srgb, currentColor 7%, transparent));
+  color: var(--showcase-fg, inherit);
+}
+.showcase-turn {
+  animation: showcase-turn 260ms ease-out both;
+}
+@keyframes showcase-turn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes showcase-stay {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+/* ----------------------------------------------------------- product page */
+
+.showcase-product-hero {
+  container-type: inline-size;
+  color: var(--showcase-fg, inherit);
+}
+.showcase-product-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.25rem;
+}
+.showcase-product-media {
+  order: -1;
+  min-width: 0;
+}
+.showcase-product-media > .showcase-cover {
+  border: var(--showcase-line-w, 1px) solid
+    var(--showcase-line, color-mix(in srgb, currentColor 14%, transparent));
+  border-radius: var(--showcase-radius, 0.75rem);
+}
+.showcase-product-text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+.showcase-product-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.875rem;
+  margin-top: 0.5rem;
+}
+.showcase-product-names {
+  min-width: 0;
+}
+.showcase-product-title {
+  margin: 0;
+  font-size: 1.625rem;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+  overflow-wrap: anywhere;
+}
+.showcase-product-code {
+  margin: 0.25rem 0 0;
+  overflow: hidden;
+  color: var(--showcase-fg-muted, color-mix(in srgb, currentColor 62%, transparent));
+  font-family: var(--showcase-font-mono, ui-monospace, monospace);
+  font-size: var(--showcase-text-xs, 0.75rem);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.showcase-product-tagline {
+  margin: 0.875rem 0 0.75rem;
+  font-size: 1.0625rem;
+  line-height: 1.55;
+}
+.showcase-product-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1.125rem;
+}
+.showcase-product-facts {
+  margin-top: 0.875rem;
+  color: var(--showcase-fg-muted, color-mix(in srgb, currentColor 62%, transparent));
+  font-size: var(--showcase-text-xs, 0.75rem);
+}
+@container (min-width: 46rem) {
+  .showcase-product-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.08fr);
+    align-items: center;
+    gap: 2.25rem;
+  }
+  .showcase-product-media {
+    order: 2;
+  }
+  .showcase-product-title {
+    font-size: 2rem;
+  }
+}
+
+.showcase-gallery {
+  display: flex;
+  gap: 0.75rem;
+  margin: 0;
+  overflow-x: auto;
+  padding: 0 0 0.5rem;
+  list-style: none;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+}
+.showcase-gallery-item {
+  width: min(24rem, 82%);
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+}
+.showcase-gallery-open {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  overflow: clip;
+  padding: 0;
+  border: var(--showcase-line-w, 1px) solid
+    var(--showcase-line, color-mix(in srgb, currentColor 14%, transparent));
+  border-radius: var(--showcase-radius-sm, 0.5rem);
+  background: var(--showcase-surface-muted, color-mix(in srgb, currentColor 7%, transparent));
+}
+.showcase-gallery-open > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top left;
+}
+.showcase-gallery-caption {
+  margin: 0.375rem 0 0;
+  color: var(--showcase-fg-muted, color-mix(in srgb, currentColor 62%, transparent));
+  font-size: var(--showcase-text-xs, 0.75rem);
+  line-height: 1.45;
+}
+
+.showcase-section {
+  margin-top: 2rem;
+  color: var(--showcase-fg, inherit);
+}
+.showcase-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.875rem;
+  padding-bottom: 0.5rem;
+  border-bottom: var(--showcase-line-w, 1px) solid
+    var(--showcase-line, color-mix(in srgb, currentColor 14%, transparent));
+}
+.showcase-section-title {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+.showcase-section-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.showcase-parts {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.showcase-part {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.625rem 0;
+  border-bottom: var(--showcase-line-w, 1px) solid
+    var(--showcase-line-muted, color-mix(in srgb, currentColor 8%, transparent));
+}
+.showcase-part:last-child {
+  border-bottom: 0;
+}
+.showcase-part-mark {
+  display: grid;
+  width: 1.75rem;
+  height: 1.75rem;
+  flex-shrink: 0;
+  place-items: center;
+  color: var(--showcase-fg-muted, color-mix(in srgb, currentColor 62%, transparent));
+}
+.showcase-part-text {
+  min-width: 0;
+  flex: 1;
+}
+.showcase-part-name {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 0;
+  font-size: var(--showcase-text-sm, 0.8125rem);
+  font-weight: 500;
+  line-height: 1.75rem;
+}
+.showcase-part-kind {
+  color: var(--showcase-fg-muted, color-mix(in srgb, currentColor 62%, transparent));
+  font-size: var(--showcase-text-xs, 0.75rem);
+  font-weight: 400;
+}
+.showcase-part-desc {
+  margin: 0;
+  color: var(--showcase-fg-muted, color-mix(in srgb, currentColor 62%, transparent));
+  font-size: var(--showcase-text-sm, 0.8125rem);
+  line-height: 1.55;
+}
+.showcase-part-action {
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.showcase-prompt {
+  padding: 0.875rem 1rem;
+  border: var(--showcase-line-w, 1px) solid
+    var(--showcase-line, color-mix(in srgb, currentColor 14%, transparent));
+  border-radius: var(--showcase-radius-sm, 0.5rem);
+  background: var(--showcase-surface-muted, color-mix(in srgb, currentColor 5%, transparent));
+}
+.showcase-prompt-text {
+  margin: 0;
+  font-size: var(--showcase-text-sm, 0.8125rem);
+  line-height: 1.7;
+  white-space: pre-line;
+}
+.showcase-prompt-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+.showcase-prompt-note {
+  min-width: 0;
+  color: var(--showcase-fg-muted, color-mix(in srgb, currentColor 62%, transparent));
+  font-size: var(--showcase-text-xs, 0.75rem);
+}
+
+.showcase-columns {
+  container-type: inline-size;
+}
+.showcase-columns-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2rem;
+}
+.showcase-columns-main > .showcase-section:first-child {
+  margin-top: 0;
+}
+@container (min-width: 56rem) {
+  .showcase-columns-grid {
+    grid-template-columns: minmax(0, 1fr) 16rem;
+    gap: 2.5rem;
+  }
+}
+
+.showcase-facts {
+  margin: 0;
+  font-size: var(--showcase-text-sm, 0.8125rem);
+}
+.showcase-fact {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.5rem 0;
+  border-bottom: var(--showcase-line-w, 1px) solid
+    var(--showcase-line-muted, color-mix(in srgb, currentColor 8%, transparent));
+}
+.showcase-fact > dt {
+  flex-shrink: 0;
+  color: var(--showcase-fg-muted, color-mix(in srgb, currentColor 62%, transparent));
+}
+.showcase-fact > dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  text-align: end;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .showcase-cover > img,
+  .showcase-card,
+  .showcase-rail-item,
+  .showcase-control {
+    transition: none;
+  }
+  .showcase-turn,
+  .showcase-rail-bar[data-running] {
+    animation: none;
+  }
+}
