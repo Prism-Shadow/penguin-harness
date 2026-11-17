@@ -596,7 +596,6 @@ describe("plugin mirrors, as a settings group", () => {
       setIndexMirrors([]);
     }
   });
->>>>>>> 14ba6f87e4 (feat(plugins): the channel install hands the release URL to npm itself and verifies what it installed after the fact)
 
   // The built-in rules run over real URLs the way the fetches will: each rewrite lands on
   // the mirror's own shape, and a URL none of them match contributes nothing.
