@@ -3,6 +3,7 @@
 - **Date:** 2026-11-17
 - **Type:** feature
 - **Scope:** `landing`
+- **PR:** [#1583](https://github.com/Prism-Shadow/penguin-harness/pull/1583)
 
 [English](2026-11-17-market-landing.md)
 
