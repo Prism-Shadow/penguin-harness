@@ -47,6 +47,7 @@ import {
 } from "../../lib/format";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { S } from "../../lib/strings";
+import { ReadReply } from "./voice/voice-scope";
 import { useTheme } from "../../state/theme";
 import { useLocale } from "../../state/locale";
 
@@ -157,6 +158,7 @@ export function TaskStatsLine({
         )}
       </span>
       {/* Pinned at the row's end, outside the scrollable stats span. */}
+      {assistantText && <ReadReply text={assistantText} />}
       <CopyButton text={copyText} label={S.chat.copyReply} size="sm" className="shrink-0" />
       {/* Fork sits to the RIGHT of copy (review request): copy is the frequent action and
           keeps its accustomed spot; the click only opens the confirmation below — the fork

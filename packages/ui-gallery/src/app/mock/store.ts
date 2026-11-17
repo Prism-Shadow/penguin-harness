@@ -8,7 +8,7 @@
  * One store per document (a frame is a document), created on first use for the frame's
  * language, and re-creatable for tests. Nothing here touches the DOM.
  */
-import type { ServerEvent, SessionInfo } from "@prismshadow/penguin-server/api";
+import type { CapabilitySettings, ServerEvent, SessionInfo } from "@prismshadow/penguin-server/api";
 import { buildFixtures, DEFAULT_MODEL } from "./fixtures";
 import type { DemoFixtures } from "./fixtures";
 import { harnessTranscript, orgDeskTranscript } from "./harness-transcript";
@@ -115,6 +115,7 @@ interface Live {
 
 export class DemoStore {
   readonly f: DemoFixtures;
+  voicePolish: CapabilitySettings["voicePolish"] = { enabled: false, model: null };
   readonly lang: Lang;
   /** Signed in as the fixtures' admin, or nobody. */
   signedIn: boolean;

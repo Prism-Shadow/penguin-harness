@@ -15,6 +15,44 @@ import type { Strings } from "./strings";
 export const en: Strings = {
   appName: "PenguinHarness",
 
+  voice: {
+    models: "CLI and voice models",
+    modelsHelp:
+      "Choose a configured model for each operation. Chat and the CLI use these project settings.",
+    unbound: "Not assigned",
+    noCandidates: "No compatible model in this project.",
+    polish: "Polish dictation",
+    polishHelp: "Remove repeated fillers and add punctuation before inserting the transcript.",
+    polishModel: "Text model for dictation",
+    record: "Dictate",
+    recording: "Recording",
+    permission: "Waiting for microphone",
+    finish: "Finish recording and transcribe",
+    cancel: "Cancel dictation",
+    transcribing: "Transcribing",
+    polishing: "Polishing transcript",
+    denied: "Allow microphone access in your browser or system settings to dictate.",
+    unsupported:
+      "This browser cannot record audio here. Open this page over HTTPS in a browser with microphone support.",
+    recordFailed: "Could not record from the microphone.",
+    tooLarge: "This recording is too large. Try a shorter recording.",
+    empty: "No speech was recognized.",
+    original: "The original transcript was inserted because polishing was unavailable.",
+    listen: "Read reply aloud",
+    stop: "Stop reading",
+    play: "Play the generated audio",
+    audioError: "Could not play the audio for this reply.",
+    preparing: "Preparing audio",
+    capabilities: {
+      image: "Image generation",
+      video: "Video generation",
+      tts: "Speech synthesis",
+      stt: "Speech transcription",
+      search: "Web search",
+      fetch: "Read a URL",
+    },
+  },
+
   nav: {
     chat: "Chat",
     newChat: "New chat",

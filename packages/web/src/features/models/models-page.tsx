@@ -210,6 +210,7 @@ import {
   type ProviderConnections,
 } from "./connection";
 
+import { CapabilityDialog } from "./capability-settings";
 import { ProviderSettingsDialog } from "./provider-settings-dialog";
 import { GroupSettingsControl } from "./group-settings-menu";
 import {
@@ -909,6 +910,7 @@ export function ModelsPage() {
   const { currentProject, agents } = useProject();
   const projectId = currentProject?.projectId ?? null;
   const isOwner = currentProject?.role === "owner";
+  const [capabilitiesOpen, setCapabilitiesOpen] = useState(false);
   /** The Models trail's raised badge, or undefined — "Add new models" and the notice appear with it. */
   const todo = useUpdateBadges().todos.models;
   /** What the trail says, read at render time: `S` is a live binding swapped on locale change. */
@@ -1773,6 +1775,9 @@ export function ModelsPage() {
                 placeholder={S.models.searchPlaceholder}
               />
             </div>
+            <Button size="sm" onClick={() => setCapabilitiesOpen(true)}>
+              {S.voice.models}
+            </Button>
             {/* "Add new models" appears only while new presets are actually waiting, and the
                 accent says so — adding nothing is a no-op, and a permanent button spent the
                 header's width on one. That is also why the dot is gone: it marked this button as
@@ -1830,6 +1835,14 @@ export function ModelsPage() {
           />
         )}
       </PageHeader>
+      {capabilitiesOpen && (
+        <CapabilityDialog
+          key={projectId}
+          projectId={projectId}
+          owner={isOwner}
+          onClose={() => setCapabilitiesOpen(false)}
+        />
+      )}
 
       {/* Above every group, while the TokenDance group has models but no key: its own connect
           flow, pitched as the way to skip setting keys by hand. */}

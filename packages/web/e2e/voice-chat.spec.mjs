@@ -1,0 +1,104 @@
+import { test, expect } from "@playwright/test";
+import { provisionAndLogin } from "./auth.mjs";
+import { setAccountPrefs } from "./account-prefs.mjs";
+
+test.use({
+  permissions: ["microphone"],
+  launchOptions: { args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"] },
+});
+const base = process.env.BASE_URL;
+const first = { provider: "first", modelId: "same" };
+const second = { provider: "second", modelId: "same" };
+const chat = { provider: "custom", modelId: "claude-4-8" };
+
+for (const lang of ["zh", "en"]) {
+  test(`${lang}: assign, dictate, edit and read an assistant reply`, async ({ page }) => {
+    await provisionAndLogin(page.request, "voice" + lang, "password123");
+    await setAccountPrefs(page.request, { lang });
+    const {projects} = await (await page.request.get(base + "/api/projects")).json();
+    const project = projects[0].projectId;
+    const saved = await page.request.put(`${base}/api/projects/${project}/models`, {
+      data: {defaultModel: chat, models: [{...chat, contextWindow:200000, apiKey:"sk-mock", baseUrl:process.env.MOCK_URL}]}
+    });
+    expect(saved.ok()).toBeTruthy();
+    const candidates = { stt:[first,second], tts:[first], chat:[chat], image:[],video:[],search:[],fetch:[] };
+    let bindings = { tts:first };
+    let voicePolish = { enabled:true, model:chat };
+    const raw = lang === "zh" ? "周五三点在西湖" : "Meet at West Lake at 3";
+    let polishWorks = false, captureCount=0, playbackCount=0;
+    await page.route("**/api/projects/*/capabilities", async route => {
+      if(route.request().method()==="PATCH") {
+        const patch=route.request().postDataJSON();
+        bindings={...bindings,...patch.bindings};
+        voicePolish={...voicePolish,...patch.voicePolish};
+      }
+      await route.fulfill({json:{bindings,candidates,voicePolish}});
+    });
+    await page.route("**/capabilities/stt/run", async route => {
+      const {audio}=route.request().postDataJSON();
+      expect(audio.mimeType).toMatch(/^audio\//);
+      expect(Buffer.from(audio.data,"base64").length).toBeGreaterThan(100);
+      captureCount++;
+      await route.fulfill({json:{status:"completed",text:raw,artifacts:[]}});
+    });
+    await page.route("**/voice-polish", async route => {
+      expect(route.request().postDataJSON().text).toBe(raw);
+      await route.fulfill(polishWorks ? {json:{text:raw+"!"}} : {status:503,json:{error:"provider unavailable"}});
+    });
+    // A real, eight-second mono PCM WAV leaves time to press Stop while it is playing.
+    const wav=Buffer.alloc(44+8000*2*8);
+    wav.write("RIFF"); wav.writeUInt32LE(wav.length-8,4); wav.write("WAVEfmt ",8);
+    wav.writeUInt32LE(16,16); wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);
+    wav.writeUInt32LE(8000,24);wav.writeUInt32LE(16000,28);wav.writeUInt16LE(2,32);
+    wav.writeUInt16LE(16,34);wav.write("data",36);wav.writeUInt32LE(wav.length-44,40);
+    await page.route("**/capabilities/tts/run", async route => {
+      expect(route.request().postDataJSON().text.trim()).toBeTruthy();
+      playbackCount++;
+      await route.fulfill({json:{status:"completed",artifacts:[{mimeType:"audio/wav",url:"/api/voice-fixture.wav"}]}});
+    });
+    await page.route("**/api/voice-fixture.wav", route => route.fulfill({body:wav,contentType:"audio/wav"}));
+    const labels = lang==="zh" ? ["CLI 与语音模型","语音转写","语音输入","结束录音并转写","朗读回复","停止朗读","发送"] : ["CLI and voice models","Speech transcription","Dictate","Finish recording and transcribe","Read reply aloud","Stop reading","Send"];
+    const btn = i => page.getByRole("button",{name:labels[i],exact:true}).first();
+    await page.goto(base+"/models");
+    await btn(0).click();
+    const field=page.getByRole("button",{name:new RegExp("^"+labels[1])});
+    const select = async (label) => { await field.click(); await page.getByRole("option",{name:label,exact:true}).click(); };
+    await select("same · second");
+    await expect.poll(()=>bindings.stt?.provider).toBe("second");
+    await select(lang==="zh" ? "未指定" : "Not assigned");
+    await expect.poll(()=>bindings.stt).toBe(null);
+    await select("same · first");
+    await expect.poll(()=>bindings.stt?.provider).toBe("first");
+    if (process.env.VOICE_EVIDENCE) await page.screenshot({path:process.env.VOICE_EVIDENCE+"/"+lang+"-models.png"});
+    await page.keyboard.press("Escape");
+    if(lang==="zh") await page.setViewportSize({width:390,height:844});
+    await page.goto(base+"/chat/new");
+    const draft=page.locator("textarea").first();
+    await draft.fill("Before");
+    await btn(2).focus(); await page.keyboard.press("Enter");
+    await expect(btn(3)).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(btn(2)).toBeVisible();
+    expect(captureCount).toBe(0);
+    await btn(2).click();
+    await expect(btn(3)).toBeVisible();
+    await page.waitForTimeout(420);
+    if(process.env.VOICE_EVIDENCE) await page.screenshot({path:process.env.VOICE_EVIDENCE+"/"+lang+"-recording.png"});
+    await btn(3).click();
+    await expect(draft).toHaveValue(new RegExp(raw));
+    expect(await draft.inputValue()).toContain("Before");
+    await expect(page).toHaveURL(/\/chat\/new/);
+    polishWorks=true;
+    await draft.fill("");
+    await btn(2).click(); await expect(btn(3)).toBeVisible(); await page.waitForTimeout(400);await btn(3).click();
+    await expect(draft).toHaveValue(raw+"!");
+    await draft.fill("@plain "+raw+" edited");
+    await btn(6).click();await expect(btn(4)).toBeVisible({timeout:35000});
+    await btn(4).click();await expect(btn(5)).toHaveAttribute("aria-pressed","true");
+    await btn(5).click();await expect(btn(4)).toBeVisible();
+    expect(playbackCount).toBe(1);
+    await btn(4).click();await expect(btn(5)).toBeVisible();
+    await page.goto(base+"/models");await expect(btn(0)).toBeVisible();
+  });
+}
+

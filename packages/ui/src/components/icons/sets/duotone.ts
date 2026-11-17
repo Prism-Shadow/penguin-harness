@@ -335,6 +335,8 @@ export const ICON_TINTS: Readonly<Record<IconName, IconTint>> = {
   shieldCheck: "green",
   shieldOff: "green",
   check: "green",
+  microphone: "pink",
+  speaker: "teal",
   play: "green",
   kanban: "green",
   checkCircle: "green",
