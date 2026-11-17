@@ -9,7 +9,8 @@
  * picture in flight. Its type is read from its bytes (core's sniffIconFormat): WebP, PNG and JPEG
  * are kept, anything else is refused and not kept, whatever the address called it.
  *
- * What is kept lives under `<data root>/cache/plugin-market/`, one pair of files per picture URL:
+ * What is kept lives under `<data root>/.cache/plugin-market/` (marketPictureDir), one pair of
+ * files per picture URL:
  * the bytes and a small record of the URL, its ETag and when it was last checked. A copy younger
  * than a day is served as it is; an older one is served at once while it is revalidated by its
  * ETag behind the answer, and stays when the source is down. The directory is a cache and nothing
@@ -45,9 +46,15 @@ const PICTURE_RETRY_MS = 60_000;
 
 const SERVED: ReadonlySet<string> = new Set<MarketPictureFormat>(["webp", "png", "jpeg"]);
 
-/** Where the pictures are kept under a data root. */
+/**
+ * Where the pictures are kept under a data root: `.cache/plugin-market/`. The data root's top level
+ * is also where Projects live, one directory per id, and no list reserves the other names there:
+ * `plugins/`, `logs/` or a plain `cache/` would take a name a Project could have, and land inside
+ * a Project that already has it. A dot-prefixed name is the one shape no Project id can take (every
+ * id rule excludes `.`), and the scanners that read the top level as Projects skip it.
+ */
 export function marketPictureDir(root: string): string {
-  return path.join(root, "cache", "plugin-market");
+  return path.join(root, ".cache", "plugin-market");
 }
 
 export interface MarketPictures {

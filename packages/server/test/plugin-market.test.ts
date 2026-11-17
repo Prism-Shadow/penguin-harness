@@ -30,7 +30,9 @@
  *   by its ETag; an unchanged answer keeps it, and it is not asked for again that day.
  *
  * Through the App: the market needs a session; with the published document off, a signed-in user
- * reads the embedded document and no picture can be had.
+ * reads the embedded document and no picture can be had; with it on, a picture the App keeps lands
+ * under the data root's `.cache/plugin-market/`, and the data root gains no name a Project id could
+ * take (Projects live at its top level).
  */
 import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -51,7 +53,7 @@ import type { MarketSnapshot } from "../src/plugin/market.js";
 import { MARKET_PICTURE_FRESH_MS, marketPictures } from "../src/plugin/market-pictures.js";
 import type { MarketPictures } from "../src/plugin/market-pictures.js";
 import type { PluginProxyRule } from "../src/plugin/registry.js";
-import { fakeFetch, fetchFailed, jsonResponse } from "./fixtures/fetch.js";
+import { fakeFetch, fetchFailed, jsonResponse, stubFetch } from "./fixtures/fetch.js";
 import type { FetchCall, FetchFake } from "./fixtures/fetch.js";
 import { createTestApp, loginAdmin } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
@@ -423,5 +425,36 @@ describe("the plugin market through the App", () => {
       headers: { cookie },
     });
     expect(picture.status).toBe(404);
+  });
+});
+
+describe("the plugin market through the App, with the published document on", () => {
+  const COVER = "https://market.example/plugins/alpha/cover.webp";
+  let t: TestApp;
+  let cookie: string;
+  let remote: FetchFake;
+  beforeAll(async () => {
+    // In place before the App boots: the market takes the global fetch when it is set up.
+    remote = stubFetch(site(DOC, { [COVER]: () => picture(WEBP) }));
+    t = await createTestApp({ config: { pluginMarketUrl: DOC_URL } });
+    cookie = (await loginAdmin(t.app)).cookie;
+  });
+  afterAll(async () => {
+    vi.unstubAllGlobals();
+    await t.cleanup();
+  });
+
+  it("keeps a fetched picture under the data root's .cache/, and claims no name a Project could take", async () => {
+    const before = new Set(await readdir(t.root));
+    const res = await t.app.request("/api/plugins/market/asset?path=alpha/cover.webp", {
+      headers: { cookie },
+    });
+    expect(res.status).toBe(200);
+    expect(remote.calls.map((c) => c.url)).toContain(COVER);
+    expect(await readdir(path.join(t.root, ".cache", "plugin-market"))).toHaveLength(2);
+    const added = (await readdir(t.root)).filter((name) => !before.has(name));
+    expect(added).toContain(".cache");
+    // Every Project id rule excludes ".": a dot-prefixed name is the one no Project can have.
+    expect(added.filter((name) => !name.startsWith("."))).toEqual([]);
   });
 });

@@ -30,7 +30,7 @@ reads it and hands it to the Web App:
   answers anything else with 404 without fetching. The server fetches the picture from beside the
   document through the same mirror rules (15 s per address, at most 2 MB, at most four fetches at
   once, one per picture in flight), serves it only when its bytes are WebP, PNG or JPEG, and keeps
-  it under `<data root>/cache/plugin-market/`, revalidating it by ETag after a day and serving it
+  it under `<data root>/.cache/plugin-market/`, revalidating it by ETag after a day and serving it
   from there while the source is down. A picture it cannot get is 404, which the page answers with
   the cover it draws itself.
 - An App Center shortcut names the library plugin that installed its workbench (`plugin`, from
@@ -40,5 +40,7 @@ reads it and hands it to the Web App:
 
 ## Data root
 
-`<data root>/cache/plugin-market/` is new and holds fetched pictures only, one pair of files per
-picture. It is a cache: nothing exports or backs it up, and deleting it costs a fetch per picture.
+`<data root>/.cache/plugin-market/` is new and holds fetched pictures only, one pair of files per
+picture. Its dot-prefixed name is one no Project id can take, so it claims no Project name and
+never lands inside a Project's directory. It is a cache: nothing exports or backs it up, and
+deleting it costs a fetch per picture.

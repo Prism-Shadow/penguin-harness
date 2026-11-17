@@ -23,7 +23,7 @@
 - `GET /api/plugins/market/asset?path=…&rev=…` 提供当前文档列出的一张图片，其他路径一律返回 404 且
   不发起抓取。服务端经同样的镜像规则从文档旁抓取图片（每个地址 15 秒，至多 2 MB，同时至多四个抓取，
   同一张图片同时只有一个），字节须为 WebP、PNG 或 JPEG 才会提供，并保存在
-  `<data root>/cache/plugin-market/` 下，一天后按 ETag 重新校验，源不可达时从这里提供。取不到的图片
+  `<data root>/.cache/plugin-market/` 下，一天后按 ETag 重新校验，源不可达时从这里提供。取不到的图片
   返回 404，页面随之改用自己绘制的封面。
 - 应用中心的快捷方式会写明安装其 Workbench 的插件库插件（`plugin`，取自文件夹里的 `.plugin.json`
   回执）；手写的 Workbench 不写。
@@ -32,5 +32,6 @@
 
 ## 数据根目录
 
-`<data root>/cache/plugin-market/` 是新增目录，只存放抓取来的图片，每张一对文件。它是缓存：不会被
+`<data root>/.cache/plugin-market/` 是新增目录，只存放抓取来的图片，每张一对文件。以点开头的名字
+不可能是任何 Project 的 id，所以它不占用 Project 名，也不会落进某个 Project 的目录。它是缓存：不会被
 任何导出或备份带走，删除它只会让每张图片重新抓取一次。
