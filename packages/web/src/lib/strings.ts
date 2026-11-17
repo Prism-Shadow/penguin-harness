@@ -3455,8 +3455,9 @@ export const zh = {
     /** A plugin the market's curation selects: the carousel's eyebrow and a card's tag. */
     selected: "精选",
     /** The selected carousel's accessible name. */
-    selectedLabel: "精选插件",
-    viewDetails: "查看详情",
+    layoutLabel: "插件布局",
+    cardsLayout: "卡片",
+    listLayout: "列表",
     /** The first tab of the market: every plugin, whatever the grouping. */
     tabAll: "全部",
     /** The sort select: its accessible name and its options. */
@@ -3469,25 +3470,6 @@ export const zh = {
       popular: "热门",
     },
     /** The ranking beside the grid: its heading, its two boards, and each figure in full words. */
-    ranking: {
-      title: "插件榜单",
-      popular: "热门",
-      rising: "飙升",
-      installs: (n: string) => `${n} 次安装`,
-      weekly: (n: string) => `本周新增 ${n} 次安装`,
-      /** Beside the heading while the figures are placeholders, and the sentence on its hover. */
-      sample: "示例数据",
-      sampleHint: "接入真实安装量之前，这里的数字均为示例数据。",
-    },
-    /** The selected carousel's controls. */
-    carousel: {
-      previous: "上一个",
-      next: "下一个",
-      pause: "暂停轮播",
-      play: "继续轮播",
-      position: (i: number, n: number) => `第 ${i} 个，共 ${n} 个`,
-    },
-    /** A plugin's workbench installed on an Agent of this server: opens it in the App Center. */
     openApp: "打开",
     openAppHint: "在应用中心打开",
     /** The detail's sections: its screenshots, what it installs, and its quick start. */

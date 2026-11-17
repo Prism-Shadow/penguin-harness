@@ -2,17 +2,8 @@
  * The plugin market: every plugin as one cover card (plugin-card.tsx) — the library's plugins
  * (Skills and/or a hook package, loaded by core from the @penguinharness/* packages and
  * installed on Agents) and the server modules a Project can ask for (the Agent Sandbox backends
- * and whatever the registry lists, installed on the server by an admin). Top to bottom: the
- * header with its notices and the search box, the selected carousel, a tab row, and the grid
- * with the ranking beside it.
- *
- * - **The curation** (GET /api/plugins/market, read on every visit): which plugins are selected,
- *   which of them may lead the carousel, each package's art, and the popularity figures. A read
- *   that is pending or failed shows no carousel, no ranking and generated covers; it never holds
- *   the grid.
- * - **The carousel** shows the selected plugins in the curation's order, led by the day's lead
- *   (`leadIndex`), on the "All" tab only, and only while nothing narrows the list (no search, not
- *   the incompatible-only filter).
+ * and whatever the registry lists, installed on the server by an admin). The catalogue opens
+ * directly on the search, filters and results. Cards and compact rows share their actions.
  * - **The tabs**: "All", then one tab per section of the grouping (category unless the reader
  *   picks status or contents; no grouping, no tabs). The tab is in the URL (`?tab=<section>`),
  *   so a tab can be linked; one the grouping does not have reads as All. The grouping select and
@@ -20,12 +11,8 @@
  *   (plugin-groups.ts, plugin-market.ts), the search is not.
  * - **The grid** is the tab's rows, narrowed by the search, in the chosen sort — the curation's
  *   order, recency, use in this Project, the name, or installs while the curation carries
- *   popularity figures. A search that finds nothing here but something in another tab says so
+ *   live popularity figures. A search that finds nothing here but something in another tab says so
  *   and offers the "All" tab.
- * - **The ranking** stands beside the grid (under it in a narrow column) while the curation
- *   carries popularity figures: the most installed plugins, and this week's risers, each row
- *   opening its plugin's detail; without figures there is no ranking and no "popular" sort.
- *   While the figures are placeholders (`source: "placeholder"`), its heading says "Sample data".
  * - **The detail** is in the URL too (`?plugin=<name>`): opening one pushes a history entry, so
  *   Back closes it; closing one a link opened replaces the entry. The plugin a link names shows
  *   its detail even while the tab or the search hides its card.
@@ -68,24 +55,18 @@ import {
   CoverCardSkeleton,
   GlyphIcon,
   ICONS,
-  ICON_SIZE,
   Notice,
   PageFrame,
   PageHeader,
   SearchInput,
   Select,
-  ShowcaseCarousel,
   ShowcaseGrid,
-  ShowcaseRanking,
-  ShowcaseSplit,
+  Segmented,
+  useShowcaseLayout,
   Tabs,
   TodoNotice,
-  dayNumber,
-  leadIndex,
   toastError,
   toastSuccess,
-  type RankingBoard,
-  type ShowcaseSlide,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -116,26 +97,20 @@ import { SettingsDialog } from "../settings";
 import { pickDefaultAgent } from "../ai-create";
 import { toneInk } from "../../lib/tone";
 import { appWindowPath } from "../../lib/app-center-path";
-import { SkillTile } from "../skills";
 import { ModuleApplyBody, PluginCard, libraryQuickStart } from "./plugin-card";
 import type { InstallTarget, PluginCardProps } from "./plugin-card";
-import { PluginCover } from "./plugin-cover";
-import { PluginTag, rowDescription, rowShortDescription, rowTitle } from "./plugin-marks";
+import { rowTitle } from "./plugin-marks";
 import {
   ALL_TAB,
   artOf,
   availableSorts,
   initialPluginsSort,
   isSelected,
-  marketIcon,
-  marketSlides,
   popularityOf,
-  rankRows,
   sortRows,
   storePluginsSort,
   tabRows,
   type PluginSort,
-  type RankingFigure,
 } from "./plugin-market";
 import {
   INDEX_KEY,
@@ -310,6 +285,7 @@ export function PluginsPage() {
   /** Only the plugins this build cannot fully run: switched in Settings › Plugins. */
   const incompatibleOnly = usePluginsIncompatibleOnly();
   const [groupBy, setGroupBy] = useState<PluginGroupBy>(() => initialPluginsGroupBy());
+  const [layout, chooseLayout] = useShowcaseLayout("penguin.pluginsLayout");
   const [sort, setSort] = useState<PluginSort>(() => initialPluginsSort());
 
   const chooseGroupBy = (by: PluginGroupBy) => {
@@ -323,8 +299,7 @@ export function PluginsPage() {
 
   /**
    * The curation: what is selected, what may lead, and the art; null until it answers, and for
-   * good when it cannot (a server older than the market answers 404) — generated covers, no
-   * carousel.
+   * good when it cannot (a server older than the market answers 404) — generated covers.
    */
   const market = useRead(pluginMarket, MARKET_KEY, () => api.getPluginMarket(), EVERY_VISIT).value;
 
@@ -889,98 +864,6 @@ export function PluginsPage() {
   /** The row a link's `?plugin=` names; its detail opens even when its card is not in the grid. */
   const openRow = openName === null ? undefined : rows.find((row) => row.name === openName);
 
-  // The carousel: the selected plugins this server lists, in the curation's order, led by the
-  // day's lead among those allowed to (the same for every reader on a given day).
-  const carousel = marketSlides(market, rows);
-  const showCarousel =
-    activeTab === ALL_TAB && query.trim() === "" && !incompatibleOnly && carousel.rows.length > 0;
-  const slides: ShowcaseSlide[] = carousel.rows.map((row) => {
-    const plugin = row.library;
-    const demo = plugin === undefined ? null : libraryQuickStart(plugin);
-    const art = artOf(market, row);
-    return {
-      key: row.key,
-      // Only the slide on show is drawn, so its picture loads at once.
-      cover: <PluginCover row={row} art={art} rendition="full" eager />,
-      thumb: <PluginCover row={row} art={art} />,
-      lead: (
-        <SkillTile
-          icon={marketIcon(row, art)}
-          name={row.name}
-          fallback={ICONS.puzzle}
-          size={36}
-          glyph={20}
-        />
-      ),
-      title: rowTitle(row, locale),
-      tagline: rowShortDescription(row, locale),
-      description: rowDescription(row, locale),
-      actions: (
-        <>
-          <Button size="sm" variant="primary" onClick={() => openDetail(row.name)}>
-            {S.plugins.viewDetails}
-          </Button>
-          {plugin !== undefined && demo !== null && (
-            <Button
-              size="sm"
-              variant="secondary"
-              disabled={currentAgent === null}
-              onClick={() => quickStartLibrary(plugin)}
-            >
-              {S.skills.quickInvoke}
-            </Button>
-          )}
-        </>
-      ),
-      onOpen: () => openDetail(row.name),
-    };
-  });
-
-  // The ranking beside the grid: the whole list's most installed plugins, and this week's risers.
-  const countFormat = new Intl.NumberFormat(locale === "zh" ? "zh-CN" : "en", {
-    notation: "compact",
-  });
-  const rankingBoard = (
-    key: RankingFigure,
-    label: string,
-    glyph: string,
-    words: (n: string) => string,
-  ): RankingBoard => ({
-    key,
-    label,
-    mark: <GlyphIcon d={glyph} size={ICON_SIZE.inlineGlyph} />,
-    entries:
-      popularity === null
-        ? []
-        : rankRows(rows, popularity, key, (row) => rowTitle(row, locale)).map(
-            ({ row, figure }) => ({
-              key: row.key,
-              thumb: <PluginCover row={row} art={artOf(market, row)} />,
-              title: rowTitle(row, locale),
-              tags: [<PluginTag key="category">{categoryTitle(row.category)}</PluginTag>],
-              count: countFormat.format(figure),
-              countLabel: words(figure.toLocaleString(locale === "zh" ? "zh-CN" : "en")),
-              onOpen: () => openDetail(row.name),
-            }),
-          ),
-  });
-  const rankingBoards = [
-    rankingBoard("installs", S.plugins.ranking.popular, ICONS.download, S.plugins.ranking.installs),
-    rankingBoard("weekly", S.plugins.ranking.rising, ICONS.arrowUpRight, S.plugins.ranking.weekly),
-  ].filter((board) => board.entries.length > 0);
-  // While the figures are placeholders, the panel says so beside its heading.
-  const sample = popularity?.source === "placeholder";
-  const ranking =
-    rankingBoards.length === 0 ? undefined : (
-      <ShowcaseRanking
-        title={S.plugins.ranking.title}
-        {...(sample
-          ? { note: S.plugins.ranking.sample, noteHint: S.plugins.ranking.sampleHint }
-          : {})}
-        boards={rankingBoards}
-      />
-    );
-
   const cardProps = (row: PluginRow): PluginCardProps => ({
     layout: "cover",
     // The first row of that name, should two packages share one: one detail at a time.
@@ -1142,85 +1025,76 @@ export function PluginsPage() {
         />
       )}
 
-      {showCarousel && (
-        <ShowcaseCarousel
-          className="mb-6"
-          slides={slides}
-          label={S.plugins.selectedLabel}
-          eyebrow={S.plugins.selected}
-          labels={S.plugins.carousel}
-          start={leadIndex(slides.length, carousel.leads, dayNumber(new Date()))}
-        />
-      )}
-
-      {/* The tab row and the grid; beside them (under them in a narrow column) the ranking,
-          while the market sends popularity figures. */}
-      <ShowcaseSplit aside={ranking}>
-        {/* The tabs, with the grouping and the sort at the row's end; no grouping, no tabs. The
-            selects stand beside the tabs only on a row wide enough for both (the column's full
-            width); narrower, they take the line above the tabs, at its end, so no tab is cut off
-            — on a phone sharing that line. */}
-        <div className="mb-5 @container">
-          <div className="flex flex-col-reverse gap-3 @5xl:flex-row @5xl:items-end @5xl:gap-0">
-            {groupBy !== "none" && (
-              <div className="min-w-0 @5xl:flex-1">
-                <Tabs items={tabs} active={activeTab} onChange={selectTab} />
-              </div>
-            )}
-            <div
-              className={`flex min-w-0 items-center gap-2 sm:justify-end ${
-                groupBy !== "none"
-                  ? "@5xl:shrink-0 @5xl:border-b @5xl:border-line @5xl:pb-1.5 @5xl:pl-3"
-                  : ""
-              }`}
-            >
-              <PluginsListControls
-                groupBy={groupBy}
-                onGroupBy={(by) => {
-                  chooseGroupBy(by);
-                  // The tab on show belongs to the grouping it came from.
-                  if (tabParam !== null) selectTab(ALL_TAB);
-                }}
-                sort={shownSort}
-                sorts={sorts}
-                onSort={chooseSort}
-                locale={locale}
-              />
-            </div>
+      <div className="mb-4 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <PluginsListControls
+              groupBy={groupBy}
+              onGroupBy={(by) => {
+                chooseGroupBy(by);
+                // The tab on show belongs to the grouping it came from.
+                if (tabParam !== null) selectTab(ALL_TAB);
+              }}
+              sort={shownSort}
+              sorts={sorts}
+              onSort={chooseSort}
+              locale={locale}
+            />
+          </div>
+          <div role="group" aria-label={S.plugins.layoutLabel}>
+            <Segmented
+              cols={2}
+              value={layout}
+              onChange={chooseLayout}
+              options={[
+                { value: "cards", label: S.plugins.cardsLayout },
+                { value: "list", label: S.plugins.listLayout },
+              ]}
+            />
           </div>
         </div>
+        {groupBy !== "none" && <Tabs items={tabs} active={activeTab} onChange={selectTab} />}
+      </div>
 
-        {error ? (
-          <div className="mt-2 flex items-center gap-3">
-            <p className={`text-sm ${toneInk.danger}`}>{error}</p>
-            <Button size="sm" onClick={() => window.location.reload()}>
-              {S.common.retry}
-            </Button>
-          </div>
-        ) : groups === null ? (
-          // The cards' own grid, so the placeholders stand in the columns the cards will take.
-          <ShowcaseGrid aria-busy>
-            {Array.from({ length: 6 }, (_, i) => (
-              <CoverCardSkeleton key={i} />
-            ))}
-          </ShowcaseGrid>
-        ) : visible.length > 0 ? (
-          <ShowcaseGrid>{visible.map(card)}</ShowcaseGrid>
-        ) : tab.elsewhere > 0 ? (
-          <p className="flex flex-wrap items-center gap-x-2 px-1 text-sm text-fg-muted">
-            <span>{S.plugins.noMatchHere(tab.elsewhere)}</span>
-            <Button size="sm" variant="link" onClick={() => selectTab(ALL_TAB)}>
-              {S.plugins.showAllResults}
-            </Button>
-          </p>
-        ) : (
-          <p className="px-1 text-sm text-fg-muted">
-            {searching && (indexPending > 0 || (registry.reading && index === null))
-              ? S.pluginRegistry.searchWhileDownloading
-              : S.plugins.noMatch}
-          </p>
-        )}
-      </ShowcaseSplit>
+      {error ? (
+        <div className="mt-2 flex items-center gap-3">
+          <p className={`text-sm ${toneInk.danger}`}>{error}</p>
+          <Button size="sm" onClick={() => window.location.reload()}>
+            {S.common.retry}
+          </Button>
+        </div>
+      ) : groups === null ? (
+        // The cards' own grid, so the placeholders stand in the columns the cards will take.
+        <ShowcaseGrid
+          layout={layout}
+          className="lg:[--showcase-column-min:12rem] xl:[--showcase-column-min:14rem]"
+          aria-busy
+        >
+          {Array.from({ length: 6 }, (_, i) => (
+            <CoverCardSkeleton key={i} />
+          ))}
+        </ShowcaseGrid>
+      ) : visible.length > 0 ? (
+        <ShowcaseGrid
+          layout={layout}
+          className="lg:[--showcase-column-min:12rem] xl:[--showcase-column-min:14rem]"
+        >
+          {visible.map(card)}
+        </ShowcaseGrid>
+      ) : tab.elsewhere > 0 ? (
+        <p className="flex flex-wrap items-center gap-x-2 px-1 text-sm text-fg-muted">
+          <span>{S.plugins.noMatchHere(tab.elsewhere)}</span>
+          <Button size="sm" variant="link" onClick={() => selectTab(ALL_TAB)}>
+            {S.plugins.showAllResults}
+          </Button>
+        </p>
+      ) : (
+        <p className="px-1 text-sm text-fg-muted">
+          {searching && (indexPending > 0 || (registry.reading && index === null))
+            ? S.pluginRegistry.searchWhileDownloading
+            : S.plugins.noMatch}
+        </p>
+      )}
       {/* The plugin a link names, when its card is not in the grid: its dialogs alone. */}
       {openRow !== undefined && !visible.includes(openRow) && (
         <PluginCard key={`open:${openRow.key}`} {...cardProps(openRow)} surface="none" />

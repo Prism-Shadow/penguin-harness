@@ -2,9 +2,6 @@
  * What the plugin market reads off its curation and the page's rows (features/plugins/
  * plugin-market.ts).
  *
- * - Given a curation selecting plugins, some of which no row carries, the carousel's slides
- *   follow the curation's order and skip the names with no row; the slides allowed to lead are
- *   those the curation names to lead, in its turn order; without a curation there are none.
  * - Given two packages of one bare name from two scopes, each row gets its own package's art and
  *   selection, never the other's.
  * - Given a remote index row with no icon of its own, it borrows the curation's icon, drawn as
@@ -19,10 +16,8 @@
  * - Given a search that matches nothing in the tab on show, the tab reports how many it matches
  *   across every plugin; on All, or with no search, it reports none; a tab the grouping does not
  *   have reads as All.
- * - Given popularity figures, the ranking's Popular board lists the rows by all-time installs
- *   and its Rising board by this week's, most first and at most ten, leaving out a package with
- *   no figure or none this week; "Popular" is a sort only while figures exist, and without them
- *   it orders as "Selected first".
+ * - Only live install counts can order the results by popularity; an unavailable sort falls
+ *   back to the curation's order.
  * - The sort is remembered in this browser, and storage it cannot use reads as "Selected first".
  */
 import { beforeEach, describe, expect, it } from "vitest";
@@ -40,9 +35,7 @@ import {
   initialPluginsSort,
   isSelected,
   marketIcon,
-  marketSlides,
   popularityOf,
-  rankRows,
   sortRows,
   storePluginsSort,
   tabRows,
@@ -122,22 +115,6 @@ const order = (rows: readonly PluginRow[], sort: PluginSort, used: Record<string
       usedBy: (row) => used[row.name] ?? 0,
     }),
   );
-
-describe("the selected carousel", () => {
-  it("follows the curation's order, skips names no row carries, and leads in its turn order", () => {
-    const rows = [libraryRow("a2ui"), libraryRow("browser"), libraryRow("goal")];
-    const slides = marketSlides(
-      market({
-        selected: ["@penguinharness/goal", "@penguinharness/gone", "@penguinharness/a2ui"],
-        hero: ["@penguinharness/a2ui", "@penguinharness/gone", "@penguinharness/goal"],
-      }),
-      rows,
-    );
-    expect(names(slides.rows)).toEqual(["goal", "a2ui"]);
-    expect(slides.leads).toEqual([1, 0]);
-    expect(marketSlides(null, rows)).toEqual({ rows: [], leads: [] });
-  });
-});
 
 describe("a row's art and selection", () => {
   it("are its own package's, even when another scope publishes the same name", () => {
@@ -241,7 +218,7 @@ describe("a tab under a search", () => {
 describe("popularity", () => {
   const rows = ["a2ui", "browser", "goal", "humanizer"].map((name) => libraryRow(name));
   const popularity: MarketPopularity = {
-    source: "placeholder",
+    source: "live",
     generatedAt: "2026-11-17",
     items: {
       "@penguinharness/a2ui": { installs: 900, weekly: 40 },
@@ -252,22 +229,10 @@ describe("popularity", () => {
   };
   const title = (row: PluginRow) => row.name;
 
-  it("ranks by all-time installs or this week's, leaving out rows with no figure", () => {
-    const ranked = (by: "installs" | "weekly", limit?: number) =>
-      rankRows(rows, popularity, by, title, limit).map(({ row, figure }) => [row.name, figure]);
-    expect(ranked("installs")).toEqual([
-      ["browser", 1200],
-      ["a2ui", 900],
-      ["goal", 300],
-    ]);
-    expect(ranked("weekly")).toEqual([
-      ["goal", 75],
-      ["a2ui", 40],
-    ]);
-    expect(ranked("installs", 2)).toHaveLength(2);
-  });
-
   it("offers the popular sort only with figures, and orders it as selected first without", () => {
+    expect(
+      popularityOf(market({ popularity: { ...popularity, source: "placeholder" } })),
+    ).toBeNull();
     const curation = market({ popularity });
     expect(popularityOf(curation)).toBe(popularity);
     expect(availableSorts(popularityOf(curation))).toContain("popular");

@@ -12,15 +12,12 @@
  *   leaves the market where it was.
  * - Given a search that matches nothing in the tab on show but matches elsewhere, the empty line
  *   says how many match across every plugin, and "Show all results" lists them on All.
- * - Given the market sends popularity figures, the ranking beside the grid lists the plugins
- *   most installed first, a row opens that plugin's detail, and "Popular" is a sort; given none,
- *   neither the ranking nor that sort is there.
- * - Given placeholder figures, the ranking says "Sample data" beside its heading, the reason a
- *   hover away; given live figures, it says nothing of the kind.
+ * - Given a selected plugin with install figures, opening the catalogue still goes straight to
+ *   the results. Switching to rows keeps the current tab and details, and a revisit uses rows.
+ * - Given live install figures, Popular is available as a sort. Sample figures are excluded.
  */
 import { createElement as h } from "react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { tooltipRequest } from "@prismshadow/penguin-ui";
 import type { PluginItem } from "@prismshadow/penguin-server/api";
 import { PluginsPage } from "../src/features/plugins/plugins-page";
 import { setActiveStrings } from "../src/lib/strings";
@@ -84,9 +81,6 @@ const tab = (label: string) =>
 /** The open detail layers, by the plugin each is named for. */
 const details = () => dialogs().map((d) => d.getAttribute("aria-label"));
 
-/** The titles the ranking lists, in rank order. */
-const ranked = () =>
-  [...document.querySelectorAll(".showcase-ranking-open")].map((el) => el.textContent);
 const sortOptions = async () => {
   await click(button(en.plugins.sortLabel));
   const options = [...document.querySelectorAll('[role="option"]')].map((o) => o.textContent);
@@ -94,67 +88,40 @@ const sortOptions = async () => {
   return options;
 };
 
-describe("the market's ranking", () => {
-  it("lists the most installed first, opens a plugin from its row, and offers the popular sort", async () => {
-    const market = {
-      hero: [],
-      selected: [],
-      art: {},
-      source: "embedded",
-      popularity: {
-        source: "placeholder",
-        generatedAt: "2026-11-17",
-        items: {
-          "@penguinharness/charts": { installs: 120, weekly: 3 },
-          "@penguinharness/tidy": { installs: 450, weekly: 9 },
-        },
-      },
-    };
-    const router = await open("/plugins", market);
-    await waitFor(() => ranked().length === 2, 40);
-    expect(ranked()).toEqual(["Tidy Up", "Charts"]);
-    expect(await sortOptions()).toContain(en.plugins.sort.popular);
-
-    await click(document.querySelectorAll<HTMLElement>(".showcase-ranking-open")[1]!);
-    expect(details()).toEqual(["Charts"]);
-    expect(whereIs(router)).toBe("/plugins?plugin=charts");
-  });
-
-  /** A market whose one counted plugin's figures come from `source`. */
-  const counted = (source: "placeholder" | "live") => ({
-    hero: [],
-    selected: [],
+describe("the catalogue layout", () => {
+  const curated = (source: "live" | "placeholder") => ({
+    hero: [CHARTS.package],
+    selected: [CHARTS.package],
     art: {},
     source: "embedded",
     popularity: {
       source,
       generatedAt: "2026-11-17",
-      items: { "@penguinharness/charts": { installs: 120, weekly: 3 } },
+      items: { [CHARTS.package!]: { installs: 120, weekly: 3 } },
     },
   });
-  const note = () => document.querySelector(".showcase-ranking .showcase-ranking-note");
-
-  it("says its figures are sample data while they are placeholders, the reason on hover", async () => {
-    await open("/plugins", counted("placeholder"));
-    await waitFor(() => ranked().length === 1, 40);
-    expect(note()?.textContent).toContain(en.plugins.ranking.sample);
-    expect(tooltipRequest(note()!)?.label).toBe(en.plugins.ranking.sampleHint);
-  });
-
-  it("says nothing of sample data once its figures are live", async () => {
-    await open("/plugins", counted("live"));
-    await waitFor(() => ranked().length === 1, 40);
-    expect(note()).toBeNull();
-    expect(document.querySelector(".showcase-ranking")?.textContent).not.toContain(
-      en.plugins.ranking.sample,
-    );
-  });
-
-  it("is not there, nor is the popular sort, without popularity figures", async () => {
-    await open("/plugins");
+  it("keeps the current category and detail when rows are chosen, and remembers the layout", async () => {
+    const router = await open("/plugins?tab=skills", curated("placeholder"));
+    await waitFor(() => cards().length === 1, 40);
+    expect(document.querySelector(".showcase-carousel, .showcase-ranking")).toBeNull();
+    await click(button(en.plugins.listLayout));
+    expect(button(en.plugins.listLayout).getAttribute("aria-pressed")).toBe("true");
+    expect(cards()).toEqual(["charts"]);
+    await click(document.querySelector('[data-plugin="charts"] button')!);
+    expect(details()).toEqual(["Charts"]);
+    expect(whereIs(router)).toBe("/plugins?tab=skills&plugin=charts");
+    await unmountAll();
+    await open("/plugins", curated("placeholder"));
     await waitFor(() => cards().length === 2, 40);
-    expect(document.querySelector(".showcase-ranking")).toBeNull();
+    expect(document.querySelector(".showcase-carousel, .showcase-ranking")).toBeNull();
+    expect(button(en.plugins.listLayout).getAttribute("aria-pressed")).toBe("true");
     expect(await sortOptions()).not.toContain(en.plugins.sort.popular);
+  });
+
+  it("offers sorting by live install figures", async () => {
+    await open("/plugins", curated("live"));
+    await waitFor(() => cards().length === 2, 40);
+    expect(await sortOptions()).toContain(en.plugins.sort.popular);
   });
 });
 

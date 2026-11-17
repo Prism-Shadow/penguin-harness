@@ -3254,8 +3254,9 @@ export const en: Strings = {
     /** A plugin the market's curation selects: the carousel's eyebrow and a card's tag. */
     selected: "Selected",
     /** The selected carousel's accessible name. */
-    selectedLabel: "Selected plugins",
-    viewDetails: "View details",
+    layoutLabel: "Plugin layout",
+    cardsLayout: "Cards",
+    listLayout: "List",
     /** The first tab of the market: every plugin, whatever the grouping. */
     tabAll: "All",
     /** The sort select: its accessible name and its options. */
@@ -3268,25 +3269,6 @@ export const en: Strings = {
       popular: "Popular",
     },
     /** The ranking beside the grid: its heading, its two boards, and each figure in full words. */
-    ranking: {
-      title: "Plugin rankings",
-      popular: "Popular",
-      rising: "Rising",
-      installs: (n: string) => `${n} installs`,
-      weekly: (n: string) => `${n} new installs this week`,
-      /** Beside the heading while the figures are placeholders, and the sentence on its hover. */
-      sample: "Sample data",
-      sampleHint: "These figures are sample data until real install counts are connected.",
-    },
-    /** The selected carousel's controls. */
-    carousel: {
-      previous: "Previous",
-      next: "Next",
-      pause: "Pause rotation",
-      play: "Resume rotation",
-      position: (i: number, n: number) => `${i} of ${n}`,
-    },
-    /** A plugin's workbench installed on an Agent of this server: opens it in the App Center. */
     openApp: "Open",
     openAppHint: "Open in the App Center",
     /** The detail's sections: its screenshots, what it installs, and its quick start. */

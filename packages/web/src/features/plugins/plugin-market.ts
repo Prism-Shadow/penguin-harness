@@ -6,16 +6,6 @@
  *   never by the bare plugin name, since two scopes may share one. Its art (`artOf`), whether it
  *   is selected (`isSelected`) and the icon an uninstalled index row borrows from the curation
  *   (`marketIcon`) are looked up by it.
- * - **The carousel's slides** (`marketSlides`): the selected packages this page lists, in the
- *   curation's order, a name with no row skipped; and which of them may lead, in turn order.
- * - **When a row last changed** (`rowUpdated`): the newest dated version among a library
- *   plugin's Skills, hook package and workbenches, a server module's index `updatedAt`.
- * - **The ranking** (`popularityOf`, `rankRows`): the market's popularity figures, when the
- *   server sends any — all-time installs ("Popular") and installs this week ("Rising") per
- *   package — as the rows they rank, most first. The figures are placeholders today
- *   (`source: "placeholder"`) until a real install-count API replaces them (`"live"`); by the
- *   product's decision the panel says "Sample data" beside its heading while they are, and
- *   reads a live source the same way without it.
  * - **The sorts** (`sortRows`): the curation's order, recency, how many Agents of this Project
  *   use a plugin, the name, and — only while popularity figures exist — installs
  *   (`availableSorts`; a stored "popular" reads as the curation's order without them).
@@ -69,36 +59,6 @@ export function marketIcon(row: PluginRow, art: PluginArt | null): IconRef | und
   return art?.icon === undefined ? undefined : { url: art.icon.url, tint: false };
 }
 
-/** The carousel's slides: rows in the curation's order, and the indexes of those that may lead. */
-export interface MarketSlides {
-  rows: PluginRow[];
-  /** Indexes into `rows` of the slides allowed to lead, in the curation's turn order. */
-  leads: number[];
-}
-
-/**
- * The selected plugins this page lists, in the curation's order (a name no row carries is
- * skipped, never an error), and which of them may lead the carousel; none without a curation.
- */
-export function marketSlides(
-  market: PluginMarketResponse | null,
-  rows: readonly PluginRow[],
-): MarketSlides {
-  if (market === null) return { rows: [], leads: [] };
-  const byPackage = new Map<string, PluginRow>();
-  for (const row of rows) {
-    const name = rowPackage(row);
-    if (name !== undefined && !byPackage.has(name)) byPackage.set(name, row);
-  }
-  const slides = [...new Set(market.selected)]
-    .map((name) => byPackage.get(name))
-    .filter((row): row is PluginRow => row !== undefined);
-  const leads = [...new Set(market.hero)]
-    .map((name) => slides.findIndex((row) => rowPackage(row) === name))
-    .filter((index) => index >= 0);
-  return { rows: slides, leads };
-}
-
 /**
  * A dated version (`YYYY.MM.DD.N`, or the older `YYYY-MM-DD.N`) as a number that orders the way
  * the dates do, the revision breaking a tie within a day; null for anything else.
@@ -131,41 +91,9 @@ export function rowUpdated(row: PluginRow): number | null {
 /** The popularity figures, when the market sends any for at least one package; else null. */
 export function popularityOf(market: PluginMarketResponse | null): MarketPopularity | null {
   const popularity = market?.popularity;
-  return popularity === undefined || Object.keys(popularity.items).length === 0 ? null : popularity;
-}
-
-/** Which figure a ranking orders by: all-time installs, or installs this week. */
-export type RankingFigure = "installs" | "weekly";
-
-/** One row of a ranking and the figure it is ranked by. */
-export interface RankedRow {
-  row: PluginRow;
-  figure: number;
-}
-
-/**
- * The rows a ranking lists, most first (ties by title), at most `limit`: those whose package has
- * a figure above zero — a plugin nobody installed this week is not rising.
- */
-export function rankRows(
-  rows: readonly PluginRow[],
-  popularity: MarketPopularity,
-  by: RankingFigure,
-  title: (row: PluginRow) => string,
-  limit = 10,
-): RankedRow[] {
-  const ranked: RankedRow[] = [];
-  const seen = new Set<string>();
-  for (const row of rows) {
-    const name = rowPackage(row);
-    if (name === undefined || seen.has(name)) continue;
-    seen.add(name);
-    const figure = popularity.items[name]?.[by] ?? 0;
-    if (figure > 0) ranked.push({ row, figure });
-  }
-  return ranked
-    .sort((a, b) => b.figure - a.figure || title(a.row).localeCompare(title(b.row)))
-    .slice(0, limit);
+  return popularity?.source !== "live" || Object.keys(popularity.items).length === 0
+    ? null
+    : popularity;
 }
 
 /** How the market's grid is ordered. */
