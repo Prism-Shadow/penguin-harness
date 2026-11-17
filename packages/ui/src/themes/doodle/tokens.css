@@ -3,7 +3,7 @@
  * "modern"`): its layout, its spacing, its sweep on a running label, its streaming veil. What
  * Doodle changes is everything a reader sees on it: a warm paper under a felt-tip ink, one
  * coloured pen whose washes are real surfaces, Material 3's shape scale, a handwriting face with
- * a heavy first rung, a sheet of dotted paper on a desk pad, and — in `recipes.css` — every
+ * a heavy first rung, a sheet of plain paper on a pastel desk pad, and — in `recipes.css` — every
  * element redrawn after its Material 3 anatomy with a pen line where a person puts their hand.
  * The idea is looseleaf's ("shadcn/ui, drawn by hand") carried on to Material 3 and M3 Expressive
  * (owner, 2026-11-17: redesign the elements after m3.material.io, and the background need not be
@@ -43,12 +43,13 @@
  * - Shape: Material 3's scale — 4 / 8 / 12 / 16 / 28 px — with every pressable control a capsule
  *   (`--ui-radius-control`); the pen draws its own corner on what it edges.
  * - Depth: by tone. No shadow on a card; a soft warm paper shadow under what floats.
- * - Shell: a sheet of paper on a desk pad. The pad is the window's field (the old pad's warm
- *   tone under a cast of the pen), the navigation column lets it through, and the main column is
- *   the sheet: set a little down from the window's top on one large corner, running off the
- *   right and bottom edges so a page's scrollbar reaches the window's corner whole. No rule
- *   between the two: tone and the corner part them. What is drawn on the pad and the sheet (the
- *   dot grid, the cut paper) is `recipes.css`'s.
+ * - Shell: a sheet of paper on a desk pad. The pad is the window's field, a flat pastel of the
+ *   pen (a tenth of it on white, so a pen change recolours the pad and no pattern is
+ *   needed to tell it from the sheet); the navigation column lets it through, and the main
+ *   column is the sheet: set a little down from the window's top on one large corner, running
+ *   off the right and bottom edges so a page's scrollbar reaches the window's corner whole. No
+ *   rule between the two: the two colours and the corner part them. Both are one flat colour;
+ *   nothing is drawn on either.
  * - Type: Shantell Sans for chrome and reading, LXGW WenKai GB Screen for Han, JetBrains Mono for
  *   code (`fonts.css`); a 14px body and 13px small at the 16px root, which the hand needs, titles
  *   in the bold cut with no negative tracking, and the first rung set apart from the rest (2rem in
@@ -203,13 +204,12 @@
   --ui-glass-saturate: 100%;
   --ui-glass-line: var(--ui-line);
 
-  /* ---- Shell: a sheet of paper on a desk pad. The pad is the window's field, the pack's
-     earlier pad under a cast of the pen, and the navigation column lets it through; the main
-     column is the sheet, laid a little down from the window's top on one large corner and
-     running off the window's right and bottom edges, so a page's scrollbar reaches the
-     window's corner whole. No rule between the two and no shadow: the two tones and the
-     corner part them. ---- */
-  --ui-shell-field: color-mix(in srgb, var(--ui-accent) 4%, #f6f3ec);
+  /* ---- Shell: a sheet of paper on a desk pad. The pad is the window's field, a flat pastel
+     of the pen, and the navigation column lets it through; the main column is the sheet, laid
+     a little down from the window's top on one large corner and running off the window's
+     right and bottom edges, so a page's scrollbar reaches the window's corner whole. No rule
+     between the two and no shadow: the two colours and the corner part them. ---- */
+  --ui-shell-field: color-mix(in srgb, var(--ui-accent) 10%, #ffffff);
   --ui-shell-nav-bg: transparent;
   --ui-shell-main-bg: var(--ui-canvas);
   --ui-shell-line: transparent;

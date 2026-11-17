@@ -12,8 +12,8 @@
  * file, the motion files, the pulse of a dot or a skeleton — it is in {@link POLICY}; an occurrence
  * a later wave removes goes in {@link ALLOWLIST} with that wave, and only the chart marks' label
  * sizes and the facts line's middle dot (moved in from the web app with its W10 entry) are there —
- * beside the one allowance that is not on its way out: Doodle's paper and its press, which the
- * owner let that pack alone go past the rules for (2026-11-17).
+ * beside the one allowance that is not on its way out: Doodle's press, which the owner let that
+ * pack alone go past the rules for (2026-11-17).
  *
  * A rule with nothing to read on this branch is a named skip, never a pass: the markup rules wait
  * for the first `.tsx` (the screens, #763; the modules, #764; the components, W1), and the
@@ -90,13 +90,11 @@ const ALLOWLIST: DeslopAllowlist = {
   // (web's plugin-detail.tsx entry shrank by one); it leaves with that page's other dots.
   "components/data/meta-line/meta-line.tsx": { 24: [1, "W10"] },
   // Doodle, by the owner's allowance and not on its way out (2026-11-17; `ALLOWED` below names
-  // the pack rules the same recipes go past). Rule 18: its paper — a dot grid, a disc of cut
-  // paper — is gradients on the app window and on the sheet. Rule 2: a capsule gives under the
-  // finger, Material 3 Expressive's press, while it is held down and never on hover.
-  "themes/doodle/recipes.css": {
-    2: [1, "Doodle: Material 3's press"],
-    18: [2, "Doodle: the paper"],
-  },
+  // the pack rules the same recipes go past). Rule 2: a capsule gives under the finger, Material
+  // 3 Expressive's press, while it is held down and never on hover. Its paper is flat, as every
+  // pack's is: the dot grid and the cut paper the first cut laid there are gone (the owner, the
+  // same day), and rule 18 holds for Doodle again.
+  "themes/doodle/recipes.css": { 2: [1, "Doodle: Material 3's press"] },
 };
 
 /** Not UI: the test machinery spells the patterns the rules look for, and hooks.ts is a list. */
@@ -191,18 +189,17 @@ describe("the cleanliness rules over every pack folder (R1, R2, R5–R11)", () =
    * is for. Doodle was redrawn after Material 3 and M3 Expressive, boldly, and in Doodle alone
    * (2026-11-17: 「我让你做卡通的主题包按照 https://m3.material.io/ 重新设计元素…背景也可以不要用单色」).
    * The counts are exact, like `HELD`'s, so the allowance never widens by itself; a pack not
-   * listed here is allowed nothing, and an imported pack is still held to no hit at all.
+   * listed here is allowed nothing, and an imported pack is still held to no hit at all. The
+   * allowance shrank the same day: the owner found the first cut's yellow fills and dotted paper
+   * ugly, so the paper is flat and the current row is a fill — three R1 hits and both R6 hits are
+   * gone.
    */
   const ALLOWED: Readonly<
     Record<string, Partial<Record<PackRule, readonly [count: number, what: string]>>>
   > = {
     "doodle/recipes.css": {
-      // The background need not be one colour: dots on the pad and on the sheet, cut paper on
-      // the pad. The row a reader is on sits on a pass of the highlighter, an image. An Agent's
-      // avatar is cut to a cookie, one of M3 Expressive's shapes.
-      R1: [4, "the dotted paper and its cut paper, the highlighter swipe, the avatar's cookie"],
-      // That swipe is laid as a border image on the current row, which has no border otherwise.
-      R6: [2, "the current row's swipe is a border image"],
+      // An Agent's avatar is cut to a cookie, one of M3 Expressive's shapes.
+      R1: [1, "the avatar's cookie"],
       // New chat is Material 3's extended FAB: a taller row with room under it.
       R7: [2, "the primary action's height and the room under it"],
     },

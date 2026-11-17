@@ -7,19 +7,22 @@
  * m3.material.io, and the background need not be one colour). Each element keeps its Material 3
  * anatomy — the role of its container, its shape, its state — and is rendered in the pack's own
  * material: paper, cut paper in the pen's washes, and a felt-tip line where a person puts their
- * hand. Where this goes past the clean baseline every other pack is held to (a second hue, an
- * image under text, a shape that is not a rectangle, a control that answers a press by moving),
- * the suite names the allowance (test/deslop.test.ts, `ALLOWED`); nothing here reaches another
- * pack.
+ * hand. Where this goes past the clean baseline every other pack is held to (a shape that is not
+ * a rectangle, a control that answers a press by moving, a row taller than its neighbours), the
+ * suite names the allowance (test/deslop.test.ts, `ALLOWED`); nothing here reaches another pack.
  *
- * - Paper (`ui-shell`). The window is a desk pad, dotted like a notebook, with two pieces of cut
- *   paper on it — a cookie in the highlighter at the top of the navigation column and a disc in
- *   the pen's wash at its foot (Material 3 Expressive's large tonal shapes); the main column is
- *   the sheet, dotted too. Gradients only, on boxes that do not scroll: no filter,
- *   no animation, and a page's own canvas is clear so the sheet shows through it.
+ * The colour is a stationery shop's, not a highlighter's (owner, 2026-11-17, on the first cut: no
+ * yellow fills, no dots behind the page; learn from the character-goods stores): one flat
+ * off-white under everything a person reads, a pastel block of the pen beside it, "here" marked
+ * in that same pastel and never in a second hue, and nothing drawn behind text.
+ *
+ * - Paper (`ui-shell`). The window is a desk pad, a flat pastel of the pen, and the main column
+ *   the sheet laid on it, flat warm paper on one large corner (tokens.css). Nothing is drawn on
+ *   either: no pattern, no texture, no shape.
  * - Navigation (`ui-shell`, `ui-action`). The column is Material 3's navigation drawer: the row
- *   the reader is on sits on its active indicator, drawn as one pass of the highlighter; the
- *   primary action, New chat, is an extended FAB in the pen's container.
+ *   the reader is on sits on its active indicator, a tonal fill in the pen's cast — the fill a
+ *   selected row takes in every other list; the primary action, New chat, is an extended FAB in
+ *   the pen's container.
  * - The pen line (`ui-edge`). One outline per shape, traced by a felt tip from a fixed seed
  *   (`scripts/draw-doodle-edges.mjs`, which writes the generated block below), laid on the
  *   host's 1px border as a `border-image` 9-slice. A button is a capsule at any height
@@ -62,9 +65,8 @@
  * ring return in the system's colours.
  *
  * An image cannot read a custom property, so the generated block spells the line ink, the danger
- * ink, the focus blue, the overlay and the highlighter; `scripts/draw-doodle-edges.mjs` names
- * them beside tokens.css. The properties it declares start with `--_`: private to these recipes,
- * not tokens.
+ * ink, the focus blue and the overlay; `scripts/draw-doodle-edges.mjs` names them beside
+ * tokens.css. The properties it declares start with `--_`: private to these recipes, not tokens.
  */
 
 /* draw-doodle-edges.mjs: begin generated block, do not edit by hand */
@@ -103,8 +105,6 @@
   --_glass-slip: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='76' height='76'%3E%3Cg transform='translate(12 12)'%3E%3Cg fill='none' stroke='%233a2c1e'%3E%3Cg stroke-opacity='0.2'%3E%3Crect x='2' y='3' width='48' height='48' rx='12' stroke-width='1.5'/%3E%3C/g%3E%3Cg stroke-opacity='0.032'%3E%3Crect x='2' y='6' width='48' height='48' rx='12' stroke-width='3'/%3E%3Crect x='2' y='6' width='48' height='48' rx='12' stroke-width='5.5'/%3E%3Crect x='2' y='6' width='48' height='48' rx='12' stroke-width='8'/%3E%3Crect x='2' y='6' width='48' height='48' rx='12' stroke-width='10.5'/%3E%3Crect x='2' y='6' width='48' height='48' rx='12' stroke-width='13'/%3E%3C/g%3E%3C/g%3E%3Cpath d='M13.6 2.8L19.4 1.5L23.9 1.6L27.6 1.5L33 2.7L38 2.1L44.2 3.2L48.6 7.9L50.6 14L49.8 14.2L50.8 19.5L50.2 22.8L50.6 28.6L50.6 32.7L50.5 38L48.2 43.9L44 48.5L38 49.4L38.3 49.9L33.1 49.8L29 49.6L23.3 49.9L19.2 50.6L14 50.4L7.9 48.5L3.9 43.8L1.9 38L2.1 38.2L2.5 32.6L1.8 29L2 22.9L1.2 18.7L1.3 14L3.6 8L8 3.6L14 2Z' fill='%23fffefb' stroke='%23352e29' stroke-width='2' stroke-linejoin='round'/%3E%3Cpath d='M10.1 4.6L15.6 2.7' fill='none' stroke='%23352e29' stroke-width='2' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E");
   --_glass-sheet: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='92' height='92'%3E%3Cg transform='translate(12 12)'%3E%3Cg fill='none' stroke='%233a2c1e'%3E%3Cg stroke-opacity='0.2'%3E%3Crect x='2' y='3' width='64' height='64' rx='22' stroke-width='1.5'/%3E%3C/g%3E%3Cg stroke-opacity='0.032'%3E%3Crect x='2' y='6' width='64' height='64' rx='22' stroke-width='3'/%3E%3Crect x='2' y='6' width='64' height='64' rx='22' stroke-width='5.5'/%3E%3Crect x='2' y='6' width='64' height='64' rx='22' stroke-width='8'/%3E%3Crect x='2' y='6' width='64' height='64' rx='22' stroke-width='10.5'/%3E%3Crect x='2' y='6' width='64' height='64' rx='22' stroke-width='13'/%3E%3C/g%3E%3C/g%3E%3Cpath d='M23.6 1.5L27.6 1.6L31.3 2.4L36.6 1.3L39.8 1.3L44 2.3L50.7 3.5L57 6.1L62.2 10.8L65.4 17.1L66.1 24L65.7 24.7L65.6 28.4L65.6 32.4L65.6 35.7L65.3 39.6L66.4 44L65.1 50.8L61.5 56.7L57.1 62L50.8 65.1L44 66.3L44.5 65.9L39.3 65.7L35.9 66L32.2 66.6L28.4 65.7L24 66.2L17.1 65.3L11.4 61.3L6.6 56.6L3.5 50.7L2.2 44L1.4 44.4L1.9 39.4L1.3 35.3L1.4 31.7L2.7 28.4L2.5 24L3.4 17.3L5.7 10.7L10.8 5.8L17.4 3.6L24 2.5Z' fill='%23fffefb' stroke='%23352e29' stroke-width='2.1' stroke-linejoin='round'/%3E%3Cpath d='M20.1 3.3L25.6 1.4' fill='none' stroke='%23352e29' stroke-width='2.1' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E");
   --_glass-sheet-focus: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='92' height='92'%3E%3Cg transform='translate(12 12)'%3E%3Cg fill='none' stroke='%233a2c1e'%3E%3Cg stroke-opacity='0.2'%3E%3Crect x='2' y='3' width='64' height='64' rx='22' stroke-width='1.5'/%3E%3C/g%3E%3Cg stroke-opacity='0.032'%3E%3Crect x='2' y='6' width='64' height='64' rx='22' stroke-width='3'/%3E%3Crect x='2' y='6' width='64' height='64' rx='22' stroke-width='5.5'/%3E%3Crect x='2' y='6' width='64' height='64' rx='22' stroke-width='8'/%3E%3Crect x='2' y='6' width='64' height='64' rx='22' stroke-width='10.5'/%3E%3Crect x='2' y='6' width='64' height='64' rx='22' stroke-width='13'/%3E%3C/g%3E%3C/g%3E%3Cpath d='M23.6 1.5L27.6 1.6L31.3 2.4L36.6 1.3L39.8 1.3L44 2.3L50.7 3.5L57 6.1L62.2 10.8L65.4 17.1L66.1 24L65.7 24.7L65.6 28.4L65.6 32.4L65.6 35.7L65.3 39.6L66.4 44L65.1 50.8L61.5 56.7L57.1 62L50.8 65.1L44 66.3L44.5 65.9L39.3 65.7L35.9 66L32.2 66.6L28.4 65.7L24 66.2L17.1 65.3L11.4 61.3L6.6 56.6L3.5 50.7L2.2 44L1.4 44.4L1.9 39.4L1.3 35.3L1.4 31.7L2.7 28.4L2.5 24L3.4 17.3L5.7 10.7L10.8 5.8L17.4 3.6L24 2.5Z' fill='%23fffefb' stroke='%232c4f9e' stroke-width='2.1' stroke-linejoin='round'/%3E%3Cpath d='M20.1 3.3L25.6 1.4' fill='none' stroke='%232c4f9e' stroke-width='2.1' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E");
-  --_swipe: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='32' preserveAspectRatio='none'%3E%3Cpath d='M6.5 6L14 4.3L30 5.1L46 3.9L55 5.3L57.4 9L56.6 20L57.7 25.4L54 27.7L46 27L30 28.1L14 27.2L5 27.9L2.5 24.4L3.4 13L2.6 8.6Z' fill='%23ffe27a' stroke='%23ffe27a' stroke-width='3' stroke-linejoin='round'/%3E%3C/svg%3E");
-  --_cut-cookie: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Cpath d='M50 0L54.2 1.9L57.8 5.9L61.1 8.5L65.3 7.9L70.4 6.3L75 6.7L77.7 10.5L78.8 15.7L80.4 19.6L84.3 21.2L89.5 22.3L93.3 25L93.7 29.6L92.1 34.7L91.5 38.9L94.1 42.2L98.1 45.8L100 50L98.1 54.2L94.1 57.8L91.5 61.1L92.1 65.3L93.7 70.4L93.3 75L89.5 77.7L84.3 78.8L80.4 80.4L78.8 84.3L77.7 89.5L75 93.3L70.4 93.7L65.3 92.1L61.1 91.5L57.8 94.1L54.2 98.1L50 100L45.8 98.1L42.2 94.1L38.9 91.5L34.7 92.1L29.6 93.7L25 93.3L22.3 89.5L21.2 84.3L19.6 80.4L15.7 78.8L10.5 77.7L6.7 75L6.3 70.4L7.9 65.3L8.5 61.1L5.9 57.8L1.9 54.2L0 50L1.9 45.8L5.9 42.2L8.5 38.9L7.9 34.7L6.3 29.6L6.7 25L10.5 22.3L15.7 21.2L19.6 19.6L21.2 15.7L22.3 10.5L25 6.7L29.6 6.3L34.7 7.9L38.9 8.5L42.2 5.9L45.8 1.9Z' fill='%23ffe27a' fill-opacity='0.62'/%3E%3C/svg%3E");
   --_clip-control: shape(
     from 6.58px 1.17px,
     line to calc(3.89% + 8.3px) 1.36px,
@@ -429,8 +429,6 @@
   --_glass-slip: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='76' height='76'%3E%3Cg transform='translate(12 12)'%3E%3Cg fill='none' stroke='%23000000'%3E%3Cg stroke-opacity='0.5'%3E%3Crect x='2' y='3' width='48' height='48' rx='12' stroke-width='1.5'/%3E%3C/g%3E%3Cg stroke-opacity='0.07'%3E%3Crect x='2' y='6' width='48' height='48' rx='12' stroke-width='3'/%3E%3Crect x='2' y='6' width='48' height='48' rx='12' stroke-width='5.5'/%3E%3Crect x='2' y='6' width='48' height='48' rx='12' stroke-width='8'/%3E%3Crect x='2' y='6' width='48' height='48' rx='12' stroke-width='10.5'/%3E%3Crect x='2' y='6' width='48' height='48' rx='12' stroke-width='13'/%3E%3C/g%3E%3C/g%3E%3Cpath d='M13.6 2.8L19.4 1.5L23.9 1.6L27.6 1.5L33 2.7L38 2.1L44.2 3.2L48.6 7.9L50.6 14L49.8 14.2L50.8 19.5L50.2 22.8L50.6 28.6L50.6 32.7L50.5 38L48.2 43.9L44 48.5L38 49.4L38.3 49.9L33.1 49.8L29 49.6L23.3 49.9L19.2 50.6L14 50.4L7.9 48.5L3.9 43.8L1.9 38L2.1 38.2L2.5 32.6L1.8 29L2 22.9L1.2 18.7L1.3 14L3.6 8L8 3.6L14 2Z' fill='%2325221f' stroke='%23d9d1c1' stroke-width='2' stroke-linejoin='round'/%3E%3Cpath d='M10.1 4.6L15.6 2.7' fill='none' stroke='%23d9d1c1' stroke-width='2' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E");
   --_glass-sheet: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='92' height='92'%3E%3Cg transform='translate(12 12)'%3E%3Cg fill='none' stroke='%23000000'%3E%3Cg stroke-opacity='0.5'%3E%3Crect x='2' y='3' width='64' height='64' rx='22' stroke-width='1.5'/%3E%3C/g%3E%3Cg stroke-opacity='0.07'%3E%3Crect x='2' y='6' width='64' height='64' rx='22' stroke-width='3'/%3E%3Crect x='2' y='6' width='64' height='64' rx='22' stroke-width='5.5'/%3E%3Crect x='2' y='6' width='64' height='64' rx='22' stroke-width='8'/%3E%3Crect x='2' y='6' width='64' height='64' rx='22' stroke-width='10.5'/%3E%3Crect x='2' y='6' width='64' height='64' rx='22' stroke-width='13'/%3E%3C/g%3E%3C/g%3E%3Cpath d='M23.6 1.5L27.6 1.6L31.3 2.4L36.6 1.3L39.8 1.3L44 2.3L50.7 3.5L57 6.1L62.2 10.8L65.4 17.1L66.1 24L65.7 24.7L65.6 28.4L65.6 32.4L65.6 35.7L65.3 39.6L66.4 44L65.1 50.8L61.5 56.7L57.1 62L50.8 65.1L44 66.3L44.5 65.9L39.3 65.7L35.9 66L32.2 66.6L28.4 65.7L24 66.2L17.1 65.3L11.4 61.3L6.6 56.6L3.5 50.7L2.2 44L1.4 44.4L1.9 39.4L1.3 35.3L1.4 31.7L2.7 28.4L2.5 24L3.4 17.3L5.7 10.7L10.8 5.8L17.4 3.6L24 2.5Z' fill='%2325221f' stroke='%23d9d1c1' stroke-width='2.1' stroke-linejoin='round'/%3E%3Cpath d='M20.1 3.3L25.6 1.4' fill='none' stroke='%23d9d1c1' stroke-width='2.1' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E");
   --_glass-sheet-focus: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='92' height='92'%3E%3Cg transform='translate(12 12)'%3E%3Cg fill='none' stroke='%23000000'%3E%3Cg stroke-opacity='0.5'%3E%3Crect x='2' y='3' width='64' height='64' rx='22' stroke-width='1.5'/%3E%3C/g%3E%3Cg stroke-opacity='0.07'%3E%3Crect x='2' y='6' width='64' height='64' rx='22' stroke-width='3'/%3E%3Crect x='2' y='6' width='64' height='64' rx='22' stroke-width='5.5'/%3E%3Crect x='2' y='6' width='64' height='64' rx='22' stroke-width='8'/%3E%3Crect x='2' y='6' width='64' height='64' rx='22' stroke-width='10.5'/%3E%3Crect x='2' y='6' width='64' height='64' rx='22' stroke-width='13'/%3E%3C/g%3E%3C/g%3E%3Cpath d='M23.6 1.5L27.6 1.6L31.3 2.4L36.6 1.3L39.8 1.3L44 2.3L50.7 3.5L57 6.1L62.2 10.8L65.4 17.1L66.1 24L65.7 24.7L65.6 28.4L65.6 32.4L65.6 35.7L65.3 39.6L66.4 44L65.1 50.8L61.5 56.7L57.1 62L50.8 65.1L44 66.3L44.5 65.9L39.3 65.7L35.9 66L32.2 66.6L28.4 65.7L24 66.2L17.1 65.3L11.4 61.3L6.6 56.6L3.5 50.7L2.2 44L1.4 44.4L1.9 39.4L1.3 35.3L1.4 31.7L2.7 28.4L2.5 24L3.4 17.3L5.7 10.7L10.8 5.8L17.4 3.6L24 2.5Z' fill='%2325221f' stroke='%2393b6ee' stroke-width='2.1' stroke-linejoin='round'/%3E%3Cpath d='M20.1 3.3L25.6 1.4' fill='none' stroke='%2393b6ee' stroke-width='2.1' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E");
-  --_swipe: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='32' preserveAspectRatio='none'%3E%3Cpath d='M6.5 6L14 4.3L30 5.1L46 3.9L55 5.3L57.4 9L56.6 20L57.7 25.4L54 27.7L46 27L30 28.1L14 27.2L5 27.9L2.5 24.4L3.4 13L2.6 8.6Z' fill='%235e5013' stroke='%235e5013' stroke-width='3' stroke-linejoin='round'/%3E%3C/svg%3E");
-  --_cut-cookie: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Cpath d='M50 0L54.2 1.9L57.8 5.9L61.1 8.5L65.3 7.9L70.4 6.3L75 6.7L77.7 10.5L78.8 15.7L80.4 19.6L84.3 21.2L89.5 22.3L93.3 25L93.7 29.6L92.1 34.7L91.5 38.9L94.1 42.2L98.1 45.8L100 50L98.1 54.2L94.1 57.8L91.5 61.1L92.1 65.3L93.7 70.4L93.3 75L89.5 77.7L84.3 78.8L80.4 80.4L78.8 84.3L77.7 89.5L75 93.3L70.4 93.7L65.3 92.1L61.1 91.5L57.8 94.1L54.2 98.1L50 100L45.8 98.1L42.2 94.1L38.9 91.5L34.7 92.1L29.6 93.7L25 93.3L22.3 89.5L21.2 84.3L19.6 80.4L15.7 78.8L10.5 77.7L6.7 75L6.3 70.4L7.9 65.3L8.5 61.1L5.9 57.8L1.9 54.2L0 50L1.9 45.8L5.9 42.2L8.5 38.9L7.9 34.7L6.3 29.6L6.7 25L10.5 22.3L15.7 21.2L19.6 19.6L21.2 15.7L22.3 10.5L25 6.7L29.6 6.3L34.7 7.9L38.9 8.5L42.2 5.9L45.8 1.9Z' fill='%235e5013' fill-opacity='0.55'/%3E%3C/svg%3E");
 }
 /* draw-doodle-edges.mjs: end generated block */
 
@@ -438,54 +436,19 @@
    above. Material 3's primary container, deeper than the wash under the person's words: what a
    tonal button, a selected segment and the navigation's primary action are filled in, and the
    same a state deeper for the pointer. The filled card's tone, a step lighter than the pad a
-   pointer or a settings row lies on. The paper's dots and the cut paper in the pen's wash. */
+   pointer or a settings row lies on. */
 :root[data-theme="doodle"] {
   --_container: color-mix(in srgb, var(--ui-accent) 24%, var(--ui-canvas));
   --_container-hover: color-mix(in srgb, var(--ui-accent) 32%, var(--ui-canvas));
   --_card: color-mix(in srgb, var(--ui-accent) 5.5%, var(--ui-surface));
-  --_dot: color-mix(in srgb, var(--ui-fg) 13%, transparent);
-  --_cut-pen: color-mix(in srgb, var(--ui-accent) 15%, transparent);
 }
 :root[data-theme="doodle"].dark {
   --_container: color-mix(in srgb, var(--ui-accent) 28%, var(--ui-canvas));
   --_container-hover: color-mix(in srgb, var(--ui-accent) 36%, var(--ui-canvas));
   --_card: color-mix(in srgb, var(--ui-accent) 4%, var(--ui-surface));
-  --_dot: color-mix(in srgb, var(--ui-fg) 11%, transparent);
-  --_cut-pen: color-mix(in srgb, var(--ui-accent) 13%, transparent);
 }
 
 @media (forced-colors: none) {
-  /* Paper. The pad: a notebook's dot grid, and two pieces of cut paper on it, one at each end
-     of the navigation column — a cookie in the highlighter at the window's top corner and a disc
-     in the pen's wash at its foot (below the width where the column stands beside the sheet, the
-     cookie is laid off the window: only a sliver of it would show above the sheet). The sheet:
-     the same dots, fainter by the paper being lighter. Both boxes hold still while their content scrolls, so the grid is rasterised
-     once; a background the person chose themselves takes the paper's place. */
-  :root[data-theme="doodle"] .ui-shell:not([data-wallpaper]) {
-    background-image:
-      radial-gradient(circle at 1px 1px, var(--_dot) 1px, transparent 1.5px),
-      radial-gradient(
-        circle 14rem at 1.5rem calc(100% + 3.5rem),
-        var(--_cut-pen) calc(100% - 1px),
-        transparent
-      ),
-      var(--_cut-cookie);
-    background-position:
-      0 0,
-      0 0,
-      max(-5.5rem, (48rem - 100vw) * 9999) -6.5rem;
-    background-size:
-      1.375rem 1.375rem,
-      auto,
-      12.5rem 12.5rem;
-    background-repeat: repeat, no-repeat, no-repeat;
-  }
-  :root[data-theme="doodle"] .ui-shell:not([data-wallpaper]) > [data-slot="main"],
-  :root[data-theme="doodle"] .ui-shell:not([data-wallpaper]) > [data-slot="dock"] {
-    background-image: radial-gradient(circle at 1px 1px, var(--_dot) 1px, transparent 1.5px);
-    background-size: 1.375rem 1.375rem;
-  }
-
   /* The pen line: a solid 1px border for the stroke to paint on, the host's own or this one. A
      box is the person's bubble's shape by default; what a person types into or picks a value in
      (a text field, a select's or a picker's trigger) takes the field's; a button — the host that
@@ -538,20 +501,6 @@
      danger ink, over the host's own danger tint. */
   :root[data-theme="doodle"] button.ui-edge[data-variant="danger"]:hover {
     border-image-source: var(--_stroke-pill-danger);
-  }
-
-  /* The navigation's active indicator: one pass of the highlighter under the row the reader is
-     on — a page's row on the window's navigation or a dialog's rail, or the open conversation's,
-     whose fill is its wrapper's (the wrapper holds the button that names it current). The
-     swipe's ends keep their shape and the band between them stretches along the row; the row's
-     own fill gives way to it. */
-  :root[data-theme="doodle"]
-    :is(.ui-shell, .ui-glass[role="dialog"])
-    :is(a, button)[aria-current="page"]:not([data-session-id], .ui-action),
-  :root[data-theme="doodle"] .ui-shell div:has(> [data-session-id][aria-current="page"]) {
-    border: 0 solid transparent;
-    background-color: transparent;
-    border-image: var(--_swipe) 0 14 fill / 0 14px / 0 stretch;
   }
 
   /* What floats: a slip of paper, its glass image its fill, its line and its shadow. The shadow
@@ -663,23 +612,32 @@
   }
 }
 
-/* A page's own canvas is clear on the sheet, so the sheet's dots run under the whole page. */
-:root[data-theme="doodle"] .ui-shell > [data-slot="main"] [data-wallpaper-surface="canvas"] {
-  background-color: transparent;
-}
-
 /* The window's columns: the pad shows through the navigation column, with no lit edge beside
    the sheet. */
 :root[data-theme="doodle"] .ui-shell > [data-slot="nav"] {
   box-shadow: none;
 }
 
-/* The row the reader is on reads in the full ink on its indicator. */
+/* The navigation's active indicator, Material 3's tonal one: the row the reader is on — a page's
+   row on the window's navigation or a dialog's rail, or the open conversation's, whose fill is
+   its wrapper's (the wrapper holds the button that names it current) — reads in the full ink on
+   the fill a selected row takes in every other list, the pen's cast, where Frost's navigation
+   column lays a wash of the ink. A fill and an ink, nothing drawn: the mark of "here" is the
+   pen's own pastel, never a second hue. On a background the person chose themselves the row
+   keeps the host's own wash, which reads on any image. */
 :root[data-theme="doodle"]
   :is(.ui-shell, .ui-glass[role="dialog"])
   :is(a, button)[aria-current="page"]:not([data-session-id]),
 :root[data-theme="doodle"] .ui-shell div:has(> [data-session-id][aria-current="page"]) {
   color: var(--ui-fg-emphasis);
+}
+:root[data-theme="doodle"]
+  .ui-shell:not([data-wallpaper])
+  :is(a, button)[aria-current="page"]:not([data-session-id], .ui-action),
+:root[data-theme="doodle"]
+  .ui-shell:not([data-wallpaper])
+  div:has(> [data-session-id][aria-current="page"]) {
+  background-color: var(--ui-line-muted);
 }
 
 /* The navigation's primary action is Material 3's extended FAB: the pen's container under the

@@ -1327,12 +1327,6 @@ const cssHookMonoCheck: Check = (analysis) =>
  * that is not a hook is review: the context bar's hatch, which carries meaning, and the sweep
  * across the TokenDance banner's brand name, the banner's one deliberate emphasis. The three are
  * GRADIENT_RECIPES (gradient-recipes.ts).
- *
- * The rule has no exception of its own. One pack goes past it by the owner's leave, and that is
- * written where a suite keeps its exceptions, by file and count, not here: Doodle's paper — a
- * notebook's dot grid on the app window and the sheet, a disc of cut paper on the window — in
- * `packages/ui/test/deslop.test.ts` (2026-11-17: the background need not be one colour, in the
- * cartoon pack alone). Every other pack, and every imported one, is still held to the rule.
  */
 
 const cssDecorationCheck: Check = (analysis) =>

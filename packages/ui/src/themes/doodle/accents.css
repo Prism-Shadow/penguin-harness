@@ -5,9 +5,9 @@
  * line derive from it in tokens.css, the containers the recipes fill derive from it there, and
  * the label ink is the theme's for the mode — paper under a light pen, the dark ink under a pen
  * lifted for dark paper. A highlighter yellow was left out: as a mark (a switch, a radio) it is
- * under 3:1 on paper; the highlighter is the swipe under the current row, whatever the pen. The
- * selectors match only Doodle's id, so a preset another theme lists paints nothing here — and a
- * stored `ballpoint`, no longer listed, paints the pack's own pen, the same blue.
+ * under 3:1 on paper. The selectors match only Doodle's id, so a preset another theme lists
+ * paints nothing here — and a stored `ballpoint`, no longer listed, paints the pack's own pen,
+ * the same blue.
  */
 :root[data-theme="doodle"][data-accent="ink"] {
   --ui-accent: #2b2521;

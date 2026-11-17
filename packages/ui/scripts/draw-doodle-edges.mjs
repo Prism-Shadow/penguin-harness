@@ -29,12 +29,8 @@
  *   shadow drawn under it in a 12 px margin, for what floats (a dialog, a menu, a tooltip, the
  *   composer, a toast). It is applied with `border-image … fill` and a 12 px outset, so the slip
  *   needs no fill, shadow or filter of its own and the shadow follows the drawn shape.
- * - `--_swipe`: one pass of a highlighter, a filled band with uneven edges and slanted ends, laid
- *   under the navigation's current row as a 3-slice (its ends keep their shape, the band between
- *   them stretches).
- * - `--_cut-cookie`: a piece of cut paper in the highlighter, laid on the desk pad as a background
- *   image; `--_clip-cookie` and `--_clip-clover`, two of Material 3 Expressive's shapes as
- *   `clip-path: polygon()` for an avatar and a tile.
+ * - `--_clip-cookie` and `--_clip-clover`: two of Material 3 Expressive's shapes as `clip-path:
+ *   polygon()`, for an avatar and a tile.
  *
  * Shapes, as `image px / corner radius / slice`: `control` 28 / 5 / 9 (what a person types into),
  * `bubble` 48 / 16·16·4·16 / 18 (the person's own words: three round corners and the one nearest
@@ -46,9 +42,9 @@
  * field that failed, a destructive button) and `-focus` (the ballpoint blue of the focus ring: a
  * focused field, the focused composer).
  *
- * An image cannot read a custom property, so the inks, the overlay and the highlighter are
- * spelled here: the pack's line ink, danger ink, focus blue, overlay and highlighter. Change them
- * together with `themes/doodle/tokens.css`.
+ * An image cannot read a custom property, so the inks and the overlay are spelled here: the
+ * pack's line ink, danger ink, focus blue and overlay. Change them together with
+ * `themes/doodle/tokens.css`.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -75,9 +71,6 @@ const SHADOW = {
 
 /** The margin a glass image keeps round its outline for the shadow; the recipes' outset. */
 const MARGIN = 12;
-
-/** The highlighter a swipe is drawn in: yellow on paper, a dim amber on dark paper. */
-const HIGHLIGHT = { light: "#ffe27a", dark: "#5e5013" };
 
 /**
  * `size` is the square image, `slice` the corner region the recipes cut it at, `radius` the
@@ -328,22 +321,6 @@ const encode = (text) =>
 const url = (text) => `url("data:image/svg+xml,${encode(text)}")`;
 
 /**
- * One pass of a highlighter: a filled band, its long edges uneven and its ends slanted, the
- * corners rounded by a stroke of the same colour. 60 × 32, cut 14 px in from each end, so the
- * ends keep their shape and the band between them stretches along the row.
- */
-function swipe(color) {
-  const band =
-    "M6.5 6L14 4.3L30 5.1L46 3.9L55 5.3L57.4 9L56.6 20L57.7 25.4L54 27.7L46 27L30 28.1L14 27.2" +
-    "L5 27.9L2.5 24.4L3.4 13L2.6 8.6Z";
-  return (
-    `<svg xmlns='http://www.w3.org/2000/svg' width='60' height='32' preserveAspectRatio='none'>` +
-    `<path d='${band}' fill='${color}' stroke='${color}' stroke-width='3' ` +
-    `stroke-linejoin='round'/></svg>`
-  );
-}
-
-/**
  * Two shapes from Material 3 Expressive's library, as `clip-path: polygon()` in percentages, so
  * each fits a square host of any size. The cookie is the nine-sided one (a nine-pointed star,
  * inner radius 0.8, rounded until its points and its notches are one wave), a lobe at the top;
@@ -364,17 +341,6 @@ function cookiePoints(sides, depth = 0.1, steps = 8) {
 }
 
 const cookie = () => polygon(cookiePoints(9));
-
-/**
- * A piece of cut paper for the desk pad: the twelve-sided cookie in the highlighter, flat, laid
- * as a background (Material 3 Expressive's large tonal shapes). 100 × 100, scaled by the recipe.
- */
-function cutPaper(color, opacity) {
-  return svg(
-    100,
-    `<path d='${polyline(cookiePoints(12, 0.07, 6))}Z' fill='${color}' fill-opacity='${opacity}'/>`,
-  );
-}
 
 function clover(notch = 42.6, steps = 14) {
   // A leaf's disc touches two sides of the box and passes through the notches beside it, which
@@ -402,7 +368,7 @@ function clover(notch = 42.6, steps = 14) {
   return polygon(points);
 }
 
-/** The custom properties for one mode: strokes, slips and the swipe in its inks; the clips (light only, shared). */
+/** The custom properties for one mode: strokes and slips in its inks; the clips (light only, shared). */
 function properties(mode) {
   const ink = (name) => INK[name][mode];
   const { control, bubble, pill, bead, box, fab } = SHAPES;
@@ -420,8 +386,6 @@ function properties(mode) {
     ["--_glass-slip", url(glass(SLIPS.slip, ink("ink"), mode))],
     ["--_glass-sheet", url(glass(SLIPS.sheet, ink("ink"), mode))],
     ["--_glass-sheet-focus", url(glass(SLIPS.sheet, ink("blue"), mode))],
-    ["--_swipe", url(swipe(HIGHLIGHT[mode]))],
-    ["--_cut-cookie", url(cutPaper(HIGHLIGHT[mode], mode === "light" ? 0.62 : 0.55))],
   ];
   if (mode === "light") {
     for (const [name, shape] of Object.entries(SHAPES)) {

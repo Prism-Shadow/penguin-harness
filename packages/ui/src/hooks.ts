@@ -86,9 +86,7 @@
  * |                    | host: `RunStatus`                                        |                                                       |
  *
  * `ui-shell` is the one place a theme may paint a field of colour, and the field is one flat
- * colour, never a gradient — but for Doodle, which the owner let lay a notebook's dot grid and two
- * pieces of cut paper there (2026-11-17; the de-slop suite names the allowance): Frost lays a
- * flat grey field behind the window and sets the
+ * colour, never a gradient: Frost lays a flat grey field behind the window and sets the
  * navigation column on it as milky, translucent glass with a lit inner edge, so the column comes
  * out a step off the opaque near-white main column — the glass takes no backdrop filter, since
  * the field is all that lies behind it and the column must not become a stacking context;
