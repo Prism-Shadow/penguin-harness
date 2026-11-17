@@ -18,6 +18,21 @@ import type { PluginSummary } from "../../lib/hub/types";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/+$/, "");
 
+// These covers already ship with the server. External plugins and screenshots use the community host.
+const bundledCovers = import.meta.glob<string>(
+  "../../../../server/src/plugin/market-covers/*/*.webp",
+  {
+    eager: true,
+    import: "default",
+    query: "?url",
+  },
+);
+function coverUrl(path: string): string {
+  return (
+    bundledCovers[`../../../../server/src/plugin/market-covers/${path}`] ?? pluginAssetUrl(path)
+  );
+}
+
 /** The product's mark: a generated cover's corner, or its tile when the plugin has no icon. */
 const LOGO = `${BASE}/penguin-logo.svg`;
 
@@ -53,8 +68,8 @@ export function PluginCover({
       image={
         cover
           ? {
-              src: pluginAssetUrl(cover.src),
-              thumb: cover.thumb === undefined ? undefined : pluginAssetUrl(cover.thumb),
+              src: coverUrl(cover.src),
+              thumb: cover.thumb === undefined ? undefined : coverUrl(cover.thumb),
               tone: cover.tone,
             }
           : null

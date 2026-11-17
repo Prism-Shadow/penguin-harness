@@ -4,7 +4,7 @@
  * narrows the list, the selected carousel heads it (the curation's selected plugins in order; the
  * one that leads turns daily among those it allows to); every plugin is a cover card in a grid,
  * the selected ones first by default. When the market document carries popularity counts, a
- * ranking stands beside the grid (under it on a narrow page), with a Popular board by installs
+ * ranking stands with the filters (under it on a narrow page), with a Popular board by installs
  * and a Rising one by the last week's, and the list gains a Popular order; without counts there
  * is neither. While the counts are placeholders, the ranking says "Sample data".
  */
@@ -16,7 +16,8 @@ import {
   ShowcaseCarousel,
   ShowcaseGrid,
   ShowcaseRanking,
-  ShowcaseSplit,
+  SiteSegmented,
+  useShowcaseLayout,
   SiteGlyph,
   useSiteLocale,
 } from "@prismshadow/penguin-ui/site";
@@ -89,6 +90,7 @@ const LEADS = market.hero
 export function PluginsPage() {
   const { locale } = useSiteLocale();
   const location = useLocation();
+  const [layout, chooseLayout] = useShowcaseLayout("penguin.pluginsLayout");
   const entryLink = useEntryLink();
   useDocumentMeta(S.hub.pageTitle(S.hub.plugins.title), S.hub.plugins.description);
   const t = S.hub.plugins;
@@ -207,23 +209,33 @@ export function PluginsPage() {
           />
         ) : undefined
       }
+      controls={
+        <SiteSegmented
+          role="radiogroup"
+          label={t.layoutLabel}
+          value={layout}
+          onChange={chooseLayout}
+          options={[
+            { id: "cards", label: t.cardsLayout },
+            { id: "list", label: t.listLayout },
+          ]}
+        />
+      }
+      aside={
+        POPULAR ? (
+          <ShowcaseRanking
+            className="site-ui"
+            title={t.rankingTitle}
+            {...(SAMPLE ? { note: t.rankingSample, noteHint: t.rankingSampleHint } : {})}
+            boards={rankingBoards(locale, byTitle, entryLink)}
+            hints="title"
+          />
+        ) : undefined
+      }
       wrapList={(cards) => (
-        <ShowcaseSplit
-          className="site-ui"
-          aside={
-            POPULAR ? (
-              <ShowcaseRanking
-                title={t.rankingTitle}
-                {...(SAMPLE ? { note: t.rankingSample, noteHint: t.rankingSampleHint } : {})}
-                boards={rankingBoards(locale, byTitle, entryLink)}
-                // The site mounts no tooltip layer: its hover hints are the browser's own.
-                hints="title"
-              />
-            ) : undefined
-          }
-        >
-          <ShowcaseGrid>{cards}</ShowcaseGrid>
-        </ShowcaseSplit>
+        <ShowcaseGrid layout={layout} className="site-ui">
+          {cards}
+        </ShowcaseGrid>
       )}
       renderItem={(plugin) => <PluginCard plugin={plugin} />}
     />

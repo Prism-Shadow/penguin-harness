@@ -465,6 +465,9 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
       /** The selected carousel's accessible name. */
       selectedPlugins: "精选插件",
       viewDetails: "查看详情",
+      layoutLabel: "插件布局",
+      cardsLayout: "卡片",
+      listLayout: "列表",
       sortSelected: "精选优先",
       /** The ranking beside the grid, shown when the market document carries counts. */
       rankingTitle: "插件榜单",

@@ -468,6 +468,9 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
       /** The selected carousel's accessible name. */
       selectedPlugins: "Selected plugins",
       viewDetails: "View details",
+      layoutLabel: "Plugin layout",
+      cardsLayout: "Cards",
+      listLayout: "List",
       sortSelected: "Selected first",
       /** The ranking beside the grid, shown when the market document carries counts. */
       rankingTitle: "Plugin rankings",

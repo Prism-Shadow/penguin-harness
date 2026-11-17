@@ -44,6 +44,8 @@ export function HubList<T>({
   renderItem,
   wrapList,
   lead,
+  controls,
+  aside,
 }: {
   title: string;
   /** One line under the title: what the list holds. */
@@ -60,6 +62,10 @@ export function HubList<T>({
   wrapList?: (items: ReactNode[]) => ReactNode;
   /** Under the title block, while nothing narrows the list. */
   lead?: ReactNode;
+  /** Extra list controls beside the sort, when this catalogue has them. */
+  controls?: ReactNode;
+  /** Stacks under the facets on desktop and below the results on small screens. */
+  aside?: ReactNode;
 }) {
   const [params, setParams] = useSearchParams();
   const { key } = useLocation();
@@ -211,14 +217,20 @@ export function HubList<T>({
                 }
               />
             )}
+            {controls}
           </div>
         </header>
 
         {lead !== undefined && !filtered && <div className="mt-8">{lead}</div>}
 
         <div className="mt-8 grid gap-x-8 gap-y-5 lg:grid-cols-[13rem_minmax(0,1fr)]">
-          {offered.length > 0 && <aside className="flex flex-col gap-5">{facetGroups}</aside>}
-          <div className={`min-w-0 ${offered.length > 0 ? "" : "lg:col-span-2"}`}>
+          {(offered.length > 0 || aside) && (
+            <div className="contents lg:flex lg:min-w-0 lg:flex-col lg:gap-6">
+              {offered.length > 0 && <aside className="flex flex-col gap-5">{facetGroups}</aside>}
+              {aside && <div className="order-last min-w-0">{aside}</div>}
+            </div>
+          )}
+          <div className={`min-w-0 ${offered.length > 0 || aside ? "" : "lg:col-span-2"}`}>
             {shown.length === 0 ? (
               <div className="py-16 text-center text-sm text-gray-600 dark:text-gray-400">
                 <p>{S.hub.empty}</p>
