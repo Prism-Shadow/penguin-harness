@@ -26,7 +26,7 @@ case "$cmd" in
     if [ -f package.json ]; then
       PKG_V="$(node -p 'require("./package.json").version')"
       if [ "$PKG_V" != "$V" ]; then
-        MSG="tag $TAG does not match the repo version $PKG_V; bump root + every workspace package.json (packages/*, plugins/*) and core VERSION during release prep, then re-tag (see .github/CONTRIBUTING.md)."
+        MSG="tag $TAG does not match the repo version $PKG_V; bump root + every workspace package.json (packages/*, plugins/*, library/*) and core VERSION during release prep, then re-tag (see .github/CONTRIBUTING.md)."
         if [ "${EVENT_NAME:-}" = "push" ]; then
           echo "error: $MSG" >&2
           exit 1
@@ -49,6 +49,9 @@ case "$cmd" in
       grep -Fq "export const BUILD_COMMIT: string | null = \"$GITHUB_SHA\"" packages/core/src/index.ts
     fi
     for dir in plugins/*/; do
+      (cd "$dir" && npm version --no-git-tag-version --allow-same-version "$V" >/dev/null)
+    done
+    for dir in library/*/; do
       (cd "$dir" && npm version --no-git-tag-version --allow-same-version "$V" >/dev/null)
     done
     for p in amsp a2ui chat-markdown core ui server cli; do
