@@ -2060,6 +2060,21 @@ export const en: Strings = {
       ],
     ] as ReadonlyArray<readonly [string, string]>,
     compactionPrompt: "Summary prompt",
+    maxRounds: "Max tool rounds",
+    maxRoundsInfo:
+      "How many tool rounds (writing hand-off files, for example) a summarize compaction may take before its summary. Once they are used up without one, the next context opens with the hand-off note.",
+    maxRoundsHint: "0 allows none",
+    maxRoundsInvalid: "Must be an integer of 0 or more",
+    compactionReminder: "Per-round reminder",
+    compactionReminderInfo:
+      "The line sent to the model after the tool outputs of each tool round while it writes the summary.",
+    compactionReminderHint:
+      "Placeholders: {{ROUNDS_USED}}, {{ROUNDS_LEFT}}, {{SCRATCHPAD_DIR}}. Leave blank to send none",
+    compactionHandoffNote: "Hand-off note",
+    compactionHandoffNoteInfo:
+      "When no summary could be had, the next context opens with this note: the harness fills its placeholders from the Trace file, without asking the model.",
+    compactionHandoffNoteHint:
+      "Placeholders: {{ERROR}}, {{USER_MESSAGES}}, {{LAST_TURN}}, {{TRACE_PATH}}, {{SCRATCHPAD_DIR}}. Leave blank for the quoted data alone",
     numberInvalid: "Must be a positive integer or -1",
     numberCannotClear: "A saved value can't be cleared: enter a number, or use Reset to restore it",
     toolFieldInvalid: (name: string, field: string) =>

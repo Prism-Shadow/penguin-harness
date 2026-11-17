@@ -2194,6 +2194,20 @@ export const zh = {
       ["discard", "不生成摘要，直接丢弃旧上下文，下一轮从新窗口重新开始。"],
     ] as ReadonlyArray<readonly [string, string]>,
     compactionPrompt: "摘要提示词",
+    maxRounds: "最多工具轮数",
+    maxRoundsInfo:
+      "生成摘要时，模型在给出摘要之前最多可用几轮工具调用（例如写交接文件）；用尽仍没有摘要，下一个上下文以交接说明开头。",
+    maxRoundsHint: "0 表示不留工具轮",
+    maxRoundsInvalid: "必须是 ≥ 0 的整数",
+    compactionReminder: "每轮提醒",
+    compactionReminderInfo: "生成摘要期间，每个工具轮之后附在工具输出后面发给模型的一行。",
+    compactionReminderHint:
+      "可用占位符 {{ROUNDS_USED}}、{{ROUNDS_LEFT}}、{{SCRATCHPAD_DIR}}；留空则不发提醒",
+    compactionHandoffNote: "交接说明",
+    compactionHandoffNoteInfo:
+      "取不到摘要时，下一个上下文以这段说明开头：harness 从 Trace 文件填入占位符，不再请求模型。",
+    compactionHandoffNoteHint:
+      "可用占位符 {{ERROR}}、{{USER_MESSAGES}}、{{LAST_TURN}}、{{TRACE_PATH}}、{{SCRATCHPAD_DIR}}；留空则只留引述的内容",
     numberInvalid: "必须是 > 0 的整数或 -1",
     numberCannotClear: "已保存的值不能清空：请填写数值，或点「重置」还原",
     toolFieldInvalid: (name: string, field: string) => `${name}: ${field} 必须是 > 0 的整数或 -1`,
