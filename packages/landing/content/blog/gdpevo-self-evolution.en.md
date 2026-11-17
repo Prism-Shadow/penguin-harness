@@ -103,7 +103,7 @@ In the conversation view, select DeepSeek V4.1 Flash in the model picker below t
 
 ### Step 4: Attach Toolkit and Launch
 
-Type / in the chat input to open the command menu and select skilladam-rsi-toolkit to attach it to the conversation, then specify the RSI toolkit name, target Benchmark, number of training iterations, number of test repetitions, model, thinking level, and Docker concurrency limit. Both the training iteration count and test repetition count can be customized in the prompt—for example, 2 training iterations and 3 test repetitions by default, or 5 to 6 test repetitions as needed.
+Type / in the chat input to open the command menu and select skilladam-rsi-toolkit to attach it to the conversation, then specify the RSI toolkit name, target Benchmarks, experimental workflow, number of training iterations, number of test repetitions, model, thinking level, and Docker concurrency limit. Both the training iteration count and test repetition count can be customized in the prompt—for example, 2 training iterations and 3 test repetitions, or 5 to 6 test repetitions as needed.
 
 <img class="my-4 rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-assets/gdpevo-slash-skill.webp" width="1636" height="1035" alt="Typing a slash in the chat input to open the command menu and select skilladam-rsi-toolkit" />
 
@@ -113,11 +113,11 @@ To evaluate a single sub-benchmark such as service-ticket-resolution, send:
 
 <img class="my-4 rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-assets/gdpevo-launch-single.webp" width="1615" height="495" alt="Attaching skilladam-rsi-toolkit and entering the launch prompt for a single sub-benchmark" />
 
-To evaluate all six sub-benchmarks in the GDPEVO Essential series, send:
+To evaluate all six sub-benchmarks, list the six Benchmarks in the prompt and specify that each is trained and tested independently:
 
-> Use skilladam-rsi-toolkit to run a self-evolution experiment across all six Benchmarks of the GDPEVO Essential series with 2 training iterations and 3 test repetitions. Use model DeepSeek V4.1 Flash, thinking level max, and Docker concurrency limit 4.
+> Use skilladam-rsi-toolkit to run self-evolution experiments separately on six Benchmarks—GDPEVO Essential-Service Ticket Resolution, GDPEVO Essential-Financial Control, GDPEVO Essential-Portfolio Management, GDPEVO Essential-Coverage Review, GDPEVO Essential-Court Clerk Operations, and GDPEVO Essential-Engineering Portfolio Analytics: train each Benchmark independently for 2 iterations, freeze its resulting Skill, and evaluate both the Baseline and evolved Agent on its paired test set for 3 repetitions. Use model DeepSeek V4.1 Flash, thinking level max, and Docker concurrency limit 4.
 
-<img class="my-4 rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-assets/gdpevo-launch-all.webp" width="1615" height="458" alt="Attaching skilladam-rsi-toolkit and entering the launch prompt for all six sub-benchmarks in GDPEVO Essential" />
+<img class="my-4 rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-assets/gdpevo-launch-all.webp" width="1615" height="657" alt="Attaching skilladam-rsi-toolkit and entering the launch prompt for running the six Benchmarks independently" />
 
 To evaluate another self-evolution algorithm, replace the attached RSI toolkit and skilladam-rsi-toolkit in the prompt with skillopt-rsi-toolkit, trace-rsi-toolkit, or openskill-rsi-toolkit.
 
@@ -204,7 +204,7 @@ While building PenguinHarness as an RSI infrastructure and running these experim
 
 A full GDPEVO Essential campaign spans continuous training across six sub-benchmarks, skill freezing and handoff, 180 isolated test container runs, and two-level metric aggregation.
 
-Once we packaged the experimental rules into an RSI toolkit, DeepSeek-V4.1-Flash-1017 with max thinking effort was able to serve as the Controller Agent and autonomously complete the entire workflow from environment preparation to final reporting. This shows that with our RSI toolkit support, models at or above the level of DeepSeek-V4.1-Flash-1017 can reliably organize and complete end-to-end RSI experiments.
+Once equipped with the RSI algorithm toolkit and a clear experiment prompt, DeepSeek-V4.1-Flash-1017 with max thinking effort was able to serve as the Controller Agent and autonomously complete the entire workflow from environment preparation to final reporting. This shows that with our RSI toolkit support, models at or above the level of DeepSeek-V4.1-Flash-1017 can reliably organize and complete end-to-end RSI experiments.
 
 ### 2. Progressive Benchmark Loading
 

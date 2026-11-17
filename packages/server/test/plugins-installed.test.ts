@@ -499,11 +499,11 @@ describe("installed plugins", () => {
     expect(await res.text()).toContain(".project_config.toml");
   });
 
-  it("a stream install answers its events in order — the download, npm, the result", async () => {
+  it("a stream install answers its events in order — npm, the result", async () => {
     // The beforeEach app has no channel to fall through to; this one does: a published index
     // and its release asset, both served here. npm stands in and refuses the name the way the
-    // registry does, so the install takes the channel — whose asset this server fetches,
-    // reports, verifies, and npm-installs from the file: record it keeps.
+    // registry does, so the install takes the channel — whose URL npm itself installs (the
+    // asset this server serves), and whose lockfile record verifies after the fact.
     await t.cleanup();
     const tarball = await packTarball("@acme/channels", "1.0.0");
     // The asset's URL needs the port, which exists only once the server listens; the index
@@ -556,20 +556,11 @@ describe("installed plugins", () => {
       expect(res.status).toBe(200);
       expect(res.headers.get("content-type")).toContain("text/event-stream");
       const events = parseSSE(await res.text());
-      // The first event says the download began; the last one carries the finished answer,
-      // with npm's hand-off between — whatever the asset's chunking reported between.
-      expect(events[0]).toEqual({
-        event: "download",
-        data: JSON.stringify({ received: 0, total: null }),
-      });
+      // The first event hands the work to npm (npm's own download is npm's to report); the
+      // last one carries the finished answer.
+      expect(events[0]).toEqual({ event: "npm", data: "{}" });
       expect(events.at(-1)!.event).toBe("result");
-      expect(events.at(-2)!.event).toBe("npm");
-      const reported = events
-        .slice(1, -2)
-        .map((e) => JSON.parse(e.data) as { received: number; total: number | null });
-      expect(reported.length).toBeGreaterThan(0);
-      for (const progress of reported) expect(progress.total).toBe(tarball.byteLength);
-      expect(reported.at(-1)!.received).toBe(tarball.byteLength);
+      expect(events).toHaveLength(2);
       const result = JSON.parse(events.at(-1)!.data) as InstalledPluginsResponse;
       // A Skills-only package joins the library, not the Project's table.
       expect(result.installed).toMatchObject({
@@ -598,7 +589,7 @@ describe("installed plugins", () => {
     const res = await postStream(cookie, "@acme/denied");
     expect(res.status).toBe(200); // the stream itself answers well
     const events = parseSSE(await res.text());
-    expect(events.map((e) => e.event)).toEqual(["download", "error"]);
+    expect(events.map((e) => e.event)).toEqual(["npm", "error"]);
     expect(JSON.parse(events[1]!.data)).toMatchObject({
       status: 400,
       code: "plugin_install_failed",

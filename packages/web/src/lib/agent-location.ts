@@ -19,7 +19,7 @@ import { createContext, useContext } from "react";
 /** The query parameter that names the machine an Agent's settings page is about. */
 export const MACHINE_PARAM = "machine";
 
-/** The settings page of an Agent, wherever it lives, optionally opened on one tab. */
+/** The settings page of an Agent, wherever it lives, optionally opened on one tab or sub-page. */
 export function agentSettingsPath(agentId: string, machineId: string | null, tab?: string): string {
   const params = new URLSearchParams();
   if (machineId !== null) params.set(MACHINE_PARAM, machineId);

@@ -3,16 +3,17 @@
  * (plugin/install.ts installPluginChannel, plugin/registry.ts indexChannelLookup +
  * indexChannelOf, and the install route's npm-first fallthrough):
  *
- * - The channel's asset is fetched, verified against the sha512 the entry pins, and only the
- *   verified bytes are written — into the prefix's archives, installed as a `file:` record.
+ * - The channel's release URL is a spec npm natively understands, so each address's attempt
+ *   is npm itself installing it; what npm actually installed is verified after the fact —
+ *   the lockfile entry's integrity against the sha512 the entry pins, the installed
+ *   manifest against the entry's name and version.
  * - A mismatch, an unreadable integrity, or a channel listed without an integrity refuses the
- *   install with the reason; nothing unverified installs.
+ *   install with the reason; a refused install is uninstalled — nothing unverified stays.
  * - npm stays the first source: a name npm installs never consults the index, and a channel
  *   install is only the fallthrough for a name npm answered E404/ETARGET on (the version
  *   asked for goes with the lookup); any other npm failure stays a failure.
- * - The verified tarball's own package.json has to be the index entry's package and version
- *   before it installs under its digest-named archive; a different archive refuses with
- *   nothing written and npm never run.
+ * - The installed package's manifest has to be the index entry's package and version before
+ *   the install counts; a different package refuses and npm uninstalls it.
  */
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -26,7 +27,6 @@ import {
   npmFailureKind,
   PluginInstallError,
   pluginsPrefix,
-  verifyIntegrity,
 } from "../src/plugin/install.js";
 import {
   indexChannelLookup,
@@ -52,8 +52,8 @@ const tempRoot = async () => {
 
 /**
  * A real gzipped tarball carrying `package/package.json` with the given name and version —
- * packed by the system tar, the same reader the install uses to check the manifest against
- * the index entry before anything installs.
+ * the bytes a release asset carries, whose digest the stand-in npm records as the
+ * integrity of what it installed.
  */
 async function packTarball(name: string, version: string): Promise<Uint8Array> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-pkg-"));
@@ -84,22 +84,6 @@ const channel: IndexChannel = {
   url: "https://github.com/o/r/releases/download/v0.0.2/x.tgz",
 };
 
-describe("verifyIntegrity", () => {
-  it("accepts the bytes the entry pins, answering the digest that names the archive", () => {
-    expect(verifyIntegrity(asset, integrity)).toBe(integrity.slice("sha512-".length));
-  });
-
-  it("refuses a mismatch, saying the asset is not installed", () => {
-    const other = new TextEncoder().encode("tampered bytes");
-    expect(() => verifyIntegrity(other, integrity)).toThrow(PluginInstallError);
-    expect(() => verifyIntegrity(other, integrity)).toThrow(/does not match the sha512/);
-  });
-
-  it("refuses an integrity that is not sha512-<base64>", () => {
-    expect(() => verifyIntegrity(asset, "md5-abc")).toThrow(/not sha512-<base64>/);
-  });
-});
-
 describe("npmFailureKind", () => {
   it("calls a missing package or an unmatched version unavailable", () => {
     expect(
@@ -124,182 +108,153 @@ describe("npmFailureKind", () => {
 });
 
 describe("installPluginChannel", () => {
-  /** What npm would record for a file: install — the record that keeps the tarball past a prune. */
-  const fakeNpmInstall =
-    (name: string, version: string) => async (prefix: string, spec: string) => {
-      const dir = path.join(prefix, "node_modules", ...name.split("/"));
-      await fs.mkdir(dir, { recursive: true });
-      await fs.writeFile(path.join(dir, "package.json"), JSON.stringify({ name, version }));
+  /**
+   * A stand-in for npm: the install records the spec it was given, writes the package into
+   * the prefix, and writes the lockfile entry npm itself records for a tarball-URL install
+   * — `resolved` naming the URL, `integrity` naming the tarball it actually took. An Error
+   * stands for npm's own failure on that spec (a dead address, an unreadable asset): npm
+   * exits non-zero and nothing lands.
+   */
+  const npmStandIn = (
+    answers: Record<string, { integrity: string; name?: string; version?: string } | Error>,
+  ) => {
+    const specs: string[] = [];
+    const uninstalls: string[] = [];
+    const install = async (prefix: string, spec: string) => {
+      specs.push(spec);
+      const answer = answers[spec];
+      if (answer === undefined || answer instanceof Error) {
+        throw new Error(`npm error code EFETCH\nnpm error cannot fetch ${spec}`);
+      }
+      const name = answer.name ?? channel.name;
+      const version = answer.version ?? channel.version;
+      const key = `node_modules/${name}`;
+      await fs.mkdir(path.join(prefix, ...key.split("/")), { recursive: true });
+      await fs.writeFile(
+        path.join(prefix, ...key.split("/"), "package.json"),
+        JSON.stringify({ name, version }),
+      );
       const manifestPath = path.join(prefix, "package.json");
       const manifest = JSON.parse(await fs.readFile(manifestPath, "utf8").catch(() => "{}")) as {
         dependencies?: Record<string, string>;
       };
-      manifest.dependencies = {
-        ...(manifest.dependencies ?? {}),
-        [name]: `file:${spec.replace(/^\.\//, "")}`,
-      };
+      manifest.dependencies = { ...(manifest.dependencies ?? {}), [name]: spec };
       await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2));
+      const lockPath = path.join(prefix, "package-lock.json");
+      const lock = JSON.parse(await fs.readFile(lockPath, "utf8").catch(() => "{}")) as {
+        packages?: Record<string, { resolved?: string; integrity?: string }>;
+      };
+      lock.packages = {
+        ...(lock.packages ?? {}),
+        [key]: { resolved: spec, integrity: answer.integrity },
+      };
+      await fs.writeFile(lockPath, JSON.stringify(lock, null, 2));
     };
+    const uninstall = async (_prefix: string, name: string) => {
+      uninstalls.push(name);
+    };
+    return { install, uninstall, specs, uninstalls };
+  };
 
-  it("fetches the asset, checks its manifest against the entry, and installs the verified tarball under its digest-named archive", async () => {
+  it("installs through npm from the release URL, the lockfile record verifying against the entry's sha512", async () => {
     const root = await tempRoot();
-    const bytes = await packTarball(channel.name, channel.version);
-    const pinned: IndexChannel = { ...channel, integrity: digest(bytes) };
-    const fetchImpl = vi.fn(async () => new Response(new Uint8Array(bytes), { status: 200 }));
-    const installedSpecs: string[] = [];
-    const installed = await installPluginChannel(root, pinned, {
-      fetchImpl: fetchImpl as unknown as typeof fetch,
-      install: async (prefix, spec) => {
-        installedSpecs.push(spec);
-        // What npm would put on disk for the verified tarball. The prefix is created by
-        // the install itself, and the fake receives it: node_modules sits inside it.
-        await fakeNpmInstall(pinned.name, pinned.version)(prefix, spec);
-      },
+    const tarball = await packTarball(channel.name, channel.version);
+    const npm = npmStandIn({ [channel.url]: { integrity: digest(tarball) } });
+    const installed = await installPluginChannel(
+      root,
+      { ...channel, integrity: digest(tarball) },
+      { install: npm.install, uninstall: npm.uninstall },
+    );
+    expect(installed).toEqual({ name: channel.name, version: channel.version });
+    // The spec npm received was the release URL itself, not a re-packed archive: npm does
+    // the download, and the record it wrote is what verified.
+    expect(npm.specs).toEqual([channel.url]);
+    expect(npm.uninstalls).toEqual([]);
+    const lock = JSON.parse(
+      await fs.readFile(path.join(pluginsPrefix(root), "package-lock.json"), "utf8"),
+    ) as { packages?: Record<string, { resolved?: string; integrity?: string }> };
+    expect(lock.packages?.[`node_modules/${channel.name}`]).toEqual({
+      resolved: channel.url,
+      integrity: digest(tarball),
     });
-    expect(fetchImpl).toHaveBeenCalledWith(pinned.url, { redirect: "follow" });
-    expect(installed).toEqual({ name: pinned.name, version: pinned.version });
-    // The tag is the digest's first sixteen file-safe characters: base64 carries `/` and
-    // `+`, and neither belongs in a file name (a `/` would make the rename a subdirectory).
-    const tag = (
-      digest(bytes)
-        .slice("sha512-".length)
-        .match(/[A-Za-z0-9._~-]/g) ?? []
-    )
-      .slice(0, 16)
-      .join("");
-    const file = `@penguinharness-language-typst-0.0.2-${tag}.tgz`;
-    expect(installedSpecs).toEqual([`./archives/${file}`]);
-    // The archive the prefix keeps is the verified bytes, and nothing else is left behind
-    // (the staging file the check read the manifest from is gone).
-    const kept = await fs.readFile(path.join(pluginsPrefix(root), "archives", file));
-    expect(new Uint8Array(kept)).toEqual(bytes);
-    await expect(fs.readdir(path.join(pluginsPrefix(root), "archives"))).resolves.toEqual([file]);
   });
 
-  it("refuses a tarball whose package.json is not the entry's package and version — npm never runs, nothing is written", async () => {
+  it("refuses an install whose tarball does not match the entry's integrity — npm uninstalls it", async () => {
     const root = await tempRoot();
-    const bytes = await packTarball("other-package", "9.9.9");
-    const install = vi.fn(async () => undefined);
+    const npm = npmStandIn({
+      [channel.url]: { integrity: digest(new TextEncoder().encode("tampered bytes")) },
+    });
+    await expect(
+      installPluginChannel(root, channel, { install: npm.install, uninstall: npm.uninstall }),
+    ).rejects.toThrow(/does not match the sha512/);
+    expect(npm.uninstalls).toEqual([channel.name]);
+  });
+
+  it("refuses an install whose manifest is not the entry's package and version — npm uninstalls it", async () => {
+    const root = await tempRoot();
+    const tarball = await packTarball(channel.name, channel.version);
+    const npm = npmStandIn({
+      [channel.url]: { integrity: digest(tarball), name: "other-package", version: "9.9.9" },
+    });
     await expect(
       installPluginChannel(
         root,
-        { ...channel, integrity: digest(bytes) },
-        {
-          fetchImpl: (async () =>
-            new Response(new Uint8Array(bytes), { status: 200 })) as unknown as typeof fetch,
-          install,
-        },
+        { ...channel, integrity: digest(tarball) },
+        { install: npm.install, uninstall: npm.uninstall },
       ),
     ).rejects.toThrow(/package\.json says "other-package"@"9\.9\.9"/);
-    expect(install).not.toHaveBeenCalled();
-    await expect(fs.readdir(path.join(pluginsPrefix(root), "archives"))).resolves.toEqual([]);
+    expect(npm.uninstalls).toEqual([channel.name]);
   });
 
-  it("refuses a mismatched asset before anything is written or installed", async () => {
+  it("refuses an install npm recorded no integrity for", async () => {
     const root = await tempRoot();
-    const wrong = new TextEncoder().encode("not what the index pinned");
-    const install = vi.fn(async () => undefined);
+    const npm = npmStandIn({ [channel.url]: { integrity: "not-a-digest" } });
+    await expect(
+      installPluginChannel(root, channel, { install: npm.install, uninstall: npm.uninstall }),
+    ).rejects.toThrow(/does not match the sha512/);
+    expect(npm.uninstalls).toEqual([channel.name]);
+  });
+
+  it("an npm failure on the release URL is the whole answer when the entry pins no mirrors", async () => {
+    const root = await tempRoot();
+    const npm = npmStandIn({});
+    await expect(
+      installPluginChannel(root, channel, { install: npm.install, uninstall: npm.uninstall }),
+    ).rejects.toThrow(/could not install the release asset from any of/);
+    expect(npm.specs).toEqual([channel.url]);
+    expect(npm.uninstalls).toEqual([]);
+  });
+
+  it("a pin that is not sha512-<base64> cannot pass the post-check, and npm uninstalls", async () => {
+    const root = await tempRoot();
+    const tarball = await packTarball(channel.name, channel.version);
+    const npm = npmStandIn({ [channel.url]: { integrity: digest(tarball) } });
     await expect(
       installPluginChannel(
         root,
-        { ...channel, integrity: digest(wrong) },
-        {
-          fetchImpl: (async () =>
-            new Response(new Uint8Array(asset), { status: 200 })) as unknown as typeof fetch,
-          install,
-        },
+        { ...channel, integrity: "md5-abc" },
+        { install: npm.install, uninstall: npm.uninstall },
       ),
     ).rejects.toThrow(/does not match the sha512/);
-    expect(install).not.toHaveBeenCalled();
+    expect(npm.uninstalls).toEqual([channel.name]);
   });
 
-  it("refuses an asset URL that answers an error status", async () => {
+  it("the mirror after a dead release URL: npm fails there, installs from the mirror", async () => {
     const root = await tempRoot();
-    await expect(
-      installPluginChannel(root, channel, {
-        fetchImpl: (async () => new Response("nope", { status: 404 })) as unknown as typeof fetch,
-        install: async () => undefined,
-      }),
-    ).rejects.toThrow(/answered 404/);
-  });
-
-  it("reports the download as it is read, the total from the content-length", async () => {
-    const root = await tempRoot();
-    const bytes = await packTarball(channel.name, channel.version);
-    const onProgress = vi.fn();
-    await installPluginChannel(
+    const mirrorUrl = "https://cdn-mirror.example/o/r/releases/download/v0.0.2/x.tgz";
+    const tarball = await packTarball(channel.name, channel.version);
+    const npm = npmStandIn({
+      [channel.url]: new Error("npm error code EFETCH\nnpm error fetch failed"),
+      [mirrorUrl]: { integrity: digest(tarball) },
+    });
+    const installed = await installPluginChannel(
       root,
-      { ...channel, integrity: digest(bytes) },
-      {
-        fetchImpl: (async () =>
-          new Response(new Uint8Array(bytes), {
-            status: 200,
-            headers: { "content-length": String(bytes.length) },
-          })) as unknown as typeof fetch,
-        install: async () => undefined,
-        onProgress,
-      },
+      { ...channel, integrity: digest(tarball), mirrors: [mirrorUrl] },
+      { install: npm.install, uninstall: npm.uninstall },
     );
-    // Every call names the total, and the last one is the whole asset against it.
-    expect(onProgress).toHaveBeenCalledWith(bytes.length, bytes.length);
-    expect(onProgress.mock.calls.every((call) => call[1] === bytes.length)).toBe(true);
-  });
-
-  it("steps the report in percents of a known size, not once per chunk", async () => {
-    const root = await tempRoot();
-    const bytes = await packTarball(channel.name, channel.version);
-    // The asset read in quarters: four reads, but a report only where a percent step is crossed.
-    const quarter = Math.floor(bytes.length / 4);
-    const pieces = [
-      bytes.subarray(0, quarter),
-      bytes.subarray(quarter, quarter * 2),
-      bytes.subarray(quarter * 2, quarter * 3),
-      bytes.subarray(quarter * 3),
-    ];
-    const onProgress = vi.fn();
-    await installPluginChannel(
-      root,
-      { ...channel, integrity: digest(bytes) },
-      {
-        fetchImpl: (async () =>
-          new Response(
-            new ReadableStream<Uint8Array>({
-              start(controller) {
-                for (const piece of pieces) controller.enqueue(piece);
-                controller.close();
-              },
-            }),
-            { status: 200, headers: { "content-length": String(bytes.length) } },
-          )) as unknown as typeof fetch,
-        install: async () => undefined,
-        onProgress,
-      },
-    );
-    const received = onProgress.mock.calls.map((call) => call[0]);
-    expect(received).toEqual([quarter, quarter * 2, quarter * 3, bytes.length, bytes.length]);
-    expect(onProgress.mock.calls.every((call) => call[1] === bytes.length)).toBe(true);
-  });
-
-  it("reports a lengthless answer by mebibytes, the last call naming the whole asset", async () => {
-    const root = await tempRoot();
-    const bytes = await packTarball(channel.name, channel.version);
-    const onProgress = vi.fn();
-    await installPluginChannel(
-      root,
-      { ...channel, integrity: digest(bytes) },
-      {
-        fetchImpl: (async () =>
-          new Response(new Uint8Array(bytes), { status: 200 })) as unknown as typeof fetch,
-        install: async () => undefined,
-        onProgress,
-      },
-    );
-    // Well under a mebibyte, so no MiB step fires on the way: the read crosses none, and the
-    // close of the read names the whole — the total the caller can show once it knows it.
-    expect(onProgress.mock.calls).toEqual([
-      [bytes.length, null],
-      [bytes.length, bytes.length],
-    ]);
+    expect(installed).toEqual({ name: channel.name, version: channel.version });
+    expect(npm.specs).toEqual([channel.url, mirrorUrl]);
+    expect(npm.uninstalls).toEqual([]);
   });
 });
 

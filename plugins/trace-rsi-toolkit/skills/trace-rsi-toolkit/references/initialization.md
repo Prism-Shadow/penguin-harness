@@ -4,7 +4,7 @@ Resolve the Project from the Penguin Environment's App Data Dir. Use the request
 
 Assign a stable experiment/report version. Record the actual Harness, toolkit, runner and benchmark package versions, resolved source commit, local source changes, provider/model/thinking per role, budgets, cases, public types, ordering, limits and selection rule. Record a concrete model revision when exposed; otherwise retain the actual model identifier. Add State versions/digests as they are frozen.
 
-Use one subdirectory per independent training unit and distinct test paths by condition, repetition and case. Keep a launch index in `state.yaml` for recovery after compaction. Task and grader sources stay fixed.
+Use separate subdirectories for each requested training run and distinct test paths by condition, repetition and case. Keep a launch index in `state.yaml` for recovery after compaction. Task and grader sources stay fixed.
 
 ## Common base and Actor State
 

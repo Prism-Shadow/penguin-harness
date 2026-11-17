@@ -1,6 +1,6 @@
 # Prepare the experiment
 
-Resolve the Project from the current Penguin Environment's App Data Dir. Use the host and output directory named by the user; otherwise use this Session's workspace or scratchpad. Record the selected packages, task sources, runtime, one training run per training unit, test repetitions (default: three), learning parameters, comparison versions and resource limits in a short experiment record.
+Resolve the Project from the current Penguin Environment's App Data Dir. Use the host and output directory named by the user; otherwise use this Session's workspace or scratchpad. Record the selected packages, task sources, runtime, the requested training and evaluation schedule, learning parameters, comparison versions and resource limits in a short experiment record.
 
 Use the user's experiment/report version when supplied; otherwise assign a stable version before launch and include it in every progress and final report. Resolve component versions with the same priority: user-specified versions first, otherwise compatible versions selected from the environment and benchmark instructions. Record the Harness and runner versions, benchmark package version and resolved source revision, provider/model identifier and thinking level, and toolkit version. Record a concrete model revision when exposed by the provider; otherwise retain the actual model identifier. Keep this configuration fixed throughout the experiment and add each Skill/Agent State version and digest when it is frozen.
 
@@ -8,7 +8,7 @@ Use the user's experiment/report version when supplied; otherwise assign a stabl
 
 Read the selected Case statements and benchmark instructions. They specify Docker, Harbor or another runner, its adapter, model configuration, task paths and artifact collection. Reuse the current CLI and configured model connection. Follow the benchmark's installation procedure for the Target; use the same prepared source build throughout when the experiment requests one. The adapter copies credentials privately; keep them out of prompts and experiment records.
 
-Use a separate directory for each benchmark or independent training unit, with one set of frozen State archives and learning records. Give test outputs distinct paths by State, repetition and case. Keep a launch index so the controller can resume collection after context compaction. Keep task source and grading implementation unchanged during the experiment. Fetch benchmark source once at the requested version, or resolve the installed package's link when no version was requested; an existing unrelated checkout is not an input.
+Use separate directories for each requested training run, with its frozen State archives and learning records, and give test outputs distinct paths by State, repetition and case. Keep a launch index so the controller can resume collection after context compaction. Keep task source and grading implementation unchanged during the experiment. Fetch benchmark source once at the requested version, or resolve the installed package's link when no version was requested; an existing unrelated checkout is not an input.
 
 Before starting training, verify that a training attempt can obtain the evaluator feedback required by SkillOpt. A reachable business service alone does not confirm that training feedback is available.
 
@@ -61,7 +61,7 @@ installed in your Agent State, read its SKILL.md and relevant supporting
 files before substantive task actions, and apply it to this task.
 ```
 
-Keep each State frozen during measurement and record its version and digest. Reuse the same archive for all three test repetitions of that State, restoring it into a fresh environment and conversation for each case. Test outputs stay outside the frozen archive. Preserve existing snapshots; distinct States of the same Agent use distinct versions.
+Keep each State frozen during measurement and record its version and digest. Reuse the same archive across all requested evaluation runs of that State, restoring it into a fresh environment and conversation for each case. Test outputs stay outside the frozen archive. Preserve existing snapshots; distinct States of the same Agent use distinct versions.
 
 ## State handoff
 
