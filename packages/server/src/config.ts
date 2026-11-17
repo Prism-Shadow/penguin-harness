@@ -11,7 +11,13 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { NIGHTLY_INDEX_URL } from "./plugin/registry.js";
+import {
+  NIGHTLY_INDEX_URL,
+  PLUGIN_DEFAULT_PROXY_RULES,
+  PROXY_RULES_MAX,
+  rewriteRuleRisk,
+  type PluginProxyRule,
+} from "./plugin/registry.js";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_SERVER_PORT, resolveRoot } from "@prismshadow/penguin-core";
 import { PENGUIN_GO_BASE_URL } from "./model-catalog/catalog.js";
@@ -150,6 +156,14 @@ export interface ServerConfig {
    * therefore reads as unset — the published index — while an explicit null is the opt-out.
    */
   pluginIndexUrl?: string | null;
+  /**
+   * This deployment's CDN mirrors for the published index and the assets its entries
+   * install through, tried in order after the source's own URL. Mirrors change only where
+   * bytes come from — the document and the assets are verified exactly as the canonical
+   * source's are. OPTIONAL for the same reason `pluginIndexUrl` is: a runtime older than
+   * this field carries none and still boots.
+   */
+  pluginProxy?: PluginProxyRule[];
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -261,6 +275,39 @@ export function normalizeModelScopeBridgeUrl(raw: string | undefined): string {
   return `${url.origin}${url.pathname.replace(/\/+$/, "")}`;
 }
 
+/**
+ * PENGUIN_PLUGIN_PROXY -> this deployment's CDN rewrite rules, in rule order; the built-in
+ * set when unset. One JSON array of `{ kind, match, rewrite }`; `match` compiles as a JS
+ * regex (checked here, at boot — a pattern that will not compile is a config error, not a
+ * fetch-time surprise), `rewrite` is the result with `$1`–`$9` for the captures.
+ */
+function resolvePluginProxy(raw: string | undefined): PluginProxyRule[] {
+  const check = (rules: PluginProxyRule[]): PluginProxyRule[] => {
+    if (rules.length > PROXY_RULES_MAX) {
+      throw new Error(
+        `PENGUIN_PLUGIN_PROXY carries ${rules.length} rules, over the ${PROXY_RULES_MAX} cap`,
+      );
+    }
+    for (const rule of rules) {
+      if (typeof rule.match !== "string" || typeof rule.rewrite !== "string") {
+        throw new Error("PENGUIN_PLUGIN_PROXY rule needs string match and rewrite");
+      }
+      new RegExp(rule.match);
+      // The ReDoS gate (shape read, caps): a rule that fails it never reaches a fetch.
+      const risk = rewriteRuleRisk(rule);
+      if (risk !== null) throw new Error(`PENGUIN_PLUGIN_PROXY rule refused: ${risk}`);
+    }
+    return rules;
+  };
+  // The built-in set is checked with the same gate a deployment's config goes through.
+  if (raw === undefined || raw.trim() === "") {
+    return check([...PLUGIN_DEFAULT_PROXY_RULES]);
+  }
+  const rules = JSON.parse(raw) as PluginProxyRule[];
+  if (!Array.isArray(rules)) throw new Error("PENGUIN_PLUGIN_PROXY must be a JSON array");
+  return check(rules);
+}
+
 /** PENGUIN_PLUGIN_INDEX -> the URL to read, or null when the lookup is off. */
 function resolvePluginIndexUrl(raw: string | undefined): string | null {
   const value = raw?.trim();
@@ -318,5 +365,6 @@ export function resolveServerConfig(env: NodeJS.ProcessEnv = process.env): Serve
       unavailable: cli.unavailable,
     },
     pluginIndexUrl: resolvePluginIndexUrl(env.PENGUIN_PLUGIN_INDEX),
+    pluginProxy: resolvePluginProxy(env.PENGUIN_PLUGIN_PROXY),
   };
 }

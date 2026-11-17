@@ -103,7 +103,7 @@ GDPEVO Essential 源自 [GDPevo Benchmark](https://arxiv.org/abs/2608.03764)，�
 
 ### 第四步：挂载工具包并启动
 
-在聊天输入框中输入 / 呼出命令菜单并选择 skilladam-rsi-toolkit 将其挂载到当前对话，随后在指令中说明 RSI 工具包名称、目标 Benchmark、训练迭代轮数、测试重复轮数、模型、思考强度与 Docker 并发上限。其中训练迭代轮数与测试重复轮数均可按需指定，例如训练迭代设为 2 轮，测试重复默认设为 3 轮，也可改为 5 轮或 6 轮。
+在聊天输入框中输入 / 呼出命令菜单并选择 skilladam-rsi-toolkit 将其挂载到当前对话，随后在指令中说明 RSI 工具包名称、目标 Benchmark、实验组织方式、训练迭代轮数、测试重复轮数、模型、思考强度与 Docker 并发上限。其中训练迭代轮数与测试重复轮数均可按需指定，例如训练迭代设为 2 轮，测试重复设为 3 轮，也可改为 5 轮或 6 轮。
 
 <img class="my-4 rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-assets/gdpevo-slash-skill.webp" width="1636" height="1035" alt="在聊天输入框中输入斜杠呼出命令菜单并选择 skilladam-rsi-toolkit" />
 
@@ -113,11 +113,11 @@ GDPEVO Essential 源自 [GDPevo Benchmark](https://arxiv.org/abs/2608.03764)，�
 
 <img class="my-4 rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-assets/gdpevo-launch-single.webp" width="1615" height="495" alt="挂载 skilladam-rsi-toolkit 并输入单个子 Benchmark 的自进化实验启动指令" />
 
-如果直接评测 GDPEVO Essential 系列的全部六个子 Benchmark，在聊天框输入：
+如果同时评测全部六个子 Benchmark，需在指令中列出六个 Benchmark 并说明各自独立训练与测试：
 
-> 使用 skilladam-rsi-toolkit，在 GDPEVO Essential 系列的全部六个 Benchmark 上开展自进化实验，训练迭代 2 轮，测试重复 3 轮。模型使用 DeepSeek V4.1 Flash，思考强度 max，Docker 并发上限 4。
+> 使用 skilladam-rsi-toolkit，在 GDPEVO Essential-Service Ticket Resolution、GDPEVO Essential-Financial Control、GDPEVO Essential-Portfolio Management、GDPEVO Essential-Coverage Review、GDPEVO Essential-Court Clerk Operations、GDPEVO Essential-Engineering Portfolio Analytics 六个 Benchmark 上分别开展自进化实验：每个 Benchmark 独立训练 2 轮，产出各自的 Skill 并冻结后，在对应测试集上对 Baseline 与进化后 Agent 各重复测试 3 轮。模型使用 DeepSeek V4.1 Flash，思考强度 max，Docker 并发上限 4。
 
-<img class="my-4 rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-assets/gdpevo-launch-all.webp" width="1615" height="458" alt="挂载 skilladam-rsi-toolkit 并输入 GDPEVO Essential 全系列六个子 Benchmark 的启动指令" />
+<img class="my-4 rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-assets/gdpevo-launch-all.webp" width="1615" height="657" alt="挂载 skilladam-rsi-toolkit 并输入六个 Benchmark 各自独立开展实验的启动指令" />
 
 评测其他自进化算法时，只需将挂载的 RSI 工具包和指令中的 skilladam-rsi-toolkit 替换为 skillopt-rsi-toolkit、trace-rsi-toolkit 或 openskill-rsi-toolkit。
 
@@ -204,7 +204,7 @@ GDPEVO Essential 源自 [GDPevo Benchmark](https://arxiv.org/abs/2608.03764)，�
 
 一场全量 GDPEVO Essential 实验包含六个子 Benchmark 的连续训练、技能冻结交接、180 次隔离容器测试以及两级指标汇总，流程跨度很长。
 
-在本次实验中，我们将实验规则封装进 RSI 工具包后，采用开启 max 思考强度的 DeepSeek-V4.1-Flash-1017 作为主控 Agent，它就能稳定理解实验要求，自主走完从环境准备到产出最终报告的全部步骤。这说明在我们的 RSI 工具包支持下，达到 DeepSeek-V4.1-Flash-1017 同等或更高水平的模型，都已经具备独立组织完整 RSI 实验的能力。
+在本次实验中，挂载 RSI 算法工具包并在指令中明确实验流程后，采用开启 max 思考强度的 DeepSeek-V4.1-Flash-1017 作为主控 Agent，它就能稳定理解实验要求，自主走完从环境准备到产出最终报告的全部步骤。这说明在我们的 RSI 工具包支持下，达到 DeepSeek-V4.1-Flash-1017 同等或更高水平的模型，都已经具备独立组织完整 RSI 实验的能力。
 
 ### 2. Benchmark 渐进式加载
 

@@ -19,9 +19,10 @@
  * dependency and reconciles the prefix against it on every later install. Installing runs the
  * package's install scripts exactly as installing it from the registry does — the same trust.
  * A fourth arrives through the plugin index: a version published on a github release channel
- * is fetched, verified against the sha512 the entry pins, and its verified bytes install as
- * the same `file:` record (installPluginChannel) — npm stays the first source; the channel is
- * where an npm-missing name can still come from.
+ * has its release URL installed by npm itself — the URL is a spec npm natively understands
+ * (a gzipped tarball over https) — and what npm actually installed is verified after the
+ * fact against the sha512 the entry pins (installPluginChannel) — npm stays the first source;
+ * the channel is where an npm-missing name can still come from.
  */
 import { execFile } from "node:child_process";
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
@@ -41,6 +42,16 @@ const execFileAsync = promisify(execFile);
 
 /** Long enough for a cold registry fetch with dependencies; short enough not to hang a request. */
 const INSTALL_TIMEOUT_MS = 180_000;
+/** One address's npm window: a dead address costs this, not a hang. */
+const CHANNEL_TIMEOUT_MS = 15_000;
+/**
+ * The asset address npm last installed from and whose install verified for each channel URL,
+ * tried first next time. Memory, not a speed test: the walk still tries one address at a time
+ * in a fixed order, only its start moves. A dead canonical would otherwise cost its window on
+ * every install; starting where the last install succeeded returns the common case to one
+ * address. Keyed by the channel URL, so two sources' assets never lend each other's start.
+ */
+const lastGoodAsset = new Map<string, string>();
 
 /** `<root>/plugins`: the npm prefix this deployment installs plugins into. */
 export function pluginsPrefix(root: string): string {
@@ -105,6 +116,21 @@ export async function prefixDependencies(prefix: string): Promise<Record<string,
   } catch {
     return {};
   }
+}
+
+/**
+ * The registry URL the installer's npm runs are pointed at, set by the Plugin sources
+ * settings group (see source-settings.ts). Undefined — the default — passes nothing: npm's
+ * own configuration (its .npmrc chain, the ambient environment) answers, exactly as before
+ * the group existed. Set, it rides every npm run of the installer as `--registry`, which
+ * overrides that chain for the plugins' installs without touching how npm is configured on
+ * the machine.
+ */
+let npmRegistry: string | undefined = undefined;
+
+/** The settings group sets (or clears) the registry the installer's npm runs are pointed at. */
+export function setNpmRegistry(url: string | undefined): void {
+  npmRegistry = url;
 }
 
 /**
@@ -195,12 +221,17 @@ function npmCommand(): Promise<NpmCommand> {
   return npmCommandCache;
 }
 
-async function npm(prefix: string, args: readonly string[], cwd = prefix): Promise<string> {
+async function npm(
+  prefix: string,
+  args: readonly string[],
+  cwd = prefix,
+  window = INSTALL_TIMEOUT_MS,
+): Promise<string> {
   const command = await npmCommand();
   try {
     const { stdout } = await execFileAsync(command.file, [...command.argv, ...args], {
       cwd,
-      timeout: INSTALL_TIMEOUT_MS,
+      timeout: window,
       maxBuffer: 8 * 1024 * 1024,
       env: process.env,
     });
@@ -232,6 +263,7 @@ export function npmFailureKind(stderr: string | undefined): "unavailable" | "oth
 // command behaves the same whatever npm version ships with the runtime.
 const install = (prefix: string, spec: string) =>
   npm(prefix, [
+    ...(npmRegistry !== undefined ? [`--registry=${npmRegistry}`] : []),
     "install",
     "--no-audit",
     "--no-fund",
@@ -534,181 +566,207 @@ function npmReason(stderr: string | undefined, err: Error): string {
 }
 
 /**
- * Checks the bytes a channel served against the hash the index entry pins: npm's
- * `integrity` shape, `sha512-<base64>`. A mismatch, or an integrity that is not even
- * readable, refuses the install — the verified bytes are the only ones that install. Returns
- * the base64 digest, which names the archive file the verified bytes are written under.
+ * The per-address timeout the channel install's npm runs carry. The walk still tries one
+ * address at a time in a fixed order, only its start moves: the sticky start (the address
+ * that last installed and verified) goes first, the URL the index published and this
+ * source's CDN mirrors follow in their configured order, and a dead start hands the walk
+ * back to that order within the same install. Each address's npm run carries its own
+ * timeout, so a dead one costs one window, not a hang. All of them failed: the error names
+ * the addresses that were tried and the failure it ended on.
  */
-export function verifyIntegrity(bytes: Uint8Array, integrity: string): string {
-  const pinned = /^sha512-([A-Za-z0-9+/]+={0,2})$/.exec(integrity);
-  if (pinned === null) {
-    throw new PluginInstallError(
-      `the index entry's integrity is not sha512-<base64>: ${JSON.stringify(integrity)}`,
-    );
-  }
-  const actual = createHash("sha512").update(bytes).digest("base64");
-  const expected = pinned[1]!;
-  if (
-    actual.length !== expected.length ||
-    !timingSafeEqual(Buffer.from(actual), Buffer.from(expected))
-  ) {
-    throw new PluginInstallError(
-      "the release asset does not match the sha512 the index entry pins; it is not installed",
-    );
-  }
-  return actual;
+
+/** The prefix's package-lock.json, the record npm keeps of what it actually installed. */
+interface LockEntry {
+  resolved?: unknown;
+  integrity?: unknown;
 }
 
-/** The size step a no-length answer reports by: every mebibyte read, rather than every chunk. */
-const PROGRESS_MIB = 1024 * 1024;
-
-/**
- * The response's body, whole. With `onProgress` the body is read chunk by chunk and the
- * reader is told as it goes — the bytes received and the total when the answer names one —
- * but only in steps: one call per percent of a known size, one per mebibyte without it. A
- * call per chunk would be thousands for one asset, none the caller could show. Without an
- * `onProgress` nothing streams, and the body arrives as it always did.
- */
-async function readAsset(
-  res: Awaited<ReturnType<typeof fetch>>,
-  onProgress: ((received: number, total: number | null) => void) | undefined,
-): Promise<Uint8Array> {
-  const totalHeader = Number(res.headers.get("content-length"));
-  const total = Number.isFinite(totalHeader) && totalHeader > 0 ? totalHeader : null;
-  if (res.body === null || onProgress === undefined) {
-    const bytes = new Uint8Array(await res.arrayBuffer());
-    onProgress?.(bytes.byteLength, total ?? bytes.byteLength);
-    return bytes;
+/** The prefix's package-lock.json, whole; null when npm has written none (never run here). */
+async function readLockfile(prefix: string): Promise<Record<string, LockEntry> | null> {
+  try {
+    const lock = JSON.parse(await fs.readFile(path.join(prefix, "package-lock.json"), "utf8")) as {
+      packages?: Record<string, LockEntry>;
+    };
+    return lock.packages ?? null;
+  } catch {
+    return null;
   }
-  const chunks: Uint8Array[] = [];
-  let received = 0;
-  let lastStep = -1;
-  const reader = res.body.getReader();
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-    received += value.byteLength;
-    // The step counter doubles as the mebibyte counter when no total is known; either way a
-    // step is a call, and a chunk is not.
-    const step =
-      total === null
-        ? Math.floor(received / PROGRESS_MIB)
-        : Math.min(100, Math.floor((received / total) * 100));
-    if (step > lastStep) {
-      lastStep = step;
-      onProgress(received, total);
-    }
-  }
-  onProgress(received, total ?? received);
-  const bytes = new Uint8Array(received);
-  let at = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, at);
-    at += chunk.byteLength;
-  }
-  return bytes;
 }
 
 /**
- * Installs a version through an index entry's github channel: the release asset is
- * fetched, verified against the entry's sha512, and only the verified bytes are written —
- * into the prefix's archives, where `npm install` takes them as a `file:` dependency, the
- * same record an uploaded zip installs under. The hash pins the bytes, not what they are:
- * before anything is published under its final name, the tarball's own package.json is read
- * (`tar -xzOf`) and has to agree with the entry's name and version — an archive that says it
- * is another package, or another version, is refused, so the manifest never names a package
- * that was not what the index published, and the caller's post-install vetting cannot end up
- * vetting, or uninstalling, the wrong one. The verified bytes are written to a temporary file
- * first and renamed into place, so a concurrent install never sees a half-written archive.
- * `fetchImpl` and `install` are injectable so a test stands in for the network and npm;
- * `onProgress`, when given, is called as the asset is read — the bytes received so far and
- * the total when the answer carries a content-length — in steps a progress bar can show.
+ * What npm actually installed for a spec, as its lockfile records it: the `integrity` of the
+ * entry whose `resolved` names the given URL, plus the name and version the installed
+ * package declares. An entry npm recorded under another shape (a `file:` tarball, a git
+ * link) answers null, as does a prefix whose lockfile does not name the URL at all.
+ */
+async function installedRecord(
+  prefix: string,
+  url: string,
+): Promise<{ integrity: string; name: string; version: string } | null> {
+  const lock = await readLockfile(prefix);
+  if (lock === null) return null;
+  const found = Object.entries(lock).find(([, pkg]) => pkg.resolved === url);
+  if (found === undefined || typeof found[1].integrity !== "string") return null;
+  // The installed package's own manifest names what landed on disk; without it there is
+  // nothing to check the entry against.
+  try {
+    const manifest = JSON.parse(
+      await fs.readFile(path.join(prefix, found[0], "package.json"), "utf8"),
+    ) as { name?: unknown; version?: unknown };
+    if (typeof manifest.name !== "string" || typeof manifest.version !== "string") return null;
+    return { integrity: found[1].integrity, name: manifest.name, version: manifest.version };
+  } catch {
+    return null;
+  }
+}
+
+/** Whether two integrity digests agree, compared the way a hash check compares. */
+function sameDigest(actual: string, expected: string): boolean {
+  return (
+    actual.length === expected.length && timingSafeEqual(Buffer.from(actual), Buffer.from(expected))
+  );
+}
+
+/**
+ * Installs a version through an index entry's github channel: the release URL is a spec npm
+ * natively understands (a gzipped tarball over https), so each address's attempt is npm
+ * itself installing it — npm downloads, unpacks and records what it took. What npm actually
+ * installed is verified after the fact: the prefix's package-lock.json records the integrity
+ * of the tarball the install resolved to, and it has to agree with the entry's sha512 — a
+ * mismatch throws the install away (npm uninstall) and the walk moves to the next address,
+ * so an address serving tampered bytes is refused like any other source, and never becomes
+ * the sticky start. The tarball's own package.json is checked the same way: the lockfile
+ * entry must say it installed the entry's package and version — an archive that says it is
+ * another package, or another version, is refused, so the caller's post-install vetting
+ * cannot end up vetting, or uninstalling, the wrong one. `install` is injectable so a test
+ * stands in for npm; `onProgress`, when given, is called once per address's install — npm's
+ * own download is npm's to report, the caller sees the address boundaries.
  */
 export async function installPluginChannel(
   root: string,
   channel: IndexChannel,
   {
-    fetchImpl = fetch,
-    install: run = (prefix, spec) => install(prefix, spec).then(() => undefined),
+    install: run = (prefix, spec) => runNpmInstallSpec(prefix, spec, timeoutMs),
+    uninstall: remove = (prefix, name) => runNpmUninstall(prefix, name),
     onProgress = undefined,
+    timeoutMs = CHANNEL_TIMEOUT_MS,
   }: {
-    fetchImpl?: typeof fetch;
     install?: (prefix: string, spec: string) => Promise<void>;
+    /** What takes a refused install out of the prefix; npm's uninstall by default. */
+    uninstall?: (prefix: string, name: string) => Promise<void>;
     onProgress?: (received: number, total: number | null) => void;
+    /** One address's npm window; the walk moves on when it runs out. */
+    timeoutMs?: number;
   } = {},
 ): Promise<InstalledPackage> {
   const prefix = await ensurePrefix(root);
-  let res: Awaited<ReturnType<typeof fetch>>;
+  // The asset's addresses in try order: the sticky start first (the address that last
+  // installed and verified for this channel URL), then the URL the index published and
+  // this source's CDN mirrors in their configured order. Mirrors change only where the
+  // bytes come from: what npm installs is verified against the entry's integrity exactly
+  // as the canonical URL's would be, so a mirror serving tampered bytes is refused like
+  // any other source — and never becomes the sticky start.
+  const canonical = [channel.url, ...(channel.mirrors ?? [])];
+  const remembered = lastGoodAsset.get(channel.url);
+  const addresses =
+    remembered !== undefined && canonical.includes(remembered) && remembered !== channel.url
+      ? [remembered, ...canonical.filter((address) => address !== remembered)]
+      : canonical;
+  // One address at a time, in the order given: the first address whose npm install lands
+  // and whose lockfile record verifies carries the install. An npm failure (a dead
+  // address, a non-ok answer — npm collapses both into its exit) moves on to the next
+  // address; so does an install whose post-check refuses it (a tampered tarball, another
+  // package's manifest). Each address carries its own timeout, so a dead one costs one
+  // window, not a hang. All of them failed: the error names the addresses that were tried
+  // and the failure it ended on.
+  let lastError: unknown = null;
+  for (const address of addresses) {
+    try {
+      await run(prefix, address);
+    } catch (err) {
+      lastError = err;
+      continue;
+    }
+    const installed = await installedRecord(prefix, address);
+    if (installed === null) {
+      lastError = new PluginInstallError(
+        "npm recorded no install of the release asset; the address did not serve it",
+      );
+      continue;
+    }
+    const actual = digestOf(installed.integrity);
+    const expected = pinnedDigest(channel.integrity);
+    if (actual === null || expected === null || !sameDigest(actual, expected)) {
+      lastError = new PluginInstallError(
+        "the release asset does not match the sha512 the index entry pins; it is not installed",
+      );
+    } else if (
+      installed.name === channel.name &&
+      installed.version === channel.version &&
+      (await readInstalledVersion(prefix, channel.name)) === channel.version
+    ) {
+      // The install carried, the bytes are the entry's own: from now on this address
+      // is where the next install of this channel starts. An address whose install
+      // fails the checks throws above (or falls through) and is never remembered.
+      if (address !== channel.url) lastGoodAsset.set(channel.url, address);
+      onProgress?.(0, null);
+      return { name: channel.name, version: channel.version };
+    } else {
+      lastError = new PluginInstallError(
+        `the release asset's package.json says ${JSON.stringify(installed.name)}@${JSON.stringify(installed.version)}, not the ${channel.name}@${channel.version} the index entry publishes; it is not installed`,
+      );
+    }
+    // A refused install does not stay in the prefix: whatever npm put there for the
+    // address goes, so a later address starts clean.
+    await remove(prefix, channel.name);
+  }
+  const why = lastError instanceof Error ? lastError.message : String(lastError);
+  throw new PluginInstallError(
+    `could not install the release asset from any of ${addresses.join(", ")}: ${why}`,
+  );
+}
+
+/** npm's own install of one spec, with the address's window on it. */
+async function runNpmInstallSpec(prefix: string, spec: string, timeoutMs: number): Promise<void> {
+  await npm(
+    prefix,
+    [
+      ...(npmRegistry !== undefined ? [`--registry=${npmRegistry}`] : []),
+      "install",
+      "--no-audit",
+      "--no-fund",
+      "--omit=dev",
+      "--",
+      spec,
+    ],
+    prefix,
+    timeoutMs,
+  );
+}
+
+/** npm's uninstall of a refused install, best effort — a clean prefix for the next address. */
+async function runNpmUninstall(prefix: string, name: string): Promise<void> {
   try {
-    res = await fetchImpl(channel.url, { redirect: "follow" });
-  } catch (err) {
-    throw new PluginInstallError(
-      `could not fetch the release asset ${channel.url}: ${err instanceof Error ? err.message : String(err)}`,
+    await npm(
+      prefix,
+      ["uninstall", "--no-audit", "--no-fund", "--", name],
+      prefix,
+      CHANNEL_TIMEOUT_MS,
     );
+  } catch {
+    // Nothing to remove, or npm could not — the walk reports its own failure either way.
   }
-  if (!res.ok) {
-    throw new PluginInstallError(`the release asset answered ${res.status}: ${channel.url}`);
-  }
-  const bytes = new Uint8Array(await readAsset(res, onProgress));
-  const digest = verifyIntegrity(bytes, channel.integrity);
-  const archives = path.join(prefix, ARCHIVES_DIR);
-  await fs.mkdir(archives, { recursive: true });
-  const staging = path.join(archives, `.tmp-${randomUUID()}.tgz`);
-  await fs.writeFile(staging, bytes);
-  // The tarball's own manifest, read straight out of the archive; anything unreadable, or
-  // disagreeing with the index entry, refuses the install and leaves nothing behind.
-  let manifest: { name?: unknown; version?: unknown };
-  try {
-    manifest = JSON.parse(
-      // Relative to the staging dir: a Windows path carries a drive letter, which GNU tar
-      // reads as a remote host name.
-      (
-        await execFileAsync("tar", ["-xzOf", path.basename(staging), "package/package.json"], {
-          cwd: path.dirname(staging),
-        })
-      ).stdout,
-    ) as { name?: unknown; version?: unknown };
-  } catch (err) {
-    await fs.rm(staging, { force: true });
-    throw new PluginInstallError(
-      `the release asset does not carry a readable package/package.json: ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
-  if (manifest.name !== channel.name || manifest.version !== channel.version) {
-    await fs.rm(staging, { force: true });
-    throw new PluginInstallError(
-      `the release asset's package.json says ${JSON.stringify(manifest.name)}@${JSON.stringify(manifest.version)}, not the ${channel.name}@${channel.version} the index entry publishes; it is not installed`,
-    );
-  }
-  // A file name under the prefix's archives: a package name's safe characters with the scope
-  // slash joined, a version's, and the first sixteen characters of the verified digest — so
-  // two entries that sanitize to the same name cannot overwrite one another, and a re-served
-  // tarball for the same version lands under its own name rather than replacing bytes npm may
-  // still be reading.
-  const base = `${channel.name
-    .split("/")
-    .filter((part) => /^[@A-Za-z0-9._~-]+$/.test(part))
-    .join("-")}-${channel.version.replace(/[^A-Za-z0-9._-]/g, "")}`;
-  if (base === "-" || base.length < 3) {
-    await fs.rm(staging, { force: true });
-    throw new PluginInstallError(
-      `the index entry's name and version do not make a file name: ${channel.name}@${channel.version}`,
-    );
-  }
-  // The digest tags the archive file. Base64 carries `/` and `+`, neither of which belongs in
-  // a file name (a `/` would make the rename a write into a directory that does not exist), so
-  // the tag is the digest's first sixteen file-safe characters — still collision-proof, since
-  // a sha512's base64 is 44 characters of which almost all are safe.
-  const tag = (digest.match(/[A-Za-z0-9._~-]/g) ?? []).slice(0, 16).join("");
-  const file = `${base}-${tag}.tgz`;
-  await fs.rename(staging, path.join(archives, file));
-  try {
-    await run(prefix, `./${ARCHIVES_DIR}/${file}`);
-  } finally {
-    await pruneArchives(prefix);
-  }
-  return { name: channel.name, version: await readInstalledVersion(prefix, channel.name) };
+}
+
+/** The digest half of an npm integrity string (`sha512-<base64>`); null for another shape. */
+function digestOf(integrity: string): string | null {
+  const match = /^sha512-([A-Za-z0-9+/]+={0,2})$/.exec(integrity);
+  return match === null ? null : match[1]!;
+}
+
+/** The digest half of the entry's pinned integrity; null when the pin is not even readable. */
+function pinnedDigest(integrity: string): string | null {
+  return digestOf(integrity);
 }
 
 /**

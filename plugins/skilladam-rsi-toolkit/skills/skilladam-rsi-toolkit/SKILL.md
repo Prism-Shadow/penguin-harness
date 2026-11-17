@@ -1,14 +1,14 @@
 ---
 name: skilladam-rsi-toolkit
-description: "Run a SkillAdam experiment on the Project's selected Benchmarks: train once in a continuing Agent Session, freeze the learned Skill, then evaluate it repeatedly on held-out tasks."
-version: 2026.10.29.4
+description: "Evolve a reusable Markdown Skill with SkillAdam from execution trajectories and feedback using an Evolving Issue Tracker (EIT) and a variance-adaptive edit budget."
+version: 2026.11.17.1
 ---
 
 # SkillAdam
 
-You are the experiment's main Penguin. Read the selected Benchmarks, prepare the runtime, arrange training and testing, and collect the results. Continue until the requested experiment is complete.
+You are the main Penguin running SkillAdam. Follow the experimental setup specified by the user's request and the selected Benchmark's instructions.
 
-The **Target Agent** is the Penguin that learns or solves tasks inside the benchmark environment. For each selected benchmark or independent training unit, train once in one continuing Session and one container. The learner controls its task attempts and Skill updates there. Repeated tests use the same frozen Agent State, with fresh environments and conversations for every task attempt.
+The **Target Agent** is the Penguin that solves tasks and refines its Skill inside the task environment. How benchmarks are organized (for example, running a single benchmark or running multiple benchmarks independently), how many training iterations to perform, and how many evaluation passes to run are defined by the user's prompt and the Benchmark's documentation rather than prescribed by this Skill.
 
 ## The method
 
@@ -32,23 +32,23 @@ Match each selected benchmark's Train and Test packages from their documentation
 Resolve the remaining settings from the request and benchmark instructions:
 
 - Model, thinking level, tools and base Agent State.
-- Training units, initialization cases, batch size, training sampling seed, proposal iterations and test repetitions (default: three).
+- Selected benchmarks or tasks, initialization cases, batch size, training sampling seed, proposal iterations and evaluation runs.
 - Acceptance metrics, optimizer parameters, comparison versions, time limits and Docker capacity.
 
 Use the complete training set for initialization and paired batches by default. Record a sampling seed only when sampling is used. If no proposal count was supplied, choose and record a finite count within the declared training budget before launch; keep it fixed during learning. Ask only for essential inputs that cannot be resolved from the request, Project or Benchmark.
 
 Fix an experiment/report version before launching. Prefer the user's specified versions; otherwise select and record the resolved versions of the runtime, benchmark, model and toolkit. Keep that configuration fixed through training and testing, and identify each measured Skill and Agent State by its frozen version.
 
-Use all Train and Test questions unless the request selects a subset. Each independent benchmark or training unit learns its own Skill once from the common base State. Freeze that result and reuse it for all test repetitions. Keep the runtime fixed across comparisons and each benchmark's learned state separate.
+Use the Train and Test tasks specified by the request and Benchmark instructions, keeping the runtime fixed across comparisons.
 
-The configurable toolkit defaults are `beta2=0.9`, `base_budget=4`, `min_budget=1`, `variance_cap=0.1`; the budget counts unified-diff hunks. The default acceptance rule is strict improvement of mean normalized reward, without a per-case regression threshold. Use that gate when it matches the benchmark's declared rule; otherwise apply that rule and calculate volatility and the next budget independently of that decision. The dataset, test repetition count and proposal iteration count are experiment settings, not properties of SkillAdam.
+The configurable toolkit defaults are `beta2=0.9`, `base_budget=4`, `min_budget=1`, `variance_cap=0.1`; the budget counts unified-diff hunks. The default acceptance rule is strict improvement of mean normalized reward, without a per-case regression threshold. Use that gate when it matches the benchmark's declared rule; otherwise apply that rule and calculate volatility and the next budget independently of that decision. The dataset, benchmark organization, evaluation repetition count and proposal iteration count are experiment settings supplied by the prompt or Benchmark, not properties of SkillAdam.
 
-## Run the experiment
+## Apply SkillAdam
 
-1. **Prepare.** Follow [initialization](references/initialization.md): record the resolved plan, make a common base State, and prepare one training State per benchmark or independent training unit. Reuse the runtime described by the Benchmark or the source build requested for the experiment.
-2. **Train once.** Launch the benchmark's continuous training entry point. Give its Target the learner instructions and training brief through the supported State handoff. Complete all requested proposal iterations inside that Session and container; a candidate update does not create another Harbor trial.
+1. **Prepare.** Follow [initialization](references/initialization.md) to record the resolved plan, make a base State, and prepare the training State(s) according to the user's requested experimental design and the Benchmark's runtime contract.
+2. **Learn.** Launch the training environment described by the Benchmark and give its Target the learner instructions and training brief through the supported State handoff. Complete the requested proposal iterations inside that continuing Session and environment.
 3. **Collect and freeze.** Collect the last accepted Skill, answers, measured scores, decisions and optimizer history. Freeze the complete Skill folder, including supporting files. If no candidate was accepted, the initial Skill is the final result.
-4. **Test repeatedly.** Evaluate the pre-training base State and the final learned State on the complete held-out set three times each by default. The base has no learned Skill unless the user supplied one. Build the final test State from the same base, adding only the frozen Skill and its reader instruction. Every case and repetition starts from the corresponding State in a fresh environment and conversation, with the same model, thinking level, tools and scoring conditions. Reuse the frozen archives; do not retrain or carry answers, memory or conversation history between test attempts.
+4. **Evaluate.** Follow [evaluation and reporting](references/evaluation.md) and the user's requested evaluation schedule (which benchmarks/splits to evaluate, which frozen States such as base and final to compare, and how many evaluation runs to perform). Every evaluation attempt starts from the corresponding frozen State in a fresh environment and conversation, with the same model, thinking level, tools and scoring conditions. Do not retrain or carry answers, memory or conversation history between evaluation attempts.
 5. **Report.** Follow [evaluation and reporting](references/evaluation.md). Collect native results, versions, the training curve, costs, elapsed time and token usage; publish to the Project's Evaluation Center when applicable.
 
 You own scheduling. When `run_subagent` is available, workers can launch and collect trials: one training worker owns a whole learning run, and a test worker owns one held-out case in one test repetition. Give each trial a separate working directory and output path. A worker does not start another experiment controller. Use the supported background mechanism, retain job identifiers, collect completions and fill available capacity until the requested work is done.
