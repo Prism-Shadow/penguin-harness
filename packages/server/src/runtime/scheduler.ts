@@ -46,7 +46,7 @@ import {
 } from "./schedule-store.js";
 import type { ScheduleConfigSource } from "./schedule-store.js";
 import type { ScheduleStatus } from "../api/types.js";
-import { Component, Interface, Use } from "@prismshadow/penguin-core/kernel";
+import { Component, Interface, Opaque, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { userChannelKey } from "../http/routes/events.js";
 import type { Channels, Clock, Paths } from "../hmr/capabilities.js";
@@ -143,7 +143,7 @@ export class Scheduler implements Scheduling {
   private ticking = false;
   private filesCache: ScheduleFileCache | null = null;
   /** mtime-gated schedule-file scans (public for test observability of its counters). */
-  get files(): ScheduleFileCache {
+  get files(): ScheduleFileCache & Opaque<"ScheduleFileCache"> {
     return (this.filesCache ??= new ScheduleFileCache(this.root));
   }
   /** Per-Project agents-dir listing gate: dir mtime → Agent ids (creating/removing an Agent dir moves it). */
