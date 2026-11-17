@@ -3,6 +3,7 @@
 - **Date:** 2026-11-18
 - **Type:** feature
 - **Scope:** `plugins`, `multimodal-tools`
+- **PR:** [#1599](https://github.com/Prism-Shadow/penguin-harness/pull/1599)
 
 [English](2026-11-18-image-studio.md)
 
