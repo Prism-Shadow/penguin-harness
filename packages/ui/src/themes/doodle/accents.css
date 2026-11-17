@@ -1,22 +1,25 @@
 /*
- * The user's accent presets (`pack.json`, `accent.presets`): five pens — the marker's orange, the
- * ballpoint's blue, grass green, a red crayon and grape. A preset sets `--ui-accent` and nothing
- * else: hover, active, wash, tint and line derive from it in tokens.css, and the label ink is the
- * theme's for the mode — paper under a light pen, the dark ink under a pen lifted for dark paper.
- * A highlighter yellow was left out: as a mark (a switch, a radio) it is under 3:1 on paper. The
- * selectors match only Doodle's id, so a preset another theme lists paints nothing here.
+ * The user's accent presets (`pack.json`, `accent.presets`): five pens — the ink the pack drew
+ * everything in until the ballpoint became its own pen, the marker's orange, grass green, a red
+ * crayon and grape. A preset sets `--ui-accent` and nothing else: hover, active, wash, tint and
+ * line derive from it in tokens.css, the containers the recipes fill derive from it there, and
+ * the label ink is the theme's for the mode — paper under a light pen, the dark ink under a pen
+ * lifted for dark paper. A highlighter yellow was left out: as a mark (a switch, a radio) it is
+ * under 3:1 on paper; the highlighter is the swipe under the current row, whatever the pen. The
+ * selectors match only Doodle's id, so a preset another theme lists paints nothing here — and a
+ * stored `ballpoint`, no longer listed, paints the pack's own pen, the same blue.
  */
+:root[data-theme="doodle"][data-accent="ink"] {
+  --ui-accent: #2b2521;
+}
+:root[data-theme="doodle"][data-accent="ink"].dark {
+  --ui-accent: #ece5d6;
+}
 :root[data-theme="doodle"][data-accent="marker"] {
   --ui-accent: #bb4f27;
 }
 :root[data-theme="doodle"][data-accent="marker"].dark {
   --ui-accent: #e58a5e;
-}
-:root[data-theme="doodle"][data-accent="ballpoint"] {
-  --ui-accent: #2c4f9e;
-}
-:root[data-theme="doodle"][data-accent="ballpoint"].dark {
-  --ui-accent: #8fb0ec;
 }
 :root[data-theme="doodle"][data-accent="grass"] {
   --ui-accent: #2f6b45;

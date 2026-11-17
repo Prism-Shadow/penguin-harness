@@ -9,6 +9,11 @@
  * up, the way a dialog's rail folds above its pane on a phone. The list lays its rows out only:
  * the rail's width, padding and rule are the caller's.
  *
+ * A list may head its rows with its primary action (the sidebar's New chat): `primary` marks the
+ * row as that action rather than a place to go. It carries the `ui-action` hook and stays a row
+ * in every built-in theme but one: a pack may draw it as its hero button (Doodle draws Material
+ * 3's extended FAB).
+ *
  * `NavRow` is a button by default (a rail that switches panes), a link with `href`. The glyph is
  * decoration — the label beside it already says what it says — so it carries the
  * `ui-icon-decor` hook with the `nav` role, and a theme may recolour or drop it. A label is text,
@@ -181,6 +186,8 @@ export interface NavRowProps {
   active?: boolean;
   /** Nowhere to go right now: muted, no hover fill, not focusable as a link. */
   disabled?: boolean;
+  /** The list's primary action (New chat), not a place to go: a theme may draw it as its hero button. */
+  primary?: boolean;
   density?: NavRowDensity;
   /** The surface the row sits on: `muted` on the app's navigation column. */
   surface?: NavSurface;
@@ -214,6 +221,7 @@ export function NavRow({
   badge,
   active = false,
   disabled = false,
+  primary = false,
   density = "md",
   surface = "default",
   groupHover = false,
@@ -227,7 +235,8 @@ export function NavRow({
   className = "",
 }: NavRowProps) {
   const orientation = useContext(NavOrientationContext);
-  const classes = `${navRowClass({ active, disabled, density, orientation, surface, groupHover })} ${className}`;
+  // ui-action: the list's primary action, which a theme may draw as its hero button.
+  const classes = `${navRowClass({ active, disabled, density, orientation, surface, groupHover })} ${primary ? "ui-action " : ""}${className}`;
   const current = active && !disabled ? ("page" as const) : undefined;
   const named = {
     ...(ariaLabel !== undefined ? { "aria-label": ariaLabel } : {}),

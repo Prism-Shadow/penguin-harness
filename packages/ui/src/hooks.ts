@@ -59,10 +59,14 @@
  * |                    | shows its own; hosts: `GlyphIcon`, `GlyphMark`           |                                                       |
  * | `ui-avatar`        | an Agent's default avatar drawn in every theme's style;  | direct children `data-variant="flat" \| "soft" \| "pixel"`, one drawing each (agent-avatar-variants.tsx); an Agent's own picture is an `<img>` host with none |
  * |                    | the theme's CSS shows its own; host: `AgentAvatar`       |                                                       |
+ * | `ui-segmented`     | a segmented control: one choice among a few options laid | its options are direct children `<button>`, each saying whether it is on in `aria-pressed="true" \| "false"` |
+ * |                    | side by side; host: `Segmented`                          |                                                       |
+ * | `ui-action`        | the primary action that heads a navigation list (New     | on the row itself, a `<button>` or an `<a>`; while its page is the one open it is `[aria-current="page"]` |
+ * |                    | chat); hosts: `NavRow`, `RailItem`                       |                                                       |
  * | `ui-widget`        | a glanceable reading set apart from the prose: a         | `data-widget="weather" \| "clock" \| "countdown" \| "metrics" \| "chart" \| "resources"`; direct children `data-slot="head" \| "body" \| "foot"`; inside, `data-figure` marks a big numeral, `data-tile` a tile, `data-art` an illustration's svg; `data-offscreen` while scrolled away |
  * |                    | weather, clock, countdown, metrics, chart or resources   |                                                       |
  * |                    | tile in a reply; host: `WidgetSurface`                   |                                                       |
- * | `ui-edge`          | the edge of a box a person presses, types into or wrote: | a text field that failed validation carries `aria-invalid="true"` on itself or on its direct child `<input>` / `<textarea>`; a switch is `role="switch"`; a drawn checkbox or radio (not the native one) is an `aria-hidden` `<span>`; a host drawn round carries `rounded-full`, a capsule `rounded-[var(--ui-radius-pill)]` |
+ * | `ui-edge`          | the edge of a box a person presses, types into or wrote: | a text field that failed validation carries `aria-invalid="true"` on itself or on its direct child `<input>` / `<textarea>`; a switch is `role="switch"`; a drawn checkbox or radio (not the native one) is an `aria-hidden` `<span>`; a host drawn round carries `rounded-full`, a capsule `rounded-[var(--ui-radius-pill)]`; a `Button` names its variant, `data-variant="primary" \| "secondary" \| "danger"` |
  * |                    | a button with a fill or a line, a text field or a select |                                                       |
  * |                    | trigger, a checkbox's box, a radio's disc, a switch's    |                                                       |
  * |                    | track, the start page's pickers and the person's own     |                                                       |
@@ -82,7 +86,9 @@
  * |                    | host: `RunStatus`                                        |                                                       |
  *
  * `ui-shell` is the one place a theme may paint a field of colour, and the field is one flat
- * colour, never a gradient: Frost lays a flat grey field behind the window and sets the
+ * colour, never a gradient — but for Doodle, which the owner let lay a notebook's dot grid and two
+ * pieces of cut paper there (2026-11-17; the de-slop suite names the allowance): Frost lays a
+ * flat grey field behind the window and sets the
  * navigation column on it as milky, translucent glass with a lit inner edge, so the column comes
  * out a step off the opaque near-white main column — the glass takes no backdrop filter, since
  * the field is all that lies behind it and the column must not become a stacking context;
@@ -262,6 +268,9 @@
  * while a turn runs). The host writes the class and nothing else; a field that failed validation
  * already says so in `aria-invalid`. A tag or a count is not a host: a pill on a row is the row's
  * chrome. The base, Primer and Console leave it alone; Doodle draws each such edge as a pen line.
+ * A `Button` also names its variant (`data-variant`, 2026-11-17), which tells a filled button from
+ * a neutral and a destructive one for a pack that draws Material 3's filled, tonal and outlined
+ * buttons apart; no other built-in pack reads it.
  *
  * The five section hooks (2026-11-05) — `ui-start`, `ui-library`, `ui-ledger`, `ui-empty` and
  * `ui-run` — let a pack dress a whole section where tokens and the hooks above reach only its
@@ -292,6 +301,17 @@
  * its id, and the same smiling face, so only the drawing changes with the theme. An Agent with a
  * picture of its own (2026-11-07) is that picture, an `<img>` host with no drawings, in the flat
  * tile's rounded square: a pack that treats the avatar's box treats both alike.
+ *
+ * `ui-segmented` and `ui-action` (2026-11-17) name two controls a pack could not reach: they are
+ * hooks of their own, and not two more hosts of `ui-edge`, so a pack written before them — a copy
+ * of Doodle's first edition among them — draws both exactly as it did. `ui-segmented` is the
+ * segmented control: the host writes the class on the control and nothing else, since each option
+ * already says whether it is on (`aria-pressed`); a pack may draw the track and the chosen option
+ * its own way, and keeps every option one size, on or off, so a choice moves no label. `ui-action`
+ * is the primary action that heads a navigation list — New chat, on the pinned sidebar (`NavRow`)
+ * and on the folded rail (`RailItem`): a row like its neighbours in the base, Primer and Console,
+ * and the one hero button where a pack says so. Doodle draws Material 3's connected button group
+ * and its extended FAB.
  */
 export const HOOKS = [
   "ui-glass",
@@ -318,6 +338,8 @@ export const HOOKS = [
   "ui-empty",
   "ui-run",
   "ui-avatar",
+  "ui-segmented",
+  "ui-action",
 ] as const;
 
 export type HookName = (typeof HOOKS)[number];

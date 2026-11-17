@@ -26,14 +26,28 @@ import {
  * What Primer drew past Frost when the guard came in (2026-11-10): a box around the work group,
  * finished or running, which Frost leaves lineless, and a box around a notice, which Frost leaves
  * unboxed — Primer's own look, kept so far. The product owner has yet to decide whether
- * Primer keeps them; until then it holds exactly these and no more, and every other pack, Doodle
- * included, holds none.
+ * Primer keeps them; until then it holds exactly these and no more.
+ *
+ * What Doodle draws past Frost by the owner's allowance (2026-11-17: the cartoon pack is redrawn
+ * after Material 3, and its background need not be one colour): on every surface, text sits on
+ * the dotted pad and the dotted sheet — two textured kinds, the app window and its main column —
+ * and the row a reader is on sits on a pass of the highlighter, a border image on a navigation
+ * row, which is not a control — one boxed kind wherever a row is current (the start page's
+ * current row is New chat, a button). It holds exactly these and no more. Console and every other
+ * pack hold none.
  */
 const HELD = {
   github: {
     chat: { nonControl: 1 },
     "chat-running": { nonControl: 1 },
     usage: { nonControl: 1 },
+  },
+  doodle: {
+    "chat-new": { textured: 2 },
+    chat: { nonControl: 1, textured: 2 },
+    "chat-running": { nonControl: 1, textured: 2 },
+    models: { nonControl: 1, textured: 2 },
+    usage: { nonControl: 1, textured: 2 },
   },
 };
 

@@ -1,311 +1,515 @@
 /*
  * Doodle's hook recipes (hooks.ts), served in `ui-theme` over Frost's, which Doodle keeps for
- * every hook it leaves alone: the frosted menus' row bands, the opaque edgeless dialog, the
- * lineless activity cards, the label sweep on a running step, the banded settings rows, the tree
- * guides, the notice card, the chart joins, the widget tiles.
+ * every hook it leaves alone: the label sweep on a running step, the streaming veil, the banded
+ * settings rows, the tree guides, the notice's tone dot, the chart joins, the widget tiles.
  *
- * What Doodle adds is a pen line where a person puts their hand, and two small drawings in their
- * homes. Nothing else is outlined: cards, tool cards, code blocks, tiles, notices, widgets and
- * tables keep Frost's hairline or none.
+ * What Doodle draws is Material 3, by hand (owner, 2026-11-17: redesign the elements after
+ * m3.material.io, and the background need not be one colour). Each element keeps its Material 3
+ * anatomy — the role of its container, its shape, its state — and is rendered in the pack's own
+ * material: paper, cut paper in the pen's washes, and a felt-tip line where a person puts their
+ * hand. Where this goes past the clean baseline every other pack is held to (a second hue, an
+ * image under text, a shape that is not a rectangle, a control that answers a press by moving),
+ * the suite names the allowance (test/deslop.test.ts, `ALLOWED`); nothing here reaches another
+ * pack.
  *
- * - The pen line (`ui-edge`): a button with a fill or a line, a text field, a select trigger, a
- *   checkbox, a radio, a switch's track, the start page's pickers and the person's own bubble.
- *   One outline per shape, traced by a pen from a fixed seed (`scripts/draw-doodle-edges.mjs`,
- *   which writes the generated block below), is laid on the host's 1px border as a
- *   `border-image` 9-slice, and where `clip-path: shape()` exists the host's own background is
- *   clipped to the same outline, so the fill ends under the line at every size and a resize
- *   stretches the clip as it stretches the line. The host keeps its own fill — hover, a tone, an
- *   accent preset, the dark mode — so every colour still comes from CSS. One stroke, no shadow,
- *   no second line. A field that failed is drawn in the danger ink.
+ * - Paper (`ui-shell`). The window is a desk pad, dotted like a notebook, with two pieces of cut
+ *   paper on it — a cookie in the highlighter at the top of the navigation column and a disc in
+ *   the pen's wash at its foot (Material 3 Expressive's large tonal shapes); the main column is
+ *   the sheet, dotted too. Gradients only, on boxes that do not scroll: no filter,
+ *   no animation, and a page's own canvas is clear so the sheet shows through it.
+ * - Navigation (`ui-shell`, `ui-action`). The column is Material 3's navigation drawer: the row
+ *   the reader is on sits on its active indicator, drawn as one pass of the highlighter; the
+ *   primary action, New chat, is an extended FAB in the pen's container.
+ * - The pen line (`ui-edge`). One outline per shape, traced by a felt tip from a fixed seed
+ *   (`scripts/draw-doodle-edges.mjs`, which writes the generated block below), laid on the
+ *   host's 1px border as a `border-image` 9-slice. A button is a capsule at any height
+ *   (Material 3's full corner); what a person types into or picks a value in keeps a small
+ *   corner (the outlined text field, and the exposed dropdown on it); their own bubble has three
+ *   round corners and one tight; a checkbox a box; the primary action the FAB's large corner. Where a shape's corners are laid at a fixed size and
+ *   `clip-path: shape()` exists, the host's own background is clipped to the same outline, so
+ *   the fill ends under the line at every size; a capsule's fill ends under its line by the
+ *   host's own full radius. The host keeps its own fill — hover, a tone, an accent preset, the
+ *   dark mode — so every colour still comes from CSS. A field that failed is drawn in the
+ *   danger ink.
+ * - Buttons, by Material 3's four: filled (`primary`: the pen under the paper label), tonal
+ *   (`secondary`: the pen's container), outlined (`danger`: paper under the line, which a hover
+ *   redraws in the danger ink) and text (`ghost`, `link`: no box). A segmented control
+ *   (`ui-segmented`) is Material 3's connected button group: the option that is on is a tonal
+ *   capsule, drawn, and the rest are one size with it.
+ * - Cards (`ui-frame`): Material 3's filled card — a container a tone off the paper, no line —
+ *   and a frame inside a frame steps back to the paper. The agent's work group is one too.
  * - What floats (`ui-glass`): a dialog, a menu, a popover, a tooltip, the composer and its slash
  *   list, and a toast are slips of paper: one image holds the slip's fill, its line and a soft
  *   shadow drawn under it in a 12px margin, so the slip needs no fill, shadow, backdrop or filter
- *   of its own and the shadow follows the drawn shape. A slip that only labels (a tooltip, the
- *   launcher's caption) takes the control's corners; the launcher's ball and its fan are drawn
- *   round. A plugin tile, the navigation backdrop and the public site's header bar
- *   (`.site-ui-header`) are glass that does not float and keep Frost's look.
+ *   of its own and the shadow follows the drawn shape. A dialog and the composer take Material
+ *   3's extra-large corner, a menu its medium one, a slip that only labels (a tooltip, the
+ *   launcher's caption) the small one; the launcher's ball and its fan are drawn round. The
+ *   navigation backdrop and the public site's header bar (`.site-ui-header`) are glass that does
+ *   not float and keep Frost's look.
+ * - Shape variety, where a shape names a kind (Material 3 Expressive's shape library): an
+ *   Agent's avatar is a nine-sided cookie, a plugin's or a skill's tile a four-leaf clover.
  * - Keyboard focus. A clip cuts whatever its box paints, the focus ring included, so a focused
- *   button gives up the clip and its CSS corner returns under the line, with the ring outside it
- *   as in every theme; a focused text field or the focused composer is redrawn in the ring's
- *   ballpoint blue instead, the one line it has.
+ *   host that is clipped gives up the clip and its CSS corner returns under the line, with the
+ *   ring outside it as in every theme; a focused text field or the focused composer is redrawn
+ *   in the ring's ballpoint blue instead, the one line it has.
  * - The two drawings: the spinner is the pencil scribble in place of the arc (both turn with
  *   the svg, so the motion and its reduced-motion stop are the host's), and an empty state shows
  *   its art slot with the doodle, a pencil squiggle looped once, in place of the line drawing.
  *
  * Browsers without `shape()` (Chrome and Edge before 135, Safari before 18.4, Firefox before 141)
- * keep a padding-box fill under the line. In forced colours none of the pen applies (every pen
- * rule sits in `forced-colors: none`): the host's own border, radius, fill and focus ring return
- * in the system's colours.
+ * keep a padding-box fill under the line. In forced colours none of the pen or the paper applies
+ * (every such rule sits in `forced-colors: none`): the host's own border, radius, fill and focus
+ * ring return in the system's colours.
  *
  * An image cannot read a custom property, so the generated block spells the line ink, the danger
- * ink, the focus blue and the overlay; `scripts/draw-doodle-edges.mjs` names them beside
- * tokens.css. The properties it declares start with `--_`: private to these recipes, not tokens.
+ * ink, the focus blue, the overlay and the highlighter; `scripts/draw-doodle-edges.mjs` names
+ * them beside tokens.css. The properties it declares start with `--_`: private to these recipes,
+ * not tokens.
  */
 
 /* draw-doodle-edges.mjs: begin generated block, do not edit by hand */
 :root[data-theme="doodle"] {
   --_stroke-control: image-set(
-    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADgAAAA4BAMAAABaqCYtAAAAMFBMVEU1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lim+jEvZAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAABsElEQVR42q3UO0sjURgG4DfxtkRNAlbauMX2CSaVsEQrKyEQAmKTytpFthGLXRAFGyP4A6KdDEq2XIQQOyEgESwWFmaTX+B4izpJzrxy4g3NfKeQfZlqHs5lvvnOAXQmdxFHcs46sc9/T+NtRknPq/EptmVZ36PPNuCwK2r70Xoex6jKeiaBwMzBE//sYI5ke+l1kZFEMrvisKlnDpH88/ndLhAs8gxAkWoV3emnFwWc+zj88pVpBHnka+jjDvq45Y8B1vGJ3/wR5QZCnBKw6CLMqIB0EVOQ8BI5V8LaBQq3Elav9SNt6BqsS1hogKcS5u/gXEiYc1EW10w1kRd3G1OG74wQsbaEw9QuZIhIiSNDxOK9AQsNA1avDCjXVuMvE+78fxw04fCHMUxI5wiIeIYeiihDhSLK0GAphdqliC1Dx6eaKN4YsHAn4Q/X0JrVG72sf4KsY1w62f3cQphxqe5pDFHozbwH9DqdG7ArPdQ9O0YeR/1m7fzLWbK1Ye3btv3PPtxbmMCX5dLfUk11RgQ26Zfnss77XPLey5XYm80k9GUdTGQ3DpzKWjIzoV8/AHTOGFVg1wKkAAAAAElFTkSuQmCC")
+    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADgAAAA4BAMAAABaqCYtAAAAMFBMVEU1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lim+jEvZAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAAB0klEQVR42o2UPU8CQRCGB/ADRD4SY2MjrZUkF2nBWGinvYloQYKx0Bh7qW0sTIyxwUZJLiGY+AMwNkYaKO3Of4AICoLHa2YP0Xiz0be4ZO+5vZl3Z2aJ/tZIip/T2fNK3MW85c4CJYoA0HXRDQB1OOqZpnn644sZuHQ/DGgN3jxkjLkveuewsTIvrH5hkVdDuqngIQB7fxjDYxjGchHoRXkB4NGV4iGwxxGBE7dxXxU1Dom2dCwhNIkogJYEx9EhoiBeJOiFrfY/i6cNpIjSuJVjIk5UGtj9pQjH9KIflWCQs/XjXaywH29EYeVHSqhLlFQnIaje56xaMiwjReO8XdIuclyUmAjn2X8eOZJPoUG0qslogm3odjLUxvSjqc/Wj1e9T4ZJuWLcPgxzOtjWQ+e3F6S1ooVBNPSQG08LI6hRRGdlFtcUwpMM+ZeTXBlJaeScyshwT3kVdYw1GkVPhnnEyaemSWpNrrMFTVN/EFFVhgEeByohLsGwsqhpsDSuVcq2MKAeS41tErC3hFIrEz6+3S59C9kj0zQPeJC9OzeUHPTd8F5k2YXFFWc9qOSoBUFfrT5ScrPva82zXjnLLBnG1HYVwMdRxTRFf4niVYz+o0/g8lYqaPJdfwAAAABJRU5ErkJggg==")
       2x
   );
   --_stroke-control-danger: image-set(
-    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADgAAAA4BAMAAABaqCYtAAAAMFBMVEWzJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh5kTHtcAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAABsElEQVR42q3UO0sjURgG4DfxtkRNAlbauMX2CSaVsEQrKyEQAmKTytpFthGLXRAFGyP4A6KdDEq2XIQQOyEgESwWFmaTX+B4izpJzrxy4g3NfKeQfZlqHs5lvvnOAXQmdxFHcs46sc9/T+NtRknPq/EptmVZ36PPNuCwK2r70Xoex6jKeiaBwMzBE//sYI5ke+l1kZFEMrvisKlnDpH88/ndLhAs8gxAkWoV3emnFwWc+zj88pVpBHnka+jjDvq45Y8B1vGJ3/wR5QZCnBKw6CLMqIB0EVOQ8BI5V8LaBQq3Elav9SNt6BqsS1hogKcS5u/gXEiYc1EW10w1kRd3G1OG74wQsbaEw9QuZIhIiSNDxOK9AQsNA1avDCjXVuMvE+78fxw04fCHMUxI5wiIeIYeiihDhSLK0GAphdqliC1Dx6eaKN4YsHAn4Q/X0JrVG72sf4KsY1w62f3cQphxqe5pDFHozbwH9DqdG7ArPdQ9O0YeR/1m7fzLWbK1Ye3btv3PPtxbmMCX5dLfUk11RgQ26Zfnss77XPLey5XYm80k9GUdTGQ3DpzKWjIzoV8/AHTOGFVg1wKkAAAAAElFTkSuQmCC")
+    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADgAAAA4BAMAAABaqCYtAAAAMFBMVEWzJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh5kTHtcAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAAB0klEQVR42o2UPU8CQRCGB/ADRD4SY2MjrZUkF2nBWGinvYloQYKx0Bh7qW0sTIyxwUZJLiGY+AMwNkYaKO3Of4AICoLHa2YP0Xiz0be4ZO+5vZl3Z2aJ/tZIip/T2fNK3MW85c4CJYoA0HXRDQB1OOqZpnn644sZuHQ/DGgN3jxkjLkveuewsTIvrH5hkVdDuqngIQB7fxjDYxjGchHoRXkB4NGV4iGwxxGBE7dxXxU1Dom2dCwhNIkogJYEx9EhoiBeJOiFrfY/i6cNpIjSuJVjIk5UGtj9pQjH9KIflWCQs/XjXaywH29EYeVHSqhLlFQnIaje56xaMiwjReO8XdIuclyUmAjn2X8eOZJPoUG0qslogm3odjLUxvSjqc/Wj1e9T4ZJuWLcPgxzOtjWQ+e3F6S1ooVBNPSQG08LI6hRRGdlFtcUwpMM+ZeTXBlJaeScyshwT3kVdYw1GkVPhnnEyaemSWpNrrMFTVN/EFFVhgEeByohLsGwsqhpsDSuVcq2MKAeS41tErC3hFIrEz6+3S59C9kj0zQPeJC9OzeUHPTd8F5k2YXFFWc9qOSoBUFfrT5ScrPva82zXjnLLBnG1HYVwMdRxTRFf4niVYz+o0/g8lYqaPJdfwAAAABJRU5ErkJggg==")
       2x
   );
   --_stroke-control-focus: image-set(
-    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADgAAAA4BAMAAABaqCYtAAAAMFBMVEUsT54sT54sT54sT54sT54sT54sT54sT54sT54sT54sT54sT54sT54sT54sT54sT57g6ZSYAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAABsElEQVR42q3UO0sjURgG4DfxtkRNAlbauMX2CSaVsEQrKyEQAmKTytpFthGLXRAFGyP4A6KdDEq2XIQQOyEgESwWFmaTX+B4izpJzrxy4g3NfKeQfZlqHs5lvvnOAXQmdxFHcs46sc9/T+NtRknPq/EptmVZ36PPNuCwK2r70Xoex6jKeiaBwMzBE//sYI5ke+l1kZFEMrvisKlnDpH88/ndLhAs8gxAkWoV3emnFwWc+zj88pVpBHnka+jjDvq45Y8B1vGJ3/wR5QZCnBKw6CLMqIB0EVOQ8BI5V8LaBQq3Elav9SNt6BqsS1hogKcS5u/gXEiYc1EW10w1kRd3G1OG74wQsbaEw9QuZIhIiSNDxOK9AQsNA1avDCjXVuMvE+78fxw04fCHMUxI5wiIeIYeiihDhSLK0GAphdqliC1Dx6eaKN4YsHAn4Q/X0JrVG72sf4KsY1w62f3cQphxqe5pDFHozbwH9DqdG7ArPdQ9O0YeR/1m7fzLWbK1Ye3btv3PPtxbmMCX5dLfUk11RgQ26Zfnss77XPLey5XYm80k9GUdTGQ3DpzKWjIzoV8/AHTOGFVg1wKkAAAAAElFTkSuQmCC")
+    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADgAAAA4BAMAAABaqCYtAAAAMFBMVEUsT54sT54sT54sT54sT54sT54sT54sT54sT54sT54sT54sT54sT54sT54sT54sT57g6ZSYAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAAB0klEQVR42o2UPU8CQRCGB/ADRD4SY2MjrZUkF2nBWGinvYloQYKx0Bh7qW0sTIyxwUZJLiGY+AMwNkYaKO3Of4AICoLHa2YP0Xiz0be4ZO+5vZl3Z2aJ/tZIip/T2fNK3MW85c4CJYoA0HXRDQB1OOqZpnn644sZuHQ/DGgN3jxkjLkveuewsTIvrH5hkVdDuqngIQB7fxjDYxjGchHoRXkB4NGV4iGwxxGBE7dxXxU1Dom2dCwhNIkogJYEx9EhoiBeJOiFrfY/i6cNpIjSuJVjIk5UGtj9pQjH9KIflWCQs/XjXaywH29EYeVHSqhLlFQnIaje56xaMiwjReO8XdIuclyUmAjn2X8eOZJPoUG0qslogm3odjLUxvSjqc/Wj1e9T4ZJuWLcPgxzOtjWQ+e3F6S1ooVBNPSQG08LI6hRRGdlFtcUwpMM+ZeTXBlJaeScyshwT3kVdYw1GkVPhnnEyaemSWpNrrMFTVN/EFFVhgEeByohLsGwsqhpsDSuVcq2MKAeS41tErC3hFIrEz6+3S59C9kj0zQPeJC9OzeUHPTd8F5k2YXFFWc9qOSoBUFfrT5ScrPva82zXjnLLBnG1HYVwMdRxTRFf4niVYz+o0/g8lYqaPJdfwAAAABJRU5ErkJggg==")
       2x
   );
-  --_stroke-surface: image-set(
-    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgBAMAAAAQtmoLAAAAMFBMVEU1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lim+jEvZAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAACfUlEQVR42s3Yz2vTYBgH8KdL5yo6KAw82kH/gDlrDx5chOF5g/0SPKQeBG89Cd4mg0ntJeDJ2wQ9zKp0Jw+D0aPH7qzrsn9Aorbp0pD0K8nSH8pY369Q8aHQJLyfvO+b5H15n1fkLEzE8e3d85V0eCWXy2+UKg07vu7dkEFk119gZPjL/fJTvWuNRuMC0d3qAT06/xQ1ZCL/uHLc8/u726s340IPANyNj+thhQ+Hmqjlcmn5M27baJ0dpQB8npWRca1XhY7KlqjEAtrRv+WLWmg2ClGLmopAFqJeZPBMFUxYHREpdkU5jCB8qK46yGBWNPxUB9MoyGXsqYMUXst1LKuDJE7EIPosCThiegSQmiumywDzL0B1vKDqSrXNAocE1vhBiwJtsZoUcAT/H7A5cMp2euwvznSlxoEO+bWaHjuAWGB45JgOQYcCATkv/QPgk6DokcCkgUuCKg3a5JuuOySwWGA3SYAm+XnjOwc0HhzKDlsD1elECDzyKXHAaskmt3RwwnmAm70NnxwP0TJOOTY9Ehi+6BRYCkRnVmSiI/wRkWEBXYMekGCJBeFj5YBHApMGHRLsuCSo0sAhgeVIEeSYBgXsJgc0/JA6M4BS2BMDaXVwFQWZVk8UReaQlimcEJOGL5KwiSVZ/TT8PPqZ+8i4FGWVc2ipj+gwq0zaqrliwgrSw5n7yLgSr9M1Gy+V0m8zyvBF5A7w5pwC2bXFwclk+QDw+m0D3kp2vfzRRqNSerIyf2ujfBBtyhztbi9GWyHF8Oywzy3AumhfJoj2dL4ONj8ma+eVOhq+ibf6215Jsobul1eP5mfy98sfjhHsl9bClszce/o+Vr2NgF8v9hp+aHdg+gAAAABJRU5ErkJggg==")
+  --_stroke-bubble: image-set(
+    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgBAMAAAAQtmoLAAAAMFBMVEU1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lim+jEvZAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAADYElEQVR42p1YP0wTYRT/rr0DbEFZ0AnpoowgFROWgk5uVRMTo0NldqiJrgZiYEGlJiY4qIHEsFoWiZN1cXAwddOgzS06YXICogj0fvr9ueN6d7175xua6+X7fe9978/vve8YC8rpiyyBHHtvAs8ZY+n7jUZjtTdmuXYDQt5q503xsHshcn1fFX6xH0WsvyrXfDZbIJ9ybXafU+tsZnBF9nI+n3/AX+xPhlpvOTt+Yyw1b7+Txo+J18shgG65+vvjc+Kva4bQhq9BQIUbv3A2RPU1jpjwvzaA1VNtfDFYB376X46j2T5G6UpAhWZiK8LfHQEVWSAypGW/igp2IlOgA/jlO/Kb6CQrA9c9fwuwY9KyVUXMkYUUvSoyrfpCRfeqmMJufGUVgZtOXGKPrFRsuRbZOUZR4bh+IJgp4Y7aV08lfKAANED5voppEqHUVfpowDAJUMFDZVuTRllFZXoWv2mAI9hUTtqkAbIq1mVK2Lh0qoSouSGPkTRs5aQckagt4c5ON4CxUhW2dLcWX3TZrfyDDWGDChjCD1EMK1RAj8jSeny1OXJIHNfNwXgxAO7cJiMLBxjYSwboiuG81hKyeUFvkwHC/GxSQBf+JAPoCbykcwdpieLAC8IkUsD/AIRJzCLXj8oKHj1y4JAMwGTy2XSAOC+dA3jtDHOWIRcQq3I6diiWIot88xKWyIAKbwxJAIucmIp01mA1foZxWsNSXJljhkUHiEgfBh2gc15KAujg6Z0BtZ8ohtFB7ScOYZj01OgR00aFbtKAoPshahN1Qpalc6Vs1AadmGSj1qzgYN22Ue/JqlgiswbkzLFBr+kJ4d1tej1Mi4CTe1BJxCxF5w1VO3XiCOeWc5k6YbEpufVxUJlmUWa2Dmrbqqm5skBV4fSStEVU4ba3AkjpkXKZPm2RgueZSwqg8J9xcM/QTIoK71zST1HR4xkPNRPNyfjM8BRCP+S3g+gG5PGlVgPwsTem4LwzQCb8I8OJW04QRrK+kXiQfxNo3uWLnq7Nir1SV14DezPuDd13V9LFbf7lmWfisr82O3pPfSfYnxnhaRF0pHYHbaXBf4JjzJjlX7j+4uA5rM6O1sGtHpUfOexXlxg7KU3Ejhbqw/T8+m3xMDr3ZUGZ0PeEG7TFEkn+sqSWv3Nqc/0H+RbRAAAAAElFTkSuQmCC")
       2x
   );
   --_stroke-pill: image-set(
-    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAoBAMAAAB+0KVeAAAAMFBMVEU1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lim+jEvZAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAABWUlEQVR42mWSv0/CUBDHDwqEKAqLi4nKYqJbE+MqOLmY4ODkgoM7xvgHdGdAV2NkNA4GBmd1ciWOmpiSOJtGBSzU9quvjwe915sun3fvfnzviEJL728kN7eJ2ZoDYa+nhSlbhDL/XLG0A+/i4ePmVlAV28TIDJ2FuoNHyXL4NdWnFDzpNGBN01fQlo/9SB8ZGbqEs2h3NTyL3z5rOQX3P0unxwepekQJdDnMByK8zeEcipTFMYczKFMOJodZHNJKwBllYFF1pME02tQcaNDAgFpam5SAS40fDQpSHcZgn0pBQYOtHs1Dh/YX5f1YoS6VPA0KMWKFsrCohjKHyzAph3etIyGyHRRZHacXX1wmFN3AJ9d4L5zAjcLxMCWWtCL7ng3XP7Z1SNUMZ3J/dAB8S28LeLsWt526grpKMsIjfjmqAxhO8u/a6ryfojomd+4BeCf6FlYv75T7BwJGqkBGrRARAAAAAElFTkSuQmCC")
+    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGgAAABoBAMAAADvMqiSAAAAMFBMVEU1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lim+jEvZAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAADgElEQVR42sVYTWsTURR9yWRs0yR1wJWLYsAf0GhBhIrNpuBGG8RiEaUVFFzZghS6azeVWNGKuChuWkTBVjGCG3FhuurCTSuKGwlBRGi7GT/a2iSdOfrezKSTZDLzbhG8i4Ymc3j349xz7zzG/plFxrKTY1PzZyUfvwAAO7CtoMOYHz3iDwnfgZc90Xwwag7eVs40PyfvPGTMZKdmJgeq/8O83ww0DWA9xdjtScedLo0dOP+wyFEj3pjTAJa8vFd4pIanhwcBvGriw/EiUEl5lKYIfGsa7j4dKCW9Air5ZJb7sVr/+wnASPmVsBvAp7rjAUz4F/4SgA813wwDH4MYdh0wasoKlLUgUGi61ps4kAkmcziHXzWp25JpgYTbPwWYkwEpbv/iMDWpbpt1+TeNTbkW7dj1LyzpHWOR3YTFYGiSapDDSrWym7KK0+M8GtLxUhbU5gQVBZKyIMUJqge/5RUxh0XxOV4NTiooq1J5DMmDYtgWn4SQGFNhWgUzKDKvI80Ya0WJAsoJ9sTlS8utDz/+MveQ+CttCXFGDyXjPJptwbw5Omg2SLvqxa4sapuhgFQB0im15WXdYSwEkGa4AqQtJMHCXJEsHwnGOyqCCgkTAjSm0Phq8ZsKEvymgmJc9qmgdt7vKjER4qQWu+nluVfh8rdFLK7JG3eDVlwdGmvHTxpoGSmWoJ6UQ4a1UUTZmoATdicSbBBzdJZboArdPSqN9goaoYN4yskxcVArkbACFKMNDQuUqFnHJCyPNNtPbA1WRIq10QahJeMqXffYHnRvR8gsUSPKdmAEi4r+Iw41q67E8WlpyrD8tsetE9/pe8SgOCNOo4QVTQutustioQrz0UaZnpqFHaIQwrDX0UVKbUt2EjcoGd+yd+0KJXkrzg4izb4wnATk5Ze3aLWR+uRlorPKhLh8UPnqGqpCluhR1wtnXlb7xl0rW4dk/iLAe/fi90UGdBJmyt0kMi94il7DnVbgazDoDGqpnZd4D29BnRjHEDxxZoF7DRcfj/wx3WjQBX6L8dgPcxEw043pbLgOcbP7bsO9h/iaXymtpb0xp5b5tZpHVVT+g/nAHiju4XLsLb/ZqnimVxHXZ+vZ0XMDz3UU3jy9tbBQwLuCdRu2mvRxvIkt+VwJ6t6Qtcu+b0cvGhHm5xtBde/NTj17fSXJDvdeu9nf36VePcr+o/0BB9uHSoe4d5oAAAAASUVORK5CYII=")
       2x
   );
-  --_stroke-box: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18'%3E%3Cpath d='M3.8 0.9L6.1 1L8.2 1.3L9.8 1.2L11.7 1.4L14 1.3L15.5 1.4L16.2 2.7L17.3 4L16.8 3.8L16.8 6.1L16.8 7.6L16.9 10L17.3 12.4L17.2 14L16.5 15.5L15.6 16.8L14 16.8L13.6 16.8L12.3 17.1L10 16.8L7.7 17.3L5.8 16.6L4 17.1L2.3 17L1.8 15.3L1 14L1 14.1L1.4 11.7L0.8 10L0.7 8.1L1.1 6.4L1.4 4L1.5 2.5L2.6 1.6L4 1.4Z' fill='none' stroke='%23352e29' stroke-width='1.45' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  --_stroke-ball: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48'%3E%3Cpath d='M24 1.3L29.8 2.2L35.3 4.5L40.5 7.5L43.5 12.7L46.5 18L47.2 24L45.8 29.8L43.7 35.4L40.2 40.2L35.7 44.2L30.1 46.7L24 47.4L18.1 46.1L12.7 43.6L7.4 40.6L4.1 35.5L1.5 30L0.9 24L2.1 18.1L3.7 12.3L7.4 7.4L12.7 4.4L18.1 1.8Z' fill='none' stroke='%23352e29' stroke-width='1.55' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  --_glass-control: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='52' height='52'%3E%3Cg transform='translate(12 12)'%3E%3Cg fill='none' stroke='%233a2c1e'%3E%3Cg stroke-opacity='0.2'%3E%3Crect x='1' y='2' width='26' height='26' rx='5' stroke-width='1.5'/%3E%3C/g%3E%3Cg stroke-opacity='0.032'%3E%3Crect x='1' y='5' width='26' height='26' rx='5' stroke-width='3'/%3E%3Crect x='1' y='5' width='26' height='26' rx='5' stroke-width='5.5'/%3E%3Crect x='1' y='5' width='26' height='26' rx='5' stroke-width='8'/%3E%3Crect x='1' y='5' width='26' height='26' rx='5' stroke-width='10.5'/%3E%3Crect x='1' y='5' width='26' height='26' rx='5' stroke-width='13'/%3E%3C/g%3E%3C/g%3E%3Cpath d='M5.8 1.2L9 1.3L12.6 0.9L15.6 0.7L18.4 1.3L22 1.4L24.3 2L26.3 3.5L27.1 6L26.7 6.3L27 9.1L27.3 12L27.4 15.5L27.2 18.9L27.1 22L26.3 24.5L24.7 26.7L22 26.9L22 26.7L18.6 27.3L15.3 26.9L12.8 26.8L9.6 26.8L6 27L3.6 26.2L1.3 24.7L1 22L0.9 22.1L0.6 18.5L0.6 15.3L1.3 12.2L0.6 9.2L1.3 6L1.8 3.6L3.7 2.1L6 0.8Z' fill='%23fffefb' stroke='%23352e29' stroke-width='1.45' stroke-linejoin='round'/%3E%3Cpath d='M2.8 3L8.3 1.1' fill='none' stroke='%23352e29' stroke-width='1.45' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E");
-  --_glass-surface: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='72' height='72'%3E%3Cg transform='translate(12 12)'%3E%3Cg fill='none' stroke='%233a2c1e'%3E%3Cg stroke-opacity='0.2'%3E%3Crect x='1' y='2' width='46' height='46' rx='7' stroke-width='1.5'/%3E%3C/g%3E%3Cg stroke-opacity='0.032'%3E%3Crect x='1' y='5' width='46' height='46' rx='7' stroke-width='3'/%3E%3Crect x='1' y='5' width='46' height='46' rx='7' stroke-width='5.5'/%3E%3Crect x='1' y='5' width='46' height='46' rx='7' stroke-width='8'/%3E%3Crect x='1' y='5' width='46' height='46' rx='7' stroke-width='10.5'/%3E%3Crect x='1' y='5' width='46' height='46' rx='7' stroke-width='13'/%3E%3C/g%3E%3C/g%3E%3Cpath d='M7.8 0.8L14.3 0.6L21 1.3L26.8 1.2L33.2 0.7L40 0.7L43.4 2.1L45.9 4.6L46.9 8L47 8.1L46.9 14.4L47.2 20.7L46.7 27.4L47.2 33.2L46.8 40L45.7 43.3L43.5 46.1L40 46.6L39.9 47.4L33.9 47.2L27.6 46.6L20.7 47.2L14 46.7L8 47.4L4.7 45.8L2.1 43.4L0.6 40L1.2 40.4L1.2 33.3L1 27.3L1.1 20.7L0.8 14.5L1 8L2.3 4.7L4.4 1.7L8 1.4Z' fill='%23fffefb' stroke='%23352e29' stroke-width='1.55' stroke-linejoin='round'/%3E%3Cpath d='M4.8 2.6L10.3 0.7' fill='none' stroke='%23352e29' stroke-width='1.55' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E");
-  --_glass-surface-focus: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='72' height='72'%3E%3Cg transform='translate(12 12)'%3E%3Cg fill='none' stroke='%233a2c1e'%3E%3Cg stroke-opacity='0.2'%3E%3Crect x='1' y='2' width='46' height='46' rx='7' stroke-width='1.5'/%3E%3C/g%3E%3Cg stroke-opacity='0.032'%3E%3Crect x='1' y='5' width='46' height='46' rx='7' stroke-width='3'/%3E%3Crect x='1' y='5' width='46' height='46' rx='7' stroke-width='5.5'/%3E%3Crect x='1' y='5' width='46' height='46' rx='7' stroke-width='8'/%3E%3Crect x='1' y='5' width='46' height='46' rx='7' stroke-width='10.5'/%3E%3Crect x='1' y='5' width='46' height='46' rx='7' stroke-width='13'/%3E%3C/g%3E%3C/g%3E%3Cpath d='M7.8 0.8L14.3 0.6L21 1.3L26.8 1.2L33.2 0.7L40 0.7L43.4 2.1L45.9 4.6L46.9 8L47 8.1L46.9 14.4L47.2 20.7L46.7 27.4L47.2 33.2L46.8 40L45.7 43.3L43.5 46.1L40 46.6L39.9 47.4L33.9 47.2L27.6 46.6L20.7 47.2L14 46.7L8 47.4L4.7 45.8L2.1 43.4L0.6 40L1.2 40.4L1.2 33.3L1 27.3L1.1 20.7L0.8 14.5L1 8L2.3 4.7L4.4 1.7L8 1.4Z' fill='%23fffefb' stroke='%232c4f9e' stroke-width='1.55' stroke-linejoin='round'/%3E%3Cpath d='M4.8 2.6L10.3 0.7' fill='none' stroke='%232c4f9e' stroke-width='1.55' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E");
+  --_stroke-pill-danger: image-set(
+    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGgAAABoBAMAAADvMqiSAAAAMFBMVEWzJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh5kTHtcAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAADgElEQVR42sVYTWsTURR9yWRs0yR1wJWLYsAf0GhBhIrNpuBGG8RiEaUVFFzZghS6azeVWNGKuChuWkTBVjGCG3FhuurCTSuKGwlBRGi7GT/a2iSdOfrezKSTZDLzbhG8i4Ymc3j349xz7zzG/plFxrKTY1PzZyUfvwAAO7CtoMOYHz3iDwnfgZc90Xwwag7eVs40PyfvPGTMZKdmJgeq/8O83ww0DWA9xdjtScedLo0dOP+wyFEj3pjTAJa8vFd4pIanhwcBvGriw/EiUEl5lKYIfGsa7j4dKCW9Air5ZJb7sVr/+wnASPmVsBvAp7rjAUz4F/4SgA813wwDH4MYdh0wasoKlLUgUGi61ps4kAkmcziHXzWp25JpgYTbPwWYkwEpbv/iMDWpbpt1+TeNTbkW7dj1LyzpHWOR3YTFYGiSapDDSrWym7KK0+M8GtLxUhbU5gQVBZKyIMUJqge/5RUxh0XxOV4NTiooq1J5DMmDYtgWn4SQGFNhWgUzKDKvI80Ya0WJAsoJ9sTlS8utDz/+MveQ+CttCXFGDyXjPJptwbw5Omg2SLvqxa4sapuhgFQB0im15WXdYSwEkGa4AqQtJMHCXJEsHwnGOyqCCgkTAjSm0Phq8ZsKEvymgmJc9qmgdt7vKjER4qQWu+nluVfh8rdFLK7JG3eDVlwdGmvHTxpoGSmWoJ6UQ4a1UUTZmoATdicSbBBzdJZboArdPSqN9goaoYN4yskxcVArkbACFKMNDQuUqFnHJCyPNNtPbA1WRIq10QahJeMqXffYHnRvR8gsUSPKdmAEi4r+Iw41q67E8WlpyrD8tsetE9/pe8SgOCNOo4QVTQutustioQrz0UaZnpqFHaIQwrDX0UVKbUt2EjcoGd+yd+0KJXkrzg4izb4wnATk5Ze3aLWR+uRlorPKhLh8UPnqGqpCluhR1wtnXlb7xl0rW4dk/iLAe/fi90UGdBJmyt0kMi94il7DnVbgazDoDGqpnZd4D29BnRjHEDxxZoF7DRcfj/wx3WjQBX6L8dgPcxEw043pbLgOcbP7bsO9h/iaXymtpb0xp5b5tZpHVVT+g/nAHiju4XLsLb/ZqnimVxHXZ+vZ0XMDz3UU3jy9tbBQwLuCdRu2mvRxvIkt+VwJ6t6Qtcu+b0cvGhHm5xtBde/NTj17fSXJDvdeu9nf36VePcr+o/0BB9uHSoe4d5oAAAAASUVORK5CYII=")
+      2x
+  );
+  --_stroke-bead: image-set(
+    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADwAAAA8BAMAAADI0sRBAAAAMFBMVEU1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lim+jEvZAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAACD0lEQVR42pVVO0wUURQ9ywwLCyJDghITNZvY6zYYO7AlIVI4DQ34aYwNiZ0Wa2NCbKYwoVNpaGz4NJZQEprFSq2mUSuT4SMfGWaPeW9mdmZ23jV6ijef8+679553333A/+CG67ruXQNRGX/95vY7anx92M1WW8xju1Fg7wQsIprJsVfSn6/uj7vuE5/kccb2BeTZ49lF10nimA3I+ZS1fPJLveDM3szMr5M/ukMdzMxbPHVKib7nr/ilxna9rEPn7xwPTQJu8pN++lmQeVzjic6CZ0b5LYY6h7wChdXbWu00xG54bOgQ9830PS4AuMBdMz3MZQBDXDPTsV08yYABHgG4xZdmup8qtgmzKkAvOQk01WBCD+mk2ZvQimRNAQSh8nAs0cqwl6cS7Su3gehbi+5xBpLo86nyJjQVE++b0bfK25d8W/ydDIKoR0CfVCzo54Ea9iBt6L6qJYmuKj0HRLrCc0WfSKqtso6qGDmaShE/lDV34k2XFk8HsVrgsS7VWqiP94J0DFShXJQOkaeJmrk5wNKnALZQqkOJXkLz8Lj1l9ZjMcmoxqjc1nC1sxctfi8b+8nawE1yo5ueY6dC7YD8WCjXylPyW6GdR0txJGM7j3B5lYxyUk/rXr/UQM8UyZ/qaz2/2ov4NsiujJViKPbb/E0SPiilcime8HnEa684JhlHn39YfAbYk/98K/4BR7xFMnMDwfUAAAAASUVORK5CYII=")
+      2x
+  );
+  --_stroke-box: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18'%3E%3Cpath d='M4.6 1.8L6.7 2L8.5 2.5L9.4 2.3L10.9 2.6L13 2.3L14.5 2.4L15.2 3.7L16.3 5L15.6 4.6L15.6 6.9L15.6 7.5L15.9 9.8L16.5 12L16.2 13L15.5 14.5L14.6 15.8L13 15.8L12.3 15.7L12 16.1L9.8 15.7L7.6 16.6L6.3 15.3L5 16.1L3.3 16L2.8 14.3L2 13L1.9 13.2L2.8 10.8L1.6 9.8L1.4 8.5L2.1 7.3L2.4 5L2.5 3.5L3.6 2.6L5 2.4Z' fill='none' stroke='%23352e29' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --_stroke-fab: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48'%3E%3Cpath d='M14.6 2.2L18 1.3L21.5 1.7L25.5 2.1L29.1 2.3L33 1.9L39.2 4.3L44.6 8.3L45.4 15L45.9 15.4L45.8 19.2L45.9 22.1L45.4 25.6L45.5 30L45.8 33L44.4 39.6L39.3 43.8L33 46.7L32.9 46.8L28.7 46.4L25 46.5L22.5 46.4L18.3 46.1L15 45.6L8.2 44.8L4 39.4L2.7 33L1.7 32.9L1.9 28.8L2.5 26.4L1.7 22.4L1.6 19.4L1.6 15L3.9 8.6L8.6 3.9L15 1.5ZM11.1 4L16.6 2.1' fill='none' stroke='%23352e29' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --_glass-label: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='52' height='52'%3E%3Cg transform='translate(12 12)'%3E%3Cg fill='none' stroke='%233a2c1e'%3E%3Cg stroke-opacity='0.2'%3E%3Crect x='2' y='3' width='24' height='24' rx='5' stroke-width='1.5'/%3E%3C/g%3E%3Cg stroke-opacity='0.032'%3E%3Crect x='2' y='6' width='24' height='24' rx='5' stroke-width='3'/%3E%3Crect x='2' y='6' width='24' height='24' rx='5' stroke-width='5.5'/%3E%3Crect x='2' y='6' width='24' height='24' rx='5' stroke-width='8'/%3E%3Crect x='2' y='6' width='24' height='24' rx='5' stroke-width='10.5'/%3E%3Crect x='2' y='6' width='24' height='24' rx='5' stroke-width='13'/%3E%3C/g%3E%3C/g%3E%3Cpath d='M6.6 2.4L9.4 2.6L12.9 1.8L15.4 1.6L17.5 2.6L21 2.6L23.3 3.1L25.3 4.5L26.2 7L25.4 7.6L26 9.6L26.6 11.9L26.8 15.2L26.4 18.4L26.1 21L25.3 23.5L23.8 25.9L21 25.9L21 25.6L17.8 26.5L14.9 25.9L13.4 25.6L10.4 25.7L7 26L4.6 25.1L2.2 23.8L2 21L1.8 21.2L1.4 17.7L1.3 14.8L2.5 12.3L1.4 9.7L2.5 7L2.8 4.6L4.8 3.3L7 1.8Z' fill='%23fffefb' stroke='%23352e29' stroke-width='1.9' stroke-linejoin='round'/%3E%3Cpath d='M3.1 4.2L8.6 2.3' fill='none' stroke='%23352e29' stroke-width='1.9' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E");
+  --_glass-slip: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='76' height='76'%3E%3Cg transform='translate(12 12)'%3E%3Cg fill='none' stroke='%233a2c1e'%3E%3Cg stroke-opacity='0.2'%3E%3Crect x='2' y='3' width='48' height='48' rx='12' stroke-width='1.5'/%3E%3C/g%3E%3Cg stroke-opacity='0.032'%3E%3Crect x='2' y='6' width='48' height='48' rx='12' stroke-width='3'/%3E%3Crect x='2' y='6' width='48' height='48' rx='12' stroke-width='5.5'/%3E%3Crect x='2' y='6' width='48' height='48' rx='12' stroke-width='8'/%3E%3Crect x='2' y='6' width='48' height='48' rx='12' stroke-width='10.5'/%3E%3Crect x='2' y='6' width='48' height='48' rx='12' stroke-width='13'/%3E%3C/g%3E%3C/g%3E%3Cpath d='M13.6 2.8L19.4 1.5L23.9 1.6L27.6 1.5L33 2.7L38 2.1L44.2 3.2L48.6 7.9L50.6 14L49.8 14.2L50.8 19.5L50.2 22.8L50.6 28.6L50.6 32.7L50.5 38L48.2 43.9L44 48.5L38 49.4L38.3 49.9L33.1 49.8L29 49.6L23.3 49.9L19.2 50.6L14 50.4L7.9 48.5L3.9 43.8L1.9 38L2.1 38.2L2.5 32.6L1.8 29L2 22.9L1.2 18.7L1.3 14L3.6 8L8 3.6L14 2Z' fill='%23fffefb' stroke='%23352e29' stroke-width='2' stroke-linejoin='round'/%3E%3Cpath d='M10.1 4.6L15.6 2.7' fill='none' stroke='%23352e29' stroke-width='2' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E");
+  --_glass-sheet: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='92' height='92'%3E%3Cg transform='translate(12 12)'%3E%3Cg fill='none' stroke='%233a2c1e'%3E%3Cg stroke-opacity='0.2'%3E%3Crect x='2' y='3' width='64' height='64' rx='22' stroke-width='1.5'/%3E%3C/g%3E%3Cg stroke-opacity='0.032'%3E%3Crect x='2' y='6' width='64' height='64' rx='22' stroke-width='3'/%3E%3Crect x='2' y='6' width='64' height='64' rx='22' stroke-width='5.5'/%3E%3Crect x='2' y='6' width='64' height='64' rx='22' stroke-width='8'/%3E%3Crect x='2' y='6' width='64' height='64' rx='22' stroke-width='10.5'/%3E%3Crect x='2' y='6' width='64' height='64' rx='22' stroke-width='13'/%3E%3C/g%3E%3C/g%3E%3Cpath d='M23.6 1.5L27.6 1.6L31.3 2.4L36.6 1.3L39.8 1.3L44 2.3L50.7 3.5L57 6.1L62.2 10.8L65.4 17.1L66.1 24L65.7 24.7L65.6 28.4L65.6 32.4L65.6 35.7L65.3 39.6L66.4 44L65.1 50.8L61.5 56.7L57.1 62L50.8 65.1L44 66.3L44.5 65.9L39.3 65.7L35.9 66L32.2 66.6L28.4 65.7L24 66.2L17.1 65.3L11.4 61.3L6.6 56.6L3.5 50.7L2.2 44L1.4 44.4L1.9 39.4L1.3 35.3L1.4 31.7L2.7 28.4L2.5 24L3.4 17.3L5.7 10.7L10.8 5.8L17.4 3.6L24 2.5Z' fill='%23fffefb' stroke='%23352e29' stroke-width='2.1' stroke-linejoin='round'/%3E%3Cpath d='M20.1 3.3L25.6 1.4' fill='none' stroke='%23352e29' stroke-width='2.1' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E");
+  --_glass-sheet-focus: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='92' height='92'%3E%3Cg transform='translate(12 12)'%3E%3Cg fill='none' stroke='%233a2c1e'%3E%3Cg stroke-opacity='0.2'%3E%3Crect x='2' y='3' width='64' height='64' rx='22' stroke-width='1.5'/%3E%3C/g%3E%3Cg stroke-opacity='0.032'%3E%3Crect x='2' y='6' width='64' height='64' rx='22' stroke-width='3'/%3E%3Crect x='2' y='6' width='64' height='64' rx='22' stroke-width='5.5'/%3E%3Crect x='2' y='6' width='64' height='64' rx='22' stroke-width='8'/%3E%3Crect x='2' y='6' width='64' height='64' rx='22' stroke-width='10.5'/%3E%3Crect x='2' y='6' width='64' height='64' rx='22' stroke-width='13'/%3E%3C/g%3E%3C/g%3E%3Cpath d='M23.6 1.5L27.6 1.6L31.3 2.4L36.6 1.3L39.8 1.3L44 2.3L50.7 3.5L57 6.1L62.2 10.8L65.4 17.1L66.1 24L65.7 24.7L65.6 28.4L65.6 32.4L65.6 35.7L65.3 39.6L66.4 44L65.1 50.8L61.5 56.7L57.1 62L50.8 65.1L44 66.3L44.5 65.9L39.3 65.7L35.9 66L32.2 66.6L28.4 65.7L24 66.2L17.1 65.3L11.4 61.3L6.6 56.6L3.5 50.7L2.2 44L1.4 44.4L1.9 39.4L1.3 35.3L1.4 31.7L2.7 28.4L2.5 24L3.4 17.3L5.7 10.7L10.8 5.8L17.4 3.6L24 2.5Z' fill='%23fffefb' stroke='%232c4f9e' stroke-width='2.1' stroke-linejoin='round'/%3E%3Cpath d='M20.1 3.3L25.6 1.4' fill='none' stroke='%232c4f9e' stroke-width='2.1' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E");
+  --_swipe: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='32' preserveAspectRatio='none'%3E%3Cpath d='M6.5 6L14 4.3L30 5.1L46 3.9L55 5.3L57.4 9L56.6 20L57.7 25.4L54 27.7L46 27L30 28.1L14 27.2L5 27.9L2.5 24.4L3.4 13L2.6 8.6Z' fill='%23ffe27a' stroke='%23ffe27a' stroke-width='3' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --_cut-cookie: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Cpath d='M50 0L54.2 1.9L57.8 5.9L61.1 8.5L65.3 7.9L70.4 6.3L75 6.7L77.7 10.5L78.8 15.7L80.4 19.6L84.3 21.2L89.5 22.3L93.3 25L93.7 29.6L92.1 34.7L91.5 38.9L94.1 42.2L98.1 45.8L100 50L98.1 54.2L94.1 57.8L91.5 61.1L92.1 65.3L93.7 70.4L93.3 75L89.5 77.7L84.3 78.8L80.4 80.4L78.8 84.3L77.7 89.5L75 93.3L70.4 93.7L65.3 92.1L61.1 91.5L57.8 94.1L54.2 98.1L50 100L45.8 98.1L42.2 94.1L38.9 91.5L34.7 92.1L29.6 93.7L25 93.3L22.3 89.5L21.2 84.3L19.6 80.4L15.7 78.8L10.5 77.7L6.7 75L6.3 70.4L7.9 65.3L8.5 61.1L5.9 57.8L1.9 54.2L0 50L1.9 45.8L5.9 42.2L8.5 38.9L7.9 34.7L6.3 29.6L6.7 25L10.5 22.3L15.7 21.2L19.6 19.6L21.2 15.7L22.3 10.5L25 6.7L29.6 6.3L34.7 7.9L38.9 8.5L42.2 5.9L45.8 1.9Z' fill='%23ffe27a' fill-opacity='0.62'/%3E%3C/svg%3E");
   --_clip-control: shape(
-    from 5.76px 0.23px,
-    line to 8.97px 0.34px,
-    line to calc(35.95% + 2.53px) -0.1px,
-    line to calc(65.99% - 2.88px) -0.23px,
-    line to calc(93.96% - 7.91px) 0.36px,
-    line to calc(100% - 6px) 0.46px,
-    line to calc(100% - 3.18px) 1.12px,
-    line to calc(100% - 0.83px) 3.01px,
-    line to calc(100% + 0.12px) 6px,
-    line to calc(100% - 0.34px) 6.31px,
-    line to calc(100% - 0.05px) calc(0.99% + 8.82px),
-    line to calc(100% + 0.31px) calc(30.21% + 3.56px),
-    line to calc(100% + 0.41px) calc(64.7% - 2.65px),
-    line to calc(100% + 0.2px) calc(98.95% - 8.81px),
-    line to calc(100% + 0.07px) calc(100% - 6px),
-    line to calc(100% - 0.85px) calc(100% - 3.03px),
-    line to calc(100% - 2.77px) calc(100% - 0.41px),
-    line to calc(100% - 6px) calc(100% - 0.08px),
-    line to calc(100% - 6px) calc(100% - 0.28px),
-    line to calc(96.03% - 8.29px) calc(100% + 0.24px),
-    line to calc(63.19% - 2.37px) calc(100% - 0.11px),
-    line to calc(38.3% + 2.11px) calc(100% - 0.26px),
-    line to calc(5.53% + 8px) calc(100% - 0.22px),
-    line to 6px calc(100% - 0.06px),
-    line to 3.11px calc(100% - 1px),
-    line to 0.49px calc(100% - 2.82px),
-    line to -0.01px calc(100% - 6px),
-    line to -0.07px calc(100% - 5.91px),
-    line to -0.33px calc(94.94% - 8.09px),
-    line to -0.35px calc(62.78% - 2.3px),
-    line to 0.28px calc(32.09% + 3.22px),
-    line to -0.34px calc(1.63% + 8.71px),
-    line to 0.37px 6px,
-    line to 0.95px 3.08px,
-    line to 3.26px 1.26px,
-    line to 6px -0.15px,
+    from 6.58px 1.17px,
+    line to calc(3.89% + 8.3px) 1.36px,
+    line to calc(39.46% + 1.9px) 0.58px,
+    line to calc(63.98% - 2.52px) 0.35px,
+    line to calc(84.82% - 6.27px) 1.39px,
+    line to calc(100% - 7px) 1.41px,
+    line to calc(100% - 4.14px) 2.04px,
+    line to calc(100% - 1.63px) 3.9px,
+    line to calc(100% - 0.6px) 7px,
+    line to calc(100% - 1.36px) 7.55px,
+    line to calc(100% - 0.84px) calc(6.2% + 7.88px),
+    line to calc(100% - 0.2px) calc(29.26% + 3.73px),
+    line to calc(100% - 0.03px) calc(61.69% - 2.1px),
+    line to calc(100% - 0.4px) calc(93.69% - 7.86px),
+    line to calc(100% - 0.66px) calc(100% - 7px),
+    line to calc(100% - 1.66px) calc(100% - 3.92px),
+    line to calc(100% - 3.56px) calc(100% - 1.05px),
+    line to calc(100% - 7px) calc(100% - 0.87px),
+    line to calc(100% - 7px) calc(100% - 1.25px),
+    line to calc(88.5% - 6.93px) calc(100% - 0.32px),
+    line to calc(59% - 1.62px) calc(100% - 0.95px),
+    line to calc(43.65% + 1.14px) calc(100% - 1.22px),
+    line to calc(14.28% + 6.43px) calc(100% - 1.15px),
+    line to 7px calc(100% - 0.84px),
+    line to 4.04px calc(100% - 1.88px),
+    line to 1.16px calc(100% - 3.63px),
+    line to 0.75px calc(100% - 7px),
+    line to 0.63px calc(100% - 6.84px),
+    line to 0.16px calc(86.56% - 6.58px),
+    line to 0.13px calc(58.27% - 1.49px),
+    line to 1.25px calc(32.61% + 3.13px),
+    line to 0.16px calc(7.34% + 7.68px),
+    line to 1.29px 7px,
+    line to 1.8px 4px,
+    line to 4.25px 2.23px,
+    line to 7px 0.56px,
     close
   );
-  --_clip-surface: shape(
-    from 7.77px -0.23px,
-    line to calc(1.33% + 13.63px) -0.41px,
-    line to calc(34.97% + 4.21px) 0.29px,
-    line to calc(64.13% - 3.96px) 0.17px,
-    line to calc(96.22% - 12.94px) -0.28px,
-    line to calc(100% - 8px) -0.31px,
-    line to calc(100% - 4.1px) 1.25px,
-    line to calc(100% - 1.17px) 4.06px,
-    line to calc(100% - 0.12px) 8px,
-    line to calc(100% + 0.04px) 8.13px,
-    line to calc(100% - 0.07px) calc(1.9% + 13.47px),
-    line to calc(100% + 0.18px) calc(33.55% + 4.61px),
-    line to calc(100% - 0.31px) calc(67.05% - 4.77px),
-    line to calc(100% + 0.27px) calc(95.91% - 12.86px),
-    line to calc(100% - 0.17px) calc(100% - 8px),
-    line to calc(100% - 1.37px) calc(100% - 4.17px),
-    line to calc(100% - 3.95px) calc(100% - 0.98px),
-    line to calc(100% - 8px) calc(100% - 0.42px),
-    line to calc(100% - 8.12px) calc(100% + 0.41px),
-    line to calc(99.38% - 13.83px) calc(100% + 0.23px),
-    line to calc(68.1% - 5.07px) calc(100% - 0.38px),
-    line to calc(33.38% + 4.65px) calc(100% + 0.27px),
-    line to 13.98px calc(100% - 0.23px),
-    line to 8px calc(100% + 0.38px),
-    line to 4.15px calc(100% - 1.33px),
-    line to 1.24px calc(100% - 4.1px),
-    line to -0.4px calc(100% - 8px),
-    line to 0.2px calc(100% - 7.61px),
-    line to 0.18px calc(96.45% - 13px),
-    line to -0.06px calc(66.42% - 4.6px),
-    line to 0.04px calc(33.61% + 4.59px),
-    line to -0.25px calc(2.53% + 13.29px),
-    line to 0.02px 8px,
-    line to 1.44px 4.21px,
-    line to 3.86px 0.83px,
-    line to 8px 0.34px,
-    close
-  );
-  --_clip-pill: shape(
-    from 8.77px 0.31px,
-    line to calc(100% - 9px) 0.07px,
-    line to calc(100% - 6.73px) 0.53px,
-    line to calc(100% - 4.41px) 1.04px,
-    line to calc(100% - 2.77px) 2.77px,
-    line to calc(100% - 1.08px) 4.43px,
-    line to calc(100% - 0.61px) 6.75px,
-    line to calc(100% - 0.37px) 9px,
-    line to calc(100% + 0.03px) calc(0.45% + 8.92px),
-    line to calc(100% - 0.15px) calc(100% - 9px),
-    line to calc(100% - 0.6px) calc(100% - 6.75px),
-    line to calc(100% - 1.6px) calc(100% - 4.73px),
-    line to calc(100% - 2.38px) calc(100% - 2.38px),
-    line to calc(100% - 4.54px) calc(100% - 1.28px),
-    line to calc(100% - 6.73px) calc(100% - 0.51px),
-    line to calc(100% - 9px) calc(100% + 0.05px),
-    line to calc(98.2% - 8.68px) calc(100% + 0.17px),
-    line to 9px calc(100% - 0.25px),
-    line to 6.78px calc(100% - 0.71px),
-    line to 4.37px calc(100% - 0.97px),
-    line to 2.68px calc(100% - 2.68px),
-    line to 1.65px calc(100% - 4.76px),
-    line to 0.06px calc(100% - 6.61px),
-    line to 0.35px calc(100% - 9px),
-    line to 0.16px calc(87.43% - 6.74px),
-    line to -0.1px calc(0% + 9px),
-    line to 0.49px 6.72px,
-    line to 1.09px 4.43px,
-    line to 2.48px 2.48px,
-    line to 4.42px 1.07px,
-    line to 6.61px 0.09px,
-    line to 9px 0.21px,
+  --_clip-bubble: shape(
+    from 17.58px 0.39px,
+    line to calc(18.02% + 11.51px) 0.07px,
+    line to calc(42.87% + 2.57px) 1.3px,
+    line to calc(54.47% - 1.61px) 1.1px,
+    line to calc(74.72% - 8.9px) 0.29px,
+    line to calc(100% - 18px) 0.35px,
+    line to calc(100% - 9.54px) 3.34px,
+    line to calc(100% - 3.23px) 9.47px,
+    line to calc(100% - 0.95px) 18px,
+    line to calc(100% - 0.72px) calc(1.89% + 17.32px),
+    line to calc(100% - 0.92px) calc(39.72% + 3.7px),
+    line to calc(100% - 0.48px) calc(78.66% - 10.32px),
+    line to calc(100% - 1.35px) calc(100% - 15.23px),
+    line to calc(100% - 0.31px) calc(100% - 11.54px),
+    line to calc(100% - 1.01px) calc(100% - 6px),
+    line to calc(100% - 1.89px) calc(100% - 3.62px),
+    line to calc(100% - 3.32px) calc(100% - 1.37px),
+    line to calc(100% - 6px) calc(100% - 1.35px),
+    line to calc(100% - 6.22px) calc(100% - 0.07px),
+    line to calc(100% - 10.31px) calc(100% - 0.38px),
+    line to calc(100% - 14.85px) calc(100% - 1.47px),
+    line to calc(78.16% - 10.14px) calc(100% - 0.31px),
+    line to calc(33.76% + 5.85px) calc(100% - 1.21px),
+    line to 18px calc(100% - 0.25px),
+    line to 9.6px calc(100% - 3.45px),
+    line to 3.32px calc(100% - 9.53px),
+    line to 0.23px calc(100% - 18px),
+    line to 1.15px calc(100% - 17.3px),
+    line to 1.11px calc(75.4% - 9.14px),
+    line to 0.69px calc(61.24% - 4.05px),
+    line to 0.86px calc(38.84% + 4.02px),
+    line to 0.36px calc(21.57% + 10.24px),
+    line to 0.81px calc(0% + 18px),
+    line to 3.61px 9.69px,
+    line to 9.19px 2.75px,
+    line to 18px 1.26px,
     close
   );
   --_clip-box: shape(
-    from 3.77px -0.1px,
-    line to calc(1.02% + 5.88px) 0.04px,
-    line to calc(36.53% + 1.62px) 0.31px,
-    line to calc(63.03% - 1.56px) 0.22px,
-    line to calc(95.62% - 5.47px) 0.39px,
-    line to calc(100% - 4px) 0.29px,
-    line to calc(100% - 2.02px) 0.57px,
-    line to calc(100% - 0.92px) 2.22px,
-    line to calc(100% + 0.25px) 4px,
-    line to calc(100% - 0.24px) 3.76px,
-    line to calc(100% - 0.27px) calc(2.42% + 5.71px),
-    line to calc(100% - 0.25px) calc(26.44% + 2.83px),
-    line to calc(100% - 0.1px) calc(66.47% - 1.98px),
-    line to calc(100% + 0.26px) calc(100% - 5.64px),
-    line to calc(100% + 0.19px) calc(100% - 4px),
-    line to calc(100% - 0.62px) calc(100% - 2.05px),
-    line to calc(100% - 1.88px) calc(100% - 0.33px),
-    line to calc(100% - 4px) calc(100% - 0.27px),
-    line to calc(100% - 4.38px) calc(100% - 0.18px),
-    line to calc(100% - 5.68px) calc(100% + 0.06px),
-    line to calc(67.07% - 2.05px) calc(100% - 0.18px),
-    line to calc(27.8% + 2.66px) calc(100% + 0.29px),
-    line to 5.83px calc(100% - 0.4px),
-    line to 4px calc(100% + 0.12px),
-    line to 1.8px calc(100% - 0.18px),
-    line to 0.93px calc(100% - 2.23px),
-    line to -0.02px calc(100% - 4px),
-    line to -0.01px calc(100% - 3.89px),
-    line to 0.45px calc(94.66% - 5.36px),
-    line to -0.22px calc(66.62% - 1.99px),
-    line to -0.29px calc(35.76% + 1.71px),
-    line to 0.08px calc(6.53% + 5.22px),
-    line to 0.46px 4px,
-    line to 0.62px 2.05px,
-    line to 2.13px 0.76px,
-    line to 4px 0.45px,
+    from 4.59px 0.68px,
+    line to calc(11.81% + 4.58px) 0.93px,
+    line to calc(42.34% + 0.92px) 1.41px,
+    line to calc(56.87% - 0.82px) 1.24px,
+    line to calc(82.22% - 3.87px) 1.54px,
+    line to calc(100% - 5px) 1.17px,
+    line to calc(100% - 2.96px) 1.46px,
+    line to calc(100% - 1.81px) 3.16px,
+    line to calc(100% - 0.62px) 5px,
+    line to calc(100% - 1.29px) 4.58px,
+    line to calc(100% - 1.33px) calc(14.3% + 4.28px),
+    line to calc(100% - 1.3px) calc(24.42% + 3.07px),
+    line to calc(100% - 1.03px) calc(62.98% - 1.56px),
+    line to calc(100% - 0.39px) calc(100% - 5.97px),
+    line to calc(100% - 0.69px) calc(100% - 5px),
+    line to calc(100% - 1.51px) calc(100% - 2.99px),
+    line to calc(100% - 2.82px) calc(100% - 1.22px),
+    line to calc(100% - 5px) calc(100% - 1.15px),
+    line to calc(100% - 5.67px) calc(100% - 1.17px),
+    line to calc(99.55% - 5.95px) calc(100% - 0.76px),
+    line to calc(64.05% - 1.69px) calc(100% - 1.18px),
+    line to calc(26.82% + 2.78px) calc(100% - 0.34px),
+    line to calc(4.95% + 5.41px) calc(100% - 1.57px),
+    line to 5px calc(100% - 0.76px),
+    line to 2.73px calc(100% - 1.07px),
+    line to 1.82px calc(100% - 3.16px),
+    line to 0.85px calc(100% - 5px),
+    line to 0.85px calc(100% - 4.81px),
+    line to 1.66px calc(80.5% - 3.66px),
+    line to 0.46px calc(63.25% - 1.59px),
+    line to 0.33px calc(40.98% + 1.08px),
+    line to 1px calc(21.61% + 3.41px),
+    line to 1.34px 5px,
+    line to 1.51px 2.99px,
+    line to 3.06px 1.65px,
+    line to 5px 1.33px,
     close
   );
-  --_clip-disc: shape(
-    from 48.71% 1.74%,
-    line to 50% 0.36%,
-    line to 62.61% 2.93%,
-    line to 75.53% 5.79%,
-    line to 84.6% 15.4%,
-    line to 94.01% 24.59%,
-    line to 96.63% 37.51%,
-    line to 97.95% 50%,
-    line to 100.15% 50%,
-    line to 99.19% 50%,
-    line to 96.66% 62.5%,
-    line to 91.09% 73.73%,
-    line to 86.78% 86.78%,
-    line to 74.76% 92.88%,
-    line to 62.63% 97.15%,
-    line to 50% 100.25%,
-    line to 50% 100.96%,
-    line to 50% 98.6%,
-    line to 37.66% 96.07%,
-    line to 24.25% 94.6%,
-    line to 14.88% 85.12%,
-    line to 9.19% 73.56%,
-    line to 0.36% 63.3%,
-    line to 1.96% 50%,
-    line to 0.9% 50%,
-    line to -0.57% 50%,
-    line to 2.74% 37.34%,
-    line to 6.05% 24.63%,
-    line to 13.77% 13.77%,
-    line to 24.55% 5.93%,
-    line to 36.74% 0.51%,
-    line to 50% 1.18%,
+  --_clip-fab: shape(
+    from 14.6px 0.87px,
+    line to calc(7.47% + 14.46px) -0.09px,
+    line to calc(31.92% + 6.15px) 0.31px,
+    line to calc(60.48% - 3.56px) 0.71px,
+    line to calc(86.63% - 12.45px) 0.98px,
+    line to calc(100% - 15px) 0.53px,
+    line to calc(100% - 8.12px) 3.09px,
+    line to calc(100% - 2.26px) 7.64px,
+    line to calc(100% - 1.21px) 15px,
+    line to calc(100% - 0.72px) 15.42px,
+    line to calc(100% - 0.85px) calc(15.7% + 11.66px),
+    line to calc(100% - 0.76px) calc(36.64% + 4.54px),
+    line to calc(100% - 1.3px) calc(61.33% - 3.85px),
+    line to calc(100% - 1.13px) calc(93.15% - 14.67px),
+    line to calc(100% - 0.85px) calc(100% - 15px),
+    line to calc(100% - 2.44px) calc(100% - 7.75px),
+    line to calc(100% - 8.06px) calc(100% - 2.99px),
+    line to calc(100% - 15px) calc(100% + 0.04px),
+    line to calc(100% - 15.13px) calc(100% + 0.11px),
+    line to calc(83.82% - 11.5px) calc(100% - 0.23px),
+    line to calc(57.3% - 2.48px) calc(100% - 0.15px),
+    line to calc(39.36% + 3.62px) calc(100% - 0.22px),
+    line to calc(9.17% + 13.88px) calc(100% - 0.51px),
+    line to 15px calc(100% - 1.04px),
+    line to 7.48px calc(100% - 1.98px),
+    line to 2.78px calc(100% - 7.95px),
+    line to 1.35px calc(100% - 15px),
+    line to 0.33px calc(100% - 15.15px),
+    line to 0.53px calc(84.36% - 11.68px),
+    line to 1.1px calc(67.25% - 5.86px),
+    line to 0.35px calc(38.5% + 3.91px),
+    line to 0.26px calc(16.83% + 11.28px),
+    line to 0.28px 15px,
+    line to 2.73px 7.92px,
+    line to 7.92px 2.73px,
+    line to 15px 0.19px,
     close
+  );
+  --_clip-cookie: polygon(
+    50% 0%,
+    54.23% 1.65%,
+    57.81% 5.68%,
+    60.73% 9.95%,
+    63.68% 12.41%,
+    67.52% 12.42%,
+    72.5% 11.03%,
+    77.84% 10.24%,
+    82.14% 11.7%,
+    84.32% 15.68%,
+    84.47% 21.07%,
+    83.97% 26.22%,
+    84.64% 30%,
+    87.58% 32.48%,
+    92.29% 34.61%,
+    96.88% 37.44%,
+    99.24% 41.32%,
+    98.35% 45.77%,
+    95% 50%,
+    91.31% 53.61%,
+    89.39% 56.95%,
+    90.05% 60.73%,
+    92.29% 65.39%,
+    93.99% 70.51%,
+    93.3% 75%,
+    89.76% 77.84%,
+    84.47% 78.93%,
+    79.32% 79.32%,
+    75.71% 80.64%,
+    73.78% 83.97%,
+    72.5% 88.97%,
+    70.51% 93.99%,
+    67.1% 96.98%,
+    62.56% 96.88%,
+    57.81% 94.32%,
+    53.61% 91.31%,
+    50% 90%,
+    46.39% 91.31%,
+    42.19% 94.32%,
+    37.44% 96.88%,
+    32.9% 96.98%,
+    29.49% 93.99%,
+    27.5% 88.97%,
+    26.22% 83.97%,
+    24.29% 80.64%,
+    20.68% 79.32%,
+    15.53% 78.93%,
+    10.24% 77.84%,
+    6.7% 75%,
+    6.01% 70.51%,
+    7.71% 65.39%,
+    9.95% 60.73%,
+    10.61% 56.95%,
+    8.69% 53.61%,
+    5% 50%,
+    1.65% 45.77%,
+    0.76% 41.32%,
+    3.12% 37.44%,
+    7.71% 34.61%,
+    12.42% 32.48%,
+    15.36% 30%,
+    16.03% 26.22%,
+    15.53% 21.07%,
+    15.68% 15.68%,
+    17.86% 11.7%,
+    22.16% 10.24%,
+    27.5% 11.03%,
+    32.48% 12.42%,
+    36.32% 12.41%,
+    39.27% 9.95%,
+    42.19% 5.68%,
+    45.77% 1.65%
+  );
+  --_clip-clover: polygon(
+    50% 7.4%,
+    55.3% 3.71%,
+    61.27% 1.23%,
+    67.63% 0.08%,
+    74.08% 0.31%,
+    80.35% 1.9%,
+    86.12% 4.79%,
+    91.16% 8.84%,
+    95.21% 13.88%,
+    98.1% 19.65%,
+    99.69% 25.92%,
+    99.92% 32.37%,
+    98.77% 38.73%,
+    96.29% 44.7%,
+    92.6% 50%,
+    96.29% 55.3%,
+    98.77% 61.27%,
+    99.92% 67.63%,
+    99.69% 74.08%,
+    98.1% 80.35%,
+    95.21% 86.12%,
+    91.16% 91.16%,
+    86.12% 95.21%,
+    80.35% 98.1%,
+    74.08% 99.69%,
+    67.63% 99.92%,
+    61.27% 98.77%,
+    55.3% 96.29%,
+    50% 92.6%,
+    44.7% 96.29%,
+    38.73% 98.77%,
+    32.37% 99.92%,
+    25.92% 99.69%,
+    19.65% 98.1%,
+    13.88% 95.21%,
+    8.84% 91.16%,
+    4.79% 86.12%,
+    1.9% 80.35%,
+    0.31% 74.08%,
+    0.08% 67.63%,
+    1.23% 61.27%,
+    3.71% 55.3%,
+    7.4% 50%,
+    3.71% 44.7%,
+    1.23% 38.73%,
+    0.08% 32.37%,
+    0.31% 25.92%,
+    1.9% 19.65%,
+    4.79% 13.88%,
+    8.84% 8.84%,
+    13.88% 4.79%,
+    19.65% 1.9%,
+    25.92% 0.31%,
+    32.37% 0.08%,
+    38.73% 1.23%,
+    44.7% 3.71%
   );
 }
 :root[data-theme="doodle"].dark {
   --_stroke-control: image-set(
-    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADgAAAA4BAMAAABaqCYtAAAAMFBMVEXZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cFTAZBvAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAABsElEQVR42q3UO0sjURgG4DfxtkRNAlbauMX2CSaVsEQrKyEQAmKTytpFthGLXRAFGyP4A6KdDEq2XIQQOyEgESwWFmaTX+B4izpJzrxy4g3NfKeQfZlqHs5lvvnOAXQmdxFHcs46sc9/T+NtRknPq/EptmVZ36PPNuCwK2r70Xoex6jKeiaBwMzBE//sYI5ke+l1kZFEMrvisKlnDpH88/ndLhAs8gxAkWoV3emnFwWc+zj88pVpBHnka+jjDvq45Y8B1vGJ3/wR5QZCnBKw6CLMqIB0EVOQ8BI5V8LaBQq3Elav9SNt6BqsS1hogKcS5u/gXEiYc1EW10w1kRd3G1OG74wQsbaEw9QuZIhIiSNDxOK9AQsNA1avDCjXVuMvE+78fxw04fCHMUxI5wiIeIYeiihDhSLK0GAphdqliC1Dx6eaKN4YsHAn4Q/X0JrVG72sf4KsY1w62f3cQphxqe5pDFHozbwH9DqdG7ArPdQ9O0YeR/1m7fzLWbK1Ye3btv3PPtxbmMCX5dLfUk11RgQ26Zfnss77XPLey5XYm80k9GUdTGQ3DpzKWjIzoV8/AHTOGFVg1wKkAAAAAElFTkSuQmCC")
+    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADgAAAA4BAMAAABaqCYtAAAAMFBMVEXZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cFTAZBvAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAAB0klEQVR42o2UPU8CQRCGB/ADRD4SY2MjrZUkF2nBWGinvYloQYKx0Bh7qW0sTIyxwUZJLiGY+AMwNkYaKO3Of4AICoLHa2YP0Xiz0be4ZO+5vZl3Z2aJ/tZIip/T2fNK3MW85c4CJYoA0HXRDQB1OOqZpnn644sZuHQ/DGgN3jxkjLkveuewsTIvrH5hkVdDuqngIQB7fxjDYxjGchHoRXkB4NGV4iGwxxGBE7dxXxU1Dom2dCwhNIkogJYEx9EhoiBeJOiFrfY/i6cNpIjSuJVjIk5UGtj9pQjH9KIflWCQs/XjXaywH29EYeVHSqhLlFQnIaje56xaMiwjReO8XdIuclyUmAjn2X8eOZJPoUG0qslogm3odjLUxvSjqc/Wj1e9T4ZJuWLcPgxzOtjWQ+e3F6S1ooVBNPSQG08LI6hRRGdlFtcUwpMM+ZeTXBlJaeScyshwT3kVdYw1GkVPhnnEyaemSWpNrrMFTVN/EFFVhgEeByohLsGwsqhpsDSuVcq2MKAeS41tErC3hFIrEz6+3S59C9kj0zQPeJC9OzeUHPTd8F5k2YXFFWc9qOSoBUFfrT5ScrPva82zXjnLLBnG1HYVwMdRxTRFf4niVYz+o0/g8lYqaPJdfwAAAABJRU5ErkJggg==")
       2x
   );
   --_stroke-control-danger: image-set(
-    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADgAAAA4BAMAAABaqCYtAAAAMFBMVEX/j3//j3//j3//j3//j3//j3//j3//j3//j3//j3//j3//j3//j3//j3//j3//j3+e/5WQAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAABsElEQVR42q3UO0sjURgG4DfxtkRNAlbauMX2CSaVsEQrKyEQAmKTytpFthGLXRAFGyP4A6KdDEq2XIQQOyEgESwWFmaTX+B4izpJzrxy4g3NfKeQfZlqHs5lvvnOAXQmdxFHcs46sc9/T+NtRknPq/EptmVZ36PPNuCwK2r70Xoex6jKeiaBwMzBE//sYI5ke+l1kZFEMrvisKlnDpH88/ndLhAs8gxAkWoV3emnFwWc+zj88pVpBHnka+jjDvq45Y8B1vGJ3/wR5QZCnBKw6CLMqIB0EVOQ8BI5V8LaBQq3Elav9SNt6BqsS1hogKcS5u/gXEiYc1EW10w1kRd3G1OG74wQsbaEw9QuZIhIiSNDxOK9AQsNA1avDCjXVuMvE+78fxw04fCHMUxI5wiIeIYeiihDhSLK0GAphdqliC1Dx6eaKN4YsHAn4Q/X0JrVG72sf4KsY1w62f3cQphxqe5pDFHozbwH9DqdG7ArPdQ9O0YeR/1m7fzLWbK1Ye3btv3PPtxbmMCX5dLfUk11RgQ26Zfnss77XPLey5XYm80k9GUdTGQ3DpzKWjIzoV8/AHTOGFVg1wKkAAAAAElFTkSuQmCC")
+    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADgAAAA4BAMAAABaqCYtAAAAMFBMVEX/j3//j3//j3//j3//j3//j3//j3//j3//j3//j3//j3//j3//j3//j3//j3//j3+e/5WQAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAAB0klEQVR42o2UPU8CQRCGB/ADRD4SY2MjrZUkF2nBWGinvYloQYKx0Bh7qW0sTIyxwUZJLiGY+AMwNkYaKO3Of4AICoLHa2YP0Xiz0be4ZO+5vZl3Z2aJ/tZIip/T2fNK3MW85c4CJYoA0HXRDQB1OOqZpnn644sZuHQ/DGgN3jxkjLkveuewsTIvrH5hkVdDuqngIQB7fxjDYxjGchHoRXkB4NGV4iGwxxGBE7dxXxU1Dom2dCwhNIkogJYEx9EhoiBeJOiFrfY/i6cNpIjSuJVjIk5UGtj9pQjH9KIflWCQs/XjXaywH29EYeVHSqhLlFQnIaje56xaMiwjReO8XdIuclyUmAjn2X8eOZJPoUG0qslogm3odjLUxvSjqc/Wj1e9T4ZJuWLcPgxzOtjWQ+e3F6S1ooVBNPSQG08LI6hRRGdlFtcUwpMM+ZeTXBlJaeScyshwT3kVdYw1GkVPhnnEyaemSWpNrrMFTVN/EFFVhgEeByohLsGwsqhpsDSuVcq2MKAeS41tErC3hFIrEz6+3S59C9kj0zQPeJC9OzeUHPTd8F5k2YXFFWc9qOSoBUFfrT5ScrPva82zXjnLLBnG1HYVwMdRxTRFf4niVYz+o0/g8lYqaPJdfwAAAABJRU5ErkJggg==")
       2x
   );
   --_stroke-control-focus: image-set(
-    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADgAAAA4BAMAAABaqCYtAAAAMFBMVEWTtu6Ttu6Ttu6Ttu6Ttu6Ttu6Ttu6Ttu6Ttu6Ttu6Ttu6Ttu6Ttu6Ttu6Ttu6Ttu6MVT1EAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAABsElEQVR42q3UO0sjURgG4DfxtkRNAlbauMX2CSaVsEQrKyEQAmKTytpFthGLXRAFGyP4A6KdDEq2XIQQOyEgESwWFmaTX+B4izpJzrxy4g3NfKeQfZlqHs5lvvnOAXQmdxFHcs46sc9/T+NtRknPq/EptmVZ36PPNuCwK2r70Xoex6jKeiaBwMzBE//sYI5ke+l1kZFEMrvisKlnDpH88/ndLhAs8gxAkWoV3emnFwWc+zj88pVpBHnka+jjDvq45Y8B1vGJ3/wR5QZCnBKw6CLMqIB0EVOQ8BI5V8LaBQq3Elav9SNt6BqsS1hogKcS5u/gXEiYc1EW10w1kRd3G1OG74wQsbaEw9QuZIhIiSNDxOK9AQsNA1avDCjXVuMvE+78fxw04fCHMUxI5wiIeIYeiihDhSLK0GAphdqliC1Dx6eaKN4YsHAn4Q/X0JrVG72sf4KsY1w62f3cQphxqe5pDFHozbwH9DqdG7ArPdQ9O0YeR/1m7fzLWbK1Ye3btv3PPtxbmMCX5dLfUk11RgQ26Zfnss77XPLey5XYm80k9GUdTGQ3DpzKWjIzoV8/AHTOGFVg1wKkAAAAAElFTkSuQmCC")
+    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADgAAAA4BAMAAABaqCYtAAAAMFBMVEWTtu6Ttu6Ttu6Ttu6Ttu6Ttu6Ttu6Ttu6Ttu6Ttu6Ttu6Ttu6Ttu6Ttu6Ttu6Ttu6MVT1EAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAAB0klEQVR42o2UPU8CQRCGB/ADRD4SY2MjrZUkF2nBWGinvYloQYKx0Bh7qW0sTIyxwUZJLiGY+AMwNkYaKO3Of4AICoLHa2YP0Xiz0be4ZO+5vZl3Z2aJ/tZIip/T2fNK3MW85c4CJYoA0HXRDQB1OOqZpnn644sZuHQ/DGgN3jxkjLkveuewsTIvrH5hkVdDuqngIQB7fxjDYxjGchHoRXkB4NGV4iGwxxGBE7dxXxU1Dom2dCwhNIkogJYEx9EhoiBeJOiFrfY/i6cNpIjSuJVjIk5UGtj9pQjH9KIflWCQs/XjXaywH29EYeVHSqhLlFQnIaje56xaMiwjReO8XdIuclyUmAjn2X8eOZJPoUG0qslogm3odjLUxvSjqc/Wj1e9T4ZJuWLcPgxzOtjWQ+e3F6S1ooVBNPSQG08LI6hRRGdlFtcUwpMM+ZeTXBlJaeScyshwT3kVdYw1GkVPhnnEyaemSWpNrrMFTVN/EFFVhgEeByohLsGwsqhpsDSuVcq2MKAeS41tErC3hFIrEz6+3S59C9kj0zQPeJC9OzeUHPTd8F5k2YXFFWc9qOSoBUFfrT5ScrPva82zXjnLLBnG1HYVwMdRxTRFf4niVYz+o0/g8lYqaPJdfwAAAABJRU5ErkJggg==")
       2x
   );
-  --_stroke-surface: image-set(
-    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgBAMAAAAQtmoLAAAAMFBMVEXZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cFTAZBvAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAACfUlEQVR42s3Yz2vTYBgH8KdL5yo6KAw82kH/gDlrDx5chOF5g/0SPKQeBG89Cd4mg0ntJeDJ2wQ9zKp0Jw+D0aPH7qzrsn9Aorbp0pD0K8nSH8pY369Q8aHQJLyfvO+b5H15n1fkLEzE8e3d85V0eCWXy2+UKg07vu7dkEFk119gZPjL/fJTvWuNRuMC0d3qAT06/xQ1ZCL/uHLc8/u726s340IPANyNj+thhQ+Hmqjlcmn5M27baJ0dpQB8npWRca1XhY7KlqjEAtrRv+WLWmg2ClGLmopAFqJeZPBMFUxYHREpdkU5jCB8qK46yGBWNPxUB9MoyGXsqYMUXst1LKuDJE7EIPosCThiegSQmiumywDzL0B1vKDqSrXNAocE1vhBiwJtsZoUcAT/H7A5cMp2euwvznSlxoEO+bWaHjuAWGB45JgOQYcCATkv/QPgk6DokcCkgUuCKg3a5JuuOySwWGA3SYAm+XnjOwc0HhzKDlsD1elECDzyKXHAaskmt3RwwnmAm70NnxwP0TJOOTY9Ehi+6BRYCkRnVmSiI/wRkWEBXYMekGCJBeFj5YBHApMGHRLsuCSo0sAhgeVIEeSYBgXsJgc0/JA6M4BS2BMDaXVwFQWZVk8UReaQlimcEJOGL5KwiSVZ/TT8PPqZ+8i4FGWVc2ipj+gwq0zaqrliwgrSw5n7yLgSr9M1Gy+V0m8zyvBF5A7w5pwC2bXFwclk+QDw+m0D3kp2vfzRRqNSerIyf2ujfBBtyhztbi9GWyHF8Oywzy3AumhfJoj2dL4ONj8ma+eVOhq+ibf6215Jsobul1eP5mfy98sfjhHsl9bClszce/o+Vr2NgF8v9hp+aHdg+gAAAABJRU5ErkJggg==")
+  --_stroke-bubble: image-set(
+    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgBAMAAAAQtmoLAAAAMFBMVEXZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cFTAZBvAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAADYElEQVR42p1YP0wTYRT/rr0DbEFZ0AnpoowgFROWgk5uVRMTo0NldqiJrgZiYEGlJiY4qIHEsFoWiZN1cXAwddOgzS06YXICogj0fvr9ueN6d7175xua6+X7fe9978/vve8YC8rpiyyBHHtvAs8ZY+n7jUZjtTdmuXYDQt5q503xsHshcn1fFX6xH0WsvyrXfDZbIJ9ybXafU+tsZnBF9nI+n3/AX+xPhlpvOTt+Yyw1b7+Txo+J18shgG65+vvjc+Kva4bQhq9BQIUbv3A2RPU1jpjwvzaA1VNtfDFYB376X46j2T5G6UpAhWZiK8LfHQEVWSAypGW/igp2IlOgA/jlO/Kb6CQrA9c9fwuwY9KyVUXMkYUUvSoyrfpCRfeqmMJufGUVgZtOXGKPrFRsuRbZOUZR4bh+IJgp4Y7aV08lfKAANED5voppEqHUVfpowDAJUMFDZVuTRllFZXoWv2mAI9hUTtqkAbIq1mVK2Lh0qoSouSGPkTRs5aQckagt4c5ON4CxUhW2dLcWX3TZrfyDDWGDChjCD1EMK1RAj8jSeny1OXJIHNfNwXgxAO7cJiMLBxjYSwboiuG81hKyeUFvkwHC/GxSQBf+JAPoCbykcwdpieLAC8IkUsD/AIRJzCLXj8oKHj1y4JAMwGTy2XSAOC+dA3jtDHOWIRcQq3I6diiWIot88xKWyIAKbwxJAIucmIp01mA1foZxWsNSXJljhkUHiEgfBh2gc15KAujg6Z0BtZ8ohtFB7ScOYZj01OgR00aFbtKAoPshahN1Qpalc6Vs1AadmGSj1qzgYN22Ue/JqlgiswbkzLFBr+kJ4d1tej1Mi4CTe1BJxCxF5w1VO3XiCOeWc5k6YbEpufVxUJlmUWa2Dmrbqqm5skBV4fSStEVU4ba3AkjpkXKZPm2RgueZSwqg8J9xcM/QTIoK71zST1HR4xkPNRPNyfjM8BRCP+S3g+gG5PGlVgPwsTem4LwzQCb8I8OJW04QRrK+kXiQfxNo3uWLnq7Nir1SV14DezPuDd13V9LFbf7lmWfisr82O3pPfSfYnxnhaRF0pHYHbaXBf4JjzJjlX7j+4uA5rM6O1sGtHpUfOexXlxg7KU3Ejhbqw/T8+m3xMDr3ZUGZ0PeEG7TFEkn+sqSWv3Nqc/0H+RbRAAAAAElFTkSuQmCC")
       2x
   );
   --_stroke-pill: image-set(
-    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAoBAMAAAB+0KVeAAAAMFBMVEXZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cFTAZBvAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAABWUlEQVR42mWSv0/CUBDHDwqEKAqLi4nKYqJbE+MqOLmY4ODkgoM7xvgHdGdAV2NkNA4GBmd1ciWOmpiSOJtGBSzU9quvjwe915sun3fvfnzviEJL728kN7eJ2ZoDYa+nhSlbhDL/XLG0A+/i4ePmVlAV28TIDJ2FuoNHyXL4NdWnFDzpNGBN01fQlo/9SB8ZGbqEs2h3NTyL3z5rOQX3P0unxwepekQJdDnMByK8zeEcipTFMYczKFMOJodZHNJKwBllYFF1pME02tQcaNDAgFpam5SAS40fDQpSHcZgn0pBQYOtHs1Dh/YX5f1YoS6VPA0KMWKFsrCohjKHyzAph3etIyGyHRRZHacXX1wmFN3AJ9d4L5zAjcLxMCWWtCL7ng3XP7Z1SNUMZ3J/dAB8S28LeLsWt526grpKMsIjfjmqAxhO8u/a6ryfojomd+4BeCf6FlYv75T7BwJGqkBGrRARAAAAAElFTkSuQmCC")
+    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGgAAABoBAMAAADvMqiSAAAAMFBMVEXZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cFTAZBvAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAADgElEQVR42sVYTWsTURR9yWRs0yR1wJWLYsAf0GhBhIrNpuBGG8RiEaUVFFzZghS6azeVWNGKuChuWkTBVjGCG3FhuurCTSuKGwlBRGi7GT/a2iSdOfrezKSTZDLzbhG8i4Ymc3j349xz7zzG/plFxrKTY1PzZyUfvwAAO7CtoMOYHz3iDwnfgZc90Xwwag7eVs40PyfvPGTMZKdmJgeq/8O83ww0DWA9xdjtScedLo0dOP+wyFEj3pjTAJa8vFd4pIanhwcBvGriw/EiUEl5lKYIfGsa7j4dKCW9Air5ZJb7sVr/+wnASPmVsBvAp7rjAUz4F/4SgA813wwDH4MYdh0wasoKlLUgUGi61ps4kAkmcziHXzWp25JpgYTbPwWYkwEpbv/iMDWpbpt1+TeNTbkW7dj1LyzpHWOR3YTFYGiSapDDSrWym7KK0+M8GtLxUhbU5gQVBZKyIMUJqge/5RUxh0XxOV4NTiooq1J5DMmDYtgWn4SQGFNhWgUzKDKvI80Ya0WJAsoJ9sTlS8utDz/+MveQ+CttCXFGDyXjPJptwbw5Omg2SLvqxa4sapuhgFQB0im15WXdYSwEkGa4AqQtJMHCXJEsHwnGOyqCCgkTAjSm0Phq8ZsKEvymgmJc9qmgdt7vKjER4qQWu+nluVfh8rdFLK7JG3eDVlwdGmvHTxpoGSmWoJ6UQ4a1UUTZmoATdicSbBBzdJZboArdPSqN9goaoYN4yskxcVArkbACFKMNDQuUqFnHJCyPNNtPbA1WRIq10QahJeMqXffYHnRvR8gsUSPKdmAEi4r+Iw41q67E8WlpyrD8tsetE9/pe8SgOCNOo4QVTQutustioQrz0UaZnpqFHaIQwrDX0UVKbUt2EjcoGd+yd+0KJXkrzg4izb4wnATk5Ze3aLWR+uRlorPKhLh8UPnqGqpCluhR1wtnXlb7xl0rW4dk/iLAe/fi90UGdBJmyt0kMi94il7DnVbgazDoDGqpnZd4D29BnRjHEDxxZoF7DRcfj/wx3WjQBX6L8dgPcxEw043pbLgOcbP7bsO9h/iaXymtpb0xp5b5tZpHVVT+g/nAHiju4XLsLb/ZqnimVxHXZ+vZ0XMDz3UU3jy9tbBQwLuCdRu2mvRxvIkt+VwJ6t6Qtcu+b0cvGhHm5xtBde/NTj17fSXJDvdeu9nf36VePcr+o/0BB9uHSoe4d5oAAAAASUVORK5CYII=")
       2x
   );
-  --_stroke-box: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18'%3E%3Cpath d='M3.8 0.9L6.1 1L8.2 1.3L9.8 1.2L11.7 1.4L14 1.3L15.5 1.4L16.2 2.7L17.3 4L16.8 3.8L16.8 6.1L16.8 7.6L16.9 10L17.3 12.4L17.2 14L16.5 15.5L15.6 16.8L14 16.8L13.6 16.8L12.3 17.1L10 16.8L7.7 17.3L5.8 16.6L4 17.1L2.3 17L1.8 15.3L1 14L1 14.1L1.4 11.7L0.8 10L0.7 8.1L1.1 6.4L1.4 4L1.5 2.5L2.6 1.6L4 1.4Z' fill='none' stroke='%23d9d1c1' stroke-width='1.45' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  --_stroke-ball: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48'%3E%3Cpath d='M24 1.3L29.8 2.2L35.3 4.5L40.5 7.5L43.5 12.7L46.5 18L47.2 24L45.8 29.8L43.7 35.4L40.2 40.2L35.7 44.2L30.1 46.7L24 47.4L18.1 46.1L12.7 43.6L7.4 40.6L4.1 35.5L1.5 30L0.9 24L2.1 18.1L3.7 12.3L7.4 7.4L12.7 4.4L18.1 1.8Z' fill='none' stroke='%23d9d1c1' stroke-width='1.55' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  --_glass-control: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='52' height='52'%3E%3Cg transform='translate(12 12)'%3E%3Cg fill='none' stroke='%23000000'%3E%3Cg stroke-opacity='0.5'%3E%3Crect x='1' y='2' width='26' height='26' rx='5' stroke-width='1.5'/%3E%3C/g%3E%3Cg stroke-opacity='0.07'%3E%3Crect x='1' y='5' width='26' height='26' rx='5' stroke-width='3'/%3E%3Crect x='1' y='5' width='26' height='26' rx='5' stroke-width='5.5'/%3E%3Crect x='1' y='5' width='26' height='26' rx='5' stroke-width='8'/%3E%3Crect x='1' y='5' width='26' height='26' rx='5' stroke-width='10.5'/%3E%3Crect x='1' y='5' width='26' height='26' rx='5' stroke-width='13'/%3E%3C/g%3E%3C/g%3E%3Cpath d='M5.8 1.2L9 1.3L12.6 0.9L15.6 0.7L18.4 1.3L22 1.4L24.3 2L26.3 3.5L27.1 6L26.7 6.3L27 9.1L27.3 12L27.4 15.5L27.2 18.9L27.1 22L26.3 24.5L24.7 26.7L22 26.9L22 26.7L18.6 27.3L15.3 26.9L12.8 26.8L9.6 26.8L6 27L3.6 26.2L1.3 24.7L1 22L0.9 22.1L0.6 18.5L0.6 15.3L1.3 12.2L0.6 9.2L1.3 6L1.8 3.6L3.7 2.1L6 0.8Z' fill='%2325221f' stroke='%23d9d1c1' stroke-width='1.45' stroke-linejoin='round'/%3E%3Cpath d='M2.8 3L8.3 1.1' fill='none' stroke='%23d9d1c1' stroke-width='1.45' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E");
-  --_glass-surface: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='72' height='72'%3E%3Cg transform='translate(12 12)'%3E%3Cg fill='none' stroke='%23000000'%3E%3Cg stroke-opacity='0.5'%3E%3Crect x='1' y='2' width='46' height='46' rx='7' stroke-width='1.5'/%3E%3C/g%3E%3Cg stroke-opacity='0.07'%3E%3Crect x='1' y='5' width='46' height='46' rx='7' stroke-width='3'/%3E%3Crect x='1' y='5' width='46' height='46' rx='7' stroke-width='5.5'/%3E%3Crect x='1' y='5' width='46' height='46' rx='7' stroke-width='8'/%3E%3Crect x='1' y='5' width='46' height='46' rx='7' stroke-width='10.5'/%3E%3Crect x='1' y='5' width='46' height='46' rx='7' stroke-width='13'/%3E%3C/g%3E%3C/g%3E%3Cpath d='M7.8 0.8L14.3 0.6L21 1.3L26.8 1.2L33.2 0.7L40 0.7L43.4 2.1L45.9 4.6L46.9 8L47 8.1L46.9 14.4L47.2 20.7L46.7 27.4L47.2 33.2L46.8 40L45.7 43.3L43.5 46.1L40 46.6L39.9 47.4L33.9 47.2L27.6 46.6L20.7 47.2L14 46.7L8 47.4L4.7 45.8L2.1 43.4L0.6 40L1.2 40.4L1.2 33.3L1 27.3L1.1 20.7L0.8 14.5L1 8L2.3 4.7L4.4 1.7L8 1.4Z' fill='%2325221f' stroke='%23d9d1c1' stroke-width='1.55' stroke-linejoin='round'/%3E%3Cpath d='M4.8 2.6L10.3 0.7' fill='none' stroke='%23d9d1c1' stroke-width='1.55' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E");
-  --_glass-surface-focus: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='72' height='72'%3E%3Cg transform='translate(12 12)'%3E%3Cg fill='none' stroke='%23000000'%3E%3Cg stroke-opacity='0.5'%3E%3Crect x='1' y='2' width='46' height='46' rx='7' stroke-width='1.5'/%3E%3C/g%3E%3Cg stroke-opacity='0.07'%3E%3Crect x='1' y='5' width='46' height='46' rx='7' stroke-width='3'/%3E%3Crect x='1' y='5' width='46' height='46' rx='7' stroke-width='5.5'/%3E%3Crect x='1' y='5' width='46' height='46' rx='7' stroke-width='8'/%3E%3Crect x='1' y='5' width='46' height='46' rx='7' stroke-width='10.5'/%3E%3Crect x='1' y='5' width='46' height='46' rx='7' stroke-width='13'/%3E%3C/g%3E%3C/g%3E%3Cpath d='M7.8 0.8L14.3 0.6L21 1.3L26.8 1.2L33.2 0.7L40 0.7L43.4 2.1L45.9 4.6L46.9 8L47 8.1L46.9 14.4L47.2 20.7L46.7 27.4L47.2 33.2L46.8 40L45.7 43.3L43.5 46.1L40 46.6L39.9 47.4L33.9 47.2L27.6 46.6L20.7 47.2L14 46.7L8 47.4L4.7 45.8L2.1 43.4L0.6 40L1.2 40.4L1.2 33.3L1 27.3L1.1 20.7L0.8 14.5L1 8L2.3 4.7L4.4 1.7L8 1.4Z' fill='%2325221f' stroke='%2393b6ee' stroke-width='1.55' stroke-linejoin='round'/%3E%3Cpath d='M4.8 2.6L10.3 0.7' fill='none' stroke='%2393b6ee' stroke-width='1.55' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E");
+  --_stroke-pill-danger: image-set(
+    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGgAAABoBAMAAADvMqiSAAAAMFBMVEX/j3//j3//j3//j3//j3//j3//j3//j3//j3//j3//j3//j3//j3//j3//j3//j3+e/5WQAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAADgElEQVR42sVYTWsTURR9yWRs0yR1wJWLYsAf0GhBhIrNpuBGG8RiEaUVFFzZghS6azeVWNGKuChuWkTBVjGCG3FhuurCTSuKGwlBRGi7GT/a2iSdOfrezKSTZDLzbhG8i4Ymc3j349xz7zzG/plFxrKTY1PzZyUfvwAAO7CtoMOYHz3iDwnfgZc90Xwwag7eVs40PyfvPGTMZKdmJgeq/8O83ww0DWA9xdjtScedLo0dOP+wyFEj3pjTAJa8vFd4pIanhwcBvGriw/EiUEl5lKYIfGsa7j4dKCW9Air5ZJb7sVr/+wnASPmVsBvAp7rjAUz4F/4SgA813wwDH4MYdh0wasoKlLUgUGi61ps4kAkmcziHXzWp25JpgYTbPwWYkwEpbv/iMDWpbpt1+TeNTbkW7dj1LyzpHWOR3YTFYGiSapDDSrWym7KK0+M8GtLxUhbU5gQVBZKyIMUJqge/5RUxh0XxOV4NTiooq1J5DMmDYtgWn4SQGFNhWgUzKDKvI80Ya0WJAsoJ9sTlS8utDz/+MveQ+CttCXFGDyXjPJptwbw5Omg2SLvqxa4sapuhgFQB0im15WXdYSwEkGa4AqQtJMHCXJEsHwnGOyqCCgkTAjSm0Phq8ZsKEvymgmJc9qmgdt7vKjER4qQWu+nluVfh8rdFLK7JG3eDVlwdGmvHTxpoGSmWoJ6UQ4a1UUTZmoATdicSbBBzdJZboArdPSqN9goaoYN4yskxcVArkbACFKMNDQuUqFnHJCyPNNtPbA1WRIq10QahJeMqXffYHnRvR8gsUSPKdmAEi4r+Iw41q67E8WlpyrD8tsetE9/pe8SgOCNOo4QVTQutustioQrz0UaZnpqFHaIQwrDX0UVKbUt2EjcoGd+yd+0KJXkrzg4izb4wnATk5Ze3aLWR+uRlorPKhLh8UPnqGqpCluhR1wtnXlb7xl0rW4dk/iLAe/fi90UGdBJmyt0kMi94il7DnVbgazDoDGqpnZd4D29BnRjHEDxxZoF7DRcfj/wx3WjQBX6L8dgPcxEw043pbLgOcbP7bsO9h/iaXymtpb0xp5b5tZpHVVT+g/nAHiju4XLsLb/ZqnimVxHXZ+vZ0XMDz3UU3jy9tbBQwLuCdRu2mvRxvIkt+VwJ6t6Qtcu+b0cvGhHm5xtBde/NTj17fSXJDvdeu9nf36VePcr+o/0BB9uHSoe4d5oAAAAASUVORK5CYII=")
+      2x
+  );
+  --_stroke-bead: image-set(
+    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADwAAAA8BAMAAADI0sRBAAAAMFBMVEXZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cFTAZBvAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAACD0lEQVR42pVVO0wUURQ9ywwLCyJDghITNZvY6zYYO7AlIVI4DQ34aYwNiZ0Wa2NCbKYwoVNpaGz4NJZQEprFSq2mUSuT4SMfGWaPeW9mdmZ23jV6ijef8+679553333A/+CG67ruXQNRGX/95vY7anx92M1WW8xju1Fg7wQsIprJsVfSn6/uj7vuE5/kccb2BeTZ49lF10nimA3I+ZS1fPJLveDM3szMr5M/ukMdzMxbPHVKib7nr/ilxna9rEPn7xwPTQJu8pN++lmQeVzjic6CZ0b5LYY6h7wChdXbWu00xG54bOgQ9830PS4AuMBdMz3MZQBDXDPTsV08yYABHgG4xZdmup8qtgmzKkAvOQk01WBCD+mk2ZvQimRNAQSh8nAs0cqwl6cS7Su3gehbi+5xBpLo86nyJjQVE++b0bfK25d8W/ydDIKoR0CfVCzo54Ea9iBt6L6qJYmuKj0HRLrCc0WfSKqtso6qGDmaShE/lDV34k2XFk8HsVrgsS7VWqiP94J0DFShXJQOkaeJmrk5wNKnALZQqkOJXkLz8Lj1l9ZjMcmoxqjc1nC1sxctfi8b+8nawE1yo5ueY6dC7YD8WCjXylPyW6GdR0txJGM7j3B5lYxyUk/rXr/UQM8UyZ/qaz2/2ov4NsiujJViKPbb/E0SPiilcime8HnEa684JhlHn39YfAbYk/98K/4BR7xFMnMDwfUAAAAASUVORK5CYII=")
+      2x
+  );
+  --_stroke-box: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18'%3E%3Cpath d='M4.6 1.8L6.7 2L8.5 2.5L9.4 2.3L10.9 2.6L13 2.3L14.5 2.4L15.2 3.7L16.3 5L15.6 4.6L15.6 6.9L15.6 7.5L15.9 9.8L16.5 12L16.2 13L15.5 14.5L14.6 15.8L13 15.8L12.3 15.7L12 16.1L9.8 15.7L7.6 16.6L6.3 15.3L5 16.1L3.3 16L2.8 14.3L2 13L1.9 13.2L2.8 10.8L1.6 9.8L1.4 8.5L2.1 7.3L2.4 5L2.5 3.5L3.6 2.6L5 2.4Z' fill='none' stroke='%23d9d1c1' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --_stroke-fab: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48'%3E%3Cpath d='M14.6 2.2L18 1.3L21.5 1.7L25.5 2.1L29.1 2.3L33 1.9L39.2 4.3L44.6 8.3L45.4 15L45.9 15.4L45.8 19.2L45.9 22.1L45.4 25.6L45.5 30L45.8 33L44.4 39.6L39.3 43.8L33 46.7L32.9 46.8L28.7 46.4L25 46.5L22.5 46.4L18.3 46.1L15 45.6L8.2 44.8L4 39.4L2.7 33L1.7 32.9L1.9 28.8L2.5 26.4L1.7 22.4L1.6 19.4L1.6 15L3.9 8.6L8.6 3.9L15 1.5ZM11.1 4L16.6 2.1' fill='none' stroke='%23d9d1c1' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --_glass-label: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='52' height='52'%3E%3Cg transform='translate(12 12)'%3E%3Cg fill='none' stroke='%23000000'%3E%3Cg stroke-opacity='0.5'%3E%3Crect x='2' y='3' width='24' height='24' rx='5' stroke-width='1.5'/%3E%3C/g%3E%3Cg stroke-opacity='0.07'%3E%3Crect x='2' y='6' width='24' height='24' rx='5' stroke-width='3'/%3E%3Crect x='2' y='6' width='24' height='24' rx='5' stroke-width='5.5'/%3E%3Crect x='2' y='6' width='24' height='24' rx='5' stroke-width='8'/%3E%3Crect x='2' y='6' width='24' height='24' rx='5' stroke-width='10.5'/%3E%3Crect x='2' y='6' width='24' height='24' rx='5' stroke-width='13'/%3E%3C/g%3E%3C/g%3E%3Cpath d='M6.6 2.4L9.4 2.6L12.9 1.8L15.4 1.6L17.5 2.6L21 2.6L23.3 3.1L25.3 4.5L26.2 7L25.4 7.6L26 9.6L26.6 11.9L26.8 15.2L26.4 18.4L26.1 21L25.3 23.5L23.8 25.9L21 25.9L21 25.6L17.8 26.5L14.9 25.9L13.4 25.6L10.4 25.7L7 26L4.6 25.1L2.2 23.8L2 21L1.8 21.2L1.4 17.7L1.3 14.8L2.5 12.3L1.4 9.7L2.5 7L2.8 4.6L4.8 3.3L7 1.8Z' fill='%2325221f' stroke='%23d9d1c1' stroke-width='1.9' stroke-linejoin='round'/%3E%3Cpath d='M3.1 4.2L8.6 2.3' fill='none' stroke='%23d9d1c1' stroke-width='1.9' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E");
+  --_glass-slip: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='76' height='76'%3E%3Cg transform='translate(12 12)'%3E%3Cg fill='none' stroke='%23000000'%3E%3Cg stroke-opacity='0.5'%3E%3Crect x='2' y='3' width='48' height='48' rx='12' stroke-width='1.5'/%3E%3C/g%3E%3Cg stroke-opacity='0.07'%3E%3Crect x='2' y='6' width='48' height='48' rx='12' stroke-width='3'/%3E%3Crect x='2' y='6' width='48' height='48' rx='12' stroke-width='5.5'/%3E%3Crect x='2' y='6' width='48' height='48' rx='12' stroke-width='8'/%3E%3Crect x='2' y='6' width='48' height='48' rx='12' stroke-width='10.5'/%3E%3Crect x='2' y='6' width='48' height='48' rx='12' stroke-width='13'/%3E%3C/g%3E%3C/g%3E%3Cpath d='M13.6 2.8L19.4 1.5L23.9 1.6L27.6 1.5L33 2.7L38 2.1L44.2 3.2L48.6 7.9L50.6 14L49.8 14.2L50.8 19.5L50.2 22.8L50.6 28.6L50.6 32.7L50.5 38L48.2 43.9L44 48.5L38 49.4L38.3 49.9L33.1 49.8L29 49.6L23.3 49.9L19.2 50.6L14 50.4L7.9 48.5L3.9 43.8L1.9 38L2.1 38.2L2.5 32.6L1.8 29L2 22.9L1.2 18.7L1.3 14L3.6 8L8 3.6L14 2Z' fill='%2325221f' stroke='%23d9d1c1' stroke-width='2' stroke-linejoin='round'/%3E%3Cpath d='M10.1 4.6L15.6 2.7' fill='none' stroke='%23d9d1c1' stroke-width='2' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E");
+  --_glass-sheet: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='92' height='92'%3E%3Cg transform='translate(12 12)'%3E%3Cg fill='none' stroke='%23000000'%3E%3Cg stroke-opacity='0.5'%3E%3Crect x='2' y='3' width='64' height='64' rx='22' stroke-width='1.5'/%3E%3C/g%3E%3Cg stroke-opacity='0.07'%3E%3Crect x='2' y='6' width='64' height='64' rx='22' stroke-width='3'/%3E%3Crect x='2' y='6' width='64' height='64' rx='22' stroke-width='5.5'/%3E%3Crect x='2' y='6' width='64' height='64' rx='22' stroke-width='8'/%3E%3Crect x='2' y='6' width='64' height='64' rx='22' stroke-width='10.5'/%3E%3Crect x='2' y='6' width='64' height='64' rx='22' stroke-width='13'/%3E%3C/g%3E%3C/g%3E%3Cpath d='M23.6 1.5L27.6 1.6L31.3 2.4L36.6 1.3L39.8 1.3L44 2.3L50.7 3.5L57 6.1L62.2 10.8L65.4 17.1L66.1 24L65.7 24.7L65.6 28.4L65.6 32.4L65.6 35.7L65.3 39.6L66.4 44L65.1 50.8L61.5 56.7L57.1 62L50.8 65.1L44 66.3L44.5 65.9L39.3 65.7L35.9 66L32.2 66.6L28.4 65.7L24 66.2L17.1 65.3L11.4 61.3L6.6 56.6L3.5 50.7L2.2 44L1.4 44.4L1.9 39.4L1.3 35.3L1.4 31.7L2.7 28.4L2.5 24L3.4 17.3L5.7 10.7L10.8 5.8L17.4 3.6L24 2.5Z' fill='%2325221f' stroke='%23d9d1c1' stroke-width='2.1' stroke-linejoin='round'/%3E%3Cpath d='M20.1 3.3L25.6 1.4' fill='none' stroke='%23d9d1c1' stroke-width='2.1' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E");
+  --_glass-sheet-focus: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='92' height='92'%3E%3Cg transform='translate(12 12)'%3E%3Cg fill='none' stroke='%23000000'%3E%3Cg stroke-opacity='0.5'%3E%3Crect x='2' y='3' width='64' height='64' rx='22' stroke-width='1.5'/%3E%3C/g%3E%3Cg stroke-opacity='0.07'%3E%3Crect x='2' y='6' width='64' height='64' rx='22' stroke-width='3'/%3E%3Crect x='2' y='6' width='64' height='64' rx='22' stroke-width='5.5'/%3E%3Crect x='2' y='6' width='64' height='64' rx='22' stroke-width='8'/%3E%3Crect x='2' y='6' width='64' height='64' rx='22' stroke-width='10.5'/%3E%3Crect x='2' y='6' width='64' height='64' rx='22' stroke-width='13'/%3E%3C/g%3E%3C/g%3E%3Cpath d='M23.6 1.5L27.6 1.6L31.3 2.4L36.6 1.3L39.8 1.3L44 2.3L50.7 3.5L57 6.1L62.2 10.8L65.4 17.1L66.1 24L65.7 24.7L65.6 28.4L65.6 32.4L65.6 35.7L65.3 39.6L66.4 44L65.1 50.8L61.5 56.7L57.1 62L50.8 65.1L44 66.3L44.5 65.9L39.3 65.7L35.9 66L32.2 66.6L28.4 65.7L24 66.2L17.1 65.3L11.4 61.3L6.6 56.6L3.5 50.7L2.2 44L1.4 44.4L1.9 39.4L1.3 35.3L1.4 31.7L2.7 28.4L2.5 24L3.4 17.3L5.7 10.7L10.8 5.8L17.4 3.6L24 2.5Z' fill='%2325221f' stroke='%2393b6ee' stroke-width='2.1' stroke-linejoin='round'/%3E%3Cpath d='M20.1 3.3L25.6 1.4' fill='none' stroke='%2393b6ee' stroke-width='2.1' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E");
+  --_swipe: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='32' preserveAspectRatio='none'%3E%3Cpath d='M6.5 6L14 4.3L30 5.1L46 3.9L55 5.3L57.4 9L56.6 20L57.7 25.4L54 27.7L46 27L30 28.1L14 27.2L5 27.9L2.5 24.4L3.4 13L2.6 8.6Z' fill='%235e5013' stroke='%235e5013' stroke-width='3' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --_cut-cookie: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Cpath d='M50 0L54.2 1.9L57.8 5.9L61.1 8.5L65.3 7.9L70.4 6.3L75 6.7L77.7 10.5L78.8 15.7L80.4 19.6L84.3 21.2L89.5 22.3L93.3 25L93.7 29.6L92.1 34.7L91.5 38.9L94.1 42.2L98.1 45.8L100 50L98.1 54.2L94.1 57.8L91.5 61.1L92.1 65.3L93.7 70.4L93.3 75L89.5 77.7L84.3 78.8L80.4 80.4L78.8 84.3L77.7 89.5L75 93.3L70.4 93.7L65.3 92.1L61.1 91.5L57.8 94.1L54.2 98.1L50 100L45.8 98.1L42.2 94.1L38.9 91.5L34.7 92.1L29.6 93.7L25 93.3L22.3 89.5L21.2 84.3L19.6 80.4L15.7 78.8L10.5 77.7L6.7 75L6.3 70.4L7.9 65.3L8.5 61.1L5.9 57.8L1.9 54.2L0 50L1.9 45.8L5.9 42.2L8.5 38.9L7.9 34.7L6.3 29.6L6.7 25L10.5 22.3L15.7 21.2L19.6 19.6L21.2 15.7L22.3 10.5L25 6.7L29.6 6.3L34.7 7.9L38.9 8.5L42.2 5.9L45.8 1.9Z' fill='%235e5013' fill-opacity='0.55'/%3E%3C/svg%3E");
 }
 /* draw-doodle-edges.mjs: end generated block */
 
+/* The containers the token contract has no name for, private to these recipes like the drawings
+   above. Material 3's primary container, deeper than the wash under the person's words: what a
+   tonal button, a selected segment and the navigation's primary action are filled in, and the
+   same a state deeper for the pointer. The filled card's tone, a step lighter than the pad a
+   pointer or a settings row lies on. The paper's dots and the cut paper in the pen's wash. */
+:root[data-theme="doodle"] {
+  --_container: color-mix(in srgb, var(--ui-accent) 24%, var(--ui-canvas));
+  --_container-hover: color-mix(in srgb, var(--ui-accent) 32%, var(--ui-canvas));
+  --_card: color-mix(in srgb, var(--ui-accent) 5.5%, var(--ui-surface));
+  --_dot: color-mix(in srgb, var(--ui-fg) 13%, transparent);
+  --_cut-pen: color-mix(in srgb, var(--ui-accent) 15%, transparent);
+}
+:root[data-theme="doodle"].dark {
+  --_container: color-mix(in srgb, var(--ui-accent) 28%, var(--ui-canvas));
+  --_container-hover: color-mix(in srgb, var(--ui-accent) 36%, var(--ui-canvas));
+  --_card: color-mix(in srgb, var(--ui-accent) 4%, var(--ui-surface));
+  --_dot: color-mix(in srgb, var(--ui-fg) 11%, transparent);
+  --_cut-pen: color-mix(in srgb, var(--ui-accent) 13%, transparent);
+}
+
 @media (forced-colors: none) {
+  /* Paper. The pad: a notebook's dot grid, and two pieces of cut paper on it, one at each end
+     of the navigation column — a cookie in the highlighter at the window's top corner and a disc
+     in the pen's wash at its foot (below the width where the column stands beside the sheet, the
+     cookie is laid off the window: only a sliver of it would show above the sheet). The sheet:
+     the same dots, fainter by the paper being lighter. Both boxes hold still while their content scrolls, so the grid is rasterised
+     once; a background the person chose themselves takes the paper's place. */
+  :root[data-theme="doodle"] .ui-shell:not([data-wallpaper]) {
+    background-image:
+      radial-gradient(circle at 1px 1px, var(--_dot) 1px, transparent 1.5px),
+      radial-gradient(
+        circle 14rem at 1.5rem calc(100% + 3.5rem),
+        var(--_cut-pen) calc(100% - 1px),
+        transparent
+      ),
+      var(--_cut-cookie);
+    background-position:
+      0 0,
+      0 0,
+      max(-5.5rem, (48rem - 100vw) * 9999) -6.5rem;
+    background-size:
+      1.375rem 1.375rem,
+      auto,
+      12.5rem 12.5rem;
+    background-repeat: repeat, no-repeat, no-repeat;
+  }
+  :root[data-theme="doodle"] .ui-shell:not([data-wallpaper]) > [data-slot="main"],
+  :root[data-theme="doodle"] .ui-shell:not([data-wallpaper]) > [data-slot="dock"] {
+    background-image: radial-gradient(circle at 1px 1px, var(--_dot) 1px, transparent 1.5px);
+    background-size: 1.375rem 1.375rem;
+  }
+
   /* The pen line: a solid 1px border for the stroke to paint on, the host's own or this one. A
-     box is the person's bubble's shape by default; what a person presses or types into takes the
-     control's; a capsule picker the pill; a host drawn round (a radio's disc, a switch's track) a
-     disc; a checkbox the box. */
+     box is the person's bubble's shape by default; what a person types into or picks a value in
+     (a text field, a select's or a picker's trigger) takes the field's; a button — the host that
+     names its variant — and a capsule picker are a capsule, its corners laid at half its height
+     whatever that is; a small round host (a radio's disc, a switch's track) a bead; a checkbox
+     the box. */
   :root[data-theme="doodle"] :where(.ui-edge) {
     border-style: solid;
     border-width: 1px;
     background-clip: padding-box;
-    border-image: var(--_stroke-surface) 14 / 14px / 0 stretch;
+    border-image: var(--_stroke-bubble) 18 / 18px / 0 stretch;
   }
   :root[data-theme="doodle"] :where(button, input, textarea, select, [role="combobox"]).ui-edge,
   :root[data-theme="doodle"] .ui-edge:where(:has(> :is(input, textarea))) {
     border-image: var(--_stroke-control) 9 / 9px / 0 stretch;
   }
+  :root[data-theme="doodle"] :where(button[data-variant]).ui-edge,
   :root[data-theme="doodle"] .ui-edge:where(.rounded-\[var\(--ui-radius-pill\)\]) {
-    border-image: var(--_stroke-pill) 9 / 9px / 0 stretch;
+    border-radius: 9999px;
+    border-image: var(--_stroke-pill) 20 / 9999px / 0 stretch;
   }
   :root[data-theme="doodle"] .ui-edge:where(.rounded-full) {
-    border-image: var(--_stroke-pill) 9 / 50% / 0 stretch;
+    border-radius: 9999px;
+    border-image: var(--_stroke-bead) 11 / 9999px / 0 stretch;
   }
   :root[data-theme="doodle"]
     .ui-edge:where(input[type="checkbox"], span[aria-hidden="true"]:not(.rounded-full)) {
@@ -314,10 +518,46 @@
   :root[data-theme="doodle"] .ui-edge:where([aria-invalid="true"], :has(> [aria-invalid="true"])) {
     border-image-source: var(--_stroke-control-danger);
   }
+  /* A segmented control: every option keeps a border's room, so on or off it is one size and a
+     choice moves no label; the one that is on is drawn as a capsule. */
+  :root[data-theme="doodle"] .ui-segmented > button {
+    border: 1px solid transparent;
+  }
+  :root[data-theme="doodle"] .ui-segmented > button[aria-pressed="true"] {
+    border-radius: 9999px;
+    border-image: var(--_stroke-pill) 20 / 9999px / 0 stretch;
+  }
+  /* The navigation's primary action: the FAB's large corner, drawn. */
+  :root[data-theme="doodle"] .ui-action {
+    border-style: solid;
+    border-width: 1px;
+    background-clip: padding-box;
+    border-image: var(--_stroke-fab) 17 / 17px / 0 stretch;
+  }
+  /* An outlined button answers the pointer in the ink it warns in: the line redrawn in the
+     danger ink, over the host's own danger tint. */
+  :root[data-theme="doodle"] button.ui-edge[data-variant="danger"]:hover {
+    border-image-source: var(--_stroke-pill-danger);
+  }
+
+  /* The navigation's active indicator: one pass of the highlighter under the row the reader is
+     on — a page's row on the window's navigation or a dialog's rail, or the open conversation's,
+     whose fill is its wrapper's (the wrapper holds the button that names it current). The
+     swipe's ends keep their shape and the band between them stretches along the row; the row's
+     own fill gives way to it. */
+  :root[data-theme="doodle"]
+    :is(.ui-shell, .ui-glass[role="dialog"])
+    :is(a, button)[aria-current="page"]:not([data-session-id], .ui-action),
+  :root[data-theme="doodle"] .ui-shell div:has(> [data-session-id][aria-current="page"]) {
+    border: 0 solid transparent;
+    background-color: transparent;
+    border-image: var(--_swipe) 0 14 fill / 0 14px / 0 stretch;
+  }
 
   /* What floats: a slip of paper, its glass image its fill, its line and its shadow. The shadow
      sits in the image's 12px outset, transparent elsewhere, so it never covers a neighbour's text
-     and no filter runs. */
+     and no filter runs. A menu, a popover and a toast take the medium corner; a slip that only
+     labels the small one; a dialog and the composer the extra-large one. */
   :root[data-theme="doodle"] .ui-glass:not([data-glass], .site-ui-header) {
     border-style: solid;
     border-width: 1px;
@@ -325,21 +565,26 @@
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
     box-shadow: none;
-    border-image: var(--_glass-surface) 26 fill / 26px / 12px stretch;
+    border-image: var(--_glass-slip) 28 fill / 28px / 12px stretch;
   }
   :root[data-theme="doodle"]
     .ui-glass:not([data-glass]):where([role="tooltip"], [aria-hidden="true"]) {
-    border-image: var(--_glass-control) 21 fill / 21px / 12px stretch;
+    border-image: var(--_glass-label) 21 fill / 21px / 12px stretch;
+  }
+  :root[data-theme="doodle"]
+    .ui-glass:not([data-glass]):where([role="dialog"], [data-slot="composer"]) {
+    border-radius: 1.375rem;
+    border-image: var(--_glass-sheet) 38 fill / 38px / 12px stretch;
   }
   :root[data-theme="doodle"] .ui-glass:not([data-glass])[data-slot="composer"]:focus-within {
-    border-image-source: var(--_glass-surface-focus);
+    border-image-source: var(--_glass-sheet-focus);
   }
   /* A round slip (the launcher's ball and its fan) keeps its round fill under the drawn circle,
      unclipped: the ball holds its caption, which sits outside it. */
   :root[data-theme="doodle"] .ui-glass:not([data-glass]):where(.rounded-full) {
     background-color: var(--ui-overlay);
     background-clip: padding-box;
-    border-image: var(--_stroke-ball) 24 / 50% / 0 stretch;
+    border-image: var(--_stroke-pill) 20 / 9999px / 0 stretch;
   }
   /* A toast floats too: the slip in place of Frost's card and its shadow, over no backing (the
      stack's opaque backing would show past the drawn corners). Frost's tone dot stays. */
@@ -350,42 +595,45 @@
     border-color: transparent;
     background-color: transparent;
     box-shadow: none;
-    border-image: var(--_glass-surface) 26 fill / 26px / 12px stretch;
+    border-image: var(--_glass-slip) 28 fill / 28px / 12px stretch;
   }
 
-  /* The window's columns: the pad beside the paper with the one pencil rule between them, and no
-     lit edge beside the rule. */
-  :root[data-theme="doodle"] .ui-shell > [data-slot="nav"] {
-    box-shadow: none;
-  }
-
-  /* The fill follows the line: a pen-edged host gives up its CSS corner (the line draws its own)
-     and paints its fill to the border's edge, which the clip trims to just outside the pen. */
+  /* The fill follows the line: a host whose corners are laid at a fixed size gives up its CSS
+     corner (the line draws its own) and paints its fill to the border's edge, which the clip
+     trims to just outside the pen. A capsule and a bead keep their own full radius instead. */
   @supports (clip-path: shape(from 0px 0px, line to 1px 1px, close)) {
     :root[data-theme="doodle"] :where(.ui-edge) {
       border-radius: 0;
       background-clip: border-box;
-      clip-path: var(--_clip-surface);
+      clip-path: var(--_clip-bubble);
     }
     :root[data-theme="doodle"] :where(button, input, textarea, select, [role="combobox"]).ui-edge,
     :root[data-theme="doodle"] .ui-edge:where(:has(> :is(input, textarea))) {
       clip-path: var(--_clip-control);
     }
-    :root[data-theme="doodle"] .ui-edge:where(.rounded-\[var\(--ui-radius-pill\)\]) {
-      clip-path: var(--_clip-pill);
-    }
-    :root[data-theme="doodle"] .ui-edge:where(.rounded-full) {
-      clip-path: var(--_clip-disc);
+    :root[data-theme="doodle"] :where(button[data-variant]).ui-edge,
+    :root[data-theme="doodle"] .ui-edge:where(.rounded-\[var\(--ui-radius-pill\)\], .rounded-full) {
+      border-radius: 9999px;
+      background-clip: padding-box;
+      clip-path: none;
     }
     :root[data-theme="doodle"]
       .ui-edge:where(input[type="checkbox"], span[aria-hidden="true"]:not(.rounded-full)) {
+      border-radius: 0;
+      background-clip: border-box;
       clip-path: var(--_clip-box);
+    }
+    :root[data-theme="doodle"] .ui-action {
+      border-radius: 0;
+      background-clip: border-box;
+      clip-path: var(--_clip-fab);
     }
     /* A clip cuts whatever the box paints: a menu opened in place inside the box, and a focus
        ring. So while a menu is open in it, and while something a person presses holds keyboard
        focus, the box keeps its own corner and a padding-box fill under the line instead, and the
        ring draws outside as in every theme. */
     :root[data-theme="doodle"] .ui-edge:has(.ui-glass:not([data-glass])),
+    :root[data-theme="doodle"] .ui-action:focus-visible,
     :root[data-theme="doodle"]
       .ui-edge:focus-visible:not(
         :where(input:not([type="checkbox"], [type="radio"]), textarea, select)
@@ -393,6 +641,15 @@
       border-radius: revert-layer;
       background-clip: padding-box;
       clip-path: none;
+    }
+
+    /* Shape variety, where the shape names the kind of thing: an Agent's avatar is a cookie, a
+       plugin's or a skill's tile a clover (Material 3 Expressive's shape library). */
+    :root[data-theme="doodle"] .ui-avatar {
+      clip-path: var(--_clip-cookie);
+    }
+    :root[data-theme="doodle"] .ui-glass[data-glass="tile"] {
+      clip-path: var(--_clip-clover);
     }
   }
 
@@ -404,6 +661,119 @@
     border-image-source: var(--_stroke-control-focus);
     box-shadow: none;
   }
+}
+
+/* A page's own canvas is clear on the sheet, so the sheet's dots run under the whole page. */
+:root[data-theme="doodle"] .ui-shell > [data-slot="main"] [data-wallpaper-surface="canvas"] {
+  background-color: transparent;
+}
+
+/* The window's columns: the pad shows through the navigation column, with no lit edge beside
+   the sheet. */
+:root[data-theme="doodle"] .ui-shell > [data-slot="nav"] {
+  box-shadow: none;
+}
+
+/* The row the reader is on reads in the full ink on its indicator. */
+:root[data-theme="doodle"]
+  :is(.ui-shell, .ui-glass[role="dialog"])
+  :is(a, button)[aria-current="page"]:not([data-session-id]),
+:root[data-theme="doodle"] .ui-shell div:has(> [data-session-id][aria-current="page"]) {
+  color: var(--ui-fg-emphasis);
+}
+
+/* The navigation's primary action is Material 3's extended FAB: the pen's container under the
+   heavy label, a row taller than the rows it heads, and a state deeper under the pointer and
+   while its page is the one open. */
+:root[data-theme="doodle"] .ui-action {
+  padding-block: calc(var(--ui-space-unit) * 2.5);
+  margin-block-end: var(--ui-stack-0);
+  background-color: var(--_container);
+  color: var(--ui-fg-emphasis);
+  font-weight: 700;
+}
+:root[data-theme="doodle"] .ui-action:hover,
+:root[data-theme="doodle"] .ui-action[aria-current="page"] {
+  background-color: var(--_container-hover);
+}
+
+/* Buttons. Filled is the host's own (the pen under the paper label). Tonal — the neutral button,
+   and a segment that is on — is the pen's container, a state deeper under the pointer. */
+:root[data-theme="doodle"] button.ui-edge[data-variant="secondary"],
+:root[data-theme="doodle"] .ui-segmented > button[aria-pressed="true"] {
+  background-color: var(--_container);
+  box-shadow: none;
+}
+:root[data-theme="doodle"] button.ui-edge[data-variant="secondary"]:hover:not(:disabled) {
+  background-color: var(--_container-hover);
+}
+
+/* A capsule gives under the finger (Material 3 Expressive's press): a hair smaller while it is
+   held down, at once, and nothing on hover. It moves no neighbour — a scale is not layout — and
+   holds still for a reader who asked for less motion. */
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-theme="doodle"]:not([data-motion="reduced"])
+    :is(button.ui-edge, .ui-action, .ui-segmented > button):active:not(:disabled) {
+    scale: 0.96;
+  }
+}
+
+/* One pen: a decorative icon is drawn in the pen's own colour, whatever hue its glyph wears in
+   Frost; a menu row's icon keeps the row's ink, as there. */
+:root[data-theme="doodle"] .ui-icon-decor:not([data-role="menu"]) {
+  color: var(--ui-accent);
+}
+
+/* The display title is set in the first heading rung's heavy cut, where the base sets it in
+   the regular one. WenKai ships one weight, so for Han the browser draws the heavy cut, here
+   alone. */
+:root[data-theme="doodle"] .ui-display {
+  font-weight: var(--ui-h1-weight);
+  font-synthesis-weight: auto;
+}
+
+/* Cards are Material 3's filled card: a container a tone off the paper and no line (a card that
+   opens something still answers the pointer with the host's own pencil line). A frame inside a
+   frame steps back to the paper, so the two stay apart by tone. */
+:root[data-theme="doodle"] .ui-frame {
+  border-color: transparent;
+  background-color: var(--_card);
+}
+:root[data-theme="doodle"] .ui-frame .ui-frame {
+  background-color: var(--ui-canvas);
+}
+/* The agent's work group is a filled card too, where Frost leaves it as words on the page: its
+   head and its rows, which hold still while the transcript scrolls under them, are painted in
+   the card's own tone. */
+:root[data-theme="doodle"] .ui-frame:has(> .ui-activity) > [data-slot="head"],
+:root[data-theme="doodle"] .ui-frame:has(> .ui-activity) .ui-tree .ui-activity {
+  background-color: var(--_card);
+}
+
+/* A notice in the page is a filled container as well: the card's tone, no shadow. Frost's tone
+   dot stays; a toast is a slip (above). */
+:root[data-theme="doodle"] .ui-notice {
+  background-color: var(--_card);
+  box-shadow: none;
+}
+
+/* A plugin's or a skill's tile is cut paper in the tile's own hue: flat, no frost, no lit edge. */
+:root[data-theme="doodle"] .ui-glass[data-glass="tile"] {
+  background-color: color-mix(in oklab, currentColor 20%, transparent);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: none;
+}
+
+/* The switch is Material 3's: off, the knob is the small one. */
+:root[data-theme="doodle"] [role="switch"][aria-checked="false"] > span > span:last-child {
+  scale: 0.75;
+}
+
+/* Tabs: Material 3's primary indicator, three pixels of the pen with its top corners round. */
+:root[data-theme="doodle"] .ui-underline-nav [role="tab"]::after {
+  height: 3px;
+  border-radius: 3px 3px 0 0;
 }
 
 /* The scribble in place of the spinner's arc. */
