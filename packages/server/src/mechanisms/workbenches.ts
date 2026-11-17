@@ -21,6 +21,7 @@ import { Interface } from "@prismshadow/penguin-core/kernel";
 import type {
   WorkbenchInfo,
   WorkbenchTab,
+  WorkbenchTabIcon,
   WorkbenchTabRenderer,
   WorkbenchAppCenter,
   AppCenterShortcut,
@@ -189,7 +190,7 @@ export abstract class Workbenches {
     projectId: string,
     agentId: string,
     workbenchId: string,
-  ): Promise<{ kind: "svg" | "png"; data: string } | null>;
+  ): Promise<WorkbenchTabIcon | null>;
   abstract history(
     projectId: string,
     agentId: string,
