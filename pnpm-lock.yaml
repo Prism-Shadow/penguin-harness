@@ -180,6 +180,9 @@ importers:
       '@penguinharness/browser-automation':
         specifier: workspace:*
         version: link:../../plugins/browser-automation
+      '@penguinharness/character-chat':
+        specifier: workspace:*
+        version: link:../../plugins/character-chat
       '@penguinharness/continual-learning':
         specifier: workspace:*
         version: link:../../plugins/continual-learning
@@ -359,6 +362,9 @@ importers:
       '@penguinharness/browser-automation':
         specifier: workspace:*
         version: link:../../plugins/browser-automation
+      '@penguinharness/character-chat':
+        specifier: workspace:*
+        version: link:../../plugins/character-chat
       '@penguinharness/continual-learning':
         specifier: workspace:*
         version: link:../../plugins/continual-learning
@@ -555,6 +561,9 @@ importers:
       '@penguinharness/browser-automation':
         specifier: workspace:*
         version: link:../../plugins/browser-automation
+      '@penguinharness/character-chat':
+        specifier: workspace:*
+        version: link:../../plugins/character-chat
       '@penguinharness/continual-learning':
         specifier: workspace:*
         version: link:../../plugins/continual-learning
@@ -693,6 +702,9 @@ importers:
       '@penguinharness/browser-automation':
         specifier: workspace:*
         version: link:../../plugins/browser-automation
+      '@penguinharness/character-chat':
+        specifier: workspace:*
+        version: link:../../plugins/character-chat
       '@penguinharness/continual-learning':
         specifier: workspace:*
         version: link:../../plugins/continual-learning
@@ -1226,6 +1238,18 @@ importers:
         version: file:packages/core(ws@8.21.0)
 
   plugins/browser-automation:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
+      '@prismshadow/skills':
+        specifier: workspace:*
+        version: link:../../packages/skills
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  plugins/character-chat:
     devDependencies:
       '@prismshadow/penguin-core':
         specifier: workspace:*
@@ -2430,6 +2454,9 @@ packages:
 
   '@penguinharness/browser-automation@file:plugins/browser-automation':
     resolution: {directory: plugins/browser-automation, type: directory}
+
+  '@penguinharness/character-chat@file:plugins/character-chat':
+    resolution: {directory: plugins/character-chat, type: directory}
 
   '@penguinharness/continual-learning@file:plugins/continual-learning':
     resolution: {directory: plugins/continual-learning, type: directory}
@@ -7146,6 +7173,8 @@ snapshots:
 
   '@penguinharness/browser-automation@file:plugins/browser-automation': {}
 
+  '@penguinharness/character-chat@file:plugins/character-chat': {}
+
   '@penguinharness/continual-learning@file:plugins/continual-learning': {}
 
   '@penguinharness/data-analysis@file:plugins/data-analysis': {}
@@ -7280,6 +7309,7 @@ snapshots:
       '@penguinharness/ape-rsi-toolkit': file:plugins/ape-rsi-toolkit
       '@penguinharness/awm-rsi-toolkit': file:plugins/awm-rsi-toolkit
       '@penguinharness/browser-automation': file:plugins/browser-automation
+      '@penguinharness/character-chat': file:plugins/character-chat
       '@penguinharness/continual-learning': file:plugins/continual-learning
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
@@ -7330,6 +7360,7 @@ snapshots:
       '@penguinharness/ape-rsi-toolkit': file:plugins/ape-rsi-toolkit
       '@penguinharness/awm-rsi-toolkit': file:plugins/awm-rsi-toolkit
       '@penguinharness/browser-automation': file:plugins/browser-automation
+      '@penguinharness/character-chat': file:plugins/character-chat
       '@penguinharness/continual-learning': file:plugins/continual-learning
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
@@ -7440,6 +7471,7 @@ snapshots:
       '@penguinharness/ape-rsi-toolkit': file:plugins/ape-rsi-toolkit
       '@penguinharness/awm-rsi-toolkit': file:plugins/awm-rsi-toolkit
       '@penguinharness/browser-automation': file:plugins/browser-automation
+      '@penguinharness/character-chat': file:plugins/character-chat
       '@penguinharness/continual-learning': file:plugins/continual-learning
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
@@ -7504,6 +7536,7 @@ snapshots:
       '@penguinharness/ape-rsi-toolkit': file:plugins/ape-rsi-toolkit
       '@penguinharness/awm-rsi-toolkit': file:plugins/awm-rsi-toolkit
       '@penguinharness/browser-automation': file:plugins/browser-automation
+      '@penguinharness/character-chat': file:plugins/character-chat
       '@penguinharness/continual-learning': file:plugins/continual-learning
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
@@ -7568,6 +7601,7 @@ snapshots:
       '@penguinharness/ape-rsi-toolkit': file:plugins/ape-rsi-toolkit
       '@penguinharness/awm-rsi-toolkit': file:plugins/awm-rsi-toolkit
       '@penguinharness/browser-automation': file:plugins/browser-automation
+      '@penguinharness/character-chat': file:plugins/character-chat
       '@penguinharness/continual-learning': file:plugins/continual-learning
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit

@@ -1,0 +1,44 @@
+{
+  "name": "@penguinharness/character-chat",
+  "version": "0.2.18",
+  "description": "AI character chat: a stage where an original character with a face, moods, a scene and a memory book talks with you, a card editor for characters of your own, and a Skill that lets the Agent play a character in the ordinary chat.",
+  "keywords": [
+    "penguin-plugin",
+    "penguinharness",
+    "skills",
+    "workbench",
+    "character",
+    "roleplay"
+  ],
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Prism-Shadow",
+    "url": "https://github.com/Prism-Shadow"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "plugins/character-chat"
+  },
+  "files": [
+    "icon.svg",
+    "skills",
+    "workbenches",
+    "ifaces.json",
+    "LICENSE",
+    "README.md",
+    "README.zh.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json"
+  },
+  "devDependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/skills": "workspace:*",
+    "vitest": "^4.1.12"
+  }
+}

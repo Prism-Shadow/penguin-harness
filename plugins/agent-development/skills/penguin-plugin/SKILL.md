@@ -1,7 +1,7 @@
 ---
 name: penguin-plugin
 description: Use for workbenches — the tabs and pages beside the chat, with server code behind them, that an Agent keeps in the `workbenches/` folder of its Agent State inside PenguinHarness — building one, changing it, showing it as the whole app, restoring an earlier version, and removing a tab or a whole workbench when the user wants the custom UI gone.
-version: 2026.11.17.2
+version: 2026.11.17.3
 ---
 
 # Agent Workbench with Penguin Plugins
