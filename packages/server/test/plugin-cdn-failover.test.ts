@@ -603,8 +603,10 @@ describe("plugin mirrors, as a settings group", () => {
     for (const rules of MIRROR_RULES) {
       for (const rule of rules) expect(rewriteRuleRisk(rule)).toBeNull();
     }
-    const [npmRules, githubRules, releaseRules] =
-      MIRROR_RULES as readonly (readonly PluginProxyRule[])[];
+    const npmRules = MIRROR_RULES[0];
+    const githubRules = MIRROR_RULES[1];
+    const releaseRules = MIRROR_RULES[2];
+    if (!npmRules || !githubRules || !releaseRules) throw new Error("mirror rules missing");
     expect(
       pluginProxyMirrors("https://registry.npmjs.org/acme/-/acme-1.0.0.tgz", npmRules),
     ).toEqual(["https://registry.npmmirror.com/acme/-/acme-1.0.0.tgz"]);
