@@ -3,6 +3,7 @@
 - **Date:** 2026-11-17
 - **Type:** feature
 - **Scope:** `server`, `core`, `landing`, `docs`
+- **PR:** [#1580](https://github.com/Prism-Shadow/penguin-harness/pull/1580)
 
 [English](2026-11-17-market-server.md)
 
