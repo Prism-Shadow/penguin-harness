@@ -1334,6 +1334,7 @@ export const changeSessionPlan = (
   sessionId: string,
   action: "enable" | "exit" | "approve",
   revision?: string,
+  language: "zh" | "en" = "en",
 ) =>
   apiFetch<{ plan: import("@prismshadow/penguin-server/api").SessionPlan | null }>(
     `/api/sessions/${encodeURIComponent(sessionId)}/plan`,
@@ -1342,7 +1343,7 @@ export const changeSessionPlan = (
       body: {
         action,
         revision,
-        language: document.documentElement.lang.startsWith("zh") ? "zh" : "en",
+        language,
       },
     },
   );

@@ -973,7 +973,7 @@ export function ChatInput({
     goalBudget !== null && goalBudget !== UNLIMITED_BUDGET
       ? S.chat.goalBudgetValue(humanizeTokens(goalBudget))
       : S.chat.goalBudgetUnlimited;
-  const planning = usePlanMode(sessionId, status);
+  const planning = usePlanMode(sessionId, status, locale);
   const planOn = planning.plan !== null;
   const planGate = useGoalPluginGate(goalPlugin, planOn, "plan");
   const goalGate = useGoalPluginGate(goalPlugin, goalOn);

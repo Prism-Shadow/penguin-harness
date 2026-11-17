@@ -3,7 +3,11 @@ import type { SessionPlan, SessionStatus } from "@prismshadow/penguin-server/api
 import { changeSessionPlan, getSessionPlan } from "../../api/endpoints";
 import { toastApiError } from "../../lib/toast-api-error";
 
-export function usePlanMode(sessionId: string | undefined, status: SessionStatus) {
+export function usePlanMode(
+  sessionId: string | undefined,
+  status: SessionStatus,
+  language: "zh" | "en",
+) {
   const [plan, setPlan] = useState<SessionPlan | null>(null);
   const [pending, setPending] = useState(false);
   const request = useRef(0);
@@ -36,7 +40,7 @@ export function usePlanMode(sessionId: string | undefined, status: SessionStatus
     ++request.current;
     setPending(true);
     try {
-      const result = await changeSessionPlan(sessionId, action, plan?.proposal?.revision);
+      const result = await changeSessionPlan(sessionId, action, plan?.proposal?.revision, language);
       if (current.current === sessionId) {
         ++request.current;
         setPlan(result.plan);
