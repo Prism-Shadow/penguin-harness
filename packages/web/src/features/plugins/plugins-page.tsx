@@ -3,11 +3,13 @@
  * (Skills and/or a hook package, loaded by core from the @penguinharness/* packages and
  * installed on Agents) and the server modules a Project can ask for (the Agent Sandbox backends
  * and whatever the registry lists, installed on the server by an admin). Top to bottom: the
- * header with its notices and the search box, the selected carousel, a tab row, and the grid.
+ * header with its notices and the search box, the selected carousel, a tab row, and the grid
+ * with the ranking beside it.
  *
  * - **The curation** (GET /api/plugins/market, read on every visit): which plugins are selected,
- *   which of them may lead the carousel, and each package's art. A read that is pending or
- *   failed shows no carousel and generated covers; it never holds the grid.
+ *   which of them may lead the carousel, each package's art, and the popularity figures. A read
+ *   that is pending or failed shows no carousel, no ranking and generated covers; it never holds
+ *   the grid.
  * - **The carousel** shows the selected plugins in the curation's order, led by the day's lead
  *   (`leadIndex`), on the "All" tab only, and only while nothing narrows the list (no search, not
  *   the incompatible-only filter).
@@ -17,9 +19,12 @@
  *   the sort select stand at the tab row's end; both are remembered per browser
  *   (plugin-groups.ts, plugin-market.ts), the search is not.
  * - **The grid** is the tab's rows, narrowed by the search, in the chosen sort — the curation's
- *   order, recency, use in this Project or the name, never a popularity nothing measures. A
- *   search that finds nothing here but something in another tab says so and offers the "All"
- *   tab.
+ *   order, recency, use in this Project, the name, or installs while the curation carries
+ *   popularity figures. A search that finds nothing here but something in another tab says so
+ *   and offers the "All" tab.
+ * - **The ranking** stands beside the grid (under it in a narrow column) while the curation
+ *   carries popularity figures: the most installed plugins, and this week's risers, each row
+ *   opening its plugin's detail; without figures there is no ranking and no "popular" sort.
  * - **The detail** is in the URL too (`?plugin=<name>`): opening one pushes a history entry, so
  *   Back closes it; closing one a link opened replaces the entry. The plugin a link names shows
  *   its detail even while the tab or the search hides its card.
