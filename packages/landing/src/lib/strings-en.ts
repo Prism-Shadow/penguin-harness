@@ -467,6 +467,16 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
       selectedPlugins: "Selected plugins",
       viewDetails: "View details",
       sortSelected: "Selected first",
+      /** The ranking beside the grid, shown when the market document carries counts. */
+      rankingTitle: "Plugin rankings",
+      /** Its board by install count. */
+      popular: "Popular",
+      /** Its board by the last week's installs. */
+      rising: "Rising",
+      /** A figure in full, `n` already written in the reader's digits. */
+      installCount: (n: string) => (n === "1" ? "1 install" : `${n} installs`),
+      weeklyCount: (n: string) =>
+        n === "1" ? "1 new install this week" : `${n} new installs this week`,
       /** The order by install count, offered when the market document carries counts. */
       sortPopular: "Popular",
       screenshots: "Screenshots",

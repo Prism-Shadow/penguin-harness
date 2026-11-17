@@ -464,6 +464,15 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
       selectedPlugins: "精选插件",
       viewDetails: "查看详情",
       sortSelected: "精选优先",
+      /** The ranking beside the grid, shown when the market document carries counts. */
+      rankingTitle: "插件榜单",
+      /** Its board by install count. */
+      popular: "热门",
+      /** Its board by the last week's installs. */
+      rising: "飙升",
+      /** A figure in full, `n` already written in the reader's digits. */
+      installCount: (n: string) => `${n} 次安装`,
+      weeklyCount: (n: string) => `本周新增 ${n} 次安装`,
       /** The order by install count, offered when the market document carries counts. */
       sortPopular: "热门",
       screenshots: "截图",

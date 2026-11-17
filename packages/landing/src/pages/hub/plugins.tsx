@@ -3,8 +3,10 @@
  * published index lists, read at build time, with the market's curation over them. While nothing
  * narrows the list, the selected carousel heads it (the curation's selected plugins in order; the
  * one that leads turns daily among those it allows to); every plugin is a cover card in a grid,
- * the selected ones first by default. The orders offered are the curation's, the update day and
- * the name: nothing here ranks plugins by a count.
+ * the selected ones first by default. When the market document carries popularity counts, a
+ * ranking stands beside the grid (under it on a narrow page), with a Popular board by installs
+ * and a Rising one by the last week's, and the list gains a Popular order; without counts there
+ * is neither.
  */
 import { Link, useLocation } from "react-router";
 import {
@@ -13,9 +15,12 @@ import {
   leadIndex,
   ShowcaseCarousel,
   ShowcaseGrid,
+  ShowcaseRanking,
+  ShowcaseSplit,
+  SiteGlyph,
   useSiteLocale,
 } from "@prismshadow/penguin-ui/site";
-import type { ShowcaseSlide } from "@prismshadow/penguin-ui/site";
+import type { RankingBoard, ShowcaseSlide, SiteLocale } from "@prismshadow/penguin-ui/site";
 import { HubTag, HubTile } from "../../components/hub/hub-icon";
 import { HubList } from "../../components/hub/hub-list";
 import type { HubFacet } from "../../components/hub/hub-list";
@@ -69,6 +74,9 @@ const POPULAR = plugins.some((plugin) => plugin.popularity !== undefined);
 
 /** A plugin's install count; one the document does not count ranks after every counted one. */
 const installs = (plugin: PluginSummary) => plugin.popularity?.installs ?? -1;
+
+/** The plugins the market document counts: the ranking's rows. */
+const COUNTED = plugins.filter((plugin) => plugin.popularity !== undefined);
 
 /** The slides allowed to lead the carousel, as indexes into SELECTED, in the curation's turn order. */
 const LEADS = market.hero
@@ -196,10 +204,69 @@ export function PluginsPage() {
           />
         ) : undefined
       }
-      wrapList={(cards) => <ShowcaseGrid className="site-ui">{cards}</ShowcaseGrid>}
+      wrapList={(cards) => (
+        <ShowcaseSplit
+          className="site-ui"
+          aside={
+            POPULAR ? (
+              <ShowcaseRanking
+                title={t.rankingTitle}
+                boards={rankingBoards(locale, byTitle, entryLink)}
+              />
+            ) : undefined
+          }
+        >
+          <ShowcaseGrid>{cards}</ShowcaseGrid>
+        </ShowcaseSplit>
+      )}
       renderItem={(plugin) => <PluginCard plugin={plugin} />}
     />
   );
+}
+
+/**
+ * The ranking's two boards: Popular by install count, Rising by the last week's installs, each
+ * row a counted plugin with its cover, name, category and figure (shortened, said in full on
+ * hover). The counts are the market document's placeholders until a real source replaces them.
+ */
+function rankingBoards(
+  locale: SiteLocale,
+  byTitle: (a: PluginSummary, b: PluginSummary) => number,
+  entryLink: ReturnType<typeof useEntryLink>,
+): RankingBoard[] {
+  const t = S.hub.plugins;
+  const tag = locale === "zh" ? "zh-CN" : "en";
+  const compact = new Intl.NumberFormat(tag, { notation: "compact", maximumFractionDigits: 1 });
+  const board = (
+    key: string,
+    label: string,
+    glyph: "download" | "arrowUpRight",
+    figure: (plugin: PluginSummary) => number,
+    words: (count: string) => string,
+  ): RankingBoard => ({
+    key,
+    label,
+    mark: <SiteGlyph name={glyph} className="h-3.5 w-3.5" />,
+    entries: [...COUNTED]
+      .sort((a, b) => figure(b) - figure(a) || byTitle(a, b))
+      .map((plugin) => ({
+        key: plugin.id,
+        thumb: <PluginCover plugin={plugin} />,
+        title: titleOf(locale, plugin),
+        tags: [
+          <HubTag key="category" fit title={categoryLabel(plugin.category)}>
+            {categoryLabel(plugin.category)}
+          </HubTag>,
+        ],
+        count: compact.format(figure(plugin)),
+        countLabel: words(figure(plugin).toLocaleString(tag)),
+        ...entryLink(`/plugins/${plugin.id}`),
+      })),
+  });
+  return [
+    board("popular", t.popular, "download", (p) => p.popularity?.installs ?? 0, t.installCount),
+    board("rising", t.rising, "arrowUpRight", (p) => p.popularity?.weekly ?? 0, t.weeklyCount),
+  ];
 }
 
 /** One plugin in the grid: its cover, name and one line, its tags, and its package facts. */
