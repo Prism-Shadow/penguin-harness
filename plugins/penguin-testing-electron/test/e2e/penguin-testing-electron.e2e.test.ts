@@ -23,7 +23,10 @@ describe.skipIf(!available)("penguin-testing-electron e2e", () => {
         "instance-data-exists": {
           description: "The instance's home and browser data exist on disk.",
           run: async () => {
-            expect(existsSync(path.join(process.cwd(), ".data/penguin-testing-electron/penguin"))).toBe(true);
+            const { gitRoot } = await import("../../src/driver.js");
+            const root = gitRoot();
+            expect(root).not.toBeNull();
+            expect(existsSync(path.join(root!, ".data/penguin-testing-electron/penguin"))).toBe(true);
           },
         },
         "window-renders": {
