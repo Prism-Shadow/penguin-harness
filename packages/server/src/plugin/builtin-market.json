@@ -1,0 +1,143 @@
+{
+  "schema": 1,
+  "updated": "2026-11-17",
+  "hero": [
+    "@penguinharness/a2ui",
+    "@penguinharness/browser-automation",
+    "@penguinharness/default-rsi-toolkit"
+  ],
+  "selected": [
+    "@penguinharness/a2ui",
+    "@penguinharness/browser-automation",
+    "@penguinharness/default-rsi-toolkit",
+    "@penguinharness/penguin-support",
+    "@penguinharness/use-bento-slides",
+    "@penguinharness/goal",
+    "@penguinharness/agent-company",
+    "@penguinharness/opro-rsi-toolkit"
+  ],
+  "plugins": {
+    "@penguinharness/a2ui": {
+      "cover": { "src": "a2ui/cover.webp", "thumb": "a2ui/cover-640.webp", "tone": "#745fac" },
+      "screenshots": [
+        {
+          "src": "a2ui/shot-1.png",
+          "caption": "Weather, clocks, a countdown and machine readings drawn inside a reply.",
+          "captionZh": "回复里直接画出天气、时钟、倒计时与机器读数。"
+        },
+        {
+          "src": "a2ui/shot-2.png",
+          "caption": "Charts drawn from the data the agent read.",
+          "captionZh": "依据智能体读到的数据画出图表。"
+        },
+        {
+          "src": "a2ui/shot-3.png",
+          "caption": "A form with every basic control; a pick fills the composer.",
+          "captionZh": "带全部基础控件的表单；选中即填入输入框。"
+        },
+        {
+          "src": "a2ui/shot-4.png",
+          "caption": "Choices, steps and callouts as blocks.",
+          "captionZh": "选项、步骤与提示都以区块呈现。"
+        }
+      ]
+    },
+    "@penguinharness/penguin-support": {
+      "cover": {
+        "src": "penguin-support/cover.webp",
+        "thumb": "penguin-support/cover-640.webp",
+        "tone": "#00847e"
+      },
+      "screenshots": [
+        {
+          "src": "penguin-support/shot-1.jpg",
+          "caption": "The support workbench: ask a question beside the chat.",
+          "captionZh": "客服工作台：在对话旁直接提问。"
+        },
+        {
+          "src": "penguin-support/shot-2.jpg",
+          "caption": "The same workbench in English.",
+          "captionZh": "英文界面下的同一工作台。"
+        }
+      ]
+    },
+    "@penguinharness/browser-automation": {
+      "cover": {
+        "src": "browser-automation/cover.webp",
+        "thumb": "browser-automation/cover-640.webp",
+        "tone": "#3a70b3"
+      },
+      "screenshots": [
+        {
+          "src": "browser-automation/shot-1.png",
+          "caption": "The agent drives the built-in browser beside the conversation.",
+          "captionZh": "智能体在对话旁驱动内置浏览器。"
+        }
+      ]
+    },
+    "@penguinharness/goal": {
+      "cover": { "src": "goal/cover.webp", "thumb": "goal/cover-640.webp", "tone": "#2f8247" },
+      "screenshots": [
+        {
+          "src": "goal/shot-1.webp",
+          "caption": "Goal mode keeps working round after round until the objective holds.",
+          "captionZh": "目标模式逐轮推进，直到目标达成。"
+        }
+      ]
+    },
+    "@penguinharness/use-bento-slides": {
+      "cover": {
+        "src": "use-bento-slides/cover.webp",
+        "thumb": "use-bento-slides/cover-640.webp",
+        "tone": "#d97230"
+      }
+    },
+    "@penguinharness/agent-company": {
+      "cover": {
+        "src": "agent-company/cover.webp",
+        "thumb": "agent-company/cover-640.webp",
+        "tone": "#dda734"
+      },
+      "screenshots": [
+        {
+          "src": "agent-company/shot-1.png",
+          "caption": "The organization chart of a company of agents.",
+          "captionZh": "一家智能体公司的组织结构图。"
+        }
+      ]
+    },
+    "@penguinharness/default-rsi-toolkit": {
+      "cover": {
+        "src": "default-rsi-toolkit/cover.webp",
+        "thumb": "default-rsi-toolkit/cover-640.webp",
+        "tone": "#a14e78"
+      },
+      "screenshots": [
+        {
+          "src": "default-rsi-toolkit/shot-1.png",
+          "caption": "The self-evolution toolkits in the plugin library.",
+          "captionZh": "插件库中的自进化工具包。"
+        },
+        {
+          "src": "default-rsi-toolkit/shot-2.png",
+          "caption": "One optimization round in the Evaluation Center.",
+          "captionZh": "评估中心里的一轮优化。"
+        }
+      ]
+    },
+    "@penguinharness/opro-rsi-toolkit": {
+      "cover": {
+        "src": "opro-rsi-toolkit/cover.webp",
+        "thumb": "opro-rsi-toolkit/cover-640.webp",
+        "tone": "#c34f4b"
+      }
+    },
+    "@penguinharness/sandbox-bwrap": {
+      "cover": {
+        "src": "sandbox-bwrap/cover.webp",
+        "thumb": "sandbox-bwrap/cover-640.webp",
+        "tone": "#5c6b7a"
+      }
+    }
+  }
+}
