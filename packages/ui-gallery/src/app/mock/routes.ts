@@ -1432,8 +1432,21 @@ router
       }
       fail(409, "session_busy", "A Task is already running.");
     }
+    if (record(body).plan === true) store.planningSessions.add(sessionId);
     store.startTask(sessionId, text || "…");
     return json({ sessionId } satisfies TaskCreateResponse, 202);
+  })
+  .get("/api/sessions/:sessionId/plan", ({ store, params }) => ({
+    plan: store.planningSessions.has(params.sessionId!) ? { proposal: null } : null,
+  }))
+  .post("/api/sessions/:sessionId/plan", ({ store, params, body }) => {
+    const id = params.sessionId!;
+    if (!store.session(id)) notFound("Session");
+    const action = record(body).action;
+    if (action === "enable") store.planningSessions.add(id);
+    else if (action === "exit") store.planningSessions.delete(id);
+    else fail(409, "plan_changed", "No pending proposal.");
+    return { plan: store.planningSessions.has(id) ? { proposal: null } : null };
   })
   .get("/api/sessions/:sessionId/goal", (): GoalResponse => ({ goal: null }))
   // The Agent API's approvals resource on the cookie door, which the API tab's Try it reads
