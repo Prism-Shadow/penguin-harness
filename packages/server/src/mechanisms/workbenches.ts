@@ -93,6 +93,13 @@ export interface WorkbenchRecord {
   origin?: string[];
 }
 
+/**
+ * The approval modes a workbench may open a Session with: two of a Session's existing modes,
+ * the two that decide every tool call by themselves. Nobody watches a workbench Session, so a
+ * mode that puts a call to a person (`read-only`, `always-ask`) is not offered.
+ */
+export type WorkbenchApprovalMode = "allow-all" | "deny-all";
+
 /** What a workbench provides (its manifest: `provides: { main: "@prismshadow/penguin-server#WorkbenchMain" }`). */
 @Interface()
 export abstract class WorkbenchMain {
@@ -106,9 +113,18 @@ export abstract class WorkbenchHost {
   abstract listAgents(): { agentId: string }[];
   /**
    * Opens a Session of an Agent of this Project — the workbench's own Agent when `agentId`
-   * is absent. The SDK's `agent.createSession`.
+   * is absent. The SDK's `agent.createSession`. The Session's approval mode is `approvalMode`,
+   * `allow-all` when absent; any other value is refused by name.
    */
-  abstract createSession(opts?: { agentId?: string }): Promise<{ sessionId: string }>;
+  abstract createSession(opts?: {
+    agentId?: string;
+    /**
+     * `allow-all` (the default) runs every tool call, as a scheduled run does. `deny-all`
+     * denies every tool call in the Session: the mode for a Session that only talks, so
+     * nothing the person types and nothing the workbench inlines can run a command.
+     */
+    approvalMode?: WorkbenchApprovalMode;
+  }): Promise<{ sessionId: string }>;
   /**
    * Runs one turn in a Session of this Project, new or existing — the SDK's `session.run`.
    * `input` is a list of items like the SDK's, each one `{ text }` today; it reaches the
