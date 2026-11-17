@@ -27,6 +27,8 @@
  * caught by the stat. The cached table is shared between callers and must be treated
  * as immutable — every mutating method here copies before changing.
  */
+import type { CapabilitySettingsPatch } from "../api/capabilities.js";
+import { capabilitySettings, applyCapabilitySettings } from "./capability-settings.js";
 import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -1101,6 +1103,14 @@ export class ProjectConfigService implements ProjectConfigStore {
    * loadProjectConfig (an invalid value drops that key; a missing/malformed block reads as
    * empty). Members may read; only the fields present in the file appear in the DTO.
    */
+  async patchCapabilitySettings(projectId: string, patch: CapabilitySettingsPatch) {
+    const raw = await this.readRaw(projectId);
+    const config = projectConfigFromTable(projectConfigPath(this.root, projectId), raw);
+    const updated = applyCapabilitySettings(config, patch);
+    await this.writeRaw(projectId, { ...raw, ...updated });
+    return capabilitySettings({ ...config, ...updated });
+  }
+
   async getChatDefaults(projectId: string): Promise<ChatDefaultsDto> {
     const raw = await this.readRaw(projectId);
     const t = asTable(raw.default_chat);
@@ -2038,6 +2048,29 @@ export class ProjectConfigService implements ProjectConfigStore {
     const next: RawTable = { ...raw, providers: providersTable, models: nextModels };
     if (defaultModel !== undefined) next.default_model = toRaw(defaultModel);
     else delete next.default_model;
+    // Capabilities follow a renamed model, and disappear if its row was removed.
+    const follow = (value: unknown): RawTable | undefined => {
+      const old = optRef(value);
+      if (!old) return undefined;
+      const ref = renamed.get(refKey(old.provider, old.model_id)) ?? {
+        provider: old.provider,
+        modelId: old.model_id,
+      };
+      return seen.has(refKey(ref.provider, ref.modelId)) ? toRaw(ref) : undefined;
+    };
+    if (raw.capability_models) {
+      next.capability_models = Object.fromEntries(
+        Object.entries(asTable(raw.capability_models)).flatMap(([key, value]) => {
+          const moved = follow(value);
+          return moved ? [[key, moved]] : [];
+        }),
+      );
+    }
+    const polish = asTable(raw.voice_polish);
+    if (polish.model) {
+      const moved = follow(polish.model);
+      next.voice_polish = moved ? { ...polish, model: moved } : { enabled: false };
+    }
     if (visionModel !== undefined) next.vision_model = toRaw(visionModel);
     else delete next.vision_model;
     const commit = async (): Promise<ModelsResponse> => {

@@ -132,13 +132,15 @@ import {
 import type { AttachmentLimits } from "../../services/attachment-limits.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
-import { Channels, Config, Desktop } from "../../hmr/capabilities.js";
+import { Channels, Config, Db, Desktop } from "../../hmr/capabilities.js";
 import { Sessions as ManagerIface, SessionServiceIface } from "../../runtime/session-manager.js";
 import { Messaging } from "../../runtime/messaging/bridge.js";
 
 import { agentDeletionsRoutes, agentsRoutes } from "./agents.js";
 import { agentConfigRoutes } from "./agent-config.js";
 import { vaultRoutes } from "./vault.js";
+import { capabilityRoutes, voicePolishRoutes } from "./capabilities.js";
+import { CapabilityRuns } from "../../services/capability-runs.js";
 import { modelsRoutes } from "./models.js";
 import { modelOAuthCallbackRoutes, modelOAuthRoutes } from "./model-oauth.js";
 import { platformAuthRoutes } from "./platform-auth.js";
@@ -1762,6 +1764,18 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
         order: 6,
       },
       {
+        id: "session-api.capabilities",
+        prefix: "/api/projects/:projectId/capabilities",
+        auth: "user",
+        order: 100,
+      },
+      {
+        id: "session-api.voice-polish",
+        prefix: "/api/projects/:projectId/voice-polish",
+        auth: "user",
+        order: 100,
+      },
+      {
         id: "session-api.models",
         prefix: "/api/projects/:projectId/models",
         auth: "user",
@@ -1867,6 +1881,9 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
   },
 })
 export class SessionApiRoutes {
+  @Use() private readonly db!: Db;
+  @Bind("session-api.capabilities") capabilities!: Hono<AppEnv>;
+  @Bind("session-api.voice-polish") voicePolish!: Hono<AppEnv>;
   @Use() private readonly config!: Config;
   @Use() private readonly channels!: Channels;
   @Use() private readonly manager!: ManagerIface;
@@ -1927,6 +1944,14 @@ export class SessionApiRoutes {
     const projectConfigService = this.projectConfig;
     const sessionsRepo = this.sessionsRepo;
     const channels = this.channels as ChannelHub;
+    const tools = {
+      access,
+      projects: projectConfigService,
+      sessions: sessionsRepo,
+      runs: new CapabilityRuns(this.db, this.config.root),
+    };
+    this.capabilities = capabilityRoutes(tools);
+    this.voicePolish = voicePolishRoutes(tools);
     const sessionsDeps = {
       agentConfigService,
       channels,
