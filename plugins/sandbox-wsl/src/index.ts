@@ -125,7 +125,7 @@ export function createWslProvider(
       if (state === null) {
         throw new Error("penguin-wsl cannot confine: the sandbox distro is not initialized");
       }
-      const job = launchJob(argv, policy, settings(), state);
+      const job = launchJob(argv, policy, settings(), state, node);
       return {
         argv: [node, launcher, Buffer.from(JSON.stringify(job), "utf8").toString("base64")],
         // In the desktop app `node` is the app's own binary, which runs a script only with this.

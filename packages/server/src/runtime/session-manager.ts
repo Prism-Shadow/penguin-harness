@@ -1376,9 +1376,19 @@ export class SessionManager {
       assertNotStranded(entry);
       this.assertIdle(entry);
       const objective = args.objective;
-      const started = await entry.session.runUserPromptHook?.("goal", objective, {
-        budget: args.budget,
-      });
+      // A start hook that fails (its script errs or times out, or the sandbox refuses to run
+      // it) is a refusal naming its reason, with no Task submitted — not an internal error.
+      const started = await entry.session
+        .runUserPromptHook?.("goal", objective, { budget: args.budget })
+        .catch((err: unknown) => {
+          if (err instanceof HttpError) throw err;
+          const reason = err instanceof Error ? err.message : String(err);
+          throw new HttpError(
+            409,
+            "goal_start_failed",
+            `Goal mode could not start: the goal plugin's start hook failed (${reason}).`,
+          );
+        });
       if (!started) throw goalPluginNotInstalled();
       if (!started.context) {
         throw new HttpError(
