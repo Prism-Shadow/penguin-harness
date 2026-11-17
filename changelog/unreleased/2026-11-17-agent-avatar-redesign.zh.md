@@ -3,6 +3,7 @@
 - **Date:** 2026-11-17
 - **Type:** feature
 - **Scope:** `ui`, `ui-gallery`
+- **PR:** [#1577](https://github.com/Prism-Shadow/penguin-harness/pull/1577)
 
 [English](2026-11-17-agent-avatar-redesign.md)
 
