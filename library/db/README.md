@@ -16,13 +16,15 @@ The server's SQLite database as a library package — #255's restack, step L01.
 - `src/index.ts` — the package face plus the `Db` capability class (the
   runtime's published SQLite handle: `prepare`/`exec`/`close`).
 
-## What deliberately does NOT live here (yet)
+## What deliberately does NOT live here
 
 The table repos (`users.ts`, `sessions.ts`, `server-settings.ts`, …). Each repo
-implements one domain's contract and moves with that domain into its own
-library package (L02+: `library/settings` takes `server-settings` and
-`ui-prefs`, and so on). They stay under `packages/server/src/db/repos/` until
-their domain step.
+implements one domain's contract and lives with that domain in its own library
+package: the auth repos (`users`, `auth-sessions`, `user-drafts`,
+`background-images`) under `library/auth/src/repos/`, settings
+(`server-settings`, `ui-prefs`) under `library/setting/src/repos/`, sessions
+and schedules under `library/session/src/repos/`, and so on for the other
+domains.
 
 ## The dependency rule
 
