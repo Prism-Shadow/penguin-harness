@@ -102,7 +102,10 @@ describe("sandbox settings group", () => {
     apps.push(t);
     const entries = await list();
     const sandbox = entries.find((e) => e.name === "sandbox")!;
+    // The sandbox's group is ordered ahead of the rest; the server's own Plugin sources
+    // group (order 1) follows it and leads nothing.
     expect(entries[0]).toBe(sandbox);
+    expect(entries[1]?.name).toBe("plugin-sources");
     // Nothing saved: the switch reads off, and the default preset is the shipped one.
     expect(sandbox.values).toEqual({
       enabled: false,
