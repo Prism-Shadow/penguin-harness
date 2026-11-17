@@ -5,7 +5,7 @@ import type {
   CapabilityRunRequest,
   CapabilitySettingsPatch,
 } from "@prismshadow/penguin-server/api";
-import { apiFetch, apiFetchStream } from "../../api/client";
+import { apiFetch, apiFetchStream } from "./client";
 
 export const capabilities = [
   "image",

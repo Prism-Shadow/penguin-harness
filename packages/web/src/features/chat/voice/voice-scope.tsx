@@ -14,7 +14,7 @@ import type { CapabilitySettings } from "@prismshadow/penguin-server/api";
 import { apiUrl } from "../../../lib/server-context";
 import { apiErrorText } from "../../../lib/api-error";
 import { S } from "../../../lib/strings";
-import { getCapabilities, runVoice } from "../../models/capability-api";
+import { getCapabilities, runVoice } from "../../../api/project-capabilities";
 
 type Playback = { id: string; phase: "loading" | "playing" | "ready" };
 interface VoiceState {

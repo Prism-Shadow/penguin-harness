@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { Button, GlyphIcon, ICONS, Spinner, toastError, toastInfo } from "@prismshadow/penguin-ui";
 import { apiErrorText } from "../../../lib/api-error";
 import { S } from "../../../lib/strings";
-import { polishVoice, runVoice } from "../../models/capability-api";
+import { polishVoice, runVoice } from "../../../api/project-capabilities";
 import { captureSpeech, recordingData } from "./recording";
 import { useVoice } from "./voice-scope";
 

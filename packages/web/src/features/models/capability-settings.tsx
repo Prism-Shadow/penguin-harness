@@ -17,7 +17,7 @@ import {
   getCapabilities,
   updateCapabilities,
   type CapabilityPatch,
-} from "./capability-api";
+} from "../../api/project-capabilities";
 
 function ModelChoice({
   label,
@@ -115,7 +115,7 @@ export function CapabilityDialog({
         if (!busy) onClose();
       }}
     >
-      <div className="space-y-5">
+      <div className="space-y-4">
         <p className="text-sm text-fg-muted">{S.voice.modelsHelp}</p>
         {error && (
           <Notice tone="attention">
