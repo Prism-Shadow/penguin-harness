@@ -25,7 +25,7 @@ interface VoiceState {
   settings: CapabilitySettings | null;
   playback: Playback | null;
   speak: (id: string, text: string) => void;
-  stop: () => void;
+  stop: (replyId?: string) => void;
 }
 const VoiceContext = createContext<VoiceState | null>(null);
 export function useVoice() {
@@ -51,6 +51,7 @@ export function VoiceScope({
     null,
   );
   useEffect(() => {
+    if (!active) return;
     const job = new AbortController();
     setSettings(null);
     void getCapabilities(projectId, server, job.signal)
@@ -59,9 +60,10 @@ export function VoiceScope({
       })
       .catch(() => {});
     return () => job.abort();
-  }, [projectId, server]);
-  const stop = useCallback(() => {
+  }, [projectId, server, active]);
+  const stop = useCallback((replyId?: string) => {
     const item = current.current;
+    if (replyId !== undefined && item?.id !== replyId) return;
     current.current = null;
     if (item) {
       item.request.abort();
@@ -78,11 +80,12 @@ export function VoiceScope({
     const hide = () => {
       if (document.hidden) stop();
     };
+    const pageHide = () => stop();
     document.addEventListener("visibilitychange", hide);
-    window.addEventListener("pagehide", stop);
+    window.addEventListener("pagehide", pageHide);
     return () => {
       document.removeEventListener("visibilitychange", hide);
-      window.removeEventListener("pagehide", stop);
+      window.removeEventListener("pagehide", pageHide);
     };
   }, [stop]);
   const speak = async (id: string, text: string) => {
@@ -111,7 +114,7 @@ export function VoiceScope({
         if (current.current !== item) return;
         const artifact = result.artifacts.find((a) => a.mimeType.startsWith("audio/"));
         if (!artifact || !artifact.url.startsWith("/api/")) throw new Error(S.voice.audioError);
-        audio.onended = stop;
+        audio.onended = () => stop(id);
         audio.onerror = () => {
           if (current.current === item) {
             stop();
@@ -153,6 +156,8 @@ export function VoiceScope({
 export function ReadReply({ text }: { text: string }) {
   const scope = useVoice(),
     id = useId();
+  const stop = scope?.stop;
+  useEffect(() => () => stop?.(id), [stop, id]);
   if (!scope?.settings?.bindings.tts || !text.trim()) return null;
   const own = scope.playback?.id === id ? scope.playback.phase : null;
   const label = own === "ready" ? S.voice.play : own ? S.voice.stop : S.voice.listen;

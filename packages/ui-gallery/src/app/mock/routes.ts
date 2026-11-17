@@ -411,15 +411,24 @@ function demoCapabilities(store: DemoStore): CapabilitySettings {
   const chat = store.f.models.defaultModel;
   return {
     bindings: {},
-    candidates: { search: [], fetch: [], image: [], video: [], tts: [], stt: [], chat: chat ? [chat] : [] },
+    candidates: {
+      search: [],
+      fetch: [],
+      image: [],
+      video: [],
+      tts: [],
+      stt: [],
+      chat: chat ? [chat] : [],
+    },
     voicePolish: store.voicePolish,
   };
 }
 router
-  .get("/api/projects/:projectId/capabilities", ({store}) => demoCapabilities(store))
-  .patch("/api/projects/:projectId/capabilities", ({store, body}) => {
+  .get("/api/projects/:projectId/capabilities", ({ store }) => demoCapabilities(store))
+  .patch("/api/projects/:projectId/capabilities", ({ store, body }) => {
     const patch = record(body) as CapabilitySettingsPatch;
-    if (patch.bindings && Object.values(patch.bindings).some(Boolean)) return readOnly("assign a media model");
+    if (patch.bindings && Object.values(patch.bindings).some(Boolean))
+      return readOnly("assign a media model");
     store.voicePolish = { ...store.voicePolish, ...patch.voicePolish };
     return demoCapabilities(store);
   });

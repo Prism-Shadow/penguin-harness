@@ -1,6 +1,15 @@
 import { useEffect, useState } from "react";
 import type { CapabilitySettings, ModelRefDto } from "@prismshadow/penguin-server/api";
-import { Button, FieldHint, Modal, Notice, Select, Spinner, Switch, toastError } from "@prismshadow/penguin-ui";
+import {
+  Button,
+  FieldHint,
+  Modal,
+  Notice,
+  Select,
+  Spinner,
+  Switch,
+  toastError,
+} from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import {
@@ -81,7 +90,11 @@ export function CapabilityDialog({
       if (value === null) delete bindings[key];
       else if (value) bindings[key] = value;
     }
-    setSettings({ ...settings, bindings, voicePolish: { ...settings.voicePolish, ...patch.voicePolish } });
+    setSettings({
+      ...settings,
+      bindings,
+      voicePolish: { ...settings.voicePolish, ...patch.voicePolish },
+    });
     setBusy(true);
     setError("");
     try {

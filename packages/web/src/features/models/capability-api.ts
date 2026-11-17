@@ -41,12 +41,15 @@ export async function runVoice(
   body: CapabilityRunRequest,
   signal: AbortSignal,
 ) {
-  const result = await read<CapabilityResult>(`${projectPath(projectId)}/capabilities/${capability}/run`, {
-    method: "POST",
-    body,
-    signal,
-    server,
-  });
+  const result = await read<CapabilityResult>(
+    `${projectPath(projectId)}/capabilities/${capability}/run`,
+    {
+      method: "POST",
+      body,
+      signal,
+      server,
+    },
+  );
   if (result.error) throw new Error(result.error);
   return result;
 }
