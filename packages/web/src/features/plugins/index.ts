@@ -21,6 +21,7 @@ export { PluginDetailModal } from "./plugin-detail";
 export {
   PluginStatusMark,
   PluginTag,
+  pluginTags,
   rowBuiltin,
   rowIcon,
   rowInstalledOnServer,

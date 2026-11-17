@@ -1,12 +1,16 @@
 /**
  * One plugin's row on the Agent settings Plugins sub-page: the shared list row (`ListRow`), the
- * shape of a hook package's row on the Hooks sub-page, kept to one line.
+ * shape of a hook package's row on the Hooks sub-page.
  *
  * - The plugin's tile, then its display name with — right after it — its status on this Agent
  *   where the section does not already say it (Update available, Incomplete, Not in library: the
- *   glyph in the status's tone, the word in muted ink, the meaning on hover), and the marks of its
- *   MCP servers while they wait for vault keys or a sign-in. No description and no tags: the
- *   detail says the rest.
+ *   glyph in the status's tone, the word in muted ink, the meaning on hover), the marks of its
+ *   MCP servers while they wait for vault keys or a sign-in, and the Plugins page card's tags
+ *   (`pluginTags`, each with its hover sentence; the category always, since the sub-page groups by
+ *   installed and available rather than by category). The marks wrap under the name as a hook
+ *   package's hook points do, and never truncate.
+ * - Under the name, the plugin's one-line description, read as the card reads it. A plugin gone
+ *   from the library has none to read, and no line, as a hook package without one has none.
  * - The npm version, quiet, then the actions: Install for an available plugin; Update while an
  *   installed one is behind the library or missing a part; the owner's Uninstall, the glyph alone
  *   as on a hook package's row.
@@ -33,7 +37,9 @@ import { S } from "../../lib/strings";
 import {
   McpServerMarks,
   pluginMcpState,
+  pluginTags,
   rowIcon,
+  rowShortDescription,
   rowVersion,
   type AgentInstalls,
   type AgentPluginGroup,
@@ -208,6 +214,8 @@ export function AgentPluginRow({
   entry,
   row,
   title,
+  categoryTitle,
+  locale,
   installs,
   isOwner,
   actions,
@@ -218,6 +226,9 @@ export function AgentPluginRow({
   /** The library's row of the plugin; undefined once it left the library. */
   row: PluginRow | undefined;
   title: string;
+  /** The title of the library category the plugin is listed under, as the Plugins page names it. */
+  categoryTitle: string | undefined;
+  locale: "zh" | "en";
   installs: AgentInstalls | undefined;
   isOwner: boolean;
   actions: AgentPluginActions;
@@ -234,13 +245,16 @@ export function AgentPluginRow({
           icon={row === undefined ? undefined : rowIcon(row)}
           name={entry.name}
           fallback={ICONS.puzzle}
-          // One line of text beside it: the tile is a size down from the two-line rows'.
-          size={28}
-          glyph={16}
         />
       }
       title={title}
-      titleTrail={<StatusWithMcp entry={entry} installs={installs} isOwner={isOwner} />}
+      titleTrail={
+        <>
+          <StatusWithMcp entry={entry} installs={installs} isOwner={isOwner} />
+          {row !== undefined && pluginTags(row, { categoryTitle })}
+        </>
+      }
+      description={row === undefined ? undefined : rowShortDescription(row, locale)}
       meta={version === undefined ? undefined : `v${version}`}
       trailing={rowActions(entry, title, isOwner, actions)}
       onClick={onOpen}

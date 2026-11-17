@@ -6,6 +6,8 @@
  *
  * - Given an Agent with all of Charts and a library that also has Notes kit, Charts is listed
  *   under Installed and Notes kit under Available; the user's own Skill is no row of its own here.
+ * - Given an installed plugin, its row reads its one-line description under its name, and the
+ *   Plugins page's tags beside it: its category, and built in with what that means on hover.
  * - Given a member installs Notes kit, one install naming it alone is sent, its row moves to
  *   Installed, and no row offers Uninstall.
  * - Given a plugin with a stdio server, Install asks first, naming the command; cancelling writes
@@ -114,6 +116,21 @@ describe("the Plugins sub-page of an Agent's settings", () => {
     expect(sectionOf("Charts")).toBe(INSTALLED);
     expect(sectionOf("Notes kit")).toBe(AVAILABLE);
     expect(findPluginRow("notes")).toBeNull();
+  });
+
+  it("shows an installed plugin's description under its name and the Plugins page's tags beside it", async () => {
+    await openAgentPlugins();
+    const describedBy = pluginRowButton("Charts").getAttribute("aria-describedby");
+    expect(document.getElementById(describedBy ?? "")?.textContent).toBe("Draw charts");
+    const tag = (text: string) =>
+      [...pluginRow("Charts").querySelectorAll("span")].find(
+        (span) => span.children.length === 0 && span.textContent === text,
+      );
+    // The fake library lists every plugin under one category, "All".
+    expect(tag("All")).toBeDefined();
+    expect(tag(en.plugins.builtin)?.getAttribute("data-tooltip")).toBe(
+      en.plugins.libraryBuiltinHint,
+    );
   });
 
   it("lets a member install a plugin, which moves to Installed, and offers a member no Uninstall", async () => {

@@ -1,6 +1,6 @@
 /**
  * The marks a plugin's card and its detail dialog share: the status glyph with its word, the tag
- * pills, and the reading of a row — its title, icon, version, descriptions and the package's own
+ * pills (and the card's set of them, which an Agent's plugin row shows too), and the reading of a row — its title, icon, version, descriptions and the package's own
  * details (author, license, links) — library and server-module plugins alike, so the two kinds
  * read as one family.
  *
@@ -108,6 +108,56 @@ export function PluginTag({
       {children}
     </Badge>
   );
+}
+
+/**
+ * A row's tags, the one set the Plugins page's card and an Agent's plugin row both show: its
+ * category, "built in", "installed on server", "link" and "shared by all machines", each where it
+ * applies and with its hover sentence. The category is left out without `categoryTitle` (a card in
+ * its category's own section, whose head names it); `sharedTagId` is the shared tag's id, for a
+ * control it describes.
+ */
+export function pluginTags(
+  row: PluginRow,
+  { categoryTitle, sharedTagId }: { categoryTitle?: string | undefined; sharedTagId?: string } = {},
+): ReactNode[] {
+  const tags: ReactNode[] = [];
+  if (categoryTitle !== undefined) {
+    tags.push(<PluginTag key="category">{categoryTitle}</PluginTag>);
+  }
+  if (rowBuiltin(row)) {
+    tags.push(
+      <PluginTag
+        key="builtin"
+        title={row.library !== undefined ? S.plugins.libraryBuiltinHint : S.plugins.builtinHint}
+      >
+        {S.plugins.builtin}
+      </PluginTag>,
+    );
+  }
+  if (rowInstalledOnServer(row)) {
+    tags.push(
+      <PluginTag key="installed" title={S.plugins.installedOnServerHint}>
+        {S.plugins.installedOnServer}
+      </PluginTag>,
+    );
+  }
+  const linked = rowLinked(row);
+  if (linked !== null) {
+    tags.push(
+      <PluginTag key="linked" title={S.plugins.linkedHint(linked.linkPath)}>
+        {S.plugins.linkedTag}
+      </PluginTag>,
+    );
+  }
+  if (row.module?.shared === true) {
+    tags.push(
+      <PluginTag key="shared" id={sharedTagId} title={S.plugins.sharedHint}>
+        {S.plugins.sharedTag}
+      </PluginTag>,
+    );
+  }
+  return tags;
 }
 
 /** The icon a row is drawn with, when it has one: the library plugin's, else the index entry's. */

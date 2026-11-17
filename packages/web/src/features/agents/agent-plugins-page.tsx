@@ -1,7 +1,8 @@
 /**
  * The Agent settings Plugins tab's Plugins sub-page: the Agent's plugins as one column of compact
  * rows, the shape of the Hooks sub-page's list (agent-plugin-row.tsx), with the Plugins page's
- * detail dialog (agent-plugin-detail.tsx), status marks and search (`rowMatches`).
+ * detail dialog (agent-plugin-detail.tsx), status marks, tags (the category named as that page
+ * names it, `pluginCategories`), one-line descriptions and search (`rowMatches`).
  *
  * Two sections, the Plugins page's group heads (a name and a count, folding, both open; both open
  * while the search box holds anything):
@@ -12,7 +13,7 @@
  *   ship a Skill, a hook package, an MCP server or a workbench; a package of server modules alone
  *   is the Plugins page's.
  *
- * Inside a section the rows are in name order, one per line. A section the search leaves empty is
+ * Inside a section the rows are in name order, one per plugin. A section the search leaves empty is
  * not drawn; nothing installed says so above Available, and a library with nothing for an Agent
  * beside nothing installed is one sentence. While the first read is out, placeholder rows stand
  * where the rows will be. The Agent's own parts are not listed here: they are rows on the kind
@@ -140,6 +141,8 @@ export function AgentPluginsPage({
       entry={entry}
       row={entry.plugin === null ? undefined : rows.get(entry.name)}
       title={agentPluginTitle(entry, locale)}
+      categoryTitle={categoryOf(entry)}
+      locale={locale}
       installs={installs}
       isOwner={isOwner}
       actions={actions}
