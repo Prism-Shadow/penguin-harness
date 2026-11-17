@@ -10,7 +10,8 @@
  * - select: a dropdown whose first row is the empty answer;
  * - switch: the switch at the end of a row whose title is set as every other field's, which changes
  *   the form's answer and nothing else until the fill;
- * - date, time, datetime: the input with the browser's own picker.
+ * - date, time, datetime: the package's date, time and date-and-time pickers, which write the
+ *   formats the grammar reads.
  *
  * Each control shows the model's hint under it. While its answer breaks the field's rule the
  * control takes the danger line and the line under it turns into the error: the model's hint, else
@@ -31,6 +32,9 @@ import type { A2uiStrings } from "../../../strings";
 import { Pill } from "../../feedback/pill/pill";
 import { Checkbox } from "../../forms/checkbox/checkbox";
 import { ChoiceGroup } from "../../forms/choice-group/choice-group";
+import { DateField } from "../../forms/date-time/date-field";
+import { DateTimeField } from "../../forms/date-time/date-time-field";
+import { TimeField } from "../../forms/date-time/time-field";
 import {
   FieldError,
   FieldHint,
@@ -385,28 +389,24 @@ function SwitchField({ field, answer, onChange, disabled }: FieldControlProps) {
   );
 }
 
-/** The native input each calendar kind is; `datetime-local` emits the `T` the grammar reads. */
-const DATE_INPUT: Readonly<Record<"date" | "time" | "datetime", string>> = {
-  date: "date",
-  time: "time",
-  datetime: "datetime-local",
-};
-
-function DateField({ field, answer, onChange, disabled, strings, problem }: FieldControlProps) {
-  const kind = field.kind as keyof typeof DATE_INPUT;
-  return (
-    <Input
-      type={DATE_INPUT[kind]}
-      label={plainText(field.label)}
-      required={field.required}
-      hint={hintText(field)}
-      error={errorText(field, problem, strings)}
-      value={textOf(answer)}
-      onChange={(event) => onChange(event.target.value)}
-      size="sm"
-      disabled={disabled}
-    />
-  );
+/**
+ * A calendar kind as the package's picker for it, each writing the format the grammar reads:
+ * `YYYY-MM-DD`, `HH:mm`, and `YYYY-MM-DDTHH:mm` with its `T`.
+ */
+function CalendarField({ field, answer, onChange, disabled, strings, problem }: FieldControlProps) {
+  const props = {
+    label: plainText(field.label),
+    required: field.required,
+    hint: hintText(field),
+    error: errorText(field, problem, strings),
+    value: textOf(answer),
+    onChange,
+    size: "sm" as const,
+    disabled,
+  };
+  if (field.kind === "time") return <TimeField {...props} />;
+  if (field.kind === "datetime") return <DateTimeField {...props} />;
+  return <DateField {...props} />;
 }
 
 const CONTROLS: Readonly<Record<A2uiFieldKind, (props: FieldControlProps) => ReactElement>> = {
@@ -418,9 +418,9 @@ const CONTROLS: Readonly<Record<A2uiFieldKind, (props: FieldControlProps) => Rea
   multiple: MultipleField,
   select: SelectField,
   switch: SwitchField,
-  date: DateField,
-  time: DateField,
-  datetime: DateField,
+  date: CalendarField,
+  time: CalendarField,
+  datetime: CalendarField,
 };
 
 /** The control a field's kind is drawn as. */

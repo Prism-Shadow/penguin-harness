@@ -39,6 +39,7 @@ import type {
 import {
   Button,
   Count,
+  DateField,
   FieldLabel,
   GlyphIcon,
   ICONS,
@@ -739,13 +740,11 @@ function CreateTicketForm({
               cols={3}
             />
           </div>
-          <Input
+          <DateField
             size="sm"
             label={S.company.tickets.due}
-            type="date"
             value={due}
-            className="font-mono"
-            onChange={(e) => form.patch({ due: e.target.value })}
+            onChange={(next) => form.patch({ due: next })}
           />
         </div>
         <Input

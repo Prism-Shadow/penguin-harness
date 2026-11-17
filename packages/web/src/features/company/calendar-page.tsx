@@ -32,6 +32,7 @@ import {
   Button,
   Card,
   ConfirmModal,
+  DateTimeField,
   GlyphIcon,
   ICONS,
   ICON_GAP,
@@ -1033,15 +1034,13 @@ export function CalendarEventDialog({
           onChange={(e) => set({ prompt: e.target.value })}
         />
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <Input
+          <DateTimeField
             size="sm"
             label={S.company.calendar.startAt}
             required
-            type="datetime-local"
             info={S.company.calendar.staggerHint}
             value={draft.startAt}
-            onChange={(e) => set({ startAt: e.target.value })}
-            className="font-mono"
+            onChange={(startAt) => set({ startAt })}
           />
           <Input
             size="sm"
@@ -1052,13 +1051,11 @@ export function CalendarEventDialog({
             className="font-mono"
             placeholder="1d"
           />
-          <Input
+          <DateTimeField
             size="sm"
             label={S.company.calendar.endAt}
-            type="datetime-local"
             value={draft.endAt}
-            onChange={(e) => set({ endAt: e.target.value })}
-            className="font-mono"
+            onChange={(endAt) => set({ endAt })}
           />
           <label className="flex items-center gap-2 self-end pb-1.5 text-xs text-gray-600 dark:text-gray-300">
             <Switch checked={draft.enabled} onChange={(v) => set({ enabled: v })} />

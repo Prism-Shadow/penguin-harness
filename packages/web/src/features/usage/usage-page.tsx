@@ -1,7 +1,8 @@
 /**
  * Cost and usage center:
  * top filters for Agent / Model + a date-range preset (trailing last hour /
- * last 24 hours, calendar 7/30/90 days, or a custom pair of date inputs);
+ * last 24 hours, calendar 7/30/90 days, or a custom range, whose two dates are picked in the
+ * range picker that shows beside it only then);
  * the range alone decides the time-series precision, so there is no second
  * control for it (controls have no external title — the explanation is
  * written into the dropdown options themselves);
@@ -31,7 +32,7 @@ import type { ModelRefDto, UsageBucket, UsageResponse } from "@prismshadow/pengu
 import {
   Card,
   CardHeader,
-  Input,
+  DateRangeField,
   PageFrame,
   PageHeader,
   Select,
@@ -54,6 +55,7 @@ import { RequestsChart, TokenBarChart, TokenLegend, type TokenLegendKey } from "
 import {
   compactCounts,
   compactSeries,
+  isoDate,
   presetDefaultGranularity,
   presetRange,
   presetTsWindow,
@@ -364,7 +366,8 @@ export function UsagePage() {
                 ))}
               </Select>
             </div>
-            {/* Date range: trailing windows and quick presets, with "custom" revealing the two date inputs */}
+            {/* Date range: the trailing windows, the calendar presets, and "custom", which reveals
+                the range field */}
             <div className="w-28">
               <Select
                 size="sm"
@@ -390,24 +393,19 @@ export function UsagePage() {
               </Select>
             </div>
             {preset === "custom" && (
-              /* A dash between the two inputs stands in for a "from/to" label */
-              <div className="flex items-center gap-1.5">
-                <Input
+              /* The custom range's two dates, shown only while the range is the custom one: a
+                 preset names its own span in the Select, so it has nothing to pick here. As wide
+                 as its two full dates in the theme's face, which differs from theme to theme,
+                 and narrower only when the row has no room. */
+              <div className="max-w-full">
+                <DateRangeField
                   size="sm"
-                  type="date"
-                  aria-label={S.usage.from}
-                  value={from}
-                  onChange={(e) => applyRange("custom", e.target.value, to)}
-                />
-                <span className="shrink-0 text-gray-400" aria-hidden>
-                  –
-                </span>
-                <Input
-                  size="sm"
-                  type="date"
-                  aria-label={S.usage.to}
-                  value={to}
-                  onChange={(e) => applyRange("custom", from, e.target.value)}
+                  aria-label={S.usage.rangeDates}
+                  required
+                  from={from}
+                  to={to}
+                  max={isoDate(new Date())}
+                  onChange={(range) => applyRange("custom", range.from, range.to)}
                 />
               </div>
             )}

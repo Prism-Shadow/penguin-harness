@@ -45,6 +45,7 @@ import {
   CloseButton,
   ConfirmModal,
   CopyButton,
+  DateField,
   FieldLabel,
   ICON_GAP,
   ICON_SIZE,
@@ -621,13 +622,11 @@ function TicketDialog({
                         cols={3}
                       />
                     </div>
-                    <Input
+                    <DateField
                       size="sm"
                       label={S.company.tickets.due}
-                      type="date"
                       value={summaryDraft.due}
-                      className="font-mono"
-                      onChange={(e) => setSummaryDraft({ ...summaryDraft, due: e.target.value })}
+                      onChange={(due) => setSummaryDraft({ ...summaryDraft, due })}
                     />
                     <div className="md:col-span-2">
                       <Input

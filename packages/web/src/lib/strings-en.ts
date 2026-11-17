@@ -2203,8 +2203,6 @@ export const en: Strings = {
     exportTracesLast: "Latest N",
     exportTracesRange: "Date range",
     exportTracesCount: "Number of conversations",
-    exportTracesFrom: "From",
-    exportTracesTo: "To",
     exportVaultNote:
       "The vault never goes into the zip; a value written into the config itself travels as it is.",
     exportAction: "Export",
@@ -5380,8 +5378,7 @@ Scenarios:
     total: "Total",
     tokens: "Tokens",
     requests: "Requests",
-    from: "From",
-    to: "To",
+    rangeDates: "Start and end dates",
     colCacheRead: "cache_read",
     colCacheWrite: "cache_write",
     colOutput: "output",
