@@ -1857,6 +1857,8 @@ export const en: GalleryStrings = {
       back: "Back to the list",
       search: "Search agents",
       create: "New",
+      cardView: "Cards",
+      listView: "List",
       cards: "Cards",
       padded: "Padded: a title row above the content",
       cardTitle: "Spend this month",
