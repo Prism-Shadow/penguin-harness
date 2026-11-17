@@ -19,6 +19,7 @@ import type { AgentArchiveQuery } from "../api/types.js";
 import { HttpError, badRequest } from "../http/errors.js";
 import type { SessionIndex } from "../mechanisms/sessions.js";
 import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
+import { FILES_DIR } from "../workbenches/files.js";
 import { STATE_FILE } from "../workbenches/store.js";
 import { MAX_ENTRIES, MAX_PACKAGE_BYTES, MAX_UNPACKED_BYTES } from "./agent-zip.js";
 import { isGitEntry, isLeftOut } from "./snapshot-service.js";
@@ -30,7 +31,10 @@ export interface AgentExportDeps {
   sessions: Pick<SessionIndex, "listByAgent">;
 }
 
-/** The State folder of each part; `workbenchData` is each workbench's `state.json`. */
+/**
+ * The State folder of each part; `workbenchData` is each workbench's `state.json` and `.files/`
+ * (../workbenches/files.ts).
+ */
 const PART_DIRS: Record<string, string> = {
   skills: "skills",
   hooks: "hooks",
@@ -64,7 +68,10 @@ function carried(parts: Record<string, boolean>, rel: string): boolean {
   if (isLeftOut(`agent_state/${rel}`) || isGitEntry(`agent_state/${rel}`)) return false;
   const [top, , file, ...rest] = rel.split("/");
   if (Object.keys(PART_DIRS).some((part) => PART_DIRS[part] === top && !parts[part])) return false;
-  const data = top === "workbenches" && file?.toLowerCase() === STATE_FILE && rest.length === 0;
+  // A workbench's data: its `state.json`, and the folder of files it shares with its Agent.
+  const name = file?.toLowerCase();
+  const data =
+    top === "workbenches" && ((name === STATE_FILE && rest.length === 0) || name === FILES_DIR);
   return !data || parts.workbenchData!;
 }
 

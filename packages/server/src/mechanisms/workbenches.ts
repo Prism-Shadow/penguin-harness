@@ -6,7 +6,8 @@
  *
  * - `WorkbenchHost` is what the server PUBLISHES into every workbench tree (the workbench's
  *   manifest requires it `from: "Host"`): Sessions of the Project's Agents, opened and run
- *   the way the SDK does it and followed live, a small state document, a log line.
+ *   the way the SDK does it and followed live, a small state document, a folder of files it
+ *   shares with its Agent, a log line.
  * - `WorkbenchMain` is what a workbench PROVIDES: a JSON request handler the server mounts
  *   under `/api/projects/:p/agents/:a/workbenches/:id/api/*`, which the workbench's own UI
  *   (served from its `ui/` folder) calls.
@@ -93,6 +94,18 @@ export interface WorkbenchRecord {
   origin?: string[];
 }
 
+/**
+ * A file of the workbench's folder of files (`.files/` in its own folder), as `listFiles` and
+ * `writeFile` report it.
+ */
+export interface WorkbenchFile {
+  /** Its path below the folder, `/`-separated. */
+  path: string;
+  size: number;
+  /** When it was last written, in ms since the epoch: by the workbench, or by its Agent's file tools. */
+  mtimeMs: number;
+}
+
 /** What a workbench provides (its manifest: `provides: { main: "@prismshadow/penguin-server#WorkbenchMain" }`). */
 @Interface()
 export abstract class WorkbenchMain {
@@ -138,6 +151,27 @@ export abstract class WorkbenchHost {
    * published for the channel hub's idle window ends by itself.
    */
   abstract subscribe(sessionId: string, listener: (record: WorkbenchRecord) => void): () => void;
+  /**
+   * The files the workbench shares with its Agent: `.files/` in its own folder, which the Agent
+   * edits with its file tools and the handler reads and writes here. Not source — a write loads
+   * nothing and enters no version — and kept across reloads, rollbacks and plugin updates; it
+   * goes with the workbench when the workbench is removed. Every regular file below it, sorted
+   * by path; a listing is how the handler notices what the Agent wrote (compare `mtimeMs` and
+   * `size` on a timer while a page is open). Links are never followed.
+   */
+  abstract listFiles(): Promise<WorkbenchFile[]>;
+  /** A file's bytes; null when there is none at `path` (a `/`-separated path below the folder). */
+  abstract readFile(path: string): Promise<Uint8Array | null>;
+  /** Writes a file whole, replacing it in one step and creating its directories; at most 50 MB. */
+  abstract writeFile(path: string, data: Uint8Array | string): Promise<WorkbenchFile>;
+  /** Removes a file; nothing happens when it is not there. */
+  abstract removeFile(path: string): Promise<void>;
+  /**
+   * Where a file (the folder itself, without `path`) is on the server's machine: the path a
+   * handler names when it asks the Agent to edit the file. It says nothing of whether the file
+   * exists.
+   */
+  abstract filePath(path?: string): string;
   /** The workbench's own document (`state.json`, kept by the server across reloads and rollbacks). */
   abstract getState(): unknown;
   abstract setState(state: unknown): Promise<void>;

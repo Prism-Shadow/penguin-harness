@@ -4923,7 +4923,8 @@ export interface ScheduleUpsertRequest {
 /**
  * The archive route's query. Each part is `1` (carried) or `0` (left out); an absent part takes
  * its default: all carried but `schedules`, since an imported task runs on its schedule.
- * `workbenchData` is each workbench's `state.json`, and means nothing without `workbenches`.
+ * `workbenchData` is each workbench's `state.json` and `.files/`, and means nothing without
+ * `workbenches`.
  */
 export interface AgentArchiveQuery {
   skills?: "0" | "1";

@@ -35,7 +35,7 @@ The data root is the `PENGUIN_HOME` environment variable, `~/.penguin/data` by d
         │                             # tools/, skills/, hooks/, schedule/
         │   ├── memory/               # Memory: user/ plus one directory per Workspace,
         │   │                         # each with its own MEMORY.md index
-        │   └── workbenches/          # one folder per workbench: source, ui/, state.json
+        │   └── workbenches/          # one folder per workbench: source, ui/, state.json, .files/
         ├── agent_state.git/          # bare git repository the server writes: workbench versions
         ├── traces/
         │   └── <yyyy-mm-dd>/<sessionId>_<index3>.jsonl

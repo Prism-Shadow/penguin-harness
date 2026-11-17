@@ -78,6 +78,7 @@ import {
   writeAppCenterShow,
   type AppCenterManifest,
 } from "./app-center.js";
+import { WorkbenchFiles } from "./files.js";
 import { migrateWorkbenches } from "./migrate.js";
 import { WorkbenchSubscriptions } from "./subscribe.js";
 import {
@@ -1188,6 +1189,7 @@ export class WorkbenchService implements Workbenches {
   ) {
     const service = this;
     let state: unknown = await readState(folder.dir);
+    const files = new WorkbenchFiles(folder.dir);
     return {
       listAgents: () => service.agents.list(projectId).map((row) => ({ agentId: row.agentId })),
       async createSession(opts?: { agentId?: string }) {
@@ -1238,6 +1240,11 @@ export class WorkbenchService implements Workbenches {
         service.ownSession(projectId, sessionId, "subscribe");
         return subscriptions.subscribe(sessionId, listener);
       },
+      listFiles: () => files.list(),
+      readFile: (rel: string) => files.read(rel),
+      writeFile: (rel: string, data: Uint8Array | string) => files.write(rel, data),
+      removeFile: (rel: string) => files.remove(rel),
+      filePath: (rel?: string) => files.pathOf(rel),
       getState: () => state,
       async setState(next: unknown) {
         await writeState(folder.dir, next ?? null);
