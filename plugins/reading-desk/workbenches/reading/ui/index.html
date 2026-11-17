@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Reading Desk</title>
+    <link rel="stylesheet" href="/workbench-ui.css" />
+    <link rel="stylesheet" href="styles.css" />
+    <script type="module" src="app.js"></script>
+  </head>
+  <body>
+    <header class="top">
+      <div class="brand">
+        <img alt="" src="icon.svg" />
+        <h1 data-t="desk"></h1>
+      </div>
+      <div class="tools">
+        <button id="toggle-shelf" data-t="shelf" aria-controls="shelf"></button
+        ><button id="import-open" class="primary" data-t="add"></button>
+      </div>
+    </header>
+    <main>
+      <aside id="shelf">
+        <h2 data-t="shelf"></h2>
+        <div id="books"></div>
+        <h2 class="contents" data-t="contents"></h2>
+        <nav id="chapters"></nav>
+      </aside>
+      <section class="reading">
+        <header class="controls">
+          <span id="chapter-count"></span>
+          <div class="tools">
+            <button id="smaller">A−</button><button id="larger">A+</button
+            ><button id="notes-open" data-t="notes"></button>
+          </div>
+        </header>
+        <div id="page" tabindex="0">
+          <article>
+            <p id="book-title"></p>
+            <h2 id="chapter-title"></h2>
+            <div id="paragraphs"></div>
+            <nav class="pager">
+              <button id="previous" data-t="prev"></button><button id="next" data-t="next"></button>
+            </nav>
+          </article>
+        </div>
+        <footer>
+          <button id="highlight" data-t="mark"></button
+          ><progress id="progress" max="100" value="0"></progress><output id="percent"></output>
+        </footer>
+      </section>
+    </main>
+    <dialog id="import">
+      <form method="dialog">
+        <h2 data-t="add"></h2>
+        <button value="close" class="dismiss" data-t="close"></button>
+      </form>
+      <p data-t="formats"></p>
+      <label class="file-label primary"
+        ><span data-t="pick"></span
+        ><input id="file" type="file" accept=".epub,.docx,.txt,.md,.markdown"
+      /></label>
+      <p id="import-status" role="status"></p>
+    </dialog>
+    <dialog id="notebook">
+      <form method="dialog">
+        <h2 data-t="notes"></h2>
+        <button value="close" class="dismiss" data-t="close"></button>
+      </form>
+      <div id="notes"></div>
+      <button id="download" data-t="export"></button>
+    </dialog>
+    <p id="status" role="status" hidden></p>
+  </body>
+</html>

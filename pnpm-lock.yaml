@@ -207,6 +207,9 @@ importers:
       '@penguinharness/penguin-support':
         specifier: workspace:*
         version: link:../../plugins/penguin-support
+      '@penguinharness/reading-desk':
+        specifier: workspace:*
+        version: link:../../plugins/reading-desk
       '@penguinharness/rrsi-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/rrsi-rsi-toolkit
@@ -386,6 +389,9 @@ importers:
       '@penguinharness/penguin-support':
         specifier: workspace:*
         version: link:../../plugins/penguin-support
+      '@penguinharness/reading-desk':
+        specifier: workspace:*
+        version: link:../../plugins/reading-desk
       '@penguinharness/rrsi-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/rrsi-rsi-toolkit
@@ -582,6 +588,9 @@ importers:
       '@penguinharness/penguin-support':
         specifier: workspace:*
         version: link:../../plugins/penguin-support
+      '@penguinharness/reading-desk':
+        specifier: workspace:*
+        version: link:../../plugins/reading-desk
       '@penguinharness/rrsi-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/rrsi-rsi-toolkit
@@ -720,6 +729,9 @@ importers:
       '@penguinharness/penguin-support':
         specifier: workspace:*
         version: link:../../plugins/penguin-support
+      '@penguinharness/reading-desk':
+        specifier: workspace:*
+        version: link:../../plugins/reading-desk
       '@penguinharness/rrsi-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/rrsi-rsi-toolkit
@@ -1308,6 +1320,15 @@ importers:
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: file:packages/core(ws@8.21.0)
+
+  plugins/reading-desk:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
 
   plugins/rrsi-rsi-toolkit:
     devDependencies:
@@ -2457,6 +2478,9 @@ packages:
 
   '@penguinharness/penguin-support@file:plugins/penguin-support':
     resolution: {directory: plugins/penguin-support, type: directory}
+
+  '@penguinharness/reading-desk@file:plugins/reading-desk':
+    resolution: {directory: plugins/reading-desk, type: directory}
 
   '@penguinharness/rrsi-rsi-toolkit@file:plugins/rrsi-rsi-toolkit':
     resolution: {directory: plugins/rrsi-rsi-toolkit, type: directory}
@@ -7163,6 +7187,7 @@ snapshots:
   '@penguinharness/opro-rsi-toolkit@file:plugins/opro-rsi-toolkit': {}
 
   '@penguinharness/penguin-support@file:plugins/penguin-support': {}
+  '@penguinharness/reading-desk@file:plugins/reading-desk': {}
 
   '@penguinharness/rrsi-rsi-toolkit@file:plugins/rrsi-rsi-toolkit': {}
 
@@ -7289,6 +7314,7 @@ snapshots:
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
       '@penguinharness/penguin-support': file:plugins/penguin-support
+      '@penguinharness/reading-desk': file:plugins/reading-desk
       '@penguinharness/rrsi-rsi-toolkit': file:plugins/rrsi-rsi-toolkit
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
@@ -7339,6 +7365,7 @@ snapshots:
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
       '@penguinharness/penguin-support': file:plugins/penguin-support
+      '@penguinharness/reading-desk': file:plugins/reading-desk
       '@penguinharness/rrsi-rsi-toolkit': file:plugins/rrsi-rsi-toolkit
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
@@ -7449,6 +7476,7 @@ snapshots:
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
       '@penguinharness/penguin-support': file:plugins/penguin-support
+      '@penguinharness/reading-desk': file:plugins/reading-desk
       '@penguinharness/rrsi-rsi-toolkit': file:plugins/rrsi-rsi-toolkit
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
@@ -7513,6 +7541,7 @@ snapshots:
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
       '@penguinharness/penguin-support': file:plugins/penguin-support
+      '@penguinharness/reading-desk': file:plugins/reading-desk
       '@penguinharness/rrsi-rsi-toolkit': file:plugins/rrsi-rsi-toolkit
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
@@ -7577,6 +7606,7 @@ snapshots:
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
       '@penguinharness/penguin-support': file:plugins/penguin-support
+      '@penguinharness/reading-desk': file:plugins/reading-desk
       '@penguinharness/rrsi-rsi-toolkit': file:plugins/rrsi-rsi-toolkit
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
