@@ -24,9 +24,7 @@
         "../../library/db/src/migrations/runner.ts"
       ],
       "@prismshadow/penguin-library-db/schema": ["../../library/db/src/schema.ts"],
-      "@prismshadow/penguin-library-auth": ["../../library/auth/src/index.ts"],
       "@prismshadow/penguin-library-auth/auth": ["../../library/auth/src/auth.ts"],
-      "@prismshadow/penguin-library-auth/repos": ["../../library/auth/src/repos/index.ts"],
       "@prismshadow/penguin-library-auth/repos/auth-sessions": [
         "../../library/auth/src/repos/auth-sessions.ts"
       ],
