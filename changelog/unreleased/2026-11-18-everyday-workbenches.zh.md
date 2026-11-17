@@ -4,6 +4,8 @@
 - **Type:** feature
 - **Scope:** `plugins`, `server`, `desktop`
 
+- **PR:** [#1592](https://github.com/Prism-Shadow/penguin-harness/pull/1592)
+
 [English](2026-11-18-everyday-workbenches.md)
 
 内置插件库新增五款工作台。可分别安装到 Agent，再从应用中心打开。每款工作台都随界面语言切换中英文，数据保存在对应的 Agent 中。

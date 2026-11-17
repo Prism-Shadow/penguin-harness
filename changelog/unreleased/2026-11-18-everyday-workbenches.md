@@ -4,6 +4,8 @@
 - **Type:** feature
 - **Scope:** `plugins`, `server`, `desktop`
 
+- **PR:** [#1592](https://github.com/Prism-Shadow/penguin-harness/pull/1592)
+
 [中文版](2026-11-18-everyday-workbenches.zh.md)
 
 The built-in library added five workbenches. Install each one separately on an Agent, then open it from the App Center. Each workbench saves its own data with that Agent and follows the interface language.
