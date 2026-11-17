@@ -63,8 +63,8 @@ import type { TestApp } from "./helpers.js";
 import { contentTable } from "./plugin-fixtures.js";
 
 /** A listing's rows as the index wrote them, but for the icon, which the listing names by URL. */
-const withoutIcons = (entries: readonly { icon?: unknown }[]) =>
-  entries.map(({ icon: _icon, ...row }) => row);
+const withoutIcons = <T extends { icon?: unknown }>(entries: readonly T[]): Omit<T, "icon">[] =>
+  entries.map(({ icon: _icon, ...row }) => row as Omit<T, "icon">);
 
 /** The first bytes of a PNG: as much of one as its format is told by. */
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]);

@@ -249,47 +249,7 @@ export function normalizeModelScopeBridgeUrl(raw: string | undefined): string {
   return `${url.origin}${url.pathname.replace(/\/+$/, "")}`;
 }
 
-/**
- * PENGUIN_PLUGIN_PROXY -> this deployment's CDN rewrite rules, in rule order; the built-in
- * set when unset. One JSON array of `{ kind, match, rewrite }`; `match` compiles as a JS
- * regex (checked here, at boot — a pattern that will not compile is a config error, not a
- * fetch-time surprise), `rewrite` is the result with `$1`–`$9` for the captures.
- */
-function resolvePluginProxy(raw: string | undefined): PluginProxyRule[] {
-  const check = (rules: PluginProxyRule[]): PluginProxyRule[] => {
-    if (rules.length > PROXY_RULES_MAX) {
-      throw new Error(
-        `PENGUIN_PLUGIN_PROXY carries ${rules.length} rules, over the ${PROXY_RULES_MAX} cap`,
-      );
-    }
-    for (const rule of rules) {
-      if (typeof rule.match !== "string" || typeof rule.rewrite !== "string") {
-        throw new Error("PENGUIN_PLUGIN_PROXY rule needs string match and rewrite");
-      }
-      new RegExp(rule.match);
-      // The ReDoS gate (shape read, caps): a rule that fails it never reaches a fetch.
-      const risk = rewriteRuleRisk(rule);
-      if (risk !== null) throw new Error(`PENGUIN_PLUGIN_PROXY rule refused: ${risk}`);
-    }
-    return rules;
-  };
-  // The built-in set is checked with the same gate a deployment's config goes through.
-  if (raw === undefined || raw.trim() === "") {
-    return check([...PLUGIN_DEFAULT_PROXY_RULES]);
-  }
-  const rules = JSON.parse(raw) as PluginProxyRule[];
-  if (!Array.isArray(rules)) throw new Error("PENGUIN_PLUGIN_PROXY must be a JSON array");
-  return check(rules);
-}
-
-/** PENGUIN_PLUGIN_INDEX -> the URL to read, or null when the lookup is off. */
-function resolvePluginIndexUrl(raw: string | undefined): string | null {
-  const value = raw?.trim();
-  if (value === undefined || value === "") return NIGHTLY_INDEX_URL;
-  return value.toLowerCase() === "off" ? null : value;
-}
-
-/** Parses server config from environment variables (PORT / PENGUIN_DEV_APP_PORT / HOST / PENGUIN_HOME / PENGUIN_WEB_DIST / PENGUIN_WEB_DB / PENGUIN_PREVIEW_ORIGIN / PENGUIN_GO_ORIGIN / MODELSCOPE_BRIDGE_URL / PENGUIN_SEED_ADMIN_PASSWORD / PENGUIN_DESKTOP_TOKEN / PENGUIN_PORT_FILE / PENGUIN_TRUST_PROXY / PENGUIN_CLI_ENTRY / PENGUIN_PLUGIN_INDEX). */
+/** Parses server config from environment variables (PORT / PENGUIN_DEV_APP_PORT / HOST / PENGUIN_HOME / PENGUIN_WEB_DIST / PENGUIN_WEB_DB / PENGUIN_PREVIEW_ORIGIN / PENGUIN_GO_ORIGIN / MODELSCOPE_BRIDGE_URL / PENGUIN_SEED_ADMIN_PASSWORD / PENGUIN_DESKTOP_TOKEN / PENGUIN_PORT_FILE / PENGUIN_TRUST_PROXY / PENGUIN_CLI_ENTRY). */
 export function resolveServerConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   const root = env.PENGUIN_HOME ?? resolveRoot();
   // An empty PORT string is treated as unset (the common `.env` case of an empty
