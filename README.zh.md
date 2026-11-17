@@ -140,6 +140,8 @@ Agent 还能编写并优化自己的 Skill（[文档](https://penguin.ooo/docs/s
 | -------------------- | ----------------------------------------------------------------------------- |
 | Agent 自进化 | `default-rsi-toolkit`, `opro-rsi-toolkit`, `ape-rsi-toolkit`, `ace-rsi-toolkit`, `awm-rsi-toolkit`, `skilladam-rsi-toolkit`, `skillopt-rsi-toolkit`, `openskill-rsi-toolkit`, `trace-rsi-toolkit`, `rrsi-rsi-toolkit` |
 | 办公效率 | `a2ui`, `data-analysis`, `use-firecrawl`, `browser-automation`, `use-bento-slides`, `humanizer`, `goal`, `continual-learning`, `trace-lookup`, `agent-company`, `penguin-support` |
+| 实用工具 | `fridge-keeper`, `action-minutes` |
+| 娱乐 | `tabletop-desk`, `party-charades`, `daily-draw` |
 | 软件开发 | `software-development`, `use-claude-code` |
 | AI 应用开发 | `agent-development`, `agent-evaluation`, `model-development`, `skill-porting` |
 
