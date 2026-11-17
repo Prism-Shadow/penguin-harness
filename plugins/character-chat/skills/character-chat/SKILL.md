@@ -50,7 +50,7 @@ One line per fact, in the character's `memory.md`:
 
 ### Tidying a memory book
 
-When the user asks to tidy, shorten or fold a character's memory, or asks before the book fills up:
+When the user asks you to tidy, shorten or fold a character's memory book:
 
 1. Read the whole file.
 2. Merge the lines about the same thing into one, under the newest date. Drop what is no longer true, and anything the user asked to forget.
