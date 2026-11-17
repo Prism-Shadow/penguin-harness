@@ -3,6 +3,7 @@
 - **Date:** 2026-11-17
 - **Type:** feature
 - **Scope:** `ui`, `ui-gallery`
+- **PR:** [#1582](https://github.com/Prism-Shadow/penguin-harness/pull/1582)
 
 [中文版](2026-11-17-market-showcase-ui.zh.md)
 
