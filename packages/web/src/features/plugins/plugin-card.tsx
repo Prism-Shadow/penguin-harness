@@ -6,8 +6,9 @@
  * placeholder, in the same muted ink, when the package carries none), a metadata line
  * `v<npm version> · <status> · used by N agents` (the last for a plugin with Skills or hooks
  * only), and a tag line (plugin-marks.tsx `pluginTags`, the set an Agent's plugin row shows too) —
- * the category (outside the category's own section), "built in", where a module runs. The card body opens the detail dialog; the actions sit beside it, light icon
- * buttons whose words show once the card is wide enough:
+ * the category (outside the category's own section), "built in", where a module runs. The card
+ * body opens the detail dialog; the actions sit beside it, light icon buttons whose words show
+ * once the card is wide enough:
  *
  * - Skills / hooks / MCP servers (any member): the update nudge while an Agent is behind (the
  *   plugins trail's last stop, so it carries the dot), quick start, and "manage installs" — a

@@ -1,8 +1,8 @@
 /**
  * The marks a plugin's card and its detail dialog share: the status glyph with its word, the tag
- * pills (and the card's set of them, which an Agent's plugin row shows too), and the reading of a row — its title, icon, version, descriptions and the package's own
- * details (author, license, links) — library and server-module plugins alike, so the two kinds
- * read as one family.
+ * pills (and the card's set of them, which an Agent's plugin row shows too), and the reading of a
+ * row — its title, icon, version, descriptions and the package's own details (author, license,
+ * links) — library and server-module plugins alike, so the two kinds read as one family.
  *
  * What a package does not carry stays missing rather than invented: no display name reads as the
  * plugin's name, no description as the "no description" placeholder (in muted ink in the dialog),
