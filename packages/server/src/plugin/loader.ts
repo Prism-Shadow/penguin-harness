@@ -46,6 +46,7 @@ import type {
 import { moduleDefOf } from "@prismshadow/penguin-core/kernel";
 import { pluginsPrefix } from "./install.js";
 import { unpackedAssetsDir } from "../hmr/asset-archives.js";
+
 import { readManifest } from "../hmr/manifest.js";
 import type { Plugin } from "@prismshadow/penguin-core/plugin";
 import type { LoadedPlugin } from "./host.js";
@@ -336,10 +337,21 @@ export type { PluginDeclaration };
  * imported. Lets a surface say which plugin a loaded module came from, and why a listed one is
  * not there, without the runtime having to publish its load report.
  */
+/** What a listed specifier declares, plus how it came to be in the prefix. */
+export interface PluginDeclarationRead {
+  modules: string[];
+  replaces: string[];
+  builtin: boolean;
+  /** The prefix resolves this name through a link the `penguin plugin link` command parked. */
+  linked?: true;
+  /** The author directory the link points at (when `linked`). */
+  linkPath?: string;
+}
+
 export async function readPluginDeclaration(
   specifier: string,
   bases: readonly PluginBase[],
-): Promise<{ modules: string[]; replaces: string[]; builtin: boolean } | { error: string }> {
+): Promise<PluginDeclarationRead | { error: string }> {
   const fault = specifierFault(specifier);
   if (fault !== null) return { error: fault };
   const resolved = resolvePlugin(specifier, bases);

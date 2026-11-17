@@ -346,6 +346,7 @@ penguin project ls
 
 - `penguin plugin install <specifier>` 把插件安装到服务端：npm 包名，可带版本、范围或标签（`@scope/name`、`name@1.2.0`），或指向 git 仓库或 tarball 的 https 链接（`https://github.com/o/r`、`github:o/r#v1`）。其他来源，例如不是插件包目录的路径、`http:` 链接或指向仓库中某个文件夹的链接，服务端会拒绝。只含 Skill、钩子或 MCP Server 的插件进入插件库，再在**插件**页把它安装到 Agent 上；带服务端模块的插件还会为该 Project 启用并立即载入，服务端上正在进行的 Agent 运行会被中止。
 - `penguin plugin install <directory>` 从本地目录安装插件包，目录里须有 `package.json`（与 npm 包名同名时以目录为准）。包须已构建：服务端读取的是它的 `ifaces.json`，所以先运行包的构建（`npm install`，然后 `npm run build`，即运行 `penguin-gen-ifaces`）；没有 `ifaces.json` 的目录在发送任何内容之前即被拒绝。CLI 随后用插件库自己的读取器读取它，插件库会拒绝时就停下，不发送任何内容；随后把目录打成 zip（不含 `node_modules`、`.git` 和 `.npmrc`），按**上传 zip 包**的方式上传。服务端已装有该包的其他版本时，命令会说明，加上 `--overwrite` 即可替换。包可以只带 MCP Server（在 `src/index.ts` 中以 `mcpServers` 贡献声明）；上传之后，命令为包携带的每个 Server 打印一行：名称、传输方式和目标，目标是 URL，或 stdio Server 在服务器上运行的命令。Agent 正是这样安装它转换好的插件，见[导入与导出插件](/skills#导入与导出插件)。
+- `penguin plugin link <directory>` 把本机的插件包目录链接进服务端的插件前缀：目录留在原地，服务端就地装载它，改动目录后下一次装载即生效，不必每次都打包上传。CLI 先用插件库自己的读取器读目录，插件库会拒绝时就停下，不发送任何内容；服务端随后把目录记为前缀的 `file:` 依赖，npm 会把它落成指向目录的符号链接。该名字已在前缀安装时，命令会说明，加上 `--overwrite` 才替换成链接。插件页把链接的插件与安装的插件并排显示，带 **链接** 标记（指向即见目录路径），版本与描述直接读目录：改动后刷新即见新值，目录被删则如实显示该行的故障。`penguin plugin remove` 摘除链接，作者目录原样不动。
 - `penguin plugin remove <name>` 从 Project 中移除插件；没有其他 Project 使用时，一并从服务端删除。
 - `penguin plugin list`（或 `ls`）列出 Project 启用的服务端模块及其在本服务端上的状态，以及服务端安装的 Skill / 钩子 / MCP Server 插件。
 
@@ -353,6 +354,7 @@ penguin project ls
 penguin plugin install @acme/penguin-notes@1.2.0
 penguin plugin install https://github.com/acme/penguin-notes --project-id my-project
 penguin plugin install ./penguin-notes --overwrite
+penguin plugin link ~/src/penguin-notes
 penguin plugin list --json
 penguin plugin remove @acme/penguin-notes
 ```

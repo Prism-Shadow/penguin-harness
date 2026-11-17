@@ -201,6 +201,8 @@ import type {
   SessionsResponse,
   SessionSwitchModelRequest,
   SessionBatchPageRequest,
+  SessionsArchiveRequest,
+  SessionsArchiveResponse,
   SessionsBatchRequest,
   SessionsBatchResponse,
   SessionTracesResponse,
@@ -956,6 +958,24 @@ export const batchSessions = (
     body: { requests } satisfies SessionsBatchRequest,
     server: machineId,
   });
+
+/**
+ * Archives every active conversation of one Workspace group (its path, or `temp`) on the server
+ * that holds it — the sidebar's "delete workspace", loaded rows or not, in one request.
+ */
+export const archiveWorkspaceSessions = (
+  projectId: string,
+  workspaceGroup: string,
+  machineId: string | null,
+) =>
+  apiFetch<SessionsArchiveResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/sessions/archive`,
+    {
+      method: "POST",
+      body: { workspaceGroup } satisfies SessionsArchiveRequest,
+      server: machineId,
+    },
+  );
 
 /** Server directory browsing: `path` is an absolute path; empty means start from the server's home directory. */
 /**
@@ -2851,6 +2871,10 @@ export const openPrivacySettings = (pane: DesktopPrivacyPane) =>
     body: { pane },
     server: null,
   });
+
+/** Has the desktop shell open another window of the app (the command palette's New Window). */
+export const openDesktopWindow = () =>
+  apiFetch<void>("/api/desktop/window", { method: "POST", body: {}, server: null });
 
 // ---- Workbenches (an Agent's own extension packages, served as tabs beside the chat) ----
 const workbenchesBase = (projectId: string, agentId: string) =>

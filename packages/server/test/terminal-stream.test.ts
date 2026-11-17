@@ -476,14 +476,21 @@ describePty("terminal stream compression", () => {
           "the small frame on the wire uncompressed",
         );
 
-        // A large burst of barely compressible bytes stays compressed: RSV1 set, and —
-        // random base64 shrinks little — still far past the threshold on the wire.
+        // A large burst of barely compressible bytes stays compressed: RSV1 set, and the
+        // wire carries it far past the small-frame threshold. The pty hands the burst to
+        // the server in chunks of its own choosing, so the assertion is about the
+        // compression decision (any chunk at or over 512 bytes goes out compressed, and
+        // random base64 at level 3 keeps over half its size on the wire) rather than
+        // about one whole message's accounting.
         await runAndWait(
           client,
-          "head -c 4000 /dev/urandom | base64; echo big-burst-done",
+          "head -c 40000 /dev/urandom | base64; echo big-burst-done",
           "big-burst-done",
         );
-        expect(client.wire.some((f) => f.rsv1 && f.length >= 512)).toBe(true);
+        await client.waitFor(
+          () => client.wire.some((f) => f.rsv1 && f.length >= 256),
+          "a compressed frame for the large burst on the wire",
+        );
       } finally {
         await client.close();
         await api.delete(`/api/terminals/${terminal.id}`);

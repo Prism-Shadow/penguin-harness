@@ -1,7 +1,7 @@
 /**
  * The diff viewer's model, as pure functions: a line diff of two texts (or a unified patch read as
- * given) grouped into hunks, the changed words of each paired line, the side-by-side rows of a
- * split view, and the per-line markup a highlighter's output splits into.
+ * given) grouped into hunks, the changed words of each paired line, and the side-by-side rows of a
+ * split view.
  *
  * The line diff is Myers' O(ND) algorithm over the lines between the common head and tail, so an
  * edit costs time in proportion to its size, not the file's. Its trace grows with the square of
@@ -411,19 +411,4 @@ export function wordMarks(model: DiffModel, kind: "add" | "del"): CodeMark[] {
         })),
       ),
   );
-}
-
-/**
- * Highlighted markup cut into its lines' inner markup, or null when it does not have the shape a
- * block-lines highlight produces (a `<code>` of `<span class="line">` elements) or the count is
- * not `expected`.
- */
-export function splitHighlightedLines(html: string, expected: number): string[] | null {
-  const open = html.indexOf("<code>");
-  const close = html.lastIndexOf("</code>");
-  if (open === -1 || close < open) return null;
-  const parts = html.slice(open + "<code>".length, close).split(/<span class="line(?: [^"]*)?">/);
-  if (parts.shift() !== "") return null;
-  const lines = parts.map((part) => (part.endsWith("</span>") ? part.slice(0, -7) : part));
-  return lines.length === expected ? lines : null;
 }

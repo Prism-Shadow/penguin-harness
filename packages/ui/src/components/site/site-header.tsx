@@ -1,34 +1,23 @@
 /** Public-site navigation. Hosts supply routes and labels; the shared UI owns layout and hover. */
 import { Fragment, useRef } from "react";
-import type { AnchorHTMLAttributes, MouseEvent, ReactNode, Ref } from "react";
+import type { MouseEvent, ReactNode, Ref } from "react";
 import { MenuIcon, XIcon } from "./site-icons";
-
-export type SiteLinkProps = AnchorHTMLAttributes<HTMLAnchorElement> & { href: string };
-export interface SiteLink {
-  id: string;
-  href: string;
-  label: string;
-  active?: boolean;
-  /** Render an internal route through the host's router, preserving ordinary anchor behavior. */
-  render?: (props: SiteLinkProps) => ReactNode;
-}
-
-function renderLink(link: SiteLink, props: SiteLinkProps) {
-  return link.render ? link.render(props) : <a {...props} />;
-}
+import { isSiteLinkGroup, renderSiteLink } from "./site-link";
+import type { SiteLink, SiteNavItem } from "./site-link";
+import { SiteNavGroupLinks, SiteNavMenu } from "./site-nav-menu";
 
 export function SiteNavLinks({
   links,
   mobile = false,
   onNavigate,
 }: {
-  links: readonly SiteLink[];
+  links: readonly SiteNavItem[];
   mobile?: boolean;
   onNavigate?: () => void;
 }) {
   const highlight = useRef<HTMLSpanElement>(null);
   const visible = useRef(false);
-  const slideTo = (event: MouseEvent<HTMLAnchorElement>) => {
+  const slideTo = (event: MouseEvent<HTMLElement>) => {
     const pill = highlight.current;
     if (!pill) return;
     if (!visible.current) pill.style.transitionProperty = "opacity";
@@ -53,18 +42,26 @@ export function SiteNavLinks({
       onMouseLeave={hide}
     >
       {!mobile && <span ref={highlight} aria-hidden className="site-ui-highlight" />}
-      {links.map((link) => (
-        <Fragment key={link.id}>
-          {renderLink(link, {
-            href: link.href,
-            className: "site-ui-nav-link",
-            "aria-current": link.active ? "page" : undefined,
-            onClick: onNavigate,
-            onMouseEnter: mobile ? undefined : slideTo,
-            children: link.label,
-          })}
-        </Fragment>
-      ))}
+      {links.map((link) =>
+        isSiteLinkGroup(link) ? (
+          mobile ? (
+            <SiteNavGroupLinks key={link.id} group={link} onNavigate={onNavigate} />
+          ) : (
+            <SiteNavMenu key={link.id} group={link} onHover={slideTo} />
+          )
+        ) : (
+          <Fragment key={link.id}>
+            {renderSiteLink(link, {
+              href: link.href,
+              className: "site-ui-nav-link",
+              "aria-current": link.active ? "page" : undefined,
+              onClick: onNavigate,
+              onMouseEnter: mobile ? undefined : slideTo,
+              children: link.label,
+            })}
+          </Fragment>
+        ),
+      )}
     </nav>
   );
 }
@@ -81,7 +78,7 @@ export function SiteHeader({
   name: string;
   logo: string;
   home: SiteLink;
-  links: readonly SiteLink[];
+  links: readonly SiteNavItem[];
   actions: ReactNode;
   menu: {
     open: boolean;
@@ -95,7 +92,7 @@ export function SiteHeader({
   return (
     <header className="site-ui site-ui-header ui-glass">
       <div className="mx-auto flex h-14 max-w-7xl items-center gap-2 px-4 sm:px-6">
-        {renderLink(home, {
+        {renderSiteLink(home, {
           href: home.href,
           className: "site-ui-brand",
           "aria-label": name,
@@ -103,8 +100,8 @@ export function SiteHeader({
             <>
               <img src={logo} alt="" className="h-7 w-7" />
               {/* The name gives way on phones, and from where the link row appears (1024 px) up
-                  to the width the widest bar needs to keep it: the English docs, all nine links
-                  and the menu button, set in a wide system font (DejaVu Sans). */}
+                  to the width the widest bar needs to keep it: the English docs, every entry of
+                  the row and the menu button, set in a wide system font (DejaVu Sans). */}
               <span className="site-ui-brand-name hidden sm:max-lg:inline min-[1200px]:inline">
                 {name}
               </span>

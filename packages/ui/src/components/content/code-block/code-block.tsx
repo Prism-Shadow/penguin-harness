@@ -40,9 +40,10 @@ import { arrivalText } from "../prose/stream-arrivals";
 import type { RevealArrival } from "../prose/stream-arrivals";
 import type { CodeHighlighter } from "./highlight-options";
 import { runtimeLanguageGeneration, subscribeToRuntimeLanguages } from "./code-languages";
-import { alignRows, splitHighlighted } from "./code-lines";
+import { CHUNK_LINES, alignRows, chunkRows, splitHighlighted } from "./code-lines";
 import type { CodeRow, HighlightedLines } from "./code-lines";
 import { useGutterClip } from "./gutter-clip";
+import { cells, useWrapRows } from "./wrap-rows";
 import "../prose/prose.css";
 
 export type { CodeHighlighter, CodeMark, HighlightOptions } from "./highlight-options";
@@ -90,7 +91,9 @@ export function resolveHighlighter(
  * into the same line elements — one gutter, whichever path rendered the code, and one shape for
  * a caller that needs to lay something else over it. Each line is an element of its own that
  * outlives an edit, and keeps its colours while its text is what was highlighted (code-lines.ts):
- * typing redraws the lines it touches, not the file and its gutter.
+ * typing redraws the lines it touches, not the file and its gutter. The lines stand in chunks
+ * that the browser lays out only near the screen (prose.css's `.line-chunk`), so a large file
+ * costs what is on screen, not its length.
  */
 export function CodeSurface({
   language,
@@ -163,7 +166,11 @@ export function CodeSurface({
         .then(() => highlighter(code, language, { blockLines: lineNumbers }))
         .then((out) => {
           if (alive && out !== undefined) {
-            setHighlighted({ code, html: out, lines: lineNumbers ? splitHighlighted(out) : null });
+            setHighlighted({
+              code,
+              html: out,
+              lines: lineNumbers ? splitHighlighted(out, code) : null,
+            });
           }
         })
         .catch(() => {
@@ -216,6 +223,7 @@ export function CodeSurface({
   useEffect(() => {
     if (rows !== null) drawn.current = rows;
   }, [rows]);
+  const chunks = useMemo(() => (rows === null ? null : chunkRows(rows)), [rows]);
 
   /**
    * Unwrapped, the numbers are a column of their own, sticky at the scroll box's left edge, and
@@ -229,6 +237,12 @@ export function CodeSurface({
     () => (column ? Array.from({ length: lineCount }, (_, i) => String(i + 1)).join("\n") : ""),
     [column, lineCount],
   );
+  /** Unwrapped, every chunk is as wide as the longest line, drawn or not (prose.css). */
+  const longest = useMemo(() => {
+    let max = 0;
+    if (column && lines !== null) for (const line of lines) max = Math.max(max, cells(line));
+    return max;
+  }, [column, lines]);
   const surfaceRef = useRef<HTMLDivElement>(null);
   const layerRef = useRef<HTMLElement | null>(null);
   const gutterRef = useRef<HTMLDivElement>(null);
@@ -236,20 +250,34 @@ export function CodeSurface({
   const setLayer = useCallback((el: HTMLElement | null) => {
     layerRef.current = el;
   }, []);
+  /**
+   * An editor's textarea over the code lays its own text out whole, so every line under it is
+   * laid out too (prose.css's `.code-overlaid`) and needs no estimate.
+   */
+  const overlaid = children !== undefined && children !== null && children !== false;
+  useWrapRows(
+    { surface: surfaceRef, layer: layerRef },
+    wrap && !overlaid ? lines : null,
+    CHUNK_LINES,
+    String(lineCount).length + 2,
+  );
 
   return (
     <div
       ref={surfaceRef}
       className={`code-surface ${wrap ? "code-wrap" : "code-nowrap"} ${
         lines === null ? "" : "code-lines"
-      } ${className}`}
+      } ${overlaid ? "code-overlaid" : ""} ${className}`}
       style={
         lines === null
           ? undefined
           : // `ch` and not `rem`: an overlaid textarea has to indent by exactly this much, and
             // only a character-relative unit is the same length in both layers. +2 is the
             // clearance between the number and the code.
-            ({ "--code-gutter": `${String(lines.length).length + 2}ch` } as CSSProperties)
+            ({
+              "--code-gutter": `${String(lines.length).length + 2}ch`,
+              "--code-longest": longest,
+            } as CSSProperties)
       }
     >
       {column && (
@@ -257,8 +285,11 @@ export function CodeSurface({
           {numbers}
         </div>
       )}
-      {rows !== null ? (
+      {chunks !== null ? (
         <pre
+          // A drawn chunk keeps its last size (prose.css), which after a wrap toggle is the other
+          // mode's: the layer starts over.
+          key={wrap ? "wrap" : "nowrap"}
           ref={setLayer}
           className={split?.pre.className}
           style={split?.pre.style}
@@ -269,15 +300,28 @@ export function CodeSurface({
                 serialises out of a run of blocks already carries the breaks. The code sits in
                 an inner span keyed by its kind, so a line turning plain or coloured keeps its
                 line element, and with it the number drawn in front of it. */}
-            {rows.map((row) => (
-              <span key={row.key} className="line">
-                {row.html !== null ? (
-                  <span key="h" className="line-code" dangerouslySetInnerHTML={row.html} />
-                ) : (
-                  <span key="t" className="line-code">
-                    {row.text}
+            {chunks.map((chunk) => (
+              <span
+                key={chunk.start}
+                className="line-chunk"
+                style={
+                  {
+                    "--chunk-start": chunk.start,
+                    "--chunk-lines": chunk.rows.length,
+                  } as CSSProperties
+                }
+              >
+                {chunk.rows.map((row) => (
+                  <span key={row.key} className="line">
+                    {row.html !== null ? (
+                      <span key="h" className="line-code" dangerouslySetInnerHTML={row.html} />
+                    ) : (
+                      <span key="t" className="line-code">
+                        {row.text}
+                      </span>
+                    )}
                   </span>
-                )}
+                ))}
               </span>
             ))}
           </code>

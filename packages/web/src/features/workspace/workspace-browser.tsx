@@ -86,6 +86,8 @@ import {
   isLongPressPointer,
   languageForFileName,
   noAutofill,
+  readCodePlace,
+  restoreCodePlace,
   toastError,
   toastInfo,
   toastSuccess,
@@ -93,12 +95,13 @@ import {
   useFilesLayout,
   useMarkdownReader,
   useRowContextMenu,
-  type EditorScroll,
+  type CodePlace,
   type FileMenuTarget,
   type PreviewView,
   type TreeToggle,
   type WorkspaceFileMenuLabels,
 } from "@prismshadow/penguin-ui";
+import type { Components } from "react-markdown";
 
 import type { WorkspaceSearchHit } from "@prismshadow/penguin-server/api";
 import { ApiError } from "../../api/client";
@@ -628,11 +631,11 @@ export function WorkspaceBrowser({
   const [menuSelection, setMenuSelection] = useState<PreviewSelection | null>(null);
   const previewBodyRef = useRef<HTMLDivElement | null>(null);
   /** Where the source view was scrolled when Edit was pressed: the editor opens there. */
-  const editorOpening = useRef<EditorScroll | undefined>(undefined);
+  const editorOpening = useRef<CodePlace | undefined>(undefined);
   /** The editor's scroll box, read on the way out of the editor. */
   const editorHost = useRef<HTMLDivElement | null>(null);
   /** Where the source view takes up once it is back on screen after the editor. */
-  const bodyScrollOnReturn = useRef<EditorScroll | null>(null);
+  const bodyScrollOnReturn = useRef<CodePlace | null>(null);
   /** The directory the menu's own picker uploads into (the toolbar's picker always means the current one). */
   const menuUploadDir = useRef("");
   const menuUploadRef = useRef<HTMLInputElement | null>(null);
@@ -1322,7 +1325,7 @@ export function WorkspaceBrowser({
     const current = previewRef.current;
     if (current === null || !canEditPreview(current)) return;
     const body = previewBodyRef.current;
-    const at = body === null ? undefined : { top: body.scrollTop, left: body.scrollLeft };
+    const at = body === null ? undefined : readCodePlace(body);
     // Content and version are read together and stored together, so one missing means both
     // are: an isolated HTML preview mounted without its text. Read it now, and refuse a
     // file the bounded read cannot hold whole — saving a partial text back would truncate
@@ -1391,8 +1394,7 @@ export function WorkspaceBrowser({
    */
   const leaveEditor = (): void => {
     const host = editorHost.current;
-    bodyScrollOnReturn.current =
-      host === null ? null : { top: host.scrollTop, left: host.scrollLeft };
+    bodyScrollOnReturn.current = host === null ? null : readCodePlace(host);
     focusAfterLeave.current = true;
     discardEditor();
   };
@@ -2206,6 +2208,63 @@ export function WorkspaceBrowser({
       </>
     );
 
+  /**
+   * The rendered Markdown view's adapters, rebuilt only for another file or another read of it:
+   * react-markdown takes them as element types, so a fresh map would make the reader parse the
+   * file again and remount every image and link on each render of the panel — and the panel
+   * renders on every heading the reader scrolls past.
+   */
+  const mdPath = preview?.path ?? "";
+  const mdNonce = preview?.nonce ?? 0;
+  const markdownComponents = useMemo<Components>(
+    () => ({
+      // Relative images are resolved against the md file's directory into the file API
+      // (otherwise resolving against the app's origin would always 404). `v` is the read
+      // nonce, not a cache-buster for its own sake: a Workspace image is rewritten under
+      // the same path, and without it a re-read of the Markdown would keep painting the
+      // previous bytes from the browser's image cache.
+      img: ({ src, alt }) => (
+        <img
+          src={
+            typeof src === "string" && !EXTERNAL_REF_RE.test(src)
+              ? `${files.fileUrl(resolveRelative(parentDir(mdPath), src))}&v=${mdNonce}`
+              : src
+          }
+          alt={alt ?? ""}
+          loading="lazy"
+          className="max-w-full"
+        />
+      ),
+      // External links open in a new tab; relative links point to a Workspace file,
+      // clicking opens it in the tree and the preview; in-page anchors keep default behavior.
+      a: ({ href, children }) => {
+        if (typeof href !== "string" || href.startsWith("#")) {
+          return <a href={href}>{children}</a>;
+        }
+        if (EXTERNAL_REF_RE.test(href)) {
+          return (
+            <a href={href} target="_blank" rel="noreferrer">
+              {children}
+            </a>
+          );
+        }
+        const target = resolveRelative(parentDir(mdPath), href);
+        return (
+          <a
+            href={files.fileUrl(target)}
+            onClick={(e) => {
+              e.preventDefault();
+              openFile(target, { locate: true });
+            }}
+          >
+            {children}
+          </a>
+        );
+      },
+    }),
+    [files, openFile, mdPath, mdNonce],
+  );
+
   /** A part of the view still on its way, or the fetch that failed to bring it. */
   const pendingSource = (): PreviewView =>
     sourceError !== null ? { kind: "error", message: sourceError } : { kind: "loading" };
@@ -2290,51 +2349,7 @@ export function WorkspaceBrowser({
         truncatedNote,
         // Another file starts the reader over: at the top, its find closed.
         docKey: p.path,
-        components: {
-          // Relative images are resolved against the md file's directory into the file API
-          // (otherwise resolving against the app's origin would always 404). `v` is the read
-          // nonce, not a cache-buster for its own sake: a Workspace image is rewritten under
-          // the same path, and without it a re-read of the Markdown would keep painting the
-          // previous bytes from the browser's image cache.
-          img: ({ src, alt }) => (
-            <img
-              src={
-                typeof src === "string" && !EXTERNAL_REF_RE.test(src)
-                  ? `${files.fileUrl(resolveRelative(parentDir(p.path), src))}&v=${p.nonce}`
-                  : src
-              }
-              alt={alt ?? ""}
-              loading="lazy"
-              className="max-w-full"
-            />
-          ),
-          // External links open in a new tab; relative links point to a Workspace file,
-          // clicking opens it in the tree and the preview; in-page anchors keep default behavior.
-          a: ({ href, children }) => {
-            if (typeof href !== "string" || href.startsWith("#")) {
-              return <a href={href}>{children}</a>;
-            }
-            if (EXTERNAL_REF_RE.test(href)) {
-              return (
-                <a href={href} target="_blank" rel="noreferrer">
-                  {children}
-                </a>
-              );
-            }
-            const target = resolveRelative(parentDir(p.path), href);
-            return (
-              <a
-                href={files.fileUrl(target)}
-                onClick={(e) => {
-                  e.preventDefault();
-                  openFile(target, { locate: true });
-                }}
-              >
-                {children}
-              </a>
-            );
-          },
-        },
+        components: markdownComponents,
       };
     }
     if (p.kind === "text" || p.kind === "html" || p.kind === "md") {
@@ -2506,8 +2521,7 @@ export function WorkspaceBrowser({
         const at = bodyScrollOnReturn.current;
         if (el !== null && at !== null) {
           bodyScrollOnReturn.current = null;
-          el.scrollTop = at.top;
-          el.scrollLeft = at.left;
+          restoreCodePlace(el, at);
         }
       }}
       bodyProps={{

@@ -149,10 +149,15 @@ export function registerWorkspace(
 }
 
 /**
- * Sets (or, with a blank alias, clears) a registered Workspace's display alias.
- * Returns the INPUT array unchanged (same reference) when the pair isn't registered
- * or the alias doesn't actually change. The machine is carried across the rewrite: an
- * entry that lost it would name a directory here rather than the one that was renamed.
+ * Sets (or, with a blank alias, clears) a Workspace's display alias. Naming a group that
+ * was never registered — one that appeared because conversations live in it — registers
+ * it with that name, on its machine, prepended like registerWorkspace; it then stays in
+ * the list without active conversations, like any registered Workspace. A blank alias on
+ * an unregistered pair, a temporary-workspace path (see registerWorkspace) and an
+ * unchanged alias return the INPUT array unchanged (same reference); a blank alias on a
+ * registered pair clears the name and keeps the entry. The machine is carried across
+ * the rewrite: an entry that lost it would name a directory here rather than the one
+ * that was renamed.
  */
 export function setWorkspaceAlias(
   entries: readonly WorkspaceEntry[],
@@ -163,7 +168,18 @@ export function setWorkspaceAlias(
   const a = alias.trim();
   const target = { path, ...(machineId === null ? {} : { machineId }) };
   const entry = entries.find((e) => sameWorkspace(e, target));
-  if (!entry || (entry.alias ?? "") === a) return entries;
+  if (!entry) {
+    if (a === "" || isTempWorkspace(path)) return entries;
+    return [
+      {
+        path: normalizeWorkspacePath(path),
+        alias: a,
+        ...(machineId === null ? {} : { machineId }),
+      },
+      ...entries,
+    ];
+  }
+  if ((entry.alias ?? "") === a) return entries;
   return entries.map((e) =>
     sameWorkspace(e, target)
       ? {

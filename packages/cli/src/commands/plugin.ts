@@ -4,6 +4,7 @@
  *
  *   penguin plugin list [--project-id <id>] [--json] [--server <url>]
  *   penguin plugin install <specifier> [--overwrite] [--project-id <id>] [--json] [--server <url>]
+ *   penguin plugin link <directory> [--overwrite] [--project-id <id>] [--json] [--server <url>]
  *   penguin plugin remove <name> [--project-id <id>] [--json] [--server <url>]
  *
  * `<specifier>` is an npm package name (`@scope/name`, `name@1.2.3`), an https link to a git
@@ -24,6 +25,11 @@
  * in progress on that server. After a directory install, each MCP server the package carries is
  * printed with its transport and its target — a URL the server connects to, or a command it runs.
  *
+ * `link` is the other way a local directory reaches the server: instead of being zipped and
+ * copied, the directory is linked into the server's plugin prefix and loaded in place — the
+ * author edits the directory and the next load reads the edit. The Plugins page shows a linked
+ * plugin with its link mark and its on-disk state, exactly as it shows an installed one.
+ *
  * `list` shows both: the server modules the Project lists, with their state on this server, and
  * the packages of Skills, hooks or MCP servers installed on the server.
  * Docs: /docs/cli § "penguin plugin".
@@ -32,6 +38,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { Command } from "commander";
+import type { PluginMcpServer } from "@prismshadow/penguin-core";
 import {
   libraryParts,
   readLibraryPackage,
@@ -39,16 +46,23 @@ import {
   readPluginTable,
   resolveMCPServer,
 } from "@prismshadow/penguin-core";
-import type { PluginMcpServer } from "@prismshadow/penguin-core";
+
 import type {
   InstalledPlugin,
   InstalledPluginsResponse,
   PluginLibraryResponse,
-} from "@prismshadow/penguin-server/api";
-import { ApiError, resolveConnection, resolveProjectId, ServerClient } from "../client.js";
-import { renderTable } from "../table.js";
-import { zipFolder } from "../zip-folder.js";
-import type { Messages } from "../i18n.js";
+  Messages,
+} from "@prismshadow/penguin-server/cli";
+import {
+  ApiError,
+  resolveConnection,
+  resolveProjectId,
+  ServerClient,
+  renderTable,
+  zipFolder,
+} from "@prismshadow/penguin-server/cli";
+import { Bind, Component } from "@prismshadow/penguin-core/kernel";
+import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/cli";
 
 const installedPath = (projectId: string) =>
   `/api/projects/${encodeURIComponent(projectId)}/plugins/installed`;
@@ -79,6 +93,9 @@ function moduleState(t: Messages, row: InstalledPlugin): string {
  * the server): an existing directory holding a package.json — given as an absolute path, `./x`,
  * `../x`, `~/x`, or a bare name that happens to be such a directory here.
  */
+
+/** The node the host located for a key, typed with this package's commander. */
+const node = (command: CliCommandProgram): Command => command as Command;
 export function packageDirectory(arg: string): string | null {
   const expanded =
     arg === "~" ? os.homedir() : arg.startsWith("~/") ? path.join(os.homedir(), arg.slice(2)) : arg;
@@ -182,7 +199,7 @@ export function registerPluginCommand(plugin: Command, t: Messages): void {
       const rows = [
         ...listed.plugins.map((row) => [
           row.specifier,
-          t.plugin.kindModules(),
+          row.linked === true ? t.plugin.kindLink() : t.plugin.kindModules(),
           moduleState(t, row),
         ]),
         ...installed.map((p) => [p.package, t.plugin.kindLibrary(), `v${p.version}`]),
@@ -242,6 +259,46 @@ export function registerPluginCommand(plugin: Command, t: Messages): void {
     });
 
   plugin
+    .command("link <directory>")
+    .description(t.plugin.linkDesc)
+    .option("--overwrite", t.plugin.linkOverwriteOpt)
+    .option("--project-id <id>", t.common.projectId)
+    .option("--json", t.common.json)
+    .option("--server <url>", t.common.server)
+    .action(async (directory: string, opts) => {
+      const client = new ServerClient(await resolveConnection({ server: opts.server }, t), t);
+      const projectId = resolveProjectId(opts.projectId);
+      // The directory is read here first, with the plugin library's own reader — the same
+      // gate a directory install passes before anything is sent: a package that was never
+      // built, or one the library would refuse, is reported and nothing is sent.
+      const dir = path.resolve(directory);
+      let built = false;
+      try {
+        built = readPluginTable(dir) !== null;
+      } catch (err) {
+        throw new Error(t.plugin.dirRefused(dir, err instanceof Error ? err.message : String(err)));
+      }
+      if (!built) throw new Error(t.plugin.dirNotBuilt(dir));
+      if (!libraryParts(dir).modules) {
+        throw new Error(t.plugin.dirNotPlugin(dir));
+      }
+      const res = await client.request<InstalledPluginsResponse>(
+        "POST",
+        `${installedPath(projectId)}/link`,
+        { dir, ...(opts.overwrite === true ? { overwrite: true } : {}) },
+      );
+      if (opts.json === true) {
+        process.stdout.write(`${JSON.stringify(res)}\n`);
+        return;
+      }
+      const row = res.plugins.find((p) => p.linked === true);
+      process.stdout.write(
+        row === undefined ? t.plugin.linked(dir) : t.plugin.linked(row.linkPath ?? dir),
+      );
+      process.stdout.write("\n");
+    });
+
+  plugin
     .command("remove <name>")
     .description(t.plugin.removeDesc)
     .option("--project-id <id>", t.common.projectId)
@@ -260,4 +317,30 @@ export function registerPluginCommand(plugin: Command, t: Messages): void {
       }
       process.stdout.write(`${t.plugin.removed(name)}\n`);
     });
+}
+
+/** `penguin plugin`. */
+@Component({
+  contributes: {
+    "CliCommandsModule.commands": [
+      {
+        id: "cli.plugin",
+        key: "plugin",
+        summary: {
+          en: "Manage the plugins installed on the server (admin)",
+          zh: "管理服务端安装的插件（管理员）",
+        },
+      },
+    ],
+  },
+})
+export class PluginCommand {
+  @Bind("cli.plugin") command!: CliCommandCode<Messages>;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerPluginCommand(node(command), ctx.messages);
+      },
+    };
+  }
 }

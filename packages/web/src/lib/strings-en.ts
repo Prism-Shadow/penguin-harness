@@ -1061,6 +1061,7 @@ export const en: Strings = {
     checkingUpdates: "Checking for updates…",
     openDevTools: "Open DevTools",
     projectOnGitHub: "Project on GitHub",
+    newWindow: "New Window",
   },
   rescue: {
     title: "Something broke the page",
@@ -1129,6 +1130,8 @@ export const en: Strings = {
         : `Show this page as the whole app; ${palette} opens the command palette to leave`,
     exitFullPage: "Exit full page (back to workbench)",
     exitFullPageButton: "Exit full screen",
+    exitBallTuck: "Tuck to the edge",
+    exitBallShow: "Show the exit button",
     retryHistory: "Retry",
     exitHint: (palette: string | null): string =>
       palette === null
@@ -3266,6 +3269,12 @@ export const en: Strings = {
     /** The tag of a plugin an admin installed on this server (not shipped with the build). */
     installedOnServer: "installed on server",
     installedOnServerHint: "Installed on this server by an admin; it does not ship with the build.",
+    /** The tag of a plugin linked in from a local directory (penguin plugin link). */
+    linkedTag: "link",
+    linkedHint: (dir: string) =>
+      `Linked from a local directory: ${dir}. Edits apply on the next load.`,
+    /** The detail line naming the directory a link points at. */
+    linkedDirectory: "linked directory",
     /** The detail dialog's export (any member) and delete (admin, a package installed on the server). */
     exportPlugin: "Export",
     exportPluginHint:
@@ -3783,16 +3792,22 @@ export const en: Strings = {
     sortManual: "Manual order",
     sortRecent: "Most recent",
     newWorkspaceEntity: "New workspace",
-    /** A Workspace group's overflow (… right of the header "+"): browse its files; a registry-backed group adds alias rename + sidebar-only removal. */
+    /** A Workspace group's overflow (… right of the header "+"): every single-directory group can browse its files, be renamed, and be deleted (its active conversations archived). */
     workspaceMenu: "Workspace options",
     renameWorkspace: "Rename workspace",
     renameWorkspaceLabel: "Name",
     renameWorkspaceHint: "Leave empty to use the folder name",
-    deleteWorkspace: "Remove workspace",
+    deleteWorkspace: "Delete workspace",
     /** A Workspace group's "more" menu: the dock's Files panel on that directory. */
     browseWorkspaceFiles: "Browse files",
-    deleteWorkspaceConfirm: (name: string) =>
-      `Remove "${name}"? This only removes the workspace group from the sidebar — the directory on disk and existing chats are untouched, and it can be re-added anytime.`,
+    deleteWorkspaceConfirm: (name: string, count: number) =>
+      count > 0
+        ? `Delete workspace "${name}"? Its ${count === 1 ? "1 chat" : `${count} chats`} will be archived; files on disk are not touched. Unarchive any of them under Archived chats and the workspace comes back.`
+        : `Delete workspace "${name}"? It leaves the sidebar; files on disk are not touched.`,
+    deleteWorkspaceArchived: (count: number) =>
+      `Archived ${count === 1 ? "1 chat" : `${count} chats`}. Unarchive them under Archived chats.`,
+    deleteWorkspaceMachineOutdated: (machine: string) =>
+      `PenguinHarness on ${machine} is too old to delete a workspace. Update it on the Machines page first.`,
     tempWorkspaces: "Temporary workspaces",
     onMachine: (name: string, machine: string) => `${name} [SSH: ${machine}]`,
     machineTag: (machine: string) => `[SSH: ${machine}]`,
@@ -4248,7 +4263,9 @@ Scenarios:
                             ? "the input could not be built into a request"
                             : kind === "failed"
                               ? "the provider returned an error"
-                              : null,
+                              : kind === "denied"
+                                ? "the provider will not serve this account or model (balance, permission, or no such model)"
+                                : null,
       unknownCause: "cause unknown",
       retryNow: "Retry now",
       stop: "Stop retrying",
@@ -4492,6 +4509,8 @@ Scenarios:
       `This model's context window ${n} is smaller than this agent's compaction threshold ${m}, so compaction actually fires at the edge of the window. Drag the dashed mark in the context panel, or set the threshold below the window in the agent settings — it applies immediately.`,
     contextWindowUnderThresholdAction: "Open agent settings",
     contextWindowUnderThresholdDismiss: "Dismiss",
+    contextRefusedHandoff:
+      "The provider refused the last request: too little room was left for compaction, so this conversation continued from a Trace hand-off note. Correct this model's context window in the model settings, or lower this agent's compaction threshold (drag the dashed mark in the context panel).",
     slashHint: "Type / for commands",
     switchAgent: "Hand off to another agent — opens a new session on send",
     switchAgentTitle: "Choose agent",
@@ -4569,6 +4588,7 @@ Scenarios:
     compactionTitle: (mode: string): string => (mode === "discard" ? "Clear" : "Compaction"),
     compactionRunning: (mode: string): string => (mode === "discard" ? "Clearing" : "Compacting"),
     compactionDone: (mode: string): string => (mode === "discard" ? "Cleared" : "Compacted"),
+    compactionWork: "Work",
     compactionResult: "Result",
     modelChanged: (from: string, to: string): string => `Model switched · ${from} → ${to}`,
     modelChangedByTrace: (from: string, to: string): string =>
@@ -4577,16 +4597,24 @@ Scenarios:
       tracePath
         ? `No summary: the previous model was unavailable or its compaction failed, so the new one reads the earlier Trace file when it needs to: ${tracePath}`
         : "No summary: the previous model was unavailable or its compaction failed, so the new one reads the earlier Trace file when it needs to",
+    compactionDegradedHint: (errorMessage?: string): string =>
+      errorMessage !== undefined
+        ? `No full summary could be written; the next context opens with a Trace hand-off note: ${errorMessage}`
+        : "No full summary could be written; the next context opens with a Trace hand-off note.",
+    compactionRoomHint: (providerMessage?: string): string =>
+      `Too little room was left for compaction, so the next context opens with a Trace hand-off note. Correct this model's context window, or lower the compaction threshold.${
+        providerMessage !== undefined ? ` The provider said: ${providerMessage}` : ""
+      }`,
     compactionFailed: (status: string, errorMessage?: string): string => {
       if (status === "aborted") return "aborted, keeping current context";
       const detail = errorMessage !== undefined ? ` (${errorMessage})` : "";
-      // retryable = abandoned this time, the standing trigger retries it; fatal = a config
-      // or credential change has to come first. Legacy Traces spell both "failed".
+      // fatal = the next context could not be opened. Old Traces' abandoned compactions:
+      // retryable = given up this time, retried at the next trigger; legacy "failed" = either.
+      if (status === "fatal") {
+        return `failed${detail}, the next context could not be opened; keeping current context`;
+      }
       if (status === "retryable") {
         return `failed${detail}, keeping current context; retries at the next trigger`;
-      }
-      if (status === "fatal") {
-        return `failed${detail}, keeping current context; fix the model configuration to retry`;
       }
       return `failed${detail}, keeping current context`;
     },

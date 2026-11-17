@@ -433,7 +433,7 @@ Project、Project 成员，以及保存在 `.project_config.toml` 中的 Project
 - `DELETE /api/projects/:projectId` 仅限所有者。`default_project` 与 CLI 共享，无法删除：返回 `409` `cannot_delete_default_project`。
 - 成员的写操作仅限所有者。桌面模式下，成员相关路由同样返回 `403 desktop_single_user`；参见[用户管理（仅管理员）](#用户管理仅管理员)。
 - `chat-defaults` 对应 `[default_chat]` 配置块：`{agentId?, workspace?, approvalMode?, thinkingLevel?}`。任何成员都可以读取，只有所有者可以替换。PUT 会替换整个块：省略的键清除对应默认值，空请求体则移除整个块。`agentId` 必须指向 Project 中已存在的 Agent（否则返回 `400` `unknown_agent`）。`workspace` 只是预填值，创建 Session 时才会校验；留空表示临时 Workspace。`thinkingLevel` 用作未在自身配置里设置思考等级的 Agent 的兜底值，不接受 `none`。默认模型不属于这个块，由模型相关路由管理。
-- `command-policy` 对应 `[command_policy]` 配置块：`{enabled?, rules: [{name, pattern, description?, enabled?}]}`。任何成员都可以读取，只有所有者可以替换。PUT 必须携带完整的规则列表（空数组表示没有任何规则），规则最多 64 条。每条规则需要名称（最多 64 个字符）和 pattern（最多 512 个字符，且必须能编译为正则表达式），description 最多 300 个字符。pattern 在服务端的引擎上编译失败返回 `400` `invalid_rule_pattern`，其 `details` 给出规则名 `rule`、规则在列表中从 0 起的下标 `index` 与引擎给的原因 `reason`；其他格式错误的规则返回 `400` `invalid_rules`，`enabled` 不是布尔值返回 `400` `invalid_enabled`。参见[命令策略](/configuration#命令策略)。
+- `command-policy` 对应 `[command_policy]` 配置块：`{enabled?, rules: [{name, pattern, description?, enabled?, action?}]}`，`action` 取 `"deny"`（缺省）或 `"ask"`。任何成员都可以读取，只有所有者可以替换。PUT 必须携带完整的规则列表（空数组表示没有任何规则），规则最多 64 条。每条规则需要名称（最多 64 个字符）和 pattern（最多 512 个字符，且必须能编译为正则表达式），description 最多 300 个字符。pattern 在服务端的引擎上编译失败返回 `400` `invalid_rule_pattern`，其 `details` 给出规则名 `rule`、规则在列表中从 0 起的下标 `index` 与引擎给的原因 `reason`；其他格式错误的规则返回 `400` `invalid_rules`，`enabled` 不是布尔值返回 `400` `invalid_enabled`。参见[命令策略](/configuration#命令策略)。
 
 ### 语义化 id 提议
 
@@ -1026,7 +1026,7 @@ interface RunFormLive {
 - `POST /tasks` 响应 `{sessionId, queued?, steered?}`。带 `queueIfBusy` 时，忙碌的 Session 会把输入存为后续 Task（`queued: true`），等 Session 空闲后作为普通的下一个 Task 启动；`task_state` 事件报告排队的数量。`file` 输入部分写入 Session 暂存区，并以 `[attached file: <path>]` 行的形式交给模型（见[请求体](#请求体)）。
 - `POST /tasks` 带 `interrupt: true` 时，忙碌的 Session 会停止当前运行，并把输入接在被打断的那一轮之后发出。输入排到后续 Task 队列的最前面（排在更早的打断之后，同样受队列上限约束），运行按 `POST /abort` 的方式中止，收尾后它最先启动（`queued: true`）；在它之前排队的后续 Task 在它之后启动。被打断那一轮已经产出的内容排在它前面一起发出，已提交的历史不变。尚未投递的插话与 `POST /abort` 时一样退回（`returnedSteering`）。启动之前，该条目以 `interrupt: true` 列在 `pendingFollowUps` 里，可以撤回。Session 空闲时直接启动 Task。与 `queueIfBusy` 或 `goal` 同时使用时返回 400。
 - `POST /tasks` 带 `steerIfBusy: true` 时，不论 Session 此刻在做什么都只需这一个请求，由服务端在会话锁内判定。空闲的 Session 直接启动 Task。有 Task 在运行时，输入作为插话送入，与 `POST /steer` 同一路径：插话镜像、撤回与退回照旧，`file` 部分以 `[attached file: <path>]` 行随插话送达；响应 `{sessionId, queued: false, steered: true}`。压缩期间没有 Task 可插话，运行恰在收束时也不再接受插话，这两种情况按 `queueIfBusy` 入队（`queued: true`）。与 `interrupt` 或 `goal` 同时使用时返回 400；同时带 `queueIfBusy` 不改变任何行为。
-- `POST /tasks` 带 `goal: {budget?}` 时改为启动目标循环。Agent 没有安装 `goal` 插件时返回 409 `goal_plugin_not_installed`。目标就是输入里的文本（去掉开头的标记块），所以输入必须带非空文本（否则返回 400）：只有图片说明不了目标。图片作为普通输入随第 1 轮发送，之后各轮只重新注入目标文本。`file` 部分一律以 400 拒绝，因为没有办法把文件带进每一轮都重新注入的目标。见[目标模式](/goal-mode)。
+- `POST /tasks` 带 `goal: {budget?}` 时改为启动目标循环。Agent 没有安装 `goal` 插件时返回 409 `goal_plugin_not_installed`。插件的启动钩子运行失败（脚本报错或超时，或沙盒拒绝运行它）时返回 409 `goal_start_failed` 并附上原因，不启动任何 Task。目标就是输入里的文本（去掉开头的标记块），所以输入必须带非空文本（否则返回 400）：只有图片说明不了目标。图片作为普通输入随第 1 轮发送，之后各轮只重新注入目标文本。`file` 部分一律以 400 拒绝，因为没有办法把文件带进每一轮都重新注入的目标。见[目标模式](/goal-mode)。
 - `POST /steer` 在轮次之间把消息作为一条独立的 `[user_steering]` 用户消息投递，图片紧随其后。`text` 和 `images` 任一字段都能单独携带消息，但两者都缺时返回 400。没有 Task 在运行时返回 409 `not_running`。
 - `DELETE /steer/:steerId` 接收 `task_state` 里 `pendingSteering` 的 id，把那条消息从队列撤回。响应 200，带原始内容 `{text, images, files}`，便于输入框恢复消息供编辑：文件以 data URL 的形式从暂存区读回，磁盘上的副本随之删除。消息已经投递给模型时返回 409 `not_pending`。
 - `DELETE /follow-ups/:followUpId` 接收 `task_state` 里 `pendingFollowUps` 的 id，在后续 Task 启动前把它移除。响应 200，带原始内容 `{text, images, files}`；无论以哪种方式排队，每个排队的后续 Task 都带这些内容。后续 Task 已经启动、或 id 未知时返回 409 `follow_up_started`。
@@ -1406,6 +1406,7 @@ Agent 用 `penguin browser` 驱动的浏览器，路由位于 `/api/builtin-brow
 | POST | `/api/desktop/update/check`、`/api/desktop/update/download`、`/api/desktop/update/install` | 把命令转发给桌面 shell；202 |
 | GET / PUT | `/api/desktop/tray` | 读取系统托盘图标偏好：`{status}` / 转发更改：`{showTrayIcon?, locale?}` → 202 |
 | POST | `/api/desktop/privacy-settings` | 请 shell 打开 macOS「隐私与安全性」的某个面板：`{pane}`（`files` 或 `fullDisk`）→ 202 |
+| POST | `/api/desktop/window` | 请 shell 再打开一个桌面应用的窗口，显示 App → 202 |
 | POST | `/api/hmr/assets/probe` | 热更新：报告存储缺少哪些 blob |
 | PUT | `/api/hmr/blobs/:sha` | 热更新：按 sha256 上传一个 blob |
 | POST | `/api/hmr/upgrade` | 热更新：把 platform、CLI 和 web bundle 一并升到新版本。构建无法完整运行全部已装插件时返回 `409` `plugins_unsatisfied`，`error.plugins` 逐个列出 `{specifier, disabled, reason}`；带上请求头 `x-penguin-unsatisfied-plugins: leave-out` 重发，推送照常完成，应答里以 `unsatisfiedPlugins` 附上同一份清单 |
@@ -1413,7 +1414,7 @@ Agent 用 `penguin browser` 驱动的浏览器，路由位于 `/api/builtin-brow
 
 - 非桌面模式下，桌面路由返回 `404` `not_found`。
 - `POST /api/desktop/shutdown` 不使用 cookie 会话。它用桌面 shell 专有的 Bearer token 认证（否则返回 `401` `unauthorized`），先应答，再立即开始优雅关闭。
-- update、tray 和 privacy-settings 路由只响应桌面 shell 自己的窗口：其他任何会话都会得到 `403` `desktop_shell_only`。shell 未监听时，返回 `503` `shell_unreachable`。`showTrayIcon` 不是布尔值时，`PUT /api/desktop/tray` 返回 `400` `invalid_show_tray_icon`；`locale` 不是 `zh` 或 `en` 时返回 `400` `invalid_locale`；两个字段都未提供时返回 `400` `empty_tray_patch`。PUT 只确认收到更改；请用 GET 读回实际结果。
+- update、tray、privacy-settings 和 window 路由只响应桌面 shell 自己的窗口：其他任何会话都会得到 `403` `desktop_shell_only`。shell 未监听时，返回 `503` `shell_unreachable`。`showTrayIcon` 不是布尔值时，`PUT /api/desktop/tray` 返回 `400` `invalid_show_tray_icon`；`locale` 不是 `zh` 或 `en` 时返回 `400` `invalid_locale`；两个字段都未提供时返回 `400` `empty_tray_patch`。PUT 只确认收到更改；请用 GET 读回实际结果。
 - `pane` 不是 `files`（文件与文件夹）或 `fullDisk`（完全磁盘访问权限）时，`POST /api/desktop/privacy-settings` 返回 `400` `invalid_privacy_pane`。shell 只在 macOS 上打开面板。
 - `/api/hmr` 路由仅限管理员（`403` `forbidden`）。绑定在非环回地址上时还要求 HTTPS，否则返回 `403` `hmr_disabled`。只有 `PENGUIN_TRUST_PROXY=1` 时 `X-Forwarded-Proto` 才生效，而且只认单个值 `https`。升级完成后，每个已连接的客户端都会收到 `web_updated` 并重新加载。
 

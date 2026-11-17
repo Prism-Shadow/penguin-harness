@@ -2420,6 +2420,17 @@ export interface SessionsBatchResponse {
   results: SessionBatchResult[];
 }
 
+/** POST /api/projects/:p/sessions/archive — archives every active Session of one Workspace group. */
+export interface SessionsArchiveRequest {
+  /** The group's path, or the merged temporary group's sentinel (`temp`) — the list's `workspaceGroup`. */
+  workspaceGroup: string;
+}
+
+export interface SessionsArchiveResponse {
+  /** Sessions this call archived. */
+  done: number;
+}
+
 /** Server directory browsing (the Workspace picker): starts from the home directory by default, can navigate up to the root. */
 export interface DirEntryInfo {
   name: string;
@@ -3006,7 +3017,8 @@ export interface TaskCreateRequest {
    * them) and the Session's installed `goal` hook package drives round after round until the
    * goal reaches a terminal state. `budget` is the token budget (uncached input + output);
    * omitted or -1 = unlimited. Requires the goal plugin installed on the Agent — 409
-   * `goal_plugin_not_installed` otherwise.
+   * `goal_plugin_not_installed` otherwise; a start hook that fails (its script errs or times
+   * out, or the sandbox refuses to run it) is 409 `goal_start_failed` with the reason.
    */
   goal?: { budget?: number };
 }
@@ -3039,11 +3051,12 @@ export interface GoalResponse {
  *   after the switch.
  *   When the summary cannot be had — the model the Session is on is no longer configured or
  *   has no credential (it is then sent nothing, and no pair streams), or the compaction ends
- *   other than `completed` or `aborted` — the switch still completes, by Trace handoff: right
+ *   without a summary — the switch still completes, by Trace handoff: right
  *   after the `session_meta` comes a user text that is one whole `[model_switch_from]` block
  *   whose `session` is this Session, naming the Trace file of the context it left. Only a
- *   stopped compaction (`aborted`) means no switch: no `session_meta` follows and the Session
- *   keeps its model.
+ *   stopped compaction (`aborted`), or a `fatal` one (the next context could not be opened on the
+ *   target; its `error_message` says why), means no switch: no `session_meta` follows and the
+ *   Session keeps its model and its context.
  * - **200** {@link SessionResponse} — a Session that never ran has no context to close: it
  *   switched inside the request, and nothing is streamed.
  * - **409**, one code per refusal, before any event: `task_in_progress` / `compacting` (busy),
@@ -6066,6 +6079,11 @@ export interface DesktopOpenPrivacySettingsMessage {
   pane: DesktopPrivacyPane;
 }
 
+/** Server → shell command over the utilityProcess message channel (relayed from POST /api/desktop/window). No reply. */
+export interface DesktopOpenWindowMessage {
+  type: "desktop-open-window";
+}
+
 /**
  * A native action the host process can run on the page's behalf — what the desktop shell's
  * application menu used to offer, reached from the command palette instead (the menu bar
@@ -7995,6 +8013,13 @@ export interface InstalledPlugin {
   modules: string[];
   /** Node names the package declares it stands in for. */
   replaces: string[];
+  /**
+   * The prefix resolves this name through a link `penguin plugin link` parked: the package is
+   * the author's directory, read fresh from disk every time.
+   */
+  linked?: true;
+  /** The author directory the link points at (when `linked`). */
+  linkPath?: string;
   /**
    * Why the package is not running: unresolvable, or a load that
    * failed (an import that threw, a module name another plugin already took). Only ever

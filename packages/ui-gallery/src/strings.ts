@@ -51,7 +51,8 @@ export const zh = {
       leaderboards: "榜单",
       amsp: "AMSP",
       docs: "文档",
-      gallery: "画廊",
+      gallery: "主题包",
+      more: "更多",
       github: "GitHub",
       openMenu: "打开菜单",
       closeMenu: "关闭菜单",
@@ -211,6 +212,12 @@ export const zh = {
         "设置对话框停在「外观」页：主题、明暗、强调色、五档字号与字体组合——主题切换就在这里。",
       how: "侧栏底部的账户菜单 › 设置 › 外观。",
     },
+    "desktop-window": {
+      title: "桌面窗口",
+      description:
+        "桌面端的主窗口：顶部标题带与侧栏同色，左端是侧栏开关与后退 / 前进，右端是窗口按钮；主栏贴着窗口边缘，与带和侧栏都以分栏线分开，滚动条一直通到窗口角上。",
+      how: "Windows / Linux 上的桌面端主窗口；浏览器里没有标题带。",
+    },
     login: {
       title: "登录",
       description: "登录页：装饰画布上的登录卡片。任意密码即可登录演示账户。",
@@ -218,7 +225,7 @@ export const zh = {
     },
   } satisfies Record<SurfaceId, SurfaceCopy>,
   home: {
-    eyebrow: "界面画廊",
+    eyebrow: "主题包",
     title: "Penguin UI",
     lead: "真实的 Web App，在三套主题、两种明暗、五档字号、可选字体组合与两种语言下运行——数据来自浏览器内的演示接口，可以随意点击。",
     app: "应用",
@@ -495,7 +502,8 @@ export const zh = {
     topics: {
       buttons: {
         title: "按钮",
-        description: "五种变体、五档尺寸与图标按钮，禁用与加载中，以及链接与键盘提示。",
+        description:
+          "五种变体、五档尺寸与图标按钮，禁用与加载中，链接与键盘提示，以及可拖到边缘、可收起的悬浮球。",
       },
       inputs: {
         title: "输入与表单",
@@ -546,7 +554,7 @@ export const zh = {
       site: {
         title: "公开站点",
         description:
-          "落地页与文档站共用的组件：页脚、代码卡片与复制按钮、胶囊、文章目录、文档侧栏、搜索、外链确认与文章排版。",
+          "落地页与文档站共用的组件：导航栏、页脚、代码卡片与复制按钮、胶囊、数据页控件、文章目录、文档侧栏、搜索、外链确认与文章排版。",
       },
       files: {
         title: "文件",
@@ -627,6 +635,14 @@ export const zh = {
       external: "查看全部版本",
       keys: "键盘提示",
       shortcuts: [["Ctrl", "K"], ["Ctrl", "`"], ["Esc"]] as readonly (readonly string[])[],
+      ball: "悬浮球",
+      ballHint:
+        "拖到左缘或右缘，松手即贴边；推出边缘或点「×」收起，点边上的把手恢复。位置由调用方保存。",
+      ballLabel: "退出全屏",
+      ballTuck: "收起到边缘",
+      ballShow: "显示退出按钮",
+      ballReadout: (side: "left" | "right", percent: number, tucked: boolean, presses: number) =>
+        `${side === "left" ? "左缘" : "右缘"}，高度 ${percent}%${tucked ? "，已收起" : ""} · 点击 ${presses} 次`,
     },
     inputs: {
       basics: "文本框",
@@ -856,6 +872,7 @@ export const zh = {
       pagedGroups: { app: "应用", you: "账号" },
       pages: { general: "通用", appearance: "外观", account: "个人资料" },
       pageBody: "当前页的设置项放在这里。",
+      pageRow: (n: number) => `第 ${n} 项设置`,
       appearanceInfo: "主题、强调色与密度只作用于这个浏览器。",
       drawer: "抽屉",
       openDrawer: "打开抽屉",
@@ -1170,12 +1187,15 @@ export const zh = {
       ] as readonly { id: string; name: string }[],
     },
     site: {
+      nav: "导航栏",
+      navHint:
+        "三站共用：行末的「更多」收着 AMSP 与主题包，悬停或按下展开，其中一页是当前页时「更多」标为当前页；手机菜单把这两页缩进列在「更多」之下。",
       footer: "页脚",
       footerHint: "落地页的品牌与链接栏，文档站的一行版权与链接。",
-      tagline: "统一、稳定的 Agent 自进化框架",
+      tagline: "开箱即用的 Agent 自进化框架",
       columns: [
         { title: "产品", links: ["案例", "快速开始", "博客", "下载"] },
-        { title: "资源", links: ["GitHub 仓库", "文档", "画廊"] },
+        { title: "资源", links: ["GitHub 仓库", "文档", "主题包"] },
       ] as readonly { title: string; links: readonly string[] }[],
       lineLinks: ["产品主页", "GitHub 仓库", "Apache-2.0 License"] as readonly string[],
       copyright: "© 2026 Prism Shadow，基于 Apache-2.0 协议开源",
@@ -1194,6 +1214,22 @@ export const zh = {
         teal: "观点",
         neutral: "更新日志",
       },
+      dataPage: "数据页控件",
+      dataPageHint:
+        "插件、评估集与榜单页共用：返回列表的链接、切换视图的分段按钮、工具栏的菜单按钮与数据表格。当前视图用不到的菜单按钮变灰但留在原位，切换视图时工具栏不动。",
+      dataBack: "插件",
+      dataBackLabel: "返回插件",
+      dataViews: "视图",
+      dataViewOptions: { table: "表格", pareto: "帕累托", waffle: "华夫饼" },
+      dataFilter: "筛选",
+      dataColumns: "列",
+      dataColumnsHint: "列只用于表格",
+      dataHead: { rank: "排名", name: "算法", score: "得分", cost: "成本" },
+      dataRows: [
+        ["SkillOpt 自进化工具包", "70.3", "$1.86"],
+        ["SkillAdam 自进化工具包", "69.0", "$1.96"],
+        ["基线", "56.3", "$2.38"],
+      ] as readonly (readonly [string, string, string])[],
       article: "文章",
       articleHint:
         "博客文章与文档页共用的排版。标题带锚点，围栏代码块高亮，标签组与提示框是文档的 Markdown 扩展；本页右侧是它的目录。",
@@ -1391,6 +1427,7 @@ export const zh = {
         "| 设置 | 取值 |\n| --- | --- |\n| 模型 | `gpt-5.6-luna` |\n| 审批 | 写文件前询问 |\n| 沙箱 | 仅限工作区 |\n| 上下文窗口 | 400k Token |",
       code: "代码",
       surface: "代码面：行号，无外框",
+      surfaceLong: "长文件，自动换行：每 100 行一块，滚到附近才绘制",
       diff: "差异",
       unified: "合并视图",
       split: "并排视图",
