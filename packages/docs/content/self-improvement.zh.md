@@ -119,7 +119,7 @@ RSI（Recursive Self-Improvement，递归自我进化）正是本页讲的事：
 - **[SkillAdam](https://arxiv.org/abs/2609.08944)**（`skilladam-rsi-toolkit`）：持续更新问题记录，按评分变化调整 Skill 编辑预算。
 - **[SkillOpt](https://arxiv.org/abs/2605.23904)**（`skillopt-rsi-toolkit`）：限制文本编辑幅度，按评分筛选候选，并在训练轮次之间总结经验。无独立验证集时，复用全部或指定部分 Train 筛选候选，仍保留全部 Train 参与学习。
 - **[OpenSkill](https://arxiv.org/abs/2606.06741)**（`openskill-rsi-toolkit`）：先通过外部检索与独立虚拟验证构建技能，再评测冻结的 State。
-- **TRACE** （`trace-rsi-toolkit`），出自 [TRACE](https://arxiv.org/abs/2608.22793)（Wu 等，2026）：入口 Skill 负责外层实验组织，训练参考文件作为独立的 Curator Skill 安装到容器内。外层 Agent 通过 Harbor 启动训练，每个 Curator 从新 Actor 子会话的轨迹初始化、修订模块化技能库。默认每题每批两次、演化两轮；训练完成后，每个 Group 按完整训练均分选择一版有效技能库，平分选更早阶段，冻结后与无 Skill 基线各进行三次完整测试。这是实验采用的版本选择规则，测试反馈不参与选版。评测遵循已发布的连续训练契约，按完整测试重复的均分计算平均数与样本标准差；做题时的技能选择依赖指令执行，已读取的正文保留在历史中，不宣称复现论文的逐轮上下文替换。
+- **TRACE** （`trace-rsi-toolkit`），出自 [TRACE](https://arxiv.org/abs/2608.22793)（Wu 等，2026）：入口 Skill 负责外层调度，训练参考文件作为独立的 Curator Skill 安装到容器内。外层 Agent 通过 Harbor 启动训练，Curator 从新 Actor 子会话的轨迹初始化、修订模块化技能库。默认每题每批两次、演化两轮；训练完成后，按完整训练均分选择一版有效技能库，平分选更早阶段，冻结后按指定的评测计划与无 Skill 基线进行对比评测。这是实验采用的版本选择规则，测试反馈不参与选版。评测遵循已发布的连续训练契约，按完整测试重复的均分计算平均数与样本标准差；做题时的技能选择依赖指令执行，已读取的正文保留在历史中，不宣称复现论文的逐轮上下文替换。
 
 OPRO 与 APE 各自带一个小型演示任务：只要提出来，Skill 会先新建一个 Agent 和一套 6 题的 Benchmark 再开始。每个 Skill 都写明论文的默认参数和一档更小的冒烟预算；除非你要求，它从不按论文的完整预算运行。
 

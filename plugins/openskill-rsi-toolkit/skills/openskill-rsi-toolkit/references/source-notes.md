@@ -18,6 +18,6 @@ Appendix F mentions a ground-truth pass/fail bit, while §2 and Appendix B descr
 
 Penguin supplies the configured models, tools, Sessions and execution environments. Its controller assembles a library across construction Cases and routes it using public applicability descriptions. With paired Train/Test packages, public Train inputs support construction and the frozen library transfers to held-out Test tasks. Record this transfer setting separately from same-task deployment.
 
-The experiment constructs once per independent benchmark/training unit and tests each frozen baseline/final State three complete times by default. These are repeated tests of one learned library, not independent learning runs. Runtime limits come from the user and Benchmark contract. Record the resolved configuration and any unsupported capability.
+How benchmarks are organized, which tasks are used for construction and evaluation, and how many evaluation passes are executed follow the user's request and the Benchmark contract. Repeated evaluations test the same frozen library rather than re-running skill construction. Runtime limits come from the user and Benchmark contract. Record the resolved configuration and any unsupported capability.
 
 Virtual verification and official Benchmark scores remain separate. An executable check can be wrong; a passing proxy does not establish a target pass. Retain source evidence, coverage limitations and the final revision's tested status in the report.

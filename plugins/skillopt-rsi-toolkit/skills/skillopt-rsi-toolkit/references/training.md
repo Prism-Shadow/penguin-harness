@@ -74,7 +74,7 @@ Export the complete best accepted Skill folder, its version and digest, and any 
 
 Retain a learning history with numbered `step`, `native_stage`, epoch, task IDs, measurement role (`rollout`, `selection` or `slow_comparison`), Skill identity, scores, edit budget, proposals and accept/reject decision. Store candidate scores separately from retained-checkpoint scores. Use `curve_kind: benchmark_score`; the fixed selection set gives a comparable optimization curve, while different rollout batches must remain identifiable. A final native verifier grade is a separate measurement.
 
-Record cost, time and token categories for the whole training unit, including reflection, candidate selection and slow/meta work. No sample standard deviation across training runs exists when training only once. The controller evaluates the same frozen `baseline` and `final` three times and owns the Test statistics.
+Record cost, time and token categories for the whole training unit, including reflection, candidate selection and slow/meta work. No sample standard deviation across training runs exists when training only once. The controller runs any requested held-out evaluations on the frozen `baseline` and `final` States and owns the Test statistics.
 
 ## Adaptation notes
 

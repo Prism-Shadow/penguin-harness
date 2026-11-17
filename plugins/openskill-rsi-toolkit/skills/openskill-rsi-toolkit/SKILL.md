@@ -1,12 +1,12 @@
 ---
 name: openskill-rsi-toolkit
-description: "Run OpenSkill on selected Project Benchmarks: research domain knowledge, refine reusable Skills with independent virtual tests, freeze the last revision, then evaluate baseline and final."
-version: 2026.10.29.4
+description: "Learn reusable Skills with OpenSkill by retrieving domain knowledge, refining Skills with independent virtual tests without target-task supervision, and exporting the last valid revision."
+version: 2026.11.17.1
 ---
 
 # OpenSkill
 
-You are the experiment controller. Use the selected Benchmark's instructions and Penguin's existing tools to arrange learning, freezing and evaluation.
+You are the main Penguin running OpenSkill. Follow the experimental setup specified by the user's request and the selected Benchmark's instructions.
 
 [OpenSkill: Open-World Self-Evolution for LLM Agents](https://arxiv.org/abs/2606.06741v1) learns reusable Skills without target-task supervision. It retrieves domain knowledge and separate verification anchors, then refines Skills using independent virtual tests. The creator keeps its learning history; the verifier independently checks the resulting work. Model weights and tools stay fixed.
 
@@ -18,18 +18,16 @@ If the request only names this Skill, ask which Target and Benchmark to use. Res
 
 Follow [initialization](references/initialization.md). Find the selected Benchmark in the current Project, read its manifest and Case statements, and resolve the documented runtime and source commit. The user need only name an installed Benchmark.
 
-Use all declared Train and Test questions unless a subset is requested. Build one library per independent benchmark or training unit. Within it, each construction Case has its own persistent creator and fixed Skill plan; do not combine unrelated Cases into one creator's learning history. A continuous Train Case can contain several questions.
+How benchmarks are organized (for example, running a single benchmark or running multiple benchmarks independently), which tasks are used for construction and evaluation, and how many evaluation passes to perform follow the user's prompt and the Benchmark's documentation rather than being prescribed by this Skill. Within a library, each construction Case has its own persistent creator and fixed Skill plan; do not combine unrelated Cases into one creator's learning history. A continuous Train Case can contain several questions.
 
 Resolve the Target Agent, model, thinking level, experiment version, runtime limits and output directory before starting. The Target is separate from this controller. Keep the same solving configuration for baseline and final.
 
 | Setting | Default |
 | --- | --- |
-| Construction runs per benchmark/training unit | 1 |
 | Planned Skills per construction Case | 1–4; keep the decomposition fixed |
 | Refinement retries per Case | Up to 3 |
 | Targeted searches after failure | Up to 3 per Case |
 | Virtual tests | Up to 60 checks per verification |
-| Complete Test repetitions per frozen State | 3 |
 
 Use user-supplied experiment settings when present and record the choices. Runtime and resource limits come from the selected Benchmark and execution environment.
 
@@ -49,7 +47,7 @@ Construction receives no target scores, private rubrics, hidden tests, reference
 
 After **all** construction Cases are frozen, create baseline and final States from the same saved base. Baseline is the pre-learning State; final adds the frozen library and its reader. Route a combined library by public applicability, never by target scores. Keep answers, practice outputs, virtual tests and learning history out of both States.
 
-Follow [evaluation and reporting](references/evaluation.md). Test both States on the complete selected evaluation set three times by default, using a fresh environment and conversation for every case and repetition. Reuse the same frozen library; do not train three times. With a held-out Test package, construction uses Train only. Without one, keep the method's same-task setting explicit.
+Follow [evaluation and reporting](references/evaluation.md) and the user's requested evaluation schedule, using a fresh environment and conversation for every evaluation attempt and reusing the same frozen library without re-running skill construction. With a held-out Test package, construction uses Train only. Without one, keep the method's same-task setting explicit.
 
 Report `baseline`, `final`, their `mean`, `std` and gain, plus versions, cost, time and token categories. Record virtual results and actual revisions as `curve_kind: virtual_validation`; they are not ground-truth Train scores. Keep intermediate labels in `native_stage`, and display progress as numbered `step` records.
 
