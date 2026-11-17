@@ -4,9 +4,9 @@ Talk with characters that have a face, a place and a memory.
 
 ## What it does
 
-Installing this plugin on an Agent adds a **Characters** tab beside its chat and an **AI Character Chat** tile in the App Center. The tab is a stage: a scene, a character drawn in front of it, and one box where the character speaks. The character's face changes with what it says, it blinks and breathes while it waits, and the room's light follows your clock.
+Open **Characters** beside an Agent’s chat or choose **AI Character Chat** in the App Center. Pick a portrait from the roster to open the conversation. You can scroll back while a reply arrives, choose a suggested topic or write your own message.
 
-Four original characters come with it: Pip, a penguin postmaster who collects small good news; Tock, a clockwork night librarian who likes riddles; Steep, a teapot spirit who keeps a tea house and listens well; and Sunny, a girl drawn in the anime way who keeps the little weather station on a rooftop and turns your day into a weather report.
+Sunny watches the clouds from a rooftop weather station. Pip, a penguin postmaster, collects good news for tomorrow’s mail. Ren keeps riddles in the books at his night desk. Mugi brews tea for visitors on the mountain road.
 
 Each character keeps a **memory book**: what it has learned about you, one line at a time. You can read it, remove a line, or clear it. A friendship meter grows with the days you talk, not with how much you type, and a character speaks to a friend differently than to someone it just met.
 
@@ -18,7 +18,7 @@ The `character-chat` Skill lets the Agent speak as a character in the ordinary c
 
 1. Install the plugin on an Agent from the plugin library.
 2. Open the **Characters** tab, or the tile in the App Center.
-3. Say something to Pip.
+3. Choose a character and type a message or pick an opening topic.
 
 ## Your data
 
@@ -32,4 +32,4 @@ Ask the Agent in the ordinary chat: "Write a character card for a retired lighth
 
 ## Licence
 
-Apache-2.0. The characters, their portraits and the scenes are original to this plugin and are drawn as SVG by its own code; it ships no image and no font.
+Apache-2.0. The four original portraits and their backgrounds ship with the plugin. The page animates the eyes, mouth and breathing locally. Custom looks use the editable SVG rig.

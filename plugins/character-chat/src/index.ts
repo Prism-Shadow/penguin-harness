@@ -16,8 +16,7 @@ import type { Plugin } from "@prismshadow/penguin-core/plugin";
           "AI 角色对话：角色有表情、有场景，会记住你们聊过的事，友谊随天数加深。自带四个原创角色，也可以自己写角色卡，或让 Agent 替你写。Skill 让 Agent 在普通对话里也能用角色的口吻说话和做事。",
         shortDescription: "Chat with characters who have a face.",
         shortDescriptionZh: "和有表情、有记忆的角色聊天。",
-        // TODO: `learning-life` once the category exists (https://github.com/Prism-Shadow/penguin-harness/pull/1580).
-        category: "office-productivity",
+        category: "entertainment",
         icon: "icon.svg",
         // Installed from the library on demand: no Agent gets it at creation.
         preinstall: false,

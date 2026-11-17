@@ -9,9 +9,10 @@ Included plugins, by category (`PLUGIN_CATEGORIES` in `packages/core/src/plugin/
 | Category | Plugins |
 | --- | --- |
 | Agent Self-Evolution | `default-rsi-toolkit`, `opro-rsi-toolkit`, `ape-rsi-toolkit`, `ace-rsi-toolkit`, `awm-rsi-toolkit`, `skilladam-rsi-toolkit`, `skillopt-rsi-toolkit`, `openskill-rsi-toolkit`, `trace-rsi-toolkit`, `rrsi-rsi-toolkit` |
-| Office Productivity | `a2ui`, `data-analysis`, `use-firecrawl`, `browser-automation`, `use-bento-slides`, `humanizer`, `goal`, `continual-learning`, `trace-lookup`, `agent-company`, `penguin-support`, `character-chat` |
+| Office Productivity | `a2ui`, `data-analysis`, `use-firecrawl`, `browser-automation`, `use-bento-slides`, `humanizer`, `goal`, `continual-learning`, `trace-lookup`, `agent-company`, `penguin-support` |
 | Software Development | `software-development`, `use-claude-code` |
 | AI App Development | `agent-development`, `agent-evaluation`, `model-development`, `skill-porting` |
+| Entertainment | `character-chat` |
 
 The four `sandbox-*` packages are not library content but server modules: Agent Sandbox backends that confine every command an Agent runs (`sandbox-bwrap` on Linux, `sandbox-seatbelt` on macOS, `sandbox-wsl` on Windows, `sandbox-dsh` on all three, file writes only). Each declares a card beside its `SandboxModule.providers` contribution (descriptions and the `sandbox` category; no skills or hooks) and carries an `icon.svg` for its card on the Plugins page, where an admin installs it on the server.
 
@@ -48,6 +49,6 @@ pnpm --filter @prismshadow/penguin-core test        # loader, the hook scripts a
 
 `penguin-support` supplies the default Project's customer support agent with a documentation Skill and the `workbenches/support/` app. It is not installed on General Agent. Workbench code is copied through the same plugin install path as Skills, into the agent's `agent_state/workbenches/`; updates preserve `state.json` and the workbench's version history in `agent_state.git/`, beside the Agent State. Each workbench declares a dated `penguin.version` in its own package.json. A workbench-only package can also be installed from the library.
 
-`character-chat` (AI Character Chat) is a workbench and a Skill: a stage where a character with a face, ten moods, a scene and a memory book talks with the person, a card editor, and the `character-chat` Skill that plays or writes a card in the ordinary chat. Four original characters come with it (Pip, Tock, Steep and Sunny). Each character's conversation is a workbench Session opened with the `deny-all` approval mode, so it only talks. Its interface is Chinese or English after the device language, with a switch, and it is not preinstalled.
+`character-chat` (AI Character Chat) is a workbench and a Skill: a stage where a character with a face, ten moods, a scene and a memory book talks with the person, a card editor, and the `character-chat` Skill that plays or writes a card in the ordinary chat. Four original characters come with it (Pip, Sunny, Ren and Mugi). Each character's conversation is a workbench Session opened with the `deny-all` approval mode, so it only talks. Its interface is Chinese or English after the device language, with a switch, and it is not preinstalled.
 
 Each plugin that ships skills also has its own `test/skills.test.ts`: it runs every `skills/<name>/` through [`@prismshadow/skills`](../packages/skills) (its `SKILL.md` must pass the parser vendored from vercel-labs/skills), so `pnpm -r test` covers them. The loader's own rules on top of that — a one-line description, skill names unique across the library — are core's test.

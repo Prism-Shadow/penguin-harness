@@ -1,6 +1,5 @@
-// The portrait rig: one drawing per kind of character, a face that takes any of the ten moods,
-// and the marks that go with a mood. Everything is SVG built from a card's checked `look`
-// values; no image is loaded and no markup from a card is ever inserted.
+// Imported and edited cards use the parametric rig. The original looks also have local art.
+import { illustratedPortrait } from "./illustrations.js";
 
 export const MOODS = [
   "neutral",
@@ -674,10 +673,12 @@ const FACE_BOX = {
  * The portrait as SVG markup. `face: true` crops to the head, for a roster row.
  * The label is set by the caller as an attribute, never as markup.
  */
-export function portrait(meta, mood, { face = false } = {}) {
-  const kind = DRAW[meta?.kind] ? meta.kind : "penguin";
+export function portrait(meta, mood, { face = false, art } = {}) {
+  const kind = Object.hasOwn(DRAW, meta?.kind) ? meta.kind : "penguin";
   const L = lookOf(kind, meta?.look);
   const m = MOODS.includes(mood) ? mood : "neutral";
+  const illustrated = illustratedPortrait(art, m, face);
+  if (illustrated) return illustrated;
   const box = face ? FACE_BOX[kind] : "0 0 400 440";
   const shadow = face
     ? ""

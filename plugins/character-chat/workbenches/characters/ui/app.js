@@ -1,6 +1,3 @@
-// The stage's page: the roster, the scene and the portrait, the line being said, and the three
-// side sheets (conversation, memory book, character card). Text from a card or a reply is only
-// ever set as text; the only markup built here is the SVG of rig.js and scenes.js.
 import { draftOf } from "./directives.js";
 import { KINDS, MOODS, PARTS, lookOf, portrait } from "./rig.js";
 import { SCENES, phaseOf, scene } from "./scenes.js";
@@ -14,6 +11,10 @@ const el = (tag, props = {}, ...children) => {
 };
 
 const ICONS = {
+  settings: "M4 7h9m4 0h3M4 17h3m4 0h9M13 4v6M8 14v6",
+  pin: "M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 1114 0z M14 10a2 2 0 11-4 0 2 2 0 014 0z",
+  arrow: "M5 12h14m-6-6 6 6-6 6",
+  reply: "M20 6v5a4 4 0 01-4 4H5m4-4-4 4 4 4",
   history:
     "M4 5.5h12A1.5 1.5 0 0 1 17.5 7v6A1.5 1.5 0 0 1 16 14.5H9.5L6 17.5v-3H4A1.5 1.5 0 0 1 2.5 13V7A1.5 1.5 0 0 1 4 5.5zM20 9.5v6a1.5 1.5 0 0 1-1.5 1.5H18v2.5L15 17",
   memory:
@@ -50,6 +51,14 @@ let lang = deviceLanguage();
 let S = STRINGS[lang];
 let settings = { lang: null, userName: "", readAloud: false };
 let roster = [];
+let illustratedLooks = [];
+let selection = 0;
+let requestedId = null;
+const unsent = new Map();
+let historyLines;
+let historyLang;
+let followScroll = true;
+let pollTimer;
 let compose = null;
 /** The character on stage, as the handler last described it. */
 let current = null;
@@ -92,6 +101,22 @@ function localNow() {
 
 const nameOf = (meta) => (lang === "zh" ? meta?.nameZh : meta?.name) || meta?.name || "";
 const taglineOf = (meta) => (lang === "zh" ? meta?.taglineZh : meta?.tagline) || "";
+function artOf(meta) {
+  if (!meta) return null;
+  const look = lookOf(meta.kind, meta.look);
+  return illustratedLooks.find(
+    (art) =>
+      art.kind === meta.kind &&
+      Object.entries(lookOf(art.kind, art.look)).every(
+        ([key, value]) => look[key].toLowerCase() === value.toLowerCase(),
+      ),
+  )?.id;
+}
+
+function drawCharacter(meta, mood, options) {
+  return portrait(meta, mood, { ...options, art: artOf(meta) });
+}
+
 const helloOf = (meta) => (lang === "zh" ? meta?.helloZh : meta?.hello) || "";
 
 /** A reply as paragraphs, an action between asterisks set apart; text only. */
@@ -114,60 +139,68 @@ function copy() {
   document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
   for (const node of document.querySelectorAll("[data-copy]"))
     node.textContent = S[node.dataset.copy];
-  $("add").innerHTML = icon("plus");
-  $("add").append(el("span", { textContent: S.add }));
-  const label = (id, name, text) => {
-    $(id).innerHTML = icon(name);
-    $(id).title = text;
-    $(id).setAttribute("aria-label", text);
+  document.title = S.brand;
+  const label = (id, name, text, visible = false) => {
+    const button = $(id);
+    button.innerHTML = icon(name);
+    if (visible) button.append(el("span", { textContent: text }));
+    button.title = text;
+    button.setAttribute("aria-label", text);
   };
-  label("open-history", "history", S.history);
-  label("open-memory", "memory", S.memory);
-  label("open-card", "card", S.card);
-  label("chapter", "chapter", `${S.chapter}: ${S.chapterHelp}`);
+  label("add", "plus", S.add, true);
+  label("open-roster", "card", S.roster, true);
+  label("open-memory", "memory", S.memory, true);
+  label("open-settings", "settings", S.settings, true);
+  label("open-card", "card", S.card, true);
+  label("chapter", "chapter", S.chapter);
   label("sheet-close", "close", S.close);
   label("aloud", "aloud", S.readAloud);
+  $("pin").innerHTML = icon("pin");
   $("aloud").setAttribute("aria-pressed", String(settings.readAloud));
-  $("ai-chip").title = S.aiChipHelp;
   $("say-text").placeholder = S.say;
+  $("say-text").setAttribute("aria-label", S.say);
   $("locale").value = lang;
-  $("locale").setAttribute("aria-label", S.language);
   $("user-name").placeholder = S.yourNameHint;
 }
 
+function thumbnail(meta, mood = "neutral") {
+  const mini = el("span", { className: "cc-mini" });
+  if (meta) mini.innerHTML = drawCharacter(meta, mood, { face: true });
+  return mini;
+}
+
+function rosterRows() {
+  return roster.map((row) => {
+    const button = el(
+      "button",
+      { type: "button" },
+      thumbnail(row.meta),
+      el("span", { className: "cc-row-name", textContent: nameOf(row.meta) || row.id }),
+    );
+    button.setAttribute("aria-current", String(row.id === current?.id));
+    button.title = taglineOf(row.meta) || row.error || row.id;
+    button.onclick = () => {
+      closeSheet();
+      void select(row.id);
+    };
+    return el("li", {}, button);
+  });
+}
+
 function drawRoster() {
-  $("roster").replaceChildren(
-    ...roster.map((row) => {
-      const mini = el("span", { className: "cc-mini" });
-      mini.innerHTML = portrait(
-        row.meta,
-        row.id === current?.id ? (draft?.mood ?? current.mood) : "neutral",
-        { face: true },
-      );
-      const button = el(
-        "button",
-        { type: "button" },
-        mini,
-        el(
-          "span",
-          {},
-          el("span", { className: "cc-row-name", textContent: nameOf(row.meta) || row.id }),
-          el("span", {
-            className: "cc-row-sub",
-            textContent: row.error ? S.cardBroken : S.levels[row.bond.level - 1],
-          }),
-        ),
-      );
-      button.setAttribute("aria-current", String(row.id === current?.id));
-      button.title = taglineOf(row.meta);
-      button.onclick = () => select(row.id);
-      return el("li", {}, button);
-    }),
-  );
+  $("roster").replaceChildren(...rosterRows());
+  if (sheet === "roster") drawSheet();
 }
 
 function drawScene() {
-  $("scene").innerHTML = scene(current?.scene ?? "plain", phaseOf(new Date().getHours()));
+  const place = current?.scene ?? "plain";
+  const phase = phaseOf(new Date().getHours());
+  $("place").textContent = S.scenes[place] ?? S.scenes.plain;
+  const key = `${place}/${phase}`;
+  if ($("scene").dataset.key !== key) {
+    $("scene").innerHTML = scene(place, phase);
+    $("scene").dataset.key = key;
+  }
 }
 
 function drawPortrait(pop = false) {
@@ -179,7 +212,7 @@ function drawPortrait(pop = false) {
   if (host.dataset.mood === mood && host.dataset.id === current?.id && !pop) return;
   host.dataset.mood = mood;
   host.dataset.id = current?.id ?? "";
-  host.innerHTML = current?.meta ? portrait(current.meta, mood) : "";
+  host.innerHTML = current?.meta ? drawCharacter(current.meta, mood) : "";
   host.setAttribute("aria-label", current?.meta ? `${nameOf(current.meta)}: ${S.moods[mood]}` : "");
   host.dataset.pop = "1";
   setTimeout(() => delete host.dataset.pop, 340);
@@ -191,11 +224,116 @@ function napping() {
   return Date.now() - new Date(current.lastTalkAt).getTime() > NAP_AFTER_MS;
 }
 
+function message(role, text, at, mood) {
+  const user = role === "user";
+  const body = el("div", { className: "cc-bubble" });
+  speech(body, text);
+  const by = el(
+    "div",
+    { className: "cc-by" },
+    user ? settings.userName || S.you : nameOf(current?.meta),
+  );
+  if (at)
+    by.append(
+      el("time", {
+        dateTime: at,
+        textContent: new Date(at).toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" }),
+      }),
+    );
+  const turn = el(
+    "article",
+    { className: "cc-turn" },
+    ...(user ? [] : [thumbnail(current?.meta, mood)]),
+    el("div", { className: "cc-message" }, by, body),
+  );
+  turn.dataset.role = role;
+  return turn;
+}
+
+function renderHistory() {
+  const history = $("history");
+  const lines = current?.lines;
+  if (historyLines === lines && historyLang === lang) return;
+  historyLines = lines;
+  historyLang = lang;
+  history.replaceChildren();
+  if (!current?.meta) return;
+
+  let lastDay = "";
+  function dateline(at) {
+    const d = at ? new Date(at) : new Date();
+    const day = d.toLocaleDateString(lang, { month: "short", day: "numeric", year: "numeric" });
+    if (day !== lastDay) history.append(el("p", { className: "cc-dateline", textContent: day }));
+    lastDay = day;
+  }
+
+  if (helloOf(current.meta)) {
+    dateline(lines[0]?.at);
+    const hello = message("character", helloOf(current.meta), null, "happy");
+    hello.querySelector(".cc-bubble").id = "greeting";
+    history.append(hello);
+    if (!lines.length) typeHello(current.meta);
+  }
+  for (const line of lines) {
+    dateline(line.at);
+    if (line.role === "note") {
+      const text = line.text.startsWith("level:")
+        ? S.levelUp(nameOf(current.meta), S.levels[Number(line.text.slice(6)) - 1])
+        : S.chapterNote;
+      history.append(el("p", { className: "cc-stage-note", textContent: text }));
+    } else history.append(message(line.role, line.text, line.at, line.mood));
+  }
+}
+
+function buttonsFor(choices, glyph) {
+  return choices.map((choice) => {
+    const button = el("button", { type: "button" }, el("span", { textContent: choice }));
+    button.insertAdjacentHTML("beforeend", icon(glyph));
+    button.onclick = () => say(choice, { keepDraft: true });
+    return button;
+  });
+}
+
+function drawConversation() {
+  const meta = current?.meta;
+  renderHistory();
+  const live = $("live-turn");
+  live.hidden = !busy;
+  if (busy) {
+    if (!live.firstChild) live.append(message("character", "", null, "thinking"));
+    speech(live.querySelector(".cc-bubble"), draft?.text || S.thinking(nameOf(meta)));
+  } else live.replaceChildren();
+
+  const note = $("stage-note");
+  const status = current?.error || failure || (napping() ? S.napping(nameOf(meta)) : "");
+  note.hidden = !status;
+  note.textContent = failure ? `${S.failed} ${failure}` : status;
+  const prompts = current?.starter && !current.lines.length && !busy ? S.prompts[current.id] : null;
+  const topics = $("topics");
+  topics.replaceChildren();
+  if (prompts) topics.append(el("h3", { textContent: S.topics }), ...buttonsFor(prompts, "arrow"));
+  $("choices").replaceChildren(...buttonsFor(busy ? [] : (current?.choices ?? []), "reply"));
+  if (followScroll)
+    $("transcript").scrollTop = current?.lines.length ? $("transcript").scrollHeight : 0;
+}
+
+function syncSend() {
+  const send = $("send");
+  const text = busy ? S.stop : S.send;
+  send.innerHTML = icon(busy ? "stop" : "send");
+  send.append(el("span", { textContent: text }));
+  send.setAttribute("aria-label", text);
+  send.disabled = busy
+    ? !reader || !current?.sessionId
+    : !current?.meta || !$("say-text").value.trim();
+}
+
 function drawStage() {
   const meta = current?.meta;
-  $("who-name").textContent = nameOf(meta) || current?.id || "";
+  const name = nameOf(meta) || current?.id || "";
+  $("who-name").textContent = name;
   $("who-tagline").textContent = taglineOf(meta);
-  $("speaker").textContent = nameOf(meta);
+  $("chat-title").textContent = S.chatWith(name);
   const level = current?.bond.level ?? 1;
   const floor = LEVEL_FLOORS[level - 1];
   const next = LEVEL_FLOORS[level] ?? floor;
@@ -209,58 +347,10 @@ function drawStage() {
     `${S.levels[level - 1]}. ${S.bondHelp(current?.bond.days ?? 0)}`,
   );
 
-  const lines = current?.lines ?? [];
-  const lastUser = [...lines].reverse().find((l) => l.role === "user");
-  const lastSaid = [...lines].reverse().find((l) => l.role === "character");
-  // The person's last line keeps its row whether or not there is one, so nothing below moves.
-  $("said").hidden = false;
-  $("said").dataset.empty = lastUser ? "0" : "1";
-  $("said").textContent = lastUser?.text ?? " ";
-  const note = $("stage-note");
-  note.hidden = true;
-  if (draft?.text) {
-    speech($("line"), draft.text);
-    $("line").scrollTop = $("line").scrollHeight;
-  } else if (busy) {
-    $("line").replaceChildren();
-    note.hidden = false;
-    note.textContent = S.thinking(nameOf(meta));
-  } else if (failure) {
-    $("line").replaceChildren();
-    note.hidden = false;
-    note.textContent = `${S.failed} ${failure}`;
-  } else if (napping()) {
-    $("line").replaceChildren();
-    note.hidden = false;
-    note.textContent = S.napping(nameOf(meta));
-  } else if (lastSaid && lines.indexOf(lastSaid) > lines.indexOf(lastUser)) {
-    speech($("line"), lastSaid.text);
-    // A level reached by this reply is said once, after it: in the reply's own flow, so it
-    // scrolls with the words and never covers them.
-    const reached =
-      lines.at(-1)?.role === "note" && lines.at(-1).text.startsWith("level:")
-        ? Number(lines.at(-1).text.slice(6))
-        : 0;
-    if (reached)
-      $("line").append(
-        el("p", {
-          className: "cc-level",
-          textContent: S.levelUp(nameOf(meta), S.levels[reached - 1]),
-        }),
-      );
-  } else if (!lastUser) typeHello(meta);
-  else $("line").replaceChildren();
-
-  $("choices").replaceChildren(
-    ...(busy ? [] : (current?.choices ?? [])).map((choice) => {
-      const b = el("button", { type: "button", textContent: choice });
-      b.onclick = () => say(choice);
-      return b;
-    }),
-  );
-  $("send").innerHTML = icon(busy ? "stop" : "send");
-  $("send").title = busy ? S.stop : S.send;
-  $("send").setAttribute("aria-label", busy ? S.stop : S.send);
+  drawConversation();
+  syncSend();
+  $("open-memory").disabled = !current;
+  $("open-card").disabled = !current;
   $("say-text").disabled = !meta;
   $("chapter").disabled = busy || !current?.sessionId;
   drawPortrait();
@@ -271,17 +361,19 @@ function typeHello(meta) {
   const text = helloOf(meta);
   const key = `${current?.id}:${lang}`;
   if (typedFor === key || reducedMotion()) {
-    if (typeTimer === null) speech($("line"), text);
+    if (typeTimer === null && $("greeting")) speech($("greeting"), text);
     typedFor = key;
     return;
   }
   stopTyping();
   typedFor = key;
+  const greeting = $("greeting");
+  greeting.replaceChildren();
   let shown = 0;
   talking(true);
   typeTimer = setInterval(() => {
     shown = Math.min(text.length, shown + 2);
-    speech($("line"), text.slice(0, shown));
+    speech(greeting, text.slice(0, shown));
     if (shown >= text.length) stopTyping();
   }, 45);
 }
@@ -291,38 +383,32 @@ function stopTyping() {
   clearInterval(typeTimer);
   typeTimer = null;
   talking(false);
-  if (current?.meta && !current.lines.some((l) => l.role === "user"))
-    speech($("line"), helloOf(current.meta));
+  if ($("greeting") && current?.meta) speech($("greeting"), helloOf(current.meta));
 }
 
 function drawSheet() {
-  $("app").dataset.sheet = sheet ? "open" : "none";
-  $("sheet").hidden = !sheet;
+  const dialog = $("sheet");
+  if (!sheet) {
+    if (dialog.open) dialog.close();
+    return;
+  }
   const body = $("sheet-body");
   body.replaceChildren();
-  if (!sheet) return;
+  body.hidden = sheet === "settings";
+  $("settings-fields").hidden = sheet !== "settings";
   $("sheet-title").textContent = {
-    history: S.history,
+    roster: S.roster,
+    settings: S.settings,
     memory: S.memory,
     card: S.card,
     add: S.newTitle,
   }[sheet];
-  if (sheet === "history") {
-    const log = el("div", { className: "cc-log" });
-    for (const line of current?.lines ?? []) {
-      const p = el("p");
-      p.dataset.role = line.role;
-      if (line.role === "note")
-        p.textContent = line.text.startsWith("level:")
-          ? S.levelUp(nameOf(current.meta), S.levels[Number(line.text.slice(6)) - 1])
-          : S.chapterNote;
-      else p.textContent = line.text;
-      log.append(p);
-    }
-    body.append(
-      log.childElementCount ? log : el("p", { className: "cc-help", textContent: S.historyEmpty }),
-    );
-    body.scrollTop = body.scrollHeight;
+  if (!dialog.open) dialog.showModal();
+  if (sheet === "roster") {
+    const add = el("button", { type: "button", className: "cc-tool" }, S.add);
+    add.insertAdjacentHTML("afterbegin", icon("plus"));
+    add.onclick = toggle("add");
+    body.append(el("ul", { className: "cc-roster-list" }, ...rosterRows()), add);
   }
   if (sheet === "memory") {
     const items = current?.memory ?? [];
@@ -410,7 +496,7 @@ function drawCard(body) {
   const look = lookOf(kind, card.look);
   const face = el("div", { className: "cc-preview-face" });
   const redraw = () =>
-    (face.innerHTML = portrait({ kind: card.fields.kind, look: card.look }, previewMood));
+    (face.innerHTML = drawCharacter({ kind: card.fields.kind, look: card.look }, previewMood));
   const moods = el("div", { className: "cc-moods" });
   for (const mood of MOODS) {
     const b = el("button", { type: "button", textContent: S.moods[mood] });
@@ -521,7 +607,15 @@ function drawCard(body) {
         (value) => (card.fields.scene = value),
       ),
     ),
-    el("div", {}, el("p", { className: "cc-help", textContent: S.colours }), swatches),
+    el(
+      "div",
+      {},
+      el("p", { className: "cc-help", textContent: S.colours }),
+      swatches,
+      ...(artOf(current.meta)
+        ? [el("p", { className: "cc-help", textContent: S.customLook })]
+        : []),
+    ),
     Object.keys(PARTS[kind] ?? {}).length === 0
       ? ""
       : el(
@@ -627,52 +721,71 @@ function drawAdd(body) {
 
 async function refreshRoster() {
   const data = await api("/characters");
-  roster = data.characters;
+  const order = ["sunny", ...illustratedLooks.map((art) => art.id)];
+  const rank = (id) => (order.includes(id) ? order.indexOf(id) : order.length);
+  roster = data.characters.toSorted((a, b) => rank(a.id) - rank(b.id));
   compose = data.compose;
   drawRoster();
 }
 
 async function refresh() {
-  if (!current) return;
-  current = await api(`/characters/${current.id}`);
+  if (!current || current.id !== requestedId) return;
+  const version = selection;
+  const data = await api(`/characters/${current.id}`);
+  if (version !== selection) return;
+  const wasRunning = busy;
+  current = data;
   failure = current.failure;
-  if (!current.running) {
-    busy = false;
+  busy = current.running;
+  if (!busy) {
     draft = null;
     talking(false);
     stopReader();
     const last = current.lines.at(-1);
-    if (last?.role === "character" || last?.role === "note")
-      readAloud(current.lines.findLast((l) => l.role === "character")?.text);
+    if (wasRunning && (last?.role === "character" || last?.role === "note")) {
+      const reply = current.lines.findLast((l) => l.role === "character")?.text;
+      $("announcement").textContent = reply ?? "";
+      readAloud(reply);
+    }
   }
   const row = roster.find((r) => r.id === current.id);
   if (row) Object.assign(row, { bond: current.bond, mood: current.mood });
   drawRoster();
   drawScene();
   drawStage();
-  if (sheet) drawSheet();
+  if (sheet === "memory") drawSheet();
 }
 
 async function select(id, { keepSheet = false } = {}) {
   if (!id) return;
+  const version = ++selection;
+  requestedId = id;
+  if (current) unsent.set(current.id, $("say-text").value);
   stopReader();
-  if (id !== current?.id) stopTyping();
+  stopTyping();
+  talking(false);
+  const data = await api(`/characters/${id}`);
+  if (version !== selection) return;
+  if (!keepSheet) closeSheet();
+  current = data;
+  $("announcement").textContent = "";
   draft = null;
-  busy = false;
   awake = false;
-  if (!keepSheet && sheet === "add") sheet = null;
-  current = await api(`/characters/${id}`);
-  failure = current.failure;
-  busy = current.running;
+  failure = data.failure;
+  busy = data.running;
+  $("say-text").value = unsent.get(id) ?? "";
+  followScroll = true;
   drawRoster();
   drawScene();
+  delete $("portrait").dataset.id;
   drawStage();
   drawSheet();
-  if (busy) follow(current.sessionId);
+  if (busy) void follow(current.sessionId);
 }
 
 let talkTimer = null;
 function talking(on) {
+  if (on && (talkTimer !== null || reducedMotion())) return;
   clearInterval(talkTimer);
   talkTimer = null;
   const host = $("portrait");
@@ -682,6 +795,7 @@ function talking(on) {
 }
 
 function stopReader() {
+  clearTimeout(pollTimer);
   reader?.close();
   reader = null;
 }
@@ -689,18 +803,24 @@ function stopReader() {
 /** Follows the reply as it is written; without the page SDK, asks the handler until it is done. */
 async function follow(sessionId) {
   stopReader();
+  const version = selection;
+  const active = () => version === selection && busy && current?.sessionId === sessionId;
+  const poll = async () => {
+    if (!active()) return;
+    await refresh();
+    if (active()) pollTimer = setTimeout(poll, 700);
+  };
   try {
     sdk ??= await import("../sdk/workbench.js");
   } catch {
-    const poll = async () => {
-      await refresh();
-      if (busy) setTimeout(poll, 1200);
-    };
-    return void setTimeout(poll, 1200);
+    if (active()) pollTimer = setTimeout(poll, 700);
+    return;
   }
+  if (!active()) return;
   let done = "";
   let live = "";
   const mine = (reader = sdk.followSession(sessionId, { tailLimit: 1 }));
+  syncSend();
   mine.on("event", ({ record }) => {
     if (reader !== mine || record.origin?.length) return;
     const p = record.payload || {};
@@ -711,14 +831,12 @@ async function follow(sessionId) {
     } else if (p.type === "text" && p.role === "assistant") {
       done = done ? `${done}\n\n${p.text}` : p.text;
       live = "";
-    } else if (p.type === "task_end") return void refresh();
+    } else if (p.type === "task_end") return void poll();
     else return;
     if (!busy) return;
     const next = draftOf(done && live ? `${done}\n\n${live}` : done || live);
-    const moodChanged = next.mood !== (draft?.mood ?? null);
     draft = next;
     talking(Boolean(live));
-    if (moodChanged) drawRoster();
     drawStage();
   });
   mine.on("reset", () => {
@@ -726,17 +844,19 @@ async function follow(sessionId) {
   });
 }
 
-async function say(text) {
+async function say(text, { keepDraft = false } = {}) {
   const words = String(text ?? "").trim();
-  if (!words || busy || !current?.meta) return;
+  if (!words || busy || !current?.meta || current.id !== requestedId) return;
+  const version = selection;
+  followScroll = true;
   stopTyping();
   awake = true;
   busy = true;
   failure = null;
   draft = null;
-  current.lines.push({ role: "user", text: words, at: localNow() });
+  current.lines = [...current.lines, { role: "user", text: words, at: localNow() }];
   current.choices = [];
-  $("say-text").value = "";
+  if (!keepDraft) $("say-text").value = "";
   drawStage();
   try {
     const { sessionId } = await post(`/characters/${current.id}/say`, {
@@ -744,11 +864,14 @@ async function say(text) {
       now: localNow(),
       lang,
     });
+    if (version !== selection) return;
     current.sessionId = sessionId;
     follow(sessionId);
   } catch (e) {
+    if (version !== selection) return;
     busy = false;
     failure = String(e.message ?? e);
+    if (!$("say-text").value) $("say-text").value = words;
     drawStage();
   }
 }
@@ -776,7 +899,7 @@ $("say").onsubmit = (event) => {
 $("say-text").onkeydown = (event) => {
   if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
     event.preventDefault();
-    $("say").requestSubmit();
+    if (!busy) $("say").requestSubmit();
   }
 };
 $("say-text").onfocus = () => {
@@ -784,28 +907,51 @@ $("say-text").onfocus = () => {
   awake = true;
   drawStage();
 };
+$("say-text").oninput = syncSend;
+$("transcript").onscroll = () => {
+  const log = $("transcript");
+  followScroll = log.scrollHeight - log.scrollTop - log.clientHeight < 45;
+};
+function closeSheet() {
+  sheet = null;
+  drawSheet();
+}
 const toggle = (name) => () => {
-  sheet = sheet === name ? null : name;
+  sheet = name;
   drawSheet();
 };
-$("open-history").onclick = toggle("history");
+$("open-roster").onclick = toggle("roster");
+$("open-settings").onclick = toggle("settings");
 $("open-memory").onclick = toggle("memory");
 $("open-card").onclick = toggle("card");
 $("add").onclick = toggle("add");
-$("sheet-close").onclick = () => {
-  sheet = null;
-  drawSheet();
+$("sheet-close").onclick = closeSheet;
+$("sheet").onclose = () => {
+  if (!$("sheet").open) sheet = null;
+};
+$("sheet").onclick = (event) => {
+  if (event.target !== $("sheet")) return;
+  const rect = $("sheet").getBoundingClientRect();
+  if (
+    event.clientX < rect.left ||
+    event.clientX > rect.right ||
+    event.clientY < rect.top ||
+    event.clientY > rect.bottom
+  )
+    closeSheet();
 };
 $("chapter").onclick = async () => {
   await post(`/characters/${current.id}/chapter`);
   await refresh();
 };
 $("locale").onchange = async () => {
+  stopTyping();
   lang = $("locale").value;
   S = STRINGS[lang];
   settings = (await put("/settings", { lang })).settings;
   copy();
   drawRoster();
+  drawScene();
   drawStage();
   drawSheet();
 };
@@ -821,10 +967,24 @@ document.addEventListener("visibilitychange", () => {
   else if (busy && current?.sessionId) follow(current.sessionId);
 });
 
+const stage = $("stage");
+stage.onpointermove = (event) => {
+  if (reducedMotion() || event.pointerType === "touch") return;
+  const box = stage.getBoundingClientRect();
+  const x = (event.clientX - box.left) / box.width - 0.5;
+  const y = (event.clientY - box.top) / box.height - 0.5;
+  stage.style.setProperty("--look-x", `${x * 7}px`);
+  stage.style.setProperty("--look-y", `${y * 4}px`);
+  stage.style.setProperty("--lean", `${x * 1.8}deg`);
+};
+stage.onpointerleave = () => {
+  for (const prop of ["--look-x", "--look-y", "--lean"]) stage.style.removeProperty(prop);
+};
+
 // Blinks at an uneven pace, and the room's light follows the clock.
 (function blink() {
   const host = $("portrait");
-  host.dataset.blink = "1";
+  if (!reducedMotion()) host.dataset.blink = "1";
   setTimeout(() => (host.dataset.blink = "0"), 130);
   setTimeout(blink, 2600 + Math.random() * 3200);
 })();
@@ -857,6 +1017,7 @@ function listen() {
   copy();
   const info = await api("/info");
   settings = info.settings;
+  illustratedLooks = info.illustratedLooks ?? [];
   if (settings.lang) {
     lang = settings.lang;
     S = STRINGS[lang];
@@ -875,4 +1036,7 @@ function listen() {
   )[0];
   await select(recent?.id);
   listen();
-})();
+})().catch((error) => {
+  $("unsupported").hidden = false;
+  $("unsupported").textContent = String(error.message ?? error);
+});

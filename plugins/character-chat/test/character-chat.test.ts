@@ -303,10 +303,10 @@ describe("the roster", () => {
     expect(roster.map((row) => row.id)).toEqual([
       "broken",
       "keeper",
+      "mugi",
       "pip",
-      "steep",
+      "ren",
       "sunny",
-      "tock",
     ]);
     expect(roster.find((row) => row.id === "keeper")).toMatchObject({
       meta: { name: "Keeper", kind: "human", scene: "rooftop" },
@@ -339,7 +339,7 @@ describe("a conversation over time", () => {
     for (let n = 0; n < 5; n++)
       shown = await exchange(
         t,
-        "tock",
+        "ren",
         `Riddle ${n}`,
         '<stage mood="happy" bond="2"/>\nCorrect.',
         day(n),
@@ -354,12 +354,12 @@ describe("a conversation over time", () => {
   it("keeps the person's line and says nothing when they stop a reply", async () => {
     const t = fakeHost();
     await t.call("GET", "/characters");
-    const said = await t.call("POST", "/characters/steep/say", {
+    const said = await t.call("POST", "/characters/mugi/say", {
       text: "Long story",
       now: "2026-11-17T21:00:00+08:00",
     });
     t.stop(said.body.sessionId);
-    const shown = (await t.call("GET", "/characters/steep")).body;
+    const shown = (await t.call("GET", "/characters/mugi")).body;
     expect(shown.failure).toBeNull();
     expect(shown.running).toBe(false);
     expect(shown.lines).toEqual([expect.objectContaining({ role: "user", text: "Long story" })]);

@@ -3,7 +3,18 @@
 export const STRINGS = {
   en: {
     title: "AI Character Chat",
+    brand: "Character Post",
+    chatWith: (name) => (name ? `Chat with ${name}` : "Conversation"),
     roster: "Characters",
+    settings: "Settings",
+    topics: "Where to start",
+    customLook: "Changing the colours or accessories switches to a customizable portrait.",
+    prompts: {
+      sunny: ["Turn my day into a forecast", "Let’s look for shapes in the clouds"],
+      pip: ["I have a little good news", "Let’s sort the mystery mail"],
+      mugi: ["Pick a tea for my day", "Tell me a mountain story"],
+      ren: ["Give me a riddle", "Let’s play twenty questions"],
+    },
     add: "New character",
     aiChip: "AI character",
     aiChipHelp: "An AI plays this character. It is not a person.",
@@ -125,7 +136,18 @@ export const STRINGS = {
   },
   zh: {
     title: "AI 角色对话",
-    roster: "角色",
+    brand: "角色通信室",
+    chatWith: (name) => (name ? `和${name}聊天` : "对话"),
+    roster: "角色名册",
+    settings: "设置",
+    topics: "从这里聊起",
+    customLook: "修改配色或配饰后，将显示可自定义的立绘。",
+    prompts: {
+      sunny: ["把我的一天写成天气预报", "一起看看云朵像什么"],
+      pip: ["今天有件小好事", "一起给无名信找个收件人"],
+      mugi: ["为今天的我挑一杯茶", "讲个山里的故事吧"],
+      ren: ["出个谜语考考我", "来玩二十问"],
+    },
     add: "新角色",
     aiChip: "AI 角色",
     aiChipHelp: "这个角色由 AI 扮演，不是真人。",

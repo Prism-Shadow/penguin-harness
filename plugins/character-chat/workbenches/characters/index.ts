@@ -15,6 +15,12 @@ import {
 import type { Bond, CardMeta, Mood } from "./stage.js";
 import { STARTERS, TEMPLATE } from "./starters.js";
 
+// The browser matches these original looks even when a card has been renamed or imported.
+const illustratedLooks = Object.entries(STARTERS).flatMap(([id, text]) => {
+  const card = parseCard(text, id);
+  return "meta" in card ? [{ id, kind: card.meta.kind, look: card.meta.look }] : [];
+});
+
 type Line = { role: "user" | "character" | "note"; text: string; at: string; mood?: Mood };
 type Character = {
   sessionId: string | null;
@@ -367,6 +373,7 @@ export default {
                     return {
                       body: {
                         supported: files !== null,
+                        illustratedLooks,
                         settings: state.settings,
                         filesDir: files ? files.filePath("characters") : null,
                       },

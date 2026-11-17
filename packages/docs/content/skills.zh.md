@@ -258,7 +258,6 @@ Agent 可以在 Task 中重写自己的 `SKILL.md`。结合 Benchmark 评估和�
 | | `trace-lookup` | 在会话的 Trace 文件里查回更早的内容：先搜出某个细节所在的行，再只读这几行；用于压缩摘要或模型切换指向 Agent 所接续的上一段上下文的 Trace 时（新初始化的 `default_agent` 预装；已有的 Agent 从插件库安装） |
 | | `agent-company` | [公司模式](/company-mode)的完整工具包，包含七个 Skill：`company-setup`（与用户一起创建组织：一次问一个问题、给出摘要供确认，然后执行 `penguin org create`；从不招聘，也不提交工单）、`company-employee`（每个工位 Session 和工单 Session 都要遵循的协议：触发块、工单看板、阻塞、重负载或不可逆的工作先向董事会请示、频道礼仪、预算）、`company-ceo`（把使命拆解为工单、招聘、划分 Workspace、审查、向董事会汇报）、`company-hr`（日历排班、招聘与离职、评估）、`company-finance`（预算、每日审计、告警与暂停）、`company-research`（科研组织的作者与审稿人：先固定评测脚本与指标，在董事会批准的资源额度内跑实验循环、只保留能提升指标的改动，每个结论都交给一个设法推翻它的审稿人）和 `company-mirror`（数字分身公司：每位真实同事对应一个分身，绑定到这位同事的机器人，只传话、不开工单）。不预装：组织在创建 CEO、招聘员工时会安装它；需要能创建组织的 Agent 则从插件库安装 |
 | | `penguin-support` | PenguinHarness 产品客服，包含 `penguin-support` Skill（依据官方文档和源码解答产品问题、排查故障）和客服[工作台](#workbench-插件)：问题列表、新建问题弹窗，以及支持追问的对话详情。不预装：默认 Project 的内置客服 Agent「PenguinHarness Support」自带该插件，其他 Agent 可从插件库安装 |
-| | `character-chat` | AI 角色对话，包含 `character-chat` Skill（在普通对话里扮演角色卡、照常做实事，编写或导入角色卡，整理角色的记忆）和一个[工作台](#workbench-插件)：角色在舞台上以表情、十种情绪、场景与记忆本和你对话，并附角色卡编辑器。自带四个原创角色。不预装：需要时从插件库安装 |
 | 软件开发 | `software-development` | 端到端的软件开发，包含两个 Skill：`software-engineering`（在最小范围内调查、实现和验证）和 `web-design`（生成 Web UI 用的 Penguin 视觉语言） |
 | | `use-claude-code` | 通过 SSH 在远程主机上运行 Claude Code：持久 expect 会话、带 stdin 修复的无头 `-p` 模式、tmux 驱动的交互式 TUI，以及多轮连续性（不预装：需要时从插件库安装） |
 | AI 应用开发 | `agent-development` | PenguinHarness 上的 Agent 开发，包含六个 Skill：`agent-initialization`（根据需求搭建 Agent：它的 `AGENTS.md`、Skill 与钩子）、`penguin-sdk`（基于 SDK 构建 Agent/AI/RAG 应用，或经 Agent API 把程序接入 Agent；动手前先问用哪种方式）、`penguin-plugin`（搭建 Agent 在对话旁自己维护的 Workbench）、`unified-llm-api`（通过 `@prismshadow/mmsp` 调用模型 API）、`penguin-config`（管理模型密钥、默认值和 Vault 机密）和 `penguin-orchestration`（在 shell 里驱动 Agent、Session、成本和定时任务） |
@@ -266,6 +265,7 @@ Agent 可以在 Task 中重写自己的 `SKILL.md`。结合 Benchmark 评估和�
 | | `model-development` | 在自己的硬件上做模型开发，包含三个 Skill：`llamafactory`（微调）、`ollama`（运行本地模型）和 `vllm`（在 OpenAI 兼容端点后面提供服务） |
 | | `skill-porting` | 把外部来源（插件市场、skills.sh 注册表、GitHub 仓库或本地文件夹）的 Skill 经审查和规范化后移植到 Agent；也可以用其中的 `plugin-porting` Skill 把整个 Codex 或 Claude Code 插件转成 PenguinHarness 插件包，安装到服务端；或用其中的 `agent-porting` Skill 把 Claude Code、Codex、DeepSeek Harness、Qoder、Qwen Code 或 WorkBuddy 的 Agent 迁移成新的 Agent（见[导入 Agent](/agents#导入-agent)） |
 | Agent 运行沙箱 | `sandbox-bwrap`、`sandbox-seatbelt`、`sandbox-wsl`、`sandbox-dsh` | 服务端插件，不属于插件库内容：封禁 Agent 执行的每条命令的后端，由管理员安装到服务端。见[服务端插件](#服务端插件)和[设置](/settings#沙盒) |
+| 娱乐 | `character-chat` | AI 角色对话，包含 `character-chat` Skill（在普通对话里扮演角色卡、照常做实事，编写或导入角色卡，整理角色的记忆）和一个[工作台](#workbench-插件)：角色在舞台上以表情、十种情绪、场景与记忆本和你对话，并附角色卡编辑器。自带四个原创角色。不预装：需要时从插件库安装 |
 
 ## 工作原理
 

@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "penguin": {
-    "version": "2026.11.17.1",
+    "version": "2026.11.18.1",
     "appCenter": {
       "show": true,
       "title": "AI Character Chat",
