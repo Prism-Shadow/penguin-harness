@@ -38,7 +38,9 @@ an address of its own.
   end. In a phone-width column the card lies down.
 - **Ranking**: when the server sends popularity figures, a panel beside the grid (under it in a
   narrow column) lists up to ten plugins on two tabs, Popular (all-time installs) and Rising
-  (installs this week); a row opens that plugin's detail. Without figures there is no panel.
+  (installs this week); a row opens that plugin's detail. While the figures are placeholders,
+  "Sample data" stands beside the panel's heading, its reason on hover. Without figures there
+  is no panel.
 - **Detail**: a large layer over the market (the whole screen on a phone), opened from a card,
   the carousel or the ranking, and named in the address (`/plugins?plugin=<name>`): opening it
   adds a history entry, so Back closes it, and a pasted link opens it even when the tab or the

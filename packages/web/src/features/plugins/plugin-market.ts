@@ -13,8 +13,9 @@
  * - **The ranking** (`popularityOf`, `rankRows`): the market's popularity figures, when the
  *   server sends any — all-time installs ("Popular") and installs this week ("Rising") per
  *   package — as the rows they rank, most first. The figures are placeholders today
- *   (`source: "placeholder"`) until a real install-count API replaces them; by the product's
- *   decision the page draws them without saying so, and reads a live source the same way.
+ *   (`source: "placeholder"`) until a real install-count API replaces them (`"live"`); by the
+ *   product's decision the panel says "Sample data" beside its heading while they are, and
+ *   reads a live source the same way without it.
  * - **The sorts** (`sortRows`): the curation's order, recency, how many Agents of this Project
  *   use a plugin, the name, and — only while popularity figures exist — installs
  *   (`availableSorts`; a stored "popular" reads as the curation's order without them).

@@ -3274,6 +3274,9 @@ export const en: Strings = {
       rising: "Rising",
       installs: (n: string) => `${n} installs`,
       weekly: (n: string) => `${n} new installs this week`,
+      /** Beside the heading while the figures are placeholders, and the sentence on its hover. */
+      sample: "Sample data",
+      sampleHint: "These figures are sample data until real install counts are connected.",
     },
     /** The selected carousel's controls. */
     carousel: {

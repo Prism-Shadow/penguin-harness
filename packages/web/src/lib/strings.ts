@@ -3475,6 +3475,9 @@ export const zh = {
       rising: "飙升",
       installs: (n: string) => `${n} 次安装`,
       weekly: (n: string) => `本周新增 ${n} 次安装`,
+      /** Beside the heading while the figures are placeholders, and the sentence on its hover. */
+      sample: "示例数据",
+      sampleHint: "接入真实安装量之前，这里的数字均为示例数据。",
     },
     /** The selected carousel's controls. */
     carousel: {

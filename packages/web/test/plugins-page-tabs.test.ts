@@ -15,9 +15,12 @@
  * - Given the market sends popularity figures, the ranking beside the grid lists the plugins
  *   most installed first, a row opens that plugin's detail, and "Popular" is a sort; given none,
  *   neither the ranking nor that sort is there.
+ * - Given placeholder figures, the ranking says "Sample data" beside its heading, the reason a
+ *   hover away; given live figures, it says nothing of the kind.
  */
 import { createElement as h } from "react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { tooltipRequest } from "@prismshadow/penguin-ui";
 import type { PluginItem } from "@prismshadow/penguin-server/api";
 import { PluginsPage } from "../src/features/plugins/plugins-page";
 import { setActiveStrings } from "../src/lib/strings";
@@ -115,6 +118,36 @@ describe("the market's ranking", () => {
     await click(document.querySelectorAll<HTMLElement>(".showcase-ranking-open")[1]!);
     expect(details()).toEqual(["Charts"]);
     expect(whereIs(router)).toBe("/plugins?plugin=charts");
+  });
+
+  /** A market whose one counted plugin's figures come from `source`. */
+  const counted = (source: "placeholder" | "live") => ({
+    hero: [],
+    selected: [],
+    art: {},
+    source: "embedded",
+    popularity: {
+      source,
+      generatedAt: "2026-11-17",
+      items: { "@penguinharness/charts": { installs: 120, weekly: 3 } },
+    },
+  });
+  const note = () => document.querySelector(".showcase-ranking .showcase-ranking-note");
+
+  it("says its figures are sample data while they are placeholders, the reason on hover", async () => {
+    await open("/plugins", counted("placeholder"));
+    await waitFor(() => ranked().length === 1, 40);
+    expect(note()?.textContent).toContain(en.plugins.ranking.sample);
+    expect(tooltipRequest(note()!)?.label).toBe(en.plugins.ranking.sampleHint);
+  });
+
+  it("says nothing of sample data once its figures are live", async () => {
+    await open("/plugins", counted("live"));
+    await waitFor(() => ranked().length === 1, 40);
+    expect(note()).toBeNull();
+    expect(document.querySelector(".showcase-ranking")?.textContent).not.toContain(
+      en.plugins.ranking.sample,
+    );
   });
 
   it("is not there, nor is the popular sort, without popularity figures", async () => {

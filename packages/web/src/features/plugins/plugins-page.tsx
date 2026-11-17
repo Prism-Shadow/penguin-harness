@@ -25,6 +25,7 @@
  * - **The ranking** stands beside the grid (under it in a narrow column) while the curation
  *   carries popularity figures: the most installed plugins, and this week's risers, each row
  *   opening its plugin's detail; without figures there is no ranking and no "popular" sort.
+ *   While the figures are placeholders (`source: "placeholder"`), its heading says "Sample data".
  * - **The detail** is in the URL too (`?plugin=<name>`): opening one pushes a history entry, so
  *   Back closes it; closing one a link opened replaces the entry. The plugin a link names shows
  *   its detail even while the tab or the search hides its card.
@@ -967,9 +968,17 @@ export function PluginsPage() {
     rankingBoard("installs", S.plugins.ranking.popular, ICONS.download, S.plugins.ranking.installs),
     rankingBoard("weekly", S.plugins.ranking.rising, ICONS.arrowUpRight, S.plugins.ranking.weekly),
   ].filter((board) => board.entries.length > 0);
+  // While the figures are placeholders, the panel says so beside its heading.
+  const sample = popularity?.source === "placeholder";
   const ranking =
     rankingBoards.length === 0 ? undefined : (
-      <ShowcaseRanking title={S.plugins.ranking.title} boards={rankingBoards} />
+      <ShowcaseRanking
+        title={S.plugins.ranking.title}
+        {...(sample
+          ? { note: S.plugins.ranking.sample, noteHint: S.plugins.ranking.sampleHint }
+          : {})}
+        boards={rankingBoards}
+      />
     );
 
   const cardProps = (row: PluginRow): PluginCardProps => ({
