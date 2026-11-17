@@ -1344,6 +1344,13 @@ export const zh = {
       wrap: "自动换行",
       crumbs: "路径条",
       crumbsHint: "放不下时，开头的几段收进一个「…」，文件名最后让位",
+      narrow: "窄树窗格",
+      narrowHint:
+        "放不下搜索框时收为放大镜按钮，点击即横跨标题行展开；框内为空时按 Esc 或失焦即收回",
+      narrowFolded: "收起",
+      narrowQuery: "框内有搜索词：一直保留",
+      refresh: "刷新",
+      upload: "上传",
       menu: "文件菜单",
       menuFile: "文件",
       menuFolder: "文件夹",
