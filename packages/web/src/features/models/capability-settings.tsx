@@ -110,6 +110,7 @@ export function CapabilityDialog({
     <Modal
       open
       title={S.voice.models}
+      widthClass="sm:max-w-2xl"
       onClose={() => {
         if (!busy) onClose();
       }}
