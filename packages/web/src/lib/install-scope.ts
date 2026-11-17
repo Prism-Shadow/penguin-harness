@@ -294,6 +294,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.pluginsLayout",
+    scope: "browser",
+    why: "The chosen plugin catalog view, cards or list, applies across projects and installations.",
+  },
+  {
+    kind: "exact",
     key: "penguin.pluginsSort",
     scope: "browser",
     why: "How the Plugins page orders its cards (selected first, recently updated, most used, name) — the MODE, valid against any root.",
