@@ -24,6 +24,7 @@ export type {
   UsageGroupRow,
   UsageModelSeries,
   UsageModelTotals,
+  UsageModelTotal,
   UsageAgentSeries,
   UsageResponse,
   UsageGranularity,
