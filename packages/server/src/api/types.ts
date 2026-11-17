@@ -8587,3 +8587,13 @@ export interface DesktopBrowserEventMessage {
   type: "desktop-browser-event";
   event: DesktopBrowserEvent;
 }
+
+export type {
+  Capability,
+  CapabilityArtifact,
+  CapabilityResult,
+  CapabilityRunRequest,
+  CapabilitySettings,
+  CapabilitySettingsPatch,
+  CapabilityUsage,
+} from "./capabilities.js";
