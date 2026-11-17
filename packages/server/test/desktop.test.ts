@@ -25,7 +25,6 @@ import {
   TEST_DESKTOP_TOKEN,
 } from "./helpers.js";
 import type { ErrorBody, MeResponse } from "../src/api/types.js";
-import type { ErrorBody, MeResponse } from "../src/api/types.js";
 import { wireShellUpdatePort } from "../src/services/desktop-update-port.js";
 import { FakePort } from "./builtin-browser/fake-shell.js";
 

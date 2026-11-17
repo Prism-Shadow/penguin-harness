@@ -21,7 +21,7 @@ import {
 } from "@prismshadow/penguin-core";
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import type { ApprovalMode } from "@prismshadow/penguin-library-sessions";
-import type { FilesStatResponse, GoalResponse, GoalStateView, RecalledMessageResponse, SessionBatchResult, SessionContextResponse, SessionCreateResponse, SessionForkResponse, SessionProcessesResponse, SessionResponse, SessionsResponse, SessionsBatchResponse, SubagentMessageResponse, RetryNowResponse, TaskCreateResponse } from "../../api/types.js";
+import type { FilesStatResponse, GoalResponse, GoalStateView, RecalledMessageResponse, SessionBatchResult, SessionContextResponse, SessionCreateResponse, SessionForkResponse, SessionProcessesResponse, SessionResponse, SessionsResponse, SessionsArchiveResponse, SessionsBatchResponse, SubagentMessageResponse, RetryNowResponse, TaskCreateResponse } from "../../api/types.js";
 import type {
   SessionSandbox,
 } from "@prismshadow/penguin-library-sessions";
