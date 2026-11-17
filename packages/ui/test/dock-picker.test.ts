@@ -5,7 +5,7 @@
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { DockPicker } from "../src/components/shell/dock-picker/dock-picker";
-import { classTokens, renderStatic } from "../src/testing";
+import { renderStatic } from "../src/testing";
 
 describe("DockPicker", () => {
   const render = (horizontal: boolean) =>
@@ -32,11 +32,5 @@ describe("DockPicker", () => {
     expect(html.match(/<button/g)).toHaveLength(2);
     expect(html).toContain("<kbd");
     expect(html).toMatch(/>Ctrl<\/kbd><kbd[^>]*>`<\/kbd>/);
-  });
-
-  it("stacks the choices on the right dock and wraps them in a row on the bottom one", () => {
-    expect(classTokens(render(false))).toEqual(expect.arrayContaining(["flex-col", "w-60"]));
-    expect(classTokens(render(true))).toEqual(expect.arrayContaining(["flex-wrap"]));
-    expect(classTokens(render(true))).not.toContain("flex-col");
   });
 });

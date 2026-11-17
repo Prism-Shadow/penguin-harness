@@ -46,6 +46,7 @@ import type {
 import { moduleDefOf } from "@prismshadow/penguin-core/kernel";
 import { pluginsPrefix } from "./install.js";
 import { unpackedAssetsDir } from "../hmr/asset-archives.js";
+
 import { readManifest } from "../hmr/manifest.js";
 import type { Plugin } from "@prismshadow/penguin-core/plugin";
 import type { LoadedPlugin } from "./host.js";
@@ -110,7 +111,7 @@ export async function readProjectPluginList(
     // configuration fault, but not this one's to fail the boot over: its models are just as
     // unreadable, and the deployment must still come up for every other Project. The list
     // view reports the fault on that Project (routes/plugins-installed.ts).
-    console.warn(
+    console.error(
       `[plugins] ${projectId}: .project_config.toml could not be read, its plugins are skipped: ${err instanceof Error ? err.message : String(err)}`,
     );
     return [];
@@ -120,7 +121,7 @@ export async function readProjectPluginList(
     parsed = parseToml(text);
   } catch (err) {
     // The same for one that does not parse.
-    console.warn(
+    console.error(
       `[plugins] ${projectId}: .project_config.toml is not valid TOML, its plugins are skipped: ${err instanceof Error ? err.message : String(err)}`,
     );
     return [];
@@ -336,10 +337,21 @@ export type { PluginDeclaration };
  * imported. Lets a surface say which plugin a loaded module came from, and why a listed one is
  * not there, without the runtime having to publish its load report.
  */
+/** What a listed specifier declares, plus how it came to be in the prefix. */
+export interface PluginDeclarationRead {
+  modules: string[];
+  replaces: string[];
+  builtin: boolean;
+  /** The prefix resolves this name through a link the `penguin plugin link` command parked. */
+  linked?: true;
+  /** The author directory the link points at (when `linked`). */
+  linkPath?: string;
+}
+
 export async function readPluginDeclaration(
   specifier: string,
   bases: readonly PluginBase[],
-): Promise<{ modules: string[]; replaces: string[]; builtin: boolean } | { error: string }> {
+): Promise<PluginDeclarationRead | { error: string }> {
   const fault = specifierFault(specifier);
   if (fault !== null) return { error: fault };
   const resolved = resolvePlugin(specifier, bases);
@@ -426,13 +438,13 @@ async function interfaceMisfits(
     ts = await loadTypeScript(assets);
   } catch (err) {
     if (!(err instanceof TypeScriptUnavailable)) throw err;
-    if (!compilerMissingLogged) console.warn(`[plugins] interfaces not compared: ${err.message}`);
+    if (!compilerMissingLogged) console.log(`[plugins] interfaces not compared: ${err.message}`);
     compilerMissingLogged = true;
     return [];
   }
   const fit = checkIfaces(ts, platformTable as unknown as IfaceTable, own, questions);
   if (fit.uncompared.length > 0) {
-    console.warn(
+    console.log(
       `[plugins] ${specifier}: ${fit.uncompared.length} interface(s) not compared — its table carries no copy of them`,
     );
   }
@@ -607,7 +619,7 @@ export async function loadPluginHost(
   // would not help.
   for (const [specifier, reason] of result.failed) {
     host.skip(specifier, reason);
-    console.warn(`[plugins] skipped ${specifier}: ${reason}`);
+    console.error(`[plugins] skipped ${specifier}: ${reason}`);
   }
   return host;
 }

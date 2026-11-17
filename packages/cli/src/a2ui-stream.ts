@@ -2,7 +2,7 @@
  * Prints the ```a2ui blocks of a streaming assistant reply as their text fallback.
  *
  * The Web App draws these blocks (a choice, a form, steps, a callout, a widget) as components. A terminal
- * cannot, so the CLI prints the readable Markdown each block stands for: core's
+ * cannot, so the CLI prints the readable Markdown each block stands for: A2UI's
  * `toFallbackMarkdown`, the same text a messaging channel receives. A choice becomes numbered
  * options the user answers by typing. The reply arrives in small deltas, and a block is JSON that
  * means nothing until it is whole, so the filter reads the stream line by line. Text and other
@@ -18,7 +18,7 @@
  * writes in, and the fallback's few labels sit inside the reply, so they follow the reply's own
  * language.
  */
-import { toFallbackMarkdown } from "@prismshadow/penguin-core/a2ui";
+import { toFallbackMarkdown } from "@prismshadow/a2ui";
 
 /** An open fence: its character and run length, which a closing line must match or exceed. */
 interface Fence {

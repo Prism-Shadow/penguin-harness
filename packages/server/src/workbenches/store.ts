@@ -7,6 +7,8 @@
  *   <agentStateDir>/workbenches/<id>/state.json     the workbench's own document (WorkbenchHost.getState)
  *   <agentStateDir>/workbenches/<id>/.harness/      the types it was written against (harness-types.ts)
  *   <agentStateDir>/workbenches/<id>/.build/        its emitted code, per revision (compile.ts)
+ *   <agentStateDir>/workbenches/<id>/.disabled      present: this workbench is switched off
+ *   <agentStateDir>/workbenches/.disabled           present: every workbench of the Agent is
  *
  * The folder's source is every file except `state.json` (the state is the workbench's data,
  * not its code, and survives a rollback untouched), `node_modules` and the dot entries, which
@@ -19,9 +21,36 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { removeLeftovers } from "./leftovers.js";
 import { blobOid, isGitName, treeId, type SourceFile } from "./repo.js";
+import { agentDir, readPluginIcon } from "@prismshadow/penguin-core";
 
 export const STATE_FILE = "state.json";
 export const UI_DIR = "ui";
+/**
+ * An empty file that switches workbenches off: in a workbench's folder, that one; beside the
+ * folders, all of the Agent's. A dot entry, so it is no part of the source, a version or an
+ * export, the watcher does not react to it, and a plugin update or an archive import (which
+ * replace source only) leaves it where it is.
+ */
+export const DISABLED_MARKER = ".disabled";
+
+/** Whether `dir` (a workbench's folder, or the folder of all of them) holds the off marker. */
+export async function isSwitchedOff(dir: string): Promise<boolean> {
+  return fs.lstat(path.join(dir, DISABLED_MARKER)).then(
+    () => true,
+    () => false,
+  );
+}
+
+/** Removes the off marker from `dir`, or writes it there (creating `dir` when it is missing). */
+export async function writeSwitch(dir: string, on: boolean): Promise<void> {
+  const marker = path.join(dir, DISABLED_MARKER);
+  if (on) {
+    await fs.rm(marker, { force: true });
+    return;
+  }
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(marker, "");
+}
 
 export interface WorkbenchFolder {
   id: string;
@@ -33,6 +62,14 @@ export interface WorkbenchFolder {
   revision: string;
   uiRev: string | null;
   pkg: { name: string; version: string | null };
+  /**
+   * The plugin icon (from `package.json#penguin.icon`, `icon.svg` at the root by default),
+   * read through core's own reader: an SVG's markup or a PNG's bytes base64-encoded — safe
+   * by the same face every plugin icon passes. An icon in one of the reader's other image
+   * formats (jpeg, webp, gif, avif) stays out of this face: the manifest keeps svg and png.
+   * Null when the workbench ships none or it is refused.
+   */
+  iconSvg: { kind: "svg" | "png"; data: string } | null;
 }
 
 export { workbenchesDir } from "@prismshadow/penguin-core";
@@ -115,7 +152,7 @@ export async function readFolder(dir: string, id: string): Promise<WorkbenchFold
   } catch {
     return null;
   }
-  let pkg: { name?: unknown; version?: unknown } = {};
+  let pkg: { name?: unknown; version?: unknown; penguin?: { icon?: unknown } } = {};
   try {
     pkg = JSON.parse(raw) as typeof pkg;
   } catch {
@@ -139,6 +176,18 @@ export async function readFolder(dir: string, id: string): Promise<WorkbenchFold
       name: typeof pkg.name === "string" && pkg.name !== "" ? pkg.name : id,
       version: typeof pkg.version === "string" ? pkg.version : null,
     },
+    iconSvg: ((icon) => {
+      if (icon === undefined) return null;
+      // The manifest face keeps two of the reader's formats: an SVG as its markup (already
+      // sanitized by the reader), a PNG as its bytes base64-encoded.
+      if (icon.format === "svg") return { kind: "svg", data: new TextDecoder().decode(icon.bytes) };
+      if (icon.format === "png")
+        return { kind: "png", data: Buffer.from(icon.bytes).toString("base64") };
+      return null;
+    })(
+      readPluginIcon(dir, typeof pkg.penguin?.icon === "string" ? pkg.penguin.icon : undefined)
+        .icon,
+    ),
   };
 }
 

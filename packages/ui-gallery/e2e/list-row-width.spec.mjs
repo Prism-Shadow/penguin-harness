@@ -3,7 +3,9 @@
  *
  * The component library's data board (`lib.html?topic=data`) holds a collapsible section of
  * memory rows, as Agent settings lists them: a long id, a description that runs far past any
- * card, a date and three icon actions, beside a short row. A line that truncates with `nowrap`
+ * card, a date and three icon actions, beside a short row — and one row whose title carries a
+ * mark after it (`titleTrail`), the plugin that wrote it, which wraps under the title rather
+ * than widen the row. A line that truncates with `nowrap`
  * counts at its full length in a container's minimum width; once, one such row widened the
  * section's body past the card, so every row ran off its edge and the card clipped each row's
  * actions, the short rows' too.
@@ -29,7 +31,7 @@ async function openSection(page, { theme, lang, size = "m", mode = "light" }) {
   const section = page
     .getByRole("button", { name: new RegExp(TITLE[lang]) })
     .locator("xpath=ancestor::section[1]");
-  await expect(section.locator("li")).toHaveCount(3);
+  await expect(section.locator("li")).toHaveCount(4);
   return section;
 }
 

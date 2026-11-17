@@ -21,7 +21,7 @@ description: 浏览插件，为 Agent 安装 Skill 和钩子包，为 Project �
 4. 要缩小范围，在搜索框中输入。有搜索词时，所有分组都会展开。
 5. 点击卡片打开详情。
 
-每张卡片显示插件的图标、名称和简短描述，一行形如 `v<版本> · <状态> · N 个 Agent 在用` 的信息，以及**内置**等标签（管理员安装的插件标为**服务端安装**）；按其他方式分组时，还会标出分类。版本就是插件的 npm 版本。Agent 数量只对含 Skill、钩子或 MCP Server 的插件显示，统计的是当前 Project 里完整装有这个插件、或已装副本被更新检查列为落后的 Agent。状态是一个图标加一个词，指向它可以看到它对这个插件意味着什么：
+每张卡片显示插件的图标、名称和简短描述，一行形如 `v<版本> · <状态> · N 个 Agent 在用` 的信息，以及**内置**等标签（管理员安装的插件标为**服务端安装**，从本机目录链接进来的插件标为**链接**，指向即见目录路径）；按其他方式分组时，还会标出分类。版本就是插件的 npm 版本。Agent 数量只对含 Skill、钩子或 MCP Server 的插件显示，统计的是当前 Project 里完整装有这个插件、或已装副本被更新检查列为落后的 Agent。状态是一个图标加一个词，指向它可以看到它对这个插件意味着什么：
 
 | 状态 | 含 Skill、钩子或 MCP Server 的插件 | 服务端插件 |
 | --- | --- | --- |
@@ -56,9 +56,9 @@ MCP Server 可能要先有一些值才能连接，例如 API token。插件会�
 
 Agent 上已有同名、但不是这个插件装的 MCP Server 时，安装会被拒绝并给出该 Server 的名称，什么都不写入。请先在 Agent 的**工具**标签页把那个 Server 改名或移除。
 
-卸载插件：把鼠标移到 Agent 旁的**已安装**上，点击**卸载**并确认。卸载会删除已安装的 Skill 和钩子文件，包括本地做过的修改，并从 Agent 上移除这个插件的 MCP Server。
+卸载插件：把鼠标移到 Agent 旁的**已安装**上，点击**卸载**并确认。卸载会删除已安装的 Skill 和钩子文件，包括本地做过的修改，从 Agent 上移除这个插件的 MCP Server，并删除它的工作台及其数据。服务端一次删除全部部件；有部件没能删除时，提示会写明是哪一个，其余部件照常删除。Agent [插件标签页](/agents#插件标签页)的**插件**子页面上也有同样的**卸载**，确认前会逐项列出部件；那里也能在这一个 Agent 上安装和更新插件。
 
-任何 Project 成员都可以安装、更新和卸载插件。
+任何 Project 成员都可以安装和更新插件，卸载插件只有 Project owner 可以操作。
 
 其他安装方式：
 
@@ -102,13 +102,13 @@ Agent 能看到每个已安装 Skill 的名称和描述，任务需要时才读�
 
 ## 管理 Agent 的 Skill
 
-要查看某个 Agent 上安装的 Skill，打开**智能体**，选中这个 Agent，然后打开**技能**标签页。
+要查看某个 Agent 上安装的 Skill，打开**智能体**，选中这个 Agent，然后打开**插件**标签页的**技能**子页面。全部 Skill 都列在那里，点击一行即可只读查看它的文件。来自插件的 Skill 在名称后带拼图图标，指向它可以看到是哪个插件，点击在**插件**子页面中高亮该插件所在的行。
 
 - 每行显示一个 Skill 的名称、简短描述和版本，附两个操作：**打包导出**把 Skill 下载为 zip 文件，**卸载**删除 Skill 目录。
-- **启用技能**控制系统提示词中是否列出已安装的 Skill。关闭后，Agent 不知道存在哪些 Skill，但你在对话中选中的 Skill 仍然生效。
+- **启用技能**控制系统提示词中是否列出已安装的 Skill。关闭后，Agent 不知道存在哪些 Skill，但你在对话中选中的 Skill 仍然生效。这个开关和**技能提示词**只有 Project owner 能改。
 - **技能提示词**是系统提示词里介绍 Skill 列表的一段文字。其中的 `{{SKILL_METADATA}}` 占位符会展开为每个已安装 Skill 一行。
 
-**技能**标签页没有更新操作，也不能从插件库添加插件。更新和安装插件请前往**插件市场**页面。
+要更新插件带来的 Skill，在**插件**子页面上该插件的那一行点击**更新**，或者到**插件市场**页面更新。两处都能从插件库安装插件。
 
 ### 导入 Skill
 
@@ -116,14 +116,14 @@ Agent 能看到每个已安装 Skill 的名称和描述，任务需要时才读�
 
 通过对话导入：
 
-1. 在**技能**标签页点击**导入技能**。
+1. 在**插件**标签页的**技能**子页面点击**导入技能**。
 2. 在**技能来源**中填入网页、GitHub 仓库或目录、本地路径，或者其他生态的安装命令，例如 `npx skills add <name>`。
 3. 点击**打开新对话**。新对话打开后，Prompt 已经填好。也可以点击**复制 Prompt**，拿到别处使用。
 4. 发送消息。Agent 会完整读取来源，检查是否安全，然后安装 Skill。如果安装了 `skill-porting` Skill，Agent 会按它的流程操作。
 
 通过上传 zip 文件导入：
 
-1. 在**技能**标签页点击**导入技能**。
+1. 在**插件**标签页的**技能**子页面点击**导入技能**。
 2. 在**上传技能 zip 包**下点击**选择 zip 文件**。zip 包的根目录下必须有 `SKILL.md`，或者有且仅有一个包含 `SKILL.md` 的顶层目录。
 3. 如果已安装同名 Skill，点击**覆盖安装**确认。覆盖安装会替换全部文件。
 
@@ -137,7 +137,7 @@ zip 文件最大 14 MB，最多 200 个文件；解压后单个文件不超过 5
 
 对话在每次开启模型上下文时读取已安装的钩子包：开始时、每次压缩之后，以及恢复时。因此写进目录的钩子包在新对话里立即生效，在已经打开的对话里从下一次压缩起生效。经 Web App 或 API 安装、导入 zip 或卸载时，已经打开的对话生效得更早，从下一轮开始，因为服务端会在 Agent 的运行时空闲时重建它们。
 
-要管理某个 Agent 的钩子包，打开**智能体**，选中这个 Agent，然后打开**钩子**标签页。
+要管理某个 Agent 的钩子包，打开**智能体**，选中这个 Agent，然后打开**插件**标签页的**钩子**子页面。全部钩子包都列在那里；来自插件的在名称后带拼图图标。
 
 - **启用钩子**是整个 Agent 的钩子总开关，不能按包单独开关。开启时，这个 Agent 启动的每个 Session 都会运行全部已安装的钩子包；关闭时，任何 Session 都不运行钩子，已安装的包仍然保留。改动从下一轮开始生效，已经打开的对话也是如此；已经在运行的 Task 沿用它的钩子，除非 Task 结束之前压缩开启了新的上下文。只有 Project owner 能改这个开关。
 - 每行显示包的名称、运行的钩子点、描述和版本，附**打包导出**和**卸载**两个操作。
@@ -146,14 +146,14 @@ zip 文件最大 14 MB，最多 200 个文件；解压后单个文件不超过 5
 
 通过对话导入：
 
-1. 在**钩子**标签页点击**导入钩子**。
+1. 在**插件**标签页的**钩子**子页面点击**导入钩子**。
 2. 在**钩子来源**中填入 URL、GitHub 仓库、本地路径、描述你想要的钩子的一段文字，或者其他工具的钩子配置，例如 Claude Code `settings.json` 里的 `hooks` 块。
 3. 点击**打开新对话**或**复制 Prompt**。
 4. 发送消息。Agent 会读取来源，审查每个脚本，然后把包安装到这个 Agent 上。
 
 通过上传 zip 文件导入：
 
-1. 在**钩子**标签页点击**导入钩子**。
+1. 在**插件**标签页的**钩子**子页面点击**导入钩子**。
 2. 在 **上传钩子包 zip** 下方点击**选择 zip 文件**。zip 包的根目录下，或唯一一个顶层目录里，必须有 `hooks.json` 和脚本文件。`hooks.json` 里的每个命令都必须指向 zip 包内的文件。
 3. 如果已安装同名包，点击**覆盖安装**确认。
 
@@ -246,6 +246,7 @@ Agent 可以在 Task 中重写自己的 `SKILL.md`。结合 Benchmark 评估和�
 | | `skillopt-rsi-toolkit` | [SkillOpt](https://arxiv.org/abs/2605.23904)：限制文本编辑幅度，按评分筛选候选，并在训练轮次之间总结经验 |
 | | `openskill-rsi-toolkit` | 通过检索和独立虚拟验证构建技能库，冻结后进行 baseline／final Benchmark 评测。 |
 | | `trace-rsi-toolkit` | TRACE，出自 [TRACE](https://arxiv.org/abs/2608.22793)（Wu 等，2026）：按技能汇总成功与失败轨迹，修订模块化技能库并测量重复运行的一致性。通过指令选择技能，自带 Benchmark、初始化、训练、评测与源码运行包参考，并说明上下文保留等适配 |
+| | `rrsi-rsi-toolkit` | RRSI，出自 [Regularized Recursive Self-Improvement of Agent Harnesses](https://arxiv.org/abs/2609.24972)（Xia 等，2026）：余弦退火的 L0 修改预算限定每个提案能捆绑多少处独立改动，停滞时转向从未被检验的组件；防基准过拟合的 Critic 在花费任何测量之前筛掉任务特化的候选；Pruner 把近期最佳增益非正的组件报为删除目标；算法 2 只在越过标定噪声下限且满足 token 成本规则时接纳候选。自成一体：自带初始化、提案、评审、训练、评测与演示任务参考 |
 | 办公效率 | `a2ui` | 让回复更易读的富文本组件——选项、表单、分步操作、提示框、Mermaid 图、由数据绘制的统计图（折线、面积、柱状、饼图、散点、直方图或仪表），以及天气、时钟、倒计时、指标和系统资源小组件，以围栏代码块写在普通 Markdown 里，Web App 用自己的组件渲染（用户的选择以普通文字填入输入框），其他界面显示为可读文本——附带中英文 STE 风格写作规则、把天气查询和系统快照直接生成组件块的脚本，以及一个发送前校验、打分的检查脚本（预装） |
 | | `data-analysis` | 完成数据分析任务：有限度地检查证据，明确决定是否修改答案，原生处理产出文件，并核验最终输出 |
 | | `use-firecrawl` | 通过 Firecrawl API 搜索网页、抓取页面，输出干净的 markdown |
@@ -254,6 +255,7 @@ Agent 可以在 Task 中重写自己的 `SKILL.md`。结合 Benchmark 评估和�
 | | `humanizer` | 去除任何语言文字中的 AI 写作痕迹，改写成书籍、报纸和百科全书的语体（不预装：需要时从插件库安装） |
 | | `goal` | [目标模式](/goal-mode)背后的 stop 钩子：让 Session 持续朝着目标推进，直到完成、受阻或 Token 预算耗尽（预装） |
 | | `continual-learning` | Task 运行超过 30 轮才结束时，把 Task 的精简摘录交给后台子 Agent，由它把有长期价值的发现沉淀到 Agent 的 Skill 中（不预装） |
+| | `trace-lookup` | 在会话的 Trace 文件里查回更早的内容：先搜出某个细节所在的行，再只读这几行；用于压缩摘要或模型切换指向 Agent 所接续的上一段上下文的 Trace 时（新初始化的 `default_agent` 预装；已有的 Agent 从插件库安装） |
 | | `agent-company` | [公司模式](/company-mode)的完整工具包，包含七个 Skill：`company-setup`（与用户一起创建组织：一次问一个问题、给出摘要供确认，然后执行 `penguin org create`；从不招聘，也不提交工单）、`company-employee`（每个工位 Session 和工单 Session 都要遵循的协议：触发块、工单看板、阻塞、重负载或不可逆的工作先向董事会请示、频道礼仪、预算）、`company-ceo`（把使命拆解为工单、招聘、划分 Workspace、审查、向董事会汇报）、`company-hr`（日历排班、招聘与离职、评估）、`company-finance`（预算、每日审计、告警与暂停）、`company-research`（科研组织的作者与审稿人：先固定评测脚本与指标，在董事会批准的资源额度内跑实验循环、只保留能提升指标的改动，每个结论都交给一个设法推翻它的审稿人）和 `company-mirror`（数字分身公司：每位真实同事对应一个分身，绑定到这位同事的机器人，只传话、不开工单）。不预装：组织在创建 CEO、招聘员工时会安装它；需要能创建组织的 Agent 则从插件库安装 |
 | | `penguin-support` | PenguinHarness 产品客服，包含 `penguin-support` Skill（依据官方文档和源码解答产品问题、排查故障）和客服[工作台](#workbench-插件)：问题列表、新建问题弹窗，以及支持追问的对话详情。不预装：默认 Project 的内置客服 Agent「PenguinHarness Support」自带该插件，其他 Agent 可从插件库安装 |
 | 软件开发 | `software-development` | 端到端的软件开发，包含两个 Skill：`software-engineering`（在最小范围内调查、实现和验证）和 `web-design`（生成 Web UI 用的 Penguin 视觉语言） |
@@ -261,7 +263,7 @@ Agent 可以在 Task 中重写自己的 `SKILL.md`。结合 Benchmark 评估和�
 | AI 应用开发 | `agent-development` | PenguinHarness 上的 Agent 开发，包含六个 Skill：`agent-initialization`（根据需求搭建 Agent：它的 `AGENTS.md`、Skill 与钩子）、`penguin-sdk`（基于 SDK 构建 Agent/AI/RAG 应用，或经 Agent API 把程序接入 Agent；动手前先问用哪种方式）、`penguin-plugin`（搭建 Agent 在对话旁自己维护的 Workbench）、`unified-llm-api`（通过 `@prismshadow/mmsp` 调用模型 API）、`penguin-config`（管理模型密钥、默认值和 Vault 机密）和 `penguin-orchestration`（在 shell 里驱动 Agent、Session、成本和定时任务） |
 | | `agent-evaluation` | Agent Evaluation，包含两个 Skill：`benchmark-design`（设计和校准能力 Benchmark，或导入已发布的 Benchmark 包）和 `agent-evaluation`（隔离执行单个题目并打分）。Default RSI Toolkit 经由它测量 |
 | | `model-development` | 在自己的硬件上做模型开发，包含三个 Skill：`llamafactory`（微调）、`ollama`（运行本地模型）和 `vllm`（在 OpenAI 兼容端点后面提供服务） |
-| | `skill-porting` | 把外部来源（插件市场、skills.sh 注册表、GitHub 仓库或本地文件夹）的 Skill 经审查和规范化后移植到 Agent；也可以用其中的 `plugin-porting` Skill 把整个 Codex 或 Claude Code 插件转成 PenguinHarness 插件包，安装到服务端 |
+| | `skill-porting` | 把外部来源（插件市场、skills.sh 注册表、GitHub 仓库或本地文件夹）的 Skill 经审查和规范化后移植到 Agent；也可以用其中的 `plugin-porting` Skill 把整个 Codex 或 Claude Code 插件转成 PenguinHarness 插件包，安装到服务端；或用其中的 `agent-porting` Skill 把 Claude Code、Codex、DeepSeek Harness、Qoder、Qwen Code 或 WorkBuddy 的 Agent 迁移成新的 Agent（见[导入 Agent](/agents#导入-agent)） |
 | Agent 运行沙箱 | `sandbox-bwrap`、`sandbox-seatbelt`、`sandbox-wsl`、`sandbox-dsh` | 服务端插件，不属于插件库内容：封禁 Agent 执行的每条命令的后端，由管理员安装到服务端。见[服务端插件](#服务端插件)和[设置](/settings#沙盒) |
 
 ## 工作原理
@@ -483,7 +485,7 @@ Skill 分两步加载：先加载索引，正文按需读取。
 
 安装插件时，工作台复制到 Agent State 中的 `agent_state/workbenches/<id>/`，Agent 自己编写的工作台也位于这里。更新替换插件携带的源文件，保留记录状态与历史版本；如果名称已被其他插件或手工创建的工作台使用，则拒绝安装。卸载会删除工作台及其状态，此前的版本不再列出。
 
-工作台每次成功加载且源码有变化时，都会记录一个版本，即 `agent_state.git/` 中的一次提交。这是与 Agent 的 `agent_state/` 并列的裸 git 仓库，由服务端自行写入，不需要安装 git。只有工作台的源码入库；它的 `state.json`、服务端生成的 `.build/` 与 `.harness/`、`node_modules/`、Vault 以及 Agent State 的其余内容都不入库。恢复某个版本会把源码精确换成该版本并重新加载，`state.json` 保持不变。仓库位于 Agent State 之外，Agent State 的快照、导出与导入既不携带它，也不改动它。装有 git 时可以读取历史，例如 `git --git-dir=<agent>/agent_state.git log --oneline -- workbenches/<id>`；不要向仓库提交，也不要删除它。恢复、移除、导出或导入工作台，见[工作台标签页](/agents#工作台标签页)。
+工作台每次成功加载且源码有变化时，都会记录一个版本，即 `agent_state.git/` 中的一次提交。这是与 Agent 的 `agent_state/` 并列的裸 git 仓库，由服务端自行写入，不需要安装 git。只有工作台的源码入库；它的 `state.json`、服务端生成的 `.build/` 与 `.harness/`、`node_modules/`、Vault 以及 Agent State 的其余内容都不入库。恢复某个版本会把源码精确换成该版本并重新加载，`state.json` 保持不变。仓库位于 Agent State 之外，Agent State 的快照、导出与导入既不携带它，也不改动它。装有 git 时可以读取历史，例如 `git --git-dir=<agent>/agent_state.git log --oneline -- workbenches/<id>`；不要向仓库提交，也不要删除它。关闭、恢复、移除、导出或导入工作台，见[工作台](/agents#工作台)。
 
 工作台可以在 Agent 工作时实时跟随它发起的会话。页面引入 `../sdk/workbench.js`，这是服务端为每个工作台提供的页面 SDK；`followSession(sessionId)` 以当前登录用户的权限读取该 Session 的 [AMSP 记录](/amsp-records)，回答因此随 Agent 的生成逐字出现；`abortSession(sessionId)` 停止当前这一轮。工作台的服务端代码通过 `host.subscribe(sessionId, listener)` 收到同样的记录。发起任务与保存结果仍由工作台自己的处理器完成，用 `host.sessionResult` 读取结果、定时轮询的做法照常可用。这些都不需要 Agent API 密钥。
 
@@ -511,5 +513,7 @@ createRoot(document.getElementById("root")!).render(<App />);
 组件会自动跟随用户的主题、强调色、字体与明暗模式。页面上你自己写的元素，用自己的样式表设置样式，颜色和字体取自 `--ui-*` 变量；在这些元素上写 Tailwind 类不会生效。
 
 用纯 HTML 和 JavaScript 写的页面照常可用，通过 `/workbench-ui.css` 获得与应用一致的外观：其中的 `--wb-*` 变量和 `wb-*` 类跟随用户的主题、强调色、字体与明暗模式，`wb-badge` 加上 `data-tone` 属性即可按状态着色。`--wb-*` 只会新增、不会改名；要调整页面样式，在 `:root` 上重新声明它们即可。一个工作台只要有了 TSX 页面，它的所有页面都会改用组件的样式表，所以要把这些页面一起改写。
+
+工作台页面是透明的：页面自己不设背景时，透出应用在它下面的底色——主题的页面色或你设置的自定义背景，与对话页一致。想要不透明的页面，就写 `body { background: var(--wb-canvas); }`（TSX 页面在自己的样式表里用 `var(--ui-canvas)`）。
 
 内置 `penguin-support` 插件为默认 Project 的客服 Agent 安装 `penguin-support` Skill 和客服工作台：居中的问题列表、新建问题弹窗，以及支持追问的对话详情。问题运行时，对话框里会随生成显示回答和 Agent 正在做的事，并提供**停止**按钮。新版本以插件更新的形式提供，已安装的副本只在你更新时才被替换。也可以把该插件安装到其他 Agent。

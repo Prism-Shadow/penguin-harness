@@ -19,6 +19,7 @@
  */
 import { createHash, randomBytes } from "node:crypto";
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -328,6 +329,22 @@ export function resolvePushPlan(
   return plan.harness === null ? null : plan;
 }
 
+/** The store carried by npm, release tarballs and container program layouts. */
+export function carriedStore(argv1: string | undefined = process.argv[1]): string | null {
+  if (!argv1 || path.basename(path.dirname(argv1)) !== "dist") return null;
+  const beside = path.join(path.dirname(argv1), "hmr");
+  if (fs.existsSync(path.join(beside, "harness.json"))) return beside;
+  // The server publishes import-only exports. Resolve the dependency's search roots
+  // rather than asking CommonJS resolution to select an entry it cannot import.
+  const search =
+    createRequire(path.resolve(argv1)).resolve.paths("@prismshadow/penguin-server") ?? [];
+  for (const modules of search) {
+    const dir = path.join(modules, "@prismshadow", "penguin-server", "dist", "hmr");
+    if (fs.existsSync(path.join(dir, "harness.json"))) return dir;
+  }
+  return null;
+}
+
 /** The install image a release build ships, in its program's `dist/` beside the entry. */
 export const SHIPPED_IMAGE = "install-image.gz";
 
@@ -342,6 +359,8 @@ export function shippedImage(
 ): { baseVersion: string; body: string } | null {
   const release = installedRelease(argv1);
   if (release === null) return null;
+  const store = carriedStore(argv1);
+  if (store !== null) return { baseVersion: release.version, body: store };
   const body = path.join(release.dir, "dist", SHIPPED_IMAGE);
   return fs.existsSync(body) ? { baseVersion: release.version, body } : null;
 }
@@ -564,7 +583,11 @@ export async function installOnRemote(opts: {
       const installerHome = opts.assets?.() ?? path.dirname(fileURLToPath(import.meta.url));
       let installer: Buffer;
       try {
-        installer = fs.readFileSync(path.join(installerHome, installerFile));
+        // Off the event loop: this read can sit on a slow or network-mounted
+        // asset directory for as long as the filesystem takes, and every other
+        // request this process owes a client waits with it when it is read
+        // synchronously.
+        installer = await fs.promises.readFile(path.join(installerHome, installerFile));
       } catch (err) {
         return {
           kind: "failed",
@@ -775,7 +798,7 @@ async function carryOver(
       },
     };
   }
-  const bytes = fs.readFileSync(fetched.file);
+  const bytes = await fs.promises.readFile(fetched.file);
   const archive = `${scratch}/${path.basename(fetched.file)}`;
   say(`Sending release ${version} (${(bytes.byteLength / 1048576).toFixed(1)} MB)…`);
   const sent = await conn.stream(`cat > "${archive}"`, {

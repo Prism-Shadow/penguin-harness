@@ -20,11 +20,11 @@ When there is no separate validation set, reuse all Train tasks for candidate se
 
 ## Launch and collect
 
-Follow the documented command and adapter. Launch the continuous training task once per benchmark or independent training unit, with the learner State archive and fixed runtime. The same training Session and business container remain alive across tasks and candidate edits. The learner may make task-focused calls inside that environment; it owns the learning iterations.
+Follow the documented command, adapter and experimental setup requested by the user. In a continuous training environment, the training Session and business container remain alive across tasks and candidate edits; the learner may make task-focused calls inside that environment and owns the learning iterations.
 
 The runtime must support a continuing training environment and usable feedback. If it does not, report that incompatibility rather than silently changing training into independent reset trials.
 
-Use native output paths returned by the runner. Collect the exported Skill folders and learning records before constructing frozen test States. A combined Train/Test job does not itself transfer learned Skills; the controller performs that handoff and then schedules three complete test repetitions per State by default. Each test attempt starts from the same frozen archive in a fresh environment and conversation.
+Use native output paths returned by the runner. Collect the exported Skill folders and learning records before constructing frozen test States. A combined Train/Test job does not itself transfer learned Skills; the controller performs that handoff and schedules the requested evaluation runs. Each evaluation attempt starts from the same frozen archive in a fresh environment and conversation.
 
 Apply the benchmark's time and network settings. Count sidecars as well as business containers against the shared capacity limit. Follow its retry rules and retain failed attempts. Completed low-scoring answers are measurements; do not retry them as infrastructure errors.
 

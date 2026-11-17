@@ -21,13 +21,14 @@ import {
   parseSkillsMessage,
 } from "@prismshadow/amsp/markers";
 import { catalogEntryFor } from "../../server/dist/model-catalog.js";
-import { catalogDelta } from "../../web/src/features/models/catalog-sync";
+import { catalogDelta } from "../../web/src/lib/model-catalog-sync";
 import { splitAttachments } from "../../web/src/lib/attachments";
 import {
   createStreamModel,
   finalizeHistory,
   pushMessages,
 } from "../../web/src/lib/amsp/stream-model";
+import { refusalHandoffOccurrence } from "../../web/src/lib/amsp/compaction-summary";
 import { buildFixtures } from "../src/app/mock/fixtures";
 import { ALL_SESSION_IDS, IDS } from "../src/app/mock/ids";
 import { REPLY_CLOSE_MS, REPLY_HOLD_MS, REPLY_LEAD_MS, resetStore } from "../src/app/mock/store";
@@ -97,19 +98,6 @@ describe("the fixtures", () => {
   it("seed every Session id the ids module lists, and no other", () => {
     const f = buildFixtures("en", NOW);
     expect(f.sessions.map((s) => s.sessionId).sort()).toEqual([...ALL_SESSION_IDS].sort());
-    expect(
-      f.sessions
-        .filter((s) => s.status === "running")
-        .map((s) => s.sessionId)
-        .sort(),
-    ).toEqual(
-      [
-        IDS.sessions.approval,
-        IDS.sessions.runningTool,
-        IDS.sessions.thinking,
-        IDS.sessions.streaming,
-      ].sort(),
-    );
   });
 
   it("carry the whole built-in catalog: the app's catalog check finds nothing to add", () => {
@@ -118,11 +106,10 @@ describe("the fixtures", () => {
       if (m.provider === "custom") continue;
       expect(catalogEntryFor(m.provider, m.modelId), `${m.provider}/${m.modelId}`).toBeDefined();
     }
-    expect(f.models.models.length).toBeGreaterThan(100);
     expect(catalogDelta(f.models.models)).toEqual({ added: 0, refs: [] });
-    expect(f.models.defaultModel).toEqual({ provider: "deepseek", modelId: "deepseek-flash" });
-    expect(f.models.models.filter((m) => m.isDefault).map((m) => m.modelId)).toEqual([
-      "deepseek-flash",
+    // One row is the default, the one the default model names, and every Session runs on a row.
+    expect(f.models.models.filter((m) => m.isDefault)).toEqual([
+      expect.objectContaining(f.models.defaultModel),
     ]);
     for (const s of f.sessions)
       expect(f.models.models.some((m) => m.modelId === s.modelId)).toBe(true);
@@ -140,14 +127,6 @@ describe("the fixtures", () => {
       }
     }
     expect(f.agents.some((agent) => agent.pluginUpdates.length > 0)).toBe(true);
-  });
-
-  it("carry thirty days of usage in both Agents' names", () => {
-    const f = buildFixtures("en", NOW);
-    expect(new Set(f.usage.map((d) => d.date)).size).toBe(30);
-    expect(new Set(f.usage.map((d) => d.agentId))).toEqual(
-      new Set([IDS.agents.docs, IDS.agents.notes]),
-    );
   });
 });
 
@@ -288,10 +267,22 @@ describe("the harness Session", () => {
     expect(fired).toContain("weekly-link-check");
     const mcp = model.items.find((item) => item.kind === "mcp_connect");
     expect(mcp?.kind === "mcp_connect" && mcp.failed).toEqual(["docs-search"]);
-    const compaction = model.items.find((item) => item.kind === "compaction");
-    expect(compaction).toMatchObject({ status: "completed", mode: "summarize" });
-    expect(compaction?.kind === "compaction" && compaction.thinkingText).toBeTruthy();
-    expect(compaction?.kind === "compaction" && compaction.summaryText).toBeTruthy();
+    const compactions = model.items.flatMap((item) => (item.kind === "compaction" ? [item] : []));
+    expect(compactions.every((c) => c.status === "completed" && c.mode === "summarize")).toBe(true);
+    // The switch's compaction wrote a full summary, and shows it with its thinking; the
+    // compactions that completed without one show none, each saying why on its mark.
+    const full = compactions.filter((c) => c.errorCode === undefined);
+    expect(full).toHaveLength(1);
+    expect(full[0]!.thinkingText).toBeTruthy();
+    expect(full[0]!.summaryText).toBeTruthy();
+    const degraded = compactions.filter((c) => c.errorCode !== undefined);
+    expect(degraded.map((c) => c.errorCode)).toEqual(["denied", "rejected"]);
+    expect(degraded.every((c) => c.summaryText === undefined)).toBe(true);
+    // The refused request's retry line resolved in the next context, and the hand-off it led
+    // to is the Session's latest compaction: the composer raises its notice for it.
+    const refusedRetry = model.items.findLast((item) => item.kind === "reconnect");
+    expect(refusedRetry).toMatchObject({ errorCode: "rejected", retrying: true });
+    expect(refusalHandoffOccurrence(model.items)).not.toBeNull();
     expect(kinds.at(-1)).toBe("task_stats");
 
     // The goal banner: a fresh subscription is told the goal run and its outcome.

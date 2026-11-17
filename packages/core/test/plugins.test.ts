@@ -28,15 +28,23 @@
  * - What a shipped package fails on, an installed one lists through, with the field missing and
  *   one warning: a malformed card field, a quick start naming skills it does not ship, a hook
  *   package without a dated version (the skills still list), a skill without a version
- *   (unversioned, never flagged behind), an unsafe or oversized icon, a skill entry whose name is
- *   not a skill name or not its directory's, a binary file in a skill (left out; the text beside it
- *   installs byte for byte). A safe icon is kept from its `<svg>` root on.
+ *   (unversioned, never flagged behind), an unsafe, oversized or mislabelled icon, a skill entry
+ *   whose name is not a skill name or not its directory's, a binary file in a skill (left out; the
+ *   text beside it installs byte for byte). A clean icon is kept in its own format, SVG or a raster
+ *   image, and every skill of the package wears it.
  * - A package of MCP servers alone is a library plugin: it lists its servers, each with every
  *   vault key its config references — declared ones with their labels first — and whether it
  *   offers OAuth sign-in. A server the resolver refuses, a bad or repeated name and a setup key
  *   nothing references are dropped, one warning each.
  * - readLibraryPackage reads a local directory the way the library will, refusing one without a
  *   release version, or one never built.
+ *
+ * Reading, on a fixture library a temp host package carries (usePushedPluginLibrary):
+ * - A plugin whose card sets `preinstall: false` stays in the library and out of the preinstalled
+ *   set.
+ * - A plugin is found by its name, a skill by its own name together with the plugin that ships
+ *   it; an unknown or illegal name finds nothing.
+ * - A hook package lists the manifest it installs, its points as declared, and every hooks/ file.
  *
  * What kind a package is (libraryParts), by its table: a content package carries Skills, hooks,
  * MCP servers or workbenches and no server modules; a package whose table lists modules is a
@@ -45,20 +53,22 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { deflateSync } from "node:zlib";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { parse as parseYaml } from "yaml";
 import {
   comparePluginVersions,
   groupPlugins,
-  isSafeIconSvg,
   libraryParts,
   libraryPlugin,
   libraryPluginPackage,
+  librarySkill,
   loadLibraryPlugins,
   loadPluginGroups,
   loadPreinstalledPlugins,
   parseSkillFrontmatter,
   readLibraryPackage,
+  readPluginIcon,
   useInstalledPluginPrefix,
   usePushedPluginLibrary,
   workspacePluginRoot,
@@ -121,6 +131,127 @@ describe("groupPlugins", () => {
     expect(groups[2]).toMatchObject({ title: "Other", titleZh: "其他" });
   });
 });
+
+describe("lookups", () => {
+  it("readPluginIcon reads a declared PNG by its bytes and an SVG by its markup, and refuses the rest", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-icon-"));
+    try {
+      // A PNG-shaped fixture: the signature, then IHDR, IDAT and IEND chunks — enough
+      // framing for the reader's format sniff, which reads the first bytes, not the
+      // file's whole structure.
+      const png = validPngBytes();
+      await write(dir, {
+        "icon.png": png,
+        "icon.svg": '<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>',
+        "note.txt": "hello",
+      });
+      // A declared .png: the bytes themselves, format from the signature.
+      const pngIcon = readPluginIcon(dir, "icon.png");
+      expect(pngIcon.warnings).toEqual([]);
+      expect(pngIcon.icon).toEqual({ format: "png", bytes: png, tint: false });
+      // A declared .svg: the markup from its root on, format from the bytes.
+      const svgIcon = readPluginIcon(dir, "icon.svg");
+      expect(svgIcon.warnings).toEqual([]);
+      expect(svgIcon.icon?.format).toBe("svg");
+      expect(svgIcon.icon?.tint).toBe(false);
+      expect(new TextDecoder().decode(svgIcon.icon!.bytes)).toBe(
+        '<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>',
+      );
+      // A declared file that is not an icon extension at all: refused, with the reason.
+      const bad = readPluginIcon(dir, "note.txt");
+      expect(bad.icon).toBeUndefined();
+      expect(bad.warnings.join(" ")).toMatch(
+        /is not a \.svg, \.png, \.jpg, \.jpeg, \.webp, \.gif or \.avif file/,
+      );
+      // A declared .png whose bytes are not a PNG: refused, with the reason.
+      await write(dir, { "fake.png": Uint8Array.from([0x00, 0x01, 0x02]) });
+      const fake = readPluginIcon(dir, "fake.png");
+      expect(fake.icon).toBeUndefined();
+      expect(fake.warnings.join(" ")).toMatch(/its bytes are no image format an icon may be/);
+      // A signature and nothing else: the eight bytes are a PNG to the sniffer, but no icon
+      // a renderer could decode — refused as one whose bytes and name disagree with nothing.
+      await write(dir, { "cut.png": png.subarray(0, 8) });
+      const cut = readPluginIcon(dir, "cut.png");
+      expect(cut.warnings).toEqual([]);
+      expect(cut.icon).toEqual({ format: "png", bytes: png.subarray(0, 8), tint: false });
+      // A signature and an IHDR but no IEND: also accepted — the sniffer reads the first
+      // bytes, not the file's whole structure.
+      const noEnd = png.subarray(0, 8 + 12 + 13);
+      await write(dir, { "head.png": noEnd });
+      const head = readPluginIcon(dir, "head.png");
+      expect(head.warnings).toEqual([]);
+      expect(head.icon?.format).toBe("png");
+      // Nothing declared: the first of the reader's own file names that reads clean — here
+      // the root icon.svg this fixture wrote.
+      const fallback = readPluginIcon(dir, undefined);
+      expect(fallback.warnings).toEqual([]);
+      expect(fallback.icon?.format).toBe("svg");
+      expect(new TextDecoder().decode(fallback.icon!.bytes)).toBe(
+        '<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>',
+      );
+      // With the SVG gone the PNG beside it is the default; with neither, silent none.
+      await fs.rm(path.join(dir, "icon.svg"));
+      expect(readPluginIcon(dir, undefined).icon?.format).toBe("png");
+      await fs.rm(path.join(dir, "icon.png"));
+      expect(readPluginIcon(dir, undefined).icon).toBeUndefined();
+    } finally {
+      await fs.rm(dir, { recursive: true });
+    }
+  });
+});
+
+/** A PNG-shaped byte string: the signature, then IHDR, IDAT and IEND chunk framing. */
+function validPngBytes(): Uint8Array {
+  const chunk = (type: string, data: Uint8Array): Uint8Array => {
+    // A chunk header is a 4-byte big-endian length, then the type, the data and the CRC.
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(data.length);
+    const body = Buffer.concat([Buffer.from(type, "latin1"), Buffer.from(data)]);
+    return Uint8Array.from([...length, ...body, ...crc32(body)]);
+  };
+  // IHDR: width 1, height 1, bit depth 8, color type 0 (grayscale), the rest zero.
+  const ihdr = Uint8Array.from([0, 0, 0, 1, 0, 0, 0, 1, 8, 0, 0, 0, 0]);
+  // IDAT: a zlib stream the renderer can actually inflate — one grayscale scanline
+  // (filter byte 0, then the single pixel) compressed here, never hand-assembled.
+  const idat = deflateSync(Uint8Array.from([0, 0x7f]));
+  return Uint8Array.from([
+    0x89,
+    0x50,
+    0x4e,
+    0x47,
+    0x0d,
+    0x0a,
+    0x1a,
+    0x0a,
+    ...chunk("IHDR", ihdr),
+    ...chunk("IDAT", idat),
+    ...chunk("IEND", new Uint8Array(0)),
+  ]);
+}
+
+/** The PNG chunk CRC (polynomial 0xedb88320), stored big-endian as PNG lays it down. */
+function crc32(body: Buffer): Uint8Array {
+  let crc = 0xffffffff;
+  for (const byte of body) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+  }
+  crc = ~crc >>> 0;
+  return Uint8Array.from([
+    (crc >>> 24) & 0xff,
+    (crc >>> 16) & 0xff,
+    (crc >>> 8) & 0xff,
+    crc & 0xff,
+  ]);
+}
+
+/** Writes `files` under `dir` (paths relative to it; a Uint8Array is written as bytes). */
+async function write(dir: string, files: Record<string, string | Uint8Array>): Promise<void> {
+  for (const [rel, data] of Object.entries(files)) {
+    await fs.mkdir(path.dirname(path.join(dir, rel)), { recursive: true });
+    await fs.writeFile(path.join(dir, rel), data);
+  }
+}
 
 describe("shipped packages, on a fixture library", () => {
   let root: string | null = null;
@@ -243,6 +374,105 @@ describe("shipped packages, on a fixture library", () => {
       "skills/one/SKILL.md": skillFile("one", "2026.09.01.2"),
     });
     expect(() => loadLibraryPlugins()).toThrow(/the MCP server "nowhere"/);
+  });
+});
+
+describe("the library's reading, on a fixture library", () => {
+  let root: string | null = null;
+
+  afterEach(async () => {
+    usePushedPluginLibrary(null);
+    if (root !== null) await fs.rm(root, { recursive: true, force: true });
+    root = null;
+  });
+
+  /** A host package holding `plugins` (unscoped name → what it declares, and its files); the library is pointed at it. */
+  async function library(
+    plugins: Record<string, { content: PluginContent; files: Record<string, string> }>,
+  ): Promise<void> {
+    root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-plugin-library-"));
+    const packages = Object.entries(plugins).map(([name, { content, files }]) => [
+      `@penguinharness/${name}`,
+      {
+        ...pluginPackage(
+          { name: `@penguinharness/${name}`, description: `${name}.` },
+          {
+            ...content,
+            card: { shortDescription: "Short.", shortDescriptionZh: "短。", ...content.card },
+          },
+        ),
+        ...files,
+      },
+    ]);
+    await libraryHost(root, Object.fromEntries(packages));
+    usePushedPluginLibrary(root);
+  }
+
+  it("leaves a plugin whose card sets preinstall: false out of the preinstalled set, and keeps it in the library", async () => {
+    await library({
+      auto: {
+        content: { skills: ["auto"] },
+        files: { "skills/auto/SKILL.md": skillFile("auto", "2026.10.01.1") },
+      },
+      manual: {
+        content: { card: { preinstall: false }, skills: ["manual"] },
+        files: { "skills/manual/SKILL.md": skillFile("manual", "2026.10.01.1") },
+      },
+    });
+
+    expect(loadLibraryPlugins().map((p) => p.name)).toEqual(["auto", "manual"]);
+    expect(loadPreinstalledPlugins().map((p) => p.name)).toEqual(["auto"]);
+  });
+
+  it("finds a plugin, and a skill by its own name with the plugin that ships it; an unknown or illegal name finds nothing", async () => {
+    await library({
+      merged: {
+        content: { skills: ["first", "second"] },
+        files: {
+          "skills/first/SKILL.md": skillFile("first", "2026.10.01.1"),
+          "skills/second/SKILL.md": skillFile("second", "2026.10.01.1"),
+        },
+      },
+    });
+
+    expect(libraryPlugin("merged")?.skills.map((s) => s.name)).toEqual(["first", "second"]);
+    expect(librarySkill("second")?.plugin.name).toBe("merged");
+    // A plugin's name is not a skill's.
+    expect(librarySkill("merged")).toBeUndefined();
+    expect(libraryPlugin("does-not-exist")).toBeUndefined();
+    expect(libraryPlugin("../etc")).toBeUndefined();
+    expect(librarySkill("..")).toBeUndefined();
+  });
+
+  it("reads a hook package: the manifest it installs, with its points as declared, and every hooks/ file", async () => {
+    const hooks = {
+      version: "2026.10.04.1",
+      stop: [{ command: "stop.mjs", timeout: 60 }],
+      user_prompt: [{ command: "start.mjs", timeout: 60, trigger: "host" }],
+    };
+    await library({
+      looper: {
+        content: { card: { descriptionZh: "循环。" }, hooks },
+        files: {
+          "hooks/start.mjs": "export {};\n",
+          "hooks/stop.mjs": "export {};\n",
+          "hooks/lib.mjs": "export {};\n",
+        },
+      },
+    });
+
+    const looper = libraryPlugin("looper")!;
+    expect(looper.skills).toEqual([]);
+    expect(looper.hooks?.manifest).toMatchObject({
+      name: "looper",
+      description: "looper.",
+      description_zh: "循环。",
+      version: "2026.10.04.1",
+      stop: hooks.stop,
+      pre_tool_use: [],
+      user_prompt: hooks.user_prompt,
+    });
+    expect(Object.keys(looper.hooks!.files).sort()).toEqual(["lib.mjs", "start.mjs", "stop.mjs"]);
   });
 });
 
@@ -445,33 +675,50 @@ describe("packages the operator installed on the server", () => {
     expect(comparePluginVersions(installed.version, skill!.version)).toBe(0);
   });
 
-  it("drops an icon with a script, an event handler or over 64 KiB, and keeps a plain one", async () => {
+  it("drops an icon with a script, an event handler, a link, over 256 KB or mislabelled, and keeps a clean one in its own format", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const plain = `<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M2 2h20v20H2z"/></svg>\n`;
-    const unsafe = {
-      script: `<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`,
-      handler: `<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><path d="M0 0"/></svg>`,
-      large: `<svg xmlns="http://www.w3.org/2000/svg"><path d="${"M0 0 ".repeat(14_000)}"/></svg>`,
-      link: `<svg xmlns="http://www.w3.org/2000/svg"><image href="https://example.invalid/t.png"/></svg>`,
+    const plain = `<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M2 2h20v20H2z"/></svg>\n`;
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]);
+    const oversized = new Uint8Array(300 * 1024);
+    oversized.set(png);
+    const unsafe: Record<string, [string, string | Uint8Array]> = {
+      script: [
+        "art/logo.svg",
+        `<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`,
+      ],
+      handler: [
+        "art/logo.svg",
+        `<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><path d="M0 0"/></svg>`,
+      ],
+      link: [
+        "art/logo.svg",
+        `<svg xmlns="http://www.w3.org/2000/svg"><image href="https://example.invalid/t.png"/></svg>`,
+      ],
+      large: ["art/logo.png", oversized],
+      mislabelled: ["art/logo.png", plain],
     };
     await setUp(
-      ["@acme/plain", ...Object.keys(unsafe).map((k) => `@acme/${k}`)],
+      ["@acme/plain", "@acme/photo", ...Object.keys(unsafe).map((k) => `@acme/${k}`)],
       Object.fromEntries([
         ["@acme/plain", { ...notes("@acme/plain"), "icon.svg": plain }],
-        ...Object.entries(unsafe).map(([k, svg]) => [
+        ["@acme/photo", { ...notes("@acme/photo"), "icon.png": png }],
+        ...Object.entries(unsafe).map(([k, [file, data]]) => [
           `@acme/${k}`,
-          { ...notes(`@acme/${k}`, { card: { icon: "art/logo.svg" } }), "art/logo.svg": svg },
+          { ...notes(`@acme/${k}`, { card: { icon: file } }), [file]: data },
         ]),
       ]),
     );
     const icons = Object.fromEntries(loadLibraryPlugins().map((p) => [p.name, p.icon]));
-    // Kept from its <svg> root on: the Web App inlines only markup that begins there.
-    expect(icons.plain).toBe(plain.slice(plain.indexOf("<svg")));
+    // A line icon in currentColor takes the text colour; a raster image is drawn as itself.
+    expect(icons.plain).toMatchObject({ format: "svg", tint: true });
+    expect(icons.photo).toEqual({ format: "png", bytes: png, tint: false });
+    // Every skill of the package wears its icon.
+    expect(libraryPlugin("photo")!.skills[0]!.icon).toEqual(icons.photo);
     for (const name of Object.keys(unsafe)) expect(icons[name], name).toBeUndefined();
     // A skill of a package without an icon installs without one (the book glyph).
     expect(libraryPlugin("script")!.skills[0]).not.toHaveProperty("icon");
-    expect(logged(warn)).toContain("is larger than 64 KiB");
-    expect(isSafeIconSvg(unsafe.script)).toBe(false);
+    expect(logged(warn)).toContain("is larger than 256 KB");
+    expect(logged(warn)).toContain("is named as PNG but its bytes are SVG");
   });
 
   it("leaves a binary file out of a skill, and installs the text files beside it as they are, a byte-order mark included", async () => {

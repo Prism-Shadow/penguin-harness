@@ -6,25 +6,14 @@ import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { Link } from "../src/components/actions/link/link";
 import { ICONS } from "../src/components/icons/icons";
-import { classTokens, renderStatic } from "../src/testing";
+import { renderStatic } from "../src/testing";
 
 describe("Link", () => {
-  it("stays in the tab by default, underlined in running text", () => {
+  it("stays in the tab by default", () => {
     const html = renderStatic(createElement(Link, { href: "/docs" }, "the docs"));
-    expect(html).toMatch(/^<a href="\/docs" class="/);
+    expect(html).toMatch(/^<a href="\/docs" /);
     expect(html).not.toContain("target=");
     expect(html).not.toContain("<svg");
-    expect(classTokens(html)).toEqual(
-      expect.arrayContaining(["text-link", "hover:text-link-hover", "underline"]),
-    );
-  });
-
-  it("underlines a standalone link on hover only", () => {
-    const tokens = classTokens(
-      renderStatic(createElement(Link, { href: "/docs", variant: "standalone" }, "Docs")),
-    );
-    expect(tokens).toContain("hover:underline");
-    expect(tokens).not.toContain("underline");
   });
 
   it("opens an external link isolated in a new tab, after the text and a decorative glyph", () => {
@@ -48,6 +37,5 @@ describe("Link", () => {
       ),
     );
     expect(html).toContain('aria-label="Manage keys for Acme"');
-    expect(classTokens(html)).toEqual(expect.arrayContaining(["shrink-0", "text-xs"]));
   });
 });

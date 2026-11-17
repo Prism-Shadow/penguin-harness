@@ -1,15 +1,15 @@
 /**
  * The Workspace finder every Workspace picker opens; its decisions live in
- * features/chat/workspace-finder-model.ts.
+ * features/workspace/workspace-finder-model.ts.
  *
  * - Breadcrumbs split a posix path from the root and keep a drive root whole.
  * - History goes back and forward, a new visit drops what was ahead, and reloading the folder
  *   shown records nothing.
  * - The list hides dot-names and what the machine marks hidden, and puts folders first;
  *   type-to-select finds a folder by prefix and arrow keys skip files, stopping at the ends.
- * - The keyboard map reads the Finder chords with ⌘ on a Mac and Ctrl elsewhere, leaving Enter
- *   and Home/End to a text field; Explorer's address keys work off the Mac, and F5 refreshes
- *   everywhere.
+ * - The keyboard map reads the Finder chords with ⌘ on a Mac and Ctrl elsewhere (⇧⌘N, Explorer's
+ *   Ctrl+Shift+N, makes a folder), leaving Enter and Home/End to a text field; Explorer's
+ *   address keys work off the Mac, and F5 refreshes everywhere.
  * - Quick access takes the standard folders the machine resolved itself, or else finds each
  *   platform's by name (Windows ignoring case), takes the user's additions and removals (a
  *   default included), and stores them per machine, reading anything unreadable as none.
@@ -17,7 +17,9 @@
  *   Windows drive by its label or its type and then its letter, a Linux root as the file
  *   system, anything else by its own name.
  * - The context menu offers open, choose, Quick access and copy on a folder, copy only on a
- *   file, and acts on the open folder (with Refresh) from the list's empty space.
+ *   file, and acts on the open folder from the list's empty space, New folder first and Refresh
+ *   last; over a folder that could not be read it keeps only New folder (to say why it cannot
+ *   be used), copy and Refresh.
  * - Recent folds the newest Session per Workspace across Agents, leaving temporary ones out;
  *   "go to" resolves ~ against the machine's home, and a bare drive to its root.
  * - A folder the server may not read gets a box of its own: the desktop app's access request
@@ -27,12 +29,6 @@
  *   names the folder a temporary Workspace would get (a Windows path keeps its separator) —
  *   none without the Agent's directory, while another machine is browsed, or for an unknown
  *   layout.
- * - A new folder's name is refused for a separator (and on Windows for the characters Windows
- *   forbids, a trailing dot or space, and a device name Windows reserves), for a leading dot the
- *   list would hide, and for any entry already there, hidden or a file.
- * - The folder a name became is found in the listing read back: as typed first, then composed
- *   (an HFS+ name comes back decomposed), and without case only where the disk ignores it;
- *   never a file.
  */
 import { describe, expect, it } from "vitest";
 import type { DirEntryInfo, DirListResponse, DirLocation } from "@prismshadow/penguin-server/api";
@@ -45,7 +41,6 @@ import {
   clearButton,
   defaultPlaces,
   deniedBox,
-  findMadeFolder,
   finderKeyAction,
   finderMenuItems,
   historyStep,
@@ -53,7 +48,6 @@ import {
   loadQuickAccess,
   locationName,
   locationPlaces,
-  newFolderProblem,
   parentOf,
   quickAccessKey,
   quickAccessPlaces,
@@ -66,8 +60,10 @@ import {
   tempWorkspacePath,
   typeSelectIndex,
   visibleEntries,
-} from "../src/features/chat/workspace-finder-model";
-import type { AccessAsk, DeniedBox } from "../src/features/chat/workspace-finder-model";
+  type AccessAsk,
+  type DeniedBox,
+} from "../src/features/workspace/workspace-finder-model";
+
 import { memoryStorage } from "./helpers/storage";
 
 const dir = (name: string, kind: "dir" | "file" = "dir"): DirEntryInfo => ({
@@ -166,6 +162,8 @@ describe("keyboard map", () => {
     expect(finderKeyAction(key("]", { ctrl: true }), false, true)).toBe("forward");
     expect(finderKeyAction(key("G", { meta: true, shift: true }), true, false)).toBe("goto");
     expect(finderKeyAction(key("ArrowDown", { meta: true }), true, true)).toBe("open");
+    expect(finderKeyAction(key("N", { meta: true, shift: true }), true, true)).toBe("newFolder");
+    expect(finderKeyAction(key("N", { ctrl: true, shift: true }), false, false)).toBe("newFolder");
   });
 
   it("leaves Enter and Home/End to a text field, but lets Up/Down steer the list", () => {
@@ -406,13 +404,19 @@ describe("the context menu", () => {
     expect(finderMenuItems({ ...folder, kind: "file" }, false)).toEqual(["copyPath"]);
   });
 
-  it("acts on the open folder from the list's empty space, with Refresh", () => {
+  it("acts on the open folder from the list's empty space, New folder first and Refresh last", () => {
     expect(finderMenuItems({ kind: "here", path: "/p", machine: null }, false)).toEqual([
+      "newFolder",
       "choose",
       "addToQuickAccess",
       "copyPath",
       "refresh",
     ]);
+  });
+
+  it("over a folder that could not be read, offers nothing that needs its listing", () => {
+    const here = { kind: "here" as const, path: "/p", machine: null, unreadable: true };
+    expect(finderMenuItems(here, false)).toEqual(["newFolder", "copyPath", "refresh"]);
   });
 });
 
@@ -541,69 +545,5 @@ describe("the footer's no-folder button", () => {
     );
     expect(tempWorkspacePath("/srv/agents/a/state")).toBeNull();
     expect(tempWorkspacePath("/")).toBeNull();
-  });
-});
-
-describe("a new folder's name", () => {
-  const here = [dir("projects"), dir(".git"), dir("notes.txt", "file")];
-  const WINDOWS_CHARS = '\\ / : * ? " < > |';
-
-  it.each([
-    { name: "a/b", platform: "linux", problem: { kind: "invalid", chars: "/" } },
-    { name: "a:b", platform: "win32", problem: { kind: "invalid", chars: WINDOWS_CHARS } },
-    { name: "a\\b", platform: "win32", problem: { kind: "invalid", chars: WINDOWS_CHARS } },
-    { name: "drafts.", platform: "win32", problem: { kind: "trailing" } },
-    { name: "drafts ", platform: "win32", problem: { kind: "trailing" } },
-    { name: "CON", platform: "win32", problem: { kind: "reserved", name: "CON" } },
-    { name: "nul.txt", platform: "win32", problem: { kind: "reserved", name: "nul.txt" } },
-    { name: "com1", platform: "win32", problem: { kind: "reserved", name: "com1" } },
-    { name: ".cache", platform: "darwin", problem: { kind: "hidden" } },
-    { name: "notes.txt", platform: "linux", problem: { kind: "exists", name: "notes.txt" } },
-    { name: ".git", platform: "linux", problem: { kind: "hidden" } },
-    { name: "a:b", platform: "linux", problem: null },
-    { name: "CON", platform: "linux", problem: null },
-    { name: "drafts.", platform: "darwin", problem: null },
-    { name: "console", platform: "win32", problem: null },
-    { name: "drafts", platform: "win32", problem: null },
-    { name: "", platform: "linux", problem: null },
-  ])("$name on $platform → $problem", ({ name, platform, problem }) => {
-    expect(newFolderProblem(name, here, platform)).toEqual(problem);
-  });
-
-  it("an entry the list hides still counts as taken", () => {
-    const hidden: DirEntryInfo = { name: "AppData", path: "C:\\Users\\me\\AppData", hidden: true };
-    expect(newFolderProblem("AppData", [hidden], "win32")).toEqual({
-      kind: "exists",
-      name: "AppData",
-    });
-  });
-});
-
-describe("the folder a new name became", () => {
-  const composed = "Café";
-  const decomposed = "Cafe\u0301";
-
-  it("is the listed folder named as typed, before a look-alike", () => {
-    const listed = [dir("drafts"), dir("Drafts")];
-    expect(findMadeFolder(listed, "Drafts", "darwin")?.name).toBe("Drafts");
-  });
-
-  it.each(["linux", "darwin", "win32"])(
-    "is found composed on %s, as HFS+ lists it decomposed",
-    (platform) => {
-      expect(findMadeFolder([dir(decomposed)], composed, platform)?.name).toBe(decomposed);
-    },
-  );
-
-  it.each([
-    ["darwin", "Drafts"],
-    ["win32", "Drafts"],
-    ["linux", undefined],
-  ])("ignores case on %s → %s", (platform, found) => {
-    expect(findMadeFolder([dir("Drafts")], "drafts", platform)?.name).toBe(found);
-  });
-
-  it("is never a file of that name", () => {
-    expect(findMadeFolder([dir("drafts", "file")], "drafts", "linux")).toBeNull();
   });
 });

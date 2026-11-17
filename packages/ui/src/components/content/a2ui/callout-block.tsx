@@ -3,7 +3,7 @@
  * the blocks' tone note: one row, the tone's mark beside the text, the model's title (if any)
  * leading it in the same line.
  */
-import type { A2uiCallout } from "@prismshadow/penguin-core/a2ui";
+import type { A2uiCallout } from "@prismshadow/a2ui";
 import { useUiStrings } from "../../../strings";
 import { A2uiNote } from "./parts";
 

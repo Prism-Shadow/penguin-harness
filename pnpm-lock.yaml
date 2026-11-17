@@ -54,6 +54,21 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
 
+  packages/a2ui:
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
+
   packages/amsp:
     devDependencies:
       tsup:
@@ -89,6 +104,52 @@ importers:
       ws:
         specifier: ^8.18.3
         version: 8.21.0
+
+  packages/chat-markdown:
+    dependencies:
+      mdast-util-gfm-footnote:
+        specifier: ^2.1.0
+        version: 2.1.0(supports-color@10.2.2)
+      mdast-util-gfm-strikethrough:
+        specifier: ^2.0.0
+        version: 2.0.0(supports-color@10.2.2)
+      mdast-util-gfm-table:
+        specifier: ^2.0.0
+        version: 2.0.0(supports-color@10.2.2)
+      mdast-util-gfm-task-list-item:
+        specifier: ^2.0.0
+        version: 2.0.0(supports-color@10.2.2)
+      micromark-extension-cjk-friendly:
+        specifier: ^2.0.2
+        version: 2.0.2(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))
+      micromark-extension-gfm-footnote:
+        specifier: ^2.1.0
+        version: 2.1.0
+      micromark-extension-gfm-strikethrough:
+        specifier: ^2.1.0
+        version: 2.1.0
+      micromark-extension-gfm-table:
+        specifier: ^2.1.1
+        version: 2.1.1
+      micromark-extension-gfm-task-list-item:
+        specifier: ^2.1.0
+        version: 2.1.0
+    devDependencies:
+      remark-parse:
+        specifier: ^11.0.0
+        version: 11.0.0(supports-color@10.2.2)
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      unified:
+        specifier: ^11.0.5
+        version: 11.0.5
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/cli:
     dependencies:
@@ -146,6 +207,9 @@ importers:
       '@penguinharness/penguin-support':
         specifier: workspace:*
         version: link:../../plugins/penguin-support
+      '@penguinharness/rrsi-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/rrsi-rsi-toolkit
       '@penguinharness/skill-porting':
         specifier: workspace:*
         version: link:../../plugins/skill-porting
@@ -158,6 +222,9 @@ importers:
       '@penguinharness/software-development':
         specifier: workspace:*
         version: link:../../plugins/software-development
+      '@penguinharness/trace-lookup':
+        specifier: workspace:*
+        version: link:../../plugins/trace-lookup
       '@penguinharness/trace-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/trace-rsi-toolkit
@@ -170,6 +237,9 @@ importers:
       '@penguinharness/use-firecrawl':
         specifier: workspace:*
         version: link:../../plugins/use-firecrawl
+      '@prismshadow/a2ui':
+        specifier: workspace:*
+        version: link:../a2ui
       '@prismshadow/mmsp':
         specifier: ^0.5.6
         version: 0.5.6(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
@@ -316,6 +386,9 @@ importers:
       '@penguinharness/penguin-support':
         specifier: workspace:*
         version: link:../../plugins/penguin-support
+      '@penguinharness/rrsi-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/rrsi-rsi-toolkit
       '@penguinharness/skill-porting':
         specifier: workspace:*
         version: link:../../plugins/skill-porting
@@ -328,6 +401,9 @@ importers:
       '@penguinharness/software-development':
         specifier: workspace:*
         version: link:../../plugins/software-development
+      '@penguinharness/trace-lookup':
+        specifier: workspace:*
+        version: link:../../plugins/trace-lookup
       '@penguinharness/trace-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/trace-rsi-toolkit
@@ -349,7 +425,7 @@ importers:
         version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-server':
         specifier: workspace:*
-        version: file:packages/server(supports-color@10.2.2)
+        version: file:packages/server(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.3
@@ -506,6 +582,9 @@ importers:
       '@penguinharness/penguin-support':
         specifier: workspace:*
         version: link:../../plugins/penguin-support
+      '@penguinharness/rrsi-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/rrsi-rsi-toolkit
       '@penguinharness/sandbox-bwrap':
         specifier: workspace:*
         version: link:../../plugins/sandbox-bwrap
@@ -530,6 +609,9 @@ importers:
       '@penguinharness/software-development':
         specifier: workspace:*
         version: link:../../plugins/software-development
+      '@penguinharness/trace-lookup':
+        specifier: workspace:*
+        version: link:../../plugins/trace-lookup
       '@penguinharness/trace-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/trace-rsi-toolkit
@@ -638,6 +720,9 @@ importers:
       '@penguinharness/penguin-support':
         specifier: workspace:*
         version: link:../../plugins/penguin-support
+      '@penguinharness/rrsi-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/rrsi-rsi-toolkit
       '@penguinharness/skill-porting':
         specifier: workspace:*
         version: link:../../plugins/skill-porting
@@ -650,6 +735,9 @@ importers:
       '@penguinharness/software-development':
         specifier: workspace:*
         version: link:../../plugins/software-development
+      '@penguinharness/trace-lookup':
+        specifier: workspace:*
+        version: link:../../plugins/trace-lookup
       '@penguinharness/trace-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/trace-rsi-toolkit
@@ -662,9 +750,15 @@ importers:
       '@penguinharness/use-firecrawl':
         specifier: workspace:*
         version: link:../../plugins/use-firecrawl
+      '@prismshadow/a2ui':
+        specifier: workspace:*
+        version: link:../a2ui
       '@prismshadow/amsp':
         specifier: workspace:*
         version: link:../amsp
+      '@prismshadow/chat-markdown':
+        specifier: workspace:*
+        version: link:../chat-markdown
       '@prismshadow/mmsp':
         specifier: ^0.5.6
         version: 0.5.6(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
@@ -674,6 +768,12 @@ importers:
       '@xterm/headless':
         specifier: ^5.5.0
         version: 5.5.0
+      commander:
+        specifier: ^13.0.0
+        version: 13.1.0
+      css-tree:
+        specifier: ^3.2.1
+        version: 3.2.1
       dotenv:
         specifier: ^17.0.0
         version: 17.4.2
@@ -689,12 +789,12 @@ importers:
       node-pty:
         specifier: ^1.1.0
         version: 1.1.0
-      remark-gfm:
-        specifier: ^4.0.0
-        version: 4.0.1(supports-color@10.2.2)
       remark-parse:
         specifier: ^11.0.0
         version: 11.0.0(supports-color@10.2.2)
+      safe-regex:
+        specifier: ^2.1.1
+        version: 2.1.1
       smol-toml:
         specifier: ^1.9.1
         version: 1.9.1
@@ -710,6 +810,9 @@ importers:
       unified:
         specifier: ^11.0.5
         version: 11.0.5
+      which:
+        specifier: ^5.0.0
+        version: 5.0.0
       ws:
         specifier: ^8.18.3
         version: 8.21.0
@@ -720,12 +823,21 @@ importers:
       '@prismshadow/penguin-hmr':
         specifier: workspace:*
         version: file:packages/hmr(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-theme-pack':
+        specifier: workspace:*
+        version: file:packages/theme-pack(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-ui':
+        specifier: workspace:*
+        version: link:../ui
       '@types/mdast':
         specifier: ^4.0.4
         version: 4.0.4
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.3
+      '@types/which':
+        specifier: ^3.0.4
+        version: 3.0.4
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.1
@@ -758,6 +870,31 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
 
+  packages/theme-pack:
+    dependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      css-tree:
+        specifier: ^3.2.1
+        version: 3.2.1
+      fflate:
+        specifier: ^0.8.3
+        version: 0.8.3
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
+
   packages/ui:
     dependencies:
       '@shikijs/langs':
@@ -769,9 +906,36 @@ importers:
       katex:
         specifier: ^0.16.47
         version: 0.16.47
+      mdast-util-gfm-footnote:
+        specifier: ^2.1.0
+        version: 2.1.0(supports-color@10.2.2)
+      mdast-util-gfm-strikethrough:
+        specifier: ^2.0.0
+        version: 2.0.0(supports-color@10.2.2)
+      mdast-util-gfm-table:
+        specifier: ^2.0.0
+        version: 2.0.0(supports-color@10.2.2)
+      mdast-util-gfm-task-list-item:
+        specifier: ^2.0.0
+        version: 2.0.0(supports-color@10.2.2)
       mermaid:
         specifier: ^11.17.2
         version: 11.17.2
+      micromark-extension-cjk-friendly:
+        specifier: ^2.0.2
+        version: 2.0.2(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))
+      micromark-extension-gfm-footnote:
+        specifier: ^2.1.0
+        version: 2.1.0
+      micromark-extension-gfm-strikethrough:
+        specifier: ^2.1.0
+        version: 2.1.0
+      micromark-extension-gfm-table:
+        specifier: ^2.1.1
+        version: 2.1.1
+      micromark-extension-gfm-task-list-item:
+        specifier: ^2.1.0
+        version: 2.1.0
       react-markdown:
         specifier: ^10.1.0
         version: 10.1.0(@types/react@19.2.17)(react@19.2.7)(supports-color@10.2.2)
@@ -803,12 +967,21 @@ importers:
       '@fontsource-variable/noto-sans-sc':
         specifier: ^5.3.0
         version: 5.3.0
+      '@fontsource-variable/shantell-sans':
+        specifier: ^5.3.0
+        version: 5.3.0
       '@fontsource/ibm-plex-sans-condensed':
         specifier: ^5.3.0
         version: 5.3.0
-      '@prismshadow/penguin-core':
+      '@prismshadow/a2ui':
         specifier: workspace:*
-        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+        version: link:../a2ui
+      '@prismshadow/chat-markdown':
+        specifier: workspace:*
+        version: link:../chat-markdown
+      '@prismshadow/penguin-theme-pack':
+        specifier: workspace:*
+        version: link:../theme-pack
       '@tailwindcss/vite':
         specifier: ^4.1.0
         version: 4.3.2(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
@@ -824,6 +997,9 @@ importers:
       esbuild:
         specifier: ^0.28.1
         version: 0.28.1
+      jsdom:
+        specifier: ^30.1.2
+        version: 30.1.2(@noble/hashes@1.8.0)
       react:
         specifier: ^19.1.0
         version: 19.2.7
@@ -867,6 +1043,9 @@ importers:
       '@playwright/test':
         specifier: ^1.61.1
         version: 1.61.1
+      '@prismshadow/a2ui':
+        specifier: workspace:*
+        version: link:../a2ui
       '@prismshadow/amsp':
         specifier: workspace:*
         version: link:../amsp
@@ -957,7 +1136,7 @@ importers:
         version: 1.61.1
       '@prismshadow/penguin-server':
         specifier: workspace:*
-        version: file:packages/server(supports-color@10.2.2)
+        version: file:packages/server(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
       '@tailwindcss/vite':
         specifier: ^4.1.0
         version: 4.3.2(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
@@ -1130,6 +1309,12 @@ importers:
         specifier: workspace:*
         version: file:packages/core(ws@8.21.0)
 
+  plugins/rrsi-rsi-toolkit:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
+
   plugins/sandbox-bwrap:
     devDependencies:
       '@prismshadow/penguin-core':
@@ -1219,6 +1404,18 @@ importers:
         version: file:packages/core(ws@8.21.0)
 
   plugins/software-development:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
+      '@prismshadow/skills':
+        specifier: workspace:*
+        version: link:../../packages/skills
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  plugins/trace-lookup:
     devDependencies:
       '@prismshadow/penguin-core':
         specifier: workspace:*
@@ -1909,6 +2106,9 @@ packages:
   '@fontsource-variable/noto-sans-sc@5.3.0':
     resolution: {integrity: sha512-lNar1dF7Ik/lHNPo/7JWG0TolXY29LtsqYgMvEysooZ5bsO9uH4shJmRrwyJ3PjyTPljhpMJEK0jDuLSU4vJ1w==}
 
+  '@fontsource-variable/shantell-sans@5.3.0':
+    resolution: {integrity: sha512-FPdHvSi6cngE/DMVCm7Xlls70U0b4/NMJLlcAPvVoq6eot1X8tNOZMRc22Rh9KoAfmmBz7yjsSXvpsYmkhXXVQ==}
+
   '@fontsource/ibm-plex-sans-condensed@5.3.0':
     resolution: {integrity: sha512-fQyBpwbkguP4azjq7Cw8h/J3C/d8MFAzXOiSoFxyKCUK4x0XKrWEh3tGdTxhDM0HctVRQilQo1zGoyxDHLm5jQ==}
 
@@ -2258,6 +2458,9 @@ packages:
   '@penguinharness/penguin-support@file:plugins/penguin-support':
     resolution: {directory: plugins/penguin-support, type: directory}
 
+  '@penguinharness/rrsi-rsi-toolkit@file:plugins/rrsi-rsi-toolkit':
+    resolution: {directory: plugins/rrsi-rsi-toolkit, type: directory}
+
   '@penguinharness/skill-porting@file:plugins/skill-porting':
     resolution: {directory: plugins/skill-porting, type: directory}
 
@@ -2269,6 +2472,9 @@ packages:
 
   '@penguinharness/software-development@file:plugins/software-development':
     resolution: {directory: plugins/software-development, type: directory}
+
+  '@penguinharness/trace-lookup@file:plugins/trace-lookup':
+    resolution: {directory: plugins/trace-lookup, type: directory}
 
   '@penguinharness/trace-rsi-toolkit@file:plugins/trace-rsi-toolkit':
     resolution: {directory: plugins/trace-rsi-toolkit, type: directory}
@@ -2287,8 +2493,16 @@ packages:
     engines: {node: '>=18'}
     hasBin: true
 
+  '@prismshadow/a2ui@file:packages/a2ui':
+    resolution: {directory: packages/a2ui, type: directory}
+    engines: {node: '>=24'}
+
   '@prismshadow/amsp@file:packages/amsp':
     resolution: {directory: packages/amsp, type: directory}
+    engines: {node: '>=24'}
+
+  '@prismshadow/chat-markdown@file:packages/chat-markdown':
+    resolution: {directory: packages/chat-markdown, type: directory}
     engines: {node: '>=24'}
 
   '@prismshadow/mmsp@0.5.6':
@@ -2309,6 +2523,10 @@ packages:
 
   '@prismshadow/penguin-server@file:packages/server':
     resolution: {directory: packages/server, type: directory}
+    engines: {node: '>=24'}
+
+  '@prismshadow/penguin-theme-pack@file:packages/theme-pack':
+    resolution: {directory: packages/theme-pack, type: directory}
     engines: {node: '>=24'}
 
   '@protobufjs/aspromise@1.1.2':
@@ -2521,7 +2739,9 @@ packages:
   '@smithy/core@3.24.7':
     resolution: {integrity: sha512-KoUi4M1f3BG6kzN1FnCwL7oyFptTbyBJKjR6yhSib+JHRdUmM1o+VwsFtJ66NZCkCzVfJMWRHJNo0R0jznp0Pg==}
     engines: {node: '>=18.0.0'}
-    deprecated: Deprecated due to a bug in custom logger data redaction. See https://github.com/aws/aws-sdk-js-v3/issues/8393.
+    deprecated: |-
+      Deprecated due to a bug in custom logger data redaction. Upgrade to the latest version. If you used a custom logger with this
+        version, review your logs and rotate any credentials or other secrets. See https://github.com/aws/aws-sdk-js-v3/issues/8393.
 
   '@smithy/credential-provider-imds@4.3.9':
     resolution: {integrity: sha512-ZlfJ/4Fa3jYb+3eaohPfG9utX9HmdhFNcFtpoGAhUhdynAOmGXtmigbi7eEiONKM+ykHw8RwKuDEb85Lx7t7fA==}
@@ -2957,6 +3177,9 @@ packages:
 
   '@types/unist@3.0.3':
     resolution: {integrity: sha512-ko/gIFJRv177XgZsZcBwnqJN5x/Gien8qNOn0D5bQU/zAzVf9Zt3BlcUiLqhV9y4ARk0GbT3tnUiPNgnTXzc/Q==}
+
+  '@types/which@3.0.4':
+    resolution: {integrity: sha512-liyfuo/106JdlgSchJzXEQCVArk0CvevqPote8F8HgWgJ3dRCcTHgJIsLDuee0kxk/mhbInzIZk3QWSZJ8R+2w==}
 
   '@types/ws@8.18.1':
     resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
@@ -4558,6 +4781,25 @@ packages:
   micromark-core-commonmark@2.0.3:
     resolution: {integrity: sha512-RDBrHEMSxVFLg6xvnXmb1Ayr2WzLAWjeSATAoxwKYJV94TeNavgoIdA0a9ytzDSVzBy2YKFK+emCPOEibLeCrg==}
 
+  micromark-extension-cjk-friendly-util@3.0.1:
+    resolution: {integrity: sha512-GcbXqTTHOsiZHyF753oIddP/J2eH8j9zpyQPhkof6B2JNxfEJabnQqxbCgzJNuNes0Y2jTNJ3LiYPSXr6eJA8w==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      micromark-util-types: '*'
+    peerDependenciesMeta:
+      micromark-util-types:
+        optional: true
+
+  micromark-extension-cjk-friendly@2.0.2:
+    resolution: {integrity: sha512-/BqZNCkDWg3Hj9zEEcRitZ5uMF3X78qmBFuP17oAjnVDZ0+H1GHiDKMJZDpJsXasCHEn/kzl6QHozUiWgCHtPQ==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      micromark: ^4.0.0
+      micromark-util-types: ^2.0.0
+    peerDependenciesMeta:
+      micromark-util-types:
+        optional: true
+
   micromark-extension-gfm-autolink-literal@2.1.0:
     resolution: {integrity: sha512-oOg7knzhicgQ3t4QCjCWgTmfNhvQbDDnJeVu9v81r7NltNCVmhPy1fJRX27pISafdjL+SVc4d3l48Gb6pbRypw==}
 
@@ -5076,6 +5318,10 @@ packages:
   regex@6.1.0:
     resolution: {integrity: sha512-6VwtthbV4o/7+OaAF9I5L5V3llLEsoPyq9P1JVXkedTP33c7MfCG0/5NOPcSJn0TzXcG9YUrR0gQSWioew3LDg==}
 
+  regexp-tree@0.1.27:
+    resolution: {integrity: sha512-iETxpjK6YoRWJG5o6hXLwvjYAoW+FEZn9os0PD/b6AP6xQwsa/Y7lCVgIixBbUPMfhu+i2LtdeAqVTgGlQarfA==}
+    hasBin: true
+
   rehype-katex@7.0.1:
     resolution: {integrity: sha512-OiM2wrZ/wuhKkigASodFoo8wimG3H12LWQaH8qSPVJn9apWKFSH3YOCtbKpBorTVw/eI7cuT21XBbvwEswbIOA==}
 
@@ -5169,6 +5415,9 @@ packages:
 
   safe-buffer@5.2.1:
     resolution: {integrity: sha512-rp3So07KcdmmKbGvgaNxQSJr7bGVSVk5S9Eq1F+ppbRo70+YeaDxkw5Dd8NPN+GD6bjnYm2VuPuCXmpuYvmCXQ==}
+
+  safe-regex@2.1.1:
+    resolution: {integrity: sha512-rx+x8AMzKb5Q5lQ95Zoi6ZbJqwCLkqi3XuJXp5P3rT8OEc6sZCJG5AE5dU3lsgRr/F4Bs31jSlVN+j5KrsGu9A==}
 
   safer-buffer@2.1.2:
     resolution: {integrity: sha512-YZo3K82SD7Riyi0E1EQPojLz7kpepnSQI9IyPbHHg1XXXevb5dJI7tpyN2ADxGcQbHG7vcyRHk0cbwqcQriUtg==}
@@ -6629,6 +6878,8 @@ snapshots:
 
   '@fontsource-variable/noto-sans-sc@5.3.0': {}
 
+  '@fontsource-variable/shantell-sans@5.3.0': {}
+
   '@fontsource/ibm-plex-sans-condensed@5.3.0': {}
 
   '@google/genai@2.24.0(supports-color@10.2.2)':
@@ -6913,6 +7164,8 @@ snapshots:
 
   '@penguinharness/penguin-support@file:plugins/penguin-support': {}
 
+  '@penguinharness/rrsi-rsi-toolkit@file:plugins/rrsi-rsi-toolkit': {}
+
   '@penguinharness/skill-porting@file:plugins/skill-porting': {}
 
   '@penguinharness/skilladam-rsi-toolkit@file:plugins/skilladam-rsi-toolkit': {}
@@ -6920,6 +7173,8 @@ snapshots:
   '@penguinharness/skillopt-rsi-toolkit@file:plugins/skillopt-rsi-toolkit': {}
 
   '@penguinharness/software-development@file:plugins/software-development': {}
+
+  '@penguinharness/trace-lookup@file:plugins/trace-lookup': {}
 
   '@penguinharness/trace-rsi-toolkit@file:plugins/trace-rsi-toolkit': {}
 
@@ -6933,7 +7188,41 @@ snapshots:
     dependencies:
       playwright: 1.61.1
 
+  '@prismshadow/a2ui@file:packages/a2ui': {}
+
   '@prismshadow/amsp@file:packages/amsp': {}
+
+  '@prismshadow/chat-markdown@file:packages/chat-markdown':
+    dependencies:
+      mdast-util-gfm-footnote: 2.1.0(supports-color@10.2.2)
+      mdast-util-gfm-strikethrough: 2.0.0(supports-color@10.2.2)
+      mdast-util-gfm-table: 2.0.0(supports-color@10.2.2)
+      mdast-util-gfm-task-list-item: 2.0.0(supports-color@10.2.2)
+      micromark-extension-cjk-friendly: 2.0.2(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))
+      micromark-extension-gfm-footnote: 2.1.0
+      micromark-extension-gfm-strikethrough: 2.1.0
+      micromark-extension-gfm-table: 2.1.1
+      micromark-extension-gfm-task-list-item: 2.1.0
+    transitivePeerDependencies:
+      - micromark
+      - micromark-util-types
+      - supports-color
+
+  '@prismshadow/chat-markdown@file:packages/chat-markdown(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)':
+    dependencies:
+      mdast-util-gfm-footnote: 2.1.0(supports-color@10.2.2)
+      mdast-util-gfm-strikethrough: 2.0.0(supports-color@10.2.2)
+      mdast-util-gfm-table: 2.0.0(supports-color@10.2.2)
+      mdast-util-gfm-task-list-item: 2.0.0(supports-color@10.2.2)
+      micromark-extension-cjk-friendly: 2.0.2(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))
+      micromark-extension-gfm-footnote: 2.1.0
+      micromark-extension-gfm-strikethrough: 2.1.0
+      micromark-extension-gfm-table: 2.1.1
+      micromark-extension-gfm-task-list-item: 2.1.0
+    transitivePeerDependencies:
+      - micromark
+      - micromark-util-types
+      - supports-color
 
   '@prismshadow/mmsp@0.5.6(supports-color@10.2.2)(ws@8.21.0)':
     dependencies:
@@ -7000,14 +7289,17 @@ snapshots:
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
       '@penguinharness/penguin-support': file:plugins/penguin-support
+      '@penguinharness/rrsi-rsi-toolkit': file:plugins/rrsi-rsi-toolkit
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
       '@penguinharness/skillopt-rsi-toolkit': file:plugins/skillopt-rsi-toolkit
       '@penguinharness/software-development': file:plugins/software-development
+      '@penguinharness/trace-lookup': file:plugins/trace-lookup
       '@penguinharness/trace-rsi-toolkit': file:plugins/trace-rsi-toolkit
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
       '@penguinharness/use-claude-code': file:plugins/use-claude-code
       '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
+      '@prismshadow/a2ui': file:packages/a2ui
       '@prismshadow/mmsp': 0.5.6(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(ws@8.21.0)
       '@prismshadow/penguin-server': file:packages/server
@@ -7020,6 +7312,8 @@ snapshots:
       - '@modelcontextprotocol/sdk'
       - bufferutil
       - debug
+      - micromark
+      - micromark-util-types
       - supports-color
       - utf-8-validate
       - ws
@@ -7045,17 +7339,20 @@ snapshots:
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
       '@penguinharness/penguin-support': file:plugins/penguin-support
+      '@penguinharness/rrsi-rsi-toolkit': file:plugins/rrsi-rsi-toolkit
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
       '@penguinharness/skillopt-rsi-toolkit': file:plugins/skillopt-rsi-toolkit
       '@penguinharness/software-development': file:plugins/software-development
+      '@penguinharness/trace-lookup': file:plugins/trace-lookup
       '@penguinharness/trace-rsi-toolkit': file:plugins/trace-rsi-toolkit
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
       '@penguinharness/use-claude-code': file:plugins/use-claude-code
       '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
+      '@prismshadow/a2ui': file:packages/a2ui
       '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
-      '@prismshadow/penguin-server': file:packages/server(supports-color@10.2.2)
+      '@prismshadow/penguin-server': file:packages/server(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
       commander: 13.1.0
       dotenv: 17.4.2
       fflate: 0.8.3
@@ -7065,6 +7362,8 @@ snapshots:
       - '@modelcontextprotocol/sdk'
       - bufferutil
       - debug
+      - micromark
+      - micromark-util-types
       - supports-color
       - utf-8-validate
       - ws
@@ -7150,41 +7449,50 @@ snapshots:
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
       '@penguinharness/penguin-support': file:plugins/penguin-support
+      '@penguinharness/rrsi-rsi-toolkit': file:plugins/rrsi-rsi-toolkit
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
       '@penguinharness/skillopt-rsi-toolkit': file:plugins/skillopt-rsi-toolkit
       '@penguinharness/software-development': file:plugins/software-development
+      '@penguinharness/trace-lookup': file:plugins/trace-lookup
       '@penguinharness/trace-rsi-toolkit': file:plugins/trace-rsi-toolkit
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
       '@penguinharness/use-claude-code': file:plugins/use-claude-code
       '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
+      '@prismshadow/a2ui': file:packages/a2ui
       '@prismshadow/amsp': file:packages/amsp
+      '@prismshadow/chat-markdown': file:packages/chat-markdown
       '@prismshadow/mmsp': 0.5.6(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(ws@8.21.0)
       '@xterm/headless': 5.5.0
+      commander: 13.1.0
+      css-tree: 3.2.1
       dotenv: 17.4.2
       fflate: 0.8.3
       hono: 4.13.13
       isomorphic-git: 1.44.10
       node-pty: 1.1.0
-      remark-gfm: 4.0.1(supports-color@10.2.2)
       remark-parse: 11.0.0(supports-color@10.2.2)
+      safe-regex: 2.1.1
       smol-toml: 1.9.1
       tar: 7.5.22
       typescript: 5.9.3
       undici: 7.30.1
       unified: 11.0.5
+      which: 5.0.0
       ws: 8.21.0
       yaml: 2.9.0
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
       - bufferutil
       - debug
+      - micromark
+      - micromark-util-types
       - supports-color
       - utf-8-validate
       - zod
 
-  '@prismshadow/penguin-server@file:packages/server(supports-color@10.2.2)':
+  '@prismshadow/penguin-server@file:packages/server(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)':
     dependencies:
       '@hono/node-server': 2.0.12(hono@4.13.13)
       '@larksuiteoapi/node-sdk': 1.73.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
@@ -7205,36 +7513,45 @@ snapshots:
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
       '@penguinharness/penguin-support': file:plugins/penguin-support
+      '@penguinharness/rrsi-rsi-toolkit': file:plugins/rrsi-rsi-toolkit
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
       '@penguinharness/skillopt-rsi-toolkit': file:plugins/skillopt-rsi-toolkit
       '@penguinharness/software-development': file:plugins/software-development
+      '@penguinharness/trace-lookup': file:plugins/trace-lookup
       '@penguinharness/trace-rsi-toolkit': file:plugins/trace-rsi-toolkit
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
       '@penguinharness/use-claude-code': file:plugins/use-claude-code
       '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
+      '@prismshadow/a2ui': file:packages/a2ui
       '@prismshadow/amsp': file:packages/amsp
+      '@prismshadow/chat-markdown': file:packages/chat-markdown(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
       '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@xterm/headless': 5.5.0
+      commander: 13.1.0
+      css-tree: 3.2.1
       dotenv: 17.4.2
       fflate: 0.8.3
       hono: 4.13.13
       isomorphic-git: 1.44.10
       node-pty: 1.1.0
-      remark-gfm: 4.0.1(supports-color@10.2.2)
       remark-parse: 11.0.0(supports-color@10.2.2)
+      safe-regex: 2.1.1
       smol-toml: 1.9.1
       tar: 7.5.22
       typescript: 5.9.3
       undici: 7.30.1
       unified: 11.0.5
+      which: 5.0.0
       ws: 8.21.0
       yaml: 2.9.0
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
       - bufferutil
       - debug
+      - micromark
+      - micromark-util-types
       - supports-color
       - utf-8-validate
       - zod
@@ -7260,38 +7577,60 @@ snapshots:
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
       '@penguinharness/penguin-support': file:plugins/penguin-support
+      '@penguinharness/rrsi-rsi-toolkit': file:plugins/rrsi-rsi-toolkit
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
       '@penguinharness/skillopt-rsi-toolkit': file:plugins/skillopt-rsi-toolkit
       '@penguinharness/software-development': file:plugins/software-development
+      '@penguinharness/trace-lookup': file:plugins/trace-lookup
       '@penguinharness/trace-rsi-toolkit': file:plugins/trace-rsi-toolkit
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
       '@penguinharness/use-claude-code': file:plugins/use-claude-code
       '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
+      '@prismshadow/a2ui': file:packages/a2ui
       '@prismshadow/amsp': file:packages/amsp
+      '@prismshadow/chat-markdown': file:packages/chat-markdown(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
       '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@xterm/headless': 5.5.0
+      commander: 13.1.0
+      css-tree: 3.2.1
       dotenv: 17.4.2
       fflate: 0.8.3
       hono: 4.13.13
       isomorphic-git: 1.44.10
       node-pty: 1.1.0
-      remark-gfm: 4.0.1(supports-color@10.2.2)
       remark-parse: 11.0.0(supports-color@10.2.2)
+      safe-regex: 2.1.1
       smol-toml: 1.9.1
       tar: 7.5.22
       typescript: 5.9.3
       undici: 7.30.1
       unified: 11.0.5
+      which: 5.0.0
       ws: 8.21.0
       yaml: 2.9.0
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
       - bufferutil
       - debug
+      - micromark
+      - micromark-util-types
       - supports-color
       - utf-8-validate
+      - zod
+
+  '@prismshadow/penguin-theme-pack@file:packages/theme-pack(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
+    dependencies:
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      css-tree: 3.2.1
+      fflate: 0.8.3
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
       - zod
 
   '@protobufjs/aspromise@1.1.2': {}
@@ -7961,6 +8300,8 @@ snapshots:
   '@types/unist@2.0.11': {}
 
   '@types/unist@3.0.3': {}
+
+  '@types/which@3.0.4': {}
 
   '@types/ws@8.18.1':
     dependencies:
@@ -9965,6 +10306,25 @@ snapshots:
       micromark-util-symbol: 2.0.1
       micromark-util-types: 2.0.2
 
+  micromark-extension-cjk-friendly-util@3.0.1(micromark-util-types@2.0.2):
+    dependencies:
+      get-east-asian-width: 1.6.0
+      micromark-util-character: 2.1.1
+      micromark-util-symbol: 2.0.1
+    optionalDependencies:
+      micromark-util-types: 2.0.2
+
+  micromark-extension-cjk-friendly@2.0.2(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2)):
+    dependencies:
+      devlop: 1.1.0
+      micromark: 4.0.2(supports-color@10.2.2)
+      micromark-extension-cjk-friendly-util: 3.0.1(micromark-util-types@2.0.2)
+      micromark-util-chunked: 2.0.1
+      micromark-util-resolve-all: 2.0.1
+      micromark-util-symbol: 2.0.1
+    optionalDependencies:
+      micromark-util-types: 2.0.2
+
   micromark-extension-gfm-autolink-literal@2.1.0:
     dependencies:
       micromark-util-character: 2.1.1
@@ -10571,6 +10931,8 @@ snapshots:
     dependencies:
       regex-utilities: 2.3.0
 
+  regexp-tree@0.1.27: {}
+
   rehype-katex@7.0.1:
     dependencies:
       '@types/hast': 3.0.4
@@ -10724,6 +11086,10 @@ snapshots:
   safe-buffer@5.1.2: {}
 
   safe-buffer@5.2.1: {}
+
+  safe-regex@2.1.1:
+    dependencies:
+      regexp-tree: 0.1.27
 
   safer-buffer@2.1.2: {}
 

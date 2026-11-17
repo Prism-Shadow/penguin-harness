@@ -1,12 +1,12 @@
 ---
 name: skillopt-rsi-toolkit
-description: Run SkillOpt on selected Project Benchmarks by learning bounded Skill edits from trajectories, selecting candidates on fixed evaluation tasks, and testing frozen baseline and final States.
-version: 2026.10.30.1
+description: "Evolve a reusable Skill with SkillOpt through trajectory reflection, bounded patch budgets, candidate selection on fixed evaluation tasks, and cross-epoch slow/meta updates."
+version: 2026.11.17.1
 ---
 
 # SkillOpt
 
-You are the experiment controller. Read the selected Project Benchmarks, prepare a continuing learning environment, collect the learned Skill and arrange independent testing.
+You are the main Penguin running SkillOpt. Follow the experimental setup specified by the user's request and the selected Benchmark's instructions.
 
 [SkillOpt: Executive Strategy for Self-Evolving Agent Skills](https://arxiv.org/abs/2605.23904v1) treats Skill text as the object of optimization. The Target solves tasks with its current Skill; an optimizer reflects on successful and failed trajectories, merges proposed edits and applies a small, scheduled edit budget. A candidate replaces the current Skill only when its selection score improves. Rejected edits inform later proposals, while epoch-wise slow/meta updates retain longer-term lessons. The model weights and solving tools stay fixed.
 
@@ -18,18 +18,16 @@ If the request only names this Skill, ask which Target and Benchmark to use. Res
 
 Follow [initialization](references/initialization.md) and the [installed Benchmark instructions](references/benchmark.md). Resolve Train/Test packages, task-source commit, runtime, feedback and export locations from their manifests and Case Markdown. An installed Benchmark name is sufficient.
 
-Use all declared Train and Test questions unless a subset is requested. Train once per independent benchmark or training unit. Record the Target Agent, model, thinking level, experiment version, optimizer configuration and resource limits. Prefer user-specified settings. The Target is separate from this experiment controller; the training Agent organizes the learning roles inside the training environment.
+How benchmarks are organized (for example, running a single benchmark or running multiple benchmarks independently), which tasks are used, and how many evaluation passes to perform follow the user's prompt and the Benchmark's documentation rather than being prescribed by this Skill. Record the Target Agent, model, thinking level, experiment version, optimizer configuration and resource limits. Prefer user-specified settings. The Target is separate from this controller; the training Agent organizes the learning roles inside the training environment.
 
 | Setting | Default |
 | --- | --- |
-| Training runs per independent unit | 1 |
 | Epochs | 4, covering all Train tasks in each epoch |
 | Rollout batch | Up to 40 Train tasks |
 | Reflection minibatch / merge batch | Up to 8 trajectories / proposals |
 | Analyst refinement | Up to 3 passes per reflection minibatch |
 | Textual edit budget | Cosine decay from 4 to 2 edits |
 | Slow/meta comparison | Up to 20 fixed Train tasks at epoch boundaries |
-| Complete Test repetitions per frozen State | 3 |
 
 Cap batch sizes at the available tasks. These defaults adapt the paper's optimization settings to the selected data; they do not require a particular benchmark, model provider or Docker image. Fix the finite learning budget before launch and honor the Benchmark's runtime limits.
 
@@ -52,9 +50,9 @@ Give the training Agent [training.md](references/training.md), the resolved sett
 
 Fresh task-solving calls receive the exact working Skill and public inputs. The continuing training Agent retains optimizer history. Evaluating a changed Skill means producing new answers; regrading old answers does not measure it.
 
-## Test and report
+## Evaluate and report
 
-Build `baseline` and `final` from the same saved base State and fixed reader. Baseline is the pre-learning State; final adds the exported Skill. Follow [evaluation and reporting](references/evaluation.md): measure each frozen State on the complete Test set three times by default, with a fresh environment and conversation per case and repetition. Reuse the same learned Skill for every repetition.
+Build `baseline` and `final` from the same saved base State and fixed reader. Baseline is the pre-learning State; final adds the exported Skill. Follow [evaluation and reporting](references/evaluation.md) and the user's requested evaluation schedule, with a fresh environment and conversation per case and evaluation run. Reuse the same frozen learned Skill without retraining.
 
 Report `baseline`, `final`, `mean`, `std` and `final_minus_baseline`, plus versions and per-unit/per-case cost, time and token categories. Record actual rollout and selection measurements as numbered `step` records with `curve_kind: benchmark_score`; distinguish their task sets and retain rejected candidates. Intermediate Skill tests are optional. Test feedback never reopens learning.
 

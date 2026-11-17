@@ -23,6 +23,7 @@ import type { Context, MiddlewareHandler } from "hono";
 import type { HttpBindings } from "@hono/node-server";
 import { bodyLimit } from "hono/body-limit";
 import { bodyLimitBytes, toAttachmentLimits } from "./services/attachment-limits.js";
+import { isAgentImport, MAX_PACKAGE_BYTES } from "./services/agent-zip.js";
 import type { DatabaseSync } from "node:sqlite";
 import type { Instance, ModuleTree } from "@prismshadow/penguin-core/kernel";
 import type { ServerConfig } from "./config.js";
@@ -38,6 +39,9 @@ import {
   HMR_HOST_RESOURCE_ID,
   HMR_CONTROL_RESOURCE_ID,
   HMR_OVERRIDES_RESOURCE_ID,
+  HMR_SHELL_FRAMES_RESOURCE_ID,
+  newShellFrames,
+  type ShellFrames,
   HMR_TEST_PLUGINS_RESOURCE_ID,
   type Replacements,
   HMR_PROXY_RESOURCE_ID,
@@ -46,7 +50,7 @@ import {
   type Log,
   type ProxyControl,
 } from "./hmr/capabilities.js";
-import { ensureCliShim } from "./services/cli-shim.js";
+import { ensureCliShim, resolveCli, shimFromResolution } from "./services/cli-shim.js";
 import { openDatabase } from "./db/database.js";
 import { MachinesRepo } from "./db/repos/machines.js";
 import { ErrorsRepo } from "./db/repos/errors.js";
@@ -57,8 +61,9 @@ import { SessionsRepo } from "./db/repos/sessions.js";
 import { UiPrefsRepo } from "./db/repos/ui-prefs.js";
 import { UsersRepo } from "./db/repos/users.js";
 import type { UserRow } from "./db/repos/users.js";
-import { jsonOnlyWrites, sameOriginWrites } from "./auth/middleware.js";
+import { authMiddleware, jsonOnlyWrites, sameOriginWrites } from "./auth/middleware.js";
 import { originRule } from "./http/public-origin.js";
+import { WEB_APP_CSP } from "./http/page-csp.js";
 import { AMSP_PREFIX, amspAllowOrigin } from "./amsp/cors.js";
 import { mintApiToken, storeApiToken } from "./auth/api-token.js";
 import type { Identity } from "./terminal/identity.js";
@@ -156,7 +161,6 @@ import { benchmarksRoutes } from "./http/routes/benchmarks.js";
 import { agentSkillsRoutes } from "./http/routes/skills.js";
 import { agentHooksRoutes } from "./http/routes/hooks.js";
 import { agentPluginsRoutes, pluginLibraryRoutes } from "./http/routes/plugins.js";
-import { agentTransferRoutes } from "./http/routes/agent-transfer.js";
 import { agentsRoutes } from "./http/routes/agents.js";
 import { dirsRoutes } from "./http/routes/dirs.js";
 import { directorySkillsRoutes } from "./http/routes/directory-skills.js";
@@ -195,6 +199,8 @@ export interface ServerBoot {
    * hmr/platform.ts), which is why `tree` is derived from it on every read rather than held.
    */
   instance: Instance<PlatformApi>;
+  /** The host's message port as state; index.ts fills it when a port exists. */
+  shellFrames: ShellFrames;
   /**
    * The tree the running App serves — read through `instance` each time, so a plugin
    * change's re-assembly is seen without any push. A generation that has no tree to answer
@@ -295,26 +301,42 @@ export async function bootAppDeps(
   // test hands the tree) is honoured here too, and the process's own console otherwise.
   const logDouble = replacements.find(([cls]) => cls === ConsoleLog)?.[1] as Log | undefined;
   const shimLog = (line: string): void => (logDouble ?? new ConsoleLog()).line(line);
-  const shim = ensureCliShim(config.root, config.cliEntry ?? null, {
+  // Which entry `penguin` is, answered once by the shared procedure rather than privately
+  // here: this server's own entry — the record decides only whether a pushed bundle rides
+  // with it. Asked pre-boot for the same reason the shim is written pre-boot — it describes
+  // this installation, not a state a push can change under a running App.
+  const ownCli = {
+    entry: config.cliEntry ?? null,
     execArgs: config.cliLaunch?.execArgs ?? [],
     unavailable: config.cliLaunch?.unavailable ?? null,
+  };
+  const resolvedCli =
+    ownCli.entry === null
+      ? null
+      : await resolveCli({ callerEntry: ownCli.entry, root: config.root });
+  const shimDecision = shimFromResolution(ownCli, resolvedCli);
+  const shim = ensureCliShim(config.root, shimDecision.entry, {
+    execArgs: shimDecision.execArgs,
+    unavailable: shimDecision.unavailable,
     dbPath: config.dbPath,
   });
   if (shim.kind === "written") {
-    // The whole command the shim runs, loader included: which CLI `penguin` is, said once.
+    // The whole command the shim runs, loader included, and the answer it ran under.
     const command = [...shim.execArgs, shim.entry].join(" ");
-    shimLog(`Agent CLI: ${path.join(shim.dir, "penguin")} -> ${command}`);
+    shimLog(
+      `Agent CLI: ${path.join(shim.dir, "penguin")} -> ${command} (${shimDecision.answerName})`,
+    );
   } else if (shim.kind === "stub") {
     shimLog(
       `Agent CLI: this checkout's CLI cannot run, so ${path.join(shim.dir, "penguin")} says why ` +
-        `instead of running another installation's: ${shim.reason}`,
+        `instead of running another installation's: ${shim.detail}`,
     );
   } else if (shim.kind === "absent") {
     shimLog(
       "Agent CLI: no CLI entry found; commands an Agent runs resolve `penguin` on their own PATH.",
     );
   } else {
-    console.warn(`[server] could not write the penguin CLI shim: ${shim.reason}`);
+    console.warn(`[server] could not write the penguin CLI shim: ${shim.detail}`);
   }
 
   // What buildAppDeps claims (see hmr/capabilities.ts) — every entry must be in place before
@@ -331,6 +353,8 @@ export async function bootAppDeps(
   hmr.resources.register(HMR_OVERRIDES_RESOURCE_ID, replacements);
   const desktop = config.desktopToken !== null ? new DesktopService(config.desktopToken) : null;
   hmr.resources.register(HMR_DESKTOP_RESOURCE_ID, desktop);
+  const shellFrames = newShellFrames();
+  hmr.resources.register(HMR_SHELL_FRAMES_RESOURCE_ID, shellFrames);
   // The registry sweep only STARTS plugin disposal (its disposers are sync) — the
   // fallback for exit paths that skip the graceful shutdown. The graceful path awaits
   // host.dispose() itself, bounded (index.ts); dispose is idempotent, so both may fire.
@@ -353,7 +377,10 @@ export async function bootAppDeps(
   // members: the runtime singletons published above, and `tree` — which follows the
   // instance of the moment, so a re-assembly (a plugin change, no push) is never missed.
   // Per-request business dispatch rides the seam.
-  booted = liveTree({ config, db, channels, hmr, control: ctl, desktop, instance }, tree);
+  booted = liveTree(
+    { config, db, channels, hmr, control: ctl, desktop, instance, shellFrames },
+    tree,
+  );
   return booted;
 }
 
@@ -399,6 +426,7 @@ export function createApp(boot: ServerBoot): Hono<AppEnv> {
   const deps = {
     config: boot.config,
     desktop: boot.desktop,
+    shellFrames: boot.shellFrames,
     get authService() {
       return authService();
     },
@@ -492,7 +520,10 @@ export function createApp(boot: ServerBoot): Hono<AppEnv> {
   app.use(`${AMSP_PREFIX}/*`, amspAllowOrigin);
   let capped: { size: number; mw: MiddlewareHandler } | null = null;
   app.use("/api/*", (c, next) => {
-    const size = bodyLimitBytes(settings().getAttachmentLimitsMb());
+    // An Agent package is uploaded raw, under the package cap rather than the attachment budget.
+    const size = isAgentImport(c.req.method, c.req.path)
+      ? MAX_PACKAGE_BYTES
+      : bodyLimitBytes(settings().getAttachmentLimitsMb());
     if (capped === null || capped.size !== size) {
       capped = {
         size,
@@ -547,6 +578,7 @@ const CONTENT_TYPES: Record<string, string> = {
   ".js": "text/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".json": "application/json",
+  ".webmanifest": "application/manifest+json",
   ".svg": "image/svg+xml",
   ".png": "image/png",
   ".jpg": "image/jpeg",
@@ -699,6 +731,11 @@ function staticResponse(
     "Cache-Control": cacheControlFor(servedPath),
     ETag: responseEtag,
   };
+  // The page's own policy (http/page-csp.ts), on HTML only: a header governs the document it
+  // arrives with, and the scripts, stylesheets and fonts are not documents. On the 304 too: a
+  // revalidation updates the stored response's headers, so a shell cached before the policy
+  // existed picks it up without a re-download.
+  if (ext === ".html") headers["Content-Security-Policy"] = WEB_APP_CSP;
   // Announced whenever the answer COULD have varied — on the 304 too, and even when this
   // particular client took no encoding: a shared cache keys on what the header says, so
   // leaving it off is how one client's gzip reaches another that cannot read it.
@@ -724,6 +761,54 @@ function staticResponse(
  * directory on disk. Serves the caching contract above, so pushes take effect
  * on the next navigation and hashed assets stop re-downloading.
  */
+/**
+ * A workbench's full-page route (`/app/<project>/<agent>/<workbench>[/<tabKey>]`) is its own
+ * installable app: served through the SPA fallback (no such file exists), its index.html's
+ * manifest link stops naming the main app's manifest and names the workbench's own — or, when
+ * the route names a tab (a fourth segment), that tab's own manifest: one app per tab, the
+ * launcher opening THAT tab. Null for every other path.
+ */
+function workbenchAppPage(reqPath: string): {
+  projectId: string;
+  agentId: string;
+  workbenchId: string;
+  tabKey?: string;
+  machineId?: string;
+} | null {
+  const m = /^\/app\/([^/]+)\/([^/]+)\/([^/]+)(?:\/([^/]+))?/.exec(reqPath);
+  if (m === null) return null;
+  const machine = new URL(`http://localhost${reqPath}`).searchParams.get("machine") ?? undefined;
+  return {
+    projectId: m[1]!,
+    agentId: m[2]!,
+    workbenchId: m[3]!,
+    ...(m[4] === undefined ? {} : { tabKey: m[4] }),
+    ...(machine === undefined || machine === "" ? {} : { machineId: machine }),
+  };
+}
+
+/**
+ * index.html served for a workbench's app page, with its manifest link retargeted. The
+ * source link is the template's literal (`href="/manifest.webmanifest"`); when the built
+ * file ever words it differently the page is passed through untouched rather than
+ * half-rewritten. Other pages keep the main app's manifest.
+ */
+function withWorkbenchManifestLink(content: Buffer, reqPath: string): Buffer {
+  const page = workbenchAppPage(reqPath);
+  if (page === null) return content;
+  const segments = [page.projectId, page.agentId, page.workbenchId].map(encodeURIComponent);
+  // `tabs/` is a literal, not a segment: only the tab key is encoded. A remote machine's
+  // workbench names the machine in the query — the auth-less gate hops to it.
+  const href =
+    `/api/projects/${segments[0]}/agents/${segments[1]}/workbenches/${segments[2]}` +
+    (page.tabKey === undefined ? "" : `/tabs/${encodeURIComponent(page.tabKey)}`) +
+    "/manifest.webmanifest" +
+    (page.machineId === undefined ? "" : `?machine=${encodeURIComponent(page.machineId)}`);
+  const html = content.toString("utf8");
+  const rewritten = html.replace('href="/manifest.webmanifest"', `href="${href}"`);
+  return rewritten === html ? content : Buffer.from(rewritten, "utf8");
+}
+
 function registerStaticRoutes(app: Hono<AppEnv>, resolveSource: () => Promise<WebSource>): void {
   app.get("*", async (c) => {
     const reqPath = decodeURIComponent(c.req.path);
@@ -742,7 +827,9 @@ function registerStaticRoutes(app: Hono<AppEnv>, resolveSource: () => Promise<We
       if (content === undefined) {
         return c.json(errorBody("not_found", "Resource does not exist."), 404);
       }
-      return staticResponse(c, content, servedPath, etagOfBuffer(content));
+      const served =
+        servedPath === "index.html" ? withWorkbenchManifestLink(content, reqPath) : content;
+      return staticResponse(c, served, servedPath, etagOfBuffer(served));
     }
 
     const webDist = source.dir;
@@ -781,10 +868,21 @@ function registerStaticRoutes(app: Hono<AppEnv>, resolveSource: () => Promise<We
     } catch {
       return c.json(errorBody("not_found", "Resource does not exist."), 404);
     }
-    // A weak size+mtime validator, the classic disk-file shape — hashing every
-    // response would cost more than the 304s save.
-    const etag = `W/"${content.byteLength}-${Math.round(mtimeMs)}"`;
-    return staticResponse(c, content, path.relative(base, file).split(path.sep).join("/"), etag);
+    const served =
+      file === path.join(base, "index.html")
+        ? withWorkbenchManifestLink(content, reqPath)
+        : content;
+    // A weak size+mtime validator, the classic disk-file shape — hashing every response
+    // would cost more than the 304s save. A rewritten page is where that shape lies: the
+    // rewrite retargets the manifest link per workbench and per tab, so equal-length
+    // rewrites of one file are different representations with the same size and mtime,
+    // and a validator held for one would wrongly 304 the other. Those carry a hash of
+    // the rewritten bytes instead (the same identity the in-memory branch hashes).
+    const etag =
+      served === content
+        ? `W/"${served.byteLength}-${Math.round(mtimeMs)}"`
+        : `W/"${createHash("sha256").update(served).digest("base64url").slice(0, 16)}"`;
+    return staticResponse(c, served, path.relative(base, file).split(path.sep).join("/"), etag);
   });
 }
 

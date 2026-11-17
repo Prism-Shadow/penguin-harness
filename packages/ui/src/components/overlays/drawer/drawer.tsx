@@ -36,14 +36,14 @@ export function Drawer({
 
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50">
+    <div className="fixed inset-0 z-modal">
       <div
         // ui-scrim: the dimmed layer behind the drawer; a theme may blur the page through it.
         className="ui-scrim anim-fade absolute inset-0 bg-[var(--ui-overlay-backdrop)]"
         onMouseDown={onClose}
       />
       <div
-        className={`absolute inset-y-0 flex w-[80vw] flex-col bg-surface pt-[env(titlebar-area-height,0px)] shadow-xl ${widthClass ?? "max-w-xs"} ${
+        className={`absolute inset-y-0 flex w-[80vw] flex-col bg-surface pt-[var(--window-band-height,0px)] shadow-xl ${widthClass ?? "max-w-xs"} ${
           side === "left"
             ? "anim-drawer-left left-0 border-r border-line"
             : "anim-drawer-right right-0 border-l border-line"

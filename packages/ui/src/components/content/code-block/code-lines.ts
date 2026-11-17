@@ -41,33 +41,45 @@ function styleObject(text: string): CSSProperties {
   return out as CSSProperties;
 }
 
+/** One attribute of an opening tag, or undefined when it has none. */
+function attribute(tag: string, name: string): string | undefined {
+  return new RegExp(`\\s${name}="([^"]*)"`).exec(tag)?.[1];
+}
+
 /**
- * Cuts Shiki's block-line markup (highlighter-core.ts's `blockLines`) into its lines. Null where
- * there is no DOM to parse with (the server renderer) or the markup is not that shape — the
- * caller then draws the block whole, as it always could.
+ * Highlighted markup cut into its lines' inner markup, or null when it does not have the shape a
+ * block-lines highlight produces (a `<code>` of `<span class="line">` elements) or the count is
+ * not `expected`.
  */
-export function splitHighlighted(html: string): HighlightedLines | null {
-  if (typeof document === "undefined") return null;
-  const template = document.createElement("template");
-  template.innerHTML = html;
-  const pre = template.content.querySelector("pre");
-  const body = pre?.querySelector(":scope > code");
-  if (!pre || !body) return null;
-  const lines = [...body.children];
-  if (lines.length !== body.childNodes.length || lines.some((l) => !l.classList.contains("line"))) {
-    return null;
-  }
-  const tab = pre.getAttribute("tabindex");
+export function splitHighlightedLines(html: string, expected: number): string[] | null {
+  const open = html.indexOf("<code>");
+  const close = html.lastIndexOf("</code>");
+  if (open === -1 || close < open) return null;
+  const parts = html.slice(open + "<code>".length, close).split(/<span class="line(?: [^"]*)?">/);
+  if (parts.shift() !== "") return null;
+  const lines = parts.map((part) => (part.endsWith("</span>") ? part.slice(0, -7) : part));
+  return lines.length === expected ? lines : null;
+}
+
+/**
+ * Cuts Shiki's block-line markup (highlighter-core.ts's `blockLines`) for `code` into its lines,
+ * as a string: a large file costs a split, not a second DOM. Null where the markup is not that
+ * shape or does not hold `code`'s lines — the caller then draws the block whole.
+ */
+export function splitHighlighted(html: string, code: string): HighlightedLines | null {
+  const tag = /^<pre\b[^>]*>/.exec(html)?.[0];
+  // Shiki splits on `\r?\n` and keeps no carriage return.
+  const texts = code.split(/\r?\n/);
+  const markup = splitHighlightedLines(html, texts.length);
+  if (tag === undefined || markup === null) return null;
+  const tab = attribute(tag, "tabindex");
   return {
     pre: {
-      className: pre.getAttribute("class") ?? "",
-      style: styleObject(pre.getAttribute("style") ?? ""),
-      tabIndex: tab === null ? undefined : Number(tab),
+      className: attribute(tag, "class") ?? "",
+      style: styleObject(attribute(tag, "style") ?? ""),
+      tabIndex: tab === undefined ? undefined : Number(tab),
     },
-    lines: lines.map((line) => ({
-      text: line.textContent ?? "",
-      html: { __html: line.innerHTML },
-    })),
+    lines: markup.map((line, i) => ({ text: texts[i]!, html: { __html: line } })),
   };
 }
 
@@ -131,4 +143,27 @@ export function alignRows(
     const html = markup !== null && before?.html?.__html === markup.__html ? before.html : markup;
     return { key: before?.key ?? newKey(), text, html };
   });
+}
+
+/**
+ * Lines per chunk of a numbered surface, which the browser draws or skips as one (prose.css's
+ * `.line-chunk`): drawing one as it scrolls into view takes a few milliseconds, and a file of
+ * tens of thousands of lines is a few hundred boxes.
+ */
+export const CHUNK_LINES = 100;
+
+/** A run of rows drawn as one box. */
+export interface RowChunk {
+  /** The index of its first line in the file. */
+  start: number;
+  rows: readonly CodeRow[];
+}
+
+/** `rows` in chunks of {@link CHUNK_LINES}, in order. */
+export function chunkRows(rows: readonly CodeRow[]): RowChunk[] {
+  const chunks: RowChunk[] = [];
+  for (let start = 0; start < rows.length; start += CHUNK_LINES) {
+    chunks.push({ start, rows: rows.slice(start, start + CHUNK_LINES) });
+  }
+  return chunks;
 }

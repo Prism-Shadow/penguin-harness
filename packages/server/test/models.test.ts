@@ -58,9 +58,10 @@
  *   than the stored key, and refuses a keyless gateway row or a Penguin Go probe without reaching
  *   for vendor environment keys or the network (a relay row with no endpoint anywhere included).
  *   Its request names PenguinHarness and its version as the whole User-Agent, whichever SDK
- *   the protocol runs on.
+ *   the protocol runs on. The vision probe asks for a handful of tokens and sends no tools.
  * - A PUT invalidates the Project's cached Session runtimes (reads do not), tells the Project's
- *   open Session channels only, and GET/PUT report the file's updatedAt.
+ *   open Session channels only, and GET/PUT report the file's updatedAt. A model change another
+ *   writer (the CLI) makes to the file does the same at the next Task; a rename does not.
  *
  * One app per describe; every case works in a Project of its own.
  */
@@ -69,7 +70,13 @@ import type { AddressInfo } from "node:net";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { renderProjectConfigToml, userText, VERSION } from "@prismshadow/penguin-core";
+import {
+  addModel,
+  renderProjectConfigToml,
+  setProviderConnection,
+  userText,
+  VERSION,
+} from "@prismshadow/penguin-core";
 import {
   MODEL_CATALOG,
   PENGUIN_GO_BASE_URL,
@@ -1332,21 +1339,22 @@ describe("model-reference rekeying and the connectivity test", () => {
   });
 
   it("the display name is editable: not persisted when it matches the built-in catalog; provider is always persisted as an entry field", async () => {
+    const catalogName = catalogEntryFor("openai", "gpt-5.5")!.displayName;
     // Preset model: saved as-is → the display name falls back to the built-in catalog, and display_name isn't written to the config file.
     await api.put(url(), {
       models: [
-        { provider: "openai", modelId: "gpt-5.5", displayName: "GPT-5.5" },
+        { provider: "openai", modelId: "gpt-5.5", displayName: catalogName },
         { provider: "openai", modelId: "gpt-5.4", displayName: "My GPT" },
       ],
     });
     const body = (await (await api.get(url())).json()) as ModelsResponse;
-    expect(pick(body, "openai", "gpt-5.5").displayName).toBe("GPT-5.5");
+    expect(pick(body, "openai", "gpt-5.5").displayName).toBe(catalogName);
     // Edited one: the display name takes effect per the user's setting.
     expect(pick(body, "openai", "gpt-5.4").displayName).toBe("My GPT");
 
     // Clean on disk: unchanged preset models don't write display_name; provider is stored as a separate column, no concatenated string.
     const toml = await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
-    expect(toml).not.toContain('display_name = "GPT-5.5"');
+    expect(toml).not.toContain(`display_name = "${catalogName}"`);
     expect(toml).toContain('display_name = "My GPT"');
     expect(toml).toContain('provider = "openai"');
     expect(toml).not.toContain("openai/gpt-5.5");
@@ -1507,7 +1515,9 @@ describe("model-reference rekeying and the connectivity test", () => {
     const cfgFile = path.join(t.root, projectId, ".project_config.toml");
     await api.put(url(), { models: [{ provider: "openai", modelId: "gpt-5.5" }] });
     const inherited = (await (await api.get(url())).json()) as ModelsResponse;
-    expect(pick(inherited, "openai", "gpt-5.5").displayName).toBe("GPT-5.5");
+    expect(pick(inherited, "openai", "gpt-5.5").displayName).toBe(
+      catalogEntryFor("openai", "gpt-5.5")!.displayName,
+    );
     expect(await readFile(cfgFile, "utf8")).not.toContain("display_name");
 
     // Cleared: the empty string records the deletion, so the name does not come back on the
@@ -1655,6 +1665,45 @@ describe("model-reference rekeying and the connectivity test", () => {
       for (const body of bodies) {
         expect("tools" in body).toBe(false);
         expect("tool_choice" in body).toBe(false);
+      }
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it("the vision probe asks for a handful of tokens and no tools, so a success cannot run up a bill", async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const server = createServer((req, res) => {
+      let raw = "";
+      req.on("data", (chunk: Buffer) => (raw += chunk.toString("utf8")));
+      req.on("end", () => {
+        try {
+          bodies.push(JSON.parse(raw) as Record<string, unknown>);
+        } catch {
+          bodies.push({});
+        }
+        res.statusCode = 401;
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ error: { message: "test-reject", type: "invalid_request" } }));
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as AddressInfo).port;
+    try {
+      const res = await api.post(`${url()}/detect-vision`, {
+        provider: "custom",
+        modelId: "probe-vision-model",
+        clientType: "openai",
+        apiKey: "sk-test-local",
+        baseUrl: `http://127.0.0.1:${port}/v1`,
+      });
+      expect(res.status).toBe(200);
+      expect(bodies.length).toBeGreaterThan(0);
+      for (const body of bodies) {
+        const cap = body.max_tokens ?? body.max_completion_tokens;
+        expect(typeof cap).toBe("number");
+        expect(cap as number).toBeLessThanOrEqual(16);
+        expect("tools" in body).toBe(false);
       }
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -2904,6 +2953,57 @@ describe("models update reaches loaded sessions (invalidation + live unlock)", (
     await t.deps.manager.startTask("models-sess-1", [userText("d")]);
     await waitFor(idle);
     expect(loads).toBe(2);
+  });
+
+  it("a model written to the config file by another writer reaches a loaded Session at its next Task; an edit that changes no model does not", async () => {
+    insertSession("models-sess-cli", projectId);
+    const idle = () => t.deps.manager.statusOf("models-sess-cli") === "idle";
+    const task = async (text: string) => {
+      await t.deps.manager.startTask("models-sess-cli", [userText(text)]);
+      await waitFor(idle);
+    };
+
+    await task("a");
+    expect(loads).toBe(1);
+    // The CLI's own writer (`penguin config model add`), not this server's route.
+    await addModel(t.root, projectId, { provider: "custom", model_id: "m-cli", api_key: "sk-cli" });
+    await task("b");
+    expect(loads).toBe(2);
+    await task("c");
+    expect(loads).toBe(2);
+    expect((await api.patch(`/api/projects/${projectId}`, { name: "renamed" })).status).toBe(200);
+    await task("d");
+    expect(loads).toBe(2);
+  });
+
+  it("a group connection written by another writer after a Session is created reaches its first Task", async () => {
+    // A protocol of its own: core builds the new Session's client to check it.
+    const put = await api.put(`/api/projects/${projectId}/models`, {
+      defaultModel: { provider: "custom", modelId: "m-inv" },
+      models: [
+        {
+          provider: "custom",
+          modelId: "m-inv",
+          apiKey: "sk-created-000444",
+          clientType: "openai-chat",
+        },
+      ],
+    });
+    expect(put.status).toBe(200);
+    const created = await api.post(`/api/projects/${projectId}/agents/default_agent/sessions`, {
+      provider: "custom",
+      modelId: "m-inv",
+    });
+    expect(created.status).toBe(201);
+    const { session } = (await created.json()) as SessionCreateResponse;
+    expect(loads).toBe(0);
+
+    await setProviderConnection(t.root, projectId, "custom", {
+      base_url: "https://gateway.example/v1",
+    });
+    await t.deps.manager.startTask(session.sessionId, [userText("a")]);
+    await waitFor(() => t.deps.manager.statusOf(session.sessionId) === "idle");
+    expect(loads).toBe(1);
   });
 
   it("PUT publishes credentials_updated to the Project's existing session channels only", async () => {

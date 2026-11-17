@@ -5,14 +5,15 @@
  * display name, else the plugin's name) and the one-line description (the "no description"
  * placeholder, in the same muted ink, when the package carries none), a metadata line
  * `v<npm version> · <status> · used by N agents` (the last for a plugin with Skills or hooks
- * only), and a tag line — the category (outside the category's own section), "built in", where
- * a module runs. The card body opens the detail dialog; the actions sit beside it, light icon
- * buttons whose words show once the card is wide enough:
+ * only), and a tag line (plugin-marks.tsx `pluginTags`, the set an Agent's plugin row shows too) —
+ * the category (outside the category's own section), "built in", where a module runs. The card
+ * body opens the detail dialog; the actions sit beside it, light icon buttons whose words show
+ * once the card is wide enough:
  *
  * - Skills / hooks / MCP servers (any member): the update nudge while an Agent is behind (the
  *   plugins trail's last stop, so it carries the dot), quick start, and "manage installs" — a
- *   dialog listing every Agent of the Project with Install / Installed (Uninstall on hover) /
- *   Update: this server's and each machine's own in one list, a machine's named `[SSH: alias]`
+ *   dialog listing every Agent of the Project with Install / Installed (Uninstall on hover, for
+ *   the Project owner, whose alone an uninstall is) / Update: this server's and each machine's own in one list, a machine's named `[SSH: alias]`
  *   after the Agent's name, every action on such a row going to that machine. A machine out of
  *   reach keeps its rows, greyed and inert with the reason, as it last answered; an Agent whose
  *   installs have not been answered yet keeps its row too, its Install held until they are.
@@ -31,38 +32,39 @@
  * Until this server has said what its own Agents hold (or, for a module, what its tables list),
  * the status and "used by" on the metadata line are fixed-width placeholders, so the first answer
  * replaces a bar rather than a word.
+ *
+ * The card, its buttons, its status mark and its facts line are the UI package's (`EntityCard`,
+ * `EntityCardAction`, `StatusMark` through plugin-marks.tsx, `MetaLine`); this module fills them
+ * for one plugin and owns its dialogs.
  */
-import { useId, useState } from "react";
-import type { ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
+
 import type { AgentSummary, PluginItem, QuickStartItem } from "@prismshadow/penguin-server/api";
 import {
   AgentAvatar,
   Button,
-  Card,
   ConfirmModal,
-  GlyphIcon,
+  EntityCard,
+  EntityCardAction,
   ICONS,
-  ICON_SIZE,
   Modal,
+  Pill,
   Skeleton,
-  StatusIcon,
-  UpdateDot,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
+import { useAgentAvatarSrc } from "../../lib/agent-avatar";
 import { S } from "../../lib/strings";
 import { cardBodyClick } from "../../lib/card-open";
 import { downloadArchive } from "../agents/archive-download";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName } from "../../state/project";
-import { SkillTile } from "../skills/skill-icon-view";
-import { MetaLine, PluginDetailModal, moduleOnThisServer } from "./plugin-detail";
+import { SkillTile } from "../skills";
+import { PluginDetailModal, moduleOnThisServer } from "./plugin-detail";
 import type { PluginRow } from "./plugin-groups";
 import { McpServerMarks, McpSetUpModal, StdioInstallBody } from "./plugin-mcp";
 import {
-  PluginTag,
-  StatusMark,
-  rowBuiltin,
-  rowInstalledOnServer,
+  PluginStatusMark,
+  pluginTags,
   rowIcon,
   rowShortDescription,
   rowTitle,
@@ -70,7 +72,6 @@ import {
   statusHint,
 } from "./plugin-marks";
 import {
-  changedParts,
   installNeedsConfirm,
   pluginMcpState,
   stdioServers,
@@ -78,6 +79,7 @@ import {
   type LibraryUsage,
   type PluginStatus,
 } from "./plugin-status";
+import { PluginUpdateParts } from "./plugin-update-parts";
 import { toastApiError } from "../../lib/toast-api-error";
 
 /** "Manage installs" button icon: the arrow landing in its tray. */
@@ -168,6 +170,8 @@ export interface PluginCardProps {
   projectId: string | null;
   /** This row's module install or removal is running. */
   busy: boolean;
+  /** The install under way is a channel download: bytes received so far, the total when known. */
+  progress?: { received: number; total: number | null } | null;
   /** Another row's is: one at a time, so this one is held rather than queued. */
   blocked: boolean;
   onQuickStart: (plugin: PluginItem) => void;
@@ -186,6 +190,7 @@ export interface PluginCardProps {
 export function PluginCard(props: PluginCardProps) {
   const { row, status, usage, categoryTitle, targets, installed } = props;
   const { locale } = useLocale();
+  const avatarSrc = useAgentAvatarSrc();
   const sharedId = useId();
   const plugin = row.library;
   const [detailOpen, setDetailOpen] = useState(false);
@@ -243,83 +248,67 @@ export function PluginCard(props: PluginCardProps) {
     }
   };
 
-  /** The card's actions: icon buttons on the card, labelled buttons in the dialog's footer. */
+  /**
+   * The card's actions: on the card their words show once it is wide (the glyph alone before
+   * that), in the dialog's footer always.
+   */
   const actions = (where: "card" | "footer"): ReactNode[] => {
     const out: ReactNode[] = [];
-    const look = where === "card" ? "h-8 shrink-0" : "shrink-0";
-    const words = (text: string) =>
-      where === "card" ? <span className="hidden @3xl:inline">{text}</span> : <span>{text}</span>;
+    const words = where === "card" ? "wide" : "always";
     // The dialog's first: what any member may take away — the package itself.
     if (where === "footer" && archiveUrl !== null) {
       out.push(
-        <Button
+        <EntityCardAction
           key="export"
-          size="sm"
-          className={look}
-          aria-label={`${S.plugins.exportPlugin} ${row.name}`}
-          title={S.plugins.exportPluginHint}
-          data-tooltip-extra
+          glyph={ICONS.download}
+          label={S.plugins.exportPlugin}
+          name={`${S.plugins.exportPlugin} ${row.name}`}
+          hint={S.plugins.exportPluginHint}
+          words={words}
           onClick={() => void exportPlugin(archiveUrl)}
-        >
-          <GlyphIcon d={ICONS.download} size={ICON_SIZE.iconButton} />
-          {words(S.plugins.exportPlugin)}
-        </Button>,
+        />,
       );
     }
     if (plugin !== undefined && behind.length > 0) {
       // Light (secondary): an update nudge, not the card's primary action. The last stop on the
       // plugins trail, so on the card it carries the dot itself, straddling the button's corner.
       out.push(
-        <Button
+        <EntityCardAction
           key="update"
-          size="sm"
           variant="secondary"
-          className={`relative ${look}`}
-          aria-label={`${S.plugins.updateOutdated(behind.length)} ${plugin.name}`}
-          title={S.plugins.updateOutdated(behind.length)}
+          glyph={ICONS.rotateCw}
+          label={S.plugins.updateOutdated(behind.length)}
+          name={`${S.plugins.updateOutdated(behind.length)} ${plugin.name}`}
+          words={words}
+          dot={where === "card"}
           onClick={() => setPendingUpdate(behind)}
-        >
-          <GlyphIcon d={ICONS.rotateCw} size={ICON_SIZE.iconButton} />
-          {words(S.plugins.updateOutdated(behind.length))}
-          {where === "card" && (
-            <UpdateDot
-              size="inline"
-              position="right-0.5 top-0.5 -translate-y-1/2 translate-x-1/2"
-            />
-          )}
-        </Button>,
+        />,
       );
     }
     if (plugin !== undefined && libraryQuickStart(plugin) !== null) {
       out.push(
-        <Button
+        <EntityCardAction
           key="quick"
-          size="sm"
-          className={look}
-          aria-label={`${S.skills.quickInvoke} ${plugin.name}`}
-          title={S.plugins.quickStartHint}
-          data-tooltip-extra
+          glyph={ICONS.paperPlane}
+          label={S.skills.quickInvoke}
+          name={`${S.skills.quickInvoke} ${plugin.name}`}
+          hint={S.plugins.quickStartHint}
+          words={words}
           disabled={!props.canQuickStart}
           onClick={() => props.onQuickStart(plugin)}
-        >
-          <GlyphIcon d={ICONS.paperPlane} size={ICON_SIZE.iconButton} />
-          {words(S.skills.quickInvoke)}
-        </Button>,
+        />,
       );
     }
     if (plugin !== undefined) {
       out.push(
-        <Button
+        <EntityCardAction
           key="manage"
-          size="sm"
-          className={look}
-          aria-label={`${S.skills.manageInstall} ${plugin.name}`}
-          title={S.skills.manageInstall}
+          glyph={INSTALL_ICON}
+          label={S.skills.manageInstall}
+          name={`${S.skills.manageInstall} ${plugin.name}`}
+          words={words}
           onClick={() => setInstallOpen(true)}
-        >
-          <GlyphIcon d={INSTALL_ICON} size={ICON_SIZE.iconButton} />
-          {words(S.skills.manageInstall)}
-        </Button>,
+        />,
       );
     }
     const mod = row.module;
@@ -331,33 +320,37 @@ export function PluginCard(props: PluginCardProps) {
         ...(mod.state !== "none" ? [false] : []),
       ];
       for (const install of verbs) {
+        // A channel download reports itself: the percent while the total is known, a pulse
+        // before that. npm's own fetches stay "installing" — npm reports no progress here.
+        const total = props.progress?.total ?? null;
+        const percent =
+          props.progress != null && total !== null && total > 0
+            ? Math.floor((props.progress.received / total) * 100)
+            : null;
         const label = install
           ? props.busy
-            ? S.plugins.installing
+            ? props.progress != null
+              ? S.plugins.downloading(percent)
+              : S.plugins.installing
             : S.plugins.install
           : S.plugins.uninstall;
+        // A removal another Project still needs says why it cannot run, as its marked hint.
+        const blockedWhy = install ? undefined : mod.removeBlocked;
         out.push(
-          <Button
+          <EntityCardAction
             key={install ? "module-install" : "module-remove"}
-            size="sm"
-            className={look}
-            aria-label={`${label} ${row.name}`}
-            aria-busy={props.busy}
-            title={install ? label : (mod.removeBlocked ?? label)}
-            data-tooltip-extra={!install && mod.removeBlocked !== undefined}
+            glyph={install ? INSTALL_ICON : ICONS.trash}
+            label={label}
+            name={`${label} ${row.name}`}
+            {...(blockedWhy !== undefined ? { hint: blockedWhy } : {})}
+            words={words}
+            busy={props.busy}
             aria-describedby={
               !install && mod.shared === true ? `${sharedId}-tag ${sharedId}-hint` : undefined
             }
-            disabled={props.busy || props.blocked || (!install && mod.removeBlocked !== undefined)}
+            disabled={props.blocked || blockedWhy !== undefined}
             onClick={() => props.onModuleApply(install)}
-          >
-            {props.busy ? (
-              <StatusIcon state="running" />
-            ) : (
-              <GlyphIcon d={install ? INSTALL_ICON : ICONS.trash} size={ICON_SIZE.iconButton} />
-            )}
-            {words(label)}
-          </Button>,
+          />,
         );
       }
     }
@@ -370,33 +363,28 @@ export function PluginCard(props: PluginCardProps) {
       props.onDeletePlugin !== null
     ) {
       out.push(
-        <Button
+        <EntityCardAction
           key="delete"
-          size="sm"
-          className={look}
-          aria-label={`${S.plugins.deletePlugin} ${plugin.package}`}
+          glyph={ICONS.trash}
+          label={S.plugins.deletePlugin}
+          name={`${S.plugins.deletePlugin} ${plugin.package}`}
+          words={words}
           disabled={deleting}
           onClick={() => setPendingDelete(true)}
-        >
-          <GlyphIcon d={ICONS.trash} size={ICON_SIZE.iconButton} />
-          {words(S.plugins.deletePlugin)}
-        </Button>,
+        />,
       );
     }
     if (props.onRepair != null && row.module?.unsatisfied !== undefined) {
       out.push(
-        <Button
+        <EntityCardAction
           key="repair"
-          size="sm"
-          className={look}
-          aria-label={`${S.plugins.repair} ${row.name}`}
-          title={S.plugins.repair}
+          glyph={ICONS.sparkles}
+          label={S.plugins.repair}
+          name={`${S.plugins.repair} ${row.name}`}
+          words={words}
           disabled={props.busy || props.blocked}
           onClick={props.onRepair}
-        >
-          <GlyphIcon d={ICONS.sparkles} size={ICON_SIZE.iconButton} />
-          {words(S.plugins.repair)}
-        </Button>,
+        />,
       );
     }
     return out;
@@ -404,118 +392,72 @@ export function PluginCard(props: PluginCardProps) {
 
   const cardActions = actions("card");
   const footerActions = actions("footer");
-  const tags: ReactNode[] = [];
-  if (props.showCategory) tags.push(<PluginTag key="category">{categoryTitle}</PluginTag>);
-  if (rowBuiltin(row)) {
-    tags.push(
-      <PluginTag
-        key="builtin"
-        title={plugin !== undefined ? S.plugins.libraryBuiltinHint : S.plugins.builtinHint}
-      >
-        {S.plugins.builtin}
-      </PluginTag>,
-    );
-  }
-  if (rowInstalledOnServer(row)) {
-    tags.push(
-      <PluginTag key="installed" title={S.plugins.installedOnServerHint}>
-        {S.plugins.installedOnServer}
-      </PluginTag>,
-    );
-  }
-  if (row.module?.shared === true) {
-    tags.push(
-      <PluginTag key="shared" id={`${sharedId}-tag`} title={S.plugins.sharedHint}>
-        {S.plugins.sharedTag}
-      </PluginTag>,
-    );
-  }
+  const tags = pluginTags(row, {
+    categoryTitle: props.showCategory ? categoryTitle : undefined,
+    sharedTagId: `${sharedId}-tag`,
+  });
   return (
-    <Card
-      padding="md"
-      framed={props.framed}
+    <EntityCard
+      {...(props.framed !== undefined ? { framed: props.framed } : {})}
       data-plugin={row.name}
-      interactive
-      onClick={cardBodyClick(() => setDetailOpen(true))}
-      className="@container flex items-center gap-3"
-    >
-      <button
-        type="button"
-        onClick={() => setDetailOpen(true)}
-        className="min-w-0 flex-1 text-left"
-      >
-        {/* The icon centred across the name and the description, one line each. */}
-        <div className="flex items-center gap-3">
-          <SkillTile
-            icon={rowIcon(row)}
-            name={row.name}
-            fallback={ICONS.puzzle}
-            size={36}
-            glyph={20}
-          />
-          <div className="min-w-0 flex-1">
-            {/* The package's display name, else the plugin's name (its id), set in the UI font as
-                a title; monospace is kept for what is code — the specifier on hover, the version. */}
-            <span
-              className="block truncate text-sm font-semibold"
-              data-tooltip={row.module?.specifier ?? row.name}
-              data-tooltip-content="code"
-            >
-              {rowTitle(row, locale)}
+      lead={
+        <SkillTile
+          icon={rowIcon(row)}
+          name={row.name}
+          fallback={ICONS.puzzle}
+          size={36}
+          glyph={20}
+        />
+      }
+      // The package's display name, else the plugin's name (its id), set in the UI font as a
+      // title; monospace is kept for what is code — the specifier on hover, the version.
+      title={rowTitle(row, locale)}
+      titleHint={row.module?.specifier ?? row.name}
+      description={description}
+      {...(row.module?.unsatisfied !== undefined
+        ? {
+            note:
+              row.module.state === "disabled"
+                ? row.module.unsatisfied
+                : S.plugins.runsPartly(row.module.unsatisfied),
+          }
+        : {})}
+      meta={[
+        version !== undefined && (
+          <span key="version" className="shrink-0 font-mono">
+            v{version}
+          </span>
+        ),
+        props.pending === true ? (
+          <Skeleton key="status" className="h-3 w-16 shrink-0" />
+        ) : (
+          <PluginStatusMark key="status" status={status} hint={hint} />
+        ),
+        usage !== null &&
+          (props.pending === true ? (
+            <Skeleton key="used-by" className="h-3 w-24 shrink-0" />
+          ) : (
+            <span key="used-by" className="min-w-0 truncate" data-testid="plugin-used-by">
+              {S.plugins.usedByAgents(usage.usedBy.length)}
             </span>
-            <p
-              className="mt-0.5 truncate text-xs leading-5 text-gray-500 dark:text-gray-400"
-              data-tooltip={description}
-              data-tooltip-content="text"
-            >
-              {description}
-            </p>
-          </div>
-        </div>
-        {row.module?.unsatisfied !== undefined && (
-          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-            {row.module.state === "disabled"
-              ? row.module.unsatisfied
-              : S.plugins.runsPartly(row.module.unsatisfied)}
-          </p>
-        )}
-        <div className="mt-2.5">
-          <MetaLine>
-            {version !== undefined && <span className="shrink-0 font-mono">v{version}</span>}
-            {props.pending === true ? (
-              <Skeleton className="h-3 w-16 shrink-0" />
-            ) : (
-              <StatusMark status={status} hint={hint} />
-            )}
-            {usage !== null &&
-              (props.pending === true ? (
-                <Skeleton className="h-3 w-24 shrink-0" />
-              ) : (
-                <span className="min-w-0 truncate" data-testid="plugin-used-by">
-                  {S.plugins.usedByAgents(usage.usedBy.length)}
-                </span>
-              ))}
-          </MetaLine>
-        </div>
-        {tags.length > 0 && (
-          <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">{tags}</div>
-        )}
-      </button>
+          )),
+      ]}
+      tags={tags}
+      actions={cardActions}
+      onOpen={() => setDetailOpen(true)}
+      onBodyClick={cardBodyClick(() => setDetailOpen(true))}
+    >
       {row.module?.shared === true && (
         <span id={`${sharedId}-hint`} className="sr-only">
           {S.plugins.sharedHint}
         </span>
-      )}
-      {cardActions.length > 0 && (
-        <div className="flex shrink-0 items-center justify-center gap-1.5">{cardActions}</div>
       )}
 
       {detailOpen && (
         <PluginDetailModal
           row={row}
           head={{
-            status,
-            statusHint: hint,
+            status: <PluginStatusMark status={status} hint={hint} />,
             categoryTitle,
             usedBy: usage === null ? null : usage.usedBy.length,
           }}
@@ -538,6 +480,7 @@ export function PluginCard(props: PluginCardProps) {
                 key={t.key}
                 agentId={t.agent.agentId}
                 name={agentDisplayName(t.agent)}
+                avatarSrc={avatarSrc(t.agent.agentId, t.machine?.machineId ?? null)}
                 machine={t.machine?.label ?? null}
                 installed={usage?.usedBy.includes(t.key) ?? false}
                 outdated={behind.includes(t.key)}
@@ -578,39 +521,14 @@ export function PluginCard(props: PluginCardProps) {
               {S.plugins.updateConfirmWarning(title)}
             </p>
             {/* Per Agent, the parts the reinstall rewrites, old → new, so it is clear exactly what gets overwritten. */}
-            <ul className="max-h-60 divide-y divide-gray-100 overflow-y-auto rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
-              {pendingUpdate.map((key) => {
-                return (
-                  <li key={key} className="px-3 py-1.5 text-xs">
-                    <span className="block truncate">{nameOf(key)}</span>
-                    {changedParts(plugin, installed.get(key)).map((part) => (
-                      <span
-                        key={`${part.kind}:${part.name}`}
-                        className="mt-0.5 flex items-center justify-between gap-3 text-gray-500 dark:text-gray-400"
-                      >
-                        {part.kind === "hooks" ? (
-                          <span className="min-w-0 truncate">{S.plugins.detailHooks}</span>
-                        ) : part.kind === "mcp" ? (
-                          <span className="min-w-0 truncate">
-                            <span className="font-mono">{part.name}</span> (
-                            {S.plugins.updatePartMcp})
-                          </span>
-                        ) : (
-                          <span className="min-w-0 truncate font-mono">{part.name}</span>
-                        )}
-                        {part.kind === "mcp" ? (
-                          <span className="shrink-0">{S.plugins.updatePartReplaced}</span>
-                        ) : (
-                          <span className="shrink-0 font-mono">
-                            {part.installed || "?"} → {part.library}
-                          </span>
-                        )}
-                      </span>
-                    ))}
-                  </li>
-                );
-              })}
-            </ul>
+            <PluginUpdateParts
+              plugin={plugin}
+              agents={pendingUpdate.map((key) => ({
+                key,
+                name: nameOf(key),
+                installs: installed.get(key),
+              }))}
+            />
             {/* The reinstall writes the plugin's stdio servers again — perhaps one the Agent did
                 not carry, or a changed command: what each runs here is said before it does. */}
             {stdioServers(plugin).length > 0 && (
@@ -698,7 +616,7 @@ export function PluginCard(props: PluginCardProps) {
           onSaved={() => props.onMcpChanged(setUpAgent)}
         />
       )}
-    </Card>
+    </EntityCard>
   );
 }
 
@@ -737,8 +655,9 @@ export interface RowHold {
 
 /**
  * One Agent row in the "manage installs" dialog: an Agent without the plugin shows "Install";
- * one with it shows "Installed", switching to "Uninstall" on hover (the same button carries the
- * uninstall); a copy the server lists as behind additionally shows "Update" (reinstall =
+ * one with it shows "Installed", switching to "Uninstall" on hover for the Project owner (the
+ * same button carries the uninstall, which the server takes from the owner alone) and a plain
+ * label for anyone else; a copy the server lists as behind additionally shows "Update" (reinstall =
  * update). Install and uninstall go through the page's optimistic updates, rolling back on
  * failure. Where the Agent carries the plugin's MCP servers, marks beside its name say what
  * they wait for — vault values, a sign-in — and a Project owner gets Set up for the values. A
@@ -751,6 +670,7 @@ export interface RowHold {
 export function InstallRow({
   agentId,
   name,
+  avatarSrc,
   machine = null,
   installed,
   outdated,
@@ -763,6 +683,8 @@ export function InstallRow({
 }: {
   agentId: string;
   name: string;
+  /** The Agent's own picture, when it has one (lib/agent-avatar.ts). */
+  avatarSrc?: string | undefined;
   /** The ssh alias of the machine the Agent lives on; null for this server. */
   machine?: string | null;
   installed: boolean;
@@ -787,7 +709,7 @@ export function InstallRow({
     <div
       className={`flex items-center gap-2 rounded-md px-1.5 py-1.5 transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/60 ${held?.off === true ? "opacity-60" : ""}`}
     >
-      <AgentAvatar id={agentId} name={name} size={22} className="shrink-0 rounded" />
+      <AgentAvatar id={agentId} size={22} className="shrink-0 rounded" src={avatarSrc} />
       <span className="flex min-w-0 flex-1 items-center gap-1.5">
         <span
           className="min-w-0 truncate text-sm"
@@ -834,7 +756,9 @@ export function InstallRow({
           {S.skills.updateAction}
         </Button>
       )}
-      {installed ? (
+      {installed && !isOwner ? (
+        <Pill tone="success">{S.skills.installed}</Pill>
+      ) : installed ? (
         // group: on hover the button's copy switches "Installed" → "Uninstall" (the same button
         // carries the uninstall action) — not on a held row, whose button does nothing.
         <Button

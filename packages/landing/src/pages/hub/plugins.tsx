@@ -63,6 +63,7 @@ export function PluginsPage() {
   return (
     <HubList
       title={S.hub.plugins.title}
+      description={S.hub.plugins.description}
       source={{ href: PLUGINS_SOURCE, label: "Prism-Shadow/penguin-harness/plugins" }}
       items={plugins}
       keyOf={(plugin) => plugin.id}
@@ -87,7 +88,7 @@ export function PluginsPage() {
       renderItem={(plugin) => (
         <HubCard
           to={`/plugins/${plugin.id}`}
-          lead={<HubTile tone={categoryTone(plugin.category)} src={plugin.icon} glyph="puzzle" />}
+          lead={<HubTile tone={categoryTone(plugin.category)} icon={plugin.icon} glyph="puzzle" />}
           title={titleOf(locale, plugin)}
           facts={[
             ...(plugin.author ? [<CardFact glyph="user">{plugin.author.name}</CardFact>] : []),

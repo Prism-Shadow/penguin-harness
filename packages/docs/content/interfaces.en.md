@@ -83,6 +83,9 @@ interface RunOptions {
 
 interface RunCutoff {       // how a run was cut off early
   kind: "abort" | "llm_failure" | "compaction_failure" | "max_turns";
+                            // compaction_failure: mid-Task, no next context could be opened
+                            // (the old context is kept, the pending input is carry-over),
+                            // a refused request's hand-off included
   errorCode?: ErrorCode;    // mirrors the terminal record's error_code (none for max_turns)
   errorMessage?: string;    // mirrors the terminal record's error_message
 }
@@ -90,7 +93,7 @@ interface RunCutoff {       // how a run was cut off early
 
 The CLI wires terminal I/O onto this boundary. The Server wires HTTP requests and SSE channels onto it. Any programmatic caller that connects becomes a new Human implementation, with nothing to register.
 
-The return value tells a consumer whether the run really finished. Failures emit no abort event, only their terminal `request_end` or `compaction_end` record, so code that must not treat a cut-off run as finished reads `RunCutoff` instead of inspecting the stream.
+The return value tells a consumer whether the run really finished. Failures emit no abort event, only their terminal `request_end` or `compaction_end` record, so code that must not treat a cut-off run as finished reads `RunCutoff` instead of inspecting the stream. A compaction that completes without a full summary is no cutoff: its `compaction_end` is `completed`, carrying the error pair, and the run carries on in the new context. Nor is a refused request answered by a hand-off: its `request_end` is `retryable` and the turn is sent again in the next context (see [A refused request hands off](/agent-loop#a-refused-request-hands-off)).
 
 ## LLMInterface
 
@@ -128,7 +131,7 @@ interface LLMOutcome {
 | --- | --- | --- |
 | `completed` | Finished normally (`token_usage` already emitted) | Proceed |
 | `retryable` | A failure worth retrying: transport drops, idle timeouts, 408/429/5xx, malformed responses, and anything unclassifiable. A response that arrived whole but stopped at its output cap is one too, coded `output_truncated`: the implementation removes the turn from its stateful history, and still emits its `token_usage` (it was billed) | Reconnect within the run on the backoff ladder |
-| `fatal` | A failure no retry can fix: a provider 4xx rejection (408 and 429 excluded), rejected credentials, or a deterministic client-side rejection before any network I/O (for example, fast mode on a model without a fast tier) | Stop the run and surface `errorMessage` |
+| `fatal` | A failure no retry can fix: a definitive provider 4xx — `rejected` when it refuses the request as sent (400, 413, 415, 422), `denied` for any other (402, 403, 404, …; 408 and 429 are retried) — rejected credentials (`auth`, 401 included), or a deterministic client-side rejection before any network I/O (for example, fast mode on a model without a fast tier) | Stop the run and surface `errorMessage` |
 | `aborted` | User interrupt | Stop and hand back to the user |
 
 The status answers one question: should this request be retried? `errorCode` says what kind of failure it was. Unclassifiable errors are `retryable` on purpose: the fatal detector is an allowlist, so a gateway that words a transient fault its own way keeps its retries.
@@ -190,7 +193,14 @@ interface GenerativeModelConfig {
 
 ```ts
 type ApprovalDecision = "allow" | "deny" | "forbidden"; // "forbidden" = the command policy's veto
-type ApproveFn = (toolCall: AmspRecord<ToolCallPayload>) => Promise<ApprovalDecision>;
+type ApproveFn = (
+  toolCall: AmspRecord<ToolCallPayload>,
+  context?: ApprovalContext, // why the call needs a person, when the command policy says so
+) => Promise<ApprovalDecision>;
+interface ApprovalContext {
+  reason?: ApprovalReason;
+}
+type ApprovalReason = { kind: "policy"; rule: string }; // a command-policy `ask` rule matched
 ```
 
 | Rule | Behavior |
@@ -200,7 +210,9 @@ type ApproveFn = (toolCall: AmspRecord<ToolCallPayload>) => Promise<ApprovalDeci
 | No callback injected | The engine denies everything (the conservative default) |
 | Subagents | A subagent inherits its parent's approval callback, invoked with an `origin` tag, so the approval policy spans the whole delegation tree |
 
-`"forbidden"` is never a host's answer. `Session.run` wraps the injected callback with the [Project command policy](/configuration#command-policy), so a vetoed command gets `"forbidden"` before the host is asked at all.
+`"forbidden"` is never a host's answer. `Session.run` wraps the injected callback with the [Project command policy](/configuration#command-policy), so a command a `deny` rule matches gets `"forbidden"` before the host is asked at all. A command an `ask` rule matches reaches the callback with `{ reason: { kind: "policy", rule } }`: the host must not answer it by approval mode alone, and puts it to a person (the server does so under every mode but `deny-all`). Every other call arrives with no second argument, as before. The engine itself always calls with the call alone and never reads the reason.
+
+The second argument is optional, so a callback written for the one-argument signature still compiles; it then decides an `ask` hit like any other call. A child Session forwards nothing extra: the callback it inherits is the parent's policy wrapper, and the child's reason travels with the call through it.
 
 Either denial produces one fixed `aborted` output line: "Tool call denied by user." for `"deny"`, and "Tool call denied by policy." for `"forbidden"`. The decision value itself rides the `approval_decision` event, so the Trace names the decider without an extra field. An existing callback that returns only `"allow"` or `"deny"` needs no change.
 
@@ -213,7 +225,7 @@ interface EnvironmentInterface {
   listTools(): Promise<ToolDefinition[]>;
   executeTool(request: ToolExecutionRequest): AsyncGenerator<AmspRecord>;
   toolPermission(name: string): "r" | "rw" | undefined;   // for frontend approval-mode decisions
-  dispose?(): void;                                        // release runtime resources; idempotent
+  dispose?(): void | Promise<void>;                        // release runtime resources; resolves once subagent children have finished writing; idempotent
 }
 ```
 
@@ -381,7 +393,7 @@ interface SubagentHandle {
   }): AsyncGenerator<AmspRecord, RunCutoff | null>; // returns null when the round completed
   steer?(messages: AmspRecord[]): boolean; // queue a steering message for a running round; false when none is running
   setThinkingLevel?(level: ThinkingLevelName): void; // pin the child's thinking level from its next request
-  dispose(): void;        // release the child Session's runtime resources; idempotent
+  dispose(): void | Promise<void>; // release the child Session's runtime resources; idempotent
 }
 ```
 

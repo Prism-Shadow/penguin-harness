@@ -23,7 +23,11 @@ import {
   assembleSystemPrompt,
   buildToolConfig,
   selectBuiltinToolsForModel,
+  COMPACTION_SCRATCHPAD_PLACEHOLDER,
+  DEFAULT_COMPACTION_HANDOFF_NOTE,
+  DEFAULT_COMPACTION_MAX_ROUNDS,
   DEFAULT_COMPACTION_PROMPT,
+  DEFAULT_COMPACTION_REMINDER,
   formatModelRef,
   getModel,
   listInstalledSkills,
@@ -82,6 +86,8 @@ import {
   mcpConnectOutcome,
   sessionEnvironment,
 } from "./internal/session-support.js";
+import { compactionToolGate } from "./internal/compaction-tool-gate.js";
+import { modelVisiblePath } from "./internal/model-visible-path.js";
 import {
   compactionEnd,
   isSessionMeta,
@@ -98,7 +104,6 @@ import type {
   AmspRecord,
   SessionMetaPayload,
   SessionSource,
-  ToolCallPayload,
 } from "@prismshadow/amsp/records";
 import { SUBAGENT_NAME } from "./environment/tools/run-subagent.js";
 import { INPUT_SUBAGENT_NAME } from "./environment/tools/input-subagent.js";
@@ -401,7 +406,14 @@ interface AssembledContext {
 function resolveCompaction(
   config: CompactionConfig | undefined,
   contextWindow: number | undefined,
+  scratchpadDir: string,
 ): CompactionSettings {
+  // The texts' placeholder is substituted here, where the settings are read: each is user text
+  // outside any cached prefix, so what it says costs none. An absent key reads as the default;
+  // a blank one stays blank (no harness line).
+  const scratchpad = modelVisiblePath(scratchpadDir);
+  const text = (value: string | undefined, fallback: string): string =>
+    (value ?? fallback).replaceAll(COMPACTION_SCRATCHPAD_PLACEHOLDER, scratchpad);
   return {
     maxContextLength: effectiveMaxContextLength(
       config?.max_context_length ?? DEFAULT_MAX_CONTEXT_LENGTH,
@@ -409,7 +421,10 @@ function resolveCompaction(
     ),
     maxSessionTurns: config?.max_session_turns ?? -1,
     mode: config?.mode === "discard" ? "discard" : "summarize",
-    prompt: config?.prompt ?? DEFAULT_COMPACTION_PROMPT,
+    prompt: text(config?.prompt, DEFAULT_COMPACTION_PROMPT),
+    maxRounds: config?.max_rounds ?? DEFAULT_COMPACTION_MAX_ROUNDS,
+    reminder: text(config?.reminder, DEFAULT_COMPACTION_REMINDER),
+    handoffNote: text(config?.handoff_note, DEFAULT_COMPACTION_HANDOFF_NOTE),
   };
 }
 
@@ -658,7 +673,11 @@ export class Agent {
     // Compaction config: this context's baseline. It is no longer the last word — the engine
     // re-reads the section at every compaction checkpoint through `compactionReader` — but a
     // context still opens on the configuration that was on disk when it opened.
-    const compaction = resolveCompaction(state.systemConfig.compaction, modelEntry.context_window);
+    const compaction = resolveCompaction(
+      state.systemConfig.compaction,
+      modelEntry.context_window,
+      sessionScratchpadDir(root, projectId, agentId, spec.sessionId),
+    );
 
     // session_meta: this context's runtime configuration — the assembled prompt goes both to
     // the LLM and in here, so the Trace can audit the actual effective value and a resume
@@ -845,7 +864,16 @@ export class Agent {
         `Session does not exist: ${sessionId} (no matching Trace file found under ${dir}).`,
       );
     }
-    const resumed = resumeTrace(await readTraceTolerant(located.path));
+    // A file a compaction closed opens its next context here, so a hand-off note it ended with
+    // is built from the template on disk now.
+    const { handoffNote } = await this.compactionReader(
+      () => undefined,
+      sessionScratchpadDir(this.state.root, this.state.projectId, this.state.agentId, sessionId),
+    )();
+    const resumed = resumeTrace(await readTraceTolerant(located.path), {
+      tracePath: located.path,
+      ...(handoffNote !== undefined ? { handoffNote } : {}),
+    });
     if (!resumed.meta) {
       throw new Error(`Trace is missing session_meta and cannot be resumed: ${located.path}`);
     }
@@ -1047,6 +1075,7 @@ export class Agent {
    */
   private compactionReader(
     contextWindow: () => number | undefined,
+    scratchpadDir: string,
   ): () => Promise<CompactionSettings> {
     const { root, projectId, agentId } = this.state;
     const configPath = systemConfigPath(root, projectId, agentId);
@@ -1061,7 +1090,7 @@ export class Agent {
       if (parsed === null || typeof parsed !== "object") {
         throw new Error(`Invalid Agent State config: ${configPath} is empty or corrupted.`);
       }
-      cached = resolveCompaction((parsed as SystemConfig).compaction, window);
+      cached = resolveCompaction((parsed as SystemConfig).compaction, window, scratchpadDir);
       cachedKey = key;
       return cached;
     };
@@ -1081,6 +1110,7 @@ export class Agent {
     extras: Partial<SessionConfig> = {},
   ): Session {
     const { root, projectId, agentId } = this.state;
+    const scratchpad = sessionScratchpadDir(root, projectId, agentId, spec.sessionId);
     return new Session({
       meta: context.meta,
       bootstrap: rt.bootstrap,
@@ -1095,9 +1125,10 @@ export class Agent {
       compaction: context.compaction,
       // Live tier: the baseline above is what this context opened on, and this is how every
       // checkpoint after it asks the disk again.
-      readCompaction: this.compactionReader(rt.contextWindow),
+      readCompaction: this.compactionReader(rt.contextWindow, scratchpad),
+      compactionToolGate: compactionToolGate(scratchpad),
       // Where an input image lands when it becomes a path line (see SessionConfig.imagesDir).
-      imagesDir: sessionScratchpadDir(root, projectId, agentId, spec.sessionId),
+      imagesDir: scratchpad,
       modelHasVision: context.modelEntry.vision !== false,
       modelSwitch: rt.modelSwitch,
       ...(context.maxTurns !== undefined ? { maxTurns: context.maxTurns } : {}),
@@ -1296,9 +1327,13 @@ export class Agent {
           // Pass through the parent's approval callback: the child Session inherits
           // the parent Agent's approval mode (with no callback, the child engine
           // defaults to deny). The tool_call received for approval also carries the
-          // origin, so the approval UI can identify which tool a subagent is calling.
-          const childApprove = approve
-            ? (tc: AmspRecord<ToolCallPayload>) => approve(withOrigin(tc, hop))
+          // origin, so the approval UI can identify which tool a subagent is calling, and
+          // the child's policy reason rides along untouched.
+          const childApprove: ApproveFn | undefined = approve
+            ? (tc, context) =>
+                context === undefined
+                  ? approve(withOrigin(tc, hop))
+                  : approve(withOrigin(tc, hop), context)
             : undefined;
           // The engine writes a run's input to the CHILD's own Trace but never replays
           // it to its consumer (a session's normal caller typed that input itself) —
@@ -1348,7 +1383,7 @@ export class Agent {
           childSession.thinkingLevel = level;
         },
         dispose() {
-          childSession.dispose();
+          return childSession.dispose();
         },
       };
     }
@@ -1535,17 +1570,28 @@ export class Agent {
     // on the model the closing context ran on, or on the one a model switch names
     // (`modelRef`, resolved against the Project config on disk). The Environment is
     // re-equipped with the new toolset and vault, then the context is opened by the same
-    // procedure as the first one — the engine yields the published records live and writes
-    // them at the head of the rotated Trace file. An Agent State that cannot be assembled (a
-    // config that no longer parses) throws: the run fails with that error and the engine
-    // keeps the old context. So does this layer when the open itself fails: `current` moves
-    // only once the context is open, and the Environment goes back to the running one.
+    // procedure as the first one. An Agent State that cannot be assembled (a config that no
+    // longer parses) does not end a same-model rotation: the configuration in force reopens on
+    // a fresh LLM object and the next rotation tries the state again — the rule the live
+    // compaction re-read follows. A model switch rethrows, keeping its model; so does this
+    // layer when the open itself fails: `current` moves only once the context is open, and the
+    // Environment goes back to the running one.
     const openNextContext = async ({
       emit,
       modelRef,
     }: SessionOpenContextOptions): Promise<SessionOpenedContext> => {
       const entry = modelRef ? await switchTargetEntry(modelRef) : current.modelEntry;
-      const next = await this.assembleContext(spec, entry);
+      let next: AssembledContext;
+      try {
+        next = await this.assembleContext(spec, entry);
+      } catch (err) {
+        if (modelRef) throw err;
+        const message = err instanceof Error ? err.message : String(err);
+        next = current;
+        process.stderr.write(
+          `[penguin] the next context could not be assembled from the Agent State: ${message}; reopening the configuration in force.\n`,
+        );
+      }
       equip(next);
       let llm: GenerativeModel;
       try {

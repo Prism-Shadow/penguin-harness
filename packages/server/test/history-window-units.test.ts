@@ -3,11 +3,13 @@
  * count a client pages by until N Tasks are on screen, so it must be the one `tailLimit` and
  * `limit` count, not a second reading of the records.
  *
- * Fixture: a prompt sent with an image, a plain prompt, a compaction (its own prompt and summary
- * inside the span, a summary opening the next file), then one more prompt.
+ * Fixture: a prompt sent with an image, a plain prompt, a compaction (its own prompt, a tool
+ * round writing a hand-off file, and the summary inside the span, a summary opening the next
+ * file), then one more prompt.
  *
  * - Given a window over the whole history, it holds three Tasks: the image rides with its prompt,
- *   and nothing of the compaction opens one.
+ *   and nothing of the compaction opens one — its round's call and output are delivered inside
+ *   the span, as the stream had them.
  * - Given windows of two Tasks and then of the rest, each says how many it holds, and asking for
  *   that many again from the same cursor gives back the same window.
  * - Given a byte budget that cuts the window to its newest Task, it says one.
@@ -15,6 +17,7 @@
 import fs from "node:fs/promises";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+  approvalDecision,
   assistantText,
   compactionBegin,
   compactionEnd,
@@ -23,6 +26,8 @@ import {
   requestEnd,
   sessionMeta,
   tokenUsage,
+  toolCall,
+  toolCallOutput,
   userText,
 } from "@prismshadow/penguin-core";
 import type { AmspRecord, TokenCounts } from "@prismshadow/penguin-core";
@@ -86,6 +91,11 @@ describe("the Tasks a window holds", () => {
       compactionBegin({ reason: "manual", mode: "summarize", context: 900, turns: 2 }),
       userText("COMPACT NOW"),
       requestBegin(),
+      toolCall({ name: "write_file", arguments: '{"file_path":"/s/plan.md"}', toolCallId: "h1" }),
+      requestEnd("completed"),
+      approvalDecision("allow", "h1"),
+      toolCallOutput({ output: "written", toolCallId: "h1", status: "completed" }),
+      requestBegin(),
       assistantText("[summary]s[/summary]"),
       requestEnd("completed"),
       compactionEnd({ reason: "manual", mode: "summarize", status: "completed" }),
@@ -107,6 +117,14 @@ describe("the Tasks a window holds", () => {
     expect(all.before).toBeUndefined();
     expect(prompts(all.messages)).toEqual(["look at this", "and plainly?", "one more"]);
     expect(all.units).toBe(3);
+    const round = all.messages.filter(
+      (m) => (m.payload as { tool_call_id?: string }).tool_call_id === "h1",
+    );
+    expect(round.map((m) => (m.payload as { type: string }).type)).toEqual([
+      "tool_call",
+      "approval_decision",
+      "tool_call_output",
+    ]);
   });
 
   it("each window says how many Tasks it holds, and asking for that many gives the same window", async () => {

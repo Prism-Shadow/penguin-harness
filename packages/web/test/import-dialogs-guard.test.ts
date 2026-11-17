@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 /**
- * The Skills, Hooks and Benchmark import dialogs under the settings commit model: the Agent
- * settings page's Import skill (features/agents/skills-tab.tsx) and Import hook
- * (features/agents/hooks-tab.tsx), and the Evaluation Center's Import benchmark
+ * The Skill, hook, workbench and Benchmark import dialogs under the settings commit model: the
+ * Agent settings Plugins tab's Import skill (features/agents/agent-skills.tsx), Import hook
+ * (features/agents/agent-hooks.tsx) and Import workbench (features/agents/agent-workbenches.tsx),
+ * each opened from its sub-page's Import button, and the Evaluation Center's Import benchmark
  * (features/benchmark/benchmark-import-modal.tsx). In each, what the source field holds is the
- * dialog's draft; every scenario runs on all three.
+ * dialog's draft; every scenario runs on all four.
  *
  * - Closing with a source typed asks first, and "keep editing" keeps it; a source typed back to
  *   empty is no change, and the dialog closes at once.
@@ -17,15 +18,14 @@
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createElement as h, useState } from "react";
-import type { ReactElement } from "react";
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
 import { hasUnsaved } from "@prismshadow/penguin-ui";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { draftKey, loadDraft } from "../src/features/chat/draft-cache";
 import { ADMIN_ME } from "./helpers/admin-settings";
-import { SkillsTab } from "../src/features/agents/skills-tab";
-import { HooksTab } from "../src/features/agents/hooks-tab";
+import { PluginsTab } from "../src/features/agents/plugins-tab";
+import type { PluginsSubPage } from "../src/features/agents/plugins-subpages";
 import { ImportBenchmarkModal } from "../src/features/benchmark/benchmark-import-modal";
 import {
   AGENT_ID,
@@ -36,8 +36,9 @@ import {
   mountAgentApp,
   topDialog,
   whereIs,
+  type AgentServer,
 } from "./helpers/agent-app";
-import type { AgentServer } from "./helpers/agent-app";
+
 import {
   button,
   click,
@@ -55,12 +56,18 @@ const promptOpen = () => hasButton(en.common.discard);
 
 type Router = Awaited<ReturnType<typeof mountAgentApp>>;
 
-/** Mounts an Agent settings tab and opens its import dialog, once its list has loaded. */
-async function openFromTab(tab: ReactElement, importLabel: string) {
+/**
+ * Mounts the Agent settings Plugins tab on one kind's sub-page and opens its import dialog from
+ * its Import button, once its lists have loaded.
+ */
+async function openFromTab(subPage: PluginsSubPage, importAction: string) {
   const server = agentServer();
-  const router = await mountAgentApp(tab, { at: `/agents/${AGENT_ID}` });
-  await waitFor(() => hasButton(importLabel) && !button(importLabel).disabled);
-  await click(button(importLabel));
+  const router = await mountAgentApp(
+    h(PluginsTab, { agentId: AGENT_ID, subPage, onSubPage: () => undefined }),
+    { at: `/agents/${AGENT_ID}` },
+  );
+  await waitFor(() => hasButton(importAction) && !button(importAction).disabled);
+  await click(button(importAction));
   await waitFor(() => dialogs().length === 1);
   return { server, router };
 }
@@ -93,7 +100,7 @@ interface ImportDialog {
 const DIALOGS: ImportDialog[] = [
   {
     name: "Import skill",
-    open: () => openFromTab(h(SkillsTab, { agentId: AGENT_ID }), en.skills.importSkill),
+    open: () => openFromTab("skills", en.skills.importSkill),
     source: en.skills.importSourceLabel,
     openChat: en.skills.importOpenChat,
     uploading: en.skills.importUploading,
@@ -101,11 +108,19 @@ const DIALOGS: ImportDialog[] = [
   },
   {
     name: "Import hook",
-    open: () => openFromTab(h(HooksTab, { agentId: AGENT_ID }), en.hooks.importHook),
+    open: () => openFromTab("hooks", en.hooks.importHook),
     source: en.hooks.importSourceLabel,
     openChat: en.hooks.importOpenChat,
     uploading: en.hooks.importUploading,
     archive: "/hooks/archive",
+  },
+  {
+    name: "Import workbench",
+    open: () => openFromTab("workbenches", en.workbenches.importTitle),
+    source: en.workbenches.importSourceLabel,
+    openChat: en.workbenches.importOpenChat,
+    uploading: en.workbenches.importUploading,
+    archive: "/workbenches/archive",
   },
   {
     name: "Import benchmark",

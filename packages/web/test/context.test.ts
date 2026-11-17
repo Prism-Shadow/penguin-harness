@@ -1,6 +1,6 @@
 /**
  * context.ts unit tests: the two upper bounds the app draws against — the model's context
- * window (positive numbers as-is, otherwise the 128000 default) and the compaction threshold
+ * window (positive numbers as-is, otherwise the default) and the compaction threshold
  * the composer's ring fills against — the small-window notice's predicate, and the arithmetic
  * behind the context panel's threshold cutter (pointer to tokens, tokens to bar position).
  */
@@ -24,21 +24,21 @@ describe("resolveContextWindow", () => {
     expect(resolveContextWindow(1)).toBe(1);
   });
 
-  it("unset (undefined / null) falls back to the default 128000", () => {
-    expect(resolveContextWindow(undefined)).toBe(128000);
+  it("unset (undefined / null) falls back to the default", () => {
+    expect(resolveContextWindow(undefined)).toBe(DEFAULT_CONTEXT_WINDOW);
     expect(resolveContextWindow(null)).toBe(DEFAULT_CONTEXT_WINDOW);
   });
 
   it("Trace's model_context_window may be a string: numeric strings parse, `unknown` falls back", () => {
     expect(resolveContextWindow("200000")).toBe(200000);
-    expect(resolveContextWindow("unknown")).toBe(128000);
-    expect(resolveContextWindow("")).toBe(128000);
+    expect(resolveContextWindow("unknown")).toBe(DEFAULT_CONTEXT_WINDOW);
+    expect(resolveContextWindow("")).toBe(DEFAULT_CONTEXT_WINDOW);
   });
 
   it("non-positive (0 / negative / NaN) falls back to the default", () => {
-    expect(resolveContextWindow(0)).toBe(128000);
-    expect(resolveContextWindow(-5)).toBe(128000);
-    expect(resolveContextWindow(Number.NaN)).toBe(128000);
+    expect(resolveContextWindow(0)).toBe(DEFAULT_CONTEXT_WINDOW);
+    expect(resolveContextWindow(-5)).toBe(DEFAULT_CONTEXT_WINDOW);
+    expect(resolveContextWindow(Number.NaN)).toBe(DEFAULT_CONTEXT_WINDOW);
   });
 });
 
@@ -57,12 +57,14 @@ describe("contextFillBasis", () => {
     expect(contextFillBasis(128000, 1000000)).toBe(128000);
   });
 
-  it("is the window minus the compaction headroom when the threshold does not fit", () => {
-    expect(contextFillBasis(256000, 32768)).toBe(32768 - 2048);
+  it("is the window minus the compaction reserve when the threshold does not fit", () => {
+    // A 32k window reserves its floor of 8192 tokens.
+    expect(contextFillBasis(256000, 32768)).toBe(24576);
   });
 
-  it("derives from the assumed 128000 window when the model has none", () => {
-    expect(contextFillBasis(256000, undefined)).toBe(128000 - 2048);
+  it("derives from the assumed default window when the model has none", () => {
+    // The assumed 128k window reserves an eighth of itself.
+    expect(contextFillBasis(256000, undefined)).toBe(112000);
   });
 
   it("falls back to the window when compaction is off", () => {
@@ -140,7 +142,7 @@ describe("thresholdFromPointer", () => {
 
 describe("thresholdCappedByWindow", () => {
   it("names the value actually in force when the window cuts the typed one down", () => {
-    expect(thresholdCappedByWindow(256000, 32768)).toBe(32768 - 2048);
+    expect(thresholdCappedByWindow(256000, 32768)).toBe(24576);
   });
 
   it("is null when the typed value is what will run", () => {

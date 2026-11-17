@@ -6,18 +6,12 @@
  * accent preset ids and font names stay English in both.
  *
  * `surfaces` names the app's surfaces the gallery frames (src/app/surfaces.ts) and `library`
- * the component library's topics (src/library/topics.ts), in both dictionaries; a test checks
- * each covers every id.
+ * the component library's topics (src/library/topics.ts), in both dictionaries. Every table keyed
+ * by an id `satisfies` a `Record` over that id, so the compiler checks each covers every id.
  */
-import type {
-  HookName,
-  StreamReveal,
-  TextVariant,
-  ThemeId,
-  ToneName,
-} from "@prismshadow/penguin-ui";
+import type { HookName, StreamReveal, TextVariant, ToneName } from "@prismshadow/penguin-ui";
 import type { TextSize } from "@prismshadow/penguin-ui/boot";
-import type { A2uiSpec } from "@prismshadow/penguin-core/a2ui";
+import type { A2uiSpec } from "@prismshadow/a2ui";
 import type { SurfaceGroupId, SurfaceId } from "./app/surfaces";
 import type { ChartToken } from "./library/chart-tokens";
 import type { TopicGroupId, TopicId } from "./library/topics";
@@ -57,7 +51,8 @@ export const zh = {
       leaderboards: "榜单",
       amsp: "AMSP",
       docs: "文档",
-      gallery: "画廊",
+      gallery: "主题包",
+      more: "更多",
       github: "GitHub",
       openMenu: "打开菜单",
       closeMenu: "关闭菜单",
@@ -101,7 +96,7 @@ export const zh = {
     resources: "资源",
     measure: "度量",
     system: "系统",
-  } as Record<SurfaceGroupId, string>,
+  } satisfies Record<SurfaceGroupId, string>,
   surfaces: {
     chat: {
       title: "对话",
@@ -168,6 +163,12 @@ export const zh = {
       description: "智能体设置的定时任务标签页：周期、下次触发、绑定的会话与模型。",
       how: "智能体 › 智能体设置 › 定时任务标签页。",
     },
+    apps: {
+      title: "应用中心",
+      description:
+        "Project 的应用桌面：图标与名称组成的图块，各构建状态（可用、构建中、加载失败），收纳两个应用的分组，以及页头的「新建分组」。",
+      how: "侧栏 › 应用中心；页头「新建分组」打开命名并勾选应用的对话框；右键图块或空白处打开菜单，拖动图块排序或叠放成分组。",
+    },
     plugins: {
       title: "插件市场",
       description: "插件按分类列出，可换分组、可搜索；点卡片看详情。",
@@ -211,14 +212,20 @@ export const zh = {
         "设置对话框停在「外观」页：主题、明暗、强调色、五档字号与字体组合——主题切换就在这里。",
       how: "侧栏底部的账户菜单 › 设置 › 外观。",
     },
+    "desktop-window": {
+      title: "桌面窗口",
+      description:
+        "桌面端的主窗口：顶部标题带与侧栏同色，左端是侧栏开关与后退 / 前进，右端是窗口按钮；主栏贴着窗口边缘，与带和侧栏都以分栏线分开，滚动条一直通到窗口角上。",
+      how: "Windows / Linux 上的桌面端主窗口；浏览器里没有标题带。",
+    },
     login: {
       title: "登录",
       description: "登录页：装饰画布上的登录卡片。任意密码即可登录演示账户。",
       how: "未登录时的任意地址。",
     },
-  } as Record<SurfaceId, SurfaceCopy>,
+  } satisfies Record<SurfaceId, SurfaceCopy>,
   home: {
-    eyebrow: "界面画廊",
+    eyebrow: "主题包",
     title: "Penguin UI",
     lead: "真实的 Web App，在三套主题、两种明暗、五档字号、可选字体组合与两种语言下运行——数据来自浏览器内的演示接口，可以随意点击。",
     app: "应用",
@@ -237,11 +244,16 @@ export const zh = {
    */
   rail: {
     theme: "主题",
-    themeNames: { github: "朴素", modern: "白领", geek: "极客" } as Record<ThemeId, string>,
     accent: "强调色",
     accentTheme: "随主题",
     size: "字号",
-    sizeNames: { xs: "特小", s: "小", m: "中", l: "大", xl: "特大" } as Record<TextSize, string>,
+    sizeNames: {
+      xs: "特小",
+      s: "小",
+      m: "中",
+      l: "大",
+      xl: "特大",
+    } satisfies Record<TextSize, string>,
     sizeTitle: (name: string, px: number) => `${name} · 根字号 ${px}px`,
     fontLatin: "英文字体",
     fontCjk: "中文字体",
@@ -283,6 +295,23 @@ export const zh = {
     unset: "未定义",
   },
   foundations: {
+    /** The theme-pack table: each pack's manifest, built-in and imported on the demo's server. */
+    packs: {
+      intro:
+        "注册表里的每个内置主题包，以及演示服务端上管理员导入的主题包，各列出清单 pack.json：名称、基于什么、版本、目标主题 API、选择器用的色样与各字体角色的首选字体。",
+      name: "名称",
+      base: "基于",
+      version: "版本",
+      api: "主题 API",
+      swatches: "色样",
+      fonts: "字体",
+      isBase: "基准",
+      onFrost: "白领",
+      foundation: "基础层",
+      imported: "导入",
+      importedHint: "演示服务端上导入的主题包，读自 GET /api/themes",
+      fontRoles: { sans: "阅读", ui: "界面", cjk: "中文", mono: "等宽", display: "展示" },
+    },
     surfaces: "表面",
     inks: "文字",
     lines: "线条",
@@ -303,7 +332,7 @@ export const zh = {
       done: "已完成",
       neutral: "空闲",
       info: "同步中",
-    } as Record<ToneName, string>,
+    } satisfies Record<ToneName, string>,
     charts: "图表序列",
     tokenSeries: "Token 构成",
     code: "代码与差异",
@@ -324,14 +353,14 @@ export const zh = {
       secondary: "取消",
       input: "搜索会话",
       badge: "运行中",
-      menuTier: "z-[60] 菜单",
+      menuTier: "z-popover 菜单",
       menuItems: ["置顶", "重命名", "移动到…"] as readonly string[],
-      backdropTier: "z-50 对话框",
+      backdropTier: "z-modal 对话框",
       dialogTitle: "删除这个会话？",
       dialogBody: "对话记录与 Trace 文件会一并删除。",
       cancel: "取消",
       confirm: "删除",
-      toastTier: "z-[100] 通知",
+      toastTier: "z-toast 通知",
       toast: "已导出 Trace #001",
     },
     radius: "圆角",
@@ -403,11 +432,20 @@ export const zh = {
       "ui-notice": "提示条与弹出通知：按语气（信息、成功、警告、错误、中性）着色",
       "ui-chart": "统计图：网格、坐标轴、折线、面积、柱与数据点",
       "ui-widget": "回复里一眼看懂的读数块：天气、时钟、倒计时与指标",
+      "ui-edge":
+        "人按下、输入或写下的框的边：有底色或描边的按钮、输入框与选择框、复选框、单选框、开关、首页的选择器与本人的消息气泡",
+      "ui-start": "首页（新建对话）整体：品牌、三个计数、输入区与示例文件夹",
+      "ui-library": "模型库：按提供方分组的框与其中的模型卡片",
+      "ui-ledger": "单独列出的一组数字：用量汇总卡、公司指标块、Benchmark 卡片的分数",
+      "ui-empty": "空状态：插画、标题、说明与操作",
+      "ui-run": "对话工具栏里的运行指示：图标与「运行中」",
       "ui-scrim": "对话框、抽屉与面板背后的遮罩层",
       "ui-stream": "正在流式输出的文字（回答、思考、压缩摘要、工具输出）：各主题决定新文字如何出现",
       "ui-glyph":
         "按主题换画法的图标：朴素为线性画法，白领为线性画法衬淡色块（双色调），极客为像素画",
-    } as Record<HookName, string>,
+      "ui-avatar":
+        "按主题换画法的智能体缺省头像：同一只笑脸圆球企鹅，朴素为圆角方块，白领与卡通为圆形，极客为像素画",
+    } satisfies Record<HookName, string>,
     hookSamples: {
       menu: ["置顶", "重命名", "删除"] as readonly string[],
       group: "工作区",
@@ -460,11 +498,12 @@ export const zh = {
   /** The component library: its topics, and the words each board prints. */
   library: {
     title: "组件库",
-    groups: { components: "组件", foundations: "视觉基础" } as Record<TopicGroupId, string>,
+    groups: { components: "组件", foundations: "视觉基础" } satisfies Record<TopicGroupId, string>,
     topics: {
       buttons: {
         title: "按钮",
-        description: "五种变体、五档尺寸与图标按钮，禁用与加载中，以及链接与键盘提示。",
+        description:
+          "五种变体、五档尺寸与图标按钮，禁用与加载中，链接、行内图形操作与键盘提示，以及可拖到边缘、可收起的悬浮球。",
       },
       inputs: {
         title: "输入与表单",
@@ -474,7 +513,7 @@ export const zh = {
       pickers: {
         title: "选择器",
         description:
-          "下拉选择、同档控件的尺寸、分段控件、滑块与选项组、开关与开关行、色板、选项菜单、下拉菜单与菜单行。",
+          "下拉选择、同档控件的尺寸、分段控件、滑块与选项组、开关与开关行、色板、选项菜单、下拉菜单、右键菜单与菜单行。",
       },
       toasts: {
         title: "提示弹窗",
@@ -492,10 +531,14 @@ export const zh = {
         title: "悬停提示",
         description: "悬停与聚焦时出现的提示：data-tooltip 属性与 Tooltip 组件。",
       },
-      tabs: { title: "标签页", description: "下划线式标签切换，可带更新标记。" },
+      tabs: {
+        title: "标签页",
+        description: "下划线式标签切换，可带更新标记；以及标签页下的子页面切换条。",
+      },
       badges: {
         title: "徽标与状态",
-        description: "徽标与计数、状态点、运行状态图标、会话活动标记与更新点，以及统计卡与统计值。",
+        description:
+          "徽标与计数、状态点、运行状态图标、状态标记、会话活动标记与更新点，以及统计卡与统计值。",
       },
       empty: { title: "空状态", description: "列表或详情为空时的占位文字，可带操作。" },
       loading: { title: "加载", description: "转圈、骨架屏、进度条与传输进度。" },
@@ -508,11 +551,14 @@ export const zh = {
         description:
           "统计图的基础：所有图表共用的绘图原语、当前主题的图表令牌，以及建立在它们之上的每一种图表——环形图、环形仪表、图例、趋势与用量柱、请求与成功率、迷你折线、轨迹时间线。",
       },
-      avatars: { title: "头像", description: "用户头像与智能体头像的各个尺寸，以及头像组。" },
+      avatars: {
+        title: "头像",
+        description: "用户头像的各个尺寸；智能体头像在每套主题下的画法与整套颜色；头像组。",
+      },
       site: {
         title: "公开站点",
         description:
-          "落地页与文档站共用的组件：页脚、代码卡片与复制按钮、胶囊、文章目录、文档侧栏、搜索、外链确认与文章排版。",
+          "落地页与文档站共用的组件：导航栏、页脚、代码卡片与复制按钮、胶囊、数据页控件、文章目录、文档侧栏、搜索、外链确认与文章排版。",
       },
       files: {
         title: "文件",
@@ -528,7 +574,10 @@ export const zh = {
         title: "布局",
         description: "页面框架与页头、卡片与卡片头、分节、可折叠分节、实体头部，以及导航列表。",
       },
-      data: { title: "数据", description: "表格、列表行、键值对与日志。" },
+      data: {
+        title: "数据",
+        description: "表格、条目卡片与事实行、列表行及其加载与空状态、键值对与日志。",
+      },
       machines: {
         title: "机器",
         description:
@@ -549,6 +598,10 @@ export const zh = {
         description:
           "对话里附加的图片与文件：输入框里待发送的、发出后消息里的、插话小块里的，以及窄屏、长文件名与加载失败。",
       },
+      packs: {
+        title: "主题包",
+        description: "每个主题包的清单：名称、基于什么、版本、主题 API、色样与字体。",
+      },
       colour: {
         title: "颜色",
         description: "表面、文字、线条、强调色、语义色调、图表序列与代码色。",
@@ -560,7 +613,7 @@ export const zh = {
       motion: { title: "动效", description: "进出、显现、布局与时长缓动。" },
       icons: { title: "图标", description: "图标尺寸与 Web App 的图标表。" },
       hooks: { title: "样式钩子", description: "主题可以重绘的结构钩子，逐个示范。" },
-    } as Record<TopicId, { title: string; description: string }>,
+    } satisfies Record<TopicId, { title: string; description: string }>,
     buttons: {
       variants: "变体",
       primary: "保存",
@@ -587,8 +640,24 @@ export const zh = {
       inlineLink: "发布说明",
       inlineAfter: "。",
       external: "查看全部版本",
+      glyphActions: "行内图形操作",
+      glyphActionsHint:
+        "只有图形，没有底框：悬停时墨色加深。名称即无障碍名称与悬停提示；给地址时是在新标签页打开的链接，否则是按钮。",
+      glyphAuthor: "Prism Shadow",
+      glyphHomepage: "主页",
+      glyphRepository: "代码仓库",
+      glyphSkill: "data-analysis",
+      glyphFromPlugin: "由插件 Data analysis 安装",
       keys: "键盘提示",
       shortcuts: [["Ctrl", "K"], ["Ctrl", "`"], ["Esc"]] as readonly (readonly string[])[],
+      ball: "悬浮球",
+      ballHint:
+        "拖到左缘或右缘，松手即贴边；推出边缘或点「×」收起，点边上的把手恢复。位置由调用方保存。",
+      ballLabel: "退出全屏",
+      ballTuck: "收起到边缘",
+      ballShow: "显示退出按钮",
+      ballReadout: (side: "left" | "right", percent: number, tucked: boolean, presses: number) =>
+        `${side === "left" ? "左缘" : "右缘"}，高度 ${percent}%${tucked ? "，已收起" : ""} · 点击 ${presses} 次`,
     },
     inputs: {
       basics: "文本框",
@@ -650,6 +719,18 @@ export const zh = {
       date: "开始日期",
       time: "每日提醒时间",
       dateTimeLocal: "下次运行",
+      dateRange: "日期范围",
+      rangeLabel: "统计区间",
+      dateStates: "日期与时间的状态",
+      dateRequired: "截止日期",
+      dateBounded: "本月内的一天",
+      dateBoundedHint: "只能选本月的日期。",
+      dateError: "发布日期",
+      dateErrorText: "发布日期不能早于今天。",
+      dateDisabled: "创建日期",
+      timeStep: "会议开始",
+      timeStepHint: "每 15 分钟一档。",
+      time12: "12 小时制",
     },
     pickers: {
       select: "下拉选择",
@@ -680,6 +761,12 @@ export const zh = {
         { value: "ask", trigger: "ask", label: "逐项审批", description: "每次写入前先询问。" },
       ] as readonly { value: string; trigger: string; label: string; description: string }[],
       dropdown: "下拉菜单",
+      contextMenu: "右键菜单",
+      contextMenuHint:
+        "右键、Shift+F10、ContextMenu 键或触屏长按都会打开；Esc 关闭并把焦点交还给目标。",
+      contextMenuTarget: "右键这里",
+      contextOpen: "打开",
+      contextFullScreen: "全屏打开",
       menu: "更多操作",
       menuPin: "置顶",
       menuRename: "重命名",
@@ -797,6 +884,7 @@ export const zh = {
       pagedGroups: { app: "应用", you: "账号" },
       pages: { general: "通用", appearance: "外观", account: "个人资料" },
       pageBody: "当前页的设置项放在这里。",
+      pageRow: (n: number) => `第 ${n} 项设置`,
       appearanceInfo: "主题、强调色与密度只作用于这个浏览器。",
       drawer: "抽屉",
       openDrawer: "打开抽屉",
@@ -837,6 +925,17 @@ export const zh = {
       items: ["概览", "轨迹", "文件", "设置"] as readonly string[],
       badgeText: "有 3 个技能可更新",
       body: (tab: string) => `「${tab}」的内容。`,
+      subPages: "子页面切换条",
+      subPagesHint:
+        "标签页之下的第二层：分段选择切换子页面，行尾是当前子页面的操作；加载、为空与有内容时位置不变，窄屏时操作折到下一行。",
+      subPagesLabel: "插件的子页面",
+      subPageItems: ["插件", "技能", "钩子", "工作台"] as readonly string[],
+      subPageBody: (page: string) => `「${page}」子页面的内容。`,
+      subPageImport: "导入技能",
+      subPageSearch: "搜索插件",
+      subPageMarket: "打开插件市场",
+      withButton: "带一个按钮",
+      withSearch: "带搜索框与按钮",
     },
     badges: {
       pills: "标签胶囊",
@@ -879,6 +978,20 @@ export const zh = {
       dotAnchor: "插件市场",
       pill: "更新提示",
       pillText: "3 个可更新",
+      statusMarks: "状态标记",
+      statusMarksHint:
+        "图形带语气，文字保持次要墨色、不着色；悬停说明状态对这一项意味着什么。不需要处理的状态不带语气，图形退为浅色。",
+      statusMarkSamples: {
+        success: "已安装",
+        attention: "可更新",
+        danger: "加载失败",
+        done: "已完成",
+        neutral: "已停用",
+        info: "仅在其他机器",
+      },
+      statusMarkHint: (word: string) => `悬停说明：「${word}」对这个插件意味着什么。`,
+      statusMarkReceding: "可安装",
+      statusMarkPill: "对照：同语气的标签胶囊",
       statTile: "统计卡",
       spend: "本月花费",
       spendDetail: "组织预算 $40",
@@ -935,7 +1048,7 @@ export const zh = {
         instant: "即时：文字一到就显示，不加动效",
         fade: "淡入：按词显现，每段新到的文字各自淡入，最新的一行半从一层轻纱里浮现",
         typewriter: "打字机：逐字打出，末尾跟着一个实心块状光标",
-      } as Record<StreamReveal, string>,
+      } satisfies Record<StreamReveal, string>,
       unset: "按即时处理",
       rate: (perSecond: number) => `每秒约 ${Math.round(perSecond)} 字`,
       reduced: "已开启减少动态效果，回答到达即显示",
@@ -1000,7 +1113,7 @@ export const zh = {
         "--ui-chart-point-radius": "数据点半径",
         "--ui-chart-curve": "连线方式（linear / smooth / step）",
         "--ui-chart-area-opacity": "面积填充不透明度（0–1）",
-      } as Record<ChartToken, string>,
+      } satisfies Record<ChartToken, string>,
       donut: "Token 环形图",
       donutHint: "缓存读取、缓存写入与输出的构成，环的余量随接近上限变色。",
       donutLabels: {
@@ -1094,6 +1207,13 @@ export const zh = {
     avatars: {
       user: "用户头像",
       agent: "智能体头像",
+      agentAside: "当前主题的画法：十二个智能体，颜色各一",
+      variants: "各主题的画法",
+      variantsAside: "同一只笑脸圆球企鹅，每套主题一种画法；颜色只随智能体",
+      sizeCaption: (px: number) => `${px}px`,
+      picture: "智能体自己的图片",
+      pictureAside: "上传的图片保持智能体的圆角方块；读不出来时画缺省头像",
+      pictureBroken: "图片读不出来",
       stack: "头像组",
       stackShown: (shown: number, total: number) => `共 ${total} 个，显示 ${shown} 个`,
       userNames: ["admin", "演示管理员"] as readonly string[],
@@ -1104,12 +1224,15 @@ export const zh = {
       ] as readonly { id: string; name: string }[],
     },
     site: {
+      nav: "导航栏",
+      navHint:
+        "三站共用：行末的「更多」收着 AMSP 与主题包，悬停或按下展开，其中一页是当前页时「更多」标为当前页；手机菜单把这两页缩进列在「更多」之下。",
       footer: "页脚",
       footerHint: "落地页的品牌与链接栏，文档站的一行版权与链接。",
-      tagline: "统一、稳定的 Agent 自进化框架",
+      tagline: "开箱即用的 Agent 自进化框架",
       columns: [
         { title: "产品", links: ["案例", "快速开始", "博客", "下载"] },
-        { title: "资源", links: ["GitHub 仓库", "文档", "画廊"] },
+        { title: "资源", links: ["GitHub 仓库", "文档", "主题包"] },
       ] as readonly { title: string; links: readonly string[] }[],
       lineLinks: ["产品主页", "GitHub 仓库", "Apache-2.0 License"] as readonly string[],
       copyright: "© 2026 Prism Shadow，基于 Apache-2.0 协议开源",
@@ -1128,6 +1251,22 @@ export const zh = {
         teal: "观点",
         neutral: "更新日志",
       },
+      dataPage: "数据页控件",
+      dataPageHint:
+        "插件、评估集与榜单页共用：返回列表的链接、切换视图的分段按钮、工具栏的菜单按钮与数据表格。当前视图用不到的菜单按钮变灰但留在原位，切换视图时工具栏不动。",
+      dataBack: "插件",
+      dataBackLabel: "返回插件",
+      dataViews: "视图",
+      dataViewOptions: { table: "表格", pareto: "帕累托", waffle: "华夫饼" },
+      dataFilter: "筛选",
+      dataColumns: "列",
+      dataColumnsHint: "列只用于表格",
+      dataHead: { rank: "排名", name: "算法", score: "得分", cost: "成本" },
+      dataRows: [
+        ["SkillOpt 自进化工具包", "70.3", "$1.86"],
+        ["SkillAdam 自进化工具包", "69.0", "$1.96"],
+        ["基线", "56.3", "$2.38"],
+      ] as readonly (readonly [string, string, string])[],
       article: "文章",
       articleHint:
         "博客文章与文档页共用的排版。标题带锚点，围栏代码块高亮，标签组与提示框是文档的 Markdown 扩展；本页右侧是它的目录。",
@@ -1205,6 +1344,13 @@ export const zh = {
       wrap: "自动换行",
       crumbs: "路径条",
       crumbsHint: "放不下时，开头的几段收进一个「…」，文件名最后让位",
+      narrow: "窄树窗格",
+      narrowHint:
+        "放不下搜索框时收为放大镜按钮，点击即横跨标题行展开；框内为空时按 Esc 或失焦即收回",
+      narrowFolded: "收起",
+      narrowQuery: "框内有搜索词：一直保留",
+      refresh: "刷新",
+      upload: "上传",
       menu: "文件菜单",
       menuFile: "文件",
       menuFolder: "文件夹",
@@ -1236,7 +1382,7 @@ export const zh = {
         eyebrow: "分组标签",
         mono: "sess_7f3a · ~/work/penguin",
         label: "字段标签",
-      } as Record<TextVariant, string>,
+      } satisfies Record<TextVariant, string>,
       inline: { before: "先运行 ", code: "pnpm install", after: " 安装依赖。" },
       prose: "Markdown 正文",
       proseSample:
@@ -1325,6 +1471,7 @@ export const zh = {
         "| 设置 | 取值 |\n| --- | --- |\n| 模型 | `gpt-5.6-luna` |\n| 审批 | 写文件前询问 |\n| 沙箱 | 仅限工作区 |\n| 上下文窗口 | 400k Token |",
       code: "代码",
       surface: "代码面：行号，无外框",
+      surfaceLong: "长文件，自动换行：每 100 行一块，滚到附近才绘制",
       diff: "差异",
       unified: "合并视图",
       split: "并排视图",
@@ -1746,6 +1893,7 @@ export const zh = {
         "本机代理在 127.0.0.1:9090，但 ~/.bashrc 在非交互式 shell 里提前 return，exec_command 拿不到 http_proxy 等环境变量；需要在命令里显式 export 代理，或对本地地址加 --noproxy '*'，否则 curl 访问本地端口会返回 502。",
         'PenguinHarness v0.2.15 服务器进程内调用任何 Gemini 模型都会失败："Failed to parse URL from [object Request]"。原因是打包后的 fetch 与 Request 实现不一致，升级到 0.2.16 后恢复正常。',
         "引用专利号或文献前，先用工具核验。",
+        "这条记忆由插件写入：每个 Task 结束后，持续学习的钩子把这次对话里值得长期记住的做法整理成一条，标题后的拼图标记说明它的来源，点击即可打开那个插件的详情。",
       ],
       viewMemory: (name: string) => `查看 ${name}`,
       editMemory: (name: string) => `编辑 ${name}`,
@@ -1760,6 +1908,81 @@ export const zh = {
       log: "日志",
       logHint: "仍在运行的任务：最后一行用正文墨色。",
       logLabel: "更新输出",
+      cards: "条目卡片",
+      cardsHint:
+        "卡片主体是一个打开详情的按钮，操作在主体之外；卡片够宽时操作显示文字，否则只显示图形，文字作为悬停提示。下方同一组卡片放在 360px 宽的栏里。",
+      cardSection: "办公效率",
+      cardCount: (n: number) => `${n} 个插件`,
+      cardNarrow: "360px 宽的栏",
+      cardSamples: [
+        {
+          title: "数据分析",
+          description: "读取表格与数据库，画出图表并写出结论。",
+          status: "已安装",
+          statusHint: "这个 Project 有 2 个 Agent 装了它。",
+          usedBy: "2 个 Agent 在用",
+        },
+        {
+          title: "会议纪要",
+          description: "把会议录音整理成纪要与待办。",
+          status: "可更新",
+          statusHint: "1 个 Agent 上的版本落后于插件库。",
+          usedBy: "1 个 Agent 在用",
+        },
+        {
+          title: "幻灯片",
+          description: "按大纲生成一套幻灯片。",
+          status: "可安装",
+          statusHint: "还没有 Agent 装它。",
+          usedBy: "",
+        },
+        {
+          title: "一个显示名称长到任何卡片都放不下、只能截断后悬停查看全文的插件",
+          description:
+            "它的一行描述同样很长：读取整个代码仓库，按团队的约定逐个文件审阅改动，并把发现写成可以直接贴进合并请求的评论。",
+          status: "已安装",
+          statusHint: "这个 Project 有 1 个 Agent 装了它。",
+          usedBy: "1 个 Agent 在用",
+        },
+      ],
+      cardTag: "办公效率",
+      cardBuiltin: "内置",
+      cardInstall: "安装",
+      cardUpdate: "更新",
+      cardManage: "管理安装",
+      cardUninstall: "卸载",
+      cardActionName: (verb: string, title: string) => `${verb} ${title}`,
+      metaLine: "事实行",
+      metaLineHint:
+        "条目的几项事实排成一行，之间用间隔点；放不下时最后一项截断，其余保持原宽，从不换行。",
+      metaLineUsedBy: "有 12 个 Agent 在用，其中 3 个在其他机器上，上次连上时的数据",
+      factRows: "详情里的事实行",
+      factRowsHint:
+        "每行一项：图形、名称、几项次要事实与行尾标记；最后一项事实占据剩余宽度并截断，标记保持原宽。缺失的部件整行用次要墨色。",
+      factListLabel: "在这个 Agent 上",
+      factKeys: "等待密钥库中的 NOTES_TOKEN",
+      factSignIn: "需要登录",
+      factMissing: "缺失",
+      factMissingHint: "插件库里的这个部件不在这个 Agent 上。点「更新」把它装回来。",
+      trailRows: "标题后的标记",
+      trailRowsHint:
+        "标记与标签紧跟标题、在同一行，保持原宽；行太窄时折到标题下方。点击行的名称或空白处打开该行，行内控件只做各自的事。插件装进来的部件带拼图标记，悬停说明来源，点击在下方的插件列表中定位该插件：那一行滚到视野中部、获得焦点，以强调色描边高亮约 2 秒后淡出。",
+      trailListLabel: "钩子包",
+      trailFromPlugin: (plugin: string) => `由插件 ${plugin} 安装，点击在下方列表中定位`,
+      trailPluginsCaption: "拼图标记指向的插件列表",
+      trailPluginsLabel: "插件",
+      trailDescriptions: [
+        "每个 Task 结束后整理这次对话里值得记下的经验。",
+        "在每轮回复前提醒模型当前的目标。",
+        "你自己写的钩子包，不属于任何插件。",
+      ],
+      trailExport: (name: string) => `导出 ${name}`,
+      trailUninstall: (name: string) => `卸载 ${name}`,
+      listStates: "列表的加载与空状态",
+      listLoading: "首次读取时",
+      listEmpty: "没有内容时",
+      listEmptyText: "这个 Agent 还没有钩子包。",
+      memoryFromPlugin: "由插件 Continual learning 写入",
     },
     machines: {
       pills: "状态胶囊",

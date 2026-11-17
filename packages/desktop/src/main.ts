@@ -5,16 +5,20 @@
  * shell boots and hosts; it does not implement product behavior. It is also
  * the least updatable code in the system — a change here reaches users only
  * through a new installer — so a capability that could instead be delivered
- * by a platform push must be. A rejected example: adding a preload bridge so
- * the web UI could open DevTools, when the shell's own View menu already
- * does it.
+ * by a platform push must be. A rejected example: widening the preload bridge
+ * so the web UI could open DevTools, when the shell's own View menu already
+ * does it. The page can still ask for DevTools — through the host-command
+ * relay every other shell action uses (`open-devtools`), which needs no
+ * bridge and no capability in the renderer.
  *
  * One window over the embedded server: fork penguin-server as a utilityProcess on the
  * shared data root (PENGUIN_HOME or ~/.penguin/data), learn its port (last launch's when
  * still free, so origin-scoped localStorage preferences survive restarts), and load
  * `http://localhost:<port>/api/auth/claim?token=…` — the one-shot token lands
- * the window signed in as admin. The window is a plain browser environment (no preload,
- * no node integration); every capability flows through the server's HTTP API.
+ * the window signed in as admin. The window is a plain browser environment (no node
+ * integration); every capability flows through the server's HTTP API. Its one preload is the
+ * window-controls bridge (preload.ts), which carries minimize, maximize and close for the title
+ * band the page draws (title-bar.ts), and nothing else.
  *
  * Attach mode: when a live server (e.g. `penguin web`) already owns the data root, the
  * window loads that instance instead. The one-shot token buys nothing there, so the shell
@@ -63,7 +67,8 @@ import {
   autoUpdater as electronUpdater,
   BrowserWindow,
   dialog,
-  nativeTheme,
+  ipcMain,
+  Menu,
   session,
   shell,
 } from "electron";
@@ -83,18 +88,22 @@ import type { SignInFailure } from "./attach-session.js";
 import { embeddedCliEntry } from "./launcher.js";
 import { webDistEntry, webDistFor } from "./web-dist.js";
 import { resolveTrayIcon, resolveWindowIcon } from "./app-icon.js";
+import { openAppWindow, parseOpenWindowRequest } from "./app-window.js";
 import { createBuiltinBrowserShell } from "./builtin-browser.js";
 import { installCliCommand, ensureCliCommand, currentCliInstallKind } from "./cli-install.js";
 import { logLine, logServerOutput, startDesktopLog, stopDesktopLog } from "./desktop-log.js";
+import { editMenuItems, runEditAction } from "./edit-menu.js";
 import { handleFolderAccessFrame } from "./folder-access.js";
 import type { FolderAccessFrameDeps } from "./folder-access.js";
 import { applyLoginShellEnv } from "./login-shell-env.js";
 import { installAppMenu } from "./menu.js";
+import { isDevToolsKey, isMenuBarKey } from "./shortcuts.js";
 import { startEmbeddedServer, stopEmbeddedServer } from "./server-process.js";
 import type { EmbeddedServer } from "./server-process.js";
-import { overlayColors, TITLE_BAR_FALLBACK_CSS, titleBarWindowOptions } from "./title-bar.js";
+import { titleBarWindowOptions } from "./title-bar.js";
 import { resolveTrayLocale } from "./tray-menu.js";
 import { afterUnloadAnswer, unloadPrompt } from "./unload-prompt.js";
+import { installWindowControls, reportMaximized } from "./window-controls.js";
 import type { TrayLocale } from "./tray-menu.js";
 import { installTray } from "./tray.js";
 import type { TrayHandle } from "./tray.js";
@@ -105,13 +114,20 @@ import {
   updateTrayPrefs,
 } from "./tray-prefs.js";
 import {
+  checkForUpdatesManually,
   getUpdaterStatus,
   handleUpdaterCommand,
   initUpdater,
   noteMainWindowShown,
   onUpdaterStatus,
+  updatesAvailableInThisForm,
 } from "./updater.js";
-import { parseUpdaterCommand, updaterStatusMessage } from "./updater-status.js";
+import {
+  hostCommandsMessage,
+  parseHostCommand,
+  parseUpdaterCommand,
+  updaterStatusMessage,
+} from "./updater-status.js";
 import {
   APP_WINDOW_OPTIONS,
   childGoneLine,
@@ -193,6 +209,84 @@ function fatal(context: string, err: unknown): void {
   app.exit(1);
 }
 
+/**
+ * Windows and Linux: the menu bar is hidden outright, not auto-hidden. With `autoHideMenuBar`
+ * a lone Alt press pulled the bar up and took the keyboard from the page, so every Alt
+ * combination the page or the terminal wanted (Alt+B, Alt+., Alt+Enter) was eaten. Hidden,
+ * the application menu still exists — macOS keeps its system menu bar — and F10 brings the
+ * bar up for the rare time it is wanted. The menu's own actions are offered from the page's
+ * command palette (see http/routes/command.ts).
+ *
+ * The menu's ACCELERATORS are not something to rely on here. Chromium offers a key to the
+ * page before it fires one, so anything the page consumes never reaches the menu — the
+ * terminal alone claims Ctrl+Shift+C, Ctrl+Shift+V and Shift+Insert — and with the bar
+ * hidden there is nothing on screen to reveal the binding either. A shortcut this shell
+ * means to guarantee is bound here instead, on `before-input-event`, which runs BEFORE the
+ * page sees the key.
+ */
+function hideMenuBar(target: BrowserWindow): void {
+  if (process.platform === "darwin") return;
+  target.setMenuBarVisibility(false);
+  target.webContents.on("before-input-event", (event, input) => {
+    if (isMenuBarKey(input)) {
+      target.setMenuBarVisibility(!target.isMenuBarVisible());
+      event.preventDefault();
+    } else if (isDevToolsKey(input)) {
+      toggleDevTools();
+      event.preventDefault();
+    }
+  });
+}
+
+/**
+ * Electron draws no right-click menu, and a browser's is what the Web App leaves its fields
+ * and its unclaimed selections to; so the shell offers the edit group there (edit-menu.ts),
+ * in the Web App's language. A page that draws its own menu (the conversation, the Files
+ * panel, the terminal) calls `preventDefault` on `contextmenu`, and then Electron raises no
+ * `context-menu` at all, so the two never stack. The `<webview>` guests are other contents
+ * with a menu of their own (builtin-browser.ts).
+ */
+function offerEditMenu(target: BrowserWindow): void {
+  const contents = target.webContents;
+  contents.on("context-menu", (_event, params) => {
+    const items = editMenuItems({
+      locale: trayLocale,
+      isEditable: params.isEditable,
+      selectionText: params.selectionText,
+      editFlags: params.editFlags,
+    });
+    if (items.length === 0) return;
+    Menu.buildFromTemplate(
+      items.map((item) => ({
+        label: item.label,
+        click: () => {
+          if (!contents.isDestroyed()) runEditAction(contents, item.action);
+        },
+      })),
+    ).popup({ window: target });
+  });
+}
+
+/**
+ * DevTools as its own window (`detach`) rather than a pane: a console error is usually being
+ * copied out to someone else, and a docked panel reflows the page under it while that happens.
+ *
+ * `openDevTools` is what the palette's command runs — it says "open", so an open window is
+ * focused rather than closed. A key that people press twice toggles.
+ */
+function openDevTools(): void {
+  if (win === null) return;
+  const contents = win.webContents;
+  if (contents.isDevToolsOpened()) contents.devToolsWebContents?.focus();
+  else contents.openDevTools({ mode: "detach" });
+}
+
+function toggleDevTools(): void {
+  if (win === null) return;
+  if (win.webContents.isDevToolsOpened()) win.webContents.closeDevTools();
+  else win.webContents.openDevTools({ mode: "detach" });
+}
+
 function createWindow(url: string): void {
   // Linux window/taskbar icon (and Windows dev runs); packaged Windows uses the exe
   // resources and macOS its bundle icns, so those ignore it (see app-icon.ts).
@@ -203,10 +297,12 @@ function createWindow(url: string): void {
     show: false,
     autoHideMenuBar: true,
     // No system title bar: the Web App's top band takes its place (see title-bar.ts).
-    ...titleBarWindowOptions(process.platform, nativeTheme.shouldUseDarkColors),
+    ...titleBarWindowOptions(process.platform),
     ...(iconPath !== null ? { icon: iconPath } : {}),
     webPreferences: {
-      // The window is a plain browser: no Node, no preload — the minimal attack surface.
+      // The window is a plain browser: no Node — the minimal attack surface. The preload is
+      // the window-controls bridge alone, isolated and sandboxed like the page (preload.ts).
+      preload: path.join(app.getAppPath(), "dist", "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -216,7 +312,7 @@ function createWindow(url: string): void {
     },
   });
   builtinBrowser.host(win);
-  followPageTitleBar(win);
+  reportMaximized(win);
   win.once("ready-to-show", () => win?.show());
   // The automatic update schedule reaches the network: it starts once a window is on screen.
   win.once("show", noteMainWindowShown);
@@ -238,21 +334,8 @@ function createWindow(url: string): void {
   win.on("closed", () => {
     win = null;
   });
-  // The page refused to unload: the Web App holds unsaved edits and asked through its
-  // beforeunload listener. Electron draws nothing for that and simply cancels the close, so the
-  // shell asks in the page's place — over the window, shown first, since a Quit from the tray
-  // may find it hidden — and lets the page go only on "discard" (see unload-prompt.ts).
-  const host = win;
-  host.webContents.on("will-prevent-unload", (event) => {
-    if (host.isDestroyed()) return;
-    host.show();
-    const answer = afterUnloadAnswer(
-      dialog.showMessageBoxSync(host, unloadPrompt(trayLocale, app.name)),
-      quitting,
-    );
-    quitting = answer.quitting;
-    if (answer.unload) event.preventDefault();
-  });
+  // Unsaved edits ask before the window goes (see armUnloadPrompt).
+  armUnloadPrompt(win);
   // New windows, from this window and from every window it opens, go through one rule
   // (classifyWindowOpen): only the Workspace preview hand-off, a preview page and a detached
   // terminal get a window of this app; other sites go to the system browser; anything else
@@ -261,6 +344,8 @@ function createWindow(url: string): void {
   // the Files panel previews Agent-written HTML in an iframe that allows popups, so any window
   // allowed here is one that HTML can open too — a hidden one, it could own outright.
   win.webContents.setWindowOpenHandler(({ url: target }) => openWindowFor(target, iconPath));
+  hideMenuBar(win);
+  offerEditMenu(win);
   win.webContents.on("did-create-window", (child) => guardOpenedWindow(child, iconPath));
   win.webContents.on("will-navigate", (event, target) => {
     if (!isAppUrl(target, appOrigin)) {
@@ -286,27 +371,6 @@ function createWindow(url: string): void {
   target.webContents.on("responsive", () => logLine("[shell] the window responds again"));
   armSmokeProbe(win);
   void win.loadURL(url);
-}
-
-/**
- * Keeps the window controls legible over the page's top band, and gives a page that lays out no
- * band of its own one to drag the window by (both in title-bar.ts). The page names its colour in
- * `<meta name="theme-color">`, which reaches this process without any channel into the page.
- */
-function followPageTitleBar(target: BrowserWindow): void {
-  target.webContents.on("dom-ready", () => {
-    target.webContents
-      .insertCSS(TITLE_BAR_FALLBACK_CSS)
-      .catch((err: unknown) =>
-        logLine(`[shell] the title bar fallback was refused: ${String(err)}`),
-      );
-  });
-  // macOS draws its own traffic lights; the overlay's colours are Windows' and Linux's.
-  if (process.platform === "darwin") return;
-  target.webContents.on("did-change-theme-color", (_event, color) => {
-    if (target.isDestroyed()) return;
-    target.setTitleBarOverlay(overlayColors(color, nativeTheme.shouldUseDarkColors));
-  });
 }
 
 /**
@@ -348,7 +412,8 @@ function openWindowFor(target: string, iconPath: string | null): WindowOpenHandl
           // and must never get Node. Nor <webview>, the main window's alone: Electron copies
           // an opener's preference only when it is the safe one, so without this line the
           // main window's `webviewTag: true` leaves a features string (`webviewTag=yes`) in
-          // charge.
+          // charge. An opener's preload is never copied, so the window-controls bridge stays
+          // the main window's: these windows keep the system's title bar.
           webPreferences: {
             contextIsolation: true,
             nodeIntegration: false,
@@ -381,6 +446,8 @@ function openWindowFor(target: string, iconPath: string | null): WindowOpenHandl
  * which Electron would otherwise apply, is refused: off-screen is hidden too.
  */
 function guardOpenedWindow(child: BrowserWindow, iconPath: string | null): void {
+  hideMenuBar(child);
+  offerEditMenu(child);
   child.center();
   child.webContents.on("content-bounds-updated", (event) => event.preventDefault());
   child.webContents.setWindowOpenHandler(({ url: target }) => openWindowFor(target, iconPath));
@@ -404,6 +471,28 @@ function guardOpenedWindow(child: BrowserWindow, iconPath: string | null): void 
       event.preventDefault();
       openInSystem(target);
     }
+  });
+}
+
+/**
+ * Unsaved edits ask before the window goes: the Web App holds a `beforeunload` listener for
+ * exactly as long as a form is dirty, and Electron draws nothing for that — without an answer
+ * here it cancels the close silently. The shell asks in the page's place, over the window
+ * (shown first, since a Quit from the tray may find it hidden), and lets the page go only on
+ * "discard" (see unload-prompt.ts). The main window and every window of the full App — New
+ * Window opens one — arm this; a preview or terminal window hosts no editor, so nothing there
+ * ever asks.
+ */
+function armUnloadPrompt(host: BrowserWindow): void {
+  host.webContents.on("will-prevent-unload", (event) => {
+    if (host.isDestroyed()) return;
+    host.show();
+    const answer = afterUnloadAnswer(
+      dialog.showMessageBoxSync(host, unloadPrompt(trayLocale, app.name)),
+      quitting,
+    );
+    quitting = answer.quitting;
+    if (answer.unload) event.preventDefault();
   });
 }
 
@@ -612,9 +701,40 @@ function wireShellRelay(child: EmbeddedServer["child"]): void {
   child.on("message", (message: unknown) => {
     if (builtinBrowser.handle(message)) return;
     if (handleFolderAccessFrame(message, folderAccess)) return;
+    if (parseOpenWindowRequest(message)) {
+      const iconPath = resolveWindowIcon(app.getAppPath(), process.platform);
+      openAppWindow({
+        origin: appOrigin,
+        iconPath,
+        create: (options) => new BrowserWindow(options),
+        guard: (child) => {
+          guardOpenedWindow(child, iconPath);
+          // A window of the full App can hold unsaved edits like the main one can: answer the
+          // page's refusal the same way instead of letting Electron cancel the close silently.
+          armUnloadPrompt(child);
+        },
+        load: (child, url) => child.loadURL(url),
+        log: logLine,
+      });
+      return;
+    }
     const action = parseUpdaterCommand(message);
     if (action !== null) {
       handleUpdaterCommand(action);
+      return;
+    }
+    // The page's command palette asking for a host command — what the menu items ran.
+    const host = parseHostCommand(message);
+    if (host === "install-cli") {
+      void installCliCommand(win);
+      return;
+    }
+    if (host === "check-updates") {
+      void checkForUpdatesManually();
+      return;
+    }
+    if (host === "open-devtools") {
+      openDevTools();
       return;
     }
     const command = parseTrayCommand(message);
@@ -630,6 +750,14 @@ function wireShellRelay(child: EmbeddedServer["child"]): void {
   });
   child.postMessage(updaterStatusMessage(getUpdaterStatus()));
   pushTrayStatus();
+  child.postMessage(
+    hostCommandsMessage([
+      ...(currentCliInstallKind() !== null ? (["install-cli"] as const) : []),
+      ...(updatesAvailableInThisForm() ? (["check-updates"] as const) : []),
+      // Unconditional: every Electron build has DevTools, packaged ones included.
+      "open-devtools",
+    ]),
+  );
 }
 
 /** Starts (or restarts) the embedded server and points the window at the claim link. */
@@ -826,7 +954,10 @@ if (!app.requestSingleInstanceLock()) {
         iconPath: resolveWindowIcon(app.getAppPath(), process.platform),
         log: (line) => logLine(`[shell] ${line}`),
       });
-      // Standard menu plus native desktop-only actions; the window gets no IPC channel.
+      // The window-controls bridge's handlers: the one IPC channel the window has, open to its
+      // own page alone (window-controls.ts).
+      installWindowControls(ipcMain, () => win, logLine);
+      // Standard menu plus native desktop-only actions.
       // The install item is the release profile's, like the per-launch repair below: the
       // `penguin` command has one owner, and a `--dev` instance of the same install would
       // rewrite it and record having done so in its own userData.

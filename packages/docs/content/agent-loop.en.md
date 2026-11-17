@@ -85,6 +85,8 @@ interface RunCutoff {
 }
 ```
 
+`compaction_failure` has one cause: mid-Task, the next context could not be opened at all, so the context the compaction was closing stays in place and the turn's pending input is carry-over. That holds for a refused request's hand-off too (see [A refused request hands off](#a-refused-request-hands-off)); one that opens the next context is no cutoff. A summary that cannot be had never ends a run (see [When no summary can be had](#when-no-summary-can-be-had)).
+
 ## Lifecycle of a turn
 
 A Task consists of consecutive Requests, also called turns. Each turn proceeds as follows:
@@ -265,7 +267,8 @@ The fatal detector is a deterministic allowlist. A gateway that phrases a transi
 
 A `fatal` failure stops the run at once, without retrying. It covers:
 
-- a definitive provider `4xx` rejection, such as invalid parameters or an exhausted quota (`rejected`); `408` and `429` are excluded from this class;
+- the provider refusing the request as sent, HTTP `400`, `413`, `415` or `422` (`rejected`), for instance invalid parameters or a prompt longer than the model takes; on a context that has already completed a turn this one hands off instead (see [A refused request hands off](#a-refused-request-hands-off));
+- any other definitive provider `4xx`, such as `402` (balance), `403` (permission) or `404` (no such model) (`denied`): the provider will not serve this account or model. `401` is `auth`, and `408` and `429` are retried;
 - a credential failure (`auth`);
 - a deterministic client-side rejection, such as fast mode on a model without a fast tier (`unsupported`);
 - input that cannot be assembled into a request (`invalid_input`).
@@ -274,7 +277,22 @@ An identical request can only fail the same way, so the ladder would only delay 
 
 A response that arrives whole but stops at its output cap (`finish_reason` `length`) ends `retryable` with `error_code: "output_truncated"`; one that ends on a finish reason the client does not map (`unknown`) ends `retryable` coded `malformed`. Neither is committed: the LLM interface takes the turn back out of MMSP's history. Both are still metered: the provider billed the attempt and reported its usage, so its `token_usage` goes out, though it counts as no Session turn. The engine retries them on the same ladder, by the same rules as any other retryable failure, and the retry's `[request_error]` line names the cause, so the model can answer in a shorter way.
 
-One rejection is retried anyway: a provider 4xx on a request whose input carries images. Providers word such refusals too many ways to match reliably, so the engine takes any 4xx on an image-bearing input as a rejection of the images (`image_rejected`): it replaces each image with a fixed note saying the request was rejected while it carried the image (the provider's error reaches the model through the retry's `[request_error]` line, see below), records that attempt as `retryable` with `retry_in_ms: 0`, and sends the cleaned input at once. The cleaned input stays the turn's input, so an interruption or the next message never resends the image. Resuming the Session applies the same replacement. A 4xx on an input with no image is fatal like any other: a refused image already in the committed history is beyond the reach of a retry.
+One refusal is retried anyway: a `rejected` request whose input carries images. Providers word such refusals too many ways to match reliably, so the engine takes any refusal of an image-bearing input as a rejection of the images (`image_rejected`): it replaces each image with a fixed note saying the request was rejected while it carried the image (the provider's error reaches the model through the retry's `[request_error]` line, see below), records that attempt as `retryable` with `retry_in_ms: 0`, and sends the cleaned input at once. The cleaned input stays the turn's input, so an interruption or the next message never resends the image. Resuming the Session applies the same replacement. A refusal of an input with no image, refused again after the replacement included, is answered by a hand-off when its context has completed a turn, and is fatal otherwise: a refused image already in the committed history is beyond the reach of a retry. A `denied` request never retries without its images.
+
+### A refused request hands off
+
+A request the provider refuses as sent (`rejected`) on a context that has already completed a turn does not end the run. That context's prefix was accepted before, so what changed is the history that grew or the input being sent, and the same carry-over would be refused on every later run: typically the context has outgrown the model's real window, because the model's `context_window` is configured larger than the provider serves. The harness's own token count cannot tell, which is why recognition is the HTTP status alone, never the provider's wording. The engine closes the context with no compaction request, since it can make none, and opens the next one with the [hand-off note](#when-no-summary-can-be-had):
+
+- The refused attempt is recorded as a retried one: `request_end` `retryable`, `error_code: "rejected"`, `retry_in_ms: 0`.
+- A compaction span with no request in it follows: `compaction_begin` (reason `context`, mode `summarize`), then `compaction_end` `completed` with `error_code: "rejected"`, the provider's `error_message` and no `attempt`.
+- The note quotes the provider's error and asks the model not to rebuild the same input but to read large files and outputs in parts, so a model that produced one oversized output does not produce it again.
+- The refused turn is sent again behind the note, as the same turn: it does not count toward `max_turns`, and its attempts keep counting toward the ceiling of 10. Only its text rides along (the Prompt, steering, notices); its tool outputs pair with calls of the closed context and are dropped, and the note quotes the last turn's outputs instead.
+
+It hands off only when the refusal is `rejected`, the context has completed a turn, the Session can open a context (an SDK embedder that wired no compaction ends the run as before), and the run has taken fewer than 3 such hand-offs. The threshold and `compaction.mode` play no part: with the threshold switched off, and in `discard` mode, a refusal still hands off, since the note costs no model call and the alternative is a Session no request can be made on. A resumed context counts its completed turns from the Trace, so a replayed history the provider refuses is handed off too.
+
+It never hands off on `denied`, `auth`, `unsupported`, `invalid_input` or a `retryable` failure; on the first request of a context (a fresh Session, or the request right after any compaction, hand-off or model switch), so a second refusal in a row ends the run with the provider's error; or on a fourth refusal in one run. An input holding images takes the image rule first; refused again without them, it hands off. A compaction's own requests have their ladder instead (see [When no summary can be had](#when-no-summary-can-be-had)). When the next context cannot be opened, the span ends `fatal`, the context is kept and the run ends with `compaction_failure`, as for any compaction.
+
+What you see: one retry line ("[Retried]: attempt 2/10 sent (the provider rejected the request, HTTP 400)"), no error, a **Compacted** row whose status mark says too little room was left for compaction, and a notice above the composer with **Open agent settings**; the CLI's completion line says the same, and the cost center records an expected `context_refused` row. The fix is one of two numbers: correct the model's context window, or lower the agent's compaction threshold (see [When the provider refuses a request](/configuration#when-the-provider-refuses-a-request)).
 
 ### How a turn is retried
 
@@ -321,7 +339,7 @@ The CLI prints its own `[retry]` line.
 
 ### Retries for compaction requests
 
-A compaction request is an ordinary LLM request. By default it retries on the same cap and ladder; an unusable summary draws on the same budget (see [Compaction](#compaction)). One exception: received content never resets a compaction's ladder. A compaction that gives up keeps the original context and tries again at the next trigger.
+A compaction request is an ordinary LLM request with a budget of its own. Transport-class failures retry on the same backoff ladder, up to `compactionMaxReconnects` (by default the same 5 as a turn), counted across the whole compaction: received content never resets it. Nothing else is sent again as it was: a committed response that is not the summary is answered and asked again as a tool round (see [The compaction request](#the-compaction-request)), while a response stopped at its output cap, a refusal, or a spent ladder ends the compaction with a hand-off note instead (see [When no summary can be had](#when-no-summary-can-be-had)).
 
 Tool errors are never retried. They are fed back to the model as `tool_call_output`, and the model decides what to do next.
 
@@ -341,6 +359,9 @@ interface CompactionSettings {
   maxSessionTurns: number;    // cumulative Session turn threshold (counted across Tasks); <=0 = unlimited
   mode: "summarize" | "discard";
   prompt: string;             // the Prompt used by summarize compaction
+  maxRounds?: number;         // how many times the harness asks again before the summary; absent or <=0 = none
+  reminder?: string;          // sent behind the tool outputs when it asks again; blank = no line
+  handoffNote?: string;       // the hand-off note's template; blank = the quoted data alone
 }
 ```
 
@@ -352,13 +373,15 @@ Three triggers exist, recorded as `compaction_begin.reason`:
 | `turns` | Session turn count ≥ `maxSessionTurns` (default -1 = unlimited) |
 | `manual` | the user runs `/compact` or calls `session.compact()`, or switches the model inside the Session (the switch compacts on the current model first) |
 
-The effective context threshold for the `context` trigger is the smaller of `maxContextLength` (default 256000) and the model's `context_window` − 2048. A 32k local vLLM therefore compacts at ~30.7k instead of overflowing the window first, while a 1M-window model fires at the configured 256000. An entry without a usable `context_window` — unset, or below 4096 — derives from an assumed 128000 window, i.e. ~126k.
+A refused request's hand-off is recorded with reason `context` too, but it is no trigger of these settings: it happens whatever they say, threshold off and `discard` mode included (see [A refused request hands off](#a-refused-request-hands-off)).
+
+The effective context threshold for the `context` trigger is the smaller of `maxContextLength` (default 256000) and the model's `context_window` minus a reserve: an eighth of the window, at least 8192 and at most 32768 tokens. The reserve is the room a compaction needs under the window for the triggering turn's pending outputs, the Prompt, the summary it writes and a margin. A 32k local vLLM therefore compacts at 24,576 and a 200k-window model at 175,000, while a window of 288,768 or more fires at the configured 256000. An entry without a usable `context_window` — unset, or below 4096 — derives from an assumed 128000 window, i.e. 112,000.
 
 Two modes exist:
 
 | Mode | Behavior |
 | --- | --- |
-| `summarize` (default) | Appends the compaction Prompt to the old context, extracts the `[summary]`, wraps it as a `[context_summary]` user text, and continues in a fresh model context |
+| `summarize` (default) | Appends the compaction Prompt to the old context, lets the model write hand-off files in a few tool rounds the harness counts, extracts the `[summary]` (or, when none can be had, writes a hand-off note), wraps it as a `[context_summary]` user text, and continues in a fresh model context |
 | `discard` | Drops the old context. Mid-Task it waits until the Task ends, since dropping the context would lose the Task |
 
 System markers are written as `[tag]…[/tag]`. The earlier angle-bracket form (`<summary>`, `<context_summary>`, …) is still recognized when reading old Traces and old persisted compaction prompts.
@@ -394,11 +417,11 @@ Runtime parameters fall into three tiers:
 | --- | --- | --- |
 | Strict | The system prompt, the toolset (MCP included), the model reference | Never change inside a running context. They shape the request prefix, and a context's prefix is fixed from open to close, so the provider's prompt cache stays valid across the whole Trace file. |
 | Soft | The thinking level | A purely per-request parameter, changeable mid-context and never recorded in the Trace, at the cost of the provider's cached messages. |
-| Unrestricted | The approval mode; the `compaction` section (`max_context_length`, `max_session_turns`, `mode`, `prompt`) | Re-read per decision or per compaction checkpoint. Changes apply at once and never touch the request. |
+| Unrestricted | The approval mode; the `compaction` section (`max_context_length`, `max_session_turns`, `mode`, `prompt`, `max_rounds`, `reminder`, `handoff_note`) | Re-read per decision or per compaction checkpoint. Changes apply at once and never touch the request. |
 
 - Every LLM request takes the Session's pinned thinking level: the Web App's in-chat picker, or the CLI's `--thinking` / `/thinking`. Unpinned, it takes the agent config default read when the context opened. The pickers advise compacting first because a mid-context change costs the provider's cached messages.
 - The approval mode is re-read from the database per decision, so an edit applies immediately.
-- The engine re-reads the `compaction` section from `system_config.yaml` at every compaction checkpoint: after each request reports its Token usage, and on a manual `/compact`. The read is cached by the file's mtime, so lowering an agent's threshold applies to conversations already running instead of waiting for a rotation. A read that fails keeps the settings already in force rather than failing the run.
+- The engine re-reads the `compaction` section from `system_config.yaml` at every compaction checkpoint: after each request reports its Token usage, and on a manual `/compact`. The read is cached by the file's mtime, so lowering an agent's threshold applies to conversations already running instead of waiting for a rotation. A read that fails keeps the settings already in force rather than failing the run. A compaction runs on the section read at the checkpoint that started it; an edit saved while it runs applies from the next one, and a refused request's hand-off reads the section first.
 - Compaction settings never belonged to the request prefix: they decide when a context ends, not what it looks like.
 - The vault, a tool's `r`/`rw` permission, and the Project's command policy never reach the model. They are read once per context, on the same rotation schedule as the strict tier.
 
@@ -413,33 +436,57 @@ The rotated Trace file opens with the `session_meta` recording the prompt this c
 
 What stays fixed for the Session's lifetime is the Session itself: its id, Workspace and origin. The model entry (credentials, window and per-model annotations included) is per context: an ordinary rotation keeps the current entry, and an in-session model switch resolves the target entry from the Project config on disk (see [Sessions & Traces](/sessions-and-traces#in-session-model-switch)).
 
-An Agent State that cannot be assembled — a config that no longer parses — fails the run with that error, and the engine stays on the old context. This is the same error a new Session would hit. The same rule opens a context that resume finds closed by a completed compaction (see [Sessions & Traces](/sessions-and-traces)).
+The next context is opened before the compaction is declared complete, so the Trace never records a completed compaction for a context that does not exist. An Agent State that cannot be assembled — a config that no longer parses — no longer ends the run on a rotation that keeps the model: the next context opens on the configuration already in force, the same system prompt and toolset on a fresh model object. A line goes to stderr, and the file is tried again at the next rotation. A model switch has no configuration in force on its target, so there the compaction ends `fatal` and the Session stays on its model. When no next context can be opened at all, for instance because no model client can be built, the compaction ends `fatal` the same way and the old context stays current. A new Session, and a resume that finds a context closed by a completed compaction (see [Sessions & Traces](/sessions-and-traces)), have no configuration in force to fall back on and still fail with the error.
 
 ### The compaction request
 
 The compaction request keeps the Session's toolset **unchanged**. The request prefix, tool list included, stays byte-identical to ordinary turns, so the provider's prompt cache remains valid at the moment the context is largest.
 
-Compaction succeeds only with a valid summary. A response that calls a tool, or whose extracted summary is empty, counts as one more failed attempt:
+Each committed response is one of two things, the summary or not:
 
-- Any tool calls in such a response are answered with synthesized failed outputs, keeping `tool_use`/`tool_result` pairing intact.
-- The resent request carries a corrective note ahead of the compaction Prompt, because committed history can only be appended to; rewriting it would invalidate the prompt cache.
+| The response holds | It is |
+| --- | --- |
+| No tool calls | The summary, by the extraction ladder above, unless that extracts nothing |
+| Tool calls and a closed, non-empty summary inside its tag | The summary. Its calls are answered — run, or refused — and nothing more is sent |
+| Anything else | Not the summary. Its text is a preamble nobody adopts, and the harness asks again (see below) |
 
-Unusable summaries and `retryable` failures alike draw on the one reconnect budget and backoff ladder described under [Automatic reconnect](#automatic-reconnect).
+Committed history is only ever appended to, so every request of a compaction extends the one before it and the prompt cache holds. A request the provider rejects while its input holds images is sent once more with the images replaced, as a turn's is.
 
-The first **committed** attempt — adopted or rejected — also absorbs whatever turn input was folded into the compaction request into the old context's history, such as mid-Task tool results or the carry-over a manual `/compact` folds in. Retries resend only the repairs and the Prompt; nothing resends the absorbed input afterwards.
+The first **committed** response also absorbs whatever turn input was folded into the compaction request into the old context's history, such as mid-Task tool results or the carry-over a manual `/compact` folds in. Later requests carry only the outputs and the reminder that answer the response before them; nothing resends the absorbed input.
 
-### When a compaction gives up
+### Hand-off files: tool rounds before the summary
 
-Once the budget is exhausted, the compaction ends `retryable` — abandoned this time. It keeps the original context and Trace file until the next trigger. A `fatal` failure ends the compaction at once as `fatal`; the next trigger would hit the same wall until the configuration or credential changes. A user interruption ends it as `aborted`.
+A summary of a paragraph or two cannot carry a plan, a decision log or a draft, so a `summarize` compaction may take tool rounds before its summary. The default Prompt asks the model to write such detail to files under its Session's scratchpad, `<scratchpad>/handoff/` — in the same reply as the summary when it can, each under a new name rather than overwriting an earlier one, so nothing has to be read first — to be done within about three tool rounds, putting the calls a step needs into one reply, and to reply with a summary in fixed sections: request, decisions and constraints, progress, errors and fixes, files (each hand-off file by absolute path), next steps. Consent does not carry over: anything that needs a go-ahead is asked again in the next context.
 
-`compaction_end` reuses the unified retry detail block: `attempt` (the final attempt's ordinal, failed attempts included) and, on failure, the last `error_code` and `error_message`, shown on the chat banner and the CLI line. A `retryable` or `fatal` compaction also lands in the cost center as a `compaction_failed` error record.
+- **One rule.** A committed response that is not the summary, while fewer than `compaction.max_rounds` (default 8) have been answered, has its tool calls answered, and `compaction.reminder` is appended behind the outputs; together they are the next request's input, with no Prompt again. That is a tool round. The harness counts, so the model never has to: the default reminder says how many rounds are used and names no total, so the number never becomes the plan. An empty response (no calls, no summary) and one whose calls were all refused use a round too. With a blank `reminder` only the outputs go, and an empty response, which leaves nothing to send, ends with the hand-off note.
+- **Once the rounds are used up** (`max_rounds` of `0` or less allows none), a tool call is answered at once with a `fatal` `[tool error] the compaction request expects a summary, not tool calls`, without reaching the gate or the approval callback, and a response that is still not the summary ends the compaction with the hand-off note.
+- **A summary and its writes can share one reply.** A response holding a closed summary inside its tag and the hand-off writes ends the compaction in that one request: its calls are answered, run or refused, and nothing more is sent to the old context.
+- The composition layer's gate decides what a round may run: `read_file`, and `write_file` / `edit_file` on an absolute path inside the Session's scratchpad. Anything else is answered with a `fatal` `[tool error]` naming what is allowed, without being asked about or run.
+- A call the gate allows goes through the same approval callback as a turn's — under `always-ask` the user approves each hand-off write — and the Environment runs it; the sandbox still applies, so under `read-only` the write fails and the model summarizes directly.
+- The round's outputs and the reminder are the next request's whole input, on the same LLM object: the request still only appends to the context it extends, and the prompt cache holds. Each round re-reads the cached prefix at the cache-read price, plus what it appends.
+- An interruption mid-round aborts the running tool and answers every open call, so the old context stays pairable; files already written stay in the scratchpad, which lives as long as the Session.
 
-An abandoned compaction is **made up later**, never patched over:
+Inside the `[context_summary]` block the summary is followed by a blank line and one line naming the Trace file of the compacted context, `Trace file of the compacted context (JSONL, one record per line): <path>`; with no Trace (an SDK embedder that writes none) the block holds the summary alone. The line gives the path and the format, not how to query the file. That is the business of the `trace-lookup` Skill, from the built-in plugin of the same name: a `default_agent` has it preinstalled when it is initialized, and any other Agent, a `default_agent` initialized before the plugin existed included, has it once it is picked at creation or installed from the plugin library. Without it the line is still a usable path; neither the line nor the hand-off note names the Skill, and a model switch's `[model_switch_from]` block names its Trace file the same way. The line is part of the next context's opening, so it never changes a running context's prefix; resume rebuilds it from the replayed file's own path, and a fork rewrites it, with the hand-off file paths, to the fork's own copies.
 
-- Mid-Task, the run ends. The turn's still-pending state is held as carry-over under the same committed/not-committed rule, and the next message resends that carry-over merged with the user's input — where the still-standing threshold triggers the compaction again. The `compaction_end` is the terminal record of such a run; an `abort` event follows only when the user interrupted the compaction.
-- At a Task boundary, the run simply ends with the original context kept.
+### When no summary can be had
 
-Either way, nothing synthetic is invented to keep the loop running on a context that was supposed to shrink.
+A summarize compaction that has started ends one of three ways: the next context is open (`completed`), the user stopped it (`aborted`), or no next context could be opened at all (`fatal`). Giving up on the summary and keeping the old context is not among them: when the rounds are used up and the response is still not the summary, or a request fails for good — refused, whatever the code (an unavailable compacting model included), stopped at its output cap (once is enough, and its text is not used), or still failing once the transport ladder is spent — the next context opens with the best text the harness has, down a ladder of two rungs:
+
+1. **The full summary.**
+2. **A hand-off note**: the Agent's `compaction.handoff_note`, filled from the closed Trace file with no model call — why there is no summary (the error pair the compaction ended with, so a refusal is quoted in the provider's words), the context's first user message and its last three, the last completed turn's text with its last four tool calls and outputs, and the Trace file's path, each quote cut at a fixed size (see [How a summarize compaction runs](/configuration#how-a-summarize-compaction-runs) for the placeholders). A refused ordinary request takes this rung at once, with no request in the span (see [A refused request hands off](#a-refused-request-hands-off)).
+
+Both are the same `[context_summary]` user text, carried exactly as a summary is; a note's block holds the filled note and nothing else. Resume rebuilds the note from the closed file with the template in force at resume, since that context opens for the first time then. A model switch's last rung is its own Trace hand-off block (see [Sessions & Traces](/sessions-and-traces#in-session-model-switch)). A user interruption never takes the ladder: it keeps the old context, and the outputs owed to a committed compaction response lead the old context's next request.
+
+The run carries on either way: mid-Task the next request goes to the new context with the opening ahead of it, and at a Task boundary the opening waits for the next run.
+
+`compaction_end` reuses the unified retry detail block: `attempt` (the final attempt's ordinal, failed attempts included; absent when the span made no request) and the error pair, shown on the chat banner and the CLI line. On a `completed` end the pair means the compaction completed without a full summary and says why; replay reads that one fact to rebuild the same opening, so a `completed` end without it replays exactly as before. A completion without a full summary lands in the cost center as an expected `compaction_degraded` error record, or `context_refused` when the provider refused a request (`rejected`); a compaction whose next context could not be opened, as a `compaction_failed` one.
+
+A `fatal` end keeps the old context and its Trace file:
+
+- Mid-Task, the run ends with `RunCutoff{kind: "compaction_failure"}`. The turn's pending outputs are carry-over, and the next message resends them merged with the user's input, where the still-standing threshold triggers the compaction again. The `compaction_end` is the terminal record of such a run; an `abort` event follows only when the user interrupted the compaction.
+- At a Task boundary or on a manual `/compact`, the run returns normally and the next trigger tries again.
+
+An old Trace may still close a compaction `retryable` or `fatal` (or `failed`) from before this rule, meaning it was abandoned with the context kept; it reads that way everywhere.
 
 ### Tools and a mid-Task compaction
 
@@ -449,16 +496,18 @@ The results then ride the compaction request itself, ahead of the compaction Pro
 
 ### Observing a compaction
 
-While the compaction request runs, each attempt's `token_usage`, and the thinking and summary it writes, ride the output stream. The thinking and summary appear as ordinary `partial_thinking` and `partial_text` — or the complete `thinking` / `text` for LLM implementations that stream nothing — positioned between the paired compaction events. There is no separate event type, and the compaction request's other raw messages stay Trace-only as before. The request carries the Session's pinned thinking level, exactly as every other LLM request does; with no pin, the level the model context was opened with applies.
+While the compaction runs, each of its requests' `request_begin` / `request_end` and `token_usage`, and the thinking and summary it writes, ride the output stream. The thinking and summary appear as ordinary `partial_thinking` and `partial_text` — or the complete `thinking` / `text` for LLM implementations that stream nothing — positioned between the paired compaction events. Every tool call of the compaction, run or refused, streams its call, approval decision and output as a turn's do. There is no separate event type; the compaction Prompt and the reminders stay Trace-only, as does the text the next context opens with. The request carries the Session's pinned thinking level, exactly as every other LLM request does; with no pin, the level the model context was opened with applies.
 
 The Web App renders the compaction row like a running work group and expands exactly one of its two layers:
 
 - The header's title doubles as its status: **Compacting** (or **Clearing**) while it runs, **Compacted** (or **Cleared**) once done — the work-group header's own **Running**/**Done** idiom. The header also carries the wall time, ticking while it runs and settled once done.
-- While the compaction runs, the row is open and its sections are not: **Thinking** (present only when the request produced any) and **Result**, each a closed row carrying its own label and its own wall time. The reader can see that they are there and how long each is taking, without the request's raw workings landing in the transcript.
+- While the compaction runs, the row is open and its sections are not: **Thinking** (present only when the request produced any), **Work** (present only when the compaction made tool calls: one tool row per call, such as the hand-off file it wrote, with approval buttons when one waits — the section opens itself then — and a refused call as a failed row showing the refusal) and **Result**, the last request's text. Each is a closed row carrying its own label. The reader can see that they are there and how long each is taking, without the request's raw workings landing in the transcript.
+- A compaction that completed without a full summary reads as a completed one, title and wall time included, in one presentation. Only the header's status icon changes, to the attention colour, and its tooltip says that no full summary could be written and the next context opens with a Trace hand-off note, with the reason. When too little room was left for the compaction — the provider refused a request (`rejected`), or the summary was cut off at the output limit (`output_truncated`) — the tooltip says so instead and asks you to correct the model's context window or lower the compaction threshold, quoting the provider's words when it refused. **Thinking** and **Work** stay; there is no **Result**.
+- When the Session's latest compaction is one the provider's refusal forced, a notice above the composer says the provider refused the last request and the conversation went on from a hand-off note, and asks for the model's context window or the agent's threshold to be corrected, with **Open agent settings** and **Dismiss**. It takes the slot of the small-window notice, never both; a dismissal holds for that occurrence, and a later compaction that ends any other way takes it down.
 
 Once the compaction settles, the row closes itself again, leaving the one-line summary. The chevron is there from the start of a summarize compaction, so the reader can open either section to watch the request work, or read the outcome afterwards.
 
-A history rebuild reads the same content back from the compaction span's recorded thinking and output, so a reload shows exactly what the live viewer saw. Consumers that render a transcript already treat model messages inside the span as compaction-internal, so nothing leaks into the conversation, and the CLI prints none of it.
+A history rebuild reads the same content back from the compaction span's recorded thinking, output and tool calls, so a reload shows exactly what the live viewer saw. Consumers that render a transcript already treat model messages inside the span as compaction-internal, so nothing leaks into the conversation. The CLI prints none of it; its completion line ends in `(no full summary: a Trace hand-off note — <reason>)` when the compaction completed without a full summary, followed, when too little room was left, by `; too little room was left for compaction: correct the model's context_window or lower compaction.max_context_length`.
 
 ### An unfinished compaction span
 

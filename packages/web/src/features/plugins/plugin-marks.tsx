@@ -1,22 +1,23 @@
 /**
  * The marks a plugin's card and its detail dialog share: the status glyph with its word, the tag
- * pills, and the reading of a row — its title, icon, version, descriptions and the package's own
- * details (author, license, links) — library and server-module plugins alike, so the two kinds
- * read as one family.
+ * pills (and the card's set of them, which an Agent's plugin row shows too), and the reading of a
+ * row — its title, icon, version, descriptions and the package's own details (author, license,
+ * links) — library and server-module plugins alike, so the two kinds read as one family.
  *
  * What a package does not carry stays missing rather than invented: no display name reads as the
  * plugin's name, no description as the "no description" placeholder (in muted ink in the dialog),
  * and a homepage or repository a browser cannot safely open is no link at all.
  *
- * Status follows the house rule for status chrome: the glyph carries the tone, the word beside
- * it stays muted ink (never red text), and the hover sentence says what the status means for
- * this plugin — the failure reason, the machines it runs on, how many Agents are behind.
+ * Status follows the house rule for status chrome, drawn by the UI package's `StatusMark`: the
+ * glyph carries the tone, the word beside it stays muted ink (never red text), and the hover
+ * sentence says what the status means for this plugin — the failure reason, the machines it runs
+ * on, how many Agents are behind.
  */
-import { Badge, GlyphIcon, ICONS, ICON_GAP, ICON_SIZE } from "@prismshadow/penguin-ui";
+import { Badge, ICONS, StatusMark, type ToneName } from "@prismshadow/penguin-ui";
 import type { ReactNode } from "react";
+import type { IconRef } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
-import { toneInk, type Tone } from "../../lib/tone";
-import { localizedText } from "../chat/skill-use";
+import { localizedText } from "../../lib/skill-use";
 import type { PluginRow } from "./plugin-groups";
 import type { LibraryUsage, PluginStatus } from "./plugin-status";
 
@@ -31,34 +32,28 @@ const STATUS_GLYPH: Record<PluginStatus, string> = {
   available: ICONS.download,
 };
 
-/** What each status means, as a tone: settled well, unfinished, failed, or receding. */
-const STATUS_TONE: Record<PluginStatus, Tone> = {
+/** What each status means, as a tone: settled well, unfinished, failed — or none, receding. */
+const STATUS_TONE: Record<PluginStatus, ToneName | undefined> = {
   installed: "success",
   update: "attention",
   restart: "attention",
   failed: "danger",
   incompatible: "attention",
-  "not-here": "muted",
-  available: "muted",
+  "not-here": undefined,
+  available: undefined,
 };
 
-/** The status glyph in its tone and the status word in muted ink; `hint` is the hover sentence. */
-export function StatusMark({ status, hint }: { status: PluginStatus; hint: string }) {
+/** A plugin's status as the UI package's mark: its glyph in its tone, its word, `hint` on hover. */
+export function PluginStatusMark({ status, hint }: { status: PluginStatus; hint: string }) {
+  const tone = STATUS_TONE[status];
   return (
-    <span
-      className={`inline-flex shrink-0 items-center ${ICON_GAP.tight}`}
+    <StatusMark
+      glyph={STATUS_GLYPH[status]}
+      {...(tone !== undefined ? { tone } : {})}
+      label={S.plugins.status[status]}
+      hint={hint}
       data-testid="plugin-status"
-      data-tooltip={hint}
-      data-tooltip-content="text"
-      data-tooltip-extra
-    >
-      <GlyphIcon
-        d={STATUS_GLYPH[status]}
-        size={ICON_SIZE.inlineGlyph}
-        className={toneInk[STATUS_TONE[status]]}
-      />
-      <span>{S.plugins.status[status]}</span>
-    </span>
+    />
   );
 }
 
@@ -115,8 +110,58 @@ export function PluginTag({
   );
 }
 
-/** The raw icon.svg a row is drawn with, when it has one: the library plugin's, else the index entry's. */
-export function rowIcon(row: PluginRow): string | undefined {
+/**
+ * A row's tags, the one set the Plugins page's card and an Agent's plugin row both show: its
+ * category, "built in", "installed on server", "link" and "shared by all machines", each where it
+ * applies and with its hover sentence. The category is left out without `categoryTitle` (a card in
+ * its category's own section, whose head names it); `sharedTagId` is the shared tag's id, for a
+ * control it describes.
+ */
+export function pluginTags(
+  row: PluginRow,
+  { categoryTitle, sharedTagId }: { categoryTitle?: string | undefined; sharedTagId?: string } = {},
+): ReactNode[] {
+  const tags: ReactNode[] = [];
+  if (categoryTitle !== undefined) {
+    tags.push(<PluginTag key="category">{categoryTitle}</PluginTag>);
+  }
+  if (rowBuiltin(row)) {
+    tags.push(
+      <PluginTag
+        key="builtin"
+        title={row.library !== undefined ? S.plugins.libraryBuiltinHint : S.plugins.builtinHint}
+      >
+        {S.plugins.builtin}
+      </PluginTag>,
+    );
+  }
+  if (rowInstalledOnServer(row)) {
+    tags.push(
+      <PluginTag key="installed" title={S.plugins.installedOnServerHint}>
+        {S.plugins.installedOnServer}
+      </PluginTag>,
+    );
+  }
+  const linked = rowLinked(row);
+  if (linked !== null) {
+    tags.push(
+      <PluginTag key="linked" title={S.plugins.linkedHint(linked.linkPath)}>
+        {S.plugins.linkedTag}
+      </PluginTag>,
+    );
+  }
+  if (row.module?.shared === true) {
+    tags.push(
+      <PluginTag key="shared" id={sharedTagId} title={S.plugins.sharedHint}>
+        {S.plugins.sharedTag}
+      </PluginTag>,
+    );
+  }
+  return tags;
+}
+
+/** The icon a row is drawn with, when it has one: the library plugin's, else the index entry's. */
+export function rowIcon(row: PluginRow): IconRef | undefined {
   return row.library?.icon ?? row.module?.entry?.icon;
 }
 
@@ -146,6 +191,12 @@ export function rowInstalledOnServer(row: PluginRow): boolean {
       part.state === "failed" ||
       part.state === "disabled")
   );
+}
+
+/** Whether the row's package is a local directory linked in (`penguin plugin link`), and where it points. */
+export function rowLinked(row: PluginRow): { linkPath: string } | null {
+  const part = row.module;
+  return part?.linked === true ? { linkPath: part.linkPath ?? "" } : null;
 }
 
 /**

@@ -1,7 +1,8 @@
 /**
  * Cost and usage center:
  * top filters for Agent / Model + a date-range preset (trailing last hour /
- * last 24 hours, calendar 7/30/90 days, or a custom pair of date inputs);
+ * last 24 hours, calendar 7/30/90 days, or a custom range, whose two dates are picked in the
+ * range picker that shows beside it only then);
  * the range alone decides the time-series precision, so there is no second
  * control for it (controls have no external title — the explanation is
  * written into the dropdown options themselves);
@@ -31,7 +32,7 @@ import type { ModelRefDto, UsageBucket, UsageResponse } from "@prismshadow/pengu
 import {
   Card,
   CardHeader,
-  Input,
+  DateRangeField,
   PageFrame,
   PageHeader,
   Select,
@@ -42,9 +43,7 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
-import { useUpdateBadges } from "../../lib/use-update-badges";
-import { dismissTodo } from "../../lib/todo-dismissals";
-import { refreshProjectTodos } from "../../lib/use-project-todos";
+import { useUpdateBadges, dismissTodo, refreshProjectTodos } from "../todos";
 import { formatMoney, humanizeTokens } from "../../lib/format";
 import { catalogEntryFor } from "@prismshadow/penguin-server/model-catalog";
 import { scoped, scopedValue, type Scoped } from "../../lib/project-scope";
@@ -56,13 +55,14 @@ import { RequestsChart, TokenBarChart, TokenLegend, type TokenLegendKey } from "
 import {
   compactCounts,
   compactSeries,
+  isoDate,
   presetDefaultGranularity,
   presetRange,
   presetTsWindow,
   rangeDays,
   type EntityCounts,
   type RangePreset,
-} from "./usage-controls";
+} from "../../lib/usage-controls";
 import { ErrorsPanel } from "./errors-panel";
 
 /** A summary card's stat row: name on the left, value on the right — each item on its own row, so a narrow card no longer crams them into one wrapping line. */
@@ -80,19 +80,26 @@ function SummaryRow({
 }) {
   const tone = muted ? "text-gray-500 dark:text-gray-400" : "text-gray-900 dark:text-gray-100";
   return (
-    <div className="flex items-baseline justify-between gap-2">
-      <span className="shrink-0 text-xs text-gray-500 dark:text-gray-400">
+    <div data-slot="row" className="flex items-baseline justify-between gap-2">
+      <span data-slot="label" className="shrink-0 text-xs text-gray-500 dark:text-gray-400">
         {label}
         {sup && <sup className="ml-px">*</sup>}
       </span>
-      <span className={`min-w-0 truncate font-mono text-sm font-semibold tabular-nums ${tone}`}>
+      <span
+        data-slot="figure"
+        className={`min-w-0 truncate font-mono text-sm font-semibold tabular-nums ${tone}`}
+      >
         {value}
       </span>
     </div>
   );
 }
 
-/** Usage summary card: a title + Token / request count / cost each on their own row. */
+/**
+ * Usage summary card: a title + Token / request count / cost each on their own row. It carries
+ * the `ui-ledger` hook, its rows the `row` slot, each a `label` beside its `figure`, so a theme
+ * may set the three cards apart as a ledger of their own.
+ */
 function SummaryCard({
   title,
   bucket,
@@ -103,7 +110,7 @@ function SummaryCard({
   currency: "USD" | "CNY";
 }) {
   return (
-    <Card>
+    <Card className="ui-ledger">
       <CardHeader title={title} />
       <div className="space-y-1">
         <SummaryRow label={S.usage.tokens} value={humanizeTokens(bucket.total)} />
@@ -359,7 +366,8 @@ export function UsagePage() {
                 ))}
               </Select>
             </div>
-            {/* Date range: trailing windows and quick presets, with "custom" revealing the two date inputs */}
+            {/* Date range: the trailing windows, the calendar presets, and "custom", which reveals
+                the range field */}
             <div className="w-28">
               <Select
                 size="sm"
@@ -385,24 +393,19 @@ export function UsagePage() {
               </Select>
             </div>
             {preset === "custom" && (
-              /* A dash between the two inputs stands in for a "from/to" label */
-              <div className="flex items-center gap-1.5">
-                <Input
+              /* The custom range's two dates, shown only while the range is the custom one: a
+                 preset names its own span in the Select, so it has nothing to pick here. As wide
+                 as its two full dates in the theme's face, which differs from theme to theme,
+                 and narrower only when the row has no room. */
+              <div className="max-w-full">
+                <DateRangeField
                   size="sm"
-                  type="date"
-                  aria-label={S.usage.from}
-                  value={from}
-                  onChange={(e) => applyRange("custom", e.target.value, to)}
-                />
-                <span className="shrink-0 text-gray-400" aria-hidden>
-                  –
-                </span>
-                <Input
-                  size="sm"
-                  type="date"
-                  aria-label={S.usage.to}
-                  value={to}
-                  onChange={(e) => applyRange("custom", from, e.target.value)}
+                  aria-label={S.usage.rangeDates}
+                  required
+                  from={from}
+                  to={to}
+                  max={isoDate(new Date())}
+                  onChange={(range) => applyRange("custom", range.from, range.to)}
                 />
               </div>
             )}

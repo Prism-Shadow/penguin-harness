@@ -14,8 +14,7 @@
 import { useEffect, useReducer } from "react";
 import type { DesktopUpdateStatus } from "@prismshadow/penguin-server/api";
 import * as api from "../api/endpoints";
-import { clientCheckSettle } from "./desktop-update";
-import type { ClientCheckSettle } from "./desktop-update";
+import { clientCheckSettle, type ClientCheckSettle } from "./desktop-update";
 
 /** Poll cadence while a check or download is moving (or a watch is armed). */
 const FAST_POLL_MS = 1_500;

@@ -1,9 +1,23 @@
 /**
  * 按钮: the Button in its five variants and five sizes, the icon button, disabled and loading, the
- * link in a sentence and on its own, and the keyboard hint.
+ * link in a sentence and on its own, the flat glyph action inline after a name (a link and a
+ * button), the keyboard hint, and the floating ball on a stage of its own, where it drags, docks
+ * to either edge and tucks away.
  */
-import type { MouseEvent } from "react";
-import { Button, GlyphIcon, ICONS, IconButton, Kbd, Link, PlusIcon } from "@prismshadow/penguin-ui";
+import { useState, type MouseEvent } from "react";
+import {
+  Button,
+  FloatingBall,
+  GlyphAction,
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
+  IconButton,
+  Kbd,
+  Link,
+  PlusIcon,
+  type FloatingBallPlacement,
+} from "@prismshadow/penguin-ui";
 import { BoardGroup } from "../../foundations/shared";
 import { useGallery } from "../../state";
 
@@ -96,6 +110,19 @@ export function ButtonsBoard() {
           </div>
         </div>
       </BoardGroup>
+      <BoardGroup title={t.glyphActions} aside={t.glyphActionsHint}>
+        <div className="lib-stack">
+          <div className="flex items-center gap-1.5 text-xs text-fg-muted">
+            <span>{t.glyphAuthor}</span>
+            <GlyphAction glyph={ICONS.globe} label={t.glyphHomepage} href={RELEASES_URL} />
+            <GlyphAction glyph={ICONS.gitBranch} label={t.glyphRepository} href={RELEASES_URL} />
+          </div>
+          <div className="flex items-center gap-1.5 text-sm">
+            <span className="font-mono">{t.glyphSkill}</span>
+            <GlyphAction glyph={ICONS.puzzle} label={t.glyphFromPlugin} onClick={() => {}} />
+          </div>
+        </div>
+      </BoardGroup>
       <BoardGroup title={t.keys}>
         <div className="lib-row">
           {t.shortcuts.map((keys) => (
@@ -103,6 +130,47 @@ export function ButtonsBoard() {
           ))}
         </div>
       </BoardGroup>
+      <BoardGroup title={t.ball} aside={t.ballHint}>
+        <FloatingBallStage />
+      </BoardGroup>
+    </div>
+  );
+}
+
+/**
+ * The ball over a box standing in for a page: the box clips like a window edge, and the board
+ * holds the placement the way a page stores it, reading it out under the box.
+ */
+function FloatingBallStage() {
+  const { S } = useGallery();
+  const t = S.library.buttons;
+  const [placement, setPlacement] = useState<FloatingBallPlacement>({
+    side: "right",
+    ratio: 1,
+    tucked: false,
+  });
+  const [presses, setPresses] = useState(0);
+  return (
+    <div className="lib-stack lib-stack-wide">
+      <div className="lib-box relative isolate h-56">
+        <FloatingBall
+          placement={placement}
+          onChange={setPlacement}
+          onActivate={() => setPresses((n) => n + 1)}
+          glyph={<GlyphIcon d={ICONS.cornersIn} size={ICON_SIZE.launcherEntry} />}
+          label={t.ballLabel}
+          tuckLabel={t.ballTuck}
+          showLabel={t.ballShow}
+        />
+      </div>
+      <span className="lib-caption">
+        {t.ballReadout(
+          placement.side,
+          Math.round(placement.ratio * 100),
+          placement.tucked,
+          presses,
+        )}
+      </span>
     </div>
   );
 }

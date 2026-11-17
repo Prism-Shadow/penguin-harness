@@ -35,6 +35,7 @@
  */
 import type { AmspRecord, ApprovalDecision, ToolCallPayload } from "@prismshadow/amsp/records";
 import type {
+  ApprovalContext,
   ApproveFn,
   RunCutoff,
   SubagentHandle,
@@ -54,9 +55,14 @@ export interface SubagentExit {
   note?: string;
 }
 
-/** A pending approval request: the settled guard makes the decision first-to-arrive-wins (late/duplicate decisions are ignored). */
+/**
+ * A pending approval request: the settled guard makes the decision first-to-arrive-wins
+ * (late/duplicate decisions are ignored). `context` is what the child's policy wrapper said
+ * about the call (a command-policy `ask` reason), handed on to whichever sink answers it.
+ */
 interface PendingApproval {
   toolCall: AmspRecord<ToolCallPayload>;
+  context?: ApprovalContext;
   settled: boolean;
   resolve: (decision: ApprovalDecision) => void;
 }
@@ -78,6 +84,8 @@ export class ManagedSubagentSession {
   private readonly textBuffer = new CappedTextBuffer(OUTPUT_BUFFER_CAP, "earlier subagent output");
 
   private isRunning = false;
+  /** The current round, then the handle's release after a kill: what whenSettled resolves on. */
+  private settled: Promise<void> = Promise.resolve();
   private exitInfo: SubagentExit | null = null;
   private killed = false;
 
@@ -168,7 +176,12 @@ export class ManagedSubagentSession {
     this.reportCurrentRun = opts?.suppressDoneReport !== true;
     this.runCtrl = new AbortController();
     this.notifyState();
-    void this.pump(messages, this.runCtrl);
+    this.settled = this.pump(messages, this.runCtrl);
+  }
+
+  /** Resolves once the current round has finished writing, its release after a kill included. */
+  whenSettled(): Promise<void> {
+    return this.settled;
   }
 
   /**
@@ -337,7 +350,7 @@ export class ManagedSubagentSession {
     this.abortCtrl.abort();
     for (const req of [...this.approvals]) this.settle(req, "deny");
     // If running, released by pump's finally after it finishes; otherwise released immediately.
-    if (!this.isRunning) this.handle.dispose();
+    if (!this.isRunning) this.settled = Promise.resolve(this.handle.dispose());
     this.wakeSignal.notify();
   }
 
@@ -424,11 +437,15 @@ export class ManagedSubagentSession {
       const message = err instanceof Error ? err.message : String(err);
       this.exitInfo = { status: "failed", note: `[subagent error: ${message}]` };
     } finally {
-      this.isRunning = false;
-      if (this.killed) this.handle.dispose();
-      this.wakeSignal.notify();
-      this.notifyState();
-      this.fireSettleWatcher();
+      try {
+        // The round is over only once the killed child's own release (its children's) is.
+        if (this.killed) await this.handle.dispose();
+      } finally {
+        this.isRunning = false;
+        this.wakeSignal.notify();
+        this.notifyState();
+        this.fireSettleWatcher();
+      }
     }
   }
 
@@ -453,10 +470,15 @@ export class ManagedSubagentSession {
   // -------------------------------------------------------------------------
 
   /** Approval callback handed to the child Session: the request is queued and waits for some parent tool call to consult Human and give a decision. */
-  private readonly childApprove: ApproveFn = (toolCall) => {
+  private readonly childApprove: ApproveFn = (toolCall, context) => {
     if (this.killed) return Promise.resolve("deny");
     return new Promise<ApprovalDecision>((resolve) => {
-      this.approvals.push({ toolCall, settled: false, resolve });
+      this.approvals.push({
+        toolCall,
+        ...(context !== undefined ? { context } : {}),
+        settled: false,
+        resolve,
+      });
       this.wakeSignal.notify(); // Wake the parent tool call waiting within the window, so it can consult as soon as possible
       void this.pumpApprovals();
     });
@@ -489,13 +511,13 @@ export class ManagedSubagentSession {
         const req = this.approvals[0]!;
         const sink = this.sink;
         if (sink === null) {
-          await this.standingApprove()!(req.toolCall).then(
+          await this.standingApprove()!(...consultArgs(req)).then(
             (d) => this.settle(req, d),
             () => this.settle(req, "deny"), // An approval sink error is treated as a denial (avoids leaving the child session stuck forever)
           );
           continue;
         }
-        const answer = sink.approve(req.toolCall).then(
+        const answer = sink.approve(...consultArgs(req)).then(
           (d) => this.settle(req, d),
           () => this.settle(req, "deny"),
         );
@@ -509,6 +531,11 @@ export class ManagedSubagentSession {
       this.pumpingApprovals = false;
     }
   }
+}
+
+/** The arguments a sink is consulted with: the call, plus its context when the child's wrapper attached one. */
+function consultArgs(req: PendingApproval): Parameters<ApproveFn> {
+  return req.context === undefined ? [req.toolCall] : [req.toolCall, req.context];
 }
 
 /** Converts a run's terminal state into a tool result (note is appended outside the truncation, so it isn't lost with long output). A failed child run is fatal for this call — nothing retries a tool. */

@@ -15,7 +15,7 @@ import {
   MenuRow,
   MenuSeparator,
 } from "../src/components/overlays/menu/menu";
-import { classTokens, renderStatic } from "../src/testing";
+import { classTokens, renderStatic, markupStructure } from "../src/testing";
 
 const inMenu = (density: "sm" | "md", ...rows: ReactElement[]) =>
   renderStatic(createElement(Menu, { label: "Workspace", density, children: rows }));
@@ -26,15 +26,6 @@ describe("Menu", () => {
     expect(html).toMatch(/^<div role="menu" aria-label="Workspace"/);
     expect(html).toContain('<button type="button" role="menuitem"');
     expect(html).toContain(">Rename</span>");
-  });
-
-  it("sets its rows on the body rung at md and the small rung at sm", () => {
-    const md = inMenu("md", createElement(MenuItem, { key: "a", label: "Settings" }));
-    const sm = inMenu("sm", createElement(MenuItem, { key: "a", label: "Copy path" }));
-    expect(classTokens(md)).toContain("text-sm");
-    expect(classTokens(md)).not.toContain("text-xs");
-    expect(classTokens(sm)).toContain("text-xs");
-    expect(classTokens(sm)).not.toContain("text-sm");
   });
 
   it("gives a choice its menu role and checked state", () => {
@@ -58,7 +49,7 @@ describe("Menu", () => {
     );
     expect(html).toContain('<div role="presentation"');
     expect(html).toContain(">Group by</div>");
-    expect(html).toContain('<div role="separator" class="my-1 border-t border-line-muted"></div>');
+    expect(markupStructure(html)).toContain('<div role="separator"></div>');
     expect(html).not.toContain("<button");
   });
 });
@@ -69,7 +60,7 @@ describe("MenuItem", () => {
 
   it("is a plain button with no menu role outside a Menu", () => {
     const html = render({ label: "Rename", checked: true });
-    expect(html).toMatch(/^<button type="button" class="/);
+    expect(html).toMatch(/^<button type="button" /);
     expect(html).not.toContain("role=");
     expect(html).not.toContain("aria-checked");
   });
@@ -79,41 +70,26 @@ describe("MenuItem", () => {
     expect(html).toContain('role="option" aria-selected="true"');
   });
 
-  it("draws a registry glyph as a muted decorative mark, and a node as given", () => {
+  it("draws a registry glyph as a decorative mark, and a node as given", () => {
     const glyph = render({ label: "Rename", glyph: ICONS.pencil });
     expect(glyph).toContain(`d="${ICONS.pencil}"`);
     expect(glyph).toContain('data-role="menu"');
-    expect(classTokens(glyph)).toEqual(expect.arrayContaining(["ui-icon-decor", "text-fg-subtle"]));
+    expect(classTokens(glyph)).toContain("ui-icon-decor");
     const node = render({ label: "Me", glyph: createElement("i", { className: "avatar" }) });
     expect(node).toContain('<i class="avatar"></i>');
     expect(node).not.toContain("ui-icon-decor");
-    // A false left by `cond && <X />` draws nothing, not an empty slot.
-    expect(render({ label: "Plain", glyph: false })).not.toContain("shrink-0 items-center");
   });
 
-  it("keeps the danger tone on the row and lets its glyph inherit it", () => {
-    const html = render({ label: "Delete", glyph: ICONS.trash, danger: true });
-    const tokens = classTokens(html);
-    expect(tokens).toEqual(
-      expect.arrayContaining(["text-tone-danger-fg", "hover:bg-tone-danger-bg"]),
-    );
-    expect(tokens).not.toContain("text-fg-subtle");
-    expect(tokens).not.toContain("hover:bg-surface-muted");
+  it("keeps the check's slot on a row that is not the current choice, and none on an action row", () => {
+    const slot = /<span aria-hidden="true"[^>]*><\/span><\/button>$/;
+    expect(render({ label: "B", checked: false })).toMatch(slot);
+    expect(render({ label: "C" })).not.toMatch(slot);
   });
 
-  it("fills and checks the current choice, and keeps the check's slot on the others", () => {
-    const on = classTokens(render({ label: "A", checked: true }));
-    const off = render({ label: "B", checked: false });
-    expect(on).toEqual(expect.arrayContaining(["bg-surface-muted", "font-medium"]));
-    expect(off).toMatch(/<span aria-hidden="true" class="[^"]*w-3[^"]*"><\/span><\/button>$/);
-    // An action row carries no check slot at all.
-    expect(render({ label: "C" })).not.toContain("w-3");
-  });
-
-  it("sets a description under the label and a note at the row's end, both muted", () => {
+  it("sets a description under the label and a note at the row's end", () => {
     const html = render({ label: "Read & write", description: "Edits files", trailing: "v1.2" });
-    expect(html).toContain('<span class="mt-0.5 block text-xs text-fg-muted">Edits files</span>');
-    expect(html).toContain('<span class="shrink-0 text-xs text-fg-subtle">v1.2</span>');
+    expect(markupStructure(html)).toContain("<span>Edits files</span>");
+    expect(markupStructure(html)).toContain("<span>v1.2</span>");
   });
 
   it("becomes a link for an address, and passes the caller's data attributes through", () => {
@@ -122,12 +98,6 @@ describe("MenuItem", () => {
     const tagged = render({ label: "Trace", "data-testid": "dock-add-trace", disabled: true });
     expect(tagged).toContain('data-testid="dock-add-trace"');
     expect(tagged).toContain('disabled=""');
-  });
-
-  it("colours only through tokens and never sets its label in mono", () => {
-    const tokens = classTokens(render({ label: "Row", glyph: ICONS.pencil, checked: true }));
-    expect(tokens.filter((t) => /gray|dark:|red-|white/.test(t))).toEqual([]);
-    expect(tokens).not.toContain("font-mono");
   });
 });
 

@@ -141,7 +141,7 @@ export interface SubagentHandle {
   /** Pins the child Session's thinking level (`Session.thinkingLevel`: applied from its next LLM request) — a host panel's pick on a live child. Optional, like `steer`. */
   setThinkingLevel?(level: ThinkingLevelName): void;
   /** Releases runtime resources held by the child Session (e.g. its managed command sessions). Idempotent. */
-  dispose(): void;
+  dispose(): void | Promise<void>;
 }
 
 /** Every thinking level name, the `ThinkingLevelName` vocabulary as a runtime list (validating a wire value — the server's PATCH and Agent-config routes). */
@@ -160,9 +160,10 @@ export const THINKING_LEVEL_NAMES: readonly ThinkingLevelName[] = [
  * user-facing pickers (many models cannot disable thinking; see the web picker's
  * SELECTABLE_THINKING_LEVELS and project-config's DEFAULT_CHAT_THINKING_LEVELS). Omitting the
  * argument inherits the parent Session's effective level, so a parent genuinely running
- * without a level still passes that down.
+ * without a level still passes that down. The element type keeps `"none"` out at compile time.
+ * This is the one selectable ladder: project-config's DEFAULT_CHAT_THINKING_LEVELS is this list.
  */
-export const SUBAGENT_THINKING_LEVELS: readonly ThinkingLevelName[] = [
+export const SUBAGENT_THINKING_LEVELS: readonly Exclude<ThinkingLevelName, "none">[] = [
   "low",
   "medium",
   "high",
@@ -601,6 +602,6 @@ export interface EnvironmentInterface {
    * setBackgroundTaskListener. Optional.
    */
   setBackgroundMessageListener?(listener: (msg: AmspRecord) => void): void;
-  /** Releases runtime resources held by the environment (e.g. managed long-running command sessions); called by the host when the Session ends. Optional, idempotent. */
-  dispose?(): void;
+  /** Releases runtime resources when the Session ends; a returned promise waits for background child cleanup. Optional, idempotent. */
+  dispose?(): void | Promise<void>;
 }

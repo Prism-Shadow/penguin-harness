@@ -18,19 +18,40 @@
  * tarball is kept in `<prefix>/archives/`, because npm records the install as a `file:`
  * dependency and reconciles the prefix against it on every later install. Installing runs the
  * package's install scripts exactly as installing it from the registry does — the same trust.
+ * A fourth arrives through the plugin index: a version published on a github release channel
+ * has its release URL installed by npm itself — the URL is a spec npm natively understands
+ * (a gzipped tarball over https) — and what npm actually installed is verified after the
+ * fact against the sha512 the entry pins (installPluginChannel) — npm stays the first source;
+ * the channel is where an npm-missing name can still come from.
  */
 import { execFile } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
+import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
-import path from "node:path";
+import { createRequire } from "node:module";
+import path, { relative } from "node:path";
 import { promisify } from "node:util";
 import { Component } from "@prismshadow/penguin-core/kernel";
+// `which` is CommonJS exporting the function itself (module.exports = which, plus
+// which.sync): the default import IS the function, and the sync form is what the
+// candidates check uses — a path answer or null, never a thrown ENOENT.
+import which from "which";
 import type { PluginPackages } from "../mechanisms/plugins.js";
-
+import type { IndexChannel } from "./registry.js";
 const execFileAsync = promisify(execFile);
 
 /** Long enough for a cold registry fetch with dependencies; short enough not to hang a request. */
 const INSTALL_TIMEOUT_MS = 180_000;
+/** One address's npm window: a dead address costs this, not a hang. */
+const CHANNEL_TIMEOUT_MS = 15_000;
+/**
+ * The asset address npm last installed from and whose install verified for each channel URL,
+ * tried first next time. Memory, not a speed test: the walk still tries one address at a time
+ * in a fixed order, only its start moves. A dead canonical would otherwise cost its window on
+ * every install; starting where the last install succeeded returns the common case to one
+ * address. Keyed by the channel URL, so two sources' assets never lend each other's start.
+ */
+const lastGoodAsset = new Map<string, string>();
 
 /** `<root>/plugins`: the npm prefix this deployment installs plugins into. */
 export function pluginsPrefix(root: string): string {
@@ -42,7 +63,20 @@ const ARCHIVES_DIR = "archives";
 /** `<prefix>/.staging`: where an uploaded package is unpacked and packed; emptied after each install. */
 const STAGING_DIR = ".staging";
 
-export class PluginInstallError extends Error {}
+/** A bare package name, scoped or not — the same rule loader.ts resolves by. */
+const PACKAGE_NAME = /^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/;
+
+export class PluginInstallError extends Error {
+  /**
+   * Why npm failed, when the failure came from npm: "unavailable" — npm answered that the
+   * package (or the requested version of it) does not exist on the registry, the one outcome
+   * a published-index channel may stand in for; "other" — everything else (a refusing
+   * registry, a dependency that will not resolve, a failed lifecycle script), where the
+   * channel is not the answer and the failure is reported as is. Undefined on errors that
+   * did not come from npm at all.
+   */
+  reason?: "unavailable" | "other";
+}
 
 /** A package npm put in the prefix: its name and the version it settled on. */
 export interface InstalledPackage {
@@ -84,22 +118,160 @@ export async function prefixDependencies(prefix: string): Promise<Record<string,
   }
 }
 
-async function npm(prefix: string, args: readonly string[], cwd = prefix): Promise<string> {
+/**
+ * The registry URL the installer's npm runs are pointed at, set by the Plugin sources
+ * settings group (see source-settings.ts). Undefined — the default — passes nothing: npm's
+ * own configuration (its .npmrc chain, the ambient environment) answers, exactly as before
+ * the group existed. Set, it rides every npm run of the installer as `--registry`, which
+ * overrides that chain for the plugins' installs without touching how npm is configured on
+ * the machine.
+ */
+let npmRegistry: string | undefined = undefined;
+
+/** The settings group sets (or clears) the registry the installer's npm runs are pointed at. */
+export function setNpmRegistry(url: string | undefined): void {
+  npmRegistry = url;
+}
+
+/**
+ * How to run npm, resolved once per process: an ordered list of spawnable commands, built by
+ * asking the file system what is really here rather than assuming where npm lives. The shape
+ * mirrors cross-spawn's (the resolver every npm-spawning tool sits on): locate first, spawn
+ * second, and never guess an extension or a layout.
+ *
+ * 1. The npm SHIPPED beside this interpreter. Node's official distribution carries npm in a
+ *    fixed layout (`<execPath dir>/../lib/node_modules/npm` on POSIX, `<execPath dir>/node_modules/npm`
+ *    on Windows — node.exe sits at the archive root), and the layout survives every
+ *    distribution that unpacks the dist unchanged: the platform packages and Docker images,
+ *    and the version managers, whose PATH shims are links into exactly this tree. Probed,
+ *    not assumed. Running the CLI through node itself avoids every batch-file question.
+ * 2. Whatever `npm` this machine puts on PATH — the way every other npm consumer here
+ *    resolves it. Debian splits npm out of its node package, so the layout above can be
+ *    absent on a machine that has npm; the PATH form covers it. Located with `which`, the
+ *    resolver cross-spawn itself sits on: it walks PATH under PATHEXT on Windows (npm.cmd
+ *    on node-installed machines, npm.exe under scoop) and checks executability on POSIX —
+ *    the quirks a hand-rolled scan forgets, settled once in a package every resolver here
+ *    already trusts. The command itself stays the plain `npm` name, which the system then
+ *    resolves the same way it would for any other consumer.
+ *
+ * A candidate is offered only when its file is proven present, so a failed install never
+ * reads as "npm is missing" when npm ran and failed: a broken npm surfaces through the
+ * install's own error, in npm's own words. Nothing here runs a probe install — existence is
+ * checkable without starting a process, and `npm --version` would prove nothing the check
+ * does not.
+ */
+
+interface NpmCommand {
+  /** What this candidate is, in the error shown when nothing is found. */
+  label: string;
+  /** The spawn executable and the args every install command is appended to. */
+  file: string;
+  argv: readonly string[];
+}
+
+const npmCandidates = (): { candidates: readonly NpmCommand[]; notes: readonly string[] } => {
+  // The layout the official dist unpacks to, relative to the running interpreter.
+  const bundled = path.join(
+    path.dirname(process.execPath),
+    ...(process.platform === "win32"
+      ? (["node_modules", "npm", "bin", "npm-cli.js"] as const)
+      : (["..", "lib", "node_modules", "npm", "bin", "npm-cli.js"] as const)),
+  );
+  const candidates: NpmCommand[] = [];
+  const notes: string[] = [];
+  if (existsSync(bundled)) {
+    // node itself runs the CLI: no batch file, no shell, every platform.
+    candidates.push({
+      label: `the npm beside this node (${bundled})`,
+      file: process.execPath,
+      argv: [bundled],
+    });
+  } else {
+    notes.push(`no npm beside this node (${bundled})`);
+  }
+  const onPath = which.sync("npm", { nothrow: true });
+  if (onPath !== null) {
+    // On Windows the PATH entry is a batch file, which node refuses to spawn directly
+    // (`spawn EINVAL`), so cmd.exe runs it — a real executable; `/d` skips AutoRun scripts,
+    // `/s /c` runs the rest as given, each argument quoted by Node (the same line
+    // cross-spawn builds for cmd shims). The bare `npm` name, so cmd.exe resolves it as it
+    // would for any consumer, whatever shim form the machine carries.
+    candidates.push(
+      process.platform === "win32"
+        ? { label: `npm on PATH (${onPath})`, file: "cmd.exe", argv: ["/d", "/s", "/c", "npm"] }
+        : { label: `npm on PATH (${onPath})`, file: "npm", argv: [] },
+    );
+  } else {
+    notes.push("no npm on PATH");
+  }
+  return { candidates, notes };
+};
+
+let npmCommandCache: Promise<NpmCommand> | null = null;
+function npmCommand(): Promise<NpmCommand> {
+  // Resolved once: the chosen npm does not move under a running process.
+  npmCommandCache ??= (async () => {
+    const { candidates, notes } = npmCandidates();
+    const [candidate] = candidates;
+    if (candidate !== undefined) return candidate;
+    throw new PluginInstallError(
+      `npm, the installer of plugins, is not on this machine (${notes.join("; ")})`,
+    );
+  })();
+  return npmCommandCache;
+}
+
+async function npm(
+  prefix: string,
+  args: readonly string[],
+  cwd = prefix,
+  window = INSTALL_TIMEOUT_MS,
+): Promise<string> {
+  const command = await npmCommand();
   try {
-    const { stdout } = await execFileAsync(npmCommand(), [...args], {
+    const { stdout } = await execFileAsync(command.file, [...command.argv, ...args], {
       cwd,
-      timeout: INSTALL_TIMEOUT_MS,
+      timeout: window,
       maxBuffer: 8 * 1024 * 1024,
       env: process.env,
     });
     return stdout;
   } catch (err) {
-    throw new PluginInstallError(npmReason((err as { stderr?: string }).stderr, err as Error));
+    const error = err as Error & { code?: string; stderr?: string };
+    const failure = new PluginInstallError(npmReason(error.stderr, error));
+    failure.reason = npmFailureKind(error.stderr);
+    throw failure;
   }
 }
 
+/**
+ * Which bucket a failed npm run falls in, from its stderr's `code E<NAME>` lines: E404 (the
+ * package or the requested version is not on the registry) and ETARGET (no version matches
+ * the requested range) are the outcomes a published-index channel may stand in for —
+ * "unavailable". Everything else — a refusing registry, a dependency that will not resolve,
+ * a failed lifecycle script — is "other", and stays a failure. This reads the raw stderr, so
+ * it runs before npmReason strips the `code E404` line the answer lives on.
+ */
+export function npmFailureKind(stderr: string | undefined): "unavailable" | "other" {
+  return /npm error code (E404|ETARGET)\b/m.test(stderr ?? "") ? "unavailable" : "other";
+}
+
+// `--install-links=false` on EVERY install: it is what makes npm reify a `file:` directory
+// dependency as a symlink to the author's directory instead of a copy (npm 7+ defaults the
+// other way). Every install carries the flag — a plain install that dropped it would silently
+// replace an existing link with a frozen copy — and no config file is relied on: the same
+// command behaves the same whatever npm version ships with the runtime.
 const install = (prefix: string, spec: string) =>
-  npm(prefix, ["install", "--no-audit", "--no-fund", "--omit=dev", "--", spec]);
+  npm(prefix, [
+    ...(npmRegistry !== undefined ? [`--registry=${npmRegistry}`] : []),
+    "install",
+    "--no-audit",
+    "--no-fund",
+    "--omit=dev",
+    "--install-links=false",
+    "--",
+    spec,
+  ]);
 
 /**
  * Installs (or upgrades) one package into the root's plugin prefix. Returns the version npm
@@ -205,22 +377,104 @@ export async function installPluginFiles(
   }
 }
 
-/** The tarball `npm pack --json` wrote: `[{ filename }]` on stdout. */
-function packedFileName(stdout: string): string {
+/**
+ * The tarball `npm pack --json` wrote, from its report on stdout: `[{ filename }]` through
+ * npm 11, `{ "<name>": { filename } }` from npm 12 on. Exported for tests: the shape follows
+ * whichever npm the machine has.
+ */
+export function packedFileName(stdout: string): string {
   let parsed: unknown;
   try {
-    // npm prints its JSON after any notices a lifecycle could not suppress; the array is last.
-    parsed = JSON.parse(stdout.slice(stdout.indexOf("[")));
+    // npm prints its JSON after any notices a lifecycle could not suppress; the report opens a
+    // line of its own and runs to the end.
+    parsed = JSON.parse(stdout.slice(stdout.search(/^[[{]/m)));
   } catch {
     throw new PluginInstallError("npm pack did not report the tarball it wrote");
   }
-  const file = Array.isArray(parsed)
-    ? (parsed[0] as { filename?: unknown } | undefined)
-    : undefined;
+  // One package was packed: the array's one entry, or the object's one value.
+  const reports: unknown[] = Array.isArray(parsed)
+    ? parsed
+    : typeof parsed === "object" && parsed !== null
+      ? Object.values(parsed)
+      : [];
+  const file = reports[0] as { filename?: unknown } | undefined;
   if (typeof file?.filename !== "string" || path.basename(file.filename) !== file.filename) {
     throw new PluginInstallError("npm pack did not report the tarball it wrote");
   }
   return file.filename;
+}
+
+/**
+ * Links a local package directory into the prefix the way npm itself does it: `npm install
+ * file:<dir>` records the directory as a `file:` dependency in the prefix's package.json and
+ * reifies it as a symlink to the author's directory (every install runs with
+ * `--install-links=false` — see `install`). Nothing here is penguin's own record — the
+ * manifest entry IS the link table (the route reads it back as one), npm keeps the symlink
+ * and the entry in step through its own re-entry, and `npm uninstall <name>` takes a link out
+ * the same way it takes any package out. The link is npm's, so are its semantics.
+ *
+ * The directory is vetted before npm is asked: its package.json must be readable and carry a
+ * name npm accepts (the same rule the loader resolves by). An existing dependency under the
+ * same name that is not itself this kind of link refuses unless `overwrite` — replacing an
+ * installed package with a link is the operator's to confirm, the way a replacing install is.
+ */
+export async function linkPluginDirectory(
+  root: string,
+  dir: string,
+  overwrite = false,
+): Promise<InstalledPackage> {
+  const prefix = await ensurePrefix(root);
+  const real = await fs.realpath(dir);
+  const name = await (async () => {
+    try {
+      return await readPackageName(path.join(real, "package.json"));
+    } catch (err) {
+      throw new PluginInstallError(
+        `${dir} is not a plugin package (its package.json could not be read: ${err instanceof Error ? err.message : String(err)})`,
+      );
+    }
+  })();
+  if (!PACKAGE_NAME.test(name)) {
+    throw new PluginInstallError(`'${name}' is not a package name npm would accept`);
+  }
+  const existing = (await prefixDependencies(prefix))[name];
+  if (existing !== undefined && !existing.startsWith("link:") && !overwrite) {
+    throw new PluginInstallError(
+      `${name} is installed in the prefix at ${existing}; pass --overwrite to replace it with a link.`,
+    );
+  }
+  // Named relative to the prefix's REAL path — npm resolves a `file:` spec against the real
+  // prefix, and the two diverge wherever a symlink sits on the way to the data root (macOS's
+  // temp directory is /var/folders over a /private/var/folders real body; npm failing to open
+  // the directory there is "syscall open", with the reason line never naming the path). npm
+  // then records the entry relative to that same real path (see installPluginFiles, whose
+  // tarball install is recorded the same way).
+  const realPrefix = await fs.realpath(prefix).catch(() => prefix);
+  await install(prefix, `file:${relative(realPrefix, real)}`);
+  return { name, version: await readInstalledVersion(prefix, name) };
+}
+
+/**
+ * The prefix's link table, as npm itself keeps it: every `file:` dependency whose spec names
+ * a DIRECTORY (a `file:` naming a tarball under archives/ is an uploaded zip's install, not a
+ * link) and whose node_modules entry exists — lstat it, not the directory it names: a dangling
+ * link (the author's directory deleted) stays in the table and the page reports its fault. A
+ * symlink lstats as a symlink (isDirectory is false on it), so both count. Specs are resolved
+ * against the prefix's real path, the one npm records them relative to (see
+ * linkPluginDirectory): on macOS the logical path and the real one diverge through the temp
+ * directory's symlink, and only the real path walks back to the author's directory.
+ */
+export async function linkedPackages(prefix: string): Promise<Map<string, string>> {
+  const table = new Map<string, string>();
+  const realPrefix = await fs.realpath(prefix).catch(() => prefix);
+  for (const [name, spec] of Object.entries(await prefixDependencies(prefix))) {
+    if (!spec.startsWith("file:")) continue;
+    const dir = path.resolve(realPrefix, spec.slice("file:".length));
+    if (/\.tgz$|\.tar\.gz$/.test(dir)) continue;
+    const st = await fs.lstat(installedPackageDir(prefix, name)).catch(() => null);
+    if (st?.isDirectory() || st?.isSymbolicLink()) table.set(name, dir);
+  }
+  return table;
 }
 
 async function readPackageName(manifest: string): Promise<string> {
@@ -311,9 +565,208 @@ function npmReason(stderr: string | undefined, err: Error): string {
   return reason ?? err.message;
 }
 
-/** Windows resolves `npm` through npm.cmd; everywhere else the plain name is on PATH. */
-function npmCommand(): string {
-  return process.platform === "win32" ? "npm.cmd" : "npm";
+/**
+ * The per-address timeout the channel install's npm runs carry. The walk still tries one
+ * address at a time in a fixed order, only its start moves: the sticky start (the address
+ * that last installed and verified) goes first, the URL the index published and this
+ * source's CDN mirrors follow in their configured order, and a dead start hands the walk
+ * back to that order within the same install. Each address's npm run carries its own
+ * timeout, so a dead one costs one window, not a hang. All of them failed: the error names
+ * the addresses that were tried and the failure it ended on.
+ */
+
+/** The prefix's package-lock.json, the record npm keeps of what it actually installed. */
+interface LockEntry {
+  resolved?: unknown;
+  integrity?: unknown;
+}
+
+/** The prefix's package-lock.json, whole; null when npm has written none (never run here). */
+async function readLockfile(prefix: string): Promise<Record<string, LockEntry> | null> {
+  try {
+    const lock = JSON.parse(await fs.readFile(path.join(prefix, "package-lock.json"), "utf8")) as {
+      packages?: Record<string, LockEntry>;
+    };
+    return lock.packages ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * What npm actually installed for a spec, as its lockfile records it: the `integrity` of the
+ * entry whose `resolved` names the given URL, plus the name and version the installed
+ * package declares. An entry npm recorded under another shape (a `file:` tarball, a git
+ * link) answers null, as does a prefix whose lockfile does not name the URL at all.
+ */
+async function installedRecord(
+  prefix: string,
+  url: string,
+): Promise<{ integrity: string; name: string; version: string } | null> {
+  const lock = await readLockfile(prefix);
+  if (lock === null) return null;
+  const found = Object.entries(lock).find(([, pkg]) => pkg.resolved === url);
+  if (found === undefined || typeof found[1].integrity !== "string") return null;
+  // The installed package's own manifest names what landed on disk; without it there is
+  // nothing to check the entry against.
+  try {
+    const manifest = JSON.parse(
+      await fs.readFile(path.join(prefix, found[0], "package.json"), "utf8"),
+    ) as { name?: unknown; version?: unknown };
+    if (typeof manifest.name !== "string" || typeof manifest.version !== "string") return null;
+    return { integrity: found[1].integrity, name: manifest.name, version: manifest.version };
+  } catch {
+    return null;
+  }
+}
+
+/** Whether two integrity digests agree, compared the way a hash check compares. */
+function sameDigest(actual: string, expected: string): boolean {
+  return (
+    actual.length === expected.length && timingSafeEqual(Buffer.from(actual), Buffer.from(expected))
+  );
+}
+
+/**
+ * Installs a version through an index entry's github channel: the release URL is a spec npm
+ * natively understands (a gzipped tarball over https), so each address's attempt is npm
+ * itself installing it — npm downloads, unpacks and records what it took. What npm actually
+ * installed is verified after the fact: the prefix's package-lock.json records the integrity
+ * of the tarball the install resolved to, and it has to agree with the entry's sha512 — a
+ * mismatch throws the install away (npm uninstall) and the walk moves to the next address,
+ * so an address serving tampered bytes is refused like any other source, and never becomes
+ * the sticky start. The tarball's own package.json is checked the same way: the lockfile
+ * entry must say it installed the entry's package and version — an archive that says it is
+ * another package, or another version, is refused, so the caller's post-install vetting
+ * cannot end up vetting, or uninstalling, the wrong one. `install` is injectable so a test
+ * stands in for npm; `onProgress`, when given, is called once per address's install — npm's
+ * own download is npm's to report, the caller sees the address boundaries.
+ */
+export async function installPluginChannel(
+  root: string,
+  channel: IndexChannel,
+  {
+    install: run = (prefix, spec) => runNpmInstallSpec(prefix, spec, timeoutMs),
+    uninstall: remove = (prefix, name) => runNpmUninstall(prefix, name),
+    onProgress = undefined,
+    timeoutMs = CHANNEL_TIMEOUT_MS,
+  }: {
+    install?: (prefix: string, spec: string) => Promise<void>;
+    /** What takes a refused install out of the prefix; npm's uninstall by default. */
+    uninstall?: (prefix: string, name: string) => Promise<void>;
+    onProgress?: (received: number, total: number | null) => void;
+    /** One address's npm window; the walk moves on when it runs out. */
+    timeoutMs?: number;
+  } = {},
+): Promise<InstalledPackage> {
+  const prefix = await ensurePrefix(root);
+  // The asset's addresses in try order: the sticky start first (the address that last
+  // installed and verified for this channel URL), then the URL the index published and
+  // this source's CDN mirrors in their configured order. Mirrors change only where the
+  // bytes come from: what npm installs is verified against the entry's integrity exactly
+  // as the canonical URL's would be, so a mirror serving tampered bytes is refused like
+  // any other source — and never becomes the sticky start.
+  const canonical = [channel.url, ...(channel.mirrors ?? [])];
+  const remembered = lastGoodAsset.get(channel.url);
+  const addresses =
+    remembered !== undefined && canonical.includes(remembered) && remembered !== channel.url
+      ? [remembered, ...canonical.filter((address) => address !== remembered)]
+      : canonical;
+  // One address at a time, in the order given: the first address whose npm install lands
+  // and whose lockfile record verifies carries the install. An npm failure (a dead
+  // address, a non-ok answer — npm collapses both into its exit) moves on to the next
+  // address; so does an install whose post-check refuses it (a tampered tarball, another
+  // package's manifest). Each address carries its own timeout, so a dead one costs one
+  // window, not a hang. All of them failed: the error names the addresses that were tried
+  // and the failure it ended on.
+  let lastError: unknown = null;
+  for (const address of addresses) {
+    try {
+      await run(prefix, address);
+    } catch (err) {
+      lastError = err;
+      continue;
+    }
+    const installed = await installedRecord(prefix, address);
+    if (installed === null) {
+      lastError = new PluginInstallError(
+        "npm recorded no install of the release asset; the address did not serve it",
+      );
+      continue;
+    }
+    const actual = digestOf(installed.integrity);
+    const expected = pinnedDigest(channel.integrity);
+    if (actual === null || expected === null || !sameDigest(actual, expected)) {
+      lastError = new PluginInstallError(
+        "the release asset does not match the sha512 the index entry pins; it is not installed",
+      );
+    } else if (
+      installed.name === channel.name &&
+      installed.version === channel.version &&
+      (await readInstalledVersion(prefix, channel.name)) === channel.version
+    ) {
+      // The install carried, the bytes are the entry's own: from now on this address
+      // is where the next install of this channel starts. An address whose install
+      // fails the checks throws above (or falls through) and is never remembered.
+      if (address !== channel.url) lastGoodAsset.set(channel.url, address);
+      onProgress?.(0, null);
+      return { name: channel.name, version: channel.version };
+    } else {
+      lastError = new PluginInstallError(
+        `the release asset's package.json says ${JSON.stringify(installed.name)}@${JSON.stringify(installed.version)}, not the ${channel.name}@${channel.version} the index entry publishes; it is not installed`,
+      );
+    }
+    // A refused install does not stay in the prefix: whatever npm put there for the
+    // address goes, so a later address starts clean.
+    await remove(prefix, channel.name);
+  }
+  const why = lastError instanceof Error ? lastError.message : String(lastError);
+  throw new PluginInstallError(
+    `could not install the release asset from any of ${addresses.join(", ")}: ${why}`,
+  );
+}
+
+/** npm's own install of one spec, with the address's window on it. */
+async function runNpmInstallSpec(prefix: string, spec: string, timeoutMs: number): Promise<void> {
+  await npm(
+    prefix,
+    [
+      ...(npmRegistry !== undefined ? [`--registry=${npmRegistry}`] : []),
+      "install",
+      "--no-audit",
+      "--no-fund",
+      "--omit=dev",
+      "--",
+      spec,
+    ],
+    prefix,
+    timeoutMs,
+  );
+}
+
+/** npm's uninstall of a refused install, best effort — a clean prefix for the next address. */
+async function runNpmUninstall(prefix: string, name: string): Promise<void> {
+  try {
+    await npm(
+      prefix,
+      ["uninstall", "--no-audit", "--no-fund", "--", name],
+      prefix,
+      CHANNEL_TIMEOUT_MS,
+    );
+  } catch {
+    // Nothing to remove, or npm could not — the walk reports its own failure either way.
+  }
+}
+
+/** The digest half of an npm integrity string (`sha512-<base64>`); null for another shape. */
+function digestOf(integrity: string): string | null {
+  const match = /^sha512-([A-Za-z0-9+/]+={0,2})$/.exec(integrity);
+  return match === null ? null : match[1]!;
+}
+
+/** The digest half of the entry's pinned integrity; null when the pin is not even readable. */
+function pinnedDigest(integrity: string): string | null {
+  return digestOf(integrity);
 }
 
 /**

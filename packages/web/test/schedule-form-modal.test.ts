@@ -29,6 +29,7 @@ import {
   mountAgentApp,
   topDialog,
 } from "./helpers/agent-app";
+import { pickDateTime } from "./helpers/date-picker";
 import {
   button,
   click,
@@ -78,7 +79,7 @@ const promptOpen = () => hasButton(en.common.discard);
 async function fillRequired() {
   await type(inForm(en.common.name), "daily_report");
   await type(inForm(en.schedule.prompt), "Write the report.");
-  await type(inForm(en.schedule.startAt), "2026-10-11T09:00");
+  await pickDateTime(topDialog(), en.schedule.startAt, "2026-10-11T09:00");
 }
 
 describe("the scheduled task form", () => {
@@ -95,7 +96,7 @@ describe("the scheduled task form", () => {
     await type(inForm(en.schedule.prompt), "Write the report.");
     expect(verb(en.common.create).disabled).toBe(true);
     expect(topDialog().textContent).not.toContain(en.common.requiredField);
-    await type(inForm(en.schedule.startAt), "2026-10-11T09:00");
+    await pickDateTime(topDialog(), en.schedule.startAt, "2026-10-11T09:00");
     expect(verb(en.common.create).disabled).toBe(false);
   });
 
@@ -135,6 +136,8 @@ describe("the scheduled task form", () => {
       name: "daily_report",
       prompt: "Write the report.",
       enabled: false,
+      // The start the picker was set to, on the reader's clock.
+      startAt: new Date(2026, 9, 11, 9, 0).toISOString(),
     });
   });
 

@@ -12,6 +12,7 @@
  * disappearing (folder removed, Agent switched) falls back to Chat rather than leaving
  * the strip pointing at nothing.
  */
+import { useEffect } from "react";
 import type { WorkbenchInfo } from "@prismshadow/penguin-server/api";
 import { apiUrl } from "./server-context";
 
@@ -49,6 +50,17 @@ export interface WorkbenchUpdatedDetail {
   agentId: string;
 }
 
+/**
+ * Dispatched on `window` when the server starts loading a workbench's files (the watcher saw an
+ * edit, or a list or a reload asked for it). The App Center listens, to show the tile building;
+ * the end of the load is the WORKBENCH_UPDATED_EVENT above.
+ */
+export const WORKBENCH_BUILDING_EVENT = "penguin:workbench-building";
+
+export interface WorkbenchBuildingDetail extends WorkbenchUpdatedDetail {
+  workbenchId: string;
+}
+
 export function workbenchesBase(projectId: string, agentId: string): string {
   return `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/workbenches`;
 }
@@ -77,6 +89,21 @@ export function workbenchNoticesOf(workbenches: readonly WorkbenchInfo[]): Workb
   return workbenches
     .filter((w) => w.tabs.length === 0 && (w.error !== null || (w.hints ?? []).length > 0))
     .map((w) => ({ workbenchId: w.id, error: w.error, hints: w.hints ?? [] }));
+}
+
+/**
+ * The workbenches that run, out of an Agent's list: none while the Agent-wide switch is off, and
+ * of the rest each only while its own switch is on. A switched-off workbench is still listed by
+ * the server (its settings row needs it) but loads nothing, so nothing outside the settings may
+ * offer it: no tab, no notice, no full page. A server older than the switches sends neither
+ * flag, and everything it lists runs.
+ */
+export function runningWorkbenches(list: {
+  workbenches: readonly WorkbenchInfo[];
+  enabled?: boolean;
+}): WorkbenchInfo[] {
+  if (list.enabled === false) return [];
+  return list.workbenches.filter((w) => w.enabled !== false);
 }
 
 export function workbenchTabsOf(
@@ -146,3 +173,55 @@ export function appPageTab(
 
 /** A page's own request to fill the app, posted to its parent: `{ type: "penguin:fill-app" }`. */
 export const FILL_APP_MESSAGE = "penguin:fill-app";
+
+/** The main app's manifest, the literal the template ships and what leaving the page restores. */
+export const MAIN_MANIFEST_HREF = "/manifest.webmanifest";
+
+/** A workbench manifest's path on the local server (the auth-less gate), per tab or whole. */
+export function workbenchManifestHref(
+  projectId: string,
+  agentId: string,
+  workbenchId: string,
+  tabKey?: string,
+  machineId: string | null = null,
+): string {
+  const segments = [projectId, agentId, workbenchId, ...(tabKey === undefined ? [] : [tabKey])].map(
+    encodeURIComponent,
+  );
+  return (
+    `/api/projects/${segments[0]}/agents/${segments[1]}/workbenches/${segments[2]}` +
+    (tabKey === undefined ? "" : `/tabs/${segments[3]}`) +
+    "/manifest.webmanifest" +
+    (machineId === null ? "" : `?machine=${encodeURIComponent(machineId)}`)
+  );
+}
+
+/**
+ * This page is its own installable app: while it is mounted, the document's manifest link
+ * names the page's own manifest (the tab's, or the workbench's when no tab key is in the
+ * route), and on unmount it is restored to the main app's literal link. The restore is the
+ * literal — NEVER the href found on arrival: on a page the server had already rewritten, the
+ * arrival href IS a workbench manifest, and keeping it would leave the install surface on
+ * the workbench after the page is gone.
+ *
+ * Returns the href the link now carries (the same string the server's rewrite builds), for
+ * the page's tests to assert against.
+ */
+export function useInstallManifest(
+  projectId: string,
+  agentId: string,
+  workbenchId: string,
+  tabKey: string | undefined,
+  machineId: string | null = null,
+): string {
+  const href = workbenchManifestHref(projectId, agentId, workbenchId, tabKey, machineId);
+  useEffect(() => {
+    const link = document.querySelector<HTMLLinkElement>('link[rel="manifest"]');
+    if (link === null) return;
+    if (link.getAttribute("href") !== href) link.setAttribute("href", href);
+    return () => {
+      link.setAttribute("href", MAIN_MANIFEST_HREF);
+    };
+  }, [href]);
+  return href;
+}

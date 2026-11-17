@@ -39,6 +39,7 @@ import type {
 import {
   Button,
   Count,
+  DateField,
   FieldLabel,
   GlyphIcon,
   ICONS,
@@ -63,7 +64,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { toneDot, toneInk } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
-import { useCompany } from "../../state/company";
+import { useCompany } from "./company-state";
 import { OrgPage, useOrg } from "./org-layout";
 import {
   BlockedBadge,
@@ -501,7 +502,7 @@ export function TicketsPage() {
             ref={drag.ghostRef}
             aria-hidden
             style={{ width: lifted.width, transform: drag.ghostTransform() }}
-            className="pointer-events-none fixed left-0 top-0 z-[60]"
+            className="pointer-events-none fixed left-0 top-0 z-drag-preview"
           >
             <div className={`${cardFrame(lifted.ticket)} rotate-1 shadow-lg ring-1 ring-accent`}>
               {cardBody(lifted.ticket)}
@@ -739,13 +740,11 @@ function CreateTicketForm({
               cols={3}
             />
           </div>
-          <Input
+          <DateField
             size="sm"
             label={S.company.tickets.due}
-            type="date"
             value={due}
-            className="font-mono"
-            onChange={(e) => form.patch({ due: e.target.value })}
+            onChange={(next) => form.patch({ due: next })}
           />
         </div>
         <Input

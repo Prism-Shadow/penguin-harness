@@ -199,10 +199,45 @@
 .code-lines textarea {
   padding-left: calc(var(--code-pad-x) + var(--code-gutter, 4ch));
 }
+/* The lines stand in chunks (code-lines.ts's CHUNK_LINES), and `content-visibility: auto` lays
+   out and paints a chunk only near the scroll box, so opening and scrolling a file cost what is
+   on screen. Every line stays in the document: the browser's find, a selection across the file
+   and the line elements a caller measures work as before.
+
+   An undrawn chunk stands at its expected size, a drawn one at the size it was last drawn at
+   (`auto`). Unwrapped that is exact: a row a line, as wide as the longest line, so the sideways
+   scroll does not depend on what is drawn. Wrapped it is an estimate (wrap-rows.ts), so a place
+   in a file is carried as a line, not a pixel offset (code-place.ts).
+
+   The containment gives each chunk a counter scope of its own, so its first line resets the
+   count to the lines before it. */
+.code-lines .line-chunk {
+  display: block;
+  content-visibility: auto;
+}
+.code-nowrap .line-chunk {
+  width: max-content;
+  min-width: calc(var(--code-longest, 0) * 1ch + var(--code-gutter, 4ch));
+  contain-intrinsic-block-size: auto calc(var(--chunk-lines) * 1lh);
+}
+.code-wrap .line-chunk {
+  contain-intrinsic-block-size: auto calc(var(--chunk-rows, var(--chunk-lines)) * 1lh);
+}
+.code-lines .line-chunk > .line:first-child {
+  counter-reset: code-line var(--chunk-start);
+}
+/* An editor's textarea lies on these lines and lays its own text out whole: every line has to be
+   where that text is, so none stands at an expected size. Without the containment the lines
+   share the block's one count: a first line's reset would hold for that line alone, its siblings
+   keeping the count they inherit, so no line resets it. */
+.code-overlaid .line-chunk {
+  content-visibility: visible;
+}
+.code-overlaid .line-chunk > .line:first-child {
+  counter-reset: none;
+}
 .code-lines .line::before {
   content: counter(code-line);
-  position: sticky;
-  left: 0;
   display: inline-block;
   width: var(--code-gutter, 4ch);
   padding-right: 1.25ch;
@@ -219,6 +254,9 @@
    mark so a blank line still has its row, and its code starts past the column as before. */
 .code-surface.code-nowrap.code-lines {
   display: grid;
+  /* The gutter's layer orders it over the code layer only: a pinned row the block scrolls under
+     stays on top of the whole block. */
+  isolation: isolate;
 }
 .code-surface.code-nowrap.code-lines > * {
   grid-area: 1 / 1;
@@ -228,14 +266,13 @@
 }
 .code-nowrap.code-lines .line::before {
   content: "";
-  position: static;
   width: 0;
   padding: 0;
 }
 .code-gutter {
   position: sticky;
   left: 0;
-  z-index: 1;
+  z-index: var(--layer-sticky);
   justify-self: start;
   align-self: start;
   box-sizing: content-box;

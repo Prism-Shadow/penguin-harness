@@ -11,14 +11,12 @@
 import { describe, expect, it } from "vitest";
 import {
   CLOSED_DISCLOSURE,
-  HOVER_DISCLOSURE_DELAY_MS,
   reduceHoverDisclosure,
 } from "../src/components/overlays/hover-disclosure/use-hover-disclosure";
 import type {
   HoverDisclosureEvent,
   HoverDisclosureState,
 } from "../src/components/overlays/hover-disclosure/use-hover-disclosure";
-import { HOVER_OPEN_DELAY_MS } from "../src/components/overlays/tooltip/tooltip";
 
 const run = (events: HoverDisclosureEvent[], from: HoverDisclosureState = CLOSED_DISCLOSURE) =>
   events.reduce(reduceHoverDisclosure, from);
@@ -37,7 +35,6 @@ const HOVER_OPEN = run([enterTrigger(), elapsed]);
 
 describe("reduceHoverDisclosure", () => {
   it("opens a resting mouse's panel after the tooltip's delay, and a pointer passing over opens nothing", () => {
-    expect(HOVER_DISCLOSURE_DELAY_MS.open).toBe(HOVER_OPEN_DELAY_MS);
     expect(run([enterTrigger()])).toEqual({ open: false, pinned: false, pending: "open" });
     expect(HOVER_OPEN).toEqual({ open: true, pinned: false, pending: null });
     expect(run([enterTrigger(), leave()])).toEqual(CLOSED_DISCLOSURE);

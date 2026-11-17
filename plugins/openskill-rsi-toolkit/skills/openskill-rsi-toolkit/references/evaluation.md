@@ -1,6 +1,6 @@
 # Evaluation and reporting
 
-Train once per independent benchmark/training unit, then evaluate the same frozen `baseline` and `final` States on the complete selected test set three times by default. Honor an explicit repetition count. Each case and repetition starts with a fresh environment and conversation. Test feedback never changes the learned artifact or its selection.
+Follow the training and evaluation schedule specified by the user's request and the selected Benchmark. When evaluating frozen `baseline` and `final` States on a test set, run the requested number of evaluation repetitions (defaulting to one pass when unspecified). Each case and repetition starts with a fresh environment and conversation. Test feedback never changes the learned artifact or its selection.
 
 OpenSkill measures both States only after every construction Case has frozen. Other methods retain their own learning order. The required Test comparison is baseline versus final.
 

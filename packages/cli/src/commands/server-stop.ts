@@ -14,8 +14,10 @@
  */
 import { liveServerLock, readServerLock } from "@prismshadow/penguin-server/lock";
 import type { Command } from "commander";
-import type { Messages } from "../i18n.js";
-import { resolveRootOption } from "../root-option.js";
+import type { Messages } from "@prismshadow/penguin-server/cli";
+import { resolveRootOption } from "@prismshadow/penguin-server/cli";
+import { Bind, Component } from "@prismshadow/penguin-core/kernel";
+import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/cli";
 
 /** How long a server that was signalled gets to let go of its lock. */
 const STOP_TIMEOUT_MS = 15_000;
@@ -25,6 +27,9 @@ const STOP_TIMEOUT_MS = 15_000;
  * without a server to signal: the signal itself, the liveness of a pid, the clock, and the
  * platform — Windows is where a signal is not what it says it is.
  */
+
+/** The node the host located for a key, typed with this package's commander. */
+const node = (command: CliCommandProgram): Command => command as Command;
 export interface StopEffects {
   kill: (pid: number, signal: NodeJS.Signals | 0) => void;
   platform: NodeJS.Platform;
@@ -39,16 +44,12 @@ interface StopResult {
   detail?: string;
 }
 
-export function registerStopCommand(server: Command, t: Messages): void {
-  server
-    .command("stop")
-    .description(t.serverStop.desc)
-    .option("--root <dir>", t.common.root)
-    .action(async (opts: { root?: string }) => {
-      const result = await stop(resolveRootOption(opts.root));
-      process.stdout.write(JSON.stringify(result) + "\n");
-      if (!result.ok) process.exitCode = 1;
-    });
+export function registerStopCommand(stop: Command, t: Messages): void {
+  stop.option("--root <dir>", t.common.root).action(async (opts: { root?: string }) => {
+    const result = await stopServer(resolveRootOption(opts.root));
+    process.stdout.write(JSON.stringify(result) + "\n");
+    if (!result.ok) process.exitCode = 1;
+  });
 }
 
 const realEffects: StopEffects = {
@@ -64,7 +65,7 @@ function codeOf(err: unknown): string | null {
   return typeof code === "string" ? code : null;
 }
 
-export async function stop(root: string, fx: StopEffects = realEffects): Promise<StopResult> {
+export async function stopServer(root: string, fx: StopEffects = realEffects): Promise<StopResult> {
   // Already stopped is the outcome asked for, not a failure: the caller wants nothing serving
   // this root, and nothing is.
   const lock = await liveServerLock(root);
@@ -118,5 +119,31 @@ export async function stop(root: string, fx: StopEffects = realEffects): Promise
       };
     }
     await fx.sleep(250);
+  }
+}
+
+/** `penguin server stop`. */
+@Component({
+  contributes: {
+    "CliCommandsModule.commands": [
+      {
+        id: "cli.server.stop",
+        key: "server.stop",
+        summary: {
+          en: "Stop the server running on this data root and report the outcome as JSON",
+          zh: "停止本数据根目录上运行的服务，并以 JSON 报告结果",
+        },
+      },
+    ],
+  },
+})
+export class ServerStopCommand {
+  @Bind("cli.server.stop") command!: CliCommandCode<Messages>;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerStopCommand(node(command), ctx.messages);
+      },
+    };
   }
 }

@@ -89,7 +89,7 @@ import type { Approvals, PendingApproval } from "./approvals.js";
 import type { ChannelHub } from "./channel.js";
 import type { ErrorSink } from "./error-recorder.js";
 import { AgentStateStore } from "./agent-state.js";
-import type { LiveTail } from "./live-tail.js";
+import type { LiveRun, LiveTail } from "./live-tail.js";
 import { unrunSource } from "./session-sources.js";
 import { StreamErrorWatcher } from "./stream-error-watcher.js";
 import type { TitleNotifier } from "./title-generator.js";
@@ -197,10 +197,16 @@ export type RunOpts = {
   signal: AbortSignal;
 };
 
+/** The target pair plus a run's options (`approve` answers the compaction's tool rounds). */
+export interface SwitchModelOpts extends RunOpts {
+  provider: string;
+  modelId: string;
+}
+
 export interface RuntimeSession {
   readonly sessionId: string;
   run(newMessages: AmspRecord[], opts: RunOpts): AsyncGenerator<AmspRecord>;
-  compact(opts: { signal: AbortSignal }): AsyncGenerator<AmspRecord>;
+  compact(opts: RunOpts): AsyncGenerator<AmspRecord>;
   /**
    * The running context's model (core `Session.provider` / `Session.modelId`, getters over
    * the context's session_meta): the row's pair at creation, moved by each in-session switch
@@ -217,11 +223,7 @@ export interface RuntimeSession {
    * switches without streaming anything. Optional: test fakes may omit it, reading as
    * "switching is not available".
    */
-  switchModel?(opts: {
-    provider: string;
-    modelId: string;
-    signal: AbortSignal;
-  }): AsyncGenerator<AmspRecord, StopReason>;
+  switchModel?(opts: SwitchModelOpts): AsyncGenerator<AmspRecord, StopReason>;
   /**
    * The Session's thinking level (core `Session.thinkingLevel`, plain state): soft-limited —
    * an assignment applies from the Session's very next LLM request. Optional: test fakes may
@@ -308,7 +310,7 @@ export interface RuntimeSession {
     messages: AmspRecord[],
     opts?: SubagentMessageOptions,
   ): Promise<SubagentMessageOutcome>;
-  /** Subscribes the host's session-lifetime fallback approval sink for child sessions (core `Session.setSubagentApprovalFallback`). Optional. */
+  /** Subscribes the host's session-lifetime fallback approval sink for child sessions (core `Session.setSubagentApprovalFallback`, which wraps it with the command policy). Optional. */
   setSubagentApprovalFallback?(approve: ApproveFn): void;
   /** Aborts one child session's current run, keeping the session (core `Session.abortBackgroundSubagentRun`); false when unknown or idle. Optional. */
   abortBackgroundSubagentRun?(childSessionId: string): boolean;
@@ -319,7 +321,7 @@ export interface RuntimeSession {
   /** Subscribes background-task state changes (core `Session.onBackgroundState`): the manager re-counts the live registries and publishes `session_background` when the counts moved. Optional. */
   onBackgroundState?(listener: () => void): void;
   /** Releases environment resources — kills the remaining background processes (core `Session.dispose`). Optional, idempotent. */
-  dispose?(): void;
+  dispose?(): void | Promise<void>;
 }
 
 /** The underlying loader behind get-or-resume-or-heal. */
@@ -494,6 +496,8 @@ export interface SessionManagerDeps {
   errors?: ErrorSink;
   /** Provider auth refresh (optional for tests that do not exercise external model credentials). */
   modelScopeAuth?: ModelScopeAuth;
+  /** The Project config's mtime-gated reads, for noticing edits made outside this server (optional like `modelScopeAuth`). */
+  projectConfig?: Pick<ProjectConfigStore, "readRaw">;
   log?: (line: string) => void;
   /** Goal run-state persistence (optional like `titles`: without it, goals run but leave no restorable record). */
   /**
@@ -829,7 +833,9 @@ export class SessionManager {
   private readonly keptLoaded = new Set<string>();
   /** Per-Agent config generation (key = agentKey), bumped by invalidateAgentRuntimes when a Project's credentials change. */
   private readonly agentGenerations: Map<string, number>;
-  /** Open streaming fragments of running sessions (fed by drive, served to GET /messages; see live-tail.ts). */
+  /** Each Project's model config as last seen (see noticeModelConfigEdit). */
+  private readonly modelConfigSeen = new Map<string, { table: unknown; models: string }>();
+  /** Open streaming fragments and the current run's records (fed by drive, served to GET /messages; see live-tail.ts). */
   private readonly liveTail: LiveTail;
   private readonly sweepTimer: NodeJS.Timeout;
   /** Clock for persisted timestamps (see SessionManagerDeps.now); wall clock unless injected. */
@@ -922,7 +928,9 @@ export class SessionManager {
     childSessionId: string,
     messages: AmspRecord[],
   ): Promise<SubagentMessageOutcome> {
-    const entry = await this.ensureEntry(sessionId);
+    // Loaded under the lock every other load takes: two concurrent loads would leave two
+    // runtimes, and the one dropped from the table would escape the Session's deletion.
+    const entry = await this.withLock(sessionId, () => this.ensureEntry(sessionId));
     entry.lastActivityMs = Date.now();
     const childRow = this.deps.sessions.findById(childSessionId);
     const resume =
@@ -977,6 +985,16 @@ export class SessionManager {
    */
   liveFragments(sessionId: string): AmspRecord[] {
     return this.liveTail.fragments(sessionId);
+  }
+
+  /**
+   * The current run's records (one drive: a Task, a goal loop, a compaction or a model switch)
+   * in publish order, each streamed fragment's deltas folded into its start, with the records
+   * the run starts at; null when no run is under way (see live-tail.ts). The run form of
+   * GET /messages attaches the records and cuts its history read before the run.
+   */
+  liveRun(sessionId: string): LiveRun | null {
+    return this.liveTail.run(sessionId);
   }
 
   /**
@@ -1060,7 +1078,8 @@ export class SessionManager {
     // The entry-lifetime approve doubles as the children's fallback approval sink: a child
     // approval with no window and no background-launch standing sink escalates to the user
     // (SSE approval_request) instead of parking until the model's next poll — the parent
-    // session idle included.
+    // session idle included. Core wraps the sink with the command policy, so a child's `ask`
+    // hit routed there arrives with its policy reason and still reaches a person.
     const entry = this.entries.get(sessionId);
     if (entry) session.setSubagentApprovalFallback?.(this.entryApprove(entry));
   }
@@ -1076,7 +1095,8 @@ export class SessionManager {
    * is denied here instead of waiting for an answer that is never coming (see `unattended`
    * in approvals.ts). The marker is the row's durable `client = "org"` stamp — desk, ticket
    * and the sub-sessions that inherit it — read per decision, so a row the reconcile pass
-   * stamps later is covered from its next decision on.
+   * stamps later is covered from its next decision on. The same holds for an `ask` hit, so
+   * an organization's Session never gets a `gh pr merge` through: nobody can say yes.
    */
   private entryApprove(entry: RuntimeEntry): ApproveFn {
     return makeApprove({
@@ -1090,6 +1110,7 @@ export class SessionManager {
           type: "approval_request",
           toolCall: pending.toolCall,
           ...(pending.origin !== undefined ? { origin: pending.origin } : {}),
+          ...(pending.reason !== undefined ? { reason: pending.reason } : {}),
         }),
     });
   }
@@ -1145,6 +1166,29 @@ export class SessionManager {
     for (const agentId of agentIds) this.invalidateAgentRuntimes(projectId, agentId);
   }
 
+  /**
+   * The same invalidation for a model change written to the Project config file by anyone
+   * else — the CLI, a hand edit, another process on this data root. Called before a runtime
+   * is built or reused; one stat while the file is unchanged. Only the model keys are
+   * compared, by content: a rename or a chat-defaults edit must not rebuild runtimes, and a
+   * fresh mtime re-reads the file without meaning it changed. A Project's first look only
+   * records — there is nothing to compare it with.
+   */
+  async noticeModelConfigEdit(projectId: string): Promise<void> {
+    // An unreadable file is the load's to report.
+    const table = await this.deps.projectConfig?.readRaw(projectId).catch(() => undefined);
+    const seen = this.modelConfigSeen.get(projectId);
+    if (table === undefined || table === seen?.table) return;
+    const models = JSON.stringify([
+      table.models,
+      table.providers,
+      table.default_model,
+      table.vision_model,
+    ]);
+    this.modelConfigSeen.set(projectId, { table, models });
+    if (seen !== undefined && seen.models !== models) this.invalidateProjectRuntimes(projectId);
+  }
+
   // —— Task / compaction drive ——
 
   /**
@@ -1159,13 +1203,15 @@ export class SessionManager {
    */
   assertCanAcceptTask(
     sessionId: string,
-    opts?: { queueIfBusy?: boolean; interrupt?: boolean },
+    opts?: { queueIfBusy?: boolean; interrupt?: boolean; steerIfBusy?: boolean },
   ): void {
     this.assertOpen();
     this.assertAgentNotDeleting(sessionId);
     this.assertSessionNotDeleting(sessionId);
     const entry = this.entries.get(sessionId);
-    if (entry && !opts?.queueIfBusy && !opts?.interrupt) this.assertIdle(entry);
+    if (entry && !opts?.queueIfBusy && !opts?.interrupt && !opts?.steerIfBusy) {
+      this.assertIdle(entry);
+    }
   }
 
   /**
@@ -1201,12 +1247,23 @@ export class SessionManager {
    * With `interrupt`, a busy session aborts its run and the input waits at the head of the
    * queue instead (see enqueueInterrupt). So does an idle one whose queue has not drained yet,
    * so that the interrupt cannot overtake an earlier one still waiting to start.
+   *
+   * With `steerIfBusy`, a running Task takes the input as steering, exactly as `steer` gives it
+   * (`steered: true`; `recall` is then the steering message's content). A compaction has no
+   * Task to steer, and a run already settling no longer takes steering (core refuses it): both
+   * queue the input as `queueIfBusy` does. Decided here, under the lock, so one request does
+   * whatever the Session's state calls for.
    */
   async startTask(
     sessionId: string,
     input: AmspRecord[],
-    opts?: { queueIfBusy?: boolean; interrupt?: boolean; recall?: RecallStore },
-  ): Promise<{ sessionId: string; queued: boolean }> {
+    opts?: {
+      queueIfBusy?: boolean;
+      interrupt?: boolean;
+      steerIfBusy?: boolean;
+      recall?: RecallStore;
+    },
+  ): Promise<{ sessionId: string; queued: boolean; steered?: boolean }> {
     return this.withLock(sessionId, async () => {
       this.assertOpen();
       this.assertAgentNotDeleting(sessionId);
@@ -1214,6 +1271,13 @@ export class SessionManager {
       const entry = await this.ensureEntry(sessionId);
       // Neither started nor queued on a runtime stranded on a model it cannot reach.
       assertNotStranded(entry);
+      if (
+        opts?.steerIfBusy &&
+        entry.status === "running" &&
+        this.steerRunning(entry, input, opts.recall ?? recallStoreOf(input))
+      ) {
+        return { sessionId: entry.sessionId, queued: false, steered: true };
+      }
       // A person's message opens a fresh chain for company mode's hop accounting, whether the
       // Task starts now or waits in the queue (see SessionManagerDeps.onHumanInput).
       if (isHumanInput(input)) this.deps.onHumanInput?.(sessionId);
@@ -1226,7 +1290,7 @@ export class SessionManager {
         });
         return { sessionId: entry.sessionId, queued: true };
       }
-      if (entry.status !== "idle" && opts?.queueIfBusy) {
+      if (entry.status !== "idle" && (opts?.queueIfBusy || opts?.steerIfBusy)) {
         this.assertQueueRoom(entry);
         entry.followUps.push({
           id: randomUUID(),
@@ -1312,9 +1376,19 @@ export class SessionManager {
       assertNotStranded(entry);
       this.assertIdle(entry);
       const objective = args.objective;
-      const started = await entry.session.runUserPromptHook?.("goal", objective, {
-        budget: args.budget,
-      });
+      // A start hook that fails (its script errs or times out, or the sandbox refuses to run
+      // it) is a refusal naming its reason, with no Task submitted — not an internal error.
+      const started = await entry.session
+        .runUserPromptHook?.("goal", objective, { budget: args.budget })
+        .catch((err: unknown) => {
+          if (err instanceof HttpError) throw err;
+          const reason = err instanceof Error ? err.message : String(err);
+          throw new HttpError(
+            409,
+            "goal_start_failed",
+            `Goal mode could not start: the goal plugin's start hook failed (${reason}).`,
+          );
+        });
       if (!started) throw goalPluginNotInstalled();
       if (!started.context) {
         throw new HttpError(
@@ -1540,7 +1614,9 @@ export class SessionManager {
       entry.abort = ac;
       entry.lastActivityMs = Date.now();
       this.publishState(entry, "compacting");
-      const gen = entry.session.compact({ signal: ac.signal });
+      // The compaction's tool rounds are approved like a Task's calls: under always-ask a
+      // hand-off file write waits for the user's click, as any write would.
+      const gen = entry.session.compact({ approve: this.entryApprove(entry), signal: ac.signal });
       entry.running = this.drive(entry, gen);
       return { sessionId: entry.sessionId };
     });
@@ -1618,7 +1694,11 @@ export class SessionManager {
         this.entries.delete(entry.sessionId);
       };
       const ac = new AbortController();
-      const gen = entry.session.switchModel({ ...ref, signal: ac.signal });
+      const gen = entry.session.switchModel({
+        ...ref,
+        approve: this.entryApprove(entry),
+        signal: ac.signal,
+      });
       const head = gen.next();
       const settled = (): void => {
         entry.abort = null;
@@ -1729,13 +1809,22 @@ export class SessionManager {
    */
   steer(sessionId: string, input: AmspRecord[], recall: RecallStore): void {
     const entry = this.entries.get(sessionId);
-    if (!entry || entry.status !== "running" || !entry.session.steer(input)) {
+    if (!entry || !this.steerRunning(entry, input, recall)) {
       throw new HttpError(
         409,
         "not_running",
         "This Session has no Task in progress; send the message as a new task instead.",
       );
     }
+  }
+
+  /**
+   * Hands `input` to the entry's running Task as steering and mirrors it (see `steer`); false,
+   * with nothing changed, when there is no Task to take it — the Session is not running one, or
+   * core refuses (no engine yet, or the run is settling).
+   */
+  private steerRunning(entry: RuntimeEntry, input: AmspRecord[], recall: RecallStore): boolean {
+    if (entry.status !== "running" || !entry.session.steer(input)) return false;
     entry.pendingSteering.push({
       info: {
         id: randomUUID(),
@@ -1748,6 +1837,7 @@ export class SessionManager {
     });
     entry.lastActivityMs = Date.now();
     this.publishState(entry, entry.status);
+    return true;
   }
 
   /**
@@ -2001,17 +2091,21 @@ export class SessionManager {
    * settles, so interrupt cleanup never races a dying environment. Deleting a Session /
    * Agent / Project is the one intent that must also end the background processes the
    * conversation started (a dev server surviving its deleted conversation is
-   * unreachable from every UI, running forever).
+   * unreachable from every UI, running forever). Subagent children are not the drive's:
+   * their rounds stop at once, or they go on sending requests while it settles. Resolves
+   * once the drive and the children's cancellation writes are done.
    */
-  private disposeRemoved(entry: RuntimeEntry): void {
-    const dispose = (): void => entry.session.dispose?.();
-    if (entry.running) void entry.running.then(dispose, dispose);
-    else dispose();
+  private disposeRemoved(entry: RuntimeEntry): Promise<void> {
+    for (const child of entry.session.listBackgroundSubagents?.() ?? []) {
+      entry.session.abortBackgroundSubagentRun?.(child.sessionId);
+    }
+    const dispose = (): void | Promise<void> => entry.session.dispose?.();
+    return entry.running ? entry.running.then(dispose, dispose) : Promise.resolve(dispose());
   }
 
   /**
    * Before deleting a Project, converge all its active runs and clear them out of the
-   * active table. Returns the in-flight drive Promises of the affected entries: the
+   * active table. Returns the drive and background-cleanup Promises of the affected entries: the
    * caller (deleteProject) should await them before removing the directory, so that
    * interrupt-cleanup Trace writes don't recreate the directory after deletion.
    */
@@ -2021,9 +2115,8 @@ export class SessionManager {
       if (entry.projectId !== projectId) continue;
       entry.approvals.denyAll();
       entry.abort?.abort();
-      if (entry.running) runnings.push(entry.running);
       this.entries.delete(key);
-      this.disposeRemoved(entry);
+      runnings.push(this.disposeRemoved(entry));
     }
     return runnings;
   }
@@ -2044,9 +2137,8 @@ export class SessionManager {
       if (entry.projectId !== projectId || entry.agentId !== agentId) continue;
       entry.approvals.denyAll();
       entry.abort?.abort();
-      if (entry.running) runnings.push(entry.running);
       this.entries.delete(key);
-      this.disposeRemoved(entry);
+      runnings.push(this.disposeRemoved(entry));
     }
     return runnings;
   }
@@ -2063,7 +2155,7 @@ export class SessionManager {
    * a new task recreates the entry and Trace file, reviving an already-deleted Session
    * between the abort snapshot and the file removal. The caller must call
    * endSessionDeletion once deletion finishes (success or failure). Returns the
-   * in-flight drive Promise: the caller should await it before deleting the Trace file,
+   * drive and background-cleanup Promise: the caller should await it before deleting the Trace file,
    * so cleanup writes don't recreate the file.
    */
   beginSessionDeletion(sessionId: string): Promise<void>[] {
@@ -2073,8 +2165,7 @@ export class SessionManager {
     entry.approvals.denyAll();
     entry.abort?.abort();
     this.entries.delete(sessionId);
-    this.disposeRemoved(entry);
-    return entry.running ? [entry.running] : [];
+    return [this.disposeRemoved(entry)];
   }
 
   endSessionDeletion(sessionId: string): void {
@@ -2104,16 +2195,13 @@ export class SessionManager {
     for (const entry of this.entries.values()) {
       entry.approvals.denyAll();
       entry.abort?.abort();
-      if (entry.running) pending.push(entry.running);
       // Suspend means the environment too: dispose kills the Session's remaining
       // background processes (a dev server the conversation started, etc.). Without
       // this, a hot swap orphans them — the OS process keeps running while the next
       // App's freshly resumed Session starts with an empty process list, so the stop
       // control has gone blind. Sequenced after the in-flight drive settles, the same
       // ordering disposeRemoved uses.
-      const dispose = (): void => entry.session.dispose?.();
-      if (entry.running) void entry.running.then(dispose, dispose);
-      else dispose();
+      pending.push(this.disposeRemoved(entry));
     }
     this.entries.clear();
     if (pending.length === 0) return;
@@ -2268,6 +2356,8 @@ export class SessionManager {
       provider: row.provider,
     });
     if (refreshed?.changed) this.invalidateProjectRuntimes(row.projectId);
+    // After the refresh: what it wrote to the file is then already this look's.
+    await this.noticeModelConfigEdit(row.projectId);
   }
 
   /** get-or-resume-or-heal: use directly on an active-table hit; otherwise load via the loader, updating the index's primary key when it answers another id. */
@@ -2308,14 +2398,10 @@ export class SessionManager {
       this.entries.delete(sessionId);
       discardedBackgroundTasks = existing.backgroundTasks;
     }
+    const notFound = (): HttpError =>
+      new HttpError(404, "session_not_found", "Session does not exist or you do not have access.");
     const row = this.deps.sessions.findById(sessionId);
-    if (!row) {
-      throw new HttpError(
-        404,
-        "session_not_found",
-        "Session does not exist or you do not have access.",
-      );
-    }
+    if (!row) throw notFound();
     await this.refreshProviderCredentialIfNeeded(row);
     // Captured before the (awaited) load: an invalidation racing with the load leaves
     // this entry stale, so the access after next rebuilds it with the new values.
@@ -2336,9 +2422,12 @@ export class SessionManager {
     // don't rebuild the entry (avoids reviving an orphaned Trace).
     this.assertSessionNotDeleting(row.sessionId);
     this.assertAgentNotDeleting(row.sessionId);
+    // A deletion can also begin and end within one load: the row is the last word.
+    const current = this.deps.sessions.findById(row.sessionId);
+    if (current === null) throw notFound();
     // A thinking-level PATCH that landed during the (awaited) load updated the row but found
     // no entry to assign, and the loader applied the snapshot's level: re-read the pin.
-    const pin = this.deps.sessions.findById(row.sessionId)?.thinkingLevel;
+    const pin = current.thinkingLevel;
     if (pin && pin !== row.thinkingLevel) session.thinkingLevel = pin;
     let currentId = row.sessionId;
     if (session.sessionId !== row.sessionId) {
@@ -2436,6 +2525,10 @@ export class SessionManager {
     gen: AsyncGenerator<AmspRecord>,
     titleSource?: { userExcerpt: string; echo?: readonly AmspRecord[] },
   ): Promise<void> {
+    // The run's log opens before anything of it is published: the input echo included, which
+    // is the run's as much as what the generator yields. Every caller flips the status in the
+    // same synchronous tick, so a history capture that reads the Session busy finds this log.
+    this.liveTail.begin(entry.sessionId);
     const ctx: UsageContext = {
       projectId: entry.projectId,
       agentId: entry.agentId,
@@ -2496,14 +2589,20 @@ export class SessionManager {
     // exist) — the latter is cleaned up when the parent-level tool_call_output settles;
     // if the call is still in the queue at that point, it never produced a session_meta.
     const subagentPrompts = new Map<string, string>();
-    // Re-fetches the channel per publish, like the loop below (see the comment there).
-    // Read before the run's first step: the generator has not started, so this is the state
-    // the run opens on.
+    // Re-fetches the channel per publish, like the loop below (see the comment there), and
+    // logs the echo in the run's records in the same tick. Read before the run's first step:
+    // the generator has not started, so this is the state the run opens on.
     const echo = new InputEcho(
       titleSource?.echo ?? [],
-      (m) => this.deps.channels.get(entry.sessionId).publish(m),
+      (m) => {
+        const published = this.deps.channels.get(entry.sessionId).publish(m);
+        this.liveTail.observe(entry.sessionId, m, published);
+      },
       entry.session.contextOpenPending?.() === true,
     );
+    // Inside a main-session compaction span: its requests are not the run's first request (the
+    // engine writes no run input ahead of them).
+    let compacting = false;
     try {
       for await (const msg of gen) {
         echo.before(msg);
@@ -2587,25 +2686,27 @@ export class SessionManager {
           if (bt === "mcp_connect_begin" || bt === "mcp_connect_end" || bt === "tool_list_ready") {
             entry.pendingBootstrap.push(msg);
           }
+          if (bt === "compaction_begin") compacting = true;
+          else if (bt === "compaction_end") compacting = false;
           // First request of the run: the engine writes input → bootstrap records → tool
           // list to the Trace BEFORE issuing the request, so both holds are persisted by
           // now — end them here rather than at idle. Holding for the whole run would
           // outlive the messages endpoint's tail-window dedup: once the Task appends
           // more records than the window, the input would be judged "not yet in the
           // Trace" and served a second time at the end of history.
-          if (bt === "request_begin") {
+          if (bt === "request_begin" && !compacting) {
             entry.pendingInputs = [];
             entry.pendingBootstrap = [];
           }
         }
-        // Live-tail bookkeeping in the same synchronous tick as the publish below: the
-        // messages endpoint captures "channel cursor + open fragments" between two
-        // publishes, so the pair is always a consistent snapshot (see live-tail.ts).
-        this.liveTail.observe(entry.sessionId, msg);
         // Re-fetch the channel before every publish (matches publishEvent): the channel
         // may have been recycled and recreated during a long wait on approval, and
         // holding a stale reference would send output to an orphaned, detached channel.
-        this.deps.channels.get(entry.sessionId).publish(msg);
+        const published = this.deps.channels.get(entry.sessionId).publish(msg);
+        // Live-tail bookkeeping in the same synchronous tick as the publish: the messages
+        // endpoint captures "channel cursor + open fragments + the run's records" between
+        // two publishes, so the capture is always a consistent snapshot (see live-tail.ts).
+        this.liveTail.observe(entry.sessionId, msg, published);
         echo.after(msg);
         watcher?.observe(msg);
         try {
@@ -2627,8 +2728,9 @@ export class SessionManager {
       echo.flush();
       // Wrap-up: persist any still-pending LLM failure and clear the tool-name cache (the watcher's state doesn't carry across runs).
       watcher?.close();
-      // The run is over: no fragment will ever continue, so drop the live tail before the
-      // idle flip (GET /messages stops attaching `live` the moment status reads idle).
+      // The run is over: no fragment will ever continue, so drop the live tail — the run's
+      // log with it — before the idle flip (GET /messages stops attaching the open fragments,
+      // and the run form's records read empty, the moment status reads idle).
       this.liveTail.clear(entry.sessionId);
       // The pending holds are NOT cleared here: a run aborted mid-bootstrap wrote nothing
       // to the Trace, so its held input (and the aborted connect pair) are the only copy
@@ -2910,6 +3012,7 @@ export abstract class Sessions extends Interface<
     | "abortSubagentRun"
     | "pendingFollowUpsOf"
     | "liveFragments"
+    | "liveRun"
     | "pendingInputs"
     | "pendingBootstrap"
     | "activeCountForAgent"
@@ -2956,6 +3059,7 @@ export abstract class SessionServiceIface extends Interface<
     | "listingOf"
     | "listSessions"
     | "archivedRows"
+    | "activeRows"
     | "sessionStats"
     | "createSession"
     | "defaultSandbox"
@@ -3121,6 +3225,7 @@ export class SessionsModule {
       recorder,
       errors,
       modelScopeAuth: this.modelScopeAuth,
+      projectConfig,
       titles,
       log,
       notifyProjectUsers,
