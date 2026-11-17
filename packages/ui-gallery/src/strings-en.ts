@@ -1878,8 +1878,6 @@ export const en: GalleryStrings = {
       back: "Back to the list",
       search: "Search agents",
       create: "New",
-      cardView: "Cards",
-      listView: "List",
       cards: "Cards",
       padded: "Padded: a title row above the content",
       cardTitle: "Spend this month",
@@ -2291,6 +2289,8 @@ export const en: GalleryStrings = {
       loading: "Loading: the picture's tone",
       loaded: "Loaded",
       fallback: "Failed: the generated cover",
+      cardView: "Cards",
+      listView: "List",
       cards: "Cover cards",
       cardsHint:
         "Short words, overlong words, a card with tags, facts and two controls, one with none of them, and the placeholder while a list is read.",

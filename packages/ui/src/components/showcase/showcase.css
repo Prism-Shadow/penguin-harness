@@ -253,7 +253,10 @@
 
 .showcase-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--showcase-column-min, 14rem)), 1fr));
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(min(100%, var(--showcase-column-min, 14rem)), 1fr)
+  );
   gap: 1rem;
   /* Named, so the phone rule below reads the grid's width even when a card is a container of
      its own (the Web App's card is one, for its controls). */

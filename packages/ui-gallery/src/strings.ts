@@ -1838,8 +1838,6 @@ export const zh = {
       back: "返回列表",
       search: "搜索智能体",
       create: "新建",
-      cardView: "卡片",
-      listView: "列表",
       cards: "卡片",
       padded: "带内边距：标题行在内容上方",
       cardTitle: "本月花费",
@@ -2223,6 +2221,8 @@ export const zh = {
       loading: "加载中：主色的底",
       loaded: "已加载",
       fallback: "加载失败：生成封面",
+      cardView: "卡片",
+      listView: "列表",
       cards: "封面卡片",
       cardsHint:
         "短文字、超长文字、带标签与信息行和两个操作的卡片、什么都不带的卡片，以及列表读取中的占位。",
