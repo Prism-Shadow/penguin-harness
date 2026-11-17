@@ -13,6 +13,10 @@
  *   kept whole.
  * - Given a bold span closing right after a URL and before CJK, or after full-width punctuation
  *   and before CJK, the span is bold.
+ * - Given a `**` right after closing ASCII punctuation and before a letter or a digit
+ *   (`**Confirmed.**Next`), the span is bold, and it stays bold while the reply streams in past
+ *   the `**`; a run after an opening bracket or a quote, a single `*` and `_` parse as under
+ *   CommonMark.
  * - Given English, the links GFM made are unchanged: trailing sentence punctuation, `**` and a
  *   trailing `&name;` are left out, `_`, `*`, `&` and balanced parentheses or brackets inside the
  *   URL stay in, a `]` the URL did not open ends it, `www.` links over `http://`, an email links
@@ -159,6 +163,30 @@ describe("bold beside a URL and beside CJK", () => {
     expect(render("**见 https://a.com/index**查看")).toBe(
       `<strong>见 ${link("https://a.com/index")}</strong>查看`,
     );
+  });
+});
+
+describe("bold closing after ASCII punctuation", () => {
+  it("closes before a letter or a digit", () => {
+    expect(render("**Confirmed.**Next sentence.")).toBe(
+      "<strong>Confirmed.</strong>Next sentence.",
+    );
+    expect(render("**算，明确是 bug。**首次初始化失败后。")).toBe(
+      "<strong>算，明确是 bug。</strong>首次初始化失败后。",
+    );
+    expect(render("**端口:**7364")).toBe("<strong>端口:</strong>7364");
+  });
+
+  it("leaves an opening bracket, a quote, a single `*` and `_` to CommonMark", () => {
+    expect(render("Pass **kwargs to f(**opts)")).toBe("Pass **kwargs to f(**opts)");
+    expect(render('**a "**b**" c**')).toBe('<strong>a "<strong>b</strong>" c</strong>');
+    expect(render("*Note.*Next")).toBe("*Note.*Next");
+    expect(render("__Note.__Next")).toBe("__Note.__Next");
+  });
+
+  it("stays bold while the next word streams in", () => {
+    expect(render("**Confirmed.**")).toBe("<strong>Confirmed.</strong>");
+    expect(render("**Confirmed.**N")).toBe("<strong>Confirmed.</strong>N");
   });
 });
 
