@@ -603,18 +603,21 @@ describe("plugin mirrors, as a settings group", () => {
     for (const rules of MIRROR_RULES) {
       for (const rule of rules) expect(rewriteRuleRisk(rule)).toBeNull();
     }
+    const [npmRules, githubRules, releaseRules] = MIRROR_RULES;
     expect(
-      pluginProxyMirrors("https://registry.npmjs.org/acme/-/acme-1.0.0.tgz", MIRROR_RULES[0]),
+      pluginProxyMirrors("https://registry.npmjs.org/acme/-/acme-1.0.0.tgz", npmRules),
     ).toEqual(["https://registry.npmmirror.com/acme/-/acme-1.0.0.tgz"]);
     expect(
-      pluginProxyMirrors(
-        "https://raw.githubusercontent.com/acme/acme/main/README.md",
-        MIRROR_RULES[1],
-      ),
+      pluginProxyMirrors("https://raw.githubusercontent.com/acme/acme/main/README.md", githubRules),
     ).toEqual(["https://fastly.jsdelivr.net/gh/acme/acme@main/README.md"]);
     expect(
-      pluginProxyMirrors("https://github.com/acme/acme/releases/download/v1.0.0/acme.tgz", MIRROR_RULES[2]),
-    ).toEqual(["https://gh-proxy.com/https://github.com/acme/acme/releases/download/v1.0.0/acme.tgz"]);
-    expect(pluginProxyMirrors("https://example.com/x", MIRROR_RULES[0])).toEqual([]);
+      pluginProxyMirrors(
+        "https://github.com/acme/acme/releases/download/v1.0.0/acme.tgz",
+        releaseRules,
+      ),
+    ).toEqual([
+      "https://gh-proxy.com/https://github.com/acme/acme/releases/download/v1.0.0/acme.tgz",
+    ]);
+    expect(pluginProxyMirrors("https://example.com/x", npmRules)).toEqual([]);
   });
 });
