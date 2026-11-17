@@ -122,6 +122,7 @@ export function mirrorRulesOf(value: unknown): readonly PluginProxyRule[] {
               "在源地址之后按顺序尝试的镜像：npm registry 镜像供给 npm 包与索引发布到 npm 的 tarball；GitHub 镜像供给发布索引与其资产的仓库内文件。留空（默认）不尝试任何镜像：只走源自己的地址。",
             hint: "One mirror per line, tried top to bottom.",
             hintZh: "每行一个镜像，从上到下依次尝试。",
+            default: [],
             // The ids the group knows; the page draws them as the choices a line can be.
             maxItems: 3,
           },
