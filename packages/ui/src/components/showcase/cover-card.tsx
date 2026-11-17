@@ -12,13 +12,13 @@
  * controls hides them from assistive technology.
  *
  * `ShowcaseGrid` lays the cards out by the width of the column it stands in: as many columns of
- * at least 17 rem as fit, one on a phone, where a card lies down (its cover a thumbnail beside
+ * at least 14 rem as fit, one on a phone, where a card lies down (its cover a thumbnail beside
  * its text).
  *
  * Props only: every word is the caller's. The look is showcase.css; the card is a `ui-showcase`
  * host (hooks.ts).
  */
-import type { HTMLAttributes, MouseEvent, ReactNode } from "react";
+import { useEffect, useState, type HTMLAttributes, type MouseEvent, type ReactNode } from "react";
 
 export interface CoverCardProps extends Omit<HTMLAttributes<HTMLElement>, "title"> {
   /** The card's cover (`Cover`, at its thumbnail rendition). */
@@ -100,14 +100,38 @@ export function CoverCard({
   );
 }
 
-/** The grid cover cards stand in: as many columns of at least 17 rem as its own width holds. */
+export type ShowcaseLayout = "cards" | "list";
+
+/** Keep the chosen layout on this browser. A public site's first render must also work on the server. */
+export function useShowcaseLayout(storageKey: string) {
+  const [layout, setLayout] = useState<ShowcaseLayout>("cards");
+  useEffect(() => {
+    try {
+      setLayout(localStorage.getItem(storageKey) === "list" ? "list" : "cards");
+    } catch {
+      // The control still works when the browser disallows storage.
+    }
+  }, [storageKey]);
+  const chooseLayout = (next: ShowcaseLayout) => {
+    setLayout(next);
+    try {
+      localStorage.setItem(storageKey, next);
+    } catch {
+      // This visit retains the choice.
+    }
+  };
+  return [layout, chooseLayout] as const;
+}
+
+/** The same cards and actions in a responsive grid or a compact one-column list. */
 export function ShowcaseGrid({
   children,
   className = "",
+  layout = "cards",
   ...rest
-}: HTMLAttributes<HTMLDivElement>) {
+}: HTMLAttributes<HTMLDivElement> & { layout?: ShowcaseLayout }) {
   return (
-    <div {...rest} className={`showcase showcase-grid ${className}`}>
+    <div {...rest} className={`showcase showcase-grid ${className}`} data-layout={layout}>
       {children}
     </div>
   );

@@ -253,7 +253,7 @@
 
 .showcase-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 14rem), 1fr));
   gap: 1rem;
   /* Named, so the phone rule below reads the grid's width even when a card is a container of
      its own (the Web App's card is one, for its controls). */
@@ -288,6 +288,48 @@
   }
 }
 
+.showcase-grid[data-layout="list"] {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+.showcase-grid[data-layout="list"] > .showcase-card {
+  border: 0;
+  border-bottom: var(--showcase-line-w, 1px) solid var(--showcase-line, currentColor);
+  border-radius: 0;
+  background: transparent;
+}
+.showcase-grid[data-layout="list"] > .showcase-card > .showcase-card-open {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.875rem;
+  padding: 0.625rem 0.25rem;
+}
+.showcase-grid[data-layout="list"] > .showcase-card > .showcase-card-open > .showcase-cover {
+  width: 4rem;
+  flex: none;
+  border-radius: var(--showcase-radius-sm, 0.5rem);
+}
+.showcase-grid[data-layout="list"] .showcase-card-open > .showcase-card-body {
+  flex: 1;
+  padding: 0;
+}
+.showcase-grid[data-layout="list"] .showcase-card-desc {
+  min-height: 0;
+}
+.showcase-grid[data-layout="list"] .showcase-card-foot {
+  padding: 0 0.25rem 0.625rem;
+}
+@container showcase-grid (min-width: 40rem) {
+  .showcase-grid[data-layout="list"] > .showcase-card {
+    flex-direction: row;
+    align-items: center;
+    gap: 1rem;
+  }
+  .showcase-grid[data-layout="list"] .showcase-card-foot {
+    width: 36%;
+    padding: 0.625rem 0.25rem;
+  }
+}
 /* --------------------------------------------------------------- carousel */
 
 .showcase-carousel {
