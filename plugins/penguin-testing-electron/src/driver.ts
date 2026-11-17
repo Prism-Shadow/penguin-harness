@@ -159,7 +159,10 @@ export async function launchHarness(options: LaunchOptions = {}): Promise<Harnes
         body: JSON.stringify({ dataBase64, overwrite: true }),
       });
       if (!response.ok) {
-        throw new Error(`install: the instance refused ${pluginDir} (${response.status})`);
+        const detail = await response.text().catch(() => "");
+        throw new Error(
+          `install: the instance refused ${pluginDir} (${response.status}): ${detail.slice(0, 400)}`,
+        );
       }
       await import("node:fs").then((fs) => fs.promises.rm(tarball, { force: true }));
     },
