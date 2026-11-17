@@ -139,9 +139,9 @@ const misplacedRows = (page, longTitles) =>
         right: box.left + list.clientLeft + list.clientWidth - parseFloat(style.paddingRight),
       };
       const row = button.parentElement.getBoundingClientRect();
-      const slotEl = button.nextElementSibling;
+      const slotEl = button.parentElement.querySelector("[data-session-details]");
+      const shown = slotEl.getClientRects().length > 0;
       const slot = slotEl.getBoundingClientRect();
-      const [actions, time] = [...slotEl.children].map((el) => el.getBoundingClientRect());
       const titleEl = button.querySelector(".truncate");
       const title = titleEl.textContent;
       const problems = [];
@@ -153,10 +153,15 @@ const misplacedRows = (page, longTitles) =>
         problems.push(
           `row ${row.left.toFixed(1)}..${row.right.toFixed(1)} outside ${content.left.toFixed(1)}..${content.right.toFixed(1)}`,
         );
-      if (!inside(slot, row)) problems.push("trailing slot outside the row");
-      if (!inside(actions, slot)) problems.push("hover actions outside the slot");
-      if (time !== undefined && !inside(time, slot))
-        problems.push(`time ${time.width.toFixed(1)} wide in a ${slot.width.toFixed(1)} slot`);
+      if (shown) {
+        if (!inside(slot, row)) problems.push("visible details outside the row");
+        for (const detail of slotEl.children) {
+          if (!inside(detail.getBoundingClientRect(), slot))
+            problems.push("detail outside the trailing area");
+        }
+      } else if (slot.width !== 0) {
+        problems.push("hidden details occupy space");
+      }
       if (longTitles.includes(title) && titleEl.scrollWidth <= titleEl.clientWidth)
         problems.push("long title not truncated");
       if (problems.length > 0) report.push({ title, problems });
@@ -185,4 +190,38 @@ test("in the phone's drawer, every row stays inside the list", async ({ page }) 
   const { rows, report } = await misplacedRows(page, LONG_TITLES);
   expect(rows).toBeGreaterThanOrEqual(4);
   expect(report).toEqual([]);
+});
+
+test("a workspace reveals its actions and a Session reveals its details on pointer or keyboard focus", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await openList(page, { theme: "modern", grouping: "workspace" });
+  const opener = page.locator('[data-testid="session-row"]').filter({ hasText: LONG }).first();
+  const row = opener.locator("..");
+  const details = row.locator("[data-session-details]");
+  const actions = page
+    .locator("[data-workspace-actions]")
+    .filter({ has: page.locator('[aria-haspopup="menu"]') })
+    .first();
+  const header = actions.locator("../..");
+  await page.mouse.move(1200, 850);
+  await expect(details).toBeHidden();
+  await expect(actions).toBeHidden();
+  const title = opener.locator(".truncate");
+  const initialTitle = await title.boundingBox();
+  const initialRow = await row.boundingBox();
+  await opener.hover();
+  await expect(details).toBeVisible();
+  expect((await title.boundingBox()).x).toBe(initialTitle.x);
+  expect((await row.boundingBox()).height).toBe(initialRow.height);
+  await header.hover();
+  await expect(actions).toBeVisible();
+  await page.mouse.move(1200, 850);
+  await opener.focus();
+  await expect(details).toBeVisible();
+  await page.keyboard.press("Tab");
+  await expect(details.locator("button").first()).toBeFocused();
+  await header.locator("button").first().focus();
+  await expect(actions).toBeVisible();
 });
