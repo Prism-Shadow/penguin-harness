@@ -768,7 +768,10 @@ function staticResponse(
  * the route names a tab (a fourth segment), that tab's own manifest: one app per tab, the
  * launcher opening THAT tab. Null for every other path.
  */
-function workbenchAppPage(reqPath: string, machineId?: string): {
+function workbenchAppPage(
+  reqPath: string,
+  machineId?: string,
+): {
   projectId: string;
   agentId: string;
   workbenchId: string;
@@ -794,11 +797,7 @@ function workbenchAppPage(reqPath: string, machineId?: string): {
  * file ever words it differently the page is passed through untouched rather than
  * half-rewritten. Other pages keep the main app's manifest.
  */
-function withWorkbenchManifestLink(
-  content: Buffer,
-  reqPath: string,
-  machineId?: string,
-): Buffer {
+function withWorkbenchManifestLink(content: Buffer, reqPath: string, machineId?: string): Buffer {
   const page = workbenchAppPage(reqPath, machineId);
   if (page === null) return content;
   const segments = [page.projectId, page.agentId, page.workbenchId].map(encodeURIComponent);
