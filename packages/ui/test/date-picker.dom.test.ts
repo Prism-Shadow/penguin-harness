@@ -496,4 +496,64 @@ describe("a date-and-time field", () => {
     expect(panel()).toBeNull();
     expect(focused()).toBe(trigger());
   });
+
+  it("keeps the time chosen on the wheels when today is before min", async () => {
+    const future = held("", (value, onChange) =>
+      createElement(DateTimeField, {
+        label: "Start",
+        value,
+        onChange,
+        min: "2026-12-01T09:00",
+        minuteStep: 5,
+      }),
+    );
+    await mount(future.element);
+    await press(trigger());
+    const pill = panel()!.querySelector<HTMLButtonElement>("button[aria-pressed]")!;
+    await press(pill);
+    expect(focused()).toBe(wheel(EN.hour));
+    await key(focused(), "ArrowUp");
+    expect(future.writes).toEqual([["2026-12-01T15:35"]]);
+  });
+
+  it("keeps the time chosen on the wheels when today is past max", async () => {
+    const past = held("", (value, onChange) =>
+      createElement(DateTimeField, {
+        label: "End",
+        value,
+        onChange,
+        max: "2026-11-10T18:00",
+        minuteStep: 5,
+      }),
+    );
+    await mount(past.element);
+    await press(trigger());
+    const pastPill = panel()!.querySelector<HTMLButtonElement>("button[aria-pressed]")!;
+    await press(pastPill);
+    expect(focused()).toBe(wheel(EN.hour));
+    await key(focused(), "ArrowDown");
+    expect(past.writes).toEqual([["2026-11-10T13:35"]]);
+  });
+
+  it("closes an open month or year menu and jumps back when Today picks today's date", async () => {
+    const field = held("", (value, onChange) =>
+      createElement(DateTimeField, { label: "Start", value, onChange, minuteStep: 5 }),
+    );
+    await mount(field.element);
+    await press(trigger());
+    await press(buttonNamed(EN.nextMonth));
+    expect(panel()!.querySelector('[role="grid"]')?.getAttribute("aria-label")).toBe(
+      "December 2026",
+    );
+    const monthBtn = panel()!.querySelector<HTMLButtonElement>('button[aria-haspopup="listbox"]')!;
+    await press(monthBtn);
+    expect(panel()!.querySelector('[role="grid"]')?.getAttribute("aria-hidden")).toBe("true");
+
+    await press(buttonNamed(EN.today));
+    expect(field.writes).toEqual([["2026-11-12T14:35"]]);
+    expect(panel()!.querySelector('[role="grid"]')?.getAttribute("aria-hidden")).toBeNull();
+    expect(panel()!.querySelector('[role="grid"]')?.getAttribute("aria-label")).toBe(
+      "November 2026",
+    );
+  });
 });
