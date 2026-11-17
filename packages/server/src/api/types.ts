@@ -5671,11 +5671,28 @@ export interface PluginArt {
 }
 
 /**
+ * How many times each plugin is installed, for the market's 热门 / 飙升 (popular / rising) panel:
+ * `installs` in all, `weekly` in the last seven days, by npm package name.
+ *
+ * PLACEHOLDER: no install count exists across deployments yet, so today's numbers are generated
+ * with a fixed seed in the community repository's pipeline and published with
+ * `source: "placeholder"`. Replace them with a real install-count API later: it publishes this
+ * same shape with `source: "live"`, the switch a reader keys on.
+ */
+export interface MarketPopularity {
+  source: "placeholder" | "live";
+  /** The day the numbers were produced (`YYYY-MM-DD`). */
+  generatedAt: string;
+  items: Record<string, { installs: number; weekly: number }>;
+}
+
+/**
  * GET /api/plugins/market: the market's curation — which plugins are selected, which of them
  * may lead the selected carousel, and the art of the plugins that have any — keyed by npm package
  * name (a library plugin's `package`, an index entry's `name`). A name this server does not list
  * is simply not drawn. `source` says which document answered: the one shipped with this build, or
- * the published one (plugin/market.ts). Neither carries a count, a rank or a rating.
+ * the published one (plugin/market.ts). Selection is an editorial choice, not a ranking; the only
+ * numbers are the optional `popularity` block, placeholders until a real install-count API exists.
  */
 export interface PluginMarketResponse {
   /** Package names allowed to lead the selected carousel, in turn order; each is also in `selected`. */
@@ -5684,6 +5701,12 @@ export interface PluginMarketResponse {
   selected: string[];
   art: Record<string, PluginArt>;
   source: "embedded" | "published";
+  /**
+   * The document's install counts, as it carries them; absent when it carries none, or a block
+   * that does not read (the rest of the document still answers). Placeholder numbers today
+   * (`source: "placeholder"`), to be replaced by a real install-count API: see MarketPopularity.
+   */
+  popularity?: MarketPopularity;
 }
 
 /**
