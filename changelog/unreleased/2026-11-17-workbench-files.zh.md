@@ -3,6 +3,7 @@
 - **Date:** 2026-11-17
 - **Type:** feat
 - **Scope:** `server`, `core`, `skills`, `docs`
+- **PR:** [#1579](https://github.com/Prism-Shadow/penguin-harness/pull/1579)
 
 [English](2026-11-17-workbench-files.md)
 
@@ -17,4 +18,4 @@
 - 导出 Agent 时，`.files/` 与各应用的 `state.json` 一同携带，仅在勾选**含其数据**（`workbenchData`）时带上。覆盖导入时，包内带了某个应用却没带其 `.files/` 的，沿用现有的，与 `state.json` 相同。插件安装可以接手只含 `state.json` 与 `.files/` 的应用目录。新建的 `agent_state.git` 的 git 排除文件列出 `workbenches/*/.files/`。
 - 服务端生成的 `.harness/README.md` 新增「Files shared with the Agent」一节，上传的文件改放在 `.files/`。此前写下的 `.harness/plugin.d.ts` 没有 `listFiles`：删除 `.harness/` 即可取得新的类型。
 - `penguin-plugin` Skill（`2026.11.17.1`）新增「Files shared with the Agent」一节，在宿主方法中列出这五个成员，上传的文件改用宿主的文件存放，不再放在 scratchpad。Workbench 插件、Agent、服务端 API 与「Session 与 Trace」文档页，以及 CLI `--no-workbench-data` 的帮助文字都说明了该文件夹。
-- 设计：[penguin-harness-design PRFC-0028](https://github.com/Prism-Shadow/penguin-harness-design/blob/main/rfcs/PRFC-0028-workbench-files.md)。
+- 设计：[penguin-harness-design#468](https://github.com/Prism-Shadow/penguin-harness-design/pull/468)（PRFC-0028）。
