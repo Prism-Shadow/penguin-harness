@@ -17,8 +17,14 @@
  * - Given a document a previous App fetched, the next App answers with it while its source is down.
  * - PENGUIN_PLUGIN_MARKET unset or blank reads the community document, `off` reads none, a URL
  *   replaces it.
+ * - Given a document with a popularity block (placeholder install counts), the block is answered
+ *   as written; given one that does not read, the block is left out and the rest of the document
+ *   still answers.
  *
  * The pictures:
+ * - Given a path the embedded document names and a cover the build ships there, the shipped cover
+ *   is served and nothing is fetched, with the published document off too; what the build does not
+ *   ship (a screenshot) is fetched and kept as before, and with the document off it is 404.
  * - Given a path the document names, the picture is fetched from beside the published document and
  *   served typed by its bytes, with nosniff, same-origin CORP and a day's private cache.
  * - Given a path the document does not name, it is 404 and nothing is fetched.
@@ -30,11 +36,13 @@
  *   by its ETag; an unchanged answer keeps it, and it is not asked for again that day.
  *
  * Through the App: the market needs a session; with the published document off, a signed-in user
- * reads the embedded document and no picture can be had; with it on, a picture the App keeps lands
+ * reads the embedded document and the covers the build ships, and no other picture can be had
+ * (the shipped covers are found beside the module, where a checkout keeps them); with the
+ * published document on, a picture the App keeps lands
  * under the data root's `.cache/plugin-market/`, and the data root gains no name a Project id could
  * take (Projects live at its top level).
  */
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -45,7 +53,6 @@ import builtinMarket from "../src/plugin/builtin-market.json" with { type: "json
 import {
   MARKET_DOCUMENT_URL,
   embeddedMarketDocument,
-  marketPicturePaths,
   marketSource,
   parseMarketDocument,
 } from "../src/plugin/market.js";
@@ -129,19 +136,28 @@ describe("the plugin market", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  /** The two routes over a document source and a picture cache, both reading `remote`. */
+  /**
+   * The two routes over a document source and a picture cache, both reading `remote`, and the
+   * folder of shipped covers when `bundled` names one.
+   */
   const market = (
     remote: FetchFake,
     {
       url = DOC_URL,
       proxy = [],
       seed = null,
-    }: { url?: string | null; proxy?: PluginProxyRule[]; seed?: MarketSnapshot | null } = {},
+      bundled = null,
+    }: {
+      url?: string | null;
+      proxy?: PluginProxyRule[];
+      seed?: MarketSnapshot | null;
+      bundled?: string | null;
+    } = {},
   ) => {
     const pictures = marketPictures({ dir, proxy: () => proxy, fetchImpl: remote.fetch, now });
     cache.push(pictures);
     const source = marketSource({ url, proxy: () => proxy, fetchImpl: remote.fetch, now, seed });
-    return pluginMarketRoutes({ source, pictures });
+    return pluginMarketRoutes({ source, pictures, bundled: () => bundled });
   };
   const listing = async (routes: ReturnType<typeof market>) => {
     const res = await routes.request("/");
@@ -290,9 +306,90 @@ describe("the plugin market", () => {
       expect(at("OFF")).toBeNull();
       expect(at(DOC_URL)).toBe(DOC_URL);
     });
+
+    // Placeholder install counts, in the shape a real install-count API will publish as "live".
+    const POPULARITY = {
+      source: "placeholder",
+      generatedAt: "2026-11-17",
+      items: {
+        "@example/alpha": { installs: 4180, weekly: 162 },
+        "@example/beta": { installs: 230, weekly: 9 },
+      },
+    };
+
+    it("answers a popularity block as the document writes it", async () => {
+      const body = await listing(market(fakeFetch(site({ ...DOC, popularity: POPULARITY }))));
+      expect(body.popularity).toEqual(POPULARITY);
+    });
+
+    const unreadable: Array<[string, unknown]> = [
+      ["a source other than placeholder or live", { ...POPULARITY, source: "estimate" }],
+      ["no generatedAt date", { ...POPULARITY, generatedAt: "today" }],
+      ["items that are a list", { ...POPULARITY, items: [] }],
+      [
+        "a negative count",
+        { ...POPULARITY, items: { "@example/alpha": { installs: -1, weekly: 0 } } },
+      ],
+      [
+        "a fractional count",
+        { ...POPULARITY, items: { "@example/alpha": { installs: 9.5, weekly: 1 } } },
+      ],
+      [
+        "more installs this week than in all",
+        { ...POPULARITY, items: { "@example/alpha": { installs: 5, weekly: 9 } } },
+      ],
+    ];
+    it.each(unreadable)(
+      "leaves out a popularity block with %s, and the rest of the published document still answers",
+      async (_case, popularity) => {
+        const body = await listing(market(fakeFetch(site({ ...DOC, popularity }))));
+        expect(body.source).toBe("published");
+        expect(body.selected).toEqual(DOC.selected);
+        expect(body).not.toHaveProperty("popularity");
+      },
+    );
   });
 
   describe("the pictures", () => {
+    /** A plugin of the embedded document with a cover and a screenshot: what a build ships and what it does not. */
+    const shipped = (() => {
+      const entry = Object.values(embeddedMarketDocument().plugins).find(
+        (p) => p.cover !== undefined && (p.screenshots?.length ?? 0) > 0,
+      )!;
+      return { cover: entry.cover!.src, shot: entry.screenshots![0]!.src };
+    })();
+    /** A folder of shipped covers holding `bytes` at the embedded document's cover path. */
+    const shippedCovers = async (bytes: Uint8Array) => {
+      const folder = path.join(dir, "shipped");
+      await mkdir(path.dirname(path.join(folder, shipped.cover)), { recursive: true });
+      await writeFile(path.join(folder, shipped.cover), bytes);
+      return folder;
+    };
+
+    it("serves a cover the build ships without fetching, with the published document off too; an unshipped screenshot is then 404", async () => {
+      const remote = fakeFetch(down);
+      const routes = market(remote, { url: null, bundled: await shippedCovers(WEBP) });
+      const res = await asset(routes, shipped.cover);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toBe("image/webp");
+      expect(new Uint8Array(await res.arrayBuffer())).toEqual(WEBP);
+      expect((await asset(routes, shipped.shot)).status).toBe(404);
+      expect(remote.calls).toHaveLength(0);
+    });
+
+    it("fetches and keeps what the build does not ship, while a shipped cover still costs no fetch", async () => {
+      const shotUrl = new URL(shipped.shot, DOC_URL).href;
+      const remote = fakeFetch((call) => {
+        if (call.url === shotUrl) return picture(PNG);
+        throw fetchFailed("ECONNREFUSED");
+      });
+      const routes = market(remote, { bundled: await shippedCovers(WEBP) });
+      expect((await asset(routes, shipped.shot)).headers.get("content-type")).toBe("image/png");
+      expect((await asset(routes, shipped.cover)).status).toBe(200);
+      expect(remote.calls.map((c) => c.url)).not.toContain(new URL(shipped.cover, DOC_URL).href);
+      expect(remote.calls.map((c) => c.url)).toContain(shotUrl);
+    });
+
     const COVER = "https://market.example/plugins/alpha/cover.webp";
     const THUMB = "https://market.example/plugins/alpha/cover-640.webp";
 
@@ -414,17 +511,21 @@ describe("the plugin market through the App", () => {
     expect((await t.app.request("/api/plugins/market")).status).toBe(401);
   });
 
-  it("with the published document off, answers the embedded document and no picture", async () => {
+  it("with the published document off, answers the embedded document, the covers the build ships and no other picture", async () => {
     const res = await t.app.request("/api/plugins/market", { headers: { cookie } });
     expect(res.status).toBe(200);
     const body = (await res.json()) as PluginMarketResponse;
     expect(body.source).toBe("embedded");
     expect(body.selected).toEqual(embeddedMarketDocument().selected);
-    const [named] = marketPicturePaths(embeddedMarketDocument());
-    const picture = await t.app.request(`/api/plugins/market/asset?path=${named}`, {
-      headers: { cookie },
-    });
-    expect(picture.status).toBe(404);
+    const entry = Object.values(embeddedMarketDocument().plugins).find(
+      (p) => p.cover !== undefined && (p.screenshots?.length ?? 0) > 0,
+    )!;
+    const get = (picturePath: string) =>
+      t.app.request(`/api/plugins/market/asset?path=${picturePath}`, { headers: { cookie } });
+    const cover = await get(entry.cover!.src);
+    expect(cover.status).toBe(200);
+    expect(cover.headers.get("content-type")).toBe("image/webp");
+    expect((await get(entry.screenshots![0]!.src)).status).toBe(404);
   });
 });
 

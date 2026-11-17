@@ -58,6 +58,7 @@ import {
 import { checkoutFacts, originUrl } from "./build-git-stamp.mjs";
 import { compilePushBundle, pushBundleOptions } from "./push-bundle.mjs";
 import { FAR_SIDE_SCRIPTS } from "./far-side-scripts.mjs";
+import { MARKET_COVERS_NAME, MARKET_COVERS_SOURCE, marketCoverFiles } from "./market-covers.mjs";
 import { buildBuiltinPlugins } from "./build-plugins.mjs";
 import { archiveName, packArchive, prefixPackages } from "./asset-archives.mjs";
 import { typescriptPayload } from "./typescript-payload.mjs";
@@ -364,6 +365,15 @@ async function readNativeAssets() {
   for (const { name, from } of FAR_SIDE_SCRIPTS) {
     files[name] = await fsp.readFile(path.join(ROOT, from));
   }
+  // The built-in plugins' market covers (scripts/market-covers.mjs), one archive for the folder:
+  // a pushed platform reads them from its unpacked assets (src/plugin/market-covers.ts).
+  files[`archives/${MARKET_COVERS_NAME}.tgz`] = await packArchive(
+    marketCoverFiles(ROOT).map((rel) => ({
+      rel: `${MARKET_COVERS_NAME}/${rel}`,
+      abs: path.join(ROOT, MARKET_COVERS_SOURCE, ...rel.split("/")),
+      exec: false,
+    })),
+  );
   // The builtin plugins, as the npm prefix the loader resolves from (`plugins/package.json`
   // + `plugins/node_modules/<name>/…`, see scripts/build-plugins.mjs), from cache when
   // unchanged — one archive per package, so an unchanged plugin is an unchanged blob.

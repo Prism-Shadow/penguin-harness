@@ -93,8 +93,8 @@ type Fetched =
   | { kind: "unchanged"; etag: string | null }
   | { kind: "none" };
 
-/** The bytes as a picture this route serves, or null: over the cap, or not WebP, PNG or JPEG. */
-function asPicture(bytes: Uint8Array): MarketPicture | null {
+/** The bytes as a picture the market serves, or null: over the cap, or not WebP, PNG or JPEG. */
+export function asPicture(bytes: Uint8Array): MarketPicture | null {
   if (bytes.byteLength > MARKET_PICTURE_MAX_BYTES) return null;
   const format = sniffIconFormat(bytes);
   return format !== null && SERVED.has(format)
