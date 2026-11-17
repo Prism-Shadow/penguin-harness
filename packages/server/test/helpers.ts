@@ -186,6 +186,8 @@ export function testConfig(root: string): ServerConfig {
     desktopToken: null,
     portFile: null,
     trustProxy: false,
+    // The embedded market document alone: no test may reach the network for the market.
+    pluginMarketUrl: null,
     // No CLI to offer: nothing is written into the temp root, and no directory is put on
     // the PATH of whatever a test's Agent runs.
     cliEntry: null,

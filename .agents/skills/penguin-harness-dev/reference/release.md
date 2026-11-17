@@ -100,6 +100,7 @@ and `check-publishable.mjs` fails if a published package depends on it.
 | `README.md`, `README.zh.md` | The Docker example pins the exact version (`hiyouga/penguinharness:<version>`). |
 | `package.json`, `packages/*/package.json`, `plugins/*/package.json` | Version, in lockstep. |
 | `packages/core/src/index.ts` | `export const VERSION`. |
+| `packages/server/src/plugin/builtin-market.json` | Replaced by the plugin market document as the community repository's `main` has it, `assets/plugins/market.json` (`Prism-Shadow/penguin-harness-community`): copy it over, then `pnpm exec prettier --write` the file, so only the formatting can differ. The server answers with this copy until the published one arrives, and the landing site falls back to it. Run the server's `plugin-market.test.ts` afterwards: a copy the server refuses fails it. |
 | `packages/landing/content/blog/penguinharness-<v-with-dashes>.{en,zh}.md` | The post pair. |
 | `packages/landing/test/blog.test.ts` | The new slug joins the expected list. |
 
