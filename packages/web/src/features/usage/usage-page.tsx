@@ -394,9 +394,10 @@ export function UsagePage() {
             </div>
             {preset === "custom" && (
               /* The custom range's two dates, shown only while the range is the custom one: a
-                 preset names its own span in the Select, so it has nothing to pick here. Wide
-                 enough for two full dates. */
-              <div className="w-60">
+                 preset names its own span in the Select, so it has nothing to pick here. As wide
+                 as its two full dates in the theme's face, which differs from theme to theme,
+                 and narrower only when the row has no room. */
+              <div className="max-w-full">
                 <DateRangeField
                   size="sm"
                   aria-label={S.usage.rangeDates}
