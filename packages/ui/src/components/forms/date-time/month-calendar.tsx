@@ -284,7 +284,11 @@ export function MonthCalendar({
         <span className="flex items-center gap-1">
           {yearFirst(locale) ? [yearButton, monthButton] : [monthButton, yearButton]}
         </span>
-        <span className={`flex items-center gap-1 ${menu !== null ? "invisible" : ""}`}>
+        {/* The month steps hide while a menu holds the grid's place, and leave the Tab order. */}
+        <span
+          className={`flex items-center gap-1 ${menu !== null ? "invisible" : ""}`}
+          {...(menu !== null ? { inert: true } : {})}
+        >
           <IconButton
             size="sm"
             variant="ghost"

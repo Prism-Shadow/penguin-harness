@@ -12,7 +12,8 @@
  *   Page Up goes back a month, End goes to the week's last day, Enter writes the focused day.
  * - Given the head's month or year button pressed, its menu opens on the month or year in view
  *   with the arrows moving its focus, and a press on one brings the grid back there with its day
- *   in the focus; pressing the button again leaves the menu and the month as they were.
+ *   in the focus; pressing the button again leaves the menu and the month as they were. Tab
+ *   goes round the panel's controls and back to the menu, past the grid and steps it hides.
  * - Given Escape, the panel closes and a dialog around the field stays open; a press outside
  *   closes it too.
  * - Given the clear cross, the field is emptied.
@@ -249,6 +250,22 @@ describe("a date field", () => {
     await press(buttonNamed(EN.fieldName(EN.month, "November")));
     expect(menu(EN.month)).toBeNull();
     expect(shownMonth()).toBe("November 2026");
+  });
+
+  it("takes Tab round an open menu's panel and back to the menu", async () => {
+    await mount(dateField("").element);
+    await press(trigger());
+    const month = buttonNamed(EN.fieldName(EN.month, "November"));
+    await press(month);
+    expect(focused()).toBe(option("November"));
+    await key(focused(), "Tab");
+    expect(focused()).toBe(buttonNamed(EN.today));
+    await key(focused(), "Tab");
+    expect(focused()).toBe(month);
+    await key(focused(), "Tab");
+    expect(focused()).toBe(buttonNamed(EN.fieldName(EN.year, "2026")));
+    await key(focused(), "Tab");
+    expect(focused()).toBe(option("November"));
   });
 
   it("closes on Escape and leaves the dialog around it open, and on a press outside", async () => {

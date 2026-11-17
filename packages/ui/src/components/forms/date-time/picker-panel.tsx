@@ -29,10 +29,14 @@ const SHEET_BELOW = 640;
 /** The panel's distance from the viewport's edges as a sheet, and below its trigger's room (px). */
 const EDGE = 8;
 
-/** The elements Tab reaches inside the panel: a grid's other days (`tabindex="-1"`) are not among them. */
+/**
+ * The elements Tab reaches inside the panel: a grid's other days (`tabindex="-1"`) are not among
+ * them, nor anything set aside as `inert` (a grid a menu covers, the month steps hidden beside
+ * it), which would take no focus and hold Tab where it stands.
+ */
 function tabbable(panel: HTMLElement): HTMLElement[] {
   return [...panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)].filter(
-    (element) => element.tabIndex >= 0,
+    (element) => element.tabIndex >= 0 && element.closest("[inert]") === null,
   );
 }
 
@@ -117,6 +121,9 @@ export function PickerPanel({
       <>
         <div
           aria-hidden
+          // A press here closes the sheet (the portal hook's press outside), which hands the
+          // focus back to the field; the press itself must not then move it to the body.
+          onMouseDown={(event) => event.preventDefault()}
           className="ui-scrim anim-fade fixed inset-0 z-popover bg-[var(--ui-overlay-backdrop)]"
         />
         {panel}
