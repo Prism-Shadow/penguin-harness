@@ -1,0 +1,12 @@
+{
+  "modules": {},
+  "contributes": {
+    "PluginLibraryModule.skills": [
+      {
+        "id": "penguin-testing-electron-sample.skill.sample",
+        "name": "penguin-testing-electron-sample",
+        "path": "skills/penguin-testing-electron-sample"
+      }
+    ]
+  }
+}
