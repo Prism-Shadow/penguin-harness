@@ -3,6 +3,7 @@
 - **Date:** 2026-11-17
 - **Type:** feature
 - **Scope:** `plugins`, `server`, `docs`
+- **PR:** [#1587](https://github.com/Prism-Shadow/penguin-harness/pull/1587)
 
 [English](2026-11-17-english-piglet-workbenches.md)
 
