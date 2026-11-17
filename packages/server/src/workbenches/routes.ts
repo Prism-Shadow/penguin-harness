@@ -62,25 +62,11 @@ import type { AgentConfig } from "../mechanisms/agents.js";
 import type { Access, Projects } from "@prismshadow/penguin-library-projects";
 import type { UiPrefsStore } from "@prismshadow/penguin-library-settings";
 import { MAX_ARCHIVE_BYTES } from "../services/skill-import-limits.js";
-<<<<<<< HEAD
 import { forwardToMachine } from "../machines/proxy.js";
 import { MachineSocketRelay } from "../machines/socket-relay.js";
 import type { Machines } from "../machines/service.js";
-import type {
-  WorkbenchRequest,
-  WorkbenchResponse,
-  Workbenches,
-} from "../mechanisms/workbenches.js";
-||||||| parent of f32f968b64 (fix(server): the vocabulary the server reads names the libraries that carry it — the model plumbing and traces reading shapes and the workbenches vocabulary import their libraries, a stray percent-s placeholder becomes the models face, and the account-data and agent-api libraries export the row shapes their contracts name)
-import type {
-  WorkbenchRequest,
-  WorkbenchResponse,
-  Workbenches,
-} from "../mechanisms/workbenches.js";
-=======
 import type { Workbenches } from "../mechanisms/workbenches.js";
 import type { WorkbenchRequest, WorkbenchResponse } from "@prismshadow/penguin-library-workbenches";
->>>>>>> f32f968b64 (fix(server): the vocabulary the server reads names the libraries that carry it — the model plumbing and traces reading shapes and the workbenches vocabulary import their libraries, a stray percent-s placeholder becomes the models face, and the account-data and agent-api libraries export the row shapes their contracts name)
 import {
   parseAppCenterLayout,
   readAppCenterLayout,
