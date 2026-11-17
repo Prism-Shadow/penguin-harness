@@ -7,9 +7,11 @@
  *
  * - **Spelling.** `<app_data_dir>` is the Project directory (the Environment's App Data Dir), `~`
  *   the server account's home; anything else must be absolute. `\` and `/` both separate.
- * - **Where.** The file's real path (symlinks resolved) must lie inside one of the organization's
- *   roots: its handbook, its shared workspace, and each employee's workspace as the chart resolves
- *   it — which a person may have pointed at any existing directory. Anything else is refused.
+ * - **Where.** The path must lie inside one of the organization's roots: its handbook, its shared
+ *   workspace, and each employee's workspace as the chart resolves it — which a person may have
+ *   pointed at any existing directory. That is checked on the path as written before anything is
+ *   read from disk, so a path outside every root is refused the same way whether or not it exists.
+ *   It is checked again on the real path (symlinks resolved), so a link cannot lead out.
  * - **Secrets.** A Project config or an Agent vault is refused by name wherever it lies, written
  *   or resolved: a workspace pointed at a wide directory would otherwise hold one.
  *
@@ -31,14 +33,12 @@ const SECRET_NAMES = new Set([".project_config.toml", ".vault.toml"]);
 const PLACEHOLDER = /^<app_data_dir>(?=[/\\])/;
 const HOME = /^~(?=[/\\])/;
 
-function lastSegment(p: string): string {
-  return p.split(/[/\\]/).filter(Boolean).pop() ?? "";
+function refused(cited: string, why: string): HttpError {
+  return new HttpError(403, "org_file_refused", `${cited} ${why}`);
 }
 
 function refuseSecret(p: string, cited: string): void {
-  if (SECRET_NAMES.has(lastSegment(p))) {
-    throw new HttpError(403, "org_file_refused", `${cited} cannot be opened from here.`);
-  }
+  if (SECRET_NAMES.has(path.basename(p))) throw refused(cited, "cannot be opened from here.");
 }
 
 /** The absolute path a citation names, or null when it names none. */
@@ -48,20 +48,22 @@ export function citedAbsolute(cited: string, appDataDir: string, home: string): 
   return path.resolve(spelled.replace(/[/\\]/g, path.sep));
 }
 
-async function realpathOrNull(p: string): Promise<string | null> {
-  try {
-    return await fs.realpath(p);
-  } catch {
+/** `p` below `root`, `/`-separated, or null when `p` is `root` itself or lies outside it. */
+function below(root: string, p: string): string | null {
+  const rel = path.relative(root, p);
+  if (rel === "" || rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) {
     return null;
   }
+  return rel.split(path.sep).join("/");
 }
 
 /**
  * Locates `cited` inside one of `roots`.
  *
  * @throws 400 org_file_invalid: not a path.
- * @throws 403 org_file_refused: a secret, or outside every root.
- * @throws 404 org_file_not_found: nothing there, or a directory.
+ * @throws 403 org_file_refused: a secret, or outside every root — decided before the path is
+ *   looked up when the path as written is outside.
+ * @throws 404 org_file_not_found: inside a root, and nothing there or a directory.
  */
 export async function locateCitedFile(
   cited: string,
@@ -76,24 +78,29 @@ export async function locateCitedFile(
     );
   }
   refuseSecret(absolute, cited);
-  const real = await realpathOrNull(absolute);
+  // A root is the organization's, not the caller's, so resolving it reveals nothing. Both its
+  // spellings count: a citation may use either (`/var/…` and `/private/var/…` on macOS).
+  const roots = (
+    await Promise.all(
+      opts.roots.map(async (root) => {
+        const real = await fs.realpath(root).catch(() => null);
+        return real === null ? null : { written: path.resolve(root), real };
+      }),
+    )
+  ).filter((root) => root !== null);
+  const outside = refused(cited, "is not in the organization's handbook or workspaces.");
+  if (!roots.some((root) => below(root.written, absolute) ?? below(root.real, absolute))) {
+    throw outside;
+  }
+  const real = await fs.realpath(absolute).catch(() => null);
   const stat = real === null ? null : await fs.stat(real).catch(() => null);
   if (real === null || stat === null || !stat.isFile()) {
     throw new HttpError(404, "org_file_not_found", `${cited} is not a file.`);
   }
   refuseSecret(real, cited);
-  for (const root of opts.roots) {
-    const realRoot = await realpathOrNull(root);
-    if (realRoot === null) continue;
-    const rel = path.relative(realRoot, real);
-    const outside = rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel);
-    if (rel !== "" && !outside) {
-      return { workspace: realRoot, path: rel.split(path.sep).join("/") };
-    }
+  for (const root of roots) {
+    const rel = below(root.real, real);
+    if (rel !== null) return { workspace: root.real, path: rel };
   }
-  throw new HttpError(
-    403,
-    "org_file_refused",
-    `${cited} is not in the organization's handbook or workspaces.`,
-  );
+  throw outside;
 }

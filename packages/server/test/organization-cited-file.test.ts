@@ -8,6 +8,8 @@
  * - Given a file of the Project that is in none of those roots (an Agent's state, the
  *   organization's own config, reached directly or through `..`), it is refused and its bytes are
  *   not sent.
+ * - Given a path outside every root, the answer is the same 403 whether something exists there or
+ *   not, so the route cannot be used to probe the host's disk.
  * - Given a Project config or an Agent vault inside a root (a workspace pointed at the Project
  *   directory), or a link in a workspace that resolves to one, it is refused by name.
  * - Given an employee's workspace re-pointed elsewhere, its old directory stops being served.
@@ -114,6 +116,16 @@ describe("opening a cited organization file", () => {
     expect(body).toContain("org_file_refused");
     expect(body).not.toContain("private");
     expect(body).not.toContain("Acme");
+  });
+
+  it("answers a path outside every root alike whether or not it exists", async () => {
+    const existing = await open("<app_data_dir>/agents/acme_dev/agent_state/memo.md");
+    const missing = await open("<app_data_dir>/agents/acme_dev/agent_state/nothing.md");
+    expect([existing.status, missing.status]).toEqual([403, 403]);
+    expect([await code(existing), await code(missing)]).toEqual([
+      "org_file_refused",
+      "org_file_refused",
+    ]);
   });
 
   it("refuses a vault and a Project config by name, even inside a workspace", async () => {
