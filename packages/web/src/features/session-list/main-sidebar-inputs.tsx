@@ -45,6 +45,7 @@ export function useMainSidebarInputs(
     loadMoreFor,
     loading,
     remove,
+    archiveGroup,
     replace,
   } = useSessions();
   const chatMatch = useMatch("/chat/:sessionId");
@@ -96,6 +97,7 @@ export function useMainSidebarInputs(
     loadMoreFor,
     loading,
     remove,
+    archiveGroup,
     replace,
     chatMatch,
     activeSessionId,

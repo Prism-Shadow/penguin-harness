@@ -15,6 +15,8 @@ import type {
   DesktopBrowserCommandMessage,
   DesktopBrowserCookie,
 } from "@prismshadow/penguin-server/api";
+import { editMenuItems } from "./edit-menu.js";
+import type { EditMenuAction } from "./edit-menu.js";
 import type { TrayLocale } from "./tray-menu.js";
 
 /** The guests' own session: independent sign-ins and profile, persisted under userData. */
@@ -520,10 +522,7 @@ export type GuestMenuAction =
   | "open-link"
   | "copy-link"
   | "copy-image-address"
-  | "cut"
-  | "copy"
-  | "paste"
-  | "select-all"
+  | EditMenuAction
   | "inspect"
   | "devtools";
 
@@ -557,10 +556,6 @@ interface GuestMenuLabels {
   openLink: string;
   copyLink: string;
   copyImageAddress: string;
-  cut: string;
-  copy: string;
-  paste: string;
-  selectAll: string;
   inspect: string;
   devtools: string;
 }
@@ -578,10 +573,6 @@ export const GUEST_MENU_LABELS: Record<TrayLocale, GuestMenuLabels> = {
     openLink: "Open link in new tab",
     copyLink: "Copy link address",
     copyImageAddress: "Copy image address",
-    cut: "Cut",
-    copy: "Copy",
-    paste: "Paste",
-    selectAll: "Select all",
     inspect: "Inspect",
     devtools: "Open DevTools",
   },
@@ -592,10 +583,6 @@ export const GUEST_MENU_LABELS: Record<TrayLocale, GuestMenuLabels> = {
     openLink: "在新标签页中打开链接",
     copyLink: "复制链接地址",
     copyImageAddress: "复制图片地址",
-    cut: "剪切",
-    copy: "复制",
-    paste: "粘贴",
-    selectAll: "全选",
     inspect: "检查",
     devtools: "打开开发者工具",
   },
@@ -621,16 +608,7 @@ export function guestContextMenu(input: GuestMenuInput): GuestMenuItem[] {
   if (input.mediaType === "image" && input.srcURL !== "") {
     groups.push([{ action: "copy-image-address", label: t.copyImageAddress }]);
   }
-  const edit: GuestMenuItem[] = [];
-  const flags = input.editFlags;
-  if (input.isEditable) {
-    if (flags.canCut) edit.push({ action: "cut", label: t.cut });
-    if (flags.canCopy) edit.push({ action: "copy", label: t.copy });
-    if (flags.canPaste) edit.push({ action: "paste", label: t.paste });
-    if (flags.canSelectAll) edit.push({ action: "select-all", label: t.selectAll });
-  } else if (input.selectionText.trim() !== "" && flags.canCopy) {
-    edit.push({ action: "copy", label: t.copy });
-  }
+  const edit = editMenuItems(input);
   if (edit.length > 0) groups.push(edit);
   if (groups.length === 0) {
     groups.push([

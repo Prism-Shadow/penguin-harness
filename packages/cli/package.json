@@ -20,7 +20,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "gen:ifaces": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out src/ifaces.json",
+    "gen:ifaces": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --project ../server/tsconfig.json --out src/ifaces.json --components-out src/cli-commands.gen.ts",
     "typecheck": "pnpm gen:ifaces && tsc --noEmit -p tsconfig.json",
     "test": "pnpm gen:ifaces && vitest run --passWithNoTests",
     "build": "pnpm gen:ifaces && tsup",
@@ -45,10 +45,12 @@
     "@penguinharness/openskill-rsi-toolkit": "workspace:*",
     "@penguinharness/opro-rsi-toolkit": "workspace:*",
     "@penguinharness/penguin-support": "workspace:*",
+    "@penguinharness/rrsi-rsi-toolkit": "workspace:*",
     "@penguinharness/skill-porting": "workspace:*",
     "@penguinharness/skilladam-rsi-toolkit": "workspace:*",
     "@penguinharness/skillopt-rsi-toolkit": "workspace:*",
     "@penguinharness/software-development": "workspace:*",
+    "@penguinharness/trace-lookup": "workspace:*",
     "@penguinharness/trace-rsi-toolkit": "workspace:*",
     "@penguinharness/use-bento-slides": "workspace:*",
     "@penguinharness/use-firecrawl": "workspace:*",

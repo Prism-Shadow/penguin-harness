@@ -19,6 +19,7 @@ import { formatLocalDate } from "../internal/dates.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Clock } from "../hmr/capabilities.js";
 import type { UsageRecording, UsageStore } from "../mechanisms/observability.js";
+import type { Projects } from "../mechanisms/projects.js";
 
 /** Attribution context for one record (top-level Session scope). */
 export interface UsageContext {
@@ -41,9 +42,15 @@ export class UsageRecorder implements UsageRecording {
   private readonly originModels = new Map<string, { provider: string; modelId: string }>();
   /** One request at a time per Session: whether its streamed request_begin has been metered. */
   private readonly requests = new Map<string, boolean>();
+  /**
+   * Sessions inside a compaction span: its requests bill their usage alone, no failed Request
+   * row (a failed attempt is the compaction's, which its `compaction_end` reports).
+   */
+  private readonly compacting = new Set<string>();
 
   @Use() private readonly usage!: UsageStore;
   @Use() private readonly clock!: Clock;
+  @Use() private readonly projects!: Projects;
 
   /** Standalone usage (such as titles) is billed without metering the Session's active request. */
   async record(
@@ -76,12 +83,24 @@ export class UsageRecorder implements UsageRecording {
     const originSessionId =
       msg.origin && msg.origin.length > 0 ? msg.origin[msg.origin.length - 1]! : null;
     const requestSessionId = originSessionId ?? ctx.sessionId;
+    if (payload.type === "compaction_begin") this.compacting.add(requestSessionId);
+    else if (payload.type === "compaction_end") this.compacting.delete(requestSessionId);
+    if (
+      (payload.type === "request_begin" || payload.type === "request_end") &&
+      this.compacting.has(requestSessionId)
+    ) {
+      return;
+    }
     if (payload.type === "request_begin") {
       this.requests.set(requestSessionId, false);
       return;
     }
     const metered = this.requests.get(requestSessionId) === true;
     if (payload.type === "request_end") this.requests.delete(requestSessionId);
+    // A request that outlived its Project's deletion (past the deletion's wait) is billed to
+    // nothing: its row would outlive the Project, and count for a later one given its id.
+    const billable = payload.type === "token_usage" || payload.type === "request_end";
+    if (billable && this.projects.findById(ctx.projectId) === null) return;
     // Empty origin → main session's Model; otherwise look up the mapping, falling back to the main Session's Model (paired) on a miss.
     const ref =
       originSessionId === null
@@ -112,7 +131,7 @@ export class UsageRecorder implements UsageRecording {
         output: r.output,
         total: r.total,
       });
-      // Compaction streams usage but keeps its request boundaries in the Trace. Do not
+      // A compaction's request boundaries are skipped above. Do not
       // retain state for those unpaired records after the compaction has finished.
       if (source === "stream" && this.requests.has(requestSessionId)) {
         this.requests.set(requestSessionId, true);

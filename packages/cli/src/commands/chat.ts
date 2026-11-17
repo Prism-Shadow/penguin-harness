@@ -41,14 +41,28 @@
  */
 import { clearLine, createInterface, cursorTo, type Interface } from "node:readline";
 import type { Command } from "commander";
-import { buildInfo } from "@prismshadow/penguin-core";
 import type {
   ApprovalDecision,
   AmspRecord,
   ThinkingLevelName,
   ToolCallPayload,
 } from "@prismshadow/penguin-core";
-import type { SessionInfo, TaskCreateResponse } from "@prismshadow/penguin-server/api";
+import { buildInfo } from "@prismshadow/penguin-core";
+
+import type { SessionInfo, Messages } from "@prismshadow/penguin-server/cli";
+import {
+  parseApprovalAnswer,
+  resolveApprovalMode,
+  ApiError,
+  connectionLabel,
+  resolveAgentId,
+  resolveConnection,
+  resolveProjectId,
+  resolveSessionRef,
+  ServerClient,
+  listAgentSessions,
+} from "@prismshadow/penguin-server/cli";
+import type { TaskCreateResponse } from "@prismshadow/penguin-server/api";
 import { StreamRenderer, dim, renderHistory } from "../render.js";
 import { parseGoalCommand } from "../goal-command.js";
 import { parseThinkingCommand, resolveThinkingLevel } from "../thinking-command.js";
@@ -58,29 +72,23 @@ import {
   switchModelRefusal,
   type ModelTarget,
 } from "../switch-model-command.js";
-import { parseApprovalAnswer, resolveApprovalMode } from "../approval.js";
+
 import { LineComposer, PasteFilter } from "../input.js";
-import {
-  ApiError,
-  connectionLabel,
-  resolveAgentId,
-  resolveConnection,
-  resolveProjectId,
-  resolveSessionRef,
-  ServerClient,
-} from "../client.js";
+
 import {
   callerSessionContext,
   createServerSession,
   getSessionInfo,
-  listAgentSessions,
   pinThinkingLevel,
   projectDefaultModel,
   resolveWorkspace,
 } from "../server-session.js";
 import { SessionView, type SessionViewOptions } from "../session-view.js";
-import type { Messages } from "../i18n.js";
+import { Bind, Component } from "@prismshadow/penguin-core/kernel";
+import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/cli";
 
+/** The node the host located for a key, typed with this package's commander. */
+const node = (command: CliCommandProgram): Command => command as Command;
 export type ChatState = "idle" | "running" | "approving" | "confirming-exit";
 
 /** What the prompt answers when a run starts while it waits: the main loop follows it. */
@@ -1058,5 +1066,31 @@ function clearCurrentLine(rl: Interface, rli: RlInternals, out: NodeJS.WritableS
   } else {
     out.write("\r\x1b[K");
     rl.prompt(true);
+  }
+}
+
+/** `penguin chat`. */
+@Component({
+  contributes: {
+    "CliCommandsModule.commands": [
+      {
+        id: "cli.chat",
+        key: "chat",
+        summary: {
+          en: "Open the interactive REPL",
+          zh: "打开交互式 REPL",
+        },
+      },
+    ],
+  },
+})
+export class ChatCommand {
+  @Bind("cli.chat") command!: CliCommandCode<Messages>;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerChatCommand(node(command), ctx.messages);
+      },
+    };
   }
 }

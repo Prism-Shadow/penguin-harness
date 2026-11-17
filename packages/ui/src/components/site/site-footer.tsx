@@ -5,7 +5,7 @@
  * with `render`, as in the header.
  */
 import type { ReactNode } from "react";
-import type { SiteLink, SiteLinkProps } from "./site-header";
+import type { SiteLink, SiteLinkProps } from "./site-link";
 
 export type SiteFooterLink = Omit<SiteLink, "active"> & {
   /** Opens in a new tab: a page on another site (the repository, its releases). */

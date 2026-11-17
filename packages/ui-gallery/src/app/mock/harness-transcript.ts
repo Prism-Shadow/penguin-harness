@@ -10,11 +10,17 @@
  *    own (the Session sat idle), the second one's fails and is steered into that running Task;
  * 4. a run the weekly schedule fired into the Session (`[scheduled_task]`), whose first request
  *    reconnects once;
- * 5. a reply the person interrupts, then a request the provider refuses outright;
+ * 5. a reply the person interrupts, a `/compact` the provider refuses for the account's balance
+ *    (`denied`) — the next context opens with the harness's Trace hand-off note instead — then
+ *    a request the provider refuses for the same reason;
  * 6. the model switch that follows: its summarize compaction (thinking and result) and the
  *    divider the next context's `session_meta` draws;
  * 7. a goal run on the new model: the round-1 protocol behind the person's objective, a steering
- *    message inside that round, the stop hook's injected round 2, and the goal banner;
+ *    message inside that round, the stop hook's injected round 2 — whose request the provider
+ *    refuses as too long for a window smaller than the configured one, so the context is handed
+ *    off with no compaction request and the turn sent again (the retry line, the compaction
+ *    row, and the composer's notice asking for the window or the threshold to be corrected) —
+ *    and the goal banner;
  * 8. every Task's stats line, and in the Trace every Task's `task_begin` / `task_end` pair (none
  *    around the model switch, which is no Task).
  *
@@ -35,6 +41,11 @@ import {
   buildSkillsMessage,
   markerBlock,
   MARKER_TAGS,
+  transcribeRequestError,
+  transcribeText,
+  transcribeToolCall,
+  transcribeToolCallOutput,
+  transcribeUserInput,
   userSteeringText,
 } from "@prismshadow/amsp/markers";
 import type { BackgroundTaskDone } from "@prismshadow/amsp/markers";
@@ -113,6 +124,42 @@ const BROKEN = {
   matchers: `✗ anchor  ${HOOKS_URL}#matchers-legacy  (no such heading)`,
   sdk: "✗ 404     corpus/claude-code-docs/sdk.md",
 };
+
+/** The new model's gateway refusing a context its configured million-token window would hold. */
+const TOO_LONG = "400 Bad Request: prompt is too long: 16502 tokens > 16384 maximum";
+
+/** The Session's n-th Trace file, in the date folder of the day it opened. */
+function traceFile(sessionId: string, openedAt: number, n: number): string {
+  return `${AGENT_DIR}/traces/${iso(openedAt).slice(0, 10)}/${sessionId}_${String(n).padStart(3, "0")}.jsonl`;
+}
+
+/** A hand-off note as the harness fills the default `compaction.handoff_note` template. */
+function handoffNoteText(
+  error: string,
+  users: readonly string[],
+  turn: readonly string[],
+  tracePath: string,
+): string {
+  return buildContextSummaryText(
+    [
+      "No summary of the earlier conversation could be written, so the harness wrote this note in its place. That conversation is no longer in your context; what is quoted below is copied from its Trace file, shortened where marked.",
+      "",
+      "Why there is no summary (if it is about size, do not rebuild the same input: read large files and outputs in parts):",
+      error,
+      "",
+      "The user's messages, oldest first:",
+      ...users.map(transcribeUserInput),
+      "",
+      "The last completed turn:",
+      ...turn,
+      "",
+      `Trace file (JSONL, one record per line): ${tracePath}`,
+      `Hand-off files written earlier, if any, are under ${SCRATCHPAD}/handoff/.`,
+      "",
+      "Carry on with the task from where it stopped. Consent does not carry over: anything that needed a go-ahead is asked again.",
+    ].join("\n"),
+  );
+}
 
 /** The harness's completion notice of a background command, worded as the Session words it. */
 function backgroundNotice(
@@ -209,6 +256,39 @@ export function harnessTranscript(lang: Lang, now: number, ref: ModelRef): Trans
 - Do not rewrite the hooks.md intro.`,
   );
   const checkLinks = (description: string) => ({ cmd: LINKS.cmd, description });
+  const rewriteIntro = L(
+    "顺便把 hooks.md 的导语也改写一下。",
+    "Rewrite the intro of hooks.md while you're at it.",
+  );
+  // The manual compaction's note: the provider's refusal, the user messages abridged to the
+  // request the person interrupted, and the weekly check's last reply.
+  const handoffNote = handoffNoteText(
+    transcribeRequestError("denied", "402 Insufficient Balance"),
+    [rewriteIntro],
+    [
+      transcribeText(
+        L(
+          "坏的还是之前那 3 条，这周没有新坏掉的链接。",
+          "The same three links as before are broken; nothing new broke this week.",
+        ),
+      ),
+    ],
+    traceFile(id, startedAt, 1),
+  );
+  const steer = L("用新的锚点，别用重定向。", "Use the new anchors, not redirects.");
+  const recheck = checkLinks(L("重新检查链接", "Re-check the links"));
+  // The goal's hand-off note: the file the refusal closed opened with the switch's summary,
+  // held the objective and the steering message, and last completed round 2's re-check; the
+  // provider's refusal of the request after it is quoted, so the model does not rebuild it.
+  const refusalNote = handoffNoteText(
+    transcribeRequestError("rejected", TOO_LONG),
+    [summary, objective, steer],
+    [
+      transcribeToolCall("exec_command", "call_round2_links", JSON.stringify(recheck)),
+      transcribeToolCallOutput("call_round2_links", "completed", "211 links checked, 0 broken."),
+    ],
+    traceFile(id, b(741.4), 3),
+  );
 
   const history: AmspRecord[] = [
     // ---- The handoff, the prompt and the first run's bootstrap -------------------------------
@@ -429,10 +509,7 @@ Every other link in \`corpus/claude-code-docs/hooks.md\` still resolves.`,
 
     // ---- Task: the person interrupts the reply ------------------------------------------------
     taskBegin(b(600)),
-    userText(
-      b(600),
-      L("顺便把 hooks.md 的导语也改写一下。", "Rewrite the intro of hooks.md while you're at it."),
-    ),
+    userText(b(600), rewriteIntro),
     requestBegin(b(600.3)),
     assistantText(
       b(607),
@@ -445,7 +522,34 @@ Every other link in \`corpus/claude-code-docs/hooks.md\` still resolves.`,
     abortEvent(b(607.1)),
     taskEnd(b(607.1)),
 
+    // ---- A manual compaction the provider refuses: the next context opens on the note ---------
+    event(b(612), {
+      type: "compaction_begin",
+      reason: "manual",
+      mode: "summarize",
+      context: 51_300,
+      turns: 62,
+    }),
+    requestBegin(b(612.2)),
+    event(b(613.4), {
+      type: "request_end",
+      status: "fatal",
+      error_code: "denied",
+      error_message: "402 Insufficient Balance",
+    }),
+    event(b(613.5), {
+      type: "compaction_end",
+      reason: "manual",
+      mode: "summarize",
+      status: "completed",
+      attempt: 1,
+      error_code: "denied",
+      error_message: "402 Insufficient Balance",
+    }),
+
     // ---- Task: the provider refuses the request ----------------------------------------------
+    meta(b(660), id, ref, IDS.workspace),
+    userText(b(660), handoffNote),
     taskBegin(b(660)),
     userText(
       b(660),
@@ -458,7 +562,7 @@ Every other link in \`corpus/claude-code-docs/hooks.md\` still resolves.`,
     event(b(662.8), {
       type: "request_end",
       status: "fatal",
-      error_code: "rejected",
+      error_code: "denied",
       error_message: "402 Insufficient Balance",
     }),
     taskEnd(b(662.8)),
@@ -517,17 +621,9 @@ Every other link in \`corpus/claude-code-docs/hooks.md\` still resolves.`,
     requestEnd(b(789.4)),
     toolOutput(b(789.6), "call_fix_events", "Edited release-0.2.13-draft.md (+1 -1)."),
     toolOutput(b(789.7), "call_fix_matchers", "Edited release-0.2.13-draft.md (+1 -1)."),
-    userText(
-      b(789.8),
-      userSteeringText(L("用新的锚点，别用重定向。", "Use the new anchors, not redirects.")),
-    ),
+    userText(b(789.8), userSteeringText(steer)),
     requestBegin(b(790)),
-    toolCall(
-      b(793),
-      "call_round1_links",
-      "exec_command",
-      checkLinks(L("重新检查链接", "Re-check the links")),
-    ),
+    toolCall(b(793), "call_round1_links", "exec_command", recheck),
     requestEnd(b(793.1)),
     toolOutput(b(821), "call_round1_links", `${BROKEN.sdk}\n211 links checked, 1 broken.`),
     requestBegin(b(821.3)),
@@ -562,21 +658,44 @@ Every other link in \`corpus/claude-code-docs/hooks.md\` still resolves.`,
     requestEnd(b(836.1)),
     toolOutput(b(836.4), "call_fix_sdk", "Edited release-0.2.13-draft.md (+1 -1)."),
     requestBegin(b(836.7)),
-    toolCall(
-      b(839),
-      "call_round2_links",
-      "exec_command",
-      checkLinks(L("重新检查链接", "Re-check the links")),
-    ),
+    toolCall(b(839), "call_round2_links", "exec_command", recheck),
     requestEnd(b(839.1)),
     toolOutput(b(866), "call_round2_links", "211 links checked, 0 broken."),
+
+    // ---- The gateway refuses the next request: a hand-off with no request, then the resend ----
     requestBegin(b(866.3)),
+    event(b(867.4), {
+      type: "request_end",
+      status: "retryable",
+      error_code: "rejected",
+      error_message: TOO_LONG,
+      attempt: 1,
+      retry_in_ms: 0,
+    }),
+    event(b(867.5), {
+      type: "compaction_begin",
+      reason: "context",
+      mode: "summarize",
+      context: 16_100,
+      turns: 9,
+    }),
+    event(b(867.9), {
+      type: "compaction_end",
+      reason: "context",
+      mode: "summarize",
+      status: "completed",
+      error_code: "rejected",
+      error_message: TOO_LONG,
+    }),
+    meta(b(868), id, SWITCHED_MODEL, IDS.workspace),
+    userText(b(868), refusalNote),
+    requestBegin(b(868.2)),
     toolCall(b(869), "call_goal_done", "edit_file", {
       path: GOAL_FILE,
       old_string: '"status": "active"',
       new_string: '"status": "complete"',
     }),
-    requestEnd(b(869.1)),
+    event(b(869.1), { type: "request_end", status: "completed", attempt: 2 }),
     toolOutput(b(869.4), "call_goal_done", "Edited GOAL.json (+1 -1)."),
     requestBegin(b(869.7)),
     assistantText(

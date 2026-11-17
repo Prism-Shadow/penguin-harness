@@ -27,8 +27,13 @@ const PLATFORM_BUNDLE_FILE = fileURLToPath(
 );
 
 const webFiles = (marker: string) => ({
-  "index.html": Buffer.from(`<html>${marker}</html>`).toString("base64"),
+  "index.html": Buffer.from(
+    `<html><link rel="manifest" href="/manifest.webmanifest" />${marker}</html>`,
+  ).toString("base64"),
   "assets/index-abc123.js": Buffer.from(`console.log("${marker}")`).toString("base64"),
+  // The PWA manifest rides in the web push as a static file; browsers install a manifest
+  // only when it answers `application/manifest+json`.
+  "manifest.webmanifest": Buffer.from(`{"name":"${marker}"}`).toString("base64"),
 });
 
 async function pushWeb(t: TestApp, cookie: string, marker: string) {
@@ -82,6 +87,13 @@ describe("web static caching, from a pushed web", () => {
     expect(asset.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
   });
 
+  it("serves the pushed manifest.webmanifest as application/manifest+json, not octet-stream", async () => {
+    const res = await t.app.request("/manifest.webmanifest");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("application/manifest+json");
+    expect(await res.json()).toEqual({ name: "v1" });
+  });
+
   it("answers a matching ETag with a bodiless 304 that keeps the contract", async () => {
     const revalidated = await t.app.request("/", {
       headers: { "if-none-match": await etagOfIndex() },
@@ -125,6 +137,39 @@ describe("web static caching, from a pushed web", () => {
     expect(await after.text()).toContain("v2");
     expect(after.headers.get("etag")).not.toBe(v1Etag);
   });
+
+  it("retargets a workbench page's manifest link at the workbench's own manifest", async () => {
+    // The full-page route of a workbench is its own installable app: its index.html stops
+    // naming the main app's manifest and names the workbench's — per workbench, from the
+    // path's own project/agent/id segments.
+    const page = await t.app.request("/app/proj-1/agent-1/wb-9");
+    const html = await page.text();
+    expect(html).toContain(
+      'href="/api/projects/proj-1/agents/agent-1/workbenches/wb-9/manifest.webmanifest"',
+    );
+    // The rewritten bytes are a different representation: their own ETag, so a client
+    // holding the plain page's validator re-downloads instead of keeping a stale link.
+    expect(page.headers.get("etag")).not.toBe(await etagOfIndex());
+
+    // Another workbench on the same pair of ids gets its own link.
+    const other = await t.app.request("/app/proj-1/agent-1/wb-10");
+    expect(await other.text()).toContain(
+      'href="/api/projects/proj-1/agents/agent-1/workbenches/wb-10/manifest.webmanifest"',
+    );
+
+    // A route that names a tab gets THAT tab's manifest: one app per tab, the launcher
+    // opening the tab the route shows.
+    const tabbed = await t.app.request("/app/proj-1/agent-1/wb-9/tab-3");
+    expect(await tabbed.text()).toContain(
+      'href="/api/projects/proj-1/agents/agent-1/workbenches/wb-9/tabs/tab-3/manifest.webmanifest"',
+    );
+
+    // Everything else keeps the main app's manifest: the shell itself, and a session page
+    // one segment short of a workbench's.
+    for (const p of ["/", "/chat/new", "/app/proj-1/agent-1"]) {
+      expect(await (await t.app.request(p)).text()).not.toContain("workbenches/");
+    }
+  });
 });
 
 describe("web static caching, served from disk", () => {
@@ -138,7 +183,10 @@ describe("web static caching, served from disk", () => {
   beforeAll(async () => {
     webDist = path.join(await makeTempRoot(), "web");
     await fs.mkdir(path.join(webDist, "assets"), { recursive: true });
-    await fs.writeFile(path.join(webDist, "index.html"), "<html>disk v1</html>");
+    await fs.writeFile(
+      path.join(webDist, "index.html"),
+      '<html><link rel="manifest" href="/manifest.webmanifest" />disk v1</html>',
+    );
     await fs.writeFile(path.join(webDist, "assets", "index-abc123.js"), 'console.log("v1")');
     t = await createTestApp({ config: { webDist } });
   });
@@ -178,10 +226,41 @@ describe("web static caching, served from disk", () => {
 
     // A different length moves the validator without depending on clock resolution — an
     // mtime-only change can land inside the same millisecond on a fast filesystem.
-    await fs.writeFile(path.join(webDist, "index.html"), "<html>disk v2 (longer)</html>");
+    await fs.writeFile(
+      path.join(webDist, "index.html"),
+      '<html><link rel="manifest" href="/manifest.webmanifest" />disk v2 (longer)</html>',
+    );
     const after = await t.app.request("/", { headers: { "if-none-match": etag } });
     expect(after.status).toBe(200);
     expect(await after.text()).toContain("v2");
     expect(after.headers.get("etag")).not.toBe(etag);
+  });
+
+  it("retargets a workbench page's manifest link on the disk path too", async () => {
+    // The shipped install serves from a directory: the same rewrite holds, with the ETag
+    // computed from the rewritten bytes (the file's mtime under it unchanged).
+    const page = await t.app.request("/app/proj-1/agent-1/wb-9");
+    const html = await page.text();
+    expect(html).toContain("disk v2 (longer)");
+    expect(html).toContain(
+      'href="/api/projects/proj-1/agents/agent-1/workbenches/wb-9/manifest.webmanifest"',
+    );
+    expect(page.headers.get("etag")).toMatch(/^W\/"[A-Za-z0-9_-]{16}"$/);
+    // Equal-length rewrites of the same index.html are different representations: two tab
+    // pages whose rewritten links have the same byte length still carry distinct ETags —
+    // a validator held for one must not answer the other's If-None-Match with a 304.
+    const a = await t.app.request("/app/proj-1/agent-1/wb-9/tab-aa");
+    const b = await t.app.request("/app/proj-1/agent-1/wb-9/tab-bb");
+    expect((await a.text()).length).toBe((await b.text()).length);
+    expect(a.headers.get("etag")).toMatch(/^W\/"/);
+    expect(b.headers.get("etag")).toMatch(/^W\/"/);
+    expect(a.headers.get("etag")).not.toBe(b.headers.get("etag"));
+    const repeat = await t.app.request("/app/proj-1/agent-1/wb-9/tab-aa", {
+      headers: { "if-none-match": b.headers.get("etag")! },
+    });
+    expect(repeat.status).toBe(200);
+    // An unchanged non-rewritten path keeps the classic size+mtime validator.
+    const asset = await t.app.request("/assets/app.js");
+    expect(asset.headers.get("etag")).toMatch(/^W\/"\d+-\d+"$/);
   });
 });

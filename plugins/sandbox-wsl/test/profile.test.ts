@@ -1,5 +1,6 @@
 /**
- * Unit tests for the WSL backend's pure half: path mapping, the program a Windows argv names,
+ * Unit tests for the WSL backend's pure half: path mapping, the program a Windows argv names
+ * (the host's own runtime included, and the host scripts it refuses),
  * the bubblewrap profile per policy, the launcher's argv and notice filter, and the parsing of
  * Alpine's release list. No wsl.exe is started, so these run on any host.
  */
@@ -7,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import {
   bwrapArgs,
   chdirRoots,
+  launchJob,
   linuxProgram,
   parseMinirootfs,
   parseUbuntuSums,
@@ -50,6 +52,30 @@ describe("linuxProgram", () => {
     expect(linuxProgram("C:\\Program Files\\Git\\bin\\bash.exe")).toBe("/bin/bash");
     expect(linuxProgram("sh.exe")).toBe("/bin/sh");
     expect(linuxProgram("git.exe")).toBe("git");
+  });
+});
+
+describe("the host's own runtime", () => {
+  const APP = "C:\\Users\\k\\AppData\\Local\\Programs\\PenguinHarness\\PenguinHarness.exe";
+  const POLICY = { mode: "workspace-write", workspaceRoot: WS } as const;
+  const STATE = {
+    distro: "penguin-sandbox",
+    user: "penguin",
+    base: "ubuntu",
+    version: "24.04",
+    packages: ["nodejs"],
+    initializedAt: "2026-11-16T00:00:00.000Z",
+  };
+  const job = (argv: string[]) => launchJob(argv, POLICY, wslSettingsOf({}), STATE, APP);
+
+  it("is the distro's node, whatever the app's executable is called", () => {
+    expect(job([APP, "-e", "process.exit(0)"]).command).toEqual(["node", "-e", "process.exit(0)"]);
+  });
+
+  it("refuses a host script by name instead of handing the distro a path it cannot see", () => {
+    const script = "C:\\Users\\k\\.penguin\\data\\p\\a\\agent_state\\hooks\\goal\\start.mjs";
+    expect(() => job([APP, script])).toThrow(`penguin-wsl cannot run ${script}`);
+    expect(job(["bash", "-c", "pwd"]).command).toEqual(["/bin/bash", "-c", "pwd"]);
   });
 });
 

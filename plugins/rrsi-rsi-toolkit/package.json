@@ -1,0 +1,36 @@
+{
+  "name": "@penguinharness/rrsi-rsi-toolkit",
+  "version": "0.2.18",
+  "description": "The RRSI RSI Toolkit: Regularized Recursive Self-Improvement of Agent Harnesses (Xia et al., 2026, https://arxiv.org/abs/2609.24972), run the way the paper does — an annealed edit budget bounds what one proposal may bundle, a leakage Critic screens it before any measurement is spent, a Pruner deletes machinery that stopped earning its place, and a noise-adjusted floor plus a token-cost rule select the next harness. Self-contained: it creates the Target's harness slot, evaluates its own cells and writes the Evaluation Center's scoreboard.",
+  "keywords": [
+    "penguin-plugin",
+    "penguinharness",
+    "skills"
+  ],
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Prism-Shadow",
+    "url": "https://github.com/Prism-Shadow"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "plugins/rrsi-rsi-toolkit"
+  },
+  "files": [
+    "icon.svg",
+    "skills",
+    "hooks",
+    "ifaces.json",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json"
+  },
+  "devDependencies": {
+    "@prismshadow/penguin-core": "workspace:*"
+  }
+}

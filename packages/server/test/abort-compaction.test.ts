@@ -8,11 +8,15 @@
  *
  * - Given a compacting Session, an abort answers 202, the compaction sees the signal and ends
  *   `aborted` (the original context kept), and the Session goes idle.
+ * - Given a compaction whose tool round waits on an always-ask approval, the approval request
+ *   reaches the user through the Session's own approval callback, and an abort answers it deny
+ *   before the signal fires, so the compaction ends instead of waiting on a question nobody
+ *   will answer.
  * - Given an idle Session, an abort answers 204 and starts nothing.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { compactionBegin, compactionEnd } from "@prismshadow/penguin-core";
-import type { AmspRecord } from "@prismshadow/penguin-core";
+import { compactionBegin, compactionEnd, toolCall } from "@prismshadow/penguin-core";
+import type { AmspRecord, ApprovalDecision, ApproveFn } from "@prismshadow/penguin-core";
 import { adoptSession, fakeSession, uniqueSessionId } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
@@ -74,6 +78,41 @@ describe("abort during compaction", () => {
     await waitFor(() => t.deps.manager.statusOf(sid) === "idle");
     expect(probe.sawAbort).toBe(true);
     expect(probe.endStatus).toBe("aborted");
+  });
+
+  it("an abort while a round's write waits on its approval denies it, and the compaction ends", async () => {
+    const roundSid = uniqueSessionId();
+    let decision: ApprovalDecision | null = null;
+    // A compaction whose round asks the Session's approval callback about a hand-off write,
+    // the way core's round does, and closes `aborted` once interrupted.
+    const session = fakeSession(roundSid, {
+      async *compact(opts: {
+        signal: AbortSignal;
+        approve: ApproveFn;
+      }): AsyncGenerator<AmspRecord> {
+        yield compactionBegin({ reason: "manual", mode: "summarize", context: 1000, turns: 3 });
+        decision = await opts.approve(
+          toolCall({
+            name: "write_file",
+            arguments: '{"file_path":"/s/handoff/plan.md","content":"x"}',
+            toolCallId: "h1",
+          }),
+        );
+        yield compactionEnd({ reason: "manual", mode: "summarize", status: "aborted" });
+      },
+    });
+    adoptSession(t.deps, session, {
+      projectId: "compactstopper-default_project",
+      approvalMode: "always-ask",
+    });
+
+    await t.deps.manager.startCompact(roundSid);
+    await waitFor(() => t.deps.manager.pendingApprovalCount(roundSid) === 1);
+    expect(decision).toBeNull();
+
+    expect((await api.post(`/api/sessions/${roundSid}/abort`, {})).status).toBe(202);
+    await waitFor(() => t.deps.manager.statusOf(roundSid) === "idle");
+    expect(decision).toBe("deny");
   });
 
   it("an idle Session reports 204: there is no compaction to stop", async () => {

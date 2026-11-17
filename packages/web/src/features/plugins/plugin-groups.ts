@@ -34,6 +34,13 @@ export interface ModulePart {
   unsatisfied?: string;
   /** The build ships it: installing it downloads nothing. */
   shipped: boolean;
+  /**
+   * The prefix resolves this name through a link `penguin plugin link` parked: the package is
+   * the author's directory, read fresh from disk every time.
+   */
+  linked?: true;
+  /** The author directory the link points at (when `linked`). */
+  linkPath?: string;
   /** Listed in the shared table, which this page never edits. */
   shared?: true;
   /** Why Remove is unavailable in this view, when it is. */
@@ -123,6 +130,7 @@ export function moduleParts(
       ...stateIn(listed, view, deployment?.machineId),
       shipped:
         listed.builtin || (view?.remote ?? deployment)?.shipped.includes(listed.specifier) === true,
+      ...(listed.linked === true ? { linked: true, linkPath: listed.linkPath } : {}),
       ...(shared ? { shared: true as const, removeBlocked: S.plugins.sharedHint } : {}),
     });
   }

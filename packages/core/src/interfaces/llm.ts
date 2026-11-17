@@ -122,7 +122,8 @@ export interface GenerativeModelParameters {
  *   - `fatal`: a failure no retry can fix — a provider 4xx rejection (invalid request or
  *     quota; 408/429 stay retryable), a credentials failure (see `isAuthenticationError`),
  *     or a deterministic client-side rejection thrown before any network I/O (fast mode on
- *     a model without a fast tier). The engine stops the run and surfaces `errorMessage`;
+ *     a model without a fast tier). The engine stops the run and surfaces `errorMessage`
+ *     (save a 4xx coded `rejected`, see `providerRejectionCode`, which it may answer itself);
  *     the fix is a config or credential change, then a new request (only the model
  *     reference is fixed at Session creation — credentials come from the current Project
  *     config, so a key update lets the Session continue).

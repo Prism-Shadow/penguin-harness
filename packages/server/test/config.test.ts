@@ -4,6 +4,9 @@
  * - An empty PORT (the common `PORT=` line in `.env`) reads as unset, never as port 0; an
  *   explicit value takes effect and an explicit "0" is kept (bind a random free port); a
  *   non-integer or out-of-range value throws. This matches the CLI's resolvePort.
+ * - PENGUIN_DEV_APP_PORT (set by `pnpm dev`, the port the first-login link points at): unset
+ *   or empty leaves it out, so the link keeps the server's own port; a value takes effect;
+ *   0, a non-integer or an out-of-range value throws rather than falling back silently.
  * - PENGUIN_SEED_ADMIN_PASSWORD: unset, empty or blank leaves the seed unpinned (null, so the
  *   seed generates its own); a value is kept trimmed; desktop mode changes neither.
  * - PENGUIN_CLI_ENTRY: a value is kept trimmed; a blank one falls through to the checkout
@@ -34,6 +37,27 @@ describe("resolveServerConfig: PORT parsing", () => {
   it("throws on a non-integer or out-of-range value", () => {
     for (const bad of ["abc", "3.14", "-1", "65536"]) {
       expect(() => resolveServerConfig({ ...base, PORT: bad }), bad).toThrow(/Invalid port/);
+    }
+  });
+});
+
+describe("resolveServerConfig: PENGUIN_DEV_APP_PORT parsing", () => {
+  it("is absent when unset or empty, so the link keeps the server's own port", () => {
+    expect(resolveServerConfig({ ...base }).devAppPort).toBeUndefined();
+    expect(resolveServerConfig({ ...base, PENGUIN_DEV_APP_PORT: "" }).devAppPort).toBeUndefined();
+  });
+
+  it("takes an explicit value, independent of PORT", () => {
+    const config = resolveServerConfig({ ...base, PORT: "7368", PENGUIN_DEV_APP_PORT: "7365" });
+    expect(config.port).toBe(7368);
+    expect(config.devAppPort).toBe(7365);
+  });
+
+  it("throws on 0, a non-integer or an out-of-range value", () => {
+    for (const bad of ["0", "abc", "3.14", "-1", "65536"]) {
+      expect(() => resolveServerConfig({ ...base, PENGUIN_DEV_APP_PORT: bad }), bad).toThrow(
+        /PENGUIN_DEV_APP_PORT/,
+      );
     }
   });
 });
