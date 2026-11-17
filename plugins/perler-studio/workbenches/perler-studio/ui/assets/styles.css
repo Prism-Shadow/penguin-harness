@@ -87,8 +87,11 @@ body {
   height: 100%;
 }
 
+/* padding:0 undoes the 16px body padding of the app's base sheet (/workbench-ui.css), which
+   would otherwise inset the full-height workbench. */
 body {
   margin: 0;
+  padding: 0;
   background: var(--bg);
   color: var(--fg);
   font-family:
