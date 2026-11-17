@@ -67,7 +67,7 @@
  * |                    | trigger, a checkbox's box, a radio's disc, a switch's    |                                                       |
  * |                    | track, the start page's pickers and the person's own     |                                                       |
  * |                    | message bubble; hosts: `Button`, `Input`, `Textarea`,    |                                                       |
- * |                    | `Select`, `OptionMenu`, `SearchInput`,                   |                                                       |
+ * |                    | `Select`, `OptionMenu`, `SearchInput`, `PickerTrigger`,  |                                                       |
  * |                    | `FormPickerTrigger`, `Checkbox`, `CheckboxBox`, `Radio`, |                                                       |
  * |                    | `RadioDisc`, `Switch`, `MessageBubble`, `AgentSelect`,   |                                                       |
  * |                    | `WorkspaceSelect`                                        |                                                       |
