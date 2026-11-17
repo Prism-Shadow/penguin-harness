@@ -222,6 +222,7 @@ export async function testPlugin(options: TestPluginOptions): Promise<TestResult
       : (options.units.modules ?? []);
     const units: Array<{ name: string; run: (context: TestContext) => Promise<void> | void }> = [];
     for (const cls of classes) {
+      if (typeof cls !== "function") continue; // Plugin.modules entries may be absent
       const proto = cls.prototype as { run?: TestUnit["run"] };
       if (typeof proto.run !== "function") continue;
       const meta = moduleMetaOf(cls); // throws when the class is not a @Module / @Component

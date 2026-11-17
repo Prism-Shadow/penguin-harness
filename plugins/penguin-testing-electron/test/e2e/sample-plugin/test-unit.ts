@@ -1,7 +1,6 @@
 import { expect } from "@playwright/test";
 import { Component } from "@prismshadow/penguin-core/plugin";
 import type { TestContext } from "../../src/driver.js";
-
 /**
  * The sample plugin's one test unit — a component, the unit the harness itself is built
  * from, with `run` as its body. The test code hands the class to the driver's `testPlugin`
