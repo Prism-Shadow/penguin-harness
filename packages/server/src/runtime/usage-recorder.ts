@@ -23,7 +23,7 @@ import type {
   UsageRecording,
   UsageStore,
 } from "@prismshadow/penguin-library-observability";
-import type { Projects } from "../mechanisms/projects.js";
+import type { Projects } from "@prismshadow/penguin-library-projects";
 
 /** Attribution context for one record (top-level Session scope). */
 
