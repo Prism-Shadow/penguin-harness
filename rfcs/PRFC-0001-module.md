@@ -2,18 +2,18 @@
 
 [中文版](PRFC-0001-module.zh.md)
 
-> **Source**: `rfcs/PRFC-0001-module.md` from the design repository [penguin-harness-design](https://github.com/Prism-Shadow/penguin-harness-design) — landed (default branch `main`, commit [`ac673a24`](https://github.com/Prism-Shadow/penguin-harness-design/commit/ac673a245eec78d6afca35e260dce28b2a3ab3ac)).
-> **Rev**: v1.0.0 (migrated into the main repository); the conventions for this surface are in [README.md](README.md), and changes from version to version are recorded in `## Changes` at the end.
+> **Source**: migrated from [PRFC-0001-module](https://github.com/Prism-Shadow/penguin-harness-design/blob/main/rfcs/PRFC-0001-module.md) in the design repository.
+> **Rev**: v2.3.0; per-version changes are recorded in `## Changes` at the end.
 
 - Feature Name: `module`
 - Start Date: 2026-09-02
-- PRFC PR: [Prism-Shadow/penguin-harness-design#117](https://github.com/Prism-Shadow/penguin-harness-design/pull/117)
-- Implementation PR: [Prism-Shadow/penguin-harness#543](https://github.com/Prism-Shadow/penguin-harness/pull/543) (kernel and generator), [Prism-Shadow/penguin-harness#599](https://github.com/Prism-Shadow/penguin-harness/pull/599) (the server-side conversion)
 
 ## Summary
 [summary]: #summary
 
-Module is the unit in which this harness assembles code — a mechanism, not a directory convention. It has only three primitives: **Interface** states what is needed, **Component** exports itself, **Module** exports others. The interfaces between nodes are expressed as **signature-level data**, and the whole tree is validated before any node's code runs. The server's business surface is its first application, and the catch-all `AppDeps` wrapper it used to carry is retired along with it.
+The Module mechanism covers declarations, operators, signature projection, dependency resolution, compilation and runtime assembly. Authors use Interface contracts, Component implementations and Module scopes; class and field annotations attach the declarations from which the generator produces signature-level data. Passes transform immutable declaration snapshots, final verification checks the assembled result, and the runtime creates and connects its instances. Plugin selection determines which declarations and passes participate.
+
+An Operator is a declaration transformation in this mechanism. The TypeScript `@...` forms express declaration construction and operator application on classes and fields. Source, intermediate and accepted declaration snapshots share one representation, while runtime instances have their own lifecycle. [Module Pass](PRFC-0025-module-pass.md) defines rewriting and deferred recipe operators; [Plugin](PRFC-0003-plugin.md) defines installation, removal and generation changes.
 
 ## Motivation
 [motivation]: #motivation
@@ -41,7 +41,9 @@ A sandbox backend has to keep working after a hot push. The platform side requir
 ## Guide-level explanation
 [guide-level-explanation]: #guide-level-explanation
 
-Three primitives, one sentence each: **Interface** is a set of method and field signatures, written as an abstract class purely to serve as a handle — declare its own members with `@Interface()`, be an existing type with `extends Interface<T>()`; **Component** is the node that exports itself, its instance being its own provision; **Module** is the node that exports others, it has children, and re-exports a portion of the interfaces from its children, with the rest of the subtree's provisions private to the outside.
+The authoring forms describe the parts to assemble: **Interface** is a contract expressed through method and field signatures; **Component** provides its own instance; **Module** groups children and publishes selected provisions. A declaration records identity, contracts, dependencies and the recipe that produces its code or value. A slot receives an ordered collection of contributions.
+
+Class and field annotations declare or refine these facts. `@Module` and `@Component` identify the class's role, `@Interface()` declares an interface handle, and `@Use`, `@Provide` and `@Bind` attach requirements, provisions and contribution bindings to fields. `extends Interface<T>()` names an existing contract. The generator reads these forms statically and the runtime interprets their resulting declarations. A pass may replace a component with a mock or filter a slot without mutating earlier snapshots; intermediate missing dependencies and type mismatches are checked after the composed edits finish.
 
 A node declares what it wants with `@Use()` fields, what it gives with `@Provide()` fields, hands over the code half of a contribution with `@Bind()`, and hands over the state to be retained with `park()`. Dependencies finish injecting before the optional `setup()`; the lifecycle hook is named `setup()` rather than `create()`, because the repo itself already has a domain method named `create`.
 
@@ -56,9 +58,21 @@ The server's business surface is organized this way: most services and all repos
 ## Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
 
-### The three primitives
+### Declarations and operators
 
-The whole mechanism has only three things: **Interface** says "what is needed"; **Component** and **Module** are the two kinds of nodes on the tree.
+The mechanism uses qualified declaration identities, contract data and opaque recipes. A Module introduces a lexical scope and an ordered assembly of declarations. A Component contributes a declaration whose recipe creates the instance; a slot exposes an ordered view of contribution declarations. These views do not create separate lifecycle stages for source, intermediate and accepted snapshots.
+
+An Operator is a pure transformation of a declaration, applied in declared order. It may refine the provided contract, append a requirement or transform the recipe; the qualified identity and position belong to the surrounding Module and remain fixed. Composition applies the left operator before the right, is associative and has an identity operation. General operators need not preserve validity or commute. A recipe operator preserves declared contracts, without thereby guaranteeing the behavior of the code it produces.
+
+Operator application has type `Declaration → Declaration`; lifting an operator to a named entry, or editing a collection, has type `Module → Module`. These types specify the inputs and outputs of the operations. Final validity separately checks identities, visibility, compatible dependencies and acyclicity. An operator can be correctly typed while producing an intermediate Module that fails those checks.
+
+In class notation, `@Module` and `@Component` introduce the declaration and scope, while field decorators express operator application to the associated requirement, provision or contribution declaration. A class with several provisions or contributions produces the corresponding declaration entries. This logical order is the order recorded for composition; source-language evaluation order must be translated consistently. It is not permission to execute arbitrary runtime code during signature projection.
+
+The assembled snapshot preserves declaration and contribution order. Removing a uniquely identified, present slot member reduces the slot from N entries to N−1 without removing its owner component. Replacing a component preserves its identity while its new contract is verified with the final assembly. Duplicate identities, missing providers and incompatible contracts may occur during rewriting, but cannot be admitted into a running generation.
+
+### Authoring forms
+
+The class and field notation below specifies how authors declare interfaces, components, modules and their connections.
 
 #### Interface: a set of method signatures, and signatures are data
 
@@ -247,6 +261,16 @@ An extension package provides a set of Modules: `package.json#penguin.modules` c
 
 Introducing this mechanism does not by itself change the runtime. The tree starts inside the existing platform kernel node, and at park time each module's document is written into the newly added `modules` field. Parked documents are not reversioned — fields are only added — so a data root parked by this version of the platform can still accept an older platform pushed back onto it. The only place the runtime is touched is the extension loader, which reads one more thing: `package.json#penguin`.
 
+### Compilation, verification and runtime assembly
+
+Compilation reads the assembled declarations and applies the selected passes. It must preserve the original declarations and earlier snapshots. Recipe construction is separate from recipe execution: compile-time editing must not run component initialization or mutate live instances. Before boot, verify unique identities, resolved and visible providers, exports, contribution contracts and an acyclic dependency order. Intermediate mismatches are permitted; an accepted generation must satisfy all of these constraints.
+
+Type compatibility is delegated to TypeScript: render each side's own declaration snapshot into `.d.ts` files and generate assignment questions. Preserve direction, transitive references, compiler options and revision identity; never replace the consumer's declaration with the provider's just to answer a question. Unsupported rendering, a missing declaration or an unfinished compiler check is not a successful comparison. Graph checks remain responsible for missing or ambiguous providers. Diagnostics map generated questions and declaration ranges back to their module facts and operator origins, including deletions; origins explain relevant changes, not a unique minimal culprit.
+
+The accepted declaration snapshot fixes the provider choices and startup order that boot consumes. Rejection preserves the current selection before runtime handover. Successful verification checks declared contracts; it does not prove that arbitrary component code honors those contracts or that boot cannot fail. Park/load, disposal and recovery follow the lifecycle in [Plugin](PRFC-0003-plugin.md) and [HMR](PRFC-0002-hmr.md).
+
+Declaration editing and runtime handover have different obligations. Edits must leave earlier inputs unchanged; implementations may use persistent data structures and structural sharing. Runtime resources belong to instances and generations, with explicit ownership and cleanup. A new declaration snapshot does not by itself copy, restore or dispose those resources.
+
 ## Drawbacks
 [drawbacks]: #drawbacks
 
@@ -289,6 +313,27 @@ Agent Workbench (formerly Workflow) describes its backend and UI in one declarat
 The frontend has a tree of its own too: `web/src/module.json` is already the App's manifest — each page's route, navigation position, whether it is admin-only, and its renderer name are all in there, and the routes and the sidebar are exported from it; `GET /api/contributions` returns, as data, what the server contributes to the frontend slots, and the frontend renders only the renderers it recognizes. The possibility of both trees using the same set of judgment rules is left for another piece.
 
 ## Changes
+
+### v2.3.0
+
+- Updated: named declaration transformations Operator and separated operation types from final Module validity.
+- Updated: related class and field annotations to declaration construction and operator application.
+
+### v2.2.0
+
+- Updated: specified the complete Module mechanism, including decorators, authoring forms, signature projection, resolution, verification and lifecycle boundaries.
+- Added: language-independent Decorator composition and its relationship to class and field notation.
+- Updated: references point to RFC documents; the specification states behavior and contracts directly.
+
+### v2.1.0
+
+- Updated: reduced the semantic core to Module, Pass and Plugin; represented components and slots within one ordered Module type, with validity separate from representation.
+- Added: explicit namespace, dependency, type-check completion and admission contracts.
+- Updated: distinguished declaration validity, diagnostics, runtime effects and structural sharing.
+
+### v2.0.0
+
+- Updated: immutable module planning, deferred verification, generation ownership and validation boundaries.
 
 ### v1.0.0
 

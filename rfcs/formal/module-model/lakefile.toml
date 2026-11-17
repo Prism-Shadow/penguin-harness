@@ -1,0 +1,6 @@
+name = "module-model"
+version = "0.1.0"
+defaultTargets = ["ModuleModel"]
+
+[[lean_lib]]
+name = "ModuleModel"

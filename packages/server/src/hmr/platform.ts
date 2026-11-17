@@ -100,6 +100,9 @@ import type { UnsatisfiedPlugin } from "../api/types.js";
 import { migrate } from "../db/migrations/index.js";
 import { MachinesRepo } from "../db/repos/machines.js";
 import type { Auth } from "../mechanisms/identity.js";
+import { compileModuleDef } from "../compile/module.js";
+import { compileModuleTree, describeCompile } from "../compile/pipeline.js";
+import { describeTree } from "../compile/tree.js";
 
 /**
  * This server's hot host: the mechanism (@prismshadow/penguin-hmr) with the api ITS platforms
@@ -354,6 +357,8 @@ async function createInner(
     );
   }
   const caps = claim.kind === "claimed" ? claim.caps : null;
+  // The compile's debug switch: trace, timings and the tree dump; off is silent and untimed.
+  const compileDebug = process.env.PENGUIN_MODULE_COMPILE_DEBUG === "1";
   // A pushed platform carries its own migrations, which is the only way the tables its
   // business needs can reach a runtime older than they are — that runtime will never grow
   // them by restarting, because it does not have them. swapPath: this boot can be rolled
@@ -488,37 +493,62 @@ async function createInner(
     console.warn("[platform] bare kernel: terminals only, no business surface");
     terminals = new TerminalManager(ctx.resources, { assets: () => null });
     terminals.adopt(adoptable("TerminalModule") ? (context.terminals ?? []) : []);
-    ({ tree, unsatisfied } = await bootKept((kept) =>
-      bootModules(bareTree(kept.modules, kept.replacements), {
-        ifaces: plugins.ifaces(ifaceTable as unknown as IfaceTable),
+    ({ tree, unsatisfied } = await bootKept(async (kept) => {
+      // THE COMPILE (compile/pipeline.ts): the bare tree assembles the same way as the
+      // full one — CompileModule declares the pass registration surface, and any pass a
+      // tree registers reaches the compile as data. A tree that registers nothing runs a
+      // compile of the verify alone; the boot below is the same boot either way.
+      const ifaces = plugins.ifaces(ifaceTable as unknown as IfaceTable, kept.plugins);
+      const compiled = await compileModuleTree(
+        bareTree([...kept.modules, compileModuleDef()], kept.replacements),
+        { ifaces, resolve: kept.resolvePass, debug: compileDebug },
+      );
+      if (compileDebug)
+        console.log(
+          `[compile] bare: ${describeCompile(compiled.trace)}\n${JSON.stringify(compiled.profile)}\n${describeTree(compiled.tree)}`,
+        );
+      return bootModules(compiled.tree, {
+        ifaces,
+        compare: compiled.compare,
         resources: ctx.resources,
         parked: parkedModules(context),
-      }),
-    ));
+      });
+    }));
   } else {
     // THE MODULE TREE (see ../platform.ts): every business service, every route
     // group and the terminal manager are modules wired by their manifests — checked as
     // data before any create() runs, created in dependency order. Sandbox backends the
     // plugin host registered enter the same tree as one contributing module.
-    ({ tree, unsatisfied } = await bootKept((kept) =>
-      bootModules(
+    ({ tree, unsatisfied } = await bootKept(async (kept) => {
+      // THE COMPILE (compile/pipeline.ts): the assembled tree is data. A pass's
+      // registration rides in it — CompileModule's `passes` slot, checked with the
+      // tree. The pipeline orders and isolates the registered passes, then verifies
+      // the result. Retained plugins supply fresh factories for each compile attempt.
+      const ifaces = plugins.ifaces(ifaceTable as unknown as IfaceTable, kept.plugins);
+      const compiled = await compileModuleTree(
         platformDef(
           caps,
           adoptable,
-          kept.modules,
+          [...kept.modules, compileModuleDef()],
           kept.replacements,
           reassemble,
           // The predecessor's state boots in place of a fresh AgentState node: this App's
           // SessionManager is built over it, running Tasks and all.
           takenOver ? new Map([[AgentStateStore, handed.state]]) : new Map(),
         ),
-        {
-          ifaces: plugins.ifaces(ifaceTable as unknown as IfaceTable),
-          resources: ctx.resources,
-          parked: parkedModules(context),
-        },
-      ),
-    ));
+        { ifaces, resolve: kept.resolvePass, debug: compileDebug },
+      );
+      if (compileDebug)
+        console.log(
+          `[compile] ${describeCompile(compiled.trace)}\n${JSON.stringify(compiled.profile)}\n${describeTree(compiled.tree)}`,
+        );
+      return bootModules(compiled.tree, {
+        ifaces,
+        compare: compiled.compare,
+        resources: ctx.resources,
+        parked: parkedModules(context),
+      });
+    }));
     business = tree;
     terminals = tree.api<TerminalManager>("TerminalModule", "terminals");
   }

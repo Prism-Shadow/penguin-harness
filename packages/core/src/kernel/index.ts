@@ -67,3 +67,38 @@ export type { Opaque, Slot } from "./markers.js";
 export { Interface } from "./markers.js";
 export { dataExtends } from "./data.js";
 export type { TypeTable } from "./data.js";
+export type {
+  Decoration,
+  InterfaceRef,
+  ModuleEdit,
+  ModulePass,
+  ModulePassFactory,
+  Operator,
+  OperatorOrigin,
+  Predicate,
+  ProviderSelector,
+  Provision,
+  RewriteCtx,
+  SlotEntry,
+} from "./pass.js";
+export {
+  add,
+  and,
+  at,
+  byId,
+  byName,
+  decorate,
+  filter,
+  has,
+  interfaceRef,
+  not,
+  or,
+  pipe,
+  provides,
+  provisionsOf,
+  remove,
+  replace,
+  when,
+} from "./pass.js";
+export { DecorationError, materializeDecorations, wrapMethods } from "./pass-decoration.js";
+export type { MethodWrappers } from "./pass-decoration.js";

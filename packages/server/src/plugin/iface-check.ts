@@ -24,6 +24,7 @@ import type {
   IfaceDecl,
   IfaceTable,
   Manifest,
+  Mismatch,
   Sig,
   TypeExpr,
 } from "@prismshadow/penguin-core/kernel";
@@ -79,7 +80,20 @@ const property = (name: string) => (/^[A-Za-z_$][\w$]*$/.test(name) ? name : JSO
 
 class Renderer {
   private readonly names = new Map<string, string>();
-  private readonly taken = new Set<string>();
+  // Emitted helpers and standard-library types must never be shadowed by table aliases.
+  private readonly taken = new Set<string>([
+    ...WORDS,
+    "Opaque",
+    "Promise",
+    "Array",
+    "Map",
+    "Set",
+    "AsyncIterable",
+    "AsyncGenerator",
+    "Uint8Array",
+    "void",
+    "any",
+  ]);
   private readonly out: string[] = [];
   private readonly done = new Set<string>();
 
@@ -345,6 +359,38 @@ export function checkIfaces(
   const checkFile = path.join(base, "check.ts");
   files.set(checkFile, lines.join("\n") + "\n");
   const firstQuestionLine = lines.length - asked.length;
+  for (const d of diagnosticsFor(ts, files, checkFile)) {
+    const text = ts
+      .flattenDiagnosticMessageText(d.messageText, "\n    ")
+      .replace(/import\("[^"]*"(?:, \{[^}]*\{[^}]*\} \})?\)\./g, "");
+    const line =
+      d.file && d.start !== undefined ? d.file.getLineAndCharacterOfPosition(d.start).line : -1;
+    const q =
+      d.file && path.resolve(d.file.fileName) === checkFile
+        ? asked[line - firstQuestionLine]
+        : undefined;
+    if (q === undefined) {
+      problems.push(`interface check: TS${d.code} ${text}`);
+      continue;
+    }
+    problems.push(
+      `${label(q)}: ${
+        q.direction === "requires"
+          ? "this platform's interface does not fit the version the package was written against"
+          : "the version the package was written against does not fit what this platform asks for"
+      }\n    TS${d.code} ${text}`,
+    );
+  }
+  return { problems, uncompared };
+}
+
+/** Run one batch of assignment questions against virtual declaration files. */
+function diagnosticsFor(
+  ts: TypeScript,
+  files: ReadonlyMap<string, string>,
+  checkFile: string,
+): readonly import("typescript").Diagnostic[] {
+  const base = path.dirname(checkFile);
   const options: import("typescript").CompilerOptions = {
     strict: true,
     noEmit: true,
@@ -373,27 +419,41 @@ export function checkIfaces(
       : ts.createSourceFile(file, text, languageVersion, true);
   };
   const program = ts.createProgram([checkFile], options, host);
-  for (const d of ts.getPreEmitDiagnostics(program)) {
-    const text = ts
-      .flattenDiagnosticMessageText(d.messageText, "\n    ")
-      .replace(/import\("[^"]*"(?:, \{[^}]*\{[^}]*\} \})?\)\./g, "");
+  return ts.getPreEmitDiagnostics(program);
+}
+
+/** Final-tree compatibility questions. Only requested pairs are generated. */
+export function checkAssignments(
+  ts: TypeScript,
+  table: IfaceTable,
+  pairs: readonly { from: string; to: string }[],
+): readonly Mismatch[][] {
+  if (pairs.length === 0) return [];
+  const rendered = renderDts(table, [...new Set(pairs.flatMap(({ from, to }) => [from, to]))]);
+  const base = path.join(os.tmpdir(), "penguin-assignment-check");
+  const checkFile = path.join(base, "check.ts");
+  const lines = [
+    'import type * as T from "./types.js";',
+    ...pairs.map(
+      ({ from, to }, i) =>
+        `declare const q${i}: T.${rendered.names.get(from)}; export const a${i}: T.${rendered.names.get(to)} = q${i};`,
+    ),
+  ];
+  const files = new Map([
+    [path.join(base, "types.d.ts"), rendered.text],
+    [checkFile, lines.join("\n") + "\n"],
+  ]);
+  const answers: Mismatch[][] = pairs.map(() => []);
+  for (const diagnostic of diagnosticsFor(ts, files, checkFile)) {
+    const why = `TS${diagnostic.code} ${ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n    ")}`;
     const line =
-      d.file && d.start !== undefined ? d.file.getLineAndCharacterOfPosition(d.start).line : -1;
-    const q =
-      d.file && path.resolve(d.file.fileName) === checkFile
-        ? asked[line - firstQuestionLine]
-        : undefined;
-    if (q === undefined) {
-      problems.push(`interface check: TS${d.code} ${text}`);
-      continue;
+      diagnostic.file && diagnostic.start !== undefined
+        ? diagnostic.file.getLineAndCharacterOfPosition(diagnostic.start).line
+        : -1;
+    if (diagnostic.file?.fileName !== checkFile || line < 1 || line > pairs.length) {
+      throw new IfaceRenderError(`interface verification incomplete: ${why}`);
     }
-    problems.push(
-      `${label(q)}: ${
-        q.direction === "requires"
-          ? "this platform's interface does not fit the version the package was written against"
-          : "the version the package was written against does not fit what this platform asks for"
-      }\n    TS${d.code} ${text}`,
-    );
+    answers[line - 1]!.push({ method: "assignment", kind: "signature", why });
   }
-  return { problems, uncompared };
+  return answers;
 }

@@ -2,18 +2,18 @@
 
 [English](PRFC-0001-module.md)
 
-> **来源**：设计仓 [penguin-harness-design](https://github.com/Prism-Shadow/penguin-harness-design) 的 `rfcs/PRFC-0001-module.md`——落地于默认分支 `main`（提交 [`ac673a24`](https://github.com/Prism-Shadow/penguin-harness-design/commit/ac673a245eec78d6afca35e260dce28b2a3ab3ac)）。
-> **修订**：v1.0.0（迁入主仓）；本面的约定见 [README.zh.md](README.zh.md)，逐版本改动记在文末 `## Changes`。
+> **来源**：迁自设计仓的 [PRFC-0001-module](https://github.com/Prism-Shadow/penguin-harness-design/blob/main/rfcs/PRFC-0001-module.md)。
+> **修订**：v2.3.0；逐版本改动记在文末 `## Changes`。
 
 - Feature Name: `module`
 - Start Date: 2026-09-02
-- PRFC PR: [Prism-Shadow/penguin-harness-design#117](https://github.com/Prism-Shadow/penguin-harness-design/pull/117)
-- Implementation PR: [Prism-Shadow/penguin-harness#543](https://github.com/Prism-Shadow/penguin-harness/pull/543)（kernel 与生成器）、[Prism-Shadow/penguin-harness#599](https://github.com/Prism-Shadow/penguin-harness/pull/599)（服务端的转换）
 
 ## Summary
 [summary]: #summary
 
-Module 是这套 harness 组装代码的单位——一套机制，不是一条目录约定。它只有三个原语：**Interface** 说需要什么，**Component** 导出它自己，**Module** 导出别人。节点之间的接口以**签名级的数据**表达，整棵树在任何节点的代码运行之前被校验一遍。服务端的业务面是它的第一个应用，此前那只什么都装的 `AppDeps` 包裹随之取消。
+Module 机制覆盖声明、Operator、签名投影、依赖解析、编译和运行时装配。作者使用 Interface 契约、Component 实现与 Module 作用域；类与字段标注附加声明，生成器据此产出签名级数据。Pass 变换不可变声明快照，最终验证检查装配结果，运行时创建并连接实例。插件选择决定哪些声明和 pass 参与。
+
+Operator 是该机制中的声明变换，TypeScript 的 `@...` 写法在类和字段上表达声明构造与算子应用。原始、中间与已接受的声明快照使用同一种表示，运行时实例另有生命周期。改写和延后配方算子见 [Module Pass](PRFC-0025-module-pass.zh.md)，安装、卸载与换代见 [Plugin](PRFC-0003-plugin.zh.md)。
 
 ## Motivation
 [motivation]: #motivation
@@ -41,7 +41,9 @@ Module 是这套 harness 组装代码的单位——一套机制，不是一条�
 ## Guide-level explanation
 [guide-level-explanation]: #guide-level-explanation
 
-三个原语，一句话各自说清：**Interface** 是一组方法与字段的签名，写成抽象类只是为了当句柄——自己声明成员的用 `@Interface()`，本身就是某个已有类型的用 `extends Interface<T>()`；**Component** 是导出自己的节点，实例本身就是它的提供物；**Module** 是导出别人的节点，它有 children，并从 children 里转出一部分接口，子树其余的提供物对外私有。
+作者接口描述待装配的部分：**Interface** 通过方法与字段签名表达契约，**Component** 提供自己的实例，**Module** 组织子节点并发布选定的提供物。声明记录身份、契约、依赖及产出代码或值的配方；slot 接收有序的贡献集合。
+
+类与字段标注声明或细化这些事实：`@Module` 和 `@Component` 指定类的角色，`@Interface()` 声明接口句柄，`@Use`、`@Provide` 和 `@Bind` 在字段上附加需求、提供物与贡献绑定。`extends Interface<T>()` 为已有契约命名。生成器静态读取这些写法，运行时解释由此得到的声明。Pass 可以把组件替换为 mock 或筛选 slot，且不修改旧快照；中间态的依赖缺失和类型失配在组合编辑完成后统一检查。
 
 一个节点用 `@Use()` 字段声明它要什么，用 `@Provide()` 字段声明它给出什么，用 `@Bind()` 交出某个贡献的代码半，用 `park()` 交出要留存的状态。依赖在可选的 `setup()` 之前注入完毕；生命周期钩子叫 `setup()` 而不是 `create()`，因为 repo 本身就有一个叫 `create` 的领域方法。
 
@@ -56,9 +58,21 @@ Module 是这套 harness 组装代码的单位——一套机制，不是一条�
 ## Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
 
-### 三个原语
+### 声明与 Operator
 
-整套机制只有三样东西：**Interface** 说「需要什么」，**Component** 与 **Module** 是树上的两种节点。
+机制使用限定的声明身份、契约数据与不透明配方。Module 引入词法作用域，并按顺序装配声明；Component 提供由配方创建实例的声明，slot 暴露贡献声明的有序视图。这些视图不为原始、中间和已接受的快照另设生命周期阶段。
+
+Operator 是按声明顺序应用的纯声明变换，可以细化提供契约、追加需求或变换配方；限定身份和位置由所在 Module 持有，保持不变。组合先应用左侧、再应用右侧，满足结合律并有恒等操作。一般算子不保证保持合法性，也不保证交换律。配方算子保持声明契约，但不因此保证产出代码的行为。
+
+算子应用的类型为 `Declaration → Declaration`；将算子提升到指定条目或编辑集合时，类型为 `Module → Module`。这些类型规定操作的输入与输出。最终合法性另行检查身份、可见性、依赖兼容性和无环性。算子本身类型正确，仍可以产生不满足这些检查的中间 Module。
+
+类写法中，`@Module` 与 `@Component` 引入声明和作用域，字段装饰器表达对相应需求、提供物或贡献声明的算子应用。一个类有多个提供物或贡献时，生成对应的声明条目。这里的逻辑顺序是组合所记录的顺序，具体语言的求值顺序必须一致地转换；它不允许在签名投影期间执行任意运行时代码。
+
+装配快照保留声明和贡献顺序。删除唯一标识且确实存在的 slot 成员，使数量从 N 变为 N−1，不移除其所属组件。替换组件保留身份，新契约随最终装配一起验证。改写期间可以存在身份重复、provider 缺失与契约失配，但这些状态不能被接受为运行中的一代。
+
+### 作者接口
+
+以下类与字段写法规定作者如何声明接口、组件、模块及其连接。
 
 #### Interface：一组方法签名，而签名是数据
 
@@ -247,6 +261,16 @@ Go 的赋值规则，跨编译边界执行：消费者点名的每个方法都�
 
 引入这套机制本身不改运行时。树在既有的平台 kernel 节点内启动，park 时每个模块的文档写进新增的 `modules` 字段。parked 文档不重定版本——只加字段——因此一个被这一版平台 park 过的数据根，仍然接得住推回去的旧平台。运行时唯一被碰到的地方，是扩展加载器多读一个 `package.json#penguin`。
 
+### 编译、验证与运行时装配
+
+编译读取装配声明并应用所选 pass，必须保留原始声明和旧快照。构造配方与执行配方分开：编译期编辑不得运行组件初始化或修改活跃实例。Boot 前统一验证身份唯一、provider 已解析且可见、exports、贡献契约与无环依赖顺序。中间态允许失配，被接受的一代必须满足全部约束。
+
+类型兼容性交给 TypeScript：将两侧各自的声明快照生成 `.d.ts`，再生成赋值问题。保留方向、传递引用、编译选项和 revision 身份；不得用提供方的声明替换消费者的声明来回答问题。无法渲染、声明缺失或编译器未完成都不等于检查通过。图检查仍负责 provider 缺失或歧义。诊断将生成问题与声明区间映射回模块事实和 operator 来源，包括删除记录；来源说明相关改动，不承诺唯一最小责任方。
+
+已接受的声明快照固定 provider 选择和启动顺序，供 boot 消费。运行时交接之前拒绝候选时，保留当前选择。验证成功检查的是声明契约，不证明任意组件代码确实遵守契约，也不保证 boot 不会失败。Park/load、dispose 与恢复遵循 [Plugin](PRFC-0003-plugin.zh.md) 和 [HMR](PRFC-0002-hmr.zh.md) 的生命周期。
+
+声明编辑与运行时交接有不同责任。编辑必须保留旧输入，实现可以采用持久化数据结构与结构共享。运行时资源属于实例和代，必须明确归属和清理。新的声明快照本身不会复制、恢复或释放这些资源。
+
 ## Drawbacks
 [drawbacks]: #drawbacks
 
@@ -289,6 +313,27 @@ Agent Workbench（原 Workflow）以一份声明描述 backend 与 UI，沿用�
 前端也有自己的一棵树：`web/src/module.json` 已经是 App 的清单，页面的路由、导航位置、是否管理员限定、渲染器名字都在里面，路由与侧栏由它导出；`GET /api/contributions` 把服务端投给前端槽的东西作为数据返回，前端只渲染自己认得的渲染器。两棵树用同一套判定的可能性留待另一篇。
 
 ## Changes
+
+### v2.3.0
+
+- Updated：将声明变换命名为 Operator，区分操作类型与最终 Module 合法性。
+- Updated：明确类与字段标注对应声明构造和算子应用。
+
+### v2.2.0
+
+- Updated：规定完整 Module 机制，包括 Decorator、作者接口、签名投影、解析、验证与生命周期边界。
+- Added：与语言无关的 Decorator 组合，以及它与类、字段写法的关系。
+- Updated：引用限定为 RFC 文档，规范直接陈述行为和契约。
+
+### v2.1.0
+
+- Updated：语义核心收敛为 Module、Pass、Plugin；Component 和 slot 表示在同一种有序 Module 内，合法性独立于表示。
+- Added：明确命名空间、依赖、类型检查完成与准入契约。
+- Updated：区分声明合法性、诊断、运行时副作用与结构共享。
+
+### v2.0.0
+
+- Updated：不可变模块计划、延后验证、换代归属与验证边界。
 
 ### v1.0.0
 

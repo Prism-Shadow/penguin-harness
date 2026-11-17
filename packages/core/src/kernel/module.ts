@@ -313,6 +313,8 @@ export interface ModuleTree {
 
 export interface BootModulesOptions {
   ifaces: TableLike;
+  /** The same compatibility relation used to verify the compiled candidate. */
+  compare?: typeof satisfies;
   /** What the host publishes: interface declarations AND the live values behind them. */
   published?: { ifaces: Published; values: Record<string, Record<string, unknown>> };
   resources: Resources;
@@ -326,6 +328,7 @@ interface Flat {
   childrenDefs: ModuleDef[];
   /** Module names above this one; a node never wires to an ancestor (its exports are for outsiders). */
   ancestors: Set<string>;
+  visible: Set<string>;
 }
 
 function flatten(root: ModuleDef): { nodes: Flat[]; tree: ManifestNode } {
@@ -336,6 +339,15 @@ function flatten(root: ModuleDef): { nodes: Flat[]; tree: ManifestNode } {
       parent,
       childrenDefs: def.children ?? [],
       ancestors: new Set(parent ? [...parent.ancestors, parent.def.manifest.name] : []),
+      visible: new Set(
+        parent
+          ? [
+              ...parent.visible,
+              parent.def.manifest.name,
+              ...parent.childrenDefs.map((child) => child.manifest.name),
+            ]
+          : [],
+      ),
     };
     nodes.push(flat);
     return { manifest: def.manifest, children: flat.childrenDefs.map((c) => walk(c, flat)) };
@@ -350,6 +362,9 @@ function wiring(
   provides: Record<string, Record<string, IfaceDecl>>,
   ifaces: TableLike,
   ancestors: ReadonlySet<string> = new Set(),
+  visible: ReadonlySet<string>,
+  published: Published,
+  compare: typeof satisfies,
 ): Record<string, { from: string; alias: string }> {
   const out: Record<string, { from: string; alias: string }> = {};
   for (const [alias, need] of Object.entries(manifest.requires)) {
@@ -362,9 +377,14 @@ function wiring(
     // interface (the same table entry) wins over one that merely has the shape.
     for (const exact of [true, false]) {
       for (const from of candidates) {
-        if (from === manifest.name || ancestors.has(from)) continue;
+        if (
+          from === manifest.name ||
+          ancestors.has(from) ||
+          (!visible.has(from) && !(from in published))
+        )
+          continue;
         for (const [pAlias, decl] of Object.entries(provides[from] ?? {})) {
-          if (exact ? decl === required : satisfiesQuick(decl, required, ifaces)) {
+          if (exact ? decl === required : compare(decl, required, ifaces).length === 0) {
             out[alias] = { from, alias: pAlias };
             break;
           }
@@ -375,10 +395,6 @@ function wiring(
     }
   }
   return out;
-}
-
-function satisfiesQuick(offered: IfaceDecl, required: IfaceDecl, table: TableLike): boolean {
-  return satisfies(offered, required, table).length === 0;
 }
 
 function migrateContext(def: ModuleDef, doc: Json | undefined): Json {
@@ -419,6 +435,7 @@ function migrateContext(def: ModuleDef, doc: Json | undefined): Json {
 }
 
 export async function bootModules(root: ModuleDef, opts: BootModulesOptions): Promise<ModuleTree> {
+  const compare = opts.compare ?? satisfies;
   const { nodes, tree } = flatten(root);
   // The manifest's `children` is the declared shape; the defs are what boots. They must
   // agree — except that a manifest listing "*" accepts modules supplied at runtime
@@ -437,7 +454,7 @@ export async function bootModules(root: ModuleDef, opts: BootModulesOptions): Pr
     }
   }
   const publishedIfaces = opts.published?.ifaces ?? {};
-  const { problems, provides } = checkTree(tree, opts.ifaces, publishedIfaces);
+  const { problems, provides } = checkTree(tree, opts.ifaces, publishedIfaces, compare);
   if (problems.length > 0) {
     throw new ModuleBootError(
       `module tree rejected:\n${problems.map((p) => `  - ${describeProblem(p)}`).join("\n")}`,
@@ -447,7 +464,18 @@ export async function bootModules(root: ModuleDef, opts: BootModulesOptions): Pr
   const byName = new Map(nodes.map((n) => [n.def.manifest.name, n]));
   const wires = new Map<string, Record<string, { from: string; alias: string }>>();
   for (const n of nodes)
-    wires.set(n.def.manifest.name, wiring(n.def.manifest, provides, opts.ifaces, n.ancestors));
+    wires.set(
+      n.def.manifest.name,
+      wiring(
+        n.def.manifest,
+        provides,
+        opts.ifaces,
+        n.ancestors,
+        n.visible,
+        publishedIfaces,
+        compare,
+      ),
+    );
 
   /**
    * Where an exported alias actually comes from: the child declaring the interface (else
@@ -466,7 +494,7 @@ export async function bootModules(root: ModuleDef, opts: BootModulesOptions): Pr
       for (const child of n.childrenDefs) {
         const name = child.manifest.name;
         for (const [cAlias, decl] of Object.entries(provides[name] ?? {})) {
-          if (exact ? decl === wanted : satisfiesQuick(decl, wanted, opts.ifaces)) {
+          if (exact ? decl === wanted : compare(decl, wanted, opts.ifaces).length === 0) {
             found.push({ module: name, alias: cAlias });
             break;
           }
