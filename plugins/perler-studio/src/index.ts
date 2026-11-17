@@ -16,8 +16,7 @@ import type { Plugin } from "@prismshadow/penguin-core/plugin";
           "上传一张图片即可生成拼豆图纸：豆形网格、色号图例、每色颗数、拼板数量与成品尺寸，可导出 PNG、CSV、JSON 与打印页。",
         shortDescription: "Turn a picture into a bead pattern.",
         shortDescriptionZh: "把图片变成拼豆图纸，附色号图例与颗数统计。",
-        // TODO: `learning-life` once the category exists (https://github.com/Prism-Shadow/penguin-harness/pull/1580).
-        category: "office-productivity",
+        category: "entertainment",
         icon: "icon.svg",
         // Installed from the library on demand: no Agent gets it at creation.
         preinstall: false,

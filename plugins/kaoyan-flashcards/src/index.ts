@@ -16,8 +16,7 @@ import type { Plugin } from "@prismshadow/penguin-core/plugin";
           "考研公共课与专业课的题库、刷题与背诵工作台：内置 295 道示例题和 9 篇背诵资料，按间隔排期复习，可导入 PDF、Word 和文本。",
         shortDescription: "Kaoyan question bank and spaced review.",
         shortDescriptionZh: "考研题库、间隔复习与背诵资料。",
-        // TODO: `learning-life` once the category exists (https://github.com/Prism-Shadow/penguin-harness/pull/1580).
-        category: "office-productivity",
+        category: "utilities",
         icon: "icon.svg",
         // Installed from the library on demand: no Agent gets it at creation.
         preinstall: false,

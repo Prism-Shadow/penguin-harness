@@ -16,3 +16,5 @@ The plugin library ships two app-only plugins, `kaoyan-flashcards` (Kaoyan Flash
 - Both apps show a Chinese or an English interface after the device language; a switch in the top bar changes it in place and remembers the choice. Exam cards and recitation notes stay in Chinese.
 - Progress and settings are kept in the workbench's own state, separately for each Agent, so they follow the Agent from one browser to another; uninstalling the plugin deletes them. Neither app contacts any host other than its own server.
 - The server's library tests and the desktop build's packed-app check count a workbench as a plugin's part, beside a Skill or a hook package.
+
+Kaoyan Flashcards appears under Utilities and Perler Studio under Entertainment.
