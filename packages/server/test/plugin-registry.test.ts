@@ -904,9 +904,7 @@ describe("the published index source", () => {
       const client = apiClient(t.app, admin.cookie);
       // The test app stores the switch off (no test may reach the network to list plugins);
       // the declared default beside it stays on, and a save turns the group on.
-      const before = (await (
-        await client.get("/api/admin/plugin-config")
-      ).json()) as {
+      const before = (await (await client.get("/api/admin/plugin-config")).json()) as {
         plugins: { name: string; values: Record<string, unknown> }[];
       };
       const group = before.plugins.find((p) => p.name === "plugin-index");
@@ -919,9 +917,7 @@ describe("the published index source", () => {
         values: { published: true, sources: ["https://one.example/index.json"] },
       });
       expect(saved.status).toBe(200);
-      const after = (await (
-        await client.get("/api/admin/plugin-config")
-      ).json()) as {
+      const after = (await (await client.get("/api/admin/plugin-config")).json()) as {
         plugins: { name: string; values: Record<string, unknown> }[];
       };
       expect(after.plugins.find((p) => p.name === "plugin-index")!.values.sources).toEqual([
