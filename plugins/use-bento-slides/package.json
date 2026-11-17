@@ -1,11 +1,14 @@
 {
   "name": "@penguinharness/use-bento-slides",
   "version": "0.2.18",
-  "description": "Create and edit Bento presentations — self-contained .bento.html decks whose document is JSON. Use whenever the user wants a slide deck or presentation: from scratch, from source material, or by improving an existing file.",
+  "description": "Bento slide decks: the Slides workbench, where you edit a deck while the Agent edits the same deck and both sides' edits are kept, and a Skill that authors decks there or as self-contained .bento.html files.",
   "keywords": [
     "penguin-plugin",
     "penguinharness",
-    "skills"
+    "skills",
+    "workbench",
+    "slides",
+    "presentation"
   ],
   "license": "Apache-2.0",
   "author": {
@@ -20,9 +23,12 @@
   "files": [
     "icon.svg",
     "skills",
+    "workbenches",
     "hooks",
     "ifaces.json",
-    "LICENSE"
+    "LICENSE",
+    "THIRD-PARTY-NOTICES.md",
+    "README.zh.md"
   ],
   "publishConfig": {
     "access": "public"

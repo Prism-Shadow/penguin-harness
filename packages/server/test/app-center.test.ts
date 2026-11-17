@@ -64,7 +64,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { agentStateDir } from "@prismshadow/penguin-core";
+import { agentStateDir, listInstalledWorkbenches } from "@prismshadow/penguin-core";
 import type {
   AppCenterLayoutResponse,
   AppCenterResponse,
@@ -482,7 +482,15 @@ describe("the App Center", { timeout: 30_000 }, () => {
   };
 
   it("lists one shortcut per shown workbench, Agents in list order and titles in order within one, and compiles nothing to do it", async () => {
-    const listed = (await shortcuts()).filter((s) => s.agentId === AGENT || s.agentId === LATER);
+    // The workbenches this suite wrote: default_agent also carries what the library preinstalls.
+    const shipped = new Set(
+      (await listInstalledWorkbenches(t.root, PROJECT, AGENT)).map((w) => `${AGENT}/${w.name}`),
+    );
+    const listed = (await shortcuts()).filter(
+      (s) =>
+        (s.agentId === AGENT || s.agentId === LATER) &&
+        !shipped.has(`${s.agentId}/${s.workbenchId}`),
+    );
     const boardIcon = new RegExp(`^${iconRoute(AGENT, "board")}\\?rev=[0-9a-f]{12}$`);
     expect(listed).toEqual([
       {

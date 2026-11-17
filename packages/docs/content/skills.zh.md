@@ -251,7 +251,7 @@ Agent 可以在 Task 中重写自己的 `SKILL.md`。结合 Benchmark 评估和�
 | | `data-analysis` | 完成数据分析任务：有限度地检查证据，明确决定是否修改答案，原生处理产出文件，并核验最终输出 |
 | | `use-firecrawl` | 通过 Firecrawl API 搜索网页、抓取页面，输出干净的 markdown |
 | | `browser-automation` | 用 `penguin browser` 驱动 Agent 浏览器，即桌面应用的[内置浏览器](/builtin-browser)或[你自己的 Chrome](/builtin-browser#使用你自己的-chrome)：以简化 HTML 或纯文本读取页面，用 JavaScript 以及可信的点击和输入操作页面，提取亚马逊订单这样的数据，登录用的是你自己的账号 |
-| | `use-bento-slides` | 创建和编辑 Bento 演示文稿：单文件 `.bento.html` 幻灯片，文件内容为 JSON，支持素材到图表的映射、morph 过渡和状态幻灯片 |
+| | `use-bento-slides` | Bento 幻灯片，含 `bento-slides` Skill 与幻灯片[工作台](#workbench-插件)（AI PPT）：你在 Bento 编辑器里修改文稿的同时，Agent 修改同一份文稿，双方的修改都会保留。该 Skill 也编写单文件 `.bento.html` 文稿，支持素材到图表的映射、morph 过渡和状态幻灯片（预装） |
 | | `humanizer` | 去除任何语言文字中的 AI 写作痕迹，改写成书籍、报纸和百科全书的语体（不预装：需要时从插件库安装） |
 | | `goal` | [目标模式](/goal-mode)背后的 stop 钩子：让 Session 持续朝着目标推进，直到完成、受阻或 Token 预算耗尽（预装） |
 | | `continual-learning` | Task 运行超过 30 轮才结束时，把 Task 的精简摘录交给后台子 Agent，由它把有长期价值的发现沉淀到 Agent 的 Skill 中（不预装） |
@@ -519,3 +519,5 @@ createRoot(document.getElementById("root")!).render(<App />);
 工作台页面是透明的：页面自己不设背景时，透出应用在它下面的底色——主题的页面色或你设置的自定义背景，与对话页一致。想要不透明的页面，就写 `body { background: var(--wb-canvas); }`（TSX 页面在自己的样式表里用 `var(--ui-canvas)`）。
 
 内置 `penguin-support` 插件为默认 Project 的客服 Agent 安装 `penguin-support` Skill 和客服工作台：居中的问题列表、新建问题弹窗，以及支持追问的对话详情。问题运行时，对话框里会随生成显示回答和 Agent 正在做的事，并提供**停止**按钮。新版本以插件更新的形式提供，已安装的副本只在你更新时才被替换。也可以把该插件安装到其他 Agent。
+
+内置的 `use-bento-slides` 插件在新建 Project 时随 `default_agent` 预装，带有幻灯片工作台：Agent 对话旁的**幻灯片**标签页，以及应用中心里的 **AI PPT**。每份文稿是工作台 `.files/decks/` 下的一个文件。你在 Bento 编辑器里修改它，同时可以从编辑器旁的侧栏或在对话里请 Agent 修改同一份文稿。Agent 保存时你还有未保存的修改，你的修改会按元素重放到它的版本上；双方设置了同一个属性时保留你的值，Agent 的版本存入文稿的**历史版本**，任何一个版本都可以恢复。**导出**得到一个自成一体的 `.bento.html`。编辑器运行在不允许任何网络连接的沙盒框架里，因此 Bento 的更新检查、实时共享和远程媒体在其中不可用。卸载插件或移除该工作台会删除其中的文稿。

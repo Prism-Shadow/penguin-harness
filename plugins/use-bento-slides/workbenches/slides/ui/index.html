@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Slides</title>
+    <link rel="stylesheet" href="/workbench-ui.css" />
+    <link rel="stylesheet" href="./style.css" />
+    <script type="module" src="./app.js"></script>
+  </head>
+  <body>
+    <div class="app" id="app" data-view="loading">
+      <header class="bar">
+        <div class="deck-pick">
+          <button
+            id="deck-button"
+            type="button"
+            class="deck-button"
+            aria-haspopup="listbox"
+            aria-expanded="false"
+          >
+            <span id="deck-title" class="deck-title"></span>
+            <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
+              <path
+                d="M3 4.5 6 7.5 9 4.5"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </button>
+          <ul id="deck-menu" class="menu" role="listbox" hidden></ul>
+        </div>
+        <span id="sync" class="sync" role="status"></span>
+        <span class="grow"></span>
+        <button id="new" type="button" data-copy="newDeck"></button>
+        <button id="import" type="button" data-copy="importDeck"></button>
+        <button id="export" type="button" data-copy="exportDeck"></button>
+        <div class="history-pick">
+          <button
+            id="history"
+            type="button"
+            aria-haspopup="listbox"
+            aria-expanded="false"
+            data-copy="history"
+          ></button>
+          <ul id="history-menu" class="menu menu-end" role="listbox" hidden></ul>
+        </div>
+        <button
+          id="rail-toggle"
+          type="button"
+          class="wb-primary"
+          aria-pressed="true"
+          data-copy="askAi"
+        ></button>
+        <input id="file" type="file" accept=".html,.json,text/html,application/json" hidden />
+      </header>
+
+      <p id="notice" class="notice" role="status" hidden></p>
+
+      <main class="stage">
+        <section class="editor" aria-label="Deck editor">
+          <iframe
+            id="editor"
+            title="Bento Slides editor"
+            sandbox="allow-scripts allow-downloads allow-popups allow-popups-to-escape-sandbox"
+          ></iframe>
+        </section>
+
+        <aside id="rail" class="rail" aria-labelledby="rail-title">
+          <header class="rail-head">
+            <h2 id="rail-title" data-copy="railTitle"></h2>
+            <button id="rail-reset" type="button" class="link" data-copy="newChat"></button>
+          </header>
+          <ol id="talk" class="talk" aria-live="polite"></ol>
+          <form id="ask" class="ask">
+            <p id="context" class="context"></p>
+            <textarea id="prompt" rows="3" maxlength="20000" required></textarea>
+            <div class="ask-actions">
+              <span id="activity" class="activity" role="status"></span>
+              <button id="stop" type="button" hidden data-copy="stop"></button>
+              <button id="send" type="submit" class="wb-primary" data-copy="send"></button>
+            </div>
+          </form>
+        </aside>
+      </main>
+
+      <section class="start" aria-labelledby="start-title">
+        <h1 id="start-title" data-copy="startTitle"></h1>
+        <p class="wb-muted" data-copy="startLead"></p>
+        <form id="start-ask" class="start-ask">
+          <textarea id="start-prompt" rows="3" maxlength="20000"></textarea>
+          <button type="submit" class="wb-primary" data-copy="startGo"></button>
+        </form>
+        <div class="start-more">
+          <button id="start-sample" type="button" data-copy="sampleDeck"></button>
+          <button id="start-blank" type="button" data-copy="blankDeck"></button>
+          <button id="start-import" type="button" data-copy="importDeck"></button>
+        </div>
+      </section>
+
+      <section class="unsupported" role="alert">
+        <h1 data-copy="unsupportedTitle"></h1>
+        <p data-copy="unsupportedBody"></p>
+      </section>
+    </div>
+  </body>
+</html>

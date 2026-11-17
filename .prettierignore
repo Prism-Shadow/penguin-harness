@@ -23,6 +23,10 @@ packages/ui/src/themes/doodle/fonts.css
 # hashes its sources (a formatter pass would change the file the hash test compares)
 plugins/a2ui/skills/a2ui/scripts/check.mjs
 
+# the Slides workbench's sample deck, kept in the one-element-per-line layout the workbench writes
+# its deck files in (vendor/ beside it is third-party and byte-for-byte, and no formatter reads it)
+plugins/use-bento-slides/workbenches/slides/ui/sample.bento.json
+
 # docs-only area (mostly Chinese; not machine-formatted)
 specs/
 *.md
