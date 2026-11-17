@@ -66,6 +66,7 @@ export type {
   MeResponse,
   MessagesResponse,
   ModelRefDto,
+  ModelsResponse,
   OrgCalendarItem,
   OrgCalendarResponse,
   OrgCalendarWriteResponse,
@@ -99,4 +100,3 @@ export type {
   SessionResponse,
   SessionsResponse,
 } from "../api/types.js";
-import type { ModelsResponse } from "@prismshadow/penguin-library-model";

@@ -5,10 +5,9 @@
  * so every aggregation is broken down by the `(provider, model_id)` pair and returns
  * raw Token sums (a model_id shared across providers is aggregated separately; never concatenated).
  */
-import type { UsageGroupBy } from "../observability.js";
+import type { UsageGroupBy, UsageStore } from "../observability.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Db } from "@prismshadow/penguin-library-db";
-import type { UsageStore } from "../observability.js";
 
 export interface UsageRecordInsert {
   ts: string;

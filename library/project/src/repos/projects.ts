@@ -2,10 +2,9 @@
  * Repo for the projects table: an index of ownership
  * relationships; the display name lives in project_config.toml.
  */
-import type { ProjectRole } from "../project.js";
+import type { ProjectRole, Projects } from "../project.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Db } from "@prismshadow/penguin-library-db";
-import type { Projects } from "../project.js";
 
 export interface ProjectRow {
   projectId: string;

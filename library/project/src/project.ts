@@ -1,6 +1,16 @@
 /**
  * The projects mechanisms: what a node may require, declared apart from what implements it.
  */
+import type {
+  ListEndpointModelsOptions,
+  ModelRequestContext,
+  ModelRef,
+  PluginTables,
+  ProjectConfig,
+  AmspRecord,
+  ToolCallPayload,
+  ThinkingLevelName,
+} from "@prismshadow/penguin-core";
 import { Interface } from "@prismshadow/penguin-core/kernel";
 import type { AccessibleProjectRow, ProjectRow } from "./repos/projects.js";
 import type { MemberRow } from "./repos/members.js";
@@ -40,14 +50,6 @@ export interface CommandPolicyRuleDto {
 /** The roles a Project membership carries (was api/types.ts's Project authorization section). */
 export type ProjectRole = "owner" | "member";
 
-import type {
-  ListEndpointModelsOptions,
-  ModelRequestContext,
-  ModelRef,
-  PluginTables,
-  ProjectConfig,
-} from "@prismshadow/penguin-core";
-import type { AmspRecord, ToolCallPayload, ThinkingLevelName } from "@prismshadow/penguin-core";
 import type { SessionSource } from "@prismshadow/amsp";
 import type { OrgChannelMessage, OrgTriggerKind } from "@prismshadow/penguin-library-organization";
 import type { BuiltinBrowserServerEvent } from "@prismshadow/penguin-library-machine";
