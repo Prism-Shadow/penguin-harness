@@ -15,7 +15,12 @@
 import type { DatabaseSync } from "node:sqlite";
 import { Interface, Opaque } from "@prismshadow/penguin-core/kernel";
 
-export { openDatabase, openDatabaseReadOnly, openExistingDatabase, ensureColumn } from "./database.js";
+export {
+  openDatabase,
+  openDatabaseReadOnly,
+  openExistingDatabase,
+  ensureColumn,
+} from "./database.js";
 
 /** The SQLite handle (single-writer, one per process). Statements are host objects. */
 @Interface()

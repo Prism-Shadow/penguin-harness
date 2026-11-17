@@ -35,7 +35,6 @@ import type {
   ToolListReadyPayload,
 } from "@prismshadow/penguin-core";
 
-
 /** TraceIndexStore: the mechanism TraceIndexRepo implements. */
 /** From packages/server: the trace reading/writing vocabulary — the api DTOs the
  * trace routes return and the service's window/page shapes. The contract names them,

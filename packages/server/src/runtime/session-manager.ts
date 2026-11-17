@@ -852,8 +852,7 @@ export class SessionManager {
     // under an earlier generation starts when it ends, it starts through this one.
     state.current = {
       startQueuedFollowUp: (sessionId: string) => this.startQueuedFollowUp(sessionId),
-      startBackgroundNoticeTask: (sessionId: string) =>
-        this.startBackgroundNoticeTask(sessionId),
+      startBackgroundNoticeTask: (sessionId: string) => this.startBackgroundNoticeTask(sessionId),
     };
     this.entries = state.entries;
     this.childRoots = state.childRoots;

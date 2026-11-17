@@ -37,11 +37,6 @@ import type {
   IconRef,
 } from "@prismshadow/penguin-library-workbench";
 
-
-
-
-
-
 /** What a workbench provides (its manifest: `provides: { main: "@prismshadow/penguin-server#WorkbenchMain" }`). */
 @Interface()
 export abstract class WorkbenchMain {
@@ -92,15 +87,6 @@ export abstract class WorkbenchHost {
   abstract setState(state: unknown): Promise<void>;
   abstract log(message: string): void;
 }
-
-
-
-
-
-
-
-
-
 
 /**
  * Every route that serves a workbench refuses one that does not run — its own switch or the

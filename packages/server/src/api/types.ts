@@ -166,8 +166,6 @@ export type ErrorDetails = Readonly<Record<string, string>>;
 
 /** Session approval mode (reuses the CLI enum). */
 
-
-
 /**
  * What kind of conversation a Session is (`user` / `api` / `schedule` / `subagent` / `cli` / `company` / `workbench`):
  * core's type, the one definition, re-exported for the DTOs below.
@@ -177,8 +175,6 @@ export type { SessionSource };
 // ---------------------------------------------------------------------------
 // Authentication and users
 // ---------------------------------------------------------------------------
-
-
 
 /**
  * PUT /api/me/profile — a patch, not a replacement: an absent field keeps what is stored,
@@ -679,10 +675,6 @@ export interface PrefsResponse {
 // Project and member authorization
 // ---------------------------------------------------------------------------
 
-
-
-
-
 export interface ProjectsResponse {
   projects: ProjectSummary[];
 }
@@ -711,8 +703,6 @@ export interface ProjectUpdateResponse {
   project: ProjectSummary;
 }
 
-
-
 export interface MembersResponse {
   members: MemberInfo[];
 }
@@ -737,14 +727,11 @@ export interface MemberAddResponse {
  * concatenation is forbidden throughout the pipeline.
  */
 
-
-
 /**
  * One group's `[providers.<id>]` connection as the page reads it: the values the GROUP stores
  * (never the catalog's), the key masked. An absent field is unset: a row with no value of its
  * own then gets the client's default.
  */
-
 
 /** Where an effective connection value comes from: the row itself, its group, or nowhere (the client's default). */
 export type ConnectionSourceDto = "model" | "provider" | "none";
@@ -757,15 +744,10 @@ export type ConnectionSourceDto = "model" | "provider" | "none";
  * display.
  */
 
-
-
-
-
 /**
  * A change to one group's connection (`PUT /models/providers/:provider`, or a member of
  * `ModelsUpdateRequest.providers`). Omitted fields are kept.
  */
-
 
 /**
  * A group just became connected (its first group key landed) and the catalog names a model of
@@ -774,12 +756,7 @@ export type ConnectionSourceDto = "model" | "provider" | "none";
  * key, which leaves the default as it is: the page asks whether to make `model` the default.
  */
 
-
 /** `PUT /models/providers/:provider`: the table as it now stands, and the default offered, if any. */
-
-
-
-
 
 /**
  * `POST /models/sync-presets` (owner): `add` adds the catalog's presets the Project lacks
@@ -792,12 +769,9 @@ export type ConnectionSourceDto = "model" | "provider" | "none";
  * platform's own models and promotions.
  */
 
-
 export interface PresetSyncRequest {
   mode: PresetSyncMode;
 }
-
-
 
 /**
  * Connectivity test (POST /api/projects/:p/models/test): the model reference is submitted as
@@ -805,7 +779,6 @@ export interface PresetSyncRequest {
  * config). When the model isn't in the config yet (adding a custom model — test-before-save),
  * all parameters come from this request body.
  */
-
 
 /**
  * Vision capability probe: sends one 1x1 image and a one-word prompt on this model's
@@ -817,7 +790,6 @@ export interface PresetSyncRequest {
  * shaped to cost nothing — so it only ever runs when the user presses the control.
  */
 
-
 /**
  * Vision probe verdict. `supported` = the model took the image and answered; `unsupported`
  * = it answered specifically that it will not take an image (a definitive negative, not an
@@ -827,13 +799,11 @@ export interface PresetSyncRequest {
 
 /** Vision probe result; `message` carries the truncated provider error for the failed case. */
 
-
 /**
  * Connectivity test result: carries round-trip latency when ok, and a reason on failure
  * (truncated raw provider error). When streamed content was observed, also carries the
  * time-to-first-token and, when usage was reported (completed streams), the output rate.
  */
-
 
 /**
  * Protocol auto-detection (POST /api/projects/:p/models/detect, owner): probes which of
@@ -842,7 +812,6 @@ export interface PresetSyncRequest {
  * model dialog to fill `clientType` from the endpoint itself; costs no tokens (each probe
  * is a minimal invalid request whose error reveals the protocol shape).
  */
-
 
 /**
  * One probe's outcome: `served` = the route answered in an API shape (including auth
@@ -860,7 +829,6 @@ export interface PresetSyncRequest {
  * ones actually run, in order.
  */
 
-
 /**
  * Endpoint model listing (POST /api/projects/:p/models/list, owner): given a base URL and
  * the protocol `/detect` reported, returns every model id the endpoint serves (MMSP's
@@ -868,9 +836,7 @@ export interface PresetSyncRequest {
  * user picks the models to import from; the ids come back in the endpoint's own order.
  */
 
-
 /** Listing outcome: model ids on success, a truncated provider/SDK reason otherwise. */
-
 
 /**
  * PUT /api/projects/:p/models/default (owner): narrow default-model switch — flips the same
@@ -887,7 +853,6 @@ export interface DefaultModelUpdateRequest {
 export interface DefaultModelResponse {
   defaultModel: ModelRefDto;
 }
-
 
 /**
  * Why a group's balance could not be read:
@@ -1072,7 +1037,6 @@ export type ModelScopeAuthFlowStatusResponse = PlatformAuthFlowStatusResponse;
  * models page).
  */
 
-
 // ---------------------------------------------------------------------------
 // Sandbox command policy (Project-level: the [command_policy] block)
 // ---------------------------------------------------------------------------
@@ -1117,7 +1081,6 @@ export interface CommandPolicyRuleDto {
  * `invalid_rule_pattern`, whose `details` name the rule (`rule`), its 0-based place in the
  * list (`index`) and the engine's reason (`reason`).
  */
-
 
 /**
  * Why an `approval_request` asks when its approval mode did not send it: a command-policy
@@ -1617,7 +1580,6 @@ export type {
   CredentialInfo,
 };
 
-
 export interface AgentApiResponse {
   api: AgentApiSettings;
   /**
@@ -1628,7 +1590,6 @@ export interface AgentApiResponse {
 }
 
 /** PUT body (owner only): every field optional, omitted fields keep their current value. */
-
 
 /** POST …/api/keys body (owner only). */
 export interface AgentApiKeyCreateRequest {
@@ -1800,11 +1761,6 @@ export interface MemoryImportResponse {
   indexWritten: boolean;
 }
 
-
-
-
-
-
 export interface SessionInfo {
   sessionId: string;
   projectId: string;
@@ -1935,9 +1891,7 @@ export interface SessionBackgroundTasks {
  * every total (a parent's Agent panel and company mode's own views open them).
  */
 
-
 /** Per-category totals across an Agent's whole Session list (returned when the list is requested with counts). */
-
 
 /**
  * GET /api/projects/:projectId/agents/:agentId/sessions. Every query parameter is optional:
@@ -2259,13 +2213,11 @@ export interface SessionCreateResponse {
 
 /** Immutable location of one record in a Session's append-only Trace. */
 
-
 /**
  * History-only transport metadata; neither field is ever persisted into Trace JSONL.
  * `elided` names the bulky values the `history` stream sent as a preview (core's
  * history-elision.ts); `GET …/trace-body?ref=` returns each one whole.
  */
-
 
 export type { ElidedBody };
 
@@ -2836,9 +2788,6 @@ export interface SteerRequest {
    */
   files?: { fileName: string; dataUrl: string }[];
 }
-
-
-
 
 /**
  * Response of POST /api/sessions/:sessionId/subagents/:childSessionId/message — a user input
@@ -3516,15 +3465,12 @@ export interface MessagingAccountHoldersResponse {
 
 /** Docs: /docs/server-api § "Streaming (SSE)". */
 
-
 /** One tool's share of the context: its calls plus their results. Its *definition* is counted in `toolDefs`, not here. */
-
 
 /**
  * One file's share of the context: its `read_file` / `edit_file` / `write_file` calls plus their
  * results, keyed by the file each call named.
  */
-
 
 /**
  * What the Session's current model context is made of — the part derived from its messages.
@@ -3540,7 +3486,6 @@ export interface MessagingAccountHoldersResponse {
  * ranking narrowed to the three file tools and keyed by the file each call named.
  */
 
-
 /** `GET /api/sessions/:id/context`: the message-derived composition plus where compaction will fire. */
 export interface SessionContextResponse extends SessionContextParts {
   /**
@@ -3552,10 +3497,7 @@ export interface SessionContextResponse extends SessionContextParts {
   compactionThreshold: number | null;
 }
 
-
-
 /** Duration span of a single LLM Request (request_begin/request_end paired by proximity). */
-
 
 /**
  * Per-Task Token / duration figures (aggregated server-side over the **entire** Trace file,
@@ -3566,9 +3508,7 @@ export interface SessionContextResponse extends SessionContextParts {
  * a numerator covering only the first N against a denominator covering the whole file.
  */
 
-
 /** Duration span of a single tool call (complete tool_call message → paired tool_call_output). */
-
 
 /** Workspace file entry (Files tab). */
 export interface WorkspaceFileEntry {
@@ -3678,13 +3618,11 @@ export interface FilesStatResponse {
  * segment).
  */
 
-
 /**
  * Tool full lifecycle (parallel to model decoding): initiated (callTs) → approved
  * (approvalTs) → output (outputTs). Unclosed fields are unset (approval pending / executing /
  * file truncated).
  */
-
 
 /**
  * Non-tool auxiliary phase on the timeline: rendered in its own lane under the "other"
@@ -3692,22 +3630,9 @@ export interface FilesStatResponse {
  * first run's MCP connect + discovery (from the mcp_connect_begin/end event pair).
  */
 
-
-
-
-
-
-
-
-
-
-
-
 /** One Trace file in the session-centric listing (`date` carried per file: one Session's shards can span date directories). */
 
-
 /** One Session's Trace files merged across date directories (the paginated listing's unit). */
-
 
 /**
  * Agent-level Trace browsing structure. Without `limit` the response is the legacy full
@@ -3721,19 +3646,14 @@ export interface FilesStatResponse {
  * stays empty (per-file stats are only taken for the returned page).
  */
 
-
 export interface TraceImportRequest {
   /** Base64 of the Trace file content (JSON Lines; the first record must be `session_meta`). */
   dataBase64: string;
 }
 
-
-
 // ---------------------------------------------------------------------------
 // Usage and cost statistics
 // ---------------------------------------------------------------------------
-
-
 
 /**
  * A cost split by the three pricing buckets, in USD: cached input (`cacheRead`), uncached input
@@ -3742,13 +3662,7 @@ export interface TraceImportRequest {
  * floating-point rounding).
  */
 
-
-
-
-
-
 /** Time-series precision for the usage series (`granularity` query parameter). `minute` requires the `fromTs`/`toTs` window bounds. */
-
 
 /**
  * One bucket of the usage time series (for the cost center's time-series charts).
@@ -3758,13 +3672,9 @@ export interface TraceImportRequest {
  * `yyyy-mm-dd`, week the ISO week's Monday `yyyy-mm-dd`, month `yyyy-mm`.
  */
 
-
-
 /** Per-Agent counts per bucket. */
 
-
 /** Per-Model counts per bucket (entity identity is the (provider, modelId) pair). */
-
 
 /**
  * Lifetime Token total for one Model, keyed by the (provider, modelId) pair. Deliberately
@@ -3773,9 +3683,7 @@ export interface TraceImportRequest {
  * own to honour. Models never used are absent rather than zero.
  */
 
-
 /** Response of `GET /usage/model-totals`. */
-
 
 /**
  * The two categories an error record is filed under: `unexpected` is a 500 or an unforeseen
@@ -3784,13 +3692,11 @@ export interface TraceImportRequest {
  */
 export type UsageErrorKind = "unexpected" | "expected";
 
-
 /**
  * One row of the stats center's error panel table: the records of one calendar day that share
  * a source, code, kind and message. The day is the viewer's when the request carried
  * `utcOffsetMinutes`, and the server's own otherwise.
  */
-
 
 /**
  * Server-side error capture stats: not affected by the model
@@ -3800,7 +3706,6 @@ export type UsageErrorKind = "unexpected" | "expected";
  * chart, so it only has a total count, the most common error code, and the most recent N
  * items.
  */
-
 
 /**
  * GET /api/projects/:projectId/usage/errors — one page of the error detail table, newest
@@ -3813,7 +3718,6 @@ export type UsageErrorKind = "unexpected" | "expected";
  * with `limit=1` instead of pulling the whole dashboard aggregate. `utcOffsetMinutes` (minutes
  * east of UTC, the dashboard takes it too) says whose calendar day a row's records share.
  */
-
 
 /**
  * DELETE /api/projects/:projectId/usage/errors — empties the error table for the filter the
@@ -3831,8 +3735,6 @@ export interface UsageErrorsClearResponse {
   /** How many rows were deleted, so the caller can say what went instead of guessing. */
   deleted: number;
 }
-
-
 
 // ---------------------------------------------------------------------------
 // Schedule
@@ -6061,9 +5963,6 @@ export interface OrgTicketsResponse {
   invalidFiles: Array<{ path: string; error: string }>;
 }
 
-
-
-
 /**
  * One channel as the API reports it. The all-hands channel (`default_channel`,
  * `everyone: true`) exists for as long as the organization does and every employee and
@@ -6521,7 +6420,6 @@ export interface OrgHandbookFileResponse {
 export interface OrgHandbookFileWriteRequest {
   content: string;
 }
-
 
 // ---------------------------------------------------------------------------
 // Web contributions (GET /api/contributions)
@@ -6999,7 +6897,6 @@ export interface InstalledPluginsResponse {
   restartPending: boolean;
 }
 
-
 /**
  * What a backend's link can do. The shell cannot create tabs (the Web App's <webview> does) and
  * throttles and measures its guests; the extension creates, closes and focuses tabs itself and
@@ -7013,7 +6910,6 @@ export interface BrowserLinkCapabilities {
   /** `set-cookies` and `clear-data` (builtin). */
   cookieStore: boolean;
 }
-
 
 /**
  * Why the agent browser cannot be driven. Built-in: not under the desktop shell, a shell too old
@@ -7064,7 +6960,6 @@ export interface BrowserBackendResponse {
   backend: BrowserBackend;
   choices: BrowserBackend[];
 }
-
 
 /** GET /api/builtin-browser/extension. */
 export interface BrowserExtensionsResponse {
@@ -7126,9 +7021,6 @@ export interface BrowserExtensionPairResponse {
  * - 4009 disabled: an admin switched Chrome connections off; retry hourly.
  */
 export type BrowserExtensionCloseCode = 4001 | 4003 | 4005 | 4008 | 4009;
-
-
-
 
 /** GET /api/builtin-browser/tabs. */
 export interface BuiltinBrowserTabsResponse {

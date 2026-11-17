@@ -72,9 +72,7 @@ import type {
   WeChatTestResponse,
 } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
-import type {
-  MessagingBindingRow,
-} from "@prismshadow/penguin-library-messaging/repos/messaging-bindings";
+import type { MessagingBindingRow } from "@prismshadow/penguin-library-messaging/repos/messaging-bindings";
 import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
 import { FEISHU_DEFAULT_DOMAIN, feishuConfigOf } from "../../runtime/messaging/feishu-connector.js";
 import { telegramBotIdOf } from "../../runtime/messaging/telegram-connector.js";

@@ -70,10 +70,7 @@ import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { Config, Desktop } from "../../hmr/capabilities.js";
 import type { Auth, Users } from "@prismshadow/penguin-library-auth";
 import type { Settings, UiPrefsStore } from "@prismshadow/penguin-library-setting";
-import type {
-  BackgroundImageStore,
-  UserDraftsStore,
-} from "@prismshadow/penguin-library-auth";
+import type { BackgroundImageStore, UserDraftsStore } from "@prismshadow/penguin-library-auth";
 
 /** Nickname bounds, counted in user-perceived code points so a CJK name is 32 characters, not 96. */
 const DISPLAY_NAME_MIN = 1;

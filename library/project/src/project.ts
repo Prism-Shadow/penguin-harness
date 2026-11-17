@@ -50,9 +50,7 @@ import type {
 import type { AmspRecord, ToolCallPayload, ThinkingLevelName } from "@prismshadow/penguin-core";
 import type { SessionSource } from "@prismshadow/amsp";
 import type { OrgChannelMessage, OrgTriggerKind } from "@prismshadow/penguin-library-organization";
-import type {
-  BuiltinBrowserServerEvent,
-} from "@prismshadow/penguin-library-machine";
+import type { BuiltinBrowserServerEvent } from "@prismshadow/penguin-library-machine";
 import type { WorkbenchInfo } from "@prismshadow/penguin-library-workbench";
 import type { ModelRefDto } from "@prismshadow/penguin-library-agent-api";
 import type { TraceFileInfo } from "@prismshadow/penguin-library-trace";
@@ -92,9 +90,6 @@ import type {
   ModelProviderAuthToken,
 } from "@prismshadow/penguin-library-model";
 
-
-
-
 /** From packages/server (services/project-config-service.ts): the raw config table shape. */
 export type RawTable = Record<string, unknown>;
 
@@ -107,16 +102,6 @@ export type UtilityCompletion =
       cause: "no_model" | "failed";
       error: string;
     };
-
-
-
-
-
-
-
-
-
-
 
 /** From packages/server (api/types.ts): the project/model plumbing DTOs - the contracts
  * name them, so the types live with the contract. */
@@ -150,23 +135,11 @@ export interface ChatDefaultsDto {
   sandbox?: SessionSandbox;
 }
 
-
-
-
 export interface MemberInfo {
   userId: string;
   role: ProjectRole;
   createdAt: string;
 }
-
-
-
-
-
-
-
-
-
 
 export interface ProjectSummary {
   projectId: string;
@@ -177,10 +150,6 @@ export interface ProjectSummary {
   ownerUserId: string;
   createdAt: string;
 }
-
-
-
-
 
 export type ServerEvent =
   /**
@@ -398,8 +367,6 @@ export type ScheduleServerEvent =
 // Trace browsing and performance analysis
 // ---------------------------------------------------------------------------
 
-
-
 export interface SessionTracesResponse {
   files: TraceFileInfo[];
 }
@@ -580,8 +547,6 @@ export abstract class ProjectConfigStore {
   ): Promise<PlatformModelApplyResult>;
   abstract completeOnce(projectId: string, prompt: string): Promise<UtilityCompletion>;
 }
-
-
 
 /**
  * ProjectEvents: the mechanism ProjectNotifier implements — a user-level event to everyone

@@ -28,7 +28,12 @@ import type {
   ThinkingLevelName,
 } from "@prismshadow/penguin-core";
 import type { ApprovalMode } from "@prismshadow/penguin-library-session";
-import type { MessagingChannel, SessionCategoryCounts, SessionInfo, SessionSource } from "../api/types.js";
+import type {
+  MessagingChannel,
+  SessionCategoryCounts,
+  SessionInfo,
+  SessionSource,
+} from "../api/types.js";
 import type {
   SessionSandbox,
   SessionSandboxPreset,

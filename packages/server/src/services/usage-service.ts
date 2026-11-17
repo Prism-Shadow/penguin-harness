@@ -95,10 +95,7 @@ export type PricingLookup = (
   modelId: string,
 ) => Promise<TieredRates | undefined>;
 
-
-
 /** One page of the error detail table (see {@link UsageService.queryErrors}). */
-
 
 /**
  * What a clear removes (see {@link UsageService.clearErrors}): the panel's own range — dates,
@@ -106,7 +103,6 @@ export type PricingLookup = (
  * panel has. No `kind`: the panel offers no such control, so a clear has no narrowing the
  * reader could have seen.
  */
-
 
 /** The "model price" formula: the three buckets at the given rates (USD per million Tokens), in USD. */
 export function requestCostUsd(

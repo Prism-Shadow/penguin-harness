@@ -11,9 +11,7 @@
 import { Hono } from "hono";
 import { providerInfo } from "../../model-catalog/catalog.js";
 import type { DefaultModelResponse, ModelBalanceResponse } from "../../api/types.js";
-import type {
-  ModelUpdateEntry,
-} from "@prismshadow/penguin-library-model";
+import type { ModelUpdateEntry } from "@prismshadow/penguin-library-model";
 import type { ModelRefDto } from "@prismshadow/penguin-library-agent-api";
 import type {
   EndpointModelListRequest,

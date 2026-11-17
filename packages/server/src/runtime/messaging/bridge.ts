@@ -76,9 +76,7 @@ import { imageUrlMessage, scratchpadDir, userText } from "@prismshadow/penguin-c
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import { toFallbackMarkdown } from "@prismshadow/a2ui";
 import type { MessagingDeliveryError, MessagingRuntimeStatus } from "../../api/types.js";
-import type {
-  MessagingBindingRow,
-} from "@prismshadow/penguin-library-messaging/repos/messaging-bindings";
+import type { MessagingBindingRow } from "@prismshadow/penguin-library-messaging/repos/messaging-bindings";
 import {
   INLINE_IMAGE_MAX_BYTES,
   toAttachmentLimits,

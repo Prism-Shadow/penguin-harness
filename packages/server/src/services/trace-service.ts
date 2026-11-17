@@ -259,21 +259,15 @@ interface LocatedFile {
 
 /** A windowed history read's request shape (see readMessagesPage). */
 
-
 /**
  * A history window with where each record was read from: what `readMessagesPage` (or, for
  * `full`, `readMessages`) returns, plus `sources`, parallel to `messages` — the input of the
  * history layout (history-layout.ts) and of each record's body refs.
  */
 
-
 /** One Trace file of a Session or a descendant, as the machine leg of a history stream reads it. */
 
-
 /** A windowed history read's result (route maps it onto MessagesResponse.page). */
-
-
-
 
 /**
  * Per-request expansion context: `projectScanned` caps the miss-path force reconcile at
@@ -338,7 +332,6 @@ export interface TraceSessionIndex {
 }
 
 /** One Session's Trace files to import: each one's date directory, index and content. */
-
 
 /** TraceService wiring (the trace-file index is required: every listing/locating path serves from it — no directory walks). */
 /** One Session's classification result (see classify): its sidebar category + Workspace path ("" = unknown). */

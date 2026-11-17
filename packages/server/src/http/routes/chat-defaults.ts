@@ -7,9 +7,7 @@
  */
 import { Hono } from "hono";
 import { DEFAULT_CHAT_THINKING_LEVELS, isValidId } from "@prismshadow/penguin-core";
-import type {
-  SessionSandbox,
-} from "@prismshadow/penguin-library-session";
+import type { SessionSandbox } from "@prismshadow/penguin-library-session";
 import type { ChatDefaultsDto } from "@prismshadow/penguin-library-project";
 import type { AppEnv } from "../../auth/middleware.js";
 import { HttpError } from "../errors.js";

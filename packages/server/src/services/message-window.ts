@@ -57,8 +57,6 @@ import type { MessageCursor, WindowPriorStats } from "@prismshadow/penguin-libra
 /** Bump when any counting/boundary rule changes: cached page_stats records with an older version are recomputed. */
 export const CACHE_VERSION = 4;
 
-
-
 /** Open-Task bookkeeping carried across messages (mirrors StreamModel.task* fields). */
 interface TaskCarry {
   open: boolean;
@@ -531,7 +529,6 @@ export function finalizeScan(state: ScanState): void {
 // ---------------------------------------------------------------------------
 
 /** A window cursor: shard file index + message ordinal within that shard's parsed array. */
-
 
 /**
  * `<fileIndex>:<ordinal>` — stable across requests and compaction: rotation always

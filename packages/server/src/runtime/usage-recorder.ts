@@ -27,7 +27,6 @@ import type { Projects } from "@prismshadow/penguin-library-project";
 
 /** Attribution context for one record (top-level Session scope). */
 
-
 /** Cap on the subagent attribution mapping: over the limit, evicts the oldest by insertion order (an evicted entry falls back to the main Session's Model attribution). */
 export const ORIGIN_MODELS_MAX = 1000;
 

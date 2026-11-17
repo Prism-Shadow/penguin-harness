@@ -13,7 +13,10 @@ import { HttpError } from "../http/errors.js";
 import type { UserRow } from "@prismshadow/penguin-library-auth/repos/users";
 import { sessionTokenHash } from "@prismshadow/penguin-library-auth/repos/auth-sessions";
 import type { SessionVia } from "@prismshadow/penguin-library-auth";
-import type { SessionViaValue, AuthSessionsRepo } from "@prismshadow/penguin-library-auth/repos/auth-sessions";
+import type {
+  SessionViaValue,
+  AuthSessionsRepo,
+} from "@prismshadow/penguin-library-auth/repos/auth-sessions";
 import type { AuthRuntimeState } from "./runtime-state.js";
 import { verifyAccountPassword, verifyPassword } from "./password.js";
 import type { PasswordHasher } from "./password.js";
@@ -60,7 +63,6 @@ export function generateInitialAdminPassword(): string {
  * no desktop-only route, and changes the password only with the old one. "token" is the local
  * API token presented as a Bearer header, and nothing else. Anything else reads as "password".
  */
-
 
 /** Row -> DTO. The two profile columns are omitted rather than sent as null when unset. */
 export function toUserInfo(row: UserRow): UserInfo {

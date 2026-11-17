@@ -34,14 +34,10 @@ import type { BenchmarkService } from "../src/services/benchmark-service.js";
 import type { SnapshotService } from "../src/services/snapshot-service.js";
 import type { SessionsRepo } from "@prismshadow/penguin-library-session/repos/sessions";
 import type { UiPrefsRepo } from "@prismshadow/penguin-library-setting/repos/ui-prefs";
-import type {
-  ServerSettingsRepo,
-} from "@prismshadow/penguin-library-setting/repos/server-settings";
+import type { ServerSettingsRepo } from "@prismshadow/penguin-library-setting/repos/server-settings";
 import type { SchedulesRepo } from "@prismshadow/penguin-library-session/repos/schedules";
 import type { ErrorsRepo } from "@prismshadow/penguin-library-observability/repos/errors";
-import type {
-  MessagingBindingsRepo,
-} from "@prismshadow/penguin-library-messaging/repos/messaging-bindings";
+import type { MessagingBindingsRepo } from "@prismshadow/penguin-library-messaging/repos/messaging-bindings";
 import type { MessagingBridge } from "../src/runtime/messaging/bridge.js";
 import type { QQScanService, QQScanTransport } from "../src/runtime/messaging/qq-scan.js";
 import type { Scheduler } from "../src/runtime/scheduler.js";

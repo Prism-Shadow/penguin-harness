@@ -14,9 +14,7 @@
 import type { SandboxMode, SandboxSettings as Policy } from "@prismshadow/penguin-core/plugin";
 import type { ApprovalMode } from "@prismshadow/penguin-library-session";
 import type { PluginConfigNotice, PluginConfiguration } from "../api/types.js";
-import type {
-  SessionSandboxPreset,
-} from "@prismshadow/penguin-library-session";
+import type { SessionSandboxPreset } from "@prismshadow/penguin-library-session";
 import { resolveTable } from "../plugin/config.js";
 import { requestedDimensions } from "./dimensions.js";
 

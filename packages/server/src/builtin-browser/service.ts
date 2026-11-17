@@ -38,9 +38,7 @@ import type {
   BuiltinBrowserTab,
   BuiltinBrowserTabsResponse,
 } from "../api/types.js";
-import type {
-  BrowserExtensionStore,
-} from "@prismshadow/penguin-library-machine/browser-extensions";
+import type { BrowserExtensionStore } from "@prismshadow/penguin-library-machine/browser-extensions";
 import { HttpError } from "../http/errors.js";
 import { BrowserBackendRuntime } from "./backend-runtime.js";
 import type { BrowserTiming } from "./backend-runtime.js";

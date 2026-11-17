@@ -13,7 +13,6 @@ import type { Db } from "@prismshadow/penguin-library-db";
 import type { OrgCache } from "./organization.js";
 import type { OrgCalendarOutcome, OrgTicketChange } from "./organization.js";
 
-
 export interface OrgSessionRow {
   sessionId: string;
   projectId: string;

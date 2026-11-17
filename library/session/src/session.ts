@@ -146,7 +146,6 @@ export interface SessionSandbox {
 /** The approval vocabulary a decision cites (core's type, aliased here so the contract names it). */
 export type ApprovalReason = CoreApprovalReason;
 
-
 /** SessionIndex: the mechanism SessionsRepo implements. */
 @Interface()
 export abstract class SessionIndex {

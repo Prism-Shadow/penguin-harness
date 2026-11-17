@@ -12,9 +12,7 @@
  */
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { BrowserExtensionPairRequest, BrowserExtensionPairResponse } from "../api/types.js";
-import type {
-  BrowserExtensionStore,
-} from "@prismshadow/penguin-library-machine/browser-extensions";
+import type { BrowserExtensionStore } from "@prismshadow/penguin-library-machine/browser-extensions";
 import { HttpError } from "../http/errors.js";
 
 export const PAIRING_CODE_TTL_MS = 10 * 60_000;

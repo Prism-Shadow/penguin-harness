@@ -16,7 +16,10 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { assistantText } from "@prismshadow/penguin-core";
 import type { AmspRecord } from "@prismshadow/penguin-core";
-import { bodyLimitBytes, MIN_ATTACHMENT_MB } from "@prismshadow/penguin-library-setting/attachment-limits";
+import {
+  bodyLimitBytes,
+  MIN_ATTACHMENT_MB,
+} from "@prismshadow/penguin-library-setting/attachment-limits";
 import { adoptSession, fakeSession, uniqueSessionId } from "./fixtures/session.js";
 import { createTestApp, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";

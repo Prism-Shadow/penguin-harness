@@ -18,8 +18,6 @@ import type { RecordSource } from "@prismshadow/penguin-library-trace";
 import { historyFileKey, parseHistoryFileKey } from "./history-wire.js";
 import type { HistoryFileKey, HistoryMessage, HistorySegment, HistoryStub } from "../api/types.js";
 
-
-
 /** One file's record offsets by ordinal (trace-line-index.ts's `starts`/`ends`). */
 export interface LineOffsets {
   starts: readonly number[];
