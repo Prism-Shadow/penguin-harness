@@ -1,12 +1,29 @@
 {
-  "modules": {},
-  "contributes": {
-    "PluginLibraryModule.skills": [
-      {
-        "id": "penguin-testing-electron-sample.skill.sample",
-        "name": "penguin-testing-electron-sample",
-        "path": "skills/penguin-testing-electron-sample"
-      }
-    ]
-  }
+  "ifaces": {
+    "penguin-testing-electron-sample#SamplePlugin": {
+      "name": "SamplePlugin",
+      "methods": {},
+      "slots": {}
+    }
+  },
+  "types": {},
+  "modules": {
+    "SamplePlugin": {
+      "name": "SamplePlugin",
+      "kind": "component",
+      "requires": {},
+      "provides": { "SamplePlugin": "penguin-testing-electron-sample#SamplePlugin" },
+      "contributes": {
+        "PluginLibraryModule.skills": [
+          {
+            "id": "penguin-testing-electron-sample.skill.penguin-testing-electron-sample",
+            "name": "penguin-testing-electron-sample",
+            "path": "skills/penguin-testing-electron-sample"
+          }
+        ]
+      },
+      "children": []
+    }
+  },
+  "plugin": { "modules": ["SamplePlugin"], "replaces": [] }
 }
