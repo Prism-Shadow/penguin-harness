@@ -482,7 +482,7 @@ describe("Penguin Go MMSP HTTP transport", () => {
         delta({ type: "thinking.delta", thinking: "Think" }),
         delta({ type: "thinking.done", thinking: "Think", fidelity: { signature: "signed" } }),
         delta({ type: "tool_call.delta", name: "lookup", arguments: "{}", tool_call_id: "call-1" }),
-        delta({ type: "tool_call.done", name: "lookup", arguments: {}, tool_call_id: "call-1" }),
+        delta({ type: "tool_call.done", name: "lookup", arguments: "{}", tool_call_id: "call-1" }),
         { ...stop, finish_reason: "tool_call" },
       ]),
     );

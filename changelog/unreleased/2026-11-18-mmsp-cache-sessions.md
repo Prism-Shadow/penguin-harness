@@ -1,0 +1,11 @@
+# Keep a conversation on the same prompt-cache route
+
+- **Date:** 2026-11-18
+- **Type:** improvement
+- **Scope:** `core`, `server`, `cli`
+
+[中文版](2026-11-18-mmsp-cache-sessions.zh.md)
+
+PenguinHarness sends a stable conversation identifier to MMSP 0.5.10 on each interactive model request. Follow-up messages, tool results, retries and resumed conversations share it. Different Projects, Agents and Sessions get separate identifiers. MMSP uses it on endpoints that support prompt-cache routing.
+
+Tool calls now retain the model’s original JSON in the conversation and when replaying history, including whitespace, large integers and long decimals.

@@ -89,18 +89,6 @@ import {
 // Pure conversion function: AmspRecord[] → a single UniMessage (unit-testable, no network)
 // ---------------------------------------------------------------------------
 
-/**
- * Tool arguments JSON string → object. History only ever contains tool_calls from committed
- * turns (non-completed turns are discarded on replay); bad JSON already throws during MMSP
- * parsing and reconnects via malformed, so it never enters history — hence we parse directly
- * with no fallback tolerance; an empty string is treated as no arguments.
- */
-function parseToolArguments(raw: string): Record<string, unknown> {
-  if (!raw) return {};
-  const parsed: unknown = JSON.parse(raw);
-  return parsed !== null && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
-}
-
 /** Spread helper: attach `fidelity` only when it carries at least one key. */
 function fidelityProp(fidelity?: Fidelity): { fidelity?: Fidelity } {
   return fidelity != null && Object.keys(fidelity).length > 0 ? { fidelity } : {};
@@ -145,8 +133,8 @@ function payloadToContentItem(payload: CompleteModelPayload): ContentItem {
       return {
         type: "tool_call.done",
         name: payload.name,
-        // AmspRecord stores arguments as a JSON string; UniMessage uses an object.
-        arguments: parseToolArguments(payload.arguments),
+        // Keep the original JSON, including whitespace and integers above Number.MAX_SAFE_INTEGER.
+        arguments: payload.arguments || "{}",
         // On the way back, strip the uniqueness suffix to restore the provider's original id (see tool-call-ids.ts).
         tool_call_id: stripToolCallIdSuffix(payload.tool_call_id),
         ...fidelityProp(payload.fidelity),
@@ -423,8 +411,7 @@ export class EventTranslator {
     if (open) yield partial(open, "stop");
     if (done.type === "tool_call.done") {
       const toolCallId = open?.toolCallId ?? this.toolCallIds.allocate(done.tool_call_id);
-      const args = JSON.stringify(done.arguments);
-      const { name, fidelity } = done;
+      const { name, arguments: args, fidelity } = done;
       yield toolCall({ name, arguments: args, toolCallId, ...fidelityProp(fidelity) });
     } else if (done.type === "text.done") {
       yield assistantText(done.text, done.fidelity);
@@ -1253,6 +1240,7 @@ export function toolDefinitionsToSchemas(tools: ToolDefinition[]): ToolSchema[] 
  */
 export function buildUniConfig(config: GenerativeModelConfig): UniConfig {
   const uniConfig: UniConfig = {};
+  if (config.cacheSessionId) uniConfig.session_id = config.cacheSessionId;
   if (config.tools.length > 0) {
     uniConfig.tools = toolDefinitionsToSchemas(config.tools);
   }

@@ -19,6 +19,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { sessionMeta, userText } from "@prismshadow/amsp/records";
 import type { ApproveFn } from "../src/interfaces/index.js";
+import { cacheSessionId } from "../src/internal/session-support.js";
 import { ContextEngine } from "../src/engine/context-engine.js";
 import { Writer, readTrace, resumeTrace } from "../src/trace/index.js";
 import {
@@ -86,6 +87,48 @@ describe("prompt-cache invariants of request assembly", () => {
 
   afterEach(async () => {
     await rm(traces, { recursive: true, force: true });
+  });
+
+  it("sends a stable cache routing key across tool results, retry and resume", async () => {
+    const id = () => cacheSessionId("research", "desk", SESSION_ID);
+    const config = () =>
+      modelConfig({
+        modelId: "gpt-6.2-sol",
+        clientType: "openai-responses",
+        apiKey: "test",
+        cacheSessionId: id(),
+      });
+    const first = recordingModel(config(), [
+      toolTurn(),
+      { text: "Working", outcome: "retryable-after-text" },
+      { text: "Done" },
+      { text: "Next" },
+    ]);
+    const engine = new ContextEngine({ llm: first.model, environment: fakeEnvironment });
+    await collect(engine.run([userText("read this")], { approve: allowAll }));
+    await collect(engine.run([userText("again")], { approve: allowAll }));
+    const resumed = recordingModel(config(), [{ text: "Resumed" }]);
+    resumed.model.setHistory([userText("again")]);
+    const next = new ContextEngine({ llm: resumed.model, environment: fakeEnvironment });
+    await collect(next.run([userText("continue")], { approve: allowAll }));
+    const sent = [...first.requests, ...resumed.requests];
+    expect(sent).toHaveLength(5);
+    for (const request of sent) {
+      expect(request.config.session_id).toBe(id());
+      expect(request.wireConfig.prompt_cache_key).toBe(id());
+      expect(request.config).not.toHaveProperty("trace_id");
+      expect(JSON.stringify(request.wire)).not.toContain(id());
+    }
+    expect(id()).toMatch(/^[a-f0-9]{64}$/);
+    for (const other of [
+      cacheSessionId("other", "desk", SESSION_ID),
+      cacheSessionId("research", "other", SESSION_ID),
+      cacheSessionId("research", "desk", "another-session"),
+    ])
+      expect(other).not.toBe(id());
+    const oneShot = recordingModel({ ...config(), cacheSessionId: undefined }, [{ text: "Title" }]);
+    await collect(oneShot.model.streamGenerate({ newMessages: [userText("title")] }));
+    expect(oneShot.requests[0]?.wireConfig).not.toHaveProperty("prompt_cache_key");
   });
 
   it("every request of a session extends the previous one on the wire", async () => {

@@ -241,8 +241,8 @@ importers:
         specifier: workspace:*
         version: link:../a2ui
       '@prismshadow/mmsp':
-        specifier: ^0.5.6
-        version: 0.5.6(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+        specifier: ^0.5.10
+        version: 0.5.10(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: link:../core
@@ -290,8 +290,8 @@ importers:
         specifier: workspace:*
         version: link:../amsp
       '@prismshadow/mmsp':
-        specifier: ^0.5.6
-        version: 0.5.6(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+        specifier: ^0.5.10
+        version: 0.5.10(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       arktype:
         specifier: ^2.2.3
         version: 2.2.3
@@ -760,8 +760,8 @@ importers:
         specifier: workspace:*
         version: link:../chat-markdown
       '@prismshadow/mmsp':
-        specifier: ^0.5.6
-        version: 0.5.6(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+        specifier: ^0.5.10
+        version: 0.5.10(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: link:../core
@@ -2505,8 +2505,8 @@ packages:
     resolution: {directory: packages/chat-markdown, type: directory}
     engines: {node: '>=24'}
 
-  '@prismshadow/mmsp@0.5.6':
-    resolution: {integrity: sha512-Yns50WqU+zHw80JC3TX1Qevcz8a5pNXnHI9rAALNZuZJwlKBlF+fQ23g7NdNpz1Sc7f+nBGfOjt2Sd7ZxPm/Zg==}
+  '@prismshadow/mmsp@0.5.10':
+    resolution: {integrity: sha512-PSKvfwZQEjlNnlQe223qiaK5qwp3PcTMEtGe9hAGiBN2VuVUGAYAkze80Juefz3ODRo3HwI1g2bwRZgzME8vbQ==}
 
   '@prismshadow/penguin-cli@file:packages/cli':
     resolution: {directory: packages/cli, type: directory}
@@ -7224,7 +7224,7 @@ snapshots:
       - micromark-util-types
       - supports-color
 
-  '@prismshadow/mmsp@0.5.6(supports-color@10.2.2)(ws@8.21.0)':
+  '@prismshadow/mmsp@0.5.10(supports-color@10.2.2)(ws@8.21.0)':
     dependencies:
       '@anthropic-ai/bedrock-sdk': 0.26.4(zod@4.6.7)
       '@anthropic-ai/sdk': 0.91.1(zod@4.6.7)
@@ -7239,7 +7239,7 @@ snapshots:
       - ws
       - zod
 
-  '@prismshadow/mmsp@0.5.6(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
+  '@prismshadow/mmsp@0.5.10(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
     dependencies:
       '@anthropic-ai/bedrock-sdk': 0.26.4(zod@4.6.7)
       '@anthropic-ai/sdk': 0.91.1(zod@4.6.7)
@@ -7254,7 +7254,7 @@ snapshots:
       - ws
       - zod
 
-  '@prismshadow/mmsp@0.5.6(ws@8.21.0)':
+  '@prismshadow/mmsp@0.5.10(ws@8.21.0)':
     dependencies:
       '@anthropic-ai/bedrock-sdk': 0.26.4(zod@4.6.7)
       '@anthropic-ai/sdk': 0.91.1(zod@4.6.7)
@@ -7300,7 +7300,7 @@ snapshots:
       '@penguinharness/use-claude-code': file:plugins/use-claude-code
       '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
       '@prismshadow/a2ui': file:packages/a2ui
-      '@prismshadow/mmsp': 0.5.6(ws@8.21.0)
+      '@prismshadow/mmsp': 0.5.10(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(ws@8.21.0)
       '@prismshadow/penguin-server': file:packages/server
       commander: 13.1.0
@@ -7350,7 +7350,7 @@ snapshots:
       '@penguinharness/use-claude-code': file:plugins/use-claude-code
       '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
       '@prismshadow/a2ui': file:packages/a2ui
-      '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/mmsp': 0.5.10(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-server': file:packages/server(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
       commander: 13.1.0
@@ -7373,7 +7373,7 @@ snapshots:
     dependencies:
       '@modelcontextprotocol/client': 2.3.1
       '@prismshadow/amsp': file:packages/amsp
-      '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/mmsp': 0.5.10(supports-color@10.2.2)(ws@8.21.0)
       arktype: 2.2.3
       smol-toml: 1.9.1
       yaml: 2.9.0
@@ -7389,7 +7389,7 @@ snapshots:
     dependencies:
       '@modelcontextprotocol/client': 2.3.1
       '@prismshadow/amsp': file:packages/amsp
-      '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/mmsp': 0.5.10(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       arktype: 2.2.3
       smol-toml: 1.9.1
       yaml: 2.9.0
@@ -7405,7 +7405,7 @@ snapshots:
     dependencies:
       '@modelcontextprotocol/client': 2.3.1
       '@prismshadow/amsp': file:packages/amsp
-      '@prismshadow/mmsp': 0.5.6(ws@8.21.0)
+      '@prismshadow/mmsp': 0.5.10(ws@8.21.0)
       arktype: 2.2.3
       smol-toml: 1.9.1
       yaml: 2.9.0
@@ -7462,7 +7462,7 @@ snapshots:
       '@prismshadow/a2ui': file:packages/a2ui
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/chat-markdown': file:packages/chat-markdown
-      '@prismshadow/mmsp': 0.5.6(ws@8.21.0)
+      '@prismshadow/mmsp': 0.5.10(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(ws@8.21.0)
       '@xterm/headless': 5.5.0
       commander: 13.1.0
@@ -7526,7 +7526,7 @@ snapshots:
       '@prismshadow/a2ui': file:packages/a2ui
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/chat-markdown': file:packages/chat-markdown(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
-      '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/mmsp': 0.5.10(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@xterm/headless': 5.5.0
       commander: 13.1.0
@@ -7590,7 +7590,7 @@ snapshots:
       '@prismshadow/a2ui': file:packages/a2ui
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/chat-markdown': file:packages/chat-markdown(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
-      '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/mmsp': 0.5.10(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@xterm/headless': 5.5.0
       commander: 13.1.0

@@ -83,6 +83,8 @@ export interface GenerativeModelConfig {
    * the instance then keeps for all of its requests, so they are a conversation of their own.
    */
   sessionId?: string;
+  /** Stable identity of a conversation for MMSP prompt-cache routing. One-shot tasks omit it. */
+  cacheSessionId?: string;
   /**
    * tool_call_id uniqueness registry (Session-level). Pass the same instance when rebuilding a new
    * GenerativeModel on compaction so the uniqueness scope covers the whole Session; defaults to a fresh
