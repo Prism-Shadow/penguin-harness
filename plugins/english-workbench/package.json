@@ -1,0 +1,42 @@
+{
+  "name": "@penguinharness/english-workbench",
+  "version": "0.2.18",
+  "description": "An English study workbench: read public-domain classics and pasted articles aloud word by word, keep a word and sentence library with spaced review, and practise speaking and exam tasks.",
+  "keywords": [
+    "penguin-plugin",
+    "penguinharness",
+    "workbench",
+    "english",
+    "language-learning",
+    "reading"
+  ],
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Prism-Shadow",
+    "url": "https://github.com/Prism-Shadow"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "plugins/english-workbench"
+  },
+  "files": [
+    "icon.svg",
+    "workbenches",
+    "ifaces.json",
+    "LICENSE",
+    "README.md",
+    "README.zh.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json"
+  },
+  "devDependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
+    "vitest": "^4.1.12"
+  }
+}

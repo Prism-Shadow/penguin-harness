@@ -1,0 +1,43 @@
+{
+  "name": "piglet-stickers-workbench",
+  "version": "1.0.0",
+  "type": "module",
+  "penguin": {
+    "version": "2026.11.17.1",
+    "appCenter": {
+      "show": true,
+      "title": "Piggy Sticker World",
+      "titleZh": "猪猪的摸鱼小世界",
+      "icon": "ui/icon.svg"
+    },
+    "modules": [
+      {
+        "name": "Workbench",
+        "requires": {
+          "host": {
+            "iface": "@prismshadow/penguin-server#WorkbenchHost",
+            "from": "Host"
+          }
+        },
+        "provides": {
+          "main": "@prismshadow/penguin-server#WorkbenchMain"
+        },
+        "contributes": {
+          "WebModule.sessionTabs": [
+            {
+              "id": "piglet-stickers.main",
+              "key": "main",
+              "title": "Piggy Sticker World",
+              "titleZh": "猪猪的摸鱼小世界",
+              "renderer": {
+                "iframe": {
+                  "src": "ui/index.html"
+                }
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

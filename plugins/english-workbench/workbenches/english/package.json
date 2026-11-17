@@ -1,0 +1,43 @@
+{
+  "name": "english-workbench",
+  "version": "1.0.0",
+  "type": "module",
+  "penguin": {
+    "version": "2026.11.17.1",
+    "appCenter": {
+      "show": true,
+      "title": "English Learning Workbench",
+      "titleZh": "英语学习工作台",
+      "icon": "ui/icon.svg"
+    },
+    "modules": [
+      {
+        "name": "Workbench",
+        "requires": {
+          "host": {
+            "iface": "@prismshadow/penguin-server#WorkbenchHost",
+            "from": "Host"
+          }
+        },
+        "provides": {
+          "main": "@prismshadow/penguin-server#WorkbenchMain"
+        },
+        "contributes": {
+          "WebModule.sessionTabs": [
+            {
+              "id": "english.main",
+              "key": "main",
+              "title": "English Learning Workbench",
+              "titleZh": "英语学习工作台",
+              "renderer": {
+                "iframe": {
+                  "src": "ui/index.html"
+                }
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

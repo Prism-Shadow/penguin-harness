@@ -1,0 +1,41 @@
+{
+  "name": "@penguinharness/piglet-stickers",
+  "version": "0.2.18",
+  "description": "A sticker-scene game starring an original emoji-style piglet: arrange 208 stickers on 13 scenes, clear 10 themed levels and keep the little worlds you make.",
+  "keywords": [
+    "penguin-plugin",
+    "penguinharness",
+    "workbench",
+    "game",
+    "stickers"
+  ],
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Prism-Shadow",
+    "url": "https://github.com/Prism-Shadow"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "plugins/piglet-stickers"
+  },
+  "files": [
+    "icon.svg",
+    "workbenches",
+    "ifaces.json",
+    "LICENSE",
+    "README.md",
+    "README.zh.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json"
+  },
+  "devDependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
+    "vitest": "^4.1.12"
+  }
+}
