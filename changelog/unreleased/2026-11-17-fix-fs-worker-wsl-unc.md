@@ -3,6 +3,7 @@
 - **Date:** 2026-11-17
 - **Type:** fix
 - **Scope:** `core`
+- **PR:** [#1603](https://github.com/Prism-Shadow/penguin-harness/pull/1603)
 
 [中文版](2026-11-17-fix-fs-worker-wsl-unc.zh.md)
 
