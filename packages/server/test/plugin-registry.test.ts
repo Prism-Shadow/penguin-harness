@@ -43,7 +43,6 @@ import type { PluginIndexResponse } from "../src/api/types.js";
 import type { PluginBase } from "../src/plugin/loader.js";
 import {
   INDEX_RETRY_MS,
-  NIGHTLY_INDEX_URL,
   builtinPluginRegistry,
   cachedRegistry,
   compareSemver,
@@ -856,21 +855,16 @@ describe("selectIndexChannel", () => {
 });
 
 describe("the published index source", () => {
-  it("the stored document answers the sources: the switch, then the list, then the published default", () => {
-    // The switch off is builtin entries only, and no outbound request.
-    expect(indexUrlsOf({ published: false, sources: ["https://a.example/index.json"] })).toEqual(
-      [],
-    );
-    // No address saved reads the published index this release ships with.
-    expect(indexUrlsOf({ published: true, sources: [] })).toEqual([NIGHTLY_INDEX_URL]);
-    expect(indexUrlsOf({})).toEqual([NIGHTLY_INDEX_URL]);
-    // The addresses, in the order written.
+  it("the stored document answers the sources: the list as written, nothing else", () => {
+    // The addresses, in the order written — the whole configuration, no switch beside it.
     expect(
-      indexUrlsOf({
-        published: true,
-        sources: ["https://a.example/index.json", "https://b.example/index.json"],
-      }),
+      indexUrlsOf({ sources: ["https://a.example/index.json", "https://b.example/index.json"] }),
     ).toEqual(["https://a.example/index.json", "https://b.example/index.json"]);
+    // An emptied list is builtin entries only, and no outbound request.
+    expect(indexUrlsOf({ sources: [] })).toEqual([]);
+    // Nothing stored (the declared default fills the read) — the group's default carries the
+    // published index, which the defaults-of mechanism, not this function, supplies.
+    expect(indexUrlsOf({})).toEqual([]);
   });
 
   it("the sources are read per listing: a save swaps the sources without a restart", async () => {
@@ -889,7 +883,7 @@ describe("the published index source", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     const withSource = (await (await routes.request("/")).json()) as PluginIndexResponse;
     expect(withSource.plugins.map((p) => p.name)).toContain(published.name);
-    // Clearing the list (the switch off) drops it on the next listing, builtin entries alone.
+    // Clearing the list drops it on the next listing, builtin entries alone.
     urls = [];
     const cleared = (await (await routes.request("/")).json()) as PluginIndexResponse;
     expect(cleared.plugins.map((p) => p.name)).not.toContain(published.name);
@@ -902,19 +896,18 @@ describe("the published index source", () => {
     try {
       const admin = await loginAdmin(t.app);
       const client = apiClient(t.app, admin.cookie);
-      // The test app stores the switch off (no test may reach the network to list plugins);
-      // the declared default beside it stays on, and a save turns the group on.
+      // The test app stores an emptied list (no test may reach the network to list plugins);
+      // the declared default beside it carries the published index, and a save replaces it.
       const before = (await (await client.get("/api/admin/plugin-config")).json()) as {
         plugins: { name: string; values: Record<string, unknown> }[];
       };
       const group = before.plugins.find((p) => p.name === "plugin-index");
       expect(group).toBeDefined();
-      expect(group!.values.published).toBe(false);
       expect(group!.values.sources).toEqual([]);
-      // A save is stored and answered; the switch and the list both reach the document.
+      // A save is stored and answered; the list reaches the document.
       const saved = await client.put("/api/admin/plugin-config", {
         name: "plugin-index",
-        values: { published: true, sources: ["https://one.example/index.json"] },
+        values: { sources: ["https://one.example/index.json"] },
       });
       expect(saved.status).toBe(200);
       const after = (await (await client.get("/api/admin/plugin-config")).json()) as {
@@ -1032,7 +1025,7 @@ describe("the route's own merge", () => {
       const client = apiClient(t.app, admin.cookie);
       await client.put("/api/admin/plugin-config", {
         name: "plugin-index",
-        values: { published: true, sources: ["https://same.example/index.json"] },
+        values: { sources: ["https://same.example/index.json"] },
       });
       // A listing answers in hand while the fetch runs behind it, so wait for the fetch to
       // land before reading the park (the second listing carries the source's entries).
@@ -1046,7 +1039,7 @@ describe("the route's own merge", () => {
       // names the new one — nothing of the old source rides under the new URL.
       await client.put("/api/admin/plugin-config", {
         name: "plugin-index",
-        values: { published: true, sources: ["https://other.example/index.json"] },
+        values: { sources: ["https://other.example/index.json"] },
       });
       await (await client.get("/api/plugins/registry")).json();
       await new Promise((resolve) => setTimeout(resolve, 0));

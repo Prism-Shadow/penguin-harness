@@ -556,7 +556,7 @@ describe("installed plugins", () => {
       admin = apiClient(t.app, cookie);
       const saved = await admin.put("/api/admin/plugin-config", {
         name: "plugin-index",
-        values: { published: true, sources: [`${base}/index.json`] },
+        values: { sources: [`${base}/index.json`] },
       });
       expect(saved.status).toBe(200);
       const res = await postStream(cookie, "@acme/channels");

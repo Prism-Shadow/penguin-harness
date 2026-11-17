@@ -263,9 +263,9 @@ describe("/api/admin/plugin-config", () => {
     ]);
     expect(body.plugins[0]!.name).toBe("sandbox");
     const index = body.plugins.find((p) => p.name === "plugin-index")!;
-    // The test app stores the switch off (no test may reach the network to list plugins);
-    // the declared default beside it stays on.
-    expect(index.values).toEqual({ published: false, sources: [] });
+    // The test app stores an emptied list (no test may reach the network to list plugins);
+    // the declared default beside it carries the release's published index.
+    expect(index.values).toEqual({ sources: [] });
     const mirrors = body.plugins.find((p) => p.name === "plugin-mirrors")!;
     expect(mirrors.values).toEqual({ mirrors: [] });
     expect(body.plugins.filter((p) => p.name === "acme-bot")).toEqual([

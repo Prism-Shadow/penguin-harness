@@ -2,9 +2,10 @@
  * The plugin index's sources, as a settings group: which `index.json` documents this
  * deployment reads, declared on `PluginConfigProvider.groups` like any module's settings,
  * drawn on the Settings dialog's Plugins page and stored under `plugin-config:plugin-index`,
- * so a save applies without a restart. With nothing saved the deployment reads the published
- * index beside the builtin entries — the behavior a source list, including the empty one
- * (builtin entries only, the switch-off reading), is written over.
+ * so a save applies without a restart. The list is the whole configuration — no switch. The
+ * release's published index sits on it by default (the declaration's default, read while
+ * nothing is saved), and an emptied list reads the packages that ship with this server only,
+ * no outbound request.
  *
  * The readers live where the listing and the install face already are: `IndexSources`
  * answers the ordered URL list per read, `PluginRegistryRoutes` and `InstalledPluginRoutes`
@@ -12,7 +13,6 @@
  */
 import { Component, Interface, Use } from "@prismshadow/penguin-core/kernel";
 import { PluginConfig } from "./config.js";
-import { NIGHTLY_INDEX_URL } from "./registry.js";
 
 /** The group's name (its contribution id), the key its document is stored under. */
 export const PLUGIN_INDEX_GROUP = "plugin-index";
@@ -23,12 +23,10 @@ export abstract class IndexSources {
   abstract urls(): string[];
 }
 
-/** The sources one stored document answers: the switch, then the list. */
+/** The sources one stored document answers: the list, in the order written; empty = none. */
 export function indexUrlsOf(doc: Record<string, unknown>): string[] {
-  if (doc.published === false) return [];
   const list = doc.sources;
-  if (!Array.isArray(list) || list.length === 0) return [NIGHTLY_INDEX_URL];
-  return list.filter((v): v is string => typeof v === "string");
+  return Array.isArray(list) ? list.filter((v): v is string => typeof v === "string") : [];
 }
 
 /** Declares the group the Settings dialog draws; nothing reads it here. */
@@ -40,33 +38,23 @@ export function indexUrlsOf(doc: Record<string, unknown>): string[] {
         title: "Plugin index",
         titleZh: "插件索引",
         description:
-          "The plugin catalogues this deployment lists and installs from: one index.json document per address, tried in the order written, the earlier address winning a package a later one also lists. With the switch on and no address saved, the published index this release ships with is read; turning the switch off lists the packages that ship with this server only, and no outbound request.",
+          "The plugin catalogues this deployment lists and installs from: one index.json document per address, tried in the order written, the earlier address winning a package a later one also lists. The published index this release ships with is on the list by default; an emptied list reads the packages that ship with this server only, and no outbound request.",
         descriptionZh:
-          "本部署列出与安装插件时读取的目录：每个地址一份 index.json，按书写顺序尝试，同一插件由更靠前的地址提供。开关打开且未填地址时，读取随本版本发布的索引；关闭开关则只列随本服务器内置的插件，且不发出任何网络请求。",
-        switch: "published",
+          "本部署列出与安装插件时读取的目录：每个地址一份 index.json，按书写顺序尝试，同一插件由更靠前的地址提供。随本版本发布的索引默认在列表里；清空列表则只列随本服务器内置的插件，且不发出任何网络请求。",
         properties: {
-          published: {
-            type: "boolean",
-            title: "Read published indexes",
-            titleZh: "读取已发布的索引",
-            description:
-              "Whether anything beyond the packages that ship with this server lists at all. On: the addresses below — without one, the published index this release ships with. Off: the shipped packages alone, and no outbound request.",
-            descriptionZh:
-              "是否在本部署列出内置插件以外的来源。打开：读下方地址；未填地址时读随本版本发布的索引。关闭：只列内置插件，不发出任何网络请求。",
-            default: true,
-          },
           sources: {
             type: "list",
-            advanced: true,
             title: "Index addresses",
             titleZh: "索引地址",
             description:
-              "The index.json documents to read, tried in the order written. Leave empty to read the published index this release ships with.",
+              "The index.json documents to read, tried in the order written. The published index this release ships with is listed by default; remove it or add addresses as the deployment needs, or empty the list to read the shipped packages alone.",
             descriptionZh:
-              "要读取的 index.json 地址，按书写顺序尝试。留空则读取随本版本发布的索引。",
+              "要读取的 index.json 地址，按书写顺序尝试。随本版本发布的索引默认在列表中：按部署需要删除或追加地址，或清空列表只读内置插件。",
             hint: "One http(s) URL per line.",
             hintZh: "每行一个 http(s) 地址。",
-            default: [],
+            default: [
+              "https://github.com/Prism-Shadow/penguin-extensions/releases/download/nightly/index.json",
+            ],
             pattern: "^https?://\\S+$",
             patternErrorMessage: "must be an http(s) URL",
           },

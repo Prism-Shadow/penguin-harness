@@ -6,7 +6,7 @@
 
 [中文版](2026-11-15-plugin-index-sources.zh.md)
 
-The Plugins page reads one published index today, and a deployment that also runs an internal catalogue or a mirror has to choose. The plugin index's sources are now a settings group (`plugin-index`, on the admin Settings dialog): a switch, and a list of `index.json` addresses tried in the order written. With no address saved the release's published index is read, as before; turning the switch off lists the packages that ship with the server only, and no outbound request. A save applies without a restart.
+The Plugins page reads one published index today, and a deployment that also runs an internal catalogue or a mirror has to choose. The plugin index's sources are now a settings group (`plugin-index`, on the admin Settings dialog): a list of `index.json` addresses tried in the order written, with the release's published index on it by default — the list is the whole configuration, no switch beside it. Removing the published address or emptying the list reads the packages that ship with the server only, and no outbound request. A save applies without a restart.
 
 ## Details
 
