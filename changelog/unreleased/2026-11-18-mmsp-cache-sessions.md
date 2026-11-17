@@ -1,8 +1,9 @@
 # Keep a conversation on the same prompt-cache route
 
 - **Date:** 2026-11-18
-- **Type:** improvement
+- **Type:** feature
 - **Scope:** `core`, `server`, `cli`
+- **PR:** [#1595](https://github.com/Prism-Shadow/penguin-harness/pull/1595)
 
 [中文版](2026-11-18-mmsp-cache-sessions.zh.md)
 

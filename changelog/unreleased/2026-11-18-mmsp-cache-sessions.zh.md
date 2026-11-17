@@ -1,8 +1,9 @@
 # 同一段对话复用提示缓存路由
 
 - **日期：** 2026-11-18
-- **类型：** improvement
+- **类型：** feature
 - **范围：** `core`、`server`、`cli`
+- **PR:** [#1595](https://github.com/Prism-Shadow/penguin-harness/pull/1595)
 
 [English](2026-11-18-mmsp-cache-sessions.md)
 
