@@ -1,0 +1,43 @@
+{
+  "name": "kaoyan-flashcards-workbench",
+  "version": "1.0.0",
+  "type": "module",
+  "penguin": {
+    "version": "2026.11.17.1",
+    "appCenter": {
+      "show": true,
+      "title": "Kaoyan Flashcards",
+      "titleZh": "考研记忆卡",
+      "icon": "ui/icon.svg"
+    },
+    "modules": [
+      {
+        "name": "Workbench",
+        "requires": {
+          "host": {
+            "iface": "@prismshadow/penguin-server#WorkbenchHost",
+            "from": "Host"
+          }
+        },
+        "provides": {
+          "main": "@prismshadow/penguin-server#WorkbenchMain"
+        },
+        "contributes": {
+          "WebModule.sessionTabs": [
+            {
+              "id": "kaoyan-flashcards.main",
+              "key": "main",
+              "title": "Kaoyan Flashcards",
+              "titleZh": "考研记忆卡",
+              "renderer": {
+                "iframe": {
+                  "src": "ui/index.html"
+                }
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

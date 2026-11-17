@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect width="64" height="64" rx="14" fill="#16233F" />
+  <g fill="#FFFFFF" fill-opacity="0.22">
+    <circle cx="12" cy="12" r="1.3" />
+    <circle cx="32" cy="12" r="1.3" />
+    <circle cx="52" cy="12" r="1.3" />
+    <circle cx="12" cy="42" r="1.3" />
+    <circle cx="52" cy="42" r="1.3" />
+    <circle cx="12" cy="52" r="1.3" />
+    <circle cx="22" cy="52" r="1.3" />
+    <circle cx="42" cy="52" r="1.3" />
+    <circle cx="52" cy="52" r="1.3" />
+  </g>
+  <g fill="none" stroke="#E2231A" stroke-width="3">
+    <circle cx="22" cy="12" r="3.4" />
+    <circle cx="42" cy="12" r="3.4" />
+    <circle cx="12" cy="22" r="3.4" />
+    <circle cx="32" cy="22" r="3.4" />
+    <circle cx="42" cy="22" r="3.4" />
+    <circle cx="52" cy="22" r="3.4" />
+    <circle cx="12" cy="32" r="3.4" />
+    <circle cx="22" cy="32" r="3.4" />
+    <circle cx="32" cy="32" r="3.4" />
+    <circle cx="42" cy="32" r="3.4" />
+    <circle cx="52" cy="32" r="3.4" />
+    <circle cx="22" cy="42" r="3.4" />
+    <circle cx="32" cy="42" r="3.4" />
+    <circle cx="42" cy="42" r="3.4" />
+    <circle cx="32" cy="52" r="3.4" />
+  </g>
+  <circle cx="22" cy="22" r="3.4" fill="none" stroke="#FFFFFF" stroke-width="3" />
+</svg>

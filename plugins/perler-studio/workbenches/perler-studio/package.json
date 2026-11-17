@@ -1,0 +1,43 @@
+{
+  "name": "perler-studio-workbench",
+  "version": "1.0.0",
+  "type": "module",
+  "penguin": {
+    "version": "2026.11.17.1",
+    "appCenter": {
+      "show": true,
+      "title": "Perler Studio",
+      "titleZh": "拼豆创作工作台",
+      "icon": "ui/icon.svg"
+    },
+    "modules": [
+      {
+        "name": "Workbench",
+        "requires": {
+          "host": {
+            "iface": "@prismshadow/penguin-server#WorkbenchHost",
+            "from": "Host"
+          }
+        },
+        "provides": {
+          "main": "@prismshadow/penguin-server#WorkbenchMain"
+        },
+        "contributes": {
+          "WebModule.sessionTabs": [
+            {
+              "id": "perler-studio.main",
+              "key": "main",
+              "title": "Perler Studio",
+              "titleZh": "拼豆创作工作台",
+              "renderer": {
+                "iframe": {
+                  "src": "ui/index.html"
+                }
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

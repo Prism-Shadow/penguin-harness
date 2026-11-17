@@ -1,0 +1,758 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="storage-bridge.js"></script>
+    <title>Perler Studio</title>
+    <meta
+      name="description"
+      content="Turn any picture into a clear perler bead pattern you can build from: the grid, the legend, the bead counts, the boards and the finished size, all worked out on your device."
+    />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%234285f4'/%3E%3Ccircle cx='16' cy='16' r='6' fill='%23fff'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="assets/styles.css" />
+  </head>
+  <body>
+    <!-- Every text below is the English fallback; app.js fills each data-i18n* element from the
+     dictionaries in assets/js/i18n.js at start and on every language switch. -->
+    <a class="skip-link" href="#stage" data-i18n="skip">Skip to the pattern</a>
+
+    <header class="topbar">
+      <div class="brand">
+        <svg class="brand-mark" viewBox="0 0 32 32" width="28" height="28" aria-hidden="true">
+          <circle cx="16" cy="16" r="14" fill="var(--brand-500)" />
+          <circle cx="16" cy="16" r="6" fill="var(--bg)" />
+        </svg>
+        <span class="brand-name" data-i18n="brand.name">Perler Studio</span>
+        <span class="brand-sub" data-i18n="brand.sub">Bead patterns</span>
+      </div>
+      <div class="topbar-actions">
+        <span class="pill local-dot"
+          ><i></i><span data-i18n="top.local">Processed locally · picture not uploaded</span></span
+        >
+        <button class="btn btn-quiet" id="btnPalette" type="button" data-i18n="top.palette">
+          Palette
+        </button>
+        <button class="btn btn-quiet" id="btnHelp" type="button" data-i18n="top.help">Help</button>
+        <button
+          class="btn btn-quiet btn-lang"
+          id="btnLang"
+          type="button"
+          data-i18n="lang.switch"
+          data-i18n-title="lang.switchLabel"
+          data-i18n-aria-label="lang.switchLabel"
+        >
+          EN
+        </button>
+        <button
+          class="icon-btn"
+          id="btnTheme"
+          type="button"
+          data-i18n-aria-label="top.theme"
+          data-i18n-title="top.theme"
+        >
+          <svg
+            class="ico-sun"
+            viewBox="0 0 24 24"
+            width="18"
+            height="18"
+            aria-hidden="true"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.7"
+            stroke-linecap="round"
+          >
+            <circle cx="12" cy="12" r="4" />
+            <path
+              d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"
+            />
+          </svg>
+          <svg
+            class="ico-moon"
+            viewBox="0 0 24 24"
+            width="18"
+            height="18"
+            aria-hidden="true"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.7"
+            stroke-linecap="round"
+          >
+            <path d="M20 13.5A8.5 8.5 0 1 1 10.5 4a6.6 6.6 0 0 0 9.5 9.5z" />
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <main class="workbench">
+      <!-- ============ Left: picture and settings ============ -->
+      <aside class="panel panel-left" data-i18n-aria-label="left.label">
+        <div class="panel-scroll">
+          <section class="sec">
+            <div class="sec-head">
+              <span class="idx">01</span>
+              <h2 data-i18n="src.title">Picture</h2>
+              <span class="sec-side" id="srcMeta"></span>
+            </div>
+
+            <div class="drop" id="drop" role="button" tabindex="0" data-i18n-aria-label="src.drop">
+              <input
+                type="file"
+                id="file"
+                accept="image/png,image/jpeg,image/webp,image/gif,image/bmp"
+                hidden
+              />
+              <div class="drop-idle" id="dropIdle">
+                <svg
+                  viewBox="0 0 24 24"
+                  width="26"
+                  height="26"
+                  aria-hidden="true"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <rect x="3" y="4" width="18" height="16" rx="2.5" />
+                  <circle cx="8.5" cy="9.5" r="1.6" />
+                  <path
+                    d="M3.5 16.5l4.6-4.2a2 2 0 0 1 2.7 0l3.1 2.9m0 0l2-1.9a2 2 0 0 1 2.7 0l2 1.9m-6.7 0l2.6 2.4"
+                  />
+                </svg>
+                <p class="drop-title" data-i18n="src.dropTitle">
+                  Drop a picture, or click to choose
+                </p>
+                <p class="drop-sub" data-i18n="src.dropSub">
+                  PNG / JPG / WebP · or paste with Ctrl+V
+                </p>
+              </div>
+              <div class="drop-preview" id="dropPreview" hidden>
+                <img id="thumb" data-i18n-alt="src.thumb" alt="Preview of the chosen picture" />
+                <div class="drop-file">
+                  <span class="drop-fname" id="fname">——</span>
+                  <span class="drop-fmeta" id="fmeta"></span>
+                </div>
+                <span class="drop-change" data-i18n="src.change">Change</span>
+              </div>
+            </div>
+
+            <div class="row-btns">
+              <button class="btn btn-secondary" id="btnDemo" type="button" data-i18n="src.demo">
+                Try a sample
+              </button>
+              <button
+                class="btn btn-secondary"
+                id="btnReset"
+                type="button"
+                disabled
+                data-i18n="src.reset"
+              >
+                Clear
+              </button>
+            </div>
+          </section>
+
+          <section class="sec">
+            <div class="sec-head">
+              <span class="idx">02</span>
+              <h2 data-i18n="set.title">Settings</h2>
+            </div>
+
+            <div
+              class="segmented seg-mode"
+              id="modeSeg"
+              role="tablist"
+              data-i18n-aria-label="mode.label"
+            >
+              <button
+                type="button"
+                role="tab"
+                data-mode="quick"
+                aria-selected="true"
+                data-i18n="mode.quick"
+              >
+                Quick
+              </button>
+              <button
+                type="button"
+                role="tab"
+                data-mode="pro"
+                aria-selected="false"
+                data-i18n="mode.pro"
+              >
+                Pro
+              </button>
+            </div>
+
+            <div class="quick" id="quickPanel">
+              <p class="quick-note" id="quickNote"></p>
+              <ul class="recommend" id="recommendList"></ul>
+              <button
+                class="btn btn-primary btn-lg btn-block"
+                id="btnGenerate"
+                type="button"
+                disabled
+              >
+                Generate pattern
+              </button>
+              <p class="micro-note" data-i18n="quick.hint">
+                Not what you want? Switch to Pro and set each one yourself.
+              </p>
+            </div>
+
+            <div class="pro" id="proPanel" hidden>
+              <div class="field">
+                <div class="field-head">
+                  <label id="lblSize" data-i18n="size.label">Grid size</label
+                  ><span class="field-value" id="sizeOut"></span>
+                </div>
+                <div
+                  class="segmented small wrap"
+                  id="sizeSeg"
+                  role="group"
+                  aria-labelledby="lblSize"
+                >
+                  <button type="button" data-size="29" aria-pressed="false">29</button>
+                  <button type="button" data-size="40" aria-pressed="false">40</button>
+                  <button type="button" data-size="52" aria-pressed="true">52</button>
+                  <button type="button" data-size="76" aria-pressed="false">76</button>
+                  <button type="button" data-size="104" aria-pressed="false">104</button>
+                  <button
+                    type="button"
+                    data-size="custom"
+                    aria-pressed="false"
+                    data-i18n="size.custom"
+                  >
+                    Custom
+                  </button>
+                </div>
+                <div class="custom-size" id="customSize" hidden>
+                  <label
+                    ><span data-i18n="size.cols">Columns</span>
+                    <input
+                      type="number"
+                      id="colsInput"
+                      min="4"
+                      max="200"
+                      step="1"
+                      value="64"
+                      inputmode="numeric"
+                  /></label>
+                  <span class="times">×</span>
+                  <label
+                    ><span data-i18n="size.rows">Rows</span>
+                    <input
+                      type="number"
+                      id="rowsInput"
+                      min="4"
+                      max="200"
+                      step="1"
+                      value="64"
+                      inputmode="numeric"
+                  /></label>
+                </div>
+                <p class="hint mono" id="sizeInfo"></p>
+                <p class="hint" data-i18n="size.hint">
+                  Fewer cells take fewer beads: 29 is about 841 beads, 40 about 1,600. For photos
+                  start at 76; use 104 only for fine detail.
+                </p>
+              </div>
+
+              <div class="field">
+                <div class="field-head">
+                  <label for="selColors" data-i18n="colors.label">Colours</label
+                  ><span class="field-value" id="colorsOut"></span>
+                </div>
+                <select id="selColors">
+                  <option value="0" data-i18n="colors.opt.auto">Auto (suggested)</option>
+                  <option value="12" data-i18n="colors.opt.12">Minimal · up to 12 colours</option>
+                  <option value="18" data-i18n="colors.opt.18">Few · up to 18 colours</option>
+                  <option value="29" data-i18n="colors.opt.29">Moderate · up to 29 colours</option>
+                  <option value="40" data-i18n="colors.opt.40">More · up to 40 colours</option>
+                  <option value="64" data-i18n="colors.opt.64">Many · up to 64 colours</option>
+                  <option value="96" data-i18n="colors.opt.96">
+                    Full palette · up to 96 colours
+                  </option>
+                </select>
+                <p class="hint" id="colorsHint"></p>
+              </div>
+
+              <div class="field">
+                <div class="field-head">
+                  <label for="selPalette" data-i18n="palette.label">Palette</label
+                  ><span class="field-value" id="palSize"></span>
+                </div>
+                <!-- The options are built by app.js from the palettes, in the interface language. -->
+                <select id="selPalette"></select>
+              </div>
+
+              <div class="field">
+                <div class="field-head">
+                  <label for="selSample" data-i18n="sample.label">Sampling</label>
+                </div>
+                <select id="selSample">
+                  <option value="area" data-i18n="sample.area">Area average</option>
+                  <option value="center" data-i18n="sample.center">Centre point</option>
+                  <option value="mode" data-i18n="sample.mode">Most common</option>
+                  <option value="median" data-i18n="sample.median">Median</option>
+                </select>
+              </div>
+
+              <div class="field">
+                <div class="field-head">
+                  <label id="lblNoise" data-i18n="noise.label">Noise merging</label
+                  ><span class="field-value" id="noiseOut"></span>
+                </div>
+                <div class="segmented small" id="noiseSeg" role="group" aria-labelledby="lblNoise">
+                  <button type="button" data-noise="0" aria-pressed="false" data-i18n="noise.0">
+                    None
+                  </button>
+                  <button type="button" data-noise="1" aria-pressed="false" data-i18n="noise.1">
+                    Light
+                  </button>
+                  <button type="button" data-noise="2" aria-pressed="true" data-i18n="noise.2">
+                    Medium
+                  </button>
+                  <button type="button" data-noise="3" aria-pressed="false" data-i18n="noise.3">
+                    Strong
+                  </button>
+                </div>
+              </div>
+
+              <div class="field">
+                <div class="field-head">
+                  <label for="selSharp" data-i18n="sharp.label">Edge boost</label
+                  ><span class="field-value" id="sharpOut"></span>
+                </div>
+                <select id="selSharp">
+                  <option value="1" data-i18n="sharp.optAuto">Auto (recommended)</option>
+                  <option value="0" data-i18n="sharp.off">Off</option>
+                </select>
+                <p class="hint" data-i18n="sharp.hint">
+                  Shrinking a picture blurs its edges; Auto pulls outlines and faces apart again.
+                  Turn it off to keep the softness of the original.
+                </p>
+              </div>
+
+              <div class="field">
+                <div class="field-head">
+                  <label id="lblBead" data-i18n="bead.label">Bead size</label
+                  ><span class="field-value" id="beadOut"></span>
+                </div>
+                <div class="segmented small" id="beadSeg" role="group" aria-labelledby="lblBead">
+                  <button type="button" data-bead="2.6" aria-pressed="false">2.6 mm</button>
+                  <button type="button" data-bead="5" aria-pressed="true">5 mm</button>
+                  <button type="button" data-bead="10" aria-pressed="false">10 mm</button>
+                </div>
+              </div>
+
+              <div class="field">
+                <div class="field-head">
+                  <label id="lblBg" data-i18n="bg.label">Background</label>
+                </div>
+                <div class="segmented small wrap" id="bgSeg" role="group" aria-labelledby="lblBg">
+                  <button type="button" data-bg="auto" aria-pressed="true" data-i18n="bg.auto">
+                    Remove
+                  </button>
+                  <button type="button" data-bg="keep" aria-pressed="false" data-i18n="bg.keep">
+                    Keep
+                  </button>
+                  <button type="button" data-bg="solid" aria-pressed="false" data-i18n="bg.solid">
+                    Fill
+                  </button>
+                  <button type="button" data-bg="empty" aria-pressed="false" data-i18n="bg.empty">
+                    Transparent
+                  </button>
+                </div>
+                <div class="bg-color-row" id="bgColorRow" hidden>
+                  <label for="bgColor" data-i18n="bg.color">Fill colour</label>
+                  <input type="color" id="bgColor" value="#ffffff" />
+                  <span class="mono" id="bgColorHex">#FFFFFF</span>
+                </div>
+              </div>
+
+              <div class="field">
+                <div class="field-head">
+                  <label for="selFit" data-i18n="fit.label">Framing</label>
+                </div>
+                <select id="selFit">
+                  <option value="cover" data-i18n="fit.cover">Crop to fill (recommended)</option>
+                  <option value="contain" data-i18n="fit.contain">Fit with margins</option>
+                </select>
+              </div>
+
+              <button
+                class="btn btn-primary btn-block btn-sticky"
+                id="btnRegen"
+                type="button"
+                data-i18n="regen"
+              >
+                Regenerate pattern
+              </button>
+            </div>
+          </section>
+        </div>
+      </aside>
+
+      <!-- ============ Centre: the pattern ============ -->
+      <section class="stage" id="stage" data-i18n-aria-label="stage.label">
+        <div class="stage-bar">
+          <div class="tool-group">
+            <button class="tool" id="btnZoomOut" type="button" data-i18n-aria-label="zoom.out">
+              −
+            </button>
+            <span class="zoom-label mono" id="zoomLabel">100%</span>
+            <button class="tool" id="btnZoomIn" type="button" data-i18n-aria-label="zoom.in">
+              +
+            </button>
+            <button class="tool tool-text" id="btnFit" type="button" data-i18n="zoom.fit">
+              Fit
+            </button>
+          </div>
+          <div class="tool-group">
+            <button
+              class="chip-toggle"
+              type="button"
+              data-toggle="grid"
+              aria-pressed="true"
+              data-i18n="view.grid"
+            >
+              Grid
+            </button>
+            <button
+              class="chip-toggle"
+              type="button"
+              data-toggle="bead"
+              aria-pressed="true"
+              data-i18n="view.bead"
+            >
+              Beads
+            </button>
+            <button
+              class="chip-toggle"
+              type="button"
+              data-toggle="coords"
+              aria-pressed="true"
+              data-i18n="view.coords"
+            >
+              Coordinates
+            </button>
+            <button
+              class="chip-toggle"
+              type="button"
+              data-toggle="compare"
+              aria-pressed="false"
+              data-i18n="view.compare"
+            >
+              Compare
+            </button>
+          </div>
+        </div>
+
+        <div class="canvas-scroll" id="canvasScroll">
+          <div class="canvas-inner" id="canvasInner" hidden>
+            <canvas id="baseCanvas" data-i18n-aria-label="canvas.label"></canvas>
+            <canvas id="overlayCanvas" aria-hidden="true"></canvas>
+            <div class="tip" id="tip" role="tooltip" hidden></div>
+          </div>
+
+          <div class="empty" id="emptyState">
+            <div class="empty-medallion" aria-hidden="true">
+              <span class="bead"></span><span class="bead"></span><span class="bead"></span>
+              <span class="bead"></span><span class="bead"></span><span class="bead"></span>
+              <span class="bead"></span><span class="bead"></span><span class="bead"></span>
+            </div>
+            <p class="eyebrow">PERLER STUDIO</p>
+            <h1 data-i18n="empty.title">Turn a picture into a pattern you can build</h1>
+            <p class="empty-sub" data-i18n="empty.sub">
+              Worked out on your device as a colour grid, with the beads of each colour, the boards
+              and the finished size.
+            </p>
+            <div class="empty-actions">
+              <button
+                class="btn btn-primary btn-lg"
+                id="btnPickEmpty"
+                type="button"
+                data-i18n="empty.pick"
+              >
+                Choose a picture
+              </button>
+              <button
+                class="btn btn-secondary btn-lg"
+                id="btnDemoEmpty"
+                type="button"
+                data-i18n="empty.demo"
+              >
+                Try a sample
+              </button>
+            </div>
+            <p class="empty-hint mono" data-i18n="empty.hint">
+              Grids of 29 / 40 / 52 / 76 / 104, or any size from 4 to 200
+            </p>
+          </div>
+
+          <div class="busy" id="busy" hidden>
+            <span class="spinner" aria-hidden="true"></span
+            ><span id="busyText" data-i18n="busy.matching">Matching colours…</span>
+          </div>
+        </div>
+
+        <div class="status-bar">
+          <span id="statusLeft" class="status-item"></span>
+          <span class="status-right" id="statusRight"></span>
+        </div>
+      </section>
+
+      <!-- ============ Right: totals and legend ============ -->
+      <aside class="panel panel-right" data-i18n-aria-label="right.label">
+        <div class="panel-scroll">
+          <section class="sec">
+            <div class="sec-head">
+              <span class="idx">03</span>
+              <h2 data-i18n="stats.title">Totals</h2>
+              <span class="sec-side" id="statSide"></span>
+            </div>
+            <div class="stats" id="stats">
+              <div class="stat">
+                <span class="stat-label" data-i18n="stats.total">Beads</span
+                ><strong class="stat-value" id="stTotal">—</strong>
+              </div>
+              <div class="stat">
+                <span class="stat-label" data-i18n="stats.colors">Colours</span
+                ><strong class="stat-value" id="stColors">—</strong>
+              </div>
+              <div class="stat">
+                <span class="stat-label" data-i18n="stats.boards">Boards</span
+                ><strong class="stat-value" id="stBoards">—</strong>
+              </div>
+              <div class="stat">
+                <span class="stat-label" data-i18n="stats.size">Finished size</span
+                ><strong class="stat-value" id="stSize">—</strong>
+              </div>
+            </div>
+            <div class="board-row">
+              <span class="micro" data-i18n="board.label">Board size</span>
+              <div
+                class="segmented mini"
+                id="boardSeg"
+                role="group"
+                data-i18n-aria-label="board.aria"
+              >
+                <button type="button" data-board="29" aria-pressed="true">29 × 29</button>
+                <button type="button" data-board="50" aria-pressed="false">50 × 50</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="sec">
+            <div class="sec-head">
+              <span class="idx">04</span>
+              <h2 data-i18n="legend.title">Legend</h2>
+              <span class="sec-side" id="legendSide"></span>
+            </div>
+            <div class="legend-head">
+              <span class="lg-h-char" data-i18n="legend.char">Symbol</span
+              ><span class="lg-h-main" data-i18n="legend.main">Code / name</span
+              ><span class="lg-h-count" data-i18n="legend.count">Beads</span>
+            </div>
+            <ul class="legend" id="legendList"></ul>
+            <p class="legend-empty" id="legendEmpty" data-i18n="legend.empty">
+              Once a pattern is made, every colour it uses is listed here, most used first.
+            </p>
+            <p class="micro-note" data-i18n="legend.hint">
+              Click a row to isolate that colour on the pattern; ⋯ at the end of a row swaps an
+              out-of-stock colour for the closest one.
+            </p>
+          </section>
+
+          <section class="sec">
+            <div class="sec-head">
+              <span class="idx">05</span>
+              <h2 data-i18n="export.title">Export</h2>
+            </div>
+            <div class="export-grid">
+              <button class="btn btn-secondary exp" id="btnPng" type="button" disabled>
+                <span data-i18n="export.png">PNG pattern</span
+                ><em data-i18n="export.pngSub">With grid and legend</em>
+              </button>
+              <button class="btn btn-secondary exp" id="btnCsv" type="button" disabled>
+                <span data-i18n="export.csv">CSV data</span
+                ><em data-i18n="export.csvSub">x,y,code,hex</em>
+              </button>
+              <button class="btn btn-secondary exp" id="btnJson" type="button" disabled>
+                <span>JSON</span><em data-i18n="export.jsonSub">Full pattern data</em>
+              </button>
+              <button class="btn btn-secondary exp" id="btnPrint" type="button" disabled>
+                <span data-i18n="export.print">Print page</span
+                ><em data-i18n="export.printSub">Laid out for A4</em>
+              </button>
+            </div>
+            <p class="micro-note" data-i18n="export.note">
+              The codes follow common bead charts and the colours are screen approximations. If they
+              differ from your beads, calibrate them under Palette at the top; the calibration is
+              saved.
+            </p>
+          </section>
+        </div>
+      </aside>
+    </main>
+
+    <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+
+    <!-- Palette calibration -->
+    <dialog class="dlg dlg-palette" id="paletteDialog" aria-labelledby="paletteTitle">
+      <form method="dialog" class="dlg-head">
+        <div>
+          <p class="eyebrow">PALETTE</p>
+          <h2 id="paletteTitle" data-i18n="palDlg.title">Calibrate palette</h2>
+        </div>
+        <button class="icon-btn" value="close" data-i18n-aria-label="dlg.close">✕</button>
+      </form>
+      <div class="dlg-body">
+        <div class="dlg-row">
+          <select id="palettePick" data-i18n-aria-label="palDlg.pick"></select>
+          <label class="switch"
+            ><input type="checkbox" id="onlyAvailable" />
+            <span data-i18n="palDlg.onlyAvailable">Use in-stock colours only</span></label
+          >
+        </div>
+        <p class="micro-note pal-note" id="paletteNote" hidden></p>
+        <ul class="pal-list" id="paletteList"></ul>
+        <details class="dlg-details">
+          <summary data-i18n="palDlg.import">Import your own palette</summary>
+          <p class="micro-note">
+            <span data-i18n="import.hintA">One colour per line: </span
+            ><span class="mono" data-i18n="import.format">code,name,hex</span
+            ><span data-i18n="import.hintB">, for example </span
+            ><span class="mono" data-i18n="import.example">H05,Red,#E8262A</span
+            ><span data-i18n="import.hintC"
+              >. The import appears in the palette list as a custom palette.</span
+            >
+          </p>
+          <textarea
+            id="importText"
+            rows="5"
+            data-i18n-placeholder="import.placeholder"
+            placeholder="H05,Red,#E8262A&#10;H01,White,#FFFFFF"
+          ></textarea>
+          <button class="btn btn-secondary" id="btnImport" type="button" data-i18n="import.button">
+            Import as a custom palette
+          </button>
+        </details>
+      </div>
+      <div class="dlg-foot">
+        <button class="btn btn-quiet" id="btnPaletteReset" type="button" data-i18n="palDlg.reset">
+          Restore built-in colours
+        </button>
+        <button class="btn btn-primary" id="btnPaletteApply" type="button" data-i18n="palDlg.apply">
+          Apply and regenerate
+        </button>
+      </div>
+    </dialog>
+
+    <!-- Substitutes for a missing colour -->
+    <dialog class="dlg dlg-replace" id="replaceDialog" aria-labelledby="replaceTitle">
+      <form method="dialog" class="dlg-head">
+        <div>
+          <p class="eyebrow">SUBSTITUTE</p>
+          <h2 id="replaceTitle"></h2>
+        </div>
+        <button class="icon-btn" value="close" data-i18n-aria-label="dlg.close">✕</button>
+      </form>
+      <div class="dlg-body">
+        <p class="micro-note" id="replaceIntro"></p>
+        <ul class="replace-list" id="replaceList"></ul>
+      </div>
+    </dialog>
+
+    <!-- Help -->
+    <dialog class="dlg dlg-help" id="helpDialog" aria-labelledby="helpTitle">
+      <form method="dialog" class="dlg-head">
+        <div>
+          <p class="eyebrow">HOW IT WORKS</p>
+          <h2 id="helpTitle" data-i18n="help.title">How to use it</h2>
+        </div>
+        <button class="icon-btn" value="close" data-i18n-aria-label="dlg.close">✕</button>
+      </form>
+      <div class="dlg-body prose">
+        <ol>
+          <li>
+            <strong data-i18n="help.s1.title">Add a picture. </strong
+            ><span data-i18n="help.s1.body"
+              >Drag it in, click to choose it or paste it with Ctrl+V. The picture is processed only
+              in your browser and never uploaded to any server.</span
+            >
+          </li>
+          <li>
+            <strong data-i18n="help.s2.title">Pick a mode. </strong
+            ><span data-i18n="help.s2.body"
+              >Quick looks at the picture first, then suggests the size, the number of colours, the
+              sampling and the background; Pro lets you set each one and recomputes after every
+              change.</span
+            >
+          </li>
+          <li>
+            <strong data-i18n="help.s3.title">Read the pattern. </strong
+            ><span data-i18n="help.s3.body"
+              >Hold Ctrl and scroll to zoom, and click Fit to see the whole pattern again; click a
+              legend row to isolate that colour, and turn on Compare to check the subject against
+              the original.</span
+            >
+          </li>
+          <li>
+            <strong data-i18n="help.s4.title">Check the counts. </strong
+            ><span data-i18n="help.s4.a"
+              >The counts per colour add up to the total. Boards are counted as </span
+            ><span class="mono" data-i18n="help.s4.formula"
+              >ceil(columns / 29) × ceil(rows / 29)</span
+            ><span data-i18n="help.s4.b">, and the finished size is cells × bead size.</span>
+          </li>
+          <li>
+            <strong data-i18n="help.s5.title">Export. </strong
+            ><span data-i18n="help.s5.body"
+              >The PNG has the grid and legend and prints well, the CSV helps you weigh out beads,
+              the JSON is for further editing, and the print page is laid out for A4.</span
+            >
+          </li>
+        </ol>
+        <h3 data-i18n="help.codes.title">About the colour codes</h3>
+        <p>
+          <span data-i18n="help.codes.a"
+            >The built-in codes come from common bead charts, and the screen colours are
+            approximations. Before you buy beads, compare them with the beads you have and adjust
+            the hex values under Palette, or import your own palette as </span
+          ><span class="mono" data-i18n="import.format">code,name,hex</span
+          ><span data-i18n="help.codes.b">.</span>
+        </p>
+        <p data-i18n="help.hama">
+          The Basic 29 palette numbers its colours after Hama's colour chart only to make matching
+          beads easy to buy. This app is neither affiliated with nor endorsed by Hama; Hama is a
+          trademark of its owner.
+        </p>
+        <h3 data-i18n="help.keys.title">Keyboard shortcuts</h3>
+        <ul class="keys">
+          <li><kbd>+</kbd> / <kbd>−</kbd> <span data-i18n="help.keys.zoom">Zoom</span></li>
+          <li><kbd>0</kbd> <span data-i18n="help.keys.fit">Fit to the window</span></li>
+          <li><kbd>G</kbd> <span data-i18n="help.keys.grid">Grid</span></li>
+          <li><kbd>C</kbd> <span data-i18n="help.keys.coords">Coordinates</span></li>
+          <li>
+            <kbd>Esc</kbd> <span data-i18n="help.keys.esc">Clear isolation / close a dialog</span>
+          </li>
+        </ul>
+      </div>
+    </dialog>
+
+    <script src="assets/js/i18n.js" defer></script>
+    <script src="assets/js/host.js" defer></script>
+    <script src="assets/js/palettes.js" defer></script>
+    <script src="assets/js/color.js" defer></script>
+    <script src="assets/js/engine.js" defer></script>
+    <script src="assets/js/render.js" defer></script>
+    <script src="assets/js/exporters.js" defer></script>
+    <script src="assets/js/app.js" defer></script>
+  </body>
+</html>

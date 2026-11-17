@@ -195,6 +195,9 @@ importers:
       '@penguinharness/humanizer':
         specifier: workspace:*
         version: link:../../plugins/humanizer
+      '@penguinharness/kaoyan-flashcards':
+        specifier: workspace:*
+        version: link:../../plugins/kaoyan-flashcards
       '@penguinharness/model-development':
         specifier: workspace:*
         version: link:../../plugins/model-development
@@ -207,6 +210,9 @@ importers:
       '@penguinharness/penguin-support':
         specifier: workspace:*
         version: link:../../plugins/penguin-support
+      '@penguinharness/perler-studio':
+        specifier: workspace:*
+        version: link:../../plugins/perler-studio
       '@penguinharness/rrsi-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/rrsi-rsi-toolkit
@@ -374,6 +380,9 @@ importers:
       '@penguinharness/humanizer':
         specifier: workspace:*
         version: link:../../plugins/humanizer
+      '@penguinharness/kaoyan-flashcards':
+        specifier: workspace:*
+        version: link:../../plugins/kaoyan-flashcards
       '@penguinharness/model-development':
         specifier: workspace:*
         version: link:../../plugins/model-development
@@ -386,6 +395,9 @@ importers:
       '@penguinharness/penguin-support':
         specifier: workspace:*
         version: link:../../plugins/penguin-support
+      '@penguinharness/perler-studio':
+        specifier: workspace:*
+        version: link:../../plugins/perler-studio
       '@penguinharness/rrsi-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/rrsi-rsi-toolkit
@@ -570,6 +582,9 @@ importers:
       '@penguinharness/humanizer':
         specifier: workspace:*
         version: link:../../plugins/humanizer
+      '@penguinharness/kaoyan-flashcards':
+        specifier: workspace:*
+        version: link:../../plugins/kaoyan-flashcards
       '@penguinharness/model-development':
         specifier: workspace:*
         version: link:../../plugins/model-development
@@ -582,6 +597,9 @@ importers:
       '@penguinharness/penguin-support':
         specifier: workspace:*
         version: link:../../plugins/penguin-support
+      '@penguinharness/perler-studio':
+        specifier: workspace:*
+        version: link:../../plugins/perler-studio
       '@penguinharness/rrsi-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/rrsi-rsi-toolkit
@@ -708,6 +726,9 @@ importers:
       '@penguinharness/humanizer':
         specifier: workspace:*
         version: link:../../plugins/humanizer
+      '@penguinharness/kaoyan-flashcards':
+        specifier: workspace:*
+        version: link:../../plugins/kaoyan-flashcards
       '@penguinharness/model-development':
         specifier: workspace:*
         version: link:../../plugins/model-development
@@ -720,6 +741,9 @@ importers:
       '@penguinharness/penguin-support':
         specifier: workspace:*
         version: link:../../plugins/penguin-support
+      '@penguinharness/perler-studio':
+        specifier: workspace:*
+        version: link:../../plugins/perler-studio
       '@penguinharness/rrsi-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/rrsi-rsi-toolkit
@@ -1279,6 +1303,15 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
 
+  plugins/kaoyan-flashcards:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
+
   plugins/model-development:
     devDependencies:
       '@prismshadow/penguin-core':
@@ -1308,6 +1341,15 @@ importers:
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: file:packages/core(ws@8.21.0)
+
+  plugins/perler-studio:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
 
   plugins/rrsi-rsi-toolkit:
     devDependencies:
@@ -2446,6 +2488,9 @@ packages:
   '@penguinharness/humanizer@file:plugins/humanizer':
     resolution: {directory: plugins/humanizer, type: directory}
 
+  '@penguinharness/kaoyan-flashcards@file:plugins/kaoyan-flashcards':
+    resolution: {directory: plugins/kaoyan-flashcards, type: directory}
+
   '@penguinharness/model-development@file:plugins/model-development':
     resolution: {directory: plugins/model-development, type: directory}
 
@@ -2457,6 +2502,9 @@ packages:
 
   '@penguinharness/penguin-support@file:plugins/penguin-support':
     resolution: {directory: plugins/penguin-support, type: directory}
+
+  '@penguinharness/perler-studio@file:plugins/perler-studio':
+    resolution: {directory: plugins/perler-studio, type: directory}
 
   '@penguinharness/rrsi-rsi-toolkit@file:plugins/rrsi-rsi-toolkit':
     resolution: {directory: plugins/rrsi-rsi-toolkit, type: directory}
@@ -7156,6 +7204,8 @@ snapshots:
 
   '@penguinharness/humanizer@file:plugins/humanizer': {}
 
+  '@penguinharness/kaoyan-flashcards@file:plugins/kaoyan-flashcards': {}
+
   '@penguinharness/model-development@file:plugins/model-development': {}
 
   '@penguinharness/openskill-rsi-toolkit@file:plugins/openskill-rsi-toolkit': {}
@@ -7163,6 +7213,8 @@ snapshots:
   '@penguinharness/opro-rsi-toolkit@file:plugins/opro-rsi-toolkit': {}
 
   '@penguinharness/penguin-support@file:plugins/penguin-support': {}
+
+  '@penguinharness/perler-studio@file:plugins/perler-studio': {}
 
   '@penguinharness/rrsi-rsi-toolkit@file:plugins/rrsi-rsi-toolkit': {}
 
@@ -7285,10 +7337,12 @@ snapshots:
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
+      '@penguinharness/kaoyan-flashcards': file:plugins/kaoyan-flashcards
       '@penguinharness/model-development': file:plugins/model-development
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
       '@penguinharness/penguin-support': file:plugins/penguin-support
+      '@penguinharness/perler-studio': file:plugins/perler-studio
       '@penguinharness/rrsi-rsi-toolkit': file:plugins/rrsi-rsi-toolkit
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
@@ -7335,10 +7389,12 @@ snapshots:
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
+      '@penguinharness/kaoyan-flashcards': file:plugins/kaoyan-flashcards
       '@penguinharness/model-development': file:plugins/model-development
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
       '@penguinharness/penguin-support': file:plugins/penguin-support
+      '@penguinharness/perler-studio': file:plugins/perler-studio
       '@penguinharness/rrsi-rsi-toolkit': file:plugins/rrsi-rsi-toolkit
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
@@ -7445,10 +7501,12 @@ snapshots:
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
+      '@penguinharness/kaoyan-flashcards': file:plugins/kaoyan-flashcards
       '@penguinharness/model-development': file:plugins/model-development
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
       '@penguinharness/penguin-support': file:plugins/penguin-support
+      '@penguinharness/perler-studio': file:plugins/perler-studio
       '@penguinharness/rrsi-rsi-toolkit': file:plugins/rrsi-rsi-toolkit
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
@@ -7509,10 +7567,12 @@ snapshots:
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
+      '@penguinharness/kaoyan-flashcards': file:plugins/kaoyan-flashcards
       '@penguinharness/model-development': file:plugins/model-development
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
       '@penguinharness/penguin-support': file:plugins/penguin-support
+      '@penguinharness/perler-studio': file:plugins/perler-studio
       '@penguinharness/rrsi-rsi-toolkit': file:plugins/rrsi-rsi-toolkit
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
@@ -7573,10 +7633,12 @@ snapshots:
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
+      '@penguinharness/kaoyan-flashcards': file:plugins/kaoyan-flashcards
       '@penguinharness/model-development': file:plugins/model-development
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
       '@penguinharness/penguin-support': file:plugins/penguin-support
+      '@penguinharness/perler-studio': file:plugins/perler-studio
       '@penguinharness/rrsi-rsi-toolkit': file:plugins/rrsi-rsi-toolkit
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit

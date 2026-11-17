@@ -23,6 +23,10 @@ packages/ui/src/themes/doodle/fonts.css
 # hashes its sources (a formatter pass would change the file the hash test compares)
 plugins/a2ui/skills/a2ui/scripts/check.mjs
 
+# Kaoyan Flashcards' question bank and recitation notes: one card or paragraph per line, so a
+# person or an Agent adds one as a line (a formatter pass would split every card over many)
+plugins/kaoyan-flashcards/workbenches/kaoyan-flashcards/ui/data/
+
 # docs-only area (mostly Chinese; not machine-formatted)
 specs/
 *.md
