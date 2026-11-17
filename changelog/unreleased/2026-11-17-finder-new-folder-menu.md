@@ -3,6 +3,7 @@
 - **Date:** 2026-11-17
 - **Type:** feature
 - **Scope:** `web`
+- **PR:** [#1589](https://github.com/Prism-Shadow/penguin-harness/pull/1589)
 
 [中文版](2026-11-17-finder-new-folder-menu.zh.md)
 
