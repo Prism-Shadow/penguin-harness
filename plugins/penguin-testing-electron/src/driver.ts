@@ -162,16 +162,19 @@ export async function launchHarness(options: LaunchOptions = {}): Promise<Harnes
       // what loads it (the route's own contract). Ask by name through POST — the specifier
       // resolves to the linked directory on this instance, so nothing downloads. The
       // loader flips a generation; poll the instance's own view until the plugin runs.
-      const name = path.basename(pluginDir);
+      const name = (await import("node:fs").then((fs) =>
+        fs.promises.readFile(path.join(pluginDir, "package.json"), "utf8"),
+      ).then(JSON.parse)) as { name: string };
+      const packageName = name.name;
       const asked = await fetch(`${base}/api/projects/${project}/plugins/installed`, {
         method: "POST",
         headers: { ...authHeaders, "content-type": "application/json" },
-        body: JSON.stringify({ specifier: name }),
+        body: JSON.stringify({ specifier: packageName }),
       });
       if (!asked.ok) {
         const detail = await asked.text().catch(() => "");
         throw new Error(
-          `install: asking the instance for ${name} failed (${asked.status}): ${detail.slice(0, 400)}`,
+          `install: asking the instance for ${packageName} failed (${asked.status}): ${detail.slice(0, 400)}`,
         );
       }
       let row: { specifier: string; linked?: true; active: boolean; error?: string } | undefined;
@@ -184,16 +187,16 @@ export async function launchHarness(options: LaunchOptions = {}): Promise<Harnes
             plugins: Array<{ specifier: string; linked?: true; active: boolean; error?: string }>;
           }>;
         });
-        row = installed.plugins.find((p) => p.specifier === name);
+        row = installed.plugins.find((p) => p.specifier === packageName);
         if (row?.active === true) break;
         if (row?.error !== undefined) {
-          throw new Error(`install: the instance cannot load ${name}: ${row.error}`);
+          throw new Error(`install: the instance cannot load ${packageName}: ${row.error}`);
         }
         await new Promise((resolve) => setTimeout(resolve, 200));
       }
       if (row === undefined || row.active !== true) {
         throw new Error(
-          `install: ${name} never became active on the instance: ${JSON.stringify(row)}`,
+          `install: ${packageName} never became active on the instance: ${JSON.stringify(row)}`,
         );
       }
     },

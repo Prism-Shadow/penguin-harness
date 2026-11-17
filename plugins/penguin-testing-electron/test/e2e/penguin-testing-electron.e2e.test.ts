@@ -41,6 +41,6 @@ describe("penguin-testing-electron sample plugin", () => {
     expect(existsSync(manifest)).toBe(true);
     expect(existsSync(unit)).toBe(true);
     const source = await import("node:fs").then((fs) => fs.promises.readFile(unit, "utf8"));
-    expect(source).toContain("@Component()");
+    expect(source).toContain("PluginTestUnits.units");
   });
 });
