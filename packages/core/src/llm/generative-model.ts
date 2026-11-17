@@ -1240,7 +1240,7 @@ export function toolDefinitionsToSchemas(tools: ToolDefinition[]): ToolSchema[] 
  */
 export function buildUniConfig(config: GenerativeModelConfig): UniConfig {
   const uniConfig: UniConfig = {};
-  if (config.cacheSessionId) uniConfig.session_id = config.cacheSessionId;
+  if (config.sessionId) uniConfig.session_id = config.sessionId;
   if (config.tools.length > 0) {
     uniConfig.tools = toolDefinitionsToSchemas(config.tools);
   }

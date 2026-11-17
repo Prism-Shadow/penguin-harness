@@ -6,7 +6,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 
 import { formatLocalDate } from "./dates.js";
 import { sessionShell } from "../environment/tools/command/shell.js";
@@ -40,14 +40,6 @@ export function mcpConnectOutcome(results: McpServerConnectResult[]): {
       ? { errorCode: "connect_failed" as const, errorMessage: `unavailable: ${failed.join(", ")}` }
       : {}),
   };
-}
-
-/** Host-chosen Session ids can repeat in different Projects and Agents. A stable,
- * opaque identity keeps those conversations apart without sending their names. */
-export function cacheSessionId(projectId: string, agentId: string, sessionId: string): string {
-  return createHash("sha256")
-    .update(JSON.stringify([projectId, agentId, sessionId]))
-    .digest("hex");
 }
 
 /** Generate a Session id of the form `session-YYYY-MM-DD-HH-mm-ss-<8-hex>` (local timezone, zero-padded: 4-digit year, 2 digits for the rest; hex from randomUUID). */
