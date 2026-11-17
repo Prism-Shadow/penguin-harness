@@ -3,6 +3,7 @@
 - **Date:** 2026-11-17
 - **Type:** fix
 - **Scope:** `ui`
+- **PR:** [#1602](https://github.com/Prism-Shadow/penguin-harness/pull/1602)
 
 [中文版](2026-11-17-fix-date-time-picker-defaults.zh.md)
 
