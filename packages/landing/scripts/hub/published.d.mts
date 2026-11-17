@@ -12,8 +12,11 @@ export interface MarketDocument {
       screenshots?: { src: string; thumb?: string; caption?: string; captionZh?: string }[];
     }
   >;
-  /** Each package's counts, when the document carries a popularity block. */
-  popularity?: Map<string, { installs: number; weekly: number }>;
+  /** Where the counts come from and each package's, when the document carries a popularity block. */
+  popularity?: {
+    source: "placeholder" | "live";
+    items: Map<string, { installs: number; weekly: number }>;
+  };
 }
 
 /** What the hub reads from the network: the curation document and the index's rows. */

@@ -473,6 +473,9 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
       /** A figure in full, `n` already written in the reader's digits. */
       installCount: (n: string) => `${n} 次安装`,
       weeklyCount: (n: string) => `本周新增 ${n} 次安装`,
+      /** Beside the ranking's heading while the counts are placeholders, and its hover sentence. */
+      rankingSample: "示例数据",
+      rankingSampleHint: "接入真实安装量之前，这里的数字均为示例数据。",
       /** The order by install count, offered when the market document carries counts. */
       sortPopular: "热门",
       screenshots: "截图",

@@ -6,7 +6,7 @@
  * the selected ones first by default. When the market document carries popularity counts, a
  * ranking stands beside the grid (under it on a narrow page), with a Popular board by installs
  * and a Rising one by the last week's, and the list gains a Popular order; without counts there
- * is neither.
+ * is neither. While the counts are placeholders, the ranking says "Sample data".
  */
 import { Link, useLocation } from "react-router";
 import {
@@ -67,10 +67,11 @@ const SELECTED = market.selected
 
 /**
  * Whether the market document carries popularity counts. Without them there is no ranking panel
- * and no Popular order. The counts are placeholders until a real source replaces them; the page
- * shows them as they come.
+ * and no Popular order. The counts are placeholders until a real source replaces them; while they
+ * are, the panel says "Sample data" beside its heading.
  */
 const POPULAR = plugins.some((plugin) => plugin.popularity !== undefined);
+const SAMPLE = market.popularitySource === "placeholder";
 
 /** A plugin's install count; one the document does not count ranks after every counted one. */
 const installs = (plugin: PluginSummary) => plugin.popularity?.installs ?? -1;
@@ -211,7 +212,10 @@ export function PluginsPage() {
             POPULAR ? (
               <ShowcaseRanking
                 title={t.rankingTitle}
+                {...(SAMPLE ? { note: t.rankingSample, noteHint: t.rankingSampleHint } : {})}
                 boards={rankingBoards(locale, byTitle, entryLink)}
+                // The site mounts no tooltip layer: its hover hints are the browser's own.
+                hints="title"
               />
             ) : undefined
           }

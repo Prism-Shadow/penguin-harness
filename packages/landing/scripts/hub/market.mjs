@@ -12,9 +12,9 @@
  *
  * Besides curation and pictures it may carry `popularity`: each package's install count and its
  * installs in the last week, which the Plugins page ranks by. The numbers are placeholders until a
- * real source replaces them (the block names its `source`); the page does not say so, and it shows
- * no ranking when the block is absent. A package the document names that no plugin on the site
- * carries is skipped.
+ * real source replaces them (the block names its `source`); while they are, the page's ranking
+ * says "Sample data", and it shows no ranking when the block is absent. A package the document
+ * names that no plugin on the site carries is skipped.
  */
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -143,8 +143,9 @@ export function parseMarketDocument(data, source) {
 }
 
 /**
- * The document's `popularity` block as package name → `{ installs, weekly }`, or undefined when it
- * has none or one that does not read: `source` "placeholder" or "live", a `generatedAt` date, and
+ * The document's `popularity` block as its `source` and `items`, package name →
+ * `{ installs, weekly }`, or undefined when it has none or one that does not read: `source`
+ * "placeholder" or "live", a `generatedAt` date, and
  * `items` by package name, each whole, non-negative counts with `weekly` at most `installs`.
  * Lenient where the rest is strict, as on the server: a block that breaks a rule is dropped whole
  * and the document still stands. The numbers published today are placeholders (`source:
@@ -163,7 +164,7 @@ function readPopularity(block) {
     if (!isCount(installs) || !isCount(weekly) || weekly > installs) return undefined;
     items.set(name, { installs, weekly });
   }
-  return items;
+  return { source: block.source, items };
 }
 
 /**
@@ -171,7 +172,8 @@ function readPopularity(block) {
  * `market` names the selected plugins and the carousel's leads by id — the ids the pages route
  * by — in the document's order, keeping only those listed; `artOf` answers a plugin's
  * `{ cover?, icon?, screenshots? }` by id, and `popularityOf` its `{ installs, weekly }` or
- * undefined. Without a document nothing is selected, dressed or counted.
+ * undefined. `market.popularitySource` says where the counts come from ("placeholder" or "live")
+ * when the document carries any. Without a document nothing is selected, dressed or counted.
  */
 export function marketFor(doc, plugins) {
   const idOf = new Map(plugins.map((plugin) => [plugin.packageName, plugin.id]));
@@ -182,12 +184,16 @@ export function marketFor(doc, plugins) {
     if (id !== undefined) art.set(id, entry);
   }
   const counts = new Map();
-  for (const [name, item] of doc?.popularity ?? []) {
+  for (const [name, item] of doc?.popularity?.items ?? []) {
     const id = idOf.get(name);
     if (id !== undefined) counts.set(id, item);
   }
   return {
-    market: { hero: ids(doc?.hero ?? []), selected: ids(doc?.selected ?? []) },
+    market: {
+      hero: ids(doc?.hero ?? []),
+      selected: ids(doc?.selected ?? []),
+      ...(doc?.popularity !== undefined ? { popularitySource: doc.popularity.source } : {}),
+    },
     artOf: (id) => art.get(id) ?? {},
     popularityOf: (id) => counts.get(id),
   };

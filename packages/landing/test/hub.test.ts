@@ -18,9 +18,10 @@
  *   plugin's summary carries its cover and the mark, and its screenshots reach its detail but not
  *   the list; a plugin it does not name carries none of them.
  * - Given a market document with a popularity block, when the hub is read, then each plugin it
- *   counts carries its install and weekly counts and the rest carry none; given a block that does
- *   not read (a count that is not a whole number), then no plugin is counted and the document's
- *   selection still stands.
+ *   counts carries its install and weekly counts and the rest carry none, and the market says
+ *   whether the counts are placeholders or live; given a block that does not read (a count that
+ *   is not a whole number), then no plugin is counted, the market names no source, and the
+ *   document's selection still stands.
  * - Given a published market document that cannot be read (the network fails, it is missing, it
  *   is not JSON, it names another schema), when a build reads the hub, then the embedded document
  *   stands and the build log says so; an earlier run's copy is not served by a build, but is by
@@ -414,9 +415,9 @@ describe("the hub readers", () => {
   });
 
   it("gives the plugins the document counts their installs and weekly installs", async () => {
-    const popularity = (items: object) => ({
+    const popularity = (items: object, source = "placeholder") => ({
       ...MARKET,
-      popularity: { source: "placeholder", generatedAt: "2026-11-17", items },
+      popularity: { source, generatedAt: "2026-11-17", items },
     });
     const read = async (doc: object) => {
       const published = await fetched({ [MARKET_DOCUMENT_URL]: doc, [PLUGIN_INDEX_URL]: [] });
@@ -431,12 +432,19 @@ describe("the hub readers", () => {
     );
     expect(counted.byId("toolkit").popularity).toEqual({ installs: 120, weekly: 7 });
     expect(counted.byId("plain")).not.toHaveProperty("popularity");
+    expect(counted.hub.index.market.popularitySource).toBe("placeholder");
+
+    const live = await read(
+      popularity({ "@penguinharness/toolkit": { installs: 3, weekly: 1 } }, "live"),
+    );
+    expect(live.hub.index.market.popularitySource).toBe("live");
 
     const fractional = await read(
       popularity({ "@penguinharness/toolkit": { installs: 1.5, weekly: 0 } }),
     );
     expect(fractional.hub.index.plugins.some((p) => p.popularity !== undefined)).toBe(false);
     expect(fractional.hub.index.market.selected).toEqual(["plain", "toolkit"]);
+    expect(fractional.hub.index.market).not.toHaveProperty("popularitySource");
   });
 
   it("falls back to the embedded market document when the published one cannot be read", async () => {

@@ -281,6 +281,11 @@ export interface LeaderboardDetail extends Omit<LeaderboardSummary, "benchmarks"
 export interface HubMarket {
   hero: string[];
   selected: string[];
+  /**
+   * Where the plugins' popularity counts come from, when the market document carries any:
+   * generated placeholders today, a real install count once one is connected.
+   */
+  popularitySource?: "placeholder" | "live";
 }
 
 export interface HubIndex {

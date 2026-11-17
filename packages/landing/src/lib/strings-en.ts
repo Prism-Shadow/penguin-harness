@@ -477,6 +477,9 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
       installCount: (n: string) => (n === "1" ? "1 install" : `${n} installs`),
       weeklyCount: (n: string) =>
         n === "1" ? "1 new install this week" : `${n} new installs this week`,
+      /** Beside the ranking's heading while the counts are placeholders, and its hover sentence. */
+      rankingSample: "Sample data",
+      rankingSampleHint: "These figures are sample data until real install counts are connected.",
       /** The order by install count, offered when the market document carries counts. */
       sortPopular: "Popular",
       screenshots: "Screenshots",
