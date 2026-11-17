@@ -350,7 +350,16 @@ describe("indexChannelLookup", () => {
     // The second source lists the same package newer, with its own channel and integrity:
     // the first registration wins whole, so neither its rows nor its channel reach the pool.
     const later = [
-      { ...entry(), version: "0.0.3", channels: [{ kind: "github" as const, url: "https://github.com/o/later/releases/download/v0.0.3/x.tgz" }] },
+      {
+        ...entry(),
+        version: "0.0.3",
+        channels: [
+          {
+            kind: "github" as const,
+            url: "https://github.com/o/later/releases/download/v0.0.3/x.tgz",
+          },
+        ],
+      },
       { ...entry(), name: "@penguinharness/second-only" },
     ];
     const fetchImpl = vi.fn(async (input: unknown) =>

@@ -608,9 +608,10 @@ function resolveRegistries(options: PluginRoutesOptions): PluginRegistry[] {
         // Only a snapshot the same URL fetched seeds this registry: a parked document without
         // its URL (a v1 park, before snapshots named their source) seeds nothing, since which
         // source it came from is unknown.
-        seed: i === 0 && seed !== null && seed.url === url
-          ? { at: seed.at, entries: seed.entries.map(withoutIcon) }
-          : null,
+        seed:
+          i === 0 && seed !== null && seed.url === url
+            ? { at: seed.at, entries: seed.entries.map(withoutIcon) }
+            : null,
       },
     ),
   );
