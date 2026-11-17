@@ -23,7 +23,7 @@ const BASE = process.env.BASE_URL;
 const MOCK = process.env.MOCK_URL;
 const U = "compactuser";
 const P = "password123";
-/** Displayed in the composer's context ring; large enough that only the Agent threshold below decides when compaction fires. */
+/** The window the composer's context ring reads against; large enough that only the Agent threshold below decides when compaction fires. */
 const CONTEXT_WINDOW = 240;
 /** Compaction threshold: above the first request's reported usage, below the second's (which carries the tool result). */
 const COMPACT_AT = 180;
@@ -100,16 +100,20 @@ test("compaction mid-turn: the reply's stats line is still reachable by hovering
   await expect(statsLine.locator("text=/\\d{1,2}:\\d{2}/")).toBeVisible();
 
   // Compaction succeeded and no ordinary request has reported usage since, so the context ring must
-  // read UNKNOWN (`—`), not 0. Zero would claim the context is empty — but the summary itself costs
-  // tokens; we simply have not measured the new size yet.
-  await expect(page.getByText(`—/${CONTEXT_WINDOW}`)).toBeVisible();
-  await expect(page.getByText(`0/${CONTEXT_WINDOW}`)).toHaveCount(0);
+  // read UNKNOWN, not 0. Zero would claim the context is empty — but the summary itself costs
+  // tokens; we simply have not measured the new size yet. The ring draws no figures: its reading
+  // is its accessible name (and tooltip), which for a measured ring would be the share and the
+  // figures, e.g. "上下文占用 0% · 0/240".
+  const contextRing = page.getByRole("button", { name: /^上下文占用/ });
+  await expect(contextRing).toHaveAccessibleName("上下文占用：压缩后待下次请求回报");
 
   // —— The summary is collapsed by default, exactly like a thinking block ——
   // The generated summary must not be on screen until the reader asks for it: the row starts
-  // collapsed and its body is not rendered at all. The mock answers the compaction request
-  // with the same prose it used for the reply, so the summary's presence is counted rather
-  // than matched by text alone (1 = the reply only, 2 = the reply + the expanded summary).
+  // collapsed and its body is not rendered at all. Opening the row lists its sections, each a
+  // thinking block's own disclosure that starts closed: 「压缩结果」 holds the summary. The mock
+  // answers the compaction request with the same prose it used for the reply, so the summary's
+  // presence is counted rather than matched by text alone (1 = the reply only, 2 = the reply +
+  // the expanded summary).
   const card = banner.locator("xpath=..");
   const summaryLine = /the result looks as expected/;
   await expect(banner).toHaveAttribute("aria-expanded", "false");
@@ -118,6 +122,11 @@ test("compaction mid-turn: the reply's stats line is still reachable by hovering
 
   await banner.click();
   await expect(banner).toHaveAttribute("aria-expanded", "true");
+  const resultSection = card.getByRole("button", { name: /^压缩结果/ });
+  await expect(resultSection).toHaveAttribute("aria-expanded", "false");
+  await expect(card.getByText(summaryLine)).toHaveCount(0);
+  await resultSection.click();
+  await expect(resultSection).toHaveAttribute("aria-expanded", "true");
   await expect(card.getByText(summaryLine).first()).toBeVisible();
   await expect(page.getByText(summaryLine)).toHaveCount(2);
 
@@ -137,8 +146,9 @@ test("compaction mid-turn: the reply's stats line is still reachable by hovering
     .getByTestId("dock-pick-trace")
     .click();
   const main = page.locator("main");
-  await expect(main.getByText("第 1 轮")).toBeVisible();
-  await expect(main.getByText("第 2 轮")).toBeVisible();
+  // Each round is read off its own row: the toolbar's rounds button also names the round in
+  // view, so a bare "第 2 轮" would match twice.
+  await expect(main.locator("[data-round='0'] [data-slot='toggle']")).toContainText("第 1 轮");
   // The TPS is in the round's readings panel, behind the button at the end of its row: a pure
   // compaction round has no context snapshot, so a tokens glyph stands where the ring would.
   const compactionToggle = main.locator("[data-round='1'] [data-slot='toggle']");
