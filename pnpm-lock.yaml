@@ -1059,9 +1059,6 @@ importers:
       '@prismshadow/penguin-library-db':
         specifier: workspace:*
         version: file:library/db(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@prismshadow/penguin-library-auth':
-        specifier: workspace:*
-        version: file:library/auth(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-machine':
         specifier: workspace:*
         version: file:library/machine(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
@@ -7785,42 +7782,6 @@ snapshots:
       - ws
       - zod
 
-  '@prismshadow/penguin-library-auth@file:library/auth(supports-color@10.2.2)(ws@8.21.0)':
-    dependencies:
-      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
-      '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)(ws@8.21.0)
-    transitivePeerDependencies:
-      - '@modelcontextprotocol/sdk'
-      - bufferutil
-      - supports-color
-      - utf-8-validate
-      - ws
-      - zod
-
-  '@prismshadow/penguin-library-auth@file:library/auth(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
-    dependencies:
-      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-    transitivePeerDependencies:
-      - '@modelcontextprotocol/sdk'
-      - bufferutil
-      - supports-color
-      - utf-8-validate
-      - ws
-      - zod
-
-  '@prismshadow/penguin-library-auth@file:library/auth(ws@8.21.0)':
-    dependencies:
-      '@prismshadow/penguin-core': file:packages/core(ws@8.21.0)
-      '@prismshadow/penguin-library-db': file:library/db(ws@8.21.0)
-    transitivePeerDependencies:
-      - '@modelcontextprotocol/sdk'
-      - bufferutil
-      - supports-color
-      - utf-8-validate
-      - ws
-      - zod
-
   '@prismshadow/penguin-library-agent-api@file:library/agent-api(supports-color@10.2.2)(ws@8.21.0)':
     dependencies:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
@@ -8336,7 +8297,6 @@ snapshots:
       '@prismshadow/chat-markdown': file:packages/chat-markdown
       '@prismshadow/mmsp': 0.5.6(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(ws@8.21.0)
-      '@prismshadow/penguin-library-auth': file:library/auth(ws@8.21.0)
       '@prismshadow/penguin-library-agent-api': file:library/agent-api(ws@8.21.0)
       '@prismshadow/penguin-library-db': file:library/db(ws@8.21.0)
       '@prismshadow/penguin-library-auth': file:library/auth(ws@8.21.0)
@@ -8413,7 +8373,6 @@ snapshots:
       '@prismshadow/chat-markdown': file:packages/chat-markdown(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
       '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
-      '@prismshadow/penguin-library-auth': file:library/auth(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-library-agent-api': file:library/agent-api(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-library-auth': file:library/auth(supports-color@10.2.2)(ws@8.21.0)
@@ -8490,7 +8449,6 @@ snapshots:
       '@prismshadow/chat-markdown': file:packages/chat-markdown(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
       '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@prismshadow/penguin-library-auth': file:library/auth(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-agent-api': file:library/agent-api(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-auth': file:library/auth(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
