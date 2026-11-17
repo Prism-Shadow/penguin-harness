@@ -37,7 +37,7 @@ describe("penguin-testing-electron sample plugin", () => {
   it("ships a package manifest and a TestUnit component", async () => {
     const sample = path.join(import.meta.dirname, "sample-plugin");
     const manifest = path.join(sample, "package.json");
-    const unit = path.join(sample, "test-unit.ts");
+    const unit = path.join(sample, "src/index.ts");
     expect(existsSync(manifest)).toBe(true);
     expect(existsSync(unit)).toBe(true);
     const source = await import("node:fs").then((fs) => fs.promises.readFile(unit, "utf8"));

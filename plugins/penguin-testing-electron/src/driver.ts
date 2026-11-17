@@ -170,12 +170,30 @@ export async function launchHarness(options: LaunchOptions = {}): Promise<Harnes
           plugins: Array<{ specifier: string; linked?: true; active: boolean; error?: string }>;
         }>;
       });
-      const row = installed.plugins.find(
-        (p) => p.linked === true && p.error === undefined && p.active,
-      );
-      if (row === undefined) {
+      // The link lands and applies; the loader flips a generation, so the plugin's
+      // modules join the running tree on the next generation. Poll the instance's own
+      // view until the linked plugin is active there (bounded, then a clear refusal).
+      const name = "penguin-testing-electron-sample";
+      let row: { specifier: string; linked?: true; active: boolean; error?: string } | undefined;
+      for (let i = 0; i < 50; i++) {
+        const installed = await fetch(`${base}/api/projects/${project}/plugins/installed`, {
+          headers: authHeaders,
+        }).then((r) => {
+          if (!r.ok) throw new Error(`install: reading the installed surface failed (${r.status})`);
+          return r.json() as Promise<{
+            plugins: Array<{ specifier: string; linked?: true; active: boolean; error?: string }>;
+          }>;
+        });
+        row = installed.plugins.find((p) => p.specifier === name);
+        if (row?.active === true) break;
+        if (row?.error !== undefined) {
+          throw new Error(`install: the instance cannot load ${name}: ${row.error}`);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+      if (row === undefined || row.active !== true) {
         throw new Error(
-          `install: the linked plugin is not active on the instance: ${JSON.stringify(installed.plugins)}`,
+          `install: ${name} never became active on the instance: ${JSON.stringify(row)}`,
         );
       }
     },
