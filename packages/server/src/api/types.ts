@@ -26,6 +26,7 @@ import type {
   SessionTracesResponse,
   MachineServerEvent,
 } from "@prismshadow/penguin-library-project";
+import type { CompactionMode, AmspRecord, SessionSource, ToolCallPayload } from "@prismshadow/amsp";
 import type {
   ElidedBody,
   MCPServerConfig,
