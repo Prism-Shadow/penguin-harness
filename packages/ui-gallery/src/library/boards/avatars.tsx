@@ -1,11 +1,13 @@
 /**
  * 头像: the user avatar at its two rungs, with and without a nickname; the agent avatar — the
- * active theme's drawing for twelve Agents, one in each palette colour, then every theme's drawing
- * pinned side by side, at 16, 24, 48 and 96 px; an agent's own picture at those sizes, beside one
- * whose picture fails to load and draws the default; and the avatar stack — agents and an account
- * overlapping, then the count of the rest. The page's mode switch shows the other mode.
+ * active theme's drawing for twelve Agents, one in each palette colour, wearing the accessories
+ * in turn, at 14, 18, 24, 48 and 96 px; one Agent per accessory, named; every theme's drawing
+ * pinned side by side; an agent's own picture at those sizes, beside one whose picture fails to
+ * load and draws the default; and the avatar stack — agents and an account overlapping, then the
+ * count of the rest. The page's mode switch shows the other mode.
  */
 import {
+  AGENT_ACCESSORIES,
   AGENT_AVATAR_VARIANT_NAMES,
   AGENT_PALETTE,
   AgentAvatar,
@@ -13,6 +15,7 @@ import {
   ICON_SIZE,
   USER_AVATAR_SIZE,
   UserAvatar,
+  agentAccessory,
   agentSlot,
 } from "@prismshadow/penguin-ui";
 import type { AgentAvatarVariant, ThemeId } from "@prismshadow/penguin-ui";
@@ -20,8 +23,11 @@ import { BoardGroup } from "../../foundations/shared";
 import { useGallery } from "../../state";
 import { useText } from "../../text";
 
-/** The sizes the board draws: the sidebar's row, a list's, a dialog's face, and the largest. */
-const SIZES = [16, 24, 48, 96] as const;
+/** The sizes the board draws: a row's glyph, a group header's, a list's, a page header's, and the largest. */
+const SIZES = [14, 18, 24, 48, 96] as const;
+
+/** The size an accessory is named at: large enough to see what it is. */
+const WEAR_SIZE = 48;
 
 /** An agent's own picture, as an upload would make it: a square scene, as an SVG data URL. */
 const PICTURE = `data:image/svg+xml,${encodeURIComponent(
@@ -49,9 +55,26 @@ function firstId(wanted: (id: string) => boolean): string {
   }
 }
 
-/** Twelve sample Agents, one per palette slot in slot order: the first `agent-<n>` in each. */
+/**
+ * Twelve sample Agents, one per palette slot in slot order, wearing the accessories in turn: the
+ * first `agent-<n>` in each slot that wears the slot's turn of the set.
+ */
 const PALETTE_IDS: readonly string[] = AGENT_PALETTE.map((_, slot) =>
-  firstId((id) => agentSlot(id) === slot),
+  firstId(
+    (id) =>
+      agentSlot(id) === slot &&
+      agentAccessory(id) === AGENT_ACCESSORIES[slot % AGENT_ACCESSORIES.length],
+  ),
+);
+
+/**
+ * One sample Agent per accessory, in the set's order: the first `agent-<n>` that wears it, each in
+ * a colour five slots on from the last, so the row shows the accents as well.
+ */
+const WEAR_IDS: readonly string[] = AGENT_ACCESSORIES.map((accessory, i) =>
+  firstId(
+    (id) => agentAccessory(id) === accessory && agentSlot(id) === (i * 5) % AGENT_PALETTE.length,
+  ),
 );
 
 /** A row of Agents at one size: the active theme's drawing, or the one `variant` pins. */
@@ -117,6 +140,21 @@ export function AvatarsBoard() {
         <div className="lib-stack lib-stack-wide" data-avatar-board="active">
           {SIZES.map((size) => (
             <AvatarRow key={size} ids={PALETTE_IDS} size={size} />
+          ))}
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.wear} aside={t.wearAside}>
+        <div className="lib-stack lib-stack-wide" data-avatar-board="wear">
+          <div className="lib-row">
+            {WEAR_IDS.map((id) => (
+              <span key={id} className="lib-cell">
+                <AgentAvatar id={id} size={WEAR_SIZE} />
+                <span className="lib-caption">{t.accessories[agentAccessory(id)]}</span>
+              </span>
+            ))}
+          </div>
+          {SIZES.filter((size) => size < WEAR_SIZE).map((size) => (
+            <AvatarRow key={size} ids={WEAR_IDS} size={size} />
           ))}
         </div>
       </BoardGroup>

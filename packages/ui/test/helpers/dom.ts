@@ -74,6 +74,20 @@ export async function fire(target: EventTarget, event: Event): Promise<void> {
   });
 }
 
+/**
+ * Types `value` into a text field the way React hears it: through the native value setter (React
+ * tracks the value it last rendered and ignores a plain assignment), then the `input` event.
+ */
+export async function type(field: Element, value: string): Promise<void> {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+  if (setter === undefined || !(field instanceof HTMLInputElement))
+    throw new Error("not a text field");
+  await act(async () => {
+    setter.call(field, value);
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
 /** An Escape press, which the layers listen for on the window. */
 export async function pressEscape(): Promise<void> {
   await fire(window, new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));

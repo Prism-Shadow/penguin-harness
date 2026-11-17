@@ -420,7 +420,7 @@ export const en: GalleryStrings = {
       "ui-glyph":
         "an icon each theme draws its own way: line (Primer), duotone line (Frost) or pixel art (Console)",
       "ui-avatar":
-        "an agent's default avatar each theme draws its own way: one smiling ball penguin, on a rounded square (Primer), a circle (Frost), a cookie (Doodle) or in pixel art (Console)",
+        "an agent's default avatar each theme draws its own way: one small egg-shaped penguin drawn in a thin brown line, on a rounded square (Primer), a circle (Frost), a cookie (Doodle) or in pixel art (Console)",
       "ui-segmented": "a segmented control: one choice among a few options side by side",
       "ui-action": "the primary action that heads a navigation list: New chat",
     },
@@ -1237,10 +1237,24 @@ export const en: GalleryStrings = {
     avatars: {
       user: "User avatar",
       agent: "Agent avatar",
-      agentAside: "The active theme's drawing for twelve agents, one in each colour",
+      agentAside:
+        "The active theme's drawing for twelve agents, one in each colour, wearing the accessories in turn",
+      wear: "What an agent wears",
+      wearAside:
+        "One of eight, picked by the agent's id like its colour, and painted in the colour opposite its own",
+      accessories: {
+        none: "Nothing",
+        scarf: "Scarf",
+        beanie: "Beanie",
+        cap: "Cap",
+        headphones: "Headphones",
+        sprout: "Sprout",
+        bow: "Bow",
+        glasses: "Glasses",
+      },
       variants: "Every theme's drawing",
       variantsAside:
-        "One smiling ball penguin, drawn once per theme; the colour follows the agent alone",
+        "One small egg-shaped penguin, drawn once per theme; the colour and the accessory follow the agent alone",
       sizeCaption: (px) => `${px}px`,
       picture: "An agent's own picture",
       pictureAside:
@@ -1380,6 +1394,13 @@ export const en: GalleryStrings = {
       crumbs: "Path strip",
       crumbsHint:
         "When the path does not fit, its leading parts fold into one “…”; the file name gives way last",
+      narrow: "Narrow tree pane",
+      narrowHint:
+        "With no room for its search box, the box folds into a magnifier that opens it across the header row; an empty box folds back on Esc or blur",
+      narrowFolded: "Folded",
+      narrowQuery: "Holding a query: stays open",
+      refresh: "Refresh",
+      upload: "Upload",
       menu: "File menu",
       menuFile: "File",
       menuFolder: "Folder",

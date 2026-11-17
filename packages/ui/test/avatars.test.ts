@@ -2,12 +2,15 @@
  * The avatars' markup.
  *
  * - Given an Agent, its avatar draws the mascot once per theme's drawing under the avatar hook, so
- *   the theme's CSS picks one; every drawing paints in the Agent's own palette colours and nothing
- *   else, the same colours and the same smiling face in every theme; no letter is drawn and no
- *   dark-mode class is needed.
+ *   the theme's CSS picks one; every drawing paints in the Agent's own colours and nothing else,
+ *   the same colours, the same face and the same accessory in every theme; no letter is drawn and
+ *   no dark-mode class is needed.
  * - Given the same Agent twice, its avatar is drawn the same both times.
  * - Given a pinned drawing, only that drawing is drawn, outside the hook, so no theme hides it.
  * - Given two Agents in different palette slots, their penguins are painted differently.
+ * - Given an Agent's id, what its penguin wears is the same every time, realistic ids wear the
+ *   whole set, and two Agents of one colour that wear different things are drawn differently; an
+ *   Agent that wears nothing paints no accent.
  * - Given a small avatar, the face drops the cheeks it cannot resolve; from 20 px up they show.
  * - Given the pixel drawing from 16 px up, its cells land on whole CSS pixels; below 16 px it
  *   scales to the box, antialiased.
@@ -18,6 +21,7 @@
  */
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
+import { AGENT_ACCESSORIES, agentAccessory } from "../src/components/icons/avatars/agent-accessory";
 import { AgentAvatar } from "../src/components/icons/avatars/agent-avatar";
 import { AGENT_AVATAR_VARIANT_NAMES } from "../src/components/icons/avatars/agent-avatar-variants";
 import { agentColors, agentSlot } from "../src/components/icons/avatars/agent-palette";
@@ -43,16 +47,28 @@ const paintsOf = (markup: string) =>
 const avatar = (props: Parameters<typeof AgentAvatar>[0]) =>
   renderStatic(createElement(AgentAvatar, props));
 
+/** Ids an Agent is given: the samples' names and a few hundred numbered ones. */
+const IDS = [
+  "default_agent",
+  "docs-expert",
+  "release-notes",
+  "qa",
+  "acme_ceo",
+  "深度求索",
+  ...Array.from({ length: 300 }, (_, n) => `agent-${n}`),
+];
+
 describe("AgentAvatar", () => {
   it("draws every theme's drawing under the avatar hook, in the Agent's colours", () => {
-    const html = avatar({ id: "docs-expert", size: 48 });
-    const { tile, coat, face, mark, blush } = agentColors("docs-expert");
+    // An Agent that wears something, so the accent is among its colours.
+    const id = IDS.find((candidate) => agentAccessory(candidate) !== "none")!;
+    const html = avatar({ id, size: 48 });
     expect(classTokens(html)).toContain("ui-avatar");
     const drawn = drawings(html);
     expect([...drawn.keys()]).toEqual(AGENT_AVATAR_VARIANT_NAMES);
     for (const [name, markup] of drawn) {
       expect(paintsOf(markup), `${name} paints the Agent's colours alone`).toEqual(
-        new Set([tile, coat, face, mark, blush]),
+        new Set(Object.values(agentColors(id))),
       );
     }
     expect(html).not.toContain("<text");
@@ -78,6 +94,25 @@ describe("AgentAvatar", () => {
     );
     const paints = (id: string) => paintsOf(drawings(avatar({ id })).get("flat")!);
     expect(paints(a!)).not.toEqual(paints(b!));
+  });
+
+  it("dresses an Agent from its id: the same every time, the whole set, in every drawing", () => {
+    for (const id of IDS) expect(agentAccessory(id)).toBe(agentAccessory(id));
+    expect(new Set(IDS.map(agentAccessory))).toEqual(new Set(AGENT_ACCESSORIES));
+    // Two Agents of one colour: one wears nothing, the other something.
+    const bare = IDS.find((id) => agentAccessory(id) === "none")!;
+    const dressed = IDS.find(
+      (id) => agentSlot(id) === agentSlot(bare) && agentAccessory(id) !== "none",
+    )!;
+    const { accent } = agentColors(bare);
+    for (const variant of AGENT_AVATAR_VARIANT_NAMES) {
+      const drawn = (id: string) => drawings(avatar({ id, size: 24, variant })).get(variant)!;
+      expect(drawn(dressed), `${variant} draws what the Agent wears`).not.toBe(drawn(bare));
+      expect(paintsOf(drawn(dressed)), `${variant} paints it in the accent`).toContain(accent);
+      expect(paintsOf(drawn(bare)), `${variant} paints no accent on a bare head`).not.toContain(
+        accent,
+      );
+    }
   });
 
   it("leaves the cheeks off below 20px and draws them from 20px up", () => {
