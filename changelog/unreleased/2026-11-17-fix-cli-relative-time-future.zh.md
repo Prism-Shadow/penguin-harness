@@ -3,6 +3,7 @@
 - **Date:** 2026-11-17
 - **Type:** fix
 - **Scope:** `server`, `cli`
+- **PR:** [#1601](https://github.com/Prism-Shadow/penguin-harness/pull/1601)
 
 [English](2026-11-17-fix-cli-relative-time-future.md)
 
