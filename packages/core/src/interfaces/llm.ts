@@ -76,15 +76,14 @@ export interface GenerativeModelConfig {
    */
   requestTimeoutMs?: number;
   /**
-   * The Session's id, for endpoints whose attribution scheme identifies the conversation
+   * The Session's id, forwarded as MMSP UniConfig.session_id for prompt-cache routing.
+   * Also used by endpoints whose attribution scheme identifies the conversation
    * rather than the app (OpenCode's `x-opencode-session`; see llm/app-attribution.ts
    * `attributionHeaders`). Unset — a request outside any Session: a connectivity test, a
    * vision probe, a one-off utility completion — attributionHeaders mints a fresh id, which
    * the instance then keeps for all of its requests, so they are a conversation of their own.
    */
   sessionId?: string;
-  /** Stable identity of a conversation for MMSP prompt-cache routing. One-shot tasks omit it. */
-  cacheSessionId?: string;
   /**
    * tool_call_id uniqueness registry (Session-level). Pass the same instance when rebuilding a new
    * GenerativeModel on compaction so the uniqueness scope covers the whole Session; defaults to a fresh

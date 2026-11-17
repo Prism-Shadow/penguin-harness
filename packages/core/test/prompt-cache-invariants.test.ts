@@ -19,7 +19,6 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { sessionMeta, userText } from "@prismshadow/amsp/records";
 import type { ApproveFn } from "../src/interfaces/index.js";
-import { cacheSessionId } from "../src/internal/session-support.js";
 import { ContextEngine } from "../src/engine/context-engine.js";
 import { Writer, readTrace, resumeTrace } from "../src/trace/index.js";
 import {
@@ -90,13 +89,12 @@ describe("prompt-cache invariants of request assembly", () => {
   });
 
   it("sends a stable cache routing key across tool results, retry and resume", async () => {
-    const id = () => cacheSessionId("research", "desk", SESSION_ID);
     const config = () =>
       modelConfig({
         modelId: "gpt-6.2-sol",
         clientType: "openai-responses",
         apiKey: "test",
-        cacheSessionId: id(),
+        sessionId: SESSION_ID,
       });
     const first = recordingModel(config(), [
       toolTurn(),
@@ -114,19 +112,17 @@ describe("prompt-cache invariants of request assembly", () => {
     const sent = [...first.requests, ...resumed.requests];
     expect(sent).toHaveLength(5);
     for (const request of sent) {
-      expect(request.config.session_id).toBe(id());
-      expect(request.wireConfig.prompt_cache_key).toBe(id());
+      expect(request.config.session_id).toBe(SESSION_ID);
+      expect(request.wireConfig.prompt_cache_key).toBe(SESSION_ID);
       expect(request.config).not.toHaveProperty("trace_id");
-      expect(JSON.stringify(request.wire)).not.toContain(id());
+      expect(JSON.stringify(request.wire)).not.toContain(SESSION_ID);
     }
-    expect(id()).toMatch(/^[a-f0-9]{64}$/);
-    for (const other of [
-      cacheSessionId("other", "desk", SESSION_ID),
-      cacheSessionId("research", "other", SESSION_ID),
-      cacheSessionId("research", "desk", "another-session"),
-    ])
-      expect(other).not.toBe(id());
-    const oneShot = recordingModel({ ...config(), cacheSessionId: undefined }, [{ text: "Title" }]);
+    const different = recordingModel({ ...config(), sessionId: "another-session" }, [
+      { text: "Hello" },
+    ]);
+    await collect(different.model.streamGenerate({ newMessages: [userText("hello")] }));
+    expect(different.requests[0]?.wireConfig.prompt_cache_key).toBe("another-session");
+    const oneShot = recordingModel({ ...config(), sessionId: undefined }, [{ text: "Title" }]);
     await collect(oneShot.model.streamGenerate({ newMessages: [userText("title")] }));
     expect(oneShot.requests[0]?.wireConfig).not.toHaveProperty("prompt_cache_key");
   });
