@@ -24,7 +24,7 @@ export const DOWNLOAD_AREA_GROUP = "download-area";
       {
         // Written out, not named from a constant: a contribution is data the host reads
         // without running the package.
-        id: DOWNLOAD_AREA_GROUP,
+        id: "download-area",
         // Ahead of everything on the Plugins page: where plugins come from is the page's
         // first question; the sandbox's group and the rest follow.
         order: 0,
