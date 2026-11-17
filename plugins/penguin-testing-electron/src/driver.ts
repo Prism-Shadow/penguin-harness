@@ -52,9 +52,9 @@ export async function launchHarness(options: LaunchOptions = {}): Promise<Harnes
   const root = options.root ?? gitRoot();
   if (!root) throw new Error("launchHarness: no harness root given and no git root found");
 
-  const base = options.dataDir ?? path.join(root, ".data", "penguin-testing-electron");
-  const penguinHome = path.join(base, "penguin");
-  const chromeDir = path.join(base, "chrome");
+  const dataBase = options.dataDir ?? path.join(root, ".data", "penguin-testing-electron");
+  const penguinHome = path.join(dataBase, "penguin");
+  const chromeDir = path.join(dataBase, "chrome");
   mkdirSync(penguinHome, { recursive: true });
   mkdirSync(chromeDir, { recursive: true });
 
