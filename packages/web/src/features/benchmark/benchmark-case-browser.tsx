@@ -37,6 +37,7 @@ import {
   expandTo,
   parentDir,
   previewKindOf,
+  resolveRelative,
   withExpanded,
   type Listings,
 } from "../../lib/workspace-tree";
@@ -123,17 +124,6 @@ function splitTreePath(treePath: string): { material: CaseMaterial; path: string
     material: head === "rubric" ? "rubric" : "statement",
     path: cut < 0 ? "" : treePath.slice(cut + 1),
   };
-}
-
-/** A reference written inside a file, resolved against the directory that file sits in. */
-function resolveRelative(baseDir: string, ref: string): string {
-  const out = ref.startsWith("/") || baseDir === "" ? [] : baseDir.split("/");
-  for (const segment of ref.split("/")) {
-    if (segment === "" || segment === ".") continue;
-    if (segment === "..") out.pop();
-    else out.push(segment);
-  }
-  return out.join("/");
 }
 
 interface Props {

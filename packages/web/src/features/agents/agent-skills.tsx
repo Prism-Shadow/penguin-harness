@@ -1,14 +1,17 @@
 /**
- * The Skills of one Agent on its settings page's Plugins tab (plugins-tab.tsx): the row each
- * installed Skill shows in its plugin's group or among the user's own, with its uninstall, and
- * the "Import skill" dialog. The files under agent_state/skills/<name>/ are the single source of
- * truth, so the tab reads its lists again after every change rather than trusting what it shows.
+ * The Skills of one Agent on its settings page's Plugins tab, Skills sub-page (plugins-tab.tsx):
+ * the row each installed Skill shows, with its uninstall, and the "Import skill" dialog. The
+ * files under agent_state/skills/<name>/ are the single source of truth, so the tab reads its
+ * lists again after every change rather than trusting what it shows.
  *
  * A row leads with the icon of the plugin the Skill came from (the book glyph when it has none),
- * then the name, the localized short description and the version; its actions export the
- * installed directory as a zip (which round-trips through the import) and uninstall it, which
- * confirms first since it deletes the whole directory, local edits included. Both are
- * member-level, matching the skills routes.
+ * then the name — followed, for a Skill a plugin installed, by the puzzle mark that names the
+ * plugin and points at its row on the Plugins sub-page — the localized short description and the
+ * version. The name, and a click anywhere else on the row that is not one of its controls, opens
+ * the Skill's own files read-only (part-files-dialog.tsx); its actions
+ * export the installed directory as a zip (which round-trips through the import) and uninstall
+ * it, which confirms first since it deletes the whole directory, local edits included, and says
+ * which plugin installed it when one did. Both are member-level, matching the skills routes.
  *
  * The "Import skill" dialog is the shared chat-or-zip import (chat-or-zip-import-dialog.tsx, the
  * hook and workbench imports' too) with two paths: the recommended chat install (a source field
@@ -23,6 +26,7 @@ import type { SkillMetadataItem } from "@prismshadow/penguin-server/api";
 import {
   ConfirmModal,
   DownloadIcon,
+  GlyphAction,
   GlyphIcon,
   ICONS,
   IconButton,
@@ -41,20 +45,31 @@ import { downloadArchive } from "./archive-download";
 import { ChatOrZipImportDialog } from "./chat-or-zip-import-dialog";
 import { buildImportPrompt } from "./skill-import-source";
 import { toastApiError } from "../../lib/toast-api-error";
+import { cardBodyClick } from "../../lib/card-open";
+import type { PartRef, PartSource } from "./plugins-subpages";
 
 /**
  * The rows of an Agent's Skills and the one uninstall confirmation they share. `agentName` names
  * the Agent in the confirmation and the toast; `onChanged` reads the tab's lists again after an
- * uninstall.
+ * uninstall; `sourceOf` names the plugin a Skill came from, which `onShowPlugin` points at.
  */
 export function useSkillRows({
   agentId,
   agentName,
   onChanged,
+  sourceOf,
+  onOpenFiles,
+  onShowPlugin,
 }: {
   agentId: string;
   agentName: string;
   onChanged: () => Promise<void>;
+  /** The plugin that installed a Skill, by its name; undefined for the user's own. */
+  sourceOf: (name: string) => PartSource | undefined;
+  /** Opens a part's own files: the row's body, and its name for the keyboard. */
+  onOpenFiles: (part: PartRef) => void;
+  /** Shows the plugin a part came from on the Plugins sub-page: its row marked, no detail opened. */
+  onShowPlugin: (plugin: string) => void;
 }): { row: (skill: SkillMetadataItem) => ReactNode; modals: ReactNode } {
   const { locale } = useLocale();
   const { currentProject } = useProject();
@@ -91,53 +106,70 @@ export function useSkillRows({
     }
   };
 
-  const row = (skill: SkillMetadataItem) => (
-    <ListRow
-      key={`skill:${skill.name}`}
-      as="li"
-      leading={<SkillTile icon={skill.icon} name={skill.name} />}
-      title={
-        <span className="font-mono text-[length:var(--ui-text-code-size)] font-semibold">
-          {skill.name}
-        </span>
-      }
-      description={
-        <span
-          data-tooltip={skill.description}
-          data-tooltip-content="text"
-          data-tooltip-extra={skill.description !== localizedShortText(locale, skill)}
-        >
-          {localizedShortText(locale, skill)}
-        </span>
-      }
-      // The installed copy's version (`YYYY.MM.DD.N`, or the legacy `YYYY-MM-DD.N` on a copy
-      // installed before that spelling; empty when the frontmatter carries none), bare like the
-      // library card's.
-      meta={skill.version || undefined}
-      trailing={
-        <>
-          <IconButton
-            label={`${S.skills.exportSkill} ${skill.name}`}
-            title={S.skills.exportSkill}
-            disabled={busy}
-            onClick={() => void exportSkill(skill.name)}
+  const row = (skill: SkillMetadataItem) => {
+    const source = sourceOf(skill.name);
+    const open = () => onOpenFiles({ kind: "skill", name: skill.name, title: skill.name });
+    return (
+      <ListRow
+        key={`skill:${skill.name}`}
+        as="li"
+        leading={<SkillTile icon={skill.icon} name={skill.name} />}
+        title={
+          <span className="font-mono text-[length:var(--ui-text-code-size)] font-semibold">
+            {skill.name}
+          </span>
+        }
+        onClick={open}
+        onBodyClick={cardBodyClick(open)}
+        titleTrail={
+          source !== undefined && (
+            <GlyphAction
+              glyph={ICONS.puzzle}
+              label={S.agentPlugins.partSource(source.title)}
+              onClick={() => onShowPlugin(source.name)}
+            />
+          )
+        }
+        description={
+          <span
+            data-tooltip={skill.description}
+            data-tooltip-content="text"
+            data-tooltip-extra={skill.description !== localizedShortText(locale, skill)}
           >
-            <DownloadIcon size={ICON_SIZE.iconButton} />
-          </IconButton>
-          <IconButton
-            variant="danger"
-            label={`${S.skills.uninstall} ${skill.name}`}
-            title={S.skills.uninstall}
-            disabled={busy}
-            onClick={() => setRemoving(skill.name)}
-          >
-            <GlyphIcon d={ICONS.trash} size={ICON_SIZE.iconButton} />
-          </IconButton>
-        </>
-      }
-    />
-  );
+            {localizedShortText(locale, skill)}
+          </span>
+        }
+        // The installed copy's version (`YYYY.MM.DD.N`, or the legacy `YYYY-MM-DD.N` on a copy
+        // installed before that spelling; empty when the frontmatter carries none), bare like the
+        // library card's.
+        meta={skill.version || undefined}
+        trailing={
+          <>
+            <IconButton
+              label={`${S.skills.exportSkill} ${skill.name}`}
+              title={S.skills.exportSkill}
+              disabled={busy}
+              onClick={() => void exportSkill(skill.name)}
+            >
+              <DownloadIcon size={ICON_SIZE.iconButton} />
+            </IconButton>
+            <IconButton
+              variant="danger"
+              label={`${S.skills.uninstall} ${skill.name}`}
+              title={S.skills.uninstall}
+              disabled={busy}
+              onClick={() => setRemoving(skill.name)}
+            >
+              <GlyphIcon d={ICONS.trash} size={ICON_SIZE.iconButton} />
+            </IconButton>
+          </>
+        }
+      />
+    );
+  };
 
+  /** The plugin the Skill being uninstalled came from: the confirmation says where to get it back. */
+  const removingSource = removing !== null ? sourceOf(removing) : undefined;
   // The uninstall confirmation (shared ConfirmModal, same copy as the skill library page).
   const modals = (
     <ConfirmModal
@@ -149,9 +181,12 @@ export function useSkillRows({
       confirmLabel={S.skills.uninstall}
       cancelLabel={S.common.cancel}
     >
-      <p className="text-sm text-gray-600 dark:text-gray-300">
-        {removing !== null ? S.skills.uninstallConfirmBody(removing, agentName) : ""}
-      </p>
+      <div className="space-y-2 text-sm text-fg-muted">
+        <p>{removing !== null ? S.skills.uninstallConfirmBody(removing, agentName) : ""}</p>
+        {removingSource !== undefined && (
+          <p>{S.agentPlugins.partFromPluginNote(removingSource.title)}</p>
+        )}
+      </div>
     </ConfirmModal>
   );
 
@@ -173,7 +208,7 @@ export function SkillImportDialog({
   projectId: string;
   agentId: string;
   onClose: () => void;
-  /** A zip landed: the tab closes the dialog and reads the lists again. */
+  /** A zip landed: the sub-page closes the dialog and reads the lists again. */
   onImported: () => void;
 }) {
   const machineId = useAgentLocation();

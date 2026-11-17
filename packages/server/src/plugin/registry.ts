@@ -31,6 +31,7 @@ import {
   readPackageCard,
   userAgent,
 } from "@prismshadow/penguin-core";
+import safeRegex from "safe-regex";
 import { resolvePluginPackage } from "./loader.js";
 import type { PluginBase } from "./loader.js";
 
@@ -189,6 +190,11 @@ export interface IndexChannel {
   version: string;
   integrity: string;
   url: string;
+  /**
+   * The same asset behind this source's CDN mirrors, tried in order when `url` is
+   * unreachable; absent when the deployment carries no rewrite rules for it.
+   */
+  mirrors?: string[];
 }
 
 /**
@@ -301,7 +307,18 @@ export function selectIndexChannel(
  */
 export function indexChannelLookup(
   indexUrl: string | null,
-  { fetchImpl = fetch, ttlMs = INDEX_CACHE_TTL_MS, now = Date.now } = {},
+  {
+    fetchImpl = fetch,
+    ttlMs = INDEX_CACHE_TTL_MS,
+    now = Date.now,
+    proxy = [],
+  }: {
+    fetchImpl?: typeof fetch;
+    ttlMs?: number;
+    now?: Clock;
+    /** The deployment's rewrite rules, applied to every channel this source serves. */
+    proxy?: readonly PluginProxyRule[];
+  } = {},
 ): (
   name: string,
   version?: string,
@@ -316,7 +333,9 @@ export function indexChannelLookup(
     if (cache === null || at - cache.at > ttlMs) {
       let entries: IndexDocumentEntry[];
       try {
-        entries = await httpPluginRegistry(indexUrl, { fetchImpl }).index();
+        entries = await httpPluginRegistry([indexUrl, ...pluginProxyMirrors(indexUrl, proxy)], {
+          fetchImpl,
+        }).index();
       } catch {
         return { channel: null, fault: null };
       }
@@ -329,8 +348,88 @@ export function indexChannelLookup(
       cache = { at, byName };
     }
     const rows = cache.byName.get(name);
-    return rows === undefined ? { channel: null, fault: null } : selectIndexChannel(rows, version);
+    if (rows === undefined) return { channel: null, fault: null };
+    const picked = selectIndexChannel(rows, version);
+    if (picked.channel !== null && proxy.length > 0) {
+      const mirrors = pluginProxyMirrors(picked.channel.url, proxy);
+      if (mirrors.length > 0) picked.channel = { ...picked.channel, mirrors };
+    }
+    return picked;
   };
+}
+
+/**
+ * One proxy rule, Cloudflare-rewrite shaped: `match` is a JS regex over the whole URL,
+ * `rewrite` is the result — the URL with everything `match` captured replaced by `rewrite`
+ * (`$1`, `$2`, … name the captures, `String.replace` semantics). Rules are tried in order
+ * against a URL; every matching rule contributes the address it rewrites to, and the
+ * canonical URL stays first in the caller's try order — a rule never replaces it.
+ *
+ * `kind` is the rule's type, "rewrite" today — a rule that maps one URL shape onto another.
+ * Both fetches of the plugin chain (the index document, a version's release asset) are
+ * rewritten by the same rules: the `match` pattern, not a kind, is what decides which URLs
+ * a rule applies to. A rule of another kind is not a rewrite and is skipped here; the
+ * config parse refuses it, so reaching this point means the rule list was hand-built.
+ */
+/**
+ * A rewrite pattern can only ever match one URL, so its length is bounded by the URL
+ * length the web itself allows — Firefox's 65,536-character limit, the largest of the
+ * mainstream browsers. Anything a URL can carry, the pattern may name; refused at parse.
+ */
+export const REWRITE_PATTERN_MAX = 65536;
+/** The rule list a deployment carries; more than this is a misconfiguration, not a proxy. */
+export const PROXY_RULES_MAX = 32;
+
+export interface PluginProxyRule {
+  /** The rule's type; "rewrite" maps a URL onto another shape via `match` and `rewrite`. */
+  kind: "rewrite";
+  /** A JS regex over the whole URL; the rule applies when it matches. */
+  match: string;
+  /** The result address; `$1`–`$9` are the match's capture groups. */
+  rewrite: string;
+}
+
+/**
+ * What a rewrite rule must answer for before it runs, once at config parse. A plain JS
+ * `RegExp` has no per-match timeout: a pattern with catastrophic backtracking (`(a+)+`
+ * and friends) run against a URL from the network — the index document is remote, so the
+ * strings the rules run over are half attacker-chosen — would pin the server for the
+ * length of the backtracking, which is the ReDoS denial of service. `safe-regex` reads
+ * the pattern's shape and answers whether its worst case stays linear; a pattern it
+ * distrusts never reaches a fetch. The static read is conservative — it may refuse a
+ * pattern a linear engine would have run — and that is the right side to be wrong on:
+ * a refused rule is a boot-time sentence, a hung one is a fetch that never ends.
+ */
+export function rewriteRuleRisk(rule: PluginProxyRule): string | null {
+  if (rule.kind !== "rewrite") return `unknown rule kind ${JSON.stringify(rule.kind)}`;
+  if (rule.match.length > REWRITE_PATTERN_MAX) {
+    return `the pattern is ${rule.match.length} characters, over the ${REWRITE_PATTERN_MAX} cap`;
+  }
+  if (!safeRegex(rule.match)) {
+    return "the pattern's worst case is not linear (catastrophic backtracking); narrow it or drop it";
+  }
+  return null;
+}
+
+/**
+ * The addresses `rules` rewrite `url` into, in rule order: every rewrite rule whose `match`
+ * matches contributes its `rewrite` result. A rule that matches but rewrites to the same
+ * URL contributes nothing (it would only repeat the canonical address), and duplicates
+ * collapse — the first rule to produce an address owns it.
+ */
+export function pluginProxyMirrors(url: string, rules: readonly PluginProxyRule[]): string[] {
+  const mirrors: string[] = [];
+  for (const rule of rules) {
+    if (rule.kind !== "rewrite") continue;
+    // A rule's shape was checked at config parse (rewriteRuleRisk); a hand-edited source
+    // that reaches here anyway is skipped rather than run.
+    if (rewriteRuleRisk(rule) !== null) continue;
+    const re = new RegExp(rule.match);
+    if (!re.test(url)) continue;
+    const rewritten = url.replace(re, rule.rewrite);
+    if (rewritten !== url && !mirrors.includes(rewritten)) mirrors.push(rewritten);
+  }
+  return mirrors;
 }
 
 /**
@@ -374,15 +473,23 @@ const backoff = (attempt: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, 500 * 2 ** (attempt - 1)));
 
 /**
- * A registry behind an `index.json` URL.
- *
- * A connection that fails is tried again before it is reported: the document sits behind a
- * CDN redirect, and the first hop out through a corporate proxy is exactly the kind of thing
- * that fails once and works a second later. What the server answered (a 404, a 503) is not
- * retried — that is a fact about the source, not about the wire.
+ * A registry behind an `index.json` source: one canonical URL plus its CDN mirrors, tried
+ * one at a time in try order — the first address that serves the document carries the
+ * read, a failed one hands the read to the next, and a source exhausted on is reported with
+ * the failure it ended on. The start of the order is where the last read succeeded (see
+ * `sticky` below), so a deployment whose canonical address is dead does not pay its window
+ * on every read; apart from that start the order is the configured one, every address is
+ * tried once per read, and nothing is measured: no probe, no speed test — the walk only
+ * remembers where it succeeded last. Within one address a connection that fails is tried
+ * again before the read moves on:
+ * the document sits behind a CDN redirect, and the first hop out through a corporate proxy
+ * is exactly the kind of thing that fails once and works a second later. What a server
+ * answered (a 404, a 503) is not retried — that is a fact about the source, not about the
+ * wire — and it moves the read to the next address the same way a connection failure does:
+ * an address that has nothing to serve is as dead as one that cannot be reached.
  */
 export function httpPluginRegistry(
-  indexUrl: string,
+  indexUrl: string | readonly string[],
   options: HttpRegistryOptions | typeof fetch = {},
 ): PluginRegistry {
   const opts: HttpRegistryOptions =
@@ -391,16 +498,31 @@ export function httpPluginRegistry(
   const attempts = opts.attempts ?? 3;
   const timeoutMs = opts.timeoutMs ?? 15_000;
   const delay = opts.delay ?? backoff;
+  const addresses = Array.isArray(indexUrl) ? [...indexUrl] : [indexUrl];
   // What the last 200 answered, so the next read can revalidate instead of re-downloading:
   // the etag goes back as If-None-Match, and the body's hash catches a CDN (GitHub Pages
   // among them) whose etag churns while the document does not.
   let revalidate: { etag: string | null; hash: string; entries: IndexDocumentEntry[] } | null =
     null;
-  const request = async (): Promise<Response> => {
+  // The address that served the document last, tried first next time. Memory, not a speed
+  // test: the walk still tries one address at a time in a fixed order, only its start
+  // moves — the configured order among the rest is untouched. A source whose first address
+  // is dead would otherwise pay its window on every read forever; starting where the last
+  // read succeeded returns the common case to one address, and a sticky address that has
+  // died hands the walk back to the configured order inside the same read.
+  let sticky: string | null = null;
+  const ordered = (): readonly string[] => {
+    if (sticky === null || !addresses.includes(sticky)) return addresses;
+    return [sticky, ...addresses.filter((address) => address !== sticky)];
+  };
+  // One address, its connection-level retries. A connection failure (refused, reset,
+  // timeout) is tried again before the read moves on; what the fetch itself answered is
+  // returned as is — the caller decides whether an answer is worth another address.
+  const requestAddress = async (address: string): Promise<Response> => {
     let lastError: unknown;
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
       try {
-        return await fetchImpl(indexUrl, {
+        return await fetchImpl(address, {
           headers: {
             "user-agent": userAgent(),
             ...(revalidate !== null && revalidate.etag !== null
@@ -418,7 +540,7 @@ export function httpPluginRegistry(
     const why =
       cause.cause instanceof Error ? `${cause.message} (${cause.cause.message})` : cause.message;
     throw new Error(
-      `plugin index from ${indexUrl} could not be fetched (${attempts} attempts): ${why}`,
+      `plugin index from ${address} could not be fetched (${attempts} attempts): ${why}`,
     );
   };
   // One read of the index, fetch through parse. Reads are queued one after another (see
@@ -427,41 +549,65 @@ export function httpPluginRegistry(
   // completion could rewind the etag a newer read had just advanced, and the next read would
   // revalidate against a header the server had already retired.
   const readOnce = async (): Promise<IndexDocumentEntry[]> => {
-    const res = await request();
-    // Unchanged since the last read: the document in hand stands, nothing re-parsed.
-    if (res.status === 304 && revalidate !== null) {
-      const fresh = res.headers.get("etag");
-      if (fresh !== null) revalidate = { ...revalidate, etag: fresh };
-      return revalidate.entries;
+    // The addresses in try order (the sticky start first, see `ordered`), one at a time:
+    // the first one whose answer turns into a document carries the read. A connection
+    // failure or a non-ok answer moves on to the next address; an answer that stops
+    // halfway (a body that never arrives, a document that will not parse) does the same —
+    // the address has not served the document, whatever its headers said. No address is
+    // fetched twice or fetched again after another has won. All of them failed: the read
+    // reports the failure it ended on, which names the address it belongs to.
+    let lastError: unknown = null;
+    for (const address of ordered()) {
+      let res: Response;
+      try {
+        res = await requestAddress(address);
+        if (!res.ok && !(res.status === 304 && revalidate !== null)) {
+          throw new Error(`plugin index from ${address} answered HTTP ${res.status}`);
+        }
+        // Unchanged since the last read: the document in hand stands, nothing re-parsed.
+        // The null check also narrows the write below for the type checker.
+        if (res.status === 304 && revalidate !== null) {
+          const fresh = res.headers.get("etag");
+          if (fresh !== null) revalidate = { ...revalidate, etag: fresh };
+          // The address served the read (a revalidation is still a served document).
+          sticky = address;
+          return revalidate.entries;
+        }
+        const text = await res.text();
+        const hash = createHash("sha256").update(text).digest("hex");
+        // The etag moved but the document did not — a Pages quirk this hash is here to
+        // catch. The new etag is kept so the next revalidation speaks the header the
+        // server last sent.
+        if (revalidate !== null && hash === revalidate.hash) {
+          revalidate = { ...revalidate, etag: res.headers.get("etag") };
+          sticky = address;
+          return revalidate.entries;
+        }
+        let data: unknown;
+        try {
+          data = JSON.parse(text);
+        } catch (err) {
+          throw new Error(
+            `plugin index from ${address} is not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+        const entries = parsePluginIndex(data, address, { icons: "drop" });
+        revalidate = { etag: res.headers.get("etag"), hash, entries };
+        // Content verified by the same parser as before — a mirror wins nothing by
+        // serving bytes the validator refuses. Only now is the address remembered.
+        sticky = address;
+        return entries;
+      } catch (err) {
+        lastError = err;
+      }
     }
-    if (!res.ok) {
-      throw new Error(`plugin index from ${indexUrl} answered HTTP ${res.status}`);
-    }
-    const text = await res.text();
-    const hash = createHash("sha256").update(text).digest("hex");
-    // The etag moved but the document did not — a Pages quirk this hash is here to catch.
-    // The new etag is kept so the next revalidation speaks the header the server last sent.
-    if (revalidate !== null && hash === revalidate.hash) {
-      revalidate = { ...revalidate, etag: res.headers.get("etag") };
-      return revalidate.entries;
-    }
-    let data: unknown;
-    try {
-      data = JSON.parse(text);
-    } catch (err) {
-      throw new Error(
-        `plugin index from ${indexUrl} is not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
-    const entries = parsePluginIndex(data, indexUrl, { icons: "drop" });
-    revalidate = { etag: res.headers.get("etag"), hash, entries };
-    return entries;
+    throw lastError;
   };
   // The queue itself: every read follows the one before it, and a read that fails does not
   // poison the chain — the failure is the caller's news, not the next read's state.
   let chain: Promise<unknown> = Promise.resolve();
   return {
-    source: indexUrl,
+    source: addresses[0]!,
     index: () => {
       const next = chain.then(readOnce, readOnce);
       chain = next.catch(() => undefined);
@@ -489,6 +635,15 @@ export function httpPluginRegistry(
  */
 export const NIGHTLY_INDEX_URL =
   "https://github.com/Prism-Shadow/penguin-extensions/releases/download/nightly/index.json";
+
+/**
+ * The proxy rules a deployment with no proxy config of its own falls back to, in rule
+ * order — the built-in set a deployment overrides with PENGUIN_PLUGIN_PROXY.
+ * Empty by default: naming the endpoints is a deployment's call (which third-party
+ * services to lean on for GitHub Pages, GitHub Releases and npm in its region), not this
+ * constant's — a default here would be a service choice made without the deployer.
+ */
+export const PLUGIN_DEFAULT_PROXY_RULES: readonly PluginProxyRule[] = [];
 
 /** Wall-clock reader, injectable so a cache's TTL is deterministic in tests. */
 export type Clock = () => number;

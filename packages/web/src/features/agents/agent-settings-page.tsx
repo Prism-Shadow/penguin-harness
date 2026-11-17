@@ -5,8 +5,8 @@
  * path — and Kernel — the defaults generation with its update / restore-defaults
  * actions), System Prompt (AGENTS.md and system_prompt editors + placeholder
  * reference), Runtime (max_turns, model.*, compaction.*), Tools (editable built-in
- * tools table + the MCP Server form, mcp-servers-section.tsx), Plugins (plugins-tab.tsx: the
- * Agent's plugins with their Skills, hook packages, MCP servers and workbenches, and its own),
+ * tools table + the MCP Server form, mcp-servers-section.tsx), Plugins (plugins-tab.tsx: four
+ * sub-pages — the Agent's plugins, its Skills, its hook packages and its workbenches),
  * Memory (memory-tab.tsx), Vault (vault-tab.tsx), Schedule (schedules-tab.tsx), API (api-tab.tsx:
  * the Agent's public API, kept by this server).
  * Save = PUT config (sends only the changed keys; YAML comments are preserved
@@ -98,6 +98,12 @@ import {
 } from "./tools-form";
 
 import { PluginsTab } from "./plugins-tab";
+import {
+  PLUGIN_PARAM,
+  SUBPAGE_TABS,
+  resolvePluginsSubPage,
+  type PluginsSubPage,
+} from "./plugins-subpages";
 import { MemoryTab } from "./memory-tab";
 import { kernelTabLabel } from "./kernel-labels";
 import { AGENT_AUTHORS } from "./agent-groups";
@@ -125,7 +131,7 @@ type TabKey =
  * Narrow an untrusted `?tab=` query value to a known tab key (exported for unit tests):
  * validated against the live TABS keys — not a hardcoded list — so newly added tabs
  * deep-link without touching this helper; missing/unknown values fall back to the default.
- * An alias names the tab that took a retired one's place.
+ * An alias names the tab another value opens (a sub-page's own value opens its tab).
  */
 export function resolveTabKey<K extends string>(
   raw: string | null,
@@ -136,16 +142,6 @@ export function resolveTabKey<K extends string>(
   const key = raw !== null && Object.hasOwn(aliases, raw) ? aliases[raw] : raw;
   return tabs.some((t) => t.key === key) ? (key as K) : fallback;
 }
-
-/**
- * The tabs the Plugins tab replaced. Bookmarks and the docs still link to them, so they stay
- * aliases for good rather than for a while.
- */
-const RETIRED_TABS: Readonly<Record<string, TabKey>> = {
-  skills: "plugins",
-  hooks: "plugins",
-  workbenches: "plugins",
-};
 
 export function AgentSettingsPage() {
   // Read inside the component: after a language switch remount, this picks up the current dictionary.
@@ -171,12 +167,14 @@ export function AgentSettingsPage() {
   const switchedAway = useLeaveOnProjectSwitch(projectId, "/agents");
 
   // The open tab is the `?tab=` value alone (the Agents page's stat icons deep-link with it;
-  // missing or unknown values fall back to "overview", a retired tab opens the one that took
-  // its place). A switch only writes the address, so
-  // it is a navigation: while the open tab holds unsaved edits the app's leave guard asks
-  // before it happens, and the tab on screen never runs ahead of the address it would leave.
+  // missing or unknown values fall back to "overview"). The Plugins tab's sub-pages are values
+  // of the same key: `skills`, `hooks` and `workbenches` select the Plugins tab on their own
+  // sub-page. A switch of either only writes the address, so it is a navigation: while the open
+  // tab holds unsaved edits the app's leave guard asks before it happens, and the tab on screen
+  // never runs ahead of the address it would leave.
   const [searchParams, setSearchParams] = useSearchParams();
-  const tab: TabKey = resolveTabKey(searchParams.get("tab"), TABS, "overview", RETIRED_TABS);
+  const tab: TabKey = resolveTabKey(searchParams.get("tab"), TABS, "overview", SUBPAGE_TABS);
+  const subPage = resolvePluginsSubPage(searchParams.get("tab"));
   /** The machine the Agent lives on (`?machine=`); null for this server. */
   const machineId = machineInSearch(searchParams);
   /**
@@ -221,13 +219,17 @@ export function AgentSettingsPage() {
     publishMachineAgentsChanged(machineId);
     await readMachineAgents(projectId, machineId).catch(() => undefined);
   }, [projectId, machineId, reloadHere]);
-  /** Writes the tab into `?tab=` (replacing the history entry, keeping the other params). */
+  /**
+   * Writes the tab, or the Plugins tab's sub-page, into `?tab=` (replacing the history entry,
+   * keeping the other params but the open plugin detail, which belongs to the page it was on).
+   */
   const switchTab = useCallback(
-    (next: TabKey) => {
+    (next: TabKey | PluginsSubPage) => {
       setSearchParams(
         (prev) => {
           const p = new URLSearchParams(prev);
           p.set("tab", next);
+          p.delete(PLUGIN_PARAM);
           return p;
         },
         { replace: true },
@@ -422,6 +424,8 @@ export function AgentSettingsPage() {
             <PluginsTab
               key={`${projectId}:${machineId ?? ""}:${agentId}`}
               agentId={agentId}
+              subPage={subPage}
+              onSubPage={switchTab}
               onConfigChanged={refreshConfig}
             />
           )}

@@ -9,7 +9,7 @@
  * - the search box narrows the list, and the bulk controls then act on what the search leaves
  *   visible rather than on the whole library — so a filtered 全选 adds only the matches;
  * - creating with a selection installs exactly those plugins into the new Agent: the settings
- *   page's Skills tab lists their skills, and the server's installed list agrees;
+ *   page's Skills sub-page lists their skills, and the server's installed list agrees;
  * - creating with nothing picked still yields a plain Agent with no skills.
  */
 import { test, expect } from "@playwright/test";
@@ -104,13 +104,8 @@ test("agent create: pick library plugins (select all / none, filtered) -> they a
     "web-design",
   ]);
 
-  // The Plugins tab lists them under the plugins they came from: each plugin's row folds its
-  // parts away, so every row is opened first.
-  await page.goto(`${BASE}/agents/seeded_agent?tab=plugins`);
-  const folded = page.locator('[data-slot="head"] > button[aria-expanded="false"]');
-  await expect(folded.first()).toBeVisible();
-  while ((await folded.count()) > 0) await folded.first().click();
-  // A Skill's row, not the plugin's title above it.
+  // The Skills sub-page lists every Skill on the Agent, one row each.
+  await page.goto(`${BASE}/agents/seeded_agent?tab=skills`);
   await expect(page.locator("li").getByText("penguin-sdk", { exact: true })).toBeVisible();
   await expect(page.locator("li").getByText("web-design", { exact: true })).toBeVisible();
 

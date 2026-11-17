@@ -1,7 +1,7 @@
 /**
- * The import dialog behind the Agent settings Plugins tab's Import menu, one for each kind —
- * Skill, hook package, workbench: the recommended chat import on top, the zip upload below, in
- * two ruled sections. Each kind's dialog (agent-skills.tsx, agent-hooks.tsx,
+ * The import dialog behind the Import of each kind sub-page of the Agent settings Plugins tab,
+ * one for each kind — Skill, hook package, workbench: the recommended chat import on top, the zip
+ * upload below, in two ruled sections. Each kind's dialog (agent-skills.tsx, agent-hooks.tsx,
  * agent-workbenches.tsx) hands in what differs by kind — the title and the words, the prompt
  * builder, the upload call with the code of the 409 that asks before overwriting, and the file
  * type the picker accepts — and the rest is the same for every kind.

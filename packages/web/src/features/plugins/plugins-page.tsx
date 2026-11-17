@@ -43,6 +43,7 @@ import {
   Button,
   CollapsibleSection,
   ConfirmModal,
+  EntityCardGrid,
   GlyphIcon,
   ICONS,
   Notice,
@@ -57,7 +58,6 @@ import {
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
@@ -97,12 +97,11 @@ import {
 } from "./plugin-reads";
 import {
   agentInstalls,
-  installsKey,
   rereadInstalls,
   useAgentInstalls,
-  withoutPlugin,
   type InstallsTarget,
 } from "./agent-installs";
+import { installOnAgent, toastWriteError, uninstallFromAgent } from "./agent-plugin-writes";
 import { StdioDisclosure, StdioInstallBody } from "./plugin-mcp";
 import { ImportPluginModal } from "./plugin-import-modal";
 import {
@@ -588,7 +587,7 @@ export function PluginsPage() {
     const agentId = agentIdOf(key);
     /** Every part goes to the server the Agent lives on. */
     const machineId = machineOfTarget(key);
-    const storeKey = installsKey(projectId, machineId, agentId);
+    const where = { projectId, agentId, machineId };
     // Shown as it will be while the write runs; dropped once the answer is in the store (or
     // the write failed, which leaves the store as it was).
     const optimistic = withPlugin(prev, plugin, on);
@@ -609,8 +608,7 @@ export function PluginsPage() {
           : `${agentDisplayName(target.agent)} ${S.chat.machineTag(target.machine.label)}`;
     try {
       if (on) {
-        const res = await api.installAgentPlugins(projectId, agentId, [plugin.name], machineId);
-        agentInstalls.accept(storeKey, res);
+        await installOnAgent(where, [plugin.name]);
         toastSuccess(
           `${S.plugins.installedToast(plugin.name, agentName)}${S.agent.takesEffectSuffix}`,
         );
@@ -618,19 +616,8 @@ export function PluginsPage() {
         // One request: the server takes every part apart. "Nothing of it is here" is the state
         // asked for (this page's snapshot was behind), so it does not fail the uninstall —
         // otherwise the row would be stuck at "Installed".
-        const res = await api
-          .uninstallAgentPlugin(projectId, agentId, plugin.name, machineId)
-          .catch((e: unknown) => {
-            if (e instanceof ApiError && e.status === 404 && e.code === "plugin_not_installed") {
-              return null;
-            }
-            throw e;
-          });
-        // What it removed is known; the Agent is read again to confirm it.
-        const before = agentInstalls.get(storeKey).value;
-        if (before !== null) agentInstalls.accept(storeKey, withoutPlugin(before, plugin));
-        rereadInstalls(projectId, machineId, agentId);
-        const failed = res?.failed ?? [];
+        const outcome = await uninstallFromAgent(where, plugin.name, plugin);
+        const failed = outcome.kind === "removed" ? outcome.failed : [];
         if (failed.length > 0) {
           const named = failed.map((f) => S.agentPlugins.failedPart(f.name, f.error));
           toastError(S.agentPlugins.uninstallPartly(plugin.name, named.join(S.todo.listSeparator)));
@@ -643,9 +630,7 @@ export function PluginsPage() {
     } catch (e) {
       written();
       // A 404 of any other kind is a server without the request: a machine older than this page.
-      if (e instanceof ApiError && e.status === 404 && machineId !== null) {
-        toastError(S.errors.byCode.machine_outdated);
-      } else toastApiError(e);
+      toastWriteError(e, machineId);
       return false;
     }
     written();
@@ -661,12 +646,11 @@ export function PluginsPage() {
   const updateOutdated = async (name: string, keys: string[]) => {
     if (!projectId || keys.length === 0) return;
     const results = await Promise.allSettled(
-      keys.map(async (key) => {
-        const agentId = agentIdOf(key);
-        const machineId = machineOfTarget(key);
-        const res = await api.installAgentPlugins(projectId, agentId, [name], machineId);
-        agentInstalls.accept(installsKey(projectId, machineId, agentId), res);
-      }),
+      keys.map((key) =>
+        installOnAgent({ projectId, agentId: agentIdOf(key), machineId: machineOfTarget(key) }, [
+          name,
+        ]),
+      ),
     );
     const failed = results.find((r): r is PromiseRejectedResult => r.status === "rejected");
     if (!failed) toastSuccess(S.plugins.updatedToast(name, keys.length));
@@ -701,11 +685,10 @@ export function PluginsPage() {
       return agent ? agentDisplayName(agent) : agentId;
     });
     const results = await Promise.allSettled(
-      plan.perAgent.map(async ({ agentId, names }) => {
-        // The plan is built from this server's Agents, as the update badge counts them.
-        const res = await api.installAgentPlugins(projectId, agentId, names, null);
-        agentInstalls.accept(installsKey(projectId, null, agentId), res);
-      }),
+      // The plan is built from this server's Agents, as the update badge counts them.
+      plan.perAgent.map(({ agentId, names }) =>
+        installOnAgent({ projectId, agentId, machineId: null }, names),
+      ),
     );
     const outcome = bulkOutcome(labels, results);
     if (outcome.allOk) toastSuccess(S.todo.bulkDone(outcome.ok));
@@ -980,7 +963,8 @@ export function PluginsPage() {
           </Button>
         </div>
       ) : groups === null ? (
-        <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+        // The cards' own grid, so the placeholders stand in the columns the cards will take.
+        <EntityCardGrid>
           {Array.from({ length: 4 }, (_, i) => (
             <SkeletonCard key={i} className="p-4">
               <Skeleton className="h-4 w-32" />
@@ -988,12 +972,12 @@ export function PluginsPage() {
               <Skeleton className="mt-3 h-6 w-36" />
             </SkeletonCard>
           ))}
-        </div>
+        </EntityCardGrid>
       ) : (
         <div className="space-y-3">
           {groupBy === "none"
             ? sections.map((section) => (
-                <CardGrid key={section.id}>{section.rows.map(card)}</CardGrid>
+                <EntityCardGrid key={section.id}>{section.rows.map(card)}</EntityCardGrid>
               ))
             : sections.map((section) => {
                 const key = foldKey(groupBy, section.id);
@@ -1008,7 +992,7 @@ export function PluginsPage() {
                     open={open}
                     onOpenChange={() => toggleFold(key)}
                   >
-                    <CardGrid>{section.rows.map(card)}</CardGrid>
+                    <EntityCardGrid>{section.rows.map(card)}</EntityCardGrid>
                   </CollapsibleSection>
                 );
               })}
@@ -1152,11 +1136,6 @@ export function IncompatibleNotice({
       {S.plugins.unsatisfiedNotice(unsatisfied)}
     </Notice>
   );
-}
-
-/** Cards in a section: two to a row once there is room, one on a phone. */
-function CardGrid({ children }: { children: React.ReactNode }) {
-  return <div className="grid grid-cols-1 gap-2 p-2 sm:grid-cols-2">{children}</div>;
 }
 
 /**

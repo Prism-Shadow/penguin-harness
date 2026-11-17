@@ -9,6 +9,7 @@
  * - A building tile does not open, by click or by its menu, and turns live by itself when the
  *   server says the workbench loaded; the news that a load started turns a tile to building.
  * - A failed tile still opens, and its menu shows the recorded error.
+ * - "View in agent settings" opens the Agent's settings on the Workbenches sub-page.
  * - Dragging a tile beside another reorders the grid, onto another makes a folder; the menu's
  *   forward and backward move one too. Each arrangement is stored as the viewer's layout, and a
  *   write the server refuses puts the grid back to what is stored.
@@ -251,6 +252,13 @@ it("opens an app full screen from its menu, carrying the way back to the App Cen
   await click(menuItem(en.appCenter.menu.openFullScreen));
   expect(whereIs(router)).toBe(`/app/${PROJECT_ID}/${AGENT_ID}/board/main`);
   expect(router.state.location.state).toEqual({ returnTo: "/apps" });
+});
+
+it("opens the Agent's Workbenches sub-page from a tile's View in agent settings", async () => {
+  const { router } = await open([workbench("board")]);
+  await rightClick(tileButton(key("board")));
+  await click(menuItem(en.appCenter.menu.viewInSettings));
+  expect(whereIs(router)).toBe(`/agents/${AGENT_ID}?tab=workbenches`);
 });
 
 it("does not open a building app, and turns it live when the server says it loaded", async () => {

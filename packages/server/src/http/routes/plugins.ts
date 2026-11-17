@@ -79,6 +79,7 @@ import {
   builtinPluginRegistry,
   cachedRegistry,
   httpPluginRegistry,
+  pluginProxyMirrors,
   localPluginDisplay,
   mergeIndexes,
   withoutIcon,
@@ -88,6 +89,7 @@ import type {
   CachedRegistry,
   IndexDocumentEntry,
   IndexSnapshot,
+  PluginProxyRule,
   PluginRegistry,
 } from "../../plugin/registry.js";
 import { PACKAGE_NAME, pluginBases, resolvePluginPackage } from "../../plugin/loader.js";
@@ -393,6 +395,8 @@ export interface PluginRoutesOptions {
    * Undefined = unset, which reads the index repository's published document.
    */
   indexUrl?: string | null;
+  /** The deployment's proxy rules for the published index, tried after its own URL. */
+  proxy?: PluginProxyRule[];
   /** Where packages are on this machine (plugin/loader.ts's pluginBases): for the builtin readmes, and for every listed package's own display fields (localPluginDisplay). */
   bases?: () => readonly PluginBase[];
   /** Overrides the resolved source list entirely; tests pass registries directly. */
@@ -578,9 +582,14 @@ function resolveRegistries(options: PluginRoutesOptions): PluginRegistry[] {
   // The parked document goes through the remote rule too: it was fetched by a previous App,
   // which may not have dropped the icons.
   const seed = options.seed ?? null;
-  const cache = cachedRegistry(httpPluginRegistry(url, { fetchImpl: options.fetchImpl ?? fetch }), {
-    seed: seed === null ? null : { at: seed.at, entries: seed.entries.map(withoutIcon) },
-  });
+  const cache = cachedRegistry(
+    httpPluginRegistry([url, ...pluginProxyMirrors(url, options.proxy ?? [])], {
+      fetchImpl: options.fetchImpl ?? fetch,
+    }),
+    {
+      seed: seed === null ? null : { at: seed.at, entries: seed.entries.map(withoutIcon) },
+    },
+  );
   options.onCache?.(cache);
   return [builtin, cache];
 }
@@ -616,6 +625,7 @@ export class PluginRegistryRoutes {
     const parked = (context as { index?: IndexSnapshot } | null)?.index;
     this.routes = pluginRegistryRoutes({
       indexUrl: this.config.pluginIndexUrl,
+      proxy: this.config.pluginProxy ?? [],
       // Read per request: a push moves the shipped prefix to a new assets directory.
       bases: () => pluginBases(this.config.root, this.hmr.assetsDir()),
       prefix: () => pluginsPrefix(this.config.root),
