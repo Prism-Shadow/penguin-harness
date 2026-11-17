@@ -3,6 +3,7 @@
 - **Date:** 2026-11-18
 - **Type:** feature
 - **Scope:** `web`, `ui`
+- **PR:** [#1593](https://github.com/Prism-Shadow/penguin-harness/pull/1593)
 
 [English](2026-11-18-sidebar-hover-details.md)
 
