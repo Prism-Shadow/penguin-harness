@@ -768,12 +768,12 @@ importers:
       '@xterm/headless':
         specifier: ^5.5.0
         version: 5.5.0
-      css-tree:
-        specifier: ^3.2.1
-        version: 3.2.1
       commander:
         specifier: ^13.0.0
         version: 13.1.0
+      css-tree:
+        specifier: ^3.2.1
+        version: 3.2.1
       dotenv:
         specifier: ^17.0.0
         version: 17.4.2
@@ -807,6 +807,9 @@ importers:
       unified:
         specifier: ^11.0.5
         version: 11.0.5
+      which:
+        specifier: ^5.0.0
+        version: 5.0.0
       ws:
         specifier: ^8.18.3
         version: 8.21.0
@@ -829,6 +832,9 @@ importers:
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.3
+      '@types/which':
+        specifier: ^3.0.4
+        version: 3.0.4
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.1
@@ -1251,9 +1257,6 @@ importers:
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: file:packages/core(ws@8.21.0)
-
-
-
 
   plugins/goal:
     devDependencies:
@@ -2733,7 +2736,9 @@ packages:
   '@smithy/core@3.24.7':
     resolution: {integrity: sha512-KoUi4M1f3BG6kzN1FnCwL7oyFptTbyBJKjR6yhSib+JHRdUmM1o+VwsFtJ66NZCkCzVfJMWRHJNo0R0jznp0Pg==}
     engines: {node: '>=18.0.0'}
-    deprecated: Deprecated due to a bug in custom logger data redaction. See https://github.com/aws/aws-sdk-js-v3/issues/8393.
+    deprecated: |-
+      Deprecated due to a bug in custom logger data redaction. Upgrade to the latest version. If you used a custom logger with this
+        version, review your logs and rotate any credentials or other secrets. See https://github.com/aws/aws-sdk-js-v3/issues/8393.
 
   '@smithy/credential-provider-imds@4.3.9':
     resolution: {integrity: sha512-ZlfJ/4Fa3jYb+3eaohPfG9utX9HmdhFNcFtpoGAhUhdynAOmGXtmigbi7eEiONKM+ykHw8RwKuDEb85Lx7t7fA==}
@@ -3169,6 +3174,9 @@ packages:
 
   '@types/unist@3.0.3':
     resolution: {integrity: sha512-ko/gIFJRv177XgZsZcBwnqJN5x/Gien8qNOn0D5bQU/zAzVf9Zt3BlcUiLqhV9y4ARk0GbT3tnUiPNgnTXzc/Q==}
+
+  '@types/which@3.0.4':
+    resolution: {integrity: sha512-liyfuo/106JdlgSchJzXEQCVArk0CvevqPote8F8HgWgJ3dRCcTHgJIsLDuee0kxk/mhbInzIZk3QWSZJ8R+2w==}
 
   '@types/ws@8.18.1':
     resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
@@ -7447,6 +7455,7 @@ snapshots:
       '@prismshadow/mmsp': 0.5.6(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(ws@8.21.0)
       '@xterm/headless': 5.5.0
+      commander: 13.1.0
       css-tree: 3.2.1
       dotenv: 17.4.2
       fflate: 0.8.3
@@ -7459,6 +7468,7 @@ snapshots:
       typescript: 5.9.3
       undici: 7.30.1
       unified: 11.0.5
+      which: 5.0.0
       ws: 8.21.0
       yaml: 2.9.0
     transitivePeerDependencies:
@@ -7508,6 +7518,7 @@ snapshots:
       '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@xterm/headless': 5.5.0
+      commander: 13.1.0
       css-tree: 3.2.1
       dotenv: 17.4.2
       fflate: 0.8.3
@@ -7520,6 +7531,7 @@ snapshots:
       typescript: 5.9.3
       undici: 7.30.1
       unified: 11.0.5
+      which: 5.0.0
       ws: 8.21.0
       yaml: 2.9.0
     transitivePeerDependencies:
@@ -7569,6 +7581,7 @@ snapshots:
       '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@xterm/headless': 5.5.0
+      commander: 13.1.0
       css-tree: 3.2.1
       dotenv: 17.4.2
       fflate: 0.8.3
@@ -7581,6 +7594,7 @@ snapshots:
       typescript: 5.9.3
       undici: 7.30.1
       unified: 11.0.5
+      which: 5.0.0
       ws: 8.21.0
       yaml: 2.9.0
     transitivePeerDependencies:
@@ -8273,6 +8287,8 @@ snapshots:
   '@types/unist@2.0.11': {}
 
   '@types/unist@3.0.3': {}
+
+  '@types/which@3.0.4': {}
 
   '@types/ws@8.18.1':
     dependencies:

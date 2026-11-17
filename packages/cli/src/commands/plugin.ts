@@ -4,6 +4,7 @@
  *
  *   penguin plugin list [--project-id <id>] [--json] [--server <url>]
  *   penguin plugin install <specifier> [--overwrite] [--project-id <id>] [--json] [--server <url>]
+ *   penguin plugin link <directory> [--overwrite] [--project-id <id>] [--json] [--server <url>]
  *   penguin plugin remove <name> [--project-id <id>] [--json] [--server <url>]
  *
  * `<specifier>` is an npm package name (`@scope/name`, `name@1.2.3`), an https link to a git
@@ -23,6 +24,11 @@
  * of server modules is also listed in the Project's plugins and loaded, which stops the agent runs
  * in progress on that server. After a directory install, each MCP server the package carries is
  * printed with its transport and its target — a URL the server connects to, or a command it runs.
+ *
+ * `link` is the other way a local directory reaches the server: instead of being zipped and
+ * copied, the directory is linked into the server's plugin prefix and loaded in place — the
+ * author edits the directory and the next load reads the edit. The Plugins page shows a linked
+ * plugin with its link mark and its on-disk state, exactly as it shows an installed one.
  *
  * `list` shows both: the server modules the Project lists, with their state on this server, and
  * the packages of Skills, hooks or MCP servers installed on the server.
@@ -193,7 +199,7 @@ export function registerPluginCommand(plugin: Command, t: Messages): void {
       const rows = [
         ...listed.plugins.map((row) => [
           row.specifier,
-          t.plugin.kindModules(),
+          row.linked === true ? t.plugin.kindLink() : t.plugin.kindModules(),
           moduleState(t, row),
         ]),
         ...installed.map((p) => [p.package, t.plugin.kindLibrary(), `v${p.version}`]),
@@ -250,6 +256,46 @@ export function registerPluginCommand(plugin: Command, t: Messages): void {
         lines.push(res.restartPending ? t.plugin.restartNext() : t.plugin.modulesLoaded(projectId));
       }
       process.stdout.write(`${lines.join("\n")}\n`);
+    });
+
+  plugin
+    .command("link <directory>")
+    .description(t.plugin.linkDesc)
+    .option("--overwrite", t.plugin.linkOverwriteOpt)
+    .option("--project-id <id>", t.common.projectId)
+    .option("--json", t.common.json)
+    .option("--server <url>", t.common.server)
+    .action(async (directory: string, opts) => {
+      const client = new ServerClient(await resolveConnection({ server: opts.server }, t), t);
+      const projectId = resolveProjectId(opts.projectId);
+      // The directory is read here first, with the plugin library's own reader — the same
+      // gate a directory install passes before anything is sent: a package that was never
+      // built, or one the library would refuse, is reported and nothing is sent.
+      const dir = path.resolve(directory);
+      let built = false;
+      try {
+        built = readPluginTable(dir) !== null;
+      } catch (err) {
+        throw new Error(t.plugin.dirRefused(dir, err instanceof Error ? err.message : String(err)));
+      }
+      if (!built) throw new Error(t.plugin.dirNotBuilt(dir));
+      if (!libraryParts(dir).modules) {
+        throw new Error(t.plugin.dirNotPlugin(dir));
+      }
+      const res = await client.request<InstalledPluginsResponse>(
+        "POST",
+        `${installedPath(projectId)}/link`,
+        { dir, ...(opts.overwrite === true ? { overwrite: true } : {}) },
+      );
+      if (opts.json === true) {
+        process.stdout.write(`${JSON.stringify(res)}\n`);
+        return;
+      }
+      const row = res.plugins.find((p) => p.linked === true);
+      process.stdout.write(
+        row === undefined ? t.plugin.linked(dir) : t.plugin.linked(row.linkPath ?? dir),
+      );
+      process.stdout.write("\n");
     });
 
   plugin

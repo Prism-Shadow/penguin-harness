@@ -21,7 +21,7 @@ A **Skill** is a set of reusable instructions that an agent reads when a task ca
 4. To narrow the cards, type in the search box. Every section opens while a search is active.
 5. Select a card to open its details.
 
-Each card shows the plugin's icon, name and short description, a line in the form `v<version> · <status> · used by N agents`, and tags such as **built in**, or **installed on server** for a plugin an admin installed, plus the category when the cards are grouped another way. The version is the plugin's npm version. The agent count, shown for a plugin with Skills, hooks or MCP servers, covers the agents in the current Project that have the whole plugin installed, or a copy the update check lists as behind. The status is an icon and a word; point at it for what it means for that plugin:
+Each card shows the plugin's icon, name and short description, a line in the form `v<version> · <status> · used by N agents`, and tags such as **built in**, **installed on server** for a plugin an admin installed, or **link** for a plugin linked in from a local directory (its hint names the directory), plus the category when the cards are grouped another way. The version is the plugin's npm version. The agent count, shown for a plugin with Skills, hooks or MCP servers, covers the agents in the current Project that have the whole plugin installed, or a copy the update check lists as behind. The status is an icon and a word; point at it for what it means for that plugin:
 
 | Status | A plugin with Skills, hooks or MCP servers | A server plugin |
 | --- | --- | --- |

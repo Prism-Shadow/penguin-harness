@@ -3441,6 +3441,11 @@ export const zh = {
     /** The tag of a plugin an admin installed on this server (not shipped with the build). */
     installedOnServer: "服务端安装",
     installedOnServerHint: "管理员安装到本服务端的包，不随构建自带。",
+    /** The tag of a plugin linked in from a local directory (penguin plugin link). */
+    linkedTag: "链接",
+    linkedHint: (dir: string) => `链接的本机目录：${dir}。改动目录后下一次装载即生效。`,
+    /** The detail line naming the directory a link points at. */
+    linkedDirectory: "链接目录",
     /** The detail dialog's export (any member) and delete (admin, a package installed on the server). */
     exportPlugin: "导出",
     exportPluginHint: "下载插件包的 zip，可在另一台服务端的「导入插件」中原样导入",

@@ -25,13 +25,18 @@
  */
 import { execFile } from "node:child_process";
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
+import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
-import path from "node:path";
+import { createRequire } from "node:module";
+import path, { relative } from "node:path";
 import { promisify } from "node:util";
 import { Component } from "@prismshadow/penguin-core/kernel";
+// `which` is CommonJS exporting the function itself (module.exports = which, plus
+// which.sync): the default import IS the function, and the sync form is what the
+// candidates check uses — a path answer or null, never a thrown ENOENT.
+import which from "which";
 import type { PluginPackages } from "../mechanisms/plugins.js";
 import type { IndexChannel } from "./registry.js";
-
 const execFileAsync = promisify(execFile);
 
 /** Long enough for a cold registry fetch with dependencies; short enough not to hang a request. */
@@ -46,6 +51,9 @@ export function pluginsPrefix(root: string): string {
 const ARCHIVES_DIR = "archives";
 /** `<prefix>/.staging`: where an uploaded package is unpacked and packed; emptied after each install. */
 const STAGING_DIR = ".staging";
+
+/** A bare package name, scoped or not — the same rule loader.ts resolves by. */
+const PACKAGE_NAME = /^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/;
 
 export class PluginInstallError extends Error {
   /**
@@ -99,17 +107,98 @@ export async function prefixDependencies(prefix: string): Promise<Record<string,
   }
 }
 
-async function npm(prefix: string, args: readonly string[], cwd = prefix): Promise<string> {
-  try {
-    // On Windows npm is a batch file, and Node refuses to spawn one directly (`spawn EINVAL`)
-    // — every install, from a name, a link or a `file:` tarball, would fail there. cmd.exe is
-    // a real executable, so the line runs through it: `/d` skips the AutoRun scripts, and
-    // `/s /c` runs the rest as given, with each argument quoted by Node on the way in.
-    const [file, argv] =
+/**
+ * How to run npm, resolved once per process: an ordered list of spawnable commands, built by
+ * asking the file system what is really here rather than assuming where npm lives. The shape
+ * mirrors cross-spawn's (the resolver every npm-spawning tool sits on): locate first, spawn
+ * second, and never guess an extension or a layout.
+ *
+ * 1. The npm SHIPPED beside this interpreter. Node's official distribution carries npm in a
+ *    fixed layout (`<execPath dir>/../lib/node_modules/npm` on POSIX, `<execPath dir>/node_modules/npm`
+ *    on Windows — node.exe sits at the archive root), and the layout survives every
+ *    distribution that unpacks the dist unchanged: the platform packages and Docker images,
+ *    and the version managers, whose PATH shims are links into exactly this tree. Probed,
+ *    not assumed. Running the CLI through node itself avoids every batch-file question.
+ * 2. Whatever `npm` this machine puts on PATH — the way every other npm consumer here
+ *    resolves it. Debian splits npm out of its node package, so the layout above can be
+ *    absent on a machine that has npm; the PATH form covers it. Located with `which`, the
+ *    resolver cross-spawn itself sits on: it walks PATH under PATHEXT on Windows (npm.cmd
+ *    on node-installed machines, npm.exe under scoop) and checks executability on POSIX —
+ *    the quirks a hand-rolled scan forgets, settled once in a package every resolver here
+ *    already trusts. The command itself stays the plain `npm` name, which the system then
+ *    resolves the same way it would for any other consumer.
+ *
+ * A candidate is offered only when its file is proven present, so a failed install never
+ * reads as "npm is missing" when npm ran and failed: a broken npm surfaces through the
+ * install's own error, in npm's own words. Nothing here runs a probe install — existence is
+ * checkable without starting a process, and `npm --version` would prove nothing the check
+ * does not.
+ */
+
+interface NpmCommand {
+  /** What this candidate is, in the error shown when nothing is found. */
+  label: string;
+  /** The spawn executable and the args every install command is appended to. */
+  file: string;
+  argv: readonly string[];
+}
+
+const npmCandidates = (): { candidates: readonly NpmCommand[]; notes: readonly string[] } => {
+  // The layout the official dist unpacks to, relative to the running interpreter.
+  const bundled = path.join(
+    path.dirname(process.execPath),
+    ...(process.platform === "win32"
+      ? (["node_modules", "npm", "bin", "npm-cli.js"] as const)
+      : (["..", "lib", "node_modules", "npm", "bin", "npm-cli.js"] as const)),
+  );
+  const candidates: NpmCommand[] = [];
+  const notes: string[] = [];
+  if (existsSync(bundled)) {
+    // node itself runs the CLI: no batch file, no shell, every platform.
+    candidates.push({
+      label: `the npm beside this node (${bundled})`,
+      file: process.execPath,
+      argv: [bundled],
+    });
+  } else {
+    notes.push(`no npm beside this node (${bundled})`);
+  }
+  const onPath = which.sync("npm", { nothrow: true });
+  if (onPath !== null) {
+    // On Windows the PATH entry is a batch file, which node refuses to spawn directly
+    // (`spawn EINVAL`), so cmd.exe runs it — a real executable; `/d` skips AutoRun scripts,
+    // `/s /c` runs the rest as given, each argument quoted by Node (the same line
+    // cross-spawn builds for cmd shims). The bare `npm` name, so cmd.exe resolves it as it
+    // would for any consumer, whatever shim form the machine carries.
+    candidates.push(
       process.platform === "win32"
-        ? (["cmd.exe", ["/d", "/s", "/c", npmCommand(), ...args]] as const)
-        : ([npmCommand(), [...args]] as const);
-    const { stdout } = await execFileAsync(file, argv, {
+        ? { label: `npm on PATH (${onPath})`, file: "cmd.exe", argv: ["/d", "/s", "/c", "npm"] }
+        : { label: `npm on PATH (${onPath})`, file: "npm", argv: [] },
+    );
+  } else {
+    notes.push("no npm on PATH");
+  }
+  return { candidates, notes };
+};
+
+let npmCommandCache: Promise<NpmCommand> | null = null;
+function npmCommand(): Promise<NpmCommand> {
+  // Resolved once: the chosen npm does not move under a running process.
+  npmCommandCache ??= (async () => {
+    const { candidates, notes } = npmCandidates();
+    const [candidate] = candidates;
+    if (candidate !== undefined) return candidate;
+    throw new PluginInstallError(
+      `npm, the installer of plugins, is not on this machine (${notes.join("; ")})`,
+    );
+  })();
+  return npmCommandCache;
+}
+
+async function npm(prefix: string, args: readonly string[], cwd = prefix): Promise<string> {
+  const command = await npmCommand();
+  try {
+    const { stdout } = await execFileAsync(command.file, [...command.argv, ...args], {
       cwd,
       timeout: INSTALL_TIMEOUT_MS,
       maxBuffer: 8 * 1024 * 1024,
@@ -117,9 +206,9 @@ async function npm(prefix: string, args: readonly string[], cwd = prefix): Promi
     });
     return stdout;
   } catch (err) {
-    const stderr = (err as { stderr?: string }).stderr;
-    const failure = new PluginInstallError(npmReason(stderr, err as Error));
-    failure.reason = npmFailureKind(stderr);
+    const error = err as Error & { code?: string; stderr?: string };
+    const failure = new PluginInstallError(npmReason(error.stderr, error));
+    failure.reason = npmFailureKind(error.stderr);
     throw failure;
   }
 }
@@ -136,8 +225,21 @@ export function npmFailureKind(stderr: string | undefined): "unavailable" | "oth
   return /npm error code (E404|ETARGET)\b/m.test(stderr ?? "") ? "unavailable" : "other";
 }
 
+// `--install-links=false` on EVERY install: it is what makes npm reify a `file:` directory
+// dependency as a symlink to the author's directory instead of a copy (npm 7+ defaults the
+// other way). Every install carries the flag — a plain install that dropped it would silently
+// replace an existing link with a frozen copy — and no config file is relied on: the same
+// command behaves the same whatever npm version ships with the runtime.
 const install = (prefix: string, spec: string) =>
-  npm(prefix, ["install", "--no-audit", "--no-fund", "--omit=dev", "--", spec]);
+  npm(prefix, [
+    "install",
+    "--no-audit",
+    "--no-fund",
+    "--omit=dev",
+    "--install-links=false",
+    "--",
+    spec,
+  ]);
 
 /**
  * Installs (or upgrades) one package into the root's plugin prefix. Returns the version npm
@@ -270,6 +372,79 @@ export function packedFileName(stdout: string): string {
   return file.filename;
 }
 
+/**
+ * Links a local package directory into the prefix the way npm itself does it: `npm install
+ * file:<dir>` records the directory as a `file:` dependency in the prefix's package.json and
+ * reifies it as a symlink to the author's directory (every install runs with
+ * `--install-links=false` — see `install`). Nothing here is penguin's own record — the
+ * manifest entry IS the link table (the route reads it back as one), npm keeps the symlink
+ * and the entry in step through its own re-entry, and `npm uninstall <name>` takes a link out
+ * the same way it takes any package out. The link is npm's, so are its semantics.
+ *
+ * The directory is vetted before npm is asked: its package.json must be readable and carry a
+ * name npm accepts (the same rule the loader resolves by). An existing dependency under the
+ * same name that is not itself this kind of link refuses unless `overwrite` — replacing an
+ * installed package with a link is the operator's to confirm, the way a replacing install is.
+ */
+export async function linkPluginDirectory(
+  root: string,
+  dir: string,
+  overwrite = false,
+): Promise<InstalledPackage> {
+  const prefix = await ensurePrefix(root);
+  const real = await fs.realpath(dir);
+  const name = await (async () => {
+    try {
+      return await readPackageName(path.join(real, "package.json"));
+    } catch (err) {
+      throw new PluginInstallError(
+        `${dir} is not a plugin package (its package.json could not be read: ${err instanceof Error ? err.message : String(err)})`,
+      );
+    }
+  })();
+  if (!PACKAGE_NAME.test(name)) {
+    throw new PluginInstallError(`'${name}' is not a package name npm would accept`);
+  }
+  const existing = (await prefixDependencies(prefix))[name];
+  if (existing !== undefined && !existing.startsWith("link:") && !overwrite) {
+    throw new PluginInstallError(
+      `${name} is installed in the prefix at ${existing}; pass --overwrite to replace it with a link.`,
+    );
+  }
+  // Named relative to the prefix's REAL path — npm resolves a `file:` spec against the real
+  // prefix, and the two diverge wherever a symlink sits on the way to the data root (macOS's
+  // temp directory is /var/folders over a /private/var/folders real body; npm failing to open
+  // the directory there is "syscall open", with the reason line never naming the path). npm
+  // then records the entry relative to that same real path (see installPluginFiles, whose
+  // tarball install is recorded the same way).
+  const realPrefix = await fs.realpath(prefix).catch(() => prefix);
+  await install(prefix, `file:${relative(realPrefix, real)}`);
+  return { name, version: await readInstalledVersion(prefix, name) };
+}
+
+/**
+ * The prefix's link table, as npm itself keeps it: every `file:` dependency whose spec names
+ * a DIRECTORY (a `file:` naming a tarball under archives/ is an uploaded zip's install, not a
+ * link) and whose node_modules entry exists — lstat it, not the directory it names: a dangling
+ * link (the author's directory deleted) stays in the table and the page reports its fault. A
+ * symlink lstats as a symlink (isDirectory is false on it), so both count. Specs are resolved
+ * against the prefix's real path, the one npm records them relative to (see
+ * linkPluginDirectory): on macOS the logical path and the real one diverge through the temp
+ * directory's symlink, and only the real path walks back to the author's directory.
+ */
+export async function linkedPackages(prefix: string): Promise<Map<string, string>> {
+  const table = new Map<string, string>();
+  const realPrefix = await fs.realpath(prefix).catch(() => prefix);
+  for (const [name, spec] of Object.entries(await prefixDependencies(prefix))) {
+    if (!spec.startsWith("file:")) continue;
+    const dir = path.resolve(realPrefix, spec.slice("file:".length));
+    if (/\.tgz$|\.tar\.gz$/.test(dir)) continue;
+    const st = await fs.lstat(installedPackageDir(prefix, name)).catch(() => null);
+    if (st?.isDirectory() || st?.isSymbolicLink()) table.set(name, dir);
+  }
+  return table;
+}
+
 async function readPackageName(manifest: string): Promise<string> {
   const name = (JSON.parse(await fs.readFile(manifest, "utf8")) as { name?: unknown }).name;
   if (typeof name !== "string") throw new PluginInstallError("the package carries no name");
@@ -356,11 +531,6 @@ function npmReason(stderr: string | undefined, err: Error): string {
     .filter((l) => l !== "" && !/^A complete log/.test(l) && !/^code [A-Z0-9]+$/.test(l));
   const reason = lines.find((l) => l.length > 8);
   return reason ?? err.message;
-}
-
-/** Windows resolves `npm` through npm.cmd; everywhere else the plain name is on PATH. */
-function npmCommand(): string {
-  return process.platform === "win32" ? "npm.cmd" : "npm";
 }
 
 /**
