@@ -16,8 +16,7 @@ import type { Plugin } from "@prismshadow/penguin-core/plugin";
           "贴纸造景小游戏：208 张小贴纸、13 个场景、10 个主题关卡，随手摆一摆就是自己的一个小世界。",
         shortDescription: "Arrange cute stickers into scenes.",
         shortDescriptionZh: "摆贴纸、换场景、闯关卡的造景小游戏。",
-        // TODO: `learning-life` once the category exists (https://github.com/Prism-Shadow/penguin-harness/pull/1580).
-        category: "office-productivity",
+        category: "entertainment",
         icon: "icon.svg",
         // Installed from the library on demand: no Agent gets it at creation.
         preinstall: false,

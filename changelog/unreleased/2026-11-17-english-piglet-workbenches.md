@@ -17,3 +17,5 @@ The plugin library ships two more app-only plugins, `english-workbench` (English
 - Both apps show a Chinese or an English interface after the device language; a switch changes it in place and remembers the choice. English Learning Workbench translates its interface and help; the English it teaches stays as written.
 - Progress is kept in the workbench's own state, separately for each Agent, so it follows the Agent from one browser to another; uninstalling the plugin deletes it.
 - The server's library test counts a workbench as a plugin's part, beside a Skill or a hook package, and the desktop build's packed-app check accepts a plugin that ships only workbenches.
+
+English Learning Workbench appears under Utilities and Piggy Sticker World under Entertainment.

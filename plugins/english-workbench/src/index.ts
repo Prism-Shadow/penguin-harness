@@ -16,8 +16,7 @@ import type { Plugin } from "@prismshadow/penguin-core/plugin";
           "英语学习工作台：名著原文点读、新闻与 TED 导读、粘贴文章精读、可选的每日外刊，配词句库与间隔复习、跟读录音和考试微练。",
         shortDescription: "A daily desk for reading English.",
         shortDescriptionZh: "点读、跟读、词句库与每日练习。",
-        // TODO: `learning-life` once the category exists (https://github.com/Prism-Shadow/penguin-harness/pull/1580).
-        category: "office-productivity",
+        category: "utilities",
         icon: "icon.svg",
         // Installed from the library on demand: no Agent gets it at creation.
         preinstall: false,
