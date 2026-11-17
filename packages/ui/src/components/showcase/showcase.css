@@ -925,12 +925,14 @@
 .showcase-ranking-open:focus-visible::after {
   outline: 2px solid var(--showcase-accent, currentColor);
 }
-/* A tag line that wraps keeps the figure on its last line. */
+/* The figure keeps to the tags' line while both fit, at its end, and takes a line of its own
+   under them when a long tag leaves it no room. */
 .showcase-ranking-meta {
   display: flex;
   min-width: 0;
+  flex-wrap: wrap;
   align-items: flex-end;
-  gap: 0.5rem;
+  gap: 0.25rem 0.5rem;
 }
 .showcase-ranking-tags {
   position: relative;
