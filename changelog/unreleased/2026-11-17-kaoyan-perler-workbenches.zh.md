@@ -3,6 +3,7 @@
 - **Date:** 2026-11-17
 - **Type:** feature
 - **Scope:** `plugins`, `server`, `docs`
+- **PR:** [#1586](https://github.com/Prism-Shadow/penguin-harness/pull/1586)
 
 [English](2026-11-17-kaoyan-perler-workbenches.md)
 
