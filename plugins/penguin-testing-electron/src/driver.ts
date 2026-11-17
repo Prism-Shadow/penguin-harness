@@ -143,16 +143,26 @@ export async function launchHarness(options: LaunchOptions = {}): Promise<Harnes
     chromeDir,
     async install(pluginDir: string) {
       // Through the instance's own management surface — never a bare copy into the plugin
-      // prefix. The package is packed and uploaded as an archive; the route installs it
-      // via npm, lists it in the project's table and applies (the loader flips a
-      // generation, so the next load carries it).
-      const { execFileSync } = await import("node:child_process");
-      const tarball = execFileSync("npm", ["pack", "--ignore-scripts", pluginDir], {
-        encoding: "utf8",
-      }).trim().split("\n").pop()!;
-      const dataBase64 = (
-        await import("node:fs").then((fs) => fs.promises.readFile(tarball))
-      ).toString("base64");
+      // prefix. The package directory is zipped (fflate, the same library the server's
+      // archive reader uses) and uploaded; the route installs it via npm, lists it in the
+      // project's table and applies (the loader flips a generation, so the next load
+      // carries it).
+      const { readdirSync, statSync, readFileSync } = await import("node:fs");
+      const { zipSync } = await import("fflate");
+      const files: Record<string, Uint8Array> = {};
+      const walk = (dir: string, prefix: string) => {
+        for (const entry of readdirSync(dir)) {
+          const full = path.join(dir, entry);
+          if (statSync(full).isDirectory()) {
+            walk(full, `${prefix}${entry}/`);
+          } else {
+            files[`${prefix}${entry}`] = new Uint8Array(readFileSync(full));
+          }
+        }
+      };
+      walk(pluginDir, "");
+      const zipped = zipSync(files);
+      const dataBase64 = Buffer.from(zipped).toString("base64");
       const response = await fetch(`${base}/api/projects/${project}/plugins/installed/archive`, {
         method: "POST",
         headers: { ...authHeaders, "content-type": "application/json" },

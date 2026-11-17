@@ -33,6 +33,7 @@
     "@playwright/test": "^1.61.1",
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/skills": "workspace:*",
-    "vitest": "^4.1.12"
+    "vitest": "^4.1.12",
+    "fflate": "^0.8.3"
   }
 }
