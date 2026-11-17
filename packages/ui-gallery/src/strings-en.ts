@@ -2359,6 +2359,10 @@ export const en: GalleryStrings = {
       rankingHint:
         "The ranking beside the grid: a right column where there is room, under the grid where there is not. Two boards to switch between; the top three ranks sit on a tinted chip, and a figure says itself in full on hover. Every row opens its plugin.",
       rankingTitle: "Plugin rankings",
+      rankingNote: "Sample data",
+      rankingNoteHint: "These figures are sample data until real install counts are connected.",
+      rankingNoteCaption:
+        "While the figures are placeholders: a muted note at the heading's end, its reason on hover",
       popular: "Popular",
       rising: "Rising",
       installCount: (n: string) => `${n} installs`,

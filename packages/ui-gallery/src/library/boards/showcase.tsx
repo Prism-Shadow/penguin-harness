@@ -5,7 +5,8 @@
  * a picture still on its way (the field in the picture's tone), one that loaded, one that failed
  * (the generated cover takes over); cover cards in their grid: short words, overlong words, the
  * full foot, a foot without controls, and the placeholder; the selected carousel with three
- * slides; and a product page's parts. The public sites' rendering of the same modules is the
+ * slides; the ranking beside the grid, and on its own with the note it carries while its figures
+ * are placeholders; and a product page's parts. The public sites' rendering of the same modules is the
  * 公开站点 board's.
  *
  * The picture still on its way never finishes: it is a lazy image held out of layout
@@ -301,6 +302,17 @@ export function ShowcaseBoard() {
             />
           </ShowcaseGrid>
         </ShowcaseSplit>
+        <div className="mt-6 max-w-[17rem]">
+          <Specimen caption={t.rankingNoteCaption}>
+            <ShowcaseRanking
+              title={t.rankingTitle}
+              note={t.rankingNote}
+              noteHint={t.rankingNoteHint}
+              boards={rankingBoards}
+              limit={3}
+            />
+          </Specimen>
+        </div>
       </BoardGroup>
 
       <BoardGroup title={t.product} aside={t.productHint}>
