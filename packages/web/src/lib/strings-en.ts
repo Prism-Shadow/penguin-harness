@@ -4808,6 +4808,13 @@ Scenarios:
     /** A paste too long for the text box, attached as a text file instead. */
     longPasteAttached: (name: string): string =>
       `The pasted text was long, so it was attached as ${name}.`,
+    planMode: "Plan mode",
+    planModeDesc: "Discuss each task before execution",
+    planDiscuss: "Plan mode is on. Discuss the approach, then approve a proposal to start work.",
+    planApprove: "Approve and execute",
+    planExit: "Exit Plan mode",
+    planPluginMissing: "Install the Plan mode plugin on this Agent to discuss a plan.",
+    planReady: "Review the latest proposal or send changes.",
     goalMode: "Goal mode",
     goalModeDesc: "Loop until the goal completes",
     goalBudgetLabel: "Token budget",
@@ -6830,6 +6837,11 @@ Scenarios:
         "This model ID cannot be routed: a vendor group routes a model by the vendor prefix its ID begins with (gpt-, claude-, gemini-, glm-, kimi-, deepseek-, minimax-). Add the model under a custom group and pick or detect its protocol.",
       unknown_skill: "This skill is not in the selected directory.",
       unknown_plugin: "This plugin is not in the plugin library.",
+      plan_busy: "Wait for this turn to finish before changing a plan.",
+      plan_changed: "This proposal changed. Review the latest version before approving.",
+      plan_plugin_missing: "Plan mode needs its plugin installed and hooks enabled on this Agent.",
+      plan_active: "Exit Plan mode before starting a goal.",
+      plan_user_only: "Sign in to approve or change a plan.",
       goal_plugin_not_installed:
         "Goal mode needs the goal plugin — install it on this agent from the plugin library, and switch its hook package on.",
       skill_too_large: "This skill directory exceeds the import limits.",

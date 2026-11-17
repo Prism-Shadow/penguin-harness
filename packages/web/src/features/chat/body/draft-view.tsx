@@ -776,7 +776,11 @@ export function DraftView({
   // mode are all locked in together), then the route jumps once sent; returns false on any
   // failure, so the input area keeps the draft and can resend.
   const onSend = useCallback(
-    async (input: TaskInputPart[], goal: { budget: number } | null = null): Promise<boolean> => {
+    async (
+      input: TaskInputPart[],
+      goal: { budget: number } | null = null,
+      plan?: boolean,
+    ): Promise<boolean> => {
       if (!agentId || sendingRef.current) return false;
       sendingRef.current = true;
       const browserScope = browserState().scope;
@@ -798,7 +802,11 @@ export function DraftView({
         createdId = created.session.sessionId;
         // The first task can use the draft's pages as soon as it starts.
         await adoptBrowserSession(browserScope, createdId);
-        const res = await api.postTask(createdId, { input, ...(goal ? { goal } : {}) });
+        const res = await api.postTask(createdId, {
+          input,
+          ...(goal ? { goal } : {}),
+          ...(plan ? { plan: true } : {}),
+        });
         await adoptBrowserSession(createdId, res.sessionId);
         // postTask answers with the CURRENT id: a Session with no Trace whose process
         // restarted in between self-heals into a new one. Everything recorded a moment ago

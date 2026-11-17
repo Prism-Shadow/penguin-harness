@@ -34,7 +34,11 @@ export function useMainChatSends(scope: ReturnType<typeof useMainChatLifecycle>)
   } = scope;
 
   const onSend = useCallback(
-    async (input: TaskInputPart[], goal: { budget: number } | null): Promise<boolean> => {
+    async (
+      input: TaskInputPart[],
+      goal: { budget: number } | null,
+      plan?: boolean,
+    ): Promise<boolean> => {
       if (!selected) return false;
       try {
         // No thinking level rides a task: the level belongs to the model context (pinned on
@@ -42,6 +46,7 @@ export function useMainChatSends(scope: ReturnType<typeof useMainChatLifecycle>)
         const res = await api.postTask(selected.sessionId, {
           input,
           ...(goal ? { goal } : {}),
+          ...(plan ? { plan: true } : {}),
         });
         discardSessionDraft();
         await syncHealedSessionId(selected.sessionId, res.sessionId);

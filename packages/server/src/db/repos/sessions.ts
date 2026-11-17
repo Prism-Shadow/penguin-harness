@@ -3,7 +3,7 @@
  * Session index, approval mode, and auto-generated title; Session-level routes use this to look up project ownership.
  */
 import type { ThinkingLevelName } from "@prismshadow/penguin-core/interfaces";
-import type { ApprovalMode } from "../../api/types.js";
+import type { ApprovalMode, SessionPlan } from "../../api/types.js";
 import type { SandboxSettings } from "@prismshadow/penguin-core/plugin";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Db } from "../../hmr/capabilities.js";
@@ -243,6 +243,31 @@ export class SessionsRepo implements SessionIndex {
          WHERE session_id = ?`,
       )
       .run(at, sessionId);
+  }
+
+  getPlan(sessionId: string): SessionPlan | null {
+    const row = this.db
+      .prepare("SELECT revision, proposal FROM session_plans WHERE session_id = ?")
+      .get(sessionId);
+    if (!row) return null;
+    return {
+      proposal:
+        typeof row.revision === "string" && typeof row.proposal === "string"
+          ? { revision: row.revision, text: row.proposal }
+          : null,
+    };
+  }
+
+  setPlan(sessionId: string, plan: SessionPlan | null): void {
+    if (!plan) {
+      this.db.prepare("DELETE FROM session_plans WHERE session_id = ?").run(sessionId);
+      return;
+    }
+    this.db
+      .prepare(
+        "INSERT INTO session_plans (session_id, revision, proposal) VALUES (?, ?, ?) ON CONFLICT(session_id) DO UPDATE SET revision = excluded.revision, proposal = excluded.proposal",
+      )
+      .run(sessionId, plan.proposal?.revision ?? null, plan.proposal?.text ?? null);
   }
 
   findById(sessionId: string): SessionRow | null {

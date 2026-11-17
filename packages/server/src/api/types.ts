@@ -2983,7 +2983,13 @@ export type TaskInputPart =
    */
   | { type: "file"; fileName: string; dataUrl: string };
 
+/** An enabled session plans each new task. Only a completed proposal carries an approval revision. */
+export interface SessionPlan {
+  proposal: { revision: string; text: string } | null;
+}
 export interface TaskCreateRequest {
+  /** Turn on planning for this Session with its first message. */
+  plan?: true;
   input: TaskInputPart[];
   /**
    * Queue instead of 409 when a Task/compaction is already in progress: the input is held
@@ -6011,6 +6017,7 @@ export const API_SOCKET_PATH = "/api/socket";
  */
 export function sessionKindPath(pathname: string): boolean {
   return (
+    /^\/api\/sessions\/[^/]+\/plan$/.test(pathname) ||
     pathname === "/api/me/password" ||
     pathname === "/api/desktop" ||
     pathname.startsWith("/api/desktop/") ||

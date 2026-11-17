@@ -71,6 +71,7 @@ import type {
 } from "@prismshadow/penguin-core";
 import type {
   ModelRefDto,
+  SessionPlan,
   PendingFollowUpInfo,
   PendingSteeringInfo,
   ServerEvent,
@@ -193,6 +194,7 @@ function assertNotStranded(entry: RuntimeEntry): void {
 /** Minimal interface for a runtime Session (satisfied by core Session; tests may inject a fake implementation). */
 /** What one run is started with: the approval callback and the interrupt signal. */
 export type RunOpts = {
+  planning?: boolean;
   approve: ApproveFn;
   signal: AbortSignal;
 };
@@ -266,6 +268,7 @@ export interface RuntimeSession {
     name: string,
     prompt: string,
     extras?: Record<string, string | number | boolean>,
+    useJustInstalled?: boolean,
   ): Promise<{ context?: string } | null>;
   /** A tool's permission level from the running context's toolset (core `Session.toolPermission`; strict-tier — rebuilt at rotation). */
   toolPermission(name: string): "r" | "rw" | undefined;
@@ -1098,6 +1101,15 @@ export class SessionManager {
    * stamps later is covered from its next decision on. The same holds for an `ask` hit, so
    * an organization's Session never gets a `gh pr merge` through: nobody can say yes.
    */
+  /** Manual compaction and model switches also run their tool rounds through approval. */
+  private maintenanceApprove(entry: RuntimeEntry): ApproveFn {
+    const ordinary = this.entryApprove(entry);
+    return this.deps.sessions.getPlan(entry.sessionId)
+      ? (call, context) =>
+          call.payload.name === "read_file" ? ordinary(call, context) : Promise.resolve("deny")
+      : ordinary;
+  }
+
   private entryApprove(entry: RuntimeEntry): ApproveFn {
     return makeApprove({
       // Re-reads approval_mode from the DB on every decision (a PATCH takes effect immediately).
@@ -1258,6 +1270,7 @@ export class SessionManager {
     sessionId: string,
     input: AmspRecord[],
     opts?: {
+      plan?: boolean;
       queueIfBusy?: boolean;
       interrupt?: boolean;
       steerIfBusy?: boolean;
@@ -1268,7 +1281,35 @@ export class SessionManager {
       this.assertOpen();
       this.assertAgentNotDeleting(sessionId);
       this.assertSessionNotDeleting(sessionId);
+      const currentPlan = this.deps.sessions.getPlan(sessionId);
       const entry = await this.ensureEntry(sessionId);
+      if (opts?.plan || currentPlan) {
+        assertNotStranded(entry);
+        this.assertIdle(entry);
+        if (entry.followUps.length)
+          throw new HttpError(409, "plan_busy", "Wait for queued tasks before planning.");
+        const row = this.deps.sessions.findById(entry.sessionId)!;
+        const prompt = input
+          .filter(isPlainText("user"))
+          .map((m) => m.payload.text)
+          .join("\n");
+        const protocol = await entry.session.runUserPromptHook?.(
+          "plan",
+          prompt,
+          { workspace: row.workspace },
+          true,
+        );
+        if (!protocol?.context)
+          throw new HttpError(
+            409,
+            "plan_plugin_missing",
+            "Install the Plan mode plugin on this Agent and enable hooks.",
+          );
+        this.deps.sessions.setPlan(entry.sessionId, { proposal: null });
+        if (isHumanInput(input)) this.deps.onHumanInput?.(entry.sessionId);
+        this.launchTask(entry, [...input, userText(protocol.context, "harness")]);
+        return { sessionId: entry.sessionId, queued: false };
+      }
       // Neither started nor queued on a runtime stranded on a model it cannot reach.
       assertNotStranded(entry);
       if (
@@ -1309,6 +1350,52 @@ export class SessionManager {
       this.assertIdle(entry);
       this.launchTask(entry, input);
       return { sessionId: entry.sessionId, queued: false };
+    });
+  }
+
+  /** Change planning intent under the same lock as a submission. A revision can start exactly one execution. */
+  async changePlan(
+    sessionId: string,
+    action: "enable" | "exit" | "approve",
+    revision?: string,
+    language?: "en" | "zh",
+  ): Promise<SessionPlan | null> {
+    return this.withLock(sessionId, async () => {
+      this.assertOpen();
+      this.assertAgentNotDeleting(sessionId);
+      this.assertSessionNotDeleting(sessionId);
+      const existing = this.entries.get(sessionId);
+      if (existing) {
+        this.assertIdle(existing);
+        if (existing.followUps.length)
+          throw new HttpError(409, "plan_busy", "Wait for queued tasks before changing Plan mode.");
+      }
+      const current = this.deps.sessions.getPlan(sessionId);
+      if (action !== "approve") {
+        const next = action === "enable" ? (current ?? { proposal: null }) : null;
+        this.deps.sessions.setPlan(sessionId, next);
+        return next;
+      }
+      if (!current?.proposal || current.proposal.revision !== revision) {
+        throw new HttpError(
+          409,
+          "plan_changed",
+          "The proposal changed. Review its latest version before approving.",
+        );
+      }
+      const entry = await this.ensureEntry(sessionId);
+      this.assertIdle(entry);
+      assertNotStranded(entry);
+      this.deps.sessions.setPlan(entry.sessionId, { proposal: null });
+      this.launchTask(
+        entry,
+        [
+          userText(language === "zh" ? "批准并执行这个方案。" : "Approve and execute this plan."),
+          userText(current.proposal.text, "harness"),
+        ],
+        true,
+      );
+      return { proposal: null };
     });
   }
 
@@ -1371,6 +1458,8 @@ export class SessionManager {
       this.assertOpen();
       this.assertAgentNotDeleting(sessionId);
       this.assertSessionNotDeleting(sessionId);
+      if (this.deps.sessions.getPlan(sessionId))
+        throw new HttpError(409, "plan_active", "Exit Plan mode before starting a goal.");
       await this.assertGoalPluginInstalled(sessionId);
       const entry = await this.ensureEntry(sessionId);
       assertNotStranded(entry);
@@ -1532,7 +1621,7 @@ export class SessionManager {
    * idle. A retry's input is empty: nothing is echoed or held, and drive gets no title
    * material — the turn it resends already offered its text when it was first sent.
    */
-  private launchTask(entry: RuntimeEntry, input: AmspRecord[]): void {
+  private launchTask(entry: RuntimeEntry, input: AmspRecord[], approvedPlan = false): void {
     // Every Task starts here — a retry, a queued follow-up, a background notice's delivery.
     assertNotStranded(entry);
     const ac = new AbortController();
@@ -1552,10 +1641,13 @@ export class SessionManager {
     this.publishState(entry, "running");
 
     const approve = this.entryApprove(entry);
-    const gen = entry.session.run(input, {
+    const planning = !approvedPlan && this.deps.sessions.getPlan(entry.sessionId) !== null;
+    const run = entry.session.run(input, {
       approve,
       signal: ac.signal,
+      ...(planning ? { planning: true } : {}),
     });
+    const gen = planning ? this.capturePlan(entry, run, ac.signal) : run;
     // This call's input user text is the whole title source: drive persists its first
     // words as the immediate fallback and hands it to the LLM as the generation material
     // (user input only — generation never waits for model output).
@@ -1564,6 +1656,42 @@ export class SessionManager {
       .map((m) => m.payload.text)
       .join("\n");
     entry.running = this.drive(entry, gen, { userExcerpt, echo: input });
+  }
+
+  /** Only a complete assistant proposal in the final committed request is offered for approval. */
+  private async *capturePlan(
+    entry: RuntimeEntry,
+    run: AsyncGenerator<AmspRecord>,
+    signal: AbortSignal,
+  ) {
+    let answer = "";
+    let completed = false;
+    let usedTool = false;
+    for await (const record of run) {
+      if (!record.origin?.length) {
+        const payload = record.payload as { type?: string; status?: string };
+        if (payload.type === "request_begin") {
+          answer = "";
+          completed = false;
+          usedTool = false;
+        }
+        if (payload.type === "tool_call") usedTool = true;
+        if (isPlainText("assistant")(record)) answer = record.payload.text;
+        if (payload.type === "request_end") completed = payload.status === "completed";
+      }
+      yield record;
+    }
+    const heading = /^## (?:Plan|实施方案)[ \t]*\r?$/m.exec(answer);
+    if (
+      completed &&
+      !usedTool &&
+      !signal.aborted &&
+      heading &&
+      answer.slice(heading.index + heading[0].length).trim()
+    ) {
+      const text = answer.slice(heading.index).trim();
+      this.deps.sessions.setPlan(entry.sessionId, { proposal: { revision: randomUUID(), text } });
+    }
   }
 
   /**
@@ -1616,7 +1744,10 @@ export class SessionManager {
       this.publishState(entry, "compacting");
       // The compaction's tool rounds are approved like a Task's calls: under always-ask a
       // hand-off file write waits for the user's click, as any write would.
-      const gen = entry.session.compact({ approve: this.entryApprove(entry), signal: ac.signal });
+      const gen = entry.session.compact({
+        approve: this.maintenanceApprove(entry),
+        signal: ac.signal,
+      });
       entry.running = this.drive(entry, gen);
       return { sessionId: entry.sessionId };
     });
@@ -1696,7 +1827,7 @@ export class SessionManager {
       const ac = new AbortController();
       const gen = entry.session.switchModel({
         ...ref,
-        approve: this.entryApprove(entry),
+        approve: this.maintenanceApprove(entry),
         signal: ac.signal,
       });
       const head = gen.next();
@@ -1808,6 +1939,12 @@ export class SessionManager {
    * and the content itself is what a recall (recallSteering) hands back to the composer.
    */
   steer(sessionId: string, input: AmspRecord[], recall: RecallStore): void {
+    if (this.deps.sessions.getPlan(sessionId))
+      throw new HttpError(
+        409,
+        "plan_busy",
+        "Wait for this turn to finish, then send your revision.",
+      );
     const entry = this.entries.get(sessionId);
     if (!entry || !this.steerRunning(entry, input, recall)) {
       throw new HttpError(
@@ -3021,6 +3158,7 @@ export abstract class Sessions extends Interface<
     | "assertCanAcceptTask"
     | "startTask"
     | "retryTask"
+    | "changePlan"
     | "startGoal"
     | "startCompact"
     | "startSwitch"

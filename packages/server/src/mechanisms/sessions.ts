@@ -3,7 +3,7 @@
  */
 import { Interface } from "@prismshadow/penguin-core/kernel";
 import type { Opaque } from "@prismshadow/penguin-core/kernel";
-import type { SessionSource, ApprovalMode } from "../api/types.js";
+import type { SessionSource, ApprovalMode, SessionPlan } from "../api/types.js";
 import type { SessionRow } from "../db/repos/sessions.js";
 import type { ThinkingLevelName } from "@prismshadow/penguin-core";
 import type { SandboxSettings } from "@prismshadow/penguin-core/plugin";
@@ -26,6 +26,8 @@ export abstract class SessionIndex {
   abstract findById(sessionId: string): SessionRow | null;
   abstract listByAgent(projectId: string, agentId: string): SessionRow[];
   abstract listByProject(projectId: string): SessionRow[];
+  abstract getPlan(sessionId: string): SessionPlan | null;
+  abstract setPlan(sessionId: string, plan: SessionPlan | null): void;
   abstract updateApprovalMode(sessionId: string, mode: ApprovalMode): void;
   abstract updateSandbox(sessionId: string, sandbox: SandboxSettings): void;
   abstract updateThinkingLevel(sessionId: string, level: ThinkingLevelName): void;

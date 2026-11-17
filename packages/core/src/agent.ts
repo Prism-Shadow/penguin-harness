@@ -1120,6 +1120,17 @@ export class Agent {
       openNextContext: rt.openNextContext,
       // The first context's hooks; each context `openNextContext` opens brings its own.
       hooks: this.sessionHooks(rt.subagentRunner, context.hookPackages, spec),
+      installedHostPromptHook: async (name) => {
+        if (spec.subagentDepth > 0 || spec.source === "subagent") return undefined;
+        const state = await loadAgentState({ root, projectId, agentId });
+        if (state.systemConfig.hooks?.enabled === false) return undefined;
+        const installed = (await listInstalledHooks(root, projectId, agentId)).filter(
+          (hook) => hook.name === name,
+        );
+        return this.sessionHooks(rt.subagentRunner, installed, spec).userPrompt?.find(
+          (hook) => hook.trigger === "host",
+        );
+      },
 
       createBareLLM: rt.createBareLLM,
       compaction: context.compaction,

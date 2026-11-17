@@ -1168,10 +1168,42 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     });
   });
 
+  app.get("/:sessionId/plan", (c) => {
+    const row = resolveSession(c);
+    return c.json({ plan: deps.sessionsRepo.getPlan(row.sessionId) });
+  });
+
+  app.post("/:sessionId/plan", async (c) => {
+    const row = resolveSession(c);
+    if (c.var.sessionVia === "token")
+      throw new HttpError(
+        403,
+        "plan_user_only",
+        "Only a signed-in user can change or approve a plan.",
+      );
+    const { action, revision, language } = await readJson(c);
+    if (action !== "enable" && action !== "exit" && action !== "approve")
+      throw badRequest("Invalid plan action.");
+    if (action === "approve" && typeof revision !== "string")
+      throw badRequest("Approving requires the proposal revision.");
+    if (action === "approve") deps.drivers?.note(row.sessionId, c.var.user.userId);
+    const plan = await deps.manager.changePlan(
+      row.sessionId,
+      action,
+      typeof revision === "string" ? revision : undefined,
+      language === "zh" ? "zh" : "en",
+    );
+    return c.json({ plan });
+  });
+
   app.post("/:sessionId/tasks", async (c) => {
     const row = resolveSession(c);
     const body = await readJson(c);
     const goal = parseGoalField(body);
+    if (body.plan !== undefined && body.plan !== true)
+      throw badRequest("plan must be true when present.");
+    if (body.plan && (goal || body.interrupt || body.steerIfBusy || body.queueIfBusy))
+      throw badRequest("Plan mode starts an idle task.");
     // Interrupt-then-send is a way of starting a Task now, so it cannot also wait its turn in
     // the queue or open a goal, which never queues.
     const interrupt = body.interrupt === true;
@@ -1248,6 +1280,7 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       if (driver !== null && !steerIfBusy) deps.drivers?.note(row.sessionId, driver);
       // 202: the Task executes on the server, decoupled from the SSE connection; sessionId is the current actual id (the new id after self-heal).
       const { sessionId, queued, steered } = await deps.manager.startTask(row.sessionId, input, {
+        ...(body.plan === true ? { plan: true } : {}),
         queueIfBusy,
         interrupt,
         steerIfBusy,
