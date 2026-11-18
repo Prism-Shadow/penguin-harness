@@ -52,7 +52,9 @@
   "devDependencies": {
     "tsup": "^8.3.0",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.12"
+    "vitest": "^4.1.12",
+    "@prismshadow/penguin-library-messaging": "workspace:*",
+    "@prismshadow/penguin-library-session": "workspace:*"
   },
   "engines": {
     "node": ">=24"
