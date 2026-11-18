@@ -108,7 +108,31 @@ export function isThemeId(value: unknown): value is ThemeId {
   return typeof value === "string" && Object.hasOwn(PACKS, value);
 }
 
-/** Live work is paged by the built-in Doodle theme. Imported packs keep ordinary chronological rows. */
-export function liveActivityLayout(appliedTheme: string | undefined): "pages" | "list" {
-  return appliedTheme === PACKS.doodle.id ? "pages" : "list";
+const listeners = new Set<() => void>();
+let observer: MutationObserver | undefined;
+
+/** One observer serves both hosts and disconnects when no component is interested. */
+export function subscribeAppliedTheme(listener: () => void) {
+  listeners.add(listener);
+  if (!observer) {
+    observer = new MutationObserver(() => {
+      for (const notify of listeners) notify();
+    });
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
+  }
+  return () => {
+    listeners.delete(listener);
+    if (!listeners.size) {
+      observer?.disconnect();
+      observer = undefined;
+    }
+  };
+}
+
+/** Only the built-in Doodle pack presents the current step as a page. */
+export function pagesLiveActivity(): boolean {
+  return document.documentElement.dataset.theme === PACKS.doodle.id;
 }
