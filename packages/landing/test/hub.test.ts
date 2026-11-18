@@ -500,7 +500,7 @@ describe("the hub readers", () => {
         titleZh: "幻灯片",
         shortDescription: "Make slides.",
         categories: ["office-productivity"],
-        keywords: ["slides", "workbenches"],
+        keywords: ["slides", "workbench", "workbenches"],
         repository: "https://github.com/acme/slides",
         integrity: "sha512-abc=",
         channels: [{ kind: "github", url: "https://example.org/releases/slides-0.10.0.tgz" }],

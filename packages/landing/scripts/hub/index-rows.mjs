@@ -16,7 +16,14 @@ import { readAuthor } from "./read.mjs";
 /** A page id: one path segment the route shells can be written under. */
 const ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 /** The index keywords that say what a package carries before it is installed. */
-const CONTENTS = ["skills", "hooks", "workbenches"];
+const CONTENTS = new Map([
+  ["skill", "skills"],
+  ["skills", "skills"],
+  ["hook", "hooks"],
+  ["hooks", "hooks"],
+  ["workbench", "workbenches"],
+  ["workbenches", "workbenches"],
+]);
 /** The page id of a package listed by the index. */
 export function rowId(name) {
   const scoped = /^@([^/]+)\/(.+)$/.exec(name);
@@ -39,7 +46,7 @@ function rowAuthor(row) {
 
 /** The plugin record a row stands for, in the shape `readPlugins` gives a bundled package. */
 function rowPlugin(row, id) {
-  const contents = (row.keywords ?? []).filter((keyword) => CONTENTS.includes(keyword));
+  const contents = (row.keywords ?? []).flatMap((keyword) => CONTENTS.get(keyword) ?? []);
   const { channel } = indexChannelOf(row);
   const sourceUrl = webLink(row.repository) ?? webLink(row.homepage);
   return {

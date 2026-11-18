@@ -29,6 +29,7 @@ import {
   parseMarketDocument,
   resolvePluginMarketUrl,
 } from "../../plugin/market.js";
+import { indexMirrorRules } from "../../plugin/mirror-settings.js";
 import type { MarketSnapshot, MarketSource } from "../../plugin/market.js";
 import { marketPictureDir, marketPictures } from "../../plugin/market-pictures.js";
 import type { MarketPicture, MarketPictures } from "../../plugin/market-pictures.js";
@@ -146,11 +147,10 @@ export class PluginMarketRoutes {
       this.config.pluginMarketUrl !== undefined
         ? this.config.pluginMarketUrl
         : resolvePluginMarketUrl(process.env.PENGUIN_PLUGIN_MARKET);
-    const proxy = () => this.config.pluginProxy ?? [];
     const log = (line: string) => this.log.line(line);
     this.source = marketSource({
       url,
-      proxy,
+      proxy: indexMirrorRules,
       seed: reseed((context as { market?: unknown } | null)?.market),
       onFailure: (message) => log(`[plugin-market] ${message}`),
     });
@@ -159,7 +159,11 @@ export class PluginMarketRoutes {
     let covers: string | null | undefined;
     this.routes = pluginMarketRoutes({
       source: this.source,
-      pictures: marketPictures({ dir: marketPictureDir(this.config.root), proxy, log }),
+      pictures: marketPictures({
+        dir: marketPictureDir(this.config.root),
+        proxy: indexMirrorRules,
+        log,
+      }),
       bundled: () =>
         covers === undefined ? (covers = bundledCoversDir(this.hmr.assetsDir())) : covers,
     });
