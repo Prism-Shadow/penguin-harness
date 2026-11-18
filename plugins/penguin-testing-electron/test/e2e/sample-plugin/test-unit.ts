@@ -13,7 +13,7 @@ import type { TestContext } from "../../../src/driver.js";
  */
 @Component()
 export class InstanceDataExists {
-  async run(): Promise<void> {
+  async run(_context?: TestContext): Promise<void> {
     const root = gitRoot();
     expect(root).not.toBeNull();
     expect(existsSync(path.join(root!, ".data/penguin-testing-electron/penguin"))).toBe(true);
