@@ -1,7 +1,7 @@
 ---
 name: multimodal-tools
 description: Use the project's configured capability models to search, fetch a URL, generate an image or video, transcribe a local recording or synthesize speech with the Penguin CLI. Use this for Image Studio requests and for returning actual generated media or source results.
-version: 2026.11.18.1
+version: 2026.11.18.2
 ---
 
 # Project search and media tools
@@ -23,12 +23,14 @@ Pass each input as one argument. Keep user text as data: use your process API's 
 | Recognize speech | `penguin tools stt ./interview.wav --json` |
 | Synthesize speech | `penguin tools tts 'Welcome to the workshop.' --json` |
 
-The CLI uses its project and Session environment. When a workbench supplies its actual Session ID, pass it unchanged with `--session-id <id>`. Use `--project-id` only when the person or host identifies a different project. For a long-running generation, wait for its result. Avoid launching a second paid request because the first is slow.
+The CLI uses its project and Session environment. When a workbench supplies its actual Session ID, pass it unchanged with `--session-id <id>`. Use `--project-id` only when the person or host identifies a different project. Run `penguin tools list --json` to check this project's bindings. By default the CLI waits for completion. For a long-running job that needs to continue in the background, add `--detach --json`, keep the returned `id` and check `penguin tools status <id> --json`. On cancellation, use `penguin tools cancel <id> --json`. Reuse the run ID to avoid duplicate requests.
 
 ## Return what the service produced
 
 For search and fetch, inspect the returned `text` and `sources`. Cite the URLs that actually support the answer. For transcription, use the returned transcript. For image, video and speech generation, require a successful result and an entry in `artifacts`. Use its actual name, MIME type and authenticated URL. An artifact URL belongs to this PenguinHarness installation; it is not a public sharing link.
 
-When the person needs a file in the workspace, give the CLI a suitable `--out` path, wait for completion, and verify that the file exists and is nonempty before reporting its actual path. A prompt, an invented filename, a model's prose or a prior Session's artifact is not a result. In Image Studio the workbench reads the current Session's artifact list directly.
+When the person needs a file in the workspace, use `--out` on image, video or TTS. On a completed detached media job, use `penguin tools status <id> --out <path> --json`. Verify the saved file exists and is nonempty before reporting its absolute path. A prompt, an invented filename, a model's prose or a prior Session's artifact is not a result. In Image Studio the workbench reads the current Session's artifact list directly.
+
+Use `penguin tools artifacts --session-id <id> --json` to recover a Session's media. For usage, `penguin tools usage --session-id <id> --json` returns each run's model, status, provider token counts and observed units. Preserve unavailable counts as unknown.
 
 If the project has no model for the requested capability, ask the person to bind one in the model settings. If the provider rejects the request, returns no media or is cancelled, describe the returned status and reason. Never substitute an unrelated model, an old artifact or a fabricated success.

@@ -67,7 +67,8 @@ export default {
                     await host.setState({ jobs: [job, ...all()] });
                     const language = body.lang === "zh" ? "Chinese" : "English";
                     const instructions = [
-                      "Use the multimodal-tools skill. Generate one image through the project's configured image model by executing penguin tools image with --json. Use the supplied Session ID and aspect ratio. Pass the image brief as one literal argument. Your response must describe the real tool result or its failure.",
+                      "[use_skills]\nskills: multimodal-tools\n[/use_skills]\n",
+                      "Generate one image through the project's configured image model by executing penguin tools image with --json. Use the supplied Session ID and aspect ratio. Pass the image brief as one literal argument. Your response must describe the real tool result or its failure.",
                       `Session ID: ${sessionId}. Aspect ratio: ${ratio}. Respond in ${language}.`,
                       "Image brief (JSON string): " + JSON.stringify(prompt),
                     ].join("\n");

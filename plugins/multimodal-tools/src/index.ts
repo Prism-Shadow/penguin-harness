@@ -10,8 +10,8 @@ import type { Plugin } from "@prismshadow/penguin-core/plugin";
         descriptionZh:
           "通过项目绑定的模型搜索、读网页、生成图像或视频、识别和合成语音；在图像工作室预览会话生成的图片。",
         shortDescription:
-          "Project search, media generation and speech tools, with an Image Studio.",
-        shortDescriptionZh: "使用项目的搜索、媒体和语音模型，打开图像工作室查看作品。",
+          "Search and read the web, create images and videos, transcribe recordings or synthesize speech.",
+        shortDescriptionZh: "搜索和读取网页、生成图像和视频、转写录音或合成语音。",
         category: "utilities",
         icon: "icon.svg",
         quickStart: {
