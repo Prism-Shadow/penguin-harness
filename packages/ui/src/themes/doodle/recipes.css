@@ -539,10 +539,14 @@
   color: var(--ui-fg-emphasis);
 }
 /* Small score captions need readable pencil and status inks on the card paper. */
-:root[data-theme="doodle"] .ui-ledger [data-slot="tile"] [data-slot="label"] {
-  --color-gray-400: var(--ui-fg-subtle);
-  --color-emerald-600: var(--ui-tone-success-fg);
-  --color-red-600: var(--ui-tone-danger-fg);
+:root[data-theme="doodle"] .ui-ledger [data-slot="label"][data-tone="muted"] {
+  color: var(--ui-fg-subtle);
+}
+:root[data-theme="doodle"] .ui-ledger [data-slot="label"][data-tone="success"] {
+  color: var(--ui-tone-success-fg);
+}
+:root[data-theme="doodle"] .ui-ledger [data-slot="label"][data-tone="danger"] {
+  color: var(--ui-tone-danger-fg);
 }
 :root[data-theme="doodle"] .ui-start [data-slot="folder"] {
   background-color: var(--ui-surface);
