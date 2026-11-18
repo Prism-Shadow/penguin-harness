@@ -94,6 +94,7 @@ A new Project writes no `base_url` for these seven first-party groups, so their 
 | `default_model` | pair | — | Paired `{ provider, model_id }` reference to the default model; must point to an entry in `models` |
 | `[tools]` | table | — | One model reference per operation: `t2t`, `i2t`, `search`, `fetch`, `t2i`, `t2v`, `t2s`, `s2t`. Image reading uses `i2t`; transcript editing uses `t2t`. |
 | `voice_polish_enabled` | boolean | false | Edit voice transcripts before adding them to the chat draft |
+| `voice_polish_prompt` | string | Built-in instructions | Instructions used only when editing a voice transcript. Clear to restore the default. |
 | `[default_chat]` | table | — | Prefilled defaults for new chats; see [New chat defaults](#new-chat-defaults) |
 | `[command_policy]` | table | Factory set | Ask and deny rules for shell commands, applied ahead of the approval mode; see [Command policy](#command-policy) |
 | `[plugins]` | table | — | The server plugins the Project asks for; see [Plugins](#plugins) |
