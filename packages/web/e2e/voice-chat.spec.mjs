@@ -401,14 +401,14 @@ test("disabling the project's provider stops dictation before upload and restore
 }) => {
   await login(page.request, ADMIN_ID, ADMIN_PASSWORD);
   await setAccountPrefs(page.request, { lang: "en" });
-  const project = "admin-voiceprovider",
+  const project = "voiceprovider",
     plugin = "@penguinharness/multimodal-tools";
   const api = base + "/api/projects/" + project,
     endpoint = api + "/plugins/installed";
   const created = await page.request.post(base + "/api/projects", {
     data: { projectId: project, name: "Voice provider test" },
   });
-  expect([201, 409]).toContain(created.status());
+  expect([201, 409], await created.text()).toContain(created.status());
   const enabled = await page.request.post(endpoint, { data: { specifier: plugin } });
   expect(enabled.ok(), await enabled.text()).toBe(true);
   const models = [first, speaker].map((ref) => ({
