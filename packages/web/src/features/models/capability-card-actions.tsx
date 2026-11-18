@@ -25,7 +25,7 @@ export function CapabilityCardActions({
   );
   if (!choices.length) return null;
   return (
-    <div className="flex flex-wrap items-center gap-2 border-t border-edge px-3 py-2">
+    <div className="flex flex-wrap items-center gap-2 border-t border-line-muted px-3 py-2">
       {choices.map((key) => {
         const selected = sameModelRef(settings.bindings[key], model);
         const label = selected ? S.voice.currentFor[key] : S.voice.assignFor[key];
@@ -44,6 +44,7 @@ export function CapabilityCardActions({
             key={key}
             size="xs"
             variant={selected ? "ghost" : "secondary"}
+            className={selected ? "bg-accent-tint text-accent" : undefined}
             aria-pressed={selected}
             aria-disabled={selected || busy}
             onClick={() => {

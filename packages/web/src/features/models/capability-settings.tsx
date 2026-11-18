@@ -52,14 +52,7 @@ export function CapabilityDialog({
 }) {
   const { settings, error, busy, reload, save } = selection;
   return (
-    <Modal
-      open
-      title={S.voice.models}
-      widthClass="sm:max-w-2xl"
-      onClose={() => {
-        if (!busy) onClose();
-      }}
-    >
+    <Modal open title={S.voice.models} widthClass="sm:max-w-2xl" onClose={onClose}>
       <div className="space-y-4">
         <p className="text-sm text-fg-muted">{S.voice.modelsHelp}</p>
         {error && (
@@ -95,7 +88,7 @@ export function CapabilityDialog({
                 </div>
               ))}
             </div>
-            <div className="space-y-3 border-t border-edge pt-4">
+            <div className="space-y-3 border-t border-line-muted pt-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-sm font-medium text-fg">{S.voice.polish}</p>
