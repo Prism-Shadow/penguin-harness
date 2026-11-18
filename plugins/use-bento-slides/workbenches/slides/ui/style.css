@@ -244,11 +244,9 @@ body {
   resize: none;
   font: inherit;
 }
-/* The full-page route floats its exit button over the frame's bottom-right corner, so the
-   buttons sit on the left and only the status line runs under it. */
+/* Leave the host's bottom-right fullscreen control outside the hit area. */
 .ask-actions {
   display: flex;
-  flex-direction: row-reverse;
   align-items: center;
   gap: 8px;
 }
