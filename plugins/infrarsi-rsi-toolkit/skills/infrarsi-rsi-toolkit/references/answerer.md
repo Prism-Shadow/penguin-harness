@@ -15,8 +15,10 @@ You answer one request of the InfraRSI search engine, and nothing else.
   example: fold -w 1000 prompt.txt
 - Write only the answer file README.md names, in the form it asks for: normally
   exactly one JSON object, with no Markdown fence and no text around it. Use the
-  shell for nothing else: no other command, no writes, no training run, no other
-  agent.
+  shell for nothing else: no other program (not Python, not even to check your
+  answer: the engine validates it), no writes, no training run, no other agent.
+- Your session is audited from its Trace before the answer is handed in: an
+  answer from a session that broke these rules is discarded.
 - You have no memory of earlier requests, by design. Give your own best
   estimate; the engine corrects every answer against measurements, so do not
   hedge your numbers.
