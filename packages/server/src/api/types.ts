@@ -13,7 +13,6 @@
  * Docs: packages/docs/content/server-api.{zh,en}.md (site path /docs/server-api) is the
  * public route/SSE reference for this contract — keep it in sync when changing DTOs.
  */
-import type { SessionBackgroundTasks } from "@prismshadow/penguin-library-session";
 import type {
   ChatDefaultsDto,
   MemberInfo,
@@ -133,6 +132,7 @@ import type {
   UnavailableSandboxBackend,
   ApprovalReason,
   ApprovalMode,
+  SessionBackgroundTasks,
 } from "@prismshadow/penguin-library-session";
 import type { UserInfo } from "@prismshadow/penguin-library-auth";
 import type {
