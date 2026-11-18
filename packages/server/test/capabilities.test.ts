@@ -10,6 +10,7 @@ import type {
   CapabilityResult,
   CapabilitySettings,
   ToolModelSettings,
+  UsageResponse,
   ProjectCreateResponse,
   SessionCreateResponse,
 } from "../src/api/types.js";
@@ -56,6 +57,7 @@ describe("project model capabilities", () => {
     api: ReturnType<typeof apiClient>,
     sessionId: string,
     endpoint: string;
+  let rejectSpeech = false;
   const received: {
     model: string;
     config: Record<string, unknown>;
@@ -69,6 +71,11 @@ describe("project model capabilities", () => {
       for await (const chunk of req) data.push(chunk);
       const wire = JSON.parse(Buffer.concat(data).toString());
       received.push({ ...wire, auth: req.headers.authorization, path: req.url });
+      if (rejectSpeech && wire.model === ids.stt) {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: { message: "invalid audio" } }));
+        return;
+      }
       if (wire.messages[0].content_items[0].text === "wait") {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write(": waiting\n\n");
@@ -167,6 +174,134 @@ describe("project model capabilities", () => {
       (await api.post(tools + "/stt/run", { audio: { data: "bad", mimeType: "audio/wav" } }))
         .status,
     ).toBe(400);
+  });
+  it("counts provider refusals once and does not count audio rejected locally or a replayed result", async () => {
+    const totals = async () =>
+      (await (
+        await api.get(base + "/usage?provider=custom&modelId=deepseek-asr")
+      ).json()) as UsageResponse;
+    const before = (await totals()).summary.total.requests;
+    const own = await api.post(base + "/agents/default_agent/sessions", {});
+    const ownId = ((await own.json()) as SessionCreateResponse).session.sessionId;
+    const calls = received.length;
+    const audio = { data: wavBase64, mimeType: "audio/wav" };
+    rejectSpeech = true;
+    try {
+      for (let i = 0; i < 2; i++)
+        expect((await api.post(tools + "/stt/run", { audio })).status).toBe(502);
+    } finally {
+      rejectSpeech = false;
+    }
+    const failed = await totals();
+    expect(failed.summary.total.requests - before).toBe(2);
+    expect(failed.series.at(-1)).toMatchObject({ completed: 0, denominator: 2 });
+    expect(
+      (await api.post(tools + "/stt/run", { audio: { ...audio, data: "broken" } })).status,
+    ).toBeGreaterThanOrEqual(400);
+    const ok = await api.post(tools + "/stt/run", { audio, sessionId: ownId });
+    expect(ok.status).toBe(200);
+    const run = (await ok.json()) as CapabilityResult;
+    await api.get(tools + "/runs/" + run.id);
+    await api.get(tools + "/usage");
+    const result = await totals();
+    expect(result.series.at(-1)).toMatchObject({ requests: 3, completed: 1, denominator: 3 });
+    expect(result.byAgentSeries).toHaveLength(1);
+    expect(result.byAgentSeries[0]?.requests.at(-1)).toBe(1);
+    expect(result.byModelSeries.find((m) => m.modelId === ids.stt)?.requests.at(-1)).toBe(3);
+    expect(received.length - calls).toBe(3);
+  });
+  it("prices historical image runs at read time and keeps physical voice units out of the token total", async () => {
+    const project = "tool_usage_history";
+    const created = await api.post("/api/projects", {
+      projectId: project,
+      name: "Tool usage history",
+    });
+    expect(created.status).toBe(201);
+    const scope = "/api/projects/" + project;
+    const tx = app.deps.db.prepare(
+      "INSERT INTO capability_runs(id,project_id,created_at,status,data) VALUES(?,?,?,?,?)",
+    );
+    const at = new Date().toISOString();
+    function add(id: string, status: string, data: Record<string, unknown>) {
+      tx.run(id, project, at, status, JSON.stringify(data));
+    }
+    const image = { provider: "openrouter", modelId: "bytedance-seed/seedream-5-5" };
+    const voice = { provider: "deepseek", modelId: "deepseek-asr" };
+    add("history-image", "completed", {
+      model: image,
+      capability: "image",
+      inputMeter: { unit: "token", quantity: 100 },
+      usage: { cached_tokens: 0, prompt_tokens: 100, thoughts_tokens: 20, response_tokens: 1120 },
+      measurements: [
+        { unit: "request", quantity: 1 },
+        { unit: "image", quantity: 2 },
+      ],
+    });
+    add("history-voice", "completed", {
+      model: voice,
+      capability: "stt",
+      usage: { cached_tokens: 0, prompt_tokens: 4, thoughts_tokens: 0, response_tokens: 0 },
+      inputMeter: { unit: "billed_audio_second", quantity: 4 },
+      measurements: [{ unit: "request", quantity: 1 }],
+    });
+    add("history-refusal", "failed", {
+      model: voice,
+      capability: "stt",
+      error: "The model provider returned HTTP 400.",
+    });
+    add("local-failure", "failed", {
+      model: voice,
+      capability: "stt",
+      error: "The selected model does not support this operation or its options.",
+    });
+    add("before-send", "cancelled", { model: voice, capability: "stt", providerAttempted: false });
+    add("after-send", "cancelled", { model: voice, capability: "stt", providerAttempted: true });
+    const get = async (query: string) =>
+      (await (await api.get(scope + "/usage?" + query)).json()) as UsageResponse;
+    const all = await get("groupBy=model");
+    expect(all.summary.total).toMatchObject({
+      total: 1240,
+      requests: 4,
+      cost: 0.04,
+      costMax: 0.07,
+      hasUncosted: true,
+    });
+    expect(all.byAgentSeries).toEqual([]);
+    const bucket = (await get("modelId=deepseek-asr&provider=deepseek")).series.at(-1);
+    expect(bucket).toMatchObject({
+      total: 0,
+      cost: null,
+      requests: 3,
+      completed: 1,
+      denominator: 2,
+    });
+    expect((await get("agentId=default_agent")).summary.total.requests).toBe(0);
+    expect((await get("groupBy=session")).groups).toEqual([]);
+    const outside = await get("from=2000-01-01&to=2000-01-02");
+    expect(outside.summary.total.requests).toBe(0);
+    expect(
+      (
+        await (
+          await api.get(base + "/usage?modelId=bytedance-seed%2Fseedream-5-5&provider=openrouter")
+        ).json()
+      ).summary.total.requests,
+    ).toBe(0);
+    expect(
+      (
+        await api.put(scope + "/models", {
+          models: [
+            {
+              ...image,
+              pricing: { unit: "usd_per_mtok", cacheRead: 1, cacheWrite: 2, output: 10 },
+            },
+          ],
+        })
+      ).status,
+    ).toBe(200);
+    const repriced = (await get("provider=openrouter&modelId=bytedance-seed%2Fseedream-5-5"))
+      .summary.total;
+    expect(repriced.cost).toBeCloseTo(0.0116, 10);
+    expect(repriced.costMax).toBeUndefined();
   });
   it("rejects WebM labelled as WAVE before sending the audio to a DeepSeek ASR gateway", async () => {
     const before = received.length;

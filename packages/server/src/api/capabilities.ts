@@ -81,6 +81,8 @@ export interface CapabilityResult {
   /** Absent for historical runs and when the adapter does not identify its input unit. */
   inputMeter?: CapabilityInputMeter;
   measurements: { unit: string; quantity: number }[];
+  /** Whether this run reached the provider transport. Older runs may have no observation. */
+  providerAttempted?: boolean;
   error?: string;
 }
 

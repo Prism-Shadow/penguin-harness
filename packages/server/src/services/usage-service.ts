@@ -30,6 +30,7 @@ import type {
   UsageResponse,
   UsageSeriesPoint,
 } from "../api/types.js";
+import { estimateImageToolCost, type ToolCostEstimate } from "./capability-cost.js";
 import type { ErrorFilter } from "../db/repos/errors.js";
 import { catalogEntryFor, offPeakAt, offPeakScheduledRefs } from "../model-catalog/catalog.js";
 import type {
@@ -210,14 +211,39 @@ export function ratesAt(
   return offPeakAt(schedule, at) ? tiered.offPeak : tiered.peak;
 }
 
-/** Cost formula: sum of the three buckets at the tier these Tokens ran in, USD per million. */
-function costOf(sums: UsageModelSums, tiered: TieredRates): number {
-  return requestCostUsd(sums, sums.peak ? tiered.peak : tiered.offPeak);
+function costOf(sums: UsageModelSums, tiered?: TieredRates): ToolCostEstimate | null {
+  if (sums.billing === "unknown") return null;
+  const rates = sums.peak ? tiered?.peak : tiered?.offPeak;
+  if (sums.billing === "image") {
+    return estimateImageToolCost(
+      {
+        capability: "image",
+        model: { provider: sums.provider, modelId: sums.modelId },
+        usage: sums.imageUsage ?? null,
+        measurements: sums.images === undefined ? [] : [{ unit: "image", quantity: sums.images }],
+      },
+      rates
+        ? {
+            unit: "usd_per_mtok",
+            cache_read: rates.cacheRead,
+            cache_write: rates.cacheWrite,
+            output: rates.output,
+          }
+        : undefined,
+    );
+  }
+  if (!rates) return null;
+  const usd = requestCostUsd(sums, rates);
+  return { minimumUsd: usd, maximumUsd: usd };
 }
 
-/** {@link costOf} split by bucket, at the same tier. */
-function costPartsOf(sums: UsageModelSums, tiered: TieredRates): CostParts {
-  return requestCostParts(sums, sums.peak ? tiered.peak : tiered.offPeak);
+function addEstimate(
+  target: { cost: number | null; costMax?: number },
+  estimate: ToolCostEstimate,
+) {
+  const maximum = (target.costMax ?? target.cost ?? 0) + estimate.maximumUsd;
+  target.cost = (target.cost ?? 0) + estimate.minimumUsd;
+  if (maximum > target.cost) target.costMax = maximum;
 }
 
 /** In-process Map key for a paired reference (\0-separated, the same style as session-manager's agentKey; never persisted). */
@@ -278,12 +304,13 @@ export class UsageService implements UsageQueries {
       if (!rates.has(key)) {
         rates.set(key, await this.lookupPricing(projectId, r.provider, r.modelId));
       }
-      const rate = rates.get(key);
-      if (!rate) {
+      const estimate = costOf(r, rates.get(key));
+      if (!estimate) {
         unpriced = true;
         continue;
       }
-      bySession.set(r.key, (bySession.get(r.key) ?? 0) + costOf(r, rate));
+      if (estimate.minimumUsd !== estimate.maximumUsd) unpriced = true;
+      bySession.set(r.key, (bySession.get(r.key) ?? 0) + estimate.minimumUsd);
     }
     return { bySession, unpriced };
   }
@@ -309,9 +336,8 @@ export class UsageService implements UsageQueries {
       if (!rates.has(key)) {
         rates.set(key, await this.lookupPricing(projectId, r.provider, r.modelId));
       }
-      const rate = rates.get(key);
-      if (!rate) continue;
-      byDate.set(r.key, (byDate.get(r.key) ?? 0) + costOf(r, rate));
+      const estimate = costOf(r, rates.get(key));
+      if (estimate) byDate.set(r.key, (byDate.get(r.key) ?? 0) + estimate.minimumUsd);
     }
     return [...byDate.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
@@ -525,32 +551,35 @@ export class UsageService implements UsageQueries {
    * so the caller renders nothing rather than a zero.
    */
   modelTotals(projectId: string): UsageModelTotals {
-    return {
-      totals: this.usage.bucketByModel(projectId).map((r) => ({
+    const totals = new Map<string, UsageModelTotals["totals"][number]>();
+    for (const r of this.usage.bucketByModel(projectId)) {
+      const key = refKey(r.provider, r.modelId);
+      const total = totals.get(key) ?? {
         provider: r.provider,
         modelId: r.modelId,
-        tokens: r.total,
-        requests: r.requests,
-      })),
-    };
+        tokens: 0,
+        requests: 0,
+      };
+      total.tokens += r.total;
+      total.requests += r.requests;
+      totals.set(key, total);
+    }
+    return { totals: [...totals.values()] };
   }
 
   private foldBucket(
     rows: UsageModelSums[],
     rates: Map<string, TieredRates | undefined>,
   ): UsageBucket {
-    let total = 0;
-    let requests = 0;
-    let cost: number | null = null;
-    let hasUncosted = false;
+    const bucket: UsageBucket = { total: 0, requests: 0, cost: null, hasUncosted: false };
     for (const r of rows) {
-      total += r.total;
-      requests += r.requests;
-      const rate = rates.get(refKey(r.provider, r.modelId));
-      if (rate) cost = (cost ?? 0) + costOf(r, rate);
-      else hasUncosted = true;
+      bucket.total += r.total;
+      bucket.requests += r.requests;
+      const estimate = costOf(r, rates.get(refKey(r.provider, r.modelId)));
+      if (estimate) addEstimate(bucket, estimate);
+      else bucket.hasUncosted = true;
     }
-    return { total, requests, cost, hasUncosted };
+    return bucket;
   }
 
   private foldGroups(
@@ -562,6 +591,7 @@ export class UsageService implements UsageQueries {
     const keyOf = (r: UsageGroupModelSums): string =>
       groupBy === "model" ? refKey(r.provider, r.key) : r.key;
     const byKey = new Map<string, UsageGroupRow>();
+    const withoutSplit = new Set<string>();
     for (const r of rows) {
       const acc: UsageGroupRow = byKey.get(keyOf(r)) ?? {
         key: r.key,
@@ -580,9 +610,19 @@ export class UsageService implements UsageQueries {
       acc.total += r.total;
       acc.requests += r.requests;
       const rate = rates.get(refKey(r.provider, r.modelId));
-      if (rate) {
-        acc.cost = (acc.cost ?? 0) + costOf(r, rate);
-        acc.costParts = sumCostParts(acc.costParts ?? ZERO_COST_PARTS, costPartsOf(r, rate));
+      const estimate = costOf(r, rate);
+      if (estimate) {
+        addEstimate(acc, estimate);
+        if (r.billing === "image") {
+          // A price per image or for separate thinking is not a chat three-bucket split.
+          withoutSplit.add(keyOf(r));
+          delete acc.costParts;
+        } else if (rate && !withoutSplit.has(keyOf(r))) {
+          acc.costParts = sumCostParts(
+            acc.costParts ?? ZERO_COST_PARTS,
+            requestCostParts(r, r.peak ? rate.peak : rate.offPeak),
+          );
+        }
       } else {
         acc.hasUncosted = true;
       }
@@ -635,8 +675,8 @@ export class UsageService implements UsageQueries {
       acc.requests += r.requests;
       acc.completed += r.completed;
       acc.denominator += r.denominator;
-      const rate = rates.get(refKey(r.provider, r.modelId));
-      if (rate) acc.cost = (acc.cost ?? 0) + costOf(r, rate);
+      const estimate = costOf(r, rates.get(refKey(r.provider, r.modelId)));
+      if (estimate) addEstimate(acc, estimate);
     }
     return keys.map((k) => byKey.get(k)!);
   }

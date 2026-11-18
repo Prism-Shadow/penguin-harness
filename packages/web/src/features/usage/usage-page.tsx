@@ -44,7 +44,7 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useUpdateBadges, dismissTodo, refreshProjectTodos } from "../todos";
-import { formatMoney, humanizeTokens } from "../../lib/format";
+import { formatEstimatedCost, humanizeTokens } from "../../lib/format";
 import { catalogEntryFor } from "@prismshadow/penguin-server/model-catalog";
 import { scoped, scopedValue, type Scoped } from "../../lib/project-scope";
 import { useOpenedInProject } from "../../lib/use-opened-in-project";
@@ -117,8 +117,8 @@ function SummaryCard({
         <SummaryRow label={S.usage.requests} value={String(bucket.requests)} muted />
         {/* The unpriced-records asterisk sits on the word "cost" (superscript), keeping the number clean and readable; see the footer for the explanation */}
         <SummaryRow
-          label={S.common.cost}
-          value={formatMoney(bucket.cost, currency)}
+          label={S.usage.estimatedCost}
+          value={formatEstimatedCost(bucket, currency)}
           sup={bucket.hasUncosted}
         />
       </div>

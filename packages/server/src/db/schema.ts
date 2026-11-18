@@ -1,3 +1,4 @@
+import { TOOL_REQUEST_USAGE_V1 } from "./migrations/steps/2026-11-19-tool-request-usage.js";
 /**
  * SQLite table-creation SQL.
  *
@@ -106,6 +107,8 @@ CREATE TABLE IF NOT EXISTS capability_runs (
 );
 CREATE INDEX IF NOT EXISTS capability_runs_project_time ON capability_runs(project_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS capability_runs_session_time ON capability_runs(project_id, session_id, created_at DESC);
+
+${TOOL_REQUEST_USAGE_V1}
 
 CREATE TABLE IF NOT EXISTS usage_records (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,

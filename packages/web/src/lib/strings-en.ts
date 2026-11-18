@@ -5385,7 +5385,9 @@ Scenarios:
     colCacheRead: "cache_read",
     colCacheWrite: "cache_write",
     colOutput: "output",
-    uncostedNote: "* Only models with configured pricing count toward cost",
+    estimatedCost: "Estimated cost",
+    uncostedNote:
+      "* Requests without known rates or billable quantities are excluded from estimated cost",
     filterAllAgents: "All agents",
     filterAllModels: "All models",
     rangeLabel: "Date range",

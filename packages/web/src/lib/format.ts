@@ -142,6 +142,17 @@ export function formatMoney(
   return `${symbol}${v.toFixed(digits)}`;
 }
 
+/** The Cost Center knows a range when an image endpoint omits its billed resolution tier. */
+export function formatEstimatedCost(
+  estimate: { cost: number | null; costMax?: number },
+  currency: "USD" | "CNY",
+): string {
+  const minimum = formatMoney(estimate.cost, currency);
+  return estimate.costMax === undefined
+    ? minimum
+    : minimum + "–" + formatMoney(estimate.costMax, currency);
+}
+
 /** Benchmark score display: integers unchanged, decimals keep up to the stored two places. */
 export function formatScore(n: number): string {
   return Number.isInteger(n) ? `${n}` : n.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");

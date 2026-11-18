@@ -4615,6 +4615,8 @@ export interface UsageBucket {
   requests: number;
   /** Cost converted using current pricing at query time (USD); a partial sum when uncosted Models are included, null if none has pricing. */
   cost: number | null;
+  /** Upper bound when a provider omits the billed image tier. cost is the lower bound. */
+  costMax?: number;
   /** Whether any Model has no pricing (its usage isn't included in cost; counted once pricing is added later). */
   hasUncosted: boolean;
 }
@@ -4630,9 +4632,11 @@ export interface UsageGroupRow {
   total: number;
   requests: number;
   cost: number | null;
+  /** Upper bound when a provider omits the billed image tier. cost is the lower bound. */
+  costMax?: number;
   /**
    * `cost` split by pricing bucket, each record at the same rates, tier and promotion that
-   * priced it in `cost`. Present exactly when `cost` is not null; a row's unpriced usage is in
+   * priced it in `cost`. Omitted when the total includes image tariffs. A row's unpriced usage is in
    * neither.
    */
   costParts?: CostParts;
@@ -4657,6 +4661,8 @@ export interface UsageSeriesPoint {
   total: number;
   /** Cost converted at query time (USD); null when no priced Model contributed. */
   cost: number | null;
+  /** Upper bound when a provider omits the billed image tier. cost is the lower bound. */
+  costMax?: number;
   requests: number;
   /** Successful requests in the bucket. */
   completed: number;

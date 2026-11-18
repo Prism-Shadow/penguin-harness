@@ -5,6 +5,8 @@
  * so every aggregation is broken down by the `(provider, model_id)` pair and returns
  * raw Token sums (a model_id shared across providers is aggregated separately; never concatenated).
  */
+import { REQUEST_SOURCE, BILLING_GROUP } from "./usage-source.js";
+import type { CapabilityUsage } from "../../api/capabilities.js";
 import type { UsageGroupBy } from "../../api/types.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Db } from "../../hmr/capabilities.js";
@@ -46,6 +48,9 @@ export interface UsageFilter {
 
 /** Raw Token sums for a single Model (paired reference) — the smallest unit for cost conversion. */
 export interface UsageModelSums {
+  billing?: "image" | "unknown";
+  imageUsage?: CapabilityUsage;
+  images?: number;
   provider: string;
   modelId: string;
   cacheRead: number;
@@ -170,13 +175,30 @@ const SUM_COLUMNS = `COALESCE(SUM(cache_read), 0) AS cache_read,
                 COALESCE(SUM(cache_write), 0) AS cache_write,
                 COALESCE(SUM(output), 0) AS output,
                 COALESCE(SUM(total), 0) AS total,
-                COUNT(*) AS requests`;
+                COUNT(*) AS requests, billing,
+                SUM(raw_cached) AS raw_cached, SUM(raw_prompt) AS raw_prompt,
+                SUM(raw_thoughts) AS raw_thoughts, SUM(raw_response) AS raw_response,
+                SUM(images) AS images`;
 
 function toSums(r: Record<string, unknown>): UsageModelSums {
   return {
     provider: r.provider as string,
     modelId: r.model_id as string,
     peak: r.peak !== 0,
+    ...(r.billing === "image"
+      ? {
+          billing: "image" as const,
+          imageUsage: {
+            cached_tokens: r.raw_cached as number | null,
+            prompt_tokens: r.raw_prompt as number | null,
+            thoughts_tokens: r.raw_thoughts as number | null,
+            response_tokens: r.raw_response as number | null,
+          },
+          ...(r.images != null && { images: Number(r.images) }),
+        }
+      : r.billing === "unknown"
+        ? { billing: "unknown" as const }
+        : {}),
     cacheRead: r.cache_read as number,
     cacheWrite: r.cache_write as number,
     output: r.output as number,
@@ -277,8 +299,8 @@ export class UsageRepo implements UsageStore {
     const rows = this.db
       .prepare(
         `SELECT provider, model_id, ${peak.sql} AS peak, ${SUM_COLUMNS}
-         FROM usage_records WHERE ${where}
-         GROUP BY provider, model_id, peak`,
+         FROM ${REQUEST_SOURCE} WHERE ${where}
+         GROUP BY provider, model_id, peak, ${BILLING_GROUP}`,
       )
       .all({ ...params, ...peak.params });
     return rows.map(toSums);
@@ -297,8 +319,8 @@ export class UsageRepo implements UsageStore {
     const rows = this.db
       .prepare(
         `SELECT ${col} AS key, provider, model_id, ${peak.sql} AS peak, ${SUM_COLUMNS}
-         FROM usage_records WHERE ${where}
-         GROUP BY ${col}, provider, model_id, peak`,
+         FROM ${REQUEST_SOURCE} WHERE ${where} AND ${col} IS NOT NULL
+         GROUP BY ${col}, provider, model_id, peak, ${BILLING_GROUP}`,
       )
       .all({ ...params, ...peak.params });
     return rows.map((r) => ({ key: r.key as string, ...toSums(r) }));
@@ -324,8 +346,8 @@ export class UsageRepo implements UsageStore {
         `SELECT ${expr} AS key, provider, model_id, ${peak.sql} AS peak, ${SUM_COLUMNS},
                 COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END), 0) AS completed,
                 COALESCE(SUM(CASE WHEN status <> 'aborted' THEN 1 ELSE 0 END), 0) AS denominator
-         FROM usage_records WHERE ${where}
-         GROUP BY key, provider, model_id, peak`,
+         FROM ${REQUEST_SOURCE} WHERE ${where}
+         GROUP BY key, provider, model_id, peak, ${BILLING_GROUP}`,
       )
       .all({ ...params, ...peak.params });
     return rows.map((r) => ({
@@ -349,7 +371,7 @@ export class UsageRepo implements UsageStore {
         `SELECT ${expr} AS key, agent_id, COUNT(*) AS requests,
                 COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END), 0) AS completed,
                 COALESCE(SUM(CASE WHEN status <> 'aborted' THEN 1 ELSE 0 END), 0) AS denominator
-         FROM usage_records WHERE ${where}
+         FROM ${REQUEST_SOURCE} WHERE ${where} AND agent_id IS NOT NULL
          GROUP BY key, agent_id`,
       )
       .all(params);
@@ -366,7 +388,7 @@ export class UsageRepo implements UsageStore {
   distinctAgentIds(projectId: string): string[] {
     const rows = this.db
       .prepare(
-        "SELECT DISTINCT agent_id AS v FROM usage_records WHERE project_id = ? ORDER BY agent_id",
+        `SELECT DISTINCT agent_id AS v FROM ${REQUEST_SOURCE} WHERE project_id = ? AND agent_id IS NOT NULL ORDER BY agent_id`,
       )
       .all(projectId);
     return rows.map((r) => r.v as string);
@@ -376,7 +398,7 @@ export class UsageRepo implements UsageStore {
   distinctModels(projectId: string): Array<{ provider: string; modelId: string }> {
     const rows = this.db
       .prepare(
-        `SELECT DISTINCT provider, model_id FROM usage_records
+        `SELECT DISTINCT provider, model_id FROM ${REQUEST_SOURCE}
          WHERE project_id = ? ORDER BY provider, model_id`,
       )
       .all(projectId);

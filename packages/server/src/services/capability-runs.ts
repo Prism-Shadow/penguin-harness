@@ -13,6 +13,7 @@ import type {
 import type { ModelRefDto } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 import { playableMedia, runProjectModel, type ModelMedia } from "./capability-model.js";
+import { observeProviderAttempt } from "./capability-attempt.js";
 import { polishTranscript } from "./voice-polish.js";
 
 const suffix: Record<string, string> = {
@@ -183,9 +184,10 @@ export class CapabilityRuns {
   }
   private async finish(task: Task, row: CapabilityResult, signal: AbortSignal) {
     const files: string[] = [];
+    const attempt = { sent: false };
     const context = { signal, sessionId: task.sessionId };
     try {
-      const output =
+      const output = await observeProviderAttempt(attempt, async () =>
         task.capability === "voice-polish" && task.item.type === "text.done"
           ? {
               ...(await polishTranscript({
@@ -210,7 +212,9 @@ export class CapabilityRuns {
               ],
               task.options,
               context,
-            );
+            ),
+      );
+      attempt.sent = true;
       row.usage = output.usage;
       if (output.inputMeter) row.inputMeter = output.inputMeter;
       if (output.text) row.text = output.text;
@@ -277,9 +281,12 @@ export class CapabilityRuns {
     } catch (error) {
       await Promise.allSettled(files.map((f) => unlink(f)));
       row.artifacts = [];
+      if (!(error instanceof HttpError) && Number.isInteger((error as { status?: number })?.status))
+        attempt.sent = true;
       row.status = signal.aborted ? "cancelled" : "failed";
       row.error = signal.aborted ? "The request was cancelled." : reason(error);
     }
+    row.providerAttempted = attempt.sent;
     this.update(row);
     return row;
   }
