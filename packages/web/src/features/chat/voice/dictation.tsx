@@ -204,11 +204,15 @@ export function useDictation({
   return {
     trigger: null,
     toolbar: (
-      <div role="group" aria-label={S.voice.record} className="flex min-w-0 items-center gap-2">
+      <div
+        role="group"
+        aria-label={S.voice.record}
+        className="inline-flex h-8 max-w-full items-center gap-1"
+      >
         <Button
           variant="ghost"
-          size="sm"
-          className="min-h-10 shrink-0"
+          size="xs"
+          className="h-8 shrink-0"
           autoFocus
           onClick={dismiss}
           aria-label={S.voice.cancel}
@@ -216,26 +220,26 @@ export function useDictation({
         >
           {S.common.cancel}
         </Button>
-        <div className="flex min-h-11 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-control bg-fill-neutral px-1 py-1">
+        <div className="inline-flex h-8 min-w-0 items-center gap-1 rounded-control bg-fill-neutral px-0.5">
           {phase === "recording" && microphone ? (
             <>
               <MicrophoneMeter {...microphone} />
               <Button
                 variant="primary"
-                size="sm"
-                className="min-h-9 shrink-0 [--ui-accent:var(--ui-tone-success-emphasis)] [--ui-accent-fg:var(--ui-tone-success-emphasis-fg)]"
+                size="xs"
+                className="h-7 shrink-0 [--ui-accent:var(--ui-tone-success-emphasis)] [--ui-accent-fg:var(--ui-tone-success-emphasis-fg)]"
                 aria-label={S.voice.finish}
                 onClick={() => finish.current?.()}
                 leading={<CheckIcon size={14} />}
               >
-                <span className="@xs:hidden">{S.voice.finishCompact}</span>
-                <span className="hidden @xs:inline">{S.voice.finishShort}</span>
+                <span className="@md:hidden">{S.voice.finishCompact}</span>
+                <span className="hidden @md:inline">{S.voice.finishShort}</span>
               </Button>
             </>
           ) : (
             <span
               role="status"
-              className="flex min-w-0 items-center gap-2 py-1 text-sm text-fg-muted"
+              className="flex min-w-0 items-center gap-1.5 whitespace-nowrap px-1.5 text-xs text-fg-muted"
             >
               <span aria-hidden>
                 <Spinner size="sm" label={S.voice[phase]} />

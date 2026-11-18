@@ -73,8 +73,8 @@ export function MicrophoneMeter({
   }, [stream, reduceMotion, captureContext]);
   const current = levels.at(-1) ?? 0;
   return (
-    <div className="flex min-w-0 flex-1 items-center justify-center gap-2 overflow-hidden pl-1">
-      <span aria-hidden className="hidden shrink-0 text-xs tabular-nums text-fg-muted @xs:inline">
+    <div className="inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden px-1">
+      <span aria-hidden className="hidden shrink-0 text-xs tabular-nums text-fg-muted @md:inline">
         {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}
       </span>
       {available ? (
@@ -85,19 +85,14 @@ export function MicrophoneMeter({
           aria-valuemax={100}
           aria-valuenow={current}
           aria-valuetext={current > 0 ? S.voice.soundDetected : S.voice.quiet}
-          className="flex h-7 min-w-0 max-w-32 flex-1 items-center justify-center text-tone-success-fg"
+          className={`flex h-5 min-w-0 items-center justify-center text-tone-success-fg ${reduceMotion ? "w-auto" : "w-10 @md:w-14"}`}
         >
           {reduceMotion ? (
             <span className="truncate text-xs text-fg-muted">
               {current > 0 ? S.voice.soundDetected : S.voice.quiet}
             </span>
           ) : (
-            <svg
-              aria-hidden
-              viewBox="0 0 90 28"
-              className="block h-7 w-24 max-w-full"
-              fill="currentColor"
-            >
+            <svg aria-hidden viewBox="0 0 90 28" className="block h-5 w-full" fill="currentColor">
               {levels.map((value, index) => {
                 const height = 3 + (value / 100) * 23;
                 return (

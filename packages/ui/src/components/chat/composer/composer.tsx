@@ -43,7 +43,6 @@ export function ComposerCard({
   tools,
   hint,
   actions,
-  alternateToolbar,
 }: {
   /** The images and files staged for the message (`AttachmentList`), first in the card. */
   attachments?: ReactNode;
@@ -57,8 +56,6 @@ export function ComposerCard({
   hint?: string;
   /** The right group: status, model and the action button; it never shrinks. */
   actions?: ReactNode;
-  /** A task in the composer, such as dictation, can temporarily take the full toolbar width. */
-  alternateToolbar?: ReactNode;
 }) {
   const { ref, ...text } = textarea;
   return (
@@ -78,25 +75,21 @@ export function ComposerCard({
         {...text}
         className="block max-h-44 min-h-[60px] w-full resize-none bg-transparent px-1 py-0.5 font-sans text-base leading-6 placeholder:text-fg-subtle focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
       />
-      {alternateToolbar == null ? (
-        <div className="mt-1 flex items-center justify-between gap-2 text-xs">
-          <div className="no-scrollbar flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
-            <div className="flex shrink-0 items-center gap-px">{tools}</div>
-            {hint !== undefined && hint !== "" && (
-              <span
-                data-tooltip={hint}
-                data-tooltip-content="text"
-                className="hidden min-w-0 truncate text-fg-subtle @lg:block"
-              >
-                {hint}
-              </span>
-            )}
-          </div>
-          <div className="flex shrink-0 items-center gap-2">{actions}</div>
+      <div className="mt-1 flex items-center justify-between gap-2 text-xs">
+        <div className="no-scrollbar flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
+          <div className="flex shrink-0 items-center gap-px">{tools}</div>
+          {hint !== undefined && hint !== "" && (
+            <span
+              data-tooltip={hint}
+              data-tooltip-content="text"
+              className="hidden min-w-0 truncate text-fg-subtle @lg:block"
+            >
+              {hint}
+            </span>
+          )}
         </div>
-      ) : (
-        <div className="mt-1">{alternateToolbar}</div>
-      )}
+        <div className="flex shrink-0 items-center gap-2">{actions}</div>
+      </div>
     </div>
   );
 }
