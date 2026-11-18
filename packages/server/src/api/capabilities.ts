@@ -11,6 +11,8 @@ export interface CapabilitySettings {
   available: AvailableCapability[];
   bindings: Partial<Record<Capability, ModelRefDto>>;
   candidates: Record<Capability | "chat", ModelRefDto[]>;
+  /** Absent when the selected transcription model accepts the browser's native recording. */
+  dictationFormat?: "audio/wav";
   voicePolish: { enabled: boolean; model: ModelRefDto | null };
 }
 export interface CapabilitySettingsPatch {
