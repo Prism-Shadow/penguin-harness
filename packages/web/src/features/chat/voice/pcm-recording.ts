@@ -1,5 +1,3 @@
-import workletUrl from "./pcm-worklet.js?url&no-inline";
-
 const RATE = 16000;
 
 function waveHeader(bytes: number): ArrayBuffer {
@@ -40,7 +38,7 @@ export async function capturePcm(
   const stop = () => processor?.port.postMessage("stop");
   const track = stream.getAudioTracks()[0];
   try {
-    await context.audioWorklet.addModule(workletUrl);
+    await context.audioWorklet.addModule(new URL("./pcm-worklet.js?no-inline", import.meta.url));
     signal.throwIfAborted();
     await context.resume();
     signal.throwIfAborted();
