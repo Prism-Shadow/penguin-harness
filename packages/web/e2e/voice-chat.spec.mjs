@@ -86,14 +86,18 @@ for (const lang of ["zh", "en"]) {
       captureCount = 0,
       playbackCount = 0;
     await page.route("**/capabilities/stt/run", async (route) => {
-      const { audio } = route.request().postDataJSON();
+      const request = route.request().postDataJSON();
+      expect(request).not.toHaveProperty("sessionId");
+      const { audio } = request;
       expect(audio.mimeType).toMatch(/^audio\//);
       expect(Buffer.from(audio.data, "base64").length).toBeGreaterThan(100);
       captureCount++;
       await route.fulfill({ json: { status: "completed", text: raw, artifacts: [] } });
     });
     await page.route("**/voice-polish", async (route) => {
-      expect(route.request().postDataJSON().text).toBe(raw);
+      const request = route.request().postDataJSON();
+      expect(request.text).toBe(raw);
+      expect(request).not.toHaveProperty("sessionId");
       await route.fulfill(
         polishWorks
           ? { json: { text: raw + "!" } }
@@ -321,7 +325,12 @@ test("speech uses the project's real MMSP routes and records each selected model
     if (process.env.VOICE_EVIDENCE)
       await page.screenshot({ path: process.env.VOICE_EVIDENCE + "/all-six-project-models.png" });
     await page.keyboard.press("Escape");
-    await page.goto(base + "/chat/new");
+    const created = await page.request.post(api + "/agents/default_agent/sessions", {
+      data: chat,
+    });
+    expect(created.ok(), await created.text()).toBeTruthy();
+    const { session } = await created.json();
+    await page.goto(base + "/chat/" + session.sessionId);
     await page.getByRole("button", { name: "Dictate", exact: true }).click();
     const finish = page.getByRole("button", { name: "Finish recording and transcribe" });
     await expect(finish).toBeVisible();
@@ -351,7 +360,11 @@ test("speech uses the project's real MMSP routes and records each selected model
       ["voice-polish", "deepseek-flash"],
     ]) {
       const run = runs.find((r) => r.capability === capability);
-      expect(run).toMatchObject({ model: ref(modelId), status: "completed" });
+      expect(run).toMatchObject({
+        model: ref(modelId),
+        sessionId: session.sessionId,
+        status: "completed",
+      });
       expect(run.usage).toEqual({
         cached_tokens: 0,
         prompt_tokens: 10,
@@ -367,7 +380,16 @@ test("speech uses the project's real MMSP routes and records each selected model
     await expectPlaying(page);
     await page.locator('a[href="/models"]').first().click();
     await expectReleased(page);
-    expect(seen.map((call) => call.path)).toEqual(Array(4).fill("/v1/stream"));
+    expect(seen.map((call) => call.model)).toEqual([
+      "deepseek-asr",
+      "deepseek-flash",
+      "deepseek-tts",
+      "deepseek-tts",
+    ]);
+    for (const call of seen) {
+      expect(call.path).toBe("/v1/stream");
+      expect(call.config.session_id).toBe(session.sessionId);
+    }
   } finally {
     upstream.closeAllConnections();
     await new Promise((resolve) => upstream.close(resolve));
