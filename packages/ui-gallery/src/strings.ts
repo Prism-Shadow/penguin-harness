@@ -1046,6 +1046,18 @@ export const zh = {
       transferRetryNow: "立即重试",
     },
     streaming: {
+      activity: "运行步骤",
+      running: "运行中",
+      thinking: "思考",
+      plan: "先读会议记录，再整理待办事项。",
+      read: "读取会议记录",
+      navigation: {
+        previous: "上一步",
+        next: "下一步",
+        latest: "最新步骤",
+        waiting: "查看待处理步骤",
+        position: (step: number, total: number) => `第 ${step} 步，共 ${total} 步`,
+      },
       reply: "助手回答",
       output: "工具输出",
       receiving: "正在接收…",

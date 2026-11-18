@@ -88,11 +88,12 @@ export function useWorkGroupState(
     // The title doubles as status: "Running" while in progress, "Done" when finished.
     title: running ? S.chat.workRunning : S.chat.workDone,
     // A pure-thinking group (no tool calls) doesn't show "0 steps".
-    ...(steps > 0 ? { count: S.chat.workGroupToolCalls(steps) } : {}),
+    ...(steps > 0 ? { count: S.chat.workGroupSteps(steps) } : {}),
     ...(startMs !== undefined ? { startMs } : {}),
     durationMs,
     pending: items.some((item) => needsAction(item, ctx)) || revealedForFind,
     stepNavigation: {
+      ...(steps > 0 ? { count: S.chat.workGroupToolCalls(steps) } : {}),
       previous: S.chat.previousWorkStep,
       next: S.chat.nextWorkStep,
       latest: S.chat.latestWorkStep,

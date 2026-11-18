@@ -1,14 +1,15 @@
 // @vitest-environment jsdom
-import { createElement as h } from "react";
+import { act, createElement as h } from "react";
 import { toolCall } from "@prismshadow/amsp";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { applyThemeAttributes } from "@prismshadow/penguin-ui/boot";
 import { ThemeProvider } from "../src/state/theme";
 import { SessionWorkGroup } from "../src/features/chat/work-group";
 import type { StreamRenderContext } from "../src/features/chat/message-stream";
 import { FindRevealContext } from "../src/lib/find-expand";
 import { approvalKey, type ChatItem, type ToolCallItem } from "../src/lib/amsp/stream-model";
 import { S } from "../src/lib/strings";
-import { stubLocalStorage } from "./helpers/storage";
+import { memoryStorage, stubLocalStorage } from "./helpers/storage";
 import { button, click, mount, unmountAll } from "./helpers/dom";
 
 const context: StreamRenderContext = {
@@ -48,7 +49,7 @@ const group = (items: ChatItem[], ctx = context, find = false) =>
 const position = () => document.querySelector("[data-step-navigation]")?.getAttribute("aria-label");
 
 beforeEach(() => {
-  stubLocalStorage();
+  stubLocalStorage(memoryStorage({ "penguin.themeId": "doodle" }));
   vi.stubGlobal("matchMedia", () => ({
     matches: false,
     addEventListener() {},
@@ -57,6 +58,34 @@ beforeEach(() => {
 });
 afterEach(unmountAll);
 describe("live work pages", () => {
+  it.each(["modern", "github", "geek"])(
+    "keeps %s chronological while allowing a live switch to and from Doodle",
+    async (themeId) => {
+      stubLocalStorage(memoryStorage({ "penguin.themeId": themeId }));
+      const view = await mount(
+        group([think(1, "First decision"), call(2), think(3, "Another decision")]),
+      );
+      const rows = () => view.container.querySelectorAll(".ui-tree > [data-depth]").length;
+      expect(rows()).toBe(3);
+      expect(position()).toBeUndefined();
+      const change = (id: string) =>
+        act(async () => {
+          applyThemeAttributes(document.documentElement, { themeId: id });
+        });
+      await change("doodle");
+      expect(rows()).toBe(1);
+      expect(position()).toBe(S.chat.workStepPosition(3, 3));
+      await click(button(S.chat.previousWorkStep));
+      await change(themeId);
+      expect(rows()).toBe(3);
+      expect(position()).toBeUndefined();
+      expect(view.container.textContent).toContain(S.chat.workGroupSteps(1));
+      await change("doodle");
+      expect(position()).toBe(S.chat.workStepPosition(2, 3));
+      expect(view.container.textContent).toContain("Output 2");
+    },
+  );
+
   it("tracks new steps by identity, keeps a manual page and its disclosure through updates and find", async () => {
     const first = think(1, "First decision");
     const second = call(2);

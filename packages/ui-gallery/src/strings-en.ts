@@ -1058,6 +1058,18 @@ export const en: GalleryStrings = {
       transferRetryNow: "Retry now",
     },
     streaming: {
+      activity: "Live steps",
+      running: "Running",
+      thinking: "Thinking",
+      plan: "I’ll read the meeting notes and collect the action items.",
+      read: "Read meeting notes",
+      navigation: {
+        previous: "Previous step",
+        next: "Next step",
+        latest: "Latest step",
+        waiting: "View pending step",
+        position: (step, total) => `Step ${step} of ${total}`,
+      },
       reply: "Assistant reply",
       output: "Tool output",
       receiving: "Receiving…",

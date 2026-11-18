@@ -56,6 +56,8 @@ export interface ThemePackManifest {
   readonly base: ThemeBase;
   /** The modes the pack declares; a mode it leaves out renders from the base. */
   readonly modes: readonly ThemeModeName[];
+  /** Live activity can replace its latest step in place. Packs default to a chronological list. */
+  readonly activitySteps?: "pages";
   readonly swatches: Readonly<Record<ThemeModeName, ThemePackSwatch>>;
   readonly accent: {
     /** The theme's own accent per mode: what `neutral` paints. */

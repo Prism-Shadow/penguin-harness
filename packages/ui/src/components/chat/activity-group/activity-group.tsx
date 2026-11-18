@@ -71,6 +71,7 @@ import type { ActivityKind, ActivityMark } from "../../layout/disclosure-row/dis
 import { Fold } from "../../layout/fold/fold";
 import { Button } from "../../actions/button/button";
 import { Pager } from "../../navigation/group-header/pager";
+import { useStepPages } from "./use-step-pages";
 import { StepDisclosure } from "./step-disclosure";
 import { WallpaperBackdrop } from "../../shell/app-shell/wallpaper";
 
@@ -93,6 +94,8 @@ export interface ActivityGroupRow {
 }
 
 export interface ActivityStepNavigation {
+  /** Count shown alongside the page position, when the regular header counts only tools. */
+  count?: string;
   previous: string;
   next: string;
   latest: string;
@@ -233,7 +236,7 @@ export interface ActivityGroupProps {
    * step lands) it adds the chevron.
    */
   rows?: readonly ActivityGroupRow[];
-  /** During a run, show one step in place; saved groups reopen as a chronological list. */
+  /** Navigation copy for themes that page live steps. Loaded history keeps its chronological rows. */
   stepNavigation?: ActivityStepNavigation;
   /** A body of one piece the caller styles, in place of rows; its presence adds the chevron too. */
   children?: ReactNode;
@@ -252,7 +255,7 @@ export function ActivityGroup({
   durationMs,
   pending = false,
   rows,
-  stepNavigation,
+  stepNavigation: navigationLabels,
   children,
 }: ActivityGroupProps) {
   const hookState = activityState(state);
@@ -277,14 +280,15 @@ export function ActivityGroup({
 
   const [reading, setReading] = useState<Key | null>(null);
   const [disclosures, setDisclosures] = useState<ReadonlyMap<Key, boolean>>(() => new Map());
-  const selected = reading === null ? -1 : (rows?.findIndex((row) => row.key === reading) ?? -1);
+  // Only a run actually watched in a paged theme keeps its pages when it settles.
+  const [ranHere, setRanHere] = useState(false);
+  const paged = useStepPages(!!navigationLabels && (running || ranHere));
+  if (paged && running && !ranHere) setRanHere(true);
+  const stepNavigation = paged ? navigationLabels : undefined;
+  const selected =
+    !paged || reading === null ? -1 : (rows?.findIndex((row) => row.key === reading) ?? -1);
   const reviewing = selected >= 0;
   const page = reviewing ? selected : (rows?.length ?? 0) - 1;
-  // A run watched here keeps its pages when it settles. A transcript loaded from history
-  // opens as the original full list, with the same sticky headers and lazy details.
-  const [ranHere, setRanHere] = useState(running && !!stepNavigation);
-  if (stepNavigation && running && !ranHere) setRanHere(true);
-  const paged = !!stepNavigation && (running || ranHere);
   const finding = !!stepNavigation?.revealAll;
   const shown = expandable && (open || pending || reviewing);
   const pageRow = rows?.[page];
@@ -292,18 +296,17 @@ export function ActivityGroup({
   const renderRows = () =>
     stepNavigation
       ? displayRows?.map((row) => {
-          const expanded = disclosures.get(row.key) ?? paged;
+          const expanded = disclosures.get(row.key) ?? true;
           return {
             ...row,
             content: (
               <StepDisclosure.Provider
                 value={{
-                  open: (finding && paged) || expanded,
-                  bounded: paged && !finding,
+                  open: finding || expanded,
+                  bounded: !finding,
                   follow: running && !reviewing,
                   toggle: () => {
-                    if (!finding || !paged)
-                      setDisclosures((prior) => new Map(prior).set(row.key, !expanded));
+                    if (!finding) setDisclosures((prior) => new Map(prior).set(row.key, !expanded));
                   },
                 }}
               >
@@ -317,6 +320,7 @@ export function ActivityGroup({
     ? startMs !== undefined
     : durationMs !== undefined && durationMs > 0;
 
+  const shownCount = stepNavigation?.count ?? count;
   const parts = (
     <>
       <ActivityMarkSlot mark={mark ?? <StatusIcon state={state} label={stateLabel} />} />
@@ -330,12 +334,12 @@ export function ActivityGroup({
       >
         {title}
       </span>
-      {count !== undefined && (
+      {shownCount !== undefined && (
         <span
           data-slot="detail"
           className="hidden shrink-0 font-mono text-xs text-fg-subtle sm:inline"
         >
-          {count}
+          {shownCount}
         </span>
       )}
       {/* min-w-0 (not flex-1) lets a long detail truncate while a short one keeps the duration
@@ -368,7 +372,7 @@ export function ActivityGroup({
     <div
       ref={rootRef}
       className={`ui-frame ${DISCLOSURE_CARD_CLASS}`}
-      data-step-view={stepNavigation ? (finding ? "find" : paged ? "paged" : "history") : undefined}
+      data-step-view={paged ? (finding ? "find" : "paged") : undefined}
     >
       {expandable ? (
         <button
@@ -419,7 +423,7 @@ export function ActivityGroup({
           {() =>
             rows !== undefined ? (
               <>
-                {stepNavigation && paged && !finding && rows.length > 1 && (
+                {stepNavigation && !finding && rows.length > 1 && (
                   <StepNavigation
                     labels={stepNavigation}
                     rows={rows}
@@ -429,7 +433,7 @@ export function ActivityGroup({
                     }
                   />
                 )}
-                <ActivityRows rows={renderRows() ?? []} revealNew={!paged && !finding} />
+                <ActivityRows rows={renderRows() ?? []} revealNew={!paged} />
               </>
             ) : (
               children

@@ -11,6 +11,8 @@
 import { test, expect } from "@playwright/test";
 import { provisionAndLogin, provisionUser } from "./auth.mjs";
 
+import { setAccountPrefs } from "./account-prefs.mjs";
+
 const BASE = process.env.BASE_URL;
 const MOCK = process.env.MOCK_URL;
 const PASSWORD = "password123";
@@ -19,8 +21,9 @@ const REPLY = "Command finished; the result looks as expected.";
 test.setTimeout(45_000);
 test.use({ actionTimeout: 10_000 });
 
-async function createSession(page, userId, approvalMode = "always-ask") {
+async function createSession(page, userId, approvalMode = "always-ask", themeId = null) {
   await provisionAndLogin(page.request, userId, PASSWORD);
+  await setAccountPrefs(page.request, { themeId });
   const projects = await page.request.get(`${BASE}/api/projects`);
   expect(projects.ok(), await projects.text()).toBeTruthy();
   const projectId = (await projects.json()).projects[0].projectId;
@@ -113,7 +116,7 @@ test("a live work group pages through reasoning and tools without losing a reade
   page,
   context,
 }, info) => {
-  const sessionId = await createSession(page, "smokeactivity");
+  const sessionId = await createSession(page, "smokeactivity", "always-ask", "doodle");
   await send(page, "activity pages test");
   const group = page.locator('[data-step-view="paged"]');
   const previous = group.getByRole("button", { name: "上一步" });
@@ -165,19 +168,26 @@ test("a live work group pages through reasoning and tools without losing a reade
   await page.keyboard.press("Escape");
   await expect(group.getByRole("group", { name: "第 2 步，共 4 步" })).toBeVisible();
 
-  // A second view decides the pending approval while the first reader stays on a completed tool.
+  // Primer shows the same run as a four-row list. The waiting approval works in either view.
+  await setAccountPrefs(page.request, { themeId: "github" });
   const reviewer = await context.newPage();
   await reviewer.goto(`/chat/${sessionId}`);
-  await reviewer.getByRole("button", { name: "允许", exact: true }).click();
+  await expect(reviewer.locator("html")).toHaveAttribute("data-theme", "github");
+  const list = reviewer.locator(".ui-frame:has(> [data-group-header])");
+  await expect(list.locator(".ui-tree > [data-depth]")).toHaveCount(4);
+  await expect(list.locator("[data-step-navigation]")).toHaveCount(0);
+  await list.getByRole("button", { name: "允许", exact: true }).click();
   await expect(page.getByText("Both tools finished.", { exact: true })).toBeVisible();
   await expect(group.getByRole("group", { name: "第 2 步，共 4 步" })).toBeVisible();
   await group.getByRole("button", { name: "最新步骤" }).click();
   await expect(group.getByRole("group", { name: "第 4 步，共 4 步" })).toBeVisible();
   await expect(group.locator("[data-step-content]")).toContainText("entry 2");
   await reviewer.close();
+  await setAccountPrefs(page.request, { themeId: "doodle" });
   await page.reload();
   await expect(page.getByText("Both tools finished.", { exact: true })).toBeVisible();
-  const archive = page.locator('[data-step-view="history"]');
+  const archive = page.locator(".ui-frame:has(> [data-group-header])");
+  await expect(archive.locator("[data-step-navigation]")).toHaveCount(0);
   await archive.locator("[data-group-header]").click();
   await expect(archive.locator(".ui-tree > [data-depth]")).toHaveCount(4);
 });

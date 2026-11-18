@@ -18,7 +18,10 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import {
+  ActivityGroup,
   AssistantText,
+  DisclosureRow,
+  StatusIcon,
   DISCLOSURE_OUTPUT_CAP_CLASS,
   DISCLOSURE_OUTPUT_CLASS,
   STREAM_REVEALS,
@@ -149,6 +152,40 @@ export function StreamingBoard() {
             <AssistantText key={run} text={stream.text} streaming={stream.streaming} />
           </div>
         </div>
+      </BoardGroup>
+      <BoardGroup title={t.activity}>
+        <ActivityGroup
+          kind="tool"
+          state="running"
+          title={t.running}
+          rows={[
+            {
+              key: "plan",
+              content: (
+                <DisclosureRow
+                  icon={<StatusIcon state="done" />}
+                  label={t.thinking}
+                  activity={{ kind: "thinking", state: "done" }}
+                >
+                  {t.plan}
+                </DisclosureRow>
+              ),
+            },
+            {
+              key: "read",
+              content: (
+                <DisclosureRow
+                  icon={<StatusIcon state="running" />}
+                  label={t.read}
+                  activity={{ kind: "tool", state: "running" }}
+                >
+                  <code>notes.md</code>
+                </DisclosureRow>
+              ),
+            },
+          ]}
+          stepNavigation={{ ...t.navigation, revealAll: false }}
+        />
       </BoardGroup>
       <BoardGroup title={t.output} aside={stream.streaming ? t.receiving : t.received}>
         <div className="lib-stream lib-stream-output">

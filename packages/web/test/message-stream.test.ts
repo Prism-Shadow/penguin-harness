@@ -256,8 +256,7 @@ describe("MessageStream error banner", () => {
     };
     const runningHtml = failures([step1, retried, step2], true);
     expect(groupHeaders(runningHtml)).toBe(1);
-    expect(runningHtml).toContain(S.chat.workStepPosition(3, 3));
-    expect(runningHtml).not.toContain(t.retried(t.sent(3, 10), "网络或服务暂时不可用，HTTP 503"));
+    expect(runningHtml).toContain(t.retried(t.sent(3, 10), "网络或服务暂时不可用，HTTP 503"));
 
     const settledHtml = failures([step1, retried, step2, reply], false);
     expect(groupHeaders(settledHtml)).toBe(1);
