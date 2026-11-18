@@ -59,8 +59,22 @@ it("uses the shipped module and Skill on a fresh Project, keeps opt-outs across 
     };
     expect(await available(project)).toEqual(actions);
     expect(await hasSkill()).toBe(true);
+    const model = { provider: "custom", modelId: "lifecycle-test" };
+    const configured = await api.put(project + "/models", {
+      defaultModel: model,
+      models: [
+        {
+          ...model,
+          clientType: "openai",
+          baseUrl: "https://lifecycle.invalid/v1",
+          apiKey: "test-only",
+          contextWindow: 128000,
+        },
+      ],
+    });
+    expect(configured.status, await configured.text()).toBe(200);
     const session = await api.post(project + "/agents/default_agent/sessions", {});
-    expect(session.status).toBe(201);
+    expect(session.status, await session.clone().text()).toBe(201);
     const { sessionId } = ((await session.json()) as SessionCreateResponse).session;
 
     const installed = project + "/plugins/installed";
