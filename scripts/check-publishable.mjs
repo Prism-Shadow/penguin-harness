@@ -37,9 +37,8 @@ const read = (file) => JSON.parse(readFileSync(file, "utf8"));
 /**
  * Every workspace package under `packages/` and `plugins/`, by npm name. Both, because the
  * dependency runs across them: `penguin-core` depends on the Agent plugins, so a plugin marked
- * private would ship core naming a version npm does not have. The `library/*` domain packages
- * are private and never published, so they are not part of this scan. Names and private flags
- * are read from each manifest, never assumed from the directory.
+ * private would ship core naming a version npm does not have. Names and private flags are read
+ * from each manifest, never assumed from the directory.
  */
 const workspace = new Map();
 for (const group of ["packages", "plugins"]) {
@@ -82,7 +81,7 @@ console.log(
 if (!process.argv.includes("--registry")) process.exit(0);
 
 // Everything the release publishes: every non-private package above. The release loops
-// `plugins/*/`, and skips the private ones by the same flag.
+// `plugins/*/` and skips the private ones by the same flag.
 const names = [...workspace.entries()]
   .filter(([, p]) => !p.private)
   .map(([name]) => name)
