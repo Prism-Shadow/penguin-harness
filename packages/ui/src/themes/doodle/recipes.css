@@ -571,6 +571,13 @@
   border-radius: var(--ui-radius-md);
   box-shadow: 0 2px 0 var(--_paper-shadow);
 }
+:root[data-theme="doodle"] .ui-library [data-slot="meta"] {
+  color: var(--ui-fg-subtle);
+}
+:root[data-theme="doodle"] .ui-library [data-slot="count"],
+:root[data-theme="doodle"] .ui-activity[data-slot="head"] [data-slot="detail"] {
+  color: var(--ui-fg-muted);
+}
 :root[data-theme="doodle"] .ui-library [data-slot="name"] {
   font-weight: 700;
 }

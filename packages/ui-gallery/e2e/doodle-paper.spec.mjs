@@ -4,6 +4,13 @@
  * their outer edge and their dividers. Check the paint rather than a particular CSS rule.
  */
 import { expect, test } from "@playwright/test";
+import { contrastRatio, parseColor } from "../../ui/src/testing/color.ts";
+
+async function expectCaptionInk(text, paper) {
+  const ink = parseColor(await text.evaluate((el) => getComputedStyle(el).color));
+  const stock = parseColor(await paper.evaluate((el) => getComputedStyle(el).backgroundColor));
+  expect(contrastRatio(ink, stock), "small text against its paper").toBeGreaterThanOrEqual(4.5);
+}
 
 async function expectPaperEdge(page, surface, stroke = surface) {
   await expect(surface).toBeVisible();
@@ -78,6 +85,7 @@ for (const [mode, lang, width] of [
       .first();
     const head = frame.locator("[data-group-header]");
     await expectPaperEdge(page, frame, head);
+    await expectCaptionInk(head.locator('[data-slot="detail"]:visible').first(), head);
     await head.focus();
     await head.press("Enter");
     await expect(head).toHaveAttribute("aria-expanded", "false");
@@ -100,5 +108,12 @@ for (const [mode, lang, width] of [
     await page.goto(`/app.html?route=/chat/new&open=settings.general&${prefs}`);
     const firstRow = page.locator(".ui-field").first();
     await expectPaperEdge(page, firstRow.locator(".."), firstRow);
+
+    await page.goto(`/app.html?route=/models&${prefs}`);
+    const group = page.locator('.ui-library [data-slot="group"]').first();
+    const groupHead = group.locator('[data-slot="head"]').first();
+    await expectCaptionInk(groupHead.locator('[data-slot="count"]'), groupHead);
+    const card = group.locator('[data-slot="card"]').first();
+    await expectCaptionInk(card.locator('[data-slot="meta"]').last(), card);
   });
 }
