@@ -1,6 +1,10 @@
 import { Command, CommanderError } from "commander";
-import { isCapability } from "../services/capability-input.js";
-import type { AvailableCapability, Capability, CapabilityRunRequest } from "../api/capabilities.js";
+import { MODEL_TOOL_KEYS, modelOperation } from "@prismshadow/penguin-core";
+import type {
+  AvailableCapability,
+  ModelOperation as Capability,
+  CapabilityRunRequest,
+} from "../api/capabilities.js";
 
 interface Options {
   sessionId?: string;
@@ -13,6 +17,7 @@ interface Options {
   resolution?: string;
   aspectRatio?: string;
   mimeType?: string;
+  prompt?: string;
 }
 export type ToolInvocation =
   | { kind: "message"; stdout: string; stderr: string; exitCode: number }
@@ -28,12 +33,13 @@ export type ToolInvocation =
  * belong to this request; no plugin callback, process stream or process exit code is touched. */
 export async function parseModelTool(
   args: string[],
-  available: AvailableCapability[],
+  available: AvailableCapability<Capability>[],
   language: "en" | "zh",
 ): Promise<ToolInvocation> {
   const t = (en: string, zh: string) => (language === "zh" ? zh : en);
   const first = args[0];
-  if (first && isCapability(first) && !available.some((c) => c.key === first)) {
+  const requested = first && modelOperation(first);
+  if (requested && !available.some((c) => c.key === requested)) {
     return {
       kind: "message",
       stdout: "",
@@ -64,6 +70,8 @@ export async function parseModelTool(
       .option("--server <url>", t("Server address", "服务端地址"))
       .option("--json", t("Print JSON", "输出 JSON"));
   const operands: Record<Capability, string> = {
+    t2t: "<text>",
+    i2t: "<file>",
     search: "<query>",
     fetch: "<url>",
     image: "<prompt>",
@@ -72,10 +80,14 @@ export async function parseModelTool(
     stt: "<file>",
   };
   for (const { key, title } of available) {
-    const cmd = common(root.command(key + " " + operands[key]).description(title[language])).option(
-      "--detach",
-      t("Return the run ID immediately", "立即返回任务 ID"),
-    );
+    const cmd = common(
+      root.command(MODEL_TOOL_KEYS[key] + " " + operands[key]).description(title[language]),
+    ).option("--detach", t("Return the run ID immediately", "立即返回任务 ID"));
+    if (MODEL_TOOL_KEYS[key] !== key) cmd.alias(key);
+    if (key === "i2t")
+      cmd
+        .option("--prompt <text>", t("Ask about the image", "对图片提问"))
+        .option("--mime-type <type>", t("Image MIME type", "图片 MIME 类型"));
     if (["tts", "video", "image"].includes(key))
       cmd.option("--out <file-or-dir>", t("Save the generated file", "保存生成的文件"));
     if (key === "tts") cmd.option("--voice <name>", t("Provider voice name", "服务商音色名称"));
@@ -129,7 +141,13 @@ export function requestFromCommand(
 ): CapabilityRunRequest {
   const { key, operand, options } = op;
   return {
-    ...(key === "stt" ? {} : key === "fetch" ? { url: operand } : { text: operand }),
+    ...(key === "stt"
+      ? {}
+      : key === "i2t"
+        ? { text: options.prompt }
+        : key === "fetch"
+          ? { url: operand }
+          : { text: operand }),
     count: options.count,
     duration: options.duration,
     resolution: options.resolution,

@@ -1,27 +1,43 @@
 import type { ModelRefDto } from "./types.js";
 
-export type Capability = "search" | "fetch" | "image" | "video" | "tts" | "stt";
+import type { ModelOperation, ToolModelKey } from "@prismshadow/penguin-core";
+export type { ModelOperation };
+export type Capability = Exclude<ModelOperation, "t2t" | "i2t">;
+export type { ToolModelKey };
+export interface ToolModelSettings {
+  available: (Omit<AvailableCapability, "key"> & { key: ToolModelKey })[];
+  bindings: Partial<Record<ToolModelKey, ModelRefDto>>;
+  candidates: Record<ToolModelKey, ModelRefDto[]>;
+  dictationFormat?: "audio/wav";
+  voicePolish: { enabled: boolean; prompt: string; defaultPrompt: string };
+}
+export interface ToolModelSettingsPatch {
+  bindings?: Partial<Record<ToolModelKey, ModelRefDto | null>>;
+  voicePolish?: { enabled?: boolean; prompt?: string | null };
+}
+
 /** An active server plugin contributing one operation to this Project. */
-export interface AvailableCapability {
-  key: Capability;
+export interface AvailableCapability<Op extends ModelOperation = Capability> {
+  key: Op;
   title: { en: string; zh: string };
   package: string;
 }
-export interface CapabilitySettings {
-  available: AvailableCapability[];
-  bindings: Partial<Record<Capability, ModelRefDto>>;
-  candidates: Record<Capability | "chat", ModelRefDto[]>;
+export interface CapabilitySettings<Op extends ModelOperation = Capability> {
+  available: AvailableCapability<Op>[];
+  bindings: Partial<Record<Op, ModelRefDto>>;
+  candidates: Record<Op | "chat", ModelRefDto[]>;
   /** Absent when the selected transcription model accepts the browser's native recording. */
   dictationFormat?: "audio/wav";
-  voicePolish: { enabled: boolean; model: ModelRefDto | null };
+  voicePolish: { enabled: boolean; model: ModelRefDto | null; prompt?: string };
 }
-export interface CapabilitySettingsPatch {
-  bindings?: Partial<Record<Capability, ModelRefDto | null>>;
-  voicePolish?: { enabled?: boolean; model?: ModelRefDto | null };
+export interface CapabilitySettingsPatch<Op extends ModelOperation = Capability> {
+  bindings?: Partial<Record<Op, ModelRefDto | null>>;
+  voicePolish?: { enabled?: boolean; model?: ModelRefDto | null; prompt?: string | null };
 }
 export interface CapabilityRunRequest {
   text?: string;
   url?: string;
+  image?: { data: string; mimeType: string };
   audio?: { data: string; mimeType: string };
   sessionId?: string;
   count?: number;
@@ -47,7 +63,7 @@ export interface CapabilityUsage {
 }
 export interface CapabilityResult {
   id: string;
-  capability: Capability | "voice-polish";
+  capability: ModelOperation | "voice-polish";
   status: "running" | "completed" | "failed" | "cancelled";
   model: ModelRefDto;
   sessionId?: string;
@@ -64,6 +80,7 @@ export interface CapabilityResult {
 export type CapabilityCliReply =
   | { kind: "message"; stdout: string; stderr: string; exitCode: number }
   | { kind: "audio"; mimeType?: string }
+  | { kind: "image"; mimeType?: string }
   | { kind: "data"; data: unknown; json: boolean }
   | { kind: "status"; result: CapabilityResult; save: boolean; json: boolean }
   | { kind: "run"; result: CapabilityResult; detached: boolean; save: boolean; json: boolean };

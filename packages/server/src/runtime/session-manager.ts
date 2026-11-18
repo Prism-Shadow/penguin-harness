@@ -1183,7 +1183,7 @@ export class SessionManager {
       table.models,
       table.providers,
       table.default_model,
-      table.vision_model,
+      (table.tools as { i2t?: unknown } | undefined)?.i2t,
     ]);
     this.modelConfigSeen.set(projectId, { table, models });
     if (seen !== undefined && seen.models !== models) this.invalidateProjectRuntimes(projectId);

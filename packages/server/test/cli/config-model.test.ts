@@ -778,8 +778,8 @@ describe("model add/default/vision: --provider is required, (provider, model_id)
     );
     const parsed = parseToml(
       await fs.readFile(projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID), "utf8"),
-    ) as unknown as { vision_model: TomlModelRef };
-    expect(parsed.vision_model).toEqual({
+    ) as unknown as { tools: { i2t: TomlModelRef } };
+    expect(parsed.tools?.i2t).toEqual({
       provider: "anthropic",
       model_id: "claude-sonnet-4-6",
     });
@@ -791,14 +791,14 @@ describe("penguin config model remove", () => {
   async function readConfig(): Promise<{
     models: Array<Record<string, unknown>>;
     default_model?: TomlModelRef;
-    vision_model?: TomlModelRef;
+    tools?: { i2t?: TomlModelRef };
   }> {
     return parseToml(
       await fs.readFile(projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID), "utf8"),
     ) as unknown as {
       models: Array<Record<string, unknown>>;
       default_model?: TomlModelRef;
-      vision_model?: TomlModelRef;
+      tools?: { i2t?: TomlModelRef };
     };
   }
 
@@ -873,7 +873,7 @@ describe("penguin config model remove", () => {
     ]);
     expect(removed.code).toBe(0);
     expect(removed.out).toContain("vision model");
-    expect((await readConfig()).vision_model).toBeUndefined();
+    expect((await readConfig()).tools?.i2t).toBeUndefined();
   });
 
   it("removing an unrelated entry leaves both pointers untouched", async () => {
@@ -905,7 +905,7 @@ describe("penguin config model remove", () => {
 
     const parsed = await readConfig();
     expect(parsed.default_model).toEqual({ provider: "custom", model_id: "the-default" });
-    expect(parsed.vision_model).toEqual({ provider: "custom", model_id: "the-eyes" });
+    expect(parsed.tools?.i2t).toEqual({ provider: "custom", model_id: "the-eyes" });
   });
 
   it("a pair the config doesn't have: reported on stderr with a nonzero exit code", async () => {
