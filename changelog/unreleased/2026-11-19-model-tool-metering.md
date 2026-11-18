@@ -3,6 +3,7 @@
 - **Date:** 2026-11-19
 - **Type:** feature
 - **Scope:** `server`, `cli`
+- **PR:** [#1615](https://github.com/Prism-Shadow/penguin-harness/pull/1615)
 
 [中文版](./2026-11-19-model-tool-metering.zh.md)
 
