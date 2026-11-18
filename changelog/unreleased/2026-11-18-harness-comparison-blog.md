@@ -3,6 +3,7 @@
 - **Date:** 2026-11-18
 - **Type:** process
 - **Scope:** `landing`
+- **PR:** [#1605](https://github.com/Prism-Shadow/penguin-harness/pull/1605)
 
 [中文版](2026-11-18-harness-comparison-blog.zh.md)
 
