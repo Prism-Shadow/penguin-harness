@@ -19,7 +19,7 @@
 ## 技能库
 
 - Target 的技能库是一个归 Target 所有的 Skill `skillweaver-apis`：API 脚本索引（签名、文档、测试次数、使用记录）、脚本本身，以及按功能组织的网站说明，通过 `AGENTS.md` 中一行固定文字读取。
-- 一个 API 是基于 `penguin browser` 的 Node 模块，对应上游的 Playwright 技能函数：先打开站内相对路径，接受有类型、人类可读的参数，输出一行 JSON 结果。随附的运行时负责执行它并检查参数。
+- 一个 API 是基于 `penguin browser` 的 Node 模块，对应上游的 Playwright 技能函数：先打开站内相对路径，接受有类型、人类可读的参数，输出一行 JSON 结果。随附的运行时负责执行它并检查参数；在 Windows 上它直接按服务端 `penguin.cmd` 中的启动命令运行 CLI，浏览器脚本不经过 cmd.exe。
 - `skillweaver.mjs` 是控制者的工具：代码校验（语法、唯一允许的导入、命名与参数规则、首次导航为相对路径、至少两次浏览器调用）、技能库记录、练习效用选择和索引生成。未通过校验的脚本整个丢弃。
 
 ## 打包

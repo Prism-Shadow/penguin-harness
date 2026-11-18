@@ -8,25 +8,84 @@
 // so the checker can read `meta` without touching the browser.
 
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const PARAM_TYPES = ["string", "number", "boolean"];
 
-/** The `penguin` executable; overridable for tests. */
-function penguinBin() {
-  return process.env.SKILLWEAVER_PENGUIN || "penguin";
+/**
+ * Read the PenguinHarness server's Windows shim (`penguin.cmd`): its launch line
+ * `"<runtime>" ["<arg>" …] "<entry>" %*` and the variables it sets. Running that command
+ * directly keeps cmd.exe out of the way: cmd cannot carry a newline in an argument and re-parses
+ * quotes and `& | < >`, all of which a browser script holds. Returns null for a stub shim (no
+ * launch line), whose message the caller reports.
+ */
+export function parseWindowsShim(text, env = process.env) {
+  const unescape = (s) => s.replaceAll("%%", "%");
+  const extra = {};
+  let launch = null;
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    const cond = line.match(/^if not defined PENGUIN_HOME set "([A-Z_]+)=(.*)"$/);
+    if (cond) {
+      if (!env.PENGUIN_HOME) extra[cond[1]] = unescape(cond[2]);
+      continue;
+    }
+    const set = line.match(/^set "([A-Z_]+)=(.*)"$/);
+    if (set) {
+      extra[set[1]] = unescape(set[2]);
+      continue;
+    }
+    if (line.endsWith(" %*") && line.startsWith('"')) {
+      launch = [...line.slice(0, -3).matchAll(/"([^"]*)"/g)].map((m) => unescape(m[1]));
+    }
+  }
+  if (launch === null || launch.length < 2) return null;
+  return { command: launch[0], args: launch.slice(1), env: extra };
+}
+
+let resolved = null;
+
+/** How to start `penguin`: an override for tests, the Windows shim's command, else `penguin`. */
+export function resolvePenguin(env = process.env, platform = process.platform) {
+  const override = env.SKILLWEAVER_PENGUIN;
+  if (override) {
+    // A JavaScript stand-in runs on this Node, so tests need no executable bit or shebang.
+    return /\.(c|m)?js$/.test(override)
+      ? { command: process.execPath, args: [override], env: {} }
+      : { command: override, args: [], env: {} };
+  }
+  if (platform !== "win32") return { command: "penguin", args: [], env: {} };
+  const dirs = (env.PATH ?? env.Path ?? "").split(path.delimiter).filter(Boolean);
+  for (const dir of dirs) {
+    const shim = path.join(dir, "penguin.cmd");
+    if (!existsSync(shim)) continue;
+    const text = readFileSync(shim, "utf8");
+    const parsed = parseWindowsShim(text, env);
+    if (parsed !== null) return parsed;
+    const why =
+      text
+        .split(/\r?\n/)
+        .map((l) => l.trim().match(/^(?:>&2\s+)?echo\s+(?!off$)(.*)$/)?.[1])
+        .find((m) => m !== undefined)
+        ?.replace(/\^(.)/g, "$1") ?? "it has no launch line";
+    throw new Error(`${shim} cannot start the CLI: ${why}`);
+  }
+  throw new Error("no penguin.cmd on PATH: run this from a PenguinHarness Agent's shell");
 }
 
 function call(args, { timeoutMs } = {}) {
+  resolved ??= resolvePenguin();
   let out;
   try {
-    out = execFileSync(penguinBin(), ["browser", ...args, "--json"], {
+    out = execFileSync(resolved.command, [...resolved.args, "browser", ...args, "--json"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
       timeout: timeoutMs ?? 120_000,
       maxBuffer: 32 * 1024 * 1024,
+      env: { ...process.env, ...resolved.env },
+      windowsHide: true,
     });
   } catch (err) {
     // A failed exec/click/type still prints its JSON result before exiting 1.
@@ -113,11 +172,20 @@ return false;`,
   },
 };
 
-/** Parse `--args '<json>'` (default `{}`) from argv. */
+/**
+ * Parse `--args '<json>'`, or `--args-file <file>` holding that JSON (for a shell such as Windows
+ * PowerShell 5.1, which strips the quotes inside an argument); `{}` when neither is given.
+ */
 export function parseArgs(argv) {
-  const i = argv.indexOf("--args");
-  if (i === -1) return {};
-  const raw = argv[i + 1];
+  const inline = argv.indexOf("--args");
+  const file = argv.indexOf("--args-file");
+  if (inline !== -1 && file !== -1) throw new Error("give --args or --args-file, not both");
+  let raw;
+  if (inline !== -1) raw = argv[inline + 1];
+  else if (file !== -1) {
+    if (argv[file + 1] === undefined) throw new Error("--args-file needs a file");
+    raw = readFileSync(argv[file + 1], "utf8");
+  } else return {};
   if (raw === undefined) throw new Error("--args needs a JSON object");
   const value = JSON.parse(raw);
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -143,9 +211,16 @@ export function checkCallArgs(meta, args) {
   }
 }
 
+/** Whether two paths name the same file; Windows paths compare without case. */
+export function samePath(a, b, platform = process.platform) {
+  const norm = (p) =>
+    platform === "win32" ? path.win32.resolve(p).toLowerCase() : path.resolve(p);
+  return norm(a) === norm(b);
+}
+
 function isMain(moduleUrl) {
   const entry = process.argv[1];
-  return entry !== undefined && path.resolve(entry) === fileURLToPath(moduleUrl);
+  return entry !== undefined && samePath(entry, fileURLToPath(moduleUrl));
 }
 
 /** The API's entry point: runs `run(args)` only when the file is executed directly. */

@@ -48,4 +48,4 @@ runApi(import.meta.url, meta, run);
 - Return plain JSON data (strings, numbers, booleans, arrays, objects), never DOM elements.
 - No cookie-banner handling, no sign-in, and nothing outside the site.
 
-Called as `node APIS/<name>.mjs --args '{"keyword":"green tea"}'`, the script prints `{"ok":true,"result":[…]}`, or `{"ok":false,"error":"…"}` with exit code 1 on a missing, unknown or mistyped argument or a failed browser call.
+Called as `node APIS/<name>.mjs --args '{"keyword":"green tea"}'` (or `--args-file <file>` holding that JSON, for a shell that mangles quotes), the script prints `{"ok":true,"result":[…]}`, or `{"ok":false,"error":"…"}` with exit code 1 on a missing, unknown or mistyped argument or a failed browser call.

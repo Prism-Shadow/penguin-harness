@@ -1,8 +1,13 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
+import {
+  posixShimScript,
+  windowsShimScript,
+} from "../../../packages/server/src/services/cli-shim.js";
 
 const SCRIPTS = path.join(import.meta.dirname, "../skills/skillweaver-rsi-toolkit/scripts");
 const TOOL = path.join(SCRIPTS, "skillweaver.mjs");
@@ -226,8 +231,7 @@ describe("the API runtime", () => {
     const bin = path.join(dir, "fake-penguin.mjs");
     writeFileSync(
       bin,
-      `#!/usr/bin/env node
-import { appendFileSync } from "node:fs";
+      `import { appendFileSync } from "node:fs";
 const args = process.argv.slice(2);
 appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + "\\n");
 const cmd = args[1];
@@ -239,7 +243,6 @@ if (cmd === "open") process.stdout.write(JSON.stringify({ tab: { id: 1, url: arg
 else process.stdout.write(JSON.stringify({ status: "success", tabId: 1, value: ["Green tea", "Black tea"] }));
 `,
     );
-    chmodSync(bin, 0o755);
     return { bin, log };
   }
 
@@ -289,6 +292,19 @@ else process.stdout.write(JSON.stringify({ status: "success", tabId: 1, value: [
     ).toBe('unknown argument "page"');
   });
 
+  it("reads the arguments from --args-file too, and refuses both at once", () => {
+    const argsFile = path.join(dir, "args.json");
+    writeFileSync(argsFile, '{"query":"green tea"}');
+    expect(runtime.parseArgs(["node", "x.mjs", "--args-file", argsFile])).toEqual({
+      query: "green tea",
+    });
+    expect(() =>
+      runtime.parseArgs(["node", "x.mjs", "--args", "{}", "--args-file", argsFile]),
+    ).toThrow(/not both/);
+    expect(runtime.parseArgs(["node", "x.mjs"])).toEqual({});
+    expect(() => runtime.parseArgs(["node", "x.mjs", "--args", "[1]"])).toThrow(/JSON object/);
+  });
+
   it("does nothing when imported", () => {
     tool.init(dir, SITE);
     const file = put("search_products", api("search_products"));
@@ -310,5 +326,61 @@ else process.stdout.write(JSON.stringify({ status: "success", tabId: 1, value: [
     );
     expect(runtime.resolveOnSite("http://a.example/", "/b")).toBe("http://a.example/b");
     expect(() => runtime.resolveOnSite(SITE, "https://evil.example/")).toThrow(/site-relative/);
+  });
+});
+
+describe("starting penguin", () => {
+  const launch = {
+    root: "C:\\Users\\me\\.penguin",
+    execPath: "C:\\Program Files\\PenguinHarness\\PenguinHarness.exe",
+    execArgs: ["--no-warnings"],
+    entry: "C:\\Program Files\\PenguinHarness\\resources\\cli 100%\\penguin.js",
+    electron: true,
+  };
+
+  it("reads the server's own Windows shim: runtime, arguments, entry and variables", () => {
+    const shim = windowsShimScript(launch);
+    expect(runtime.parseWindowsShim(shim, {})).toEqual({
+      command: launch.execPath,
+      args: ["--no-warnings", launch.entry],
+      env: { PENGUIN_HOME: launch.root, ELECTRON_RUN_AS_NODE: "1" },
+    });
+    // A caller that set PENGUIN_HOME keeps it, as cmd's `if not defined` would.
+    expect(runtime.parseWindowsShim(shim, { PENGUIN_HOME: "D:\\other" }).env).toEqual({
+      ELECTRON_RUN_AS_NODE: "1",
+    });
+  });
+
+  it("finds penguin.cmd on PATH on Windows, and explains a stub shim", () => {
+    const bin = path.join(dir, "bin");
+    mkdirSync(bin);
+    writeFileSync(path.join(bin, "penguin.cmd"), windowsShimScript({ ...launch, electron: false }));
+    const env = { PATH: ["/nowhere", bin].join(path.delimiter) };
+    expect(runtime.resolvePenguin(env, "win32")).toMatchObject({ command: launch.execPath });
+    writeFileSync(
+      path.join(bin, "penguin.cmd"),
+      "@echo off\r\n>&2 echo penguin: this instance cannot run its own CLI: no build\r\nexit /b 1\r\n",
+    );
+    expect(() => runtime.resolvePenguin(env, "win32")).toThrow(
+      /cannot start the CLI: penguin: this instance cannot run its own CLI: no build/,
+    );
+    expect(() => runtime.resolvePenguin({ PATH: "/nowhere" }, "win32")).toThrow(
+      /no penguin.cmd on PATH/,
+    );
+  });
+
+  it("uses penguin from PATH elsewhere, and runs a JavaScript stand-in on Node", () => {
+    expect(runtime.resolvePenguin({}, "linux")).toEqual({ command: "penguin", args: [], env: {} });
+    expect(posixShimScript({ ...launch, electron: false })).toContain('"$@"');
+    expect(runtime.resolvePenguin({ SKILLWEAVER_PENGUIN: "/t/fake.mjs" }, "win32")).toEqual({
+      command: process.execPath,
+      args: ["/t/fake.mjs"],
+      env: {},
+    });
+  });
+
+  it("compares Windows paths without case", () => {
+    expect(runtime.samePath("C:\\Lib\\a.mjs", "c:\\lib\\A.MJS", "win32")).toBe(true);
+    expect(runtime.samePath("/lib/a.mjs", "/lib/A.mjs", "linux")).toBe(false);
   });
 });

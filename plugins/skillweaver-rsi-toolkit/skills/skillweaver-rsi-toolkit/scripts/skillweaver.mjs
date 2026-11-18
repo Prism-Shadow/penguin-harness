@@ -16,7 +16,7 @@ import { copyFileSync, existsSync, readFileSync, readdirSync, writeFileSync } fr
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { PARAM_TYPES } from "./skillweaver-api.mjs";
+import { PARAM_TYPES, samePath } from "./skillweaver-api.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const RUNTIME = "skillweaver-api.mjs";
@@ -241,6 +241,8 @@ export async function buildIndex(dir) {
     "Each API below is a script beside this file. Call it from the shell as",
     "`node <this directory>/<name>.mjs --args '<JSON object of its parameters>'`; it drives the agent",
     'browser and prints one JSON line, `{"ok":true,"result":…}` or `{"ok":false,"error":"…"}`.',
+    "Where the shell mangles quotes (Windows PowerShell), write the JSON to a file and pass",
+    "`--args-file <file>` instead.",
     "",
   ];
   if (entries.length === 0) lines.push("No API has been learned yet.", "");
@@ -284,7 +286,7 @@ async function main(argv) {
   }
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (process.argv[1] && samePath(process.argv[1], fileURLToPath(import.meta.url))) {
   main(process.argv.slice(2)).then(
     (res) => {
       process.stdout.write(`${JSON.stringify(res)}\n`);
