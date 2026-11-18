@@ -30,9 +30,6 @@
       "import": "./dist/driver.js"
     }
   },
-  "peerDependencies": {
-    "@playwright/test": "^1.61.1"
-  },
   "publishConfig": {
     "access": "public"
   },
