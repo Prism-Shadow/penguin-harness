@@ -504,8 +504,7 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     apiKeyUrl: "https://openrouter.ai/workspaces/default/keys",
     modelsUrl: "https://openrouter.ai/models",
     gatewayBaseUrl: OPENROUTER_BASE_URL,
-    // The whole group speaks the Responses API, which OpenRouter serves at the preset base
-    // URL below for every upstream — presets and user-added entries alike.
+    // Chat presets and hand-added models inherit Responses. Image presets pin the Images client.
     clientType: "openai-responses",
     // The catalog lists a fraction of what OpenRouter serves, so the group takes more.
     addable: true,
@@ -901,11 +900,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // their context windows are the listing's `top_provider.context_length`, as on the
   // mimo-v2.5 and step-3.7-flash rows.
   //
-  // Protocol: every row pins `openai-responses`. OpenRouter serves the Responses API at
-  // {base}/responses for every upstream, at the same https://openrouter.ai/api/v1 base URL
-  // the rows already carry, and the group pins the same protocol, which a new Project writes on
-  // `[providers.openrouter]`, so an entry added to it by hand follows it. The generic Responses client sends a text-only tool result as a plain
-  // string and replays reasoning items only where the upstream returned them.
+  // Chat presets inherit Responses from the group. Dedicated image presets pin their own
+  // client so MMSP sends the prompt to the Images endpoint at the same gateway base URL.
   //
   // Price buckets: cache_read stores the published input_cache_read
   // (falling back to the input price for the rows without one — the :free rows and the
