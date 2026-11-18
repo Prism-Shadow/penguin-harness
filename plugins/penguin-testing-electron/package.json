@@ -26,8 +26,8 @@
   ],
   "exports": {
     "./driver": {
-      "types": "./dist/driver.d.ts",
-      "import": "./dist/driver.js"
+      "types": "./dist/driver.d.mts",
+      "import": "./dist/driver.mjs"
     }
   },
   "publishConfig": {
