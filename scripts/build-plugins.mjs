@@ -157,6 +157,12 @@ async function sourceHash(dir, into) {
     const sub = path.join(dir, name);
     if (!fs.existsSync(sub) || !fs.statSync(sub).isDirectory()) continue;
     for (const rel of await walk(sub)) {
+      // A shipped directory may hold a build of its own beside its sources: `ui/dist` written
+      // by the package's build, and a `.js` compiled from the `.ts` beside it (a driver's
+      // `ui/figure.js`, built from `ui/figure.ts`). Hashing a build would key the cache on the
+      // last build's output instead of on its sources — one rebuild, forever.
+      if (rel.split("/").some((part) => part === "dist" || part === "vendor")) continue;
+      if (rel.endsWith(".js") && fs.existsSync(path.join(sub, rel.replace(/\.js$/, ".ts")))) continue;
       into
         .update(`${name}/${rel}`)
         .update("\0")

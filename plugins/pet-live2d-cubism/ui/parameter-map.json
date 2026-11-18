@@ -1,0 +1,11 @@
+{
+  "headYaw": "ParamAngleX",
+  "headPitch": "ParamAngleY",
+  "headRoll": "ParamAngleZ",
+  "bodyYaw": "ParamBodyAngleX",
+  "eyeBallX": "ParamEyeBallX",
+  "eyeBallY": "ParamEyeBallY",
+  "eyeLOpen": "ParamEyeLOpen",
+  "eyeROpen": "ParamEyeROpen",
+  "mouthOpen": "ParamMouthOpenY"
+}

@@ -1,0 +1,52 @@
+{
+  "name": "@penguinharness/pet-live2d-coopanion",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The pet's Coopanion figure driver: draws the pet with a Coopanion figure pack loaded at run time from the installation, behind the pet plugin's figure contract.",
+  "keywords": [
+    "penguin-plugin",
+    "penguinharness",
+    "pet",
+    "coopanion",
+    "figure-pack"
+  ],
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Prism-Shadow",
+    "url": "https://github.com/Prism-Shadow"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "plugins/pet-live2d-coopanion"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "main": "./dist/index.js",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "ui",
+    "README.md",
+    "icon.svg",
+    "ifaces.json"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json && tsup && tsup --config tsup.ui.config.ts"
+  },
+  "devDependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/penguin-server": "workspace:*",
+    "tsup": "^8.3.0",
+    "vitest": "^4.1.12",
+    "hono": "^4.13.11"
+  }
+}
