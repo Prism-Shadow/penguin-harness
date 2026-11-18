@@ -201,7 +201,7 @@ export function parseWorkbenchArchive(archive: Buffer): WorkbenchArchive {
   const id = dirName ?? idOfRootPackage(pkg);
   if (!isWorkbenchId(id)) {
     throw badRequest(
-      `Invalid workbench id ${JSON.stringify(id)}: up to 64 letters, digits, ".", "_" and "-", starting with a letter or digit.`,
+      `Invalid workbench id ${JSON.stringify(id)}: up to 64 letters, digits, "_" and "-", starting with a letter or digit.`,
     );
   }
   const source = new Map<string, Uint8Array>();

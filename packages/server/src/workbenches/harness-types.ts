@@ -129,7 +129,16 @@ check: \`const sdk = "../sdk/workbench.js"; await import(sdk)\`.
 snapshot: \`running\`, \`completed\` with the final \`text\`, or \`failed\` with an \`error\`.
 Persist the Session id with \`host.setState\`, then poll from GET requests until terminal. Do not
 mark a running snapshot failed because its text is empty. Store small reports in host state;
-keep uploaded files outside this watched source directory. Never edit state.json by hand.
+keep uploaded files and persistent blobs in \`host.dataPaths().dataDir\` (outside this watched source
+directory). Never edit state.json by hand.
+
+## Data and storage
+
+\`host.dataPaths(opts?)\` returns the persistent app storage directories (\`{ appId, level, dataDir,
+cacheDir, stateDir }\`) for this workbench — by default its \`<agentId>.<workbenchId>\` entry at
+\`agent\` level, or pass \`{ level, appId }\` for \`project\`, \`server\` or \`machine\` level. Put user
+files, media, documents and build artifacts in \`dataDir\`, disposable caches in \`cacheDir\`, and
+Unix sockets or port files in \`stateDir\`; never put code in \`dataDir\`.
 
 ## Following a Session live
 

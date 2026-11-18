@@ -18,8 +18,9 @@ export function randomHex8(): string {
   return randomBytes(4).toString("hex");
 }
 
-/** General semantic id rule: starts with a lowercase letter, followed by lowercase letters, digits, or underscores only, 2-64 chars (no hyphen). */
-export const SEMANTIC_ID_PATTERN = /^[a-z][a-z0-9_]{1,63}$/;
+/** General semantic id rule: starts with a lowercase letter, followed by lowercase letters, digits, or underscores only, 2-64 chars (no hyphen, no Windows reserved device name). */
+export const SEMANTIC_ID_PATTERN =
+  /^(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$)[a-z][a-z0-9_]{1,63}$/;
 
 /** Username tightens the general rule to 2-32 chars: leaves headroom for the default Project id `<username>-default_project`. */
 export const USERNAME_PATTERN = /^[a-z][a-z0-9_]{1,31}$/;
