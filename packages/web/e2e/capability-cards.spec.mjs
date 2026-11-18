@@ -190,6 +190,30 @@ test("Models opens the project’s multimodal defaults, which persist across rel
   await page.reload();
   await open(page);
   await expect(field(page, "语音识别")).toContainText(recognition + " (deepseek)");
+  const activeTab = page
+    .getByRole("dialog")
+    .getByRole("navigation")
+    .getByRole("button", { name: "默认多模态模型" });
+  await expect(activeTab).toBeFocused();
+  const tabIsVisible = () =>
+    activeTab.evaluate((button) => {
+      const rail = button.closest("nav");
+      const limits = rail.getBoundingClientRect();
+      const tab = button.getBoundingClientRect();
+      return (
+        tab.left >= limits.left &&
+        tab.right <= limits.right &&
+        tab.left >= 0 &&
+        tab.right <= window.innerWidth &&
+        window.scrollX === 0 &&
+        document.documentElement.scrollWidth <= window.innerWidth
+      );
+    });
+  await expect.poll(tabIsVisible).toBe(true);
+  await page.setViewportSize({ width: 320, height: 780 });
+  await expect.poll(tabIsVisible).toBe(true);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(tabIsVisible).toBe(true);
   if (process.env.VOICE_EVIDENCE)
     await page.screenshot({
       animations: "disabled",
@@ -197,7 +221,11 @@ test("Models opens the project’s multimodal defaults, which persist across rel
     });
   await page.getByRole("button", { name: /^润色语音输入/ }).click();
   await expect(page.getByRole("switch", { name: "润色语音输入" })).toBeChecked();
-  await field(page, "保存").scrollIntoViewIfNeeded();
+  const phonePrompt = "保留项目名称、数字和中英文术语，修正标点和口头重复。";
+  await page.getByRole("textbox", { name: "润色提示词" }).fill(phonePrompt);
+  await field(page, "保存").click();
+  await expect.poll(() => polish(a)).toMatchObject({ enabled: true, prompt: phonePrompt });
+  await expect(field(page, "保存")).toBeInViewport();
   if (process.env.VOICE_EVIDENCE)
     await page.screenshot({
       animations: "disabled",

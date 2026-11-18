@@ -11,7 +11,7 @@
  * into a horizontal scroller above the pane and group headings are dropped along with the second
  * dimension (Tabs' convention).
  */
-import type { ReactNode } from "react";
+import { useLayoutEffect, useRef, type ReactNode } from "react";
 import { CloseButton } from "../../actions/close-button/close-button";
 import { ICON_GAP } from "../../../icon-scale";
 import { NavList, NavRow } from "../../navigation/nav-list/nav-list";
@@ -67,12 +67,39 @@ export function PagedDialog<K extends string>({
   const showGroupHeadings = groups.length > 1;
   const activeItem = groups.flatMap((g) => g.items).find((item) => item.key === active);
   const activeLabel = activeItem?.label ?? title;
+  const railRef = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    if (!open) return;
+    const rail = railRef.current;
+    const selected = rail?.querySelector<HTMLElement>('[aria-current="page"]');
+    if (!rail || !selected) return;
+    // A direct link can open any page. Give its tab the dialog's initial focus without
+    // scrolling the document or stealing focus from an editor that already claimed it.
+    if (!rail.closest('[role="dialog"]')?.contains(document.activeElement)) {
+      selected.focus({ preventScroll: true });
+    }
+    const reveal = () => {
+      if (rail.scrollWidth <= rail.clientWidth) return;
+      const strip = rail.getBoundingClientRect();
+      const tab = selected.getBoundingClientRect();
+      if (tab.left < strip.left || tab.right > strip.right) {
+        rail.scrollLeft += (tab.left + tab.right - strip.left - strip.right) / 2;
+      }
+    };
+    reveal();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(reveal);
+    observer.observe(rail);
+    observer.observe(selected);
+    return () => observer.disconnect();
+  }, [open, active]);
 
   return (
     <Modal open={open} onClose={onClose} title={title} headerless bare widthClass="sm:max-w-4xl">
       <div className="flex h-[min(40rem,85vh)] flex-col sm:flex-row">
         {/* Rail: vertical on desktop, a horizontal scroller above the pane on narrow screens. */}
         <NavList
+          ref={railRef}
           label={title}
           orientation="responsive"
           className="shrink-0 border-b border-line-muted p-2 sm:w-44 sm:overflow-y-auto sm:border-b-0 sm:border-r sm:p-3"
@@ -90,6 +117,7 @@ export function PagedDialog<K extends string>({
                 <NavRow
                   key={item.key}
                   label={item.label}
+                  tooltip={item.label}
                   glyph={item.icon}
                   active={item.key === active}
                   onClick={() => onSelect(item.key)}
