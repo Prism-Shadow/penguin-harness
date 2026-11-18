@@ -1,9 +1,9 @@
 # Workbench versions use your Git identity
 
 - **Date:** 2026-11-19
-- **Type:** change
+- **Type:** refactor
 - **Scope:** `server`
-- **PR:** pending
+- **PR:** [#1608](https://github.com/Prism-Shadow/penguin-harness/pull/1608)
 
 [中文版](2026-11-19-agent-state-system-git.zh.md)
 

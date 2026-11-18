@@ -1,9 +1,9 @@
 # 工作台版本沿用你的 Git 身份
 
 - **日期：** 2026-11-19
-- **类型：** 变更
+- **类型：** refactor
 - **范围：** `server`
-- **PR：** 待定
+- **PR:** [#1608](https://github.com/Prism-Shadow/penguin-harness/pull/1608)
 
 [English](2026-11-19-agent-state-system-git.md)
 
