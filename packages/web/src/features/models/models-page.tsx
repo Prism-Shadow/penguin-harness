@@ -1774,14 +1774,14 @@ export function ModelsPage() {
       {/* The header holds search, the owner-only catalog pair — "Add new models" and "Restore
           defaults" — and the pair of create buttons: the AI path and the group form, offered side
           by side (per-model entry points still live in each group header); on narrow screens the
-          actions wrap to their own line and the search box shrinks flexibly, fixed width at >=sm.
+          search takes its own row and the actions wrap below it, with a fixed search width at >=sm.
           A member reads why nothing here is editable behind the title's "?". */}
       <PageHeader
         title={S.models.title}
         info={isOwner ? undefined : S.models.readOnlyHint}
         actions={
           <>
-            <div className="min-w-0 flex-1 sm:w-56 sm:flex-none">
+            <div className="w-full shrink-0 sm:w-56">
               <Input
                 size="sm"
                 value={query}

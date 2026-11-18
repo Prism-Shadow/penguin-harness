@@ -124,6 +124,7 @@ test("model cards replace only their project's single capability and update othe
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload();
   await search(page, recognition);
+  expect((await page.getByPlaceholder(/搜索模型/).boundingBox()).width).toBeGreaterThan(250);
   await expect(role(card(page, "Lake recognition"), "当前语音识别模型")).toBeVisible();
   await expect(role(card(page, "River recognition"), "设为语音识别模型")).toBeVisible();
   if (process.env.VOICE_EVIDENCE)
