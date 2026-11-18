@@ -190,8 +190,8 @@ export async function launchHarness(options: LaunchOptions = {}): Promise<Harnes
 
 /** The plugin package's name, read from its manifest — the name install/remove act on. */
 export async function pluginNameOf(pluginDir: string): Promise<string> {
-  const { readFile } = await import("node:fs");
-  const manifest = JSON.parse(await readFile(path.join(pluginDir, "package.json"), "utf8")) as {
+  const fs = await import("node:fs");
+  const manifest = JSON.parse(await fs.promises.readFile(path.join(pluginDir, "package.json"), "utf8")) as {
     name: string;
   };
   return manifest.name;
