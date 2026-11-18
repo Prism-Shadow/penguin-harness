@@ -20,8 +20,7 @@
         "../session/src/repos/sessions.ts"
       ],
       "@prismshadow/penguin-library-session/repos": ["../session/src/repos/index.ts"]
-    },
-    "rootDir": "."
+    }
   },
   "include": ["src", "test"]
 }
