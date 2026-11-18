@@ -83,15 +83,15 @@ import {
   localPluginDisplay,
   mergeIndexes,
   withoutIcon,
-  NIGHTLY_INDEX_URL,
 } from "../../plugin/registry.js";
+import { indexMirrorRules } from "../../plugin/mirror-settings.js";
 import type {
   CachedRegistry,
   IndexDocumentEntry,
   IndexSnapshot,
-  PluginProxyRule,
   PluginRegistry,
 } from "../../plugin/registry.js";
+import { IndexSources } from "../../plugin/index-config.js";
 import { PACKAGE_NAME, pluginBases, resolvePluginPackage } from "../../plugin/loader.js";
 import type { PluginBase } from "../../plugin/loader.js";
 import { installedPackageDir, pluginsPrefix, prefixDependencies } from "../../plugin/install.js";
@@ -391,12 +391,11 @@ export class PluginRoutes {
 
 export interface PluginRoutesOptions {
   /**
-   * The published index to read, or null for builtin entries only (see ServerConfig).
-   * Undefined = unset, which reads the index repository's published document.
+   * The published index sources to read, or null for builtin entries only (see IndexSources).
+   * Read per listing: the sources are the plugin-index settings group, whose document a save
+   * changes without a restart.
    */
-  indexUrl?: string | null;
-  /** The deployment's proxy rules for the published index, tried after its own URL. */
-  proxy?: PluginProxyRule[];
+  indexUrl?: () => readonly string[];
   /** Where packages are on this machine (plugin/loader.ts's pluginBases): for the builtin readmes, and for every listed package's own display fields (localPluginDisplay). */
   bases?: () => readonly PluginBase[];
   /** Overrides the resolved source list entirely; tests pass registries directly. */
@@ -404,8 +403,8 @@ export interface PluginRoutesOptions {
   fetchImpl?: typeof fetch;
   /** The published index as the previous App last fetched it (see PluginRegistryRoutes.park). */
   seed?: IndexSnapshot | null;
-  /** Receives the published index's cache, so its document can be parked. */
-  onCache?: (cache: CachedRegistry) => void;
+  /** Receives the published index's cache and the URL it reads, so its document can be parked with its source. */
+  onCache?: (cache: CachedRegistry, url: string) => void;
   /** This server's plugin prefix (`<root>/plugins`), whose server modules from a link or a zip the listing adds; none without it. */
   prefix?: () => string | null;
 }
@@ -449,8 +448,18 @@ async function prefixEntries(
 
 export function pluginRegistryRoutes(options: PluginRoutesOptions = {}): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
-  // Built once per App, so the cache outlives a request rather than being rebuilt per page load.
-  const registries = options.registries ?? resolveRegistries(options);
+  // The sources are read per listing, from the plugin-index settings group; the registries
+  // for the list as last read are kept until the list changes, so the caches (and the park)
+  // outlive a listing that changes nothing and a save rebuilds them without a restart.
+  let current: { urls: string; registries: readonly PluginRegistry[] } | null = null;
+  const registries = (): readonly PluginRegistry[] => {
+    if (options.registries !== undefined) return options.registries;
+    const urls = (options.indexUrl?.() ?? []).join(" ");
+    if (current === null || current.urls !== urls) {
+      current = { urls, registries: resolveRegistries(options) };
+    }
+    return current.registries;
+  };
   const bases = options.bases ?? (() => []);
   const prefix = options.prefix ?? (() => null);
 
@@ -461,7 +470,7 @@ export function pluginRegistryRoutes(options: PluginRoutesOptions = {}): Hono<Ap
    * own join on a later read, once the cache has them.
    */
   const listing = async () => {
-    const { entries, failures, pending } = await mergeIndexes(registries, {
+    const { entries, failures, pending } = await mergeIndexes(registries(), {
       waitForNetwork: false,
     });
     const own = await prefixEntries(prefix(), new Set(entries.map((e) => e.name)));
@@ -525,7 +534,7 @@ export function pluginRegistryRoutes(options: PluginRoutesOptions = {}): Hono<Ap
     }
     // First source that has one. Only the builtin registry carries readmes today: the shared
     // index format has no readme location, so a remote source has none to offer.
-    for (const registry of registries) {
+    for (const registry of registries()) {
       const readme = await registry.readme(name).catch(() => null);
       if (readme !== null) {
         const body: PluginReadmeResponse = { name, readme };
@@ -575,23 +584,36 @@ function indexRowIcon(svg: string): IconImage | undefined {
 
 function resolveRegistries(options: PluginRoutesOptions): PluginRegistry[] {
   const builtin = builtinPluginRegistry(options.bases);
-  // Undefined and null part ways here: a runtime that predates the setting publishes nothing
-  // and gets the default index, while `off` resolves to null and means builtin entries only.
-  const url = options.indexUrl === undefined ? NIGHTLY_INDEX_URL : options.indexUrl;
-  if (url === null) return [builtin];
+  // The sources are read per listing, from the plugin-index settings group: a save changes
+  // the list without a restart. Empty = builtin entries only (the switch off); a single URL
+  // is the one-element list. Each address is its own registry, so the listing reports a down
+  // source by its URL and the merge lets the earlier source win a name. The park carries one
+  // snapshot — the first configured source's, the primary published index — so the seed and
+  // the parking hook ride that one; a further source starts its own cache cold.
+  const urls = options.indexUrl?.() ?? [];
+  if (urls.length === 0) return [builtin];
   // The parked document goes through the remote rule too: it was fetched by a previous App,
-  // which may not have dropped the icons.
+  // which may not have dropped the icons. The park carries one snapshot — the first
+  // configured source's, the primary published index — named by the URL it was fetched
+  // from, and it seeds only that URL's registry: a saved change of the sources must not
+  // hand the old source's entries to the new one. A further source starts its own cache
+  // cold and answers its first fetch like any first page load.
   const seed = options.seed ?? null;
-  const cache = cachedRegistry(
-    httpPluginRegistry([url, ...pluginProxyMirrors(url, options.proxy ?? [])], {
-      fetchImpl: options.fetchImpl ?? fetch,
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const mirrors = indexMirrorRules();
+  const remote = urls.map((url, i) =>
+    cachedRegistry(httpPluginRegistry([url, ...pluginProxyMirrors(url, mirrors)], { fetchImpl }), {
+      // Only a snapshot the same URL fetched seeds this registry: a parked document without
+      // its URL (a v1 park, before snapshots named their source) seeds nothing, since which
+      // source it came from is unknown.
+      seed:
+        i === 0 && seed !== null && seed.url === url
+          ? { at: seed.at, entries: seed.entries.map(withoutIcon) }
+          : null,
     }),
-    {
-      seed: seed === null ? null : { at: seed.at, entries: seed.entries.map(withoutIcon) },
-    },
   );
-  options.onCache?.(cache);
-  return [builtin, cache];
+  if (remote.length > 0) options.onCache?.(remote[0]!, urls[0]!);
+  return [builtin, ...remote];
 }
 
 /**
@@ -612,32 +634,41 @@ function resolveRegistries(options: PluginRoutesOptions): PluginRegistry[] {
     ],
   },
   context: {
-    version: 1,
-    schema: { "index?": { at: "number", entries: "unknown[]" } },
+    version: 2,
+    schema: { "index?": { at: "number", entries: "unknown[]", "url?": "string" } },
   },
 })
 export class PluginRegistryRoutes {
   @Use() private readonly config!: Config;
   @Use() private readonly hmr!: Hmr;
+  @Use() private readonly sources!: IndexSources;
   @Bind("PluginRegistryRoutes.routes") routes!: Hono<AppEnv>;
   private cache: CachedRegistry | null = null;
+  private cacheUrl: string | null = null;
+  /** v1 parked without the snapshot's source URL; v2 names it. A v1 snapshot seeds nothing —
+   * which source it came from is unknown, so handing it to a configured source is unsafe. */
+  migrations = { 1: () => null };
   setup(_ctx: ClassCtx, context: Json) {
     const parked = (context as { index?: IndexSnapshot } | null)?.index;
     this.routes = pluginRegistryRoutes({
-      indexUrl: this.config.pluginIndexUrl,
-      proxy: this.config.pluginProxy ?? [],
+      indexUrl: () => this.sources.urls(),
       // Read per request: a push moves the shipped prefix to a new assets directory.
       bases: () => pluginBases(this.config.root, this.hmr.assetsDir()),
       prefix: () => pluginsPrefix(this.config.root),
       seed: parked ?? null,
-      onCache: (cache) => {
+      onCache: (cache, url) => {
         this.cache = cache;
+        this.cacheUrl = url;
       },
     });
   }
 
   park(): Json {
     const index = this.cache?.snapshot() ?? null;
-    return index === null ? null : ({ index } as unknown as Json);
+    if (index === null) return null;
+    // The snapshot names the source it was fetched from (cachedRegistry stamps it), so a
+    // successor seeds only the same URL's registry — a saved change of the sources starts
+    // the new one cold.
+    return { index } as unknown as Json;
   }
 }
