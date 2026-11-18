@@ -28,7 +28,7 @@
  * as immutable — every mutating method here copies before changing.
  */
 import type { CapabilitySettingsPatch } from "../api/capabilities.js";
-import { capabilitySettings, applyCapabilitySettings } from "./capability-settings.js";
+import { applyCapabilitySettings } from "./capability-settings.js";
 import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -1129,7 +1129,6 @@ export class ProjectConfigService implements ProjectConfigStore {
       const config = projectConfigFromTable(projectConfigPath(this.root, projectId), raw);
       const updated = applyCapabilitySettings(config, patch);
       await this.writeRaw(projectId, { ...raw, ...updated });
-      return capabilitySettings({ ...config, ...updated });
     });
   }
 

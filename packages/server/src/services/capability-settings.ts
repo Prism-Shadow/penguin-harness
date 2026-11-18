@@ -10,6 +10,7 @@ import {
 } from "@prismshadow/penguin-core";
 import type {
   Capability,
+  AvailableCapability,
   CapabilitySettings,
   CapabilitySettingsPatch,
 } from "../api/capabilities.js";
@@ -51,7 +52,7 @@ function destination(row: ModelEntry, config: ProjectConfig): Capability | "chat
       : "chat";
   return undefined;
 }
-export function capabilitySettings(config: ProjectConfig): CapabilitySettings {
+export function capabilitySettings(config: ProjectConfig): Omit<CapabilitySettings, "available"> {
   const candidates: CapabilitySettings["candidates"] = {
     search: [],
     fetch: [],
@@ -79,6 +80,16 @@ export function capabilitySettings(config: ProjectConfig): CapabilitySettings {
     },
   };
 }
+export function projectCapabilities(
+  config: ProjectConfig,
+  available: AvailableCapability[],
+): CapabilitySettings {
+  const settings = capabilitySettings(config);
+  const visible = new Set(available.map((c) => c.key));
+  for (const key of MODEL_CAPABILITIES) if (!visible.has(key)) settings.candidates[key] = [];
+  return { ...settings, available };
+}
+
 export function applyCapabilitySettings(config: ProjectConfig, patch: CapabilitySettingsPatch) {
   const current = capabilitySettings(config);
   const requireCandidate = (key: Capability | "chat", ref: ModelRefDto) => {

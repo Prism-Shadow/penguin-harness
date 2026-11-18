@@ -40,6 +40,8 @@ function commandAt(program: Command, key: string): Command {
  * read back then restored, so calling this more than once in a process is safe.
  */
 export async function cli(argv: string[]): Promise<number> {
+  // This command's contextual help comes from the target Project on its server.
+  if (argv[0] === "help" && argv[1] === "tools") argv = ["tools", ...argv.slice(2), "--help"];
   const language = resolveLanguage();
   const t = getMessages(language);
   const program = new Command();
