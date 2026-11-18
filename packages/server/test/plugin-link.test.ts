@@ -215,4 +215,65 @@ describe("plugin link", () => {
       (await member.post("/api/projects/default_project/plugins/installed/link", { dir })).status,
     ).toBe(403);
   });
+
+  it("a name the build ships refuses without --force and links with it, the build's copy returning on removal", async () => {
+    // A shipped module: the installation's plugins/ prefix beside the program entry, which
+    // the program resolves as a builtin base for the length of the test.
+    const programEntry = process.argv[1];
+    const shippedPrefix = path.join(t.root, "install", "plugins");
+    process.argv[1] = path.join(t.root, "install", "bin", "server.js");
+    try {
+      await fs.mkdir(path.join(shippedPrefix, "node_modules", "@acme"), { recursive: true });
+      await fs.writeFile(
+        path.join(shippedPrefix, "package.json"),
+        JSON.stringify({ name: "shipped-prefix", private: true, dependencies: { "@acme/shipped": "9.9.9" } }),
+        "utf8",
+      );
+      const manifest = JSON.stringify({
+        name: "@acme/shipped",
+        version: "9.9.9",
+        type: "module",
+        main: "./index.js",
+      });
+      await fs.writeFile(path.join(shippedPrefix, "node_modules", "@acme/shipped", "package.json"), manifest, "utf8");
+      await fs.writeFile(
+        path.join(shippedPrefix, "node_modules", "@acme/shipped", "index.js"),
+        "export {};",
+        "utf8",
+      );
+
+      // Without force: refused before the link replaces the build's copy for every Project.
+      const dir = await authorDir("@acme/shipped");
+      const refused = await admin.post("/api/projects/default_project/plugins/installed/link", {
+        dir,
+      });
+      expect(refused.status).toBe(409);
+      const body = (await refused.json()) as { error: { code: string; message: string } };
+      expect(body.error.code).toBe("plugin_shipped");
+      expect(body.error.message).toMatch(/--force/);
+      expect(await prefixDependencies(prefix())).not.toHaveProperty("@acme/shipped");
+
+      // With force: the link lands in the Project's own prefix; the build's copy is untouched.
+      const forced = await admin.post("/api/projects/default_project/plugins/installed/link", {
+        dir,
+        force: true,
+      });
+      expect(forced.status).toBe(200);
+      expect(await prefixDependencies(prefix())).toHaveProperty("@acme/shipped");
+      const rows = (await view()).plugins;
+      expect(rows.find((p) => p.specifier === "@acme/shipped")).toBeTruthy();
+      expect(
+        await fs.readFile(path.join(shippedPrefix, "node_modules", "@acme/shipped", "package.json"), "utf8"),
+      ).toBe(manifest);
+
+      // The link goes, the build's own copy is what the name resolves to again.
+      const removed = await admin.delete(
+        "/api/projects/default_project/plugins/installed?specifier=@acme/shipped",
+      );
+      expect(removed.status).toBe(200);
+      expect(await prefixDependencies(prefix())).not.toHaveProperty("@acme/shipped");
+    } finally {
+      if (programEntry !== undefined) process.argv[1] = programEntry;
+    }
+  });
 });

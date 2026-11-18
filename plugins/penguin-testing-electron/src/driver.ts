@@ -164,7 +164,10 @@ export async function testPlugin(options: TestPluginOptions): Promise<TestResult
     const linked = await fetch(`${base}/api/projects/${project}/plugins/installed/link`, {
       method: "POST",
       headers: { ...authHeaders, "content-type": "application/json" },
-      body: JSON.stringify({ dir: path.resolve(options.pluginDir), overwrite: true }),
+      // force: a plugin whose name the build ships (a builtin under test from a checkout
+      // newer than the build) replaces the build's copy for this throwaway instance; the
+      // build's own tarball returns when the link is removed.
+      body: JSON.stringify({ dir: path.resolve(options.pluginDir), overwrite: true, force: true }),
     });
     if (!linked.ok) {
       const detail = await linked.text().catch(() => "");
