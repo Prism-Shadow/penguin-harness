@@ -84,6 +84,10 @@ for (const [mode, lang, width] of [
       .filter({ has: page.locator('[data-group-header][data-state="running"]') })
       .first();
     const head = frame.locator("[data-group-header]");
+    await expect(head).toHaveCSS(
+      "background-color",
+      await frame.evaluate((el) => getComputedStyle(el).backgroundColor),
+    );
     await expectPaperEdge(page, frame, head);
     await expectCaptionInk(head.locator('[data-slot="detail"]:visible').first(), head);
     await head.focus();
@@ -112,6 +116,10 @@ for (const [mode, lang, width] of [
     await page.goto(`/app.html?route=/models&${prefs}`);
     const group = page.locator('.ui-library [data-slot="group"]').first();
     const groupHead = group.locator('[data-slot="head"]').first();
+    await expect(groupHead).toHaveCSS(
+      "background-color",
+      await group.evaluate((el) => getComputedStyle(el).backgroundColor),
+    );
     await expectCaptionInk(groupHead.locator('[data-slot="count"]'), groupHead);
     const card = group.locator('[data-slot="card"]').first();
     await expectCaptionInk(card.locator('[data-slot="meta"]').last(), card);

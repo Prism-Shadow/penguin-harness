@@ -355,7 +355,7 @@
   font-synthesis-weight: auto;
 }
 
-/* Apricot and plum paper cards with a mint header and a dashed binding rule. */
+/* The card and its heading share one sheet of paper, with a dashed binding rule. */
 :root[data-theme="doodle"] .ui-frame:not(:has(> .ui-activity)) {
   border-width: 2px;
   border-color: var(--ui-line);
@@ -363,7 +363,7 @@
   background-color: var(--ui-surface);
 }
 :root[data-theme="doodle"] .ui-frame:not(:has(> .ui-activity)) > [data-slot="head"] {
-  background-color: var(--_head-bg);
+  background-color: inherit;
   border-bottom: 1.5px dashed var(--ui-line);
   font-weight: 700;
 }
@@ -379,7 +379,7 @@
   background-color: var(--ui-surface);
 }
 :root[data-theme="doodle"] .ui-frame:has(> .ui-activity) > [data-slot="head"] {
-  background-color: var(--_head-bg);
+  background-color: inherit;
   border-block: 2px solid var(--_pen);
 }
 :root[data-theme="doodle"] .ui-frame > button.ui-activity[data-group-header] {
@@ -563,7 +563,7 @@
   box-shadow: 0 2px 0 var(--_paper-shadow);
 }
 :root[data-theme="doodle"] .ui-library [data-slot="head"] {
-  background-color: var(--_head-bg);
+  background-color: inherit;
   border-bottom: 1.5px dashed var(--ui-line);
 }
 :root[data-theme="doodle"] .ui-library [data-slot="card"] {
