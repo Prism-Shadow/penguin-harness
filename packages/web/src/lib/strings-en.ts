@@ -43,6 +43,22 @@ export const en: Strings = {
     play: "Play the generated audio",
     audioError: "Could not play the audio for this reply.",
     preparing: "Preparing audio",
+    assignFor: {
+      image: "Use for image generation",
+      video: "Use for video generation",
+      tts: "Use for speech synthesis",
+      stt: "Use for speech recognition",
+      search: "Use for web search",
+      fetch: "Use for URL reading",
+    },
+    currentFor: {
+      image: "Current for image generation",
+      video: "Current for video generation",
+      tts: "Current for speech synthesis",
+      stt: "Current for speech recognition",
+      search: "Current for web search",
+      fetch: "Current for URL reading",
+    },
     capabilities: {
       image: "Image generation",
       video: "Video generation",

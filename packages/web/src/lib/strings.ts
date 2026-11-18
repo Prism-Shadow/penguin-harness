@@ -49,6 +49,22 @@ export const zh = {
     play: "播放已生成的语音",
     audioError: "无法播放这条回复的语音。",
     preparing: "正在生成语音",
+    assignFor: {
+      image: "设为生图模型",
+      video: "设为视频生成模型",
+      tts: "设为语音合成模型",
+      stt: "设为语音识别模型",
+      search: "设为搜索模型",
+      fetch: "设为网页读取模型",
+    },
+    currentFor: {
+      image: "当前生图模型",
+      video: "当前视频生成模型",
+      tts: "当前语音合成模型",
+      stt: "当前语音识别模型",
+      search: "当前搜索模型",
+      fetch: "当前网页读取模型",
+    },
     capabilities: {
       image: "生成图片",
       video: "生成视频",

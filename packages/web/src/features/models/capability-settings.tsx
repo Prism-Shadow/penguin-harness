@@ -1,23 +1,8 @@
-import { useEffect, useState } from "react";
-import type { CapabilitySettings, ModelRefDto } from "@prismshadow/penguin-server/api";
-import {
-  Button,
-  FieldHint,
-  Modal,
-  Notice,
-  Select,
-  Spinner,
-  Switch,
-  toastError,
-} from "@prismshadow/penguin-ui";
+import type { ModelRefDto } from "@prismshadow/penguin-server/api";
+import { Button, FieldHint, Modal, Notice, Select, Spinner, Switch } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import {
-  capabilities,
-  getCapabilities,
-  updateCapabilities,
-  type CapabilityPatch,
-} from "../../api/project-capabilities";
+import { capabilities } from "../../api/project-capabilities";
+import type { useProjectCapabilities } from "../../state/use-project-capabilities";
 
 function ModelChoice({
   label,
@@ -57,55 +42,15 @@ function ModelChoice({
 }
 
 export function CapabilityDialog({
-  projectId,
+  selection,
   owner,
   onClose,
 }: {
-  projectId: string;
+  selection: ReturnType<typeof useProjectCapabilities>;
   owner: boolean;
   onClose: () => void;
 }) {
-  const [settings, setSettings] = useState<CapabilitySettings | null>(null);
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [retry, setRetry] = useState(0);
-  useEffect(() => {
-    const job = new AbortController();
-    setError("");
-    void getCapabilities(projectId, null, job.signal)
-      .then((next) => {
-        if (!job.signal.aborted) setSettings(next);
-      })
-      .catch((e) => {
-        if (!job.signal.aborted) setError(apiErrorText(e));
-      });
-    return () => job.abort();
-  }, [projectId, retry]);
-  async function save(patch: CapabilityPatch) {
-    if (!settings || busy || !owner) return;
-    const previous = settings;
-    const bindings = { ...settings.bindings };
-    for (const key of capabilities) {
-      const value = patch.bindings?.[key];
-      if (value === null) delete bindings[key];
-      else if (value) bindings[key] = value;
-    }
-    setSettings({
-      ...settings,
-      bindings,
-      voicePolish: { ...settings.voicePolish, ...patch.voicePolish },
-    });
-    setBusy(true);
-    setError("");
-    try {
-      setSettings(await updateCapabilities(projectId, patch));
-    } catch (e) {
-      setSettings(previous);
-      toastError(apiErrorText(e));
-    } finally {
-      setBusy(false);
-    }
-  }
+  const { settings, error, busy, reload, save } = selection;
   return (
     <Modal
       open
@@ -121,7 +66,7 @@ export function CapabilityDialog({
           <Notice tone="attention">
             {error}
             {!settings && (
-              <Button size="sm" onClick={() => setRetry((n) => n + 1)}>
+              <Button size="sm" onClick={reload}>
                 {S.common.retry}
               </Button>
             )}

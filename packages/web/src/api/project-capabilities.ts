@@ -27,11 +27,15 @@ const projectPath = (id: string) => `/api/projects/${encodeURIComponent(id)}`;
 export function getCapabilities(projectId: string, server: string | null, signal: AbortSignal) {
   return read<CapabilitySettings>(`${projectPath(projectId)}/capabilities`, { server, signal });
 }
-export function updateCapabilities(projectId: string, body: CapabilityPatch) {
+export function updateCapabilities(
+  projectId: string,
+  body: CapabilityPatch,
+  server: string | null = null,
+) {
   return apiFetch<CapabilitySettings>(`${projectPath(projectId)}/capabilities`, {
     method: "PATCH",
     body,
-    server: null,
+    server,
   });
 }
 export async function runVoice(

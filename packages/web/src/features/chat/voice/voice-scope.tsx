@@ -14,7 +14,8 @@ import type { CapabilitySettings } from "@prismshadow/penguin-server/api";
 import { apiUrl } from "../../../lib/server-context";
 import { apiErrorText } from "../../../lib/api-error";
 import { S } from "../../../lib/strings";
-import { getCapabilities, runVoice } from "../../../api/project-capabilities";
+import { useProjectCapabilities } from "../../../state/use-project-capabilities";
+import { runVoice } from "../../../api/project-capabilities";
 
 type Playback = { id: string; phase: "loading" | "playing" | "ready" };
 interface VoiceState {
@@ -45,22 +46,11 @@ export function VoiceScope({
   active: boolean;
   children: ReactNode;
 }) {
-  const [settings, setSettings] = useState<CapabilitySettings | null>(null);
+  const { settings } = useProjectCapabilities(active ? projectId : null, server);
   const [playback, setPlayback] = useState<Playback | null>(null);
   const current = useRef<{ request: AbortController; audio: HTMLAudioElement; id: string } | null>(
     null,
   );
-  useEffect(() => {
-    if (!active) return;
-    const job = new AbortController();
-    setSettings(null);
-    void getCapabilities(projectId, server, job.signal)
-      .then((v) => {
-        if (!job.signal.aborted) setSettings(v);
-      })
-      .catch(() => {});
-    return () => job.abort();
-  }, [projectId, server, active]);
   const stop = useCallback((replyId?: string) => {
     const item = current.current;
     if (replyId !== undefined && item?.id !== replyId) return;

@@ -210,6 +210,8 @@ import {
   type ProviderConnections,
 } from "./connection";
 
+import { useProjectCapabilities } from "../../state/use-project-capabilities";
+import { CapabilityCardActions } from "./capability-card-actions";
 import { CapabilityDialog } from "./capability-settings";
 import { ProviderSettingsDialog } from "./provider-settings-dialog";
 import { GroupSettingsControl } from "./group-settings-menu";
@@ -938,6 +940,7 @@ export function ModelsPage() {
   const pinnedBalance = usePinnedBalance();
 
   const [rows, setRows] = useState<RowState[] | null>(null);
+  const capabilitySelection = useProjectCapabilities(rows ? projectId : null, null, rows);
   /** Every group's stored connection (`[providers.<id>]`), off the same responses as `rows`. */
   const [providers, setProviders] = useState<ProviderConnections>({});
   const [defaultModel, setDefaultModel] = useState<ModelRefDto | undefined>(undefined);
@@ -1724,6 +1727,17 @@ export function ModelsPage() {
                       isDefault={sameModelRef(rowRef(row), defaultModel)}
                       isVisionModel={sameModelRef(rowRef(row), visionModel)}
                       speed={speedResults.get(refMapKey(row.provider, row.modelId))}
+                      capabilityActions={
+                        <CapabilityCardActions
+                          model={rowRef(row)}
+                          settings={capabilitySelection.settings}
+                          owner={isOwner}
+                          busy={capabilitySelection.busy}
+                          onSelect={(capability, model) =>
+                            void capabilitySelection.save({ bindings: { [capability]: model } })
+                          }
+                        />
+                      }
                       usedTokens={usedTokens.get(refMapKey(row.provider, row.modelId))}
                       hourTick={hourTick}
                       onOpen={() => {
@@ -1838,7 +1852,7 @@ export function ModelsPage() {
       {capabilitiesOpen && (
         <CapabilityDialog
           key={projectId}
-          projectId={projectId}
+          selection={capabilitySelection}
           owner={isOwner}
           onClose={() => setCapabilitiesOpen(false)}
         />
@@ -2609,9 +2623,11 @@ export function ModelCard({
   usedTokens,
   hourTick,
   onOpen,
+  capabilityActions,
   onMoveToCustom,
 }: {
   row: RowState;
+  capabilityActions?: ReactNode;
   /** The row's group's stored connection: what its blank fields follow. */
   group?: ProviderConnectionDto | undefined;
   currency: Currency;
@@ -2810,6 +2826,7 @@ export function ModelCard({
           {speedBadges}
         </span>
       </button>
+      {capabilityActions}
       {/* The routing warning and its way out (see unroutableFix): the move the config dialog's
           own button performs, so the owner lands where the problem is fixed rather than on a
           second explanation. */}
