@@ -17,6 +17,9 @@ interface Disk {
   mkdir(dir: string, opts: { recursive: true }): Promise<unknown>;
   readFile(file: string | URL): Promise<Uint8Array>;
   writeFile(file: string, data: Uint8Array | string, opts?: { flag: string }): Promise<void>;
+  copyFile(from: string | URL, to: string, mode: number): Promise<void>;
+  link(from: string, to: string): Promise<void>;
+  utimes(file: string, accessed: number, modified: number): Promise<void>;
   rename(from: string, to: string): Promise<void>;
   rm(file: string, opts: { force: boolean }): Promise<void>;
 }
@@ -69,23 +72,33 @@ export function deckStorage(root: string, preview = new URL("../../.files/", imp
     const marker = filePath(".bento-storage-v1");
     try {
       if ((await fs.lstat(marker)).isFile()) return;
+      throw new Error("Invalid presentation migration marker");
     } catch (err) {
       if (!absent(err)) throw err;
     }
     // The preview kept files beside its source. Copy existing decks and history once. An
     // interrupted migration resumes without replacing newer documents in the host data folder.
     for (const entry of await scan((name) => new URL(name, preview))) {
-      if (entry.size > MAX_BYTES) throw new Error("Presentation too large: " + entry.path);
       const dest = checked(entry.path);
       await ensureParent(entry.path);
-      const bytes = await fs.readFile(new URL(entry.path, preview));
+      // Stage the complete file before making it visible. Linking refuses to replace a newer
+      // deck, including one created on another request during the copy.
+      const tmp = dest + "." + crypto.randomUUID() + ".tmp";
       try {
-        await fs.writeFile(dest, bytes, { flag: "wx" });
+        await fs.copyFile(new URL(entry.path, preview), tmp, 1);
+        await fs.utimes(tmp, entry.mtimeMs / 1000, entry.mtimeMs / 1000);
+        await fs.link(tmp, dest);
       } catch (err) {
         if ((err as { code?: string }).code !== "EEXIST") throw err;
+      } finally {
+        await fs.rm(tmp, { force: true });
       }
     }
-    await fs.writeFile(marker, "1");
+    try {
+      await fs.writeFile(marker, "1", { flag: "wx" });
+    } catch (err) {
+      if ((err as { code?: string }).code !== "EEXIST") throw err;
+    }
   }
   function ready() {
     return (initialized ??= ensure().catch((err) => {

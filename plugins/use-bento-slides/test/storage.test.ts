@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -16,6 +16,9 @@ it("imports preview decks and history once and keeps newer edits and later delet
     await writeFile(path.join(older, "history", "brief", "12-editor.bento.json"), "draft");
     await mkdir(path.join(current, "decks"), { recursive: true });
     await writeFile(path.join(current, "decks", "brief.bento.json"), "newer");
+    const past = Math.trunc(Date.now() / 1000) - 86400;
+    const historyFile = path.join("history", "brief", "12-editor.bento.json");
+    await utimes(path.join(older, historyFile), past, past);
     const open = () => deckStorage(current, pathToFileURL(older + path.sep));
     const store = open();
     expect((await store.listFiles()).map((x) => x.path).sort()).toEqual([
@@ -23,6 +26,7 @@ it("imports preview decks and history once and keeps newer edits and later delet
       "history/brief/12-editor.bento.json",
     ]);
     expect(await readFile(store.filePath("decks/brief.bento.json"), "utf8")).toBe("newer");
+    expect((await stat(path.join(current, historyFile))).mtimeMs).toBe(past * 1000);
     const h = await store.readFile("history/brief/12-editor.bento.json");
     expect(new TextDecoder().decode(h!)).toBe("draft");
     await store.writeFile("decks/brief.bento.json", "revised");
