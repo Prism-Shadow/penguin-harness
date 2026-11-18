@@ -8,7 +8,7 @@
 // so the checker can read `meta` without touching the browser.
 
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -211,10 +211,21 @@ export function checkCallArgs(meta, args) {
   }
 }
 
-/** Whether two paths name the same file; Windows paths compare without case. */
+/**
+ * Whether two paths name the same file. Symlinks are resolved first: `import.meta.url` names the
+ * real file while `process.argv[1]` keeps the path as typed (macOS's /var -> /private/var, a
+ * symlinked home or data root). Windows paths compare without case.
+ */
 export function samePath(a, b, platform = process.platform) {
+  const real = (p) => {
+    try {
+      return realpathSync(p);
+    } catch {
+      return p;
+    }
+  };
   const norm = (p) =>
-    platform === "win32" ? path.win32.resolve(p).toLowerCase() : path.resolve(p);
+    platform === "win32" ? path.win32.resolve(real(p)).toLowerCase() : path.resolve(real(p));
   return norm(a) === norm(b);
 }
 

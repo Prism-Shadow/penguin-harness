@@ -1,7 +1,8 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
@@ -313,7 +314,7 @@ else process.stdout.write(JSON.stringify({ status: "success", tabId: 1, value: [
       [
         "--input-type=module",
         "-e",
-        `const m = await import(${JSON.stringify(file)}); console.log(m.meta.name);`,
+        `const m = await import(${JSON.stringify(pathToFileURL(file).href)}); console.log(m.meta.name);`,
       ],
       { encoding: "utf8" },
     );
@@ -377,6 +378,38 @@ describe("starting penguin", () => {
       args: ["/t/fake.mjs"],
       env: {},
     });
+  });
+
+  it("treats a symlinked path as the file it points to", () => {
+    const real = path.join(dir, "real");
+    mkdirSync(real);
+    writeFileSync(path.join(real, "a.mjs"), "");
+    const link = path.join(dir, "link");
+    symlinkSync(real, link, "junction");
+    expect(runtime.samePath(path.join(link, "a.mjs"), path.join(real, "a.mjs"))).toBe(true);
+  });
+
+  it("runs an API reached through a symlinked directory", () => {
+    const real = path.join(dir, "lib");
+    mkdirSync(real);
+    tool.init(real, SITE);
+    writeFileSync(path.join(real, "search_products.mjs"), api("search_products"));
+    const link = path.join(dir, "lib-link");
+    symlinkSync(real, link, "junction");
+    const fake = path.join(dir, "fake.mjs");
+    writeFileSync(
+      fake,
+      'process.stdout.write(JSON.stringify(process.argv[3] === "open" ? { tab: { id: 1 } } : { status: "success", value: 7 }));',
+    );
+    const res = spawnSync(
+      process.execPath,
+      [path.join(link, "search_products.mjs"), "--args", '{"query":"x"}'],
+      {
+        encoding: "utf8",
+        env: { ...process.env, SKILLWEAVER_PENGUIN: fake },
+      },
+    );
+    expect(JSON.parse(res.stdout)).toEqual({ ok: true, result: 7 });
   });
 
   it("compares Windows paths without case", () => {
