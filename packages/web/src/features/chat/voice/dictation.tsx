@@ -1,13 +1,23 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Button, GlyphIcon, ICONS, Spinner, toastError, toastInfo } from "@prismshadow/penguin-ui";
+import {
+  Button,
+  CheckIcon,
+  CloseIcon,
+  GlyphIcon,
+  ICONS,
+  Spinner,
+  toastError,
+  toastInfo,
+} from "@prismshadow/penguin-ui";
 import { apiErrorText } from "../../../lib/api-error";
 import { S } from "../../../lib/strings";
 import { hasBoundCapability, polishVoice, runVoice } from "../../../api/project-capabilities";
 import { captureSpeech, recordingData } from "./recording";
 import { useVoice } from "./voice-scope";
+import { MicrophoneMeter } from "./microphone-meter";
 
 type Phase = "idle" | "permission" | "recording" | "transcribing" | "polishing";
-export function Dictation({
+export function useDictation({
   insert,
   disabled,
 }: {
@@ -17,7 +27,9 @@ export function Dictation({
   const scope = useVoice();
   const canDictate = hasBoundCapability(scope?.settings, "stt");
   const [phase, setPhase] = useState<Phase>("idle");
-  const [seconds, setSeconds] = useState(0);
+  const [stream, setStream] = useState<MediaStream | null>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const returnFocus = useRef(false);
   const job = useRef<AbortController | null>(null);
   const finish = useRef<(() => void) | null>(null);
   const target = useRef(insert);
@@ -28,8 +40,19 @@ export function Dictation({
     job.current?.abort();
     job.current = null;
     finish.current = null;
+    setStream(null);
     setPhase("idle");
   }, []);
+  const dismiss = useCallback(() => {
+    returnFocus.current = true;
+    cancel();
+  }, [cancel]);
+  useLayoutEffect(() => {
+    if (phase === "idle" && returnFocus.current) {
+      returnFocus.current = false;
+      trigger.current?.focus();
+    }
+  }, [phase]);
   useLayoutEffect(
     () => cancel,
     [scope?.projectId, scope?.server, scope?.sessionId, scope?.active, canDictate, cancel],
@@ -43,7 +66,7 @@ export function Dictation({
     const escape = (e: KeyboardEvent) => {
       if (job.current && e.key === "Escape") {
         e.preventDefault();
-        cancel();
+        dismiss();
       }
     };
     document.addEventListener("keydown", escape);
@@ -52,14 +75,7 @@ export function Dictation({
       document.removeEventListener("visibilitychange", hidden);
       window.removeEventListener("pagehide", cancel);
     };
-  }, [cancel]);
-  useEffect(() => {
-    if (phase !== "recording") return;
-    const start = Date.now();
-    setSeconds(0);
-    const timer = setInterval(() => setSeconds(Math.floor((Date.now() - start) / 1000)), 250);
-    return () => clearInterval(timer);
-  }, [phase]);
+  }, [cancel, dismiss]);
   async function record() {
     if (!scope?.active || !canDictate || job.current) return;
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
@@ -72,12 +88,14 @@ export function Dictation({
     setPhase("permission");
     try {
       if (!hasBoundCapability(await scope.readCurrent(task.signal), "stt")) return;
-      const blob = await captureSpeech(task.signal, (stop) => {
+      const blob = await captureSpeech(task.signal, (stop, microphone) => {
         finish.current = stop;
+        setStream(microphone);
         setPhase("recording");
       });
       task.signal.throwIfAborted();
       finish.current = null;
+      setStream(null);
       if (!blob.size) {
         toastInfo(S.voice.empty);
         return;
@@ -140,46 +158,73 @@ export function Dictation({
       if (job.current === task) {
         job.current = null;
         finish.current = null;
+        setStream(null);
         setPhase("idle");
       }
     }
   }
-  if (!canDictate) return null;
+  if (!canDictate) return { trigger: null, toolbar: null };
   if (phase === "idle")
-    return (
-      <button
-        type="button"
-        aria-label={S.voice.record}
-        data-tooltip={S.voice.record}
-        disabled={disabled}
-        onClick={() => void record()}
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-fg-muted hover:bg-surface-muted hover:text-fg disabled:opacity-50"
-      >
-        <GlyphIcon d={ICONS.microphone} size={18} />
-      </button>
-    );
-  const label = phase === "recording" ? S.voice.finish : S.voice[phase];
-  return (
-    <div className="flex shrink-0 items-center gap-1" aria-live="polite">
-      {phase === "recording" ? (
+    return {
+      toolbar: null,
+      trigger: (
         <button
           type="button"
-          className="flex h-8 items-center gap-1 rounded-md px-1 text-tone-danger-fg"
-          aria-label={label}
-          data-tooltip={label}
-          onClick={() => finish.current?.()}
+          ref={trigger}
+          aria-label={S.voice.record}
+          data-tooltip={S.voice.record}
+          disabled={disabled}
+          onClick={() => void record()}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-fg-muted hover:bg-surface-muted hover:text-fg disabled:opacity-50"
         >
-          <GlyphIcon d={ICONS.stopCircle} size={18} />
-          <span aria-hidden className="text-xs tabular-nums">
-            {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}
-          </span>
+          <GlyphIcon d={ICONS.microphone} size={18} />
         </button>
-      ) : (
-        <Spinner size="sm" label={label} />
-      )}
-      <Button size="xs" variant="ghost" onClick={cancel} aria-label={S.voice.cancel}>
-        {S.common.cancel}
-      </Button>
-    </div>
-  );
+      ),
+    };
+  return {
+    trigger: null,
+    toolbar: (
+      <div role="group" aria-label={S.voice.record} className="flex min-w-0 items-center gap-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="min-h-10 shrink-0"
+          autoFocus
+          onClick={dismiss}
+          aria-label={S.voice.cancel}
+          leading={<CloseIcon size={13} />}
+        >
+          {S.common.cancel}
+        </Button>
+        <div className="flex min-h-11 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-control bg-fill-neutral px-1 py-1">
+          {phase === "recording" && stream ? (
+            <>
+              <MicrophoneMeter stream={stream} />
+              <Button
+                variant="primary"
+                size="sm"
+                className="min-h-9 shrink-0 [--ui-accent:var(--ui-tone-success-emphasis)] [--ui-accent-fg:var(--ui-tone-success-emphasis-fg)]"
+                aria-label={S.voice.finish}
+                onClick={() => finish.current?.()}
+                leading={<CheckIcon size={14} />}
+              >
+                <span className="@xs:hidden">{S.voice.finishCompact}</span>
+                <span className="hidden @xs:inline">{S.voice.finishShort}</span>
+              </Button>
+            </>
+          ) : (
+            <span
+              role="status"
+              className="flex min-w-0 items-center gap-2 py-1 text-sm text-fg-muted"
+            >
+              <span aria-hidden>
+                <Spinner size="sm" label={S.voice[phase]} />
+              </span>
+              {S.voice[phase]}
+            </span>
+          )}
+        </div>
+      </div>
+    ),
+  };
 }

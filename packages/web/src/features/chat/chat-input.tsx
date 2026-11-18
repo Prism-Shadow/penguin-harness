@@ -133,7 +133,7 @@ import {
 import { S } from "../../lib/strings";
 import { useAgentAvatarSrc } from "../../lib/agent-avatar";
 import { formatBytes, humanizeTokens } from "../../lib/format";
-import { Dictation } from "./voice/dictation";
+import { useDictation } from "./voice/dictation";
 import { fitTextarea } from "../../lib/textarea-fit";
 import { useLocale } from "../../state/locale";
 import { useAuth } from "../../state/auth";
@@ -1852,7 +1852,42 @@ export function ChatInput({
     });
   };
 
+  const dictation = useDictation({
+    disabled: busy,
+    insert: (spoken) => {
+      const el = textareaRef.current;
+      const current = el?.value ?? text;
+      const at = el?.selectionStart ?? current.length;
+      const end = el?.selectionEnd ?? at;
+      const separator =
+        at > 0 &&
+        /[\p{Script=Latin}\d]/u.test(current[at - 1]!) &&
+        /^[\p{Script=Latin}\d]/u.test(spoken)
+          ? " "
+          : "";
+      const after =
+        end < current.length &&
+        /[\p{Script=Latin}\d]$/u.test(spoken) &&
+        /^[\p{Script=Latin}\d]/u.test(current.slice(end))
+          ? " "
+          : "";
+      const next = current.slice(0, at) + separator + spoken + after + current.slice(end);
+      const pos = at + separator.length + spoken.length + after.length;
+      setText(next);
+      onTextChange?.(next);
+      setCaret(pos);
+      requestAnimationFrame(() => {
+        el?.focus();
+        el?.setSelectionRange(pos, pos);
+      });
+    },
+  });
+
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (dictation.toolbar && e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+      e.preventDefault();
+      return;
+    }
     if (slashOpen) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
@@ -2396,6 +2431,7 @@ export function ChatInput({
           container breakpoints) — the card's width changes with the viewport and with the Files
           panel squeezing it, so viewport breakpoints wouldn't judge it accurately. */}
       <ComposerCard
+        alternateToolbar={dictation.toolbar}
         attachments={
           // The staged images, then the staged files, as one row of tiles at the top of the
           // card: the same tiles the message shows once sent. A file's name is the picked
@@ -2666,36 +2702,7 @@ export function ChatInput({
               channel is open then, so the alternative was a permanently disabled Send sitting
               where the only available action belonged. Idle keeps the ordinary send button.
               Merging the pair keeps the running-state row within a 320px viewport. */}
-            <Dictation
-              disabled={busy}
-              insert={(spoken) => {
-                const el = textareaRef.current;
-                const current = el?.value ?? text;
-                const at = el?.selectionStart ?? current.length;
-                const end = el?.selectionEnd ?? at;
-                const separator =
-                  at > 0 &&
-                  /[\p{Script=Latin}\d]/u.test(current[at - 1]!) &&
-                  /^[\p{Script=Latin}\d]/u.test(spoken)
-                    ? " "
-                    : "";
-                const after =
-                  end < current.length &&
-                  /[\p{Script=Latin}\d]$/u.test(spoken) &&
-                  /^[\p{Script=Latin}\d]/u.test(current.slice(end))
-                    ? " "
-                    : "";
-                const next = current.slice(0, at) + separator + spoken + after + current.slice(end);
-                const pos = at + separator.length + spoken.length + after.length;
-                setText(next);
-                onTextChange?.(next);
-                setCaret(pos);
-                requestAnimationFrame(() => {
-                  el?.focus();
-                  el?.setSelectionRange(pos, pos);
-                });
-              }}
-            />
+            {dictation.trigger}
             <SendButton
               action={stopAction ? "stop" : "send"}
               label={stopAction ? S.chat.stop : running ? midRunSendLabel : S.chat.send}

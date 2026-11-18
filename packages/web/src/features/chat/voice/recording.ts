@@ -4,7 +4,7 @@ const preferred = ["audio/webm;codecs=opus", "audio/mp4", "audio/ogg;codecs=opus
 /** Resolves when the recorder stops. Aborting always releases tracks, including a permission grant that arrives late. */
 export async function captureSpeech(
   signal: AbortSignal,
-  started: (finish: () => void) => void,
+  started: (finish: () => void, stream: MediaStream) => void,
 ): Promise<Blob> {
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
   const release = () => stream.getTracks().forEach((track) => track.stop());
@@ -45,7 +45,7 @@ export async function captureSpeech(
       };
       try {
         recorder.start(1000);
-        started(stop);
+        started(stop, stream);
       } catch (e) {
         detach();
         reject(e);
