@@ -37,7 +37,7 @@ git -C "$SRC" checkout --detach 512f8ea784054f4ca3331d03cc6589267a4cbdf5
 
 Run these lines as they are, in one command; do not create `$SRC` or `dist` beforehand. `<python>` is the training environment's interpreter. The built Skill is `SKILL_DIR="$SRC/dist/infrarsi-optimize"`; check that `$SKILL_DIR/scripts/engine/VERSION.json` names the pinned commit without `+changes`. Do not run `install_skill.py`: it writes Claude Code and Codex directories this Session does not use. Do not edit anything under `$SRC`.
 
-The upstream repository carries no license file. This toolkit does not redistribute its code or text; the user's machine fetches them from upstream. Say so in the report.
+The upstream repository carries no license file, so no license grants the use of its code. This toolkit does not redistribute its code or text: the user's machine fetches them from upstream. Before the first fetch on a machine, tell the user so and fetch only on their go-ahead; say so in the report as well.
 
 ## Follow the upstream Skill
 
