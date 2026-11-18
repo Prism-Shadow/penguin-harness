@@ -101,10 +101,11 @@ const usable = mustRun(
   cannotOpen ?? (shellReady ? null : "the session shell is not pwsh (PowerShell 7)"),
 );
 
-// The denial dialect depends on the rung (EROFS, EACCES, EPERM, .NET's "Access to the path"):
-// assert the effect plus a denial in any dialect, never one rung's.
+// The denial dialect depends on the rung (EROFS, EACCES, EPERM, .NET's "Access to the path")
+// and on the host's locale (a zh_CN shell says 只读文件系统): assert the effect plus a denial
+// in any dialect, never one rung's.
 const DENIED =
-  /permission denied|read-only file system|operation not permitted|access is denied|access to the path .* is denied/i;
+  /permission denied|read-only file system|只读文件系统|operation not permitted|不允许的操作|access is denied|access to the path .* is denied/i;
 
 afterAll(() => {
   mgr.dispose();
