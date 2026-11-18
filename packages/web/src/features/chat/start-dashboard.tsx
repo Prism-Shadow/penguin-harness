@@ -294,7 +294,7 @@ function StatCount({
   value: number | null;
 }) {
   return (
-    <li data-slot="count" className="min-w-0">
+    <li data-slot="count" data-clip-surface="" className="min-w-0">
       <Link
         to={to}
         className="flex min-w-0 flex-col rounded-[inherit] px-3 py-1.5 transition-colors duration-150 hover:bg-control-hover focus-visible:-outline-offset-2"
