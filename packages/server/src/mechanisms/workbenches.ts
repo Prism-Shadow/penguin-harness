@@ -6,8 +6,7 @@
  *
  * - `WorkbenchHost` is what the server PUBLISHES into every workbench tree (the workbench's
  *   manifest requires it `from: "Host"`): Sessions of the Project's Agents, opened and run
- *   the way the SDK does it and followed live, a small state document, a folder of files it
- *   shares with its Agent, a log line.
+ *   the way the SDK does it and followed live, a small state document, a log line.
  * - `WorkbenchMain` is what a workbench PROVIDES: a JSON request handler the server mounts
  *   under `/api/projects/:p/agents/:a/workbenches/:id/api/*`, which the workbench's own UI
  *   (served from its `ui/` folder) calls.
@@ -94,16 +93,19 @@ export interface WorkbenchRecord {
   origin?: string[];
 }
 
+/** Scope level of persistent app storage (`machine`, `server`, `project` or `agent`). */
+export type WorkbenchAppLevel = "agent" | "project" | "server" | "machine";
+
 /**
- * A file of the workbench's folder of files (`.files/` in its own folder), as `listFiles` and
- * `writeFile` report it.
+ * One persistent app storage entry a workbench or its Agent may access: its `appId`, scope `level`,
+ * and resolved `dataDir`, `cacheDir` and `stateDir` paths on this machine.
  */
-export interface WorkbenchFile {
-  /** Its path below the folder, `/`-separated. */
-  path: string;
-  size: number;
-  /** When it was last written, in ms since the epoch: by the workbench, or by its Agent's file tools. */
-  mtimeMs: number;
+export interface WorkbenchAppStorage {
+  appId: string;
+  level: WorkbenchAppLevel;
+  dataDir: string;
+  cacheDir: string;
+  stateDir: string;
 }
 
 /** What a workbench provides (its manifest: `provides: { main: "@prismshadow/penguin-server#WorkbenchMain" }`). */
@@ -152,26 +154,11 @@ export abstract class WorkbenchHost {
    */
   abstract subscribe(sessionId: string, listener: (record: WorkbenchRecord) => void): () => void;
   /**
-   * The files the workbench shares with its Agent: `.files/` in its own folder, which the Agent
-   * edits with its file tools and the handler reads and writes here. Not source — a write loads
-   * nothing and enters no version — and kept across reloads, rollbacks and plugin updates; it
-   * goes with the workbench when the workbench is removed. Every regular file below it, sorted
-   * by path; a listing is how the handler notices what the Agent wrote (compare `mtimeMs` and
-   * `size` on a timer while a page is open). Links are never followed.
+   * The persistent app storage directories for this workbench (`{ appId, level, dataDir, cacheDir,
+   * stateDir }`), defaulting to `<agentId>.<workbenchId>` at `agent` level (`opts` may override
+   * `level` — `"agent" | "project" | "server" | "machine"` — and `appId`).
    */
-  abstract listFiles(): Promise<WorkbenchFile[]>;
-  /** A file's bytes; null when there is none at `path` (a `/`-separated path below the folder). */
-  abstract readFile(path: string): Promise<Uint8Array | null>;
-  /** Writes a file whole, replacing it in one step and creating its directories; at most 50 MB. */
-  abstract writeFile(path: string, data: Uint8Array | string): Promise<WorkbenchFile>;
-  /** Removes a file; nothing happens when it is not there. */
-  abstract removeFile(path: string): Promise<void>;
-  /**
-   * Where a file (the folder itself, without `path`) is on the server's machine: the path a
-   * handler names when it asks the Agent to edit the file. It says nothing of whether the file
-   * exists.
-   */
-  abstract filePath(path?: string): string;
+  abstract dataPaths(opts?: { level?: WorkbenchAppLevel; appId?: string }): WorkbenchAppStorage;
   /** The workbench's own document (`state.json`, kept by the server across reloads and rollbacks). */
   abstract getState(): unknown;
   abstract setState(state: unknown): Promise<void>;
@@ -423,7 +410,8 @@ export abstract class Workbenches {
   /**
    * The workbench's plugin icon (`.svg` markup or `.png` bytes base64-encoded), from its
    * `package.json#penguin.icon`; null when it ships none or the read refuses it. The PWA
-   * manifest inlines it; the session tabs default to it.
+   * manifest inlines it; the session tabs default to it. A pure read of the current
+   * layout — no migration, like `describe`; the auth-less manifest gate calls this.
    */
   abstract iconSvg(
     projectId: string,

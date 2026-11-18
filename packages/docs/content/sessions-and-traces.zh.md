@@ -25,28 +25,32 @@ PenguinHarness 的全部运行时数据都存放在本地文件系统上。配�
 数据根目录由环境变量 `PENGUIN_HOME` 指定，默认为 `~/.penguin/data`。目录布局统一定义在 `packages/core/src/state/paths.ts` 中：
 
 ```text
-<root>/<project>/
-├── .project_config.toml          # Project-level models & credentials (hidden file, 0600)
-├── benchmarks/                   # capability Benchmark cases and scores, one directory per
-│                                 # Benchmark — a peer of the Agents, evaluating any of them
-└── agents/
-    └── <agent>/
-        ├── agent_state/              # system_config.yaml, AGENTS.md, .vault.toml,
-        │                             # tools/, skills/, hooks/, schedule/
-        │   ├── memory/               # Memory: user/ plus one directory per Workspace,
-        │   │                         # each with its own MEMORY.md index
-        │   └── workbenches/          # one folder per workbench: source, ui/, state.json, .files/
-        ├── agent_state.git/          # bare git repository the server writes: workbench versions
-        ├── traces/
-        │   └── <yyyy-mm-dd>/<sessionId>_<index3>.jsonl
-        ├── scratchpad/               # temp files, one subdirectory per Session id (e.g. pasted images)
-        ├── shared_env/               # shared interpreter/tool environments (virtualenvs, pipx,
-        │                             # caches) the Agent creates on demand — a system prompt
-        │                             # convention, not a path the code creates, so tooling is
-        │                             # installed once for any task; project dependencies stay
-        │                             # in the project
-        ├── workspaces/               # temporary Workspaces (tmp-<8hex>)
-        └── snapshots/                # Agent State version snapshots
+<root>/
+├── app/                              # server-level app storage: {data,cache,state}/<app_id>
+└── <project>/
+    ├── .project_config.toml          # Project-level models & credentials (hidden file, 0600)
+    ├── app/                          # project-level app storage: {data,cache,state}/<app_id>
+    ├── benchmarks/                   # capability Benchmark cases and scores, one directory per
+    │                                 # Benchmark — a peer of the Agents, evaluating any of them
+    └── agents/
+        └── <agent>/
+            ├── agent_state/          # system_config.yaml, AGENTS.md, .vault.toml,
+            │                         # tools/, skills/, hooks/, schedule/
+            │   ├── memory/           # Memory: user/ plus one directory per Workspace,
+            │   │                     # each with its own MEMORY.md index
+            │   └── workbenches/      # one folder per workbench: source, ui/, state.json
+            ├── agent_state.git/      # bare git repository the server writes: workbench versions
+            ├── app/                  # agent-level app storage: {data,cache,state}/<app_id>
+            ├── traces/
+            │   └── <yyyy-mm-dd>/<sessionId>_<index3>.jsonl
+            ├── scratchpad/           # temp files, one subdirectory per Session id (e.g. pasted images)
+            ├── shared_env/           # shared interpreter/tool environments (virtualenvs, pipx,
+            │                         # caches) the Agent creates on demand — a system prompt
+            │                         # convention, not a path the code creates, so tooling is
+            │                         # installed once for any task; project dependencies stay
+            │                         # in the project
+            ├── workspaces/           # temporary Workspaces (tmp-<8hex>)
+            └── snapshots/            # Agent State version snapshots
 ```
 
 各配置文件的字段见[配置参考](/configuration)。

@@ -14,8 +14,6 @@ interface Receipt extends InstalledWorkbench {
   files: string[];
 }
 const receiptFile = ".plugin.json";
-/** A workbench folder's data, as opposed to its source: the server's `state.json` and `.files/`. */
-const WORKBENCH_DATA = new Set(["state.json", ".files"]);
 const safeSource = (rel: string): boolean =>
   rel !== "state.json" &&
   !path.isAbsolute(rel) &&
@@ -110,10 +108,9 @@ export async function assertPluginWorkbenchesInstallable(
       if (existing) {
         if (!existing.isDirectory()) throw new WorkbenchNameTakenError(workbench.name);
         const current = await receipt(dir);
-        // A folder holding only data — `state.json`, and `.files/` (the files the workbench shares
-        // with its Agent) — can precede provisioning (restored data); source is never adopted silently.
+        // A folder holding only state can precede provisioning (restored data); source is never adopted silently.
         const contents = await fs.readdir(dir);
-        if (current?.plugin !== plugin.name && contents.some((name) => !WORKBENCH_DATA.has(name)))
+        if (current?.plugin !== plugin.name && contents.some((name) => name !== "state.json"))
           throw new WorkbenchNameTakenError(workbench.name);
       }
     }

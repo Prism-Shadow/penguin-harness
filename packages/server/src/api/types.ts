@@ -4923,8 +4923,7 @@ export interface ScheduleUpsertRequest {
 /**
  * The archive route's query. Each part is `1` (carried) or `0` (left out); an absent part takes
  * its default: all carried but `schedules`, since an imported task runs on its schedule.
- * `workbenchData` is each workbench's `state.json` and `.files/`, and means nothing without
- * `workbenches`.
+ * `workbenchData` is each workbench's `state.json`, and means nothing without `workbenches`.
  */
 export interface AgentArchiveQuery {
   skills?: "0" | "1";
@@ -7745,6 +7744,12 @@ export interface PluginConfigField {
   options?: PluginConfigOption[];
   /** `list` only: the most entries a save may leave (after trimming and de-duplicating). */
   maxItems?: number;
+  /**
+   * `list` only: how one entry is drawn and chosen. Options present — the entries are picked
+   * from a fixed set (a mirror id, say); absent — an entry is a free-text line. Presentation
+   * and page interaction only: storage is a string array either way.
+   */
+  items?: { options?: PluginConfigOption[] };
   /** `number` only: the smallest and largest value a save may store. */
   minimum?: number;
   maximum?: number;

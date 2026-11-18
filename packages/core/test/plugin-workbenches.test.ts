@@ -2,7 +2,6 @@
  * Given a plugin with a workbench, installing on any Agent copies its runnable source and Skill.
  * Given an installed copy, updating removes retired source but preserves state, history and user files.
  * Given a manually owned name or a second plugin with that name, installation refuses before writing Skills.
- * Given a folder holding only a workbench's data (state.json, .files/), installation takes it and keeps the data.
  * Given a symlink parent or an unsafe payload, installation never writes outside the Agent.
  * Given a restored package version, installed metadata reflects the restored source rather than the last install.
  * Given an interrupted installation receipt, retry completes the original plugin's install.
@@ -119,19 +118,6 @@ it("refuses a manual workbench before installing any Skill", async () => {
   await expect(
     assertPluginWorkbenchesInstallable(root, project, "empty", [plugin(), other]),
   ).rejects.toThrow("already exists");
-});
-it("takes a folder holding only the workbench's data, restored before provisioning, and keeps it", async () => {
-  await fs.mkdir(path.join(dir(), ".files", "decks"), { recursive: true });
-  await fs.writeFile(path.join(dir(), "state.json"), '{"restored":true}');
-  await fs.writeFile(path.join(dir(), ".files", "decks", "a.json"), "the user's deck");
-  await installPlugin(root, project, agent, plugin());
-  expect((await listInstalledWorkbenches(root, project, agent)).map((w) => w.name)).toEqual([
-    "support",
-  ]);
-  expect(await fs.readFile(path.join(dir(), "state.json"), "utf8")).toBe('{"restored":true}');
-  expect(await fs.readFile(path.join(dir(), ".files", "decks", "a.json"), "utf8")).toBe(
-    "the user's deck",
-  );
 });
 it("refuses redirected source directories and runtime data without changing files", async () => {
   await installPlugin(root, project, agent, plugin());

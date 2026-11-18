@@ -821,6 +821,11 @@ export const en: Strings = {
     /** A switch one of whose positions this machine cannot honour, under the switch. */
     pluginPositionUnavailable: (position: string, reason: string) =>
       `${position} is not supported here: ${reason}`,
+    /** A list field's editor: the row buttons and the add row. */
+    pluginListMoveUp: "Move up",
+    pluginListMoveDown: "Move down",
+    pluginListRemove: "Remove",
+    pluginListAdd: "Add",
     pluginPositionOn: "On",
     pluginPositionOff: "Off",
     pluginsInfo:
@@ -3764,8 +3769,6 @@ export const en: Strings = {
       newFolderPlaceholder: "Type a name, then press Enter",
       /** Accessible name of the × that closes the new-folder row. */
       newFolderCancel: "Cancel new folder",
-      /** The toolbar's New folder while the folder on screen could not be read. */
-      newFolderDenied: "This folder can't be read, so nothing can be made in it here",
       /** Under the new-folder field: a character this machine does not allow in a name. */
       newFolderInvalid: (chars: string): string => `A name can't contain ${chars}`,
       newFolderHidden:

@@ -44,6 +44,7 @@ import type {
 import { agentDir, userText } from "@prismshadow/penguin-core";
 import type { IconImage } from "@prismshadow/penguin-core";
 import table from "../ifaces.json" with { type: "json" };
+import { appStorageBaseDir, assertValidAppId } from "../sandbox/service.js";
 import type { ServerEvent } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 import type { Channels, Clock, Config, Hmr, Log, Paths } from "../hmr/capabilities.js";
@@ -55,6 +56,7 @@ import { workbenchResult } from "./result.js";
 import type { SessionIndex } from "../mechanisms/sessions.js";
 import type {
   AppCenterShortcut,
+  WorkbenchAppLevel,
   WorkbenchTabIcon,
   WorkbenchInfo,
   WorkbenchInput,
@@ -78,7 +80,6 @@ import {
   writeAppCenterShow,
   type AppCenterManifest,
 } from "./app-center.js";
-import { WorkbenchFiles } from "./files.js";
 import { migrateWorkbenches } from "./migrate.js";
 import { WorkbenchSubscriptions } from "./subscribe.js";
 import {
@@ -594,7 +595,6 @@ export class WorkbenchService implements Workbenches {
     workbenchId: string,
   ): Promise<{ kind: "svg" | "png"; data: string } | null> {
     if (!isWorkbenchId(workbenchId)) return null;
-    await this.migrate(projectId, agentId);
     const folder = await readFolder(
       path.join(workbenchesDir(this.paths.root, projectId, agentId), workbenchId),
       workbenchId,
@@ -1189,7 +1189,6 @@ export class WorkbenchService implements Workbenches {
   ) {
     const service = this;
     let state: unknown = await readState(folder.dir);
-    const files = new WorkbenchFiles(folder.dir);
     return {
       listAgents: () => service.agents.list(projectId).map((row) => ({ agentId: row.agentId })),
       async createSession(opts?: { agentId?: string }) {
@@ -1240,11 +1239,29 @@ export class WorkbenchService implements Workbenches {
         service.ownSession(projectId, sessionId, "subscribe");
         return subscriptions.subscribe(sessionId, listener);
       },
-      listFiles: () => files.list(),
-      readFile: (rel: string) => files.read(rel),
-      writeFile: (rel: string, data: Uint8Array | string) => files.write(rel, data),
-      removeFile: (rel: string) => files.remove(rel),
-      filePath: (rel?: string) => files.pathOf(rel),
+      dataPaths: (opts?: { level?: WorkbenchAppLevel; appId?: string }) => {
+        if (
+          opts !== undefined &&
+          (typeof opts !== "object" || opts === null || Array.isArray(opts))
+        ) {
+          throw new Error(`dataPaths: invalid options '${String(opts)}'`);
+        }
+        const level =
+          opts !== undefined && "level" in opts && opts.level !== undefined ? opts.level : "agent";
+        const appId =
+          opts !== undefined && "appId" in opts && opts.appId !== undefined
+            ? opts.appId
+            : `${agentId}.${folder.id}`;
+        assertValidAppId(appId);
+        const base = appStorageBaseDir(service.paths.root, projectId, agentId, level);
+        return {
+          appId,
+          level,
+          dataDir: path.join(base, "data", appId),
+          cacheDir: path.join(base, "cache", appId),
+          stateDir: path.join(base, "state", appId),
+        };
+      },
       getState: () => state,
       async setState(next: unknown) {
         await writeState(folder.dir, next ?? null);

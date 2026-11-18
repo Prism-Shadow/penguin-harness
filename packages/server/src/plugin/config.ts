@@ -533,6 +533,18 @@ export function parsePluginConfiguration(
       }
       field.maxItems = f.maxItems;
     }
+    if (field.type === "list" && f.items !== undefined) {
+      const items = (f.items ?? {}) as Record<string, unknown>;
+      if (typeof items !== "object" || Array.isArray(items)) {
+        throw new Error(`${where}: configuration.properties.${name}.items must be an object`);
+      }
+      if (items.options !== undefined) {
+        // The same check an enum's options get: the page draws a picker from them.
+        field.items = {
+          options: parseOptions(items.options, `${where}: configuration.properties.${name}.items`),
+        };
+      }
+    }
     if (field.type === "number") {
       for (const key of ["minimum", "maximum"] as const) {
         const v = f[key];
@@ -759,8 +771,11 @@ export function applyUpdate(
       }
       const violation = valueViolation(name, field, items);
       if (violation !== undefined) throw new PluginConfigError(name, violation);
-      if (items.length === 0) delete next[name];
-      else next[name] = items;
+      if (items.length === 0 && (!Array.isArray(field.default) || field.default.length === 0)) {
+        delete next[name];
+      } else {
+        next[name] = items;
+      }
       continue;
     }
     next[name] = typeof value === "string" ? value.trim() : value;

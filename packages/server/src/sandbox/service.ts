@@ -12,6 +12,9 @@
  * never a silent unconfined run, and never a silently dropped dimension.
  */
 import fs from "node:fs";
+import path from "node:path";
+import envPaths from "env-paths";
+import { agentDir, projectDir } from "@prismshadow/penguin-core";
 import type { SpawnConfiner } from "@prismshadow/penguin-core";
 import type {
   SandboxDimension,
@@ -24,6 +27,74 @@ import type {
 import { providerDimensions, requestedDimensions } from "./dimensions.js";
 import { Interface, Module, Provide } from "@prismshadow/penguin-core/kernel";
 import type { Slot, ClassCtx, Json } from "@prismshadow/penguin-core/kernel";
+import type { WorkbenchAppLevel } from "../mechanisms/workbenches.js";
+
+const APP_ID_PATTERN = /^[A-Za-z0-9_-][A-Za-z0-9._-]*$/;
+const WINDOWS_RESERVED_NAME = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i;
+const MAX_APP_ID_LENGTH = 200;
+
+/**
+ * Validates that `appId` is a portable, single-segment directory name across POSIX and Windows:
+ * 1–200 ASCII alphanumeric/`.`/`_`/`-` characters, not starting or ending with `.`, with no `..`
+ * sequence and no Windows reserved device name.
+ */
+export function isValidAppId(appId: unknown): appId is string {
+  return (
+    typeof appId === "string" &&
+    appId.length >= 1 &&
+    appId.length <= MAX_APP_ID_LENGTH &&
+    APP_ID_PATTERN.test(appId) &&
+    !appId.endsWith(".") &&
+    !appId.includes("..") &&
+    !WINDOWS_RESERVED_NAME.test(appId)
+  );
+}
+
+export function assertValidAppId(appId: unknown): asserts appId is string {
+  if (!isValidAppId(appId)) {
+    throw new Error(`dataPaths: invalid appId '${String(appId)}'`);
+  }
+}
+
+/** Resolves the OS-level Penguin user data directory via `env-paths`. */
+export function machineDataDir(): string {
+  return envPaths("penguin", { suffix: "" }).data;
+}
+
+/** Base `<scope>/app` directory for one persistent app storage level (`agent`, `project`, `server` or `machine`). */
+export function appStorageBaseDir(
+  root: string,
+  projectId: string,
+  agentId: string,
+  level: WorkbenchAppLevel,
+): string {
+  switch (level) {
+    case "agent":
+      return path.join(agentDir(root, projectId, agentId), "app");
+    case "project":
+      return path.join(projectDir(root, projectId), "app");
+    case "server":
+      return path.join(root, "app");
+    case "machine":
+      return path.join(machineDataDir(), "app");
+    default:
+      throw new Error(`dataPaths: invalid level '${String(level)}'`);
+  }
+}
+
+/**
+ * Persistent `<scope>/app` directories granted writable under a `workspace-write` sandbox policy.
+ * Defaults to `["agent"]` so shared scopes (`project`, `server`, `machine`) are never exposed
+ * writable to a Session unless explicitly requested.
+ */
+export function appStorageRoots(
+  root: string,
+  projectId: string,
+  agentId: string,
+  levels: readonly WorkbenchAppLevel[] = ["agent"],
+): string[] {
+  return levels.map((level) => appStorageBaseDir(root, projectId, agentId, level));
+}
 
 interface MountedProvider {
   name: string;
@@ -221,7 +292,7 @@ export class SandboxService {
    * The same closure under a policy the caller keeps — a Session's own snapshot. The
    * backends are still this service's, so a backend change reaches every Session.
    */
-  confinerFor(policyOf: () => SandboxSettings): SpawnConfiner {
+  confinerFor(policyOf: () => SandboxSettings, writableRoots?: readonly string[]): SpawnConfiner {
     return (argv, opts) => {
       const settings = policyOf();
       const required = requestedDimensions(settings);
@@ -240,14 +311,19 @@ export class SandboxService {
       // it on disk: bubblewrap refuses to start on a missing bind source. Ensured on every
       // spawn, here, where every confined spawn meets — see SandboxPolicy.writableRoots.
       if (scratchpadDir !== undefined) ensureScratchpad(scratchpadDir);
+      const extraRoots =
+        settings.mode === "workspace-write" && writableRoots !== undefined ? writableRoots : [];
+      for (const dir of extraRoots) ensureWritableRoot(dir);
+      const roots = [...(scratchpadDir !== undefined ? [scratchpadDir] : []), ...extraRoots];
       // workspaceRoot is the Session's Workspace, never the per-command cwd: a command
       // running in a workdir outside the Workspace must not widen the writable roots.
       const policy: SandboxPolicy = {
         mode: settings.mode,
         workspaceRoot: opts.workspaceDir,
-        // The Session's scratchpad is writable beside the Workspace: the plan file, a goal's
-        // state file and the attachments live there, and hooks and commands both write it.
-        ...(scratchpadDir !== undefined ? { writableRoots: [scratchpadDir] } : {}),
+        // The Session's scratchpad and persistent app storage roots are writable beside the
+        // Workspace: the plan file, a goal's state file, attachments and app data/cache/state
+        // live there, and hooks, file tools and commands all write them.
+        ...(roots.length > 0 ? { writableRoots: roots } : {}),
         ...(settings.network !== undefined ? { network: settings.network } : {}),
         ...(settings.maskPaths !== undefined && settings.maskPaths.length > 0
           ? { maskPaths: settings.maskPaths }
@@ -327,6 +403,18 @@ function ensureScratchpad(dir: string): void {
     // A filesystem error's message leads with its errno (`EACCES: permission denied, …`).
     throw new Error(
       `cannot prepare the Session scratchpad ${dir} for the sandbox ` +
+        `(${err instanceof Error ? err.message : String(err)}); refusing to run the command without it.`,
+      { cause: err },
+    );
+  }
+}
+
+function ensureWritableRoot(dir: string): void {
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+  } catch (err) {
+    throw new Error(
+      `cannot prepare writable root ${dir} for the sandbox ` +
         `(${err instanceof Error ? err.message : String(err)}); refusing to run the command without it.`,
       { cause: err },
     );

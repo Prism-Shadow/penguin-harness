@@ -3,8 +3,6 @@
  *
  * - The default export carries the State without its schedules, vault, workbench build output
  *   or git entries, and without Traces.
- * - A workbench's data, its `state.json` and the `.files/` it shares with its Agent, travels only
- *   with `workbenchData`; an overwrite keeps the data a package left out.
  * - `traces=last:N` takes the N latest Sessions and the subagent Sessions they started; a date
  *   range takes the Sessions in those date folders; a vault value in a Trace travels as its key.
  * - An export with its Traces imports under a new id with its parts, version and Sessions, listed
@@ -145,7 +143,6 @@ describe("Agent zip export and import", () => {
       "memory/user/notes.md",
       "workbenches/desk/package.json",
       "workbenches/desk/state.json",
-      "workbenches/desk/.files/decks/a.json",
       "workbenches/desk/.build/out.js",
       "schedule/daily.toml",
     ]) {
@@ -182,19 +179,6 @@ describe("Agent zip export and import", () => {
     );
     expect(
       entries.filter((e) => /\/schedule\/|\.vault\.toml|\/\.build\/|\/\.git\/|\/traces\//.test(e)),
-    ).toEqual([]);
-  });
-
-  it("a workbench's data, its state and the files it shares with its Agent, travels only with workbenchData", async () => {
-    const data = ["state.json", ".files/decks/a.json"].map(
-      (rel) => `source/agent_state/workbenches/desk/${rel}`,
-    );
-    expect(names(await exportOf("source"))).toEqual(expect.arrayContaining(data));
-
-    const without = names(await exportOf("source", "?workbenchData=0"));
-    expect(without).toContain("source/agent_state/workbenches/desk/package.json");
-    expect(
-      without.filter((e) => e.includes("/workbenches/desk/") && /state\.json|\.files/.test(e)),
     ).toEqual([]);
   });
 
@@ -245,13 +229,11 @@ describe("Agent zip export and import", () => {
       await owner.post(`${agents}/target/api/keys`, { name: "ci" });
       await write(stateOf("target", "marker.txt"), "previous State");
       await write(stateOf("target", "memory/user/own.md"), "the target's own memory");
-      await write(stateOf("target", "workbenches/desk/state.json"), '{"own":true}\n');
-      await write(stateOf("target", "workbenches/desk/.files/decks/own.json"), "the target's deck");
       await write(
         path.join(tracesDir(t.root, P, "target"), "2026-03-01", "kept_001.jsonl"),
         "{}\n",
       );
-      pkg = await exportOf("source", "?memory=0&workbenchData=0");
+      pkg = await exportOf("source", "?memory=0");
     });
 
     it("an import without overwrite is 409 naming the id, and writes nothing", async () => {
@@ -271,7 +253,7 @@ describe("Agent zip export and import", () => {
       expect((await importAs(member, pkg, "?agentId=target&overwrite=1")).status).toBe(403);
     });
 
-    it("the owner's overwrite backs the State up, replaces the parts the zip carries, and keeps the vault, Traces, API keys and the parts and data it left out", async () => {
+    it("the owner's overwrite backs the State up, replaces the parts the zip carries, and keeps the vault, Traces, API keys and the parts it left out", async () => {
       const vault = await fs.readFile(agentVaultPath(t.root, P, "target"));
 
       const res = await importAs(owner, pkg, "?agentId=target&overwrite=1");
@@ -290,16 +272,6 @@ describe("Agent zip export and import", () => {
       await expect(fs.readFile(stateOf("target", "memory/user/own.md"), "utf8")).resolves.toBe(
         "the target's own memory",
       );
-      // The package carried the workbench's source only: its data here stays.
-      await expect(
-        fs.access(stateOf("target", "workbenches/desk/package.json")),
-      ).resolves.toBeUndefined();
-      await expect(
-        fs.readFile(stateOf("target", "workbenches/desk/state.json"), "utf8"),
-      ).resolves.toBe('{"own":true}\n');
-      await expect(
-        fs.readFile(stateOf("target", "workbenches/desk/.files/decks/own.json"), "utf8"),
-      ).resolves.toBe("the target's deck");
       expect(await fs.readFile(agentVaultPath(t.root, P, "target"))).toEqual(vault);
       await expect(
         fs.access(path.join(tracesDir(t.root, P, "target"), "2026-03-01", "kept_001.jsonl")),

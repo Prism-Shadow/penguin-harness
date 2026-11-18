@@ -33,7 +33,6 @@ import { badRequest } from "../http/validate.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Clock, Log, Paths } from "../hmr/capabilities.js";
 import type { AgentPackage, Snapshots } from "../mechanisms/agents.js";
-import { FILES_DIR } from "../workbenches/files.js";
 import { isGitName } from "../workbenches/repo.js";
 import { isTempName, STATE_FILE } from "../workbenches/store.js";
 import { isZip, unpackAgentZip } from "./agent-zip.js";
@@ -97,12 +96,6 @@ async function keepAbsentParts(current: string, incoming: string): Promise<void>
     const from = path.join(current, "workbenches", id, STATE_FILE);
     const to = path.join(workbenches, id, STATE_FILE);
     if (!(await exists(to)) && (await exists(from))) await fs.copyFile(from, to);
-    // The folder of files it shares with its Agent is its data too.
-    const filesFrom = path.join(current, "workbenches", id, FILES_DIR);
-    const filesTo = path.join(workbenches, id, FILES_DIR);
-    if (!(await exists(filesTo)) && (await exists(filesFrom))) {
-      await fs.cp(filesFrom, filesTo, { recursive: true, verbatimSymlinks: true });
-    }
   }
 }
 

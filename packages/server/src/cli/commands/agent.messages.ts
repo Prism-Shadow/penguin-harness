@@ -177,7 +177,7 @@ export const agentEn: AgentText = {
     exportNoHooks: "Leave out the hook packages",
     exportNoMemory: "Leave out the memory",
     exportNoWorkbenches: "Leave out the workbenches",
-    exportNoWorkbenchData: "Take each workbench's source without its data (state.json, .files/)",
+    exportNoWorkbenchData: "Take each workbench's source without its data (state.json)",
     exportSchedules: "Take the scheduled tasks (once imported, they run on their schedule)",
     exportTraces:
       "Sessions to take: none, last:<N> (1-500 by last activity, subagents with their parent) or <yyyy-mm-dd>..<yyyy-mm-dd>",
@@ -269,7 +269,7 @@ export const agentZh: AgentText = {
     exportNoHooks: "不带钩子包",
     exportNoMemory: "不带记忆",
     exportNoWorkbenches: "不带 Workbench",
-    exportNoWorkbenchData: "Workbench 只带源码，不带其数据（state.json 与 .files/）",
+    exportNoWorkbenchData: "Workbench 只带源码，不带其数据（state.json）",
     exportSchedules: "带上定时任务（导入后会按计划运行）",
     exportTraces:
       "带哪些 Session：none、last:<N>（1~500，按最近活跃，Subagent 会话随其父）或 <yyyy-mm-dd>..<yyyy-mm-dd>",
