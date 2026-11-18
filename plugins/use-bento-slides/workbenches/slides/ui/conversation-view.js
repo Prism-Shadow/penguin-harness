@@ -71,7 +71,7 @@ function details(label, key, opened, cls = "turn-step") {
 }
 
 export function showConversation(list, messages, trace, options) {
-  const { locale, running, hint, retry, approvals = [], decide } = options;
+  const { locale, running, hint, retry, approvals = [], decidingCalls, decide } = options;
   const S = labels[locale] || labels.en;
   const stick = list.scrollHeight - list.clientHeight - list.scrollTop < 40;
   const previous = list.scrollTop;
@@ -81,6 +81,7 @@ export function showConversation(list, messages, trace, options) {
   const scrolled = [...list.querySelectorAll("details[open] pre")].map((el) => el.scrollTop);
   const focused = document.activeElement?.closest("details")?.dataset.disclosure;
   const grouped = turnsFor(messages, trace);
+  const runningTurn = trace.current?.status === "running" ? trace.current : null;
   const out = document.createDocumentFragment();
   let row,
     prompt = "";
@@ -112,11 +113,13 @@ export function showConversation(list, messages, trace, options) {
           ? "failed"
           : "completed"
         : running
-          ? "running"
+          ? runningTurn
+            ? "queued"
+            : "running"
           : null);
     const active = status === "running" || status === "queued";
     const parts = turn?.parts || [];
-    const waiting = active && i === messages.length - 1 ? approvals : [];
+    const waiting = runningTurn && turn === runningTurn ? approvals : [];
     const last = parts.at(-1);
     let state = S[status] || status;
     if (waiting.length) state = S.waiting;
@@ -126,9 +129,11 @@ export function showConversation(list, messages, trace, options) {
       else if (last.name === "exec_command") state = S.executing;
       else state = S.tools[last.name] || S.running;
     }
-    const key = msg.at || String(i);
+    // The optimistic user message gets its server timestamp on the next poll.
+    // The Session task timestamp stays the same for the entire trace.
+    const key = turn?.at || msg.at || String(i);
     let group;
-    if (parts.some((part) => part.kind !== "text")) {
+    if (waiting.length || parts.some((part) => part.kind !== "text")) {
       group = details(state, key, opened, "turn-history");
       group.firstElementChild.className = "turn-state";
       row.append(group);
@@ -137,27 +142,22 @@ export function showConversation(list, messages, trace, options) {
       const actions = element("div", "turn-approval");
       actions.append(element("span", "", S.tools[call.name] || call.name || S.tool));
       // Show the actual request before asking to authorize it, including the command or file.
-      const args = typeof call.arguments === "string" ? call.arguments : JSON.stringify(call.arguments);
+      const args =
+        typeof call.arguments === "string" ? call.arguments : JSON.stringify(call.arguments);
       if (args) actions.append(element("pre", "", args));
       for (const decision of ["allow", "deny"]) {
         const btn = element("button", "", S[decision]);
         btn.type = "button";
-        btn.onclick = async () => {
-          const buttons = actions.querySelectorAll("button");
-          buttons.forEach((b) => (b.disabled = true));
-          try { await decide(call.tool_call_id, decision); }
-          catch (error) {
-            actions.append(element("span", "turn-error", error.message));
-            buttons.forEach((b) => (b.disabled = false));
-          }
-        };
+        btn.disabled = decidingCalls?.has(call.tool_call_id) ?? false;
+        btn.onclick = () => decide(call.tool_call_id, decision);
         actions.append(btn);
       }
-      row.append(actions);
+      group.append(actions);
     }
     for (const [j, part] of parts.entries()) {
       if (part.kind === "text") {
-        if (part.text) row.append(element("div", "turn-answer", part.text));
+        if (part.text)
+          (group && part !== last ? group : row).append(element("div", "turn-answer", part.text));
         continue;
       }
       const item = details(

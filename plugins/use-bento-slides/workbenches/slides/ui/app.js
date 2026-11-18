@@ -735,6 +735,7 @@ let reader = null;
 let transcript = newConversation();
 let followedId = null;
 let approvals = [];
+let decidingCalls = new Set();
 let approvalRead = 0;
 let renderFrame = null;
 let talk = { sessionId: null, status: null, messages: [] };
@@ -754,6 +755,7 @@ function stopFollowing() {
   reader = null;
   followedId = null;
   approvals = [];
+  decidingCalls = new Set();
   ++approvalRead;
   transcript = newConversation();
   if (renderFrame !== null) cancelAnimationFrame(renderFrame);
@@ -764,7 +766,9 @@ async function pendingApprovals(sessionId) {
   if (!sdk || followedId !== sessionId) return;
   const revision = ++approvalRead;
   try {
-    const res = await sdk.transport.get("/sessions/" + encodeURIComponent(sessionId) + "/approvals");
+    const res = await sdk.transport.get(
+      "/sessions/" + encodeURIComponent(sessionId) + "/approvals",
+    );
     if (revision === approvalRead && followedId === sessionId) {
       approvals = res.body?.approvals || [];
       scheduleTalk();
@@ -775,12 +779,20 @@ async function pendingApprovals(sessionId) {
 }
 
 async function decideApproval(sessionId, toolId, decision) {
-  if (!sdk || followedId !== sessionId) return;
-  const path = "/sessions/" + encodeURIComponent(sessionId) + "/approvals/" + encodeURIComponent(toolId);
+  if (!sdk || followedId !== sessionId || decidingCalls.has(toolId)) return;
+  const pending = decidingCalls;
+  pending.add(toolId);
+  scheduleTalk();
+  const path =
+    "/sessions/" + encodeURIComponent(sessionId) + "/approvals/" + encodeURIComponent(toolId);
   try {
     await sdk.transport.post(path, { decision });
+  } catch (error) {
+    if (followedId === sessionId) notice(String(error.message || error));
   } finally {
     await pendingApprovals(sessionId);
+    pending.delete(toolId);
+    if (followedId === sessionId) scheduleTalk();
   }
 }
 
@@ -793,6 +805,7 @@ function renderTalk() {
     hint: S.hintEmpty,
     retry: ask,
     approvals,
+    decidingCalls,
     decide: (id, decision) => decideApproval(sessionId, id, decision),
   });
   $("stop").hidden = !running || !sdk;
@@ -815,10 +828,11 @@ async function follow(sessionId) {
   // The rail retains 40 messages. The SDK window counts whole Tasks, not
   // records, so even a long tool run is restored with its own original turn.
   const mine = (reader = sdk.followSession(sessionId, { tailLimit: 40 }));
-  mine.on("event", ({ record }) => {
+  mine.on("event", ({ record, source }) => {
     if (reader !== mine) return;
     readConversation(transcript, record);
-    if (record.payload?.type === "tool_call" && talk.status !== "idle") void pendingApprovals(sessionId);
+    if (source === "live" && record.payload?.type === "tool_call" && talk.status !== "idle")
+      void pendingApprovals(sessionId);
     if (record.payload?.type === "task_end" && talk.status !== "idle") {
       clearTimeout(talkTimer);
       talkTimer = setTimeout(() => void refreshTalk(), 150);
