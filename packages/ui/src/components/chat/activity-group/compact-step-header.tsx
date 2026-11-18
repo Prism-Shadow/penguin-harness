@@ -8,17 +8,12 @@ import {
   ACTIVITY_HEAD_HOVER_CLASS,
   ActivityMarkSlot,
   ActivityToggle,
-  DISCLOSURE_HEADER_STICKY_CLASS,
-  activityState,
 } from "../../layout/disclosure-row/disclosure-row";
-import type { ActivityKind } from "../../layout/disclosure-row/disclosure-row";
 import { Pager } from "../../navigation/group-header/pager";
-import { WallpaperBackdrop } from "../../shell/app-shell/wallpaper";
 import type { ActivityStepNavigation, ActivityStepSummary } from "./activity-group";
 
 interface CompactStepHeaderProps {
   summary: ActivityStepSummary;
-  kind: ActivityKind;
   navigation: ActivityStepNavigation;
   page: number;
   total: number;
@@ -32,7 +27,6 @@ interface CompactStepHeaderProps {
 /** A single sticky line. Paging is available on a closed group and never toggles it. */
 export function CompactStepHeader({
   summary,
-  kind,
   navigation,
   page,
   total,
@@ -49,7 +43,6 @@ export function CompactStepHeader({
       controls.current.focus({ preventScroll: true });
     goTo(page);
   }
-  const hookState = activityState(summary.state);
   const content = (
     <>
       <ActivityMarkSlot mark={<StatusIcon state={summary.state} label={summary.stateLabel} />} />
@@ -72,15 +65,7 @@ export function CompactStepHeader({
   );
   const summaryClass = "flex min-w-0 flex-1 items-center gap-2 self-stretch px-2 text-left";
   return (
-    <div
-      data-slot="head"
-      data-step-head=""
-      data-kind={kind}
-      data-state={hookState}
-      data-step-terminal={terminal || undefined}
-      className={`ui-activity ${DISCLOSURE_HEADER_STICKY_CLASS} flex min-w-0 items-center bg-surface-muted py-0.5 pe-12 sm:pe-1`}
-    >
-      <WallpaperBackdrop />
+    <>
       {terminal ? (
         <div className={summaryClass}>{content}</div>
       ) : (
@@ -143,6 +128,6 @@ export function CompactStepHeader({
           readoutLabel={navigation.position(page + 1, total)}
         />
       </div>
-    </div>
+    </>
   );
 }

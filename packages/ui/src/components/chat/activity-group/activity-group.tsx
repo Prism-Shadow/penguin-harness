@@ -83,6 +83,7 @@ export const ActivitySearchPreview = createContext(false);
 export type ActivityDisplayMode = "standard" | "expanded" | "compact";
 
 export interface ActivityStepSummary {
+  kind?: ActivityKind;
   label: string;
   state: RunState;
   stateLabel?: string;
@@ -188,13 +189,18 @@ export interface ActivityGroupProps {
   children?: ReactNode;
 }
 
-export function ActivityGroup(props: ActivityGroupProps) {
-  const mode = props.stepNavigation ? (props.displayMode ?? "standard") : "standard";
-  // Selecting a different presentation applies its disclosure defaults to existing work too.
-  return <ActivityGroupView key={mode} {...props} displayMode={mode} />;
+interface ReadingState {
+  mode: ActivityDisplayMode;
+  open: boolean | null;
+  pageKey: Key | null;
+  disclosures: ReadonlyMap<Key, boolean>;
 }
 
-function ActivityGroupView({
+function initialReadingState(mode: ActivityDisplayMode): ReadingState {
+  return { mode, open: null, pageKey: null, disclosures: new Map() };
+}
+
+export function ActivityGroup({
   kind,
   state,
   stepRunning,
@@ -208,14 +214,17 @@ function ActivityGroupView({
   pending = false,
   rows,
   stepNavigation,
-  displayMode = "standard",
+  displayMode: preference = "standard",
   terminal,
   children,
 }: ActivityGroupProps) {
   const hookState = activityState(state);
   const running = hookState === "running";
   const inFlight = stepRunning ?? state === "running";
-  const [manualOpen, setOpen] = useState<boolean | null>(null);
+  const displayMode = stepNavigation ? preference : "standard";
+  const [view, setView] = useState(() => initialReadingState(displayMode));
+  // A preference change applies the new defaults before React commits the next frame.
+  if (view.mode !== displayMode) setView(initialReadingState(displayMode));
   /** The reader closed the card: land the view on it once the fold has finished. */
   const landOnClose = useRef(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -226,27 +235,33 @@ function ActivityGroupView({
 
   const compact = displayMode === "compact";
   const finding = !!stepNavigation?.revealAll;
-  const [reading, setReading] = useState<Key | null>(null);
-  const [disclosures, setDisclosures] = useState<ReadonlyMap<Key, boolean>>(() => new Map());
   const stepCount = rows?.length ?? 0;
   const total = stepCount + (terminal ? 1 : 0);
-  const selected = reading === null ? -1 : (rows?.findIndex((row) => row.key === reading) ?? -1);
+  const selected =
+    view.pageKey === null ? -1 : (rows?.findIndex((row) => row.key === view.pageKey) ?? -1);
   const page = selected >= 0 ? selected : total - 1;
   const pageRow = rows?.[page];
   const terminalPage = !!terminal && page === stepCount;
+  const summary: ActivityStepSummary = (terminalPage ? terminal : pageRow?.summary) ?? {
+    label: title,
+    state,
+    startMs,
+    durationMs,
+  };
   const shown =
     expandable &&
     (finding ||
       (compact
-        ? !terminalPage && (manualOpen ?? false)
-        : pending || (manualOpen ?? (displayMode === "expanded" || running))));
+        ? !terminalPage && (view.open ?? false)
+        : pending || (view.open ?? (displayMode === "expanded" || running))));
   function toggle() {
     landOnClose.current = shown && !finding && (compact || !pending);
-    setOpen(!shown);
+    setView((prior) => ({ ...prior, open: !shown }));
   }
   function goTo(index: number) {
     // The newest page has no pinned id, so it continues to follow new arrivals.
-    setReading(index === total - 1 ? null : (rows?.[index]?.key ?? null));
+    const pageKey = index === total - 1 ? null : (rows?.[index]?.key ?? null);
+    setView((prior) => ({ ...prior, pageKey }));
   }
   // Cycle through simultaneous approvals, including the selected one when the group is shut.
   const nextWaiting = rows?.findIndex((row, index) => row.needsAction && index > page) ?? -1;
@@ -258,7 +273,7 @@ function ActivityGroupView({
   function renderRows() {
     if (!stepNavigation) return rows ?? [];
     return (visibleRows ?? []).map((row) => {
-      const expanded = disclosures.get(row.key) ?? displayMode === "expanded";
+      const expanded = view.disclosures.get(row.key) ?? displayMode === "expanded";
       return {
         ...row,
         content: (
@@ -268,7 +283,11 @@ function ActivityGroupView({
               bounded: compact && !finding,
               follow: running && selected < 0,
               toggle: () => {
-                if (!finding) setDisclosures((prior) => new Map(prior).set(row.key, !expanded));
+                if (!finding)
+                  setView((prior) => ({
+                    ...prior,
+                    disclosures: new Map(prior.disclosures).set(row.key, !expanded),
+                  }));
               },
             }}
           >
@@ -336,32 +355,34 @@ function ActivityGroupView({
       data-step-view={stepNavigation ? (finding ? "find" : displayMode) : undefined}
     >
       {compact && stepNavigation && !finding && total > 0 ? (
-        <CompactStepHeader
-          summary={
-            (terminalPage ? terminal : pageRow?.summary) ?? {
-              label: title,
-              state,
-              startMs,
-              durationMs,
+        <div
+          data-slot="head"
+          data-step-head=""
+          data-kind={summary.kind ?? kind}
+          data-state={activityState(summary.state)}
+          data-step-terminal={terminalPage || undefined}
+          className={`ui-activity ${DISCLOSURE_HEADER_STICKY_CLASS} flex min-w-0 items-center bg-surface-muted py-0.5 pe-12 sm:pe-1`}
+        >
+          <WallpaperBackdrop />
+          <CompactStepHeader
+            summary={summary}
+            navigation={stepNavigation}
+            page={page}
+            total={total}
+            terminal={terminalPage}
+            open={shown}
+            toggle={toggle}
+            goTo={goTo}
+            showAction={
+              waiting < 0
+                ? undefined
+                : () => {
+                    goTo(waiting);
+                    setView((prior) => ({ ...prior, open: true }));
+                  }
             }
-          }
-          kind={kind}
-          navigation={stepNavigation}
-          page={page}
-          total={total}
-          terminal={terminalPage}
-          open={shown}
-          toggle={toggle}
-          goTo={goTo}
-          showAction={
-            waiting < 0
-              ? undefined
-              : () => {
-                  goTo(waiting);
-                  setOpen(true);
-                }
-          }
-        />
+          />
+        </div>
       ) : expandable ? (
         <button
           type="button"

@@ -1,9 +1,9 @@
 /**
  * A tool call in the transcript: one line by default — status icon, the tool's name, a one-line
- * subtitle, the duration (a live clock while it runs) — that expands to the call's full arguments,
+ * subtitle when offered, the duration (a live clock while it runs) — that expands to the call's full arguments,
  * its output and any images it returned. A call waiting on a person's decision shows its
- * approval block under the row whatever the collapsed state, and a footer (a spawned subagent's
- * row) is always shown below the details.
+ * approval block under the row whatever the collapsed state. In a work group, opening the row
+ * also reveals its subtitle and optional footer (a spawned subagent's row).
  *
  * The row names no outcome in words: the status icon, with the caller's state label as its
  * accessible name and tooltip, carries how the call ended or was decided (a failure also turns
@@ -31,7 +31,7 @@
  * props. What the caller decides from the call's own data — the preview, the payload, the
  * duration's segments — does too; this component only lays them out.
  */
-import type { ReactNode } from "react";
+import { useContext, type ReactNode } from "react";
 import { Button } from "../../actions/button/button";
 import { StatusIcon } from "../../icons/status-icon/status-icon";
 import type { RunState } from "../../icons/status-icon/status-icon";
@@ -43,6 +43,7 @@ import {
   activityState,
 } from "../../layout/disclosure-row/disclosure-row";
 import { ZoomableImage } from "../../overlays/lightbox/lightbox";
+import { StepDisclosure } from "../activity-group/step-disclosure";
 import { ApprovalBlock } from "../approval-block/approval-block";
 import { StreamText } from "../stream-text/stream-text";
 import type { ApprovalRequest } from "../approval-block/approval-block";
@@ -118,6 +119,8 @@ export function ToolCallCard({
   expandLabel,
   collapseLabel,
 }: ToolCallCardProps) {
+  const step = useContext(StepDisclosure);
+  const showDetails = step?.open ?? true;
   const row = (
     <DisclosureRow
       sticky
@@ -139,7 +142,7 @@ export function ToolCallCard({
           >
             {name}
           </span>
-          {subtitle && (
+          {showDetails && subtitle && (
             <span
               data-slot="detail"
               {...(subtitleFull && subtitleFull !== subtitle
@@ -232,7 +235,7 @@ export function ToolCallCard({
       </>
     </DisclosureRow>
   );
-  if (footer === undefined || footer === null) return row;
+  if (!showDetails || footer === undefined || footer === null) return row;
   return (
     <div>
       {row}
