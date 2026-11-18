@@ -208,7 +208,12 @@ export interface BodyLoad {
   error: string | null;
 }
 
-export interface ThinkingItem {
+interface WorkStep {
+  /** Only the final work step of a settled Task carries its outcome and trace duration. */
+  workOutcome?: { state: "done" | "failed" | "stopped"; durationMs: number };
+}
+
+export interface ThinkingItem extends WorkStep {
   kind: "thinking";
   id: number;
   thinking: string;
@@ -223,7 +228,7 @@ export interface ThinkingItem {
   bodyLoad?: BodyLoad;
 }
 
-export interface ToolCallItem {
+export interface ToolCallItem extends WorkStep {
   kind: "tool_call";
   id: number;
   toolCallId: string;
@@ -337,7 +342,7 @@ function isReconnectStatus(status: string | undefined): status is ReconnectStatu
 }
 
 /** An LLM Request ending retryable → the engine retries carrying the content already produced. */
-export interface ReconnectItem extends RequestFailureFacts {
+export interface ReconnectItem extends RequestFailureFacts, WorkStep {
   kind: "reconnect";
   id: number;
   /** Trigger status (legacy Traces carry the finer pre-convergence spellings). */
@@ -676,6 +681,9 @@ export interface StreamModel {
   openApprovalWaitMs: number;
   /** Task segmentation state. */
   taskOpen: boolean;
+  taskFirstItemId: number;
+  /** Latest normal request or abort outcome, published on the last work step only when the Task closes. */
+  taskOutcome: NonNullable<WorkStep["workOutcome"]>["state"] | null;
   /**
    * Local-clock instant the running Task's header elapsed ticks from — display
    * only; no settled duration is ever derived from it (see finalizeOpenTask,
@@ -775,6 +783,8 @@ function newModel(nested: boolean, localDecisions: Set<string>): StreamModel {
     openRequestFirstItemId: null,
     openApprovalWaitMs: 0,
     taskOpen: false,
+    taskFirstItemId: 1,
+    taskOutcome: null,
     taskStartLocalMs: 0,
     taskFirstTsMs: 0,
     taskLastTsMs: 0,
@@ -1116,6 +1126,8 @@ function startTask(model: StreamModel, timestamp: string, nowMs: number): void {
   // along, and the Task's own next request belongs to it.
   model.runEnded = false;
   model.taskOpen = true;
+  model.taskFirstItemId = model.nextItemId;
+  model.taskOutcome = null;
   model.taskModel = model.contextModel && {
     provider: model.contextModel.provider,
     modelId: model.contextModel.modelId,
@@ -1154,6 +1166,20 @@ function finalizeOpenTask(model: StreamModel): void {
   // latency folded into it.
   const endMs = model.taskLastReqEndMs ?? model.taskLastTsMs;
   const elapsed = Math.max(0, endMs - model.taskFirstTsMs);
+  if (model.taskOutcome) {
+    for (let i = model.items.length - 1; i >= 0; i--) {
+      const item = model.items[i]!;
+      if (item.id < model.taskFirstItemId) break;
+      if (
+        item.kind === "thinking" ||
+        item.kind === "tool_call" ||
+        (item.kind === "reconnect" && !item.gaveUp)
+      ) {
+        item.workOutcome = { state: model.taskOutcome, durationMs: elapsed };
+        break;
+      }
+    }
+  }
   const stats = endTask(model.stats, elapsed);
   if (model.nested) return;
   const reply = collectTaskAssistant(model);
@@ -1858,6 +1884,7 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       model.items.push(item);
       // The stop ended the run with its turn held: a Retry's first request opens a new Task.
       model.runEnded = true;
+      model.taskOutcome = "stopped";
       return;
     }
     case "token_usage":
@@ -2023,6 +2050,7 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
         }
         return;
       }
+      model.taskOutcome = null;
       // A retry request was sent: mark the waiting reconnect hint as resent (a no-op when there's no such item before a normal first request).
       const waiting = findLastWaitingReconnect(model);
       if (waiting) waiting.retrying = true;
@@ -2076,6 +2104,13 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       // retry_in_ms; `0` is an immediate retry). A request after it opens a new Task.
       model.runEnded =
         p.status === "fatal" || (p.status === "retryable" && p.retry_in_ms === undefined);
+      model.taskOutcome = model.runEnded
+        ? "failed"
+        : p.status === "aborted"
+          ? "stopped"
+          : p.status === "completed"
+            ? "done"
+            : null;
       // A fatal end stops the run — no abort event follows; this request_end is the
       // terminal record, rendered as an error banner.
       if (p.status === "fatal") {

@@ -35,7 +35,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import type { ThemePackDto } from "@prismshadow/penguin-server/api";
-import type { ThemeId } from "@prismshadow/penguin-ui";
+import type { ActivityDisplayMode, ThemeId } from "@prismshadow/penguin-ui";
 import { applyThemeAttributes, THEME_STORAGE_KEYS } from "@prismshadow/penguin-ui/boot";
 import type { AccentChoice } from "@prismshadow/penguin-ui/boot";
 import {
@@ -118,8 +118,8 @@ interface ThemeContextValue {
   terminalMode: TerminalThemeMode;
   setTerminalMode: (mode: TerminalThemeMode) => void;
   /** Whether tool-call cards name the built-in tools by their short alias. */
-  activityDisplayMode: NonNullable<ReturnType<typeof activityDisplayModeValue>>;
-  setActivityDisplayMode: (mode: NonNullable<ReturnType<typeof activityDisplayModeValue>>) => void;
+  activityDisplayMode: ActivityDisplayMode;
+  setActivityDisplayMode: (mode: ActivityDisplayMode) => void;
   toolAliases: boolean;
   setToolAliases: (on: boolean) => void;
   /** Resolved terminal appearance ("app" already resolved against the app's own). */
@@ -308,13 +308,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setTerminalModeState(next);
   }, []);
 
-  const setActivityDisplayMode = useCallback(
-    (next: NonNullable<ReturnType<typeof activityDisplayModeValue>>) => {
-      writeCached(ACTIVITY_DISPLAY_MODE_KEY, next);
-      setActivityDisplayModeState(next);
-    },
-    [],
-  );
+  const setActivityDisplayMode = useCallback((next: ActivityDisplayMode) => {
+    writeCached(ACTIVITY_DISPLAY_MODE_KEY, next);
+    setActivityDisplayModeState(next);
+  }, []);
 
   const setToolAliases = useCallback((next: boolean) => {
     writeCached(TOOL_ALIASES_KEY, next ? "1" : "0");

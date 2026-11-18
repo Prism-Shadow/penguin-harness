@@ -15,12 +15,18 @@
  * - The duration is `summarizeWork`'s span; it ticks only while an item is in flight.
  */
 import { useContext } from "react";
-import { ActivityGroup, type ActivityGroupProps } from "@prismshadow/penguin-ui";
+import {
+  ActivityGroup,
+  type ActivityGroupProps,
+  type ActivityStepSummary,
+} from "@prismshadow/penguin-ui";
 
 import { S } from "../../lib/strings";
 import { FindRevealContext } from "../../lib/find-expand";
 import { approvalKey, type ChatItem } from "../../lib/amsp/stream-model";
 
+import { useActivityDisplayMode } from "../../state/theme";
+import { toolActivity } from "./tool-activity";
 import { MessageItem } from "./message-item";
 import type { StreamRenderContext } from "./message-stream";
 import { summarizeWork } from "./work-summary";
@@ -62,6 +68,33 @@ function needsAction(item: ChatItem, ctx: StreamRenderContext): boolean {
   );
 }
 
+function stepSummary(item: ChatItem, ctx: StreamRenderContext): ActivityStepSummary | undefined {
+  if (item.kind === "thinking") {
+    return {
+      kind: "thinking",
+      label: S.chat.thinking,
+      state: item.streaming ? "running" : "done",
+      startMs: item.streaming ? item.startedAtMs : undefined,
+      durationMs: item.durationMs,
+    };
+  }
+  if (item.kind === "tool_call") {
+    const { state, stateLabel, duration } = toolActivity(item, needsAction(item, ctx));
+    return {
+      kind: "tool",
+      label: item.name || S.chat.unknownTool,
+      state,
+      stateLabel,
+      startMs: duration?.live ? duration.sinceMs : undefined,
+      durationMs: duration?.live === false ? duration.ms : undefined,
+      offsetMs: duration?.live ? duration.offsetMs : undefined,
+    };
+  }
+  if (item.kind === "reconnect") {
+    return { kind: "event", label: S.chat.workRetryStep(item.attempt), state: item.retrying ? "done" : "waiting" };
+  }
+}
+
 /** The group's state as the package's `ActivityGroup` takes it, minus the rows. */
 export function useWorkGroupState(
   items: ChatItem[],
@@ -70,6 +103,7 @@ export function useWorkGroupState(
 ): Omit<ActivityGroupProps, "rows" | "children"> {
   // Whether any item is in flight right now — also the only window in which the group's span is
   // still growing, which the duration display depends on.
+  const displayMode = useActivityDisplayMode();
   const stepRunning = items.some((it) => itemActive(it, ctx));
   const waitingRetry = hasWaitingRetry(items);
   // Last segment + Task running = the model might still call another tool → Running, even with
@@ -80,20 +114,34 @@ export function useWorkGroupState(
   // this region, which can only see the rows while they are mounted.
   const revealedForFind = useContext(FindRevealContext);
   const { steps, durationMs, startMs } = summarizeWork(items);
+  const last = items.at(-1);
+  const outcome =
+    last && (last.kind === "thinking" || last.kind === "tool_call" || last.kind === "reconnect")
+      ? last.workOutcome
+      : undefined;
+  const title =
+    outcome?.state === "failed"
+      ? S.chat.workFailed
+      : outcome?.state === "stopped"
+        ? S.chat.workStopped
+        : running
+          ? S.chat.workRunning
+          : S.chat.workDone;
   return {
-    state: running ? "running" : "done",
+    displayMode,
+    terminal: outcome && { ...outcome, label: title },
+    state: outcome?.state ?? (running ? "running" : "done"),
     stepRunning,
     // A group of thinking only is thinking; anything with a tool call in it is tool work.
     kind: items.some((it) => it.kind === "tool_call") ? "tool" : "thinking",
     // The title doubles as status: "Running" while in progress, "Done" when finished.
-    title: running ? S.chat.workRunning : S.chat.workDone,
+    title,
     // A pure-thinking group (no tool calls) doesn't show "0 steps".
     ...(steps > 0 ? { count: S.chat.workGroupSteps(steps) } : {}),
     ...(startMs !== undefined ? { startMs } : {}),
     durationMs,
     pending: items.some((item) => needsAction(item, ctx)) || revealedForFind,
     stepNavigation: {
-      ...(steps > 0 ? { count: S.chat.workGroupToolCalls(steps) } : {}),
       previous: S.chat.previousWorkStep,
       next: S.chat.nextWorkStep,
       latest: S.chat.latestWorkStep,
@@ -120,6 +168,7 @@ export function SessionWorkGroup({
       {...state}
       rows={items.map((item) => ({
         key: item.id,
+        summary: stepSummary(item, ctx),
         needsAction: needsAction(item, ctx),
         content: <MessageItem item={item} ctx={ctx} />,
       }))}
