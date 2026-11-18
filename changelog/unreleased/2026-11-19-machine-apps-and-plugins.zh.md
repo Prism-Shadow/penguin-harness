@@ -3,6 +3,7 @@
 - **Date:** 2026-11-19
 - **Type:** feature
 - **Scope:** `web`
+- **PR:** [#1618](https://github.com/Prism-Shadow/penguin-harness/pull/1618)
 
 [English](2026-11-19-machine-apps-and-plugins.md)
 
