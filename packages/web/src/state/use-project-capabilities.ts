@@ -2,20 +2,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { CapabilitySettings, CapabilitySettingsPatch } from "@prismshadow/penguin-server/api";
 import { toastError } from "@prismshadow/penguin-ui";
 import { getCapabilities, updateCapabilities } from "../api/project-capabilities";
-import { serverPluginsChanged } from "../features/plugins/plugin-reads";
+import {
+  serverPluginsChanged,
+  projectCapabilitiesChanged,
+  notifyProjectChange,
+} from "../lib/project-change-events";
 import { apiErrorText } from "../lib/api-error";
 import { sameModelRef } from "../lib/model-grouping";
-
-const changeEvent = "penguin-project-capabilities-changed";
-
-function notifyChange(key: string) {
-  window.dispatchEvent(new CustomEvent(changeEvent, { detail: key }));
-  try {
-    window.localStorage.setItem(changeEvent, JSON.stringify({ key, at: crypto.randomUUID() }));
-  } catch {
-    // A browser that disables storage still updates the views in this window.
-  }
-}
 
 function applyPatch(
   previous: CapabilitySettings,
@@ -80,7 +73,7 @@ export function useProjectCapabilities(
       if ((event as CustomEvent<string>).detail === key) reload();
     };
     const storage = (event: StorageEvent) => {
-      if (event.key === changeEvent || event.key === serverPluginsChanged) reload();
+      if (event.key === projectCapabilitiesChanged || event.key === serverPluginsChanged) reload();
     };
     const visible = () => {
       if (document.visibilityState === "visible") reload();
@@ -89,14 +82,14 @@ export function useProjectCapabilities(
       if ((event as CustomEvent<string>).detail === projectId) reload();
     };
     window.addEventListener(serverPluginsChanged, pluginsChanged);
-    window.addEventListener(changeEvent, changed);
+    window.addEventListener(projectCapabilitiesChanged, changed);
     window.addEventListener("storage", storage);
     window.addEventListener("focus", visible);
     document.addEventListener("visibilitychange", visible);
     return () => {
       request.current?.abort();
       window.removeEventListener(serverPluginsChanged, pluginsChanged);
-      window.removeEventListener(changeEvent, changed);
+      window.removeEventListener(projectCapabilitiesChanged, changed);
       window.removeEventListener("storage", storage);
       window.removeEventListener("focus", visible);
       document.removeEventListener("visibilitychange", visible);
@@ -127,7 +120,7 @@ export function useProjectCapabilities(
       }
       const next = await updateCapabilities(projectId, patch, server);
       if (active.current === key) setSnapshot({ key, settings: next });
-      notifyChange(key);
+      notifyProjectChange(projectCapabilitiesChanged, key);
     } catch (reason) {
       if (active.current === key && !check.signal.aborted) {
         setSnapshot({ key, settings });
