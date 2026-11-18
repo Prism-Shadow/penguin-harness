@@ -21,19 +21,30 @@
     "icon.svg",
     "skills",
     "ifaces.json",
+    "dist",
     "LICENSE"
   ],
+  "exports": {
+    "./driver": {
+      "types": "./dist/driver.d.ts",
+      "import": "./dist/driver.js"
+    }
+  },
+  "peerDependencies": {
+    "@playwright/test": "^1.61.1"
+  },
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
     "test": "vitest run",
-    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json"
+    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json && tsup"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/skills": "workspace:*",
+    "tsup": "^8.3.0",
     "vitest": "^4.1.12"
   }
 }

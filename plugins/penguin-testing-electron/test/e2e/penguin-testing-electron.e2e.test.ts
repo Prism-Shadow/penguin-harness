@@ -4,10 +4,14 @@ import { describe, it } from "vitest";
 
 /**
  * End to end: test the sample plugin against a real harness shell — the shape a plugin
- * author writes: the units are modules (`@Component` classes with a `run(context)`
- * method) handed to the driver. The driver runs the whole lifecycle; this test only
- * declares the unit classes. Skips itself when no display is available (Linux CI runs it
- * under Xvfb) — it never fails red for lack of a head.
+ * author writes. Both driver tiers, against the same unit modules:
+ *
+ * - `testPlugin` — the whole lifecycle in one call.
+ * - the low-level tier — one instance, install / assert / remove held by the caller, the
+ *   exploratory round a plugin author actually runs.
+ *
+ * Skips itself when no display is available (Linux CI runs it under Xvfb) — it never
+ * fails red for lack of a head.
  */
 const display = process.env.DISPLAY ?? process.env.WAYLAND_DISPLAY;
 const available = process.platform !== "linux" || display !== undefined;
@@ -28,5 +32,37 @@ describe.skipIf(!available)("penguin-testing-electron e2e", () => {
       "InstanceDataExists:true",
       "WindowRenders:true",
     ]);
+  }, 120_000);
+
+  it("holds the steps by hand on one instance: install, run, remove, another plugin", async () => {
+    const driver = await import("../../src/driver.js");
+    const sample = path.join(import.meta.dirname, "sample-plugin");
+    const { InstanceDataExists, WindowRenders } = await import("./sample-plugin/test-unit.js");
+
+    const harness = await driver.launchHarness();
+    try {
+      // The window is the caller's from here on — the exploratory round starts.
+      await harness.window.waitForLoadState("domcontentloaded");
+      expect(harness.window.isClosed()).toBe(false);
+
+      const name = await driver.installPlugin(harness, sample, { force: true });
+      await driver.waitForActive(harness, name);
+
+      // Run one unit by hand against the held window.
+      const unit = new WindowRenders();
+      await unit.run({ window: harness.window });
+
+      // The instance carries the units' data dir — the data-exists unit's subject.
+      const data = new InstanceDataExists();
+      await data.run({ window: harness.window });
+
+      // Remove and install again on the same instance: the shared shell is the point.
+      await driver.removePlugin(harness, name);
+      const again = await driver.installPlugin(harness, sample, { force: true });
+      expect(again).toBe(name);
+      await driver.waitForActive(harness, again);
+    } finally {
+      await driver.closeHarness(harness);
+    }
   }, 120_000);
 });
