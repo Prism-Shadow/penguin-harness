@@ -502,6 +502,8 @@ describe("the hub readers", () => {
         categories: ["office-productivity"],
         keywords: ["slides", "workbenches"],
         repository: "https://github.com/acme/slides",
+        integrity: "sha512-abc=",
+        channels: [{ kind: "github", url: "https://example.org/releases/slides-0.10.0.tgz" }],
         updatedAt: NOV_17,
       }),
       row("@acme/slides", "0.10.0-rc.1"),
@@ -545,6 +547,7 @@ describe("the hub readers", () => {
     const slides = hub.details.plugin["acme__slides"]!;
     expect(slides).toMatchObject({
       sourceUrl: "https://github.com/acme/slides",
+      archiveUrl: "https://example.org/releases/slides-0.10.0.tgz",
       screenshots: [{ src: "acme__slides/shot-1.webp", caption: "A deck." }],
       skills: [],
       hooks: [],
@@ -558,6 +561,23 @@ describe("the hub readers", () => {
     });
     expect(perler).not.toHaveProperty("sourceUrl");
     expect(perler.author).toEqual({ name: "Bead Co" });
+  });
+
+  it("keeps the most recent verified index offline and rejects malformed release channels", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const cacheDir = tree({});
+    const entries = [
+      row("@acme/cards", "1.0.0", {
+        integrity: "sha512-abc=",
+        channels: [{ kind: "github", url: "https://example.org/cards.tgz" }],
+      }),
+    ];
+    await fetched({ [PLUGIN_INDEX_URL]: entries }, { cacheDir });
+    const offline = await fetched({}, { cacheDir });
+    expect(offline.index).toEqual(entries);
+    const invalid = [{ ...entries[0], channels: [{ kind: "github", url: 7 }] }];
+    const stillValid = await fetched({ [PLUGIN_INDEX_URL]: invalid }, { cacheDir });
+    expect(stillValid.index).toEqual(entries);
   });
 
   it("lists the bundled plugins alone when the published index cannot be read", async () => {

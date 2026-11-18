@@ -16,7 +16,7 @@
  */
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { parsePluginIndex } from "./index-rows.mjs";
+import { NIGHTLY_INDEX_URL, parsePluginIndex } from "../../../server/src/plugin/index-document.ts";
 import { EMBEDDED_MARKET_DOC, parseMarketDocument } from "./market.mjs";
 import { CACHE_DIR } from "./source.mjs";
 
@@ -25,8 +25,7 @@ export const MARKET_DOCUMENT_URL =
   "https://github.com/Prism-Shadow/penguin-harness-community/raw/refs/heads/main/assets/plugins/market.json";
 
 /** The published plugin index: the server's NIGHTLY_INDEX_URL (packages/server/src/plugin/registry.ts). */
-export const PLUGIN_INDEX_URL =
-  "https://github.com/Prism-Shadow/penguin-extensions/releases/download/nightly/index.json";
+export const PLUGIN_INDEX_URL = NIGHTLY_INDEX_URL;
 
 /** Where the fetched copies are kept. */
 export const PUBLISHED_DIR = join(CACHE_DIR, "published");
@@ -51,17 +50,16 @@ const SOURCES = [
     env: "PENGUIN_PLUGIN_INDEX_DOC",
     what: "the published plugin index",
     fallback: "the bundled plugins alone",
-    parse: parsePluginIndex,
+    parse: (doc, url) => parsePluginIndex(doc, url, { icons: "drop" }),
   },
 ];
 
 const message = (error) => (error instanceof Error ? error.message : String(error));
 
 /**
- * Fetch both documents into `cacheDir`, each unless its env variable names a local file. With
- * `refresh` (a build) the copy from an earlier run is dropped first, so a failed fetch falls back
- * rather than serving an older document; without it (the dev server) a copy under a day old is
- * reused, and an older one still serves when the fetch fails.
+ * Fetch both documents into `cacheDir`, each unless its env variable names a local file. A build refreshes both sources. A failed index request keeps its last validated catalog;
+ * a failed market refresh uses the embedded artwork and selection. In development, a copy under
+ * a day old is reused.
  */
 export async function fetchPublished({
   refresh = false,
@@ -75,7 +73,7 @@ export async function fetchPublished({
         const copy = join(cacheDir, file);
         if (!refresh && existsSync(copy) && Date.now() - statSync(copy).mtimeMs < MAX_AGE_MS)
           return;
-        if (refresh) rmSync(copy, { force: true });
+        if (refresh && url === MARKET_DOCUMENT_URL) rmSync(copy, { force: true });
         try {
           const res = await fetchImpl(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
           if (!res.ok) throw new Error(`HTTP ${res.status}`);

@@ -489,6 +489,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
       sortPopular: "Popular",
       screenshots: "Screenshots",
       whatItInstalls: "What it installs",
+      downloadPlugin: "Download plugin",
       getPenguin: "Get PenguinHarness",
       source: "Source",
       carousel: {

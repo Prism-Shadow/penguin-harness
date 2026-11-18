@@ -101,6 +101,8 @@ export interface PluginDetail extends PluginSummary {
   readme?: string;
   /** Its folder on GitHub; for a plugin that is not bundled, its repository, when the index names one. */
   sourceUrl?: string;
+  /** An HTTPS release archive pinned by the registry. */
+  archiveUrl?: string;
   /** The screenshots the curation document gives it, in order. */
   screenshots?: PluginShot[];
   /** The leaderboards whose entries ran it (an RSI toolkit's algorithm): what measured it. */

@@ -159,6 +159,12 @@ function PluginView({ plugin }: { plugin: PluginDetail }) {
                     <DownloadIcon className="h-4 w-4" />
                     {t.getPenguin}
                   </Link>
+                  {plugin.archiveUrl && (
+                    <ExternalLink href={plugin.archiveUrl} className={SECONDARY_ACTION}>
+                      <DownloadIcon aria-hidden className="h-4 w-4" />
+                      {t.downloadPlugin}
+                    </ExternalLink>
+                  )}
                   {plugin.sourceUrl !== undefined && (
                     <ExternalLink href={plugin.sourceUrl} className={SECONDARY_ACTION}>
                       <GitHubIcon aria-hidden className="h-4 w-4" />

@@ -485,6 +485,7 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
       sortPopular: "热门",
       screenshots: "截图",
       whatItInstalls: "包含内容",
+      downloadPlugin: "下载插件",
       getPenguin: "获取 PenguinHarness",
       source: "源码",
       carousel: {
