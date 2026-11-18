@@ -11,7 +11,7 @@ import {
   appliedMigrations,
   migrate,
   rollbackTo,
-} from "@prismshadow/penguin-library-db/migrations";
+} from "../src/migrations/index.js";
 import {
   columns,
   hasTable,
