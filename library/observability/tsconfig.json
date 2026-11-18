@@ -1,5 +1,24 @@
 {
   "extends": "../../tsconfig.base.json",
-  "compilerOptions": {},
+  "compilerOptions": {
+    "paths": {
+      "@prismshadow/penguin-library-agent-api": ["../../agent-api/src/index.ts"],
+      "@prismshadow/penguin-library-agent-api/agent-api-repo": [
+        "../../agent-api/src/agent-api-repo.ts"
+      ],
+      "@prismshadow/penguin-library-agent-api/agent-api": ["../../agent-api/src/agent-api.ts"],
+      "@prismshadow/penguin-library-db": ["../../db/src/index.ts"],
+      "@prismshadow/penguin-library-db/database": ["../../db/src/database.ts"],
+      "@prismshadow/penguin-library-db/schema": ["../../db/src/schema.ts"],
+      "@prismshadow/penguin-library-db/migrations": ["../../db/src/migrations/index.ts"],
+      "@prismshadow/penguin-library-db/migrations/runner": ["../../db/src/migrations/runner.ts"],
+      "@prismshadow/penguin-library-trace": ["../../trace/src/index.ts"],
+      "@prismshadow/penguin-library-trace/trace": ["../../trace/src/trace.ts"],
+      "@prismshadow/penguin-library-trace/repos/trace-index": [
+        "../../trace/src/repos/trace-index.ts"
+      ],
+      "@prismshadow/penguin-library-trace/repos": ["../../trace/src/repos/index.ts"]
+    }
+  },
   "include": ["src"]
 }
