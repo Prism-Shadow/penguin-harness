@@ -1174,7 +1174,7 @@ describe("project-config round trip", () => {
     const visRef = { provider: "custom", model_id: "vis" };
     await setVisionModel(tmpRoot, DEFAULT_PROJECT_ID, visRef);
     const loaded = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
-    expect(loaded.vision_model).toEqual(visRef);
+    expect(loaded.tools?.i2t).toEqual(visRef);
     // A subsequent addModel save/reload round trip does not lose vision_model (loadProjectConfig
     // passes it through explicitly).
     await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
@@ -1182,7 +1182,7 @@ describe("project-config round trip", () => {
       model_id: "vis",
       context_window: 1000,
     });
-    expect((await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID)).vision_model).toEqual(visRef);
+    expect((await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID)).tools?.i2t).toEqual(visRef);
     // A target that does not exist or is annotated as not supporting images: throws
     // (the error includes the pair reference).
     await expect(
@@ -1223,7 +1223,7 @@ describe("project-config round trip", () => {
     // resolveModelRef rejects on the next createSession.
     const loaded = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
     expect(loaded.default_model).toBeUndefined();
-    expect(loaded.vision_model).toBeUndefined();
+    expect(loaded.tools?.i2t).toBeUndefined();
   });
 
   it("removeModel leaves pointers aimed at other entries untouched", async () => {
@@ -1240,7 +1240,7 @@ describe("project-config round trip", () => {
     await removeModel(tmpRoot, DEFAULT_PROJECT_ID, { provider: "custom", model_id: "spare" });
     const loaded = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
     expect(loaded.default_model).toEqual(keeperRef);
-    expect(loaded.vision_model).toEqual(keeperRef);
+    expect(loaded.tools?.i2t).toEqual(keeperRef);
   });
 
   it("removeModel is idempotent: an absent pair is not an error and changes nothing", async () => {
@@ -2176,13 +2176,46 @@ describe("single hidden config file (.project_config.toml, credentials inlined)"
     expect(raw).toContain(
       'default_model = { provider = "openrouter", model_id = "xiaomi/mimo-v2.5" }',
     );
-    expect(raw).toContain(
-      'vision_model = { provider = "anthropic", model_id = "claude-sonnet-4-6" }',
-    );
+    expect(raw).toContain('i2t = { provider = "anthropic", model_id = "claude-sonnet-4-6" }');
     expect(raw).toContain('provider = "openrouter"');
     expect(raw).toContain('model_id = "xiaomi/mimo-v2.5"');
     expect(raw).not.toContain("request_model_id");
     expect(raw).not.toContain('"openrouter/xiaomi/mimo-v2.5"');
+  });
+});
+
+describe("project tool model upgrades", () => {
+  it("migrates the old reference tables once, preserves an explicit tool selection and never restores a cleared binding", async () => {
+    const file = projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID);
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    const original = { provider: "p", model_id: "old" };
+    const chosen = { provider: "p", model_id: "new" };
+    await fs.writeFile(
+      file,
+      renderProjectConfigToml({
+        models: [original, chosen],
+        default_model: original,
+        vision_model: original,
+        voice_polish: { enabled: true, model: chosen },
+        capability_models: { tts: original, image: chosen },
+        tools: { i2t: chosen },
+        addon_stamp: "keep",
+      }),
+    );
+    expect(await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID)).toMatchObject({
+      default_model: original,
+      voice_polish_enabled: true,
+      tools: { i2t: chosen, t2t: chosen, t2s: original, t2i: chosen },
+    });
+    const disk = parseToml(await fs.readFile(file, "utf8"));
+    expect(disk).toHaveProperty("addon_stamp", "keep");
+    for (const key of ["voice_polish", "vision_model", "capability_models"])
+      expect(disk).not.toHaveProperty(key);
+    await removeModel(tmpRoot, DEFAULT_PROJECT_ID, chosen);
+    const reopened = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    expect(reopened.tools).toEqual({ t2s: original });
+    expect(reopened.voice_polish_enabled).toBe(false);
+    expect(reopened.default_model).toEqual(original);
   });
 });
 

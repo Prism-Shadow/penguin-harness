@@ -1,7 +1,7 @@
 ---
 name: multimodal-tools
-description: Use the project's configured capability models to search, fetch a URL, generate an image or video, transcribe a local recording or synthesize speech with the Penguin CLI. Return the generated media or the sources that support the answer.
-version: 2026.11.19.1
+description: Use the project's configured capability models to write text, read an image, search, fetch a URL, generate an image or video, transcribe a local recording or synthesize speech with the Penguin CLI. Return the generated media or the sources that support the answer.
+version: 2026.11.19.2
 ---
 
 # Project search and media tools
@@ -16,12 +16,14 @@ Pass each input as one argument. Keep user text as data: use your process API's 
 
 | Task | Example |
 | --- | --- |
+| Generate or edit text | `penguin tools t2t 'question or instructions'` |
+| Read an image | `penguin tools i2t picture.png --prompt 'Describe the diagram'` |
 | Search | `penguin tools search 'research question' --json` |
 | Fetch a page | `penguin tools fetch 'https://example.org/article' --json` |
-| Generate an image | `penguin tools image 'illustration of a penguin reading' --aspect-ratio 1:1 --out ./reading-penguin.png --json` |
-| Generate a video | `penguin tools video 'short shot of a kite lifting off' --json` |
-| Recognize speech | `penguin tools stt ./interview.wav --json` |
-| Synthesize speech | `penguin tools tts 'Welcome to the workshop.' --json` |
+| Generate an image | `penguin tools t2i 'illustration of a penguin reading' --aspect-ratio 1:1 --out ./reading-penguin.png --json` |
+| Generate a video | `penguin tools t2v 'short shot of a kite lifting off' --json` |
+| Recognize speech | `penguin tools s2t ./interview.wav --json` |
+| Synthesize speech | `penguin tools t2s 'Welcome to the workshop.' --json` |
 
 The CLI uses its project and Session environment. When a workbench supplies its actual Session ID, pass it unchanged with `--session-id <id>`. Use `--project-id` only when the person or host identifies a different project. Run `penguin tools list --json` to check this project's bindings. By default the CLI waits for completion. For a long-running job that needs to continue in the background, add `--detach --json`, keep the returned `id` and check `penguin tools status <id> --json`. On cancellation, use `penguin tools cancel <id> --json`. Reuse the run ID to avoid duplicate requests.
 
