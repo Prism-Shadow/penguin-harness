@@ -31,7 +31,7 @@ import { listState } from "../../lib/hub/back";
 import { market, plugins } from "../../lib/hub/data";
 import { pick, plainText, titleOf } from "../../lib/hub/text";
 import type { PluginSummary } from "../../lib/hub/types";
-import { PLUGINS_SOURCE } from "../../lib/links";
+import { PLUGIN_DIRECTORY_URL } from "../../lib/links";
 import { pluginTone } from "../../lib/hub/plugin-hue";
 import { S } from "../../lib/strings";
 
@@ -153,7 +153,7 @@ export function PluginsPage() {
     <HubList
       title={t.title}
       description={t.description}
-      source={{ href: PLUGINS_SOURCE, label: "Prism-Shadow/penguin-harness/plugins" }}
+      source={{ href: PLUGIN_DIRECTORY_URL, label: "Prism-Shadow/penguin-harness-plugins" }}
       items={plugins}
       keyOf={(plugin) => plugin.id}
       texts={(plugin) => [

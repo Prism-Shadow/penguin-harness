@@ -36,7 +36,7 @@ export function galleryUrl(locale: "zh" | "en"): string {
 
 /** The AMSP page's outside links: the SDK on npm and its source, and MMSP's own site. */
 /** Where the Plugins page reads its packages: this repository's plugins/ directory. */
-export const PLUGINS_SOURCE = `${REPO_URL}/tree/main/plugins`;
+export const PLUGIN_DIRECTORY_URL = "https://github.com/Prism-Shadow/penguin-harness-plugins";
 /** Where the Benchmarks and Leaderboards pages read their files. */
 export const BENCHMARK_REPO_URL = "https://github.com/Prism-Shadow/penguin-harness-benchmark";
 export const AMSP_NPM_URL = "https://www.npmjs.com/package/@prismshadow/amsp";
