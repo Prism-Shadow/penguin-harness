@@ -112,7 +112,7 @@ There are 7 built-in tools, assembled through `packages/core/src/environment/too
 | --- | --- | --- | --- |
 | `exec_command` | rw | 120000 | Run a shell command in the Workspace (through `bash -lc` where bash exists), streaming stdout/stderr |
 | `input_command` | rw | 120000 | Drive a command session by `process_id`: write stdin, send Ctrl-C, poll output, or terminate it (`kill: true`) |
-| `read_file` | r | 60000 | Read a text file as a line-numbered (`cat -n`) window paged by offset/limit, or an image (path or URL) as image content; for a text-only model, the `vision_model` describes the image in text |
+| `read_file` | r | 60000 | Read a text file as a line-numbered (`cat -n`) window paged by offset/limit, or an image (path or URL) as image content; for a text-only model, the `tools.i2t` describes the image in text |
 | `edit_file` | rw | 30000 | Replace an exact string in an existing file, echoing a diff of the change |
 | `write_file` | rw | 30000 | Create or overwrite a whole file, creating parent directories as needed |
 | `run_subagent` | rw | 600000 | Delegate a self-contained subtask to a child agent in the same Workspace |
@@ -205,7 +205,7 @@ Under the WSL backend the helper runs inside the distro, which the initializatio
 What comes back depends on the Session model's vision flag:
 
 - A model that accepts images gets the image itself as image content, and the text output is one line giving its format and byte size, such as `image/png, 123.4 kB`. If the provider then rejects the request, the engine sends it again without the image (see [Retryable and fatal failures](/agent-loop#retryable-and-fatal-failures)) and leaves a fixed note in the tool output saying so; the provider's error reaches the model through the retry's `[request_error]` line (see [Automatic reconnect](/agent-loop#automatic-reconnect)).
-- A text-only model gets the Project's `vision_model` answering `prompt` (by default, a detailed description), streamed as the tool's text output. The image never enters that Session's history. If the vision model refuses the image, the tool output carries the same causes and advice. Without a `vision_model`, reading an image in a text-only Session fails with an explanation asking the user to pick one in the model settings. See [Models & Providers](/models).
+- A text-only model gets the Project's `tools.i2t` answering `prompt` (by default, a detailed description), streamed as the tool's text output. The image never enters that Session's history. If the vision model refuses the image, the tool output carries the same causes and advice. Without a `tools.i2t`, reading an image in a text-only Session fails with an explanation asking the user to pick one in the model settings. See [Models & Providers](/models).
 
 The branch is decided by the `VisionDescriberService` that the SDK injects into the Environment for text-only Sessions only, so one config entry (without `forModel`) serves both model classes. A model that accepts images is handed `read_file` without `prompt`: assembly drops the argument from the schema in memory, as `call_description: false` drops `description`, and the YAML is never rewritten.
 
@@ -218,7 +218,7 @@ The branch is decided by the `VisionDescriberService` that the SDK injects into 
   file_path: string;       // required: absolute, or relative to the Workspace; an http(s) URL for an image
   offset?: number;         // 1-based line to start from; default 1
   limit?: number;          // max lines returned; default 2000 — a trailing note points at the continuation
-  prompt?: string;         // text-only models only: a question about an image, answered by the vision_model; default: a detailed description
+  prompt?: string;         // text-only models only: a question about an image, answered by the tools.i2t; default: a detailed description
 }
 
 // edit_file — the file must exist; old_string must occur exactly once (or set replace_all);

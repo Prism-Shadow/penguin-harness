@@ -9,6 +9,7 @@ import type {
   CapabilityArtifact,
   CapabilityResult,
   CapabilitySettings,
+  ToolModelSettings,
   ProjectCreateResponse,
   SessionCreateResponse,
 } from "../src/api/types.js";
@@ -125,7 +126,7 @@ describe("project model capabilities", () => {
     if (!address || typeof address === "string") throw new Error("listener missing");
     endpoint = "http://127.0.0.1:" + address.port + "/v1";
     const host = new PluginHost();
-    addFixture(host, fixtureProvider, "TestMediaProvider", Object.keys(ids));
+    addFixture(host, fixtureProvider, "TestMediaProvider", [...Object.keys(ids), "t2t", "i2t"]);
     addFixture(host, speechProvider, "TestSpeechProvider", ["tts"]);
     app = await createTestApp({ plugins: host });
     await app.deps.projectConfigService.setPluginTables("default_project", {
@@ -274,6 +275,56 @@ describe("project model capabilities", () => {
     expect(((await cancelled.json()) as CapabilityResult).status).toBe("cancelled");
     const status = await api.get(tools + "/runs/" + start.id);
     expect(((await status.json()) as CapabilityResult).artifacts).toEqual([]);
+  });
+  it("shares the eight project bindings with image reading and transcript editing without changing the chat model", async () => {
+    const chosen = { provider: "custom", modelId: "gpt-6.2-sol" };
+    const read = async () => (await (await api.get(tools + "/tools")).json()) as ToolModelSettings;
+    const initial = await read();
+    expect(Object.keys(initial.candidates).sort()).toEqual([
+      "fetch",
+      "i2t",
+      "s2t",
+      "search",
+      "t2i",
+      "t2s",
+      "t2t",
+      "t2v",
+    ]);
+    expect(initial.bindings.t2t).toEqual(chosen);
+    expect(initial.bindings.t2s).toEqual(bindings.tts);
+    expect(initial.candidates.i2t).toContainEqual(chosen);
+    expect(initial.candidates.t2t).not.toContainEqual(bindings.stt);
+    const update = await api.patch(tools + "/tools", { bindings: { i2t: chosen } });
+    expect(update.status, await update.clone().text()).toBe(200);
+    expect(await (await api.get(base + "/models")).json()).toMatchObject({
+      visionModel: chosen,
+      defaultModel: chosen,
+    });
+    const text = await api.post(tools + "/t2t/run", { text: "Rewrite this", sessionId });
+    expect(text.status, await text.clone().text()).toBe(200);
+    const image = { data: "iVBORw0KGgo=", mimeType: "image/png" };
+    const caption = await api.post(tools + "/i2t/run", { image, text: "What is here?", sessionId });
+    expect(caption.status, await caption.clone().text()).toBe(200);
+    expect((await caption.json()) as CapabilityResult).toMatchObject({
+      model: chosen,
+      text: "Edited words",
+    });
+    expect(received.at(-1)).toMatchObject({
+      messages: [{ content_items: [{ text: "What is here?" }, { data: image.data }] }],
+    });
+    const cleared = await api.patch(tools + "/tools", { bindings: { i2t: null, t2t: null } });
+    expect(cleared.status).toBe(200);
+    expect((await read()).voicePolish.enabled).toBe(false);
+    expect((await api.post(tools + "/i2t/run", { image })).status).toBe(409);
+    expect(await (await api.get(base + "/models")).json()).not.toHaveProperty("visionModel");
+    expect(
+      (
+        await api.patch(tools + "/tools", {
+          bindings: { t2t: chosen },
+          voicePolish: { enabled: true },
+        })
+      ).status,
+    ).toBe(200);
   });
   it("keeps one binding per capability per Project, including simultaneous saves", async () => {
     const created = await api.post("/api/projects", {
