@@ -17,7 +17,7 @@
  * `provider` and `model_id` as two independent fields, with the `(provider, model_id)` pair as
  * the unique key — string concatenation like `<provider>/<id>` is forbidden anywhere in the
  * pipeline. `model_id` is the upstream request id, sent to MMSP unchanged; `default_model` /
- * `vision_model` are paired `{ provider, model_id }` references (a TOML inline table).
+ * `tools.i2t` are paired `{ provider, model_id }` references (a TOML inline table).
  *
  * A caller always supplies the **complete pair**: `provider` is never guessed from the builtin
  * catalog and never derived from whichever configured entry happens to carry the same
@@ -25,6 +25,7 @@
  * lookup, because resolving it would silently point credentials and pricing at a vendor the
  * caller never named.
  */
+import { migrateToolModels, TOOL_MODEL_KEYS, type ToolModels } from "./tool-models.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
@@ -199,10 +200,6 @@ export interface ProviderConnection {
 /** Every group's connection defaults, keyed by provider id. */
 export type ProviderTable = Record<string, ProviderConnection>;
 
-/** Project model references used by workbenches and the tools CLI. */
-export const MODEL_CAPABILITIES = ["search", "fetch", "image", "video", "tts", "stt"] as const;
-export type ModelCapability = (typeof MODEL_CAPABILITIES)[number];
-
 /**
  * Project-level config.
  * Docs: /docs/configuration § "Project config".
@@ -212,15 +209,9 @@ export interface ProjectConfig {
   name?: string;
   /** Paired reference to the default Model; must point to an entry in `models`. */
   default_model?: ModelRef;
-  /**
-   * The vision model used by read_file to read images on behalf of a session model (when a session
-   * model with `vision=false` reads an image, it's handed to this model to describe and the tool
-   * returns text); must point to an entry in `models` (a paired reference). Unconfigured by
-   * default — models that don't support images won't be able to read images.
-   */
-  vision_model?: ModelRef;
-  capability_models?: Partial<Record<ModelCapability, ModelRef>>;
-  voice_polish?: { enabled: boolean; model?: ModelRef };
+  /** Model bindings shared by tool commands, image reading and transcript editing. */
+  tools?: ToolModels;
+  voice_polish_enabled?: boolean;
   /**
    * New-chat defaults block; absent by default (`defaultProjectConfig` never includes it —
    * absent = the pre-existing behavior). Loaded tolerantly: invalid values drop per key.
@@ -285,7 +276,7 @@ export function defaultProjectConfig(): ProjectConfig {
 const OLD_FORMAT_HINT =
   "No migration since the product hasn't shipped yet: delete this config file and rebuild it with `penguin config model add/default`.";
 
-/** Validates the default_model / vision_model fields: must be a { provider, model_id } paired reference. */
+/** Validates the default_model / tools.i2t fields: must be a { provider, model_id } paired reference. */
 function parseRefField(file: string, name: string, value: unknown): ModelRef | undefined {
   if (value === undefined) return undefined;
   const ref = value as { provider?: unknown; model_id?: unknown };
@@ -546,7 +537,8 @@ export function hoistProviderConnections(table: Record<string, unknown>): boolea
 export function migrateProjectConfigTable(table: Record<string, unknown>): boolean {
   const legacy = migrateLegacyClientTypes(table);
   const hoisted = hoistProviderConnections(table);
-  return legacy || hoisted;
+  const tools = migrateToolModels(table);
+  return legacy || hoisted || tools;
 }
 
 /**
@@ -780,21 +772,13 @@ export function projectConfigFromTable(
   parsed: Record<string, unknown>,
 ): ProjectConfig {
   const defaultModel = parseRefField(file, "default_model", parsed.default_model);
-  const visionModel = parseRefField(file, "vision_model", parsed.vision_model);
-  const capabilityModels: Partial<Record<ModelCapability, ModelRef>> = {};
-  if (isTable(parsed.capability_models)) {
-    for (const key of MODEL_CAPABILITIES) {
-      const ref = parseRefField(file, `capability_models.${key}`, parsed.capability_models[key]);
-      if (ref) capabilityModels[key] = ref;
+  const toolModels: ToolModels = {};
+  if (isTable(parsed.tools)) {
+    for (const key of TOOL_MODEL_KEYS) {
+      const ref = parseRefField(file, `tools.${key}`, parsed.tools[key]);
+      if (ref) toolModels[key] = ref;
     }
   }
-  const polish = parsed.voice_polish;
-  const voicePolish = isTable(polish)
-    ? {
-        enabled: polish.enabled === true,
-        model: parseRefField(file, "voice_polish.model", polish.model),
-      }
-    : undefined;
   const defaultChat = parseDefaultChat(parsed.default_chat);
   const commandPolicy = parseCommandPolicy(parsed.command_policy);
   const plugins = parsePluginTables(parsed.plugins);
@@ -802,9 +786,10 @@ export function projectConfigFromTable(
   return {
     ...(parsed.name !== undefined ? { name: parsed.name as string } : {}),
     ...(defaultModel !== undefined ? { default_model: defaultModel } : {}),
-    ...(visionModel !== undefined ? { vision_model: visionModel } : {}),
-    ...(Object.keys(capabilityModels).length ? { capability_models: capabilityModels } : {}),
-    ...(voicePolish ? { voice_polish: voicePolish } : {}),
+    ...(Object.keys(toolModels).length ? { tools: toolModels } : {}),
+    ...(typeof parsed.voice_polish_enabled === "boolean"
+      ? { voice_polish_enabled: parsed.voice_polish_enabled }
+      : {}),
     ...(defaultChat !== undefined ? { default_chat: defaultChat } : {}),
     ...(commandPolicy !== undefined ? { command_policy: commandPolicy } : {}),
     ...(plugins !== undefined ? { plugins } : {}),
@@ -859,7 +844,7 @@ function isModelRefShape(v: unknown): v is ModelRef {
  * site-wide** (shared by core's saveProjectConfig and the interface layer's full-table write, to
  * avoid the same file ending up in two different formats).
  *
- * Paired references (default_model / vision_model) are rendered as a TOML inline table
+ * Paired references (default_model / tools.i2t) are rendered as a TOML inline table
  * `{ provider = "...", model_id = "..." }`; `models` is always
  * placed last, since any table header after `[[models]]` would be read as its sub-table. Unknown
  * extension fields are kept as-is.
@@ -886,6 +871,22 @@ export function renderProjectConfigToml(data: Record<string, unknown>): string {
     if (key === "providers" && noProviders) continue;
     if (isModelRefShape(value)) {
       head.push(`${key} = ${tomlInlineRef(value)}`);
+      continue;
+    }
+    if (
+      key === "tools" &&
+      isTable(value) &&
+      Object.keys(value).every((k) => TOOL_MODEL_KEYS.some((key) => key === k)) &&
+      Object.values(value).every(isModelRefShape)
+    ) {
+      tables.push(
+        [
+          "[tools]",
+          ...Object.entries(value).map(
+            ([slot, model]) => `${slot} = ${tomlInlineRef(model as ModelRef)}`,
+          ),
+        ].join("\n"),
+      );
       continue;
     }
     const rendered = stringifyToml({ [key]: value }).trim();
@@ -1152,15 +1153,15 @@ export async function setVisionModel(
   const entry = getModel(cfg, ref);
   if (!entry) {
     throw new Error(
-      `vision_model must point to a configured model: ${formatModelRef(ref)} is not in models. Use \`penguin config model list\` to see the configured models.`,
+      `tools.i2t must point to a configured model: ${formatModelRef(ref)} is not in models. Use \`penguin config model list\` to see the configured models.`,
     );
   }
   if (entry.vision === false) {
     throw new Error(
-      `vision_model cannot point to a model tagged as not supporting images: ${formatModelRef(ref)}.`,
+      `tools.i2t cannot point to a model tagged as not supporting images: ${formatModelRef(ref)}.`,
     );
   }
-  cfg.vision_model = { provider: ref.provider, model_id: ref.model_id };
+  cfg.tools = { ...cfg.tools, i2t: { provider: ref.provider, model_id: ref.model_id } };
   await saveProjectConfig(root, projectId, cfg);
   return cfg;
 }
@@ -1170,7 +1171,7 @@ export async function setVisionModel(
  * have is not an error and writes nothing, so the caller decides whether a missing entry
  * deserves a message.
  *
- * `default_model` / `vision_model` are cleared when they named the removed entry. Leaving a
+ * `default_model` / `tools.i2t` are cleared when they named the removed entry. Leaving a
  * pointer behind would name a model that is no longer configured, which createSession rejects
  * outright — the same rule the models page applies when a row is deleted, kept on one behavior
  * so the CLI and the Web App never disagree about what a deletion leaves behind.
@@ -1187,16 +1188,12 @@ export async function removeModel(
   if (cfg.default_model && sameModelRef(cfg.default_model, ref)) {
     delete cfg.default_model;
   }
-  for (const key of MODEL_CAPABILITIES) {
-    const bound = cfg.capability_models?.[key];
-    if (bound && sameModelRef(bound, ref)) delete cfg.capability_models![key];
-  }
-  if (cfg.voice_polish?.model && sameModelRef(cfg.voice_polish.model, ref)) {
-    delete cfg.voice_polish.model;
-    cfg.voice_polish.enabled = false;
-  }
-  if (cfg.vision_model && sameModelRef(cfg.vision_model, ref)) {
-    delete cfg.vision_model;
+  for (const key of TOOL_MODEL_KEYS) {
+    const bound = cfg.tools?.[key];
+    if (bound && sameModelRef(bound, ref)) {
+      delete cfg.tools![key];
+      if (key === "t2t" && cfg.voice_polish_enabled) cfg.voice_polish_enabled = false;
+    }
   }
   await saveProjectConfig(root, projectId, cfg);
   return cfg;

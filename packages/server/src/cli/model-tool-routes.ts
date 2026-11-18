@@ -1,6 +1,7 @@
-import { Hono } from "hono";
+import { modelOperation } from "@prismshadow/penguin-core";
+import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import type { Capability, CapabilityCliReply } from "../api/capabilities.js";
+import type { ModelOperation as Capability, CapabilityCliReply } from "../api/capabilities.js";
 import { parseModelTool, requestFromCommand } from "./model-tool-grammar.js";
 import type { AppEnv } from "../auth/middleware.js";
 import type { Access, ProjectConfigStore } from "../mechanisms/projects.js";
@@ -8,12 +9,17 @@ import type { SessionIndex } from "../mechanisms/sessions.js";
 import type { ModelCapabilities } from "./model-capabilities.js";
 import type { CapabilityRuns } from "../services/capability-runs.js";
 import {
+  inputText,
   capabilityInput,
-  isCapability,
   MAX_AUDIO_BYTES,
   settingsPatch,
 } from "../services/capability-input.js";
-import { capabilitySettings, projectCapabilities } from "../services/capability-settings.js";
+import {
+  canonicalToolSettings,
+  legacyToolSettings,
+  capabilitySettings,
+  projectCapabilities,
+} from "../services/capability-settings.js";
 import { requireDeepSeekAudio } from "../services/transcription-audio.js";
 import { badRequest, HttpError } from "../http/errors.js";
 import { pathParam, readJson, requireValidId } from "../http/validate.js";
@@ -57,8 +63,13 @@ export function capabilityRoutes(deps: CapabilityDependencies) {
       await deps.projects.loadConfig(project),
       await deps.capabilities.list(project),
     );
-  app.get("/", async (c) => c.json(await settings(requireValidId(c, "projectId"))));
-  app.patch("/", async (c) => {
+  app.get("/", async (c) =>
+    c.json(legacyToolSettings(await settings(requireValidId(c, "projectId")))),
+  );
+  app.get("/tools", async (c) =>
+    c.json(canonicalToolSettings(await settings(requireValidId(c, "projectId")))),
+  );
+  const patchSettings = async (c: Context<AppEnv>, canonical: boolean) => {
     const project = requireValidId(c, "projectId");
     deps.access.requireProjectOwner(c.var.user.userId, project);
     const patch = settingsPatch(await readJson(c));
@@ -67,8 +78,11 @@ export function capabilityRoutes(deps: CapabilityDependencies) {
       if (!available.some((c) => c.key === key)) throw unavailable(key);
     }
     await deps.projects.patchCapabilitySettings(project, patch);
-    return c.json(await settings(project));
-  });
+    const current = await settings(project);
+    return c.json(canonical ? canonicalToolSettings(current) : legacyToolSettings(current));
+  };
+  app.patch("/", (c) => patchSettings(c, false));
+  app.patch("/tools", (c) => patchSettings(c, true));
   const usage = (project: string, session: string | undefined, limit: number, offset: number) =>
     deps.runs
       .list(project, session, limit, offset)
@@ -146,6 +160,9 @@ export function capabilityRoutes(deps: CapabilityDependencies) {
         model,
         config: await deps.projects.loadCapabilityModel(project, model),
         item,
+        ...(key === "i2t"
+          ? { instruction: body.text === undefined ? "Describe this image." : inputText(body.text) }
+          : {}),
         options,
       },
       signal,
@@ -158,8 +175,8 @@ export function capabilityRoutes(deps: CapabilityDependencies) {
     return result;
   }
   app.post("/:capability/run", async (c) => {
-    const key = pathParam(c, "capability");
-    if (!isCapability(key)) throw badRequest("Unknown capability.");
+    const key = modelOperation(pathParam(c, "capability"));
+    if (!key) throw badRequest("Unknown capability.");
     const project = requireValidId(c, "projectId");
     if (!(await deps.capabilities.list(project)).some((c) => c.key === key)) throw unavailable(key);
     const body = await readJson(c);
@@ -186,11 +203,13 @@ export function capabilityRoutes(deps: CapabilityDependencies) {
     if (parsed.kind === "operation") {
       if (parsed.key === "stt" && body.audio === undefined)
         return reply({ kind: "audio", mimeType: parsed.options.mimeType });
+      if (parsed.key === "i2t" && body.image === undefined)
+        return reply({ kind: "image", mimeType: parsed.options.mimeType });
       const payload = requestFromCommand(parsed);
       const result = await run(
         project,
         parsed.key,
-        { ...payload, audio: body.audio },
+        { ...payload, audio: body.audio, image: body.image },
         session,
         c.req.raw.signal,
       );
@@ -200,7 +219,9 @@ export function capabilityRoutes(deps: CapabilityDependencies) {
       case "list":
         return reply({
           kind: "data",
-          data: projectCapabilities(await deps.projects.loadConfig(project), available),
+          data: canonicalToolSettings(
+            projectCapabilities(await deps.projects.loadConfig(project), available),
+          ),
           json,
         });
       case "usage":

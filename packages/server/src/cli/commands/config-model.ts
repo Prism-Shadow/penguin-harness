@@ -337,7 +337,7 @@ export function registerConfigModelCommand(model: Command, t: Messages): void {
       process.stdout.write(
         `${t.modelRemoved(formatModelRef(ref), cfg.default_model && formatModelRef(cfg.default_model))}\n`,
       );
-      if (before.vision_model !== undefined && cfg.vision_model === undefined) {
+      if (before.tools?.i2t !== undefined && cfg.tools?.i2t === undefined) {
         process.stdout.write(`${t.visionModelCleared()}\n`);
       }
     });

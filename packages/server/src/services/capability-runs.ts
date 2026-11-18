@@ -5,7 +5,11 @@ import { projectDir, type ProjectConfig } from "@prismshadow/penguin-core";
 import type { Resources } from "@prismshadow/penguin-core/kernel";
 import type { ContentItem, UniConfig } from "@prismshadow/mmsp";
 import type { Db } from "../hmr/capabilities.js";
-import type { Capability, CapabilityArtifact, CapabilityResult } from "../api/capabilities.js";
+import type {
+  ModelOperation as Capability,
+  CapabilityArtifact,
+  CapabilityResult,
+} from "../api/capabilities.js";
 import type { ModelRefDto } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 import { playableMedia, runProjectModel, type ModelMedia } from "./capability-model.js";
@@ -36,6 +40,7 @@ interface Task {
   capability: Capability | "voice-polish";
   config: ProjectConfig;
   item: ContentItem;
+  instruction?: string;
   options: UniConfig;
 }
 function decode(row: unknown): CapabilityResult {
@@ -195,7 +200,14 @@ export class CapabilityRuns {
           : await runProjectModel(
               task.config,
               task.model,
-              [{ role: "user", content_items: [task.item] }],
+              [
+                {
+                  role: "user",
+                  content_items: task.instruction
+                    ? [{ type: "text.done", text: task.instruction }, task.item]
+                    : [task.item],
+                },
+              ],
               task.options,
               context,
             );
@@ -255,7 +267,7 @@ export class CapabilityRuns {
           quantity: row.artifacts.length,
         });
       } else if (
-        (task.capability === "stt" || task.capability === "voice-polish") &&
+        ["stt", "voice-polish", "t2t", "i2t"].includes(task.capability) &&
         !output.text.trim()
       )
         throw new HttpError(502, "empty_transcript", "The model returned no text.");
