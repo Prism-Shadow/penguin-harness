@@ -198,6 +198,9 @@ importers:
       '@penguinharness/model-development':
         specifier: workspace:*
         version: link:../../plugins/model-development
+      '@penguinharness/multimodal-tools':
+        specifier: workspace:*
+        version: link:../../plugins/multimodal-tools
       '@penguinharness/openskill-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/openskill-rsi-toolkit
@@ -377,6 +380,9 @@ importers:
       '@penguinharness/model-development':
         specifier: workspace:*
         version: link:../../plugins/model-development
+      '@penguinharness/multimodal-tools':
+        specifier: workspace:*
+        version: link:../../plugins/multimodal-tools
       '@penguinharness/openskill-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/openskill-rsi-toolkit
@@ -573,6 +579,9 @@ importers:
       '@penguinharness/model-development':
         specifier: workspace:*
         version: link:../../plugins/model-development
+      '@penguinharness/multimodal-tools':
+        specifier: workspace:*
+        version: link:../../plugins/multimodal-tools
       '@penguinharness/openskill-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/openskill-rsi-toolkit
@@ -711,6 +720,9 @@ importers:
       '@penguinharness/model-development':
         specifier: workspace:*
         version: link:../../plugins/model-development
+      '@penguinharness/multimodal-tools':
+        specifier: workspace:*
+        version: link:../../plugins/multimodal-tools
       '@penguinharness/openskill-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/openskill-rsi-toolkit
@@ -1287,6 +1299,18 @@ importers:
       '@prismshadow/skills':
         specifier: workspace:*
         version: link:../../packages/skills
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  plugins/multimodal-tools:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
       vitest:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
@@ -2448,6 +2472,9 @@ packages:
 
   '@penguinharness/model-development@file:plugins/model-development':
     resolution: {directory: plugins/model-development, type: directory}
+
+  '@penguinharness/multimodal-tools@file:plugins/multimodal-tools':
+    resolution: {directory: plugins/multimodal-tools, type: directory}
 
   '@penguinharness/openskill-rsi-toolkit@file:plugins/openskill-rsi-toolkit':
     resolution: {directory: plugins/openskill-rsi-toolkit, type: directory}
@@ -7158,6 +7185,8 @@ snapshots:
 
   '@penguinharness/model-development@file:plugins/model-development': {}
 
+  '@penguinharness/multimodal-tools@file:plugins/multimodal-tools': {}
+
   '@penguinharness/openskill-rsi-toolkit@file:plugins/openskill-rsi-toolkit': {}
 
   '@penguinharness/opro-rsi-toolkit@file:plugins/opro-rsi-toolkit': {}
@@ -7286,6 +7315,7 @@ snapshots:
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
+      '@penguinharness/multimodal-tools': file:plugins/multimodal-tools
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
       '@penguinharness/penguin-support': file:plugins/penguin-support
@@ -7336,6 +7366,7 @@ snapshots:
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
+      '@penguinharness/multimodal-tools': file:plugins/multimodal-tools
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
       '@penguinharness/penguin-support': file:plugins/penguin-support
@@ -7446,6 +7477,7 @@ snapshots:
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
+      '@penguinharness/multimodal-tools': file:plugins/multimodal-tools
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
       '@penguinharness/penguin-support': file:plugins/penguin-support
@@ -7510,6 +7542,7 @@ snapshots:
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
+      '@penguinharness/multimodal-tools': file:plugins/multimodal-tools
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
       '@penguinharness/penguin-support': file:plugins/penguin-support
@@ -7574,6 +7607,7 @@ snapshots:
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
+      '@penguinharness/multimodal-tools': file:plugins/multimodal-tools
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
       '@penguinharness/penguin-support': file:plugins/penguin-support
