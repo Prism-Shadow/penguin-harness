@@ -42,9 +42,9 @@ import {
   userText,
 } from "@prismshadow/penguin-core";
 import type { AmspRecord, TokenCounts } from "@prismshadow/penguin-core";
-import { openDatabase } from "@prismshadow/penguin-library-db";
-import { SessionsRepo } from "@prismshadow/penguin-library-session/repos/sessions";
-import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
+import { openDatabase } from "@prismshadow/penguin-library/db";
+import { SessionsRepo } from "@prismshadow/penguin-library/session/repos/sessions";
+import type { SessionRow } from "@prismshadow/penguin-library/session/repos/sessions";
 import { ChannelHub } from "../src/runtime/channel.js";
 import type { ChannelEvent } from "../src/runtime/channel.js";
 import { SessionManager, createCoreSessionLoader } from "../src/runtime/session-manager.js";

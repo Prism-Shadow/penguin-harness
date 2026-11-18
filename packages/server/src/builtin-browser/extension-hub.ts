@@ -19,7 +19,7 @@ import type {
 import type {
   BrowserExtensionRow,
   BrowserExtensionStore,
-} from "@prismshadow/penguin-library-machine/browser-extensions";
+} from "@prismshadow/penguin-library/machine/browser-extensions";
 import { BrowserBackendRuntime } from "./backend-runtime.js";
 import type { BackendRuntimeDeps } from "./backend-runtime.js";
 import { CLOSE, ExtensionLink } from "./extension-link.js";

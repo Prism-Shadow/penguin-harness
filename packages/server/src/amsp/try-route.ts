@@ -19,7 +19,7 @@ import { Hono } from "hono";
 import { requireHuman } from "../auth/middleware.js";
 import type { AppEnv } from "../auth/middleware.js";
 import { requireValidId } from "../http/validate.js";
-import type { Access } from "@prismshadow/penguin-library-project";
+import type { Access } from "@prismshadow/penguin-library/project";
 import type { AmspEnv } from "./gate.js";
 import { requireAgentApiOn, requireExposedAgent } from "./gate.js";
 import type { AmspRouteDeps } from "./routes.js";

@@ -23,7 +23,7 @@
  * which costs the user a re-authorization and nothing else (the upstream code expires in
  * minutes anyway, and no key exists until the exchange runs).
  */
-import type { GroupKeyApplied, ModelOAuth } from "@prismshadow/penguin-library-model";
+import type { GroupKeyApplied, ModelOAuth } from "@prismshadow/penguin-library/model";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { APP_URL, userAgent } from "@prismshadow/penguin-core";
 import { providerInfo } from "../model-catalog/catalog.js";
@@ -32,7 +32,7 @@ import { HttpError } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { DefaultModelOffer } from "../api/types.js";
-import type { ProjectConfigStore } from "@prismshadow/penguin-library-project";
+import type { ProjectConfigStore } from "@prismshadow/penguin-library/project";
 
 /** How the user gets the authorization code back to the harness. */
 export type ModelOAuthMode = "callback" | "manual";

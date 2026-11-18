@@ -29,7 +29,7 @@ import type {
   Traces,
   HistoryTraceFile,
   HistoryWindowRead,
-} from "@prismshadow/penguin-library-trace";
+} from "@prismshadow/penguin-library/trace";
 import fs from "node:fs/promises";
 import {
   decodeBodyRef,
@@ -47,7 +47,7 @@ import type {
   HistoryStub,
   HistoryWindowPart,
 } from "../api/types.js";
-import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
+import type { SessionRow } from "@prismshadow/penguin-library/session/repos/sessions";
 import { HttpError } from "../http/errors.js";
 import type { EventSink } from "../http/event-stream.js";
 import { badRequest } from "../http/validate.js";

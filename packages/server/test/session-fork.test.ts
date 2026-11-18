@@ -62,7 +62,7 @@ import type {
 } from "../src/api/types.js";
 import { apiClient, createTestApp, provisionUser, writeTraceFile, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
-import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
+import type { SessionRow } from "@prismshadow/penguin-library/session/repos/sessions";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import { rewriteSummaryPaths } from "../src/services/trace-service.js";
 import { fakeSession } from "./fixtures/session.js";

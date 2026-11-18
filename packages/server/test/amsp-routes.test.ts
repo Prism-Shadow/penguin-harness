@@ -87,7 +87,7 @@ import type {
   AgentApiResponse,
   SessionResponse,
 } from "../src/api/types.js";
-import { bodyLimitBytes } from "@prismshadow/penguin-library-setting/attachment-limits";
+import { bodyLimitBytes } from "@prismshadow/penguin-library/setting/attachment-limits";
 import { apiClient, createTestApp, loginAdmin, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 import { adoptSession, fakeSession, uniqueSessionId } from "./fixtures/session.js";

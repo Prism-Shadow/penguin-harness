@@ -12,7 +12,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import { assistantText } from "@prismshadow/penguin-core";
-import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
+import type { SessionRow } from "@prismshadow/penguin-library/session/repos/sessions";
 import type { Reassembly } from "../src/hmr/capabilities.js";
 import type { RuntimeSession, SessionManager } from "../src/runtime/session-manager.js";
 import { createTestApp, waitFor } from "./helpers.js";

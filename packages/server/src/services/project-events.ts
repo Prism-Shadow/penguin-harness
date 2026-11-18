@@ -12,7 +12,7 @@ import type {
   Members,
   ProjectEvents,
   Projects,
-} from "@prismshadow/penguin-library-project";
+} from "@prismshadow/penguin-library/project";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Channels } from "../hmr/capabilities.js";
 import type { ChannelHub } from "../runtime/channel.js";

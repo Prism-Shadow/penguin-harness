@@ -57,18 +57,18 @@ import { HttpError } from "../../http/errors.js";
 import { userChannelKey } from "../../http/routes/events.js";
 import type { Channels, Clock, Config, Log } from "../../hmr/capabilities.js";
 import type { ChannelHub } from "../channel.js";
-import type { OrgCache } from "@prismshadow/penguin-library-organization";
+import type { OrgCache } from "@prismshadow/penguin-library/organization";
 import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
 import type {
   AgentIndex,
   Members,
   ProjectConfigStore,
   Projects,
-} from "@prismshadow/penguin-library-project";
-import type { MessagingBindings } from "@prismshadow/penguin-library-messaging";
-import type { SessionIndex } from "@prismshadow/penguin-library-session";
-import type { Settings } from "@prismshadow/penguin-library-setting";
-import type { Errors, UsageQueries } from "@prismshadow/penguin-library-observability";
+} from "@prismshadow/penguin-library/project";
+import type { MessagingBindings } from "@prismshadow/penguin-library/messaging";
+import type { SessionIndex } from "@prismshadow/penguin-library/session";
+import type { Settings } from "@prismshadow/penguin-library/setting";
+import type { Errors, UsageQueries } from "@prismshadow/penguin-library/observability";
 import { OrgStore } from "../../organization/store.js";
 import { badRequest } from "../../http/validate.js";
 import type { ChannelConfig, OrgConfig, OrgEmployee, TicketDoc } from "../../organization/files.js";

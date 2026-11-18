@@ -20,7 +20,7 @@
 #   legacy layout for pinned versions.
 # - publish-npm: publish the whole chain (the @penguinharness/* plugin packages -> @prismshadow/amsp
 #   -> @prismshadow/a2ui -> @prismshadow/chat-markdown -> @prismshadow/penguin-core ->
-#   the @prismshadow/penguin-library-* domain packages -> @prismshadow/penguin-server ->
+#   the @prismshadow/penguin-library domain package -> @prismshadow/penguin-server ->
 #   @prismshadow/penguin-cli) to npm at the tag version.
 #   core serves the penguin-sdk Skill's `npm install`; server ships the built web assets inside
 #   the package (web-dist/, its default web dir falls back to it), so `npm install -g
@@ -696,9 +696,7 @@ jobs:
           for dir in plugins/*/; do
             cp LICENSE "$dir/LICENSE"
           done
-          for dir in library/*/; do
-            cp LICENSE "$dir/LICENSE"
-          done
+          cp LICENSE library/penguin-library/LICENSE
           rm -rf packages/server/web-dist
           cp -r packages/web/dist packages/server/web-dist
           # The @penguinharness/* plugin packages go first: core declares them as workspace:*
@@ -734,11 +732,10 @@ jobs:
             fi
             pnpm --filter "$name" publish --access public --no-git-checks
           done
-          # The library domain packages go next, each one after what it depends on (db and
-          # workbench first, then the rest in dependency order), and all before the server,
-          # whose published manifest names them. Library sources build with `pnpm -r build`
-          # above, so each dist/ is in place when its publish runs.
-          for name in @prismshadow/penguin-library-db @prismshadow/penguin-library-workbench @prismshadow/penguin-library-agent-api @prismshadow/penguin-library-auth @prismshadow/penguin-library-machine @prismshadow/penguin-library-messaging @prismshadow/penguin-library-model @prismshadow/penguin-library-observability @prismshadow/penguin-library-organization @prismshadow/penguin-library-session @prismshadow/penguin-library-setting @prismshadow/penguin-library-trace @prismshadow/penguin-library-project; do
+          # The library domain package goes next, before the server, whose published
+          # manifest names it. Its sources build with `pnpm -r build` above, so the
+          # dist/ is in place when the publish runs.
+          for name in @prismshadow/penguin-library; do
             if [ -n "$(npm view "$name@$V" version 2>/dev/null || true)" ]; then
               echo "$name@$V already on the registry, skipping."
               continue

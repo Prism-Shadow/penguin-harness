@@ -58,7 +58,7 @@ import type {
   ModelProtocolProbeDto,
   ProtocolProbeOutcome,
   ModelProtocolDetectResponse,
-} from "@prismshadow/penguin-library-model";
+} from "@prismshadow/penguin-library/model";
 import { userAgent } from "@prismshadow/penguin-core";
 import { clientEnvKey } from "../model-catalog/env-keys.js";
 

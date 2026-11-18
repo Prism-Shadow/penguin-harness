@@ -24,7 +24,7 @@
 import { HttpError } from "../errors.js";
 import { optionalBoolean } from "../validate.js";
 import { maskApiKey } from "../../services/project-config-service.js";
-import type { MessagingBindingRow } from "@prismshadow/penguin-library-messaging/repos/messaging-bindings";
+import type { MessagingBindingRow } from "@prismshadow/penguin-library/messaging/repos/messaging-bindings";
 import type { MessagingChannel } from "../../runtime/messaging/connector.js";
 import type {
   MessagingBindingCommon,

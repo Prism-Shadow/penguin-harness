@@ -1,6 +1,6 @@
 packages:
   - "packages/*"
-  # Domain library packages (#255 restack): the contracts and their implementations,
+  # The domain library package (#255 restack): the contracts and their implementations,
   # which packages/server imports. One-directional: a library package never imports
   # the server.
   - "library/*"

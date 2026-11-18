@@ -10,7 +10,7 @@
  */
 import type { AppCenterLayout, AppCenterLayoutItem, UiPrefs } from "../api/types.js";
 import { badRequest } from "../http/errors.js";
-import type { UiPrefsStore } from "@prismshadow/penguin-library-setting";
+import type { UiPrefsStore } from "@prismshadow/penguin-library/setting";
 
 const MAX_ITEMS = 500;
 const MAX_FOLDER_APPS = 500;

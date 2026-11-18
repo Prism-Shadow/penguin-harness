@@ -8,18 +8,18 @@ import type {
   ApprovalMode,
   SessionStatus,
   SessionIndex,
-} from "@prismshadow/penguin-library-session";
+} from "@prismshadow/penguin-library/session";
 import type {
   ServerEvent,
   Members,
   ProjectConfigStore,
   Projects,
   UtilityCompletion,
-} from "@prismshadow/penguin-library-project";
+} from "@prismshadow/penguin-library/project";
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import { Interface } from "@prismshadow/penguin-core/kernel";
 import type { MessagingChannel } from "../../api/types.js";
-import type { OrgCache } from "@prismshadow/penguin-library-organization";
+import type { OrgCache } from "@prismshadow/penguin-library/organization";
 import type { OrgStore } from "../../organization/store.js";
 import type { ErrorSink } from "../error-recorder.js";
 

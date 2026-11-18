@@ -65,25 +65,25 @@ import {
 } from "./services/update-check-service.js";
 import { UpdateJobService } from "./services/update-job.js";
 import { HarnessHistoryStore } from "./services/harness-history.js";
-import { UsersRepo } from "@prismshadow/penguin-library-auth/repos/users";
-import { AuthSessionsRepo } from "@prismshadow/penguin-library-auth/repos/auth-sessions";
-import { ServerSettingsRepo } from "@prismshadow/penguin-library-setting/repos/server-settings";
-import { UiPrefsRepo } from "@prismshadow/penguin-library-setting/repos/ui-prefs";
-import { UserDraftsRepo } from "@prismshadow/penguin-library-auth/repos/user-drafts";
-import { BackgroundImagesRepo } from "@prismshadow/penguin-library-auth/repos/background-images";
-import { SessionsRepo } from "@prismshadow/penguin-library-session/repos/sessions";
-import { ProjectsRepo } from "@prismshadow/penguin-library-project/repos/projects";
-import { ModelPromotionsRepo } from "@prismshadow/penguin-library-model/repos/model-promotions";
-import { ModelProviderAuthTokensRepo } from "@prismshadow/penguin-library-model/repos/model-provider-auth-tokens";
-import { MembersRepo } from "@prismshadow/penguin-library-project/repos/members";
-import { AgentsRepo } from "@prismshadow/penguin-library-project/repos/agents";
-import { UsageRepo } from "@prismshadow/penguin-library-observability/repos/usage";
-import { SchedulesRepo } from "@prismshadow/penguin-library-session/repos/schedules";
-import { TraceIndexRepo } from "@prismshadow/penguin-library-trace/repos/trace-index";
-import { MessagingBindingsRepo } from "@prismshadow/penguin-library-messaging/repos/messaging-bindings";
-import { MessagingConversationsRepo } from "@prismshadow/penguin-library-messaging/repos/messaging-conversations";
-import { OrgCacheRepo } from "@prismshadow/penguin-library-organization/organizations";
-import { ErrorsRepo } from "@prismshadow/penguin-library-observability/repos/errors";
+import { UsersRepo } from "@prismshadow/penguin-library/auth/repos/users";
+import { AuthSessionsRepo } from "@prismshadow/penguin-library/auth/repos/auth-sessions";
+import { ServerSettingsRepo } from "@prismshadow/penguin-library/setting/repos/server-settings";
+import { UiPrefsRepo } from "@prismshadow/penguin-library/setting/repos/ui-prefs";
+import { UserDraftsRepo } from "@prismshadow/penguin-library/auth/repos/user-drafts";
+import { BackgroundImagesRepo } from "@prismshadow/penguin-library/auth/repos/background-images";
+import { SessionsRepo } from "@prismshadow/penguin-library/session/repos/sessions";
+import { ProjectsRepo } from "@prismshadow/penguin-library/project/repos/projects";
+import { ModelPromotionsRepo } from "@prismshadow/penguin-library/model/repos/model-promotions";
+import { ModelProviderAuthTokensRepo } from "@prismshadow/penguin-library/model/repos/model-provider-auth-tokens";
+import { MembersRepo } from "@prismshadow/penguin-library/project/repos/members";
+import { AgentsRepo } from "@prismshadow/penguin-library/project/repos/agents";
+import { UsageRepo } from "@prismshadow/penguin-library/observability/repos/usage";
+import { SchedulesRepo } from "@prismshadow/penguin-library/session/repos/schedules";
+import { TraceIndexRepo } from "@prismshadow/penguin-library/trace/repos/trace-index";
+import { MessagingBindingsRepo } from "@prismshadow/penguin-library/messaging/repos/messaging-bindings";
+import { MessagingConversationsRepo } from "@prismshadow/penguin-library/messaging/repos/messaging-conversations";
+import { OrgCacheRepo } from "@prismshadow/penguin-library/organization/organizations";
+import { ErrorsRepo } from "@prismshadow/penguin-library/observability/repos/errors";
 import { AgentStateStore } from "./runtime/agent-state.js";
 import { SessionSources } from "./runtime/session-sources.js";
 import { SessionDriverRegistry } from "./runtime/session-drivers.js";
@@ -162,8 +162,8 @@ import {
   ProjectEvents,
   ProjectLifecycle,
   Projects,
-} from "@prismshadow/penguin-library-project";
-import { ModelOAuth, ModelProviderAuthTokens } from "@prismshadow/penguin-library-model";
+} from "@prismshadow/penguin-library/project";
+import { ModelOAuth, ModelProviderAuthTokens } from "@prismshadow/penguin-library/model";
 import {
   AgentState,
   Schedules,
@@ -171,7 +171,7 @@ import {
   SessionDrivers,
   SessionIndex,
   SessionOrigins,
-} from "@prismshadow/penguin-library-session";
+} from "@prismshadow/penguin-library/session";
 import { Workbenches } from "./mechanisms/workbenches.js";
 import { WorkbenchService } from "./workbenches/service.js";
 import { WorkbenchRoutes } from "./workbenches/routes.js";
@@ -182,11 +182,11 @@ import {
   UsageQueries,
   UsageRecording,
   UsageStore,
-} from "@prismshadow/penguin-library-observability";
-import { TraceIndex, TraceIndexStore, Traces } from "@prismshadow/penguin-library-trace";
+} from "@prismshadow/penguin-library/observability";
+import { TraceIndex, TraceIndexStore, Traces } from "@prismshadow/penguin-library/trace";
 import { AgentConfig, AgentLifecycle, Benchmarks, Memory, Snapshots } from "./mechanisms/agents.js";
 import { FileReveal, WorkspaceFiles } from "./mechanisms/workspace.js";
-import { Settings, UiPrefsStore } from "@prismshadow/penguin-library-setting";
+import { Settings, UiPrefsStore } from "@prismshadow/penguin-library/setting";
 import {
   Admin,
   Auth,
@@ -194,9 +194,9 @@ import {
   Users,
   BackgroundImageStore,
   UserDraftsStore,
-} from "@prismshadow/penguin-library-auth";
-import { MessagingBindings } from "@prismshadow/penguin-library-messaging";
-import { OrgCache } from "@prismshadow/penguin-library-organization";
+} from "@prismshadow/penguin-library/auth";
+import { MessagingBindings } from "@prismshadow/penguin-library/messaging";
+import { OrgCache } from "@prismshadow/penguin-library/organization";
 import { PreviewModule, PreviewTokens } from "./http/routes/preview.js";
 import { Http, HttpModule } from "./http/app.js";
 import { WebModule, WebShell } from "./http/routes/contributions.js";

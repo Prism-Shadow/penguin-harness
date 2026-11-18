@@ -9,10 +9,10 @@ import type {
   ChatDefaultsDto,
   Access,
   ProjectConfigStore,
-} from "@prismshadow/penguin-library-project";
+} from "@prismshadow/penguin-library/project";
 import { Hono } from "hono";
 import { DEFAULT_CHAT_THINKING_LEVELS, isValidId } from "@prismshadow/penguin-core";
-import type { SessionSandbox } from "@prismshadow/penguin-library-session";
+import type { SessionSandbox } from "@prismshadow/penguin-library/session";
 import type { AppEnv } from "../../auth/middleware.js";
 import { HttpError } from "../errors.js";
 import { optionalEnum, optionalString, readJson, requireValidId } from "../validate.js";

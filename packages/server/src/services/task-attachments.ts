@@ -24,7 +24,7 @@ import {
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import { HttpError } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
-import type { AttachmentLimits } from "@prismshadow/penguin-library-setting/attachment-limits";
+import type { AttachmentLimits } from "@prismshadow/penguin-library/setting/attachment-limits";
 
 /**
  * The size limits are no longer constants here: they are admin-settable (see attachment-limits.ts

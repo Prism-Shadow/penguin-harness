@@ -37,12 +37,12 @@ import {
 import type { SessionManager } from "../../runtime/session-manager.js";
 import type { SessionService } from "../../services/session-service.js";
 import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
-import type { TraceIndex } from "@prismshadow/penguin-library-trace";
-import type { ErrorLog } from "@prismshadow/penguin-library-observability";
-import type { Schedules, SessionIndex } from "@prismshadow/penguin-library-session";
-import type { Access } from "@prismshadow/penguin-library-project";
-import type { AgentApi } from "@prismshadow/penguin-library-agent-api";
-import type { UserDraftsStore } from "@prismshadow/penguin-library-auth";
+import type { TraceIndex } from "@prismshadow/penguin-library/trace";
+import type { ErrorLog } from "@prismshadow/penguin-library/observability";
+import type { Schedules, SessionIndex } from "@prismshadow/penguin-library/session";
+import type { Access } from "@prismshadow/penguin-library/project";
+import type { AgentApi } from "@prismshadow/penguin-library/agent-api";
+import type { UserDraftsStore } from "@prismshadow/penguin-library/auth";
 import type { Workbenches } from "../../mechanisms/workbenches.js";
 import { deleteAgentEverywhere } from "../../services/agent-deletion.js";
 import { migrateEmployeeAuthors } from "../../services/agent-author-migration.js";

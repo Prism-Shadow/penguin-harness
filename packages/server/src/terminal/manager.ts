@@ -35,7 +35,7 @@ import { shellStartupDir, type TerminalPathFirst } from "./shell-startup.js";
 import { shimNamesDataRoot, terminalCliNotice } from "./cli-notice.js";
 import { terminalRoutes } from "./routes.js";
 import { identityFrom } from "./identity.js";
-import type { Auth } from "@prismshadow/penguin-library-auth";
+import type { Auth } from "@prismshadow/penguin-library/auth";
 import type { RemoteTerminals } from "../machines/terminal-relay.js";
 
 /** How long an exited session stays listable/attachable before it is disposed. */

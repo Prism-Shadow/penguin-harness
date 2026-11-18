@@ -37,8 +37,8 @@ import { ExtensionPairing } from "../../src/builtin-browser/extension-pairing.js
 import { attachExtensionWebSocket } from "../../src/builtin-browser/extension-ws.js";
 import type { ExtensionGate } from "../../src/builtin-browser/extension-ws.js";
 import { BuiltinBrowser } from "../../src/builtin-browser/service.js";
-import { openDatabase } from "@prismshadow/penguin-library-db";
-import { BrowserExtensionsRepo } from "@prismshadow/penguin-library-machine/browser-extensions";
+import { openDatabase } from "@prismshadow/penguin-library/db";
+import { BrowserExtensionsRepo } from "@prismshadow/penguin-library/machine/browser-extensions";
 import { userChannelKey } from "../../src/http/routes/events.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser, waitFor } from "../helpers.js";
 import type { TestApp } from "../helpers.js";

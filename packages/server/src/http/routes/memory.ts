@@ -41,7 +41,7 @@ import {
   requireValidId,
 } from "../validate.js";
 import type { Memory } from "../../mechanisms/agents.js";
-import type { Access } from "@prismshadow/penguin-library-project";
+import type { Access } from "@prismshadow/penguin-library/project";
 
 const IMPORT_MODES: readonly MemoryImportMode[] = ["skip", "overwrite", "replace"];
 

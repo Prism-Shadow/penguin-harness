@@ -20,12 +20,12 @@ import { Hono } from "hono";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { LiveStreams } from "../../auth/live-streams.js";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
+import type { SessionRow } from "@prismshadow/penguin-library/session/repos/sessions";
 import type { Channels } from "../../hmr/capabilities.js";
-import type { Auth } from "@prismshadow/penguin-library-auth";
-import type { Access } from "@prismshadow/penguin-library-project";
-import type { SessionIndex } from "@prismshadow/penguin-library-session";
-import type { Traces } from "@prismshadow/penguin-library-trace";
+import type { Auth } from "@prismshadow/penguin-library/auth";
+import type { Access } from "@prismshadow/penguin-library/project";
+import type { SessionIndex } from "@prismshadow/penguin-library/session";
+import type { Traces } from "@prismshadow/penguin-library/trace";
 import type { Sessions as ManagerIface } from "../../runtime/session-manager.js";
 import {
   HeldWindows,

@@ -14,8 +14,8 @@ import type { AgentArchiveImportResponse, AgentArchiveQuery } from "../../api/ty
 import type { AppEnv } from "../../auth/middleware.js";
 import { formatLocalDate } from "../../internal/dates.js";
 import type { AgentConfig, AgentLifecycle, Snapshots } from "../../mechanisms/agents.js";
-import type { Access } from "@prismshadow/penguin-library-project";
-import type { Traces } from "@prismshadow/penguin-library-trace";
+import type { Access } from "@prismshadow/penguin-library/project";
+import type { Traces } from "@prismshadow/penguin-library/trace";
 import type { Workbenches } from "../../mechanisms/workbenches.js";
 import { exportAgent } from "../../services/agent-export.js";
 import type { AgentExportDeps } from "../../services/agent-export.js";

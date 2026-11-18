@@ -1,0 +1,267 @@
+{
+  "name": "@prismshadow/penguin-library",
+  "version": "0.2.18",
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "exports": {
+    "./package.json": "./package.json",
+    "./agent-api": {
+      "types": "./dist/agent-api/index.d.ts",
+      "import": "./dist/agent-api/index.js"
+    },
+    "./agent-api/agent-api-repo": {
+      "types": "./dist/agent-api/agent-api-repo.d.ts",
+      "import": "./dist/agent-api/agent-api-repo.js"
+    },
+    "./agent-api/agent-api": {
+      "types": "./dist/agent-api/agent-api.d.ts",
+      "import": "./dist/agent-api/agent-api.js"
+    },
+    "./auth": {
+      "types": "./dist/auth/index.d.ts",
+      "import": "./dist/auth/index.js"
+    },
+    "./auth/account-data": {
+      "types": "./dist/auth/account-data.d.ts",
+      "import": "./dist/auth/account-data.js"
+    },
+    "./auth/auth": {
+      "types": "./dist/auth/auth.d.ts",
+      "import": "./dist/auth/auth.js"
+    },
+    "./auth/repos/auth-sessions": {
+      "types": "./dist/auth/repos/auth-sessions.d.ts",
+      "import": "./dist/auth/repos/auth-sessions.js"
+    },
+    "./auth/repos/background-images": {
+      "types": "./dist/auth/repos/background-images.d.ts",
+      "import": "./dist/auth/repos/background-images.js"
+    },
+    "./auth/repos/user-drafts": {
+      "types": "./dist/auth/repos/user-drafts.d.ts",
+      "import": "./dist/auth/repos/user-drafts.js"
+    },
+    "./auth/repos/users": {
+      "types": "./dist/auth/repos/users.d.ts",
+      "import": "./dist/auth/repos/users.js"
+    },
+    "./auth/repos": {
+      "types": "./dist/auth/repos/index.d.ts",
+      "import": "./dist/auth/repos/index.js"
+    },
+    "./db": {
+      "types": "./dist/db/index.d.ts",
+      "import": "./dist/db/index.js"
+    },
+    "./db/database": {
+      "types": "./dist/db/database.d.ts",
+      "import": "./dist/db/database.js"
+    },
+    "./db/schema": {
+      "types": "./dist/db/schema.d.ts",
+      "import": "./dist/db/schema.js"
+    },
+    "./db/migrations": {
+      "types": "./dist/db/migrations/index.d.ts",
+      "import": "./dist/db/migrations/index.js"
+    },
+    "./db/migrations/runner": {
+      "types": "./dist/db/migrations/runner.d.ts",
+      "import": "./dist/db/migrations/runner.js"
+    },
+    "./machine": {
+      "types": "./dist/machine/index.d.ts",
+      "import": "./dist/machine/index.js"
+    },
+    "./machine/browser-extensions": {
+      "types": "./dist/machine/browser-extensions.d.ts",
+      "import": "./dist/machine/browser-extensions.js"
+    },
+    "./machine/builtin-browser-vocab": {
+      "types": "./dist/machine/builtin-browser-vocab.d.ts",
+      "import": "./dist/machine/builtin-browser-vocab.js"
+    },
+    "./machine/machine": {
+      "types": "./dist/machine/machine.d.ts",
+      "import": "./dist/machine/machine.js"
+    },
+    "./messaging": {
+      "types": "./dist/messaging/index.d.ts",
+      "import": "./dist/messaging/index.js"
+    },
+    "./messaging/messaging": {
+      "types": "./dist/messaging/messaging.d.ts",
+      "import": "./dist/messaging/messaging.js"
+    },
+    "./messaging/repos/messaging-bindings": {
+      "types": "./dist/messaging/repos/messaging-bindings.d.ts",
+      "import": "./dist/messaging/repos/messaging-bindings.js"
+    },
+    "./messaging/repos/messaging-conversations": {
+      "types": "./dist/messaging/repos/messaging-conversations.d.ts",
+      "import": "./dist/messaging/repos/messaging-conversations.js"
+    },
+    "./messaging/repos": {
+      "types": "./dist/messaging/repos/index.d.ts",
+      "import": "./dist/messaging/repos/index.js"
+    },
+    "./model": {
+      "types": "./dist/model/index.d.ts",
+      "import": "./dist/model/index.js"
+    },
+    "./model/model": {
+      "types": "./dist/model/model.d.ts",
+      "import": "./dist/model/model.js"
+    },
+    "./model/repos/model-promotions": {
+      "types": "./dist/model/repos/model-promotions.d.ts",
+      "import": "./dist/model/repos/model-promotions.js"
+    },
+    "./model/repos/model-provider-auth-tokens": {
+      "types": "./dist/model/repos/model-provider-auth-tokens.d.ts",
+      "import": "./dist/model/repos/model-provider-auth-tokens.js"
+    },
+    "./observability": {
+      "types": "./dist/observability/index.d.ts",
+      "import": "./dist/observability/index.js"
+    },
+    "./observability/observability": {
+      "types": "./dist/observability/observability.d.ts",
+      "import": "./dist/observability/observability.js"
+    },
+    "./observability/repos/errors": {
+      "types": "./dist/observability/repos/errors.d.ts",
+      "import": "./dist/observability/repos/errors.js"
+    },
+    "./observability/repos/usage": {
+      "types": "./dist/observability/repos/usage.d.ts",
+      "import": "./dist/observability/repos/usage.js"
+    },
+    "./observability/repos": {
+      "types": "./dist/observability/repos/index.d.ts",
+      "import": "./dist/observability/repos/index.js"
+    },
+    "./organization": {
+      "types": "./dist/organization/index.d.ts",
+      "import": "./dist/organization/index.js"
+    },
+    "./organization/organization": {
+      "types": "./dist/organization/organization.d.ts",
+      "import": "./dist/organization/organization.js"
+    },
+    "./organization/organizations": {
+      "types": "./dist/organization/organizations.d.ts",
+      "import": "./dist/organization/organizations.js"
+    },
+    "./project": {
+      "types": "./dist/project/index.d.ts",
+      "import": "./dist/project/index.js"
+    },
+    "./project/project": {
+      "types": "./dist/project/project.d.ts",
+      "import": "./dist/project/project.js"
+    },
+    "./project/repos/agents": {
+      "types": "./dist/project/repos/agents.d.ts",
+      "import": "./dist/project/repos/agents.js"
+    },
+    "./project/repos/members": {
+      "types": "./dist/project/repos/members.d.ts",
+      "import": "./dist/project/repos/members.js"
+    },
+    "./project/repos/projects": {
+      "types": "./dist/project/repos/projects.d.ts",
+      "import": "./dist/project/repos/projects.js"
+    },
+    "./project/repos": {
+      "types": "./dist/project/repos/index.d.ts",
+      "import": "./dist/project/repos/index.js"
+    },
+    "./session": {
+      "types": "./dist/session/index.d.ts",
+      "import": "./dist/session/index.js"
+    },
+    "./session/session": {
+      "types": "./dist/session/session.d.ts",
+      "import": "./dist/session/session.js"
+    },
+    "./session/repos/schedules": {
+      "types": "./dist/session/repos/schedules.d.ts",
+      "import": "./dist/session/repos/schedules.js"
+    },
+    "./session/repos/sessions": {
+      "types": "./dist/session/repos/sessions.d.ts",
+      "import": "./dist/session/repos/sessions.js"
+    },
+    "./session/repos": {
+      "types": "./dist/session/repos/index.d.ts",
+      "import": "./dist/session/repos/index.js"
+    },
+    "./setting": {
+      "types": "./dist/setting/index.d.ts",
+      "import": "./dist/setting/index.js"
+    },
+    "./setting/attachment-limits": {
+      "types": "./dist/setting/attachment-limits.d.ts",
+      "import": "./dist/setting/attachment-limits.js"
+    },
+    "./setting/setting": {
+      "types": "./dist/setting/setting.d.ts",
+      "import": "./dist/setting/setting.js"
+    },
+    "./setting/repos/server-settings": {
+      "types": "./dist/setting/repos/server-settings.d.ts",
+      "import": "./dist/setting/repos/server-settings.js"
+    },
+    "./setting/repos/ui-prefs": {
+      "types": "./dist/setting/repos/ui-prefs.d.ts",
+      "import": "./dist/setting/repos/ui-prefs.js"
+    },
+    "./setting/repos": {
+      "types": "./dist/setting/repos/index.d.ts",
+      "import": "./dist/setting/repos/index.js"
+    },
+    "./trace": {
+      "types": "./dist/trace/index.d.ts",
+      "import": "./dist/trace/index.js"
+    },
+    "./trace/trace": {
+      "types": "./dist/trace/trace.d.ts",
+      "import": "./dist/trace/trace.js"
+    },
+    "./trace/repos/trace-index": {
+      "types": "./dist/trace/repos/trace-index.d.ts",
+      "import": "./dist/trace/repos/trace-index.js"
+    },
+    "./trace/repos": {
+      "types": "./dist/trace/repos/index.d.ts",
+      "import": "./dist/trace/repos/index.js"
+    },
+    "./workbench": {
+      "types": "./dist/workbench/index.d.ts",
+      "import": "./dist/workbench/index.js"
+    },
+    "./workbench/workbench": {
+      "types": "./dist/workbench/workbench.d.ts",
+      "import": "./dist/workbench/workbench.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup"
+  },
+  "dependencies": {
+    "@prismshadow/amsp": "workspace:*",
+    "@prismshadow/penguin-core": "workspace:*"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.0",
+    "typescript": "^5.9.3"
+  }
+}

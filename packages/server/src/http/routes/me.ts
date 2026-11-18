@@ -21,7 +21,7 @@ import type {
   Users,
   BackgroundImageStore,
   UserDraftsStore,
-} from "@prismshadow/penguin-library-auth";
+} from "@prismshadow/penguin-library/auth";
 import { Hono } from "hono";
 import { setCookie } from "hono/cookie";
 import { createHash } from "node:crypto";
@@ -70,11 +70,11 @@ import {
   MAX_ATTACHMENT_COUNT,
   MAX_ATTACHMENT_MB,
   MIN_ATTACHMENT_MB,
-} from "@prismshadow/penguin-library-setting/attachment-limits";
+} from "@prismshadow/penguin-library/setting/attachment-limits";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { Config, Desktop } from "../../hmr/capabilities.js";
-import type { Settings, UiPrefsStore } from "@prismshadow/penguin-library-setting";
+import type { Settings, UiPrefsStore } from "@prismshadow/penguin-library/setting";
 
 /** Nickname bounds, counted in user-perceived code points so a CJK name is 32 characters, not 96. */
 const DISPLAY_NAME_MIN = 1;

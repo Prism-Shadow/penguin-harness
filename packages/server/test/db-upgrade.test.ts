@@ -35,11 +35,11 @@ import { copyFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
-import { openDatabase } from "@prismshadow/penguin-library-db";
-import { SCHEMA_SQL } from "@prismshadow/penguin-library-db/schema";
-import { MessagingBindingsRepo } from "@prismshadow/penguin-library-messaging/repos/messaging-bindings";
-import { SessionsRepo } from "@prismshadow/penguin-library-session/repos/sessions";
-import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
+import { openDatabase } from "@prismshadow/penguin-library/db";
+import { SCHEMA_SQL } from "@prismshadow/penguin-library/db/schema";
+import { MessagingBindingsRepo } from "@prismshadow/penguin-library/messaging/repos/messaging-bindings";
+import { SessionsRepo } from "@prismshadow/penguin-library/session/repos/sessions";
+import type { SessionRow } from "@prismshadow/penguin-library/session/repos/sessions";
 import { wire } from "@prismshadow/penguin-core/kernel";
 
 const sqlite = process.getBuiltinModule("node:sqlite");

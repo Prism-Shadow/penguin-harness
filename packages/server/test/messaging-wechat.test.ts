@@ -76,9 +76,9 @@ import {
   wechatConfigOf,
   wechatRetryDelayMs,
 } from "../src/runtime/messaging/wechat-connector.js";
-import { openDatabase } from "@prismshadow/penguin-library-db";
-import { MessagingBindingsRepo } from "@prismshadow/penguin-library-messaging/repos/messaging-bindings";
-import { MessagingConversationsRepo } from "@prismshadow/penguin-library-messaging/repos/messaging-conversations";
+import { openDatabase } from "@prismshadow/penguin-library/db";
+import { MessagingBindingsRepo } from "@prismshadow/penguin-library/messaging/repos/messaging-bindings";
+import { MessagingConversationsRepo } from "@prismshadow/penguin-library/messaging/repos/messaging-conversations";
 import { forwardingTo } from "./fixtures/forwarding.js";
 import { fakeSession, sessionRow, uniqueSessionId } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";

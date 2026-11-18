@@ -29,11 +29,11 @@ import type {
   ScheduleServerEvent,
   ProjectConfigStore,
   Projects,
-} from "@prismshadow/penguin-library-project";
+} from "@prismshadow/penguin-library/project";
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import { agentsDir, buildScheduledMessage, userText } from "@prismshadow/penguin-core";
-import type { ScheduleStateRow } from "@prismshadow/penguin-library-session/repos/schedules";
+import type { ScheduleStateRow } from "@prismshadow/penguin-library/session/repos/schedules";
 import { cacheable, statMtime } from "../internal/mtime-gate.js";
 import type { ErrorSink } from "./error-recorder.js";
 import type { ScheduleDefinition } from "./schedule-file.js";
@@ -55,8 +55,8 @@ import type {
   Scheduling,
   SessionDrivers,
   SessionIndex,
-} from "@prismshadow/penguin-library-session";
-import type { Errors } from "@prismshadow/penguin-library-observability";
+} from "@prismshadow/penguin-library/session";
+import type { Errors } from "@prismshadow/penguin-library/observability";
 
 /** Reconcile and fire-check interval (min period is 5m, so 30s granularity is plenty). */
 const TICK_INTERVAL_MS = 30_000;

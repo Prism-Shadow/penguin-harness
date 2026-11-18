@@ -27,7 +27,7 @@ import { iconResponse } from "../icon-response.js";
 import { HttpError } from "../errors.js";
 import { directorySkillIcon, discoverDirectorySkills } from "../../services/directory-skills.js";
 import { toSkillItem } from "../../services/plugin-library.js";
-import type { Access } from "@prismshadow/penguin-library-project";
+import type { Access } from "@prismshadow/penguin-library/project";
 
 /** Where a directory Skill's icon is served: the listing's own path, and the Skill's name. */
 const iconRoute = (projectId: string, dir: string, name: string): string =>

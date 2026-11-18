@@ -23,11 +23,11 @@ import type { AmspRecord } from "@prismshadow/penguin-core";
 import { bodyAt, decodeBodyRef } from "@prismshadow/penguin-core/interfaces";
 import type { HistoryProgress, HistoryRecords } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
+import type { SessionRow } from "@prismshadow/penguin-library/session/repos/sessions";
 import { Channels, Log } from "../../hmr/capabilities.js";
-import type { Access } from "@prismshadow/penguin-library-project";
-import type { SessionIndex } from "@prismshadow/penguin-library-session";
-import type { Traces } from "@prismshadow/penguin-library-trace";
+import type { Access } from "@prismshadow/penguin-library/project";
+import type { SessionIndex } from "@prismshadow/penguin-library/session";
+import type { Traces } from "@prismshadow/penguin-library/trace";
 import { Sessions } from "../../runtime/session-manager.js";
 import {
   HISTORY_LINES_BEAT_MS,

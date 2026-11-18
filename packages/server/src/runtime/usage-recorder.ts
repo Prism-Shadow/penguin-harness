@@ -22,8 +22,8 @@ import type {
   UsageContext,
   UsageRecording,
   UsageStore,
-} from "@prismshadow/penguin-library-observability";
-import type { Projects } from "@prismshadow/penguin-library-project";
+} from "@prismshadow/penguin-library/observability";
+import type { Projects } from "@prismshadow/penguin-library/project";
 
 /** Attribution context for one record (top-level Session scope). */
 

@@ -13,7 +13,7 @@
 import { DRAFT_KINDS, DRAFT_VALUE_MAX_CHARS, DRAFTS_PATCH_MAX_ENTRIES } from "../api/types.js";
 import type { DraftKind } from "../api/types.js";
 import { badRequest } from "../http/errors.js";
-import type { DraftWrite } from "@prismshadow/penguin-library-auth";
+import type { DraftWrite } from "@prismshadow/penguin-library/auth";
 
 /** The most drafts one account keeps; past it, the least recently written go. */
 export const DRAFTS_MAX_COUNT = 200;

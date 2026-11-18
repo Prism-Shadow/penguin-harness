@@ -18,8 +18,8 @@ import type {
   ProjectConfigStore,
   ProjectLifecycle,
   Projects,
-} from "@prismshadow/penguin-library-project";
-import type { Users, UserDraftsStore } from "@prismshadow/penguin-library-auth";
+} from "@prismshadow/penguin-library/project";
+import type { Users, UserDraftsStore } from "@prismshadow/penguin-library/auth";
 import fs from "node:fs/promises";
 import {
   DEFAULT_PROJECT_ID,
@@ -30,8 +30,8 @@ import {
 } from "@prismshadow/penguin-core";
 import type { MemberInfo, ProjectSummary } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
-import type { ProjectRow } from "@prismshadow/penguin-library-project/repos/projects";
-import type { UserRow } from "@prismshadow/penguin-library-auth/repos/users";
+import type { ProjectRow } from "@prismshadow/penguin-library/project/repos/projects";
+import type { UserRow } from "@prismshadow/penguin-library/auth/repos/users";
 import type { SessionManager } from "../runtime/session-manager.js";
 import {
   PROJECT_ID_MAX_LENGTH,
@@ -41,11 +41,11 @@ import {
 } from "./ids.js";
 import { Component, Use, Interface } from "@prismshadow/penguin-core/kernel";
 import type { Config, Paths } from "../hmr/capabilities.js";
-import type { Schedules, SessionIndex } from "@prismshadow/penguin-library-session";
-import type { ErrorLog, UsageStore } from "@prismshadow/penguin-library-observability";
-import type { TraceIndex } from "@prismshadow/penguin-library-trace";
-import type { OrgCache } from "@prismshadow/penguin-library-organization";
-import type { AgentApi } from "@prismshadow/penguin-library-agent-api";
+import type { Schedules, SessionIndex } from "@prismshadow/penguin-library/session";
+import type { ErrorLog, UsageStore } from "@prismshadow/penguin-library/observability";
+import type { TraceIndex } from "@prismshadow/penguin-library/trace";
+import type { OrgCache } from "@prismshadow/penguin-library/organization";
+import type { AgentApi } from "@prismshadow/penguin-library/agent-api";
 
 /** Fallback timeout for waiting on runs to settle before deleting a Project. */
 const ABORT_SETTLE_TIMEOUT_MS = 5000;

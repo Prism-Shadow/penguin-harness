@@ -55,15 +55,15 @@ import { formatLocalDate } from "../internal/dates.js";
 import { HttpError } from "../http/errors.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Clock } from "../hmr/capabilities.js";
-import { ErrorLog, Errors } from "@prismshadow/penguin-library-observability";
+import { ErrorLog, Errors } from "@prismshadow/penguin-library/observability";
 import type {
   ErrorSource,
   ErrorKind,
   ErrorRecordArgs,
-} from "@prismshadow/penguin-library-observability";
+} from "@prismshadow/penguin-library/observability";
 
 /** Attribution context (all optional: the login endpoint has no Project, and process-level fallback has no request at all). Lives with the Errors contract (library/observability); re-exported for the recorder's callers. */
-export type { ErrorContext } from "@prismshadow/penguin-library-observability";
+export type { ErrorContext } from "@prismshadow/penguin-library/observability";
 
 /** Message truncation length (keep only a readable summary; the full stack is still logged). */
 export const MESSAGE_MAX = 500;

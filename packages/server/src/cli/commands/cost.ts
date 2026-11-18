@@ -18,7 +18,7 @@ import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-cor
 /** The node the host located for a key, typed with this package's commander. */
 const node = (command: CliCommandProgram): Command => command as Command;
 
-import type { UsageResponse } from "@prismshadow/penguin-library-observability";
+import type { UsageResponse } from "@prismshadow/penguin-library/observability";
 import { humanizeTokens, renderTable } from "../table.js";
 import { resolveProjectId, ServerClient } from "../client.js";
 import { resolveConnection } from "../connection.js";

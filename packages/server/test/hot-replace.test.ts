@@ -8,10 +8,10 @@ import { describe, expect, it, afterEach } from "vitest";
 import { parseManifest } from "@prismshadow/penguin-core/kernel";
 import type { ModuleDef } from "@prismshadow/penguin-core/kernel";
 import { PluginHost } from "../src/plugin/host.js";
-import type { Settings, UiPrefsStore } from "@prismshadow/penguin-library-setting";
+import type { Settings, UiPrefsStore } from "@prismshadow/penguin-library/setting";
 import { createTestApp, loginAdmin, type TestApp } from "./helpers.js";
 
-const LIB = "@prismshadow/penguin-library-setting";
+const LIB = "@prismshadow/penguin-library";
 
 function replacing(
   name: string,

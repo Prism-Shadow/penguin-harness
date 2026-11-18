@@ -9,7 +9,7 @@ import { badRequest } from "../http/validate.js";
 import {
   INLINE_IMAGE_MAX_BYTES,
   INLINE_IMAGE_MAX_MB,
-} from "@prismshadow/penguin-library-setting/attachment-limits";
+} from "@prismshadow/penguin-library/setting/attachment-limits";
 
 /**
  * A base64 `data:` URL of an image: an `image/*` MIME, the `;base64,` marker, a non-empty body.

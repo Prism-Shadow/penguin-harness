@@ -24,8 +24,8 @@ import type {
   MessagingUnreachableReason,
 } from "../../api/types.js";
 import type { MachineApi } from "../../machines/machine-api.js";
-import type { MessagingBindings } from "@prismshadow/penguin-library-messaging";
-import type { SessionIndex } from "@prismshadow/penguin-library-session";
+import type { MessagingBindings } from "@prismshadow/penguin-library/messaging";
+import type { SessionIndex } from "@prismshadow/penguin-library/session";
 import { isMessagingChannel } from "./enabled-channel.js";
 
 /** Where a server answers its enabled accounts (GET, admin only). */

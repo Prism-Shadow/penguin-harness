@@ -12,10 +12,10 @@ import type {
   Members,
   ProjectConfigStore,
   Projects,
-} from "@prismshadow/penguin-library-project";
+} from "@prismshadow/penguin-library/project";
 import type { ProjectSummary } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
-import type { ProjectRow } from "@prismshadow/penguin-library-project/repos/projects";
+import type { ProjectRow } from "@prismshadow/penguin-library/project/repos/projects";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 
 @Component()

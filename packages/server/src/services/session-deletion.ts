@@ -17,9 +17,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { scratchpadDir } from "@prismshadow/penguin-core";
-import type { SessionIndex, SessionOrigins } from "@prismshadow/penguin-library-session";
-import type { Traces } from "@prismshadow/penguin-library-trace";
-import type { UserDraftsStore } from "@prismshadow/penguin-library-auth";
+import type { SessionIndex, SessionOrigins } from "@prismshadow/penguin-library/session";
+import type { Traces } from "@prismshadow/penguin-library/trace";
+import type { UserDraftsStore } from "@prismshadow/penguin-library/auth";
 
 /** What deleting a Session reaches. */
 export interface SessionDeletionDeps {

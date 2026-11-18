@@ -55,7 +55,7 @@ import type {
 import type {
   AgentApiSettings,
   AgentApiUpdateRequest,
-} from "@prismshadow/penguin-library-agent-api";
+} from "@prismshadow/penguin-library/agent-api";
 import { resolveApprovalMode } from "../approval.js";
 import { ApiError, resolveProjectId, ServerClient } from "../client.js";
 import { resolveConnection } from "../connection.js";

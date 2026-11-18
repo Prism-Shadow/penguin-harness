@@ -25,7 +25,7 @@ import { adoptSession, fakeSession, uniqueSessionId } from "./fixtures/session.j
 import { MOCK_MODEL_ID, startMockLLM, type MockLLM } from "./live-session.js";
 const BASE = "/api/projects/default_project/agents/penguin_support/workbenches/support";
 const HOST_KEY = "@prismshadow/penguin-server#WorkbenchHost";
-const RECORD_KEY = "@prismshadow/penguin-library-workbench#WorkbenchRecord";
+const RECORD_KEY = "@prismshadow/penguin-library#WorkbenchRecord";
 const message = (role: string, text: string): AmspRecord =>
   ({
     timestamp: "2026-10-14T00:00:00Z",

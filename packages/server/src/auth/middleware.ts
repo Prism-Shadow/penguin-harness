@@ -14,7 +14,7 @@
  * CSRF: SameSite=Lax plus a Content-Type an HTML form cannot forge (see jsonOnlyWrites).
  * That guard stays for Bearer requests too — the CLI always sends application/json.
  */
-import type { SessionVia, Auth } from "@prismshadow/penguin-library-auth";
+import type { SessionVia, Auth } from "@prismshadow/penguin-library/auth";
 import type { Context, MiddlewareHandler } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
 import { parse } from "hono/utils/cookie";
@@ -29,7 +29,7 @@ import {
   sameOriginSite,
 } from "../http/public-origin.js";
 import type { OriginRule } from "../http/public-origin.js";
-import type { UserRow } from "@prismshadow/penguin-library-auth/repos/users";
+import type { UserRow } from "@prismshadow/penguin-library/auth/repos/users";
 import { SESSION_COOKIE } from "../api/types.js";
 
 /** The session cookie's name as every non-browser client spells it (declared in the API contract). */

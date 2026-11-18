@@ -22,8 +22,8 @@
  * A machine that should have been asked and could not be is named in the answer, never dropped
  * in silence.
  */
-import type { SessionCategory, TraceIndexStore } from "@prismshadow/penguin-library-trace";
-import type { SessionStatus, SessionIndex } from "@prismshadow/penguin-library-session";
+import type { SessionCategory, TraceIndexStore } from "@prismshadow/penguin-library/trace";
+import type { SessionStatus, SessionIndex } from "@prismshadow/penguin-library/session";
 import type {
   ArchivedSessionGroup,
   ArchivedSessionGroupServers,
@@ -38,8 +38,8 @@ import type {
   SessionInfo,
   SessionSource,
 } from "../api/types.js";
-import type { ServerEvent } from "@prismshadow/penguin-library-project";
-import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
+import type { ServerEvent } from "@prismshadow/penguin-library/project";
+import type { SessionRow } from "@prismshadow/penguin-library/session/repos/sessions";
 import { HttpError, badRequest } from "../http/errors.js";
 import type { ListingView } from "../runtime/session-sources.js";
 import { compareActivityDesc } from "./session-service.js";

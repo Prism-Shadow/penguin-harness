@@ -27,12 +27,12 @@ import {
   saveProjectConfig,
   scheduleDir,
 } from "@prismshadow/penguin-core";
-import { openDatabase } from "@prismshadow/penguin-library-db";
-import { ProjectsRepo } from "@prismshadow/penguin-library-project/repos/projects";
-import { SchedulesRepo } from "@prismshadow/penguin-library-session/repos/schedules";
-import { SessionsRepo } from "@prismshadow/penguin-library-session/repos/sessions";
-import { UsersRepo } from "@prismshadow/penguin-library-auth/repos/users";
-import type { ErrorRecordArgs } from "@prismshadow/penguin-library-observability";
+import { openDatabase } from "@prismshadow/penguin-library/db";
+import { ProjectsRepo } from "@prismshadow/penguin-library/project/repos/projects";
+import { SchedulesRepo } from "@prismshadow/penguin-library/session/repos/schedules";
+import { SessionsRepo } from "@prismshadow/penguin-library/session/repos/sessions";
+import { UsersRepo } from "@prismshadow/penguin-library/auth/repos/users";
+import type { ErrorRecordArgs } from "@prismshadow/penguin-library/observability";
 import type { ScheduleSessionCreator, ScheduleTaskRunner } from "../src/runtime/scheduler.js";
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import { Scheduler } from "../src/runtime/scheduler.js";

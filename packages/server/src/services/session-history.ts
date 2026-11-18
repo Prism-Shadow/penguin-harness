@@ -20,7 +20,7 @@ import type {
   Traces,
   MessagesPageRequest,
   MessagesPageResult,
-} from "@prismshadow/penguin-library-trace";
+} from "@prismshadow/penguin-library/trace";
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import type { Context } from "hono";
 import type {
@@ -29,8 +29,8 @@ import type {
   MessagesPageInfo,
   MessagesResponse,
 } from "../api/types.js";
-import type { SessionStatus } from "@prismshadow/penguin-library-session";
-import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
+import type { SessionStatus } from "@prismshadow/penguin-library/session";
+import type { SessionRow } from "@prismshadow/penguin-library/session/repos/sessions";
 import { badRequest, parseNonNegativeInt } from "../http/validate.js";
 import type { Channels } from "../hmr/capabilities.js";
 import { envelopeDigest } from "../runtime/live-tail.js";

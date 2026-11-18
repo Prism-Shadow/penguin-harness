@@ -65,9 +65,9 @@ import type {
   TelegramBindingResponse,
   TelegramTestResponse,
 } from "../src/api/types.js";
-import { ProjectsRepo } from "@prismshadow/penguin-library-project/repos/projects";
+import { ProjectsRepo } from "@prismshadow/penguin-library/project/repos/projects";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
-import { INLINE_IMAGE_MAX_BYTES } from "@prismshadow/penguin-library-setting/attachment-limits";
+import { INLINE_IMAGE_MAX_BYTES } from "@prismshadow/penguin-library/setting/attachment-limits";
 import {
   MESSAGING_APPROVAL_NOTICE,
   MESSAGING_UNSUPPORTED_NOTICE,

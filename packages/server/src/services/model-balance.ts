@@ -30,7 +30,7 @@ import type {
   ModelBalanceReading,
   ModelBalanceResponse,
 } from "../api/types.js";
-import type { ModelBalanceAmount } from "@prismshadow/penguin-library-model";
+import type { ModelBalanceAmount } from "@prismshadow/penguin-library/model";
 
 /** How long a vendor may take to answer a balance request. */
 export const BALANCE_TIMEOUT_MS = 5_000;

@@ -30,10 +30,10 @@ import type { AgentResponse, SessionResponse, TaskResponse } from "@prismshadow/
 import type { AppEnv } from "../auth/middleware.js";
 import { HttpError } from "../http/errors.js";
 import { readJson, requireEnum } from "../http/validate.js";
-import { DEFAULT_API_CONCURRENT_RUNS } from "@prismshadow/penguin-library-agent-api";
+import { DEFAULT_API_CONCURRENT_RUNS } from "@prismshadow/penguin-library/agent-api";
 import type { AgentConfig } from "../mechanisms/agents.js";
-import type { Settings } from "@prismshadow/penguin-library-setting";
-import { toAttachmentLimits } from "@prismshadow/penguin-library-setting/attachment-limits";
+import type { Settings } from "@prismshadow/penguin-library/setting";
+import { toAttachmentLimits } from "@prismshadow/penguin-library/setting/attachment-limits";
 import { sessionMessages, sessionTraceImage } from "../services/session-history.js";
 import type { SessionHistoryDeps } from "../services/session-history.js";
 import { reserveStart } from "./admission.js";

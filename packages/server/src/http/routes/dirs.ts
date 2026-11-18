@@ -45,7 +45,7 @@ import { requireValidId } from "../validate.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import { directorySkillsRoutes } from "./directory-skills.js";
 import type { Desktop, DesktopApi } from "../../hmr/capabilities.js";
-import type { Access } from "@prismshadow/penguin-library-project";
+import type { Access } from "@prismshadow/penguin-library/project";
 import { discoverLocalPlaces, windowsHiddenNames } from "../../services/dir-places.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
