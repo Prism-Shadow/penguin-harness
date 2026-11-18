@@ -220,11 +220,12 @@ export async function testPlugin(options: TestPluginOptions): Promise<TestResult
     // declare `run` — so a plugin's whole module list can go in as is. Each must be a
     // real module (a decorated class), the unit the harness itself is built from, and
     // concrete: the driver instantiates it and calls `run` with the context.
-    // Array.isArray does not narrow a `readonly ModuleClass[] | Plugin` union (a readonly
-    // array is not an `any[]`); discriminate on the Plugin shape with `in` instead.
-    const classes: readonly ModuleClass[] = "modules" in options.units
-      ? (options.units.modules ?? [])
-      : options.units;
+    // Array.isArray does not narrow the `readonly ModuleClass[] | Plugin` union itself, so
+    // widen to unknown first — there it narrows to any[] and the else branch is the Plugin.
+    const source: unknown = options.units;
+    const classes: readonly ModuleClass[] = Array.isArray(source)
+      ? (source as readonly ModuleClass[])
+      : ((source as Plugin).modules ?? []);
     const units: Array<{ name: string; run: (context: TestContext) => Promise<void> | void }> = [];
     for (const cls of classes) {
       if (typeof cls !== "function") continue; // Plugin.modules entries may be absent
