@@ -312,7 +312,12 @@ export function ChartsBoard() {
         </BoardGroup>
         <BoardGroup title={t.requests} aside={t.requestsHint}>
           <div className="lib-box p-3">
-            <RequestsChart series={SERIES} entities={entities} granularity="day" />
+            <RequestsChart
+              label={t.requests}
+              series={SERIES}
+              entities={entities}
+              granularity="day"
+            />
           </div>
         </BoardGroup>
         <BoardGroup title={t.activity} aside={t.activityHint}>
