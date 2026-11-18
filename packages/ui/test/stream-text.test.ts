@@ -13,9 +13,10 @@
  * - Given a reply, a thinking row or a tool's output, each body is that same host, so the four
  *   surfaces reveal alike; none carries the app's fixed fade.
  */
-import { createElement, isValidElement } from "react";
-import type { ReactElement, ReactNode } from "react";
+import { createElement } from "react";
+import type { ReactElement } from "react";
 import { describe, expect, it } from "vitest";
+import { StepDisclosure } from "../src/components/chat/activity-group/step-disclosure";
 import { AssistantText } from "../src/components/chat/assistant-text/assistant-text";
 import { StreamingCaret } from "../src/components/chat/assistant-text/streaming-caret";
 import { StreamText } from "../src/components/chat/stream-text/stream-text";
@@ -40,14 +41,14 @@ const output = (streaming: boolean) =>
     }),
   );
 
-/**
- * A row's expanded body. The rows start collapsed, and a static render cannot open them, so the
- * body the row would show is rendered from the element the component hands its row.
- */
-function bodyOf(row: ReactNode): string {
-  if (!isValidElement(row)) throw new Error("the component rendered no row");
+/** Render the real disclosure in its expanded state, including its streamed body. */
+function expandedRow(row: ReactElement): string {
   return renderStatic(
-    createElement("div", null, (row as ReactElement<{ children?: ReactNode }>).props.children),
+    createElement(
+      StepDisclosure.Provider,
+      { value: { open: true, bounded: false, follow: true, toggle() {} } },
+      row,
+    ),
   );
 }
 
@@ -95,8 +96,8 @@ describe("the surfaces that stream", () => {
   });
 
   it("a thinking row's text is the host", () => {
-    const html = bodyOf(
-      ThinkingBlock({ state: "running", label: "Thinking", text: "the **plan**" }),
+    const html = expandedRow(
+      createElement(ThinkingBlock, { state: "running", label: "Thinking", text: "the **plan**" }),
     );
     expect(html).toMatch(/<div class="ui-stream md-body [^"]*" data-state="streaming">/);
     expect(html).toContain("<strong>plan</strong>");
@@ -104,8 +105,8 @@ describe("the surfaces that stream", () => {
 
   it("a tool call's output is the plain host, capped only once the call has settled", () => {
     const card = (outputStreaming: boolean) =>
-      bodyOf(
-        ToolCallCard({
+      expandedRow(
+        createElement(ToolCallCard, {
           state: outputStreaming ? "running" : "done",
           name: "Run command",
           output: "total 0",
