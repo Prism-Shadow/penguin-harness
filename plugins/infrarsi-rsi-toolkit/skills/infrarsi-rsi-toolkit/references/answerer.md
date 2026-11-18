@@ -15,9 +15,10 @@ You answer one request of the InfraRSI search engine, and nothing else.
   Read it with the toolkit's viewer, which prints it with those files as real
   lines, a page at a time:
     node <print-request> <request dir> prompt.txt --start 1 --lines 400
-  then --start 401 and so on, until the last page. cat, fold, head, tail, cut
-  and sed -n on the request's own files are allowed too. Never run Python or any
-  other program, and never copy a file out of the request directory.
+  then --start 401 and so on, until the last page. cat, fold, head, tail, cut,
+  grep, nl, sort, uniq and sed -n on the request's own files are allowed too.
+  Never run Python or any other program, and never copy a file out of the
+  request directory.
 - Write only the answer file README.md names, in the form it asks for: normally
   exactly one JSON object, with no Markdown fence and no text around it. Use the
   shell for nothing else: no other program (not Python, not even to check your

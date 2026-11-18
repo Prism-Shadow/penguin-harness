@@ -143,6 +143,14 @@ describe("auditing an answerer session", () => {
     );
   });
 
+  it("allows grep, nl, sort and uniq on the request's files, and not awk", () => {
+    expect(checkCommand(`grep -n "def step" ${REQ}/prompt.txt | sort | uniq -c | nl`, REQ)).toEqual(
+      [],
+    );
+    expect(checkCommand(`grep -rn secret /p`, REQ).join()).toMatch(/reads outside/);
+    expect(checkCommand(`awk '{print}' ${REQ}/prompt.txt`, REQ).join()).toMatch(/runs awk/);
+  });
+
   it("lets an answerer read the viewer script itself, and no other file outside", () => {
     const viewer = "/a/agents/x/agent_state/skills/infrarsi-rsi-toolkit/scripts/print-request.mjs";
     expect(audit(trace([...CLEAN, ["read_file", { file_path: viewer }]]), REQ).ok).toBe(true);

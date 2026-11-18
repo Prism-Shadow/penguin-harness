@@ -24,8 +24,24 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const ALLOWED_TOOLS = ["read_file", "write_file", "exec_command"];
-// Filters that only print their input (`echo` its arguments); `sed` only as `sed -n <range>p`.
-const PRINTERS = new Set(["cat", "fold", "head", "tail", "cut", "wc", "ls", "sed", "jq", "echo"]);
+// Filters that only print their input (`echo` its arguments, `grep` the matching lines); `sed` only
+// as `sed -n <range>p`. awk is not one: its programs can write files and run commands.
+const PRINTERS = new Set([
+  "cat",
+  "fold",
+  "head",
+  "tail",
+  "cut",
+  "wc",
+  "ls",
+  "sed",
+  "jq",
+  "echo",
+  "grep",
+  "nl",
+  "sort",
+  "uniq",
+]);
 
 // The toolkit's own read-only request viewer, the one program besides the filters an answerer may run.
 const VIEWER = /(^|\/)infrarsi-rsi-toolkit\/scripts\/print-request\.mjs$/;
