@@ -279,13 +279,10 @@ describe("project model capabilities", () => {
     expect((await get("groupBy=session")).groups).toEqual([]);
     const outside = await get("from=2000-01-01&to=2000-01-02");
     expect(outside.summary.total.requests).toBe(0);
-    expect(
-      (
-        await (
-          await api.get(base + "/usage?modelId=bytedance-seed%2Fseedream-5-5&provider=openrouter")
-        ).json()
-      ).summary.total.requests,
-    ).toBe(0);
+    const other = await api.get(
+      base + "/usage?modelId=bytedance-seed%2Fseedream-5-5&provider=openrouter",
+    );
+    expect(((await other.json()) as UsageResponse).summary.total.requests).toBe(0);
     expect(
       (
         await api.put(scope + "/models", {
