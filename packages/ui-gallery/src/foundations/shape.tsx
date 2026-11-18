@@ -24,7 +24,7 @@ function Scene() {
   const t = S.foundations.scene;
   return (
     <div className="gf-scene">
-      <div className="gf-scene-page">
+      <div className="gf-scene-page" data-clip-surface>
         <Tier>{t.pageTier}</Tier>
         <div className="gf-card">
           <div className="gf-card-head">
@@ -55,7 +55,7 @@ function Scene() {
           </div>
         </div>
       </div>
-      <div className="gf-scene-modal">
+      <div className="gf-scene-modal" data-clip-surface>
         <div className="gf-scene-lines" aria-hidden>
           {LINES.map((width, i) => (
             <span key={i} style={{ width: `${width}%` }} />
