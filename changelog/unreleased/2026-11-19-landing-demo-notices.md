@@ -3,6 +3,7 @@
 - Date: 2026-11-19
 - Type: fix
 - Scope: landing, ui-gallery
+- PR: [#1617](https://github.com/Prism-Shadow/penguin-harness/pull/1617)
 
 [中文版](2026-11-19-landing-demo-notices.zh.md)
 
