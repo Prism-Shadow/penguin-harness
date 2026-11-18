@@ -247,6 +247,11 @@ export interface ModelProviderInfo {
   connectDefault?: string;
 }
 
+/** Published standard rates for the text-to-image endpoint. Unknown cache rates stay absent. */
+export type ImageToolPricing =
+  | { unit: "usd_per_mtok"; input: number; output: number; thoughts: number; cached?: number }
+  | { unit: "usd_per_image"; output: number; highResolution?: number };
+
 /** A single built-in model's catalog entry (`modelId` is the upstream id; paired with `provider` it forms the catalog's unique key). */
 export interface ModelCatalogEntry {
   /** Dedicated tool model, selected through project capabilities. */
@@ -257,6 +262,7 @@ export interface ModelCatalogEntry {
   provider: string;
   contextWindow?: number;
   pricing?: ModelPricing;
+  imagePricing?: ImageToolPricing;
   /**
    * Fraction off the list price the seller is currently running (0.5 = 50% off), applied to
    * every bucket. `pricing` stays the LIST price whatever promotion is live, so a lapsed
@@ -1113,6 +1119,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   {
     // MMSP exposes the image endpoint as text-to-image, without a conversational context limit.
     modelId: "google/gemini-nano-banana-2.1",
+    imagePricing: { unit: "usd_per_mtok", input: 1.5, thoughts: 7.5, output: 30 },
     displayName: "Gemini Nano Banana 2.1",
     provider: "openrouter",
     capability: "image",
@@ -3176,6 +3183,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   {
     // The provider bills image output and thoughts at different rates.
     modelId: "gemini-nano-banana-2.1",
+    imagePricing: { unit: "usd_per_mtok", input: 1.5, thoughts: 7.5, output: 30 },
     displayName: "Gemini Nano Banana 2.1",
     provider: "google",
     capability: "image",
