@@ -229,6 +229,7 @@ describe("plugin link", () => {
         JSON.stringify({ name: "shipped-prefix", private: true, dependencies: { "@acme/shipped": "9.9.9" } }),
         "utf8",
       );
+      await fs.mkdir(path.join(shippedPrefix, "node_modules", "@acme", "shipped"), { recursive: true });
       const manifest = JSON.stringify({
         name: "@acme/shipped",
         version: "9.9.9",
