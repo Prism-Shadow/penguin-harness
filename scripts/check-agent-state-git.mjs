@@ -9,7 +9,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import { inflateSync } from "node:zlib";
 
-export async function checkAgentStateGit(serverEntry) {
+export async function checkAgentStateGit(serverEntry, args = []) {
   const scratch = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-offline-git-"));
   const root = path.join(scratch, "Agent data");
   const blocked = path.join(scratch, "empty PATH");
@@ -31,7 +31,7 @@ export async function checkAgentStateGit(serverEntry) {
       ([key]) => !/^path$|^git_|^penguin_|^(home|userprofile)$/i.test(key),
     ),
   );
-  const child = spawn(process.execPath, [serverEntry], {
+  const child = spawn(process.execPath, [serverEntry, ...args], {
     cwd: scratch,
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"],
@@ -155,5 +155,8 @@ export async function checkAgentStateGit(serverEntry) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
-  await checkAgentStateGit(path.resolve(process.argv[2] ?? "packages/server/dist/index.js"));
+  await checkAgentStateGit(
+    path.resolve(process.argv[2] ?? "packages/server/dist/index.js"),
+    process.argv.slice(3),
+  );
 }

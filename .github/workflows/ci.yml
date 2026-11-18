@@ -480,6 +480,10 @@ jobs:
       - uses: actions/checkout@v5
         with:
           ref: ${{ inputs.ref || '' }}
+      - name: Stage the Windows release's MinGit before building the desktop
+        if: runner.os == 'Windows'
+        shell: bash
+        run: bash scripts/stage-mingit.sh packages/desktop/build/minigit
       - uses: ./.github/actions/setup
         with:
           # The web package is not a dependency of the desktop package (the app carries its
@@ -487,6 +491,16 @@ jobs:
           # leaves it unbuilt — and the mapping then silently packs nothing. The web's build
           # copies in the UI package's Workbench runtime, so that package builds first.
           build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-ui,@prismshadow/penguin-web"
+
+      # The standalone npm server uses dugite-native. The packed Windows desktop below
+      # must instead use its existing MinGit and contain no second host executable.
+      - name: Exercise both Windows Git distributions
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          test -f packages/desktop/build/minigit/cmd/git.exe
+          test ! -d packages/desktop/dist/agent-git/win32-x64
+          node scripts/check-agent-state-git.mjs packages/server/dist/index.js
 
       - name: Preflight the packed tree's inputs
         run: node packages/desktop/scripts/preflight.mjs

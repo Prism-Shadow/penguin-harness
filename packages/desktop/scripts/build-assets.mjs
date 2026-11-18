@@ -156,9 +156,13 @@ const withMinGit =
 const platformGit = withMinGit
   ? []
   : gitTargets.filter((target) => target.startsWith(process.platform + "-"));
+const desktopGit = path.join(distDir, "agent-git");
+fs.rmSync(desktopGit, { recursive: true, force: true });
+// electron-builder expects the source directory even when Windows ships MinGit.
+fs.mkdirSync(desktopGit, { recursive: true });
 const gitDir = await vendorAgentGit(platformGit);
 for (const target of platformGit) {
-  fs.cpSync(path.join(gitDir, target), path.join(distDir, "agent-git", target), {
+  fs.cpSync(path.join(gitDir, target), path.join(desktopGit, target), {
     recursive: true,
   });
 }

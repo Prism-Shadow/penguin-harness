@@ -85,10 +85,6 @@ env:
   # these instead of `inputs.*`, which is empty on a push.
   REQUIRE_MACOS_SIGNING: ${{ (github.event_name == 'push' || inputs.require_macos_signing) && 'true' || 'false' }}
   REQUIRE_WINDOWS_SIGNING: ${{ (github.event_name == 'push' || inputs.require_windows_signing) && 'true' || 'false' }}
-  # Keep in sync with release.yml (its header comment is the source of truth; duplicated
-  # here because reusable workflows do not inherit the caller's env).
-  MINGIT_VERSION: 2.55.0.3
-  MINGIT_TAG: v2.55.0.windows.3
 
 jobs:
   build:
@@ -161,8 +157,6 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - run: pnpm -r build
-
       # Windows carries MinGit under resources/git so the packaged agent shell has the
       # same deterministic POSIX bash as the npm package (release.yml bundles the
       # identical MinGit into the CLI win-x64 zip; the shell advertises it as
@@ -170,11 +164,10 @@ jobs:
       - name: Bundle MinGit (Windows)
         if: runner.os == 'Windows'
         shell: bash
-        run: |
-          mingit="MinGit-$MINGIT_VERSION-64-bit.zip"
-          curl -fsSL -o "$mingit" \
-            "https://github.com/git-for-windows/git/releases/download/$MINGIT_TAG/$mingit"
-          unzip -q "$mingit" -d packages/desktop/build/minigit
+        run: bash scripts/stage-mingit.sh packages/desktop/build/minigit
+
+      # Stage MinGit first so the desktop build reuses it for Agent State.
+      - run: pnpm -r build
 
       - name: Prepare macOS signing credentials
         if: runner.os == 'macOS'
