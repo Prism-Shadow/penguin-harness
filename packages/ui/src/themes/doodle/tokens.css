@@ -39,7 +39,6 @@
  * `ui-base`, so a value here beats Frost's in both modes.
  */
 :root[data-theme="doodle"] {
-  --ui-page-offset: -3px 2px;
   /* ---- Gray bridge: a warm ramp from paper to ink. white = the slip. ---- */
   --color-white: var(--ui-surface);
   --color-gray-50: #fcfaf6;
@@ -249,6 +248,7 @@
   --ui-tracking-body: normal;
   --ui-tracking-mono: normal;
   --ui-tracking-label: normal;
+  --ui-page-offset: -3px 2px;
 
   /* ---- Icons: Frost's line set and duotone bodies; the hues a decorative icon wears are pen
      colours, each a 3:1 mark on the paper and the pad ---- */
