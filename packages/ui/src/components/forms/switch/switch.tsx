@@ -54,6 +54,7 @@ export function Switch({ checked, onChange, disabled, className, title, ...rest 
         ` ${className ?? ""}`
       }
       // A hover hint shows in the shared tooltip, never the browser's own `title`.
+      data-clip-surface=""
       data-tooltip={title}
       {...rest}
     >
