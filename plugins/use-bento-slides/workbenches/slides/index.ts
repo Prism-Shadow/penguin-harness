@@ -2,7 +2,7 @@
  * Slides: the handler of the AI Slides workbench.
  *
  * A deck is one JSON file, `decks/<id>.bento.json`, in the folder of files this workbench shares
- * with its Agent (`host.listFiles` and friends). The page edits it through the routes below; the
+ * with its Agent (`host.dataPaths().dataDir`). The page edits it through the routes below; the
  * Agent edits it with its own file tools. Nothing here decides between the two: a save names the
  * revision it was made from and is refused when the file has moved on (the page then replays the
  * person's edits on the newer file), and a stream tells an open page when the file changed under
@@ -23,6 +23,7 @@
  *   POST   /export?name=…        stashes a file the page built; answers the link that downloads it
  *   GET    /export/:token
  */
+import { deckStorage } from "./storage.js";
 import type { WorkbenchPackage, WorkbenchResponse } from "@prismshadow/penguin-server/plugin";
 
 interface FileInfo {
@@ -32,7 +33,7 @@ interface FileInfo {
 }
 
 /**
- * The host's shared files as this handler uses them. A server from before them has no such
+ * The file operations the deck routes share. The preview host exposed them directly; old servers have no such
  * methods and its types do not name them, so the handler reads them through this shape and says
  * plainly, on `/info`, when they are missing.
  */
@@ -90,15 +91,19 @@ export default {
     Workbench: {
       create({ use, effect }) {
         const host = use.host;
-        const shared = host as unknown as Partial<SharedFiles>;
+        const shared = host as unknown as Partial<SharedFiles> & {
+          dataPaths?: () => { dataDir: string };
+        };
         const files: SharedFiles | null =
-          typeof shared.listFiles === "function" &&
-          typeof shared.readFile === "function" &&
-          typeof shared.writeFile === "function" &&
-          typeof shared.removeFile === "function" &&
-          typeof shared.filePath === "function"
-            ? (shared as SharedFiles)
-            : null;
+          typeof shared.dataPaths === "function"
+            ? deckStorage(shared.dataPaths().dataDir)
+            : typeof shared.listFiles === "function" &&
+                typeof shared.readFile === "function" &&
+                typeof shared.writeFile === "function" &&
+                typeof shared.removeFile === "function" &&
+                typeof shared.filePath === "function"
+              ? (shared as SharedFiles)
+              : null;
 
         // ---- decks ------------------------------------------------------------------------
 

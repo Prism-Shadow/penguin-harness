@@ -491,8 +491,6 @@ Skill 分两步加载：先加载索引，正文按需读取。
 
 工作台可以在 Agent 工作时实时跟随它发起的会话。页面引入 `../sdk/workbench.js`，这是服务端为每个工作台提供的页面 SDK；`followSession(sessionId)` 以当前登录用户的权限读取该 Session 的 [AMSP 记录](/amsp-records)，回答因此随 Agent 的生成逐字出现；`abortSession(sessionId)` 停止当前这一轮。工作台的服务端代码通过 `host.subscribe(sessionId, listener)` 收到同样的记录。发起任务与保存结果仍由工作台自己的处理器完成，用 `host.sessionResult` 读取结果、定时轮询的做法照常可用。这些都不需要 Agent API 密钥。
 
-工作台与它的 Agent 可以处理同一批文件。工作台目录下的 `.files/` 由双方共用：工作台的服务端代码用 `host.listFiles()`、`host.readFile(path)`、`host.writeFile(path, data)` 与 `host.removeFile(path)` 读写，Agent 用自己的文件工具编辑同样的文件。用户在页面里编辑、又让 Agent 修改的文档因此只是一个文件，后写的一方就是另一方下次读到的内容。`host.filePath(path)` 给出该文件在服务端所在机器上的路径，供工作台请求 Agent 修改时指明。没有监视接口：页面打开期间，服务端代码定时列出该目录，比较各文件的 `mtimeMs` 与 `size`。路径不得越出该目录，链接一律不跟随，单个文件至多 50 MB。与 `state.json` 一样，这个目录属于工作台的数据：写入既不重新加载工作台，也不记录版本；恢复版本、更新插件与导入源码都不动它；移除工作台时一并删除；导出 Agent 时只有勾选**含其数据**才带上。
-
 工作台页面也可以用 TSX 编写，直接使用应用自己的组件。在 `ui/` 下的 `index.html` 旁边放一个 `app.tsx`，页面里按 `app.js` 加载它，从 `react`、`react-dom/client` 和 `@prismshadow/penguin-ui` 导入即可。不用安装任何东西：服务端会像检查工作台的服务端代码一样严格地检查页面类型，再编译它，React 和组件也由服务端自己提供，所以页面运行的就是检查它的那一份，离线也一样。类型出错，或者导入了这几个之外的模块，加载会失败并指出文件和行号，上一个版本继续运行。每个组件的确切属性都在 `.harness/ui/` 里，由服务端在编译页面时写入。
 
 ```tsx
@@ -522,4 +520,4 @@ createRoot(document.getElementById("root")!).render(<App />);
 
 内置 `penguin-support` 插件为默认 Project 的客服 Agent 安装 `penguin-support` Skill 和客服工作台：居中的问题列表、新建问题弹窗，以及支持追问的对话详情。问题运行时，对话框里会随生成显示回答和 Agent 正在做的事，并提供**停止**按钮。新版本以插件更新的形式提供，已安装的副本只在你更新时才被替换。也可以把该插件安装到其他 Agent。
 
-内置的 `use-bento-slides` 插件在新建 Project 时随 `default_agent` 预装，带有幻灯片工作台：Agent 对话旁的**幻灯片**标签页，以及应用中心里的 **AI PPT**。每份文稿是工作台 `.files/decks/` 下的一个文件。你在 Bento 编辑器里修改它，同时可以从编辑器旁的侧栏或在对话里请 Agent 修改同一份文稿。Agent 保存时你还有未保存的修改，你的修改会按元素重放到它的版本上；双方设置了同一个属性时保留你的值，Agent 的版本存入文稿的**历史版本**，任何一个版本都可以恢复。**导出**得到一个自成一体的 `.bento.html`。编辑器运行在不允许任何网络连接的沙盒框架里，因此 Bento 的更新检查、实时共享和远程媒体在其中不可用。卸载插件或移除该工作台会删除其中的文稿。
+内置的 `use-bento-slides` 插件提供对话旁的**幻灯片**标签页和应用中心的 **AI PPT**。在首页打开或重命名已有文稿。你与 Agent 可同时修改工作台 Agent 级数据目录中的同一份 JSON 文稿，编辑器在接收 Agent 的修改时保留你的待保存内容。可从**历史版本**恢复文稿、导出可编辑的 PowerPoint 文件，或下载能重新导入的独立 Bento HTML 文件。

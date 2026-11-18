@@ -20,10 +20,10 @@ To start, open the **Slides** tab beside the Agent's chat, or the **AI PPT** til
 
 ## Your data
 
-- Decks live with the Agent, on the server: `agent_state/workbenches/slides/.files/decks/<name>.bento.json`, one JSON file per deck, and under `.files/history/` the last twenty versions that one side replaced.
+- Decks live with the Agent, on the server: `app/data/<Agent ID>.slides/decks/<name>.bento.json`, one JSON file per deck, and under `history/` the last twenty versions that one side replaced.
 - The editor runs in a sandboxed frame with no origin of its own and a policy that allows no network connection. It cannot reach the internet, the app's API or your sign-in. Bento's update check, live sharing and remote media are therefore off inside the workbench; pictures are embedded in the deck.
 - The workbench sends nothing to any other host. The Agent's own work goes to the model you configured, as in any chat.
-- Uninstalling the plugin, or removing the workbench from the Agent, deletes its decks. Export the ones you want to keep first. A plugin update replaces the workbench's code and keeps your decks.
+- Decks stay in the Agent’s app data when the workbench is updated or reinstalled. Deleting a presentation from the file list removes it and its history.
 
 ## Known limits
 
