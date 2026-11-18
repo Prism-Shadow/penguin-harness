@@ -8,6 +8,8 @@
  *   its Sessions carry the context-window notice.
  * - Given a plain store, the admin's password is settled, the banner is dismissed, and the docs
  *   Agent compacts within the window: neither notice is up.
+ * - Given a public embedded demo, its Agents and plugins are current, the error history is empty
+ *   and visitors can browse the ready apps. Standalone gallery boards retain diagnostic examples.
  */
 import { afterEach, describe, expect, it } from "vitest";
 import * as api from "../../web/src/api/endpoints";
@@ -40,6 +42,25 @@ describe("the demo's notices", () => {
     resetStore({ lang: "en", signedIn: true, notices: true });
     expect(await noticesUp()).toEqual({ banner: true, contextWindow: true });
   });
+
+  it.each([true, false])(
+    "serves the appropriate maintenance examples (embedded %s)",
+    async (embedded) => {
+      resetStore({ lang: "en", signedIn: true, embedded });
+      const [{ agents }, errors, { plugins }, { shortcuts }] = await Promise.all([
+        api.listAgents(IDS.project, null),
+        api.getUsageErrors(IDS.project, { offset: 0, limit: 1 }),
+        api.getInstalledPlugins(IDS.project, null),
+        api.getAppCenter(IDS.project),
+      ]);
+      expect(agents.some((agent) => agent.kernelOutdated)).toBe(!embedded);
+      expect(agents.some((agent) => agent.pluginUpdates.length > 0)).toBe(!embedded);
+      expect(errors.total > 0).toBe(!embedded);
+      expect(plugins.some((plugin) => plugin.unsatisfied)).toBe(!embedded);
+      expect(shortcuts.some((app) => app.build === "failed")).toBe(!embedded);
+      expect(shortcuts.some((app) => app.build === "ready")).toBe(true);
+    },
+  );
 
   it("are down in a plain store", async () => {
     resetStore({ lang: "zh", signedIn: true });
