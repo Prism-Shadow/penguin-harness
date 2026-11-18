@@ -1,7 +1,7 @@
 {
   "name": "@prismshadow/penguin-library-db",
   "version": "0.2.18",
-  "description": "The server's SQLite database: the connection (open/readonly/narrow-write), the table-creation SQL, the named migrations, and the Db capability the runtime publishes. A library package — the server imports it; nothing here imports the server.",
+  "description": "The server's SQLite database: the connection (open/readonly/narrow-write), the table-creation SQL, the named migrations, and the Db capability the runtime publishes. A library package \u2014 the server imports it; nothing here imports the server.",
   "license": "Apache-2.0",
   "author": {
     "name": "Prism-Shadow",
@@ -52,9 +52,7 @@
   "devDependencies": {
     "tsup": "^8.3.0",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.12",
-    "@prismshadow/penguin-library-messaging": "workspace:*",
-    "@prismshadow/penguin-library-session": "workspace:*"
+    "vitest": "^4.1.12"
   },
   "engines": {
     "node": ">=24"
