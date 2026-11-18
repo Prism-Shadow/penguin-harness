@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { pagesLiveActivity, subscribeAppliedTheme } from "../../../themes";
+import { currentActivityIsPaged, subscribeAppliedTheme } from "../../../themes/applied";
 
 const list = () => false;
 const idle = () => () => {};
@@ -8,7 +8,7 @@ const idle = () => () => {};
 export function useStepPages(live: boolean): boolean {
   return useSyncExternalStore(
     live ? subscribeAppliedTheme : idle,
-    live ? pagesLiveActivity : list,
+    live ? currentActivityIsPaged : list,
     list,
   );
 }
