@@ -1,13 +1,4 @@
-/**
- * The plugin library: every package under the repository's plugins/ and every other plugin the
- * published index lists, read at build time, with the market's curation over them. While nothing
- * narrows the list, the selected carousel heads it (the curation's selected plugins in order; the
- * one that leads turns daily among those it allows to); every plugin is a cover card in a grid,
- * the selected ones first by default. When the market document carries popularity counts, a
- * ranking stands with the filters (under it on a narrow page), with a Popular board by installs
- * and a Rising one by the last week's, and the list gains a Popular order; without counts there
- * is neither. While the counts are placeholders, the ranking says "Sample data".
- */
+/** The editorial feature stays above the search and the filtered plugin directory. */
 import { Link, useLocation } from "react-router";
 import {
   CoverCard,
@@ -15,13 +6,11 @@ import {
   leadIndex,
   ShowcaseCarousel,
   ShowcaseGrid,
-  ShowcaseRanking,
   SiteSegmented,
   useShowcaseLayout,
-  SiteGlyph,
   useSiteLocale,
 } from "@prismshadow/penguin-ui/site";
-import type { RankingBoard, ShowcaseSlide, SiteLocale } from "@prismshadow/penguin-ui/site";
+import type { ShowcaseSlide } from "@prismshadow/penguin-ui/site";
 import { HubTag, HubTile } from "../../components/hub/hub-icon";
 import { HubList } from "../../components/hub/hub-list";
 import type { HubFacet } from "../../components/hub/hub-list";
@@ -31,7 +20,6 @@ import { listState } from "../../lib/hub/back";
 import { market, plugins } from "../../lib/hub/data";
 import { pick, plainText, titleOf } from "../../lib/hub/text";
 import type { PluginSummary } from "../../lib/hub/types";
-import { PLUGIN_DIRECTORY_URL } from "../../lib/links";
 import { pluginTone } from "../../lib/hub/plugin-hue";
 import { S } from "../../lib/strings";
 
@@ -67,20 +55,6 @@ const byId = new Map(plugins.map((plugin) => [plugin.id, plugin]));
 const SELECTED = market.selected
   .map((id) => byId.get(id))
   .filter((plugin): plugin is PluginSummary => plugin !== undefined);
-
-/**
- * Whether the market document carries popularity counts. Without them there is no ranking panel
- * and no Popular order. The counts are placeholders until a real source replaces them; while they
- * are, the panel says "Sample data" beside its heading.
- */
-const POPULAR = plugins.some((plugin) => plugin.popularity !== undefined);
-const SAMPLE = market.popularitySource === "placeholder";
-
-/** A plugin's install count; one the document does not count ranks after every counted one. */
-const installs = (plugin: PluginSummary) => plugin.popularity?.installs ?? -1;
-
-/** The plugins the market document counts: the ranking's rows. */
-const COUNTED = plugins.filter((plugin) => plugin.popularity !== undefined);
 
 /** The slides allowed to lead the carousel, as indexes into SELECTED, in the curation's turn order. */
 const LEADS = market.hero
@@ -134,7 +108,6 @@ export function PluginsPage() {
     return {
       key: plugin.id,
       cover: <PluginCover plugin={plugin} rendition="full" eager />,
-      thumb: <PluginCover plugin={plugin} />,
       lead: <HubTile tone={pluginTone(plugin.id)} icon={pluginIcon(plugin)} glyph="puzzle" />,
       title: titleOf(locale, plugin),
       tagline,
@@ -152,8 +125,6 @@ export function PluginsPage() {
   return (
     <HubList
       title={t.title}
-      description={t.description}
-      source={{ href: PLUGIN_DIRECTORY_URL, label: "Prism-Shadow/penguin-harness-plugins" }}
       items={plugins}
       keyOf={(plugin) => plugin.id}
       texts={(plugin) => [
@@ -172,16 +143,6 @@ export function PluginsPage() {
           compare: (a, b) =>
             curated(a) - curated(b) || rank(a.category) - rank(b.category) || byTitle(a, b),
         },
-        ...(POPULAR
-          ? [
-              {
-                id: "popular",
-                label: t.sortPopular,
-                compare: (a: PluginSummary, b: PluginSummary) =>
-                  installs(b) - installs(a) || byTitle(a, b),
-              },
-            ]
-          : []),
         {
           id: "updated",
           label: S.hub.sortLatest,
@@ -201,6 +162,7 @@ export function PluginsPage() {
         slides.length > 0 ? (
           <ShowcaseCarousel
             className="site-ui"
+            navigation="controls"
             slides={slides}
             label={t.selectedPlugins}
             eyebrow={t.selected}
@@ -221,17 +183,6 @@ export function PluginsPage() {
           ]}
         />
       }
-      aside={
-        POPULAR ? (
-          <ShowcaseRanking
-            className="site-ui"
-            title={t.rankingTitle}
-            {...(SAMPLE ? { note: t.rankingSample, noteHint: t.rankingSampleHint } : {})}
-            boards={rankingBoards(locale, byTitle, entryLink)}
-            hints="title"
-          />
-        ) : undefined
-      }
       wrapList={(cards) => (
         <ShowcaseGrid layout={layout} className="site-ui">
           {cards}
@@ -240,51 +191,6 @@ export function PluginsPage() {
       renderItem={(plugin) => <PluginCard plugin={plugin} />}
     />
   );
-}
-
-/**
- * The ranking's two boards: Popular by install count, Rising by the last week's installs, each
- * row a counted plugin with its cover, name, category and figure (shortened, said in full on
- * hover). The counts are the market document's placeholders until a real source replaces them.
- */
-function rankingBoards(
-  locale: SiteLocale,
-  byTitle: (a: PluginSummary, b: PluginSummary) => number,
-  entryLink: ReturnType<typeof useEntryLink>,
-): RankingBoard[] {
-  const t = S.hub.plugins;
-  const tag = locale === "zh" ? "zh-CN" : "en";
-  const compact = new Intl.NumberFormat(tag, { notation: "compact", maximumFractionDigits: 1 });
-  const board = (
-    key: string,
-    label: string,
-    glyph: "download" | "arrowUpRight",
-    figure: (plugin: PluginSummary) => number,
-    words: (count: string) => string,
-  ): RankingBoard => ({
-    key,
-    label,
-    mark: <SiteGlyph name={glyph} className="h-3.5 w-3.5" />,
-    entries: [...COUNTED]
-      .sort((a, b) => figure(b) - figure(a) || byTitle(a, b))
-      .map((plugin) => ({
-        key: plugin.id,
-        thumb: <PluginCover plugin={plugin} />,
-        title: titleOf(locale, plugin),
-        tags: [
-          <HubTag key="category" fit title={categoryLabel(plugin.category)}>
-            {categoryLabel(plugin.category)}
-          </HubTag>,
-        ],
-        count: compact.format(figure(plugin)),
-        countLabel: words(figure(plugin).toLocaleString(tag)),
-        ...entryLink(`/plugins/${plugin.id}`),
-      })),
-  });
-  return [
-    board("popular", t.popular, "download", (p) => p.popularity?.installs ?? 0, t.installCount),
-    board("rising", t.rising, "arrowUpRight", (p) => p.popularity?.weekly ?? 0, t.weeklyCount),
-  ];
 }
 
 /** One plugin in the grid: its cover, name and one line, its tags, and its package facts. */

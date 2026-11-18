@@ -5,8 +5,7 @@
  * in the URL, so a filtered list can be linked and Back restores it; the scroll is noted on every
  * click inside the page, so Back returns to it too (lib/hub/back.ts).
  *
- * A page may put a `lead` under the title block (the Plugins page's selected carousel), shown
- * only while no search or facet narrows the list, and may lay the shown items out in a list of
+ * A page may put a `lead` above its filters and may lay the shown items out in a list of
  * its own (`wrapList`, the Plugins page's cover grid); by default they are cards in two columns.
  */
 import { Fragment, useEffect, useMemo } from "react";
@@ -45,12 +44,11 @@ export function HubList<T>({
   wrapList,
   lead,
   controls,
-  aside,
 }: {
   title: string;
   /** One line under the title: what the list holds. */
-  description: string;
-  source: { href: string; label: string };
+  description?: string;
+  source?: { href: string; label: string };
   items: readonly T[];
   keyOf: (item: T) => string;
   texts: (item: T) => readonly (string | undefined)[];
@@ -60,12 +58,10 @@ export function HubList<T>({
   renderItem: (item: T) => ReactNode;
   /** Lays the shown items out — `renderItem`'s, keyed, in order — in the page's own list. */
   wrapList?: (items: ReactNode[]) => ReactNode;
-  /** Under the title block, while nothing narrows the list. */
+  /** Editorial content independent of the results. */
   lead?: ReactNode;
   /** Extra list controls beside the sort, when this catalogue has them. */
   controls?: ReactNode;
-  /** Stacks under the facets on desktop and below the results on small screens. */
-  aside?: ReactNode;
 }) {
   const [params, setParams] = useSearchParams();
   const { key } = useLocation();
@@ -160,25 +156,30 @@ export function HubList<T>({
   return (
     <ExternalLinkScope>
       <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
+        {lead && <div className="mb-6">{lead}</div>}
         <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
-          <div className="min-w-0">
-            <h1 className="text-2xl font-semibold tracking-tight">
-              {title}
-              <span className="ml-2 text-base font-normal text-gray-500 tabular-nums dark:text-gray-400">
-                {items.length}
-              </span>
-            </h1>
-            <p className="mt-1.5 text-sm text-gray-600 dark:text-gray-400">{description}</p>
-            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              {S.hub.source}{" "}
-              <ExternalLink
-                href={source.href}
-                className="text-gray-900 underline decoration-gray-300 underline-offset-4 hover:decoration-gray-500 dark:text-gray-100 dark:decoration-gray-700"
-              >
-                {source.label}
-              </ExternalLink>
-            </p>
-          </div>
+          {description && source ? (
+            <div className="min-w-0">
+              <h1 className="text-2xl font-semibold tracking-tight">
+                {title}
+                <span className="ml-2 text-base font-normal text-gray-500 tabular-nums dark:text-gray-400">
+                  {items.length}
+                </span>
+              </h1>
+              <p className="mt-1.5 text-sm text-gray-600 dark:text-gray-400">{description}</p>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {S.hub.source}{" "}
+                <ExternalLink
+                  href={source.href}
+                  className="text-gray-900 underline decoration-gray-300 underline-offset-4 hover:decoration-gray-500 dark:text-gray-100 dark:decoration-gray-700"
+                >
+                  {source.label}
+                </ExternalLink>
+              </p>
+            </div>
+          ) : (
+            <h1 className="sr-only">{title}</h1>
+          )}
           <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
             <label className={`relative flex-1 ${searchWidth}`}>
               <span className="sr-only">{S.hub.searchPlaceholder}</span>
@@ -221,16 +222,9 @@ export function HubList<T>({
           </div>
         </header>
 
-        {lead !== undefined && !filtered && <div className="mt-8">{lead}</div>}
-
         <div className="mt-8 grid gap-x-8 gap-y-5 lg:grid-cols-[13rem_minmax(0,1fr)]">
-          {(offered.length > 0 || aside) && (
-            <div className="contents lg:flex lg:min-w-0 lg:flex-col lg:gap-6">
-              {offered.length > 0 && <aside className="flex flex-col gap-5">{facetGroups}</aside>}
-              {aside && <div className="order-last min-w-0">{aside}</div>}
-            </div>
-          )}
-          <div className={`min-w-0 ${offered.length > 0 || aside ? "" : "lg:col-span-2"}`}>
+          {offered.length > 0 && <aside className="flex flex-col gap-5">{facetGroups}</aside>}
+          <div className={`min-w-0 ${offered.length > 0 ? "" : "lg:col-span-2"}`}>
             {shown.length === 0 ? (
               <div className="py-16 text-center text-sm text-gray-600 dark:text-gray-400">
                 <p>{S.hub.empty}</p>

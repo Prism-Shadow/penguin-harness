@@ -7,7 +7,7 @@
 
 [中文版](2026-11-17-market-landing.zh.md)
 
-The public plugin catalog offers cover cards and a compact list. The browser remembers the chosen view. On desktop, filters and the public ranking share a sidebar, leaving space for at least three cards per row. On phones the catalog becomes one column, followed by the ranking.
+The featured plugin stays above search and filters, including in a shared category link. Use the arrows to browse one featured plugin at a time. The directory offers cover cards and a compact list and remembers the chosen view.
 
 Search, filter by category, sort by name, update date or selection, and open the same product page from either view. Bundled plugin covers ship with the site. Other images come from the community repository.
 
