@@ -13,9 +13,9 @@
 //   - tools: only read_file, write_file and exec_command were offered;
 //   - read_file: every path is inside the request directory;
 //   - write_file: the only path written is the answer file in that directory;
-//   - exec_command: every command only prints request files: print-only filters, piped and
-//     chained with && or ;, after a cd that stays inside; no other program, heredoc, command
-//     substitution or redirection into a file.
+//   - exec_command: every command only prints request files: print-only filters and the
+//     toolkit's own print-request.mjs viewer, piped and chained with && or ;, after a cd that stays
+//     inside; no other program, heredoc, command substitution or redirection into a file.
 // It prints one JSON object: {ok, tools, calls, tokens, violations}; exit code 1 when not ok.
 // `tokens` is the session's total from its last token_usage event (for `--tokens`), or null.
 
@@ -26,6 +26,36 @@ import { fileURLToPath } from "node:url";
 export const ALLOWED_TOOLS = ["read_file", "write_file", "exec_command"];
 // Filters that only print their input (`echo` its arguments); `sed` only as `sed -n <range>p`.
 const PRINTERS = new Set(["cat", "fold", "head", "tail", "cut", "wc", "ls", "sed", "jq", "echo"]);
+
+// The toolkit's own read-only request viewer, the one program besides the filters an answerer may run.
+const VIEWER = /(^|\/)infrarsi-rsi-toolkit\/scripts\/print-request\.mjs$/;
+
+/** Problems with `node <toolkit>/scripts/print-request.mjs <request dir> [file] [--start N] [--lines M]`. */
+function checkViewer(args, dir, cwd) {
+  const [script, ...rest] = args;
+  if (!VIEWER.test(script ?? ""))
+    return [`runs node ${script ?? ""}, which is not the toolkit's print-request.mjs`];
+  const problems = [];
+  const plain = [];
+  for (let i = 0; i < rest.length; i++) {
+    if (rest[i] === "--start" || rest[i] === "--lines") {
+      if (!/^\d+$/.test(rest[i + 1] ?? ""))
+        problems.push(`print-request.mjs ${rest[i]} needs a number`);
+      i += 1;
+    } else if (rest[i].startsWith("-")) {
+      problems.push(`print-request.mjs takes no option ${rest[i]}`);
+    } else plain.push(rest[i]);
+  }
+  if (plain.length === 0 || plain.length > 2)
+    return [...problems, "print-request.mjs takes the request directory and at most one file name"];
+  const target = path.resolve(cwd, plain[0]);
+  if (!inside(dir, target))
+    problems.push(`print-request.mjs outside the request directory: ${plain[0]}`);
+  if (plain[1] !== undefined && !inside(dir, path.resolve(target, plain[1]))) {
+    problems.push(`print-request.mjs reads outside the request directory: ${plain[1]}`);
+  }
+  return problems;
+}
 
 function inside(dir, p) {
   const rel = path.relative(dir, path.resolve(dir, p));
@@ -76,6 +106,10 @@ export function checkCommand(cmd, dir) {
       const [prog, ...args] = words(segment);
       if (prog === undefined) {
         problems.push("empty pipeline segment");
+        continue;
+      }
+      if (prog === "node") {
+        problems.push(...checkViewer(args, dir, cwd));
         continue;
       }
       if (!PRINTERS.has(prog)) {

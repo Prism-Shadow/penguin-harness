@@ -119,6 +119,30 @@ describe("auditing an answerer session", () => {
     expect(audit(trace(calls), REQ, "answer.txt").ok).toBe(true);
   });
 
+  it("allows the toolkit's request viewer on the request, and no other program", () => {
+    const viewer = "/a/agents/x/agent_state/skills/infrarsi-rsi-toolkit/scripts/print-request.mjs";
+    expect(checkCommand(`node ${viewer} ${REQ} prompt.txt --start 401 --lines 400`, REQ)).toEqual(
+      [],
+    );
+    expect(checkCommand(`cd ${REQ} && node "${viewer}" . prompt.txt | head -50`, REQ)).toEqual([]);
+    expect(checkCommand(`node ${viewer} /p prompt.txt`, REQ).join()).toMatch(
+      /outside the request directory/,
+    );
+    expect(checkCommand(`node ${viewer} ${REQ} ../0002-prior/prompt.txt`, REQ).join()).toMatch(
+      /reads outside/,
+    );
+    expect(checkCommand(`node ${viewer} ${REQ} --start x`, REQ).join()).toMatch(/needs a number/);
+    expect(checkCommand(`node /tmp/print-request.mjs ${REQ}`, REQ).join()).toMatch(
+      /not the toolkit's print-request/,
+    );
+    expect(checkCommand(`node -e "console.log(1)"`, REQ).join()).toMatch(
+      /not the toolkit's print-request/,
+    );
+    expect(checkCommand(`python3 -m json.tool ${REQ}/prompt.txt`, REQ).join()).toMatch(
+      /runs python3/,
+    );
+  });
+
   it("reads relative paths against a cd inside the request", () => {
     expect(checkCommand(`cd ${REQ} && head -c 9000 prompt.txt`, REQ)).toEqual([]);
     expect(checkCommand(`cd ${REQ} && cat ../0002-prior/prompt.txt`, REQ).join()).toMatch(
