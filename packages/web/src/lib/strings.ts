@@ -3610,6 +3610,8 @@ export const zh = {
     replaceAction: "替换",
     /** Usage count in the card metadata (shows "unused" instead of a bare 0). */
     usedByAgents: (n: number): string => (n === 0 ? "未被使用" : `${n} 个 Agent 在用`),
+    marketAgentInstalls: (n: number): string => `${n} 个 Agent 已装`,
+    marketServerInstalled: "服务端已装",
     quickAction: "快速调用",
     noQuickAction: "这个插件没有快速调用示例。",
     packageUpdateBody: (name: string, from: string, to: string) =>

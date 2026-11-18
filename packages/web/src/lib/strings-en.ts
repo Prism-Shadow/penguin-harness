@@ -3412,6 +3412,8 @@ export const en: Strings = {
     replaceAction: "Replace",
     usedByAgents: (n: number): string =>
       n === 0 ? "not used yet" : n === 1 ? "used by 1 agent" : `used by ${n} agents`,
+    marketAgentInstalls: (n: number): string => `Installed on ${n} ${n === 1 ? "Agent" : "Agents"}`,
+    marketServerInstalled: "Installed on server",
     quickAction: "Quick start",
     noQuickAction: "This plugin has no quick-start example.",
     packageUpdateBody: (name: string, from: string, to: string) =>

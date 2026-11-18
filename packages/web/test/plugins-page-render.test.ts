@@ -286,7 +286,8 @@ describe("the market’s versioned actions", () => {
       module: { specifier: newer.name, state: "none" as const, shipped: false, entry: newer },
     };
     const html = card(row, true, current);
-    expect(buttonWords(html).slice(-2)).toEqual(["Update v1.1.0", "Quick start"]);
+    expect(buttonWords(html).slice(-2)).toEqual(["Update to v1.1.0", "Quick start"]);
+    expect(html).toContain('class="market-plugin-version">v1.0.0</span>');
     expect(html).toContain(en.plugins.quickStartAfterInstall);
   });
   it("only enables a demo on the Agent that carries it", () => {
@@ -296,12 +297,28 @@ describe("the market’s versioned actions", () => {
         { skills: new Map([["data-analysis", "2026.10.04.1"]]), hooks: new Map(), mcp: new Map() },
       ],
     ]);
-    const ready = card(libraryRow, false, { ...current, installed });
-    expect(buttonWords(ready).slice(-2)).toEqual(["Installed v0.2.13", "Quick start"]);
+    const usage = { usedBy: ["alice"], behind: [], lastSeen: [] };
+    const ready = card(libraryRow, false, { ...current, installed, usage });
+    expect(buttonWords(ready).slice(-2)).toEqual(["Installed on 1 Agent", "Quick start"]);
     expect(ready).toContain(en.plugins.quickStartHint);
-    const other = card(libraryRow, false, { ...current, installed, currentAgentId: "bob" });
-    expect(buttonWords(other).slice(-2)).toEqual(["Install v0.2.13", "Quick start"]);
+    expect(ready).toContain('class="market-plugin-version">v0.2.13</span>');
+    const other = card(libraryRow, false, { ...current, installed, usage, currentAgentId: "bob" });
+    expect(buttonWords(other).slice(-2)).toEqual(["Install Installed on 1 Agent", "Quick start"]);
     expect(other).toContain(en.plugins.quickStartAfterInstall);
+  });
+  it("distinguishes a running server plugin from a shipped or downloaded package", () => {
+    for (const layout of ["row", "cover"] as const) {
+      const props = { ...current, layout };
+      expect(buttonWords(card(moduleRow("active"), true, props)).at(-2)).toBe(
+        "Installed on server",
+      );
+      expect(buttonWords(card(moduleRow("none"), true, props)).at(-2)).toBe("Install");
+      expect(buttonWords(card(libraryRow, true, props)).at(-2)).toBe("Install");
+      const usage = { usedBy: ["alice", "bob"], behind: [], lastSeen: [] };
+      expect(buttonWords(card(libraryRow, true, { ...props, usage })).at(-2)).toBe(
+        "Install Installed on 2 Agents",
+      );
+    }
   });
   it("keeps a workbench with no example readable in both layouts", () => {
     const row = {

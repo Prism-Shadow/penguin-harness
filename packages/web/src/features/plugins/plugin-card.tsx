@@ -757,19 +757,24 @@ export function PluginCard(props: PluginCardProps) {
     const agentPackage = plugin !== undefined && agentInstallable(plugin);
     const updateAgent = currentId !== undefined && behind.includes(currentId);
     const download = !agentPackage && mod?.state === "none" && !local?.libraryOnly;
-    const installedHere = agentPackage ? onAgent : Boolean(local || (mod && mod.state !== "none"));
-    const installVersion = downloadUpdate || download ? release : version;
-    const verb =
-      downloadUpdate || updateAgent
-        ? S.skills.updateAction
-        : installedHere
-          ? S.skills.installed
-          : S.skills.install;
-    const installLabel = props.busy
-      ? S.plugins.installing
-      : installVersion
-        ? `${verb} v${installVersion}`
-        : verb;
+    const count = usage?.usedBy.length ?? 0;
+    const agentInstalls = count > 0 ? S.plugins.marketAgentInstalls(count) : undefined;
+    const serverInstalled = mod?.state === "active" || mod?.state === "pending";
+    const badgeVersion = local?.version ?? version;
+    const installLabel = () => {
+      if (props.busy) return S.plugins.installing;
+      // The badge keeps the local version. Name the destination only when it differs.
+      if (downloadUpdate && release !== undefined) return S.plugins.updatePackageTo(release);
+      if (updateAgent) return S.skills.updateAction;
+      if (agentPackage) return onAgent && agentInstalls ? agentInstalls : S.skills.install;
+      if (serverInstalled) return S.plugins.marketServerInstalled;
+      if (mod && mod.state !== "none" && !agentPackage) return S.plugins.status[status];
+      return S.skills.install;
+    };
+    const action = installLabel();
+    const note = [agentInstalls, serverInstalled ? S.plugins.marketServerInstalled : undefined]
+      .filter((label) => label && label !== action)
+      .join(" · ");
     const needAgent =
       !props.canQuickStart || (currentId !== undefined && props.unknown?.has(currentId));
     return (
@@ -777,6 +782,7 @@ export function PluginCard(props: PluginCardProps) {
         <MarketPluginCard
           layout={cover ? "cover" : "row"}
           name={row.name}
+          version={badgeVersion}
           title={title}
           description={description}
           detailsLabel={title}
@@ -792,7 +798,8 @@ export function PluginCard(props: PluginCardProps) {
           }
           onOpen={() => setDetailOpen(true)}
           install={{
-            label: installLabel,
+            label: action,
+            note,
             disabled:
               props.pending === true ||
               props.busy ||
@@ -803,8 +810,7 @@ export function PluginCard(props: PluginCardProps) {
                 props.onModuleApply(true, mod?.shipped ? undefined : release);
               else if (agentPackage) {
                 if (updateAgent) setPendingUpdate([currentId!]);
-                else if (currentId === undefined || installedHere || needAgent)
-                  setInstallOpen(true);
+                else if (currentId === undefined || onAgent || needAgent) setInstallOpen(true);
                 else if (installNeedsConfirm(plugin, installed.get(currentId)))
                   setPendingStdio(currentId);
                 else void props.onToggleInstall(currentId, plugin, true);

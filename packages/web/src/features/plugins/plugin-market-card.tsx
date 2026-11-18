@@ -7,6 +7,7 @@ interface MarketAction {
   disabled: boolean;
   onClick: () => void;
   hint?: string | undefined;
+  note?: string | undefined;
 }
 
 interface MarketPluginCardProps {
@@ -20,6 +21,7 @@ interface MarketPluginCardProps {
   install: MarketAction;
   quick: MarketAction;
   name?: string | undefined;
+  version?: string | undefined;
 }
 
 export function MarketPluginCard({
@@ -33,6 +35,7 @@ export function MarketPluginCard({
   install,
   quick,
   name,
+  version,
 }: MarketPluginCardProps) {
   return (
     <CoverCard
@@ -46,17 +49,19 @@ export function MarketPluginCard({
       description={description}
       onOpen={onOpen}
     >
+      {version && <span className="market-plugin-version">v{version}</span>}
       <div className="market-plugin-actions">
         {[install, quick].map((action, index) => (
           <button
             type="button"
             key={index}
             disabled={action.disabled}
-            aria-label={action.label + " · " + title}
+            aria-label={[action.label, action.note, title].filter(Boolean).join(" · ")}
             data-tooltip={action.hint}
             onClick={action.onClick}
           >
             {action.label}
+            {action.note && <small>{action.note}</small>}
           </button>
         ))}
       </div>

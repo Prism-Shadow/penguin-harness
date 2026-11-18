@@ -13,4 +13,4 @@ Both views open plugin details, manage installations and launch installed workbe
 
 Categories supplied only by the remote registry, including Utilities and Entertainment, appear as soon as they have a plugin to browse.
 
-Cards and list rows show the same two actions. Install or update the displayed version, then use Quick start on the current Agent to open a draft. The plugin title opens its details and installation management.
+The version appears in the top right of each card and list row. Below it, you can see how many Agents have the plugin, or whether it is installed on the server. A package update names the new version alongside the current one. Quick start opens an example on the selected Agent.
