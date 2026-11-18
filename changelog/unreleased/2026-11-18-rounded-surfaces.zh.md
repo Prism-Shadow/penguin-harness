@@ -1,8 +1,9 @@
 # 悬停和拖放时的底色贴合圆角
 
-- **日期：** 2026-11-18
-- **类型：** fix
-- **范围：** `ui`、`web`、`ui-gallery`
+- **Date:** 2026-11-18
+- **Type:** fix
+- **Scope:** `ui`, `web`, `ui-gallery`
+- **PR:** [#1606](https://github.com/Prism-Shadow/penguin-harness/pull/1606)
 
 [English](2026-11-18-rounded-surfaces.md)
 
