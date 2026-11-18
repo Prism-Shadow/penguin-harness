@@ -108,3 +108,56 @@ test("completed history reloads once and a follow-up completes", async ({ page }
   await expect(page.getByText(followUp, { exact: true })).toHaveCount(1);
   await expect(page.getByText(REPLY, { exact: true })).toHaveCount(2);
 });
+
+test("a live work group pages through reasoning and tools without losing a reader's place", async ({
+  page,
+  context,
+}, info) => {
+  const sessionId = await createSession(page, "smokeactivity");
+  await send(page, "activity pages test");
+  const group = page.locator('[data-step-view="paged"]');
+  const previous = group.getByRole("button", { name: "上一步" });
+  const allow = group.getByRole("button", { name: "允许", exact: true });
+  await expect(group.getByRole("group", { name: "第 2 步，共 2 步" })).toBeVisible();
+  await expect(allow).toBeVisible();
+  await previous.click();
+  await expect(group.getByText("I will check the first entry.")).toBeVisible();
+  await expect(allow).toHaveCount(0);
+  await group.getByRole("button", { name: "查看待处理步骤" }).click();
+  await allow.click();
+  await expect(group.getByRole("group", { name: "第 4 步，共 4 步" })).toBeVisible();
+  await previous.focus();
+  await page.keyboard.press("ArrowLeft");
+  await expect(group.getByText("I will compare the second entry.")).toBeVisible();
+  await page.keyboard.press("ArrowLeft");
+  await expect(group.getByRole("group", { name: "第 2 步，共 4 步" })).toBeVisible();
+  await expect(group.locator("[data-step-content]")).toContainText("entry 1");
+  await expect(group.locator(".ui-tree > [data-depth]")).toHaveCount(1);
+  await info.attach("activity-pager", { body: await group.screenshot(), contentType: "image/png" });
+
+  await page.keyboard.press("Control+f");
+  const find = page.getByRole("search");
+  await find.locator("input").fill("I will check the first entry");
+  await expect(
+    page.locator('[data-step-view="find"]').getByText("I will check the first entry."),
+  ).toBeVisible();
+  await expect(find.getByText("1/1", { exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(group.getByRole("group", { name: "第 2 步，共 4 步" })).toBeVisible();
+
+  // A second view decides the pending approval while the first reader stays on a completed tool.
+  const reviewer = await context.newPage();
+  await reviewer.goto(`/chat/${sessionId}`);
+  await reviewer.getByRole("button", { name: "允许", exact: true }).click();
+  await expect(page.getByText("Both tools finished.", { exact: true })).toBeVisible();
+  await expect(group.getByRole("group", { name: "第 2 步，共 4 步" })).toBeVisible();
+  await group.getByRole("button", { name: "最新步骤" }).click();
+  await expect(group.getByRole("group", { name: "第 4 步，共 4 步" })).toBeVisible();
+  await expect(group.locator("[data-step-content]")).toContainText("entry 2");
+  await reviewer.close();
+  await page.reload();
+  await expect(page.getByText("Both tools finished.", { exact: true })).toBeVisible();
+  const archive = page.locator('[data-step-view="history"]');
+  await archive.locator("[data-group-header]").click();
+  await expect(archive.locator(".ui-tree > [data-depth]")).toHaveCount(4);
+});

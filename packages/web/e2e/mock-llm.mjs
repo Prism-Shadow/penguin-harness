@@ -509,6 +509,37 @@ const server = http.createServer((req, res) => {
       return;
     }
 
+    // Two approval gates let the real Session stay on each page until the browser advances it.
+    if (flat.includes("activity pages test") && !isTitle) {
+      if (flat.includes("toolu_activity_2")) {
+        block(res, 0, { type: "text", text: "" }, [
+          { type: "text_delta", text: "Both tools finished." },
+        ]);
+        messageStop(res, "end_turn", 12);
+      } else {
+        const step = hasToolResult ? 2 : 1;
+        const thinking =
+          step === 1 ? "I will check the first entry." : "I will compare the second entry.";
+        block(res, 0, { type: "thinking", thinking: "" }, [{ type: "thinking_delta", thinking }], {
+          type: "signature_delta",
+          signature: "sig_mock_activity",
+        });
+        block(
+          res,
+          1,
+          { type: "tool_use", id: `toolu_activity_${step}`, name: "exec_command", input: {} },
+          [
+            {
+              type: "input_json_delta",
+              partial_json: JSON.stringify({ cmd: `printf 'entry ${step}'` }),
+            },
+          ],
+        );
+        messageStop(res, "tool_use", 24);
+      }
+      return;
+    }
+
     // Sticky-rows test case (sticky-rows.spec): one work group of a thinking step and three
     // exec_command calls whose output is one long run of numbers, so every line of an open
     // output block is full of text, edge to edge, while it scrolls under the pinned rows.

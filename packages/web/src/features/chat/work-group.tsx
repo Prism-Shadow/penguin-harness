@@ -54,11 +54,11 @@ function hasWaitingRetry(items: ChatItem[]): boolean {
   return items.some((it) => it.kind === "reconnect" && !it.gaveUp && !it.retrying);
 }
 
-/** Whether the group contains a pending approval (used to force it open, ensuring the approval buttons stay reachable). */
-function hasPendingApproval(items: ChatItem[], ctx: StreamRenderContext): boolean {
-  return items.some(
-    (it) =>
-      it.kind === "tool_call" && ctx.pendingApprovals.has(approvalKey(ctx.origin, it.toolCallId)),
+/** Which steps have an action the reader may need to reach from a different page. */
+function needsAction(item: ChatItem, ctx: StreamRenderContext): boolean {
+  if (item.kind === "reconnect") return !item.gaveUp && !item.retrying;
+  return (
+    item.kind === "tool_call" && ctx.pendingApprovals.has(approvalKey(ctx.origin, item.toolCallId))
   );
 }
 
@@ -88,10 +88,18 @@ export function useWorkGroupState(
     // The title doubles as status: "Running" while in progress, "Done" when finished.
     title: running ? S.chat.workRunning : S.chat.workDone,
     // A pure-thinking group (no tool calls) doesn't show "0 steps".
-    ...(steps > 0 ? { count: S.chat.workGroupSteps(steps) } : {}),
+    ...(steps > 0 ? { count: S.chat.workGroupToolCalls(steps) } : {}),
     ...(startMs !== undefined ? { startMs } : {}),
     durationMs,
-    pending: hasPendingApproval(items, ctx) || waitingRetry || revealedForFind,
+    pending: items.some((item) => needsAction(item, ctx)) || revealedForFind,
+    stepNavigation: {
+      previous: S.chat.previousWorkStep,
+      next: S.chat.nextWorkStep,
+      latest: S.chat.latestWorkStep,
+      waiting: S.chat.waitingWorkStep,
+      position: S.chat.workStepPosition,
+      revealAll: revealedForFind,
+    },
   };
 }
 
@@ -111,6 +119,7 @@ export function SessionWorkGroup({
       {...state}
       rows={items.map((item) => ({
         key: item.id,
+        needsAction: needsAction(item, ctx),
         content: <MessageItem item={item} ctx={ctx} />,
       }))}
     />
