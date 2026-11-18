@@ -53,8 +53,8 @@ export function Switch({ checked, onChange, disabled, className, title, ...rest 
         (checked ? "bg-accent" : "bg-switch-track") +
         ` ${className ?? ""}`
       }
-      // A hover hint shows in the shared tooltip, never the browser's own `title`.
       data-clip-surface=""
+      // A hover hint shows in the shared tooltip, never the browser's own `title`.
       data-tooltip={title}
       {...rest}
     >

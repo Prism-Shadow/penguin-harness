@@ -37,7 +37,11 @@ It is already compiled, so your project needs no Tailwind. It holds:
 
 A flush `<Card padding="none">` keeps row hover colours, images and header fills within its
 rounded border. On a custom frame, put `data-clip-surface=""` on the element that owns the
-border when all of its content belongs inside that shape.
+border when all of its content belongs inside that shape. This uses `overflow: hidden` to
+preserve the flush card’s block formatting and scroll-container behaviour. A sticky descendant
+will use that box as its nearest scrollport. When a header should stick to the page or an
+outer list, put the marker on a separate paint layer beside the sticky content and leave
+scrolling to the existing scrollport.
 
 For a frame with an overhanging handle or focus ring, keep the frame open and give its
 decorative overlay `border-radius: inherit`. An overlay with painted children can carry

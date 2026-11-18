@@ -39,8 +39,9 @@ border radius then paints every state, including a theme’s asymmetric or squar
 
 - For a flush card of rows, use `Card padding="none"`. For another closed frame with an
   edge-to-edge header, image, progress fill or moving knob, put `data-clip-surface=""` on the
-  element that actually draws the rounded edge. It clips child paint at that edge. Keep an
-  existing scrolling element responsible for its own overflow.
+  element that actually draws the rounded edge. Its `overflow: hidden` establishes a scroll
+  container. If a descendant sticks to an outer scrollport, contain the paint on a separate
+  layer alongside the sticky content. Keep the existing scrolling element in charge of overflow.
 - When a region has an overhanging handle, focus indicator or menu, leave that region open.
   A full-size decorative layer directly inside it can use `rounded-[inherit]` for its own
   background or inset ring. Give that layer `data-clip-surface=""` if its own children also paint.
