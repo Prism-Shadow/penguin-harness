@@ -5,9 +5,11 @@
 //
 // `file` is a name inside the request directory (default prompt.txt); anything outside it is
 // refused. A JSON file is printed as indented key: value lines, and every string that holds
-// line breaks (the source files the engine embeds) is printed as a block of real lines, so the
-// answerer can read code without decoding JSON itself. Lines start..start+M-1 are printed (default
-// 1 and 400) after a header with the total, so a long request is read page by page.
+// line breaks (the source files the engine embeds) is printed verbatim, at column 0 with nothing
+// added, between a `----- begin <key> (N lines, verbatim) -----` and an `----- end <key> -----`
+// line: text copied from inside the markers matches the file exactly, so an edit's old string can
+// be taken from it. Lines start..start+M-1 are printed (default 1 and 400) after a header with the
+// total, so a long request is read page by page.
 // Read-only: it opens one file and writes only to stdout.
 
 import { readFileSync, realpathSync } from "node:fs";
@@ -19,8 +21,11 @@ function render(value, indent = "") {
   const put = (key, v) => {
     const head = key === null ? indent : `${indent}${key}:`;
     if (typeof v === "string" && v.includes("\n")) {
-      out.push(`${head}${key === null ? "" : " "}|`);
-      for (const line of v.replace(/\n$/, "").split("\n")) out.push(`${indent}  ${line}`);
+      const lines = v.replace(/\n$/, "").split("\n");
+      const name = key === null ? "text" : key;
+      out.push(`${indent}----- begin ${name} (${lines.length} lines, verbatim) -----`);
+      out.push(...lines);
+      out.push(`${indent}----- end ${name} -----`);
     } else if (v !== null && typeof v === "object") {
       const empty = Array.isArray(v) ? v.length === 0 : Object.keys(v).length === 0;
       if (empty) out.push(`${head}${key === null ? "" : " "}${Array.isArray(v) ? "[]" : "{}"}`);

@@ -132,6 +132,13 @@ export function checkCommand(cmd, dir) {
         problems.push(`runs ${prog}, which is not a print-only filter`);
         continue;
       }
+      // sort and uniq can write a file (`sort -o F`, `uniq IN OUT`): only their printing forms pass.
+      if (prog === "sort" && args.some((a) => /^-[a-zA-Z]*o/.test(a) || a.startsWith("--output"))) {
+        problems.push("sort writing a file (-o/--output)");
+      }
+      if (prog === "uniq" && args.filter((a) => !a.startsWith("-")).length > 1) {
+        problems.push("uniq with an output file");
+      }
       if (prog === "sed" && !(args[0] === "-n" && /^[\d,$]+p$/.test(args[1] ?? ""))) {
         problems.push("sed other than `sed -n <range>p`");
       }

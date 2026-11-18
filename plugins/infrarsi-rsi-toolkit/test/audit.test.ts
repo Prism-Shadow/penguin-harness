@@ -119,6 +119,19 @@ describe("auditing an answerer session", () => {
     expect(audit(trace(calls), REQ, "answer.txt").ok).toBe(true);
   });
 
+  it("passes sort and uniq only in their printing forms", () => {
+    expect(checkCommand(`sort ${REQ}/prompt.txt | uniq -c`, REQ)).toEqual([]);
+    expect(checkCommand(`sort -o ${REQ}/answer.json ${REQ}/prompt.txt`, REQ).join()).toMatch(
+      /sort writing a file/,
+    );
+    expect(checkCommand(`sort --output=${REQ}/x ${REQ}/prompt.txt`, REQ).join()).toMatch(
+      /sort writing a file/,
+    );
+    expect(checkCommand(`uniq ${REQ}/prompt.txt ${REQ}/answer.json`, REQ).join()).toMatch(
+      /uniq with an output file/,
+    );
+  });
+
   it("allows the toolkit's request viewer on the request, and no other program", () => {
     const viewer = "/a/agents/x/agent_state/skills/infrarsi-rsi-toolkit/scripts/print-request.mjs";
     expect(checkCommand(`node ${viewer} ${REQ} prompt.txt --start 401 --lines 400`, REQ)).toEqual(

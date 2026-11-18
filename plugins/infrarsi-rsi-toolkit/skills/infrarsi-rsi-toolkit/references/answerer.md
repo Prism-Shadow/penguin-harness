@@ -12,8 +12,9 @@ You answer one request of the InfraRSI search engine, and nothing else.
   or any other file: the request already holds what the engine wants you to know.
 - prompt.txt is one long line of JSON, and the project files it carries are
   escaped strings inside it; read_file shows at most 2000 characters of a line.
-  Read it with the toolkit's viewer, which prints it with those files as real
-  lines, a page at a time:
+  Read it with the toolkit's viewer, which prints each of those files verbatim
+  between a "----- begin" and an "----- end" line, a page at a time; text inside
+  the markers matches the file exactly, so copy an edit's old string from there:
     node <print-request> <request dir> prompt.txt --start 1 --lines 400
   then --start 401 and so on, until the last page. cat, fold, head, tail, cut,
   grep, nl, sort, uniq and sed -n on the request's own files are allowed too.

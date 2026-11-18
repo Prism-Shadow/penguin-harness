@@ -42,13 +42,23 @@ describe("the request viewer", () => {
       "  mutable_files:",
       '    - [0]: "train.py"',
       "files:",
-      "  train.py: |",
-      "    import torch",
-      "    ",
-      "    def step(x):",
-      "        return x * 2",
+      "  ----- begin train.py (4 lines, verbatim) -----",
+      "import torch",
+      "",
+      "def step(x):",
+      "    return x * 2",
+      "  ----- end train.py -----",
       "empty: {}",
     ]);
+  });
+
+  it("prints embedded files so an edit's old string can be copied from them", () => {
+    const lines = requestLines(req);
+    const begin = lines.findIndex((l: string) => l.includes("begin train.py"));
+    const end = lines.findIndex((l: string) => l.includes("end train.py"));
+    expect(lines.slice(begin + 1, end).join("\n") + "\n").toBe(
+      "import torch\n\ndef step(x):\n    return x * 2\n",
+    );
   });
 
   it("prints a text file as it is", () => {
@@ -76,7 +86,9 @@ describe("the request viewer", () => {
       },
     );
     expect(ok.status).toBe(0);
-    expect(ok.stdout).toBe("# lines 10-12 of 15\n  train.py: |\n    import torch\n    \n");
+    expect(ok.stdout).toBe(
+      "# lines 10-12 of 16\n  ----- begin train.py (4 lines, verbatim) -----\nimport torch\n\n",
+    );
     const bad = spawnSync(process.execPath, [SCRIPT, req, "../../secret.txt"], {
       encoding: "utf8",
     });
