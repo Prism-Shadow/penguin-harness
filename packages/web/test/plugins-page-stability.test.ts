@@ -32,6 +32,7 @@ import { en } from "../src/lib/strings-en";
 import {
   cachedAgentInstalls,
   rememberAgentInstalls,
+  setMachineCatalogUser,
   rememberMachineAgents,
 } from "../src/lib/machine-cache";
 import { publishMachinesChanged } from "../src/state/machines";
@@ -46,7 +47,6 @@ import {
   settle,
   unmountAll,
   waitFor,
-  spokenText,
   watchText,
 } from "./helpers/dom";
 import { json } from "./helpers/fetch";
@@ -93,17 +93,12 @@ const GPU_HELPER = {
 /** The machine's `helper`, as the dialog's buttons name it. */
 const MACHINE_HELPER = `${AGENT_ID} ${en.chat.machineTag("gpu-box")}`;
 
-const STATUS = '[data-plugin="charts"] [data-testid="plugin-status"]';
-const USED_BY = '[data-plugin="charts"] [data-testid="plugin-used-by"]';
-/** What a reader is told a mark says: the cover card draws its words for assistive technology. */
-const textOf = (selector: string) => {
-  const node = document.querySelector(selector);
-  return node === null ? null : spokenText(node);
-};
-const watchSpoken = (selector: string) => watchText(selector, spokenText);
-const hintOf = (selector: string) =>
-  document.querySelector(selector)?.getAttribute("data-tooltip") ?? "";
-
+// Installed counts now appear on the first text action. Detailed status is in the plugin details.
+const COUNT = '[data-plugin="charts"] .market-plugin-actions button:first-child';
+const textOf = (selector: string) => document.querySelector(selector)?.textContent?.trim() ?? null;
+const counts = () => watchText(COUNT, (node) => node.textContent?.trim() ?? "");
+const offlineNotice = () =>
+  document.body.textContent?.includes(en.appCenter.machinesOffline("gpu-box"));
 const PICKER = `button[aria-label="${en.plugins.viewMachine}"]`;
 /** The page header's controls, in the order they sit. */
 const headerControls = () =>
@@ -116,10 +111,8 @@ const headerControls = () =>
 const pickerEntries = () =>
   [...document.querySelectorAll('[role="option"]')].map((o) => o.textContent?.trim() ?? "");
 
-const INSTALLED = en.plugins.status.installed;
-const USED_BY_1 = en.plugins.usedByAgents(1);
-const USED_BY_2 = en.plugins.usedByAgents(2);
-const LAST_SEEN = en.plugins.statusHint.lastSeenOn(1);
+const USED_BY_1 = en.plugins.marketAgentInstalls(1);
+const USED_BY_2 = en.plugins.marketAgentInstalls(2);
 
 /** Reads of an Agent's installed plugins answered so far on that server (null: this one). */
 const installsReads = (server: AgentServer, machine: string | null) =>
@@ -167,7 +160,10 @@ async function setReachable(server: AgentServer, reachable: boolean) {
 }
 
 describe("the plugin market while a machine connects, fails or blinks", () => {
-  beforeAll(() => setActiveStrings(en));
+  beforeAll(() => {
+    setMachineCatalogUser("admin");
+    setActiveStrings(en);
+  });
   afterAll(() => setActiveStrings(zh));
   afterEach(async () => {
     await unmountAll();
@@ -178,18 +174,18 @@ describe("the plugin market while a machine connects, fails or blinks", () => {
   it("reads Installed, used by 1, while the machine is held, then used by 2 once it answers", async () => {
     const { server } = await serverWithCharts(true);
     const gpu = server.hold("gpu1");
-    const status = watchSpoken(STATUS);
-    const usedBy = watchSpoken(USED_BY);
+    const usedBy = counts();
     await openPage();
-    await waitFor(() => textOf(USED_BY) === USED_BY_1, 40);
+    await waitFor(() => textOf(COUNT) === USED_BY_1, 40);
     for (let i = 0; i < 5; i++) await settle();
-    expect(status.texts()).toEqual([INSTALLED]);
-    expect(usedBy.texts()).toEqual([USED_BY_1]);
+    expect(usedBy.texts().filter((value) => value.startsWith("Installed on"))).toEqual([USED_BY_1]);
 
     await run(() => gpu.release());
-    await waitFor(() => textOf(USED_BY) === USED_BY_2, 40);
-    expect(status.texts()).toEqual([INSTALLED]);
-    expect(usedBy.texts()).toEqual([USED_BY_1, USED_BY_2]);
+    await waitFor(() => textOf(COUNT) === USED_BY_2, 40);
+    expect(usedBy.texts().filter((value) => value.startsWith("Installed on"))).toEqual([
+      USED_BY_1,
+      USED_BY_2,
+    ]);
     expect(installsReads(server, null)).toBe(1);
   });
 
@@ -198,14 +194,12 @@ describe("the plugin market while a machine connects, fails or blinks", () => {
     rememberMachineAgents(PROJECT_ID, "gpu1", [GPU_HELPER]);
     rememberAgentInstalls(PROJECT_ID, "gpu1", AGENT_ID, machineInstalls!);
     server.failNext("gpu1", new RegExp(`^/api/projects/${PROJECT_ID}/agents$`));
-    const status = watchSpoken(STATUS);
-    const usedBy = watchSpoken(USED_BY);
+    const usedBy = counts();
     await openPage();
-    await waitFor(() => listReads(server, "gpu1") >= 1 && hintOf(STATUS).includes(LAST_SEEN), 40);
-    expect(status.texts()).toEqual([INSTALLED]);
-    expect(usedBy.texts()).toEqual([USED_BY_2]);
+    await waitFor(() => listReads(server, "gpu1") >= 1 && textOf(COUNT) === USED_BY_2, 40);
+    expect(usedBy.texts().filter((value) => value.startsWith("Installed on"))).toEqual([USED_BY_2]);
 
-    await click(button(`${en.skills.manageInstall} charts`));
+    await click(document.querySelector(COUNT)!);
     const machineRow = () => button(`${en.skills.uninstall} ${MACHINE_HELPER}`);
     expect(machineRow().disabled).toBe(true);
     expect(machineRow().getAttribute("data-tooltip")).toContain(
@@ -220,24 +214,21 @@ describe("the plugin market while a machine connects, fails or blinks", () => {
     await setReachable(server, true);
     await waitFor(() => listReads(server, "gpu1") > machineReads && !machineRow().disabled, 40);
     expect(installsReads(server, null)).toBe(localReads);
-    expect(status.texts()).toEqual([INSTALLED]);
-    expect(usedBy.texts()).toEqual([USED_BY_2]);
+    expect(usedBy.texts().filter((value) => value.startsWith("Installed on"))).toEqual([USED_BY_2]);
   });
 
   it("changes no status text and asks this server nothing when the machine blinks", async () => {
     const { server } = await serverWithCharts(true);
     await openPage();
-    await waitFor(() => textOf(USED_BY) === USED_BY_2, 40);
-    const status = watchSpoken(STATUS);
-    const usedBy = watchSpoken(USED_BY);
+    await waitFor(() => textOf(COUNT) === USED_BY_2, 40);
+    const usedBy = counts();
     const localReads = installsReads(server, null);
 
     await setReachable(server, false);
-    expect(hintOf(STATUS)).toContain(LAST_SEEN);
+    expect(offlineNotice()).toBe(true);
     await setReachable(server, true);
-    await waitFor(() => !hintOf(STATUS).includes(LAST_SEEN), 40);
-    expect(status.texts()).toEqual([INSTALLED]);
-    expect(usedBy.texts()).toEqual([USED_BY_2]);
+    await waitFor(() => !offlineNotice(), 40);
+    expect(usedBy.texts().filter((value) => value.startsWith("Installed on"))).toEqual([USED_BY_2]);
     expect(installsReads(server, null)).toBe(localReads);
   });
 
@@ -246,27 +237,24 @@ describe("the plugin market while a machine connects, fails or blinks", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     const { server } = await serverWithCharts(true);
     const router = await openPage();
-    await waitFor(() => textOf(USED_BY) === USED_BY_2, 40);
+    await waitFor(() => textOf(COUNT) === USED_BY_2, 40);
     await run(() => router.navigate("/chat"));
-    expect(textOf(STATUS)).toBeNull();
+    expect(textOf(COUNT)).toBeNull();
 
     vi.setSystemTime(Date.now() + 3_000);
     const localReads = installsReads(server, null);
-    const status = watchSpoken(STATUS);
-    const usedBy = watchSpoken(USED_BY);
+    const usedBy = counts();
     await run(() => router.navigate("/plugins"));
-    expect(textOf(STATUS)).toBe(INSTALLED);
-    expect(textOf(USED_BY)).toBe(USED_BY_2);
+    expect(textOf(COUNT)).toBe(USED_BY_2);
     await waitFor(() => installsReads(server, null) === localReads + 1, 40);
     for (let i = 0; i < 5; i++) await settle();
-    expect(status.texts()).toEqual([INSTALLED]);
-    expect(usedBy.texts()).toEqual([USED_BY_2]);
+    expect(usedBy.texts().filter((value) => value.startsWith("Installed on"))).toEqual([USED_BY_2]);
   });
 
   it("forgets what it remembered of a machine that leaves the Project's list", async () => {
     await serverWithCharts(true);
     await openPage();
-    await waitFor(() => textOf(USED_BY) === USED_BY_2, 40);
+    await waitFor(() => textOf(COUNT) === USED_BY_2, 40);
     expect(cachedAgentInstalls(PROJECT_ID, "gpu1", AGENT_ID)).not.toBeNull();
 
     // The machine is removed: the server's machine list stops naming it.
@@ -279,7 +267,7 @@ describe("the plugin market while a machine connects, fails or blinks", () => {
       return json({ ...body, machines: body.machines.filter((m) => m.machineId !== "gpu1") });
     });
     await run(() => publishMachinesChanged());
-    await waitFor(() => textOf(USED_BY) === USED_BY_1, 40);
+    await waitFor(() => textOf(COUNT) === USED_BY_1, 40);
     expect(cachedAgentInstalls(PROJECT_ID, "gpu1", AGENT_ID)).toBeNull();
     expect(cachedAgentInstalls(PROJECT_ID, null, AGENT_ID)).not.toBeNull();
   });
@@ -288,7 +276,7 @@ describe("the plugin market while a machine connects, fails or blinks", () => {
     const { server } = await serverWithCharts(false);
     const picker = watchText(PICKER);
     await openPage();
-    await waitFor(() => hasButton(en.plugins.viewMachine) && textOf(STATUS) !== null, 40);
+    await waitFor(() => hasButton(en.plugins.viewMachine) && textOf(COUNT) !== null, 40);
     const controls = headerControls();
     expect(controls).toEqual([
       en.plugins.viewMachine,
@@ -300,6 +288,7 @@ describe("the plugin market while a machine connects, fails or blinks", () => {
     expect(headerControls()).toEqual(controls);
     await click(button(en.plugins.viewMachine));
     expect(pickerEntries()).toEqual([
+      en.appCenter.allMachines,
       en.plugins.thisServer,
       en.plugins.machineOutOfReach("gpu-box"),
     ]);
@@ -307,9 +296,9 @@ describe("the plugin market while a machine connects, fails or blinks", () => {
 
     await setReachable(server, true);
     await click(button(en.plugins.viewMachine));
-    expect(pickerEntries()).toEqual([en.plugins.thisServer, "gpu-box"]);
+    expect(pickerEntries()).toEqual([en.appCenter.allMachines, en.plugins.thisServer, "gpu-box"]);
     await click(button(en.plugins.viewMachine));
     expect(headerControls()).toEqual(controls);
-    expect(picker.texts()).toEqual([en.plugins.thisServer]);
+    expect(picker.texts()).toEqual([en.appCenter.allMachines]);
   });
 });

@@ -92,7 +92,8 @@ import { MachinePicker, type MachineChoice } from "../machines";
 import { DRAFT_SESSION_ID, draftKey, loadDraft, saveDraft, prepareNewChatDraft } from "../chat";
 import { localizedText } from "../../lib/skill-use";
 import { usePluginRepair } from "./plugin-repair";
-import { samePluginTarget, viewedMachine } from "./viewed-machine";
+import { combinedMarketRows, useMachineMarkets } from "./machine-markets";
+import { viewedMachine } from "./viewed-machine";
 import { SettingsDialog } from "../settings";
 import { pickDefaultAgent } from "../ai-create";
 import { toneInk } from "../../lib/tone";
@@ -145,7 +146,6 @@ import {
   storePluginsGroupBy,
   type PluginGroupBy,
   type PluginRow,
-  type PluginView,
 } from "./plugin-groups";
 import {
   installNeedsConfirm,
@@ -233,9 +233,9 @@ export function PluginsPage() {
   const error = groups === null ? library.error : null;
   // A return to the same Project is a new visit, not permission for an old reply: a write that
   // answers in a later visit is not taken (its Project's list is read again on entry anyway).
-  const projectVisit = useRef({ projectId, generation: 0 });
-  if (projectVisit.current.projectId !== projectId) {
-    projectVisit.current = { projectId, generation: projectVisit.current.generation + 1 };
+  const projectVisit = useRef({ projectId, userId, generation: 0 });
+  if (projectVisit.current.projectId !== projectId || projectVisit.current.userId !== userId) {
+    projectVisit.current = { projectId, userId, generation: projectVisit.current.generation + 1 };
   }
   const visit = projectVisit.current;
   const isCurrentVisit = () => projectVisit.current === visit;
@@ -319,17 +319,33 @@ export function PluginsPage() {
   };
   const selectTab = (key: string) =>
     setParams(withParam(TAB_PARAM, key === ALL_TAB ? null : key), { replace: true });
-  const openDetail = (name: string) =>
-    setParams(withParam(PLUGIN_PARAM, name), { state: { pluginDetail: true } });
+  const openDetail = (row: PluginRow) =>
+    setParams(
+      (prev) => {
+        const next = withParam(PLUGIN_PARAM, row.name)(prev);
+        if (row.origin) next.set("machine", row.origin.machineId);
+        else next.delete("machine");
+        return next;
+      },
+      { state: { pluginDetail: true } },
+    );
   const closeDetail = () => {
     if (openedHere) void navigate(-1);
-    else setParams(withParam(PLUGIN_PARAM, null), { replace: true });
+    else
+      setParams(
+        (prev) => {
+          const next = withParam(PLUGIN_PARAM, null)(prev);
+          next.delete("machine");
+          return next;
+        },
+        { replace: true },
+      );
   };
 
   const { machineIds, machineLabels } = useSessions();
   /** Every machine of the Project with its Agents, reachable or not (lib/machine-agent-lists.ts). */
   const { lists: machineLists, reload: reloadMachineAgents } = useMachineAgents(projectId);
-  /** The machine picked in the header; null until one is, which views this server. */
+  /** The machine picked in the header; null collects the catalogs from every machine. */
   const [pickedMachine, setPickedMachine] = useState<string | null>(null);
   /** Installs written on an Agent and not answered yet, by target key: what the dialog shows meanwhile. */
   const [writing, setWriting] = useState<ReadonlyMap<string, AgentInstalls>>(() => new Map());
@@ -340,6 +356,11 @@ export function PluginsPage() {
     setWriting((m) => (m.size === 0 ? m : new Map()));
   }, [visit]);
   const selfId = deployment?.machineId;
+  const machineMarkets = useMachineMarkets(projectId);
+  const allMachines = pickedMachine === null;
+  const offlineMarkets = machineMarkets.filter(
+    (m) => m.unavailable && (allMachines || pickedMachine === m.machineId),
+  );
   /** The Project's machines as the machine list has them: alias, and whether each can be asked now. */
   const listedMachine = (machineId: string) =>
     machineLists.find((list) => list.machine.machineId === machineId)?.machine;
@@ -375,6 +396,7 @@ export function PluginsPage() {
    * width never move with a machine's link.
    */
   const machineChoices: MachineChoice[] = [
+    { value: "*", label: S.appCenter.allMachines },
     { value: selfId ?? SELF_PENDING, label: S.plugins.thisServer },
     ...otherMachines.map((id) => ({
       value: id,
@@ -387,17 +409,25 @@ export function PluginsPage() {
    * Its last answer stands while it is asked again, so a row reads "not on that machine" only
    * when an answer of the machine's lacks it.
    */
-  const remoteKey =
-    projectId !== null && viewMachine !== undefined && viewMachine !== selfId
-      ? installedPluginsKey(projectId, viewMachine)
+  const remoteMarket = machineMarkets.find((m) => m.machineId === viewMachine);
+  const remoteSelected = viewMachine !== undefined && viewMachine !== selfId;
+  // Entries named only in the Project's tables keep their existing, table-scoped controls.
+  // The remote libraries above are read exclusively for the administrator's enrolled machines.
+  const tableKey =
+    isAdmin &&
+    remoteSelected &&
+    !remoteMarket &&
+    projectId &&
+    userId &&
+    machineIds.includes(viewMachine!)
+      ? readKey(projectId, userId, viewMachine!, "table-view")
       : null;
-  const remote = useRead(installedPlugins, remoteKey, () =>
+  const tableRead = useRead(installedPlugins, tableKey, () =>
     api.getInstalledPlugins(projectId!, viewMachine!),
   );
-  const view: PluginView | undefined =
-    viewMachine === undefined
-      ? undefined
-      : { machineId: viewMachine, remote: remoteKey === null ? null : remote.value };
+  const tableView = remoteSelected
+    ? { machineId: viewMachine!, remote: remoteMarket?.deployment.value ?? tableRead.value }
+    : undefined;
   /** Whether the machine in view is this server itself. */
   const viewingHere = viewMachine === selfId;
   /**
@@ -406,7 +436,7 @@ export function PluginsPage() {
    */
   const modulesPending =
     (deployment === null && deploymentRead.error === null) ||
-    (remoteKey !== null && remote.value === null && remote.error === null);
+    (remoteSelected && !tableView?.remote && !tableRead.error && !remoteMarket?.deployment.error);
 
   // While a source of the registry is still being read, it is read again every
   // INDEX_RECHECK_MS until it has answered or failed; the rows already listed stay meanwhile.
@@ -428,6 +458,7 @@ export function PluginsPage() {
     version?: string;
     previousVersion?: string;
     resourceOnly?: boolean;
+    catalogMachine?: string;
     projectId: string;
     machineId: string;
   } | null>(null);
@@ -440,10 +471,16 @@ export function PluginsPage() {
    * running process has — including a load that failed, which is reported as such rather than
    * toasted as installed; otherwise the row waits for a restart.
    */
+  const canApply = (target: { projectId: string; machineId: string }) =>
+    target.projectId === projectId &&
+    (allMachines || target.machineId === viewMachine) &&
+    (target.machineId === selfId ||
+      machineMarkets.some((m) => m.machineId === target.machineId && m.deployment.live) ||
+      (tableKey !== null && target.machineId === viewMachine));
   const runDeploymentInstall = async (target: NonNullable<typeof pendingApply>) => {
     // A confirmation names the target that opened it, never a later picker or Project.
     if (pendingSpecifier !== null) return;
-    if (!samePluginTarget(target, { projectId, machineId: viewMachine })) {
+    if (!canApply(target)) {
       setPendingApply(null);
       return;
     }
@@ -460,23 +497,29 @@ export function PluginsPage() {
             (received, total) => {
               if (isCurrentVisit()) setInstallProgress({ specifier, received, total });
             },
+            ...(target.catalogMachine ? [target.catalogMachine] : []),
           )
-        : await api.uninstallPlugin(target.projectId, specifier, target.machineId);
+        : await api.uninstallPlugin(
+            target.projectId,
+            specifier,
+            target.machineId,
+            ...(target.catalogMachine ? [target.catalogMachine] : []),
+          );
       // A write that answers in a later visit is not taken: that visit read the list itself.
       if (!isCurrentVisit()) return;
       if (target.machineId !== selfId) {
-        // The machine in view is handed its part in the background: its row keeps the state it
-        // has until the machine is asked again, then shows what the machine reports — the
-        // tables' new answer is taken together with the machine's, never ahead of it.
-        const machineKey = installedPluginsKey(target.projectId, target.machineId);
-        installedPlugins.invalidate(machineKey);
-        // A machine that cannot answer keeps its last answer; the tables' answer is taken anyway.
-        await installedPlugins
-          .read(machineKey, () => api.getInstalledPlugins(target.projectId, target.machineId))
-          .catch(() => undefined);
-        if (!isCurrentVisit()) return;
+        machineMarkets.find((m) => m.machineId === target.machineId)?.refresh();
+        if (tableKey) {
+          installedPlugins.invalidate(tableKey);
+          await installedPlugins.read(tableKey, () =>
+            api.getInstalledPlugins(target.projectId, target.machineId),
+          );
+          if (!isCurrentVisit()) return;
+        }
       }
-      installedPlugins.accept(installedPluginsKey(target.projectId, null), next);
+      if (target.catalogMachine)
+        installedPlugins.invalidate(installedPluginsKey(target.projectId, null));
+      else installedPlugins.accept(installedPluginsKey(target.projectId, null), next);
       if (install && target.machineId === selfId) {
         pluginLibrary.invalidate(LIBRARY_KEY);
         pluginIndex.invalidate(INDEX_KEY);
@@ -645,6 +688,7 @@ export function PluginsPage() {
     if (!projectId) return false;
     const prev = installed.get(key) ?? NO_INSTALLS;
     const target = targetOf(key);
+    if (!target || target.machine?.live === false) return false;
     const agentId = agentIdOf(key);
     /** Every part goes to the server the Agent lives on. */
     const machineId = machineOfTarget(key);
@@ -780,8 +824,9 @@ export function PluginsPage() {
    * pre-selected and goal mode on when the demo is a goal. handoffAgentId must be cleared: a
    * leftover handoff target would forward the demo to a different Agent.
    */
-  const openQuickStart = (quickStart: QuickStartItem) => {
-    const agentId = currentAgent?.agentId;
+  const openQuickStart = (quickStart: QuickStartItem, target: InstallTarget) => {
+    const agentId = target.agent.agentId;
+    const place = target.machine ? { machineId: target.machine.machineId, workspace: "" } : {};
     if (!agentId) return;
     if (userId && projectId) {
       // Typed-but-unsent draft text becomes a parked draft conversation instead of being
@@ -792,6 +837,7 @@ export function PluginsPage() {
       const { skills: _skills, goal: _goal, ...rest } = loadDraft(key);
       saveDraft(key, {
         ...rest,
+        ...place,
         agentId,
         text: localizedText(locale, quickStart.prompt, quickStart.promptZh),
         ...(quickStart.skills !== undefined && quickStart.skills.length > 0
@@ -801,36 +847,53 @@ export function PluginsPage() {
         handoffAgentId: undefined,
       });
     }
-    setCurrentAgentId(agentId);
-    navigate(`/chat/${DRAFT_SESSION_ID}`, { state: { agentId } });
+    if (!target.machine) setCurrentAgentId(agentId);
+    navigate(`/chat/${DRAFT_SESSION_ID}`, { state: { agentId, ...place } });
   };
 
   /** A library plugin waiting for "install on this Agent, then quick start" to be confirmed. */
-  const [pendingQuickStart, setPendingQuickStart] = useState<PluginItem | null>(null);
+  const [pendingQuickStart, setPendingQuickStart] = useState<{
+    plugin: PluginItem;
+    key: string;
+    projectId: string | null;
+  } | null>(null);
   const [quickStartInstalling, setQuickStartInstalling] = useState(false);
 
   /** A library plugin's quick start: on an Agent that has all of it, it opens; otherwise installing comes first, and is asked. */
-  const quickStartLibrary = (plugin: PluginItem) => {
+  const quickStartLibrary = (plugin: PluginItem, target: InstallTarget | undefined) => {
     const demo = libraryQuickStart(plugin);
-    if (demo === null || !currentAgent) return;
-    if (pluginComplete(plugin, installed.get(currentAgent.agentId))) openQuickStart(demo);
-    else setPendingQuickStart(plugin);
+    if (demo === null || !target || target.machine?.live === false) return;
+    if (pluginComplete(plugin, installed.get(target.key))) openQuickStart(demo, target);
+    else setPendingQuickStart({ plugin, key: target.key, projectId });
   };
 
+  const quickTarget =
+    pendingQuickStart?.projectId === projectId && pendingQuickStart
+      ? targetOf(pendingQuickStart.key)
+      : undefined;
   const confirmQuickStartInstall = async () => {
-    const plugin = pendingQuickStart;
-    const agentId = currentAgent?.agentId;
-    if (plugin === null || !agentId) return;
+    if (!pendingQuickStart || !quickTarget || quickTarget.machine?.live === false) return;
+    const { plugin } = pendingQuickStart;
     setQuickStartInstalling(true);
-    const ok = await toggleInstall(agentId, plugin, true);
+    const ok = await toggleInstall(quickTarget.key, plugin, true);
     setQuickStartInstalling(false);
     setPendingQuickStart(null);
     const demo = libraryQuickStart(plugin);
-    if (ok && demo !== null) openQuickStart(demo);
+    if (ok && demo !== null && isCurrentVisit()) openQuickStart(demo, quickTarget);
   };
 
-  const rows = pluginRows(groups ?? [], moduleParts(deployment, index ?? [], view));
-  const categories = pluginCategories(groups ?? [], locale);
+  const localRows = pluginRows(groups ?? [], moduleParts(deployment, index ?? []));
+  const rows: PluginRow[] = allMachines
+    ? combinedMarketRows(localRows, machineMarkets)
+    : remoteSelected
+      ? (remoteMarket?.rows ?? pluginRows([], moduleParts(deployment, index ?? [], tableView)))
+      : localRows;
+  const categories = pluginCategories(
+    [...(groups ?? []), ...machineMarkets.flatMap((m) => m.groups)],
+    locale,
+  );
+  const targetsFor = (row: PluginRow) =>
+    !row.origin ? targets : targets.filter((t) => t.machine?.machineId === row.origin!.machineId);
   const usages = new Map<string, LibraryUsage>();
   for (const row of rows) {
     if (row.library !== undefined) {
@@ -838,7 +901,7 @@ export function PluginsPage() {
         row.key,
         libraryUsage(
           row.library,
-          targets.map((t) => ({
+          targetsFor(row).map((t) => ({
             agentId: t.key,
             pluginUpdates: t.agent.pluginUpdates,
             lastSeen: t.machine !== null && t.machine.live === false,
@@ -870,77 +933,100 @@ export function PluginsPage() {
   });
   const categoryTitle = (id: string) => categories.find((c) => c.id === id)?.title ?? id;
   /** The row a link's `?plugin=` names; its detail opens even when its card is not in the grid. */
-  const openRow = openName === null ? undefined : rows.find((row) => row.name === openName);
+  const detailMachine = params.get("machine");
+  const detailRows =
+    detailMachine === null
+      ? rows
+      : (machineMarkets.find((m) => m.machineId === detailMachine)?.rows ?? []);
+  const openRow = detailRows.find((row) => row.name === openName);
 
-  const cardProps = (row: PluginRow): PluginCardProps => ({
-    marketCard: true,
-    layout: layout === "list" ? "row" : "cover",
-    currentAgentId: currentAgent?.agentId,
-    // The first row of that name, should two packages share one: one detail at a time.
-    detailOpen: row === openRow,
-    onDetailOpenChange: (open) => (open ? openDetail(row.name) : closeDetail()),
-    art: artOf(market, row),
-    selected: isSelected(market, row),
-    onOpenApp: (appId) => void navigate(appWindowPath(appId)),
-    row,
-    status: statusOf(row),
-    usage: usages.get(row.key) ?? null,
-    categoryTitle: categoryTitle(row.category),
-    // Outside its category's own tab, a card names its category.
-    showCategory: groupBy !== "category" || activeTab === ALL_TAB,
-    targets,
-    installed,
-    unknown,
-    failed: unreadable,
-    pending:
-      (row.module !== undefined && modulesPending) || (row.library !== undefined && libraryPending),
-    canQuickStart: currentAgent !== null,
-    isAdmin,
-    isOwner,
-    projectId,
-    busy: row.module !== undefined && pendingSpecifier === row.module.specifier,
-    progress:
-      row.module !== undefined && installProgress?.specifier === row.module.specifier
-        ? installProgress
-        : null,
-    blocked:
-      row.module !== undefined &&
-      (viewMachine === undefined ||
-        (pendingSpecifier !== null && pendingSpecifier !== row.module.specifier)),
-    onQuickStart: quickStartLibrary,
-    onDeletePlugin: null,
-    onToggleInstall: toggleInstall,
-    onUpdateOutdated: updateOutdated,
-    showPackageUpdates: viewingHere,
-    onModuleApply: (install, version) => {
-      if (row.module !== undefined && projectId !== null && viewMachine !== undefined) {
-        setPendingApply({
-          specifier: row.module.specifier,
-          name: row.name,
-          install,
-          version,
-          ...(viewingHere && version && row.module.entry?.localInstall?.updateAvailable
-            ? {
-                previousVersion: row.module.entry.localInstall.version,
-                resourceOnly: row.module.entry.localInstall.libraryOnly,
-              }
-            : {}),
-          projectId,
-          machineId: viewMachine,
-        });
-      }
-    },
-    onRepair:
-      isAdmin && row.module?.unsatisfied !== undefined
-        ? () =>
-            repair({
-              specifier: row.module!.specifier,
-              disabled: row.module!.state === "disabled",
-              reason: row.module!.unsatisfied!,
-            })
-        : null,
-    onMcpChanged: refreshAgentMcp,
-  });
+  const cardProps = (row: PluginRow): PluginCardProps => {
+    const choices = targetsFor(row);
+    const current = row.origin
+      ? (choices.find(
+          (t) =>
+            t.machine?.live && row.library && pluginComplete(row.library, installed.get(t.key)),
+        ) ??
+        choices.find((t) => t.machine?.live && t.agent.agentId === "default_agent") ??
+        choices.find((t) => t.machine?.live))
+      : choices.find((t) => !t.machine && t.agent.agentId === currentAgent?.agentId);
+    const rowMachine = row.origin?.machineId ?? viewMachine;
+    const live = row.origin?.live !== false;
+    return {
+      marketCard: true,
+      layout: layout === "list" ? "row" : "cover",
+      currentAgentId: current?.key,
+      // The first row of that name, should two packages share one: one detail at a time.
+      detailOpen: row === openRow,
+      onDetailOpenChange: (open) => (open ? openDetail(row) : closeDetail()),
+      art: artOf(market, row),
+      selected: isSelected(market, row),
+      onOpenApp: (appId) => void navigate(appWindowPath(appId)),
+      row,
+      status: statusOf(row),
+      usage: usages.get(row.key) ?? null,
+      categoryTitle: categoryTitle(row.category),
+      // Outside its category's own tab, a card names its category.
+      showCategory: groupBy !== "category" || activeTab === ALL_TAB,
+      targets: live
+        ? choices
+        : choices.map((t) => (t.machine ? { ...t, machine: { ...t.machine, live: false } } : t)),
+      installed,
+      unknown,
+      failed: unreadable,
+      pending:
+        (row.module !== undefined && modulesPending) ||
+        (row.library !== undefined && libraryPending),
+      canQuickStart: live && !!current,
+      isAdmin,
+      isOwner,
+      projectId,
+      busy: row.module !== undefined && pendingSpecifier === row.module.specifier,
+      progress:
+        row.module !== undefined && installProgress?.specifier === row.module.specifier
+          ? installProgress
+          : null,
+      blocked:
+        !live ||
+        (row.module !== undefined &&
+          (viewMachine === undefined ||
+            (pendingSpecifier !== null && pendingSpecifier !== row.module.specifier))),
+      onQuickStart: (plugin) => quickStartLibrary(plugin, current),
+      onDeletePlugin: null,
+      onToggleInstall: toggleInstall,
+      onUpdateOutdated: updateOutdated,
+      showPackageUpdates: true,
+      onModuleApply: (install, version) => {
+        if (live && row.module !== undefined && projectId !== null && rowMachine !== undefined) {
+          setPendingApply({
+            specifier: row.module.specifier,
+            name: row.name,
+            install,
+            version,
+            ...(version && row.module.entry?.localInstall?.updateAvailable
+              ? {
+                  previousVersion: row.module.entry.localInstall.version,
+                  resourceOnly: row.module.entry.localInstall.libraryOnly,
+                }
+              : {}),
+            projectId,
+            machineId: rowMachine,
+            ...(row.origin ? { catalogMachine: row.origin.machineId } : {}),
+          });
+        }
+      },
+      onRepair:
+        isAdmin && !row.origin && row.module?.unsatisfied !== undefined
+          ? () =>
+              repair({
+                specifier: row.module!.specifier,
+                disabled: row.module!.state === "disabled",
+                reason: row.module!.unsatisfied!,
+              })
+          : null,
+      onMcpChanged: refreshAgentMcp,
+    };
+  };
   const card = (row: PluginRow) => <PluginCard key={row.key} {...cardProps(row)} />;
   const tabs = [
     { key: ALL_TAB, label: S.plugins.tabAll },
@@ -967,9 +1053,9 @@ export function PluginsPage() {
                 <MachinePicker
                   aria-label={S.plugins.viewMachine}
                   choices={machineChoices}
-                  value={viewMachine ?? SELF_PENDING}
+                  value={allMachines ? "*" : (viewMachine ?? SELF_PENDING)}
                   onChange={(id) => {
-                    if (id !== SELF_PENDING) setPickedMachine(id);
+                    if (id !== SELF_PENDING) setPickedMachine(id === "*" ? null : id);
                   }}
                 />
               ) : null
@@ -1013,14 +1099,22 @@ export function PluginsPage() {
           </Notice>
         )}
         {/* Only while there is no answer to show: a failed re-read changes nothing on screen. */}
-        {remoteKey !== null &&
-          viewMachine !== undefined &&
-          remote.value === null &&
-          remote.error !== null && (
-            <Notice tone="attention" className="mt-4">
-              {S.plugins.machineUnreadable(nameOf(viewMachine), remote.error)}
-            </Notice>
-          )}
+        {offlineMarkets.length > 0 && (
+          <p className="mt-2 text-xs text-fg-muted">
+            {S.appCenter.machinesOffline(offlineMarkets.map((m) => m.label).join(", "))}{" "}
+            {offlineMarkets.some((m) => m.retryable) && (
+              <Button
+                size="sm"
+                variant="link"
+                onClick={() =>
+                  offlineMarkets.filter((m) => m.retryable).forEach((m) => m.refresh())
+                }
+              >
+                {S.common.retry}
+              </Button>
+            )}
+          </p>
+        )}
         {deployment !== null && viewingHere && deployment.restartPending && (
           <Notice tone="attention" className="mt-4">
             {S.plugins.restartPending}
@@ -1074,14 +1168,14 @@ export function PluginsPage() {
         {groupBy !== "none" && <Tabs items={tabs} active={activeTab} onChange={selectTab} />}
       </div>
 
-      {error ? (
+      {error && rows.length === 0 ? (
         <div className="mt-2 flex items-center gap-3">
           <p className={`text-sm ${toneInk.danger}`}>{error}</p>
           <Button size="sm" onClick={() => window.location.reload()}>
             {S.common.retry}
           </Button>
         </div>
-      ) : groups === null ? (
+      ) : groups === null && rows.length === 0 ? (
         // The cards' own grid, so the placeholders stand in the columns the cards will take.
         <ShowcaseGrid
           layout={layout}
@@ -1120,59 +1214,60 @@ export function PluginsPage() {
 
       {/* A server module change: what it does is said before it runs, and what it costs in
           small type under it. An install is primary; a removal is danger. */}
-      {pendingApply !== null &&
-        samePluginTarget(pendingApply, { projectId, machineId: viewMachine }) && (
-          <ConfirmModal
-            open
-            title={
-              pendingApply.previousVersion && pendingApply.version
-                ? S.plugins.updatePackageTo(pendingApply.version)
-                : pendingApply.install
-                  ? S.plugins.applyConfirmInstall(pendingApply.name)
-                  : S.plugins.applyConfirmRemove(pendingApply.name)
-            }
-            tone={pendingApply.install ? "primary" : "danger"}
-            {...(pendingApply.install ? { glyph: ICONS.download } : {})}
-            confirmLabel={
-              pendingApply.previousVersion
-                ? S.skills.updateAction
-                : pendingApply.install
-                  ? S.plugins.install
-                  : S.plugins.uninstall
-            }
-            cancelLabel={S.common.cancel}
-            busy={pendingSpecifier !== null}
-            onClose={() => setPendingApply(null)}
-            onConfirm={() => void runDeploymentInstall(pendingApply)}
-          >
-            {pendingApply.resourceOnly && pendingApply.previousVersion && pendingApply.version ? (
-              <p>
-                {S.plugins.packageUpdateBody(
-                  pendingApply.name,
-                  pendingApply.previousVersion,
-                  pendingApply.version,
-                )}
-              </p>
-            ) : (
-              <ModuleApplyBody
-                install={pendingApply.install}
-                name={
-                  pendingApply.version
-                    ? `${pendingApply.name} v${pendingApply.version}`
-                    : pendingApply.name
-                }
-              />
-            )}
-          </ConfirmModal>
-        )}
+      {pendingApply !== null && canApply(pendingApply) && (
+        <ConfirmModal
+          open
+          title={
+            pendingApply.previousVersion && pendingApply.version
+              ? S.plugins.updatePackageTo(pendingApply.version)
+              : pendingApply.install
+                ? S.plugins.applyConfirmInstall(pendingApply.name)
+                : S.plugins.applyConfirmRemove(pendingApply.name)
+          }
+          tone={pendingApply.install ? "primary" : "danger"}
+          {...(pendingApply.install ? { glyph: ICONS.download } : {})}
+          confirmLabel={
+            pendingApply.previousVersion
+              ? S.skills.updateAction
+              : pendingApply.install
+                ? S.plugins.install
+                : S.plugins.uninstall
+          }
+          cancelLabel={S.common.cancel}
+          busy={pendingSpecifier !== null}
+          onClose={() => setPendingApply(null)}
+          onConfirm={() => void runDeploymentInstall(pendingApply)}
+        >
+          {pendingApply.resourceOnly && pendingApply.previousVersion && pendingApply.version ? (
+            <p>
+              {S.plugins.packageUpdateBody(
+                pendingApply.name,
+                pendingApply.previousVersion,
+                pendingApply.version,
+              )}
+            </p>
+          ) : (
+            <ModuleApplyBody
+              install={pendingApply.install}
+              name={
+                pendingApply.version
+                  ? `${pendingApply.name} v${pendingApply.version}`
+                  : pendingApply.name
+              }
+            />
+          )}
+        </ConfirmModal>
+      )}
       {repairModal}
       {/* A library plugin's quick start on an Agent that lacks it: installing comes first, and is asked. */}
-      {pendingQuickStart !== null && currentAgent && (
+      {pendingQuickStart !== null && quickTarget && quickTarget.machine?.live !== false && (
         <ConfirmModal
           open
           title={S.plugins.quickStartInstallTitle(
-            pendingQuickStart.name,
-            agentDisplayName(currentAgent),
+            pendingQuickStart.plugin.name,
+            [agentDisplayName(quickTarget.agent), quickTarget.machine?.label]
+              .filter(Boolean)
+              .join(" · "),
           )}
           tone="primary"
           confirmLabel={S.plugins.install}
@@ -1183,9 +1278,9 @@ export function PluginsPage() {
         >
           <p>{S.plugins.quickStartAfterInstall}</p>
           {/* The install brings a stdio server: the command it runs here is said before it does. */}
-          {installNeedsConfirm(pendingQuickStart, installed.get(currentAgent.agentId)) && (
+          {installNeedsConfirm(pendingQuickStart.plugin, installed.get(quickTarget.key)) && (
             <div className="mt-3">
-              <StdioInstallBody plugin={pendingQuickStart} />
+              <StdioInstallBody plugin={pendingQuickStart.plugin} />
             </div>
           )}
         </ConfirmModal>

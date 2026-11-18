@@ -18,15 +18,27 @@ import type {
   AppCenterShortcut,
 } from "@prismshadow/penguin-server/api";
 
+import { locatedAppKey } from "../../lib/app-center-path";
+
+export interface LocatedShortcut extends AppCenterShortcut {
+  machineId?: string;
+  machineLabel?: string;
+  unavailable?: boolean;
+}
+
 /** An app's key in a layout: `<agentId>/<workbenchId>`. */
-export function appKeyOf(shortcut: { agentId: string; workbenchId: string }): string {
-  return `${shortcut.agentId}/${shortcut.workbenchId}`;
+export function appKeyOf(shortcut: {
+  agentId: string;
+  workbenchId: string;
+  machineId?: string;
+}): string {
+  return locatedAppKey(shortcut.agentId, shortcut.workbenchId, shortcut.machineId);
 }
 
 export interface GridApp {
   type: "app";
   id: string;
-  shortcut: AppCenterShortcut;
+  shortcut: LocatedShortcut;
 }
 
 export interface GridFolder {
@@ -40,7 +52,7 @@ export type GridItem = GridApp | GridFolder;
 
 /** The grid the viewer sees: the stored layout over the live shortcuts. */
 export function arrange(
-  shortcuts: readonly AppCenterShortcut[],
+  shortcuts: readonly LocatedShortcut[],
   layout: AppCenterLayout | null,
 ): GridItem[] {
   const live = new Map(shortcuts.map((shortcut) => [appKeyOf(shortcut), shortcut] as const));
@@ -83,6 +95,30 @@ export function layoutOf(grid: readonly GridItem[]): AppCenterLayout {
         : { type: "folder", id: item.id, name: item.name, apps: item.apps.map((app) => app.id) },
     ),
   };
+}
+
+/** Keep saved positions for a machine that has yet to answer when other tiles are moved. */
+export function keepUnseenApps(
+  next: AppCenterLayout,
+  previous: AppCenterLayout | null,
+  unseen: (key: string) => boolean,
+): AppCenterLayout {
+  const items = [...next.items];
+  for (const [index, item] of (previous?.items ?? []).entries()) {
+    if (item.type === "app") {
+      if (unseen(item.app)) items.splice(index, 0, item);
+      continue;
+    }
+    const missing = item.apps.filter(unseen);
+    if (!missing.length) continue;
+    const found = items.find((entry) => entry.type === "folder" && entry.id === item.id);
+    if (found?.type === "folder") {
+      for (const key of missing) found.apps.splice(item.apps.indexOf(key), 0, key);
+    } else {
+      items.splice(index, 0, { ...item, apps: missing });
+    }
+  }
+  return { v: 1, items };
 }
 
 /** Whether two grids store as the same layout (a move that changed nothing writes nothing). */

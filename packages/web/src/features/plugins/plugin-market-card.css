@@ -10,7 +10,7 @@
   background: var(--showcase-surface);
   color: var(--showcase-fg);
   font-family: var(--font-mono, monospace);
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   line-height: 1.4;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -51,7 +51,7 @@
 .market-plugin-actions small {
   display: block;
   color: var(--showcase-fg-muted);
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
 }
 .market-plugin-actions button + button {
   border-inline-start: 1px solid var(--showcase-line);

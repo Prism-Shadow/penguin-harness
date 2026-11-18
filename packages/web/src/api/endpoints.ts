@@ -1991,7 +1991,11 @@ export const uninstallAgentPlugin = (
   );
 
 /** Plugin index (available to any logged-in user): the merged index of every configured registry. */
-export const getPluginIndex = () => apiFetch<PluginIndexResponse>("/api/plugins/registry");
+export const getPluginIndex = (machineId: string | null = null) =>
+  apiFetch<PluginIndexResponse>("/api/plugins/registry", { server: machineId }).then((r) => ({
+    ...r,
+    plugins: iconsOn(r.plugins, machineId),
+  }));
 
 /** The market's curation (any logged-in user): the selected plugins, which may lead, and the art. */
 export const getPluginMarket = () => apiFetch<PluginMarketResponse>("/api/plugins/market");
@@ -2034,8 +2038,10 @@ export const themePackFileUrl = (id: string, file: string, v: string): string =>
     .join("/")}?v=${encodeURIComponent(v)}`;
 
 /** An index entry's README.md, read from the package on this server; `readme` is null when the package is not here or has none. */
-export const getPluginReadme = (name: string) =>
-  apiFetch<PluginReadmeResponse>(`/api/plugins/registry/readme?name=${encodeURIComponent(name)}`);
+export const getPluginReadme = (name: string, machineId: string | null = null) =>
+  apiFetch<PluginReadmeResponse>(`/api/plugins/registry/readme?name=${encodeURIComponent(name)}`, {
+    server: machineId,
+  });
 
 export const getAgentSkills = (projectId: string, agentId: string, machineId: string | null) =>
   apiFetch<AgentSkillsResponse>(
@@ -3009,8 +3015,13 @@ export const setWorkbenchAppCenter = (
  * The Project's App Center: the shown workbenches of its Agents on this server (local only), each
  * with its build state, and the viewer's own arrangement of them (null: the server's order).
  */
-export const getAppCenter = (projectId: string) =>
-  apiFetch<AppCenterResponse>(`/api/projects/${encodeURIComponent(projectId)}/app-center`);
+export const getAppCenter = (projectId: string, machineId: string | null = null) =>
+  apiFetch<AppCenterResponse>(`/api/projects/${encodeURIComponent(projectId)}/app-center`, {
+    server: machineId,
+  }).then((r) => ({
+    ...r,
+    shortcuts: iconsOn(r.shortcuts, machineId),
+  }));
 /** Stores the viewer's arrangement of the Project's App Center; null restores the server's order. */
 export const putAppCenterLayout = (projectId: string, layout: AppCenterLayout | null) =>
   apiFetch<AppCenterLayoutResponse>(
@@ -3069,8 +3080,10 @@ export const installPluginStream = async (
   specifier: string,
   machineId: string | null,
   onProgress: InstallProgressListener,
+  server: string | null = null,
 ): Promise<InstalledPluginsResponse> => {
   const response = await apiFetchStream(pluginsPath(projectId), {
+    server,
     method: "POST",
     body: machineId === null ? { specifier } : { specifier, machineId },
     headers: { accept: "text/event-stream" },
@@ -3138,12 +3151,13 @@ export const uninstallPlugin = (
   projectId: string,
   specifier: string,
   machineId: string | null = null,
+  server: string | null = null,
 ) =>
   apiFetch<InstalledPluginsResponse>(
     `${pluginsPath(projectId)}?specifier=${encodeURIComponent(specifier)}${
       machineId === null ? "" : `&machineId=${encodeURIComponent(machineId)}`
     }`,
-    { method: "DELETE" },
+    { method: "DELETE", server },
   );
 
 /**

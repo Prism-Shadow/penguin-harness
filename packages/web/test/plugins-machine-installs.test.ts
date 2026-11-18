@@ -22,7 +22,7 @@ import type { AgentSummary, PluginItem } from "@prismshadow/penguin-server/api";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { PluginsPage } from "../src/features/plugins/plugins-page";
-import { rememberMachineAgents } from "../src/lib/machine-cache";
+import { setMachineCatalogUser, rememberMachineAgents } from "../src/lib/machine-cache";
 import {
   AGENT_ID,
   PROJECT_ID,
@@ -63,7 +63,7 @@ async function openInstalls(machines: FakeMachine[]) {
     },
   );
   const server = agentServer(undefined, { machines, library: [CHARTS] });
-  await mountAgentApp(h(PluginsPage), { route: "/plugins", at: "/plugins" });
+  await mountAgentApp(h(PluginsPage), { route: "/plugins", at: "/plugins?plugin=charts" });
   await waitFor(() =>
     [...document.querySelectorAll("button")].some(
       (b) => b.getAttribute("aria-label") === `${en.skills.manageInstall} charts`,
@@ -90,7 +90,10 @@ const offers = (verb: string, who: string) =>
   );
 
 describe("installing a library plugin on a machine's Agent", () => {
-  beforeAll(() => setActiveStrings(en));
+  beforeAll(() => {
+    setMachineCatalogUser("admin");
+    setActiveStrings(en);
+  });
   afterAll(() => setActiveStrings(zh));
   afterEach(async () => {
     await unmountAll();

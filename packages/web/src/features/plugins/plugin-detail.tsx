@@ -677,7 +677,7 @@ function usePluginReadme(row: PluginRow, machineId: string | null): ReadmeState 
     let cancelled = false;
     const read =
       specifier !== undefined
-        ? getPluginReadme(specifier).then((res) => res.readme)
+        ? getPluginReadme(specifier, machineId).then((res) => res.readme)
         : name !== undefined
           ? getLibraryPluginReadme(name, machineId).then(
               (res) => res.readme,

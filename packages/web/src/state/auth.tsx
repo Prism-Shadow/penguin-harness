@@ -9,6 +9,8 @@
  * theme and language, and every composer mounts with the account's draft. Signing out sends what
  * is still pending first, then stops carrying edits.
  */
+import { setMachineCatalogUser } from "../lib/machine-cache";
+import { forgetCatalogs } from "../lib/catalog-storage";
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 
 import type { MeResponse, UploadLimits, UserInfo } from "@prismshadow/penguin-server/api";
@@ -123,6 +125,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // The session is gone: nothing more can reach the account, and the journal keeps what
       // was pending for this account's next sign-in.
       stopAccountSync();
+      setMachineCatalogUser(null);
+      forgetCatalogs(() => true);
       setUser(null);
     });
     return () => setUnauthorizedHandler(null);
@@ -136,6 +140,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (cancelled) return;
         // A refused read already signed the client out (the 401 handler): nothing to adopt.
         if (!(await startAccountSync(res.user.userId)) || cancelled) return;
+        setMachineCatalogUser(res.user.userId);
         setUser(res.user);
         setPreviewIsolated(res.previewIsolated);
         setDesktopMode(res.desktopMode);
@@ -190,6 +195,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const me = await api.getMe();
       if (!(await startAccountSync(me.user.userId))) return;
+      setMachineCatalogUser(me.user.userId);
       setUser(me.user);
       setPreviewIsolated(me.previewIsolated);
       setDesktopMode(me.desktopMode);
@@ -202,6 +208,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // session that does not exist would undo the 401 handler's setUser(null) in the same
       // continuation and mount the shell over a dead session.
       if (loginSessionSurvives(e) && (await startAccountSync(res.user.userId))) {
+        setMachineCatalogUser(res.user.userId);
         setUser(res.user);
       }
     }
@@ -217,6 +224,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await api.logout();
     } finally {
+      setMachineCatalogUser(null);
+      forgetCatalogs(() => true);
       setUser(null);
     }
   }, []);
@@ -225,6 +234,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(async () => {
     const res = await api.getMe();
+    setMachineCatalogUser(res.user.userId);
     setUser(res.user);
     setPreviewIsolated(res.previewIsolated);
     setDesktopMode(res.desktopMode);

@@ -76,17 +76,21 @@ export function useAppPageTab({
     void load();
     const onUpdated = (e: Event) => {
       const d = (e as CustomEvent<WorkbenchUpdatedDetail>).detail;
-      if (d.projectId === projectId && d.agentId === agentId) void load();
+      if (d.projectId === projectId && d.agentId === agentId && (d.machineId ?? null) === machineId)
+        void load();
     };
     window.addEventListener(WORKBENCH_UPDATED_EVENT, onUpdated);
     const conn = ownEvents
-      ? openUserEvents({
-          onRecord: () => undefined,
-          onServerEvent: (ev) => {
-            if (ev.type !== "workbench_updated" && ev.type !== "workbench_removed") return;
-            if (ev.projectId === projectId && ev.agentId === agentId) void load();
+      ? openUserEvents(
+          {
+            onRecord: () => undefined,
+            onServerEvent: (ev) => {
+              if (ev.type !== "workbench_updated" && ev.type !== "workbench_removed") return;
+              if (ev.projectId === projectId && ev.agentId === agentId) void load();
+            },
           },
-        })
+          machineId,
+        )
       : null;
     return () => {
       alive = false;

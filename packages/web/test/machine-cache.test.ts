@@ -14,6 +14,7 @@ import {
   CACHED_ROWS_PER_MACHINE,
   cachedMachineAgents,
   cachedMachineSessions,
+  setMachineCatalogUser,
   rememberMachineAgents,
   rememberMachineSessions,
 } from "../src/lib/machine-cache";
@@ -62,10 +63,21 @@ describe("machine cache", () => {
     localStorage.setItem("penguin.machineSessions.p:M1", "not json");
     expect(cachedMachineSessions("p", "M1")).toEqual([]);
     localStorage.setItem(
-      "penguin.machineAgents.p:M1",
+      'penguin.machineAgents.[null,"p"]:M1',
       JSON.stringify([{ name: "x" }, { agentId: "a" }]),
     );
     expect(cachedMachineAgents("p", "M1").map((a) => a.agentId)).toEqual(["a"]);
+  });
+
+  it("two accounts on the same project and machine see their own remembered Agents", () => {
+    setMachineCatalogUser("anne");
+    rememberMachineAgents("p", "M1", [agent("anne-helper")]);
+    setMachineCatalogUser("bo");
+    expect(cachedMachineAgents("p", "M1")).toEqual([]);
+    rememberMachineAgents("p", "M1", [agent("bo-helper")]);
+    setMachineCatalogUser("anne");
+    expect(cachedMachineAgents("p", "M1").map((a) => a.agentId)).toEqual(["anne-helper"]);
+    setMachineCatalogUser(null);
   });
 
   it("storage that refuses is not an error — the answer is merely not remembered", () => {

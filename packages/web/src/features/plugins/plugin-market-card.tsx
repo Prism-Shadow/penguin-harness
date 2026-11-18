@@ -22,6 +22,7 @@ interface MarketPluginCardProps {
   quick: MarketAction;
   name?: string | undefined;
   version?: string | undefined;
+  machineLabel?: string | undefined;
 }
 
 export function MarketPluginCard({
@@ -36,6 +37,7 @@ export function MarketPluginCard({
   quick,
   name,
   version,
+  machineLabel,
 }: MarketPluginCardProps) {
   return (
     <CoverCard
@@ -49,6 +51,7 @@ export function MarketPluginCard({
       description={description}
       onOpen={onOpen}
     >
+      {machineLabel && <span className="truncate text-xs text-fg-muted">{machineLabel}</span>}
       {version && <span className="market-plugin-version">v{version}</span>}
       <div className="market-plugin-actions">
         {[install, quick].map((action, index) => (
