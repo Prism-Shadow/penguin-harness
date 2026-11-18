@@ -150,72 +150,6 @@ describe("project model capabilities", () => {
     upstream?.close();
     await app?.cleanup();
   });
-  it("discovers and runs only this Project's active contributions, retaining history and bindings across disable", async () => {
-    const project = app.deps.projectConfigService;
-    const configure = (all: Record<string, {}>) =>
-      project.setPluginTables("default_project", { all, machines: {} });
-    try {
-      await configure({ [speechProvider]: {} });
-      const partial = (await (await api.get(tools)).json()) as CapabilitySettings;
-      expect(partial.available).toEqual([
-        { key: "tts", package: speechProvider, title: { en: "TTS", zh: "测试 tts" } },
-      ]);
-      expect(partial.candidates.tts.length).toBeGreaterThan(0);
-      expect(partial.candidates.image).toEqual([]);
-      const help = (await (
-        await api.post(tools + "/cli", { args: ["--help"], language: "zh" })
-      ).json()) as { stdout: string };
-      expect(help.stdout).toContain("测试 tts");
-      expect(help.stdout).not.toContain("image <prompt>");
-      const before = received.length;
-      expect((await api.post(tools + "/image/run", { text: "hidden" })).status).toBe(409);
-      expect(received).toHaveLength(before);
-      expect((await api.patch(tools, { bindings: { image: bindings.image } })).status).toBe(409);
-      const spoken = await api.post(tools + "/tts/run", { text: "scope proof" });
-      expect(spoken.status, await spoken.clone().text()).toBe(200);
-      const id = ((await spoken.json()) as CapabilityResult).id;
-      await configure({});
-      expect(((await (await api.get(tools)).json()) as CapabilitySettings).available).toEqual([]);
-      const absent = (await (await api.post(tools + "/cli", { args: ["tts", "none"] })).json()) as {
-        exitCode: number;
-        stderr: string;
-      };
-      expect(absent.exitCode).toBe(2);
-      expect(absent.stderr).toContain("No enabled plugin");
-      expect((await api.get(tools + "/runs/" + id)).status).toBe(200);
-      expect((await api.get(tools + "/usage")).status).toBe(200);
-      expect((await api.post(tools + "/tts/run", { text: "off" })).status).toBe(409);
-      await configure({ [speechProvider]: {} });
-      expect(((await (await api.get(tools)).json()) as CapabilitySettings).bindings.tts).toEqual(
-        bindings.tts,
-      );
-    } finally {
-      await configure({ [fixtureProvider]: {} });
-      received.length = 0;
-    }
-  });
-  it("lets an ordinary member start, inspect and cancel a long command without granting access to other Projects", async () => {
-    const { user, cookie } = await provisionUser(app.app, "model_tool_member");
-    const member = apiClient(app.app, cookie);
-    expect((await member.post(tools + "/cli", { args: ["list"] })).status).toBe(404);
-    expect((await api.post(base + "/members", { userId: user.userId })).ok).toBe(true);
-    const answer = await member.post(tools + "/cli", {
-      args: ["video", "wait", "--detach", "--json"],
-      sessionId,
-    });
-    expect(answer.status, await answer.clone().text()).toBe(200);
-    const { result } = (await answer.json()) as { result: CapabilityResult };
-    expect(result.status).toBe("running");
-    const info = await member.post(tools + "/cli", {
-      args: ["status", result.id, "--json"],
-      sessionId,
-    });
-    expect(((await info.json()) as { result: CapabilityResult }).result.status).toBe("running");
-    const cancel = await member.post(tools + "/cli", { args: ["cancel", result.id], sessionId });
-    expect(((await cancel.json()) as { result: CapabilityResult }).result.status).toBe("cancelled");
-    expect((await member.patch(tools, { bindings: { video: bindings.video } })).status).toBe(403);
-    received.length = 0;
-  });
   it("advertises eligible project models and rejects an incompatible assignment", async () => {
     const settings = (await (await api.get(tools)).json()) as CapabilitySettings;
     expect(settings.bindings).toEqual(bindings);
@@ -429,5 +363,71 @@ describe("project model capabilities", () => {
         voicePolish: { enabled: true, model: { provider: "custom", modelId: "gpt-6.2-sol" } },
       });
     }
+  });
+  it("discovers and runs only this Project's active contributions, retaining history and bindings across disable", async () => {
+    const project = app.deps.projectConfigService;
+    const configure = (all: Record<string, {}>) =>
+      project.setPluginTables("default_project", { all, machines: {} });
+    try {
+      await configure({ [speechProvider]: {} });
+      const partial = (await (await api.get(tools)).json()) as CapabilitySettings;
+      expect(partial.available).toEqual([
+        { key: "tts", package: speechProvider, title: { en: "TTS", zh: "测试 tts" } },
+      ]);
+      expect(partial.candidates.tts.length).toBeGreaterThan(0);
+      expect(partial.candidates.image).toEqual([]);
+      const help = (await (
+        await api.post(tools + "/cli", { args: ["--help"], language: "zh" })
+      ).json()) as { stdout: string };
+      expect(help.stdout).toContain("测试 tts");
+      expect(help.stdout).not.toContain("image <prompt>");
+      const before = received.length;
+      expect((await api.post(tools + "/image/run", { text: "hidden" })).status).toBe(409);
+      expect(received).toHaveLength(before);
+      expect((await api.patch(tools, { bindings: { image: bindings.image } })).status).toBe(409);
+      const spoken = await api.post(tools + "/tts/run", { text: "scope proof" });
+      expect(spoken.status, await spoken.clone().text()).toBe(200);
+      const id = ((await spoken.json()) as CapabilityResult).id;
+      await configure({});
+      expect(((await (await api.get(tools)).json()) as CapabilitySettings).available).toEqual([]);
+      const absent = (await (await api.post(tools + "/cli", { args: ["tts", "none"] })).json()) as {
+        exitCode: number;
+        stderr: string;
+      };
+      expect(absent.exitCode).toBe(2);
+      expect(absent.stderr).toContain("No enabled plugin");
+      expect((await api.get(tools + "/runs/" + id)).status).toBe(200);
+      expect((await api.get(tools + "/usage")).status).toBe(200);
+      expect((await api.post(tools + "/tts/run", { text: "off" })).status).toBe(409);
+      await configure({ [speechProvider]: {} });
+      expect(((await (await api.get(tools)).json()) as CapabilitySettings).bindings.tts).toEqual(
+        bindings.tts,
+      );
+    } finally {
+      await configure({ [fixtureProvider]: {} });
+      received.length = 0;
+    }
+  });
+  it("lets an ordinary member start, inspect and cancel a long command without granting access to other Projects", async () => {
+    const { user, cookie } = await provisionUser(app.app, "model_tool_member");
+    const member = apiClient(app.app, cookie);
+    expect((await member.post(tools + "/cli", { args: ["list"] })).status).toBe(404);
+    expect((await api.post(base + "/members", { userId: user.userId })).ok).toBe(true);
+    const answer = await member.post(tools + "/cli", {
+      args: ["video", "wait", "--detach", "--json"],
+      sessionId,
+    });
+    expect(answer.status, await answer.clone().text()).toBe(200);
+    const { result } = (await answer.json()) as { result: CapabilityResult };
+    expect(result.status).toBe("running");
+    const info = await member.post(tools + "/cli", {
+      args: ["status", result.id, "--json"],
+      sessionId,
+    });
+    expect(((await info.json()) as { result: CapabilityResult }).result.status).toBe("running");
+    const cancel = await member.post(tools + "/cli", { args: ["cancel", result.id], sessionId });
+    expect(((await cancel.json()) as { result: CapabilityResult }).result.status).toBe("cancelled");
+    expect((await member.patch(tools, { bindings: { video: bindings.video } })).status).toBe(403);
+    received.length = 0;
   });
 });
