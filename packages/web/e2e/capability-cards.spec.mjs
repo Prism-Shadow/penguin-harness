@@ -111,17 +111,17 @@ test("Models opens the project’s multimodal defaults, which persist across rel
   await expect(field(page, "Speech recognition")).toContainText("Not assigned");
   const other = await context.newPage();
   await other.goto(page.url());
-  await choose(page, "Speech recognition", recognition + " · custom");
-  await expect(field(other, "Speech recognition")).toContainText(recognition + " · custom");
-  await choose(page, "Speech recognition", recognition + " · deepseek");
-  await expect(field(other, "Speech recognition")).toContainText(recognition + " · deepseek");
+  await choose(page, "Speech recognition", recognition + " (custom)");
+  await expect(field(other, "Speech recognition")).toContainText(recognition + " (custom)");
+  await choose(page, "Speech recognition", recognition + " (deepseek)");
+  await expect(field(other, "Speech recognition")).toContainText(recognition + " (deepseek)");
   await expect
     .poll(() => settings(a))
     .toEqual({ s2t: { provider: "deepseek", modelId: recognition } });
   expect(await settings(b)).toEqual({});
-  await choose(page, "Speech synthesis", synthesis + " · custom");
-  await choose(page, "Text generation", "note-editor · custom");
-  await choose(page, "Image understanding", "note-editor · custom");
+  await choose(page, "Speech synthesis", synthesis + " (custom)");
+  await choose(page, "Text generation", "note-editor (custom)");
+  await choose(page, "Image understanding", "note-editor (custom)");
   const originalPrompt = (await polish(a)).defaultPrompt;
   const prompt = page.getByRole("textbox", { name: "Editing instructions" });
   await field(page, "Polish dictation").click();
@@ -129,14 +129,28 @@ test("Models opens the project’s multimodal defaults, which persist across rel
   await expect(prompt).toHaveValue(originalPrompt);
   await prompt.fill("Keep project names. Preserve all line breaks.");
   await page.getByRole("switch", { name: "Polish dictation" }).click();
-  expect((await polish(a)).prompt).toBe(originalPrompt);
+  await expect.poll(() => polish(a)).toMatchObject({ enabled: true, prompt: originalPrompt });
+  const settingsRoute = "**/api/projects/" + a + "/capabilities/tools";
+  let rejected = false;
+  await page.route(settingsRoute, async (route) => {
+    if (!rejected && route.request().method() === "PATCH") {
+      rejected = true;
+      return route.fulfill({ status: 503, json: { error: "Save failed" } });
+    }
+    return route.continue();
+  });
+  await field(page, "Save").click();
+  await expect.poll(() => rejected).toBe(true);
+  await expect(field(page, "Save")).toBeEnabled();
+  await expect(prompt).toHaveValue("Keep project names. Preserve all line breaks.");
+  await page.unroute(settingsRoute);
   await field(page, "Save").click();
   await expect
     .poll(() => polish(a))
     .toMatchObject({ enabled: true, prompt: "Keep project names. Preserve all line breaks." });
   expect((await polish(b)).prompt).toBe(originalPrompt);
   await page.reload();
-  await expect(field(page, "Speech recognition")).toContainText(recognition + " · deepseek");
+  await expect(field(page, "Speech recognition")).toContainText(recognition + " (deepseek)");
   if (process.env.VOICE_EVIDENCE)
     await page.screenshot({
       animations: "disabled",
@@ -151,7 +165,7 @@ test("Models opens the project’s multimodal defaults, which persist across rel
   await page.goBack();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.goForward();
-  await expect(field(page, "Image understanding")).toContainText("note-editor · custom");
+  await expect(field(page, "Image understanding")).toContainText("note-editor (custom)");
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await switchProject(page, "Cards Alpha", "Cards Beta");
@@ -162,7 +176,7 @@ test("Models opens the project’s multimodal defaults, which persist across rel
   await expect(page).toHaveURL(/projectSettings=multimodal/);
   await page.reload();
   await expect(field(page, "Speech recognition")).toContainText("Not assigned");
-  await choose(page, "Speech recognition", recognition + " · custom");
+  await choose(page, "Speech recognition", recognition + " (custom)");
   await expect
     .poll(() => settings(b))
     .toEqual({ s2t: { provider: "custom", modelId: recognition } });
@@ -174,7 +188,7 @@ test("Models opens the project’s multimodal defaults, which persist across rel
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload();
   await open(page);
-  await expect(field(page, "语音识别")).toContainText(recognition + " · deepseek");
+  await expect(field(page, "语音识别")).toContainText(recognition + " (deepseek)");
   if (process.env.VOICE_EVIDENCE)
     await page.screenshot({
       animations: "disabled",
@@ -205,7 +219,7 @@ test("Models opens the project’s multimodal defaults, which persist across rel
     await memberPage.goto(base + "/models");
     await open(memberPage);
     await expect(field(memberPage, "Speech recognition")).toContainText(
-      recognition + " · deepseek",
+      recognition + " (deepseek)",
     );
     await expect(field(memberPage, "Speech recognition")).toBeDisabled();
     expect(

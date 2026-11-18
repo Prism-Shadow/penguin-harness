@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ICONS, PagedDialog, guardLeave, useGuardedClose } from "@prismshadow/penguin-ui";
 import { S } from "../../../lib/strings";
-import { useProject } from "../../../state/project";
+import { projectDisplayName, useProject } from "../../../state/project";
 import { useAuth } from "../../../state/auth";
 import { PROJECT_SETTINGS_SCOPE } from "./shared";
 import { GeneralSection } from "./general-section";
@@ -97,7 +97,7 @@ export function ProjectSettingsBody({
       {active.key === "multimodal" && (
         <MultimodalModelsSection
           projectId={projectId}
-          projectName={currentProject.name ?? projectId}
+          projectName={projectDisplayName(currentProject)}
           owner={isOwner}
         />
       )}

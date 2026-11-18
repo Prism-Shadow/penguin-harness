@@ -16,7 +16,7 @@ import { useProjectCapabilities } from "../../../state/use-project-capabilities"
 import { DictationPolishSettings } from "./dictation-polish-settings";
 import { PROJECT_SETTINGS_SCOPE } from "./shared";
 
-const labelFor = (model: ModelRefDto) => `${model.modelId} · ${model.provider}`;
+const labelFor = (model: ModelRefDto) => `${model.modelId} (${model.provider})`;
 
 export function MultimodalModelsSection({
   projectId,
@@ -32,17 +32,17 @@ export function MultimodalModelsSection({
   const [picking, setPicking] = useState<ToolModelKey | null>(null);
   const [query, setQuery] = useState("");
   useSaving(busy, PROJECT_SETTINGS_SCOPE);
-  if (error)
-    return (
-      <Notice tone="attention">
-        {error}
-        <Button size="xs" onClick={reload}>
-          {S.common.retry}
-        </Button>
-      </Notice>
-    );
-  if (!settings) return <Spinner label={S.common.loading} />;
-  if (!settings.available.length) return <p className="text-sm text-fg-muted">{S.voice.noTools}</p>;
+  const loadError = error && (
+    <Notice tone="attention">
+      {error}
+      <Button size="xs" onClick={reload}>
+        {S.common.retry}
+      </Button>
+    </Notice>
+  );
+  if (!settings) return loadError || <Spinner label={S.common.loading} />;
+  if (!settings.available.length)
+    return loadError || <p className="text-sm text-fg-muted">{S.voice.noTools}</p>;
   const active = settings.available.find(({ key }) => key === picking);
   const options = picking
     ? settings.candidates[picking].filter((model) =>
@@ -51,8 +51,9 @@ export function MultimodalModelsSection({
     : [];
   return (
     <div className="space-y-4">
+      {loadError}
       <p className="text-sm text-fg-muted">{S.voice.modelHelp(projectName)}</p>
-      <div className="grid gap-x-5 gap-y-3 min-[52rem]:grid-cols-2">
+      <div className="grid gap-x-4 gap-y-3 min-[52rem]:grid-cols-2">
         {settings.available.map(({ key, title }) => {
           const current = settings.bindings[key];
           const available = settings.candidates[key].length > 0;
@@ -100,7 +101,7 @@ export function MultimodalModelsSection({
           items={query.trim() ? options : [null, ...options]}
           query={query}
           onQueryChange={setQuery}
-          searchPlaceholder={S.models.searchPlaceholder}
+          searchPlaceholder={S.voice.searchModels}
           emptyText={S.models.noSearchResults}
           itemKey={(model) => JSON.stringify(model ? [model.provider, model.modelId] : null)}
           isCurrent={(model) =>

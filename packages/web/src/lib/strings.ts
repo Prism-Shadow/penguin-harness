@@ -27,11 +27,12 @@ export const zh = {
     models: "默认多模态模型",
     modelHelp: (project: string) => `「${project}」中的聊天和 CLI 共用这些模型。`,
     unbound: "未指定",
-    noModels: "没有可选模型",
+    noModels: "没有兼容的模型",
+    searchModels: "按模型 ID 或厂商搜索",
     noTools: "当前服务未启用多模态工具。",
     polish: "润色语音输入",
     enableIn: (project: string) => `在「${project}」中启用`,
-    polishWith: (model: string, provider: string) => `转写后使用 ${model} · ${provider} 润色。`,
+    polishWith: (model: string, provider: string) => `转写后使用 ${model}（${provider}）润色。`,
     prompt: "润色提示词",
     restorePrompt: "恢复默认提示词",
     polishOn: "已开启",
@@ -2799,8 +2800,6 @@ export const zh = {
     /** Card's right-edge figure: what this model has spent over its whole life. The unit stays English and is abbreviated the way the rest of the page abbreviates it — `tok/s`, `/M tok`. */
     usedTokens: (v: string) => `${v} toks`,
     usedTokensTitle: "该模型累计消耗的 Token（不限时间范围）",
-    setVisionModel: "设为视觉代理模型",
-    visionModelHint: "供不支持图片的模型在 read_file 读图时代读",
     priceUnitShort: "/M tok",
     testConnection: "测试连通性",
     testing: "测试中…",
@@ -3009,9 +3008,6 @@ export const zh = {
     } as Record<string, string | undefined>,
     envBaseUrlNote: (defaultBaseUrl: string, envBaseUrlKey: string): string =>
       `请求发往 ${defaultBaseUrl}；环境里设置了 ${envBaseUrlKey} 时改发往该地址`,
-    confirmVisionModelTitle: "设为视觉代理模型",
-    confirmVisionModel: (name: string): string =>
-      `确定把「${name}」设为视觉代理模型？不支持图片的模型用 read_file 读图时将由它代读。`,
     /** The add-model dialog's footer verb (the settings dialog's is the common Save). */
     addAction: "添加",
     /** A save that changes a promoted row's price or identity: the server then drops the promotion. */

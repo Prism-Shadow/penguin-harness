@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ToolModelSettings, ToolModelSettingsPatch } from "@prismshadow/penguin-server/api";
 import { toastError } from "@prismshadow/penguin-ui";
+import { ApiError } from "../api/client";
 import { getCapabilities, updateCapabilities } from "../api/project-capabilities";
 import {
   serverPluginsChanged,
@@ -38,7 +39,10 @@ export function useProjectCapabilities(
         return next;
       } catch (reason) {
         if (!signal.aborted && active.current === key) {
-          setSnapshot(null);
+          // A transient refresh failure must not discard unsaved instructions; a project we
+          // no longer have access to must clear its previous response.
+          if (reason instanceof ApiError && [401, 403, 404].includes(reason.status))
+            setSnapshot(null);
           setFailure({ key, message: apiErrorText(reason) });
         }
         return null;

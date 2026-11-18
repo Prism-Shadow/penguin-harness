@@ -20,11 +20,12 @@ export const en: Strings = {
     modelHelp: (project: string) => `Chat and the CLI in ${project} use these models.`,
     unbound: "Not assigned",
     noModels: "No compatible models",
+    searchModels: "Search by model ID or provider",
     noTools: "Multimodal tools are disabled on this server.",
     polish: "Polish dictation",
     enableIn: (project: string) => `Enable in ${project}`,
     polishWith: (model: string, provider: string) =>
-      `Edit transcripts with ${model} · ${provider}.`,
+      `Edit transcripts with ${model} (${provider}).`,
     prompt: "Editing instructions",
     restorePrompt: "Restore default instructions",
     polishOn: "On",
@@ -2611,8 +2612,6 @@ export const en: Strings = {
     visionModelBadge: "Proxy vision",
     usedTokens: (v: string) => `${v} toks`,
     usedTokensTitle: "Tokens this model has used, all time",
-    setVisionModel: "Set as proxy vision model",
-    visionModelHint: "Describes images for models without vision when they read one with read_file",
     priceUnitShort: "/M tok",
     testConnection: "Test connection",
     testing: "Testing…",
@@ -2785,9 +2784,6 @@ export const en: Strings = {
     },
     envBaseUrlNote: (defaultBaseUrl: string, envBaseUrlKey: string): string =>
       `Requests go to ${defaultBaseUrl}, or to ${envBaseUrlKey} when it is set`,
-    confirmVisionModelTitle: "Set as proxy vision model",
-    confirmVisionModel: (name: string): string =>
-      `Make "${name}" the proxy vision model? Models without vision will read images through it when they call read_file.`,
     addAction: "Add",
     confirmCancelPromotionTitle: "Cancel promotion",
     confirmCancelPromotion: (name: string, pct: number): string =>

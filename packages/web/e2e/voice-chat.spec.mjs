@@ -163,11 +163,11 @@ for (const lang of ["zh", "en"]) {
         .getByRole("button", { name: label, exact: true })
         .click();
     };
-    await select("deepseek-asr · deepseek");
+    await select("deepseek-asr (deepseek)");
     await expect.poll(selected).toBe("deepseek");
     await select(lang === "zh" ? "未指定" : "Not assigned");
     await expect.poll(selected).toBeUndefined();
-    await select("deepseek-asr · custom");
+    await select("deepseek-asr (custom)");
     await expect.poll(selected).toBe("custom");
     if (process.env.VOICE_EVIDENCE)
       await page.screenshot({ path: process.env.VOICE_EVIDENCE + "/" + lang + "-models.png" });
@@ -321,7 +321,7 @@ test("speech uses the project's real MMSP routes and records each selected model
       await page
         .getByRole("dialog")
         .last()
-        .getByRole("button", { name: model + " · custom", exact: true })
+        .getByRole("button", { name: model + " (custom)", exact: true })
         .click();
     }
     const expectedBindings = Object.fromEntries(

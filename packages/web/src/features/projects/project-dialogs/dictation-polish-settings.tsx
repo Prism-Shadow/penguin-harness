@@ -5,6 +5,7 @@ import {
   Switch,
   Textarea,
   useFormDraft,
+  useSaving,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../../lib/strings";
@@ -24,21 +25,14 @@ export function DictationPolishSettings({
   onSave: (patch: ToolModelSettingsPatch) => Promise<boolean>;
 }) {
   const { enabled, prompt, defaultPrompt } = settings.voicePolish;
-  const form = useFormDraft({ enabled, prompt }, { scope: PROJECT_SETTINGS_SCOPE });
+  const form = useFormDraft(prompt, { scope: PROJECT_SETTINGS_SCOPE });
+  useSaving(busy, PROJECT_SETTINGS_SCOPE);
   const textModel = settings.bindings.t2t;
-  const restore = () => form.patch({ prompt: defaultPrompt });
+  const restore = () => form.setDraft(defaultPrompt);
   const submit = async () => {
-    const next = form.draft.prompt.trim();
-    const saved = await onSave({
-      voicePolish: {
-        ...(form.draft.enabled !== enabled ? { enabled: form.draft.enabled } : {}),
-        ...(form.draft.prompt !== prompt
-          ? { prompt: next && next !== defaultPrompt ? next : null }
-          : {}),
-      },
-    });
-    if (saved) {
-      form.adopt({ enabled: form.draft.enabled, prompt: next || defaultPrompt });
+    const next = form.draft.trim();
+    if (await onSave({ voicePolish: { prompt: next && next !== defaultPrompt ? next : null } })) {
+      form.adopt(next || defaultPrompt);
       toastSuccess(S.common.saved);
     }
   };
@@ -59,27 +53,27 @@ export function DictationPolishSettings({
             </p>
           </div>
           <Switch
-            checked={form.draft.enabled}
+            checked={enabled}
             disabled={!owner || busy || !textModel}
             aria-label={S.voice.polish}
-            onChange={(value) => form.patch({ enabled: value })}
+            onChange={(value) => void onSave({ voicePolish: { enabled: value } })}
           />
         </div>
         <Textarea
           label={S.voice.prompt}
           rows={8}
           maxLength={8000}
-          value={form.draft.prompt}
+          value={form.draft}
           readOnly={!owner}
           disabled={busy}
-          onChange={(e) => form.patch({ prompt: e.target.value })}
+          onChange={(e) => form.setDraft(e.target.value)}
         />
         {owner && (
           <div className="flex flex-wrap items-center justify-between gap-2">
             <Button
               size="sm"
               variant="ghost"
-              disabled={busy || form.draft.prompt === defaultPrompt}
+              disabled={busy || form.draft === defaultPrompt}
               onClick={restore}
             >
               {S.voice.restorePrompt}
