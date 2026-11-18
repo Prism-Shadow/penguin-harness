@@ -507,7 +507,7 @@ PenguinHarness 升级可能往内置目录里增加预置模型。只要目录�
 
 OpenAI 兼容网关分组（openrouter / fireworks / siliconflow / atlascloud / runcrate / tokendance / qwen-pay-as-you-go / qwen-token-plan）走的是 MMSP 通用的 OpenAI 协议客户端，对应变量是 `OPENAI_API_KEY`；其中没有 key 的条目会被拒绝，而不是把你的 OpenAI key 发过去。custom 和自建分组里自身或分组带 base URL 的条目同样如此，除非那正是其协议客户端自己的缺省端点；任何一层都不带时，读取其协议客户端的那对变量（见[设置 API key](#设置-api-key)）。vLLM 条目带 base URL 而没有 key 时则不带 key 发出请求，因为 vLLM 服务器只有用 key 启动时才校验 key。ModelScope 的凭据是 api-inference token，三条预置都固定使用通用 Responses 协议；没有 key 的 ModelScope 条目同样会被拒绝。
 
-- OpenRouter 分组的预置模型，以及你添加到该分组的任何模型，都使用 Responses 客户端（`client_type = "openai-responses"`），因为 OpenRouter 在同一个 base URL 上为它转售的每一个模型提供 Responses API。
+- OpenRouter 对话模型 → `openai-responses` · `google/gemini-nano-banana-2.1` → `openai-image`
 - 其他网关的预置模型使用 Chat Completions 客户端（`client_type = "openai-chat"`）。
 - ModelScope 像 Penguin Go 一样是聚合网关，但三条预置都使用 MMSP 通用 Responses 客户端（`client_type = "openai-responses"`）。
 - 无论哪种方式，网关都带 base URL，所以凭据规则完全一致。
@@ -557,6 +557,7 @@ MiniMax 的官方客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模
 - `deepseek-flash` / `deepseek-v4-pro`
 - `MiniMax-M3.1-Flash` / `MiniMax-M3`
 - `gemini-4-argon` / `gemini-3.8-flash`
+- `gemini-nano-banana-2.1` (Google) / `google/gemini-nano-banana-2.1` (OpenRouter)
 - `claude-opus-5-5` / `claude-sonnet-5-5` / `claude-haiku-5-5` / `claude-fable-5-1`
 - `claude-opus-5` / `claude-opus-4-8` / `claude-sonnet-5`
 - `gpt-6.1-sol` / `gpt-6-astra` / `gpt-6-luna` / `gpt-5.6` / `gpt-5.5`

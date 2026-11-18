@@ -56,7 +56,7 @@
     "@penguinharness/use-firecrawl": "workspace:*",
     "@penguinharness/use-claude-code": "workspace:*",
     "@prismshadow/a2ui": "workspace:*",
-    "@prismshadow/mmsp": "^0.5.10",
+    "@prismshadow/mmsp": "^0.5.11",
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-server": "workspace:*",
     "commander": "^13.0.0",

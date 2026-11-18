@@ -57,7 +57,7 @@
   "dependencies": {
     "@modelcontextprotocol/client": "^2.3.1",
     "@prismshadow/amsp": "workspace:*",
-    "@prismshadow/mmsp": "^0.5.10",
+    "@prismshadow/mmsp": "^0.5.11",
     "arktype": "^2.2.3",
     "smol-toml": "^1.9.1",
     "yaml": "^2.5.0"

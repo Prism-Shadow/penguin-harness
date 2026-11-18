@@ -6,7 +6,10 @@
  * and the installed MMSP, through OpenAI, OpenRouter and OpenCode Go.
  * Given OpenCode Go's group key, Gemini 4 Argon Contributor streams a tool call through
  * Go's generateContent endpoint with the group key and conversation header, never Google's API.
+ * Given a Nano Banana preset, asking for an image reaches its provider's image-capable
+ * endpoint and returns the original image bytes through MMSP.
  */
+import { AutoLLMClient } from "@prismshadow/mmsp";
 import { describe, expect, it, vi } from "vitest";
 import { CLIENT_CREDENTIALS } from "@prismshadow/mmsp/credentials";
 import { stubFetch } from "./fixtures/fetch.js";
@@ -286,6 +289,68 @@ describe("model-catalog", () => {
     }
   });
 
+  it.each([
+    ["google", "gemini-nano-banana-2.1"],
+    ["openrouter", "google/gemini-nano-banana-2.1"],
+  ])("the %s Nano Banana preset returns the requested image", async (provider, model) => {
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aN4sAAAAASUVORK5CYII=",
+      "base64",
+    );
+    const fake = stubFetch((call) => {
+      const req = JSON.parse(call.body);
+      expect(req.model).toBe(model);
+      if (provider === "openrouter") {
+        expect(call.url).toBe("https://openrouter.ai/api/v1/images/generations");
+        expect(req).toMatchObject({ prompt: "Draw a dot", size: "1024x1024" });
+        return Response.json({
+          data: [{ b64_json: png.toString("base64"), media_type: "image/png" }],
+        });
+      }
+      expect(new URL(call.url).pathname).toMatch(/\/interactions$/);
+      expect(req.response_format).toContainEqual({
+        type: "image",
+        image_size: "1K",
+        aspect_ratio: "1:1",
+      });
+      const events = [
+        { event_type: "step.start", index: 0, step: { type: "model_output" } },
+        {
+          event_type: "step.delta",
+          index: 0,
+          delta: { type: "image", mime_type: "image/png", data: png.toString("base64") },
+        },
+        { event_type: "step.stop", index: 0 },
+        { event_type: "interaction.completed", interaction: { status: "completed" } },
+      ];
+      return new Response(
+        events
+          .map((e) => "event: " + e.event_type + "\ndata: " + JSON.stringify(e) + "\n\n")
+          .join(""),
+        { headers: { "content-type": "text/event-stream" } },
+      );
+    });
+    try {
+      const entry = presetModelEntries().find(
+        (row) => row.provider === provider && row.model_id === model,
+      )!;
+      const connection = storedConnection({ ...entry, api_key: "test-key" });
+      const client = new AutoLLMClient({ model: entry.model_id, ...connection });
+      const images: Uint8Array[] = [];
+      for await (const event of client.streamingResponse({
+        messages: [{ role: "user", content_items: [{ type: "text.done", text: "Draw a dot" }] }],
+        config: { image_config: { resolution: "1K", aspect_ratio: "1:1" } },
+      })) {
+        for (const item of event.content_items)
+          if (item.type === "inline_data.done") images.push(item.data);
+      }
+      expect(fake.calls).toHaveLength(1);
+      expect(images.map((bytes) => Buffer.from(bytes))).toEqual([png]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("the app URL a minted key is stamped with is the same one attribution headers carry", () => {
     expect(attributionHeaders("https://tokendance.space/gateway/v1")).toEqual({
       "X-App-URL": APP_URL,
@@ -305,6 +370,11 @@ describe("model-catalog", () => {
       "Qwen/Qwen3.8-Flash-Next",
     ]);
     for (const m of MODEL_CATALOG) {
+      if (m.capability) {
+        // Media and web tools do not have a conversational context limit or a chat tariff.
+        expect(m.pricing).toBeUndefined();
+        continue;
+      }
       if (m.pricing === undefined) {
         expect(UNPRICED.has(m.modelId), m.modelId).toBe(true);
       } else if (

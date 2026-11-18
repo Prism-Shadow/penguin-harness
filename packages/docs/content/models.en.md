@@ -508,7 +508,7 @@ The table below lists the built-in groups and, for the seven first-party groups,
 
 The OpenAI-compatible gateway groups (openrouter / fireworks / siliconflow / atlascloud / runcrate / tokendance / qwen-pay-as-you-go / qwen-token-plan) go through MMSP's generic OpenAI-protocol clients, whose variable is `OPENAI_API_KEY`; a keyless row there is refused rather than sent your OpenAI key. The same holds for a custom or user-created row with a base URL on itself or its group, unless that is its protocol client's own default endpoint; with none anywhere, it reads its protocol client's pair (see [Set API keys](#set-api-keys)). A vLLM row with a base URL and no key is sent none instead, since a vLLM server checks no key unless it was started with one. ModelScope's credential is an api-inference token, and all three presets pin the generic Responses protocol; a keyless ModelScope row is refused the same way.
 
-- The OpenRouter group uses the Responses client (`client_type = "openai-responses"`) for its presets and for any model you add to it, because OpenRouter serves the Responses API at that same base URL for every model it resells.
+- OpenRouter chat models → `openai-responses` · `google/gemini-nano-banana-2.1` → `openai-image`
 - The other gateway presets use the Chat Completions client (`client_type = "openai-chat"`).
 - ModelScope is an aggregate gateway like Penguin Go, but all three of its presets use MMSP's generic Responses client (`client_type = "openai-responses"`).
 - Either way every gateway carries a base URL, so the credential rule is the same for all of them.
@@ -558,6 +558,7 @@ The preset catalog includes, among others:
 - `deepseek-flash` / `deepseek-v4-pro`
 - `MiniMax-M3.1-Flash` / `MiniMax-M3`
 - `gemini-4-argon` / `gemini-3.8-flash`
+- `gemini-nano-banana-2.1` (Google) / `google/gemini-nano-banana-2.1` (OpenRouter)
 - `claude-opus-5-5` / `claude-sonnet-5-5` / `claude-haiku-5-5` / `claude-fable-5-1`
 - `claude-opus-5` / `claude-opus-4-8` / `claude-sonnet-5`
 - `gpt-6.1-sol` / `gpt-6-astra` / `gpt-6-luna` / `gpt-5.6` / `gpt-5.5`

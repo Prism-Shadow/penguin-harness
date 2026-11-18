@@ -78,9 +78,8 @@
  * an unpinned gateway id would be placed by its own spelling — `deepseek-ai/DeepSeek-V4` would
  * reach DeepSeek's official client aimed at a gateway, and `openai/gpt-5.6-sol` would throw
  * outright (no known family begins with "openai/"). Gateway protocols are pinned:
- * - `openai-responses` for every OpenRouter row: OpenRouter serves the Responses API for
- *   every upstream at the same base URL the rows already carry, and the group pins the same
- *   protocol so a user-added entry inherits it;
+ * - `openai-responses` for OpenRouter chat and hand-added models, with `openai-image`
+ *   pinned on its dedicated image endpoint;
  * - `openai-chat` for the other OpenAI-compatible gateway rows (the generic Chat Completions
  *   client — the bare "openai" spelling is a deprecated upstream alias, see
  *   canonicalClientType);
@@ -250,6 +249,8 @@ export interface ModelProviderInfo {
 
 /** A single built-in model's catalog entry (`modelId` is the upstream id; paired with `provider` it forms the catalog's unique key). */
 export interface ModelCatalogEntry {
+  /** Dedicated tool model, selected through project capabilities. */
+  capability?: "search" | "fetch" | "image" | "video" | "tts" | "stt";
   modelId: string;
   displayName: string;
   /** Provider id (one of MODEL_PROVIDERS). */
@@ -1111,6 +1112,16 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: usd(0.022, 0.66, 1.98),
     supportsVision: false,
     clientType: "openai-responses",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
+    // MMSP exposes the image endpoint as text-to-image, without a conversational context limit.
+    modelId: "google/gemini-nano-banana-2.1",
+    displayName: "Gemini Nano Banana 2.1",
+    provider: "openrouter",
+    capability: "image",
+    supportsVision: false,
+    clientType: "openai-image",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -3167,6 +3178,15 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // -- Google Gemini (official USD pricing). Gemini 3.7 Flash left the group on 2026-10-10:
   // Google retires the id and reroutes it to 3.8 Flash, at the same price. --
   {
+    // The provider bills image output and thoughts at different rates.
+    modelId: "gemini-nano-banana-2.1",
+    displayName: "Gemini Nano Banana 2.1",
+    provider: "google",
+    capability: "image",
+    contextWindow: 131072,
+    supportsVision: true,
+  },
+  {
     // ai.google.dev/gemini-api/docs/pricing#gemini-4-argon (2026-10-14): standard list
     // prices with a 50% introductory discount through 2026-11-30. Only implicit caching
     // is supported; cache_write is the ordinary input price.
@@ -3719,7 +3739,7 @@ export function providerInfo(providerId: string): ModelProviderInfo | undefined 
  * undefined when the group pins none — an unknown id (a user-defined group) included.
  *
  * Six groups pin: vLLM, whose models are served by the user's own vLLM adapter,
- * OpenRouter, whose models all speak the Responses API OpenRouter serves at its preset base
+ * OpenRouter, whose chat models speak the Responses API at its preset base
  * URL, and TokenDance, SiliconFlow, Atlas Cloud and Runcrate, whose models all speak Chat
  * Completions.
  *
