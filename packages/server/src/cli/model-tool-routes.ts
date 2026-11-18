@@ -15,6 +15,7 @@ import {
   settingsPatch,
 } from "../services/capability-input.js";
 import {
+  dto,
   canonicalToolSettings,
   legacyToolSettings,
   capabilitySettings,
@@ -74,7 +75,21 @@ export function capabilityRoutes(deps: CapabilityDependencies) {
     deps.access.requireProjectOwner(c.var.user.userId, project);
     const patch = settingsPatch(await readJson(c));
     const available = await deps.capabilities.list(project);
-    for (const key of Object.keys(patch.bindings ?? {})) {
+    // Older Web Apps offered "use the default chat model" for editing. Resolve that choice
+    // once to the project text tool, so a later change of chat model can't change the tool.
+    if (
+      !canonical &&
+      patch.voicePolish?.enabled &&
+      patch.bindings?.t2t === undefined &&
+      !patch.voicePolish.model
+    ) {
+      const config = await deps.projects.loadConfig(project);
+      if ((patch.voicePolish.model === null || !config.tools?.t2t) && config.default_model)
+        patch.voicePolish.model = dto(config.default_model);
+    }
+    const requested = Object.keys(patch.bindings ?? {});
+    if (patch.voicePolish?.model || patch.voicePolish?.enabled) requested.push("t2t");
+    for (const key of requested) {
       if (!available.some((c) => c.key === key)) throw unavailable(key);
     }
     await deps.projects.patchCapabilitySettings(project, patch);

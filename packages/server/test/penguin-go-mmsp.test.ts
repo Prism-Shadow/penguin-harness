@@ -276,7 +276,7 @@ describe("Penguin Go stored projects", () => {
     });
     expect(rows.slice(2)).toEqual(original.models.slice(2));
     expect(raw.default_model).toEqual(original.default_model);
-    expect(raw.vision_model).toEqual(original.vision_model);
+    expect(raw.tools).toMatchObject({ i2t: original.vision_model });
     expect(raw.account_note).toBe(original.account_note);
     expect(await t.deps.projectConfigService.getGroupApiKey(id, "penguin-go")).toBe(
       "saved-device-key",
@@ -296,7 +296,8 @@ describe("Penguin Go stored projects", () => {
       throw new Error("Migration must not access the network");
     });
     for (const id of ids) {
-      await t.deps.projectConfigService.writeRaw(id, oldConfig(`ep_auto_${id}`));
+      const { vision_model, ...old } = oldConfig(`ep_auto_${id}`);
+      await t.deps.projectConfigService.writeRaw(id, { ...old, tools: { i2t: vision_model } });
       // The SDK alone has no catalog to migrate with: the old route stays as written.
       const file = projectConfigPath(t.root, id);
       const written = await fs.readFile(file, "utf8");

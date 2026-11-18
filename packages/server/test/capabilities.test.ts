@@ -9,6 +9,7 @@ import type {
   CapabilityArtifact,
   CapabilityResult,
   CapabilitySettings,
+  ToolModelSettings,
   ProjectCreateResponse,
   SessionCreateResponse,
 } from "../src/api/types.js";
@@ -125,7 +126,7 @@ describe("project model capabilities", () => {
     if (!address || typeof address === "string") throw new Error("listener missing");
     endpoint = "http://127.0.0.1:" + address.port + "/v1";
     const host = new PluginHost();
-    addFixture(host, fixtureProvider, "TestMediaProvider", Object.keys(ids));
+    addFixture(host, fixtureProvider, "TestMediaProvider", [...Object.keys(ids), "t2t", "i2t"]);
     addFixture(host, speechProvider, "TestSpeechProvider", ["tts"]);
     app = await createTestApp({ plugins: host });
     await app.deps.projectConfigService.setPluginTables("default_project", {
@@ -275,6 +276,56 @@ describe("project model capabilities", () => {
     const status = await api.get(tools + "/runs/" + start.id);
     expect(((await status.json()) as CapabilityResult).artifacts).toEqual([]);
   });
+  it("shares the eight project bindings with image reading and transcript editing without changing the chat model", async () => {
+    const chosen = { provider: "custom", modelId: "gpt-6.2-sol" };
+    const read = async () => (await (await api.get(tools + "/tools")).json()) as ToolModelSettings;
+    const initial = await read();
+    expect(Object.keys(initial.candidates).sort()).toEqual([
+      "fetch",
+      "i2t",
+      "s2t",
+      "search",
+      "t2i",
+      "t2s",
+      "t2t",
+      "t2v",
+    ]);
+    expect(initial.bindings.t2t).toEqual(chosen);
+    expect(initial.bindings.t2s).toEqual(bindings.tts);
+    expect(initial.candidates.i2t).toContainEqual(chosen);
+    expect(initial.candidates.t2t).not.toContainEqual(bindings.stt);
+    const update = await api.patch(tools + "/tools", { bindings: { i2t: chosen } });
+    expect(update.status, await update.clone().text()).toBe(200);
+    expect(await (await api.get(base + "/models")).json()).toMatchObject({
+      visionModel: chosen,
+      defaultModel: chosen,
+    });
+    const text = await api.post(tools + "/t2t/run", { text: "Rewrite this", sessionId });
+    expect(text.status, await text.clone().text()).toBe(200);
+    const image = { data: "iVBORw0KGgo=", mimeType: "image/png" };
+    const caption = await api.post(tools + "/i2t/run", { image, text: "What is here?", sessionId });
+    expect(caption.status, await caption.clone().text()).toBe(200);
+    expect((await caption.json()) as CapabilityResult).toMatchObject({
+      model: chosen,
+      text: "Edited words",
+    });
+    expect(received.at(-1)).toMatchObject({
+      messages: [{ content_items: [{ text: "What is here?" }, { data: image.data }] }],
+    });
+    const cleared = await api.patch(tools + "/tools", { bindings: { i2t: null, t2t: null } });
+    expect(cleared.status).toBe(200);
+    expect((await read()).voicePolish.enabled).toBe(false);
+    expect((await api.post(tools + "/i2t/run", { image })).status).toBe(409);
+    expect(await (await api.get(base + "/models")).json()).not.toHaveProperty("visionModel");
+    expect(
+      (
+        await api.patch(tools + "/tools", {
+          bindings: { t2t: chosen },
+          voicePolish: { enabled: true },
+        })
+      ).status,
+    ).toBe(200);
+  });
   it("keeps one binding per capability per Project, including simultaneous saves", async () => {
     const created = await api.post("/api/projects", {
       projectId: "scope_test",
@@ -333,6 +384,38 @@ describe("project model capabilities", () => {
       expect((await api.get(otherPath + "/runs/" + run.id)).status).toBe(404);
       expect((await api.get(otherPath + "/artifacts/" + run.artifacts[0]!.id)).status).toBe(404);
     }
+  });
+  it("uses the Project's optional instructions only for voice polishing and restores the built-in prompt", async () => {
+    const settings = async (project: string = tools) =>
+      (await (await api.get(project + "/tools")).json()) as ToolModelSettings;
+    const defaults = (await settings()).voicePolish;
+    expect(defaults.prompt).toBe(defaults.defaultPrompt);
+    const custom = "Keep the speaker's punctuation.\n保留中英文混排。";
+    expect((await api.patch(tools + "/tools", { voicePolish: { prompt: custom } })).status).toBe(
+      200,
+    );
+    expect((await settings()).voicePolish.prompt).toBe(custom);
+    expect((await settings("/api/projects/scope_test/capabilities")).voicePolish.prompt).toBe(
+      defaults.defaultPrompt,
+    );
+    const edited = await api.post(base + "/voice-polish", { text: "raw transcript" });
+    expect(edited.status, await edited.clone().text()).toBe(200);
+    expect(received.at(-1)?.config.system_prompt).toBe(custom);
+    await api.post(tools + "/t2t/run", { text: "ordinary text" });
+    expect(received.at(-1)?.config.system_prompt).toBeUndefined();
+    expect(
+      (await api.patch(tools + "/tools", { voicePolish: { prompt: "x".repeat(8001) } })).status,
+    ).toBe(400);
+    expect((await settings()).voicePolish.prompt).toBe(custom);
+    expect((await api.patch(tools + "/tools", { voicePolish: { prompt: null } })).status).toBe(200);
+    expect((await settings()).voicePolish.prompt).toBe(defaults.defaultPrompt);
+    await api.post(base + "/voice-polish", { text: "raw transcript" });
+    expect(received.at(-1)?.config.system_prompt).toBe(defaults.defaultPrompt);
+    await api.patch(tools + "/tools", { voicePolish: { enabled: false } });
+    const before = received.length;
+    expect((await api.post(base + "/voice-polish", { text: "raw transcript" })).status).toBe(409);
+    expect(received).toHaveLength(before);
+    await api.patch(tools + "/tools", { voicePolish: { enabled: true } });
   });
   it("follows a model rekey and clears bindings whose models are subsequently deleted", async () => {
     const original = ["gpt-6.2-sol", ...Object.values(ids)].map((modelId) => ({
