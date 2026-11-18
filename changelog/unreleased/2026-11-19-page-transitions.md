@@ -1,8 +1,9 @@
 # Smoother navigation between pages
 
 - **Date:** 2026-11-19
-- **Type:** improvement
+- **Type:** feature
 - **Scope:** `web`, `ui`
+- **PR:** [#1610](https://github.com/Prism-Shadow/penguin-harness/pull/1610)
 
 [中文版](2026-11-19-page-transitions.zh.md)
 
