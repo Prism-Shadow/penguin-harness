@@ -12,3 +12,5 @@ The New chat button and welcome desk carry a watercolor penguin riding a pink pe
 Buttons, fields, menus, dialogs and the composer draw their surface and rounded edge together. The switch and progress bar clip their moving fill to their tracks. Keyboard focus remains visible around controls. Existing Doodle selections and accent presets continue to work.
 
 The start page’s Agents, RSI algorithms and Benchmarks share a paper card with perforated dividers and three marker colours under the counts. Each column opens its own list.
+
+The Evaluation Center shows the score and its change directly on the card, with the same space for the unevaluated state.
