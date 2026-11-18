@@ -23,6 +23,7 @@
  * Docs: /docs/tools § "Approval".
  */
 import type { ApprovalMode, ApprovalReason } from "@prismshadow/penguin-library-session";
+import type { Approvals, PendingApproval } from "@prismshadow/penguin-library-session";
 import type {
   ApprovalDecision,
   ApproveFn,
@@ -30,25 +31,12 @@ import type {
   ToolCallPayload,
 } from "@prismshadow/penguin-core";
 
-export interface PendingApproval {
-  toolCall: AmspRecord<ToolCallPayload>;
-  origin?: string[];
-  /** Why the call asks, when the mode did not send it here (a command-policy `ask` rule). */
-  reason?: ApprovalReason;
-}
+// The Approvals contract and PendingApproval moved to @prismshadow/penguin-library-session
+// (the AgentState closed shape reaches them); re-exported here for the existing import paths.
+export type { Approvals, PendingApproval };
 
 interface PendingEntry extends PendingApproval {
   resolve: (decision: ApprovalDecision) => void;
-}
-
-/** A Session runtime's pending approvals, as its holder uses them — what {@link ApprovalRegistry} implements. */
-export interface Approvals {
-  readonly size: number;
-  list(): PendingApproval[];
-  wait(toolCall: AmspRecord<ToolCallPayload>, reason?: ApprovalReason): Promise<ApprovalDecision>;
-  decide(toolCallId: string, decision: ApprovalDecision): boolean;
-  denyAll(): void;
-  denyMain(): void;
 }
 
 /** Pending approval registry (key = tool_call_id), one per Session runtime. */

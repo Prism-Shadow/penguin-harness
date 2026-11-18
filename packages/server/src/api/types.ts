@@ -13,6 +13,7 @@
  * Docs: packages/docs/content/server-api.{zh,en}.md (site path /docs/server-api) is the
  * public route/SSE reference for this contract — keep it in sync when changing DTOs.
  */
+import type { SessionBackgroundTasks } from "@prismshadow/penguin-library-session";
 import type {
   ChatDefaultsDto,
   MemberInfo,
@@ -1897,13 +1898,9 @@ export interface SessionInfo {
   backgroundTasks?: SessionBackgroundTasks;
 }
 
-/** The background-task counts of one Session (see SessionInfo.backgroundTasks). */
-export interface SessionBackgroundTasks {
-  /** Background command sessions whose process is still running. */
-  processes: number;
-  /** Background subagent sessions (promoted to a `subagent_id`) currently mid-round. */
-  subagents: number;
-}
+/** The background-task counts moved to @prismshadow/penguin-library-session (the AgentState
+ * closed shape reaches them); re-exported here for the `@prismshadow/penguin-server/api` path. */
+export type { SessionBackgroundTasks };
 
 /**
  * Session list category, the listing rule applied server-side: `archived` when the user
