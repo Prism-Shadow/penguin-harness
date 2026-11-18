@@ -17,4 +17,4 @@ The Evaluation Center shows the score and its change directly on the card, with 
 
 Model and tool cards use apricot paper in light mode and plum in dark mode. The running activity keeps its ink outline when expanded or folded. Settings groups, the initial-password reminder and the change-password dialog have a continuous border.
 
-Activity and library group headings share the paper color of their cards.
+Activity and library group headings share the paper color of their cards. The skill note has a continuous outline on all four sides.

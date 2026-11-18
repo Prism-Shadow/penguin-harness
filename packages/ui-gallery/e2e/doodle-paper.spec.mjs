@@ -113,6 +113,12 @@ for (const [mode, lang, width] of [
     const firstRow = page.locator(".ui-field").first();
     await expectPaperEdge(page, firstRow.locator(".."), firstRow);
 
+    await page.goto(`/app.html?route=/chat/s-harness-rows&${prefs}`);
+    const skill = page
+      .locator('p.ui-activity[data-kind="event"]')
+      .filter({ hasText: /Using skills?|使用技能/i })
+      .first();
+    await expectPaperEdge(page, skill.locator(".."), skill);
     await page.goto(`/app.html?route=/models&${prefs}`);
     const group = page.locator('.ui-library [data-slot="group"]').first();
     const groupHead = group.locator('[data-slot="head"]').first();

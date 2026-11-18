@@ -382,7 +382,8 @@
   background-color: inherit;
   border-block: 2px solid var(--_pen);
 }
-:root[data-theme="doodle"] .ui-frame > button.ui-activity[data-group-header] {
+:root[data-theme="doodle"] .ui-frame > button.ui-activity[data-group-header],
+:root[data-theme="doodle"] .ui-frame > .ui-activity[data-kind="event"][data-slot="head"]:only-child {
   border: 2px solid var(--_pen);
   border-radius: inherit;
 }
