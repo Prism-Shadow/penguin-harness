@@ -1,4 +1,4 @@
-# Page through a conversation’s live steps
+# Choose how conversations show reasoning and tools
 
 - **Date:** 2026-11-18
 - **Type:** feature
@@ -7,6 +7,8 @@
 
 [中文版](2026-11-18-live-activity-pages.zh.md)
 
-In the Doodle theme, thinking, tool calls and retries now share a single place in the running activity card. Each new step replaces the last one on screen. Use the arrows to review earlier steps, or choose **Latest step** to follow new arrivals. A step you are reading stays in place when more output arrives or the run ends.
+In **Settings → Appearance → Reasoning display**, choose how every theme shows a conversation’s work. **Standard** lists steps by name and duration while the run is active. Select a step to read its reasoning, tool arguments or results. **Expanded** opens those details for you. You can fold individual steps in either view.
 
-A pending approval or retry is one click away from any page. Searching the conversation temporarily shows its steps and restores your page when the search closes. The final reply appears below the activity, and older conversations still open with their chronological list of steps.
+**Compact** follows the latest step in one line. Use the arrows to review earlier steps, or choose **Latest step** to resume following. Open the line to see the selected step, then open the step for its details. A completed run has a final page for its outcome. Your place stays put while new output arrives, including when the run finishes.
+
+Your account saves this choice. It also applies to conversations you reopen. Pending approvals and retries have a direct shortcut. Searching temporarily reveals all loaded steps and restores the page and folds when you close the search.
