@@ -24,13 +24,18 @@ export const zh = {
   appName: "PenguinHarness",
 
   voice: {
-    models: "CLI 与语音模型",
-    modelsHelp: "为每项功能选择当前项目中已配置的模型。聊天与 CLI 使用同一份设置。",
+    models: "默认多模态模型",
+    modelHelp: (project: string) => `「${project}」中的聊天和 CLI 共用这些模型。`,
     unbound: "未指定",
-    noCandidates: "当前项目没有支持此功能的模型。",
+    noModels: "没有可选模型",
+    noTools: "当前服务未启用多模态工具。",
     polish: "润色语音输入",
-    polishHelp: "转写后去除口头重复、补充标点，再填入输入框。",
-    polishModel: "润色用文本模型",
+    enableIn: (project: string) => `在「${project}」中启用`,
+    polishWith: (model: string, provider: string) => `转写后使用 ${model} · ${provider} 润色。`,
+    prompt: "润色提示词",
+    restorePrompt: "恢复默认提示词",
+    polishOn: "已开启",
+    polishNeedsText: "请先选择上方的文本生成模型。",
     record: "语音输入",
     recording: "正在录音",
     permission: "等待麦克风授权",
@@ -55,8 +60,6 @@ export const zh = {
     play: "播放已生成的语音",
     audioError: "无法播放这条回复的语音。",
     preparing: "正在生成语音",
-    assignFor: (title: string) => `设为${title}模型`,
-    currentFor: (title: string) => `当前${title}模型`,
   },
 
   nav: {

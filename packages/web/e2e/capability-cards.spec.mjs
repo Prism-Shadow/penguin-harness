@@ -23,7 +23,7 @@ async function switchProject(page, from, to) {
     .click();
   await expect(page.getByRole("button", { name: to, exact: true })).toBeVisible();
 }
-test("model cards replace only their project's single capability and update other open views", async ({
+test("Models opens the project’s multimodal defaults, which persist across reloads and stay scoped to that project", async ({
   page,
   context,
   browser,
@@ -53,82 +53,141 @@ test("model cards replace only their project's single capability and update othe
         baseUrl: process.env.MOCK_URL + "/v1",
       })),
     );
+    models.push({
+      provider: "custom",
+      modelId: "note-editor",
+      displayName: "Project writer",
+      clientType: "mmsp",
+      contextWindow: 32000,
+      vision: true,
+      baseUrl: process.env.MOCK_URL + "/v1",
+      apiKey: "local-test",
+    });
     const put = await page.request.put(base + "/api/projects/" + project + "/models", {
       data: { models },
     });
     expect(put.ok(), await put.text()).toBeTruthy();
   }
   const settings = async (project) =>
-    (await (await page.request.get(base + "/api/projects/" + project + "/capabilities")).json())
-      .bindings;
-  await page.addInitScript((project) => localStorage.setItem("penguin.lastProjectId", project), a);
+    (
+      await (
+        await page.request.get(base + "/api/projects/" + project + "/capabilities/tools")
+      ).json()
+    ).bindings;
+  await page.addInitScript((project) => {
+    if (!localStorage.getItem("penguin.lastProjectId"))
+      localStorage.setItem("penguin.lastProjectId", project);
+  }, a);
+  const open = async (target) => {
+    await target
+      .getByRole("button", { name: /^(Default multimodal models|默认多模态模型)$/ })
+      .click();
+    await expect(
+      target.getByRole("heading", { name: /^(Default multimodal models|默认多模态模型)$/ }),
+    ).toBeVisible();
+  };
+  const field = (target, label) =>
+    target.getByRole("dialog").first().getByRole("button", { name: label, exact: true });
+  const choose = async (target, label, option) => {
+    await field(target, label).click();
+    await target
+      .getByRole("dialog")
+      .last()
+      .getByRole("button", { name: option, exact: true })
+      .click();
+  };
+  const polish = async (project) =>
+    (
+      await (
+        await page.request.get(base + "/api/projects/" + project + "/capabilities/tools")
+      ).json()
+    ).voicePolish;
   await page.goto(base + "/models");
   await search(page, recognition);
+  await expect(card(page, "River recognition").getByRole("button")).toHaveCount(1);
+  await open(page);
+  await expect(page).toHaveURL(/projectSettings=multimodal/);
+  await expect(field(page, "Image generation")).toBeDisabled();
+  await expect(field(page, "Speech recognition")).toContainText("Not assigned");
   const other = await context.newPage();
-  await other.goto(base + "/models");
-  await search(other, recognition);
-  const current = "Current for Speech recognition",
-    assign = "Use for Speech recognition";
-  const role = (row, label) => row.getByRole("button", { name: label, exact: true });
-  await role(card(page, "River recognition"), assign).click();
-  await expect(role(card(other, "River recognition"), current)).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  await role(card(page, "Lake recognition"), assign).click();
-  await expect(role(card(page, "River recognition"), assign)).toHaveAttribute(
-    "aria-pressed",
-    "false",
-  );
-  await expect(role(card(other, "Lake recognition"), current)).toBeVisible();
+  await other.goto(page.url());
+  await choose(page, "Speech recognition", recognition + " · custom");
+  await expect(field(other, "Speech recognition")).toContainText(recognition + " · custom");
+  await choose(page, "Speech recognition", recognition + " · deepseek");
+  await expect(field(other, "Speech recognition")).toContainText(recognition + " · deepseek");
   await expect
     .poll(() => settings(a))
-    .toEqual({ stt: { provider: "deepseek", modelId: recognition } });
+    .toEqual({ s2t: { provider: "deepseek", modelId: recognition } });
   expect(await settings(b)).toEqual({});
-  if (process.env.VOICE_EVIDENCE)
-    await page.screenshot({ path: process.env.VOICE_EVIDENCE + "/cards-alpha.png" });
-  await search(page, synthesis);
-  await role(card(page, "River synthesis"), "Use for Speech synthesis").click();
+  await choose(page, "Speech synthesis", synthesis + " · custom");
+  await choose(page, "Text generation", "note-editor · custom");
+  await choose(page, "Image understanding", "note-editor · custom");
+  const originalPrompt = (await polish(a)).defaultPrompt;
+  const prompt = page.getByRole("textbox", { name: "Editing instructions" });
+  await field(page, "Polish dictation").click();
+  await expect(page.getByText("Enable in Cards Alpha")).toBeVisible();
+  await expect(prompt).toHaveValue(originalPrompt);
+  await prompt.fill("Keep project names. Preserve all line breaks.");
+  await page.getByRole("switch", { name: "Polish dictation" }).click();
+  expect((await polish(a)).prompt).toBe(originalPrompt);
+  await field(page, "Save").click();
   await expect
-    .poll(() => settings(a))
-    .toEqual({
-      stt: { provider: "deepseek", modelId: recognition },
-      tts: { provider: "custom", modelId: synthesis },
-    });
+    .poll(() => polish(a))
+    .toMatchObject({ enabled: true, prompt: "Keep project names. Preserve all line breaks." });
+  expect((await polish(b)).prompt).toBe(originalPrompt);
   await page.reload();
-  await search(page, recognition);
-  await expect(role(card(page, "Lake recognition"), current)).toBeVisible();
+  await expect(field(page, "Speech recognition")).toContainText(recognition + " · deepseek");
+  if (process.env.VOICE_EVIDENCE)
+    await page.screenshot({
+      animations: "disabled",
+      path: process.env.VOICE_EVIDENCE + "/defaults-en.png",
+    });
+  await page.getByRole("button", { name: /^Polish dictation/ }).click();
+  await expect(prompt).toHaveValue("Keep project names. Preserve all line breaks.");
+  await field(page, "Restore default instructions").click();
+  await expect(prompt).toHaveValue(originalPrompt);
+  await field(page, "Save").click();
+  await expect.poll(() => polish(a)).toMatchObject({ enabled: true, prompt: originalPrompt });
+  await page.goBack();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.goForward();
+  await expect(field(page, "Image understanding")).toContainText("note-editor · custom");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await switchProject(page, "Cards Alpha", "Cards Beta");
-  await search(page, recognition);
-  await expect(role(card(page, "Lake recognition"), assign)).toHaveAttribute(
-    "aria-pressed",
-    "false",
-  );
-  await role(card(page, "River recognition"), assign).click();
+  await page.getByRole("button", { name: "Cards Beta", exact: true }).click();
+  await page.getByRole("button", { name: "Project settings", exact: true }).click();
+  await expect(page).toHaveURL(/projectSettings=general/);
+  await field(page, "Default multimodal models").click();
+  await expect(page).toHaveURL(/projectSettings=multimodal/);
+  await page.reload();
+  await expect(field(page, "Speech recognition")).toContainText("Not assigned");
+  await choose(page, "Speech recognition", recognition + " · custom");
   await expect
     .poll(() => settings(b))
-    .toEqual({ stt: { provider: "custom", modelId: recognition } });
-  await expect(role(card(other, "Lake recognition"), current)).toBeVisible();
-  await page.getByRole("button", { name: "CLI and voice models" }).click();
-  await expect(page.getByRole("button", { name: /^Speech recognition/ })).toContainText(
-    "deepseek-asr · custom",
-  );
-  await page.getByRole("button", { name: /^Speech recognition/ }).click();
-  await page.getByRole("option", { name: "Not assigned", exact: true }).click();
+    .toEqual({ s2t: { provider: "custom", modelId: recognition } });
+  await choose(page, "Speech recognition", "Not assigned");
+  await expect.poll(() => settings(b)).toEqual({});
   await page.keyboard.press("Escape");
-  await expect(role(card(page, "River recognition"), assign)).toBeVisible();
   await switchProject(page, "Cards Beta", "Cards Alpha");
-  await search(page, recognition);
-  await expect(role(card(page, "Lake recognition"), current)).toBeVisible();
   await setAccountPrefs(page.request, { lang: "zh" });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload();
-  await search(page, recognition);
-  expect((await page.getByPlaceholder(/搜索模型/).boundingBox()).width).toBeGreaterThan(250);
-  await expect(role(card(page, "Lake recognition"), "当前语音识别模型")).toBeVisible();
-  await expect(role(card(page, "River recognition"), "设为语音识别模型")).toBeVisible();
+  await open(page);
+  await expect(field(page, "语音识别")).toContainText(recognition + " · deepseek");
   if (process.env.VOICE_EVIDENCE)
-    await page.screenshot({ path: process.env.VOICE_EVIDENCE + "/cards-mobile-zh.png" });
+    await page.screenshot({
+      animations: "disabled",
+      path: process.env.VOICE_EVIDENCE + "/defaults-zh-phone.png",
+    });
+  await page.getByRole("button", { name: /^润色语音输入/ }).click();
+  await expect(page.getByRole("switch", { name: "润色语音输入" })).toBeChecked();
+  await page.getByRole("textbox", { name: "润色提示词" }).scrollIntoViewIfNeeded();
+  if (process.env.VOICE_EVIDENCE)
+    await page.screenshot({
+      animations: "disabled",
+      path: process.env.VOICE_EVIDENCE + "/polish-zh-phone.png",
+    });
   const member = await browser.newContext();
   try {
     const reader = "cardreader";
@@ -144,15 +203,15 @@ test("model cards replace only their project's single capability and update othe
       a,
     );
     await memberPage.goto(base + "/models");
-    await search(memberPage, recognition);
-    await expect(
-      card(memberPage, "Lake recognition").getByText(current, { exact: true }),
-    ).toBeVisible();
-    await expect(memberPage.getByRole("button", { name: assign, exact: true })).toHaveCount(0);
+    await open(memberPage);
+    await expect(field(memberPage, "Speech recognition")).toContainText(
+      recognition + " · deepseek",
+    );
+    await expect(field(memberPage, "Speech recognition")).toBeDisabled();
     expect(
       (
-        await member.request.patch(base + "/api/projects/" + a + "/capabilities", {
-          data: { bindings: { stt: null } },
+        await member.request.patch(base + "/api/projects/" + a + "/capabilities/tools", {
+          data: { bindings: { s2t: null } },
         })
       ).status(),
     ).toBe(403);

@@ -134,7 +134,7 @@ for (const lang of ["zh", "en"]) {
     const labels =
       lang === "zh"
         ? [
-            "CLI 与语音模型",
+            "默认多模态模型",
             "语音识别",
             "语音输入",
             "结束录音并转写",
@@ -143,7 +143,7 @@ for (const lang of ["zh", "en"]) {
             "发送",
           ]
         : [
-            "CLI and voice models",
+            "Default multimodal models",
             "Speech recognition",
             "Dictate",
             "Finish recording and transcribe",
@@ -157,7 +157,11 @@ for (const lang of ["zh", "en"]) {
     const field = page.getByRole("button", { name: new RegExp("^" + labels[1]) });
     const select = async (label) => {
       await field.click();
-      await page.getByRole("option", { name: label, exact: true }).click();
+      await page
+        .getByRole("dialog")
+        .last()
+        .getByRole("button", { name: label, exact: true })
+        .click();
     };
     await select("deepseek-asr · deepseek");
     await expect.poll(selected).toBe("deepseek");
@@ -311,10 +315,14 @@ test("speech uses the project's real MMSP routes and records each selected model
     });
     expect(settings.ok(), await settings.text()).toBeTruthy();
     await page.goto(base + "/models");
-    await page.getByRole("button", { name: "CLI and voice models", exact: true }).click();
+    await page.getByRole("button", { name: "Default multimodal models", exact: true }).click();
     for (const [, label, model] of tools) {
       await page.getByRole("button", { name: new RegExp("^" + label) }).click();
-      await page.getByRole("option", { name: model + " · custom", exact: true }).click();
+      await page
+        .getByRole("dialog")
+        .last()
+        .getByRole("button", { name: model + " · custom", exact: true })
+        .click();
     }
     const expectedBindings = Object.fromEntries(
       tools.map(([capability, , model]) => [capability, ref(model)]),
@@ -466,7 +474,8 @@ test("disabling the project's provider stops dictation before upload and restore
     await expect(page.locator("textarea").first()).toBeEditable();
     await page.goto(base + "/models");
     await expect(page.getByPlaceholder("Search models")).toBeVisible();
-    await expect(page.getByRole("button", { name: "CLI and voice models" })).toHaveCount(0);
+    await page.getByRole("button", { name: "Default multimodal models", exact: true }).click();
+    await expect(page.getByText("Multimodal tools are disabled on this server.")).toBeVisible();
     expect((await (await page.request.get(api + "/capabilities")).json()).bindings).toEqual(
       bindings,
     );
@@ -479,11 +488,11 @@ test("disabling the project's provider stops dictation before upload and restore
   }
   await page.reload();
   await expect(
-    page.getByRole("button", { name: "Current for Speech recognition", exact: true }),
-  ).toBeVisible();
+    page.getByRole("dialog").getByRole("button", { name: "Speech recognition", exact: true }),
+  ).toContainText(first.modelId);
   await expect(
-    page.getByRole("button", { name: "Current for Speech synthesis", exact: true }),
-  ).toBeVisible();
+    page.getByRole("dialog").getByRole("button", { name: "Speech synthesis", exact: true }),
+  ).toContainText(speaker.modelId);
   await page.goto(base + "/chat/" + sessionId);
   await expect(record).toBeVisible();
 });

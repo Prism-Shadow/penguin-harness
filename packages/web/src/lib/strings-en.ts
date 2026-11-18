@@ -16,14 +16,19 @@ export const en: Strings = {
   appName: "PenguinHarness",
 
   voice: {
-    models: "CLI and voice models",
-    modelsHelp:
-      "Choose a configured model for each operation. Chat and the CLI use these project settings.",
+    models: "Default multimodal models",
+    modelHelp: (project: string) => `Chat and the CLI in ${project} use these models.`,
     unbound: "Not assigned",
-    noCandidates: "No compatible model in this project.",
+    noModels: "No compatible models",
+    noTools: "Multimodal tools are disabled on this server.",
     polish: "Polish dictation",
-    polishHelp: "Remove repeated fillers and add punctuation before inserting the transcript.",
-    polishModel: "Text model for dictation",
+    enableIn: (project: string) => `Enable in ${project}`,
+    polishWith: (model: string, provider: string) =>
+      `Edit transcripts with ${model} · ${provider}.`,
+    prompt: "Editing instructions",
+    restorePrompt: "Restore default instructions",
+    polishOn: "On",
+    polishNeedsText: "Choose a text generation model above.",
     record: "Dictate",
     recording: "Recording",
     permission: "Waiting for microphone",
@@ -49,8 +54,6 @@ export const en: Strings = {
     play: "Play the generated audio",
     audioError: "Could not play the audio for this reply.",
     preparing: "Preparing audio",
-    assignFor: (title: string) => `Use for ${title}`,
-    currentFor: (title: string) => `Current for ${title}`,
   },
 
   nav: {

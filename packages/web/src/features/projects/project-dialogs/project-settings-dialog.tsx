@@ -7,6 +7,7 @@ import { PROJECT_SETTINGS_SCOPE } from "./shared";
 import { GeneralSection } from "./general-section";
 import { MembersSection } from "./members-section";
 import { ChatDefaultsSection } from "./chat-defaults-section";
+import { MultimodalModelsSection } from "./multimodal-models-section";
 import { SecurityPolicySection } from "./security-policy-section";
 
 export const TAB_ICON_PATHS = {
@@ -17,18 +18,33 @@ export const TAB_ICON_PATHS = {
   defaults: ICONS.sliders,
   /** The shield with a check: the policy that guards the Project. */
   security: ICONS.shieldCheck,
+  multimodal: ICONS.chip,
 } as const;
 
 export type SettingsTab = keyof typeof TAB_ICON_PATHS;
 
-export function ProjectSettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  return open ? <ProjectSettingsBody onClose={onClose} /> : null;
+interface ProjectSettingsProps {
+  onClose: () => void;
+  initialTab?: SettingsTab;
+  onSelectTab?: (tab: SettingsTab) => void;
 }
 
-export function ProjectSettingsBody({ onClose }: { onClose: () => void }) {
+export function ProjectSettingsDialog({
+  open,
+  ...props
+}: ProjectSettingsProps & { open: boolean }) {
+  return open ? <ProjectSettingsBody {...props} /> : null;
+}
+
+export function ProjectSettingsBody({
+  onClose,
+  initialTab = "general",
+  onSelectTab,
+}: ProjectSettingsProps) {
   const { desktopMode } = useAuth();
   const { currentProject } = useProject();
-  const [tab, setTab] = useState<SettingsTab>("general");
+  const [localTab, setLocalTab] = useState<SettingsTab>(initialTab);
+  const tab = onSelectTab ? initialTab : localTab;
   const requestClose = useGuardedClose(onClose, PROJECT_SETTINGS_SCOPE);
 
   const projectId = currentProject?.projectId;
@@ -41,6 +57,7 @@ export function ProjectSettingsBody({ onClose }: { onClose: () => void }) {
     { key: "general", label: S.project.settingsTabGeneral },
     ...(!desktopMode ? [{ key: "members" as const, label: S.project.settingsTabMembers }] : []),
     { key: "defaults", label: S.project.settingsTabDefaults },
+    { key: "multimodal", label: S.voice.models },
     {
       key: "security",
       label: S.project.settingsTabSecurity,
@@ -68,7 +85,8 @@ export function ProjectSettingsBody({ onClose }: { onClose: () => void }) {
       ]}
       active={active.key}
       onSelect={(key) => {
-        if (key !== active.key) void guardLeave(() => setTab(key), PROJECT_SETTINGS_SCOPE);
+        if (key !== active.key)
+          void guardLeave(() => (onSelectTab ?? setLocalTab)(key), PROJECT_SETTINGS_SCOPE);
       }}
     >
       {active.key === "general" && (
@@ -76,6 +94,13 @@ export function ProjectSettingsBody({ onClose }: { onClose: () => void }) {
       )}
       {active.key === "members" && <MembersSection projectId={projectId} isOwner={isOwner} />}
       {active.key === "defaults" && <ChatDefaultsSection projectId={projectId} isOwner={isOwner} />}
+      {active.key === "multimodal" && (
+        <MultimodalModelsSection
+          projectId={projectId}
+          projectName={currentProject.name ?? projectId}
+          owner={isOwner}
+        />
+      )}
       {active.key === "security" && (
         <SecurityPolicySection projectId={projectId} isOwner={isOwner} />
       )}

@@ -25,7 +25,7 @@ export function useDictation({
   disabled: boolean;
 }) {
   const scope = useVoice();
-  const canDictate = hasBoundCapability(scope?.settings, "stt");
+  const canDictate = hasBoundCapability(scope?.settings, "s2t");
   const [phase, setPhase] = useState<Phase>("idle");
   const [microphone, setMicrophone] = useState<{
     stream: MediaStream;
@@ -91,7 +91,7 @@ export function useDictation({
     setPhase("permission");
     try {
       const atStart = await scope.readCurrent(task.signal);
-      if (!atStart || !hasBoundCapability(atStart, "stt")) return;
+      if (!atStart || !hasBoundCapability(atStart, "s2t")) return;
       const supported =
         atStart.dictationFormat === "audio/wav"
           ? typeof AudioContext !== "undefined" && typeof AudioWorkletNode !== "undefined"
@@ -118,7 +118,7 @@ export function useDictation({
       }
       setPhase("transcribing");
       const latest = await scope.readCurrent(task.signal);
-      if (!latest || !hasBoundCapability(latest, "stt")) return;
+      if (!latest || !hasBoundCapability(latest, "s2t")) return;
       if (latest.dictationFormat && latest.dictationFormat !== blob.type) {
         toastInfo(S.voice.modelChanged);
         return;
@@ -141,7 +141,7 @@ export function useDictation({
         toastInfo(S.voice.empty);
         return;
       }
-      if (latest.voicePolish.enabled && latest.voicePolish.model) {
+      if (latest.voicePolish.enabled && hasBoundCapability(latest, "t2t")) {
         setPhase("polishing");
         try {
           const polished = await polishVoice(

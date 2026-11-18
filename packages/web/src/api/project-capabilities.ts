@@ -1,17 +1,17 @@
 import type {
-  Capability,
-  CapabilitySettings,
+  ToolModelKey,
+  ToolModelSettings,
   CapabilityResult,
   CapabilityRunRequest,
-  CapabilitySettingsPatch,
+  ToolModelSettingsPatch,
 } from "@prismshadow/penguin-server/api";
 import { sameModelRef } from "../lib/model-grouping";
 import { apiFetch, apiFetchStream } from "./client";
 
 /** A saved selection is runnable only while its server contribution and configured model exist. */
 export function hasBoundCapability(
-  settings: CapabilitySettings | null | undefined,
-  key: Capability,
+  settings: ToolModelSettings | null | undefined,
+  key: ToolModelKey,
 ): boolean {
   const binding = settings?.bindings[key];
   return Boolean(
@@ -21,7 +21,7 @@ export function hasBoundCapability(
   );
 }
 
-export type CapabilityPatch = CapabilitySettingsPatch;
+export type CapabilityPatch = ToolModelSettingsPatch;
 
 async function read<T>(path: string, options: Parameters<typeof apiFetchStream>[1]): Promise<T> {
   const response = await apiFetchStream(path, options);
@@ -30,14 +30,17 @@ async function read<T>(path: string, options: Parameters<typeof apiFetchStream>[
 
 const projectPath = (id: string) => `/api/projects/${encodeURIComponent(id)}`;
 export function getCapabilities(projectId: string, server: string | null, signal: AbortSignal) {
-  return read<CapabilitySettings>(`${projectPath(projectId)}/capabilities`, { server, signal });
+  return read<ToolModelSettings>(`${projectPath(projectId)}/capabilities/tools`, {
+    server,
+    signal,
+  });
 }
 export function updateCapabilities(
   projectId: string,
   body: CapabilityPatch,
   server: string | null = null,
 ) {
-  return apiFetch<CapabilitySettings>(`${projectPath(projectId)}/capabilities`, {
+  return apiFetch<ToolModelSettings>(`${projectPath(projectId)}/capabilities/tools`, {
     method: "PATCH",
     body,
     server,

@@ -12,7 +12,7 @@
  * name + count + the collapse chevron), with one card per model within a group — the card
  * shows only the display name + status badges (default / vision / fast / free / discount), while
  * context, pricing, and key status are folded into a single line of small text. Clicking a card opens the config dialog
- * (credentials, context, pricing, vision toggle, plus set as default / set as vision model /
+ * (credentials, context, pricing, vision toggle, plus set as default /
  * delete). The group header's right side holds the group's actions in a fixed order
  * (group-header.ts): its balance (one menu: pin, refresh, when it was read), the connection
  * ("Not connected", which connects, or one "Connected" menu: Sync models on Penguin Go,
@@ -211,8 +211,7 @@ import {
 } from "./connection";
 
 import { useProjectCapabilities } from "../../state/use-project-capabilities";
-import { CapabilityCardActions } from "./capability-card-actions";
-import { CapabilityDialog } from "./capability-settings";
+import { useOpenProjectSettings } from "../../lib/project-settings-location";
 import { ProviderSettingsDialog } from "./provider-settings-dialog";
 import { GroupSettingsControl } from "./group-settings-menu";
 import {
@@ -483,38 +482,18 @@ export function rowRef(row: Pick<RowState, "provider" | "modelId">): ModelRefDto
   return { provider: row.provider, modelId: row.modelId };
 }
 
-/**
- * After saving a model config, which entries the defaultModel / visionModel pointers should
- * point to (always paired references).
- *
- * The key case is a **rename** (either provider or model_id changes): if a pointer still
- * points at the old reference, what gets submitted is a reference no longer present in
- * models, and the server responds with a flat 400 (it validates that defaultModel/
- * visionModel must be in models).
- */
-export function nextPointers(args: {
+/** A renamed default keeps its reference, and the first model added becomes the default. */
+export function nextDefaultModel(args: {
   /** The paired reference being edited; null for a new model. */
   editing: ModelRefDto | null;
   /** The paired reference after saving (differing from editing in either field means a rename). */
   ref: ModelRefDto;
   action: DialogAction;
   defaultModel: ModelRefDto | undefined;
-  visionModel: ModelRefDto | undefined;
-}): { defaultModel: ModelRefDto | undefined; visionModel: ModelRefDto | undefined } {
-  const { editing, ref, action, defaultModel, visionModel } = args;
-  const isNew = editing === null;
-  const renamedFrom = !isNew && !sameModelRef(editing, ref) ? editing : null;
-  const follow = (p: ModelRefDto | undefined) => (sameModelRef(p, renamedFrom) ? ref : p);
-  return {
-    defaultModel:
-      action === "setDefault"
-        ? ref
-        : // The first model added (when there was no previous default) is auto-set as default.
-          isNew && !defaultModel
-          ? ref
-          : follow(defaultModel),
-    visionModel: action === "setVisionModel" ? ref : follow(visionModel),
-  };
+}): ModelRefDto | undefined {
+  const { editing, ref, action, defaultModel } = args;
+  if (action === "setDefault" || (!editing && !defaultModel)) return ref;
+  return editing && sameModelRef(defaultModel, editing) ? ref : defaultModel;
 }
 
 /** Fields in the config dialog that can be highlighted red on error (keys match RowState field names, so they can be cleared per edit action). */
@@ -912,7 +891,6 @@ export function ModelsPage() {
   const { currentProject, agents } = useProject();
   const projectId = currentProject?.projectId ?? null;
   const isOwner = currentProject?.role === "owner";
-  const [capabilitiesOpen, setCapabilitiesOpen] = useState(false);
   /** The Models trail's raised badge, or undefined — "Add new models" and the notice appear with it. */
   const todo = useUpdateBadges().todos.models;
   /** What the trail says, read at render time: `S` is a live binding swapped on locale change. */
@@ -945,7 +923,8 @@ export function ModelsPage() {
   const [providers, setProviders] = useState<ProviderConnections>({});
   const [defaultModel, setDefaultModel] = useState<ModelRefDto | undefined>(undefined);
   // Vision model used for read_file's proxy reads (describes images for session models with vision=false).
-  const [visionModel, setVisionModel] = useState<ModelRefDto | undefined>(undefined);
+  const visionModel = capabilitySelection.settings?.bindings.i2t;
+  const openProjectSettings = useOpenProjectSettings();
   /** Edit target: paired reference of an existing row. */
   const [editing, setEditing] = useState<ModelRefDto | null>(null);
   /**
@@ -1058,7 +1037,6 @@ export function ModelsPage() {
     setRows(res.models.map(toRow));
     setProviders(res.providers ?? {});
     setDefaultModel(res.defaultModel);
-    setVisionModel(res.visionModel);
   }, []);
 
   const load = useCallback(async () => {
@@ -1091,7 +1069,7 @@ export function ModelsPage() {
   }, [load]);
 
   /**
-   * Writes the whole table (the dialog's Save / Add, set default, set vision model, delete).
+   * Writes the whole table (the dialog's Save / Add, set default, delete).
    * Resolves with whether it landed. On failure the table on screen stays as the server last
    * answered — nothing that was not written shows as if it had been — and the error is a toast;
    * a dialog that asked keeps its draft open for a retry.
@@ -1099,7 +1077,6 @@ export function ModelsPage() {
   const persist = async (
     nextRows: RowState[],
     nextDefault: ModelRefDto | undefined,
-    nextVision: ModelRefDto | undefined,
     /** Success toast text (defaults to "saved"); on failure this function shows an error toast instead. */
     successText?: string,
     /** Group connections written in the same request (an import writes its group's once). */
@@ -1107,11 +1084,6 @@ export function ModelsPage() {
   ): Promise<boolean> => {
     if (!projectId) return false;
     setBusy(true);
-    // The vision model pointer must point to a row that still exists and isn't marked "doesn't support images" (invalidated on delete/re-annotation).
-    const effectiveVision =
-      nextVision && nextRows.some((r) => sameModelRef(rowRef(r), nextVision) && r.vision)
-        ? nextVision
-        : undefined;
     // Each row's blank fields are judged against its group as this request will leave it.
     const groupAfter = (id: string) =>
       providerUpdates?.[id] !== undefined
@@ -1123,7 +1095,6 @@ export function ModelsPage() {
       };
       if (providerUpdates !== undefined) body.providers = providerUpdates;
       if (nextDefault) body.defaultModel = nextDefault;
-      if (effectiveVision) body.visionModel = effectiveVision;
       const res = await api.putModels(projectId, body);
       adopt(res);
       // Default model changed: drop the stored draft's model selection so the draft chat
@@ -1263,13 +1234,9 @@ export function ModelsPage() {
     skipped: number,
   ): Promise<boolean> => {
     if (!projectId) return false;
-    const ok = await persist(
-      nextRows,
-      defaultModel,
-      visionModel,
-      S.models.groupImported(added, skipped),
-      { [name]: connection },
-    );
+    const ok = await persist(nextRows, defaultModel, S.models.groupImported(added, skipped), {
+      [name]: connection,
+    });
     if (!ok) return false;
     if (!expanded.has(name)) {
       const next = new Set(expanded);
@@ -1727,18 +1694,6 @@ export function ModelsPage() {
                       isDefault={sameModelRef(rowRef(row), defaultModel)}
                       isVisionModel={sameModelRef(rowRef(row), visionModel)}
                       speed={speedResults.get(refMapKey(row.provider, row.modelId))}
-                      capabilityActions={
-                        <CapabilityCardActions
-                          model={rowRef(row)}
-                          locale={locale}
-                          settings={capabilitySelection.settings}
-                          owner={isOwner}
-                          busy={capabilitySelection.busy}
-                          onSelect={(capability, model) =>
-                            void capabilitySelection.save({ bindings: { [capability]: model } })
-                          }
-                        />
-                      }
                       usedTokens={usedTokens.get(refMapKey(row.provider, row.modelId))}
                       hourTick={hourTick}
                       onOpen={() => {
@@ -1790,11 +1745,9 @@ export function ModelsPage() {
                 placeholder={S.models.searchPlaceholder}
               />
             </div>
-            {Boolean(capabilitySelection.settings?.available?.length) && (
-              <Button size="sm" onClick={() => setCapabilitiesOpen(true)}>
-                {S.voice.models}
-              </Button>
-            )}
+            <Button size="sm" onClick={() => openProjectSettings("multimodal")}>
+              {S.voice.models}
+            </Button>
             {/* "Add new models" appears only while new presets are actually waiting, and the
                 accent says so — adding nothing is a no-op, and a permanent button spent the
                 header's width on one. That is also why the dot is gone: it marked this button as
@@ -1852,16 +1805,6 @@ export function ModelsPage() {
           />
         )}
       </PageHeader>
-      {capabilitiesOpen && Boolean(capabilitySelection.settings?.available?.length) && (
-        <CapabilityDialog
-          key={projectId}
-          selection={capabilitySelection}
-          locale={locale}
-          owner={isOwner}
-          onClose={() => setCapabilitiesOpen(false)}
-        />
-      )}
-
       {/* Above every group, while the TokenDance group has models but no key: its own connect
           flow, pitched as the way to skip setting keys by hand. */}
       {isOwner && showTokenDanceBanner && (
@@ -2052,7 +1995,6 @@ export function ModelsPage() {
             void persist(
               rows.filter((r) => r.provider !== target),
               defaultModel?.provider === target ? undefined : defaultModel,
-              visionModel?.provider === target ? undefined : visionModel,
               S.models.groupDeleted(removed.length),
             );
           }}
@@ -2175,20 +2117,18 @@ export function ModelsPage() {
               ok = await persist(
                 rows.filter((r) => !sameModelRef(rowRef(r), removed)),
                 sameModelRef(removed, defaultModel) ? undefined : defaultModel,
-                sameModelRef(removed, visionModel) ? undefined : visionModel,
               );
             } else {
               const nextRows = isNew
                 ? [...rows, next]
                 : rows.map((r) => (sameModelRef(rowRef(r), editing) ? next : r));
-              const ptr = nextPointers({
+              const nextDefault = nextDefaultModel({
                 editing: isNew ? null : editing,
                 ref: rowRef(next),
                 action,
                 defaultModel,
-                visionModel,
               });
-              ok = await persist(nextRows, ptr.defaultModel, ptr.visionModel);
+              ok = await persist(nextRows, nextDefault);
             }
             if (ok) closeModelDialog();
             return ok;
@@ -2627,11 +2567,9 @@ export function ModelCard({
   usedTokens,
   hourTick,
   onOpen,
-  capabilityActions,
   onMoveToCustom,
 }: {
   row: RowState;
-  capabilityActions?: ReactNode;
   /** The row's group's stored connection: what its blank fields follow. */
   group?: ProviderConnectionDto | undefined;
   currency: Currency;
@@ -2830,7 +2768,6 @@ export function ModelCard({
           {speedBadges}
         </span>
       </button>
-      {capabilityActions}
       {/* The routing warning and its way out (see unroutableFix): the move the config dialog's
           own button performs, so the owner lands where the problem is fixed rather than on a
           second explanation. */}
@@ -2855,7 +2792,7 @@ export function ModelCard({
 // Config dialog (shared by editing an existing model / adding a custom model)
 // ---------------------------------------------------------------------------
 
-type DialogAction = "save" | "setDefault" | "setVisionModel" | "remove";
+type DialogAction = "save" | "setDefault" | "remove";
 
 /**
  * Confirmation text per action (S is a live runtime binding, must be read at render time, not
@@ -2866,13 +2803,11 @@ type DialogAction = "save" | "setDefault" | "setVisionModel" | "remove";
 const CONFIRM_TITLE: Record<DialogAction, () => string> = {
   save: () => S.models.confirmCancelPromotionTitle,
   setDefault: () => S.models.confirmDefaultTitle,
-  setVisionModel: () => S.models.confirmVisionModelTitle,
   remove: () => S.models.confirmDeleteTitle,
 };
 const CONFIRM_BODY: Record<DialogAction, (name: string, promotionPct: number) => string> = {
   save: (n, pct) => S.models.confirmCancelPromotion(n, pct),
   setDefault: (n) => S.models.confirmDefault(n),
-  setVisionModel: (n) => S.models.confirmVisionModel(n),
   remove: (n) => S.models.confirmDelete(n),
 };
 
@@ -2989,7 +2924,7 @@ function ModelDialog({
   /** The write is in flight (its protocol probe included): the dialog waits for its answer. */
   const [saving, setSaving] = useState(false);
   /**
-   * Action pending confirmation: set as default / set as vision proxy model / delete, and a
+   * Action pending confirmation: set as default / delete, and a
    * save that would cancel the row's running promotion. An ordinary save is not confirmed.
    */
   const [confirming, setConfirming] = useState<DialogAction | null>(null);
@@ -3697,28 +3632,17 @@ function ModelDialog({
    */
   const slots: Record<ModelDialogSlot, ReactNode> = {
     // Model-level actions: test connectivity (for a new model, fill in the id and key to verify
-    // before saving) / set default / set as vision proxy model / remove.
+    // before saving) / set default / remove.
     actions: canEdit && (
       <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" disabled={testing || !form.modelId.trim()} onClick={() => void runTest()}>
           {testing ? S.models.testing : S.models.testConnection}
         </Button>
-        {/* Setting the default or the vision model writes the draft with it, so those two wait
+        {/* Setting the default writes the draft with it, so it waits
             for it to be valid, like Save; removing writes nothing of the draft. */}
         {!isNew && !isDefault && (
           <Button size="sm" disabled={saving || !valid} onClick={() => setConfirming("setDefault")}>
             {S.models.setDefault}
-          </Button>
-        )}
-        {!isNew && form.vision && !isVisionModel && (
-          <Button
-            size="sm"
-            title={S.models.visionModelHint}
-            data-tooltip-extra
-            disabled={saving || !valid}
-            onClick={() => setConfirming("setVisionModel")}
-          >
-            {S.models.setVisionModel}
           </Button>
         )}
         {!isNew && (

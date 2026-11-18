@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { GlyphIcon, ICONS, Spinner, toastError } from "@prismshadow/penguin-ui";
-import type { CapabilitySettings } from "@prismshadow/penguin-server/api";
+import type { ToolModelSettings } from "@prismshadow/penguin-server/api";
 import { apiUrl } from "../../../lib/server-context";
 import { apiErrorText } from "../../../lib/api-error";
 import { S } from "../../../lib/strings";
@@ -23,8 +23,8 @@ interface VoiceState {
   server: string | null;
   sessionId: string | undefined;
   active: boolean;
-  settings: CapabilitySettings | null;
-  readCurrent: (signal: AbortSignal) => Promise<CapabilitySettings | null>;
+  settings: ToolModelSettings | null;
+  readCurrent: (signal: AbortSignal) => Promise<ToolModelSettings | null>;
   playback: Playback | null;
   speak: (id: string, text: string) => void;
   stop: (replyId?: string) => void;
@@ -48,7 +48,7 @@ export function VoiceScope({
   children: ReactNode;
 }) {
   const { settings, readCurrent } = useProjectCapabilities(active ? projectId : null, server);
-  const canSpeak = hasBoundCapability(settings, "tts");
+  const canSpeak = hasBoundCapability(settings, "t2s");
   const [playback, setPlayback] = useState<Playback | null>(null);
   const current = useRef<{ request: AbortController; audio: HTMLAudioElement; id: string } | null>(
     null,
@@ -98,7 +98,7 @@ export function VoiceScope({
         setPlayback({ id, phase: "loading" });
         const latest = await readCurrent(request.signal);
         if (current.current !== item) return;
-        if (!hasBoundCapability(latest, "tts")) {
+        if (!hasBoundCapability(latest, "t2s")) {
           stop(id);
           return;
         }
@@ -157,7 +157,7 @@ export function ReadReply({ text }: { text: string }) {
     id = useId();
   const stop = scope?.stop;
   useEffect(() => () => stop?.(id), [stop, id]);
-  if (!scope || !hasBoundCapability(scope.settings, "tts") || !text.trim()) return null;
+  if (!scope || !hasBoundCapability(scope.settings, "t2s") || !text.trim()) return null;
   const own = scope.playback?.id === id ? scope.playback.phase : null;
   const label = own === "ready" ? S.voice.play : own ? S.voice.stop : S.voice.listen;
   return (

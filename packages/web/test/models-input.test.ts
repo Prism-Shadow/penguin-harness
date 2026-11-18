@@ -6,8 +6,8 @@
  * - DTO -> row edit state (toRow): provider and modelId are both plain entry
  *   fields with no prefix parsing; the loaded identity (original) is a paired
  *   reference;
- * - Ownership of the default/vision-agent model pointers after save
- *   (nextPointers): always compared as pairs; renaming (either provider or
+ * - Ownership of the default model reference after save
+ *   (nextDefaultModel): always compared as pairs; renaming (either provider or
  *   model_id changes) moves the pointer along.
  * - Which env fallback variables a key hint may promise (detectedEnvKeys):
  *   only those the server reported a value for.
@@ -50,7 +50,7 @@ import {
   hasKey,
   keyStatusNote,
   keyStatusText,
-  nextPointers,
+  nextDefaultModel,
   rowRef,
   toRow,
   type RowState,
@@ -344,96 +344,24 @@ describe("toRow (DTO → row edit state)", () => {
   });
 });
 
-describe("nextPointers (where the default/vision-agent model pointers land after save; always paired)", () => {
-  const mA = { provider: "custom", modelId: "m-a" };
-  const mANew = { provider: "custom", modelId: "m-a-new" };
-  const mB = { provider: "custom", modelId: "m-b" };
-  const base = { action: "save" as const, defaultModel: mA, visionModel: mB };
-
-  it("renames carry the pointer along (otherwise the submitted stale reference is no longer in models and the server 400s)", () => {
-    // Renaming the current default model.
-    expect(nextPointers({ ...base, editing: mA, ref: mANew })).toEqual({
-      defaultModel: mANew,
-      visionModel: mB,
-    });
-    // Renaming the current vision-agent model.
-    const mBNew = { provider: "custom", modelId: "m-b-new" };
-    expect(nextPointers({ ...base, editing: mB, ref: mBNew })).toEqual({
-      defaultModel: mA,
-      visionModel: mBNew,
-    });
-    // Same model is both default and vision agent: both pointers move together.
-    expect(nextPointers({ ...base, editing: mA, ref: mANew, visionModel: mA })).toEqual({
-      defaultModel: mANew,
-      visionModel: mANew,
-    });
+describe("nextDefaultModel", () => {
+  const original = { provider: "custom", modelId: "m-a" };
+  const moved = { provider: "openai", modelId: "m-a" };
+  const renamed = { provider: "custom", modelId: "m-b" };
+  const edit = { action: "save" as const, defaultModel: original, editing: original };
+  it("follows the default when its model ID or provider changes", () => {
+    expect(nextDefaultModel({ ...edit, ref: moved })).toEqual(moved);
+    expect(nextDefaultModel({ ...edit, ref: renamed })).toEqual(renamed);
+    expect(nextDefaultModel({ ...edit, editing: moved, ref: renamed })).toEqual(original);
   });
-
-  it("changing only the group (model_id unchanged) is also a rename: the pointer follows the new provider", () => {
-    const moved = { provider: "openai", modelId: "m-a" };
-    expect(nextPointers({ ...base, editing: mA, ref: moved })).toEqual({
-      defaultModel: moved,
-      visionModel: mB,
-    });
-  });
-
-  it("no rename, or editing another model: pointers stay put", () => {
-    expect(nextPointers({ ...base, editing: mA, ref: mA })).toEqual({
-      defaultModel: mA,
-      visionModel: mB,
-    });
-    const mC = { provider: "custom", modelId: "m-c" };
-    const mCNew = { provider: "custom", modelId: "m-c-new" };
-    expect(nextPointers({ ...base, editing: mC, ref: mCNew })).toEqual({
-      defaultModel: mA,
-      visionModel: mB,
-    });
-  });
-
-  it("the same model_id under two providers: only a pointer equal as a pair follows", () => {
-    // Default pointer points to openai/m-a, but the edit renames custom/m-a:
-    // same modelId, different provider — the pointer must not be changed.
-    const openaiA = { provider: "openai", modelId: "m-a" };
+  it("sets the explicit choice and supplies a default only for the first new model", () => {
+    expect(nextDefaultModel({ ...edit, editing: moved, ref: moved, action: "setDefault" })).toEqual(
+      moved,
+    );
     expect(
-      nextPointers({
-        action: "save",
-        editing: mA,
-        ref: mANew,
-        defaultModel: openaiA,
-        visionModel: undefined,
-      }),
-    ).toEqual({ defaultModel: openaiA, visionModel: undefined });
-  });
-
-  it("set as default / set as vision agent: the pointer points at this model", () => {
-    const mC = { provider: "custom", modelId: "m-c" };
-    expect(nextPointers({ ...base, editing: mC, ref: mC, action: "setDefault" })).toEqual({
-      defaultModel: mC,
-      visionModel: mB,
-    });
-    expect(nextPointers({ ...base, editing: mC, ref: mC, action: "setVisionModel" })).toEqual({
-      defaultModel: mA,
-      visionModel: mC,
-    });
-  });
-
-  it("the first model added (no default before) automatically becomes the default model", () => {
-    const first = { provider: "custom", modelId: "m-first" };
-    expect(
-      nextPointers({
-        editing: null,
-        ref: first,
-        action: "save",
-        defaultModel: undefined,
-        visionModel: undefined,
-      }),
-    ).toEqual({ defaultModel: first, visionModel: undefined });
-    // When a default already exists, a newly added model does not take it over.
-    const mNew = { provider: "custom", modelId: "m-new" };
-    expect(nextPointers({ ...base, editing: null, ref: mNew })).toEqual({
-      defaultModel: mA,
-      visionModel: mB,
-    });
+      nextDefaultModel({ ...edit, editing: null, defaultModel: undefined, ref: moved }),
+    ).toEqual(moved);
+    expect(nextDefaultModel({ ...edit, editing: null, ref: moved })).toEqual(original);
   });
 });
 
