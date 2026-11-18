@@ -102,10 +102,10 @@ describe("sandbox settings group", () => {
     apps.push(t);
     const entries = await list();
     const sandbox = entries.find((e) => e.name === "sandbox")!;
-    // The download area's card leads the page (order 0) with its three sections (1–3);
+    // The Plugin Sources card leads the page (order 0) with its two child entries (1–2);
     // the sandbox's group follows them.
-    expect(entries[0]?.name).toBe("download-area");
-    expect(entries[4]).toBe(sandbox);
+    expect(entries[0]?.name).toBe("plugin-sources");
+    expect(entries[3]).toBe(sandbox);
     // Nothing saved: the switch reads off, and the default preset is the shipped one.
     expect(sandbox.values).toEqual({
       enabled: false,

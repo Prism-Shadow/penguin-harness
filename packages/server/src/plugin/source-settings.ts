@@ -35,18 +35,16 @@ export function npmRegistryOf(value: unknown): string | undefined {
         // Written out, not named from a constant: a contribution is data the host reads
         // without running the package.
         id: "plugin-sources",
-        // A section of the download area's card (download-area.ts): drawn inside it under
-        // this title, saved under its own key.
-        parent: "download-area",
-        // The section's place inside the card: the registry first, then the index's
-        // address list, then the mirrors that serve them.
-        order: 1,
-        title: "Plugin sources",
+        // Leads the Plugins page (order 0): where plugins are listed and installed from comes
+        // first; the index's addresses and the mirrors sit inside this card (order 1–2), and
+        // the sandbox's card follows.
+        order: 0,
+        title: "Plugin Sources",
         titleZh: "插件源",
         description:
-          "Where plugins install from. The npm registry the installer runs against; the published index's mirror rules are a deployment's own setting and do not appear here.",
+          "Where plugins are listed and installed from: the npm registry packages install from, the plugin catalogues this deployment reads, and the mirrors tried when those are unreachable.",
         descriptionZh:
-          "插件从哪里安装。安装器使用的 npm registry；发布索引的镜像规则是部署级配置，不在此处。",
+          "列出与安装插件的来源：安装包的 npm registry、本部署读取的插件目录，以及这些地址不可达时尝试的镜像。",
         properties: {
           npmRegistry: {
             type: "enum",

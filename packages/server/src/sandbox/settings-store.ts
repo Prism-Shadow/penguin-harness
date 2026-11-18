@@ -25,9 +25,9 @@ export const SANDBOX_GROUP = "sandbox";
     "PluginConfigProvider.groups": [
       {
         id: "sandbox",
-        // After the download area's card (order 0) and its three sections (1–3): where
+        // After the Plugin Sources card (order 0) and its child entries (1–2): where
         // plugins come from leads the Plugins page, the sandbox follows.
-        order: 4,
+        order: 3,
         // The name the Plugins page gives the sandbox backends' category, so the card and the
         // plugins it is enforced by read as one thing.
         title: "Agent Sandbox",

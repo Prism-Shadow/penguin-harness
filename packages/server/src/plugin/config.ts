@@ -771,8 +771,11 @@ export function applyUpdate(
       }
       const violation = valueViolation(name, field, items);
       if (violation !== undefined) throw new PluginConfigError(name, violation);
-      if (items.length === 0) delete next[name];
-      else next[name] = items;
+      if (items.length === 0 && (!Array.isArray(field.default) || field.default.length === 0)) {
+        delete next[name];
+      } else {
+        next[name] = items;
+      }
       continue;
     }
     next[name] = typeof value === "string" ? value.trim() : value;

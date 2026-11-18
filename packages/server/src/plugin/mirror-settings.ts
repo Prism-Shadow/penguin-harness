@@ -103,27 +103,19 @@ export function mirrorRulesOf(value: unknown): readonly PluginProxyRule[] {
         // Written out, not named from a constant: a contribution is data the host reads
         // without running the package.
         id: "plugin-mirrors",
-        // A section of the download area's card (download-area.ts), after the plugin-index
-        // section: both sections lead with the sources.
-        parent: "download-area",
-        order: 3,
-        title: "Plugin mirrors",
-        titleZh: "插件镜像",
-        description:
-          "Where the plugin chain looks when GitHub or the npm registry is unreachable: the published index's fetches try the chosen mirrors after the source's own URL, in the order chosen. Everything a mirror serves is verified exactly as the canonical source's — the index document is parsed the same, every release asset's sha512 is checked, and npm's own install record is verified after the fact — so a mirror costs a failed fetch, never tampered bytes.",
-        descriptionZh:
-          "GitHub 或 npm registry 不可达时插件链去哪里取：发布索引的取回按所选顺序在源地址之后尝试所选镜像。镜像供给的一切都按源地址同样的方式校验——索引文档照同一个解析器解析、每个 release 资产照条目的 sha512 核对、npm 安装完成后照条目事后核验——镜像带来的只可能是一次取数失败，不会是被篡改的字节。",
+        // Drawn inside the Plugin Sources card (source-settings.ts), after the plugin-index
+        // field: one card on screen, saved under its own key (`plugin-config:plugin-mirrors`).
+        parent: "plugin-sources",
+        order: 2,
         properties: {
           mirrors: {
             type: "list",
-            title: "Mirrors to try",
-            titleZh: "尝试的镜像",
+            title: "Plugin mirrors",
+            titleZh: "插件镜像",
             description:
-              "The mirrors to try after the source's own URL, in order: the npm registry mirror serves npm packages and the index's npm-published tarballs; the GitHub mirrors serve the published index and its assets' repository files. Empty — the default — tries nothing: the source's own URL only.",
+              "The mirrors to try after each source's own URL when GitHub or the npm registry is unreachable, in order: the npm registry mirror serves npm packages and the index's npm-published tarballs; the GitHub mirrors serve the published index and its release assets. Everything a mirror serves is verified against the entry's sha512, just like the canonical source. Empty (the default) tries the source's own URL only.",
             descriptionZh:
-              "在源地址之后按顺序尝试的镜像：npm registry 镜像供给 npm 包与索引发布到 npm 的 tarball；GitHub 镜像供给发布索引与其资产的仓库内文件。留空（默认）不尝试任何镜像：只走源自己的地址。",
-            hint: "One mirror per line, tried top to bottom.",
-            hintZh: "每行一个镜像，从上到下依次尝试。",
+              "GitHub 或 npm registry 不可达时，在每个源地址之后按顺序尝试的镜像：npm registry 镜像供给 npm 包与索引发布到 npm 的 tarball；GitHub 镜像供给发布索引与其 release 资产。镜像供给的一切同样按条目的 sha512 核验。留空（默认）只走源自己的地址。",
             default: [],
             // The page draws one picker per entry from these choices (items.options); the
             // server still holds a list of ids and `mirrorRulesOf` filters what it reads.

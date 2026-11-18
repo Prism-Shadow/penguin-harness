@@ -35,27 +35,20 @@ export function indexUrlsOf(doc: Record<string, unknown>): string[] {
     "PluginConfigProvider.groups": [
       {
         id: "plugin-index",
-        // A section of the download area's card (download-area.ts), between the sources'
-        // section and the mirrors': the address list is what the mirrors serve.
-        parent: "download-area",
-        order: 2,
-        title: "Plugin index",
-        titleZh: "插件索引",
-        description:
-          "The plugin catalogues this deployment lists and installs from: one index.json document per address, tried in the order written, the earlier address winning a package a later one also lists. The published index this release ships with is on the list by default; an emptied list reads the packages that ship with this server only, and no outbound request.",
-        descriptionZh:
-          "本部署列出与安装插件时读取的目录：每个地址一份 index.json，按书写顺序尝试，同一插件由更靠前的地址提供。随本版本发布的索引默认在列表里；清空列表则只列随本服务器内置的插件，且不发出任何网络请求。",
+        // Drawn inside the Plugin Sources card (source-settings.ts), between the npm registry
+        // and the mirrors: one card on screen, saved under its own key (`plugin-config:plugin-index`).
+        parent: "plugin-sources",
+        order: 1,
         properties: {
           sources: {
             type: "list",
-            title: "Index addresses",
-            titleZh: "索引地址",
+            title: "Plugin index",
+            titleZh: "插件索引",
             description:
-              "The index.json documents to read, tried in the order written. The published index this release ships with is listed by default; remove it or add addresses as the deployment needs, or empty the list to read the shipped packages alone.",
+              "The plugin catalogues this deployment lists and installs from: one index.json document per address, tried in the order written, the earlier address winning a package a later one also lists. The published index this release ships with is on the list by default; remove it or add addresses as the deployment needs, or empty the list to read the shipped packages alone (no outbound request).",
             descriptionZh:
-              "要读取的 index.json 地址，按书写顺序尝试。随本版本发布的索引默认在列表中：按部署需要删除或追加地址，或清空列表只读内置插件。",
-            hint: "One http(s) URL per line.",
-            hintZh: "每行一个 http(s) 地址。",
+              "本部署列出与安装插件时读取的目录：每个地址一份 index.json，按书写顺序尝试，同一插件由更靠前的地址提供。随本版本发布的索引默认在列表中：按部署需要删除或追加地址，或清空列表只读随本服务器内置的插件（不发出任何网络请求）。",
+            placeholder: "https://example.com/index.json",
             default: [
               "https://github.com/Prism-Shadow/penguin-extensions/releases/download/nightly/index.json",
             ],

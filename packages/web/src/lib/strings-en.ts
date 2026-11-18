@@ -825,7 +825,7 @@ export const en: Strings = {
     pluginListMoveUp: "Move up",
     pluginListMoveDown: "Move down",
     pluginListRemove: "Remove",
-    pluginListAdd: "Add an entry",
+    pluginListAdd: "Add",
     pluginPositionOn: "On",
     pluginPositionOff: "Off",
     pluginsInfo:

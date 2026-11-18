@@ -969,7 +969,7 @@ export const zh = {
     pluginListMoveUp: "上移",
     pluginListMoveDown: "下移",
     pluginListRemove: "删除",
-    pluginListAdd: "添加一条",
+    pluginListAdd: "添加",
     /** A secret field with a stored value: submitting it empty keeps the stored one. */
     pluginSecretKeepHint: "留空保持已保存的值不变",
     pluginSecretClear: "清除已存值",

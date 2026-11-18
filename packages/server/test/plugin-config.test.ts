@@ -252,25 +252,22 @@ describe("/api/admin/plugin-config", () => {
     const res = await admin.get("/api/admin/plugin-config");
     expect(res.status).toBe(200);
     const body = (await res.json()) as PluginConfigResponse;
-    // The download area leads the page (order 0); the sandbox's group and the packages'
-    // groups follow it. The three sections ride inside the download area's card as its
-    // children, each saved under its own key.
+    // The Plugin Sources card leads the page (order 0) with the index and mirrors entries
+    // drawn inside it (order 1–2, parent "plugin-sources", each saved under its own key);
+    // the sandbox's group and the packages' groups follow.
     expect(body.plugins.map((p) => p.name)).toEqual([
-      "download-area",
       "plugin-sources",
       "plugin-index",
       "plugin-mirrors",
       "sandbox",
       "acme-bot",
     ]);
-    expect(body.plugins[0]!.name).toBe("download-area");
-    const sources = body.plugins.find((p) => p.name === "plugin-sources")!;
-    expect(sources.parent).toBe("download-area");
+    expect(body.plugins[0]!.name).toBe("plugin-sources");
     const index = body.plugins.find((p) => p.name === "plugin-index")!;
     // The test app stores an emptied list (no test may reach the network to list plugins);
     // the declared default beside it carries the release's published index.
     expect(index.values).toEqual({ sources: [] });
-    expect(index.parent).toBe("download-area");
+    expect(index.parent).toBe("plugin-sources");
     const mirrors = body.plugins.find((p) => p.name === "plugin-mirrors")!;
     expect(mirrors.values).toEqual({ mirrors: [] });
     // The mirror entries are chosen from the built-in mirrors' fixed set.
@@ -279,7 +276,7 @@ describe("/api/admin/plugin-config", () => {
       "github-raw",
       "github-proxy",
     ]);
-    expect(mirrors.parent).toBe("download-area");
+    expect(mirrors.parent).toBe("plugin-sources");
     expect(body.plugins.filter((p) => p.name === "acme-bot")).toEqual([
       {
         name: "acme-bot",
