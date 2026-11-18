@@ -1,3 +1,7 @@
+/** Read-aloud replay scenarios cover concurrent listeners, changed voice/text, missing audio,
+ * independent sessions and users, failed synthesis followed by a successful retry, and a fresh CLI run. */
+import { unlink } from "node:fs/promises";
+import path from "node:path";
 import { parseManifest } from "@prismshadow/penguin-core/kernel";
 import { PluginHost } from "../src/plugin/host.js";
 import { createServer, type Server } from "node:http";
@@ -75,6 +79,13 @@ describe("project model capabilities", () => {
         return;
       }
       const input = wire.messages[0].content_items[0].text;
+      if (
+        input === "Retry speech" &&
+        received.filter((r) => r.messages[0]!.content_items[0]!.text === input).length === 1
+      ) {
+        res.writeHead(400).end();
+        return;
+      }
       const key =
         wire.model === "gemini-3.1-flash-image"
           ? "image"
@@ -531,5 +542,53 @@ describe("project model capabilities", () => {
     expect(((await cancel.json()) as { result: CapabilityResult }).result.status).toBe("cancelled");
     expect((await member.patch(tools, { bindings: { video: bindings.video } })).status).toBe(403);
     received.length = 0;
+  });
+  it("replays completed audio for one listener without recording another synthesis, including simultaneous requests", async () => {
+    const body = { text: "Replay this sentence", voice: "voice-one", readAloud: true, sessionId };
+    const run = async (input = body, client = api) => {
+      const res = await client.post(tools + "/t2s/run", input);
+      expect(res.status, await res.clone().text()).toBe(200);
+      return (await res.json()) as CapabilityResult;
+    };
+    const before = received.length;
+    const [first, joined] = await Promise.all([run(), run()]);
+    expect(joined.id).toBe(first.id);
+    expect((await run()).id).toBe(first.id);
+    expect(received).toHaveLength(before + 1);
+
+    const voice = await run({ ...body, voice: "voice-two" });
+    const edit = await run({ ...body, text: "Changed text" });
+    const otherSession = await api.post(base + "/agents/default_agent/sessions", {});
+    const otherId = ((await otherSession.json()) as SessionCreateResponse).session.sessionId;
+    const separate = await run({ ...body, sessionId: otherId });
+    const ordinary = await run({ ...body, readAloud: false });
+    const member = await provisionUser(app.app, "read_aloud_member");
+    const memberApi = apiClient(app.app, member.cookie);
+    expect((await memberApi.post(tools + "/t2s/run", body)).status).toBe(404);
+    expect((await api.post(base + "/members", { userId: member.user.userId })).ok).toBe(true);
+    const memberSpeech = await run(body, memberApi);
+    expect(
+      new Set([first, voice, edit, separate, ordinary, memberSpeech].map((r) => r.id)).size,
+    ).toBe(6);
+    expect(received).toHaveLength(before + 6);
+    const audio = first.artifacts[0]!;
+    await unlink(path.join(app.root, "default_project", ".capability-artifacts", audio.id));
+    expect((await run()).id).not.toBe(first.id);
+    expect(received).toHaveLength(before + 7);
+  });
+  it("retries a failed reading and caches only the successful audio", async () => {
+    const input = { text: "Retry speech", readAloud: true, sessionId };
+    const before = received.length;
+    expect((await api.post(tools + "/tts/run", input)).status).toBe(502);
+    const retry = await api.post(tools + "/tts/run", input);
+    expect(retry.status).toBe(200);
+    const replay = await api.post(tools + "/tts/run", input);
+    expect(((await replay.json()) as CapabilityResult).id).toBe(
+      ((await retry.json()) as CapabilityResult).id,
+    );
+    expect(received).toHaveLength(before + 2);
+    expect((await api.post(tools + "/t2s/run", { ...input, sessionId: undefined })).status).toBe(
+      400,
+    );
   });
 });

@@ -9,11 +9,12 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { GlyphIcon, ICONS, Spinner, toastError } from "@prismshadow/penguin-ui";
+import { GlyphIcon, ICONS, InlineIconButton, Spinner, toastError } from "@prismshadow/penguin-ui";
 import type { CapabilitySettings } from "@prismshadow/penguin-server/api";
 import { apiUrl } from "../../../lib/server-context";
 import { apiErrorText } from "../../../lib/api-error";
 import { S } from "../../../lib/strings";
+import { useAuth } from "../../../state/auth";
 import { useProjectCapabilities } from "../../../state/use-project-capabilities";
 import { hasBoundCapability, runVoice } from "../../../api/project-capabilities";
 
@@ -47,6 +48,8 @@ export function VoiceScope({
   active: boolean;
   children: ReactNode;
 }) {
+  const listener = useAuth().user?.userId;
+  const replays = useRef(new Map<string, { text: string; model: string; url: string }>());
   const { settings, readCurrent } = useProjectCapabilities(active ? projectId : null, server);
   const canSpeak = hasBoundCapability(settings, "tts");
   const [playback, setPlayback] = useState<Playback | null>(null);
@@ -67,7 +70,10 @@ export function VoiceScope({
     }
     setPlayback(null);
   }, []);
-  useLayoutEffect(() => stop, [projectId, server, sessionId, active, canSpeak, stop]);
+  useLayoutEffect(() => {
+    replays.current.clear();
+    return stop;
+  }, [projectId, server, sessionId, listener, active, canSpeak, stop]);
   useEffect(() => {
     const hide = () => {
       if (document.hidden) stop();
@@ -102,24 +108,37 @@ export function VoiceScope({
           stop(id);
           return;
         }
-        const result = await runVoice(
-          projectId,
-          server,
-          "tts",
-          { text, ...(sessionId ? { sessionId } : {}) },
-          request.signal,
-        );
-        if (current.current !== item) return;
-        const artifact = result.artifacts.find((a) => a.mimeType.startsWith("audio/"));
-        if (!artifact || !artifact.url.startsWith("/api/")) throw new Error(S.voice.audioError);
+        const binding = latest!.bindings.tts!;
+        const model = JSON.stringify([binding.provider, binding.modelId]);
+        const cached = replays.current.get(id);
+        let url = cached?.text === text && cached.model === model ? cached.url : undefined;
+        if (!url) {
+          const result = await runVoice(
+            projectId,
+            server,
+            "tts",
+            { text, ...(sessionId ? { sessionId, readAloud: true } : {}) },
+            request.signal,
+          );
+          if (current.current !== item) return;
+          const artifact = result.artifacts.find((a) => a.mimeType.startsWith("audio/"));
+          if (!artifact || !artifact.url.startsWith("/api/")) throw new Error(S.voice.audioError);
+          url = artifact.url;
+          if (
+            result.model?.provider === binding.provider &&
+            result.model.modelId === binding.modelId
+          )
+            replays.current.set(id, { text, model, url });
+        }
         audio.onended = () => stop(id);
         audio.onerror = () => {
           if (current.current === item) {
+            replays.current.delete(id);
             stop();
             toastError(S.voice.audioError);
           }
         };
-        audio.src = apiUrl(artifact.url, server);
+        audio.src = apiUrl(url, server);
       }
       await item.audio.play();
       if (current.current === item) setPlayback({ id, phase: "playing" });
@@ -129,6 +148,7 @@ export function VoiceScope({
         setPlayback({ id, phase: "ready" });
         return;
       }
+      replays.current.delete(id);
       stop();
       toastError(apiErrorText(e));
     }
@@ -161,19 +181,17 @@ export function ReadReply({ text }: { text: string }) {
   const own = scope.playback?.id === id ? scope.playback.phase : null;
   const label = own === "ready" ? S.voice.play : own ? S.voice.stop : S.voice.listen;
   return (
-    <button
-      type="button"
-      data-tooltip={label}
-      aria-label={label}
+    <InlineIconButton
+      label={label}
       aria-pressed={own === "playing" || own === "loading"}
       onClick={() => scope.speak(id, text)}
-      className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-fg-subtle hover:bg-surface-muted hover:text-fg"
+      className="shrink-0"
     >
       {own === "loading" ? (
         <Spinner size="sm" label={S.voice.preparing} />
       ) : (
-        <GlyphIcon d={own === "playing" ? ICONS.square : ICONS.speaker} size={15} />
+        <GlyphIcon d={own === "playing" ? ICONS.square : ICONS.speaker} />
       )}
-    </button>
+    </InlineIconButton>
   );
 }

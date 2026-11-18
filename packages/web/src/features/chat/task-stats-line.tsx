@@ -33,6 +33,7 @@ import {
   CopyButton,
   GlyphIcon,
   ICONS,
+  InlineIconButton,
   Spinner,
   StatChip,
 } from "@prismshadow/penguin-ui";
@@ -165,20 +166,18 @@ export function TaskStatsLine({
           request fires on Confirm, never directly. */}
       {onFork && assistantText?.trim() && (
         <>
-          <button
-            type="button"
+          <InlineIconButton
             disabled={forking}
-            data-tooltip={S.chat.forkSession}
-            aria-label={S.chat.forkSession}
+            label={S.chat.forkSession}
             onClick={() => setConfirmingFork(true)}
-            className="flex h-5 w-5 shrink-0 items-center justify-center rounded transition-colors duration-150 hover:bg-surface-muted hover:text-fg-muted disabled:cursor-wait disabled:opacity-50"
+            className="shrink-0"
           >
             {forking ? (
               <Spinner size="sm" label={S.common.loading} />
             ) : (
-              <GlyphIcon d={ICONS.gitBranch} size={13} />
+              <GlyphIcon d={ICONS.gitBranch} />
             )}
-          </button>
+          </InlineIconButton>
           <ConfirmModal
             open={confirmingFork}
             title={S.chat.forkSession}

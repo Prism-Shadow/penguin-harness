@@ -48,6 +48,7 @@ export * from "./components/feedback/load-failed/load-failed";
 // W1 — actions.
 export * from "./components/actions/close-button/close-button";
 export * from "./components/actions/button/button";
+export * from "./components/actions/button/inline-icon-button";
 export * from "./components/actions/link/link";
 export * from "./components/actions/text-action/text-action";
 export * from "./components/actions/copy-button/copy-button";

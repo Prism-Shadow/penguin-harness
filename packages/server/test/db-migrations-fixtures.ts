@@ -82,6 +82,7 @@ export function dropCompanyTables(db: DatabaseSync): void {
 
 /** 2026-10-04-browser-extensions' table and index: a database from before the Chrome pairings had neither. */
 export function dropBrowserExtensions(db: DatabaseSync): void {
+  db.exec("DROP TABLE IF EXISTS read_aloud_cache");
   db.exec("DROP TABLE IF EXISTS capability_runs");
   db.exec("DROP INDEX IF EXISTS idx_browser_extensions_user");
   db.exec("DROP TABLE IF EXISTS browser_extensions");

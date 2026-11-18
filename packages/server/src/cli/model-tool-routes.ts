@@ -151,6 +151,7 @@ export function capabilityRoutes(deps: CapabilityDependencies) {
     body: Record<string, unknown>,
     session: string | undefined,
     signal: AbortSignal,
+    listener?: string,
   ) {
     const { item, options } = capabilityInput(key, body);
     const config = await deps.projects.loadConfig(project);
@@ -172,6 +173,7 @@ export function capabilityRoutes(deps: CapabilityDependencies) {
         projectId: project,
         sessionId: session,
         capability: key,
+        listener,
         model,
         config: await deps.projects.loadCapabilityModel(project, model),
         item,
@@ -196,7 +198,17 @@ export function capabilityRoutes(deps: CapabilityDependencies) {
     if (!(await deps.capabilities.list(project)).some((c) => c.key === key)) throw unavailable(key);
     const body = await readJson(c);
     const session = sessionScope(deps, project, body.sessionId);
-    const result = await run(project, key, body, session, c.req.raw.signal);
+    const readAloud = body.readAloud === true;
+    if (readAloud && (key !== "tts" || !session || body.async === true))
+      throw badRequest("Reading aloud requires a Session and a synchronous speech request.");
+    const result = await run(
+      project,
+      key,
+      body,
+      session,
+      c.req.raw.signal,
+      readAloud ? c.var.user.userId : undefined,
+    );
     return c.json(result, body.async === true ? 202 : 200);
   });
 

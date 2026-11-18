@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto";
-import { mkdir, open, readFile, unlink } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, open, readFile, stat, unlink } from "node:fs/promises";
 import path from "node:path";
 import { projectDir, type ProjectConfig } from "@prismshadow/penguin-core";
 import type { Resources } from "@prismshadow/penguin-core/kernel";
@@ -34,6 +34,7 @@ const suffix: Record<string, string> = {
   "video/quicktime": "mov",
 };
 interface Task {
+  listener?: string;
   projectId: string;
   sessionId?: string;
   model: ModelRefDto;
@@ -61,13 +62,27 @@ function reason(err: unknown): string {
   if (e?.status && e.status >= 400) return "The model provider returned HTTP " + e.status + ".";
   return "The model request failed. Check the selected model and its endpoint.";
 }
+interface PendingSpeech {
+  controller: AbortController;
+  listeners: number;
+  result: Promise<CapabilityResult>;
+}
+
 export class CapabilityRuns {
+  private readonly speech: Map<string, PendingSpeech>;
   private readonly active: Map<string, AbortController>;
   constructor(
     private readonly db: Db,
     private readonly root: string,
     resources: Resources,
   ) {
+    const speechSlot = "capability-runs:read-aloud";
+    const speech = resources.claim<Map<string, PendingSpeech>>(speechSlot);
+    this.speech = speech ?? new Map();
+    if (!speech)
+      resources.register(speechSlot, this.speech, () => {
+        for (const entry of this.speech.values()) entry.controller.abort();
+      });
     // An outstanding video continues when the HTTP routes are hot-replaced.
     const slot = "capability-runs:controllers";
     const existing = resources.claim<Map<string, AbortController>>(slot);
@@ -152,7 +167,93 @@ export class CapabilityRuns {
     }
     return row;
   }
+  private async existingSpeech(task: Task, key: string): Promise<CapabilityResult | undefined> {
+    const row = this.db
+      .prepare(
+        "SELECT r.data FROM read_aloud_cache c JOIN capability_runs r ON r.id=c.run_id WHERE c.fingerprint=? AND r.project_id=? AND r.session_id=? AND r.status='completed'",
+      )
+      .get(key, task.projectId, task.sessionId!);
+    if (!row) return;
+    const result = decode(row);
+    const audio = result.artifacts.find((item) => item.mimeType.startsWith("audio/"));
+    if (audio) {
+      try {
+        const file = await stat(path.join(this.dir(task.projectId), audio.id));
+        if (file.isFile() && file.size === audio.bytes && file.size > 0) return result;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+    }
+    this.db
+      .prepare("DELETE FROM read_aloud_cache WHERE fingerprint=? AND run_id=?")
+      .run(key, result.id);
+  }
+
+  private async speechResult(task: Task, key: string, signal: AbortSignal) {
+    const existing = await this.existingSpeech(task, key);
+    signal.throwIfAborted();
+    if (existing) return existing;
+    const result = await this.start(task, signal, false);
+    if (result.status === "completed") {
+      this.db
+        .prepare("INSERT OR REPLACE INTO read_aloud_cache(fingerprint,run_id) VALUES(?,?)")
+        .run(key, result.id);
+    }
+    return result;
+  }
+
   async run(task: Task, signal: AbortSignal, background: boolean) {
+    if (
+      !task.listener ||
+      task.capability !== "tts" ||
+      !task.sessionId ||
+      task.item.type !== "text.done"
+    )
+      return this.start(task, signal, background);
+    signal.throwIfAborted();
+    const key = createHash("sha256")
+      .update(
+        JSON.stringify([
+          task.projectId,
+          task.sessionId,
+          task.listener,
+          task.model.provider,
+          task.model.modelId,
+          task.options,
+          task.item.text,
+        ]),
+      )
+      .digest("hex");
+    let entry = this.speech.get(key);
+    if (!entry || entry.controller.signal.aborted) {
+      const controller = new AbortController();
+      const next = {
+        controller,
+        listeners: 0,
+        result: this.speechResult(task, key, controller.signal),
+      };
+      entry = next;
+      this.speech.set(key, next);
+      const remove = () => {
+        if (this.speech.get(key) === next) this.speech.delete(key);
+      };
+      void next.result.then(remove, remove);
+    }
+    const job = entry;
+    job.listeners++;
+    const leave = () => {
+      if (--job.listeners === 0) job.controller.abort();
+    };
+    signal.addEventListener("abort", leave, { once: true });
+    try {
+      return await job.result;
+    } finally {
+      signal.removeEventListener("abort", leave);
+      if (!signal.aborted) leave();
+    }
+  }
+
+  private async start(task: Task, signal: AbortSignal, background: boolean) {
     const { projectId, capability, model, sessionId } = task;
     const row: CapabilityResult = {
       id: randomUUID(),

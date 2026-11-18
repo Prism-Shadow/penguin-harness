@@ -311,6 +311,7 @@ describe("2026-09-23-machines-columns → current: 2026-10-04-browser-extensions
         "2026-09-23-model-tables-adoption",
         "2026-10-26-user-drafts",
         "2026-11-18-capability-runs",
+        "2026-11-19-read-aloud-cache",
       ]);
       db.exec("PRAGMA foreign_keys = ON");
       db.exec(
@@ -376,6 +377,7 @@ describe("a sessions table from before the sidebar mark: 2026-10-12-sessions-kep
         "2026-09-23-model-tables-adoption",
         "2026-10-26-user-drafts",
         "2026-11-18-capability-runs",
+        "2026-11-19-read-aloud-cache",
       ]);
       expect(db.prepare("SELECT session_id, kept_at FROM sessions").all()).toEqual([
         { session_id: "s1", kept_at: null },
@@ -435,6 +437,7 @@ describe("an agent_api table from before the session settings: 2026-10-14-agent-
         "2026-09-23-model-tables-adoption",
         "2026-10-26-user-drafts",
         "2026-11-18-capability-runs",
+        "2026-11-19-read-aloud-cache",
       ]);
       expect(db.prepare("SELECT * FROM agent_api").get()).toMatchObject({
         enabled: 1,
@@ -497,6 +500,7 @@ describe("an agent_api table from before the concurrency limit: 2026-10-14-agent
         "2026-09-23-model-tables-adoption",
         "2026-10-26-user-drafts",
         "2026-11-18-capability-runs",
+        "2026-11-19-read-aloud-cache",
       ]);
       expect(db.prepare("SELECT * FROM agent_api").get()).toMatchObject({
         enabled: 1,
@@ -547,6 +551,7 @@ describe("a machines table from before the adoption times: 2026-10-16-machines-a
         "2026-09-23-model-tables-adoption",
         "2026-10-26-user-drafts",
         "2026-11-18-capability-runs",
+        "2026-11-19-read-aloud-cache",
       ]);
       expect(db.prepare("SELECT address, adopted_at FROM machines").all()).toEqual([
         { address: "ssh:nas", adopted_at: null },
@@ -594,6 +599,7 @@ describe("a database from before the account's drafts: 2026-10-26-user-drafts", 
       expect(migrate(db, { swapPath: true }).applied).toEqual([
         "2026-10-26-user-drafts",
         "2026-11-18-capability-runs",
+        "2026-11-19-read-aloud-cache",
       ]);
       db.exec("PRAGMA foreign_keys = ON");
       db.exec(
@@ -653,10 +659,13 @@ describe("project capability runs", () => {
   it("adds the project-owned ledger on a hot update and can roll it back", () => {
     const db = openFresh();
     try {
-      db.exec("DROP TABLE capability_runs");
+      db.exec("DROP TABLE read_aloud_cache; DROP TABLE capability_runs");
       stampThrough(db, "2026-10-26-user-drafts");
       const before = shape(db);
-      expect(migrate(db, { swapPath: true }).applied).toEqual(["2026-11-18-capability-runs"]);
+      expect(migrate(db, { swapPath: true }).applied).toEqual([
+        "2026-11-18-capability-runs",
+        "2026-11-19-read-aloud-cache",
+      ]);
       expect(columns(db, "capability_runs")).toEqual([
         "id",
         "project_id",

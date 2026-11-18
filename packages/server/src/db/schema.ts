@@ -107,6 +107,11 @@ CREATE TABLE IF NOT EXISTS capability_runs (
 CREATE INDEX IF NOT EXISTS capability_runs_project_time ON capability_runs(project_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS capability_runs_session_time ON capability_runs(project_id, session_id, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS read_aloud_cache (
+  fingerprint TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL REFERENCES capability_runs(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS usage_records (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,
   ts                TEXT NOT NULL,
