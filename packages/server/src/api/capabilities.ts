@@ -35,6 +35,8 @@ export interface CapabilitySettingsPatch<Op extends ModelOperation = Capability>
   voicePolish?: { enabled?: boolean; model?: ModelRefDto | null; prompt?: string | null };
 }
 export interface CapabilityRunRequest {
+  /** Reuse completed speech for this signed-in listener and Session. */
+  readAloud?: boolean;
   text?: string;
   url?: string;
   image?: { data: string; mimeType: string };

@@ -124,6 +124,7 @@ for (const lang of ["zh", "en"]) {
       await route.fulfill({
         json: {
           status: "completed",
+          model: speaker,
           artifacts: [{ mimeType: "audio/wav", url: "/api/voice-fixture.wav" }],
         },
       });
@@ -211,6 +212,7 @@ for (const lang of ["zh", "en"]) {
     expect(playbackCount).toBe(1);
     await btn(4).click();
     await expect(btn(5)).toBeVisible();
+    expect(playbackCount).toBe(1);
     await page.goto(base + "/models");
     await expect(btn(0)).toBeVisible();
   });
@@ -220,6 +222,7 @@ test("speech uses the project's real MMSP routes and records each selected model
   page,
 }) => {
   const seen = [];
+  let rejectSpeech = false;
   const upstream = createServer(async (req, res) => {
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
@@ -230,17 +233,21 @@ test("speech uses the project's real MMSP routes and records each selected model
       items: payload.messages.flatMap((m) => m.content_items),
       config: payload.config,
     });
-    const item =
-      payload.model === "deepseek-tts"
-        ? {
-            type: "inline_data.done",
-            mime_type: "audio/pcm;rate=8000",
-            data: Buffer.alloc(8000 * 2 * 5).toString("base64"),
-          }
-        : {
-            type: "text.done",
-            text: payload.model === "deepseek-asr" ? "meet meet at 3" : "Meet at 3.",
-          };
+    const synthesis = ["deepseek-tts", "fish-audio/drama-3"].includes(payload.model);
+    if (synthesis && rejectSpeech) {
+      res.writeHead(400).end();
+      return;
+    }
+    const item = synthesis
+      ? {
+          type: "inline_data.done",
+          mime_type: "audio/pcm;rate=8000",
+          data: Buffer.alloc(8000 * 2 * 5).toString("base64"),
+        }
+      : {
+          type: "text.done",
+          text: payload.model === "deepseek-asr" ? "meet meet at 3" : "Meet at 3.",
+        };
     const event = {
       role: "assistant",
       event_type: "delta",
@@ -386,18 +393,124 @@ test("speech uses the project's real MMSP routes and records each selected model
     }
     await read.click();
     await expectPlaying(page);
+    await stop.click();
+    await expectReleased(page);
+    await page.reload();
+    await read.click();
+    await expectPlaying(page);
+    await stop.click();
+    const footer = read.locator("..");
+    if (process.env.VOICE_EVIDENCE) {
+      await read.hover();
+      await footer.screenshot({ path: process.env.VOICE_EVIDENCE + "/reply-actions.png" });
+    }
+    const buttons = await footer
+      .locator(":scope > button")
+      .evaluateAll((items) =>
+        items.map((item) => [item.offsetWidth, item.offsetHeight, item.getBoundingClientRect().y]),
+      );
+    expect(buttons).toHaveLength(3);
+    expect(buttons[1]).toEqual(buttons[0]);
+    expect(buttons[2]).toEqual(buttons[0]);
+    await read.click();
+    await expectPlaying(page);
     await page.locator('a[href="/models"]').first().click();
     await expectReleased(page);
     expect(seen.map((call) => call.model)).toEqual([
       "deepseek-asr",
       "deepseek-flash",
       "deepseek-tts",
-      "deepseek-tts",
     ]);
     for (const call of seen) {
       expect(call.path).toBe("/v1/stream");
       expect(call.config.session_id).toBe(session.sessionId);
     }
+
+    // Switching models has to invalidate the old recording. A failed synthesis can be retried.
+    const alternate = ref("fish-audio/drama-3");
+    const chatRow = {
+      ...chat,
+      contextWindow: 200000,
+      baseUrl: process.env.MOCK_URL,
+      apiKey: "local-voice-test",
+    };
+    const voiceRows = [...models, { ...models[0], ...alternate }, chatRow];
+    const useModel = await page.request.put(api + "/models", {
+      data: { models: voiceRows, defaultModel: chat },
+    });
+    expect(useModel.ok()).toBe(true);
+    expect(
+      (
+        await page.request.patch(api + "/capabilities", { data: { bindings: { tts: alternate } } })
+      ).ok(),
+    ).toBe(true);
+    await page.goto(base + "/chat/" + session.sessionId);
+    rejectSpeech = true;
+    await read.click();
+    await expect.poll(() => seen.filter((c) => c.model === alternate.modelId).length).toBe(1);
+    await expect(read).toBeVisible();
+    rejectSpeech = false;
+    await read.click();
+    await expectPlaying(page);
+    await stop.click();
+    await read.click();
+    await expectPlaying(page);
+    await stop.click();
+    expect(seen.filter((c) => c.model === alternate.modelId)).toHaveLength(2);
+    expect(
+      (
+        await page.request.patch(api + "/capabilities", {
+          data: { bindings: { tts: ref("deepseek-tts") } },
+        })
+      ).ok(),
+    ).toBe(true);
+    await read.click();
+    await expectPlaying(page);
+    await stop.click();
+    expect(seen.filter((c) => c.model === "deepseek-tts")).toHaveLength(1);
+
+    const secondProject = "voiceintegrated-second";
+    const other = base + "/api/projects/" + secondProject;
+    const newProject = await page.request.post(base + "/api/projects", {
+      data: { projectId: secondProject, name: "Another reading project" },
+    });
+    expect(newProject.status(), await newProject.text()).toBe(201);
+    expect(
+      (
+        await page.request.put(other + "/models", {
+          data: { models: voiceRows, defaultModel: chat },
+        })
+      ).ok(),
+    ).toBe(true);
+    expect(
+      (
+        await page.request.patch(other + "/capabilities", {
+          data: { bindings: { tts: ref("deepseek-tts") } },
+        })
+      ).ok(),
+    ).toBe(true);
+    const otherSession = (
+      await (
+        await page.request.post(other + "/agents/default_agent/sessions", { data: chat })
+      ).json()
+    ).session.sessionId;
+    const input = {
+      sessionId: otherSession,
+      text: seen.find((c) => c.model === "deepseek-tts").items[0].text,
+      readAloud: true,
+    };
+    const invoke = async (text) =>
+      (
+        await (
+          await page.request.post(other + "/capabilities/tts/run", { data: { ...input, text } })
+        ).json()
+      ).id;
+    const [left, right] = await Promise.all([invoke(input.text), invoke(input.text)]);
+    expect(left).toBeTruthy();
+    expect(right).toBe(left);
+    expect(await invoke(input.text + " Edited.")).not.toBe(left);
+    expect(seen.filter((c) => c.model === "deepseek-tts")).toHaveLength(3);
+    expect((await page.request.get(api + "/capabilities/runs/" + left)).status()).toBe(404);
   } finally {
     upstream.closeAllConnections();
     await new Promise((resolve) => upstream.close(resolve));
