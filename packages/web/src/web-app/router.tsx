@@ -43,6 +43,7 @@ import { useRuntimeLanguages } from "../lib/use-runtime-languages";
 import { ProjectProvider } from "../state/project";
 import { MachinesProvider } from "../state/machines";
 import { SessionsProvider } from "../state/sessions";
+import { withPageTransitions } from "./page-transitions";
 import { AppLayout } from "./app-layout";
 import { LoginPage } from "../pages/login";
 import { webAppDeps } from "./deps";
@@ -195,7 +196,7 @@ export function AppRouter({ initialPath }: AppRouterProps = {}) {
   const { pages } = webAppDeps.useDeps();
   const [router] = useState(() =>
     initialPath === undefined
-      ? (browserRouter ??= createBrowserRouter(appRoutes(pages)))
+      ? (browserRouter ??= withPageTransitions(createBrowserRouter(appRoutes(pages))))
       : createMemoryRouter(appRoutes(pages), { initialEntries: [initialPath] }),
   );
   // A problem report names the page by its route's pattern, never by the ids in the address.

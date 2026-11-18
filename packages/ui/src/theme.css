@@ -419,6 +419,41 @@
     }
   }
 
+  /* Only the route body is photographed. Chrome, open portals and fixed controls stay in
+     the live document. The transient name leaves the resting shell's stacking order intact. */
+  :root:active-view-transition:has([data-page-viewport]) {
+    view-transition-name: none;
+  }
+  :root:active-view-transition [data-page-viewport] {
+    view-transition-name: penguin-page;
+  }
+  :root:has([data-page-viewport])::view-transition {
+    pointer-events: none;
+  }
+  ::view-transition-group(penguin-page) {
+    animation-duration: var(--ui-dur-enter);
+    animation-timing-function: var(--ui-ease-out);
+  }
+  ::view-transition-old(penguin-page) {
+    animation: ui-page-out var(--ui-dur-enter) var(--ui-ease-out) both;
+    mix-blend-mode: plus-lighter;
+  }
+  ::view-transition-new(penguin-page) {
+    animation: ui-page-in var(--ui-dur-enter) var(--ui-ease-out) both;
+    mix-blend-mode: plus-lighter;
+  }
+  @keyframes ui-page-out {
+    to {
+      opacity: 0;
+    }
+  }
+  @keyframes ui-page-in {
+    from {
+      opacity: 0;
+      translate: var(--ui-page-offset, 0 0);
+    }
+  }
+
   [data-reveal] {
     animation: ui-reveal var(--ui-dur-reveal) var(--ui-ease-out) backwards;
   }
@@ -553,7 +588,18 @@
   animation: none;
   transition: none;
 }
+/* Back/Forward can recall a routed transition after the reader has turned motion off. */
+:root[data-motion="reduced"]::view-transition-group(penguin-page),
+:root[data-motion="reduced"]::view-transition-old(penguin-page),
+:root[data-motion="reduced"]::view-transition-new(penguin-page) {
+  animation-duration: 0s;
+}
 @media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(penguin-page),
+  ::view-transition-old(penguin-page),
+  ::view-transition-new(penguin-page) {
+    animation-duration: 0s;
+  }
   :is([data-presence], [data-backdrop], [data-reveal], .ui-live) {
     animation: none;
   }

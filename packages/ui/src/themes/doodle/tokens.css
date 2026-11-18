@@ -39,6 +39,7 @@
  * `ui-base`, so a value here beats Frost's in both modes.
  */
 :root[data-theme="doodle"] {
+  --ui-page-offset: -3px 2px;
   /* ---- Gray bridge: a warm ramp from paper to ink. white = the slip. ---- */
   --color-white: var(--ui-surface);
   --color-gray-50: #fcfaf6;

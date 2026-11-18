@@ -354,6 +354,7 @@
   --ui-live-timing: linear;
   /* Presence, reveal and layout: the app's own feel — a layer fades in over 150ms with a 4px
      slide from its edge and leaves faster, streamed text fades in, the sidebar's width eases. */
+  --ui-page-offset: 2px 0;
   --ui-dur-enter: 150ms;
   --ui-dur-exit: 100ms;
   --ui-ease-enter: var(--ui-ease-overlay-in);
