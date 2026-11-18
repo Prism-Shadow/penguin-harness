@@ -178,6 +178,7 @@ export class CapabilityRuns {
   }
   private async finish(task: Task, row: CapabilityResult, signal: AbortSignal) {
     const files: string[] = [];
+    const context = { signal, sessionId: task.sessionId };
     try {
       const output =
         task.capability === "voice-polish" && task.item.type === "text.done"
@@ -186,7 +187,7 @@ export class CapabilityRuns {
                 config: task.config,
                 model: task.model,
                 text: task.item.text,
-                signal,
+                ...context,
               })),
               sources: [],
               media: [],
@@ -196,7 +197,7 @@ export class CapabilityRuns {
               task.model,
               [{ role: "user", content_items: [task.item] }],
               task.options,
-              signal,
+              context,
             );
       row.usage = output.usage;
       if (output.text) row.text = output.text;
