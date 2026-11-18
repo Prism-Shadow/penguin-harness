@@ -9,11 +9,11 @@ export interface ToolModelSettings {
   bindings: Partial<Record<ToolModelKey, ModelRefDto>>;
   candidates: Record<ToolModelKey, ModelRefDto[]>;
   dictationFormat?: "audio/wav";
-  voicePolish: { enabled: boolean };
+  voicePolish: { enabled: boolean; prompt: string; defaultPrompt: string };
 }
 export interface ToolModelSettingsPatch {
   bindings?: Partial<Record<ToolModelKey, ModelRefDto | null>>;
-  voicePolish?: { enabled?: boolean };
+  voicePolish?: { enabled?: boolean; prompt?: string | null };
 }
 
 /** An active server plugin contributing one operation to this Project. */
@@ -28,11 +28,11 @@ export interface CapabilitySettings<Op extends ModelOperation = Capability> {
   candidates: Record<Op | "chat", ModelRefDto[]>;
   /** Absent when the selected transcription model accepts the browser's native recording. */
   dictationFormat?: "audio/wav";
-  voicePolish: { enabled: boolean; model: ModelRefDto | null };
+  voicePolish: { enabled: boolean; model: ModelRefDto | null; prompt?: string };
 }
 export interface CapabilitySettingsPatch<Op extends ModelOperation = Capability> {
   bindings?: Partial<Record<Op, ModelRefDto | null>>;
-  voicePolish?: { enabled?: boolean; model?: ModelRefDto | null };
+  voicePolish?: { enabled?: boolean; model?: ModelRefDto | null; prompt?: string | null };
 }
 export interface CapabilityRunRequest {
   text?: string;

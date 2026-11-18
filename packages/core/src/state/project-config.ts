@@ -212,6 +212,8 @@ export interface ProjectConfig {
   /** Model bindings shared by tool commands, image reading and transcript editing. */
   tools?: ToolModels;
   voice_polish_enabled?: boolean;
+  /** Optional Project instructions applied only to transcript editing. */
+  voice_polish_prompt?: string;
   /**
    * New-chat defaults block; absent by default (`defaultProjectConfig` never includes it —
    * absent = the pre-existing behavior). Loaded tolerantly: invalid values drop per key.
@@ -789,6 +791,9 @@ export function projectConfigFromTable(
     ...(Object.keys(toolModels).length ? { tools: toolModels } : {}),
     ...(typeof parsed.voice_polish_enabled === "boolean"
       ? { voice_polish_enabled: parsed.voice_polish_enabled }
+      : {}),
+    ...(typeof parsed.voice_polish_prompt === "string" && parsed.voice_polish_prompt.trim()
+      ? { voice_polish_prompt: parsed.voice_polish_prompt }
       : {}),
     ...(defaultChat !== undefined ? { default_chat: defaultChat } : {}),
     ...(commandPolicy !== undefined ? { command_policy: commandPolicy } : {}),

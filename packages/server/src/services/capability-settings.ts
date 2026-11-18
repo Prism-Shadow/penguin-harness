@@ -18,6 +18,7 @@ import type {
   ToolModelSettings,
 } from "../api/capabilities.js";
 import type { ModelRefDto } from "../api/types.js";
+import { DEFAULT_VOICE_POLISH_PROMPT } from "./voice-polish.js";
 import { badRequest } from "../http/errors.js";
 
 const models = listSupportedModels();
@@ -102,6 +103,7 @@ export function capabilitySettings(
     dictationFormat: dictationFormat(config),
     voicePolish: {
       enabled: config.voice_polish_enabled ?? false,
+      prompt: config.voice_polish_prompt,
       model: config.tools?.t2t ? dto(config.tools.t2t) : null,
     },
   };
@@ -150,7 +152,17 @@ export function applyCapabilitySettings(
       throw badRequest("Choose a text tool model for transcript editing.");
     enabled = false;
   }
-  return { tools, voice_polish_enabled: enabled };
+  const prompt = patch.voicePolish?.prompt;
+  return {
+    tools,
+    voice_polish_enabled: enabled,
+    ...(prompt === undefined
+      ? {}
+      : {
+          voice_polish_prompt:
+            prompt && prompt !== DEFAULT_VOICE_POLISH_PROMPT ? prompt : undefined,
+        }),
+  };
 }
 export function canonicalToolSettings(settings: CapabilitySettings<Capability>): ToolModelSettings {
   const bindings: ToolModelSettings["bindings"] = {};
@@ -165,7 +177,11 @@ export function canonicalToolSettings(settings: CapabilitySettings<Capability>):
     bindings,
     candidates,
     dictationFormat: settings.dictationFormat,
-    voicePolish: { enabled: settings.voicePolish.enabled },
+    voicePolish: {
+      enabled: settings.voicePolish.enabled,
+      prompt: settings.voicePolish.prompt ?? DEFAULT_VOICE_POLISH_PROMPT,
+      defaultPrompt: DEFAULT_VOICE_POLISH_PROMPT,
+    },
   };
 }
 
@@ -176,5 +192,11 @@ export function legacyToolSettings(settings: CapabilitySettings<Capability>): Ca
   const available = settings.available.flatMap((entry) =>
     entry.key === "t2t" || entry.key === "i2t" ? [] : [{ ...entry, key: entry.key }],
   );
-  return { ...settings, available, bindings, candidates };
+  return {
+    ...settings,
+    available,
+    bindings,
+    candidates,
+    voicePolish: { enabled: settings.voicePolish.enabled, model: settings.voicePolish.model },
+  };
 }

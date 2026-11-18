@@ -385,6 +385,38 @@ describe("project model capabilities", () => {
       expect((await api.get(otherPath + "/artifacts/" + run.artifacts[0]!.id)).status).toBe(404);
     }
   });
+  it("uses the Project's optional instructions only for voice polishing and restores the built-in prompt", async () => {
+    const settings = async (project: string = tools) =>
+      (await (await api.get(project + "/tools")).json()) as ToolModelSettings;
+    const defaults = (await settings()).voicePolish;
+    expect(defaults.prompt).toBe(defaults.defaultPrompt);
+    const custom = "Keep the speaker's punctuation.\n保留中英文混排。";
+    expect((await api.patch(tools + "/tools", { voicePolish: { prompt: custom } })).status).toBe(
+      200,
+    );
+    expect((await settings()).voicePolish.prompt).toBe(custom);
+    expect((await settings("/api/projects/scope_test/capabilities")).voicePolish.prompt).toBe(
+      defaults.defaultPrompt,
+    );
+    const edited = await api.post(base + "/voice-polish", { text: "raw transcript" });
+    expect(edited.status, await edited.clone().text()).toBe(200);
+    expect(received.at(-1)?.config.system_prompt).toBe(custom);
+    await api.post(tools + "/t2t/run", { text: "ordinary text" });
+    expect(received.at(-1)?.config.system_prompt).toBeUndefined();
+    expect(
+      (await api.patch(tools + "/tools", { voicePolish: { prompt: "x".repeat(8001) } })).status,
+    ).toBe(400);
+    expect((await settings()).voicePolish.prompt).toBe(custom);
+    expect((await api.patch(tools + "/tools", { voicePolish: { prompt: null } })).status).toBe(200);
+    expect((await settings()).voicePolish.prompt).toBe(defaults.defaultPrompt);
+    await api.post(base + "/voice-polish", { text: "raw transcript" });
+    expect(received.at(-1)?.config.system_prompt).toBe(defaults.defaultPrompt);
+    await api.patch(tools + "/tools", { voicePolish: { enabled: false } });
+    const before = received.length;
+    expect((await api.post(base + "/voice-polish", { text: "raw transcript" })).status).toBe(409);
+    expect(received).toHaveLength(before);
+    await api.patch(tools + "/tools", { voicePolish: { enabled: true } });
+  });
   it("follows a model rekey and clears bindings whose models are subsequently deleted", async () => {
     const original = ["gpt-6.2-sol", ...Object.values(ids)].map((modelId) => ({
       modelId,

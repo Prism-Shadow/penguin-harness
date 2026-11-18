@@ -41,6 +41,11 @@ export function settingsPatch(body: Record<string, unknown>): CapabilitySettings
       if (typeof v.enabled !== "boolean") throw badRequest("enabled must be a boolean.");
       patch.voicePolish.enabled = v.enabled;
     }
+    if (v.prompt !== undefined) {
+      if (v.prompt !== null && (typeof v.prompt !== "string" || v.prompt.length > 8000))
+        throw badRequest("The transcript editing prompt must contain at most 8,000 characters.");
+      patch.voicePolish.prompt = typeof v.prompt === "string" ? v.prompt.trim() || null : null;
+    }
     if (v.model !== undefined) patch.voicePolish.model = ref(v.model);
   }
   if (!patch.bindings && !patch.voicePolish) throw badRequest("Provide bindings or voicePolish.");
