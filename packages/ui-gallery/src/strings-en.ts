@@ -1058,6 +1058,12 @@ export const en: GalleryStrings = {
       transferRetryNow: "Retry now",
     },
     streaming: {
+      standard: "Standard",
+      expanded: "Expanded",
+      compact: "Compact",
+      finish: "Finish run",
+      restart: "Run again",
+      finished: "Run complete",
       activity: "Live steps",
       running: "Running",
       thinking: "Thinking",

@@ -1046,6 +1046,12 @@ export const zh = {
       transferRetryNow: "立即重试",
     },
     streaming: {
+      standard: "标准",
+      expanded: "展开",
+      compact: "紧凑",
+      finish: "结束运行",
+      restart: "重新运行",
+      finished: "运行完毕",
       activity: "运行步骤",
       running: "运行中",
       thinking: "思考",

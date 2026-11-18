@@ -19,6 +19,8 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityGroup,
+  Button,
+  Segmented,
   AssistantText,
   DisclosureRow,
   StatusIcon,
@@ -28,7 +30,7 @@ import {
   StreamText,
   usePrefersReducedMotion,
 } from "@prismshadow/penguin-ui";
-import type { StreamReveal } from "@prismshadow/penguin-ui";
+import type { ActivityDisplayMode, StreamReveal } from "@prismshadow/penguin-ui";
 import { streamScript } from "../../app/mock/stream-script";
 import { streamingAnswer } from "../../app/mock/transcripts";
 import { BoardGroup, ReplayButton } from "../../foundations/shared";
@@ -133,6 +135,10 @@ export function StreamingBoard() {
   const t = S.library.streaming;
   const answer = streamingAnswer(state.lang);
   const [run, setRun] = useState(0);
+  const [activityMode, setActivityMode] = useState<ActivityDisplayMode>("standard");
+  const [finished, setFinished] = useState(false);
+  const [started, setStarted] = useState(Date.now);
+  const activityState = finished ? "done" : "running";
   const stream = useScriptedStream(answer, run);
   const tokens = useStreamTokens();
 
@@ -153,14 +159,40 @@ export function StreamingBoard() {
           </div>
         </div>
       </BoardGroup>
-      <BoardGroup title={t.activity}>
+      <BoardGroup
+        title={t.activity}
+        action={
+          <Button
+            variant="secondary"
+            size="xs"
+            onClick={() => {
+              if (finished) setStarted(Date.now());
+              setFinished(!finished);
+            }}
+          >
+            {finished ? t.restart : t.finish}
+          </Button>
+        }
+      >
+        <Segmented
+          value={activityMode}
+          onChange={setActivityMode}
+          options={[
+            { value: "standard", label: t.standard },
+            { value: "expanded", label: t.expanded },
+            { value: "compact", label: t.compact },
+          ]}
+        />
         <ActivityGroup
           kind="tool"
-          state="running"
-          title={t.running}
+          displayMode={activityMode}
+          state={activityState}
+          title={finished ? t.finished : t.running}
+          terminal={finished ? { label: t.finished, state: "done", durationMs: 3000 } : undefined}
           rows={[
             {
               key: "plan",
+              summary: { label: t.thinking, state: "done", durationMs: 1000 },
               content: (
                 <DisclosureRow
                   icon={<StatusIcon state="done" />}
@@ -173,11 +205,12 @@ export function StreamingBoard() {
             },
             {
               key: "read",
+              summary: { label: t.read, state: activityState, startMs: started, durationMs: 2000 },
               content: (
                 <DisclosureRow
-                  icon={<StatusIcon state="running" />}
+                  icon={<StatusIcon state={activityState} />}
                   label={t.read}
-                  activity={{ kind: "tool", state: "running" }}
+                  activity={{ kind: "tool", state: activityState }}
                 >
                   <code>notes.md</code>
                 </DisclosureRow>
