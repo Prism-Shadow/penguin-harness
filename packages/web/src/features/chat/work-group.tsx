@@ -91,7 +91,11 @@ function stepSummary(item: ChatItem, ctx: StreamRenderContext): ActivityStepSumm
     };
   }
   if (item.kind === "reconnect") {
-    return { kind: "event", label: S.chat.workRetryStep(item.attempt), state: item.retrying ? "done" : "waiting" };
+    return {
+      kind: "event",
+      label: S.chat.workRetryStep(item.attempt),
+      state: item.retrying ? "done" : "waiting",
+    };
   }
 }
 
