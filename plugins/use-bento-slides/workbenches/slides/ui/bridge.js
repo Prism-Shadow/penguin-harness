@@ -1,3 +1,9 @@
+// A workbench can be opened from a LAN host over HTTP, where randomUUID is unavailable.
+export function editorToken() {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 // Installed in the head of the editor and presentation before Bento attaches its own file
 // shortcuts. The standalone HTML download retains the original runtime's file controls.
 export function captureSave(event) {

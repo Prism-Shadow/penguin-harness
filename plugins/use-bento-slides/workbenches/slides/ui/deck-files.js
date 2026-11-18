@@ -8,8 +8,8 @@ const labels =
         recent: "最近编辑",
         modified: "上次修改",
         name: "文稿名称",
-        create: "新建演示文稿",
-        open: "打开文件…",
+        sample: "示例文稿",
+        open: "打开 Bento HTML / JSON…",
         rename: "重命名",
         remove: "删除",
         importHint: "打开 Bento JSON 或 HTML 演示文稿",
@@ -31,8 +31,8 @@ const labels =
         recent: "Recently edited",
         modified: "Last modified",
         name: "Presentation name",
-        create: "New presentation",
-        open: "Open file…",
+        sample: "Sample presentation",
+        open: "Open Bento HTML / JSON…",
         rename: "Rename",
         remove: "Delete",
         importHint: "Open a Bento JSON or HTML presentation",
@@ -140,20 +140,28 @@ export function deckFiles({ onOpen, onRename, onDelete, onRefresh, onBack }) {
     const rows = decks.map((deck) => {
       const row = document.createElement("li");
       row.className = "file-row";
-      const open = action(deck.title);
+      const open = document.createElement("button");
+      open.type = "button";
+      open.setAttribute("aria-label", deck.title);
       open.className = "file-open";
       open.dataset.openDeck = deck.id;
       const name = document.createElement("strong");
       name.textContent = deck.title;
       const meta = document.createElement("small");
       meta.textContent = S.slides(deck.slides);
-      open.replaceChildren(name, meta);
+      const file = document.createElement("span");
+      file.className = "file-description";
+      file.append(name, meta);
       open.onclick = () => onOpen(deck.id);
       const time = document.createElement("time");
       if (Number.isFinite(deck.mtimeMs)) {
         time.dateTime = new Date(deck.mtimeMs).toISOString();
         time.textContent = dates.format(deck.mtimeMs);
       }
+      const icon = document.createElement("span");
+      icon.className = "slide-file-icon";
+      icon.setAttribute("aria-hidden", "true");
+      open.append(icon, file, time);
       const actions = document.createElement("div");
       actions.className = "file-actions";
       const rename = action(labels.rename, `${labels.rename} · ${deck.title}`);
@@ -163,7 +171,7 @@ export function deckFiles({ onOpen, onRename, onDelete, onRefresh, onBack }) {
       remove.dataset.removeDeck = deck.id;
       remove.onclick = () => edit(deck, "delete");
       actions.append(rename, remove);
-      row.append(open, time, actions);
+      row.append(open, actions);
       return row;
     });
     // An Agent save can reorder the list while someone is using it with the keyboard.

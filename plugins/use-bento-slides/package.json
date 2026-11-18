@@ -1,6 +1,6 @@
 {
   "name": "@penguinharness/use-bento-slides",
-  "version": "0.2.18",
+  "version": "0.2.19",
   "description": "Bento slide decks: the Slides workbench, where you edit a deck while the Agent edits the same deck and both sides' edits are kept, and a Skill that authors decks there or as self-contained .bento.html files.",
   "keywords": [
     "penguin-plugin",

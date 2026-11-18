@@ -94,16 +94,31 @@
 
       <section class="start" id="deck-files" aria-labelledby="start-title">
         <div class="file-home">
-          <h1 id="start-title" data-files-copy="title"></h1>
-          <div class="file-toolbar">
-            <button
-              id="start-blank"
-              type="button"
-              class="wb-primary"
-              data-files-copy="create"
-            ></button>
+          <header class="file-header">
+            <h1 id="start-title" data-files-copy="title"></h1>
             <button id="start-import" type="button" data-files-copy="open"></button>
-            <button id="start-sample" type="button" data-copy="sampleDeck"></button>
+          </header>
+          <div class="file-launch">
+            <section class="new-presentations" aria-labelledby="new-heading">
+              <h2 id="new-heading" data-copy="newDeck"></h2>
+              <div class="file-templates">
+                <button id="start-blank" type="button">
+                  <span class="template-sheet blank-sheet" aria-hidden="true"><span>+</span></span>
+                  <span data-copy="blankDeck"></span>
+                </button>
+                <button id="start-sample" type="button">
+                  <span class="template-sheet sample-sheet" aria-hidden="true"
+                    ><span>Bento<span>/</span><br />Slides</span></span
+                  >
+                  <span data-files-copy="sample"></span>
+                </button>
+              </div>
+            </section>
+            <form id="start-ask" class="start-ask">
+              <h2><label for="start-prompt" data-files-copy="ai"></label></h2>
+              <textarea id="start-prompt" rows="2" maxlength="20000" required></textarea>
+              <button type="submit" class="wb-primary" data-copy="startGo"></button>
+            </form>
           </div>
           <h2 id="recent-heading" data-files-copy="recent"></h2>
           <div class="file-head" aria-hidden="true">
@@ -112,13 +127,6 @@
           <p id="list-message" class="file-status" role="status"></p>
           <button id="retry-decks" type="button" data-files-copy="retry" hidden></button>
           <ul class="file-rows" id="recent-decks" aria-labelledby="recent-heading"></ul>
-          <details>
-            <summary data-files-copy="ai"></summary>
-            <form id="start-ask" class="start-ask">
-              <textarea id="start-prompt" rows="3" maxlength="20000"></textarea>
-              <button type="submit" class="wb-primary" data-copy="startGo"></button>
-            </form>
-          </details>
         </div>
       </section>
       <dialog id="deck-action" aria-labelledby="deck-action-title">

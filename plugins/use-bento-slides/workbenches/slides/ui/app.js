@@ -9,7 +9,7 @@
 // policy that allows no connection, so the Bento runtime cannot reach the network or the app.
 import { exportPowerPoint } from "./powerpoint.js";
 import { deckFiles } from "./deck-files.js";
-import { bridge, connectSave, captureSave } from "./bridge.js";
+import { bridge, connectSave, captureSave, editorToken } from "./bridge.js";
 import { newConversation, readConversation } from "./conversation.js";
 import { showConversation } from "./conversation-view.js";
 import { S, locale } from "./strings.js";
@@ -498,7 +498,7 @@ async function openDeck(id) {
   stopFollowing();
   open = {
     id,
-    token: crypto.randomUUID(),
+    token: editorToken(),
     /** The file's revision the editor is in step with, and its document. */
     rev: current.rev,
     base: doc,
@@ -515,7 +515,7 @@ async function openDeck(id) {
   };
   cursor = { index: 0, slideId: null, selection: [] };
   setView("deck");
-  setSync("");
+  setSync("opening");
   $("deck-title").textContent = doc.title || S.untitled;
   frame.inert = true;
   frame.srcdoc = editorHtml(doc, open.token);
