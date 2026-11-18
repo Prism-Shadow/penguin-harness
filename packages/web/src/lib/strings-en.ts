@@ -859,6 +859,11 @@ export const en: Strings = {
     /** A switch one of whose positions this machine cannot honour, under the switch. */
     pluginPositionUnavailable: (position: string, reason: string) =>
       `${position} is not supported here: ${reason}`,
+    /** A list field's editor: the row buttons and the add row. */
+    pluginListMoveUp: "Move up",
+    pluginListMoveDown: "Move down",
+    pluginListRemove: "Remove",
+    pluginListAdd: "Add",
     pluginPositionOn: "On",
     pluginPositionOff: "Off",
     pluginsInfo:
