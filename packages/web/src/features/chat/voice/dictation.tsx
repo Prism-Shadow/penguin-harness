@@ -27,7 +27,10 @@ export function useDictation({
   const scope = useVoice();
   const canDictate = hasBoundCapability(scope?.settings, "stt");
   const [phase, setPhase] = useState<Phase>("idle");
-  const [stream, setStream] = useState<MediaStream | null>(null);
+  const [microphone, setMicrophone] = useState<{
+    stream: MediaStream;
+    context?: AudioContext;
+  } | null>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const returnFocus = useRef(false);
   const job = useRef<AbortController | null>(null);
@@ -40,7 +43,7 @@ export function useDictation({
     job.current?.abort();
     job.current = null;
     finish.current = null;
-    setStream(null);
+    setMicrophone(null);
     setPhase("idle");
   }, []);
   const dismiss = useCallback(() => {
@@ -78,7 +81,7 @@ export function useDictation({
   }, [cancel, dismiss]);
   async function record() {
     if (!scope?.active || !canDictate || job.current) return;
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+    if (!navigator.mediaDevices?.getUserMedia) {
       toastError(S.voice.unsupported);
       return;
     }
@@ -87,15 +90,28 @@ export function useDictation({
     job.current = task;
     setPhase("permission");
     try {
-      if (!hasBoundCapability(await scope.readCurrent(task.signal), "stt")) return;
-      const blob = await captureSpeech(task.signal, (stop, microphone) => {
-        finish.current = stop;
-        setStream(microphone);
-        setPhase("recording");
-      });
+      const atStart = await scope.readCurrent(task.signal);
+      if (!atStart || !hasBoundCapability(atStart, "stt")) return;
+      const supported =
+        atStart.dictationFormat === "audio/wav"
+          ? typeof AudioContext !== "undefined" && typeof AudioWorkletNode !== "undefined"
+          : typeof MediaRecorder !== "undefined";
+      if (!supported) {
+        toastError(S.voice.unsupported);
+        return;
+      }
+      const blob = await captureSpeech(
+        task.signal,
+        (stop, stream, context) => {
+          finish.current = stop;
+          setMicrophone({ stream, context });
+          setPhase("recording");
+        },
+        atStart.dictationFormat,
+      );
       task.signal.throwIfAborted();
       finish.current = null;
-      setStream(null);
+      setMicrophone(null);
       if (!blob.size) {
         toastInfo(S.voice.empty);
         return;
@@ -103,7 +119,11 @@ export function useDictation({
       setPhase("transcribing");
       const latest = await scope.readCurrent(task.signal);
       if (!latest || !hasBoundCapability(latest, "stt")) return;
-      const audio = await recordingData(blob, latest.dictationFormat, task.signal);
+      if (latest.dictationFormat && latest.dictationFormat !== blob.type) {
+        toastInfo(S.voice.modelChanged);
+        return;
+      }
+      const audio = await recordingData(blob);
       task.signal.throwIfAborted();
       const result = await runVoice(
         scope.projectId,
@@ -158,7 +178,7 @@ export function useDictation({
       if (job.current === task) {
         job.current = null;
         finish.current = null;
-        setStream(null);
+        setMicrophone(null);
         setPhase("idle");
       }
     }
@@ -197,9 +217,9 @@ export function useDictation({
           {S.common.cancel}
         </Button>
         <div className="flex min-h-11 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-control bg-fill-neutral px-1 py-1">
-          {phase === "recording" && stream ? (
+          {phase === "recording" && microphone ? (
             <>
-              <MicrophoneMeter stream={stream} />
+              <MicrophoneMeter {...microphone} />
               <Button
                 variant="primary"
                 size="sm"

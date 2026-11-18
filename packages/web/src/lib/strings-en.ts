@@ -39,6 +39,7 @@ export const en: Strings = {
     denied: "Allow microphone access in your browser or system settings to dictate.",
     unsupported:
       "This browser cannot record audio here. Open this page over HTTPS in a browser with microphone support.",
+    modelChanged: "The speech recognition model changed. Record again to use it.",
     recordFailed: "Could not record from the microphone.",
     tooLarge: "This recording is too large. Try a shorter recording.",
     empty: "No speech was recognized.",

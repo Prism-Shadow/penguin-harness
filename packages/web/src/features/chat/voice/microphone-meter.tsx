@@ -7,7 +7,13 @@ const silent = Array<number>(BARS).fill(0);
 
 /** A short history of microphone levels. The analyser only reads from the stream used by
  * the recorder; connecting it to a speaker would feed the microphone back into itself. */
-export function MicrophoneMeter({ stream }: { stream: MediaStream }) {
+export function MicrophoneMeter({
+  stream,
+  context: captureContext,
+}: {
+  stream: MediaStream;
+  context?: AudioContext;
+}) {
   const [levels, setLevels] = useState(silent);
   const [available, setAvailable] = useState(false);
   const [seconds, setSeconds] = useState(0);
@@ -28,7 +34,7 @@ export function MicrophoneMeter({ stream }: { stream: MediaStream }) {
     let analyser: AnalyserNode | undefined;
     let poll: number | undefined;
     try {
-      audio = new AudioContext();
+      audio = captureContext ?? new AudioContext();
       source = audio.createMediaStreamSource(stream);
       analyser = audio.createAnalyser();
       analyser.fftSize = 1024;
@@ -62,9 +68,9 @@ export function MicrophoneMeter({ stream }: { stream: MediaStream }) {
       window.clearInterval(poll);
       source?.disconnect();
       analyser?.disconnect();
-      if (audio && audio.state !== "closed") void audio.close().catch(() => {});
+      if (!captureContext && audio && audio.state !== "closed") void audio.close().catch(() => {});
     };
-  }, [stream, reduceMotion]);
+  }, [stream, reduceMotion, captureContext]);
   const current = levels.at(-1) ?? 0;
   return (
     <div className="flex min-w-0 flex-1 items-center justify-center gap-2 overflow-hidden pl-1">

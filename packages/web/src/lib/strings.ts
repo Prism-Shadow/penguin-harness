@@ -45,6 +45,7 @@ export const zh = {
     polishing: "正在润色",
     denied: "请在浏览器或系统设置中允许使用麦克风。",
     unsupported: "当前页面无法录音。请通过 HTTPS 在支持麦克风的浏览器中打开。",
+    modelChanged: "语音识别模型已更改，请重新录音。",
     recordFailed: "未能从麦克风录音。",
     tooLarge: "录音文件太大，请缩短录音时长。",
     empty: "未识别到语音。",
