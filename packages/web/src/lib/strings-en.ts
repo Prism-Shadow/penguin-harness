@@ -994,6 +994,12 @@ export const en: Strings = {
     launcherInfo:
       "The round button floating on the conversation's right edge that fans out shortcuts to the workbench's panels and the terminal. Turning it off here removes it; the fan's \"Hide launcher\" entry does the same.",
     toolAliases: "Tool short names",
+    activityDisplayMode: "Reasoning display",
+    activityDisplayModeInfo:
+      "Standard shows one step at a time. Expanded shows thoughts and tool calls together. Compact lists short summaries you can open for details.",
+    activityDisplayStandard: "Standard",
+    activityDisplayExpanded: "Expanded",
+    activityDisplayCompact: "Compact",
     toolAliasesInfo:
       'Tool cards in a conversation name the built-in tools by a short alias: read_file reads as "read". Every other tool (MCP tools included) and the Trace viewer keep the tool\'s own name, and hovering a short name shows it.',
     notifications: "Task completion notifications",

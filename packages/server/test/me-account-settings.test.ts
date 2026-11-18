@@ -57,6 +57,7 @@ describe("the account's Settings preferences", () => {
       lang: "en",
       currency: "CNY",
       toolAliases: false,
+      activityDisplayMode: "compact",
       notifications: true,
       background: { transparency: 40, mode: "tile", position: "center top" },
     };
@@ -66,6 +67,7 @@ describe("the account's Settings preferences", () => {
     for (const bad of [
       { themeId: "two words" },
       { toolAliases: "yes" },
+      { activityDisplayMode: "custom" },
       { background: { transparency: 40, position: "center top" } },
     ]) {
       const res = await ann.put("/api/me/prefs", { lang: "zh", ...bad });

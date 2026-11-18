@@ -1128,6 +1128,12 @@ export const zh = {
     launcherInfo:
       "在对话正文右缘浮动的圆形按钮，展开后是工作台各块面板与终端的快捷方式；这里关掉后它就不再出现，展开里的「隐藏悬浮球」同样会关掉它。",
     toolAliases: "工具短名",
+    activityDisplayMode: "思考显示方式",
+    activityDisplayModeInfo:
+      "标准模式可逐步翻页，展开模式列出思考和工具调用的内容，紧凑模式仅列摘要。可点开步骤查看详情。",
+    activityDisplayStandard: "标准",
+    activityDisplayExpanded: "展开",
+    activityDisplayCompact: "紧凑",
     toolAliasesInfo:
       "对话里的工具卡片用短名称呼内置工具，read_file 显示为「读取」。其余工具（含 MCP 工具）与轨迹观测始终是工具原本的名字；悬停短名也能看到它。",
     notifications: "任务完成通知",

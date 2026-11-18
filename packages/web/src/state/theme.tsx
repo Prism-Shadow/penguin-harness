@@ -39,6 +39,8 @@ import type { ThemeId } from "@prismshadow/penguin-ui";
 import { applyThemeAttributes, THEME_STORAGE_KEYS } from "@prismshadow/penguin-ui/boot";
 import type { AccentChoice } from "@prismshadow/penguin-ui/boot";
 import {
+  ACTIVITY_DISPLAY_MODE_KEY,
+  activityDisplayModeValue,
   CURRENCY_KEY,
   TERMINAL_THEME_KEY,
   TOOL_ALIASES_KEY,
@@ -116,6 +118,8 @@ interface ThemeContextValue {
   terminalMode: TerminalThemeMode;
   setTerminalMode: (mode: TerminalThemeMode) => void;
   /** Whether tool-call cards name the built-in tools by their short alias. */
+  activityDisplayMode: NonNullable<ReturnType<typeof activityDisplayModeValue>>;
+  setActivityDisplayMode: (mode: NonNullable<ReturnType<typeof activityDisplayModeValue>>) => void;
   toolAliases: boolean;
   setToolAliases: (on: boolean) => void;
   /** Resolved terminal appearance ("app" already resolved against the app's own). */
@@ -139,6 +143,10 @@ function initialTerminalMode(): TerminalThemeMode {
 /** Default on, so anything but the explicit off value reads as on (an absent value included). */
 function initialToolAliases(): boolean {
   return localStorage.getItem(TOOL_ALIASES_KEY) !== "0";
+}
+
+function initialActivityDisplayMode() {
+  return activityDisplayModeValue(localStorage.getItem(ACTIVITY_DISPLAY_MODE_KEY)) ?? "standard";
 }
 
 function initialCurrency(): Currency {
@@ -170,6 +178,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [accent, setAccentState] = useState<Accent>(initial.accent);
   const [currency, setCurrencyState] = useState<Currency>(initialCurrency);
   const [terminalMode, setTerminalModeState] = useState<TerminalThemeMode>(initialTerminalMode);
+  const [activityDisplayMode, setActivityDisplayModeState] = useState(initialActivityDisplayMode);
   const [toolAliases, setToolAliasesState] = useState<boolean>(initialToolAliases);
 
   // The account's preferences replaced the cached ones at sign-in:
@@ -187,6 +196,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         setCurrencyState(initialCurrency());
         setTerminalModeState(initialTerminalMode());
         setToolAliasesState(initialToolAliases());
+        setActivityDisplayModeState(initialActivityDisplayMode());
       }),
     [],
   );
@@ -298,6 +308,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setTerminalModeState(next);
   }, []);
 
+  const setActivityDisplayMode = useCallback(
+    (next: NonNullable<ReturnType<typeof activityDisplayModeValue>>) => {
+      writeCached(ACTIVITY_DISPLAY_MODE_KEY, next);
+      setActivityDisplayModeState(next);
+    },
+    [],
+  );
+
   const setToolAliases = useCallback((next: boolean) => {
     writeCached(TOOL_ALIASES_KEY, next ? "1" : "0");
     setToolAliasesState(next);
@@ -328,6 +346,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         terminalMode,
         setTerminalMode,
         terminalDark,
+        activityDisplayMode,
+        setActivityDisplayMode,
         toolAliases,
         setToolAliases,
       }}
@@ -335,6 +355,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       {children}
     </ThemeContext.Provider>
   );
+}
+
+/** Embedded read-only transcript views can render without an appearance provider. */
+export function useActivityDisplayMode() {
+  return useContext(ThemeContext)?.activityDisplayMode ?? "standard";
 }
 
 export function useTheme(): ThemeContextValue {

@@ -54,6 +54,10 @@ function parseBackground(raw: unknown): BackgroundSettingsDto {
  * other key is left to the route. Throws before anything is stored.
  */
 export function validateAccountSettings(body: Record<string, unknown>): void {
+  const mode = body.activityDisplayMode;
+  if (mode != null && mode !== "standard" && mode !== "expanded" && mode !== "compact") {
+    throw badRequest("activityDisplayMode must be standard, expanded, compact or null.");
+  }
   for (const field of TOKEN_FIELDS) {
     const value = body[field];
     if (value === undefined || value === null) continue;

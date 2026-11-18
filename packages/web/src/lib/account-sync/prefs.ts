@@ -19,7 +19,13 @@ import type { UiPrefs } from "@prismshadow/penguin-server/api";
 import { BACKGROUND_STORAGE_KEYS, THEME_STORAGE_KEYS } from "@prismshadow/penguin-ui/boot";
 import { LAUNCHER_HIDDEN_KEY } from "../../features/dock/dock-launcher-state";
 import { STEER_MODE_KEY } from "../../features/chat/steer-mode";
-import { CURRENCY_KEY, TERMINAL_THEME_KEY, TOOL_ALIASES_KEY } from "../../state/theme-prefs";
+import {
+  ACTIVITY_DISPLAY_MODE_KEY,
+  activityDisplayModeValue,
+  CURRENCY_KEY,
+  TERMINAL_THEME_KEY,
+  TOOL_ALIASES_KEY,
+} from "../../state/theme-prefs";
 import { LANG_KEY } from "../../state/locale-pref";
 import { NOTIFICATIONS_KEY } from "../notification-pref";
 
@@ -34,6 +40,7 @@ export type SyncedPrefField =
   | "lang"
   | "currency"
   | "terminalTheme"
+  | "activityDisplayMode"
   | "toolAliases"
   | "notifications"
   | "launcherHidden"
@@ -98,6 +105,12 @@ export const SYNCED_PREFS: readonly SyncedPref[] = [
   token("lang", LANG_KEY),
   token("currency", CURRENCY_KEY),
   token("terminalTheme", TERMINAL_THEME_KEY),
+  {
+    field: "activityDisplayMode",
+    key: ACTIVITY_DISPLAY_MODE_KEY,
+    toAccount: (cached) => activityDisplayModeValue(cached) ?? undefined,
+    toCache: activityDisplayModeValue,
+  },
   flag("toolAliases", TOOL_ALIASES_KEY),
   flag("notifications", NOTIFICATIONS_KEY),
   flag("launcherHidden", LAUNCHER_HIDDEN_KEY),
