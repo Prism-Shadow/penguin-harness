@@ -2,8 +2,8 @@
  * A conversation's row in the sidebar's list, and the hover actions it shares with the other
  * conversation rows.
  *
- * The title and activity marks stay visible. Hovering or focusing a row shows the agent, time
- * and actions at its trailing edge without moving the title's leading edge. The same
+ * The last activity time stands at the row's end. Hovering or focusing the row reveals the
+ * Agent beside the title and replaces the time with the actions in the same space. The same
  * menu opens at the pointer on a right-click, from the keyboard with Shift+F10, and on touch with
  * a press-and-hold (`useRowContextMenu`, whose handlers the row spreads); a hold's replayed click
  * does not also open the conversation. Both panels go through the dropdown's body portal, so the
@@ -150,7 +150,7 @@ export interface SessionRowProps {
   /** Archived: the title recedes to the subtle ink. */
   archived?: boolean;
   /**
-   * The conversation's agent, as a small avatar beside the time (where its group is not the
+   * The conversation's agent, as a small avatar before the title (where its group is not the
    * agent); `avatarSrc` is its own picture, when it has one.
    */
   agent?: { id: string; name: string; avatarSrc?: string | undefined };
@@ -297,6 +297,21 @@ export function SessionRow({
           }}
           className="flex min-w-0 flex-1 items-center gap-1.5 px-2.5 py-1.5 text-left"
         >
+          {agent && (
+            <span
+              data-session-avatar
+              data-tooltip={agent.name}
+              aria-hidden
+              className="invisible flex shrink-0 items-center group-hover:visible group-focus-within:visible"
+            >
+              <AgentAvatar
+                id={agent.id}
+                size={ICON_SIZE.rowLead}
+                className="rounded-sm"
+                src={agent.avatarSrc}
+              />
+            </span>
+          )}
           {renderTitle(`min-w-0 flex-1 font-sans text-sm ${titleInk}`)}
           {sourceGlyph !== undefined && sourceLabel !== undefined && (
             <RowMark glyph={sourceGlyph} label={sourceLabel} />
@@ -325,26 +340,20 @@ export function SessionRow({
           {agent && <span className="sr-only">{agent.name}</span>}
           {time && <span className="sr-only">{time}</span>}
         </button>
-        <div
-          data-session-details
-          className="hidden h-6 shrink-0 items-center gap-1 group-hover:flex group-focus-within:flex"
-        >
-          {agent && (
-            <span data-tooltip={agent.name} aria-hidden className="shrink-0">
-              <AgentAvatar
-                id={agent.id}
-                size={ICON_SIZE.rowLead}
-                className="rounded-sm"
-                src={agent.avatarSrc}
-              />
-            </span>
-          )}
+        <div data-session-details className="grid h-6 shrink-0 items-center justify-items-end">
           {time && (
-            <span aria-hidden className="whitespace-nowrap text-xs tabular-nums text-fg-subtle">
-              {time}
+            <span
+              data-session-time
+              aria-hidden
+              className="col-start-1 row-start-1 whitespace-nowrap text-xs tabular-nums text-fg-muted group-hover:invisible group-focus-within:invisible"
+            >
+              <span className="text-[0.92em]">{time}</span>
             </span>
           )}
-          <div className="flex items-center [&_button]:pointer-events-auto [&_button]:opacity-100">
+          <div
+            data-session-actions
+            className="invisible col-start-1 row-start-1 flex items-center group-hover:visible group-focus-within:visible [&_button]:pointer-events-auto [&_button]:opacity-100"
+          >
             <RowHoverActions
               actions={hoverActions.map(fromHover)}
               moreLabel={moreLabel}
@@ -352,9 +361,6 @@ export function SessionRow({
             />
           </div>
         </div>
-        {/* The menu. `contents` keeps this wrapper out of the row's layout: the panel is
-            portaled, and its anchor is the point the gesture landed on (or the "more" button's
-            box), not this element. */}
         <Dropdown
           open={ctx.open}
           setOpen={ctx.setOpen}

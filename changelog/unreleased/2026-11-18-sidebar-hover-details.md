@@ -7,4 +7,4 @@
 
 [中文版](2026-11-18-sidebar-hover-details.zh.md)
 
-Hover over a conversation or focus its row with the keyboard to see its last activity time and, when grouped by workspace, its Agent avatar. Workspace folders reveal New chat and More the same way. On touchscreens, folder actions are directly tappable, and holding a conversation opens its menu.
+The last activity time appears at the right of each conversation. Hover over the row or focus it with the keyboard to replace the time with its actions and reveal the Agent avatar beside the title in workspace groups. The title stays in place. Workspace folders reveal New chat and More the same way. On touchscreens, folder actions are directly tappable, and holding a conversation opens its menu.
