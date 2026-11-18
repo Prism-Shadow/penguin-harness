@@ -145,7 +145,7 @@ function initialToolAliases(): boolean {
   return localStorage.getItem(TOOL_ALIASES_KEY) !== "0";
 }
 
-function initialActivityDisplayMode() {
+function initialActivityDisplayMode(): ActivityDisplayMode {
   return activityDisplayModeValue(localStorage.getItem(ACTIVITY_DISPLAY_MODE_KEY)) ?? "standard";
 }
 
