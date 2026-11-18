@@ -11,6 +11,10 @@
  * each group as a tab (plugin-market.ts). The grouping is remembered per browser
  * (`penguin.pluginsGroupBy`); the search is not.
  */
+import {
+  PLUGIN_CATEGORIES,
+  type PluginCategory,
+} from "@prismshadow/penguin-core/plugin-categories";
 import type {
   InstalledPluginsResponse,
   PluginGroupItem,
@@ -181,7 +185,7 @@ export function pluginRows(
       byPackage.set(plugin.package, row);
     }
   }
-  const known = new Set([...groups.map((g) => g.id), SANDBOX_CATEGORY]);
+  const known = new Set([...PLUGIN_CATEGORIES, ...groups].map((category) => category.id));
   for (const part of modules) {
     const both = byPackage.get(part.specifier);
     if (both !== undefined) {
@@ -198,28 +202,27 @@ export function pluginRows(
   return rows;
 }
 
-/** The category of the sandbox backends, which no library plugin needs to fill. */
-export const SANDBOX_CATEGORY = "sandbox";
 const OTHER_CATEGORY = "other";
 
-/**
- * The categories in display order with their titles in the UI language: the library's, in the
- * order the server sends them, then Agent Sandbox, then Other last.
- */
+/** Official market order, including categories that only remote packages fill. A newer library
+ * can supply additional categories or localized titles. Other stays last. */
 export function pluginCategories(
   groups: readonly PluginGroupItem[],
   locale: "zh" | "en",
 ): { id: string; title: string }[] {
-  const title = (id: string, fallback: string) => {
-    const group = groups.find((g) => g.id === id);
-    return group === undefined ? fallback : localizedText(locale, group.title, group.titleZh);
-  };
+  const categories = new Map<string, PluginCategory>();
+  for (const category of [...PLUGIN_CATEGORIES, ...groups]) categories.set(category.id, category);
+  const other = categories.get(OTHER_CATEGORY);
+  categories.delete(OTHER_CATEGORY);
   return [
-    ...groups
-      .filter((g) => g.id !== SANDBOX_CATEGORY && g.id !== OTHER_CATEGORY)
-      .map((g) => ({ id: g.id, title: localizedText(locale, g.title, g.titleZh) })),
-    { id: SANDBOX_CATEGORY, title: title(SANDBOX_CATEGORY, S.plugins.sandboxCategory) },
-    { id: OTHER_CATEGORY, title: title(OTHER_CATEGORY, S.plugins.otherCategory) },
+    ...Array.from(categories.values(), (category) => ({
+      id: category.id,
+      title: localizedText(locale, category.title, category.titleZh),
+    })),
+    {
+      id: OTHER_CATEGORY,
+      title: other ? localizedText(locale, other.title, other.titleZh) : S.plugins.otherCategory,
+    },
   ];
 }
 

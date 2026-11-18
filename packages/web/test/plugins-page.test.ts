@@ -51,8 +51,9 @@ import {
   writePluginsIncompatibleOnly,
 } from "../src/features/plugins/incompatible-only";
 import { pluginUpdatePlan } from "../src/features/plugins/plugins-page";
-import { setActiveStrings } from "../src/lib/strings";
+import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
+import { tabRows } from "../src/features/plugins/plugin-market";
 
 beforeEach(() => {
   setActiveStrings(en);
@@ -312,6 +313,44 @@ describe("grouping", () => {
       ["Other", ["mystery"]],
     ]);
     expect(pluginCategories(GROUPS, "zh").map((c) => c.title)).toContain("办公效率");
+  });
+
+  it("keeps registry-only categories in market order and genuinely unknown packages in Other", () => {
+    const entry = (name: string, categories: string[]) => ({
+      ...sandbox(name, categories),
+      keywords: [],
+    });
+    const index = [
+      entry("racing", ["entertainment"]),
+      entry("notes", ["future-category", "utilities"]),
+      entry("flashcards", ["utilities"]),
+      entry("mystery", ["future-category"]),
+    ];
+    const rows = pluginRows([], moduleParts(null, index));
+    for (const [locale, strings] of [
+      ["en", en],
+      ["zh", zh],
+    ] as const) {
+      setActiveStrings(strings);
+      const sections = groupRows(rows, () => "available", "category", pluginCategories([], locale));
+      expect(sections.map((section) => section.id)).toEqual([
+        "utilities",
+        "entertainment",
+        "other",
+      ]);
+      expect(sections.map((section) => section.title)).toEqual(
+        locale === "zh" ? ["实用工具", "娱乐", "其他"] : ["Utilities", "Entertainment", "Other"],
+      );
+      expect(sections.map((section) => section.rows.length)).toEqual([2, 1, 1]);
+      expect(tabRows(sections, "utilities", rows, "").rows.map((r) => r.name)).toEqual([
+        "flashcards",
+        "notes",
+      ]);
+      expect(tabRows(sections, "entertainment", rows, "NOTES")).toMatchObject({
+        rows: [],
+        elsewhere: 1,
+      });
+    }
   });
 
   it("regroups the same rows by status, what wants a look first, by contents, or into one section", () => {
