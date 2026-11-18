@@ -133,7 +133,8 @@ test("Models opens the project’s multimodal defaults, which persist across rel
   const settingsRoute = "**/api/projects/" + a + "/capabilities/tools";
   let rejected = false;
   await page.route(settingsRoute, async (route) => {
-    if (!rejected && route.request().method() === "PATCH") {
+    // A save first checks the live project settings before sending the change.
+    if (!rejected && route.request().method() === "GET") {
       rejected = true;
       return route.fulfill({ status: 503, json: { error: "Save failed" } });
     }
