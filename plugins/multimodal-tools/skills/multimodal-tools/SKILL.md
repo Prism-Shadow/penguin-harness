@@ -1,7 +1,7 @@
 ---
 name: multimodal-tools
-description: Use the project's configured capability models to search, fetch a URL, generate an image or video, transcribe a local recording or synthesize speech with the Penguin CLI. Use this for Image Studio requests and for returning actual generated media or source results.
-version: 2026.11.18.2
+description: Use the project's configured capability models to search, fetch a URL, generate an image or video, transcribe a local recording or synthesize speech with the Penguin CLI. Return the generated media or the sources that support the answer.
+version: 2026.11.19.2
 ---
 
 # Project search and media tools
@@ -29,8 +29,10 @@ The CLI uses its project and Session environment. When a workbench supplies its 
 
 For search and fetch, inspect the returned `text` and `sources`. Cite the URLs that actually support the answer. For transcription, use the returned transcript. For image, video and speech generation, require a successful result and an entry in `artifacts`. Use its actual name, MIME type and authenticated URL. An artifact URL belongs to this PenguinHarness installation; it is not a public sharing link.
 
-When the person needs a file in the workspace, use `--out` on image, video or TTS. On a completed detached media job, use `penguin tools status <id> --out <path> --json`. Verify the saved file exists and is nonempty before reporting its absolute path. A prompt, an invented filename, a model's prose or a prior Session's artifact is not a result. In Image Studio the workbench reads the current Session's artifact list directly.
+When the person needs a file in the workspace, use `--out` on image, video or TTS. On a completed detached media job, use `penguin tools status <id> --out <path> --json`. Verify the saved file exists and is nonempty before reporting its absolute path. A prompt, an invented filename, a model's prose or a prior Session's artifact is not a result.
+
+Image Studio reads the image artifacts of the current Session. Keep its supplied Session ID on the CLI call so the image appears in the workbench.
 
 Use `penguin tools artifacts --session-id <id> --json` to recover a Session's media. For usage, `penguin tools usage --session-id <id> --json` returns each run's model, status, provider token counts and observed units. Preserve unavailable counts as unknown.
 
-If the project has no model for the requested capability, ask the person to bind one in the model settings. If the provider rejects the request, returns no media or is cancelled, describe the returned status and reason. Never substitute an unrelated model, an old artifact or a fabricated success.
+If the project has disabled the plugin, explain that it can be enabled on the Plugins page. If the project has no model for the requested capability, ask the person to bind one in the model settings. If the provider rejects the request, returns no media or is cancelled, describe the returned status and reason. Never substitute an unrelated model, an old artifact or a fabricated success.

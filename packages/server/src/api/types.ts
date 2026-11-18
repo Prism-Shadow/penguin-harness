@@ -8599,6 +8599,8 @@ export type {
   CapabilityArtifact,
   CapabilityResult,
   CapabilityRunRequest,
+  AvailableCapability,
+  CapabilityCliReply,
   CapabilitySettings,
   CapabilitySettingsPatch,
   CapabilityUsage,

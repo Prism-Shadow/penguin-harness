@@ -1,7 +1,7 @@
 {
   "name": "@penguinharness/multimodal-tools",
   "version": "0.2.18",
-  "description": "Use project search, web, image, video and speech models from the CLI, and make images in Image Studio.",
+  "description": "Use project models for web search, page retrieval, image and video generation, speech recognition and speech synthesis.",
   "license": "Apache-2.0",
   "author": {
     "name": "Prism-Shadow",
@@ -13,6 +13,7 @@
     "directory": "plugins/multimodal-tools"
   },
   "files": [
+    "dist",
     "skills",
     "workbenches",
     "icon.svg",
@@ -25,16 +26,30 @@
     "access": "public"
   },
   "scripts": {
-    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json",
+    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json && tsup src/index.ts --format esm --target node24 --out-dir dist --clean",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run"
   },
   "devDependencies": {
     "@prismshadow/penguin-core": "workspace:*",
-    "vitest": "^4.1.12"
+    "vitest": "^4.1.12",
+    "tsup": "^8.3.0"
   },
   "keywords": [
     "penguin-plugin",
-    "images",
-    "multimodal"
-  ]
+    "skills",
+    "multimodal",
+    "web-search",
+    "image",
+    "video",
+    "speech"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  }
 }

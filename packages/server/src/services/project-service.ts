@@ -30,7 +30,8 @@ import {
   SEMANTIC_ID_RULE,
 } from "./ids.js";
 import { Component, Use, Interface } from "@prismshadow/penguin-core/kernel";
-import type { Config, Paths } from "../hmr/capabilities.js";
+import { pluginHostFrom } from "../plugin/host.js";
+import type { Config, Hmr, Paths, Reassembly } from "../hmr/capabilities.js";
 import type {
   Access,
   AgentIndex,
@@ -62,6 +63,8 @@ async function dirExists(path: string): Promise<boolean> {
 @Component()
 export class ProjectService implements ProjectLifecycle {
   @Use() private readonly paths!: Paths;
+  @Use() private readonly hmr!: Hmr;
+  @Use() private readonly reassembly!: Reassembly;
   private get root(): string {
     return this.paths.root;
   }
@@ -171,6 +174,7 @@ export class ProjectService implements ProjectLifecycle {
       // with it by the rollback below).
       await this.projectConfig.seedPresetPromotions(projectId);
       await this.provisionProjectDefaults(projectId);
+      await this.loadProjectPlugins(projectId);
     } catch (err) {
       this.projects.delete(projectId);
       await fs
@@ -359,6 +363,17 @@ export class ProjectService implements ProjectLifecycle {
       throw new HttpError(404, "member_not_found", `This Project has no member: ${targetUserId}.`);
     }
     this.members.delete(projectId, targetUserId);
+  }
+
+  /** A new Project can ask for a factory plugin that all earlier Projects had turned off. */
+  private async loadProjectPlugins(projectId: string): Promise<void> {
+    const { all } = await this.projectConfig.getPluginTables(projectId);
+    const host = pluginHostFrom(this.hmr.resources);
+    const loaded = host.entries();
+    const skipped = host.skipped();
+    if (Object.keys(all).some((name) => !loaded.has(name) && !skipped.has(name))) {
+      await this.reassembly.reassemble();
+    }
   }
 
   /**

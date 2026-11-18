@@ -1,7 +1,14 @@
 import type { ModelRefDto } from "./types.js";
 
 export type Capability = "search" | "fetch" | "image" | "video" | "tts" | "stt";
+/** An active server plugin contributing one operation to this Project. */
+export interface AvailableCapability {
+  key: Capability;
+  title: { en: string; zh: string };
+  package: string;
+}
 export interface CapabilitySettings {
+  available: AvailableCapability[];
   bindings: Partial<Record<Capability, ModelRefDto>>;
   candidates: Record<Capability | "chat", ModelRefDto[]>;
   voicePolish: { enabled: boolean; model: ModelRefDto | null };
@@ -50,3 +57,11 @@ export interface CapabilityResult {
   measurements: { unit: string; quantity: number }[];
   error?: string;
 }
+
+/** Only the invoking terminal handles local file paths. The server parses and runs the argv. */
+export type CapabilityCliReply =
+  | { kind: "message"; stdout: string; stderr: string; exitCode: number }
+  | { kind: "audio"; mimeType?: string }
+  | { kind: "data"; data: unknown; json: boolean }
+  | { kind: "status"; result: CapabilityResult; save: boolean; json: boolean }
+  | { kind: "run"; result: CapabilityResult; detached: boolean; save: boolean; json: boolean };

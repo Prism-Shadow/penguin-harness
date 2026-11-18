@@ -151,6 +151,8 @@ $("brief").onsubmit = async (event) => {
   $("generate").disabled = true;
   problem("");
   try {
+    await refreshModel();
+    if (!binding) return;
     const { job } = await request("../api/jobs", "POST", { id: retry.id, prompt, ratio, lang });
     jobs = [job, ...jobs.filter((j) => j.id !== job.id)];
     retry = null;
@@ -197,15 +199,27 @@ $("stop").onclick = async () => {
     if (serial === generation) stopping = false;
   }
 };
+async function refreshModel() {
+  try {
+    const settings = await request(cap);
+    const active = settings.available.some((row) => row.key === "image");
+    binding = active ? settings.bindings.image : null;
+    $("model").textContent = binding
+      ? binding.provider + " / " + binding.modelId
+      : active
+        ? S.unconfigured
+        : S.disabled;
+  } catch {
+    binding = null;
+    $("model").textContent = S.unavailable;
+  }
+  $("generate").disabled = submitting || !binding;
+}
+
 async function start() {
   $("generate").disabled = true;
   stage(S.idle);
-  const [settings, history] = await Promise.allSettled([request(cap), request("../api/jobs")]);
-  if (settings.status === "fulfilled") {
-    binding = settings.value.bindings.image;
-    $("model").textContent = binding ? binding.provider + " / " + binding.modelId : S.unconfigured;
-  } else $("model").textContent = S.unavailable;
-  $("generate").disabled = !binding;
+  const [, history] = await Promise.allSettled([refreshModel(), request("../api/jobs")]);
   if (history.status === "fulfilled") {
     jobs = history.value.jobs;
     choose(jobs[0] || null);
@@ -214,4 +228,5 @@ async function start() {
     problem(history.reason.message);
   }
 }
+window.addEventListener("focus", () => void refreshModel());
 void start();

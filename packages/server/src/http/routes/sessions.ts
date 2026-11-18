@@ -139,7 +139,9 @@ import { Messaging } from "../../runtime/messaging/bridge.js";
 import { agentDeletionsRoutes, agentsRoutes } from "./agents.js";
 import { agentConfigRoutes } from "./agent-config.js";
 import { vaultRoutes } from "./vault.js";
-import { capabilityRoutes, voicePolishRoutes } from "./capabilities.js";
+import { ModelCapabilities } from "../../cli/model-capabilities.js";
+import { voicePolishRoutes } from "./capabilities.js";
+import { capabilityRoutes } from "../../cli/model-tool-routes.js";
 import { CapabilityRuns } from "../../services/capability-runs.js";
 import { modelsRoutes } from "./models.js";
 import { modelOAuthCallbackRoutes, modelOAuthRoutes } from "./model-oauth.js";
@@ -1917,6 +1919,7 @@ export class SessionApiRoutes {
   @Use() private readonly agentApi!: AgentApi;
   @Use() private readonly orgService!: OrgService;
   @Use() private readonly workbenches!: Workbenches;
+  @Use() private readonly modelCapabilities!: ModelCapabilities;
   @Use() private readonly drafts!: UserDraftsStore;
   @Bind("session-api.model-oauth-callback") modelOauthCallbackRoutes!: Hono<AppEnv>;
   @Bind("session-api.models") modelsRoutes!: Hono<AppEnv>;
@@ -1948,6 +1951,7 @@ export class SessionApiRoutes {
       access,
       projects: projectConfigService,
       sessions: sessionsRepo,
+      capabilities: this.modelCapabilities,
       runs: new CapabilityRuns(this.db, this.config.root, ctx.resources),
     };
     this.capabilities = capabilityRoutes(tools);
