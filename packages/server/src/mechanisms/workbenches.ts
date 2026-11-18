@@ -395,7 +395,8 @@ export abstract class Workbenches {
   /**
    * The workbench's plugin icon (`.svg` markup or `.png` bytes base64-encoded), from its
    * `package.json#penguin.icon`; null when it ships none or the read refuses it. The PWA
-   * manifest inlines it; the session tabs default to it.
+   * manifest inlines it; the session tabs default to it. A pure read of the current
+   * layout — no migration, like `describe`; the auth-less manifest gate calls this.
    */
   abstract iconSvg(
     projectId: string,

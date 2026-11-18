@@ -88,6 +88,45 @@ describe("prompt-cache invariants of request assembly", () => {
     await rm(traces, { recursive: true, force: true });
   });
 
+  it("sends a stable cache routing key across tool results, retry and resume", async () => {
+    const config = () =>
+      modelConfig({
+        modelId: "gpt-6.2-sol",
+        clientType: "openai-responses",
+        apiKey: "test",
+        sessionId: SESSION_ID,
+      });
+    const first = recordingModel(config(), [
+      toolTurn(),
+      { text: "Working", outcome: "retryable-after-text" },
+      { text: "Done" },
+      { text: "Next" },
+    ]);
+    const engine = new ContextEngine({ llm: first.model, environment: fakeEnvironment });
+    await collect(engine.run([userText("read this")], { approve: allowAll }));
+    await collect(engine.run([userText("again")], { approve: allowAll }));
+    const resumed = recordingModel(config(), [{ text: "Resumed" }]);
+    resumed.model.setHistory([userText("again")]);
+    const next = new ContextEngine({ llm: resumed.model, environment: fakeEnvironment });
+    await collect(next.run([userText("continue")], { approve: allowAll }));
+    const sent = [...first.requests, ...resumed.requests];
+    expect(sent).toHaveLength(5);
+    for (const request of sent) {
+      expect(request.config.session_id).toBe(SESSION_ID);
+      expect(request.wireConfig.prompt_cache_key).toBe(SESSION_ID);
+      expect(request.config).not.toHaveProperty("trace_id");
+      expect(JSON.stringify(request.wire)).not.toContain(SESSION_ID);
+    }
+    const different = recordingModel({ ...config(), sessionId: "another-session" }, [
+      { text: "Hello" },
+    ]);
+    await collect(different.model.streamGenerate({ newMessages: [userText("hello")] }));
+    expect(different.requests[0]?.wireConfig.prompt_cache_key).toBe("another-session");
+    const oneShot = recordingModel({ ...config(), sessionId: undefined }, [{ text: "Title" }]);
+    await collect(oneShot.model.streamGenerate({ newMessages: [userText("title")] }));
+    expect(oneShot.requests[0]?.wireConfig).not.toHaveProperty("prompt_cache_key");
+  });
+
   it("every request of a session extends the previous one on the wire", async () => {
     const { model, requests } = recordingModel(modelConfig(), [
       toolTurn(),

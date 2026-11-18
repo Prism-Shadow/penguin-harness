@@ -548,10 +548,17 @@ describe("installed plugins", () => {
           installFiles: async () => npmSays("not used", "other"),
           remove: async () => {},
         },
-        config: { pluginIndexUrl: `${base}/index.json` },
+        config: {},
       });
+      // The test's own server is the index source: saved as the settings group says, so the
+      // channel lookup reads it the way a deployment configures one.
       const cookie = (await loginAdmin(t.app)).cookie;
       admin = apiClient(t.app, cookie);
+      const saved = await admin.put("/api/admin/plugin-config", {
+        name: "plugin-index",
+        values: { sources: [`${base}/index.json`] },
+      });
+      expect(saved.status).toBe(200);
       const res = await postStream(cookie, "@acme/channels");
       expect(res.status).toBe(200);
       expect(res.headers.get("content-type")).toContain("text/event-stream");

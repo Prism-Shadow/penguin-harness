@@ -593,7 +593,6 @@ export class WorkbenchService implements Workbenches {
     workbenchId: string,
   ): Promise<{ kind: "svg" | "png"; data: string } | null> {
     if (!isWorkbenchId(workbenchId)) return null;
-    await this.migrate(projectId, agentId);
     const folder = await readFolder(
       path.join(workbenchesDir(this.paths.root, projectId, agentId), workbenchId),
       workbenchId,
