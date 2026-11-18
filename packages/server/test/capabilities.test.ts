@@ -379,6 +379,7 @@ describe("project model capabilities", () => {
       const help = (await (
         await api.post(tools + "/cli", { args: ["--help"], language: "zh" })
       ).json()) as { stdout: string };
+      expect(help.stdout).toContain("调用项目插件提供的模型工具");
       expect(help.stdout).toContain("测试 tts");
       expect(help.stdout).not.toContain("image <prompt>");
       const before = received.length;
