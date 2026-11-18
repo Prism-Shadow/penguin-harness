@@ -9,12 +9,8 @@
       "@prismshadow/penguin-library-db/migrations/runner": ["../db/src/migrations/runner.ts"],
       "@prismshadow/penguin-library-session": ["../session/src/index.ts"],
       "@prismshadow/penguin-library-session/session": ["../session/src/session.ts"],
-      "@prismshadow/penguin-library-session/repos/schedules": [
-        "../session/src/repos/schedules.ts"
-      ],
-      "@prismshadow/penguin-library-session/repos/sessions": [
-        "../session/src/repos/sessions.ts"
-      ],
+      "@prismshadow/penguin-library-session/repos/schedules": ["../session/src/repos/schedules.ts"],
+      "@prismshadow/penguin-library-session/repos/sessions": ["../session/src/repos/sessions.ts"],
       "@prismshadow/penguin-library-session/repos": ["../session/src/repos/index.ts"]
     }
   },

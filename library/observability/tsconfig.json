@@ -14,9 +14,7 @@
       "@prismshadow/penguin-library-db/migrations/runner": ["../db/src/migrations/runner.ts"],
       "@prismshadow/penguin-library-trace": ["../trace/src/index.ts"],
       "@prismshadow/penguin-library-trace/trace": ["../trace/src/trace.ts"],
-      "@prismshadow/penguin-library-trace/repos/trace-index": [
-        "../trace/src/repos/trace-index.ts"
-      ],
+      "@prismshadow/penguin-library-trace/repos/trace-index": ["../trace/src/repos/trace-index.ts"],
       "@prismshadow/penguin-library-trace/repos": ["../trace/src/repos/index.ts"]
     }
   },

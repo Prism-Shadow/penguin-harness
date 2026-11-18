@@ -6,12 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { DatabaseSync } from "node:sqlite";
-import {
-  MIGRATIONS,
-  appliedMigrations,
-  migrate,
-  rollbackTo,
-} from "../src/migrations/index.js";
+import { MIGRATIONS, appliedMigrations, migrate, rollbackTo } from "../src/migrations/index.js";
 import {
   columns,
   hasTable,
