@@ -27,6 +27,7 @@
  * caught by the stat. The cached table is shared between callers and must be treated
  * as immutable — every mutating method here copies before changing.
  */
+import { projectPluginTables } from "../plugin/project-defaults.js";
 import type { CapabilitySettingsPatch } from "../api/capabilities.js";
 import { applyCapabilitySettings } from "./capability-settings.js";
 import type { Dirent } from "node:fs";
@@ -41,7 +42,6 @@ import {
   commandPolicyPatternError,
   effectiveCommandPolicyRules,
   parseCommandPolicy,
-  parsePluginTables,
   pluginTablesToToml,
   GenerativeModel,
   canonicalClientType,
@@ -1004,6 +1004,7 @@ export class ProjectConfigService implements ProjectConfigStore {
     const preset = presetProjectConfig();
     await this.writeRaw(projectId, {
       name,
+      plugins: pluginTablesToToml(projectPluginTables()),
       ...(preset.default_model !== undefined ? { default_model: preset.default_model } : {}),
       // The factory command-policy rules are seeded exactly like the model presets:
       // copied in at creation, owned by the project from then on.
@@ -1034,6 +1035,7 @@ export class ProjectConfigService implements ProjectConfigStore {
     const { providers, added } = presetAdditions(raw);
     await this.writeRaw(projectId, {
       ...raw,
+      plugins: raw.plugins ?? pluginTablesToToml(projectPluginTables()),
       // Also reset to the preset default_model if the existing one points at a now-deleted model, to keep the default model valid.
       ...(preset.default_model !== undefined ? { default_model: preset.default_model } : {}),
       providers,
@@ -1241,7 +1243,7 @@ export class ProjectConfigService implements ProjectConfigStore {
    * file's order; both empty when it asks for none.
    */
   async getPluginTables(projectId: string): Promise<PluginTables> {
-    return parsePluginTables((await this.readRaw(projectId)).plugins) ?? { all: {}, machines: {} };
+    return projectPluginTables((await this.readRaw(projectId)).plugins);
   }
 
   /**

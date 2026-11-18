@@ -49,8 +49,15 @@ describe("installed plugins", () => {
     await writeClassPackage(path.join(prefix, "node_modules", ...pkg.name.split("/")), pkg);
   };
 
+  // These tests assemble their own shipped and installed packages on an explicitly empty list.
+  const beforeSeed = async (root: string) => {
+    const dir = path.join(root, "default_project");
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, ".project_config.toml"), "[plugins]\n");
+  };
+
   beforeEach(async () => {
-    t = await createTestApp();
+    t = await createTestApp({ beforeSeed });
     admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
   });
 
@@ -364,7 +371,7 @@ describe("installed plugins", () => {
     host.use({ specifier: "@acme/unmet", modules: [], replaces: [unmet] });
     await t.cleanup();
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    t = await createTestApp({ plugins: host });
+    t = await createTestApp({ plugins: host, beforeSeed });
     admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
     await ship({ name: "@acme/partial", module: "Partial" });
     await ship({ name: "@acme/unmet", module: "Unmet" });
@@ -413,7 +420,7 @@ describe("installed plugins", () => {
     host.use({ specifier: "@acme/partial", modules: [partial], replaces: [] });
     await t.cleanup();
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    t = await createTestApp({ plugins: host });
+    t = await createTestApp({ plugins: host, beforeSeed });
     admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
     await ship({ name: "@acme/fine", module: "Fine" });
     // A push's slip with no acceptance on it, left registered: only the boot a push makes
@@ -539,6 +546,7 @@ describe("installed plugins", () => {
     base = `http://127.0.0.1:${(serve.address() as AddressInfo).port}`;
     try {
       t = await createTestApp({
+        beforeSeed,
         pluginPackages: {
           install: async (_root, source) =>
             npmSays(
@@ -585,6 +593,7 @@ describe("installed plugins", () => {
   it("a stream install that fails rides the failure as an error event, with the status the JSON answer would have had", async () => {
     await t.cleanup();
     t = await createTestApp({
+      beforeSeed,
       pluginPackages: {
         install: async () => npmSays("npm error code EACCES\nnpm error permission denied", "other"),
         installFiles: async () => npmSays("not used", "other"),

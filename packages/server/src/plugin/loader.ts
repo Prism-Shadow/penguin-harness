@@ -27,11 +27,11 @@ import {
   effectivePluginTable,
   IFACES_FILE,
   packageEntry,
-  parsePluginTables,
   projectConfigPath,
   readPluginTable,
 } from "@prismshadow/penguin-core";
 import type { PluginDeclaration } from "@prismshadow/penguin-core";
+import { projectPluginTables } from "./project-defaults.js";
 import { findPackageJSON } from "node:module";
 import { existsSync, statSync } from "node:fs";
 import path from "node:path";
@@ -126,8 +126,8 @@ export async function readProjectPluginList(
     );
     return [];
   }
-  const tables = parsePluginTables((parsed as { plugins?: unknown }).plugins);
-  return tables === undefined ? [] : Object.keys(effectivePluginTable(tables, machineId));
+  const tables = projectPluginTables((parsed as { plugins?: unknown }).plugins);
+  return Object.keys(effectivePluginTable(tables, machineId));
 }
 
 /**
@@ -140,8 +140,13 @@ export async function readPluginClosure(
   root: string,
   machineId: string | null = null,
 ): Promise<string[]> {
+  const projectIds = await listProjectIds(root);
+  // The server boots the module tree before provisioning its first default Project. Load that
+  // Project's factory choice on first boot so the first request can use the plugin. Once any
+  // Project exists the closure is exactly what the Projects ask for, including an empty set.
+  if (projectIds.length === 0) return Object.keys(projectPluginTables().all);
   const out: string[] = [];
-  for (const projectId of await listProjectIds(root)) {
+  for (const projectId of projectIds) {
     for (const specifier of await readProjectPluginList(root, projectId, machineId)) {
       if (!out.includes(specifier)) out.push(specifier);
     }
