@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="./style.css" />
     <link rel="stylesheet" href="./deck-files.css" />
     <script type="module" src="./app.js"></script>
+    <link rel="stylesheet" href="conversation.css" />
   </head>
   <body>
     <div class="app" id="app" data-view="loading">
@@ -79,12 +80,11 @@
             <h2 id="rail-title" data-copy="railTitle"></h2>
             <button id="rail-reset" type="button" class="link" data-copy="newChat"></button>
           </header>
-          <ol id="talk" class="talk" aria-live="polite"></ol>
+          <ol id="talk" class="talk" aria-labelledby="rail-title"></ol>
           <form id="ask" class="ask">
             <p id="context" class="context"></p>
             <textarea id="prompt" rows="3" maxlength="20000" required></textarea>
             <div class="ask-actions">
-              <span id="activity" class="activity" role="status"></span>
               <button id="stop" type="button" hidden data-copy="stop"></button>
               <button id="send" type="submit" class="wb-primary" data-copy="send"></button>
             </div>

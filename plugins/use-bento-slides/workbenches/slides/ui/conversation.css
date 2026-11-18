@@ -1,0 +1,66 @@
+.talk .conversation-turn {
+  display: flex;
+  flex-flow: column;
+  gap: 0.5rem;
+  min-width: 0;
+  white-space: normal;
+}
+.conversation-turn + .conversation-turn {
+  margin-top: 0.8rem;
+}
+.conversation-turn .me,
+.turn-answer,
+.turn-thought,
+.turn-error {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.turn-state,
+.turn-step small {
+  color: var(--wb-muted);
+  font-size: 0.77rem;
+}
+.turn-step {
+  min-width: 0;
+  align-self: stretch;
+  border-inline-start: 2px solid var(--wb-line);
+  padding-inline-start: 0.65rem;
+}
+.turn-step summary {
+  cursor: pointer;
+  width: fit-content;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.turn-step summary:focus-visible,
+.turn-retry:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+.turn-step[open] > :not(summary) {
+  margin-block: 0.4rem;
+}
+.turn-step small {
+  display: block;
+}
+.turn-step pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0;
+  max-height: 16rem;
+  overflow: auto;
+  font-size: 0.8rem;
+}
+.turn-error {
+  color: var(--wb-danger, var(--wb-fg));
+}
+.turn-retry {
+  align-self: flex-start;
+}
+
+.turn-end {
+  padding-block-start: 0.16rem;
+}
+.turn-step summary {
+  font-weight: 550;
+}

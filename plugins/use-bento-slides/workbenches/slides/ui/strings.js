@@ -71,17 +71,6 @@ const en = {
   importFailed: (why) => `That file could not be imported: ${why}.`,
   askFailed: (why) => `The request could not be sent: ${why}`,
   aiFailed: "The Agent stopped without an answer.",
-  activity: {
-    thinking: "Thinking…",
-    reading: "Reading the deck…",
-    searching: "Working on the deck…",
-    notes: "Editing the deck…",
-    helper: "Working with a helper…",
-    writing: "Writing its answer…",
-    summarizing: "Tidying its notes…",
-    other: "Working…",
-    queued: "Queued behind the running request…",
-  },
 };
 
 const zh = {
@@ -147,17 +136,6 @@ const zh = {
   importFailed: (why) => `无法导入这个文件：${why}。`,
   askFailed: (why) => `请求没有发出：${why}`,
   aiFailed: "Agent 没有给出回答就停止了。",
-  activity: {
-    thinking: "正在思考…",
-    reading: "正在读取文稿…",
-    searching: "正在处理文稿…",
-    notes: "正在修改文稿…",
-    helper: "正在与助手协作…",
-    writing: "正在写回答…",
-    summarizing: "正在整理笔记…",
-    other: "正在处理…",
-    queued: "已排在当前请求之后…",
-  },
 };
 
 /** The language of the app framing this page, else the browser's. */

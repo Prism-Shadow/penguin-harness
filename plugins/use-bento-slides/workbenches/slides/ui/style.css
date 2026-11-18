@@ -220,18 +220,9 @@ body {
   border-radius: 12px;
   background: var(--wb-hover);
 }
-.talk .ai {
-  color: var(--wb-fg);
-}
-.talk .ai.draft {
-  color: var(--wb-muted);
-}
 .talk .hint {
   color: var(--wb-muted);
   font-size: 13px;
-}
-.talk .error {
-  color: var(--wb-muted);
 }
 .ask {
   display: flex;
@@ -260,17 +251,6 @@ body {
   flex-direction: row-reverse;
   align-items: center;
   gap: 8px;
-}
-.activity {
-  flex: 1;
-  min-width: 0;
-  text-align: right;
-  padding-right: 56px;
-  color: var(--wb-muted);
-  font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .start,

@@ -10,7 +10,8 @@
 import { exportPowerPoint } from "./powerpoint.js";
 import { deckFiles } from "./deck-files.js";
 import { bridge, connectSave, captureSave } from "./bridge.js";
-import { draftOf, emptyLive, foldLive } from "./live.js";
+import { newConversation, readConversation } from "./conversation.js";
+import { showConversation } from "./conversation-view.js";
 import { S, locale } from "./strings.js";
 import {
   deckFromHtml,
@@ -731,7 +732,9 @@ function closeMenus() {
 
 let sdk; // undefined until tried, null when this server has none
 let reader = null;
-let live = emptyLive();
+let transcript = newConversation();
+let followedId = null;
+let renderFrame = null;
 let talk = { sessionId: null, status: null, messages: [] };
 
 async function loadSdk() {
@@ -747,51 +750,54 @@ async function loadSdk() {
 function stopFollowing() {
   reader?.close();
   reader = null;
-  live = emptyLive();
+  followedId = null;
+  transcript = newConversation();
+  if (renderFrame !== null) cancelAnimationFrame(renderFrame);
+  renderFrame = null;
 }
 
 function renderTalk() {
-  const list = $("talk");
-  const items = talk.messages.map((message) => {
-    const item = document.createElement("li");
-    item.className = message.role === "user" ? "me" : message.role === "error" ? "error" : "ai";
-    item.textContent = message.text;
-    return item;
-  });
   const running = talk.status !== null && talk.status !== "idle";
-  const draft = running ? draftOf(live) : "";
-  if (draft !== "") {
-    const item = document.createElement("li");
-    item.className = "ai draft";
-    item.textContent = draft;
-    items.push(item);
-  }
-  if (items.length === 0) {
-    const item = document.createElement("li");
-    item.className = "hint";
-    item.textContent = S.hintEmpty;
-    items.push(item);
-  }
-  list.replaceChildren(...items);
-  list.scrollTop = list.scrollHeight;
-  $("activity").textContent = running ? S.activity[live.activity ?? "thinking"] : "";
+  showConversation($("talk"), talk.messages, transcript, {
+    locale,
+    running,
+    hint: S.hintEmpty,
+    retry: ask,
+  });
   $("stop").hidden = !running || !sdk;
-  $("send").disabled = false;
+}
+
+function scheduleTalk() {
+  if (renderFrame !== null) return;
+  renderFrame = requestAnimationFrame(() => {
+    renderFrame = null;
+    renderTalk();
+  });
 }
 
 async function follow(sessionId) {
+  if (followedId === sessionId && reader !== null) return;
   stopFollowing();
-  if (!(await loadSdk()) || open === null) return;
-  const mine = (reader = sdk.followSession(sessionId, { tailLimit: 1 }));
+  const deck = open;
+  followedId = sessionId;
+  if (!(await loadSdk()) || !deck || open !== deck || followedId !== sessionId) return;
+  // The rail retains 40 messages. The SDK window counts whole Tasks, not
+  // records, so even a long tool run is restored with its own original turn.
+  const mine = (reader = sdk.followSession(sessionId, { tailLimit: 40 }));
   mine.on("event", ({ record }) => {
     if (reader !== mine) return;
-    const was = live.running;
-    live = foldLive(live, record);
-    if (was !== false && live.running === false) setTimeout(() => void refreshTalk(), 300);
-    renderTalk();
+    readConversation(transcript, record);
+    if (record.payload?.type === "task_end" && talk.status !== "idle") {
+      clearTimeout(talkTimer);
+      talkTimer = setTimeout(() => void refreshTalk(), 150);
+    }
+    scheduleTalk();
   });
   mine.on("reset", () => {
-    if (reader === mine) live = emptyLive();
+    if (reader === mine) {
+      transcript = newConversation();
+      scheduleTalk();
+    }
   });
   mine.on("error", () => {
     if (reader === mine) reader = null;
@@ -799,21 +805,25 @@ async function follow(sessionId) {
 }
 
 let talkTimer = null;
+let talkRevision = 0;
 async function refreshTalk() {
   clearTimeout(talkTimer);
   if (open === null) return;
-  const id = open.id;
+  const deck = open;
+  const id = deck.id;
+  const revision = ++talkRevision;
   let next;
   try {
     next = await getJson(`/ask?deck=${encodeURIComponent(id)}`);
   } catch {
     return;
   }
-  if (open?.id !== id) return;
+  if (open !== deck || talkRevision !== revision) return;
   talk = next;
   const running = talk.status !== null && talk.status !== "idle";
-  if (running && reader === null && talk.sessionId !== null) void follow(talk.sessionId);
-  if (!running) stopFollowing();
+  if (talk.sessionId !== null && (followedId !== talk.sessionId || reader === null))
+    void follow(talk.sessionId);
+  if (talk.sessionId === null) stopFollowing();
   // The stream says when a task ends; this is for a server without it, and for a missed end.
   if (running) talkTimer = setTimeout(() => void refreshTalk(), 4000);
   renderTalk();
@@ -825,9 +835,14 @@ async function ask(text) {
   // What the person just did reaches the file before the Agent reads it.
   clearTimeout(o.timer);
   await inTurn(o, () => save(o));
-  talk.messages = [...talk.messages, { role: "user", text: text.trim() }];
+  if (open !== o) return;
+  ++talkRevision;
+  talk.messages = [
+    ...talk.messages,
+    { role: "user", text: text.trim(), at: new Date().toISOString() },
+  ];
   talk.status = "running";
-  live = { ...emptyLive(), running: true };
+
   renderTalk();
   let res;
   try {
@@ -840,6 +855,7 @@ async function ask(text) {
   } catch (err) {
     res = { ok: false, status: String(err) };
   }
+  if (open !== o) return;
   if (!res.ok) {
     const detail = res.json
       ? ((await res.json().catch(() => null))?.error ?? res.status)
@@ -851,6 +867,7 @@ async function ask(text) {
   }
   const { sessionId } = await res.json();
   talk.sessionId = sessionId;
+  ++talkRevision;
   await follow(sessionId);
   talkTimer = setTimeout(() => void refreshTalk(), 4000);
 }
@@ -998,6 +1015,7 @@ $("prompt").onkeydown = (event) => {
 $("stop").onclick = () => talk.sessionId && sdk && void sdk.abortSession(talk.sessionId);
 $("rail-reset").onclick = async () => {
   if (open === null) return;
+  ++talkRevision;
   await send("/ask/reset", "POST", { deck: open.id });
   await refreshTalk();
 };

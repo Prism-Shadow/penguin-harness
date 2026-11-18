@@ -241,7 +241,9 @@ describe("asking the Agent", () => {
     expect((await call("GET", "/ask", null, { deck: "q4" })).body.status).toBe("running");
     status.set("session-1", "idle");
     const talk = (await call("GET", "/ask", null, { deck: "q4" })).body;
-    expect(talk.messages).toEqual([
+    expect(
+      talk.messages.map(({ role, text }: { role: string; text: string }) => ({ role, text })),
+    ).toEqual([
       { role: "user", text: "Make this slide a bar chart of the numbers" },
       { role: "user", text: "Add a caption under it" },
       { role: "assistant", text: "The chart on slide 3 now shows Q1 to Q4." },

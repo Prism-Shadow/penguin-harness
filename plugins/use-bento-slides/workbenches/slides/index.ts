@@ -263,8 +263,22 @@ export default {
               delete state.talks[deck];
             } else state.sessions[deck] = sessionId;
           });
-        const say = (deck: string, role: Message["role"], text: string) =>
+        const say = (
+          deck: string,
+          role: Message["role"],
+          text: string,
+          after?: { sessionId: string; at: string },
+        ) =>
           change((state) => {
+            if (after) {
+              const last = state.talks[deck]?.at(-1);
+              if (
+                state.sessions[deck] !== after.sessionId ||
+                last?.role !== "user" ||
+                last.at !== after.at
+              )
+                return;
+            }
             const at = new Date().toISOString();
             state.talks[deck] = [...(state.talks[deck] ?? []), { role, text, at }].slice(
               -TALK_KEPT,
@@ -476,20 +490,23 @@ export default {
                   // asks when its stream says the task ended, and again when it loads.
                   const messages = talkOf(id);
                   if (sessionId !== null && status === "idle" && messages.at(-1)?.role === "user") {
+                    const after = { sessionId, at: messages.at(-1)!.at };
                     const result = await host.sessionResult(sessionId);
-                    if (result.status === "completed") await say(id, "assistant", result.text);
+                    if (result.status === "completed")
+                      await say(id, "assistant", result.text, after);
                     else if (result.status === "failed") {
                       await say(
                         id,
                         "error",
                         result.error ?? "The Agent stopped without an answer.",
+                        after,
                       );
                     }
                   }
                   return json({
                     sessionId: status === null ? null : sessionId,
                     status,
-                    messages: talkOf(id).map(({ role, text }) => ({ role, text })),
+                    messages: talkOf(id),
                   });
                 }
 
@@ -532,8 +549,15 @@ export default {
                     .filter((line) => line !== "")
                     .join("\n");
                   await say(id, "user", text);
-                  const run = await host.run(sessionId, [{ text: prompt }]);
-                  return json({ sessionId, queued: run.queued });
+                  const at = talkOf(id).at(-1)!.at;
+                  try {
+                    const run = await host.run(sessionId, [{ text: prompt }]);
+                    return json({ sessionId, queued: run.queued });
+                  } catch (err) {
+                    const error = err instanceof Error ? err.message : String(err);
+                    await say(id, "error", error, { sessionId, at });
+                    return json({ error }, 503);
+                  }
                 }
 
                 return json({ error: `no such route: ${method} ${path}` }, 404);
