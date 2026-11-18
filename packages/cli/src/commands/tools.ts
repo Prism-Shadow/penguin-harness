@@ -126,17 +126,26 @@ export function registerTools(program: Command, m: Messages) {
         aspectRatio: opts.aspectRatio,
         voice: opts.voice,
       });
-      let run = await api.request<CapabilityResult>("POST", base + "/" + key + "/run", req);
+      const submit = () => api.request<CapabilityResult>("POST", base + "/" + key + "/run", req);
       if (opts.detach) {
+        const run = await submit();
         process.stdout.write((opts.json ? JSON.stringify(run) : run.id) + "\n");
         return;
       }
+      let run: CapabilityResult | undefined;
+      let interrupted = false;
+      const cancelById = (id: string) =>
+        api.request<CapabilityResult>("DELETE", base + "/runs/" + encodeURIComponent(id));
       const cancel = () => {
-        void api.request("DELETE", base + "/runs/" + encodeURIComponent(run.id)).catch(() => {});
+        interrupted = true;
+        if (run) void cancelById(run.id).catch(() => {});
       };
       process.once("SIGINT", cancel);
       process.once("SIGTERM", cancel);
       try {
+        run = await submit();
+        // A Session can be stopped while its upload or the start acknowledgement is in flight.
+        if (interrupted) run = await cancelById(run.id);
         while (run.status === "running") {
           await delay(600);
           run = await api.request<CapabilityResult>(

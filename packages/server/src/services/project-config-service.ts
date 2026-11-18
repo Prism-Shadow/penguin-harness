@@ -1098,19 +1098,46 @@ export class ProjectConfigService implements ProjectConfigStore {
     return { provider: ref.provider, modelId: ref.modelId };
   }
 
+  /** Refresh a managed credential only for a model permitted to inherit its provider key. */
+  async loadCapabilityModel(projectId: string, ref: ModelRefDto): Promise<ProjectConfig> {
+    const config = await this.loadConfig(projectId);
+    const row = config.models.find(
+      (m) => m.provider === ref.provider && m.model_id === ref.modelId,
+    );
+    if (
+      !row ||
+      row.api_key ||
+      !groupKeyReaches(row.base_url, config.providers?.[ref.provider]?.base_url)
+    )
+      return config;
+    const key = await this.modelApiKeyResolver?.({
+      projectId,
+      provider: ref.provider,
+      modelId: ref.modelId,
+    });
+    if (!key) return config;
+    return {
+      ...config,
+      models: config.models.map((m) => (m === row ? { ...m, api_key: key } : m)),
+    };
+  }
+
+  async patchCapabilitySettings(projectId: string, patch: CapabilitySettingsPatch) {
+    // Model-table edits and restore use the same Project lock; a simultaneous binding save sees their final rows.
+    return this.withProviderCredentialLock(projectId, MODELSCOPE_PROVIDER_ID, async () => {
+      const raw = await this.readRaw(projectId);
+      const config = projectConfigFromTable(projectConfigPath(this.root, projectId), raw);
+      const updated = applyCapabilitySettings(config, patch);
+      await this.writeRaw(projectId, { ...raw, ...updated });
+      return capabilitySettings({ ...config, ...updated });
+    });
+  }
+
   /**
    * New-chat defaults (`[default_chat]`): read leniently — same tolerance as core's
    * loadProjectConfig (an invalid value drops that key; a missing/malformed block reads as
    * empty). Members may read; only the fields present in the file appear in the DTO.
    */
-  async patchCapabilitySettings(projectId: string, patch: CapabilitySettingsPatch) {
-    const raw = await this.readRaw(projectId);
-    const config = projectConfigFromTable(projectConfigPath(this.root, projectId), raw);
-    const updated = applyCapabilitySettings(config, patch);
-    await this.writeRaw(projectId, { ...raw, ...updated });
-    return capabilitySettings({ ...config, ...updated });
-  }
-
   async getChatDefaults(projectId: string): Promise<ChatDefaultsDto> {
     const raw = await this.readRaw(projectId);
     const t = asTable(raw.default_chat);
@@ -2478,9 +2505,23 @@ export class ProjectConfigService implements ProjectConfigStore {
     if (defaultModel !== undefined) next.default_model = defaultModel;
     else delete next.default_model;
     delete next.vision_model;
+    if (raw.capability_models) {
+      next.capability_models = Object.fromEntries(
+        Object.entries(asTable(raw.capability_models)).filter(([, value]) => {
+          const ref = optRef(value);
+          return ref && presetRefs.has(refKey(ref.provider, ref.model_id));
+        }),
+      );
+    }
+    const editModel = optRef(asTable(raw.voice_polish).model);
+    if (editModel && !presetRefs.has(refKey(editModel.provider, editModel.model_id)))
+      next.voice_polish = { enabled: false };
+
     const changed =
       !sameValue(current, nextModels) ||
       !sameValue(asTable(raw.providers), providers) ||
+      !sameValue(raw.capability_models, next.capability_models) ||
+      !sameValue(raw.voice_polish, next.voice_polish) ||
       !sameValue(optRef(raw.default_model), defaultModel) ||
       raw.vision_model !== undefined;
     if (changed) await this.writeRaw(projectId, next);

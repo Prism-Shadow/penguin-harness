@@ -10,6 +10,8 @@ import type { ModelRefDto } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 
 export interface ModelMedia {
+  /** Derived only from the returned PCM sample count and its stated format. */
+  seconds?: number;
   data: Buffer;
   mimeType: string;
 }
@@ -55,7 +57,11 @@ export async function runProjectModel(
         result.media.push({ mimeType: item.mime_type, data: Buffer.from(item.data) });
       }
     }
-    if (event.event_type === "stop") result.usage = event.usage_metadata;
+    if (event.event_type === "stop" && event.usage_metadata) {
+      const { cached_tokens, prompt_tokens, thoughts_tokens, response_tokens } =
+        event.usage_metadata;
+      result.usage = { cached_tokens, prompt_tokens, thoughts_tokens, response_tokens };
+    }
   }
   result.text = chunks.join("");
   return result;
@@ -65,7 +71,8 @@ export async function runProjectModel(
 export function playableMedia(media: ModelMedia): ModelMedia {
   const { mimeType, data } = media;
   if (!/^audio\/(?:l16|pcm)(?:\s*;|$)/i.test(mimeType)) return media;
-  const rate = Number(/(?:^|;)\s*rate\s*=\s*(\d+)/i.exec(mimeType)?.[1] ?? 24000);
+  const reportedRate = /(?:^|;)\s*rate\s*=\s*(\d+)/i.exec(mimeType)?.[1];
+  const rate = Number(reportedRate ?? 24000);
   const channels = Number(/(?:^|;)\s*channels\s*=\s*(\d+)/i.exec(mimeType)?.[1] ?? 1);
   if (
     rate < 1 ||
@@ -88,5 +95,9 @@ export function playableMedia(media: ModelMedia): ModelMedia {
   header.writeUInt16LE(16, 34);
   header.write("data", 36);
   header.writeUInt32LE(data.length, 40);
-  return { mimeType: "audio/wav", data: Buffer.concat([header, data]) };
+  return {
+    mimeType: "audio/wav",
+    data: Buffer.concat([header, data]),
+    ...(reportedRate ? { seconds: data.length / (channels * 2 * rate) } : {}),
+  };
 }

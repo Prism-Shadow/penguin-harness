@@ -133,6 +133,7 @@ export abstract class ProjectConfigStore {
   abstract setName(projectId: string, name: string): Promise<void>;
   abstract getDefaultModelRef(projectId: string): Promise<ModelRef | undefined>;
   abstract setDefaultModelRef(projectId: string, ref: ModelRefDto): Promise<ModelRefDto>;
+  abstract loadCapabilityModel(projectId: string, ref: ModelRefDto): Promise<ProjectConfig>;
   abstract patchCapabilitySettings(
     projectId: string,
     patch: CapabilitySettingsPatch,

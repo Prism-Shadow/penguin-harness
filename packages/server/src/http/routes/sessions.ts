@@ -1936,7 +1936,7 @@ export class SessionApiRoutes {
   @Bind("session-api.workspace-files") workspaceFilesRoutes!: Hono<AppEnv>;
   @Bind("session-api.sessions") sessionsRoutes!: Hono<AppEnv>;
   @Bind("session-api.archived-sessions") archivedSessionsRoutes!: Hono<AppEnv>;
-  setup() {
+  setup(ctx: ClassCtx) {
     const manager = this.manager as SessionManager;
     const sessionService = this.sessionService as SessionService;
     const agentConfigService = this.agentConfig;
@@ -1948,7 +1948,7 @@ export class SessionApiRoutes {
       access,
       projects: projectConfigService,
       sessions: sessionsRepo,
-      runs: new CapabilityRuns(this.db, this.config.root),
+      runs: new CapabilityRuns(this.db, this.config.root, ctx.resources),
     };
     this.capabilities = capabilityRoutes(tools);
     this.voicePolish = voicePolishRoutes(tools);

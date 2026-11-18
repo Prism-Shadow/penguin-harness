@@ -37,6 +37,7 @@ const KEYS = [
   "server.status",
   "server.stop",
   "session",
+  "tools",
   "update",
   "version",
 ];

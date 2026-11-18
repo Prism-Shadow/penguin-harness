@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import { projectDir, type ProjectConfig } from "@prismshadow/penguin-core";
+import type { Resources } from "@prismshadow/penguin-core/kernel";
 import type { ContentItem, UniConfig } from "@prismshadow/mmsp";
 import type { Db } from "../hmr/capabilities.js";
 import type { Capability, CapabilityArtifact, CapabilityResult } from "../api/capabilities.js";
@@ -56,11 +57,21 @@ function reason(err: unknown): string {
   return "The model request failed. Check the selected model and its endpoint.";
 }
 export class CapabilityRuns {
-  private readonly active = new Map<string, AbortController>();
+  private readonly active: Map<string, AbortController>;
   constructor(
     private readonly db: Db,
     private readonly root: string,
-  ) {}
+    resources: Resources,
+  ) {
+    // An outstanding video continues when the HTTP routes are hot-replaced.
+    const slot = "capability-runs:controllers";
+    const existing = resources.claim<Map<string, AbortController>>(slot);
+    this.active = existing ?? new Map();
+    if (!existing)
+      resources.register(slot, this.active, () => {
+        for (const controller of this.active.values()) controller.abort();
+      });
+  }
   private dir(project: string) {
     return path.join(projectDir(this.root, project), ".capability-artifacts");
   }
@@ -118,7 +129,13 @@ export class CapabilityRuns {
     if (!run) throw new HttpError(404, "artifact_not_found", "This artifact does not exist.");
     const item = this.get(project, run).artifacts.find((f) => f.id === id);
     if (!item) throw new HttpError(404, "artifact_not_found", "This artifact does not exist.");
-    return { item, bytes: await readFile(path.join(this.dir(project), item.id)) };
+    try {
+      return { item, bytes: await readFile(path.join(this.dir(project), item.id)) };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT")
+        throw new HttpError(404, "artifact_not_found", "This artifact file no longer exists.");
+      throw error;
+    }
   }
   cancel(project: string, id: string) {
     const row = this.get(project, id);
@@ -196,9 +213,11 @@ export class CapabilityRuns {
         if (!requested.length)
           throw new HttpError(502, "missing_artifact", "The model returned no " + kind + " file.");
         await mkdir(this.dir(task.projectId), { recursive: true, mode: 0o700 });
+        let seconds = 0;
         for (const blob of requested) {
           signal.throwIfAborted();
           const media: ModelMedia = playableMedia(blob);
+          if (media.seconds !== undefined) seconds += media.seconds;
           const mimeType = media.mimeType.split(";")[0]!.toLowerCase();
           const extension = suffix[mimeType];
           if (!extension)
@@ -209,8 +228,13 @@ export class CapabilityRuns {
             );
           const id = row.id + "-" + row.artifacts.length;
           const target = path.join(this.dir(task.projectId), id);
-          await writeFile(target, media.data, { flag: "wx", mode: 0o600 });
+          const handle = await open(target, "wx", 0o600);
           files.push(target);
+          try {
+            await handle.writeFile(media.data);
+          } finally {
+            await handle.close();
+          }
           row.artifacts.push({
             id,
             name: task.capability + "-" + id + "." + extension,
@@ -224,6 +248,7 @@ export class CapabilityRuns {
               id,
           });
         }
+        if (seconds > 0) row.measurements.push({ unit: "audio_second", quantity: seconds });
         row.measurements.push({
           unit: kind === "audio" ? "audio_file" : kind,
           quantity: row.artifacts.length,

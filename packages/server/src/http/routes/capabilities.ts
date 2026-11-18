@@ -131,10 +131,20 @@ export function capabilityRoutes(deps: Dependencies) {
       );
     const bg = body.async === true;
     const result = await deps.runs.run(
-      { projectId: project, sessionId: session, capability: key, model, config, item, options },
+      {
+        projectId: project,
+        sessionId: session,
+        capability: key,
+        model,
+        config: await deps.projects.loadCapabilityModel(project, model),
+        item,
+        options,
+      },
       c.req.raw.signal,
       bg,
     );
+    if (!bg && result.status === "cancelled")
+      throw new HttpError(409, "capability_cancelled", "The request was cancelled.");
     if (!bg && result.status === "failed")
       throw new HttpError(502, "capability_failed", result.error!);
     return c.json(result, bg ? 202 : 200);
@@ -157,7 +167,7 @@ export function voicePolishRoutes(deps: Dependencies) {
         sessionId: session,
         capability: "voice-polish",
         model,
-        config,
+        config: await deps.projects.loadCapabilityModel(project, model),
         item: { type: "text.done", text },
         options: {},
       },
