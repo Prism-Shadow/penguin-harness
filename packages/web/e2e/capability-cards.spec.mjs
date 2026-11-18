@@ -197,7 +197,7 @@ test("Models opens the project’s multimodal defaults, which persist across rel
     });
   await page.getByRole("button", { name: /^润色语音输入/ }).click();
   await expect(page.getByRole("switch", { name: "润色语音输入" })).toBeChecked();
-  await page.getByRole("textbox", { name: "润色提示词" }).scrollIntoViewIfNeeded();
+  await field(page, "保存").scrollIntoViewIfNeeded();
   if (process.env.VOICE_EVIDENCE)
     await page.screenshot({
       animations: "disabled",
