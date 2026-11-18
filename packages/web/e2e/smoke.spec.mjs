@@ -112,82 +112,149 @@ test("completed history reloads once and a follow-up completes", async ({ page }
   await expect(page.getByText(REPLY, { exact: true })).toHaveCount(2);
 });
 
-test("a live work group pages through reasoning and tools without losing a reader's place", async ({
+async function changeActivityDisplay(page, userId, label) {
+  await page
+    .getByRole("complementary")
+    .getByRole("button", { name: new RegExp(userId), expanded: false })
+    .click();
+  await page.getByRole("menuitem", { name: "设置", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: "外观", exact: true }).click();
+  const option = dialog.getByRole("button", { name: label, exact: true });
+  await option.click();
+  await expect(option).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+}
+
+const activityRoot = (page) => page.locator(".ui-frame[data-step-view]").first();
+const activityRows = (group) => group.locator(".ui-tree > [data-depth]");
+async function openSteps(group) {
+  const toggle = group.locator("[data-group-header]");
+  if ((await toggle.getAttribute("aria-expanded")) === "false") await toggle.click();
+}
+const expectFoldedBodies = async (group) => {
+  await expect(group).not.toContainText(/I will check|I will compare|printf|entry [12]/, {
+    useInnerText: true,
+  });
+};
+
+test("the account's display setting changes saved history and survives a different theme and a reload", async ({
+  page,
+}) => {
+  const userId = "smokeactivityhistory";
+  await createSession(page, userId, "allow-all", "doodle");
+  await send(page, "activity pages test");
+  await expect(page.getByText("Both tools finished.", { exact: true })).toBeVisible();
+  await page.reload();
+
+  const group = activityRoot(page),
+    rows = activityRows(group);
+  // A new account starts in Standard on every theme, including Doodle.
+  await openSteps(group);
+  await expect(rows).toHaveCount(4);
+  await expectFoldedBodies(group);
+  await expect(group.locator("[data-step-navigation]")).toHaveCount(0);
+  await changeActivityDisplay(page, userId, "展开");
+  await openSteps(group);
+  await expect(rows).toHaveCount(4);
+  await expect(group.getByText("I will check the first entry.", { exact: true })).toBeVisible();
+  await expect(group.getByText("entry 2", { exact: true })).toBeVisible();
+  await changeActivityDisplay(page, userId, "紧凑");
+
+  const nav = group.locator("[data-step-navigation]");
+  await expect(nav).toContainText("5/5");
+  await expect(group.locator("[data-step-terminal]")).toBeVisible();
+  await expect(rows).toHaveCount(0);
+  await expectFoldedBodies(group);
+  await group.getByRole("button", { name: "上一步" }).click();
+  await expect(nav).toContainText("4/5");
+  await expect(rows).toHaveCount(0);
+  await openSteps(group);
+  await expect(rows).toHaveCount(1);
+  await expectFoldedBodies(group);
+  await rows.locator("button[aria-expanded]").first().click();
+  await expect(rows.getByText("entry 2", { exact: true })).toBeVisible();
+
+  await setAccountPrefs(page.request, { themeId: "github" });
+  await page.reload();
+  await expect(nav).toContainText("5/5");
+  await expect(rows).toHaveCount(0);
+  await expect(page.getByText("Both tools finished.", { exact: true })).toHaveCount(1);
+});
+
+test("compact navigation stays on one line while the run advances and preserves a reader's earlier page", async ({
   page,
   context,
-}, info) => {
-  const sessionId = await createSession(page, "smokeactivity", "always-ask", "doodle");
+}) => {
+  const userId = "smokeactivity";
+  const sessionId = await createSession(page, userId, "always-ask", "modern");
+  await changeActivityDisplay(page, userId, "紧凑");
   await send(page, "activity pages test");
-  const group = page.locator('[data-step-view="paged"]');
-  const previous = group.getByRole("button", { name: "上一步" });
-  const allow = group.getByRole("button", { name: "允许", exact: true });
-  await expect(group.getByRole("group", { name: "第 2 步，共 2 步" })).toBeVisible();
-  await expect(allow).toBeVisible();
+  const group = activityRoot(page),
+    nav = group.locator("[data-step-navigation]"),
+    rows = activityRows(group);
+  const previous = group.getByRole("button", { name: "上一步" }),
+    next = group.getByRole("button", { name: "下一步" });
+  await expect(nav).toContainText("2/2");
+  await expect(rows).toHaveCount(0);
+  await expectFoldedBodies(group);
+
+  const reviewer = await context.newPage();
+  await reviewer.goto(`/chat/${sessionId}`);
+  const reviewing = activityRoot(reviewer);
   await previous.click();
-  await expect(group.getByText("I will check the first entry.")).toBeVisible();
-  await expect(allow).toHaveCount(0);
-  await group.getByRole("button", { name: "查看待处理步骤" }).click();
+  await expect(nav).toContainText("1/2");
+  await openSteps(group);
+  await expectFoldedBodies(group);
+  await rows.locator("button[aria-expanded]").first().click();
+  await expect(group.getByText("I will check the first entry.", { exact: true })).toBeVisible();
+
+  // A second, real reader approves the very same Session. Neither advancing nor finishing
+  // the run may take the first reader off their chosen page.
+  await openSteps(reviewing);
+  const allow = reviewing.getByRole("button", { name: "允许", exact: true });
+  if (!(await allow.isVisible()))
+    await activityRows(reviewing).locator("button[aria-expanded]").first().click();
   await allow.click();
-  await expect(group.getByRole("group", { name: "第 4 步，共 4 步" })).toBeVisible();
-  await previous.focus();
-  await page.keyboard.press("ArrowLeft");
-  await expect(group.getByText("I will compare the second entry.")).toBeVisible();
+  await expect(nav).toContainText("1/4");
+  await expect(group.getByText("I will check the first entry.", { exact: true })).toBeVisible();
+  await group.locator("[data-group-header]").click();
+  await expect(rows).toHaveCount(0);
   for (const width of [320, 390]) {
     await page.setViewportSize({ width, height: 844 });
-    const controls = group.locator("[data-step-navigation] button:enabled");
+    const head = group.locator("[data-group-header]");
+    const [labelBox, navBox] = await Promise.all([head.boundingBox(), nav.boundingBox()]);
+    expect(Math.abs(labelBox.y + labelBox.height / 2 - navBox.y - navBox.height / 2)).toBeLessThan(
+      3,
+    );
     await expect
       .poll(() =>
-        controls.evaluateAll((buttons) =>
+        nav.locator("button:enabled").evaluateAll((buttons) =>
           buttons.every((button) => {
-            const box = button.getBoundingClientRect();
+            const r = button.getBoundingClientRect();
             return button.contains(
-              document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2),
+              document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2),
             );
           }),
         ),
       )
       .toBe(true);
-    await group.getByRole("button", { name: "最新步骤" }).click();
+    await next.focus();
+    await page.keyboard.press("ArrowRight");
+    await expect(nav).toContainText("2/4");
     await previous.click();
+    await expect(nav).toContainText("1/4");
   }
   await page.setViewportSize({ width: 1280, height: 800 });
-  await previous.focus();
-  await page.keyboard.press("ArrowLeft");
-  await expect(group.getByRole("group", { name: "第 2 步，共 4 步" })).toBeVisible();
-  await expect(group.locator("[data-step-content]")).toContainText("entry 1");
-  await expect(group.locator(".ui-tree > [data-depth]")).toHaveCount(1);
-  await info.attach("activity-pager", { body: await group.screenshot(), contentType: "image/png" });
-
-  await page.keyboard.press("ControlOrMeta+f");
-  const find = page.getByRole("search");
-  await find.locator("input").fill("I will check the first entry");
-  await expect(
-    page.locator('[data-step-view="find"]').getByText("I will check the first entry."),
-  ).toBeVisible();
-  await expect(find.getByText("1/1", { exact: true })).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(group.getByRole("group", { name: "第 2 步，共 4 步" })).toBeVisible();
-
-  // Primer shows the same run as a four-row list. The waiting approval works in either view.
-  await setAccountPrefs(page.request, { themeId: "github" });
-  const reviewer = await context.newPage();
-  await reviewer.goto(`/chat/${sessionId}`);
-  await expect(reviewer.locator("html")).toHaveAttribute("data-theme", "github");
-  const list = reviewer.locator(".ui-frame:has(> [data-group-header])");
-  await expect(list.locator(".ui-tree > [data-depth]")).toHaveCount(4);
-  await expect(list.locator("[data-step-navigation]")).toHaveCount(0);
-  await list.getByRole("button", { name: "允许", exact: true }).click();
+  await expect(reviewing.locator("[data-step-navigation]")).toContainText("4/4");
+  await openSteps(reviewing);
+  if (!(await allow.isVisible()))
+    await activityRows(reviewing).locator("button[aria-expanded]").first().click();
+  await allow.click();
   await expect(page.getByText("Both tools finished.", { exact: true })).toBeVisible();
-  await expect(group.getByRole("group", { name: "第 2 步，共 4 步" })).toBeVisible();
-  await group.getByRole("button", { name: "最新步骤" }).click();
-  await expect(group.getByRole("group", { name: "第 4 步，共 4 步" })).toBeVisible();
-  await expect(group.locator("[data-step-content]")).toContainText("entry 2");
+  await expect(nav).toContainText("1/5");
+  await expect(rows).toHaveCount(0);
+  await expect(reviewing.locator("[data-step-navigation]")).toContainText("5/5");
   await reviewer.close();
-  await setAccountPrefs(page.request, { themeId: "doodle" });
-  await page.reload();
-  await expect(page.getByText("Both tools finished.", { exact: true })).toBeVisible();
-  const archive = page.locator(".ui-frame:has(> [data-group-header])");
-  await expect(archive.locator("[data-step-navigation]")).toHaveCount(0);
-  await archive.locator("[data-group-header]").click();
-  await expect(archive.locator(".ui-tree > [data-depth]")).toHaveCount(4);
 });

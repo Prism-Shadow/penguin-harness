@@ -35,8 +35,8 @@ const HITS = 4;
 const REPLY = "Command finished";
 
 /** Points the user's Project at the mock LLM; returns a factory for fresh sessions in it. */
-async function setup(page) {
-  await provisionAndLogin(page.request, U, P);
+async function setup(page, userId = U) {
+  await provisionAndLogin(page.request, userId, P);
   const projects = await (await page.request.get(`${BASE}/api/projects`)).json();
   const projectId = projects.projects[0].projectId;
   const put = await page.request.put(`${BASE}/api/projects/${projectId}/models`, {
@@ -210,6 +210,36 @@ test("a match inside a collapsed work group is found, and the group folds back w
   await expect(bar).toHaveCount(0);
   await expect(group).toHaveAttribute("aria-expanded", "false");
   await expect(step).toHaveCount(0);
+});
+
+test("transcript find searches off-page compact details and restores the reviewed page", async ({
+  page,
+}) => {
+  const newSession = await setup(page, "findcompact");
+  const prefs = await page.request.put(`${BASE}/api/me/prefs`, {
+    data: { activityDisplayMode: "compact" },
+  });
+  expect(prefs.ok()).toBe(true);
+  await page.goto(`${BASE}/chat/${await newSession()}`);
+  const input = page.getByPlaceholder(/输入消息/);
+  await input.fill("activity pages test");
+  await input.press("Enter");
+  await expect(page.getByText("Both tools finished.", { exact: true })).toBeVisible();
+  const group = page.locator(".ui-frame[data-step-view]"),
+    nav = group.locator("[data-step-navigation]");
+  await expect(nav).toContainText("5/5");
+  await group.getByRole("button", { name: "上一步" }).click();
+  await expect(nav).toContainText("4/5");
+  await input.focus();
+  await page.keyboard.press("ControlOrMeta+f");
+  const bar = page.getByRole("search");
+  await bar.locator("input").fill("I will check the first entry");
+  await expect(group).toHaveAttribute("data-step-view", "find");
+  await expect(group.getByText("I will check the first entry.", { exact: true })).toBeVisible();
+  await expect(bar.getByText("1/1", { exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(nav).toContainText("4/5");
+  await expect(group.locator(".ui-tree > [data-depth]")).toHaveCount(0);
 });
 
 test("load and keep searching backfills earlier turns and lands on the nearest hit above", async ({
