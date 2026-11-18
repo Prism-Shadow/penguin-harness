@@ -11,4 +11,4 @@ Project owners can bind a model to web search, page reading, image or video gene
 
 Use `penguin tools list` to inspect the bindings. For example, `penguin tools image "A penguin by the sea" --out penguin.png` saves a generated image, and `penguin tools stt meeting.wav` prints the transcript. Add `--detach` to start a long run, then use `penguin tools status` or `penguin tools cancel` with its ID.
 
-`penguin tools usage` shows the model, operation, reported token counts and observed units. `penguin tools artifacts` lists generated files. From an Agent terminal, both commands default to the calling Session.
+`penguin tools usage` shows the model, operation, reported token counts and observed units. `penguin tools artifacts` lists generated files. From an Agent terminal, both commands default to the calling Session. Tool and transcript-editing requests carry that same Session ID to MMSP for provider cache routing.

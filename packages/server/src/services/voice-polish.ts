@@ -15,11 +15,13 @@ export async function polishTranscript({
   model,
   text,
   signal,
+  sessionId,
 }: {
   config: ProjectConfig;
   model: ModelRefDto;
   text: string;
   signal: AbortSignal;
+  sessionId?: string;
 }): Promise<{ text: string; usage: UsageMetadata | null }> {
   signal.throwIfAborted();
   if (!text.trim()) throw new HttpError(400, "empty_transcript", "The transcript is empty.");
@@ -28,7 +30,7 @@ export async function polishTranscript({
     model,
     [{ role: "user", content_items: [{ type: "text.done", text }] }],
     { system_prompt: INSTRUCTION },
-    signal,
+    { signal, sessionId },
   );
   signal.throwIfAborted();
   if (!result.text.trim())

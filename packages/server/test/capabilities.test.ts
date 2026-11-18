@@ -147,6 +147,7 @@ describe("project model capabilities", () => {
       expect(run.model).toEqual(bindings[key]);
       expect(run.usage).toEqual(usage);
       expect(run.sessionId).toBe(sessionId);
+      expect(received.at(-1)?.config.session_id).toBe(sessionId);
       expect(run.measurements).toContainEqual({ unit: "request", quantity: 1 });
       if (key === "search" || key === "fetch")
         expect(run.sources?.[0]?.url).toBe("https://penguin.ooo/");
@@ -181,12 +182,21 @@ describe("project model capabilities", () => {
       sessionId,
     });
     expect(edited.status).toBe(200);
+    expect(received.at(-1)?.config.session_id).toBe(sessionId);
     expect(((await edited.json()) as { text: string }).text).toBe("Edited words");
     const history = (await (await api.get(tools + "/usage?sessionId=" + sessionId)).json()) as {
       runs: CapabilityResult[];
     };
     expect(history.runs).toHaveLength(7);
     expect(JSON.stringify(history)).not.toMatch(/local-test|Edited words|\bcost\b/);
+  });
+  it("sends no MMSP Session ID for standalone tools or transcript editing", async () => {
+    const last = received.length;
+    expect((await api.post(tools + "/search/run", { text: "standalone query" })).status).toBe(200);
+    expect((await api.post(base + "/voice-polish", { text: "standalone draft" })).status).toBe(200);
+    const standalone = received.slice(last);
+    expect(standalone.map((call) => call.model)).toEqual([ids.search, "gpt-6.2-sol"]);
+    for (const call of standalone) expect(call.config).not.toHaveProperty("session_id");
   });
   it("retains provider usage when media is missing and reports only observed units for unmetered calls", async () => {
     const response = await api.post(tools + "/image/run", { text: "no image", sessionId });

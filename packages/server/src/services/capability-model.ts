@@ -27,7 +27,7 @@ export async function runProjectModel(
   ref: ModelRefDto,
   messages: UniMessage[],
   options: UniConfig,
-  signal: AbortSignal,
+  { signal, sessionId }: { signal: AbortSignal; sessionId?: string },
 ): Promise<ModelOutput> {
   signal.throwIfAborted();
   const entry = getModel(config, { provider: ref.provider, model_id: ref.modelId });
@@ -45,7 +45,8 @@ export async function runProjectModel(
   const result: ModelOutput = { text: "", sources: [], media: [], usage: null };
   const chunks: string[] = [];
   let size = 0;
-  for await (const event of client.streamingResponse({ messages, config: options, signal })) {
+  const requestConfig = sessionId ? { ...options, session_id: sessionId } : options;
+  for await (const event of client.streamingResponse({ messages, config: requestConfig, signal })) {
     signal.throwIfAborted();
     for (const item of event.content_items) {
       if (item.type === "text.done") chunks.push(item.text);
