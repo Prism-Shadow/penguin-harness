@@ -16,9 +16,12 @@
 //   - exec_command: every command only prints request files: print-only filters and the
 //     toolkit's own print-request.mjs viewer, piped and chained with && or ;, after a cd that stays
 //     inside; no other program, heredoc, command substitution or redirection into a file.
-// It prints one JSON object: {ok, tools, calls, tokens, violations}; exit code 1 when not ok.
+// It prints one JSON object: {ok, tools, calls, tokens, violations, scripts_sha256}; exit code 1
+// when not ok. scripts_sha256 holds the SHA-256 of this script and of print-request.mjs as they
+// are on disk, so a run can show that the audit and the viewer stayed the toolkit's own.
 // `tokens` is the session's total from its last token_usage event (for `--tokens`), or null.
 
+import { createHash } from "node:crypto";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -256,6 +259,21 @@ export function findSession(tracesDir, requestDir) {
   return { session, files };
 }
 
+/** SHA-256 of this script and of the viewer beside it, so a run can show that neither changed. */
+export function scriptHashes(dir = path.dirname(fileURLToPath(import.meta.url))) {
+  const out = {};
+  for (const f of ["audit-answerer.mjs", "print-request.mjs"]) {
+    try {
+      out[f] = createHash("sha256")
+        .update(readFileSync(path.join(dir, f)))
+        .digest("hex");
+    } catch {
+      out[f] = null;
+    }
+  }
+  return out;
+}
+
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const argv = process.argv.slice(2);
   const find = argv[0] === "--traces";
@@ -280,6 +298,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   } else {
     res = audit(readFileSync(source, "utf8"), dir, name);
   }
+  res.scripts_sha256 = scriptHashes();
   process.stdout.write(`${JSON.stringify(res)}\n`);
   if (!res.ok) process.exitCode = 1;
 }

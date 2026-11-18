@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -9,7 +10,7 @@ const SCRIPT = path.join(
   "../skills/infrarsi-rsi-toolkit/scripts/audit-answerer.mjs",
 );
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const { audit, checkCommand, findSession }: any = await import(SCRIPT);
+const { audit, checkCommand, findSession, scriptHashes }: any = await import(SCRIPT);
 
 const REQ = "/p/.infrarsi/sessions/s1/requests/0003-code_review";
 const TOOLS = ["read_file", "write_file", "exec_command"];
@@ -237,6 +238,18 @@ describe("auditing an answerer session", () => {
     }
   });
 
+  it("reports the SHA-256 of itself and of the viewer", () => {
+    const hashes = scriptHashes();
+    const dir = path.dirname(SCRIPT);
+    for (const f of ["audit-answerer.mjs", "print-request.mjs"]) {
+      expect(hashes[f]).toBe(
+        createHash("sha256")
+          .update(readFileSync(path.join(dir, f)))
+          .digest("hex"),
+      );
+    }
+  });
+
   it("works from the command line: JSON out, exit 1 on a violation", () => {
     const dir = mkdtempSync(path.join(tmpdir(), "audit-"));
     try {
@@ -247,6 +260,10 @@ describe("auditing an answerer session", () => {
       const ok = spawnSync(process.execPath, [SCRIPT, good, REQ], { encoding: "utf8" });
       expect(ok.status).toBe(0);
       expect(JSON.parse(ok.stdout).ok).toBe(true);
+      expect(Object.keys(JSON.parse(ok.stdout).scripts_sha256)).toEqual([
+        "audit-answerer.mjs",
+        "print-request.mjs",
+      ]);
       const no = spawnSync(process.execPath, [SCRIPT, bad, REQ], { encoding: "utf8" });
       expect(no.status).toBe(1);
       expect(JSON.parse(no.stdout).violations[0]).toMatch(/python3/);

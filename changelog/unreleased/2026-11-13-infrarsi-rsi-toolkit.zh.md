@@ -17,6 +17,7 @@
 - 引擎的每个请求都交给 `infrarsi_answerer` Agent 的一个新 `run_subagent` 会话，使用本会话的模型，请求目录原样取自引擎的输出。该 Agent 只有 `read_file`、`write_file` 与 `exec_command`，规则只允许用 shell 打印请求目录中的文件：`read_file` 会截断超过 2000 个字符的行，而引擎把每个请求的 prompt 写成一行。若该 Agent 无法创建或限制工具，运行即停止，而不是以调用方身份作答。
 - 答案提交之前，`scripts/audit-answerer.mjs` 读取 answerer 会话的 Trace，检查它实际做了什么：只提供了这三个工具、每次读取都在请求目录内、只写了答案文件、shell 命令只做打印。未通过的会话被丢弃，请求交给新的 answerer，并附一行反馈说明原因（与上游处理被拒答案的方式相同）；同一请求第三次未通过即停止运行。审计同时给出该会话的 token 数，用于 `--tokens`。
 - answerer 用只读查看脚本 `scripts/print-request.mjs` 阅读请求：它分页打印 `prompt.txt`，把其中嵌入的每个项目文件原样放在开始与结束标记之间，答案里修改的原文可以直接从中复制。审计只放行这个脚本，不放行其他程序，answerer 不必再自己解析 JSON。
+- Agent 不改动清单中的搜索设置（`run_noise`、`multi_fidelity` 等），除非用户给出取值，由引擎自己测量运行间噪声。Agent 也不得修改工具包自身的脚本和参考文件；每次审计都会给出审计脚本与查看脚本的 SHA-256，运行期间一旦变化即停止运行。
 - `infrarsi agent next` 的等待时间控制在命令工具的两分钟上限之内。用户同意之前，不会改动用户的代码。
 
 ## 打包

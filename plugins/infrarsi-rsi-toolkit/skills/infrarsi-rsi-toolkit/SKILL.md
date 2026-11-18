@@ -1,7 +1,7 @@
 ---
 name: infrarsi-rsi-toolkit
 description: Speed up an existing GPU training job with InfraRSI, running the upstream engine and its infrarsi-optimize Skill at a pinned commit, with every search request answered by a fresh subagent and only verified changes reported. Use when asked to make a training job faster, raise its MFU or throughput, or tune its launch settings and hot-path code without changing what it trains.
-version: 2026.11.18.3
+version: 2026.11.18.4
 ---
 
 # InfraRSI
@@ -73,10 +73,14 @@ When `infrarsi agent next` returns `"state": "request"`:
 1. Start a **new** `run_subagent` session with `agent_id: infrarsi_answerer` and `yield_time_ms: 590000`. Omit `provider`, `model_id` and `thinking_level`, so the answerer runs on this Session's model: the engine weighs answers by the model named in `--model`. Never send a request to a cheaper model.
 2. Its prompt is the line `Caller agent: <your agent id>`, then the prompt in the _The prompt_ section of `$SKILL_DIR/references/answering.md` with the request's id, directory and answer file filled in, the `dir` and `answer` copied exactly as `infrarsi agent next` printed them: never type a path yourself. Add nothing else: no advice, numbers, file contents or view of the job.
 3. If `run_subagent` returns before the answerer is done, wait with `input_subagent` and an empty prompt. Never send an answerer a prompt: a message to a running or finished answerer adds to its question.
-4. Audit the session before handing anything in: `node "$TOOLKIT_DIR/scripts/audit-answerer.mjs" --traces <app_data_dir>/agents/infrarsi_answerer/traces <dir> <answer file name>`. It finds the answerer session whose prompt names `<dir>` and checks what that session did: only the three tools offered, every read inside `<dir>`, a write of the answer file and nothing else, and shell commands that only print. Keep every result for the report.
+4. Audit the session before handing anything in: `node "$TOOLKIT_DIR/scripts/audit-answerer.mjs" --traces <app_data_dir>/agents/infrarsi_answerer/traces <dir> <answer file name>`. It finds the answerer session whose prompt names `<dir>` and checks what that session did: only the three tools offered, every read inside `<dir>`, a write of the answer file and nothing else, and shell commands that only print. Its `scripts_sha256` gives the SHA-256 of the audit script and the viewer: the first audit's pair is the run's, and when a later audit reports another, the toolkit's own checks were changed during the run, so run `infrarsi agent stop --now` and report it. Keep every result for the report.
 5. When the audit says `"ok": true`, hand the answer in with `infrarsi agent answer <id> --by <model id> --tokens <its tokens>`. When it says false, do not hand that answer in: start another new answerer for the request (it writes the answer file afresh) whose prompt ends with one more line, `Feedback: an earlier answer to this request was discarded because its session <what the violations say, in one sentence>; read the request only as your AGENTS.md says.`, as upstream does for a refused answer, and audit again. After three failed audits of one request, run `infrarsi agent stop` and report the violations. Follow the answering reference's table for refused answers: a refused answer gets another new subagent with the feedback line it gives.
 
 If `run_subagent` is not in your tool list, you are a subagent yourself: do not answer the request. Run `infrarsi agent stop` and report that this Session cannot start an independent answerer.
+
+### The toolkit's own files
+
+Never edit, replace or add anything in `$TOOLKIT_DIR`: its scripts and references are the checks this run is held to. If one of them looks wrong or gets in the way, say so in the report or ask the user; do not patch it, and do not work around it with a script of your own.
 
 ### Go-aheads and the engine's home
 
@@ -84,7 +88,7 @@ The engine writes its experience library, cost ledger and signing key under `$IN
 
 ## Report
 
-Report from `infrarsi report <run_dir>` and `infrarsi agent status` only: the original and new time per update (and MFU when reported), the speed-up of the back-to-back re-run, what changed, what was rejected and why, the checks the logs could not support, and the cost. Add the pinned commit and engine hash from `VERSION.json`, the model, the number of requests answered with their subagent tokens, every answerer audit (and each discarded answer with its violations), whether this Session ran under the Agent Sandbox, and the GPUs used. A run that ends with `no_change` keeps the current configuration (×1.00); say so.
+Report from `infrarsi report <run_dir>` and `infrarsi agent status` only: the original and new time per update (and MFU when reported), the speed-up of the back-to-back re-run, what changed, what was rejected and why, the checks the logs could not support, and the cost. Add the pinned commit and engine hash from `VERSION.json`, the model, the number of requests answered with their subagent tokens, every answerer audit (and each discarded answer with its violations), the `scripts_sha256` pair the audits reported, whether this Session ran under the Agent Sandbox, and the GPUs used. A run that ends with `no_change` keeps the current configuration (×1.00); say so.
 
 ## Trying the setup
 
