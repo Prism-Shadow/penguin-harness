@@ -3,7 +3,10 @@
 
 const en = {
   newDeck: "New",
-  pptx: "PowerPoint",
+  saveDeck: "Save presentation",
+  saveFailed: (why) => `Could not save this presentation (${why}). Your edits are still open.`,
+  notSaved: "Not saved",
+  pptx: "Export as PowerPoint file (.pptx)",
   unsupportedPowerPoint:
     "This deck contains media or a graphic PowerPoint export cannot reproduce. Download HTML to keep the complete deck.",
   present: "Present",
@@ -20,8 +23,8 @@ const en = {
   ],
   transferFailed: "The editor could not complete that action. Your deck is still open.",
   frameTitle: "Bento Slides editor",
-  importDeck: "Import",
-  exportDeck: "Download HTML",
+  importDeck: "Import Bento HTML file (.html)",
+  exportDeck: "Download Bento HTML file (.html)",
   history: "History",
   askAi: "Ask AI",
   railTitle: "Ask AI to change this deck",
@@ -83,7 +86,10 @@ const en = {
 
 const zh = {
   newDeck: "新建",
-  pptx: "PowerPoint",
+  saveDeck: "保存演示文稿",
+  saveFailed: (why) => `无法保存这份文稿（${why}），编辑内容仍保留在这里。`,
+  notSaved: "未保存",
+  pptx: "导出为 PowerPoint 文件（.pptx）",
   unsupportedPowerPoint: "文稿含有尚不能导出到 PowerPoint 的媒体或图形。下载 HTML 可保留整份文稿。",
   present: "放映",
   backToEdit: "返回编辑",
@@ -99,8 +105,8 @@ const zh = {
   ],
   transferFailed: "操作未完成，文稿仍在编辑器中。",
   frameTitle: "Bento 幻灯片编辑器",
-  importDeck: "导入",
-  exportDeck: "下载 HTML",
+  importDeck: "导入 Bento HTML 文件（.html）",
+  exportDeck: "下载 Bento HTML 文件（.html）",
   history: "历史版本",
   askAi: "让 AI 修改",
   railTitle: "让 AI 修改这份文稿",

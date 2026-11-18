@@ -1,3 +1,46 @@
+// Installed in the head of the editor and presentation before Bento attaches its own file
+// shortcuts. The standalone HTML download retains the original runtime's file controls.
+export function captureSave(event) {
+  if (event.type === "keydown") {
+    if (
+      !(event.ctrlKey || event.metaKey) ||
+      event.altKey ||
+      event.shiftKey ||
+      event.key.toLowerCase() !== "s"
+    )
+      return false;
+  } else if (!event.target.closest?.("button")?.querySelector(".ed-dirty")) {
+    return false;
+  }
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  return true;
+}
+
+export function connectSave(token, capture, label) {
+  function save(event) {
+    if (!capture(event)) return;
+    // Bento commits the active text box and table cell on blur, including the last input.
+    const active = document.activeElement;
+    if (active?.isContentEditable || active?.matches("input, textarea")) active.blur();
+    parent.postMessage({ __slides: 1, token, type: "save" }, "*");
+  }
+  window.addEventListener("keydown", save, true);
+  window.addEventListener("click", save, true);
+  // The standalone editor's button describes overwriting a disk file. Here it saves to the desk.
+  const decorate = () => {
+    const dot = document.querySelector(".ed-dirty"),
+      button = dot?.closest("button");
+    if (!button) return;
+    button.title = dot.title = label;
+    button.setAttribute("aria-label", label);
+  };
+  window.addEventListener("DOMContentLoaded", () => {
+    decorate();
+    new MutationObserver(decorate).observe(document.body, { subtree: true, childList: true });
+  });
+}
+
 // Runs INSIDE the editor frame, next to the Bento app: the only code that touches `window.bento`.
 //
 // The frame is sandboxed without `allow-same-origin`, so the workbench page cannot reach into
@@ -108,8 +151,11 @@ export function bridge(token, locale) {
     var data = event.data;
     if (event.source !== parent || !data || data[TAG] !== 1 || data.token !== token) return;
     if (data.type === "load" && ready()) load(data.id, data.json, Date.now());
-    if (data.type === "read" && ready())
+    if (data.type === "read" && ready()) {
+      const active = document.activeElement;
+      if (active?.isContentEditable || active?.matches("input, textarea")) active.blur();
       post({ type: "read", id: data.id, doc: window.bento.read() });
+    }
   });
   tick();
   setInterval(tick, POLL_MS);

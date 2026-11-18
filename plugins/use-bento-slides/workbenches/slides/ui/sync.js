@@ -237,11 +237,23 @@ export function parseDeck(text) {
 
 /** The `#bento-doc` block of a `.bento.html` file, as a document. */
 export function deckFromHtml(html) {
-  const block = /<script type="application\/bento\+json" id="bento-doc">([\s\S]*?)<\/script>/.exec(
-    html,
-  );
-  if (!block || block[1].trim() === "") throw new Error("the file holds no Bento document");
-  return parseDeck(block[1]);
+  // Older exporters re-order or single-quote these attributes. Read the JSON block as
+  // text; scripts and other contents of the imported page never run.
+  for (const match of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi)) {
+    const attrs = new Map();
+    for (const part of match[1].matchAll(
+      /(?:^|\s)([\w:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/g,
+    )) {
+      attrs.set(part[1].toLowerCase(), part[2] ?? part[3] ?? part[4]);
+    }
+    if (
+      attrs.get("id") === "bento-doc" &&
+      ["application/bento+json", "application/json"].includes(attrs.get("type")?.toLowerCase()) &&
+      match[2].trim()
+    )
+      return parseDeck(match[2]);
+  }
+  throw new Error("the file holds no Bento document");
 }
 
 /** A Bento runtime file with `doc` written into its `#bento-doc` block. */

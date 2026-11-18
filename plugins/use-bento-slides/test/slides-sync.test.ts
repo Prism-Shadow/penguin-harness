@@ -168,6 +168,14 @@ describe("a deck as a file", () => {
     expect(() => parseDeck('{"format":"bento/slides"}')).toThrow(/slides/);
   });
 
+  it("imports a saved Bento HTML with reordered, single-quoted script attributes", () => {
+    const doc = deck([{ id: "cover", elements: [text("t", "Saved copy")] }]);
+    const html =
+      "<script>throw Error('unrelated script');</script>" +
+      `<script data-version="1" ID='bento-doc' type='application/bento+json'>${JSON.stringify(doc)}</script>`;
+    expect(deckFromHtml(html)).toEqual(doc);
+  });
+
   it("travels inside a Bento file and comes back out of it", () => {
     const runtime =
       '<html><head><script type="application/bento+json" id="bento-doc"></script></head><body></body></html>';

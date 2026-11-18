@@ -8,7 +8,7 @@
 // The editor never talks to anything but this page: its frame has no origin of its own and a
 // policy that allows no connection, so the Bento runtime cannot reach the network or the app.
 import { exportPowerPoint } from "./powerpoint.js";
-import { bridge } from "./bridge.js";
+import { bridge, connectSave, captureSave } from "./bridge.js";
 import { draftOf, emptyLive, foldLive } from "./live.js";
 import { S, locale } from "./strings.js";
 import {
@@ -161,13 +161,21 @@ function renderDeckMenu() {
 // ---- the editor frame ---------------------------------------------------------------------
 
 /** The Bento runtime with `doc` in it, the frame's policy, and the bridge that reports to us. */
-function editorHtml(doc, token) {
+function frameHead(token) {
   const policy = `<meta http-equiv="Content-Security-Policy" content="${FRAME_POLICY}">`;
+  return (
+    policy +
+    `<script>(${connectSave.toString()})(${JSON.stringify(token)},(${captureSave.toString()}),${JSON.stringify(S.saveDeck)})</` +
+    "script>"
+  );
+}
+
+function editorHtml(doc, token) {
   const script =
     `<script>(${bridge.toString()})(${JSON.stringify(token)},${JSON.stringify(locale === "zh" ? "zh-Hans" : "en")})</` +
     "script>";
   return htmlWithDeck(runtime, doc)
-    .replace(/<head>/i, `<head>${policy}`)
+    .replace(/<head>/i, () => `<head>${frameHead(token)}`)
     .replace(/<\/body>/i, `${script}</body>`);
 }
 
@@ -198,20 +206,66 @@ async function currentDocument(o) {
 }
 
 async function savedSnapshot(o) {
-  const doc = await currentDocument(o);
-  if (open !== o) throw new Error(S.transferFailed);
-  if (o.ready && !o.gone) {
+  return inTurn(o, async () => {
+    if (open !== o || !o.ready || o.gone) throw new Error(o.gone ? S.gone : S.transferFailed);
+    const doc = await currentDocument(o);
+    if (open !== o) throw new Error(S.transferFailed);
     o.mine = doc;
     clearTimeout(o.timer);
-    await inTurn(o, () => save(o));
+    await save(o, true);
+    if (open !== o || o.gone || unsaved(o).length) throw new Error(S.notSaved);
+    return o.mine;
+  });
+}
+
+async function saveCurrent() {
+  if (!open) return;
+  try {
+    await savedSnapshot(open);
+  } catch (error) {
+    setSync("notSaved", "attention");
+    notice(S.saveFailed(error.message));
   }
-  return doc;
+}
+$("save").onclick = saveCurrent;
+function saveKey(event) {
+  if (open && app.dataset.view === "deck" && captureSave(event)) void saveCurrent();
+}
+window.addEventListener("keydown", saveKey, true);
+// The App's own toolbar can hold focus while its workbench is open. Handle its shortcut
+// only while this page is visible and the user is in this workbench's app or window.
+try {
+  const host = window.parent;
+  if (host !== window) {
+    const onHostKey = (event) => {
+      if (!frameElement?.getClientRects().length) return;
+      const win = frameElement.closest('[role="dialog"], section[aria-label]');
+      if (host.location.pathname.startsWith("/app/") || (win && win.contains(event.target)))
+        saveKey(event);
+    };
+    host.addEventListener("keydown", onHostKey, true);
+    window.addEventListener(
+      "pagehide",
+      () => host.removeEventListener("keydown", onHostKey, true),
+      { once: true },
+    );
+  }
+} catch {
+  /* The workbench can also run in a cross-origin host. */
 }
 
 window.addEventListener("message", (event) => {
   const message = event.data;
-  if (event.source !== frame.contentWindow || !message || message[TAG] !== 1) return;
-  if (open === null || message.token !== open.token) return;
+  if (!message || message[TAG] !== 1 || open === null || message.token !== open.token) return;
+  if (
+    message.type === "save" &&
+    (event.source === frame.contentWindow ||
+      ($("player").open && event.source === $("player-frame").contentWindow))
+  ) {
+    void saveCurrent();
+    return;
+  }
+  if (event.source !== frame.contentWindow) return;
   if (message.type === "ready") {
     open.shown = message.doc;
     open.mine = message.doc;
@@ -256,7 +310,7 @@ function scheduleSave(o) {
   o.timer = setTimeout(() => void inTurn(o, () => save(o)), SAVE_AFTER_MS);
 }
 
-async function save(o) {
+async function save(o, explicit = false) {
   if (open !== o || !o.ready || o.gone) return;
   if (unsaved(o).length === 0) {
     setSync("synced");
@@ -266,21 +320,27 @@ async function save(o) {
   let res;
   try {
     res = await send(`/decks/${o.id}`, "PUT", { text: formatDeck(mine), base: o.rev });
-  } catch {
+  } catch (error) {
     setSync("offline", "attention");
+    if (explicit) throw error;
     return;
   }
   if (res.status === 409) {
     const current = await res.json();
-    await takeTheirs(o, current.rev, current.text);
+    await takeTheirs(o, current.rev, current.text, explicit);
     return;
   }
   if (res.status === 404) {
     deckGone(o);
+    if (explicit) throw new Error(S.gone);
     return;
   }
   if (!res.ok) {
-    setSync("offline", "attention");
+    const detail = await res.json().catch(() => null);
+    const why = detail?.error?.message || detail?.error || `HTTP ${res.status}`;
+    setSync("notSaved", "attention");
+    if (explicit) throw new Error(String(why));
+    notice(S.saveFailed(why));
     return;
   }
   o.rev = (await res.json()).rev;
@@ -296,7 +356,7 @@ async function save(o) {
  * The file moved on under the editor (the Agent wrote it): put its document in the editor with
  * the person's unsaved edits replayed on it, then save the result when there were any.
  */
-async function takeTheirs(o, rev, text) {
+async function takeTheirs(o, rev, text, explicit = false) {
   if (open !== o || rev === o.rev) return;
   let theirs;
   try {
@@ -331,7 +391,7 @@ async function takeTheirs(o, rev, text) {
   if (clashes.length > 0) notice(S.clashes(clashes.length));
   if (o.carry.length > 0) {
     setSync("merged", "busy");
-    await save(o);
+    await save(o, explicit);
   } else {
     setSync("theirs", "busy");
     setTimeout(() => open === o && unsaved(o).length === 0 && setSync("synced"), 2500);
@@ -837,10 +897,7 @@ $("present").onclick = async () => {
       '<script>const start=()=>{const go=document.querySelector(".ed-playgo");if(go){loaded.disconnect();go.click();}};const loaded=new MutationObserver(start);loaded.observe(document.body,{childList:true,subtree:true});start();</' +
       "script>";
     $("player-frame").srcdoc = htmlWithDeck(runtime, { ...doc, readonly: true })
-      .replace(
-        /<head>/i,
-        `<head><meta http-equiv="Content-Security-Policy" content="${FRAME_POLICY}">`,
-      )
+      .replace(/<head>/i, () => `<head>${frameHead(open.token)}`)
       .replace(/<\/body>/i, launch + "</body>");
     $("player").showModal();
     $("player-frame").focus();
