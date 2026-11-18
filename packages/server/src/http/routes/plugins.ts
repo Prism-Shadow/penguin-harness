@@ -480,7 +480,7 @@ export function pluginRegistryRoutes(options: PluginRoutesOptions = {}): Hono<Ap
     here: readonly PluginBase[],
   ): Promise<{ entry: PluginIndexEntry; icon?: IconImage }> => {
     const { icon: rowIcon, ...row } = entry;
-    const { icon: ownIcon, ...display } = await localPluginDisplay(entry.name, here);
+    const { icon: ownIcon, ...display } = await localPluginDisplay(entry.name, here, entry);
     const icon = ownIcon ?? (rowIcon !== undefined ? indexRowIcon(rowIcon) : undefined);
     const route = `/api/plugins/registry/icon?name=${encodeURIComponent(entry.name)}`;
     return {

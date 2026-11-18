@@ -3168,6 +3168,7 @@ export const en: Strings = {
     /** Listed, but the process could not load it: the reason, not a success. */
     deploymentFailedToast: (name: string, reason: string) => `${name} failed to load: ${reason}`,
     /** A server module's install / removal confirm: what it does, then what it costs, in small type below. */
+    updatePackageTo: (version: string) => `Update to v${version}`,
     applyConfirmInstall: (name: string) => `Install ${name}`,
     applyConfirmRemove: (name: string) => `Remove ${name}`,
     applyConfirmInstallBody: (name: string) =>
@@ -3411,12 +3412,15 @@ export const en: Strings = {
     replaceAction: "Replace",
     usedByAgents: (n: number): string =>
       n === 0 ? "not used yet" : n === 1 ? "used by 1 agent" : `used by ${n} agents`,
-    /** Quick start's tooltip: what pressing it does, and what it does not. */
-    quickStartHint:
-      "Quick start: opens a draft with a demo of this plugin — nothing runs until you send it",
+    quickAction: "Quick start",
+    noQuickAction: "This plugin has no quick-start example.",
+    packageUpdateBody: (name: string, from: string, to: string) =>
+      `Update ${name} in the plugin library from v${from} to v${to}. You can then update the Agents that use it.`,
+    /** The market explains quick start using the selected Agent’s installation. */
+    quickStartHint: "Open an example draft in a new chat with the current Agent.",
     quickStartInstallTitle: (plugin: string, agent: string) =>
       `Install ${plugin} on ${agent} to quick-start?`,
-    quickStartAfterInstall: "Then a draft with its demo opens; nothing runs until you send it.",
+    quickStartAfterInstall: "Install this plugin before using Quick start.",
     installedToast: (plugin: string, agent: string): string => `Installed ${plugin} to ${agent}`,
     uninstalledToast: (plugin: string, agent: string): string =>
       `Uninstalled ${plugin} from ${agent}`,

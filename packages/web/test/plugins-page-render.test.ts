@@ -273,6 +273,49 @@ describe("a library plugin's card", () => {
   });
 });
 
+describe("the market’s versioned actions", () => {
+  const current = { marketCard: true, currentAgentId: "alice", showPackageUpdates: true };
+  it("offers a verified package update before applying the new resources to the Agent", () => {
+    const newer = {
+      ...BWRAP,
+      version: "1.1.0",
+      localInstall: { version: "1.0.0", libraryOnly: true, updateAvailable: true },
+    };
+    const row = {
+      ...libraryRow,
+      module: { specifier: newer.name, state: "none" as const, shipped: false, entry: newer },
+    };
+    const html = card(row, true, current);
+    expect(buttonWords(html).slice(-2)).toEqual(["Update v1.1.0", "Quick start"]);
+    expect(html).toContain(en.plugins.quickStartAfterInstall);
+  });
+  it("only enables a demo on the Agent that carries it", () => {
+    const installed = new Map([
+      [
+        "alice",
+        { skills: new Map([["data-analysis", "2026.10.04.1"]]), hooks: new Map(), mcp: new Map() },
+      ],
+    ]);
+    const ready = card(libraryRow, false, { ...current, installed });
+    expect(buttonWords(ready).slice(-2)).toEqual(["Installed v0.2.13", "Quick start"]);
+    expect(ready).toContain(en.plugins.quickStartHint);
+    const other = card(libraryRow, false, { ...current, installed, currentAgentId: "bob" });
+    expect(buttonWords(other).slice(-2)).toEqual(["Install v0.2.13", "Quick start"]);
+    expect(other).toContain(en.plugins.quickStartAfterInstall);
+  });
+  it("keeps a workbench with no example readable in both layouts", () => {
+    const row = {
+      ...libraryRow,
+      library: { ...LIBRARY, skills: [], workbenches: [{ name: "slides", version: "1" }] },
+    };
+    for (const layout of ["cover", "row"] as const) {
+      const html = card(row as PluginRow, true, { ...current, layout });
+      expect(html).toContain(en.plugins.noQuickAction);
+      expect(html).toMatch(/<button[^>]*disabled[^>]*aria-label="Quick start/);
+    }
+  });
+});
+
 describe("a card's category", () => {
   it("is named on the card, except inside the category's own section", () => {
     const tagged = card(libraryRow, false, { categoryTitle: "Office Productivity" });

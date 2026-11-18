@@ -425,6 +425,9 @@ export function PluginsPage() {
     specifier: string;
     name: string;
     install: boolean;
+    version?: string;
+    previousVersion?: string;
+    resourceOnly?: boolean;
     projectId: string;
     machineId: string;
   } | null>(null);
@@ -450,7 +453,7 @@ export function PluginsPage() {
       const next = install
         ? await api.installPluginStream(
             target.projectId,
-            specifier,
+            target.version ? `${specifier}@${target.version}` : specifier,
             target.machineId,
             // A download the user has navigated away from does not write this visit's state;
             // the request itself runs on.
@@ -474,6 +477,11 @@ export function PluginsPage() {
         if (!isCurrentVisit()) return;
       }
       installedPlugins.accept(installedPluginsKey(target.projectId, null), next);
+      if (install && target.machineId === selfId) {
+        pluginLibrary.invalidate(LIBRARY_KEY);
+        pluginIndex.invalidate(INDEX_KEY);
+        void reloadAgents().catch(() => undefined);
+      }
       const row = next.plugins.find((p) => p.specifier === specifier);
       if (install && row?.error !== undefined) {
         toastError(S.plugins.deploymentFailedToast(specifier, row.error));
@@ -865,7 +873,9 @@ export function PluginsPage() {
   const openRow = openName === null ? undefined : rows.find((row) => row.name === openName);
 
   const cardProps = (row: PluginRow): PluginCardProps => ({
-    layout: "cover",
+    marketCard: true,
+    layout: layout === "list" ? "row" : "cover",
+    currentAgentId: currentAgent?.agentId,
     // The first row of that name, should two packages share one: one detail at a time.
     detailOpen: row === openRow,
     onDetailOpenChange: (open) => (open ? openDetail(row.name) : closeDetail()),
@@ -901,12 +911,20 @@ export function PluginsPage() {
     onDeletePlugin: null,
     onToggleInstall: toggleInstall,
     onUpdateOutdated: updateOutdated,
-    onModuleApply: (install) => {
+    showPackageUpdates: viewingHere,
+    onModuleApply: (install, version) => {
       if (row.module !== undefined && projectId !== null && viewMachine !== undefined) {
         setPendingApply({
           specifier: row.module.specifier,
           name: row.name,
           install,
+          version,
+          ...(viewingHere && version && row.module.entry?.localInstall?.updateAvailable
+            ? {
+                previousVersion: row.module.entry.localInstall.version,
+                resourceOnly: row.module.entry.localInstall.libraryOnly,
+              }
+            : {}),
           projectId,
           machineId: viewMachine,
         });
@@ -1107,19 +1125,44 @@ export function PluginsPage() {
           <ConfirmModal
             open
             title={
-              pendingApply.install
-                ? S.plugins.applyConfirmInstall(pendingApply.name)
-                : S.plugins.applyConfirmRemove(pendingApply.name)
+              pendingApply.previousVersion && pendingApply.version
+                ? S.plugins.updatePackageTo(pendingApply.version)
+                : pendingApply.install
+                  ? S.plugins.applyConfirmInstall(pendingApply.name)
+                  : S.plugins.applyConfirmRemove(pendingApply.name)
             }
             tone={pendingApply.install ? "primary" : "danger"}
             {...(pendingApply.install ? { glyph: ICONS.download } : {})}
-            confirmLabel={pendingApply.install ? S.plugins.install : S.plugins.uninstall}
+            confirmLabel={
+              pendingApply.previousVersion
+                ? S.skills.updateAction
+                : pendingApply.install
+                  ? S.plugins.install
+                  : S.plugins.uninstall
+            }
             cancelLabel={S.common.cancel}
             busy={pendingSpecifier !== null}
             onClose={() => setPendingApply(null)}
             onConfirm={() => void runDeploymentInstall(pendingApply)}
           >
-            <ModuleApplyBody install={pendingApply.install} name={pendingApply.name} />
+            {pendingApply.resourceOnly && pendingApply.previousVersion && pendingApply.version ? (
+              <p>
+                {S.plugins.packageUpdateBody(
+                  pendingApply.name,
+                  pendingApply.previousVersion,
+                  pendingApply.version,
+                )}
+              </p>
+            ) : (
+              <ModuleApplyBody
+                install={pendingApply.install}
+                name={
+                  pendingApply.version
+                    ? `${pendingApply.name} v${pendingApply.version}`
+                    : pendingApply.name
+                }
+              />
+            )}
           </ConfirmModal>
         )}
       {repairModal}

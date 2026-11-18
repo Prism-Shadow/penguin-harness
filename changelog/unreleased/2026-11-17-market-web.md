@@ -12,3 +12,5 @@ The Plugins page opens directly to search, filters and results. Switch between c
 Both views open plugin details, manage installations and launch installed workbenches. Each detail has a shareable address. Back returns to the market, and details open full-screen on a phone.
 
 Categories supplied only by the remote registry, including Utilities and Entertainment, appear as soon as they have a plugin to browse.
+
+Cards and list rows show the same two actions. Install or update the displayed version, then use Quick start on the current Agent to open a draft. The plugin title opens its details and installation management.

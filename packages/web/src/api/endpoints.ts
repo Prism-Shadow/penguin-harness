@@ -3110,8 +3110,7 @@ async function* sseEvents(response: Response): AsyncGenerator<{ event: string; d
         return;
       }
       buffer += decoder.decode(value, { stream: true });
-      let cut = buffer.indexOf("\n\n");
-      while (cut !== -1) {
+      for (let cut = buffer.indexOf("\n\n"); cut !== -1; cut = buffer.indexOf("\n\n")) {
         const lines = buffer.slice(0, cut).split("\n");
         buffer = buffer.slice(cut + 2);
         const event = lines

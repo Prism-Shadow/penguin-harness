@@ -3380,6 +3380,7 @@ export const zh = {
     /** Listed, but the process could not load it: the reason, not a success. */
     deploymentFailedToast: (name: string, reason: string) => `${name} 加载失败：${reason}`,
     /** A server module's install / removal confirm: what it does, then what it costs, in small type below. */
+    updatePackageTo: (version: string) => `更新到 v${version}`,
     applyConfirmInstall: (name: string) => `安装 ${name}`,
     applyConfirmRemove: (name: string) => `移除 ${name}`,
     applyConfirmInstallBody: (name: string) => `将把 ${name} 安装到整个服务端，所有 Project 共用。`,
@@ -3609,11 +3610,15 @@ export const zh = {
     replaceAction: "替换",
     /** Usage count in the card metadata (shows "unused" instead of a bare 0). */
     usedByAgents: (n: number): string => (n === 0 ? "未被使用" : `${n} 个 Agent 在用`),
-    /** Quick start's tooltip: what pressing it does, and what it does not. */
-    quickStartHint: "快速开始：打开一份带该插件演示的草稿——点发送之前什么都不会运行",
+    quickAction: "快速调用",
+    noQuickAction: "这个插件没有快速调用示例。",
+    packageUpdateBody: (name: string, from: string, to: string) =>
+      `将插件库中的 ${name} 从 v${from} 更新到 v${to}。完成后，可将新版本应用到使用它的 Agent。`,
+    /** The market explains quick start using the selected Agent’s installation. */
+    quickStartHint: "在当前 Agent 的新对话中打开示例草稿。",
     quickStartInstallTitle: (plugin: string, agent: string) =>
       `先把 ${plugin} 安装到 ${agent} 再快速开始？`,
-    quickStartAfterInstall: "随后打开一份带演示的草稿；点发送之前什么都不会运行。",
+    quickStartAfterInstall: "请先安装此插件，再快速调用。",
     /** Top toast shown on successful install / uninstall. */
     installedToast: (plugin: string, agent: string): string => `已将 ${plugin} 安装到 ${agent}`,
     uninstalledToast: (plugin: string, agent: string): string => `已从 ${agent} 卸载 ${plugin}`,

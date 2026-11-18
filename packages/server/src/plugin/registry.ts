@@ -27,6 +27,7 @@ import { createHash } from "node:crypto";
 import type { IconImage } from "@prismshadow/penguin-core";
 import {
   compareVersions,
+  libraryParts,
   normalizeVersion,
   readPackageCard,
   userAgent,
@@ -41,7 +42,9 @@ import type { PluginBase } from "./loader.js";
  * parsePluginIndex); the listing reads it the way it reads a package's icon file and names it by
  * the URL it is served at (http/routes/plugins.ts).
  */
-export type IndexDocumentEntry = Omit<PluginIndexEntry, "icon"> & { icon?: string };
+export type IndexDocumentEntry = Omit<PluginIndexEntry, "icon" | "localInstall"> & {
+  icon?: string;
+};
 
 /** One source of plugin index entries; `source` identifies it for display and errors. */
 export interface PluginRegistry {
@@ -112,6 +115,11 @@ function asIndexEntry(value: unknown): IndexDocumentEntry | null {
       if (typeof c.kind !== "string" || c.kind === "" || typeof c.url !== "string") return null;
     }
   }
+  // Only the serving machine can report an installed version, even when the index is self-hosted.
+  if ("localInstall" in e) {
+    const { localInstall: _localOnly, ...entry } = e;
+    return entry as unknown as IndexDocumentEntry;
+  }
   return value as IndexDocumentEntry;
 }
 
@@ -181,7 +189,7 @@ export function builtinPluginRegistry(
 /** The display fields an index entry may carry, which a package can also carry itself: its card's, and its icon. */
 export type PluginDisplay = Pick<
   PluginIndexEntry,
-  "title" | "titleZh" | "descriptionZh" | "shortDescription" | "shortDescriptionZh"
+  "title" | "titleZh" | "descriptionZh" | "shortDescription" | "shortDescriptionZh" | "localInstall"
 > & { icon?: IconImage };
 
 /** An index entry's github channel, as the install face installs it: pinned bytes at a URL. */
@@ -443,11 +451,35 @@ export function pluginProxyMirrors(url: string, rules: readonly PluginProxyRule[
 export async function localPluginDisplay(
   name: string,
   bases: readonly PluginBase[],
+  available?: IndexDocumentEntry,
 ): Promise<PluginDisplay> {
   const found = resolvePluginPackage(name, bases);
   if (found === null) return {};
   const { card, icon } = readPackageCard(found.dir);
   const display: PluginDisplay = {};
+  if (available && !found.base.builtin && !found.base.program) {
+    try {
+      const { version } = JSON.parse(await fs.readFile(found.manifest, "utf8")) as {
+        version?: unknown;
+      };
+      const entry = path.join(path.dirname(found.base.file), "node_modules", name);
+      if (typeof version === "string" && !(await fs.lstat(entry)).isSymbolicLink()) {
+        const parts = libraryParts(found.dir);
+        display.localInstall = {
+          version,
+          libraryOnly:
+            !parts.modules && (parts.workbenches || parts.skills || parts.mcp || parts.hooks),
+          updateAvailable:
+            indexChannelOf(available).fault === null &&
+            isSemver(version) &&
+            isSemver(available.version) &&
+            compareSemver(available.version, version) > 0,
+        };
+      }
+    } catch {
+      // The package can disappear during a registry read. Its index entry still lists.
+    }
+  }
   if (card.title !== undefined) display.title = card.title;
   if (card.titleZh !== undefined) display.titleZh = card.titleZh;
   if (card.descriptionZh !== undefined) display.descriptionZh = card.descriptionZh;

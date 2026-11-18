@@ -5564,6 +5564,8 @@ export interface WorkbenchEnabledRequest {
  * can also be installed from that channel (plugin/install.ts).
  */
 export interface PluginIndexEntry {
+  /** A downloaded package on the machine serving this listing, compared with the index release. */
+  localInstall?: { version: string; libraryOnly: boolean; updateAvailable: boolean };
   /** Package specifier — the string a Project's plugin list names. */
   name: string;
   /** Localized display names; the UI falls back to the package name. */

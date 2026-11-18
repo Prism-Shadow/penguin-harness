@@ -84,6 +84,7 @@ import { downloadArchive } from "../agents/archive-download";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName } from "../../state/project";
 import { SkillTile } from "../skills";
+import { MarketPluginCard } from "./plugin-market-card";
 import { PluginCover } from "./plugin-cover";
 import { PluginDetailModal, moduleOnThisServer } from "./plugin-detail";
 import type { PluginRow } from "./plugin-groups";
@@ -101,6 +102,8 @@ import {
   statusHint,
 } from "./plugin-marks";
 import {
+  agentInstallable,
+  pluginComplete,
   installNeedsConfirm,
   pluginMcpState,
   stdioServers,
@@ -169,6 +172,9 @@ export interface PluginCardProps {
   layout?: "row" | "cover";
   /** `none` draws no card, only its dialogs: a detail opened by a link to a hidden card. */
   surface?: "card" | "none";
+  /** The market offers a versioned install and a quick-start draft on the selected Agent. */
+  marketCard?: boolean;
+  currentAgentId?: string;
   /** Whether the detail is open, when the caller keeps it (the market: in the URL). */
   detailOpen?: boolean;
   /** The detail asks to open or close; with `detailOpen`, the caller decides. */
@@ -227,7 +233,9 @@ export interface PluginCardProps {
   onToggleInstall: (key: string, plugin: PluginItem, on: boolean) => Promise<boolean>;
   onUpdateOutdated: (name: string, keys: string[]) => Promise<void>;
   /** Asks to install (true) or remove (false) the server module; the page confirms first. */
-  onModuleApply: (install: boolean) => void;
+  onModuleApply: (install: boolean, updateTo?: string) => void;
+  /** Package updates apply to the machine whose registry supplied the card. */
+  showPackageUpdates?: boolean;
   /** An Agent's vault changed under the plugin's MCP servers (Set up saved): its servers are read again. */
   onRepair?: (() => void) | null;
   onMcpChanged: (key: string) => void;
@@ -281,6 +289,11 @@ export function PluginCard(props: PluginCardProps) {
   // What the dialogs below call the plugin: what its card does.
   const title = rowTitle(row, locale);
   const behind = usage?.behind ?? [];
+  const currentId = props.currentAgentId;
+  const onAgent =
+    currentId !== undefined &&
+    plugin !== undefined &&
+    pluginComplete(plugin, installed.get(currentId));
 
   const confirmUpdate = async () => {
     if (pendingUpdate === null || plugin === undefined) return;
@@ -409,7 +422,7 @@ export function PluginCard(props: PluginCardProps) {
           glyph={ICONS.paperPlane}
           label={S.skills.quickInvoke}
           name={`${S.skills.quickInvoke} ${plugin.name}`}
-          hint={S.plugins.quickStartHint}
+          hint={onAgent ? S.plugins.quickStartHint : S.plugins.quickStartAfterInstall}
           words={words}
           disabled={!props.canQuickStart}
           onClick={() => props.onQuickStart(plugin)}
@@ -422,8 +435,28 @@ export function PluginCard(props: PluginCardProps) {
     if (mod !== undefined && props.isAdmin) {
       // Not listed: Install. Listed: Remove — and, in the all-machines view of a module listed
       // for some machines only, Install too, which asks every machine to run it.
+      const localInstall = props.showPackageUpdates ? mod.entry?.localInstall : undefined;
+      const update = localInstall?.updateAvailable ? mod.entry : undefined;
+      if (update !== undefined) {
+        const label = S.plugins.updatePackageTo(update.version);
+        out.push(
+          <EntityCardAction
+            key="package-update"
+            variant="secondary"
+            glyph={ICONS.rotateCw}
+            label={label}
+            name={`${label} ${row.name}`}
+            words={words}
+            busy={props.busy}
+            disabled={props.blocked}
+            onClick={() => props.onModuleApply(true, update.version)}
+          />,
+        );
+      }
       const verbs: boolean[] = [
-        ...(mod.state === "none" ? [true] : []),
+        ...(mod.state === "none" && update === undefined && !localInstall?.libraryOnly
+          ? [true]
+          : []),
         ...(mod.state !== "none" ? [false] : []),
       ];
       for (const install of verbs) {
@@ -715,6 +748,89 @@ export function PluginCard(props: PluginCardProps) {
   );
 
   if (props.surface === "none") return dialogs;
+  if (props.marketCard) {
+    const mod = row.module;
+    const local = props.showPackageUpdates ? mod?.entry?.localInstall : undefined;
+    const release = mod?.entry?.version;
+    const downloadUpdate =
+      Boolean(local?.updateAvailable) && release !== undefined && props.isAdmin;
+    const agentPackage = plugin !== undefined && agentInstallable(plugin);
+    const updateAgent = currentId !== undefined && behind.includes(currentId);
+    const download = !agentPackage && mod?.state === "none" && !local?.libraryOnly;
+    const installedHere = agentPackage ? onAgent : Boolean(local || (mod && mod.state !== "none"));
+    const installVersion = downloadUpdate || download ? release : version;
+    const verb =
+      downloadUpdate || updateAgent
+        ? S.skills.updateAction
+        : installedHere
+          ? S.skills.installed
+          : S.skills.install;
+    const installLabel = props.busy
+      ? S.plugins.installing
+      : installVersion
+        ? `${verb} v${installVersion}`
+        : verb;
+    const needAgent =
+      !props.canQuickStart || (currentId !== undefined && props.unknown?.has(currentId));
+    return (
+      <>
+        <MarketPluginCard
+          layout={cover ? "cover" : "row"}
+          name={row.name}
+          title={title}
+          description={description}
+          detailsLabel={title}
+          cover={<PluginCover row={row} art={props.art ?? null} />}
+          icon={
+            <SkillTile
+              icon={rowIcon(row)}
+              name={row.name}
+              fallback={ICONS.puzzle}
+              size={36}
+              glyph={20}
+            />
+          }
+          onOpen={() => setDetailOpen(true)}
+          install={{
+            label: installLabel,
+            disabled:
+              props.pending === true ||
+              props.busy ||
+              props.blocked ||
+              ((download || downloadUpdate) && !props.isAdmin),
+            onClick: () => {
+              if (downloadUpdate || download)
+                props.onModuleApply(true, mod?.shipped ? undefined : release);
+              else if (agentPackage) {
+                if (updateAgent) setPendingUpdate([currentId!]);
+                else if (currentId === undefined || installedHere || needAgent)
+                  setInstallOpen(true);
+                else if (installNeedsConfirm(plugin, installed.get(currentId)))
+                  setPendingStdio(currentId);
+                else void props.onToggleInstall(currentId, plugin, true);
+              } else setDetailOpen(true);
+            },
+          }}
+          quick={{
+            label: S.plugins.quickAction,
+            hint:
+              plugin === undefined
+                ? S.plugins.quickStartAfterInstall
+                : quickStart === null
+                  ? S.plugins.noQuickAction
+                  : onAgent
+                    ? S.plugins.quickStartHint
+                    : S.plugins.quickStartAfterInstall,
+            disabled: needAgent === true || !onAgent || quickStart === null,
+            onClick: () => {
+              if (plugin && onAgent && quickStart) props.onQuickStart(plugin);
+            },
+          }}
+        />
+        {dialogs}
+      </>
+    );
+  }
   if (cover) {
     return (
       <CoverCard
