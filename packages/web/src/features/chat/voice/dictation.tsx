@@ -83,16 +83,16 @@ export function Dictation({
         return;
       }
       setPhase("transcribing");
-      const data = await recordingData(blob);
-      task.signal.throwIfAborted();
       const latest = await scope.readCurrent(task.signal);
       if (!latest || !hasBoundCapability(latest, "stt")) return;
+      const audio = await recordingData(blob, latest.dictationFormat, task.signal);
+      task.signal.throwIfAborted();
       const result = await runVoice(
         scope.projectId,
         scope.server,
         "stt",
         {
-          audio: { data, mimeType: blob.type.split(";")[0]! },
+          audio,
           ...(scope.sessionId ? { sessionId: scope.sessionId } : {}),
         },
         task.signal,

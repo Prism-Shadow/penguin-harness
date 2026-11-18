@@ -15,3 +15,5 @@ With a speech synthesis model assigned, click the speaker on an assistant reply 
 
 
 Model cards list the operations supplied by active project plugins. Removing the provider hides its model selectors and chat voice controls. Enabling it again restores the saved selections.
+
+Browser dictation converts the microphone recording to 16 kHz mono PCM WAV when the selected speech recognition model needs it.

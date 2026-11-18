@@ -340,7 +340,7 @@ test("speech uses the project's real MMSP routes and records each selected model
     await expect(draft).toHaveValue("Meet at 3.");
     expect(seen[0].items).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ type: "inline_data.done", mime_type: "audio/webm" }),
+        expect.objectContaining({ type: "inline_data.done", mime_type: "audio/wav" }),
       ]),
     );
     expect(seen[1].items).toContainEqual({ type: "text.done", text: "meet meet at 3" });

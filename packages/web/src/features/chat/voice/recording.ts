@@ -55,11 +55,57 @@ export async function captureSpeech(
     release();
   }
 }
-export function recordingData(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
+/** Decode the recorder's WebM or MP4 at 16 kHz, then downmix to a single signed PCM channel. */
+async function speechWave(recording: Blob, signal: AbortSignal): Promise<Blob> {
+  const rate = 16000;
+  const input = await recording.arrayBuffer();
+  signal.throwIfAborted();
+  const decoder = new OfflineAudioContext(1, 1, rate);
+  const audio = await decoder.decodeAudioData(input).catch(() => {
+    throw new Error("recording_failed");
+  });
+  signal.throwIfAborted();
+  const bytes = audio.length * 2;
+  if (bytes + 44 > MAX_BYTES) throw new RangeError("audio_size");
+  const wave = new ArrayBuffer(44 + bytes);
+  const view = new DataView(wave);
+  view.setUint32(0, 0x52494646); // RIFF
+  view.setUint32(4, 36 + bytes, true);
+  view.setUint32(8, 0x57415645); // WAVE
+  view.setUint32(12, 0x666d7420); // fmt
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, 1, true);
+  view.setUint32(24, rate, true);
+  view.setUint32(28, rate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  view.setUint32(36, 0x64617461); // data
+  view.setUint32(40, bytes, true);
+  const channels = Array.from({ length: audio.numberOfChannels }, (_, n) =>
+    audio.getChannelData(n),
+  );
+  for (let i = 0; i < audio.length; i++) {
+    let value = 0;
+    for (const channel of channels) value += channel[i]!;
+    const sample = Math.max(-1, Math.min(1, value / channels.length));
+    view.setInt16(44 + 2 * i, Math.round(sample * (sample < 0 ? 32768 : 32767)), true);
+  }
+  return new Blob([wave], { type: "audio/wav" });
+}
+
+export async function recordingData(
+  recording: Blob,
+  format: "audio/wav" | undefined,
+  signal: AbortSignal,
+) {
+  const blob = format === "audio/wav" ? await speechWave(recording, signal) : recording;
+  signal.throwIfAborted();
+  const data = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result).split(",")[1] ?? "");
     reader.onerror = () => reject(reader.error);
     reader.readAsDataURL(blob);
   });
+  return { data, mimeType: blob.type.split(";")[0]! };
 }
