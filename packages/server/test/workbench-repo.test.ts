@@ -14,7 +14,7 @@
  * - Given a listed revision, its files come back exactly; a revision not listed is null.
  * - Given more versions than listed, the newest are; given a version older than the walk, the
  *   current one is still listed and can be restored.
- * - A name git refuses is judged as isomorphic-git judges it when it reads a tree.
+ * - Reserved path segments are excluded consistently across filesystems.
  * - Given a folder holding such a name (a `.git` spelling, a backslash, `.` behind characters
  *   HFS+ ignores), it is not source and not in the revision; a commit passed one leaves it out
  *   with a log line; the history, later commits and the removal all still work.
@@ -34,11 +34,10 @@
  * - The files handed to a commit are the ones that loaded: an edit since the folder was read
  *   gives none.
  */
-import nodeFs from "node:fs";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import git from "isomorphic-git";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   AgentStateRepo,
@@ -87,16 +86,30 @@ let now: Date;
 let logged: string[];
 const open = (caps?: { versions?: number; commits?: number }) =>
   new AgentStateRepo({ gitdir, now: () => now, log: (line) => logged.push(line), caps });
-const head = () => git.resolveRef({ fs: nodeFs, gitdir, ref: "HEAD" });
+function git(args: string[], input?: string): string {
+  return execFileSync("git", ["--git-dir", gitdir, ...args], { encoding: "utf8", input }).trimEnd();
+}
+const head = () => git(["rev-parse", "HEAD"]);
 
 beforeEach(async () => {
   dir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-state-repo-"));
   await fs.mkdir(path.join(dir, "agent_state"));
   gitdir = agentStateRepoDir(dir);
+  vi.stubEnv("GIT_CONFIG_GLOBAL", path.join(dir, "global.gitconfig"));
+  vi.stubEnv("GIT_CONFIG_NOSYSTEM", "1");
+  for (const key of [
+    "GIT_AUTHOR_NAME",
+    "GIT_AUTHOR_EMAIL",
+    "GIT_COMMITTER_NAME",
+    "GIT_COMMITTER_EMAIL",
+    "EMAIL",
+  ])
+    vi.stubEnv(key, undefined);
   now = T1;
   logged = [];
 });
 afterEach(async () => {
+  vi.unstubAllEnvs();
   vi.restoreAllMocks();
   await fs.rm(dir, { recursive: true, force: true });
 });
@@ -112,7 +125,7 @@ async function objectIds(at: string): Promise<string[]> {
 }
 
 const ZWNJ = String.fromCodePoint(0x200c);
-/** Names isomorphic-git's own tree check covers, refused and allowed alike. */
+/** The existing cross-platform policy also covers names Git would accept on POSIX. */
 const NAMES = [
   ".git",
   ".GIT",
@@ -144,13 +157,13 @@ describe("recording versions", () => {
     expect((await repo.commitPath(REL, DEMO, "workbench demo @1")).changed).toBe(true);
 
     expect(await fs.readdir(path.join(dir, "agent_state"))).toEqual([]);
-    expect(await git.currentBranch({ fs: nodeFs, gitdir })).toBe("main");
+    expect(git(["symbolic-ref", "--short", "HEAD"])).toBe("main");
     expect(await fs.readFile(path.join(gitdir, "info", "exclude"), "utf8")).toContain(
       "workbenches/*/state.json",
     );
     const commit = await head();
-    const written = await git.readTree({ fs: nodeFs, gitdir, oid: commit, filepath: REL });
-    expect(written.oid.slice(0, 12)).toBe(revisionOf(DEMO));
+    const written = git(["rev-parse", `${commit}:${REL}`]);
+    expect(written.slice(0, 12)).toBe(revisionOf(DEMO));
     expect(await repo.history(REL)).toEqual([
       { revision: revisionOf(DEMO), commit: commit.slice(0, 12), savedAt: T1.toISOString() },
     ]);
@@ -170,16 +183,102 @@ describe("recording versions", () => {
     const replayed = new Date("2026-10-01T00:00:00.789Z");
     await repo.commitPath(REL, DEMO, "workbench demo @1 replayed", { at: replayed });
 
-    const { commit } = await git.readCommit({ fs: nodeFs, gitdir, oid: await head() });
-    expect([commit.author.timestamp, commit.committer.timestamp]).toEqual([
-      Date.parse("2026-10-01T00:00:00Z") / 1000,
-      Date.parse("2026-10-01T00:00:00Z") / 1000,
-    ]);
+    expect(git(["show", "-s", "--format=%at %ct", "HEAD"])).toBe(
+      `${Math.floor(replayed.getTime() / 1000)} ${Math.floor(replayed.getTime() / 1000)}`,
+    );
     expect((await repo.history(REL)).map((v) => [v.revision, v.savedAt])).toEqual([
       [revisionOf(DEMO), "2026-10-01T00:00:00.000Z"],
       [revisionOf(EDITED), T2.toISOString()],
       [revisionOf(DEMO), T1.toISOString()],
     ]);
+  });
+
+  it("uses per-field defaults, local/global Git configuration and role-specific overrides without writing configuration", async () => {
+    const repo = open();
+    const identity = () => git(["show", "-s", "--format=%an|%ae|%cn|%ce"]);
+    await repo.commitPath(REL, DEMO, "no configured identity");
+    expect(identity()).toBe("PenguinHarness|penguin@localhost|PenguinHarness|penguin@localhost");
+    const local = path.join(gitdir, "config");
+    const global = process.env.GIT_CONFIG_GLOBAL!;
+    git(["config", "--global", "user.name", "My Global Name"]);
+    git(["config", "--local", "author.email", "author@local.example"]);
+    const [localBefore, globalBefore] = await Promise.all([
+      fs.readFile(local),
+      fs.readFile(global),
+    ]);
+    await repo.commitPath(REL, EDITED, "partial configuration");
+    expect(identity()).toBe("My Global Name|author@local.example|My Global Name|penguin@localhost");
+    vi.stubEnv("GIT_AUTHOR_NAME", "Env Author");
+    vi.stubEnv("GIT_COMMITTER_EMAIL", "env@example.com");
+    vi.stubEnv("EMAIL", "generic@example.com");
+    await repo.commitPath(REL, DEMO, "role-specific env");
+    expect(identity()).toBe("Env Author|author@local.example|My Global Name|env@example.com");
+    expect(await fs.readFile(local)).toEqual(localBefore);
+    expect(await fs.readFile(global)).toEqual(globalBefore);
+  });
+
+  it("does not import templates, start signing programs or invoke repository hooks", async () => {
+    const template = path.join(dir, "user-template");
+    const hooks = path.join(dir, "user-hooks");
+    await fs.mkdir(template);
+    await fs.mkdir(hooks);
+    await fs.writeFile(path.join(template, "imported-from-template"), "template");
+    await fs.writeFile(path.join(hooks, "reference-transaction"), "#!/bin/sh\nexit 1\n", {
+      mode: 0o755,
+    });
+    const config = process.env.GIT_CONFIG_GLOBAL!;
+    execFileSync("git", ["config", "--file", config, "init.templateDir", template]);
+    execFileSync("git", ["config", "--file", config, "core.hooksPath", hooks]);
+    execFileSync("git", ["config", "--file", config, "commit.gpgSign", "true"]);
+    execFileSync("git", [
+      "config",
+      "--file",
+      config,
+      "gpg.program",
+      path.join(dir, "unused-signing-program"),
+    ]);
+    const before = await fs.readFile(config);
+    await open().commitPath(REL, DEMO, "save automatically");
+    expect(git(["cat-file", "commit", "HEAD"])).not.toContain("gpgsig");
+    await expect(fs.stat(path.join(gitdir, "imported-from-template"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    expect(await fs.readFile(config)).toEqual(before);
+  });
+
+  it("reads packed objects and refs and leaves an external ref lock untouched", async () => {
+    const repo = open();
+    const first = await repo.commitPath(REL, DEMO, "base");
+    git(["pack-refs", "--all"]);
+    git(["repack", "-ad"]);
+    const lock = path.join(gitdir, "refs", "heads", "main.lock");
+    await fs.writeFile(lock, "another Git process");
+    await expect(repo.commitPath(REL, EDITED, "competing commit")).rejects.toThrow("update-ref");
+    expect(await fs.readFile(lock, "utf8")).toBe("another Git process");
+    expect((await repo.history(REL))[0]?.commit).toBe(first.commit);
+    await fs.unlink(lock);
+    expect((await repo.commitPath(REL, EDITED, "retry")).changed).toBe(true);
+    expect(texts(await repo.filesAt(REL, revisionOf(DEMO)))).toEqual(texts(DEMO));
+  });
+
+  it("cannot redirect snapshots into an ambient Git directory or object store", async () => {
+    const unrelated = path.join(dir, "unrelated.git");
+    vi.stubEnv("GIT_DIR", unrelated);
+    vi.stubEnv("GIT_OBJECT_DIRECTORY", path.join(dir, "outside-objects"));
+    vi.stubEnv("GIT_INDEX_FILE", path.join(dir, "outside-index"));
+    const repo = open();
+    const rel = "workbenches/名字 with [brackets]";
+    const files = source({ "nested/-item with spaces": "中", "tab\tline\n.txt": "contents" });
+    await repo.commitPath(rel, files, "spaces and non-ASCII");
+    expect(texts(await repo.filesAt(rel, revisionOf(files)))).toEqual(texts(files));
+    for (const file of [unrelated, process.env.GIT_OBJECT_DIRECTORY!, process.env.GIT_INDEX_FILE!])
+      await expect(fs.stat(file)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("reports a missing Git executable without creating an incomplete repository", async () => {
+    vi.stubEnv("PATH", path.join(dir, "empty-path"));
+    await expect(open().commitPath(REL, DEMO, "requires git")).rejects.toThrow("Install Git");
+    await expect(fs.stat(gitdir)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("two folders committed at once, through two instances, each list exactly their own commit", async () => {
@@ -193,21 +292,8 @@ describe("recording versions", () => {
     expect((await open().history("workbenches/b")).map((v) => v.commit)).toEqual([b.commit]);
   });
 
-  it.each(NAMES)("%j is refused exactly when isomorphic-git refuses it in a tree", async (name) => {
-    const nodeRepo = { fs: nodeFs, gitdir: path.join(dir, "scratch.git") };
-    await git.init({ ...nodeRepo, bare: true });
-    const blob = await git.writeBlob({ ...nodeRepo, blob: Buffer.from("x") });
-    const tree = await git.writeTree({
-      ...nodeRepo,
-      tree: [{ mode: "100644", path: name, oid: blob, type: "blob" }],
-    });
-
-    const read = git.readTree({ ...nodeRepo, oid: tree }).then(
-      () => false,
-      () => true,
-    );
-
-    expect(await read).toBe(isGitName(name));
+  it("retains the existing cross-platform filename policy", () => {
+    expect(NAMES.filter(isGitName)).toEqual(NAMES.slice(0, NAMES.indexOf("git~0")));
   });
 
   // Windows reads a backslash as a separator and drops a trailing dot: neither name can exist there.
@@ -239,41 +325,29 @@ describe("recording versions", () => {
     const repo = open();
     await repo.commitPath(REL, DEMO, "workbench demo @1");
     // Another tool commits a file under a name git refuses.
-    const nodeRepo = { fs: nodeFs, gitdir };
-    const blob = await git.writeBlob({ ...nodeRepo, blob: Buffer.from("x") });
-    const head = await git.resolveRef({ ...nodeRepo, ref: "HEAD" });
-    const { commit } = await git.readCommit({ ...nodeRepo, oid: head });
-    const root = await git.readTree({ ...nodeRepo, oid: commit.tree });
-    const workbenches = await git.readTree({
-      ...nodeRepo,
-      oid: commit.tree,
-      filepath: "workbenches",
-    });
-    const demo = await git.readTree({ ...nodeRepo, oid: commit.tree, filepath: REL });
-    const badDemo = await git.writeTree({
-      ...nodeRepo,
-      tree: [...demo.tree, { mode: "100644", path: "ui\\index.html", oid: blob, type: "blob" }],
-    });
-    const badWorkbenches = await git.writeTree({
-      ...nodeRepo,
-      tree: workbenches.tree.map((e) => (e.path === "demo" ? { ...e, oid: badDemo } : e)),
-    });
-    const badRoot = await git.writeTree({
-      ...nodeRepo,
-      tree: root.tree.map((e) => (e.path === "workbenches" ? { ...e, oid: badWorkbenches } : e)),
-    });
-    const stamp = { name: "x", email: "x@x", timestamp: 1_800_000_000, timezoneOffset: 0 };
-    const planted = await git.writeCommit({
-      ...nodeRepo,
-      commit: {
-        message: "by hand\n",
-        tree: badRoot,
-        parent: [head],
-        author: stamp,
-        committer: stamp,
-      },
-    });
-    await git.writeRef({ ...nodeRepo, ref: "refs/heads/main", value: planted, force: true });
+    const blob = git(["hash-object", "-w", "--stdin"], "x");
+    const add = (tree: string, row: string, replacing?: string) => {
+      const rows = git(["ls-tree", "-z", tree])
+        .split("\0")
+        .filter((r) => r && !r.endsWith(`\t${replacing}`));
+      return git(["mktree", "-z"], [...rows, row, ""].join("\0"));
+    };
+    const demo = add(`HEAD:${REL}`, `100644 blob ${blob}\tui\\index.html`);
+    const workbenches = add("HEAD:workbenches", `040000 tree ${demo}\tdemo`, "demo");
+    const root = add("HEAD", `040000 tree ${workbenches}\tworkbenches`, "workbenches");
+    const planted = git([
+      "-c",
+      "user.name=x",
+      "-c",
+      "user.email=x@x",
+      "commit-tree",
+      root,
+      "-p",
+      "HEAD",
+      "-m",
+      "by hand",
+    ]);
+    git(["update-ref", "refs/heads/main", planted, head()]);
 
     // The hand-made commit is a version of its own, read without the entry git refuses.
     const versions = await repo.history(REL);

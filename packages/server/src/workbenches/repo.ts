@@ -15,18 +15,16 @@
  * refuses in a tree (`isGitName`) is never written into one, and one found in a tree written
  * elsewhere is skipped on reading, with a log line, rather than failing the whole history.
  *
- * Every file the repository gets is written whole: to a temporary name, flushed, then renamed
- * in. An object file a crash left empty or cut short counts as absent, so the next write of the
- * same object replaces it instead of building on it.
- *
- * Writes to one repository run one at a time in this process, whichever instance makes them.
- * Reads take no lock: objects never change once written, and the branch ref is replaced whole.
+ * Git installs its objects and updates the branch with its own ref lock. A damaged loose
+ * object from an earlier server is repaired when the same content is written again.
+ * Writes in this process serialize per repository. An outside writer moving the branch
+ * causes the compare-and-swap to fail instead of losing either writer's history.
  */
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { inflateSync } from "node:zlib";
-import git, { type TreeEntry } from "isomorphic-git";
+import { commitIdentity, runGit } from "./git.js";
 import { removeLeftovers } from "./leftovers.js";
 
 /** Versions a history lists at most. */
@@ -49,7 +47,12 @@ export interface RecordedVersion {
   savedAt: string;
 }
 
-const AUTHOR = { name: "PenguinHarness", email: "penguin@localhost" };
+interface TreeEntry {
+  mode: string;
+  path: string;
+  oid: string;
+  type: "tree" | "blob" | "commit";
+}
 const SHORT = 12;
 const BRANCH = "main";
 const EXCLUDE = `# Written by PenguinHarness for git run by a person with --work-tree=agent_state:
@@ -72,7 +75,7 @@ export function agentStateRepoDir(agentDir: string): string {
 const HFS_IGNORED = /[\u200C-\u200F\u202A-\u202E\u206A-\u206F\uFEFF]/g;
 
 /**
- * A tree entry name git refuses, by isomorphic-git's own check (git's `verify_path`): one that
+ * A tree entry name excluded on every supported filesystem: one that
  * holds a path separator, that is `.` or `..` once the characters HFS+ ignores are dropped, or
  * that spells `.git` — any case, trailing dots or spaces (NTFS), an NTFS short name (`git~1`),
  * or before a `:` stream.
@@ -81,6 +84,8 @@ export function isGitName(name: string): boolean {
   const visible = name.replace(HFS_IGNORED, "");
   const normalized = (visible.split(":")[0] ?? "").toLowerCase().replace(/[. ]+$/, "");
   return (
+    !name ||
+    name.includes("\0") ||
     name.includes("/") ||
     name.includes("\\") ||
     visible === "." ||
@@ -145,50 +150,6 @@ function hashTree(files: ReadonlyArray<{ rel: string; oid: string }>): string {
 export function treeId(files: ReadonlyArray<{ rel: string; oid: string }>): string {
   return hashTree(files).slice(0, SHORT);
 }
-
-const isNotFound = (err: unknown): boolean =>
-  (err as { code?: unknown } | null)?.code === "NotFoundError";
-
-/** Writes `data` to `file` whole: a temporary name, flushed to disk, then renamed in. */
-async function writeWhole(
-  file: string,
-  data: string | Uint8Array,
-  temp = `${file}.penguin-tmp`,
-): Promise<void> {
-  const handle = await fs.promises.open(temp, "w");
-  try {
-    await handle.writeFile(data);
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
-  await fs.promises.rename(temp, file);
-}
-
-const LOOSE_OBJECT = /[\\/]objects[\\/][0-9a-f]{2}[\\/][0-9a-f]{38}$/;
-
-/**
- * The filesystem isomorphic-git works through. Its writes are whole (writeWhole), and a loose
- * object that does not inflate (a crash left it empty or cut short) is not there for it: the
- * library writes an object only when it finds none, and would otherwise build on the damaged one.
- */
-const gitFs = {
-  promises: {
-    ...fs.promises,
-    writeFile: (file: string, data: string | Uint8Array) => writeWhole(file, data),
-    async stat(file: string) {
-      const stats = await fs.promises.stat(file);
-      if (LOOSE_OBJECT.test(file)) {
-        try {
-          inflateSync(await fs.promises.readFile(file));
-        } catch {
-          throw Object.assign(new Error(`ENOENT: damaged object ${file}`), { code: "ENOENT" });
-        }
-      }
-      return stats;
-    },
-  },
-};
 
 /** The write in progress per repository, across instances: the next one starts once it settles. */
 const writing = new Map<string, Promise<unknown>>();
@@ -284,40 +245,39 @@ export class AgentStateRepo {
     return run;
   }
 
-  private get repo() {
-    return { fs: gitFs, gitdir: this.gitdir };
+  private git(args: string[], input?: Uint8Array | string): Promise<Buffer> {
+    return runGit(this.gitdir, args, { input });
   }
 
-  /**
-   * The branch HEAD names and its commit (null before the first one); null when there is no
-   * repository. A detached or unreadable HEAD, or a branch ref that is not a commit id, is an
-   * error: no version is recorded or listed against it.
-   */
   private async head(): Promise<{ ref: string; commit: string | null } | null> {
     try {
-      await fs.promises.lstat(this.gitdir);
+      if (!(await fs.promises.lstat(this.gitdir)).isDirectory())
+        throw new Error(`Expected an Agent State repository directory at ${this.gitdir}`);
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
       throw err;
     }
-    const ref = await git.currentBranch({ ...this.repo, fullname: true });
-    if (!ref) throw new Error(`${this.gitdir} has a detached HEAD`);
-    let loose: string;
-    try {
-      loose = (await fs.promises.readFile(path.join(this.gitdir, ref), "utf8")).trim();
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
-      // No file of its own: packed by a person's git, or a branch with no commit yet.
+    if ((await this.git(["rev-parse", "--is-bare-repository"])).toString().trim() !== "true")
+      throw new Error(`${this.gitdir} is not a bare repository`);
+    const ref = (await this.git(["symbolic-ref", "HEAD"])).toString().trim();
+    if (!ref.startsWith("refs/heads/")) throw new Error(`Invalid Agent State branch: ${ref}`);
+    const commit = (
+      await runGit(this.gitdir, ["rev-parse", "--verify", "--quiet", ref], { allowMissing: true })
+    )
+      .toString()
+      .trim();
+    if (!commit) {
+      // Git's quiet lookup also returns 1 for a malformed loose ref. Only a genuinely unborn
+      // branch may be the parent of a new root commit.
       try {
-        return { ref, commit: await git.resolveRef({ ...this.repo, ref }) };
-      } catch (packed) {
-        if (isNotFound(packed)) return { ref, commit: null };
-        throw packed;
+        await fs.promises.lstat(path.join(this.gitdir, ref));
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === "ENOENT") return { ref, commit: null };
+        throw err;
       }
-    }
-    if (!/^[0-9a-f]{40}$/.test(loose))
       throw new Error(`${ref} in ${this.gitdir} is not a commit id`);
-    return { ref, commit: loose };
+    }
+    return { ref, commit };
   }
 
   /**
@@ -329,10 +289,21 @@ export class AgentStateRepo {
     const staging = `${path.basename(this.gitdir)}.penguin-tmp`;
     await removeLeftovers(path.dirname(this.gitdir), staging, this.now().getTime());
     const made = await fs.promises.mkdtemp(path.join(path.dirname(this.gitdir), staging));
-    await git.init({ fs: gitFs, gitdir: made, bare: true, defaultBranch: BRANCH });
-    await fs.promises.mkdir(path.join(made, "info"), { recursive: true });
-    await writeWhole(path.join(made, "info", "exclude"), EXCLUDE);
-    await fs.promises.rename(made, this.gitdir);
+    try {
+      await runGit(made, [
+        "init",
+        "--bare",
+        "--object-format=sha1",
+        "--template=",
+        `--initial-branch=${BRANCH}`,
+        made,
+      ]);
+      await fs.promises.mkdir(path.join(made, "info"), { recursive: true });
+      await fs.promises.writeFile(path.join(made, "info", "exclude"), EXCLUDE);
+      await fs.promises.rename(made, this.gitdir);
+    } finally {
+      await fs.promises.rm(made, { recursive: true, force: true });
+    }
     return { ref: `refs/heads/${BRANCH}`, commit: null };
   }
 
@@ -341,39 +312,17 @@ export class AgentStateRepo {
    * in the repository at all (the parent of a shallow copy's oldest commit).
    */
   private async subtree(commit: string, rel: string): Promise<string | null> {
-    let tree: string;
-    try {
-      tree = (await git.readCommit({ ...this.repo, oid: commit })).commit.tree;
-    } catch (err) {
-      if (isNotFound(err)) return null;
-      throw err;
-    }
-    for (const name of rel.split("/")) {
-      const entry = (await this.entries(tree)).find((e) => e.path === name);
-      if (entry?.type !== "tree") return null;
-      tree = entry.oid;
-    }
-    return tree;
+    const item = await this.git(["--literal-pathspecs", "ls-tree", "-z", commit, "--", rel]);
+    return /^040000 tree ([0-9a-f]{40})\t/.exec(item.toString())?.[1] ?? null;
   }
 
-  /**
-   * A tree's entries, parsed here rather than by the library, which refuses a whole tree for one
-   * entry name git refuses: such an entry (written by another tool, or by an older server) is
-   * left out, logged once.
-   */
   private async entries(tree: string): Promise<TreeEntry[]> {
-    const { type, object } = await git.readObject({ ...this.repo, oid: tree, format: "content" });
-    if (type !== "tree") throw new Error(`${tree} is a ${type}, not a tree`);
-    const body = Buffer.from(object as Uint8Array);
-    const out: TreeEntry[] = [];
-    for (let at = 0; at < body.length;) {
-      const space = body.indexOf(0x20, at);
-      const nul = space === -1 ? -1 : body.indexOf(0, space);
-      if (nul === -1 || nul + 21 > body.length) throw new Error(`tree ${tree} is malformed`);
-      const mode = body.subarray(at, space).toString();
-      const name = body.subarray(space + 1, nul).toString("utf8");
-      const oid = body.subarray(nul + 1, nul + 21).toString("hex");
-      at = nul + 21;
+    const rows = await this.git(["ls-tree", "-z", tree]);
+    const entries: TreeEntry[] = [];
+    for (const row of rows.toString().split("\0").filter(Boolean)) {
+      const match = /^(\d+) (blob|tree|commit) ([0-9a-f]{40})\t([\s\S]+)$/.exec(row);
+      if (!match) throw new Error(`tree ${tree} is malformed`);
+      const name = match[4]!;
       if (isGitName(name)) {
         if (!this.skipped.has(name)) {
           this.skipped.add(name);
@@ -381,13 +330,45 @@ export class AgentStateRepo {
             `tree ${tree.slice(0, SHORT)} holds a name git refuses, left out: ${JSON.stringify(name)}`,
           );
         }
-        continue;
-      }
-      const isTree = mode === "40000" || mode === "040000";
-      const kind = isTree ? "tree" : mode === "160000" ? "commit" : "blob";
-      out.push({ mode: isTree ? "040000" : mode, path: name, oid, type: kind });
+      } else
+        entries.push({
+          mode: match[1]!,
+          type: match[2] as TreeEntry["type"],
+          oid: match[3]!,
+          path: name,
+        });
     }
-    return out;
+    return entries;
+  }
+
+  /** Native Git may reuse an existing loose object without looking inside. Repair only
+   * unreadable data at the id just written, including loose objects left by older servers. */
+  private async writeObject(write: () => Promise<Buffer>): Promise<string> {
+    const oid = (await write()).toString().trim();
+    if (!/^[a-f0-9]{40}$/.test(oid)) throw new Error("Git did not return a SHA-1 object id");
+    const file = path.join(this.gitdir, "objects", oid.slice(0, 2), oid.slice(2));
+    let bytes: Buffer;
+    try {
+      bytes = await fs.promises.readFile(file);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return oid; // packed
+      throw err;
+    }
+    try {
+      inflateSync(bytes);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== "Z_DATA_ERROR" && code !== "Z_BUF_ERROR") throw err;
+      await fs.promises.unlink(file);
+      if ((await write()).toString().trim() !== oid)
+        throw new Error(`Could not repair Git object ${oid}`);
+    }
+    return oid;
+  }
+
+  private writeTree(entries: TreeEntry[]): Promise<string> {
+    const records = entries.map((e) => `${e.mode} ${e.type} ${e.oid}\t${e.path}\0`).join("");
+    return this.writeObject(() => this.git(["mktree", "-z"], records));
   }
 
   /** Writes the files' blobs and trees; returns the top tree's id. */
@@ -395,13 +376,15 @@ export class AgentStateRepo {
     const { here, dirs } = level(files);
     const tree: TreeEntry[] = [];
     for (const file of here) {
-      const oid = await git.writeBlob({ ...this.repo, blob: file.body });
+      const oid = await this.writeObject(() =>
+        this.git(["hash-object", "-w", "--stdin"], file.body),
+      );
       tree.push({ mode: "100644", path: file.rel, oid, type: "blob" });
     }
     for (const [name, inner] of dirs) {
       tree.push({ mode: "040000", path: name, oid: await this.writeFiles(inner), type: "tree" });
     }
-    return git.writeTree({ ...this.repo, tree });
+    return this.writeTree(tree);
   }
 
   /** Commits HEAD's tree with `tree` at `rel` (null: without it) and moves the branch to it. */
@@ -415,29 +398,24 @@ export class AgentStateRepo {
     const root =
       head.commit === null
         ? null
-        : (await git.readCommit({ ...this.repo, oid: head.commit })).commit.tree;
-    const next =
-      (await this.splice(root, rel.split("/"), tree)) ??
-      (await git.writeTree({ ...this.repo, tree: [] }));
-    const stamp = {
-      ...AUTHOR,
-      timestamp: Math.floor(at.getTime() / 1000),
-      timezoneOffset: at.getTimezoneOffset(),
+        : (await this.git(["rev-parse", `${head.commit}^{tree}`])).toString().trim();
+    const next = (await this.splice(root, rel.split("/"), tree)) ?? (await this.writeTree([]));
+    const date = at.toISOString();
+    const env = {
+      ...(await commitIdentity(this.gitdir)),
+      GIT_AUTHOR_DATE: date,
+      GIT_COMMITTER_DATE: date,
     };
-    const commit = await git.writeCommit({
-      ...this.repo,
-      commit: {
-        message: `${subject}\n`,
-        tree: next,
-        parent: head.commit === null ? [] : [head.commit],
-        author: stamp,
-        committer: stamp,
-      },
-    });
-    // `.lock` is the name git itself stages a ref under and never reads as a branch.
-    const file = path.join(this.gitdir, head.ref);
-    await fs.promises.mkdir(path.dirname(file), { recursive: true });
-    await writeWhole(file, `${commit}\n`, `${file}.lock`);
+    const args = [
+      "commit-tree",
+      "--no-gpg-sign",
+      next,
+      ...(head.commit ? ["-p", head.commit] : []),
+    ];
+    const commit = await this.writeObject(() =>
+      runGit(this.gitdir, args, { input: `${subject}\n`, env }),
+    );
+    await this.git(["update-ref", head.ref, commit, head.commit ?? "0".repeat(40)]);
     return commit;
   }
 
@@ -460,7 +438,7 @@ export class AgentStateRepo {
     const kept = entries.filter((e) => e.path !== name);
     const next: TreeEntry[] =
       child === null ? kept : [...kept, { mode: "040000", path: name, oid: child, type: "tree" }];
-    return next.length === 0 ? null : git.writeTree({ ...this.repo, tree: next });
+    return next.length === 0 ? null : this.writeTree(next);
   }
 
   /**
@@ -473,25 +451,56 @@ export class AgentStateRepo {
     rel: string,
   ): Promise<Array<{ tree: string; commit: string; savedAt: string }>> {
     const out: Array<{ tree: string; commit: string; savedAt: string }> = [];
-    let oid = (await this.head())?.commit ?? null;
-    let tree = oid === null ? null : await this.subtree(oid, rel);
-    const current = tree;
-    let oldest: { commit: string; savedAt: string } | null = null;
-    let walked = 0;
-    while (oid !== null && tree !== null && out.length < this.limit && walked < this.walk) {
-      walked += 1;
-      const { commit } = await git.readCommit({ ...this.repo, oid });
-      const savedAt = new Date(commit.committer.timestamp * 1000).toISOString();
-      oldest = { commit: oid, savedAt };
-      const parent = commit.parent[0] ?? null;
-      const before = parent === null ? null : await this.subtree(parent, rel);
-      if (before !== tree) out.push({ tree, commit: oid, savedAt });
-      oid = parent;
-      tree = before;
+    const head = (await this.head())?.commit;
+    if (!head || this.walk <= 0 || this.limit <= 0) return out;
+    const log = await this.git([
+      "rev-list",
+      "--first-parent",
+      "--timestamp",
+      `--max-count=${this.walk + 1}`,
+      head,
+      "--",
+    ]);
+    const commits = log
+      .toString()
+      .trim()
+      .split("\n")
+      .map((line) => {
+        const [seconds, oid] = line.split(" ") as [string, string];
+        return { commit: oid, savedAt: new Date(Number(seconds) * 1000).toISOString() };
+      });
+    // The extra tree supplies the last walked commit's parent. Resolve all normal paths in
+    // one process, including absence in old commits; a newline in the path needs argv instead.
+    const trees = rel.includes("\n")
+      ? await this.subtreesWithNewline(commits, rel)
+      : (
+          await this.git(
+            ["cat-file", "--batch-check"],
+            commits.map((c) => `${c.commit}:${rel}\n`).join(""),
+          )
+        )
+          .toString()
+          .trimEnd()
+          .split("\n")
+          .map((line) => /^([0-9a-f]{40}) tree /.exec(line)?.[1] ?? null);
+    let oldest: { commit: string; savedAt: string } | undefined;
+    for (const [i, commit] of commits.entries()) {
+      const tree = trees[i];
+      if (!tree || i === this.walk || out.length === this.limit) break;
+      oldest = commit;
+      if (tree !== trees[i + 1]) out.push({ tree, ...commit });
     }
-    if (out.length === 0 && current !== null && oldest !== null)
-      out.push({ tree: current, ...oldest });
+    if (!out.length && oldest && trees[0]) out.push({ tree: trees[0], ...oldest });
     return out;
+  }
+
+  private async subtreesWithNewline(
+    commits: { commit: string }[],
+    rel: string,
+  ): Promise<(string | null)[]> {
+    const trees = [];
+    for (const { commit } of commits) trees.push(await this.subtree(commit, rel));
+    return trees;
   }
 
   /** Every file under a tree, paths relative to it. */
@@ -501,7 +510,7 @@ export class AgentStateRepo {
       const rel = `${prefix}${entry.path}`;
       if (entry.type === "tree") out.push(...(await this.readFiles(entry.oid, `${rel}/`)));
       else if (entry.type === "blob") {
-        out.push({ rel, body: (await git.readBlob({ ...this.repo, oid: entry.oid })).blob });
+        out.push({ rel, body: await this.git(["cat-file", "blob", entry.oid]) });
       }
     }
     return out;
