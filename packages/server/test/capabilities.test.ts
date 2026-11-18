@@ -9,6 +9,7 @@ import type {
   CapabilityArtifact,
   CapabilityResult,
   CapabilitySettings,
+  ToolModelSettings,
   ProjectCreateResponse,
   SessionCreateResponse,
 } from "../src/api/types.js";
@@ -21,6 +22,12 @@ const ids = {
   tts: "deepseek-tts",
   stt: "deepseek-asr",
 } as const;
+// A 16 kHz, mono, signed PCM wave with four samples, including its real data chunk.
+const wav = Buffer.from(
+  "524946462c00000057415645666d74201000000001000100803e0000007d000002001000646174610800000000000100ffff0000",
+  "hex",
+);
+const wavBase64 = wav.toString("base64");
 const fixtureProvider = "@tests/media";
 const speechProvider = "@tests/speech";
 function addFixture(host: PluginHost, specifier: string, name: string, keys: string[]) {
@@ -119,7 +126,7 @@ describe("project model capabilities", () => {
     if (!address || typeof address === "string") throw new Error("listener missing");
     endpoint = "http://127.0.0.1:" + address.port + "/v1";
     const host = new PluginHost();
-    addFixture(host, fixtureProvider, "TestMediaProvider", Object.keys(ids));
+    addFixture(host, fixtureProvider, "TestMediaProvider", [...Object.keys(ids), "t2t", "i2t"]);
     addFixture(host, speechProvider, "TestSpeechProvider", ["tts"]);
     app = await createTestApp({ plugins: host });
     await app.deps.projectConfigService.setPluginTables("default_project", {
@@ -153,12 +160,24 @@ describe("project model capabilities", () => {
   it("advertises eligible project models and rejects an incompatible assignment", async () => {
     const settings = (await (await api.get(tools)).json()) as CapabilitySettings;
     expect(settings.bindings).toEqual(bindings);
+    expect(settings.dictationFormat).toBe("audio/wav");
     expect(settings.candidates.chat).toEqual([{ provider: "custom", modelId: "gpt-6.2-sol" }]);
     expect((await api.patch(tools, { bindings: { stt: bindings.tts } })).status).toBe(400);
     expect(
       (await api.post(tools + "/stt/run", { audio: { data: "bad", mimeType: "audio/wav" } }))
         .status,
     ).toBe(400);
+  });
+  it("rejects WebM labelled as WAVE before sending the audio to a DeepSeek ASR gateway", async () => {
+    const before = received.length;
+    const audio = {
+      mimeType: "audio/wav",
+      data: Buffer.from("1a45dfa3", "hex").toString("base64"),
+    };
+    const r = await api.post(tools + "/stt/run", { audio });
+    expect(r.status).toBe(415);
+    expect(await r.json()).toMatchObject({ error: { code: "unsupported_transcription_audio" } });
+    expect(received.length).toBe(before);
   });
   it("uses project credentials, preserves exact model metering and serves files only to project members", async () => {
     const payloads: Record<Capability, Record<string, unknown>> = {
@@ -167,7 +186,7 @@ describe("project model capabilities", () => {
       image: { text: "a penguin", resolution: "1K" },
       video: { text: "wave", duration: 5 },
       tts: { text: "Hello", voice: "demo" },
-      stt: { audio: { data: "AAEC", mimeType: "audio/wav" } },
+      stt: { audio: { data: wavBase64, mimeType: "audio/wav" } },
     };
     for (const [key, input] of Object.entries(payloads)) {
       const response = await api.post(tools + "/" + key + "/run", { ...input, sessionId });
@@ -182,7 +201,7 @@ describe("project model capabilities", () => {
         expect(run.sources?.[0]?.url).toBe("https://penguin.ooo/");
       if (key === "stt") {
         expect(run.text).toBe("Recorded words");
-        expect(received.at(-1)?.messages[0]?.content_items[0]?.data).toBe("AAEC");
+        expect(received.at(-1)?.messages[0]?.content_items[0]?.data).toBe(wavBase64);
       }
       if (run.artifacts.length) {
         const file = run.artifacts[0]!;
@@ -256,6 +275,56 @@ describe("project model capabilities", () => {
     expect(((await cancelled.json()) as CapabilityResult).status).toBe("cancelled");
     const status = await api.get(tools + "/runs/" + start.id);
     expect(((await status.json()) as CapabilityResult).artifacts).toEqual([]);
+  });
+  it("shares the eight project bindings with image reading and transcript editing without changing the chat model", async () => {
+    const chosen = { provider: "custom", modelId: "gpt-6.2-sol" };
+    const read = async () => (await (await api.get(tools + "/tools")).json()) as ToolModelSettings;
+    const initial = await read();
+    expect(Object.keys(initial.candidates).sort()).toEqual([
+      "fetch",
+      "i2t",
+      "s2t",
+      "search",
+      "t2i",
+      "t2s",
+      "t2t",
+      "t2v",
+    ]);
+    expect(initial.bindings.t2t).toEqual(chosen);
+    expect(initial.bindings.t2s).toEqual(bindings.tts);
+    expect(initial.candidates.i2t).toContainEqual(chosen);
+    expect(initial.candidates.t2t).not.toContainEqual(bindings.stt);
+    const update = await api.patch(tools + "/tools", { bindings: { i2t: chosen } });
+    expect(update.status, await update.clone().text()).toBe(200);
+    expect(await (await api.get(base + "/models")).json()).toMatchObject({
+      visionModel: chosen,
+      defaultModel: chosen,
+    });
+    const text = await api.post(tools + "/t2t/run", { text: "Rewrite this", sessionId });
+    expect(text.status, await text.clone().text()).toBe(200);
+    const image = { data: "iVBORw0KGgo=", mimeType: "image/png" };
+    const caption = await api.post(tools + "/i2t/run", { image, text: "What is here?", sessionId });
+    expect(caption.status, await caption.clone().text()).toBe(200);
+    expect((await caption.json()) as CapabilityResult).toMatchObject({
+      model: chosen,
+      text: "Edited words",
+    });
+    expect(received.at(-1)).toMatchObject({
+      messages: [{ content_items: [{ text: "What is here?" }, { data: image.data }] }],
+    });
+    const cleared = await api.patch(tools + "/tools", { bindings: { i2t: null, t2t: null } });
+    expect(cleared.status).toBe(200);
+    expect((await read()).voicePolish.enabled).toBe(false);
+    expect((await api.post(tools + "/i2t/run", { image })).status).toBe(409);
+    expect(await (await api.get(base + "/models")).json()).not.toHaveProperty("visionModel");
+    expect(
+      (
+        await api.patch(tools + "/tools", {
+          bindings: { t2t: chosen },
+          voicePolish: { enabled: true },
+        })
+      ).status,
+    ).toBe(200);
   });
   it("keeps one binding per capability per Project, including simultaneous saves", async () => {
     const created = await api.post("/api/projects", {

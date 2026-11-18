@@ -16,7 +16,7 @@
  * stored as two independent fields, `provider` and `model_id`; the `(provider,
  * model_id)` pair is the entry's unique key. `model_id` is the upstream request id,
  * sent to MMSP verbatim — string concatenation like `<provider>/<id>` is
- * forbidden everywhere in the pipeline. `default_model` / `vision_model` are `{
+ * forbidden everywhere in the pipeline. `default_model` / `tools.i2t` are `{
  * provider, model_id }` paired references (TOML tables).
  *
  * Reads are memoized on the file's mtime (see readTable): every consumer of this
@@ -28,7 +28,7 @@
  * as immutable — every mutating method here copies before changing.
  */
 import { projectPluginTables } from "../plugin/project-defaults.js";
-import type { CapabilitySettingsPatch } from "../api/capabilities.js";
+import type { CapabilitySettingsPatch, ModelOperation } from "../api/capabilities.js";
 import { applyCapabilitySettings } from "./capability-settings.js";
 import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
@@ -283,7 +283,7 @@ function toCommandPolicyRuleDtos(rules: readonly CommandPolicyRule[]): CommandPo
   });
 }
 
-/** Leniently reads a paired reference table (default_model / vision_model); returns undefined on a shape mismatch (including the old string format). */
+/** Leniently reads a paired reference table (default_model / tools.i2t); returns undefined on a shape mismatch (including the old string format). */
 function optRef(v: unknown): ModelRef | undefined {
   const t = asTable(v);
   const provider = optStr(t.provider);
@@ -1124,7 +1124,7 @@ export class ProjectConfigService implements ProjectConfigStore {
     };
   }
 
-  async patchCapabilitySettings(projectId: string, patch: CapabilitySettingsPatch) {
+  async patchCapabilitySettings(projectId: string, patch: CapabilitySettingsPatch<ModelOperation>) {
     // Model-table edits and restore use the same Project lock; a simultaneous binding save sees their final rows.
     return this.withProviderCredentialLock(projectId, MODELSCOPE_PROVIDER_ID, async () => {
       const raw = await this.readRaw(projectId);
@@ -1618,7 +1618,7 @@ export class ProjectConfigService implements ProjectConfigStore {
   async getModels(projectId: string): Promise<ModelsResponse> {
     const raw = await this.readRaw(projectId);
     const defaultRef = optRef(raw.default_model);
-    const visionRef = optRef(raw.vision_model);
+    const visionRef = optRef(asTable(raw.tools).i2t);
     const providers = providerTableOf(raw);
     const discounts = new Map(
       (this.promotions?.list(projectId) ?? []).map((p) => [
@@ -2038,7 +2038,7 @@ export class ProjectConfigService implements ProjectConfigStore {
       }
     }
 
-    // vision_model: same semantics as default_model; additionally must not be annotated vision=false (can't proxy-read images if unsupported).
+    // tools.i2t: same semantics as default_model; additionally must not be annotated vision=false (can't proxy-read images if unsupported).
     const targetOf = (ref: ModelRefDto) =>
       req.models.find((m) => m.provider === ref.provider && m.modelId === ref.modelId);
     let visionModel: ModelRefDto | undefined;
@@ -2055,7 +2055,7 @@ export class ProjectConfigService implements ProjectConfigStore {
       }
       visionModel = req.visionModel;
     } else {
-      const prevRef = optRef(raw.vision_model);
+      const prevRef = optRef(asTable(raw.tools).i2t);
       if (prevRef !== undefined) {
         const prevKey = refKey(prevRef.provider, prevRef.model_id);
         const followed = renamed.get(prevKey) ?? {
@@ -2086,21 +2086,17 @@ export class ProjectConfigService implements ProjectConfigStore {
       };
       return seen.has(refKey(ref.provider, ref.modelId)) ? toRaw(ref) : undefined;
     };
-    if (raw.capability_models) {
-      next.capability_models = Object.fromEntries(
-        Object.entries(asTable(raw.capability_models)).flatMap(([key, value]) => {
-          const moved = follow(value);
-          return moved ? [[key, moved]] : [];
-        }),
-      );
-    }
-    const polish = asTable(raw.voice_polish);
-    if (polish.model) {
-      const moved = follow(polish.model);
-      next.voice_polish = moved ? { ...polish, model: moved } : { enabled: false };
-    }
-    if (visionModel !== undefined) next.vision_model = toRaw(visionModel);
-    else delete next.vision_model;
+    const previousTools = asTable(raw.tools);
+    const tools = Object.fromEntries(
+      Object.entries(previousTools).flatMap(([key, value]) => {
+        const moved = key === "i2t" ? undefined : follow(value);
+        return moved ? [[key, moved]] : [];
+      }),
+    );
+    if (visionModel) tools.i2t = toRaw(visionModel);
+    if (raw.tools || visionModel) next.tools = tools;
+    if (previousTools.t2t && !tools.t2t && raw.voice_polish_enabled)
+      next.voice_polish_enabled = false;
     const commit = async (): Promise<ModelsResponse> => {
       await this.writeRaw(projectId, next);
       if (this.promotions !== undefined) {
@@ -2505,26 +2501,23 @@ export class ProjectConfigService implements ProjectConfigStore {
     const next: RawTable = { ...raw, providers, models: nextModels };
     if (defaultModel !== undefined) next.default_model = defaultModel;
     else delete next.default_model;
-    delete next.vision_model;
-    if (raw.capability_models) {
-      next.capability_models = Object.fromEntries(
-        Object.entries(asTable(raw.capability_models)).filter(([, value]) => {
+    const tools = asTable(raw.tools);
+    if (raw.tools) {
+      const keptTools = Object.fromEntries(
+        Object.entries(tools).filter(([key, value]) => {
           const ref = optRef(value);
-          return ref && presetRefs.has(refKey(ref.provider, ref.model_id));
+          return key !== "i2t" && ref && presetRefs.has(refKey(ref.provider, ref.model_id));
         }),
       );
+      next.tools = keptTools;
+      if (tools.t2t && !keptTools.t2t && raw.voice_polish_enabled)
+        next.voice_polish_enabled = false;
     }
-    const editModel = optRef(asTable(raw.voice_polish).model);
-    if (editModel && !presetRefs.has(refKey(editModel.provider, editModel.model_id)))
-      next.voice_polish = { enabled: false };
-
     const changed =
       !sameValue(current, nextModels) ||
       !sameValue(asTable(raw.providers), providers) ||
-      !sameValue(raw.capability_models, next.capability_models) ||
-      !sameValue(raw.voice_polish, next.voice_polish) ||
-      !sameValue(optRef(raw.default_model), defaultModel) ||
-      raw.vision_model !== undefined;
+      !sameValue(raw.tools, next.tools) ||
+      !sameValue(optRef(raw.default_model), defaultModel);
     if (changed) await this.writeRaw(projectId, next);
 
     this.promotions?.replaceAll(projectId, presetPromotions());

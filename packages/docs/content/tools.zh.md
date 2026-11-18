@@ -112,7 +112,7 @@ Trace 不会再存一份这些内容，但会记录展示给模型、Web App 和
 | --- | --- | --- | --- |
 | `exec_command` | rw | 120000 | 在 Workspace 中执行 shell 命令（有 bash 的环境通过 `bash -lc` 执行），流式输出 stdout/stderr |
 | `input_command` | rw | 120000 | 通过 `process_id` 操控命令会话：写入 stdin、发送 Ctrl-C、轮询输出，或终止会话（`kill: true`） |
-| `read_file` | r | 60000 | 读取文本文件，返回带行号（`cat -n`）的窗口，按 offset/limit 分页；或读取图片（路径或 URL）返回图片内容；对纯文本模型，由 `vision_model` 用文字描述图片 |
+| `read_file` | r | 60000 | 读取文本文件，返回带行号（`cat -n`）的窗口，按 offset/limit 分页；或读取图片（路径或 URL）返回图片内容；对纯文本模型，由 `tools.i2t` 用文字描述图片 |
 | `edit_file` | rw | 30000 | 在已有文件中精确替换字符串，并回显变更的 diff |
 | `write_file` | rw | 30000 | 创建或覆盖整个文件，必要时自动创建父目录 |
 | `run_subagent` | rw | 600000 | 把一个自包含的子任务委托给同一 Workspace 中的子 Agent |
@@ -205,7 +205,7 @@ WSL 后端下，助手在发行版内运行，初始化时已把 `nodejs` 装进
 返回什么取决于 Session 模型的 vision 标志：
 
 - 支持图片的模型会直接拿到图片内容，文字输出只有一行，给出格式和字节大小，例如 `image/png, 123.4 kB`。供应商随后拒绝这次请求时，引擎会去掉图片重发（见[可重试失败与致命失败](/agent-loop#可重试失败与致命失败)），并在工具输出中留下一句固定说明，写明图片已去掉；供应商的报错原文经重试输入的 `[request_error]` 行到达模型（见[自动重连](/agent-loop#自动重连)）。
-- 纯文本模型则由 Project 的 `vision_model` 回答 `prompt`（默认是一段详细描述），以工具文字输出的形式流式返回。图片本身不会进入这个 Session 的历史。视觉模型拒收图片时，工具输出会附上同样的原因与建议。未配置 `vision_model` 时，在纯文本 Session 中读取图片会失败，并提示用户到模型设置中选择一个。参见[模型与供应商](/models)。
+- 纯文本模型则由 Project 的 `tools.i2t` 回答 `prompt`（默认是一段详细描述），以工具文字输出的形式流式返回。图片本身不会进入这个 Session 的历史。视觉模型拒收图片时，工具输出会附上同样的原因与建议。未配置 `tools.i2t` 时，在纯文本 Session 中读取图片会失败，并提示用户到模型设置中选择一个。参见[模型与供应商](/models)。
 
 走哪个分支由 `VisionDescriberService` 决定；SDK 只在纯文本 Session 时才向 Environment 注入它，因此一条配置（不带 `forModel`）即可同时服务两类模型。支持图片的模型拿到的 `read_file` 不带 `prompt`：组装时在内存中把这个参数从 schema 里移除，与 `call_description: false` 移除 `description` 的做法相同，YAML 文件本身不会改动。
 
@@ -218,7 +218,7 @@ WSL 后端下，助手在发行版内运行，初始化时已把 `nodejs` 装进
   file_path: string;       // required: absolute, or relative to the Workspace; an http(s) URL for an image
   offset?: number;         // 1-based line to start from; default 1
   limit?: number;          // max lines returned; default 2000 — a trailing note points at the continuation
-  prompt?: string;         // text-only models only: a question about an image, answered by the vision_model; default: a detailed description
+  prompt?: string;         // text-only models only: a question about an image, answered by the tools.i2t; default: a detailed description
 }
 
 // edit_file — the file must exist; old_string must occur exactly once (or set replace_all);

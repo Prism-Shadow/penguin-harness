@@ -92,7 +92,8 @@ Agent 运行的每条命令，PATH 的第一位都是本安装自带的 `penguin
 | --- | --- | --- | --- |
 | `name` | 字符串 | — | Project 显示名；未设置时显示 id |
 | `default_model` | 成对引用 | — | 指向默认模型的 `{ provider, model_id }` 成对引用；必须指向 `models` 里的条目 |
-| `vision_model` | 成对引用 | — | 为纯文本模型读取图像的视觉模型（`read_file` 会把图像交给它）；成对引用 |
+| `[tools]` | 表 | — | 每项工具选择一个模型：`t2t`、`i2t`、`search`、`fetch`、`t2i`、`t2v`、`t2s`、`s2t`。图片理解使用 `i2t`，听写润色使用 `t2t`。 |
+| `voice_polish_enabled` | 布尔 | false | 把听写文字填入草稿前先润色 |
 | `[default_chat]` | 表 | — | 新对话的预填默认值；见[新对话默认值](#新对话默认值) |
 | `[command_policy]` | 表 | 出厂规则集 | shell 命令的需确认与拒绝规则，先于审批模式生效；见[命令策略](#命令策略) |
 | `[plugins]` | 表 | — | Project 要求的服务端插件；见[插件](#插件) |

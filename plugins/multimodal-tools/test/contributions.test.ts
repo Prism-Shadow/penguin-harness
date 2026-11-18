@@ -26,11 +26,13 @@ describe("the shipped Multimodal tools plugin", () => {
     const actions = manifest.contributes["ModelCapabilitiesProvider.capabilities"]!;
     expect(actions.map((action) => action.key).sort()).toEqual([
       "fetch",
-      "image",
+      "i2t",
+      "s2t",
       "search",
-      "stt",
-      "tts",
-      "video",
+      "t2i",
+      "t2s",
+      "t2t",
+      "t2v",
     ]);
     for (const action of actions) {
       expect(action).toMatchObject({

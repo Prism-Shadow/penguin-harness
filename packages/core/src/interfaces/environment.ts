@@ -223,7 +223,7 @@ export interface SubagentRunner {
  * Docs: /docs/interfaces § "VisionDescriberService".
  */
 export interface VisionDescriberService {
-  /** Vision model id; null when the Project has no `vision_model` configured (or it's invalid), in which case the tool ends with a failed explanation. */
+  /** Vision model id; null when the Project has no `tools.i2t` configured (or it's invalid), in which case the tool ends with a failed explanation. */
   modelId: string | null;
   /** Constructs a single-shot LLM for this vision model (no tools, no system prompt); omitted when `modelId` is null. */
   createLLM?: () => LLMInterface;

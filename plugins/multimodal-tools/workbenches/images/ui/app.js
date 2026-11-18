@@ -201,9 +201,9 @@ $("stop").onclick = async () => {
 };
 async function refreshModel() {
   try {
-    const settings = await request(cap);
-    const active = settings.available.some((row) => row.key === "image");
-    binding = active ? settings.bindings.image : null;
+    const settings = await request(cap + "/tools");
+    const active = settings.available.some((row) => row.key === "t2i");
+    binding = active ? settings.bindings.t2i : null;
     $("model").textContent = binding
       ? binding.provider + " / " + binding.modelId
       : active

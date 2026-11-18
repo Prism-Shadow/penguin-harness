@@ -10,6 +10,13 @@ import { resolveConnection } from "./connection.js";
 import { resolveProjectId, ServerClient } from "./client.js";
 import type { Messages } from "./i18n.js";
 
+const imageTypes: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  webp: "image/webp",
+  gif: "image/gif",
+};
 const audioTypes: Record<string, string> = {
   wav: "audio/wav",
   mp3: "audio/mpeg",
@@ -73,7 +80,11 @@ export function splitModelToolArgs(argv: readonly string[]): ClientArgs {
     if (!positional && arg.startsWith("--")) {
       const eq = arg.indexOf("=");
       const name = eq < 0 ? arg : arg.slice(0, eq);
-      if (["--server", "--project-id", "--out", "--mime-type", "--session-id"].includes(name)) {
+      if (
+        ["--server", "--project-id", "--out", "--mime-type", "--session-id", "--prompt"].includes(
+          name,
+        )
+      ) {
         const value = eq < 0 ? argv[++i] : arg.slice(eq + 1);
         if (!value || (eq < 0 && value.startsWith("--")))
           throw new Error(`Missing value for ${name}.`);
@@ -86,9 +97,13 @@ export function splitModelToolArgs(argv: readonly string[]): ClientArgs {
         continue;
       }
     }
-    if (parsed.args[0] === "stt" && !parsed.file && (positional || !arg.startsWith("-"))) {
+    if (
+      ["stt", "s2t", "i2t"].includes(parsed.args[0] ?? "") &&
+      !parsed.file &&
+      (positional || !arg.startsWith("-"))
+    ) {
       parsed.file = arg;
-      parsed.args.push("client-audio");
+      parsed.args.push(parsed.args[0] === "i2t" ? "client-image" : "client-audio");
     } else parsed.args.push(arg);
   }
   return parsed;
@@ -105,8 +120,10 @@ export async function runModelTool(argv: readonly string[], m: Messages): Promis
     language: m.language,
     sessionId: process.env.PENGUIN_SESSION_ID?.trim() || undefined,
   };
-  const submit = (audio?: { data: string; mimeType: string }) =>
-    api.request<CapabilityCliReply>("POST", base + "/cli", { ...request, audio });
+  const submit = (attachment?: {
+    audio?: { data: string; mimeType: string };
+    image?: { data: string; mimeType: string };
+  }) => api.request<CapabilityCliReply>("POST", base + "/cli", { ...request, ...attachment });
   let runId: string | undefined;
   let cancelled = false;
   const cancel = async () => {
@@ -120,24 +137,31 @@ export async function runModelTool(argv: readonly string[], m: Messages): Promis
   process.once("SIGTERM", signal);
   try {
     let response = await submit();
-    if (response.kind === "audio") {
-      if (!opts.file) throw new Error(t("Select an audio file.", "请选择音频文件。"));
+    if (response.kind === "audio" || response.kind === "image") {
+      const image = response.kind === "image";
+      if (!opts.file)
+        throw new Error(
+          image
+            ? t("Select an image.", "请选择图片。")
+            : t("Select an audio file.", "请选择音频文件。"),
+        );
       const info = await stat(opts.file);
       if (!info.isFile() || info.size > 20 * 1024 * 1024)
-        throw new Error(
-          t("Select an audio file up to 20 MiB.", "请选择不超过 20 MiB 的音频文件。"),
-        );
+        throw new Error(t("Select a file up to 20 MiB.", "请选择不超过 20 MiB 的文件。"));
       const mimeType =
-        response.mimeType ?? audioTypes[path.extname(opts.file).slice(1).toLowerCase()];
+        response.mimeType ??
+        (image ? imageTypes : audioTypes)[path.extname(opts.file).slice(1).toLowerCase()];
       if (!mimeType)
         throw new Error(
-          t("Specify the audio type with --mime-type.", "请用 --mime-type 指定音频类型。"),
+          t("Specify the file type with --mime-type.", "请用 --mime-type 指定文件类型。"),
         );
       if (cancelled) return 130;
-      response = await submit({ mimeType, data: (await readFile(opts.file)).toString("base64") });
+      response = await submit({
+        [response.kind]: { mimeType, data: (await readFile(opts.file)).toString("base64") },
+      });
     }
-    if (response.kind === "audio")
-      throw new Error("The server did not accept the audio attachment.");
+    if (response.kind === "audio" || response.kind === "image")
+      throw new Error("The server did not accept the attachment.");
     if (response.kind === "message") {
       if (response.stdout) process.stdout.write(response.stdout);
       if (response.stderr) process.stderr.write(response.stderr);

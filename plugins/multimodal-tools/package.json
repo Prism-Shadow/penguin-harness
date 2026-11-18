@@ -1,7 +1,7 @@
 {
   "name": "@penguinharness/multimodal-tools",
   "version": "0.2.18",
-  "description": "Use project models for web search, page retrieval, image and video generation, speech recognition and speech synthesis.",
+  "description": "Use project models for writing text, understanding images, web search, page retrieval, image and video generation, speech recognition and speech synthesis.",
   "license": "Apache-2.0",
   "author": {
     "name": "Prism-Shadow",

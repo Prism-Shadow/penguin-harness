@@ -198,7 +198,7 @@ function localModelsOf(config: ProjectConfig): LocalModels {
     models: config.models,
     ...(config.providers !== undefined ? { providers: config.providers } : {}),
     ...(config.default_model !== undefined ? { defaultModel: config.default_model } : {}),
-    ...(config.vision_model !== undefined ? { visionModel: config.vision_model } : {}),
+    ...(config.tools?.i2t !== undefined ? { visionModel: config.tools?.i2t } : {}),
     ...(config.name !== undefined ? { name: config.name } : {}),
   };
 }
@@ -2992,7 +2992,7 @@ export class MachinesService {
         ref?.provider === entry.provider && ref.model_id === entry.modelId;
       for (const [pointer, ref] of [
         ["Default model", config?.default_model],
-        ["Vision model", config?.vision_model],
+        ["Vision model", config?.tools?.i2t],
       ] as const) {
         if (names(ref)) {
           say(

@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
 import type {
   AgentPluginsInstallResponse,
-  CapabilitySettings,
+  ToolModelSettings,
   SessionCreateResponse,
 } from "../src/api/types.js";
 import { apiClient, createTestApp, loginAdmin, restartTestApp, type TestApp } from "./helpers.js";
@@ -14,7 +14,7 @@ const specifier = "@penguinharness/multimodal-tools";
 const shipped = fileURLToPath(new URL("../../../plugins/multimodal-tools/", import.meta.url));
 const project = "/api/projects/default_project";
 const agentPlugins = project + "/agents/default_agent/plugins";
-const actions = ["fetch", "image", "search", "stt", "tts", "video"];
+const actions = ["fetch", "i2t", "s2t", "search", "t2i", "t2s", "t2t", "t2v"];
 
 /** Install exactly the package's distributable files under the same prefix a release carries. */
 async function shipPlugin(root: string): Promise<void> {
@@ -42,9 +42,9 @@ it("uses the shipped module and Skill on a fresh Project, keeps opt-outs across 
     t = await createTestApp({ durableDatabase: true, beforeSeed: shipPlugin });
     let api = apiClient(t.app, (await loginAdmin(t.app)).cookie);
     const available = async (base: string) => {
-      const response = await api.get(base + "/capabilities");
+      const response = await api.get(base + "/capabilities/tools");
       expect(response.status).toBe(200);
-      const settings = (await response.json()) as CapabilitySettings;
+      const settings = (await response.json()) as ToolModelSettings;
       return settings.available
         .filter((row) => row.package === specifier)
         .map((row) => row.key)

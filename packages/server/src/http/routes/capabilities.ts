@@ -8,14 +8,14 @@ import { HttpError } from "../errors.js";
 import { readJson, requireValidId } from "../validate.js";
 
 function chosenPolish(config: ProjectConfig) {
-  if (!config.voice_polish?.enabled)
+  if (!config.voice_polish_enabled)
     throw new HttpError(409, "voice_polish_disabled", "Transcript editing is disabled.");
-  const ref = config.voice_polish.model ?? config.default_model;
+  const ref = config.tools?.t2t;
   if (!ref)
     throw new HttpError(409, "model_unavailable", "Choose a chat model to edit transcripts.");
   const settings = capabilitySettings(config);
   if (
-    !settings.candidates.chat.some((r) => r.provider === ref.provider && r.modelId === ref.model_id)
+    !settings.candidates.t2t.some((r) => r.provider === ref.provider && r.modelId === ref.model_id)
   )
     throw new HttpError(409, "model_unavailable", "The configured model cannot edit text.");
   return dto(ref);
@@ -30,6 +30,12 @@ export function voicePolishRoutes(deps: CapabilityDependencies) {
     const text = inputText(body.text);
     const config = await deps.projects.loadConfig(project);
     const model = chosenPolish(config);
+    if (!(await deps.capabilities.list(project)).some((c) => c.key === "t2t"))
+      throw new HttpError(
+        409,
+        "capability_unavailable",
+        "Enable a plugin providing the text tool to edit transcripts.",
+      );
     const result = await deps.runs.run(
       {
         projectId: project,
