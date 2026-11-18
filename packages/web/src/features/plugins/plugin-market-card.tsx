@@ -23,7 +23,16 @@ interface MarketPluginCardProps {
 }
 
 export function MarketPluginCard({
-  layout, title, description, cover, icon, onOpen, detailsLabel, install, quick, name,
+  layout,
+  title,
+  description,
+  cover,
+  icon,
+  onOpen,
+  detailsLabel,
+  install,
+  quick,
+  name,
 }: MarketPluginCardProps) {
   return (
     <CoverCard
@@ -38,7 +47,7 @@ export function MarketPluginCard({
       onOpen={onOpen}
     >
       <div className="market-plugin-actions">
-        {[install, quick].map((action,index) => (
+        {[install, quick].map((action, index) => (
           <button
             type="button"
             key={index}
