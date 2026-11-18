@@ -131,3 +131,69 @@ for (const [mode, lang, width] of [
     await expectCaptionInk(card.locator('[data-slot="meta"]').last(), card);
   });
 }
+
+test("Doodle keeps the fold's perimeter in place while the sheet closes", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.goto("/app.html?route=/chat/s-link-check&theme=doodle&mode=light&lang=zh");
+  const header = page.locator('[data-group-header][data-state="running"]').first();
+  await expect(header).toHaveAttribute("aria-expanded", "true");
+  const phases = await header.evaluate(async (button) => {
+    const frame = button.closest(".ui-frame");
+    const samples = [];
+    button.click();
+    for (let i = 0; i < 128; i++) {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const body = frame.querySelector(":scope > [data-fold]");
+      const border = getComputedStyle(frame);
+      samples.push({
+        phase: body?.dataset.fold ?? "closed",
+        stroke: [
+          getComputedStyle(frame.querySelector(':scope > [data-slot="head"]')).borderTopWidth,
+          border.borderRightWidth,
+          border.borderBottomWidth,
+          border.borderLeftWidth,
+        ],
+      });
+      if (!body) break;
+    }
+    return samples;
+  });
+  expect(phases.some((sample) => sample.phase === "closing")).toBe(true);
+  expect(phases.at(-1).phase).toBe("closed");
+  expect(phases.every((sample) => sample.stroke.every((width) => parseFloat(width) === 2))).toBe(
+    true,
+  );
+});
+
+for (const [lang, mode, width] of [
+  ["zh", "light", 1280],
+  ["en", "dark", 390],
+]) {
+  test(`Doodle marks the folder and the example accepted into the draft (${lang})`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 850 });
+    await page.goto(`/app.html?route=/chat/new&theme=doodle&mode=${mode}&lang=${lang}`);
+    const box = page.locator('.ui-start [data-slot="folders"]');
+    const folder = box.locator('[data-slot="folder"]').nth(1);
+    await folder.focus();
+    await page.keyboard.press("Enter");
+    await expect(folder).toHaveAttribute("aria-expanded", "true");
+    const examples = box.locator('[data-slot="rows"] button[data-slot="row"]');
+    const first = examples.first();
+    await first.click();
+    await expect(first).toHaveAttribute("aria-current", "true");
+    await expect(folder.locator('[data-slot="example-check"]')).toBeVisible();
+    await expect(first.locator('[data-slot="example-check"]')).toBeVisible();
+    const draft = page.locator(".ui-start textarea").first();
+    const text = await draft.inputValue();
+    expect(text).not.toBe("");
+    await draft.fill(text + "!");
+    await expect(box.locator('[aria-current="true"]')).toHaveCount(0);
+    await examples.nth(1).click();
+    const confirmation = page.getByRole("dialog");
+    await expect(confirmation).toBeVisible();
+    await confirmation.getByRole("button", { name: /^(Cancel|取消)$/ }).click();
+    await expect(box.locator('[aria-current="true"]')).toHaveCount(0);
+  });
+}

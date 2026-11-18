@@ -15,6 +15,8 @@ The start page’s Agents, RSI algorithms and Benchmarks share a paper card with
 
 The Evaluation Center shows the score and its change directly on the card, with the same space for the unevaluated state.
 
-Model and tool cards use apricot paper in light mode and plum in dark mode. The running activity keeps its ink outline when expanded or folded. Settings groups, the initial-password reminder and the change-password dialog have a continuous border.
+Model and tool cards use cream paper in light mode and plum in dark mode. The running activity keeps its ink outline when expanded or folded. Settings groups, the initial-password reminder and the change-password dialog have a continuous border.
 
 Activity and library group headings share the paper color of their cards. The skill note has a continuous outline on all four sides.
+
+An ink check marks the open example folder and the example in the draft. When a run finishes, the rows fold into the page while the outline stays in place.

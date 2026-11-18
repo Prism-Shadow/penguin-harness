@@ -19,13 +19,13 @@
   --color-gray-900: #402e40;
   --color-gray-950: #211712;
 
-  /* ---- Colour — surfaces: vanilla canvas, apricot cards and golden paper wells. ---- */
-  --ui-canvas: #fffaf4;
-  --ui-surface: #fff3d7;
-  --ui-surface-muted: #fff1d9;
-  --ui-fill-neutral: color-mix(in srgb, var(--ui-accent) 7%, #f0e4ce);
-  --ui-inset: #f6efe0;
-  --ui-overlay: #fff6e7;
+  /* ---- Colour — surfaces: warm white sheets, cream cards and softly shaded paper wells. ---- */
+  --ui-canvas: #fffdf8;
+  --ui-surface: #fffbf3;
+  --ui-surface-muted: #fff8ed;
+  --ui-fill-neutral: color-mix(in srgb, var(--ui-accent) 5%, #f8f0e5);
+  --ui-inset: #faf5eb;
+  --ui-overlay: #fffbf4;
   --ui-overlay-backdrop: rgb(50 36 29 / 0.38);
 
   /* ---- Colour — text: berry ink on paper ---- */
