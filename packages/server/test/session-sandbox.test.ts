@@ -8,7 +8,7 @@ import { wire } from "@prismshadow/penguin-core/kernel";
 import type { SandboxProvider, SandboxSettings } from "@prismshadow/penguin-core/plugin";
 import { openDatabase } from "@prismshadow/penguin-library-db";
 import { migrate } from "@prismshadow/penguin-library-db/migrations";
-import { stampThrough } from "../../library/db/test/db-migrations-fixtures.js";
+import { stampThrough } from "../../../library/db/test/db-migrations-fixtures.js";
 import { SCHEMA_SQL } from "@prismshadow/penguin-library-db/schema";
 import { SessionsRepo } from "@prismshadow/penguin-library-session/repos/sessions";
 import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
