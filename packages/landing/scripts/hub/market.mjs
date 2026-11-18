@@ -10,11 +10,8 @@
  * restated here because a build script cannot import the server's TypeScript: a document that
  * breaks one is not used at all. Where the document comes from is published.mjs.
  *
- * Besides curation and pictures it may carry `popularity`: each package's install count and its
- * installs in the last week, which the Plugins page ranks by. The numbers are placeholders until a
- * real source replaces them (the block names its `source`); while they are, the page's ranking
- * says "Sample data", and it shows no ranking when the block is absent. A package the document
- * names that no plugin on the site carries is skipped.
+ * Optional popularity figures remain part of the shared market document. A package the
+ * document names that the site doesn't carry is skipped.
  */
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";

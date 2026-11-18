@@ -63,7 +63,7 @@ export interface PluginSummary {
   selected?: true;
   /**
    * Its install count and its installs in the last week, from the market document's popularity
-   * block: what the Plugins page's ranking and its Popular order read. Placeholder numbers until a
+   * block. Placeholder numbers until a
    * real source replaces them; absent when the document carries none for it.
    */
   popularity?: { installs: number; weekly: number };
