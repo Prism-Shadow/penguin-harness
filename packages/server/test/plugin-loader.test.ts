@@ -66,9 +66,12 @@ function lower(source: string): string {
 }
 
 describe("plugin list", () => {
-  it("no Project means no plugins — the default deployment shape, not an error", async () => {
+  it("loads the first Project's shipped defaults before admin provisioning", async () => {
+    expect(await readPluginClosure(root)).toEqual(["@penguinharness/multimodal-tools"]);
+    await writeProject("p1", "models = []\n");
+    expect(await readProjectPluginList(root, "p1")).toEqual(["@penguinharness/multimodal-tools"]);
+    await writeProject("p1", "[plugins]\n");
     expect(await readPluginClosure(root)).toEqual([]);
-    expect(await loadPlugins(root)).toEqual({ loaded: [], failed: new Map() });
   });
 
   it("reads the configured specifiers in order", async () => {
