@@ -1,3 +1,5 @@
+import { getModel } from "@prismshadow/penguin-core";
+import { estimateImageToolCost } from "../services/capability-cost.js";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { Capability, CapabilityCliReply } from "../api/capabilities.js";
@@ -69,17 +71,31 @@ export function capabilityRoutes(deps: CapabilityDependencies) {
     await deps.projects.patchCapabilitySettings(project, patch);
     return c.json(await settings(project));
   });
-  const usage = (project: string, session: string | undefined, limit: number, offset: number) =>
-    deps.runs
+  const usage = async (
+    project: string,
+    session: string | undefined,
+    limit: number,
+    offset: number,
+  ) => {
+    const config = await deps.projects.loadConfig(project);
+    return deps.runs
       .list(project, session, limit, offset)
-      .map(({ text: _text, sources: _sources, ...record }) => record);
-  app.get("/usage", (c) => {
+      .map(({ text: _text, sources: _sources, ...record }) => {
+        if (record.capability !== "image") return record;
+        const model = getModel(config, {
+          provider: record.model.provider,
+          model_id: record.model.modelId,
+        });
+        return { ...record, estimatedCost: estimateImageToolCost(record, model?.pricing) };
+      });
+  };
+  app.get("/usage", async (c) => {
     const project = requireValidId(c, "projectId");
     const session = sessionScope(deps, project, c.req.query("sessionId"));
     const limit = pageNumber(c.req.query("limit"), 50, 200);
     const offset = pageNumber(c.req.query("offset"), 0, Number.MAX_SAFE_INTEGER);
     return c.json({
-      runs: usage(project, session, limit, offset),
+      runs: await usage(project, session, limit, offset),
     });
   });
   app.get("/artifacts", (c) => {
@@ -204,7 +220,7 @@ export function capabilityRoutes(deps: CapabilityDependencies) {
           json,
         });
       case "usage":
-        return reply({ kind: "data", data: { runs: usage(project, session, 50, 0) }, json });
+        return reply({ kind: "data", data: { runs: await usage(project, session, 50, 0) }, json });
       case "artifacts":
         return reply({
           kind: "data",

@@ -39,6 +39,11 @@ export interface CapabilityArtifact {
   bytes: number;
   sessionId?: string;
 }
+/** How the adapter measured the request input. MMSP also represents non-token units in prompt_tokens. */
+export interface CapabilityInputMeter {
+  unit: "token" | "billable_request" | "billed_audio_second" | "billed_character" | "utf8_byte";
+  quantity: number;
+}
 export interface CapabilityUsage {
   cached_tokens: number | null;
   prompt_tokens: number | null;
@@ -55,7 +60,10 @@ export interface CapabilityResult {
   text?: string;
   sources?: { title: string; url: string; content: string }[];
   artifacts: CapabilityArtifact[];
+  /** The original MMSP stop-event buckets, including nulls for unreported counts. */
   usage: CapabilityUsage | null;
+  /** Absent for historical runs and when the adapter does not identify its input unit. */
+  inputMeter?: CapabilityInputMeter;
   measurements: { unit: string; quantity: number }[];
   error?: string;
 }

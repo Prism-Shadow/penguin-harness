@@ -1,8 +1,7 @@
 import type { ProjectConfig } from "@prismshadow/penguin-core";
-import type { UsageMetadata } from "@prismshadow/mmsp";
 import type { ModelRefDto } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
-import { runProjectModel } from "./capability-model.js";
+import { runProjectModel, type ModelOutput } from "./capability-model.js";
 
 const INSTRUCTION =
   "Edit the user's speech transcript in its original language. Preserve its meaning, facts, proper names, numbers, tone and level of formality. " +
@@ -22,7 +21,7 @@ export async function polishTranscript({
   text: string;
   signal: AbortSignal;
   sessionId?: string;
-}): Promise<{ text: string; usage: UsageMetadata | null }> {
+}): Promise<Pick<ModelOutput, "text" | "usage" | "inputMeter">> {
   signal.throwIfAborted();
   if (!text.trim()) throw new HttpError(400, "empty_transcript", "The transcript is empty.");
   const result = await runProjectModel(
@@ -39,5 +38,9 @@ export async function polishTranscript({
       "empty_polished_transcript",
       "The selected model returned no transcript.",
     );
-  return { text: result.text.trim(), usage: result.usage };
+  return {
+    text: result.text.trim(),
+    usage: result.usage,
+    ...(result.inputMeter && { inputMeter: result.inputMeter }),
+  };
 }

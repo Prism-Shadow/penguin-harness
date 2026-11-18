@@ -200,6 +200,7 @@ export class CapabilityRuns {
               context,
             );
       row.usage = output.usage;
+      if (output.inputMeter) row.inputMeter = output.inputMeter;
       if (output.text) row.text = output.text;
       if (task.capability === "search" || task.capability === "fetch") row.sources = output.sources;
       // A completed upstream request is directly observed, independently of whether its endpoint reports tokens.

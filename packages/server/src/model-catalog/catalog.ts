@@ -248,6 +248,11 @@ export interface ModelProviderInfo {
   connectDefault?: string;
 }
 
+/** Published standard rates for the text-to-image endpoint. Unknown cache rates stay absent. */
+export type ImageToolPricing =
+  | { unit: "usd_per_mtok"; input: number; output: number; thoughts: number; cached?: number }
+  | { unit: "usd_per_image"; output: number; highResolution?: number };
+
 /** A single built-in model's catalog entry (`modelId` is the upstream id; paired with `provider` it forms the catalog's unique key). */
 export interface ModelCatalogEntry {
   /** Dedicated tool model, selected through project capabilities. */
@@ -258,6 +263,7 @@ export interface ModelCatalogEntry {
   provider: string;
   contextWindow?: number;
   pricing?: ModelPricing;
+  imagePricing?: ImageToolPricing;
   /**
    * Fraction off the list price the seller is currently running (0.5 = 50% off), applied to
    * every bucket. `pricing` stays the LIST price whatever promotion is live, so a lapsed
@@ -3729,6 +3735,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   {
     provider: "google",
     modelId: "gemini-3.1-flash-lite-image",
+    imagePricing: { unit: "usd_per_mtok", input: 0.25, thoughts: 1.5, output: 30 },
     displayName: "Gemini 3.1 Flash Lite Image",
     capability: "image",
     supportsVision: true,
@@ -3736,6 +3743,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   {
     provider: "google",
     modelId: "gemini-3.1-flash-image",
+    imagePricing: { unit: "usd_per_mtok", input: 0.5, thoughts: 3, output: 60 },
     displayName: "Gemini 3.1 Flash Image",
     capability: "image",
     supportsVision: true,
@@ -3789,6 +3797,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   {
     provider: "openai",
     modelId: "gpt-image-2.5-flare",
+    imagePricing: { unit: "usd_per_mtok", input: 5, cached: 1.25, thoughts: 30, output: 30 },
     displayName: "GPT Image 2.5 Flare",
     capability: "image",
     supportsVision: false,
@@ -3838,6 +3847,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   {
     provider: "openrouter",
     modelId: "bytedance-seed/seedream-5-5",
+    imagePricing: { unit: "usd_per_image", output: 0.02, highResolution: 0.035 },
     displayName: "Seedream 5 5",
     capability: "image",
     supportsVision: false,
@@ -3847,6 +3857,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   {
     provider: "openrouter",
     modelId: "bytedance-seed/seedream-5-0-flash",
+    imagePricing: { unit: "usd_per_image", output: 0.018 },
     displayName: "Seedream 5 0 Flash",
     capability: "image",
     supportsVision: false,
@@ -3982,6 +3993,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   {
     provider: "tokendance",
     modelId: "seedream-5.0-lite",
+    imagePricing: { unit: "usd_per_image", output: 0.22 / 7 },
     displayName: "Seedream 5.0 Lite",
     capability: "image",
     supportsVision: false,

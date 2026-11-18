@@ -1,3 +1,4 @@
+import { routedClientType } from "@prismshadow/mmsp/credentials";
 import { AutoLLMClient } from "@prismshadow/mmsp";
 import type { UniConfig, UniMessage, UsageMetadata, WebData } from "@prismshadow/mmsp";
 import {
@@ -6,6 +7,7 @@ import {
   resolveEntryCredential,
   type ProjectConfig,
 } from "@prismshadow/penguin-core";
+import type { CapabilityInputMeter } from "../api/capabilities.js";
 import type { ModelRefDto } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 
@@ -20,6 +22,38 @@ export interface ModelOutput {
   sources: WebData[];
   media: ModelMedia[];
   usage: UsageMetadata | null;
+  inputMeter?: CapabilityInputMeter;
+}
+
+function inputMeter(
+  client: string | null,
+  model: string,
+  usage: UsageMetadata | null,
+  billableWebRequests: number,
+): CapabilityInputMeter | undefined {
+  const quantity = usage?.prompt_tokens;
+  if (quantity == null || !Number.isFinite(quantity) || quantity < 0) return;
+  switch (client) {
+    case null:
+    case "mmsp":
+      // The remote MMSP server chooses its own upstream adapter.
+      return;
+    case "deepseek-webtool":
+      return { unit: "billable_request", quantity: billableWebRequests };
+    case "deepseek-transcription":
+      return { unit: "billed_audio_second", quantity };
+    case "openai-transcription":
+      // A compatible endpoint can report tokens instead of the seconds Fish Audio bills.
+      return model === "fish-audio/transcribe-1"
+        ? { unit: "billed_audio_second", quantity }
+        : undefined;
+    case "deepseek-speech":
+      return { unit: "billed_character", quantity };
+    case "openai-speech":
+      return model === "fish-audio/drama-3" ? { unit: "utf8_byte", quantity } : undefined;
+    default:
+      return { unit: "token", quantity };
+  }
 }
 
 export async function runProjectModel(
@@ -45,12 +79,25 @@ export async function runProjectModel(
   const result: ModelOutput = { text: "", sources: [], media: [], usage: null };
   const chunks: string[] = [];
   let size = 0;
+  let billableWebRequests = 0;
+  const adapter = routedClientType(entry.model_id, connection.clientType);
   const requestConfig = sessionId ? { ...options, session_id: sessionId } : options;
   for await (const event of client.streamingResponse({ messages, config: requestConfig, signal })) {
     signal.throwIfAborted();
     for (const item of event.content_items) {
       if (item.type === "text.done") chunks.push(item.text);
-      if (item.type === "webtool.done") result.sources.push(...item.webdata);
+      if (item.type === "webtool.done") {
+        result.sources.push(...item.webdata);
+        // DeepSeek charges separately for each answer that contains a search result or page content.
+        if (
+          adapter === "deepseek-webtool" &&
+          item.webdata.some(
+            (source) =>
+              !entry.model_id.toLowerCase().includes("-fetch") || source.content.trim().length > 0,
+          )
+        )
+          billableWebRequests++;
+      }
       if (item.type === "inline_data.done") {
         size += item.data.byteLength;
         if (size > 256 * 1024 * 1024)
@@ -65,6 +112,8 @@ export async function runProjectModel(
     }
   }
   result.text = chunks.join("");
+  const meter = inputMeter(adapter, entry.model_id, result.usage, billableWebRequests);
+  if (meter) result.inputMeter = meter;
   return result;
 }
 
