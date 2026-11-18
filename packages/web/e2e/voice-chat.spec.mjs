@@ -7,6 +7,45 @@ test.use({
   permissions: ["microphone"],
   launchOptions: { args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"] },
 });
+// Keep references to the real browser media objects so release and playback can be verified.
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    window.voiceTracks = [];
+    const getMedia = MediaDevices.prototype.getUserMedia;
+    MediaDevices.prototype.getUserMedia = async function (...args) {
+      const stream = await getMedia.apply(this, args);
+      window.voiceTracks.push(...stream.getAudioTracks());
+      return stream;
+    };
+    const play = HTMLMediaElement.prototype.play;
+    HTMLMediaElement.prototype.play = function (...args) {
+      if (this instanceof HTMLAudioElement) window.voicePlayback = this;
+      return play.apply(this, args);
+    };
+  });
+});
+async function expectPlaying(page) {
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        Boolean(
+          window.voicePlayback &&
+          !window.voicePlayback.paused &&
+          window.voicePlayback.currentTime > 0,
+        ),
+      ),
+    )
+    .toBe(true);
+}
+async function expectReleased(page) {
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        Boolean(window.voicePlayback?.paused && !window.voicePlayback.hasAttribute("src")),
+      ),
+    )
+    .toBe(true);
+}
 const base = process.env.BASE_URL;
 const first = { provider: "custom", modelId: "deepseek-asr" };
 const second = { provider: "deepseek", modelId: "deepseek-asr" };
@@ -135,6 +174,9 @@ for (const lang of ["zh", "en"]) {
     await page.keyboard.press("Escape");
     await expect(btn(2)).toBeVisible();
     expect(captureCount).toBe(0);
+    await expect
+      .poll(() => page.evaluate(() => window.voiceTracks.map((track) => track.readyState)))
+      .toEqual(["ended"]);
     await btn(2).click();
     await expect(btn(3)).toBeVisible();
     await page.waitForTimeout(420);
@@ -299,8 +341,9 @@ test("speech uses the project's real MMSP routes and records each selected model
     await expect(read).toBeVisible();
     await read.click();
     const stop = page.getByRole("button", { name: "Stop reading", exact: true });
-    await expect(stop).toHaveAttribute("aria-pressed", "true");
+    await expectPlaying(page);
     await stop.click();
+    await expectReleased(page);
     const { runs } = await (await page.request.get(api + "/capabilities/usage")).json();
     for (const [capability, modelId] of [
       ["tts", "deepseek-tts"],
@@ -320,7 +363,11 @@ test("speech uses the project's real MMSP routes and records each selected model
         false,
       );
     }
-    expect(seen.map((call) => call.path)).toEqual(["/v1/stream", "/v1/stream", "/v1/stream"]);
+    await read.click();
+    await expectPlaying(page);
+    await page.locator('a[href="/models"]').first().click();
+    await expectReleased(page);
+    expect(seen.map((call) => call.path)).toEqual(Array(4).fill("/v1/stream"));
   } finally {
     upstream.closeAllConnections();
     await new Promise((resolve) => upstream.close(resolve));
