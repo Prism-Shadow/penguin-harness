@@ -1,7 +1,7 @@
 ---
 name: infrarsi-rsi-toolkit
 description: Speed up an existing GPU training job with InfraRSI, running the upstream engine and its infrarsi-optimize Skill at a pinned commit, with every search request answered by a fresh subagent and only verified changes reported. Use when asked to make a training job faster, raise its MFU or throughput, or tune its launch settings and hot-path code without changing what it trains.
-version: 2026.11.18.2
+version: 2026.11.18.3
 ---
 
 # InfraRSI
@@ -52,6 +52,7 @@ Make these substitutions for PenguinHarness:
 | The Agent tool, `spawn_agent`, `codex exec`         | `run_subagent`, as described below                                                                                                                                    |
 | Give your shell tool a timeout above 9 minutes      | `exec_command` waits at most two minutes: call `infrarsi agent next --wait 100`. Start `infrarsi doctor` and other commands that last longer with `run_in_background` |
 | Agree the contract and the apply step with the user | Ask in the conversation. A quick-start prompt agrees to neither; it never loosens the contract or applies a change                                                    |
+| The manifest's `search` settings (`run_noise`, `multi_fidelity` and the rest) | Leave them at the engine's defaults unless the user gives a value: the engine measures run-to-run noise itself, and a guessed noise floor can rule out every candidate before one runs |
 
 ### The answerer identity
 
