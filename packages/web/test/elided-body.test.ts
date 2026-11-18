@@ -11,7 +11,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createElement as h } from "react";
 import { ElidedBodiesContext, ElidedBodyNote } from "../src/features/chat/elided-body";
 import type { ThinkingItem } from "../src/lib/amsp/stream-model";
-import { FindRevealContext } from "../src/lib/find-expand";
+import { ActivitySearchPreview } from "@prismshadow/penguin-ui";
 import { S } from "../src/lib/strings";
 import { button, click, mount, unmountAll } from "./helpers/dom";
 
@@ -32,7 +32,7 @@ describe("a folded value that could not be fetched", () => {
     const load = vi.fn();
     const panel = (finding: boolean) =>
       h(
-        FindRevealContext.Provider,
+        ActivitySearchPreview.Provider,
         { value: finding },
         h(ElidedBodiesContext.Provider, { value: { load } }, h(ElidedBodyNote, { item: failed })),
       );

@@ -14,6 +14,7 @@
  */
 import { createContext, useContext, useEffect, useState } from "react";
 import {
+  ActivitySearchPreview,
   MessageBubble,
   TextAction,
   TransferProgress,
@@ -21,7 +22,6 @@ import {
 } from "@prismshadow/penguin-ui";
 import { elidedRecordsOf } from "../../lib/amsp/stream-model";
 import type { ThinkingItem, ToolCallItem } from "../../lib/amsp/stream-model";
-import { FindRevealContext } from "../../lib/find-expand";
 import { transferAmount } from "../../lib/history/transfer-amount";
 import { S } from "../../lib/strings";
 import type { ElidedBodies } from "./use-session-stream";
@@ -39,7 +39,7 @@ export function hasElidedNote(item: ToolCallItem | ThinkingItem): boolean {
 export function ElidedBodyNote({ item }: { item: ToolCallItem | ThinkingItem }) {
   const bodies = useContext(ElidedBodiesContext);
   // Find opens all steps to index their loaded text. Fetch full values only when reading a row.
-  const finding = useContext(FindRevealContext);
+  const finding = useContext(ActivitySearchPreview);
   useEffect(() => {
     if (!finding) bodies?.load(item);
   }, [bodies, item, finding]);

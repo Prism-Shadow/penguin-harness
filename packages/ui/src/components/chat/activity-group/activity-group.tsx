@@ -50,7 +50,7 @@
  * a fixed phrase in sentence case on the small rung, uppercased only by a theme's recipe; names
  * go in the detail, which no recipe recases.
  */
-import { useEffect, useRef, useState } from "react";
+import { createContext, useEffect, useRef, useState } from "react";
 import type { Key, ReactNode } from "react";
 import { useArrived } from "../../../motion/use-arrived";
 import { StatusIcon } from "../../icons/status-icon/status-icon";
@@ -84,6 +84,9 @@ const TITLE_INK: Readonly<Record<ActivityMark["state"], string>> = {
   done: "text-fg-muted",
   error: "text-tone-danger-fg",
 };
+
+/** A search temporarily mounted these pages. Search previews should use their already loaded content. */
+export const ActivitySearchPreview = createContext(false);
 
 /** One of the activity's steps under the head, keyed for React. */
 export interface ActivityGroupRow {
@@ -433,7 +436,9 @@ export function ActivityGroup({
                     }
                   />
                 )}
-                <ActivityRows rows={renderRows() ?? []} revealNew={!paged} />
+                <ActivitySearchPreview.Provider value={finding}>
+                  <ActivityRows rows={renderRows() ?? []} revealNew={!paged} />
+                </ActivitySearchPreview.Provider>
               </>
             ) : (
               children
