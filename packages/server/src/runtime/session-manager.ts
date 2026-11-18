@@ -97,7 +97,7 @@ import type { UsageContext } from "./usage-recorder.js";
 import { Component, Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { SessionService as SessionServiceImpl } from "../services/session-service.js";
 import type { ClassCtx, Json, Opaque } from "@prismshadow/penguin-core/kernel";
-import { Sandbox, SandboxModule } from "../sandbox/service.js";
+import { appStorageRoots, Sandbox, SandboxModule } from "../sandbox/service.js";
 import { SANDBOX_GROUP } from "../sandbox/settings-store.js";
 import { sandboxEnabledOf, sandboxPresetsOf, sandboxStartOf } from "../sandbox/settings-policy.js";
 import { PluginConfig } from "../plugin/config.js";
@@ -3189,14 +3189,17 @@ export class SessionsModule {
       // subagent — so a settings change reaches only Sessions created after it. A row from
       // before snapshots takes the settings at its first command and keeps them from then on.
       confineSpawn: (ctx: ControlEnvContext) =>
-        sandbox.confinerFor(() => {
-          const root = manager.rootSessionOf(ctx.sessionId);
-          const row = sessionsRepo.findById(root);
-          if (row?.sandbox) return row.sandbox;
-          const snapshot = sandbox.currentSettings();
-          if (row !== null) sessionsRepo.updateSandbox(root, snapshot);
-          return snapshot;
-        }),
+        sandbox.confinerFor(
+          () => {
+            const root = manager.rootSessionOf(ctx.sessionId);
+            const row = sessionsRepo.findById(root);
+            if (row?.sandbox) return row.sandbox;
+            const snapshot = sandbox.currentSettings();
+            if (row !== null) sessionsRepo.updateSandbox(root, snapshot);
+            return snapshot;
+          },
+          appStorageRoots(config.root, ctx.projectId, ctx.agentId),
+        ),
     };
 
     const notifyProjectUsers = (projectId: string, event: ServerEvent): void =>

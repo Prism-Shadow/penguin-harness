@@ -50,6 +50,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
+import envPaths from "env-paths";
 import { agentDir, agentStateDir } from "@prismshadow/penguin-core";
 import type { IfaceTable } from "@prismshadow/penguin-core/kernel";
 import type {
@@ -60,6 +61,8 @@ import type {
   ArchivedSessionsResponse,
   AgentsResponse,
 } from "../src/api/types.js";
+import type { WorkbenchAppStorage } from "../src/mechanisms/workbenches.js";
+import { isWorkbenchId } from "../src/workbenches/store.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -155,6 +158,25 @@ export default {
                   const n = (((host.getState() ?? {}) as { count?: number }).count ?? 0) + 1;
                   await host.setState({ count: n });
                   return { body: { count: n } };
+                }
+                if (req.path === "/data-paths") {
+                  if (req.method === "POST") {
+                    try {
+                      return { body: { ok: host.dataPaths(req.body as Parameters<typeof host.dataPaths>[0]) } };
+                    } catch (e) {
+                      return { status: 400, body: { error: (e as Error).message } };
+                    }
+                  }
+                  return {
+                    body: {
+                      agent: host.dataPaths(),
+                      agentCustom: host.dataPaths({ appId: "com.example.custom" }),
+                      projectDefault: host.dataPaths({ level: "project" }),
+                      project: host.dataPaths({ level: "project", appId: "com.example.shared" }),
+                      server: host.dataPaths({ level: "server", appId: "com.example.shared" }),
+                      machine: host.dataPaths({ level: "machine", appId: "com.example.shared" }),
+                    },
+                  };
                 }
                 return { status: 200, body: { greeting: ${JSON.stringify(greeting)}, path: req.path, q: req.query } };
               },
@@ -448,6 +470,121 @@ describe("a loaded workbench", { timeout: 30_000 }, () => {
     expect((await owner.get(`${BASE}/demo/ui/index.html`)).status).toBe(200);
     expect((await owner.get(`${BASE}/nope/ui/index.html`)).status).toBe(404);
     expect((await owner.get(`${BASE}/nope/api/`)).status).toBe(404);
+  });
+
+  it("exposes persistent app storage directories via host.dataPaths()", async () => {
+    const appId = `${AGENT}.demo`;
+    const customAppId = "com.example.custom";
+    const sharedAppId = "com.example.shared";
+    const agentBase = path.join(agentDir(t.root, PROJECT, AGENT), "app");
+    const projectBase = path.join(t.root, PROJECT, "app");
+    const serverBase = path.join(t.root, "app");
+    const machineBase = path.join(envPaths("penguin", { suffix: "" }).data, "app");
+
+    const fromHost = (await (await owner.get(`${BASE}/demo/api/data-paths`)).json()) as {
+      agent: WorkbenchAppStorage;
+      agentCustom: WorkbenchAppStorage;
+      projectDefault: WorkbenchAppStorage;
+      project: WorkbenchAppStorage;
+      server: WorkbenchAppStorage;
+      machine: WorkbenchAppStorage;
+    };
+    expect(fromHost.agent).toEqual({
+      appId,
+      level: "agent",
+      dataDir: path.join(agentBase, "data", appId),
+      cacheDir: path.join(agentBase, "cache", appId),
+      stateDir: path.join(agentBase, "state", appId),
+    });
+    expect(fromHost.agentCustom).toEqual({
+      appId: customAppId,
+      level: "agent",
+      dataDir: path.join(agentBase, "data", customAppId),
+      cacheDir: path.join(agentBase, "cache", customAppId),
+      stateDir: path.join(agentBase, "state", customAppId),
+    });
+    expect(fromHost.projectDefault).toEqual({
+      appId,
+      level: "project",
+      dataDir: path.join(projectBase, "data", appId),
+      cacheDir: path.join(projectBase, "cache", appId),
+      stateDir: path.join(projectBase, "state", appId),
+    });
+    expect(fromHost.project).toEqual({
+      appId: sharedAppId,
+      level: "project",
+      dataDir: path.join(projectBase, "data", sharedAppId),
+      cacheDir: path.join(projectBase, "cache", sharedAppId),
+      stateDir: path.join(projectBase, "state", sharedAppId),
+    });
+    expect(fromHost.server).toEqual({
+      appId: sharedAppId,
+      level: "server",
+      dataDir: path.join(serverBase, "data", sharedAppId),
+      cacheDir: path.join(serverBase, "cache", sharedAppId),
+      stateDir: path.join(serverBase, "state", sharedAppId),
+    });
+    expect(fromHost.machine).toEqual({
+      appId: sharedAppId,
+      level: "machine",
+      dataDir: path.join(machineBase, "data", sharedAppId),
+      cacheDir: path.join(machineBase, "cache", sharedAppId),
+      stateDir: path.join(machineBase, "state", sharedAppId),
+    });
+
+    for (const validAppId of [
+      "report_",
+      "report-",
+      "_agent.demo",
+      "-agent.demo",
+      "a".repeat(200),
+    ]) {
+      const res = await owner.post(`${BASE}/demo/api/data-paths`, { appId: validAppId });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { ok: WorkbenchAppStorage };
+      expect(body.ok.appId).toBe(validAppId);
+    }
+
+    expect(isWorkbenchId("demo")).toBe(true);
+    expect(isWorkbenchId("report.v2")).toBe(true);
+    for (const badWorkbenchId of [
+      "",
+      ".",
+      "..",
+      "report.",
+      "report..v2",
+      "CON",
+      "nul.txt",
+      "notes.penguin-tmp1",
+    ]) {
+      expect(isWorkbenchId(badWorkbenchId)).toBe(false);
+    }
+
+    const invalidCases: Array<{ input: unknown; match: RegExp }> = [
+      { input: { appId: "" }, match: /invalid appId/ },
+      { input: { appId: "." }, match: /invalid appId/ },
+      { input: { appId: ".." }, match: /invalid appId/ },
+      { input: { appId: "a..b" }, match: /invalid appId/ },
+      { input: { appId: "../escape" }, match: /invalid appId/ },
+      { input: { appId: "a/b" }, match: /invalid appId/ },
+      { input: { appId: "a\\b" }, match: /invalid appId/ },
+      { input: { appId: "bad\0id" }, match: /invalid appId/ },
+      { input: { appId: "CON" }, match: /invalid appId/ },
+      { input: { appId: "nul.txt" }, match: /invalid appId/ },
+      { input: { appId: "bad:colon" }, match: /invalid appId/ },
+      { input: { appId: "trailing." }, match: /invalid appId/ },
+      { input: { appId: ".leading" }, match: /invalid appId/ },
+      { input: { appId: "a".repeat(201) }, match: /invalid appId/ },
+      { input: { appId: null }, match: /invalid appId/ },
+      { input: { level: null }, match: /invalid level/ },
+      { input: { level: "cloud" }, match: /invalid level/ },
+    ];
+    for (const { input, match } of invalidCases) {
+      const res = await owner.post(`${BASE}/demo/api/data-paths`, input);
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toMatch(match);
+    }
   });
 
   it("notices an Agent's FIRST workbench, made with nothing but its file tools", async () => {

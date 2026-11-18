@@ -487,6 +487,8 @@ Skill 分两步加载：先加载索引，正文按需读取。
 
 工作台每次成功加载且源码有变化时，都会记录一个版本，即 `agent_state.git/` 中的一次提交。这是与 Agent 的 `agent_state/` 并列的裸 git 仓库，由服务端自行写入，不需要安装 git。只有工作台的源码入库；它的 `state.json`、服务端生成的 `.build/` 与 `.harness/`、`node_modules/`、Vault 以及 Agent State 的其余内容都不入库。恢复某个版本会把源码精确换成该版本并重新加载，`state.json` 保持不变。仓库位于 Agent State 之外，Agent State 的快照、导出与导入既不携带它，也不改动它。装有 git 时可以读取历史，例如 `git --git-dir=<agent>/agent_state.git log --oneline -- workbenches/<id>`；不要向仓库提交，也不要删除它。关闭、恢复、移除、导出或导入工作台，见[工作台](/agents#工作台)。
 
+工作台通过 `host.dataPaths(opts?)` 读取持久应用存储目录（`dataDir`、`cacheDir`、`stateDir`），该方法返回 `{ appId, level, dataDir, cacheDir, stateDir }`，默认为 `agent` 层级下的 `<agentId>.<workbenchId>`（位于 `<project>/agents/<agent>/app/{data,cache,state}/<app_id>`），也可通过 `opts`（`{ level, appId }`）获取 `project`、`server` 或 `machine` 层级的目录。
+
 工作台可以在 Agent 工作时实时跟随它发起的会话。页面引入 `../sdk/workbench.js`，这是服务端为每个工作台提供的页面 SDK；`followSession(sessionId)` 以当前登录用户的权限读取该 Session 的 [AMSP 记录](/amsp-records)，回答因此随 Agent 的生成逐字出现；`abortSession(sessionId)` 停止当前这一轮。工作台的服务端代码通过 `host.subscribe(sessionId, listener)` 收到同样的记录。发起任务与保存结果仍由工作台自己的处理器完成，用 `host.sessionResult` 读取结果、定时轮询的做法照常可用。这些都不需要 Agent API 密钥。
 
 工作台页面也可以用 TSX 编写，直接使用应用自己的组件。在 `ui/` 下的 `index.html` 旁边放一个 `app.tsx`，页面里按 `app.js` 加载它，从 `react`、`react-dom/client` 和 `@prismshadow/penguin-ui` 导入即可。不用安装任何东西：服务端会像检查工作台的服务端代码一样严格地检查页面类型，再编译它，React 和组件也由服务端自己提供，所以页面运行的就是检查它的那一份，离线也一样。类型出错，或者导入了这几个之外的模块，加载会失败并指出文件和行号，上一个版本继续运行。每个组件的确切属性都在 `.harness/ui/` 里，由服务端在编译页面时写入。

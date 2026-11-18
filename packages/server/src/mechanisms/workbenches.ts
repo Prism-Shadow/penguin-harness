@@ -93,6 +93,21 @@ export interface WorkbenchRecord {
   origin?: string[];
 }
 
+/** Scope level of persistent app storage (`machine`, `server`, `project` or `agent`). */
+export type WorkbenchAppLevel = "agent" | "project" | "server" | "machine";
+
+/**
+ * One persistent app storage entry a workbench or its Agent may access: its `appId`, scope `level`,
+ * and resolved `dataDir`, `cacheDir` and `stateDir` paths on this machine.
+ */
+export interface WorkbenchAppStorage {
+  appId: string;
+  level: WorkbenchAppLevel;
+  dataDir: string;
+  cacheDir: string;
+  stateDir: string;
+}
+
 /** What a workbench provides (its manifest: `provides: { main: "@prismshadow/penguin-server#WorkbenchMain" }`). */
 @Interface()
 export abstract class WorkbenchMain {
@@ -138,6 +153,12 @@ export abstract class WorkbenchHost {
    * published for the channel hub's idle window ends by itself.
    */
   abstract subscribe(sessionId: string, listener: (record: WorkbenchRecord) => void): () => void;
+  /**
+   * The persistent app storage directories for this workbench (`{ appId, level, dataDir, cacheDir,
+   * stateDir }`), defaulting to `<agentId>.<workbenchId>` at `agent` level (`opts` may override
+   * `level` — `"agent" | "project" | "server" | "machine"` — and `appId`).
+   */
+  abstract dataPaths(opts?: { level?: WorkbenchAppLevel; appId?: string }): WorkbenchAppStorage;
   /** The workbench's own document (`state.json`, kept by the server across reloads and rollbacks). */
   abstract getState(): unknown;
   abstract setState(state: unknown): Promise<void>;
