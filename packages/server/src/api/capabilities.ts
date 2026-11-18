@@ -1,7 +1,14 @@
 import type { ModelRefDto } from "./types.js";
 
 export type Capability = "search" | "fetch" | "image" | "video" | "tts" | "stt";
+/** An active server plugin contributing one operation to this Project. */
+export interface AvailableCapability {
+  key: Capability;
+  title: { en: string; zh: string };
+  package: string;
+}
 export interface CapabilitySettings {
+  available: AvailableCapability[];
   bindings: Partial<Record<Capability, ModelRefDto>>;
   candidates: Record<Capability | "chat", ModelRefDto[]>;
   voicePolish: { enabled: boolean; model: ModelRefDto | null };
