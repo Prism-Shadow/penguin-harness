@@ -154,8 +154,8 @@
   --_action-bg: color-mix(in srgb, var(--ui-accent) 16%, #ffd3dc);
   --_action-hover: color-mix(in srgb, var(--ui-accent) 24%, #ffc3cd);
   --_card: color-mix(in srgb, var(--ui-accent) 5%, #fff7f0);
-  --_head-bg: color-mix(in srgb, var(--ui-accent) 8%, #e4f2ed);
-  --_field-bg: color-mix(in srgb, var(--ui-accent) 5%, #fff7ef);
+  --_head-bg: #d7f1df;
+  --_field-bg: #ffedcf;
   --_well: color-mix(in srgb, var(--ui-accent) 8%, #e9e3f2);
   --_nav-active: #ffffff;
   --_sticker-ring: inset 0 0 0 1.5px var(--ui-line), 0 2px 0 var(--ui-line);
@@ -168,8 +168,8 @@
   --_action-bg: color-mix(in srgb, var(--ui-accent) 28%, #4c354b);
   --_action-hover: color-mix(in srgb, var(--ui-accent) 36%, #543c53);
   --_card: color-mix(in srgb, var(--ui-accent) 5%, #2d2934);
-  --_head-bg: color-mix(in srgb, var(--ui-accent) 8%, #334041);
-  --_field-bg: color-mix(in srgb, var(--ui-accent) 5%, #302b35);
+  --_head-bg: #254540;
+  --_field-bg: #412a45;
   --_well: color-mix(in srgb, var(--ui-accent) 8%, #24212e);
   --_nav-active: color-mix(in srgb, var(--ui-accent) 16%, #3e3546);
   --_sticker-ring: inset 0 0 0 1.5px var(--ui-line), 0 2px 0 rgb(0 0 0 / 0.35);
@@ -228,6 +228,14 @@
   :root[data-theme="doodle"]
     .ui-glass:not([data-glass]):where([role="dialog"], [data-slot="composer"]) {
     border-radius: 1.35rem 1.65rem 1.4rem 1.6rem;
+  }
+  :root[data-theme="doodle"] .ui-glass[role="dialog"]:not([data-glass]) {
+    border-width: 2px;
+  }
+  :root[data-theme="doodle"]
+    .ui-glass[role="dialog"]
+    > :is([data-slot="head"], [data-slot="foot"]) {
+    border-color: var(--ui-line);
   }
   :root[data-theme="doodle"] .ui-glass:not([data-glass]):where(.rounded-full) {
     border-radius: 9999px;
@@ -347,9 +355,7 @@
   font-synthesis-weight: auto;
 }
 
-/* Standalone frames (file cards, tool cards, code blocks, framed tables, agent cards): crisp white
-   picture-book sticker cards with a 2px caramel-cocoa border and a warm butter-cream header band
-   parted by a dashed notebook rule. */
+/* Apricot and plum paper cards with a mint header and a dashed binding rule. */
 :root[data-theme="doodle"] .ui-frame:not(:has(> .ui-activity)) {
   border-width: 2px;
   border-color: var(--ui-line);
@@ -365,22 +371,19 @@
   background-color: var(--ui-canvas);
 }
 
-/* The agent's work group: a warm cream notebook block with 2px top-and-bottom rules and visible
-   status marks (the hand-drawn scribble spinner and checkmarks). */
+/* The frame owns the notebook edge. Its sticky head and tool rows paint inside the ink. */
 :root[data-theme="doodle"] .ui-frame:has(> .ui-activity) {
-  border-color: transparent;
-  border-top: 2px solid var(--ui-line);
-  border-bottom: 2px solid var(--ui-line);
+  border: 2px solid var(--_pen);
   border-radius: var(--ui-radius-lg);
-  background-color: var(--_card);
+  background-color: var(--ui-surface);
 }
 :root[data-theme="doodle"] .ui-frame:has(> .ui-activity) > [data-slot="head"] {
   background-color: var(--_head-bg);
   border-bottom: 1.5px dashed var(--ui-line);
-  border-radius: var(--ui-radius-lg) var(--ui-radius-lg) 0 0;
+  border-radius: 0;
 }
 :root[data-theme="doodle"] .ui-frame:has(> .ui-activity) .ui-tree .ui-activity {
-  background-color: var(--_card);
+  background-color: var(--ui-surface);
 }
 :root[data-theme="doodle"] .ui-activity:not([data-state="error"]) [data-slot="mark"] {
   display: inline-flex;
@@ -391,15 +394,17 @@
    ring around the group. */
 :root[data-theme="doodle"] .ui-field {
   background-color: var(--_field-bg);
+  border-inline: 1px solid var(--ui-line);
+  border-block-end-width: 0;
 }
 :root[data-theme="doodle"] .ui-field + .ui-field {
-  border-top: 1.5px dashed var(--ui-line);
+  border-top: 1px dashed var(--ui-line);
 }
 :root[data-theme="doodle"] .ui-field:first-child {
-  border-top: 2px solid var(--ui-line);
+  border-top: 1px solid var(--ui-line);
 }
 :root[data-theme="doodle"] .ui-field:last-child {
-  border-bottom: 2px solid var(--ui-line);
+  border-bottom: 1px solid var(--ui-line);
 }
 :root[data-theme="doodle"] .ui-field > [data-slot="label"] {
   font-weight: 600;
@@ -411,33 +416,31 @@
   border-inline-start: 1.5px dashed var(--ui-line-emphasis);
 }
 
-/* Inline notices & banners: warm tonal pastel callout strips with 2px top-and-bottom rules and a
-   plump ringed sticker dot. */
+/* Each banner keeps its status colour around the whole rounded paper strip. */
 :root[data-theme="doodle"] .ui-notice:not(button) {
   background-color: var(--_field-bg);
-  border-top: 2px solid var(--ui-line);
-  border-bottom: 2px solid var(--ui-line);
+  border: 1px solid var(--ui-line);
   box-shadow: none;
 }
 :root[data-theme="doodle"] .ui-notice[data-tone="info"]:not(button) {
   background-color: var(--ui-tone-info-bg);
-  border-top-color: var(--ui-tone-info-line);
-  border-bottom-color: var(--ui-tone-info-line);
+  border-color: var(--ui-tone-info-line);
+  color: var(--ui-tone-info-fg);
 }
 :root[data-theme="doodle"] .ui-notice[data-tone="success"]:not(button) {
   background-color: var(--ui-tone-success-bg);
-  border-top-color: var(--ui-tone-success-line);
-  border-bottom-color: var(--ui-tone-success-line);
+  border-color: var(--ui-tone-success-line);
+  color: var(--ui-tone-success-fg);
 }
 :root[data-theme="doodle"] .ui-notice[data-tone="warning"]:not(button) {
   background-color: var(--ui-tone-attention-bg);
-  border-top-color: var(--ui-tone-attention-line);
-  border-bottom-color: var(--ui-tone-attention-line);
+  border-color: var(--ui-tone-attention-line);
+  color: var(--ui-tone-attention-fg);
 }
 :root[data-theme="doodle"] .ui-notice[data-tone="danger"]:not(button) {
   background-color: var(--ui-tone-danger-bg);
-  border-top-color: var(--ui-tone-danger-line);
-  border-bottom-color: var(--ui-tone-danger-line);
+  border-color: var(--ui-tone-danger-line);
+  color: var(--ui-tone-danger-fg);
 }
 :root[data-theme="doodle"] .ui-notice::before {
   scale: 1.3;
@@ -526,8 +529,9 @@
 }
 :root[data-theme="doodle"] .ui-library [data-slot="group"] {
   background-color: var(--ui-surface);
+  border: 1px solid var(--_pen);
   border-radius: var(--ui-radius-lg);
-  box-shadow: var(--_sticker-ring);
+  box-shadow: 0 2px 0 var(--_paper-shadow);
 }
 :root[data-theme="doodle"] .ui-library [data-slot="head"] {
   background-color: var(--_head-bg);
@@ -536,7 +540,7 @@
 :root[data-theme="doodle"] .ui-library [data-slot="card"] {
   background-color: var(--ui-surface);
   border-radius: var(--ui-radius-md);
-  box-shadow: var(--_sticker-ring);
+  box-shadow: 0 2px 0 var(--_paper-shadow);
 }
 :root[data-theme="doodle"] .ui-library [data-slot="name"] {
   font-weight: 700;

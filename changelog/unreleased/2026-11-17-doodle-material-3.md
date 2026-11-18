@@ -14,3 +14,5 @@ Buttons, fields, menus, dialogs and the composer draw their surface and rounded 
 The start page’s Agents, RSI algorithms and Benchmarks share a paper card with perforated dividers and three marker colours under the counts. Each column opens its own list.
 
 The Evaluation Center shows the score and its change directly on the card, with the same space for the unevaluated state.
+
+Model and tool cards use apricot paper in light mode and plum in dark mode. The running activity keeps its ink outline when expanded or folded. Settings groups, the initial-password reminder and the change-password dialog have a continuous border.

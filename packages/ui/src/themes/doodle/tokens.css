@@ -19,14 +19,13 @@
   --color-gray-900: #402e40;
   --color-gray-950: #211712;
 
-  /* ---- Colour — surfaces: warm milk-vanilla paper (`#fffaf4`) and crisp white sticker stock
-     (`#ffffff`); grouped rows and chips sit on warm custard-biscuit cream kissed by the pen. ---- */
+  /* ---- Colour — surfaces: vanilla canvas, apricot cards and golden paper wells. ---- */
   --ui-canvas: #fffaf4;
-  --ui-surface: #ffffff;
-  --ui-surface-muted: color-mix(in srgb, var(--ui-accent) 3%, #fbf5e8);
+  --ui-surface: #fff3d7;
+  --ui-surface-muted: #fff1d9;
   --ui-fill-neutral: color-mix(in srgb, var(--ui-accent) 7%, #f0e4ce);
   --ui-inset: #f6efe0;
-  --ui-overlay: #fffaf6;
+  --ui-overlay: #fff6e7;
   --ui-overlay-backdrop: rgb(50 36 29 / 0.38);
 
   /* ---- Colour — text: berry ink on paper ---- */
@@ -39,7 +38,7 @@
   --ui-link-decoration: none;
 
   /* ---- Colour — lines: soft pink and plum rules ---- */
-  --ui-line: #ddc7cf;
+  --ui-line: #ba8d98;
   --ui-line-muted: color-mix(in srgb, var(--ui-accent) 14%, #f5ebd6);
   --ui-line-emphasis: #907285;
   --ui-divider: #e3d2ba;
@@ -279,11 +278,11 @@
 
   /* ---- Colour — surfaces ---- */
   --ui-canvas: #211d29;
-  --ui-surface: #2a2532;
-  --ui-surface-muted: color-mix(in srgb, var(--ui-accent) 5%, #28231e);
+  --ui-surface: #36243f;
+  --ui-surface-muted: #3c2744;
   --ui-fill-neutral: color-mix(in srgb, var(--ui-accent) 7%, #352f29);
   --ui-inset: #171412;
-  --ui-overlay: #312936;
+  --ui-overlay: #39273f;
   --ui-overlay-backdrop: rgb(0 0 0 / 0.55);
 
   /* ---- Colour — text ---- */
@@ -295,9 +294,9 @@
   --ui-fg-link-hover: #b0d0f7;
 
   /* ---- Colour — lines ---- */
-  --ui-line: #4d443b;
-  --ui-line-muted: color-mix(in srgb, var(--ui-accent) 10%, #332d27);
-  --ui-line-emphasis: #706559;
+  --ui-line: #8b6a88;
+  --ui-line-muted: #61465e;
+  --ui-line-emphasis: #ac86a5;
   --ui-divider: #423b34;
 
   /* ---- Colour — accent ---- */
