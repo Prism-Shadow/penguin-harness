@@ -7,6 +7,7 @@ import type {
   CapabilityArtifact,
   CapabilityResult,
   CapabilitySettings,
+  ProjectCreateResponse,
   SessionCreateResponse,
 } from "../src/api/types.js";
 
@@ -36,20 +37,24 @@ describe("project model capabilities", () => {
     config: Record<string, unknown>;
     messages: { content_items: { text?: string; data?: string }[] }[];
     auth?: string;
+    path?: string;
   }[] = [];
   beforeAll(async () => {
     upstream = createServer(async (req, res) => {
       const data = [];
       for await (const chunk of req) data.push(chunk);
       const wire = JSON.parse(Buffer.concat(data).toString());
-      received.push({ ...wire, auth: req.headers.authorization });
+      received.push({ ...wire, auth: req.headers.authorization, path: req.url });
       if (wire.messages[0].content_items[0].text === "wait") {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write(": waiting\n\n");
         return;
       }
       const input = wire.messages[0].content_items[0].text;
-      const key = Object.entries(ids).find(([, model]) => model === wire.model)?.[0];
+      const key =
+        wire.model === "gemini-3.1-flash-image"
+          ? "image"
+          : Object.entries(ids).find(([, model]) => model === wire.model)?.[0];
       const item =
         input === "no image"
           ? { type: "text.done", text: "unavailable" }
@@ -227,6 +232,61 @@ describe("project model capabilities", () => {
     expect(((await cancelled.json()) as CapabilityResult).status).toBe("cancelled");
     const status = await api.get(tools + "/runs/" + start.id);
     expect(((await status.json()) as CapabilityResult).artifacts).toEqual([]);
+  });
+  it("keeps one binding per capability per Project, including simultaneous saves", async () => {
+    const created = await api.post("/api/projects", {
+      projectId: "scope_test",
+      name: "Second library",
+    });
+    expect(created.status, await created.clone().text()).toBe(201);
+    const { project } = (await created.json()) as ProjectCreateResponse;
+    const other = "/api/projects/" + project.projectId;
+    const otherTools = other + "/capabilities";
+    const replacement = { provider: "custom", modelId: "gemini-3.1-flash-image" };
+    const models = [...Object.values(bindings), replacement];
+    expect(
+      (
+        await api.put(other + "/models", {
+          providers: {
+            custom: { clientType: "mmsp", baseUrl: endpoint + "/second", apiKey: "second-project" },
+          },
+          models,
+        })
+      ).status,
+    ).toBe(200);
+    const settings = async (path: string) =>
+      (await (await api.get(path)).json()) as CapabilitySettings;
+    expect((await settings(otherTools)).bindings).toEqual({});
+    const unbound = await api.post(otherTools + "/image/run", { text: "no fallback" });
+    expect(unbound.status).toBe(409);
+    const writes = await Promise.all(
+      Object.entries(bindings).map(([key, ref]) =>
+        api.patch(otherTools, { bindings: { [key]: ref } }),
+      ),
+    );
+    expect(writes.every((r) => r.ok)).toBe(true);
+    expect((await settings(otherTools)).bindings).toEqual(bindings);
+    expect((await api.patch(otherTools, { bindings: { image: replacement } })).status).toBe(200);
+    expect((await settings(otherTools)).bindings).toEqual({ ...bindings, image: replacement });
+    expect((await settings(tools)).bindings).toEqual(bindings);
+    expect((await api.patch(tools, { bindings: { image: replacement } })).status).toBe(400);
+    for (const [path, expected, credential, endpointPath] of [
+      [tools, ids.image, "local-test", "/v1/stream"],
+      [otherTools, replacement.modelId, "second-project", "/v1/second/stream"],
+    ] as const) {
+      const response = await api.post(path + "/image/run", { text: "an independent image" });
+      expect(response.status).toBe(200);
+      const run = (await response.json()) as CapabilityResult;
+      expect(run.model.modelId).toBe(expected);
+      expect(received.at(-1)).toMatchObject({
+        model: expected,
+        auth: "Bearer " + credential,
+        path: endpointPath,
+      });
+      const otherPath = path === tools ? otherTools : tools;
+      expect((await api.get(otherPath + "/runs/" + run.id)).status).toBe(404);
+      expect((await api.get(otherPath + "/artifacts/" + run.artifacts[0]!.id)).status).toBe(404);
+    }
   });
   it("follows a model rekey and clears bindings whose models are subsequently deleted", async () => {
     const original = ["gpt-6.2-sol", ...Object.values(ids)].map((modelId) => ({
