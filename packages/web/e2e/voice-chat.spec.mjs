@@ -223,7 +223,15 @@ test("speech uses the project's real MMSP routes and records each selected model
     const project = projects[0].projectId;
     const api = base + "/api/projects/" + project;
     const ref = (modelId) => ({ provider: "custom", modelId });
-    const models = ["deepseek-tts", "deepseek-asr", "deepseek-flash"].map((id) => ({
+    const tools = [
+      ["image", "Image generation", "gpt-image-2.5-flare"],
+      ["video", "Video generation", "gemini-omni-1.2-flash"],
+      ["tts", "Speech synthesis", "deepseek-tts"],
+      ["stt", "Speech transcription", "deepseek-asr"],
+      ["search", "Web search", "deepseek-search"],
+      ["fetch", "Read a URL", "deepseek-fetch"],
+    ];
+    const models = [...tools.map(([, , model]) => model), "deepseek-flash"].map((id) => ({
       ...ref(id),
       baseUrl: "http://127.0.0.1:" + upstream.address().port + "/v1",
       clientType: "mmsp",
@@ -246,23 +254,30 @@ test("speech uses the project's real MMSP routes and records each selected model
     });
     expect(result.ok(), await result.text()).toBeTruthy();
     const capabilities = await (await page.request.get(api + "/capabilities")).json();
-    expect(capabilities.candidates.stt).toContainEqual(ref("deepseek-asr"));
-    expect(capabilities.candidates.tts).toContainEqual(ref("deepseek-tts"));
+    for (const [capability, , model] of tools) {
+      expect(capabilities.candidates[capability]).toEqual([ref(model)]);
+    }
     expect(JSON.stringify(capabilities)).not.toContain("local-voice-test");
     const settings = await page.request.patch(api + "/capabilities", {
       data: {
-        bindings: { tts: ref("deepseek-tts") },
         voicePolish: { enabled: true, model: ref("deepseek-flash") },
       },
     });
     expect(settings.ok(), await settings.text()).toBeTruthy();
     await page.goto(base + "/models");
     await page.getByRole("button", { name: "CLI and voice models", exact: true }).click();
-    await page.getByRole("button", { name: /^Speech transcription/ }).click();
-    await page.getByRole("option", { name: "deepseek-asr · custom", exact: true }).click();
+    for (const [, label, model] of tools) {
+      await page.getByRole("button", { name: new RegExp("^" + label) }).click();
+      await page.getByRole("option", { name: model + " · custom", exact: true }).click();
+    }
+    const expectedBindings = Object.fromEntries(
+      tools.map(([capability, , model]) => [capability, ref(model)]),
+    );
     await expect
-      .poll(async () => (await (await page.request.get(api + "/capabilities")).json()).bindings.stt)
-      .toEqual(ref("deepseek-asr"));
+      .poll(async () => (await (await page.request.get(api + "/capabilities")).json()).bindings)
+      .toEqual(expectedBindings);
+    if (process.env.VOICE_EVIDENCE)
+      await page.screenshot({ path: process.env.VOICE_EVIDENCE + "/all-six-project-models.png" });
     await page.keyboard.press("Escape");
     await page.goto(base + "/chat/new");
     await page.getByRole("button", { name: "Dictate", exact: true }).click();
@@ -292,13 +307,17 @@ test("speech uses the project's real MMSP routes and records each selected model
       ["stt", "deepseek-asr"],
       ["voice-polish", "deepseek-flash"],
     ]) {
-      expect(runs).toContainEqual(
-        expect.objectContaining({
-          capability,
-          model: ref(modelId),
-          status: "completed",
-          usage: expect.objectContaining({ prompt_tokens: 10, response_tokens: 4 }),
-        }),
+      const run = runs.find((r) => r.capability === capability);
+      expect(run).toMatchObject({ model: ref(modelId), status: "completed" });
+      expect(run.usage).toEqual({
+        cached_tokens: 0,
+        prompt_tokens: 10,
+        thoughts_tokens: 0,
+        response_tokens: 4,
+      });
+      expect(run.measurements).toContainEqual({ unit: "request", quantity: 1 });
+      expect(Object.keys(run).some((key) => /cost|price|amount|currency|charge/i.test(key))).toBe(
+        false,
       );
     }
     expect(seen.map((call) => call.path)).toEqual(["/v1/stream", "/v1/stream", "/v1/stream"]);
