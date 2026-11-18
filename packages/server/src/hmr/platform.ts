@@ -22,6 +22,7 @@
  * ones it does not own. A pushed bundle therefore replaces the business wholesale:
  * adding or changing an endpoint or a service needs no runtime change.
  */
+import path from "node:path";
 import type { WebSocket } from "ws";
 import type {
   Impl,
@@ -90,7 +91,8 @@ import {
 } from "@prismshadow/penguin-core";
 import { pluginsPrefix } from "../plugin/install.js";
 import { serverPackageDir } from "../plugin/library-host.js";
-import { pushedLibraryDir, pushedBenchmarksDir } from "./asset-archives.js";
+import { usePushedGitDirectory } from "../workbenches/git-binary.js";
+import { pushedLibraryDir, pushedBenchmarksDir, unpackedAssetsDir } from "./asset-archives.js";
 import { UnsatisfiedPluginsError, bootWithoutUnsatisfied } from "../plugin/unsatisfied.js";
 import type { PluginSelection } from "../plugin/unsatisfied.js";
 import { takePushSlip } from "./push-plugins.js";
@@ -427,6 +429,10 @@ async function createInner(
   // that seeds an Agent with it (company mode's CEO, `agent-company`) fails on every attempt.
   // Otherwise it is the one the server package was installed with: its own dependencies name
   // the plugin packages (core no longer does), so it names itself the library's host.
+  if (caps !== null) {
+    const assets = caps.hmr.assetsDir();
+    usePushedGitDirectory(assets ? path.join(unpackedAssetsDir(assets), "agent-git") : null);
+  }
   if (caps !== null) usePushedPluginLibrary(pushedLibraryDir(caps.hmr.assetsDir()));
   useLibraryHost(serverPackageDir());
   if (caps !== null) usePushedBenchmarkDirectory(pushedBenchmarksDir(caps.hmr.assetsDir()));

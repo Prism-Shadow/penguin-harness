@@ -169,6 +169,16 @@ jobs:
         run: pnpm --filter '@prismshadow/penguin-cli...' --filter '@prismshadow/penguin-web...' build
       - name: Stamped version and plugin-registry regressions
         run: bash scripts/release-npm.sh test-smoke
+      # Run the server from its actual tarball. pnpm normalizes executable bits when it
+      # packs; testing the checkout alone cannot detect a Git binary installed as 0644.
+      - name: Agent State from the npm tarball with no Git on PATH
+        run: |
+          packed=$(mktemp -d)
+          trap 'rm -rf "$packed"' EXIT
+          pnpm --filter @prismshadow/penguin-server pack --pack-destination "$packed"
+          tar -xzf "$packed"/prismshadow-penguin-server-*.tgz -C "$packed"
+          ln -s "$PWD/packages/server/node_modules" "$packed/package/node_modules"
+          node scripts/check-agent-state-git.mjs "$packed/package/dist/index.js"
       # The release stages two things into the package directories before it publishes: the root
       # LICENSE, and the built web assets as the server's web-dist/. Neither exists in the repo, and
       # npm silently skips a `files` entry that is not on disk -- so packing without them proves the

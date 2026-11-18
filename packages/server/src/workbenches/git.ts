@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
+import { agentGit } from "./git-binary.js";
 
 /** Keep normal Git configuration and identity, while addressing only the Agent's bare repo. */
 function environment(): NodeJS.ProcessEnv {
@@ -26,49 +27,55 @@ export async function runGit(
   args: string[],
   opts: { input?: Uint8Array | string; env?: NodeJS.ProcessEnv; allowMissing?: boolean } = {},
 ): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(
-      "git",
-      [
-        "--git-dir",
-        gitdir,
-        "--no-replace-objects",
-        // HEAD is a file, so this path can never contain executable hook programs.
-        "-c",
-        `core.hooksPath=${path.join(gitdir, "HEAD")}`,
-        ...args,
-      ],
-      {
-        env: { ...environment(), ...opts.env },
-        windowsHide: true,
-      },
-    );
-    const stdout: Buffer[] = [],
-      stderr: Buffer[] = [];
-    child.stdout.on("data", (data: Buffer) => stdout.push(data));
-    child.stderr.on("data", (data: Buffer) => stderr.push(data));
-    child.on("error", (cause: NodeJS.ErrnoException) => {
-      reject(
-        cause.code === "ENOENT"
-          ? new Error(
-              "Git is required for Agent State version history. Install Git and make it available on PATH.",
-              { cause },
-            )
-          : cause,
+  const binary = agentGit();
+  try {
+    return await executeGit(binary);
+  } catch (err) {
+    // An absent dynamic loader (for example glibc on Alpine) fails before Git executes.
+    // Commands that actually ran, including writes rejected by Git, are never replayed.
+    if (binary !== "git" && (err as NodeJS.ErrnoException).code === "ENOENT")
+      return executeGit("git");
+    throw err;
+  }
+
+  function executeGit(program: string): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+      const child = spawn(
+        program,
+        [
+          "--git-dir",
+          gitdir,
+          "--no-replace-objects",
+          // HEAD is a file, so this path can never contain executable hook programs.
+          "-c",
+          `core.hooksPath=${path.join(gitdir, "HEAD")}`,
+          ...args,
+        ],
+        {
+          env: { ...environment(), ...opts.env },
+          windowsHide: true,
+        },
       );
+      const stdout: Buffer[] = [],
+        stderr: Buffer[] = [];
+      child.stdout.on("data", (data: Buffer) => stdout.push(data));
+      child.stderr.on("data", (data: Buffer) => stderr.push(data));
+      child.on("error", reject);
+      child.stdin.on("error", (cause: NodeJS.ErrnoException) => {
+        if (cause.code !== "EPIPE") reject(cause);
+      });
+      child.on("close", (code) => {
+        if (code === 0 || (opts.allowMissing && code === 1)) resolve(Buffer.concat(stdout));
+        else
+          reject(
+            new Error(
+              `git ${args[0]}: ${Buffer.concat(stderr).toString().trim() || `exit ${code}`}`,
+            ),
+          );
+      });
+      child.stdin.end(opts.input);
     });
-    child.stdin.on("error", (cause: NodeJS.ErrnoException) => {
-      if (cause.code !== "EPIPE") reject(cause);
-    });
-    child.on("close", (code) => {
-      if (code === 0 || (opts.allowMissing && code === 1)) resolve(Buffer.concat(stdout));
-      else
-        reject(
-          new Error(`git ${args[0]}: ${Buffer.concat(stderr).toString().trim() || `exit ${code}`}`),
-        );
-    });
-    child.stdin.end(opts.input);
-  });
+  }
 }
 
 /** Fill each missing identity field separately. Git retains its environment/config precedence. */

@@ -7,6 +7,4 @@
 
 [English](2026-11-19-agent-state-system-git.md)
 
-服务端通过 PATH 上的 Git 保存和读取工作台版本。在原有的裸仓库中，你仍然可以查看和恢复旧版本，版本号保持一致。新提交会读取 Git 配置和环境变量中的作者及提交者身份。姓名缺失时使用 `PenguinHarness`，邮箱缺失时使用 `penguin@localhost`，仅对这一次提交生效。
-
-未安装 Git 时，工作台仍可运行，服务端日志会说明此次版本保存失败的原因。
+macOS、Windows 和使用 glibc 的 Linux 版 PenguinHarness 随附 Agent State 所需的 Git，首次启动就可以离线保存和恢复工作台版本。在原有的裸仓库中，你仍然可以查看和恢复旧版本，版本号保持一致。新提交会读取 Git 配置和环境变量中的作者及提交者身份。姓名缺失时使用 `PenguinHarness`，邮箱缺失时使用 `penguin@localhost`，仅对这一次提交生效。

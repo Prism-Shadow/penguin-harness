@@ -34,6 +34,7 @@
  * it import the same platform as another generation (see deploy-same-build.mjs). `--force`
  * pushes anyway.
  */
+import { vendorAgentGit, gitTargets } from "./vendor-agent-git.mjs";
 import { createRequire } from "node:module";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -383,6 +384,24 @@ async function readNativeAssets() {
     await library.cleanup();
   }
   log(`plugin library: ${library.names.length} plugins packed`);
+  // A machine can receive a push from another OS. Pack each architecture separately so
+  // unchanged native assets transfer once across subsequent platform updates.
+  const gitRoot = await vendorAgentGit(gitTargets);
+  for (const target of gitTargets) {
+    const dir = path.join(gitRoot, target);
+    const entries = [];
+    for (const entry of await fsp.readdir(dir, { recursive: true, withFileTypes: true })) {
+      if (!entry.isFile()) continue;
+      const abs = path.join(entry.parentPath, entry.name);
+      const rel = path.relative(gitRoot, abs).split(path.sep).join("/");
+      entries.push({
+        abs,
+        rel: `agent-git/${rel}`,
+        exec: entry.name === "git" || entry.name === "git.exe",
+      });
+    }
+    files[`archives/agent-git-${target}.tgz`] = await packArchive(entries);
+  }
   await buildBenchmarks();
   const benchmarks = [];
   for (const entry of await fsp.readdir(BENCHMARKS_DIR, { recursive: true, withFileTypes: true })) {

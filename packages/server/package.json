@@ -82,7 +82,8 @@
     "typecheck": "pnpm gen:ifaces && tsc --noEmit -p tsconfig.json",
     "gen:ifaces": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out src/ifaces.json",
     "test": "pnpm gen:ifaces && vitest run --passWithNoTests",
-    "build": "pnpm gen:ifaces && node ../../scripts/run-with-env.mjs NODE_OPTIONS=--max-old-space-size=4096 -- tsup"
+    "build": "pnpm gen:ifaces && node ../../scripts/run-with-env.mjs NODE_OPTIONS=--max-old-space-size=4096 -- tsup && node ../../scripts/vendor-agent-git.mjs",
+    "prepack": "node ../../scripts/vendor-agent-git.mjs --all"
   },
   "dependencies": {
     "@hono/node-server": "^2.0.5",
@@ -152,10 +153,19 @@
   },
   "files": [
     "dist",
+    "vendor/agent-git",
     "web-dist",
     "LICENSE"
   ],
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "executableFiles": [
+      "./vendor/agent-git/darwin-arm64/bin/git",
+      "./vendor/agent-git/darwin-x64/bin/git",
+      "./vendor/agent-git/linux-arm/bin/git",
+      "./vendor/agent-git/linux-arm64/bin/git",
+      "./vendor/agent-git/linux-ia32/bin/git",
+      "./vendor/agent-git/linux-x64/bin/git"
+    ]
   }
 }

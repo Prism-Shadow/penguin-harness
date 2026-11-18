@@ -275,10 +275,24 @@ describe("recording versions", () => {
       await expect(fs.stat(file)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("reports a missing Git executable without creating an incomplete repository", async () => {
-    vi.stubEnv("PATH", path.join(dir, "empty-path"));
-    await expect(open().commitPath(REL, DEMO, "requires git")).rejects.toThrow("Install Git");
-    await expect(fs.stat(gitdir)).rejects.toMatchObject({ code: "ENOENT" });
+  it("saves, reads, restores and deletes real revisions without a system Git", async () => {
+    const blocked = path.join(dir, "no system git");
+    await fs.mkdir(blocked);
+    vi.stubEnv("PATH", blocked);
+    const repo = open();
+    await repo.commitPath(REL, DEMO, "first");
+    const changed = source({ "你好 world.md": "new text" });
+    await repo.commitPath(REL, changed, "second");
+    expect((await repo.history(REL)).map((v) => v.revision)).toEqual([
+      revisionOf(changed),
+      revisionOf(DEMO),
+    ]);
+    const original = await repo.filesAt(REL, revisionOf(DEMO));
+    expect(original).not.toBeNull();
+    await repo.commitPath(REL, original!, "restore first");
+    expect(texts(await repo.filesAt(REL, revisionOf(DEMO)))).toEqual(texts(DEMO));
+    await repo.removePath(REL, "remove");
+    expect(await repo.history(REL)).toEqual([]);
   });
 
   it("two folders committed at once, through two instances, each list exactly their own commit", async () => {

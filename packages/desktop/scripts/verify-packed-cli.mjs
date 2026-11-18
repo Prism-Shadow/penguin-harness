@@ -25,6 +25,7 @@
  * have no button to minimize, maximize or close them.
  */
 import fs from "node:fs";
+import { checkAgentStateGit } from "../../../scripts/check-agent-state-git.mjs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -188,6 +189,8 @@ for (const app of dirs) {
     );
     continue;
   }
+  // The packed server must version an Agent even on machines with no separate Git.
+  await checkAgentStateGit(path.join(app, "dist", "server.js"));
   ran += 1;
   console.log(`[verify-packed-cli] ${app}: penguin --version -> ${printed}`);
 }

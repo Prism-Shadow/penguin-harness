@@ -252,6 +252,7 @@ jobs:
       # operator adds it. One prefix serves every payload below (native parts per platform).
       - name: Assemble penguin/ (lib + web + bin + plugins)
         run: |
+          node scripts/vendor-agent-git.mjs --all
           pnpm --config.node-linker=hoisted --filter @prismshadow/penguin-cli --prod deploy "$PWD/out/penguin/lib"
           rm -f out/penguin/lib/pnpm-workspace.yaml
           cp -r packages/web/dist out/penguin/web
@@ -315,7 +316,12 @@ jobs:
             mv "/tmp/node-runtime/$name" out/penguin/node
             rm -rf out/penguin/node/share/doc out/penguin/node/share/man
             printf '{"schemaVersion":1,"target":"%s"}\n' "$os-$arch" > out/penguin/package-manifest.json
-            tar -czf "payloads/$os-$arch.tar.gz" -C out penguin
+            # The full server npm package has every native target. This installer needs one.
+            omitted=()
+            for dir in out/penguin/lib/node_modules/@prismshadow/penguin-server/vendor/agent-git/*; do
+              if [[ "$(basename "$dir")" != "$target" ]]; then omitted+=("--exclude=${dir#out/}"); fi
+            done
+            tar "${omitted[@]}" -czf "payloads/$os-$arch.tar.gz" -C out penguin
           done
           # Universal payload: no bundled runtime, requires system Node >= 24.
           rm -rf out/penguin/node
@@ -356,7 +362,8 @@ jobs:
           # is CRLF (.gitattributes), the only form cmd.exe is fully reliable with.
           rm -f out/penguin/bin/penguin
           install -D -m 644 scripts/launchers/penguin.cmd out/penguin/bin/penguin.cmd
-          (cd out && zip -qr ../payloads/win32-x64.zip penguin)
+          # MinGit supplies both the Windows shell and Git for Agent State.
+          (cd out && zip -qr ../payloads/win32-x64.zip penguin -x '*/vendor/agent-git/*')
 
       # The canonical artifacts: each payload is sealed with its checksum and the native
       # installer into one flat bundle per target (see scripts/package-release-bundles.sh).
