@@ -4,7 +4,6 @@
   "names": { "zh": "卡通", "en": "Doodle" },
   "version": "1.0.0",
   "base": "modern",
-  "activitySteps": "pages",
   "modes": ["light", "dark"],
   "swatches": {
     "light": { "canvas": "#fbf9f4", "ink": "#2b2521", "accent": "#2b2521" },

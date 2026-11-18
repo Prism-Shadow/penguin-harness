@@ -56,8 +56,6 @@ export interface ThemePackManifest {
   readonly base: ThemeBase;
   /** The modes the pack declares; a mode it leaves out renders from the base. */
   readonly modes: readonly ThemeModeName[];
-  /** Live activity can replace its latest step in place. Packs default to a chronological list. */
-  readonly activitySteps?: "pages";
   readonly swatches: Readonly<Record<ThemeModeName, ThemePackSwatch>>;
   readonly accent: {
     /** The theme's own accent per mode: what `neutral` paints. */
@@ -108,4 +106,9 @@ export function builtinPack(id: ThemeId): ThemePackManifest {
 /** Whether a value names a built-in pack. */
 export function isThemeId(value: unknown): value is ThemeId {
   return typeof value === "string" && Object.hasOwn(PACKS, value);
+}
+
+/** Live work is paged by the built-in Doodle theme. Imported packs keep ordinary chronological rows. */
+export function liveActivityLayout(appliedTheme: string | undefined): "pages" | "list" {
+  return appliedTheme === PACKS.doodle.id ? "pages" : "list";
 }

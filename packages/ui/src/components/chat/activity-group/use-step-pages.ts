@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { builtinPack, isThemeId } from "../../../themes";
+import { liveActivityLayout } from "../../../themes";
 
 const listeners = new Set<() => void>();
 let observer: MutationObserver | undefined;
@@ -25,8 +25,7 @@ function subscribe(listener: () => void) {
 }
 
 function pagesInAppliedTheme() {
-  const id = document.documentElement.dataset.theme;
-  return isThemeId(id) && builtinPack(id).activitySteps === "pages";
+  return liveActivityLayout(document.documentElement.dataset.theme) === "pages";
 }
 
 const list = () => false;
