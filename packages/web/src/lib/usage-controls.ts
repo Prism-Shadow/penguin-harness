@@ -160,14 +160,29 @@ export function sumCounts(series: readonly EntityCounts[]): Omit<EntityCounts, "
 /**
  * Per-bucket success rate in percent, or **null where there is nothing to
  * rate** (denominator 0 — the entity was idle, or every request it made was
- * aborted). Null is not a number the reader may be shown: the hover table
- * prints a dash for it, and plotRates below turns it into a drawing height so
- * the line still crosses the interval.
+ * aborted). A missing denominator leaves a gap in the chart and a dash in its tooltip.
  */
 export function rateSeries(
   counts: Pick<EntityCounts, "completed" | "denominator">,
 ): (number | null)[] {
   return counts.denominator.map((d, i) => (d > 0 ? ((counts.completed[i] ?? 0) / d) * 100 : null));
+}
+
+/** Indices of consecutive measured rates. A compressed gap in the time axis also starts a new stroke. */
+export function successRateRuns(
+  rates: readonly (number | null)[],
+  breaks: readonly number[] = [],
+): number[][] {
+  const skippedAfter = new Set(breaks);
+  const runs: number[][] = [];
+  let run: number[] = [];
+  for (const [i, value] of rates.entries()) {
+    if (value === null || skippedAfter.has(i - 1)) run = [];
+    if (value === null) continue;
+    if (!run.length) runs.push(run);
+    run.push(i);
+  }
+  return runs;
 }
 
 /** Per-bucket cache hit rate in percent, null where the bucket had no cache traffic at all — the same "no rate here" as a success rate with an empty denominator. */

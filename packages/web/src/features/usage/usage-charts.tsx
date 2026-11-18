@@ -24,10 +24,8 @@
  * its place in that column — as a zero and a dash, not as a missing bucket.
  * `breaks` marks where the axis skipped an interval.
  *
- * Every data line is drawn at the theme's line width (the chart primitives), and a
- * bucket with no rate to show is drawn at NO_RATE_PLOT so the stroke stays
- * continuous. Neither is a
- * claim about the data: the hover table prints a dash there.
+ * Success rates draw gaps wherever the denominator is absent, and a point for an
+ * isolated observation. The cache-hit curve retains its separate convention.
  *
  * Unified highlight interaction (a site-wide convention): highlight = fade
  * out the rest, and every chart offers the same three ways in: hover a column
@@ -72,6 +70,7 @@ import {
   plotRates,
   rateSeries,
   sumCounts,
+  successRateRuns,
   type EntityCounts,
   type EntitySeries,
 } from "../../lib/usage-controls";
@@ -93,13 +92,7 @@ function niceCountMax(...values: number[]): number {
   return Math.max(4, Math.ceil(Math.max(0, ...values) / 4) * 4);
 }
 
-/**
- * A rate in the hover table. A real 0 prints `0%`; a bucket that had nothing
- * to rate has no number at all and prints formatPercent's dash — the same
- * dash the rest of the app uses for an undefined ratio. The 100 those buckets
- * are *drawn* at (NO_RATE_PLOT) never reaches this table: the line is a shape,
- * the table is the data.
- */
+/** A measured zero prints 0%; an unavailable ratio prints a dash. */
 function rateCell(v: number | null | undefined): string {
   return formatPercent(v == null ? null : v / 100);
 }
@@ -144,6 +137,12 @@ function RequestsLegend({
 }) {
   const items: LegendItem[] = [
     ...entities.map((e, i) => ({ key: String(i), label: e.label, paint: entityPaint(e, i) })),
+    {
+      key: "requests",
+      label: S.usage.legendRequestCount,
+      paint: NEUTRAL_PAINT,
+      interactive: false,
+    },
     // The lines wear each entity's own hue, so their legend item is about shape, not color: a
     // neutral dash saying "the lines are the success rate, on the right axis".
     {
@@ -181,10 +180,8 @@ function RequestsLegend({
  * rate points come from the same interval. A bucket only one entity ran in is
  * still a bucket: the idle ones sit at zero in it with a dash for their rate.
  *
- * A bucket an entity had nothing to rate in has no rate: the line crosses it
- * at the top of the axis (NO_RATE_PLOT) so the stroke stays continuous, and
- * the bubble's table prints a dash there — never a number the bucket does not
- * have, and never the 0% that would read as "failed everything".
+ * Measured neighbours form a stroke. An isolated rate has its own point; idle,
+ * aborted-only and skipped intervals leave the line open.
  *
  * Three ways to single out a series, all resolving to one RequestsMark: hover
  * a bar segment (that entity in that bucket), hover a rate line, or hover a
@@ -193,11 +190,13 @@ function RequestsLegend({
  * a tall segment.
  */
 export function RequestsChart({
+  label,
   series,
   entities,
   granularity,
   breaks,
 }: {
+  label: string;
   series: UsageSeriesPoint[];
   /** Per-entity counts, already re-indexed onto `series` by compactCounts — the stack and its rate lines read them by position. */
   entities: EntityCounts[];
@@ -213,10 +212,8 @@ export function RequestsChart({
 
   const totals = sumCounts(drawn);
   const totalRate = rateSeries(totals);
-  // Two readings of the same rates: `rates` keeps the nulls for the table,
-  // `lines` gives every bucket a height so the strokes stay unbroken.
   const rates = drawn.map((e) => rateSeries(e));
-  const lines = rates.map(plotRates);
+  const runs = rates.map((row) => successRateRuns(row, breaks));
   const geom = makeGeom(series.length, niceCountMax(...totals.requests), width, PAD_R_AXIS);
   const rateGeom = makeRangeGeom(series.length, 0, 100, width, PAD_R_AXIS);
   const buckets = series.map((p) => p.bucket);
@@ -242,16 +239,15 @@ export function RequestsChart({
       {width > 0 && (
         <>
           <ChartFrame
+            inspectLabel={label}
             geom={geom}
             fmtY={(v) => String(Math.round(v))}
             dates={buckets}
             fmtX={(b) => bucketAxisLabel(granularity, b)}
             hover={hover}
             onHover={(i) => {
-              if (i === null) {
-                setHover(null);
-                setMark(null);
-              } else setHover(i);
+              setHover(i);
+              setMark(null);
             }}
             labels={autoLabelIdx(series.length, geom.step)}
             hoverLine={false}
@@ -328,7 +324,7 @@ export function RequestsChart({
                 <LineHits
                   key={`line-${e.label}:${si}`}
                   geom={rateGeom}
-                  values={lines[si]!}
+                  values={rates[si]!}
                   onEnter={(i) => {
                     setHover(i);
                     setMark({ entity: si, bucket: null });
@@ -359,16 +355,33 @@ export function RequestsChart({
                 like the Token chart's hit-rate curve: a dash is what tells the reader a stroke
                 belongs to the right-hand percentage axis rather than to the bars — and here the
                 lines share their entity's bar color, so shape is the only separator left. */}
-            {drawn.map((e, si) => (
-              <ChartLine
-                key={`rate-${e.label}:${si}`}
-                points={seriesPoints(rateGeom, lines[si]!)}
-                paint={entityPaint(e, si)}
-                dash="4 3"
-                className="pointer-events-none transition-opacity duration-150"
-                opacity={lineLit(si) ? 1 : 0.15}
-              />
-            ))}
+            {drawn.map((e, si) =>
+              runs[si]!.map((run) => {
+                const first = run[0]!;
+                const paint = entityPaint(e, si);
+                const opacity = lineLit(si) ? 1 : 0.15;
+                const key = `rate-${si}-${first}`;
+                return run.length === 1 ? (
+                  <ChartPoint
+                    key={key}
+                    cx={rateGeom.x(first)}
+                    cy={rateGeom.y(rates[si]![first]!)}
+                    paint={paint}
+                    opacity={opacity}
+                    grow={hover === first && lineLit(si)}
+                  />
+                ) : (
+                  <ChartLine
+                    key={key}
+                    points={run.map((i) => [rateGeom.x(i), rateGeom.y(rates[si]![i]!)])}
+                    paint={paint}
+                    dash="4 3"
+                    className="pointer-events-none transition-opacity duration-150"
+                    opacity={opacity}
+                  />
+                );
+              }),
+            )}
           </ChartFrame>
           <RequestsLegend
             entities={drawn}

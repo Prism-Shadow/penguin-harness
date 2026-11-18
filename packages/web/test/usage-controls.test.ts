@@ -10,7 +10,7 @@
  *   counted tail (success counts included); a tail of one keeps its name; by default every named
  *   series fits the palette.
  * - Series sum column by column; a bucket with nothing to rate has no rate (neither 0 nor a
- *   number), and is drawn at the top of the percent axis only so a line can cross it.
+ *   number). Only the cache hit-rate curve uses a fallback drawing height.
  * - Empty buckets are dropped (a request with no tokens still counts), shortening the axis and
  *   marking breaks where buckets were skipped; per-entity counts stay with their buckets.
  */
@@ -31,6 +31,7 @@ import {
   presetTsWindow,
   rangeDays,
   rateSeries,
+  successRateRuns,
   sumCounts,
 } from "../src/lib/usage-controls";
 import { SERIES_COLORS } from "../src/lib/category-colors";
@@ -266,6 +267,14 @@ describe("rate values", () => {
         point({ cacheRead: 0, cacheWrite: 5 }),
       ]),
     ).toEqual([75, null, 0]);
+  });
+
+  it("retains isolated measured rates, including the left and right endpoints, and skips unknown intervals", () => {
+    expect(successRateRuns([100])).toEqual([[0]]);
+    expect(successRateRuns([0])).toEqual([[0]]);
+    expect(successRateRuns([null, null])).toEqual([]);
+    expect(successRateRuns([100, null, 50, 0, null, 0])).toEqual([[0], [2, 3], [5]]);
+    expect(successRateRuns([100, 0, 50, 100], [0, 2])).toEqual([[0], [1, 2], [3]]);
   });
 
   it("plotRates gives every bucket a height so the stroke stays continuous, absent rates at the top of the axis", () => {

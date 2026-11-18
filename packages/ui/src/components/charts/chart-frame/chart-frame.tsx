@@ -33,6 +33,7 @@
  */
 import {
   useEffect,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
@@ -73,22 +74,24 @@ export function LineHits({
   onLeave,
 }: {
   geom: ChartGeom;
-  values: readonly number[];
+  values: readonly (number | null)[];
   onEnter: (i: number) => void;
   onLeave?: () => void;
 }) {
-  return values.map((v, i) => (
-    <ChartHit
-      key={i}
-      x={geom.x(i) - geom.step / 2}
-      y={geom.y(v) - LINE_HIT_H / 2}
-      width={geom.step}
-      height={LINE_HIT_H}
-      cursor="pointer"
-      onMouseEnter={() => onEnter(i)}
-      onMouseLeave={onLeave}
-    />
-  ));
+  return values.map((v, i) =>
+    v === null ? null : (
+      <ChartHit
+        key={i}
+        x={geom.x(i) - geom.step / 2}
+        y={geom.y(v) - LINE_HIT_H / 2}
+        width={geom.step}
+        height={LINE_HIT_H}
+        cursor="pointer"
+        onMouseEnter={() => onEnter(i)}
+        onMouseLeave={onLeave}
+      />
+    ),
+  );
 }
 
 /**
@@ -131,6 +134,7 @@ export function ChartFrame({
   hoverLine = true,
   axisBreaks,
   label,
+  inspectLabel,
   children,
 }: {
   geom: ChartGeom;
@@ -160,6 +164,8 @@ export function ChartFrame({
   axisBreaks?: number[];
   /** The image's accessible name: what the chart shows, since its marks are not read out. */
   label?: string;
+  /** Enables inspection of each bucket by keyboard or touch, with this accessible chart name. */
+  inspectLabel?: string;
   /** Data marks: bars / line / area, drawn between the grid and the hit area. */
   children?: ReactNode;
 }) {
@@ -182,6 +188,7 @@ export function ChartFrame({
   const bubbleRef = useRef<HTMLDivElement>(null);
   const mouseRef = useRef<{ cx: number; cy: number } | null>(null);
   const rafRef = useRef(0);
+  const bubbleId = useId();
   const placeBubble = () => {
     const el = bubbleRef.current;
     const svg = svgRef.current;
@@ -209,6 +216,15 @@ export function ChartFrame({
       placeBubble();
     });
   };
+  const inspectBucket = (index: number) => {
+    const svg = svgRef.current;
+    if (!svg || !dates.length) return;
+    const i = Math.max(0, Math.min(dates.length - 1, index));
+    const box = svg.getBoundingClientRect();
+    mouseRef.current = { cx: box.left + x(i), cy: box.top + PAD_T + innerH / 2 };
+    onHover(i);
+    schedulePlace();
+  };
   useEffect(() => () => cancelAnimationFrame(rafRef.current), []);
 
   // Re-place synchronously (before paint) when the bubble's content changes:
@@ -231,8 +247,55 @@ export function ChartFrame({
         // ui-chart: a theme may redraw the parts, which carry data-part — the grid, the axis
         // labels and breaks here, the series, areas, bars and points in the caller's marks.
         className="ui-chart text-fg-muted"
-        role="img"
-        aria-label={label}
+        role={inspectLabel ? "group" : "img"}
+        aria-label={inspectLabel ?? label}
+        tabIndex={inspectLabel ? 0 : undefined}
+        aria-describedby={inspectLabel && hover !== null ? bubbleId : undefined}
+        aria-keyshortcuts={inspectLabel ? "ArrowLeft ArrowRight Home End Escape" : undefined}
+        onFocus={
+          inspectLabel
+            ? (e) => {
+                if (e.currentTarget.matches(":focus-visible")) inspectBucket(0);
+              }
+            : undefined
+        }
+        onBlur={inspectLabel ? () => onHover(null) : undefined}
+        onKeyDown={
+          inspectLabel
+            ? (e) => {
+                const i = hover ?? 0;
+                switch (e.key) {
+                  case "ArrowLeft":
+                    inspectBucket(i - 1);
+                    break;
+                  case "ArrowRight":
+                    inspectBucket(i + 1);
+                    break;
+                  case "Home":
+                    inspectBucket(0);
+                    break;
+                  case "End":
+                    inspectBucket(dates.length - 1);
+                    break;
+                  case "Escape":
+                    onHover(null);
+                    break;
+                  default:
+                    return;
+                }
+                e.preventDefault();
+              }
+            : undefined
+        }
+        onPointerDown={
+          inspectLabel
+            ? (e) => {
+                if (e.pointerType === "mouse" || !step) return;
+                const left = e.currentTarget.getBoundingClientRect().left;
+                inspectBucket(Math.floor((e.clientX - left - padL) / step));
+              }
+            : undefined
+        }
         onMouseLeave={() => {
           onHover(null);
           // Drop the pointer sample: on re-entry the bubble stays hidden until the fresh position is known, rather than flashing at the stale one.
@@ -308,6 +371,8 @@ export function ChartFrame({
       {bubble && hover !== null && dates[hover] !== undefined && (
         <div
           ref={bubbleRef}
+          id={bubbleId}
+          role={inspectLabel ? "tooltip" : undefined}
           className="pointer-events-none absolute rounded border border-line bg-overlay px-2 py-1 text-xs whitespace-nowrap shadow-sm"
           // Mounted hidden at the origin; placeBubble moves it to the
           // pointer's lower-right (flipping near the right/bottom edges, see
