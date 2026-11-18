@@ -1,0 +1,156 @@
+/* The launch page shares the editor's token palette and scrolls independently of its toolbar. */
+.app[data-view="start"] .start {
+  display: block;
+  min-height: 0;
+  overflow: auto;
+  padding: clamp(20px, 5vw, 64px) clamp(14px, 5vw, 64px);
+  text-align: start;
+}
+.file-home {
+  max-width: 980px;
+  margin: 0 auto;
+}
+.file-home h1 {
+  font-size: clamp(27px, 4vw, 38px);
+  line-height: 1.15;
+  letter-spacing: -0.025em;
+}
+.file-home h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.file-toolbar,
+.file-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.file-toolbar {
+  margin: 20px 0 32px;
+}
+.file-head,
+.file-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(125px, 0.38fr) 150px;
+  align-items: center;
+  column-gap: 12px;
+}
+.file-head {
+  color: var(--wb-muted);
+  border-bottom: 1px solid var(--wb-border);
+  padding: 8px 0;
+  font-size: 12px;
+}
+.file-rows {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.file-row {
+  border-bottom: 1px solid var(--wb-border);
+  padding: 7px 0;
+}
+.file-row .file-open {
+  align-self: stretch;
+  display: flex;
+  align-items: start;
+  flex-direction: column;
+  text-align: start;
+  min-width: 0;
+  padding: 6px 9px;
+  background: transparent;
+  border: 0;
+}
+.file-open strong {
+  font-size: 14px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.file-open small,
+.file-row time {
+  color: var(--wb-muted);
+  font-size: 12px;
+}
+.file-open:hover,
+.file-actions button:hover {
+  background: var(--wb-hover);
+}
+.file-actions {
+  justify-content: end;
+  gap: 2px;
+}
+.file-actions button {
+  border: 0;
+  background: transparent;
+  padding: 6px 9px;
+}
+.file-home .file-status {
+  color: var(--wb-muted);
+  margin: 12px 0;
+}
+.file-home .file-status:empty {
+  display: none;
+}
+.file-home details {
+  border-top: 1px solid var(--wb-border);
+  margin-top: 32px;
+  padding-top: 12px;
+}
+.file-home summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.file-home .start-ask {
+  width: min(100%, 640px);
+  margin-top: 12px;
+}
+#deck-action form {
+  display: grid;
+  gap: 12px;
+  max-width: min(360px, 80vw);
+}
+#deck-action h2,
+#deck-action p {
+  margin: 0;
+}
+#deck-action-message:empty {
+  display: none;
+}
+#rename-field {
+  display: grid;
+  gap: 4px;
+}
+@media (max-width: 600px) {
+  .file-toolbar {
+    gap: 6px;
+    margin-bottom: 24px;
+  }
+  .file-head {
+    display: none;
+  }
+  .file-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 4px;
+  }
+  .file-row time {
+    grid-row: 2;
+    padding-inline-start: 9px;
+  }
+  .file-actions {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    flex-direction: column;
+    align-items: end;
+  }
+  .file-open strong {
+    font-size: 14px;
+  }
+}
+#deck-action {
+  color: var(--wb-fg);
+  background: var(--wb-canvas);
+  border: 1px solid var(--wb-border);
+  border-radius: var(--wb-radius);
+  padding: 20px;
+}

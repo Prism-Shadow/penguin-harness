@@ -8,6 +8,7 @@
 // The editor never talks to anything but this page: its frame has no origin of its own and a
 // policy that allows no connection, so the Bento runtime cannot reach the network or the app.
 import { exportPowerPoint } from "./powerpoint.js";
+import { deckFiles } from "./deck-files.js";
 import { bridge, connectSave, captureSave } from "./bridge.js";
 import { draftOf, emptyLive, foldLive } from "./live.js";
 import { S, locale } from "./strings.js";
@@ -107,8 +108,41 @@ function notice(text, ms = 12_000, action = null) {
 const TRASH =
   '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
+let listRequest = 0;
+let connected = false;
+const filesPage = deckFiles({
+  onOpen: (id) => openDeck(id).catch(() => notice(filesPage.openFailed)),
+  onRename: async (deck, title) => {
+    const current = await getJson(`/decks/${deck.id}`);
+    const doc = parseDeck(current.text);
+    // Preserve concurrent edits and the file's identity, its history, and its linked conversation.
+    if ((doc.title?.trim() || deck.id) !== deck.title.trim())
+      throw Object.assign(new Error(), { status: 409 });
+    doc.title = title;
+    const response = await send(`/decks/${deck.id}`, "PUT", {
+      text: formatDeck(doc),
+      base: current.rev,
+    });
+    if (!response.ok)
+      throw Object.assign(new Error(String(response.status)), { status: response.status });
+    await refreshDecks();
+  },
+  onDelete: (id) => removeFile(id),
+  onRefresh: () => (connected ? refreshDecks() : start()),
+  onBack: () => showFiles().catch(() => notice(S.transferFailed)),
+});
+
 async function refreshDecks() {
-  decks = (await getJson("/decks")).decks;
+  const request = ++listRequest;
+  try {
+    const result = await getJson("/decks");
+    if (request !== listRequest) return;
+    decks = result.decks;
+  } catch {
+    if (request === listRequest) filesPage.render(decks, "error");
+    return;
+  }
+  filesPage.render(decks, "ready");
   renderDeckMenu();
   const current = decks.find((deck) => deck.id === open?.id);
   $("deck-title").textContent = current?.title || open?.shown?.title || S.untitled;
@@ -447,6 +481,11 @@ async function openDeck(id) {
     if (next !== opening || unsaved(previous).length) return;
   }
   const current = await getJson(`/decks/${id}`);
+  if (runtime === null) {
+    const response = await fetch(RUNTIME);
+    if (!response.ok) throw new Error(String(response.status));
+    runtime = await response.text();
+  }
   if (next !== opening) return;
   let doc;
   try {
@@ -479,11 +518,6 @@ async function openDeck(id) {
   $("deck-title").textContent = doc.title || S.untitled;
   frame.inert = true;
   frame.srcdoc = editorHtml(doc, open.token);
-  try {
-    localStorage.setItem(`${location.pathname}#deck`, id);
-  } catch {
-    // Remembering the last deck is a convenience.
-  }
   renderContext();
   await refreshDecks();
   await refreshTalk();
@@ -650,19 +684,35 @@ function closeDeck() {
   frame.srcdoc = "";
 }
 
+async function showFiles() {
+  const next = ++opening;
+  const previous = open;
+  if (previous?.ready) {
+    if (!previous.gone) await savedSnapshot(previous);
+    if (next !== opening || unsaved(previous).length) return;
+  }
+  closeMenus();
+  closeDeck();
+  setView("start");
+  $("start-blank").focus();
+  await refreshDecks();
+}
+
+async function removeFile(id) {
+  const res = await api(`/decks/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(String(res.status));
+  await refreshDecks();
+}
+
 async function deleteDeck(id) {
   const wasOpen = open?.id === id;
   if (wasOpen) closeDeck();
-  const res = await api(`/decks/${id}`, { method: "DELETE" }).catch(() => null);
-  if (res === null || !res.ok) {
-    notice(S.deleteFailed(res === null ? "offline" : String(res.status)));
+  try {
+    await removeFile(id);
+    if (!open) setView("start");
+  } catch (error) {
+    notice(S.deleteFailed(error.message || "offline"));
     if (wasOpen) await openDeck(id);
-    return;
-  }
-  await refreshDecks();
-  if (open === null) {
-    if (decks.length > 0) await openDeck(decks[0].id);
-    else setView("start");
   }
 }
 
@@ -1001,6 +1051,9 @@ $("start-ask").onsubmit = async (event) => {
 };
 
 function listen() {
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && app.dataset.view === "start") void refreshDecks();
+  });
   const events = new EventSource("../api/events");
   let lost = false;
   events.onerror = () => {
@@ -1023,23 +1076,20 @@ function listen() {
 }
 
 async function start() {
-  const info = await getJson("/info").catch(() => ({ supported: false }));
-  if (!info.supported) {
-    setView("unsupported");
-    return;
-  }
-  runtime = await (await fetch(RUNTIME)).text();
-  await refreshDecks();
-  listen();
-  let last = null;
+  setView("start");
+  filesPage.render(decks, "loading");
   try {
-    last = localStorage.getItem(`${location.pathname}#deck`);
+    const info = await getJson("/info");
+    if (!info.supported) {
+      setView("unsupported");
+      return;
+    }
+    connected = true;
+    listen();
+    await refreshDecks();
   } catch {
-    last = null;
+    filesPage.render(decks, "error");
   }
-  const first = decks.find((deck) => deck.id === last) ?? decks[0];
-  if (first) await openDeck(first.id);
-  else setView("start");
 }
 
 void start();

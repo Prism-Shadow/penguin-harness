@@ -6,11 +6,13 @@
     <title>Slides</title>
     <link rel="stylesheet" href="/workbench-ui.css" />
     <link rel="stylesheet" href="./style.css" />
+    <link rel="stylesheet" href="./deck-files.css" />
     <script type="module" src="./app.js"></script>
   </head>
   <body>
     <div class="app" id="app" data-view="loading">
       <header class="bar">
+        <button id="show-decks" type="button"></button>
         <div class="deck-pick">
           <button
             id="deck-button"
@@ -90,19 +92,50 @@
         </aside>
       </main>
 
-      <section class="start" aria-labelledby="start-title">
-        <h1 id="start-title" data-copy="startTitle"></h1>
-        <p class="wb-muted" data-copy="startLead"></p>
-        <form id="start-ask" class="start-ask">
-          <textarea id="start-prompt" rows="3" maxlength="20000"></textarea>
-          <button type="submit" class="wb-primary" data-copy="startGo"></button>
-        </form>
-        <div class="start-more">
-          <button id="start-sample" type="button" data-copy="sampleDeck"></button>
-          <button id="start-blank" type="button" data-copy="blankDeck"></button>
-          <button id="start-import" type="button" data-copy="importDeck"></button>
+      <section class="start" id="deck-files" aria-labelledby="start-title">
+        <div class="file-home">
+          <h1 id="start-title" data-files-copy="title"></h1>
+          <div class="file-toolbar">
+            <button
+              id="start-blank"
+              type="button"
+              class="wb-primary"
+              data-files-copy="create"
+            ></button>
+            <button id="start-import" type="button" data-files-copy="open"></button>
+            <button id="start-sample" type="button" data-copy="sampleDeck"></button>
+          </div>
+          <h2 id="recent-heading" data-files-copy="recent"></h2>
+          <div class="file-head" aria-hidden="true">
+            <span data-files-copy="name"></span><span data-files-copy="modified"></span>
+          </div>
+          <p id="list-message" class="file-status" role="status"></p>
+          <button id="retry-decks" type="button" data-files-copy="retry" hidden></button>
+          <ul class="file-rows" id="recent-decks" aria-labelledby="recent-heading"></ul>
+          <details>
+            <summary data-files-copy="ai"></summary>
+            <form id="start-ask" class="start-ask">
+              <textarea id="start-prompt" rows="3" maxlength="20000"></textarea>
+              <button type="submit" class="wb-primary" data-copy="startGo"></button>
+            </form>
+          </details>
         </div>
       </section>
+      <dialog id="deck-action" aria-labelledby="deck-action-title">
+        <form id="deck-action-form">
+          <h2 id="deck-action-title"></h2>
+          <label id="rename-field"
+            ><span data-files-copy="name"></span
+            ><input id="rename-title" type="text" maxlength="120"
+          /></label>
+          <p id="remove-message"></p>
+          <p id="deck-action-message" role="alert"></p>
+          <div class="dialog-actions">
+            <button id="cancel-deck-action" type="button" data-copy="cancel"></button
+            ><button id="confirm-deck-action" type="submit" class="wb-primary"></button>
+          </div>
+        </form>
+      </dialog>
 
       <dialog id="create-dialog" aria-labelledby="create-heading">
         <form id="create-form">
