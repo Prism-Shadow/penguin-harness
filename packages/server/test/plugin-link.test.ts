@@ -259,7 +259,7 @@ describe("plugin link", () => {
         dir,
         force: true,
       });
-      expect(forced.status).toBe(200);
+      expect(forced.status).toBe(201);
       expect(await prefixDependencies(prefix())).toHaveProperty("@acme/shipped");
       const rows = (await view()).plugins;
       expect(rows.find((p) => p.specifier === "@acme/shipped")).toBeTruthy();
