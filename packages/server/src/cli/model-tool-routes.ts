@@ -14,6 +14,7 @@ import {
   settingsPatch,
 } from "../services/capability-input.js";
 import { capabilitySettings, projectCapabilities } from "../services/capability-settings.js";
+import { requireDeepSeekAudio } from "../services/transcription-audio.js";
 import { badRequest, HttpError } from "../http/errors.js";
 import { pathParam, readJson, requireValidId } from "../http/validate.js";
 
@@ -124,7 +125,7 @@ export function capabilityRoutes(deps: CapabilityDependencies) {
   ) {
     const { item, options } = capabilityInput(key, body);
     const config = await deps.projects.loadConfig(project);
-    const { bindings, candidates } = capabilitySettings(config);
+    const { bindings, candidates, dictationFormat } = capabilitySettings(config);
     const model = bindings[key];
     if (
       !model ||
@@ -135,6 +136,7 @@ export function capabilityRoutes(deps: CapabilityDependencies) {
         "capability_unbound",
         "Bind a project model that supports " + key + " first.",
       );
+    if (key === "stt" && dictationFormat === "audio/wav") requireDeepSeekAudio(item);
     const bg = body.async === true;
     const result = await deps.runs.run(
       {

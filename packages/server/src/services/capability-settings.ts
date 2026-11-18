@@ -2,6 +2,7 @@ import { listSupportedModels } from "@prismshadow/mmsp";
 import { routedClientType } from "@prismshadow/mmsp/credentials";
 import {
   MODEL_CAPABILITIES,
+  getModel,
   providerConnectionShape,
   resolveEntryCredential,
   type ModelEntry,
@@ -20,12 +21,23 @@ import { badRequest } from "../http/errors.js";
 const models = listSupportedModels();
 export const dto = (m: ModelRef): ModelRefDto => ({ provider: m.provider, modelId: m.model_id });
 export const rawRef = (m: ModelRefDto): ModelRef => ({ provider: m.provider, model_id: m.modelId });
-function destination(row: ModelEntry, config: ProjectConfig): Capability | "chat" | undefined {
+function modelClient(row: ModelEntry, config: ProjectConfig) {
   const conn = resolveEntryCredential(
     row,
     providerConnectionShape(config.providers?.[row.provider]),
   );
-  const client = routedClientType(row.model_id, conn.clientType);
+  return routedClientType(row.model_id, conn.clientType);
+}
+function dictationFormat(config: ProjectConfig): CapabilitySettings["dictationFormat"] {
+  const ref = config.capability_models?.stt;
+  const row = ref && getModel(config, ref);
+  if (!row) return;
+  const client = modelClient(row, config);
+  if (client === "deepseek-transcription" || (client === "mmsp" && row.model_id === "deepseek-asr"))
+    return "audio/wav";
+}
+function destination(row: ModelEntry, config: ProjectConfig): Capability | "chat" | undefined {
+  const client = modelClient(row, config);
   if (!client) return undefined;
   if (client === "openai-image") return "image";
   if (client === "openai-speech" || client === "deepseek-speech") return "tts";
@@ -74,6 +86,7 @@ export function capabilitySettings(config: ProjectConfig): Omit<CapabilitySettin
   return {
     bindings,
     candidates,
+    dictationFormat: dictationFormat(config),
     voicePolish: {
       enabled: config.voice_polish?.enabled ?? false,
       model: config.voice_polish?.model ? dto(config.voice_polish.model) : null,

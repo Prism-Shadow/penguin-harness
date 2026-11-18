@@ -14,3 +14,5 @@
 运行 `penguin tools --help` 查看当前项目插件提供的命令，用 `penguin tools list` 查看模型绑定。连接远程服务器时，输入和输出文件也在运行 CLI 的机器上读写。例如，`penguin tools image "海边的企鹅" --out penguin.png` 会保存生成的图片，`penguin tools stt meeting.wav` 会输出转写文本。耗时任务可以加 `--detach` 后台运行，再用任务 ID 查询状态或取消。
 
 `penguin tools usage` 显示模型、操作、上游返回的 token 计数和实际用量单位。`penguin tools artifacts` 列出生成的文件。在 Agent 终端内，两条命令都默认查询当前会话。工具调用和语音润色也会把同一个会话 ID 传给 MMSP，供模型服务商路由缓存。
+
+使用 DeepSeek ASR 时，请上传 16 位 PCM WAV 或 Ogg Opus 录音。Penguin 会在调用模型前检查音频格式。

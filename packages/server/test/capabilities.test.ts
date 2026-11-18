@@ -21,6 +21,12 @@ const ids = {
   tts: "deepseek-tts",
   stt: "deepseek-asr",
 } as const;
+// A 16 kHz, mono, signed PCM wave with four samples, including its real data chunk.
+const wav = Buffer.from(
+  "524946462c00000057415645666d74201000000001000100803e0000007d000002001000646174610800000000000100ffff0000",
+  "hex",
+);
+const wavBase64 = wav.toString("base64");
 const fixtureProvider = "@tests/media";
 const speechProvider = "@tests/speech";
 function addFixture(host: PluginHost, specifier: string, name: string, keys: string[]) {
@@ -153,12 +159,24 @@ describe("project model capabilities", () => {
   it("advertises eligible project models and rejects an incompatible assignment", async () => {
     const settings = (await (await api.get(tools)).json()) as CapabilitySettings;
     expect(settings.bindings).toEqual(bindings);
+    expect(settings.dictationFormat).toBe("audio/wav");
     expect(settings.candidates.chat).toEqual([{ provider: "custom", modelId: "gpt-6.2-sol" }]);
     expect((await api.patch(tools, { bindings: { stt: bindings.tts } })).status).toBe(400);
     expect(
       (await api.post(tools + "/stt/run", { audio: { data: "bad", mimeType: "audio/wav" } }))
         .status,
     ).toBe(400);
+  });
+  it("rejects WebM labelled as WAVE before sending the audio to a DeepSeek ASR gateway", async () => {
+    const before = received.length;
+    const audio = {
+      mimeType: "audio/wav",
+      data: Buffer.from("1a45dfa3", "hex").toString("base64"),
+    };
+    const r = await api.post(tools + "/stt/run", { audio });
+    expect(r.status).toBe(415);
+    expect(await r.json()).toMatchObject({ error: { code: "unsupported_transcription_audio" } });
+    expect(received.length).toBe(before);
   });
   it("uses project credentials, preserves exact model metering and serves files only to project members", async () => {
     const payloads: Record<Capability, Record<string, unknown>> = {
@@ -167,7 +185,7 @@ describe("project model capabilities", () => {
       image: { text: "a penguin", resolution: "1K" },
       video: { text: "wave", duration: 5 },
       tts: { text: "Hello", voice: "demo" },
-      stt: { audio: { data: "AAEC", mimeType: "audio/wav" } },
+      stt: { audio: { data: wavBase64, mimeType: "audio/wav" } },
     };
     for (const [key, input] of Object.entries(payloads)) {
       const response = await api.post(tools + "/" + key + "/run", { ...input, sessionId });
@@ -182,7 +200,7 @@ describe("project model capabilities", () => {
         expect(run.sources?.[0]?.url).toBe("https://penguin.ooo/");
       if (key === "stt") {
         expect(run.text).toBe("Recorded words");
-        expect(received.at(-1)?.messages[0]?.content_items[0]?.data).toBe("AAEC");
+        expect(received.at(-1)?.messages[0]?.content_items[0]?.data).toBe(wavBase64);
       }
       if (run.artifacts.length) {
         const file = run.artifacts[0]!;
