@@ -11,7 +11,7 @@
 // It reads the Trace the harness wrote for the answerer's session and checks what the session
 // actually did, not what it was told: the tools it was given, and every tool call it made.
 //   - tools: only read_file, write_file and exec_command were offered;
-//   - read_file: every path is inside the request directory;
+//   - read_file: every path is inside the request directory (or is the toolkit's viewer script);
 //   - write_file: the only path written is the answer file in that directory;
 //   - exec_command: every command only prints request files: print-only filters and the
 //     toolkit's own print-request.mjs viewer, piped and chained with && or ;, after a cd that stays
@@ -160,7 +160,8 @@ export function audit(traceText, requestDir, answerName = "answer.json") {
       continue;
     }
     if (p.name === "read_file") {
-      if (!inside(dir, args.file_path ?? ""))
+      // Reading the viewer itself (to see how to call it) shows no project data.
+      if (!inside(dir, args.file_path ?? "") && !VIEWER.test(args.file_path ?? ""))
         violations.push(`read_file outside the request directory: ${args.file_path}`);
     } else if (p.name === "write_file") {
       if (path.resolve(dir, args.file_path ?? "") !== answer)

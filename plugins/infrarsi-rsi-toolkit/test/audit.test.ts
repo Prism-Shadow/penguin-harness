@@ -143,6 +143,15 @@ describe("auditing an answerer session", () => {
     );
   });
 
+  it("lets an answerer read the viewer script itself, and no other file outside", () => {
+    const viewer = "/a/agents/x/agent_state/skills/infrarsi-rsi-toolkit/scripts/print-request.mjs";
+    expect(audit(trace([...CLEAN, ["read_file", { file_path: viewer }]]), REQ).ok).toBe(true);
+    const other = "/a/agents/x/agent_state/skills/infrarsi-rsi-toolkit/scripts/audit-answerer.mjs";
+    expect(
+      audit(trace([...CLEAN, ["read_file", { file_path: other }]]), REQ).violations.join(),
+    ).toMatch(/read_file outside/);
+  });
+
   it("reads relative paths against a cd inside the request", () => {
     expect(checkCommand(`cd ${REQ} && head -c 9000 prompt.txt`, REQ)).toEqual([]);
     expect(checkCommand(`cd ${REQ} && cat ../0002-prior/prompt.txt`, REQ).join()).toMatch(
