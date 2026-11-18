@@ -8604,4 +8604,7 @@ export type {
   CapabilitySettings,
   CapabilitySettingsPatch,
   CapabilityUsage,
+  ToolModelKey,
+  ToolModelSettings,
+  ToolModelSettingsPatch,
 } from "./capabilities.js";

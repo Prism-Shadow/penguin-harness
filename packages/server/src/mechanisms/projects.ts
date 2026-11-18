@@ -2,7 +2,7 @@
  * The projects mechanisms: what a node may require, declared apart from what implements it.
  */
 import { Interface } from "@prismshadow/penguin-core/kernel";
-import type { CapabilitySettingsPatch } from "../api/capabilities.js";
+import type { CapabilitySettingsPatch, ModelOperation } from "../api/capabilities.js";
 import type { AccessibleProjectRow, ProjectRow } from "../db/repos/projects.js";
 import type { MemberRow } from "../db/repos/members.js";
 import type { AgentRow } from "../db/repos/agents.js";
@@ -136,7 +136,7 @@ export abstract class ProjectConfigStore {
   abstract loadCapabilityModel(projectId: string, ref: ModelRefDto): Promise<ProjectConfig>;
   abstract patchCapabilitySettings(
     projectId: string,
-    patch: CapabilitySettingsPatch,
+    patch: CapabilitySettingsPatch<ModelOperation>,
   ): Promise<void>;
   abstract getChatDefaults(projectId: string): Promise<ChatDefaultsDto>;
   abstract setChatDefaults(projectId: string, req: ChatDefaultsDto): Promise<ChatDefaultsDto>;

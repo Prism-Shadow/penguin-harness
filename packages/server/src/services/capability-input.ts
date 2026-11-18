@@ -5,13 +5,11 @@ import type {
   UniConfig,
   VideoResolution,
 } from "@prismshadow/mmsp";
-import { MODEL_CAPABILITIES } from "@prismshadow/penguin-core";
-import type { Capability, CapabilitySettingsPatch } from "../api/capabilities.js";
+import { modelOperation } from "@prismshadow/penguin-core";
+import type { ModelOperation as Capability, CapabilitySettingsPatch } from "../api/capabilities.js";
 import type { ModelRefDto } from "../api/types.js";
 import { badRequest } from "../http/errors.js";
 
-export const isCapability = (value: string): value is Capability =>
-  (MODEL_CAPABILITIES as readonly string[]).includes(value);
 export const MAX_AUDIO_BYTES = 20 * 1024 * 1024;
 
 function object(value: unknown, label: string): Record<string, unknown> {
@@ -26,13 +24,14 @@ function ref(value: unknown): ModelRefDto | null {
     throw badRequest("A model requires a provider and modelId.");
   return { provider: r.provider, modelId: r.modelId };
 }
-export function settingsPatch(body: Record<string, unknown>): CapabilitySettingsPatch {
-  const patch: CapabilitySettingsPatch = {};
+export function settingsPatch(body: Record<string, unknown>): CapabilitySettingsPatch<Capability> {
+  const patch: CapabilitySettingsPatch<Capability> = {};
   if (body.bindings !== undefined) {
     patch.bindings = {};
     for (const [key, val] of Object.entries(object(body.bindings, "bindings"))) {
-      if (!isCapability(key)) throw badRequest("Unknown capability: " + key);
-      patch.bindings[key] = ref(val);
+      const op = modelOperation(key);
+      if (!op) throw badRequest("Unknown capability: " + key);
+      patch.bindings[op] = ref(val);
     }
   }
   if (body.voicePolish !== undefined) {
@@ -73,15 +72,18 @@ export function capabilityInput(
   body: Record<string, unknown>,
 ): { item: ContentItem; options: UniConfig } {
   const options: UniConfig = {};
-  if (cap === "stt") {
-    const audio = object(body.audio, "audio");
-    const { data, mimeType } = audio;
+  if (cap === "stt" || cap === "i2t") {
+    const image = cap === "i2t";
+    const kind = image ? "image" : "audio";
+    const { data, mimeType } = object(body[kind], kind);
     if (
       typeof mimeType !== "string" ||
-      !/^audio\/[a-z0-9.+-]+(?:\s*;[\w =.-]+)*$/i.test(mimeType) ||
+      !(
+        image ? /^image\/(?:png|jpeg|webp|gif)$/i : /^audio\/[a-z0-9.+-]+(?:\s*;[\w =.-]+)*$/i
+      ).test(mimeType) ||
       mimeType.length > 128
     )
-      throw badRequest("Provide an audio MIME type.");
+      throw badRequest("Provide a supported " + kind + " MIME type.");
     if (
       typeof data !== "string" ||
       !data.length ||
@@ -89,9 +91,9 @@ export function capabilityInput(
       data.length % 4 ||
       !/^[a-z0-9+/]+={0,2}$/i.test(data)
     )
-      throw badRequest("Provide a base64 audio file up to 20 MiB.");
+      throw badRequest("Provide a base64 " + kind + " file up to 20 MiB.");
     const bytes = Buffer.from(data, "base64");
-    if (bytes.length > MAX_AUDIO_BYTES) throw badRequest("Audio exceeds 20 MiB.");
+    if (bytes.length > MAX_AUDIO_BYTES) throw badRequest("Attachment exceeds 20 MiB.");
     return { item: { type: "inline_data.done", mime_type: mimeType, data: bytes }, options };
   }
   const text = inputText(cap === "fetch" ? body.url : body.text);
