@@ -1,7 +1,30 @@
 // A deck opened from a LAN address needs an independent editor token even without randomUUID.
 // Editor and presentation save controls commit active text before requesting a workbench save.
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { captureSave, connectSave, editorToken } from "../workbenches/slides/ui/bridge.js";
+import {
+  captureSave,
+  connectSave,
+  editorDocument,
+  editorToken,
+} from "../workbenches/slides/ui/bridge.js";
+
+// Secure editors let Bento initialize its room. HTTP editors open the same saved document
+// without a room; a template still gets its own new document id.
+it("keeps the saved deck intact when an HTTP editor opens without live sharing", () => {
+  const deck = { title: "Project review", docId: "original" };
+  expect(editorDocument(deck)).toEqual(deck);
+  vi.stubGlobal("crypto", {});
+  try {
+    expect(editorDocument(deck)).toEqual({ ...deck, collab: { on: false } });
+    expect(editorDocument({ ...deck, template: true })).toEqual({
+      title: deck.title,
+      collab: { on: false },
+    });
+    expect(deck).toEqual({ title: "Project review", docId: "original" });
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
 
 it("creates a new frame token on HTTP hosts that only offer getRandomValues", () => {
   const getRandomValues = crypto.getRandomValues.bind(crypto);

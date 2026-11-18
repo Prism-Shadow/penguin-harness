@@ -4,6 +4,19 @@ export function editorToken() {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+/** The embedded editor starts a sharing room unless the document explicitly turns it off. */
+export function editorDocument(doc) {
+  if (typeof globalThis.crypto?.subtle?.generateKey === "function") return doc;
+  const local = { ...doc, collab: { on: false } };
+  if (local.template) {
+    // Bento opens templates as fresh documents and discards their room. Let it assign the
+    // new document id while retaining the offline setting for this editor only.
+    delete local.template;
+    delete local.docId;
+  }
+  return local;
+}
+
 // Installed in the head of the editor and presentation before Bento attaches its own file
 // shortcuts. The standalone HTML download retains the original runtime's file controls.
 export function captureSave(event) {

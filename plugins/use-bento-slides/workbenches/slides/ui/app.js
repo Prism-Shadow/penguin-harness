@@ -9,7 +9,7 @@
 // policy that allows no connection, so the Bento runtime cannot reach the network or the app.
 import { exportPowerPoint } from "./powerpoint.js";
 import { deckFiles } from "./deck-files.js";
-import { bridge, connectSave, captureSave, editorToken } from "./bridge.js";
+import { bridge, connectSave, captureSave, editorDocument, editorToken } from "./bridge.js";
 import { newConversation, readConversation } from "./conversation.js";
 import { showConversation } from "./conversation-view.js";
 import { S, locale } from "./strings.js";
@@ -209,7 +209,7 @@ function editorHtml(doc, token) {
   const script =
     `<script>(${bridge.toString()})(${JSON.stringify(token)},${JSON.stringify(locale === "zh" ? "zh-Hans" : "en")})</` +
     "script>";
-  return htmlWithDeck(runtime, doc)
+  return htmlWithDeck(runtime, editorDocument(doc))
     .replace(/<head>/i, () => `<head>${frameHead(token)}`)
     .replace(/<\/body>/i, `${script}</body>`);
 }
