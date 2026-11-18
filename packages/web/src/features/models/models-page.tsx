@@ -1730,6 +1730,7 @@ export function ModelsPage() {
                       capabilityActions={
                         <CapabilityCardActions
                           model={rowRef(row)}
+                          locale={locale}
                           settings={capabilitySelection.settings}
                           owner={isOwner}
                           busy={capabilitySelection.busy}
@@ -1789,9 +1790,11 @@ export function ModelsPage() {
                 placeholder={S.models.searchPlaceholder}
               />
             </div>
-            <Button size="sm" onClick={() => setCapabilitiesOpen(true)}>
-              {S.voice.models}
-            </Button>
+            {Boolean(capabilitySelection.settings?.available?.length) && (
+              <Button size="sm" onClick={() => setCapabilitiesOpen(true)}>
+                {S.voice.models}
+              </Button>
+            )}
             {/* "Add new models" appears only while new presets are actually waiting, and the
                 accent says so — adding nothing is a no-op, and a permanent button spent the
                 header's width on one. That is also why the dot is gone: it marked this button as
@@ -1849,10 +1852,11 @@ export function ModelsPage() {
           />
         )}
       </PageHeader>
-      {capabilitiesOpen && (
+      {capabilitiesOpen && Boolean(capabilitySelection.settings?.available?.length) && (
         <CapabilityDialog
           key={projectId}
           selection={capabilitySelection}
+          locale={locale}
           owner={isOwner}
           onClose={() => setCapabilitiesOpen(false)}
         />

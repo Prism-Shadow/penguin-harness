@@ -13,3 +13,5 @@ With a transcription model assigned, click the microphone beside Send. Finish th
 
 With a speech synthesis model assigned, click the speaker on an assistant reply to listen. Click again to stop. Leaving the conversation stops playback and releases the audio.
 
+
+Model cards list the operations supplied by active project plugins. Removing the provider hides its model selectors and chat voice controls. Enabling it again restores the saved selections.

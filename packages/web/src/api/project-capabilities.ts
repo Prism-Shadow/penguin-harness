@@ -5,16 +5,21 @@ import type {
   CapabilityRunRequest,
   CapabilitySettingsPatch,
 } from "@prismshadow/penguin-server/api";
+import { sameModelRef } from "../lib/model-grouping";
 import { apiFetch, apiFetchStream } from "./client";
 
-export const capabilities = [
-  "image",
-  "video",
-  "tts",
-  "stt",
-  "search",
-  "fetch",
-] as const satisfies readonly Capability[];
+/** A saved selection is runnable only while its server contribution and configured model exist. */
+export function hasBoundCapability(
+  settings: CapabilitySettings | null | undefined,
+  key: Capability,
+): boolean {
+  const binding = settings?.bindings[key];
+  return Boolean(
+    binding &&
+    settings?.available?.some((entry) => entry.key === key) &&
+    settings.candidates[key]?.some((row) => sameModelRef(row, binding)),
+  );
+}
 
 export type CapabilityPatch = CapabilitySettingsPatch;
 

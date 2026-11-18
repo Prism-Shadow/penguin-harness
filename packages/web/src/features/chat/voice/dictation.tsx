@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { Button, GlyphIcon, ICONS, Spinner, toastError, toastInfo } from "@prismshadow/penguin-ui";
 import { apiErrorText } from "../../../lib/api-error";
 import { S } from "../../../lib/strings";
-import { polishVoice, runVoice } from "../../../api/project-capabilities";
+import { hasBoundCapability, polishVoice, runVoice } from "../../../api/project-capabilities";
 import { captureSpeech, recordingData } from "./recording";
 import { useVoice } from "./voice-scope";
 
@@ -15,6 +15,7 @@ export function Dictation({
   disabled: boolean;
 }) {
   const scope = useVoice();
+  const canDictate = hasBoundCapability(scope?.settings, "stt");
   const [phase, setPhase] = useState<Phase>("idle");
   const [seconds, setSeconds] = useState(0);
   const job = useRef<AbortController | null>(null);
@@ -31,7 +32,7 @@ export function Dictation({
   }, []);
   useLayoutEffect(
     () => cancel,
-    [scope?.projectId, scope?.server, scope?.sessionId, scope?.active, cancel],
+    [scope?.projectId, scope?.server, scope?.sessionId, scope?.active, canDictate, cancel],
   );
   useEffect(() => {
     const hidden = () => {
@@ -60,7 +61,7 @@ export function Dictation({
     return () => clearInterval(timer);
   }, [phase]);
   async function record() {
-    if (!scope?.active || job.current) return;
+    if (!scope?.active || !canDictate || job.current) return;
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
       toastError(S.voice.unsupported);
       return;
@@ -70,6 +71,7 @@ export function Dictation({
     job.current = task;
     setPhase("permission");
     try {
+      if (!hasBoundCapability(await scope.readCurrent(task.signal), "stt")) return;
       const blob = await captureSpeech(task.signal, (stop) => {
         finish.current = stop;
         setPhase("recording");
@@ -83,6 +85,8 @@ export function Dictation({
       setPhase("transcribing");
       const data = await recordingData(blob);
       task.signal.throwIfAborted();
+      const latest = await scope.readCurrent(task.signal);
+      if (!latest || !hasBoundCapability(latest, "stt")) return;
       const result = await runVoice(
         scope.projectId,
         scope.server,
@@ -99,7 +103,7 @@ export function Dictation({
         toastInfo(S.voice.empty);
         return;
       }
-      if (scope.settings?.voicePolish.enabled && scope.settings.voicePolish.model) {
+      if (latest.voicePolish.enabled && latest.voicePolish.model) {
         setPhase("polishing");
         try {
           const polished = await polishVoice(
@@ -140,7 +144,7 @@ export function Dictation({
       }
     }
   }
-  if (!scope?.settings?.bindings.stt) return null;
+  if (!canDictate) return null;
   if (phase === "idle")
     return (
       <button

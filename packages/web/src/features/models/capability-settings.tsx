@@ -1,7 +1,6 @@
 import type { ModelRefDto } from "@prismshadow/penguin-server/api";
 import { Button, FieldHint, Modal, Notice, Select, Spinner, Switch } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { capabilities } from "../../api/project-capabilities";
 import type { useProjectCapabilities } from "../../state/use-project-capabilities";
 
 function ModelChoice({
@@ -43,10 +42,12 @@ function ModelChoice({
 
 export function CapabilityDialog({
   selection,
+  locale,
   owner,
   onClose,
 }: {
   selection: ReturnType<typeof useProjectCapabilities>;
+  locale: "en" | "zh";
   owner: boolean;
   onClose: () => void;
 }) {
@@ -69,10 +70,10 @@ export function CapabilityDialog({
         {settings && (
           <>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              {capabilities.map((key) => (
+              {settings.available.map(({ key, title }) => (
                 <div key={key}>
                   <ModelChoice
-                    label={S.voice.capabilities[key]}
+                    label={title[locale]}
                     value={settings.bindings[key]}
                     rows={settings.candidates[key]}
                     disabled={
@@ -88,29 +89,31 @@ export function CapabilityDialog({
                 </div>
               ))}
             </div>
-            <div className="space-y-3 border-t border-line-muted pt-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-medium text-fg">{S.voice.polish}</p>
-                  <p className="text-xs text-fg-muted">{S.voice.polishHelp}</p>
+            {settings.available.some(({ key }) => key === "stt") && (
+              <div className="space-y-3 border-t border-line-muted pt-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-fg">{S.voice.polish}</p>
+                    <p className="text-xs text-fg-muted">{S.voice.polishHelp}</p>
+                  </div>
+                  <Switch
+                    aria-label={S.voice.polish}
+                    checked={settings.voicePolish.enabled}
+                    disabled={busy || !owner || !settings.voicePolish.model}
+                    onChange={(enabled) => void save({ voicePolish: { enabled } })}
+                  />
                 </div>
-                <Switch
-                  aria-label={S.voice.polish}
-                  checked={settings.voicePolish.enabled}
-                  disabled={busy || !owner || !settings.voicePolish.model}
-                  onChange={(enabled) => void save({ voicePolish: { enabled } })}
+                <ModelChoice
+                  label={S.voice.polishModel}
+                  rows={settings.candidates.chat}
+                  value={settings.voicePolish.model}
+                  disabled={busy || !owner}
+                  onChange={(model) =>
+                    void save({ voicePolish: model ? { model } : { model: null, enabled: false } })
+                  }
                 />
               </div>
-              <ModelChoice
-                label={S.voice.polishModel}
-                rows={settings.candidates.chat}
-                value={settings.voicePolish.model}
-                disabled={busy || !owner}
-                onChange={(model) =>
-                  void save({ voicePolish: model ? { model } : { model: null, enabled: false } })
-                }
-              />
-            </div>
+            )}
           </>
         )}
       </div>

@@ -15,7 +15,7 @@ import { apiUrl } from "../../../lib/server-context";
 import { apiErrorText } from "../../../lib/api-error";
 import { S } from "../../../lib/strings";
 import { useProjectCapabilities } from "../../../state/use-project-capabilities";
-import { runVoice } from "../../../api/project-capabilities";
+import { hasBoundCapability, runVoice } from "../../../api/project-capabilities";
 
 type Playback = { id: string; phase: "loading" | "playing" | "ready" };
 interface VoiceState {
@@ -24,6 +24,7 @@ interface VoiceState {
   sessionId: string | undefined;
   active: boolean;
   settings: CapabilitySettings | null;
+  readCurrent: (signal: AbortSignal) => Promise<CapabilitySettings | null>;
   playback: Playback | null;
   speak: (id: string, text: string) => void;
   stop: (replyId?: string) => void;
@@ -46,7 +47,8 @@ export function VoiceScope({
   active: boolean;
   children: ReactNode;
 }) {
-  const { settings } = useProjectCapabilities(active ? projectId : null, server);
+  const { settings, readCurrent } = useProjectCapabilities(active ? projectId : null, server);
+  const canSpeak = hasBoundCapability(settings, "tts");
   const [playback, setPlayback] = useState<Playback | null>(null);
   const current = useRef<{ request: AbortController; audio: HTMLAudioElement; id: string } | null>(
     null,
@@ -65,7 +67,7 @@ export function VoiceScope({
     }
     setPlayback(null);
   }, []);
-  useLayoutEffect(() => stop, [projectId, server, sessionId, active, stop]);
+  useLayoutEffect(() => stop, [projectId, server, sessionId, active, canSpeak, stop]);
   useEffect(() => {
     const hide = () => {
       if (document.hidden) stop();
@@ -84,7 +86,7 @@ export function VoiceScope({
       stop();
       return;
     }
-    if (!active || !settings?.bindings.tts) return;
+    if (!active || !canSpeak) return;
     let item = previous?.id === id ? previous : null;
     try {
       if (!item) {
@@ -94,6 +96,12 @@ export function VoiceScope({
         item = { request, audio, id };
         current.current = item;
         setPlayback({ id, phase: "loading" });
+        const latest = await readCurrent(request.signal);
+        if (current.current !== item) return;
+        if (!hasBoundCapability(latest, "tts")) {
+          stop(id);
+          return;
+        }
         const result = await runVoice(
           projectId,
           server,
@@ -133,6 +141,7 @@ export function VoiceScope({
         sessionId,
         active,
         settings,
+        readCurrent,
         playback,
         speak: (id, text) => void speak(id, text),
         stop,
@@ -148,7 +157,7 @@ export function ReadReply({ text }: { text: string }) {
     id = useId();
   const stop = scope?.stop;
   useEffect(() => () => stop?.(id), [stop, id]);
-  if (!scope?.settings?.bindings.tts || !text.trim()) return null;
+  if (!scope || !hasBoundCapability(scope.settings, "tts") || !text.trim()) return null;
   const own = scope.playback?.id === id ? scope.playback.phase : null;
   const label = own === "ready" ? S.voice.play : own ? S.voice.stop : S.voice.listen;
   return (

@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { test, expect } from "@playwright/test";
-import { provisionAndLogin } from "./auth.mjs";
+import { ADMIN_ID, ADMIN_PASSWORD, login, provisionAndLogin } from "./auth.mjs";
 import { setAccountPrefs } from "./account-prefs.mjs";
 
 test.use({
@@ -135,7 +135,7 @@ for (const lang of ["zh", "en"]) {
       lang === "zh"
         ? [
             "CLI 与语音模型",
-            "语音转写",
+            "语音识别",
             "语音输入",
             "结束录音并转写",
             "朗读回复",
@@ -144,7 +144,7 @@ for (const lang of ["zh", "en"]) {
           ]
         : [
             "CLI and voice models",
-            "Speech transcription",
+            "Speech recognition",
             "Dictate",
             "Finish recording and transcribe",
             "Read reply aloud",
@@ -273,9 +273,9 @@ test("speech uses the project's real MMSP routes and records each selected model
       ["image", "Image generation", "gpt-image-2.5-flare"],
       ["video", "Video generation", "gemini-omni-1.2-flash"],
       ["tts", "Speech synthesis", "deepseek-tts"],
-      ["stt", "Speech transcription", "deepseek-asr"],
+      ["stt", "Speech recognition", "deepseek-asr"],
       ["search", "Web search", "deepseek-search"],
-      ["fetch", "Read a URL", "deepseek-fetch"],
+      ["fetch", "Fetch a web page", "deepseek-fetch"],
     ];
     const models = [...tools.map(([, , model]) => model), "deepseek-flash"].map((id) => ({
       ...ref(id),
@@ -394,4 +394,96 @@ test("speech uses the project's real MMSP routes and records each selected model
     upstream.closeAllConnections();
     await new Promise((resolve) => upstream.close(resolve));
   }
+});
+
+test("disabling the project's provider stops dictation before upload and restores its saved models on enable", async ({
+  page,
+}) => {
+  await login(page.request, ADMIN_ID, ADMIN_PASSWORD);
+  await setAccountPrefs(page.request, { lang: "en" });
+  const project = "admin-voiceprovider",
+    plugin = "@penguinharness/multimodal-tools";
+  const api = base + "/api/projects/" + project,
+    endpoint = api + "/plugins/installed";
+  const created = await page.request.post(base + "/api/projects", {
+    data: { projectId: project, name: "Voice provider test" },
+  });
+  expect([201, 409]).toContain(created.status());
+  const enabled = await page.request.post(endpoint, { data: { specifier: plugin } });
+  expect(enabled.ok(), await enabled.text()).toBe(true);
+  const models = [first, speaker].map((ref) => ({
+    ...ref,
+    clientType: "mmsp",
+    contextWindow: 8000,
+    apiKey: "local-test",
+    baseUrl: process.env.MOCK_URL,
+  }));
+  const saved = await page.request.put(api + "/models", {
+    data: {
+      models: [
+        ...models,
+        { ...chat, contextWindow: 200000, apiKey: "sk-mock", baseUrl: process.env.MOCK_URL },
+      ],
+      defaultModel: chat,
+    },
+  });
+  expect(saved.ok(), await saved.text()).toBe(true);
+  const bindings = { stt: first, tts: speaker };
+  const selected = await page.request.patch(api + "/capabilities", { data: { bindings } });
+  expect(selected.ok(), await selected.text()).toBe(true);
+  const session = await page.request.post(api + "/agents/default_agent/sessions", { data: {} });
+  expect(session.ok(), await session.text()).toBe(true);
+  const { sessionId } = (await session.json()).session;
+  await page.addInitScript((id) => localStorage.setItem("penguin.lastProjectId", id), project);
+  const runs = [];
+  page.on("request", (req) => {
+    if (
+      req.method() === "POST" &&
+      /\/(?:capabilities\/(?:stt|tts)\/run|voice-polish)$/.test(req.url())
+    )
+      runs.push(req.url());
+  });
+  await page.goto(base + "/chat/" + sessionId);
+  const record = page.getByRole("button", { name: "Dictate", exact: true });
+  await record.click();
+  const finish = page.getByRole("button", { name: "Finish recording and transcribe", exact: true });
+  await expect(finish).toBeVisible();
+  try {
+    const disabled = await page.request.delete(
+      endpoint + "?specifier=" + encodeURIComponent(plugin),
+    );
+    expect(disabled.ok(), await disabled.text()).toBe(true);
+    await expect
+      .poll(async () => (await (await page.request.get(api + "/capabilities")).json()).available)
+      .toEqual([]);
+    if (await finish.isVisible()) await finish.click();
+    await expect(record).toHaveCount(0);
+    await expect
+      .poll(() =>
+        page.evaluate(() => window.voiceTracks.every((track) => track.readyState === "ended")),
+      )
+      .toBe(true);
+    await expect(page.locator("textarea").first()).toBeEditable();
+    await page.goto(base + "/models");
+    await expect(page.getByPlaceholder("Search models")).toBeVisible();
+    await expect(page.getByRole("button", { name: "CLI and voice models" })).toHaveCount(0);
+    expect((await (await page.request.get(api + "/capabilities")).json()).bindings).toEqual(
+      bindings,
+    );
+    expect(runs).toEqual([]);
+    if (process.env.VOICE_EVIDENCE)
+      await page.screenshot({ path: process.env.VOICE_EVIDENCE + "/provider-disabled-models.png" });
+  } finally {
+    const restored = await page.request.post(endpoint, { data: { specifier: plugin } });
+    expect(restored.ok(), await restored.text()).toBe(true);
+  }
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: "Current for Speech recognition", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Current for Speech synthesis", exact: true }),
+  ).toBeVisible();
+  await page.goto(base + "/chat/" + sessionId);
+  await expect(record).toBeVisible();
 });

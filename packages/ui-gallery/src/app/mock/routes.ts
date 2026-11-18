@@ -410,6 +410,7 @@ function refreshEffective(store: DemoStore): void {
 function demoCapabilities(store: DemoStore): CapabilitySettings {
   const chat = store.f.models.defaultModel;
   return {
+    available: [],
     bindings: {},
     candidates: {
       search: [],

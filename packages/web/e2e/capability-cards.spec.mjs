@@ -67,8 +67,8 @@ test("model cards replace only their project's single capability and update othe
   const other = await context.newPage();
   await other.goto(base + "/models");
   await search(other, recognition);
-  const current = "Current for speech recognition",
-    assign = "Use for speech recognition";
+  const current = "Current for Speech recognition",
+    assign = "Use for Speech recognition";
   const role = (row, label) => row.getByRole("button", { name: label, exact: true });
   await role(card(page, "River recognition"), assign).click();
   await expect(role(card(other, "River recognition"), current)).toHaveAttribute(
@@ -88,7 +88,7 @@ test("model cards replace only their project's single capability and update othe
   if (process.env.VOICE_EVIDENCE)
     await page.screenshot({ path: process.env.VOICE_EVIDENCE + "/cards-alpha.png" });
   await search(page, synthesis);
-  await role(card(page, "River synthesis"), "Use for speech synthesis").click();
+  await role(card(page, "River synthesis"), "Use for Speech synthesis").click();
   await expect
     .poll(() => settings(a))
     .toEqual({
@@ -110,10 +110,10 @@ test("model cards replace only their project's single capability and update othe
     .toEqual({ stt: { provider: "custom", modelId: recognition } });
   await expect(role(card(other, "Lake recognition"), current)).toBeVisible();
   await page.getByRole("button", { name: "CLI and voice models" }).click();
-  await expect(page.getByRole("button", { name: /^Speech transcription/ })).toContainText(
+  await expect(page.getByRole("button", { name: /^Speech recognition/ })).toContainText(
     "deepseek-asr · custom",
   );
-  await page.getByRole("button", { name: /^Speech transcription/ }).click();
+  await page.getByRole("button", { name: /^Speech recognition/ }).click();
   await page.getByRole("option", { name: "Not assigned", exact: true }).click();
   await page.keyboard.press("Escape");
   await expect(role(card(page, "River recognition"), assign)).toBeVisible();

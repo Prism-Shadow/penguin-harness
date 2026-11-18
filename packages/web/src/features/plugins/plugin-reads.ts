@@ -32,3 +32,17 @@ export const installedPlugins = createReadStore<InstalledPluginsResponse>();
 export function installedPluginsKey(projectId: string, machineId: string | null): string {
   return readKey(projectId, machineId, "installed-plugins");
 }
+
+/** The server has applied a plugin install or removal. Other views can reread its contributions. */
+export const serverPluginsChanged = "penguin-server-plugins-changed";
+export function notifyServerPluginsChanged(projectId: string) {
+  window.dispatchEvent(new CustomEvent(serverPluginsChanged, { detail: projectId }));
+  try {
+    localStorage.setItem(
+      serverPluginsChanged,
+      JSON.stringify({ projectId, at: crypto.randomUUID() }),
+    );
+  } catch {
+    // Views in this window still receive the event if storage is unavailable.
+  }
+}
