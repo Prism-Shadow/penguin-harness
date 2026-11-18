@@ -103,7 +103,7 @@ for (const [theme, mode] of [
   ["doodle", "dark"],
   ["github", "light"],
 ]) {
-  test(`welcome link hover respects its themed cell in ${theme} ${mode}`, async ({
+  test(`welcome link hover and keyboard focus respect its themed cell in ${theme} ${mode}`, async ({
     page,
   }, info) => {
     await page.goto(`/app.html?route=/chat/new&lang=en&theme=${theme}&mode=${mode}`);
@@ -116,15 +116,21 @@ for (const [theme, mode] of [
     await link.evaluate((el) => {
       el.dataset.testLink = "";
     });
+    // A theme may give the interactive link a smaller curve than the cell that owns its fill.
     await page.addStyleTag({
-      content: `[data-test-link]:hover { background-color: ${ink} !important; }`,
+      content: `
+        [data-test-link]:is(:hover, :focus-visible) { background-color: ${ink} !important; }
+        [data-test-link]:focus-visible { border-radius: 9px 12px 9px 11px !important; }
+      `,
     });
     await link.hover();
     await checkInk(page, owner, info);
-    // Tab from the preceding link, then activate the real destination.
+    // Move the pointer away so the keyboard fill is exercised on its own.
+    await page.mouse.move(0, 0);
     await page.locator('.ui-start [data-slot="counts"] a').first().focus();
     await page.keyboard.press("Tab");
     await expect(link).toBeFocused();
+    await checkInk(page, owner, info);
     await page.keyboard.press("Enter");
     await expect(page.getByRole("heading", { name: /^Plugins\b/, level: 1 })).toBeVisible();
   });
