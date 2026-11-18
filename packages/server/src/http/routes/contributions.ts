@@ -17,6 +17,7 @@ import type {
   WebPageRemovalContribution,
   WebPageRemovalData,
 } from "../../api/types.js";
+import type { WorkbenchTabRenderer } from "../../mechanisms/workbenches.js";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 
 export interface ContributionsRouteDeps {
@@ -60,7 +61,7 @@ export interface WebShellSlots {
     key: string;
     title: string;
     titleZh?: string;
-    renderer: { builtin: string } | { iframe: { src: string } };
+    renderer: WorkbenchTabRenderer;
     /**
      * The launcher label when the tab installs as its own app (`/app/…/<key>`): overrides
      * the title for the PWA manifest's short_name. Absent or blank it means the title.

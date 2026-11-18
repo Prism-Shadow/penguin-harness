@@ -494,7 +494,9 @@ export function WorkbenchFrame({
         className={`min-h-0 flex-1 border-0 transition-opacity duration-150 motion-reduce:transition-none ${
           shownKey === frameKey ? "opacity-100" : "opacity-0"
         }`}
-        sandbox={PAGE_FRAME_SANDBOX}
+        sandbox={
+          tab.pointerLock === true ? PAGE_FRAME_SANDBOX + " allow-pointer-lock" : PAGE_FRAME_SANDBOX
+        }
       />
       <ConfirmModal
         open={restoring !== null}

@@ -145,7 +145,15 @@ export abstract class WorkbenchHost {
 }
 
 /** How the Web App draws a contributed tab: a page of the workbench, or a renderer it carries. */
-export type WorkbenchTabRenderer = { iframe: { src: string } } | { builtin: string };
+export type WorkbenchTabRenderer =
+  | {
+      iframe: {
+        src: string;
+        /** Let a user gesture capture relative mouse movement in this tab. */
+        pointerLock?: boolean;
+      };
+    }
+  | { builtin: string };
 
 /**
  * One tab beside Chat, as the workbench contributed it (`WebModule.sessionTabs`). In a

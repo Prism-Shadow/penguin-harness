@@ -21,7 +21,7 @@ afterEach(async () => {
 });
 
 /** The Support tab's frame in English, its loaded revision `current`. */
-async function frame(): Promise<void> {
+async function frame(pointerLock?: true): Promise<void> {
   setActiveStrings(en);
   vi.stubGlobal("matchMedia", () => ({
     matches: false,
@@ -44,6 +44,7 @@ async function frame(): Promise<void> {
             key: "main",
             title: "Support",
             src: "/support",
+            pointerLock,
             machineId: null,
             name: "Support",
             version: null,
@@ -110,4 +111,14 @@ it("marks only the newest entry of a revision listed twice as current", async ()
   expect(rows).toHaveLength(2);
   expect(rows[0]!.textContent).toContain(en.workbenches.current);
   expect(rows[1]!.querySelector("button")?.textContent).toBe(en.workbenches.restore);
+});
+
+it("permits pointer lock only for a workbench tab that requests it", async () => {
+  await frame();
+  const flags = () => document.querySelector("iframe")!.getAttribute("sandbox")!.split(" ");
+  const ordinary = flags();
+  expect(ordinary).not.toContain("allow-pointer-lock");
+  await unmountAll();
+  await frame(true);
+  expect(flags()).toEqual([...ordinary, "allow-pointer-lock"]);
 });
