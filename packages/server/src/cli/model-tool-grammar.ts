@@ -53,6 +53,9 @@ export async function parseModelTool(
       output.stderr += text;
     },
   });
+  root.description(
+    t("Use model tools provided by this project’s plugins", "调用项目插件提供的模型工具"),
+  );
   let parsed: ToolInvocation = output;
   const common = (cmd: Command) =>
     cmd
