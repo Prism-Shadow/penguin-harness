@@ -7,10 +7,10 @@
 import path from "node:path";
 import fs from "node:fs";
 import type { DatabaseSync } from "node:sqlite";
-import { openExistingDatabase } from "@prismshadow/penguin-library/db";
-import { AuthSessionsRepo } from "@prismshadow/penguin-library/auth/repos/auth-sessions";
-import type { SessionViaValue } from "@prismshadow/penguin-library/auth/repos/auth-sessions";
-import { UsersRepo } from "@prismshadow/penguin-library/auth/repos/users";
+import { openExistingDatabase } from "@prismshadow/penguin-library-db";
+import { AuthSessionsRepo } from "@prismshadow/penguin-library-auth/repos/auth-sessions";
+import type { SessionViaValue } from "@prismshadow/penguin-library-auth/repos/auth-sessions";
+import { UsersRepo } from "@prismshadow/penguin-library-auth/repos/users";
 import { liveServerLock } from "./lock.js";
 import { wire } from "@prismshadow/penguin-core/kernel";
 

@@ -34,9 +34,9 @@ import type {
   ErrorLog,
   UsageQueries,
   UsageStore,
-} from "@prismshadow/penguin-library/observability";
-import type { CostParts } from "@prismshadow/penguin-library/trace";
-import type { ErrorFilter } from "@prismshadow/penguin-library/observability/repos/errors";
+} from "@prismshadow/penguin-library-observability";
+import type { CostParts } from "@prismshadow/penguin-library-trace";
+import type { ErrorFilter } from "@prismshadow/penguin-library-observability/repos/errors";
 import { catalogEntryFor, offPeakAt, offPeakScheduledRefs } from "../model-catalog/catalog.js";
 import type {
   UsageModelSums,
@@ -45,7 +45,7 @@ import type {
   UsageAgentBucketCount,
   UsageFilter,
   PeakTier,
-} from "@prismshadow/penguin-library/observability/repos/usage";
+} from "@prismshadow/penguin-library-observability/repos/usage";
 import {
   enumerateBuckets,
   enumerateTsBuckets,
@@ -55,7 +55,7 @@ import {
 import { badRequest } from "../http/validate.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Clock } from "../hmr/capabilities.js";
-import type { ProjectConfigStore } from "@prismshadow/penguin-library/project";
+import type { ProjectConfigStore } from "@prismshadow/penguin-library-project";
 
 /**
  * Number of most-recent rows kept in the error detail table. Also the page size the whole

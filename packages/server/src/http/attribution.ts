@@ -5,8 +5,8 @@
  */
 import type { Context } from "hono";
 import type { AppEnv } from "../auth/middleware.js";
-import type { UserRow } from "@prismshadow/penguin-library/auth/repos/users";
-import type { Access } from "@prismshadow/penguin-library/project";
+import type { UserRow } from "@prismshadow/penguin-library-auth/repos/users";
+import type { Access } from "@prismshadow/penguin-library-project";
 
 /**
  * The Project an error is attributed to: only

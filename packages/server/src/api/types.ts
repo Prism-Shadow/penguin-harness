@@ -25,7 +25,7 @@ import type {
   CompanyServerEvent,
   SessionTracesResponse,
   MachineServerEvent,
-} from "@prismshadow/penguin-library/project";
+} from "@prismshadow/penguin-library-project";
 import type { CompactionMode, AmspRecord, SessionSource, ToolCallPayload } from "@prismshadow/amsp";
 import type {
   ElidedBody,
@@ -36,7 +36,7 @@ import type {
 // Build/harness identity is not an interface contract — it ships from the barrel (core's version-info.ts).
 import type { HarnessInfo, VersionReport, HarnessHistory } from "@prismshadow/penguin-core";
 import type { IfacesDiff } from "@prismshadow/penguin-hmr";
-import type { AppCenterShortcut, WorkbenchInfo } from "@prismshadow/penguin-library/workbench";
+import type { AppCenterShortcut, WorkbenchInfo } from "@prismshadow/penguin-library-workbench";
 // The vocabulary whose ownership moved to the domain libraries (the contracts name it):
 // the server's own API DTOs reference these, and the Web App reads them through this
 // module's exports, so each is imported and re-exported — the server→library direction
@@ -46,7 +46,7 @@ import type {
   AgentApiSettings,
   AgentApiUpdateRequest,
   ModelRefDto,
-} from "@prismshadow/penguin-library/agent-api";
+} from "@prismshadow/penguin-library-agent-api";
 import type {
   DefaultModelOffer,
   EndpointModelListRequest,
@@ -74,7 +74,7 @@ import type {
   ProviderConnectionUpdate,
   ModelEffectiveConnection,
   CredentialInfo,
-} from "@prismshadow/penguin-library/model";
+} from "@prismshadow/penguin-library-model";
 import type {
   ContextToolShare,
   AgentTraceFileRef,
@@ -101,7 +101,7 @@ import type {
   TraceTaskStats,
   TraceToolSpan,
   UsageTrendPointInTrace,
-} from "@prismshadow/penguin-library/trace";
+} from "@prismshadow/penguin-library-trace";
 import type {
   UsageAgentSeries,
   UsageBucket,
@@ -119,7 +119,7 @@ import type {
   ErrorContext,
   UsageErrorItem,
   UsageGroupBy,
-} from "@prismshadow/penguin-library/observability";
+} from "@prismshadow/penguin-library-observability";
 import type {
   SessionStatus,
   PendingSteeringInfo,
@@ -132,8 +132,8 @@ import type {
   UnavailableSandboxBackend,
   ApprovalReason,
   ApprovalMode,
-} from "@prismshadow/penguin-library/session";
-import type { UserInfo } from "@prismshadow/penguin-library/auth";
+} from "@prismshadow/penguin-library-session";
+import type { UserInfo } from "@prismshadow/penguin-library-auth";
 import type {
   OrgCalendarOutcome,
   OrgChannelMessage,
@@ -141,7 +141,7 @@ import type {
   OrgChannelNoticeKind,
   OrgTicketChange,
   OrgTriggerKind,
-} from "@prismshadow/penguin-library/organization";
+} from "@prismshadow/penguin-library-organization";
 import type {
   BrowserBackend,
   BrowserExtensionRecord,
@@ -156,7 +156,7 @@ import type {
   DesktopBrowserCommandMessage,
   DesktopBrowserCookie,
   DesktopBrowserReplyMessage,
-} from "@prismshadow/penguin-library/machine";
+} from "@prismshadow/penguin-library-machine";
 
 // ---------------------------------------------------------------------------
 // General
@@ -4734,7 +4734,7 @@ export type {
   WorkbenchRequest,
   WorkbenchResponse,
   WorkbenchRecord,
-} from "@prismshadow/penguin-library/workbench";
+} from "@prismshadow/penguin-library-workbench";
 
 /** GET /api/version/history: the harness versions this data root has committed, newest first. */
 export type VersionHistoryResponse = HarnessHistory;

@@ -1,0 +1,58 @@
+{
+  "name": "@prismshadow/penguin-library-machine",
+  "version": "0.2.18",
+  "description": "The machines domain: the MachineRow shape, the machines repo and the browser-extension pairing store. A library package - the server imports it; nothing here imports the server.",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Prism-Shadow",
+    "url": "https://github.com/Prism-Shadow"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "library/machine"
+  },
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./browser-extensions": {
+      "types": "./dist/browser-extensions.d.ts",
+      "import": "./dist/browser-extensions.js"
+    },
+    "./builtin-browser-vocab": {
+      "types": "./dist/builtin-browser-vocab.d.ts",
+      "import": "./dist/builtin-browser-vocab.js"
+    },
+    "./machine": {
+      "types": "./dist/machine.d.ts",
+      "import": "./dist/machine.js"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "build": "tsup"
+  },
+  "dependencies": {
+    "@prismshadow/amsp": "workspace:*",
+    "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/penguin-library-db": "workspace:*"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.12"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

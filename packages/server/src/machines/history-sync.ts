@@ -56,7 +56,7 @@ import type { HistoryLinesQuery } from "../services/history-wire.js";
 import { encodeCursor } from "../services/message-window.js";
 import { historyResponse } from "../services/session-history.js";
 import { SESSION_ROUTES_BASE } from "../services/trace-images.js";
-import type { MessagesPageRequest } from "@prismshadow/penguin-library/trace";
+import type { MessagesPageRequest } from "@prismshadow/penguin-library-trace";
 import { CREDIT_FLOW } from "../socket/frames.js";
 import type { EventFrame } from "../socket/frames.js";
 import { LineCommitter, frameBytes } from "../socket/line-frames.js";

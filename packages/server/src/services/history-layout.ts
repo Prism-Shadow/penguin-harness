@@ -14,7 +14,7 @@
  * of one file into runs, with byte offsets from that file's line index.
  */
 import type { AmspRecord } from "@prismshadow/penguin-core";
-import type { RecordSource } from "@prismshadow/penguin-library/trace";
+import type { RecordSource } from "@prismshadow/penguin-library-trace";
 import { historyFileKey, parseHistoryFileKey } from "./history-wire.js";
 import type { HistoryFileKey, HistoryMessage, HistorySegment, HistoryStub } from "../api/types.js";
 

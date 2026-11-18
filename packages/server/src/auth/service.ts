@@ -12,16 +12,16 @@ import type {
   Auth,
   AuthSessions,
   Users,
-} from "@prismshadow/penguin-library/auth";
+} from "@prismshadow/penguin-library-auth";
 import { randomBytes } from "node:crypto";
 import { tokensEqual } from "./api-token.js";
 import { HttpError } from "../http/errors.js";
-import type { UserRow } from "@prismshadow/penguin-library/auth/repos/users";
-import { sessionTokenHash } from "@prismshadow/penguin-library/auth/repos/auth-sessions";
+import type { UserRow } from "@prismshadow/penguin-library-auth/repos/users";
+import { sessionTokenHash } from "@prismshadow/penguin-library-auth/repos/auth-sessions";
 import type {
   SessionViaValue,
   AuthSessionsRepo,
-} from "@prismshadow/penguin-library/auth/repos/auth-sessions";
+} from "@prismshadow/penguin-library-auth/repos/auth-sessions";
 import type { AuthRuntimeState } from "./runtime-state.js";
 import { verifyAccountPassword, verifyPassword } from "./password.js";
 import type { PasswordHasher } from "./password.js";

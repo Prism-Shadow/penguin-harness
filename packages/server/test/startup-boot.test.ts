@@ -12,7 +12,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { wire } from "@prismshadow/penguin-core/kernel";
 import { Startup } from "../src/platform.js";
-import type { ErrorRecordArgs } from "@prismshadow/penguin-library/observability";
+import type { ErrorRecordArgs } from "@prismshadow/penguin-library-observability";
 
 /** The startup step over doubles: each scheduler's first pass is what `pass` returns. */
 function startup(pass: () => Promise<void>) {

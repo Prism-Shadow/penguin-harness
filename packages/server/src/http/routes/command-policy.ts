@@ -13,7 +13,7 @@ import type { AppEnv } from "../../auth/middleware.js";
 import { commandPolicyPatternError } from "@prismshadow/penguin-core";
 import { HttpError } from "../errors.js";
 import { readJson, requireValidId } from "../validate.js";
-import type { Access, ProjectConfigStore } from "@prismshadow/penguin-library/project";
+import type { Access, ProjectConfigStore } from "@prismshadow/penguin-library-project";
 import type { Machines } from "../../machines/service.js";
 
 /** What this route group reaches — bound by its module (src/modules). */

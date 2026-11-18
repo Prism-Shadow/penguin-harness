@@ -31,7 +31,7 @@ import type {
   ChatDefaultsDto,
   CommandPolicyDto,
   ProjectConfigStore,
-} from "@prismshadow/penguin-library/project";
+} from "@prismshadow/penguin-library-project";
 import type {
   DefaultModelOffer,
   ModelEffectiveConnection,
@@ -59,7 +59,7 @@ import type {
   ModelProviderAuthToken,
   ModelProviderAuthTokens,
   ModelPromotions,
-} from "@prismshadow/penguin-library/model";
+} from "@prismshadow/penguin-library-model";
 import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -125,7 +125,7 @@ import type {
   ProviderTable,
 } from "@prismshadow/penguin-core";
 import type { CommandPolicyRuleDto } from "../api/types.js";
-import type { ModelRefDto } from "@prismshadow/penguin-library/agent-api";
+import type { ModelRefDto } from "@prismshadow/penguin-library-agent-api";
 import { badRequest } from "../http/validate.js";
 import { HttpError } from "../http/errors.js";
 import { cacheable } from "../internal/mtime-gate.js";

@@ -17,7 +17,7 @@ import type {
   SessionCategory,
   TraceIndex,
   TraceIndexStore,
-} from "@prismshadow/penguin-library/trace";
+} from "@prismshadow/penguin-library-trace";
 import type {
   ApprovalMode,
   SessionSandbox,
@@ -25,8 +25,8 @@ import type {
   UnavailableSandboxBackend,
   SessionIndex,
   SessionOrigins,
-} from "@prismshadow/penguin-library/session";
-import type { ServerEvent, ProjectConfigStore } from "@prismshadow/penguin-library/project";
+} from "@prismshadow/penguin-library-session";
+import type { ServerEvent, ProjectConfigStore } from "@prismshadow/penguin-library-project";
 import fs from "node:fs/promises";
 import {
   agentsDir,
@@ -49,7 +49,7 @@ import type {
 } from "../api/types.js";
 import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
-import type { SessionRow } from "@prismshadow/penguin-library/session/repos/sessions";
+import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
 import type { SessionManager } from "../runtime/session-manager.js";
 import {
   listCategory,

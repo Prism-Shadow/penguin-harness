@@ -35,7 +35,7 @@ import type {
   WorkbenchResult,
   WorkbenchRecord,
   IconRef,
-} from "@prismshadow/penguin-library/workbench";
+} from "@prismshadow/penguin-library-workbench";
 
 /** What a workbench provides (its manifest: `provides: { main: "@prismshadow/penguin-server#WorkbenchMain" }`). */
 @Interface()

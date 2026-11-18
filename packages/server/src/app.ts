@@ -13,7 +13,7 @@
  * version rather than with this build. Swap semantics for anything the platform holds that
  * is not parked is a HARD STOP: approvals deny, runs abort, the scheduler dies with its App.
  */
-import type { ServerEvent, Access } from "@prismshadow/penguin-library/project";
+import type { ServerEvent, Access } from "@prismshadow/penguin-library-project";
 import { createHash } from "node:crypto";
 import zlib from "node:zlib";
 import fs from "node:fs";
@@ -26,7 +26,7 @@ import { bodyLimit } from "hono/body-limit";
 import {
   bodyLimitBytes,
   toAttachmentLimits,
-} from "@prismshadow/penguin-library/setting/attachment-limits";
+} from "@prismshadow/penguin-library-setting/attachment-limits";
 import { isAgentImport, MAX_PACKAGE_BYTES } from "./services/agent-zip.js";
 import type { DatabaseSync } from "node:sqlite";
 import type { Instance, ModuleTree } from "@prismshadow/penguin-core/kernel";
@@ -55,16 +55,16 @@ import {
   type ProxyControl,
 } from "./hmr/capabilities.js";
 import { ensureCliShim, resolveCli, shimFromResolution } from "./services/cli-shim.js";
-import { openDatabase } from "@prismshadow/penguin-library/db";
-import { MachinesRepo } from "@prismshadow/penguin-library/machine/machine";
-import { ErrorsRepo } from "@prismshadow/penguin-library/observability/repos/errors";
-import { MessagingBindingsRepo } from "@prismshadow/penguin-library/messaging/repos/messaging-bindings";
-import { SchedulesRepo } from "@prismshadow/penguin-library/session/repos/schedules";
-import { ServerSettingsRepo } from "@prismshadow/penguin-library/setting/repos/server-settings";
-import { SessionsRepo } from "@prismshadow/penguin-library/session/repos/sessions";
-import { UiPrefsRepo } from "@prismshadow/penguin-library/setting/repos/ui-prefs";
-import { UsersRepo } from "@prismshadow/penguin-library/auth/repos/users";
-import type { UserRow } from "@prismshadow/penguin-library/auth/repos/users";
+import { openDatabase } from "@prismshadow/penguin-library-db";
+import { MachinesRepo } from "@prismshadow/penguin-library-machine/machine";
+import { ErrorsRepo } from "@prismshadow/penguin-library-observability/repos/errors";
+import { MessagingBindingsRepo } from "@prismshadow/penguin-library-messaging/repos/messaging-bindings";
+import { SchedulesRepo } from "@prismshadow/penguin-library-session/repos/schedules";
+import { ServerSettingsRepo } from "@prismshadow/penguin-library-setting/repos/server-settings";
+import { SessionsRepo } from "@prismshadow/penguin-library-session/repos/sessions";
+import { UiPrefsRepo } from "@prismshadow/penguin-library-setting/repos/ui-prefs";
+import { UsersRepo } from "@prismshadow/penguin-library-auth/repos/users";
+import type { UserRow } from "@prismshadow/penguin-library-auth/repos/users";
 import { authMiddleware, jsonOnlyWrites, sameOriginWrites } from "./auth/middleware.js";
 import { originRule } from "./http/public-origin.js";
 import { WEB_APP_CSP } from "./http/page-csp.js";
@@ -77,7 +77,7 @@ import { PLUGINS_RESOURCE_ID, type PluginHost } from "./plugin/host.js";
 import type { AppEnv } from "./auth/middleware.js";
 import { AuthService } from "./auth/service.js";
 import { newAuthRuntimeState } from "./auth/runtime-state.js";
-import { AuthSessionsRepo } from "@prismshadow/penguin-library/auth/repos/auth-sessions";
+import { AuthSessionsRepo } from "@prismshadow/penguin-library-auth/repos/auth-sessions";
 import { ensureInstallId } from "./install-id.js";
 import { handleError, HttpError, errorBody } from "./http/errors.js";
 import { attributedProjectId } from "./http/attribution.js";
@@ -142,11 +142,11 @@ import type { PreviewTokenSigner } from "./services/preview-token.js";
 
 import type { ControlEnvContext, ProxyEnvPolicy, SpawnConfiner } from "@prismshadow/penguin-core";
 import { declined } from "./hmr/hono-seam.js";
-import { AgentsRepo } from "@prismshadow/penguin-library/project/repos/agents";
-import { MembersRepo } from "@prismshadow/penguin-library/project/repos/members";
-import { ProjectsRepo } from "@prismshadow/penguin-library/project/repos/projects";
-import { TraceIndexRepo } from "@prismshadow/penguin-library/trace/repos/trace-index";
-import { UsageRepo } from "@prismshadow/penguin-library/observability/repos/usage";
+import { AgentsRepo } from "@prismshadow/penguin-library-project/repos/agents";
+import { MembersRepo } from "@prismshadow/penguin-library-project/repos/members";
+import { ProjectsRepo } from "@prismshadow/penguin-library-project/repos/projects";
+import { TraceIndexRepo } from "@prismshadow/penguin-library-trace/repos/trace-index";
+import { UsageRepo } from "@prismshadow/penguin-library-observability/repos/usage";
 import { adminUsersRoutes } from "./http/routes/admin.js";
 import { adminSettingsRoutes } from "./http/routes/admin-settings.js";
 import { meRoutes } from "./http/routes/me.js";
@@ -178,9 +178,9 @@ import { UsageRecorder } from "./runtime/usage-recorder.js";
 import { previewRoutes } from "./http/routes/preview.js";
 import { MachinesService } from "./machines/service.js";
 import { wire } from "@prismshadow/penguin-core/kernel";
-import type { Settings } from "@prismshadow/penguin-library/setting";
-import type { Errors } from "@prismshadow/penguin-library/observability";
-import type { Auth } from "@prismshadow/penguin-library/auth";
+import type { Settings } from "@prismshadow/penguin-library-setting";
+import type { Errors } from "@prismshadow/penguin-library-observability";
+import type { Auth } from "@prismshadow/penguin-library-auth";
 
 /**
  * What the runtime process holds after boot: the capabilities it owns for the process

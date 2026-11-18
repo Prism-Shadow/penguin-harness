@@ -59,7 +59,7 @@ on:
       - LICENSE
       - THIRD-PARTY-NOTICES.md
       - plugins/**
-      # The library domain package is a workspace package the server imports, so its
+      # The library domain packages are workspace packages the server imports, so their
       # source and manifest changes change the image too.
       - library/**
       # CLI + web and their dependencies are built; all workspace manifests are installed.

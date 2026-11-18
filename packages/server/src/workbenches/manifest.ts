@@ -14,7 +14,7 @@
  * penguin SVG. No service worker is implied: this is only the install surface. Pure
  * functions; the route (./routes.ts) only mounts them.
  */
-import type { WorkbenchInfo } from "@prismshadow/penguin-library/workbench";
+import type { WorkbenchInfo } from "@prismshadow/penguin-library-workbench";
 
 export const MANIFEST_FILE = "manifest.webmanifest";
 /** The main app's icon, the fallback for a workbench that ships no plugin icon. */

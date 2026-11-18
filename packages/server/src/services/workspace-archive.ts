@@ -14,8 +14,8 @@
  * failing, none.
  */
 import type { ServerEvent } from "../api/types.js";
-import type { SessionRow } from "@prismshadow/penguin-library/session/repos/sessions";
-import type { SessionIndex } from "@prismshadow/penguin-library/session";
+import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
+import type { SessionIndex } from "@prismshadow/penguin-library-session";
 import type { ListingView } from "../runtime/session-sources.js";
 import { matchesWorkspaceGroup } from "./workspace-group.js";
 

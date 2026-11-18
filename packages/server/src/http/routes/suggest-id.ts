@@ -29,15 +29,15 @@ import type {
   ProjectConfigStore,
   ProjectLifecycle,
   UtilityCompletion,
-} from "@prismshadow/penguin-library/project";
+} from "@prismshadow/penguin-library-project";
 import { Hono } from "hono";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { SemanticIdKind } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { Log } from "../../hmr/capabilities.js";
 import type { AgentLifecycle, Benchmarks } from "../../mechanisms/agents.js";
-import type { Errors } from "@prismshadow/penguin-library/observability";
-import type { Settings } from "@prismshadow/penguin-library/setting";
+import type { Errors } from "@prismshadow/penguin-library-observability";
+import type { Settings } from "@prismshadow/penguin-library-setting";
 import type { OrgService } from "../../runtime/organization/service.js";
 import { SEMANTIC_ID_RULES, projectIdRule } from "../../services/semantic-id.js";
 import { suggestSemanticId } from "../../services/semantic-id-suggest.js";

@@ -43,7 +43,7 @@ import {
   parseScheduleFile,
   slotInWindow,
 } from "../../runtime/schedule-file.js";
-import type { ScheduleStateRow } from "@prismshadow/penguin-library/session/repos/schedules";
+import type { ScheduleStateRow } from "@prismshadow/penguin-library-session/repos/schedules";
 import {
   deleteScheduleFile,
   readScheduleFile,
@@ -54,8 +54,8 @@ import {
 import { scheduleStatus } from "../../runtime/scheduler.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Config } from "../../hmr/capabilities.js";
-import type { Access, ProjectConfigStore } from "@prismshadow/penguin-library/project";
-import type { Schedules, Scheduling } from "@prismshadow/penguin-library/session";
+import type { Access, ProjectConfigStore } from "@prismshadow/penguin-library-project";
+import type { Schedules, Scheduling } from "@prismshadow/penguin-library-session";
 import type { AgentConfig } from "../../mechanisms/agents.js";
 
 /** Validate and shape the POST/PUT request body into file fields (semantic validation is left to parseScheduleFile). */

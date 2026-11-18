@@ -64,7 +64,7 @@ import type { MachinesService } from "../../machines/service.js";
 import type { MachineEventHub } from "../../machines/event-hub.js";
 import { machineEventsStream } from "../../machines/aggregate-stream.js";
 import type { WatchedMachine } from "../../machines/aggregate-stream.js";
-import type { Access } from "@prismshadow/penguin-library/project";
+import type { Access } from "@prismshadow/penguin-library-project";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface MachinesRouteDeps {

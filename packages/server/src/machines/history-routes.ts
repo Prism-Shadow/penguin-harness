@@ -34,7 +34,7 @@ import type { HistoryFileKey } from "../api/types.js";
 import type {
   TraceAnalysisResponse,
   TraceEventsResponse,
-} from "@prismshadow/penguin-library/trace";
+} from "@prismshadow/penguin-library-trace";
 import { HttpError, errorBody } from "../http/errors.js";
 import type { SseRevocation } from "../http/sse.js";
 import {

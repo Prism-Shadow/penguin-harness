@@ -79,7 +79,7 @@ import type {
   ToolStatus,
 } from "@prismshadow/penguin-core";
 import { MESSAGE_MAX } from "./error-recorder.js";
-import type { ErrorContext, ErrorKind } from "@prismshadow/penguin-library/observability";
+import type { ErrorContext, ErrorKind } from "@prismshadow/penguin-library-observability";
 import type { ErrorSink } from "./error-recorder.js";
 
 /** Cap on the tool-name cache (bounded, to prevent unbounded growth over a long run; over the limit, evicts the oldest by registration order). */

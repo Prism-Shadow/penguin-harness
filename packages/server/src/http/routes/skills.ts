@@ -52,7 +52,7 @@ import {
 import { Bind, Component } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import type { AgentConfig } from "../../mechanisms/agents.js";
-import type { Access } from "@prismshadow/penguin-library/project";
+import type { Access } from "@prismshadow/penguin-library-project";
 
 /** A skill decoded from an uploaded zip: name + file bytes keyed by path relative to the skill directory. */
 interface ArchiveSkill {

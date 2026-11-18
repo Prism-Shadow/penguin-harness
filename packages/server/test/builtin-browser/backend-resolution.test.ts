@@ -29,7 +29,7 @@ import type {
 } from "../../src/api/types.js";
 import { hashPassword } from "../../src/auth/password.js";
 import { userChannelKey } from "../../src/http/routes/events.js";
-import type { Users } from "@prismshadow/penguin-library/auth";
+import type { Users } from "@prismshadow/penguin-library-auth";
 import { adoptSession, fakeSession, uniqueSessionId } from "../fixtures/session.js";
 import {
   apiClient,

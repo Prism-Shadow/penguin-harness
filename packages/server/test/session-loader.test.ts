@@ -14,7 +14,7 @@ import { createAgent, saveProjectConfig, sessionMeta, userText } from "@prismsha
 import type { SessionMetaPayload } from "@prismshadow/penguin-core";
 import { createCoreSessionLoader } from "../src/runtime/session-manager.js";
 import { SessionSources } from "../src/runtime/session-sources.js";
-import type { SessionRow } from "@prismshadow/penguin-library/session/repos/sessions";
+import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
 import { HttpError } from "../src/http/errors.js";
 import { makeTempRoot, writeTraceFile } from "./helpers.js";
 

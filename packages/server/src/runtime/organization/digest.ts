@@ -5,8 +5,8 @@
  * it decides what to do about each. Pure: the rows as they were queued and the tickets as
  * they stand now go in, one Markdown section comes out.
  */
-import type { OrgTicketChange } from "@prismshadow/penguin-library/organization";
-import type { OrgDeskNoticeRow } from "@prismshadow/penguin-library/organization/organizations";
+import type { OrgTicketChange } from "@prismshadow/penguin-library-organization";
+import type { OrgDeskNoticeRow } from "@prismshadow/penguin-library-organization/organizations";
 import type { TicketDoc } from "../../organization/files.js";
 
 /** A ticket as the digest reads it: the listing the reconcile pass already holds. */

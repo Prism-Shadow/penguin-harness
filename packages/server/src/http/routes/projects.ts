@@ -19,7 +19,7 @@ import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Desktop } from "../../hmr/capabilities.js";
 import type { DesktopService } from "../../services/desktop-service.js";
 import { membersRoutes } from "./members.js";
-import type { ProjectLifecycle } from "@prismshadow/penguin-library/project";
+import type { ProjectLifecycle } from "@prismshadow/penguin-library-project";
 import type { Machines } from "../../machines/service.js";
 
 /** What this route group reaches — bound by its module (src/modules). */

@@ -17,7 +17,7 @@ import type {
   SemanticIdSuggestReason,
   SemanticIdSuggestResponse,
 } from "../api/types.js";
-import type { UtilityCompletion } from "@prismshadow/penguin-library/project";
+import type { UtilityCompletion } from "@prismshadow/penguin-library-project";
 import { fallbackSemanticId, placeholderSemanticId, sanitizeSuggestedId } from "./semantic-id.js";
 import type { SemanticIdRule } from "./semantic-id.js";
 

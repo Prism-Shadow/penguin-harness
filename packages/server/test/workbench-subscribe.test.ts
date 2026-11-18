@@ -33,7 +33,7 @@ const A = "default_agent";
 const BASE = `/api/projects/${P}/agents/${A}/workbenches`;
 const HOST_KEY = "@prismshadow/penguin-server#WorkbenchHost";
 const MAIN_KEY = "@prismshadow/penguin-server#WorkbenchMain";
-const RECORD_KEY = "@prismshadow/penguin-library#WorkbenchRecord";
+const RECORD_KEY = "@prismshadow/penguin-library-workbench#WorkbenchRecord";
 
 const PACKAGE = JSON.stringify({
   name: "Follow",

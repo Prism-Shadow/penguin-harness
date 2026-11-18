@@ -15,8 +15,8 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { openDatabaseReadOnly } from "@prismshadow/penguin-library/db";
-import { MachinesRepo } from "@prismshadow/penguin-library/machine/machine";
+import { openDatabaseReadOnly } from "@prismshadow/penguin-library-db";
+import { MachinesRepo } from "@prismshadow/penguin-library-machine/machine";
 import { liveServerLock } from "./lock.js";
 
 /** What `penguin server status` prints, as one line of JSON. */

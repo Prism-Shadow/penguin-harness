@@ -70,9 +70,21 @@ export default defineConfig({
   // one subpath of it the server imports (`@prismshadow/penguin-ui/pack-rules`, which reaches
   // nothing but two small modules): the published UI package does not export it.
   noExternal: [
-    // The domain library is server code by another address: a hot push ships the
+    // The domain libraries are server code by another address: a hot push ships the
     // server bundle alone, so its migrations and connection module ride in it.
-    "@prismshadow/penguin-library",
+    "@prismshadow/penguin-library-db",
+    "@prismshadow/penguin-library-setting",
+    "@prismshadow/penguin-library-auth",
+    "@prismshadow/penguin-library-observability",
+    "@prismshadow/penguin-library-trace",
+    "@prismshadow/penguin-library-project",
+    "@prismshadow/penguin-library-session",
+    "@prismshadow/penguin-library-messaging",
+    "@prismshadow/penguin-library-organization",
+    "@prismshadow/penguin-library-agent-api",
+    "@prismshadow/penguin-library-machine",
+    "@prismshadow/penguin-library-model",
+    "@prismshadow/penguin-library-workbench",
 
     "@prismshadow/penguin-hmr",
     "@prismshadow/penguin-theme-pack",

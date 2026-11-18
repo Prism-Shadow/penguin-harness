@@ -22,11 +22,11 @@ import { MODELSCOPE_PROVIDER_ID } from "../model-catalog/catalog.js";
 import { HttpError } from "../http/errors.js";
 import { normalizeModelScopeBridgeUrl } from "../config.js";
 import { Config } from "../hmr/capabilities.js";
-import type { ProjectConfigStore } from "@prismshadow/penguin-library/project";
+import type { ProjectConfigStore } from "@prismshadow/penguin-library-project";
 import type {
   ModelProviderAuthToken,
   ModelProviderAuthTokens,
-} from "@prismshadow/penguin-library/model";
+} from "@prismshadow/penguin-library-model";
 import type { ModelScopeAuthFlowStatusResponse } from "../api/types.js";
 
 /** Recorded by the bridge alongside the flow; it identifies the App but does not gate it. */

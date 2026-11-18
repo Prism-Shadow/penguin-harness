@@ -11,7 +11,7 @@
  * Session started from it (Full Access, Always Ask) is unconfined. A document stored before the
  * card had a default preset starts Sessions by its own mode and network until one is picked.
  */
-import type { ApprovalMode, SessionSandboxPreset } from "@prismshadow/penguin-library/session";
+import type { ApprovalMode, SessionSandboxPreset } from "@prismshadow/penguin-library-session";
 import type { SandboxMode, SandboxSettings as Policy } from "@prismshadow/penguin-core/plugin";
 import type { PluginConfigNotice, PluginConfiguration } from "../api/types.js";
 import { resolveTable } from "../plugin/config.js";

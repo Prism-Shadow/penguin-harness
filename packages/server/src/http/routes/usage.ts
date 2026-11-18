@@ -18,13 +18,13 @@ import type {
   UsageGroupBy,
   UsageGranularity,
   UsageQueries,
-} from "@prismshadow/penguin-library/observability";
+} from "@prismshadow/penguin-library-observability";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import type { UsageErrorKind, UsageErrorsClearResponse } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { badRequest, optionalDateParam, paginationQuery, requireValidId } from "../validate.js";
-import type { Access } from "@prismshadow/penguin-library/project";
+import type { Access } from "@prismshadow/penguin-library-project";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface UsageRouteDeps {

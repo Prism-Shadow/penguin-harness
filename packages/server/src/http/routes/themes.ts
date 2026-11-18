@@ -21,7 +21,7 @@ import type { Context } from "hono";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import { THEME_PACK_LIMITS, ThemePackError } from "@prismshadow/penguin-theme-pack";
 import type { ThemePackImportResponse, ThemePacksResponse } from "../../api/types.js";
-import type { ServerEvent } from "@prismshadow/penguin-library/project";
+import type { ServerEvent } from "@prismshadow/penguin-library-project";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { Channels, Clock, Config, Hmr, Paths } from "../../hmr/capabilities.js";
 import { ThemeStore } from "../../services/theme-store.js";

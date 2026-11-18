@@ -22,7 +22,7 @@
  * so mode changes take effect immediately.
  * Docs: /docs/tools § "Approval".
  */
-import type { ApprovalMode, ApprovalReason } from "@prismshadow/penguin-library/session";
+import type { ApprovalMode, ApprovalReason } from "@prismshadow/penguin-library-session";
 import type {
   ApprovalDecision,
   ApproveFn,

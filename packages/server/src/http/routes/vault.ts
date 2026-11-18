@@ -11,7 +11,7 @@ import type { AppEnv } from "../../auth/middleware.js";
 import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
 import type { SessionManager } from "../../runtime/session-manager.js";
 import type { AgentConfig } from "../../mechanisms/agents.js";
-import type { Access } from "@prismshadow/penguin-library/project";
+import type { Access } from "@prismshadow/penguin-library-project";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface VaultRouteDeps {
