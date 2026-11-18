@@ -164,7 +164,7 @@ function StepNavigation({
       role="group"
       aria-label={labels.position(page + 1, rows.length)}
       tabIndex={-1}
-      className="flex min-w-0 flex-wrap items-center gap-x-2 border-t border-line-muted px-2 py-0.5"
+      className="flex min-w-0 flex-wrap items-center gap-x-2 border-t border-line-muted py-0.5 ps-2 pe-14 sm:pe-2"
       onKeyDown={(event) => {
         if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
         if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
@@ -187,7 +187,7 @@ function StepNavigation({
         </Button>
       )}
       {page < last && (
-        <Button className="ml-auto" variant="ghost" size="xs" onClick={() => changePage(last)}>
+        <Button className="sm:ml-auto" variant="ghost" size="xs" onClick={() => changePage(last)}>
           {labels.latest}
         </Button>
       )}
@@ -282,8 +282,8 @@ export function ActivityGroup({
   const page = reviewing ? selected : (rows?.length ?? 0) - 1;
   // A run watched here keeps its pages when it settles. A transcript loaded from history
   // opens as the original full list, with the same sticky headers and lazy details.
-  const [ranHere, setRanHere] = useState(running);
-  if (running && !ranHere) setRanHere(true);
+  const [ranHere, setRanHere] = useState(running && !!stepNavigation);
+  if (stepNavigation && running && !ranHere) setRanHere(true);
   const paged = !!stepNavigation && (running || ranHere);
   const finding = !!stepNavigation?.revealAll;
   const shown = expandable && (open || pending || reviewing);
@@ -298,10 +298,13 @@ export function ActivityGroup({
             content: (
               <StepDisclosure.Provider
                 value={{
-                  open: finding || expanded,
+                  open: (finding && paged) || expanded,
                   bounded: paged && !finding,
                   follow: running && !reviewing,
-                  toggle: () => setDisclosures((prior) => new Map(prior).set(row.key, !expanded)),
+                  toggle: () => {
+                    if (!finding || !paged)
+                      setDisclosures((prior) => new Map(prior).set(row.key, !expanded));
+                  },
                 }}
               >
                 {row.content}

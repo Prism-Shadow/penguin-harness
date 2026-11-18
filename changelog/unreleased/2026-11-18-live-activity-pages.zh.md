@@ -3,6 +3,7 @@
 - **Date:** 2026-11-18
 - **Type:** feature
 - **Scope:** `web`, `ui`
+- **PR:** [#1607](https://github.com/Prism-Shadow/penguin-harness/pull/1607)
 
 [English](2026-11-18-live-activity-pages.md)
 

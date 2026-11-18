@@ -129,13 +129,33 @@ test("a live work group pages through reasoning and tools without losing a reade
   await previous.focus();
   await page.keyboard.press("ArrowLeft");
   await expect(group.getByText("I will compare the second entry.")).toBeVisible();
+  for (const width of [320, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    const controls = group.locator("[data-step-navigation] button:enabled");
+    await expect
+      .poll(() =>
+        controls.evaluateAll((buttons) =>
+          buttons.every((button) => {
+            const box = button.getBoundingClientRect();
+            return button.contains(
+              document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2),
+            );
+          }),
+        ),
+      )
+      .toBe(true);
+    await group.getByRole("button", { name: "最新步骤" }).click();
+    await previous.click();
+  }
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await previous.focus();
   await page.keyboard.press("ArrowLeft");
   await expect(group.getByRole("group", { name: "第 2 步，共 4 步" })).toBeVisible();
   await expect(group.locator("[data-step-content]")).toContainText("entry 1");
   await expect(group.locator(".ui-tree > [data-depth]")).toHaveCount(1);
   await info.attach("activity-pager", { body: await group.screenshot(), contentType: "image/png" });
 
-  await page.keyboard.press("Control+f");
+  await page.keyboard.press("ControlOrMeta+f");
   const find = page.getByRole("search");
   await find.locator("input").fill("I will check the first entry");
   await expect(

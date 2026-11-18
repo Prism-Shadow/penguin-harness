@@ -93,7 +93,7 @@ test("Ctrl+F scopes to the focused area, Ctrl+Shift+F searches them all", async 
 
   // --- Ctrl+F: the focus is in the composer, which is in no region at all, so the conversation is
   //     the fallback. Typing counts but does not move the page. ---
-  await page.keyboard.press("Control+f");
+  await page.keyboard.press("ControlOrMeta+f");
   await expect(bar).toBeVisible();
   await input.fill("findmarker");
   await expect(bar.getByText(`1/${HITS}`, { exact: true })).toBeVisible();
@@ -124,9 +124,9 @@ test("Ctrl+F scopes to the focused area, Ctrl+Shift+F searches them all", async 
   // sidebar folds away and comes back (Ctrl+Alt+1), from inside the query field.
   const sidebarRegion = page.locator('[data-find-region="sessions"]');
   await expect(sidebarRegion).toBeVisible();
-  await input.press("Control+Alt+1");
+  await input.press("ControlOrMeta+Alt+1");
   await expect(sidebarRegion).toBeHidden();
-  await input.press("Control+Alt+1");
+  await input.press("ControlOrMeta+Alt+1");
   await expect(sidebarRegion).toBeVisible();
 
   // Escape closes it, and the paint goes with it.
@@ -137,7 +137,7 @@ test("Ctrl+F scopes to the focused area, Ctrl+Shift+F searches them all", async 
   );
 
   // --- Ctrl+Shift+F: every region at once, as a list. ---
-  await page.keyboard.press("Control+Shift+f");
+  await page.keyboard.press("ControlOrMeta+Shift+f");
   await expect(bar).toBeVisible();
   await input.fill("findmarker");
   const rows = bar.getByRole("option");
@@ -156,7 +156,7 @@ test("Ctrl+F scopes to the focused area, Ctrl+Shift+F searches them all", async 
   await sessions.getByRole("button").filter({ hasText: TITLE }).first().click();
   await expect(page.getByPlaceholder(/输入消息/)).toBeVisible();
 
-  await page.keyboard.press("Control+f");
+  await page.keyboard.press("ControlOrMeta+f");
   await expect(bar).toBeVisible();
   await input.fill("findmarker");
   await expect(bar.getByText("无结果", { exact: true })).toBeVisible();
@@ -188,7 +188,7 @@ test("a match inside a collapsed work group is found, and the group folds back w
 
   // A search of the conversation opens the group once the query settles, and the hit is counted.
   await ta.click();
-  await page.keyboard.press("Control+f");
+  await page.keyboard.press("ControlOrMeta+f");
   await input.fill(STEP);
   await expect(group).toHaveAttribute("aria-expanded", "true");
   await expect(bar.getByText("1/1", { exact: true })).toBeVisible();
@@ -197,14 +197,14 @@ test("a match inside a collapsed work group is found, and the group folds back w
   // searched area opens its groups.
   const sessions = page.locator('[data-find-region="sessions"]');
   await sessions.getByRole("button").filter({ hasText: TITLE }).first().click();
-  await page.keyboard.press("Control+f");
+  await page.keyboard.press("ControlOrMeta+f");
   await expect(bar.getByText("无结果", { exact: true })).toBeVisible();
   await expect(group).toHaveAttribute("aria-expanded", "false");
 
   // Back in the conversation it opens again, and closing the bar folds it: the reader never
   // opened it.
   await ta.click();
-  await page.keyboard.press("Control+f");
+  await page.keyboard.press("ControlOrMeta+f");
   await expect(group).toHaveAttribute("aria-expanded", "true");
   await page.keyboard.press("Escape");
   await expect(bar).toHaveCount(0);
@@ -237,7 +237,7 @@ test("load and keep searching backfills earlier turns and lands on the nearest h
 
   const bar = page.getByRole("search");
   const input = bar.locator("input");
-  await page.keyboard.press("Control+f");
+  await page.keyboard.press("ControlOrMeta+f");
   await input.fill("zebracorn");
   await expect(bar.getByText("1/1", { exact: true })).toBeVisible();
   await expect(bar.getByText("更早的内容尚未加载")).toBeVisible();

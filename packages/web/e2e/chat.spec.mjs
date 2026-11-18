@@ -113,7 +113,7 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   await runningGroup.click(); // toggle back → the user is deliberately keeping it open
 
   const toolCard = page.locator("button[aria-expanded]").filter({ hasText: "执行命令" }).first();
-  await toolCard.click();
+  if ((await toolCard.getAttribute("aria-expanded")) !== "true") await toolCard.click();
   await expect(toolCard).toHaveAttribute("aria-expanded", "true");
 
   // Desktop keeps the one-line pending preview (truncate); only phones wrap the command in

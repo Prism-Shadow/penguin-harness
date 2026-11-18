@@ -8,6 +8,7 @@ import type { StreamRenderContext } from "../src/features/chat/message-stream";
 import { FindRevealContext } from "../src/lib/find-expand";
 import { approvalKey, type ChatItem, type ToolCallItem } from "../src/lib/amsp/stream-model";
 import { S } from "../src/lib/strings";
+import { stubLocalStorage } from "./helpers/storage";
 import { button, click, mount, unmountAll } from "./helpers/dom";
 
 const context: StreamRenderContext = {
@@ -46,13 +47,14 @@ const group = (items: ChatItem[], ctx = context, find = false) =>
   );
 const position = () => document.querySelector("[data-step-navigation]")?.getAttribute("aria-label");
 
-beforeEach(() =>
+beforeEach(() => {
+  stubLocalStorage();
   vi.stubGlobal("matchMedia", () => ({
     matches: false,
     addEventListener() {},
     removeEventListener() {},
-  })),
-);
+  }));
+});
 afterEach(unmountAll);
 describe("live work pages", () => {
   it("tracks new steps by identity, keeps a manual page and its disclosure through updates and find", async () => {
@@ -98,6 +100,23 @@ describe("live work pages", () => {
     expect(history.container.querySelectorAll(".ui-tree > [data-depth]")).toHaveLength(3);
     expect(position()).toBeUndefined();
   });
+
+  it.each(["fatal", "aborted"] as const)(
+    "keeps a %s tool's status and output available after the run",
+    async (status) => {
+      const finalCall = call(2);
+      const first = think(1, "Inspect first");
+      const view = await mount(group([first, finalCall]));
+      await click(button(S.chat.previousWorkStep));
+      finalCall.output = "The tool ended before producing a result.";
+      finalCall.outputStatus = status;
+      await view.rerender(group([first, finalCall], { ...context, taskRunning: false }));
+      expect(position()).toBe(S.chat.workStepPosition(1, 2));
+      await click(button(S.chat.latestWorkStep));
+      expect(view.container.querySelector('[data-kind="tool"][data-state="error"]')).not.toBeNull();
+      expect(view.container.textContent).toContain(finalCall.output);
+    },
+  );
 
   it("cycles through outstanding parallel approvals and an active retry without duplicating any action", async () => {
     const calls = [call(1), call(2)];
