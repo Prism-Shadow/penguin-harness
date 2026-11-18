@@ -13,16 +13,10 @@
  * `children` is one piece the caller styles (a report in the output block). With neither the head
  * is a static line: no button, no chevron, no hover.
  *
- * Expand policy, two layers deep: the body opens while the activity runs, so its rows are on
- * screen as they arrive, and folds itself away once it settles, leaving the one-line
- * summary the head exists to be; the rows inside it stay closed — the reader sees that a step happened
- * and how long it took, not its contents, until they ask. The caller's state bridges the gaps
- * between two steps (a work group the model may still add to counts as running), so the card
- * closes once and stays closed rather than flickering on every step. Once the reader toggles it
- * the card is theirs: a later automatic change never fights them. A step waiting on an approval
- * forces the body open (`pending`), since the approval buttons live in it. With step navigation
- * a watched run shows one expanded step at a time. A reader parked on an older page keeps it
- * through new arrivals and settlement. Searching temporarily reveals all rows for indexing.
+ * Work groups can list collapsed or expanded rows, or page through them behind one compact
+ * header. A completed turn can provide a terminal page. The host supplies the actual turn
+ * outcome separately from a group settling between messages. A search temporarily exposes
+ * all loaded rows without changing the reader's page or disclosures.
  *
  * The head is a title bar of its own (the muted ground, a short title that doubles as the state),
  * a different layer from the rows on the surface below it, so the parent and its children read
@@ -50,7 +44,7 @@
  * a fixed phrase in sentence case on the small rung, uppercased only by a theme's recipe; names
  * go in the detail, which no recipe recases.
  */
-import { createContext, useEffect, useRef, useState } from "react";
+import { createContext, useRef, useState } from "react";
 import type { Key, ReactNode } from "react";
 import { useArrived } from "../../../motion/use-arrived";
 import { StatusIcon } from "../../icons/status-icon/status-icon";
@@ -69,9 +63,7 @@ import {
 } from "../../layout/disclosure-row/disclosure-row";
 import type { ActivityKind, ActivityMark } from "../../layout/disclosure-row/disclosure-row";
 import { Fold } from "../../layout/fold/fold";
-import { Button } from "../../actions/button/button";
-import { Pager } from "../../navigation/group-header/pager";
-import { useStepPages } from "./use-step-pages";
+import { CompactStepHeader } from "./compact-step-header";
 import { StepDisclosure } from "./step-disclosure";
 import { WallpaperBackdrop } from "../../shell/app-shell/wallpaper";
 
@@ -88,17 +80,27 @@ const TITLE_INK: Readonly<Record<ActivityMark["state"], string>> = {
 /** A search temporarily mounted these pages. Search previews should use their already loaded content. */
 export const ActivitySearchPreview = createContext(false);
 
+export type ActivityDisplayMode = "standard" | "expanded" | "compact";
+
+export interface ActivityStepSummary {
+  label: string;
+  state: RunState;
+  stateLabel?: string;
+  startMs?: number;
+  durationMs?: number;
+  offsetMs?: number;
+}
+
 /** One of the activity's steps under the head, keyed for React. */
 export interface ActivityGroupRow {
   key: Key;
   content: ReactNode;
+  summary?: ActivityStepSummary;
   /** An approval or a retry is waiting on this step. */
   needsAction?: boolean;
 }
 
 export interface ActivityStepNavigation {
-  /** Count shown alongside the page position, when the regular header counts only tools. */
-  count?: string;
   previous: string;
   next: string;
   latest: string;
@@ -135,69 +137,6 @@ function ActivityRows({
         </div>
       ))}
     </>
-  );
-}
-
-/** Only the current step's detail is mounted in the live deck, even in a long run. */
-function StepNavigation({
-  labels,
-  rows,
-  page,
-  goTo,
-}: {
-  labels: ActivityStepNavigation;
-  rows: readonly ActivityGroupRow[];
-  page: number;
-  goTo: (index: number) => void;
-}) {
-  const nav = useRef<HTMLDivElement>(null);
-  const last = rows.length - 1;
-  // Start after the current page so repeated presses cycle through parallel approvals.
-  const nextWaiting = rows.findIndex((row, index) => row.needsAction && index > page);
-  const waiting =
-    nextWaiting >= 0
-      ? nextWaiting
-      : rows.findIndex((row, index) => row.needsAction && index < page);
-  const changePage = (index: number) => {
-    // A button at an end may disable itself or disappear. Keep keyboard navigation inside the bar.
-    if (nav.current?.contains(document.activeElement)) nav.current.focus({ preventScroll: true });
-    goTo(index);
-  };
-  return (
-    <div
-      ref={nav}
-      data-step-navigation=""
-      role="group"
-      aria-label={labels.position(page + 1, rows.length)}
-      tabIndex={-1}
-      className="flex min-w-0 flex-wrap items-center gap-x-2 border-t border-line-muted py-0.5 ps-2 pe-14 sm:pe-2"
-      onKeyDown={(event) => {
-        if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-        if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-        event.preventDefault();
-        const index = page + (event.key === "ArrowLeft" ? -1 : 1);
-        if (index >= 0 && index <= last) changePage(index);
-      }}
-    >
-      <Pager
-        page={page}
-        pageCount={rows.length}
-        onChange={changePage}
-        previousLabel={labels.previous}
-        nextLabel={labels.next}
-        readoutLabel={labels.position(page + 1, rows.length)}
-      />
-      {waiting >= 0 && (
-        <Button variant="ghost" size="xs" onClick={() => changePage(waiting)}>
-          {labels.waiting}
-        </Button>
-      )}
-      {page < last && (
-        <Button className="sm:ml-auto" variant="ghost" size="xs" onClick={() => changePage(last)}>
-          {labels.latest}
-        </Button>
-      )}
-    </div>
   );
 }
 
@@ -239,13 +178,23 @@ export interface ActivityGroupProps {
    * step lands) it adds the chevron.
    */
   rows?: readonly ActivityGroupRow[];
-  /** Navigation copy for themes that page live steps. Loaded history keeps its chronological rows. */
+  /** Presentation of reasoning and tool groups. Other activities keep their normal disclosure. */
+  displayMode?: ActivityDisplayMode;
+  /** Actual end of the turn, reported once on its last work group. */
+  terminal?: { state: "done" | "failed" | "stopped"; label: string; durationMs?: number };
+  /** Pager and action labels for a work group and its transcript-search state. */
   stepNavigation?: ActivityStepNavigation;
   /** A body of one piece the caller styles, in place of rows; its presence adds the chevron too. */
   children?: ReactNode;
 }
 
-export function ActivityGroup({
+export function ActivityGroup(props: ActivityGroupProps) {
+  const mode = props.stepNavigation ? (props.displayMode ?? "standard") : "standard";
+  // Selecting a different presentation applies its disclosure defaults to existing work too.
+  return <ActivityGroupView key={mode} {...props} displayMode={mode} />;
+}
+
+function ActivityGroupView({
   kind,
   state,
   stepRunning,
@@ -258,14 +207,15 @@ export function ActivityGroup({
   durationMs,
   pending = false,
   rows,
-  stepNavigation: navigationLabels,
+  stepNavigation,
+  displayMode = "standard",
+  terminal,
   children,
 }: ActivityGroupProps) {
   const hookState = activityState(state);
   const running = hookState === "running";
   const inFlight = stepRunning ?? state === "running";
-  const [open, setOpen] = useState(running);
-  const userToggled = useRef(false);
+  const [manualOpen, setOpen] = useState<boolean | null>(null);
   /** The reader closed the card: land the view on it once the fold has finished. */
   const landOnClose = useRef(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -274,56 +224,64 @@ export function ActivityGroup({
   const hasChildren = children !== undefined && children !== null;
   const expandable = rows !== undefined || hasChildren;
 
-  // Before any manual toggle, follow the activity's own state: open while it runs, closed the
-  // moment it settles. Afterwards the reader's choice stands, so a settled card they opened
-  // stays open and one they closed mid-run stays closed.
-  useEffect(() => {
-    if (!userToggled.current) setOpen(running);
-  }, [running]);
-
+  const compact = displayMode === "compact";
+  const finding = !!stepNavigation?.revealAll;
   const [reading, setReading] = useState<Key | null>(null);
   const [disclosures, setDisclosures] = useState<ReadonlyMap<Key, boolean>>(() => new Map());
-  // Only a run actually watched in a paged theme keeps its pages when it settles.
-  const [ranHere, setRanHere] = useState(false);
-  const paged = useStepPages(!!navigationLabels && (running || ranHere));
-  if (paged && running && !ranHere) setRanHere(true);
-  const stepNavigation = paged ? navigationLabels : undefined;
-  const selected =
-    !paged || reading === null ? -1 : (rows?.findIndex((row) => row.key === reading) ?? -1);
-  const reviewing = selected >= 0;
-  const page = reviewing ? selected : (rows?.length ?? 0) - 1;
-  const finding = !!stepNavigation?.revealAll;
-  const shown = expandable && (open || pending || reviewing);
+  const stepCount = rows?.length ?? 0;
+  const total = stepCount + (terminal ? 1 : 0);
+  const selected = reading === null ? -1 : (rows?.findIndex((row) => row.key === reading) ?? -1);
+  const page = selected >= 0 ? selected : total - 1;
   const pageRow = rows?.[page];
-  const displayRows = paged && !finding && pageRow ? [pageRow] : rows;
-  const renderRows = () =>
-    stepNavigation
-      ? displayRows?.map((row) => {
-          const expanded = disclosures.get(row.key) ?? true;
-          return {
-            ...row,
-            content: (
-              <StepDisclosure.Provider
-                value={{
-                  open: finding || expanded,
-                  bounded: !finding,
-                  follow: running && !reviewing,
-                  toggle: () => {
-                    if (!finding) setDisclosures((prior) => new Map(prior).set(row.key, !expanded));
-                  },
-                }}
-              >
-                {row.content}
-              </StepDisclosure.Provider>
-            ),
-          };
-        })
-      : rows;
+  const terminalPage = !!terminal && page === stepCount;
+  const shown =
+    expandable &&
+    (finding ||
+      (compact
+        ? !terminalPage && (manualOpen ?? false)
+        : pending || (manualOpen ?? (displayMode === "expanded" || running))));
+  function toggle() {
+    landOnClose.current = shown && !finding && (compact || !pending);
+    setOpen(!shown);
+  }
+  function goTo(index: number) {
+    // The newest page has no pinned id, so it continues to follow new arrivals.
+    setReading(index === total - 1 ? null : (rows?.[index]?.key ?? null));
+  }
+  // Cycle through simultaneous approvals, including the selected one when the group is shut.
+  const nextWaiting = rows?.findIndex((row, index) => row.needsAction && index > page) ?? -1;
+  const waiting =
+    nextWaiting >= 0
+      ? nextWaiting
+      : (rows?.findIndex((row, index) => row.needsAction && (index !== page || !shown)) ?? -1);
+  const visibleRows = compact && !finding ? (pageRow ? [pageRow] : []) : rows;
+  function renderRows() {
+    if (!stepNavigation) return rows ?? [];
+    return (visibleRows ?? []).map((row) => {
+      const expanded = disclosures.get(row.key) ?? displayMode === "expanded";
+      return {
+        ...row,
+        content: (
+          <StepDisclosure.Provider
+            value={{
+              open: finding || expanded,
+              bounded: compact && !finding,
+              follow: running && selected < 0,
+              toggle: () => {
+                if (!finding) setDisclosures((prior) => new Map(prior).set(row.key, !expanded));
+              },
+            }}
+          >
+            {row.content}
+          </StepDisclosure.Provider>
+        ),
+      };
+    });
+  }
   const showDuration = inFlight
     ? startMs !== undefined
     : durationMs !== undefined && durationMs > 0;
 
-  const shownCount = stepNavigation?.count ?? count;
   const parts = (
     <>
       <ActivityMarkSlot mark={mark ?? <StatusIcon state={state} label={stateLabel} />} />
@@ -337,12 +295,12 @@ export function ActivityGroup({
       >
         {title}
       </span>
-      {shownCount !== undefined && (
+      {count !== undefined && (
         <span
           data-slot="detail"
           className="hidden shrink-0 font-mono text-xs text-fg-subtle sm:inline"
         >
-          {shownCount}
+          {count}
         </span>
       )}
       {/* min-w-0 (not flex-1) lets a long detail truncate while a short one keeps the duration
@@ -375,23 +333,41 @@ export function ActivityGroup({
     <div
       ref={rootRef}
       className={`ui-frame ${DISCLOSURE_CARD_CLASS}`}
-      data-step-view={paged ? (finding ? "find" : "paged") : undefined}
+      data-step-view={stepNavigation ? (finding ? "find" : displayMode) : undefined}
     >
-      {expandable ? (
+      {compact && stepNavigation && !finding && total > 0 ? (
+        <CompactStepHeader
+          summary={
+            (terminalPage ? terminal : pageRow?.summary) ?? {
+              label: title,
+              state,
+              startMs,
+              durationMs,
+            }
+          }
+          kind={kind}
+          navigation={stepNavigation}
+          page={page}
+          total={total}
+          terminal={terminalPage}
+          open={shown}
+          toggle={toggle}
+          goTo={goTo}
+          showAction={
+            waiting < 0
+              ? undefined
+              : () => {
+                  goTo(waiting);
+                  setOpen(true);
+                }
+          }
+        />
+      ) : expandable ? (
         <button
           type="button"
           data-group-header
           aria-expanded={shown}
-          onClick={() => {
-            userToggled.current = true;
-            // Collapsing while the head is stuck: the card's top sits above the fold, so bring the
-            // (now head-only) card back into view once the fold has finished; `nearest` makes
-            // every other case a no-op. A forced-open card keeps its body, so that click moves
-            // nothing.
-            landOnClose.current = shown && !pending;
-            if (reviewing && !pending) setReading(null);
-            setOpen((v) => (reviewing ? false : !v));
-          }}
+          onClick={toggle}
           className={`ui-activity ${DISCLOSURE_HEADER_STICKY_CLASS} ${DISCLOSURE_HEADER_ROW_CLASS}`}
           data-slot="head"
           data-kind={kind}
@@ -425,21 +401,9 @@ export function ActivityGroup({
         >
           {() =>
             rows !== undefined ? (
-              <>
-                {stepNavigation && !finding && rows.length > 1 && (
-                  <StepNavigation
-                    labels={stepNavigation}
-                    rows={rows}
-                    page={page}
-                    goTo={(index) =>
-                      setReading(running && index === rows.length - 1 ? null : rows[index]!.key)
-                    }
-                  />
-                )}
-                <ActivitySearchPreview.Provider value={finding}>
-                  <ActivityRows rows={renderRows() ?? []} revealNew={!paged} />
-                </ActivitySearchPreview.Provider>
-              </>
+              <ActivitySearchPreview.Provider value={finding}>
+                <ActivityRows rows={renderRows()} revealNew={!compact} />
+              </ActivitySearchPreview.Provider>
             ) : (
               children
             )

@@ -107,8 +107,3 @@ export function builtinPack(id: ThemeId): ThemePackManifest {
 export function isThemeId(value: unknown): value is ThemeId {
   return typeof value === "string" && Object.hasOwn(PACKS, value);
 }
-
-/** Only the built-in Doodle pack presents the current step as a page. */
-export function pagesLiveActivity(applied: string | undefined): boolean {
-  return applied === PACKS.doodle.id;
-}

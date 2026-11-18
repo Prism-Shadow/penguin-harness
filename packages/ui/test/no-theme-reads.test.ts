@@ -26,8 +26,6 @@ import { REPO_ROOT, SRC_DIR } from "./helpers/paths";
  */
 const THEME_MACHINERY: readonly string[] = [
   "themes/index.ts",
-  // The DOM adapter observes a change once and provides the current presentation policy.
-  "themes/applied.ts",
   "tokens.ts",
   "boot.ts",
   "testing/",
