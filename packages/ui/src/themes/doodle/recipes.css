@@ -475,25 +475,15 @@
 }
 :root[data-theme="doodle"] .ui-start [data-slot="count"] {
   border: 0;
-  border-radius: 9px 12px 9px 11px;
 }
 :root[data-theme="doodle"] .ui-start [data-slot="count"] + [data-slot="count"] {
-  position: relative;
-  padding-inline-start: 1px;
-}
-:root[data-theme="doodle"] .ui-start [data-slot="count"] + [data-slot="count"]::before {
-  content: "";
-  position: absolute;
-  inset-block: 0;
-  inset-inline-start: 0;
   border-inline-start: 1px dashed var(--ui-line);
-  pointer-events: none;
 }
 :root[data-theme="doodle"] .ui-start [data-slot="count"] > a {
   height: 100%;
   justify-content: space-between;
   border: 2px solid transparent;
-  border-radius: inherit;
+  border-radius: 9px 12px 9px 11px;
   background-clip: padding-box;
 }
 :root[data-theme="doodle"] .ui-start [data-slot="count"] > a:is(:hover, :focus-visible) {
