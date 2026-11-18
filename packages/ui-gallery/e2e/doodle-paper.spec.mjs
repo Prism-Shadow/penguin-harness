@@ -76,12 +76,12 @@ for (const [mode, lang, width] of [
       .locator(".ui-frame")
       .filter({ has: page.locator('[data-group-header][data-state="running"]') })
       .first();
-    await expectPaperEdge(page, frame);
     const head = frame.locator("[data-group-header]");
+    await expectPaperEdge(page, frame, head);
     await head.focus();
     await head.press("Enter");
     await expect(head).toHaveAttribute("aria-expanded", "false");
-    await expectPaperEdge(page, frame);
+    await expectPaperEdge(page, frame, head);
 
     await page.goto(`/app.html?route=/chat/new&notices=1&${prefs}`);
     const banner = page.locator(".ui-notice[data-banner]").first();

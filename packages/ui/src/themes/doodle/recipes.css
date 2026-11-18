@@ -371,16 +371,31 @@
   background-color: var(--ui-canvas);
 }
 
-/* The frame owns the notebook edge. Its sticky head and tool rows paint inside the ink. */
+/* The sticky disclosure button keeps its own ink edge when it scrolls or folds. The
+   attached sheet meets the button at one dashed seam and owns its lower corners. */
 :root[data-theme="doodle"] .ui-frame:has(> .ui-activity) {
-  border: 2px solid var(--_pen);
+  border: 0;
   border-radius: var(--ui-radius-lg);
   background-color: var(--ui-surface);
 }
 :root[data-theme="doodle"] .ui-frame:has(> .ui-activity) > [data-slot="head"] {
   background-color: var(--_head-bg);
-  border-bottom: 1.5px dashed var(--ui-line);
-  border-radius: 0;
+  border-block: 2px solid var(--_pen);
+}
+:root[data-theme="doodle"] .ui-frame > button.ui-activity[data-group-header] {
+  border: 2px solid var(--_pen);
+  border-radius: inherit;
+}
+:root[data-theme="doodle"] .ui-frame:has(> [data-slot="body"]) > button[data-group-header] {
+  border-bottom: 1px dashed var(--ui-line);
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+:root[data-theme="doodle"] .ui-frame > button[data-group-header] + [data-slot="body"] {
+  border: 2px solid var(--_pen);
+  border-top: 0;
+  border-radius: 0 0 var(--ui-radius-lg) var(--ui-radius-lg);
+  overflow: clip;
 }
 :root[data-theme="doodle"] .ui-frame:has(> .ui-activity) .ui-tree .ui-activity {
   background-color: var(--ui-surface);
@@ -419,8 +434,12 @@
 /* Each banner keeps its status colour around the whole rounded paper strip. */
 :root[data-theme="doodle"] .ui-notice:not(button) {
   background-color: var(--_field-bg);
-  border: 1px solid var(--ui-line);
+  border-block: 1px solid var(--ui-line);
+  border-inline-width: 0;
   box-shadow: none;
+}
+:root[data-theme="doodle"] .ui-notice[data-banner]:not(button) {
+  border-inline: 1px solid var(--ui-line);
 }
 :root[data-theme="doodle"] .ui-notice[data-tone="info"]:not(button) {
   background-color: var(--ui-tone-info-bg);
