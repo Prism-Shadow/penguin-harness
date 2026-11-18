@@ -147,7 +147,7 @@ describe.skipIf(!usable)("penguin-bwrap live enforcement (host-gated)", () => {
         `ls -A ${JSON.stringify(secretDir)}; cat ${JSON.stringify(secretFile)} 2>&1`,
       );
       expect(masked.out).not.toContain("super-secret");
-      expect(masked.out).toMatch(/no such file|not found/i);
+      expect(masked.out).toMatch(/no such file|没有那个文件或目录|not found|找不到/i);
     } finally {
       rmSync(secretDir, { recursive: true, force: true });
     }
