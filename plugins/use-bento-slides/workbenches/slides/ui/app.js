@@ -734,6 +734,8 @@ let sdk; // undefined until tried, null when this server has none
 let reader = null;
 let transcript = newConversation();
 let followedId = null;
+let approvals = [];
+let approvalRead = 0;
 let renderFrame = null;
 let talk = { sessionId: null, status: null, messages: [] };
 
@@ -751,18 +753,47 @@ function stopFollowing() {
   reader?.close();
   reader = null;
   followedId = null;
+  approvals = [];
+  ++approvalRead;
   transcript = newConversation();
   if (renderFrame !== null) cancelAnimationFrame(renderFrame);
   renderFrame = null;
 }
 
+async function pendingApprovals(sessionId) {
+  if (!sdk || followedId !== sessionId) return;
+  const revision = ++approvalRead;
+  try {
+    const res = await sdk.transport.get("/sessions/" + encodeURIComponent(sessionId) + "/approvals");
+    if (revision === approvalRead && followedId === sessionId) {
+      approvals = res.body?.approvals || [];
+      scheduleTalk();
+    }
+  } catch {
+    // The next Session status refresh retries the read. Keep the last actionable request.
+  }
+}
+
+async function decideApproval(sessionId, toolId, decision) {
+  if (!sdk || followedId !== sessionId) return;
+  const path = "/sessions/" + encodeURIComponent(sessionId) + "/approvals/" + encodeURIComponent(toolId);
+  try {
+    await sdk.transport.post(path, { decision });
+  } finally {
+    await pendingApprovals(sessionId);
+  }
+}
+
 function renderTalk() {
   const running = talk.status !== null && talk.status !== "idle";
+  const sessionId = talk.sessionId;
   showConversation($("talk"), talk.messages, transcript, {
     locale,
     running,
     hint: S.hintEmpty,
     retry: ask,
+    approvals,
+    decide: (id, decision) => decideApproval(sessionId, id, decision),
   });
   $("stop").hidden = !running || !sdk;
 }
@@ -787,6 +818,7 @@ async function follow(sessionId) {
   mine.on("event", ({ record }) => {
     if (reader !== mine) return;
     readConversation(transcript, record);
+    if (record.payload?.type === "tool_call" && talk.status !== "idle") void pendingApprovals(sessionId);
     if (record.payload?.type === "task_end" && talk.status !== "idle") {
       clearTimeout(talkTimer);
       talkTimer = setTimeout(() => void refreshTalk(), 150);
@@ -825,7 +857,13 @@ async function refreshTalk() {
     void follow(talk.sessionId);
   if (talk.sessionId === null) stopFollowing();
   // The stream says when a task ends; this is for a server without it, and for a missed end.
-  if (running) talkTimer = setTimeout(() => void refreshTalk(), 4000);
+  if (running) {
+    if (talk.sessionId) void pendingApprovals(talk.sessionId);
+    talkTimer = setTimeout(() => void refreshTalk(), 4000);
+  } else {
+    ++approvalRead;
+    approvals = [];
+  }
   renderTalk();
 }
 

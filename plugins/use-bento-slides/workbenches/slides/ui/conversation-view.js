@@ -2,7 +2,12 @@ import { turnsFor } from "./conversation.js";
 
 const labels = {
   en: {
-    running: "Running",
+    running: "Working",
+    reading: "Reading a file",
+    executing: "Running a command",
+    waiting: "Approval needed",
+    allow: "Allow",
+    deny: "Deny",
     queued: "Queued",
     completed: "Completed",
     failed: "Failed",
@@ -24,9 +29,14 @@ const labels = {
     aborted: "Stopped",
   },
   zh: {
-    running: "运行中",
+    running: "处理中",
+    reading: "正在读取文件",
+    executing: "正在运行命令",
+    waiting: "需要批准",
+    allow: "允许",
+    deny: "拒绝",
     queued: "排队中",
-    completed: "运行完毕",
+    completed: "已完成",
     failed: "失败",
     interrupted: "已停止",
     thinking: "思考",
@@ -52,8 +62,8 @@ function element(tag, cls, text) {
   if (text) el.textContent = text;
   return el;
 }
-function details(label, key, opened) {
-  const item = element("details", "turn-step");
+function details(label, key, opened, cls = "turn-step") {
+  const item = element("details", cls);
   item.dataset.disclosure = key;
   item.open = opened.has(key);
   item.append(element("summary", "", label));
@@ -61,7 +71,7 @@ function details(label, key, opened) {
 }
 
 export function showConversation(list, messages, trace, options) {
-  const { locale, running, hint, retry } = options;
+  const { locale, running, hint, retry, approvals = [], decide } = options;
   const S = labels[locale] || labels.en;
   const stick = list.scrollHeight - list.clientHeight - list.scrollTop < 40;
   const previous = list.scrollTop;
@@ -85,10 +95,7 @@ export function showConversation(list, messages, trace, options) {
       if (msg.role === "assistant" && last?.kind === "text" && last.text.trim() === msg.text.trim())
         continue;
       if (msg.role !== "error" || traceTurn?.error !== msg.text)
-        row.insertBefore(
-          element("div", msg.role === "error" ? "turn-error" : "turn-answer", msg.text),
-          row.querySelector(".turn-end"),
-        );
+        row.append(element("div", msg.role === "error" ? "turn-error" : "turn-answer", msg.text));
       if (msg.role === "error" && prompt) addRetry(row, prompt);
       continue;
     }
@@ -108,15 +115,54 @@ export function showConversation(list, messages, trace, options) {
           ? "running"
           : null);
     const active = status === "running" || status === "queued";
-    if (active) row.append(element("span", "turn-state", S[status]));
-    for (const [j, part] of (turn?.parts || []).entries()) {
+    const parts = turn?.parts || [];
+    const waiting = active && i === messages.length - 1 ? approvals : [];
+    const last = parts.at(-1);
+    let state = S[status] || status;
+    if (waiting.length) state = S.waiting;
+    else if (active && last?.kind === "thinking") state = S.thinking;
+    else if (active && last?.kind === "tool" && last.status === "running") {
+      if (last.name === "read_file") state = S.reading;
+      else if (last.name === "exec_command") state = S.executing;
+      else state = S.tools[last.name] || S.running;
+    }
+    const key = msg.at || String(i);
+    let group;
+    if (parts.some((part) => part.kind !== "text")) {
+      group = details(state, key, opened, "turn-history");
+      group.firstElementChild.className = "turn-state";
+      row.append(group);
+    } else if (state) row.append(element("span", "turn-state", state));
+    for (const { tool_call: call } of waiting) {
+      const actions = element("div", "turn-approval");
+      actions.append(element("span", "", S.tools[call.name] || call.name || S.tool));
+      // Show the actual request before asking to authorize it, including the command or file.
+      const args = typeof call.arguments === "string" ? call.arguments : JSON.stringify(call.arguments);
+      if (args) actions.append(element("pre", "", args));
+      for (const decision of ["allow", "deny"]) {
+        const btn = element("button", "", S[decision]);
+        btn.type = "button";
+        btn.onclick = async () => {
+          const buttons = actions.querySelectorAll("button");
+          buttons.forEach((b) => (b.disabled = true));
+          try { await decide(call.tool_call_id, decision); }
+          catch (error) {
+            actions.append(element("span", "turn-error", error.message));
+            buttons.forEach((b) => (b.disabled = false));
+          }
+        };
+        actions.append(btn);
+      }
+      row.append(actions);
+    }
+    for (const [j, part] of parts.entries()) {
       if (part.kind === "text") {
         if (part.text) row.append(element("div", "turn-answer", part.text));
         continue;
       }
       const item = details(
         part.kind === "tool" ? (S.tools[part.name] ?? part.name) || S.tool : S.thinking,
-        i + "-" + j,
+        key + "-" + j,
         opened,
       );
       if (part.kind === "thinking") item.append(element("div", "turn-thought", part.text));
@@ -130,10 +176,9 @@ export function showConversation(list, messages, trace, options) {
           );
         }
       }
-      row.append(item);
+      group.append(item);
     }
     if (turn?.error) row.append(element("div", "turn-error", turn.error));
-    if (status && !active) row.append(element("span", "turn-state turn-end", S[status] || status));
     if (
       (status === "failed" || status === "interrupted" || status === "aborted") &&
       next?.role !== "error"
@@ -147,7 +192,7 @@ export function showConversation(list, messages, trace, options) {
   });
   if (focused)
     list
-      .querySelector('[data-disclosure="' + focused + '"] summary')
+      .querySelector('[data-disclosure="' + CSS.escape(focused) + '"] > summary')
       ?.focus({ preventScroll: true });
   list.scrollTop = stick ? list.scrollHeight : previous;
 
