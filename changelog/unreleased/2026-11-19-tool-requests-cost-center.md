@@ -3,6 +3,7 @@
 - Date: 2026-11-19
 - Type: fix
 - Scope: server, web
+- PR: [#1616](https://github.com/Prism-Shadow/penguin-harness/pull/1616)
 
 [简体中文](2026-11-19-tool-requests-cost-center.zh.md)
 
