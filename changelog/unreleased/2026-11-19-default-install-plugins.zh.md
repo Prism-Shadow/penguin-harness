@@ -3,6 +3,7 @@
 - **Date:** 2026-11-19
 - **Type:** feat
 - **Scope:** `core`, `server`, `cli`, `web`, `plugins`, `docs`
+- **PR:** [#1651](https://github.com/Prism-Shadow/penguin-harness/pull/1651)
 
 [English](2026-11-19-default-install-plugins.md)
 
