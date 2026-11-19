@@ -59,3 +59,5 @@ plugins/sandbox-bwrap/vendor/
 
 # Pinned native builds staged for Agent State version history.
 packages/server/vendor/agent-git/
+# plugin test instance data (penguin-testing-electron)
+.data/

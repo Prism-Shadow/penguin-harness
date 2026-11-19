@@ -22,6 +22,8 @@
  * A machine that should have been asked and could not be is named in the answer, never dropped
  * in silence.
  */
+import type { SessionCategory, TraceIndexStore } from "@prismshadow/penguin-library-trace";
+import type { SessionStatus, SessionIndex } from "@prismshadow/penguin-library-session";
 import type {
   ArchivedSessionGroup,
   ArchivedSessionGroupServers,
@@ -33,17 +35,13 @@ import type {
   ArchivedSessionsQuery,
   ArchivedSessionsResponse,
   ProjectSummary,
-  ServerEvent,
-  SessionCategory,
   SessionInfo,
   SessionSource,
-  SessionStatus,
 } from "../api/types.js";
-import type { SessionRow } from "../db/repos/sessions.js";
+import type { ServerEvent } from "@prismshadow/penguin-library-project";
+import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
 import { HttpError, badRequest } from "../http/errors.js";
 import type { ListingView } from "../runtime/session-sources.js";
-import type { SessionIndex } from "../mechanisms/sessions.js";
-import type { TraceIndexStore } from "../mechanisms/traces.js";
 import { compareActivityDesc } from "./session-service.js";
 import type { ActivityCursor, ArchivedRow } from "./session-service.js";
 import { TEMP_WORKSPACE_GROUP, isTempWorkspace, matchesWorkspaceGroup } from "./workspace-group.js";

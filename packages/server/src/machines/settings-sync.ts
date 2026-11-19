@@ -17,7 +17,8 @@
  */
 import { effectiveCommandPolicyRules } from "@prismshadow/penguin-core";
 import type { ProjectConfig } from "@prismshadow/penguin-core";
-import type { ChatDefaultsDto, CommandPolicyRuleDto } from "../api/types.js";
+import type { CommandPolicyRuleDto } from "../api/types.js";
+import type { ChatDefaultsDto } from "@prismshadow/penguin-library-project";
 import type { MachineApi } from "./machine-api.js";
 
 /** This side's half: the two blocks as the far side's PUTs take them. */

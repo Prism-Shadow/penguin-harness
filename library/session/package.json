@@ -1,0 +1,63 @@
+{
+  "name": "@prismshadow/penguin-library-session",
+  "version": "0.2.18",
+  "description": "The sessions domain: the SessionIndex, SessionDrivers, SessionOrigins and Schedules mechanisms, the ApprovalMode vocabulary, and the sessions/schedules repos. A library package - the server imports it; nothing here imports the server.",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Prism-Shadow",
+    "url": "https://github.com/Prism-Shadow"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "library/session"
+  },
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./session": {
+      "types": "./dist/session.d.ts",
+      "import": "./dist/session.js"
+    },
+    "./repos/schedules": {
+      "types": "./dist/repos/schedules.d.ts",
+      "import": "./dist/repos/schedules.js"
+    },
+    "./repos/sessions": {
+      "types": "./dist/repos/sessions.d.ts",
+      "import": "./dist/repos/sessions.js"
+    },
+    "./repos": {
+      "types": "./dist/repos/index.d.ts",
+      "import": "./dist/repos/index.js"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "build": "tsup"
+  },
+  "dependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/penguin-library-db": "workspace:*",
+    "@prismshadow/amsp": "workspace:*"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.12"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "private": true
+}

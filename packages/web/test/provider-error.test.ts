@@ -5,9 +5,12 @@
  *   read; given one that names none — a date or a count at its start included — there is none.
  * - Given a message naming the provider's request id in any of its usual spellings, that id is
  *   read, without the sentence's stop; given none, there is none.
+ * - Given a message that is a JSON body, alone or after its status, the sentence it holds for a
+ *   person is read from where providers put it; given plain text, prose with a body inside it, a
+ *   body with no such sentence, or one that does not parse, the message comes back as it came.
  */
 import { describe, expect, it } from "vitest";
-import { httpStatusOf, requestIdOf } from "../src/features/chat/provider-error";
+import { httpStatusOf, providerWordsOf, requestIdOf } from "../src/features/chat/provider-error";
 
 describe("a provider's error message", () => {
   it.each<[string | undefined, number | null]>([
@@ -34,5 +37,26 @@ describe("a provider's error message", () => {
     [undefined, null],
   ])("%s names request id %s", (message, id) => {
     expect(requestIdOf(message)).toBe(id);
+  });
+
+  const TOO_LONG = "prompt is too long: 140211 tokens > 131072 maximum";
+  it.each<[string, string]>([
+    // An SDK's status, then the provider's body: the sentence inside it.
+    [
+      `400 {"type":"error","error":{"type":"invalid_request_error","message":"${TOO_LONG}"},"request_id":"req_011CUz3tF8eJ2dQx6Q9pY7Ln"}`,
+      TOO_LONG,
+    ],
+    [`HTTP 400: {"error":{"message":"${TOO_LONG}","code":"context_length_exceeded"}}`, TOO_LONG],
+    [`{"message":"${TOO_LONG}"}`, TOO_LONG],
+    [`422 {"detail":"${TOO_LONG}"}`, TOO_LONG],
+    [`400 {"error":"${TOO_LONG}"}`, TOO_LONG],
+    // Nothing to read: the message as it came.
+    [`400 Bad Request: ${TOO_LONG}`, `400 Bad Request: ${TOO_LONG}`],
+    ['upstream said {"message":"busy"}', 'upstream said {"message":"busy"}'],
+    ['400 {"error":{"code":400},"message":""}', '400 {"error":{"code":400},"message":""}'],
+    ['400 {"error":{"message":"cut', '400 {"error":{"message":"cut'],
+    ['400 [{"message":"busy"}]', '400 [{"message":"busy"}]'],
+  ])("%s says %s to a person", (message, words) => {
+    expect(providerWordsOf(message)).toBe(words);
   });
 });

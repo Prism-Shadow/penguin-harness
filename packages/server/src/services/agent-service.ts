@@ -53,7 +53,7 @@ import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import type { Config, Paths } from "../hmr/capabilities.js";
 import type { AgentConfig, AgentLifecycle, AgentPackage, Snapshots } from "../mechanisms/agents.js";
-import type { AgentIndex } from "../mechanisms/projects.js";
+import type { AgentIndex } from "@prismshadow/penguin-library-project";
 
 /**
  * How much of a SKILL.md is read to answer "which version is installed" (see `installedSkills`).

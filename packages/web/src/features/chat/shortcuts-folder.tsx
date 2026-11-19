@@ -42,6 +42,7 @@ import {
   ExampleFolderRow,
   ExampleRowGlyph,
   ExampleRowGo,
+  ExampleSelectionMark,
   examplePanelClass,
   exampleRowClass,
 } from "./example-folder-row";
@@ -104,11 +105,13 @@ function RowAction({
 export function ShortcutsFolder({
   open,
   onOpen,
+  exampleText,
   readComposerText,
   onFill,
 }: {
   open: boolean;
   onOpen: () => void;
+  exampleText?: string | null;
   /** The composer's current text, read at click time — a new shortcut starts from what was typed. */
   readComposerText: () => string;
   /** Hand the saved prompt to the composer. Pins no Skills; see user-shortcuts.ts. */
@@ -192,12 +195,14 @@ export function ShortcutsFolder({
                   <button
                     type="button"
                     data-slot="row"
+                    aria-current={shortcut.prompt === exampleText || undefined}
                     data-tooltip={`${shortcut.title}\n${S.chat.exampleFillHint}`}
                     onClick={() => onFill(shortcut.prompt)}
                     className={`flex min-w-0 flex-1 items-center ${ICON_GAP.menu} ${exampleRowClass}`}
                   >
                     <ExampleRowGlyph glyph={SHORTCUTS_GLYPH} />
                     <span className="min-w-0 flex-1 truncate">{shortcut.title}</span>
+                    {shortcut.prompt === exampleText && <ExampleSelectionMark />}
                     <ExampleRowGo />
                   </button>
                   <RowAction
