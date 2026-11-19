@@ -4452,7 +4452,7 @@ export interface AppCenterLayoutResponse {
 
 /**
  * GET /api/projects/:p/agents/:a/workbenches: every workbench of the Agent, disabled ones
- * included (each says so in `enabled`).
+ * included (each says so in `enabled`). With `?view=chat`, installations hidden from Chat are skipped before loading.
  */
 export interface WorkbenchesResponse {
   workbenches: WorkbenchInfo[];

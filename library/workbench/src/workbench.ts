@@ -49,6 +49,8 @@ export interface WorkbenchInfo {
    * predates the switches, which the Web reads as "no switch to show".
    */
   enabled?: boolean;
+  /** Whether this installation contributes tabs to Chat. An older server shows every tab. */
+  showInChat?: boolean;
 }
 
 /** How the Web App draws a contributed tab: a page of the workbench, or a renderer it carries. */

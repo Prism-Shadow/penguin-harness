@@ -98,6 +98,8 @@ import { loadTypeScript } from "../plugin/typescript.js";
 import { openUiRuntime, requireUiRuntime, type UiRuntime, type WebFiles } from "./ui-runtime.js";
 import { AgentStateRepo, agentStateRepoDir } from "./repo.js";
 import {
+  HIDDEN_FROM_CHAT,
+  listFolderIds,
   isSafeRelPath,
   isSwitchedOff,
   isTempName,
@@ -387,21 +389,30 @@ export class WorkbenchService implements Workbenches {
     });
   }
 
-  async list(projectId: string, agentId: string): Promise<WorkbenchInfo[]> {
+  async list(projectId: string, agentId: string, view?: "chat"): Promise<WorkbenchInfo[]> {
     await this.migrate(projectId, agentId);
     this.watch(projectId, agentId);
     const base = workbenchesDir(this.paths.root, projectId, agentId);
-    const folders = await listFolders(base);
+    const ids = await listFolderIds(base);
     const all = !(await isSwitchedOff(base));
     const out: WorkbenchInfo[] = [];
-    for (const folder of folders) {
+    const alive = new Set<string>();
+    for (const id of ids) {
+      const dir = path.join(base, id);
+      if (view === "chat" && (await isSwitchedOff(dir, HIDDEN_FROM_CHAT))) {
+        // Its window may be open in the App Center. Leave its runtime alone and skip its source.
+        alive.add(key(projectId, agentId, id));
+        continue;
+      }
+      const folder = await readFolder(dir, id);
+      if (!folder) continue;
+      alive.add(key(projectId, agentId, id));
       const { info, unloaded } = await this.settle(projectId, agentId, folder, all);
       // A marker written by hand is only seen here: what it unloaded is news to open pages.
       if (unloaded) this.notify(projectId, agentId, info);
       out.push(info);
     }
     // Folders that went away drop their instances.
-    const alive = new Set(folders.map((f) => key(projectId, agentId, f.id)));
     for (const [k, l] of this.loaded) {
       if (k.startsWith(`${projectId}/${agentId}/`) && !alive.has(k)) {
         this.forget(projectId, agentId, l.folder.id);
@@ -708,6 +719,20 @@ export class WorkbenchService implements Workbenches {
     return readAppCenterIcon(dir, workbenchId);
   }
 
+  async setChatVisibility(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+    show: boolean,
+  ): Promise<WorkbenchInfo> {
+    const folder = await this.folder(projectId, agentId, workbenchId);
+    await writeSwitch(folder.dir, show, HIDDEN_FROM_CHAT);
+    const all = await this.agentEnabled(projectId, agentId);
+    const { info, loaded } = await this.settle(projectId, agentId, folder, all);
+    if (!loaded) this.notify(projectId, agentId, info);
+    return info;
+  }
+
   async setAppCenter(
     projectId: string,
     agentId: string,
@@ -844,7 +869,12 @@ export class WorkbenchService implements Workbenches {
   }
 
   /** A loaded instance, which runs, so both its switches are on. */
-  private info(projectId: string, agentId: string, id: string, l: Loaded): WorkbenchInfo {
+  private async info(
+    projectId: string,
+    agentId: string,
+    id: string,
+    l: Loaded,
+  ): Promise<WorkbenchInfo> {
     const { icon } = l.appCenter;
     return {
       id,
@@ -856,6 +886,7 @@ export class WorkbenchService implements Workbenches {
       loadedAt: l.loadedAt,
       error: l.error,
       hints: hintsOf(l),
+      showInChat: !(await isSwitchedOff(l.folder.dir, HIDDEN_FROM_CHAT)),
       enabled: true,
       ...(l.appCenter.appCenter !== undefined ? { appCenter: l.appCenter.appCenter } : {}),
       ...(icon !== undefined ? { icon: appCenterIconRef(projectId, agentId, id, icon) } : {}),
@@ -863,13 +894,13 @@ export class WorkbenchService implements Workbenches {
   }
 
   /** One that does not run, from its folder alone (see WorkbenchInfo). */
-  private idleInfo(
+  private async idleInfo(
     projectId: string,
     agentId: string,
     folder: WorkbenchFolder,
     enabled: boolean,
     declared: AppCenterManifest,
-  ): WorkbenchInfo {
+  ): Promise<WorkbenchInfo> {
     const { appCenter, icon } = declared;
     return {
       id: folder.id,
@@ -881,6 +912,7 @@ export class WorkbenchService implements Workbenches {
       loadedAt: null,
       error: null,
       hints: [],
+      showInChat: !(await isSwitchedOff(folder.dir, HIDDEN_FROM_CHAT)),
       enabled,
       ...(appCenter !== undefined ? { appCenter } : {}),
       ...(icon !== undefined
@@ -933,7 +965,7 @@ export class WorkbenchService implements Workbenches {
       const current = this.loaded.get(k);
       if (current && current.folder.revision === folder.revision) {
         return {
-          info: this.info(projectId, agentId, folder.id, current),
+          info: await this.info(projectId, agentId, folder.id, current),
           loaded: false,
           unloaded: false,
         };
@@ -941,7 +973,7 @@ export class WorkbenchService implements Workbenches {
       try {
         const fresh = await this.load(projectId, agentId, folder);
         return {
-          info: this.info(projectId, agentId, folder.id, fresh),
+          info: await this.info(projectId, agentId, folder.id, fresh),
           loaded: true,
           unloaded: false,
         };
@@ -952,7 +984,7 @@ export class WorkbenchService implements Workbenches {
     // A load that started before the switch went off still lands; it is let go with the rest.
     await this.loading.get(k)?.catch(() => undefined);
     const unloaded = this.unload(k);
-    const info = this.idleInfo(
+    const info = await this.idleInfo(
       projectId,
       agentId,
       folder,
@@ -1181,7 +1213,7 @@ export class WorkbenchService implements Workbenches {
       hints: hintsOf(next),
     });
     this.loaded.set(k, next);
-    this.notify(projectId, agentId, this.info(projectId, agentId, folder.id, next));
+    this.notify(projectId, agentId, await this.info(projectId, agentId, folder.id, next));
     return next;
   }
 

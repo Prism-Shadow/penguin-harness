@@ -77,7 +77,7 @@ export function useWorkbenchTabs(
       return;
     }
     try {
-      const res = await api.getWorkbenches(projectId, agentId, machineId);
+      const res = await api.getWorkbenches(projectId, agentId, machineId, "chat");
       if (asked.current !== mine || isSafeMode()) return;
       // A switched-off workbench loads nothing: it offers no tab and has nothing to report.
       const running = runningWorkbenches(res);

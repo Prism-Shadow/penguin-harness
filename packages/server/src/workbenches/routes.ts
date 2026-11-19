@@ -10,6 +10,7 @@
  *   POST   /:id/reload             re-import the folder now (the watcher does this on change too)
  *   GET    /:id/history            the versions that loaded, newest first
  *   POST   /:id/rollback {revision} restore that version's files and reload
+ *   PATCH  /:id/chat-tabs {show}   opt this installation into or out of Chat
  *   PATCH  /:id/app-center {show}  set `penguin.appCenter.show` in its package.json and reload
  *   GET    /:id/app-center/icon    the image its App Center declaration names, re-checked and
  *                                  served as icons are (../http/icon-response.ts); 404
@@ -471,7 +472,11 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
   };
   app.get("/", async (c) => {
     const { projectId, agentId } = scope(c);
-    const workbenches = await deps.workbenches.list(projectId, agentId);
+    const workbenches = await deps.workbenches.list(
+      projectId,
+      agentId,
+      c.req.query("view") === "chat" ? "chat" : undefined,
+    );
     const enabled = await deps.workbenches.agentEnabled(projectId, agentId);
     return c.json({ workbenches, enabled } satisfies WorkbenchesResponse);
   });
@@ -598,6 +603,16 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
       throw new HttpError(400, "bad_request", "revision is required");
     const workbench = await deps.workbenches
       .rollback(projectId, agentId, c.req.param("id"), body.revision)
+      .catch(notFound);
+    return c.json({ workbench });
+  });
+
+  app.patch("/:id/chat-tabs", async (c) => {
+    const { projectId, agentId } = scope(c);
+    const body = await readJson(c);
+    if (typeof body.show !== "boolean") throw badRequest("show must be true or false");
+    const workbench = await deps.workbenches
+      .setChatVisibility(projectId, agentId, c.req.param("id"), body.show)
       .catch(notFound);
     return c.json({ workbench });
   });

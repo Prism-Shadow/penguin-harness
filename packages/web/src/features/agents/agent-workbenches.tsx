@@ -4,8 +4,7 @@
  * and the "Import workbench" dialog. The files are the truth, so the tab reads its lists again
  * after every action.
  *
- * A row says what its controls do (workbench-row.tsx): its two switches carry their words
- * ("Enable", "Show in the App Center"), "Open" is a text button and the way into the app, and the
+ * A row says what its controls do (workbench-row.tsx): its switches name the setting they change, "Open" is a text button and the way into the app, and the
  * rest — the App Center setting again as a checkable row, reload, version history, export,
  * remove — are the rows of its "More" menu. The title, and a click anywhere else on the row that
  * is not one of its controls, opens the workbench's own files read-only (part-files-dialog.tsx).
@@ -48,7 +47,7 @@ import * as api from "../../api/endpoints";
 import { formatDateTime } from "../../lib/format";
 import { useInstantSetting } from "../../lib/instant-setting";
 import { S } from "../../lib/strings";
-import { workbenchTabsOf } from "../../lib/workbench-tabs";
+import { workbenchAppPath, workbenchTabsOf } from "../../lib/workbench-tabs";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
 import { useAgentLocation } from "../../lib/agent-location";
@@ -128,6 +127,44 @@ function WorkbenchSwitch({
         onChange={(next) => void setting.set(next)}
         aria-label={S.workbenches.enableOne(title)}
         {...(allOff ? { title: S.workbenches.offByAll, "data-tooltip-extra": true } : {})}
+      />
+    </LabelledSwitch>
+  );
+}
+
+function ChatTabsSwitch({
+  workbench,
+  options,
+  title,
+}: {
+  workbench: WorkbenchInfo;
+  options: WorkbenchRowsOptions;
+  title: string;
+}) {
+  const { currentProject } = useProject();
+  const machineId = useAgentLocation();
+  const setting = useInstantSetting(workbench.showInChat !== false, async (show: boolean) => {
+    if (!currentProject) return;
+    const { workbench: updated } = await api.setWorkbenchChatVisibility(
+      currentProject.projectId,
+      options.agentId,
+      workbench.id,
+      show,
+      machineId,
+    );
+    options.onSwitched(updated);
+  });
+  return (
+    <LabelledSwitch
+      text={S.workbenches.showInChat}
+      hint={S.workbenches.showInChatHint}
+      disabled={setting.busy}
+    >
+      <Switch
+        checked={setting.value}
+        disabled={setting.busy}
+        onChange={(show) => void setting.set(show)}
+        aria-label={`${S.workbenches.showInChat} ${title}`}
       />
     </LabelledSwitch>
   );
@@ -231,12 +268,21 @@ export function useWorkbenchRows(options: WorkbenchRowsOptions): {
         {enabled !== undefined && (
           <WorkbenchSwitch workbench={{ ...workbench, enabled }} title={title} options={options} />
         )}
+        {workbench.showInChat !== undefined && (first || workbench.uiRev !== null) && (
+          <ChatTabsSwitch workbench={workbench} options={options} title={title} />
+        )}
         {appCenter !== undefined && <AppCenterToggle title={title} {...appCenter} />}
         {first && running && projectId && (
           <Button
             size="sm"
             aria-label={`${S.workbenches.open} ${title}`}
-            onClick={() =>
+            onClick={() => {
+              if (workbench.showInChat === false) {
+                void navigate(
+                  workbenchAppPath(projectId, agentId, workbench.id, first.key, machineId),
+                );
+                return;
+              }
               void navigate("/chat/new", {
                 state: {
                   agentId,
@@ -250,8 +296,8 @@ export function useWorkbenchRows(options: WorkbenchRowsOptions): {
                     machineId,
                   },
                 },
-              })
-            }
+              });
+            }}
           >
             {S.workbenches.openAction}
           </Button>

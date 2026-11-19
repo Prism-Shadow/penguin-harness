@@ -15,6 +15,9 @@
  * - A member who is not the owner is refused either switch (403 `owner_required`), a body
  *   without a boolean is 400, an unknown workbench is 404, and none of them changes anything.
  *
+ * - Given a workbench hidden from Chat, reading its chat listing skips its source, while an
+ *   explicit open still serves its tabs and the same workbench of a second Agent stays visible.
+ *
  * A loaded workbench (one load shared by the group, and one more each time a switch turns it
  * back on):
  * - Given it follows a Session, when its own switch goes off, the subscription ends at once,
@@ -195,6 +198,39 @@ describe("workbench switches", { timeout: 30_000 }, () => {
     loadedAt: null,
     error: null,
     enabled,
+    showInChat: true,
+  });
+
+  it("skips a hidden installation before loading its source and still serves the app directly", async () => {
+    const first = await newAgent();
+    const second = await newAgent();
+    for (const agent of [first, second])
+      await writeFiles(path.join(agent.folders, "desk"), DEMO_FILES);
+    const change = (show: boolean) => owner.patch(`${first.base}/desk/chat-tabs`, { show });
+    expect((await change(false)).status).toBe(200);
+    // On a cold start Chat must not compile this installation. Change its revision while the
+    // server has no watcher for this new Agent. Only opening the app should run the build.
+    const cold = await newAgent();
+    const dir = path.join(cold.folders, "desk");
+    await fs.cp(path.join(first.folders, "desk"), dir, { recursive: true });
+    await fs.rm(path.join(dir, ".build"), { recursive: true, force: true });
+    expect((await listing(cold.base + "?view=chat")).workbenches).toEqual([]);
+    await expect(fs.stat(path.join(dir, ".build"))).rejects.toThrow();
+    expect((await listing(second.base + "?view=chat")).workbenches[0]).toMatchObject({
+      id: "desk",
+      showInChat: true,
+    });
+    expect((await owner.get(cold.base + "/desk/ui/index.html")).status).toBe(200);
+    expect((await listing(cold.base)).workbenches[0]).toMatchObject({
+      showInChat: false,
+      enabled: true,
+    });
+    expect((await change(true)).status).toBe(200);
+    expect((await listing(first.base + "?view=chat")).workbenches[0]?.tabs[0]?.key).toBe("board");
+    expect((await owner.patch(first.base + "/desk/chat-tabs", { show: "no" })).status).toBe(400);
+    expect((await owner.patch(first.base + "/missing/chat-tabs", { show: false })).status).toBe(
+      404,
+    );
   });
 
   describe("a workbench switched off", () => {

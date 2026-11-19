@@ -1330,6 +1330,8 @@ export const zh = {
     /** The row's More menu: downloads the workbench's source as a zip. */
     exportWorkbench: "打包导出",
     /** Whether the workbench has a shortcut in the App Center: the words beside the row's switch (which flip it too), its accessible name with the title, and the More menu's checkable row. */
+    showInChat: "在聊天标签页显示",
+    showInChatHint: "关闭后，聊天页不会加载这个工作台。",
     showInAppCenter: "展示到应用中心",
     /** The switch's words' tooltip: what showing in the App Center means, and what the switch writes. */
     showInAppCenterHint:

@@ -8,6 +8,7 @@
  *   <agentStateDir>/workbenches/<id>/.harness/      the types it was written against (harness-types.ts)
  *   <agentStateDir>/workbenches/<id>/.build/        its emitted code, per revision (compile.ts)
  *   <agentStateDir>/workbenches/<id>/.disabled      present: this workbench is switched off
+ *   <agentStateDir>/workbenches/<id>/.hidden-from-chat  present: omit its tabs from Chat
  *   <agentStateDir>/workbenches/.disabled           present: every workbench of the Agent is
  *
  * The folder's source is every file except `state.json` (the state is the workbench's data,
@@ -33,23 +34,34 @@ export const UI_DIR = "ui";
  */
 export const DISABLED_MARKER = ".disabled";
 
+/** A per-installation preference, outside the versioned source like the enable switch. */
+export const HIDDEN_FROM_CHAT = ".hidden-from-chat";
+
 /** Whether `dir` (a workbench's folder, or the folder of all of them) holds the off marker. */
-export async function isSwitchedOff(dir: string): Promise<boolean> {
-  return fs.lstat(path.join(dir, DISABLED_MARKER)).then(
+export async function isSwitchedOff(dir: string, marker = DISABLED_MARKER): Promise<boolean> {
+  return fs.lstat(path.join(dir, marker)).then(
     () => true,
     () => false,
   );
 }
 
 /** Removes the off marker from `dir`, or writes it there (creating `dir` when it is missing). */
-export async function writeSwitch(dir: string, on: boolean): Promise<void> {
-  const marker = path.join(dir, DISABLED_MARKER);
+export async function writeSwitch(
+  dir: string,
+  on: boolean,
+  markerName = DISABLED_MARKER,
+): Promise<void> {
+  const marker = path.join(dir, markerName);
   if (on) {
     await fs.rm(marker, { force: true });
     return;
   }
   await fs.mkdir(dir, { recursive: true });
-  await fs.writeFile(marker, "");
+  try {
+    await fs.writeFile(marker, "", { flag: "wx" });
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+  }
 }
 
 export interface WorkbenchFolder {
@@ -200,17 +212,23 @@ export async function readLoadedSource(folder: WorkbenchFolder): Promise<SourceF
   return revisionOf(files) === folder.revision ? files : null;
 }
 
-export async function listFolders(base: string): Promise<WorkbenchFolder[]> {
+export async function listFolderIds(base: string): Promise<string[]> {
   let entries: import("node:fs").Dirent[];
   try {
     entries = await fs.readdir(base, { withFileTypes: true });
   } catch {
     return [];
   }
+  return entries
+    .filter((entry) => entry.isDirectory() && isWorkbenchId(entry.name))
+    .map((entry) => entry.name)
+    .sort((a, b) => a.localeCompare(b));
+}
+
+export async function listFolders(base: string): Promise<WorkbenchFolder[]> {
   const out: WorkbenchFolder[] = [];
-  for (const e of entries.sort((a, b) => a.name.localeCompare(b.name))) {
-    if (!e.isDirectory() || !isWorkbenchId(e.name)) continue;
-    const folder = await readFolder(path.join(base, e.name), e.name);
+  for (const id of await listFolderIds(base)) {
+    const folder = await readFolder(path.join(base, id), id);
     if (folder) out.push(folder);
   }
   return out;

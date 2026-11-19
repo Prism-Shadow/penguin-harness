@@ -1197,6 +1197,8 @@ export const en: Strings = {
     /** The row's More menu: downloads the workbench's source as a zip. */
     exportWorkbench: "Export",
     /** Whether the workbench has a shortcut in the App Center: the words beside the row's switch (which flip it too), its accessible name with the title, and the More menu's checkable row. */
+    showInChat: "Show in chat tabs",
+    showInChatHint: "Turn off to keep this workbench out of Chat.",
     showInAppCenter: "Show in the App Center",
     /** The switch's words' tooltip: what showing in the App Center means, and what the switch writes. */
     showInAppCenterHint:

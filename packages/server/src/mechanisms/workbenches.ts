@@ -112,7 +112,7 @@ export abstract class WorkbenchHost {
 @Interface()
 export abstract class Workbenches {
   /** Every workbench of the Agent, disabled ones included; the ones that run are loaded when stale. */
-  abstract list(projectId: string, agentId: string): Promise<WorkbenchInfo[]>;
+  abstract list(projectId: string, agentId: string, view?: "chat"): Promise<WorkbenchInfo[]>;
   /** The Agent-wide switch: false while `.disabled` sits beside the workbench folders. */
   abstract agentEnabled(projectId: string, agentId: string): Promise<boolean>;
   /**
@@ -227,6 +227,14 @@ export abstract class Workbenches {
     agentId: string,
     workbenchId: string,
   ): Promise<IconImage | null>;
+  /** Change this installation's visibility in Chat without disabling the running workbench. */
+  abstract setChatVisibility(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+    show: boolean,
+  ): Promise<WorkbenchInfo>;
+
   /**
    * Rewrites `penguin.appCenter.show` in the workbench's package.json, and nothing else of it,
    * then reloads the workbench — which records the edit as a version like any other.

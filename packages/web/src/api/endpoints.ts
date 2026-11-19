@@ -2894,10 +2894,18 @@ const workbenchesBase = (projectId: string, agentId: string) =>
  * the workbenches of an Agent that only a machine has are asked of THAT machine's server, and the
  * list's icons are re-rooted onto it (api/machine-icons.ts).
  */
-export const getWorkbenches = (projectId: string, agentId: string, machineId: string | null) =>
-  apiFetch<WorkbenchesResponse>(workbenchesBase(projectId, agentId), {
-    server: machineId,
-  }).then((r) => ({ ...r, workbenches: iconsOn(r.workbenches, machineId) }));
+export const getWorkbenches = (
+  projectId: string,
+  agentId: string,
+  machineId: string | null,
+  view?: "chat",
+) =>
+  apiFetch<WorkbenchesResponse>(
+    workbenchesBase(projectId, agentId) + (view === "chat" ? "?view=chat" : ""),
+    {
+      server: machineId,
+    },
+  ).then((r) => ({ ...r, workbenches: iconsOn(r.workbenches, machineId) }));
 /** The Agent-wide switch (Project owner): off, none of the Agent's workbenches runs. */
 export const setWorkbenchesEnabled = (
   projectId: string,
@@ -2989,6 +2997,17 @@ export const removeWorkbench = (
     method: "DELETE",
     server: machineId,
   });
+export const setWorkbenchChatVisibility = (
+  projectId: string,
+  agentId: string,
+  workbenchId: string,
+  show: boolean,
+  machineId: string | null,
+) =>
+  apiFetch<{ workbench: WorkbenchInfo }>(
+    `${workbenchesBase(projectId, agentId)}/${encodeURIComponent(workbenchId)}/chat-tabs`,
+    { method: "PATCH", body: { show }, server: machineId },
+  );
 /** The App Center switch: sets `penguin.appCenter.show` in the workbench's package.json and reloads it. */
 export const setWorkbenchAppCenter = (
   projectId: string,

@@ -6,6 +6,8 @@
  * - Given a conversation with a dock open and its transcript scrolled, when a workbench tab is
  *   shown, nothing of Chat is on top anywhere over the page, focus cannot reach the dock, and
  *   when Chat is shown again the dock has its size and the transcript its scroll.
+ * - Hiding a selected workbench in its Agent's settings returns to Chat. A fresh chat view
+ *   downloads none of its pages, and its App Center tile still opens them.
  * - The page is see-through: a page that paints no background leaves its root and body clear,
  *   in the app's color scheme, so the app's surface shows through it; a page that paints its own
  *   background keeps it.
@@ -14,6 +16,7 @@
  */
 import { test, expect } from "@playwright/test";
 import { provisionAndLogin } from "./auth.mjs";
+import { watchSocket } from "./api-socket.mjs";
 import { zip } from "./workbench-zip.mjs";
 
 const BASE = process.env.BASE_URL;
@@ -29,6 +32,7 @@ const MANIFEST = {
   version: "1.0.0",
   type: "module",
   penguin: {
+    appCenter: { show: true, title: "Window demo" },
     modules: [
       {
         name: "Workbench",
@@ -230,4 +234,83 @@ test("the toolbar's details card opens on top of a dock lifted to fullscreen", a
     { x: box.x + box.width / 2, y: box.y + box.height / 2 },
   );
   expect(onTop).toBe("复制 Session ID");
+});
+
+test("a workbench can stay in the App Center without loading in Chat", async ({
+  page,
+  context,
+}) => {
+  await openChat(page);
+  await tab(page, "Clear").click();
+  await expect(
+    page.frameLocator("iframe[title='Clear']").getByRole("heading", { name: "Board" }),
+  ).toBeVisible();
+  const settings = await context.newPage();
+  await settings.setViewportSize({ width: 320, height: 760 });
+  await settings.goto(`${BASE}/agents/default_agent?tab=workbenches`);
+  const toggle = settings.getByRole("switch", { name: "在聊天标签页显示 Clear" });
+  try {
+    await expect(toggle).toBeChecked();
+    await toggle.click();
+    await expect(toggle).not.toBeChecked();
+    await expect(tab(page, "Clear")).toHaveCount(0);
+    await expect(tab(page, "Solid")).toHaveCount(0);
+    await expect(page.locator("iframe[title='Clear']")).toHaveCount(0);
+    await expect(page.getByText(REPLY)).toBeVisible();
+
+    await page.evaluate(
+      ({ projectId }) => {
+        history.replaceState(
+          {
+            ...history.state,
+            usr: {
+              ...history.state?.usr,
+              workbench: {
+                projectId,
+                agentId: "default_agent",
+                tabId: "window-demo/clear",
+                machineId: null,
+              },
+            },
+          },
+          "",
+        );
+      },
+      { projectId },
+    );
+    const socket = await watchSocket(page);
+    const resources = [];
+    socket.onCall((call) => {
+      if (call.path.includes("/workbenches/window-demo/")) resources.push(call.path);
+    });
+    page.on("request", (r) => {
+      if (new URL(r.url()).pathname.includes("/workbenches/window-demo/")) resources.push(r.url());
+    });
+    await Promise.all([
+      socket.nextAnswer((call) => call.path.endsWith("/workbenches?view=chat")),
+      page.reload(),
+    ]);
+    await expect(page.getByText(REPLY)).toBeVisible();
+    await expect(tab(page, "Clear")).toHaveCount(0);
+    expect(resources).toEqual([]);
+    await settings.reload();
+    await expect(toggle).not.toBeChecked();
+    await page.goto(`${BASE}/apps`);
+    const tile = page.getByRole("button", { name: /^Window demo/ });
+    await tile.click();
+    await expect(
+      page.frameLocator("iframe[title='Clear']").getByRole("heading", { name: "Board" }),
+    ).toBeVisible();
+    expect(resources.some((url) => url.includes("/ui/clear.html"))).toBe(true);
+    await toggle.click();
+    await expect(toggle).toBeChecked();
+    await page.goto(`${BASE}/chat/${sessionId}`);
+    await expect(tab(page, "Clear")).toBeVisible();
+  } finally {
+    await page.request.patch(
+      `${BASE}/api/projects/${projectId}/agents/default_agent/workbenches/window-demo/chat-tabs`,
+      { data: { show: true } },
+    );
+    await settings.close();
+  }
 });
