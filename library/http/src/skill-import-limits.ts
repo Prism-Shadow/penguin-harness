@@ -1,5 +1,5 @@
 /**
- * Caps shared by every path that pulls Skill files in from outside the harness — the archive
+ * Caps shared by every path that pulls Skill files in from outside the library — the archive
  * upload/download routes and the directory import. One set of numbers, so a limit raised for one
  * entry point cannot quietly leave another behind, and one message, so the failure reads the same
  * wherever the user hit it. `unzipBounded` is where they are enforced on the way in, since an

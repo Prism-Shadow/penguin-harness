@@ -114,7 +114,7 @@ import { SnapshotService } from "./services/snapshot-service.js";
 import { AgentRoutes } from "./services/agent-routes.js";
 import { AgentService } from "./services/agent-service.js";
 import { MemoryService } from "./services/memory-service.js";
-import { BenchmarkService } from "./services/benchmark-service.js";
+import { BenchmarkServiceProvider } from "./services/benchmark-service.js";
 import { ProjectsRoutes } from "./http/routes/dirs.js";
 import { SandboxModule } from "./sandbox/service.js";
 import { SandboxSettings } from "./sandbox/settings-store.js";
@@ -481,7 +481,7 @@ export class TracesModule {}
     SnapshotService,
     AgentService,
     MemoryService,
-    BenchmarkService,
+    BenchmarkServiceProvider,
     AgentRoutes,
   ],
   exports: [AgentConfig, Snapshots, AgentLifecycle, Memory, Benchmarks],

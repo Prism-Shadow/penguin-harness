@@ -30,7 +30,7 @@ import type { SessionService } from "../src/services/session-service.js";
 import type { PricingLookup, UsageService } from "../src/services/usage-service.js";
 import type { WorkspaceFilesService } from "../src/services/workspace-files-service.js";
 import type { PreviewTokenSigner } from "../src/services/preview-token.js";
-import type { BenchmarkService } from "../src/services/benchmark-service.js";
+import type { BenchmarkService } from "@prismshadow/penguin-library-benchmark/benchmark-service";
 import type { SnapshotService } from "../src/services/snapshot-service.js";
 import type { SessionsRepo } from "@prismshadow/penguin-library-session/repos/sessions";
 import type { UiPrefsRepo } from "@prismshadow/penguin-library-setting/repos/ui-prefs";
