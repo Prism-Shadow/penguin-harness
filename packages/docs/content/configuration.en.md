@@ -93,6 +93,7 @@ A new Project writes no `base_url` for these seven first-party groups, so their 
 | `name` | string | — | Project display name; the id is shown when unset |
 | `default_model` | pair | — | Paired `{ provider, model_id }` reference to the default model; must point to an entry in `models` |
 | `vision_model` | pair | — | The vision model that reads images for text-only models (`read_file` hands images to it); a paired reference |
+| `[tools]` | table | — | The models bound to the tools plugins offer, one `key = { provider = "…", model_id = "…" }` line per binding; the keys are the plugins'. Set in Project settings; removing a model unbinds it |
 | `[default_chat]` | table | — | Prefilled defaults for new chats; see [New chat defaults](#new-chat-defaults) |
 | `[command_policy]` | table | Factory set | Ask and deny rules for shell commands, applied ahead of the approval mode; see [Command policy](#command-policy) |
 | `[plugins]` | table | — | The server plugins the Project asks for; see [Plugins](#plugins) |

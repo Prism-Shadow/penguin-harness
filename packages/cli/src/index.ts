@@ -68,7 +68,14 @@ export async function cli(argv: string[]): Promise<number> {
     // is resolved once, here, and every register consumes the bundle — no command resolves
     // a locale itself. The commands write to this process's own streams; this invocation
     // IS the process.
-    command.code.register(node as unknown as CliCommandProgram, { messages: t });
+    command.code.register(node as unknown as CliCommandProgram, {
+      messages: t,
+      stdout: process.stdout,
+      stderr: process.stderr,
+      exit: (code) => {
+        process.exitCode = code;
+      },
+    });
   }
 
   // Show help only when no subcommand is given (empty input); do not error.

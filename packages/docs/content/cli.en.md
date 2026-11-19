@@ -790,7 +790,7 @@ Sets the CLI's interface language (`en` or `zh`) by writing `PENGUIN_LANG` into 
 
 ## penguin exec
 
-Runs a plugin's command on the server. A plugin contributes commands the way it contributes anything else: a class whose `contributes["PluginCliCommandsProvider.commands"]` entry is the command's data half — a `key` (the command path, `a.b.c` answering `penguin a b c ARGS`) and a one-line summary in each language — and whose `@Bind(entry.id)` field is its code half. The commands live in the server's tree, so the CLI lists them from the server (`GET /api/cli/commands`) and asks the server to run one (`POST /api/cli/commands/run`); running a plugin's code is an admin operation, which the CLI's local API token carries, as for `penguin plugin install`.
+Runs a plugin's command on the server. A plugin contributes commands the way it contributes anything else: a class whose `contributes["PluginCliCommandsProvider.commands"]` entry is the command's data half — a `key` (the command path, `a.b.c` answering `penguin a b c ARGS`) and a one-line summary in each language — and whose `@Bind(entry.id)` field is its code half. The commands live in the server's tree, so the CLI lists them from the server (`GET /api/cli/commands`) and asks the server to run one (`POST /api/cli/commands/run`); running a plugin's code is an admin operation unless the command is a member command (below), and the CLI's local API token carries it, as for `penguin plugin install`.
 
 ```bash
 penguin exec <id> [args...]
@@ -807,6 +807,8 @@ Two or more plugins answering the same words is ambiguous: the report lists one 
 penguin exec sandbox.wsl.restart --prod
 penguin exec @penguinharness/sandbox-wsl:sandbox.wsl.restart   # when ids collide
 ```
+
+A command a plugin marks `access: "member"` runs for any member of the Project, not only the administrator. A run names its caller's Project and Session: inside an Agent's shell, its `PENGUIN_PROJECT_ID` and `PENGUIN_SESSION_ID`; outside one, `default_project` for such a command. A command can also declare the options that name local files: the CLI reads the file each `read` option names, relative to the current directory, and sends it with the run, and an unreadable file stops the run before anything is sent. The files the command hands back are saved under the directory its `write` option names, or in the current directory, never over an existing file (`name-1.ext` instead), and each saved path is printed on stderr.
 
 ## penguin server / penguin web
 

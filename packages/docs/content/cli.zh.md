@@ -790,7 +790,7 @@ penguin config lang en
 
 ## penguin exec
 
-在 server 上运行插件的一条命令。插件与其他贡献一样地贡献命令：一个类，其 `contributes["PluginCliCommandsProvider.commands"]` 条目是命令的数据半——一个 `key`（命令路径，`a.b.c` 等价于 `penguin a b c ARGS`）与每种语言一行 summary——其 `@Bind(entry.id)` 字段是代码半。命令住在 server 的模块树里，因此 CLI 从 server 列出它们（`GET /api/cli/commands`）、请 server 运行一条（`POST /api/cli/commands/run`）；运行插件的代码是管理员操作，CLI 以本地 API token 调用，与 `penguin plugin install` 同一权限。
+在 server 上运行插件的一条命令。插件与其他贡献一样地贡献命令：一个类，其 `contributes["PluginCliCommandsProvider.commands"]` 条目是命令的数据半——一个 `key`（命令路径，`a.b.c` 等价于 `penguin a b c ARGS`）与每种语言一行 summary——其 `@Bind(entry.id)` 字段是代码半。命令住在 server 的模块树里，因此 CLI 从 server 列出它们（`GET /api/cli/commands`）、请 server 运行一条（`POST /api/cli/commands/run`）；除成员命令（见下文）外，运行插件的代码是管理员操作，CLI 以本地 API token 调用，与 `penguin plugin install` 同一权限。
 
 ```bash
 penguin exec <id> [args...]
@@ -807,6 +807,8 @@ penguin exec <包>:<id> [args...]
 penguin exec sandbox.wsl.restart --prod
 penguin exec @penguinharness/sandbox-wsl:sandbox.wsl.restart   # id 撞名时
 ```
+
+插件标为 `access: "member"` 的命令，Project 的任何成员都能运行，不限管理员。一次运行带上调用方的 Project 与 Session：在 Agent 的 shell 里取其 `PENGUIN_PROJECT_ID` 与 `PENGUIN_SESSION_ID`；在 Agent 之外，这类命令缺省为 `default_project`。命令还可以声明指名本地文件的选项：每个 `read` 选项所指的文件由 CLI 相对当前目录读取、随运行发送，读不到即在发送任何内容之前停止。命令交回的文件保存到 `write` 选项所指的目录，缺省为当前目录，从不覆盖已有文件（改存为 `name-1.ext`），每个保存的路径都打印到 stderr。
 
 ## penguin server / penguin web
 

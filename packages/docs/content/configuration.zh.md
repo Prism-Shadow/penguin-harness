@@ -93,6 +93,7 @@ Agent 运行的每条命令，PATH 的第一位都是本安装自带的 `penguin
 | `name` | 字符串 | — | Project 显示名；未设置时显示 id |
 | `default_model` | 成对引用 | — | 指向默认模型的 `{ provider, model_id }` 成对引用；必须指向 `models` 里的条目 |
 | `vision_model` | 成对引用 | — | 为纯文本模型读取图像的视觉模型（`read_file` 会把图像交给它）；成对引用 |
+| `[tools]` | 表 | — | 插件所提供工具绑定的模型，每个绑定一行 `key = { provider = "…", model_id = "…" }`，键由插件声明。在 Project 设置中选择；删除模型即解除绑定 |
 | `[default_chat]` | 表 | — | 新对话的预填默认值；见[新对话默认值](#新对话默认值) |
 | `[command_policy]` | 表 | 出厂规则集 | shell 命令的需确认与拒绝规则，先于审批模式生效；见[命令策略](#命令策略) |
 | `[plugins]` | 表 | — | Project 要求的服务端插件；见[插件](#插件) |

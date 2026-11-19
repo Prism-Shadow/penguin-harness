@@ -6528,6 +6528,16 @@ export interface PluginCliCommandInfo {
   key: string;
   /** Its one-line summary, per language. */
   summary: { en: string; zh: string };
+  /**
+   * Who may run it: the administrator only, or any member of the caller's Project. This server
+   * always says; a client reads an absent one (a server from before member commands) as `admin`.
+   */
+  access?: "admin" | "member";
+  /**
+   * The local files it exchanges: `read`, the options whose value is a file the terminal sends;
+   * `write`, the option naming the directory the terminal saves returned files into.
+   */
+  files?: { read?: string[]; write?: string };
 }
 
 /** GET /api/cli/commands: every command the server's plugins contribute, in load order. */
@@ -6545,13 +6555,39 @@ export interface PluginCliCommandRunRequest {
   language: "en" | "zh";
   /** The program name usage lines print (`penguin`, or `penguin exec <plugin>`). */
   prog: string;
+  /** The caller's Project (an Agent's `PENGUIN_PROJECT_ID`); a member command needs one. */
+  projectId?: string;
+  /** The caller's Session (an Agent's `PENGUIN_SESSION_ID`): a Session of `projectId`. */
+  sessionId?: string;
+  /** The local files the terminal read for the command's `files.read` options. */
+  files?: PluginCliCommandInputFile[];
 }
 
-/** What one run printed, and its exit code. */
+/** One file the terminal sends with a run. */
+export interface PluginCliCommandInputFile {
+  /** The option's value as typed: what the command looks the file up by. */
+  value: string;
+  /** The file's own name, no directory. */
+  name: string;
+  /** Its bytes, base64. */
+  data: string;
+}
+
+/** One file a run hands back to the terminal, which saves it under the command's `files.write`. */
+export interface PluginCliCommandOutputFile {
+  /** A plain file name, no directory. */
+  name: string;
+  mimeType?: string;
+  /** Its bytes, base64. */
+  data: string;
+}
+
+/** What one run printed, its exit code, and the files it handed back. */
 export interface PluginCliCommandRunResponse {
   exitCode: number;
   stdout: string;
   stderr: string;
+  files?: PluginCliCommandOutputFile[];
 }
 
 /**

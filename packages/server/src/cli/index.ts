@@ -91,6 +91,8 @@ export type {
   OrganizationDetail,
   OrganizationsResponse,
   PluginCliCommandInfo,
+  PluginCliCommandInputFile,
+  PluginCliCommandOutputFile,
   PluginCliCommandRunRequest,
   PluginCliCommandRunResponse,
   PluginCliCommandsResponse,
