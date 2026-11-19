@@ -22,13 +22,10 @@
  */
 import { randomUUID } from "node:crypto";
 
-/** A numbered channel event; `id` is `<epoch>-<seq>`, `data` is serialized single-line JSON. */
-export interface ChannelEvent {
-  id: string;
-  /** SSE event name; omitted (a record) means no `event:` line. */
-  event?: string;
-  data: string;
-}
+/** The channel event shape moved to @prismshadow/penguin-library-session (the AgentState
+ * closed shape reaches it); re-exported here for the existing import paths. */
+export type { ChannelEvent };
+import type { ChannelEvent } from "@prismshadow/penguin-library-session";
 
 export type ChannelListener = (evt: ChannelEvent) => void;
 

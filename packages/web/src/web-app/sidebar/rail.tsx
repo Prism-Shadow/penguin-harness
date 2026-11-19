@@ -252,6 +252,7 @@ export function CollapsedRail({ onExpand }: { onExpand?: () => void }) {
           glyph={NEW_CHAT_ICON}
           active={activeSessionId === DRAFT_SESSION_ID}
           onClick={newChat}
+          primary
         />
       )}
       {/* 3 onward. Page entries. Four sit on a badge trail — Agents (an outdated kernel),

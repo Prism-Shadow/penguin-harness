@@ -32,6 +32,25 @@ abstraction at the concrete behavior being shared; a one-off business rule stays
 During review, check for duplicated markup, page-local overrides and call sites that bypass the
 shared component. Verify the shared change in the gallery and in a representative host surface.
 
+### Rounded surfaces and state fills
+
+Put a control’s background, hover, selected and border on the same element when possible. Its
+border radius then paints every state, including a theme’s asymmetric or square corners.
+
+- For a flush card of rows, use `Card padding="none"`. For another closed frame with an
+  edge-to-edge header, image, progress fill or moving knob, put `data-clip-surface=""` on the
+  element that actually draws the rounded edge. Its `overflow: hidden` establishes a scroll
+  container. If a descendant sticks to an outer scrollport, contain the paint on a separate
+  layer alongside the sticky content. Keep the existing scrolling element in charge of overflow.
+- When a region has an overhanging handle, focus indicator or menu, leave that region open.
+  A full-size decorative layer directly inside it can use `rounded-[inherit]` for its own
+  background or inset ring. Give that layer `data-clip-surface=""` if its own children also paint.
+  The same rule applies to a full-size pseudo-element (`border-radius: inherit`). An inset
+  decoration with a different size can have its own shape inside the clipped fill.
+- Check the first and last row on hover/selection, the corners during motion, and keyboard
+  focus outside the edge. The gallery’s rounded-surface browser test uses contrasting paint and
+  a visible-overflow host so a second clipping ancestor cannot hide a regression.
+
 ### Landing, docs and gallery chrome
 
 Use `@prismshadow/penguin-ui/site` for the shared `SiteHeader`, `SiteNavLinks`,

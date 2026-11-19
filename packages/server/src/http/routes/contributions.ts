@@ -17,7 +17,7 @@ import type {
   WebPageRemovalContribution,
   WebPageRemovalData,
 } from "../../api/types.js";
-import type { WorkbenchTabRenderer } from "../../mechanisms/workbenches.js";
+import type { WorkbenchTabRenderer } from "@prismshadow/penguin-library-workbench";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 
 export interface ContributionsRouteDeps {

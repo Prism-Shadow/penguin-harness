@@ -59,6 +59,9 @@ on:
       - LICENSE
       - THIRD-PARTY-NOTICES.md
       - plugins/**
+      # The library domain packages are workspace packages the server imports, so their
+      # source and manifest changes change the image too.
+      - library/**
       # CLI + web and their dependencies are built; all workspace manifests are installed.
       # New packages are included by default, so adding an image dependency cannot silently
       # leave its later source changes out. The excluded packages do not ship in this image.
