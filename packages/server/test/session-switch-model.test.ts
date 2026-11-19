@@ -11,7 +11,9 @@
  * new context's `session_meta` already finds it) — by summary or, when the compaction gets no
  * summary, by Trace handoff — stay put when the switch is stopped or the target's context cannot
  * be opened, and usage is attributed to the model that served each request — the switch's own
- * compaction request to the previous model, the next Task to the new one.
+ * compaction request to the previous model, the next Task to the new one. A switch that records
+ * its target with a `session_update` in that last place moves the row as that record passes,
+ * and its Trace handoff is held for history reads beside the opener's records.
  *
  * A Session that is not in memory is loaded the ordinary way first, through the real loader and
  * core: one whose model was removed from the Project config hands its history over by Trace path
@@ -33,6 +35,7 @@ import {
   requestBegin,
   requestEnd,
   sessionMeta,
+  sessionUpdate,
   tokenUsage,
   toolListReady,
   userText,
@@ -93,6 +96,11 @@ type SwitchBehaviour =
       status: StopReason;
       degraded?: { errorCode: ErrorCode; errorMessage: string };
       gate?: Promise<void>;
+      /**
+       * The switch records its target with a `session_update` where the new context's
+       * `session_meta` stood: the next file opens only with the next message.
+       */
+      recorded?: boolean;
     };
 
 /** What the fake's opener reports when the target's context cannot be opened. */
@@ -173,16 +181,18 @@ function switchFake(model: ModelRefDto, behaviour: SwitchBehaviour): SwitchFake 
         fake.provider = opts.provider;
         fake.modelId = opts.modelId;
         yield toolListReady([]);
-        yield sessionMeta({
-          session_id: SID,
-          provider: opts.provider,
-          model_id: opts.modelId,
-          model_context_window: WINDOW_B,
-          system_prompt: "sp",
-          agent_state: "/tmp/agents/default_agent/agent_state",
-          workspace: "/tmp/w",
-          source: "user",
-        });
+        yield behaviour.recorded
+          ? sessionUpdate({ provider: opts.provider, model_id: opts.modelId })
+          : sessionMeta({
+              session_id: SID,
+              provider: opts.provider,
+              model_id: opts.modelId,
+              model_context_window: WINDOW_B,
+              system_prompt: "sp",
+              agent_state: "/tmp/agents/default_agent/agent_state",
+              workspace: "/tmp/w",
+              source: "user",
+            });
         // No summary: the handoff names this Session's file instead.
         if (behaviour.degraded) {
           yield userText(
@@ -243,6 +253,8 @@ describe("POST /switch-model", () => {
     const rowAtEnd: ModelRefDto[] = [];
     /** The row's model as it stood when each session_meta was published. */
     const rowAtMeta: ModelRefDto[] = [];
+    /** The row's model as it stood when each session_update was published. */
+    const rowAtUpdate: ModelRefDto[] = [];
     /** How many bootstrap records the manager held for GET /messages as each message was published. */
     const heldAt: Array<[string | undefined, number]> = [];
     t.deps.channels.get(SID).subscribe((evt) => {
@@ -258,6 +270,9 @@ describe("POST /switch-model", () => {
       ]);
       const r = row();
       if (msg.type === "session_meta") rowAtMeta.push({ provider: r.provider, modelId: r.modelId });
+      if ((msg.payload as { type?: string }).type === "session_update") {
+        rowAtUpdate.push({ provider: r.provider, modelId: r.modelId });
+      }
       if ((msg.payload as { type?: string }).type === "compaction_end") {
         rowAtEnd.push({ provider: r.provider, modelId: r.modelId });
       }
@@ -267,6 +282,7 @@ describe("POST /switch-model", () => {
       events,
       rowAtEnd,
       rowAtMeta,
+      rowAtUpdate,
       heldAt,
       /** Each message's kind: its payload type, or `session_meta`. */
       kinds: () =>
@@ -557,6 +573,55 @@ describe("POST /switch-model", () => {
     expect(feed.rowAtMeta).toEqual([B]);
     expect(row()).toMatchObject(B);
 
+    await api.post(`/api/sessions/${SID}/tasks`, { input: [{ type: "text", text: "on B" }] });
+    await waitFor(() => usageModels().length === 2);
+    expect(usageModels()).toEqual([A.modelId, B.modelId]);
+  });
+
+  it("a switch that records its target with a session_update moves the row and the entry as that record is published, tells the listeners once, and holds its handoff for history reads until the next file opens", async () => {
+    adopt(
+      switchFake(A, {
+        kind: "stream",
+        status: "completed",
+        recorded: true,
+        degraded: { errorCode: "rejected", errorMessage: "prompt is too long" },
+      }),
+    );
+    const heard: Array<{ model: ModelRefDto; row: ModelRefDto }> = [];
+    t.deps.manager.onModelChanged((_sessionId, model) => {
+      const r = row();
+      heard.push({ model, row: { provider: r.provider, modelId: r.modelId } });
+    });
+    const feed = listen();
+
+    expect((await api.post(url, B)).status).toBe(202);
+    await waitFor(() => feed.states().includes("idle"));
+
+    expect(feed.kinds()).toEqual([
+      "compaction_begin",
+      "token_usage",
+      "compaction_end",
+      "tool_list_ready",
+      "session_update",
+      "text",
+    ]);
+    // A client refetching the Session on that record reads the new model.
+    expect(feed.rowAtEnd).toEqual([A]);
+    expect(feed.rowAtUpdate).toEqual([B]);
+    expect(row()).toMatchObject(B);
+    expect(heard).toEqual([{ model: B, row: B }]);
+    // No file opened: the opener's record and the handoff stay held for history reads.
+    expect(feed.heldAt.slice(-3)).toEqual([
+      ["tool_list_ready", 1],
+      ["session_update", 1],
+      ["text", 2],
+    ]);
+    const held = t.deps.manager.pendingBootstrap(SID);
+    expect(parseModelSwitchMessage((held.at(-1)!.payload as { text: string }).text)).toMatchObject(
+      { sessionId: SID, ...prev(A) },
+    );
+
+    // The next Task bills to the target.
     await api.post(`/api/sessions/${SID}/tasks`, { input: [{ type: "text", text: "on B" }] });
     await waitFor(() => usageModels().length === 2);
     expect(usageModels()).toEqual([A.modelId, B.modelId]);

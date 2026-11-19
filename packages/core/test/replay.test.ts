@@ -19,6 +19,13 @@
  * - A span with no request (an ordinary request the provider refused, answered by a hand-off)
  *   resumes with that note, the refusal quoted in it; a process that died inside such a span
  *   resumes on the old context with the refused turn's input pending.
+ * - A closed context (rule 1): a file closed by a compaction stays closed whatever the Session
+ *   writes behind it (Task and hook records, a session_update, a stopped first run's input, which
+ *   is carried behind the opening), and reopens once a request_begin follows; a completed switch's
+ *   pending session_update closes it too, on the model it names (the last one wins). The
+ *   compaction decides the opening; without one, the opening is the regenerated
+ *   `[model_switch_from]` handoff after completed turns, else the text the context opened with,
+ *   and the unanswered input rides on as text alone.
  * - Tolerates a truncated trailing line left by an abnormal process exit.
  * - Round-trip: a Trace written out by the engine, once replayed, matches the history the model actually received.
  */
@@ -28,14 +35,21 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { REJECTED_IMAGE_NOTE, replaceInputImages } from "../src/engine/rejected-images.js";
 import {
+  abortEvent,
   assistantText,
   compactionBegin,
   compactionEnd,
   emptyTokenCounts,
+  hookEvent,
   imageUrlMessage,
+  mcpConnectBegin,
+  mcpConnectEnd,
   requestBegin,
   requestEnd,
   sessionMeta,
+  sessionUpdate,
+  taskBegin,
+  taskEnd,
   thinkingMessage,
   tokenUsage,
   toolCall,
@@ -43,7 +57,11 @@ import {
   userText,
 } from "@prismshadow/amsp/records";
 import type { AmspRecord, ErrorCode, TokenCounts } from "@prismshadow/amsp/records";
-import { transcribeToolCallOutput } from "@prismshadow/amsp/markers";
+import {
+  buildModelSwitchMessage,
+  parseInPlaceModelSwitch,
+  transcribeToolCallOutput,
+} from "@prismshadow/amsp/markers";
 import { parseTraceLines, readTraceTolerant, resumeTrace } from "../src/trace/resume.js";
 import { buildCompactionHandoff } from "../src/engine/compaction-carry.js";
 import { ContextEngine } from "../src/engine/context-engine.js";
@@ -625,6 +643,228 @@ describe("resumeTrace over a compaction's span (summary, hand-off)", () => {
     expect(textsOf(result.history)).toEqual(["hello", "hi", "please summarize", "write_file"]);
     // Only the output the committed round is owed rides on; the harness's line does not.
     expect(textsOf(result.carryOver)).toEqual(["written"]);
+  });
+});
+
+describe("resumeTrace over a closed context (replay rule 1)", () => {
+  const SESSION = "session-2026-07-06-10-00-00-abcdef01";
+  const TRACE = "/traces/2026-07-06/session-2026-07-06-10-00-00-abcdef01_001.jsonl";
+  const target = { provider: "openai", model_id: "gpt-5.2" };
+
+  /** A context with one completed turn, closed by a full-summary compaction. */
+  const compacted = (): AmspRecord[] => [
+    meta(),
+    userText("hello"),
+    requestBegin(),
+    assistantText("hi"),
+    requestEnd("completed"),
+    tokenUsage(usage(10), usage(10)),
+    compactionBegin({ reason: "manual", mode: "summarize", context: 10, turns: 1 }),
+    userText("please summarize"),
+    requestBegin(),
+    assistantText("[summary]the gist[/summary]"),
+    requestEnd("completed"),
+    tokenUsage(usage(20), usage(20)),
+    compactionEnd({ reason: "manual", mode: "summarize", status: "completed" }),
+  ];
+  const SUMMARY = "[context_summary]\nthe gist\n[/context_summary]";
+  const pendingText = (r: ReturnType<typeof resumeTrace>): string | undefined =>
+    (r.pendingSummary?.payload as { text?: string } | undefined)?.text;
+
+  it.each([
+    ["Task records", () => [taskEnd(), taskBegin()]],
+    ["a stop hook's record", () => [hookEvent({ hook: "stop", name: "goal", output: { round: 2 } })]],
+    ["a completed switch's session_update", () => [sessionUpdate(target)]],
+    [
+      "a first run stopped during its MCP connect",
+      () => [
+        taskBegin(),
+        userText("next?"),
+        mcpConnectBegin(["docs"]),
+        mcpConnectEnd({ status: "aborted", results: [] }),
+        abortEvent(),
+        taskEnd(),
+      ],
+    ],
+  ])("a compaction-closed file stays closed with %s behind it", (_, behind) => {
+    const result = resumeTrace([...compacted(), ...behind()]);
+    expect(result.contextClosed).toBe(true);
+    expect(result.history).toEqual([]);
+    expect(pendingText(result)).toBe(SUMMARY);
+  });
+
+  it("a compaction-closed file reopens once a request_begin follows", () => {
+    const result = resumeTrace([
+      ...compacted(),
+      userText("next?"),
+      requestBegin(),
+      assistantText("sure"),
+      requestEnd("completed"),
+    ]);
+    expect(result.contextClosed).toBe(false);
+    expect(textsOf(result.history)).toContain("sure");
+    expect(result.pendingSummary).toBeUndefined();
+  });
+
+  it("the input a stopped first run left behind the closing compaction rides on behind the summary, without tool output", () => {
+    const image = imageUrlMessage("data:image/png;base64,AAAA");
+    const result = resumeTrace([
+      ...compacted(),
+      taskBegin(),
+      userText("next?"),
+      image,
+      toolCallOutput({ output: "stale", toolCallId: "call_old", status: "completed" }),
+      abortEvent(),
+      taskEnd(),
+    ]);
+    expect(result.contextClosed).toBe(true);
+    expect(pendingText(result)).toBe(SUMMARY);
+    expect(textsOf(result.carryOver)).toEqual(["next?", "image_url"]);
+  });
+
+  it("a switch after a compaction opens the next context on its target, with the summary", () => {
+    const result = resumeTrace([...compacted(), sessionUpdate(target)], { tracePath: TRACE });
+    expect(result.contextClosed).toBe(true);
+    expect(result.pendingModel).toEqual(target);
+    // The opening is the compaction's, exactly as it is without the switch.
+    expect(pendingText(result)).toContain("the gist");
+    expect(pendingText(result)).toBe(pendingText(resumeTrace(compacted(), { tracePath: TRACE })));
+    expect(result.sessionTurns).toBe(0);
+    expect(result.lastRequestTotal).toBe(0);
+  });
+
+  it("a switch whose compaction got no summary opens with the in-place hand-off note rebuilt from the file", () => {
+    const degraded: AmspRecord[] = [
+      ...compacted().slice(0, -1),
+      compactionEnd({
+        reason: "manual",
+        mode: "summarize",
+        status: "completed",
+        errorCode: "rate_limited",
+        errorMessage: "slow down",
+      }),
+    ];
+    const result = resumeTrace([...degraded, sessionUpdate(target)], { tracePath: TRACE });
+    expect(result.pendingModel).toEqual(target);
+    expect(pendingText(result)).toBe(buildCompactionHandoff(degraded, { tracePath: TRACE }));
+  });
+
+  it("a switch away from an unreachable model after completed turns opens with the regenerated [model_switch_from] handoff, unanswered text alone riding on", () => {
+    const image = imageUrlMessage("data:image/png;base64,AAAA");
+    const result = resumeTrace(
+      [
+        meta(),
+        userText("hello"),
+        requestBegin(),
+        assistantText("hi"),
+        toolCall({ name: "read_file", arguments: "{}", toolCallId: "call_1" }),
+        requestEnd("completed"),
+        tokenUsage(usage(10), usage(10)),
+        userText("and this"),
+        image,
+        requestBegin(),
+        requestEnd("aborted"),
+        sessionUpdate(target),
+      ],
+      { tracePath: TRACE },
+    );
+    expect(result.contextClosed).toBe(true);
+    expect(result.history).toEqual([]);
+    expect(result.pendingModel).toEqual(target);
+    expect(pendingText(result)).toBe(
+      buildModelSwitchMessage({
+        sessionId: SESSION,
+        tracePath: TRACE,
+        workspace: "/ws",
+        prevProvider: "anthropic",
+        prevModelId: "claude-sonnet-4-6",
+      }),
+    );
+    expect(parseInPlaceModelSwitch(pendingText(result)!, SESSION)).not.toBeNull();
+    // The unanswered text only: no image, no placeholder for the unpaired call.
+    expect(textsOf(result.carryOver)).toEqual(["and this"]);
+  });
+
+  it("a switch away from a context that never answered opens with the text that context opened with, and keeps its unanswered text", () => {
+    const image = imageUrlMessage("data:image/png;base64,AAAA");
+    const result = resumeTrace([
+      meta(),
+      userText(SUMMARY),
+      userText("and now?"),
+      image,
+      requestBegin(),
+      requestEnd("retryable", { errorCode: "network", errorMessage: "reset" }),
+      sessionUpdate(target),
+    ]);
+    expect(result.contextClosed).toBe(true);
+    expect(result.pendingModel).toEqual(target);
+    expect(pendingText(result)).toBe(SUMMARY);
+    expect(textsOf(result.carryOver)).toEqual(["and now?"]);
+  });
+
+  it("a switch away from a first context that never answered carries its text with no opening", () => {
+    const result = resumeTrace([
+      meta(),
+      userText("hello"),
+      requestBegin(),
+      requestEnd("aborted"),
+      sessionUpdate(target),
+    ]);
+    expect(result.contextClosed).toBe(true);
+    expect(result.pendingSummary).toBeUndefined();
+    expect(textsOf(result.carryOver)).toEqual(["hello"]);
+  });
+
+  it("input the Session wrote behind the pending switch rides on as it is", () => {
+    const image = imageUrlMessage("data:image/png;base64,BBBB");
+    const result = resumeTrace([
+      meta(),
+      userText("hello"),
+      requestBegin(),
+      requestEnd("aborted"),
+      sessionUpdate(target),
+      taskBegin(),
+      userText("again"),
+      image,
+      abortEvent(),
+      taskEnd(),
+    ]);
+    expect(result.contextClosed).toBe(true);
+    expect(result.carryOver.map((m) => (m.payload as { type: string }).type)).toEqual([
+      "text",
+      "text",
+      "image_url",
+    ]);
+    expect(textsOf(result.carryOver).slice(0, 2)).toEqual(["hello", "again"]);
+  });
+
+  it("consecutive switches: the last record names the model", () => {
+    const result = resumeTrace([
+      ...compacted(),
+      sessionUpdate({ provider: "openai", model_id: "gpt-5.1" }),
+      sessionUpdate({ provider: "google", model_id: "gemini-3-pro" }),
+      sessionUpdate(target),
+    ]);
+    expect(result.pendingModel).toEqual(target);
+    expect(pendingText(result)).toBe(SUMMARY);
+  });
+
+  it("a session_update a request_begin followed is no longer pending: the file replays on its own model", () => {
+    const result = resumeTrace([
+      meta(),
+      userText("hello"),
+      requestBegin(),
+      assistantText("hi"),
+      requestEnd("completed"),
+      sessionUpdate(target),
+      userText("still here"),
+      requestBegin(),
+      assistantText("yes"),
+      requestEnd("completed"),
+    ]);
+    expect(result.contextClosed).toBe(false);
+    expect(result.pendingModel).toBeUndefined();
+    expect(textsOf(result.history)).toEqual(["hello", "hi", "still here", "yes"]);
   });
 });
 
