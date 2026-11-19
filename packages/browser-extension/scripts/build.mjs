@@ -1,6 +1,6 @@
 // Builds the extension into dist/ (what "Load unpacked" takes) and zips it beside:
 //
-//   dist/background.js, dist/pages/{pair,popup}.{html,js}, dist/pages/pages.css
+//   dist/background.js, dist/pages/{pair,popup,consent}.{html,js}, dist/pages/pages.css
 //   dist/icons/icon{,-grey}-{16,32,48,128}.png   (sized and greyed from icons/penguin-128.png)
 //   dist/icons/penguin-logo.svg                  (the site's logo, in the pages' headers)
 //   dist/_locales/{en,zh_CN}/messages.json       (the manifest's name and description)
@@ -38,6 +38,7 @@ await build({
     background: "src/background.ts",
     "pages/pair": "pages/pair.ts",
     "pages/popup": "pages/popup.ts",
+    "pages/consent": "pages/consent.ts",
   },
   outdir: dist,
   bundle: true,
@@ -54,7 +55,7 @@ manifest.version = numeric;
 if (numeric !== version) manifest.version_name = version;
 writeFileSync(path.join(dist, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
 
-for (const file of ["pair.html", "popup.html", "pages.css"]) {
+for (const file of ["pair.html", "popup.html", "consent.html", "pages.css"]) {
   writeFileSync(path.join(dist, "pages", file), readFileSync(path.join(root, "pages", file)));
 }
 cpSync(path.join(root, "_locales"), path.join(dist, "_locales"), { recursive: true });
