@@ -98,7 +98,7 @@ describe.skipIf(!usable)("penguin-bwrap live enforcement (host-gated)", () => {
 
     const outside = await run(`echo leak > ${JSON.stringify(outsideProbe)} 2>&1; echo exit=$?`);
     expect(existsSync(outsideProbe)).toBe(false);
-    expect(outside.out).toMatch(/read-only file system|permission denied/i);
+    expect(outside.out).toMatch(/read-only file system|只读文件系统|permission denied|没有权限/i);
   });
 
   it("fs-write: reads outside the workspace still work, and read-only denies the workspace too", async () => {
@@ -110,7 +110,7 @@ describe.skipIf(!usable)("penguin-bwrap live enforcement (host-gated)", () => {
     policy = { mode: "read-only" };
     const ro = await run("echo x > ro-probe.txt 2>&1; echo exit=$?");
     expect(existsSync(path.join(ws, "ro-probe.txt"))).toBe(false);
-    expect(ro.out).toMatch(/read-only file system|permission denied/i);
+    expect(ro.out).toMatch(/read-only file system|只读文件系统|permission denied|没有权限/i);
   });
 
   it("fs-write: background children are confined with the wrapped shell", async () => {
@@ -147,7 +147,7 @@ describe.skipIf(!usable)("penguin-bwrap live enforcement (host-gated)", () => {
         `ls -A ${JSON.stringify(secretDir)}; cat ${JSON.stringify(secretFile)} 2>&1`,
       );
       expect(masked.out).not.toContain("super-secret");
-      expect(masked.out).toMatch(/no such file|not found/i);
+      expect(masked.out).toMatch(/no such file|没有那个文件或目录|not found|找不到/i);
     } finally {
       rmSync(secretDir, { recursive: true, force: true });
     }

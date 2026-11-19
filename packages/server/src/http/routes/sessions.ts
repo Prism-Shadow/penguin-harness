@@ -6,6 +6,27 @@
  *   - Session-level: /api/sessions/:sessionId/* (no projectId; looks up project_id via the
  *     sessions index, then goes through requireProjectAccess; 404 if the index has no such Session).
  */
+import type {
+  SessionCategory,
+  TraceIndex,
+  TraceIndexStore,
+  Traces,
+} from "@prismshadow/penguin-library-trace";
+import type {
+  ApprovalMode,
+  SessionSandbox,
+  Schedules,
+  SessionDrivers,
+  SessionIndex,
+  SessionOrigins,
+} from "@prismshadow/penguin-library-session";
+import type {
+  ServerEvent,
+  Access,
+  ProjectConfigStore,
+  ProjectEvents,
+} from "@prismshadow/penguin-library-project";
+import type { UserDraftsStore, Auth } from "@prismshadow/penguin-library-auth";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { Hono } from "hono";
@@ -21,13 +42,10 @@ import {
 } from "@prismshadow/penguin-core";
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import type {
-  ApprovalMode,
   FilesStatResponse,
   GoalResponse,
   GoalStateView,
   RecalledMessageResponse,
-  ServerEvent,
-  SessionCategory,
   SessionBatchResult,
   SessionContextResponse,
   SessionCreateResponse,
@@ -40,7 +58,6 @@ import type {
   SubagentMessageResponse,
   RetryNowResponse,
   TaskCreateResponse,
-  SessionSandbox,
 } from "../../api/types.js";
 import { compactionThresholdFor } from "../../services/context-breakdown.js";
 import { sessionMessages, sessionTraceImage } from "../../services/session-history.js";
@@ -50,7 +67,7 @@ import { amspSessionStream } from "../../amsp/session-stream.js";
 import { pendingApprovals } from "../../amsp/approvals.js";
 import { PREVIEW_TOKEN_TTL_MS, resolvePreviewTarget } from "../../services/preview-token.js";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { SessionRow } from "../../db/repos/sessions.js";
+import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
 import { assertWorkspaceAllowed } from "../../services/workspace-guard.js";
 import { isGoalOutcome } from "../../runtime/goal-events.js";
 import { deleteSessionTree } from "../../services/session-deletion.js";
@@ -128,8 +145,8 @@ import {
   INLINE_IMAGE_MAX_BYTES,
   INLINE_IMAGE_MAX_MB,
   toAttachmentLimits,
-} from "../../services/attachment-limits.js";
-import type { AttachmentLimits } from "../../services/attachment-limits.js";
+} from "@prismshadow/penguin-library-setting/attachment-limits";
+import type { AttachmentLimits } from "@prismshadow/penguin-library-setting/attachment-limits";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { Channels, Config, Db, Desktop } from "../../hmr/capabilities.js";
@@ -154,30 +171,16 @@ import { registerWorkspaceFileRoutes, workspaceFilesRoutes } from "./workspace-f
 import { archivedSessionsRoutes } from "./archived-sessions.js";
 import { ArchivedSessionsService } from "../../services/archived-sessions-service.js";
 import { PreviewTokens } from "./preview.js";
-import type {
-  Access,
-  ModelOAuth,
-  ProjectConfigStore,
-  ProjectEvents,
-} from "../../mechanisms/projects.js";
+import type { ModelOAuth } from "@prismshadow/penguin-library-model";
 import type { PlatformAuth } from "../../services/platform-auth-service.js";
 import type { ModelScopeAuth } from "../../services/modelscope-auth-service.js";
-import type {
-  Schedules,
-  SessionDrivers,
-  SessionIndex,
-  SessionOrigins,
-} from "../../mechanisms/sessions.js";
-import type { ErrorLog, UsageQueries } from "../../mechanisms/observability.js";
-import type { TraceIndex, TraceIndexStore, Traces } from "../../mechanisms/traces.js";
+import type { ErrorLog, UsageQueries } from "@prismshadow/penguin-library-observability";
 import type { FileReveal, WorkspaceFiles } from "../../mechanisms/workspace.js";
 import type { Machines } from "../../machines/service.js";
 import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
-import type { Settings } from "../../mechanisms/settings.js";
-import type { UserDraftsStore } from "../../mechanisms/account-data.js";
+import type { Settings } from "@prismshadow/penguin-library-setting";
 import type { LiveStreams } from "../../auth/live-streams.js";
-import type { Auth } from "../../mechanisms/identity.js";
-import type { AgentApi } from "../../mechanisms/agent-api.js";
+import type { AgentApi } from "@prismshadow/penguin-library-agent-api";
 import type { Workbenches } from "../../mechanisms/workbenches.js";
 import type { OrgService } from "../../runtime/organization/service.js";
 

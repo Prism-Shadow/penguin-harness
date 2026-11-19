@@ -18,3 +18,4 @@ export * from "./catalog.js";
 export * from "./client-protocols.js";
 export * from "./env-keys.js";
 export * from "./seed.js";
+export * from "./tool-pricing.js";

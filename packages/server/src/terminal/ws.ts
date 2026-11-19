@@ -23,7 +23,7 @@ import { WebSocketServer } from "ws";
 import { parseCookieHeader, sessionCookies } from "../auth/middleware.js";
 import { acceptsOrigin, publicOrigin, sameOriginSite } from "../http/public-origin.js";
 import type { ServerHmrHost } from "../hmr/platform.js";
-import type { Auth } from "../mechanisms/identity.js";
+import type { Auth } from "@prismshadow/penguin-library-auth";
 import { API_SOCKET_PATH } from "../api/types.js";
 import { apiSocketRef } from "../socket/ref.js";
 import { API_SOCKET_DEFLATE, compressesApiSocket } from "../socket/compression.js";

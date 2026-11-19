@@ -2,7 +2,8 @@ import { parseManifest } from "@prismshadow/penguin-core/kernel";
 import { PluginHost } from "../src/plugin/host.js";
 import { createServer, type Server } from "node:http";
 import { once } from "node:events";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { jsonResponse, stubFetch } from "./fixtures/fetch.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser, type TestApp } from "./helpers.js";
 import type {
   Capability,
@@ -167,6 +168,71 @@ describe("project model capabilities", () => {
       (await api.post(tools + "/stt/run", { audio: { data: "bad", mimeType: "audio/wav" } }))
         .status,
     ).toBe(400);
+  });
+  // A project with both DeepSeek ASR listings must send dictation, CLI and probe traffic
+  // to the selected provider, with that provider's key and native audio endpoint.
+  it("transcribes and tests the TokenDance preset with the gateway key", async () => {
+    const projectId = "asr_" + crypto.randomUUID().slice(0, 8);
+    expect((await api.post("/api/projects", { projectId, name: "Transcription" })).status).toBe(
+      201,
+    );
+    await app.deps.projectConfigService.setPluginTables(projectId, {
+      all: { [fixtureProvider]: {} },
+      machines: {},
+    });
+    const project = "/api/projects/" + projectId;
+    const models = project + "/models";
+    const capabilities = project + "/capabilities";
+    const model = { provider: "tokendance", modelId: "deepseek-asr" };
+    const official = { provider: "deepseek", modelId: "deepseek-asr" };
+    for (const provider of [model.provider, official.provider]) {
+      expect(
+        (await api.put(models + "/providers/" + provider, { apiKey: provider + "-test-key" }))
+          .status,
+      ).toBe(200);
+    }
+    const selected = await api.patch(capabilities + "/tools", { bindings: { s2t: model } });
+    expect(selected.status, await selected.clone().text()).toBe(200);
+    expect(await selected.json()).toMatchObject({
+      bindings: { s2t: model },
+      candidates: { s2t: expect.arrayContaining([model, official]) },
+      dictationFormat: "audio/wav",
+    });
+    const audio = { data: wavBase64, mimeType: "audio/wav" };
+    const upstream = stubFetch((call) =>
+      call.headers.get("authorization") === "Bearer tokendance-test-key"
+        ? jsonResponse({ text: "Transcribed", duration_ms: 1 })
+        : jsonResponse({ error: { message: "Invalid TokenDance key" } }, 401),
+    );
+    try {
+      const reply = await api.post(capabilities + "/stt/run", { audio });
+      expect(await reply.json()).toMatchObject({ model, text: "Transcribed" });
+      const cli = await api.post(capabilities + "/cli", { args: ["stt", "sample.wav"], audio });
+      const started = (await cli.json()) as { result: { id: string } };
+      expect(started).toMatchObject({ kind: "run", detached: false, result: { model } });
+      await expect
+        .poll(async () => (await api.get(capabilities + "/runs/" + started.result.id)).json())
+        .toMatchObject({ model, text: "Transcribed" });
+      const probe = await api.post(models + "/test", model);
+      expect(await probe.json()).toMatchObject({ ok: true });
+      expect(upstream.calls).toHaveLength(3);
+      for (const [index, call] of upstream.calls.entries()) {
+        expect(call.url).toBe("https://tokendance.space/gateway/deepseek/v1/tools/asr");
+        expect(call.headers.get("authorization")).toBe("Bearer tokendance-test-key");
+        const form = await new Response(call.bytes, { headers: call.headers }).formData();
+        const file = form.get("file") as File;
+        const bytes = Buffer.from(await file.arrayBuffer());
+        if (index < 2) expect(bytes).toEqual(wav);
+        else expect(bytes.toString("ascii", 0, 4)).toBe("OggS");
+      }
+      const rejected = await api.post(models + "/test", { ...model, apiKey: "invalid-test-key" });
+      expect(await rejected.json()).toMatchObject({
+        ok: false,
+        message: expect.stringContaining("Invalid TokenDance key"),
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
   it("rejects WebM labelled as WAVE before sending the audio to a DeepSeek ASR gateway", async () => {
     const before = received.length;
@@ -400,8 +466,12 @@ describe("project model capabilities", () => {
     );
     const edited = await api.post(base + "/voice-polish", { text: "raw transcript" });
     expect(edited.status, await edited.clone().text()).toBe(200);
-    expect(received.at(-1)?.config.system_prompt).toBe(custom);
+    expect(received.at(-1)?.config).toMatchObject({
+      system_prompt: custom,
+      thinking_level: "none",
+    });
     await api.post(tools + "/t2t/run", { text: "ordinary text" });
+    expect(received.at(-1)?.config).not.toHaveProperty("thinking_level");
     expect(received.at(-1)?.config.system_prompt).toBeUndefined();
     expect(
       (await api.patch(tools + "/tools", { voicePolish: { prompt: "x".repeat(8001) } })).status,
