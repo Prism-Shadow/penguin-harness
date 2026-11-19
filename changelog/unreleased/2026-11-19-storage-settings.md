@@ -3,6 +3,7 @@
 - **Date:** 2026-11-19
 - **Type:** feature
 - **Scope:** `server`, `web`, `ui`, `ui-gallery`, `docs`
+- **PR:** [#1641](https://github.com/Prism-Shadow/penguin-harness/pull/1641)
 
 [中文版](2026-11-19-storage-settings.zh.md)
 
