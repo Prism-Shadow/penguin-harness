@@ -2,12 +2,13 @@
  * The WebApp composition module: the app's frame and its router. Features reach it only through its slots —
  * a page is a contribution to `WebAppModule.pages` with the component bound by id, a provider of
  * the signed-in session one to `sessionProviders`, an overlay or a headless runtime one to
- * `layers`, a component a server-contributed page may name as its `builtin` renderer one to
- * `pageRenderers` — so WebApp imports no feature. What it provides is the root component the app
- * mounts, with the contributions bound into it (web-app/deps.ts), and the user event handlers
- * the sessions module collects (state/user-events.ts), which the router hands to the session
- * list. The layout mounts the sidebar module's column and rail, and opens the chat module's
- * drafts on the New chat command.
+ * `layers` (beside the columns, or over the page area with `area: "page"`), a component a
+ * server-contributed page may name as its `builtin` renderer one to `pageRenderers` — so WebApp
+ * imports no feature. What it provides is the root component the app mounts, with the
+ * contributions bound into it (web-app/deps.ts), and the user event handlers the sessions module
+ * collects (state/user-events.ts), which the router hands to the session list. The layout mounts
+ * the sidebar module's column and rail, and opens the chat module's drafts on the New chat
+ * command.
  *
  * The kernel addresses a slot by the providing MODULE's name (`WebAppModule.pages`), while the
  * slot declaration hangs on the interface the module provides (`WebAppSlots` beside `WebApp`) —
@@ -45,6 +46,17 @@ export interface Ordered {
   order: number;
 }
 
+/** The data half of a `layers` contribution. */
+export interface LayerData extends Ordered {
+  /**
+   * `"page"`: mounted inside the main column after the page, in the page's own box, for a layer
+   * whose surfaces cover the page and must outlive it (the App Center's running apps): they take
+   * the page's size and follow every resize without measuring anything. Absent: beside the
+   * columns, like every overlay and headless runtime.
+   */
+  area?: "page";
+}
+
 /** The data half of a `pageRenderers` contribution: the name a server-contributed page's `builtin` renderer gives. */
 export interface PageRendererData {
   name: string;
@@ -55,19 +67,19 @@ export interface WebAppSlots {
   pages: Slot<PageData, ComponentType>;
   /** Providers of the signed-in session, mounted inside Project + Sessions, outermost first. */
   sessionProviders: Slot<Ordered, ComponentType<{ children: ReactNode }>>;
-  /** Mounted once beside every page: overlays and headless runtimes. */
-  layers: Slot<Ordered, ComponentType>;
+  /** Mounted once beside every page: overlays and headless runtimes, or over the page area. */
+  layers: Slot<LayerData, ComponentType>;
   /** A component a page the server contributes (web-app/contributions.tsx) may name to be drawn with. */
   pageRenderers: Slot<PageRendererData, ComponentType>;
 }
 
-/** A slot's contributions by `order`, each with the component its module bound. */
-function byOrder<P>(
+/** A slot's contributions by `order`, each with the component its module bound and its data. */
+function byOrder<P, D extends Ordered = Ordered>(
   contributions: readonly Contributed[],
-): ReadonlyArray<{ id: string; Component: ComponentType<P> }> {
+): ReadonlyArray<{ id: string; Component: ComponentType<P>; data: D }> {
   return [...contributions]
-    .sort((a, b) => (a.data as unknown as Ordered).order - (b.data as unknown as Ordered).order)
-    .map((c) => ({ id: c.id, Component: c.code as ComponentType<P> }));
+    .map((c) => ({ id: c.id, Component: c.code as ComponentType<P>, data: c.data as unknown as D }))
+    .sort((a, b) => a.data.order - b.data.order);
 }
 
 @Module()
@@ -81,7 +93,13 @@ export class WebAppModule {
     const sessionProviders: readonly WebAppSessionProvider[] = byOrder<{ children: ReactNode }>(
       contributions.sessionProviders ?? [],
     );
-    const layers: readonly WebAppLayer[] = byOrder(contributions.layers ?? []);
+    const layers: readonly WebAppLayer[] = byOrder<unknown, LayerData>(
+      contributions.layers ?? [],
+    ).map(({ id, Component, data }) => ({
+      id,
+      Component,
+      area: data.area === "page" ? "page" : "shell",
+    }));
     const pageRenderers: ReadonlyMap<string, ComponentType> = new Map(
       (contributions.pageRenderers ?? []).map((c) => [
         (c.data as unknown as PageRendererData).name,

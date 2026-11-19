@@ -1876,6 +1876,16 @@ export const zh = {
         vault: "密钥库",
         billing: "账单",
       },
+      window: "窗口标题栏",
+      windowHint:
+        "装一个应用的窗口：应用图标与名称，行尾依次是最小化、全屏打开与关闭。最小化只收起窗口、应用继续运行，关闭才结束它；不能最小化或全屏的窗口不给这两个按钮。",
+      windowFull: "三个按钮",
+      windowCloseOnly: "只有关闭",
+      windowTitle: "每日待办",
+      windowBody: "应用的页面在这里。",
+      windowMinimize: "最小化",
+      windowFullScreen: "全屏打开",
+      windowClose: "关闭",
     },
     data: {
       table: "表格",
