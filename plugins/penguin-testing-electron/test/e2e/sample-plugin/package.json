@@ -1,0 +1,15 @@
+{
+  "name": "penguin-testing-electron-sample",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Minimal plugin under test for the penguin-testing-electron e2e case: one TestUnit component.",
+  "scripts": {
+    "build": "node ../../../../../packages/core/bin/gen-ifaces.mjs --project tsconfig.json --out ifaces.json && tsup"
+  },
+  "main": "./dist/index.js",
+  "type": "module",
+  "devDependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
+    "tsup": "^8.3.0"
+  }
+}

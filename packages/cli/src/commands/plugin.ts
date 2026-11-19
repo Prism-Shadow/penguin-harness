@@ -262,6 +262,7 @@ export function registerPluginCommand(plugin: Command, t: Messages): void {
     .command("link <directory>")
     .description(t.plugin.linkDesc)
     .option("--overwrite", t.plugin.linkOverwriteOpt)
+    .option("--force", t.plugin.linkForceOpt)
     .option("--project-id <id>", t.common.projectId)
     .option("--json", t.common.json)
     .option("--server <url>", t.common.server)
@@ -285,7 +286,11 @@ export function registerPluginCommand(plugin: Command, t: Messages): void {
       const res = await client.request<InstalledPluginsResponse>(
         "POST",
         `${installedPath(projectId)}/link`,
-        { dir, ...(opts.overwrite === true ? { overwrite: true } : {}) },
+        {
+          dir,
+          ...(opts.overwrite === true ? { overwrite: true } : {}),
+          ...(opts.force === true ? { force: true } : {}),
+        },
       );
       if (opts.json === true) {
         process.stdout.write(`${JSON.stringify(res)}\n`);
