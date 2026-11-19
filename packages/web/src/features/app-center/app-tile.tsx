@@ -126,6 +126,7 @@ function TileName({ children }: { children: ReactNode }) {
 
 export function AppTile({
   app,
+  inFolder,
   title,
   drag,
   mark,
@@ -134,6 +135,7 @@ export function AppTile({
   onOpen,
 }: {
   app: GridApp;
+  inFolder: boolean;
   /** The title in the reader's language. */
   title: string;
   drag: TileDragProps;
@@ -180,8 +182,15 @@ export function AppTile({
               failed ? "opacity-60" : ""
             } ${lifted ? "opacity-40" : ""}`}
           >
-            <span className="relative block" style={{ width: ICON_PX, height: ICON_PX }}>
-              <span className={`block ${building ? "opacity-50" : ""}`}>
+            <span
+              data-app-icon
+              className="relative block"
+              style={{ width: ICON_PX, height: ICON_PX }}
+            >
+              <span
+                data-layout-motion={inFolder ? "shared-artwork" : undefined}
+                className={`block ${building ? "opacity-50" : ""}`}
+              >
                 <TileIcon shortcut={shortcut} title={title} />
               </span>
               {building && (
@@ -208,8 +217,12 @@ export function AppTile({
   );
 }
 
+export const folderTriggerId = (id: string) => `app-center-trigger-${id}`;
+export const folderPanelId = (id: string) => `app-center-folder-${id}`;
+
 export function FolderTile({
   folder,
+  expanded,
   titleOf,
   drag,
   mark,
@@ -218,6 +231,7 @@ export function FolderTile({
   onOpen,
 }: {
   folder: GridFolder;
+  expanded: boolean;
   /** An app's title in the reader's language. */
   titleOf: (shortcut: AppCenterShortcut) => string;
   drag: TileDragProps;
@@ -236,7 +250,9 @@ export function FolderTile({
             ref={target.ref}
             {...target.props}
             type="button"
-            aria-haspopup="dialog"
+            id={folderTriggerId(folder.id)}
+            aria-expanded={expanded}
+            aria-controls={expanded ? folderPanelId(folder.id) : undefined}
             aria-label={S.appCenter.folderName(folder.name, count)}
             data-tooltip={S.appCenter.folderTip(folder.name, count)}
             data-tooltip-extra
@@ -247,6 +263,7 @@ export function FolderTile({
             className={`${TILE_BUTTON} ${lifted ? "opacity-40" : ""}`}
           >
             <span
+              data-folder-icon
               className="relative grid grid-cols-2 content-start rounded-xl bg-fg/10"
               style={{
                 width: ICON_PX,
@@ -256,12 +273,9 @@ export function FolderTile({
               }}
             >
               {folder.apps.slice(0, 4).map((app) => (
-                <TileIcon
-                  key={app.id}
-                  shortcut={app.shortcut}
-                  title={titleOf(app.shortcut)}
-                  size={MINI_PX}
-                />
+                <span key={app.id} data-preview-app={app.id} className="flex">
+                  <TileIcon shortcut={app.shortcut} title={titleOf(app.shortcut)} size={MINI_PX} />
+                </span>
               ))}
               {mark === "into" && <IntoRing />}
             </span>

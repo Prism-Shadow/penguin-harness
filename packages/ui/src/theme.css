@@ -450,6 +450,14 @@
     transition-duration: var(--ui-dur-layout);
     transition-timing-function: var(--ui-ease-layout);
   }
+  /* A shared element keeps its final box in layout while its visible bounds and artwork travel
+     from their source. The same theme timing and both reduced-motion overrides apply. */
+  [data-layout-motion="shared-bounds"] {
+    transition-property: clip-path;
+  }
+  [data-layout-motion="shared-artwork"] {
+    transition-property: transform;
+  }
   [data-layout-motion][data-fold] {
     grid-template-rows: 1fr;
   }

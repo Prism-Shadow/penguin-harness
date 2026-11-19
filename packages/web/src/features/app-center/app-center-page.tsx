@@ -21,7 +21,7 @@
  * With nothing to show, the page says what a workbench is and offers to have one built; there is
  * no manual path, so the AI button stands alone.
  */
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router";
 import type { AppCenterShortcut } from "@prismshadow/penguin-server/api";
 import {
@@ -118,7 +118,29 @@ export function AppCenterPage() {
   const { shortcuts, layout, error, reload, saveLayout } = useAppCenter(projectId, agentIds);
 
   const [aiOpen, setAiOpen] = useState(false);
-  const [openFolderId, setOpenFolderId] = useState<string | null>(null);
+  const folderParam = params.get("folder");
+  // Direct interaction must be visible in the same frame; the router also accepts browser Back
+  // and links from full-screen workbenches, which can arrive in a deferred React transition.
+  const [openFolderId, setOpenFolderId] = useState(folderParam);
+  useLayoutEffect(() => setOpenFolderId(folderParam), [folderParam]);
+  // Keep the departing folder mounted until its icons reach their previews, including on Back.
+  const [displayedFolderId, setDisplayedFolderId] = useState(openFolderId);
+  if (openFolderId !== null && displayedFolderId !== openFolderId)
+    setDisplayedFolderId(openFolderId);
+  const showFolder = (id: string | null) => {
+    setOpenFolderId(id);
+    const next = new URLSearchParams(params);
+    if (id === null) next.delete("folder");
+    else next.set("folder", id);
+    if (id === null && location.state?.fromAppGrid) void navigate(-1);
+    else
+      setParams(next, {
+        replace: openFolderId !== null,
+        state: {
+          fromAppGrid: id !== null && (openFolderId === null || location.state?.fromAppGrid),
+        },
+      });
+  };
   const [renaming, setRenaming] = useState<GridFolder | null>(null);
   const [errorOf, setErrorOf] = useState<GridApp | null>(null);
   const [restoring, setRestoring] = useState(false);
@@ -133,8 +155,10 @@ export function AppCenterPage() {
     localizedText(locale, shortcut.title, shortcut.titleZh);
 
   /** Shows a new arrangement and stores it; one that changes nothing writes nothing. */
-  const commit = (next: GridItem[]) => {
+  const commit = (next: GridItem[], leaveFolder = false) => {
     if (grid === null || sameArrangement(grid, next)) return;
+    if (openFolderId !== null && (leaveFolder || !next.some((item) => item.id === openFolderId)))
+      showFolder(null);
     saveLayout(layoutOf(next));
   };
 
@@ -160,8 +184,7 @@ export function AppCenterPage() {
         commit(moveToEnd(grid, dragged.id));
         return;
       case "outOfFolder":
-        setOpenFolderId(null);
-        commit(takeOutOfFolder(grid, dragged.id));
+        commit(takeOutOfFolder(grid, dragged.id), true);
         return;
     }
   };
@@ -175,12 +198,17 @@ export function AppCenterPage() {
   const openedHere = (location.state as { appCenterWindow?: boolean } | null)?.appCenterWindow;
 
   const openWindow = (app: GridApp) => {
-    setOpenFolderId(null);
-    setParams({ [OPEN_PARAM]: app.id }, { state: { appCenterWindow: true } });
+    const next = new URLSearchParams(params);
+    next.set(OPEN_PARAM, app.id);
+    setParams(next, { state: { appCenterWindow: true } });
   };
   const closeWindow = () => {
     if (openedHere === true) void navigate(-1);
-    else setParams({}, { replace: true });
+    else {
+      const next = new URLSearchParams(params);
+      next.delete(OPEN_PARAM);
+      setParams(next, { replace: true });
+    }
   };
   const openFullScreen = (app: GridApp, returnTo: string) =>
     void navigate(app.shortcut.path, { state: { returnTo } });
@@ -194,7 +222,7 @@ export function AppCenterPage() {
           titleOf,
           arrange: commit,
           open: openWindow,
-          openFullScreen: (app) => openFullScreen(app, APP_CENTER_PATH),
+          openFullScreen: (app) => openFullScreen(app, APP_CENTER_PATH + location.search),
           showError: setErrorOf,
           viewInSettings: (app) =>
             void navigate(agentSettingsPath(app.shortcut.agentId, null, "workbenches")),
@@ -208,7 +236,7 @@ export function AppCenterPage() {
                 null,
               )
               .then(reload, toastApiError),
-          openFolder: (folder) => setOpenFolderId(folder.id),
+          openFolder: (folder) => showFolder(folder.id),
           newFolder: (app) => setNewFolderPicked(app === null ? [] : [app.id]),
           renameFolder: setRenaming,
           dissolveFolder: (folder) => commit(dissolveFolder(grid, folder.id)),
@@ -219,6 +247,7 @@ export function AppCenterPage() {
     <AppTile
       key={app.id}
       app={app}
+      inFolder={from !== null}
       title={titleOf(app.shortcut)}
       drag={drag.tileProps({ id: app.id, folder: false, from, canTakeInto: from === null })}
       mark={markOf(drag.pending, app.id)}
@@ -228,11 +257,11 @@ export function AppCenterPage() {
     />
   );
 
-  const openFolder =
-    openFolderId === null || grid === null
+  const displayedFolder =
+    displayedFolderId === null || grid === null
       ? null
       : (grid.find(
-          (item): item is GridFolder => item.type === "folder" && item.id === openFolderId,
+          (item): item is GridFolder => item.type === "folder" && item.id === displayedFolderId,
         ) ?? null);
 
   const create = <AiCreateButtons size="sm" onAi={() => setAiOpen(true)} />;
@@ -249,7 +278,7 @@ export function AppCenterPage() {
   return (
     <WindowStack className="h-full">
       <AppWindow shown={windowApp === null}>
-        <div className="h-full overflow-y-auto p-4 md:p-6">
+        <div data-app-center-scroll className="h-full overflow-y-auto p-4 md:p-6">
           <div className="mx-auto flex min-h-full max-w-5xl flex-col">
             <PageHeader
               title={S.appCenter.title}
@@ -292,7 +321,7 @@ export function AppCenterPage() {
                     ref={target.ref}
                     {...target.props}
                     {...drag.areaProps({ kind: "end" }, () => true)}
-                    className="flex-1 pb-6"
+                    className="relative flex-1 pb-6"
                   >
                     <ul className={GRID} aria-label={S.appCenter.title}>
                       {grid.map((item) =>
@@ -302,6 +331,7 @@ export function AppCenterPage() {
                           <FolderTile
                             key={item.id}
                             folder={item}
+                            expanded={openFolderId === item.id}
                             titleOf={titleOf}
                             drag={drag.tileProps({
                               id: item.id,
@@ -316,11 +346,24 @@ export function AppCenterPage() {
                                 <FolderMenu folder={item} actions={actions} close={close} />
                               )
                             }
-                            onOpen={() => setOpenFolderId(item.id)}
+                            onOpen={() => showFolder(openFolderId === item.id ? null : item.id)}
                           />
                         ),
                       )}
                     </ul>
+                    {displayedFolder !== null && (
+                      <FolderPanel
+                        key={displayedFolder.id}
+                        folder={displayedFolder}
+                        open={openFolderId === displayedFolder.id}
+                        onClose={() => showFolder(null)}
+                        onExited={() => setDisplayedFolderId(null)}
+                        draggingOut={drag.dragged?.from === displayedFolder.id}
+                        onTakeOut={() => drag.dropNow({ kind: "outOfFolder" })}
+                      >
+                        {displayedFolder.apps.map((app) => appTile(app, displayedFolder.id))}
+                      </FolderPanel>
+                    )}
                   </div>
                 )}
               </ContextMenu>
@@ -344,16 +387,6 @@ export function AppCenterPage() {
             }
           />
         </AppWindow>
-      )}
-      {openFolder !== null && (
-        <FolderPanel
-          folder={openFolder}
-          onClose={() => setOpenFolderId(null)}
-          draggingOut={drag.dragged?.from === openFolder.id}
-          onTakeOut={() => drag.dropNow({ kind: "outOfFolder" })}
-        >
-          {openFolder.apps.map((app) => appTile(app, openFolder.id))}
-        </FolderPanel>
       )}
       <FolderNameDialog
         name={renaming?.name ?? null}

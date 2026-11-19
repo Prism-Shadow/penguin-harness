@@ -173,12 +173,45 @@ test("tiles drag into a folder, step through the menu, keep their order, and res
   await expect.poll(names).toEqual(["New folder", "Beta"]);
 
   const folder = grid.getByRole("button", { name: /^New folder, folder, 2 apps/ });
+  // Inspect the two ends of the actual CSS transitions without racing the display refresh.
+  const slow = await page.addStyleTag({
+    content: ".app-center-folder[data-ready] { --ui-dur-layout: 2s; }",
+  });
   await folder.click();
-  const panel = page.getByRole("dialog", { name: "New folder" });
+  const panel = page.getByRole("region", { name: "New folder" });
+  const positions = await panel.evaluate((node) => {
+    const animations = node.getAnimations({ subtree: true });
+    for (const part of animations) {
+      part.pause();
+      part.currentTime = 0;
+    }
+    const trigger = document.querySelector(`[aria-controls="${node.id}"]`);
+    const bounds = (el) => {
+      const { x, y, width } = el.getBoundingClientRect();
+      return [x, y, width].map(Math.round);
+    };
+    const pairs = [...trigger.querySelectorAll("[data-preview-app]")].map((mini) => {
+      const tile = [...node.querySelectorAll("[data-app]")].find(
+        (el) => el.dataset.app === mini.dataset.previewApp,
+      );
+      return [bounds(mini), bounds(tile.querySelector("[data-app-icon] > span"))];
+    });
+    for (const part of animations) part.finish();
+    return pairs;
+  });
+  for (const [preview, icon] of positions) expect(icon).toEqual(preview);
+  await slow.evaluate((style) => style.remove());
   await expect(panel.getByRole("button", { name: /^Alpha,/ })).toBeVisible();
   await expect(panel.getByRole("button", { name: /^Gamma,/ })).toBeVisible();
+  await panel.getByRole("button", { name: /^Gamma,/ }).click();
+  const window = page.getByRole("region", { name: "Gamma" });
+  await expect(window.frameLocator("iframe").getByRole("heading", { name: "Gamma" })).toBeVisible();
+  await window.getByRole("button", { name: "Close, back to the App Center" }).click();
+  await expect(panel).toBeVisible();
+
   await page.keyboard.press("Escape");
   await expect(panel).toBeHidden();
+  await expect(folder).toBeFocused();
 
   // The folder moves one step backward from its menu.
   await folder.click({ button: "right" });

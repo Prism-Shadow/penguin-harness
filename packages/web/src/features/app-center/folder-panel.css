@@ -1,0 +1,51 @@
+/* Opening and closing use the same endpoints. CSS reverses a transition in flight when a
+   reader presses Back before the folder has finished expanding. All coordinates are local. */
+[data-folder-origin] > [data-folder-icon] {
+  visibility: hidden;
+}
+
+.app-center-folder {
+  --folder-duration: var(--ui-dur-layout);
+  --folder-motion: var(--folder-duration) var(--ui-ease-layout);
+  clip-path: var(--folder-preview-clip);
+}
+
+/* Placement measures live layout. Do not transition from the unmeasured icon positions. */
+.app-center-folder:not([data-ready]) {
+  --ui-dur-layout: 0s;
+}
+
+.app-center-folder[data-open] {
+  /* Leave room for the surface's shadow at rest. */
+  clip-path: inset(-1rem round var(--ui-radius-xl));
+}
+
+.app-center-folder [data-app-icon] > span:first-child {
+  transform: var(--folder-icon-transform, scale(0.72));
+  transform-origin: top left;
+}
+
+.app-center-folder[data-open] [data-app-icon] > span:first-child {
+  transform: none;
+}
+
+.app-center-folder :is(header, [data-app] button > span:last-child),
+.app-center-folder [data-app-icon]:not([data-preview]) {
+  opacity: 0;
+  transition: opacity var(--folder-motion);
+}
+
+.app-center-folder[data-open] :is(header, [data-app] button > span:last-child),
+.app-center-folder[data-open] [data-app-icon]:not([data-preview]) {
+  opacity: 1;
+}
+
+:root[data-motion="reduced"] .app-center-folder {
+  --folder-duration: 0s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-center-folder {
+    --folder-duration: 0s;
+  }
+}
