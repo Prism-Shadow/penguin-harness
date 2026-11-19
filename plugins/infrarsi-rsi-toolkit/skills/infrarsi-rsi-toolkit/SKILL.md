@@ -1,0 +1,95 @@
+---
+name: infrarsi-rsi-toolkit
+description: Speed up an existing GPU training job with InfraRSI, running the upstream engine and its infrarsi-optimize Skill at a pinned commit, with every search request answered by a fresh subagent and only verified changes reported. Use when asked to make a training job faster, raise its MFU or throughput, or tune its launch settings and hot-path code without changing what it trains.
+version: 2026.11.18.4
+---
+
+# InfraRSI
+
+[InfraRSI: Harnessing Recursive Self-Improvement for Training Infrastructure](https://arxiv.org/abs/2611.11558) improves the infrastructure around a training job that already runs. Its engine fixes a task contract (same data, model, batch, precision rules and optimizer steps), measures the reference run and its noise, and searches launch settings and code patches with B-Comp. Every candidate is a real training run checked against the reference; the winner is re-run back to back with the original, and only verified results enter an experience library that orders the next job's search. The goal is one number: the time one optimizer update takes.
+
+This toolkit runs the [upstream engine and its `infrarsi-optimize` Skill](https://github.com/TokenRhythm/InfraRSI/tree/512f8ea784054f4ca3331d03cc6589267a4cbdf5) unchanged. It supplies only what PenguinHarness needs around them: fetching the pinned build, the subagent that answers the engine's requests, the tools' time limits, and the go-aheads the engine needs.
+
+## Before you start
+
+You need a training job that already runs, on this machine or on SSH hosts, and the command that starts it today. If the request only names this Skill, ask for the project directory and that command. If the job does not run as it is, fix that with the user first.
+
+The engine runs with the training environment's Python: 3.11 or newer with PyYAML, or 3.10 with PyYAML and `tomli`. Fetching needs `git` and access to GitHub once.
+
+## Fetch the pinned engine
+
+| Item       | Value                                      |
+| ---------- | ------------------------------------------ |
+| Repository | `https://github.com/TokenRhythm/InfraRSI`  |
+| Commit     | `512f8ea784054f4ca3331d03cc6589267a4cbdf5` |
+| Engine     | `infrarsi` 0.3.0                           |
+
+Build the upstream Skill once per machine, outside the user's project and outside the engine's home directory:
+
+```bash
+SRC="${XDG_CACHE_HOME:-$HOME/.cache}/penguin-infrarsi/512f8ea7"
+if [ ! -d "$SRC/.git" ]; then
+  rm -rf "$SRC" && git clone https://github.com/TokenRhythm/InfraRSI.git "$SRC"
+fi
+git -C "$SRC" checkout --detach 512f8ea784054f4ca3331d03cc6589267a4cbdf5
+<python> -I "$SRC/agent_skill/build_skill.py" --out "$SRC/dist"
+```
+
+Run these lines as they are, in one command; do not create `$SRC` or `dist` beforehand. `<python>` is the training environment's interpreter. The built Skill is `SKILL_DIR="$SRC/dist/infrarsi-optimize"`; check that `$SKILL_DIR/scripts/engine/VERSION.json` names the pinned commit without `+changes`. Do not run `install_skill.py`: it writes Claude Code and Codex directories this Session does not use. Do not edit anything under `$SRC`.
+
+The upstream repository carries no license file, so no license grants the use of its code. This toolkit does not redistribute its code or text: the user's machine fetches them from upstream. Before the first fetch on a machine, tell the user so and fetch only on their go-ahead; say so in the report as well.
+
+## Follow the upstream Skill
+
+Read `$SKILL_DIR/SKILL.md` and the references it names, and follow its rules and workflow exactly: numbers come only from the engine, the contract is fixed before the search, you never answer the engine's requests, the engine schedules, and failures are data. `infrarsi` in those files means `<python> "$SKILL_DIR/scripts/infrarsi.py"`, run from the project directory.
+
+Make these substitutions for PenguinHarness:
+
+| Upstream says                                       | Here                                                                                                                                                                  |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `<skill-dir>`, `${CLAUDE_SKILL_DIR}`                | `$SKILL_DIR`                                                                                                                                                          |
+| `--model <your model name>`                         | This Session's model id from the Environment section                                                                                                                  |
+| The Agent tool, `spawn_agent`, `codex exec`         | `run_subagent`, as described below                                                                                                                                    |
+| Give your shell tool a timeout above 9 minutes      | `exec_command` waits at most two minutes: call `infrarsi agent next --wait 100`. Start `infrarsi doctor` and other commands that last longer with `run_in_background` |
+| Agree the contract and the apply step with the user | Ask in the conversation. A quick-start prompt agrees to neither; it never loosens the contract or applies a change                                                    |
+| The manifest's `search` settings (`run_noise`, `multi_fidelity` and the rest) | Leave them at the engine's defaults unless the user gives a value: the engine measures run-to-run noise itself, and a guessed noise floor can rule out every candidate before one runs |
+
+### The answerer identity
+
+Upstream's answerer may only read and write files. Before `infrarsi agent start`, give it close limits here with a separate Agent in this Project, created once and reused:
+
+1. `penguin agent create --agent-id infrarsi_answerer --name "InfraRSI answerer" --json`, unless that Agent already exists.
+2. In `<app_data_dir>/agents/infrarsi_answerer/agent_state/system_config.yaml`, keep only the `read_file`, `write_file` and `exec_command` entries under `tools.builtin`. When an existing answerer lacks one of them, copy that entry from your own `system_config.yaml`.
+3. Replace the `AGENTS.md` beside it with the rules block in [answerer.md](references/answerer.md), `<print-request>` replaced by the absolute path of `$TOOLKIT_DIR/scripts/print-request.mjs`. `TOOLKIT_DIR` is this toolkit's Skill directory, `<app_data_dir>/agents/<your agent id>/agent_state/skills/infrarsi-rsi-toolkit`.
+
+`exec_command` stays because `read_file` shows at most 2000 characters of a line, and the engine writes each request's `prompt.txt` as one long line of JSON with the project's files as escaped strings in it; the answerer reads it with the toolkit's read-only viewer `scripts/print-request.mjs`, which prints the request with those files as real lines. Report this adaptation. What the runtime enforces is the tool list: the answerer has these three tools and no other. Which files it touches is set by its rules and checked afterwards, session by session, by the audit below. Check the three steps before the first request. If the Agent cannot be created or restricted, do not answer under your own identity, which has every tool: run `infrarsi agent stop` and report why.
+
+A subagent Session runs under its root Session's sandbox policy. When this Session runs under the Agent Sandbox (workspace-write, with the network cut where the backend can), the answerer's commands and file writes are confined at runtime too; say in the report whether it was.
+
+### Answer each request with a fresh subagent
+
+When `infrarsi agent next` returns `"state": "request"`:
+
+1. Start a **new** `run_subagent` session with `agent_id: infrarsi_answerer` and `yield_time_ms: 590000`. Omit `provider`, `model_id` and `thinking_level`, so the answerer runs on this Session's model: the engine weighs answers by the model named in `--model`. Never send a request to a cheaper model.
+2. Its prompt is the line `Caller agent: <your agent id>`, then the prompt in the _The prompt_ section of `$SKILL_DIR/references/answering.md` with the request's id, directory and answer file filled in, the `dir` and `answer` copied exactly as `infrarsi agent next` printed them: never type a path yourself. Add nothing else: no advice, numbers, file contents or view of the job.
+3. If `run_subagent` returns before the answerer is done, wait with `input_subagent` and an empty prompt. Never send an answerer a prompt: a message to a running or finished answerer adds to its question.
+4. Audit the session before handing anything in: `node "$TOOLKIT_DIR/scripts/audit-answerer.mjs" --traces <app_data_dir>/agents/infrarsi_answerer/traces <dir> <answer file name>`. It finds the answerer session whose prompt names `<dir>` and checks what that session did: only the three tools offered, every read inside `<dir>`, a write of the answer file and nothing else, and shell commands that only print. Its `scripts_sha256` gives the SHA-256 of the audit script and the viewer: the first audit's pair is the run's, and when a later audit reports another, the toolkit's own checks were changed during the run, so run `infrarsi agent stop --now` and report it. Keep every result for the report.
+5. When the audit says `"ok": true`, hand the answer in with `infrarsi agent answer <id> --by <model id> --tokens <its tokens>`. When it says false, do not hand that answer in: start another new answerer for the request (it writes the answer file afresh) whose prompt ends with one more line, `Feedback: an earlier answer to this request was discarded because its session <what the violations say, in one sentence>; read the request only as your AGENTS.md says.`, as upstream does for a refused answer, and audit again. After three failed audits of one request, run `infrarsi agent stop` and report the violations. Follow the answering reference's table for refused answers: a refused answer gets another new subagent with the feedback line it gives.
+
+If `run_subagent` is not in your tool list, you are a subagent yourself: do not answer the request. Run `infrarsi agent stop` and report that this Session cannot start an independent answerer.
+
+### The toolkit's own files
+
+Never edit, replace or add anything in `$TOOLKIT_DIR`: its scripts and references are the checks this run is held to. If one of them looks wrong or gets in the way, say so in the report or ask the user; do not patch it, and do not work around it with a script of your own.
+
+### Go-aheads and the engine's home
+
+The engine writes its experience library, cost ledger and signing key under `$INFRARSI_HOME`, by default `~/.infrarsi`, and its runs under the project's `.infrarsi/`. When a command policy or sandbox stops `infrarsi agent start` or `infrarsi agent resume` from writing there, ask the user for a go-ahead to run that command as it is, or to choose an `INFRARSI_HOME` they allow. Never create or edit the files in that directory yourself.
+
+## Report
+
+Report from `infrarsi report <run_dir>` and `infrarsi agent status` only: the original and new time per update (and MFU when reported), the speed-up of the back-to-back re-run, what changed, what was rejected and why, the checks the logs could not support, and the cost. Add the pinned commit and engine hash from `VERSION.json`, the model, the number of requests answered with their subagent tokens, every answerer audit (and each discarded answer with its violations), the `scripts_sha256` pair the audits reported, whether this Session ran under the Agent Sandbox, and the GPUs used. A run that ends with `no_change` keeps the current configuration (×1.00); say so.
+
+## Trying the setup
+
+Upstream's `examples/toy_cpu` is a simulated job that needs neither a GPU nor PyTorch. To check the whole loop end to end, copy it from `$SRC` to a scratch directory and run the workflow there with a small budget, for example `--screens 4 --wall-hours 2h`. Each request waits at most what is left of the wall-clock budget, and the example's own half hour leaves too little for answering subagents that each take a full turn. Its speed-ups are simulated; a real result needs a real training job.

@@ -1,0 +1,38 @@
+{
+  "name": "@penguinharness/infrarsi-rsi-toolkit",
+  "version": "0.2.18",
+  "description": "InfraRSI RSI Toolkit: speed up an existing training job by running the upstream InfraRSI engine at a pinned commit, answering its search requests with fresh subagents and reporting only changes verified against the original run.",
+  "keywords": [
+    "penguin-plugin",
+    "penguinharness",
+    "skills"
+  ],
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Prism-Shadow",
+    "url": "https://github.com/Prism-Shadow"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "plugins/infrarsi-rsi-toolkit"
+  },
+  "files": [
+    "icon.svg",
+    "skills",
+    "ifaces.json",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json"
+  },
+  "devDependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/skills": "workspace:*",
+    "vitest": "^4.1.12"
+  }
+}

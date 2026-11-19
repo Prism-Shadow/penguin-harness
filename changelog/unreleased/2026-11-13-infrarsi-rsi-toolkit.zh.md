@@ -1,0 +1,25 @@
+# InfraRSI 工具包用上游引擎加速训练任务
+
+- **Date:** 2026-11-13
+- **Type:** feature
+- **Scope:** `plugins`, `skills`, `docs`, `landing`
+- **PR:** [#1551](https://github.com/Prism-Shadow/penguin-harness/pull/1551)
+- **Issue:** [penguin-harness-community #71](https://github.com/Prism-Shadow/penguin-harness-community/issues/71)
+
+[English](2026-11-13-infrarsi-rsi-toolkit.md)
+
+新增 `infrarsi-rsi-toolkit`，用 [InfraRSI](https://arxiv.org/abs/2611.11558) 加速已有的训练任务。负责人：[Nhckdvrl](https://github.com/Nhckdvrl)。
+
+## 运行方式
+
+- Skill 按固定 commit 获取上游引擎及其 `infrarsi-optimize` Skill，在项目之外构建。上游没有许可证文件，因此插件不包含上游的代码或文字，Skill 在获取之前先告知用户并取得同意。
+- Agent 原样遵循上游 Skill：与用户拟定任务约定，启动引擎并让它持续运行。引擎测量参考运行及其噪声，搜索启动参数与代码补丁，把最优者与原任务背靠背重跑，并写出报告。
+- 引擎的每个请求都交给 `infrarsi_answerer` Agent 的一个新 `run_subagent` 会话，使用本会话的模型，请求目录原样取自引擎的输出。该 Agent 只有 `read_file`、`write_file` 与 `exec_command`，规则只允许用 shell 打印请求目录中的文件：`read_file` 会截断超过 2000 个字符的行，而引擎把每个请求的 prompt 写成一行。若该 Agent 无法创建或限制工具，运行即停止，而不是以调用方身份作答。
+- 答案提交之前，`scripts/audit-answerer.mjs` 读取 answerer 会话的 Trace，检查它实际做了什么：只提供了这三个工具、每次读取都在请求目录内、只写了答案文件、shell 命令只做打印。未通过的会话被丢弃，请求交给新的 answerer，并附一行反馈说明原因（与上游处理被拒答案的方式相同）；同一请求第三次未通过即停止运行。审计同时给出该会话的 token 数，用于 `--tokens`。
+- answerer 用只读查看脚本 `scripts/print-request.mjs` 阅读请求：它分页打印 `prompt.txt`，把其中嵌入的每个项目文件原样放在开始与结束标记之间，答案里修改的原文可以直接从中复制。审计只放行这个脚本，不放行其他程序，answerer 不必再自己解析 JSON。
+- Agent 不改动清单中的搜索设置（`run_noise`、`multi_fidelity` 等），除非用户给出取值，由引擎自己测量运行间噪声。Agent 也不得修改工具包自身的脚本和参考文件；每次审计都会给出审计脚本与查看脚本的 SHA-256，运行期间一旦变化即停止运行。
+- `infrarsi agent next` 的等待时间控制在命令工具的两分钟上限之内。用户同意之前，不会改动用户的代码。
+
+## 打包
+
+插件在 `src/index.ts` 中声明卡片与 Skill（`preinstall: false`），已登记到 server、CLI、桌面端与 landing 打包、中英文插件目录、Skill 文档和官网算法清单。插件带有库内其他 Skill 插件同样运行的 SKILL.md 解析检查，以及审计脚本在真实记录和构造会话上的测试。
