@@ -78,8 +78,9 @@ export function switchContextShape(
 }
 
 /**
- * Whether the Session row on hand names another model than the conversation is on: the running
- * context's `session_meta` (the stream model's `contextModel`) is of this Session and says so —
+ * Whether the Session row on hand names another model than the conversation is on: the model the
+ * stream model holds (`contextModel` — the running context's `session_meta`, or the
+ * `session_update` a completed switch leaves) is of this Session and says so —
  * a switch completed, on this tab or another one watching the Session, or the row was held from
  * before a switch. The page then moves the row to that model; the server moved its own before
  * it published the record. False while the stream says nothing of this Session's model: before

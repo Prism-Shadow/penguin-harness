@@ -23,7 +23,7 @@
  * mode asks for reaches the panel through the SDK's approval loop: the `tool_call` row it is
  * about offers Allow and Deny, and the answer goes back through the SDK.
  */
-import { AgentClient, AmspHttpError } from "@prismshadow/amsp";
+import { AgentClient, AmspHttpError, updatedModel } from "@prismshadow/amsp";
 import type {
   AmspRecord,
   RunRequest,
@@ -289,12 +289,22 @@ export function recordFields(rec: AmspRecord): TryField[] {
       return failure(p);
     case "subagent":
       return [{ value: str(p.session_id) }];
-    default: {
-      // A record this panel does not know (the protocol grows within /v1): what it carries.
-      const { type: _type, ...rest } = p;
-      return [{ value: cut(JSON.stringify(rest)), quiet: true }];
+    case "session_update": {
+      // A Session setting changed. The one setting it carries today is the model the Session's
+      // next context opens on, written as session_meta's is; anything else, as carried.
+      const model = updatedModel(rec);
+      return model !== undefined ? [{ value: `${model.provider}/${model.model_id}` }] : carried(p);
     }
+    default:
+      // A record this panel does not know (the protocol grows within /v1).
+      return carried(p);
   }
+}
+
+/** What a record carries besides its type, on one line. */
+function carried(p: Record<string, unknown>): TryField[] {
+  const { type: _type, ...rest } = p;
+  return [{ value: cut(JSON.stringify(rest)), quiet: true }];
 }
 
 /** The rows with every open message that `close` picks marked complete. */
