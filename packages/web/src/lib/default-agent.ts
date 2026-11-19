@@ -10,9 +10,12 @@
  * sending.
  */
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
+import { isConversationAgent } from "./builtin-agents";
 
 export const DEFAULT_AGENT_ID = "default_agent";
 
+/** Never the system Agent, which takes no prompt. */
 export function pickDefaultAgent(agents: readonly AgentSummary[]): AgentSummary | null {
-  return agents.find((a) => a.agentId === DEFAULT_AGENT_ID) ?? agents[0] ?? null;
+  const chat = agents.filter(isConversationAgent);
+  return chat.find((a) => a.agentId === DEFAULT_AGENT_ID) ?? chat[0] ?? null;
 }

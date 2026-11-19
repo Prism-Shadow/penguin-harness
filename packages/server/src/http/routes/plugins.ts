@@ -103,6 +103,7 @@ import {
 import { migrateWorkbenches } from "../../workbenches/migrate.js";
 import type { PluginLibrary } from "../../plugin/library-module.js";
 import { uninstallAgentPlugin } from "../../services/plugin-uninstall.js";
+import { refuseSystemAgentInstall } from "../../services/system-agent.js";
 
 /** What these route groups reach — bound by their component below. */
 export interface PluginsRouteDeps {
@@ -236,6 +237,7 @@ export function agentPluginsRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
     const agentId = requireValidId(c, "agentId");
     deps.access.requireProjectAccess(c.var.user.userId, projectId);
     await deps.agentConfigService.requireExists(projectId, agentId);
+    await refuseSystemAgentInstall(deps.agentConfigService, projectId, agentId);
     const names = optionalStringArray(await readJson(c), "names") ?? [];
     if (names.length === 0) throw badRequest("names must be a non-empty array.");
     // Verify every name up front before writing anything: an unknown name, or an MCP server

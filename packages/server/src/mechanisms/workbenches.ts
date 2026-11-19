@@ -53,7 +53,10 @@ export abstract class WorkbenchMain {
 /** What the server publishes into a workbench tree as module `Host`. */
 @Interface()
 export abstract class WorkbenchHost {
-  /** The Agents of this Project — who `createSession` can be asked to open a Session of. */
+  /**
+   * The Agents of this Project — who `createSession` can be asked to open a Session of. The
+   * system Agent, which runs none, is not one of them.
+   */
   abstract listAgents(): { agentId: string }[];
   /**
    * Opens a Session of an Agent of this Project — the workbench's own Agent when `agentId`

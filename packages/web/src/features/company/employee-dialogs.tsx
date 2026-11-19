@@ -49,6 +49,7 @@ import {
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
+import { isConversationAgent } from "../../lib/builtin-agents";
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
 import { formatMoney } from "../../lib/format";
 import { useCompany } from "./company-state";
@@ -159,9 +160,9 @@ function HireForm({
   const { currency } = useTheme();
   const company = useCompany();
 
-  /** Agents of the Project not yet in the organization. */
+  /** Agents of the Project not yet in the organization; never the system Agent, which takes no work. */
   const employed = new Set(employees.map((e) => e.agentId));
-  const candidates = agents.filter((a) => !employed.has(a.agentId));
+  const candidates = agents.filter((a) => isConversationAgent(a) && !employed.has(a.agentId));
 
   // Where the form opens: an existing Agent when there is one to pick, else a new one.
   const [opening] = useState<HireDraft>(() => ({

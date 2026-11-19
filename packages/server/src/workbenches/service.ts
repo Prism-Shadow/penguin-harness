@@ -47,7 +47,7 @@ import type {
   ModuleDef,
   ModuleTree,
 } from "@prismshadow/penguin-core/kernel";
-import { agentDir, userText } from "@prismshadow/penguin-core";
+import { agentDir, SYSTEM_AGENT_ID, userText } from "@prismshadow/penguin-core";
 import type { IconImage } from "@prismshadow/penguin-core";
 import table from "../ifaces.json" with { type: "json" };
 import { HttpError } from "../http/errors.js";
@@ -1193,8 +1193,19 @@ export class WorkbenchService implements Workbenches {
   ) {
     const service = this;
     let state: unknown = await readState(folder.dir);
+    // The system Agent runs no Sessions (PRFC-0033), so it is never offered; `createSession`
+    // refuses it through the session service. Whether the Project's `system_agent` is instead
+    // an Agent of the user's (core state/system-agent.ts) is read once per tree: a system Agent
+    // is only ever provisioned where no Agent holds the id.
+    const usersSystemId =
+      (await service.agentConfig.exists(projectId, SYSTEM_AGENT_ID)) &&
+      !(await service.agentConfig.isSystemAgent(projectId, SYSTEM_AGENT_ID));
     return {
-      listAgents: () => service.agents.list(projectId).map((row) => ({ agentId: row.agentId })),
+      listAgents: () =>
+        service.agents
+          .list(projectId)
+          .filter((row) => row.agentId !== SYSTEM_AGENT_ID || usersSystemId)
+          .map((row) => ({ agentId: row.agentId })),
       async createSession(opts?: { agentId?: string; approvalMode?: WorkbenchApprovalMode }) {
         const target = opts?.agentId ?? agentId;
         // Unattended, like a scheduled run: allow-all unless the workbench asks for deny-all,

@@ -60,6 +60,7 @@ import {
   ICON_GAP,
   ICON_SIZE,
   Input,
+  NoticeStrip,
   PageFrame,
   PageHeader,
   RuledSection,
@@ -98,7 +99,7 @@ import { mixAgents, useMachineAgents } from "../../lib/machine-agent-lists";
 import type { PlacedAgent } from "../../lib/machine-agent-lists";
 import { toneInk } from "../../lib/tone";
 import { employmentsOf, splitByEmployment } from "../../lib/agent-employment";
-import { isBuiltinAgent } from "../../lib/builtin-agents";
+import { holdsSystemAgentId, isBuiltinAgent, isSystemAgent } from "../../lib/builtin-agents";
 import {
   AGENT_GROUP_BYS,
   groupByAuthor,
@@ -232,6 +233,12 @@ export function AgentsPage() {
   const { user } = useAuth();
   const { currentProject, agents, agentsLoading, reloadAgents, setCurrentAgentId } = useProject();
   const avatarSrc = useAgentAvatarSrc();
+  /**
+   * An Agent of the user's holding the id reserved for the system Agent, which the Project then
+   * lacks: its owner is asked to move it, the only way the system Agent can be added.
+   */
+  const heldSystemId =
+    currentProject?.role === "owner" ? (agents.find(holdsSystemAgentId) ?? null) : null;
   /** Header search, the Models page's shape: name, id and description, case-insensitive. */
   const [query, setQuery] = useState("");
   /** The header's grouping select and the folded author sections, both remembered per browser. */
@@ -491,7 +498,10 @@ export function AgentsPage() {
    * card is greyed and inert, its controls disabled with the reason — and null for this server's.
    */
   const renderCard = ({ agent: a, on }: PlacedAgent, framed = true) => {
-    const builtin = isBuiltinAgent(a.agentId);
+    const builtin = isBuiltinAgent(a);
+    // The system Agent holds no conversation and no data of its own to export: its card keeps
+    // only its settings, and its words come from the dictionary.
+    const system = isSystemAgent(a);
     const machineId = on?.machine.machineId ?? null;
     /** Whether the server holding the Agent can be acted on right now (this one always can). */
     const reachable = on === null || on.live;
@@ -567,13 +577,17 @@ export function AgentsPage() {
             <span className="hidden shrink-0 font-mono text-xs text-gray-400 md:inline dark:text-gray-500">
               {a.agentId}
             </span>
-            <Pill>v{a.version}</Pill>
+            {system ? (
+              <Pill tooltip={S.agent.systemTagHint}>{S.agent.systemTag}</Pill>
+            ) : (
+              <Pill>v{a.version}</Pill>
+            )}
             {/* Kernel-outdated pill: the card the sidebar's Agents dot leads to, so it
                         names the state in words rather than as another bare dot — a capsule in
                         the version badge's own geometry, in the attention tint (behind is
                         unfinished, not failed), opening the settings overview where the update
                         action lives. Not on a card that cannot open it. */}
-            {a.kernelOutdated && reachable && (
+            {a.kernelOutdated && reachable && !system && (
               <UpdatePill onClick={() => openSettingsTab(a.agentId, "overview", machineId)}>
                 {S.agent.kernelUpdateNeeded}
               </UpdatePill>
@@ -581,7 +595,7 @@ export function AgentsPage() {
           </div>
           {/* Description truncated to one line (an empty description still takes up a line, keeping card heights equal) */}
           <p className="mt-1.5 min-h-4 truncate text-xs text-gray-500 dark:text-gray-400">
-            {a.description ?? ""}
+            {system ? S.agent.systemDescription : (a.description ?? "")}
           </p>
           {/* An employee's organizations, one line each: the building every company
                       surface wears, then `<organization> · <title>`. */}
@@ -668,28 +682,34 @@ export function AgentsPage() {
                     against zero with a faint fill, in the success ink (an agent in use is a
                     healthy one). Hidden on narrow screens first, giving the horizontal space back
                     to content and buttons. */}
-        <Sparkline
-          values={a.sessionActivity}
-          label={S.agent.activity(a.sessionActivity.length || 30)}
-          area
-          tone="success"
-          width={100}
-          height={30}
-          className="hidden shrink-0 md:block"
-        />
+        {/* None on the system Agent's card: it never holds a conversation, so the line would
+            only ever be flat, and out of step with the other cards' beside its shorter buttons. */}
+        {!system && (
+          <Sparkline
+            values={a.sessionActivity}
+            label={S.agent.activity(a.sessionActivity.length || 30)}
+            area
+            tone="success"
+            width={100}
+            height={30}
+            className="hidden shrink-0 md:block"
+          />
+        )}
 
         {/* Button group to the right of the sparkline: "New Chat" shows text, the rest are square icon buttons (tooltip shows the full name) */}
         <div className="flex shrink-0 items-center gap-2">
-          <Button
-            size="sm"
-            variant="primary"
-            disabled={!reachable}
-            {...(offReason !== null ? { title: offReason, "data-tooltip-extra": true } : {})}
-            onClick={() => newChat(a.agentId, machineId)}
-          >
-            <GlyphIcon d={CARD_ICONS.newChat} />
-            {S.chat.newSessionMenu}
-          </Button>
+          {!system && (
+            <Button
+              size="sm"
+              variant="primary"
+              disabled={!reachable}
+              {...(offReason !== null ? { title: offReason, "data-tooltip-extra": true } : {})}
+              onClick={() => newChat(a.agentId, machineId)}
+            >
+              <GlyphIcon d={CARD_ICONS.newChat} />
+              {S.chat.newSessionMenu}
+            </Button>
+          )}
           <Button
             size="sm"
             disabled={!reachable}
@@ -700,32 +720,36 @@ export function AgentsPage() {
             {S.common.settings}
           </Button>
           {/* The usage center reads this server's records: a machine's Agent has none here. */}
-          <Button
-            size="icon"
-            title={machineId !== null ? S.agent.usageThisServerOnly : S.nav.usage}
-            aria-label={S.nav.usage}
-            disabled={machineId !== null}
-            onClick={() => navigate(`/usage?agentId=${encodeURIComponent(a.agentId)}`)}
-          >
-            <GlyphIcon
-              d={CARD_ICONS.usage}
-              size={15}
-              className="text-gray-600 dark:text-gray-300"
-            />
-          </Button>
-          <Button
-            size="icon"
-            title={offReason ?? S.agent.exportAgent}
-            aria-label={S.agent.exportAgent}
-            disabled={!reachable}
-            onClick={() => setExporting({ agent: a, on })}
-          >
-            <GlyphIcon
-              d={ICONS.download}
-              size={ICON_SIZE.iconButton}
-              className="text-gray-600 dark:text-gray-300"
-            />
-          </Button>
+          {!system && (
+            <Button
+              size="icon"
+              title={machineId !== null ? S.agent.usageThisServerOnly : S.nav.usage}
+              aria-label={S.nav.usage}
+              disabled={machineId !== null}
+              onClick={() => navigate(`/usage?agentId=${encodeURIComponent(a.agentId)}`)}
+            >
+              <GlyphIcon
+                d={CARD_ICONS.usage}
+                size={15}
+                className="text-gray-600 dark:text-gray-300"
+              />
+            </Button>
+          )}
+          {!system && (
+            <Button
+              size="icon"
+              title={offReason ?? S.agent.exportAgent}
+              aria-label={S.agent.exportAgent}
+              disabled={!reachable}
+              onClick={() => setExporting({ agent: a, on })}
+            >
+              <GlyphIcon
+                d={ICONS.download}
+                size={ICON_SIZE.iconButton}
+                className="text-gray-600 dark:text-gray-300"
+              />
+            </Button>
+          )}
           {/* Built-in Agents can't be deleted: shown as a non-button light gray
                       placeholder (no border/background, no hover response, disabled cursor,
                       explained via tooltip); the transparent border keeps the same box size as
@@ -770,7 +794,7 @@ export function AgentsPage() {
    * built-in default is not one the user set up. Hidden while searching (the list itself is being
    * filtered).
    */
-  const firstAgentCall = !searching && agents.every((a) => isBuiltinAgent(a.agentId)) && (
+  const firstAgentCall = !searching && agents.every(isBuiltinAgent) && (
     <EmptyState
       title={S.agent.firstAgentTitle}
       description={S.agent.firstAgentDesc}
@@ -829,6 +853,11 @@ export function AgentsPage() {
             behind the defaults generation — so the line states the upgradable count alone
             rather than padding it with a zero the page has no meaning for. The per-card capsule
             below and the per-Agent update in settings are untouched. */}
+        {heldSystemId !== null && (
+          <NoticeStrip tone="attention" as="p" className="rounded-md border px-3 py-2 text-xs">
+            {S.agent.systemIdHeld(agentDisplayName(heldSystemId))}
+          </NoticeStrip>
+        )}
         {kernelTodo && (
           <TodoNotice
             text={S.todo.changesUpgradable(noticeCounts(kernelTodo).updated)}
