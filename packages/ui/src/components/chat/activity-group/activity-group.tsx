@@ -87,16 +87,16 @@ export interface ActivityStepSummary {
   label: string;
   state: RunState;
   stateLabel?: string;
-  startMs?: number;
-  durationMs?: number;
-  offsetMs?: number;
+  /** Tool description and, for file operations, the path of this invocation. */
+  description?: string;
+  path?: { short: string; full: string };
 }
 
 /** One of the activity's steps under the head, keyed for React. */
 export interface ActivityGroupRow {
   key: Key;
   content: ReactNode;
-  summary?: ActivityStepSummary;
+  summary?: ActivityStepSummary | (() => ActivityStepSummary | undefined);
   /** An approval or a retry is waiting on this step. */
   needsAction?: boolean;
 }
@@ -106,7 +106,8 @@ export interface ActivityStepNavigation {
   next: string;
   latest: string;
   waiting: string;
-  position: (step: number, total: number) => string;
+  position: (step: number) => string;
+  elapsed: string;
   /** Expose every step to a search of this transcript, preserving the reading position. */
   revealAll: boolean;
 }
@@ -183,6 +184,8 @@ export interface ActivityGroupProps {
   displayMode?: ActivityDisplayMode;
   /** Actual end of the turn, reported once on its last work group. */
   terminal?: { state: "done" | "failed" | "stopped"; label: string; durationMs?: number };
+  /** Whole-turn timing, shared by its work groups. A duration freezes the clock. */
+  runTiming?: { startMs: number; durationMs?: number };
   /** Pager and action labels for a work group and its transcript-search state. */
   stepNavigation?: ActivityStepNavigation;
   /** A body of one piece the caller styles, in place of rows; its presence adds the chevron too. */
@@ -214,6 +217,7 @@ export function ActivityGroup({
   pending = false,
   rows,
   stepNavigation,
+  runTiming,
   displayMode: preference = "standard",
   terminal,
   children,
@@ -242,17 +246,20 @@ export function ActivityGroup({
   const page = selected >= 0 ? selected : total - 1;
   const pageRow = rows?.[page];
   const terminalPage = !!terminal && page === stepCount;
-  const summary: ActivityStepSummary = (terminalPage ? terminal : pageRow?.summary) ?? {
+  const pageSummary = compact && !finding ? pageRow?.summary : undefined;
+  const summary: ActivityStepSummary = (terminalPage
+    ? terminal
+    : typeof pageSummary === "function"
+      ? pageSummary()
+      : pageSummary) ?? {
     label: title,
     state,
-    startMs,
-    durationMs,
   };
   const shown =
     expandable &&
     (finding ||
       (compact
-        ? !terminalPage && (view.open ?? false)
+        ? (view.open ?? false)
         : pending || (view.open ?? (displayMode === "expanded" || running))));
   function toggle() {
     landOnClose.current = shown && !finding && (compact || !pending);
@@ -269,10 +276,9 @@ export function ActivityGroup({
     nextWaiting >= 0
       ? nextWaiting
       : (rows?.findIndex((row, index) => row.needsAction && (index !== page || !shown)) ?? -1);
-  const visibleRows = compact && !finding ? (pageRow ? [pageRow] : []) : rows;
   function renderRows() {
     if (!stepNavigation) return rows ?? [];
-    return (visibleRows ?? []).map((row) => {
+    return (rows ?? []).map((row) => {
       const expanded = view.disclosures.get(row.key) ?? displayMode === "expanded";
       return {
         ...row,
@@ -361,7 +367,7 @@ export function ActivityGroup({
           data-kind={summary.kind ?? kind}
           data-state={activityState(summary.state)}
           data-step-terminal={terminalPage || undefined}
-          className={`ui-activity ${DISCLOSURE_HEADER_STICKY_CLASS} flex min-w-0 items-center bg-surface-muted py-0.5 pe-12 sm:pe-1`}
+          className={`ui-activity ${DISCLOSURE_HEADER_STICKY_CLASS} flex min-w-0 items-center bg-surface-muted py-0.5 pe-[62px] sm:pe-1`}
         >
           <WallpaperBackdrop />
           <CompactStepHeader
@@ -369,7 +375,9 @@ export function ActivityGroup({
             navigation={stepNavigation}
             page={page}
             total={total}
-            terminal={terminalPage}
+            totalStartMs={runTiming?.startMs ?? startMs}
+            totalDurationMs={runTiming?.durationMs ?? terminal?.durationMs ?? durationMs}
+            totalRunning={runTiming ? runTiming.durationMs === undefined : running && !terminal}
             open={shown}
             toggle={toggle}
             goTo={goTo}

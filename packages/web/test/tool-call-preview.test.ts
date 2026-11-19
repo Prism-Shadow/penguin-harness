@@ -19,8 +19,7 @@
  */
 import { describe, expect, it } from "vitest";
 import {
-  headerSubtitle,
-  headerSubtitlePath,
+  toolHeaderDetails,
   isBackgroundCall,
   isDetachedCall,
   pendingFilePayload,
@@ -28,6 +27,11 @@ import {
   shortenPath,
   showsBackgroundAction,
 } from "../src/features/chat/tool-call-card";
+
+const headerSubtitle = (...args: Parameters<typeof toolHeaderDetails>) =>
+  toolHeaderDetails(...args).subtitle;
+const headerSubtitlePath = (...args: Parameters<typeof toolHeaderDetails>) =>
+  toolHeaderDetails(...args).subtitleFull;
 
 describe("previewArguments", () => {
   it("renders exec_command as $ <cmd>", () => {

@@ -25,7 +25,9 @@ import { S } from "../../lib/strings";
 import { FindRevealContext } from "../../lib/find-expand";
 import { approvalKey, type ChatItem } from "../../lib/amsp/stream-model";
 
-import { useActivityDisplayMode } from "../../state/theme";
+import { useActivityAppearance } from "../../state/theme";
+import { toolDisplayName } from "../../lib/tool-alias";
+import { toolHeaderDetails } from "./tool-call-card";
 import { toolActivity } from "./tool-activity";
 import { MessageItem } from "./message-item";
 import type { StreamRenderContext } from "./message-stream";
@@ -68,26 +70,32 @@ function needsAction(item: ChatItem, ctx: StreamRenderContext): boolean {
   );
 }
 
-function stepSummary(item: ChatItem, ctx: StreamRenderContext): ActivityStepSummary | undefined {
+function stepSummary(
+  item: ChatItem,
+  ctx: StreamRenderContext,
+  toolAliases: boolean,
+): ActivityStepSummary | undefined {
   if (item.kind === "thinking") {
     return {
       kind: "thinking",
       label: S.chat.thinking,
       state: item.streaming ? "running" : "done",
-      startMs: item.streaming ? item.startedAtMs : undefined,
-      durationMs: item.durationMs,
     };
   }
   if (item.kind === "tool_call") {
-    const { state, stateLabel, duration } = toolActivity(item, needsAction(item, ctx));
+    const { state, stateLabel } = toolActivity(item, needsAction(item, ctx));
+    const { description, path } = toolHeaderDetails(
+      item.name,
+      item.argumentsText,
+      !item.callStreaming,
+    );
     return {
       kind: "tool",
-      label: item.name || S.chat.unknownTool,
+      label: toolDisplayName(item.name, toolAliases) || S.chat.unknownTool,
+      description,
+      path,
       state,
       stateLabel,
-      startMs: duration?.live ? duration.sinceMs : undefined,
-      durationMs: duration?.live === false ? duration.ms : undefined,
-      offsetMs: duration?.live ? duration.offsetMs : undefined,
     };
   }
   if (item.kind === "reconnect") {
@@ -100,14 +108,14 @@ function stepSummary(item: ChatItem, ctx: StreamRenderContext): ActivityStepSumm
 }
 
 /** The group's state as the package's `ActivityGroup` takes it, minus the rows. */
-export function useWorkGroupState(
+function useWorkGroupState(
   items: ChatItem[],
   ctx: StreamRenderContext,
   isLast: boolean,
+  displayMode: ActivityGroupProps["displayMode"],
 ): Omit<ActivityGroupProps, "rows" | "children"> {
   // Whether any item is in flight right now — also the only window in which the group's span is
   // still growing, which the duration display depends on.
-  const displayMode = useActivityDisplayMode();
   const stepRunning = items.some((it) => itemActive(it, ctx));
   const waitingRetry = hasWaitingRetry(items);
   // Last segment + Task running = the model might still call another tool → Running, even with
@@ -119,10 +127,11 @@ export function useWorkGroupState(
   const revealedForFind = useContext(FindRevealContext);
   const { steps, durationMs, startMs } = summarizeWork(items);
   const last = items.at(-1);
-  const outcome =
+  const work =
     last && (last.kind === "thinking" || last.kind === "tool_call" || last.kind === "reconnect")
-      ? last.workOutcome
+      ? last
       : undefined;
+  const outcome = work?.workOutcome;
   const title =
     outcome?.state === "failed"
       ? S.chat.workFailed
@@ -133,6 +142,7 @@ export function useWorkGroupState(
           : S.chat.workDone;
   return {
     displayMode,
+    runTiming: work?.workTiming,
     terminal: outcome && { ...outcome, label: title },
     state: outcome?.state ?? (running ? "running" : "done"),
     stepRunning,
@@ -151,6 +161,7 @@ export function useWorkGroupState(
       latest: S.chat.latestWorkStep,
       waiting: S.chat.waitingWorkStep,
       position: S.chat.workStepPosition,
+      elapsed: S.chat.workElapsed,
       revealAll: revealedForFind,
     },
   };
@@ -166,13 +177,19 @@ export function SessionWorkGroup({
   /** Whether this group is the last segment of the message stream (current turn still in progress): decides the default expanded/collapsed state. */
   isLast: boolean;
 }) {
-  const state = useWorkGroupState(items, ctx, isLast);
+  const appearance = useActivityAppearance();
+  const state = useWorkGroupState(
+    items,
+    ctx,
+    isLast,
+    appearance?.activityDisplayMode ?? "standard",
+  );
   return (
     <ActivityGroup
       {...state}
       rows={items.map((item) => ({
         key: item.id,
-        summary: stepSummary(item, ctx),
+        summary: () => stepSummary(item, ctx, appearance?.toolAliases ?? false),
         needsAction: needsAction(item, ctx),
         content: <MessageItem item={item} ctx={ctx} />,
       }))}

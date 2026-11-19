@@ -177,11 +177,16 @@ describe("the final work step of a Task", () => {
     const live = createStreamModel();
     pushMessages(live, records);
     expect(steps(live).map((item) => item.workOutcome)).toEqual([undefined, undefined]);
+    const clock = steps(live)[0]!.workTiming;
+    expect(clock).toBeDefined();
+    expect(steps(live)[1]!.workTiming).toBe(clock);
+    expect(clock?.durationMs).toBeUndefined();
     notifyTaskIdle(live);
     const replay = createStreamModel();
     pushMessages(replay, records);
     finalizeHistory(replay);
     for (const model of [live, replay]) {
+      expect(steps(model).map((item) => item.workTiming?.durationMs)).toEqual([4000, 4000]);
       expect(steps(model).map((item) => item.workOutcome)).toEqual([
         undefined,
         { state: "done", durationMs: 4000 },
@@ -204,10 +209,14 @@ describe("the final work step of a Task", () => {
       pushMessages(model, [
         at(userText("next question"), last),
         at(requestBegin(), last),
+        at(thinkingMessage("new turn"), last),
         at(requestEnd("completed"), last),
       ]);
       finalizeHistory(model);
-      expect(steps(model)[0]?.workOutcome).toEqual({ state, durationMs: 4000 });
+      const [prior, next] = steps(model);
+      expect(prior?.workOutcome).toEqual({ state, durationMs: 4000 });
+      expect(prior?.workTiming?.durationMs).toBe(4000);
+      expect(next?.workTiming?.durationMs).toBe(0);
     },
   );
   it("leaves an unfinished request without a fabricated completion", () => {

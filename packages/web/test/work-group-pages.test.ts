@@ -103,25 +103,26 @@ describe("work display modes", () => {
       mode("compact", theme);
       const first = think(1, "First decision");
       const view = await mount(group([first, call(2)]));
-      expect(position()).toBe(S.chat.workStepPosition(2, 2));
+      expect(position()).toBe(S.chat.workStepPosition(2));
       expect(rows()).toHaveLength(0);
       await click(button(S.chat.previousWorkStep));
       expect(rows()).toHaveLength(0);
       await click(header());
-      expect(rows()).toHaveLength(1);
+      expect(rows()).toHaveLength(2);
       expect(view.container.textContent).not.toContain("First decision");
       await click(stepToggle());
       expect(view.container.textContent).toContain("First decision");
       await view.rerender(group([first, call(2), think(3, "Later decision")]));
-      expect(position()).toBe(S.chat.workStepPosition(1, 3));
+      expect(position()).toBe(S.chat.workStepPosition(1));
       await click(button(S.chat.nextWorkStep));
-      expect(rows()).toHaveLength(1);
+      expect(rows()).toHaveLength(3);
+      expect(view.container.textContent).toContain("First decision");
       expect(view.container.textContent).not.toContain("Output 2");
       await click(button(S.chat.previousWorkStep));
       expect(view.container.textContent).toContain("First decision");
       await click(button(S.chat.latestWorkStep));
       await view.rerender(group([first, call(2), think(3, "Later decision"), call(4)]));
-      expect(position()).toBe(S.chat.workStepPosition(4, 4));
+      expect(position()).toBe(S.chat.workStepPosition(4));
     },
   );
 
@@ -132,7 +133,7 @@ describe("work display modes", () => {
     const view = await mount(group([first, tool]));
     tool.output = "Updated output";
     await view.rerender(group([first, tool]));
-    expect(position()).toBe(S.chat.workStepPosition(2, 2));
+    expect(position()).toBe(S.chat.workStepPosition(2));
     await click(button(S.chat.previousWorkStep));
     await view.rerender(group([first, tool, think(3, "More work")], context, true));
     expect(position()).toBeUndefined();
@@ -140,7 +141,7 @@ describe("work display modes", () => {
       expect(view.container.textContent).toContain(phrase);
     await view.rerender(group([first, tool, think(3, "More work")]));
     expect(rows()).toHaveLength(0);
-    expect(position()).toBe(S.chat.workStepPosition(1, 3));
+    expect(position()).toBe(S.chat.workStepPosition(1));
     await click(header());
     expect(stepToggle().getAttribute("aria-expanded")).toBe("false");
   });
@@ -154,24 +155,59 @@ describe("work display modes", () => {
       const view = await mount(group([first, second]));
       await click(button(S.chat.previousWorkStep));
       await view.rerender(group([first, second], { ...context, taskRunning: false }));
-      expect(position()).toBe(S.chat.workStepPosition(1, 2));
+      expect(position()).toBe(S.chat.workStepPosition(1));
       second.workOutcome = { state, durationMs: 2300 };
       const finished = () => group([first, second], { ...context, taskRunning: false });
       await view.rerender(finished());
-      expect(position()).toBe(S.chat.workStepPosition(1, 3));
+      expect(position()).toBe(S.chat.workStepPosition(1));
       expect(rows()).toHaveLength(0);
       await click(button(S.chat.latestWorkStep));
       const headline = () => document.querySelector("[data-step-terminal]");
       expect(headline()).not.toBeNull();
       expect(headline()?.getAttribute("data-state")).toBe(state === "failed" ? "error" : "done");
       expect(rows()).toHaveLength(0);
+      const elapsed = headline()?.querySelector("[data-step-elapsed]")?.textContent;
+      expect(elapsed).toContain("2.3s");
+      await click(header());
+      expect(rows()).toHaveLength(2);
+      await click(stepToggle());
+      await click(button(S.chat.previousWorkStep));
+      expect(rows()).toHaveLength(2);
+      expect(view.container.textContent).toContain("First decision");
+      expect(document.querySelector("[data-step-elapsed]")?.textContent).toBe(elapsed);
+      await click(button(S.chat.latestWorkStep));
       const endLabel = headline()?.textContent;
       await unmountAll();
       await mount(finished());
-      expect(position()).toBe(S.chat.workStepPosition(3, 3));
+      expect(position()).toBe(S.chat.workStepPosition(3));
       expect(headline()?.textContent).toBe(endLabel);
       await click(button(S.chat.previousWorkStep));
       expect(header().getAttribute("aria-expanded")).toBe("false");
+      expect(rows()).toHaveLength(0);
+    },
+  );
+
+  it.each(["read_file", "edit_file", "write_file"])(
+    "summarizes the description and path of a streaming %s on its own page",
+    async (name) => {
+      mode("compact");
+      const item = call(10);
+      const path = "资料/会议/每周 计划/项目  记录.md";
+      item.name = name;
+      item.argumentsText = '{"description":"核对会议记录","file_path":"资';
+      item.callStreaming = true;
+      const view = await mount(group([item]));
+      expect(header().textContent).toContain("核对会议记录");
+      expect(header().textContent).not.toContain("资");
+      item.argumentsText = JSON.stringify({ description: "核对会议记录", file_path: path });
+      await view.rerender(group([item]));
+      expect(header().textContent).toContain("…/每周 计划/项目  记录.md");
+      expect(
+        header().querySelector('[data-tooltip-content="code"]')?.getAttribute("data-tooltip"),
+      ).toBe(path);
+      item.argumentsText = JSON.stringify({ description: path, file_path: path });
+      await view.rerender(group([item]));
+      expect(header().querySelectorAll('[data-slot="detail"]')).toHaveLength(1);
       expect(rows()).toHaveLength(0);
     },
   );
@@ -212,7 +248,7 @@ describe("work display modes", () => {
     expect(hasButton(S.chat.approve)).toBe(false);
     for (let i = 0; i < calls.length; i++) {
       await click(button(S.chat.waitingWorkStep));
-      expect(position()).toBe(S.chat.workStepPosition(i + 1, 4));
+      expect(position()).toBe(S.chat.workStepPosition(i + 1));
       const item = calls[i]!;
       await click(button(S.chat.approve));
       expect(onApprove).toHaveBeenLastCalledWith(item.toolCallId, "allow", []);
@@ -220,7 +256,7 @@ describe("work display modes", () => {
       await view.rerender(group(items, ctx));
     }
     await click(button(S.chat.waitingWorkStep));
-    expect(position()).toBe(S.chat.workStepPosition(3, 4));
+    expect(position()).toBe(S.chat.workStepPosition(3));
     await click(button(S.chat.requestRetry.retryNow));
     expect(onRetryNow).toHaveBeenCalledOnce();
   });

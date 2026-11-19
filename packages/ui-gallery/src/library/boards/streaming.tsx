@@ -188,11 +188,12 @@ export function StreamingBoard() {
           displayMode={activityMode}
           state={activityState}
           title={finished ? t.finished : t.running}
+          runTiming={{ startMs: started, durationMs: finished ? 3000 : undefined }}
           terminal={finished ? { label: t.finished, state: "done", durationMs: 3000 } : undefined}
           rows={[
             {
               key: "plan",
-              summary: { label: t.thinking, state: "done", durationMs: 1000 },
+              summary: { label: t.thinking, state: "done" },
               content: (
                 <DisclosureRow
                   icon={<StatusIcon state="done" />}
@@ -205,7 +206,11 @@ export function StreamingBoard() {
             },
             {
               key: "read",
-              summary: { label: t.read, state: activityState, startMs: started, durationMs: 2000 },
+              summary: {
+                label: t.read,
+                path: { short: "notes.md", full: "notes.md" },
+                state: activityState,
+              },
               content: (
                 <DisclosureRow
                   icon={<StatusIcon state={activityState} />}

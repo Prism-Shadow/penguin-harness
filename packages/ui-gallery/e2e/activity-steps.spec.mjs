@@ -20,20 +20,22 @@ test("activity display modes work independently of the gallery theme, even on co
     await expect(plan).toBeHidden();
     await choose("Compact");
     await expect(rows).toHaveCount(0);
-    await expect(group.getByRole("group", { name: "Step 2 of 2" })).toBeVisible();
+    await expect(group.getByRole("group", { name: "Step 2" })).toBeVisible();
     await group.getByRole("button", { name: "Previous step" }).click();
     await expect(rows).toHaveCount(0);
     await group.locator("button[data-group-header]").click();
-    await expect(rows).toHaveCount(1);
+    await expect(rows).toHaveCount(2);
     await expect(plan).toBeHidden();
     await rows.locator('button[data-kind="thinking"]').click();
     await expect(plan).toBeVisible();
   }
   await choose("Finish run");
-  await expect(group.getByRole("group", { name: "Step 1 of 3" })).toBeVisible();
+  await expect(group.getByRole("group", { name: "Step 1" })).toBeVisible();
   await group.getByRole("button", { name: "Latest step" }).click();
   await expect(group.locator("[data-step-terminal]")).toContainText("Run complete");
-  await expect(rows).toHaveCount(0);
+  await expect(rows).toHaveCount(2);
+  await expect(plan).toBeVisible();
+  await expect(group.locator("[data-step-elapsed]")).toContainText("3s");
   await choose("Expanded");
   await expect(rows).toHaveCount(2);
   await expect(plan).toBeVisible();

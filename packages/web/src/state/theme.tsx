@@ -355,8 +355,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 }
 
 /** Embedded read-only transcript views can render without an appearance provider. */
-export function useActivityDisplayMode() {
-  return useContext(ThemeContext)?.activityDisplayMode ?? "standard";
+export function useActivityAppearance() {
+  return useContext(ThemeContext);
 }
 
 export function useTheme(): ThemeContextValue {

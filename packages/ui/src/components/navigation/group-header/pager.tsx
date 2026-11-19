@@ -14,6 +14,7 @@
  * it. The buttons disable at the ends, and while `disabled` (a page is loading), so the control
  * never offers a step that goes nowhere.
  */
+import type { ReactNode } from "react";
 import { useUiStrings } from "../../../strings";
 import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
 import { ICONS } from "../../icons/icons";
@@ -47,7 +48,7 @@ export function Pager({
   /** The step forward's words. */
   nextLabel?: string;
   /** The position as shown; "2/5" when omitted. */
-  readout?: string;
+  readout?: ReactNode;
   /** The position as announced, when the readout is not words; the interface's "Page 2 of 5" by default. */
   readoutLabel?: string;
   /** Both steps off, e.g. while the next page loads. */

@@ -208,7 +208,14 @@ export interface BodyLoad {
   error: string | null;
 }
 
+/** One clock per Task; its work groups share the live anchor and the settled trace span. */
+interface WorkTiming {
+  startMs: number;
+  durationMs?: number;
+}
+
 interface WorkStep {
+  workTiming?: WorkTiming;
   /** Only the final work step of a settled Task carries its outcome and trace duration. */
   workOutcome?: { state: "done" | "failed" | "stopped"; durationMs: number };
 }
@@ -695,7 +702,8 @@ export interface StreamModel {
    * from the server's own clock rather than the Trace's tail so that an event
    * still in flight is counted too.
    */
-  taskStartLocalMs: number;
+  readonly taskStartLocalMs: number;
+  taskClock: WorkTiming;
   /** The Task's first message timestamp, in SERVER time: both the settled duration and the back-dated live anchor measure from it. */
   taskFirstTsMs: number;
   /**
@@ -785,7 +793,10 @@ function newModel(nested: boolean, localDecisions: Set<string>): StreamModel {
     taskOpen: false,
     taskFirstItemId: 1,
     taskOutcome: null,
-    taskStartLocalMs: 0,
+    taskClock: { startMs: 0 },
+    get taskStartLocalMs() {
+      return this.taskClock.startMs;
+    },
     taskFirstTsMs: 0,
     taskLastTsMs: 0,
     taskLastReqEndMs: null,
@@ -1039,7 +1050,7 @@ export function pushMessages(
   if (model.taskOpen) {
     const tracedSpan = model.taskLastTsMs - model.taskFirstTsMs;
     const serverSpan = serverNowMs === null ? 0 : serverNowMs - model.taskFirstTsMs;
-    model.taskStartLocalMs = nowMs - Math.max(0, tracedSpan, serverSpan);
+    model.taskClock.startMs = nowMs - Math.max(0, tracedSpan, serverSpan);
   }
 }
 
@@ -1132,7 +1143,7 @@ function startTask(model: StreamModel, timestamp: string, nowMs: number): void {
     provider: model.contextModel.provider,
     modelId: model.contextModel.modelId,
   };
-  model.taskStartLocalMs = nowMs;
+  model.taskClock = { startMs: nowMs };
   const ts = Date.parse(timestamp);
   model.taskFirstTsMs = Number.isFinite(ts) ? ts : nowMs;
   model.taskLastTsMs = model.taskFirstTsMs;
@@ -1166,6 +1177,7 @@ function finalizeOpenTask(model: StreamModel): void {
   // latency folded into it.
   const endMs = model.taskLastReqEndMs ?? model.taskLastTsMs;
   const elapsed = Math.max(0, endMs - model.taskFirstTsMs);
+  model.taskClock.durationMs = elapsed;
   if (model.taskOutcome) {
     for (let i = model.items.length - 1; i >= 0; i--) {
       const item = model.items[i]!;
@@ -1323,6 +1335,7 @@ function handlePartial(model: StreamModel, p: PartialModelPayload, tsMs?: number
         const item: ThinkingItem = {
           kind: "thinking",
           id: nextId(model),
+          ...(model.taskOpen ? { workTiming: model.taskClock } : {}),
           thinking: p.thinking ?? "",
           streaming: true,
         };
@@ -1605,6 +1618,7 @@ function handleComplete(
       const item: ThinkingItem = {
         kind: "thinking",
         id: nextId(model),
+        ...(model.taskOpen ? { workTiming: model.taskClock } : {}),
         thinking: p.thinking,
         streaming: false,
         ...(elided !== undefined ? { elided } : {}),
@@ -1820,6 +1834,7 @@ function createToolCard(
   const item: ToolCallItem = {
     kind: "tool_call",
     id: nextId(model),
+    ...(model.taskOpen ? { workTiming: model.taskClock } : {}),
     toolCallId: init.toolCallId,
     name: init.name,
     argumentsText: init.argumentsText,
@@ -2133,6 +2148,7 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
         const item: ReconnectItem = {
           kind: "reconnect",
           id: nextId(model),
+          ...(model.taskOpen ? { workTiming: model.taskClock } : {}),
           status: p.status,
           // The core stamps the authoritative ordinal on every retryable request_end; only
           // Traces written before the field existed lack it (rendered as attempt 1).
