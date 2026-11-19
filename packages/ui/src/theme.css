@@ -419,6 +419,61 @@
     }
   }
 
+  /* Only the route body is photographed. Chrome, open portals and fixed controls stay in
+     the live document. The transient name leaves the resting shell's stacking order intact. */
+  :root:active-view-transition:has([data-page-viewport]) {
+    view-transition-name: none;
+  }
+  :root:active-view-transition [data-page-viewport] {
+    view-transition-name: penguin-page;
+  }
+  :root:has([data-page-viewport])::view-transition {
+    pointer-events: none;
+  }
+  ::view-transition-group(penguin-page) {
+    overflow: clip;
+    animation-duration: var(--ui-page-duration);
+  }
+  /* A snapshot moves in the top layer, outside the shell's usual overflow clip. When the
+     desktop viewport begins at the edge of the sheet, keep its rounded frame in front. */
+  @media (min-width: 48rem) {
+    :root:not(:has(.ui-shell > [data-slot="main"] > [data-banner]))::view-transition-group(
+        penguin-page
+      ) {
+      border-radius: var(--ui-shell-radius);
+    }
+  }
+  ::view-transition-old(penguin-page),
+  ::view-transition-new(penguin-page) {
+    mix-blend-mode: plus-lighter;
+  }
+  ::view-transition-old(penguin-page) {
+    animation: var(--ui-page-exit) var(--ui-page-duration) ease-in-out both;
+  }
+  ::view-transition-new(penguin-page) {
+    animation: var(--ui-page-enter) var(--ui-page-duration) ease-in-out both;
+  }
+
+  /* The neutral page pair a theme may name for --ui-page-enter / --ui-page-exit. A theme's own
+     page motion is a keyframe in its pack's recipes (Frost's frost, Console's dissolve, Doodle's
+     hop), so an exported pack carries it. */
+  @keyframes ui-page-fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes ui-page-fade-out {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+
   [data-reveal] {
     animation: ui-reveal var(--ui-dur-reveal) var(--ui-ease-out) backwards;
   }
@@ -580,7 +635,18 @@
   animation: none;
   transition: none;
 }
+/* Back/Forward can recall a routed transition after the reader has turned motion off. */
+:root[data-motion="reduced"]::view-transition-group(penguin-page),
+:root[data-motion="reduced"]::view-transition-old(penguin-page),
+:root[data-motion="reduced"]::view-transition-new(penguin-page) {
+  animation-duration: 0s;
+}
 @media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(penguin-page),
+  ::view-transition-old(penguin-page),
+  ::view-transition-new(penguin-page) {
+    animation-duration: 0s;
+  }
   :is([data-presence], [data-backdrop], [data-reveal], .ui-live) {
     animation: none;
   }
