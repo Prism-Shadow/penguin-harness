@@ -31,7 +31,7 @@ import {
   parseBenchmarkManifest,
   type BenchmarkManifest,
 } from "@prismshadow/penguin-core";
-import { HttpError } from "../http/errors.js";
+import { HttpError } from "@prismshadow/penguin-library-http";
 import {
   MAX_ARCHIVE_BYTES,
   MAX_BENCHMARK_ARCHIVE_FILES,

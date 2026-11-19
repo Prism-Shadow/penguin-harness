@@ -124,7 +124,7 @@ import { DataLayout } from "./mechanisms/data-layout.js";
 import { DeletingFolders } from "./mechanisms/deleting-folders.js";
 import { SessionActivity } from "./runtime/session-activity.js";
 import { MemoryService } from "./services/memory-service.js";
-import { BenchmarkService } from "./services/benchmark-service.js";
+import { BenchmarkServiceProvider } from "./services/benchmark-service.js";
 import { ProjectsRoutes } from "./http/routes/dirs.js";
 import { SandboxModule } from "./sandbox/service.js";
 import { SandboxSettings } from "./sandbox/settings-store.js";
@@ -514,7 +514,7 @@ export class TracesModule {}
     AgentService,
     DeletingFoldersService,
     MemoryService,
-    BenchmarkService,
+    BenchmarkServiceProvider,
     InstalledAgentSkills,
     AgentRoutes,
   ],

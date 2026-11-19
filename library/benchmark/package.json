@@ -1,0 +1,67 @@
+{
+  "name": "@prismshadow/penguin-library-benchmark",
+  "version": "0.2.18",
+  "description": "The benchmark domain: the Benchmarks mechanism, its service (create/import/export a Project's Benchmark packages), the archive reader/writer and the API vocabulary. One package, no server dependencies \u2014 the server imports these; nothing here imports the server.",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Prism-Shadow",
+    "url": "https://github.com/Prism-Shadow/Prism-Shadow"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "library/benchmark"
+  },
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./contract": {
+      "types": "./dist/contract.d.ts",
+      "import": "./dist/contract.js"
+    },
+    "./benchmark-service": {
+      "types": "./dist/benchmark-service.d.ts",
+      "import": "./dist/benchmark-service.js"
+    },
+    "./benchmark-archive": {
+      "types": "./dist/benchmark-archive.d.ts",
+      "import": "./dist/benchmark-archive.js"
+    },
+    "./types": {
+      "types": "./dist/types.d.ts",
+      "import": "./dist/types.js"
+    },
+    "./ports": {
+      "types": "./dist/ports.d.ts",
+      "import": "./dist/ports.js"
+    },
+    "./workspace-port": {
+      "types": "./dist/workspace-port.d.ts",
+      "import": "./dist/workspace-port.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup"
+  },
+  "dependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/penguin-library-http": "workspace:*",
+    "fflate": "^0.8.3",
+    "smol-toml": "^1.9.1",
+    "yaml": "^2.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24",
+    "tsup": "^8"
+  },
+  "private": true
+}

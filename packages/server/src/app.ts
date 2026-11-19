@@ -117,7 +117,6 @@ import { DesktopService } from "./services/desktop-service.js";
 import { AgentConfigService } from "./services/agent-config-service.js";
 import { MemoryService } from "./services/memory-service.js";
 import { AgentService } from "./services/agent-service.js";
-import { BenchmarkService } from "./services/benchmark-service.js";
 import { SnapshotService } from "./services/snapshot-service.js";
 import { ProjectConfigService } from "./services/project-config-service.js";
 import { ProjectService } from "./services/project-service.js";
