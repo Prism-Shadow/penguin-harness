@@ -42,6 +42,17 @@ export function sameModelRef(
   return !!a && !!b && a.provider === b.provider && a.modelId === b.modelId;
 }
 
+/** The effective chat default when a project has no saved choice or it points at a tool model. */
+export function defaultChatModel<T extends ModelRefValue & { chatEligible?: boolean }>(
+  models: readonly T[],
+  preferred: ModelRefValue | null | undefined,
+): T | undefined {
+  return (
+    models.find((m) => m.chatEligible !== false && sameModelRef(m, preferred)) ??
+    models.find((m) => m.chatEligible !== false)
+  );
+}
+
 /** Minimal row shape needed for grouping/filtering (models-page's RowState and the DTO's ModelInfo are both supersets of this). */
 export interface ModelRowLike {
   /** Vendor id (entry field): a value not in the catalog list is a user-defined group, forming its own group while keeping its original value. */

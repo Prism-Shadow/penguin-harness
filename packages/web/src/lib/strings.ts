@@ -2030,6 +2030,7 @@ export const zh = {
       "这是当前账号最后一个 Project，删除后将无 Project 可用；请先创建新的 Project",
     noCredentialTitle: "尚未配置模型 credential",
     noCredentialBody: "当前 Project 的默认模型尚未配置 API key，发起对话前请先前往模型页配置。",
+    noChatModels: "请为这个项目添加一个支持对话的模型，然后发送消息。",
     goToModels: "前往模型页",
     later: "稍后再说",
   },

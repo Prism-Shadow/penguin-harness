@@ -5,7 +5,7 @@
 import { useEffect, useState } from "react";
 import type { ModelsResponse } from "@prismshadow/penguin-server/api";
 import * as api from "../../../api/endpoints";
-import { hasConfiguredKey, sameModelRef } from "../../models";
+import { defaultChatModel, hasConfiguredKey } from "../../models";
 import { CHAT_DEFAULTS_CHANGED_EVENT, chatDefaultsChangedDetail } from "../chat-defaults-event";
 
 export function useProjectModels(projectId: string | null) {
@@ -30,9 +30,8 @@ export function useProjectModels(projectId: string | null) {
         setModels(res);
         const { prefs } = await api.getPrefs();
         if (cancelled || prefs.credentialGuideSeen) return;
-        const def = res.models.find((m) => sameModelRef(m, res.defaultModel));
-        const missing = !res.defaultModel || !def || !hasConfiguredKey(def);
-        if (missing) setCredentialGuide(true);
+        const def = defaultChatModel(res.models, res.defaultModel);
+        if (def && !hasConfiguredKey(def)) setCredentialGuide(true);
         // Mark as "seen" regardless of whether the dialog actually popped up: only ever once.
         void api.putPrefs({ credentialGuideSeen: true }).catch(() => undefined);
       } catch {

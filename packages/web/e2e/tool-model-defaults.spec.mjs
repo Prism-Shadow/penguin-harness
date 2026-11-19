@@ -79,3 +79,85 @@ test("speech and image models can become tool defaults directly from their cards
   const modelConfig = await (await page.request.get(projectUrl + "/models")).json();
   expect(modelConfig.defaultModel).toEqual(chat);
 });
+
+// A saved specialist and a tools-first catalog must resolve to a chat-capable model for sending.
+// With only tools left, the draft survives a trip to configure a chat model.
+test("a draft restores a chat-capable model or takes the user to Models", async ({ page }) => {
+  const user = "drafttoolmodel";
+  await provisionAndLogin(page.request, user, "password123");
+  await setAccountPrefs(page.request, { lang: "en", credentialGuideSeen: false });
+  const project = (await (await page.request.get(base + "/api/projects")).json()).projects[0]
+    .projectId;
+  const modelUrl = base + "/api/projects/" + project + "/models";
+  const specialist = { provider: "deepseek", modelId: "deepseek-asr" };
+  const chat = { provider: "custom", modelId: "claude-4-8-mini" };
+  const audio = { ...specialist, displayName: "Voice notes", clientType: "deepseek-transcription" };
+  const general = {
+    ...chat,
+    displayName: "Photo chat",
+    vision: true,
+    contextWindow: 200000,
+    apiKey: "test-key",
+    baseUrl: process.env.MOCK_URL,
+  };
+  const setModels = async (models) => {
+    const result = await page.request.put(modelUrl, { data: { models } });
+    expect(result.ok(), await result.text()).toBe(true);
+  };
+  await setModels([audio, general]);
+  const config = await (await page.request.get(modelUrl)).json();
+  expect(config.defaultModel).toBeUndefined();
+  expect(config.models[0]).toMatchObject({ ...specialist, chatEligible: false });
+  const draftKey = "penguin.chatDraft." + user + "." + project;
+  await page.addInitScript(
+    ({ draftKey, specialist }) => {
+      if (sessionStorage.getItem("seededDraft")) return;
+      sessionStorage.setItem("seededDraft", "true");
+      localStorage.setItem(
+        draftKey,
+        JSON.stringify({ text: "@plain use the conversation model", modelRef: specialist }),
+      );
+    },
+    { draftKey, specialist },
+  );
+  await page.goto(base + "/chat/new");
+  const picker = page.getByRole("button", { name: "Choose model", exact: true });
+  await expect(picker).toContainText("Photo chat");
+  await picker.click();
+  const choices = page.getByRole("dialog", { name: "Choose model" });
+  await choices.getByRole("combobox").fill("Voice notes");
+  await expect(choices.getByRole("option")).toHaveCount(0);
+  await choices.getByRole("combobox").fill("Photo chat");
+  await choices.getByRole("combobox").press("Enter");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page).toHaveURL(/\/chat\/session-/);
+  const sessionId = new URL(page.url()).pathname.split("/").at(-1);
+  const created = await (await page.request.get(base + "/api/sessions/" + sessionId)).json();
+  expect(created.session).toMatchObject(chat);
+  await expect(picker).toBeEnabled({ timeout: 35_000 });
+  await picker.click();
+  await choices.getByRole("combobox").fill("Voice notes");
+  await expect(choices.getByRole("option")).toHaveCount(0);
+  await setModels([audio]);
+  await setAccountPrefs(page.request, { lang: "zh", credentialGuideSeen: false });
+  await page.goto(base + "/chat/new");
+  const noModels = page.getByText("请为这个项目添加一个支持对话的模型，然后发送消息。");
+  await expect(noModels).toBeVisible();
+  const draft = page.locator("textarea").first();
+  await draft.fill("添加模型后继续");
+  await expect(page.getByRole("button", { name: "发送", exact: true })).toBeDisabled();
+  if (process.env.CARD_EVIDENCE)
+    await page.screenshot({
+      path: process.env.CARD_EVIDENCE + "/chat-model-required.png",
+      animations: "disabled",
+    });
+  await page.getByRole("button", { name: "前往模型页", exact: true }).click();
+  await expect(page).toHaveURL(/\/models$/);
+  await setModels([audio, general]);
+  await page.goBack();
+  await expect(draft).toHaveValue("添加模型后继续");
+  await expect(page.getByRole("button", { name: "选择模型", exact: true })).toContainText(
+    "Photo chat",
+  );
+  await expect(page.getByRole("button", { name: "发送", exact: true })).toBeEnabled();
+});

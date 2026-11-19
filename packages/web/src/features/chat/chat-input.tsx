@@ -996,6 +996,7 @@ export function ChatInput({
     !running &&
     !compacting &&
     !busy &&
+    (!onChangeModel || models?.some((m) => sameModelRef(m, modelRef))) &&
     (goalOn
       ? text.trim().length > 0 &&
         attachments.length === 0 &&
@@ -1676,7 +1677,9 @@ export function ChatInput({
     }
     pendingModelRestored.current = true;
     if (staged || !onSwitchModel) return;
-    const restored = models.find((m) => sameModelRef(m, initialPendingModelRef));
+    const restored = models.find(
+      (m) => m.chatEligible !== false && sameModelRef(m, initialPendingModelRef),
+    );
     if (restored && !sameModelRef(restored, modelRef)) setPendingModel(restored);
   }, [models, initialPendingModelRef, modelRef, onSwitchModel, staged]);
 

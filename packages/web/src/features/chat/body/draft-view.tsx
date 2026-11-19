@@ -41,6 +41,7 @@
 import { browserState, adoptBrowserSession } from "../../builtin-browser";
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { useLocation, useNavigate } from "react-router";
+import { Notice } from "@prismshadow/penguin-ui";
 import type {
   AgentModelConfigDto,
   AgentSummary,
@@ -93,7 +94,7 @@ import { effectiveThinkingLevel } from "../../model-picker";
 import { useAgentSkills } from "../use-agent-skills";
 import { WorkspaceSelect } from "../../workspace";
 import { FilesPanelToggle } from "../dock-toggles";
-import { sameModelRef } from "../../models";
+import { defaultChatModel, sameModelRef } from "../../models";
 import { toastApiError } from "../../../lib/toast-api-error";
 
 /** Coalescing window for writing body text to the cache: keystrokes are frequent, so a short batch accumulates before persisting (option changes are still written immediately). */
@@ -407,15 +408,17 @@ export function DraftView({
     }
   }, [chatDefaults, stateWorkspace, cached.workspace, cached.approvalMode]);
 
-  // Model fallback: once config is ready, if nothing is selected or the selection is no longer valid, fall back to the project default → the first model (always as a paired reference).
+  const chatModels = useMemo(
+    () => models?.models.filter((m) => m.chatEligible !== false) ?? [],
+    [models],
+  );
+  const modelInfo = chatModels.find((m) => sameModelRef(m, modelRef));
+  // A cached choice or an older Project default can name a model intended only for tools.
   useEffect(() => {
-    if (!models) return;
-    if (modelRef && models.models.some((m) => sameModelRef(m, modelRef))) return;
-    const first = models.models[0];
-    setModelRef(
-      models.defaultModel ?? (first ? { provider: first.provider, modelId: first.modelId } : null),
-    );
-  }, [models, modelRef]);
+    if (!models || modelInfo) return;
+    const next = defaultChatModel(models.models, models.defaultModel);
+    setModelRef(next ? { provider: next.provider, modelId: next.modelId } : null);
+  }, [models, modelRef, modelInfo]);
 
   /**
    * Live reseed: the project-settings dialog saved new defaults in THIS tab while the
@@ -782,7 +785,7 @@ export function DraftView({
   // failure, so the input area keeps the draft and can resend.
   const onSend = useCallback(
     async (input: TaskInputPart[], goal: { budget: number } | null = null): Promise<boolean> => {
-      if (!agentId || sendingRef.current) return false;
+      if (!agentId || !modelInfo || sendingRef.current) return false;
       sendingRef.current = true;
       const browserScope = browserState().scope;
       // The draft's own docks, named now: the send takes round trips, and the user may be on
@@ -792,11 +795,8 @@ export function DraftView({
       try {
         const body: SessionCreateRequest = { approvalMode };
         if (Object.keys(sandboxPick).length > 0) body.sandbox = sandboxPick;
-        // Model reference is submitted as a pair (provider + modelId; falls back to the Project default when not set).
-        if (modelRef) {
-          body.modelId = modelRef.modelId;
-          body.provider = modelRef.provider;
-        }
+        body.modelId = modelInfo.modelId;
+        body.provider = modelInfo.provider;
         if (workspace.trim()) body.workspace = workspace.trim();
         // Created ON the machine that owns the workspace: that server runs the agent in it.
         const created = await api.createSession(projectId, agentId, body, workspaceMachine);
@@ -850,6 +850,7 @@ export function DraftView({
       approvalMode,
       sandboxPick,
       modelRef,
+      modelInfo,
       workspace,
       // The machine can change while the path does not: a temporary workspace there after a
       // temporary one here is "" both times, and a send that kept the old machine would create
@@ -887,8 +888,6 @@ export function DraftView({
     if (resolvedAgentId && workspaceMachine === null) setCurrentAgentId(resolvedAgentId);
   }, [resolvedAgentId, workspaceMachine, onAgentChange, setCurrentAgentId]);
 
-  // Capability info for the currently selected model (vision/context window) switches instantly with the selection (matched by paired reference).
-  const modelInfo = models?.models.find((m) => sameModelRef(m, modelRef));
   // Goal mode's plugin check, against the Agent the Session will be created for, on the server
   // that holds it: nothing is created for a goal that cannot start (goal-plugin-gate.ts).
   const goalPlugin = useMemo(
@@ -902,13 +901,22 @@ export function DraftView({
   // and its examples.
   const composer = (
     <>
+      {models && chatModels.length === 0 && (
+        <Notice
+          tone="attention"
+          role="status"
+          action={{ label: S.project.goToModels, onClick: () => navigate("/models") }}
+        >
+          {S.project.noChatModels}
+        </Notice>
+      )}
       <ChatInput
         status="idle"
         controlRef={composerRef}
         onSend={onSend}
         onStop={async () => undefined}
         modelRef={modelRef}
-        models={models?.models ?? []}
+        models={chatModels}
         onChangeModel={setModelRef}
         thinkingLevel={thinkingLevel}
         onChangeThinkingLevel={onChangeThinkingLevel}

@@ -1904,6 +1904,7 @@ export const en: Strings = {
     noCredentialTitle: "No model credential configured",
     noCredentialBody:
       "The default model of this Project has no API key yet. Configure it on the Models page before chatting.",
+    noChatModels: "Add a chat model to this project to send a message.",
     goToModels: "Go to Models",
     later: "Later",
   },
