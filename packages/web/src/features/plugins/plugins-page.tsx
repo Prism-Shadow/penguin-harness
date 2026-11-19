@@ -203,7 +203,7 @@ export function PluginsPage() {
     EVERY_VISIT,
   );
   const groups = library.value?.groups ?? null;
-  const error = groups === null ? library.error : null;
+  const error = groups === null ? library.failure : null;
   // A return to the same Project is a new visit, not permission for an old reply: a write that
   // answers in a later visit is not taken (its Project's list is read again on entry anyway).
   const projectVisit = useRef({ projectId, generation: 0 });

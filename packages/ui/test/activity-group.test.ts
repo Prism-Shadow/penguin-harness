@@ -5,8 +5,8 @@
  * and a harness event alike; a failure's title takes the danger ink, and the title stays
  * sentence case (a theme uppercases it through the hook, never the component). A head that does
  * not expand carries the caller's text actions after its duration (a failed row's Report); an
- * expandable head is one button and renders none. The app's containers decide the state; this
- * reads what the card draws.
+ * expandable head is one button and renders none, its open body ending in the detail and the
+ * actions instead. The app's containers decide the state; this reads what the card draws.
  *
  * The settle's motion, as far as a first render shows it: the body is a fold (the theme's layout
  * motion folds it away when the run settles), and a card that renders already settled, or rows
@@ -113,6 +113,24 @@ describe("ActivityGroup", () => {
       actions,
     });
     expect(expandable).not.toContain("data-act");
+  });
+
+  it("ends an expandable failed card's open body with its detail and actions, none in the head", () => {
+    const actions = createElement("button", { type: "button", "data-act": "" }, "Report");
+    const html = card({
+      kind: "event",
+      state: "failed",
+      title: "Compaction",
+      detail: "failed (the provider refused)",
+      pending: true,
+      rows: ROWS,
+      actions,
+    });
+    const [head, body] = html.split('data-slot="body"');
+    expect(head).not.toContain("data-act");
+    expect(body).toMatch(
+      /second step<\/div><div data-slot="foot"[^>]*><span[^>]*>failed \(the provider refused\)<\/span><span data-slot="actions"[^>]*><button type="button" data-act="">Report</,
+    );
   });
 
   it("keeps a one-piece body out of the tree, and its title in sentence case", () => {

@@ -79,7 +79,6 @@ import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { writeClipboard } from "../../lib/clipboard";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { isElectronRenderer } from "../../lib/desktop-renderer";
 import { formatDateTime } from "../../lib/format";
 import { STAT_ICONS } from "../../lib/stat-icons";
@@ -288,7 +287,8 @@ export function WorkspaceFinder({
     dir: string;
     name: string;
     busy: boolean;
-    refusal: string | null;
+    /** Why the folder was not made: a refusal's words, or a failure's with 「[报告问题]」. */
+    refusal: ReactNode;
   } | null>(null);
   const newFolderRef = useRef<HTMLInputElement>(null);
   const newFolderNoteId = useId();
@@ -623,7 +623,10 @@ export function WorkspaceFinder({
           });
           return;
         }
-        const refusal = apiErrorText(err);
+        const refusal = failureNode(err, {
+          what: "a folder could not be made",
+          privatePaths: [dir],
+        });
         setNewFolder((cur) => (cur?.dir === dir ? { ...cur, busy: false, refusal } : cur));
       });
   };

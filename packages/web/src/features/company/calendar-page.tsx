@@ -84,6 +84,7 @@ import {
 
 import { dismissHint, hintKey, isHintDismissed } from "./page-hints";
 import { toastApiError } from "../../lib/toast-api-error";
+import { failureNode } from "../../lib/failure";
 
 const OUTCOME_TONE: Record<OrgCalendarOutcome, Tone> = {
   fired: "success",
@@ -205,7 +206,7 @@ export function CalendarPage() {
     Array<{ agentId: string; name: string; error: string }>
   >([]);
   const [chart, setChart] = useState<OrgChartResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   const [view, setView] = useState<CalendarView>("month");
   const [anchor, setAnchor] = useState(() => Date.now());
   const [now, setNow] = useState(() => Date.now());
@@ -235,7 +236,12 @@ export function CalendarPage() {
       setChart(ch);
       setError(null);
     } catch (e) {
-      setError(apiErrorText(e));
+      setError(
+        failureNode(e, {
+          text: S.company.calendar.loadFailed(apiErrorText(e)),
+          what: "an organization's calendar could not be loaded",
+        }),
+      );
     }
   }, [projectId, orgId]);
   // A fired slot arrives as an org_run event; a budget pause flips `paused` on every event of that employee.
@@ -805,7 +811,7 @@ export function CalendarPage() {
           className="mb-3"
           retry={{ label: S.common.retry, onClick: () => void load() }}
         >
-          {S.company.calendar.loadFailed(error)}
+          {error}
         </Notice>
       )}
 
