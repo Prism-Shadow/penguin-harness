@@ -212,6 +212,10 @@ test("tiles drag into a folder, step through the menu, keep their order, and res
   await page.keyboard.press("Escape");
   await expect(panel).toBeHidden();
   await expect(folder).toBeFocused();
+  await folder.press("Enter");
+  await page.goBack();
+  await expect(folder).toHaveAttribute("aria-expanded", "false");
+  await expect(panel).toBeHidden();
 
   // The folder moves one step backward from its menu.
   await folder.click({ button: "right" });

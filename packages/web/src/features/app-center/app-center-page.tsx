@@ -123,6 +123,14 @@ export function AppCenterPage() {
   // and links from full-screen workbenches, which can arrive in a deferred React transition.
   const [openFolderId, setSelectedFolderId] = useState(folderParam);
   useLayoutEffect(() => setSelectedFolderId(folderParam), [folderParam]);
+  useLayoutEffect(() => {
+    // A rapid browser Back can skip the intermediate router render entirely. Its destination
+    // may have the same folderParam as the last committed render, despite our local open.
+    const onPop = () =>
+      setSelectedFolderId(new URLSearchParams(window.location.search).get("folder"));
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
   // Keep the departing folder mounted until its icons reach their previews, including on Back.
   const [displayedFolderId, setDisplayedFolderId] = useState(openFolderId);
   if (openFolderId !== null && displayedFolderId !== openFolderId)
