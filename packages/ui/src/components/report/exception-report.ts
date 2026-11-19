@@ -6,7 +6,7 @@
  * the stack and the components it crashed in. Every part of it is redacted on its way into the
  * report, and the paths the caller names private are replaced with `<workspace>`.
  */
-import type { ErrorReport, ReportFact } from "./error-report";
+import type { ErrorReport, ReportFact, ReportMask } from "./error-report";
 import { currentReportRoute } from "./report-store";
 
 export interface ExceptionContext {
@@ -20,6 +20,8 @@ export interface ExceptionContext {
   atMs?: number;
   /** Paths to keep out of the report, replaced with `<workspace>` (the Workspace, a browsed folder). */
   privatePaths?: readonly string[];
+  /** What else to mask: known private values, and host names when the error names a machine. */
+  mask?: ReportMask;
 }
 
 /** The error's kind and message, from whatever was thrown. */
@@ -62,5 +64,6 @@ export function exceptionReport(error: unknown, context: ExceptionContext): Erro
     facts,
     output: { label: "Error", text: parts.join("\n\n"), missing: "(no further detail)" },
     ...(context.privatePaths !== undefined ? { privatePaths: context.privatePaths } : {}),
+    ...(context.mask !== undefined ? { mask: context.mask } : {}),
   };
 }

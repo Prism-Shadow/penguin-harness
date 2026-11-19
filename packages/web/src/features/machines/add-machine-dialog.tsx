@@ -328,7 +328,7 @@ export function AddMachineDialog({
       ) {
         setRefused({ field: "password", text: hostErrorText(err) });
       } else {
-        setError(failureNode(err));
+        setError(failureNode(err, { mask: { hosts: true } }));
       }
     } finally {
       setBusy(false);

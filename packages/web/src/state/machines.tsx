@@ -105,7 +105,9 @@ export function MachinesProvider({ children }: { children: ReactNode }) {
           setError(null);
         } catch (err) {
           if (current.current !== projectId) return;
-          setError(failureNode(err, { what: "the machines could not be read" }));
+          setError(
+            failureNode(err, { what: "the machines could not be read", mask: { hosts: true } }),
+          );
         } finally {
           if (current.current === projectId) setSettled(true);
         }

@@ -173,7 +173,9 @@ export function MachinesPage() {
       accept(next);
       setError(null);
     } catch (err) {
-      setError(failureNode(err, { what: "the machines could not be probed" }));
+      setError(
+        failureNode(err, { what: "the machines could not be probed", mask: { hosts: true } }),
+      );
     }
   }, [projectId, accept]);
 
@@ -209,7 +211,7 @@ export function MachinesPage() {
       setError(null);
       return true;
     } catch (err) {
-      setError(failureNode(err));
+      setError(failureNode(err, { mask: { hosts: true } }));
       return false;
     } finally {
       setPosting(false);

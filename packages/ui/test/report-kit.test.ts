@@ -17,6 +17,9 @@
  *   ends with the stack and the component stack.
  * - Given a failure the app was told about, its report names what happened, its code, the page and
  *   its own words, a key in them redacted; with the words left out, it says so and holds none.
+ * - Given words that name the person's machines (ssh's), the report keeps them readable but masks
+ *   a token, an e-mail address, host names and IP addresses, a value the caller knows is private
+ *   and the account name in a home path; a file name and loopback stay as they are.
  * - How it is installed, and an OS, are named as people name them.
  */
 import { afterEach, describe, expect, it } from "vitest";
@@ -194,6 +197,42 @@ describe("a problem report", () => {
     expect(built.markdown).toContain("401 Incorrect API key provided: [redacted]");
     expect(decodeURIComponent(built.issueUrl)).not.toContain("sk-proj-Ab3dEf6hIj9kLm2nOp5q");
     expect(fieldsOf(built.issueUrl).title).toBe("Failure: upstream_failed on /models");
+  });
+
+  it("masks a token, an e-mail, hosts, addresses and a home path in words that name the person's machines", () => {
+    const words = [
+      "ssh: alice@10.20.30.40: Permission denied (publickey).",
+      "Tried /home/alice/.ssh/id_ed25519 for gpu-box.lab.example.com via jump-1 (fe80::1ff:fe23:4567:890a).",
+      "Authorization: Bearer abcDEF0123456789ghiJKL; mail ops@example.com",
+      "at connect (/opt/penguin/dist/index.js:3:7); local proxy 127.0.0.1:7890",
+    ].join("\n");
+    const report = toldReport({
+      what: "a machine job failed",
+      code: "auth",
+      detail: words,
+      mask: { hosts: true, values: ["jump-1"] },
+    })();
+    const built = buildReport(report, ENV);
+    for (const shared of [built.markdown, decodeURIComponent(built.issueUrl)]) {
+      for (const leak of [
+        "alice",
+        "10.20.30.40",
+        "gpu-box.lab.example.com",
+        "jump-1",
+        "fe80::1ff",
+        "abcDEF0123456789ghiJKL",
+        "ops@example.com",
+      ]) {
+        expect(shared).not.toContain(leak);
+      }
+    }
+    expect(built.markdown).toContain("ssh: <user>@<host>: Permission denied (publickey).");
+    expect(built.markdown).toContain(
+      "Tried /home/<user>/.ssh/id_ed25519 for <host> via [redacted] (<ip>).",
+    );
+    expect(built.markdown).toContain("mail <email>");
+    expect(built.markdown).toContain("/opt/penguin/dist/index.js:3:7");
+    expect(built.markdown).toContain("127.0.0.1:7890");
   });
 
   it("for a told failure with its words left out, says so and holds none of them", () => {

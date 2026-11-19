@@ -215,12 +215,14 @@ export function McpServerDialog({
       const res = await api.testAgentMcpServer(projectId, agentId, tested.server, machineId);
       if (res.ok) toastSuccess(S.agent.mcpTestOk(res.tools?.length ?? 0, res.latencyMs));
       else if (res.saveFirst === true) setSaveFirst(true);
-      // The server's own words stay on screen and out of the report: a stdio child can print
-      // its command line, a URL or an environment value.
+      // The report carries the server's words masked: a stdio child can print its command
+      // line, a URL or an environment value.
       else
         toastFailure(
           toldFailure(S.agent.mcpTestFail(res.error ?? S.common.unknownError), {
             what: "an MCP server could not be connected",
+            detail: res.error ?? null,
+            mask: { hosts: true },
           }),
         );
     } catch (e) {

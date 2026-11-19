@@ -13,7 +13,7 @@
  * Either way the page and the time are read now, when it failed, and the report is built when it
  * is opened.
  */
-import type { ErrorReport, ReportFact } from "./error-report";
+import type { ErrorReport, ReportFact, ReportMask } from "./error-report";
 import { exceptionReport } from "./exception-report";
 import type { ExceptionContext } from "./exception-report";
 import { isReportable } from "./reportable";
@@ -53,9 +53,9 @@ export interface ToldFailure {
   /** Its machine-readable code, when it has one. */
   code?: string;
   /**
-   * The failure's own words: a server's or a provider's message, an installer's output; null
-   * when it came with none. Omit it for words about the person's own machines or content (ssh's
-   * output, an MCP server's error): the report then says they were left out.
+   * The failure's own words — a server's or a provider's message, an installer's output, ssh's
+   * words — masked like every report's text; null when it came with none. Omitted, the report says
+   * they were left out.
    */
   detail?: string | null;
   /** Further named facts, in English (the provider and the model, a step, a package). */
@@ -64,10 +64,15 @@ export interface ToldFailure {
   keep?: readonly string[];
   /** Paths to keep out of the report (`<workspace>`). */
   privatePaths?: readonly string[];
+  /**
+   * What else to mask: values the caller knows are private (a machine's alias), and `hosts` for
+   * words that can name the person's machines (ssh's, an MCP server's).
+   */
+  mask?: ReportMask;
 }
 
-/** What stands in a told failure's report where its words were left out. */
-const LEFT_OUT = "(left out: it can name hosts, accounts or commands; add what is needed by hand)";
+/** What stands in a told failure's report where the caller passed no words at all. */
+const LEFT_OUT = "(left out: add what is needed by hand)";
 
 /** What stands in a told failure's report when it came with no words. */
 const NO_WORDS = "(no further detail)";
@@ -97,6 +102,7 @@ export function toldReport(told: ToldFailure): () => ErrorReport {
       },
       ...(told.keep !== undefined ? { keep: told.keep } : {}),
       ...(told.privatePaths !== undefined ? { privatePaths: told.privatePaths } : {}),
+      ...(told.mask !== undefined ? { mask: told.mask } : {}),
     };
   };
 }

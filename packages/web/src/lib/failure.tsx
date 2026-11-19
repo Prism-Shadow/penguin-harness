@@ -15,7 +15,7 @@
  */
 import type { ReactNode } from "react";
 import { FailureText, reportFor, toldReport } from "@prismshadow/penguin-ui";
-import type { Failure, ToldFailure } from "@prismshadow/penguin-ui";
+import type { Failure, ReportMask, ToldFailure } from "@prismshadow/penguin-ui";
 import { apiErrorText } from "./api-error";
 
 export interface FailureContext {
@@ -27,6 +27,8 @@ export interface FailureContext {
   what?: string;
   /** Paths to keep out of the report: the Workspace, a browsed directory. */
   privatePaths?: readonly string[];
+  /** What else to mask: known private values, and host names when the error names a machine. */
+  mask?: ReportMask;
 }
 
 export function failureOf(err: unknown, ctx?: FailureContext): Failure {
@@ -35,6 +37,7 @@ export function failureOf(err: unknown, ctx?: FailureContext): Failure {
     report: reportFor(err, {
       what: ctx?.what ?? "an action failed",
       ...(ctx?.privatePaths !== undefined ? { privatePaths: ctx.privatePaths } : {}),
+      ...(ctx?.mask !== undefined ? { mask: ctx.mask } : {}),
     }),
   };
 }

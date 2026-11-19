@@ -569,9 +569,11 @@ decides:
 - A result or a record that says something failed (a test that failed, a plugin that did not load, a
   job's failed step) goes through `toldFailure` / `toldNode`, with what happened in English.
 - `toastError(text)` is for a check before any request only.
-- Words about the person's own machines or content (ssh's output, an MCP server's error, a job's log)
-  are never passed as `detail`: the report then says they were left out. A surface over a directory
-  passes it as `privatePaths`.
+- A report carries as much as it can, masked: every report's text goes through `maskPrivate`
+  (secrets, e-mail and IP addresses, home paths). Words that name the person's machines (ssh's
+  output, a job's log, an MCP server's error) go in `detail` with `mask: { hosts: true }`, plus the
+  values the page knows are private (a machine's alias) in `mask.values`. A surface over a
+  directory passes it as `privatePaths`.
 - The Agent's own work (a tool's failed output, a workbench's build error), a state, and an echo of
   a failure said in full elsewhere (a tooltip, a badge) carry no action.
 

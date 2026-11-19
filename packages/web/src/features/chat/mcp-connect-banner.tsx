@@ -56,9 +56,9 @@ function ServerGroup({ outcome, tools }: { outcome: McpServerOutcome; tools: Mcp
       : outcome.errorCode === "mcp_sign_in_required"
         ? S.chat.mcpServerSignIn
         : S.chat.mcpServerFailed;
-  // A server that could not connect offers 「[报告问题]」 after its error; its report leaves the
-  // server's own words out, since a stdio child can print its command line, a URL or an
-  // environment value. One waiting on a vault value or a sign-in is a state, not a failure.
+  // A server that could not connect offers 「[报告问题]」 after its error; its report carries the
+  // server's words masked — a stdio child can print its command line, a URL or an environment
+  // value. One waiting on a vault value or a sign-in is a state, not a failure.
   const body = !expandable ? undefined : failed ? (
     <p className="anim-fade px-3 pt-0.5 pb-2 pl-8 font-mono text-xs break-all text-fg-muted">
       {skipped || outcome.error === undefined
@@ -66,6 +66,8 @@ function ServerGroup({ outcome, tools }: { outcome: McpServerOutcome; tools: Mcp
         : toldNode(outcome.error, {
             what: "an MCP server could not be connected",
             ...(outcome.errorCode !== undefined ? { code: outcome.errorCode } : {}),
+            detail: outcome.error,
+            mask: { hosts: true },
           })}
     </p>
   ) : (

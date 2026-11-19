@@ -440,15 +440,31 @@ export function MachineToolbar({
   );
 }
 
-/** A failed job's line, with the report that names its step and ssh's reason, not ssh's words. */
-function JobFailure({ job, text }: { job: MachineJob; text: string }) {
-  const told = machineJobFailure(job);
+/** A failed job's line, with the report that names its step and ssh's reason, its words masked. */
+function JobFailure({
+  job,
+  host,
+  text,
+}: {
+  job: MachineJob;
+  host: SshHostResponse | null;
+  text: string;
+}) {
+  const told = machineJobFailure(job, host);
   return told === null ? text : <FailureText failure={toldFailure(text, told)} />;
 }
 
 /** The reconnecting streak's last failure, with the same report. */
-function ReconnectFailure({ machine, text }: { machine: MachineInfo; text: string }) {
-  const told = machineReconnectFailure(machine);
+function ReconnectFailure({
+  machine,
+  host,
+  text,
+}: {
+  machine: MachineInfo;
+  host: SshHostResponse | null;
+  text: string;
+}) {
+  const told = machineReconnectFailure(machine, host);
   return told === null ? text : <FailureText failure={toldFailure(text, told)} />;
 }
 
@@ -582,7 +598,7 @@ export function MachineDetailBody({
             {configSync !== null && (
               <ConfigSync
                 view={configSync}
-                failure={machineConfigSyncFailure(machine)}
+                failure={machineConfigSyncFailure(machine, host)}
                 envOnlyDismissed={envOnlyDismissed}
                 {...(onDismissEnvOnly !== undefined ? { onDismissEnvOnly } : {})}
                 skippedDismissed={skippedDismissed}
@@ -613,7 +629,7 @@ export function MachineDetailBody({
             <div className="mt-2">
               <p className="mb-1 text-xs text-fg-muted">{d.reconnect.lastError}</p>
               <p className="text-sm break-words whitespace-pre-line">
-                <ReconnectFailure machine={machine} text={reconnect.lastError} />
+                <ReconnectFailure machine={machine} host={host} text={reconnect.lastError} />
               </p>
             </div>
           )}
@@ -653,7 +669,11 @@ export function MachineDetailBody({
           {/* Line by line: an installer's refusal is the program's own error over its own line. */}
           {view.kind === "failed" && (
             <p className="mt-3 text-sm break-words whitespace-pre-line">
-              <JobFailure job={job} text={d.failedAtStep(view.stepName, view.message)} />
+              <JobFailure
+                job={job}
+                host={host}
+                text={d.failedAtStep(view.stepName, view.message)}
+              />
             </p>
           )}
           {view.kind === "failed" && view.detail !== null && (

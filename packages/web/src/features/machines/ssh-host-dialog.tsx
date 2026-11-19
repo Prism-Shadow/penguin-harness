@@ -349,7 +349,7 @@ export function SshHostDialog({
         (err.code === "ssh_password_invalid" || err.code === "ssh_password_unsupported");
       setRefused({
         field: password ? "password" : "hostName",
-        text: password ? hostErrorText(err) : failureNode(err),
+        text: password ? hostErrorText(err) : failureNode(err, { mask: { hosts: true } }),
       });
     } finally {
       setBusy(false);

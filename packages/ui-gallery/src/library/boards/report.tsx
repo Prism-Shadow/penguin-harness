@@ -1,8 +1,8 @@
 /**
  * 报告问题: the problem report kit — the notice a crashed part of the page shows, a failure's
  * toast that offers 「[报告问题]」 beside a refusal's that does not, inline failures (a danger
- * line, a notice's body, a field's error, a failure the app was told about with its words left
- * out) beside an input error, the could-not-load notice with the entry, and the report dialog
+ * line, a notice's body, a field's error, a failure the app was told about with ssh's words
+ * masked) beside an input error, the could-not-load notice with the entry, and the report dialog
  * itself, opened in a demo environment.
  */
 import { useEffect } from "react";
@@ -66,14 +66,17 @@ export function ReportBoard() {
     text,
     report: reportFor(error, { what: "an action failed" }),
   });
-  // A machine job told the page it failed: the report names the step and the reason code, and
-  // leaves ssh's words out, since they name the host, the account and the key it tried.
+  // A machine job told the page it failed: the report names the step and the reason code and
+  // carries ssh's words, masked, since they name the host, the account and the key it tried.
   const told: Failure = {
     text: t.inlineTold,
     report: toldReport({
       what: "a machine job failed",
       code: "auth",
       facts: [["Step", "connect"]],
+      detail:
+        "ssh refused the sign-in (ssh: alice@10.20.30.40: Permission denied (publickey). Tried the key /Users/alice/.ssh/id_ed25519 for gpu-box.lab.example.com; contact ops@example.com)",
+      mask: { hosts: true, values: ["gpu-box"] },
     }),
   };
   return (
