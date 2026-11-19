@@ -28,7 +28,7 @@ import type { AgentConfigService } from "../src/services/agent-config-service.js
 import type { MemoryService } from "../src/services/memory-service.js";
 import type { SessionService } from "../src/services/session-service.js";
 import type { PricingLookup, UsageService } from "../src/services/usage-service.js";
-import type { WorkspaceFilesService } from "../src/services/workspace-files-service.js";
+import type { WorkspaceFilesService } from "@prismshadow/penguin-library-workspace/workspace-files-service";
 import type { PreviewTokenSigner } from "../src/services/preview-token.js";
 import type { BenchmarkService } from "@prismshadow/penguin-library-benchmark/benchmark-service";
 import type { SnapshotService } from "../src/services/snapshot-service.js";

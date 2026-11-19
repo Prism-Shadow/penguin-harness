@@ -43,10 +43,6 @@
     "./ports": {
       "types": "./dist/ports.d.ts",
       "import": "./dist/ports.js"
-    },
-    "./workspace-port": {
-      "types": "./dist/workspace-port.d.ts",
-      "import": "./dist/workspace-port.js"
     }
   },
   "scripts": {
@@ -55,6 +51,7 @@
   "dependencies": {
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-library-http": "workspace:*",
+    "@prismshadow/penguin-library-workspace": "workspace:*",
     "fflate": "^0.8.3",
     "smol-toml": "^1.9.1",
     "yaml": "^2.5.0"

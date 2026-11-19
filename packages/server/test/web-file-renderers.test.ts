@@ -11,7 +11,7 @@ import { parseManifest } from "@prismshadow/penguin-core/kernel";
 import type { ModuleDef } from "@prismshadow/penguin-core/kernel";
 import type { ContributionsResponse } from "../src/api/types.js";
 import { PluginHost } from "../src/plugin/host.js";
-import { WorkspaceFilesService } from "../src/services/workspace-files-service.js";
+import { WorkspaceFilesService } from "@prismshadow/penguin-library-workspace/workspace-files-service";
 import { apiClient, createTestApp, loginAdmin, makeTempRoot } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 

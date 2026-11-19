@@ -17,7 +17,7 @@ import type {
   WorkspaceFileContent,
   WorkspaceFileReadOptions,
   WorkspaceFilesResponse,
-} from "./workspace-port.js";
+} from "@prismshadow/penguin-library-workspace/types";
 
 /** Benchmarks: the mechanism BenchmarkService implements. */
 @Interface()
