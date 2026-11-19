@@ -199,6 +199,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.sidebarWidth",
+    scope: "browser",
+    why: "How wide the sidebar was dragged, in px; the same chrome layout, holds no entity.",
+  },
+  {
+    kind: "exact",
     key: "penguin.panelWidth",
     scope: "browser",
     why: "Side-panel width in px; its own module calls it a layout preference, not session data.",
