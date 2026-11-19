@@ -3,7 +3,7 @@
 - **Date:** 2026-11-19
 - **Type:** feature
 - **Scope:** `core`, `server`, `web`
-- **PR:** [#PR](https://github.com/Prism-Shadow/penguin-harness/pull/PR)
+- **PR:** [#1654](https://github.com/Prism-Shadow/penguin-harness/pull/1654)
 
 [中文版](2026-11-19-system-agent.zh.md)
 
