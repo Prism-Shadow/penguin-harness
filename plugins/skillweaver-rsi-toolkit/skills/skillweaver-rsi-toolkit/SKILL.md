@@ -1,7 +1,7 @@
 ---
 name: skillweaver-rsi-toolkit
 description: Run SkillWeaver (Zheng et al. 2025) on an agent - let it explore a website on its own, propose skills worth having, practise them, and hone the successful ones into tested, reusable API scripts in a skill library, then freeze the library and measure it on a published Benchmark of tasks on that site. Use when asked to make an agent better at a website by learning skills or APIs from self-directed practice.
-version: 2026.11.20.3
+version: 2026.11.20.4
 ---
 
 # SkillWeaver
@@ -72,7 +72,7 @@ adaptations: []
 
 Keep in OUT, per iteration `OUT/iter_<n>/`: the choice (`choose.json`: explore or test, the proposal or the API and its arguments, utilities), the practice README, the session id, the Judge's verdict, the Synthesiser's request and raw reply, the check results, and every published API version under `OUT/library/v<version>/`. Keep `OUT/state.yaml` (next iteration, phase, State version) so that a compacted or resumed Session continues the run instead of restarting it.
 
-Snapshots: before the first change to a measured State, make sure `TARGET/snapshots/v<version>.tar.gz` exists: an archive of `agent_state/` without `.vault.toml`, its entries rooted at `agent_state/`. Never overwrite one, and stop if it cannot be created. State versions only increase and are never reused.
+Snapshots: before the first change to a measured State, make sure `TARGET/snapshots/v<version>.tar.gz` exists: an archive of `agent_state/` without `.vault.toml`, its entries rooted at `agent_state/`. Never overwrite one, and stop if it cannot be created. Before reusing an existing snapshot, unpack it into an empty scratch directory and compare its files with the State that version represents, excluding `.vault.toml`. A mismatch is a stop. State versions only increase and are never reused.
 
 ## Initialize
 
@@ -90,7 +90,7 @@ Practice changes a sandboxed site (it creates, edits and filters data), so H1 an
 
 These are the checks the run enforces itself, not instructions to anyone:
 
-- **The library changes only through Publish.** After every Publish, record `TOOL fingerprint LIBRARY` in `OUT/state.yaml`. Before and after every practice cell and every role call, compute it again; any difference you did not publish is a stop (`a Target edit to LIBRARY` or `a role edit to LIBRARY`), and the changed files are named in the report.
+- **The library changes only through Publish or a recorded passing test.** After either change, record `TOOL fingerprint LIBRARY` in `OUT/state.yaml`. Before and after every practice cell and every role call, compute it again; any difference you did not publish is a stop (`a Target edit to LIBRARY` or `a role edit to LIBRARY`), and the changed files are named in the report.
 - **No Target State changes during a practice cell.** Immediately before and after each practice cell, save `TOOL fingerprint STATE` in that iteration's records, in addition to the library fingerprint. If the State differs (including memory), record the changed paths and stop before judging or publishing. The check detects changes after execution and does not restrict the Target's tools.
 - **The runtime is the shipped one.** Before every practice cell, `TOOL verify-runtime APIS` must report no problem.
 - **Every API passed the checker.** Only files `TOOL check` accepted are registered, and `INDEX.md` lists registered APIs only.
@@ -105,7 +105,7 @@ Iterations are sequential: one browser, one Target, each iteration using the lib
 2. **Choose.** Draw `u` with `node -e 'console.log(Math.random())'` (never pick it yourself) and record it. When `u < test_probability` and `TOOL pick-test APIS --seed <n>` names an API, this is a **test** iteration: run the Tester on that API (`references/roles.md`); an API with no parameters needs no Tester and is tested with `{}`, as the paper runs such an API directly as a unit test. Otherwise it is an **explore** iteration: run the Proposer. Write `OUT/iter_<n>/choose.json`.
 3. **Practise.** Run one practice cell (below) with the task: for explore, the proposed skill; for test, `Test the API <name> with the arguments <json>`.
 4. **Update.**
-   - A test whose Trace shows the Target calling that API with exactly those arguments and the call printing `{"ok":true,…}` passes: `TOOL tested APIS <name> iter_<n>`, then `TOOL index APIS`. Nothing else changes.
+   - A test whose Trace shows the Target calling that API with exactly those arguments and the call printing `{"ok":true,…}` passes: `TOOL tested APIS <name> iter_<n>`, then `TOOL index APIS`. A passing test changes the library metadata even when the API script stays the same. Bump the Skill and State versions and archive the new library exactly as in Publish step 4. Keep the API's implementation and API version unchanged.
    - Otherwise run the Judge on the attempt. When it answers `success: true`, run the Synthesiser on it and Publish what it returns. A failed attempt changes nothing: upstream writes no function from an unsuccessful attempt.
 5. **Record** `OUT/state.yaml` and go on. An iteration that fails for an infrastructure reason (the browser became unavailable, the cell never started) is retried once after the cause is fixed; it never counts as a failed attempt.
 
