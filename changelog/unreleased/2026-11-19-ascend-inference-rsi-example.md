@@ -3,6 +3,7 @@
 - **Date:** 2026-11-19
 - **Type:** feature
 - **Scope:** `examples`
+- **PR:** [#1627](https://github.com/Prism-Shadow/penguin-harness/pull/1627)
 - **Issue:** [#88](https://github.com/Prism-Shadow/penguin-harness-community/issues/88)
 
 [中文版](2026-11-19-ascend-inference-rsi-example.zh.md)
