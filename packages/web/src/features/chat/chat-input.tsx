@@ -2599,7 +2599,16 @@ export function ChatInput({
                   // A switch holds for the messages that follow, so it stays reachable mid-run.
                   ...(switches?.modes ?? []).map((mode) => ({
                     key: `switch:${mode.name}`,
-                    icon: <SkillIcon icon={mode.icon} fallback={ICONS.fishHook} size={13} />,
+                    // Drawn like the entries above, whose path glyphs the menu sets in the
+                    // muted subtle ink at the inline size: a plugin's mark takes the same.
+                    icon: (
+                      <SkillIcon
+                        icon={mode.icon}
+                        fallback={ICONS.fishHook}
+                        size={ICON_SIZE.inlineGlyph}
+                        className="text-fg-subtle"
+                      />
+                    ),
                     label: mode.title,
                     desc: mode.description,
                     active: switches?.on.includes(mode.name) === true,
