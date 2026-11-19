@@ -1,7 +1,7 @@
 ---
 name: skillweaver-rsi-toolkit
 description: Run SkillWeaver (Zheng et al. 2025) on an agent - let it explore a website on its own, propose skills worth having, practise them, and hone the successful ones into tested, reusable API scripts in a skill library, then freeze the library and measure it on a published Benchmark of tasks on that site. Use when asked to make an agent better at a website by learning skills or APIs from self-directed practice.
-version: 2026.11.20.6
+version: 2026.11.20.7
 ---
 
 # SkillWeaver
@@ -72,7 +72,7 @@ adaptations: []
 
 Keep in OUT, per iteration `OUT/iter_<n>/`: the choice (`choose.json`: explore or test, the proposal or the API and its arguments, utilities), the practice README, the session id, the Judge's verdict, the Synthesiser's request and raw reply, the check results, and every published API version under `OUT/library/v<version>/`. Keep `OUT/state.yaml` (next iteration, phase, State version) so that a compacted or resumed Session continues the run instead of restarting it.
 
-Snapshots: before the first change to a measured State, make sure `TARGET/snapshots/v<version>.tar.gz` exists: an archive of `agent_state/` without `.vault.toml`, its entries rooted at `agent_state/`. Never overwrite one, and stop if it cannot be created. Before reusing an existing snapshot, unpack it into an empty scratch directory and compare its files with the State that version represents, excluding `.vault.toml`. A mismatch is a stop. State versions only increase and are never reused.
+Snapshots: initialization creates the H1 snapshot only after the empty library and reader line are in place. Before the first change to any measured State, make sure `TARGET/snapshots/v<version>.tar.gz` exists: an archive of `agent_state/` without `.vault.toml`, its entries rooted at `agent_state/`. Never overwrite one, and stop if it cannot be created. Before reusing an existing snapshot, unpack it into an empty scratch directory and compare its files with the State that version represents, excluding `.vault.toml`. A mismatch is a stop. State versions only increase and are never reused.
 
 ## Initialize
 

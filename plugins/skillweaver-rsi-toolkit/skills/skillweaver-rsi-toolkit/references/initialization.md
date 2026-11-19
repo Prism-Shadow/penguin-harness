@@ -4,7 +4,7 @@ Prepare the Target before H1 is measured: one target-owned Skill holding an empt
 
 1. **Learned state.** If `LIBRARY` exists already, stop. It is either an experiment to resume, which needs the matching `OUT/experiment.yaml`, or learning that must not be lost: ask the user, and never empty a learned library.
 2. **The browser.** Check that `STATE/skills/browser-automation/SKILL.md` exists: the Target drives the website and every API through `penguin browser`. If it is missing, stop and say so.
-3. **Version.** A Target created for this experiment is initialized in place, at `version` 1. For an existing agent, make sure the snapshot of its current version exists (the Skill's snapshot rule); the initialized State then takes that version + 1 as `version` in `STATE/system_config.yaml`.
+3. **Version.** A Target created for this experiment normally initializes in place at `version` 1. Do not make a v1 snapshot of that new agent before initialization. If a snapshot of its initial version already exists, preserve it and assign the initialized State the next version. For an existing agent, make sure the snapshot of its current version exists and matches before changing anything, then assign the initialized State the next version. Replace the single `version` field in `STATE/system_config.yaml` when advancing it.
 4. **The Skill.** Write `LIBRARY/SKILL.md`, with today's date version (`YYYY.MM.DD.1`) in place of the placeholder, exactly:
 
 ```markdown
@@ -26,6 +26,6 @@ version: <YYYY.MM.DD.1>
 Before your first action on any task on the website named in `skills/skillweaver-apis/apis/INDEX.md` in your Agent State, read that file and `skills/skillweaver-apis/site.md` in full, and follow the `skillweaver-apis` Skill.
 ```
 
-7. **Verify.** Parse `STATE/system_config.yaml` (the expected `version`, no duplicate key) and the frontmatter of `LIBRARY/SKILL.md` (`name: skillweaver-apis`, matching its directory); check that `APIS/library.json` names `site_url` with no API, that `APIS/skillweaver-api.mjs` equals `SKILL_DIR/scripts/skillweaver-api.mjs` byte for byte, and that the reader line appears exactly once in `STATE/AGENTS.md`. Record the SHA-256 of these files in `OUT/experiment.yaml`.
+7. **Verify.** Parse `STATE/system_config.yaml` (the expected `version`, no duplicate key) and the frontmatter of `LIBRARY/SKILL.md` (`name: skillweaver-apis`, matching its directory); check that `APIS/library.json` names `site_url` with no API, that `APIS/skillweaver-api.mjs` equals `SKILL_DIR/scripts/skillweaver-api.mjs` byte for byte, and that the reader line appears exactly once in `STATE/AGENTS.md`. Record the SHA-256 of these files in `OUT/experiment.yaml`. Then create `TARGET/snapshots/v<initialized version>.tar.gz` from the complete initialized State. Compare all regular files in that archive to the live State, excluding `.vault.toml`, and record the match. Do this before any baseline measurement or practice cell; the archive itself must contain the empty library and reader line.
 
 The Skill body, the runtime and the reader line stay unchanged through H1, the practice loop and the final measurement: only the API scripts, `INDEX.md`, `library.json` and `site.md` learn, and only through the Skill's Publish step and the `TOOL` commands it names.
