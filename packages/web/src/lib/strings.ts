@@ -1329,17 +1329,12 @@ export const zh = {
     importOverwriteAction: "覆盖导入",
     /** The row's More menu: downloads the workbench's source as a zip. */
     exportWorkbench: "打包导出",
-    /** Whether the workbench has a shortcut in the App Center: the words beside the row's switch (which flip it too), its accessible name with the title, and the More menu's checkable row. */
     showInChat: "在聊天标签页显示",
-    showInChatHint: "关闭后，聊天页不会加载这个工作台。",
     showInAppCenter: "展示到应用中心",
-    /** The switch's words' tooltip: what showing in the App Center means, and what the switch writes. */
-    showInAppCenterHint:
-      "打开后，这个工作台会作为一个应用出现在「应用中心」页面：Project 的每个成员都能在那里看到它的图标，点一下即可打开使用，不必先进入对话。关闭只是把入口从应用中心撤下，工作台本身、它的数据与历史版本都不受影响。拨动开关会改写工作台 package.json 中的 penguin.appCenter.show，并记为一个版本。",
-    /** The row's text button: opens the workbench beside a new chat. */
     openAction: "打开",
-    /** The row's "⋯" button, which holds its other actions. */
-    more: "更多",
+    viewFiles: "查看文件",
+    viewPlugin: (name: string) => `查看插件「${name}」`,
+    more: "更多设置",
     /** The More menu's row that lists the recorded versions. */
     historyAction: "历史版本",
     /** The full page's way out when it was opened from the App Center. */
@@ -1350,7 +1345,7 @@ export const zh = {
     loading: "加载中…",
     emptyTitle: "应用中心还是空的",
     empty:
-      "Workbench 是由 Agent 托管、嵌在对话旁的页面，也可以整页打开。Agent 创建 Workbench，并在 Agent 设置的工作台行打开「展示到应用中心」开关后，它就会出现在这里。",
+      "工作台可以在聊天标签页或独立窗口中打开。在 Agent 设置的「插件 → 工作台 → 更多设置」里勾选「展示到应用中心」，即可添加到这里。",
     /** A tile whose current files failed to load: it still opens, and its menu shows the error. */
     broken: "加载失败",
     /** A tile whose app is still being built: it opens once the build is done. */

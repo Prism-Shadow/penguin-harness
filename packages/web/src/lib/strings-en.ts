@@ -1196,17 +1196,12 @@ export const en: Strings = {
     importOverwriteAction: "Overwrite",
     /** The row's More menu: downloads the workbench's source as a zip. */
     exportWorkbench: "Export",
-    /** Whether the workbench has a shortcut in the App Center: the words beside the row's switch (which flip it too), its accessible name with the title, and the More menu's checkable row. */
     showInChat: "Show in chat tabs",
-    showInChatHint: "Turn off to keep this workbench out of Chat.",
     showInAppCenter: "Show in the App Center",
-    /** The switch's words' tooltip: what showing in the App Center means, and what the switch writes. */
-    showInAppCenterHint:
-      "When on, this workbench appears as an app on the App Center page: every member of the Project sees its icon there and opens it with one click, without starting a chat first. Turning it off only takes the shortcut off the App Center; the workbench, its data and its versions are untouched. Flipping the switch rewrites penguin.appCenter.show in the workbench's package.json and is recorded as a version.",
-    /** The row's text button: opens the workbench beside a new chat. */
     openAction: "Open",
-    /** The row's "⋯" button, which holds its other actions. */
-    more: "More",
+    viewFiles: "View files",
+    viewPlugin: (name: string) => `View plugin: ${name}`,
+    more: "More settings",
     /** The More menu's row that lists the recorded versions. */
     historyAction: "Version history",
     /** The full page's way out when it was opened from the App Center. */
@@ -1217,7 +1212,7 @@ export const en: Strings = {
     loading: "Loading…",
     emptyTitle: "The App Center is empty",
     empty:
-      "A workbench is a page an agent hosts beside the chat, and it can also open full page. Once an agent creates a workbench and its row in the agent's settings has the “Show in the App Center” switch on, it appears here.",
+      "Workbenches can open beside a chat or in their own window. In Agent settings, open Plugins → Workbenches → More settings and select “Show in the App Center” to add one here.",
     /** A tile whose current files failed to load: it still opens, and its menu shows the error. */
     broken: "Failed to load",
     /** A tile whose app is still being built: it opens once the build is done. */

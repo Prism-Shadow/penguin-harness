@@ -1,8 +1,6 @@
 /**
- * A part's own files, read-only: the body of a Skill's, a hook package's or a workbench's row on
- * the Plugins tab opens this dialog, titled with the part, over the part's directory in the Agent
- * State (`partDir`). It reads through the Files panel's directory routes on the server the Agent
- * lives on, and lands on the file that says what the part is (`PART_LEAD`).
+ * The Plugins tab opens this read-only dialog at a part's directory in the Agent State
+ * (`partDir`). It reads from the Agent's server and previews the file named by `PART_LEAD`.
  *
  * Preview and Download only. A part changes through a chat or an import: a removed SKILL.md or
  * hooks.json breaks the part, and an edit to a workbench reloads it and records a version.

@@ -4,7 +4,7 @@
  * - The admin's default Project lists the shipped Support workbench as a tile with its own icon,
  *   served by the icon route. A click opens it windowed over the grid, and the window's close
  *   returns to the grid; "Open full screen" in the tile's menu opens the full page, whose exit
- *   comes back to the App Center. The App Center switch on the workbench's row (the Plugins
+ *   comes back to the App Center. The App Center setting in the workbench's More settings menu (the Plugins
  *   tab's Workbenches sub-page) takes the tile off (the empty page offers Create with AI) and puts
  *   it back.
  * - With three workbenches of a fresh account's Agent: a real pointer drag of one tile onto the
@@ -57,7 +57,9 @@ test("the App Center opens Support windowed and full screen, and its switch take
   await expect(page).toHaveURL(`${BASE}/apps`);
 
   await openSupportRow(page);
-  const toggle = page.getByRole("switch", { name: "Show in the App Center Support" });
+  const more = page.getByRole("button", { name: "More settings Support" });
+  const toggle = page.getByRole("menuitemcheckbox", { name: "Show in the App Center" });
+  await more.click();
   await expect(toggle).toHaveAttribute("aria-checked", "true");
   await toggle.click();
   // The reload behind the switch compiles the workbench: the row reads back once it is done.
@@ -69,6 +71,7 @@ test("the App Center opens Support windowed and full screen, and its switch take
   await expect(page.getByRole("button", { name: "Create with AI" })).toBeVisible();
 
   await openSupportRow(page);
+  await more.click();
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-checked", "true", { timeout: 30_000 });
   await expect(toggle).toBeEnabled({ timeout: 30_000 });

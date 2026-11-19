@@ -6,6 +6,8 @@
  * - Given a conversation with a dock open and its transcript scrolled, when a workbench tab is
  *   shown, nothing of Chat is on top anywhere over the page, focus cannot reach the dock, and
  *   when Chat is shown again the dock has its size and the transcript its scroll.
+ * - A settings row exposes Enable and More settings at desktop and phone widths. Its menu
+ *   keeps both visibility choices together and can be operated entirely from the keyboard.
  * - Hiding a selected workbench in its Agent's settings returns to Chat. A fresh chat view
  *   downloads none of its pages, and its App Center tile still opens them.
  * - The page is see-through: a page that paints no background leaves its root and body clear,
@@ -246,10 +248,38 @@ test("a workbench can stay in the App Center without loading in Chat", async ({
     page.frameLocator("iframe[title='Clear']").getByRole("heading", { name: "Board" }),
   ).toBeVisible();
   const settings = await context.newPage();
-  await settings.setViewportSize({ width: 320, height: 760 });
+  await settings.setViewportSize({ width: 1280, height: 900 });
   await settings.goto(`${BASE}/agents/default_agent?tab=workbenches`);
-  const toggle = settings.getByRole("switch", { name: "在聊天标签页显示 Clear" });
+  const more = settings.getByRole("button", { name: "更多设置 Clear" });
+  const row = settings.getByRole("listitem").filter({ has: more });
+  const menu = settings.getByRole("menu", { name: "更多设置 Clear" });
+  const toggle = menu.getByRole("menuitemcheckbox", { name: "在聊天标签页显示" });
+  const appCenter = menu.getByRole("menuitemcheckbox", { name: "展示到应用中心" });
   try {
+    await expect(more).toBeVisible();
+    await expect(row.locator("button, a, input, [tabindex='0']")).toHaveCount(2);
+    await row.getByText("Clear", { exact: true }).click();
+    await expect(settings.getByRole("dialog")).toHaveCount(0);
+    await more.focus();
+    await settings.keyboard.press("Enter");
+    await expect(toggle).toBeFocused();
+    await expect(menu.getByRole("menuitemcheckbox")).toHaveCount(2);
+    await settings.keyboard.press("ArrowDown");
+    await expect(appCenter).toBeFocused();
+    await settings.keyboard.press("Space");
+    await expect(appCenter).not.toBeChecked();
+    await expect(appCenter).toBeEnabled();
+    await expect(toggle).toBeChecked();
+    await settings.keyboard.press("Space");
+    await expect(appCenter).toBeChecked();
+    await expect(appCenter).toBeEnabled();
+    await settings.keyboard.press("Escape");
+    await expect(more).toBeFocused();
+    await expect(menu).toHaveCount(0);
+    await settings.setViewportSize({ width: 320, height: 760 });
+    await expect(row.locator("button, a, input, [tabindex='0']")).toHaveCount(2);
+    await more.click();
+    await expect(menu).toBeInViewport({ ratio: 1 });
     await expect(toggle).toBeChecked();
     await toggle.click();
     await expect(toggle).not.toBeChecked();
@@ -294,7 +324,15 @@ test("a workbench can stay in the App Center without loading in Chat", async ({
     await expect(tab(page, "Clear")).toHaveCount(0);
     expect(resources).toEqual([]);
     await settings.reload();
+    await more.click();
     await expect(toggle).not.toBeChecked();
+    await menu.getByRole("menuitem", { name: "打开", exact: true }).click();
+    await expect(settings).toHaveURL(`${BASE}/app/${projectId}/default_agent/window-demo/clear`);
+    await expect(
+      settings.frameLocator("iframe[title='Clear']").getByRole("heading", { name: "Board" }),
+    ).toBeVisible();
+    await settings.goBack();
+    await more.click();
     await page.goto(`${BASE}/apps`);
     const tile = page.getByRole("button", { name: /^Window demo/ });
     await tile.click();
