@@ -44,7 +44,7 @@ import {
   MAX_FILE_BYTES,
   MAX_TOTAL_BYTES,
   assertSafeEntryPath,
-} from "../../services/skill-import-limits.js";
+} from "@prismshadow/penguin-library-http/skill-import-limits";
 
 /** The hook points a manifest lists commands for. */
 const HOOK_POINTS = ["stop", "pre_tool_use", "user_prompt"] as const;

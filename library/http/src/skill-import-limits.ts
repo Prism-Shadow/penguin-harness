@@ -1,5 +1,5 @@
 /**
- * Caps shared by every path that pulls Skill files in from outside the library — the archive
+ * Caps shared by every path that pulls Skill files in from outside the harness — the archive
  * upload/download routes and the directory import. One set of numbers, so a limit raised for one
  * entry point cannot quietly leave another behind, and one message, so the failure reads the same
  * wherever the user hit it. `unzipBounded` is where they are enforced on the way in, since an
@@ -7,7 +7,7 @@
  * (benchmark-archive.ts) shares them all but the file count.
  */
 import { unzipSync } from "fflate";
-import { HttpError, badRequest } from "../http/errors.js";
+import { HttpError, badRequest } from "./errors.js";
 
 /** Decoded zip cap: aligned with the Agent snapshot import (stays within the 20MB body limit after base64). Shared with the hooks and Benchmark archive routes. */
 export const MAX_ARCHIVE_BYTES = 14 * 1024 * 1024;

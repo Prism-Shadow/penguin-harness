@@ -5,7 +5,7 @@
  * same for both.
  *
  * The caps are read off the central directory before an entry is inflated (unzipSync allocates
- * what an entry declares; see skill-import-limits.ts). An entry that is a link, leaves the
+ * what an entry declares; see @prismshadow/penguin-library-http/skill-import-limits). An entry that is a link, leaves the
  * package, carries a control character or differs from another only in letter case refuses the
  * whole package. Entries the import never takes, and anything beside `agent_state/` and the Trace
  * files, are dropped.
@@ -14,8 +14,12 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { unzipSync } from "fflate";
 import { HttpError, badRequest } from "../http/errors.js";
-import { assertSafeEntryPath } from "./skill-import-limits.js";
-import { assertDistinctPaths, CONTROL_CHARACTER, specialEntries } from "./zip-entries.js";
+import { assertSafeEntryPath } from "@prismshadow/penguin-library-http/skill-import-limits";
+import {
+  assertDistinctPaths,
+  CONTROL_CHARACTER,
+  specialEntries,
+} from "@prismshadow/penguin-library-http/zip-entries";
 
 /** An Agent package's caps: the upload, what it unpacks to, and its entries. An export stays within them. */
 export const MAX_PACKAGE_BYTES = 64 * 1024 * 1024;
