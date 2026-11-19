@@ -454,69 +454,15 @@
     animation: var(--ui-page-enter) var(--ui-page-duration) ease-in-out both;
   }
 
-  /* Frost keeps both pages registered with the shell. A shallow blur at the handoff
-     clears as the new ink becomes legible. Neither snapshot zooms or shifts. */
-  @keyframes ui-page-unfrost {
+  /* The neutral page pair a theme may name for --ui-page-enter / --ui-page-exit. A theme's own
+     page motion is a keyframe in its pack's recipes (Frost's frost, Console's dissolve, Doodle's
+     hop), so an exported pack carries it. */
+  @keyframes ui-page-fade-in {
     from {
       opacity: 0;
-      filter: blur(1.75px) saturate(0.88);
     }
     to {
       opacity: 1;
-      filter: blur(0) saturate(1);
-    }
-  }
-  @keyframes ui-page-frost {
-    from {
-      opacity: 1;
-      filter: blur(0) saturate(1);
-    }
-    to {
-      opacity: 0;
-      filter: blur(1.75px) saturate(0.88);
-    }
-  }
-
-  /* Console lays the destination beneath the outgoing page. Clearing the solid part
-     of its mask lets four-pixel squares with different coverage dissolve in place. */
-  @keyframes ui-page-dissolve {
-    from,
-    to {
-      z-index: var(--layer-raised);
-      mix-blend-mode: normal;
-      background-color: var(--ui-shell-main-bg);
-      mask-image: linear-gradient(currentColor 0 0), url("./motion/page-pixels.svg");
-      mask-size:
-        100% 100%,
-        16px 16px;
-    }
-    from {
-      color: black;
-      opacity: 1;
-    }
-    30% {
-      opacity: 0.96;
-    }
-    55% {
-      color: transparent;
-    }
-    to {
-      color: transparent;
-      opacity: 0;
-    }
-  }
-
-  @keyframes ui-page-hop {
-    from {
-      opacity: 0;
-      translate: 0 4px;
-    }
-    62% {
-      translate: 0 -2px;
-    }
-    to {
-      opacity: 1;
-      translate: 0 0;
     }
   }
   @keyframes ui-page-fade-out {

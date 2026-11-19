@@ -365,9 +365,6 @@
   --ui-ease-overlay-in: steps(3, jump-none);
   --ui-ease-overlay-out: steps(2, jump-none);
   --ui-live-timing: steps(2, end);
-  --ui-page-duration: 200ms;
-  --ui-page-enter: none;
-  --ui-page-exit: ui-page-dissolve;
   --ui-dur-enter: 120ms;
   --ui-dur-exit: 60ms;
   --ui-ease-enter: steps(3, jump-none);
@@ -375,6 +372,9 @@
   --ui-enter-shift: 0px;
   --ui-enter-scale: 1;
   --ui-enter-blur: 0px;
+  --ui-page-duration: 200ms;
+  --ui-page-enter: none;
+  --ui-page-exit: ui-page-dissolve;
   --ui-dur-reveal: 0ms;
   --ui-reveal-blur: 0px;
   --ui-dur-layout: 160ms;

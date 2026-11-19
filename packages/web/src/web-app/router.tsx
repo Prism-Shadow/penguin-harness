@@ -188,15 +188,33 @@ function appRoutes(pages: readonly WebAppPage[]) {
  */
 let browserRouter: ReturnType<typeof createBrowserRouter> | null = null;
 
+/** The page table as the shell routes on it now, contributed pages included (see LivePages). */
+let livePages: readonly WebAppPage[] = [];
+
+/** Keeps livePages current for the page transition, which runs outside React. */
+function LivePages() {
+  const pages = useWebAppPages();
+  useLayoutEffect(() => {
+    livePages = pages;
+  }, [pages]);
+  return null;
+}
+
 export interface AppRouterProps {
   initialPath?: string;
 }
 
 export function AppRouter({ initialPath }: AppRouterProps = {}) {
   const { pages } = webAppDeps.useDeps();
+  // withPageTransitions replaces this router's `navigate`: a navigation that changes the page
+  // asks for the theme's view transition (page-transitions.ts). A navigate that behaves
+  // differently from React Router's own starts there.
   const [router] = useState(() =>
     initialPath === undefined
-      ? (browserRouter ??= withPageTransitions(createBrowserRouter(appRoutes(pages))))
+      ? (browserRouter ??= withPageTransitions(
+          createBrowserRouter(appRoutes(pages)),
+          () => livePages,
+        ))
       : createMemoryRouter(appRoutes(pages), { initialEntries: [initialPath] }),
   );
   // A problem report names the page by its route's pattern, never by the ids in the address.
@@ -206,6 +224,7 @@ export function AppRouter({ initialPath }: AppRouterProps = {}) {
   }, [router]);
   return (
     <WebAppPagesProvider>
+      <LivePages />
       <RouterProvider router={router} />
     </WebAppPagesProvider>
   );

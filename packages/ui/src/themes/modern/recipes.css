@@ -573,3 +573,27 @@
 :root[data-theme-base="modern"] .ui-avatar > [data-variant="soft"] {
   display: inline;
 }
+
+/* Page change (--ui-page-enter / --ui-page-exit, played by theme.css's view transition): both
+   pages stay registered with the shell, and a shallow blur at the handoff clears as the new ink
+   becomes legible. Neither snapshot zooms or shifts. */
+@keyframes ui-page-unfrost {
+  from {
+    opacity: 0;
+    filter: blur(1.75px) saturate(0.88);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0) saturate(1);
+  }
+}
+@keyframes ui-page-frost {
+  from {
+    opacity: 1;
+    filter: blur(0) saturate(1);
+  }
+  to {
+    opacity: 0;
+    filter: blur(1.75px) saturate(0.88);
+  }
+}

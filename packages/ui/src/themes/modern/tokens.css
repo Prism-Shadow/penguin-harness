@@ -341,9 +341,6 @@
   --ui-ease-overlay-in: cubic-bezier(0.16, 1, 0.3, 1);
   --ui-ease-overlay-out: cubic-bezier(0.4, 0, 1, 1);
   --ui-live-timing: linear;
-  --ui-page-duration: 200ms;
-  --ui-page-enter: ui-page-unfrost;
-  --ui-page-exit: ui-page-frost;
   --ui-dur-enter: 280ms;
   --ui-dur-exit: 160ms;
   --ui-ease-enter: cubic-bezier(0.22, 1.15, 0.36, 1);
@@ -351,6 +348,9 @@
   --ui-enter-shift: 8px;
   --ui-enter-scale: 0.96;
   --ui-enter-blur: 6px;
+  --ui-page-duration: 200ms;
+  --ui-page-enter: ui-page-unfrost;
+  --ui-page-exit: ui-page-frost;
   --ui-dur-reveal: 360ms;
   --ui-reveal-blur: 4px;
   --ui-dur-layout: 320ms;
