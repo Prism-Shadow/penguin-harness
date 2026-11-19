@@ -12,7 +12,8 @@
  *   not one plain segment is refused; on Windows the socket is a named pipe of its own.
  * - The agent level is the default; the server level is the data root's, the machine level this
  *   OS user's, each keyed by the plugin and the workbench and with a short state folder; a
- *   workbench made in place has no shared level, and an unknown level is refused.
+ *   workbench made in place has no shared level, and an unknown level is refused. Where a Project
+ *   is called `app` or `run`, a level whose folders would fall inside that Project's is refused.
  */
 import fs from "node:fs/promises";
 import net from "node:net";
@@ -194,6 +195,29 @@ describe("a workbench's levels", () => {
     expect(levelFolders("machine", twin, "dataPaths").paths).toEqual(machine.paths);
     expect(levelFolders("server", place("other-kit"), "dataPaths").paths.stateDir).not.toBe(
       server.paths.stateDir,
+    );
+  });
+
+  it("make no folder inside a Project's folder: a Project called app or run takes the levels that would fall there", async () => {
+    const at = place("voice-kit");
+    const project = async (name: string) => {
+      await fs.mkdir(path.join(at.root, name), { recursive: true });
+      await fs.writeFile(path.join(at.root, name, ".project_config.toml"), "");
+    };
+    await project("app");
+    expect(() => levelFolders("server", at, "dataPaths")).toThrow(
+      /is the folder of the Project "app", so this server keeps no workbench folders there/,
+    );
+    expect(levelFolders("agent", at, "dataPaths").paths.dataDir).toContain(
+      path.join("acme", "agents", "writer"),
+    );
+    await project("run");
+    for (const level of ["agent", "server"]) {
+      expect(() => levelFolders(level, at, "socketPath")).toThrow(/the Project "run"/);
+    }
+    // The machine level is outside the data root.
+    expect(levelFolders("machine", at, "dataPaths").paths.dataDir).toContain(
+      path.join(base, "machine"),
     );
   });
 

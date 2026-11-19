@@ -22,6 +22,7 @@
   - server：`<root>/app/{data,cache}/<plugin>/<workbenchId>/`，状态在 `<root>/run/server/<hash>/`；
   - machine：`~/.penguin/machine/{data,cache}/<plugin>/<workbenchId>/`（可用 `PENGUIN_MACHINE_HOME` 另指位置），状态在其下的 `run/<hash>/`。
 - **共享级别：**只有从插件安装的工作台才有 server 与 machine 级；就地创建的工作台会得到一个报错，提示改用 agent 级。
+- **名为 `app` 或 `run` 的 Project：**已有的 Project 占用这两个名称之一时，宿主不在它的目录里建任何工作台文件夹；文件夹会落在其中的请求报错并说明原因：`app` 对应 server 级的数据与缓存，`run` 对应 agent 与 server 级的状态与 socket 路径。machine 级不受影响。
 - **建立文件夹：**`dataPaths()` 返回前建好该级的三个文件夹。其中任何一个所在的位置，以及它到所在根之间的任何一级，若是链接或文件即拒绝。
 - **`socketPath(name, level?)`**：返回 `<stateDir>/<name>`。该路径超过 Unix socket 路径的 103 字节上限（macOS 含结尾符为 104，Linux 为 108）时报错并说明上限；在 Windows 上返回命名管道 `\\.\pipe\penguin-<hex>-<name>`。
 - **Node 类型：**工作台编译时带上 `@types/node`，不带其他任何 `@types` 包。`@types/node` 改为服务端的运行时依赖，桌面版构建与热推送把它与编译器放在一起携带。

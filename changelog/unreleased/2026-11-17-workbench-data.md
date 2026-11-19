@@ -22,6 +22,7 @@ A workbench's server code is now type-checked with Node's declarations, so its h
   - server: `<root>/app/{data,cache}/<plugin>/<workbenchId>/`, with its state at `<root>/run/server/<hash>/`;
   - machine: `~/.penguin/machine/{data,cache}/<plugin>/<workbenchId>/` (`PENGUIN_MACHINE_HOME` names another place), with its state at `run/<hash>/` below it.
 - **Shared levels:** only a workbench installed from a plugin has a server or machine level. One made in place gets an error naming the agent level instead.
+- **A Project called `app` or `run`:** where an older Project holds one of those names, the host makes no workbench folder inside its folder. A request whose folders would fall there throws and says why: `app` covers the server level's data and cache, `run` the agent and server levels' state and socket paths. The machine level is unaffected.
 - **Folder creation:** `dataPaths()` creates the level's three folders before it returns. It refuses a link or a file wherever one of them belongs, or wherever any level above it, up to its base, belongs.
 - **`socketPath(name, level?)`** returns `<stateDir>/<name>`. It throws, naming the limit, when that path would pass the 103 bytes a Unix socket path holds (macOS allows 104 with the terminator, Linux 108). On Windows it returns a named pipe, `\\.\pipe\penguin-<hex>-<name>`.
 - **Node types:** the workbench compile now includes `@types/node` and no other `@types` package. `@types/node` became a runtime dependency of the server, and the desktop build and the hot push carry it beside the compiler.

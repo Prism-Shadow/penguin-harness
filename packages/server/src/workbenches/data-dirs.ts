@@ -26,7 +26,9 @@ import {
   agentAppDir,
   agentDir,
   agentRunDir,
+  agentsDir,
   machineAppDir,
+  projectConfigPath,
   runDir,
   serverAppDir,
   sharedWorkbenchDirs,
@@ -149,8 +151,27 @@ export interface WorkbenchPlace {
 }
 
 /**
+ * Refuses `dir`, one of the data root's own folders (`app`, `run`), when a Project holds its
+ * name: until Projects move under `<root>/projects/`, an older Project may be called so, and no
+ * workbench folder is ever made inside a Project's folder.
+ */
+function refuseProjectFolder(root: string, dir: string, call: string): void {
+  const name = path.basename(dir);
+  if (
+    fsSync.existsSync(projectConfigPath(root, name)) ||
+    fsSync.existsSync(agentsDir(root, name))
+  ) {
+    throw new WorkbenchDirError(
+      `${call}: ${dir} is the folder of the Project "${name}", so this server keeps no workbench ` +
+        `folders there until Projects move under ${path.join(root, "projects")}`,
+    );
+  }
+}
+
+/**
  * A level's three folders for one workbench, and the trusted base each is made below. Throws for
- * a level that is none of the three, and for a shared level of a workbench made in place.
+ * a level that is none of the three, for a shared level of a workbench made in place, and where
+ * a folder would fall inside a Project's folder (a Project called `app` or `run`).
  */
 export function levelFolders(
   level: unknown,
@@ -164,6 +185,10 @@ export function levelFolders(
     );
   }
   const { root, projectId, agentId, workbenchId, plugin } = at;
+  // The agent and server levels keep their state under `<root>/run`, the server level its data
+  // and cache under `<root>/app`; the machine level is outside the data root.
+  if (chosen !== "machine") refuseProjectFolder(root, runDir(root), call);
+  if (chosen === "server") refuseProjectFolder(root, serverAppDir(root), call);
   if (chosen === "agent") {
     const agent = agentDir(root, projectId, agentId);
     return {
