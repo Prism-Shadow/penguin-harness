@@ -40,7 +40,6 @@ files:
   # machines (packages/server/src/machines/shipped-image.ts).
   - dist/**/*
   - "!dist/**/*.map"
-  - "!dist/agent-git/**/*"
   # The staged node-pty package (scripts/build-assets.mjs, src/pty-payload.ts). electron-builder
   # adds a `!**/node_modules/**` of its own: at the head of this list when no non-negated
   # pattern names node_modules, or immediately BEFORE the first one that does. Naming it here
@@ -66,11 +65,6 @@ files:
 # `lib.es2022.full.d.ts`. Extra resources are not filtered that way; asar is off, so `app/…`
 # under the resources directory is the app's own tree and they land beside the entry again.
 extraResources:
-  # A dual-architecture macOS build stages both executables. Each installer carries its own.
-  - from: dist/agent-git
-    to: app/dist/agent-git
-    filter:
-      - "*-${arch}/**/*"
   - from: dist/node_modules/typescript/lib
     to: app/dist/node_modules/typescript/lib
     filter:

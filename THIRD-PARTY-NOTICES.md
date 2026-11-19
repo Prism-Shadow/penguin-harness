@@ -35,20 +35,20 @@ as `NODE_RUNTIME_VERSION` in the release workflow.
 
 ## MinGit (Git for Windows) — `git/`
 
-Present in the Windows desktop installer and `penguin-win32-x64.zip`.
+Present in `penguin-win32-x64.zip` only.
 
 The Windows package bundles **MinGit**, the minimal redistributable build of Git for Windows,
 unmodified, as published by the Git for Windows project. It supplies the POSIX shell that the
 agent's `exec_command` runs (`git/usr/bin/sh.exe`, which is GNU bash), roughly sixty core
-utilities, and `git.exe`. The Agent State version history uses the bundled Git. Interactive agent
-shells prefer a user-installed Git for Windows.
+utilities, and `git.exe`. It is used only when the machine has no Git for Windows installation of
+its own; a user-installed one always takes precedence.
 
 **License: GNU General Public License version 2** (with the additional per-component licenses
 that Git for Windows ships). The complete license texts are included inside the bundle at
 `git/LICENSE.txt` and `git/mingw64/share/licenses/`.
 
-Version bundled: the release attached to the Git for Windows tag pinned in
-`scripts/stage-mingit.sh`.
+Version bundled: the release attached to the Git for Windows tag pinned as `MINGIT_TAG` in the
+release workflow.
 
 **Written offer / source availability.** The complete corresponding source code for the bundled
 MinGit is published by the Git for Windows project at:

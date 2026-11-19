@@ -1,31 +1,17 @@
 /**
  * The Agent State repository: a bare git repository beside `agent_state/`, where a workbench's
- * versions are the commits that touched its folder.
+ * versions are the commits that touched its folder. Its behaviour is one suite any engine runs
+ * (./helpers/agent-state-repo-scenarios.ts), run here with the built-in engine; what follows it
+ * is the built-in engine's own, and the folder side of a restore.
  *
- * - Given a fresh Agent, the first commit creates `agent_state.git/` with its ignore rules for
- *   people, adds nothing to `agent_state/`, and lists one version whose revision is the folder's
- *   in-memory tree id: the id git wrote, names git orders unusually included.
- * - Given the same files again, nothing is recorded; an edit is a newer version, dated by the
- *   clock, or by the time the caller passes (to the whole second, as git keeps it).
- * - Given two folders committed at once, even through two instances, each lists exactly its
- *   own commit.
- * - Given no repository, the history is empty and removing creates nothing; after a removal the
- *   history is empty, and a folder made again lists only its new versions.
- * - Given a listed revision, its files come back exactly; a revision not listed is null.
- * - Given more versions than listed, the newest are; given a version older than the walk, the
- *   current one is still listed and can be restored.
- * - Reserved path segments are excluded consistently across filesystems.
- * - Given a folder holding such a name (a `.git` spelling, a backslash, `.` behind characters
- *   HFS+ ignores), it is not source and not in the revision; a commit passed one leaves it out
- *   with a log line; the history, later commits and the removal all still work.
- * - Given a tree already holding such a name (written by another tool), the history, commits
- *   and the removal still work, the entry left out with a log line.
+ * - A name git refuses is judged as isomorphic-git judges it when it reads a tree.
  * - Given object files a crash left empty, the next commit of those objects writes them again,
  *   and every workbench's history still reads.
- * - Given a staging folder an interrupted creation left an hour ago, the next creation removes
- *   it; a younger one stays.
- * - Given an unreadable HEAD, a detached one, or an empty or invalid branch ref, a commit and a
- *   history read are errors, never a fresh history.
+ * - Given a contributed engine, it writes the commits of folders from the size it is worth it at,
+ *   and reads large versions' files back; the comparison, the history walk, removals and
+ *   anything smaller stay built-in. One that cannot run at all is replaced by the built-in engine
+ *   for that step and reported once, and one whose git refuses a write fails the write as the
+ *   built-in engine would.
  * - Restoring a version: a file where a directory was, or the reverse, comes out exactly; a
  *   version that holds something other than source (`state.json` in any case, anything under
  *   it) is refused before anything is written; a move that fails puts every file back, and
@@ -34,98 +20,75 @@
  * - The files handed to a commit are the ones that loaded: an edit since the folder was read
  *   gives none.
  */
-import { execFileSync } from "node:child_process";
+import nodeFs from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import git from "isomorphic-git";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { AgentStateEngine } from "@prismshadow/penguin-core/plugin";
 import {
   AgentStateRepo,
   agentStateRepoDir,
-  blobOid,
+  builtinEngine,
   isGitName,
-  treeId,
-  type SourceFile,
 } from "../src/workbenches/repo.js";
 import { readFolder, readLoadedSource, restoreSource } from "../src/workbenches/store.js";
+import {
+  agentStateRepoScenarios,
+  DEMO,
+  EDITED,
+  objectIds,
+  REL,
+  revisionOf,
+  source,
+  T1,
+  texts,
+} from "./helpers/agent-state-repo-scenarios.js";
 
-const REL = "workbenches/demo";
-const T1 = new Date("2026-11-03T08:00:00.000Z");
-const T2 = new Date("2026-11-03T09:30:00.000Z");
-
-const source = (files: Record<string, string>): SourceFile[] =>
-  Object.entries(files).map(([rel, text]) => ({ rel, body: Buffer.from(text) }));
-const revisionOf = (files: SourceFile[]) =>
-  treeId(files.map((f) => ({ rel: f.rel, oid: blobOid(f.body) })));
-const texts = (files: SourceFile[] | null) =>
-  Object.fromEntries((files ?? []).map((f) => [f.rel, Buffer.from(f.body).toString()]));
-
-/**
- * `ui.css` beside `ui/` and two names whose UTF-16 order differs from their code point order:
- * git sorts a directory as if its name ended in `/`, and compares bytes.
- */
-const DEMO = source({
-  "package.json": '{"name":"demo"}',
-  "index.ts": "export default {};",
-  "ui.css": "body{}",
-  "ui/index.html": "<h1>v1</h1>",
-  "\u{1F600}.txt": "astral",
-  "ａ.txt": "fullwidth",
-});
-const EDITED = source({
-  "package.json": '{"name":"demo"}',
-  "index.ts": "export default { edited: true };",
-  "ui/index.html": "<h1>v2</h1>",
-  "lib/util.ts": "export const x = 1;",
-});
+agentStateRepoScenarios(
+  { afterEach, beforeEach, describe, expect, it },
+  { label: "built-in", engine: () => undefined },
+);
 
 /** The Agent's directory, holding `agent_state/` and the repository beside it. */
 let dir: string;
 let gitdir: string;
 let now: Date;
 let logged: string[];
-const open = (caps?: { versions?: number; commits?: number }) =>
-  new AgentStateRepo({ gitdir, now: () => now, log: (line) => logged.push(line), caps });
-function git(args: string[], input?: string): string {
-  return execFileSync("git", ["--git-dir", gitdir, ...args], { encoding: "utf8", input }).trimEnd();
-}
-const head = () => git(["rev-parse", "HEAD"]);
+const quiet = { env: {}, home: os.tmpdir(), readFile: () => null };
+const open = (
+  engine?: AgentStateEngine,
+  opts: {
+    onEngineUnavailable?: (e: AgentStateEngine) => void;
+    engineFrom?: { commit?: number; read?: number };
+  } = {},
+) =>
+  new AgentStateRepo({
+    gitdir,
+    now: () => now,
+    log: (line) => logged.push(line),
+    engine,
+    ...opts,
+    identity: quiet,
+  });
+/** A contributed engine, handed every step whatever the folder's size. */
+const always = { commit: 1, read: 1 };
 
 beforeEach(async () => {
   dir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-state-repo-"));
   await fs.mkdir(path.join(dir, "agent_state"));
   gitdir = agentStateRepoDir(dir);
-  vi.stubEnv("GIT_CONFIG_GLOBAL", path.join(dir, "global.gitconfig"));
-  vi.stubEnv("GIT_CONFIG_NOSYSTEM", "1");
-  for (const key of [
-    "GIT_AUTHOR_NAME",
-    "GIT_AUTHOR_EMAIL",
-    "GIT_COMMITTER_NAME",
-    "GIT_COMMITTER_EMAIL",
-    "EMAIL",
-  ])
-    vi.stubEnv(key, undefined);
   now = T1;
   logged = [];
 });
 afterEach(async () => {
-  vi.unstubAllEnvs();
   vi.restoreAllMocks();
   await fs.rm(dir, { recursive: true, force: true });
 });
 
-/** Every loose object file of a repository, as its id. */
-async function objectIds(at: string): Promise<string[]> {
-  const out: string[] = [];
-  for (const prefix of await fs.readdir(path.join(at, "objects"))) {
-    if (!/^[0-9a-f]{2}$/.test(prefix)) continue;
-    for (const rest of await fs.readdir(path.join(at, "objects", prefix))) out.push(prefix + rest);
-  }
-  return out;
-}
-
 const ZWNJ = String.fromCodePoint(0x200c);
-/** The existing cross-platform policy also covers names Git would accept on POSIX. */
+/** Names isomorphic-git's own tree check covers, refused and allowed alike. */
 const NAMES = [
   ".git",
   ".GIT",
@@ -151,226 +114,22 @@ const NAMES = [
   "index.ts",
 ];
 
-describe("recording versions", () => {
-  it("the first commit creates the repository beside agent_state/, and lists the folder's tree id", async () => {
-    const repo = open();
-    expect((await repo.commitPath(REL, DEMO, "workbench demo @1")).changed).toBe(true);
+describe("the built-in engine", () => {
+  it.each(NAMES)("%j is refused exactly when isomorphic-git refuses it in a tree", async (name) => {
+    const nodeRepo = { fs: nodeFs, gitdir: path.join(dir, "scratch.git") };
+    await git.init({ ...nodeRepo, bare: true });
+    const blob = await git.writeBlob({ ...nodeRepo, blob: Buffer.from("x") });
+    const tree = await git.writeTree({
+      ...nodeRepo,
+      tree: [{ mode: "100644", path: name, oid: blob, type: "blob" }],
+    });
 
-    expect(await fs.readdir(path.join(dir, "agent_state"))).toEqual([]);
-    expect(git(["symbolic-ref", "--short", "HEAD"])).toBe("main");
-    expect(await fs.readFile(path.join(gitdir, "info", "exclude"), "utf8")).toContain(
-      "workbenches/*/state.json",
+    const read = git.readTree({ ...nodeRepo, oid: tree }).then(
+      () => false,
+      () => true,
     );
-    const commit = await head();
-    const written = git(["rev-parse", `${commit}:${REL}`]);
-    expect(written.slice(0, 12)).toBe(revisionOf(DEMO));
-    expect(await repo.history(REL)).toEqual([
-      { revision: revisionOf(DEMO), commit: commit.slice(0, 12), savedAt: T1.toISOString() },
-    ]);
-  });
 
-  it("records nothing for the same files, and an edit as a newer version dated by the clock or by `at`", async () => {
-    const repo = open();
-    const first = await repo.commitPath(REL, DEMO, "workbench demo @1");
-    expect(await repo.commitPath(REL, DEMO, "workbench demo @1 again")).toEqual({
-      commit: first.commit,
-      changed: false,
-    });
-
-    now = T2;
-    await repo.commitPath(REL, EDITED, "workbench demo @2");
-    // A replayed version keeps the time it was first saved, to the second.
-    const replayed = new Date("2026-10-01T00:00:00.789Z");
-    await repo.commitPath(REL, DEMO, "workbench demo @1 replayed", { at: replayed });
-
-    expect(git(["show", "-s", "--format=%at %ct", "HEAD"])).toBe(
-      `${Math.floor(replayed.getTime() / 1000)} ${Math.floor(replayed.getTime() / 1000)}`,
-    );
-    expect((await repo.history(REL)).map((v) => [v.revision, v.savedAt])).toEqual([
-      [revisionOf(DEMO), "2026-10-01T00:00:00.000Z"],
-      [revisionOf(EDITED), T2.toISOString()],
-      [revisionOf(DEMO), T1.toISOString()],
-    ]);
-  });
-
-  it("uses per-field defaults, local/global Git configuration and role-specific overrides without writing configuration", async () => {
-    const repo = open();
-    const identity = () => git(["show", "-s", "--format=%an|%ae|%cn|%ce"]);
-    await repo.commitPath(REL, DEMO, "no configured identity");
-    expect(identity()).toBe("PenguinHarness|penguin@localhost|PenguinHarness|penguin@localhost");
-    const local = path.join(gitdir, "config");
-    const global = process.env.GIT_CONFIG_GLOBAL!;
-    git(["config", "--global", "user.name", "My Global Name"]);
-    git(["config", "--local", "author.email", "author@local.example"]);
-    const [localBefore, globalBefore] = await Promise.all([
-      fs.readFile(local),
-      fs.readFile(global),
-    ]);
-    await repo.commitPath(REL, EDITED, "partial configuration");
-    expect(identity()).toBe("My Global Name|author@local.example|My Global Name|penguin@localhost");
-    vi.stubEnv("GIT_AUTHOR_NAME", "Env Author");
-    vi.stubEnv("GIT_COMMITTER_EMAIL", "env@example.com");
-    vi.stubEnv("EMAIL", "generic@example.com");
-    await repo.commitPath(REL, DEMO, "role-specific env");
-    expect(identity()).toBe("Env Author|author@local.example|My Global Name|env@example.com");
-    expect(await fs.readFile(local)).toEqual(localBefore);
-    expect(await fs.readFile(global)).toEqual(globalBefore);
-  });
-
-  it("does not import templates, start signing programs or invoke repository hooks", async () => {
-    const template = path.join(dir, "user-template");
-    const hooks = path.join(dir, "user-hooks");
-    await fs.mkdir(template);
-    await fs.mkdir(hooks);
-    await fs.writeFile(path.join(template, "imported-from-template"), "template");
-    await fs.writeFile(path.join(hooks, "reference-transaction"), "#!/bin/sh\nexit 1\n", {
-      mode: 0o755,
-    });
-    const config = process.env.GIT_CONFIG_GLOBAL!;
-    execFileSync("git", ["config", "--file", config, "init.templateDir", template]);
-    execFileSync("git", ["config", "--file", config, "core.hooksPath", hooks]);
-    execFileSync("git", ["config", "--file", config, "commit.gpgSign", "true"]);
-    execFileSync("git", [
-      "config",
-      "--file",
-      config,
-      "gpg.program",
-      path.join(dir, "unused-signing-program"),
-    ]);
-    const before = await fs.readFile(config);
-    await open().commitPath(REL, DEMO, "save automatically");
-    expect(git(["cat-file", "commit", "HEAD"])).not.toContain("gpgsig");
-    await expect(fs.stat(path.join(gitdir, "imported-from-template"))).rejects.toMatchObject({
-      code: "ENOENT",
-    });
-    expect(await fs.readFile(config)).toEqual(before);
-  });
-
-  it("reads packed objects and refs and leaves an external ref lock untouched", async () => {
-    const repo = open();
-    const first = await repo.commitPath(REL, DEMO, "base");
-    git(["pack-refs", "--all"]);
-    git(["repack", "-ad"]);
-    const lock = path.join(gitdir, "refs", "heads", "main.lock");
-    await fs.writeFile(lock, "another Git process");
-    await expect(repo.commitPath(REL, EDITED, "competing commit")).rejects.toThrow("update-ref");
-    expect(await fs.readFile(lock, "utf8")).toBe("another Git process");
-    expect((await repo.history(REL))[0]?.commit).toBe(first.commit);
-    await fs.unlink(lock);
-    expect((await repo.commitPath(REL, EDITED, "retry")).changed).toBe(true);
-    expect(texts(await repo.filesAt(REL, revisionOf(DEMO)))).toEqual(texts(DEMO));
-  });
-
-  it("cannot redirect snapshots into an ambient Git directory or object store", async () => {
-    const unrelated = path.join(dir, "unrelated.git");
-    vi.stubEnv("GIT_DIR", unrelated);
-    vi.stubEnv("GIT_OBJECT_DIRECTORY", path.join(dir, "outside-objects"));
-    vi.stubEnv("GIT_INDEX_FILE", path.join(dir, "outside-index"));
-    const repo = open();
-    const rel = "workbenches/名字 with [brackets]";
-    const files = source({ "nested/-item with spaces": "中", "tab\tline\n.txt": "contents" });
-    await repo.commitPath(rel, files, "spaces and non-ASCII");
-    expect(texts(await repo.filesAt(rel, revisionOf(files)))).toEqual(texts(files));
-    for (const file of [unrelated, process.env.GIT_OBJECT_DIRECTORY!, process.env.GIT_INDEX_FILE!])
-      await expect(fs.stat(file)).rejects.toMatchObject({ code: "ENOENT" });
-  });
-
-  it("saves, reads, restores and deletes real revisions without a system Git", async () => {
-    const blocked = path.join(dir, "no system git");
-    await fs.mkdir(blocked);
-    vi.stubEnv("PATH", blocked);
-    const repo = open();
-    await repo.commitPath(REL, DEMO, "first");
-    const changed = source({ "你好 world.md": "new text" });
-    await repo.commitPath(REL, changed, "second");
-    expect((await repo.history(REL)).map((v) => v.revision)).toEqual([
-      revisionOf(changed),
-      revisionOf(DEMO),
-    ]);
-    const original = await repo.filesAt(REL, revisionOf(DEMO));
-    expect(original).not.toBeNull();
-    await repo.commitPath(REL, original!, "restore first");
-    expect(texts(await repo.filesAt(REL, revisionOf(DEMO)))).toEqual(texts(DEMO));
-    await repo.removePath(REL, "remove");
-    expect(await repo.history(REL)).toEqual([]);
-  });
-
-  it("two folders committed at once, through two instances, each list exactly their own commit", async () => {
-    const [a, b] = await Promise.all([
-      open().commitPath("workbenches/a", DEMO, "workbench a @1"),
-      open().commitPath("workbenches/b", EDITED, "workbench b @1"),
-    ]);
-
-    expect(a.commit).not.toBe(b.commit);
-    expect((await open().history("workbenches/a")).map((v) => v.commit)).toEqual([a.commit]);
-    expect((await open().history("workbenches/b")).map((v) => v.commit)).toEqual([b.commit]);
-  });
-
-  it("retains the existing cross-platform filename policy", () => {
-    expect(NAMES.filter(isGitName)).toEqual(NAMES.slice(0, NAMES.indexOf("git~0")));
-  });
-
-  // Windows reads a backslash as a separator and drops a trailing dot: neither name can exist there.
-  it.skipIf(process.platform === "win32")(
-    "a folder's file under a name git refuses is not source; a commit passed one leaves it out, and everything still works",
-    async () => {
-      const folderDir = path.join(dir, "agent_state", REL);
-      const refused = ["git~1", "ui\\index.html", `${ZWNJ}.`];
-      for (const name of [...refused, "package.json", "index.ts"]) {
-        await fs.mkdir(folderDir, { recursive: true });
-        await fs.writeFile(path.join(folderDir, name), "x");
-      }
-      const folder = (await readFolder(folderDir, "demo"))!;
-      expect(folder.files).toEqual(["index.ts", "package.json"]);
-      expect(folder.refused).toEqual([...refused].sort());
-
-      const repo = open();
-      const passed = [...(await readLoadedSource(folder))!, ...source({ [refused[1]!]: "x" })];
-      expect((await repo.commitPath(REL, passed, "workbench demo @1")).changed).toBe(true);
-      expect(logged.some((line) => line.includes(refused[1]!))).toBe(true);
-      expect((await repo.history(REL)).map((v) => v.revision)).toEqual([folder.revision]);
-      expect((await repo.commitPath(REL, EDITED, "workbench demo @2")).changed).toBe(true);
-      await repo.removePath(REL, "workbench demo: removed");
-      expect(await repo.history(REL)).toEqual([]);
-    },
-  );
-
-  it("a tree already holding a name git refuses still lists, commits and removes, the entry left out", async () => {
-    const repo = open();
-    await repo.commitPath(REL, DEMO, "workbench demo @1");
-    // Another tool commits a file under a name git refuses.
-    const blob = git(["hash-object", "-w", "--stdin"], "x");
-    const add = (tree: string, row: string, replacing?: string) => {
-      const rows = git(["ls-tree", "-z", tree])
-        .split("\0")
-        .filter((r) => r && !r.endsWith(`\t${replacing}`));
-      return git(["mktree", "-z"], [...rows, row, ""].join("\0"));
-    };
-    const demo = add(`HEAD:${REL}`, `100644 blob ${blob}\tui\\index.html`);
-    const workbenches = add("HEAD:workbenches", `040000 tree ${demo}\tdemo`, "demo");
-    const root = add("HEAD", `040000 tree ${workbenches}\tworkbenches`, "workbenches");
-    const planted = git([
-      "-c",
-      "user.name=x",
-      "-c",
-      "user.email=x@x",
-      "commit-tree",
-      root,
-      "-p",
-      "HEAD",
-      "-m",
-      "by hand",
-    ]);
-    git(["update-ref", "refs/heads/main", planted, head()]);
-
-    // The hand-made commit is a version of its own, read without the entry git refuses.
-    const versions = await repo.history(REL);
-    expect(versions).toHaveLength(2);
-    expect(texts(await repo.filesAt(REL, versions[0]!.revision))).toEqual(texts(DEMO));
-    expect(logged.some((line) => line.includes("ui\\\\index.html"))).toBe(true);
-    expect((await repo.commitPath(REL, EDITED, "workbench demo @2")).changed).toBe(true);
-    await repo.removePath(REL, "workbench demo: removed");
-    expect(await repo.history(REL)).toEqual([]);
+    expect(await read).toBe(isGitName(name));
   });
 
   it("object files a crash left empty are written again by the next commit of them", async () => {
@@ -379,7 +138,12 @@ describe("recording versions", () => {
     const other = source({ "package.json": "{}" });
     // A scratch repository with the same history tells which objects version 2 writes.
     const scratch = path.join(dir, "scratch.git");
-    const twin = new AgentStateRepo({ gitdir: scratch, now: () => now, log: () => {} });
+    const twin = new AgentStateRepo({
+      gitdir: scratch,
+      now: () => now,
+      log: () => {},
+      identity: quiet,
+    });
     for (const repo of [open(), twin]) {
       await repo.commitPath(REL, v1, "workbench demo @1");
       await repo.commitPath("workbenches/other", other, "workbench other @1");
@@ -407,80 +171,86 @@ describe("recording versions", () => {
       true,
     );
   });
-
-  it("a staging folder an interrupted creation left an hour ago is removed by the next creation; a younger one stays", async () => {
-    const stale = `${gitdir}.penguin-tmpold`;
-    const young = `${gitdir}.penguin-tmpnew`;
-    for (const leftover of [stale, young]) await fs.mkdir(leftover);
-    const twoHoursAgo = new Date(T1.getTime() - 2 * 60 * 60 * 1000);
-    await fs.utimes(stale, twoHoursAgo, twoHoursAgo);
-    await fs.utimes(young, T1, T1);
-
-    await open().commitPath(REL, DEMO, "workbench demo @1");
-
-    await expect(fs.stat(stale)).rejects.toMatchObject({ code: "ENOENT" });
-    expect((await fs.stat(young)).isDirectory()).toBe(true);
-  });
 });
 
-describe("listing and removing", () => {
-  it("a removal empties the history, and a folder made again lists only its new versions", async () => {
-    const repo = open();
-    expect(await repo.history(REL)).toEqual([]);
-    await repo.removePath(REL, "workbench demo: removed");
-    await expect(fs.stat(gitdir)).rejects.toMatchObject({ code: "ENOENT" });
+describe("a contributed engine", () => {
+  /** The built-in engine under another name, counting what it is asked to do. */
+  function counting(fail?: () => Error) {
+    const calls: string[] = [];
+    const engine: AgentStateEngine = {
+      name: "counting",
+      async commit(c) {
+        calls.push(`commit ${c.rel}`);
+        const err = fail?.();
+        if (err) throw err;
+        return builtinEngine.commit(c);
+      },
+      async readBlobs(at, oids) {
+        calls.push(`readBlobs ${oids.length}`);
+        const err = fail?.();
+        if (err) throw err;
+        return builtinEngine.readBlobs(at, oids);
+      },
+    };
+    return { engine, calls };
+  }
+  const unavailable = () =>
+    Object.assign(new Error("spawn git ENOENT"), { engineUnavailable: true as const });
 
+  it("writes the commits and reads the versions' blobs back; the comparison, the walk and removals stay built-in", async () => {
+    const { engine, calls } = counting();
+    const repo = open(engine, { engineFrom: always });
     await repo.commitPath(REL, DEMO, "workbench demo @1");
-    await repo.removePath(REL, "workbench demo: removed");
-    expect(await repo.history(REL)).toEqual([]);
-    expect(await repo.filesAt(REL, revisionOf(DEMO))).toBeNull();
-
-    const again = await repo.commitPath(REL, DEMO, "workbench demo @1");
-    expect(await repo.history(REL)).toEqual([
-      { revision: revisionOf(DEMO), commit: again.commit, savedAt: T1.toISOString() },
-    ]);
-  });
-
-  it("a listed revision gives back exactly its files; one not listed is null", async () => {
-    const repo = open();
-    await repo.commitPath(REL, DEMO, "workbench demo @1");
-    await repo.commitPath(REL, EDITED, "workbench demo @2");
-
+    await repo.commitPath(REL, DEMO, "workbench demo @1 again");
+    await repo.history(REL);
     expect(texts(await repo.filesAt(REL, revisionOf(DEMO)))).toEqual(texts(DEMO));
-    expect(texts(await repo.filesAt(REL, revisionOf(EDITED)))).toEqual(texts(EDITED));
-    expect(await repo.filesAt(REL, "000000000000")).toBeNull();
-    expect(await repo.filesAt("workbenches/other", revisionOf(DEMO))).toBeNull();
+    await repo.removePath(REL, "workbench demo: removed");
+
+    expect(calls).toEqual([`commit ${REL}`, `readBlobs ${DEMO.length}`]);
   });
 
-  it("lists the newest versions up to the cap, and the current one even when it is older than the walk", async () => {
-    const edits = [1, 2, 3].map((n) => source({ "package.json": "{}", "index.ts": `${n}` }));
-    for (const files of edits) await open().commitPath(REL, files, "workbench demo");
-    expect((await open({ versions: 2 }).history(REL)).map((v) => v.revision)).toEqual([
-      revisionOf(edits[2]!),
-      revisionOf(edits[1]!),
-    ]);
-
-    // A neighbour busy enough to push this folder's only commit beyond the walk.
-    for (const files of edits) await open().commitPath("workbenches/busy", files, "busy");
-    const repo = open({ commits: 2 });
-    expect((await repo.history(REL)).map((v) => v.revision)).toEqual([revisionOf(edits[2]!)]);
-    expect(texts(await repo.filesAt(REL, revisionOf(edits[2]!)))).toEqual(texts(edits[2]!));
-  });
-});
-
-describe("a repository that cannot be trusted", () => {
-  it.each([
-    { name: "an unreadable HEAD", file: "HEAD", content: async () => "garbage\n" },
-    { name: "a detached HEAD", file: "HEAD", content: async () => `${await head()}\n` },
-    { name: "an empty branch ref", file: "refs/heads/main", content: async () => "" },
-    { name: "an invalid branch ref", file: "refs/heads/main", content: async () => "nonsense\n" },
-  ])("$name fails a commit and a history read", async ({ file, content }) => {
-    const repo = open();
+  it("is not handed a folder smaller than the size it says it is faster from", async () => {
+    const { engine, calls } = counting();
+    const repo = open({ ...engine, fasterFrom: { commit: 7, read: 7 } });
     await repo.commitPath(REL, DEMO, "workbench demo @1");
-    await fs.writeFile(path.join(gitdir, file), await content());
+    expect(texts(await repo.filesAt(REL, revisionOf(DEMO)))).toEqual(texts(DEMO));
+    expect(calls).toEqual([]);
 
-    await expect(repo.commitPath(REL, EDITED, "workbench demo @2")).rejects.toThrow();
-    await expect(repo.history(REL)).rejects.toThrow();
+    const larger = [...DEMO, ...source({ "more.ts": "1" })];
+    await repo.commitPath(REL, larger, "workbench demo @2");
+    expect(texts(await repo.filesAt(REL, revisionOf(larger)))).toEqual(texts(larger));
+    expect(calls).toEqual([`commit ${REL}`, `readBlobs ${larger.length}`]);
+  });
+
+  it("one that cannot run is replaced by the built-in engine for that step, reported once, and not asked again", async () => {
+    const { engine, calls } = counting(unavailable);
+    const dropped: AgentStateEngine[] = [];
+    const repo = open(engine, { engineFrom: always, onEngineUnavailable: (e) => dropped.push(e) });
+
+    expect((await repo.commitPath(REL, DEMO, "workbench demo @1")).changed).toBe(true);
+    expect(texts(await repo.filesAt(REL, revisionOf(DEMO)))).toEqual(texts(DEMO));
+    expect((await repo.commitPath(REL, EDITED, "workbench demo @2")).changed).toBe(true);
+
+    expect(calls).toEqual([`commit ${REL}`]);
+    expect(dropped).toEqual([engine]);
+    expect(logged.filter((line) => line.includes("counting could not run"))).toEqual([
+      "counting could not run (spawn git ENOENT); the built-in engine takes over",
+    ]);
+    expect((await open().history(REL)).map((v) => v.revision)).toEqual([
+      revisionOf(EDITED),
+      revisionOf(DEMO),
+    ]);
+  });
+
+  it("one whose git refuses the write fails it, and nothing is written in its place", async () => {
+    const { engine } = counting(() => new Error("fatal: cannot lock ref 'refs/heads/main'"));
+    await open().commitPath(REL, DEMO, "workbench demo @1");
+    const tip = await git.resolveRef({ fs: nodeFs, gitdir, ref: "HEAD" });
+
+    await expect(
+      open(engine, { engineFrom: always }).commitPath(REL, EDITED, "workbench demo @2"),
+    ).rejects.toThrow("cannot lock ref");
+    expect(await git.resolveRef({ fs: nodeFs, gitdir, ref: "HEAD" })).toBe(tip);
   });
 });
 

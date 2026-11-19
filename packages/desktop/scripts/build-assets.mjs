@@ -147,22 +147,3 @@ fs.writeFileSync(path.join(binDir, "penguin.cmd"), windowsLauncherScript());
 console.log(
   `[build-assets] done: plugins/ (${builtPlugins.plugins.length} builtin plugins), dist/icon.png, dist/tray/ (${trayIcons.length} icons), dist/install.{sh,ps1}, bin/, ${NODE_PTY_RELDIR.join("/")} (${ptyFiles.length} files, bindings: ${bindings.join(", ")})`,
 );
-
-// The desktop server is a self-contained bundle and resolves this alongside server.js.
-const { vendorAgentGit, gitTargets } = await import("../../../scripts/vendor-agent-git.mjs");
-const withMinGit =
-  process.platform === "win32" &&
-  fs.existsSync(path.join(pkgDir, "build", "minigit", "cmd", "git.exe"));
-const platformGit = withMinGit
-  ? []
-  : gitTargets.filter((target) => target.startsWith(process.platform + "-"));
-const desktopGit = path.join(distDir, "agent-git");
-fs.rmSync(desktopGit, { recursive: true, force: true });
-// electron-builder expects the source directory even when Windows ships MinGit.
-fs.mkdirSync(desktopGit, { recursive: true });
-const gitDir = await vendorAgentGit(platformGit);
-for (const target of platformGit) {
-  fs.cpSync(path.join(gitDir, target), path.join(desktopGit, target), {
-    recursive: true,
-  });
-}

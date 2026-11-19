@@ -66,6 +66,7 @@ import { forwardToMachine } from "../machines/proxy.js";
 import { MachineSocketRelay } from "../machines/socket-relay.js";
 import type { Machines } from "../machines/service.js";
 import type { Workbenches } from "../mechanisms/workbenches.js";
+import type { VersionAuthor } from "./git-identity.js";
 import type { WorkbenchRequest, WorkbenchResponse } from "@prismshadow/penguin-library-workbench";
 import {
   parseAppCenterLayout,
@@ -469,6 +470,14 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
     deps.access.requireProjectAccess(c.var.user.userId, projectId);
     return { projectId, agentId };
   };
+  /**
+   * The member a version a request records is by: their display name, when they set one.
+   * Accounts hold no email, so its email is the server's (../workbenches/git-identity.ts).
+   */
+  const by = (c: { var: AppEnv["Variables"] }): VersionAuthor | undefined => {
+    const name = c.var.user.displayName?.trim();
+    return name ? { name } : undefined;
+  };
   app.get("/", async (c) => {
     const { projectId, agentId } = scope(c);
     const workbenches = await deps.workbenches.list(projectId, agentId);
@@ -495,7 +504,7 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
   app.put("/:id/enabled", async (c) => {
     const { projectId, agentId, enabled } = await switchRequest(c);
     const workbench = await deps.workbenches
-      .setEnabled(projectId, agentId, c.req.param("id"), enabled)
+      .setEnabled(projectId, agentId, c.req.param("id"), enabled, by(c))
       .catch(notFound);
     return c.json({ workbench });
   });
@@ -552,7 +561,7 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
         });
       }
       await writeWorkbenchSource(dir, parsed.files);
-      return deps.workbenches.reloadIfEnabled(projectId, agentId, id).catch(notFound);
+      return deps.workbenches.reloadIfEnabled(projectId, agentId, id, by(c)).catch(notFound);
     });
     return c.json({ workbench } satisfies WorkbenchArchiveInstallResponse, 201);
   });
@@ -579,7 +588,7 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
   app.post("/:id/reload", async (c) => {
     const { projectId, agentId } = scope(c);
     const workbench = await deps.workbenches
-      .reload(projectId, agentId, c.req.param("id"))
+      .reload(projectId, agentId, c.req.param("id"), by(c))
       .catch(notFound);
     return c.json({ workbench });
   });
@@ -597,7 +606,7 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
     if (typeof body.revision !== "string")
       throw new HttpError(400, "bad_request", "revision is required");
     const workbench = await deps.workbenches
-      .rollback(projectId, agentId, c.req.param("id"), body.revision)
+      .rollback(projectId, agentId, c.req.param("id"), body.revision, by(c))
       .catch(notFound);
     return c.json({ workbench });
   });
@@ -609,7 +618,7 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
     const body = await readJson(c);
     if (typeof body.show !== "boolean") throw badRequest("show must be true or false");
     const workbench = await deps.workbenches
-      .setAppCenter(projectId, agentId, c.req.param("id"), body.show)
+      .setAppCenter(projectId, agentId, c.req.param("id"), body.show, by(c))
       .catch(notFound);
     return c.json({ workbench } satisfies WorkbenchAppCenterResponse);
   });
@@ -623,7 +632,7 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
 
   app.delete("/:id", async (c) => {
     const { projectId, agentId } = scope(c);
-    await deps.workbenches.remove(projectId, agentId, c.req.param("id")).catch(notFound);
+    await deps.workbenches.remove(projectId, agentId, c.req.param("id"), by(c)).catch(notFound);
     return c.body(null, 204);
   });
 

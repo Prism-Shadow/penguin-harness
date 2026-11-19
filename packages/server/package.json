@@ -82,8 +82,7 @@
     "typecheck": "pnpm gen:ifaces && tsc --noEmit -p tsconfig.json",
     "gen:ifaces": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out src/ifaces.json",
     "test": "pnpm gen:ifaces && vitest run --passWithNoTests",
-    "build": "pnpm gen:ifaces && node ../../scripts/run-with-env.mjs NODE_OPTIONS=--max-old-space-size=4096 -- tsup && node ../../scripts/vendor-agent-git.mjs",
-    "prepack": "node ../../scripts/vendor-agent-git.mjs --all"
+    "build": "pnpm gen:ifaces && node ../../scripts/run-with-env.mjs NODE_OPTIONS=--max-old-space-size=4096 -- tsup"
   },
   "dependencies": {
     "@hono/node-server": "^2.0.5",
@@ -126,6 +125,7 @@
     "dotenv": "^17.0.0",
     "fflate": "^0.8.3",
     "hono": "^4.13.11",
+    "isomorphic-git": "^1.44.0",
     "node-pty": "^1.1.0",
     "remark-parse": "^11.0.0",
     "smol-toml": "^1.9.1",
@@ -166,19 +166,10 @@
   },
   "files": [
     "dist",
-    "vendor/agent-git",
     "web-dist",
     "LICENSE"
   ],
   "publishConfig": {
-    "access": "public",
-    "executableFiles": [
-      "./vendor/agent-git/darwin-arm64/bin/git",
-      "./vendor/agent-git/darwin-x64/bin/git",
-      "./vendor/agent-git/linux-arm/bin/git",
-      "./vendor/agent-git/linux-arm64/bin/git",
-      "./vendor/agent-git/linux-ia32/bin/git",
-      "./vendor/agent-git/linux-x64/bin/git"
-    ]
+    "access": "public"
   }
 }
