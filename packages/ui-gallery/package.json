@@ -24,6 +24,7 @@
     "@prismshadow/amsp": "workspace:*",
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-web": "workspace:*",
+    "@prismshadow/penguin-web-plugin": "workspace:*",
     "@prismshadow/skills": "workspace:*",
     "@tailwindcss/vite": "^4.1.0",
     "@types/node": "^24.0.0",

@@ -1,5 +1,6 @@
 /**
- * Every endpoint the Web App calls (`packages/web/src/api/endpoints.ts`), answered from the
+ * Every endpoint the Web App calls (`packages/web/src/api/endpoints.ts`, and the wrappers its
+ * features keep beside them, such as the agent browser's `features/builtin-browser/api.ts`), answered from the
  * demo store. Reads answer the fixtures; writes mutate them where the app shows the result
  * (a renamed Session, a saved model table, a new schedule) and answer `demo_read_only` where
  * the operation would need a machine, a registry or a provider behind it. Each handler's
@@ -194,13 +195,14 @@ function costOf(day: Pick<UsageDay, "cacheRead" | "cacheWrite" | "output" | "pro
 export const router = new Router();
 
 // The demo boots its own page table and has no server-side plugin contributions: no pages,
-// no file renderers, and nothing removed.
+// no file renderers, nothing removed, and no plugin's server module running.
 router.get("/api/contributions", (): ContributionsResponse => ({
   pages: [],
   fileRenderers: [],
   pageRemovals: [],
   agentTabs: [],
   sessionTabs: [],
+  modules: [],
 }));
 
 // ---------------------------------------------------------------------------------------------

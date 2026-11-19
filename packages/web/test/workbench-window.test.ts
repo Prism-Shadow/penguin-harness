@@ -17,6 +17,8 @@ import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BuiltinBrowserStatus } from "@prismshadow/penguin-server/api";
 import { AppWindow, DockFrame, WindowStack } from "@prismshadow/penguin-ui";
+// The browser reaches the app's own helpers through the plugin face; this hands them over.
+import "../src/web-app/plugin-host";
 import { WorkbenchTabStrip } from "../src/features/workbenches/workbench-tabs";
 import { BuiltinBrowserPanel } from "../src/features/builtin-browser/browser-panel";
 import { dispatchBrowser } from "../src/features/builtin-browser/browser-store";

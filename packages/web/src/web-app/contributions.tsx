@@ -13,6 +13,7 @@ import type { ContributionsResponse, RendererRef } from "@prismshadow/penguin-se
 import * as api from "../api/endpoints";
 import { FileRendererRulesContext, type FileRendererRule } from "../lib/file-renderers";
 
+import { setRunningServerModules } from "../lib/module-gate";
 import { useSafeMode } from "../rescue/safe-mode";
 import { useAuth } from "../state/auth";
 import { webAppDeps } from "./deps";
@@ -268,6 +269,9 @@ export function WebAppPagesProvider({ children }: { children: ReactNode }) {
     [compiled, answer, pageRenderers, pending, store],
   );
   const rules = useMemo(() => fileRendererRulesOf(answer), [answer]);
+  // The server modules this generation runs open the gates of the web modules that need them
+  // (lib/module-gate.ts); with no answer — signed out, safe mode, in flight — every gate is shut.
+  useEffect(() => setRunningServerModules(answer?.modules ?? null), [answer]);
   return (
     <PagesContext.Provider value={value}>
       <FileRendererRulesContext.Provider value={rules}>

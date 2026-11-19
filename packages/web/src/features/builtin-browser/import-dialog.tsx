@@ -12,10 +12,9 @@ import type {
   BuiltinBrowserImportSource,
 } from "@prismshadow/penguin-server/api";
 import { Button, Checkbox, FieldLabel, Input, Modal, Radio } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
-import { S } from "../../lib/strings";
-import { toneInk } from "../../lib/tone";
+import * as api from "./api";
+import { apiErrorText, failureNode, toneInk } from "@prismshadow/penguin-web-plugin";
+import { S } from "./strings";
 import {
   appBoundLikely,
   appBoundSkips,
@@ -26,7 +25,6 @@ import {
   sourceImportable,
   type ImportExtensionRoute,
 } from "./import-options";
-import { failureNode } from "../../lib/failure";
 
 /** The option rows' ink. */
 const optionInk = "text-gray-700 dark:text-gray-300";

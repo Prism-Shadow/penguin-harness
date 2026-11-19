@@ -11,7 +11,7 @@ import type {
   BuiltinBrowserImportSource,
   BuiltinBrowserImportSourcesResponse,
 } from "@prismshadow/penguin-server/api";
-import type { ImportExtensionRoute } from "../../lib/browser-import-route";
+import type { ImportExtensionRoute } from "./browser-import-route";
 
 export type { ImportExtensionRoute };
 

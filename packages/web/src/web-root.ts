@@ -3,14 +3,18 @@ import { MainSidebarBadgesModule } from "./features/models/main-sidebar-badges.m
  * The composition root: the one file that lists the module classes, the web app's counterpart
  * of the server's platform.ts. `bootWeb()` boots the tree once, before the first render
  * (main.tsx), and hands back WebApp's root component — the routed app with every module's
- * contributions bound in.
+ * contributions bound in. The shipped plugins' web halves boot beside the app's own modules as
+ * further children of the root (plugin-web.gen.ts, the list scripts/gen-web-table.mjs writes
+ * from this package's dependencies), after the app has handed its implementations to the face
+ * they import (web-app/plugin-host.ts).
  *
- * The manifests and interfaces come from `ifaces.json`, which scripts/gen-ifaces.mjs generates
- * from this package's sources (`pnpm gen:ifaces`; not committed). The tree parks nothing and
- * claims no live resource, so its resource registry is an empty one. Booting does no network
- * and takes a few milliseconds; the kernel and its arktype dependency are a fixed cost in the
- * entry bundle.
+ * The manifests and interfaces come from `ifaces.json`, which the same script generates from
+ * this package's sources and those web halves together (`pnpm gen:ifaces`; neither file is
+ * committed). The tree parks nothing and claims no live resource, so its resource registry is an
+ * empty one. Booting does no network and takes a few milliseconds; the kernel and its arktype
+ * dependency are a fixed cost in the entry bundle.
  */
+import "./web-app/plugin-host";
 import type { ComponentType } from "react";
 import {
   bootModules,
@@ -18,10 +22,13 @@ import {
   moduleDefOf,
   type IfaceTable,
   type ManifestTable,
+  type ModuleClass,
+  type ModuleDef,
   type Resources,
 } from "@prismshadow/penguin-core/kernel";
 
 import table from "./ifaces.json";
+import { pluginWebModules, type PluginWebEntry } from "./plugin-web.gen";
 import { WebAppModule, type WebApp } from "./web-app/module";
 
 import { SidebarModule } from "./web-app/sidebar/module";
@@ -85,11 +92,32 @@ const NO_RESOURCES: Resources = {
   claim: () => undefined,
 };
 
+/**
+ * The tree `bootWeb()` boots: the app's own modules and, as further children of the root, every
+ * module of every listed plugin web half, each checked against the one generated table.
+ * `instances` stands pre-built nodes in for their classes (a suite's doubles).
+ */
+export function webRootDef(
+  plugins: readonly PluginWebEntry[] = pluginWebModules,
+  instances?: ReadonlyMap<ModuleClass, object>,
+): ModuleDef {
+  const manifests = table.modules as unknown as ManifestTable;
+  return moduleDefOf(WebRoot, {
+    manifests,
+    ...(instances !== undefined ? { instances } : {}),
+    extra: plugins.flatMap((entry) =>
+      entry.plugin.modules.map((cls) => moduleDefOf(cls, { manifests })),
+    ),
+  });
+}
+
 /** Boots the module tree and returns the component the app mounts. */
-export async function bootWeb(): Promise<ComponentType<AppRouterProps>> {
-  const tree = await bootModules(
-    moduleDefOf(WebRoot, { manifests: table.modules as unknown as ManifestTable }),
-    { ifaces: table as unknown as IfaceTable, resources: NO_RESOURCES },
-  );
+export async function bootWeb(
+  plugins: readonly PluginWebEntry[] = pluginWebModules,
+): Promise<ComponentType<AppRouterProps>> {
+  const tree = await bootModules(webRootDef(plugins), {
+    ifaces: table as unknown as IfaceTable,
+    resources: NO_RESOURCES,
+  });
   return tree.api<WebApp>("WebAppModule", "webApp").Root;
 }

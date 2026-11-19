@@ -7,7 +7,7 @@
  * looks the same offline and asks no site anything before the user picks it. The address sits in
  * the tile's hint, since only the name is on screen.
  */
-import { S } from "../../lib/strings";
+import { S } from "./strings";
 
 export function NewTabPage({ onOpen }: { onOpen: (url: string) => void }) {
   return (
@@ -48,7 +48,7 @@ export function NewTabPage({ onOpen }: { onOpen: (url: string) => void }) {
   );
 }
 
-export { START_PAGE_SITES } from "../../lib/browser-start-sites";
-import { START_PAGE_SITES, type StartPageSiteId } from "../../lib/browser-start-sites";
+export { START_PAGE_SITES } from "./browser-start-sites";
+import { START_PAGE_SITES, type StartPageSiteId } from "./browser-start-sites";
 
-export type { StartPageSiteId } from "../../lib/browser-start-sites";
+export type { StartPageSiteId } from "./browser-start-sites";

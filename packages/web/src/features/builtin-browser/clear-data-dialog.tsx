@@ -6,11 +6,10 @@
 import { browserState } from "./browser-store";
 import { useEffect, useState } from "react";
 import { Checkbox, ConfirmModal, toastSuccess } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import type { BuiltinBrowserStorage } from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
-import { S } from "../../lib/strings";
-import { toastApiError } from "../../lib/toast-api-error";
+import * as api from "./api";
+import type { BuiltinBrowserStorage } from "./api";
+import { apiErrorText, toastApiError } from "@prismshadow/penguin-web-plugin";
+import { S } from "./strings";
 
 type ClearKind = BuiltinBrowserStorage | "history";
 
