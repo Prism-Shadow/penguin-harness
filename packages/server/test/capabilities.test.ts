@@ -262,6 +262,66 @@ describe("project model capabilities", () => {
       vi.unstubAllGlobals();
     }
   });
+  it("prices Jina's reported tokens only on the route used for that request", async () => {
+    const projectId = "jina_" + crypto.randomUUID().slice(0, 8);
+    const project = "/api/projects/" + projectId;
+    const capabilities = project + "/capabilities";
+    const model = { provider: "jina", modelId: "jina-search" };
+    expect((await api.post("/api/projects", { projectId, name: "Web search" })).status).toBe(201);
+    await app.deps.projectConfigService.setPluginTables(projectId, {
+      all: { [fixtureProvider]: {} },
+      machines: {},
+    });
+    expect(
+      (await api.put(project + "/models/providers/jina", { apiKey: "jina-fixture-key" })).status,
+    ).toBe(200);
+    expect((await api.patch(capabilities + "/tools", { bindings: { search: model } })).status).toBe(
+      200,
+    );
+    const wire = stubFetch(() =>
+      jsonResponse({
+        data: [{ title: "Penguin", url: "https://penguin.ooo/" }],
+        meta: { usage: { tokens: 1000000 } },
+      }),
+    );
+    const search = async () => {
+      const response = await api.post(capabilities + "/search/run", { text: "Penguin" });
+      expect(response.status, await response.clone().text()).toBe(200);
+      return (await response.json()) as CapabilityResult;
+    };
+    vi.stubEnv("JINA_BASE_URL", "");
+    try {
+      const official = await search();
+      expect(official.registryRouteMatched).toBe(true);
+      expect(wire.calls.at(-1)?.url).toBe("https://s.jina.ai/search");
+      vi.stubEnv("JINA_BASE_URL", "https://proxy.example/jina-private-route");
+      const proxy = await search();
+      expect(proxy.usage?.prompt_tokens).toBe(1000000);
+      expect(proxy.registryRouteMatched).toBeUndefined();
+      expect(wire.calls.at(-1)?.url).toBe("https://proxy.example/jina-private-route/search");
+      const history = (await (await api.get(capabilities + "/usage")).json()) as {
+        runs: (CapabilityResult & { estimatedCost: unknown })[];
+      };
+      expect(history.runs.find((r) => r.id === official.id)?.estimatedCost).toEqual({
+        minimumUsd: 0.05,
+        maximumUsd: 0.05,
+      });
+      expect(history.runs.find((r) => r.id === proxy.id)?.estimatedCost).toBeNull();
+      expect(JSON.stringify(history)).not.toMatch(
+        /jina-fixture-key|jina-private-route|https:\/\/s\.jina\.ai/,
+      );
+      const officialGroup = await api.put(project + "/models/providers/jina", {
+        baseUrl: "https://s.jina.ai/",
+      });
+      expect(officialGroup.status).toBe(200);
+      expect((await search()).registryRouteMatched).toBe(true); // an explicit row/group endpoint takes precedence over the environment
+      const reloaded = (await (await api.get(capabilities + "/usage")).json()) as typeof history;
+      expect(reloaded.runs.find((r) => r.id === proxy.id)?.estimatedCost).toBeNull();
+    } finally {
+      vi.unstubAllEnvs();
+      vi.unstubAllGlobals();
+    }
+  });
   it("rejects WebM labelled as WAVE before sending the audio to a DeepSeek ASR gateway", async () => {
     const before = received.length;
     const audio = {

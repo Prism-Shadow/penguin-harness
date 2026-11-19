@@ -91,6 +91,7 @@ describe("tool input meters", () => {
       expect(onUsage).toHaveBeenCalledExactlyOnceWith(
         { cached_tokens: 2, prompt_tokens: 7, thoughts_tokens: 5, response_tokens: 3 },
         { unit: "token", quantity: 7 },
+        undefined,
       );
       expect(wire.calls).toHaveLength(1);
     },

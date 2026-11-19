@@ -41,6 +41,11 @@ function registryEndpoint(url: string): string | undefined {
   }
 }
 
+export function sameRegistryEndpoint(url: string, expected: string): boolean {
+  const endpoint = registryEndpoint(url);
+  return endpoint !== undefined && endpoint === registryEndpoint(expected);
+}
+
 /** The first rate is the primary output a user is choosing this tool for. */
 export function toolPricingFor(
   entry: ModelCatalogEntry | undefined,
@@ -51,7 +56,7 @@ export function toolPricingFor(
     const expected = price.registryRoute;
     if (
       routedClientType(entry.modelId, route?.clientType) !== expected.clientType ||
-      (route?.baseUrl && registryEndpoint(route.baseUrl) !== registryEndpoint(expected.baseUrl))
+      (route?.baseUrl && !sameRegistryEndpoint(route.baseUrl, expected.baseUrl))
     )
       return undefined;
   }

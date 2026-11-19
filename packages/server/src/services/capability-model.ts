@@ -14,6 +14,7 @@ import {
 } from "@prismshadow/penguin-core";
 import type { CapabilityInputMeter, CapabilityResult } from "../api/capabilities.js";
 import type { ModelRefDto } from "../api/types.js";
+import { matchesRegistryRoute } from "./capability-cost.js";
 import { catalogEntryFor } from "../model-catalog/catalog.js";
 import { HttpError } from "../http/errors.js";
 
@@ -92,7 +93,11 @@ export interface ModelRunContext {
   signal: AbortSignal;
   sessionId?: string;
   capability?: CapabilityResult["capability"];
-  onUsage?: (usage: UsageMetadata, input?: CapabilityInputMeter) => void;
+  onUsage?: (
+    usage: UsageMetadata,
+    input?: CapabilityInputMeter,
+    registryRouteMatched?: true,
+  ) => void;
 }
 
 export async function runProjectModel(
@@ -121,6 +126,7 @@ export async function runProjectModel(
   let billableWebRequests = 0;
   const clientType = routedClientType(entry.model_id, connection.clientType);
   const preset = catalogEntryFor(ref.provider, ref.modelId);
+  const registryRouteMatched = matchesRegistryRoute(preset, connection) || undefined;
   // A remote MMSP server selects its own adapter. A cataloged tool still has a
   // known input unit; generic text operations use tokens even on a custom server.
   const meterClient =
@@ -137,7 +143,7 @@ export async function runProjectModel(
     if (!usage) return;
     result.usage = usage;
     result.inputMeter = inputMeter(meterClient, usage, webRequests);
-    onUsage?.(usage, result.inputMeter);
+    onUsage?.(usage, result.inputMeter, registryRouteMatched);
   };
   const requestConfig = sessionId ? { ...options, session_id: sessionId } : options;
   try {
