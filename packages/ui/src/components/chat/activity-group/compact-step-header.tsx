@@ -95,7 +95,7 @@ export function CompactStepHeader({
         <span
           data-step-elapsed=""
           data-tooltip={navigation.elapsed}
-          className="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs text-fg-subtle max-[380px]:gap-0.5"
+          className="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs text-fg-subtle max-[380px]:gap-0"
         >
           <span className="sr-only sm:not-sr-only">{navigation.elapsed}</span>
           <span aria-hidden className="sm:hidden">
