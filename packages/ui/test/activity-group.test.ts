@@ -3,8 +3,10 @@
  * tree hooks' markup and the expand policy's first render — open while running, closed once
  * settled, forced open by a pending approval, a static head with no body — for the agent's work
  * and a harness event alike; a failure's title takes the danger ink, and the title stays
- * sentence case (a theme uppercases it through the hook, never the component). The app's
- * containers decide the state; this reads what the card draws.
+ * sentence case (a theme uppercases it through the hook, never the component); a settled head
+ * that needs attention says so on the hook (`data-attention`), so a theme that draws no status
+ * marks keeps the mark that says why. The app's containers decide the state; this reads what the
+ * card draws.
  *
  * The settle's motion, as far as a first render shows it: the body is a fold (the theme's layout
  * motion folds it away when the run settles), and a card that renders already settled, or rows
@@ -95,5 +97,17 @@ describe("ActivityGroup", () => {
     const html = card({ kind: "event", state: "running", title: "Compacting", children: "report" });
     expect(markupStructure(html)).toContain('data-slot="body"><div>report</div>');
     expect(html).not.toContain("ui-tree");
+  });
+
+  it("tells the theme a settled head needs attention, expandable or not, and only when it does", () => {
+    const mark = createElement("span", { "data-tooltip": "why" }, "!");
+    for (const body of [{ children: "report" }, {}]) {
+      const flagged = card({ kind: "event", title: "Compacted", mark, attention: true, ...body });
+      expect(flagged).toMatch(/class="ui-activity [^"]*"[^>]*data-attention=""/);
+      expect(flagged).toContain('data-tooltip="why"');
+      expect(card({ kind: "event", title: "Compacted", mark, ...body })).not.toContain(
+        "data-attention",
+      );
+    }
   });
 });
