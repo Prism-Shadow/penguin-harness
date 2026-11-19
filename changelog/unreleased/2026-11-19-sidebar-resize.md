@@ -3,6 +3,7 @@
 - **Date:** 2026-11-19
 - **Type:** feature
 - **Scope:** `web`, `ui`
+- **PR:** [#1647](https://github.com/Prism-Shadow/penguin-harness/pull/1647)
 
 [中文版](2026-11-19-sidebar-resize.zh.md)
 
