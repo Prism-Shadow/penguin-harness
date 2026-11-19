@@ -18,3 +18,5 @@ Project settings list the operations supplied by active server plugins. Removing
 Browser dictation converts the microphone recording to 16 kHz mono PCM WAV when the selected speech recognition model needs it.
 
 Reading a reply again uses its saved audio for that listener, Session, text and voice model. A reload also reuses it. The playback control sits alongside Copy and Fork.
+
+On a dedicated model’s card, select it as the Project default for that operation. Choosing another speech recognition model replaces the previous one and keeps the chat model.

@@ -404,6 +404,7 @@ interface DetectOutcome {
 
 /** Local edit state for one model row (string-typed for form use; parsed uniformly on save). */
 export interface RowState {
+  chatEligible?: boolean;
   /**
    * Vendor id (entry field, i.e. group membership): a value not in the catalog list is a
    * user-defined group, kept **verbatim** — an operation that only edits the key,
@@ -482,18 +483,14 @@ export function rowRef(row: Pick<RowState, "provider" | "modelId">): ModelRefDto
   return { provider: row.provider, modelId: row.modelId };
 }
 
-/** A renamed default keeps its reference, and the first model added becomes the default. */
-export function nextDefaultModel(args: {
-  /** The paired reference being edited; null for a new model. */
-  editing: ModelRefDto | null;
-  /** The paired reference after saving (differing from editing in either field means a rename). */
-  ref: ModelRefDto;
-  action: DialogAction;
-  defaultModel: ModelRefDto | undefined;
-}): ModelRefDto | undefined {
-  const { editing, ref, action, defaultModel } = args;
-  if (action === "setDefault" || (!editing && !defaultModel)) return ref;
-  return editing && sameModelRef(defaultModel, editing) ? ref : defaultModel;
+/** Explicit picks are validated by the server. A first add is only a suggestion until it knows the model can chat. */
+export function modelDefaultUpdate(
+  action: DialogAction,
+  firstAdd: boolean,
+  ref: ModelRefDto,
+): Pick<ModelsUpdateRequest, "defaultModel" | "initialChatModel"> {
+  if (action === "setDefault") return { defaultModel: ref };
+  return firstAdd ? { initialChatModel: ref } : {};
 }
 
 /** Fields in the config dialog that can be highlighted red on error (keys match RowState field names, so they can be cleared per edit action). */
@@ -660,6 +657,7 @@ export function toRow(m: ModelsResponse["models"][number]): RowState {
     provider: m.provider,
     modelId: m.modelId,
     original: { provider: m.provider, modelId: m.modelId },
+    ...(m.chatEligible === false ? { chatEligible: false } : {}),
     vision: m.vision !== false,
     contextWindow: m.contextWindow !== undefined ? String(m.contextWindow) : "",
     maxTokens: m.maxTokens !== undefined ? String(m.maxTokens) : "",
@@ -926,6 +924,34 @@ export function ModelsPage() {
   const [defaultModel, setDefaultModel] = useState<ModelRefDto | undefined>(undefined);
   // Vision model used for read_file's proxy reads (describes images for session models with vision=false).
   const visionModel = capabilitySelection.settings?.bindings.i2t;
+  const toolDefaultActions = (row: RowState | undefined, disabled = false): ReactNode => {
+    const settings = capabilitySelection.settings;
+    if (!row || row.chatEligible !== false || !settings) return null;
+    const ref = rowRef(row);
+    const actions = settings.available.filter(
+      ({ key }) =>
+        key !== "i2t" &&
+        key !== "t2t" &&
+        (isOwner || sameModelRef(settings.bindings[key], ref)) &&
+        settings.candidates[key].some((m) => sameModelRef(m, ref)),
+    );
+    if (!actions.length) return null;
+    return actions.map(({ key, title }) => {
+      const current = sameModelRef(settings.bindings[key], ref);
+      const name = title[locale];
+      return (
+        <Button
+          key={key}
+          size="xs"
+          variant="secondary"
+          disabled={disabled || !isOwner || current || capabilitySelection.busy}
+          onClick={() => void capabilitySelection.save({ bindings: { [key]: ref } })}
+        >
+          {current ? S.voice.currentToolModel(name) : S.voice.setToolModel(name)}
+        </Button>
+      );
+    });
+  };
   const openProjectSettings = useOpenProjectSettings();
   /** Edit target: paired reference of an existing row. */
   const [editing, setEditing] = useState<ModelRefDto | null>(null);
@@ -1078,7 +1104,7 @@ export function ModelsPage() {
    */
   const persist = async (
     nextRows: RowState[],
-    nextDefault: ModelRefDto | undefined,
+    defaults: Pick<ModelsUpdateRequest, "defaultModel" | "initialChatModel"> = {},
     /** Success toast text (defaults to "saved"); on failure this function shows an error toast instead. */
     successText?: string,
     /** Group connections written in the same request (an import writes its group's once). */
@@ -1094,9 +1120,9 @@ export function ModelsPage() {
     try {
       const body: ModelsUpdateRequest = {
         models: nextRows.map((r) => rowToEntry(r, groupAfter(r.provider))),
+        ...defaults,
       };
       if (providerUpdates !== undefined) body.providers = providerUpdates;
-      if (nextDefault) body.defaultModel = nextDefault;
       const res = await api.putModels(projectId, body);
       adopt(res);
       // Default model changed: drop the stored draft's model selection so the draft chat
@@ -1236,7 +1262,7 @@ export function ModelsPage() {
     skipped: number,
   ): Promise<boolean> => {
     if (!projectId) return false;
-    const ok = await persist(nextRows, defaultModel, S.models.groupImported(added, skipped), {
+    const ok = await persist(nextRows, {}, S.models.groupImported(added, skipped), {
       [name]: connection,
     });
     if (!ok) return false;
@@ -1699,6 +1725,7 @@ export function ModelsPage() {
                       speed={speedResults.get(refMapKey(row.provider, row.modelId))}
                       usedTokens={usedTokens.get(refMapKey(row.provider, row.modelId))}
                       hourTick={hourTick}
+                      toolDefaults={toolDefaultActions(row)}
                       onOpen={() => {
                         setEditingMovedToCustom(false);
                         setEditing(rowRef(row));
@@ -1997,7 +2024,7 @@ export function ModelsPage() {
             // deleted group is dropped, otherwise the server rejects the dangling pair.
             void persist(
               rows.filter((r) => r.provider !== target),
-              defaultModel?.provider === target ? undefined : defaultModel,
+              {},
               S.models.groupDeleted(removed.length),
             );
           }}
@@ -2105,6 +2132,7 @@ export function ModelsPage() {
           canEdit={isOwner}
           isDefault={editingRow !== undefined && sameModelRef(rowRef(editingRow), defaultModel)}
           isVisionModel={editingRow !== undefined && sameModelRef(rowRef(editingRow), visionModel)}
+          toolDefaults={(disabled) => toolDefaultActions(editingRow, disabled)}
           onClose={closeModelDialog}
           // The dialog stays open, its draft intact, until the write answers; it closes only
           // once the table holds what it sent.
@@ -2117,21 +2145,15 @@ export function ModelsPage() {
               // deleting, next's current reference wouldn't match any row -> nothing gets
               // deleted while it still reports "saved".
               const removed = next.original;
-              ok = await persist(
-                rows.filter((r) => !sameModelRef(rowRef(r), removed)),
-                sameModelRef(removed, defaultModel) ? undefined : defaultModel,
-              );
+              ok = await persist(rows.filter((r) => !sameModelRef(rowRef(r), removed)));
             } else {
               const nextRows = isNew
                 ? [...rows, next]
                 : rows.map((r) => (sameModelRef(rowRef(r), editing) ? next : r));
-              const nextDefault = nextDefaultModel({
-                editing: isNew ? null : editing,
-                ref: rowRef(next),
-                action,
-                defaultModel,
-              });
-              ok = await persist(nextRows, nextDefault);
+              ok = await persist(
+                nextRows,
+                modelDefaultUpdate(action, isNew && !defaultModel, rowRef(next)),
+              );
             }
             if (ok) closeModelDialog();
             return ok;
@@ -2570,6 +2592,7 @@ export function ModelCard({
   usedTokens,
   hourTick,
   onOpen,
+  toolDefaults,
   onMoveToCustom,
 }: {
   row: RowState;
@@ -2584,6 +2607,7 @@ export function ModelCard({
   /** Bumped on the hour (see useHourTick): the cue to re-read a time-of-day price. */
   hourTick: number;
   onOpen: () => void;
+  toolDefaults?: ReactNode;
   /** Opens the config dialog with this row already moved to the custom group; absent for a member, who cannot write the config. */
   onMoveToCustom?: () => void;
 }) {
@@ -2633,7 +2657,7 @@ export function ModelCard({
    */
   const tags = modelTags({
     isDefault,
-    vision: row.vision,
+    vision: row.vision && row.chatEligible !== false,
     isVisionModel,
     fastMode: row.fastMode,
     free: isFreeModel(row),
@@ -2775,6 +2799,7 @@ export function ModelCard({
           {speedBadges}
         </span>
       </button>
+      {toolDefaults && <div className="flex flex-wrap gap-1 px-3 pb-2">{toolDefaults}</div>}
       {/* The routing warning and its way out (see unroutableFix): the move the config dialog's
           own button performs, so the owner lands where the problem is fixed rather than on a
           second explanation. */}
@@ -2839,6 +2864,7 @@ function ModelDialog({
   canEdit,
   isDefault,
   isVisionModel,
+  toolDefaults,
   onClose,
   onSubmit,
 }: {
@@ -2857,6 +2883,7 @@ function ModelDialog({
   canEdit: boolean;
   isDefault: boolean;
   isVisionModel: boolean;
+  toolDefaults: (disabled: boolean) => ReactNode;
   onClose: () => void;
   /** Writes the row; resolves with whether it landed (the host closes the dialog when it did). */
   onSubmit: (row: RowState, action: DialogAction) => Promise<boolean>;
@@ -3647,11 +3674,21 @@ function ModelDialog({
         </Button>
         {/* Setting the default writes the draft with it, so it waits
             for it to be valid, like Save; removing writes nothing of the draft. */}
-        {!isNew && !isDefault && (
-          <Button size="sm" disabled={saving || !valid} onClick={() => setConfirming("setDefault")}>
-            {S.models.setDefault}
-          </Button>
-        )}
+        {!isNew &&
+          row &&
+          row.chatEligible !== false &&
+          sameModelRef(row, form) &&
+          row.clientType === form.clientType &&
+          !isDefault && (
+            <Button
+              size="sm"
+              disabled={saving || !valid}
+              onClick={() => setConfirming("setDefault")}
+            >
+              {S.models.setDefault}
+            </Button>
+          )}
+        {!isNew && toolDefaults(changed || saving)}
         {!isNew && (
           <>
             <span className="min-w-0 flex-1" />
@@ -4066,10 +4103,12 @@ function ModelDialog({
                   {form.modelId}
                 </span>
               )}
-              {(isDefault || form.vision || isVisionModel) && (
+              {(isDefault || (form.vision && form.chatEligible !== false) || isVisionModel) && (
                 <span className="flex flex-wrap items-center gap-1 pt-0.5">
                   {isDefault && <Pill tone={TAG_TONE.status}>{S.models.default}</Pill>}
-                  {form.vision && <Pill tone={TAG_TONE.capability}>{S.models.visionBadge}</Pill>}
+                  {form.vision && form.chatEligible !== false && (
+                    <Pill tone={TAG_TONE.capability}>{S.models.visionBadge}</Pill>
+                  )}
                   {isVisionModel && (
                     <Pill tone={TAG_TONE.capability}>{S.models.visionModelBadge}</Pill>
                   )}

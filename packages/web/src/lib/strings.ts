@@ -24,6 +24,8 @@ export const zh = {
   appName: "PenguinHarness",
 
   voice: {
+    setToolModel: (name: string) => `设置为默认${name}模型`,
+    currentToolModel: (name: string) => `当前默认${name}模型`,
     models: "默认多模态模型",
     modelHelp: (project: string) =>
       `penguin tools 命令在「${project}」中使用以下默认模型。聊天中的语音输入和朗读也使用这里的语音模型。`,
@@ -7147,6 +7149,7 @@ Benchmark：
       memory_import_confirm_required: "本次导入会覆盖或删除已有记忆，请确认后继续。",
       schedule_exists: "已存在同名定时任务。",
       schedule_not_found: "该定时任务已不存在。",
+      model_not_chat_eligible: "该模型仅支持专用工具，无法设为默认聊天模型。",
       model_not_addable: "该分组只承载内置模型，不能再添加其他模型；请在自定义分组中添加。",
       penguin_go_protocol_fixed: "Penguin Go 固定使用 MMSP 协议，不能改为其他协议。",
       model_not_routable:

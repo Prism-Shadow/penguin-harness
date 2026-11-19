@@ -16,6 +16,8 @@ export const en: Strings = {
   appName: "PenguinHarness",
 
   voice: {
+    setToolModel: (name: string) => `Set as default ${name.toLowerCase()} model`,
+    currentToolModel: (name: string) => `Default ${name.toLowerCase()} model`,
     models: "Default multimodal models",
     modelHelp: (project: string) =>
       `The penguin tools CLI uses these default models in ${project}. Dictation and read-aloud use the same voice models.`,
@@ -6867,6 +6869,7 @@ Scenarios:
         "This import would overwrite or delete memories. Confirm it to continue.",
       schedule_exists: "A scheduled task with this name already exists.",
       schedule_not_found: "This scheduled task no longer exists.",
+      model_not_chat_eligible: "This model cannot be set as the default for chat.",
       model_not_addable:
         "This group carries its built-in models only; add the model under a custom group.",
       penguin_go_protocol_fixed: "Penguin Go always uses the MMSP protocol; it cannot be changed.",

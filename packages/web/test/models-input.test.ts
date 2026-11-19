@@ -6,9 +6,8 @@
  * - DTO -> row edit state (toRow): provider and modelId are both plain entry
  *   fields with no prefix parsing; the loaded identity (original) is a paired
  *   reference;
- * - Ownership of the default model reference after save
- *   (nextDefaultModel): always compared as pairs; renaming (either provider or
- *   model_id changes) moves the pointer along.
+ * - An explicit default selection is written as a pair. A first model is offered as an
+ *   initial chat default and the server checks whether its route supports conversation.
  * - Which env fallback variables a key hint may promise (detectedEnvKeys):
  *   only those the server reported a value for.
  * - Whether a row has a key (hasKey) and what the card prints for it
@@ -50,7 +49,7 @@ import {
   hasKey,
   keyStatusNote,
   keyStatusText,
-  nextDefaultModel,
+  modelDefaultUpdate,
   rowRef,
   toRow,
   type RowState,
@@ -344,27 +343,14 @@ describe("toRow (DTO → row edit state)", () => {
   });
 });
 
-describe("nextDefaultModel", () => {
-  const original = { provider: "custom", modelId: "m-a" };
-  const moved = { provider: "openai", modelId: "m-a" };
-  const renamed = { provider: "custom", modelId: "m-b" };
-  const edit = { action: "save" as const, defaultModel: original, editing: original };
-  it("follows the default when its model ID or provider changes", () => {
-    expect(nextDefaultModel({ ...edit, ref: moved })).toEqual(moved);
-    expect(nextDefaultModel({ ...edit, ref: renamed })).toEqual(renamed);
-    expect(nextDefaultModel({ ...edit, editing: moved, ref: renamed })).toEqual(original);
-  });
-  it("sets the explicit choice and supplies a default only for the first new model", () => {
-    expect(nextDefaultModel({ ...edit, editing: moved, ref: moved, action: "setDefault" })).toEqual(
-      moved,
-    );
-    expect(
-      nextDefaultModel({ ...edit, editing: null, defaultModel: undefined, ref: moved }),
-    ).toEqual(moved);
-    expect(nextDefaultModel({ ...edit, editing: null, ref: moved })).toEqual(original);
+describe("choosing a default when saving a model", () => {
+  const ref = { provider: "custom", modelId: "local" };
+  it("asks the server to check an initial addition and leaves ordinary edits alone", () => {
+    expect(modelDefaultUpdate("save", true, ref)).toEqual({ initialChatModel: ref });
+    expect(modelDefaultUpdate("save", false, ref)).toEqual({});
+    expect(modelDefaultUpdate("setDefault", false, ref)).toEqual({ defaultModel: ref });
   });
 });
-
 describe("fastModeState (whether the dialog offers the fast-mode switch, and on which protocol)", () => {
   // The provider defaults to a real vendor group, whose entries are routed by the vendor
   // family their model id begins with — the custom-like groups, which resolve to a protocol
