@@ -8,6 +8,13 @@
  *   connects again it is asked once and its tiles open again.
  * - A machine that leaves the Project's list takes its tiles and the tab's copies with it; one
  *   that refuses access loses its tiles at the next read.
+ *
+ * The plugin market across a machine, whose server modules this server's real Project tables own:
+ * - A module the Project lists for the machine alone is removable on the machine's card, though
+ *   the machine reports it in its shared table; the removal goes to this server and leaves the
+ *   machine's own table out of it.
+ * - A module only the machine's own index offers installs through this server, which lists it for
+ *   that machine in the Project's tables.
  */
 import { test, expect } from "@playwright/test";
 import { ADMIN_ID, ADMIN_PASSWORD, login } from "./auth.mjs";
@@ -140,4 +147,122 @@ test("a slow, offline or returning machine only affects its own App Center tiles
       ),
     )
     .toBe(0);
+});
+
+test("the market writes a machine's server modules into this server's Project tables", async ({
+  page,
+}) => {
+  await login(page.request, ADMIN_ID, ADMIN_PASSWORD);
+  await setAccountPrefs(page.request, { lang: "en" });
+  const office = "OfficeMachine001";
+  const tables = project + "/plugins/installed";
+  const listedFor = async (specifier) => {
+    const res = await page.request.get(tables);
+    expect(res.ok(), await res.text()).toBe(true);
+    return (await res.json()).plugins.find((p) => p.specifier === specifier)?.machines ?? null;
+  };
+  // The Project lists one module for the office machine alone, in this server's own tables.
+  const listed = await page.request.post(tables, {
+    data: { specifier: "@example/office-only", machineId: office },
+  });
+  expect(listed.ok(), await listed.text()).toBe(true);
+  expect(await listedFor("@example/office-only")).toEqual([office]);
+
+  const frame = await watchSocket(page);
+  const agentList = await (await page.request.get(agents)).json();
+  const machines = [
+    {
+      id: "ssh:Office",
+      alias: "Office",
+      member: true,
+      local: false,
+      machineId: office,
+      installed: { version: "1", at: "2026-01-01" },
+      connection: { pid: 21 },
+      socket: null,
+      api: null,
+      status: null,
+      root: "/tmp",
+    },
+  ];
+  frame.answer("GET", machinesPath, ok({ machines, imageVersion: "1", job: null, jobs: [] }));
+  const remote = (path) => "/server/" + office + path;
+  frame.answer("GET", remote("/api/plugins"), ok({ groups: [] }));
+  frame.answer(
+    "GET",
+    remote("/api/plugins/registry"),
+    ok({
+      plugins: [
+        {
+          name: "@example/office-tool",
+          version: "1.0.0",
+          description: "Only the office's sources list it.",
+          authors: [],
+          license: "MIT",
+        },
+      ],
+      failures: [],
+      pending: [],
+    }),
+  );
+  // The machine runs what the fleet sync handed it, as its own shared table.
+  frame.answer(
+    "GET",
+    remote(tables),
+    ok({
+      machineId: office,
+      plugins: [
+        {
+          specifier: "@example/office-only",
+          active: true,
+          builtin: false,
+          modules: [],
+          replaces: [],
+          everywhere: true,
+          machines: [],
+          here: true,
+        },
+      ],
+      shipped: [],
+      file: "",
+      restartPending: false,
+    }),
+  );
+  frame.answer("GET", remote(agents), ok(agentList));
+  for (const agent of agentList.agents)
+    frame.answer(
+      "GET",
+      remote(agents + "/" + agent.agentId + "/plugins"),
+      ok({ skills: [], hooks: [], workbenches: [], mcpServers: [] }),
+    );
+
+  await page.goto("/plugins");
+  const writes = () =>
+    frame.calls
+      .filter((c) => c.method !== "GET" && c.path.includes("/plugins/installed"))
+      .map((c) => c.method + " " + c.path.split("?")[0]);
+
+  // Remove: the machine's card offers it, and the removal is this server's.
+  const only = page.locator('[data-plugin="office-only"]');
+  await expect(only).toContainText("Office");
+  await only.locator(".showcase-card-open").click();
+  const remove = page.getByRole("button", { name: "Remove office-only" }).first();
+  await expect(remove).toBeEnabled();
+  await remove.click();
+  await page.getByRole("dialog").getByRole("button", { name: "Remove", exact: true }).click();
+  await expect.poll(() => listedFor("@example/office-only")).toBe(null);
+  expect(writes()).toEqual(["DELETE " + tables]);
+  await page.keyboard.press("Escape");
+
+  // Install: a package only the machine's index offers is listed for it, here.
+  const tool = page.locator('[data-plugin="office-tool"]');
+  await expect(tool).toContainText("Office");
+  await tool.locator(".market-plugin-actions button").first().click();
+  await page.getByRole("dialog").getByRole("button", { name: "Install", exact: true }).click();
+  await expect.poll(() => listedFor("@example/office-tool")).toEqual([office]);
+  expect(writes()).toEqual(["DELETE " + tables, "POST " + tables]);
+  expect(frame.calls.find((c) => c.method === "POST" && c.path === tables)?.body).toEqual({
+    specifier: "@example/office-tool@1.0.0",
+    machineId: office,
+  });
 });

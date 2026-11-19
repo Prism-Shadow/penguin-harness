@@ -234,6 +234,7 @@ export function ShowcaseBoard() {
             cover={<Cover seed="agent-company" hue="amber" logo={LOGO} />}
             title={t.longTitle}
             titleHint="@penguinharness/agent-company"
+            origin={t.origin}
             description={t.longDescription}
           />
           <CoverCard

@@ -32,18 +32,6 @@ import type {
   SessionInfo,
 } from "@prismshadow/penguin-server/api";
 
-import { resetReadStores } from "./read-store";
-
-let catalogUser: string | null = null;
-
-/** Switch the Agent and install snapshots before rendering a different signed-in account. */
-export function setMachineCatalogUser(userId: string | null) {
-  if (catalogUser === userId) return;
-  catalogUser = userId;
-  resetReadStores();
-}
-const accountProject = (projectId: string) => JSON.stringify([catalogUser, projectId]);
-
 const SESSIONS_PREFIX = "penguin.machineSessions.";
 const AGENTS_PREFIX = "penguin.machineAgents.";
 const INSTALLS_PREFIX = "penguin.agentInstalls.";
@@ -124,14 +112,14 @@ export function rememberMachineAgents(
   machineId: string,
   agents: readonly AgentSummary[],
 ): void {
-  remember(AGENTS_PREFIX, accountProject(projectId), machineId, [...agents]);
+  remember(AGENTS_PREFIX, projectId, machineId, [...agents]);
 }
 
 /** The Agents this machine was last seen running. Empty when nothing is remembered. */
 export function cachedMachineAgents(projectId: string, machineId: string): AgentSummary[] {
   return cached<AgentSummary>(
     AGENTS_PREFIX,
-    accountProject(projectId),
+    projectId,
     machineId,
     (row) => typeof (row as AgentSummary).agentId === "string",
   );
@@ -139,7 +127,7 @@ export function cachedMachineAgents(projectId: string, machineId: string): Agent
 
 /** The storage key of one Agent's installs: this server's are kept too, under `-`. */
 const installsKey = (projectId: string, machineId: string | null, agentId: string) =>
-  `${INSTALLS_PREFIX}${accountProject(projectId)}:${machineId ?? "-"}:${agentId}`;
+  `${INSTALLS_PREFIX}${projectId}:${machineId ?? "-"}:${agentId}`;
 
 /**
  * Replaces what one Agent — of this server (`machineId` null) or of a machine — is remembered as
@@ -154,11 +142,7 @@ export function rememberAgentInstalls(
   installs: AgentPluginsInstallResponse,
 ): void {
   try {
-    const snapshot = {
-      ...installs,
-      mcpServers: installs.mcpServers.map((server) => ({ ...server, target: "" })),
-    };
-    localStorage.setItem(installsKey(projectId, machineId, agentId), JSON.stringify(snapshot));
+    localStorage.setItem(installsKey(projectId, machineId, agentId), JSON.stringify(installs));
   } catch {
     // Storage refused or is full: the answer is merely not remembered across the next restart.
   }

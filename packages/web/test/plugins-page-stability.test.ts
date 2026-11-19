@@ -32,7 +32,6 @@ import { en } from "../src/lib/strings-en";
 import {
   cachedAgentInstalls,
   rememberAgentInstalls,
-  setMachineCatalogUser,
   rememberMachineAgents,
 } from "../src/lib/machine-cache";
 import { publishMachinesChanged } from "../src/state/machines";
@@ -160,10 +159,7 @@ async function setReachable(server: AgentServer, reachable: boolean) {
 }
 
 describe("the plugin market while a machine connects, fails or blinks", () => {
-  beforeAll(() => {
-    setMachineCatalogUser("admin");
-    setActiveStrings(en);
-  });
+  beforeAll(() => setActiveStrings(en));
   afterAll(() => setActiveStrings(zh));
   afterEach(async () => {
     await unmountAll();
@@ -288,7 +284,7 @@ describe("the plugin market while a machine connects, fails or blinks", () => {
     expect(headerControls()).toEqual(controls);
     await click(button(en.plugins.viewMachine));
     expect(pickerEntries()).toEqual([
-      en.appCenter.allMachines,
+      en.plugins.allMachines,
       en.plugins.thisServer,
       en.plugins.machineOutOfReach("gpu-box"),
     ]);
@@ -296,9 +292,9 @@ describe("the plugin market while a machine connects, fails or blinks", () => {
 
     await setReachable(server, true);
     await click(button(en.plugins.viewMachine));
-    expect(pickerEntries()).toEqual([en.appCenter.allMachines, en.plugins.thisServer, "gpu-box"]);
+    expect(pickerEntries()).toEqual([en.plugins.allMachines, en.plugins.thisServer, "gpu-box"]);
     await click(button(en.plugins.viewMachine));
     expect(headerControls()).toEqual(controls);
-    expect(picker.texts()).toEqual([en.appCenter.allMachines]);
+    expect(picker.texts()).toEqual([en.plugins.allMachines]);
   });
 });

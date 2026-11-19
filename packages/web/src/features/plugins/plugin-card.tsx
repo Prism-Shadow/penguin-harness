@@ -792,7 +792,7 @@ export function PluginCard(props: PluginCardProps) {
           version={badgeVersion}
           title={title}
           description={description}
-          machineLabel={row.origin?.label}
+          origin={row.origin?.label}
           detailsLabel={title}
           cover={<PluginCover row={row} art={props.art ?? null} />}
           icon={

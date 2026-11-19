@@ -190,6 +190,15 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.showcase-card-origin {
+  display: block;
+  overflow: hidden;
+  color: var(--showcase-fg-muted, color-mix(in srgb, currentColor 62%, transparent));
+  font-size: var(--showcase-text-xs, 0.75rem);
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .showcase-card-desc {
   display: -webkit-box;
   min-height: 2.9em;

@@ -22,7 +22,7 @@ import type { AgentSummary, PluginItem } from "@prismshadow/penguin-server/api";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { PluginsPage } from "../src/features/plugins/plugins-page";
-import { setMachineCatalogUser, rememberMachineAgents } from "../src/lib/machine-cache";
+import { rememberMachineAgents } from "../src/lib/machine-cache";
 import {
   AGENT_ID,
   PROJECT_ID,
@@ -90,10 +90,7 @@ const offers = (verb: string, who: string) =>
   );
 
 describe("installing a library plugin on a machine's Agent", () => {
-  beforeAll(() => {
-    setMachineCatalogUser("admin");
-    setActiveStrings(en);
-  });
+  beforeAll(() => setActiveStrings(en));
   afterAll(() => setActiveStrings(zh));
   afterEach(async () => {
     await unmountAll();

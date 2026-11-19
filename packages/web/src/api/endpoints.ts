@@ -1990,7 +1990,10 @@ export const uninstallAgentPlugin = (
     { method: "DELETE", server: machineId },
   );
 
-/** Plugin index (available to any logged-in user): the merged index of every configured registry. */
+/**
+ * Plugin index (available to any logged-in user): the merged index of every configured registry;
+ * with `machineId`, THAT machine's (its own sources), its icons re-rooted onto it.
+ */
 export const getPluginIndex = (machineId: string | null = null) =>
   apiFetch<PluginIndexResponse>("/api/plugins/registry", { server: machineId }).then((r) => ({
     ...r,
@@ -2037,7 +2040,7 @@ export const themePackFileUrl = (id: string, file: string, v: string): string =>
     .map(encodeURIComponent)
     .join("/")}?v=${encodeURIComponent(v)}`;
 
-/** An index entry's README.md, read from the package on this server; `readme` is null when the package is not here or has none. */
+/** An index entry's README.md, read from the package on this server (or on `machineId`); `readme` is null when the package is not there or has none. */
 export const getPluginReadme = (name: string, machineId: string | null = null) =>
   apiFetch<PluginReadmeResponse>(`/api/plugins/registry/readme?name=${encodeURIComponent(name)}`, {
     server: machineId,
@@ -3079,10 +3082,8 @@ export const installPluginStream = async (
   specifier: string,
   machineId: string | null,
   onProgress: InstallProgressListener,
-  server: string | null = null,
 ): Promise<InstalledPluginsResponse> => {
   const response = await apiFetchStream(pluginsPath(projectId), {
-    server,
     method: "POST",
     body: machineId === null ? { specifier } : { specifier, machineId },
     headers: { accept: "text/event-stream" },
@@ -3150,13 +3151,12 @@ export const uninstallPlugin = (
   projectId: string,
   specifier: string,
   machineId: string | null = null,
-  server: string | null = null,
 ) =>
   apiFetch<InstalledPluginsResponse>(
     `${pluginsPath(projectId)}?specifier=${encodeURIComponent(specifier)}${
       machineId === null ? "" : `&machineId=${encodeURIComponent(machineId)}`
     }`,
-    { method: "DELETE", server },
+    { method: "DELETE" },
   );
 
 /**

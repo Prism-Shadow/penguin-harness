@@ -26,7 +26,7 @@ import type { AgentSummary, SessionsBatchRequest } from "@prismshadow/penguin-se
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { AgentsPage } from "../src/features/agents/agents-page";
-import { setMachineCatalogUser, rememberMachineAgents } from "../src/lib/machine-cache";
+import { rememberMachineAgents } from "../src/lib/machine-cache";
 import { PROJECT_ID, agentServer, mountAgentApp, topDialog, whereIs } from "./helpers/agent-app";
 import type { FakeMachine } from "./helpers/agent-app";
 import { button, click, type, unmountAll, waitFor } from "./helpers/dom";
@@ -69,10 +69,7 @@ async function openPage(machines: FakeMachine[]) {
 }
 
 describe("a machine's Agents on the Agents page", () => {
-  beforeAll(() => {
-    setMachineCatalogUser("admin");
-    setActiveStrings(en);
-  });
+  beforeAll(() => setActiveStrings(en));
   afterAll(() => setActiveStrings(zh));
   afterEach(async () => {
     await unmountAll();

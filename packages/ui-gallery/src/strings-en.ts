@@ -2297,11 +2297,12 @@ export const en: GalleryStrings = {
       listView: "List",
       cards: "Cover cards",
       cardsHint:
-        "Short words, overlong words, a card with tags, facts and two controls, one with none of them, and the placeholder while a list is read.",
+        "Short words, overlong words with the machine it came from, a card with tags, facts and two controls, one with none of them, and the placeholder while a list is read.",
       shortTitle: "Goal Mode",
       shortDescription: "Loop the session on an objective until it is done.",
       longTitle:
         "Agent Company: setup, the employee protocol and the CEO, HR, finance, research and mirror playbooks",
+      origin: "Lab GPU box",
       longDescription:
         "Run a Project's agents as a company: create the organization with the user one question at a time, then the employee protocol every desk and ticket session follows, plus the CEO, HR and finance playbooks.",
       fullTitle: "PenguinHarness Q&A Assistant",

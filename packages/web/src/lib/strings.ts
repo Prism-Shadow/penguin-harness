@@ -1409,7 +1409,6 @@ export const zh = {
     windowFullScreen: "全屏打开",
     /** Machines whose apps could not be read just now: what they last showed stays on the grid. */
     machinesOffline: (names: string) => `暂时无法连接：${names}。已缓存的内容仍可查看。`,
-    allMachines: "所有机器",
     aiCreateTitle: "用 AI 创建应用",
     aiCreateDescription: "选定的 Agent 会做一个 Workbench，并让它出现在应用中心。",
     aiCreatePlaceholder: "描述你想要的应用，例如：一个记录每日待办的看板",
@@ -3413,6 +3412,8 @@ export const zh = {
     /** The header's machine picker: which machine's plugins the page shows and edits. */
     viewMachine: "机器",
     thisServer: "本机",
+    /** The machine picker's first choice: every machine's cards at once (the default). */
+    allMachines: "所有机器",
     /** A row the Project lists for a machine that has not reported it running yet. */
     notSynced: "尚未同步到该机器",
     /** The tag on a row the shared table lists, and its tooltip (Remove is unavailable on it). */

@@ -1,3 +1,10 @@
+/**
+ * What each of the Project's machines offers the plugin market, read on that machine: its
+ * library, its registry index and the server modules it runs. The answers are kept for the tab
+ * (lib/catalog-storage.ts) as display data only — no file locations, no MCP setup or targets — so
+ * a machine out of reach keeps its cards. Which rows they make, and where each row's actions go,
+ * is market-rows.ts.
+ */
 import type {
   InstalledPluginsResponse,
   PluginGroupItem,
@@ -6,7 +13,7 @@ import type {
 import * as api from "../../api/endpoints";
 import { createCatalogStore } from "../../lib/catalog-storage";
 import { useMachineCatalogs } from "../../lib/machine-catalogs";
-import { moduleParts, pluginRows, type PluginRow } from "./plugin-groups";
+import type { MachineMarketData } from "./market-rows";
 
 const libraries = createCatalogStore<PluginGroupItem[]>(
   "plugin-libraries.v1",
@@ -119,65 +126,51 @@ const deployments = createCatalogStore<InstalledPluginsResponse>(
 const loadLibrary = (_: string, id: string) => api.getPluginLibrary(id).then((r) => r.groups);
 const loadIndex = (_: string, id: string) => api.getPluginIndex(id).then((r) => r.plugins);
 
-export function useMachineMarkets(projectId: string | null) {
+/** One machine's market as the page reads it: its answers (market-rows.ts), and how to ask again. */
+export interface MachineMarket extends MachineMarketData {
+  /** Out of reach, or one of its reads failed: its cards stand as last answered. */
+  unavailable: boolean;
+  /** Connected, and a read failed: asking again may help. */
+  retryable: boolean;
+  /** Connected and asked, with no answer yet about the modules it runs and no failure either. */
+  runningPending: boolean;
+  /** Asks the machine for all three again. */
+  refresh: () => void;
+  /** Asks the machine again for the modules it runs, and settles when it has answered. */
+  rereadRunning: () => Promise<void>;
+}
+
+/**
+ * Every machine's library, registry index and running modules, each read on that machine
+ * through this server's proxy (lib/machine-catalogs.ts), in the machines list's order.
+ */
+export function useMachineMarkets(projectId: string | null): MachineMarket[] {
   const libs = useMachineCatalogs(libraries, projectId, loadLibrary);
   const registry = useMachineCatalogs(indexes, projectId, loadIndex);
   const installed = useMachineCatalogs(deployments, projectId, api.getInstalledPlugins);
   return libs.map((library, i) => {
     const index = registry[i]!;
-    const deployment = installed[i]!;
-    const { machineId, label } = library.machine;
-    const rows = pluginRows(library.value ?? [], moduleParts(deployment.value, index.value ?? []));
+    const running = installed[i]!;
+    const connected = library.machine.link === "connected";
+    const failed = Boolean(library.error || running.error || index.error);
     return {
-      machineId,
-      label,
-      groups: library.value ?? [],
-      deployment,
-      index,
-      retryable:
-        library.machine.link === "connected" &&
-        Boolean(library.error || deployment.error || index.error),
-      unavailable:
-        library.machine.link !== "connected" ||
-        !!(library.error || deployment.error || index.error),
-      rows: rows.map((row) => ({
-        ...row,
-        key: machineId + "/" + row.key,
-        origin: {
-          machineId,
-          label,
-          live: row.library
-            ? library.live
-            : deployment.live && (row.module?.entry ? index.live : true),
-        },
-      })),
+      machineId: library.machine.machineId,
+      label: library.machine.label,
+      library: library.value,
+      index: index.value,
+      running: running.value,
+      libraryLive: library.live,
+      indexLive: index.live,
+      runningLive: running.live,
+      unavailable: !connected || failed,
+      retryable: connected && failed,
+      runningPending: connected && running.value === null && running.error === null,
       refresh: () => {
         library.refresh();
-        deployment.refresh();
+        running.refresh();
         index.refresh();
       },
+      rereadRunning: running.reread,
     };
   });
-}
-
-export type MachineMarket = ReturnType<typeof useMachineMarkets>[number];
-
-/** Common packages get one card; installations or versions available only elsewhere keep their origin. */
-export function combinedMarketRows(local: PluginRow[], machines: MachineMarket[]): PluginRow[] {
-  const packageKey = (row: PluginRow) => row.library?.package ?? row.module?.specifier ?? row.name;
-  const here = new Map(local.map((row) => [packageKey(row), row]));
-  return [
-    ...local,
-    ...machines.flatMap((machine) =>
-      machine.rows.filter((row) => {
-        const other = here.get(packageKey(row));
-        if (!other) return true;
-        if (row.library && (!other.library || other.library.version !== row.library.version))
-          return true;
-        return (
-          row.module && row.module.state !== "none" && row.module.state !== other.module?.state
-        );
-      }),
-    ),
-  ];
 }

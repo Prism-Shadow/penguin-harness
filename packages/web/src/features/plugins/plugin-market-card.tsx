@@ -22,7 +22,8 @@ interface MarketPluginCardProps {
   quick: MarketAction;
   name?: string | undefined;
   version?: string | undefined;
-  machineLabel?: string | undefined;
+  /** The machine the card came from, in the market across machines; absent for this server's. */
+  origin?: string | undefined;
 }
 
 export function MarketPluginCard({
@@ -37,7 +38,7 @@ export function MarketPluginCard({
   quick,
   name,
   version,
-  machineLabel,
+  origin,
 }: MarketPluginCardProps) {
   return (
     <CoverCard
@@ -48,10 +49,10 @@ export function MarketPluginCard({
       cover={layout === "cover" ? cover : icon}
       title={title}
       titleHint={detailsLabel}
+      {...(origin !== undefined ? { origin } : {})}
       description={description}
       onOpen={onOpen}
     >
-      {machineLabel && <span className="truncate text-xs text-fg-muted">{machineLabel}</span>}
       {version && <span className="market-plugin-version">v{version}</span>}
       <div className="market-plugin-actions">
         {[install, quick].map((action, index) => (

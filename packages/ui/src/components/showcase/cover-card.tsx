@@ -1,7 +1,8 @@
 /**
  * A cover card: one thing in a showcase grid, led by its cover — a plugin in the market, in the
- * Web App and on the public site alike. Under the cover: the title on one line, the description
- * on two (the box holds two lines whether the text fills them or not, so a row of cards lines
+ * Web App and on the public site alike. Under the cover: the title on one line — and, in a grid
+ * that gathers several sources, the card's own (`origin`: the machine it came from) on one line
+ * under it — the description on two (the box holds two lines whether the text fills them or not, so a row of cards lines
  * up), then a foot: the tag line across the card's width, and under it the facts with the
  * card's controls at the line's end. The tag line never shares a line with the controls, so two
  * or three controls never squeeze it into wrapping and the feet of one grid row line up.
@@ -26,6 +27,11 @@ export interface CoverCardProps extends Omit<HTMLAttributes<HTMLElement>, "title
   title: string;
   /** The id behind a display name, on the title's hover. */
   titleHint?: string;
+  /**
+   * Where the thing comes from, when the grid gathers several sources (the market across a
+   * Project's machines: the machine's name). Part of the opener, so its accessible name says it.
+   */
+  origin?: string;
   description: string;
   /** The tag line's items, keyed. Empty or omitted: no line. */
   tags?: ReactNode[];
@@ -45,6 +51,7 @@ export function CoverCard({
   cover,
   title,
   titleHint,
+  origin,
   description,
   tags,
   meta,
@@ -67,6 +74,7 @@ export function CoverCard({
         >
           {title}
         </span>
+        {origin !== undefined && <span className="showcase-card-origin">{origin}</span>}
         <span className="showcase-card-desc">{description}</span>
       </span>
     </>

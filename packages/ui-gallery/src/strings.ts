@@ -2228,10 +2228,11 @@ export const zh = {
       listView: "列表",
       cards: "封面卡片",
       cardsHint:
-        "短文字、超长文字、带标签与信息行和两个操作的卡片、什么都不带的卡片，以及列表读取中的占位。",
+        "短文字、带来源机器的超长文字、带标签与信息行和两个操作的卡片、什么都不带的卡片，以及列表读取中的占位。",
       shortTitle: "目标模式",
       shortDescription: "让会话循环推进一个目标直到完成。",
       longTitle: "智能体公司：组织、员工协议、CEO、人事、财务、科研与镜像公司的完整操作手册",
+      origin: "实验室 GPU 机",
       longDescription:
         "把 Project 里的 Agent 组织成一家公司：先与用户一问一答地创建组织，再是每个工位会话与工单会话都遵循的员工协议，以及 CEO、人事与财务的操作手册。",
       fullTitle: "PenguinHarness 问答助手",
