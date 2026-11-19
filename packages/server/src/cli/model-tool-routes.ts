@@ -1,5 +1,6 @@
-import { getModel, modelOperation } from "@prismshadow/penguin-core";
-import { estimateImageToolCost } from "../services/capability-cost.js";
+import { modelOperation } from "@prismshadow/penguin-core";
+import { ratesAt, type TieredRates } from "../services/usage-service.js";
+import { estimateToolCost } from "../services/capability-cost.js";
 import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { ModelOperation as Capability, CapabilityCliReply } from "../api/capabilities.js";
@@ -105,17 +106,28 @@ export function capabilityRoutes(deps: CapabilityDependencies) {
     limit: number,
     offset: number,
   ) => {
-    const config = await deps.projects.loadConfig(project);
-    return deps.runs
-      .list(project, session, limit, offset)
-      .map(({ text: _text, sources: _sources, ...record }) => {
-        if (record.capability !== "image") return record;
-        const model = getModel(config, {
-          provider: record.model.provider,
-          model_id: record.model.modelId,
-        });
-        return { ...record, estimatedCost: estimateImageToolCost(record, model?.pricing) };
-      });
+    const records = deps.runs.list(project, session, limit, offset);
+    const lookups = new Map<string, Promise<TieredRates | undefined>>();
+    return Promise.all(
+      records.map(async ({ text: _text, sources: _sources, ...record }) => {
+        const { provider, modelId } = record.model;
+        const key = JSON.stringify([provider, modelId]);
+        let lookup = lookups.get(key);
+        if (!lookup) {
+          lookup = deps.projects.getPricing(project, provider, modelId);
+          lookups.set(key, lookup);
+        }
+        const tiered = await lookup;
+        const rate = tiered && ratesAt(tiered, provider, modelId, new Date(record.createdAt));
+        const pricing = rate && {
+          unit: "usd_per_mtok" as const,
+          cache_read: rate.cacheRead,
+          cache_write: rate.cacheWrite,
+          output: rate.output,
+        };
+        return { ...record, estimatedCost: estimateToolCost(record, pricing) };
+      }),
+    );
   };
   app.get("/usage", async (c) => {
     const project = requireValidId(c, "projectId");
