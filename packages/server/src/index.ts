@@ -42,9 +42,9 @@ import type { ExtensionGate } from "./builtin-browser/extension-ws.js";
 import { loopbackHostRoles } from "./services/preview-token.js";
 import { acquireServerLock, liveServerLock, releaseServerLock } from "./lock.js";
 import { shellPortOf, wireShellUpdatePort } from "./services/desktop-update-port.js";
-import type { Settings } from "./mechanisms/settings.js";
-import type { Errors } from "./mechanisms/observability.js";
-import type { Auth } from "./mechanisms/identity.js";
+import type { Settings } from "@prismshadow/penguin-library-setting";
+import type { Errors } from "@prismshadow/penguin-library-observability";
+import type { Auth } from "@prismshadow/penguin-library-auth";
 
 /**
  * The startup lifecycle: one line per step, in the order they have to happen.

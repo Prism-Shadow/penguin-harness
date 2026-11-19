@@ -8,9 +8,9 @@ import type { Plugin } from "@prismshadow/penguin-core/plugin";
         id: "plan.card",
         title: "Plan mode",
         titleZh: "计划模式",
-        descriptionZh: "先讨论需求、阅读相关文件、来回调整方案，批准后再开始执行。",
-        shortDescription: "Discuss and revise a plan before approving it for execution.",
-        shortDescriptionZh: "先讨论和修订方案，批准后再执行。",
+        descriptionZh: "与智能体讨论目标、方案和取舍，必要时一起画架构图或撰写规划文档。",
+        shortDescription: "Discuss the approach and architecture before starting a task.",
+        shortDescriptionZh: "先讨论做法和架构，再开始任务。",
         category: "office-productivity",
         icon: "icon.svg",
         quickStart: {
@@ -24,7 +24,7 @@ import type { Plugin } from "@prismshadow/penguin-core/plugin";
     "PluginLibraryModule.hooks": [
       {
         id: "plan.hooks",
-        version: "2026.11.18.1",
+        version: "2026.11.19.1",
         path: "hooks",
         user_prompt: [{ command: "discuss.mjs", timeout: 15, trigger: "host" }],
       },

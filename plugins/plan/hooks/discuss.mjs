@@ -1,23 +1,6 @@
-// The host calls this only on a planning turn. The host owns approval and the tool boundary.
-import fs from "node:fs";
-const { workspace } = JSON.parse(fs.readFileSync(0, "utf8"));
-let entries = [];
-if (typeof workspace === "string") {
-  try {
-    entries = fs
-      .readdirSync(workspace, { withFileTypes: true })
-      .filter((entry) => !entry.name.startsWith("."))
-      .slice(0, 60)
-      .map((entry) => entry.name + (entry.isDirectory() ? "/" : ""));
-  } catch {
-    /* A workspace listing is optional; attached context may be sufficient. */
-  }
-}
 const context = [
-  "Plan mode is active. Work with the user in their language. Treat this as a discussion until they use the approval control.",
-  "Understand the outcome and constraints first. Read relevant files with read_file. Ask focused questions when an answer would change the approach. Let the user ask questions or revise earlier decisions over as many turns as needed.",
-  "When the scope is sufficiently clear, give the current complete proposal under a Markdown heading exactly '## Plan' in English or '## 实施方案' in Chinese. Describe the changes, sequence and how to verify them, including decisions the user needs to review. If still asking questions, omit the proposal heading.",
-  "Do not start implementation, run commands, call other agents, change files or claim that discussion or text has approved a proposal. Only the separate user approval action starts execution.",
+  "For this user message, plan together in the user's language. For a new task, start by checking the desired outcome, scope and constraints against the conversation and relevant files. Focus on the decisions that could change how you implement it.",
+  "For a substantial design, work as you would on an RFC. Explain the proposed approach and why, compare realistic alternatives and trade-offs, and ask about the open decisions. When components or data flow matter, sketch the architecture (for example, a Mermaid diagram). Keep simple tasks brief.",
+  "Use the conversation to refine the design. You can write a planning document, diagram or browsable documentation site in the workspace when it helps the user review the work. Once the direction is clear from what the user has said, carry it out in this conversation. For follow-ups, continue from decisions already made.",
 ];
-if (entries.length) context.push("Names present at the workspace root: " + JSON.stringify(entries));
 process.stdout.write(JSON.stringify({ context: context.join("\n\n") }));

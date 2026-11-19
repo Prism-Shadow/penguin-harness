@@ -1,7 +1,7 @@
 {
   "name": "@penguinharness/plan",
   "version": "0.2.18",
-  "description": "Plan tasks together, revise the proposal, and approve a version before work begins.",
+  "description": "Discuss goals, trade-offs and architecture before implementing a task.",
   "keywords": [
     "penguin-plugin",
     "penguinharness",

@@ -32,6 +32,7 @@ import {
   userAgent,
 } from "@prismshadow/penguin-core";
 import safeRegex from "safe-regex";
+import { indexMirrorRules } from "./mirror-settings.js";
 import { resolvePluginPackage } from "./loader.js";
 import type { PluginBase } from "./loader.js";
 
@@ -299,26 +300,18 @@ export function selectIndexChannel(
 }
 
 /**
- * Answers one package name's github channel from the published index — the entry whose
+ * Answers one package name's github channel from the configured index sources — the entry whose
  * version the requested one (when the caller has one) selects — fetched at most once
  * per TTL (the same cadence the Plugins page reads at) and consulted only when npm has
- * already failed on the name — installs are rare, so no standing fetch. A source that is
- * down answers "no channel": the npm failure is the news then, not the index's silence.
+ * already failed on the name — installs are rare, so no standing fetch. The sources are read
+ * in the configured order and merged first-come-first-served: the first source to register a
+ * package provides every version row for it, and a later source listing the same package adds
+ * nothing (the listing's mergeIndexes rule). A source that is down contributes no
+ * rows: the npm failure is the news then, not the index's silence.
  */
 export function indexChannelLookup(
-  indexUrl: string | null,
-  {
-    fetchImpl = fetch,
-    ttlMs = INDEX_CACHE_TTL_MS,
-    now = Date.now,
-    proxy = [],
-  }: {
-    fetchImpl?: typeof fetch;
-    ttlMs?: number;
-    now?: Clock;
-    /** The deployment's rewrite rules, applied to every channel this source serves. */
-    proxy?: readonly PluginProxyRule[];
-  } = {},
+  readUrls: () => readonly string[],
+  { fetchImpl = fetch, ttlMs = INDEX_CACHE_TTL_MS, now = Date.now } = {},
 ): (
   name: string,
   version?: string,
@@ -326,32 +319,52 @@ export function indexChannelLookup(
   // Every version the index carries for a name, not one row per name: the request's version
   // is what picks among them (selectIndexChannel), and collapsing to one row per name would
   // make the index's last-listed version the only one a channel could serve.
-  let cache: { at: number; byName: Map<string, IndexDocumentEntry[]> } | null = null;
+  let cache: {
+    at: number;
+    urls: string;
+    byName: Map<string, IndexDocumentEntry[]>;
+  } | null = null;
   return async (name, version) => {
-    if (indexUrl === null) return { channel: null, fault: null };
+    const urls = readUrls();
+    if (urls.length === 0) return { channel: null, fault: null };
     const at = now();
-    if (cache === null || at - cache.at > ttlMs) {
-      let entries: IndexDocumentEntry[];
-      try {
-        entries = await httpPluginRegistry([indexUrl, ...pluginProxyMirrors(indexUrl, proxy)], {
-          fetchImpl,
-        }).index();
-      } catch {
-        return { channel: null, fault: null };
+    if (cache === null || at - cache.at > ttlMs || cache.urls !== urls.join(" ")) {
+      // The sources merge first-come-first-served, as the listing's mergeIndexes does: the
+      // first source to register a name provides every row for it — the whole entry rides
+      // that first registration, no field merging — and a later source listing the same
+      // name contributes nothing. The registration happens per SOURCE, not per row, so a
+      // source's own several versions of a package all land (the request's version picks
+      // among them, as selectIndexChannel does for a single-source index); a source that
+      // answers nothing registers nothing, so the next source to actually list the name is
+      // the one whose rows answer.
+      const rows: IndexDocumentEntry[] = [];
+      const mirrors = indexMirrorRules();
+      const registered = new Set<string>();
+      for (const url of urls) {
+        try {
+          const fromSource = await httpPluginRegistry([url, ...pluginProxyMirrors(url, mirrors)], {
+            fetchImpl,
+          }).index();
+          const fresh = fromSource.filter((entry) => !registered.has(entry.name));
+          for (const entry of fresh) registered.add(entry.name);
+          rows.push(...fresh);
+        } catch {
+          // A dead source shortens the rows this lookup sees; it does not fail the lookup.
+        }
       }
       const byName = new Map<string, IndexDocumentEntry[]>();
-      for (const entry of entries) {
-        const rows = byName.get(entry.name);
-        if (rows === undefined) byName.set(entry.name, [entry]);
-        else rows.push(entry);
+      for (const entry of rows) {
+        const same = byName.get(entry.name);
+        if (same === undefined) byName.set(entry.name, [entry]);
+        else same.push(entry);
       }
-      cache = { at, byName };
+      cache = { at, urls: urls.join(" "), byName };
     }
-    const rows = cache.byName.get(name);
-    if (rows === undefined) return { channel: null, fault: null };
-    const picked = selectIndexChannel(rows, version);
-    if (picked.channel !== null && proxy.length > 0) {
-      const mirrors = pluginProxyMirrors(picked.channel.url, proxy);
+    const pool = cache.byName.get(name);
+    if (pool === undefined) return { channel: null, fault: null };
+    const picked = selectIndexChannel(pool, version);
+    if (picked.channel !== null) {
+      const mirrors = pluginProxyMirrors(picked.channel.url, indexMirrorRules());
       if (mirrors.length > 0) picked.channel = { ...picked.channel, mirrors };
     }
     return picked;
@@ -377,8 +390,6 @@ export function indexChannelLookup(
  * mainstream browsers. Anything a URL can carry, the pattern may name; refused at parse.
  */
 export const REWRITE_PATTERN_MAX = 65536;
-/** The rule list a deployment carries; more than this is a misconfiguration, not a proxy. */
-export const PROXY_RULES_MAX = 32;
 
 export interface PluginProxyRule {
   /** The rule's type; "rewrite" maps a URL onto another shape via `match` and `rewrite`. */
@@ -637,13 +648,11 @@ export const NIGHTLY_INDEX_URL =
   "https://github.com/Prism-Shadow/penguin-extensions/releases/download/nightly/index.json";
 
 /**
- * The proxy rules a deployment with no proxy config of its own falls back to, in rule
- * order — the built-in set a deployment overrides with PENGUIN_PLUGIN_PROXY.
- * Empty by default: naming the endpoints is a deployment's call (which third-party
- * services to lean on for GitHub Pages, GitHub Releases and npm in its region), not this
- * constant's — a default here would be a service choice made without the deployer.
+ * The mirrors the two fetches try after the source's own URL come from a user's setting
+ * (Settings → Plugins → Plugin mirrors, plugin/mirror-settings.ts) — which third-party
+ * services to lean on is a service choice a user makes, applied through that group's
+ * watch, not a constant here.
  */
-export const PLUGIN_DEFAULT_PROXY_RULES: readonly PluginProxyRule[] = [];
 
 /** Wall-clock reader, injectable so a cache's TTL is deterministic in tests. */
 export type Clock = () => number;
@@ -681,6 +690,8 @@ export interface IndexSnapshot {
   /** When the document was fetched (ms since the epoch). */
   at: number;
   entries: IndexDocumentEntry[];
+  /** The URL the document was fetched from; a successor only seeds the same URL's registry. */
+  url?: string;
 }
 
 /** A cached registry also hands out its last good document, for a successor to start from. */
@@ -715,7 +726,10 @@ export function cachedRegistry(
       .index()
       .then(
         (entries) => {
-          good = { at: now(), entries };
+          // The snapshot names the source it was fetched from: what a successor parks (and
+          // seeds) carries its URL, so a saved change of the sources cannot hand the old
+          // source's entries to the new one.
+          good = { at: now(), entries, url: inner.source };
           failed = null;
           return entries;
         },

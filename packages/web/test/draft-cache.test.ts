@@ -70,10 +70,13 @@ describe("parseDraft (field-by-field validation)", () => {
     });
   });
 
-  it("restores a Plan quick start and accepts only one mode per draft", () => {
+  it("restores a Plan quick start and accepts independent mode choices", () => {
     expect(parseDraft(JSON.stringify({ plan: true }))).toEqual({ plan: true });
     expect(parseDraft(JSON.stringify({ plan: "yes" }))).toEqual({});
-    expect(parseDraft(JSON.stringify({ goal: true, plan: true }))).toEqual({ goal: true });
+    expect(parseDraft(JSON.stringify({ goal: true, plan: true }))).toEqual({
+      goal: true,
+      plan: true,
+    });
   });
 
   it("the AI-prefill mark round-trips only as true, so nothing else can pass for it", () => {

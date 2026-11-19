@@ -6,6 +6,27 @@
  *   - Session-level: /api/sessions/:sessionId/* (no projectId; looks up project_id via the
  *     sessions index, then goes through requireProjectAccess; 404 if the index has no such Session).
  */
+import type {
+  SessionCategory,
+  TraceIndex,
+  TraceIndexStore,
+  Traces,
+} from "@prismshadow/penguin-library-trace";
+import type {
+  ApprovalMode,
+  SessionSandbox,
+  Schedules,
+  SessionDrivers,
+  SessionIndex,
+  SessionOrigins,
+} from "@prismshadow/penguin-library-session";
+import type {
+  ServerEvent,
+  Access,
+  ProjectConfigStore,
+  ProjectEvents,
+} from "@prismshadow/penguin-library-project";
+import type { UserDraftsStore, Auth } from "@prismshadow/penguin-library-auth";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { Hono } from "hono";
@@ -21,13 +42,10 @@ import {
 } from "@prismshadow/penguin-core";
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import type {
-  ApprovalMode,
   FilesStatResponse,
   GoalResponse,
   GoalStateView,
   RecalledMessageResponse,
-  ServerEvent,
-  SessionCategory,
   SessionBatchResult,
   SessionContextResponse,
   SessionCreateResponse,
@@ -40,7 +58,6 @@ import type {
   SubagentMessageResponse,
   RetryNowResponse,
   TaskCreateResponse,
-  SessionSandbox,
 } from "../../api/types.js";
 import { compactionThresholdFor } from "../../services/context-breakdown.js";
 import { sessionMessages, sessionTraceImage } from "../../services/session-history.js";
@@ -50,7 +67,7 @@ import { amspSessionStream } from "../../amsp/session-stream.js";
 import { pendingApprovals } from "../../amsp/approvals.js";
 import { PREVIEW_TOKEN_TTL_MS, resolvePreviewTarget } from "../../services/preview-token.js";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { SessionRow } from "../../db/repos/sessions.js";
+import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
 import { assertWorkspaceAllowed } from "../../services/workspace-guard.js";
 import { isGoalOutcome } from "../../runtime/goal-events.js";
 import { deleteSessionTree } from "../../services/session-deletion.js";
@@ -128,8 +145,8 @@ import {
   INLINE_IMAGE_MAX_BYTES,
   INLINE_IMAGE_MAX_MB,
   toAttachmentLimits,
-} from "../../services/attachment-limits.js";
-import type { AttachmentLimits } from "../../services/attachment-limits.js";
+} from "@prismshadow/penguin-library-setting/attachment-limits";
+import type { AttachmentLimits } from "@prismshadow/penguin-library-setting/attachment-limits";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { Channels, Config, Desktop } from "../../hmr/capabilities.js";
@@ -150,30 +167,16 @@ import { registerWorkspaceFileRoutes, workspaceFilesRoutes } from "./workspace-f
 import { archivedSessionsRoutes } from "./archived-sessions.js";
 import { ArchivedSessionsService } from "../../services/archived-sessions-service.js";
 import { PreviewTokens } from "./preview.js";
-import type {
-  Access,
-  ModelOAuth,
-  ProjectConfigStore,
-  ProjectEvents,
-} from "../../mechanisms/projects.js";
+import type { ModelOAuth } from "@prismshadow/penguin-library-model";
 import type { PlatformAuth } from "../../services/platform-auth-service.js";
 import type { ModelScopeAuth } from "../../services/modelscope-auth-service.js";
-import type {
-  Schedules,
-  SessionDrivers,
-  SessionIndex,
-  SessionOrigins,
-} from "../../mechanisms/sessions.js";
-import type { ErrorLog, UsageQueries } from "../../mechanisms/observability.js";
-import type { TraceIndex, TraceIndexStore, Traces } from "../../mechanisms/traces.js";
+import type { ErrorLog, UsageQueries } from "@prismshadow/penguin-library-observability";
 import type { FileReveal, WorkspaceFiles } from "../../mechanisms/workspace.js";
 import type { Machines } from "../../machines/service.js";
 import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
-import type { Settings } from "../../mechanisms/settings.js";
-import type { UserDraftsStore } from "../../mechanisms/account-data.js";
+import type { Settings } from "@prismshadow/penguin-library-setting";
 import type { LiveStreams } from "../../auth/live-streams.js";
-import type { Auth } from "../../mechanisms/identity.js";
-import type { AgentApi } from "../../mechanisms/agent-api.js";
+import type { AgentApi } from "@prismshadow/penguin-library-agent-api";
 import type { Workbenches } from "../../mechanisms/workbenches.js";
 import type { OrgService } from "../../runtime/organization/service.js";
 
@@ -770,6 +773,9 @@ export function agentSessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
         "modelId and provider must be given together as a model reference pair: specify both, or neither to use the Project's default model.",
       );
     }
+    const planMode = body.planMode;
+    if (planMode !== undefined && typeof planMode !== "boolean")
+      throw badRequest("planMode must be a boolean.");
     const approvalMode = optionalEnum(body, "approvalMode", APPROVAL_MODES);
     const sandbox = parseSandboxPick(body);
     // Creating-client hint stored on the row ("cli" from the CLI; default "web"). Provenance:
@@ -796,6 +802,7 @@ export function agentSessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       ...(provider !== undefined ? { provider } : {}),
       ...(workspace !== undefined ? { workspace } : {}),
       ...(approvalMode !== undefined ? { approvalMode } : {}),
+      ...(planMode === true ? { planMode } : {}),
       ...(sandbox !== undefined ? { sandbox, isAdmin: c.var.user.isAdmin } : {}),
       ...(client !== undefined ? { client } : {}),
       ...(source !== undefined ? { source } : {}),
@@ -838,6 +845,9 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
   app.patch("/:sessionId", async (c) => {
     const row = resolveSession(c);
     const body = await readJson(c);
+    const planMode = body.planMode;
+    if (planMode !== undefined && typeof planMode !== "boolean")
+      throw badRequest("planMode must be a boolean.");
     const approvalMode = optionalEnum(body, "approvalMode", APPROVAL_MODES);
     const thinkingLevel = optionalEnum(body, "thinkingLevel", THINKING_LEVEL_NAMES);
     const sandbox = parseSandboxPick(body);
@@ -868,6 +878,7 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       }
     }
     if (
+      planMode === undefined &&
       approvalMode === undefined &&
       sandbox === undefined &&
       thinkingLevel === undefined &&
@@ -877,7 +888,7 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       throw new HttpError(
         400,
         "no_update",
-        "No updatable field provided (approvalMode / sandbox / thinkingLevel / archived / title).",
+        "No updatable field provided (planMode / approvalMode / sandbox / thinkingLevel / archived / title).",
       );
     }
     // Every check before any write: the sandbox pick's (the non-admin ceiling, what this server
@@ -900,6 +911,7 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       );
     }
     let updated: SessionRow = { ...row };
+    if (planMode !== undefined) deps.sessionsRepo.setPlanMode(row.sessionId, planMode);
     if (title !== undefined) {
       // Manual renaming takes priority over auto-generation: TitleGenerator only ever replaces the fallback title it wrote itself, never a manual rename.
       deps.sessionsRepo.updateTitle(row.sessionId, title);
@@ -1168,42 +1180,10 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     });
   });
 
-  app.get("/:sessionId/plan", (c) => {
-    const row = resolveSession(c);
-    return c.json({ plan: deps.sessionsRepo.getPlan(row.sessionId) });
-  });
-
-  app.post("/:sessionId/plan", async (c) => {
-    const row = resolveSession(c);
-    if (c.var.sessionVia === "token")
-      throw new HttpError(
-        403,
-        "plan_user_only",
-        "Only a signed-in user can change or approve a plan.",
-      );
-    const { action, revision, language } = await readJson(c);
-    if (action !== "enable" && action !== "exit" && action !== "approve")
-      throw badRequest("Invalid plan action.");
-    if (action === "approve" && typeof revision !== "string")
-      throw badRequest("Approving requires the proposal revision.");
-    if (action === "approve") deps.drivers?.note(row.sessionId, c.var.user.userId);
-    const plan = await deps.manager.changePlan(
-      row.sessionId,
-      action,
-      typeof revision === "string" ? revision : undefined,
-      language === "zh" ? "zh" : "en",
-    );
-    return c.json({ plan });
-  });
-
   app.post("/:sessionId/tasks", async (c) => {
     const row = resolveSession(c);
     const body = await readJson(c);
     const goal = parseGoalField(body);
-    if (body.plan !== undefined && body.plan !== true)
-      throw badRequest("plan must be true when present.");
-    if (body.plan && (goal || body.interrupt || body.steerIfBusy || body.queueIfBusy))
-      throw badRequest("Plan mode starts an idle task.");
     // Interrupt-then-send is a way of starting a Task now, so it cannot also wait its turn in
     // the queue or open a goal, which never queues.
     const interrupt = body.interrupt === true;
@@ -1280,7 +1260,6 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       if (driver !== null && !steerIfBusy) deps.drivers?.note(row.sessionId, driver);
       // 202: the Task executes on the server, decoupled from the SSE connection; sessionId is the current actual id (the new id after self-heal).
       const { sessionId, queued, steered } = await deps.manager.startTask(row.sessionId, input, {
-        ...(body.plan === true ? { plan: true } : {}),
         queueIfBusy,
         interrupt,
         steerIfBusy,

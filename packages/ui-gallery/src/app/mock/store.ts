@@ -118,7 +118,6 @@ export class DemoStore {
   readonly lang: Lang;
   /** Signed in as the fixtures' admin, or nobody. */
   signedIn: boolean;
-  readonly planningSessions = new Set<string>();
   readonly userChannel = new Channel();
   readonly evolutionPlayback = new EvolutionClock();
   private readonly live = new Map<string, Live>();
@@ -259,7 +258,6 @@ export class DemoStore {
     this.stopScript(sessionId);
     this.f.sessions.splice(index, 1);
     this.live.delete(sessionId);
-    this.planningSessions.delete(sessionId);
     return true;
   }
 

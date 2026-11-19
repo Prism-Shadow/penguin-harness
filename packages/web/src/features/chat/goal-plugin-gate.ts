@@ -27,8 +27,11 @@ export interface GoalPluginGate {
   install(plugin?: string): Promise<boolean>;
 }
 
-const hasGoalHook = (res: AgentPluginsInstallResponse, plugin: string): boolean =>
-  res.hooks.some((hook) => hook.name === plugin);
+// The preview Plan hook asks for an approval action that no longer exists.
+const hasModeHook = (res: AgentPluginsInstallResponse, plugin: string): boolean =>
+  res.hooks.some(
+    (hook) => hook.name === plugin && (plugin !== "plan" || hook.version !== "2026.11.18.1"),
+  );
 
 /** The gate for one Agent; `machineId` is the machine that holds it (null = this server). */
 export function goalPluginGate(
@@ -38,9 +41,9 @@ export function goalPluginGate(
 ): GoalPluginGate {
   return {
     check: async (plugin = GOAL_PLUGIN) =>
-      hasGoalHook(await getAgentPlugins(projectId, agentId, machineId), plugin),
+      hasModeHook(await getAgentPlugins(projectId, agentId, machineId), plugin),
     install: async (plugin = GOAL_PLUGIN) =>
-      hasGoalHook(await installAgentPlugins(projectId, agentId, [plugin], machineId), plugin),
+      hasModeHook(await installAgentPlugins(projectId, agentId, [plugin], machineId), plugin),
   };
 }
 

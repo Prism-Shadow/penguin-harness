@@ -234,8 +234,12 @@ export function DraftView({
   // Only what the person picked: the rest follows the server's sandbox settings, which the
   // chat-defaults response carries, so the button shows what the Session would start with.
   const [sandboxPick, setSandboxPick] = useState<Partial<SessionSandbox>>(cached.sandbox ?? {});
+  const [planMode, setPlanMode] = useState(cached.plan === true);
   const [modelRef, setModelRef] = useState<ModelRefDto | null>(cached.modelRef ?? null);
   const textRef = useRef(cached.text ?? "");
+  // A restored prompt can match an example. Typing only clears that match once.
+  const [exampleText, setExampleText] = useState<string | null>(cached.text ?? null);
+  const requestedExample = useRef<string | null>(null);
   /**
    * The text came from a "Create with AI" surface rather than a keyboard (`aiPrefill`,
    * draft-cache.ts): it seeded this draft and dies with it. The mark rides in the cache so a
@@ -580,6 +584,7 @@ export function DraftView({
     if (workspaceMachine !== null) data.machineId = workspaceMachine;
     if (agentId) data.agentId = agentId;
     if (modelRef) data.modelRef = modelRef;
+    if (planMode) data.plan = true;
     if (skillsRef.current.length > 0) data.skills = skillsRef.current;
     // Carried through every write, so a reload finds the prefill still marked as composed
     // rather than resuming it as if it had been typed here.
@@ -596,6 +601,7 @@ export function DraftView({
     workspace,
     workspaceMachine,
     approvalMode,
+    planMode,
     sandboxPick,
     modelRef,
   ]);
@@ -611,6 +617,8 @@ export function DraftView({
   const onTextChange = useCallback(
     (text: string) => {
       textRef.current = text;
+      const acceptedExample = text === requestedExample.current;
+      setExampleText((previous) => (acceptedExample || text === previous ? text : null));
       // Editing an AI-composed prefill makes it the user's own text — an ordinary draft, kept
       // when the page is left and parkable like any other (see aiPrefillRef).
       aiPrefillRef.current = false;
@@ -776,11 +784,7 @@ export function DraftView({
   // mode are all locked in together), then the route jumps once sent; returns false on any
   // failure, so the input area keeps the draft and can resend.
   const onSend = useCallback(
-    async (
-      input: TaskInputPart[],
-      goal: { budget: number } | null = null,
-      plan?: boolean,
-    ): Promise<boolean> => {
+    async (input: TaskInputPart[], goal: { budget: number } | null = null): Promise<boolean> => {
       if (!agentId || sendingRef.current) return false;
       sendingRef.current = true;
       const browserScope = browserState().scope;
@@ -789,7 +793,7 @@ export function DraftView({
       const dockScope = currentDockScope();
       let createdId: string | null = null;
       try {
-        const body: SessionCreateRequest = { approvalMode };
+        const body: SessionCreateRequest = { approvalMode, ...(planMode ? { planMode } : {}) };
         if (Object.keys(sandboxPick).length > 0) body.sandbox = sandboxPick;
         // Model reference is submitted as a pair (provider + modelId; falls back to the Project default when not set).
         if (modelRef) {
@@ -802,11 +806,7 @@ export function DraftView({
         createdId = created.session.sessionId;
         // The first task can use the draft's pages as soon as it starts.
         await adoptBrowserSession(browserScope, createdId);
-        const res = await api.postTask(createdId, {
-          input,
-          ...(goal ? { goal } : {}),
-          ...(plan ? { plan: true } : {}),
-        });
+        const res = await api.postTask(createdId, { input, ...(goal ? { goal } : {}) });
         await adoptBrowserSession(createdId, res.sessionId);
         // postTask answers with the CURRENT id: a Session with no Trace whose process
         // restarted in between self-heals into a new one. Everything recorded a moment ago
@@ -851,6 +851,7 @@ export function DraftView({
       projectId,
       agentId,
       approvalMode,
+      planMode,
       sandboxPick,
       modelRef,
       workspace,
@@ -880,6 +881,7 @@ export function DraftView({
   const ownComposerRef = useRef<ComposerControl | null>(null);
   const composerRef = pageComposerRef ?? ownComposerRef;
   const fillComposer = useCallback((prompt: string, skills: readonly string[]) => {
+    requestedExample.current = prompt;
     composerRef.current?.fillPrompt(prompt, skills);
   }, []);
   const readComposerText = useCallback(() => textRef.current, []);
@@ -931,7 +933,8 @@ export function DraftView({
         skills={agentSkills}
         {...(cached.skills && cached.skills.length > 0 ? { initialSkills: cached.skills } : {})}
         {...(cached.goal === true ? { initialGoal: true } : {})}
-        {...(cached.plan === true ? { initialPlan: true } : {})}
+        planMode={planMode}
+        onDraftPlanChange={setPlanMode}
         goalPlugin={goalPlugin}
         onSkillsChange={onSkillsChange}
         initialText={cached.text ?? ""}
@@ -983,6 +986,7 @@ export function DraftView({
           composer={composer}
           skillsLoaded={skillsLoaded}
           fill={fillComposer}
+          exampleText={exampleText}
           readComposerText={readComposerText}
         />
       </div>

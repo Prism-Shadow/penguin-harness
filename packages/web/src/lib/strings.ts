@@ -965,6 +965,11 @@ export const zh = {
       "开关下方是各已装载插件在其包里声明的选项，表单按插件自己的 schema 生成。与插件本身一样是服务器全局的；保存后立即送达插件，无需重启。没有声明选项的插件不会出现在这里。顶部的开关只影响本浏览器在插件页列出哪些插件。",
     /** The page's own switch, above the server's cards: a display preference of this browser. */
     pluginsIncompatibleOnly: "只显示不兼容的插件",
+    /** A list field's editor: the row buttons and the add row. */
+    pluginListMoveUp: "上移",
+    pluginListMoveDown: "下移",
+    pluginListRemove: "删除",
+    pluginListAdd: "添加",
     /** A secret field with a stored value: submitting it empty keeps the stored one. */
     pluginSecretKeepHint: "留空保持已保存的值不变",
     pluginSecretClear: "清除已存值",
@@ -1174,6 +1179,7 @@ export const zh = {
       cobalt: "钴蓝",
       orange: "橙红",
       marker: "马克笔橙",
+      ink: "墨水黑",
       ballpoint: "圆珠笔蓝",
       grass: "草绿",
       crayon: "蜡笔红",
@@ -5097,12 +5103,8 @@ Benchmark：
     /** A paste too long for the text box, attached as a text file instead. */
     longPasteAttached: (name: string): string => `粘贴的文本较长，已作为附件 ${name} 添加。`,
     planMode: "计划模式",
-    planModeDesc: "每个任务先讨论方案，批准后执行",
-    planDiscuss: "计划模式已开启。先讨论做法，确认方案后再执行。",
-    planApprove: "批准并执行",
-    planExit: "退出计划模式",
-    planPluginMissing: "请在此智能体上安装计划模式插件。",
-    planReady: "请审阅最新方案，或发送修改意见。",
+    planModeDesc: "先讨论目标、方案和关键取舍，再动手实施",
+    planPluginMissing: "请为这个智能体安装或更新计划模式插件。",
     goalMode: "目标模式",
     goalModeDesc: "循环运行直至目标完成",
     goalBudgetLabel: "Token 预算",

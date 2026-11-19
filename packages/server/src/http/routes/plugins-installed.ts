@@ -94,12 +94,13 @@ import {
   type InstalledPackage,
 } from "../../plugin/install.js";
 import { indexChannelLookup, type IndexChannel } from "../../plugin/registry.js";
+import { IndexSources } from "../../plugin/index-config.js";
 import { parsePluginSource, type PluginSource } from "../../plugin/source.js";
 import { parsePluginArchive } from "../../services/plugin-archive.js";
 import { PluginHost, pluginHostFrom, PLUGINS_RESOURCE_ID } from "../../plugin/host.js";
-import { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
+import { Access, ProjectConfigStore } from "@prismshadow/penguin-library-project";
 import type { Machines } from "../../machines/service.js";
-import { MachinesRepo } from "../../db/repos/machines.js";
+import { MachinesRepo } from "@prismshadow/penguin-library-machine/machine";
 
 /** How a channel install reports its download as it runs: bytes received, the total when known. */
 export type InstallProgress = (received: number, total: number | null) => void;
@@ -820,6 +821,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
 export class InstalledPluginRoutes {
   @Use() private readonly config!: Config;
   @Use() private readonly hmr!: Hmr;
+  @Use() private readonly sources!: IndexSources;
   @Use() private readonly reassembly!: Reassembly;
   @Use() private readonly projectConfig!: ProjectConfigStore;
   @Use() private readonly access!: Access;
@@ -848,11 +850,10 @@ export class InstalledPluginRoutes {
       access: this.access,
       apply: (change) => this.reassembly.reassemble(change),
       packages: this.packages,
-      // The published index's github channels, for a name npm has no answer for; looked up
-      // only then, cached at the listing's cadence (indexChannelLookup).
-      channelOf: indexChannelLookup(this.config.pluginIndexUrl ?? null, {
-        proxy: this.config.pluginProxy ?? [],
-      }),
+      // The configured index sources' github channels, for a name npm has no answer for; looked
+      // up only then, cached at the listing's cadence (indexChannelLookup). The sources are
+      // read per lookup: the plugin-index settings group's document, changed without a restart.
+      channelOf: indexChannelLookup(() => this.sources.urls()),
       // The plugin list rides the same trip the model config takes to a Project's machines.
       syncFleet: (projectId) => void this.machines.syncConfigEverywhere(projectId),
       // `penguin plugin link`: the npm prefix is this server's own disk, so a local directory

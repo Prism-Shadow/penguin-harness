@@ -59,17 +59,14 @@ import { iconResponse } from "../http/icon-response.js";
 import { mediaType } from "../http/media-type.js";
 import { badRequest, readJson, requireString, requireValidId } from "../http/validate.js";
 import type { AgentConfig } from "../mechanisms/agents.js";
-import type { Access, Projects } from "../mechanisms/projects.js";
-import type { UiPrefsStore } from "../mechanisms/settings.js";
+import type { Access, Projects } from "@prismshadow/penguin-library-project";
+import type { UiPrefsStore } from "@prismshadow/penguin-library-setting";
 import { MAX_ARCHIVE_BYTES } from "../services/skill-import-limits.js";
 import { forwardToMachine } from "../machines/proxy.js";
 import { MachineSocketRelay } from "../machines/socket-relay.js";
 import type { Machines } from "../machines/service.js";
-import type {
-  WorkbenchRequest,
-  WorkbenchResponse,
-  Workbenches,
-} from "../mechanisms/workbenches.js";
+import type { Workbenches } from "../mechanisms/workbenches.js";
+import type { WorkbenchRequest, WorkbenchResponse } from "@prismshadow/penguin-library-workbench";
 import {
   parseAppCenterLayout,
   readAppCenterLayout,
@@ -308,6 +305,45 @@ const notFound = (err: unknown): never => {
 };
 
 /**
+ * The forwarded answer's headers minus the ones that describe the body: the body may be
+ * replaced (the machine query rides the start_url), so the old length and validator must
+ * not ride along — the runtime recomputes or regenerates both. Everything else does.
+ */
+const passAlong = (remote: Response): Headers => {
+  const headers = new Headers(remote.headers);
+  headers.delete("content-length");
+  headers.delete("etag");
+  return headers;
+};
+/**
+ * A forwarded manifest of a remote machine, with the machine written into its `start_url`
+ * and `scope` (they share one string). The remote gate generated the manifest for its own
+ * server — its start_url names no machine, because only the hop that asked knows which
+ * machine the workbench lives on. Anything the body of which is not a manifest with a
+ * start_url (an error answer, a shape the hop did not expect) passes through as-is.
+ */
+export const withMachineInStartUrl = async (
+  remote: Response,
+  machineId: string,
+): Promise<Response> => {
+  if (!remote.ok) return remote;
+  const text = await remote.text();
+  let manifest: { start_url?: string; scope?: string };
+  try {
+    manifest = JSON.parse(text) as { start_url?: string; scope?: string };
+  } catch {
+    return new Response(text, { status: remote.status, headers: passAlong(remote) });
+  }
+  if (typeof manifest.start_url !== "string")
+    return new Response(text, { status: remote.status, headers: passAlong(remote) });
+  const url = new URL(manifest.start_url, "http://localhost");
+  url.searchParams.set("machine", machineId);
+  const withMachine = url.pathname + url.search;
+  const body = JSON.stringify({ ...manifest, start_url: withMachine, scope: withMachine });
+  return new Response(body, { status: remote.status, headers: passAlong(remote) });
+};
+
+/**
  * The install manifest on its own, auth-less gate: a browser fetching a manifest for
  * install carries no session for another host than the page's. It answers from the
  * workbench's own folder — its name, version, tabs and icon — nothing per-user, and it runs
@@ -334,14 +370,16 @@ export function manifestRoutes(
     tabKey: string | undefined,
     machineId: string | undefined,
   ): Promise<string | Response> => {
-    // A manifest of a remote machine: what THAT gate answers, verbatim — status included
-    // (it generated the route with its own server's project/agent ids; the start_url's
-    // machine query is what points the installed app back at that machine).
+    // A manifest of a remote machine: what THAT gate answers, status included (it generated
+    // the route with its own server's project/agent ids). The remote gate names no machine
+    // in its start_url — only the hop knows which machine this is — so this side writes the
+    // machine query into the start_url and scope before handing the manifest on: the
+    // installed app must open the workbench ON THAT machine, not on this one.
     if (machineId !== undefined) {
       const remote = await throughMachine(projectId, agentId, machineId, id, tabKey);
       if (remote === null)
         throw new HttpError(503, "not_connected", `No live forward to ${machineId}.`);
-      return remote;
+      return withMachineInStartUrl(remote, machineId);
     }
     const info = await workbenches.describe(projectId, agentId, id).catch(notFound);
     const tab = tabKey === undefined ? undefined : info.tabs.find((t) => t.key === tabKey);

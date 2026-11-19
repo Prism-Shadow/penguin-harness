@@ -35,7 +35,7 @@ export interface QuickStart {
   skills?: string[];
   /** Open the draft in goal mode (the prompt is the objective). */
   goal?: boolean;
-  /** Open the demo as a read-only planning discussion. */
+  /** Discuss the demo with the Plan prompt hook. */
   plan?: boolean;
 }
 

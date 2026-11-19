@@ -129,7 +129,7 @@ export function draftFromUnknown(parsed: unknown): DraftCache {
   }
   if (o.aiPrefill === true) out.aiPrefill = true;
   if (o.goal === true) out.goal = true;
-  else if (o.plan === true) out.plan = true;
+  if (o.plan === true) out.plan = true;
   if (
     typeof o.approvalMode === "string" &&
     APPROVAL_MODES.includes(o.approvalMode as ApprovalMode)

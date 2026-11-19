@@ -119,7 +119,7 @@ function thinking(chunks: string[], fidelity?: Fidelity): UniEvent[] {
 
 /**
  * A tool call as it streams: the name and id on the first fragment only, the arguments JSON
- * in fragments, then the done item holding the parsed arguments.
+ * in fragments, then the done item holding the original JSON.
  */
 function call(name: string, id: string, fragments: string[], fidelity?: Fidelity): UniEvent[] {
   return [
@@ -134,7 +134,7 @@ function call(name: string, id: string, fragments: string[], fidelity?: Fidelity
     delta({
       type: "tool_call.done",
       name,
-      arguments: JSON.parse(fragments.join("") || "{}") as Record<string, unknown>,
+      arguments: fragments.join("") || "{}",
       tool_call_id: id,
       ...(fidelity ? { fidelity } : {}),
     }),
@@ -194,7 +194,7 @@ describe("mergeRecordsToUniMessage", () => {
     }
   });
 
-  it("maps assistant tool_call AmspRecord (args JSON string → object)", () => {
+  it("maps assistant tool_call arguments without rewriting the JSON", () => {
     const uni = mergeRecordsToUniMessage([
       toolCall({
         name: "exec_command",
@@ -207,7 +207,7 @@ describe("mergeRecordsToUniMessage", () => {
     expect(item).toEqual({
       type: "tool_call.done",
       name: "exec_command",
-      arguments: { cmd: "ls -la" },
+      arguments: '{"cmd":"ls -la"}',
       tool_call_id: "call_1",
     });
   });
@@ -409,12 +409,20 @@ describe("translateEvents", () => {
     expect(partials[3]!.event_type).toBe("stop");
     expect(partials.every((p) => p.tool_call_id === "c1")).toBe(true);
 
-    // complete tool_call: the done item's parsed arguments, re-serialized.
+    // The complete tool call carries the original argument text.
     const tc = messages.find((m) => typeOf(m) === "tool_call")!.payload as ToolCallPayload;
     expect(tc.name).toBe("exec_command");
     expect(tc.tool_call_id).toBe("c1");
     expect(tc.arguments).toBe('{"cmd":"ls -la"}');
     expect(tc).not.toHaveProperty("stop_reason");
+  });
+
+  it("preserves JSON whitespace and integers beyond JS precision in both directions", () => {
+    const raw = '{ "id": 9007199254740993, "fraction": 0.012345678901234567891 }';
+    const { messages } = translateEvents([...call("lookup", "t1", [raw]), stop("tool_call")]);
+    const record = messages.find((m) => typeOf(m) === "tool_call")!;
+    expect((record.payload as ToolCallPayload).arguments).toBe(raw);
+    expect(mergeRecordsToUniMessage([record]).content_items[0]).toMatchObject({ arguments: raw });
   });
 
   it("reads the complete call off the done item alone: the fragments are never reconciled against it", () => {
@@ -430,7 +438,7 @@ describe("translateEvents", () => {
       delta({
         type: "tool_call.done",
         name: "exec_command",
-        arguments: { cmd: "ls" },
+        arguments: '{"cmd":"ls"}',
         tool_call_id: "c1",
       }),
       stop("tool_call"),
@@ -470,7 +478,7 @@ describe("translateEvents", () => {
       delta({
         type: "tool_call.done",
         name: "exec_command",
-        arguments: { cmd: "ls" },
+        arguments: '{"cmd":"ls"}',
         tool_call_id: "real1",
       }),
       stop("tool_call"),
@@ -2052,7 +2060,7 @@ describe("provider fidelity payloads (opaque)", () => {
       {
         type: "tool_call.done",
         name: "t",
-        arguments: {},
+        arguments: "{}",
         tool_call_id: "tc1",
         fidelity: { signature: "sig-3" },
       },

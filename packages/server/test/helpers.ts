@@ -32,22 +32,22 @@ import type { WorkspaceFilesService } from "../src/services/workspace-files-serv
 import type { PreviewTokenSigner } from "../src/services/preview-token.js";
 import type { BenchmarkService } from "../src/services/benchmark-service.js";
 import type { SnapshotService } from "../src/services/snapshot-service.js";
-import type { SessionsRepo } from "../src/db/repos/sessions.js";
-import type { UiPrefsRepo } from "../src/db/repos/ui-prefs.js";
-import type { ServerSettingsRepo } from "../src/db/repos/server-settings.js";
-import type { SchedulesRepo } from "../src/db/repos/schedules.js";
-import type { ErrorsRepo } from "../src/db/repos/errors.js";
-import type { MessagingBindingsRepo } from "../src/db/repos/messaging-bindings.js";
+import type { SessionsRepo } from "@prismshadow/penguin-library-session/repos/sessions";
+import type { UiPrefsRepo } from "@prismshadow/penguin-library-setting/repos/ui-prefs";
+import type { ServerSettingsRepo } from "@prismshadow/penguin-library-setting/repos/server-settings";
+import type { SchedulesRepo } from "@prismshadow/penguin-library-session/repos/schedules";
+import type { ErrorsRepo } from "@prismshadow/penguin-library-observability/repos/errors";
+import type { MessagingBindingsRepo } from "@prismshadow/penguin-library-messaging/repos/messaging-bindings";
 import type { MessagingBridge } from "../src/runtime/messaging/bridge.js";
 import type { QQScanService, QQScanTransport } from "../src/runtime/messaging/qq-scan.js";
 import type { Scheduler } from "../src/runtime/scheduler.js";
 import type { OrganizationService } from "../src/runtime/organization/service.js";
-import type { OrgCacheRepo } from "../src/db/repos/organizations.js";
+import type { OrgCacheRepo } from "@prismshadow/penguin-library-organization/organizations";
 import type { SessionManager, SessionLoader } from "../src/runtime/session-manager.js";
 import type { ErrorRecorder } from "../src/runtime/error-recorder.js";
 import type { MachinesService } from "../src/machines/service.js";
-import { openDatabase } from "../src/db/database.js";
-import { TraceIndexRepo } from "../src/db/repos/trace-index.js";
+import { openDatabase } from "@prismshadow/penguin-library-db";
+import { TraceIndexRepo } from "@prismshadow/penguin-library-trace/repos/trace-index";
 import { SessionSources } from "../src/runtime/session-sources.js";
 import { TraceIndexService } from "../src/services/trace-index.js";
 import { TraceService } from "../src/services/trace-service.js";
@@ -55,7 +55,7 @@ import type { TraceSessionIndex } from "../src/services/trace-service.js";
 import type { AppEnv } from "../src/auth/middleware.js";
 import { ADMIN_USER_ID } from "../src/auth/service.js";
 import type { ServerConfig } from "../src/config.js";
-import type { UserInfo } from "../src/api/types.js";
+import type { UserInfo } from "@prismshadow/penguin-library-auth";
 import { wire } from "@prismshadow/penguin-core/kernel";
 import type { PluginHost } from "../src/plugin/host.js";
 import type { Replacements, ShellFrames } from "../src/hmr/capabilities.js";
@@ -88,7 +88,7 @@ import { machineSessionForward } from "../src/machines/session-forward.js";
 import { machineHistory } from "../src/machines/history-routes.js";
 import type { HistorySync } from "../src/machines/history-sync.js";
 import { TraceCache } from "../src/machines/trace-cache.js";
-import type { Access } from "../src/mechanisms/projects.js";
+import type { Access } from "@prismshadow/penguin-library-project";
 import { ProcessShellPort } from "../src/builtin-browser/module.js";
 import type { BrowserShellPort } from "../src/builtin-browser/shell-link.js";
 
@@ -189,8 +189,6 @@ export function testConfig(root: string): ServerConfig {
     // No CLI to offer: nothing is written into the temp root, and no directory is put on
     // the PATH of whatever a test's Agent runs.
     cliEntry: null,
-    // Off by default: no test may reach the network to list plugins.
-    pluginIndexUrl: null,
   };
 }
 
@@ -566,6 +564,12 @@ async function bootTestApp(
     throw error;
   }
   const deps = flattenForTests(boot);
+  // Emptied by default: no test may reach the network to list plugins. The stored document
+  // empties the plugin-index group's address list — the release's published index sits on the
+  // declared default, so only an explicit empty list keeps the routes offline; the routes
+  // read it per request, so a test that exercises the index saves the values it wants and
+  // they apply at once.
+  deps.serverSettingsRepo.set("plugin-config:plugin-index", JSON.stringify({ sources: [] }));
   // The seed hashes and discards; tests know the password only because the config injects it.
   // With a null override there is nothing to know, and such tests never password-login.
   const adminPassword = config.seedAdminPassword ?? TEST_ADMIN_PASSWORD;

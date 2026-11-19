@@ -13,6 +13,20 @@
  * Project's default reference, 400 if there is none); the new Session is
  * added to session-manager's active table (state idle).
  */
+import type {
+  SessionCategory,
+  TraceIndex,
+  TraceIndexStore,
+} from "@prismshadow/penguin-library-trace";
+import type {
+  ApprovalMode,
+  SessionSandbox,
+  SessionSandboxPreset,
+  UnavailableSandboxBackend,
+  SessionIndex,
+  SessionOrigins,
+} from "@prismshadow/penguin-library-session";
+import type { ServerEvent, ProjectConfigStore } from "@prismshadow/penguin-library-project";
 import fs from "node:fs/promises";
 import {
   agentsDir,
@@ -28,20 +42,14 @@ import type {
   ThinkingLevelName,
 } from "@prismshadow/penguin-core";
 import type {
-  ApprovalMode,
   MessagingChannel,
-  SessionCategory,
   SessionCategoryCounts,
   SessionInfo,
-  SessionSandbox,
-  SessionSandboxPreset,
   SessionSource,
-  ServerEvent,
-  UnavailableSandboxBackend,
 } from "../api/types.js";
 import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
-import type { SessionRow } from "../db/repos/sessions.js";
+import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
 import type { SessionManager } from "../runtime/session-manager.js";
 import {
   listCategory,
@@ -53,9 +61,6 @@ import {
 import type { ListingView } from "../runtime/session-sources.js";
 import { TraceIndexService, traceFilePath } from "./trace-index.js";
 import { matchesWorkspaceGroup } from "./workspace-group.js";
-import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
-import type { SessionIndex, SessionOrigins } from "../mechanisms/sessions.js";
-import type { ProjectConfigStore } from "../mechanisms/projects.js";
 import type { SandboxDimension, SandboxSettings } from "@prismshadow/penguin-core/plugin";
 import { aboveSandboxCeiling } from "./sandbox-ceiling.js";
 
@@ -400,6 +405,7 @@ export class SessionService {
       modelId: row.modelId,
       workspace: row.workspace,
       approvalMode: row.approvalMode,
+      ...(row.planMode ? { planMode: true } : {}),
       sandbox: this.sandboxView(this.sandboxOf(row)),
       ...(row.thinkingLevel ? { thinkingLevel: row.thinkingLevel } : {}),
       ...(row.title !== null ? { title: row.title } : {}),
@@ -793,6 +799,7 @@ export class SessionService {
     workspace?: string;
     thinkingLevel?: ThinkingLevelName;
     approvalMode?: ApprovalMode;
+    planMode?: boolean;
     /** The composer's sandbox picks; omitted halves take the server's settings. */
     sandbox?: Partial<SessionSandbox>;
     /** Whether the creator is an administrator (may loosen past the settings). Default false. */
@@ -890,6 +897,7 @@ export class SessionService {
       workspace: session.workspaceDir,
       ...(args.thinkingLevel !== undefined ? { thinkingLevel: args.thinkingLevel } : {}),
       approvalMode: this.startApproval(args.approvalMode, args.client),
+      ...(args.planMode ? { planMode: true } : {}),
       sandbox,
       title: null,
       // The creator's hint: "cli" when the CLI created this Session through the API,

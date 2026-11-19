@@ -821,6 +821,11 @@ export const en: Strings = {
     /** A switch one of whose positions this machine cannot honour, under the switch. */
     pluginPositionUnavailable: (position: string, reason: string) =>
       `${position} is not supported here: ${reason}`,
+    /** A list field's editor: the row buttons and the add row. */
+    pluginListMoveUp: "Move up",
+    pluginListMoveDown: "Move down",
+    pluginListRemove: "Remove",
+    pluginListAdd: "Add",
     pluginPositionOn: "On",
     pluginPositionOff: "Off",
     pluginsInfo:
@@ -1038,6 +1043,7 @@ export const en: Strings = {
       gold: "Gold",
       cobalt: "Cobalt",
       orange: "Orange",
+      ink: "Ink",
       marker: "Marker",
       ballpoint: "Ballpoint",
       grass: "Grass",
@@ -4809,12 +4815,8 @@ Scenarios:
     longPasteAttached: (name: string): string =>
       `The pasted text was long, so it was attached as ${name}.`,
     planMode: "Plan mode",
-    planModeDesc: "Discuss each task before execution",
-    planDiscuss: "Plan mode is on. Discuss the approach, then approve a proposal to start work.",
-    planApprove: "Approve and execute",
-    planExit: "Exit Plan mode",
-    planPluginMissing: "Install the Plan mode plugin on this Agent to discuss a plan.",
-    planReady: "Review the latest proposal or send changes.",
+    planModeDesc: "Discuss the approach and trade-offs before starting a task",
+    planPluginMissing: "Install or update the Plan mode plugin on this Agent.",
     goalMode: "Goal mode",
     goalModeDesc: "Loop until the goal completes",
     goalBudgetLabel: "Token budget",

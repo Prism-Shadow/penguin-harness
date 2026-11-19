@@ -181,9 +181,9 @@ export interface SessionConfig {
    * hook's `subagent` answer (see hooks/stop-hook.ts). Absent = none. A context
    * `openNextContext` opens may bring its own.
    */
-  /** Resolve the host's explicitly requested protocol if the user installed it while this context was open. */
-  installedHostPromptHook?: (name: string) => Promise<UserPromptHook | undefined>;
   hooks?: SessionHooks;
+  /** A host-selected hook may have been installed since the context opened. */
+  installedHostPromptHook?: (name: string) => Promise<UserPromptHook | undefined>;
   /**
    * Project sandbox command policy (`[command_policy]` of `.project_config.toml`), as a
    * SOURCE answering with the running context's policy: command policy is strict-tier —
@@ -198,7 +198,7 @@ export interface SessionConfig {
 }
 
 /** `Session.run` options: the engine's per-call options. */
-export type SessionRunOptions = RunOptions & { planning?: boolean };
+export type SessionRunOptions = RunOptions & { promptHook?: string };
 
 /**
  * Why a model switch was refused before its first event (see {@link ModelSwitchRefusedError}).
@@ -530,11 +530,8 @@ export class Session {
     name: string,
     prompt: string,
     extras?: Record<string, string | number | boolean>,
-    useJustInstalled = false,
   ): Promise<UserPromptHookResult | null> {
-    const selected = this.userPromptHooks.find((h) => h.name === name && h.trigger === "host");
-    const hook =
-      selected ?? (useJustInstalled ? await this.installedHostPromptHook?.(name) : undefined);
+    const hook = this.userPromptHooks.find((h) => h.name === name && h.trigger === "host");
     if (!hook) return null;
     const tracePath = this.trace?.currentPath?.();
     const result = await hook.run({
@@ -565,8 +562,15 @@ export class Session {
   private async consultUserPromptHooks(
     input: AmspRecord[],
     signal?: AbortSignal,
+    selected?: string,
   ): Promise<{ records: AmspRecord[] } | null> {
     const hooks = this.userPromptHooks.filter((h) => h.trigger !== "host");
+    if (selected) {
+      const hook =
+        this.userPromptHooks.find((h) => h.trigger === "host" && h.name === selected) ??
+        (await this.installedHostPromptHook?.(selected));
+      if (hook) hooks.push(hook);
+    }
     if (hooks.length === 0) return null;
     const texts: string[] = [];
     for (const msg of input) {
@@ -642,17 +646,6 @@ export class Session {
     // callback again: that callback is this wrapper, so the child's `ask` hit arrives here
     // with its reason and is matched once more (see internal/command-policy.ts). With no
     // callback at all the engine denies everything anyway, so there is nothing to guard.
-    const planning = opts?.planning === true;
-    if (planning) {
-      const ordinaryApproval = opts?.approve;
-      opts = {
-        ...opts,
-        approve: (call, details) =>
-          call.payload.name === "read_file" && ordinaryApproval
-            ? ordinaryApproval(call, details)
-            : Promise.resolve("deny"),
-      };
-    }
     if (opts?.approve) {
       opts = { ...opts, approve: withCommandPolicy(opts.approve, this.commandPolicy) };
     }
@@ -670,18 +663,6 @@ export class Session {
       opts = {
         ...opts,
         preToolUse: async (tc) => {
-          if (planning) {
-            // Editable hooks must never promote a call past the host's read-only boundary.
-            return tc.payload.name === "read_file"
-              ? null
-              : {
-                  events: [],
-                  decision: "deny",
-                  name: "plan",
-                  reason:
-                    "Plan mode allows reading files. Approve the proposed plan before starting work.",
-                };
-          }
           const hooks = this.preToolUseHooks;
           if (hooks.length === 0) return null;
           const p = tc.payload;
@@ -710,12 +691,7 @@ export class Session {
     // input, which no user submitted.
     let taskOpts: SessionRunOptions | undefined = {
       ...opts,
-      ...(!planning
-        ? {
-            userPrompt: (prompt: AmspRecord[], signal?: AbortSignal) =>
-              this.consultUserPromptHooks(prompt, signal),
-          }
-        : {}),
+      userPrompt: (prompt, signal) => this.consultUserPromptHooks(prompt, signal, opts?.promptHook),
     };
     let input = newMessages;
     /** Whether `input` is a stop hook's `continue`: yielded by the Session, since no host submitted it. */
@@ -748,7 +724,7 @@ export class Session {
         yield res.value;
       }
       let next: string | null = null;
-      if (!planning && this.stopHooks.length > 0) {
+      if (this.stopHooks.length > 0) {
         const tracePath = this.trace?.currentPath?.();
         const spawn = this.spawnSubagent;
         const outcome = await runStopHooks(

@@ -96,6 +96,7 @@ import type {
   PendingFollowUpInfo,
   PendingSteeringInfo,
   RecalledMessageResponse,
+  SessionInfo,
   SessionSandbox,
   SessionStatus,
   SkillMetadataItem,
@@ -113,7 +114,6 @@ import {
   ComposerCard,
   ConfirmModal,
   Dropdown,
-  Button,
   GlyphIcon,
   ICONS,
   ICON_SIZE,
@@ -161,7 +161,8 @@ import {
   skillSlashItems,
 } from "../../lib/skill-use";
 import { GOAL_ICON, UNLIMITED_BUDGET, parseBudgetInput } from "./goal-use";
-import { usePlanMode } from "./use-plan-mode";
+import { patchSession } from "../../api/endpoints";
+import { toastApiError } from "../../lib/toast-api-error";
 import { useGoalPluginGate } from "./goal-plugin-gate";
 import type { GoalPluginGate } from "./goal-plugin-gate";
 import { mergeRecalledDraft } from "./recall-draft";
@@ -616,7 +617,9 @@ export function ChatInput({
   skills,
   initialSkills,
   initialGoal,
-  initialPlan = false,
+  planMode = false,
+  onDraftPlanChange,
+  onSessionPatched,
   goalPlugin = null,
   onSkillsChange,
   onHandoff,
@@ -636,11 +639,7 @@ export function ChatInput({
    * `goal` is non-null when goal mode is engaged: the text is the objective and the server
    * loops the Session until the goal reaches a terminal state (budget -1 = unlimited).
    */
-  onSend: (
-    input: TaskInputPart[],
-    goal: { budget: number } | null,
-    plan?: boolean,
-  ) => Promise<boolean>;
+  onSend: (input: TaskInputPart[], goal: { budget: number } | null) => Promise<boolean>;
   /**
    * Mid-run steering (session state only): while a Task is running, Enter/send queues the
    * trimmed text **and any attached images and files** for the running agent — delivered
@@ -837,7 +836,9 @@ export function ChatInput({
   initialSkills?: string[];
   /** Start in goal mode (a plugin's quick start whose demo is a goal): read once on mount. */
   initialGoal?: boolean;
-  initialPlan?: boolean;
+  planMode?: boolean;
+  onDraftPlanChange?: (enabled: boolean) => void;
+  onSessionPatched?: (session: SessionInfo) => void;
   /**
    * The goal plugin check for the Agent this composer sends to (goal-plugin-gate.ts): while the
    * goal chip is engaged and the plugin is missing, a notice above the input offers to install
@@ -975,10 +976,24 @@ export function ChatInput({
     goalBudget !== null && goalBudget !== UNLIMITED_BUDGET
       ? S.chat.goalBudgetValue(humanizeTokens(goalBudget))
       : S.chat.goalBudgetUnlimited;
-  const planning = usePlanMode(sessionId, status, locale, initialPlan);
-  const planOn = planning.plan !== null;
-  const planGate = useGoalPluginGate(goalPlugin, planOn, "plan");
   const goalGate = useGoalPluginGate(goalPlugin, goalOn);
+  const planGate = useGoalPluginGate(goalPlugin, planMode, "plan");
+  const missingMode = planGate.holdsSend ? planGate : goalGate;
+  const [planSaving, setPlanSaving] = useState(false);
+  const togglePlan = async () => {
+    if (!sessionId || !onSessionPatched) {
+      onDraftPlanChange?.(!planMode);
+      return;
+    }
+    setPlanSaving(true);
+    try {
+      onSessionPatched((await patchSession(sessionId, { planMode: !planMode })).session);
+    } catch (err) {
+      toastApiError(err);
+    } finally {
+      setPlanSaving(false);
+    }
+  };
   /**
    * Where a send with a staged chip would go — and, for a `/model` fork, whether it may go at
    * all right now (see stagedSendRoute): a fork branches a NEW session off this session's
@@ -1006,8 +1021,8 @@ export function ChatInput({
     !running &&
     !compacting &&
     !busy &&
-    !planning.pending &&
-    !(planOn && planGate.holdsSend) &&
+    !planSaving &&
+    !planGate.holdsSend &&
     (goalOn
       ? text.trim().length > 0 &&
         attachments.length === 0 &&
@@ -1064,7 +1079,6 @@ export function ChatInput({
    */
   const toggleGoal = useCallback(
     (on: boolean) => {
-      if (on && planOn) return;
       setGoalOn(on);
       setGoalBudgetOpen(false);
       setGoalBudgetDraft("");
@@ -1080,7 +1094,7 @@ export function ChatInput({
         setAttachments([]);
       }
     },
-    [onHandoffTargetChange, onPendingModelChange, planOn],
+    [onHandoffTargetChange, onPendingModelChange],
   );
 
   // Mid-run steering: while running, Enter/send queues the text **and the attached images
@@ -1113,7 +1127,7 @@ export function ChatInput({
   // compacting one is always Stop (see isStopAction).
   const midRun = midRunAction({
     sending: busy,
-    goalOn: goalOn || planOn,
+    goalOn,
     canSteerChannel: onSteer !== undefined,
     canQueueChannel: onQueueFollowUp !== undefined,
     canInterruptChannel: onInterruptSend !== undefined,
@@ -1394,24 +1408,6 @@ export function ChatInput({
       ...(variant !== "subagent"
         ? [
             {
-              cmd: "/plan",
-              desc: S.chat.planModeDesc,
-              run: () => {
-                if (
-                  running ||
-                  compacting ||
-                  busy ||
-                  goalOn ||
-                  target ||
-                  pendingModel ||
-                  planning.pending
-                )
-                  return;
-                clearInput();
-                void planning.change(planOn ? "exit" : "enable");
-              },
-            },
-            {
               cmd: "/goal",
               desc: S.chat.goalModeDesc,
               run: () => {
@@ -1425,7 +1421,7 @@ export function ChatInput({
       // draft state has its own model picker). Gated on the model list being loaded: without
       // it the picker would open empty. Running the command consumes the /model token (like
       // /compact) and opens the picker; the rest of the draft stays.
-      ...(!planOn && onSwitchModel && models && models.length > 0
+      ...(onSwitchModel && models && models.length > 0
         ? [
             {
               cmd: "/model",
@@ -1442,7 +1438,7 @@ export function ChatInput({
       // same way too: the parent passes onHandoff for an active Session only, because a draft
       // has nothing to hand over (and already picks its Agent in the draft page's own
       // selector). Candidates must exist, or the picker would open empty.
-      ...(!planOn && onHandoff && agents.length > 0
+      ...(onHandoff && agents.length > 0
         ? [
             {
               cmd: "/agent",
@@ -1466,13 +1462,6 @@ export function ChatInput({
     ];
   }, [
     variant,
-    planOn,
-    planning,
-    running,
-    compacting,
-    busy,
-    target,
-    pendingModel,
     onCompact,
     onSwitchModel,
     onHandoff,
@@ -1730,11 +1719,7 @@ export function ChatInput({
   // `post` accepts onSend's goal parameter so onSend can be its default; the follow-up queue
   // (fewer params) is assignable too. Non-goal calls always pass null.
   const sendNormal = async (
-    post: (
-      input: TaskInputPart[],
-      goal: { budget: number } | null,
-      plan?: boolean,
-    ) => Promise<boolean> = onSend,
+    post: (input: TaskInputPart[], goal: { budget: number } | null) => Promise<boolean> = onSend,
   ) => {
     const t = text.trim();
     // Goal mode: the trimmed text is the objective (no file attachments, no staged switch —
@@ -1803,9 +1788,7 @@ export function ChatInput({
               { provider: switchModel.provider, modelId: switchModel.modelId },
               input,
             )
-          : planOn
-            ? await post(input, null, true)
-            : await post(input, null);
+          : await post(input, null);
       // Only clear the draft after a successful send: on failure (network / conflict / server error) keep the user's input and attachments.
       if (ok) {
         setText("");
@@ -2312,67 +2295,22 @@ export function ChatInput({
         </Notice>
       )}
 
-      {planOn && (
-        <div
-          className="mb-2 flex flex-wrap items-center gap-2 rounded-md border border-line bg-surface px-3 py-2 text-sm text-fg"
-          aria-label={S.chat.planMode}
-        >
-          <GlyphIcon d={ICONS.clipboard} size={16} />
-          <span className="min-w-36 flex-1" role="status">
-            {planGate.holdsSend
-              ? S.chat.planPluginMissing
-              : planning.plan?.proposal
-                ? S.chat.planReady
-                : S.chat.planDiscuss}
-          </span>
-          {planGate.holdsSend && (
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => void planGate.install()}
-              disabled={planGate.status === "installing"}
-            >
-              {S.chat.goalPluginInstall}
-            </Button>
-          )}
-          {planning.plan?.proposal && (
-            <Button
-              type="button"
-              size="sm"
-              variant="primary"
-              disabled={running || compacting || busy || planning.pending || draftHasContent}
-              onClick={() => void planning.change("approve")}
-            >
-              {S.chat.planApprove}
-            </Button>
-          )}
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            disabled={running || compacting || busy || planning.pending}
-            onClick={() => void planning.change("exit")}
-          >
-            {S.chat.planExit}
-          </Button>
-        </div>
-      )}
       {/* Goal mode on an Agent without the goal plugin: the goal could not start, so Send is held
           and the plugin is offered right here — installed on the Agent this composer sends to.
           `attention`, like the threshold notice above: it waits on the user. */}
-      {goalOn && (goalGate.status === "missing" || goalGate.status === "installing") && (
+      {missingMode.holdsSend && (
         <Notice
           tone="attention"
-          glyph={GOAL_ICON}
+          glyph={planGate.holdsSend ? ICONS.clipboard : GOAL_ICON}
           role="status"
           className="anim-fade mb-1"
           action={{
             label: S.chat.goalPluginInstall,
-            onClick: () => void goalGate.install(),
-            busy: goalGate.status === "installing",
+            onClick: () => void missingMode.install(),
+            busy: missingMode.status === "installing",
           }}
         >
-          {S.chat.goalPluginMissing}
+          {planGate.holdsSend ? S.chat.planPluginMissing : S.chat.goalPluginMissing}
         </Notice>
       )}
 
@@ -2645,7 +2583,7 @@ export function ChatInput({
                     label: S.chat.goalMode,
                     desc: S.chat.goalModeDesc,
                     active: goalOn,
-                    disabled: running || compacting || busy || planOn,
+                    disabled: running || compacting || busy,
                     onSelect: () => toggleGoal(!goalOn),
                   },
                   {
@@ -2653,16 +2591,9 @@ export function ChatInput({
                     icon: ICONS.clipboard,
                     label: S.chat.planMode,
                     desc: S.chat.planModeDesc,
-                    active: planOn,
-                    disabled:
-                      running ||
-                      compacting ||
-                      busy ||
-                      planning.pending ||
-                      goalOn ||
-                      target !== null ||
-                      pendingModel !== null,
-                    onSelect: () => void planning.change(planOn ? "exit" : "enable"),
+                    active: planMode,
+                    disabled: planSaving || busy,
+                    onSelect: () => void togglePlan(),
                   },
                 ]}
                 footer={<SteerModeRow steerMode={steerMode} onChangeSteerMode={setSteerMode} />}

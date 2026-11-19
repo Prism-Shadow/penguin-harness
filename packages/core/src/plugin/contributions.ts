@@ -191,7 +191,7 @@ function readQuickStart(value: unknown, at: string, warnings: string[]): QuickSt
     ...(typeof promptZh === "string" && promptZh.trim() !== "" ? { promptZh } : {}),
     ...(skillList !== undefined ? { skills: skillList } : {}),
     ...(goal === true ? { goal: true } : {}),
-    ...(plan === true && goal !== true ? { plan: true } : {}),
+    ...(plan === true ? { plan: true } : {}),
   };
 }
 

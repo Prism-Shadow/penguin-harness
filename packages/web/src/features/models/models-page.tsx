@@ -1556,7 +1556,7 @@ export function ModelsPage() {
       // The drop indicator is drawn against the WHOLE group, so "below" reads as
       // after this group and its model cards rather than between the header and
       // its own first card. It needs this wrapper to live in: the section clips
-      // its children (overflow-hidden carries the expand/collapse transition).
+      // its header and cards to the provider's outline.
       // Absolutely positioned, so it costs no layout width and cannot push the
       // header's actions out of a narrow page.
       <div key={group.provider.id} className="relative">
@@ -1571,7 +1571,8 @@ export function ModelsPage() {
         <WallpaperSurface
           data-slot="group"
           data-pinned={pinned || undefined}
-          className="overflow-hidden rounded-md border border-line bg-surface"
+          data-clip-surface
+          className="rounded-md border border-line bg-surface"
         >
           {/* Group header: collapse button (logo + vendor name + count + chevron) +
               the group's actions on the right, in group-header.ts's order. Actions are
@@ -2731,7 +2732,7 @@ export function ModelCard({
     // The card is a box holding the button rather than being one: the routing warning below
     // carries an action of its own, and buttons cannot nest (the group header solves the same
     // problem the same way). A click on the rest of the box opens the dialog too
-    // (lib/card-open.ts). overflow-hidden lets the warning strip fill the rounded corners.
+    // (lib/card-open.ts). The flush Card contains the warning strip inside its corners.
     <Card
       data-slot="card"
       padding="none"
@@ -2759,6 +2760,7 @@ export function ModelCard({
           {usedTokens !== undefined && usedTokens > 0 && (
             <span
               className="shrink-0 text-xs tabular-nums text-gray-400 dark:text-gray-500"
+              data-slot="meta"
               data-tooltip={S.models.usedTokensTitle}
             >
               {S.models.usedTokens(humanizeTokens(usedTokens))}
@@ -2786,7 +2788,10 @@ export function ModelCard({
         {/* 3. Meta line: the truncating text takes the flexible space; speed badges keep their own
             non-shrinking slot on the right so the numbers never wrap or get pushed out. */}
         <span className="flex w-full items-center gap-1.5">
-          <span className="min-w-0 flex-1 truncate text-xs text-gray-400 dark:text-gray-500">
+          <span
+            data-slot="meta"
+            className="min-w-0 flex-1 truncate text-xs text-gray-400 dark:text-gray-500"
+          >
             {meta.map((part, i) => (
               <Fragment key={i}>
                 {i > 0 && " · "}

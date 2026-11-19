@@ -1326,28 +1326,6 @@ export const postTask = (sessionId: string, body: TaskCreateRequest) =>
     body,
   });
 
-export const getSessionPlan = (sessionId: string) =>
-  apiFetch<{ plan: import("@prismshadow/penguin-server/api").SessionPlan | null }>(
-    `/api/sessions/${encodeURIComponent(sessionId)}/plan`,
-  );
-export const changeSessionPlan = (
-  sessionId: string,
-  action: "enable" | "exit" | "approve",
-  revision?: string,
-  language: "zh" | "en" = "en",
-) =>
-  apiFetch<{ plan: import("@prismshadow/penguin-server/api").SessionPlan | null }>(
-    `/api/sessions/${encodeURIComponent(sessionId)}/plan`,
-    {
-      method: "POST",
-      body: {
-        action,
-        revision,
-        language,
-      },
-    },
-  );
-
 export const getGoal = (sessionId: string) =>
   apiFetch<GoalResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/goal`);
 
