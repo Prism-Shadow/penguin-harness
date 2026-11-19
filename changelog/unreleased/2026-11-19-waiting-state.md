@@ -3,6 +3,7 @@
 - **Date:** 2026-11-19
 - **Type:** feature
 - **Scope:** `web`, `ui`, `ui-gallery`
+- **PR:** [#1646](https://github.com/Prism-Shadow/penguin-harness/pull/1646)
 
 [中文版](2026-11-19-waiting-state.zh.md)
 
