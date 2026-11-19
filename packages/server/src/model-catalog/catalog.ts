@@ -108,6 +108,7 @@ import {
   OFFICIAL_CLIENT_TYPES,
   routedClientType,
 } from "@prismshadow/mmsp/credentials";
+import type { ToolPricing } from "./tool-pricing.js";
 import type { ModelPricing } from "@prismshadow/penguin-core";
 import { sameClientType } from "@prismshadow/penguin-core/model-connection";
 
@@ -248,6 +249,11 @@ export interface ModelProviderInfo {
   connectDefault?: string;
 }
 
+/** Published standard rates for the text-to-image endpoint. Unknown cache rates stay absent. */
+export type ImageToolPricing =
+  | { unit: "usd_per_mtok"; input: number; output: number; thoughts: number; cached?: number }
+  | { unit: "usd_per_image"; output: number; highResolution?: number };
+
 /** A single built-in model's catalog entry (`modelId` is the upstream id; paired with `provider` it forms the catalog's unique key). */
 export interface ModelCatalogEntry {
   /** Dedicated tool model, selected through project capabilities. */
@@ -258,6 +264,8 @@ export interface ModelCatalogEntry {
   provider: string;
   contextWindow?: number;
   pricing?: ModelPricing;
+  imagePricing?: ImageToolPricing;
+  toolPricing?: ToolPricing;
   /**
    * Fraction off the list price the seller is currently running (0.5 = 50% off), applied to
    * every bucket. `pricing` stays the LIST price whatever promotion is live, so a lapsed
@@ -346,6 +354,7 @@ const QWEN_TOKEN_PLAN_BASE_URL =
 const QWEN_PAYG_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
 const FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1";
 const TOKENDANCE_BASE_URL = "https://tokendance.space/gateway/v1";
+const TOKENDANCE_DEEPSEEK_BASE_URL = "https://tokendance.space/gateway/deepseek";
 /** TokenDance's Anthropic Messages base: the SDK appends /v1/messages itself, so no /v1 here. */
 const TOKENDANCE_MESSAGES_BASE_URL = "https://tokendance.space/gateway";
 const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
@@ -816,6 +825,8 @@ export function effectivePricing(
     output: off(pricing.output),
   };
 }
+
+const seedreamLiteYuanPerImage = 0.22;
 
 /**
  * Built-in model catalog, clustered by provider. Within each provider, entries are in
@@ -3729,6 +3740,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   {
     provider: "google",
     modelId: "gemini-3.1-flash-lite-image",
+    imagePricing: { unit: "usd_per_mtok", input: 0.25, thoughts: 1.5, output: 30 },
     displayName: "Gemini 3.1 Flash Lite Image",
     capability: "image",
     supportsVision: true,
@@ -3736,6 +3748,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   {
     provider: "google",
     modelId: "gemini-3.1-flash-image",
+    imagePricing: { unit: "usd_per_mtok", input: 0.5, thoughts: 3, output: 60 },
     displayName: "Gemini 3.1 Flash Image",
     capability: "image",
     supportsVision: true,
@@ -3743,6 +3756,16 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   {
     provider: "google",
     modelId: "gemini-3.8-flash-tts",
+    // https://aistudio.google.com/docs/pricing#gemini-3.8-flash-tts
+    toolPricing: {
+      currency: "USD",
+      rates: [
+        { unit: "audioTokens", amount: 18 },
+        { unit: "inputTokens", amount: 1 },
+      ],
+      discount: 0.5,
+      promotionEndsAt: "2027-01-01T00:00:00Z",
+    },
     displayName: "Gemini 3.8 Flash TTS",
     capability: "tts",
     supportsVision: false,
@@ -3750,6 +3773,16 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   {
     provider: "google",
     modelId: "gemini-3.8-flash-lite-tts",
+    // https://aistudio.google.com/docs/pricing#gemini-3.8-flash-lite-tts
+    toolPricing: {
+      currency: "USD",
+      rates: [
+        { unit: "audioTokens", amount: 12 },
+        { unit: "inputTokens", amount: 1 },
+      ],
+      discount: 0.5,
+      promotionEndsAt: "2027-01-01T00:00:00Z",
+    },
     displayName: "Gemini 3.8 Flash Lite TTS",
     capability: "tts",
     supportsVision: false,
@@ -3757,6 +3790,15 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   {
     provider: "google",
     modelId: "gemini-omni-1.2-flash",
+    // https://aistudio.google.com/docs/pricing#gemini-omni-1.2-flash
+    toolPricing: {
+      currency: "USD",
+      rates: [
+        { unit: "videoTokens", amount: 12 },
+        { unit: "inputTokens", amount: 1.5 },
+        { unit: "textOutputTokens", amount: 9 },
+      ],
+    },
     displayName: "Gemini Omni 1.2 Flash",
     capability: "video",
     contextWindow: 131072,
@@ -3789,6 +3831,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   {
     provider: "openai",
     modelId: "gpt-image-2.5-flare",
+    imagePricing: { unit: "usd_per_mtok", input: 5, cached: 1.25, thoughts: 30, output: 30 },
     displayName: "GPT Image 2.5 Flare",
     capability: "image",
     supportsVision: false,
@@ -3796,6 +3839,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   {
     provider: "deepseek",
     modelId: "deepseek-search",
+    // https://api-docs.deepseek.com/quick_start/pricing/
+    toolPricing: { currency: "USD", rates: [{ unit: "thousandSuccesses", amount: 0.75 }] },
     displayName: "DeepSeek Search",
     capability: "search",
     supportsVision: false,
@@ -3803,6 +3848,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   {
     provider: "deepseek",
     modelId: "deepseek-fetch",
+    // https://api-docs.deepseek.com/quick_start/pricing/
+    toolPricing: { currency: "USD", rates: [{ unit: "thousandSuccesses", amount: 0.75 }] },
     displayName: "DeepSeek Fetch",
     capability: "fetch",
     supportsVision: false,
@@ -3810,6 +3857,12 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   {
     provider: "deepseek",
     modelId: "deepseek-tts",
+    // https://api-docs.deepseek.com/quick_start/pricing/
+    toolPricing: {
+      currency: "USD",
+      rates: [{ unit: "tenThousandChars", amount: 0.45 }],
+      discount: 0.5,
+    },
     displayName: "DeepSeek TTS",
     capability: "tts",
     supportsVision: false,
@@ -3817,6 +3870,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   {
     provider: "deepseek",
     modelId: "deepseek-asr",
+    // https://api-docs.deepseek.com/guides/asr/#billing
+    toolPricing: { currency: "USD", rates: [{ unit: "audioHour", amount: 0.116 }], discount: 0.5 },
     displayName: "DeepSeek ASR",
     capability: "stt",
     supportsVision: false,
@@ -3838,6 +3893,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   {
     provider: "openrouter",
     modelId: "bytedance-seed/seedream-5-5",
+    imagePricing: { unit: "usd_per_image", output: 0.02, highResolution: 0.035 },
     displayName: "Seedream 5 5",
     capability: "image",
     supportsVision: false,
@@ -3847,6 +3903,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   {
     provider: "openrouter",
     modelId: "bytedance-seed/seedream-5-0-flash",
+    imagePricing: { unit: "usd_per_image", output: 0.018 },
     displayName: "Seedream 5 0 Flash",
     capability: "image",
     supportsVision: false,
@@ -3856,6 +3913,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   {
     provider: "openrouter",
     modelId: "fish-audio/drama-3",
+    // https://openrouter.ai/fish-audio/drama-3
+    toolPricing: { currency: "USD", rates: [{ unit: "millionBytes", amount: 10 }] },
     displayName: "Fish Audio Drama 3",
     capability: "tts",
     supportsVision: false,
@@ -3865,6 +3924,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   {
     provider: "openrouter",
     modelId: "fish-audio/transcribe-1",
+    // https://openrouter.ai/fish-audio/transcribe-1
+    toolPricing: { currency: "USD", rates: [{ unit: "audioSecond", amount: 0.0001 }] },
     displayName: "Fish Audio Transcribe 1",
     capability: "stt",
     supportsVision: false,
@@ -3964,24 +4025,46 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   {
     provider: "tokendance",
     modelId: "deepseek-search",
+    // https://tokendance.space/models/deepseek-search
+    toolPricing: { currency: "CNY", rates: [{ unit: "request", amount: 0.005 }] },
     displayName: "DeepSeek Search",
     capability: "search",
     supportsVision: false,
     clientType: "deepseek-webtool",
-    baseUrl: "https://tokendance.space/gateway/deepseek",
+    baseUrl: TOKENDANCE_DEEPSEEK_BASE_URL,
   },
   {
     provider: "tokendance",
     modelId: "deepseek-fetch",
+    // https://tokendance.space/models/deepseek-fetch
+    toolPricing: { currency: "CNY", rates: [{ unit: "request", amount: 0.005 }] },
     displayName: "DeepSeek Fetch",
     capability: "fetch",
     supportsVision: false,
     clientType: "deepseek-webtool",
-    baseUrl: "https://tokendance.space/gateway/deepseek",
+    baseUrl: TOKENDANCE_DEEPSEEK_BASE_URL,
+  },
+  {
+    provider: "tokendance",
+    modelId: "deepseek-asr",
+    // https://tokendance.space/models/deepseek-asr
+    toolPricing: {
+      currency: "CNY",
+      rates: [{ unit: "audioSecond", amount: 0.0002 }],
+      discount: 0.5,
+    },
+    displayName: "DeepSeek ASR",
+    capability: "stt",
+    supportsVision: false,
+    clientType: "deepseek-transcription",
+    baseUrl: TOKENDANCE_DEEPSEEK_BASE_URL,
   },
   {
     provider: "tokendance",
     modelId: "seedream-5.0-lite",
+    // https://tokendance.space/models/seedream-5.0-lite
+    toolPricing: { currency: "CNY", rates: [{ unit: "image", amount: seedreamLiteYuanPerImage }] },
+    imagePricing: { unit: "usd_per_image", output: seedreamLiteYuanPerImage / 7 },
     displayName: "Seedream 5.0 Lite",
     capability: "image",
     supportsVision: false,

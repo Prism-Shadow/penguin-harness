@@ -722,7 +722,10 @@ describe("MMSP's clients as the catalog reads them", () => {
         expect(env!.envBaseUrlKey, m.modelId).toBe("ANTHROPIC_BASE_URL");
         continue;
       }
-      if (m.provider === "tokendance" && m.clientType === "deepseek-webtool") {
+      if (
+        m.provider === "tokendance" &&
+        (m.clientType === "deepseek-webtool" || m.clientType === "deepseek-transcription")
+      ) {
         expect(env!.envKey).toBe("DEEPSEEK_API_KEY");
         expect(env!.envBaseUrlKey).toBe("DEEPSEEK_BASE_URL");
         continue;
