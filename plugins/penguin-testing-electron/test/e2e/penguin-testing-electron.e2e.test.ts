@@ -65,4 +65,23 @@ describe.skipIf(!available)("penguin-testing-electron e2e", () => {
       await driver.closeHarness(harness);
     }
   }, 120_000);
+
+  it("opens the Settings dialog on the Plugins page through the helper", async () => {
+    const driver = await import("../../src/driver.js");
+    const sample = path.join(import.meta.dirname, "sample-plugin");
+
+    const harness = await driver.launchHarness({ lang: "en" });
+    try {
+      // The plugin's config cards live on that page once the plugin is active — the path a
+      // plugin author's UI-contribution assertions start from.
+      const name = await driver.installPlugin(harness, sample, { force: true });
+      await driver.waitForActive(harness, name);
+
+      await driver.openSettings(harness, { section: "plugins" });
+      await expect(harness.window.getByRole("dialog", { name: "Settings" })).toBeVisible();
+      await expect(harness.window.getByRole("heading", { name: "Plugins" })).toBeVisible();
+    } finally {
+      await driver.closeHarness(harness);
+    }
+  }, 120_000);
 });

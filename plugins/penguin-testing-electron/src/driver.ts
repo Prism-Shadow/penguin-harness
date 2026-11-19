@@ -41,6 +41,13 @@ export interface LaunchOptions {
   root?: string;
   /** Where the instance keeps its data: `<base>/penguin` and `<base>/chrome`. Defaults to `<gitRoot>/.data/penguin-testing-electron`. */
   dataDir?: string;
+  /**
+   * The instance's UI language ("en" | "zh"), so selectors do not chase the host machine's
+   * locale. The language is the signed-in admin account's preference (`PUT /api/me/prefs`),
+   * applied before the first window loads — an Electron `--lang` argument does not reach the
+   * web app's locale chain. Defaults to "en".
+   */
+  lang?: "en" | "zh";
 }
 
 export interface TestPluginOptions extends LaunchOptions {
@@ -58,6 +65,8 @@ export interface TestResult {
   unit: string;
   ok: boolean;
   error?: string;
+  /** The failing unit's stack, when it failed — the locator's exact await, not just its message. */
+  stack?: string;
   /** How long the unit took, in milliseconds. */
   durationMs: number;
 }
@@ -94,10 +103,11 @@ export function instanceDirs(root: string, dataDir?: string): { penguinHome: str
 
 /**
  * Launch a harness desktop shell and hold it: the caller drives the steps from here —
- * `installPlugin`, `waitForActive`, `removePlugin`, and `closeHarness` when the round is
- * over. The instance gets its own data root and its own seeded admin (never the user
- * harness's), and launches with `--lang=en` so the shell's UI language is deterministic
- * whatever the host machine's locale is — selectors in units do not chase translations.
+ * `installPlugin`, `waitForActive`, `openSettings`, `removePlugin`, and `closeHarness` when
+ * the round is over. The instance gets its own data root and its own seeded admin (never
+ * the user harness's), and its UI language is pinned (the signed-in admin account's
+ * preference) so the shell renders in the language the selectors expect whatever the host
+ * machine's locale is.
  */
 export async function launchHarness(options: LaunchOptions = {}): Promise<HarnessInstance> {
   const root = options.root ?? gitRoot();
@@ -111,7 +121,7 @@ export async function launchHarness(options: LaunchOptions = {}): Promise<Harnes
   const adminPassword = "penguin-testing-electron";
   const app = await _electron.launch({
     cwd: root,
-    args: [path.join(root, "packages/desktop"), "--lang=en"],
+    args: [path.join(root, "packages/desktop")],
     env: {
       ...process.env,
       PENGUIN_HOME: penguinHome,
@@ -162,6 +172,21 @@ export async function launchHarness(options: LaunchOptions = {}): Promise<Harnes
       cookie: loginResponse.headers.get("set-cookie")!.split(";")[0]!,
     };
 
+    // The UI language is the signed-in account's preference: pin it before the first window
+    // reads it, so the shell renders in the language the test's selectors expect. Applied
+    // via the account prefs (the same source the UI itself follows), not an Electron
+    // argument — `--lang` never reaches the web app's locale chain.
+    const lang = options.lang ?? "en";
+    const prefsPut = await fetch(`${base}/api/me/prefs`, {
+      method: "PUT",
+      headers: { ...authHeaders, "content-type": "application/json" },
+      body: JSON.stringify({ lang }),
+    });
+    if (!prefsPut.ok) {
+      throw new Error(`launchHarness: pinning the UI language to '${lang}' failed (${prefsPut.status})`);
+    }
+    await window.reload().catch(() => undefined);
+
     // A project to install plugins into: the first project on the instance, or one the
     // driver creates when the fresh instance has none.
     const project = await fetch(`${base}/api/projects`, { headers: authHeaders })
@@ -198,6 +223,45 @@ export async function pluginNameOf(pluginDir: string): Promise<string> {
 }
 
 /**
+ * What the instance will check about a plugin package, checked locally before any shell is
+ * launched: a readable manifest with a name, the `main` entry it names, and — the loader's
+ * own contract — an ifaces.json. Everything here is the link route's `not_a_plugin` refusal,
+ * caught before a 2s launch + login only to be refused the same thing. A package without an
+ * ifaces.json was never built: its build runs gen-ifaces + the bundler.
+ */
+export async function precheckPluginPackage(pluginDir: string): Promise<{ name: string }> {
+  const fs = await import("node:fs");
+  const manifestPath = path.join(pluginDir, "package.json");
+  const manifest = JSON.parse(await fs.promises.readFile(manifestPath, "utf8").catch(() => {
+    throw new Error(
+      `precheck: ${pluginDir} has no package.json — point pluginDir at a plugin package directory`,
+    );
+  })) as { name?: string; main?: string };
+  if (typeof manifest.name !== "string" || manifest.name === "") {
+    throw new Error(`precheck: ${manifestPath} declares no name`);
+  }
+  if (typeof manifest.main !== "string" || manifest.main === "") {
+    throw new Error(`precheck: ${manifestPath} declares no main entry`);
+  }
+  const mainPath = path.join(pluginDir, manifest.main);
+  await fs.promises.access(mainPath).catch(() => {
+    throw new Error(
+      `precheck: the manifest's main entry ${manifest.main} is missing on disk (the package was never built — run its build: gen-ifaces + bundler)`,
+    );
+  });
+  await fs.promises
+    .access(path.join(pluginDir, "ifaces.json"))
+    .catch(() =>
+      Promise.reject(
+        new Error(
+          `precheck: ${pluginDir} has no ifaces.json — the instance will refuse it as not_a_plugin. The package was never built: run its build (gen-ifaces + bundler) first`,
+        ),
+      ),
+    );
+  return { name: manifest.name };
+}
+
+/**
  * Link a plugin package into the running instance through its own management surface —
  * the same verb the author-facing `penguin plugin link` uses: the directory is referenced
  * in place, no packaging, no copying. `force` lets a name the build ships be replaced for
@@ -208,6 +272,7 @@ export async function installPlugin(
   pluginDir: string,
   options: { force?: boolean } = {},
 ): Promise<string> {
+  await precheckPluginPackage(pluginDir);
   const name = await pluginNameOf(pluginDir);
   const linked = await fetch(`${instance.base}/api/projects/${instance.project}/plugins/installed/link`, {
     method: "POST",
@@ -245,10 +310,20 @@ export async function installPlugin(
 /**
  * Poll the instance's own view until the named plugin runs. Resolves once the loader has
  * flipped its generation for the link; throws what the instance itself reported when the
- * plugin cannot load.
+ * plugin cannot load. On timeout the error carries the row's last seen state — the
+ * instance's own `error` field when it reported one, otherwise the active flag — so the
+ * failure says where the plugin actually stood, not just that it never arrived.
  */
-export async function waitForActive(instance: HarnessInstance, name: string): Promise<void> {
-  for (let i = 0; i < 50; i++) {
+export async function waitForActive(
+  instance: HarnessInstance,
+  name: string,
+  options: { timeoutMs?: number; intervalMs?: number } = {},
+): Promise<void> {
+  const timeoutMs = options.timeoutMs ?? 10_000;
+  const intervalMs = options.intervalMs ?? 200;
+  const deadline = Date.now() + timeoutMs;
+  let lastRow: { active: boolean; error?: string } | null = null;
+  while (Date.now() < deadline) {
     const installed = await fetch(`${instance.base}/api/projects/${instance.project}/plugins/installed`, {
       headers: instance.authHeaders,
     }).then((r) => {
@@ -258,13 +333,22 @@ export async function waitForActive(instance: HarnessInstance, name: string): Pr
       }>;
     });
     const row = installed.plugins.find((p) => p.specifier === name);
+    lastRow = row ? { active: row.active, error: row.error } : null;
     if (row?.active === true) return;
     if (row?.error !== undefined) {
       throw new Error(`waitForActive: the instance cannot load ${name}: ${row.error}`);
     }
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
   }
-  throw new Error(`waitForActive: ${name} never became active on the instance`);
+  const seen =
+    lastRow === null
+      ? "the instance never listed it"
+      : lastRow.error !== undefined
+        ? `its last reported error: ${lastRow.error}`
+        : `it was listed but not active (active: ${lastRow.active})`;
+  throw new Error(
+    `waitForActive: ${name} never became active within ${timeoutMs}ms — ${seen}`,
+  );
 }
 
 /**
@@ -282,6 +366,40 @@ export async function removePlugin(instance: HarnessInstance, name: string): Pro
 export async function closeHarness(instance: HarnessInstance): Promise<void> {
   await instance.app.close().catch(() => undefined);
 }
+
+/**
+ * Open the shell's Settings dialog, on the named page ("plugins" for a plugin's config
+ * cards) or the account's first one, and wait until the page's heading is visible. The
+ * path is the shell's own: the sidebar's account button opens the account menu, the
+ * menu's Settings row asks for the dialog (the layer every page mounts), the dialog's rail
+ * row switches the page. Every anchor is an accessible name, so the helper does not chase
+ * classes or translated text — the UI language is pinned ("en") by `launchHarness`.
+ */
+export async function openSettings(
+  instance: HarnessInstance,
+  options: { section?: "plugins" } = {},
+): Promise<void> {
+  const window = instance.window;
+  const accountButton = window.locator("button[aria-haspopup='menu']").filter({ hasText: "admin" });
+  if ((await accountButton.count()) === 0) {
+    throw new Error("openSettings: the sidebar's account button was not found");
+  }
+  await accountButton.first().click();
+  const settingsRow = window.getByRole("menuitem", { name: "Settings" });
+  await settingsRow.click();
+  const dialog = window.getByRole("dialog", { name: "Settings" });
+  await dialog.waitFor({ state: "visible" });
+  if (options.section === undefined) return;
+  // The rail row is a nav link named by its section; the pane heading follows it.
+  const row = dialog.getByRole("link", { name: SECTION_TITLES[options.section] }).first();
+  await row.click();
+  await dialog.getByRole("heading", { name: SECTION_TITLES[options.section] }).waitFor({
+    state: "visible",
+  });
+}
+
+/** The Settings dialog's page titles the helper can open on (the "en" UI strings). */
+const SECTION_TITLES = { plugins: "Plugins" } as const;
 
 /**
  * Collect the units: the modules the caller handed over, filtered to those that declare
@@ -323,6 +441,9 @@ export function collectUnits(units: readonly ModuleClass[] | Plugin): Array<{
  * low-level surface above — the manual tier is the same steps, held by the caller.
  */
 export async function testPlugin(options: TestPluginOptions): Promise<TestResult[]> {
+  // The package checks are the link route's refusals — catch them before a shell is
+  // launched, so a never-built package fails in milliseconds instead of after 2s + login.
+  await precheckPluginPackage(options.pluginDir);
   const instance = await launchHarness(options);
   let pluginName: string | null = null;
   try {
@@ -342,6 +463,7 @@ export async function testPlugin(options: TestPluginOptions): Promise<TestResult
           unit: unit.name,
           ok: false,
           error: err instanceof Error ? err.message : String(err),
+          stack: err instanceof Error ? err.stack : undefined,
           durationMs: Date.now() - started,
         });
       }

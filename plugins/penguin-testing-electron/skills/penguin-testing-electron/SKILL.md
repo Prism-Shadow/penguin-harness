@@ -1,7 +1,7 @@
 ---
 name: penguin-testing-electron
 description: "Drive a real harness desktop shell (Electron) end to end from the shell: launch the current checkout or a given build, set the instance up from the current harness's config and vault, install the plugin under test, run its test-unit modules inside the shell, and remove them afterwards. Use it to verify that a plugin's UI contributions and registered capabilities actually work in a real shell."
-version: 2026.11.18.1
+version: 2026.11.19.1
 ---
 
 # Penguin testing (Electron)
@@ -10,7 +10,7 @@ version: 2026.11.18.1
 
 ## What it does
 
-1. **Launch** — `_electron.launch` starts the harness desktop shell (the current checkout by default, or a given build's path), over Playwright's Electron channel. The shell's first window comes back as a standard Playwright page, so every locator and `expect` assertion works unchanged. The instance launches with `--lang=en`, so the UI language is English whatever the host machine's locale is — selectors do not chase translations.
+1. **Launch** — `_electron.launch` starts the harness desktop shell (the current checkout by default, or a given build's path), over Playwright's Electron channel. The shell's first window comes back as a standard Playwright page, so every locator and `expect` assertion works unchanged. The UI language is pinned before the first window reads it — the signed-in admin account's preference (`PUT /api/me/prefs`), "en" by default (`lang` option) — so the shell renders English whatever the host machine's locale is and selectors do not chase translations.
 2. **Set up** — the instance gets its own data root and its own seeded admin, so the driver may call the instance's plugin management surface as an admin. The credential belongs to the throwaway instance only, never the user harness's.
 3. **Test data** — the instance's home and browser data live at `<git root>/.data/penguin-testing-electron/penguin` and `.../chrome` by default (an alternative base can be named). The path survives across test rounds; the system does not clean it.
 4. **Install and remove** — the plugin under test is installed into the running instance so its real UI and capabilities load; the test units are handed to the driver as modules and run against that real shell; after the run the plugin is removed so the instance returns to a clean state.
@@ -56,15 +56,23 @@ The low-level tier holds the same steps one at a time, for the exploratory round
 
 ```ts
 import {
-  launchHarness, installPlugin, waitForActive, removePlugin, closeHarness,
+  launchHarness, installPlugin, waitForActive, removePlugin, openSettings, closeHarness,
 } from "@penguinharness/penguin-testing-electron/driver";
 
 const harness = await launchHarness();          // the shell is up; harness.window is the page
 const name = await installPlugin(harness, "plugins/my-plugin", { force: true });
-await waitForActive(harness, name);
+await waitForActive(harness, name, { timeoutMs: 15_000 });
 // ... drive harness.window with Playwright, remove and install others on the same shell ...
+
+// A plugin's config cards live on the Settings dialog's Plugins page; the helper opens the
+// shell's own path there — the account menu's Settings row, then the rail's Plugins row.
+await openSettings(harness, { section: "plugins" });
+const card = harness.window.getByRole("heading", { name: "My plugin" });
+
 await removePlugin(harness, name);
 await closeHarness(harness);
 ```
+
+The driver checks a plugin package before any shell is launched (`precheckPluginPackage`, part of every install): a package without a manifest, a `main` entry or an `ifaces.json` fails in milliseconds with what to run (the build: gen-ifaces + bundler) instead of after a two-second launch. When a unit fails, its result carries the error's stack — the exact await, not just the message.
 
 On Linux the shell runs headless under Xvfb; without a display the cases skip themselves instead of failing.
