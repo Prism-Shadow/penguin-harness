@@ -60,6 +60,7 @@ import type { SessionIndex } from "@prismshadow/penguin-library-session";
 import type { Workbenches } from "../mechanisms/workbenches.js";
 import type {
   AppCenterShortcut,
+  WorkbenchApprovalMode,
   WorkbenchTabIcon,
   WorkbenchInfo,
   WorkbenchInput,
@@ -127,6 +128,8 @@ export const TABS_SLOT = "sessionTabs";
 const OPEN_WEB_SLOTS = [TABS_SLOT] as const;
 /** A burst of file writes (an editor, a git checkout, a rollback) becomes one reload. */
 const WATCH_SETTLE_MS = 300;
+/** What `createSession` takes as `approvalMode`: the two modes that never wait for a person. */
+const WORKBENCH_APPROVAL_MODES: readonly WorkbenchApprovalMode[] = ["allow-all", "deny-all"];
 
 interface Loaded {
   folder: WorkbenchFolder;
@@ -1193,16 +1196,25 @@ export class WorkbenchService implements Workbenches {
     let state: unknown = await readState(folder.dir);
     return {
       listAgents: () => service.agents.list(projectId).map((row) => ({ agentId: row.agentId })),
-      async createSession(opts?: { agentId?: string }) {
+      async createSession(opts?: { agentId?: string; approvalMode?: WorkbenchApprovalMode }) {
         const target = opts?.agentId ?? agentId;
+        // Unattended, like a scheduled run: allow-all unless the workbench asks for deny-all,
+        // whatever the default preset says. The handler's types name the two values, but a
+        // cast gets past them, so the value is checked here too: any other mode would park a
+        // call for a person who is not there.
+        const approvalMode = opts?.approvalMode === undefined ? "allow-all" : opts.approvalMode;
+        if (!WORKBENCH_APPROVAL_MODES.includes(approvalMode)) {
+          throw new Error(
+            `createSession: approvalMode is "allow-all" or "deny-all", not ${JSON.stringify(approvalMode)}`,
+          );
+        }
         if (!service.agents.exists(projectId, target)) {
           throw new Error(`createSession: this Project has no Agent '${target}'`);
         }
-        // Unattended, like a scheduled run: allow-all, whatever the default preset asks.
         return service.sessions.createSession({
           projectId,
           agentId: target,
-          approvalMode: "allow-all",
+          approvalMode,
           source: "workbench",
           client: "workbench",
         });
