@@ -1276,9 +1276,9 @@ export const en: Strings = {
     /** The windowed app's title bar. */
     windowClose: "Close, back to the App Center",
     windowFullScreen: "Open full screen",
-    /** Local Agents only: a machine's Agents keep their apps in their own settings. */
-    machinesNote:
-      "Workbenches of agents on machines are not listed here. Open them from the agent's settings.",
+    /** Machines whose apps could not be read just now: what they last showed stays on the grid. */
+    machinesOffline: (names: string) =>
+      `Currently unreachable: ${names}. Cached items are still visible.`,
     aiCreateTitle: "Create an app with AI",
     aiCreateDescription: "The agent you pick builds a workbench and puts it in the App Center.",
     aiCreatePlaceholder: "Describe the app you want, such as a board for daily to-dos",

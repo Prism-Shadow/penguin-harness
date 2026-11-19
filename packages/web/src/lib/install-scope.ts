@@ -36,6 +36,7 @@
  * being fixed. The practical consequence, which the changelog states plainly: state that is
  * ALREADY stale when this ships stays stale; only wipes from here on are handled.
  */
+import { forgetCatalogs } from "./catalog-storage";
 import * as api from "../api/endpoints";
 
 /** Where this browser records the data root it last saw. Never swept — it IS the marker. */
@@ -368,6 +369,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "family",
+    key: "penguin.catalog.",
+    scope: "install",
+    why: "What each machine last answered the App Center (sessionStorage, lib/catalog-storage.ts): it names that machine's Agents and apps, so a sweep forgets the tab's copies too (forgetCatalogs).",
+  },
+  {
+    kind: "family",
     key: "penguin.machineSessions.",
     scope: "install",
     why: "The Sessions each machine was last seen holding, shown until its connection is held again. Project id and machine id in the key, Session ids in the value — a new root knows none of them.",
@@ -648,7 +655,10 @@ export function reconcileInstallScope(
   if (stored === installId) return "unchanged";
 
   const swept = stored !== null;
-  if (swept) sweep(storage);
+  if (swept) {
+    sweep(storage);
+    forgetCatalogs(() => true);
+  }
   try {
     storage.setItem(INSTALL_ID_KEY, installId);
   } catch {
@@ -752,6 +762,7 @@ export function reactToInstallIdChange(
   if (change.oldValue === null || change.newValue === null) return false;
   if (change.oldValue === change.newValue) return false;
   sweep(storage);
+  forgetCatalogs(() => true);
   return true;
 }
 

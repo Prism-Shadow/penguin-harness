@@ -288,6 +288,8 @@ export interface AgentServer {
   answerMcpTest(answer: (entry: MCPServerConfig) => McpServerTestResponse): void;
   /** Takes a machine out of reach (being brought back), or brings it back. */
   setReconnecting(machineId: string, reconnecting: boolean): void;
+  /** Takes a machine out of the Project's machines list, or puts it back (the page reads on `machines_changed`). */
+  setListed(machineId: string, listed: boolean): void;
   /** Breaks an organization's chart (or mends it): from then on only its CEO is known to work there. */
   setChartUnreadable(orgId: string, unreadable: boolean): void;
   /** A conversation's messaging bindings as the server that runs it (null: this one) holds them now. */
@@ -499,6 +501,8 @@ export function agentServer(
     pluginUpdates: agentId === AGENT_ID ? pluginUpdates : [],
   });
 
+  /** Machines the list leaves out for now (setListed). */
+  const unlisted = new Set<string>();
   /** The machines list as this server reports it: itself first, then each machine. */
   const machinesList = (): MachineInfo[] => [
     {
@@ -513,32 +517,34 @@ export function agentServer(
       status: null,
       root: "/data",
     },
-    ...machines.map((m): MachineInfo => ({
-      id: `ssh:${m.alias}`,
-      alias: m.alias,
-      installed: { version: "0.2.16", at: "2026-10-01T00:00:00Z" },
-      member: true,
-      machineId: m.machineId,
-      local: false,
-      connection: m.reconnecting === true ? null : { pid: 4242 },
-      socket: null,
-      ...(m.reconnecting === true
-        ? {
-            reconnect: {
-              since: "2026-10-15T00:00:00Z",
-              attempts: 2,
-              maxAttempts: 8,
-              nextAt: null,
-              lastError: null,
-              diagnosis: null,
-            },
-          }
-        : {}),
-      keepConnected: true,
-      api: null,
-      status: { state: "running", checkedAt: "2026-10-15T00:00:00Z", port: 7371 },
-      root: "/home/penguin/.penguin/data",
-    })),
+    ...machines
+      .filter((m) => !unlisted.has(m.machineId))
+      .map((m): MachineInfo => ({
+        id: `ssh:${m.alias}`,
+        alias: m.alias,
+        installed: { version: "0.2.16", at: "2026-10-01T00:00:00Z" },
+        member: true,
+        machineId: m.machineId,
+        local: false,
+        connection: m.reconnecting === true ? null : { pid: 4242 },
+        socket: null,
+        ...(m.reconnecting === true
+          ? {
+              reconnect: {
+                since: "2026-10-15T00:00:00Z",
+                attempts: 2,
+                maxAttempts: 8,
+                nextAt: null,
+                lastError: null,
+                diagnosis: null,
+              },
+            }
+          : {}),
+        keepConnected: true,
+        api: null,
+        status: { state: "running", checkedAt: "2026-10-15T00:00:00Z", port: 7371 },
+        root: "/home/penguin/.penguin/data",
+      })),
   ];
 
   /** What a machine answers itself: its own Agent list; anything else is the shared state below. */
@@ -1230,6 +1236,10 @@ export function agentServer(
     },
     answerMcpTest: (answer) => {
       mcpTest = answer;
+    },
+    setListed: (machineId, listed) => {
+      if (listed) unlisted.delete(machineId);
+      else unlisted.add(machineId);
     },
     setReconnecting: (machineId, reconnecting) => {
       const machine = machines.find((m) => m.machineId === machineId);

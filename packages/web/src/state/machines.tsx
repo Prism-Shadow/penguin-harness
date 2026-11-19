@@ -33,6 +33,13 @@ import {
 
 import type { MachinesResponse } from "@prismshadow/penguin-server/api";
 import * as api from "../api/endpoints";
+import {
+  catalogAccessDenied,
+  catalogKey,
+  catalogScope,
+  forgetCatalogs,
+  inCatalogScope,
+} from "../lib/catalog-storage";
 import { apiErrorText } from "../lib/api-error";
 import { useAuth } from "./auth";
 import { useProject } from "./project";
@@ -78,20 +85,38 @@ const MachinesContext = createContext<MachinesAccount>(NONE);
 export function MachinesProvider({ children }: { children: ReactNode }) {
   const { currentProject } = useProject();
   const projectId = currentProject?.projectId ?? null;
-  const admin = useAuth().user?.isAdmin === true;
+  const { user } = useAuth();
+  const admin = user?.isAdmin === true;
+  /** The Project and the account the list is read for: another account's answer is not shown. */
+  const scope = admin && projectId !== null ? catalogScope(projectId, user.userId) : null;
   const [state, setState] = useState<MachinesResponse | null>(null);
   const [settled, setSettled] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  /** The Project the current answers are about: a late one about another is dropped. */
+  /** The scope the current answers are about: a late one about another is dropped. */
   const current = useRef<string | null>(null);
-  /** The read in flight and the Project it asks about, and whether another is owed after it. */
-  const reading = useRef<{ projectId: string; done: Promise<void> } | null>(null);
+  /** The read in flight and the scope it asks about, and whether another is owed after it. */
+  const reading = useRef<{ scope: string; done: Promise<void> } | null>(null);
   const owed = useRef(false);
 
+  const adopt = useCallback(
+    (next: MachinesResponse | null) => {
+      if (!scope || current.current !== scope) return;
+      // A machine the Project no longer lists takes what it answered with it.
+      const allowed = new Set(
+        next?.machines
+          .filter((m) => !m.local && m.installed && m.machineId)
+          .map((m) => catalogKey(scope, m.machineId!)),
+      );
+      forgetCatalogs((key) => inCatalogScope(key, scope) && !allowed.has(key));
+      setState(next);
+    },
+    [scope],
+  );
+
   const refresh = useCallback((): Promise<void> => {
-    if (projectId === null || !admin) return Promise.resolve();
+    if (projectId === null || scope === null) return Promise.resolve();
     const inFlight = reading.current;
-    if (inFlight !== null && inFlight.projectId === projectId) {
+    if (inFlight !== null && inFlight.scope === scope) {
       owed.current = true;
       return inFlight.done;
     }
@@ -100,26 +125,27 @@ export function MachinesProvider({ children }: { children: ReactNode }) {
         owed.current = false;
         try {
           const next = await api.getMachines(projectId);
-          if (current.current !== projectId) return;
-          setState(next);
+          if (current.current !== scope) return;
+          adopt(next);
           setError(null);
         } catch (err) {
-          if (current.current !== projectId) return;
+          if (current.current !== scope) return;
+          if (catalogAccessDenied(err)) adopt(null);
           setError(apiErrorText(err));
         } finally {
-          if (current.current === projectId) setSettled(true);
+          if (current.current === scope) setSettled(true);
         }
-      } while (owed.current && current.current === projectId);
+      } while (owed.current && current.current === scope);
     };
     const done = run().finally(() => {
       if (reading.current?.done === done) reading.current = null;
     });
-    reading.current = { projectId, done };
+    reading.current = { scope, done };
     return done;
-  }, [projectId, admin]);
+  }, [projectId, scope, adopt]);
 
   useEffect(() => {
-    current.current = projectId;
+    current.current = scope;
     setState(null);
     setError(null);
     // No Project yet is still waiting; a user who reads no machines has an account already.
@@ -127,17 +153,28 @@ export function MachinesProvider({ children }: { children: ReactNode }) {
     if (projectId === null || !admin) return;
     void refresh();
     return subscribeMachinesChanged(() => void refresh());
-  }, [projectId, admin, refresh]);
+  }, [projectId, admin, scope, refresh]);
 
-  const accept = useCallback((next: MachinesResponse) => {
-    setState(next);
-    setError(null);
-    setSettled(true);
-  }, []);
+  const accept = useCallback(
+    (next: MachinesResponse) => {
+      if (!scope || current.current !== scope) return;
+      adopt(next);
+      setError(null);
+      setSettled(true);
+    },
+    [scope, adopt],
+  );
 
+  const visible = scope !== null && current.current === scope;
   const value = useMemo<MachinesAccount>(
-    () => ({ state, settled, error, refresh, accept }),
-    [state, settled, error, refresh, accept],
+    () => ({
+      state: visible ? state : null,
+      settled: visible ? settled : projectId !== null && !admin,
+      error: visible ? error : null,
+      refresh,
+      accept,
+    }),
+    [visible, projectId, admin, state, settled, error, refresh, accept],
   );
   return <MachinesContext.Provider value={value}>{children}</MachinesContext.Provider>;
 }
