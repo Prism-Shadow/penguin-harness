@@ -3,7 +3,7 @@
 - **Date:** 2026-11-19
 - **Type:** feature
 - **Scope:** `amsp`, `core`, `server`, `web`, `cli`
-- **PR:** PR_R_LINK
+- **PR:** [#1652](https://github.com/Prism-Shadow/penguin-harness/pull/1652)
 - **Breaking:** yes — `@prismshadow/amsp/records` no longer exports `lastNonTaskRecord`
 
 [中文版](2026-11-19-session-update-record.zh.md)
