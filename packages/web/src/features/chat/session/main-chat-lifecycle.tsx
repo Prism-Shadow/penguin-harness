@@ -2,11 +2,11 @@ import { scoped } from "../../../lib/project-scope";
 import { adoptBrowserSession } from "../../builtin-browser";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SessionInfo, SessionStatus } from "@prismshadow/penguin-server/api";
-import { toastError, toastSuccess } from "@prismshadow/penguin-ui";
+import { toastSuccess } from "@prismshadow/penguin-ui";
 import * as api from "../../../api/endpoints";
 import { ApiError } from "../../../api/client";
 import { S } from "../../../lib/strings";
-import { apiErrorText } from "../../../lib/api-error";
+import { toastApiError } from "../../../lib/toast-api-error";
 import { configuredCompactionLimit } from "../../../lib/context";
 import { humanizeTokens } from "../../../lib/format";
 import { latestConversation, withoutOrgSessions } from "../../../lib/session-grouping";
@@ -222,7 +222,7 @@ export function useMainChatLifecycle(scope: ReturnType<typeof useMainChatTranscr
           null,
         );
       } catch (e) {
-        toastError(apiErrorText(e));
+        toastApiError(e);
         throw e;
       }
       setCompactionLimit(configuredCompactionLimit(maxContextLength));
@@ -632,7 +632,7 @@ export function useMainChatLifecycle(scope: ReturnType<typeof useMainChatTranscr
           processIds.map((processId) => request(sessionId, processId)),
         );
         const failure = reportableProcessFailure(results, staleStatuses);
-        if (failure !== null) toastError(apiErrorText(failure.error));
+        if (failure !== null) toastApiError(failure.error);
       } finally {
         setProcBusy(null);
         api

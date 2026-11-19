@@ -636,6 +636,64 @@ export const en: Strings = {
       (c.failed > 0 ? `, ${c.failed} failed` : ""),
     importHistoryResult: (h: { found: number; imported: number }): string =>
       `History: ${h.imported} of ${h.found} entries imported`,
+    importSkip: ({ reason, count: n }, browser) => {
+      switch (reason) {
+        case "app_bound":
+          return `${n} protected by ${browser}'s app-bound encryption, which only ${browser} itself can read.`;
+        case "dpapi":
+          return `${n} whose key Windows would not unlock.`;
+        case "keychain":
+          return `${n} whose key the Keychain did not release; allow the access when macOS asks, then import again.`;
+        case "keyring":
+          return `${n} whose key the desktop keyring could not provide.`;
+        case "undecryptable":
+          return `${n} that could not be decrypted.`;
+        case "partitioned":
+          return `${n} partitioned to a single site or container.`;
+        case "expired":
+          return `${n} expired.`;
+      }
+    },
+    importNote: (note, browser) => {
+      const store = (which: "cookies" | "history") =>
+        which === "cookies" ? "cookie store" : "history";
+      switch (note.code) {
+        case "no_cookie_store":
+          return "This profile has no cookie store.";
+        case "no_history":
+          return "This source has no history to import.";
+        case "store_busy":
+          return `${browser} is holding its ${store(note.store)} open; close ${browser} and import again.`;
+        case "store_unreadable":
+          return `The ${store(note.store)} of ${browser} could not be read.`;
+        case "cookies_not_set":
+          return (
+            `${note.count} cookies could not be set in the built-in browser` +
+            (note.errors.length > 0 ? `: ${note.errors.join("; ")}` : ".")
+          );
+      }
+    },
+    importExtensionGroup: "Through the Chrome extension",
+    importExtensionHint:
+      "Reads the cookies of the Chrome profile the extension runs in; Chrome asks you to allow it first.",
+    importWaitingChrome: "Waiting for Chrome…",
+    importAppBoundHint: (route) =>
+      route === "not_paired"
+        ? "On Windows, only Chrome can read most of its cookies: connect your Chrome in Settings › Browser to import them through the extension, or sign in inside the Browser panel."
+        : route === "disconnected"
+          ? "On Windows, only Chrome can read most of its cookies: once your Chrome's PenguinHarness Browser extension is connected, import them through it, or sign in inside the Browser panel."
+          : route === "connected"
+            ? "On Windows, only Chrome can read most of its cookies; choose the Chrome extension below to import them through it."
+            : "On Windows, only Chrome can read most of its cookies; sign in inside the Browser panel instead.",
+    importAppBoundAdvice: (route) =>
+      route === "connected"
+        ? "Import again through the Chrome extension to bring them over, or sign in inside the Browser panel."
+        : route === "not_paired"
+          ? "Connect your Chrome in Settings › Browser to import them through the extension, or sign in inside the Browser panel."
+          : route === "disconnected"
+            ? "Once your Chrome's PenguinHarness Browser extension is connected, import them through it, or sign in inside the Browser panel."
+            : "Sign in to those sites inside the Browser panel instead.",
+    importUseExtension: "Import through the Chrome extension",
     importFailed: (reason: string): string => `Import failed: ${reason}`,
     clearTitle: "Clear browsing data",
     clearBody:
@@ -4562,8 +4620,12 @@ Scenarios:
       `This model's context window ${n} is smaller than this agent's compaction threshold ${m}, so compaction actually fires at the edge of the window. Drag the dashed mark in the context panel, or set the threshold below the window in the agent settings — it applies immediately.`,
     contextWindowUnderThresholdAction: "Open agent settings",
     contextWindowUnderThresholdDismiss: "Dismiss",
-    contextRefusedHandoff:
-      "The provider refused the last request: too little room was left for compaction, so this conversation continued from a Trace hand-off note. Correct this model's context window in the model settings, or lower this agent's compaction threshold (drag the dashed mark in the context panel).",
+    contextRefusedHandoff: {
+      reason: (said: boolean): string =>
+        said ? "The provider refused the last request:" : "The provider refused the last request.",
+      advice:
+        "This conversation continued from a Trace hand-off note. Most likely too little room was left for compaction: correct this model's context window in the model settings, or lower this agent's compaction threshold (drag the dashed mark in the context panel).",
+    },
     slashHint: "Type / for commands",
     switchAgent: "Hand off to another agent — opens a new session on send",
     switchAgentTitle: "Choose agent",
@@ -4650,14 +4712,25 @@ Scenarios:
       tracePath
         ? `No summary: the previous model was unavailable or its compaction failed, so the new one reads the earlier Trace file when it needs to: ${tracePath}`
         : "No summary: the previous model was unavailable or its compaction failed, so the new one reads the earlier Trace file when it needs to",
-    compactionDegradedHint: (errorMessage?: string): string =>
-      errorMessage !== undefined
-        ? `No full summary could be written; the next context opens with a Trace hand-off note: ${errorMessage}`
-        : "No full summary could be written; the next context opens with a Trace hand-off note.",
-    compactionRoomHint: (providerMessage?: string): string =>
-      `Too little room was left for compaction, so the next context opens with a Trace hand-off note. Correct this model's context window, or lower the compaction threshold.${
-        providerMessage !== undefined ? ` The provider said: ${providerMessage}` : ""
-      }`,
+    compactionDegradedHint: (
+      why: string | null,
+      errorMessage: string | undefined,
+      room: boolean,
+    ): string => {
+      // The retry line's cause sits inside parentheses, lower-case; here it starts a line.
+      const cause = why === null ? null : `${why.charAt(0).toUpperCase()}${why.slice(1)}`;
+      return [
+        cause !== null && errorMessage !== undefined
+          ? `${cause}: ${errorMessage}`
+          : (cause ?? errorMessage),
+        "No full summary could be written; the next context opens with a Trace hand-off note.",
+        room
+          ? "Most likely too little room was left for compaction: correct this model's context window, or lower the compaction threshold."
+          : undefined,
+      ]
+        .filter((line) => line !== undefined)
+        .join("\n");
+    },
     compactionFailed: (status: string, errorMessage?: string): string => {
       if (status === "aborted") return "aborted, keeping current context";
       const detail = errorMessage !== undefined ? ` (${errorMessage})` : "";
@@ -6766,7 +6839,7 @@ Scenarios:
   report: {
     action: "Report",
     title: "Report a problem",
-    lead: "An error like this is most likely a defect in PenguinHarness. Reporting it on GitHub helps improve this open-source project.",
+    lead: "This may be a defect in PenguinHarness, or it may come from the network, a model provider or a connected machine. If you think PenguinHarness is at fault, filing an issue on GitHub helps improve this open-source project.",
     check:
       "Keys, tokens and personal paths are taken out of the report; still check it for anything private before you send it.",
     label: "Report",
@@ -6957,6 +7030,9 @@ Scenarios:
       browser_unavailable:
         "The browser is not available right now: the built-in browser needs the PenguinHarness desktop app open, and your Chrome needs the PenguinHarness Browser extension connected.",
       source_not_found: "That browser profile was not found.",
+      import_declined: "The import was not allowed in Chrome.",
+      extension_outdated:
+        "The PenguinHarness Browser extension in Chrome is too old for this. Update it and try again.",
       shell_unreachable: "The desktop app could not be reached.",
       timeout: "That took too long. Try again.",
     },

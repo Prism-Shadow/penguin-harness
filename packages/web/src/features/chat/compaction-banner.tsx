@@ -53,8 +53,10 @@ import {
   ICONS,
   ICON_SIZE,
   LiveDuration,
+  ReportIssueAction,
   StatusIcon,
   StreamText,
+  toldReport,
   type ActivityGroupRow,
 } from "@prismshadow/penguin-ui";
 
@@ -69,6 +71,7 @@ import {
   compactionSummaryText,
 } from "../../lib/amsp/compaction-summary";
 import type { StreamRenderContext } from "./message-stream";
+import { httpStatusOf } from "./provider-error";
 import { SessionToolCall } from "./tool-call-card";
 
 /**
@@ -170,6 +173,17 @@ function CompactionWork({
   );
 }
 
+/**
+ * The degraded mark's tooltip and accessible name. The cause comes from the dictionary the retry
+ * line uses, so the row and the line above it name a refusal the same way.
+ */
+function degradedMarkHint(item: CompactionItem): string {
+  const t = S.chat.requestRetry;
+  const cause = t.cause(item.errorCode);
+  const why = cause === null ? null : t.why(cause, httpStatusOf(item.errorMessage));
+  return S.chat.compactionDegradedHint(why, item.errorMessage, compactionShortOfRoom(item));
+}
+
 export function CompactionBanner({
   item,
   ctx,
@@ -246,13 +260,10 @@ export function CompactionBanner({
   }
   const ok = item.status === "completed";
   // A completion without a full summary is still a completion: only the head's mark changes, to
-  // the attention ink, its tooltip and accessible name saying why — and, short of room, what to
-  // correct. Only a refusal's message is the provider's words.
-  const degradedHint = !compactionDegraded(item)
-    ? undefined
-    : compactionShortOfRoom(item)
-      ? S.chat.compactionRoomHint(item.errorCode === "rejected" ? item.errorMessage : undefined)
-      : S.chat.compactionDegradedHint(item.errorMessage);
+  // the attention ink, its tooltip and accessible name saying why first — the cause in the retry
+  // line's words, with the HTTP status, and the error's own words — then what was done, and, short
+  // of room, what to correct.
+  const degradedHint = compactionDegraded(item) ? degradedMarkHint(item) : undefined;
   return (
     <ActivityGroup
       kind="event"
@@ -271,6 +282,8 @@ export function CompactionBanner({
                 role="img"
                 aria-label={degradedHint}
                 data-tooltip={degradedHint}
+                // Prose: wraps at words, an unbroken token included, and keeps one line per part.
+                data-tooltip-content="text"
                 className="flex shrink-0 text-tone-attention-fg"
               >
                 <GlyphIcon d={ICONS.checkCircle} size={ICON_SIZE.rowLead} />
@@ -280,6 +293,29 @@ export function CompactionBanner({
         : {})}
       {...(item.durationMs !== undefined ? { durationMs: item.durationMs } : {})}
       {...(expandable ? { rows } : {})}
+      {...(!ok && item.status !== "aborted"
+        ? { actions: <ReportIssueAction report={compactionFailureReport(item)} /> }
+        : {})}
     />
   );
+}
+
+/**
+ * What a failed compaction's report holds: what happened, the error's code and its own words
+ * (the provider's, or the server's). A stop the person made (`aborted`) is not a failure and
+ * offers none.
+ */
+function compactionFailureReport(item: CompactionItem) {
+  return toldReport({
+    what:
+      item.status === "fatal"
+        ? "a compaction could not open the next context, and the run ended"
+        : "a compaction was given up",
+    ...(item.errorCode !== undefined ? { code: item.errorCode } : {}),
+    facts: [
+      ["Mode", item.mode],
+      ["Status", item.status ?? "failed"],
+    ],
+    detail: item.errorMessage ?? null,
+  });
 }

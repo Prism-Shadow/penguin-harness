@@ -1360,8 +1360,8 @@ The browser agents drive with `penguin browser`, under `/api/builtin-browser`. I
 | POST | `/tabs/:tab/activate` | Makes a tab the active one; on `chrome`, Chrome shows it too |
 | DELETE | `/tabs/:tab` | Closes a tab; `204` |
 | POST | `/tabs/:tab/navigate`, `scan`, `exec`, `click`, `type`, `screenshot`, `cdp` | The agent's actions; see [penguin browser](/cli#penguin-browser) |
-| GET | `/import/sources` | Built-in: the system browser profiles that can be imported |
-| POST | `/import` | Built-in: imports cookies and history: `{sourceId, cookies?, history?, domains?}` |
+| GET | `/import/sources` | Built-in: the system browser profiles that can be imported, then the caller's connected Chrome extension (`chrome-extension`, cookies only) → `{sources, extension?}`, `extension` saying why it is not listed |
+| POST | `/import` | Built-in: imports cookies and history: `{sourceId, cookies?, history?, domains?}` → `{sourceId, browserName, cookies?: {found, imported, skipped, failed, skips}, history?, notes}`; skip reasons and notes are codes with counts. Through the extension, after the user allows it in Chrome (403 `import_declined` otherwise) |
 | GET / PUT | `/settings` | The homepage: `{homepage}`. Administrators only |
 | GET / DELETE | `/history?q=&limit=` | Built-in: searches or clears the history |
 | POST | `/clear-data` | Built-in: `{storages}`, any of `cookies`, `cache` and `storage` |

@@ -5,13 +5,11 @@ import type {
   ModelRefDto,
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
-import { toastError } from "@prismshadow/penguin-ui";
 import { toastApiError } from "../../../lib/toast-api-error";
 import * as api from "../../../api/endpoints";
 import { switchDeskModel } from "../../company";
 import { ApiError } from "../../../api/client";
 import { S } from "../../../lib/strings";
-import { apiErrorText } from "../../../lib/api-error";
 import { machineForSession } from "../../../lib/session-machines";
 import { discardUnstartedSession } from "../unstarted-session";
 import { handoffMessage, modelSwitchMessage } from "../agent-handoff";
@@ -48,7 +46,7 @@ export function useMainChatSends(scope: ReturnType<typeof useMainChatLifecycle>)
         return true;
       } catch (e) {
         // Returning false -> the input area keeps the draft, letting the user fix it and resend (the error copy includes the session model's upstream id).
-        toastError(apiErrorText(e, { modelId: selected.modelId }));
+        toastApiError(e, { modelId: selected.modelId });
         return false;
       }
     },
@@ -114,7 +112,7 @@ export function useMainChatSends(scope: ReturnType<typeof useMainChatLifecycle>)
           // The model may be written and the desk renewed by now; the lists say which.
           void company.reloadOrgChart();
           void company.reloadOrgSessions();
-          toastError(apiErrorText(e, { modelId: ref.modelId }));
+          toastApiError(e, { modelId: ref.modelId });
           return false;
         }
       }
@@ -151,7 +149,7 @@ export function useMainChatSends(scope: ReturnType<typeof useMainChatLifecycle>)
             deleteSession: api.deleteSession,
           });
         }
-        toastError(apiErrorText(e, { modelId: ref.modelId }));
+        toastApiError(e, { modelId: ref.modelId });
         return false;
       }
     },
@@ -203,9 +201,7 @@ export function useMainChatSends(scope: ReturnType<typeof useMainChatLifecycle>)
           });
         }
         // The new chat uses the project's default model (createSession doesn't specify a model reference), so the error copy's model context follows suit.
-        toastError(
-          apiErrorText(e, models?.defaultModel ? { modelId: models.defaultModel.modelId } : {}),
-        );
+        toastApiError(e, models?.defaultModel ? { modelId: models.defaultModel.modelId } : {});
         return false;
       }
     },
@@ -237,11 +233,12 @@ export function useMainChatSends(scope: ReturnType<typeof useMainChatLifecycle>)
       const res = await api.postRetry(selected.sessionId);
       await syncHealedSessionId(selected.sessionId, res.sessionId);
     } catch (e) {
-      toastError(
-        e instanceof ApiError && e.code === "nothing_to_retry"
-          ? S.chat.retryNothing
-          : apiErrorText(e, { modelId: selected.modelId }),
-      );
+      toastApiError(e, {
+        modelId: selected.modelId,
+        ...(e instanceof ApiError && e.code === "nothing_to_retry"
+          ? { text: S.chat.retryNothing }
+          : {}),
+      });
       throw e;
     }
   }, [selected, syncHealedSessionId]);
@@ -262,7 +259,7 @@ export function useMainChatSends(scope: ReturnType<typeof useMainChatLifecycle>)
         await syncHealedSessionId(selected.sessionId, res.sessionId);
         return true;
       } catch (e) {
-        toastError(apiErrorText(e, { modelId: selected.modelId }));
+        toastApiError(e, { modelId: selected.modelId });
         return false;
       }
     },
@@ -295,7 +292,7 @@ export function useMainChatSends(scope: ReturnType<typeof useMainChatLifecycle>)
         return "queued";
       } catch (e) {
         if (e instanceof ApiError && e.status === 409) return "not_running";
-        toastError(apiErrorText(e, { modelId: selected.modelId }));
+        toastApiError(e, { modelId: selected.modelId });
         return "failed";
       }
     },
@@ -312,10 +309,11 @@ export function useMainChatSends(scope: ReturnType<typeof useMainChatLifecycle>)
         await api.postInterrupt(selected.sessionId, target);
         return true;
       } catch (e) {
-        toastError(
+        toastApiError(
+          e,
           e instanceof ApiError && (e.code === "not_pending" || e.code === "follow_up_started")
-            ? S.chat.interruptAlreadySent
-            : apiErrorText(e),
+            ? { text: S.chat.interruptAlreadySent }
+            : {},
         );
         return false;
       }

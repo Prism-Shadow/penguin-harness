@@ -1360,8 +1360,8 @@ Agent 用 `penguin browser` 驱动的浏览器，路由位于 `/api/builtin-brow
 | POST | `/tabs/:tab/activate` | 设为当前标签页；在 `chrome` 上，Chrome 也会切到该标签页 |
 | DELETE | `/tabs/:tab` | 关闭标签页；`204` |
 | POST | `/tabs/:tab/navigate`、`scan`、`exec`、`click`、`type`、`screenshot`、`cdp` | Agent 的各项操作，见 [penguin browser](/cli#penguin-browser) |
-| GET | `/import/sources` | 内置：可导入的系统浏览器个人资料 |
-| POST | `/import` | 内置：导入 Cookie 与历史记录：`{sourceId, cookies?, history?, domains?}` |
+| GET | `/import/sources` | 内置：可导入的系统浏览器个人资料，以及调用者已连接的 Chrome 扩展（`chrome-extension`，只有 Cookie）→ `{sources, extension?}`，`extension` 说明扩展为何未列出 |
+| POST | `/import` | 内置：导入 Cookie 与历史记录：`{sourceId, cookies?, history?, domains?}` → `{sourceId, browserName, cookies?: {found, imported, skipped, failed, skips}, history?, notes}`；跳过原因与提示都是代码加计数。经扩展导入须用户在 Chrome 中允许（否则 403 `import_declined`） |
 | GET / PUT | `/settings` | 主页：`{homepage}`。仅管理员 |
 | GET / DELETE | `/history?q=&limit=` | 内置：搜索或清空历史记录 |
 | POST | `/clear-data` | 内置：`{storages}`，取 `cookies`、`cache` 和 `storage` 中的若干项 |

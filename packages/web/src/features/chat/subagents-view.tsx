@@ -40,7 +40,6 @@ import {
   ICON_SIZE,
   StatusIcon,
   Text,
-  toastError,
 } from "@prismshadow/penguin-ui";
 import { ApiError } from "../../api/client";
 import { abortSubagent, messageSubagent, patchSession } from "../../api/endpoints";
@@ -414,13 +413,14 @@ function SubagentComposer({
 
   const send = (text: string) => messageSubagent(sessionId, childSessionId, text);
   const sendFailure = (err: unknown): void => {
-    toastError(
-      err instanceof ApiError && err.code === "subagent_gone"
-        ? S.subagentPanel.subagentGone
-        : err instanceof Error
-          ? err.message
-          : String(err),
-    );
+    toastApiError(err, {
+      text:
+        err instanceof ApiError && err.code === "subagent_gone"
+          ? S.subagentPanel.subagentGone
+          : err instanceof Error
+            ? err.message
+            : String(err),
+    });
   };
 
   return (

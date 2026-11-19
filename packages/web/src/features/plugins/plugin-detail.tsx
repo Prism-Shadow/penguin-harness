@@ -36,6 +36,7 @@ import {
   CopyButton,
   FactList,
   FactRow,
+  FailureText,
   FileBrowser,
   GlyphAction,
   ICONS,
@@ -47,6 +48,7 @@ import {
   RuledSection,
   Skeleton,
   useMarkdownReader,
+  type Failure,
   type FileBrowserPreview,
   type FileTreeRow,
   type MarkdownReaderState,
@@ -54,7 +56,6 @@ import {
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { linkSegments } from "../../lib/link-segments";
-import { apiErrorText } from "../../lib/api-error";
 import { baseName } from "../../lib/workspace-tree";
 import { useReaderFind } from "../../lib/reader-find";
 import { useLocale } from "../../state/locale";
@@ -77,6 +78,7 @@ import {
   rowVersion,
   type PluginDetails,
 } from "./plugin-marks";
+import { failureOf } from "../../lib/failure";
 
 /** One collapsible group of installable files. */
 interface FileGroup {
@@ -589,7 +591,7 @@ export function PluginDetailModal({
  */
 function PluginFiles({ plugin, machineId }: { plugin: PluginItem; machineId: string | null }) {
   const [files, setFiles] = useState<Record<string, string> | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Failure | null>(null);
   /** Collapsed directories: every one starts open, so the whole plugin is in view at once. */
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const [selected, setSelected] = useState<string | null>(null);
@@ -604,7 +606,7 @@ function PluginFiles({ plugin, machineId }: { plugin: PluginItem; machineId: str
         setFiles(res.files);
       })
       .catch((e: unknown) => {
-        if (!cancelled) setError(apiErrorText(e));
+        if (!cancelled) setError(failureOf(e));
       });
     return () => {
       cancelled = true;
@@ -647,10 +649,10 @@ function PluginFiles({ plugin, machineId }: { plugin: PluginItem; machineId: str
       selectedPath={current}
       toggled={toggled}
       treeLoading={files === null}
-      treeError={error}
+      treeError={error === null ? null : <FailureText failure={error} />}
       headerFallback={plugin.name}
       preview={preview}
-      emptyPreview={error ?? S.common.none}
+      emptyPreview={error?.text ?? S.common.none}
       emptyDirLabel={S.files.empty}
       truncatedLabel={S.files.previewTruncated}
       unsupportedLabel={S.files.previewUnsupported}
