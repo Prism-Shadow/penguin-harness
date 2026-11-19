@@ -9,12 +9,14 @@
  * stays the backstop: a check that cannot be read holds nothing.
  *
  * The Agent is the one the conversation runs on, on the server that holds it — a machine's Agent
- * is asked about, and installed on, over there.
+ * is asked about, and installed on, over there, the way every install goes
+ * (lib/agent-plugin-install.ts): a machine is told to leave its plugin tables to this server.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AgentPluginsInstallResponse } from "@prismshadow/penguin-server/api";
 
-import { getAgentPlugins, installAgentPlugins } from "../../api/endpoints";
+import { getAgentPlugins } from "../../api/endpoints";
+import { installWithModules } from "../../lib/agent-plugin-install";
 import { toastApiError } from "../../lib/toast-api-error";
 
 /** The library plugin goal mode runs on; its hook package carries the same name. */
@@ -39,7 +41,9 @@ export function goalPluginGate(
   return {
     check: async () => hasGoalHook(await getAgentPlugins(projectId, agentId, machineId)),
     install: async () =>
-      hasGoalHook(await installAgentPlugins(projectId, agentId, [GOAL_PLUGIN], machineId)),
+      hasGoalHook(
+        (await installWithModules({ projectId, agentId, machineId }, [GOAL_PLUGIN])).lists,
+      ),
   };
 }
 

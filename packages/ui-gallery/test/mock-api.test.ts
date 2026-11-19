@@ -8,7 +8,9 @@
  * Transferring a draft's browser pages reports the unavailable browser, as opening a page
  * does: the gallery hosts no desktop browser and must not report a successful transfer.
  * The Agent plugin listing agrees with the installed Skills, hooks and MCP listings, and
- * refuses an unknown Agent with 404.
+ * refuses an unknown Agent with 404. The administrator's ledger of server module requests takes a
+ * decision the way the server does: approving a waiting request enables it, declining another
+ * declines it, enabling one whose Project is gone is refused, and an unknown package is 404.
  */
 import { describe, expect, it } from "vitest";
 import * as api from "../../web/src/api/endpoints";
@@ -98,11 +100,63 @@ describe("the mocked API", () => {
       hooks: (await api.getAgentHooks(projectId, agentId, null)).hooks,
       mcpServers: (await api.getAgentMcpServers(projectId, agentId, null)).servers,
       workbenches: [],
+      modules: [],
     });
     await expect(api.getAgentPlugins(projectId, "nope", null)).rejects.toMatchObject({
       status: 404,
     });
     await expect(api.getSession("nope")).rejects.toMatchObject({ status: 404, code: "not_found" });
+  });
+
+  it("decides a server module request the way the server does, and answers the new list", async () => {
+    const store = resetStore({ lang: "en", signedIn: true });
+    const asked = (pkg: string, projectId: string | null) => ({
+      package: pkg,
+      plugin: pkg.replace(/^@[^/]+\//, ""),
+      projectId,
+      projectName: projectId === null ? null : "Demo",
+      agentId: IDS.agents.docs,
+      requestedBy: "member",
+      requestedByName: "Member",
+      requestedAt: "2026-11-19T08:00:00.000Z",
+      decision: null,
+      decidedBy: null,
+      decidedAt: null,
+      via: null,
+      builtin: false,
+      state: "off" as const,
+    });
+    store.f.pluginModuleRequests = [
+      asked("@acme/charts", store.f.project.projectId),
+      asked("@acme/notes", store.f.project.projectId),
+      asked("@acme/orphan", null),
+    ];
+    expect((await api.adminGetPluginModuleRequests(null)).pending).toBe(3);
+
+    const approved = await api.adminDecidePluginModule(
+      { package: "@acme/charts", decision: "enable" },
+      null,
+    );
+    expect(approved.requests.find((r) => r.package === "@acme/charts")).toMatchObject({
+      decision: "enabled",
+      via: "approval",
+      state: "running",
+    });
+    expect(approved.pending).toBe(2);
+
+    const declined = await api.adminDecidePluginModule(
+      { package: "@acme/notes", decision: "decline" },
+      null,
+    );
+    expect(declined.requests.find((r) => r.package === "@acme/notes")?.decision).toBe("declined");
+    expect(declined.pending).toBe(1);
+
+    await expect(
+      api.adminDecidePluginModule({ package: "@acme/orphan", decision: "enable" }, null),
+    ).rejects.toMatchObject({ status: 409, code: "project_gone" });
+    await expect(
+      api.adminDecidePluginModule({ package: "@acme/none", decision: "enable" }, null),
+    ).rejects.toMatchObject({ status: 404, code: "unknown_request" });
   });
 
   it("pages a Session list per category with totals, own rows only", async () => {

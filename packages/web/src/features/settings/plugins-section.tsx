@@ -3,7 +3,9 @@
  * switch: a display preference of this browser, not server configuration, which commits when
  * flipped and which the page, open under this dialog, follows at once (incompatible-only.ts).
  *
- * Under it, ruled off, plugin options (admin only, server-global): one card per settings entry
+ * Under it, ruled off, the server's part (admin only, server-global): first the requests to run a
+ * library plugin's server module and what was decided about them (plugin-module-requests.tsx),
+ * then the plugin options: one card per settings entry
  * — a group a module contributes (the sandbox) or a loaded plugin's declared configuration —
  * drawn from its schema: a string, a secret, a boolean, a number, a choice, a list of lines or
  * a table (a row per preset, say; plugin-config-table.tsx) per field, so the page knows nothing
@@ -50,6 +52,7 @@ import {
   writePluginsIncompatibleOnly,
 } from "../../lib/plugins-incompatible-only";
 import { PluginCard } from "./plugin-config-card";
+import { PluginModuleRequests } from "./plugin-module-requests";
 import { withLiveParts } from "./plugin-config-live";
 import { SandboxBackendPrompt } from "./sandbox-backend-prompt";
 import {
@@ -332,11 +335,17 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
     </SettingsGroup>
   );
 
+  // The requests come first among the server's options: they are what waits for the admin.
+  const requests = <PluginModuleRequests machine={machine} />;
+
   if (entries === null) {
     return (
       <SettingsSection>
         {viewRow}
-        {picker !== null && <div className={SERVER_PART}>{picker}</div>}
+        <div className={SERVER_PART}>
+          {picker}
+          {requests}
+        </div>
       </SettingsSection>
     );
   }
@@ -348,31 +357,30 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
   return (
     <SettingsSection>
       {viewRow}
-      {(picker !== null || loadError !== null || cards.length > 0) && (
-        <div className={SERVER_PART}>
-          {picker}
-          {machine !== null && loadError !== null && (
-            <NoticeStrip tone="attention" as="p" className="rounded-md px-3 py-2 text-xs">
-              {S.plugins.machineUnreadable(nameOf(machine), loadError)}
-            </NoticeStrip>
-          )}
-          <FocusCard focus={focus} ready={entries.length > 0} />
-          {cards.map((card) => (
-            <PluginCard
-              key={card.name}
-              members={[card, ...entries.filter((e) => e.parent === card.name)]}
-              machine={machine}
-              busy={busy}
-              setBusy={setBusy}
-              locale={locale}
-              onStored={adoptOne}
-              onStoredAll={adopt}
-              onAction={askAction}
-              onSwitchedOn={offerBackend}
-            />
-          ))}
-        </div>
-      )}
+      <div className={SERVER_PART}>
+        {picker}
+        {machine !== null && loadError !== null && (
+          <NoticeStrip tone="attention" as="p" className="rounded-md px-3 py-2 text-xs">
+            {S.plugins.machineUnreadable(nameOf(machine), loadError)}
+          </NoticeStrip>
+        )}
+        {requests}
+        <FocusCard focus={focus} ready={entries.length > 0} />
+        {cards.map((card) => (
+          <PluginCard
+            key={card.name}
+            members={[card, ...entries.filter((e) => e.parent === card.name)]}
+            machine={machine}
+            busy={busy}
+            setBusy={setBusy}
+            locale={locale}
+            onStored={adoptOne}
+            onStoredAll={adopt}
+            onAction={askAction}
+            onSwitchedOn={offerBackend}
+          />
+        ))}
+      </div>
       <ConfirmModal
         open={pendingAction !== null}
         title={S.settings.pluginActionTitle}

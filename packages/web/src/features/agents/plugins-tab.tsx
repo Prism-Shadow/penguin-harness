@@ -55,6 +55,7 @@ import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
 import { useAgentLocation } from "../../lib/agent-location";
 import { useInstantSetting } from "../../lib/instant-setting";
+import { useOnPluginModulesChanged } from "../../lib/plugin-modules";
 import {
   publishMachineAgentsChanged,
   readMachineAgents,
@@ -62,6 +63,7 @@ import {
 } from "../../lib/machine-agent-lists";
 import { S } from "../../lib/strings";
 import { WORKBENCH_UPDATED_EVENT } from "../../lib/workbench-tabs";
+import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { useMachines } from "../../state/machines";
 import { agentDisplayName, useProject } from "../../state/project";
@@ -130,6 +132,7 @@ export function PluginsTab({
   const { currentProject, reloadAgents, setCurrentAgentId } = useProject();
   const projectId = currentProject?.projectId ?? null;
   const isOwner = currentProject?.role === "owner";
+  const isAdmin = useAuth().user?.isAdmin === true;
   /** The machine the Agent lives on (null: this server), and the Agents that server runs. */
   const machineId = useAgentLocation();
   const agent = useAgentsOn(machineId).find((a) => a.agentId === agentId);
@@ -208,6 +211,12 @@ export function PluginsTab({
       window.removeEventListener(WORKBENCH_UPDATED_EVENT, onUpdated);
     };
   }, [load, projectId, agentId]);
+
+  // A server module changed on the Agent's server (an install elsewhere, the administrator's
+  // decision): the lists, which say how each module stands there, are read again.
+  useOnPluginModulesChanged((server) => {
+    if (server === machineId) void load();
+  });
 
   /**
    * After a change: the lists again, and the Agent list whose counts and update marks moved — a
@@ -397,6 +406,7 @@ export function PluginsTab({
         agentName={agentName}
         machineLabel={machineLabel}
         isOwner={isOwner}
+        isAdmin={isAdmin}
         locale={locale}
         library={lists?.library ?? null}
         installed={lists?.installed ?? null}
