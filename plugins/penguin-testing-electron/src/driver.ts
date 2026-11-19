@@ -96,7 +96,10 @@ export function gitRoot(from: string = process.cwd()): string | null {
 }
 
 /** The data roots an instance gets: `<base>/penguin` (PENGUIN_HOME) and `<base>/chrome`. */
-export function instanceDirs(root: string, dataDir?: string): { penguinHome: string; chromeDir: string } {
+export function instanceDirs(
+  root: string,
+  dataDir?: string,
+): { penguinHome: string; chromeDir: string } {
   const base = dataDir ?? path.join(root, ".data", "penguin-testing-electron");
   return { penguinHome: path.join(base, "penguin"), chromeDir: path.join(base, "chrome") };
 }
@@ -183,7 +186,9 @@ export async function launchHarness(options: LaunchOptions = {}): Promise<Harnes
       body: JSON.stringify({ lang }),
     });
     if (!prefsPut.ok) {
-      throw new Error(`launchHarness: pinning the UI language to '${lang}' failed (${prefsPut.status})`);
+      throw new Error(
+        `launchHarness: pinning the UI language to '${lang}' failed (${prefsPut.status})`,
+      );
     }
     await window.reload().catch(() => undefined);
 
@@ -216,7 +221,9 @@ export async function launchHarness(options: LaunchOptions = {}): Promise<Harnes
 /** The plugin package's name, read from its manifest — the name install/remove act on. */
 export async function pluginNameOf(pluginDir: string): Promise<string> {
   const fs = await import("node:fs");
-  const manifest = JSON.parse(await fs.promises.readFile(path.join(pluginDir, "package.json"), "utf8")) as {
+  const manifest = JSON.parse(
+    await fs.promises.readFile(path.join(pluginDir, "package.json"), "utf8"),
+  ) as {
     name: string;
   };
   return manifest.name;
@@ -232,11 +239,13 @@ export async function pluginNameOf(pluginDir: string): Promise<string> {
 export async function precheckPluginPackage(pluginDir: string): Promise<{ name: string }> {
   const fs = await import("node:fs");
   const manifestPath = path.join(pluginDir, "package.json");
-  const manifest = JSON.parse(await fs.promises.readFile(manifestPath, "utf8").catch(() => {
-    throw new Error(
-      `precheck: ${pluginDir} has no package.json — point pluginDir at a plugin package directory`,
-    );
-  })) as { name?: string; main?: string };
+  const manifest = JSON.parse(
+    await fs.promises.readFile(manifestPath, "utf8").catch(() => {
+      throw new Error(
+        `precheck: ${pluginDir} has no package.json — point pluginDir at a plugin package directory`,
+      );
+    }),
+  ) as { name?: string; main?: string };
   if (typeof manifest.name !== "string" || manifest.name === "") {
     throw new Error(`precheck: ${manifestPath} declares no name`);
   }
@@ -274,15 +283,18 @@ export async function installPlugin(
 ): Promise<string> {
   await precheckPluginPackage(pluginDir);
   const name = await pluginNameOf(pluginDir);
-  const linked = await fetch(`${instance.base}/api/projects/${instance.project}/plugins/installed/link`, {
-    method: "POST",
-    headers: { ...instance.authHeaders, "content-type": "application/json" },
-    body: JSON.stringify({
-      dir: path.resolve(pluginDir),
-      overwrite: true,
-      ...(options.force === true ? { force: true } : {}),
-    }),
-  });
+  const linked = await fetch(
+    `${instance.base}/api/projects/${instance.project}/plugins/installed/link`,
+    {
+      method: "POST",
+      headers: { ...instance.authHeaders, "content-type": "application/json" },
+      body: JSON.stringify({
+        dir: path.resolve(pluginDir),
+        overwrite: true,
+        ...(options.force === true ? { force: true } : {}),
+      }),
+    },
+  );
   if (!linked.ok) {
     const detail = await linked.text().catch(() => "");
     throw new Error(
@@ -324,9 +336,12 @@ export async function waitForActive(
   const deadline = Date.now() + timeoutMs;
   let lastRow: { active: boolean; error?: string } | null = null;
   while (Date.now() < deadline) {
-    const installed = await fetch(`${instance.base}/api/projects/${instance.project}/plugins/installed`, {
-      headers: instance.authHeaders,
-    }).then((r) => {
+    const installed = await fetch(
+      `${instance.base}/api/projects/${instance.project}/plugins/installed`,
+      {
+        headers: instance.authHeaders,
+      },
+    ).then((r) => {
       if (!r.ok) throw new Error("waitForActive: reading the installed surface failed");
       return r.json() as Promise<{
         plugins: Array<{ specifier: string; active: boolean; error?: string }>;
@@ -346,9 +361,7 @@ export async function waitForActive(
       : lastRow.error !== undefined
         ? `its last reported error: ${lastRow.error}`
         : `it was listed but not active (active: ${lastRow.active})`;
-  throw new Error(
-    `waitForActive: ${name} never became active within ${timeoutMs}ms — ${seen}`,
-  );
+  throw new Error(`waitForActive: ${name} never became active within ${timeoutMs}ms — ${seen}`);
 }
 
 /**
@@ -419,7 +432,8 @@ export function collectUnits(units: readonly ModuleClass[] | Plugin): Array<{
   const classes: readonly ModuleClass[] = Array.isArray(source)
     ? (source as readonly ModuleClass[])
     : ((source as Plugin).modules ?? []);
-  const collected: Array<{ name: string; run: (context: TestContext) => Promise<void> | void }> = [];
+  const collected: Array<{ name: string; run: (context: TestContext) => Promise<void> | void }> =
+    [];
   for (const cls of classes) {
     if (typeof cls !== "function") continue; // Plugin.modules entries may be absent
     const proto = cls.prototype as { run?: TestUnit["run"] };

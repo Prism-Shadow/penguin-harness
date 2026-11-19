@@ -364,7 +364,9 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
   };
 
   /** A body asking for a directory link: `linkPluginDirectory`'s overwrite, off unless asked. */
-  const linkOptions = (body: Record<string, unknown>): { dir: string; overwrite: boolean; force: boolean } => {
+  const linkOptions = (
+    body: Record<string, unknown>,
+  ): { dir: string; overwrite: boolean; force: boolean } => {
     const dir = typeof body.dir === "string" ? body.dir.trim() : "";
     if (dir === "" || !path.isAbsolute(dir)) {
       throw new HttpError(

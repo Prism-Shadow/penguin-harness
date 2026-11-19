@@ -226,17 +226,27 @@ describe("plugin link", () => {
       await fs.mkdir(path.join(shippedPrefix, "node_modules", "@acme"), { recursive: true });
       await fs.writeFile(
         path.join(shippedPrefix, "package.json"),
-        JSON.stringify({ name: "shipped-prefix", private: true, dependencies: { "@acme/shipped": "9.9.9" } }),
+        JSON.stringify({
+          name: "shipped-prefix",
+          private: true,
+          dependencies: { "@acme/shipped": "9.9.9" },
+        }),
         "utf8",
       );
-      await fs.mkdir(path.join(shippedPrefix, "node_modules", "@acme", "shipped"), { recursive: true });
+      await fs.mkdir(path.join(shippedPrefix, "node_modules", "@acme", "shipped"), {
+        recursive: true,
+      });
       const manifest = JSON.stringify({
         name: "@acme/shipped",
         version: "9.9.9",
         type: "module",
         main: "./index.js",
       });
-      await fs.writeFile(path.join(shippedPrefix, "node_modules", "@acme/shipped", "package.json"), manifest, "utf8");
+      await fs.writeFile(
+        path.join(shippedPrefix, "node_modules", "@acme/shipped", "package.json"),
+        manifest,
+        "utf8",
+      );
       await fs.writeFile(
         path.join(shippedPrefix, "node_modules", "@acme/shipped", "index.js"),
         "export {};",
@@ -264,7 +274,10 @@ describe("plugin link", () => {
       const rows = (await view()).plugins;
       expect(rows.find((p) => p.specifier === "@acme/shipped")).toBeTruthy();
       expect(
-        await fs.readFile(path.join(shippedPrefix, "node_modules", "@acme/shipped", "package.json"), "utf8"),
+        await fs.readFile(
+          path.join(shippedPrefix, "node_modules", "@acme/shipped", "package.json"),
+          "utf8",
+        ),
       ).toBe(manifest);
 
       // The link goes, the build's own copy is what the name resolves to again.

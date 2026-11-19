@@ -83,7 +83,8 @@ export const pluginEn: PluginText = {
     linkDesc:
       "Link a local plugin package directory into the server's plugin prefix: the directory stays where it is and the server loads it in place, and the Plugins page shows it with a link mark. The directory must be a built plugin package",
     linkOverwriteOpt: "Replace the name's installed package or earlier link",
-    linkForceOpt: "Replace a package the build ships (the build's own copy returns when the link is removed)",
+    linkForceOpt:
+      "Replace a package the build ships (the build's own copy returns when the link is removed)",
     removeDesc: "Remove a plugin from the Project, and from the server once nothing else lists it",
     colName: () => "PLUGIN",
     colKind: () => "KIND",

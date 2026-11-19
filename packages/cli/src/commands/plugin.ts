@@ -286,7 +286,11 @@ export function registerPluginCommand(plugin: Command, t: Messages): void {
       const res = await client.request<InstalledPluginsResponse>(
         "POST",
         `${installedPath(projectId)}/link`,
-        { dir, ...(opts.overwrite === true ? { overwrite: true } : {}), ...(opts.force === true ? { force: true } : {}) },
+        {
+          dir,
+          ...(opts.overwrite === true ? { overwrite: true } : {}),
+          ...(opts.force === true ? { force: true } : {}),
+        },
       );
       if (opts.json === true) {
         process.stdout.write(`${JSON.stringify(res)}\n`);
