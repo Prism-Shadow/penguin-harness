@@ -6532,6 +6532,13 @@ export interface ContributionsResponse {
   pageRemovals: WebPageRemovalContribution[];
   agentTabs: WebContribution[];
   sessionTabs: WebContribution[];
+  /**
+   * The server modules plugins provide that this generation runs, by name: a web module that
+   * declared one of them (`WebAppModule.serverModules`) is drawn only while it is listed. A
+   * plugin left out of this generation because the build cannot satisfy it lists nothing; the
+   * platform's own modules always run and are not listed. Absent from a server older than it.
+   */
+  modules?: string[];
 }
 
 /** One command a plugin contributes to the CLI, as GET /api/cli/commands lists it. */

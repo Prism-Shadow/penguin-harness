@@ -1,0 +1,36 @@
+{
+  "name": "@prismshadow/penguin-web-plugin",
+  "version": "0.2.18",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "description": "The Web App's face for a shipped plugin's web half: the host abilities plugin UI code may call, its string tables, and the types of the slots it contributes to. Consumed as source by the Web App's build.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "packages/web-plugin"
+  },
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./host": "./src/host.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests"
+  },
+  "peerDependencies": {
+    "@prismshadow/penguin-ui": "workspace:*",
+    "react": "^19.1.0"
+  },
+  "devDependencies": {
+    "@prismshadow/penguin-ui": "workspace:*",
+    "@types/react": "^19.1.0",
+    "react": "^19.1.0",
+    "typescript": "^5.6.0",
+    "vitest": "^4.1.12"
+  }
+}

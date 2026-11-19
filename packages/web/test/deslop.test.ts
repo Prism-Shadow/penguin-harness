@@ -67,6 +67,7 @@ const ALLOWLIST: DeslopAllowlist = {
   "components/account/app-info-dialog.tsx": { 24: [1, "W10"] },
   "features/agents/agent-settings-page.tsx": { 24: [3, "W10"] },
   "features/benchmark/benchmark-detail.tsx": { 24: [1, "W10"] },
+  "features/builtin-browser/strings.ts": { 24: [6, "W10"] },
   "features/chat/archived-session-stub.tsx": { 24: [1, "W10"] },
   "features/company/channel-view.tsx": { 24: [1, "W10"] },
   "features/company/employee-dialogs.tsx": { 24: [1, "W10"] },
@@ -79,8 +80,8 @@ const ALLOWLIST: DeslopAllowlist = {
   "features/plugins/plugin-detail.tsx": { 24: [1, "W10"] },
   "features/settings/proxy-section.tsx": { 24: [1, "W10"] },
   "features/traces/trace-panel.tsx": { 24: [2, "W10"] },
-  "lib/strings-en.ts": { 24: [34, "W10"] },
-  "lib/strings.ts": { 24: [34, "W10"] },
+  "lib/strings-en.ts": { 24: [31, "W10"] },
+  "lib/strings.ts": { 24: [31, "W10"] },
 };
 
 /**
@@ -95,8 +96,10 @@ const ALLOWLIST: DeslopAllowlist = {
  */
 const TOKENS_ONLY: readonly string[] = [
   "components/find/find-bar.tsx",
+  "features/builtin-browser/browser-section.tsx",
   "features/builtin-browser/browser-tab-strip.tsx",
   "features/builtin-browser/browser-toolbar.tsx",
+  "features/builtin-browser/chrome-extension-section.tsx",
   "features/builtin-browser/chrome-status-row.tsx",
   "features/builtin-browser/chrome-surface.tsx",
   "features/builtin-browser/new-tab-page.tsx",
@@ -114,8 +117,6 @@ const TOKENS_ONLY: readonly string[] = [
   "features/chat/task-stats-line.tsx",
   "features/company/handbook-page.tsx",
   "features/model-picker/model-picker-modal.tsx",
-  "features/settings/browser-section.tsx",
-  "features/settings/chrome-extension-section.tsx",
   "features/settings/shortcut-recorder.tsx",
   "features/settings/shortcuts-section.tsx",
   "features/settings/trace-import-row.tsx",
