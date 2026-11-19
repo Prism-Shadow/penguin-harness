@@ -12,7 +12,7 @@ import type {
 } from "../api/capabilities.js";
 import type { ModelRefDto } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
-    const attempt = { sent: false };
+import { observeProviderAttempt } from "./capability-attempt.js";
 import {
   playableMedia,
   runProjectModel,

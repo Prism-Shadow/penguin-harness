@@ -689,6 +689,56 @@ describe("project capability runs", () => {
 });
 
 describe("tool request history", () => {
+  it("recovers a metered failure from protocol usage and backfills input quantities on a V1 database", () => {
+    const db = openFresh();
+    try {
+      migrate(db);
+      rollbackTo(db, "2026-11-19-tool-request-usage");
+      db.exec("PRAGMA foreign_keys=OFF");
+      const insert = db.prepare(
+        "INSERT INTO capability_runs(id,project_id,created_at,status,data) VALUES(?,?,?,?,?)",
+      );
+      const data = {
+        model: { provider: "tokendance", modelId: "deepseek-asr" },
+        capability: "stt",
+        usage: { cached_tokens: null, prompt_tokens: 4, thoughts_tokens: null, response_tokens: 0 },
+        inputMeter: { unit: "billed_audio_second", quantity: 4 },
+      };
+      insert.run(
+        "asr",
+        "p",
+        "2026-11-19T02:00:00Z",
+        "completed",
+        JSON.stringify({ ...data, measurements: [{ unit: "request", quantity: 1 }] }),
+      );
+      insert.run("error", "p", "2026-11-19T02:00:01Z", "failed", JSON.stringify(data));
+      expect(db.prepare("SELECT count(*) AS n FROM tool_request_usage").get()?.n).toBe(1);
+      migrate(db);
+      migrate(db);
+      const rows = db
+        .prepare(
+          "SELECT id, input_unit, input_quantity, completed_requests, cached, prompt, thoughts, response FROM tool_request_usage ORDER BY id",
+        )
+        .all();
+      expect(rows).toEqual(
+        ["asr", "error"].map((id) => ({
+          id,
+          input_unit: "billed_audio_second",
+          input_quantity: 4,
+          completed_requests: id === "asr" ? 1 : null,
+          cached: null,
+          prompt: 4,
+          thoughts: null,
+          response: 0,
+        })),
+      );
+      expect(
+        columns(db, "tool_request_usage").filter((name) => /price|cost|amount/.test(name)),
+      ).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
   it("backfills a proven upstream error once and keeps an unverified attempt out after a restart", () => {
     const db = openFresh();
     try {
