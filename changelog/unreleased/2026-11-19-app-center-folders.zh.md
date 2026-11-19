@@ -3,6 +3,7 @@
 - **Date:** 2026-11-19
 - **Type:** feature
 - **Scope:** `web`, `ui`
+- **PR:** [#1622](https://github.com/Prism-Shadow/penguin-harness/pull/1622)
 
 [English](2026-11-19-app-center-folders.md)
 
