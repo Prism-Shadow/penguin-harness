@@ -16,7 +16,8 @@ import { apiErrorText } from "../../../lib/api-error";
 import { S } from "../../../lib/strings";
 import { useAuth } from "../../../state/auth";
 import { useProjectCapabilities } from "../../../state/use-project-capabilities";
-import { hasBoundCapability, runVoice } from "../../../api/project-capabilities";
+import { runVoice } from "../../../api/project-capabilities";
+import { hasBoundCapability } from "../../../lib/bound-capability";
 
 type Playback = { id: string; phase: "loading" | "playing" | "ready" };
 interface VoiceState {

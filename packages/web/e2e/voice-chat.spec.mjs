@@ -134,21 +134,13 @@ for (const lang of ["zh", "en"]) {
     );
     const labels =
       lang === "zh"
-        ? [
-            "默认多模态模型",
-            "语音识别",
-            "语音输入",
-            "结束录音并转写",
-            "朗读回复",
-            "停止朗读",
-            "发送",
-          ]
+        ? ["多模态模型", "语音识别", "语音输入", "完成录音", "朗读回复", "停止朗读", "发送"]
         : [
-            "Default multimodal models",
+            "Multimodal models",
             "Speech recognition",
             "Dictate",
-            "Finish recording and transcribe",
-            "Read reply aloud",
+            "Finish recording",
+            "Read aloud",
             "Stop reading",
             "Send",
           ];
@@ -327,7 +319,7 @@ test("speech uses the project's real MMSP routes and records each selected model
     });
     expect(settings.ok(), await settings.text()).toBeTruthy();
     await page.goto(base + "/models");
-    await page.getByRole("button", { name: "Default multimodal models", exact: true }).click();
+    await page.getByRole("button", { name: "Multimodal models", exact: true }).click();
     for (const [, label, model] of tools) {
       await page.getByRole("button", { name: new RegExp("^" + label) }).click();
       const input = page.getByRole("dialog").last().getByRole("combobox");
@@ -350,7 +342,7 @@ test("speech uses the project's real MMSP routes and records each selected model
     const { session } = await created.json();
     await page.goto(base + "/chat/" + session.sessionId);
     await page.getByRole("button", { name: "Dictate", exact: true }).click();
-    const finish = page.getByRole("button", { name: "Finish recording and transcribe" });
+    const finish = page.getByRole("button", { name: "Finish recording", exact: true });
     await expect(finish).toBeVisible();
     await page.waitForTimeout(450);
     await finish.click();
@@ -364,7 +356,7 @@ test("speech uses the project's real MMSP routes and records each selected model
     expect(seen[1].items).toContainEqual({ type: "text.done", text: "meet meet at 3" });
     await draft.fill("@plain Meet at 3.");
     await page.getByRole("button", { name: "Send", exact: true }).click();
-    const read = page.getByRole("button", { name: "Read reply aloud", exact: true }).first();
+    const read = page.getByRole("button", { name: "Read aloud", exact: true }).first();
     await expect(read).toBeVisible();
     await read.click();
     const stop = page.getByRole("button", { name: "Stop reading", exact: true });
@@ -573,7 +565,7 @@ test("disabling the project's provider stops dictation before upload and restore
   await page.goto(base + "/chat/" + sessionId);
   const record = page.getByRole("button", { name: "Dictate", exact: true });
   await record.click();
-  const finish = page.getByRole("button", { name: "Finish recording and transcribe", exact: true });
+  const finish = page.getByRole("button", { name: "Finish recording", exact: true });
   await expect(finish).toBeVisible();
   try {
     const disabled = await page.request.put(endpoint, {
@@ -593,7 +585,7 @@ test("disabling the project's provider stops dictation before upload and restore
     await expect(page.locator("textarea").first()).toBeEditable();
     await page.goto(base + "/models");
     await expect(page.getByPlaceholder("Search models")).toBeVisible();
-    await page.getByRole("button", { name: "Default multimodal models", exact: true }).click();
+    await page.getByRole("button", { name: "Multimodal models", exact: true }).click();
     await expect(page.getByText("Multimodal tools are disabled on this server.")).toBeVisible();
     expect((await (await page.request.get(api + "/capabilities")).json()).bindings).toEqual(
       bindings,

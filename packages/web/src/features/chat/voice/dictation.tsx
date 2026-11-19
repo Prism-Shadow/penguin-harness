@@ -1,22 +1,53 @@
+/**
+ * Dictation into the composer's draft. The hook returns two pieces the composer places:
+ *
+ * - `trigger`, the record button, which stands directly before Send for the whole dictation —
+ *   the microphone at rest, the finish square while recording, a spinner while the microphone
+ *   opens or the recording is transcribed and polished — so the toolbar's right group keeps its
+ *   width and Send never moves;
+ * - `strip`, which takes the place of the toolbar's left group while a dictation runs: the cancel
+ *   control, then the elapsed time and the level meter, or the step that is running.
+ *
+ * `active` is true from the first press until the text is inserted or the dictation is cancelled;
+ * the composer holds Send and Enter for that time. Esc cancels through the shared Escape stack,
+ * so a dialog or menu opened over the composer closes first and the recording goes on.
+ */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
-  Button,
-  CheckIcon,
-  CloseIcon,
-  GlyphIcon,
   ICONS,
-  Spinner,
+  MicrophoneMeter,
+  RecordButton,
+  ToolbarTrigger,
   toastError,
   toastInfo,
+  useEscLayer,
+  useMicrophoneLevels,
 } from "@prismshadow/penguin-ui";
 import { apiErrorText } from "../../../lib/api-error";
 import { S } from "../../../lib/strings";
-import { hasBoundCapability, polishVoice, runVoice } from "../../../api/project-capabilities";
+import { polishVoice, runVoice } from "../../../api/project-capabilities";
+import { hasBoundCapability } from "../../../lib/bound-capability";
 import { captureSpeech, recordingData } from "./recording";
 import { useVoice } from "./voice-scope";
-import { MicrophoneMeter } from "./microphone-meter";
 
 type Phase = "idle" | "permission" | "recording" | "transcribing" | "polishing";
+
+/** The meter of one recording: the shared readout fed by this stream's levels. */
+function DictationMeter({ stream, context }: { stream: MediaStream; context?: AudioContext }) {
+  const levels = useMicrophoneLevels(stream, context);
+  return (
+    <MicrophoneMeter
+      {...levels}
+      labels={{
+        level: S.voice.inputLevel,
+        quiet: S.voice.quiet,
+        sound: S.voice.soundDetected,
+        recording: S.voice.recording,
+      }}
+    />
+  );
+}
+
 export function useDictation({
   insert,
   disabled,
@@ -31,7 +62,7 @@ export function useDictation({
     stream: MediaStream;
     context?: AudioContext;
   } | null>(null);
-  const trigger = useRef<HTMLButtonElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
   const returnFocus = useRef(false);
   const job = useRef<AbortController | null>(null);
   const finish = useRef<(() => void) | null>(null);
@@ -53,7 +84,7 @@ export function useDictation({
   useLayoutEffect(() => {
     if (phase === "idle" && returnFocus.current) {
       returnFocus.current = false;
-      trigger.current?.focus();
+      button.current?.focus();
     }
   }, [phase]);
   useLayoutEffect(
@@ -66,19 +97,12 @@ export function useDictation({
     };
     document.addEventListener("visibilitychange", hidden);
     window.addEventListener("pagehide", cancel);
-    const escape = (e: KeyboardEvent) => {
-      if (job.current && e.key === "Escape") {
-        e.preventDefault();
-        dismiss();
-      }
-    };
-    document.addEventListener("keydown", escape);
     return () => {
-      document.removeEventListener("keydown", escape);
       document.removeEventListener("visibilitychange", hidden);
       window.removeEventListener("pagehide", cancel);
     };
-  }, [cancel, dismiss]);
+  }, [cancel]);
+  useEscLayer(phase !== "idle", dismiss);
   async function record() {
     if (!scope?.active || !canDictate || job.current) return;
     if (!navigator.mediaDevices?.getUserMedia) {
@@ -183,71 +207,34 @@ export function useDictation({
       }
     }
   }
-  if (!canDictate) return { trigger: null, toolbar: null };
-  if (phase === "idle")
-    return {
-      toolbar: null,
-      trigger: (
-        <button
-          type="button"
-          ref={trigger}
-          aria-label={S.voice.record}
-          data-tooltip={S.voice.record}
-          disabled={disabled}
-          onClick={() => void record()}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-fg-muted hover:bg-surface-muted hover:text-fg disabled:opacity-50"
-        >
-          <GlyphIcon d={ICONS.microphone} size={18} />
-        </button>
-      ),
-    };
+  if (!canDictate) return { trigger: null, strip: null, active: false };
+  const recording = phase === "recording";
+  const trigger = (
+    <RecordButton
+      ref={button}
+      state={phase === "idle" ? "idle" : recording ? "recording" : "waiting"}
+      label={phase === "idle" ? S.voice.record : recording ? S.voice.finish : S.voice[phase]}
+      disabled={disabled}
+      onClick={() => {
+        if (phase === "idle") void record();
+        else finish.current?.();
+      }}
+    />
+  );
+  if (phase === "idle") return { trigger, strip: null, active: false };
   return {
-    trigger: null,
-    toolbar: (
-      <div
-        role="group"
-        aria-label={S.voice.record}
-        className="inline-flex h-8 max-w-full items-center gap-1"
-      >
-        <Button
-          variant="ghost"
-          size="xs"
-          className="h-8 shrink-0"
-          autoFocus
-          onClick={dismiss}
-          aria-label={S.voice.cancel}
-          leading={<CloseIcon size={13} />}
-        >
-          {S.common.cancel}
-        </Button>
-        <div className="inline-flex h-8 min-w-0 items-center gap-1 rounded-control bg-fill-neutral px-0.5">
-          {phase === "recording" && microphone ? (
-            <>
-              <MicrophoneMeter {...microphone} />
-              <Button
-                variant="primary"
-                size="xs"
-                className="h-7 shrink-0 [--ui-accent:var(--ui-tone-success-emphasis)] [--ui-accent-fg:var(--ui-tone-success-emphasis-fg)]"
-                aria-label={S.voice.finish}
-                onClick={() => finish.current?.()}
-                leading={<CheckIcon size={14} />}
-              >
-                <span className="@md:hidden">{S.voice.finishCompact}</span>
-                <span className="hidden @md:inline">{S.voice.finishShort}</span>
-              </Button>
-            </>
-          ) : (
-            <span
-              role="status"
-              className="flex min-w-0 items-center gap-1.5 whitespace-nowrap px-1.5 text-xs text-fg-muted"
-            >
-              <span aria-hidden>
-                <Spinner size="sm" label={S.voice[phase]} />
-              </span>
-              {S.voice[phase]}
-            </span>
-          )}
-        </div>
+    trigger,
+    active: true,
+    strip: (
+      <div role="group" aria-label={S.voice.record} className="flex min-w-0 items-center gap-1">
+        <ToolbarTrigger glyph={ICONS.cross} ariaLabel={S.voice.cancel} onClick={dismiss} />
+        {recording && microphone ? (
+          <DictationMeter {...microphone} />
+        ) : (
+          <span role="status" className="truncate whitespace-nowrap px-1 text-xs text-fg-muted">
+            {S.voice[phase]}
+          </span>
+        )}
       </div>
     ),
   };

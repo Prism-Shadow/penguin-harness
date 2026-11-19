@@ -80,19 +80,29 @@ test("microphone input drives the meter and the chosen action determines whether
       return [card.y, card.height, text.y, text.height, card.bottom - text.bottom];
     });
   const record = page.getByRole("button", { name: "语音输入", exact: true });
-  const done = page.getByRole("button", { name: "结束录音并转写" });
+  const done = page.getByRole("button", { name: "完成录音", exact: true });
   const cancel = page.getByRole("button", { name: "取消语音输入" });
   const meter = page.getByRole("meter", { name: "麦克风音量" });
+  // Send holds its place through a whole dictation: the record button changes in its own square.
+  const send = page.getByRole("button", { name: "发送", exact: true });
+  const sendAt = async () => {
+    const box = await send.boundingBox();
+    return [box.x, box.y];
+  };
   await record.waitFor();
   await page.evaluate(() => document.fonts.ready);
   const empty = await bounds();
+  const idleSend = await sendAt();
   await record.focus();
   await page.keyboard.press("Enter");
   await expect(page.getByText("等待麦克风授权", { exact: true })).toBeVisible();
   expect(await bounds()).toEqual(empty);
+  expect(await sendAt()).toEqual(idleSend);
   await page.evaluate(() => window.grantMicrophone());
-  await expect(done.getByText("完成", { exact: true })).toBeVisible();
-  await expect(cancel).toHaveText("取消");
+  await expect(done).toBeVisible();
+  await expect(cancel).toBeVisible();
+  await expect(send).toBeDisabled();
+  expect(await sendAt()).toEqual(idleSend);
   await expect(meter).toHaveAttribute("aria-valuenow", "0");
   expect(await bounds()).toEqual(empty);
   const group = page.getByRole("group", { name: "语音输入" });
@@ -116,6 +126,7 @@ test("microphone input drives the meter and the chosen action determines whether
   const multiline = "周一安排\n上午见面\n记录如下";
   await draft.fill(multiline);
   const filled = await bounds();
+  const filledSend = await sendAt();
   await record.click();
   await expect(meter).toBeVisible();
   await expect(meter).toContainText("安静");
@@ -128,6 +139,7 @@ test("microphone input drives the meter and the chosen action determines whether
   await page.keyboard.press("Enter");
   await expect(page.getByText("正在转写", { exact: true })).toBeVisible();
   expect(await bounds()).toEqual(filled);
+  expect(await sendAt()).toEqual(filledSend);
   transcription.resolve();
   await expect(draft).toHaveValue(multiline + "下午开会");
   expect(await bounds()).toEqual(filled);

@@ -1,25 +1,14 @@
+/**
+ * The multimodal models' endpoint wrappers, and nothing else: the gallery's mock coverage test
+ * calls every function this module exports against the mock, as it does `endpoints.ts`'s.
+ */
 import type {
-  ToolModelKey,
   ToolModelSettings,
   CapabilityResult,
   CapabilityRunRequest,
   ToolModelSettingsPatch,
 } from "@prismshadow/penguin-server/api";
-import { sameModelRef } from "../lib/model-grouping";
 import { apiFetch, apiFetchStream } from "./client";
-
-/** A saved selection is runnable only while its server contribution and configured model exist. */
-export function hasBoundCapability(
-  settings: ToolModelSettings | null | undefined,
-  key: ToolModelKey,
-): boolean {
-  const binding = settings?.bindings[key];
-  return Boolean(
-    binding &&
-    settings?.available?.some((entry) => entry.key === key) &&
-    settings.candidates[key]?.some((row) => sameModelRef(row, binding)),
-  );
-}
 
 export type CapabilityPatch = ToolModelSettingsPatch;
 

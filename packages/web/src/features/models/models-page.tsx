@@ -76,6 +76,7 @@ import type {
   ModelVisionDetectRequest,
   ProviderConnectionDto,
   ProviderConnectionUpdate,
+  ToolModelKey,
 } from "@prismshadow/penguin-server/api";
 import {
   Pill,
@@ -212,6 +213,12 @@ import {
 
 import { useProjectCapabilities } from "../../state/use-project-capabilities";
 import { useOpenProjectSettings } from "../../lib/project-settings-location";
+import {
+  ModelInUseMark,
+  ModelOperationsBlock,
+  modelOperations,
+  type ModelOperation,
+} from "./model-operations";
 import { ProviderSettingsDialog } from "./provider-settings-dialog";
 import { GroupSettingsControl } from "./group-settings-menu";
 import {
@@ -225,7 +232,6 @@ import {
 
 import { tpsTone, ttftTone, type SpeedResult, type SpeedTone } from "./speed-test";
 
-import { toolModelQuote } from "../../lib/tool-model-price";
 import { toneInk } from "../../lib/tone";
 import { KeyAuthDialog, type KeyAuthTexts } from "./key-auth-dialog";
 
@@ -406,7 +412,6 @@ interface DetectOutcome {
 /** Local edit state for one model row (string-typed for form use; parsed uniformly on save). */
 export interface RowState {
   chatEligible?: boolean;
-  referencePriceEligible?: false;
   /**
    * Vendor id (entry field, i.e. group membership): a value not in the catalog list is a
    * user-defined group, kept **verbatim** — an operation that only edits the key,
@@ -660,7 +665,6 @@ export function toRow(m: ModelsResponse["models"][number]): RowState {
     modelId: m.modelId,
     original: { provider: m.provider, modelId: m.modelId },
     ...(m.chatEligible === false ? { chatEligible: false } : {}),
-    ...(m.referencePriceEligible === false ? { referencePriceEligible: false } : {}),
     vision: m.vision !== false,
     contextWindow: m.contextWindow !== undefined ? String(m.contextWindow) : "",
     maxTokens: m.maxTokens !== undefined ? String(m.maxTokens) : "",
@@ -927,34 +931,11 @@ export function ModelsPage() {
   const [defaultModel, setDefaultModel] = useState<ModelRefDto | undefined>(undefined);
   // Vision model used for read_file's proxy reads (describes images for session models with vision=false).
   const visionModel = capabilitySelection.settings?.bindings.i2t;
-  const toolDefaultActions = (row: RowState | undefined, disabled = false): ReactNode => {
-    const settings = capabilitySelection.settings;
-    if (!row || row.chatEligible !== false || !settings) return null;
-    const ref = rowRef(row);
-    const actions = settings.available.filter(
-      ({ key }) =>
-        key !== "i2t" &&
-        key !== "t2t" &&
-        (isOwner || sameModelRef(settings.bindings[key], ref)) &&
-        settings.candidates[key].some((m) => sameModelRef(m, ref)),
-    );
-    if (!actions.length) return null;
-    return actions.map(({ key, title }) => {
-      const current = sameModelRef(settings.bindings[key], ref);
-      const name = title[locale];
-      return (
-        <Button
-          key={key}
-          size="xs"
-          variant="secondary"
-          disabled={disabled || !isOwner || current || capabilitySelection.busy}
-          onClick={() => void capabilitySelection.save({ bindings: { [key]: ref } })}
-        >
-          {current ? S.voice.currentToolModel(name) : S.voice.setToolModel(name)}
-        </Button>
-      );
-    });
-  };
+  /** The operations a row can serve and the ones it is in use for (model-operations.tsx). */
+  const operationsOf = (row: RowState | undefined) =>
+    row ? modelOperations(capabilitySelection.settings, rowRef(row), locale) : [];
+  const assignOperation = (row: RowState, key: ToolModelKey) =>
+    void capabilitySelection.save({ bindings: { [key]: rowRef(row) } });
   const openProjectSettings = useOpenProjectSettings();
   /** Edit target: paired reference of an existing row. */
   const [editing, setEditing] = useState<ModelRefDto | null>(null);
@@ -1728,7 +1709,7 @@ export function ModelsPage() {
                       speed={speedResults.get(refMapKey(row.provider, row.modelId))}
                       usedTokens={usedTokens.get(refMapKey(row.provider, row.modelId))}
                       hourTick={hourTick}
-                      toolDefaults={toolDefaultActions(row)}
+                      operations={operationsOf(row)}
                       onOpen={() => {
                         setEditingMovedToCustom(false);
                         setEditing(rowRef(row));
@@ -2135,7 +2116,11 @@ export function ModelsPage() {
           canEdit={isOwner}
           isDefault={editingRow !== undefined && sameModelRef(rowRef(editingRow), defaultModel)}
           isVisionModel={editingRow !== undefined && sameModelRef(rowRef(editingRow), visionModel)}
-          toolDefaults={(disabled) => toolDefaultActions(editingRow, disabled)}
+          operations={operationsOf(editingRow)}
+          operationsBusy={capabilitySelection.busy}
+          onUseForOperation={(key) => {
+            if (editingRow) assignOperation(editingRow, key);
+          }}
           onClose={closeModelDialog}
           // The dialog stays open, its draft intact, until the write answers; it closes only
           // once the table holds what it sent.
@@ -2595,7 +2580,7 @@ export function ModelCard({
   usedTokens,
   hourTick,
   onOpen,
-  toolDefaults,
+  operations,
   onMoveToCustom,
 }: {
   row: RowState;
@@ -2610,7 +2595,8 @@ export function ModelCard({
   /** Bumped on the hour (see useHourTick): the cue to re-read a time-of-day price. */
   hourTick: number;
   onOpen: () => void;
-  toolDefaults?: ReactNode;
+  /** The Project operations this model can serve; the card marks the ones it is in use for. */
+  operations?: readonly ModelOperation[];
   /** Opens the config dialog with this row already moved to the custom group; absent for a member, who cannot write the config. */
   onMoveToCustom?: () => void;
 }) {
@@ -2629,7 +2615,6 @@ export function ModelCard({
   );
   /** Where an inherited key comes from (the group, or the environment), as the key's hover note. */
   const keyNote = keyStatusNote(row, group);
-  const quote = toolModelQuote(row);
   const priced = row.cacheRead || row.cacheWrite || row.output;
   /**
    * What is taken off this row's list price right now: its running promotion, its live
@@ -2664,7 +2649,7 @@ export function ModelCard({
     vision: row.vision && row.chatEligible !== false,
     isVisionModel,
     fastMode: row.fastMode,
-    free: !quote && isFreeModel(row),
+    free: isFreeModel(row),
     discount,
   });
 
@@ -2676,8 +2661,8 @@ export function ModelCard({
     // One price, the one being billed right now. What the row would cost without the promotion
     // answers no question a reader of this list is asking, and spending the meta line's width
     // on it pushes out the figures that do.
-    priced && (!quote || !isFreeModel(row)) ? (
-      <span data-slot="price" data-tooltip={quote ? S.models.configuredTokenPrices : undefined}>
+    priced ? (
+      <span data-slot="price">
         {priceLine(shownPrice.cacheRead, shownPrice.cacheWrite, shownPrice.output)}
       </span>
     ) : null,
@@ -2753,6 +2738,9 @@ export function ModelCard({
           <span data-slot="name" className="min-w-0 flex-1 truncate text-sm font-medium">
             {modelLabelOf(row.displayName, row.modelId)}
           </span>
+          {/* The Project operations this model is in use for: one quiet glyph, named in its
+              tooltip. Assigning happens in the model's dialog or in Project settings. */}
+          <ModelInUseMark operations={operations ?? []} />
           {/* What this model has spent over its whole life, on the row's right edge. Recessive by
               design — grey, on the small rung below the name: it is context for a name you are
               scanning past, not a figure the page is about. A model that has never run shows
@@ -2780,16 +2768,7 @@ export function ModelCard({
               {tag.label}
             </Pill>
           ))}
-          {quote && (
-            <span
-              data-slot="tool-price"
-              className="text-xs tabular-nums text-fg-muted"
-              data-tooltip={quote.details.join(" · ")}
-            >
-              {quote.primary}
-            </span>
-          )}
-          {tags.length === 0 && !quote && (
+          {tags.length === 0 && (
             <span aria-hidden className="invisible flex">
               <Pill>&nbsp;</Pill>
             </span>
@@ -2812,7 +2791,6 @@ export function ModelCard({
           {speedBadges}
         </span>
       </button>
-      {toolDefaults && <div className="flex flex-wrap gap-1 px-3 pb-2">{toolDefaults}</div>}
       {/* The routing warning and its way out (see unroutableFix): the move the config dialog's
           own button performs, so the owner lands where the problem is fixed rather than on a
           second explanation. */}
@@ -2877,7 +2855,9 @@ function ModelDialog({
   canEdit,
   isDefault,
   isVisionModel,
-  toolDefaults,
+  operations,
+  operationsBusy,
+  onUseForOperation,
   onClose,
   onSubmit,
 }: {
@@ -2896,7 +2876,11 @@ function ModelDialog({
   canEdit: boolean;
   isDefault: boolean;
   isVisionModel: boolean;
-  toolDefaults: (disabled: boolean) => ReactNode;
+  /** The Project operations this model can serve (model-operations.tsx). */
+  operations: readonly ModelOperation[];
+  /** A binding write is in flight. */
+  operationsBusy: boolean;
+  onUseForOperation: (key: ToolModelKey) => void;
   onClose: () => void;
   /** Writes the row; resolves with whether it landed (the host closes the dialog when it did). */
   onSubmit: (row: RowState, action: DialogAction) => Promise<boolean>;
@@ -3003,7 +2987,6 @@ function ModelDialog({
   const visionInFlight = useRef<Promise<void> | null>(null);
   const isNew = row === null;
   const preset = row !== null && isPreset(row);
-  const modelId = form.modelId.trim();
   /** The loaded row's running promotion, explained under the price fields. */
   const promotion = fractionOff(row?.discount);
   /**
@@ -3015,25 +2998,6 @@ function ModelDialog({
   const inherited = inheritedConnection(form.provider, form.modelId, group, form.baseUrl);
   /** The protocol the draft is used with: its own, else the inherited one ("" = routed by id). */
   const effectiveClientType = form.clientType.trim() || inherited.clientType || "";
-
-  const sameRow = row?.provider === form.provider && row.modelId === modelId;
-  const sellerQuote = toolModelQuote({
-    provider: form.provider,
-    modelId,
-    chatEligible: sameRow ? row.chatEligible : undefined,
-    referencePriceEligible:
-      sameRow && row.baseUrl === form.baseUrl && row.clientType === form.clientType
-        ? row.referencePriceEligible
-        : undefined,
-    clientType: effectiveClientType,
-    baseUrl: form.baseUrl.trim() || inherited.baseUrl,
-  });
-  const pricedByToken =
-    !sellerQuote?.published ||
-    sellerQuote.reference ||
-    !!catalogEntryFor(form.provider, modelId)?.imagePricing;
-  const showTokenPriceInputs =
-    pricedByToken || !!(form.cacheRead || form.cacheWrite || form.output);
 
   // Read from the live form, not the saved row, so editing the upstream id, the protocol or
   // the base URL updates the answer as it is typed.
@@ -3721,7 +3685,6 @@ function ModelDialog({
               {S.models.setDefault}
             </Button>
           )}
-        {!isNew && toolDefaults(changed || saving)}
         {!isNew && (
           <>
             <span className="min-w-0 flex-1" />
@@ -3740,6 +3703,16 @@ function ModelDialog({
     // API key — "get API key" link next to the label. PasswordInput carries its own show/hide
     // toggle and brings its own <label> wrapper, so this outer container is a <div> (a nested
     // <label> is invalid).
+    // The Project operations this model can serve, each with its short action: the binding is
+    // written for the saved model, so the actions wait while the draft holds unsaved edits.
+    tools: !isNew && (
+      <ModelOperationsBlock
+        operations={operations}
+        canEdit={canEdit}
+        disabled={changed || saving || operationsBusy}
+        onUse={onUseForOperation}
+      />
+    ),
     apiKey: (
       <div className="space-y-1">
         <div className="block">
@@ -3945,54 +3918,30 @@ function ModelDialog({
     // card prints: the promotion is stored apart and taken off when usage is priced, which the
     // line under them says, since typing a different price cancels it.
     pricing: (
-      <div className="space-y-2">
-        {sellerQuote && (
-          <div className="text-xs text-fg-muted">
-            {sellerQuote.published && (
-              <p className="font-medium text-fg">
-                {sellerQuote.reference ? S.models.mmspReference : S.models.publishedPrices}
-              </p>
-            )}
-            {sellerQuote.details.map((rate) => (
-              <p key={rate}>{rate}</p>
-            ))}
-            {sellerQuote.reference && (
-              <a
-                className="underline"
-                target="_blank"
-                rel="noreferrer"
-                href="https://jina.ai/api-dashboard/pricing/"
-              >
-                {S.models.providerPlans}
-              </a>
-            )}
-          </div>
-        )}
-        {showTokenPriceInputs && (
-          <div className="grid grid-cols-3 items-start gap-2">
-            {(
-              [
-                ["cacheRead", S.models.priceCacheRead, form.cacheRead],
-                ["cacheWrite", S.models.priceCacheWrite, form.cacheWrite],
-                ["output", S.models.priceOutput, form.output],
-              ] as Array<[keyof FieldErrors & keyof RowState, string, string]>
-            ).map(([key, label, value]) => (
-              <Input
-                key={key}
-                label={label}
-                size="sm"
-                value={value}
-                inputMode="decimal"
-                disabled={!canEdit}
-                error={shownErrors[key]}
-                onChange={(e) => set({ [key]: decimalOnly(e.target.value) })}
-                className="text-right font-mono"
-                affix={{ leading: CURRENCY_SYMBOL[currency], trailing: S.models.priceUnitShort }}
-                placeholder={S.models.priceBlankHint}
-              />
-            ))}
-          </div>
-        )}
+      <div className="space-y-1">
+        <div className="grid grid-cols-3 items-start gap-2">
+          {(
+            [
+              ["cacheRead", S.models.priceCacheRead, form.cacheRead],
+              ["cacheWrite", S.models.priceCacheWrite, form.cacheWrite],
+              ["output", S.models.priceOutput, form.output],
+            ] as Array<[keyof FieldErrors & keyof RowState, string, string]>
+          ).map(([key, label, value]) => (
+            <Input
+              key={key}
+              label={label}
+              size="sm"
+              value={value}
+              inputMode="decimal"
+              disabled={!canEdit}
+              error={shownErrors[key]}
+              onChange={(e) => set({ [key]: decimalOnly(e.target.value) })}
+              className="text-right font-mono"
+              affix={{ leading: CURRENCY_SYMBOL[currency], trailing: S.models.priceUnitShort }}
+              placeholder={S.models.priceBlankHint}
+            />
+          ))}
+        </div>
         {promotion !== undefined && (
           <p className="text-xs text-gray-500 dark:text-gray-400">
             {S.models.promotionPriceHint(Math.round(promotion * 100))}

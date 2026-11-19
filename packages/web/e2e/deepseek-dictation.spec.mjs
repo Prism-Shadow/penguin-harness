@@ -88,7 +88,7 @@ test("DeepSeek dictation sends each completed microphone recording once as PCM W
       if (req.method() === "POST" && req.url() === api + "/capabilities/stt/run") posts++;
     });
     const record = page.getByRole("button", { name: "Dictate", exact: true });
-    const finish = page.getByRole("button", { name: "Finish recording and transcribe" });
+    const finish = page.getByRole("button", { name: "Finish recording", exact: true });
     await record.click();
     await expect(finish).toBeVisible();
     await page.keyboard.press("Escape");

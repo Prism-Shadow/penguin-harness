@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ToolModelSettings } from "@prismshadow/penguin-server/api";
-import { hasBoundCapability } from "../src/api/project-capabilities";
+import { hasBoundCapability } from "../src/lib/bound-capability";
 
 const model = { provider: "river", modelId: "voice" };
 const other = { provider: "lake", modelId: "voice" };

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ICONS, PagedDialog, guardLeave, useGuardedClose } from "@prismshadow/penguin-ui";
 import { S } from "../../../lib/strings";
-import { projectDisplayName, useProject } from "../../../state/project";
+import { useProject } from "../../../state/project";
 import { useAuth } from "../../../state/auth";
 import { PROJECT_SETTINGS_SCOPE } from "./shared";
 import { GeneralSection } from "./general-section";
@@ -57,7 +57,7 @@ export function ProjectSettingsBody({
     { key: "general", label: S.project.settingsTabGeneral },
     ...(!desktopMode ? [{ key: "members" as const, label: S.project.settingsTabMembers }] : []),
     { key: "defaults", label: S.project.settingsTabDefaults },
-    { key: "multimodal", label: S.voice.models },
+    { key: "multimodal", label: S.voice.models, info: S.voice.modelHelp },
     {
       key: "security",
       label: S.project.settingsTabSecurity,
@@ -95,11 +95,7 @@ export function ProjectSettingsBody({
       {active.key === "members" && <MembersSection projectId={projectId} isOwner={isOwner} />}
       {active.key === "defaults" && <ChatDefaultsSection projectId={projectId} isOwner={isOwner} />}
       {active.key === "multimodal" && (
-        <MultimodalModelsSection
-          projectId={projectId}
-          projectName={projectDisplayName(currentProject)}
-          owner={isOwner}
-        />
+        <MultimodalModelsSection projectId={projectId} owner={isOwner} />
       )}
       {active.key === "security" && (
         <SecurityPolicySection projectId={projectId} isOwner={isOwner} />

@@ -79,11 +79,10 @@ test("Models opens the project’s multimodal defaults, which persist across rel
       localStorage.setItem("penguin.lastProjectId", project);
   }, a);
   const open = async (target) => {
-    await target
-      .getByRole("button", { name: /^(Default multimodal models|默认多模态模型)$/ })
-      .click();
+    await target.getByRole("button", { name: /^(Multimodal models|多模态模型)$/ }).click();
     await expect(
-      target.getByRole("heading", { name: /^(Default multimodal models|默认多模态模型)$/ }),
+      // The pane heading also holds the page's "?", whose name follows the title.
+      target.getByRole("heading", { name: /^(Multimodal models|多模态模型)(\s|$)/ }),
     ).toBeVisible();
   };
   const field = (target, label) =>
@@ -112,7 +111,7 @@ test("Models opens the project’s multimodal defaults, which persist across rel
   await open(page);
   await expect(page).toHaveURL(/projectSettings=multimodal/);
   await expect(field(page, "Image generation")).toBeDisabled();
-  await expect(field(page, "Speech recognition")).toContainText("Not assigned");
+  await expect(field(page, "Speech recognition")).toContainText("Not set");
   await field(page, "Speech recognition").click();
   const picker = page.getByRole("dialog").last();
   await expect(picker.getByRole("navigation", { name: "Model groups" })).toBeVisible();
@@ -141,9 +140,10 @@ test("Models opens the project’s multimodal defaults, which persist across rel
   await choose(page, "Text generation", "Project writer");
   await choose(page, "Image understanding", "Project writer");
   const originalPrompt = (await polish(a)).defaultPrompt;
-  const prompt = page.getByRole("textbox", { name: "Editing instructions" });
-  await field(page, "Polish dictation").click();
-  await expect(page.getByText("Enable in Cards Alpha")).toBeVisible();
+  const prompt = page.getByRole("textbox", { name: "Polish instructions" });
+  // Polishing shares the text generation model, which the switch's hint names.
+  await expect(page.getByText("Polished by note-editor (custom)")).toBeVisible();
+  await field(page, "Polish instructions").click();
   await expect(prompt).toHaveValue(originalPrompt);
   await prompt.fill("Keep project names. Preserve all line breaks.");
   await page.getByRole("switch", { name: "Polish dictation" }).click();
@@ -175,9 +175,9 @@ test("Models opens the project’s multimodal defaults, which persist across rel
       animations: "disabled",
       path: process.env.VOICE_EVIDENCE + "/defaults-en.png",
     });
-  await page.getByRole("button", { name: /^Polish dictation/ }).click();
+  await field(page, "Polish instructions").click();
   await expect(prompt).toHaveValue("Keep project names. Preserve all line breaks.");
-  await field(page, "Restore default instructions").click();
+  await field(page, "Restore default").click();
   await expect(prompt).toHaveValue(originalPrompt);
   await field(page, "Save").click();
   await expect.poll(() => polish(a)).toMatchObject({ enabled: true, prompt: originalPrompt });
@@ -191,10 +191,10 @@ test("Models opens the project’s multimodal defaults, which persist across rel
   await page.getByRole("button", { name: "Cards Beta", exact: true }).click();
   await page.getByRole("button", { name: "Project settings", exact: true }).click();
   await expect(page).toHaveURL(/projectSettings=general/);
-  await field(page, "Default multimodal models").click();
+  await field(page, "Multimodal models").click();
   await expect(page).toHaveURL(/projectSettings=multimodal/);
   await page.reload();
-  await expect(field(page, "Speech recognition")).toContainText("Not assigned");
+  await expect(field(page, "Speech recognition")).toContainText("Not set");
   await choose(page, "Speech recognition", "River recognition");
   await expect
     .poll(() => settings(b))
@@ -211,7 +211,7 @@ test("Models opens the project’s multimodal defaults, which persist across rel
   const activeTab = page
     .getByRole("dialog")
     .getByRole("navigation")
-    .getByRole("button", { name: "默认多模态模型" });
+    .getByRole("button", { name: "多模态模型", exact: true });
   await expect(activeTab).toBeFocused();
   const tabIsVisible = () =>
     activeTab.evaluate((button) => {
@@ -249,8 +249,8 @@ test("Models opens the project’s multimodal defaults, which persist across rel
       animations: "disabled",
       path: process.env.VOICE_EVIDENCE + "/defaults-zh-phone.png",
     });
-  await page.getByRole("button", { name: /^润色语音输入/ }).click();
   await expect(page.getByRole("switch", { name: "润色语音输入" })).toBeChecked();
+  await field(page, "润色提示词").click();
   const phonePrompt = "保留项目名称、数字和中英文术语，修正标点和口头重复。";
   await page.getByRole("textbox", { name: "润色提示词" }).fill(phonePrompt);
   await field(page, "保存").click();

@@ -1887,7 +1887,7 @@ export function ChatInput({
   });
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (dictation.toolbar && e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+    if (dictation.active && e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       return;
     }
@@ -2623,96 +2623,99 @@ export function ChatInput({
         // Help text: shown only when the card is wide enough; it never competes for space on
         // phones, where the group scrolls instead.
         hint={S.chat.slashHint}
+        // While a dictation runs, its strip (cancel, time, level) stands in for the tools and the
+        // hint; the right group keeps every control, so Send stays where it was.
+        strip={dictation.strip}
         actions={
-          dictation.toolbar ?? (
-            <>
-              {/* Draft state (model still changeable = no session created yet) has no context usage to speak of: the ring isn't shown, it displays as usual once the session is created. */}
-              {!onChangeModel && (
-                <ContextGauge
-                  now={contextNow}
-                  unknown={contextStale}
-                  {...(contextWindow !== undefined ? { window: contextWindow } : {})}
-                  {...(compactionLimit !== undefined ? { compactionLimit } : {})}
-                  {...(sessionId !== undefined ? { sessionId } : {})}
-                  agentName={currentAgentName}
-                  {...(onChangeCompactionLimit ? { onChangeCompactionLimit } : {})}
-                />
-              )}
-              {/* Draft state: conversation-time thinking level (backed by Agent settings), docked left of the model selector. */}
-              {models && onChangeModel && onChangeThinkingLevel && (
-                <ThinkingLevelSelect
-                  value={thinkingLevel ?? null}
-                  onChange={onChangeThinkingLevel}
-                  disabled={busy}
-                />
-              )}
-              {/* Session state: the Session's pinned thinking level (editable) — displays the
+          <>
+            {/* Draft state (model still changeable = no session created yet) has no context usage to speak of: the ring isn't shown, it displays as usual once the session is created. */}
+            {!onChangeModel && (
+              <ContextGauge
+                now={contextNow}
+                unknown={contextStale}
+                {...(contextWindow !== undefined ? { window: contextWindow } : {})}
+                {...(compactionLimit !== undefined ? { compactionLimit } : {})}
+                {...(sessionId !== undefined ? { sessionId } : {})}
+                agentName={currentAgentName}
+                {...(onChangeCompactionLimit ? { onChangeCompactionLimit } : {})}
+              />
+            )}
+            {/* Draft state: conversation-time thinking level (backed by Agent settings), docked left of the model selector. */}
+            {models && onChangeModel && onChangeThinkingLevel && (
+              <ThinkingLevelSelect
+                value={thinkingLevel ?? null}
+                onChange={onChangeThinkingLevel}
+                disabled={busy}
+              />
+            )}
+            {/* Session state: the Session's pinned thinking level (editable) — displays the
               user's pick, else the Agent config's level (auto-follow; the parent resolves
               it). A pick is pinned on the Session (PATCH) and applies from the next LLM
               request (soft-limited): a pick mid-chat goes through the parent's confirm
               dialog, which says the change costs the model's cached context and offers to
               compact first — never writing through to the Agent config. */}
-              {!onChangeModel && onChangeTurnThinkingLevel && (
-                <ThinkingLevelSelect
-                  value={turnThinkingLevel ?? ""}
-                  onChange={onChangeTurnThinkingLevel}
-                  disabled={busy}
-                  direction="up"
-                />
-              )}
-              {/* Left of the send button: the model selector. In draft state it picks the model the
+            {!onChangeModel && onChangeTurnThinkingLevel && (
+              <ThinkingLevelSelect
+                value={turnThinkingLevel ?? ""}
+                onChange={onChangeTurnThinkingLevel}
+                disabled={busy}
+                direction="up"
+              />
+            )}
+            {/* Left of the send button: the model selector. In draft state it picks the model the
                 Session will be created on; in session state it switches this conversation's
                 model (the parent confirms, then compacts on the current model first), so it is
                 disabled whenever a compaction could not start. */}
-              {models && onChangeModel ? (
-                <ModelCatalogSelect
-                  models={models}
-                  value={modelRef}
-                  {...(defaultModel !== undefined ? { defaultModel } : {})}
-                  onChange={onChangeModel}
-                  disabled={busy}
-                />
-              ) : models && onPickSessionModel && variant === "session" ? (
-                <ModelCatalogSelect
-                  models={models}
-                  value={modelRef}
-                  {...(defaultModel !== undefined ? { defaultModel } : {})}
-                  onChange={onPickSessionModel}
-                  disabled={busy || sessionModelPickerDisabled(status)}
-                />
-              ) : (
-                /* Display-only badge: the subagent composer (a child runs whatever model it was
+            {models && onChangeModel ? (
+              <ModelCatalogSelect
+                models={models}
+                value={modelRef}
+                {...(defaultModel !== undefined ? { defaultModel } : {})}
+                onChange={onChangeModel}
+                disabled={busy}
+              />
+            ) : models && onPickSessionModel && variant === "session" ? (
+              <ModelCatalogSelect
+                models={models}
+                value={modelRef}
+                {...(defaultModel !== undefined ? { defaultModel } : {})}
+                onChange={onPickSessionModel}
+                disabled={busy || sessionModelPickerDisabled(status)}
+              />
+            ) : (
+              /* Display-only badge: the subagent composer (a child runs whatever model it was
                  spawned with and has no switch surface), and a session composer until its
                  model list has loaded. Both the logo and the name come from the DTO's paired
                  fields (no prefix parsing). */
-                <span
-                  data-tooltip={modelRef?.modelId ?? ""}
-                  data-tooltip-extra={lockedModelLabel !== modelRef?.modelId}
-                  className="flex h-8 min-w-0 max-w-44 shrink items-center gap-1.5 rounded-md px-1 text-gray-400 dark:text-gray-500"
-                >
-                  <ProviderLogo
-                    provider={modelRef?.provider ?? "custom"}
-                    className="h-4 w-4 shrink-0"
-                  />
-                  <span className="hidden min-w-0 truncate @md:block">{lockedModelLabel}</span>
-                </span>
-              )}
-              {/* One action button, never two: while running an empty composer means "Stop"
+              <span
+                data-tooltip={modelRef?.modelId ?? ""}
+                data-tooltip-extra={lockedModelLabel !== modelRef?.modelId}
+                className="flex h-8 min-w-0 max-w-44 shrink items-center gap-1.5 rounded-md px-1 text-gray-400 dark:text-gray-500"
+              >
+                <ProviderLogo
+                  provider={modelRef?.provider ?? "custom"}
+                  className="h-4 w-4 shrink-0"
+                />
+                <span className="hidden min-w-0 truncate @md:block">{lockedModelLabel}</span>
+              </span>
+            )}
+            {/* One action button, never two: while running an empty composer means "Stop"
               (abort), and typing turns the very same button into "Send" — which, mid-run,
               steers or queues per the remembered send mode (the "+" menu's settings row).
               While COMPACTING it is always Stop: a compaction is abortable, and neither send
               channel is open then, so the alternative was a permanently disabled Send sitting
               where the only available action belonged. Idle keeps the ordinary send button.
               Merging the pair keeps the running-state row within a 320px viewport. */}
-              {dictation.trigger}
-              <SendButton
-                action={stopAction ? "stop" : "send"}
-                label={stopAction ? S.chat.stop : running ? midRunSendLabel : S.chat.send}
-                disabled={running ? !canMidRunSend : !canSend}
-                onClick={() => (stopAction ? void onStop() : void send())}
-              />
-            </>
-          )
+            {/* The record button keeps this slot for the whole dictation, and Send holds still
+                  beside it, disabled until the text is in the draft. */}
+            {dictation.trigger}
+            <SendButton
+              action={stopAction ? "stop" : "send"}
+              label={stopAction ? S.chat.stop : running ? midRunSendLabel : S.chat.send}
+              disabled={(!stopAction && dictation.active) || (running ? !canMidRunSend : !canSend)}
+              onClick={() => (stopAction ? void onStop() : void send())}
+            />
+          </>
         }
       />
       <ConfirmModal

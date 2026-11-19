@@ -1,11 +1,12 @@
-// A specialist's card assigns its Project tool. Replacing the model, including across
-// providers with the same upstream id, leaves chat and the other tool bindings intact.
+// A specialist's dialog assigns its Project tool and its card marks it. Replacing the model,
+// including across providers with the same upstream id, leaves chat and the other tool bindings
+// intact.
 import { test, expect } from "@playwright/test";
 import { provisionAndLogin } from "./auth.mjs";
 import { setAccountPrefs } from "./account-prefs.mjs";
 
 const base = process.env.BASE_URL;
-test("speech and image models can become tool defaults directly from their cards", async ({
+test("speech and image models become tool defaults from their dialogs, and their cards mark it", async ({
   page,
 }) => {
   await provisionAndLogin(page.request, "tooldefaultcards", "password123");
@@ -33,47 +34,54 @@ test("speech and image models can become tool defaults directly from their cards
     page
       .locator('[data-slot="card"]')
       .filter({ has: page.locator('[data-slot="name"]').filter({ hasText: name }) });
+  // The card face carries no action: the model's dialog lists what it can serve, and the card
+  // only marks what it is in use for.
+  const dialog = page.getByRole("dialog").last();
+  const openCard = async (name) => {
+    await card(name).getByText(name, { exact: true }).click();
+    await expect(dialog).toBeVisible();
+  };
+  const inUse = (name) => card(name).locator('[data-slot="in-use"]');
+  const operation = (key) => dialog.locator(`[data-operation="${key}"]`);
   await page.goto(base + "/models");
   const search = page.getByPlaceholder(/搜索模型|Search models/);
   await search.fill("asr");
-  const choose = "设置为默认语音识别模型";
-  await card("DeepSeek ASR").getByRole("button", { name: choose }).click();
-  await expect(
-    card("DeepSeek ASR").getByRole("button", { name: "当前默认语音识别模型" }),
-  ).toBeDisabled();
+  await expect(card("DeepSeek ASR").getByRole("button", { name: "设为默认" })).toHaveCount(0);
+  await expect(inUse("DeepSeek ASR")).toHaveCount(0);
+  await openCard("DeepSeek ASR");
+  await expect(operation("s2t")).toContainText("语音识别");
+  await operation("s2t").getByRole("button", { name: "设为默认", exact: true }).click();
+  await expect(operation("s2t").getByText("已选用", { exact: true })).toBeVisible();
+  await expect(operation("s2t").getByRole("button")).toHaveCount(0);
+  // A tool model is never offered as the chat default.
+  await expect(dialog.getByRole("button", { name: /^(设为|设置为)默认模型$/ })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(inUse("DeepSeek ASR")).toHaveAttribute("aria-label", "已选用：语音识别");
   if (process.env.CARD_EVIDENCE)
     await page.screenshot({
       path: process.env.CARD_EVIDENCE + "/asr-defaults-zh.png",
       animations: "disabled",
     });
-  await card("Studio ASR").getByRole("button", { name: choose }).click();
-  await expect(card("DeepSeek ASR").getByRole("button", { name: choose })).toBeEnabled();
-  await card("Studio ASR").getByText("Studio ASR", { exact: true }).click();
-  await expect(
-    page.getByRole("dialog").getByRole("button", { name: "当前默认语音识别模型" }),
-  ).toBeDisabled();
-  await expect(
-    page.getByRole("dialog").getByRole("button", { name: /^(设为|设置为)默认模型$/ }),
-  ).toHaveCount(0);
+  await openCard("Studio ASR");
+  await operation("s2t").getByRole("button", { name: "设为默认", exact: true }).click();
+  await expect(operation("s2t").getByText("已选用", { exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
+  await expect(inUse("Studio ASR")).toHaveAttribute("aria-label", "已选用：语音识别");
+  await expect(inUse("DeepSeek ASR")).toHaveCount(0);
   await setAccountPrefs(page.request, { lang: "en" });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload();
   await search.fill("Flash Image");
-  await card("Flash Image")
-    .getByRole("button", { name: "Set as default image generation model" })
-    .click();
-  await expect(
-    card("Flash Image").getByRole("button", {
-      name: "Default image generation model",
-      exact: true,
-    }),
-  ).toBeDisabled();
+  await openCard("Flash Image");
+  await operation("t2i").getByRole("button", { name: "Set default", exact: true }).click();
+  await expect(operation("t2i").getByText("In use", { exact: true })).toBeVisible();
   if (process.env.CARD_EVIDENCE)
     await page.screenshot({
       path: process.env.CARD_EVIDENCE + "/image-default-en-phone.png",
       animations: "disabled",
     });
+  await page.keyboard.press("Escape");
+  await expect(inUse("Flash Image")).toHaveAttribute("aria-label", /^In use: .*Image generation/);
   const toolConfig = await (await page.request.get(projectUrl + "/capabilities/tools")).json();
   expect(toolConfig.bindings).toMatchObject({ s2t: proxy, t2i: image });
   const modelConfig = await (await page.request.get(projectUrl + "/models")).json();
