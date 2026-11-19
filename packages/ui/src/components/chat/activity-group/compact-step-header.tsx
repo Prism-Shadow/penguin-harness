@@ -95,10 +95,10 @@ export function CompactStepHeader({
         <span
           data-step-elapsed=""
           data-tooltip={navigation.elapsed}
-          className="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs text-fg-subtle max-[380px]:gap-0"
+          className="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs text-fg-subtle max-[380px]:ms-0.5"
         >
           <span className="sr-only sm:not-sr-only">{navigation.elapsed}</span>
-          <span aria-hidden className="sm:hidden">
+          <span aria-hidden className="max-[380px]:hidden sm:hidden">
             <GlyphIcon d={ICONS.clock} size={12} />
           </span>
           <DurationSlot
@@ -143,24 +143,8 @@ export function CompactStepHeader({
           onChange={change}
           previousLabel={navigation.previous}
           nextLabel={navigation.next}
-          readout={
-            page < total - 1 ? (
-              <button
-                type="button"
-                aria-label={navigation.latest}
-                data-tooltip={navigation.latest}
-                onClick={() => change(total - 1)}
-                className="inline-flex h-6 items-center justify-center gap-1 rounded px-0.5 hover:bg-fg/5 hover:text-fg"
-              >
-                {position}
-                <span className="hidden sm:inline-flex" aria-hidden>
-                  <GlyphIcon d={ICONS.chevronRightPipe} size={12} />
-                </span>
-              </button>
-            ) : (
-              position
-            )
-          }
+          lastPageLabel={navigation.latest}
+          readout={position}
           className="whitespace-nowrap max-sm:gap-0 max-sm:px-0 max-sm:[&>button]:w-[24px]"
         />
       </div>

@@ -7,6 +7,8 @@
  *   not written its file; approving it executes the command and completes the reply.
  * - Given a completed conversation, when it reloads and receives a follow-up, history appears
  *   once and the new turn completes instead of becoming stranded (the #89 regression).
+ * - Given earlier work in Compact, the step number stays separate from the latest-step shortcut.
+ *   That shortcut follows Next in visual and keyboard order, including at phone widths.
  */
 import { test, expect } from "@playwright/test";
 import { provisionAndLogin, provisionUser } from "./auth.mjs";
@@ -279,9 +281,9 @@ test("reopened ten-step work shows tool context, the same total and every row on
   const elapsed = group.locator("[data-step-elapsed]"),
     rows = activityRows(group);
   await page.clock.install();
-  for (const [lang, previous, latest, step] of [
-    ["zh", "上一步", "最新步骤", "第 10 步"],
-    ["en", "Previous step", "Latest step", "Step 10"],
+  for (const [lang, previous, next, latest, step] of [
+    ["zh", "上一步", "下一步", "最新步骤", "第 10 步"],
+    ["en", "Previous step", "Next step", "Latest step", "Step 10"],
   ]) {
     await setAccountPrefs(page.request, { lang });
     await page.reload();
@@ -294,11 +296,29 @@ test("reopened ten-step work shows tool context, the same total and every row on
     await expect(head).toContainText("…/每周 总结/评审 记录.md");
     await expect(rows).toHaveCount(0);
     await group.screenshot({ path: testInfo.outputPath(`step-10-${lang}.png`) });
-    await page.setViewportSize({ width: 320, height: 780 });
-    const box = await group.locator("[data-step-head]").boundingBox();
-    const navBox = await nav.boundingBox();
-    expect(navBox.x + navBox.width).toBeLessThanOrEqual(Math.min(320, box.x + box.width) + 1);
-    await expect(nav.locator("[aria-live]")).toBeInViewport();
+    const nextButton = nav.getByRole("button", { name: next, exact: true });
+    const latestButton = nav.getByRole("button", { name: latest, exact: true });
+    const readout = nav.locator("[aria-live]");
+    for (const width of [375, 320]) {
+      await page.setViewportSize({ width, height: 780 });
+      const [box, positionBox, nextBox, latestBox] = await Promise.all(
+        [group.locator("[data-step-head]"), readout, nextButton, latestButton].map((el) =>
+          el.boundingBox(),
+        ),
+      );
+      expect(positionBox.x + positionBox.width).toBeLessThanOrEqual(nextBox.x + 1);
+      expect(nextBox.x + nextBox.width).toBeLessThanOrEqual(latestBox.x + 1);
+      expect(latestBox.x + latestBox.width).toBeLessThanOrEqual(
+        Math.min(width, box.x + box.width) + 1,
+      );
+      await readout.click();
+      await expect(readout).toHaveText(step);
+      await nav.getByRole("button", { name: previous, exact: true }).focus();
+      await page.keyboard.press("Tab");
+      await expect(nextButton).toBeFocused();
+      await page.keyboard.press("Tab");
+      await expect(latestButton).toBeFocused();
+    }
     const label = head.locator('[data-slot="label"]');
     const visibleName = await label.evaluate((el) => {
       const text = el.getBoundingClientRect();
@@ -321,7 +341,8 @@ test("reopened ten-step work shows tool context, the same total and every row on
     const first = rows.first();
     await first.locator("button[aria-expanded]").first().click();
     await expect(first).toContainText("Reviewing item 1.");
-    await group.getByRole("button", { name: latest, exact: true }).click();
+    await latestButton.click();
+    await expect(latestButton).toBeHidden();
     await expect(group.locator("[data-step-terminal]")).toBeVisible();
     await expect(rows).toHaveCount(10);
     await expect(first).toContainText("Reviewing item 1.");

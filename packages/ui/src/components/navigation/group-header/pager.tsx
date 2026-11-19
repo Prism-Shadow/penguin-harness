@@ -34,6 +34,7 @@ export function Pager({
   variant = "compact",
   previousLabel,
   nextLabel,
+  lastPageLabel,
   readout,
   readoutLabel,
   disabled = false,
@@ -47,6 +48,8 @@ export function Pager({
   previousLabel?: string;
   /** The step forward's words. */
   nextLabel?: string;
+  /** Offer a shortcut after Next in the compact pager. Reserve its place on the last page. */
+  lastPageLabel?: string;
   /** The position as shown; "2/5" when omitted. */
   readout?: ReactNode;
   /** The position as announced, when the readout is not words; the interface's "Page 2 of 5" by default. */
@@ -117,6 +120,18 @@ export function Pager({
       >
         <GlyphIcon d={ICONS.chevronRight} size={12} />
       </button>
+      {lastPageLabel && pageCount > 1 && (
+        <button
+          type="button"
+          data-tooltip={lastPageLabel}
+          aria-label={lastPageLabel}
+          disabled={atEnd}
+          onClick={() => onChange(pageCount - 1)}
+          className={`${COMPACT_STEP} ${page === pageCount - 1 ? "invisible" : ""}`}
+        >
+          <GlyphIcon d={ICONS.chevronRightPipe} size={12} />
+        </button>
+      )}
     </div>
   );
 }
