@@ -10,17 +10,19 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  closingCompaction,
   compactionBegin,
   compactionEnd,
+  pendingModel,
   requestBegin,
   requestEnd,
   sessionUpdate,
   taskBegin,
   taskEnd,
+  updatedModel,
   userText,
   withOrigin,
 } from "../src/records/index.js";
-import { closingCompaction, pendingModel, updatedModel } from "../src/records/index.js";
 
 const B = { provider: "openai", model_id: "gpt-5.2" };
 
