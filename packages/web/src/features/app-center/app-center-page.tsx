@@ -21,7 +21,7 @@
  * With nothing to show, the page says what a workbench is and offers to have one built; there is
  * no manual path, so the AI button stands alone.
  */
-import { useLayoutEffect, useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router";
 import type { AppCenterShortcut } from "@prismshadow/penguin-server/api";
 import {
@@ -39,7 +39,11 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { agentSettingsPath } from "../../lib/agent-location";
-import { APP_CENTER_PATH } from "../../lib/app-center-path";
+import {
+  APP_CENTER_PATH,
+  openAppCenterFullScreen,
+  returnToAppCenter,
+} from "../../lib/app-center-path";
 import { localizedText } from "../../lib/skill-use";
 import { S } from "../../lib/strings";
 import { toastApiError } from "../../lib/toast-api-error";
@@ -49,7 +53,7 @@ import { useProject } from "../../state/project";
 import { AiCreateButtons, AiCreateModal } from "../ai-create";
 import type { AiExample } from "../ai-create";
 import { AppCenterWindow } from "./app-center-window";
-import { AppTile, FolderTile, MENU_PX, type TileMark } from "./app-tile";
+import { appTriggerId, AppTile, FolderTile, MENU_PX, type TileMark } from "./app-tile";
 import {
   arrange,
   dissolveFolder,
@@ -102,6 +106,10 @@ function markOf(drop: Drop | null, id: string): TileMark {
   return null;
 }
 
+function appCenterPath(params: URLSearchParams): string {
+  return params.size ? APP_CENTER_PATH + "?" + params : APP_CENTER_PATH;
+}
+
 export function AppCenterPage() {
   const { currentProject, agents } = useProject();
   const projectId = currentProject?.projectId ?? null;
@@ -140,14 +148,8 @@ export function AppCenterPage() {
     const next = new URLSearchParams(params);
     if (id === null) next.delete("folder");
     else next.set("folder", id);
-    if (id === null && location.state?.fromAppGrid) void navigate(-1);
-    else
-      setParams(next, {
-        replace: openFolderId !== null,
-        state: {
-          fromAppGrid: id !== null && (openFolderId === null || location.state?.fromAppGrid),
-        },
-      });
+    if (id === null) returnToAppCenter(navigate, appCenterPath(next));
+    else setParams(next, { replace: openFolderId !== null });
   };
   const [renaming, setRenaming] = useState<GridFolder | null>(null);
   const [errorOf, setErrorOf] = useState<GridApp | null>(null);
@@ -202,24 +204,25 @@ export function AppCenterPage() {
   const openKey = params.get(OPEN_PARAM);
   const openApp = openKey === null || grid === null ? null : findItem(grid, openKey);
   const windowApp = openApp?.type === "app" ? openApp : null;
-  /** The window was opened from this page, so closing it is a step back rather than a new entry. */
-  const openedHere = (location.state as { appCenterWindow?: boolean } | null)?.appCenterWindow;
+  const previousWindow = useRef(openKey);
+  useLayoutEffect(() => {
+    if (openKey === null && previousWindow.current !== null)
+      document.getElementById(appTriggerId(previousWindow.current))?.focus({ preventScroll: true });
+    previousWindow.current = openKey;
+  }, [openKey]);
 
   const openWindow = (app: GridApp) => {
     const next = new URLSearchParams(params);
     next.set(OPEN_PARAM, app.id);
-    setParams(next, { state: { appCenterWindow: true } });
+    setParams(next);
   };
   const closeWindow = () => {
-    if (openedHere === true) void navigate(-1);
-    else {
-      const next = new URLSearchParams(params);
-      next.delete(OPEN_PARAM);
-      setParams(next, { replace: true });
-    }
+    const next = new URLSearchParams(params);
+    next.delete(OPEN_PARAM);
+    returnToAppCenter(navigate, appCenterPath(next));
   };
   const openFullScreen = (app: GridApp, returnTo: string) =>
-    void navigate(app.shortcut.path, { state: { returnTo } });
+    openAppCenterFullScreen(navigate, app.shortcut.path, returnTo);
 
   const actions: GridActions | null =
     grid === null || projectId === null

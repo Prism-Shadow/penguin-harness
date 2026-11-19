@@ -124,6 +124,8 @@ function TileName({ children }: { children: ReactNode }) {
   );
 }
 
+export const appTriggerId = (id: string) => `app-center-app-${id}`;
+
 export function AppTile({
   app,
   inFolder,
@@ -169,6 +171,7 @@ export function AppTile({
             ref={target.ref}
             {...target.props}
             type="button"
+            id={appTriggerId(app.id)}
             aria-label={S.appCenter.tileName(title, shortcut.agentName, state)}
             aria-disabled={building || undefined}
             data-tooltip={tip}
