@@ -39,6 +39,7 @@ import {
   SettingsEmpty,
   SkeletonList,
   Spinner,
+  FailureText,
 } from "@prismshadow/penguin-ui";
 import { useStore } from "zustand/react";
 import { formatDateTime } from "../../lib/format";
@@ -224,11 +225,15 @@ export function ArchivedSessionsSection() {
           <SkeletonList rows={4} />
         ) : state.groups.length === 0 ? (
           <SettingsEmpty>
-            {state.error !== null
-              ? S.archivedSessions.loadFailed(state.error)
-              : filtered
-                ? S.archivedSessions.noMatches
-                : S.archivedSessions.empty}
+            {state.error !== null ? (
+              <FailureText
+                failure={{ ...state.error, text: S.archivedSessions.loadFailed(state.error.text) }}
+              />
+            ) : filtered ? (
+              S.archivedSessions.noMatches
+            ) : (
+              S.archivedSessions.empty
+            )}
           </SettingsEmpty>
         ) : (
           <div className="space-y-6">

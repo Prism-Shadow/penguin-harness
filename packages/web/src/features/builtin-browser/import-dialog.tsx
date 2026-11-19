@@ -6,7 +6,7 @@
  * all worded here from the server's codes. The browser imported from is only read.
  */
 import { browserState } from "./browser-store";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type {
   BuiltinBrowserImportResult,
   BuiltinBrowserImportSource,
@@ -26,6 +26,7 @@ import {
   sourceImportable,
   type ImportExtensionRoute,
 } from "./import-options";
+import { failureNode } from "../../lib/failure";
 
 /** The option rows' ink. */
 const optionInk = "text-gray-700 dark:text-gray-300";
@@ -35,14 +36,14 @@ const noteInk = "text-xs text-gray-500 dark:text-gray-400";
 export function ImportDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [sources, setSources] = useState<BuiltinBrowserImportSource[] | null>(null);
   const [route, setRoute] = useState<ImportExtensionRoute>("off");
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<ReactNode>(null);
   const [sourceId, setSourceId] = useState<string | null>(null);
   const [cookies, setCookies] = useState(true);
   const [history, setHistory] = useState(true);
   const [domains, setDomains] = useState("");
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<BuiltinBrowserImportResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
 
   // Every opening starts over and re-reads the list: a browser installed or signed into since
   // the last look should show up, and the extension may have connected meanwhile.
@@ -62,7 +63,13 @@ export function ImportDialog({ open, onClose }: { open: boolean; onClose: () => 
         setSourceId(res.sources.find(sourceImportable)?.id ?? null);
       })
       .catch((err: unknown) => {
-        if (!cancelled) setLoadError(apiErrorText(err));
+        if (cancelled) return;
+        setLoadError(
+          failureNode(err, {
+            text: S.builtinBrowser.importSourcesFailed(apiErrorText(err)),
+            what: "the browsers to import from could not be listed",
+          }),
+        );
       });
     return () => {
       cancelled = true;
@@ -88,7 +95,12 @@ export function ImportDialog({ open, onClose }: { open: boolean; onClose: () => 
         }),
       );
     } catch (err) {
-      setError(S.builtinBrowser.importFailed(apiErrorText(err)));
+      setError(
+        failureNode(err, {
+          text: S.builtinBrowser.importFailed(apiErrorText(err)),
+          what: "browser data could not be imported",
+        }),
+      );
     } finally {
       setRunning(false);
     }
@@ -145,9 +157,7 @@ export function ImportDialog({ open, onClose }: { open: boolean; onClose: () => 
         <div className="flex flex-col gap-4">
           <p className={noteInk}>{S.builtinBrowser.importIntro}</p>
           {loadError !== null ? (
-            <p className={`text-xs ${toneInk.danger}`}>
-              {S.builtinBrowser.importSourcesFailed(loadError)}
-            </p>
+            <p className={`text-xs ${toneInk.danger}`}>{loadError}</p>
           ) : sources === null ? (
             <p className={noteInk}>{S.builtinBrowser.importLoading}</p>
           ) : sources.length === 0 ? (

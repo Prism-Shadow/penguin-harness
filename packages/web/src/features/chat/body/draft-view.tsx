@@ -39,7 +39,15 @@
  * always survive.
  */
 import { browserState, adoptBrowserSession } from "../../builtin-browser";
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { useLocation, useNavigate } from "react-router";
 import type {
   AgentModelConfigDto,
@@ -59,6 +67,7 @@ import { S } from "../../../lib/strings";
 import { UNCONFINED, draftSandboxAfter, type PermissionPick } from "../../../lib/permission-level";
 
 import { apiErrorText } from "../../../lib/api-error";
+import { failureNode } from "../../../lib/failure";
 import { rememberSessionMachine } from "../../../lib/session-machines";
 import { cachedMachineAgents, rememberMachineAgents } from "../../../lib/machine-cache";
 import { machineLink, remoteAgentsEmpty, type MachineLink } from "../../../lib/machine-link";
@@ -170,7 +179,7 @@ export function DraftView({
    */
   const [remoteAgents, setRemoteAgents] = useState<AgentSummary[]>([]);
   /** Why a connected machine's list may be empty: still asking, or its answer was a failure. */
-  const [remoteAgentsFailure, setRemoteAgentsFailure] = useState<string | null>(null);
+  const [remoteAgentsFailure, setRemoteAgentsFailure] = useState<ReactNode>(null);
   const { add, remove } = useSessions();
   // The draft key includes a user dimension (#68 cross-account leakage). RequireAuth
   // guarantees the user is logged in here; on the off chance there's no user (the
@@ -754,7 +763,13 @@ export function DraftView({
         rememberMachineAgents(projectId, workspaceMachine, answered);
         if (!cancelled) setRemoteAgents(answered);
       } catch (err) {
-        if (!cancelled) setRemoteAgentsFailure(apiErrorText(err));
+        if (cancelled) return;
+        setRemoteAgentsFailure(
+          failureNode(err, {
+            text: S.machines.composer.failed(apiErrorText(err)),
+            what: "a machine's Agents could not be listed",
+          }),
+        );
       }
     })();
     return () => {
@@ -965,7 +980,11 @@ export function DraftView({
           agents={agents}
           selected={selectedAgent}
           onSelect={selectAgent}
-          empty={remoteAgentsEmpty(remoteLink, remoteAgentsFailure)}
+          empty={
+            remoteLink === "connected" && remoteAgentsFailure !== null
+              ? remoteAgentsFailure
+              : remoteAgentsEmpty(remoteLink, null)
+          }
           machineId={workspaceMachine}
         />
         <WorkspaceSelect

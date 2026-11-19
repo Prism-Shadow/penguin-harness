@@ -474,3 +474,33 @@
 :root[data-theme="geek"] .ui-avatar > [data-variant="pixel"] {
   display: inline;
 }
+
+/* Page change (--ui-page-exit, played by theme.css's view transition): the destination lies
+   beneath the outgoing page, and clearing the solid part of the outgoing page's mask lets
+   four-pixel squares of different coverage (art/page-pixels.svg) dissolve in place. */
+@keyframes ui-page-dissolve {
+  from,
+  to {
+    z-index: var(--layer-raised);
+    mix-blend-mode: normal;
+    background-color: var(--ui-shell-main-bg);
+    mask-image: linear-gradient(currentColor 0 0), url("./art/page-pixels.svg");
+    mask-size:
+      100% 100%,
+      16px 16px;
+  }
+  from {
+    color: black;
+    opacity: 1;
+  }
+  30% {
+    opacity: 0.96;
+  }
+  55% {
+    color: transparent;
+  }
+  to {
+    color: transparent;
+    opacity: 0;
+  }
+}

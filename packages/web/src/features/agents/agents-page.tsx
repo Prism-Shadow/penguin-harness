@@ -114,6 +114,7 @@ import { AgentImportDialog } from "./agent-import-dialog";
 import { followAgentDeletion } from "../../lib/agent-deletion-progress";
 import type { PluginPickItem } from "./create-agent-dialog";
 import { toastApiError } from "../../lib/toast-api-error";
+import { failureNode } from "../../lib/failure";
 
 /** Card button icons (24x24 line path, rendered via GlyphIcon). */
 const CARD_ICONS = {
@@ -267,7 +268,7 @@ export function AgentsPage() {
    * renders carries no meaning here. `null` until a fetch succeeds.
    */
   const [library, setLibrary] = useState<PluginPickItem[] | null>(null);
-  const [libraryError, setLibraryError] = useState<string | null>(null);
+  const [libraryError, setLibraryError] = useState<ReactNode>(null);
   /** In-flight guard for that fetch (StrictMode runs the effect twice), released on failure so reopening retries. */
   const libraryPending = useRef(false);
   /** Open the create dialog. Its form mounts with it, so every opening starts empty. */
@@ -287,7 +288,7 @@ export function AgentsPage() {
       .catch((e: unknown) => {
         // Leave `library` unset and release the guard, so the next open tries again.
         libraryPending.current = false;
-        setLibraryError(apiErrorText(e));
+        setLibraryError(failureNode(e, { what: "the plugin library could not be read" }));
       });
   }, [createOpen, library]);
 
@@ -310,7 +311,7 @@ export function AgentsPage() {
     name: string;
     machine: { machineId: string; label: string } | null;
   } | null>(null);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<ReactNode>(null);
 
   const projectId = currentProject?.projectId;
   /** Each installed machine's own Agents, mixed into this server's list (lib/machine-agent-lists.ts). */
@@ -427,7 +428,7 @@ export function AgentsPage() {
       if (machineId !== null) reloadMachine(machineId);
       else await reloadAgents();
     } catch (e) {
-      setDeleteError(apiErrorText(e));
+      setDeleteError(failureNode(e, { what: "an Agent could not be deleted" }));
       // Hired since the list was read: re-read it, so the card moves to the employees and its
       // delete button turns off.
       if (e instanceof ApiError && e.code === "agent_employed") {

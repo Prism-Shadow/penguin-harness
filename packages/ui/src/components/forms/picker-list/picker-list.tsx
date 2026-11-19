@@ -36,8 +36,11 @@ export interface PickerListProps<T> {
   onQueryChange: (query: string) => void;
   /** The search box's placeholder, which is also its accessible name. */
   searchPlaceholder: string;
-  /** Shown in place of the list when the query matches nothing. */
-  emptyText: string;
+  /**
+   * Shown in place of the list when the query matches nothing, or why there is nothing to list
+   * (a failure's words with 「[报告问题]」 after them).
+   */
+  emptyText: ReactNode;
   onPick: (item: T) => void;
   /** The row's own content, left of the check's slot. */
   renderRow: (item: T) => ReactNode;

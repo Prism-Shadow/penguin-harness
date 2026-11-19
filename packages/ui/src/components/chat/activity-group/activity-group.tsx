@@ -11,7 +11,9 @@
  * The body is one of two shapes, or none. `rows` are the activity's own steps (the agent's steps,
  * a compaction's sections, an MCP connection's servers), hung off the head one tree level down;
  * `children` is one piece the caller styles (a report in the output block). With neither the head
- * is a static line: no button, no chevron, no hover.
+ * is a static line: no button, no chevron, no hover. A failure's text actions (its 「[报告问题]」)
+ * follow the duration on a static head, and the body's last line, after the detail, on one that
+ * expands.
  *
  * Expand policy, two layers deep: the body opens while the activity runs, so its rows are on
  * screen as they are appended, and folds itself away once it settles, leaving the one-line
@@ -156,8 +158,9 @@ export interface ActivityGroupProps {
   /** A body of one piece the caller styles, in place of rows; its presence adds the chevron too. */
   children?: ReactNode;
   /**
-   * Text actions after the duration (a failed row's 「[报告问题]」), on a head that does not
-   * expand only: an expandable head is one button, and a press cannot nest in it.
+   * Text actions for the activity (a failed row's 「[报告问题]」): after the duration on a head
+   * that does not expand. An expandable head is one button and a press cannot nest in it, so
+   * there they stand at the foot of the open body instead, after the detail in full.
    */
   actions?: ReactNode;
 }
@@ -191,6 +194,7 @@ export function ActivityGroup({
   const settledHere = useArrived(hookState);
   const hasChildren = children !== undefined && children !== null;
   const expandable = rows !== undefined || hasChildren;
+  const hasActions = actions !== undefined && actions !== null;
 
   // Before any manual toggle, follow the activity's own state: open while it runs, closed the
   // moment it settles. Afterwards the reader's choice stands, so a settled card they opened
@@ -246,7 +250,7 @@ export function ActivityGroup({
         />
       )}
       <ActivityProgress running={inFlight} />
-      {!expandable && actions !== undefined && actions !== null && (
+      {!expandable && hasActions && (
         <span data-slot="actions" className="flex shrink-0 items-baseline gap-x-2 text-xs">
           {actions}
         </span>
@@ -305,7 +309,26 @@ export function ActivityGroup({
             rootRef.current?.scrollIntoView({ block: "nearest" });
           }}
         >
-          {() => (rows !== undefined ? <ActivityRows rows={rows} /> : children)}
+          {() => (
+            <>
+              {rows !== undefined ? <ActivityRows rows={rows} /> : children}
+              {hasActions && (
+                // The head's detail truncates; here it wraps, so the action follows the whole of
+                // what it is about.
+                <div
+                  data-slot="foot"
+                  className="flex flex-wrap items-baseline gap-x-2 px-3 py-1.5 text-xs"
+                >
+                  {detail !== undefined && (
+                    <span className="min-w-0 break-words font-mono text-fg-subtle">{detail}</span>
+                  )}
+                  <span data-slot="actions" className="flex shrink-0 items-baseline gap-x-2">
+                    {actions}
+                  </span>
+                </div>
+              )}
+            </>
+          )}
         </Fold>
       )}
     </div>

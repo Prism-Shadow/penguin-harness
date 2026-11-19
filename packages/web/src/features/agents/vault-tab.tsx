@@ -13,7 +13,7 @@
  * {{VAULT}}-placeholder alert (with legacy-template migration) and the editable
  * vault.prompt section, mirroring the Memory tab — owner-only, like the table edits.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import type { VaultEntryInfo, VaultUpdateRequest } from "@prismshadow/penguin-server/api";
 import {
   Button,
@@ -26,8 +26,7 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { failureOf } from "../../lib/failure";
+import { failureOf, failureNode } from "../../lib/failure";
 import { toastFailure } from "../../lib/toast-api-error";
 import { useProject } from "../../state/project";
 import { useAgentLocation } from "../../lib/agent-location";
@@ -62,7 +61,7 @@ export function VaultTab({
 
   const [entries, setEntries] = useState<VaultEntryInfo[] | null>(null);
   // Tab-level error is only the initial load failure; saves/deletes report via toast.
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   const [busy, setBusy] = useState(false);
   // Add dialog: its form, its errors and its overwrite question travel with it (vault-add-dialog.tsx).
   const [adding, setAdding] = useState(false);
@@ -84,7 +83,7 @@ export function VaultTab({
       setEntries(res.entries);
       applyConfig(configView.config);
     } catch (e) {
-      setError(apiErrorText(e));
+      setError(failureNode(e, { what: "an Agent's vault could not be loaded" }));
     }
   }, [projectId, agentId, machineId, applyConfig]);
 
@@ -120,8 +119,8 @@ export function VaultTab({
    * The add dialog's write. Upsert by key name: the existing entry is not resent beside the new
    * one, which PUT's duplicate-key validation would refuse.
    */
-  const addEntry = async (key: string, value: string) =>
-    (await persist({ entries: [...keepEntries(key), { key, value }] }))?.text ?? null;
+  const addEntry = (key: string, value: string) =>
+    persist({ entries: [...keepEntries(key), { key, value }] });
 
   /** Confirm modal's "Confirm": closes the modal after deletion; a failure pops a toast. */
   const confirmRemove = async () => {

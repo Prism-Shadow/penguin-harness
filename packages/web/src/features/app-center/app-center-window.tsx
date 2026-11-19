@@ -9,7 +9,7 @@
  * same way (useAppPageTab): it follows the workbench as it reloads, and a workbench removed under
  * it closes the window.
  */
-import type { AppCenterShortcut } from "@prismshadow/penguin-server/api";
+import type { LocatedShortcut } from "./arrangement";
 import { GlyphIcon, ICONS, ICON_SIZE, IconButton } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { useAppPageTab, WorkbenchFrame } from "../workbenches";
@@ -26,7 +26,7 @@ export function AppCenterWindow({
   onFullScreen,
 }: {
   projectId: string;
-  shortcut: AppCenterShortcut;
+  shortcut: LocatedShortcut;
   title: string;
   onClose: () => void;
   onFullScreen: () => void;
@@ -36,7 +36,7 @@ export function AppCenterWindow({
     agentId: shortcut.agentId,
     workbenchId: shortcut.workbenchId,
     tabKey: shortcut.tab,
-    machineId: null,
+    machineId: shortcut.machineId ?? null,
     ownEvents: false,
   });
   return (
