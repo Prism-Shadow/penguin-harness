@@ -3,6 +3,7 @@
 - **Date:** 2026-11-19
 - **Type:** docs
 - **Scope:** `plugins`, `skills`
+- **PR:** [#1619](https://github.com/Prism-Shadow/penguin-harness/pull/1619)
 
 [中文版](2026-11-19-workbench-editor-guidance.zh.md)
 
