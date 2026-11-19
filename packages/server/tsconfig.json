@@ -104,10 +104,16 @@
       "@prismshadow/penguin-library-setting/attachment-limits": [
         "../../library/setting/src/attachment-limits.ts"
       ],
+      "@prismshadow/penguin-library-setting/plugin-module-preinstalls": [
+        "../../library/setting/src/plugin-module-preinstalls.ts"
+      ],
       "@prismshadow/penguin-library-setting/plugin-module-requests": [
         "../../library/setting/src/plugin-module-requests.ts"
       ],
       "@prismshadow/penguin-library-setting/repos": ["../../library/setting/src/repos/index.ts"],
+      "@prismshadow/penguin-library-setting/repos/plugin-module-preinstalls": [
+        "../../library/setting/src/repos/plugin-module-preinstalls.ts"
+      ],
       "@prismshadow/penguin-library-setting/repos/plugin-module-requests": [
         "../../library/setting/src/repos/plugin-module-requests.ts"
       ],

@@ -4388,12 +4388,12 @@ export interface PluginModuleAskResponse {
 export interface PluginModuleRequest {
   package: string;
   plugin: string;
-  /** The Project whose table lists it, or will; null when that Project is gone. */
+  /** The Project whose table lists it, or will; null when that Project is gone, and for a preinstalled module's own row (PRFC-0030) — `preinstalled` tells the two apart. */
   projectId: string | null;
-  /** That Project's display name (its id when it has none); null when it is gone. */
+  /** That Project's display name (its id when it has none); null when there is none. */
   projectName: string | null;
   agentId: string | null;
-  /** The user who asked; "" when no person was behind it (company mode's reconcile). */
+  /** The user who asked; "" when no person was behind it (company mode's reconcile, a preinstalled module's one-time listing). */
   requestedBy: string;
   /** That user's display name; null when it has none or the user is gone. */
   requestedByName: string | null;
@@ -4405,6 +4405,12 @@ export interface PluginModuleRequest {
   /** How it was enabled: `builtin` (automatic), `admin` (the administrator's own act), `approval` (a member's request approved). */
   via: "builtin" | "admin" | "approval" | null;
   builtin: boolean;
+  /**
+   * A preinstalled module (PRFC-0030): every Project's rather than one's. Its row names no
+   * Project (`projectId` null without the Project being gone), and enabling it after a stop
+   * lists it in every Project. Absent from a server older than PRFC-0030.
+   */
+  preinstalled?: boolean;
   state: PluginModuleState;
 }
 
