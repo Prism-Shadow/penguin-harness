@@ -43,6 +43,7 @@ import {
   initialDoc,
   moduleDefOf,
   upgrade,
+  wire,
 } from "@prismshadow/penguin-core/kernel";
 import type { HmrHost, PlatformBundle } from "@prismshadow/penguin-hmr";
 import { TerminalManager } from "../terminal/manager.js";
@@ -82,6 +83,8 @@ import { PLUGINS_RESOURCE_ID, pluginHostFrom } from "../plugin/host.js";
 import type { PluginHost } from "../plugin/host.js";
 import { loadPluginHost, pluginBases } from "../plugin/loader.js";
 import { listPreinstalledOnce } from "../services/preinstall-once.js";
+import { PluginModulePreinstallsRepo } from "@prismshadow/penguin-library-setting/repos/plugin-module-preinstalls";
+import { PluginModuleRequestsRepo } from "@prismshadow/penguin-library-setting/repos/plugin-module-requests";
 import {
   useInstalledPluginPrefix,
   useLibraryHost,
@@ -443,7 +446,9 @@ async function createInner(
   // them and no re-assembly follows. Like the migrations above, it comes before any node.
   if (caps !== null && machineId !== null) {
     await listPreinstalledOnce({
-      db: caps.db,
+      // Before the tree, so built by hand over the same database the tree's repos use.
+      preinstalls: wire(PluginModulePreinstallsRepo, { db: caps.db }),
+      ledger: wire(PluginModuleRequestsRepo, { db: caps.db }),
       root: caps.config.root,
       bases: pluginBases(caps.config.root, caps.hmr.assetsDir()),
       machineId,

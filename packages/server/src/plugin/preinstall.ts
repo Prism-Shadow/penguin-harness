@@ -14,20 +14,12 @@
  * WHERE AND WHEN they are listed is this server's own `[plugins.<machineId>]` table of a
  * Project — never the shared table, never another machine's:
  *   - when a Project is created (services/plugin-modules.ts, `PluginModules.preinstall`);
- *   - once for the Projects a server already has, the first time it boots a build that ships the
+ *   - once for each Project created before that, at the first boot of a build that ships the
  *     package (services/preinstall-once.ts).
  */
-import {
-  libraryContributions,
-  readPluginTable,
-  type PluginTables,
-} from "@prismshadow/penguin-core";
-import {
-  discoverBuiltinPlugins,
-  readPluginDeclaration,
-  resolvePluginPackage,
-  type PluginBase,
-} from "./loader.js";
+import { libraryContributions, readPluginTable } from "@prismshadow/penguin-core";
+import { isBuiltin } from "./builtin.js";
+import { discoverBuiltinPlugins, resolvePluginPackage, type PluginBase } from "./loader.js";
 
 export interface PreinstalledModule {
   /** The npm package name, as a plugin table lists it. */
@@ -49,15 +41,7 @@ export async function preinstalledModules(
 
 /** Whether `pkg` is a preinstalled module on this server (see the header). */
 export async function isPreinstalled(pkg: string, bases: readonly PluginBase[]): Promise<boolean> {
-  const declared = await readPluginDeclaration(pkg, bases);
-  if (
-    "error" in declared ||
-    !declared.builtin ||
-    declared.modules.length === 0 ||
-    declared.replaces.length > 0
-  ) {
-    return false;
-  }
+  if (!(await isBuiltin(pkg, bases))) return false;
   const found = resolvePluginPackage(pkg, bases);
   if (found === null) return false;
   try {
@@ -72,15 +56,4 @@ export async function isPreinstalled(pkg: string, bases: readonly PluginBase[]):
 /** The plugin's name a package carries: its npm name without the scope. */
 export function pluginNameOf(pkg: string): string {
   return pkg.slice(pkg.lastIndexOf("/") + 1);
-}
-
-/** `packages` added to this server's own table, each as an administrator's entry reads: any version. */
-export function withOwnListing(
-  tables: PluginTables,
-  machineId: string,
-  packages: readonly string[],
-): PluginTables {
-  const own = { ...tables.machines[machineId] };
-  for (const pkg of packages) own[pkg] = {};
-  return { ...tables, machines: { ...tables.machines, [machineId]: own } };
 }

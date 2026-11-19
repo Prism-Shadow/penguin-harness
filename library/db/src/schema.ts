@@ -241,9 +241,11 @@ CREATE TABLE IF NOT EXISTS plugin_module_requests ( -- who asked this server to 
   decided_at   TEXT,
   via          TEXT                           -- how it was enabled: 'builtin' | 'admin' | 'approval'; NULL while pending or declined
 );
-CREATE TABLE IF NOT EXISTS plugin_module_preinstalls ( -- the preinstalled built-in packages this server has listed once in every Project it had (PRFC-0030); one row per package. After that the Project tables are the administrator's: a package here is never listed into an existing Project again
-  package   TEXT PRIMARY KEY,                 -- npm package name, as a plugin table lists it
-  listed_at TEXT NOT NULL                     -- when this server listed it in the Projects it had
+CREATE TABLE IF NOT EXISTS plugin_module_preinstalls ( -- the preinstalled built-in modules this server has handled for each Project (PRFC-0030): listed in its own table once, or passed over for good. A Project with a row never gets the one-time listing of that package again, so an administrator's removal stands
+  package    TEXT NOT NULL,                   -- npm package name, as a plugin table lists it
+  project_id TEXT NOT NULL,                   -- the Project directory's id; no foreign key: a directory the CLI made has no row yet
+  listed_at  TEXT NOT NULL,                   -- when this server handled the pair
+  PRIMARY KEY (package, project_id)
 );
 CREATE TABLE IF NOT EXISTS machine (           -- this server's OWN identity, minted here and never assigned from outside (what 'penguin server status' reports)
   singleton  INTEGER PRIMARY KEY CHECK (singleton = 1),  -- exactly one row, enforced by the schema rather than by convention

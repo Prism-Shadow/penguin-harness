@@ -693,7 +693,8 @@ describe("a database from before the module requests: 2026-11-19-plugin-module-r
 });
 
 // Given a database from before the preinstall record, the upgrade adds its table on the swap
-// path, a second record of one package is refused by its key, and down takes the table away.
+// path, a second record of one package for one Project is refused by its key, and down takes
+// the table away.
 describe("a database from before the preinstall record: 2026-11-19-plugin-module-preinstalls", () => {
   /** A root whose line declared everything through 2026-11-19-plugin-module-requests. */
   function openPrePreinstalls(): DatabaseSync {
@@ -703,19 +704,23 @@ describe("a database from before the preinstall record: 2026-11-19-plugin-module
     return db;
   }
 
-  it("adds the table while a pushed platform boots, one row per package", () => {
+  it("adds the table while a pushed platform boots, one row per package and Project", () => {
     const db = openPrePreinstalls();
     try {
       expect(migrate(db, { swapPath: true }).applied).toEqual([
         "2026-11-19-plugin-module-preinstalls",
       ]);
       const record = db.prepare(
-        "INSERT OR IGNORE INTO plugin_module_preinstalls (package, listed_at) VALUES (?, ?)",
+        "INSERT OR IGNORE INTO plugin_module_preinstalls (package, project_id, listed_at) VALUES (?, ?, ?)",
       );
-      expect(Number(record.run("@acme/x", "first").changes)).toBe(1);
-      expect(Number(record.run("@acme/x", "second").changes)).toBe(0);
-      expect(db.prepare("SELECT package, listed_at FROM plugin_module_preinstalls").all()).toEqual([
-        { package: "@acme/x", listed_at: "first" },
+      expect(Number(record.run("@acme/x", "p1", "first").changes)).toBe(1);
+      expect(Number(record.run("@acme/x", "p1", "second").changes)).toBe(0);
+      expect(Number(record.run("@acme/x", "p2", "second").changes)).toBe(1);
+      expect(
+        db.prepare("SELECT project_id, listed_at FROM plugin_module_preinstalls ORDER BY 1").all(),
+      ).toEqual([
+        { project_id: "p1", listed_at: "first" },
+        { project_id: "p2", listed_at: "second" },
       ]);
     } finally {
       db.close();

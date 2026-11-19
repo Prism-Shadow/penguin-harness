@@ -221,6 +221,7 @@ describe("a plugin's server module, installed with the plugin on an Agent", () =
         decision: "enabled",
         decidedBy: "member",
         via: "builtin",
+        preinstalled: false,
         state: "running",
       }),
     ]);

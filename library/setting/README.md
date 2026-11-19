@@ -20,12 +20,12 @@ The settings domain as a library package — #255's restack, step L02.
   (implements `PluginModuleRequests`): the `server_settings`, `ui_prefs` and
   `plugin_module_requests` tables. Each takes the `Db` capability from
   `@prismshadow/penguin-library-db`.
-- `src/repos/plugin-module-preinstalls.ts` — `PluginModulePreinstallsRepo`:
-  the `plugin_module_preinstalls` table, which records the preinstalled
-  built-in packages this server has listed once in the Projects it had, and
-  the ledger row such a listing seeds (PRFC-0030). A plain class over the
-  database rather than a component: the listing runs while a generation boots,
-  before its module tree exists.
+- `src/plugin-module-preinstalls.ts` and its repo — the
+  `PluginModulePreinstalls` contract over the `plugin_module_preinstalls`
+  table: the preinstalled built-in modules this server has handled for each
+  Project (PRFC-0030). The server also builds the repo with `wire`, outside a
+  tree: the one-time listing runs while a generation boots, before its module
+  tree exists.
 
 ## The dependency rule
 

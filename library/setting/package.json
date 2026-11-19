@@ -32,6 +32,10 @@
       "types": "./dist/setting.d.ts",
       "import": "./dist/setting.js"
     },
+    "./plugin-module-preinstalls": {
+      "types": "./dist/plugin-module-preinstalls.d.ts",
+      "import": "./dist/plugin-module-preinstalls.js"
+    },
     "./plugin-module-requests": {
       "types": "./dist/plugin-module-requests.d.ts",
       "import": "./dist/plugin-module-requests.js"

@@ -16,18 +16,28 @@
  * - The administrator removes it from a Project: later boots leave it out there.
  * - Removed from every Project it stops; the next Project created lists it and it runs again.
  * - Installing it on an Agent after the listing changes nothing.
- * - The administrator sees it enabled, built in, by nobody; stopping it keeps every Project, new
- *   ones and boots included, from listing it; enabling it lists it in every Project again.
+ * - The administrator sees it enabled, built in, by nobody, as every Project's; stopping it keeps
+ *   every Project, new ones and boots included, from listing it; enabling it lists it in every
+ *   Project again and tells their users.
  * - An administrator's stop from before the package was preinstalled holds.
+ * - A Project whose config cannot be read at that boot gets it at a later boot; one whose config
+ *   is not TOML is passed over for good.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { usePushedPluginLibrary, type PluginTables } from "@prismshadow/penguin-core";
+import fs from "node:fs/promises";
+import {
+  projectConfigPath,
+  usePushedPluginLibrary,
+  type PluginTables,
+} from "@prismshadow/penguin-core";
+import type { ServerEvent } from "@prismshadow/penguin-library-project";
 import type {
   AgentPluginsInstallResponse,
   InstalledPluginsResponse,
   PluginModuleRequestsResponse,
 } from "../src/api/types.js";
 import type { Reassembly } from "../src/hmr/capabilities.js";
+import { userChannelKey } from "../src/http/routes/events.js";
 import { shipHybrids, type HybridPackage } from "./plugin-fixtures.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
@@ -110,6 +120,15 @@ describe("a preinstalled built-in module, listed in Project config", () => {
 
   /** The App of the moment: the same object until a re-assembly replaces the tree. */
   const currentApp = () => t.boot.tree.api("IdentityModule", "Auth");
+
+  /** The server events a user's channel carries from now on. */
+  function inbox(userId: string): ServerEvent[] {
+    const events: ServerEvent[] = [];
+    t.deps.channels.get(userChannelKey(userId)).subscribe((evt) => {
+      if (evt.event === "server_event") events.push(JSON.parse(evt.data) as ServerEvent);
+    });
+    return events;
+  }
 
   it("the first boot of a build that ships it lists it in this server's own table of every Project, and runs it", async () => {
     const member = apiClient(t.app, (await provisionUser(t.app, "member")).cookie);
@@ -218,6 +237,7 @@ describe("a preinstalled built-in module, listed in Project config", () => {
         decision: "enabled",
         via: "builtin",
         builtin: true,
+        preinstalled: true,
         state: "running",
       }),
     ]);
@@ -230,6 +250,7 @@ describe("a preinstalled built-in module, listed in Project config", () => {
     expect(await own(MEMBER_PROJECT)).toBeUndefined();
     expect(await own("later")).toBeUndefined();
     expect(await stateOf("default_project", PRE.name)).toBe("off");
+    const memberEvents = inbox("member");
 
     const res = await decide(PRE.name, "enable");
 
@@ -246,6 +267,7 @@ describe("a preinstalled built-in module, listed in Project config", () => {
     for (const projectId of ["default_project", MEMBER_PROJECT, "later"]) {
       expect(await own(projectId)).toEqual({ [PRE.name]: {} });
     }
+    expect(memberEvents).toContainEqual({ type: "plugin_modules_changed" });
   });
 
   it("an administrator's stop from before the package was preinstalled holds", async () => {
@@ -268,5 +290,29 @@ describe("a preinstalled built-in module, listed in Project config", () => {
     expect(await own("default_project")).toBeUndefined();
     expect(await own("later")).toBeUndefined();
     expect(await stateOf("default_project", PRE.name)).toBe("off");
+  });
+
+  it("a Project whose config cannot be read at that boot gets it later; one that is not TOML is passed over for good", async () => {
+    await createProject("unreadable");
+    await createProject("garbled");
+    const unreadable = projectConfigPath(t.root, "unreadable");
+    const garbled = projectConfigPath(t.root, "garbled");
+    const good = await fs.readFile(garbled, "utf8");
+    // A read that fails (a directory where the file should be: EISDIR everywhere), and a file
+    // that is not TOML.
+    await fs.rename(unreadable, `${unreadable}.aside`);
+    await fs.mkdir(unreadable);
+    await fs.writeFile(garbled, "this is = = not toml");
+    await shipHybrids(t, PRE);
+    expect(await boot()).toBe(true);
+    expect(await own("default_project")).toEqual({ [PRE.name]: {} });
+
+    await fs.rmdir(unreadable);
+    await fs.rename(`${unreadable}.aside`, unreadable);
+    await fs.writeFile(garbled, good);
+    expect(await boot()).toBe(true);
+
+    expect(await own("unreadable")).toEqual({ [PRE.name]: {} });
+    expect(await own("garbled")).toBeUndefined();
   });
 });

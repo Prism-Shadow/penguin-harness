@@ -47,6 +47,7 @@ import type {
   ServerEvent,
 } from "@prismshadow/penguin-library-project";
 import type {
+  PluginModulePreinstalls,
   PluginModuleRequestRow,
   PluginModuleRequests,
   PluginModuleVia,
@@ -72,8 +73,9 @@ import {
   type PluginBase,
 } from "../plugin/loader.js";
 import { moduleStep } from "../plugin/module-rule.js";
-import { isPreinstalled, preinstalledModules, withOwnListing } from "../plugin/preinstall.js";
-import { pluginTableEdits, type PluginTableEdits } from "./plugin-tables.js";
+import { isBuiltin } from "../plugin/builtin.js";
+import { isPreinstalled, preinstalledModules } from "../plugin/preinstall.js";
+import { pluginTableEdits, withOwnListing, type PluginTableEdits } from "./plugin-tables.js";
 
 /** What the process's plugin host holds, claimed per call: the host belongs to the process. */
 interface Running {
@@ -100,6 +102,8 @@ export class PluginModulesService implements PluginModules {
   @Use() private readonly db!: Db;
   @Use() private readonly library!: PluginLibrary;
   @Use() private readonly ledger!: PluginModuleRequests;
+  /** Which Projects each preinstalled module was handled for (PRFC-0030). */
+  @Use() private readonly preinstalls!: PluginModulePreinstalls;
   @Use() private readonly projects!: Projects;
   @Use() private readonly members!: Members;
   @Use() private readonly users!: Users;
@@ -202,7 +206,13 @@ export class PluginModulesService implements PluginModules {
         }),
       }));
       const listing = steps.filter((s) => s.step === "list" || s.step === "load").map((s) => s.pkg);
-      if (listing.length === 0) return;
+      // Handled, so the one-time listing at boot passes this Project over from now on (it is new,
+      // not one that predates the module): listed, listed already, or stopped by the administrator.
+      const handled = () => {
+        for (const { package: pkg } of modules)
+          this.preinstalls.record(pkg, [projectId], this.now());
+      };
+      if (listing.length === 0) return handled();
       const next = (tables: PluginTables) => withOwnListing(tables, this.machineId, listing);
       // One write for all of them; inside a re-assembly only when one is not in the closure yet.
       if (steps.some((s) => s.step === "load")) await this.tables.edit(projectId, next);
@@ -219,9 +229,13 @@ export class PluginModulesService implements PluginModules {
             : `[plugins] module ${pkg}: not listed for ${projectId} (preinstalled): ${BOOT_FAILED}`,
         );
       }
+      // A module that broke the boot is handled too: listed again at every boot, it would break
+      // each one before the administrator could stop it.
+      handled();
     } catch (err) {
+      // Not recorded: the next boot's one-time listing tries this Project again.
       this.log.line(
-        `[plugins] ${projectId}: the preinstalled modules were not listed: ${err instanceof Error ? err.message : String(err)}`,
+        `[plugins] ${projectId}: the preinstalled modules were not listed, the next boot tries again: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }
@@ -256,6 +270,7 @@ export class PluginModulesService implements PluginModules {
         decidedAt: row.decidedAt,
         via: row.via,
         builtin: await isBuiltin(row.package, bases),
+        preinstalled: await isPreinstalled(row.package, bases),
         state: stateOf(row.package, running, closure).state,
       });
     }
@@ -275,12 +290,13 @@ export class PluginModulesService implements PluginModules {
     if (decision === "enable" && (await isPreinstalled(pkg, this.bases()))) {
       // A preinstalled module is every Project's (PRFC-0030): enabled again, it is listed in
       // every Project, as its one-time listing did — its seeded row names no Project at all.
-      if (!(await this.listEverywhere(pkg))) throw new HttpError(409, "module_failed", BOOT_FAILED);
+      const listed = await this.listEverywhere(pkg);
+      if (listed === null) throw new HttpError(409, "module_failed", BOOT_FAILED);
       this.ledger.decide(pkg, "enabled", admin.userId, at, "admin");
       this.log.line(
         `[plugins] module ${pkg}: enabled for every Project by ${admin.userId} (admin)`,
       );
-      this.announce(null);
+      this.announce(...listed);
       return this.requests();
     }
     if (decision === "enable") {
@@ -301,10 +317,10 @@ export class PluginModulesService implements PluginModules {
       this.announce(projectId);
       return this.requests();
     }
-    const stillListedBy = await this.unlistEverywhere(pkg);
+    const { stillListedBy, unlisted } = await this.unlistEverywhere(pkg);
     this.ledger.decide(pkg, "declined", admin.userId, at, null);
     this.say(pkg, "declined", row.projectId, admin.userId, null);
-    this.announce(row.projectId);
+    this.announce(row.projectId, ...unlisted);
     return {
       ...(await this.requests()),
       ...(stillListedBy.length > 0 ? { stillListedBy } : {}),
@@ -368,7 +384,9 @@ export class PluginModulesService implements PluginModules {
         const took =
           step === "list"
             ? await this.writeHere(projectId, pkg)
-            : await this.tables.edit(projectId, (tables) => withOwn(tables, this.machineId, pkg));
+            : await this.tables.edit(projectId, (tables) =>
+                withOwnListing(tables, this.machineId, [pkg]),
+              );
         // False with the listing undone is a boot that failed; false with it in place is a
         // runtime that cannot re-assemble, and the restart that reads it applies it.
         if (!took && !(pkg in (await this.effective(projectId)))) {
@@ -454,7 +472,7 @@ export class PluginModulesService implements PluginModules {
     const closure = await readPluginClosure(this.config.root, this.machineId);
     if (closure.includes(pkg)) return this.writeHere(projectId, pkg);
     const took = await this.tables.edit(projectId, (tables) =>
-      withOwn(tables, this.machineId, pkg),
+      withOwnListing(tables, this.machineId, [pkg]),
     );
     return took || pkg in (await this.effective(projectId));
   }
@@ -462,24 +480,28 @@ export class PluginModulesService implements PluginModules {
   /** Writes `pkg` into this server's own table of the Project, with no re-assembly. */
   private async writeHere(projectId: string, pkg: string): Promise<boolean> {
     const tables = await this.tables.tablesOf(projectId);
-    await this.projectConfig.setPluginTables(projectId, withOwn(tables, this.machineId, pkg));
+    await this.projectConfig.setPluginTables(
+      projectId,
+      withOwnListing(tables, this.machineId, [pkg]),
+    );
     return true;
   }
 
   /**
    * Lists `pkg` in this server's own table of every Project that does not ask this server for it
-   * yet, in one change: re-assembled only when no Project keeps it in the closure already.
-   * Answers whether the App took it (true too when the listing waits for a restart).
+   * yet, in one change: re-assembled only when no Project keeps it in the closure already. Each
+   * Project is recorded as handled for it (PRFC-0030). Answers the Projects it listed it in, or
+   * null when the App did not take it (a listing waiting for a restart took).
    */
-  private async listEverywhere(pkg: string): Promise<boolean> {
+  private async listEverywhere(pkg: string): Promise<string[] | null> {
     const root = this.config.root;
+    const projectIds = await listProjectIds(root);
     const missing: string[] = [];
-    for (const projectId of await listProjectIds(root)) {
+    for (const projectId of projectIds) {
       const tables = await this.projectConfig.getPluginTables(projectId).catch(() => null);
       if (tables === null) continue;
       if (!(pkg in effectivePluginTable(tables, this.machineId))) missing.push(projectId);
     }
-    if (missing.length === 0) return true;
     const previous = new Map<string, PluginTables>();
     const write = async () => {
       for (const projectId of missing) {
@@ -491,30 +513,35 @@ export class PluginModulesService implements PluginModules {
         );
       }
     };
-    if ((await readPluginClosure(root, this.machineId)).includes(pkg)) {
-      await write();
-      return true;
+    if (missing.length > 0) {
+      if ((await readPluginClosure(root, this.machineId)).includes(pkg)) await write();
+      else {
+        const took = await this.reassembly.reassemble({
+          write,
+          undo: async () => {
+            for (const [projectId, tables] of previous) {
+              await this.projectConfig.setPluginTables(projectId, tables);
+            }
+          },
+        });
+        if (!took && !(await readPluginClosure(root, this.machineId)).includes(pkg)) return null;
+      }
     }
-    const took = await this.reassembly.reassemble({
-      write,
-      undo: async () => {
-        for (const [projectId, tables] of previous) {
-          await this.projectConfig.setPluginTables(projectId, tables);
-        }
-      },
-    });
-    return took || (await readPluginClosure(root, this.machineId)).includes(pkg);
+    this.preinstalls.record(pkg, projectIds, this.now());
+    return missing;
   }
 
   /**
    * Stops a module here: `pkg` leaves this server's own table of every Project, in one change,
    * re-assembled only when no shared table keeps it in the closure. Answers the Projects whose
    * shared table still lists it — those listings are the administrator's own, removed on the
-   * Plugins page.
+   * Plugins page — and the ones whose own table it left.
    */
-  private async unlistEverywhere(
-    pkg: string,
-  ): Promise<Array<{ projectId: string; projectName: string }>> {
+  private async unlistEverywhere(pkg: string): Promise<{
+    stillListedBy: Array<{ projectId: string; projectName: string }>;
+    /** The Projects whose own table it left. */
+    unlisted: string[];
+  }> {
     const root = this.config.root;
     const own: string[] = [];
     const shared: string[] = [];
@@ -531,7 +558,7 @@ export class PluginModulesService implements PluginModules {
           (await this.projectConfig.getName(projectId).catch(() => undefined)) ?? projectId,
       })),
     );
-    if (own.length === 0) return stillListedBy;
+    if (own.length === 0) return { stillListedBy, unlisted: [] };
     const previous = new Map<string, PluginTables>();
     const write = async () => {
       for (const projectId of own) {
@@ -546,7 +573,7 @@ export class PluginModulesService implements PluginModules {
     if (shared.length > 0) {
       // A shared table keeps it in the closure: the tree is the same, nothing to re-assemble.
       await write();
-      return stillListedBy;
+      return { stillListedBy, unlisted: own };
     }
     const took = await this.reassembly.reassemble({
       write,
@@ -560,7 +587,7 @@ export class PluginModulesService implements PluginModules {
       const still = await readPluginClosure(root, this.machineId);
       if (still.includes(pkg)) throw new HttpError(409, "module_failed", BOOT_FAILED);
     }
-    return stillListedBy;
+    return { stillListedBy, unlisted: own };
   }
 
   /** The library plugins that also ship server modules; none when the library will not read. */
@@ -610,15 +637,17 @@ export class PluginModulesService implements PluginModules {
   }
 
   /**
-   * Tells the administrator, and everyone who can see the Project, to read again. Only to a user
+   * Tells the administrator, and everyone who can see the Projects named, to read again — each
+   * user once. Only to a user
    * with GET /api/events open (`peek`, never `get`). Never throws: a page reads again on its
    * next visit.
    */
-  private announce(projectId: string | null): void {
+  private announce(...projectIds: Array<string | null>): void {
     try {
       const audience = new Set<string>();
       for (const user of this.users.list()) if (user.isAdmin) audience.add(user.userId);
-      if (projectId !== null) {
+      for (const projectId of new Set(projectIds)) {
+        if (projectId === null) continue;
         const owner = this.projects.findById(projectId)?.ownerUserId;
         if (owner !== undefined) audience.add(owner);
         for (const member of this.members.list(projectId)) audience.add(member.userId);
@@ -632,30 +661,11 @@ export class PluginModulesService implements PluginModules {
   }
 }
 
-/** `pkg` added to this server's own table, as an administrator's entry reads: any version. */
-function withOwn(tables: PluginTables, machineId: string, pkg: string): PluginTables {
-  return {
-    ...tables,
-    machines: { ...tables.machines, [machineId]: { ...tables.machines[machineId], [pkg]: {} } },
-  };
-}
-
 /** `pkg` taken out of this server's own table. */
 function withoutOwn(tables: PluginTables, machineId: string, pkg: string): PluginTables {
   const kept = { ...tables.machines[machineId] };
   delete kept[pkg];
   return { ...tables, machines: { ...tables.machines, [machineId]: kept } };
-}
-
-/** Built in on this server (plugin/module-rule.ts): resolved from a shipped prefix, and it only adds modules. */
-async function isBuiltin(pkg: string, bases: readonly PluginBase[]): Promise<boolean> {
-  const declared = await readPluginDeclaration(pkg, bases);
-  return (
-    !("error" in declared) &&
-    declared.builtin &&
-    declared.modules.length > 0 &&
-    declared.replaces.length === 0
-  );
 }
 
 /** How a package's module stands here, from the host and the closure (see PluginModuleState). */

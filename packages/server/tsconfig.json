@@ -104,6 +104,9 @@
       "@prismshadow/penguin-library-setting/attachment-limits": [
         "../../library/setting/src/attachment-limits.ts"
       ],
+      "@prismshadow/penguin-library-setting/plugin-module-preinstalls": [
+        "../../library/setting/src/plugin-module-preinstalls.ts"
+      ],
       "@prismshadow/penguin-library-setting/plugin-module-requests": [
         "../../library/setting/src/plugin-module-requests.ts"
       ],
