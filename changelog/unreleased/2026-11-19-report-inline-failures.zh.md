@@ -3,6 +3,7 @@
 - **Date:** 2026-11-19
 - **Type:** feature
 - **Scope:** `web`, `ui`
+- **PR:** [#1633](https://github.com/Prism-Shadow/penguin-harness/pull/1633)
 
 [English](2026-11-19-report-inline-failures.md)
 
