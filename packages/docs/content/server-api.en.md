@@ -452,7 +452,7 @@ Manage a Project's model table and probe model endpoints. Reading the table and 
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | `/api/projects/:projectId/models` | Lists models (`api_key` masked); a row with a running promotion carries it as `discount` |
+| GET | `/api/projects/:projectId/models` | Lists models (`api_key` masked); a row with a running promotion carries it as `discount`. A route ineligible for a registry reference price carries `referencePriceEligible: false` |
 | PUT | `/api/projects/:projectId/models` | Replaces the whole table, keyed by `(provider, modelId)`; an entry's `discount` stores or clears its promotion |
 | PUT | `/api/projects/:projectId/models/providers/:provider` | Sets or clears one group's connection in `[providers.<provider>]`, field by field: `{apiKey?, clearApiKey?, baseUrl?, clientType?}` (`null` clears a field) → the model table |
 | POST | `/api/projects/:projectId/models/sync-presets` | **Add new models** or **Restore defaults** against the built-in catalog: `{mode: add\|restore}` → the model table plus `added` and `restored` counts |

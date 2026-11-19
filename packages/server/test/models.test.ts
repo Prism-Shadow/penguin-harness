@@ -171,6 +171,21 @@ describe("models preset & catalog enrichment", () => {
     projectId = created.project.projectId;
   });
 
+  it("a Jina proxy in the project or MMSP environment cannot use the official registry price", async () => {
+    const table = async () => (await (await api.get(url())).json()) as ModelsResponse;
+    vi.stubEnv("JINA_BASE_URL", "https://proxy.example");
+    try {
+      expect(pick(await table(), "jina", "jina-search").referencePriceEligible).toBe(false);
+      const changed = await api.put(url() + "/providers/jina", { baseUrl: "https://s.jina.ai/" });
+      expect(changed.status).toBe(200);
+      const models = await table();
+      expect(pick(models, "jina", "jina-search").referencePriceEligible).toBeUndefined();
+      expect(pick(models, "jina", "jina-fetch").referencePriceEligible).toBe(false);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("dedicated models never displace a chat model, including the first saved model", async () => {
     const speech = { provider: "deepseek", modelId: "deepseek-asr" };
     const image = { provider: "google", modelId: "gemini-3.1-flash-image" };
