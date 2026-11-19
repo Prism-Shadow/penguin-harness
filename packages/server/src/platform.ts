@@ -92,7 +92,7 @@ import { ErrorRecorder } from "./runtime/error-recorder.js";
 import { UsageRecorder } from "./runtime/usage-recorder.js";
 import { UsageService } from "./services/usage-service.js";
 import { ProjectConfigService } from "./services/project-config-service.js";
-import { ModelOAuthService } from "./services/model-oauth-service.js";
+import { ModelOAuthProvider } from "./services/model-oauth-service.js";
 import { PlatformAuth, PlatformAuthProvider } from "./services/platform-auth-service.js";
 import { ModelScopeAuth, ModelScopeAuthProvider } from "./services/modelscope-auth-service.js";
 import { TraceIndexService } from "./services/trace-index.js";
@@ -344,7 +344,7 @@ export class IdentityModule {}
     ShippedBuiltinBenchmarkSeeds,
     ProjectService,
     ProjectConfigService,
-    ModelOAuthService,
+    ModelOAuthProvider,
     PlatformAuthProvider,
     ModelScopeAuthProvider,
     ProjectsRoutes,

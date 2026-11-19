@@ -12,7 +12,6 @@ import { userAgent } from "@prismshadow/penguin-core";
 import { Interface } from "@prismshadow/penguin-core/kernel";
 import { PENGUIN_GO_PROVIDER_ID } from "./model-catalog/catalog.js";
 import { HttpError } from "@prismshadow/penguin-library-http";
-import type { ProjectConfigStore } from "@prismshadow/penguin-library-project";
 import type { DefaultModelOffer } from "./model.js";
 import {
   PLATFORM_CLIENT_ID,

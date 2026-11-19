@@ -29,8 +29,6 @@ import { providerInfo } from "./model-catalog/catalog.js";
 import type { ModelProviderOAuth } from "./model-catalog/catalog.js";
 import { HttpError } from "@prismshadow/penguin-library-http";
 import { badRequest } from "@prismshadow/penguin-library-http/validate";
-import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { ProjectConfigStore } from "@prismshadow/penguin-library-project";
 import {
   DefaultModelOffer,
   FLOW_TTL_MS,
@@ -222,15 +220,32 @@ export type ApplyGroupKey = (
   apiKey: string,
 ) => Promise<GroupKeyApplied>;
 
-@Component()
+/**
+ * The key-write port the flow writes a minted key through. The server's assembly binds it to
+ * the Project config (the Project config is a server-owned mechanism; binding it here would
+ * make this package depend on the project package, which itself depends on this one).
+ */
+export type ModelOAuthServiceDeps = {
+  /** Writes a minted key as one provider group's key; returns how many of its rows use it, and the default it offers. */
+  applyGroupKey: ApplyGroupKey;
+  /** The exchange's HTTP; tests replace it so they never reach the network. */
+  fetchImpl?: typeof fetch;
+  /** The flow clock; tests pin it. */
+  now?: () => number;
+};
+
 export class ModelOAuthService implements ModelOAuth {
   private readonly flows = new Map<string, Flow>();
-  @Use() private readonly projectConfig!: ProjectConfigStore;
-  private applyGroupKey: ApplyGroupKey = (projectId, provider, apiKey) =>
-    this.projectConfig.setGroupApiKey(projectId, provider, apiKey);
+  private readonly deps: ModelOAuthServiceDeps;
   /** Replaced in tests so they never reach the network. */
-  private fetchImpl: typeof fetch = (...args) => fetch(...args);
-  private now: () => number = () => Date.now();
+  private fetchImpl: typeof fetch;
+  private now: () => number;
+
+  constructor(deps: ModelOAuthServiceDeps) {
+    this.deps = deps;
+    this.fetchImpl = deps.fetchImpl ?? ((...args) => fetch(...args));
+    this.now = deps.now ?? (() => Date.now());
+  }
 
   /**
    * Open a flow for one provider group and return the page to send the user to.
@@ -413,7 +428,7 @@ export class ModelOAuthService implements ModelOAuth {
     }
     let written: GroupKeyApplied;
     try {
-      written = await this.applyGroupKey(flow.projectId, flow.provider, result.key);
+      written = await this.deps.applyGroupKey(flow.projectId, flow.provider, result.key);
     } catch {
       flow.status = "error";
       flow.errorCode = "apply_failed";
