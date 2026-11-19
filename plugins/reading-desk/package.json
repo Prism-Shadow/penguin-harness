@@ -1,6 +1,6 @@
 {
   "name": "@penguinharness/reading-desk",
-  "version": "0.2.18",
+  "version": "0.2.19",
   "description": "Read local books, keep your place and collect annotated passages in Reading Desk.",
   "keywords": [
     "penguin-plugin",

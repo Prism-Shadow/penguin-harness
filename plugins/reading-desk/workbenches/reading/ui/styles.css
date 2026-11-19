@@ -36,6 +36,7 @@ button:disabled {
 }
 .top,
 .controls,
+.chapter-location,
 footer,
 .tools,
 .brand,
@@ -70,7 +71,11 @@ button.primary,
   border-radius: 0.4rem;
   padding: 0.5rem 0.85rem;
 }
-main {
+button.primary:hover:not(:disabled),
+.file-label:hover {
+  background: color-mix(in srgb, var(--leaf) 90%, var(--wb-fg));
+}
+#reader {
   flex: 1;
   min-height: 0;
   display: grid;
@@ -87,9 +92,6 @@ aside h2 {
   padding: 0 0.45rem;
   margin-bottom: 0.5rem;
 }
-.contents {
-  margin-top: 1.7rem;
-}
 aside button {
   display: flex;
   align-items: center;
@@ -105,14 +107,6 @@ aside button[aria-current="true"] {
   background: var(--pale);
   color: var(--leaf);
   font-weight: 600;
-}
-.spine {
-  width: 1.2rem;
-  height: 1.6rem;
-  background: var(--leaf);
-  border-left: 0.22rem solid color-mix(in srgb, var(--leaf) 70%, var(--paper));
-  border-radius: 1px 3px 3px 1px;
-  flex: none;
 }
 .chapter-number {
   font-size: 0.8rem;
@@ -281,7 +275,7 @@ dialog form h2 {
   .tools {
     gap: 0.25rem;
   }
-  main {
+  #reader {
     position: relative;
     display: flex;
   }
@@ -300,7 +294,14 @@ dialog form h2 {
     display: block;
   }
   footer {
-    padding-right: 3.4rem;
+    padding-inline-end: 3.4rem;
+  }
+  .chapter-location {
+    flex-wrap: wrap;
+    gap: 0.15rem;
+  }
+  .controls .tools {
+    flex-shrink: 0;
   }
   .controls {
     padding: 0.35rem 0.5rem;

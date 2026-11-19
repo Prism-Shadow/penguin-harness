@@ -57,10 +57,13 @@ function archive(buffer) {
     p += 46 + nameLength + view.getUint16(p + 30, true) + view.getUint16(p + 32, true);
   }
   let readBytes = 0;
-  return async function read(name) {
+  return async function read(name, imageType) {
     const entry = entries.get(name);
     if (!entry) throw new Error("invalidFile");
     const { method, compressed, size, local } = entry;
+    if (imageType && (size > 2 * 1024 * 1024 || size > LIMIT - readBytes)) return;
+    const asContent = (data) =>
+      imageType ? { type: imageType, bytes: data.slice() } : decoder.decode(data);
     if (size > LIMIT - readBytes) throw new Error("tooLarge");
     if (view.getUint32(local, true) !== 0x04034b50) throw new Error("invalidFile");
     const start = local + 30 + view.getUint16(local + 26, true) + view.getUint16(local + 28, true);
@@ -68,7 +71,7 @@ function archive(buffer) {
     const data = bytes.subarray(start, start + compressed);
     if (method === 0 && compressed === size) {
       readBytes += size;
-      return decoder.decode(data);
+      return asContent(data);
     }
     if (method !== 8) throw new Error("invalidFile");
     const reader = new Blob([data])
@@ -89,7 +92,7 @@ function archive(buffer) {
     }
     if (at !== size) throw new Error("invalidFile");
     readBytes += size;
-    return decoder.decode(out);
+    return asContent(out);
   };
 }
 const xml = (text) => new DOMParser().parseFromString(text, "application/xml");
@@ -122,7 +125,27 @@ async function epub(read, name) {
     if (paragraphs.length)
       chapters.push({ title: content(heading) || String(chapters.length + 1), paragraphs });
   }
+  // EPUB 3 marks its cover in the manifest; EPUB 2 points to the item's ID from metadata.
+  const coverId = tags(opf, "meta")
+    .find((entry) => entry.getAttribute("name") === "cover")
+    ?.getAttribute("content");
+  const item =
+    [...items.values()].find((entry) =>
+      entry.getAttribute("properties")?.split(/\s+/).includes("cover-image"),
+    ) || items.get(coverId);
+  let cover;
+  const type = item?.getAttribute("media-type");
+  if (type && ["image/jpeg", "image/png", "image/webp", "image/gif"].includes(type)) {
+    try {
+      const url = new URL(item.getAttribute("href"), new URL(path, "https://epub.invalid/"));
+      if (url.origin === "https://epub.invalid")
+        cover = await read(decodeURIComponent(url.pathname.slice(1)), type);
+    } catch {
+      // A missing cover must not prevent reading the book.
+    }
+  }
   return {
+    ...(cover && { cover }),
     title: content(tags(opf, "title")[0]) || basename(name),
     author: content(tags(opf, "creator")[0]),
     chapters,

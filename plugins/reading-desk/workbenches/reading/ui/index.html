@@ -6,6 +6,7 @@
     <title>Reading Desk</title>
     <link rel="stylesheet" href="/workbench-ui.css" />
     <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="bookshelf.css" />
     <script type="module" src="app.js"></script>
   </head>
   <body>
@@ -15,20 +16,38 @@
         <h1 data-t="desk"></h1>
       </div>
       <div class="tools">
-        <button id="toggle-shelf" data-t="shelf" aria-controls="shelf"></button
+        <button id="show-library" data-t="shelf" hidden></button
         ><button id="import-open" class="primary" data-t="add"></button>
       </div>
     </header>
-    <main>
-      <aside id="shelf">
-        <h2 data-t="shelf"></h2>
+    <main id="library" hidden>
+      <div class="library-inner">
+        <h2 class="shelf-heading" data-t="shelf"></h2>
+        <div id="resume-book"></div>
+        <div class="shelf-header">
+          <h3><span data-t="allBooks"></span> <span id="book-count"></span></h3>
+          <input type="search" id="book-search" />
+        </div>
         <div id="books"></div>
-        <h2 class="contents" data-t="contents"></h2>
+        <p id="search-empty" data-t="searchEmpty" hidden></p>
+      </div>
+    </main>
+    <main id="reader" hidden>
+      <aside id="shelf">
+        <h2 id="contents-heading" data-t="contents"></h2>
         <nav id="chapters"></nav>
       </aside>
       <section class="reading">
         <header class="controls">
-          <span id="chapter-count"></span>
+          <div class="chapter-location">
+            <button
+              id="toggle-shelf"
+              data-t="contents"
+              aria-controls="shelf"
+              aria-expanded="false"
+            ></button>
+            <span id="chapter-count"></span>
+          </div>
           <div class="tools">
             <button id="smaller">A−</button><button id="larger">A+</button
             ><button id="notes-open" data-t="notes"></button>

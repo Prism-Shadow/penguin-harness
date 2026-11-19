@@ -6,6 +6,13 @@ export const zh = language.toLowerCase().startsWith("zh");
 const en = {
   desk: "Reading Desk",
   shelf: "Bookshelf",
+  allBooks: "All books",
+  search: "Search titles or authors",
+  searchEmpty: "No books match your search.",
+  openSample: "Read the sample",
+  startReading: "Start reading",
+  unread: "Unread",
+  chapters: (n) => (n === 1 ? "1 chapter" : `${n} chapters`),
   add: "Import book",
   pick: "Select a file",
   formats:
@@ -42,6 +49,13 @@ const en = {
 const cn = {
   desk: "阅读工作台",
   shelf: "书架",
+  allBooks: "全部书籍",
+  search: "搜索书名或作者",
+  searchEmpty: "没有找到匹配的书籍。",
+  openSample: "试读样书",
+  startReading: "开始阅读",
+  unread: "未读",
+  chapters: (n) => `${n} 章`,
   add: "导入书籍",
   pick: "选择文件",
   formats:

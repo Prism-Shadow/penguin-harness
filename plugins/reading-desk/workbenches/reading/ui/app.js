@@ -1,4 +1,5 @@
 import { all, get, remove, save } from "./library.js";
+import { showBookshelf, readingPercent } from "./bookshelf.js";
 import { importBook } from "./import.js";
 import { S, sample, zh } from "./strings.js";
 const $ = (id) => document.getElementById(id);
@@ -14,6 +15,9 @@ for (const [id, label] of [
   ["file", S.pick],
 ])
   $(id).setAttribute("aria-label", label);
+$("book-search").placeholder = S.search;
+$("book-search").setAttribute("aria-label", S.search);
+const positions = new Map();
 let books = [],
   notes = [],
   book,
@@ -40,23 +44,56 @@ async function persist(store, row) {
   }
 }
 function position() {
-  const page = $("page"),
-    total = page.scrollHeight - page.clientHeight;
-  return { id: book.id, chapter, ratio: total > 0 ? page.scrollTop / total : 0 };
+  const page = $("page");
+  const total = page.scrollHeight - page.clientHeight;
+  const loc = {
+    id: book.id,
+    chapter,
+    ratio: total > 0 ? page.scrollTop / total : 0,
+    fits: total <= 0,
+    opened: positions.get(book.id)?.opened || Date.now(),
+  };
+  if (page.scrollTop <= 0 || page.scrollTop >= total - 1) return loc;
+  // Store the paragraph at the top of the viewport even when font size or screen width changes.
+  const top = page.getBoundingClientRect().top;
+  const paragraphs = $("paragraphs").children;
+  let lo = 0,
+    hi = paragraphs.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (paragraphs[mid].getBoundingClientRect().bottom <= top) lo = mid + 1;
+    else hi = mid;
+  }
+  if (lo < paragraphs.length) {
+    const rect = paragraphs[lo].getBoundingClientRect();
+    if (rect.top <= top || lo > 0) {
+      loc.paragraph = lo;
+      loc.offset = Math.max(0, (top - rect.top) / Math.max(rect.height, 1));
+    }
+  }
+  return loc;
+}
+function restorePosition(loc) {
+  const page = $("page");
+  const paragraph = $("paragraphs").children[loc?.paragraph];
+  if (paragraph) {
+    const rect = paragraph.getBoundingClientRect();
+    page.scrollTop += rect.top - page.getBoundingClientRect().top + (loc.offset || 0) * rect.height;
+  } else {
+    page.scrollTop = (loc?.ratio || 0) * (page.scrollHeight - page.clientHeight);
+  }
 }
 function percentage() {
-  const p = position();
-  const value = Math.round(
-    (100 * (chapter + (p.ratio || ($("page").scrollHeight <= $("page").clientHeight ? 1 : 0)))) /
-      book.chapters.length,
-  );
+  const value = readingPercent(book, position());
   $("progress").value = value;
   $("percent").textContent = value + "%";
 }
 function keepPosition() {
-  if (!book || restoring) return;
+  if (!book || restoring || $("reader").hidden) return;
   clearTimeout(positionTimer);
-  void persist("positions", position());
+  const value = position();
+  positions.set(book.id, value);
+  void persist("positions", value);
 }
 $("page").onscroll = () => {
   if (!book || restoring) return;
@@ -85,12 +122,7 @@ function row(label, active, run, leading) {
   button.setAttribute("aria-current", String(active));
   return button;
 }
-function drawShelf() {
-  $("books").replaceChildren(
-    ...books.map((b) =>
-      row(b.title, b.id === book.id, () => void openBook(b), el("i", "", { className: "spine" })),
-    ),
-  );
+function drawChapters() {
   $("chapters").replaceChildren(
     ...book.chapters.map((c, i) =>
       row(
@@ -127,17 +159,16 @@ function drawText() {
   $("previous").disabled = chapter === 0;
   $("next").disabled = chapter === book.chapters.length - 1;
 }
-function draw(ratio) {
+function draw(loc) {
   const version = ++generation;
   clearTimeout(positionTimer);
   restoring = true;
   selected = null;
   $("highlight").disabled = true;
-  drawShelf();
+  drawChapters();
   drawText();
   closeShelf();
-  const page = $("page");
-  page.scrollTop = ratio * (page.scrollHeight - page.clientHeight);
+  restorePosition(loc);
   percentage();
   requestAnimationFrame(() => {
     if (version === generation) {
@@ -146,30 +177,55 @@ function draw(ratio) {
     }
   });
 }
-async function openBook(next) {
+function showLibrary() {
   keepPosition();
-  const version = ++generation;
-  const old = await get("positions", next.id);
-  if (version !== generation) return;
+  ++generation;
+  clearTimeout(positionTimer);
+  restoring = false;
+  $("reader").hidden = true;
+  $("show-library").hidden = true;
+  $("library").hidden = false;
+  closeShelf();
+  showBookshelf(books, positions, book, openBook);
+  void persist("settings", { id: "last", book: book.id, view: "library" });
+}
+$("show-library").onclick = () => {
+  showLibrary();
+  $("resume-book").firstElementChild.focus();
+};
+function openBook(next) {
+  keepPosition();
   book = next;
+  const old = positions.get(next.id);
+  positions.set(next.id, {
+    ...old,
+    id: next.id,
+    chapter: old?.chapter || 0,
+    ratio: old?.ratio || 0,
+    opened: Date.now(),
+  });
   chapter = Math.max(0, Math.min(old?.chapter || 0, next.chapters.length - 1));
-  draw(old?.ratio || 0);
-  void persist("settings", { id: "last", book: next.id });
+  $("reader").hidden = false;
+  $("show-library").hidden = false;
+  $("library").hidden = true;
+  draw(old);
+  void persist("settings", { id: "last", book: next.id, view: "reader" });
+  $("page").focus({ preventScroll: true });
 }
 function turn(index) {
   chapter = index;
-  draw(0);
+  draw();
 }
 $("previous").onclick = () => turn(chapter - 1);
 $("next").onclick = () => turn(chapter + 1);
 function resize(value) {
-  const ratio = book ? position().ratio : 0;
+  const loc = book && !$("reader").hidden ? position() : null;
   font = Math.min(28, Math.max(15, value));
   document.documentElement.style.setProperty("--size", font + "px");
   $("larger").disabled = font >= 28;
   $("smaller").disabled = font <= 15;
-  if (book) {
-    $("page").scrollTop = ratio * ($("page").scrollHeight - $("page").clientHeight);
+  if (loc) {
+    restorePosition(loc);
     percentage();
   }
 }
@@ -194,8 +250,8 @@ $("file").onchange = async () => {
     const imported = await importBook(file);
     await save("books", imported);
     books.unshift(imported);
-    await openBook(imported);
     $("import").close();
+    openBook(imported);
   } catch (err) {
     $("import-status").textContent = S[err.message] || S.invalidFile;
   } finally {
@@ -324,15 +380,19 @@ $("download").onclick = () => {
   setTimeout(() => URL.revokeObjectURL(url), 30000);
 };
 async function start() {
-  const [local, entries, last, size] = await Promise.all([
+  const [local, entries, savedPositions, last, size] = await Promise.all([
     all("books"),
     all("notes"),
+    all("positions"),
     get("settings", "last"),
     get("settings", "font"),
   ]);
   books = [...local.sort((a, b) => b.imported - a.imported), sample];
   notes = entries;
   resize(size?.size || 19);
-  await openBook(books.find((b) => b.id === last?.book) || books[0]);
+  for (const loc of savedPositions) positions.set(loc.id, loc);
+  book = books.find((b) => b.id === last?.book) || books[0];
+  if (last && last.view !== "library") openBook(book);
+  else showLibrary();
 }
 void start().catch(() => notify(S.localError));
