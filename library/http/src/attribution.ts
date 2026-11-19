@@ -6,7 +6,18 @@
 import type { Context } from "hono";
 import type { AppEnv } from "./app-env.js";
 import type { UserRow } from "@prismshadow/penguin-library-auth/repos/users";
-import type { Access } from "@prismshadow/penguin-library-project";
+
+/**
+ * The one question attribution asks of Project access. A structural port rather than the
+ * Project package's `Access` mechanism: importing that interface here would make this
+ * package depend on `@prismshadow/penguin-library-project`, which itself depends on the
+ * model package, which (this PR) depends on this one — a manifest cycle. The server
+ * supplies its `ProjectAccess` instance; every caller holds an `Access`, which satisfies
+ * this shape.
+ */
+interface ProjectAccessProbe {
+  canAccess(userId: string, projectId: string): boolean;
+}
 
 /**
  * The Project an error is attributed to: only
@@ -32,7 +43,7 @@ import type { Access } from "@prismshadow/penguin-library-project";
  */
 export function attributedProjectId(
   c: Context<AppEnv>,
-  deps: { access: Access },
+  deps: { access: ProjectAccessProbe },
 ): string | undefined {
   try {
     const projectId = c.req.param("projectId");

@@ -77,10 +77,9 @@
   "dependencies": {
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-library-auth": "workspace:*",
-    "@prismshadow/penguin-library-project": "workspace:*"
+    "hono": "^4.13.11"
   },
   "devDependencies": {
-    "hono": "^4.13.11",
     "tsup": "^8.3.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.12"

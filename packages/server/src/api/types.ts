@@ -985,29 +985,19 @@ export interface ModelOAuthCodeResponse {
 // ---------------------------------------------------------------------------
 // Penguin Go key authorization (/api/projects/:p/platform-auth, owner)
 // ---------------------------------------------------------------------------
-
-export interface PlatformAuthStartResponse {
-  flowId: string;
-  authorizeUrl: string;
-  expiresAt: string;
-}
-
-export type PlatformAuthFlowErrorCode =
-  | "unreachable"
-  | "upstream_failed"
-  | "invalid_key"
-  | "expired"
-  | "locked"
-  | "already_delivered"
-  | "apply_failed";
-
-export interface PlatformAuthFlowStatusResponse {
-  status: "pending" | "applying" | "completed" | "cancelled" | "apply_failed" | "error";
-  error?: PlatformAuthFlowErrorCode;
-  applied?: number;
-  /** The default model offered on the delivered key (see DefaultModelOffer); on every `completed` answer. */
-  defaultOffer?: DefaultModelOffer;
-}
+//
+// The flow wire shapes moved to the model domain package
+// (@prismshadow/penguin-library-model/platform-auth-flow, services+http+cli restack S1),
+// ModelScope's aliases with them; re-exported here so the API contract keeps spelling them.
+export type {
+  PlatformAuthStartResponse,
+  PlatformAuthFlowErrorCode,
+  PlatformAuthFlowStatusResponse,
+  ModelScopeAuthStartResponse,
+  ModelScopeAuthFlowErrorCode,
+  ModelScopeAuthFlowStatusResponse,
+} from "@prismshadow/penguin-library-model/platform-auth-flow";
+import type { PlatformAuthFlowStatusResponse } from "@prismshadow/penguin-library-model/platform-auth-flow";
 
 /** Result of refreshing Penguin Go's catalog with the Project's stored platform key. */
 export interface PlatformModelSyncResponse extends ModelsResponse {
@@ -1015,21 +1005,12 @@ export interface PlatformModelSyncResponse extends ModelsResponse {
   updated: number;
 }
 
-// ---------------------------------------------------------------------------
-// ModelScope key authorization (/api/projects/:p/modelscope-auth, owner)
-// ---------------------------------------------------------------------------
-
 /**
- * The wire shapes are Penguin Go's, deliberately: both flows create a request, poll it, and
- * report the same six states and the same seven failure codes, so the App drives both with one
- * dialog. They are aliases rather than a second declaration because a copy would be the same
- * fields with the same meaning, and a shape that drifted apart in one of the two would be a
- * bug rather than a distinction. The endpoints stay separate regardless — a flow id issued by
- * one is not accepted by the other.
+ * ModelScope key authorization (/api/projects/:p/modelscope-auth, owner): its wire shapes are
+ * Penguin Go's, deliberately — both flows create a request, poll it, and report the same six
+ * states and the same seven failure codes, so the App drives both with one dialog. They moved
+ * beside Penguin Go's to the model domain package (platform-auth-flow), aliases included.
  */
-export type ModelScopeAuthStartResponse = PlatformAuthStartResponse;
-export type ModelScopeAuthFlowErrorCode = PlatformAuthFlowErrorCode;
-export type ModelScopeAuthFlowStatusResponse = PlatformAuthFlowStatusResponse;
 
 // ---------------------------------------------------------------------------
 // New-chat defaults (the `[default_chat]` block of .project_config.toml)

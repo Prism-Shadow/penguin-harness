@@ -119,13 +119,10 @@ importers:
       '@prismshadow/penguin-library-auth':
         specifier: workspace:*
         version: link:../auth
-      '@prismshadow/penguin-library-project':
-        specifier: workspace:*
-        version: link:../project
-    devDependencies:
       hono:
         specifier: ^4.13.11
         version: 4.13.13
+    devDependencies:
       tsup:
         specifier: ^8.3.0
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
@@ -179,15 +176,21 @@ importers:
 
   library/model:
     dependencies:
+      '@prismshadow/mmsp':
+        specifier: ^0.5.10
+        version: 0.5.10(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core':
         specifier: workspace:*
-        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+        version: link:../../packages/core
       '@prismshadow/penguin-library-agent-api':
         specifier: workspace:*
-        version: link:../agent-api
+        version: file:library/agent-api(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-db':
         specifier: workspace:*
-        version: link:../db
+        version: file:library/db(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-http':
+        specifier: workspace:*
+        version: file:library/http(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
     devDependencies:
       tsup:
         specifier: ^8.3.0
@@ -265,7 +268,7 @@ importers:
         version: link:../machine
       '@prismshadow/penguin-library-model':
         specifier: workspace:*
-        version: link:../model
+        version: file:library/model(supports-color@10.2.2)
       '@prismshadow/penguin-library-organization':
         specifier: workspace:*
         version: link:../organization
@@ -1153,7 +1156,7 @@ importers:
         version: file:library/messaging(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-model':
         specifier: workspace:*
-        version: file:library/model(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+        version: link:../../library/model
       '@prismshadow/penguin-library-observability':
         specifier: workspace:*
         version: file:library/observability(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
@@ -7836,11 +7839,36 @@ snapshots:
       - ws
       - zod
 
+  '@prismshadow/penguin-library-agent-api@file:library/agent-api(supports-color@10.2.2)':
+    dependencies:
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)
+      '@prismshadow/penguin-library-session': file:library/session(supports-color@10.2.2)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
   '@prismshadow/penguin-library-agent-api@file:library/agent-api(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
     dependencies:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-session': file:library/session(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
+  '@prismshadow/penguin-library-auth@file:library/auth(supports-color@10.2.2)':
+    dependencies:
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
       - bufferutil
@@ -7861,9 +7889,33 @@ snapshots:
       - ws
       - zod
 
+  '@prismshadow/penguin-library-db@file:library/db(supports-color@10.2.2)':
+    dependencies:
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
   '@prismshadow/penguin-library-db@file:library/db(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
     dependencies:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
+  '@prismshadow/penguin-library-http@file:library/http(supports-color@10.2.2)':
+    dependencies:
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-library-auth': file:library/auth(supports-color@10.2.2)
+      hono: 4.13.13
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
       - bufferutil
@@ -7876,7 +7928,7 @@ snapshots:
     dependencies:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-auth': file:library/auth(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@prismshadow/penguin-library-project': file:library/project(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      hono: 4.13.13
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
       - bufferutil
@@ -7910,11 +7962,28 @@ snapshots:
       - ws
       - zod
 
+  '@prismshadow/penguin-library-model@file:library/model(supports-color@10.2.2)':
+    dependencies:
+      '@prismshadow/mmsp': 0.5.10(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-library-agent-api': file:library/agent-api(supports-color@10.2.2)
+      '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)
+      '@prismshadow/penguin-library-http': file:library/http(supports-color@10.2.2)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
   '@prismshadow/penguin-library-model@file:library/model(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
     dependencies:
+      '@prismshadow/mmsp': 0.5.10(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-agent-api': file:library/agent-api(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-http': file:library/http(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
       - bufferutil
@@ -7962,6 +8031,19 @@ snapshots:
       '@prismshadow/penguin-library-session': file:library/session(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-trace': file:library/trace(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-workbench': file:library/workbench
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
+  '@prismshadow/penguin-library-session@file:library/session(supports-color@10.2.2)':
+    dependencies:
+      '@prismshadow/amsp': file:packages/amsp
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
       - bufferutil
