@@ -153,6 +153,7 @@ import type {
   BuiltinBrowserServerEvent,
   BuiltinBrowserTab,
   BuiltinBrowserTabMetrics,
+  ChromeExtensionCookie,
   DesktopBrowserCommand,
   DesktopBrowserCommandMessage,
   DesktopBrowserCookie,
@@ -1564,6 +1565,7 @@ export type {
   BuiltinBrowserServerEvent,
   BuiltinBrowserTab,
   BuiltinBrowserTabMetrics,
+  ChromeExtensionCookie,
   DesktopBrowserCommand,
   DesktopBrowserCommandMessage,
   DesktopBrowserCookie,
@@ -7127,10 +7129,23 @@ export interface BuiltinBrowserImportSource {
   profileName: string;
   hasCookies: boolean;
   hasHistory: boolean;
+  /**
+   * How the source is read. Absent: the profile's own files on this computer. `extension`: the
+   * user's connected Chrome extension (id `chrome-extension`), which hands over the cookies of
+   * the Chrome profile it runs in once the user allows it in Chrome; cookies only, and
+   * `profile` / `profileName` name the extension's Chrome.
+   */
+  via?: "extension";
 }
 
 export interface BuiltinBrowserImportSourcesResponse {
   sources: BuiltinBrowserImportSource[];
+  /**
+   * Why the user's Chrome extension is not among `sources`: none is paired, the paired one is not
+   * connected now, or an admin switched Chrome connections off. Absent when it is listed, and on
+   * a server that offers no Chrome backend at all.
+   */
+  extension?: "extension_not_paired" | "extension_disconnected" | "extension_disabled";
 }
 
 /** POST /api/builtin-browser/import. */
@@ -7144,11 +7159,52 @@ export interface BuiltinBrowserImportRequest {
   domains?: string[];
 }
 
+/**
+ * Why a cookie the import found stayed behind. `app_bound`: Chrome's app-bound encryption
+ * (Chrome 127+ on Windows), which only Chrome itself can undo. `dpapi`, `keychain`, `keyring`:
+ * the platform would not give up the browser's cookie key (Windows DPAPI, the macOS Keychain,
+ * the Linux desktop keyring). `undecryptable`: no key at hand fits the value. `partitioned`: it
+ * belongs to one context only — a partitioned (CHIPS) cookie kept for one top-level site, or a
+ * Firefox container's. `expired`: past its expiry.
+ */
+export type BuiltinBrowserCookieSkipReason =
+  "app_bound" | "dpapi" | "keychain" | "keyring" | "undecryptable" | "partitioned" | "expired";
+
+export interface BuiltinBrowserCookieSkip {
+  reason: BuiltinBrowserCookieSkipReason;
+  count: number;
+}
+
+/**
+ * What else an import reports, as a code (and counts) the Web App and the CLI word in the
+ * reader's language; the server sends no prose. `store`: which of the profile's stores.
+ */
+export type BuiltinBrowserImportNote =
+  /** The profile holds no cookie store. */
+  | { code: "no_cookie_store" }
+  /** The profile holds no history (an extension source never does). */
+  | { code: "no_history" }
+  /** The browser holds the store open (Windows): closing it lets the import read it. */
+  | { code: "store_busy"; store: "cookies" | "history" }
+  /** The store could not be copied or opened. */
+  | { code: "store_unreadable"; store: "cookies" | "history" }
+  /** The built-in browser refused `count` cookies; `errors` holds up to three of its messages, verbatim. */
+  | { code: "cookies_not_set"; count: number; errors: string[] };
+
 export interface BuiltinBrowserImportResult {
   sourceId: string;
-  cookies?: { found: number; imported: number; skipped: number; failed: number };
+  /** The browser imported from, as the source names it ("Chrome", "Firefox"). */
+  browserName: string;
+  cookies?: {
+    found: number;
+    imported: number;
+    skipped: number;
+    failed: number;
+    /** Why the skipped cookies stayed behind: one entry per reason that occurred; the counts add up to `skipped`. */
+    skips: BuiltinBrowserCookieSkip[];
+  };
   history?: { found: number; imported: number };
-  warnings: string[];
+  notes: BuiltinBrowserImportNote[];
 }
 
 export interface BuiltinBrowserHistoryEntry {

@@ -328,8 +328,11 @@ export async function resolveSource(
     "GET",
     `${BASE}/import/sources${sessionQuery()}`,
   );
+  const exact = sources.find((s) => s.id === from.trim());
+  if (exact !== undefined) return exact.id;
+  // A browser's name means a profile on this computer, never the extension.
   const browser = from.trim().toLowerCase();
-  const matching = sources.filter((s) => s.browser === browser);
+  const matching = sources.filter((s) => s.browser === browser && s.via === undefined);
   if (matching.length === 0) {
     const known = [...new Set(sources.map((s) => s.browser))];
     throw new BrowserCliError("source_not_found", t.browser.sourceNotFound(from, known));
