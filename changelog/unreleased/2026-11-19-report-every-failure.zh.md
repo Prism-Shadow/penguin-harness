@@ -3,6 +3,7 @@
 - **Date:** 2026-11-19
 - **Type:** feature
 - **Scope:** `ui`, `web`, `ui-gallery`
+- **PR:** [#1631](https://github.com/Prism-Shadow/penguin-harness/pull/1631)
 
 [English](2026-11-19-report-every-failure.md)
 
