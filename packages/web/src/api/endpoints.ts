@@ -3048,11 +3048,15 @@ export const setWorkbenchAppCenter = (
     { method: "PATCH", body: { show } satisfies WorkbenchAppCenterRequest, server: machineId },
   );
 /**
- * The Project's App Center: the shown workbenches of its Agents on this server (local only), each
- * with its build state, and the viewer's own arrangement of them (null: the server's order).
+ * The Project's App Center on one server: the shown workbenches of its Agents there, each with
+ * its build state, and the viewer's own arrangement (null: the server's order). With `machineId`
+ * it is THAT machine's list, read through this server's proxy, its icons re-rooted onto it; the
+ * arrangement that counts is always this server's.
  */
-export const getAppCenter = (projectId: string) =>
-  apiFetch<AppCenterResponse>(`/api/projects/${encodeURIComponent(projectId)}/app-center`);
+export const getAppCenter = (projectId: string, machineId: string | null = null) =>
+  apiFetch<AppCenterResponse>(`/api/projects/${encodeURIComponent(projectId)}/app-center`, {
+    server: machineId,
+  }).then((r) => ({ ...r, shortcuts: iconsOn(r.shortcuts, machineId) }));
 /** Stores the viewer's arrangement of the Project's App Center; null restores the server's order. */
 export const putAppCenterLayout = (projectId: string, layout: AppCenterLayout | null) =>
   apiFetch<AppCenterLayoutResponse>(

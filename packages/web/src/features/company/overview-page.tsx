@@ -53,7 +53,6 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime, formatMoney, formatRelativeShort } from "../../lib/format";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { toneDot, toneInk, toneSurface, type Tone } from "../../lib/tone";
@@ -103,6 +102,7 @@ import {
   type TimelineMark,
 } from "./overview-summary";
 import { toastApiError } from "../../lib/toast-api-error";
+import { failureNode } from "../../lib/failure";
 
 /** How many of today's instances the timeline shows before pointing at the calendar. */
 const TIMELINE_ROWS = 6;
@@ -336,7 +336,7 @@ export function OverviewPage() {
   const [chart, setChart] = useState<OrgChartResponse | null>(null);
   /** The whole calendar's size, read only while the organization is fresh (today's slice says nothing about next week). */
   const [calendarCount, setCalendarCount] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   const [openingDesk, setOpeningDesk] = useState(false);
   /** The inbox chip in force; local to the visit, as a filter over one section should be. */
   const [inboxFilter, setInboxFilter] = useState<InboxFilter>("all");
@@ -374,7 +374,7 @@ export function OverviewPage() {
         }
       }
     } catch (e) {
-      setError(apiErrorText(e));
+      setError(failureNode(e, { what: "an organization's overview could not be loaded" }));
     }
   }, [projectId, orgId]);
 

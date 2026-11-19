@@ -1598,8 +1598,8 @@ export const zh = {
     /** The windowed app's title bar. */
     windowClose: "关闭，回到应用中心",
     windowFullScreen: "全屏打开",
-    /** Local Agents only: a machine's Agents keep their apps in their own settings. */
-    machinesNote: "机器上 Agent 的应用不在这里，请从它们的 Agent 设置页进入。",
+    /** Machines whose apps could not be read just now: what they last showed stays on the grid. */
+    machinesOffline: (names: string) => `暂时无法连接：${names}。已缓存的内容仍可查看。`,
     aiCreateTitle: "用 AI 创建应用",
     aiCreateDescription: "选定的 Agent 会做一个 Workbench，并让它出现在应用中心。",
     aiCreatePlaceholder: "描述你想要的应用，例如：一个记录每日待办的看板",
@@ -5338,6 +5338,8 @@ Benchmark：
     goalBudgetInvalid: "无效预算：应为正数，可带 k/m 后缀（500k、2m）",
     goalBudgetSave: "保存预算",
     goalRemove: "退出目标模式",
+    /** The remove label of a composer switch's chip (a plugin's mode, e.g. Plan mode). */
+    switchOff: (title: string): string => `关闭${title}`,
     /** The notice above the composer when goal mode is engaged on an Agent without the goal plugin, and its install button. */
     goalPluginMissing: "目标模式需要 goal 插件：安装到此 Agent 后即可发起目标。",
     goalPluginInstall: "安装到此 Agent",
@@ -7346,6 +7348,8 @@ Benchmark：
       unknown_plugin: "该插件不在插件库中。",
       goal_plugin_not_installed:
         "目标模式需要 goal 插件——请先在插件库中为该 Agent 安装，并确认其钩子包已启用。",
+      prompt_hook_not_installed:
+        "这个 Agent 已没有该开关所需的钩子包，或钩子已关闭。请关闭这个开关，或重新安装对应插件。",
       skill_too_large: "该技能目录过大，超出了导入限制。",
       hook_too_large: "该钩子包过大，超出了导入限制。",
       workbench_too_large: "该工作台的源码过大，超出了导出限制。",

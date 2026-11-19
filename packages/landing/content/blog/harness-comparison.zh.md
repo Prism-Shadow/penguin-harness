@@ -46,7 +46,9 @@ excerpt: "固定底层模型与思考强度，在五个评测集、共 50 道题
 
 <figure class="post-figure prose-figure-centered prose-figure-diagram"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-assets/harness-comparison-04-penguin-reproduction-flow-zh.png" width="2880" height="1500" alt="图 1 用 PenguinHarness 组织对比实验" /><figcaption>图 1 用 PenguinHarness 组织对比实验</figcaption></figure>
 
-在 PenguinHarness 的 Web 界面中，按以下三步即可复现实验：
+复现前，请准备好 DSH、PenguinHarness、Pi 和 Codex 各自的离线运行包和 Harbor 适配器。每个离线包应包含对应的 CLI、运行时及依赖。将离线包和适配器的宿主机路径填入 Prompt，并按各适配器的要求在宿主机上配置好 api-key。
+
+准备好后，在 PenguinHarness 的 Web 界面中按以下三步启动实验：
 
 **第一步**：**配置默认模型**
 
@@ -81,8 +83,12 @@ excerpt: "固定底层模型与思考强度，在五个评测集、共 50 道题
 
 2. 被测对象、统一模型与思考强度
 - 运行器统一使用 Harbor 0.23.0。
-- 四个被测 Harness 与版本分别为：DSH 0.2.1-rc.2、PenguinHarness 0.2.17、Pi 1.4.0、Codex 0.162.1。
-- 模型统一使用 deepseek/DeepSeek-V4.1-Flash-1017，并核实四个被测 Harness 均按各自适配器的实际参数启用 max 思考强度。
+- 四个被测 Harness 的版本、离线包及 Harbor 适配器如下：
+  - DSH 0.2.1-rc.2：<宿主机上的离线包路径>，<宿主机上的 Harbor 适配器路径>
+  - PenguinHarness 0.2.17：<宿主机上的离线包路径>，<宿主机上的 Harbor 适配器路径>
+  - Pi 1.4.0：<宿主机上的离线包路径>，<宿主机上的 Harbor 适配器路径>
+  - Codex 0.162.1：<宿主机上的离线包路径>，<宿主机上的 Harbor 适配器路径>
+- 四组实验统一使用 DeepSeek-V4.1-Flash-1017，思考强度设为 max。按各适配器的要求配置 API 地址、模型 ID 和思考强度。API Key 在运行时从宿主机读取。
 
 3. 五个子集、测试次数与单题预算
 - 对 Sec A 至 Sec E 五个子集各 10 道题、共 50 道题分别独立运行 3 次，每个 Harness 运行 150 次，合计 600 次作答：
@@ -92,10 +98,11 @@ excerpt: "固定底层模型与思考强度，在五个评测集、共 50 道题
   - Sec D：data/penguinharness-benchmark-sec-d，10 题，单题时限 40m，请求上限 320，允许公网并复用共享网络 penguin-bench
   - Sec E：data/penguinharness-benchmark-sec-e，10 题，单题时限 25m，请求上限 200，允许公网并复用共享网络 penguin-bench
 
-4. 环境与适配器准备、单题验证与批量运行
-- 创建 Docker 共享网络 penguin-bench 并构建离线运行包。仓库 agents/ 目录内置了 penguin_agent:PenguinAgent 适配器；复现 DSH、Pi、Codex 前，请先核实并准备好符合 Harbor InstalledAgent 接口的对应适配器与离线运行包。
-- 先以单并发运行 data/penguinharness-benchmark-sec-e/tasks 中的 embedding-drift-monitor 完成单题验证，确认离线包解压、模型调用、产物落盘和独立验证器判分正常。
-- 单题验证通过后，按单机并发度不超过 4 依次运行四个 Harness 在五个子集上的三次实验。
+4. 环境准备、单题验证与批量运行
+- 创建或复用 Docker 共享网络 penguin-bench，按第 3 条配置各子集的网络。
+- 使用第 2 条提供的离线包和适配器。Harbor 创建任务容器后，由对应适配器将离线包复制到容器内，解压到独立目录，加载模型配置并启动 CLI。
+- 四个 Harness 各以单并发试跑一次 data/penguinharness-benchmark-sec-e/tasks 中的 embedding-drift-monitor。核对 CLI 版本、实际请求的模型 ID 和思考强度，确认产物正常落盘、独立验证器完成判分。
+- 四组单题验证通过后，按单机并发度不超过 4 依次运行四个 Harness 在五个子集上的三次实验。
 
 5. 异常核查与结果汇总
 - 每次批量运行结束后按 tools/measure/reruns.py 核查并补跑未实质启动的试次，输出四个 Harness 各子集的 meta_info.yaml、test/attempt-1..3.yaml 与 test/summary.yaml，并汇总得分、逐题通过频次与资源开销对比表。
@@ -131,7 +138,19 @@ API 费用、运行时间与 Token 用量则先按单次 50 道题累加，再�
 
 把总分拆到 Sec A 至 Sec E 五个子集后，四个 Harness 在不同题型上的表现如图 5 所示：
 
-<figure class="post-figure prose-figure-centered prose-figure-diagram"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-assets/harness-comparison-02-subset-bars-zh.png" width="2880" height="3180" alt="图 5 五个子集的得分对比" /><figcaption>图 5 五个子集的得分对比</figcaption></figure>
+<figure class="post-figure prose-figure-centered prose-figure-diagram"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-assets/harness-comparison-02-subset-radar-zh.svg" width="2880" height="2400" alt="图 5 五个子集的得分对比" /><figcaption>图 5 五个子集的得分对比</figcaption></figure>
+
+<!-- harness-subset-scores:start -->
+**平均分 ± 样本标准差**
+
+| 子集 | DSH | PenguinHarness | Pi | Codex |
+| --- | ---: | ---: | ---: | ---: |
+| Sec A 数据分析 | **70.00** ± 0.00 | **70.00** ± 10.00 | 56.67 ± 5.77 | 60.00 ± 0.00 |
+| Sec B 软件工程 | 63.33 ± 15.28 | **70.00** ± 10.00 | 60.00 ± 10.00 | 53.33 ± 5.77 |
+| Sec C 自动化流程 | **36.67** ± 5.77 | 30.00 ± 10.00 | 26.67 ± 11.55 | 26.67 ± 15.28 |
+| Sec D 科学计算 | 3.33 ± 5.77 | 0.00 ± 0.00 | 3.33 ± 5.77 | **10.00** ± 0.00 |
+| Sec E 终端任务 | 20.00 ± 10.00 | 20.00 ± 0.00 | **23.33** ± 15.28 | 0.00 ± 0.00 |
+<!-- harness-subset-scores:end -->
 
 由图 5 可以看出，总体得分领先的 Harness 并非在所有题型上都占优，四个 Harness 在不同任务上各有优劣：PenguinHarness 在 Sec B 软件工程类题集上得分最高，并与 DSH 在 Sec A 数据分析类题集上并列第一；DSH 在 Sec C 自动化流程类题集上领先；Pi 在 Sec E 终端排障类题集上领先；Codex 则在 Sec D 科学计算类题集上得分最高。
 

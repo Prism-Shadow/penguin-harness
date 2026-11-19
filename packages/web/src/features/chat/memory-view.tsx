@@ -15,7 +15,7 @@
  * stays on the agent-settings tab — the list header links there — so this view never
  * duplicates the bridge-modal flows.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { MemoryFolderFile, SessionInfo } from "@prismshadow/penguin-server/api";
 import {
   CodeSurface,
@@ -29,6 +29,7 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
+import { failureNode } from "../../lib/failure";
 import { formatBytes, formatRelativeDate } from "../../lib/format";
 import {
   type MemoryChangeRow,
@@ -85,7 +86,7 @@ export function ChatMemoryView({
   changes: MemoryChangeRow[];
   /** The server listing, loaded by chat-page's use-memory-listing; null = not loaded. */
   scopes: ScopeFiles[] | null;
-  listingError: string | null;
+  listingError: ReactNode;
   /** Navigation command from openMemory (object identity re-triggers): with a target it lands on that memory's detail, without one on the list. */
   request: { target: MemoryLocateTarget | null } | null;
   /** Whether the panel is showing (detail loading waits for it). */
@@ -110,6 +111,8 @@ export function ChatMemoryView({
     key: string;
     content: string | null;
     failed: boolean;
+    /** Why the content could not be read, once it failed. */
+    failure?: ReactNode;
     /** The files a topic keeps; empty for a kept file's own detail. */
     files: MemoryFolderFile[];
   } | null>(null);
@@ -128,8 +131,18 @@ export function ChatMemoryView({
           setDetail({ key, content: res.content, files: res.file.files, failed: false });
         }
       })
-      .catch(() => {
-        if (!cancelled) setDetail({ key, content: null, failed: true, files: [] });
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setDetail({
+          key,
+          content: null,
+          failed: true,
+          files: [],
+          failure: failureNode(err, {
+            text: S.chat.memoryContentUnavailable,
+            what: "a memory's content could not be read",
+          }),
+        });
       });
     return () => {
       cancelled = true;
@@ -186,9 +199,7 @@ export function ChatMemoryView({
           {!loaded || (!detail.failed && detail.content === null) ? (
             <SkeletonList rows={3} />
           ) : detail.failed ? (
-            <p className="text-xs text-gray-400 dark:text-gray-500">
-              {S.chat.memoryContentUnavailable}
-            </p>
+            <p className="text-xs text-gray-400 dark:text-gray-500">{detail.failure}</p>
           ) : isFile ? (
             <CodeSurface
               language={languageForFileName(target.file)}

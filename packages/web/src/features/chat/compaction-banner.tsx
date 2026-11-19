@@ -275,6 +275,8 @@ export function CompactionBanner({
       detail={ok ? undefined : S.chat.compactionFailed(item.status ?? "failed", item.errorMessage)}
       {...(degradedHint !== undefined
         ? {
+            // The mark is the only place that says why, so a theme without status marks keeps it.
+            attention: true,
             mark: (
               <span
                 role="img"

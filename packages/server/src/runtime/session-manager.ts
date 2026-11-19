@@ -104,6 +104,7 @@ import { ApprovalRegistry, makeApprove } from "./approvals.js";
 import { goalOutcomeOf, goalProgressOf } from "./goal-events.js";
 import { InputEcho } from "./input-echo.js";
 import { goalPluginNotInstalled, hasGoalHookPackage } from "./goal-plugin.js";
+import { withPromptHooks } from "./prompt-hooks.js";
 import type { Approvals, PendingApproval } from "./approvals.js";
 import type { ChannelHub } from "./channel.js";
 import type { ErrorSink } from "./error-recorder.js";
@@ -1064,6 +1065,10 @@ export class SessionManager {
    * Task to steer, and a run already settling no longer takes steering (core refuses it): both
    * queue the input as `queueIfBusy` does. Decided here, under the lock, so one request does
    * whatever the Session's state calls for.
+   *
+   * `promptHooks` names the composer's switches (prompt-hooks.ts): their contexts join the input
+   * behind the user's message once it is known to start, queue or interrupt — a steered input
+   * takes none, as steering consults no `user_prompt` hook. `recall` stays the user's own.
    */
   async startTask(
     sessionId: string,
@@ -1073,6 +1078,7 @@ export class SessionManager {
       interrupt?: boolean;
       steerIfBusy?: boolean;
       recall?: RecallStore;
+      promptHooks?: readonly string[];
     },
   ): Promise<{ sessionId: string; queued: boolean; steered?: boolean }> {
     return this.withLock(sessionId, async () => {
@@ -1092,11 +1098,14 @@ export class SessionManager {
       // A person's message opens a fresh chain for company mode's hop accounting, whether the
       // Task starts now or waits in the queue (see SessionManagerDeps.onHumanInput).
       if (isHumanInput(input)) this.deps.onHumanInput?.(sessionId);
+      // Each branch below adds the switches' contexts once it is known to take the input;
+      // without a switch nothing is awaited, so a plain Task starts exactly as it always did.
+      const hooks = opts?.promptHooks ?? [];
       if (opts?.interrupt && (entry.status !== "idle" || entry.followUps.length > 0)) {
         this.assertQueueRoom(entry);
         this.enqueueInterrupt(entry, {
           id: randomUUID(),
-          input,
+          input: hooks.length > 0 ? await withPromptHooks(entry.session, input, hooks) : input,
           recall: opts.recall ?? recallStoreOf(input),
         });
         return { sessionId: entry.sessionId, queued: true };
@@ -1105,7 +1114,7 @@ export class SessionManager {
         this.assertQueueRoom(entry);
         entry.followUps.push({
           id: randomUUID(),
-          input,
+          input: hooks.length > 0 ? await withPromptHooks(entry.session, input, hooks) : input,
           // The original content rides the queue so a recall can hand it back, and so the
           // queued line shows what is waiting (see recallFollowUp). Callers that know more
           // than the input carries pass their own; the rest get it read off the input.
@@ -1118,7 +1127,10 @@ export class SessionManager {
         return { sessionId: entry.sessionId, queued: true };
       }
       this.assertIdle(entry);
-      this.launchTask(entry, input);
+      this.launchTask(
+        entry,
+        hooks.length > 0 ? await withPromptHooks(entry.session, input, hooks) : input,
+      );
       return { sessionId: entry.sessionId, queued: false };
     });
   }
@@ -1369,9 +1381,11 @@ export class SessionManager {
     });
     // This call's input user text is the whole title source: drive persists its first
     // words as the immediate fallback and hands it to the LLM as the generation material
-    // (user input only — generation never waits for model output).
+    // (user input only — generation never waits for model output; a switch's context from
+    // prompt-hooks.ts is the harness's text, not the user's).
     const userExcerpt = input
       .filter(isPlainText("user"))
+      .filter((m) => m.payload.sender !== "harness")
       .map((m) => m.payload.text)
       .join("\n");
     entry.running = this.drive(entry, gen, { userExcerpt, echo: input });
