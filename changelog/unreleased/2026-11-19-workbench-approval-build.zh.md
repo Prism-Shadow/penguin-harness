@@ -3,6 +3,7 @@
 - **Date:** 2026-11-19
 - **Type:** fix
 - **Scope:** `server`
+- **PR:** [#1620](https://github.com/Prism-Shadow/penguin-harness/pull/1620)
 
 [English](2026-11-19-workbench-approval-build.md)
 
