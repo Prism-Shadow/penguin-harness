@@ -21,7 +21,7 @@
  */
 import { DEFAULT_MAX_TURN_ATTEMPTS } from "@prismshadow/penguin-core/interfaces";
 import type { RetryAction } from "@prismshadow/penguin-ui";
-import type { LlmErrorItem, ReconnectItem } from "../../lib/amsp/stream-model";
+import type { CompactionItem, LlmErrorItem, ReconnectItem } from "../../lib/amsp/stream-model";
 import { S } from "../../lib/strings";
 import { httpStatusOf } from "./provider-error";
 import type { RequestFailure } from "./request-failure-report";
@@ -113,7 +113,22 @@ export function fatalFailure(item: LlmErrorItem): RequestFailure {
   };
 }
 
-function failureFields(item: ReconnectItem | LlmErrorItem) {
+/**
+ * The refused request behind a hand-off, as its details report it: the compaction row carries the
+ * refused request's error pair. `retryable` is that request_end's own status: the run went on, in
+ * a new context.
+ */
+export function handoffFailure(item: CompactionItem): RequestFailure {
+  return {
+    phase: "handoff",
+    attempt: 1,
+    maxAttempts: DEFAULT_MAX_TURN_ATTEMPTS,
+    status: "retryable",
+    ...failureFields(item),
+  };
+}
+
+function failureFields(item: ReconnectItem | LlmErrorItem | CompactionItem) {
   return {
     ...(item.errorCode !== undefined ? { errorCode: item.errorCode } : {}),
     ...(item.errorMessage !== undefined ? { message: item.errorMessage } : {}),
