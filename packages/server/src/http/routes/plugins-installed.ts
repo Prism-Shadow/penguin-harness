@@ -98,9 +98,9 @@ import { IndexSources } from "../../plugin/index-config.js";
 import { parsePluginSource, type PluginSource } from "../../plugin/source.js";
 import { parsePluginArchive } from "../../services/plugin-archive.js";
 import { PluginHost, pluginHostFrom, PLUGINS_RESOURCE_ID } from "../../plugin/host.js";
-import { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
+import { Access, ProjectConfigStore } from "@prismshadow/penguin-library-project";
 import type { Machines } from "../../machines/service.js";
-import { MachinesRepo } from "../../db/repos/machines.js";
+import { MachinesRepo } from "@prismshadow/penguin-library-machine/machine";
 
 /** How a channel install reports its download as it runs: bytes received, the total when known. */
 export type InstallProgress = (received: number, total: number | null) => void;

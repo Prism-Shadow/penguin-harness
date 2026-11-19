@@ -2,10 +2,8 @@
  * A conversation's row in the sidebar's list, and the hover actions it shares with the other
  * conversation rows.
  *
- * The row is the title — with an agent's avatar before it where the group does not name the
- * agent — the marks of its standing arrangements, its live state and its waiting approvals, and a
- * trailing slot that swaps what it shows: the compact last-active time at rest, and on hover or
- * focus the direct actions and the "more" button that opens the whole set as a menu. The same
+ * The last activity time stands at the row's end. Hovering or focusing the row reveals the
+ * Agent beside the title and replaces the time with the actions in the same space. The same
  * menu opens at the pointer on a right-click, from the keyboard with Shift+F10, and on touch with
  * a press-and-hold (`useRowContextMenu`, whose handlers the row spreads); a hold's replayed click
  * does not also open the conversation. Both panels go through the dropdown's body portal, so the
@@ -21,9 +19,7 @@
  * The title is the caller's to draw, with the classes the row hands `renderTitle`: the row
  * decides the ink and the weight, the caller its own truncation — the app's line reveals a
  * clipped tail by scrolling it while the row is hovered or focused, keyed on the row's
- * `data-title-reveal`. The trailing slot's width is fixed per language (`timeSlot`), so the marks
- * that end the title sit at one x from row to row, and the hover actions are anchored to its right
- * edge so every row's icons form one column.
+ * `data-title-reveal`.
  */
 import type { DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { ICON_SIZE } from "../../../icon-scale";
@@ -176,12 +172,9 @@ export interface SessionRowProps {
   activity?: { state: ActivityIconState; label: string } | null;
   /** Approvals waiting: the count in the attention ink, its hint; none at a count of 0. */
   approvals?: { count: number; label: string };
-  /** The compact last-active time at rest; "" draws none. */
+  /** The compact last-active time; "" draws none. */
   time: string;
-  /**
-   * The width the trailing slot reserves, fixed per language: `wide` where the longest compact
-   * time runs longer ("12月31日", "59 分钟前"), `narrow` otherwise ("Nov 30").
-   */
+  /** @deprecated The row fits the time to its content. */
   timeSlot?: "narrow" | "wide";
   /** The direct actions the hover reveals, before the "more" button. */
   hoverActions: readonly RowActionItem[];
@@ -220,7 +213,6 @@ export function SessionRow({
   activity = null,
   approvals,
   time,
-  timeSlot = "narrow",
   hoverActions,
   menuActions,
   moreLabel,
@@ -305,17 +297,19 @@ export function SessionRow({
           }}
           className="flex min-w-0 flex-1 items-center gap-1.5 px-2.5 py-1.5 text-left"
         >
-          {agent !== undefined && (
-            <span data-tooltip={agent.name} className="flex shrink-0 items-center">
+          {agent && (
+            <span
+              data-session-avatar
+              data-tooltip={agent.name}
+              aria-hidden
+              className="invisible flex shrink-0 items-center group-hover:visible group-focus-within:visible"
+            >
               <AgentAvatar
                 id={agent.id}
                 size={ICON_SIZE.rowLead}
                 className="rounded-sm"
                 src={agent.avatarSrc}
               />
-              {/* The avatar is hidden from assistive technology and the hint serves pointers only:
-                  the agent's name reaches everyone else as hidden text inside the row's button. */}
-              <span className="sr-only">{agent.name}</span>
             </span>
           )}
           {renderTitle(`min-w-0 flex-1 font-sans text-sm ${titleInk}`)}
@@ -343,35 +337,30 @@ export function SessionRow({
               <span className="sr-only">{approvals.label}</span>
             </span>
           )}
+          {agent && <span className="sr-only">{agent.name}</span>}
+          {time && <span className="sr-only">{time}</span>}
         </button>
-        {/* The trailing slot: the time at rest, the hover actions over it. Its width is fixed so
-            the marks before it hold one x from row to row; the actions are a constant-width
-            group anchored at its right edge, so their glyphs form one column; the swap is an
-            opacity handoff (the actions precede the time, so the peer rule can reach it). */}
-        <div
-          className={`relative flex h-6 shrink-0 items-center justify-end ${
-            timeSlot === "wide" ? "w-[4.5rem]" : "w-14"
-          }`}
-        >
-          <div className="peer absolute right-0 top-1/2 flex -translate-y-1/2 items-center">
+        <div data-session-details className="grid h-6 shrink-0 items-center justify-items-end">
+          {time && (
+            <span
+              data-session-time
+              aria-hidden
+              className="col-start-1 row-start-1 whitespace-nowrap text-xs tabular-nums text-fg-muted group-hover:invisible group-focus-within:invisible"
+            >
+              <span className="text-[0.92em]">{time}</span>
+            </span>
+          )}
+          <div
+            data-session-actions
+            className="invisible col-start-1 row-start-1 flex items-center group-hover:visible group-focus-within:visible [&_button]:pointer-events-auto [&_button]:opacity-100"
+          >
             <RowHoverActions
               actions={hoverActions.map(fromHover)}
               moreLabel={moreLabel}
               onMore={ctx.openAt}
             />
           </div>
-          {time !== "" && (
-            <span
-              aria-hidden
-              className="pointer-events-none whitespace-nowrap px-1 text-right text-xs tabular-nums text-fg-subtle transition-opacity duration-150 group-hover:opacity-0 peer-focus-within:opacity-0"
-            >
-              {time}
-            </span>
-          )}
         </div>
-        {/* The menu. `contents` keeps this wrapper out of the row's layout: the panel is
-            portaled, and its anchor is the point the gesture landed on (or the "more" button's
-            box), not this element. */}
         <Dropdown
           open={ctx.open}
           setOpen={ctx.setOpen}

@@ -25,7 +25,7 @@ import { adoptSession, fakeSession, uniqueSessionId } from "./fixtures/session.j
 import { MOCK_MODEL_ID, startMockLLM, type MockLLM } from "./live-session.js";
 const BASE = "/api/projects/default_project/agents/penguin_support/workbenches/support";
 const HOST_KEY = "@prismshadow/penguin-server#WorkbenchHost";
-const RECORD_KEY = "@prismshadow/penguin-server#WorkbenchRecord";
+const RECORD_KEY = "@prismshadow/penguin-library-workbench#WorkbenchRecord";
 const message = (role: string, text: string): AmspRecord =>
   ({
     timestamp: "2026-10-14T00:00:00Z",
@@ -353,7 +353,9 @@ describe("support workbench following a question live", { timeout: 30000 }, () =
       const tableFile = path.join(dir(), ".harness/ifaces.json");
       const table = JSON.parse(await fs.readFile(tableFile, "utf8")) as IfaceTable;
       delete table.ifaces[HOST_KEY]!.methods["subscribe"];
+      expect(table.types).toHaveProperty(RECORD_KEY);
       delete table.types[RECORD_KEY];
+      expect(table.types).not.toHaveProperty(RECORD_KEY);
       await fs.writeFile(tableFile, JSON.stringify(table));
       const typesFile = path.join(dir(), ".harness/plugin.d.ts");
       const types = (await fs.readFile(typesFile, "utf8"))
