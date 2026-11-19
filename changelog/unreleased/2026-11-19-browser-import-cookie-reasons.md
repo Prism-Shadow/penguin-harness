@@ -3,6 +3,7 @@
 - **Date:** 2026-11-19
 - **Type:** fix
 - **Scope:** `server`, `web`, `cli`, `browser-extension`, `docs`
+- **PR:** [#1635](https://github.com/Prism-Shadow/penguin-harness/pull/1635)
 - **Issue:** [#1628](https://github.com/Prism-Shadow/penguin-harness/issues/1628)
 
 [中文版](2026-11-19-browser-import-cookie-reasons.zh.md)
