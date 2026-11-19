@@ -3,6 +3,7 @@
 - **Date:** 2026-11-19
 - **Type:** feat
 - **Scope:** `server`, `web`, `docs`
+- **PR:** [#1655](https://github.com/Prism-Shadow/penguin-harness/pull/1655)
 
 [English](2026-11-19-app-center-show-default.md)
 
