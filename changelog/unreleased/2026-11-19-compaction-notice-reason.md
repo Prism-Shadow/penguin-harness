@@ -3,6 +3,7 @@
 - **Date:** 2026-11-19
 - **Type:** fix
 - **Scope:** `web`, `docs`
+- **PR:** [#1630](https://github.com/Prism-Shadow/penguin-harness/pull/1630)
 
 [中文版](2026-11-19-compaction-notice-reason.zh.md)
 
