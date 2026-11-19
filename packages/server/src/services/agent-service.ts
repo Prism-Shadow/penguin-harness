@@ -46,7 +46,7 @@ import { agentAvatarRev } from "./agent-avatar.js";
 import { isWorkbenchId, workbenchesDir } from "../workbenches/store.js";
 import { isTopicFileName } from "./memory-service.js";
 import type { AgentAuthor, AgentDeletionInfo, PluginUpdateRef } from "../api/types.js";
-import { resolveLibraryPlugins } from "./plugin-library.js";
+import { resolveLibraryPlugins, seedPluginNames } from "./plugin-library.js";
 import type { PluginLibrary } from "../plugin/library-module.js";
 import { resolveDirectorySkills } from "./directory-skills.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
@@ -164,6 +164,12 @@ export interface AgentCreation {
   author?: AgentAuthor;
   /** Library plugin names to install into it. */
   plugins?: readonly string[];
+  /**
+   * Whether the library's default-install plugins (cards with `defaultInstall`) join `plugins`;
+   * omitted = true. An Agent made from a package (`archive`) never gets them: an import moves an
+   * existing Agent, with the plugins it already has.
+   */
+  defaultPlugins?: boolean;
   /** Skills to import from a directory the creator picked. */
   directory?: { path: string; names: readonly string[] };
   /** An Agent package (the import route's) to start from instead of the default template. */
@@ -696,7 +702,10 @@ export class AgentService implements AgentLifecycle {
    * `pluginNames` are library plugin names picked at creation; they go through the same
    * `installPlugin` writer the plugin routes use, inside the same cleanup window as the rest
    * of initialization, so an Agent never survives with only part of its picked set. They are
-   * resolved before anything is created, so an unknown name creates no directory at all.
+   * resolved before anything is created, so an unknown name creates no directory at all. The
+   * library's default-install plugins join them (seedPluginNames) unless `defaultPlugins` is
+   * false: every new Agent has goal mode and Plan mode, whose hooks do nothing until the mode
+   * is picked. The system Agent is provisioned by core's presets, never through here.
    *
    * `archive` is an Agent package (the import route's): the fresh Agent takes its State, name,
    * description and version instead of the template's, and its Traces land once the State is
@@ -736,7 +745,15 @@ export class AgentService implements AgentLifecycle {
     // installed after the library plugins and so win a name collision: the user picked that
     // directory for this Agent specifically, which is a narrower intent than "install the
     // built-in one".
-    const librarySeed = resolveLibraryPlugins(this.library, pluginNames ?? []);
+    const librarySeed = resolveLibraryPlugins(
+      this.library,
+      seedPluginNames(
+        pluginNames ?? [],
+        archive === undefined && creation.defaultPlugins !== false
+          ? this.library.defaultInstalled()
+          : [],
+      ),
+    );
     const directorySeed = directory
       ? await resolveDirectorySkills(directory.path, directory.names)
       : [];
