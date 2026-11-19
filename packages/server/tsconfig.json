@@ -89,6 +89,14 @@
       "@prismshadow/penguin-library-http/settle": ["../../library/http/src/settle.ts"],
       "@prismshadow/penguin-library-http/validate": ["../../library/http/src/validate.ts"],
       "@prismshadow/penguin-library-workbench": ["../../library/workbench/src/index.ts"],
+      "@prismshadow/penguin-library-workspace": ["../../library/workspace/src/index.ts"],
+      "@prismshadow/penguin-library-workspace/contract": [
+        "../../library/workspace/src/contract.ts"
+      ],
+      "@prismshadow/penguin-library-workspace/types": ["../../library/workspace/src/types.ts"],
+      "@prismshadow/penguin-library-workspace/workspace-files-service": [
+        "../../library/workspace/src/workspace-files-service.ts"
+      ],
       "@prismshadow/penguin-library-workbench/workbench": [
         "../../library/workbench/src/workbench.ts"
       ],

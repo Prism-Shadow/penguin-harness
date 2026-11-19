@@ -57,13 +57,13 @@ import type {
   WorkspaceFilesResponse,
   WorkspaceFileContent,
   WorkspaceFileReadOptions,
-} from "./workspace-port.js";
+} from "@prismshadow/penguin-library-workspace/types";
 import { packBenchmark, readBenchmarkArchive } from "./benchmark-archive.js";
 import { HttpError } from "@prismshadow/penguin-library-http";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { BenchmarkPaths } from "./ports.js";
 import type { Benchmarks } from "./contract.js";
-import type { WorkspaceFiles } from "./workspace-port.js";
+import type { WorkspaceFiles } from "@prismshadow/penguin-library-workspace/contract";
 
 const STATEMENT_TITLE_READ_BYTES = 64 * 1024;
 
