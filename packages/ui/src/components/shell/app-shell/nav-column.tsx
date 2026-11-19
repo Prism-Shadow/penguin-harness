@@ -24,6 +24,12 @@
  * arrow key, and a double click back to the theme's width, reach the caller at once and keep the
  * motion, so the column eases to its new width. Folding mid-drag drops the drag: the rail has no
  * handle.
+ *
+ * A dock lifted to fullscreen (`DockFrame`, which marks its root `data-fullscreen`) puts its own
+ * handle on the cover's leading edge, and the right dock's cover starts where this column ends:
+ * the two handles would claim the same strip, and this one would win, since it is chrome over
+ * the window the dock is isolated in. While a surface is lifted, the strip is the dock's, the way
+ * back out of fullscreen by drag, and this handle takes no pointer; the keyboard still reaches it.
  */
 import { useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
@@ -160,6 +166,7 @@ export function NavColumn({
           onResizeEnd={end}
           onStep={step}
           onReset={() => resize.onChange(null)}
+          className="[.ui-shell:has([data-fullscreen])_&]:pointer-events-none"
         />
       )}
     </aside>
