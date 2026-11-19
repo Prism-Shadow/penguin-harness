@@ -1,3 +1,6 @@
+/* Keep the plain editor controls in the base layer, below Penguin UI components. */
+@import url("/workbench-ui.css") layer(base);
+
 /* The Slides workbench's own shell: a bar, the editor frame, the AI rail. The editor inside the
    frame is Bento's and keeps its own light chrome; everything here reads the app's tokens. */
 html,

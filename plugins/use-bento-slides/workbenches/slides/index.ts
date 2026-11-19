@@ -19,6 +19,7 @@
  *   GET    /events               server-sent events: `decks` whenever a deck file changed
  *   GET    /ask?deck=:id         the deck's Session and whether it is running
  *   POST   /ask                  { deck, text, slide?, selection? } runs one request of the Agent on the deck
+ *   POST   /ask/session          { deck, model } opens the deck's conversation on the chosen model, or returns its existing Session
  *   POST   /ask/reset            { deck } forgets the deck's Session; the next request opens a new one
  *   POST   /export?name=…        stashes a file the page built; answers the link that downloads it
  *   GET    /export/:token
@@ -296,6 +297,15 @@ export default {
             return null; // The Session is gone: the next request opens a new one.
           }
         };
+        const ensureSession = (deck: string, model?: { provider: string; modelId: string }) =>
+          locked(deck, async () => {
+            const existing = sessions()[deck];
+            if (existing && statusOf(existing) !== null) return existing;
+            if ((await files!.readFile(deckPath(deck))) === null) return null;
+            const { sessionId } = await host.createSession(model ? { model } : {});
+            await setSession(deck, sessionId);
+            return sessionId;
+          });
 
         // ---- downloads --------------------------------------------------------------------
 
@@ -520,19 +530,40 @@ export default {
                   return json({ ok: true });
                 }
 
-                if (path === "/ask" && method === "POST") {
+                if ((path === "/ask/session" || path === "/ask") && method === "POST") {
+                  const candidate = body.model as
+                    { provider?: unknown; modelId?: unknown } | undefined;
+                  if (
+                    candidate !== undefined &&
+                    (!candidate ||
+                      typeof candidate.provider !== "string" ||
+                      !candidate.provider.trim() ||
+                      typeof candidate.modelId !== "string" ||
+                      !candidate.modelId.trim())
+                  ) {
+                    return json({ error: "model needs a provider and modelId" }, 400);
+                  }
+                  const model = candidate as { provider: string; modelId: string } | undefined;
+                  if (path === "/ask/session") {
+                    const id = String(body.deck ?? "");
+                    if (!DECK_ID.test(id) || !model)
+                      return json({ error: "deck and model are required" }, 400);
+                    const sessionId = await ensureSession(id, model);
+                    return sessionId ? json({ sessionId }) : json({ error: "no such deck" }, 404);
+                  }
                   const id = String(body.deck ?? "");
                   const text = typeof body.text === "string" ? body.text.trim() : "";
                   if (!DECK_ID.test(id) || text === "") {
                     return json({ error: "deck and text are required" }, 400);
                   }
                   if (text.length > 20_000) return json({ error: "text is too long" }, 400);
-                  let sessionId: string | null = sessions()[id] ?? null;
-                  if (sessionId !== null && statusOf(sessionId) === null) sessionId = null;
-                  if (sessionId === null) {
-                    sessionId = (await host.createSession()).sessionId;
-                    await setSession(id, sessionId);
-                  }
+                  const sessionId = await ensureSession(id, model);
+                  if (!sessionId) return json({ error: "no such deck" }, 404);
+                  if (statusOf(sessionId) === "compacting")
+                    return json(
+                      { error: "The Session is switching context. Try again when it finishes." },
+                      409,
+                    );
                   const slide = (body.slide ?? null) as { id?: unknown; number?: unknown } | null;
                   const selection = Array.isArray(body.selection)
                     ? body.selection.filter((s): s is string => typeof s === "string").slice(0, 40)

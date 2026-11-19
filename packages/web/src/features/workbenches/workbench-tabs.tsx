@@ -39,6 +39,7 @@ import {
 import { isSafeMode, useSafeMode } from "../../rescue/safe-mode";
 import { useLocale } from "../../state/locale";
 import { useTheme } from "../../state/theme";
+import { WorkbenchModelPicker } from "./workbench-model-picker";
 import { localizedText } from "../chat";
 
 /** The Agent's workbench tabs, kept fresh by the server's `workbench_updated` events. */
@@ -495,6 +496,12 @@ export function WorkbenchFrame({
           shownKey === frameKey ? "opacity-100" : "opacity-0"
         }`}
         sandbox={PAGE_FRAME_SANDBOX}
+      />
+      <WorkbenchModelPicker
+        key={`model-picker/${frameKey}`}
+        frame={frameRef}
+        projectId={projectId}
+        machineId={tab.machineId}
       />
       <ConfirmModal
         open={restoring !== null}

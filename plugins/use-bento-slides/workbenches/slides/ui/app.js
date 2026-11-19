@@ -457,6 +457,7 @@ async function openDeck(id) {
     return;
   }
   stopFollowing();
+  talk = { sessionId: null, status: null, messages: [] };
   open = {
     id,
     token: editorToken(),
@@ -683,6 +684,131 @@ let approvalRead = 0;
 let renderFrame = null;
 let talk = { sessionId: null, status: null, messages: [] };
 
+let defaultModel = null;
+let startModel = null;
+let startPicking = false;
+let railControl;
+let startControl;
+const labels = new Map();
+const modelKey = (m) => JSON.stringify([m.provider, m.modelId]);
+const sessionPath = (sessionId) => "/sessions/" + encodeURIComponent(sessionId);
+
+function drawModels() {
+  const busy = open?.choosingModel || open?.pendingModel || talk.status === "compacting";
+  railControl?.(
+    open?.model ?? defaultModel,
+    S.defaultModel,
+    S.chooseModel,
+    !open || Boolean(busy) || (talk.status !== null && talk.status !== "idle"),
+    !!open?.choosingModel,
+  );
+  startControl?.(
+    startModel ?? defaultModel,
+    S.defaultModel,
+    S.chooseModel,
+    startPicking,
+    startPicking,
+  );
+  $("send").disabled = Boolean(busy);
+  $("rail-reset").disabled = Boolean(busy);
+}
+
+async function chooseModel(start) {
+  const deck = open;
+  if (start ? startPicking : !deck || deck.choosingModel || deck.pendingModel) return;
+  if (start) startPicking = true;
+  else deck.choosingModel = true;
+  drawModels();
+  try {
+    const api = await loadSdk();
+    if (!api?.chooseChatModel) {
+      notice(S.modelUnsupported);
+      return;
+    }
+    const choice = await api.chooseChatModel(start ? startModel : deck.model);
+    if (!choice || (!start && open !== deck)) return;
+    labels.set(modelKey(choice), choice.label);
+    if (start) {
+      startModel = choice;
+      return;
+    }
+    // The first choice opens this deck's own Session. Existing Sessions keep their history.
+    const response = await send("/ask/session", "POST", { deck: deck.id, model: choice });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.error || String(response.status));
+    if (open !== deck) return;
+    const path = sessionPath(body.sessionId);
+    const {
+      body: { session },
+    } = await api.transport.get(path);
+    if (open !== deck) return;
+    if (modelKey(session) !== modelKey(choice)) {
+      await api.transport.post(path + "/switch-model", {
+        provider: choice.provider,
+        modelId: choice.modelId,
+      });
+      deck.pendingModel = choice;
+    }
+    await refreshTalk();
+  } catch (error) {
+    if (start || open === deck)
+      notice(
+        error.name === "WorkbenchHostUnavailable"
+          ? S.modelUnsupported
+          : S.modelFailed(String(error.message || error)),
+      );
+  } finally {
+    if (start) startPicking = false;
+    else deck.choosingModel = false;
+    drawModels();
+    requestAnimationFrame(() => {
+      if (start || open === deck)
+        (start ? $("start-model") : $("chat-model")).querySelector("button")?.focus();
+    });
+  }
+}
+
+async function readChatModel(deck, sessionId) {
+  const api = await loadSdk();
+  if (!api || open !== deck) return;
+  const {
+    body: { session },
+  } = await api.transport.get(sessionPath(sessionId));
+  if (open !== deck || talk.sessionId !== sessionId) return;
+  const key = modelKey(session);
+  if (!labels.has(key)) {
+    const ref = { provider: session.provider, modelId: session.modelId };
+    const named = await api.getChatModel?.(ref).catch(() => null);
+    if (open !== deck || talk.sessionId !== sessionId) return;
+    labels.set(key, named?.label || session.modelId);
+  }
+  deck.model = { provider: session.provider, modelId: session.modelId, label: labels.get(key) };
+  if (deck.pendingModel && session.status === "idle") {
+    if (modelKey(deck.pendingModel) !== modelKey(session)) notice(S.modelUnchanged);
+    deck.pendingModel = null;
+  }
+  drawModels();
+}
+
+void import("./model-control.js")
+  .then(({ mountModelControl }) => {
+    railControl = mountModelControl($("chat-model"), () => void chooseModel(false));
+    startControl = mountModelControl($("start-model"), () => void chooseModel(true));
+    drawModels();
+    void loadSdk()
+      .then((api) => api?.getChatModel?.())
+      .then((model) => {
+        defaultModel = model;
+        drawModels();
+      })
+      .catch(() => {
+        /* The picker can retry when the user opens it. */
+      });
+  })
+  .catch(() => {
+    /* Plain static previews do not have the workbench UI runtime. */
+  });
+
 async function loadSdk() {
   if (sdk !== undefined) return sdk;
   try {
@@ -752,6 +878,7 @@ function renderTalk() {
     decide: (id, decision) => decideApproval(sessionId, id, decision),
   });
   $("stop").hidden = !running || !sdk;
+  drawModels();
 }
 
 function scheduleTalk() {
@@ -805,18 +932,43 @@ async function refreshTalk() {
   try {
     next = await getJson(`/ask?deck=${encodeURIComponent(id)}`);
   } catch {
+    if (
+      open === deck &&
+      revision === talkRevision &&
+      (deck.pendingModel || (talk.status && talk.status !== "idle"))
+    ) {
+      talkTimer = setTimeout(() => void refreshTalk(), 4000);
+    }
     return;
   }
   if (open !== deck || talkRevision !== revision) return;
+  const previousId = talk.sessionId;
+  const previousStatus = talk.status;
   talk = next;
+  if (
+    talk.sessionId &&
+    (!deck.model ||
+      previousId !== talk.sessionId ||
+      deck.pendingModel ||
+      previousStatus !== talk.status)
+  ) {
+    try {
+      await readChatModel(deck, talk.sessionId);
+    } catch (error) {
+      if (open === deck && deck.pendingModel) notice(S.modelFailed(String(error.message || error)));
+    }
+    if (open !== deck || revision !== talkRevision) return;
+  } else if (!talk.sessionId) {
+    deck.model = null;
+  }
   const running = talk.status !== null && talk.status !== "idle";
   if (talk.sessionId !== null && (followedId !== talk.sessionId || reader === null))
     void follow(talk.sessionId);
   if (talk.sessionId === null) stopFollowing();
   // The stream says when a task ends; this is for a server without it, and for a missed end.
-  if (running) {
+  if (running || deck.pendingModel) {
     if (talk.sessionId) void pendingApprovals(talk.sessionId);
-    talkTimer = setTimeout(() => void refreshTalk(), 4000);
+    talkTimer = setTimeout(() => void refreshTalk(), deck.pendingModel ? 700 : 4000);
   } else {
     ++approvalRead;
     approvals = [];
@@ -824,8 +976,8 @@ async function refreshTalk() {
   renderTalk();
 }
 
-async function ask(text) {
-  if (open === null || text.trim() === "") return;
+async function ask(text, firstModel = null) {
+  if (open === null || open.pendingModel || open.choosingModel || text.trim() === "") return;
   const o = open;
   // What the person just did reaches the file before the Agent reads it.
   clearTimeout(o.timer);
@@ -843,6 +995,7 @@ async function ask(text) {
   try {
     res = await send("/ask", "POST", {
       deck: o.id,
+      ...(firstModel ? { model: firstModel } : {}),
       text,
       slide: cursor.slideId === null ? null : { id: cursor.slideId, number: cursor.index + 1 },
       selection: cursor.selection,
@@ -862,6 +1015,7 @@ async function ask(text) {
   }
   const { sessionId } = await res.json();
   talk.sessionId = sessionId;
+  void readChatModel(o, sessionId).catch(() => undefined);
   ++talkRevision;
   await follow(sessionId);
   talkTimer = setTimeout(() => void refreshTalk(), 4000);
@@ -960,6 +1114,7 @@ $("rail-toggle").onclick = () => {
 };
 $("ask").onsubmit = (event) => {
   event.preventDefault();
+  if ($("send").disabled) return;
   const text = $("prompt").value;
   $("prompt").value = "";
   void ask(text);
@@ -1022,8 +1177,11 @@ $("start-ask").onsubmit = async (event) => {
   const text = $("start-prompt").value.trim();
   if (text === "") return;
   const title = text.split(/[\n。.!?！？]/)[0].slice(0, 40) || S.untitled;
+  const chosen = startModel;
   await createDeck(title, blankDeck(title));
-  await ask(text);
+  await ask(text, chosen);
+  startModel = null;
+  drawModels();
 };
 
 function listen() {

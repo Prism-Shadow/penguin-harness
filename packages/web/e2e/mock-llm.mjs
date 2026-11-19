@@ -246,6 +246,14 @@ const server = http.createServer((req, res) => {
       return;
     }
 
+    if (json.model === "claude-bento-first" || json.model === "claude-bento-second") {
+      block(res, 0, { type: "text", text: "" }, [
+        { type: "text_delta", text: "Served by " + json.model },
+      ]);
+      messageStop(res, "end_turn", 8);
+      return;
+    }
+
     // Find-bar fixture (find.spec): one settled reply whose body repeats a token nobody else in
     // the app writes, so the hit count is exact without depending on the app's own copy.
     if (flat.includes("find marker test")) {

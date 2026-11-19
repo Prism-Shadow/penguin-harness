@@ -123,7 +123,11 @@ export abstract class WorkbenchHost {
    * Opens a Session of an Agent of this Project — the workbench's own Agent when `agentId`
    * is absent. The SDK's `agent.createSession`.
    */
-  abstract createSession(opts?: { agentId?: string }): Promise<{ sessionId: string }>;
+  abstract createSession(opts?: {
+    agentId?: string;
+    /** Choose a project model for this Session. Omit it to use the Project default. */
+    model?: { provider: string; modelId: string };
+  }): Promise<{ sessionId: string }>;
   /**
    * Runs one turn in a Session of this Project, new or existing — the SDK's `session.run`.
    * `input` is a list of items like the SDK's, each one `{ text }` today; it reaches the

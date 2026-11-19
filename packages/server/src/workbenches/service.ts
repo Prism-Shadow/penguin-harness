@@ -59,6 +59,7 @@ import type {
   WorkbenchAppLevel,
   WorkbenchTabIcon,
   WorkbenchInfo,
+  WorkbenchHost,
   WorkbenchInput,
   WorkbenchRecord,
   WorkbenchRequest,
@@ -1191,8 +1192,19 @@ export class WorkbenchService implements Workbenches {
     let state: unknown = await readState(folder.dir);
     return {
       listAgents: () => service.agents.list(projectId).map((row) => ({ agentId: row.agentId })),
-      async createSession(opts?: { agentId?: string }) {
+      async createSession(opts?: Parameters<WorkbenchHost["createSession"]>[0]) {
         const target = opts?.agentId ?? agentId;
+        const model = opts?.model;
+        if (
+          model !== undefined &&
+          (!model ||
+            typeof model.provider !== "string" ||
+            typeof model.modelId !== "string" ||
+            !model.provider.trim() ||
+            !model.modelId.trim())
+        ) {
+          throw new Error("createSession: model needs a provider and modelId");
+        }
         if (!service.agents.exists(projectId, target)) {
           throw new Error(`createSession: this Project has no Agent '${target}'`);
         }
@@ -1200,6 +1212,7 @@ export class WorkbenchService implements Workbenches {
         return service.sessions.createSession({
           projectId,
           agentId: target,
+          ...(model ? { provider: model.provider, modelId: model.modelId } : {}),
           approvalMode: "allow-all",
           source: "workbench",
           client: "workbench",

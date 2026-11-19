@@ -66,6 +66,29 @@ export function followSession(sessionId, options = {}) {
   });
 }
 
+/** Opens the hosting app's chat model picker. Resolves to {provider, modelId, label} or null on dismissal. */
+export function chooseChatModel(current = null) {
+  return requestChatModel("penguin:choose-chat-model", current);
+}
+
+/** Reads a model's display name, or the project default when no pair is supplied. */
+export function getChatModel(current = null) {
+  return requestChatModel("penguin:get-chat-model", current);
+}
+
+function requestChatModel(eventName, current) {
+  return new Promise((resolve, reject) => {
+    const request = new CustomEvent(eventName, {
+      cancelable: true, detail: { current, resolve, reject },
+    });
+    if (window.dispatchEvent(request)) {
+      const error = new Error("Open this workbench in PenguinHarness to choose a model.");
+      error.name = "WorkbenchHostUnavailable";
+      reject(error);
+    }
+  });
+}
+
 /** Interrupts the Session's running Task: true when one was running, false when it was idle. */
 export async function abortSession(sessionId) {
   const res = await transport.post(sessionPath(sessionId) + "/abort");

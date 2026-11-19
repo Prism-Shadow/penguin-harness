@@ -76,3 +76,13 @@
 .turn-step summary {
   font-weight: 550;
 }
+
+.chat-model {
+  flex: 0 1 10.5rem;
+  min-width: 0;
+}
+
+/* Full-screen workbenches carry an exit control at the lower right. */
+.rail .ask-actions {
+  padding-inline-end: 2.75rem;
+}

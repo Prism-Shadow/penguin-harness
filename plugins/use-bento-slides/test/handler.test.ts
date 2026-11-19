@@ -11,6 +11,8 @@
  * - Given requests on two decks, each deck gets one Session of its own, every request names the
  *   deck's file, the slide and the selection, and the answer joins the deck's conversation once
  *   the run has ended.
+ * - Given two opens of one presentation on the same chosen model, both use one Session.
+ *   A second presentation can choose a different provider with the same model ID.
  * - Given a deck is deleted, its file, its history and its conversation go with it.
  * - Given a host without shared files, the handler says so instead of failing.
  */
@@ -32,6 +34,7 @@ function fakeHost({ withFiles = true } = {}) {
     return { path, size: bytes.byteLength, mtimeMs: clock };
   };
   const status = new Map<string, string>();
+  const picked = new Map<string, unknown>();
   const runs: Array<{ sessionId: string; text: string }> = [];
   let state: unknown = null;
   const shared = {
@@ -55,9 +58,10 @@ function fakeHost({ withFiles = true } = {}) {
   };
   const host = {
     listAgents: () => [{ agentId: "default_agent" }],
-    async createSession() {
+    async createSession(opts?: { model?: unknown }) {
       const sessionId = `session-${status.size + 1}`;
       status.set(sessionId, "idle");
+      picked.set(sessionId, opts?.model);
       return { sessionId };
     },
     async run(sessionId: string, input: Array<{ text: string }>) {
@@ -87,6 +91,7 @@ function fakeHost({ withFiles = true } = {}) {
     files,
     runs,
     status,
+    picked,
     /** What the Agent does with its own file tools: the file changes outside the handler. */
     agentWrites: (path: string, text: string) => void put(path, text),
     text: (path: string) => {
@@ -212,6 +217,36 @@ describe("a page listening for changes", () => {
 });
 
 describe("asking the Agent", () => {
+  it("keeps the chosen provider and model per deck across simultaneous opens, runs and a reload", async () => {
+    const { host, picked, runs } = fakeHost();
+    const { call } = mount(host);
+    for (const id of ["draft", "other"]) await call("POST", "/decks", { id, text: deckText(id) });
+    const chosen = { provider: "first", modelId: "same-upstream" };
+    expect(
+      (await call("POST", "/ask/session", { deck: "draft", model: { modelId: "same-upstream" } }))
+        .status,
+    ).toBe(400);
+    expect((await call("POST", "/ask/session", { deck: "missing", model: chosen })).status).toBe(
+      404,
+    );
+    const open = () => call("POST", "/ask/session", { deck: "draft", model: chosen });
+    const [one, two] = await Promise.all([open(), open()]);
+    expect(one.body.sessionId).toBe(two.body.sessionId);
+    expect(picked.get(one.body.sessionId)).toEqual(chosen);
+    expect(runs).toHaveLength(0);
+    expect((await mount(host).call("GET", "/ask", null, { deck: "draft" })).body.sessionId).toBe(
+      one.body.sessionId,
+    );
+    await call("POST", "/ask", { deck: "draft", text: "First task" });
+    const other = await call("POST", "/ask", {
+      deck: "other",
+      text: "Create",
+      model: { ...chosen, provider: "second" },
+    });
+    expect(picked.get(other.body.sessionId)).toEqual({ ...chosen, provider: "second" });
+    expect(picked.size).toBe(2);
+  });
+
   it("opens one Session per deck and names the deck's file, the slide and the selection", async () => {
     const { host, runs, status } = fakeHost();
     const { call } = mount(host);
