@@ -13,6 +13,7 @@ import { deckFiles } from "./deck-files.js";
 import { setupFileMenu } from "./file-menu.js";
 import { bridge, connectSave, captureSave, editorDocument, editorToken } from "./bridge.js";
 import { newConversation, readConversation } from "./conversation.js";
+import { setupModelChoice } from "./model-choice.js";
 import { showConversation } from "./conversation-view.js";
 import { S, locale } from "./strings.js";
 import {
@@ -685,130 +686,15 @@ let approvalRead = 0;
 let renderFrame = null;
 let talk = { sessionId: null, status: null, messages: [] };
 
-let defaultModel = null;
-let startModel = null;
-let startPicking = false;
-let railControl;
-let startControl;
-const labels = new Map();
-const modelKey = (m) => JSON.stringify([m.provider, m.modelId]);
-const sessionPath = (sessionId) => "/sessions/" + encodeURIComponent(sessionId);
-
-function drawModels() {
-  const busy = open?.choosingModel || open?.pendingModel || talk.status === "compacting";
-  railControl?.(
-    open?.model ?? defaultModel,
-    S.defaultModel,
-    S.chooseModel,
-    !open || Boolean(busy) || (talk.status !== null && talk.status !== "idle"),
-    !!open?.choosingModel,
-  );
-  startControl?.(
-    startModel ?? defaultModel,
-    S.defaultModel,
-    S.chooseModel,
-    startPicking,
-    startPicking,
-  );
-  $("send").disabled = Boolean(busy);
-  $("rail-reset").disabled = Boolean(busy);
-}
-
-async function chooseModel(start) {
-  const deck = open;
-  if (start ? startPicking : !deck || deck.choosingModel || deck.pendingModel) return;
-  if (start) startPicking = true;
-  else deck.choosingModel = true;
-  drawModels();
-  try {
-    const api = await loadSdk();
-    if (!api?.chooseChatModel) {
-      notice(S.modelUnsupported);
-      return;
-    }
-    const choice = await api.chooseChatModel(start ? startModel : deck.model);
-    if (!choice || (!start && open !== deck)) return;
-    labels.set(modelKey(choice), choice.label);
-    if (start) {
-      startModel = choice;
-      return;
-    }
-    // The first choice opens this deck's own Session. Existing Sessions keep their history.
-    const response = await send("/ask/session", "POST", { deck: deck.id, model: choice });
-    const body = await response.json();
-    if (!response.ok) throw new Error(body.error || String(response.status));
-    if (open !== deck) return;
-    const path = sessionPath(body.sessionId);
-    const {
-      body: { session },
-    } = await api.transport.get(path);
-    if (open !== deck) return;
-    if (modelKey(session) !== modelKey(choice)) {
-      await api.transport.post(path + "/switch-model", {
-        provider: choice.provider,
-        modelId: choice.modelId,
-      });
-      deck.pendingModel = choice;
-    }
-    await refreshTalk();
-  } catch (error) {
-    if (start || open === deck)
-      notice(
-        error.name === "WorkbenchHostUnavailable"
-          ? S.modelUnsupported
-          : S.modelFailed(String(error.message || error)),
-      );
-  } finally {
-    if (start) startPicking = false;
-    else deck.choosingModel = false;
-    drawModels();
-    requestAnimationFrame(() => {
-      if (start || open === deck)
-        (start ? $("start-model") : $("chat-model")).querySelector("button")?.focus();
-    });
-  }
-}
-
-async function readChatModel(deck, sessionId) {
-  const api = await loadSdk();
-  if (!api || open !== deck) return;
-  const {
-    body: { session },
-  } = await api.transport.get(sessionPath(sessionId));
-  if (open !== deck || talk.sessionId !== sessionId) return;
-  const key = modelKey(session);
-  if (!labels.has(key)) {
-    const ref = { provider: session.provider, modelId: session.modelId };
-    const named = await api.getChatModel?.(ref).catch(() => null);
-    if (open !== deck || talk.sessionId !== sessionId) return;
-    labels.set(key, named?.label || session.modelId);
-  }
-  deck.model = { provider: session.provider, modelId: session.modelId, label: labels.get(key) };
-  if (deck.pendingModel && session.status === "idle") {
-    if (modelKey(deck.pendingModel) !== modelKey(session)) notice(S.modelUnchanged);
-    deck.pendingModel = null;
-  }
-  drawModels();
-}
-
-void import("./model-control.js")
-  .then(({ mountModelControl }) => {
-    railControl = mountModelControl($("chat-model"), () => void chooseModel(false));
-    startControl = mountModelControl($("start-model"), () => void chooseModel(true));
-    drawModels();
-    void loadSdk()
-      .then((api) => api?.getChatModel?.())
-      .then((model) => {
-        defaultModel = model;
-        drawModels();
-      })
-      .catch(() => {
-        /* The picker can retry when the user opens it. */
-      });
-  })
-  .catch(() => {
-    /* Plain static previews do not have the workbench UI runtime. */
-  });
+const models = setupModelChoice({
+  $,
+  notice,
+  send,
+  loadSdk,
+  currentDeck: () => open,
+  currentTalk: () => talk,
+  refreshTalk,
+});
 
 async function loadSdk() {
   if (sdk !== undefined) return sdk;
@@ -879,7 +765,7 @@ function renderTalk() {
     decide: (id, decision) => decideApproval(sessionId, id, decision),
   });
   $("stop").hidden = !running || !sdk;
-  drawModels();
+  models.draw();
 }
 
 function scheduleTalk() {
@@ -954,7 +840,7 @@ async function refreshTalk() {
       previousStatus !== talk.status)
   ) {
     try {
-      await readChatModel(deck, talk.sessionId);
+      await models.readSessionModel(deck, talk.sessionId);
     } catch (error) {
       if (open === deck && deck.pendingModel) notice(S.modelFailed(String(error.message || error)));
     }
@@ -1016,7 +902,7 @@ async function ask(text, firstModel = null) {
   }
   const { sessionId } = await res.json();
   talk.sessionId = sessionId;
-  void readChatModel(o, sessionId).catch(() => undefined);
+  void models.readSessionModel(o, sessionId).catch(() => undefined);
   ++talkRevision;
   await follow(sessionId);
   talkTimer = setTimeout(() => void refreshTalk(), 4000);
@@ -1135,11 +1021,10 @@ $("start-ask").onsubmit = async (event) => {
   const text = $("start-prompt").value.trim();
   if (text === "") return;
   const title = text.split(/[\n。.!?！？]/)[0].slice(0, 40) || S.untitled;
-  const chosen = startModel;
+  const chosen = models.startChoice();
   await createDeck(title, blankDeck(title));
   await ask(text, chosen);
-  startModel = null;
-  drawModels();
+  models.clearStartChoice();
 };
 
 function listen() {
