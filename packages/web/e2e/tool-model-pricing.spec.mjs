@@ -97,7 +97,7 @@ for (const lang of ["zh", "en"]) {
     const reference =
       lang === "zh"
         ? "MMSP 参考价 US$0.05/百万输入 Token"
-        : "MMSP reference · US$0.05/1M input tokens";
+        : "US$0.05/1M input tokens (MMSP reference)";
     const missing = lang === "zh" ? "价格以供应商为准" : "See provider pricing";
     const card = (label) =>
       page

@@ -2618,7 +2618,7 @@ export const en: Strings = {
     usedTokens: (v: string) => `${v} toks`,
     usedTokensTitle: "Tokens this model has used, all time",
     mmspReference: "MMSP reference rates",
-    mmspReferenceAmount: (rate: string) => `MMSP reference · ${rate}`,
+    mmspReferenceAmount: (rate: string) => `${rate} (MMSP reference)`,
     publishedPrices: "Provider rates",
     configuredTokenPrices:
       "Configured cache read, cache write and output prices per million tokens",
