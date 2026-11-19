@@ -18,6 +18,7 @@ import { RouteProbe } from "../route-probe";
 import { machineForSession } from "../../../lib/session-machines";
 import { CHAT_DEFAULTS_CHANGED_EVENT, chatDefaultsChangedDetail } from "../chat-defaults-event";
 import { goalPluginGate } from "../goal-plugin-gate";
+import { usePromptModes, useSessionSwitches } from "../prompt-modes";
 import { useAgentSkills } from "../use-agent-skills";
 import { applyUsageFetch } from "../header-stats";
 import { hasConfiguredKey, sameModelRef } from "../../models";
@@ -77,6 +78,7 @@ export function useMainChatLifecycle(scope: ReturnType<typeof useMainChatTranscr
     routed,
     selected,
     stream,
+    user,
   } = scope;
 
   // Current Agent follows the Session in the route (keeps the sidebar and stats aligned on deep
@@ -104,6 +106,10 @@ export function useMainChatLifecycle(scope: ReturnType<typeof useMainChatTranscr
         : null,
     [projectId, selectedAgentId, selectedAgentMachine],
   );
+  // The composer's switches the Session's Agent offers, and the ones on in this Session
+  // (prompt-modes.ts): every send but a goal carries them.
+  const promptModes = usePromptModes(projectId, selectedAgentId, selectedAgentMachine);
+  const switches = useSessionSwitches(user?.userId ?? null, selectedSessionId, promptModes);
   // The thinking level pinned on THIS Session, read straight off the Session row
   // (SessionInfo.thinkingLevel, written by the picker through PATCH — see
   // applyTurnThinkingLevel): "" = never pinned, and the picker then displays the Agent
@@ -752,6 +758,7 @@ export function useMainChatLifecycle(scope: ReturnType<typeof useMainChatTranscr
     selectedSessionId,
     selectedAgentId,
     goalPlugin,
+    switches,
     turnThinkingLevel,
     selectedAgentKnown,
     panelTaskScopeRef,

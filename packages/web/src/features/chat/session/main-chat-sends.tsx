@@ -15,6 +15,7 @@ import { apiErrorText } from "../../../lib/api-error";
 import { machineForSession } from "../../../lib/session-machines";
 import { discardUnstartedSession } from "../unstarted-session";
 import { handoffMessage, modelSwitchMessage } from "../agent-handoff";
+import { promptHooksField } from "../prompt-modes";
 import type { useMainChatLifecycle } from "./main-chat-lifecycle";
 
 /** Exact consecutive main ChatPage statements 129..135; called once, in original order. */
@@ -31,7 +32,10 @@ export function useMainChatSends(scope: ReturnType<typeof useMainChatLifecycle>)
     discardSessionDraft,
     turnThinkingLevel,
     syncHealedSessionId,
+    switches,
   } = scope;
+  /** The composer's switches that are on (prompt-modes.ts): every Task but a goal names them. */
+  const switchesOn = switches.on;
 
   const onSend = useCallback(
     async (input: TaskInputPart[], goal: { budget: number } | null): Promise<boolean> => {
@@ -41,7 +45,7 @@ export function useMainChatSends(scope: ReturnType<typeof useMainChatLifecycle>)
         // the Session through PATCH, see applyTurnThinkingLevel).
         const res = await api.postTask(selected.sessionId, {
           input,
-          ...(goal ? { goal } : {}),
+          ...(goal ? { goal } : promptHooksField(switchesOn)),
         });
         discardSessionDraft();
         await syncHealedSessionId(selected.sessionId, res.sessionId);
@@ -52,7 +56,7 @@ export function useMainChatSends(scope: ReturnType<typeof useMainChatLifecycle>)
         return false;
       }
     },
-    [selected, turnThinkingLevel, discardSessionDraft, syncHealedSessionId],
+    [selected, turnThinkingLevel, discardSessionDraft, syncHealedSessionId, switchesOn],
   );
 
   // /model switch (handoff-style, mirroring onHandoff exactly): opens a NEW session for the
@@ -257,7 +261,11 @@ export function useMainChatSends(scope: ReturnType<typeof useMainChatLifecycle>)
     async (input: TaskInputPart[]): Promise<boolean> => {
       if (!selected) return false;
       try {
-        const res = await api.postTask(selected.sessionId, { input, queueIfBusy: true });
+        const res = await api.postTask(selected.sessionId, {
+          input,
+          queueIfBusy: true,
+          ...promptHooksField(switchesOn),
+        });
         discardSessionDraft();
         await syncHealedSessionId(selected.sessionId, res.sessionId);
         return true;
@@ -266,7 +274,7 @@ export function useMainChatSends(scope: ReturnType<typeof useMainChatLifecycle>)
         return false;
       }
     },
-    [selected, turnThinkingLevel, discardSessionDraft, syncHealedSessionId],
+    [selected, turnThinkingLevel, discardSessionDraft, syncHealedSessionId, switchesOn],
   );
 
   // Mid-run steering: the message is queued on the server and delivered between turns as a
@@ -338,7 +346,11 @@ export function useMainChatSends(scope: ReturnType<typeof useMainChatLifecycle>)
     async (input: TaskInputPart[]): Promise<boolean> => {
       if (!selected) return false;
       try {
-        const res = await api.postTask(selected.sessionId, { input, interrupt: true });
+        const res = await api.postTask(selected.sessionId, {
+          input,
+          interrupt: true,
+          ...promptHooksField(switchesOn),
+        });
         discardSessionDraft();
         await syncHealedSessionId(selected.sessionId, res.sessionId);
         return true;
@@ -347,7 +359,7 @@ export function useMainChatSends(scope: ReturnType<typeof useMainChatLifecycle>)
         return false;
       }
     },
-    [selected, discardSessionDraft, syncHealedSessionId],
+    [selected, discardSessionDraft, syncHealedSessionId, switchesOn],
   );
   return {
     ...scope,

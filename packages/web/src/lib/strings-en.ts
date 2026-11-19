@@ -4840,6 +4840,8 @@ Scenarios:
       "Invalid budget: use a positive number with an optional k/m suffix (500k, 2m)",
     goalBudgetSave: "Save budget",
     goalRemove: "Exit goal mode",
+    /** The remove label of a composer switch's chip (a plugin's mode, e.g. Plan mode). */
+    switchOff: (title: string): string => `Turn off ${title}`,
     /** The notice above the composer when goal mode is engaged on an Agent without the goal plugin, and its install button. */
     goalPluginMissing: "Goal mode needs the goal plugin: install it on this Agent to start a goal.",
     goalPluginInstall: "Install on this Agent",
@@ -6853,6 +6855,8 @@ Scenarios:
       unknown_plugin: "This plugin is not in the plugin library.",
       goal_plugin_not_installed:
         "Goal mode needs the goal plugin — install it on this agent from the plugin library, and switch its hook package on.",
+      prompt_hook_not_installed:
+        "This agent no longer has the hook package a switch needs, or its hooks are off. Turn the switch off, or install its plugin again.",
       skill_too_large: "This skill directory exceeds the import limits.",
       hook_too_large: "This hook package exceeds the import limits.",
       workbench_too_large: "This workbench's source exceeds the export limits.",

@@ -716,10 +716,11 @@ export function PluginsPage() {
    * written, never sent, so nothing runs (and no token is spent) until the person sends it. The
    * prompt goes in per UI language, overwriting the draft body (any typed-but-unsent text is
    * parked as a draft conversation first, draft-sessions.ts), with the demo's skills
-   * pre-selected and goal mode on when the demo is a goal. handoffAgentId must be cleared: a
-   * leftover handoff target would forward the demo to a different Agent.
+   * pre-selected, goal mode on when the demo is a goal, and the plugin's composer switch on when
+   * it has one. handoffAgentId must be cleared: a leftover handoff target would forward the demo
+   * to a different Agent.
    */
-  const openQuickStart = (quickStart: QuickStartItem) => {
+  const openQuickStart = (quickStart: QuickStartItem, plugin: PluginItem) => {
     const agentId = currentAgent?.agentId;
     if (!agentId) return;
     if (userId && projectId) {
@@ -728,7 +729,7 @@ export function PluginsPage() {
       // the Project's new-chat defaults (new-chat.ts).
       prepareNewChatDraft(userId, projectId);
       const key = draftKey(userId, projectId);
-      const { skills: _skills, goal: _goal, ...rest } = loadDraft(key);
+      const { skills: _skills, goal: _goal, promptHooks: _promptHooks, ...rest } = loadDraft(key);
       saveDraft(key, {
         ...rest,
         agentId,
@@ -737,6 +738,9 @@ export function PluginsPage() {
           ? { skills: quickStart.skills }
           : {}),
         ...(quickStart.goal === true ? { goal: true as const } : {}),
+        ...(plugin.composerMode === true && quickStart.goal !== true
+          ? { promptHooks: [plugin.name] }
+          : {}),
         handoffAgentId: undefined,
       });
     }
@@ -752,7 +756,7 @@ export function PluginsPage() {
   const quickStartLibrary = (plugin: PluginItem) => {
     const demo = libraryQuickStart(plugin);
     if (demo === null || !currentAgent) return;
-    if (pluginComplete(plugin, installed.get(currentAgent.agentId))) openQuickStart(demo);
+    if (pluginComplete(plugin, installed.get(currentAgent.agentId))) openQuickStart(demo, plugin);
     else setPendingQuickStart(plugin);
   };
 
@@ -765,7 +769,7 @@ export function PluginsPage() {
     setQuickStartInstalling(false);
     setPendingQuickStart(null);
     const demo = libraryQuickStart(plugin);
-    if (ok && demo !== null) openQuickStart(demo);
+    if (ok && demo !== null) openQuickStart(demo, plugin);
   };
 
   const rows = pluginRows(groups ?? [], moduleParts(deployment, index ?? [], view));

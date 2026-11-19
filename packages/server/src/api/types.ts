@@ -2723,6 +2723,16 @@ export interface TaskCreateRequest {
    * out, or the sandbox refuses to run it) is 409 `goal_start_failed` with the reason.
    */
   goal?: { budget?: number };
+  /**
+   * Hook packages installed on the Agent whose `trigger: "host"` `user_prompt` command this
+   * Task runs (the composer's switches, see `PluginItem.composerMode`): each one's `context`
+   * follows the user's message, stamped `sender: "harness"`, in the order named. Run when the
+   * request is accepted, so a queued or interrupting input waits with its contexts; a steered
+   * input takes none. A package that is not installed, or declares no such command, is 409
+   * `prompt_hook_not_installed`; one whose command fails is 409 `prompt_hook_failed` with the
+   * reason; nothing is started or queued either way. Exclusive with `goal` (400).
+   */
+  promptHooks?: string[];
 }
 
 /** Goal-mode run state, read from the Session's GOAL.json — the goal plugin's file (the chat page's banner restores from it; a live status on an idle Session reads as `aborted`). */
@@ -4225,6 +4235,8 @@ export interface PluginItem {
   icon?: IconRef;
   /** The demo the Plugins page's quick start pre-fills (the card's `quickStart`); absent = pre-select its first skill. */
   quickStart?: QuickStartItem;
+  /** The card's `composerMode`: an Agent with the hook package gets it as a switch in the composer's "+" menu (sent as `TaskCreateRequest.promptHooks`). */
+  composerMode?: true;
   /** The MCP servers the plugin installs into an Agent's `tools.mcpServers` (its mcpServers contributions); `[]` without any. */
   mcpServers: PluginMcpServerItem[];
 }

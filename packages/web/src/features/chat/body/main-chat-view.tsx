@@ -40,6 +40,7 @@ export function createMainChatView(
     inputHistory,
     turnThinkingLevel,
     goalPlugin,
+    switches,
     agentSkills,
     agentThinkingLevel,
     compactionLimit,
@@ -173,6 +174,7 @@ export function createMainChatView(
         ? { initialSkills: sessionDraft.skills }
         : {})}
       goalPlugin={goalPlugin}
+      switches={switches}
       onSkillsChange={onDraftSkillsChange}
       onHandoff={onHandoff}
       initialText={sessionDraft.text ?? ""}

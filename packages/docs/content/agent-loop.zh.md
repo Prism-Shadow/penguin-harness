@@ -208,7 +208,9 @@ exit    non-zero = failure (stderr's tail becomes the reason); a timeout (defaul
 
 **宿主触发的命令。** `user_prompt` 命令可以在 `hooks.json` 里带 `"trigger": "host"`，缺省为 `"prompt"`。这样的命令不参与上述咨询，只在宿主按包名启动该包自己的流程时，经 `Session.runUserPromptHook(name, prompt, extras)` 运行：Session 自己补上 id、Trace 路径与 scratchpad 目录，宿主的 `extras` 并入 stdin 字段。调用返回钩子的回答（空回答为 `{}`）；包未安装、或没有宿主触发的命令时返回 `null`。随后由宿主自己把 `context` 以 `sender: "harness"` 标记紧随用户消息、作为普通的 Task 输入发出；这条路径同样不记 `hook` 事件。进程内的 `UserPromptHook` 也有同一个可选字段 `trigger`。
 
-[目标模式](/goal-mode)是 `host` 的唯一内置用途：goal 插件的 `start.mjs` 标记为 `"trigger": "host"`。服务端收到 `goal: { budget }` 时经 `runUserPromptHook` 运行它，并在 stdin 里附上 `budget`；脚本写下 `GOAL.json`，并以第 1 轮的协议消息作答。启动目标的那条 Prompt 仍是用户提交的 Prompt，因此其他钩子包的 `user_prompt` 钩子照常运行，它们的 context 排在 goal 的协议消息之后。
+输入框的开关是 `host` 的一种内置用途。卡片设了 `composerMode` 的插件，会出现在装有其钩子包的每个 Agent 的对话输入框 **+** 菜单里；开关开着时，Web App 发出的每个 Task 都在 `promptHooks` 里带上包名，服务端经 `runUserPromptHook` 以用户的原话运行该命令，并把 context 紧随这条消息发出。`plan` 插件的计划模式就是这样的开关。排队或打断发出的消息带着各自的 context，插话不带。
+
+[目标模式](/goal-mode)是另一种：goal 插件的 `start.mjs` 标记为 `"trigger": "host"`。服务端收到 `goal: { budget }` 时经 `runUserPromptHook` 运行它，并在 stdin 里附上 `budget`；脚本写下 `GOAL.json`，并以第 1 轮的协议消息作答。启动目标的那条 Prompt 仍是用户提交的 Prompt，因此其他钩子包的 `user_prompt` 钩子照常运行，它们的 context 排在 goal 的协议消息之后。
 
 ## 运行中插话
 

@@ -1,6 +1,12 @@
 import { Component } from "@prismshadow/penguin-core/plugin";
 import type { Plugin } from "@prismshadow/penguin-core/plugin";
 
+/**
+ * Plan mode: a switch in the composer's "+" menu (`composerMode`). While it is on, each message
+ * the user sends runs `hooks/discuss.mjs`, whose prompt follows the message and asks the Agent to
+ * settle the approach with the user before carrying it out. Data only: the class has no body and
+ * the package no entry point; `build` writes this literal into `ifaces.json`.
+ */
 @Component({
   contributes: {
     "PluginLibraryModule.cards": [
@@ -13,8 +19,8 @@ import type { Plugin } from "@prismshadow/penguin-core/plugin";
         shortDescriptionZh: "先讨论做法和架构，再开始任务。",
         category: "office-productivity",
         icon: "icon.svg",
+        composerMode: true,
         quickStart: {
-          plan: true,
           prompt:
             "Help me plan a migration. Ask which systems and constraints matter before drafting it.",
           promptZh: "帮我规划一次迁移。请先问清涉及哪些系统和限制，再起草方案。",
