@@ -6,6 +6,7 @@ export default defineConfig({
     "src/index.ts",
     "src/plugin-module-requests.ts",
     "src/repos/index.ts",
+    "src/repos/plugin-module-preinstalls.ts",
     "src/repos/plugin-module-requests.ts",
     "src/repos/server-settings.ts",
     "src/repos/ui-prefs.ts",

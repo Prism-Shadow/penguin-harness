@@ -232,14 +232,18 @@ CREATE TABLE IF NOT EXISTS server_settings (   -- admin-level server-global sett
 CREATE TABLE IF NOT EXISTS plugin_module_requests ( -- who asked this server to run a plugin's server module, and what an administrator decided; one row per package. The record of asks and decisions, not of what runs: the plugin tables are that
   package      TEXT PRIMARY KEY,              -- npm package name, as a plugin table lists it
   plugin       TEXT NOT NULL,                 -- the library plugin's name, for display
-  project_id   TEXT REFERENCES projects(project_id) ON DELETE SET NULL, -- whose table lists it, or will; NULL once that Project is gone
+  project_id   TEXT REFERENCES projects(project_id) ON DELETE SET NULL, -- whose table lists it, or will; NULL once that Project is gone, and for a preinstalled module (every Project's)
   agent_id     TEXT,                          -- the Agent whose install asked first; display only
-  requested_by TEXT NOT NULL,                 -- user id; '' when no person was behind it (company mode's reconcile)
+  requested_by TEXT NOT NULL,                 -- user id; '' when no person was behind it (company mode's reconcile, a preinstall's one-time listing)
   requested_at TEXT NOT NULL,
   decision     TEXT,                          -- NULL pending | 'enabled' | 'declined'
   decided_by   TEXT,                          -- equals requested_by when nobody else had to decide
   decided_at   TEXT,
   via          TEXT                           -- how it was enabled: 'builtin' | 'admin' | 'approval'; NULL while pending or declined
+);
+CREATE TABLE IF NOT EXISTS plugin_module_preinstalls ( -- the preinstalled built-in packages this server has listed once in every Project it had (PRFC-0030); one row per package. After that the Project tables are the administrator's: a package here is never listed into an existing Project again
+  package   TEXT PRIMARY KEY,                 -- npm package name, as a plugin table lists it
+  listed_at TEXT NOT NULL                     -- when this server listed it in the Projects it had
 );
 CREATE TABLE IF NOT EXISTS machine (           -- this server's OWN identity, minted here and never assigned from outside (what 'penguin server status' reports)
   singleton  INTEGER PRIMARY KEY CHECK (singleton = 1),  -- exactly one row, enforced by the schema rather than by convention

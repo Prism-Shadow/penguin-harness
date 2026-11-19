@@ -36,6 +36,10 @@
       "types": "./dist/plugin-module-requests.d.ts",
       "import": "./dist/plugin-module-requests.js"
     },
+    "./repos/plugin-module-preinstalls": {
+      "types": "./dist/repos/plugin-module-preinstalls.d.ts",
+      "import": "./dist/repos/plugin-module-preinstalls.js"
+    },
     "./repos/plugin-module-requests": {
       "types": "./dist/repos/plugin-module-requests.d.ts",
       "import": "./dist/repos/plugin-module-requests.js"

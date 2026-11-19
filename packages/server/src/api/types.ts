@@ -4388,12 +4388,12 @@ export interface PluginModuleAskResponse {
 export interface PluginModuleRequest {
   package: string;
   plugin: string;
-  /** The Project whose table lists it, or will; null when that Project is gone. */
+  /** The Project whose table lists it, or will; null when that Project is gone, and for a preinstalled module (PRFC-0030), which is every Project's. */
   projectId: string | null;
-  /** That Project's display name (its id when it has none); null when it is gone. */
+  /** That Project's display name (its id when it has none); null when there is none. */
   projectName: string | null;
   agentId: string | null;
-  /** The user who asked; "" when no person was behind it (company mode's reconcile). */
+  /** The user who asked; "" when no person was behind it (company mode's reconcile, a preinstalled module's one-time listing). */
   requestedBy: string;
   /** That user's display name; null when it has none or the user is gone. */
   requestedByName: string | null;

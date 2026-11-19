@@ -352,7 +352,7 @@ npm 标准字段：
 | `shortDescription` / `shortDescriptionZh` | 卡片上显示的简短文案；没有时用完整描述 |
 | `category` | `rsi`、`office-productivity`、`software-development`、`ai-app-development` 之一，Agent 运行沙箱后端用 `sandbox`；缺失或未知的分类归入「其他」 |
 | `icon` | 包内一个 SVG 的路径；没有时取包根目录的 `icon.svg`，再没有就显示拼图块。SVG 必须是不含脚本、事件、链接和外部引用的纯图形，且不超过 64 KiB，否则不显示 |
-| `preinstall` | 设为 `false` 的插件不进入 `default_agent` 的预装集合，只能从插件库手动安装 |
+| `preinstall` | 设为 `false` 的插件不进入 `default_agent` 的预装集合，只能从插件库手动安装。不写时只预装插件的 Agent 内容。带服务端模块的内置插件只有显式写 `true`，其模块才列入每个 Project：新建的 Project 都会列入，服务端也会把它一次性列入已有的 Project |
 | `quickStart` | 插件页「快速开始」预填进新对话草稿的演示：`{ prompt: "…", promptZh: "…", skills: ["…"], goal: true }`——一条发出后就能看到插件工作的提示词、要预选的本插件 Skill，以及草稿是否以目标模式打开。页面从不代为发送；不填时，快速开始预选第一个 Skill |
 | `references` | 原始论文或上游实现的链接，官网的插件页会列出 |
 

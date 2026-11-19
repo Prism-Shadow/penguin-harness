@@ -22,6 +22,11 @@
  * administrator decided, and every change is a log line naming its actor. It is not what runs:
  * a row whose module an administrator unlisted by hand is stale, and the next ask overwrites it.
  *
+ * PREINSTALLED MODULES (PRFC-0030, plugin/preinstall.ts) are listed by Project creation
+ * (`preinstall`) under the same rule, with the system as the actor; the ones a Project predates
+ * were listed once at boot (preinstall-once.ts), which also seeded their ledger row. Enabling one
+ * an administrator stopped lists it in every Project again.
+ *
  * Everything this touches survives a swap — the files, the database, the channel hub, the plugin
  * host claimed per call — so the generation that started a request may finish it after `ensure`
  * re-assembled the App.
@@ -67,6 +72,7 @@ import {
   type PluginBase,
 } from "../plugin/loader.js";
 import { moduleStep } from "../plugin/module-rule.js";
+import { isPreinstalled, preinstalledModules, withOwnListing } from "../plugin/preinstall.js";
 import { pluginTableEdits, type PluginTableEdits } from "./plugin-tables.js";
 
 /** What the process's plugin host holds, claimed per call: the host belongs to the process. */
@@ -175,6 +181,51 @@ export class PluginModulesService implements PluginModules {
     return actions;
   }
 
+  async preinstall(projectId: string): Promise<void> {
+    try {
+      const modules = await preinstalledModules(this.bases());
+      if (modules.length === 0) return;
+      const here = await this.effective(projectId);
+      const closure = await readPluginClosure(this.config.root, this.machineId);
+      const running = this.running();
+      const steps = modules.map(({ package: pkg }) => ({
+        pkg,
+        step: moduleStep({
+          listed: pkg in here,
+          inClosure: closure.includes(pkg),
+          running: running.loaded.has(pkg),
+          builtin: true,
+          declined: this.ledger.get(pkg)?.decision === "declined",
+          admin: false,
+          explicit: false,
+          system: true,
+        }),
+      }));
+      const listing = steps.filter((s) => s.step === "list" || s.step === "load").map((s) => s.pkg);
+      if (listing.length === 0) return;
+      const next = (tables: PluginTables) => withOwnListing(tables, this.machineId, listing);
+      // One write for all of them; inside a re-assembly only when one is not in the closure yet.
+      if (steps.some((s) => s.step === "load")) await this.tables.edit(projectId, next);
+      else
+        await this.projectConfig.setPluginTables(
+          projectId,
+          next(await this.tables.tablesOf(projectId)),
+        );
+      const listed = await this.effective(projectId);
+      for (const pkg of listing) {
+        this.log.line(
+          pkg in listed
+            ? `[plugins] module ${pkg}: listed for ${projectId} (preinstalled)`
+            : `[plugins] module ${pkg}: not listed for ${projectId} (preinstalled): ${BOOT_FAILED}`,
+        );
+      }
+    } catch (err) {
+      this.log.line(
+        `[plugins] ${projectId}: the preinstalled modules were not listed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
   async requests(): Promise<PluginModuleRequestsResponse> {
     const rows = this.ledger.list();
     const running = this.running();
@@ -221,6 +272,17 @@ export class PluginModulesService implements PluginModules {
       throw new HttpError(404, "unknown_request", `Nobody asked this server to run ${pkg}.`);
     }
     const at = this.now();
+    if (decision === "enable" && (await isPreinstalled(pkg, this.bases()))) {
+      // A preinstalled module is every Project's (PRFC-0030): enabled again, it is listed in
+      // every Project, as its one-time listing did — its seeded row names no Project at all.
+      if (!(await this.listEverywhere(pkg))) throw new HttpError(409, "module_failed", BOOT_FAILED);
+      this.ledger.decide(pkg, "enabled", admin.userId, at, "admin");
+      this.log.line(
+        `[plugins] module ${pkg}: enabled for every Project by ${admin.userId} (admin)`,
+      );
+      this.announce(null);
+      return this.requests();
+    }
     if (decision === "enable") {
       const projectId = row.projectId;
       if (projectId === null || this.projects.findById(projectId) === null) {
@@ -402,6 +464,46 @@ export class PluginModulesService implements PluginModules {
     const tables = await this.tables.tablesOf(projectId);
     await this.projectConfig.setPluginTables(projectId, withOwn(tables, this.machineId, pkg));
     return true;
+  }
+
+  /**
+   * Lists `pkg` in this server's own table of every Project that does not ask this server for it
+   * yet, in one change: re-assembled only when no Project keeps it in the closure already.
+   * Answers whether the App took it (true too when the listing waits for a restart).
+   */
+  private async listEverywhere(pkg: string): Promise<boolean> {
+    const root = this.config.root;
+    const missing: string[] = [];
+    for (const projectId of await listProjectIds(root)) {
+      const tables = await this.projectConfig.getPluginTables(projectId).catch(() => null);
+      if (tables === null) continue;
+      if (!(pkg in effectivePluginTable(tables, this.machineId))) missing.push(projectId);
+    }
+    if (missing.length === 0) return true;
+    const previous = new Map<string, PluginTables>();
+    const write = async () => {
+      for (const projectId of missing) {
+        const tables = await this.projectConfig.getPluginTables(projectId);
+        previous.set(projectId, tables);
+        await this.projectConfig.setPluginTables(
+          projectId,
+          withOwnListing(tables, this.machineId, [pkg]),
+        );
+      }
+    };
+    if ((await readPluginClosure(root, this.machineId)).includes(pkg)) {
+      await write();
+      return true;
+    }
+    const took = await this.reassembly.reassemble({
+      write,
+      undo: async () => {
+        for (const [projectId, tables] of previous) {
+          await this.projectConfig.setPluginTables(projectId, tables);
+        }
+      },
+    });
+    return took || (await readPluginClosure(root, this.machineId)).includes(pkg);
   }
 
   /**

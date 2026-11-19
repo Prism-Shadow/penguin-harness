@@ -80,7 +80,8 @@ import {
 import type { Interfaces, MembersOf, ReassemblyChange } from "./capabilities.js";
 import { PLUGINS_RESOURCE_ID, pluginHostFrom } from "../plugin/host.js";
 import type { PluginHost } from "../plugin/host.js";
-import { loadPluginHost } from "../plugin/loader.js";
+import { loadPluginHost, pluginBases } from "../plugin/loader.js";
+import { listPreinstalledOnce } from "../services/preinstall-once.js";
 import {
   useInstalledPluginPrefix,
   useLibraryHost,
@@ -434,6 +435,23 @@ async function createInner(
   // servers in the data root's plugin prefix, beside the ones the build ships.
   if (caps !== null) useInstalledPluginPrefix(pluginsPrefix(caps.config.root));
 
+  // A Project may list a plugin for one machine only (`[plugins.<machineId>]`); this server's
+  // own id says which of those tables are its own.
+  const machineId = caps === null ? null : new MachinesRepo(caps.db).ownId();
+  // The preinstalled built-in modules this build ships reach the Projects the server already
+  // had, once (PRFC-0030) — before the closure below is read, so this generation boots with
+  // them and no re-assembly follows. Like the migrations above, it comes before any node.
+  if (caps !== null && machineId !== null) {
+    await listPreinstalledOnce({
+      db: caps.db,
+      root: caps.config.root,
+      bases: pluginBases(caps.config.root, caps.hmr.assetsDir()),
+      machineId,
+      now: () => new Date().toISOString(),
+      log: (line) => console.log(line),
+    });
+  }
+
   // Plugins are modules (see ../plugin/), and WHICH ones this App runs is configuration it
   // reads for ITSELF: the closure over the root's Projects, loaded here rather than handed
   // over by the runtime, so the rule for reading it ships by push like every other policy.
@@ -441,14 +459,7 @@ async function createInner(
   const plugins =
     caps === null
       ? pluginHostFrom(ctx.resources)
-      : await loadPluginHost(
-          ctx.resources,
-          caps.config.root,
-          caps.hmr.assetsDir(),
-          // A Project may list a plugin for one machine only (`[plugins.<machineId>]`); this
-          // server's own id says which of those tables are its own.
-          new MachinesRepo(caps.db).ownId(),
-        );
+      : await loadPluginHost(ctx.resources, caps.config.root, caps.hmr.assetsDir(), machineId);
   // Plus whatever a test stood up in process, which no closure could name (see the id).
   const injected = ctx.resources.claim<PluginHost | null>(HMR_TEST_PLUGINS_RESOURCE_ID);
   if (injected != null && typeof injected.entries === "function") {
