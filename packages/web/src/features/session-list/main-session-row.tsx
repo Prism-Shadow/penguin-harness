@@ -27,7 +27,6 @@ export function SidebarSessionRow({
   background,
   pinned,
   lastActive,
-  locale,
   agentHint,
   draggable = false,
   dropEdge = null,
@@ -51,10 +50,8 @@ export function SidebarSessionRow({
   background: number;
   /** Row is pinned (bubbled to its group's top; small pin glyph on the title). */
   pinned: boolean;
-  /** Preformatted compact last-active time ("" hides the slot's resting text). */
+  /** Compact last-active time in the interface language. */
   lastActive: string;
-  /** Interface language: decides the fixed width the time slot reserves (SessionRow's `timeSlot`). */
-  locale: "zh" | "en";
   /** Agent display name; when set (workspace mode) a small avatar keeps the Agent context visible on the row. */
   agentHint?: string;
   /** Manual sort: the row can be drag-reordered (the sidebar wires the handlers below). */
@@ -155,7 +152,6 @@ export function SidebarSessionRow({
         time={lastActive}
         // Sized for the widest compact time each language produces — 「12月31日」 and 「59 分钟前」 in
         // zh, "Nov 30" in en.
-        timeSlot={locale === "zh" ? "wide" : "narrow"}
         hoverActions={sessionRowActions(HOVER_ROW_ACTIONS, rowState, run)}
         menuActions={menu}
         moreLabel={S.chat.moreActions}

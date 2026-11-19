@@ -15,6 +15,8 @@
  * Agent must not switch on its own exposure from its shell. The reads stay open to the token,
  * for `penguin agent api status` and `keys ls`.
  */
+import { DEFAULT_API_CONCURRENT_RUNS } from "@prismshadow/penguin-library-agent-api";
+import type { ModelRefDto, AgentApi } from "@prismshadow/penguin-library-agent-api";
 import { Hono } from "hono";
 import { THINKING_LEVEL_NAMES, resolveModelRef } from "@prismshadow/penguin-core";
 import { assertWorkspaceAllowed } from "../../services/workspace-guard.js";
@@ -23,7 +25,6 @@ import type {
   AgentApiKeyCreateResponse,
   AgentApiKeyInfo,
   AgentApiResponse,
-  ModelRefDto,
 } from "../../api/types.js";
 import { requireHuman } from "../../auth/middleware.js";
 import type { AppEnv } from "../../auth/middleware.js";
@@ -40,11 +41,10 @@ import {
   requireValidId,
 } from "../validate.js";
 import { APPROVAL_MODES } from "./sessions.js";
-import { DEFAULT_API_CONCURRENT_RUNS } from "../../mechanisms/agent-api.js";
-import type { AgentApi, AgentApiKeyRow } from "../../mechanisms/agent-api.js";
+import type { AgentApiKeyRow } from "@prismshadow/penguin-library-agent-api/agent-api";
 import type { AgentConfig } from "../../mechanisms/agents.js";
-import type { ProjectConfigStore, Access } from "../../mechanisms/projects.js";
-import type { Settings } from "../../mechanisms/settings.js";
+import type { ProjectConfigStore, Access } from "@prismshadow/penguin-library-project";
+import type { Settings } from "@prismshadow/penguin-library-setting";
 
 /** What this route group reaches — bound by its module (services/agent-routes.ts). */
 export interface AgentApiRouteDeps {

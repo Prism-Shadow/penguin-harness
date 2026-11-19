@@ -1,8 +1,8 @@
 /**
  * The sidebar's conversation row and its hover actions (src/components/shell/session-row/): a
  * button that opens the conversation, the title drawn by the caller in the row's ink, marks that
- * each name themselves, one reserved box for the live state, and a trailing slot whose time gives
- * way to the hover actions. The row's menu mounts only while open, which a static render never
+ * each name themselves, one reserved box for the live state, and details that share the
+ * trailing edge with the actions when revealed. The row's menu mounts only while open, which a static render never
  * is; what its wiring must keep doing on a real page is session-row.dom.test.ts.
  */
 import { createElement } from "react";

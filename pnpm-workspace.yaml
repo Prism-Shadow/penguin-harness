@@ -1,5 +1,9 @@
 packages:
   - "packages/*"
+  # Domain library packages (#255 restack): the contracts and their implementations,
+  # which packages/server imports. One-directional: a library package never imports
+  # the server.
+  - "library/*"
   # Plugin packages a Project asks for (the [plugins] table of its config). They sit at the top
   # level, outside packages/, because they are not part of the harness: nothing under
   # packages/ depends on one, and the platform bundle carries none of them — what ships

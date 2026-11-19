@@ -4,8 +4,8 @@ import { bodyLimit } from "hono/body-limit";
 import type { ModelOperation as Capability, CapabilityCliReply } from "../api/capabilities.js";
 import { parseModelTool, requestFromCommand } from "./model-tool-grammar.js";
 import type { AppEnv } from "../auth/middleware.js";
-import type { Access, ProjectConfigStore } from "../mechanisms/projects.js";
-import type { SessionIndex } from "../mechanisms/sessions.js";
+import type { Access, ProjectConfigStore } from "@prismshadow/penguin-library-project";
+import type { SessionIndex } from "@prismshadow/penguin-library-session";
 import type { ModelCapabilities } from "./model-capabilities.js";
 import type { CapabilityRuns } from "../services/capability-runs.js";
 import {

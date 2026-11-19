@@ -68,6 +68,7 @@ import {
   ExampleFolderRow,
   ExampleRowGlyph,
   ExampleRowGo,
+  ExampleSelectionMark,
   exampleGridClass,
   examplePanelClass,
   exampleRowClass,
@@ -83,6 +84,8 @@ export interface StartDashboardProps {
   skillsLoaded: boolean;
   /** Put a prompt in the composer with the Skills it pins; nothing is sent. */
   fill: (prompt: string, skills: readonly string[]) => void;
+  /** Current accepted example text, cleared when the draft is edited. */
+  exampleText?: string | null;
   /** The composer's text at this moment: a new shortcut starts from it. */
   readComposerText: () => string;
 }
@@ -91,6 +94,7 @@ export function StartDashboard({
   projectId,
   composer,
   skillsLoaded,
+  exampleText = null,
   fill,
   readComposerText,
 }: StartDashboardProps) {
@@ -110,7 +114,7 @@ export function StartDashboard({
           <Card
             data-slot="counts"
             padding="none"
-            className="col-span-2 row-start-3 mt-4 justify-self-start overflow-hidden @2xl:col-span-1 @2xl:col-start-3 @2xl:row-start-1 @2xl:mt-0 @2xl:ml-3"
+            className="col-span-2 row-start-3 mt-4 justify-self-start @2xl:col-span-1 @2xl:col-start-3 @2xl:row-start-1 @2xl:mt-0 @2xl:ml-3"
           >
             {/* The hairlines between the counts are the list's own dividers. Three equal columns,
                 each as wide as the widest count needs, so the panel reads as one even strip. */}
@@ -140,7 +144,12 @@ export function StartDashboard({
       </div>
       {composer}
       <div data-slot="examples" className="@container mt-10">
-        <ExamplesSection ready={skillsLoaded} fill={fill} readComposerText={readComposerText} />
+        <ExamplesSection
+          ready={skillsLoaded}
+          fill={fill}
+          exampleText={exampleText}
+          readComposerText={readComposerText}
+        />
       </div>
     </div>
   );
@@ -162,7 +171,10 @@ function StartBrand() {
           page, where white meets white. Its corner is the asset's own (the drawing clips at 24% of
           the side), not the theme's radius scale, which would make it a circle in Frost and a
           square in Console: the mark keeps one shape everywhere. */}
-      <div className="relative col-start-1 row-span-2 row-start-1 aspect-square max-h-24 justify-self-start self-stretch">
+      <div
+        data-slot="brand-mark"
+        className="relative col-start-1 row-span-2 row-start-1 aspect-square max-h-24 justify-self-start self-stretch"
+      >
         <PenguinLogo
           src={PENGUIN_LOGO_URL}
           className="absolute inset-0 h-full w-full rounded-[24%] ring-1 ring-line-muted"
@@ -294,10 +306,10 @@ function StatCount({
   value: number | null;
 }) {
   return (
-    <li data-slot="count" className="min-w-0">
+    <li data-slot="count" data-clip-surface="" className="min-w-0">
       <Link
         to={to}
-        className="flex min-w-0 flex-col px-3 py-1.5 transition-colors duration-150 hover:bg-control-hover focus-visible:-outline-offset-2"
+        className="flex min-w-0 flex-col rounded-[inherit] px-3 py-1.5 transition-colors duration-150 hover:bg-control-hover focus-visible:-outline-offset-2"
       >
         <span
           className={`flex items-center ${ICON_GAP.row} whitespace-nowrap text-xs text-fg-muted`}
@@ -366,10 +378,12 @@ const TASK_GLYPHS: Record<ExampleTaskId, string> = {
  */
 function ExamplesSection({
   ready,
+  exampleText,
   fill,
   readComposerText,
 }: {
   ready: boolean;
+  exampleText: string | null;
   fill: (prompt: string, skills: readonly string[]) => void;
   readComposerText: () => string;
 }) {
@@ -399,6 +413,7 @@ function ExamplesSection({
                         <button
                           type="button"
                           data-slot="row"
+                          aria-current={copy.prompt === exampleText || undefined}
                           data-tooltip={`${copy.desc}\n${S.chat.exampleFillHint}`}
                           data-tooltip-extra
                           disabled={!ready}
@@ -409,6 +424,7 @@ function ExamplesSection({
                         >
                           <ExampleRowGlyph glyph={TASK_GLYPHS[task.id]} />
                           <span className="min-w-0 flex-1 truncate">{copy.label}</span>
+                          {copy.prompt === exampleText && <ExampleSelectionMark />}
                           <ExampleRowGo />
                         </button>
                       </li>
@@ -423,6 +439,7 @@ function ExamplesSection({
           open={openFolder === SHORTCUTS_FOLDER_ID}
           onOpen={() => setOpenFolder(SHORTCUTS_FOLDER_ID)}
           readComposerText={readComposerText}
+          exampleText={exampleText}
           onFill={(prompt) => fill(prompt, [])}
         />
       </div>

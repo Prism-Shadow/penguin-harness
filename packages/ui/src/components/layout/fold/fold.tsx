@@ -123,7 +123,11 @@ export function Fold({
       onTransitionEnd={ended}
       onTransitionCancel={ended}
     >
-      <div className={bodyClass} inert={phase === "closing"}>
+      <div
+        className={bodyClass}
+        data-sheet-phase={phase === "settled" ? undefined : phase}
+        inert={phase === "closing"}
+      >
         {typeof children === "function" ? children() : children}
       </div>
     </div>
