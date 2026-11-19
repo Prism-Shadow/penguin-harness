@@ -1,11 +1,5 @@
-import { MIMEType } from "node:util";
-
-/** Parse Content-Type with the platform parser; callers decide how to handle absence/invalidity. */
-export function mediaType(header: string | undefined): MIMEType | null {
-  if (header === undefined) return null;
-  try {
-    return new MIMEType(header);
-  } catch {
-    return null;
-  }
-}
+/**
+ * media-type moved to the http vocabulary package (@prismshadow/penguin-library-http, services+http+cli
+ * restack T0); this re-export keeps the server's own import paths stable.
+ */
+export * from "@prismshadow/penguin-library-http/media-type";

@@ -164,17 +164,12 @@ import type {
 // ---------------------------------------------------------------------------
 
 /**
- * Unified error response body: `code` is a machine-readable error code, `message` an English
- * user-facing message, and `details`, on the errors that have them, the facts a client acts on
- * beside the code (the Benchmark id a 409 `benchmark_exists` is about, say) — read from there,
- * never parsed out of the message.
+ * Unified error response body and its detail record — the shape lives in the http
+ * vocabulary package (services+http+cli restack T0); re-exported here so the API
+ * contract keeps spelling it.
  */
-export interface ErrorBody {
-  error: { code: string; message: string; details?: ErrorDetails };
-}
-
-/** An error's structured facts, by name; each code that carries them documents its own. */
-export type ErrorDetails = Readonly<Record<string, string>>;
+export type { ErrorBody, ErrorDetails } from "@prismshadow/penguin-library-http/errors";
+import type { ErrorDetails } from "@prismshadow/penguin-library-http/errors";
 
 /** Session approval mode (reuses the CLI enum). */
 

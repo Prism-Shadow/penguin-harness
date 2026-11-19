@@ -31,6 +31,7 @@ import {
 import type { OriginRule } from "../http/public-origin.js";
 import type { UserRow } from "@prismshadow/penguin-library-auth/repos/users";
 import { SESSION_COOKIE } from "../api/types.js";
+import type { AppEnv } from "@prismshadow/penguin-library-http/app-env";
 
 /** The session cookie's name as every non-browser client spells it (declared in the API contract). */
 export { SESSION_COOKIE };
@@ -87,14 +88,13 @@ export function cookieOptions(
   };
 }
 
-/** Hono env: variables injected by the auth middleware. */
-export type AppEnv = {
-  Variables: {
-    user: UserRow;
-    /** How the current session was established — see {@link SessionVia}. */
-    sessionVia: SessionVia;
-  };
-};
+/**
+ * Hono env: variables injected by the auth middleware. The shape moved to the http
+ * vocabulary package (services+http+cli restack T0) — routes and middlewares on both
+ * sides speak it, so it lives beside the pieces they share; the middleware that fills
+ * these variables stays here.
+ */
+export type { AppEnv } from "@prismshadow/penguin-library-http/app-env";
 
 /** Gets the current user (available after authMiddleware). */
 export function currentUser(c: { var: { user: UserRow } }): UserRow {
