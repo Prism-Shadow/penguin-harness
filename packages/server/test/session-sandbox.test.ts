@@ -6,12 +6,12 @@
 import { describe, expect, it } from "vitest";
 import { wire } from "@prismshadow/penguin-core/kernel";
 import type { SandboxProvider, SandboxSettings } from "@prismshadow/penguin-core/plugin";
-import { openDatabase } from "../src/db/database.js";
-import { migrate } from "../src/db/migrations/index.js";
-import { stampThrough } from "./db-migrations-fixtures.js";
-import { SCHEMA_SQL } from "../src/db/schema.js";
-import { SessionsRepo } from "../src/db/repos/sessions.js";
-import type { SessionRow } from "../src/db/repos/sessions.js";
+import { openDatabase } from "@prismshadow/penguin-library-db";
+import { migrate } from "@prismshadow/penguin-library-db/migrations";
+import { stampThrough } from "../../../library/db/test/db-migrations-fixtures.js";
+import { SCHEMA_SQL } from "@prismshadow/penguin-library-db/schema";
+import { SessionsRepo } from "@prismshadow/penguin-library-session/repos/sessions";
+import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
 import type { SessionSandbox } from "../src/api/types.js";
 import { SandboxService } from "../src/sandbox/index.js";
 import { applySandboxPick, sessionSandboxOf } from "../src/services/session-service.js";

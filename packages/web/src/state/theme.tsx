@@ -345,17 +345,22 @@ export function useTheme(): ThemeContextValue {
 
 /**
  * The accent swatches a theme offers: "neutral" first (the theme's own accent, the absence of a
- * choice), then the theme's own presets in its own order, painted in their light values.
+ * choice), then the theme's own presets in its own order, painted in their light values — save
+ * one: in dark, a preset that is the pack's own light ink (Doodle's `ink`) is painted in the
+ * pack's dark ink, because a near-black dot on a dark row cannot be seen.
  */
 export function accentSwatches(
   theme: ThemeEntry,
   dark = false,
 ): ReadonlyArray<{ value: Accent; color: string }> {
-  // "Theme's own" paints the accent that choice resolves to — every built-in theme's is black
-  // (white in dark) — rather than a stand-in grey.
+  // "Theme's own" paints the accent that choice resolves to — black (white in dark) in most
+  // built-in themes, the ballpoint blue in Doodle — rather than a stand-in grey.
   const own = theme.accent.own;
+  const ink = theme.swatches.light.ink.toLowerCase();
+  const paint = (swatch: string) =>
+    dark && swatch.toLowerCase() === ink ? theme.swatches.dark.ink : swatch;
   return [
     { value: "neutral", color: dark ? own.dark : own.light },
-    ...theme.accent.presets.map((preset) => ({ value: preset.id, color: preset.swatch })),
+    ...theme.accent.presets.map((preset) => ({ value: preset.id, color: paint(preset.swatch) })),
   ];
 }

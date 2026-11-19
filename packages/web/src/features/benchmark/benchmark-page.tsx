@@ -74,9 +74,9 @@ const BENCHMARK_DESIGN_SKILLS = ["benchmark-design", "agent-evaluation"];
 /** How many tested Agents a card names before the rest fold into a "+n". */
 const AVATARS_SHOWN = 3;
 
-function deltaTone(delta: number | null): string {
-  if (delta === null || delta === 0) return toneInk.muted;
-  return delta > 0 ? toneInk.success : toneInk.danger;
+function deltaTone(delta: number | null): "muted" | "success" | "danger" {
+  if (delta === null || delta === 0) return "muted";
+  return delta > 0 ? "success" : "danger";
 }
 
 /**
@@ -206,6 +206,7 @@ export function BenchmarkCard({
   onDelete: () => void;
 }) {
   const latest = latestWithDelta(benchmark.evaluations);
+  const scoreTone = deltaTone(latest?.delta ?? null);
   const series = sparklineSeries(benchmark.evaluations);
   // A Benchmark that is not published is masked and inert: a draft is still being written and
   // calibrated by the agent, and a failed one never finished calibrating and can only be thrown
@@ -298,7 +299,8 @@ export function BenchmarkCard({
               </span>
               <span
                 data-slot="label"
-                className={`block whitespace-nowrap text-xs tabular-nums ${deltaTone(latest.delta)}`}
+                data-tone={scoreTone}
+                className={`block whitespace-nowrap text-xs tabular-nums ${toneInk[scoreTone]}`}
               >
                 {latest.delta === null
                   ? S.benchmark.firstEvaluation
@@ -310,6 +312,7 @@ export function BenchmarkCard({
           ) : (
             <span
               data-slot="label"
+              data-tone="muted"
               className="block whitespace-nowrap text-xs text-gray-400 dark:text-gray-500"
             >
               {S.benchmark.notEvaluated}

@@ -24,9 +24,9 @@ import type {
 } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { Machines } from "../../machines/service.js";
-import type { MessagingBindings } from "../../mechanisms/messaging.js";
-import type { Access } from "../../mechanisms/projects.js";
-import type { SessionIndex } from "../../mechanisms/sessions.js";
+import type { MessagingBindings } from "@prismshadow/penguin-library-messaging";
+import type { Access } from "@prismshadow/penguin-library-project";
+import type { SessionIndex } from "@prismshadow/penguin-library-session";
 import {
   enabledAccounts,
   findAccountHolders,
