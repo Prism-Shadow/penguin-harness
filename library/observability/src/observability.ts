@@ -229,7 +229,17 @@ export interface UsageErrorItem {
   firstTs: string;
 }
 
-export interface UsageBucket {
+interface ToolQuantityUnitTotals {
+  /** Physical quantities observed by the adapter. Units stay separate from true tokens. */
+  toolQuantities?: Partial<
+    Record<
+      "billed_audio_second" | "billed_character" | "utf8_byte" | "billable_request" | "image",
+      number
+    >
+  >;
+}
+
+export interface UsageBucket extends ToolQuantityUnitTotals {
   total: number;
   requests: number;
   /** Cost converted using current pricing at query time (USD); a partial sum when uncosted Models are included, null if none has pricing. */
@@ -240,7 +250,7 @@ export interface UsageBucket {
   hasUncosted: boolean;
 }
 
-export interface UsageGroupRow {
+export interface UsageGroupRow extends ToolQuantityUnitTotals {
   /** Group key: date / agentId / modelId / sessionId. */
   key: string;
   /** Provider group when groupBy=model (rows are broken down by (provider, modelId); unset for other dimensions). */
@@ -255,14 +265,14 @@ export interface UsageGroupRow {
   costMax?: number;
   /**
    * `cost` split by pricing bucket, each record at the same rates, tier and promotion that
-   * priced it in `cost`. Present exactly when `cost` is not null; a row's unpriced usage is in
-   * neither.
+   * priced it in `cost`. Omitted when the estimate includes tool tariffs that cannot be
+   * split into these three chat buckets.
    */
   costParts?: CostParts;
   hasUncosted: boolean;
 }
 
-export interface UsageSeriesPoint {
+export interface UsageSeriesPoint extends ToolQuantityUnitTotals {
   bucket: string;
   cacheRead: number;
   cacheWrite: number;
@@ -272,6 +282,8 @@ export interface UsageSeriesPoint {
   cost: number | null;
   /** Upper estimate for a provider-reported quantity with multiple possible rates. */
   costMax?: number;
+  /** This point includes upstream requests with unknown prices or quantities. */
+  hasUncosted?: boolean;
   requests: number;
   /** Successful requests in the bucket. */
   completed: number;

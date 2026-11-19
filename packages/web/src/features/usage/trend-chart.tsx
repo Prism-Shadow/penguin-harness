@@ -29,9 +29,10 @@ import {
   type ChartPaint,
 } from "@prismshadow/penguin-ui";
 
+import { S } from "../../lib/strings";
 import { formatEstimatedCost, formatMoney } from "../../lib/format";
 import type { Currency } from "../../state/theme";
-import { bucketAxisLabel, bucketFullLabel } from "../../lib/usage-controls";
+import { bucketAxisLabel, bucketFullLabel, toolQuantityRows } from "../../lib/usage-controls";
 import { Empty } from "./usage-charts";
 
 /**
@@ -93,7 +94,15 @@ export function TrendChart({
             return (
               <>
                 <p className="text-gray-400">{bucketFullLabel(granularity, p.bucket)}</p>
-                <p className="font-mono">{formatEstimatedCost(p, currency)}</p>
+                <p className="font-mono">
+                  {formatEstimatedCost(p, currency)}
+                  {p.hasUncosted && <sup>*</sup>}
+                </p>
+                {toolQuantityRows(p.toolQuantities).map(({ unit, quantity }) => (
+                  <p key={unit}>
+                    {S.usage.toolUnits[unit]} · {quantity}
+                  </p>
+                ))}
               </>
             );
           }}

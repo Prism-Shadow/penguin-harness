@@ -5658,6 +5658,13 @@ Benchmark：
     colCacheWrite: "缓存未命中",
     colOutput: "输出",
     estimatedCost: "估算成本",
+    toolUnits: {
+      billed_audio_second: "计费音频（秒）",
+      billed_character: "计费字符数",
+      utf8_byte: "计费字节数",
+      billable_request: "计费请求数",
+      image: "图片张数",
+    },
     uncostedNote: "* 缺少单价或计量的请求未计入估算成本",
     filterAllAgents: "全部 Agent",
     filterAllModels: "全部模型",

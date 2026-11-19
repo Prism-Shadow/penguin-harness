@@ -45,7 +45,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useUpdateBadges, dismissTodo, refreshProjectTodos } from "../todos";
 import { formatEstimatedCost, humanizeTokens } from "../../lib/format";
-import { catalogEntryFor } from "@prismshadow/penguin-server/model-catalog";
+import { catalogEntryFor, providerInfo } from "@prismshadow/penguin-server/model-catalog";
 import { scoped, scopedValue, type Scoped } from "../../lib/project-scope";
 import { useOpenedInProject } from "../../lib/use-opened-in-project";
 import { useProject } from "../../state/project";
@@ -60,6 +60,7 @@ import {
   presetRange,
   presetTsWindow,
   rangeDays,
+  toolQuantityRows,
   type EntityCounts,
   type RangePreset,
 } from "../../lib/usage-controls";
@@ -115,6 +116,9 @@ function SummaryCard({
       <div className="space-y-1">
         <SummaryRow label={S.usage.tokens} value={humanizeTokens(bucket.total)} />
         <SummaryRow label={S.usage.requests} value={String(bucket.requests)} muted />
+        {toolQuantityRows(bucket.toolQuantities).map(({ unit, quantity }) => (
+          <SummaryRow key={unit} label={S.usage.toolUnits[unit]} value={String(quantity)} muted />
+        ))}
         {/* The unpriced-records asterisk sits on the word "cost" (superscript), keeping the number clean and readable; see the footer for the explanation */}
         <SummaryRow
           label={S.usage.estimatedCost}
@@ -294,6 +298,21 @@ export function UsagePage() {
 
   // Model filter candidates and the currently selected item's index (the option value uses the index, avoiding concatenating an id as the key).
   const modelOptions = data?.models ?? [];
+  const modelName = (ref: ModelRefDto) =>
+    catalogEntryFor(ref.provider, ref.modelId)?.displayName ?? ref.modelId;
+  const names = new Set<string>();
+  const repeatedNames = new Set<string>();
+  for (const ref of modelOptions) {
+    const name = modelName(ref);
+    if (names.has(name)) repeatedNames.add(name);
+    names.add(name);
+  }
+  const modelLabel = (ref: ModelRefDto) => {
+    const name = modelName(ref);
+    return repeatedNames.has(name)
+      ? S.models.modelInGroup(name, providerInfo(ref.provider)?.label ?? ref.provider)
+      : name;
+  };
   const selectedModelIndex = modelFilter
     ? modelOptions.findIndex(
         (m) => m.provider === modelFilter.provider && m.modelId === modelFilter.modelId,
@@ -320,7 +339,7 @@ export function UsagePage() {
     ...compactCounts(s, plotted.kept),
   }));
   const modelEntities: EntityCounts[] = (data?.byModelSeries ?? []).map((s) => ({
-    label: catalogEntryFor(s.provider, s.modelId)?.displayName ?? s.modelId,
+    label: modelLabel(s),
     ...compactCounts(s, plotted.kept),
   }));
   return (
@@ -361,7 +380,7 @@ export function UsagePage() {
                 <option value="">{S.usage.filterAllModels}</option>
                 {modelOptions.map((m, i) => (
                   <option key={`${m.provider}:${m.modelId}`} value={String(i)}>
-                    {catalogEntryFor(m.provider, m.modelId)?.displayName ?? m.modelId}
+                    {modelLabel(m)}
                   </option>
                 ))}
               </Select>

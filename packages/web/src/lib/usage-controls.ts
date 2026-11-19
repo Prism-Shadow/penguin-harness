@@ -15,6 +15,20 @@ import type { UsageGranularity, UsageSeriesPoint } from "@prismshadow/penguin-se
 import { cacheHitRate } from "./format";
 import { SERIES_COLORS } from "./category-colors";
 
+export function toolQuantityRows(totals: UsageSeriesPoint["toolQuantities"]) {
+  const units = [
+    "billed_audio_second",
+    "billed_character",
+    "utf8_byte",
+    "billable_request",
+    "image",
+  ] as const;
+  return units.flatMap((unit) => {
+    const quantity = totals?.[unit];
+    return quantity === undefined ? [] : [{ unit, quantity }];
+  });
+}
+
 /** Quick range choices; `1h`/`1d` are trailing timestamp windows, the rest calendar ranges (`custom` reveals the range picker its pair is picked in). */
 export type RangePreset = "1h" | "1d" | "7d" | "30d" | "90d" | "custom";
 

@@ -410,7 +410,11 @@ describe("project model capabilities", () => {
         ).json()) as UsageResponse;
         const expected = (2 * 4 * 0.0001) / 7;
         for (const bucket of [report.summary.total, report.groups[0], report.series.at(-1)]) {
-          expect(bucket).toMatchObject({ total: 0, requests: 2 });
+          expect(bucket).toMatchObject({
+            total: 0,
+            requests: 2,
+            toolQuantities: { billed_audio_second: 8 },
+          });
           expect(bucket?.cost).toBeCloseTo(expected, 12);
         }
         expect(report.summary.total.hasUncosted).toBe(false);
@@ -449,7 +453,11 @@ describe("project model capabilities", () => {
         officialReport.groups[0],
         officialReport.series.at(-1),
       ]) {
-        expect(bucket).toMatchObject({ requests: 1, total: 0 });
+        expect(bucket).toMatchObject({
+          requests: 1,
+          total: 0,
+          toolQuantities: { billed_audio_second: 4 },
+        });
         expect(bucket?.cost).toBeCloseTo((4 * 0.058) / 3600, 12);
       }
     } finally {
@@ -563,6 +571,11 @@ describe("project model capabilities", () => {
   });
   it("keeps four buckets on failed remote MMSP requests, including failed voice polishing", async () => {
     const meter = { unit: "token", quantity: usage.prompt_tokens };
+    const report = async () =>
+      (await (
+        await api.get(base + "/usage?groupBy=model&provider=custom&modelId=gpt-6.2-sol")
+      ).json()) as UsageResponse;
+    const before = (await report()).summary.total;
     for (const error of ["EmptyResponseError", "IncompleteStreamError", "missing usage error"]) {
       const reply = await api.post(base + "/voice-polish", { text: error, sessionId });
       expect(reply.status).toBe(502);
@@ -582,6 +595,13 @@ describe("project model capabilities", () => {
           error === "missing usage error" ? null : { minimumUsd: 0.00004, maximumUsd: 0.00004 },
       });
     }
+    const after = await report();
+    expect(after.summary.total.requests - before.requests).toBe(3);
+    expect(after.summary.total.total - before.total).toBe(2 * (2 + 7 + 5 + 3));
+    expect((after.summary.total.cost ?? 0) - (before.cost ?? 0)).toBeCloseTo(2 * 0.00004, 12);
+    expect(after.summary.total.hasUncosted).toBe(true);
+    expect(after.groups[0]?.hasUncosted).toBe(true);
+    expect(after.series.at(-1)?.hasUncosted).toBe(true);
   });
   it("cancels a background video and keeps the terminal result", async () => {
     const queued = await api.post(tools + "/video/run", { text: "wait", async: true, sessionId });

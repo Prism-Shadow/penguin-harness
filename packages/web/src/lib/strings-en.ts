@@ -5387,6 +5387,13 @@ Scenarios:
     colCacheWrite: "cache_write",
     colOutput: "output",
     estimatedCost: "Estimated cost",
+    toolUnits: {
+      billed_audio_second: "Billed audio (s)",
+      billed_character: "Billed characters",
+      utf8_byte: "Billed bytes",
+      billable_request: "Billable requests",
+      image: "Images",
+    },
     uncostedNote:
       "* Requests without known rates or billable quantities are excluded from estimated cost",
     filterAllAgents: "All agents",

@@ -47,6 +47,10 @@ export interface UsageFilter {
   sessionIds?: readonly string[];
 }
 
+/** MMSP may use prompt_tokens to carry the native quantity billed by the adapter. */
+type ToolInputUnit =
+  "token" | "billable_request" | "billed_audio_second" | "billed_character" | "utf8_byte";
+
 /** Raw Token sums for a single Model (paired reference) — the smallest unit for cost conversion. */
 export interface UsageModelSums {
   tool?: {
@@ -59,7 +63,7 @@ export interface UsageModelSums {
       response_tokens: number | null;
     };
     inputMeter?: {
-      unit: "token" | "billable_request" | "billed_audio_second" | "billed_character" | "utf8_byte";
+      unit: ToolInputUnit;
       quantity: number;
     };
     measurements: { unit: string; quantity: number }[];
@@ -224,9 +228,7 @@ function toSums(r: Record<string, unknown>): UsageModelSums {
         ...(r.input_unit != null &&
           r.input_quantity != null && {
             inputMeter: {
-              unit: r.input_unit as NonNullable<
-                NonNullable<UsageModelSums["tool"]>["inputMeter"]
-              >["unit"],
+              unit: r.input_unit as ToolInputUnit,
               quantity: Number(r.input_quantity),
             },
           }),

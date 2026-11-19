@@ -197,6 +197,28 @@ function costOf(sums: UsageModelSums, tiered?: TieredRates): ToolCostEstimate | 
   return { minimumUsd: usd, maximumUsd: usd };
 }
 
+function addToolQuantities(target: Pick<UsageBucket, "toolQuantities">, row: UsageModelSums) {
+  const tool = row.tool;
+  if (!tool) return;
+  const add = (unit: keyof NonNullable<UsageBucket["toolQuantities"]>, quantity: number) => {
+    const totals = (target.toolQuantities ??= {});
+    totals[unit] = (totals[unit] ?? 0) + quantity;
+  };
+  if (tool.inputMeter && tool.inputMeter.unit !== "token") {
+    add(tool.inputMeter.unit, tool.inputMeter.quantity);
+  }
+  for (const measurement of tool.measurements) {
+    if (measurement.unit === "image") add("image", measurement.quantity);
+    if (
+      measurement.unit === "request" &&
+      tool.inputMeter?.unit !== "billable_request" &&
+      toolPricingFor(catalogEntryFor(row.provider, row.modelId))?.rates[0]?.unit === "request"
+    ) {
+      add("billable_request", measurement.quantity);
+    }
+  }
+}
+
 function addEstimate(
   target: { cost: number | null; costMax?: number },
   estimate: ToolCostEstimate,
@@ -535,6 +557,7 @@ export class UsageService implements UsageQueries {
     for (const r of rows) {
       bucket.total += r.total;
       bucket.requests += r.requests;
+      addToolQuantities(bucket, r);
       const estimate = costOf(r, rates.get(refKey(r.provider, r.modelId)));
       if (estimate) addEstimate(bucket, estimate);
       else bucket.hasUncosted = true;
@@ -569,6 +592,7 @@ export class UsageService implements UsageQueries {
       acc.output += r.output;
       acc.total += r.total;
       acc.requests += r.requests;
+      addToolQuantities(acc, r);
       const rate = rates.get(refKey(r.provider, r.modelId));
       const estimate = costOf(r, rate);
       if (estimate) {
@@ -633,10 +657,12 @@ export class UsageService implements UsageQueries {
       acc.output += r.output;
       acc.total += r.total;
       acc.requests += r.requests;
+      addToolQuantities(acc, r);
       acc.completed += r.completed;
       acc.denominator += r.denominator;
       const estimate = costOf(r, rates.get(refKey(r.provider, r.modelId)));
       if (estimate) addEstimate(acc, estimate);
+      else acc.hasUncosted = true;
     }
     return keys.map((k) => byKey.get(k)!);
   }
