@@ -2,7 +2,7 @@ import type { ProjectConfig } from "@prismshadow/penguin-core";
 import { listSupportedModels, ThinkingLevel } from "@prismshadow/mmsp";
 import type { ModelRefDto } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
-import { runProjectModel, type ModelOutput } from "./capability-model.js";
+import { runProjectModel, type ModelOutput, type ModelRunContext } from "./capability-model.js";
 
 // A custom model ID may use a gateway that rejects reasoning parameters.
 const knownModels = new Set(listSupportedModels().map((entry) => entry.model));
@@ -17,16 +17,13 @@ export async function polishTranscript({
   config,
   model,
   text,
-  signal,
-  sessionId,
+  ...context
 }: {
   config: ProjectConfig;
   model: ModelRefDto;
   text: string;
-  signal: AbortSignal;
-  sessionId?: string;
-}): Promise<Pick<ModelOutput, "text" | "usage" | "inputMeter">> {
-  signal.throwIfAborted();
+} & ModelRunContext): Promise<Pick<ModelOutput, "text" | "usage" | "inputMeter">> {
+  context.signal.throwIfAborted();
   if (!text.trim()) throw new HttpError(400, "empty_transcript", "The transcript is empty.");
   const result = await runProjectModel(
     config,
@@ -36,9 +33,9 @@ export async function polishTranscript({
       system_prompt: config.voice_polish_prompt ?? DEFAULT_VOICE_POLISH_PROMPT,
       ...(knownModels.has(model.modelId) ? { thinking_level: ThinkingLevel.NONE } : {}),
     },
-    { signal, sessionId },
+    { ...context, capability: "voice-polish" },
   );
-  signal.throwIfAborted();
+  context.signal.throwIfAborted();
   if (!result.text.trim())
     throw new HttpError(
       502,

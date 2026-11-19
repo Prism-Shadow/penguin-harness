@@ -12,8 +12,13 @@ import type {
 } from "../api/capabilities.js";
 import type { ModelRefDto } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
-import { playableMedia, runProjectModel, type ModelMedia } from "./capability-model.js";
-import { observeProviderAttempt } from "./capability-attempt.js";
+    const attempt = { sent: false };
+import {
+  playableMedia,
+  runProjectModel,
+  type ModelMedia,
+  type ModelRunContext,
+} from "./capability-model.js";
 import { polishTranscript } from "./voice-polish.js";
 
 const suffix: Record<string, string> = {
@@ -185,7 +190,16 @@ export class CapabilityRuns {
   private async finish(task: Task, row: CapabilityResult, signal: AbortSignal) {
     const files: string[] = [];
     const attempt = { sent: false };
-    const context = { signal, sessionId: task.sessionId };
+    const context: ModelRunContext = {
+      signal,
+      sessionId: task.sessionId,
+      capability: task.capability,
+      onUsage: (usage, inputMeter) => {
+        attempt.sent = true;
+        row.usage = usage;
+        if (inputMeter) row.inputMeter = inputMeter;
+      },
+    };
     try {
       const output = await observeProviderAttempt(attempt, async () =>
         task.capability === "voice-polish" && task.item.type === "text.done"
@@ -215,8 +229,6 @@ export class CapabilityRuns {
             ),
       );
       attempt.sent = true;
-      row.usage = output.usage;
-      if (output.inputMeter) row.inputMeter = output.inputMeter;
       if (output.text) row.text = output.text;
       if (task.capability === "search" || task.capability === "fetch") row.sources = output.sources;
       // A completed upstream request is directly observed, independently of whether its endpoint reports tokens.
@@ -230,6 +242,10 @@ export class CapabilityRuns {
         );
         if (!requested.length)
           throw new HttpError(502, "missing_artifact", "The model returned no " + kind + " file.");
+        row.measurements.push({
+          unit: kind === "audio" ? "audio_file" : kind,
+          quantity: requested.length,
+        });
         await mkdir(this.dir(task.projectId), { recursive: true, mode: 0o700 });
         let seconds = 0;
         for (const blob of requested) {
@@ -267,10 +283,6 @@ export class CapabilityRuns {
           });
         }
         if (seconds > 0) row.measurements.push({ unit: "audio_second", quantity: seconds });
-        row.measurements.push({
-          unit: kind === "audio" ? "audio_file" : kind,
-          quantity: row.artifacts.length,
-        });
       } else if (
         ["stt", "voice-polish", "t2t", "i2t"].includes(task.capability) &&
         !output.text.trim()

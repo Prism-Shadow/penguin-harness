@@ -9,4 +9,4 @@
 
 Cost Center includes model tool calls in request counts and success rates. A provider refusal counts as a failure; cancelling a submitted request keeps it out of the success-rate calculation. Tool calls with a Session also appear under its Agent.
 
-Image generation contributes an estimated cost at the current model price. A range appears when an image service omits the billed resolution tier. Voice duration, characters and other physical units stay in tool usage. The Token totals include quantities reported in tokens.
+The cost estimate uses each provider’s billing unit, including tokens, seconds of transcription, speech characters, images and search requests. A failed request with reported usage still contributes to the estimate. The Token total counts actual tokens. Image services that omit the billed resolution show a price range.

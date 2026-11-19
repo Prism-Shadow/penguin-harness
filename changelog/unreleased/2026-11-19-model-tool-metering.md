@@ -1,4 +1,4 @@
-# Units and image estimates in tool usage
+# Billing units and estimated costs for model tools
 
 - **Date:** 2026-11-19
 - **Type:** feature
@@ -7,6 +7,8 @@
 
 [中文版](./2026-11-19-model-tool-metering.zh.md)
 
-`penguin tools usage` keeps a provider's reported counts and labels the measured input when the adapter identifies its unit. DeepSeek speech recognition uses billed seconds. DeepSeek speech generation counts billable characters, and Fish Audio speech generation counts UTF-8 bytes. A DeepSeek search with no matches uses zero billable requests.
+`penguin tools usage` shows the provider’s reported usage and estimates the charge when you read the history. A failed request keeps any usage the provider reported. Cached input, uncached input, thinking and response tokens each count once.
 
-Image generation includes a USD estimate at the current project or model rate. Ordinary response text uses the image output price. Separately reported thinking uses its own published rate. Services that bill per image use the actual number of images returned. When a service has two image prices and does not identify the tariff in the response, both bounds are shown. Missing rates or quantities leave the estimate unavailable.
+DeepSeek speech recognition uses billed seconds, speech generation uses billable characters, and search and fetch use successful requests. Jina uses input tokens and Fish Audio speech generation uses UTF-8 bytes. The estimate uses the selected seller’s rate and the promotion in effect when the request ran. Project token prices apply to token-billed output.
+
+Mixed image and text output uses the image rate. Services that bill per image use the returned image count. When the service publishes two possible rates, the estimate shows both bounds. An estimate with a missing price or measurement stays unavailable.

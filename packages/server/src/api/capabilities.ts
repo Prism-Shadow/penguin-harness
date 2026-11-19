@@ -73,7 +73,7 @@ export interface CapabilityResult {
   text?: string;
   sources?: { title: string; url: string; content: string }[];
   artifacts: CapabilityArtifact[];
-  /** The original MMSP stop-event buckets, including nulls for unreported counts. */
+  /** The original MMSP stop or error buckets, including nulls for unreported counts. */
   usage: CapabilityUsage | null;
   /** Absent for historical runs and when the adapter does not identify its input unit. */
   inputMeter?: CapabilityInputMeter;
