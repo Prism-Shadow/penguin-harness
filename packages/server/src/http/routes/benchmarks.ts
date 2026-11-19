@@ -26,7 +26,7 @@ import type {
 import type { BenchmarkCaseInput } from "@prismshadow/penguin-library-benchmark/types";
 import { benchmarkTooLarge } from "@prismshadow/penguin-library-benchmark/benchmark-archive";
 import { isHttpUrl } from "../../services/protocol-detect.js";
-import { MAX_ARCHIVE_BYTES } from "../../services/skill-import-limits.js";
+import { MAX_ARCHIVE_BYTES } from "@prismshadow/penguin-library-http/skill-import-limits";
 import type { Benchmarks } from "../../mechanisms/agents.js";
 import type { Access } from "@prismshadow/penguin-library-project";
 import {
