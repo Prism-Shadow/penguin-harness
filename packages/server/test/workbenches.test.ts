@@ -7,6 +7,13 @@
  *   under ui/ (no default document, nothing outside it) and dispatches to its handler, and its
  *   state persists on disk across a reload.
  * - Its own state write is not an edit: the revision holds and nothing is left staged.
+ * - It has three folders of its own — data and cache beside the Agent State, state at a short
+ *   path under the data root's `run/` — made when asked for, which its handler reads and writes
+ *   with Node's own `fs` (typed for it): what one side writes the other reads, and neither write
+ *   reloads it. It listens on a local socket in its state folder, and a socket path past the
+ *   103 bytes a Unix socket path holds is refused naming the limit.
+ * - An Agent named `aux` and a workbench named `report.v2`, made before such names were refused,
+ *   still open; a new Agent under a name Windows reserves is refused.
  * - With a configured model credential, it opens and runs Sessions the SDK's way, inside
  *   its own Project only, with allow-all: nobody is there to answer an ask. Its Sessions
  *   are archived with workbench provenance, including before their first run after a restart.
@@ -42,7 +49,8 @@
  * - Several contributed tabs are exposed in order.
  * - A tab outside ui/, a closed contribution slot and a malformed tab are each refused.
  * - Pages with no tab get a hint in the API and status file; adding a tab clears it.
- * - Removing a workbench removes its folder and its versions are no longer listed.
+ * - Removing a workbench removes its folder, its data, cache and state folders, and its versions
+ *   are no longer listed; another workbench's data stays.
  * - A legacy Workflow package loads through the new route after one-time conversion, with its state intact.
  *
  * Every load runs the TypeScript compiler, so the loaded-once group shares one app and one
@@ -53,8 +61,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
-import envPaths from "env-paths";
-import { agentDir, agentStateDir, isValidId } from "@prismshadow/penguin-core";
+import { agentDir, agentStateDir, createAgent, workbenchStateDir } from "@prismshadow/penguin-core";
 import type { IfaceTable } from "@prismshadow/penguin-core/kernel";
 import type {
   WorkbenchInfo,
@@ -64,9 +71,6 @@ import type {
   ArchivedSessionsResponse,
   AgentsResponse,
 } from "../src/api/types.js";
-import type { WorkbenchAppStorage } from "../src/mechanisms/workbenches.js";
-import { isWorkbenchId } from "../src/workbenches/store.js";
-import { SEMANTIC_ID_PATTERN } from "../src/services/ids.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 import { MOCK_MODEL_ID, requestText, startMockLLM } from "./live-session.js";
@@ -104,10 +108,14 @@ function packageJson(modules: unknown[] = [MANIFEST], extra: Record<string, unkn
 }
 
 function indexSource(greeting: string): string {
-  // These handlers only use ES2022 APIs. Loading the DOM declarations on every fixture
-  // compilation adds work without exercising another part of the workbench contract.
+  // These handlers only use ES2022 APIs and Node's own modules, which the server types for
+  // every workbench. Loading the DOM declarations on every fixture compilation adds work
+  // without exercising another part of the workbench contract.
   return `/// <reference no-default-lib="true" />
 /// <reference lib="es2022" />
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import net from "node:net";
+import path from "node:path";
 import type { WorkbenchPackage } from "@prismshadow/penguin-server/plugin";
 
 export default {
@@ -135,7 +143,7 @@ export default {
                   const opened = await host
                     .createSession({
                       ...(mode === undefined ? {} : { approvalMode: mode as "deny-all" }),
-                      ...(modelId ? {model: {provider: "custom", modelId}} : {}),
+                      ...(modelId ? { model: { provider: "custom", modelId } } : {}),
                     })
                     .catch((e: Error) => e.message);
                   if (typeof opened !== "string") {
@@ -174,29 +182,41 @@ export default {
                   const headers: Record<string, string> = { location: "page" };
                   return { status: 302, headers };
                 }
+                if (req.path === "/files" && req.method === "POST") {
+                  // The page saves a document the Agent edits with its own file tools: Node's
+                  // own fs on the workbench's data folder, behind a route of its own.
+                  const paths = host.dataPaths();
+                  const at = path.join(paths.dataDir, "decks", "a.json");
+                  await mkdir(path.dirname(at), { recursive: true });
+                  await writeFile(at, JSON.stringify(req.body));
+                  return { body: { at, size: (await stat(at)).size, paths } };
+                }
+                if (req.path === "/files") {
+                  const at = path.join(host.dataPaths().dataDir, "notes", "agent.md");
+                  return { body: { notes: await readFile(at, "utf8").catch(() => null) } };
+                }
+                if (req.path === "/socket") {
+                  // A local socket in the state folder: listen, connect, and say what came back.
+                  const at = host.socketPath("t.sock");
+                  let tooLong: string | null = null;
+                  try {
+                    host.socketPath("x".repeat(120));
+                  } catch (e) {
+                    tooLong = (e as Error).message;
+                  }
+                  const server = net.createServer((socket) => socket.end("pong"));
+                  await new Promise<void>((resolve) => server.listen(at, resolve));
+                  const reply = await new Promise<string>((resolve) => {
+                    let text = "";
+                    net.connect(at).on("data", (chunk) => (text += chunk.toString())).on("end", () => resolve(text));
+                  });
+                  await new Promise<void>((resolve) => server.close(() => resolve()));
+                  return { body: { at, reply, tooLong } };
+                }
                 if (req.path === "/count" && req.method === "POST") {
                   const n = (((host.getState() ?? {}) as { count?: number }).count ?? 0) + 1;
                   await host.setState({ count: n });
                   return { body: { count: n } };
-                }
-                if (req.path === "/data-paths") {
-                  if (req.method === "POST") {
-                    try {
-                      return { body: { ok: host.dataPaths(req.body as Parameters<typeof host.dataPaths>[0]) } };
-                    } catch (e) {
-                      return { status: 400, body: { error: (e as Error).message } };
-                    }
-                  }
-                  return {
-                    body: {
-                      agent: host.dataPaths(),
-                      agentCustom: host.dataPaths({ appId: "com.example.custom" }),
-                      projectDefault: host.dataPaths({ level: "project" }),
-                      project: host.dataPaths({ level: "project", appId: "com.example.shared" }),
-                      server: host.dataPaths({ level: "server", appId: "com.example.shared" }),
-                      machine: host.dataPaths({ level: "machine", appId: "com.example.shared" }),
-                    },
-                  };
                 }
                 return { status: 200, body: { greeting: ${JSON.stringify(greeting)}, path: req.path, q: req.query } };
               },
@@ -346,6 +366,94 @@ describe("a loaded workbench", { timeout: 30_000 }, () => {
     expect(after!.loadedAt).toBe(before!.loadedAt);
     const left = (await fs.readdir(dir)).filter((n) => n.includes("tmp"));
     expect(left).toEqual([]);
+  });
+
+  it("has three folders of its own, read and written with Node's fs: the Agent reads what the handler wrote, and neither write is an edit", async () => {
+    const [before] = await list();
+    const agent = agentDir(t.root, PROJECT, AGENT);
+    const expected = {
+      dataDir: path.join(agent, "app", "data", "demo"),
+      cacheDir: path.join(agent, "app", "cache", "demo"),
+      stateDir: workbenchStateDir(t.root, PROJECT, AGENT, "demo"),
+    };
+
+    const saved = await owner.post(`${BASE}/demo/api/files`, { title: "A" });
+    expect(saved.status, await saved.clone().text()).toBe(200);
+    const { at, size, paths } = (await saved.json()) as {
+      at: string;
+      size: number;
+      paths: typeof expected;
+    };
+    expect(paths).toEqual(expected);
+    for (const dir of Object.values(paths)) expect((await fs.stat(dir)).isDirectory()).toBe(true);
+    // The state folder sits at a short path of its own, beside no Agent folder.
+    expect(paths.stateDir.startsWith(path.join(t.root, "run") + path.sep)).toBe(true);
+    // The path the handler names is where the Agent finds its write.
+    expect(at).toBe(path.join(expected.dataDir, "decks", "a.json"));
+    expect(size).toBe(13);
+    expect(await fs.readFile(at, "utf8")).toBe('{"title":"A"}');
+
+    // The Agent writes a second file with its own file tools; the handler reads it.
+    await fs.mkdir(path.join(expected.dataDir, "notes"), { recursive: true });
+    await fs.writeFile(path.join(expected.dataDir, "notes", "agent.md"), "from the Agent");
+    expect(await (await owner.get(`${BASE}/demo/api/files`)).json()).toEqual({
+      notes: "from the Agent",
+    });
+
+    // Past the watcher's settle time, the same load still serves: no reload, no new version.
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    const [after] = await list();
+    expect(after!.revision).toBe(before!.revision);
+    expect(after!.loadedAt).toBe(before!.loadedAt);
+    expect(after!.error).toBeNull();
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "listens on a local socket in its state folder, and a socket path past the limit is refused naming it",
+    async (ctx) => {
+      const state = workbenchStateDir(t.root, PROJECT, AGENT, "demo");
+      // A temp folder as long as macOS's leaves no room: the limit is the case below.
+      if (Buffer.byteLength(path.join(state, "t.sock")) > 103) ctx.skip();
+      const res = await owner.get(`${BASE}/demo/api/socket`);
+      expect(res.status, await res.clone().text()).toBe(200);
+      const body = (await res.json()) as { at: string; reply: string; tooLong: string };
+      expect(body.at).toBe(path.join(state, "t.sock"));
+      expect(body.reply).toBe("pong");
+      expect(body.tooLong).toMatch(/a Unix socket path holds at most 103/);
+    },
+  );
+
+  it("an Agent named aux and a workbench named report.v2, made before such names were refused, still open", async () => {
+    // A Project of its own, so the shared Project's Agent list stays as the other cases expect.
+    const project = "owner-odd";
+    const created = await owner.post("/api/projects", { projectId: project, name: "odd" });
+    expect(created.status, await created.text()).toBe(201);
+    // Made the way the CLI or an older server made them, straight on disk.
+    await createAgent({ root: t.root, projectId: project, agentId: "aux" });
+    const old = path.join(agentStateDir(t.root, project, "aux"), "workbenches", "report.v2");
+    await writeDemo(old);
+
+    const agents = (await (
+      await owner.get(`/api/projects/${project}/agents`)
+    ).json()) as AgentsResponse;
+    expect(agents.agents.map((a) => a.agentId)).toContain("aux");
+    expect((await owner.get(`/api/projects/${project}/agents/aux/config`)).status).toBe(200);
+    const route = `/api/projects/${project}/agents/aux/workbenches`;
+    const [loaded] = await listOf(owner, route);
+    expect(loaded).toMatchObject({ id: "report.v2", error: null });
+    const res = await owner.get(`${route}/report.v2/api/greet`);
+    expect(await res.json()).toMatchObject({ greeting: "hello", path: "/greet" });
+  });
+
+  it("refuses a new Agent under a name Windows reserves", async () => {
+    for (const agentId of ["nul", "com1"]) {
+      const res = await owner.post(`/api/projects/${PROJECT}/agents`, { agentId });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toMatchObject({ error: { code: "invalid_agent_id" } });
+      await expect(fs.stat(agentDir(t.root, PROJECT, agentId))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    }
   });
 
   it("opens and runs Sessions the SDK's way, inside its own Project only", async () => {
@@ -563,129 +671,6 @@ describe("a loaded workbench", { timeout: 30_000 }, () => {
     expect((await owner.get(`${BASE}/demo/ui/index.html`)).status).toBe(200);
     expect((await owner.get(`${BASE}/nope/ui/index.html`)).status).toBe(404);
     expect((await owner.get(`${BASE}/nope/api/`)).status).toBe(404);
-  });
-
-  it("exposes persistent app storage directories via host.dataPaths()", async () => {
-    const appId = `${AGENT}.demo`;
-    const customAppId = "com.example.custom";
-    const sharedAppId = "com.example.shared";
-    const agentBase = path.join(agentDir(t.root, PROJECT, AGENT), "app");
-    const projectBase = path.join(t.root, PROJECT, "app");
-    const serverBase = path.join(t.root, "app");
-    const machineBase = path.join(envPaths("penguin", { suffix: "" }).data, "app");
-
-    const fromHost = (await (await owner.get(`${BASE}/demo/api/data-paths`)).json()) as {
-      agent: WorkbenchAppStorage;
-      agentCustom: WorkbenchAppStorage;
-      projectDefault: WorkbenchAppStorage;
-      project: WorkbenchAppStorage;
-      server: WorkbenchAppStorage;
-      machine: WorkbenchAppStorage;
-    };
-    expect(fromHost.agent).toEqual({
-      appId,
-      level: "agent",
-      dataDir: path.join(agentBase, "data", appId),
-      cacheDir: path.join(agentBase, "cache", appId),
-      stateDir: path.join(agentBase, "state", appId),
-    });
-    expect(fromHost.agentCustom).toEqual({
-      appId: customAppId,
-      level: "agent",
-      dataDir: path.join(agentBase, "data", customAppId),
-      cacheDir: path.join(agentBase, "cache", customAppId),
-      stateDir: path.join(agentBase, "state", customAppId),
-    });
-    expect(fromHost.projectDefault).toEqual({
-      appId,
-      level: "project",
-      dataDir: path.join(projectBase, "data", appId),
-      cacheDir: path.join(projectBase, "cache", appId),
-      stateDir: path.join(projectBase, "state", appId),
-    });
-    expect(fromHost.project).toEqual({
-      appId: sharedAppId,
-      level: "project",
-      dataDir: path.join(projectBase, "data", sharedAppId),
-      cacheDir: path.join(projectBase, "cache", sharedAppId),
-      stateDir: path.join(projectBase, "state", sharedAppId),
-    });
-    expect(fromHost.server).toEqual({
-      appId: sharedAppId,
-      level: "server",
-      dataDir: path.join(serverBase, "data", sharedAppId),
-      cacheDir: path.join(serverBase, "cache", sharedAppId),
-      stateDir: path.join(serverBase, "state", sharedAppId),
-    });
-    expect(fromHost.machine).toEqual({
-      appId: sharedAppId,
-      level: "machine",
-      dataDir: path.join(machineBase, "data", sharedAppId),
-      cacheDir: path.join(machineBase, "cache", sharedAppId),
-      stateDir: path.join(machineBase, "state", sharedAppId),
-    });
-
-    for (const validAppId of [
-      "report_",
-      "report-",
-      "_agent.demo",
-      "-agent.demo",
-      "a".repeat(200),
-    ]) {
-      const res = await owner.post(`${BASE}/demo/api/data-paths`, { appId: validAppId });
-      expect(res.status).toBe(200);
-      const body = (await res.json()) as { ok: WorkbenchAppStorage };
-      expect(body.ok.appId).toBe(validAppId);
-    }
-
-    expect(isWorkbenchId("demo")).toBe(true);
-    expect(isWorkbenchId("report_v2-1")).toBe(true);
-    for (const badWorkbenchId of [
-      "",
-      ".",
-      "..",
-      "report.v2",
-      "report.",
-      "report..v2",
-      "CON",
-      "nul",
-      "com1",
-      "lpt9",
-      "notes.penguin-tmp1",
-    ]) {
-      expect(isWorkbenchId(badWorkbenchId)).toBe(false);
-    }
-    for (const reserved of ["con", "prn", "aux", "nul", "com1", "lpt9"]) {
-      expect(SEMANTIC_ID_PATTERN.test(reserved)).toBe(false);
-      expect(isValidId(reserved)).toBe(false);
-      expect(isValidId(reserved.toUpperCase())).toBe(false);
-    }
-
-    const invalidCases: Array<{ input: unknown; match: RegExp }> = [
-      { input: { appId: "" }, match: /invalid appId/ },
-      { input: { appId: "." }, match: /invalid appId/ },
-      { input: { appId: ".." }, match: /invalid appId/ },
-      { input: { appId: "a..b" }, match: /invalid appId/ },
-      { input: { appId: "../escape" }, match: /invalid appId/ },
-      { input: { appId: "a/b" }, match: /invalid appId/ },
-      { input: { appId: "a\\b" }, match: /invalid appId/ },
-      { input: { appId: "bad\0id" }, match: /invalid appId/ },
-      { input: { appId: "CON" }, match: /invalid appId/ },
-      { input: { appId: "nul.txt" }, match: /invalid appId/ },
-      { input: { appId: "bad:colon" }, match: /invalid appId/ },
-      { input: { appId: "trailing." }, match: /invalid appId/ },
-      { input: { appId: ".leading" }, match: /invalid appId/ },
-      { input: { appId: "a".repeat(201) }, match: /invalid appId/ },
-      { input: { appId: null }, match: /invalid appId/ },
-      { input: { level: null }, match: /invalid level/ },
-      { input: { level: "cloud" }, match: /invalid level/ },
-    ];
-    for (const { input, match } of invalidCases) {
-      const res = await owner.post(`${BASE}/demo/api/data-paths`, input);
-      expect(res.status).toBe(400);
-      const body = (await res.json()) as { error: string };
-      expect(body.error).toMatch(match);
-    }
   });
 
   it("notices an Agent's FIRST workbench, made with nothing but its file tools", async () => {
@@ -1135,7 +1120,16 @@ describe("editing a workbench", { timeout: 30_000 }, () => {
     expect(((await reload()) as { hints: string[] }).hints).toEqual([]);
   });
 
-  it("removes the folder on request, and its versions are no longer listed", async () => {
+  it("removes the folder and its data on request, and its versions are no longer listed", async () => {
+    const app = path.join(agentDir(t.root, PROJECT, agentId), "app");
+    // What the workbench and its Agent wrote beside the State, and another workbench's data.
+    for (const rel of ["data/demo/decks/a.json", "cache/demo/thumb.png", "data/other/keep.md"]) {
+      await fs.mkdir(path.dirname(path.join(app, rel)), { recursive: true });
+      await fs.writeFile(path.join(app, rel), "x");
+    }
+    const state = workbenchStateDir(t.root, PROJECT, agentId, "demo");
+    await fs.mkdir(state, { recursive: true });
+    await fs.writeFile(path.join(state, "dev.lock"), "x");
     const count = async () => {
       const response = (await (
         await owner.get(`/api/projects/${PROJECT}/agents`)
@@ -1149,6 +1143,13 @@ describe("editing a workbench", { timeout: 30_000 }, () => {
     expect(await count()).toBe(0);
     expect(await list()).toEqual([]);
     await expect(fs.stat(dir)).rejects.toThrow();
+    // Its data, cache and state went with it, so a workbench made again under this id starts empty.
+    await expect(fs.stat(path.join(app, "data", "demo"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(fs.stat(path.join(app, "cache", "demo"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(fs.stat(state)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await fs.readFile(path.join(app, "data", "other", "keep.md"), "utf8")).toBe("x");
     expect((await owner.get(`${base}/demo/api/`)).status).toBe(404);
     expect((await owner.delete(`${base}/demo`)).status).toBe(404);
     // The removal is a commit of its own: the history walk stops there.

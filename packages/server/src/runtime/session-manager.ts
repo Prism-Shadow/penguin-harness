@@ -65,6 +65,8 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
+  agentAppDir,
+  agentRunDir,
   createAgent,
   findLatestTraceFile,
   getModel,
@@ -115,7 +117,7 @@ import type { TitleNotifier } from "./title-generator.js";
 import { Component, Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { SessionService as SessionServiceImpl } from "../services/session-service.js";
 import type { ClassCtx, Json, Opaque } from "@prismshadow/penguin-core/kernel";
-import { appStorageRoots, Sandbox, SandboxModule } from "../sandbox/service.js";
+import { Sandbox, SandboxModule } from "../sandbox/service.js";
 import { SANDBOX_GROUP } from "../sandbox/settings-store.js";
 import { sandboxEnabledOf, sandboxPresetsOf, sandboxStartOf } from "../sandbox/settings-policy.js";
 import { PluginConfig } from "../plugin/config.js";
@@ -2953,18 +2955,21 @@ export class SessionsModule {
       // Each Session confines under its OWN policy — the snapshot on its row, its root's for a
       // subagent — so a settings change reaches only Sessions created after it. A row from
       // before snapshots takes the settings at its first command and keeps them from then on.
+      // Under workspace-write the Agent's workbench folders are writable too, once something has
+      // created them: `<agentDir>/app` (data and cache) and its runtime folder under `<root>/run`
+      // (sockets, pipes, locks).
       confineSpawn: (ctx: ControlEnvContext) =>
-        sandbox.confinerFor(
-          () => {
-            const root = manager.rootSessionOf(ctx.sessionId);
-            const row = sessionsRepo.findById(root);
-            if (row?.sandbox) return row.sandbox;
-            const snapshot = sandbox.currentSettings();
-            if (row !== null) sessionsRepo.updateSandbox(root, snapshot);
-            return snapshot;
-          },
-          appStorageRoots(config.root, ctx.projectId, ctx.agentId),
-        ),
+        sandbox.confinerFor(() => {
+          const root = manager.rootSessionOf(ctx.sessionId);
+          const row = sessionsRepo.findById(root);
+          if (row?.sandbox) return row.sandbox;
+          const snapshot = sandbox.currentSettings();
+          if (row !== null) sessionsRepo.updateSandbox(root, snapshot);
+          return snapshot;
+        }, [
+          agentAppDir(config.root, ctx.projectId, ctx.agentId),
+          agentRunDir(config.root, ctx.projectId, ctx.agentId),
+        ]),
     };
 
     const notifyProjectUsers = (projectId: string, event: ServerEvent): void =>

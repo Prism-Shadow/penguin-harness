@@ -34,12 +34,5 @@
  * Where none implements a requested dimension, service.ts fails closed naming what each
  * covers rather than quietly confining less than was asked.
  */
-export {
-  appStorageBaseDir,
-  appStorageRoots,
-  assertValidAppId,
-  isValidAppId,
-  machineDataDir,
-  SandboxService,
-} from "./service.js";
+export { SandboxService } from "./service.js";
 export { SANDBOX_DIMENSIONS, providerDimensions, requestedDimensions } from "./dimensions.js";

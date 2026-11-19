@@ -6,7 +6,8 @@
  *
  * - `WorkbenchHost` is what the server PUBLISHES into every workbench tree (the workbench's
  *   manifest requires it `from: "Host"`): Sessions of the Project's Agents, opened and run
- *   the way the SDK does it and followed live, a small state document, a log line.
+ *   the way the SDK does it and followed live, a small state document, where its own data,
+ *   cache and state folders are, a log line.
  * - `WorkbenchMain` is what a workbench PROVIDES: a JSON request handler the server mounts
  *   under `/api/projects/:p/agents/:a/workbenches/:id/api/*`, which the workbench's own UI
  *   (served from its `ui/` folder) calls.
@@ -44,18 +45,26 @@ import type {
  */
 export type WorkbenchApprovalMode = "allow-all" | "deny-all";
 
-/** Scope level of persistent app storage (`machine`, `server`, `project` or `agent`). */
-export type WorkbenchAppLevel = "agent" | "project" | "server" | "machine";
-
 /**
- * One persistent app storage entry a workbench or its Agent may access: its `appId`, scope `level`,
- * and resolved `dataDir`, `cacheDir` and `stateDir` paths on this machine.
+ * Where a workbench's own folders are on the server's machine. The handler reads and writes them
+ * with Node's own `fs` (`node:fs`, `node:path`, `node:net` are typed for it) and serves what its
+ * page needs from its own routes; the host offers no file API.
  */
-export interface WorkbenchAppStorage {
-  appId: string;
-  level: WorkbenchAppLevel;
+export interface WorkbenchDataPaths {
+  /**
+   * The data folder (`<agentDir>/app/data/<id>`): files the handler and the Agent both write,
+   * the Agent with its own file tools. It travels in the Agent export with the workbench's data
+   * and is removed with the workbench.
+   */
   dataDir: string;
+  /** Files that can be made again (`<agentDir>/app/cache/<id>`): never exported, removed with the workbench. */
   cacheDir: string;
+  /**
+   * Runtime-only files — Unix sockets, pipes, locks — at a short path (`<root>/run/…`), since a
+   * Unix socket path holds at most 103 bytes here: name a socket with `socketPath`. Never
+   * exported, removed with the workbench, kept across restarts (unlink a stale socket before
+   * listening).
+   */
   stateDir: string;
 }
 
@@ -116,11 +125,17 @@ export abstract class WorkbenchHost {
    */
   abstract subscribe(sessionId: string, listener: (record: WorkbenchRecord) => void): () => void;
   /**
-   * The persistent app storage directories for this workbench (`{ appId, level, dataDir, cacheDir,
-   * stateDir }`), defaulting to `<agentId>.<workbenchId>` at `agent` level (`opts` may override
-   * `level` — `"agent" | "project" | "server" | "machine"` — and `appId`).
+   * Where this workbench's data, cache and state folders are. All three exist once this
+   * returns, so a path in them can be handed to the Agent, whose commands may write them even in
+   * a `workspace-write` sandbox. A link where one of them belongs is refused.
    */
-  abstract dataPaths(opts?: { level?: WorkbenchAppLevel; appId?: string }): WorkbenchAppStorage;
+  abstract dataPaths(): WorkbenchDataPaths;
+  /**
+   * What to `listen` on for a local socket called `name`: `<stateDir>/<name>`, or on Windows a
+   * named pipe (`\\.\pipe\penguin-…-<name>`), which is no path on disk. Throws, naming the limit,
+   * when the path would pass the 103 bytes a Unix socket path holds.
+   */
+  abstract socketPath(name: string): string;
   /** The workbench's own document (`state.json`, kept by the server across reloads and rollbacks). */
   abstract getState(): unknown;
   abstract setState(state: unknown): Promise<void>;

@@ -74,12 +74,9 @@ export interface WorkbenchFolder {
 
 export { workbenchesDir } from "@prismshadow/penguin-core";
 
-const WORKBENCH_ID_PATTERN =
-  /^(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$)[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/i;
-
 /** A workbench id is one path segment of the folder's own name; nothing else is accepted. */
 export function isWorkbenchId(id: string): boolean {
-  return WORKBENCH_ID_PATTERN.test(id);
+  return /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(id) && id !== "." && id !== "..";
 }
 
 export function isSafeRelPath(rel: string): boolean {

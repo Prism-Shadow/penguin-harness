@@ -25,33 +25,33 @@ PenguinHarness 的全部运行时数据都存放在本地文件系统上。配�
 数据根目录由环境变量 `PENGUIN_HOME` 指定，默认为 `~/.penguin/data`。目录布局统一定义在 `packages/core/src/state/paths.ts` 中：
 
 ```text
-<root>/
-├── app/                              # server-level app storage: {data,cache,state}/<app_id>
-└── <project>/
-    ├── .project_config.toml          # Project-level models & credentials (hidden file, 0600)
-    ├── app/                          # project-level app storage: {data,cache,state}/<app_id>
-    ├── benchmarks/                   # capability Benchmark cases and scores, one directory per
-    │                                 # Benchmark — a peer of the Agents, evaluating any of them
-    └── agents/
-        └── <agent>/
-            ├── agent_state/          # system_config.yaml, AGENTS.md, .vault.toml,
-            │                         # tools/, skills/, hooks/, schedule/
-            │   ├── memory/           # Memory: user/ plus one directory per Workspace,
-            │   │                     # each with its own MEMORY.md index
-            │   └── workbenches/      # one folder per workbench: source, ui/, state.json
-            ├── agent_state.git/      # bare git repository the server writes: workbench versions
-            ├── app/                  # agent-level app storage: {data,cache,state}/<app_id>
-            ├── traces/
-            │   └── <yyyy-mm-dd>/<sessionId>_<index3>.jsonl
-            ├── scratchpad/           # temp files, one subdirectory per Session id (e.g. pasted images)
-            ├── shared_env/           # shared interpreter/tool environments (virtualenvs, pipx,
-            │                         # caches) the Agent creates on demand — a system prompt
-            │                         # convention, not a path the code creates, so tooling is
-            │                         # installed once for any task; project dependencies stay
-            │                         # in the project
-            ├── workspaces/           # temporary Workspaces (tmp-<8hex>)
-            └── snapshots/            # Agent State version snapshots
+<root>/<project>/
+├── .project_config.toml          # Project-level models & credentials (hidden file, 0600)
+├── benchmarks/                   # capability Benchmark cases and scores, one directory per
+│                                 # Benchmark — a peer of the Agents, evaluating any of them
+└── agents/
+    └── <agent>/
+        ├── agent_state/              # system_config.yaml, AGENTS.md, .vault.toml,
+        │                             # tools/, skills/, hooks/, schedule/
+        │   ├── memory/               # Memory: user/ plus one directory per Workspace,
+        │   │                         # each with its own MEMORY.md index
+        │   └── workbenches/          # one folder per workbench: source, ui/, state.json
+        ├── agent_state.git/          # bare git repository the server writes: workbench versions
+        ├── app/                      # workbench folders beside the Agent State: data/<workbench>/
+        │                             # (exported with the workbench's data) and cache/<workbench>/
+        ├── traces/
+        │   └── <yyyy-mm-dd>/<sessionId>_<index3>.jsonl
+        ├── scratchpad/               # temp files, one subdirectory per Session id (e.g. pasted images)
+        ├── shared_env/               # shared interpreter/tool environments (virtualenvs, pipx,
+        │                             # caches) the Agent creates on demand — a system prompt
+        │                             # convention, not a path the code creates, so tooling is
+        │                             # installed once for any task; project dependencies stay
+        │                             # in the project
+        ├── workspaces/               # temporary Workspaces (tmp-<8hex>)
+        └── snapshots/                # Agent State version snapshots
 ```
+
+工作台的运行时文件（Unix socket、管道、锁）另放在 `<root>/run/<project>/<agent>/<workbench>/`，每一级是其 id 的 10 位哈希，使 socket 路径不超过 Unix socket 路径的 103 字节上限。它们从不导出，随所属的工作台、Agent 或 Project 一并删除。
 
 各配置文件的字段见[配置参考](/configuration)。
 

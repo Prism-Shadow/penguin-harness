@@ -15,6 +15,7 @@ import { randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { strFromU8 } from "fflate";
+import { isWindowsReservedName } from "@prismshadow/penguin-core";
 import { HttpError, badRequest } from "../http/errors.js";
 import {
   MAX_ARCHIVE_FILES,
@@ -49,8 +50,6 @@ export function folded(name: string): string {
   return name.normalize("NFC").toLowerCase();
 }
 
-/** Windows reserves these device names, with or without an extension, in any letter case. */
-const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
 /** Characters no Windows name holds. */
 const WINDOWS_FORBIDDEN = /[<>:"|?*]/;
 /** The longest name a disk keeps, in UTF-8 bytes. */
@@ -68,8 +67,7 @@ function notSource(name: string): string | null {
     if (isGitName(segment)) return "a name git reserves";
     if (
       WINDOWS_FORBIDDEN.test(segment) ||
-      WINDOWS_RESERVED.test(segment) ||
-      /[. ]$/.test(segment) ||
+      isWindowsReservedName(segment) ||
       Buffer.byteLength(segment) > MAX_SEGMENT_BYTES
     ) {
       return "a name Windows cannot hold";
@@ -201,7 +199,7 @@ export function parseWorkbenchArchive(archive: Buffer): WorkbenchArchive {
   const id = dirName ?? idOfRootPackage(pkg);
   if (!isWorkbenchId(id)) {
     throw badRequest(
-      `Invalid workbench id ${JSON.stringify(id)}: up to 64 letters, digits, "_" and "-", starting with a letter or digit.`,
+      `Invalid workbench id ${JSON.stringify(id)}: up to 64 letters, digits, ".", "_" and "-", starting with a letter or digit.`,
     );
   }
   const source = new Map<string, Uint8Array>();
