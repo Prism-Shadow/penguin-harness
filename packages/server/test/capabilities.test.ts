@@ -212,7 +212,7 @@ describe("project model capabilities", () => {
     expect(received.length - calls).toBe(3);
   });
   it("prices historical image runs at read time and keeps physical voice units out of the token total", async () => {
-    const project = "tool_usage_history";
+    const project = "history_" + crypto.randomUUID().slice(0, 8);
     const created = await api.post("/api/projects", {
       projectId: project,
       name: "Tool usage history",
@@ -223,8 +223,8 @@ describe("project model capabilities", () => {
       "INSERT INTO capability_runs(id,project_id,created_at,status,data) VALUES(?,?,?,?,?)",
     );
     const at = new Date().toISOString();
-    function add(id: string, status: string, data: Record<string, unknown>) {
-      tx.run(id, project, at, status, JSON.stringify(data));
+    function add(id: string, status: string, data: Record<string, unknown>, createdAt = at) {
+      tx.run(project + "-" + id, project, createdAt, status, JSON.stringify(data));
     }
     const image = { provider: "openrouter", modelId: "bytedance-seed/seedream-5-5" };
     const voice = { provider: "deepseek", modelId: "deepseek-asr" };
@@ -300,6 +300,35 @@ describe("project model capabilities", () => {
       .summary.total;
     expect(repriced.cost).toBeCloseTo(0.0116, 10);
     expect(repriced.costMax).toBeUndefined();
+    // A failed stream can carry billable output. These two requests straddle the
+    // end of the published TTS promotion by one millisecond.
+    const audioModel = { provider: "google", modelId: "gemini-3.8-flash-tts" };
+    for (const [i, instant] of ["2026-12-31T23:59:59.999Z", "2027-01-01T00:00:00.000Z"].entries()) {
+      add(
+        "promo" + i,
+        "failed",
+        {
+          model: audioModel,
+          capability: "tts",
+          usage: {
+            cached_tokens: 0,
+            prompt_tokens: 1000,
+            thoughts_tokens: 0,
+            response_tokens: 2000,
+          },
+          inputMeter: { unit: "token", quantity: 1000 },
+        },
+        instant,
+      );
+    }
+    const promo = await get(
+      "groupBy=model&provider=google&modelId=gemini-3.8-flash-tts&from=2026-12-31&to=2027-01-02",
+    );
+    const billed = ((1000 + 2000 * 18) / 1e6) * 1.5;
+    expect(promo.summary.total).toMatchObject({ requests: 2, total: 6000, hasUncosted: false });
+    expect(promo.summary.total.cost).toBeCloseTo(billed, 12);
+    expect(promo.groups[0]?.cost).toBeCloseTo(billed, 12);
+    expect(promo.series.reduce((sum, x) => sum + (x.cost ?? 0), 0)).toBeCloseTo(billed, 12);
   });
   // A project with both DeepSeek ASR listings must send dictation, CLI and probe traffic
   // to the selected provider, with that provider's key and native audio endpoint.
@@ -332,13 +361,20 @@ describe("project model capabilities", () => {
     });
     const audio = { data: wavBase64, mimeType: "audio/wav" };
     const upstream = stubFetch((call) =>
-      call.headers.get("authorization") === "Bearer tokendance-test-key"
+      ["Bearer tokendance-test-key", "Bearer deepseek-test-key"].includes(
+        call.headers.get("authorization") ?? "",
+      )
         ? jsonResponse({ text: "Transcribed", duration_ms: 3200 })
         : jsonResponse({ error: { message: "Invalid TokenDance key" } }, 401),
     );
     try {
       const reply = await api.post(capabilities + "/stt/run", { audio });
-      expect(await reply.json()).toMatchObject({ model, text: "Transcribed" });
+      expect(await reply.json()).toMatchObject({
+        model,
+        text: "Transcribed",
+        usage: { prompt_tokens: 4 },
+        inputMeter: { unit: "billed_audio_second", quantity: 4 },
+      });
       const cli = await api.post(capabilities + "/cli", { args: ["stt", "sample.wav"], audio });
       const started = (await cli.json()) as { result: { id: string } };
       expect(started).toMatchObject({ kind: "run", detached: false, result: { model } });
@@ -373,6 +409,26 @@ describe("project model capabilities", () => {
         ok: false,
         message: expect.stringContaining("Invalid TokenDance key"),
       });
+      expect(
+        (await api.patch(capabilities + "/tools", { bindings: { s2t: official } })).status,
+      ).toBe(200);
+      const sent = await api.post(capabilities + "/stt/run", { audio });
+      expect(await sent.json()).toMatchObject({
+        model: official,
+        usage: { prompt_tokens: 4 },
+        inputMeter: { unit: "billed_audio_second", quantity: 4 },
+      });
+      const officialReport = (await (
+        await api.get(project + "/usage?groupBy=model&provider=deepseek&modelId=deepseek-asr")
+      ).json()) as UsageResponse;
+      for (const bucket of [
+        officialReport.summary.total,
+        officialReport.groups[0],
+        officialReport.series.at(-1),
+      ]) {
+        expect(bucket).toMatchObject({ requests: 1, total: 0 });
+        expect(bucket?.cost).toBeCloseTo((4 * 0.058) / 3600, 12);
+      }
     } finally {
       vi.unstubAllGlobals();
     }
