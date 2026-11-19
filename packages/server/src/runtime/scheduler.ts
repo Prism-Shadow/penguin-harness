@@ -81,9 +81,10 @@ export interface ScheduleSessionCreatorShape {
     provider?: string;
     /**
      * Unattended creators pass `allow-all`: nobody is there to answer an ask the default
-     * preset's approval mode would bring.
+     * preset's approval mode would bring. A workbench Session that only talks passes
+     * `deny-all`, which asks nobody either.
      */
-    approvalMode?: "allow-all";
+    approvalMode?: "allow-all" | "deny-all";
     source?: "schedule" | "workbench";
     client?: "workbench";
   }): Promise<{ sessionId: string }>;
