@@ -11,19 +11,13 @@
  * the dialog while its write is in flight.
  */
 import { useState } from "react";
-import {
-  Button,
-  Input,
-  Modal,
-  toastError,
-  useFormDraft,
-  useGuardedClose,
-} from "@prismshadow/penguin-ui";
+import { Button, Input, Modal, useFormDraft, useGuardedClose } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
 import { homepageFromInput } from "./address";
 import { dispatchBrowser } from "./browser-store";
+import { toastApiError } from "../../lib/toast-api-error";
 
 export function HomepageDialog({
   homepage,
@@ -53,7 +47,7 @@ export function HomepageDialog({
       onClose();
     } catch (err) {
       // The dialog stays open with the entry, so the save can be tried again.
-      toastError(S.builtinBrowser.homepageFailed(apiErrorText(err)));
+      toastApiError(err, { text: S.builtinBrowser.homepageFailed(apiErrorText(err)) });
       setSaving(false);
     }
   };

@@ -15,7 +15,7 @@
  * values are a typed form: Save is live once one is filled in, closing with one filled in asks
  * first, and nothing closes the dialog while the write is in flight.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type {
   PluginItem,
   PluginMcpServerItem,
@@ -40,11 +40,11 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { toneInk, type Tone } from "../../lib/tone";
 import { useLocale } from "../../state/locale";
 import { localizedText } from "../../lib/skill-use";
 import { stdioServers } from "./plugin-status";
+import { failureNode } from "../../lib/failure";
 
 /** One mark: a glyph in its tone, the sentence on hover and as its accessible name. */
 function Mark({ glyph, tone, sentence }: { glyph: string; tone: Tone; sentence: string }) {
@@ -285,14 +285,15 @@ export function McpSetUpModal({
   const form = useFormDraft<Record<string, string>>({}, { normalize: givenValues });
   const values = form.draft;
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
 
   useEffect(() => {
     let cancelled = false;
     api.getVault(projectId, agentId, machineId).then(
       (res) => !cancelled && setPresent(new Set(res.entries.map((entry) => entry.key))),
-      (e: unknown) => !cancelled && setError(apiErrorText(e)),
+      (e: unknown) =>
+        !cancelled && setError(failureNode(e, { what: "an Agent's vault could not be read" })),
     );
     return () => {
       cancelled = true;
@@ -321,7 +322,7 @@ export function McpSetUpModal({
       onSaved();
       onClose();
     } catch (e) {
-      setError(apiErrorText(e));
+      setError(failureNode(e, { what: "a plugin's set-up could not be saved" }));
     } finally {
       setBusy(false);
     }

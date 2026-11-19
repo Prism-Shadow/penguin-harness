@@ -10,7 +10,7 @@
  * before it: nodes of the tree that appeared, vanished or rewired; interfaces whose
  * members changed. A push is shown as what it changed, not as a hash.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Badge, CloseIcon, NoticeStrip, Skeleton, useDialogLayer } from "@prismshadow/penguin-ui";
 import type {
@@ -25,6 +25,7 @@ import * as api from "../api/endpoints";
 import { openUserEvents } from "../api/sse";
 import { formatDateTime } from "../lib/format";
 import { S } from "../lib/strings";
+import { failureNode, toldNode } from "../lib/failure";
 import { ModuleTreeView } from "./module-tree-view";
 
 /** The last path segment without its extension: `store/platform/1a2b….mjs` → `1a2b…`. */
@@ -114,16 +115,26 @@ function IfaceRow({ i }: { i: IfaceChange }) {
   );
 }
 
+/** An error's own words, as this panel has always shown them. */
+function messageOf(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/** The history could not be read. */
+function historyFailure(err: unknown): ReactNode {
+  return failureNode(err, { text: messageOf(err), what: "the harness history could not be read" });
+}
+
 type DiffLoad =
   | { state: "idle" }
   | { state: "loading" }
-  | { state: "error"; message: string }
+  | { state: "error"; failure: ReactNode }
   | { state: "ready"; diff: VersionHistoryDiffResponse };
 
 export function HarnessHistoryOverlay({ open, onClose }: { open: boolean; onClose: () => void }) {
   const t = S.harnessHistory;
   const [history, setHistory] = useState<VersionHistoryResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   const [selected, setSelected] = useState(0);
   const [diff, setDiff] = useState<DiffLoad>({ state: "idle" });
   // What the detail pane shows for the selected version: its changes, or its whole tree.
@@ -136,7 +147,7 @@ export function HarnessHistoryOverlay({ open, onClose }: { open: boolean; onClos
     | { state: "idle" }
     | { state: "armed"; id: string }
     | { state: "pushing"; id: string }
-    | { state: "error"; message: string }
+    | { state: "error"; failure: ReactNode }
   >({ state: "idle" });
 
   useEffect(() => {
@@ -151,7 +162,7 @@ export function HarnessHistoryOverlay({ open, onClose }: { open: boolean; onClos
         if (!cancelled) setHistory(data);
       })
       .catch((err: unknown) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+        if (!cancelled) setError(historyFailure(err));
       });
     return () => {
       cancelled = true;
@@ -168,7 +179,7 @@ export function HarnessHistoryOverlay({ open, onClose }: { open: boolean; onClos
     api
       .getVersionHistory()
       .then((data) => setHistory(data))
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
+      .catch((err: unknown) => setError(historyFailure(err)));
 
   const startRollback = async (id: string) => {
     setRollback({ state: "pushing", id });
@@ -194,7 +205,13 @@ export function HarnessHistoryOverlay({ open, onClose }: { open: boolean; onClos
         try {
           const h = await api.getVersionHistory();
           if (h.lastRollback?.id === id) {
-            setRollback({ state: "error", message: h.lastRollback.error });
+            setRollback({
+              state: "error",
+              failure: toldNode(h.lastRollback.error, {
+                what: "a harness rollback failed",
+                detail: h.lastRollback.error,
+              }),
+            });
             setHistory(h);
             return;
           }
@@ -202,10 +219,19 @@ export function HarnessHistoryOverlay({ open, onClose }: { open: boolean; onClos
           // mid-swap: the seam queues or refuses; keep polling
         }
       }
-      setRollback({ state: "error", message: S.harnessHistory.rollbackTimeout });
+      setRollback({
+        state: "error",
+        failure: toldNode(S.harnessHistory.rollbackTimeout, {
+          what: "a harness rollback did not finish in time",
+          detail: null,
+        }),
+      });
       await reload();
     } catch (err) {
-      setRollback({ state: "error", message: err instanceof Error ? err.message : String(err) });
+      setRollback({
+        state: "error",
+        failure: failureNode(err, { text: messageOf(err), what: "a harness rollback failed" }),
+      });
     } finally {
       conn.close();
     }
@@ -230,8 +256,14 @@ export function HarnessHistoryOverlay({ open, onClose }: { open: boolean; onClos
         if (!cancelled) setDiff({ state: "ready", diff: d });
       })
       .catch((err: unknown) => {
-        if (!cancelled)
-          setDiff({ state: "error", message: err instanceof Error ? err.message : String(err) });
+        if (cancelled) return;
+        setDiff({
+          state: "error",
+          failure: failureNode(err, {
+            text: messageOf(err),
+            what: "a harness version's changes could not be read",
+          }),
+        });
       });
     return () => {
       cancelled = true;
@@ -387,7 +419,7 @@ export function HarnessHistoryOverlay({ open, onClose }: { open: boolean; onClos
                           </button>
                         )}
                         {rollback.state === "error" ? (
-                          <span className="text-red-600 dark:text-red-400">{rollback.message}</span>
+                          <span className="text-red-600 dark:text-red-400">{rollback.failure}</span>
                         ) : null}
                       </div>
                     ) : null}
@@ -437,7 +469,7 @@ export function HarnessHistoryOverlay({ open, onClose }: { open: boolean; onClos
                             tone="danger"
                             className="mt-2 rounded-md border px-3 py-2 text-sm"
                           >
-                            {diff.message}
+                            {diff.failure}
                           </NoticeStrip>
                         ) : diff.diff.modules.length + diff.diff.ifaces.length === 0 &&
                           diff.diff.types.added +

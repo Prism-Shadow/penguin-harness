@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type {
   ApprovalMode,
   ChatDefaultsDto,
@@ -16,7 +16,6 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../../api/endpoints";
 import { S } from "../../../lib/strings";
-import { apiErrorText } from "../../../lib/api-error";
 import { toastApiError } from "../../../lib/toast-api-error";
 import { agentDisplayName, useProject } from "../../../state/project";
 import { useAuth } from "../../../state/auth";
@@ -31,6 +30,7 @@ import { ModelCatalogSelect, modelLabel, SELECTABLE_THINKING_LEVELS } from "../.
 import { WorkspaceSelect } from "../../workspace";
 import { sameModelRef } from "../../models";
 import { PROJECT_SETTINGS_SCOPE } from "./shared";
+import { failureNode } from "../../../lib/failure";
 
 export const APPROVAL_MODES: readonly ApprovalMode[] = [
   "always-ask",
@@ -51,7 +51,7 @@ export function ChatDefaultsSection({
   /** Saved block (null while loading); the draft uses "" for "not set". */
   const [saved, setSaved] = useState<ChatDefaultsDto | null>(null);
   const [models, setModels] = useState<ModelsResponse | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<ReactNode>(null);
   const [busy, setBusy] = useState(false);
   useSaving(busy, PROJECT_SETTINGS_SCOPE);
   // The selects are fields of this form (they save with it), and the default-model pick is a
@@ -76,7 +76,9 @@ export function ChatDefaultsSection({
         if (!cancelled) setSaved(res);
       })
       .catch((e: unknown) => {
-        if (!cancelled) setLoadError(apiErrorText(e));
+        if (!cancelled) {
+          setLoadError(failureNode(e, { what: "a Project's chat defaults could not be loaded" }));
+        }
       });
     api
       .getModels(projectId, null)
@@ -84,7 +86,9 @@ export function ChatDefaultsSection({
         if (!cancelled) setModels(res);
       })
       .catch((e: unknown) => {
-        if (!cancelled) setLoadError(apiErrorText(e));
+        if (!cancelled) {
+          setLoadError(failureNode(e, { what: "a Project's models could not be listed" }));
+        }
       });
     return () => {
       cancelled = true;

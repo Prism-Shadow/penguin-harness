@@ -11,7 +11,9 @@
  * The body is one of two shapes, or none. `rows` are the activity's own steps (the agent's steps,
  * a compaction's sections, an MCP connection's servers), hung off the head one tree level down;
  * `children` is one piece the caller styles (a report in the output block). With neither the head
- * is a static line: no button, no chevron, no hover.
+ * is a static line: no button, no chevron, no hover. A failure's text actions (its 「[报告问题]」)
+ * follow the duration on a static head, and the body's last line, after the detail, on one that
+ * expands.
  *
  * Work groups take one of three display modes. Standard lists the steps closed; Expanded opens
  * every step; Compact pages through the steps behind one sticky line, with a terminal page for
@@ -163,6 +165,12 @@ export interface ActivityGroupProps {
   stateLabel?: string;
   /** A mark naming the activity in place of the status icon (an injected message's hook); a registry glyph's path or a node. */
   mark?: ReactNode;
+  /**
+   * A settled activity that needs the reader's attention, said by its `mark` (an attention-ink
+   * glyph whose tooltip and accessible name say why: a compaction that wrote no full summary). The
+   * head carries `data-attention`, so a theme that draws no status marks keeps this one.
+   */
+  attention?: boolean;
   /** A count as words ("3 steps"), mono after the title. Hidden below `sm`: the head must stay one uncut line on a phone. */
   count?: string;
   /** One line of status or result, where names go (servers, a failure's reason); mono, truncating, with the full text as its tooltip. */
@@ -192,6 +200,12 @@ export interface ActivityGroupProps {
   stepNavigation?: ActivityStepNavigation;
   /** A body of one piece the caller styles, in place of rows; its presence adds the chevron too. */
   children?: ReactNode;
+  /**
+   * Text actions for the activity (a failed row's 「[报告问题]」): after the duration on a head
+   * that does not expand. An expandable head is one button and a press cannot nest in it, so
+   * there they stand at the foot of the open body instead, after the detail in full.
+   */
+  actions?: ReactNode;
 }
 
 interface ReadingState {
@@ -212,6 +226,7 @@ export function ActivityGroup({
   title,
   stateLabel,
   mark,
+  attention = false,
   count,
   detail,
   startMs,
@@ -223,6 +238,7 @@ export function ActivityGroup({
   displayMode: preference = "standard",
   terminal,
   children,
+  actions,
 }: ActivityGroupProps) {
   const hookState = activityState(state);
   const running = hookState === "running";
@@ -238,6 +254,7 @@ export function ActivityGroup({
   const settledHere = useArrived(hookState);
   const hasChildren = children !== undefined && children !== null;
   const expandable = rows !== undefined || hasChildren;
+  const hasActions = actions !== undefined && actions !== null;
 
   const compact = displayMode === "compact";
   const finding = !!stepNavigation?.revealAll;
@@ -355,6 +372,11 @@ export function ActivityGroup({
         />
       )}
       <ActivityProgress running={inFlight} />
+      {!expandable && hasActions && (
+        <span data-slot="actions" className="flex shrink-0 items-baseline gap-x-2 text-xs">
+          {actions}
+        </span>
+      )}
       {expandable && <ActivityToggle open={shown} />}
       <span className="min-w-0 flex-1" />
     </>
@@ -409,6 +431,7 @@ export function ActivityGroup({
           data-slot="head"
           data-kind={kind}
           data-state={hookState}
+          data-attention={attention ? "" : undefined}
         >
           <WallpaperBackdrop />
           {parts}
@@ -419,6 +442,7 @@ export function ActivityGroup({
           data-slot="head"
           data-kind={kind}
           data-state={hookState}
+          data-attention={attention ? "" : undefined}
         >
           {parts}
         </div>
@@ -436,13 +460,30 @@ export function ActivityGroup({
             rootRef.current?.scrollIntoView({ block: "nearest" });
           }}
         >
-          {() =>
-            rows !== undefined ? (
-              <ActivityRows rows={renderRows()} revealNew={!compact} />
-            ) : (
-              children
-            )
-          }
+          {() => (
+            <>
+              {rows !== undefined ? (
+                <ActivityRows rows={renderRows()} revealNew={!compact} />
+              ) : (
+                children
+              )}
+              {hasActions && (
+                // The head's detail truncates; here it wraps, so the action follows the whole of
+                // what it is about.
+                <div
+                  data-slot="foot"
+                  className="flex flex-wrap items-baseline gap-x-2 px-3 py-1.5 text-xs"
+                >
+                  {detail !== undefined && (
+                    <span className="min-w-0 break-words font-mono text-fg-subtle">{detail}</span>
+                  )}
+                  <span data-slot="actions" className="flex shrink-0 items-baseline gap-x-2">
+                    {actions}
+                  </span>
+                </div>
+              )}
+            </>
+          )}
         </Fold>
       )}
     </div>
