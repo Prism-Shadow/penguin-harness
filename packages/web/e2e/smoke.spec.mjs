@@ -9,6 +9,7 @@
  *   once and the new turn completes instead of becoming stranded (the #89 regression).
  * - Given earlier work in Compact, the step number stays separate from the latest-step shortcut.
  *   That shortcut follows Next in visual and keyboard order, including at phone widths.
+ * - Given a Compact run waiting on an approval, its line opens by itself with Allow and Deny.
  */
 import { test, expect } from "@playwright/test";
 import { provisionAndLogin, provisionUser } from "./auth.mjs";
@@ -199,8 +200,11 @@ test("compact navigation stays on one line while the run advances and preserves 
   const previous = group.getByRole("button", { name: "上一步" }),
     next = group.getByRole("button", { name: "下一步" });
   await expect(nav).toContainText("第 2 步");
-  await expect(rows).toHaveCount(0);
-  await expectFoldedBodies(group);
+  // The run waits on an approval: the line opens by itself, so Allow and Deny show at once.
+  await expect(rows).toHaveCount(2);
+  await expect(group.getByRole("button", { name: "允许", exact: true })).toBeVisible();
+  await expect(group.getByRole("button", { name: "拒绝", exact: true })).toBeVisible();
+  await expect(rows.first()).not.toContainText("I will check");
 
   const total = group.locator("[data-step-elapsed] .font-mono");
   const runningTime = await total.innerText();

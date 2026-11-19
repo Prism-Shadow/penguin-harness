@@ -1,9 +1,11 @@
 /**
  * A tool call in the transcript: one line by default — status icon, the tool's name, a one-line
- * subtitle when offered, the duration (a live clock while it runs) — that expands to the call's full arguments,
+ * subtitle, the duration (a live clock while it runs) — that expands to the call's full arguments,
  * its output and any images it returned. A call waiting on a person's decision shows its
- * approval block under the row whatever the collapsed state. In a work group, opening the row
- * also reveals its subtitle and optional footer (a spawned subagent's row).
+ * approval block under the row whatever the collapsed state, and a footer (a spawned subagent's
+ * row) is always shown below the details — unless a list keeps its rows' details for when they
+ * are open (a Compact work group's listing), which holds the subtitle and the footer back until
+ * the row is opened.
  *
  * The row names no outcome in words: the status icon, with the caller's state label as its
  * accessible name and tooltip, carries how the call ended or was decided (a failure also turns
@@ -42,8 +44,8 @@ import {
   DisclosureRow,
   activityState,
 } from "../../layout/disclosure-row/disclosure-row";
+import { DisclosureControlContext } from "../../layout/disclosure-row/disclosure-control";
 import { ZoomableImage } from "../../overlays/lightbox/lightbox";
-import { StepDisclosure } from "../activity-group/step-disclosure";
 import { ApprovalBlock } from "../approval-block/approval-block";
 import { StreamText } from "../stream-text/stream-text";
 import type { ApprovalRequest } from "../approval-block/approval-block";
@@ -119,8 +121,8 @@ export function ToolCallCard({
   expandLabel,
   collapseLabel,
 }: ToolCallCardProps) {
-  const step = useContext(StepDisclosure);
-  const showDetails = step?.open ?? true;
+  const control = useContext(DisclosureControlContext);
+  const showDetails = !control?.detailsWhenOpen || control.open;
   const row = (
     <DisclosureRow
       sticky

@@ -117,9 +117,10 @@ interface ThemeContextValue {
   setCurrency: (currency: Currency) => void;
   terminalMode: TerminalThemeMode;
   setTerminalMode: (mode: TerminalThemeMode) => void;
-  /** Whether tool-call cards name the built-in tools by their short alias. */
+  /** How work groups show thinking and tool steps: Standard, Expanded or Compact. */
   activityDisplayMode: ActivityDisplayMode;
   setActivityDisplayMode: (mode: ActivityDisplayMode) => void;
+  /** Whether tool-call cards name the built-in tools by their short alias. */
   toolAliases: boolean;
   setToolAliases: (on: boolean) => void;
   /** Resolved terminal appearance ("app" already resolved against the app's own). */

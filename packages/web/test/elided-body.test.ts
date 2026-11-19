@@ -11,7 +11,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createElement as h } from "react";
 import { ElidedBodiesContext, ElidedBodyNote } from "../src/features/chat/elided-body";
 import type { ThinkingItem } from "../src/lib/amsp/stream-model";
-import { ActivitySearchPreview } from "@prismshadow/penguin-ui";
 import { S } from "../src/lib/strings";
 import { button, click, mount, unmountAll } from "./helpers/dom";
 
@@ -28,19 +27,6 @@ afterEach(async () => {
 });
 
 describe("a folded value that could not be fetched", () => {
-  it("indexes the loaded preview during find and fetches the whole row when reading resumes", async () => {
-    const load = vi.fn();
-    const panel = (finding: boolean) =>
-      h(
-        ActivitySearchPreview.Provider,
-        { value: finding },
-        h(ElidedBodiesContext.Provider, { value: { load } }, h(ElidedBodyNote, { item: failed })),
-      );
-    const view = await mount(panel(true));
-    expect(load).not.toHaveBeenCalled();
-    await view.rerender(panel(false));
-    expect(load).toHaveBeenCalledOnce();
-  });
   it("says so on a notice line with the failure in sight and Retry, which asks again", async () => {
     const load = vi.fn();
     const { container } = await mount(

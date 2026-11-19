@@ -21,7 +21,6 @@ import { LAUNCHER_HIDDEN_KEY } from "../../features/dock/dock-launcher-state";
 import { STEER_MODE_KEY } from "../../features/chat/steer-mode";
 import {
   ACTIVITY_DISPLAY_MODE_KEY,
-  activityDisplayModeValue,
   CURRENCY_KEY,
   TERMINAL_THEME_KEY,
   TOOL_ALIASES_KEY,
@@ -105,12 +104,7 @@ export const SYNCED_PREFS: readonly SyncedPref[] = [
   token("lang", LANG_KEY),
   token("currency", CURRENCY_KEY),
   token("terminalTheme", TERMINAL_THEME_KEY),
-  {
-    field: "activityDisplayMode",
-    key: ACTIVITY_DISPLAY_MODE_KEY,
-    toAccount: (cached) => activityDisplayModeValue(cached) ?? undefined,
-    toCache: activityDisplayModeValue,
-  },
+  token("activityDisplayMode", ACTIVITY_DISPLAY_MODE_KEY),
   flag("toolAliases", TOOL_ALIASES_KEY),
   flag("notifications", NOTIFICATIONS_KEY),
   flag("launcherHidden", LAUNCHER_HIDDEN_KEY),

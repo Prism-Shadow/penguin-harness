@@ -4472,6 +4472,8 @@ Scenarios:
       heavy: "Syncing full outputs",
       /** Under an unfolded output or thinking block while its whole text arrives. */
       body: "Loading the full text",
+      /** On an unfolded output or thinking block the reader did not open (an Expanded view, a search): fetch the whole. */
+      bodyLoad: "Load the full text",
       /** The fetch failed: a notice line like the earlier-messages one, the failure in parentheses. */
       bodyFailed: (reason: string) => `[Load failed]: could not load the full text (${reason})`,
       /** The Trace panel bringing a machine's Trace file over before it opens it. */

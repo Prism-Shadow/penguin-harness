@@ -35,6 +35,14 @@ import { toolActivity } from "./tool-activity";
 import { SessionSubagentChip } from "./subagent-chip";
 import type { StreamRenderContext } from "./message-stream";
 
+/** Tools that accept the optional model-written `description` argument. */
+const DESCRIBED_TOOLS = new Set([
+  "exec_command",
+  "input_command",
+  "run_subagent",
+  "input_subagent",
+]);
+
 /** The three file tools: previewed by their `file_path` argument. */
 const FILE_TOOLS = new Set(["read_file", "edit_file", "write_file"]);
 
@@ -96,12 +104,20 @@ export function previewArguments(name: string, argsJson: string): string {
 }
 
 /**
- * Read a call's header from the arguments as they stream. Wait for each field's closing quote
- * before showing it (#137), unless the call ended before closing the string. The compact header
- * shows both description and file path. A regular row has one subtitle and prefers the description.
+ * Read a call's header from the arguments as they stream: the model-written `description`
+ * argument and, for the file tools, the file path. Wait for each field's closing quote before
+ * showing it (#137), unless the call ended before closing the string. The compact header shows
+ * both; a regular row has one subtitle and prefers the description.
+ *
+ * Only the built-in tools that declare `description` (and the file tools, whose schema may enable
+ * it) are read for one: any other tool's `description` is payload — an issue's body, an event's
+ * notes — not a line about the call.
  */
 export function toolHeaderDetails(name: string, argsJson: string, settled = true) {
-  const desc = extractStringField(argsJson, "description");
+  const desc =
+    DESCRIBED_TOOLS.has(name) || FILE_TOOLS.has(name)
+      ? extractStringField(argsJson, "description")
+      : null;
   const rawDescription = desc && (desc.complete || settled) ? desc.value.trim() : "";
   const key = pathArgument(name);
   const file = key && extractStringField(argsJson, key);
@@ -272,7 +288,7 @@ export function SessionToolCall({ item, ctx }: { item: ToolCallItem; ctx: Stream
   const pending = ctx.pendingApprovals.get(approvalKey(ctx.origin, item.toolCallId));
 
   // Display-only, and confined to the name props below: every name-keyed decision on this card
-  // (the file-tool previews and the subagent chip) and everywhere else in
+  // (DESCRIBED_TOOLS, FILE_TOOLS, the argument previews, the subagent chip) and everywhere else in
   // the app (the tools config table, permission rules, the Trace viewer) keeps reading
   // `item.name`, so an alias can never change what a call means.
   const displayName = toolDisplayName(item.name, toolAliases);

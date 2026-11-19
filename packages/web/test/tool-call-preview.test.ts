@@ -137,6 +137,13 @@ describe("headerSubtitle", () => {
     expect(headerSubtitle("search", '{"q":"x"}')).toBeNull();
   });
 
+  it("does not read another tool's description argument as its subtitle", () => {
+    // An MCP tool's `description` is its payload (an issue's body), not a line about the call.
+    expect(
+      headerSubtitle("create_issue", '{"title":"Bug","description":"Steps to reproduce"}'),
+    ).toBeNull();
+  });
+
   it("folds a multi-line description to one line", () => {
     expect(headerSubtitle("exec_command", '{"cmd":"ls","description":"one\\ntwo"}')).toBe(
       "one two",

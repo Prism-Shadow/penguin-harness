@@ -191,6 +191,7 @@ export * from "./components/feedback/retry-status/retry-status";
 export * from "./components/feedback/transfer-progress/transfer-progress";
 export * from "./components/feedback/beta-badge/beta-badge";
 export * from "./components/layout/disclosure-row/disclosure-row";
+export * from "./components/layout/disclosure-row/disclosure-control";
 export * from "./components/data/stat-tile/stat-tile";
 export * from "./components/data/stat-chip/stat-chip";
 
@@ -249,7 +250,6 @@ export * from "./components/chat/message-bubble/message-bubble";
 // The images and files a message carries: the composer, the sent message and a steer's chip.
 export * from "./components/chat/attachments/attachments";
 export * from "./components/chat/stream-text/stream-text";
-export * from "./components/chat/stream-text/stream-follow";
 export * from "./components/chat/assistant-text/assistant-text";
 export * from "./components/chat/assistant-text/streaming-caret";
 export * from "./components/chat/assistant-text/use-stream-reveal";

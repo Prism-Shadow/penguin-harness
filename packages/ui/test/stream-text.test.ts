@@ -16,7 +16,7 @@
 import { createElement } from "react";
 import type { ReactElement } from "react";
 import { describe, expect, it } from "vitest";
-import { StepDisclosure } from "../src/components/chat/activity-group/step-disclosure";
+import { DisclosureControlContext } from "../src/components/layout/disclosure-row/disclosure-control";
 import { AssistantText } from "../src/components/chat/assistant-text/assistant-text";
 import { StreamingCaret } from "../src/components/chat/assistant-text/streaming-caret";
 import { StreamText } from "../src/components/chat/stream-text/stream-text";
@@ -45,8 +45,8 @@ const output = (streaming: boolean) =>
 function expandedRow(row: ReactElement): string {
   return renderStatic(
     createElement(
-      StepDisclosure.Provider,
-      { value: { open: true, bounded: false, follow: true, toggle() {} } },
+      DisclosureControlContext.Provider,
+      { value: { open: true, requested: true, detailsWhenOpen: false, toggle() {} } },
       row,
     ),
   );

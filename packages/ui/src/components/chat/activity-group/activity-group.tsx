@@ -13,10 +13,14 @@
  * `children` is one piece the caller styles (a report in the output block). With neither the head
  * is a static line: no button, no chevron, no hover.
  *
- * Work groups can list collapsed or expanded rows, or page through them behind one compact
- * header. A completed turn can provide a terminal page. The host supplies the actual turn
- * outcome separately from a group settling between messages. A search temporarily exposes
- * all loaded rows without changing the reader's page or disclosures.
+ * Work groups take one of three display modes. Standard lists the steps closed; Expanded opens
+ * every step; Compact pages through the steps behind one sticky line, with a terminal page for
+ * the turn's outcome when the host knows it (separately from a group settling between
+ * messages). The group holds each step's disclosure (`DisclosureControlContext`) so a page change
+ * or a mode change keeps the reader's folds, and tells a step whether the reader opened it or the
+ * mode did: a folded value is fetched only for a step the reader asked for. A step waiting on an
+ * approval or a retry opens the group in every mode, so its actions are on screen. A search
+ * temporarily exposes all loaded rows without changing the reader's page or disclosures.
  *
  * The head is a title bar of its own (the muted ground, a short title that doubles as the state),
  * a different layer from the rows on the surface below it, so the parent and its children read
@@ -44,7 +48,7 @@
  * a fixed phrase in sentence case on the small rung, uppercased only by a theme's recipe; names
  * go in the detail, which no recipe recases.
  */
-import { createContext, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import type { Key, ReactNode } from "react";
 import { useArrived } from "../../../motion/use-arrived";
 import { StatusIcon } from "../../icons/status-icon/status-icon";
@@ -62,9 +66,9 @@ import {
   activityState,
 } from "../../layout/disclosure-row/disclosure-row";
 import type { ActivityKind, ActivityMark } from "../../layout/disclosure-row/disclosure-row";
+import { DisclosureControlContext } from "../../layout/disclosure-row/disclosure-control";
 import { Fold } from "../../layout/fold/fold";
 import { CompactStepHeader } from "./compact-step-header";
-import { StepDisclosure } from "./step-disclosure";
 import { WallpaperBackdrop } from "../../shell/app-shell/wallpaper";
 
 /**
@@ -76,9 +80,6 @@ const TITLE_INK: Readonly<Record<ActivityMark["state"], string>> = {
   done: "text-fg-muted",
   error: "text-tone-danger-fg",
 };
-
-/** A search temporarily mounted these pages. Search previews should use their already loaded content. */
-export const ActivitySearchPreview = createContext(false);
 
 export type ActivityDisplayMode = "standard" | "expanded" | "compact";
 
@@ -171,8 +172,9 @@ export interface ActivityGroupProps {
   /** The settled span, shown once nothing is in flight. */
   durationMs?: number;
   /**
-   * The body is forced open, the reader's own open state kept for later: a step waits on an
-   * approval, or the caller needs the rows on screen (a search of the transcript).
+   * A step waits on an approval or a retry, or the caller needs the rows on screen (a search of
+   * the transcript). The body is forced open, the reader's own open state kept for later; in
+   * Compact it opens by default instead, so the reader can still close the line.
    */
   pending?: boolean;
   /**
@@ -259,7 +261,7 @@ export function ActivityGroup({
     expandable &&
     (finding ||
       (compact
-        ? (view.open ?? false)
+        ? (view.open ?? pending)
         : pending || (view.open ?? (displayMode === "expanded" || running))));
   function toggle() {
     landOnClose.current = shown && !finding && (compact || !pending);
@@ -279,15 +281,19 @@ export function ActivityGroup({
   function renderRows() {
     if (!stepNavigation) return rows ?? [];
     return (rows ?? []).map((row) => {
-      const expanded = view.disclosures.get(row.key) ?? displayMode === "expanded";
+      const chosen = view.disclosures.get(row.key);
+      const expanded = chosen ?? displayMode === "expanded";
       return {
         ...row,
         content: (
-          <StepDisclosure.Provider
+          <DisclosureControlContext.Provider
             value={{
               open: finding || expanded,
-              bounded: compact && !finding,
-              follow: running && selected < 0,
+              // Expanded and a search open rows by policy; only the reader's own opening asks
+              // for what a row holds folded.
+              requested: !finding && chosen === true,
+              // Compact's listing is the step names; each row's details come with opening it.
+              detailsWhenOpen: compact && !finding,
               toggle: () => {
                 if (!finding)
                   setView((prior) => ({
@@ -298,7 +304,7 @@ export function ActivityGroup({
             }}
           >
             {row.content}
-          </StepDisclosure.Provider>
+          </DisclosureControlContext.Provider>
         ),
       };
     });
@@ -367,7 +373,9 @@ export function ActivityGroup({
           data-kind={summary.kind ?? kind}
           data-state={activityState(summary.state)}
           data-step-terminal={terminalPage || undefined}
-          className={`ui-activity ${DISCLOSURE_HEADER_STICKY_CLASS} flex min-w-0 items-center bg-surface-muted py-0.5 pe-[62px] sm:pe-1`}
+          // A host that floats a control over the transcript's right edge on a phone sets
+          // --activity-head-reserve, so the pager at the line's end stays reachable.
+          className={`ui-activity ${DISCLOSURE_HEADER_STICKY_CLASS} flex min-w-0 items-center bg-surface-muted py-0.5 pe-[var(--activity-head-reserve,0.25rem)] sm:pe-1`}
         >
           <WallpaperBackdrop />
           <CompactStepHeader
@@ -430,9 +438,7 @@ export function ActivityGroup({
         >
           {() =>
             rows !== undefined ? (
-              <ActivitySearchPreview.Provider value={finding}>
-                <ActivityRows rows={renderRows()} revealNew={!compact} />
-              </ActivitySearchPreview.Provider>
+              <ActivityRows rows={renderRows()} revealNew={!compact} />
             ) : (
               children
             )

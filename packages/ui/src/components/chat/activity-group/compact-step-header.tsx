@@ -26,6 +26,20 @@ interface CompactStepHeaderProps {
   showAction?: () => void;
 }
 
+/*
+ * The line has to hold the step's name, the total time and three pager buttons on a 320px phone
+ * at the user's largest text size. Two rungs make room:
+ * - below `sm` the pager drops its gaps and its buttons take a fixed 24px rather than the
+ *   rem-sized 1.5rem, which grows with the text size, and the "Total time" words give way to the
+ *   clock glyph;
+ * - below 380px (the narrowest phones) the chevron and the clock glyph go too, and the header
+ *   button drops its inline padding. The open state stays in `aria-expanded`.
+ */
+const PAGER_PHONE_CLASS = "max-sm:gap-0 max-sm:px-0 max-sm:[&>button]:w-[24px]";
+const HEAD_BUTTON_NARROWEST_CLASS = "max-[380px]:px-0";
+const HIDDEN_NARROWEST_CLASS = "max-[380px]:hidden";
+const ELAPSED_NARROWEST_CLASS = "max-[380px]:ms-0.5";
+
 /** A single sticky line. Paging is available on a closed group and never toggles it. */
 export function CompactStepHeader({
   summary,
@@ -55,7 +69,7 @@ export function CompactStepHeader({
         data-group-header
         aria-expanded={open}
         onClick={toggle}
-        className={`flex min-w-0 flex-1 items-center gap-1 self-stretch px-1 text-left max-[380px]:px-0 sm:gap-2 sm:px-2 ${ACTIVITY_HEAD_HOVER_CLASS}`}
+        className={`flex min-w-0 flex-1 items-center gap-1 self-stretch px-1 text-left ${HEAD_BUTTON_NARROWEST_CLASS} sm:gap-2 sm:px-2 ${ACTIVITY_HEAD_HOVER_CLASS}`}
       >
         <ActivityMarkSlot mark={<StatusIcon state={summary.state} label={summary.stateLabel} />} />
         <span className="flex min-w-0 items-center gap-1 overflow-x-auto whitespace-nowrap [scrollbar-width:none] sm:gap-2 sm:overflow-hidden">
@@ -87,7 +101,7 @@ export function CompactStepHeader({
             </span>
           )}
         </span>
-        <span className="contents max-[380px]:hidden">
+        <span className={`contents ${HIDDEN_NARROWEST_CLASS}`}>
           <ActivityToggle open={open} />
         </span>
       </button>
@@ -95,10 +109,10 @@ export function CompactStepHeader({
         <span
           data-step-elapsed=""
           data-tooltip={navigation.elapsed}
-          className="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs text-fg-subtle max-[380px]:ms-0.5"
+          className={`flex shrink-0 items-center gap-1 whitespace-nowrap text-xs text-fg-subtle ${ELAPSED_NARROWEST_CLASS}`}
         >
           <span className="sr-only sm:not-sr-only">{navigation.elapsed}</span>
-          <span aria-hidden className="max-[380px]:hidden sm:hidden">
+          <span aria-hidden className={`${HIDDEN_NARROWEST_CLASS} sm:hidden`}>
             <GlyphIcon d={ICONS.clock} size={12} />
           </span>
           <DurationSlot
@@ -145,7 +159,7 @@ export function CompactStepHeader({
           nextLabel={navigation.next}
           lastPageLabel={navigation.latest}
           readout={position}
-          className="whitespace-nowrap max-sm:gap-0 max-sm:px-0 max-sm:[&>button]:w-[24px]"
+          className={`whitespace-nowrap ${PAGER_PHONE_CLASS}`}
         />
       </div>
     </>

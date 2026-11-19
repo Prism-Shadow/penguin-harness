@@ -22,9 +22,8 @@ import { Chevron } from "../../icons/chevron/chevron";
 import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
 import type { RunState } from "../../icons/status-icon/status-icon";
 import { WallpaperBackdrop } from "../../shell/app-shell/wallpaper";
-import { StepBody } from "../../chat/activity-group/step-body";
-import { StepDisclosure } from "../../chat/activity-group/step-disclosure";
 import { Fold } from "../fold/fold";
+import { DisclosureControlContext, DisclosureRequested } from "./disclosure-control";
 
 /**
  * The row itself (collapsed and expanded share it; the hover fill is the "open or close me"
@@ -244,9 +243,10 @@ export function DisclosureRow({
   children,
 }: DisclosureRowProps) {
   const strings = useUiStrings();
-  const step = useContext(StepDisclosure);
+  // A list that pages through its rows holds their disclosure (disclosure-control.ts).
+  const control = useContext(DisclosureControlContext);
   const [localOpen, setOpen] = useState(defaultOpen);
-  const open = step?.open ?? localOpen;
+  const open = control?.open ?? localOpen;
   const rootRef = useRef<HTMLDivElement>(null);
   /** The reader closed the row: land the view on it once the fold has finished. */
   const landOnClose = useRef(false);
@@ -285,7 +285,7 @@ export function DisclosureRow({
     // in-view collapse). It waits for the fold's end rather than a frame, since while the body
     // is still folding the row is still stuck and the view would land on the wrong place.
     landOnClose.current = open;
-    if (step) step.toggle();
+    if (control) control.toggle();
     else setOpen(!open);
   };
   return (
@@ -346,15 +346,12 @@ export function DisclosureRow({
           rootRef.current?.scrollIntoView({ block: "nearest" });
         }}
       >
-        <StepDisclosure.Provider value={null}>
-          {step?.bounded ? (
-            <StepBody live={step.follow && (inFlight ?? activity?.state === "running")}>
-              {children}
-            </StepBody>
-          ) : (
-            children
-          )}
-        </StepDisclosure.Provider>
+        {/* The control is this row's alone: a row nested in the body holds its own state. */}
+        <DisclosureControlContext.Provider value={null}>
+          <DisclosureRequested.Provider value={control?.requested ?? true}>
+            {children}
+          </DisclosureRequested.Provider>
+        </DisclosureControlContext.Provider>
       </Fold>
     </div>
   );
