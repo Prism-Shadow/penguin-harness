@@ -1273,7 +1273,7 @@ export const en: Strings = {
     loading: "Loading…",
     emptyTitle: "The App Center is empty",
     empty:
-      "A workbench is a page an agent hosts beside the chat, and it can also open full page. Once an agent creates a workbench and its row in the agent's settings has the “Show in the App Center” switch on, it appears here.",
+      "A workbench is a page an agent hosts beside the chat, and it can also open full page. A workbench an agent creates appears here once it loads; to keep one off, turn off “Show in the App Center” on its row in the agent's settings.",
     /** A tile whose current files failed to load: it still opens, and its menu shows the error. */
     broken: "Failed to load",
     /** A tile whose app is still being built: it opens once the build is done. */
