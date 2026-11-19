@@ -58,6 +58,13 @@ export { Interface } from "../kernel/markers.js";
  * bundler leaves alone and by namespace, because a host core from before this export has none.
  */
 export { sessionShell } from "../environment/tools/command/shell.js";
+/**
+ * The Harness's atomic file writer (temp file beside the target, then rename), for a plugin that
+ * keeps state files of its own. A code plugin bundles what it imports from this subpath, and
+ * this one reaches nothing beyond Node's fs, where the root entry would bring the whole SDK.
+ */
+export { atomicWriteFile } from "../internal/atomic-write.js";
+export type { AtomicWriteOptions } from "../internal/atomic-write.js";
 
 export type * from "./sandbox.js";
 export type * from "./languages.js";

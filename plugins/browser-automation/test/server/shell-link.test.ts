@@ -4,14 +4,14 @@
  * can escape from, and disposal taking the listener off the port — the hot-swap guarantee.
  */
 import { describe, expect, it } from "vitest";
-import type { DesktopBrowserCommandMessage } from "../../src/api/types.js";
+import type { DesktopBrowserCommandMessage } from "@prismshadow/penguin-server/api";
 import {
   ShellLink,
   ShellLinkError,
   parseBrowserEvent,
   parseBrowserReply,
   parseTab,
-} from "../../src/builtin-browser/shell-link.js";
+} from "../../src/server/shell-link.js";
 import { FakePort, FakeShell, tab } from "./fake-shell.js";
 
 const lastCommand = (port: FakePort) => port.sent.at(-1) as DesktopBrowserCommandMessage;

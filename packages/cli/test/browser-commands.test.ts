@@ -22,14 +22,8 @@ import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BuiltinBrowserExecResult, BuiltinBrowserTab } from "@prismshadow/penguin-server/api";
 import { cli } from "../src/index.js";
-import {
-  browserEn,
-  browserZh,
-  getMessages,
-  localMinute,
-  RETURN_LIMIT,
-  renderExec,
-} from "@prismshadow/penguin-server/cli";
+import { browserEn, browserZh, RETURN_LIMIT, renderExec } from "@penguinharness/browser-automation/cli";
+import { getMessages, localMinute } from "@prismshadow/penguin-server/cli";
 import { FakeServer } from "./fake-server.js";
 
 // The bundle the browser's commands receive: the host's, with the browser module's own group.

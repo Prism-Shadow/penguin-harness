@@ -9,7 +9,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { ImportEnv } from "../src/builtin-browser/import/index.js";
+import type { ImportEnv } from "../../src/server/import/index.js";
 
 const sqlite = process.getBuiltinModule("node:sqlite");
 

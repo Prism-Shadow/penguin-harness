@@ -5,8 +5,8 @@
  * can be read at all.
  */
 import { describe, expect, it } from "vitest";
-import type { BuiltinBrowserTabMetrics } from "../../src/api/types.js";
-import { assessLoad, systemMemory } from "../../src/builtin-browser/load.js";
+import type { BuiltinBrowserTabMetrics } from "@prismshadow/penguin-server/api";
+import { assessLoad, systemMemory } from "../../src/server/load.js";
 
 const MB = 1024;
 const GB = 1024 * 1024;

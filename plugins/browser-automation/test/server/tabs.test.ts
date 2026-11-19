@@ -5,7 +5,7 @@
  * closing a selected tab falls back only within its Session.
  */
 import { describe, expect, it } from "vitest";
-import { TabRegistry } from "../../src/builtin-browser/tabs.js";
+import { TabRegistry } from "../../src/server/tabs.js";
 import { tab } from "./fake-shell.js";
 
 describe("TabRegistry tabs", () => {

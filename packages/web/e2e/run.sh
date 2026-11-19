@@ -24,8 +24,13 @@ if [ "${SKIP_BUILD:-0}" != "1" ]; then
   (cd "$ROOT" \
     && pnpm --filter @prismshadow/penguin-core build \
     && pnpm --filter @prismshadow/penguin-server build \
+    && pnpm --filter @penguinharness/browser-automation build \
     && pnpm --filter @prismshadow/penguin-web build) || { echo "BUILD FAILED"; exit 1; }
 fi
+
+# The preinstalled plugins' server modules (the agent browser's among them) load from the builtin
+# prefix beside the server's entry, which an installed server ships and this checkout stages.
+node "$ROOT/scripts/stage-dev-plugins.mjs" || { echo "STAGING THE BUILTIN PLUGINS FAILED"; exit 1; }
 
 echo "== start mock LLM =="
 MOCK_PORT=$MOCK_PORT node "$HERE/mock-llm.mjs" &

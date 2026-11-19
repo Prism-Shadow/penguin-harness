@@ -25,13 +25,13 @@ import type {
   BuiltinBrowserImportSourcesResponse,
   ChromeExtensionCookie,
   DesktopBrowserCommand,
-} from "../../src/api/types.js";
-import type { AppEnv } from "../../src/auth/middleware.js";
-import { ExtensionPairing } from "../../src/builtin-browser/extension-pairing.js";
-import { builtinBrowserRoutes } from "../../src/builtin-browser/routes.js";
-import { BuiltinBrowser } from "../../src/builtin-browser/service.js";
-import type { Importer } from "../../src/builtin-browser/service.js";
-import { handleError } from "../../src/http/errors.js";
+} from "@prismshadow/penguin-server/api";
+import type { AppEnv } from "@prismshadow/penguin-server/plugin";
+import { ExtensionPairing } from "../../src/server/extension-pairing.js";
+import { builtinBrowserRoutes } from "../../src/server/routes.js";
+import { BuiltinBrowser } from "../../src/server/service.js";
+import type { Importer } from "../../src/server/service.js";
+import { handleError } from "./host.js";
 import { openDatabase } from "@prismshadow/penguin-library-db";
 import { BrowserExtensionsRepo } from "@prismshadow/penguin-library-machine/browser-extensions";
 import type { UserRow } from "@prismshadow/penguin-library-auth/repos/users";

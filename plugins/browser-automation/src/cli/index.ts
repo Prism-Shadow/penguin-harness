@@ -60,3 +60,8 @@ const browserCliModule = {
 } satisfies CliModule;
 
 export default browserCliModule;
+
+// What a caller checks the command's output against: the message groups, and the exec renderer
+// with the length it cuts a returned value at.
+export { browserEn, browserZh, type BrowserMessages } from "./browser.messages.js";
+export { RETURN_LIMIT, renderExec } from "./browser-output.js";

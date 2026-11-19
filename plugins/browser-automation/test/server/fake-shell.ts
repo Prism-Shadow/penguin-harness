@@ -1,28 +1,22 @@
 /**
  * Test doubles for the built-in browser's shell side: the shell's port (the host's generic fake,
- * test/helpers/fake-shell-port.ts), a fake shell behind it that speaks the desktop-browser
- * protocol the way builtin-browser.ts does — one reply per command, tab events pushed as its
- * guests change — and the node that hands that port to a test app's browser module. Its CDP
- * answers come from a handler each test supplies.
+ * packages/server/test/helpers/fake-shell-port.ts), and a fake shell behind it that speaks the
+ * desktop-browser protocol the way the desktop shell's builtin-browser.ts does — one reply per
+ * command, tab events pushed as its guests change. Its CDP answers come from a handler each test
+ * supplies. The host's App-booting browser suites hand its port to a test app through
+ * `shellPortNode` (packages/server/test/builtin-browser/plugin.ts).
  */
-import type { ModuleClass } from "@prismshadow/penguin-core/kernel";
 import type {
   BuiltinBrowserTab,
   DesktopBrowserCommand,
   DesktopBrowserCommandMessage,
   DesktopBrowserCookie,
   DesktopBrowserEvent,
-} from "../../src/api/types.js";
-import { ProcessShellPort } from "../../src/builtin-browser/module.js";
-import type { BrowserShellPort } from "../../src/builtin-browser/shell-link.js";
-import { FakePort } from "../helpers/fake-shell-port.js";
+} from "@prismshadow/penguin-server/api";
+import type { BrowserShellPort } from "../../src/server/shell-link.js";
+import { FakePort } from "./host.js";
 
 export { FakePort };
-
-/** The test app's stand-in for the browser's shell port node: a fake shell's port, for `createTestApp({ nodes })`. */
-export function shellPortNode(port: BrowserShellPort): readonly [ModuleClass, object] {
-  return [ProcessShellPort, { current: () => port }];
-}
 
 export type CdpHandler = (
   tabId: number,

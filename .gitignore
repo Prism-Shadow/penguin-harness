@@ -56,9 +56,12 @@ packages/server/src/ifaces.json
 packages/web/src/ifaces.json
 packages/web/src/plugin-web.gen.ts
 plugins/*/ifaces.json
+plugins/*/cli-ifaces.json
 # rendered by scripts/iface-page.mjs (pnpm ifaces:page); CI publishes it
 dist-ifaces/
 plugins/sandbox-bwrap/vendor/
+# the builtin plugin prefix a workspace server loads from (scripts/stage-dev-plugins.mjs)
+packages/server/plugins/
 
 # plugin test instance data (penguin-testing-electron)
 .data/

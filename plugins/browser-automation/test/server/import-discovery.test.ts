@@ -11,7 +11,7 @@ import {
   listImportSources,
   readHistory,
   ImportSourceNotFoundError,
-} from "../src/builtin-browser/import/index.js";
+} from "../../src/server/import/index.js";
 import {
   FakeMachine,
   writeChromiumCookies,
@@ -22,7 +22,7 @@ import {
   writeLocalState,
   writeProfilesIni,
   nowSeconds,
-} from "./builtin-browser-import-fixtures.js";
+} from "./import-fixtures.js";
 
 let machine: FakeMachine;
 afterEach(() => machine.cleanup());

@@ -42,6 +42,7 @@
  * (test/setup/weighted-shards.ts, weights in test/shard-weights.json).
  */
 import { availableParallelism } from "node:os";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 import { WeightedShards } from "./test/setup/weighted-shards";
 
@@ -62,6 +63,17 @@ const WORKERS =
   process.platform === "darwin" ? Math.max(1, Math.min(4, availableParallelism())) : 2;
 
 export default defineConfig({
+  // The browser suites that boot the App load the browser-automation plugin from its sources
+  // (test/builtin-browser/plugin.ts), which reach this package through its published face; a
+  // package cannot resolve its own name, so the two subpaths point at their sources.
+  resolve: {
+    alias: {
+      "@prismshadow/penguin-server/plugin": fileURLToPath(
+        new URL("./src/plugin/index.ts", import.meta.url),
+      ),
+      "@prismshadow/penguin-server/api": fileURLToPath(new URL("./src/api/types.ts", import.meta.url)),
+    },
+  },
   test: {
     environment: "node",
     maxWorkers: WORKERS,

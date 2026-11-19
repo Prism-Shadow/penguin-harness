@@ -12,9 +12,9 @@ import {
   listImportSources,
   readCookies,
   readHistory,
-} from "../src/builtin-browser/import/index.js";
-import { HISTORY_LIMIT } from "../src/builtin-browser/import/history.js";
-import { unreadableStoreNote } from "../src/builtin-browser/import/sqlite-copy.js";
+} from "../../src/server/import/index.js";
+import { HISTORY_LIMIT } from "../../src/server/import/history.js";
+import { unreadableStoreNote } from "../../src/server/import/sqlite-copy.js";
 import {
   DAY,
   FakeMachine,
@@ -24,7 +24,7 @@ import {
   writeFirefoxCookies,
   writeFirefoxPlaces,
   writeProfilesIni,
-} from "./builtin-browser-import-fixtures.js";
+} from "./import-fixtures.js";
 
 const sqlite = process.getBuiltinModule("node:sqlite");
 

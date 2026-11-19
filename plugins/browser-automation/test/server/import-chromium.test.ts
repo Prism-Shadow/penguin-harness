@@ -12,7 +12,7 @@ import {
   listImportSources,
   readCookies,
   type CookieReadResult,
-} from "../src/builtin-browser/import/index.js";
+} from "../../src/server/import/index.js";
 import {
   DAY,
   FakeMachine,
@@ -26,7 +26,7 @@ import {
   writeChromiumCookies,
   writeLocalState,
   type ChromiumCookieFixture,
-} from "./builtin-browser-import-fixtures.js";
+} from "./import-fixtures.js";
 
 let machine: FakeMachine;
 afterEach(() => machine.cleanup());

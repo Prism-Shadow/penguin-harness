@@ -13,13 +13,13 @@ import type {
   BuiltinBrowserMetrics,
   BuiltinBrowserServerEvent,
   BuiltinBrowserStatus,
-} from "../../src/api/types.js";
-import type { AppEnv } from "../../src/auth/middleware.js";
+} from "@prismshadow/penguin-server/api";
+import type { AppEnv } from "@prismshadow/penguin-server/plugin";
 import type { UserRow } from "@prismshadow/penguin-library-auth/repos/users";
-import { handleError } from "../../src/http/errors.js";
-import { builtinBrowserRoutes } from "../../src/builtin-browser/routes.js";
-import { BuiltinBrowser } from "../../src/builtin-browser/service.js";
-import type { BrowserTiming } from "../../src/builtin-browser/service.js";
+import { handleError } from "./host.js";
+import { builtinBrowserRoutes } from "../../src/server/routes.js";
+import { BuiltinBrowser } from "../../src/server/service.js";
+import type { BrowserTiming } from "../../src/server/service.js";
 import { FakeShell, evaluated, expressionOf, tab } from "./fake-shell.js";
 
 const GB = 1024 * 1024;

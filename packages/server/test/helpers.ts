@@ -345,9 +345,9 @@ export interface TestAppOptions {
   /** Test double: how plugin packages reach the data root's prefix, so a test never runs npm. */
   pluginPackages?: PluginPackages;
   /**
-   * Test doubles for any other node, by its class: what a feature's own test helper stands in
-   * for (the agent browser's shell port, test/builtin-browser/fake-shell.ts), so this file
-   * names no feature's nodes.
+   * Test doubles for any other node of the platform's tree, by its class: what a feature's own
+   * test helper stands in for, so this file names no feature's nodes. (A plugin module's own
+   * nodes are stood in for where its definition is built: test/builtin-browser/plugin.ts.)
    */
   nodes?: ReadonlyArray<readonly [ModuleClass, object]>;
   /** Test double: the password work factor (scrypt at full strength is seconds per hash). */

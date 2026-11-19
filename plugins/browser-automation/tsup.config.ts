@@ -1,4 +1,12 @@
+import { readFileSync } from "node:fs";
 import { defineConfig } from "tsup";
+
+/** Core's version, which `buildInfo().version` reports; stamped into the server half (module.ts). */
+const coreVersion = (
+  JSON.parse(
+    readFileSync(new URL("../../packages/core/package.json", import.meta.url), "utf8"),
+  ) as { version: string }
+).version;
 
 /**
  * The server half (`.`): one ESM file the plugin loader imports from the builtin prefix. A
@@ -21,6 +29,7 @@ export default defineConfig({
   clean: true,
   sourcemap: true,
   noExternal: [/.*/],
+  define: { __PENGUIN_VERSION__: JSON.stringify(coreVersion) },
   external: ["bufferutil", "utf-8-validate"],
   // ws is CommonJS and requires Node's built-ins; in an ESM bundle those requires need a real
   // `require`, which an ES module does not have.

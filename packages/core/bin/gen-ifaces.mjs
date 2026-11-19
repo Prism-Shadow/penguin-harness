@@ -7,6 +7,15 @@
  *
  *   penguin-gen-ifaces --project tsconfig.json --out ifaces.json   # a plugin package's build
  *   penguin-gen-ifaces ... --check                                 # CI: fail when the file on disk is stale
+ *   penguin-gen-ifaces ... --sources src                           # project only the files under src/
+ *
+ * `--sources <dir>` (repeatable) limits what is projected to the source files under those
+ * directories. Without it every source file of the program outside node_modules is projected,
+ * which is what a package whose program is its own sources wants. A plugin package that compiles
+ * against its host's SOURCES (a shipped plugin reaching the server's face through tsconfig
+ * `paths`, since depending on the server package would be a cycle) names its own `src`: the
+ * host's classes stay the host's, and an interface the plugin requires is still written into its
+ * table as a copy, under the host's own key.
  *
  * Published with @prismshadow/penguin-core as the `penguin-gen-ifaces` bin, so a package
  * outside this repository builds its table the way the shipped plugins do; inside the repo,
@@ -83,6 +92,15 @@ const projects = args.flatMap((a, i) => (a === "--project" ? [args[i + 1]] : [])
 const outPath = opt("--out");
 const componentsOut = opt("--components-out");
 const checkOnly = args.includes("--check");
+/** `--sources <dir>`: the directories whose source files are projected (absolute, `/`-separated). */
+const sourceRoots = args.flatMap((a, i) =>
+  a === "--sources" ? [`${path.resolve(args[i + 1]).split(path.sep).join("/")}/`] : [],
+);
+/** A source file this run projects: not a declaration, not installed, and under --sources if given. */
+const projectsFile = (sf) =>
+  !sf.isDeclarationFile &&
+  !sf.fileName.includes("/node_modules/") &&
+  (sourceRoots.length === 0 || sourceRoots.some((root) => sf.fileName.startsWith(root)));
 if (projects.length === 0 || outPath === null) {
   console.error(
     "usage: gen-ifaces --project <tsconfig> [--project ...] --out <ifaces.json> [--components-out <cli-commands.gen.ts>] [--check]",
@@ -179,7 +197,7 @@ for (const project of projects) {
 
   const sourceFiles = program
     .getSourceFiles()
-    .filter((sf) => !sf.isDeclarationFile && !sf.fileName.includes("/node_modules/"));
+    .filter(projectsFile);
   /** An `@Interface()` decorator, like every other decorator here a factory call. */
   const hasInterfaceDecorator = (d) =>
     (ts.getDecorators?.(d) ?? []).some(
@@ -410,7 +428,7 @@ for (const project of projects) {
     return null;
   };
   for (const sf of program.getSourceFiles()) {
-    if (sf.isDeclarationFile || sf.fileName.includes("/node_modules/")) continue;
+    if (!projectsFile(sf)) continue;
     const file = path.relative(process.cwd(), sf.fileName);
     const visit = (node) => {
       if (ts.isClassDeclaration(node) && node.name) {
@@ -467,7 +485,7 @@ for (const project of projects) {
   // default-exported binding initialized to that literal (`const plugin: Plugin = {...}`).
   // Each element must be a module class of this package; anything else is refused.
   for (const sf of program.getSourceFiles()) {
-    if (sf.isDeclarationFile || sf.fileName.includes("/node_modules/")) continue;
+    if (!projectsFile(sf)) continue;
     for (const st of sf.statements) {
       if (!ts.isExportAssignment(st) || st.isExportEquals) continue;
       let literal = unwrap(st.expression);

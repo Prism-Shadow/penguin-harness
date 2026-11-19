@@ -39,7 +39,7 @@ export { requireHuman } from "../auth/require-human.js";
 export { userChannelKey } from "../http/user-channel.js";
 export { ensureInstallId } from "../install-id.js";
 export { shellPortOf } from "../services/desktop-update-port.js";
-export { profileFromEnv } from "../machines/layout.js";
+export { profileFromEnv } from "../machines/profile.js";
 export type { Sandbox, SandboxSlots } from "../sandbox/service.js";
 export type { Terminals } from "../terminal/manager.js";
 export type { Sessions, SessionServiceIface } from "../runtime/session-manager.js";

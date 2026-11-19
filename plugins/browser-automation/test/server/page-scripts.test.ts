@@ -21,25 +21,25 @@ import type { AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { DesktopBrowserCommandMessage } from "../../src/api/types.js";
-import { BrowserActions } from "../../src/builtin-browser/actions.js";
-import { BrowserDriver } from "../../src/builtin-browser/driver.js";
-import { execExpression } from "../../src/builtin-browser/page-scripts/exec.js";
+import type { DesktopBrowserCommandMessage } from "@prismshadow/penguin-server/api";
+import { BrowserActions } from "../../src/server/actions.js";
+import { BrowserDriver } from "../../src/server/driver.js";
+import { execExpression } from "../../src/server/page-scripts/exec.js";
 import {
   DISPATCH_INPUT_EVENTS_SCRIPT,
   clickTargetScript,
   focusScript,
   pointTargetScript,
-} from "../../src/builtin-browser/page-scripts/input.js";
+} from "../../src/server/page-scripts/input.js";
 import {
   MONITOR_BEGIN_SCRIPT,
   MONITOR_END_SCRIPT,
   MONITOR_STOP_SCRIPT,
-} from "../../src/builtin-browser/page-scripts/monitor.js";
-import { scanScript } from "../../src/builtin-browser/page-scripts/simplify.js";
-import { ShellLink } from "../../src/builtin-browser/shell-link.js";
-import type { BrowserShellPort } from "../../src/builtin-browser/shell-link.js";
-import { TabRegistry } from "../../src/builtin-browser/tabs.js";
+} from "../../src/server/page-scripts/monitor.js";
+import { scanScript } from "../../src/server/page-scripts/simplify.js";
+import { ShellLink } from "../../src/server/shell-link.js";
+import type { BrowserShellPort } from "../../src/server/shell-link.js";
+import { TabRegistry } from "../../src/server/tabs.js";
 
 /** Compiles `code` the way the driver wraps it, without running it. */
 function compiles(code: string): void {

@@ -4,14 +4,14 @@
  * is the page's own message, a vanished tab is `no_such_tab`, silence is `timeout`.
  */
 import { afterEach, describe, expect, it } from "vitest";
-import { HttpError } from "../../src/http/errors.js";
+import { HttpError } from "@prismshadow/penguin-server/plugin";
 import {
   BrowserDriver,
   PageScriptError,
   exceptionMessage,
   mapLinkError,
-} from "../../src/builtin-browser/driver.js";
-import { ShellLink, ShellLinkError } from "../../src/builtin-browser/shell-link.js";
+} from "../../src/server/driver.js";
+import { ShellLink, ShellLinkError } from "../../src/server/shell-link.js";
 import { FakeShell, evaluated, expressionOf, tab } from "./fake-shell.js";
 
 const links: ShellLink[] = [];

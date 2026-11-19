@@ -16,8 +16,8 @@ import type {
   DesktopBrowserCommand,
   DesktopBrowserCommandMessage,
   DesktopBrowserEvent,
-} from "../../src/api/types.js";
-import type { ExtensionSocket } from "../../src/builtin-browser/extension-link.js";
+} from "@prismshadow/penguin-server/api";
+import type { ExtensionSocket } from "../../src/server/extension-link.js";
 import type { CdpHandler } from "./fake-shell.js";
 
 export class FakeChrome implements ExtensionSocket {

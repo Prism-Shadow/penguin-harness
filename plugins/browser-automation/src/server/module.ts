@@ -24,7 +24,6 @@
  * is not opened for them.
  */
 import type { DatabaseSync } from "node:sqlite";
-import { buildInfo } from "@prismshadow/penguin-core";
 import { Bind, Component, Interface, Module, Provide, Use } from "@prismshadow/penguin-core/plugin";
 import type { ClassCtx, Opaque } from "@prismshadow/penguin-core/plugin";
 import type { Hono } from "hono";
@@ -59,6 +58,15 @@ import { extensionUpgrade } from "./extension-ws.js";
 import { builtinBrowserRoutes, extensionPairRoutes } from "./routes.js";
 import { BuiltinBrowser } from "./service.js";
 import type { BrowserShellPort } from "./shell-link.js";
+
+/**
+ * The version a paired extension is told it paired with: this build's, which tsup.config.ts
+ * stamps from core's package.json (core's `VERSION`, what `buildInfo()` reports; a builtin plugin
+ * is built and shipped with the platform it runs on). Read from core's root entry instead, the
+ * bundle would carry the whole SDK. The sources under test run unstamped.
+ */
+declare const __PENGUIN_VERSION__: string | undefined;
+const SERVER_VERSION = typeof __PENGUIN_VERSION__ === "string" ? __PENGUIN_VERSION__ : "dev";
 
 /** The desktop shell's message port as the built-in browser reaches it; null outside the shell. */
 @Interface()
@@ -217,7 +225,7 @@ export class BuiltinBrowserRoutes {
         return user === null ? null : { userId: user.userId, displayName: user.displayName };
       },
       installId: () => ensureInstallId(this.paths.root),
-      serverVersion: buildInfo().version,
+      serverVersion: SERVER_VERSION,
       now: () => clock.now().getTime(),
     });
     this.routes = builtinBrowserRoutes(browser, {

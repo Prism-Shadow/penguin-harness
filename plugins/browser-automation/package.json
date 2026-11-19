@@ -51,7 +51,9 @@
   },
   "devDependencies": {
     "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/penguin-library-auth": "workspace:*",
     "@prismshadow/penguin-library-cli": "workspace:*",
+    "@prismshadow/penguin-library-db": "workspace:*",
     "@prismshadow/penguin-library-machine": "workspace:*",
     "@prismshadow/penguin-library-setting": "workspace:*",
     "@prismshadow/skills": "workspace:*",
