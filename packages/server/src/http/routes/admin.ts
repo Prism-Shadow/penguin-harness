@@ -15,8 +15,8 @@ import type { Desktop, Proxy } from "../../hmr/capabilities.js";
 import { adminSettingsRoutes } from "./admin-settings.js";
 import { adminPluginConfigRoutes } from "./admin-plugin-config.js";
 import { PluginConfigAdmin } from "../../plugin/config-page.js";
-import type { Admin } from "../../mechanisms/identity.js";
-import type { Settings } from "../../mechanisms/settings.js";
+import type { Admin } from "@prismshadow/penguin-library-auth";
+import type { Settings } from "@prismshadow/penguin-library-setting";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface AdminRouteDeps {

@@ -30,7 +30,11 @@
  */
 import { bodyAt, decodeBodyRef } from "@prismshadow/penguin-core/interfaces";
 import type { AmspRecord } from "@prismshadow/penguin-core";
-import type { HistoryFileKey, TraceAnalysisResponse, TraceEventsResponse } from "../api/types.js";
+import type { HistoryFileKey } from "../api/types.js";
+import type {
+  TraceAnalysisResponse,
+  TraceEventsResponse,
+} from "@prismshadow/penguin-library-trace";
 import { HttpError, errorBody } from "../http/errors.js";
 import type { SseRevocation } from "../http/sse.js";
 import {

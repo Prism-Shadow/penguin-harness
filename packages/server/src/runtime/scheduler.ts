@@ -25,10 +25,15 @@
  * so an unchanged tree ticks with zero readdir/readFile — manual edits are still
  * picked up next tick because every edit variant moves an mtime the gate stats.
  */
+import type {
+  ScheduleServerEvent,
+  ProjectConfigStore,
+  Projects,
+} from "@prismshadow/penguin-library-project";
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import { agentsDir, buildScheduledMessage, userText } from "@prismshadow/penguin-core";
-import type { ScheduleStateRow } from "../db/repos/schedules.js";
+import type { ScheduleStateRow } from "@prismshadow/penguin-library-session/repos/schedules";
 import { cacheable, statMtime } from "../internal/mtime-gate.js";
 import type { ErrorSink } from "./error-recorder.js";
 import type { ScheduleDefinition } from "./schedule-file.js";
@@ -40,8 +45,8 @@ import {
   validateScheduleModelRef,
 } from "./schedule-store.js";
 import type { ScheduleConfigSource } from "./schedule-store.js";
-import type { ScheduleServerEvent, ScheduleStatus } from "../api/types.js";
-import { Component, Interface, Use } from "@prismshadow/penguin-core/kernel";
+import type { ScheduleStatus } from "../api/types.js";
+import { Component, Interface, Opaque, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { userChannelKey } from "../http/routes/events.js";
 import type { Channels, Clock, Paths } from "../hmr/capabilities.js";
@@ -50,9 +55,8 @@ import type {
   Scheduling,
   SessionDrivers,
   SessionIndex,
-} from "../mechanisms/sessions.js";
-import type { ProjectConfigStore, Projects } from "../mechanisms/projects.js";
-import type { Errors } from "../mechanisms/observability.js";
+} from "@prismshadow/penguin-library-session";
+import type { Errors } from "@prismshadow/penguin-library-observability";
 
 /** Reconcile and fire-check interval (min period is 5m, so 30s granularity is plenty). */
 const TICK_INTERVAL_MS = 30_000;
@@ -139,7 +143,7 @@ export class Scheduler implements Scheduling {
   private ticking = false;
   private filesCache: ScheduleFileCache | null = null;
   /** mtime-gated schedule-file scans (public for test observability of its counters). */
-  get files(): ScheduleFileCache {
+  get files(): ScheduleFileCache & Opaque<"ScheduleFileCache"> {
     return (this.filesCache ??= new ScheduleFileCache(this.root));
   }
   /** Per-Project agents-dir listing gate: dir mtime → Agent ids (creating/removing an Agent dir moves it). */
