@@ -7,7 +7,7 @@
  * (The runtime keeps a frozen copy of this rule for a platform older than the WebSocket slot,
  * hmr/legacy-browser.ts.)
  */
-import { profileFromEnv } from "../plugin/index.js";
+import { profileFromEnv } from "@prismshadow/penguin-server/plugin";
 
 /** The extension's id, as its pinned manifest key fixes it. */
 export const PENGUIN_EXTENSION_ID = "dodgfhpcbmkjfcbgnoidablfgjjhhmgp";

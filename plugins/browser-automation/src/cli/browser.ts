@@ -41,7 +41,7 @@ import type {
   BuiltinBrowserStatus,
   BuiltinBrowserTab,
   BuiltinBrowserTabsResponse,
-} from "../../api/types.js";
+} from "@prismshadow/penguin-server/api";
 import type { BrowserMessages } from "./browser.messages.js";
 import {
   renderCdpResult,
@@ -53,7 +53,7 @@ import {
   renderStatus,
   renderTabs,
   tabHead,
-} from "../browser-output.js";
+} from "./browser-output.js";
 import {
   action,
   connect,

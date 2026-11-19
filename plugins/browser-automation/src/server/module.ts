@@ -1,5 +1,6 @@
 /**
- * The agent browser's place in the platform tree: one group, two nodes.
+ * The agent browser's server module, which the browser-automation plugin adds to the platform
+ * tree: one group, two nodes.
  *
  * - `ProcessShellPort` answers which port reaches the desktop shell — Electron's
  *   `process.parentPort`, absent under a plain `penguin server|web` — and is the node a test
@@ -10,9 +11,9 @@
  *   which the runtime hands the upgrade to. The browser (and with it the port listener and
  *   every extension socket) is disposed with the App: a hot swap hands the port to the next
  *   generation's link, and the extensions reconnect to the next generation's hub (close 1012).
- * - It reaches the host only through the plugin face (`../plugin/index.js`, published as
- *   `@prismshadow/penguin-server/plugin`), the API's types (`@prismshadow/penguin-server/api`),
- *   core and the library packages, so moving it into a plugin package changes import paths only.
+ * - It reaches the host only through the plugin face (`@prismshadow/penguin-server/plugin`), the
+ *   API's types (`@prismshadow/penguin-server/api`), core and the library packages, all bundled
+ *   into the plugin's dist (tsup.config.ts) but for the API's types, which are erased.
  *
  * Two names are kept for runtimes older than the WebSocket slot, which find the extension's gate
  * by name rather than by path: this module stays `BuiltinBrowserModule` and keeps exporting
@@ -24,8 +25,8 @@
  */
 import type { DatabaseSync } from "node:sqlite";
 import { buildInfo } from "@prismshadow/penguin-core";
-import { Bind, Component, Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
-import type { ClassCtx, Opaque } from "@prismshadow/penguin-core/kernel";
+import { Bind, Component, Interface, Module, Provide, Use } from "@prismshadow/penguin-core/plugin";
+import type { ClassCtx, Opaque } from "@prismshadow/penguin-core/plugin";
 import type { Hono } from "hono";
 import type {
   BrowserBackend,
@@ -34,7 +35,7 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import { BrowserExtensionsRepo } from "@prismshadow/penguin-library-machine/browser-extensions";
 import { BROWSER_EXTENSIONS_KEY } from "@prismshadow/penguin-library-setting/repos/server-settings";
-import { ensureInstallId, shellPortOf, userChannelKey } from "../plugin/index.js";
+import { ensureInstallId, shellPortOf, userChannelKey } from "@prismshadow/penguin-server/plugin";
 import type {
   AppEnv,
   Channels,
@@ -50,7 +51,7 @@ import type {
   UiPrefsStore,
   Users,
   WebSocketUpgrade,
-} from "../plugin/index.js";
+} from "@prismshadow/penguin-server/plugin";
 import type { BrowserExtensionAdmission } from "./extension-hub.js";
 import type { ExtensionSocket } from "./extension-link.js";
 import { ExtensionPairing } from "./extension-pairing.js";

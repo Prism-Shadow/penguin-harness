@@ -34,7 +34,7 @@ import type {
   DesktopBrowserCommand,
   DesktopBrowserEvent,
 } from "@prismshadow/penguin-server/api";
-import { HttpError } from "../plugin/index.js";
+import { HttpError } from "@prismshadow/penguin-server/plugin";
 import { BrowserActions, DEFAULT_ACTION_TIMING } from "./actions.js";
 import type { ActionTiming } from "./actions.js";
 import { BrowserDriver, mapLinkError, tabCrashedError } from "./driver.js";

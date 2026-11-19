@@ -5,7 +5,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import type { BuiltinBrowserImportSourcesResponse } from "../../api/types.js";
+import type { BuiltinBrowserImportSourcesResponse } from "@prismshadow/penguin-server/api";
 import {
   ApiError,
   ServerClient,

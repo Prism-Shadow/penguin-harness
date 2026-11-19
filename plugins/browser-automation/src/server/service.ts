@@ -42,7 +42,7 @@ import type {
   BuiltinBrowserTabsResponse,
 } from "@prismshadow/penguin-server/api";
 import type { BrowserExtensionStore } from "@prismshadow/penguin-library-machine/browser-extensions";
-import { HttpError } from "../plugin/index.js";
+import { HttpError } from "@prismshadow/penguin-server/plugin";
 import { BrowserBackendRuntime } from "./backend-runtime.js";
 import type { BrowserTiming } from "./backend-runtime.js";
 import { ExtensionHub } from "./extension-hub.js";

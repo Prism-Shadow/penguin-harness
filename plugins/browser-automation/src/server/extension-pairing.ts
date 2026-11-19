@@ -16,7 +16,7 @@ import type {
   BrowserExtensionPairResponse,
 } from "@prismshadow/penguin-server/api";
 import type { BrowserExtensionStore } from "@prismshadow/penguin-library-machine/browser-extensions";
-import { HttpError } from "../plugin/index.js";
+import { HttpError } from "@prismshadow/penguin-server/plugin";
 
 export const PAIRING_CODE_TTL_MS = 10 * 60_000;
 /** Failed attempts at one code before it is burned. */

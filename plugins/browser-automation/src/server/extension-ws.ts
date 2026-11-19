@@ -27,7 +27,7 @@ import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocketServer } from "ws";
 import type { RawData, WebSocket } from "ws";
-import type { WebSocketUpgrade } from "../plugin/index.js";
+import type { WebSocketUpgrade } from "@prismshadow/penguin-server/plugin";
 import type { ExtensionSocket } from "./extension-link.js";
 import { isPenguinExtensionOrigin } from "./extension-origin.js";
 

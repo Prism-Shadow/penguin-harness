@@ -4,7 +4,7 @@
  * bundle the command receives. The host's table does not carry them.
  */
 import type { CliHostMessages } from "@prismshadow/penguin-library-cli/messages";
-import type { BuiltinBrowserCookieSkip, BuiltinBrowserImportNote } from "../../api/types.js";
+import type { BuiltinBrowserCookieSkip, BuiltinBrowserImportNote } from "@prismshadow/penguin-server/api";
 
 /** The bundle the browser's commands read: the CLI host's, with the browser's own group. */
 export type BrowserMessages = CliHostMessages & BrowserText;

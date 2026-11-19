@@ -14,7 +14,7 @@
  * - A script that throws is a PageScriptError carrying the page's own message.
  */
 import type { BrowserBackend } from "@prismshadow/penguin-server/api";
-import { HttpError } from "../plugin/index.js";
+import { HttpError } from "@prismshadow/penguin-server/plugin";
 import {
   BrowserLinkError,
   BrowserUnavailableError,

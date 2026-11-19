@@ -15,7 +15,7 @@ import type {
   DesktopBrowserCommand,
   DesktopBrowserEvent,
 } from "@prismshadow/penguin-server/api";
-import { HttpError } from "../plugin/index.js";
+import { HttpError } from "@prismshadow/penguin-server/plugin";
 
 export interface BrowserLink {
   readonly backend: BrowserBackend;
