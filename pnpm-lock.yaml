@@ -381,7 +381,19 @@ importers:
       '@prismshadow/penguin-library-db':
         specifier: workspace:*
         version: link:../db
+      '@prismshadow/penguin-library-http':
+        specifier: workspace:*
+        version: link:../http
+      '@prismshadow/penguin-theme-pack':
+        specifier: workspace:*
+        version: link:../../packages/theme-pack
+      '@prismshadow/penguin-ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
     devDependencies:
+      '@types/node':
+        specifier: ^24
+        version: 24.13.3
       tsup:
         specifier: ^8.3.0
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
@@ -1252,7 +1264,7 @@ importers:
         version: file:library/session(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-setting':
         specifier: workspace:*
-        version: file:library/setting(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+        version: file:library/setting(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-trace':
         specifier: workspace:*
         version: file:library/trace(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
@@ -3032,6 +3044,12 @@ packages:
   '@prismshadow/penguin-theme-pack@file:packages/theme-pack':
     resolution: {directory: packages/theme-pack, type: directory}
     engines: {node: '>=24'}
+
+  '@prismshadow/penguin-ui@file:packages/ui':
+    resolution: {directory: packages/ui, type: directory}
+    peerDependencies:
+      react: ^19.1.0
+      react-dom: ^19.1.0
 
   '@protobufjs/aspromise@1.1.2':
     resolution: {integrity: sha512-j+gKExEuLmKwvz3OgROXtrJ2UG2x8Ch2YZUxahh+s1F2HZ+wAceUNLkvy6zKCPVRkU++ZWQrdxsUeQXmcg4uoQ==}
@@ -8192,14 +8210,24 @@ snapshots:
       - ws
       - zod
 
-  '@prismshadow/penguin-library-setting@file:library/setting(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
+  '@prismshadow/penguin-library-setting@file:library/setting(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
     dependencies:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-http': file:library/http(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-theme-pack': file:packages/theme-pack(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
+      - '@types/react'
       - bufferutil
+      - immer
+      - micromark
+      - micromark-util-types
+      - react
+      - react-dom
       - supports-color
+      - use-sync-external-store
       - utf-8-validate
       - ws
       - zod
@@ -8435,6 +8463,37 @@ snapshots:
       - utf-8-validate
       - ws
       - zod
+
+  '@prismshadow/penguin-ui@file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)':
+    dependencies:
+      '@shikijs/langs': 4.3.1
+      '@shikijs/themes': 4.3.1
+      katex: 0.16.47
+      mdast-util-gfm-footnote: 2.1.0(supports-color@10.2.2)
+      mdast-util-gfm-strikethrough: 2.0.0(supports-color@10.2.2)
+      mdast-util-gfm-table: 2.0.0(supports-color@10.2.2)
+      mdast-util-gfm-task-list-item: 2.0.0(supports-color@10.2.2)
+      mermaid: 11.17.2
+      micromark-extension-cjk-friendly: 2.0.2(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))
+      micromark-extension-gfm-footnote: 2.1.0
+      micromark-extension-gfm-strikethrough: 2.1.0
+      micromark-extension-gfm-table: 2.1.1
+      micromark-extension-gfm-task-list-item: 2.1.0
+      react: 19.2.7
+      react-dom: 19.2.7(react@19.2.7)
+      react-markdown: 10.1.0(@types/react@19.2.17)(react@19.2.7)(supports-color@10.2.2)
+      rehype-katex: 7.0.1
+      remark-gfm: 4.0.1(supports-color@10.2.2)
+      remark-math: 6.0.0(supports-color@10.2.2)
+      shiki: 4.3.1
+      zustand: 5.0.15(@types/react@19.2.17)(react@19.2.7)
+    transitivePeerDependencies:
+      - '@types/react'
+      - immer
+      - micromark
+      - micromark-util-types
+      - supports-color
+      - use-sync-external-store
 
   '@protobufjs/aspromise@1.1.2': {}
 
