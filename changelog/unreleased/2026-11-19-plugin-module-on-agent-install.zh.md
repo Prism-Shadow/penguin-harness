@@ -3,6 +3,7 @@
 - **Date:** 2026-11-19
 - **Type:** feature
 - **Scope:** `server`, `core`, `db`
+- **PR:** [#1636](https://github.com/Prism-Shadow/penguin-harness/pull/1636)
 
 [English](2026-11-19-plugin-module-on-agent-install.md)
 
