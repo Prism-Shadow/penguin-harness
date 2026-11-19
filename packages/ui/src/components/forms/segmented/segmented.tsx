@@ -61,7 +61,9 @@ export function Segmented<T extends string>({
   cols?: 2 | 3 | 4 | 5;
 }) {
   return (
-    <div className={`grid ${COLUMNS[cols]} gap-1 rounded-control bg-control-well p-1`}>
+    // ui-segmented: the control names itself, and each option says whether it is on in
+    // `aria-pressed`, so a theme may draw the track and the chosen option its own way.
+    <div className={`ui-segmented grid ${COLUMNS[cols]} gap-1 rounded-control bg-control-well p-1`}>
       {options.map((opt) => {
         const text =
           opt.shortLabel === undefined ? (

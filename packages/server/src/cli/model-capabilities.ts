@@ -2,9 +2,9 @@ import type { DatabaseSync } from "node:sqlite";
 import { modelOperation, type ToolModelKey, effectivePluginTable } from "@prismshadow/penguin-core";
 import { Interface, Module, Provide, Use, type ClassCtx } from "@prismshadow/penguin-core/kernel";
 import type { AvailableCapability, ModelOperation as Capability } from "../api/capabilities.js";
-import { MachinesRepo } from "../db/repos/machines.js";
+import { MachinesRepo } from "@prismshadow/penguin-library-machine/machine";
 import type { Db, Hmr } from "../hmr/capabilities.js";
-import { ProjectConfigStore } from "../mechanisms/projects.js";
+import { ProjectConfigStore } from "@prismshadow/penguin-library-project";
 import { pluginHostFrom } from "../plugin/host.js";
 
 @Interface()

@@ -131,6 +131,17 @@ Persist the Session id with \`host.setState\`, then poll from GET requests until
 mark a running snapshot failed because its text is empty. Store small reports in host state;
 keep uploaded files outside this watched source directory. Never edit state.json by hand.
 
+## A Session that only talks
+
+\`host.createSession()\` opens a Session in which every tool call runs (\`allow-all\`): right for a
+workbench that asks its Agent to do work. A workbench whose Session only talks — a character, a
+game host, anything that hands the model the person's words or a text the person imported —
+opens it with \`host.createSession({ approvalMode: "deny-all" })\`: every tool call in that
+Session is denied, the model reads the usual denial line and answers in text, and nobody is
+asked. Say in the prompt as well that the Session has no tools, so the model does not try. No
+other mode is accepted. A \`plugin.d.ts\` here without \`approvalMode\` predates it; delete
+\`.harness/\` to take it.
+
 ## Following a Session live
 
 \`host.subscribe(sessionId, listener)\` hands \`listener\` every record the Session publishes from

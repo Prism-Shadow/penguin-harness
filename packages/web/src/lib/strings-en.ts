@@ -1085,6 +1085,7 @@ export const en: Strings = {
       gold: "Gold",
       cobalt: "Cobalt",
       orange: "Orange",
+      ink: "Ink",
       marker: "Marker",
       ballpoint: "Ballpoint",
       grass: "Grass",

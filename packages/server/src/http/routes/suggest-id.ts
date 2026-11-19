@@ -24,17 +24,21 @@
  * None of them reaches the prompt, only the collision suffix. `org` and `channel` delegate to
  * the organization service, recorded as the organization's.
  */
+import type {
+  Access,
+  ProjectConfigStore,
+  ProjectLifecycle,
+  UtilityCompletion,
+} from "@prismshadow/penguin-library-project";
 import { Hono } from "hono";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { SemanticIdKind } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { Log } from "../../hmr/capabilities.js";
 import type { AgentLifecycle, Benchmarks } from "../../mechanisms/agents.js";
-import type { Errors } from "../../mechanisms/observability.js";
-import type { Access, ProjectConfigStore, ProjectLifecycle } from "../../mechanisms/projects.js";
-import type { Settings } from "../../mechanisms/settings.js";
+import type { Errors } from "@prismshadow/penguin-library-observability";
+import type { Settings } from "@prismshadow/penguin-library-setting";
 import type { OrgService } from "../../runtime/organization/service.js";
-import type { UtilityCompletion } from "../../services/project-config-service.js";
 import { SEMANTIC_ID_RULES, projectIdRule } from "../../services/semantic-id.js";
 import { suggestSemanticId } from "../../services/semantic-id-suggest.js";
 import { HttpError } from "../errors.js";

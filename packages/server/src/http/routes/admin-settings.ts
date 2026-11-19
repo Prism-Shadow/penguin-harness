@@ -38,13 +38,16 @@ export interface AdminSettingsRouteDeps {
   serverSettingsRepo: Settings;
 }
 import { applyProxySettings, normalizeProxyUrl } from "../../net/proxy.js";
-import { MAX_ATTACHMENT_MB, MIN_ATTACHMENT_MB } from "../../services/attachment-limits.js";
+import {
+  MAX_ATTACHMENT_MB,
+  MIN_ATTACHMENT_MB,
+} from "@prismshadow/penguin-library-setting/attachment-limits";
 import {
   PROXY_PROBE_TARGETS,
   probeProxyReachabilityOf,
   proxyProbeTarget,
 } from "../../services/proxy-probe.js";
-import type { Settings } from "../../mechanisms/settings.js";
+import type { Settings } from "@prismshadow/penguin-library-setting";
 
 /**
  * proxyUrl update value -> stored value: null and empty/whitespace-only clear the

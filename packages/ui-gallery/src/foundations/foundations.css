@@ -420,7 +420,6 @@
   border: 1px solid var(--ui-line);
   border-radius: var(--ui-radius-lg);
   background: var(--ui-canvas);
-  overflow: hidden;
 }
 .gf-tier {
   position: absolute;

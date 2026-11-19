@@ -97,7 +97,7 @@ import type {
   SessionCreateResponse,
   UsageResponse,
 } from "../src/api/types.js";
-import { UsageRepo } from "../src/db/repos/usage.js";
+import { UsageRepo } from "@prismshadow/penguin-library-observability/repos/usage";
 import { ProjectConfigService } from "../src/services/project-config-service.js";
 import type { ChannelEvent } from "../src/runtime/channel.js";
 import { jsonResponse, stubFetch } from "./fixtures/fetch.js";
@@ -1710,6 +1710,63 @@ describe("model-reference rekeying and the connectivity test", () => {
       }
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  // The model card and the group speed test use the same endpoint. A transcription
+  // route must receive an actual audio file even when the owner is testing a draft.
+  it.each([
+    ["deepseek-official", "deepseek-asr", "/gateway/deepseek/v1/tools/asr", false],
+    ["openai-transcription", "custom-asr", "/gateway/deepseek/audio/transcriptions", true],
+  ] as const)(
+    "uploads speech through the %s route using the draft connection",
+    async (clientType, modelId, path, speed) => {
+      const upstream = stubFetch(() => jsonResponse({ text: "Testing", duration_ms: 570 }));
+      try {
+        const result = await api.post(testUrl(), {
+          provider: "private-gateway",
+          modelId,
+          clientType,
+          speed,
+          apiKey: "probe-fixture-key",
+          baseUrl: "https://gateway.example/gateway/deepseek",
+        });
+        expect(await result.json()).toMatchObject({ ok: true, latencyMs: expect.any(Number) });
+        expect(upstream.calls).toHaveLength(1);
+        const call = upstream.calls[0]!;
+        expect(new URL(call.url).pathname).toBe(path);
+        expect(call.headers.get("authorization")).toBe("Bearer probe-fixture-key");
+        const form = await new Response(call.bytes, { headers: call.headers }).formData();
+        const file = form.get("file") as File;
+        expect(file.type).toBe("audio/ogg");
+        const bytes = Buffer.from(await file.arrayBuffer());
+        expect(bytes.toString("ascii", 0, 4)).toBe("OggS");
+        expect(bytes.indexOf("OpusHead")).toBeGreaterThan(0);
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    },
+  );
+
+  it("shows an upstream transcription rejection as a failed connectivity test", async () => {
+    const upstream = stubFetch(() =>
+      jsonResponse({ error: { message: "invalid audio key" } }, 401),
+    );
+    try {
+      const result = await api.post(testUrl(), {
+        provider: "custom",
+        modelId: "deepseek-asr",
+        clientType: "deepseek-official",
+        apiKey: "probe-fixture-key",
+        baseUrl: "https://gateway.example",
+      });
+      expect(await result.json()).toMatchObject({
+        ok: false,
+        message: expect.stringContaining("invalid audio key"),
+      });
+      expect(upstream.calls).toHaveLength(1);
+    } finally {
+      vi.unstubAllGlobals();
     }
   });
 
