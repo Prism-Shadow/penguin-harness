@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "penguin": {
-    "version": "2026.11.19.4",
+    "version": "2026.11.19.5",
     "appCenter": {
       "show": true,
       "title": "AI Slides",

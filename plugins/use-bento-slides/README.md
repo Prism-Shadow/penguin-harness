@@ -21,15 +21,16 @@ To start, open the **Slides** tab beside the Agent's chat, or the **AI PPT** til
 
 ## Your data
 
-- Decks live with the Agent, on the server: `app/data/<Agent ID>.slides/decks/<name>.bento.json`, one JSON file per deck, and under `history/` the last twenty versions that one side replaced.
+- Decks live with the Agent, on the server, in the workbench's data folder: `app/data/slides/decks/<name>.bento.json` in the Agent's folder, one JSON file per deck, and under `history/` the last twenty versions that one side replaced. Exporting the Agent with its data carries them.
 - The editor runs in a sandboxed frame with no origin of its own and a policy that allows no network connection. It cannot reach the internet, the app's API or your sign-in. Bento's update check, live sharing and remote media are therefore off inside the workbench; pictures are embedded in the deck.
 - The workbench sends nothing to any other host. The Agent's own work goes to the model you configured, as in any chat.
-- Decks stay in the Agent’s app data when the workbench is updated or reinstalled. Deleting a presentation from the file list removes it and its history.
+- Decks stay when the workbench is updated. Removing the workbench, or the plugin, removes them with it. Deleting a presentation from the file list removes it and its history.
 
 ## Known limits
 
 - The workbench and editor use the app’s language. The embedded Bento presentation keeps its own slide colours.
 - Printing, PDF and real full screen do not work inside the app's frame. Export the deck and present or print it from a browser tab; Bento's own "fill the tab" presenting works in the workbench.
+- The Agent's Session for a deck runs its tool calls without asking, because it edits the deck file with them. A deck you import may have been written by someone else: each request tells the Agent the deck's text is content, not instructions, and the Agent's sandbox is what limits its commands.
 
 ## Licence and credits
 

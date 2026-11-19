@@ -1,7 +1,7 @@
 ---
 name: bento-slides
-description: "Create and edit Bento slide decks, whose document is JSON: in the Slides workbench, where the user edits the same deck while you work, or as a self-contained .bento.html file. Use whenever the user wants a slide deck or presentation, or a request names the Slides workbench or a deck file under app/data/<Agent ID>.slides/decks/."
-version: 2026.11.17.1
+description: "Create and edit Bento slide decks, whose document is JSON: in the Slides workbench, where the user edits the same deck while you work, or as a self-contained .bento.html file. Use whenever the user wants a slide deck or presentation, or a request names the Slides workbench or a deck file under app/data/slides/decks/."
+version: 2026.11.19.1
 ---
 
 # Bento slide decks
@@ -26,7 +26,7 @@ The workbench shows the deck in Bento's editor and loads whatever you save withi
 ### Where the decks are
 
 ```
-<App Data Dir>/agents/<Agent ID>/app/data/<Agent ID>.slides/decks/<deck-id>.bento.json
+<App Data Dir>/agents/<Agent ID>/app/data/slides/decks/<deck-id>.bento.json
 ```
 
 Build the path from the Environment section of your system prompt. A request sent from the workbench names the exact file; use that path as given. `<deck-id>` is lower-case letters, digits and hyphens.
