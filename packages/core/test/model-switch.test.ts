@@ -927,9 +927,7 @@ describe("in-session model switch", () => {
     const midPath = h.trace.currentPath();
     const mid = await readTrace(midPath);
     expect(payloadTypes(mid).slice(0, 3)).toEqual(["session_meta", "tool_list_ready", "text"]);
-    expect(mid.filter((m) => m.type === "model_msg" && textOf(m) === SUMMARY_TEXT)).toHaveLength(
-      1,
-    );
+    expect(mid.filter((m) => m.type === "model_msg" && textOf(m) === SUMMARY_TEXT)).toHaveLength(1);
 
     const { all, result } = await collectWithReturn(switchTo(h.session, MODEL_B));
     expect(result).toBe("completed");
