@@ -3,8 +3,7 @@
  * them to its own mechanisms (see the Provider in packages/server); the package defines the
  * shapes so it never imports the server.
  */
+import { Interface } from "@prismshadow/penguin-core/kernel";
 
 /** Where the harness root is. The server's `Paths` capability satisfies this structurally. */
-export interface BenchmarkPaths {
-  readonly root: string;
-}
+export abstract class BenchmarkPaths extends Interface<{ readonly root: string }>() {}

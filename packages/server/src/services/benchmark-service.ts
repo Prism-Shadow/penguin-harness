@@ -39,7 +39,11 @@ export class BenchmarkServiceProvider {
   @Bind("BenchmarkService.semanticIdKind") semanticIdKind!: SemanticIdKindSource;
 
   setup() {
-    this.service = new BenchmarkService();
+    // The service's ports are decorator-injected fields; the server binds them by hand here.
+    this.service = Object.assign(new BenchmarkService(), {
+      paths: this.paths,
+      workspaceFiles: this.workspaceFiles,
+    });
     this.benchmarks = this.service;
     this.semanticIdKind = { takenIds: (projectId) => this.service.takenIds(projectId) };
   }
