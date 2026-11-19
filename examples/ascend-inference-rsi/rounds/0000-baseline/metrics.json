@@ -1,0 +1,40 @@
+{
+  "round": "0000-baseline",
+  "runs": 5,
+  "config": {
+    "model": "Qwen3.8-27B-w8a8",
+    "tensor_parallel_size": 1,
+    "device": "NPU 0",
+    "max_model_len": 32768,
+    "max_num_seqs": 32,
+    "cudagraph_mode": "FULL_DECODE_ONLY",
+    "num_speculative_tokens": 3,
+    "dataset": "random",
+    "seed": 0,
+    "num_prompts": 32,
+    "input_len": 128,
+    "output_len": 128
+  },
+  "metrics": {
+    "mean_tpot_ms": { "median": 26.164, "min": 24.59, "max": 26.441, "cv_pct": 2.68 },
+    "median_tpot_ms": { "median": 26.607, "min": 24.766, "max": 27.146, "cv_pct": 3.55 },
+    "output_throughput_tok_s": {
+      "median": 814.243,
+      "min": 803.699,
+      "max": 854.143,
+      "cv_pct": 2.22
+    },
+    "total_token_throughput_tok_s": {
+      "median": 1962.454,
+      "min": 1937.04,
+      "max": 2058.618,
+      "cv_pct": 2.22
+    },
+    "mean_ttft_ms": { "median": 718.412, "min": 715.353, "max": 722.326, "cv_pct": 0.31 },
+    "duration_s": { "median": 5.03, "min": 4.795, "max": 5.096, "cv_pct": 2.2 }
+  },
+  "noise_floor_pct": {
+    "mean_tpot_ms": 8.04,
+    "output_throughput_tok_s": 6.66
+  }
+}

@@ -1,0 +1,27 @@
+diff --git a/vllm_ascend/platform.py b/vllm_ascend/platform.py
+index 8868f0f..4880712 100644
+--- a/vllm_ascend/platform.py
++++ b/vllm_ascend/platform.py
+@@ -794,6 +794,22 @@ def _fix_incompatible_config(vllm_config: VllmConfig) -> None:
+             )
+             vllm_config.speculative_config.quantization = None
+ 
++        # Operator-selectable MTP token budget. Measurements on 950PR show that
++        # one speculative token wins at high concurrency, while three win for
++        # single-stream latency.
++        serving_mode = os.getenv("VLLM_ASCEND_SERVING_MODE", "").strip().lower()
++        spec = vllm_config.speculative_config
++        if serving_mode in ("latency", "throughput") and str(getattr(spec, "method", "")) == "mtp":
++            target = 3 if serving_mode == "latency" else 1
++            if getattr(spec, "num_speculative_tokens", target) != target:
++                logger.info(
++                    "Ascend serving mode %s: MTP speculative tokens %d -> %d",
++                    serving_mode,
++                    spec.num_speculative_tokens,
++                    target,
++                )
++                spec.num_speculative_tokens = target
++
+     # ==================== 7. KV Transfer Config ====================
+     if vllm_config.kv_transfer_config:
+         # Buffer size is primarily tied to NCCL (GPU) backends

@@ -1,0 +1,8 @@
+{"id":"warm-01","max_tokens":64,"prompt":"Give three short reasons why decode differs from prefill in an inference server."}
+{"id":"warm-02","max_tokens":64,"prompt":"Name four sources of host-side overhead in a decode loop and one way to measure each."}
+{"id":"warm-03","max_tokens":96,"prompt":"Explain in plain language how speculative decoding changes the number of tokens produced per model forward pass."}
+{"id":"warm-04","max_tokens":96,"prompt":"A serving step takes 20 ms on the device and 30 ms on the host. State which side to optimize first and why."}
+{"id":"reason-01","max_tokens":128,"prompt":"A 27B model is quantized to 8-bit weights and runs on a chip with 1.6 TB/s memory bandwidth. Estimate the lower bound on tokens per second for single-stream decode, showing your arithmetic."}
+{"id":"reason-02","max_tokens":128,"prompt":"Two identical prompts in one batch produce different tokens after position 20 only when speculative decoding is enabled. List three plausible causes and how you would isolate the batch-dependent one."}
+{"id":"code-01","max_tokens":128,"prompt":"Write a Python function that takes a list of per-token latencies and returns the median, p90, and the number of outliers above three times the median."}
+{"id":"code-02","max_tokens":128,"prompt":"Write a short shell script that stops a process, waits for its port to close, starts a new process with the same arguments, and waits until the health endpoint returns 200."}

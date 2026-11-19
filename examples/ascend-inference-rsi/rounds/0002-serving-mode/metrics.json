@@ -1,0 +1,44 @@
+{
+  "round": "0002-serving-mode",
+  "patch": "patches/0001-ascend-serving-mode.patch",
+  "base_commit": "0c002b4b44cd2e7e12a094e6f778b62ed793afba",
+  "modes": {
+    "latency": {
+      "concurrency": 1,
+      "runs": 3,
+      "mean_tpot_ms": 11.104,
+      "output_throughput_tok_s": 85.787,
+      "mean_ttft_ms": 75.624
+    },
+    "throughput": {
+      "concurrency": 32,
+      "runs": 3,
+      "mean_tpot_ms": 26.092,
+      "output_throughput_tok_s": 904.742,
+      "mean_ttft_ms": 698.045
+    },
+    "throughput_at_concurrency_1": {
+      "runs": 1,
+      "mean_tpot_ms": 14.467,
+      "output_throughput_tok_s": 67.375
+    }
+  },
+  "baseline_reference": {
+    "mean_tpot_ms": 26.164,
+    "output_throughput_tok_s": 814.243
+  },
+  "delta_throughput_vs_baseline_pct": 11.1,
+  "accuracy": {
+    "baseline_correct": 20,
+    "throughput_correct": 20,
+    "total": 20
+  },
+  "soak": {
+    "runs": 120,
+    "failures": 0,
+    "first20_mean_tpot_ms": 26.102,
+    "last20_mean_tpot_ms": 26.166,
+    "first20_output_throughput_tok_s": 926.891,
+    "last20_output_throughput_tok_s": 920.456
+  }
+}

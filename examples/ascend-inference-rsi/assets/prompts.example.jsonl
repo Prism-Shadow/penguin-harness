@@ -1,0 +1,4 @@
+{"id":"short-001","input_tokens":128,"output_tokens":128,"prompt":"Explain why a decode step on an Ascend NPU can be host-bound."}
+{"id":"short-002","input_tokens":128,"output_tokens":128,"prompt":"List three differences between prefill and decode serving."}
+{"id":"medium-001","input_tokens":2048,"output_tokens":256,"prompt":"Summarize the trade-offs between speculative decoding and plain decoding for a 27B dense model."}
+{"id":"long-001","input_tokens":32768,"output_tokens":128,"prompt":"Read the attached document and state the single most important constraint it imposes on inference serving."}

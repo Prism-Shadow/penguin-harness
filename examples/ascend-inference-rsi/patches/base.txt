@@ -1,0 +1,5 @@
+vllm-ascend: releases/v0.30.0 at 0c002b4b44cd2e7e12a094e6f778b62ed793afba
+vllm: 0.30.0+empty
+CANN: 9.2.1
+torch: 2.10.0+cpu
+torch_npu: 2.10.0.post7

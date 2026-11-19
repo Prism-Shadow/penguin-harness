@@ -1,0 +1,49 @@
+{
+  "round": "0001-mtp-sweep",
+  "runs_per_variant": 3,
+  "workload": {
+    "dataset": "random",
+    "num_prompts": 32,
+    "input_len": 128,
+    "output_len": 128,
+    "seed": 0,
+    "max_num_seqs": 32
+  },
+  "variants": {
+    "3_baseline": {
+      "mean_tpot_ms": 26.164,
+      "output_throughput_tok_s": 814.243,
+      "acceptance_pct": 50.24,
+      "runs": 5,
+      "source": "rounds/0000-baseline"
+    },
+    "1": {
+      "mean_tpot_ms": 25.913,
+      "output_throughput_tok_s": 910.359,
+      "acceptance_pct": 76.59,
+      "runs": 3
+    },
+    "2": {
+      "mean_tpot_ms": 26.257,
+      "output_throughput_tok_s": 865.949,
+      "acceptance_pct": 62.05,
+      "runs": 3
+    },
+    "4": {
+      "mean_tpot_ms": 26.72,
+      "output_throughput_tok_s": 769.769,
+      "acceptance_pct": 43.22,
+      "runs": 3
+    },
+    "5": {
+      "mean_tpot_ms": 28.576,
+      "output_throughput_tok_s": 717.716,
+      "acceptance_pct": 35.86,
+      "runs": 3
+    }
+  },
+  "delta_variant_1_vs_baseline_pct": {
+    "mean_tpot_ms": -0.96,
+    "output_throughput_tok_s": 11.8
+  }
+}
