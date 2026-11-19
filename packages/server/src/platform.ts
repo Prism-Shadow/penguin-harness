@@ -102,7 +102,7 @@ import { PlatformAuth, PlatformAuthProvider } from "./services/platform-auth-ser
 import { ModelScopeAuth, ModelScopeAuthProvider } from "./services/modelscope-auth-service.js";
 import { TraceIndexService } from "./services/trace-index.js";
 import { TraceService } from "./services/trace-service.js";
-import { WorkspaceFilesService } from "./services/workspace-files-service.js";
+import { WorkspaceFilesService } from "@prismshadow/penguin-library-workspace/workspace-files-service";
 import { RevealService } from "./services/reveal-path.js";
 import { ProjectAccess } from "./services/project-access.js";
 import { ProjectNotifier } from "./services/project-events.js";

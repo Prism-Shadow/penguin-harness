@@ -8,7 +8,6 @@ export default defineConfig({
     "src/index.ts",
     "src/ports.ts",
     "src/types.ts",
-    "src/workspace-port.ts",
   ],
   format: ["esm"],
   target: "node24",

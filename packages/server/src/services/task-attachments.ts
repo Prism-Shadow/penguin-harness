@@ -263,7 +263,7 @@ async function writeAttachment(dir: string, attachment: TaskAttachment): Promise
  * `fs.mkdir(…, {recursive:true})` succeeds silently when the directory is already a **symlink**
  * to somewhere else, and nothing downstream would notice — so the result is realpath'd and
  * required to still sit inside the Agent's scratchpad root, the same containment rule the
- * Workspace upload path applies (workspace-files-service.resolveWriteParent). Only the Agent
+ * Workspace upload path applies (the workspace domain library's resolveWriteParent). Only the Agent
  * process can plant such a link and it runs as this server's uid, so this is consistency rather
  * than a privilege boundary; it costs one resolution per message that carries attachments.
  *

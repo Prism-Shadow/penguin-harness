@@ -14,11 +14,15 @@ import type {
   WorkspaceFilesResponse,
   WorkspaceSearchHit,
   WorkspaceSearchResponse,
-} from "../api/types.js";
-import { HttpError } from "../http/errors.js";
-import { badRequest } from "../http/validate.js";
+  WorkspaceFileContent,
+  WorkspaceFileReadOptions,
+  WorkspaceFileStat,
+} from "./types.js";
+export type { WorkspaceFileContent, WorkspaceFileReadOptions, WorkspaceFileStat };
+import { HttpError } from "@prismshadow/penguin-library-http";
+import { badRequest } from "@prismshadow/penguin-library-http/validate";
 import { Component } from "@prismshadow/penguin-core/kernel";
-import type { WorkspaceFiles } from "../mechanisms/workspace.js";
+import type { WorkspaceFiles } from "./contract.js";
 
 /** Per-file read cap (a safety limit since preview/download reads the whole file into memory). */
 const MAX_READ_BYTES = 50 * 1024 * 1024;
@@ -64,24 +68,6 @@ const CONTENT_TYPES: Record<string, string> = {
   ".ogg": "audio/ogg",
   ".m4a": "audio/mp4",
 };
-
-export interface WorkspaceFileContent {
-  data: Buffer;
-  fileName: string;
-  contentType: string;
-  /**
-   * Which kind of scriptable document this is, or false. Both kinds would execute scripts if
-   * a browser rendered them as a same-origin document, but they need different inline
-   * handling: `"html"` falls back to plain text, while `"svg"` keeps its real type so an
-   * `<img>` can render it (an image never runs the SVG's scripts) and is served with a
-   * sandbox CSP so a direct navigation to it stays inert. See the file-content routes.
-   */
-  scriptable: "html" | "svg" | false;
-  /** True when a bounded preview returned only the beginning of the file. */
-  truncated?: boolean;
-  /** The file's version at the moment it was read — see {@link fileVersion}. */
-  version: string;
-}
 
 /**
  * A file's version marker: the weak size+mtime validator the static asset route already
@@ -141,18 +127,6 @@ async function occupied(p: string): Promise<boolean> {
     () => true,
     () => false,
   );
-}
-
-export interface WorkspaceFileReadOptions {
-  /** Return at most this many bytes. Used for bounded text previews. */
-  maxBytes?: number;
-}
-
-/** One existing file from a batch existence check, with the time it was last written. */
-export interface WorkspaceFileStat {
-  /** The path as it was asked for, not its canonical form. */
-  rel: string;
-  mtimeMs: number;
 }
 
 @Component()
