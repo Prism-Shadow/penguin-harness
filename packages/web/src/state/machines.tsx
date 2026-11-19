@@ -33,8 +33,13 @@ import {
 
 import type { MachinesResponse } from "@prismshadow/penguin-server/api";
 import * as api from "../api/endpoints";
-import { catalogAccessDenied, forgetCatalogs } from "../lib/catalog-storage";
-import { readKey } from "../lib/read-store";
+import {
+  catalogAccessDenied,
+  catalogKey,
+  catalogScope,
+  forgetCatalogs,
+  inCatalogScope,
+} from "../lib/catalog-storage";
 import { apiErrorText } from "../lib/api-error";
 import { useAuth } from "./auth";
 import { useProject } from "./project";
@@ -82,25 +87,27 @@ export function MachinesProvider({ children }: { children: ReactNode }) {
   const projectId = currentProject?.projectId ?? null;
   const { user } = useAuth();
   const admin = user?.isAdmin === true;
-  const scope = admin && projectId !== null ? readKey(projectId, user.userId) : null;
+  /** The Project and the account the list is read for: another account's answer is not shown. */
+  const scope = admin && projectId !== null ? catalogScope(projectId, user.userId) : null;
   const [state, setState] = useState<MachinesResponse | null>(null);
   const [settled, setSettled] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  /** The Project the current answers are about: a late one about another is dropped. */
+  /** The scope the current answers are about: a late one about another is dropped. */
   const current = useRef<string | null>(null);
-  /** The read in flight and the Project it asks about, and whether another is owed after it. */
-  const reading = useRef<{ projectId: string; done: Promise<void> } | null>(null);
+  /** The read in flight and the scope it asks about, and whether another is owed after it. */
+  const reading = useRef<{ scope: string; done: Promise<void> } | null>(null);
   const owed = useRef(false);
 
   const adopt = useCallback(
     (next: MachinesResponse | null) => {
       if (!scope || current.current !== scope) return;
+      // A machine the Project no longer lists takes what it answered with it.
       const allowed = new Set(
         next?.machines
           .filter((m) => !m.local && m.installed && m.machineId)
-          .map((m) => readKey(scope, m.machineId)),
+          .map((m) => catalogKey(scope, m.machineId!)),
       );
-      forgetCatalogs((key) => key.startsWith(scope + "\u0000") && !allowed.has(key));
+      forgetCatalogs((key) => inCatalogScope(key, scope) && !allowed.has(key));
       setState(next);
     },
     [scope],
@@ -109,7 +116,7 @@ export function MachinesProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback((): Promise<void> => {
     if (projectId === null || scope === null) return Promise.resolve();
     const inFlight = reading.current;
-    if (inFlight !== null && inFlight.projectId === scope) {
+    if (inFlight !== null && inFlight.scope === scope) {
       owed.current = true;
       return inFlight.done;
     }
@@ -133,7 +140,7 @@ export function MachinesProvider({ children }: { children: ReactNode }) {
     const done = run().finally(() => {
       if (reading.current?.done === done) reading.current = null;
     });
-    reading.current = { projectId: scope, done };
+    reading.current = { scope, done };
     return done;
   }, [projectId, scope, adopt]);
 

@@ -295,15 +295,9 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
-    key: "penguin.pluginsLayout",
+    key: "penguin.pluginsGroupsFolded",
     scope: "browser",
-    why: "The chosen plugin catalog view, cards or list, applies across projects and installations.",
-  },
-  {
-    kind: "exact",
-    key: "penguin.pluginsSort",
-    scope: "browser",
-    why: "How the Plugins page orders its cards (selected first, recently updated, most used, name) — the MODE, valid against any root.",
+    why: "Which of the Plugins page's sections are folded, keyed by grouping and category, status or contents id; those ids ship with the build and name nothing on the server.",
   },
   {
     kind: "exact",
@@ -377,7 +371,7 @@ export const KEY_RULES: readonly KeyRule[] = [
     kind: "family",
     key: "penguin.catalog.",
     scope: "install",
-    why: "Machine catalogs in this tab belong to a specific installation, account, Project and machine.",
+    why: "What each machine last answered the App Center (sessionStorage, lib/catalog-storage.ts): it names that machine's Agents and apps, so a sweep forgets the tab's copies too (forgetCatalogs).",
   },
   {
     kind: "family",

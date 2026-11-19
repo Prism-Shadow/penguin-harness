@@ -18,6 +18,7 @@ import * as api from "../api/endpoints";
 import { ApiError, setUnauthorizedHandler } from "../api/client";
 import { probeSession } from "../api/session-probe";
 import { flushAccountSync, startAccountSync, stopAccountSync } from "../lib/account-sync/sync";
+import { forgetCatalogs } from "../lib/catalog-storage";
 
 /** How long signing out waits for pending edits to reach the account before it goes ahead. */
 const SIGN_OUT_FLUSH_MS = 2000;
@@ -123,7 +124,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     setUnauthorizedHandler(() => {
       // The session is gone: nothing more can reach the account, and the journal keeps what
-      // was pending for this account's next sign-in.
+      // was pending for this account's next sign-in. What machines answered it is not kept.
       stopAccountSync();
       setMachineCatalogUser(null);
       forgetCatalogs(() => true);

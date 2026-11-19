@@ -1407,7 +1407,7 @@ export const zh = {
     /** The windowed app's title bar. */
     windowClose: "关闭，回到应用中心",
     windowFullScreen: "全屏打开",
-    /** Local Agents only: a machine's Agents keep their apps in their own settings. */
+    /** Machines whose apps could not be read just now: what they last showed stays on the grid. */
     machinesOffline: (names: string) => `暂时无法连接：${names}。已缓存的内容仍可查看。`,
     allMachines: "所有机器",
     aiCreateTitle: "用 AI 创建应用",

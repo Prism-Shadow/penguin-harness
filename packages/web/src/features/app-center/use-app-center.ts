@@ -11,14 +11,23 @@
  *
  * An arrangement the viewer makes is shown at once and then written; a write that fails is said
  * in a toast and the list is read back, so the grid returns to what is stored.
+ *
+ * For an administrator the Project's machines list their apps too: each machine's own App Center
+ * read through this server's proxy (lib/machine-catalogs.ts), its tiles added after this server's
+ * as it answers, labelled with the machine and keyed `<machineId>:<agentId>/<workbenchId>`. A
+ * machine out of reach keeps the tiles it last answered (kept for the tab, without their icons),
+ * shown but not opened; a workbench's news from a machine reads that machine again. The
+ * arrangement is this server's, one for every machine: a move made before a machine answered
+ * keeps that machine's tiles where they were (arrangement.ts, `keepUnseenApps`).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AppCenterLayout, AppCenterShortcut } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
-import type { LocatedShortcut } from "./arrangement";
+import { appAwaited, type LocatedShortcut } from "./arrangement";
 import { createCatalogStore } from "../../lib/catalog-storage";
 import { useMachineCatalogs } from "../../lib/machine-catalogs";
+import { useMachines } from "../../state/machines";
 import { toastApiError } from "../../lib/toast-api-error";
 import {
   workbenchAppPath,
@@ -30,6 +39,7 @@ import {
 /** How long a burst of workbench news is gathered into one read (ms). */
 const NEWS_SETTLE_MS = 120;
 
+/** Each machine's shortcuts, kept for the tab: display data only, no icon and no path. */
 const remoteApps = createCatalogStore<AppCenterShortcut[]>(
   "apps.v1",
   (shortcuts) =>
@@ -50,11 +60,18 @@ const loadRemoteApps = (projectId: string, machineId: string) =>
   api.getAppCenter(projectId, machineId).then((r) => r.shortcuts);
 
 export interface AppCenterData {
-  /** The shortcuts in the server's order; null until the first answer for this Project. */
+  /**
+   * This server's shortcuts in its order, then each machine's; null until this server first
+   * answers for this Project (or, when it fails, until a machine does).
+   */
   shortcuts: LocatedShortcut[] | null;
+  /** The names of the machines whose tiles are not live: out of reach, or their read failed. */
   unavailableMachines: string[];
+  /** Reads again every connected machine whose read failed; null when none did. */
   retryFailures: (() => void) | null;
-  unseenApp: (key: string) => boolean;
+  /** Whether a stored app is one the grid cannot show yet (arrangement.ts, `appAwaited`). */
+  awaitedApp: (key: string) => boolean;
+  /** Reads one machine's apps again, or this server's without a machine. */
   refreshMachine: (machineId?: string) => void;
   /** The viewer's arrangement; null for the server's order. */
   layout: AppCenterLayout | null;
@@ -95,6 +112,7 @@ export function useAppCenter(projectId: string | null, agentIds: string): AppCen
   }, [load, agentIds]);
 
   const remotes = useMachineCatalogs(remoteApps, projectId, loadRemoteApps);
+  const { state: machineList, settled: machinesSettled } = useMachines();
   const catalogs = useRef(remotes);
   catalogs.current = remotes;
   useEffect(() => {
@@ -171,9 +189,13 @@ export function useAppCenter(projectId: string | null, agentIds: string): AppCen
     unavailableMachines: remotes
       .filter((r) => r.machine.link !== "connected" || r.error)
       .map((r) => r.machine.label),
-    unseenApp: (key) =>
-      key.includes(":") &&
-      !remotes.some((r) => key.startsWith(r.machine.machineId + ":") && r.value !== null),
+    awaitedApp: (key) =>
+      appAwaited(
+        key,
+        machinesSettled && machineList !== null
+          ? remotes.map((r) => ({ machineId: r.machine.machineId, answered: r.value !== null }))
+          : null,
+      ),
     refreshMachine: (machineId) =>
       machineId ? remotes.find((r) => r.machine.machineId === machineId)?.refresh() : void load(),
     layout: current?.layout ?? null,

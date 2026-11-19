@@ -1,8 +1,10 @@
 /**
  * The App Center (/apps): the Project's home screen. One tile per workbench of the Project's
- * Agents on this server and its machines whose manifest asks to be shown (`penguin.appCenter.show`), each the
- * app's icon and name; the server reads them from the files without loading anything, so opening
- * this page starts no build.
+ * Agents whose manifest asks to be shown (`penguin.appCenter.show`), each the app's icon and name;
+ * the server reads them from the files without loading anything, so opening this page starts no
+ * build. An administrator sees the apps of the Project's machines too, after this server's, each
+ * with its machine's name under its own (use-app-center.ts); a machine out of reach keeps the
+ * tiles it last showed, which do not open, and a note under the grid names it.
  *
  * - The arrangement is the viewer's own: they drag tiles to reorder them and onto one another to
  *   make folders, or make one from the "New folder" dialog (the header's button, the grid's
@@ -10,8 +12,8 @@
  *   A new app is appended, one that went away drops out, and a folder goes only once it is
  *   empty. Restoring the default order asks first.
  * - A click (or Enter) opens the app windowed, over the grid, in this page's own window stack
- *   (`?app=<agentId>/<workbenchId>`, so Back closes it); the tile's menu also opens it full
- *   screen, the full page whose exit comes back here.
+ *   (`?app=<agentId>/<workbenchId>`, `<machineId>:` first for a machine's, so Back closes it);
+ *   the tile's menu also opens it full screen, the full page whose exit comes back here.
  * - A tile whose app is building shows a turning ring and does not open; it turns live by itself
  *   when the build ends (use-app-center.ts follows the server's workbench news).
  * - Every tile, every folder and the grid's empty space have a context menu: right-click,
@@ -32,6 +34,7 @@ import {
   EmptyState,
   GlyphIcon,
   ICONS,
+  Notice,
   NoticeStrip,
   PageHeader,
   Skeleton,
@@ -119,7 +122,7 @@ export function AppCenterPage() {
     saveLayout,
     refreshMachine,
     unavailableMachines,
-    unseenApp,
+    awaitedApp,
     retryFailures,
   } = useAppCenter(projectId, agentIds);
 
@@ -141,7 +144,7 @@ export function AppCenterPage() {
   /** Shows a new arrangement and stores it; one that changes nothing writes nothing. */
   const commit = (next: GridItem[]) => {
     if (grid === null || sameArrangement(grid, next)) return;
-    saveLayout(keepUnseenApps(layoutOf(next), layout, unseenApp));
+    saveLayout(keepUnseenApps(layoutOf(next), layout, awaitedApp));
   };
 
   const onDrop = (dragged: Dragged, drop: Drop) => {
@@ -338,14 +341,15 @@ export function AppCenterPage() {
               </ContextMenu>
             )}
             {unavailableMachines.length > 0 && (
-              <p className="mt-6 text-xs text-fg-muted">
-                {S.appCenter.machinesOffline(unavailableMachines.join(", "))}{" "}
-                {retryFailures && (
-                  <Button size="sm" variant="link" onClick={retryFailures}>
-                    {S.common.retry}
-                  </Button>
-                )}
-              </p>
+              <Notice
+                tone="attention"
+                className="mt-6"
+                {...(retryFailures !== null
+                  ? { retry: { label: S.common.retry, onClick: retryFailures } }
+                  : {})}
+              >
+                {S.appCenter.machinesOffline(unavailableMachines.join(", "))}
+              </Notice>
             )}
           </div>
         </div>

@@ -1276,7 +1276,7 @@ export const en: Strings = {
     /** The windowed app's title bar. */
     windowClose: "Close, back to the App Center",
     windowFullScreen: "Open full screen",
-    /** Machines that could not refresh their entries. */
+    /** Machines whose apps could not be read just now: what they last showed stays on the grid. */
     machinesOffline: (names: string) =>
       `Currently unreachable: ${names}. Cached items are still visible.`,
     allMachines: "All machines",
