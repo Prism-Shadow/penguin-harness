@@ -112,13 +112,10 @@ interface RunLog {
  * them (the input behind the run's `task_begin`, a goal round, a stop-hook continue). A read
  * is cut at the earliest of these it holds (services/session-history.ts `cutBeforeRun`).
  */
-export interface RunStart {
-  /** The channel event id the record went out as (`<epoch>-<seq>`). */
-  id: string;
-  timestamp: string;
-  /** `envelopeDigest` of the record as published; the Trace holds the same bytes. */
-  digest: string;
-}
+/** The live fragment log and its shapes moved to @prismshadow/penguin-library-session
+ * (the AgentState closed shape reaches them); re-exported here for the existing import paths. */
+export type { LiveTail, LiveRun, RunStart };
+import type { LiveTail, LiveRun, RunStart } from "@prismshadow/penguin-library-session";
 
 /**
  * The digest a record's envelope (its JSON) is compared by: a run's user inputs can carry
@@ -129,14 +126,6 @@ export function envelopeDigest(envelope: string): string {
 }
 
 /** The current run's log, as the run form of GET /messages reads it. */
-export interface LiveRun {
-  /** The run's records in publish order, each fragment rendered as its start with what was folded in. */
-  records: AmspRecord[];
-  /** How many of the run's oldest records the byte cap dropped. */
-  omitted: number;
-  starts: RunStart[];
-}
-
 /** The partial kind a complete payload closes out; null when it has no streamed counterpart. */
 function partialKindFor(p: CompleteModelPayload): PartialKind | null {
   switch (p.type) {
@@ -259,18 +248,6 @@ function isUserInput(msg: AmspRecord): boolean {
   return (
     msg.type === "model_msg" && p.role === "user" && (p.type === "text" || p.type === "image_url")
   );
-}
-
-/** The live tail of running sessions, as their holder uses it — what {@link LiveTailTracker} implements. */
-export interface LiveTail {
-  /** A run starts on the Session: a fresh log of its records (nothing from before it continues). */
-  begin(sessionId: string): void;
-  /** Feed one published message with the channel event it went out as. */
-  observe(sessionId: string, msg: AmspRecord, published: ChannelEvent): void;
-  fragments(sessionId: string): AmspRecord[];
-  /** The current run's log; null when no run is under way. */
-  run(sessionId: string): LiveRun | null;
-  clear(sessionId: string): void;
 }
 
 export class LiveTailTracker implements LiveTail {

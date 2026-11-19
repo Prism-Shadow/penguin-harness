@@ -140,6 +140,17 @@ cacheDir, stateDir }\`) for this workbench — by default its \`<agentId>.<workb
 files, media, documents and build artifacts in \`dataDir\`, disposable caches in \`cacheDir\`, and
 Unix sockets or port files in \`stateDir\`; never put code in \`dataDir\`.
 
+## A Session that only talks
+
+\`host.createSession()\` opens a Session in which every tool call runs (\`allow-all\`): right for a
+workbench that asks its Agent to do work. A workbench whose Session only talks — a character, a
+game host, anything that hands the model the person's words or a text the person imported —
+opens it with \`host.createSession({ approvalMode: "deny-all" })\`: every tool call in that
+Session is denied, the model reads the usual denial line and answers in text, and nobody is
+asked. Say in the prompt as well that the Session has no tools, so the model does not try. No
+other mode is accepted. A \`plugin.d.ts\` here without \`approvalMode\` predates it; delete
+\`.harness/\` to take it.
+
 ## Following a Session live
 
 \`host.subscribe(sessionId, listener)\` hands \`listener\` every record the Session publishes from

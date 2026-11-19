@@ -10,6 +10,9 @@
  * - With a configured model credential, it opens and runs Sessions the SDK's way, inside
  *   its own Project only, with allow-all: nobody is there to answer an ask. Its Sessions
  *   are archived with workbench provenance, including before their first run after a restart.
+ * - A Session that only talks is opened with deny-all: the model's tool call in it is denied
+ *   and the model reads the denial, while one opened without the option still runs its calls;
+ *   a mode that would wait for a person is refused by name.
  * - Agent counts include installed workbenches and follow removal without a compiler load.
  * - A handler takes any body (a form only from the app's own pages) and sends back any
  *   content type, a stream as it is produced and a redirect relative to its mount, never the
@@ -64,8 +67,9 @@ import type {
 import type { WorkbenchAppStorage } from "../src/mechanisms/workbenches.js";
 import { isWorkbenchId } from "../src/workbenches/store.js";
 import { SEMANTIC_ID_PATTERN } from "../src/services/ids.js";
-import { apiClient, createTestApp, provisionUser } from "./helpers.js";
+import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
+import { MOCK_MODEL_ID, requestText, startMockLLM } from "./live-session.js";
 
 const PROJECT = "owner-wf";
 const AGENT = "default_agent";
@@ -123,6 +127,17 @@ export default {
                   const opened = await (agent ? host.createSession({ agentId: agent }) : host.createSession()).catch((e: Error) => e.message);
                   const ran = await host.run(req.query["session"] ?? "", [{ text: "hi" }]).catch((e: Error) => e.message);
                   return { body: { opened, ran, agents: host.listAgents().map((a) => a.agentId) } };
+                }
+                if (req.path === "/talk") {
+                  // The mode is whatever the page sent, cast past its type as plain JavaScript could.
+                  const mode = req.query["mode"];
+                  const opened = await host
+                    .createSession(mode === undefined ? {} : { approvalMode: mode as "deny-all" })
+                    .catch((e: Error) => e.message);
+                  if (typeof opened !== "string") {
+                    await host.run(opened.sessionId, [{ text: "read the probe: " + (mode ?? "default") }]);
+                  }
+                  return { body: { opened } };
                 }
                 if (req.path === "/page") {
                   const headers: Record<string, string> = { "content-type": "text/html; charset=utf-8", "set-cookie": "x=1" };
@@ -386,6 +401,67 @@ describe("a loaded workbench", { timeout: 30_000 }, () => {
     expect((await owner.patch(`/api/sessions/${sessionId}`, { archived: false })).status).toBe(200);
     const kept = (await (await owner.get(`/api/sessions/${sessionId}`)).json()) as SessionResponse;
     expect(kept.session).toMatchObject({ source: "workbench", archived: false });
+  });
+
+  it("opens a Session that only talks with deny-all: its tool calls are denied, while a Session opened without the option runs them", async () => {
+    const probe = path.join(t.root, "approval-probe.txt");
+    await fs.writeFile(probe, "the probe was read");
+    // The model reads the probe once per Session, then answers; a request that does not come
+    // from a Session's turn (a title, say) gets plain text.
+    const mock = await startMockLLM((n) => {
+      const sent = requestText(mock.requests[n - 1]!);
+      const mode = /read the probe: ([a-z-]+)/.exec(sent)?.[1];
+      if (mode === undefined) return "A title";
+      if (sent.includes('"tool_result"')) return "done";
+      return { toolUse: { id: `toolu_${mode}`, name: "read_file", input: { file_path: probe } } };
+    });
+    try {
+      const configured = await owner.put(`/api/projects/${PROJECT}/models`, {
+        defaultModel: { provider: "custom", modelId: MOCK_MODEL_ID },
+        models: [
+          {
+            provider: "custom",
+            modelId: MOCK_MODEL_ID,
+            apiKey: "sk-mock",
+            baseUrl: mock.url,
+            contextWindow: 200_000,
+          },
+        ],
+      });
+      expect(configured.status).toBe(200);
+      /** What the model was told the tool call came to, once the Session's turn has ended. */
+      const talk = async (mode?: string) => {
+        const res = await owner.get(`${BASE}/demo/api/talk${mode ? `?mode=${mode}` : ""}`);
+        const { opened } = (await res.json()) as {
+          opened: { sessionId: string; approvalMode: string } | string;
+        };
+        if (typeof opened === "string") return { opened, toolResult: null };
+        await waitFor(() => t.deps.manager.statusOf(opened.sessionId) === "idle", 20_000);
+        const answered = mock.requests
+          .map(requestText)
+          .find(
+            (text) => text.includes('"tool_result"') && text.includes(`toolu_${mode ?? "default"}`),
+          );
+        return { opened, toolResult: answered ?? null };
+      };
+
+      const quiet = await talk("deny-all");
+      expect(quiet.opened).toMatchObject({ approvalMode: "deny-all", source: "workbench" });
+      expect(quiet.toolResult).toContain("Tool call denied by user.");
+      expect(quiet.toolResult).not.toContain("the probe was read");
+
+      const working = await talk();
+      expect(working.opened).toMatchObject({ approvalMode: "allow-all", source: "workbench" });
+      expect(working.toolResult).toContain("the probe was read");
+      expect(working.toolResult).not.toContain("Tool call denied");
+
+      // Nobody watches a workbench Session: a mode that asks a person is refused, by name.
+      expect((await talk("always-ask")).opened).toBe(
+        'createSession: approvalMode is "allow-all" or "deny-all", not "always-ask"',
+      );
+    } finally {
+      await mock.close();
+    }
   });
 
   it("hands a handler any body and sends back any content type; JSON stays the default", async () => {

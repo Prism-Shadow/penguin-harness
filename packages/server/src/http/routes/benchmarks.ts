@@ -28,7 +28,7 @@ import { benchmarkTooLarge } from "../../services/benchmark-archive.js";
 import { isHttpUrl } from "../../services/protocol-detect.js";
 import { MAX_ARCHIVE_BYTES } from "../../services/skill-import-limits.js";
 import type { Benchmarks } from "../../mechanisms/agents.js";
-import type { Access } from "../../mechanisms/projects.js";
+import type { Access } from "@prismshadow/penguin-library-project";
 import {
   badRequest,
   optionalNumber,

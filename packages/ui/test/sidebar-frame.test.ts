@@ -47,7 +47,7 @@ const dropTarget = (over: boolean): SidebarDropTarget => ({
 
 /** The ring a drop target draws while a drag it would take is over it. */
 const DROP_RING =
-  '<span aria-hidden="true" class="pointer-events-none absolute inset-0 z-raised rounded-md ring-1 ring-inset ring-accent"></span>';
+  '<span aria-hidden="true" class="pointer-events-none absolute inset-0 z-raised rounded-[inherit] ring-1 ring-inset ring-accent"></span>';
 
 const frame = (props: Partial<Parameters<typeof SidebarFrame>[0]> = {}) =>
   renderStatic(
@@ -154,7 +154,9 @@ describe("SidebarNavArea", () => {
     const html = renderStatic(
       createElement(SidebarNavArea, { drop: dropTarget(true) }, createElement("a", null, "New")),
     );
-    expect(html).toBe(`<div class="relative flex flex-col gap-px"><a>New</a>${DROP_RING}</div>`);
+    expect(html).toBe(
+      `<div class="relative flex flex-col gap-px rounded-md"><a>New</a>${DROP_RING}</div>`,
+    );
   });
 });
 

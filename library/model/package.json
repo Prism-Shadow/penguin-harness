@@ -1,0 +1,59 @@
+{
+  "name": "@prismshadow/penguin-library-model",
+  "version": "0.2.18",
+  "description": "The models domain: the model/credential plumbing vocabulary (the DTOs the models routes return and take), the ModelOAuth mechanism and its flow vocabulary, and the model promotions / provider auth token repos. A library package - the server imports it; nothing here imports the server.",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Prism-Shadow",
+    "url": "https://github.com/Prism-Shadow"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "library/model"
+  },
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./model": {
+      "types": "./dist/model.d.ts",
+      "import": "./dist/model.js"
+    },
+    "./repos/model-promotions": {
+      "types": "./dist/repos/model-promotions.d.ts",
+      "import": "./dist/repos/model-promotions.js"
+    },
+    "./repos/model-provider-auth-tokens": {
+      "types": "./dist/repos/model-provider-auth-tokens.d.ts",
+      "import": "./dist/repos/model-provider-auth-tokens.js"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "build": "tsup"
+  },
+  "dependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/penguin-library-agent-api": "workspace:*",
+    "@prismshadow/penguin-library-db": "workspace:*"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.12"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "private": true
+}
