@@ -31,6 +31,25 @@ const entry = path.join(cliDir, "dist", "penguin.js");
 const t = getMessages("en");
 const windows = process.platform === "win32";
 
+/**
+ * node-pty's macOS prebuild ships its `spawn-helper` without the exec bit, and every spawn then
+ * fails with "posix_spawnp failed.". The server restores the bit before its first terminal
+ * (server terminal/spawn-helper.ts); this test spawns before any server has.
+ */
+function repairSpawnHelper(): void {
+  if (process.platform !== "darwin") return;
+  const dir = path.dirname(resolveHere.resolve("node-pty/package.json"));
+  for (const rel of ["build/Release", "build/Debug", `prebuilds/darwin-${process.arch}`]) {
+    const helper = path.join(dir, ...rel.split("/"), "spawn-helper");
+    try {
+      const { mode } = fs.statSync(helper);
+      if ((mode & 0o111) === 0) fs.chmodSync(helper, mode | 0o111);
+    } catch {
+      // This copy of node-pty neither ships nor built that variant.
+    }
+  }
+}
+
 /** CSI, OSC and two-character escapes: what a terminal draws with, not what it shows. */
 const ESCAPES = /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[@-Z\\-_]/g;
 
@@ -167,6 +186,7 @@ describe("penguin chat in a terminal", () => {
         `${entry} is missing: build the CLI first (pnpm --filter @prismshadow/penguin-cli build)`,
       );
     }
+    repairSpawnHelper();
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   });
