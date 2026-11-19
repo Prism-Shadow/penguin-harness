@@ -53,6 +53,13 @@ export const LINE_HIT_H = 10;
  * indicator, axis-break marks) stays at 1 and is deliberately not that width.
  */
 
+/**
+ * An inspectable chart is focused from the keyboard, so it wears the theme's focus ring. The ring
+ * is drawn inside the canvas: the scroll box around it would clip one drawn outside.
+ */
+const INSPECT_FOCUS_CLASS =
+  "focus-visible:[outline:var(--ui-focus-ring)] focus-visible:[outline-offset:-2px]";
+
 /** Cell width (CSS px) below which axis-break marks are dropped: any narrower and successive marks sit closer together than they are wide, smearing into a hatched baseline. */
 const AXIS_BREAK_MIN_STEP = 8;
 
@@ -134,7 +141,7 @@ export function ChartFrame({
   hoverLine = true,
   axisBreaks,
   label,
-  inspectLabel,
+  inspectable = false,
   children,
 }: {
   geom: ChartGeom;
@@ -162,10 +169,13 @@ export function ChartFrame({
   hoverLine?: boolean;
   /** Indices after which the x axis skips at least one interval (the usage charts drop the buckets that recorded nothing): a break mark is drawn between that point and the next, so a compressed axis never reads as a continuous one. */
   axisBreaks?: number[];
-  /** The image's accessible name: what the chart shows, since its marks are not read out. */
+  /** The chart's accessible name: what it shows, since its marks are not read out. */
   label?: string;
-  /** Enables inspection of each bucket by keyboard or touch, with this accessible chart name. */
-  inspectLabel?: string;
+  /**
+   * Lets a reader step through the buckets without a mouse: Tab focuses the chart, the arrow
+   * keys, Home and End move the bubble, Esc hides it, and a tap opens the bucket under it.
+   */
+  inspectable?: boolean;
   /** Data marks: bars / line / area, drawn between the grid and the hit area. */
   children?: ReactNode;
 }) {
@@ -246,36 +256,37 @@ export function ChartFrame({
         height={h}
         // ui-chart: a theme may redraw the parts, which carry data-part — the grid, the axis
         // labels and breaks here, the series, areas, bars and points in the caller's marks.
-        className="ui-chart text-fg-muted"
-        role={inspectLabel ? "group" : "img"}
-        aria-label={inspectLabel ?? label}
-        tabIndex={inspectLabel ? 0 : undefined}
-        aria-describedby={inspectLabel && hover !== null ? bubbleId : undefined}
-        aria-keyshortcuts={inspectLabel ? "ArrowLeft ArrowRight Home End Escape" : undefined}
+        className={`ui-chart text-fg-muted ${inspectable ? INSPECT_FOCUS_CLASS : ""}`.trim()}
+        role={inspectable ? "group" : "img"}
+        aria-label={label}
+        tabIndex={inspectable ? 0 : undefined}
+        aria-describedby={inspectable && hover !== null ? bubbleId : undefined}
+        aria-keyshortcuts={inspectable ? "ArrowLeft ArrowRight Home End Escape" : undefined}
         onFocus={
-          inspectLabel
+          inspectable
             ? (e) => {
                 if (e.currentTarget.matches(":focus-visible")) inspectBucket(0);
               }
             : undefined
         }
-        onBlur={inspectLabel ? () => onHover(null) : undefined}
+        onBlur={inspectable ? () => onHover(null) : undefined}
         onKeyDown={
-          inspectLabel
+          inspectable
             ? (e) => {
-                const i = hover ?? 0;
+                // The first arrow press opens the bucket at that end rather than skipping it.
+                const last = dates.length - 1;
                 switch (e.key) {
                   case "ArrowLeft":
-                    inspectBucket(i - 1);
+                    inspectBucket(hover === null ? last : hover - 1);
                     break;
                   case "ArrowRight":
-                    inspectBucket(i + 1);
+                    inspectBucket(hover === null ? 0 : hover + 1);
                     break;
                   case "Home":
                     inspectBucket(0);
                     break;
                   case "End":
-                    inspectBucket(dates.length - 1);
+                    inspectBucket(last);
                     break;
                   case "Escape":
                     onHover(null);
@@ -288,7 +299,7 @@ export function ChartFrame({
             : undefined
         }
         onPointerDown={
-          inspectLabel
+          inspectable
             ? (e) => {
                 if (e.pointerType === "mouse" || !step) return;
                 const left = e.currentTarget.getBoundingClientRect().left;
@@ -372,7 +383,7 @@ export function ChartFrame({
         <div
           ref={bubbleRef}
           id={bubbleId}
-          role={inspectLabel ? "tooltip" : undefined}
+          role={inspectable ? "tooltip" : undefined}
           className="pointer-events-none absolute rounded border border-line bg-overlay px-2 py-1 text-xs whitespace-nowrap shadow-sm"
           // Mounted hidden at the origin; placeBubble moves it to the
           // pointer's lower-right (flipping near the right/bottom edges, see

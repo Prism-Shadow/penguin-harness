@@ -1144,11 +1144,13 @@ export const zh = {
       legendHitRate: "缓存命中率",
       legendParts: ["系统提示词", "工具定义", "对话消息", "工具结果"] as readonly string[],
       trend: "成本趋势",
-      trendHint: "十四天的成本折线，悬停查看某一天。",
+      trendHint: "十四天的成本折线，悬停查看某一天；也可按 Tab 聚焦，再用方向键逐日查看。",
       tokens: "Token 用量",
-      tokensHint: "按种类堆叠的每日 Token 柱，叠加缓存命中率曲线；悬停图例高亮一种。",
+      tokensHint:
+        "按种类堆叠的每日 Token 柱，叠加缓存命中率曲线；没有缓存流量的那天曲线断开。悬停图例高亮一种。",
       requests: "请求与成功率",
-      requestsHint: "按智能体堆叠的每日请求数，与各自的成功率线。",
+      requestsHint:
+        "按智能体堆叠的每日请求数，与各自的成功率线。第二个智能体空闲的日子线会断开，夹在其间的那一天画成一个点。",
       agents: ["docs-expert", "release-notes"] as readonly string[],
       activity: "活动折线",
       activityHint: "智能体卡片上的十四天会话数曲线，只看相对起伏。",

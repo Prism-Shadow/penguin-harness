@@ -24,8 +24,12 @@
  * its place in that column — as a zero and a dash, not as a missing bucket.
  * `breaks` marks where the axis skipped an interval.
  *
- * Success rates draw gaps wherever the denominator is absent, and a point for an
- * isolated observation. The cache-hit curve retains its separate convention.
+ * Every data line is drawn at the theme's line width (the chart primitives). A
+ * rate line (RateLine) breaks wherever a bucket has nothing to rate and draws a
+ * lone rate as a point; the hover table prints a dash for such a bucket.
+ *
+ * Every chart can be inspected without a mouse (ChartFrame's `inspectable`):
+ * Tab focuses it, the arrow keys walk the buckets, a tap opens one.
  *
  * Unified highlight interaction (a site-wide convention): highlight = fade
  * out the rest, and every chart offers the same three ways in: hover a column
@@ -41,8 +45,6 @@ import {
   ChartBarHit,
   ChartFrame,
   ChartHit,
-  ChartLine,
-  ChartPoint,
   ChartSwatch,
   Legend,
   LineHits,
@@ -51,7 +53,6 @@ import {
   barSegments,
   makeGeom,
   makeRangeGeom,
-  seriesPoints,
   stackSegments,
   useChartWidth,
   type ChartPaint,
@@ -67,13 +68,12 @@ import {
   bucketFullLabel,
   foldEntitySeries,
   hitRateValues,
-  plotRates,
   rateSeries,
   sumCounts,
-  successRateRuns,
   type EntityCounts,
   type EntitySeries,
 } from "../../lib/usage-controls";
+import { RateLine } from "./rate-line";
 
 /** Empty state for a chart card (defaults to "no usage records yet"; the errors chart passes its own copy). */
 export function Empty({ text }: { text?: string }) {
@@ -180,8 +180,8 @@ function RequestsLegend({
  * rate points come from the same interval. A bucket only one entity ran in is
  * still a bucket: the idle ones sit at zero in it with a dash for their rate.
  *
- * Measured neighbours form a stroke. An isolated rate has its own point; idle,
- * aborted-only and skipped intervals leave the line open.
+ * Neighbouring rates form a stroke and a lone rate is a point; an idle or
+ * aborted-only bucket, and an axis break, leave the line open (RateLine).
  *
  * Three ways to single out a series, all resolving to one RequestsMark: hover
  * a bar segment (that entity in that bucket), hover a rate line, or hover a
@@ -196,6 +196,7 @@ export function RequestsChart({
   granularity,
   breaks,
 }: {
+  /** The chart's accessible name. */
   label: string;
   series: UsageSeriesPoint[];
   /** Per-entity counts, already re-indexed onto `series` by compactCounts — the stack and its rate lines read them by position. */
@@ -213,7 +214,6 @@ export function RequestsChart({
   const totals = sumCounts(drawn);
   const totalRate = rateSeries(totals);
   const rates = drawn.map((e) => rateSeries(e));
-  const runs = rates.map((row) => successRateRuns(row, breaks));
   const geom = makeGeom(series.length, niceCountMax(...totals.requests), width, PAD_R_AXIS);
   const rateGeom = makeRangeGeom(series.length, 0, 100, width, PAD_R_AXIS);
   const buckets = series.map((p) => p.bucket);
@@ -239,7 +239,8 @@ export function RequestsChart({
       {width > 0 && (
         <>
           <ChartFrame
-            inspectLabel={label}
+            label={label}
+            inspectable
             geom={geom}
             fmtY={(v) => String(Math.round(v))}
             dates={buckets}
@@ -355,33 +356,19 @@ export function RequestsChart({
                 like the Token chart's hit-rate curve: a dash is what tells the reader a stroke
                 belongs to the right-hand percentage axis rather than to the bars — and here the
                 lines share their entity's bar color, so shape is the only separator left. */}
-            {drawn.map((e, si) =>
-              runs[si]!.map((run) => {
-                const first = run[0]!;
-                const paint = entityPaint(e, si);
-                const opacity = lineLit(si) ? 1 : 0.15;
-                const key = `rate-${si}-${first}`;
-                return run.length === 1 ? (
-                  <ChartPoint
-                    key={key}
-                    cx={rateGeom.x(first)}
-                    cy={rateGeom.y(rates[si]![first]!)}
-                    paint={paint}
-                    opacity={opacity}
-                    grow={hover === first && lineLit(si)}
-                  />
-                ) : (
-                  <ChartLine
-                    key={key}
-                    points={run.map((i) => [rateGeom.x(i), rateGeom.y(rates[si]![i]!)])}
-                    paint={paint}
-                    dash="4 3"
-                    className="pointer-events-none transition-opacity duration-150"
-                    opacity={opacity}
-                  />
-                );
-              }),
-            )}
+            {drawn.map((e, si) => (
+              <RateLine
+                key={`rate-${e.label}:${si}`}
+                geom={rateGeom}
+                rates={rates[si]!}
+                breaks={breaks}
+                paint={entityPaint(e, si)}
+                dash="4 3"
+                className="pointer-events-none transition-opacity duration-150"
+                opacity={lineLit(si) ? 1 : 0.15}
+                hover={lineLit(si) ? hover : null}
+              />
+            ))}
           </ChartFrame>
           <RequestsLegend
             entities={drawn}
@@ -417,8 +404,8 @@ const HIT_RATE_PAINT: ChartPaint = { role: "ref" };
  * cacheRead, with the cache hit rate drawn as a dashed line **in front of the
  * bars** on its own right-hand 0–100% axis (same x positions — the two geoms
  * share n / w / padR). A bucket with no cache traffic has no hit rate: the
- * line crosses it at NO_RATE_PLOT rather than dipping to a 0% it did not
- * measure, and the bubble prints a dash for it.
+ * line breaks there rather than claiming a rate it did not measure (RateLine),
+ * and the bubble prints a dash for it.
  *
  * The series arrives with its empty buckets already dropped (compactSeries),
  * so the bars run left to right over only the intervals that recorded
@@ -436,11 +423,14 @@ const HIT_RATE_PAINT: ChartPaint = { role: "ref" };
  * No hover vertical line is drawn (hoverLine={false}): the bar itself already indicates the x position.
  */
 export function TokenBarChart({
+  label,
   series,
   granularity,
   legend,
   breaks,
 }: {
+  /** The chart's accessible name. */
+  label: string;
   series: UsageSeriesPoint[];
   granularity: UsageGranularity;
   /** The legend item currently hovered (highlights matching segments / the curve); null = none. */
@@ -458,10 +448,7 @@ export function TokenBarChart({
   const rateGeom = makeRangeGeom(series.length, 0, 100, width, PAD_R_AXIS);
   const buckets = series.map((p) => p.bucket);
   const segs = series.map((p) => barSegments(geom, p));
-  // As in the requests charts: `rates` keeps the nulls for the bubble, `line`
-  // gives every bucket a height so the curve stays unbroken.
   const rates = hitRateValues(series);
-  const line = plotRates(rates);
 
   // Highlight = fade out the rest: segment-level hover leaves only "that bucket's that segment" (column-level hover highlights nothing), legend hover leaves all segments of the matching bucket (or the curve alone).
   const dimmed = (i: number, key: TokenBucketKey) =>
@@ -486,6 +473,8 @@ export function TokenBarChart({
     <div ref={ref}>
       {width > 0 && (
         <ChartFrame
+          label={label}
+          inspectable
           geom={geom}
           fmtY={(v) => humanizeTokens(Math.round(v))}
           dates={buckets}
@@ -496,10 +485,9 @@ export function TokenBarChart({
           hoverLine={false}
           rightAxis={{ y: rateGeom.y, ticks: [0, 50, 100], fmt: (v) => `${v}%` }}
           axisBreaks={breaks}
-          // Hits go through hitLayer below; ChartFrame only calls back when the mouse leaves the whole chart (i=null).
-          onHover={(i) => {
-            if (i === null) setHover(null);
-          }}
+          // The pointer's hits go through hitLayer below; ChartFrame calls back when the mouse
+          // leaves the chart (null) and when the keyboard or a tap opens a whole bucket.
+          onHover={(i) => setHover(i === null ? null : { i, key: null })}
           bubble={(i) => {
             const p = series[i]!;
             const key = hover?.key ?? null;
@@ -559,7 +547,7 @@ export function TokenBarChart({
             <LineHits
               key="hit-rate-line"
               geom={rateGeom}
-              values={line}
+              values={rates}
               onEnter={(i) => setHover({ i, key: "hitRate" })}
             />,
           ]}
@@ -585,14 +573,15 @@ export function TokenBarChart({
             className="pointer-events-none transition-opacity duration-150"
             opacity={curveDim ? 0.3 : 1}
           >
-            <ChartLine points={seriesPoints(rateGeom, line)} paint={HIT_RATE_PAINT} dash="5 4" />
-            {hover !== null && (
-              <ChartPoint
-                cx={rateGeom.x(hover.i)}
-                cy={rateGeom.y(line[hover.i] ?? 0)}
-                paint={HIT_RATE_PAINT}
-              />
-            )}
+            <RateLine
+              geom={rateGeom}
+              rates={rates}
+              breaks={breaks}
+              paint={HIT_RATE_PAINT}
+              dash="5 4"
+              hover={hover?.i ?? null}
+              pointAtHover
+            />
           </g>
         </ChartFrame>
       )}

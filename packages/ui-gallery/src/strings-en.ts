@@ -1159,12 +1159,14 @@ export const en: GalleryStrings = {
       legendHitRate: "Cache hit rate",
       legendParts: ["System prompt", "Tool definitions", "Messages", "Tool results"],
       trend: "Cost trend",
-      trendHint: "Fourteen days of cost as a line; hover a day.",
+      trendHint:
+        "Fourteen days of cost as a line; hover a day, or press Tab and step through the days with the arrow keys.",
       tokens: "Token usage",
       tokensHint:
-        "Daily tokens stacked by kind, with the cache-hit-rate curve over them; hover a legend entry to highlight one.",
+        "Daily tokens stacked by kind, with the cache-hit-rate curve over them; the curve breaks on the day with no cache traffic. Hover a legend entry to highlight one.",
       requests: "Requests and success rate",
-      requestsHint: "Daily requests stacked by agent, each with its success-rate line.",
+      requestsHint:
+        "Daily requests stacked by agent, each with its success-rate line. The second agent's line breaks on the days it was idle, and its one day between them is a point.",
       agents: ["docs-expert", "release-notes"],
       activity: "Activity sparkline",
       activityHint:

@@ -10,7 +10,7 @@
  *   counted tail (success counts included); a tail of one keeps its name; by default every named
  *   series fits the palette.
  * - Series sum column by column; a bucket with nothing to rate has no rate (neither 0 nor a
- *   number). Only the cache hit-rate curve uses a fallback drawing height.
+ *   number), and a rate line breaks there and at every axis break; a lone rate stands alone.
  * - Empty buckets are dropped (a request with no tokens still counts), shortening the axis and
  *   marking breaks where buckets were skipped; per-entity counts stay with their buckets.
  */
@@ -25,13 +25,12 @@ import {
   foldEntitySeries,
   hitRateValues,
   isoDate,
-  plotRates,
   presetDefaultGranularity,
   presetRange,
   presetTsWindow,
   rangeDays,
+  rateRuns,
   rateSeries,
-  successRateRuns,
   sumCounts,
 } from "../src/lib/usage-controls";
 import { SERIES_COLORS } from "../src/lib/category-colors";
@@ -269,18 +268,15 @@ describe("rate values", () => {
     ).toEqual([75, null, 0]);
   });
 
-  it("retains isolated measured rates, including the left and right endpoints, and skips unknown intervals", () => {
-    expect(successRateRuns([100])).toEqual([[0]]);
-    expect(successRateRuns([0])).toEqual([[0]]);
-    expect(successRateRuns([null, null])).toEqual([]);
-    expect(successRateRuns([100, null, 50, 0, null, 0])).toEqual([[0], [2, 3], [5]]);
-    expect(successRateRuns([100, 0, 50, 100], [0, 2])).toEqual([[0], [1, 2], [3]]);
+  it("a rate line joins neighbouring rates, keeps a lone rate at either end, and breaks where there is nothing to rate", () => {
+    expect(rateRuns([100])).toEqual([[0]]);
+    expect(rateRuns([0])).toEqual([[0]]);
+    expect(rateRuns([null, null])).toEqual([]);
+    expect(rateRuns([100, null, 50, 0, null, 0])).toEqual([[0], [2, 3], [5]]);
   });
 
-  it("plotRates gives every bucket a height so the stroke stays continuous, absent rates at the top of the axis", () => {
-    expect(plotRates([75, null, 0])).toEqual([75, 100, 0]);
-    // Drawing at 100 and reading 0 are different questions: a rated 0 is not lifted.
-    expect(plotRates(rateSeries({ completed: [0, 0], denominator: [0, 4] }))).toEqual([100, 0]);
+  it("a rate line also breaks where the axis skipped an interval", () => {
+    expect(rateRuns([100, 0, 50, 100], [0, 2])).toEqual([[0], [1, 2], [3]]);
   });
 });
 

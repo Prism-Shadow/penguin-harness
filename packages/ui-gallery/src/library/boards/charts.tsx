@@ -4,7 +4,9 @@
  * then every chart kind the app draws, on fixed demo data so the themes' chart styles compare:
  * the token donut, the ring gauge, the legend in both layouts, the cost trend line, the stacked
  * token bars with their cache-hit curve and legend, the requests-and-success-rate stack, the
- * sparkline at both scales, and the Trace timeline's lanes.
+ * sparkline at both scales, and the Trace timeline's lanes. The demo days include an idle
+ * stretch for one agent and a day with no cache traffic, so the rate lines show their breaks and
+ * a lone point; the cost, token and requests charts are inspectable (Tab, then the arrow keys).
  *
  * Every input a chart receives is built once, at module level or memoized: a chart keeps
  * effects keyed on its data (the timeline re-measures its scroller whenever its groups change),
@@ -42,14 +44,18 @@ const DAY_COSTS = [
   0.41, 0.63, 0.22, 0.98, 1.24, 0.77, 0.15, 0.09, 0.88, 1.43, 1.02, 0.56, 0.71, 0.93,
 ];
 
+/** The day the demo records output but no cache traffic: the hit-rate curve breaks there. */
+const NO_CACHE_DAY = 7;
+
 function daySeries(): UsageSeriesPoint[] {
   const end = Date.UTC(2026, 8, 28);
   return DAY_COSTS.map((cost, index) => {
     const date = new Date(end - (DAY_COSTS.length - 1 - index) * 86_400_000);
     const requests = Math.round(cost * 40) + 3;
     const output = Math.round(cost * 30_000);
-    const cacheRead = output * 6;
-    const cacheWrite = Math.round(output * 0.8);
+    const cached = index !== NO_CACHE_DAY;
+    const cacheRead = cached ? output * 6 : 0;
+    const cacheWrite = cached ? Math.round(output * 0.8) : 0;
     return {
       bucket: date.toISOString().slice(0, 10),
       cacheRead,
@@ -66,6 +72,9 @@ function daySeries(): UsageSeriesPoint[] {
 
 const SERIES: UsageSeriesPoint[] = daySeries();
 
+/** Days the second agent sits idle: its rate line breaks there, and the day between is a point. */
+const IDLE_DAYS = new Set([5, 7]);
+
 /** The day series split between two agents, the first taking the larger share. */
 function agentCounts(
   series: readonly UsageSeriesPoint[],
@@ -73,7 +82,9 @@ function agentCounts(
 ): EntityCounts[] {
   const shares = [0.6, 0.4];
   return shares.map((share, entity) => {
-    const requests = series.map((point) => Math.round(point.requests * share));
+    const requests = series.map((point, day) =>
+      entity === 1 && IDLE_DAYS.has(day) ? 0 : Math.round(point.requests * share),
+    );
     return {
       label: labels[entity] ?? `agent-${entity + 1}`,
       requests,
@@ -301,12 +312,12 @@ export function ChartsBoard() {
         </BoardGroup>
         <BoardGroup title={t.trend} aside={t.trendHint}>
           <div className="lib-box p-3">
-            <TrendChart series={SERIES} granularity="day" />
+            <TrendChart label={t.trend} series={SERIES} granularity="day" />
           </div>
         </BoardGroup>
         <BoardGroup title={t.tokens} aside={t.tokensHint}>
           <div className="lib-box p-3">
-            <TokenBarChart series={SERIES} granularity="day" legend={legend} />
+            <TokenBarChart label={t.tokens} series={SERIES} granularity="day" legend={legend} />
             <TokenLegend active={legend} onHover={setLegend} />
           </div>
         </BoardGroup>

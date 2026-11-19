@@ -472,6 +472,7 @@ export function UsagePage() {
             extra={<TokenLegend active={tokenBucket} onHover={setTokenBucket} />}
           >
             <TokenBarChart
+              label={S.usage.chartTokenTrend}
               series={plotted.points}
               granularity={data.granularity}
               legend={tokenBucket}
@@ -480,6 +481,7 @@ export function UsagePage() {
           </ChartCard>
           <ChartCard title={S.usage.chartCostTrend}>
             <TrendChart
+              label={S.usage.chartCostTrend}
               series={plotted.points}
               granularity={data.granularity}
               currency={currency}

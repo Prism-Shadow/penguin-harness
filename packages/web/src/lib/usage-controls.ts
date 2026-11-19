@@ -160,7 +160,7 @@ export function sumCounts(series: readonly EntityCounts[]): Omit<EntityCounts, "
 /**
  * Per-bucket success rate in percent, or **null where there is nothing to
  * rate** (denominator 0 — the entity was idle, or every request it made was
- * aborted). A missing denominator leaves a gap in the chart and a dash in its tooltip.
+ * aborted). The chart leaves a gap there (rateRuns) and the bubble prints a dash.
  */
 export function rateSeries(
   counts: Pick<EntityCounts, "completed" | "denominator">,
@@ -168,8 +168,24 @@ export function rateSeries(
   return counts.denominator.map((d, i) => (d > 0 ? ((counts.completed[i] ?? 0) / d) * 100 : null));
 }
 
-/** Indices of consecutive measured rates. A compressed gap in the time axis also starts a new stroke. */
-export function successRateRuns(
+/** Per-bucket cache hit rate in percent, null where the bucket had no cache traffic at all — the same "no rate here" as a success rate with an empty denominator. */
+export function hitRateValues(series: readonly UsageSeriesPoint[]): (number | null)[] {
+  return series.map((p) => {
+    const rate = cacheHitRate(p.cacheRead, p.cacheWrite);
+    return rate === null ? null : rate * 100;
+  });
+}
+
+/**
+ * How a rate line is drawn: the runs of neighbouring buckets that both have a rate, as bucket
+ * indices. A bucket with nothing to rate breaks the line, and so does an axis break (`breaks`,
+ * the indices after which the axis skipped an interval), since the two points either side of
+ * it are not neighbours in time. A run of one is a lone rate, drawn as a point.
+ *
+ * The success-rate lines and the cache hit-rate curve share this rule. Drawing an idle
+ * interval at the top of the axis would read as "everything succeeded".
+ */
+export function rateRuns(
   rates: readonly (number | null)[],
   breaks: readonly number[] = [],
 ): number[][] {
@@ -183,31 +199,6 @@ export function successRateRuns(
     run.push(i);
   }
   return runs;
-}
-
-/** Per-bucket cache hit rate in percent, null where the bucket had no cache traffic at all — the same "no rate here" as a success rate with an empty denominator. */
-export function hitRateValues(series: readonly UsageSeriesPoint[]): (number | null)[] {
-  return series.map((p) => {
-    const rate = cacheHitRate(p.cacheRead, p.cacheWrite);
-    return rate === null ? null : rate * 100;
-  });
-}
-
-/**
- * The height a rate line is drawn at across a bucket that has no rate. The
- * stroke has to cross the interval at *some* height — a hole reads as a claim
- * of its own, and so does dropping to the floor, which is where "made
- * requests and failed every one" lives. The top of the axis is the one height
- * that invents no failure.
- *
- * It is a drawing choice and nothing more: the hover table prints a dash for
- * the same bucket, so the number the reader takes away is never this 100.
- */
-export const NO_RATE_PLOT = 100;
-
-/** Drawing values for a rate line: every bucket gets a height, the ones with no rate at NO_RATE_PLOT. */
-export function plotRates(values: readonly (number | null)[]): number[] {
-  return values.map((v) => v ?? NO_RATE_PLOT);
 }
 
 /** A time series with its empty buckets dropped: the buckets that survived, where they sat, and where the axis now jumps. */
