@@ -821,6 +821,11 @@ export const en: Strings = {
     /** A switch one of whose positions this machine cannot honour, under the switch. */
     pluginPositionUnavailable: (position: string, reason: string) =>
       `${position} is not supported here: ${reason}`,
+    /** A list field's editor: the row buttons and the add row. */
+    pluginListMoveUp: "Move up",
+    pluginListMoveDown: "Move down",
+    pluginListRemove: "Remove",
+    pluginListAdd: "Add",
     pluginPositionOn: "On",
     pluginPositionOff: "Off",
     pluginsInfo:
@@ -1038,6 +1043,7 @@ export const en: Strings = {
       gold: "Gold",
       cobalt: "Cobalt",
       orange: "Orange",
+      ink: "Ink",
       marker: "Marker",
       ballpoint: "Ballpoint",
       grass: "Grass",
@@ -2061,6 +2067,21 @@ export const en: Strings = {
       ],
     ] as ReadonlyArray<readonly [string, string]>,
     compactionPrompt: "Summary prompt",
+    maxRounds: "Max tool rounds",
+    maxRoundsInfo:
+      "How many tool rounds (writing hand-off files, for example) a summarize compaction may take before its summary. Once they are used up without one, the next context opens with the hand-off note.",
+    maxRoundsHint: "0 allows none",
+    maxRoundsInvalid: "Must be an integer of 0 or more",
+    compactionReminder: "Per-round reminder",
+    compactionReminderInfo:
+      "The line sent to the model after the tool outputs of each tool round while it writes the summary.",
+    compactionReminderHint:
+      "Placeholders: {{ROUNDS_USED}}, {{ROUNDS_LEFT}}, {{SCRATCHPAD_DIR}}. Leave blank to send none",
+    compactionHandoffNote: "Hand-off note",
+    compactionHandoffNoteInfo:
+      "When no summary could be had, the next context opens with this note: the harness fills its placeholders from the Trace file, without asking the model.",
+    compactionHandoffNoteHint:
+      "Placeholders: {{ERROR}}, {{USER_MESSAGES}}, {{LAST_TURN}}, {{TRACE_PATH}}, {{SCRATCHPAD_DIR}}. Leave blank for the quoted data alone",
     numberInvalid: "Must be a positive integer or -1",
     numberCannotClear: "A saved value can't be cleared: enter a number, or use Reset to restore it",
     toolFieldInvalid: (name: string, field: string) =>
@@ -4594,8 +4615,12 @@ Scenarios:
       `This model's context window ${n} is smaller than this agent's compaction threshold ${m}, so compaction actually fires at the edge of the window. Drag the dashed mark in the context panel, or set the threshold below the window in the agent settings — it applies immediately.`,
     contextWindowUnderThresholdAction: "Open agent settings",
     contextWindowUnderThresholdDismiss: "Dismiss",
-    contextRefusedHandoff:
-      "The provider refused the last request: too little room was left for compaction, so this conversation continued from a Trace hand-off note. Correct this model's context window in the model settings, or lower this agent's compaction threshold (drag the dashed mark in the context panel).",
+    contextRefusedHandoff: {
+      reason: (said: boolean): string =>
+        said ? "The provider refused the last request:" : "The provider refused the last request.",
+      advice:
+        "This conversation continued from a Trace hand-off note. Most likely too little room was left for compaction: correct this model's context window in the model settings, or lower this agent's compaction threshold (drag the dashed mark in the context panel).",
+    },
     slashHint: "Type / for commands",
     switchAgent: "Hand off to another agent — opens a new session on send",
     switchAgentTitle: "Choose agent",
@@ -4682,14 +4707,25 @@ Scenarios:
       tracePath
         ? `No summary: the previous model was unavailable or its compaction failed, so the new one reads the earlier Trace file when it needs to: ${tracePath}`
         : "No summary: the previous model was unavailable or its compaction failed, so the new one reads the earlier Trace file when it needs to",
-    compactionDegradedHint: (errorMessage?: string): string =>
-      errorMessage !== undefined
-        ? `No full summary could be written; the next context opens with a Trace hand-off note: ${errorMessage}`
-        : "No full summary could be written; the next context opens with a Trace hand-off note.",
-    compactionRoomHint: (providerMessage?: string): string =>
-      `Too little room was left for compaction, so the next context opens with a Trace hand-off note. Correct this model's context window, or lower the compaction threshold.${
-        providerMessage !== undefined ? ` The provider said: ${providerMessage}` : ""
-      }`,
+    compactionDegradedHint: (
+      why: string | null,
+      errorMessage: string | undefined,
+      room: boolean,
+    ): string => {
+      // The retry line's cause sits inside parentheses, lower-case; here it starts a line.
+      const cause = why === null ? null : `${why.charAt(0).toUpperCase()}${why.slice(1)}`;
+      return [
+        cause !== null && errorMessage !== undefined
+          ? `${cause}: ${errorMessage}`
+          : (cause ?? errorMessage),
+        "No full summary could be written; the next context opens with a Trace hand-off note.",
+        room
+          ? "Most likely too little room was left for compaction: correct this model's context window, or lower the compaction threshold."
+          : undefined,
+      ]
+        .filter((line) => line !== undefined)
+        .join("\n");
+    },
     compactionFailed: (status: string, errorMessage?: string): string => {
       if (status === "aborted") return "aborted, keeping current context";
       const detail = errorMessage !== undefined ? ` (${errorMessage})` : "";

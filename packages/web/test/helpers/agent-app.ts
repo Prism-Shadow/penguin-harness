@@ -158,7 +158,14 @@ export function agentConfig(): AgentConfigResponse {
       systemPrompt: "You are a helper.\n{{SKILLS}}",
       maxTurns: 50,
       model: { maxTokens: 8000, timeoutMs: 120000 },
-      compaction: { maxContextLength: 100000, mode: "summarize", prompt: "Summarize." },
+      compaction: {
+        maxContextLength: 100000,
+        mode: "summarize",
+        prompt: "Summarize.",
+        maxRounds: 8,
+        reminder: "Round {{ROUNDS_USED}} done.",
+        handoffNote: "No summary.\n{{LAST_TURN}}",
+      },
       memory: { enabled: true, prompt: "Remember.", workspacePrompt: "Here." },
       vault: {
         enabled: true,

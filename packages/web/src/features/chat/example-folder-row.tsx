@@ -62,6 +62,7 @@ export function ExampleFolderRow({
         <GlyphIcon d={glyph} size={ICON_SIZE.navRow} />
       </span>
       <span className="min-w-0 flex-1 truncate font-medium">{label}</span>
+      {open && <ExampleSelectionMark />}
       <span className="shrink-0 text-xs text-fg-subtle">{count}</span>
       {/* The accordion's fold mark; beside the panel the filled row already says which is open. */}
       <Chevron open={open} size={ICON_SIZE.chevron} className="text-fg-subtle @md:hidden" />
@@ -89,6 +90,14 @@ export function ExampleRowGlyph({ glyph }: { glyph: string }) {
   return (
     <span className="shrink-0 text-accent">
       <GlyphIcon d={glyph} size={ICON_SIZE.navRow} />
+    </span>
+  );
+}
+
+export function ExampleSelectionMark() {
+  return (
+    <span data-slot="example-check" className="hidden shrink-0 text-fg" aria-hidden="true">
+      <GlyphIcon d={ICONS.check} size={ICON_SIZE.navRow} />
     </span>
   );
 }

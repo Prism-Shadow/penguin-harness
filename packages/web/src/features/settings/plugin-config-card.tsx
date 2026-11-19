@@ -22,7 +22,7 @@
  * or picking another machine with a dirty card asks first; while the card's Save is in flight
  * the dialog does not close.
  */
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import type { PluginConfigEntry, PluginConfigField } from "@prismshadow/penguin-server/api";
 import { Button, toastSuccess, useFormDraft, useSaving } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
@@ -351,22 +351,26 @@ export function PluginCard({
         locale={locale}
       />
       {fields(card)}
-      {(switchedOff(card, viewOf(card)) ? [] : children).map((child) => (
-        <div
-          key={child.name}
-          className="space-y-3 border-t border-gray-100 pt-3 dark:border-gray-800/60"
-        >
-          <ConfigHeading
-            entry={child}
-            draft={viewOf(child)}
-            nested
-            disabled={busy !== null}
-            onAction={(action) => onAction(child, action)}
-            locale={locale}
-          />
-          {fields(child)}
-        </div>
-      ))}
+      {(switchedOff(card, viewOf(card)) ? [] : children).map((child) =>
+        child.configuration.title === undefined ? (
+          <Fragment key={child.name}>{fields(child)}</Fragment>
+        ) : (
+          <div
+            key={child.name}
+            className="space-y-3 border-t border-gray-100 pt-3 dark:border-gray-800/60"
+          >
+            <ConfigHeading
+              entry={child}
+              draft={viewOf(child)}
+              nested
+              disabled={busy !== null}
+              onAction={(action) => onAction(child, action)}
+              locale={locale}
+            />
+            {fields(child)}
+          </div>
+        ),
+      )}
       <div className="flex flex-wrap justify-end gap-2">
         <Button
           size="sm"

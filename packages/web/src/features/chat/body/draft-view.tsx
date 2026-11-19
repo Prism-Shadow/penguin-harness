@@ -236,6 +236,9 @@ export function DraftView({
   const [sandboxPick, setSandboxPick] = useState<Partial<SessionSandbox>>(cached.sandbox ?? {});
   const [modelRef, setModelRef] = useState<ModelRefDto | null>(cached.modelRef ?? null);
   const textRef = useRef(cached.text ?? "");
+  // A restored prompt can match an example. Typing only clears that match once.
+  const [exampleText, setExampleText] = useState<string | null>(cached.text ?? null);
+  const requestedExample = useRef<string | null>(null);
   /**
    * The text came from a "Create with AI" surface rather than a keyboard (`aiPrefill`,
    * draft-cache.ts): it seeded this draft and dies with it. The mark rides in the cache so a
@@ -611,6 +614,8 @@ export function DraftView({
   const onTextChange = useCallback(
     (text: string) => {
       textRef.current = text;
+      const acceptedExample = text === requestedExample.current;
+      setExampleText((previous) => (acceptedExample || text === previous ? text : null));
       // Editing an AI-composed prefill makes it the user's own text — an ordinary draft, kept
       // when the page is left and parkable like any other (see aiPrefillRef).
       aiPrefillRef.current = false;
@@ -872,6 +877,7 @@ export function DraftView({
   const ownComposerRef = useRef<ComposerControl | null>(null);
   const composerRef = pageComposerRef ?? ownComposerRef;
   const fillComposer = useCallback((prompt: string, skills: readonly string[]) => {
+    requestedExample.current = prompt;
     composerRef.current?.fillPrompt(prompt, skills);
   }, []);
   const readComposerText = useCallback(() => textRef.current, []);
@@ -974,6 +980,7 @@ export function DraftView({
           composer={composer}
           skillsLoaded={skillsLoaded}
           fill={fillComposer}
+          exampleText={exampleText}
           readComposerText={readComposerText}
         />
       </div>

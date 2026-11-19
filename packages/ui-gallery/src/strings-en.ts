@@ -420,7 +420,9 @@ export const en: GalleryStrings = {
       "ui-glyph":
         "an icon each theme draws its own way: line (Primer), duotone line (Frost) or pixel art (Console)",
       "ui-avatar":
-        "an agent's default avatar each theme draws its own way: one small egg-shaped penguin drawn in a thin brown line, on a rounded square (Primer), a circle (Frost, Doodle) or in pixel art (Console)",
+        "an agent's default avatar each theme draws its own way: one small egg-shaped penguin drawn in a thin brown line, on a rounded square (Primer), a circle (Frost), a cookie (Doodle) or in pixel art (Console)",
+      "ui-segmented": "a segmented control: one choice among a few options side by side",
+      "ui-action": "the primary action that heads a navigation list: New chat",
       "ui-showcase":
         "a cover-led showcase: a cover card, the selected carousel, a ranking, a product page's hero",
     },
@@ -1917,7 +1919,9 @@ export const en: GalleryStrings = {
       navHint:
         "The current row takes the solid fill and is the current page; a glyph is decoration beside a label that already says it. A dialog's rail scrolls sideways on a phone.",
       navLabel: "Agent settings",
-      navRail: "A rail: glyph, label and a trailing count; the last row has nowhere to go yet",
+      navRail:
+        "A rail: its primary action first, then glyph, label and a trailing count; the last row has nowhere to go yet",
+      navPrimary: "New chat",
       navDense: "Dense, inside a panel",
       navRows: {
         overview: "Overview",
