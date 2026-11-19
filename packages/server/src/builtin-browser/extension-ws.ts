@@ -4,11 +4,10 @@
  *
  * Only the handshake: it checks the request, upgrades, and hands the live socket to the hub,
  * which owns the protocol (extension-link.ts). The browser module contributes it as a WebSocket
- * endpoint (`HttpModule.upgrades`, module.ts), so the runtime only dispatches the upgrade to the
- * current generation (hmr/upgrade-seam.ts) and the handshake travels with a push. A runtime
- * still does this same handshake itself for a platform pushed before that slot, over the gate it
- * looks up by name (hmr/legacy-browser.ts) — so this file imports nothing of the platform's but
- * types.
+ * endpoint (`HttpModule.upgrades`, `auth: "none"`, module.ts), so the runtime only dispatches
+ * the upgrade to the current generation (hmr/upgrade-seam.ts) and the handshake travels with a
+ * push. (A runtime keeps a frozen copy of this handshake for a platform pushed before that
+ * slot, hmr/legacy-browser.ts; that copy is not this file.)
  *
  * Auth is the extension's own token, never the session cookie: a cookie rides along with any
  * page's request, and a page must never ride a signed-in session into the hub, so cookies are
@@ -37,11 +36,7 @@ export const EXTENSION_SUBPROTOCOL = "penguin-browser.1";
 const TOKEN_PREFIX = "token.";
 /** A screenshot of a tall page is the largest frame: well under this. */
 const MAX_FRAME_BYTES = 64 * 1024 * 1024;
-/**
- * CLOSE.protocolMismatch (extension-link.ts), spelled here: this file also runs in the runtime's
- * fallback, which a pushed platform cannot update, so it imports nothing of the platform's but
- * types.
- */
+/** CLOSE.protocolMismatch (extension-link.ts): the extension reads it as another protocol. */
 const PROTOCOL_MISMATCH = 4005;
 
 /** What the upgrade asks of the current generation (the hub, through the platform). */

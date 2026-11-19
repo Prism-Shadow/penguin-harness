@@ -4,9 +4,8 @@
  * the Chrome Web Store), and — on a dev-profile server only — any extension's, so a build
  * loaded with another id can be tried. A web page's origin never does.
  *
- * Runs in the runtime's legacy upgrade fallback as well as in the platform, so it imports
- * nothing of the platform's: the plugin face's `profileFromEnv` is a pure reading of the
- * environment.
+ * (The runtime keeps a frozen copy of this rule for a platform older than the WebSocket slot,
+ * hmr/legacy-browser.ts.)
  */
 import { profileFromEnv } from "../plugin/index.js";
 

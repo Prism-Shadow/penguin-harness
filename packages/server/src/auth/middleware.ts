@@ -197,10 +197,10 @@ function isAmspKeyedWrite(c: Context): boolean {
  * computes it, scheme included, so this refuses such a page even where the desktop's transition
  * (OriginRule.acceptOwnOrigin) lets its `Origin` through.
  *
- * `ownOrigin` names the writes that are cross-origin by design and judge their caller's origin
- * themselves, so this rule is not theirs: the route groups that declare `origin: "own"`
- * (http/own-origin.ts) — the PenguinHarness Browser extension pairing from its
- * `chrome-extension://` origin is one.
+ * `ownOrigin` names writes this copy of the check lets through to a later, exact one: the
+ * runtime's copy in front of the seam (app.ts) passes the writes a route group declaring
+ * `origin: "own"` may answer (http/own-origin.ts), and the platform — which mounts those groups
+ * ahead of its own copy (http/app.ts) — decides them.
  */
 export const sameOriginWrites =
   (rule: OriginRule = NO_PROXY_RULE, ownOrigin: OwnOrigin = () => false): MiddlewareHandler =>

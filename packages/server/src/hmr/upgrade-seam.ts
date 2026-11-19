@@ -15,6 +15,9 @@
  */
 import type { IncomingMessage, Server as HttpServer } from "node:http";
 import type { Duplex } from "node:stream";
+import { isRuntimeUpgradePath } from "../terminal/ws.js";
+import { legacyExtensionUpgrade } from "./legacy-browser.js";
+import type { ServerHmrHost } from "./platform.js";
 
 /** The part of a generation's HTTP surface this seam calls (http/app.ts, `Http.upgrade`). */
 export interface UpgradeSurface {
@@ -51,4 +54,31 @@ export function attachUpgradeSeam(server: HttpServer, deps: UpgradeSeamDeps): vo
         socket.destroy();
       });
   });
+}
+
+/**
+ * The seam as the runtime wires it on each listener (index.ts): the generation current per
+ * upgrade — the platform shell's tree, so a re-assembly or a push is followed — its HTTP
+ * surface's endpoints, the runtime's own paths kept out, and the extension's legacy gate as the
+ * fallback for a platform that predates the slot (legacy-browser.ts).
+ */
+export function platformUpgradeDeps(
+  hmr: ServerHmrHost,
+  log: (line: string) => void,
+): UpgradeSeamDeps {
+  return {
+    current: async () => {
+      const platform = await hmr.ensure();
+      const tree = typeof platform.api.business === "function" ? platform.api.business() : null;
+      if (tree === null) return null;
+      try {
+        return tree.api<UpgradeSurface>("ApiModule", "Http");
+      } catch {
+        return null;
+      }
+    },
+    reserved: isRuntimeUpgradePath,
+    fallback: legacyExtensionUpgrade(hmr, log),
+    log,
+  };
 }

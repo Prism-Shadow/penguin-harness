@@ -15,9 +15,15 @@
  * `library/*` package for a type — those are bundled into the plugin, not resolved from the
  * prefix. So besides the interfaces it carries the capability interfaces a plugin module
  * `@Use`s (the runtime's, the settings', the identity and Session indexes'), and the few small
- * VALUES a route of its own needs. The values are bundled into the plugin as copies; each is
- * pure or recognised across copies — an HttpError a plugin throws answers with its own status
- * and code because the host knows it by its brand (http/errors.ts), not by `instanceof`.
+ * VALUES a route of its own needs. The values are bundled into the plugin as copies, so none of
+ * them keeps state a copy would split: they compute from their arguments or the environment,
+ * `ensureInstallId` reads (and on a root's first use writes) the data root's `install-id` file,
+ * and an HttpError a plugin throws answers with its own status and code because the host knows
+ * it by its brand (http/errors.ts, `isHttpError`), not by `instanceof`.
+ *
+ * A slot or a slot field is as old as the platform that added it: an older platform's check
+ * refuses a contribution naming one it does not know, and drops the module's contributions to
+ * that slot. A plugin published to npm states the oldest platform it needs.
  */
 export type { Channels, Clock, Config, Db, Desktop, Log, Paths } from "../hmr/capabilities.js";
 export type { Users } from "@prismshadow/penguin-library-auth";
@@ -25,9 +31,9 @@ export type { SessionDrivers, SessionIndex } from "@prismshadow/penguin-library-
 export type { Settings, UiPrefsStore } from "@prismshadow/penguin-library-setting";
 export type { AppEnv } from "../auth/middleware.js";
 export type { ShellPort } from "../services/desktop-update-port.js";
-export type { WebSocketUpgrade } from "../http/app.js";
-export type { OwnedPref } from "../http/routes/me.js";
-export { HttpError, badRequest, errorBody } from "../http/errors.js";
+export type { UpgradeCaller, WebSocketUpgrade } from "../http/upgrade-endpoints.js";
+export type { MeRoutes, MeRoutesSlots, OwnedPref } from "../http/routes/me.js";
+export { HttpError, badRequest, errorBody, isHttpError } from "../http/errors.js";
 export { publicOriginOf } from "../http/public-origin.js";
 export { requireHuman } from "../auth/require-human.js";
 export { userChannelKey } from "../http/user-channel.js";

@@ -16,7 +16,7 @@
  *
  * Two names are kept for runtimes older than the WebSocket slot, which find the extension's gate
  * by name rather than by path: this module stays `BuiltinBrowserModule` and keeps exporting
- * `BrowserExtensionGate` (hmr/legacy-browser.ts; until 1.0).
+ * `BrowserExtensionGate` with its `admit` / `connect` shape (until 1.0).
  *
  * The built-in browser's UI events go to every admin who has the event stream open (it is the
  * admins' tool, see routes.ts); a user's Chrome's go to that user. A channel nobody listens on
@@ -131,8 +131,11 @@ function backendPrefs(store: UiPrefsStore) {
     ],
     "HttpModule.upgrades": [
       {
+        // The extension's own token (in the subprotocol) is the credential, and the handshake
+        // admits only the extension's origin (extension-ws.ts): no session cookie is read.
         id: "BuiltinBrowserRoutes.extensionSocket",
         prefix: "/api/builtin-browser/extension/ws",
+        auth: "none",
       },
     ],
     "MeRoutes.ownedPrefs": [

@@ -35,11 +35,9 @@ import { clearInitialAdminPassword, renderFirstLoginNotice } from "./initial-pas
 import { applyProxySettings, installGlobalProxyDispatcher } from "./net/proxy.js";
 import { PluginHost } from "./plugin/host.js";
 import { loadPlugins } from "./plugin/loader.js";
-import { attachTerminalWebSocket, isRuntimeUpgradePath } from "./terminal/ws.js";
+import { attachTerminalWebSocket } from "./terminal/ws.js";
 import { originRule } from "./http/public-origin.js";
-import { attachUpgradeSeam } from "./hmr/upgrade-seam.js";
-import type { UpgradeSurface } from "./hmr/upgrade-seam.js";
-import { legacyExtensionUpgrade } from "./hmr/legacy-browser.js";
+import { attachUpgradeSeam, platformUpgradeDeps } from "./hmr/upgrade-seam.js";
 import { loopbackHostRoles } from "./services/preview-token.js";
 import { acquireServerLock, liveServerLock, releaseServerLock } from "./lock.js";
 import { shellPortOf, wireShellUpdatePort } from "./services/desktop-update-port.js";
@@ -532,26 +530,10 @@ class PenguinServer {
   /**
    * The contributed WebSocket endpoints' wiring, beside the terminal's on every listener: each
    * upgrade goes to the current generation's HTTP surface (`HttpModule.upgrades`), and to the
-   * extension's legacy gate when that generation predates the slot (hmr/legacy-browser.ts).
+   * extension's legacy gate when that generation predates the slot (hmr/upgrade-seam.ts).
    */
   private upgradeSeamDeps() {
-    const hmr = this.deps.hmr;
-    const log = (line: string) => console.log(line);
-    return {
-      current: async (): Promise<UpgradeSurface | null> => {
-        const platform = await hmr.ensure();
-        const tree = typeof platform.api.business === "function" ? platform.api.business() : null;
-        if (tree === null) return null;
-        try {
-          return tree.api<UpgradeSurface>("ApiModule", "Http");
-        } catch {
-          return null;
-        }
-      },
-      reserved: isRuntimeUpgradePath,
-      fallback: legacyExtensionUpgrade(hmr, log),
-      log,
-    };
+    return platformUpgradeDeps(this.deps.hmr, (line: string) => console.log(line));
   }
 
   /** Terminal WebSocket wiring, shared by every listener this process opens. */

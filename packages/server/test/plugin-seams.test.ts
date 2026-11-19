@@ -1,33 +1,38 @@
 /**
  * The server seams a code plugin reaches the host through, exercised by a plugin module booted
- * into the real platform tree (the way the loader adds one): a route group, an own-origin route
- * group, a WebSocket endpoint and an owned ui_prefs key, all contributed by one module.
+ * into the real platform tree (the way the loader adds one): route groups — some built with a
+ * second copy of Hono, as a bundled plugin builds them — own-origin groups, WebSocket endpoints
+ * and an owned ui_prefs key, all contributed by one module.
  *
  * HttpError across copies:
- * - Given a route that throws an HttpError from its own copy of the errors module (as a bundled
- *   plugin does), the caller gets that status, code, message and details — with Retry-After when
- *   it carries one — and the error log records it as expected under its code.
- * - Given an error that only calls itself HttpError (no brand), the caller gets 500 `internal`
- *   and nothing of its claimed status or code.
+ * - Given a route that throws an HttpError from its own copy of the errors module, the caller
+ *   gets that status, code, message and details — with Retry-After when it carries one — and the
+ *   error log records it as expected under its code.
+ * - The same holds for a group built with the plugin's own copy of Hono that set no error
+ *   handler of its own; one that did set a handler answers with it.
+ * - Given an error that only calls itself HttpError (no brand), the caller gets 500 `internal`.
  *
  * Own-origin route groups:
- * - Given a group declaring `origin: "own"`, a cross-origin write reaches its handler.
- * - Given a group without it, the same write is refused 403 `cross_origin_write` — also one
- *   mounted below the own-origin prefix, which is not the own-origin group's.
- * - Given a generation that cannot name its own-origin groups (a platform pushed before the
- *   field), the runtime's check in front of the seam still lets the extension pair, and still
- *   refuses every other cross-origin write.
+ * - Given a group declaring `origin: "own"` — with a `:param` in its prefix too — a cross-origin
+ *   write it answers reaches its handler.
+ * - A cross-origin write under its prefix that it does not answer (another method) is refused
+ *   403 `cross_origin_write`, as is one to a group mounted below its prefix and to any other group.
  *
  * Owned ui_prefs keys:
  * - Given a key a module owns, a prefs write naming it is refused 400 with the module's message,
  *   and nothing of that write is stored; a write without it merges as before.
- * - The agent browser's own key, `browserBackend`, is refused the same way.
  *
  * WebSocket endpoints (the runtime's upgrade seam on a real listener):
- * - An upgrade under the endpoint's prefix reaches the endpoint, which owns the handshake.
- * - An upgrade no endpoint covers is not taken by one: the seam's fallback gets it.
- * - The runtime's own upgrade paths (a terminal's stream, the API socket) are never offered to
- *   the generation, even under a prefix an endpoint declares.
+ * - An `auth: "none"` endpoint is handed an upgrade under its prefix (a `:param` prefix
+ *   included) as it came, whatever its Origin, with no caller.
+ * - An `auth: "user"` endpoint is handed only a signed-in, same-origin handshake, with the user:
+ *   no session cookie is 401, a foreign Origin or a cross-site `Sec-Fetch-Site` is 403.
+ * - An upgrade no endpoint covers is not taken by one: the seam's fallback gets it. So is one to
+ *   an endpoint whose prefix has a pattern only Hono could read (it is not served).
+ * - The runtime's own upgrade paths are never offered to the generation, even under a prefix an
+ *   endpoint declares.
+ * - Wired as the runtime wires it, the seam follows the current generation: after a
+ *   re-assembly the old generation's socket is closed 1012 and a new one reaches the successor.
  */
 import http from "node:http";
 import type { IncomingMessage } from "node:http";
@@ -37,16 +42,17 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 import WebSocket, { WebSocketServer } from "ws";
 import { parseManifest } from "@prismshadow/penguin-core/kernel";
-import type { ModuleDef, ModuleTree } from "@prismshadow/penguin-core/kernel";
-import { createApp } from "../src/app.js";
+import type { ModuleDef } from "@prismshadow/penguin-core/kernel";
+import type { Reassembly } from "../src/hmr/capabilities.js";
 import { PluginHost } from "../src/plugin/host.js";
 import { HttpError } from "../src/http/errors.js";
-import { attachUpgradeSeam } from "../src/hmr/upgrade-seam.js";
-import type { UpgradeSurface } from "../src/hmr/upgrade-seam.js";
+import type { UpgradeCaller } from "../src/http/upgrade-endpoints.js";
+import { attachUpgradeSeam, platformUpgradeDeps } from "../src/hmr/upgrade-seam.js";
+import type { UpgradeSeamDeps, UpgradeSurface } from "../src/hmr/upgrade-seam.js";
 import { isRuntimeUpgradePath } from "../src/terminal/ws.js";
-import { PENGUIN_EXTENSION_ID } from "../src/builtin-browser/extension-origin.js";
-import { apiClient, createTestApp, loginAdmin } from "./helpers.js";
+import { apiClient, createTestApp, loginAdmin, makeTempRoot } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
+import { foreignHono } from "./helpers/foreign-hono.js";
 
 /**
  * The errors module as a plugin bundles it: a second copy, its classes distinct from the host's.
@@ -59,10 +65,12 @@ const copy = (await import(copySpecifier)) as typeof import("../src/http/errors.
 const FOREIGN = "https://elsewhere.example";
 const ACME_PREF_MESSAGE = "acmeChoice is set by PUT /api/acme/choice, not the prefs.";
 
-/** What the plugin's WebSocket endpoint was handed, by path. */
-const upgraded: string[] = [];
+/** What the plugin's WebSocket endpoints were handed: path, and the user it came with. */
+const upgraded: { path: string; userId: string | null }[] = [];
+/** Which App the plugin module was created in, counted from 1. */
+let generation = 0;
 
-function seamsPlugin(): ModuleDef {
+function seamsPlugin(ForeignHono: typeof Hono): ModuleDef {
   const manifest = parseManifest({
     name: "AcmeSeams",
     requires: {},
@@ -70,13 +78,25 @@ function seamsPlugin(): ModuleDef {
     contributes: {
       "HttpModule.routes": [
         { id: "acme.routes", prefix: "/api/acme", auth: "none", order: 300 },
+        { id: "acme.bundled", prefix: "/api/acme-bundled", auth: "none", order: 300 },
+        { id: "acme.bundledOwn", prefix: "/api/acme-bundled-own", auth: "none", order: 300 },
         { id: "acme.hook", prefix: "/api/acme/hook", auth: "none", order: 8, origin: "own" },
         { id: "acme.hookAdmin", prefix: "/api/acme/hook/admin", auth: "none", order: 8 },
+        {
+          id: "acme.roomHook",
+          prefix: "/api/acme/rooms/:room/hook",
+          auth: "none",
+          order: 8,
+          origin: "own",
+        },
       ],
       "HttpModule.upgrades": [
-        { id: "acme.socket", prefix: "/api/acme/ws" },
+        { id: "acme.socket", prefix: "/api/acme/ws", auth: "none" },
+        { id: "acme.room", prefix: "/api/acme/rooms/:room/ws", auth: "none" },
+        { id: "acme.mine", prefix: "/api/acme/me/ws", auth: "user" },
+        { id: "acme.digits", prefix: "/api/acme/digits/:id{[0-9]+}", auth: "none" },
         // Covers the runtime's own terminal streams: the seam must still never offer them.
-        { id: "acme.terminals", prefix: "/api/terminals" },
+        { id: "acme.terminals", prefix: "/api/terminals", auth: "none" },
       ],
       "MeRoutes.ownedPrefs": [{ id: "acme.pref", key: "acmeChoice", message: ACME_PREF_MESSAGE }],
     },
@@ -97,50 +117,85 @@ function seamsPlugin(): ModuleDef {
     });
   });
   routes.post("/write", (c) => c.json({ wrote: true }));
+  const bundled = new ForeignHono();
+  bundled.get("/missing", () => {
+    throw new copy.HttpError(404, "acme_missing", "No such acme.");
+  });
+  const bundledOwn = new ForeignHono();
+  bundledOwn.onError((_err, c) => c.json({ handledBy: "the group" }, 418));
+  bundledOwn.get("/missing", () => {
+    throw new copy.HttpError(404, "acme_missing", "No such acme.");
+  });
   const hook = new Hono();
   hook.post("/", (c) => c.json({ judged: c.req.header("origin") ?? null }));
   const hookAdmin = new Hono();
   hookAdmin.post("/", (c) => c.json({ wrote: true }));
-  const wss = new WebSocketServer({ noServer: true });
-  const endpoint = {
-    upgrade: (request: IncomingMessage, socket: Duplex, head: Buffer) => {
-      const path = new URL(request.url ?? "/", "http://localhost").pathname;
-      upgraded.push(path);
-      wss.handleUpgrade(request, socket, head, (ws) => ws.send(`hello ${path}`));
-    },
-  };
+  const roomHook = new Hono();
+  roomHook.post("/", (c) => c.json({ judged: c.req.header("origin") ?? null }));
   return {
     manifest,
-    create: () => ({
-      api: {},
-      bind: {
-        "acme.routes": routes,
-        "acme.hook": hook,
-        "acme.hookAdmin": hookAdmin,
-        "acme.socket": endpoint,
-        "acme.terminals": endpoint,
-      },
-    }),
+    create: (ctx) => {
+      const mine = ++generation;
+      const wss = new WebSocketServer({ noServer: true });
+      ctx.effect(() => {
+        for (const ws of wss.clients) ws.close(1012, "service restart");
+      });
+      const endpoint = {
+        upgrade: (
+          request: IncomingMessage,
+          socket: Duplex,
+          head: Buffer,
+          caller: UpgradeCaller | null,
+        ) => {
+          const path = new URL(request.url ?? "/", "http://localhost").pathname;
+          const userId = caller?.user.userId ?? null;
+          upgraded.push({ path, userId });
+          wss.handleUpgrade(request, socket, head, (ws) =>
+            ws.send(`gen ${mine} ${path} ${userId ?? "anonymous"}`),
+          );
+        },
+      };
+      return {
+        api: {},
+        bind: {
+          "acme.routes": routes,
+          "acme.bundled": bundled,
+          "acme.bundledOwn": bundledOwn,
+          "acme.hook": hook,
+          "acme.hookAdmin": hookAdmin,
+          "acme.roomHook": roomHook,
+          "acme.socket": endpoint,
+          "acme.room": endpoint,
+          "acme.mine": endpoint,
+          "acme.digits": endpoint,
+          "acme.terminals": endpoint,
+        },
+      };
+    },
   };
 }
 
 let t: TestApp;
 let admin: ReturnType<typeof apiClient>;
+let adminCookie: string;
+let ForeignHono: typeof Hono;
 
 beforeAll(async () => {
+  ForeignHono = (await foreignHono(await makeTempRoot())).Hono;
   const host = new PluginHost();
-  host.use({ specifier: "@acme/seams", modules: [seamsPlugin()], replaces: [] });
+  host.use({ specifier: "@acme/seams", modules: [seamsPlugin(ForeignHono)], replaces: [] });
   t = await createTestApp({ plugins: host });
-  admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
+  adminCookie = (await loginAdmin(t.app)).cookie;
+  admin = apiClient(t.app, adminCookie);
 });
 afterAll(async () => {
   await t.cleanup();
 });
 
-const crossOriginPost = (app: TestApp["app"], path: string, origin = FOREIGN) =>
-  app.request(path, {
-    method: "POST",
-    headers: { origin, "content-type": "application/json" },
+const crossOrigin = (path: string, method = "POST") =>
+  t.app.request(path, {
+    method,
+    headers: { origin: FOREIGN, "content-type": "application/json" },
     body: "{}",
   });
 
@@ -172,6 +227,20 @@ describe("an HttpError from a plugin's own copy of the class", () => {
     expect((await errorOf(res)).code).toBe("acme_busy");
   });
 
+  it("reaches the App's handler from a group built with the plugin's own Hono", async () => {
+    expect(new ForeignHono()).not.toBeInstanceOf(Hono);
+    const res = await admin.get("/api/acme-bundled/missing");
+    expect(res.status).toBe(404);
+    expect(res.headers.get("content-type")).toContain("application/json");
+    expect((await errorOf(res)).code).toBe("acme_missing");
+  });
+
+  it("is left to the error handler such a group set itself", async () => {
+    const res = await admin.get("/api/acme-bundled-own/missing");
+    expect(res.status).toBe(418);
+    expect(await res.json()).toEqual({ handledBy: "the group" });
+  });
+
   it("is not mistaken for an error that only calls itself HttpError", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const res = await admin.get("/api/acme/look-alike");
@@ -181,41 +250,21 @@ describe("an HttpError from a plugin's own copy of the class", () => {
 });
 
 describe("a route group that judges its callers' origin itself", () => {
-  it("takes a cross-origin write to its own handler", async () => {
-    const res = await crossOriginPost(t.app, "/api/acme/hook");
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ judged: FOREIGN });
-  });
-
-  it("leaves every other group, one mounted below its prefix included, to the same-origin rule", async () => {
-    for (const path of ["/api/acme/write", "/api/acme/hook/admin"]) {
-      const res = await crossOriginPost(t.app, path);
-      expect(res.status).toBe(403);
-      expect((await errorOf(res)).code).toBe("cross_origin_write");
+  it("takes a cross-origin write it answers to its own handler, a :param prefix's too", async () => {
+    for (const path of ["/api/acme/hook", "/api/acme/rooms/r1/hook"]) {
+      const res = await crossOrigin(path);
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ judged: FOREIGN });
     }
   });
 
-  it("on a generation that cannot name such groups, the runtime still lets the extension pair and refuses the rest", async () => {
-    // A platform pushed before `Http.ownOrigin`: its HTTP surface has no such member.
-    const tree = t.boot.tree;
-    const olderTree = {
-      api: <T>(module: string, alias: string): T =>
-        module === "ApiModule" && alias === "Http" ? ({} as T) : tree.api<T>(module, alias),
-    } as unknown as ModuleTree;
-    const runtime = createApp({ ...t.boot, tree: olderTree });
-
-    const pair = await crossOriginPost(
-      runtime,
-      "/api/builtin-browser/extension/pair",
-      `chrome-extension://${PENGUIN_EXTENSION_ID}`,
-    );
-    // Past the origin check: the pairing route itself turns the empty body away.
-    expect(pair.status).toBe(400);
-    expect((await errorOf(pair)).code).toBe("bad_request");
-
-    // The plugin's own-origin group is the generation's to name, which this one cannot.
-    for (const path of ["/api/acme/hook", "/api/acme/write"]) {
-      const res = await crossOriginPost(runtime, path);
+  it("leaves what it does not answer, and every other group, to the same-origin rule", async () => {
+    for (const [method, path] of [
+      ["DELETE", "/api/acme/hook"],
+      ["POST", "/api/acme/hook/admin"],
+      ["POST", "/api/acme/write"],
+    ] as const) {
+      const res = await crossOrigin(path, method);
       expect(res.status).toBe(403);
       expect((await errorOf(res)).code).toBe("cross_origin_write");
     }
@@ -237,17 +286,10 @@ describe("a ui_prefs key a module owns", () => {
     expect(res.status).toBe(200);
     expect(((await res.json()) as { prefs: object }).prefs).toMatchObject({ lang: "en" });
   });
-
-  it("refuses the agent browser's backend choice the same way", async () => {
-    const res = await admin.put("/api/me/prefs", { browserBackend: "chrome" });
-    expect(res.status).toBe(400);
-    expect((await errorOf(res)).code).toBe("bad_request");
-  });
 });
 
 describe("a contributed WebSocket endpoint", () => {
-  let server: http.Server;
-  let port: number;
+  const servers: http.Server[] = [];
   /** The upgrades the generation took nothing for, by path. */
   const fellBack: string[] = [];
 
@@ -257,9 +299,23 @@ describe("a contributed WebSocket endpoint", () => {
     socket.destroy();
   };
 
+  const listen = async (deps: UpgradeSeamDeps): Promise<number> => {
+    const server = http.createServer((_req, res) => res.writeHead(404).end());
+    attachUpgradeSeam(server, deps);
+    // Stands in for the terminal's listener, which serves the runtime's own paths.
+    server.on("upgrade", (request: IncomingMessage, socket: Duplex) => {
+      if (isRuntimeUpgradePath(new URL(request.url ?? "/", "http://localhost").pathname)) {
+        answer404(socket);
+      }
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    return (server.address() as AddressInfo).port;
+  };
+
+  let port: number;
   beforeAll(async () => {
-    server = http.createServer((_req, res) => res.writeHead(404).end());
-    attachUpgradeSeam(server, {
+    port = await listen({
       current: async () => t.boot.tree.api<UpgradeSurface>("ApiModule", "Http"),
       reserved: isRuntimeUpgradePath,
       fallback: (request, socket) => {
@@ -269,50 +325,90 @@ describe("a contributed WebSocket endpoint", () => {
       },
       log: () => {},
     });
-    // Stands in for the terminal's listener, which serves the runtime's own paths.
-    server.on("upgrade", (request: IncomingMessage, socket: Duplex) => {
-      if (isRuntimeUpgradePath(new URL(request.url ?? "/", "http://localhost").pathname)) {
-        answer404(socket);
-      }
-    });
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-    port = (server.address() as AddressInfo).port;
   });
   afterAll(async () => {
-    server.closeAllConnections();
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+    for (const server of servers) {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 
-  /** Opens a socket to `path`: the first message, or the status the upgrade was refused with. */
-  const open = (path: string) =>
-    new Promise<{ message: string } | { status: number }>((resolve, reject) => {
-      const ws = new WebSocket(`ws://127.0.0.1:${port}${path}`);
+  type Outcome = { message: string; ws: WebSocket } | { status: number };
+  /** Opens a socket to `path`: its first message, or the status the upgrade was refused with. */
+  const open = (path: string, headers: Record<string, string> = {}, to = port) =>
+    new Promise<Outcome>((resolve, reject) => {
+      const ws = new WebSocket(`ws://127.0.0.1:${to}${path}`, { headers });
       ws.on("error", () => {});
-      ws.on("message", (data) => {
-        resolve({ message: String(data) });
-        ws.terminate();
-      });
+      ws.once("message", (data) => resolve({ message: String(data), ws }));
       ws.on("unexpected-response", (_req, res) => resolve({ status: res.statusCode ?? 0 }));
       ws.on("close", () => reject(new Error(`${path}: closed without an answer`)));
     });
+  const messageOf = async (outcome: Promise<Outcome>): Promise<string> => {
+    const got = await outcome;
+    if (!("message" in got)) throw new Error(`refused ${got.status}`);
+    got.ws.terminate();
+    return got.message;
+  };
 
-  it("is handed an upgrade under its prefix, and owns the handshake", async () => {
-    expect(await open("/api/acme/ws/room-1")).toEqual({ message: "hello /api/acme/ws/room-1" });
-    expect(upgraded).toContain("/api/acme/ws/room-1");
+  it("hands an auth-none endpoint the upgrade as it came, whatever its Origin, with no caller", async () => {
+    expect(await messageOf(open("/api/acme/ws/room-1", { origin: FOREIGN }))).toMatch(
+      / \/api\/acme\/ws\/room-1 anonymous$/,
+    );
+    expect(await messageOf(open("/api/acme/rooms/r7/ws"))).toMatch(
+      / \/api\/acme\/rooms\/r7\/ws anonymous$/,
+    );
   });
 
-  it("is not handed an upgrade it does not cover: the fallback gets it", async () => {
-    expect(await open("/api/acme/websocket")).toEqual({ status: 404 });
-    expect(fellBack).toContain("/api/acme/websocket");
-    expect(upgraded).not.toContain("/api/acme/websocket");
+  it("hands an auth-user endpoint only a signed-in, same-origin handshake, with the user", async () => {
+    const own = `http://127.0.0.1:${port}`;
+    expect(await open("/api/acme/me/ws", { origin: own })).toEqual({ status: 401 });
+    expect(await open("/api/acme/me/ws", { origin: FOREIGN, cookie: adminCookie })).toEqual({
+      status: 403,
+    });
+    expect(
+      await open("/api/acme/me/ws", {
+        origin: own,
+        cookie: adminCookie,
+        "sec-fetch-site": "cross-site",
+      }),
+    ).toEqual({ status: 403 });
+    expect(upgraded.filter((u) => u.path === "/api/acme/me/ws")).toEqual([]);
+
+    expect(await messageOf(open("/api/acme/me/ws", { origin: own, cookie: adminCookie }))).toMatch(
+      / \/api\/acme\/me\/ws admin$/,
+    );
+  });
+
+  it("is not handed an upgrade it does not cover, nor one only a Hono pattern would read", async () => {
+    for (const path of ["/api/acme/websocket", "/api/acme/digits/42"]) {
+      expect(await open(path)).toEqual({ status: 404 });
+      expect(fellBack).toContain(path);
+    }
+    expect(upgraded.map((u) => u.path)).not.toContain("/api/acme/websocket");
+    expect(upgraded.map((u) => u.path)).not.toContain("/api/acme/digits/42");
   });
 
   it("is never offered the runtime's own upgrades, even under its prefix", async () => {
     for (const path of ["/api/terminals/t1/stream", "/api/socket"]) {
       expect(await open(path)).toEqual({ status: 404 });
     }
-    expect(upgraded.filter((p) => p.startsWith("/api/terminals"))).toEqual([]);
+    expect(upgraded.filter((u) => u.path.startsWith("/api/terminals"))).toEqual([]);
     expect(fellBack).not.toContain("/api/terminals/t1/stream");
     expect(fellBack).not.toContain("/api/socket");
+  });
+
+  it("wired as the runtime wires it, follows the current generation across a re-assembly", async () => {
+    const wired = await listen(platformUpgradeDeps(t.deps.hmr, () => {}));
+    const before = await open("/api/acme/ws/live", {}, wired);
+    if (!("message" in before)) throw new Error(`refused ${before.status}`);
+    const was = Number(before.message.split(" ")[1]);
+    const closed = new Promise<number>((resolve) => before.ws.on("close", (code) => resolve(code)));
+
+    expect(await t.deps.tree.api<Reassembly>("RuntimeModule", "Reassembly").reassemble()).toBe(
+      true,
+    );
+    expect(await closed).toBe(1012);
+    const after = await messageOf(open("/api/acme/ws/live", {}, wired));
+    expect(Number(after.split(" ")[1])).toBeGreaterThan(was);
   });
 });

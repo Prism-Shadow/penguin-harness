@@ -16,8 +16,6 @@
  *   again, the extension gets back in.
  * - An extension that answers its pings stays; one that stops, or never answers hello, is closed
  *   4008.
- * - On a platform pushed before the WebSocket slot, the runtime's fallback still connects a paired
- *   extension, through the gate it finds by the browser module's name.
  */
 import fs from "node:fs/promises";
 import http from "node:http";
@@ -38,8 +36,7 @@ import { PENGUIN_EXTENSION_ID } from "../../src/builtin-browser/extension-origin
 import { ExtensionPairing } from "../../src/builtin-browser/extension-pairing.js";
 import { extensionUpgrade } from "../../src/builtin-browser/extension-ws.js";
 import { attachUpgradeSeam } from "../../src/hmr/upgrade-seam.js";
-import type { UpgradeSeamDeps, UpgradeSurface } from "../../src/hmr/upgrade-seam.js";
-import { legacyExtensionUpgrade } from "../../src/hmr/legacy-browser.js";
+import type { UpgradeSurface } from "../../src/hmr/upgrade-seam.js";
 import { BuiltinBrowser } from "../../src/builtin-browser/service.js";
 import { openDatabase } from "@prismshadow/penguin-library-db";
 import { BrowserExtensionsRepo } from "@prismshadow/penguin-library-machine/browser-extensions";
@@ -76,24 +73,13 @@ afterEach(async () => {
   );
 });
 
-/**
- * An http.Server on an ephemeral port with only the upgrade seam attached, offering every upgrade
- * to `surface`, then to `fallback`.
- */
-async function listen(
-  surface: () => Promise<UpgradeSurface | null>,
-  fallback?: UpgradeSeamDeps["fallback"],
-): Promise<number> {
+/** An http.Server on an ephemeral port with only the upgrade seam attached, offering every upgrade to `surface`. */
+async function listen(surface: () => Promise<UpgradeSurface | null>): Promise<number> {
   const server = http.createServer((_req, res) => {
     res.statusCode = 404;
     res.end();
   });
-  attachUpgradeSeam(server, {
-    current: surface,
-    reserved: () => false,
-    ...(fallback !== undefined ? { fallback } : {}),
-    log: () => {},
-  });
+  attachUpgradeSeam(server, { current: surface, reserved: () => false, log: () => {} });
   servers.push(server);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   return (server.address() as AddressInfo).port;
@@ -234,21 +220,6 @@ describe("the extension socket of the real platform", () => {
     });
   });
 
-  it("on a platform pushed before the WebSocket slot, connects through the gate found by name", async () => {
-    const { token } = await pairChrome();
-    // That platform's HTTP surface offers no endpoints: the runtime's fallback takes the socket.
-    const older = await listen(
-      async () => ({}),
-      legacyExtensionUpgrade(t.deps.hmr, () => {}),
-    );
-    const chrome = extension(older, token);
-    expect((await chrome.next("hello")).command).toEqual({ op: "hello" });
-    expect(chrome.ws.protocol).toBe("penguin-browser.1");
-    await waitFor(() =>
-      events.some((e) => e.type === "builtin_browser_extension" && e.state === "connected"),
-    );
-  });
-
   it("matches replies to requests by id, whatever order they come back in", async () => {
     const { token } = await pairChrome();
     const chrome = extension(port, token);
@@ -360,7 +331,7 @@ describe("liveness", () => {
     const endpoint = extensionUpgrade({ gate: () => browser, log: () => {} });
     port = await listen(async () => ({
       upgrade: (req, socket, head) => {
-        endpoint.upgrade(req, socket, head);
+        endpoint.upgrade(req, socket, head, null);
         return true;
       },
     }));
