@@ -332,11 +332,57 @@ body {
 dialog::backdrop {
   background: rgb(18 24 30 / 0.48);
 }
+#create-dialog {
+  margin: auto;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+}
 #create-form {
   display: grid;
   gap: 16px;
   width: min(340px, calc(100vw - 64px));
   padding: 20px;
+}
+#create-form:has(#template-preview:not([hidden])) {
+  width: min(560px, calc(100vw - 28px));
+}
+#template-preview {
+  margin: 0;
+  min-width: 0;
+}
+#preview-sheet {
+  border: 1px solid var(--wb-border);
+  border-radius: var(--wb-radius);
+}
+#template-preview figcaption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+  color: var(--wb-muted);
+  font-size: 12px;
+}
+#preview-caption {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.preview-paging {
+  display: flex;
+  flex-shrink: 0;
+}
+.preview-paging button {
+  border: 0;
+  background: none;
+  font-size: 12px;
+}
+#create-error {
+  color: var(--wb-tone-danger-fg);
+  margin: 0;
+}
+#create-error:empty {
+  display: none;
 }
 #create-form h2 {
   margin: 0;

@@ -36,8 +36,8 @@
 }
 .file-launch {
   display: grid;
-  grid-template-columns: minmax(185px, 0.8fr) minmax(240px, 1.2fr);
-  gap: clamp(18px, 5vw, 64px);
+  grid-template-columns: minmax(0, 1.45fr) minmax(224px, 0.85fr);
+  gap: clamp(18px, 4vw, 54px);
   align-items: start;
   margin: clamp(25px, 4vw, 42px) 0;
   padding-block-end: clamp(22px, 4vw, 38px);
@@ -71,20 +71,34 @@
   font-size: 26px;
   font-weight: 350;
 }
-.sample-sheet {
-  background: #182731;
-  color: #f3eee2;
-  font:
-    650 clamp(16px, 2.3vw, 25px)/0.96 system-ui,
-    sans-serif;
-  letter-spacing: -0.035em;
+.templates-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
 }
-.sample-sheet > span {
-  justify-self: start;
-  margin-inline-start: 16%;
+.templates-heading .link {
+  color: var(--wb-muted);
+  font-size: 12px;
 }
-.sample-sheet > span > span {
-  color: #ffab91;
+.templates-heading .link:hover {
+  color: var(--wb-fg);
+  text-decoration: underline;
+}
+.slide-preview {
+  display: block;
+  position: relative;
+  container-type: inline-size;
+  aspect-ratio: 16/9;
+  overflow: hidden;
+  text-align: left;
+}
+.slide-preview > span {
+  position: absolute;
+  display: block;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-family: system-ui, sans-serif;
 }
 .file-templates button:hover .template-sheet {
   border-color: var(--wb-muted);
@@ -111,9 +125,8 @@
   grid-template-columns: minmax(0, 1fr) 140px;
 }
 .file-head {
-  display: flex;
-  justify-content: space-between;
-  padding: 12px calc(140px + 1rem) 7px 0;
+  grid-template-columns: minmax(0, 1fr) clamp(125px, 22vw, 232px) 140px;
+  padding: 12px 0 7px;
   border-bottom: 1px solid var(--wb-border);
   color: var(--wb-muted);
   font-size: 12px;
@@ -128,11 +141,11 @@
 }
 .file-row .file-open {
   display: grid;
-  grid-template-columns: 38px minmax(0, 1fr) minmax(100px, 0.37fr);
+  grid-template-columns: 38px minmax(0, 1fr) clamp(125px, 22vw, 232px);
   gap: 12px;
   align-items: center;
   align-self: stretch;
-  padding: 10px 10px 10px 2px;
+  padding: 10px 0 10px 2px;
   border: 0;
   background: transparent;
   text-align: start;
@@ -195,15 +208,20 @@
   display: none;
 }
 @media (max-width: 570px) {
+  .file-header {
+    gap: 8px;
+  }
+  .file-home h1 {
+    flex-shrink: 0;
+    font-size: 23px;
+  }
+  #start-import {
+    min-width: 0;
+    max-width: 53%;
+  }
   .file-launch {
     grid-template-columns: minmax(0, 1fr);
     gap: 22px;
-  }
-  .file-templates {
-    max-width: 310px;
-  }
-  .template-sheet {
-    max-height: 76px;
   }
   .file-head {
     display: none;

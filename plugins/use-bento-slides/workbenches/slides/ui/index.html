@@ -127,17 +127,19 @@
           </header>
           <div class="file-launch">
             <section class="new-presentations" aria-labelledby="new-heading">
-              <h2 id="new-heading" data-copy="newDeck"></h2>
-              <div class="file-templates">
+              <div class="templates-heading">
+                <h2 id="new-heading" data-copy="newDeck"></h2>
+                <button
+                  id="start-sample"
+                  type="button"
+                  class="link"
+                  data-files-copy="sample"
+                ></button>
+              </div>
+              <div class="file-templates" id="templates">
                 <button id="start-blank" type="button">
                   <span class="template-sheet blank-sheet" aria-hidden="true"><span>+</span></span>
                   <span data-copy="blankDeck"></span>
-                </button>
-                <button id="start-sample" type="button">
-                  <span class="template-sheet sample-sheet" aria-hidden="true"
-                    ><span>Bento<span>/</span><br />Slides</span></span
-                  >
-                  <span data-files-copy="sample"></span>
                 </button>
               </div>
             </section>
@@ -185,9 +187,19 @@
           <label
             ><span data-copy="layout"></span
             ><select id="create-layout">
-              <option value="blank" data-copy="blankDeck"></option>
-              <option value="brief" data-copy="projectBrief"></option></select
+              <option value="blank" data-copy="blankDeck"></option></select
           ></label>
+          <figure id="template-preview" hidden>
+            <div id="preview-sheet" class="slide-preview"></div>
+            <figcaption>
+              <span id="preview-caption" aria-live="polite"></span>
+              <span class="preview-paging"
+                ><button id="preview-prev" type="button" data-copy="previousSlide"></button
+                ><button id="preview-next" type="button" data-copy="nextSlide"></button
+              ></span>
+            </figcaption>
+          </figure>
+          <p id="create-error" role="alert"></p>
           <div class="dialog-actions">
             <button id="create-cancel" type="button" data-copy="cancel"></button
             ><button type="submit" class="wb-primary" data-copy="create"></button>

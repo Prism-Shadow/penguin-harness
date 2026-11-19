@@ -8,6 +8,7 @@
 // The editor never talks to anything but this page: its frame has no origin of its own and a
 // policy that allows no connection, so the Bento runtime cannot reach the network or the app.
 import { exportPowerPoint } from "./powerpoint.js";
+import { setupTemplatePicker } from "./template-picker.js";
 import { deckFiles } from "./deck-files.js";
 import { setupFileMenu } from "./file-menu.js";
 import { bridge, connectSave, captureSave, editorDocument, editorToken } from "./bridge.js";
@@ -1024,49 +1025,7 @@ async function ask(text, firstModel = null) {
 // ---- wiring -------------------------------------------------------------------------------
 
 $("history").onclick = () => void showHistory();
-function newPresentation() {
-  $("create-name").value = S.untitled;
-  $("create-layout").value = "blank";
-  $("create-dialog").showModal();
-  $("create-name").select();
-}
-$("new").onclick = newPresentation;
-$("create-cancel").onclick = () => $("create-dialog").close();
-$("create-form").onsubmit = async (event) => {
-  event.preventDefault();
-  const name = $("create-name").value.trim();
-  if (!name) return $("create-name").focus();
-  const doc = blankDeck(name);
-  if ($("create-layout").value === "brief") {
-    for (const [heading, body] of S.brief) {
-      const slide = blankDeck(heading).slides[0];
-      slide.id = "s" + (doc.slides.length + 1);
-      slide.elements[0].y = 96;
-      slide.elements.push({
-        ...slide.elements[0],
-        id: "body",
-        role: "body",
-        y: 320,
-        h: 220,
-        html: body,
-        fontSize: 42,
-        fontWeight: 400,
-      });
-      doc.slides.push(slide);
-    }
-  }
-  const submit = $("create-form").querySelector('[type="submit"]');
-  submit.disabled = true;
-  try {
-    await createDeck(name, doc);
-    $("create-dialog").close();
-  } catch {
-    $("create-dialog").close();
-    notice(S.transferFailed);
-  } finally {
-    submit.disabled = false;
-  }
-};
+setupTemplatePicker({ blankDeck, createDeck });
 $("present").onclick = async () => {
   if (!open) return;
   try {
@@ -1171,7 +1130,6 @@ $("start-sample").onclick = async () => {
   }
   await createDeck(doc.title, doc);
 };
-$("start-blank").onclick = newPresentation;
 $("start-ask").onsubmit = async (event) => {
   event.preventDefault();
   const text = $("start-prompt").value.trim();
