@@ -186,6 +186,9 @@ describe("auditing an answerer session", () => {
     try {
       const day = path.join(traces, "2026-11-16");
       mkdirSync(day);
+      // The engine writes the request directory as an absolute path of the host, which is what
+      // the audit resolves the argument to ("/p/…" becomes "D:\\p\\…" on Windows).
+      const resolved = path.resolve(REQ);
       const prompt = (dir: string) =>
         JSON.stringify({
           type: "model_msg",
@@ -198,11 +201,11 @@ describe("auditing an answerer session", () => {
       const [head, ...rest] = trace(CLEAN).split("\n");
       writeFileSync(
         path.join(day, "session-2026-11-16-10-00-00-aaaa_001.jsonl"),
-        [head, prompt(REQ), ...rest].join("\n"),
+        [head, prompt(resolved), ...rest].join("\n"),
       );
       writeFileSync(
         path.join(day, "session-2026-11-16-11-00-00-bbbb_001.jsonl"),
-        [head, prompt(REQ), ...rest.slice(0, 2)].join("\n"),
+        [head, prompt(resolved), ...rest.slice(0, 2)].join("\n"),
       );
       writeFileSync(
         path.join(day, "session-2026-11-16-11-00-00-bbbb_002.jsonl"),
@@ -210,7 +213,7 @@ describe("auditing an answerer session", () => {
       );
       writeFileSync(
         path.join(day, "session-2026-11-16-12-00-00-cccc_001.jsonl"),
-        [head, prompt(`${REQ}-other`), ...rest].join("\n"),
+        [head, prompt(`${resolved}-other`), ...rest].join("\n"),
       );
       const found = findSession(traces, REQ);
       expect(found.session).toBe("session-2026-11-16-11-00-00-bbbb");
