@@ -3,6 +3,7 @@
 - **Date:** 2026-11-19
 - **Type:** fix
 - **Scope:** `ui`, `web`
+- **PR:** [#1625](https://github.com/Prism-Shadow/penguin-harness/pull/1625)
 
 [中文版](2026-11-19-workbench-exit-accent.zh.md)
 
