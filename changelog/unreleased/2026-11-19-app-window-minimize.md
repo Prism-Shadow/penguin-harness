@@ -3,6 +3,7 @@
 - **Date:** 2026-11-19
 - **Type:** feature
 - **Scope:** `web`, `ui`, `ui-gallery`
+- **PR:** [#1640](https://github.com/Prism-Shadow/penguin-harness/pull/1640)
 
 [中文版](2026-11-19-app-window-minimize.zh.md)
 
