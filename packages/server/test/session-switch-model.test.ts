@@ -617,9 +617,10 @@ describe("POST /switch-model", () => {
       ["text", 2],
     ]);
     const held = t.deps.manager.pendingBootstrap(SID);
-    expect(parseModelSwitchMessage((held.at(-1)!.payload as { text: string }).text)).toMatchObject(
-      { sessionId: SID, ...prev(A) },
-    );
+    expect(parseModelSwitchMessage((held.at(-1)!.payload as { text: string }).text)).toMatchObject({
+      sessionId: SID,
+      ...prev(A),
+    });
 
     // The next Task bills to the target.
     await api.post(`/api/sessions/${SID}/tasks`, { input: [{ type: "text", text: "on B" }] });
