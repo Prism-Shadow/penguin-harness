@@ -84,7 +84,7 @@ With a `benchmark_id`, every measurement is a full case × `runs` matrix through
 
 ### The same site for both measurements
 
-Practice changes a sandboxed site (it creates, edits and filters data), so H1 and the final library would otherwise be measured on different sites. With `live_site: false`, the user names how the site is reset to one fixed snapshot (for a WebArena container, restoring its image); reset it before H1 and again before the final measurement, and record the command and the time of each reset. If it cannot be reset, say so in the report next to the scores. A live site drifts on its own: measure H1 and the final library close together, and report that the two ran on a moving site. Both measurements use the same browser profile and sign-ins, and nobody else uses the agent browser while a cell runs.
+Practice changes a sandboxed site (it creates, edits and filters data), so H1 and the final library would otherwise be measured on different sites. With `live_site: false`, the user names how the site is reset to one fixed snapshot (for a WebArena container, restoring its image); reset it before H1 and again before the final measurement, and record the command and the time of each reset. If it cannot be reset, say so in the report next to the scores. A live site drifts on its own: measure H1 and the final library close together, and report that the two ran on a moving site. Both measurements use the same browser profile and sign-ins, and nobody else uses the agent browser while a cell runs. Run every cell, measured or practice, one at a time, though `references/evaluation.md` allows a frozen State's cells in parallel: the agent browser is one shared set of tabs, and two cells would act on each other's pages.
 
 ## Integrity checks
 
