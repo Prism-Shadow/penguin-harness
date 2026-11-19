@@ -69,7 +69,7 @@ import {
   MAX_IMPORT_NAME_BYTES,
   MAX_IMPORT_TOTAL_BYTES,
 } from "../src/services/memory-transfer-document.js";
-import { MAX_FILE_BYTES, MAX_TOTAL_BYTES } from "../src/services/skill-import-limits.js";
+import { MAX_FILE_BYTES, MAX_TOTAL_BYTES } from "@prismshadow/penguin-library-http/skill-import-limits";
 import { apiClient, canCreateSymlink, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 

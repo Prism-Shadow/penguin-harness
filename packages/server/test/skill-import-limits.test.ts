@@ -13,7 +13,7 @@
  */
 import { strFromU8, strToU8, zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
-import { MAX_ARCHIVE_FILES, unzipBounded } from "../src/services/skill-import-limits.js";
+import { MAX_ARCHIVE_FILES, unzipBounded } from "@prismshadow/penguin-library-http/skill-import-limits";
 
 describe("unzipBounded and directory entries", () => {
   it("a directory entry is never inflated nor returned, not even one past the per-file cap", () => {
