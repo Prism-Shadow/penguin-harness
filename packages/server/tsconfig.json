@@ -199,6 +199,19 @@
       "@prismshadow/penguin-library-setting/attachment-limits": [
         "../../library/setting/src/attachment-limits.ts"
       ],
+      "@prismshadow/penguin-library-setting/desktop-service": [
+        "../../library/setting/src/desktop-service.ts"
+      ],
+      "@prismshadow/penguin-library-setting/desktop-update-port": [
+        "../../library/setting/src/desktop-update-port.ts"
+      ],
+      "@prismshadow/penguin-library-setting/keybindings": [
+        "../../library/setting/src/keybindings.ts"
+      ],
+      "@prismshadow/penguin-library-setting/theme-store": [
+        "../../library/setting/src/theme-store.ts"
+      ],
+      "@prismshadow/penguin-library-setting/types": ["../../library/setting/src/types.ts"],
       "@prismshadow/penguin-library-setting/repos": ["../../library/setting/src/repos/index.ts"],
       "@prismshadow/penguin-library-setting/repos/server-settings": [
         "../../library/setting/src/repos/server-settings.ts"

@@ -30,7 +30,7 @@ import { HttpError } from "../errors.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { Desktop } from "../../hmr/capabilities.js";
 import type { ShellFrames } from "../../hmr/capabilities.js";
-import { parseHostCommandsMessage } from "../../services/desktop-update-port.js";
+import { parseHostCommandsMessage } from "@prismshadow/penguin-library-setting/desktop-update-port";
 
 /** What this route group reaches: the host's port as state, read fresh on every request. */
 export interface CommandRouteDeps {

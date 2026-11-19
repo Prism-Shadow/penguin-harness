@@ -30,7 +30,7 @@ import { ensureInstallId } from "../install-id.js";
 import type { Users } from "@prismshadow/penguin-library-auth";
 import type { SessionDrivers, SessionIndex } from "@prismshadow/penguin-library-session";
 import type { Settings, UiPrefsStore } from "@prismshadow/penguin-library-setting";
-import { shellPortOf } from "../services/desktop-update-port.js";
+import { shellPortOf } from "@prismshadow/penguin-library-setting/desktop-update-port";
 import type { BrowserExtensionAdmission } from "./extension-hub.js";
 import type { ExtensionSocket } from "./extension-link.js";
 import { ExtensionPairing } from "./extension-pairing.js";

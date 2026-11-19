@@ -63,6 +63,15 @@ const WORKERS =
 
 export default defineConfig({
   test: {
+    server: {
+      deps: {
+        // The setting domain library (an externalized node_modules package) imports the
+        // theme-pack, whose package export is its TypeScript source; left external, the
+        // run's Node loader reaches it and refuses the extension. Inlining the library lets
+        // vite transform the chain the way it transforms this package's own imports.
+        inline: [/@prismshadow\/penguin-library-setting/, /@prismshadow\/penguin-theme-pack/],
+      },
+    },
     environment: "node",
     maxWorkers: WORKERS,
     sequence: { sequencer: WeightedShards },

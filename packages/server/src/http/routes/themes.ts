@@ -24,7 +24,7 @@ import type { ThemePackImportResponse, ThemePacksResponse } from "../../api/type
 import type { ServerEvent } from "@prismshadow/penguin-library-project";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { Channels, Clock, Config, Hmr, Paths } from "../../hmr/capabilities.js";
-import { ThemeStore } from "../../services/theme-store.js";
+import { ThemeStore } from "@prismshadow/penguin-library-setting/theme-store";
 import { HttpError } from "../errors.js";
 
 export interface ThemeRouteDeps {
