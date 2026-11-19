@@ -116,6 +116,7 @@ import { AgentService } from "./services/agent-service.js";
 import { MemoryService } from "./services/memory-service.js";
 import { BenchmarkService } from "./services/benchmark-service.js";
 import { ProjectsRoutes } from "./http/routes/dirs.js";
+import { StorageRoutes } from "./http/routes/storage.js";
 import { SandboxModule } from "./sandbox/service.js";
 import { SandboxSettings } from "./sandbox/settings-store.js";
 import { SandboxSettingsStatus } from "./sandbox/settings-status.js";
@@ -571,6 +572,17 @@ export class WorkbenchesModule {}
 })
 export class ThemesModule {}
 
+/**
+ * The Storage page: the data root measured by category, the cleanup of what can be regenerated,
+ * and the Sessions by size and age. Its own group: it reads the session runtime, the indexes and
+ * the Agents, and nothing reads it.
+ */
+@Module({
+  children: [StorageRoutes],
+  exports: [],
+})
+export class StorageModule {}
+
 /** The root: provides nothing and requires nothing; it exists so the groups have a scope to see each other in. */
 @Module({
   children: [
@@ -601,6 +613,7 @@ export class ThemesModule {}
     HistoryLinesRoutes,
     WorkbenchesModule,
     ThemesModule,
+    StorageModule,
     BuiltinBrowserModule,
     AgentApiModule,
     Startup,

@@ -466,6 +466,13 @@ function backgroundTaskCounts(session: RuntimeSession): SessionBackgroundTasks {
   return { processes, subagents };
 }
 
+/** A loaded Session doing something: a Task, a compaction, queued input, or background work. */
+function entryInUse(entry: RuntimeEntry): boolean {
+  if (entry.status !== "idle" || entry.followUps.length > 0) return true;
+  const background = backgroundTaskCounts(entry.session);
+  return background.processes > 0 || background.subagents > 0;
+}
+
 /** The `task_state` display info of one queued follow-up (see PendingFollowUpInfo). */
 function followUpInfo(f: QueuedFollowUp): PendingFollowUpInfo {
   return {
@@ -785,6 +792,45 @@ export class SessionManager {
       if (e.projectId === projectId && e.agentId === agentId && e.status !== "idle") n++;
     }
     return n;
+  }
+
+  /**
+   * Whether anything may be touching a Session's files right now: a Task or a compaction under
+   * way, input queued behind one, a background process or subagent still running, or the Session
+   * being deleted. A subagent child runs inside its root's runtime, so it is in use while its
+   * root is. A Session that is not loaded is not in use, and nothing loads it without a Task
+   * starting through the lock — so a caller that asks this and acts in the same synchronous
+   * step (the storage cleanup's check-then-rename) cannot be overtaken by a Task.
+   */
+  sessionInUse(sessionId: string): boolean {
+    if (this.deletingSessions.has(sessionId)) return true;
+    const entry = this.entries.get(sessionId);
+    if (entry !== undefined && entryInUse(entry)) return true;
+    const root = this.childRoots.get(sessionId);
+    if (root === undefined || root === sessionId) return false;
+    if (this.deletingSessions.has(root)) return true;
+    const rootEntry = this.entries.get(root);
+    return rootEntry !== undefined && entryInUse(rootEntry);
+  }
+
+  /**
+   * Whether any Session of the Agent is in use ({@link sessionInUse}) — one of its own, or a
+   * subagent child of another Agent's Session that runs as this Agent — or the Agent is being
+   * deleted. What the Agent's shared folders (its tool environments) wait on.
+   */
+  agentInUse(projectId: string, agentId: string): boolean {
+    if (this.deletingAgents.has(agentKey(projectId, agentId))) return true;
+    for (const entry of this.entries.values()) {
+      if (entry.projectId === projectId && entry.agentId === agentId && entryInUse(entry)) {
+        return true;
+      }
+    }
+    for (const [child, root] of this.childRoots) {
+      if (child === root || !this.sessionInUse(child)) continue;
+      const row = this.deps.sessions.findById(child);
+      if (row !== null && row.projectId === projectId && row.agentId === agentId) return true;
+    }
+    return false;
   }
 
   /** Add a newly created Session to the active table (status idle), avoiding a redundant load on the next Task. */
@@ -2781,6 +2827,8 @@ export abstract class Sessions extends Interface<
     | "pendingInputs"
     | "pendingBootstrap"
     | "activeCountForAgent"
+    | "sessionInUse"
+    | "agentInUse"
     | "invalidateAgentRuntimes"
     | "invalidateProjectRuntimes"
     | "assertCanAcceptTask"
