@@ -217,7 +217,7 @@ export function AppLayout() {
 
       {/* relative: the page area is the box a page-area layer's surfaces cover. At z-index auto
           it makes no stacking context, so the stacking in styles.css's header holds. */}
-      <main className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
+      <main data-page-viewport className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
         {/* A page that crashes says so here, and leaves the sidebar working: going to another
             page gives the body another chance. The recovery panel (error details, safe reload,
             harness history) stands in for the bare crash notice — the same fallback the shell

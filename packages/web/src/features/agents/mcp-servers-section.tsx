@@ -227,12 +227,10 @@ export function McpServersSection({
   };
 
   /** The dialog's write: the entry added, or put in place of the row it edits. */
-  const submitEntry = async (index: number | null, server: MCPServerConfig) =>
-    (
-      await persist(
-        index === null ? [...servers, server] : servers.map((s, i) => (i === index ? server : s)),
-      )
-    )?.text ?? null;
+  const submitEntry = (index: number | null, server: MCPServerConfig) =>
+    persist(
+      index === null ? [...servers, server] : servers.map((s, i) => (i === index ? server : s)),
+    );
 
   const confirmDelete = async () => {
     if (deleting === null) return;

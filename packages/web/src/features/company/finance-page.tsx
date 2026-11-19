@@ -62,7 +62,6 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime, formatMoney, formatPercent } from "../../lib/format";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { useDocumentTitle } from "../../lib/use-document-title";
@@ -105,6 +104,7 @@ import {
 
 import { agentPrincipal } from "./principals";
 import { toastApiError } from "../../lib/toast-api-error";
+import { failureNode } from "../../lib/failure";
 
 const iconButtonClass =
   "inline-flex items-center justify-center rounded p-1 text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200";
@@ -302,7 +302,7 @@ export function FinancePage() {
   const [params, setParams] = useSearchParams();
   useDocumentTitle(org ? `${org.name} · ${S.nav.org.finance}` : S.nav.org.finance);
   const [data, setData] = useState<OrgFinanceResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   /** Ticket owners, joined from the board (best effort: the finance rows carry none). */
   const [owners, setOwners] = useState<ReadonlyMap<string, string>>(new Map());
   /** Live employee states, joined from the org chart (best effort, for the state column). */
@@ -347,7 +347,7 @@ export function FinancePage() {
       setError(null);
     } catch (e) {
       if (my !== seq.current) return;
-      setError(apiErrorText(e));
+      setError(failureNode(e, { what: "an organization's finances could not be loaded" }));
     }
   }, [projectId, orgId, requested]);
   const { budget: budgetVersion, runs } = company.versions;

@@ -16,11 +16,12 @@
  *   workbenches" is off every row's switch is greyed at its own value, and a server older than
  *   the switches gets none. A workbench that does not run (its own switch or the Agent-wide one
  *   is off) has nothing to open or reload; its history, restore, export and removal stay.
- * - The App Center setting, on a row of an Agent on this server (the App Center lists those
- *   only), commits at once too, from the switch or from the menu's row — one setting, two
- *   controls: it rewrites `penguin.appCenter.show` in the workbench's package.json, and the
- *   reload that follows (none while it does not run) records the edit as a version. A refused
- *   write puts both back where the file says.
+ * - The App Center setting commits at once too, from the switch or from the menu's row — one
+ *   setting, two controls: it rewrites `penguin.appCenter.show` in the workbench's package.json,
+ *   and the reload that follows (none while it does not run) records the edit as a version. A
+ *   refused write puts both back where the file says. A machine's Agent has it as well, written
+ *   on that machine: the App Center lists a machine's apps for an administrator, and its "Remove
+ *   from App Center" is this same setting, so this row is where such an app comes back.
  *
  * Everything but the Enable switch is member-level, matching the workbench routes, and goes to
  * the server the Agent lives on.
@@ -150,6 +151,8 @@ function WorkbenchAppCenter({
 }) {
   const { currentProject } = useProject();
   const projectId = currentProject?.projectId ?? null;
+  /** The machine the Agent lives on, whose copy of the workbench is written; null for this server. */
+  const machineId = useAgentLocation();
   const setting = useInstantSetting(workbench.appCenter?.show === true, async (show: boolean) => {
     if (!projectId) return;
     const res = await api.setWorkbenchAppCenter(
@@ -157,7 +160,7 @@ function WorkbenchAppCenter({
       options.agentId,
       workbench.id,
       show,
-      null,
+      machineId,
     );
     options.onSwitched(res.workbench);
   });
@@ -225,13 +228,13 @@ export function useWorkbenchRows(options: WorkbenchRowsOptions): {
     const source = sourceOf(workbench.id);
     // The body opens the workbench's files; "Open" stays the way into the app.
     const open = () => onOpenFiles({ kind: "workbench", name: workbench.id, title });
-    /** The row's controls, with the App Center setting when the row has one. */
-    const controls = (appCenter: AppCenterControl | undefined) => (
+    /** The row's controls, the App Center setting among them. */
+    const controls = (appCenter: AppCenterControl) => (
       <>
         {enabled !== undefined && (
           <WorkbenchSwitch workbench={{ ...workbench, enabled }} title={title} options={options} />
         )}
-        {appCenter !== undefined && <AppCenterToggle title={title} {...appCenter} />}
+        <AppCenterToggle title={title} {...appCenter} />
         {first && running && projectId && (
           <Button
             size="sm"
@@ -301,14 +304,9 @@ export function useWorkbenchRows(options: WorkbenchRowsOptions): {
         description={workbench.error ?? workbench.id}
         meta={workbench.version ? `v${workbench.version}` : undefined}
         trailing={
-          // The App Center lists this server's Agents only: a machine's row has no such setting.
-          machineId === null ? (
-            <WorkbenchAppCenter workbench={workbench} options={options}>
-              {controls}
-            </WorkbenchAppCenter>
-          ) : (
-            controls(undefined)
-          )
+          <WorkbenchAppCenter workbench={workbench} options={options}>
+            {controls}
+          </WorkbenchAppCenter>
         }
       />
     );

@@ -161,10 +161,14 @@ export function AppTile({
   onOpen: () => void;
 }) {
   const { shortcut } = app;
+  const owner = [shortcut.agentName, shortcut.machineLabel].filter(Boolean).join(" · ");
   const building = shortcut.build === "building";
   const failed = shortcut.build === "failed";
-  /** A building app does not open, but one already running has a window to bring back. */
-  const closed = building && !running;
+  /**
+   * Whether a click does nothing: an app out of reach never opens, and a building one opens only
+   * when it is already running, with a window to bring back.
+   */
+  const closed = shortcut.unavailable === true || (building && !running);
   const state = running
     ? S.appCenter.running
     : building
@@ -173,12 +177,12 @@ export function AppTile({
         ? S.appCenter.broken
         : null;
   const tip = running
-    ? S.appCenter.runningTip(title, shortcut.agentName)
+    ? S.appCenter.runningTip(title, owner)
     : building
-      ? S.appCenter.buildingTip(title, shortcut.agentName)
+      ? S.appCenter.buildingTip(title, owner)
       : failed
-        ? S.appCenter.failedTip(title, shortcut.agentName)
-        : S.appCenter.tileTip(title, shortcut.agentName);
+        ? S.appCenter.failedTip(title, owner)
+        : S.appCenter.tileTip(title, owner);
   return (
     <li
       className="relative"
@@ -194,7 +198,7 @@ export function AppTile({
             ref={target.ref}
             {...target.props}
             type="button"
-            aria-label={S.appCenter.tileName(title, shortcut.agentName, state)}
+            aria-label={S.appCenter.tileName(title, owner, state)}
             aria-disabled={closed || undefined}
             data-tooltip={tip}
             data-tooltip-extra
@@ -204,7 +208,7 @@ export function AppTile({
               if (!closed) onOpen();
             }}
             className={`${TILE_BUTTON} ${closed ? "cursor-default" : ""} ${
-              failed ? "opacity-60" : ""
+              failed || shortcut.unavailable ? "opacity-60" : ""
             } ${lifted ? "opacity-40" : ""}`}
           >
             <span className="relative block" style={{ width: ICON_PX, height: ICON_PX }}>
@@ -229,6 +233,11 @@ export function AppTile({
               {mark === "into" && <IntoRing />}
             </span>
             <TileName>{title}</TileName>
+            {shortcut.machineLabel && (
+              <span className="max-w-full truncate text-xs text-fg-muted">
+                {shortcut.machineLabel}
+              </span>
+            )}
           </button>
         )}
       </ContextMenu>

@@ -24,22 +24,25 @@ import { WINDOW_ENTRY_STATE, windowInFront, windowSearch } from "./app-window-ad
 import { APP_CENTER_PATH } from "./app-center-path";
 import { localizedText } from "./skill-use";
 
+/** A running app's App Center shortcut, with the machine its Agent lives on (none: this server). */
+export type RunningShortcut = AppCenterShortcut & { machineId?: string };
+
 /** One running app as its window's host keeps it. */
 export interface RunningAppRecord {
-  /** The App Center's key for the app, `<agentId>/<workbenchId>`. */
+  /** The App Center's key: `<agentId>/<workbenchId>`, after `<machineId>:` for a machine's app. */
   key: string;
   /** The Project it was opened in. */
   projectId: string;
-  shortcut: AppCenterShortcut;
+  shortcut: RunningShortcut;
 }
 
 /** One running app as a surface outside the App Center lists it. */
 export interface RunningApp {
-  /** What `useRestoreApp()` takes: `<agentId>/<workbenchId>`. */
+  /** What `useRestoreApp()` takes: the App Center's key, as in `RunningAppRecord`. */
   key: string;
   agentId: string;
   workbenchId: string;
-  /** The machine its Agent lives on; null for this server, the only one the App Center lists yet. */
+  /** The machine its Agent lives on; null for this server. */
   machineId: string | null;
   /** In the reader's language. */
   title: string;
@@ -88,7 +91,7 @@ export function useRunningApps(): readonly RunningApp[] {
           key,
           agentId: shortcut.agentId,
           workbenchId: shortcut.workbenchId,
-          machineId: null,
+          machineId: shortcut.machineId ?? null,
           title: localizedText(locale, shortcut.title, shortcut.titleZh),
           icon: shortcut.icon ?? null,
           shown: key === front,
@@ -138,7 +141,7 @@ export function closeApp(key: string): void {
  */
 export function keepListedApps(
   projectId: string,
-  listed: ReadonlyMap<string, AppCenterShortcut>,
+  listed: ReadonlyMap<string, RunningShortcut>,
 ): void {
   let changed = false;
   const next: RunningAppRecord[] = [];

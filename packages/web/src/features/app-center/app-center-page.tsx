@@ -1,21 +1,24 @@
 /**
  * The App Center (/apps): the Project's home screen. One tile per workbench of the Project's
- * Agents on this server whose manifest asks to be shown (`penguin.appCenter.show`), each the
- * app's icon and name; the server reads them from the files without loading anything, so opening
- * this page starts no build.
+ * Agents whose manifest asks to be shown (`penguin.appCenter.show`), each the app's icon and name;
+ * the server reads them from the files without loading anything, so opening this page starts no
+ * build. An administrator sees the apps of the Project's machines too, after this server's, each
+ * with its machine's name under its own (use-app-center.ts); a machine out of reach keeps the
+ * tiles it last showed, which do not open, and a note under the grid names it.
  *
  * - The arrangement is the viewer's own: they drag tiles to reorder them and onto one another to
  *   make folders, or make one from the "New folder" dialog (the header's button, the grid's
  *   menu, a tile's "Move to…"), and it is kept with their account, per Project (arrangement.ts).
  *   A new app is appended, one that went away drops out, and a folder goes only once it is
  *   empty. Restoring the default order asks first.
- * - A click (or Enter) opens the app windowed, over the grid (`?app=<agentId>/<workbenchId>`);
- *   the tile's menu also opens it full screen, the full page whose exit comes back here. The
- *   window's minimize (and Back) returns to the grid with the app still running, and its tile
- *   marked so; a click on that tile brings back the same live window. Several apps can run at
- *   once, and they keep running while the viewer is on another page, because their windows live
- *   in a layer over the page area rather than here (app-center-windows.tsx, over the running set
- *   in lib/running-apps.ts, which other surfaces read too); only Close ends one.
+ * - A click (or Enter) opens the app windowed, over the grid (`?app=<agentId>/<workbenchId>`,
+ *   `<machineId>:` first for a machine's); the tile's menu also opens it full screen, the full
+ *   page whose exit comes back here. The window's minimize (and Back) returns to the grid with
+ *   the app still running, and its tile marked so; a click on that tile brings back the same
+ *   live window. Several apps can run at once, and they keep running while the viewer is on
+ *   another page, because their windows live in a layer over the page area rather than here
+ *   (app-center-windows.tsx, over the running set in lib/running-apps.ts, which other surfaces
+ *   read too); only Close ends one.
  * - A tile whose app is building shows a turning ring and does not open; it turns live by itself
  *   when the build ends (use-app-center.ts follows the server's workbench news).
  * - Every tile, every folder and the grid's empty space have a context menu: right-click,
@@ -36,6 +39,7 @@ import {
   EmptyState,
   GlyphIcon,
   ICONS,
+  Notice,
   NoticeStrip,
   PageHeader,
   Skeleton,
@@ -50,7 +54,6 @@ import { localizedText } from "../../lib/skill-use";
 import { S } from "../../lib/strings";
 import { toastApiError } from "../../lib/toast-api-error";
 import { useLocale } from "../../state/locale";
-import { useMachines } from "../../state/machines";
 import { useProject } from "../../state/project";
 import { AiCreateButtons, AiCreateModal } from "../ai-create";
 import type { AiExample } from "../ai-create";
@@ -61,6 +64,7 @@ import {
   findItem,
   groupApps,
   layoutOf,
+  keepUnseenApps,
   makeFolder,
   moveBeside,
   moveIntoFolder,
@@ -72,6 +76,7 @@ import {
   type GridApp,
   type GridFolder,
   type GridItem,
+  type LocatedShortcut,
 } from "./arrangement";
 import { BuildErrorDialog } from "./build-error-dialog";
 import { FolderNameDialog } from "./folder-name-dialog";
@@ -110,13 +115,19 @@ export function AppCenterPage() {
   const { locale } = useLocale();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
-  /** Machines the Project's Agents can live on: this server is listed too, and is not one. */
-  const machines = (useMachines().state?.machines ?? []).filter(
-    (machine) => !machine.local && machine.installed !== null && machine.machineId !== null,
-  );
   /** The Agent list as a value: a new array with the same Agents does not read again. */
   const agentIds = agents.map((agent) => agent.agentId).join("\n");
-  const { shortcuts, layout, error, reload, saveLayout } = useAppCenter(projectId, agentIds);
+  const {
+    shortcuts,
+    layout,
+    error,
+    reload,
+    saveLayout,
+    refreshMachine,
+    unavailableMachines,
+    awaitedApp,
+    retryFailures,
+  } = useAppCenter(projectId, agentIds);
 
   const [aiOpen, setAiOpen] = useState(false);
   const [openFolderId, setOpenFolderId] = useState<string | null>(null);
@@ -136,7 +147,7 @@ export function AppCenterPage() {
   /** Shows a new arrangement and stores it; one that changes nothing writes nothing. */
   const commit = (next: GridItem[]) => {
     if (grid === null || sameArrangement(grid, next)) return;
-    saveLayout(layoutOf(next));
+    saveLayout(keepUnseenApps(layoutOf(next), layout, awaitedApp));
   };
 
   const onDrop = (dragged: Dragged, drop: Drop) => {
@@ -173,14 +184,14 @@ export function AppCenterPage() {
   const runningIds = useMemo(() => new Set(running.map((app) => app.key)), [running]);
   const openKey = params.get(WINDOW_PARAM);
   const openApp = openKey === null || grid === null ? null : findItem(grid, openKey);
-  const windowApp = openApp?.type === "app" ? openApp : null;
+  const windowApp = openApp?.type === "app" && !openApp.shortcut.unavailable ? openApp : null;
   const windowShown = openKey !== null && runningIds.has(openKey);
 
   // An app the list no longer has ends: the App Center is the one place an app is opened from, so
   // one it no longer lists could not be brought back. The rest take the shortcut it gives now.
   useEffect(() => {
     if (projectId === null || grid === null) return;
-    const listed = new Map<string, AppCenterShortcut>();
+    const listed = new Map<string, LocatedShortcut>();
     for (const item of grid) {
       if (item.type === "app") listed.set(item.id, item.shortcut);
       else for (const app of item.apps) listed.set(app.id, app.shortcut);
@@ -218,7 +229,13 @@ export function AppCenterPage() {
           openFullScreen: (app) => openFullScreen(app, APP_CENTER_PATH),
           showError: setErrorOf,
           viewInSettings: (app) =>
-            void navigate(agentSettingsPath(app.shortcut.agentId, null, "workbenches")),
+            void navigate(
+              agentSettingsPath(
+                app.shortcut.agentId,
+                app.shortcut.machineId ?? null,
+                "workbenches",
+              ),
+            ),
           removeFromAppCenter: (app) =>
             void api
               .setWorkbenchAppCenter(
@@ -226,9 +243,9 @@ export function AppCenterPage() {
                 app.shortcut.agentId,
                 app.shortcut.workbenchId,
                 false,
-                null,
+                app.shortcut.machineId ?? null,
               )
-              .then(reload, toastApiError),
+              .then(() => refreshMachine(app.shortcut.machineId), toastApiError),
           openFolder: (folder) => setOpenFolderId(folder.id),
           newFolder: (app) => setNewFolderPicked(app === null ? [] : [app.id]),
           renameFolder: setRenaming,
@@ -348,8 +365,16 @@ export function AppCenterPage() {
                 )}
               </ContextMenu>
             )}
-            {machines.length > 0 && (
-              <p className="mt-6 text-xs text-fg-muted">{S.appCenter.machinesNote}</p>
+            {unavailableMachines.length > 0 && (
+              <Notice
+                tone="attention"
+                className="mt-6"
+                {...(retryFailures !== null
+                  ? { retry: { label: S.common.retry, onClick: retryFailures } }
+                  : {})}
+              >
+                {S.appCenter.machinesOffline(unavailableMachines.join(", "))}
+              </Notice>
             )}
           </div>
         </div>
