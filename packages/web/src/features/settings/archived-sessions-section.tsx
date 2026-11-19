@@ -39,7 +39,6 @@ import {
   SettingsEmpty,
   SkeletonList,
   Spinner,
-  toastError,
 } from "@prismshadow/penguin-ui";
 import { useStore } from "zustand/react";
 import { formatDateTime } from "../../lib/format";
@@ -65,6 +64,7 @@ import {
   type ArchiveTarget,
   type GroupRows,
 } from "./archived-sessions-state";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** How long typing in the search box rests before the page reads again. */
 const SEARCH_DEBOUNCE_MS = 250;
@@ -83,7 +83,9 @@ interface PendingDelete {
 export function ArchivedSessionsSection() {
   const { projects } = useProject();
   const [store] = useState<ArchiveStore>(() =>
-    createArchiveStore((reason) => toastError(S.archivedSessions.actionFailed(reason))),
+    createArchiveStore((reason, err) =>
+      toastApiError(err, { text: S.archivedSessions.actionFailed(reason) }),
+    ),
   );
   const state = useStore(store);
   const [q, setQ] = useState("");

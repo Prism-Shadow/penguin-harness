@@ -7063,13 +7063,13 @@ Benchmark：
     },
   },
   /**
-   * The problem report (the UI package's `ReportStrings`): 「[报告问题]」 after a serious error, the
+   * The problem report (the UI package's `ReportStrings`): 「[报告问题]」 after a failure, the
    * report dialog it opens, and the notice a crashed part of the page shows.
    */
   report: {
     action: "报告问题",
     title: "报告问题",
-    lead: "这类错误多半是 PenguinHarness 的缺陷。提交到 GitHub 能帮助改进这个开源项目。",
+    lead: "这可能是 PenguinHarness 的缺陷，也可能来自网络、模型服务或所连的机器。如果你认为问题出在 PenguinHarness，欢迎到 GitHub 提交 issue，帮助改进这个开源项目。",
     check: "报告已去掉密钥、Token 与个人路径一类的内容，发送前仍请检查有没有不想公开的信息。",
     label: "报告",
     copy: "复制",

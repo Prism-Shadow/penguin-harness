@@ -268,7 +268,9 @@ export function touchesArchive(ev: ServerEvent): boolean {
   );
 }
 
-export function createArchiveStore(onError: (message: string) => void = () => undefined) {
+export function createArchiveStore(
+  onError: (message: string, error: unknown) => void = () => undefined,
+) {
   /** Invalidates the answers of a read (a load or a refresh) that a newer one replaced. */
   let gen = 0;
   /** Invalidates a page turn's answer: only a new query or filter, or the page closing, does. */
@@ -540,7 +542,7 @@ export function createArchiveStore(onError: (message: string) => void = () => un
         if (target.kind === "selection") set({ selection: NO_SELECTION });
         return true;
       } catch (err) {
-        onError(apiErrorText(err));
+        onError(apiErrorText(err), err);
         return false;
       } finally {
         set({ busy: false });
@@ -627,7 +629,7 @@ export function createArchiveStore(onError: (message: string) => void = () => un
             const now = current();
             if (now === undefined) return;
             setRows(key, { ...now, turning: false });
-            onError(apiErrorText(err));
+            onError(apiErrorText(err), err);
           }
         });
       },

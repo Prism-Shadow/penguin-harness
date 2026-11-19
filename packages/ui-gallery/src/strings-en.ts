@@ -584,7 +584,7 @@ export const en: GalleryStrings = {
       report: {
         title: "Report a problem",
         description:
-          "The Report entry of a serious error: the notice a crashed part of the page shows, an error toast and a could-not-load notice with the entry, and the report dialog.",
+          "The Report entry every failure offers: the notice a crashed part of the page shows, an error toast, an inline failure and a could-not-load notice with the entry, and the report dialog.",
       },
       attachments: {
         title: "Attachments",
@@ -2225,14 +2225,23 @@ export const en: GalleryStrings = {
         'A part of the page that crashed while rendering leaves no blank: one line in the shape of "[Aborted]", with Reload and Report. The report holds the error, its stack and the component stack, personal paths taken out.',
       toast: "Error toast",
       toastHint:
-        "Only a serious error (a 500 the server did not name, an exception nobody expected) offers Report on its toast, which then stays longer; an expected error (validation, permission, offline) looks as it always did.",
-      fireSerious: "Serious error",
-      fireExpected: "Expected error",
+        "A failure's toast carries Report and stays longer; a refusal (a failed check, a name taken, no permission) reads as before, without it.",
+      fireSerious: "A failure",
+      fireExpected: "A refusal",
       seriousText: "Internal server error",
       expectedText: "You do not have access to this Project",
       loadFailed: "Could not load",
       loadFailedHint:
-        "The could-not-load notice adds Report beside Retry when the failure is a serious error.",
+        "A could-not-load notice carries Report beside Retry; one that was refused does not.",
+      inline: "Inline failures",
+      inlineHint:
+        "An inline failure in a form or a panel carries Report after its words; an input error does not.",
+      inlineLine: "The machine gpu-box did not answer",
+      inlineNotice: "Could not read the earlier Traces: internal server error",
+      inlineName: "Name",
+      inlineSaveFailed: "Could not save: internal server error",
+      inlineRefused: "That name is already taken",
+      inlineTold: "Failed at the “Connect” step",
       loadTitle: "Could not load the message history",
       retry: "Retry",
       dialog: "Report dialog",

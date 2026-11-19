@@ -149,6 +149,11 @@ export interface ActivityGroupProps {
   rows?: readonly ActivityGroupRow[];
   /** A body of one piece the caller styles, in place of rows; its presence adds the chevron too. */
   children?: ReactNode;
+  /**
+   * Text actions after the duration (a failed row's 「[报告问题]」), on a head that does not
+   * expand only: an expandable head is one button, and a press cannot nest in it.
+   */
+  actions?: ReactNode;
 }
 
 export function ActivityGroup({
@@ -165,6 +170,7 @@ export function ActivityGroup({
   pending = false,
   rows,
   children,
+  actions,
 }: ActivityGroupProps) {
   const hookState = activityState(state);
   const running = hookState === "running";
@@ -233,6 +239,11 @@ export function ActivityGroup({
         />
       )}
       <ActivityProgress running={inFlight} />
+      {!expandable && actions !== undefined && actions !== null && (
+        <span data-slot="actions" className="flex shrink-0 items-baseline gap-x-2 text-xs">
+          {actions}
+        </span>
+      )}
       {expandable && <ActivityToggle open={shown} />}
       <span className="min-w-0 flex-1" />
     </>

@@ -25,7 +25,6 @@ import {
   type TreeToggle,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
 import { joinWorkspacePath } from "../../lib/file-path";
 import { formatBytes } from "../../lib/format";
 import { useReaderFind } from "../../lib/reader-find";
@@ -41,6 +40,7 @@ import {
   withExpanded,
   type Listings,
 } from "../../lib/workspace-tree";
+import { failureNode } from "../../lib/failure";
 
 /** One row of the case tree: a shared tree row, which material it came from, and a file's size. */
 export interface CaseTreeRow extends FileTreeRow {
@@ -146,7 +146,7 @@ export function BenchmarkCaseBrowser({ projectId, benchmarkId, caseSummary, mach
   /** Both materials start open, so the case's files are in view without a click. */
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set(MATERIAL_PATHS));
   const [loadingDirs, setLoadingDirs] = useState<ReadonlySet<string>>(() => new Set());
-  const [listError, setListError] = useState<string | null>(null);
+  const [listError, setListError] = useState<ReactNode>(null);
   /** The directory whose subtree the tree should animate — the one just clicked. */
   const [toggled, setToggled] = useState<TreeToggle | null>(null);
   const [preview, setPreview] = useState<FileBrowserPreview | null>(null);
@@ -195,7 +195,7 @@ export function BenchmarkCaseBrowser({ projectId, benchmarkId, caseSummary, mach
         return res.entries;
       } catch (error) {
         if (!current()) return null;
-        setListError(apiErrorText(error));
+        setListError(failureNode(error));
         return null;
       } finally {
         if (current()) {
@@ -243,7 +243,7 @@ export function BenchmarkCaseBrowser({ projectId, benchmarkId, caseSummary, mach
         });
       } catch (error) {
         if (request !== previewRequest.current) return;
-        setPreview({ ...base, error: apiErrorText(error) });
+        setPreview({ ...base, error: failureNode(error) });
       }
     },
     [fileUrl],

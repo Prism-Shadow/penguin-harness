@@ -6781,7 +6781,7 @@ Scenarios:
   report: {
     action: "Report",
     title: "Report a problem",
-    lead: "An error like this is most likely a defect in PenguinHarness. Reporting it on GitHub helps improve this open-source project.",
+    lead: "This may be a defect in PenguinHarness, or it may come from the network, a model provider or a connected machine. If you think PenguinHarness is at fault, filing an issue on GitHub helps improve this open-source project.",
     check:
       "Keys, tokens and personal paths are taken out of the report; still check it for anything private before you send it.",
     label: "Report",

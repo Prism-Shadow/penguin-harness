@@ -8,10 +8,21 @@
  * usual suspect once a plugin has added a page); and the harness history, to roll the harness
  * back when the build itself is what broke. The command palette mounts beside the tree and
  * stays reachable over this panel too.
+ *
+ * And 「[报告问题]」 after the error: the report holds the error and its stack, redacted like every
+ * report. The panel shows that report in a dialog of its own rather than through the app's
+ * report host, which may be part of the tree that broke.
  */
 import { useState } from "react";
 import type { ComponentType } from "react";
-import { Button, NoticeStrip } from "@prismshadow/penguin-ui";
+import {
+  Button,
+  ErrorReportDialog,
+  NoticeStrip,
+  TextAction,
+  exceptionReport,
+  type ErrorReport,
+} from "@prismshadow/penguin-ui";
 import { useShortcutLabel } from "../lib/shortcuts/use-keymap";
 import { S } from "../lib/strings";
 import { HarnessHistoryOverlay } from "./harness-history-overlay";
@@ -22,12 +33,20 @@ function messageOf(error: unknown): string {
   return String(error);
 }
 
-export function RescuePanel({ error }: { error: unknown }) {
+export function RescuePanel({
+  error,
+  what = "the page crashed while rendering",
+}: {
+  error: unknown;
+  /** What happened, for the report. */
+  what?: string;
+}) {
   const t = S.rescue;
   // Whether the error happened in safe mode, fixed when the panel appears: entering safe mode
   // afterwards from the palette does not make the error the app's own.
   const [safe] = useState(isSafeMode);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [report, setReport] = useState<ErrorReport | null>(null);
   const palette = useShortcutLabel("palette.toggle");
   return (
     <div className="flex h-dvh w-full items-center justify-center overflow-y-auto bg-white px-4 py-8 text-gray-900 dark:bg-gray-950 dark:text-gray-100">
@@ -40,7 +59,13 @@ export function RescuePanel({ error }: { error: unknown }) {
           tone="danger"
           className="mt-4 rounded-md border px-3 py-2 font-mono text-xs break-words whitespace-pre-wrap"
         >
-          {messageOf(error)}
+          {messageOf(error)}{" "}
+          <TextAction
+            data-report-issue=""
+            onClick={() => setReport(exceptionReport(error, { what }))}
+          >
+            {S.report.action}
+          </TextAction>
         </NoticeStrip>
         {safe ? (
           <p className="mt-3 text-sm text-gray-600 dark:text-gray-400">{t.safeNote}</p>
@@ -73,6 +98,7 @@ export function RescuePanel({ error }: { error: unknown }) {
         <p className="mt-4 text-xs text-gray-500 dark:text-gray-400">{t.paletteHint(palette)}</p>
       </section>
       <HarnessHistoryOverlay open={historyOpen} onClose={() => setHistoryOpen(false)} />
+      <ErrorReportDialog report={report} onClose={() => setReport(null)} />
     </div>
   );
 }
@@ -80,6 +106,6 @@ export function RescuePanel({ error }: { error: unknown }) {
 /** The root the app mounts when the module tree failed to boot: the panel, with the boot error. */
 export function bootFailedRoot(error: unknown): ComponentType {
   return function BootFailed() {
-    return <RescuePanel error={error} />;
+    return <RescuePanel error={error} what="the app's modules failed to load" />;
   };
 }
