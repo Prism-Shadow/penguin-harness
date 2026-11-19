@@ -25,8 +25,8 @@ import type {
   DesktopBrowserCommandMessage,
   DesktopBrowserEvent,
   DesktopBrowserReplyMessage,
-} from "../api/types.js";
-import type { ShellPort } from "../services/desktop-update-port.js";
+} from "@prismshadow/penguin-server/api";
+import type { ShellPort } from "../plugin/index.js";
 import { BUILTIN_CAPABILITIES, BrowserLinkError } from "./link.js";
 import type { BrowserLink } from "./link.js";
 

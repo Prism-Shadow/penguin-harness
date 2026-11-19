@@ -1,3 +1,5 @@
+import type { IncomingMessage } from "node:http";
+import type { Duplex } from "node:stream";
 import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { Opaque, Slot, ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { Hono } from "hono";
@@ -14,6 +16,10 @@ import {
 import { AMSP_PREFIX, amspAllowOrigin } from "../amsp/cors.js";
 import { HttpError, handleError } from "./errors.js";
 import { originRule } from "./public-origin.js";
+import { ownOriginPrefixes } from "./own-origin.js";
+import { adoptGroup } from "./foreign-groups.js";
+import { upgradeDispatch } from "./upgrade-endpoints.js";
+import type { WebSocketUpgrade } from "./upgrade-endpoints.js";
 import { attributedProjectId } from "./attribution.js";
 import { jsonCompression } from "./json-compression.js";
 import { jsonValidators } from "./json-validators.js";
@@ -41,17 +47,55 @@ export abstract class Http {
     userId: string,
     request: Opaque<"Request", Request>,
   ): Promise<Opaque<"Response", Response>>;
+  /**
+   * Hands a WebSocket upgrade to the contributed endpoint (`HttpModule.upgrades`) whose prefix
+   * covers its path most specifically — checking the handshake's Origin and session cookie first
+   * for an `auth: "user"` one (http/upgrade-endpoints.ts) — and answers true; false when none
+   * covers it, leaving the socket untouched. The runtime asks this per upgrade of the generation
+   * current at that moment (hmr/upgrade-seam.ts): a socket cannot cross the HTTP seam, so this is
+   * the in-process half.
+   */
+  abstract upgrade(
+    request: Opaque<"IncomingMessage", IncomingMessage>,
+    socket: Opaque<"Duplex", Duplex>,
+    head: Opaque<"Buffer", Buffer>,
+  ): boolean;
+  /**
+   * Whether a write to `path` may reach a route group that judges its callers' origin itself
+   * (`origin: "own"`): what the runtime's copy of the same-origin check, in front of the seam,
+   * lets through for this generation's exact one to decide (http/own-origin.ts, app.ts).
+   */
+  abstract ownOrigin(path: string): boolean;
 }
+
+export type { UpgradeCaller, WebSocketUpgrade } from "./upgrade-endpoints.js";
 
 export interface HttpSlots {
   /**
    * A route group. `auth: "user"` accepts a cookie or the local API token; `"token"` accepts
    * only the local API token, without renewing cookies; `"none"` is public. `order` is the
-   * mount position (a stable number, since Hono matches in order). The code half is the Hono app.
+   * mount position (a stable number, since Hono matches in order). `origin: "own"` says the
+   * group judges its callers' origin itself (a caller that is cross-origin by design, such as a
+   * browser extension): such groups are mounted ahead of the others and of the same-origin rule
+   * for writes, which so never runs for a request one of them answers (http/own-origin.ts). The
+   * code half is the Hono app — any copy of Hono: one built with a plugin's own copy is made to
+   * hand its errors to the App's handler (http/foreign-groups.ts).
    */
   routes: Slot<
-    { prefix: string; auth: "user" | "token" | "none"; order: number },
+    { prefix: string; auth: "user" | "token" | "none"; order: number; origin?: "own" },
     Opaque<"Hono", Hono<AppEnv>>
+  >;
+  /**
+   * A WebSocket endpoint: the upgrades whose path `prefix` covers (that path, or below it;
+   * `:name` segments match any one segment) are handed to the code half. `auth: "user"` has the
+   * host check the handshake's Origin and session cookie first and hand the endpoint the user;
+   * `"none"` hands it the bare request, and the endpoint checks the Origin and its own credential
+   * itself (http/upgrade-endpoints.ts). The runtime's own upgrades (a terminal's stream, the API
+   * socket) are never offered here.
+   */
+  upgrades: Slot<
+    { prefix: string; auth: "none" | "user" },
+    Opaque<"WebSocketUpgrade", WebSocketUpgrade>
   >;
 }
 
@@ -77,9 +121,20 @@ export class HttpModule {
         prefix: c.data.prefix as string,
         auth: c.data.auth as "user" | "token" | "none",
         order: c.data.order as number,
+        ...(c.data.origin === "own" ? { origin: "own" as const } : {}),
         app: c.code as Hono<AppEnv>,
       }))
       .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+    for (const r of routes) adoptGroup(r.app);
+    const upgrade = upgradeDispatch(
+      (contributions.upgrades ?? []).map((c) => ({
+        id: c.id,
+        prefix: c.data.prefix as string,
+        auth: c.data.auth === "user" ? ("user" as const) : ("none" as const),
+        code: c.code as WebSocketUpgrade,
+      })),
+      { auth: this.auth, rule: originRule(this.config), log: (line) => this.log.line(line) },
+    );
 
     // The HTTP surface, gated on the cookie; and the same surface once per socket user,
     // gated on that user — assembled lazily, since most users never open a socket, and kept,
@@ -108,12 +163,25 @@ export class HttpModule {
       fetch: (request: Request) => Promise.resolve(cookieGated.fetch(request)),
       fetchAs: (userId: string, request: Request) =>
         Promise.resolve(enteredAs(userId).fetch(request)),
+      upgrade: (request: IncomingMessage, socket: Duplex, head: Buffer) =>
+        upgrade(request, socket, head),
+      ownOrigin: ownOriginPrefixes(routes),
     };
   }
 
-  /** The whole surface behind one gate: error handling, logging, body cap, JSON-only writes, the runtime-prefix decline, then every group in order. */
+  /**
+   * The whole surface behind one gate: error handling, logging, body cap, the groups that judge
+   * their callers' origin themselves, the same-origin and JSON-only write checks, the
+   * runtime-prefix decline, then every other group in order.
+   */
   private assemble(
-    routes: { prefix: string; auth: "user" | "token" | "none"; order: number; app: Hono<AppEnv> }[],
+    routes: {
+      prefix: string;
+      auth: "user" | "token" | "none";
+      order: number;
+      origin?: "own";
+      app: Hono<AppEnv>;
+    }[],
     gate: MiddlewareHandler<AppEnv>,
   ): Hono<AppEnv> {
     const errors = this.errors;
@@ -172,11 +240,6 @@ export class HttpModule {
       return capped.mw(c, next);
     });
     const origins = originRule(this.config);
-    app.use("/api/*", sameOriginWrites(origins));
-    // A machine's API is reached through this server (machines/proxy.ts), with this server's
-    // cookie: the same question, asked here because the hop drops the Origin.
-    app.use("/server/*", sameOriginWrites(origins));
-    app.use("/api/*", jsonOnlyWrites(origins));
 
     // A group's own auth declaration applies to both HTTP and socket calls, independent of order.
     const authenticate = gate;
@@ -193,12 +256,29 @@ export class HttpModule {
       c.var.sessionVia === "token" && bearerToken(c.req.header("authorization")) !== null
         ? next()
         : authenticateToken(c, next);
-    for (const r of routes) {
+    const mount = (r: (typeof routes)[number]) => {
       // Each group keeps its own gate, including protected prefixes outside /api.
       if (r.auth === "user") app.use(`${r.prefix.replace(/\/$/, "")}/*`, once);
       if (r.auth === "token") app.use(`${r.prefix.replace(/\/$/, "")}/*`, tokenGate);
       app.route(r.prefix, r.app);
+    };
+
+    // The groups that judge their callers' origin themselves (`origin: "own"`) go ahead of the
+    // same-origin rule, each behind its own copy of the JSON-only one: a request one of them
+    // answers never meets the same-origin check, while anything else under their prefixes —
+    // another method, a path the group does not serve — falls through to it like every other
+    // write (http/own-origin.ts).
+    for (const r of routes) {
+      if (r.origin !== "own") continue;
+      app.use(`${r.prefix.replace(/\/$/, "")}/*`, jsonOnlyWrites(origins));
+      mount(r);
     }
+    app.use("/api/*", sameOriginWrites(origins));
+    // A machine's API is reached through this server (machines/proxy.ts), with this server's
+    // cookie: the same question, asked here because the hop drops the Origin.
+    app.use("/server/*", sameOriginWrites(origins));
+    app.use("/api/*", jsonOnlyWrites(origins));
+    for (const r of routes) if (r.origin !== "own") mount(r);
     return app;
   }
 }
