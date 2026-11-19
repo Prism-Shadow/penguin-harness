@@ -93,6 +93,23 @@ export interface ProjectModelRequestOptions extends ProjectModelClientOptions {
   idleTimeoutMs?: number;
 }
 
+/**
+ * One request as a plugin hands it to the host (the server's `ProjectModelRequests.stream`): the
+ * MMSP messages and config, and how long it may run. Declared here, in the SDK every plugin
+ * compiles against, because the host's interface passes it as an opaque value and an opaque value
+ * is matched by the package that declares its type: a plugin that requires the interface must
+ * name this very type, and a plugin cannot depend on the server package.
+ */
+export interface ProjectModelRequest {
+  messages: UniMessage[];
+  /** MMSP's request config (modalities, voice, thinking …). */
+  config?: UniConfig;
+  /** Stops the request; its usage row says `aborted` unless the provider had reported usage. */
+  signal?: AbortSignal;
+  /** Longest wait between two events from the model (default: chat's, 600 s; 0 disables). */
+  idleTimeoutMs?: number;
+}
+
 /** How one request ended, reported once. */
 export interface ProjectModelRequestEnd {
   /** `aborted`: the caller's signal, or the caller stopped reading; `failed`: anything else that ended it early. */
