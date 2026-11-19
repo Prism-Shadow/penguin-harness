@@ -16,10 +16,10 @@ import { createHash, randomBytes } from "node:crypto";
 import type { Stats } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { TMP_SUFFIX } from "../workbenches/store.js";
+import { TMP_SUFFIX } from "./agent-vocab.js";
 
 // Same cap as a user's avatar, measured on the data URL as it arrives (≈ 96 KiB of image).
-import { AVATAR_MAX_CHARS } from "../api/types.js";
+import { AVATAR_MAX_CHARS } from "./types.js";
 /** A file dropped in by hand is served up to this size; a larger one is ignored. */
 const AVATAR_MAX_BYTES = 256 * 1024;
 const DATA_URL = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/;

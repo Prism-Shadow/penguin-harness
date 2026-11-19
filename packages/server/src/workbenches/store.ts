@@ -232,7 +232,11 @@ export async function readState(dir: string): Promise<unknown> {
  * from truncating each other's staging file and renaming a half-written document into place.
  */
 export const TMP_SUFFIX = ".penguin-tmp";
-export const isTempName = (name: string): boolean => name.includes(TMP_SUFFIX);
+// The temp-suffix convention is shared with the agent domain's State paths (its vocabulary
+// module owns the predicate); imported for this module's own checks and re-exported for the
+// workbench store's consumers.
+import { isTempName } from "@prismshadow/penguin-library-agent/agent-vocab";
+export { isTempName };
 const tempPath = (file: string) => `${file}${TMP_SUFFIX}${randomBytes(6).toString("hex")}`;
 
 export async function writeState(dir: string, state: unknown): Promise<void> {
