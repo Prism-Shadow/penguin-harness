@@ -3,6 +3,7 @@
 - **Date:** 2026-11-19
 - **Type:** refactor
 - **Scope:** `web`, `web-plugin`, `server`, `ui-gallery`
+- **PR:** [#1648](https://github.com/Prism-Shadow/penguin-harness/pull/1648)
 
 [English](2026-11-19-plugin-web-seams.md)
 
