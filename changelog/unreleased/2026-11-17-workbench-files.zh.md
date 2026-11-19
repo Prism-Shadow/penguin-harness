@@ -2,7 +2,7 @@
 
 - **Date:** 2026-11-17
 - **Type:** feature
-- **Scope:** `server`, `plugins`, `docs`
+- **Scope:** `core`, `server`, `plugins`, `docs`
 - **PR:** [#1579](https://github.com/Prism-Shadow/penguin-harness/pull/1579)
 
 [English](2026-11-17-workbench-files.md)
@@ -12,5 +12,6 @@ Workbench 宿主接口新增 `host.dataPaths(opts?)`，返回持久应用存储�
 ## 细节
 
 - `WorkbenchHost.dataPaths(opts?)` 返回 `<scope>/app/{data,cache,state}/<app_id>` 下的 `{ appId, level, dataDir, cacheDir, stateDir }`，支持 `agent`（默认）、`project`、`server` 与 `machine` 四个层级。
+- `isWorkbenchId` 与 `WORKBENCH_NAME_PATTERN` 对齐，不再允许包含 `.`（使 `<agentId>.<workbenchId>` 分隔无歧义），同时 `projectId`、`agentId` 与 `workbenchId` 校验均拦截 Windows 保留设备名（`con`、`prn`、`aux`、`nul`、`com1`–`com9`、`lpt1`–`lpt9`）。
 - `SandboxService.confinerFor` 在 `workspace-write` 模式下默认将当前 Agent 的 `agent` 级 `<scope>/app` 存储根目录与会话 `scratchpad` 一并作为可写根目录挂载。
 - `penguin-plugin`（`SKILL.md`）新增 `Data and storage` 章节，涵盖 `Adding configuration`（`PluginConfigProvider.groups`、`PluginConfig`、Agent Vault）与 `Managing persistent data`（`agent`、`project`、`server`、`machine` 四层作用域、反向域名 `app_id` 与 `<agentId>.<workbenchId>`，以及默认使用 `agent` 作用域、共享存储须征得用户同意的原则）。

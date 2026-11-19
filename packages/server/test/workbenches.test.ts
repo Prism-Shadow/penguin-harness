@@ -51,7 +51,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
 import envPaths from "env-paths";
-import { agentDir, agentStateDir } from "@prismshadow/penguin-core";
+import { agentDir, agentStateDir, isValidId } from "@prismshadow/penguin-core";
 import type { IfaceTable } from "@prismshadow/penguin-core/kernel";
 import type {
   WorkbenchInfo,
@@ -63,6 +63,7 @@ import type {
 } from "../src/api/types.js";
 import type { WorkbenchAppStorage } from "../src/mechanisms/workbenches.js";
 import { isWorkbenchId } from "../src/workbenches/store.js";
+import { SEMANTIC_ID_PATTERN } from "../src/services/ids.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -546,18 +547,26 @@ describe("a loaded workbench", { timeout: 30_000 }, () => {
     }
 
     expect(isWorkbenchId("demo")).toBe(true);
-    expect(isWorkbenchId("report.v2")).toBe(true);
+    expect(isWorkbenchId("report_v2-1")).toBe(true);
     for (const badWorkbenchId of [
       "",
       ".",
       "..",
+      "report.v2",
       "report.",
       "report..v2",
       "CON",
-      "nul.txt",
+      "nul",
+      "com1",
+      "lpt9",
       "notes.penguin-tmp1",
     ]) {
       expect(isWorkbenchId(badWorkbenchId)).toBe(false);
+    }
+    for (const reserved of ["con", "prn", "aux", "nul", "com1", "lpt9"]) {
+      expect(SEMANTIC_ID_PATTERN.test(reserved)).toBe(false);
+      expect(isValidId(reserved)).toBe(false);
+      expect(isValidId(reserved.toUpperCase())).toBe(false);
     }
 
     const invalidCases: Array<{ input: unknown; match: RegExp }> = [
