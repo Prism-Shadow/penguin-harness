@@ -18,7 +18,7 @@
  * policy, never markup put into the page. An icon that fails to load falls back to the letter
  * tile.
  */
-import type { DragEvent as ReactDragEvent, ReactNode } from "react";
+import type { CSSProperties, DragEvent as ReactDragEvent, ReactNode } from "react";
 import type { AppCenterShortcut } from "@prismshadow/penguin-server/api";
 import {
   ContextMenu,
@@ -32,6 +32,7 @@ import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import { skillTileColor } from "../skills";
 import type { GridApp, GridFolder, Side } from "./arrangement";
+import "./app-tile.css";
 
 /** Edge of a tile's icon, in px: the phone home screen's size, large enough to read a glyph in. */
 export const ICON_PX = 56;
@@ -73,19 +74,26 @@ export function TileIcon({
   title: string;
   size?: number;
 }) {
-  const round = size >= ICON_PX ? "rounded-xl" : "rounded-md";
   const letter = (
     <span
       aria-hidden
-      style={{ width: size, height: size }}
-      className={`flex shrink-0 items-center justify-center font-semibold ${round} ${
+      className={`flex size-full items-center justify-center font-semibold ${
         size >= ICON_PX ? "text-2xl" : "text-xs"
       } ${skillTileColor(shortcut.workbenchId)}`}
     >
       {[...title][0]?.toUpperCase() ?? "?"}
     </span>
   );
-  return <ImageIcon icon={shortcut.icon ?? null} size={size} fallback={letter} className={round} />;
+  return (
+    <span
+      aria-hidden
+      data-clip-surface
+      className="app-center-icon-shape block shrink-0"
+      style={{ width: size, height: size, "--app-icon-scale": size / ICON_PX } as CSSProperties}
+    >
+      <ImageIcon icon={shortcut.icon ?? null} size={size} fallback={letter} />
+    </span>
+  );
 }
 
 /** The line in the gap beside a tile, where the dragged one would land. */
@@ -100,15 +108,8 @@ function DropLine({ side }: { side: Side }) {
   );
 }
 
-/** The ring around an icon square that the dragged app would go into. */
-function IntoRing() {
-  return (
-    <span
-      aria-hidden
-      className="pointer-events-none absolute -inset-1 rounded-2xl ring-2 ring-accent"
-    />
-  );
-}
+/** An outline follows the actual icon mask and stays visible outside its clipped fill. */
+const DROP_OUTLINE = "outline-2 outline-offset-4 outline-accent";
 
 /**
  * A tile is pressed and held for its menu on touch, so neither the text selection nor the
@@ -184,7 +185,7 @@ export function AppTile({
           >
             <span
               data-app-icon
-              className="relative block"
+              className={`app-center-icon-shape relative block ${mark === "into" ? DROP_OUTLINE : ""}`}
               style={{ width: ICON_PX, height: ICON_PX }}
             >
               <span
@@ -207,7 +208,6 @@ export function AppTile({
                   <GlyphIcon d={ICONS.triangleAlert} size={ICON_SIZE.rowLead} />
                 </span>
               )}
-              {mark === "into" && <IntoRing />}
             </span>
             <TileName>{title}</TileName>
           </button>
@@ -264,7 +264,8 @@ export function FolderTile({
           >
             <span
               data-folder-icon
-              className="relative grid grid-cols-2 content-start rounded-xl bg-fg/10"
+              data-clip-surface
+              className={`app-center-icon-shape relative grid grid-cols-2 content-start bg-fg/10 ${mark === "into" ? DROP_OUTLINE : ""}`}
               style={{
                 width: ICON_PX,
                 height: ICON_PX,
@@ -277,7 +278,6 @@ export function FolderTile({
                   <TileIcon shortcut={app.shortcut} title={titleOf(app.shortcut)} size={MINI_PX} />
                 </span>
               ))}
-              {mark === "into" && <IntoRing />}
             </span>
             <TileName>{folder.name}</TileName>
           </button>

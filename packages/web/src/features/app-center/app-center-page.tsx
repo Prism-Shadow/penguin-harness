@@ -305,7 +305,7 @@ export function AppCenterPage() {
                 <ul className={GRID} aria-busy aria-label={S.appCenter.loading}>
                   {[0, 1, 2, 3].map((i) => (
                     <li key={i} className="flex flex-col items-center gap-2 p-2">
-                      <Skeleton className="size-14 rounded-xl" />
+                      <Skeleton className="app-center-icon-shape size-14" />
                       <Skeleton className="h-3 w-16" />
                     </li>
                   ))}
