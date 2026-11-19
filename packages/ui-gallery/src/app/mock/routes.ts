@@ -53,8 +53,8 @@ import type {
   ChatDefaultsDto,
   ContributionsResponse,
   CommandPolicyDto,
-  CapabilitySettings,
-  CapabilitySettingsPatch,
+  ToolModelSettings,
+  ToolModelSettingsPatch,
   DefaultModelResponse,
   DesktopTrayStatusResponse,
   DesktopUpdateStatusResponse,
@@ -407,32 +407,37 @@ function refreshEffective(store: DemoStore): void {
   }));
 }
 
-function demoCapabilities(store: DemoStore): CapabilitySettings {
-  const chat = store.f.models.defaultModel;
+/**
+ * The Project's multimodal models, as the Web App reads them: the gallery's server contributes no
+ * operation, so the settings page says the tools are off and the chat shows no voice controls.
+ * Running an operation or polishing a transcript needs a model behind it, which the demo has not.
+ */
+function demoToolModels(store: DemoStore): ToolModelSettings {
   return {
     available: [],
     bindings: {},
-    candidates: {
-      search: [],
-      fetch: [],
-      image: [],
-      video: [],
-      tts: [],
-      stt: [],
-      chat: chat ? [chat] : [],
-    },
+    candidates: { t2t: [], i2t: [], search: [], fetch: [], t2i: [], t2v: [], t2s: [], s2t: [] },
     voicePolish: store.voicePolish,
   };
 }
 router
-  .get("/api/projects/:projectId/capabilities", ({ store }) => demoCapabilities(store))
-  .patch("/api/projects/:projectId/capabilities", ({ store, body }) => {
-    const patch = record(body) as CapabilitySettingsPatch;
+  .get("/api/projects/:projectId/capabilities/tools", ({ store }) => demoToolModels(store))
+  .patch("/api/projects/:projectId/capabilities/tools", ({ store, body }) => {
+    const patch = record(body) as ToolModelSettingsPatch;
     if (patch.bindings && Object.values(patch.bindings).some(Boolean))
-      return readOnly("assign a media model");
-    store.voicePolish = { ...store.voicePolish, ...patch.voicePolish };
-    return demoCapabilities(store);
-  });
+      return readOnly("assign a multimodal model");
+    const { enabled, prompt } = patch.voicePolish ?? {};
+    store.voicePolish = {
+      ...store.voicePolish,
+      ...(enabled !== undefined ? { enabled } : {}),
+      ...(prompt !== undefined ? { prompt: prompt ?? store.voicePolish.defaultPrompt } : {}),
+    };
+    return demoToolModels(store);
+  })
+  .post("/api/projects/:projectId/capabilities/:capability/run", () =>
+    readOnly("run a multimodal model"),
+  )
+  .post("/api/projects/:projectId/voice-polish", () => readOnly("polish a transcript"));
 
 router
   .get("/api/projects/:projectId/models", ({ store }): ModelsResponse => store.f.models)
