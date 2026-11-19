@@ -23,6 +23,7 @@
 ## agent-state-git 插件
 
 - `@penguinharness/agent-state-git` 运行 dugite 3.3.3 固定的 GitHub Desktop Git 构建（Git 2.56.1）。它在一台主机上首次运行时下载本平台的归档（24–65 MiB），校验 sha256，只把 `git`（Windows 另有它加载的 DLL）共 3.4–7.1 MiB 留在 `<数据根>/cache/agent-state-git.engine/`。`LOCAL_GIT_DIRECTORY` 与 `DUGITE_CACHE_DIR` 的用法与 dugite 相同。构建与安装都不下载任何东西：工作区不运行 dugite 的 postinstall。
+- 它在 Linux 上从 1 个文件起、macOS 上从 30 个、Windows 上从 300 个起承担提交，恢复分别从 150、100、150 个文件起，即其基准测得比内置引擎快的规模；更小的步骤仍走内置引擎。
 - 一次提交是一次 `git fast-import`，一次恢复是一次 `git cat-file --batch`。每个进程只定位该 Agent 的仓库，剥除全部 `GIT_*` 变量，不读系统与全局配置，不运行钩子，不签名，并同步对象与引用。
 - 没有对应构建的主机（musl、其他架构）、下载失败或程序无法运行时，由内置引擎记录版本，日志说明原因。
 - 插件出现在插件页，没有分类；由管理员安装到服务端。

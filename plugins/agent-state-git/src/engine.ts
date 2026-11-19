@@ -153,16 +153,22 @@ class Objects {
 }
 
 /**
- * The folder sizes, in files, from which this engine beats the built-in one (bench/, median of
- * runs on each platform). A commit gains from the first file: one fast-import and one batched
- * sync against an fsync per object. A read gains only once its blobs outweigh starting a process.
+ * The folder sizes, in files, from which this engine beats the built-in one, read off the bench
+ * (bench/engines.bench-run.ts) on each platform: a write here is one fast-import plus the child
+ * that unpacks it, a read one cat-file, so what decides is what a process start costs.
+ *
+ * - Linux (about 4 ms a process): a commit wins from the first file — one batched sync against
+ *   an fsync per object — and a restore from 100–200 files.
+ * - macOS (about 7 ms): a load with a change wins from 20–50 files, a restore from 50–100.
+ * - Windows (about 34 ms): a load with a change wins only between 200 and 500 files, a restore
+ *   from 100–200.
  */
 export function fasterFrom(platform: NodeJS.Platform = process.platform): {
   commit: number;
   read: number;
 } {
-  if (platform === "win32") return { commit: 1, read: 150 };
-  if (platform === "darwin") return { commit: 1, read: 150 };
+  if (platform === "win32") return { commit: 300, read: 150 };
+  if (platform === "darwin") return { commit: 30, read: 100 };
   return { commit: 1, read: 150 };
 }
 

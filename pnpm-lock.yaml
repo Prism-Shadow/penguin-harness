@@ -831,6 +831,9 @@ importers:
       '@penguinharness/agent-evaluation':
         specifier: workspace:*
         version: link:../../plugins/agent-evaluation
+      '@penguinharness/agent-state-git':
+        specifier: workspace:*
+        version: link:../../plugins/agent-state-git
       '@penguinharness/ape-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/ape-rsi-toolkit

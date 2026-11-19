@@ -2,8 +2,9 @@
  * The native engine against real repositories, beyond what the shared suite holds every engine
  * to (agent-state-repo.test.ts):
  *
- * - File names with spaces, quotes, brackets, tabs, line breaks and non-ASCII text are written
- *   and read back exactly, in the same commits the built-in engine writes.
+ * - File names with spaces, brackets, apostrophes and non-ASCII text (and, where a file system
+ *   can hold them, quotes, tabs and line breaks) are written and read back exactly, in the same
+ *   commits the built-in engine writes.
  * - Every object it writes is a loose file, as the built-in engine stores them: no pack per commit.
  * - What the server's environment and the operator's Git config could change does not apply: an
  *   ambient `GIT_DIR`, object directory or index file is not followed, and a global config's hooks,
@@ -65,10 +66,14 @@ describe.skipIf(live === null)("the native engine", () => {
   it("writes and reads back unusual names exactly, in the commits the built-in engine writes", async () => {
     const files = text({
       "nested/-item with spaces": "中文",
-      'quote "and" apostrophe\'s.md': "q",
-      "tab\tline\nbreak.txt": "contents",
+      "apostrophe's (and parentheses).md": "q",
       "名字 with [brackets]/index.ts": "export {};",
       "ünï cödé.txt": "ü",
+      // A quote, a tab and a line break cannot be in a file name on Windows, and Git for Windows
+      // refuses them in a path; a workbench folder there never holds one.
+      ...(process.platform === "win32"
+        ? {}
+        : { 'quote "and" back.md': "q", "tab\tline\nbreak.txt": "contents" }),
     });
     const rel = "workbenches/名字 [x]";
     const twin = path.join(dir, "twin.git");

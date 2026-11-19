@@ -45,6 +45,9 @@ which stays the default.
   `<data root>/cache/agent-state-git.engine/`. `LOCAL_GIT_DIRECTORY` and `DUGITE_CACHE_DIR` work
   as in dugite. No build or install downloads anything: the workspace does not run dugite's
   postinstall.
+- It takes a commit from 1 file on Linux, 30 on macOS and 300 on Windows, and a restore from 150,
+  100 and 150 files, where its bench measured it faster than the built-in engine; smaller steps
+  stay built-in.
 - A commit is one `git fast-import`, a restore one `git cat-file --batch`. Each process addresses
   only the Agent's repository, drops every `GIT_*` variable, reads no system or global config, runs
   no hook, does not sign, and syncs objects and refs.

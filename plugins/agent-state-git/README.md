@@ -17,6 +17,18 @@ Git process:
 | Writing a version | one `git fast-import`: the folder's files, the commit and the branch move |
 | Reading a version back (restore) | one `git cat-file --batch` for every tree and file of it |
 
+It takes a step only from the folder size at which it measured faster than the built-in engine
+(`fasterFrom`, set per platform from `bench/`), because what decides is the cost of starting a
+process — about 4 ms on Linux, 7 ms on macOS and 34 ms on Windows:
+
+| Platform | Commits from | Restores from |
+| --- | --- | --- |
+| Linux | 1 file | 150 files |
+| macOS | 30 files | 100 files |
+| Windows | 300 files | 150 files |
+
+A smaller step, an unchanged load, the history and a removal stay with the built-in engine.
+
 Those processes address only the Agent's repository (`--git-dir`). They drop every `GIT_*`
 variable of the server's environment, read no system or global Git config, never run a hook, never
 sign, and sync what they write (`core.fsync=objects,reference`). Objects are stored loose, as the
