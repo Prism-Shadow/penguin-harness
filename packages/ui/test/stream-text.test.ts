@@ -46,7 +46,7 @@ function expandedRow(row: ReactElement): string {
   return renderStatic(
     createElement(
       DisclosureControlContext.Provider,
-      { value: { open: true, requested: true, detailsWhenOpen: false, toggle() {} } },
+      { value: { open: true, requested: true, toggle() {} } },
       row,
     ),
   );

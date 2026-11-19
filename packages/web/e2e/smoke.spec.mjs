@@ -285,16 +285,16 @@ test("reopened ten-step work shows tool context, the same total and every row on
   const elapsed = group.locator("[data-step-elapsed]"),
     rows = activityRows(group);
   await page.clock.install();
-  for (const [lang, previous, next, latest, step] of [
-    ["zh", "上一步", "下一步", "最新步骤", "第 10 步"],
-    ["en", "Previous step", "Next step", "Latest step", "Step 10"],
+  for (const [lang, previous, next, latest, step, jump, step3] of [
+    ["zh", "上一步", "下一步", "最新步骤", "第 10 步", "跳转到步骤", "第 3 步"],
+    ["en", "Previous step", "Next step", "Latest step", "Step 10", "Go to step", "Step 3"],
   ]) {
     await setAccountPrefs(page.request, { lang });
     await page.reload();
     await expect(group.locator("[data-step-terminal]")).toBeVisible();
     const time = await elapsed.locator(".font-mono").innerText();
     await group.getByRole("button", { name: previous, exact: true }).click();
-    await expect(nav.locator("[aria-live]")).toHaveText(step);
+    await expect(nav).toHaveAttribute("aria-label", step);
     await expect(head).toContainText("read_file");
     await expect(head).toContainText("核对本周评审记录");
     await expect(head).toContainText("…/每周 总结/评审 记录.md");
@@ -303,21 +303,37 @@ test("reopened ten-step work shows tool context, the same total and every row on
     const nextButton = nav.getByRole("button", { name: next, exact: true });
     const latestButton = nav.getByRole("button", { name: latest, exact: true });
     const readout = nav.locator("[aria-live]");
+    const number = nav.getByRole("textbox", { name: jump, exact: true });
+    const fontOf = (el) =>
+      el.evaluate((node) => {
+        const style = getComputedStyle(node);
+        return `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+      });
     for (const width of [375, 320]) {
       await page.setViewportSize({ width, height: 780 });
-      const [box, positionBox, nextBox, latestBox] = await Promise.all(
-        [group.locator("[data-step-head]"), readout, nextButton, latestButton].map((el) =>
+      const [box, positionBox, nextBox, latestBox, elapsedBox] = await Promise.all(
+        [group.locator("[data-step-head]"), readout, nextButton, latestButton, elapsed].map((el) =>
           el.boundingBox(),
         ),
       );
       expect(positionBox.x + positionBox.width).toBeLessThanOrEqual(nextBox.x + 1);
       expect(nextBox.x + nextBox.width).toBeLessThanOrEqual(latestBox.x + 1);
-      expect(latestBox.x + latestBox.width).toBeLessThanOrEqual(
+      // The total sits after the pager, at the end of the line.
+      expect(latestBox.x + latestBox.width).toBeLessThanOrEqual(elapsedBox.x + 1);
+      expect(elapsedBox.x + elapsedBox.width).toBeLessThanOrEqual(
         Math.min(width, box.x + box.width) + 1,
       );
-      await readout.click();
-      await expect(readout).toHaveText(step);
+      // The step number turns editable in place: same box, same type as the words around it.
+      await expect(number).toHaveValue("10");
+      expect(await fontOf(number)).toBe(await fontOf(readout));
+      const resting = await number.boundingBox();
+      await number.click();
+      await expect(number).toBeFocused();
+      expect(await number.boundingBox()).toEqual(resting);
+      await page.keyboard.press("Escape");
       await nav.getByRole("button", { name: previous, exact: true }).focus();
+      await page.keyboard.press("Tab");
+      await expect(number).toBeFocused();
       await page.keyboard.press("Tab");
       await expect(nextButton).toBeFocused();
       await page.keyboard.press("Tab");
@@ -340,6 +356,15 @@ test("reopened ten-step work shows tool context, the same total and every row on
     await path.evaluate((el) => {
       el.parentElement.scrollLeft = 0;
     });
+    // A step typed into the readout is the page shown; Escape puts the shown one back.
+    await number.fill("3");
+    await number.press("Enter");
+    await expect(nav).toHaveAttribute("aria-label", step3);
+    await expect(rows).toHaveCount(0);
+    await number.fill("1");
+    await number.press("Escape");
+    await expect(number).toHaveValue("3");
+    await expect(nav).toHaveAttribute("aria-label", step3);
     await head.click();
     await expect(rows).toHaveCount(10);
     const first = rows.first();

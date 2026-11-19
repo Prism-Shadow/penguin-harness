@@ -109,7 +109,14 @@ export interface ActivityStepNavigation {
   next: string;
   latest: string;
   waiting: string;
-  position: (step: number) => string;
+  /**
+   * The words before and after the step number in the pager's readout (「第 」「 步」,
+   * "Step " and nothing); the number between them is a field the reader can type a step into.
+   */
+  stepWords: readonly [before: string, after: string];
+  /** The step number field's name: what typing a number and pressing Enter does. */
+  jump: string;
+  /** The total time's name, as its tooltip and to a screen reader; the line shows the time alone. */
   elapsed: string;
   /** Expose every step to a search of this transcript, preserving the reading position. */
   revealAll: boolean;
@@ -309,8 +316,6 @@ export function ActivityGroup({
               // Expanded and a search open rows by policy; only the reader's own opening asks
               // for what a row holds folded.
               requested: !finding && chosen === true,
-              // Compact's listing is the step names; each row's details come with opening it.
-              detailsWhenOpen: compact && !finding,
               toggle: () => {
                 if (!finding)
                   setView((prior) => ({

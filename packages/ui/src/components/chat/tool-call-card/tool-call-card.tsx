@@ -3,9 +3,7 @@
  * subtitle, the duration (a live clock while it runs) — that expands to the call's full arguments,
  * its output and any images it returned. A call waiting on a person's decision shows its
  * approval block under the row whatever the collapsed state, and a footer (a spawned subagent's
- * row) is always shown below the details — unless a list keeps its rows' details for when they
- * are open (a Compact work group's listing), which holds the subtitle and the footer back until
- * the row is opened.
+ * row) is always shown below the details.
  *
  * The row names no outcome in words: the status icon, with the caller's state label as its
  * accessible name and tooltip, carries how the call ended or was decided (a failure also turns
@@ -33,7 +31,7 @@
  * props. What the caller decides from the call's own data — the preview, the payload, the
  * duration's segments — does too; this component only lays them out.
  */
-import { useContext, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { Button } from "../../actions/button/button";
 import { StatusIcon } from "../../icons/status-icon/status-icon";
 import type { RunState } from "../../icons/status-icon/status-icon";
@@ -44,7 +42,6 @@ import {
   DisclosureRow,
   activityState,
 } from "../../layout/disclosure-row/disclosure-row";
-import { DisclosureControlContext } from "../../layout/disclosure-row/disclosure-control";
 import { ZoomableImage } from "../../overlays/lightbox/lightbox";
 import { ApprovalBlock } from "../approval-block/approval-block";
 import { StreamText } from "../stream-text/stream-text";
@@ -121,8 +118,6 @@ export function ToolCallCard({
   expandLabel,
   collapseLabel,
 }: ToolCallCardProps) {
-  const control = useContext(DisclosureControlContext);
-  const showDetails = !control?.detailsWhenOpen || control.open;
   const row = (
     <DisclosureRow
       sticky
@@ -144,7 +139,7 @@ export function ToolCallCard({
           >
             {name}
           </span>
-          {showDetails && subtitle && (
+          {subtitle && (
             <span
               data-slot="detail"
               {...(subtitleFull && subtitleFull !== subtitle
@@ -237,7 +232,7 @@ export function ToolCallCard({
       </>
     </DisclosureRow>
   );
-  if (!showDetails || footer === undefined || footer === null) return row;
+  if (footer === undefined || footer === null) return row;
   return (
     <div>
       {row}

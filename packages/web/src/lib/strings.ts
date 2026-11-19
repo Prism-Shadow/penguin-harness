@@ -5049,7 +5049,9 @@ Benchmark：
     latestWorkStep: "最新步骤",
     waitingWorkStep: "查看待处理步骤",
     workElapsed: "总耗时",
-    workStepPosition: (step: number) => `第 ${step} 步`,
+    /** The words around the step number in Compact's pager; the number between them is a field. */
+    workStepWords: ["第 ", " 步"] as readonly [before: string, after: string],
+    workStepJump: "跳转到步骤",
     workGroupSteps: (n: number) => `${n} 步`,
     approvalWaiting: "待审批",
     copyCode: "复制代码",

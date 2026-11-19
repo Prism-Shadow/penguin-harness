@@ -172,12 +172,13 @@ export * from "./components/content/a2ui/chart-block";
 export * from "./components/content/a2ui/resources-block";
 
 // W4-A — navigation, notices and readings: the tab bar, the grouped list's header, folder, more
-// row and pager, the create pair, the notice with its variants and the page to-do built on it,
-// the progress bar, the duration slot and its live clock, the beta tag, the disclosure row, and
-// the stat tile and chip.
+// row and pager (with the page number a reader can type over), the create pair, the notice with
+// its variants and the page to-do built on it, the progress bar, the duration slot and its live
+// clock, the beta tag, the disclosure row, and the stat tile and chip.
 export * from "./components/navigation/tabs/tabs";
 export * from "./components/navigation/group-header/group-header";
 export * from "./components/navigation/group-header/pager";
+export * from "./components/navigation/group-header/page-field";
 export * from "./components/actions/create-buttons/create-buttons";
 export * from "./components/feedback/notice/notice";
 export * from "./components/feedback/todo-notice/todo-notice";

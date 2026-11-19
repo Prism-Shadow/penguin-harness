@@ -9,6 +9,7 @@ import {
   ActivityMarkSlot,
   ActivityToggle,
 } from "../../layout/disclosure-row/disclosure-row";
+import { PageField } from "../../navigation/group-header/page-field";
 import { Pager } from "../../navigation/group-header/pager";
 import type { ActivityStepNavigation, ActivityStepSummary } from "./activity-group";
 
@@ -27,20 +28,29 @@ interface CompactStepHeaderProps {
 }
 
 /*
- * The line has to hold the step's name, the total time and three pager buttons on a 320px phone
+ * The line has to hold the step's name, three pager buttons and the total time on a 320px phone
  * at the user's largest text size. Two rungs make room:
  * - below `sm` the pager drops its gaps and its buttons take a fixed 24px rather than the
- *   rem-sized 1.5rem, which grows with the text size, and the "Total time" words give way to the
- *   clock glyph;
- * - below 380px (the narrowest phones) the chevron and the clock glyph go too, and the header
- *   button drops its inline padding. The open state stays in `aria-expanded`.
+ *   rem-sized 1.5rem, which grows with the text size, and the total gives up the room it keeps
+ *   for a longer time;
+ * - below 380px (the narrowest phones) the chevron goes too, and the header button and the total
+ *   drop their inline padding. The open state stays in `aria-expanded`.
  */
 const PAGER_PHONE_CLASS = "max-sm:gap-0 max-sm:px-0 max-sm:[&>button]:w-[24px]";
 const HEAD_BUTTON_NARROWEST_CLASS = "max-[380px]:px-0";
 const HIDDEN_NARROWEST_CLASS = "max-[380px]:hidden";
-const ELAPSED_NARROWEST_CLASS = "max-[380px]:ms-0.5";
+const ELAPSED_NARROWEST_CLASS = "max-[380px]:ps-0.5";
+/*
+ * The total keeps room for five figures ("12.7s", "1m30s", "10m0s"), right-aligned at the line's
+ * end, so the pager beside it holds still while the clock ticks through its first minutes.
+ */
+const ELAPSED_ROOM_CLASS = "sm:min-w-[5ch] text-end";
 
-/** A single sticky line. Paging is available on a closed group and never toggles it. */
+/**
+ * A single sticky line: the step, then the pager, then the run's total time at the far end. Paging
+ * is available on a closed group and never toggles it. The step number in the pager can be typed
+ * over to go to a step (`PageField`); the time carries no words, its name is its tooltip.
+ */
 export function CompactStepHeader({
   summary,
   navigation,
@@ -61,7 +71,8 @@ export function CompactStepHeader({
       controls.current.focus({ preventScroll: true });
     goTo(page);
   }
-  const position = navigation.position(page + 1);
+  const [before, after] = navigation.stepWords;
+  const position = `${before}${page + 1}${after}`;
   return (
     <>
       <button
@@ -105,23 +116,6 @@ export function CompactStepHeader({
           <ActivityToggle open={open} />
         </span>
       </button>
-      {(totalRunning || totalDurationMs !== undefined) && (
-        <span
-          data-step-elapsed=""
-          data-tooltip={navigation.elapsed}
-          className={`flex shrink-0 items-center gap-1 whitespace-nowrap text-xs text-fg-subtle ${ELAPSED_NARROWEST_CLASS}`}
-        >
-          <span className="sr-only sm:not-sr-only">{navigation.elapsed}</span>
-          <span aria-hidden className={`${HIDDEN_NARROWEST_CLASS} sm:hidden`}>
-            <GlyphIcon d={ICONS.clock} size={12} />
-          </span>
-          <DurationSlot
-            running={totalRunning}
-            sinceMs={totalStartMs}
-            durationMs={totalDurationMs}
-          />
-        </span>
-      )}
       <div
         ref={controls}
         role="group"
@@ -158,10 +152,33 @@ export function CompactStepHeader({
           previousLabel={navigation.previous}
           nextLabel={navigation.next}
           lastPageLabel={navigation.latest}
-          readout={position}
+          readout={
+            <>
+              {/* The words aloud as one phrase, as the live readout announces a step. */}
+              <span className="sr-only">{position}</span>
+              <span aria-hidden="true">{before}</span>
+              <PageField page={page} pageCount={total} onChange={goTo} label={navigation.jump} />
+              <span aria-hidden="true">{after}</span>
+            </>
+          }
           className={`whitespace-nowrap ${PAGER_PHONE_CLASS}`}
         />
       </div>
+      {(totalRunning || totalDurationMs !== undefined) && (
+        <span
+          data-step-elapsed=""
+          data-tooltip={navigation.elapsed}
+          className={`flex shrink-0 justify-end whitespace-nowrap ps-1 ${ELAPSED_NARROWEST_CLASS}`}
+        >
+          <span className="sr-only">{navigation.elapsed}</span>
+          <DurationSlot
+            running={totalRunning}
+            sinceMs={totalStartMs}
+            durationMs={totalDurationMs}
+            className={ELAPSED_ROOM_CLASS}
+          />
+        </span>
+      )}
     </>
   );
 }

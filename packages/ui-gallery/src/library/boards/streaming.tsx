@@ -24,6 +24,7 @@ import {
   AssistantText,
   DisclosureRow,
   StatusIcon,
+  ToolCallCard,
   DISCLOSURE_OUTPUT_CAP_CLASS,
   DISCLOSURE_OUTPUT_CLASS,
   STREAM_REVEALS,
@@ -207,18 +208,22 @@ export function StreamingBoard() {
             {
               key: "read",
               summary: {
-                label: t.read,
+                kind: "tool",
+                label: "read_file",
+                description: t.read,
                 path: { short: "notes.md", full: "notes.md" },
                 state: activityState,
               },
+              // The tool row reads as in every mode: its name, its description and its time.
               content: (
-                <DisclosureRow
-                  icon={<StatusIcon state={activityState} />}
-                  label={t.read}
-                  activity={{ kind: "tool", state: activityState }}
-                >
-                  <code>notes.md</code>
-                </DisclosureRow>
+                <ToolCallCard
+                  state={activityState}
+                  name="read_file"
+                  subtitle={t.read}
+                  duration={finished ? { live: false, ms: 1200 } : { live: true, sinceMs: started }}
+                  argumentsText={'{"file_path": "notes.md"}'}
+                  output="# Weekly sync"
+                />
               ),
             },
           ]}

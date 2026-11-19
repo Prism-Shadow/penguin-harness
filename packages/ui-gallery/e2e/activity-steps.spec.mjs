@@ -25,6 +25,8 @@ test("activity display modes work independently of the gallery theme, even on co
     await expect(rows).toHaveCount(0);
     await group.locator("button[data-group-header]").click();
     await expect(rows).toHaveCount(2);
+    // The opened listing reads as Standard does: the tool row keeps its description.
+    await expect(rows.nth(1)).toContainText("Read meeting notes");
     await expect(plan).toBeHidden();
     await rows.locator('button[data-kind="thinking"]').click();
     await expect(plan).toBeVisible();

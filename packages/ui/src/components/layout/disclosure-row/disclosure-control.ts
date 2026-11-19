@@ -16,8 +16,6 @@ export interface DisclosureControl {
   open: boolean;
   /** The reader opened this row, rather than the list opening it by policy. */
   requested: boolean;
-  /** The row keeps its secondary details (subtitle, footer) for when it is open. */
-  detailsWhenOpen: boolean;
   /** The reader pressed the row. */
   toggle: () => void;
 }
