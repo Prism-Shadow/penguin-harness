@@ -137,7 +137,8 @@
     "unified": "^11.0.5",
     "which": "^5.0.0",
     "ws": "^8.18.3",
-    "yaml": "^2.5.0"
+    "yaml": "^2.5.0",
+    "@prismshadow/penguin-library-benchmark": "workspace:*"
   },
   "devDependencies": {
     "@prismshadow/penguin-hmr": "workspace:*",

@@ -75,6 +75,7 @@ export default defineConfig({
     "@prismshadow/penguin-library-db",
     "@prismshadow/penguin-library-setting",
     "@prismshadow/penguin-library-auth",
+    "@prismshadow/penguin-library-benchmark",
     "@prismshadow/penguin-library-observability",
     "@prismshadow/penguin-library-trace",
     "@prismshadow/penguin-library-project",
