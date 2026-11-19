@@ -3,6 +3,7 @@
 - **Date:** 2026-11-19
 - **Type:** feature
 - **Scope:** `core`, `server`, `cli`, `db`, `docs`
+- **PR:** [#1639](https://github.com/Prism-Shadow/penguin-harness/pull/1639)
 
 [中文版](2026-11-19-model-tools-platform.zh.md)
 
