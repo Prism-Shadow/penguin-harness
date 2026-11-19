@@ -8,6 +8,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
+import type { BuiltinBrowserImportNote } from "../../api/types.js";
 import type { ImportEnv } from "./index.js";
 
 // Resolved at runtime, like db/database.ts: keeps bundlers from resolving `node:sqlite` statically.
@@ -49,13 +50,15 @@ export function columnsOf(db: DatabaseSync, table: string): Set<string> {
 }
 
 /**
- * The warning for a store that could not be read. A copy that fails with a sharing violation
- * is a running browser holding the file (Windows); everything else is reported as unreadable.
+ * The note for a store that could not be read. A copy that fails with a sharing violation is a
+ * running browser holding the file (Windows); everything else is reported as unreadable.
  */
-export function unreadableStoreWarning(err: unknown, browserName: string, store: string): string {
+export function unreadableStoreNote(
+  err: unknown,
+  store: "cookies" | "history",
+): BuiltinBrowserImportNote {
   const code = (err as NodeJS.ErrnoException | null)?.code;
-  if (code === "EBUSY" || code === "EPERM") {
-    return `${browserName} is holding its ${store} open; close ${browserName} and import again.`;
-  }
-  return `The ${store} of ${browserName} could not be read.`;
+  return code === "EBUSY" || code === "EPERM"
+    ? { code: "store_busy", store }
+    : { code: "store_unreadable", store };
 }

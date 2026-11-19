@@ -259,10 +259,15 @@ export function renderImportResult(res: BuiltinBrowserImportResult, t: Messages)
     ...(res.cookies !== undefined
       ? [line(label.cookies, t.browser.importCookies(res.cookies))]
       : []),
+    ...(res.cookies !== undefined && res.cookies.skips.length > 0
+      ? [line(label.skipped, t.browser.importSkips(res.cookies.skips, res.browserName))]
+      : []),
     ...(res.history !== undefined
       ? [line(label.history, t.browser.importHistory(res.history))]
       : []),
-    ...res.warnings.map((warning) => line(label.warning, oneLine(warning))),
+    ...res.notes.map((note) =>
+      line(label.warning, oneLine(t.browser.importNote(note, res.browserName))),
+    ),
   ]);
 }
 

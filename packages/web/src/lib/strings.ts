@@ -18,7 +18,13 @@ import type { ProtocolClientType } from "./protocol-client-types";
 import type { ModelGroupSort } from "../features/models/model-sort";
 import type { StartPageSiteId } from "./browser-start-sites";
 import { EVOLUTION_DEMO } from "./evolution-demo";
-import type { AgentAuthor, SemanticIdSuggestReason } from "@prismshadow/penguin-server/api";
+import type {
+  AgentAuthor,
+  BuiltinBrowserCookieSkip,
+  BuiltinBrowserImportNote,
+  SemanticIdSuggestReason,
+} from "@prismshadow/penguin-server/api";
+import type { ImportExtensionRoute } from "./browser-import-route";
 
 export const zh = {
   appName: "PenguinHarness",
@@ -750,6 +756,74 @@ export const zh = {
       (c.failed > 0 ? `，失败 ${c.failed}` : ""),
     importHistoryResult: (h: { found: number; imported: number }): string =>
       `历史记录：已导入 ${h.imported} / ${h.found} 条`,
+    /** Under the counts: why that many cookies were skipped; `browser` is the source's name. */
+    importSkip: ({ reason, count: n }: BuiltinBrowserCookieSkip, browser: string): string => {
+      switch (reason) {
+        case "app_bound":
+          return `${n} 个受 ${browser} 的应用绑定加密保护，只有 ${browser} 自己能读取。`;
+        case "dpapi":
+          return `${n} 个的密钥 Windows 未能解开。`;
+        case "keychain":
+          return `${n} 个的密钥钥匙串未放行；在 macOS 询问时选择「允许」，再导入一次。`;
+        case "keyring":
+          return `${n} 个的密钥未能从桌面密钥环取得。`;
+        case "undecryptable":
+          return `${n} 个无法解密。`;
+        case "partitioned":
+          return `${n} 个是只属于某个站点或容器的分区 Cookie。`;
+        case "expired":
+          return `${n} 个已过期。`;
+      }
+    },
+    /** Anything else the import reports. */
+    importNote: (note: BuiltinBrowserImportNote, browser: string): string => {
+      const store = (which: "cookies" | "history") =>
+        which === "cookies" ? " Cookie 库" : "历史记录";
+      switch (note.code) {
+        case "no_cookie_store":
+          return "这个个人资料没有 Cookie 库。";
+        case "no_history":
+          return "这个来源没有可导入的历史记录。";
+        case "store_busy":
+          return `${browser} 正占用它的${store(note.store)}，关闭 ${browser} 后再导入。`;
+        case "store_unreadable":
+          return `无法读取 ${browser} 的${store(note.store)}。`;
+        case "cookies_not_set":
+          return (
+            `${note.count} 个 Cookie 未能写入内置浏览器` +
+            (note.errors.length > 0 ? `：${note.errors.join("；")}` : "。")
+          );
+      }
+    },
+    /** The group the user's connected Chrome extension is listed under, and its row's hint. */
+    importExtensionGroup: "经 Chrome 扩展",
+    importExtensionHint:
+      "读取扩展所在的 Chrome 个人资料的 Cookie，导入前要在 Chrome 中选择「允许」。",
+    /** The import button while the extension waits for the user's answer in Chrome. */
+    importWaitingChrome: "等待 Chrome 确认…",
+    /**
+     * Windows, a Chrome profile's cookies chosen: why most of them will be skipped, and the way
+     * round it the extension's state leaves.
+     */
+    importAppBoundHint: (route: ImportExtensionRoute): string =>
+      route === "not_paired"
+        ? "Windows 上 Chrome 的 Cookie 多数只有 Chrome 自己能读取：在「设置 › 浏览器」中连接你的 Chrome 后可经扩展导入，或直接在浏览器面板中登录。"
+        : route === "disconnected"
+          ? "Windows 上 Chrome 的 Cookie 多数只有 Chrome 自己能读取：让你的 Chrome 连上 PenguinHarness Browser 扩展后可经扩展导入，或直接在浏览器面板中登录。"
+          : route === "connected"
+            ? "Windows 上 Chrome 的 Cookie 多数只有 Chrome 自己能读取，可改选下方的「经 Chrome 扩展」导入。"
+            : "Windows 上 Chrome 的 Cookie 多数只有 Chrome 自己能读取，可直接在浏览器面板中登录。",
+    /** After app-bound skips: how to get those cookies, given the extension's state. */
+    importAppBoundAdvice: (route: ImportExtensionRoute): string =>
+      route === "connected"
+        ? "选择「经 Chrome 扩展」再导入一次即可取回它们，也可以直接在浏览器面板中登录。"
+        : route === "not_paired"
+          ? "在「设置 › 浏览器」中连接你的 Chrome 后，可经扩展导入它们；也可以直接在浏览器面板中登录。"
+          : route === "disconnected"
+            ? "让你的 Chrome 连上 PenguinHarness Browser 扩展后，可经扩展导入它们；也可以直接在浏览器面板中登录。"
+            : "可以直接在浏览器面板中登录这些网站。",
+    /** The outcome's way back to the form with the extension chosen. */
+    importUseExtension: "经 Chrome 扩展导入",
     importFailed: (reason: string): string => `导入失败：${reason}`,
     /** The clear-browsing-data confirmation. */
     clearTitle: "清除浏览数据",
@@ -5704,7 +5778,8 @@ Benchmark：
     rangeCustom: "自定义",
     chartRequestsByAgent: "各 Agent 请求与成功率",
     chartRequestsByModel: "各模型请求与成功率",
-    legendSuccessRate: "成功率",
+    legendRequestCount: "请求数（左轴）",
+    legendSuccessRate: "成功率（右轴）",
     chartTokenTrend: "Token 变化",
     chartCostTrend: "成本变化",
     legendOther: (n: number): string => `其他 ${n} 项`,
@@ -7243,6 +7318,8 @@ Benchmark：
       browser_unavailable:
         "浏览器现在不可用：内置浏览器需要打开 PenguinHarness 桌面应用，你的 Chrome 需要连上 PenguinHarness Browser 扩展。",
       source_not_found: "找不到这个浏览器配置文件。",
+      import_declined: "你没有在 Chrome 中允许这次导入。",
+      extension_outdated: "Chrome 中的 PenguinHarness Browser 扩展版本过旧，请更新后重试。",
       shell_unreachable: "无法联系桌面应用。",
       timeout: "操作超时，请重试。",
     },
