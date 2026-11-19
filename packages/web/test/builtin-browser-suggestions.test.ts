@@ -1,10 +1,10 @@
 /**
  * Keyboard movement through the address bar's history suggestions
- * (features/builtin-browser/suggestion-nav.ts): the arrows cycle through the rows and back to
+ * (plugins/browser-automation/src/web/suggestion-nav.ts): the arrows cycle through the rows and back to
  * the typed text, like a browser's address bar, and every other key stays the field's.
  */
 import { describe, expect, it } from "vitest";
-import { NO_HIGHLIGHT, moveHighlight } from "../src/features/builtin-browser/suggestion-nav";
+import { NO_HIGHLIGHT, moveHighlight } from "../../../plugins/browser-automation/src/web/suggestion-nav";
 
 describe("moveHighlight", () => {
   it("walks down the rows and back to the typed text", () => {

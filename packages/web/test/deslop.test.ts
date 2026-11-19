@@ -68,7 +68,7 @@ const ALLOWLIST: DeslopAllowlist = {
   "components/account/app-info-dialog.tsx": { 24: [1, "W10"] },
   "features/agents/agent-settings-page.tsx": { 24: [3, "W10"] },
   "features/benchmark/benchmark-detail.tsx": { 24: [1, "W10"] },
-  "features/builtin-browser/strings.ts": { 24: [6, "W10"] },
+  "plugins/browser-automation/src/web/strings.ts": { 24: [6, "W10"] },
   "features/chat/archived-session-stub.tsx": { 24: [1, "W10"] },
   "features/company/channel-view.tsx": { 24: [1, "W10"] },
   "features/company/employee-dialogs.tsx": { 24: [1, "W10"] },
@@ -97,14 +97,14 @@ const ALLOWLIST: DeslopAllowlist = {
  */
 const TOKENS_ONLY: readonly string[] = [
   "components/find/find-bar.tsx",
-  "features/builtin-browser/browser-section.tsx",
-  "features/builtin-browser/browser-tab-strip.tsx",
-  "features/builtin-browser/browser-toolbar.tsx",
-  "features/builtin-browser/chrome-extension-section.tsx",
-  "features/builtin-browser/chrome-status-row.tsx",
-  "features/builtin-browser/chrome-surface.tsx",
-  "features/builtin-browser/new-tab-page.tsx",
-  "features/builtin-browser/pairing-dialog.tsx",
+  "plugins/browser-automation/src/web/browser-section.tsx",
+  "plugins/browser-automation/src/web/browser-tab-strip.tsx",
+  "plugins/browser-automation/src/web/browser-toolbar.tsx",
+  "plugins/browser-automation/src/web/chrome-extension-section.tsx",
+  "plugins/browser-automation/src/web/chrome-status-row.tsx",
+  "plugins/browser-automation/src/web/chrome-surface.tsx",
+  "plugins/browser-automation/src/web/new-tab-page.tsx",
+  "plugins/browser-automation/src/web/pairing-dialog.tsx",
   "features/chat/background-done-banner.tsx",
   "features/chat/compaction-banner.tsx",
   "features/chat/goal-banner.tsx",
@@ -134,7 +134,7 @@ describe("de-slop rules over packages/web/src", () => {
   it("scans every source root, and every listed file is still in the web app", () => {
     expectEveryRootScanned(SCAN);
     const gone = [...Object.keys(ALLOWLIST), ...TOKENS_ONLY].filter(
-      (rel) => !WEB.some((file) => file.rel === rel),
+      (rel) => !WEB.some((file) => relOf(file.id) === rel),
     );
     expect(
       gone,

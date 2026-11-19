@@ -59,6 +59,11 @@ export function appKeyOf(id: string): string {
   return id.startsWith(web) ? id.slice(web.length) : id;
 }
 
+/** The repo-relative id of the app file a guard's list names (the inverse of {@link appKeyOf}). */
+export function appIdOf(key: string): string {
+  return key.startsWith("plugins/") ? key : `packages/web/src/${key}`;
+}
+
 /** `.ts`, `.tsx` and `.css` under every root. */
 export function scanSources(extensions?: readonly string[]): SourceScan {
   return scanSourceRoots(SOURCE_ROOTS, { repoRoot: REPO_ROOT, extensions });

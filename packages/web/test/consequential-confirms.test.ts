@@ -13,7 +13,7 @@
  */
 import { describe, expect, it } from "vitest";
 import ts from "typescript";
-import { expectEveryRootScanned, scanSources, sourceFile } from "./helpers/roots";
+import { appIdOf, expectEveryRootScanned, scanSources, sourceFile } from "./helpers/roots";
 
 const SCAN = scanSources();
 
@@ -35,7 +35,7 @@ const GUARDED: ReadonlyArray<readonly [string, string]> = [
   ["features/company/org-dialogs.tsx", "dropDraft"],
   ["features/company/org-dialogs.tsx", "doDelete"],
   ["features/models/preset-sync.tsx", "runPresetSync"],
-  ["features/builtin-browser/browser-section.tsx", "revokeChrome"],
+  ["plugins/browser-automation/src/web/browser-section.tsx", "revokeChrome"],
   ["features/chat/archived-session-stub.tsx", "remove"],
   ["features/settings/archived-sessions-section.tsx", "deletePending"],
 ];
@@ -48,7 +48,7 @@ const isOnConfirm = (node: ts.Node): node is ts.JsxAttribute =>
  * inside one — none at all means the entry names a function that was renamed or removed.
  */
 function references(file: string, action: string): { unguarded: string[]; confirmed: number } {
-  const src = sourceFile(SCAN, `packages/web/src/${file}`);
+  const src = sourceFile(SCAN, appIdOf(file));
   const sf = ts.createSourceFile(
     src.path,
     src.text,

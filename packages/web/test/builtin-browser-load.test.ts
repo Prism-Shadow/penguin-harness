@@ -1,5 +1,5 @@
 /**
- * The built-in browser's load as the window words it (features/builtin-browser/load.ts): sizes,
+ * The built-in browser's load as the window words it (plugins/browser-automation/src/web/load.ts): sizes,
  * the toolbar mark's warning for each of the server's verdicts, the heavy tabs' memory, and which
  * warnings are new (one toast each).
  */
@@ -10,8 +10,8 @@ import {
   heavyTabMemory,
   loadWarningText,
   newWarnings,
-} from "../src/features/builtin-browser/load";
-import { en as browserEn, zh as browserZh } from "../src/features/builtin-browser/strings";
+} from "../../../plugins/browser-automation/src/web/load";
+import { en as browserEn, zh as browserZh } from "../../../plugins/browser-automation/src/web/strings";
 
 const EN = browserEn.builtinBrowser.load;
 

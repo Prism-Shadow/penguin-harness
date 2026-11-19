@@ -1,5 +1,5 @@
 /**
- * The built-in browser's start page (features/builtin-browser/new-tab-page.tsx): what a new tab
+ * The built-in browser's start page (plugins/browser-automation/src/web/new-tab-page.tsx): what a new tab
  * shows when no homepage is set, decided by `startPageShown` (browser-state.ts) and drawn by the
  * panel over the parked blank page. Static markup from the window's browser store (node env, no
  * DOM).
@@ -20,8 +20,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { BuiltinBrowserServerEvent, BuiltinBrowserTab } from "@prismshadow/penguin-server/api";
 // The browser reaches the app's own helpers through the plugin face; this hands them over.
 import "../src/web-app/plugin-host";
-import { normalizeAddress } from "../src/features/builtin-browser/address";
-import { BuiltinBrowserPanel } from "../src/features/builtin-browser/browser-panel";
+import { normalizeAddress } from "../../../plugins/browser-automation/src/web/address";
+import { BuiltinBrowserPanel } from "../../../plugins/browser-automation/src/web/browser-panel";
 import {
   INITIAL_BROWSER_STATE,
   activeTab,
@@ -30,10 +30,10 @@ import {
   startPageShown,
   type BrowserAction,
   type BrowserState,
-} from "../src/features/builtin-browser/browser-state";
-import { dispatchBrowser } from "../src/features/builtin-browser/browser-store";
-import { NewTabPage, START_PAGE_SITES } from "../src/features/builtin-browser/new-tab-page";
-import { S as B } from "../src/features/builtin-browser/strings";
+} from "../../../plugins/browser-automation/src/web/browser-state";
+import { dispatchBrowser } from "../../../plugins/browser-automation/src/web/browser-store";
+import { NewTabPage, START_PAGE_SITES } from "../../../plugins/browser-automation/src/web/new-tab-page";
+import { S as B } from "../../../plugins/browser-automation/src/web/strings";
 
 const BUILTIN = {
   backend: "builtin" as const,

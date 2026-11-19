@@ -92,6 +92,25 @@ const projects = args.flatMap((a, i) => (a === "--project" ? [args[i + 1]] : [])
 const outPath = opt("--out");
 const componentsOut = opt("--components-out");
 const checkOnly = args.includes("--check");
+/** The name in the package.json nearest above `fileName` (null when there is none). */
+const packageNames = new Map();
+function packageNameOf(fileName) {
+  for (let dir = path.dirname(fileName); ; ) {
+    if (packageNames.has(dir)) return packageNames.get(dir);
+    const file = path.join(dir, "package.json");
+    if (fs.existsSync(file)) {
+      const name = JSON.parse(fs.readFileSync(file, "utf8")).name ?? null;
+      packageNames.set(dir, name);
+      return name;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+/** The package this table is generated for: the one around the first `--project`. */
+const ownPackage = packageNameOf(path.resolve(projects[0] ?? "tsconfig.json"));
+
 /** `--sources <dir>`: the directories whose source files are projected (absolute, `/`-separated). */
 const sourceRoots = args.flatMap((a, i) =>
   a === "--sources" ? [`${path.resolve(args[i + 1]).split(path.sep).join("/")}/`] : [],
@@ -483,9 +502,11 @@ for (const project of projects) {
   }
   // The plugin declaration: `export default { modules: [...], replaces: [...] }`, or a
   // default-exported binding initialized to that literal (`const plugin: Plugin = {...}`).
-  // Each element must be a module class of this package; anything else is refused.
+  // Each element must be a module class of this package; anything else is refused. Only the
+  // package's own files declare it: a default export in another package's file is that package's
+  // (the Web App's program compiles in the plugin web halves it lists, each with its own).
   for (const sf of program.getSourceFiles()) {
-    if (!projectsFile(sf)) continue;
+    if (!projectsFile(sf) || packageNameOf(sf.fileName) !== ownPackage) continue;
     for (const st of sf.statements) {
       if (!ts.isExportAssignment(st) || st.isExportEquals) continue;
       let literal = unwrap(st.expression);

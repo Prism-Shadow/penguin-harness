@@ -1,6 +1,6 @@
 /**
  * Settings › Personal › Browser and Settings › Server › Chrome extension
- * (features/builtin-browser/browser-section.tsx, chrome-extension-section.tsx): the paired Chromes as
+ * (plugins/browser-automation/src/web/browser-section.tsx, chrome-extension-section.tsx): the paired Chromes as
  * rendered to static markup, and the two confirmations as the elements the pages render, driven
  * through their handlers against the fetch fake (node env, no DOM).
  *
@@ -23,9 +23,9 @@ import type { BrowserExtensionRecord, ServerSettings } from "@prismshadow/pengui
 import { Button } from "@prismshadow/penguin-ui";
 // The browser reaches the app's own helpers through the plugin face; this hands them over.
 import "../src/web-app/plugin-host";
-import { PairedChromes, RevokeConfirm } from "../src/features/builtin-browser/browser-section";
-import { ExtensionsOffConfirm } from "../src/features/builtin-browser/chrome-extension-section";
-import { S as B } from "../src/features/builtin-browser/strings";
+import { PairedChromes, RevokeConfirm } from "../../../plugins/browser-automation/src/web/browser-section";
+import { ExtensionsOffConfirm } from "../../../plugins/browser-automation/src/web/chrome-extension-section";
+import { S as B } from "../../../plugins/browser-automation/src/web/strings";
 import { apiError, json, stubFetch } from "./helpers/fetch";
 
 const toasts = vi.hoisted(() => [] as string[]);

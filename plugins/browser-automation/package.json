@@ -28,11 +28,13 @@
     ".": {
       "import": "./dist/index.js"
     },
+    "./web": "./src/web/index.ts",
     "./cli": "./src/cli/index.ts",
     "./package.json": "./package.json"
   },
   "files": [
     "dist",
+    "src/web",
     "src/cli",
     "skills",
     "icon.svg",
@@ -56,11 +58,17 @@
     "@prismshadow/penguin-library-db": "workspace:*",
     "@prismshadow/penguin-library-machine": "workspace:*",
     "@prismshadow/penguin-library-setting": "workspace:*",
+    "@prismshadow/penguin-ui": "workspace:*",
+    "@prismshadow/penguin-web-plugin": "workspace:*",
     "@prismshadow/skills": "workspace:*",
     "@types/node": "^24.0.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
     "@types/ws": "^8.18.1",
     "commander": "^13.0.0",
     "hono": "^4.13.11",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
     "tsup": "^8.3.0",
     "typescript": "^5.6.0",
     "vitest": "^4.1.12",

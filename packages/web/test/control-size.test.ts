@@ -27,6 +27,7 @@ import { describe, expect, it } from "vitest";
 import ts from "typescript";
 import {
   expectEveryRootScanned,
+  appIdOf,
   appKeyOf,
   expectSingleHome,
   isAppFile,
@@ -187,8 +188,8 @@ const DIALOG_BODY_MODULES = new Set([
   "features/settings/profile-section.tsx",
   "features/settings/appearance-section.tsx",
   "features/settings/background-controls.tsx",
-  "features/builtin-browser/browser-section.tsx",
-  "features/builtin-browser/chrome-extension-section.tsx",
+  "plugins/browser-automation/src/web/browser-section.tsx",
+  "plugins/browser-automation/src/web/chrome-extension-section.tsx",
   "features/settings/general-section.tsx",
   "features/settings/plugin-config-card.tsx",
   "features/settings/proxy-section.tsx",
@@ -271,7 +272,7 @@ describe("control font size", () => {
     expectEveryRootScanned(SCAN);
     for (const id of Object.values(FAMILY)) expectSingleHome(SCAN, id);
     // A listed module that was renamed or moved would silently drop out of the dialog-body rule.
-    for (const rel of DIALOG_BODY_MODULES) sourceFile(SCAN, `packages/web/src/${rel}`);
+    for (const rel of DIALOG_BODY_MODULES) sourceFile(SCAN, appIdOf(rel));
   });
 
   it("is never spelled on a call site's className", () => {

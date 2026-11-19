@@ -5,6 +5,10 @@
  * conversation on screen changes or a dock steps into full screen, its two Settings pages, the
  * handover of a draft's pages to the Session it becomes, and its row in a web link's menu. Its
  * copy is its own (strings.ts), and so is its stylesheet (browser.css).
+ *
+ * It is the browser-automation plugin's, and drawn only while the plugin's server module
+ * (`BuiltinBrowserModule` on the server, src/server/module.ts) runs: an administrator can stop
+ * it, and a server whose Projects all left it out does not run it (`WebAppModule.serverModules`).
  */
 import { Bind, Module } from "@prismshadow/penguin-core/kernel";
 import "./browser.css";
@@ -19,6 +23,7 @@ import { invalidateSlotClips } from "./slot-registry";
 
 @Module({
   contributes: {
+    "WebAppModule.serverModules": [{ id: "builtin-browser.server", module: "BuiltinBrowserModule" }],
     "WebAppModule.layers": [{ id: "builtin-browser.layer", order: 30 }],
     "SessionsModule.userEvents": [{ id: "builtin-browser.events", order: 20 }],
     "DockModule.panels": [
