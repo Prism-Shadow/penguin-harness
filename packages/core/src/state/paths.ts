@@ -211,6 +211,13 @@ export function agentRunDir(root: string, projectId: string, agentId: string): s
 }
 
 /**
+ * What a new Project id may not be: the data root's own folders that sit beside the Projects and
+ * that a Project's folder would share a name with (`app/`, `run/`). A Project already called so
+ * keeps opening, its folder shared with them, until Projects move under `<root>/projects/`.
+ */
+export const ROOT_FOLDER_NAMES: readonly string[] = ["app", "run"];
+
+/**
  * `<root>/app`: the server level of a workbench's folders — what every copy of an app installed
  * from a plugin shares across this data root's Projects and Agents (a model's weights, a tool's
  * binaries). Its state folders sit under `<root>/run/server` at a short path.

@@ -29,7 +29,7 @@
  * `placeholderSemanticId` is the floor — a valid, dated, obviously-temporary id, so the dialog
  * is never left with nothing to put in the box.
  */
-import { isValidId } from "@prismshadow/penguin-core";
+import { isValidId, ROOT_FOLDER_NAMES } from "@prismshadow/penguin-core";
 import type { SemanticIdKind } from "../api/types.js";
 import { isNewSemanticId, PROJECT_ID_MAX_LENGTH, PROJECT_SUFFIX_PATTERN } from "./ids.js";
 
@@ -76,7 +76,7 @@ export const SEMANTIC_ID_RULES: Record<SemanticIdKind, SemanticIdRule> = {
     prefix: "",
     separator: "_",
     maxLength: 64,
-    accepts: snakeCaseId,
+    accepts: (id) => snakeCaseId(id) && !ROOT_FOLDER_NAMES.includes(id),
     noun: "project",
     examples:
       "Plugin Marketplace → plugin_marketplace; 科研论文项目 → research_papers; 官网改版 → website_redesign; Site → site.",

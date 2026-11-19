@@ -36,5 +36,5 @@
   - 移除工作台或卸载其所属插件时，删除它 Agent 级的文件夹。
   - 删除 Agent 或 Project 时，删除其 `run/` 文件夹。
   - server 与 machine 级从不随工作台、Agent 或 Project 删除。
-- **新建 id：**新建 Project、Agent 或组织时，拒绝 `con`、`prn`、`aux`、`nul`、`com1`–`com9` 与 `lpt1`–`lpt9`（带不带扩展名均同）以及以点结尾的名称；以新名称导入 Skill、钩子包或工作台，以及把插件工作台装进新文件夹时同此。读取 id 的规则不变，已有的名为 `aux` 的 Agent 或名为 `report.v2` 的工作台照常打开。
+- **新建 id：**新建 Project、Agent 或组织时，拒绝 `con`、`prn`、`aux`、`nul`、`com1`–`com9` 与 `lpt1`–`lpt9`（带不带扩展名均同）以及以点结尾的名称；以新名称导入 Skill、钩子包或工作台，以及把插件工作台装进新文件夹时同此。新建的 Project 也不得命名为 `app` 或 `run`，这是数据根为工作台保留的文件夹。读取 id 的规则不变，已有的名为 `aux` 的 Agent、名为 `report.v2` 的工作台或名为 `app` 的 Project 照常打开。
 - **文档：**`penguin-plugin` Skill（2026.11.19.3）、工作台的 `.harness/README.md`、CLI 的 `--no-workbench-data` 帮助与文档站页面说明了这些文件夹及其级别。

@@ -13,7 +13,8 @@
  *   reloads it. It listens on a local socket in its state folder, and a socket path past the
  *   103 bytes a Unix socket path holds is refused naming the limit.
  * - An Agent named `aux` and a workbench named `report.v2`, made before such names were refused,
- *   still open; a new Agent under a name Windows reserves is refused.
+ *   still open; a new Agent under a name Windows reserves is refused, and so is a new Project
+ *   named after the data root's own folders (`app`, `run`).
  * - With a configured model credential, it opens and runs Sessions the SDK's way, inside
  *   its own Project only, with allow-all: nobody is there to answer an ask. Its Sessions
  *   are archived with workbench provenance, including before their first run after a restart.
@@ -82,7 +83,7 @@ import type {
   ArchivedSessionsResponse,
   AgentsResponse,
 } from "../src/api/types.js";
-import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
+import { apiClient, createTestApp, loginAdmin, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 import { MOCK_MODEL_ID, requestText, startMockLLM } from "./live-session.js";
 
@@ -462,6 +463,18 @@ describe("a loaded workbench", { timeout: 30_000 }, () => {
     expect(loaded).toMatchObject({ id: "report.v2", error: null });
     const res = await owner.get(`${route}/report.v2/api/greet`);
     expect(await res.json()).toMatchObject({ greeting: "hello", path: "/greet" });
+  });
+
+  it("refuses a new Project named after the data root's own folders, app and run", async () => {
+    const admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
+    for (const projectId of ["app", "run"]) {
+      const res = await admin.post("/api/projects", { projectId, name: projectId });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toMatchObject({ error: { code: "invalid_project_id" } });
+    }
+    expect((await admin.post("/api/projects", { projectId: "apps", name: "apps" })).status).toBe(
+      201,
+    );
   });
 
   it("refuses a new Agent under a name Windows reserves", async () => {

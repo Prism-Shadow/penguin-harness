@@ -209,14 +209,16 @@ describe("a workbench's levels", () => {
   });
 
   it("keep a socket path short at every level: the state folder adds a fixed length to its base", () => {
-    const at = place("voice-kit");
+    // A short data root, as `~/.penguin/data` is: the deep Agent folder adds nothing here.
+    const at = { ...place("voice-kit"), root: path.join(path.sep, "r") };
     for (const level of ["agent", "server", "machine"] as const) {
       const { paths, bases } = levelFolders(level, at, "socketPath");
       const added = Buffer.byteLength(paths.stateDir) - Buffer.byteLength(bases.stateDir);
       expect(added).toBeLessThanOrEqual(37);
-      expect(socketPathIn(paths.stateDir, "dev.sock", "linux")).toBe(
-        path.join(paths.stateDir, "dev.sock"),
-      );
+    }
+    for (const level of ["agent", "server"] as const) {
+      const { stateDir } = levelFolders(level, at, "socketPath").paths;
+      expect(socketPathIn(stateDir, "dev.sock", "linux")).toBe(path.join(stateDir, "dev.sock"));
     }
   });
 });

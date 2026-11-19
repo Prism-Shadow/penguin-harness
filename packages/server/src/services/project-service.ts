@@ -25,6 +25,7 @@ import {
   DEFAULT_PROJECT_ID,
   projectDir,
   projectRunDir,
+  ROOT_FOLDER_NAMES,
   provisionProjectAgents,
   provisionProjectBenchmarks,
   type BuiltinBenchmark,
@@ -130,6 +131,13 @@ export class ProjectService implements ProjectLifecycle {
           400,
           "invalid_project_id",
           `Project id must be 2–64 characters: ${SEMANTIC_ID_RULE}; ${NEW_ID_RULE} (the hyphen is reserved as the user namespace separator).`,
+        );
+      }
+      if (ROOT_FOLDER_NAMES.includes(projectId)) {
+        throw new HttpError(
+          400,
+          "invalid_project_id",
+          `Project id ${projectId} is the name of a folder the data root keeps for itself (${ROOT_FOLDER_NAMES.join(", ")}); choose another.`,
         );
       }
     } else {
