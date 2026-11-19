@@ -706,6 +706,8 @@ export interface CredentialInfo {
 }
 
 export interface ModelInfo {
+  /** False for models dedicated to tools rather than chat. */
+  chatEligible?: boolean;
   /** Provider group id (anthropic / openai / …, see core's MODEL_PROVIDERS; custom models use `custom`). */
   provider: string;
   /** Upstream model id (the request id actually sent to MMSP); paired with `provider` forms the entry's unique key. */
