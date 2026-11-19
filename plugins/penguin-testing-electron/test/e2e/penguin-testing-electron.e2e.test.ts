@@ -72,9 +72,10 @@ describe.skipIf(!available)("penguin-testing-electron e2e", () => {
 
     const harness = await driver.launchHarness({ lang: "en" });
     try {
-      // The plugin's config cards live on that page once the plugin is active — the path a
-      // plugin author's UI-contribution assertions start from.
-      const name = await driver.installPlugin(harness, sample, { force: true });
+      // A plugin's config cards live on that page once the plugin is active — the path a
+      // plugin author's UI-contribution assertions start from. The install is the same
+      // force-free shape a test of a non-shipped plugin uses.
+      const name = await driver.installPlugin(harness, sample);
       await driver.waitForActive(harness, name);
 
       await driver.openSettings(harness, { section: "plugins" });
