@@ -1718,6 +1718,7 @@ export class ProjectConfigService implements ProjectConfigStore {
           provider,
           modelId,
           ...(displayName !== undefined ? { displayName } : {}),
+          ...(cat?.tool === true ? { chatEligible: false } : {}),
           isDefault:
             defaultRef !== undefined &&
             defaultRef.provider === provider &&

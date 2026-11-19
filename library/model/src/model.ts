@@ -81,6 +81,11 @@ export interface ModelInfo {
   /** Upstream model id (the request id actually sent to MMSP); paired with `provider` forms the entry's unique key. */
   modelId: string;
   /**
+   * False for a model the catalog marks as a tool model (an image, speech or web model a plugin's
+   * tool binds): the chat model pickers do not offer it. Absent for every other model.
+   */
+  chatEligible?: boolean;
+  /**
    * Display name: explicit TOML field (user-edited) takes priority, then the built-in catalog;
    * falls back to unset (frontend shows modelId). The empty string is reported as such and
    * means the user cleared the name on a model the catalog does name — render it as modelId,
