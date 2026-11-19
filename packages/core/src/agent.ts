@@ -901,10 +901,15 @@ export class Agent {
       );
     }
 
-    // The Model carries over from the Trace (the latest file's paired reference) and must still
-    // be present in the Project config, with a client that can be built — unless the caller
-    // resumes only to switch away from it (see ResumeSessionOptions.allowUnreachableModel).
-    const ref: ModelRef = { provider: meta.provider, model_id: meta.model_id };
+    // The Model carries over from the Trace (the latest file's paired reference, or the target
+    // of a completed switch whose session_update is still pending there — the next context
+    // opens on it) and must still be present in the Project config, with a client that can be
+    // built — unless the caller resumes only to switch away from it (see
+    // ResumeSessionOptions.allowUnreachableModel).
+    const ref: ModelRef = resumed.pendingModel ?? {
+      provider: meta.provider,
+      model_id: meta.model_id,
+    };
     const configured = getModel(this.projectConfig, ref);
     let unreachable: string | undefined;
     try {
@@ -920,10 +925,11 @@ export class Agent {
       if (!opts.allowUnreachableModel) throw err;
       unreachable = err instanceof Error ? err.message : String(err);
     }
-    // An unconfigured model's context is assembled on what its own Trace recorded of it.
+    // An unconfigured model's context is assembled on what its own Trace recorded of it (a
+    // pending switch's target has no record of its window).
     const modelEntry: ModelEntry = configured ?? {
       ...ref,
-      ...(typeof meta.model_context_window === "number"
+      ...(typeof meta.model_context_window === "number" && resumed.pendingModel === undefined
         ? { context_window: meta.model_context_window }
         : {}),
     };
@@ -943,8 +949,8 @@ export class Agent {
       subagentDepth: 0,
       source: normalizeSessionSource(meta.source),
     };
-    // The context follows the Trace. A context a completed compaction closed is opened here
-    // for the first time — nothing was produced under any configuration yet — so it is
+    // The context follows the Trace. A closed context (a completed compaction, or a switch
+    // whose session_update is pending) is opened here for the first time — nothing was produced under any configuration yet — so it is
     // assembled from the current Agent State exactly as the compaction would have opened it,
     // and the rotation deferred to the first write records its meta at the new file's head.
     // An open context keeps the system prompt its file recorded — the history replayed into
@@ -1036,8 +1042,8 @@ export class Agent {
         sessionTokens: resumed.sessionTokens,
         lastRequestTotal: resumed.lastRequestTotal,
         pendingTraceRotation: resumed.contextClosed,
-        // A closed context is one a completed compaction opened: the same fact drives the
-        // deferred Trace rotation above and the "just compacted" compaction reason, but they
+        // A closed context is one a completed compaction (or switch) opened: the same fact drives
+        // the deferred Trace rotation above and the "just compacted" compaction reason, but they
         // are separate meanings and stay separate fields. A file past the first was opened by
         // a compaction too, so one with no completed turn yet — a model switch's eagerly opened
         // file, or any new context the process died in before its first answer — is just as
