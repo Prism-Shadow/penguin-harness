@@ -321,35 +321,40 @@ describe("agent.resumeSession", () => {
       expect(status).toBe("completed");
       expect(session.sessionId).toBe(SID);
       expect(session.modelId).toBe(MODEL.model_id);
-      // No compaction pair: nothing was asked of the vanished model. The stream ends with the new
-      // context's meta, on the target, then the handoff naming the file the history is in.
+      // No compaction pair: nothing was asked of the vanished model. The stream ends with the
+      // record naming the target, then the handoff naming the file the history is in.
       const kinds = streamed.map((m) =>
         m.type === "session_meta" ? "session_meta" : (m.payload as { type?: string }).type,
       );
       expect(kinds).not.toContain("compaction_begin");
-      expect(kinds.slice(-2)).toEqual(["session_meta", "text"]);
+      expect(kinds.slice(-2)).toEqual(["session_update", "text"]);
+      expect(streamed.at(-2)!.payload).toMatchObject({
+        provider: MODEL.provider,
+        model_id: MODEL.model_id,
+      });
       const handoff = (streamed.at(-1)!.payload as { text: string }).text;
       expect(handoff).toMatch(/^\[model_switch_from\]/);
       expect(handoff).toContain(`session: ${SID}`);
       expect(handoff).toContain(`trace: ${oldFile}`);
       expect(handoff).toContain(`workspace: ${workspace}`);
       expect(handoff).toContain(`previous_model: ${gone.model_id}`);
-      // The left file is untouched; the new one opens on the target with the handoff at its head.
-      expect(await fs.readFile(oldFile, "utf8")).toBe(before);
+      // The left file gains the record alone, and stays the latest: no file opens before a
+      // message does.
+      const after = await fs.readFile(oldFile, "utf8");
+      expect(after.startsWith(before)).toBe(true);
+      expect((await readTrace(oldFile)).at(-1)!.payload).toMatchObject({
+        type: "session_update",
+        provider: MODEL.provider,
+        model_id: MODEL.model_id,
+      });
       const latest = await findLatestTraceFile(
         tracesDir(tmpRoot, "default_project", "default_agent"),
         SID,
       );
-      expect(latest!.path).not.toBe(oldFile);
-      const head = await readTrace(latest!.path);
-      expect(head[0]!.payload).toMatchObject({
-        provider: MODEL.provider,
-        model_id: MODEL.model_id,
-      });
-      expect((head.at(-1)!.payload as { text: string }).text).toBe(handoff);
+      expect(latest!.path).toBe(oldFile);
       session.dispose();
 
-      // A restart resumes the new file on the target, the handoff still the text it opened with.
+      // A restart lands on the target, the handoff regenerated from the left file pending.
       const again = await agent.resumeSession({ sessionId: SID });
       expect(again.modelId).toBe(MODEL.model_id);
       expect(again.hasPendingInput()).toBe(true);
@@ -759,10 +764,11 @@ describe("agent.resumeSession after an in-session model switch", () => {
     compactionEnd({ reason, mode: "summarize", status: "completed" }),
   ];
 
-  it("resumes on the model of the eagerly opened file: history empty, the summary is the carry-over, on the switched-to model", async () => {
+  it("a file an older harness opened at once for a switch still resumes on its model: history empty, the summary is the carry-over", async () => {
     const agent = await createAgent({});
-    // The switch closed the original model's context with a plain manual pair, and opened the
-    // target's file at once: its session_meta, its toolset, the summary as its first input.
+    // An older harness closed the original model's context with a plain manual pair, and
+    // opened the target's file at once: its session_meta, its toolset, the summary as its first
+    // input.
     await writeTraceFile(tmpRoot, SID, closedFile(ORIGINAL, "manual"));
     await writeTraceFile(
       tmpRoot,
@@ -792,7 +798,7 @@ describe("agent.resumeSession after an in-session model switch", () => {
     }
   });
 
-  it("a switch made right after the restart carries the summary on: the next file opens with it", async () => {
+  it("a switch made right after the restart records its target in the file an older harness opened for a switch, and a restart then lands on it with the summary", async () => {
     const agent = await createAgent({});
     await writeTraceFile(tmpRoot, SID, closedFile(ORIGINAL, "manual"));
     const leaving = await writeTraceFile(
@@ -816,28 +822,36 @@ describe("agent.resumeSession after an in-session model switch", () => {
       }
       // The engine is built first, so the bootstrap of the context being left streams. That
       // context holds the summary and no completed turn: nothing to summarize and no pair —
-      // the target's own records and its meta follow.
-      expect(streamed.map(kind)).toEqual(["tool_list_ready", "tool_list_ready", "session_meta"]);
+      // the target's own records and the record follow.
+      expect(streamed.map(kind)).toEqual(["tool_list_ready", "tool_list_ready", "session_update"]);
       expect(session.provider).toBe(ORIGINAL.provider);
       expect(session.modelId).toBe(ORIGINAL.model_id);
 
+      // No file opens: the file being left gains the record and stays the latest.
       const located = await findLatestTraceFile(
         tracesDir(tmpRoot, "default_project", "default_agent"),
         SID,
       );
-      expect(located!.index).toBe(3);
-      const opened = await readTrace(located!.path);
-      expect(opened.map(kind)).toEqual(["session_meta", "tool_list_ready", "text"]);
-      expect((opened[0]!.payload as { model_id: string }).model_id).toBe(ORIGINAL.model_id);
-      expect((opened[2]!.payload as { text: string }).text).toBe(SUMMARY);
-      // Nothing was added to the file being left.
+      expect(located!.path).toBe(leaving);
       expect((await readTrace(leaving)).map(kind)).toEqual([
         "session_meta",
         "tool_list_ready",
         "text",
+        "session_update",
       ]);
     } finally {
       session.dispose();
+    }
+
+    // A restart lands on the target, the summary that context opened with pending.
+    const again = await agent.resumeSession({ sessionId: SID });
+    try {
+      expect(again.modelId).toBe(ORIGINAL.model_id);
+      const state = engineStateOf(again);
+      expect(state?.pendingTraceRotation).toBe(true);
+      expect((state?.pendingSummary?.payload as { text: string }).text).toBe(SUMMARY);
+    } finally {
+      again.dispose();
     }
   });
 
