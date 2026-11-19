@@ -20,7 +20,7 @@
  * and it decides whether the id is free. A new location drops the plugins
  * and the directory picked for the old one, which would name things the new one may not have.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import type {
   AgentCreateRequest,
@@ -46,7 +46,6 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
 import { SemanticIdField } from "../semantic-id";
 import { WorkspaceSelect } from "../workspace";
@@ -59,6 +58,7 @@ import {
 } from "../skills";
 
 import { StdioDisclosure, stdioServers } from "../plugins";
+import { failureNode } from "../../lib/failure";
 
 /** A library plugin as a picker row, keeping what the create confirmation reads: its title and its MCP servers. */
 export type PluginPickItem = PickableItem & Pick<PluginItem, "title" | "titleZh" | "mcpServers">;
@@ -124,7 +124,7 @@ export interface CreateAgentDialogProps {
   /** This server's plugin library as picker rows; null until the page's fetch succeeds. */
   library: PluginPickItem[] | null;
   /** Why the library could not be read, in place of the field's hint. */
-  libraryError: string | null;
+  libraryError: ReactNode;
   /** The connected machines an Agent can be created on; empty (the field hidden) when none is. */
   machines?: readonly LocationChoice[];
   onClose: () => void;
@@ -161,7 +161,7 @@ function CreateAgentForm({
   const [machineLibrary, setMachineLibrary] = useState<{
     machineId: string;
     items: PluginPickItem[] | null;
-    error: string | null;
+    error: ReactNode;
   } | null>(null);
   useEffect(() => {
     if (location === null) return;
@@ -174,8 +174,12 @@ function CreateAgentForm({
         setMachineLibrary({ machineId: location, items, error: null });
       },
       (e: unknown) => {
-        if (!cancelled)
-          setMachineLibrary({ machineId: location, items: null, error: apiErrorText(e) });
+        if (cancelled) return;
+        setMachineLibrary({
+          machineId: location,
+          items: null,
+          error: failureNode(e, { what: "a machine's plugin library could not be read" }),
+        });
       },
     );
     return () => {
@@ -191,7 +195,7 @@ function CreateAgentForm({
   const machineLabel =
     location === null ? undefined : machines.find((m) => m.value === location)?.label;
   /** What the server refused, under the id. Cleared by the next edit of the id. */
-  const [refused, setRefused] = useState<string | undefined>(undefined);
+  const [refused, setRefused] = useState<ReactNode>(undefined);
   const [busy, setBusy] = useState(false);
   const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
   /** Over to the import dialog: what was filled in here goes nowhere with it, so it asks first. */
@@ -200,7 +204,7 @@ function CreateAgentForm({
   const [locationOpen, setLocationOpen] = useState(false);
   /** The Skills the picked directory carries (null while none is picked or it is being read). */
   const [dirSkills, setDirSkills] = useState<SkillMetadataItem[] | null>(null);
-  const [dirSkillsError, setDirSkillsError] = useState<string | null>(null);
+  const [dirSkillsError, setDirSkillsError] = useState<ReactNode>(null);
   const [dirSkillsOpen, setDirSkillsOpen] = useState(false);
   /** Creating waits on the confirmation a picked plugin's stdio MCP server asks for: the command it runs on this server. */
   const [stdioConfirmOpen, setStdioConfirmOpen] = useState(false);
@@ -231,7 +235,7 @@ function CreateAgentForm({
       .catch((e: unknown) => {
         if (cancelled) return;
         setDirSkills(null);
-        setDirSkillsError(apiErrorText(e));
+        setDirSkillsError(failureNode(e, { what: "a directory's Skills could not be listed" }));
       });
     return () => {
       cancelled = true;
@@ -290,7 +294,7 @@ function CreateAgentForm({
       discardUnsaved(form.scope);
       await onCreated(res.agent.agentId, location);
     } catch (e) {
-      setRefused(apiErrorText(e));
+      setRefused(failureNode(e, { what: "an Agent could not be created" }));
     } finally {
       setBusy(false);
     }

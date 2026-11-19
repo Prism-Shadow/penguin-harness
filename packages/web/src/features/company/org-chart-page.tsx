@@ -50,13 +50,14 @@ import {
   Menu,
   MenuItem,
   MenuSeparator,
+  FailureText,
   Notice,
   toastSuccess,
   usePointerDrag,
+  type Failure,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { toneInk } from "../../lib/tone";
 import { useCompany } from "./company-state";
@@ -91,6 +92,7 @@ import {
   type EmployeeEdit,
 } from "./employee-dialogs";
 import { toastApiError } from "../../lib/toast-api-error";
+import { failureOf } from "../../lib/failure";
 
 /** Node-menu glyphs: the open door of a desk session, a plus person for hiring, a coin for budget, the composer's spark for the thinking level, an arrow for the line, a turning arrow for a fresh desk, a door out for leaving. */
 const MENU_ICONS = {
@@ -145,7 +147,8 @@ export function OrgChartPage() {
   const { currency } = useTheme();
   useDocumentTitle(org ? `${org.name} · ${S.nav.org.chart}` : S.nav.org.chart);
   const [chart, setChart] = useState<OrgChartResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  /** The last read's failure: its words, and its report when it offers one. */
+  const [error, setError] = useState<Failure | null>(null);
   const [hireFor, setHireFor] = useState<OrgEmployeeItem | null>(null);
   const [profileFor, setProfileFor] = useState<OrgEmployeeItem | null>(null);
   const [editFor, setEditFor] = useState<{ employee: OrgEmployeeItem; edit: EmployeeEdit } | null>(
@@ -172,7 +175,7 @@ export function OrgChartPage() {
       setChart(await api.getOrgChart(projectId, orgId));
       setError(null);
     } catch (e) {
-      setError(apiErrorText(e));
+      setError(failureOf(e, { what: "an organization's chart could not be read" }));
     }
   }, [projectId, orgId]);
   // A run starting moves a state dot, a ticket change can attach a session to an employee, and
@@ -370,7 +373,7 @@ export function OrgChartPage() {
     return (
       <OrgPage title={S.nav.org.chart} info={S.company.chart.info}>
         <EmptyState
-          title={error}
+          title={<FailureText failure={error} />}
           action={<Button onClick={() => void load()}>{S.common.retry}</Button>}
         />
       </OrgPage>
@@ -505,7 +508,7 @@ export function OrgChartPage() {
           className="mb-3"
           retry={{ label: S.common.retry, onClick: () => void load() }}
         >
-          {S.company.chart.refreshFailed(error)}
+          <FailureText failure={{ ...error, text: S.company.chart.refreshFailed(error.text) }} />
         </Notice>
       )}
       {ceoMissing && (

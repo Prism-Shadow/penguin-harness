@@ -70,6 +70,7 @@ import type {
   ModelProtocolDetectRequest,
   ModelRefDto,
   ModelsResponse,
+  ModelOAuthErrorCode,
   ModelsUpdateRequest,
   ModelTestRequest,
   ModelUpdateEntry,
@@ -251,7 +252,7 @@ import { TOKENDANCE_PROVIDER_ID, TokenDanceBanner } from "./tokendance-banner";
 import { ConnectDefaultOfferConfirm } from "./connect-default-offer";
 import { toastApiError, toastFailure } from "../../lib/toast-api-error";
 import { toastDetectFailed, type DetectMiss } from "./detect-failure";
-import { toldFailure } from "../../lib/failure";
+import { failureNode, toldFailure, toldNode } from "../../lib/failure";
 
 /**
  * The authorization flows a group's Connect dialog can run, keyed by the flow named in that
@@ -1036,7 +1037,7 @@ export function ModelsPage() {
   /** "Add models with AI" dialog: the prompt goes to the Project's default agent. */
   const [aiAddOpen, setAiAddOpen] = useState(false);
   /** Initial load failure: shown inline only when the whole page has no content (there's no context to pop a toast against). */
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<ReactNode>(null);
   const [busy, setBusy] = useState(false);
   // Currency follows the user setting (toggled in sidebar settings).
   const { currency } = useTheme();
@@ -1069,7 +1070,7 @@ export function ModelsPage() {
     try {
       adopt(await api.getModels(projectId, null));
     } catch (e) {
-      setLoadError(apiErrorText(e));
+      setLoadError(failureNode(e, { what: "a Project's models could not be listed" }));
     }
     try {
       const totals = await api.getUsageModelTotals(projectId);
@@ -2250,7 +2251,7 @@ function AddGroupDialog({
     dropped: number;
     picked: Set<string>;
   } | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   /** Detection run counter: a manual pick or an edited URL supersedes an in-flight run (same convention as the model dialog). */
   const detectSeq = useRef(0);
 
@@ -2303,12 +2304,17 @@ function AddGroupDialog({
       } else {
         setDetectFailed(true);
         // Same condition the model dialog reports, so it gets the same sentence.
-        setError(S.models.detectFailedBody);
+        setError(
+          toldNode(S.models.detectFailedBody, {
+            what: "protocol detection found no protocol the endpoint serves",
+            detail: null,
+          }),
+        );
       }
     } catch (e) {
       if (seq !== detectSeq.current) return;
       setDetectFailed(true);
-      setError(apiErrorText(e));
+      setError(failureNode(e, { what: "protocol detection failed" }));
     } finally {
       if (seq === detectSeq.current) setDetecting(false);
     }
@@ -2353,7 +2359,10 @@ function AddGroupDialog({
         setError(
           listed.unsupported
             ? S.models.groupImportUnsupported
-            : (listed.message ?? S.models.groupImportFailed),
+            : toldNode(listed.message ?? S.models.groupImportFailed, {
+                what: "an endpoint's model list could not be read",
+                detail: listed.message ?? null,
+              }),
         );
         return;
       }
@@ -2369,7 +2378,7 @@ function AddGroupDialog({
         picked: new Set(ids),
       });
     } catch (e) {
-      setError(apiErrorText(e));
+      setError(failureNode(e, { what: "an endpoint's model list could not be read" }));
     } finally {
       setImporting(null);
     }
@@ -2391,7 +2400,7 @@ function AddGroupDialog({
         list.dropped + built.skipped,
       );
     } catch (e) {
-      setError(apiErrorText(e));
+      setError(failureNode(e, { what: "a model group could not be imported" }));
     } finally {
       setImporting(null);
     }
@@ -4281,6 +4290,23 @@ const OAUTH_POLL_MS = 2000;
  * the last word on which: it opens a manual flow when the provider would refuse to redirect to
  * the address this page is served from, and the dialog follows the flow it was given.
  */
+/** The flow's own refusals: the authorization asked again is the way on, nothing failed. */
+const OAUTH_REFUSALS: ReadonlySet<ModelOAuthErrorCode> = new Set([
+  "invalid_request",
+  "code_rejected",
+]);
+
+/**
+ * What a flow that ended in an error says: a refusal (or a flow that ran out of time) in its
+ * words alone, a failure with 「[报告问题]」 after them.
+ */
+function oauthFlowError(code: ModelOAuthErrorCode | undefined): ReactNode {
+  if (code === undefined) return S.models.oauthTimedOut;
+  const text = S.models.oauthErrors[code];
+  if (OAUTH_REFUSALS.has(code)) return text;
+  return toldNode(text, { what: "a model provider's authorization failed", code, detail: null });
+}
+
 function ModelOAuthDialog({
   projectId,
   provider,
@@ -4308,7 +4334,7 @@ function ModelOAuthDialog({
   const byHand = manual || redirectRefused;
   const [phase, setPhase] = useState<OAuthPhase>("starting");
   const [flow, setFlow] = useState<{ flowId: string; authorizeUrl: string } | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   const [code, setCode] = useState("");
   /** How many models use the group key the flow wrote — the sentence the `done` phase reports. */
   const [applied, setApplied] = useState(0);
@@ -4340,7 +4366,7 @@ function ModelOAuthDialog({
         setPhase("ready");
       } catch (e) {
         if (cancelled) return;
-        setError(apiErrorText(e));
+        setError(failureNode(e, { what: "a model provider's authorization could not start" }));
         setPhase("failed");
       }
     })();
@@ -4368,7 +4394,7 @@ function ModelOAuthDialog({
           return;
         }
         if (res.status === "error") {
-          setError(res.error ? S.models.oauthErrors[res.error] : S.models.oauthTimedOut);
+          setError(oauthFlowError(res.error));
           setPhase("failed");
         }
       } catch {
@@ -4403,10 +4429,10 @@ function ModelOAuthDialog({
         onAppliedRef.current(n, res.defaultOffer);
         return;
       }
-      setError(res.error ? S.models.oauthErrors[res.error] : S.models.oauthTimedOut);
+      setError(oauthFlowError(res.error));
       setPhase("failed");
     } catch (e) {
-      setError(apiErrorText(e));
+      setError(failureNode(e, { what: "a model provider's authorization code was not taken" }));
       setPhase("failed");
     }
   };
