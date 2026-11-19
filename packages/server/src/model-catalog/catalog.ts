@@ -346,6 +346,7 @@ const QWEN_TOKEN_PLAN_BASE_URL =
 const QWEN_PAYG_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
 const FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1";
 const TOKENDANCE_BASE_URL = "https://tokendance.space/gateway/v1";
+const TOKENDANCE_DEEPSEEK_BASE_URL = "https://tokendance.space/gateway/deepseek";
 /** TokenDance's Anthropic Messages base: the SDK appends /v1/messages itself, so no /v1 here. */
 const TOKENDANCE_MESSAGES_BASE_URL = "https://tokendance.space/gateway";
 const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
@@ -3968,7 +3969,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     capability: "search",
     supportsVision: false,
     clientType: "deepseek-webtool",
-    baseUrl: "https://tokendance.space/gateway/deepseek",
+    baseUrl: TOKENDANCE_DEEPSEEK_BASE_URL,
   },
   {
     provider: "tokendance",
@@ -3977,7 +3978,16 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     capability: "fetch",
     supportsVision: false,
     clientType: "deepseek-webtool",
-    baseUrl: "https://tokendance.space/gateway/deepseek",
+    baseUrl: TOKENDANCE_DEEPSEEK_BASE_URL,
+  },
+  {
+    provider: "tokendance",
+    modelId: "deepseek-asr",
+    displayName: "DeepSeek ASR",
+    capability: "stt",
+    supportsVision: false,
+    clientType: "deepseek-transcription",
+    baseUrl: TOKENDANCE_DEEPSEEK_BASE_URL,
   },
   {
     provider: "tokendance",
