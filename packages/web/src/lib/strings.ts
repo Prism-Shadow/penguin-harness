@@ -1481,8 +1481,8 @@ export const zh = {
     /** The windowed app's title bar. */
     windowClose: "关闭，回到应用中心",
     windowFullScreen: "全屏打开",
-    /** Local Agents only: a machine's Agents keep their apps in their own settings. */
-    machinesNote: "机器上 Agent 的应用不在这里，请从它们的 Agent 设置页进入。",
+    /** Machines whose apps could not be read just now: what they last showed stays on the grid. */
+    machinesOffline: (names: string) => `暂时无法连接：${names}。已缓存的内容仍可查看。`,
     aiCreateTitle: "用 AI 创建应用",
     aiCreateDescription: "选定的 Agent 会做一个 Workbench，并让它出现在应用中心。",
     aiCreatePlaceholder: "描述你想要的应用，例如：一个记录每日待办的看板",
