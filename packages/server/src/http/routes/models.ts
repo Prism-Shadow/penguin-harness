@@ -268,6 +268,9 @@ function parseModelsUpdate(body: Record<string, unknown>): ModelsUpdateRequest {
     return entry;
   });
   const req: ModelsUpdateRequest = { models };
+  if (body.initialChatModel !== undefined) {
+    req.initialChatModel = parseRef(body.initialChatModel, "initialChatModel");
+  }
   if (body.defaultModel !== undefined) {
     req.defaultModel = parseRef(body.defaultModel, "defaultModel");
   }

@@ -12,6 +12,8 @@
  * - The file is the only truth: a Session on a preset is built with its group table's endpoint,
  *   protocol and key; with the table cleared a probe goes where the client's defaults send it,
  *   and GET reports the missing values as none — the catalog never fills them back in.
+ * - An audio-only or generation endpoint can be configured without becoming the chat default;
+ *   selecting one through either default write is refused without replacing a working model.
  * - Credentials live inline in `.project_config.toml` (0600) and GET shows only a mask; the env
  *   fallback is reported and masked only where the entry is allowed one, never leaking a value.
  * - GET labels a row with the catalog's display name and reports the env key; a pre-rename
@@ -167,6 +169,38 @@ describe("models preset & catalog enrichment", () => {
       })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
+  });
+
+  it("dedicated models never displace a chat model, including the first saved model", async () => {
+    const speech = { provider: "deepseek", modelId: "deepseek-asr" };
+    const image = { provider: "google", modelId: "gemini-3.1-flash-image" };
+    const chat = { provider: "google", modelId: "gemini-4-carbon" };
+    const first = await api.put(url(), { models: [speech, image], initialChatModel: speech });
+    expect(first.status).toBe(200);
+    const firstTable = (await first.json()) as ModelsResponse;
+    expect(firstTable.defaultModel).toBeUndefined();
+    expect(firstTable.models.every((m) => m.chatEligible === false)).toBe(true);
+    // The vision-capable general chat model remains available.
+    const added = await api.put(url(), { models: [speech, image, chat], initialChatModel: chat });
+    expect((await added.json()).defaultModel).toEqual(chat);
+    expect((await api.put(url() + "/default", speech)).status).toBe(400);
+    expect(
+      (await api.put(url(), { models: [speech, image, chat], defaultModel: image })).status,
+    ).toBe(400);
+    const table = (await (await api.get(url())).json()) as ModelsResponse;
+    expect(table.defaultModel).toEqual(chat);
+    expect(pick(table, chat.provider, chat.modelId).chatEligible).not.toBe(false);
+    // Inheriting a transcription protocol makes a hand-added model audio-only as well.
+    const inherited = { provider: "lab", modelId: "experiment" };
+    const changed = await api.put(url(), {
+      providers: { lab: { clientType: "openai-transcription" } },
+      models: [inherited, chat],
+      initialChatModel: inherited,
+    });
+    expect(changed.status).toBe(200);
+    const changedTable = (await changed.json()) as ModelsResponse;
+    expect(changedTable.defaultModel).toEqual(chat);
+    expect(pick(changedTable, inherited.provider, inherited.modelId).chatEligible).toBe(false);
   });
 
   it("credentials are inlined in one file: the apiKey from PUT lands in .project_config.toml (0600), GET returns only a mask", async () => {

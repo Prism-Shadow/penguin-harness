@@ -237,6 +237,8 @@ export interface ModelUpdateEntry {
 }
 
 export interface ModelsUpdateRequest {
+  /** Use this newly added model only if chat has no default and the model can hold a conversation. */
+  initialChatModel?: ModelRefDto;
   /** Must be included in models (matched by paired reference). */
   defaultModel?: ModelRefDto;
   /** Vision model used as a proxy reader for read_file: must be included in models and not annotated vision=false; omitted keeps the existing value. */
