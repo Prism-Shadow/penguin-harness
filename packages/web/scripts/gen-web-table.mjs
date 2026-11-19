@@ -2,18 +2,20 @@
 /**
  * The Web App's `gen:ifaces`: writes the generated list of the shipped plugins' web halves
  * (`src/plugin-web.gen.ts`), then the interface table (`src/ifaces.json`) over the app's sources
- * and those web halves together.
+ * (`tsconfig.app.json`, `src/` only) and those web halves together. With `--tests` it also
+ * writes `test/ifaces.json` over the app, its tests and the web halves (`tsconfig.json`): the
+ * table a suite boots a test-only module against, which never reaches the shipped bundle.
  *
  * A plugin's web half is a dependency of this package whose package.json exports `./web`: an
  * entry under its `src/web/`, TypeScript source this package's Vite compiles with the app, whose
- * default export is `{ modules: [<@Module class>, …] }`. Beside its package.json it keeps
- * `tsconfig.web.json` (DOM and JSX, its `src/web/` only), which is handed to the interface
- * generator as one more `--project`: the plugin's web modules land in the app's own table, read
- * from the plugin's own directory in the workspace — a copy pnpm installed under node_modules is
- * not scanned — so the boot check judges them with the app's. web-root.ts boots each listed
- * module beside the app's own.
+ * default export is `{ modules: [<@Module class>, …], api?: <its endpoint wrappers> }`. Beside its
+ * package.json it keeps `tsconfig.web.json` (DOM and JSX, its `src/web/` only), which is handed to
+ * the interface generator as one more `--project`: the plugin's web modules land in the app's own
+ * table, read from the plugin's own directory in the workspace — a copy pnpm installed under
+ * node_modules is not scanned — so the boot check judges them with the app's. web-root.ts boots
+ * each listed module beside the app's own.
  *
- *   node scripts/gen-web-table.mjs           # from packages/web (its `gen:ifaces`)
+ *   node scripts/gen-web-table.mjs [--tests] [gen-ifaces flags such as --check]
  */
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -25,12 +27,28 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 /** Where a plugin's web half must live in its package. */
 const WEB_DIR = "./src/web/";
 
-/** The `./web` export's file, whichever condition spells it. */
-function webEntryOf(pkg) {
-  const entry = pkg.exports?.["./web"];
-  if (entry === undefined) return null;
-  if (typeof entry === "string") return entry;
-  return entry.import ?? entry.default ?? null;
+/** The export conditions a browser bundle resolves, in the order a bundler tries them. */
+const CONDITIONS = ["import", "browser", "module", "default"];
+
+/** The file an export target names, through nested conditions and fallback arrays; null for none. */
+function targetOf(target) {
+  if (typeof target === "string") return target;
+  if (Array.isArray(target)) {
+    for (const option of target) {
+      const found = targetOf(option);
+      if (found !== null) return found;
+    }
+    return null;
+  }
+  if (target !== null && typeof target === "object") {
+    for (const condition of CONDITIONS) {
+      if (condition in target) {
+        const found = targetOf(target[condition]);
+        if (found !== null) return found;
+      }
+    }
+  }
+  return null;
 }
 
 /** The workspace directory of a package named `name` under `pluginsDir`, or null. */
@@ -50,17 +68,28 @@ function workspaceDirOf(name, pluginsDir) {
  * The web halves among `webDir`'s dependencies, in the order its package.json lists them: each
  * package's name, the specifier the app imports it by, and the tsconfig its modules are read
  * through. `pluginsDir` is where the workspace keeps plugin packages (the repository's
- * `plugins/`); a dependency found there is read from there.
+ * `plugins/`); a dependency found there is read from there. A listed dependency that is not
+ * installed is an error, not a web half to skip: whether it has one cannot be told.
  */
 export function pluginWebEntries(webDir, { pluginsDir = null } = {}) {
   const manifest = JSON.parse(fs.readFileSync(path.join(webDir, "package.json"), "utf8"));
   const entries = [];
   for (const name of Object.keys(manifest.dependencies ?? {})) {
     const installed = path.join(webDir, "node_modules", name, "package.json");
-    if (!fs.existsSync(installed)) continue;
+    if (!fs.existsSync(installed)) {
+      throw new Error(
+        `${name}: listed in the Web App's dependencies but not installed; run pnpm install`,
+      );
+    }
     const pkg = JSON.parse(fs.readFileSync(installed, "utf8"));
-    const entry = webEntryOf(pkg);
-    if (entry === null) continue;
+    const declared = pkg.exports?.["./web"];
+    if (declared === undefined) continue;
+    const entry = targetOf(declared);
+    if (entry === null) {
+      throw new Error(
+        `${name}: exports["./web"] names no file under a condition a browser build resolves`,
+      );
+    }
     if (!entry.startsWith(WEB_DIR)) {
       throw new Error(
         `${name}: exports["./web"] is ${entry}; a plugin's web half lives under ${WEB_DIR}`,
@@ -87,16 +116,20 @@ export function pluginWebModuleSource(entries) {
     'import type { ModuleClass } from "@prismshadow/penguin-core/kernel";',
   ];
   entries.forEach((entry, i) => lines.push(`import plugin${i} from "${entry.specifier}";`));
-  lines.push("");
   lines.push(
-    "/** One plugin's web half: its package, and the modules its `./web` entry exports. */",
+    "",
+    "/** One plugin's web half: its package, and what its `./web` entry exports. */",
+    "export interface PluginWebEntry {",
+    "  package: string;",
+    "  plugin: {",
+    "    readonly modules: readonly ModuleClass[];",
+    "    /** Its endpoint wrappers: the gallery's mock coverage check calls every one. */",
+    "    readonly api?: Readonly<Record<string, unknown>>;",
+    "  };",
+    "}",
+    "",
+    "export const pluginWebModules: readonly PluginWebEntry[] = [",
   );
-  lines.push("export interface PluginWebEntry {");
-  lines.push("  package: string;");
-  lines.push("  plugin: { readonly modules: readonly ModuleClass[] };");
-  lines.push("}");
-  lines.push("");
-  lines.push("export const pluginWebModules: readonly PluginWebEntry[] = [");
   entries.forEach((entry, i) =>
     lines.push(`  { package: ${JSON.stringify(entry.name)}, plugin: plugin${i} },`),
   );
@@ -113,22 +146,34 @@ export function writePluginWebModules(webDir, options) {
   return entries;
 }
 
-if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const webDir = path.resolve(here, "..");
-  const entries = writePluginWebModules(webDir, {
-    pluginsDir: path.resolve(webDir, "..", "..", "plugins"),
-  });
-  const projects = ["tsconfig.json", ...entries.map((e) => path.relative(webDir, e.tsconfig))];
+/** Runs the interface generator over `projects` into `out`; answers its exit status. */
+function genIfaces(webDir, projects, out, flags) {
   const result = spawnSync(
     process.execPath,
     [
       path.resolve(webDir, "..", "..", "scripts", "gen-ifaces.mjs"),
       ...projects.flatMap((p) => ["--project", p]),
       "--out",
-      "src/ifaces.json",
-      ...process.argv.slice(2),
+      out,
+      ...flags,
     ],
     { cwd: webDir, stdio: "inherit" },
   );
-  process.exit(result.status ?? 1);
+  return result.status ?? 1;
+}
+
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const webDir = path.resolve(here, "..");
+  const args = process.argv.slice(2);
+  const withTests = args.includes("--tests");
+  const flags = args.filter((a) => a !== "--tests");
+  const entries = writePluginWebModules(webDir, {
+    pluginsDir: path.resolve(webDir, "..", "..", "plugins"),
+  });
+  const plugins = entries.map((e) => path.relative(webDir, e.tsconfig));
+  let status = genIfaces(webDir, ["tsconfig.app.json", ...plugins], "src/ifaces.json", flags);
+  if (status === 0 && withTests) {
+    status = genIfaces(webDir, ["tsconfig.json", ...plugins], "test/ifaces.json", flags);
+  }
+  process.exit(status);
 }

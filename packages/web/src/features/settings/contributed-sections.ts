@@ -16,8 +16,24 @@ export interface ContributedSection {
 
 let sections: readonly ContributedSection[] = [];
 
+/**
+ * The settings module's side, at boot. Two contributors naming one key would make one rail entry
+ * open the other's page: the first in contribution order keeps it, the later one is dropped and
+ * said on the console.
+ */
 export function setContributedSections(next: readonly ContributedSection[]): void {
-  sections = next;
+  const seen = new Map<string, string>();
+  sections = next.filter((section) => {
+    const first = seen.get(section.data.key);
+    if (first === undefined) {
+      seen.set(section.data.key, section.from);
+      return true;
+    }
+    console.warn(
+      `${section.from}: a Settings page keyed "${section.data.key}" is already contributed by ${first}; this one is dropped`,
+    );
+    return false;
+  });
 }
 
 export function contributedSections(): readonly ContributedSection[] {

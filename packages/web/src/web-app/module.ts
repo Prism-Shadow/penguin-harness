@@ -5,7 +5,7 @@
  * `layers`, a component a server-contributed page may name as its `builtin` renderer one to
  * `pageRenderers` — so WebApp imports no feature. A module whose server half may not be running
  * declares that server module in `serverModules`; its drawn contributions wait for it
- * (lib/module-gate.ts), and its layers here render only while it runs. What it provides is the
+ * (lib/module-gate.ts), the shell's own included (gated-slots.ts). What it provides is the
  * root component the app mounts, with the contributions bound into it (web-app/deps.ts), and the user event handlers
  * the sessions module collects (state/user-events.ts), which the router hands to the session
  * list. The layout mounts the sidebar module's column and rail, and opens the chat module's
@@ -29,7 +29,13 @@ import {
 
 import type { UserEventHandlers } from "../state/user-events";
 import { setServerModuleGates } from "../lib/module-gate";
-import { gatesOf, layersOf } from "./gated-layers";
+import {
+  gatedPagesOf,
+  gatesOf,
+  layersOf,
+  pageRenderersOf,
+  sessionProvidersOf,
+} from "./gated-slots";
 import type { ChatDrafts } from "../features/chat";
 import type { Sidebar } from "./sidebar/iface";
 import { webAppDeps, type WebAppLayer, type WebAppSessionProvider } from "./deps";
@@ -86,17 +92,17 @@ export class WebAppModule {
   setup({ contributions }: ClassCtx) {
     const gates = gatesOf(contributions.serverModules ?? []);
     setServerModuleGates(gates);
-    const pages = pageTableOf(contributions.pages ?? []);
-    const sessionProviders: readonly WebAppSessionProvider[] = byOrder<{ children: ReactNode }>(
-      contributions.sessionProviders ?? [],
+    const pages = gatedPagesOf(
+      pageTableOf(contributions.pages ?? []),
+      contributions.pages ?? [],
+      gates,
+    );
+    const sessionProviders: readonly WebAppSessionProvider[] = sessionProvidersOf(
+      byOrder<{ children: ReactNode }>(contributions.sessionProviders ?? []),
+      gates,
     );
     const layers: readonly WebAppLayer[] = layersOf(byOrder(contributions.layers ?? []), gates);
-    const pageRenderers: ReadonlyMap<string, ComponentType> = new Map(
-      (contributions.pageRenderers ?? []).map((c) => [
-        (c.data as unknown as PageRendererData).name,
-        c.code as ComponentType,
-      ]),
-    );
+    const pageRenderers = pageRenderersOf(contributions.pageRenderers ?? [], gates);
     const userEvents = this.userEventHandlers.all();
     this.webApp = {
       Root: webAppDeps.provide(

@@ -8,9 +8,9 @@
     "dev": "pnpm gen:ifaces && vite",
     "build": "pnpm gen:ifaces && vite build",
     "preview": "vite preview",
-    "typecheck": "pnpm gen:ifaces && tsc --noEmit -p tsconfig.json",
+    "typecheck": "node scripts/gen-web-table.mjs --tests && tsc --noEmit -p tsconfig.json",
     "gen:ifaces": "node scripts/gen-web-table.mjs",
-    "test": "pnpm gen:ifaces && vitest run --passWithNoTests",
+    "test": "node scripts/gen-web-table.mjs --tests && vitest run --passWithNoTests",
     "test:e2e": "bash e2e/run.sh"
   },
   "dependencies": {

@@ -21,11 +21,35 @@ export function setLinkActions(next: readonly Entry[]): void {
   actions = next;
 }
 
-/** The contributed rows for `href` right now, in order. */
+const warned = new Set<string>();
+
+/**
+ * The contributed rows for `href` right now, in order. Two rows reading the same would look like
+ * one menu entry twice: the first keeps its place, a later one with the same label is dropped
+ * (and said on the console, once).
+ */
 export function linkActionRows(href: string): readonly LinkRow[] {
-  return actions.flatMap(({ action, from }) =>
-    contributionShown(from) ? (action.row(href) ?? []) : [],
-  );
+  const rows: LinkRow[] = [];
+  const labels = new Map<string, string>();
+  for (const { action, from } of actions) {
+    if (!contributionShown(from)) continue;
+    const row = action.row(href);
+    if (row === null) continue;
+    const first = labels.get(row.label);
+    if (first !== undefined) {
+      const key = `${from}\0${row.label}`;
+      if (!warned.has(key)) {
+        warned.add(key);
+        console.warn(
+          `${from}: a link row reading "${row.label}" is already offered by ${first}; this one is dropped`,
+        );
+      }
+      continue;
+    }
+    labels.set(row.label, from);
+    rows.push(row);
+  }
+  return rows;
 }
 
 /** Fires when any contributor's offer, or any server-module gate, changes. */
