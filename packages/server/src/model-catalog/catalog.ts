@@ -35,8 +35,9 @@
  * and MiMo-V2.6-Flash rows, SiliconFlow's GLM-5.3 Flash and Hy4 preview rows, and Gemini 3.7
  * Flash dropped from every group, Google rerouting the id to 3.8 Flash: 2026-10-10; and the
  * Atlas Cloud group, from its public catalog API and pricing page: 2026-10-11; Gemini 4 Argon
- * (Google, Penguin Go and OpenRouter): 2026-10-14; and the Runcrate group, from its catalog API:
- * 2026-11-02).
+ * (Google, Penguin Go and OpenRouter): 2026-10-14; the Runcrate group, from its catalog API:
+ * 2026-11-02; and Gemini 4 Neon (Google and OpenRouter), per MMSP 0.5.12's registry:
+ * 2026-11-19).
  * Docs: packages/docs/content/models.{zh,en}.md (site path /docs/models) documents the
  * provider groups and credential resolution described here.
  *
@@ -1125,6 +1126,19 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     capability: "image",
     supportsVision: false,
     clientType: "openai-image",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
+    // MMSP 0.5.12's registry (models API, read 2026-11-19): OpenRouter quotes Google AI
+    // Studio's list rate with no discount, $3 input / $15 output / $0.15 cache hit. Implicit
+    // caching only, so cache_write records input. Text and image input.
+    modelId: "google/gemini-4-neon",
+    displayName: "Gemini 4 Neon",
+    provider: "openrouter",
+    contextWindow: 1048576,
+    pricing: usd(0.15, 3, 15),
+    supportsVision: true,
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -3188,6 +3202,18 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     provider: "google",
     capability: "image",
     contextWindow: 131072,
+    supportsVision: true,
+  },
+  {
+    // MMSP 0.5.12's registry, from aistudio.google.com/docs/pricing and
+    // aistudio.google.com/docs/models/gemini-4-neon (read 2026-11-19): $3 input / $15 output /
+    // $0.15 cache hit, no promotion. Implicit caching only, so cache_write is the input price.
+    // Text, image, video and audio input.
+    modelId: "gemini-4-neon",
+    displayName: "Gemini 4 Neon",
+    provider: "google",
+    contextWindow: 1048576,
+    pricing: usd(0.15, 3, 15),
     supportsVision: true,
   },
   {

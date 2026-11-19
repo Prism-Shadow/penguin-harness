@@ -370,6 +370,7 @@ PenguinHarness 升级可能往内置目录里增加预置模型。只要目录�
 - `max` 是最深的档位。各客户端会把它映射到供应商支持的最深推理档位，没有这个档位时静默回退，所以选它不会失败。在 Gemini 和 MiniMax M3 上，它的档位和 `xhigh` 相同。
 - 对 MiniMax M3，`none` 直接映射为 `reasoning.effort = "none"`。
 - 在 Google 官方客户端上，Gemini 4 Argon 的 `none` 映射为 `low`，`xhigh` 和 `max` 映射为 `high`。`low`、`medium` 和 `high` 保持原值；省略档位时保留 Google 默认的 `medium`。
+- 在 Google 官方客户端上，Gemini 4 Neon 的 `none` 映射为 `low`，`max` 映射为 `xhigh`。`low`、`medium`、`high` 和 `xhigh` 保持原值。
 - DeepSeek V4 接受 `low`、`high` 和 `max`，`medium` 和 `xhigh` 会在它那边归并为 `high`。要 DeepSeek 最深的推理，请选 `max`。
 
 ### 在新对话中
@@ -507,7 +508,7 @@ PenguinHarness 升级可能往内置目录里增加预置模型。只要目录�
 
 OpenAI 兼容网关分组（openrouter / fireworks / siliconflow / atlascloud / runcrate / tokendance / qwen-pay-as-you-go / qwen-token-plan）走的是 MMSP 通用的 OpenAI 协议客户端，对应变量是 `OPENAI_API_KEY`；其中没有 key 的条目会被拒绝，而不是把你的 OpenAI key 发过去。custom 和自建分组里自身或分组带 base URL 的条目同样如此，除非那正是其协议客户端自己的缺省端点；任何一层都不带时，读取其协议客户端的那对变量（见[设置 API key](#设置-api-key)）。vLLM 条目带 base URL 而没有 key 时则不带 key 发出请求，因为 vLLM 服务器只有用 key 启动时才校验 key。ModelScope 的凭据是 api-inference token，三条预置都固定使用通用 Responses 协议；没有 key 的 ModelScope 条目同样会被拒绝。
 
-- OpenRouter 对话模型 → `openai-responses` · `google/gemini-nano-banana-2.1` → `openai-image`
+- OpenRouter 分组的对话预置模型，以及你添加到该分组的任何模型，都使用 Responses 客户端（`client_type = "openai-responses"`），因为 OpenRouter 在同一个 base URL 上为它转售的每一个模型提供 Responses API。图像预置 `google/gemini-nano-banana-2.1` 是例外：它在同一个 base URL 上固定使用 Images 客户端（`client_type = "openai-image"`）。
 - 其他网关的预置模型使用 Chat Completions 客户端（`client_type = "openai-chat"`）。
 - ModelScope 像 Penguin Go 一样是聚合网关，但三条预置都使用 MMSP 通用 Responses 客户端（`client_type = "openai-responses"`）。
 - 无论哪种方式，网关都带 base URL，所以凭据规则完全一致。
@@ -556,7 +557,7 @@ MiniMax 的官方客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模
 
 - `deepseek-flash` / `deepseek-v4-pro`
 - `MiniMax-M3.1-Flash` / `MiniMax-M3`
-- `gemini-4-argon` / `gemini-3.8-flash`
+- `gemini-4-neon` / `gemini-4-argon` / `gemini-3.8-flash`
 - `gemini-nano-banana-2.1` (Google) / `google/gemini-nano-banana-2.1` (OpenRouter)
 - `claude-opus-5-5` / `claude-sonnet-5-5` / `claude-haiku-5-5` / `claude-fable-5-1`
 - `claude-opus-5` / `claude-opus-4-8` / `claude-sonnet-5`
@@ -572,6 +573,8 @@ MiniMax 的官方客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模
 列表并未穷尽所有模型。
 
 Google、Penguin Go 和 OpenRouter 分组均预置了 Gemini 4 Argon，支持图像输入，输入与输出共享 1,048,576 Token 的上下文窗口。Google 和 Penguin Go 使用 `gemini-4-argon`，OpenRouter 使用 `google/gemini-4-argon`。MMSP 的同步流最多支持 65,536 个输出 Token，包含思考；Google 的更长后台生成不在此接口范围内。
+
+Google 分组以 `gemini-4-neon`、OpenRouter 分组以 `google/gemini-4-neon` 预置了 Gemini 4 Neon，支持图像输入，上下文窗口为 1,048,576 Token。两者记录的牌价均为每百万 Token 输入 3 美元、输出 15 美元、缓存命中 0.15 美元，没有促销。
 
 - **DeepSeek 图像能力。** `deepseek-flash` 就是 V4.1 Flash，支持读图；`deepseek-v4-pro` 是 V4 Pro 0813 版本，仅支持文本。要发送图像，请使用 `deepseek-flash`。
 - **退役条目。** DeepSeek 仍然接受 `deepseek-v4-flash` 和 `deepseek-v4-flash-vision-exp`，并都由 V4.1 Flash 承接。它们不再是预置条目，但目录把它们连同 TokenDance 的 `deepseek-v4-flash-vision-exp` 作为退役条目保留：仍带着其中某条的 Project 照旧显示它的名称，直到**恢复默认**把它连同其他非预置模型一起删除。退役条目不会被补进没有它的 Project，新建的 Project 也不会拿到。
