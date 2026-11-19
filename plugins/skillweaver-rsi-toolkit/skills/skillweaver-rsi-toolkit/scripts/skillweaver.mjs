@@ -3,6 +3,7 @@
 // Only the controller runs it; the Target only reads INDEX.md and calls the API scripts.
 //
 //   node skillweaver.mjs init <apis-dir> <site-url>     create library.json and copy the runtime
+//   node skillweaver.mjs role-reply <trace>...         validate the final assistant text as one JSON object
 //   node skillweaver.mjs check <api-file>               code verification; prints {"name","problems":[…]}
 //   node skillweaver.mjs register <apis-dir> <name> <ref>   a new API, or a new version of one
 //   node skillweaver.mjs tested <apis-dir> <name> <ref>     one more passing test
@@ -314,11 +315,46 @@ export function verifyRuntime(dir) {
   return { problems };
 }
 
+/** Read the final assistant text, excluding earlier turns, tool progress and reasoning. */
+export function readRoleReply(traceFiles) {
+  if (traceFiles.length === 0) {
+    throw new Error("role-reply requires the role's Trace files in order");
+  }
+  let text = null;
+  for (const file of traceFiles) {
+    for (const line of readFileSync(file, "utf8").split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      const record = JSON.parse(line);
+      if (record?.type !== "model_msg") continue;
+      const message = record.payload;
+      if (message?.type === "tool_call" || (message?.role === "user" && message.type === "text")) {
+        text = null;
+      } else if (message?.role === "assistant" && message.type === "text") {
+        text = message.text;
+      }
+    }
+  }
+  if (typeof text !== "string") {
+    return { problems: ["The role Trace has no final assistant text"] };
+  }
+  try {
+    const reply = JSON.parse(text);
+    if (reply !== null && typeof reply === "object" && !Array.isArray(reply)) {
+      return { text, reply, problems: [] };
+    }
+  } catch {
+    // Keep the full text for the correction request without extracting a JSON fragment.
+  }
+  return { text, problems: ["The final assistant text must be exactly one JSON object"] };
+}
+
 async function main(argv) {
   const [cmd, ...rest] = argv;
   switch (cmd) {
     case "init":
       return init(rest[0], rest[1]);
+    case "role-reply":
+      return readRoleReply(rest);
     case "check":
       return checkApi(rest[0]);
     case "register":

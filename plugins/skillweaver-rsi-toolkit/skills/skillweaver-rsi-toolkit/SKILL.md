@@ -1,7 +1,7 @@
 ---
 name: skillweaver-rsi-toolkit
 description: Run SkillWeaver (Zheng et al. 2025) on an agent - let it explore a website on its own, propose skills worth having, practise them, and hone the successful ones into tested, reusable API scripts in a skill library, then freeze the library and measure it on a published Benchmark of tasks on that site. Use when asked to make an agent better at a website by learning skills or APIs from self-directed practice.
-version: 2026.11.20.4
+version: 2026.11.20.5
 ---
 
 # SkillWeaver
@@ -21,7 +21,7 @@ This Skill needs `run_subagent`, so it runs in a top-level Session. It also need
 - `runs` - runs per case in every measurement; default 1, or the request's `test_repetitions`. One run checks the pipeline; a claim that the library helps needs at least 3, and the report gives every run, the mean and the spread.
 - The runtime - the `provider` / `model_id` pair the user names, else your Environment's, fixed for the whole experiment (`references/evaluation.md`, controller step 2). The Proposer, Judge, Synthesiser and Tester run on your own model; record it.
 
-Budget, for I iterations, C cases and R runs: I practice cells of the Target, at most I Proposer or Tester calls, at most I Judge calls and at most I Synthesiser calls; with a Benchmark, `2 × C × R` cells more for H1 and the final measurement. Before the first practice cell, show the user the plan (site, `live_site`, iterations, the Benchmark if any, these numbers) and wait for their go-ahead: a quick-start prompt is not one. Never launch a larger budget implicitly.
+Budget, for I iterations, C cases and R runs: I practice cells of the Target, at most I Proposer or Tester calls, at most I Judge calls and at most I Synthesiser calls. The role limits count sessions. A single format correction to the same role is allowed and is reported as an additional model request, without launching another role. With a Benchmark, `2 × C × R` cells more for H1 and the final measurement. Before the first practice cell, show the user the plan (site, `live_site`, iterations, the Benchmark if any, these numbers) and wait for their go-ahead: a quick-start prompt is not one. Never launch a larger budget implicitly.
 
 ## Paths and records
 

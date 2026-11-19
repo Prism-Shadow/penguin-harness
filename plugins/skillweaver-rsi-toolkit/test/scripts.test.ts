@@ -63,6 +63,28 @@ function put(name: string, source: string) {
   return file;
 }
 
+describe("role reply verification", () => {
+  function record(role: string, text: string) {
+    return JSON.stringify({ type: "model_msg", payload: { type: "text", role, text } });
+  }
+
+  it("reads the final JSON reply rather than streamed narration or an earlier attempt", () => {
+    const first = path.join(dir, "first.jsonl");
+    const second = path.join(dir, "second.jsonl");
+    writeFileSync(first, record("assistant", 'I found this: {"success":false}') + "\n");
+    writeFileSync(
+      second,
+      [record("user", "Resend the JSON only"), record("assistant", '{"success":true}')].join("\n"),
+    );
+    expect(tool.readRoleReply([first, second])).toEqual({
+      text: '{"success":true}',
+      reply: { success: true },
+      problems: [],
+    });
+    expect(tool.readRoleReply([first]).problems).toHaveLength(1);
+  });
+});
+
 describe("code verification", () => {
   it("accepts a well-formed API", async () => {
     tool.init(dir, SITE);
