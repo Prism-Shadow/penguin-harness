@@ -1129,7 +1129,8 @@ export class TraceService implements Traces {
     const firstMeta = shards.flat().find(isSessionMeta);
     if (!firstMeta) throw invalid("The source Trace has no session metadata.");
     // The fork's model is the target shard's: one shard is one model context, and a model
-    // switch opens the next context in a new shard headed by its own session_meta.
+    // switch's next context opens a new shard headed by its own session_meta (the cut stops
+    // at the switch's session_update, above).
     const targetMeta = targetShard.find(isSessionMeta) ?? firstMeta;
     const model = { provider: targetMeta.payload.provider, modelId: targetMeta.payload.model_id };
 
