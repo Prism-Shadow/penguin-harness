@@ -49,7 +49,7 @@ interface SessionMetaPayload {
 }
 ```
 
-The Workspace is fixed for the Session's lifetime. The model and the system prompt are fixed per context: an in-session model switch opens its new context on another model, and this record is the only place that says so.
+The Workspace is fixed for the Session's lifetime. The model and the system prompt are fixed per context: an in-session model switch opens its new context on another model. Each context's model is named in its own `session_meta`; until the next context's is written, the switch's `session_update` names it (see [event_msg](#eventmsg)).
 
 `source` says what kind of conversation the Session is, and is fixed for its lifetime too:
 
@@ -195,7 +195,7 @@ Renderers can therefore paint deltas as they arrive and swap in the complete mes
 
 ## event_msg
 
-Fourteen event payloads record the runtime events outside the model context:
+Fifteen event payloads record the runtime events outside the model context:
 
 | Event `type` | What it records |
 | --- | --- |
@@ -204,6 +204,7 @@ Fourteen event payloads record the runtime events outside the model context:
 | `mcp_connect_end` | The overall connect status and the per-server results |
 | `task_begin` | The start of a Task |
 | `task_end` | The end of the Task the last `task_begin` opened |
+| `session_update` | The new value of a Session-level setting that changed: today the model the Session's next context opens on |
 | `request_begin` | The start of a model request, with the thinking level it went out at |
 | `request_end` | The request's terminal status, plus the retry detail block (`error_code`, `error_message`, `attempt`, `retry_in_ms`) |
 | `approval_decision` | An approval decision, paired with its `tool_call_id` |
@@ -214,9 +215,11 @@ Fourteen event payloads record the runtime events outside the model context:
 | `subagent` | A pointer in the parent Trace to a direct child Session |
 | `hook` | A hook's answer: the hook point, name, decision and the hook's own record |
 
-The vocabulary is closed: a record or field is added only when no existing record carries the fact and no reader can derive it. `task_begin` / `task_end` are one of its two stated exceptions (the other is `request_begin.thinking_level`). Before them no record said where a Task starts or whether it reached its end, and every reader derived both from the user's prompts.
+The vocabulary is closed: a record or field is added only when no existing record carries the fact and no reader can derive it. `task_begin` / `task_end` are one of its three stated exceptions (the others are `request_begin.thinking_level` and `session_update`). Before them no record said where a Task starts or whether it reached its end, and every reader derived both from the user's prompts.
 
 The Session writes one pair around each Task: one prompt's run, followed by the `hook` records of the stop hooks it consults. A Task that a stop hook's `continue` drives, such as a goal round, gets a pair of its own. A manual compaction and a model switch are not Tasks and get none. The payload is the type alone. How the Task ended is read from the records inside the pair (`abort`, a terminal `request_end` or `compaction_end`), and who started it from its input. A Task that throws writes no `task_end`, so an unclosed `task_begin` means the Task never reached its end. Where the records sit in the Trace is covered under [Trace design](/sessions-and-traces#trace-design).
+
+`session_update` records that a Session-level run setting changed, and carries the new value under the name the setting has elsewhere. It carries one setting today, the model: `provider` and `model_id`, the pair `session_meta` uses, name the model the Session's **next** context opens on. The Session writes it when an in-session model switch completes, through its own Trace sink as it writes the Task records, and it never opens a file: it lands at the end of the file of the context being left, behind the `compaction_end` when there is one, and is streamed once, when written. Until a `request_begin` follows it, that file's context is closed and the next context opens on the model it names; of several, the last one wins. It is not a message, starts no Task and takes no part in a Task's timing. It is a stated exception because between a completed switch and the next file's `session_meta` no other record names the target. Traces written before it carry none, and readers derive a switch from two consecutive `session_meta` records.
 
 Every payload that reports a failure carries the same error pair: `error_code`, a stable machine-readable cause that render layers localize from, and `error_message`, the raw text of the failure, shown verbatim. The complete listing:
 
@@ -299,6 +302,14 @@ interface TaskBeginPayload {
 interface TaskEndPayload {
   type: "task_end";           // the Task returned, however it ended (the records inside
                               // the pair say how); absent when the Task threw
+}
+
+interface SessionUpdatePayload {
+  type: "session_update";     // a Session-level setting changed: its new value; written
+                              // and streamed by the Session, at the end of the file of the
+                              // context being left
+  provider?: string;          // the model the Session's next context opens on, as in
+  model_id?: string;          // session_meta; the two come together
 }
 
 interface RequestBeginPayload {
@@ -499,8 +510,9 @@ How messages travel along these surfaces, and every ordering guarantee, is cover
 
 `@prismshadow/amsp` exports every record type, plus the following, and `@prismshadow/penguin-core` re-exports all of it:
 
-- a builder per message kind in `records/builders.ts`: `userText`, `assistantText`, `toolCall`, `toolCallOutput`, `partialText`, `tokenUsage`, `withOrigin`, `emptyTokenCounts`, `addTokenCounts`, and more;
-- runtime guards: `isCompleteModelMessage`, `isPartialPayload`, `isModelMessage`, `isEventMessage`, `isSessionMeta`, `isTaskRecord`, and `lastNonTaskRecord`, which finds the record that decides whether a Trace file was closed by a compaction.
+- a builder per message kind in `records/builders.ts`: `userText`, `assistantText`, `toolCall`, `toolCallOutput`, `partialText`, `tokenUsage`, `sessionUpdate`, `withOrigin`, `emptyTokenCounts`, `addTokenCounts`, and more;
+- runtime guards: `isCompleteModelMessage`, `isPartialPayload`, `isModelMessage`, `isEventMessage`, `isSessionMeta`, `isTaskRecord`;
+- the readers of whether a Trace file's context is closed, in `records/context-state.ts`: `closingCompaction` (the completed `compaction_end` that closed it), `pendingModel` (the model a completed switch left for the next context) and `updatedModel` (the model one `session_update` names).
 
 ```ts
 import { userText, isCompleteModelMessage } from "@prismshadow/amsp";
