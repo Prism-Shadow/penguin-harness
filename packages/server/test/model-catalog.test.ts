@@ -115,7 +115,8 @@ describe("model-catalog", () => {
           { unit: "textOutputTokens", amount: reference!.response_tokens },
         ],
       });
-      expect(toolPricingFor(row, { baseUrl: endpoint + "/proxy" })).toBeUndefined();
+      for (const suffix of ["/proxy", "?via=reseller", "#proxy"])
+        expect(toolPricingFor(row, { baseUrl: endpoint + suffix })).toBeUndefined();
       expect(toolPricingFor(row, { baseUrl: endpoint, clientType: "mmsp" })).toBeUndefined();
       expect(
         toolPricingFor(row, {

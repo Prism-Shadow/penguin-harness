@@ -1,5 +1,4 @@
 import { routedClientType } from "@prismshadow/mmsp/credentials";
-import { sameEndpoint } from "@prismshadow/penguin-core/model-connection";
 import type { ModelCatalogEntry } from "./catalog.js";
 
 /** A seller's published tariff. Non-token units and native currencies never enter token pricing or usage records. */
@@ -33,6 +32,15 @@ export type ToolPriceUnit =
   | "videoTokens"
   | "textOutputTokens";
 
+/** Keep the entire registry route, including any credentials, path or query in an override. */
+function registryEndpoint(url: string): string | undefined {
+  try {
+    return new URL(url).href.replace(/\/+$/, "");
+  } catch {
+    return undefined;
+  }
+}
+
 /** The first rate is the primary output a user is choosing this tool for. */
 export function toolPricingFor(
   entry: ModelCatalogEntry | undefined,
@@ -43,7 +51,7 @@ export function toolPricingFor(
     const expected = price.registryRoute;
     if (
       routedClientType(entry.modelId, route?.clientType) !== expected.clientType ||
-      (route?.baseUrl && !sameEndpoint(route.baseUrl, expected.baseUrl))
+      (route?.baseUrl && registryEndpoint(route.baseUrl) !== registryEndpoint(expected.baseUrl))
     )
       return undefined;
   }
