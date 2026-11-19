@@ -3,6 +3,7 @@
 - **Date:** 2026-11-19
 - **Type:** feature
 - **Scope:** `web`, `ui-gallery`
+- **PR:** [#1638](https://github.com/Prism-Shadow/penguin-harness/pull/1638)
 
 [English](2026-11-19-plugin-module-on-agent-install-web.md)
 
