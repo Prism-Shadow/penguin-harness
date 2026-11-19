@@ -236,11 +236,22 @@ test("the market writes a machine's server modules into this server's Project ta
       ok({ skills: [], hooks: [], workbenches: [], mcpServers: [] }),
     );
 
+  // Every write to a plugin list, whichever way it went: the page's socket, or plain HTTP (an
+  // install's progress stream). A write sent to the machine would read /server/<machineId>/….
+  const sent = [];
+  const record = (method, path, body) => {
+    if (method !== "GET" && path.includes("/plugins/installed"))
+      sent.push({ write: method + " " + path.split("?")[0], body });
+  };
+  frame.onCall((c) => record(c.method, c.path, c.body));
+  page.on("request", (r) => {
+    const url = new URL(r.url());
+    if (url.pathname.startsWith("/api/socket")) return;
+    record(r.method(), url.pathname, r.postData() ? JSON.parse(r.postData()) : undefined);
+  });
+  const writes = () => sent.map((s) => s.write);
+
   await page.goto("/plugins");
-  const writes = () =>
-    frame.calls
-      .filter((c) => c.method !== "GET" && c.path.includes("/plugins/installed"))
-      .map((c) => c.method + " " + c.path.split("?")[0]);
 
   // Remove: the machine's card offers it, and the removal is this server's.
   const only = page.locator('[data-plugin="office-only"]');
@@ -261,8 +272,5 @@ test("the market writes a machine's server modules into this server's Project ta
   await page.getByRole("dialog").getByRole("button", { name: "Install", exact: true }).click();
   await expect.poll(() => listedFor("@example/office-tool")).toEqual([office]);
   expect(writes()).toEqual(["DELETE " + tables, "POST " + tables]);
-  expect(frame.calls.find((c) => c.method === "POST" && c.path === tables)?.body).toEqual({
-    specifier: "@example/office-tool@1.0.0",
-    machineId: office,
-  });
+  expect(sent[1]?.body).toEqual({ specifier: "@example/office-tool@1.0.0", machineId: office });
 });
