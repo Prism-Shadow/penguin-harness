@@ -673,7 +673,10 @@ describe("resumeTrace over a closed context (replay rule 1)", () => {
 
   it.each([
     ["Task records", () => [taskEnd(), taskBegin()]],
-    ["a stop hook's record", () => [hookEvent({ hook: "stop", name: "goal", output: { round: 2 } })]],
+    [
+      "a stop hook's record",
+      () => [hookEvent({ hook: "stop", name: "goal", output: { round: 2 } })],
+    ],
     ["a completed switch's session_update", () => [sessionUpdate(target)]],
     [
       "a first run stopped during its MCP connect",

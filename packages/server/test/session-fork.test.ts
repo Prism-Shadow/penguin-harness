@@ -340,7 +340,10 @@ describe("session fork", () => {
     await fs.appendFile(
       file,
       JSON.stringify(
-        at("2026-08-14T11:00:00.000Z", sessionUpdate({ provider: "custom", model_id: "fork-model-b" })),
+        at(
+          "2026-08-14T11:00:00.000Z",
+          sessionUpdate({ provider: "custom", model_id: "fork-model-b" }),
+        ),
       ) + "\n",
       "utf8",
     );
