@@ -452,7 +452,7 @@ Project、Project 成员，以及保存在 `.project_config.toml` 中的 Project
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/api/projects/:projectId/models` | 列出模型（`api_key` 做掩码处理）；正在促销的条目会带上促销折扣 `discount`。连接与注册表参考价不匹配的条目会带上 `referencePriceEligible: false` |
+| GET | `/api/projects/:projectId/models` | 列出模型（`api_key` 做掩码处理）；正在促销的条目会带上促销折扣 `discount` |
 | PUT | `/api/projects/:projectId/models` | 整表替换，以 `(provider, modelId)` 为键；条目的 `discount` 用来保存或清除它的促销 |
 | PUT | `/api/projects/:projectId/models/providers/:provider` | 逐字段设置或清除一个分组在 `[providers.<provider>]` 里的连接信息：`{apiKey?, clearApiKey?, baseUrl?, clientType?}`（`null` 清除该项）→ 模型表 |
 | POST | `/api/projects/:projectId/models/sync-presets` | 按内置目录**同步新增模型**或**恢复默认**：`{mode: add\|restore}` → 模型表，外加 `added` 与 `restored` 计数 |

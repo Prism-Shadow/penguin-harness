@@ -36,7 +36,6 @@ export * from "./server-session.js";
 export * from "./company.js";
 export * from "./browser.js";
 export * from "./browser-output.js";
-export { registerModelToolTransport } from "./model-tool-client.js";
 export * from "./commands/browser.js";
 export * from "./commands/agent.js";
 export * from "./commands/cost.js";

@@ -4,7 +4,6 @@
 import type {
   ListEndpointModelsOptions,
   ModelRequestContext,
-  ModelOperation,
   ModelRef,
   PluginTables,
   ProjectConfig,
@@ -447,13 +446,6 @@ export abstract class ProjectLifecycle {
   abstract removeMember(userId: string, projectId: string, targetUserId: string): void;
 }
 
-export interface CapabilitySettingsPatch<
-  Op extends ModelOperation = Exclude<ModelOperation, "t2t" | "i2t">,
-> {
-  bindings?: Partial<Record<Op, ModelRefDto | null>>;
-  voicePolish?: { enabled?: boolean; model?: ModelRefDto | null; prompt?: string | null };
-}
-
 /** ProjectConfigStore: the mechanism ProjectConfigService implements. */
 @Interface()
 export abstract class ProjectConfigStore {
@@ -469,11 +461,6 @@ export abstract class ProjectConfigStore {
   abstract setName(projectId: string, name: string): Promise<void>;
   abstract getDefaultModelRef(projectId: string): Promise<ModelRef | undefined>;
   abstract setDefaultModelRef(projectId: string, ref: ModelRefDto): Promise<ModelRefDto>;
-  abstract loadCapabilityModel(projectId: string, ref: ModelRefDto): Promise<ProjectConfig>;
-  abstract patchCapabilitySettings(
-    projectId: string,
-    patch: CapabilitySettingsPatch<ModelOperation>,
-  ): Promise<void>;
   abstract getChatDefaults(projectId: string): Promise<ChatDefaultsDto>;
   abstract setChatDefaults(projectId: string, req: ChatDefaultsDto): Promise<ChatDefaultsDto>;
   /** The `[plugins]` key: the shared table and each machine's own, package name → requirement, in the file's order. */

@@ -7317,18 +7317,3 @@ export interface DesktopBrowserEventMessage {
   type: "desktop-browser-event";
   event: DesktopBrowserEvent;
 }
-
-export type {
-  Capability,
-  CapabilityArtifact,
-  CapabilityResult,
-  CapabilityRunRequest,
-  AvailableCapability,
-  CapabilityCliReply,
-  CapabilitySettings,
-  CapabilitySettingsPatch,
-  CapabilityUsage,
-  ToolModelKey,
-  ToolModelSettings,
-  ToolModelSettingsPatch,
-} from "./capabilities.js";

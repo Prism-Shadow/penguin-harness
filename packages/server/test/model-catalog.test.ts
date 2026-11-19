@@ -7,7 +7,6 @@
  * Given OpenCode Go's group key, Gemini 4 Argon Contributor streams a tool call through
  * Go's generateContent endpoint with the group key and conversation header, never Google's API.
  */
-import { listSupportedModels } from "@prismshadow/mmsp";
 import { describe, expect, it, vi } from "vitest";
 import { CLIENT_CREDENTIALS } from "@prismshadow/mmsp/credentials";
 import { stubFetch } from "./fixtures/fetch.js";
@@ -35,7 +34,6 @@ import {
   catalogGroupConnection,
   catalogModelEntries,
   effectivePricing,
-  toolPricingFor,
   fastModeProtocol,
   isAddableGroup,
   isVendorGroup,
@@ -93,40 +91,6 @@ function rowEnvKey(m: { modelId: string; clientType?: string }): string | undefi
 }
 
 describe("model-catalog", () => {
-  it("tracks each Jina MMSP reference by model, protocol and endpoint", () => {
-    const registry = listSupportedModels("USD");
-    for (const [id, endpoint] of [
-      ["jina-search", "https://s.jina.ai"],
-      ["jina-fetch", "https://r.jina.ai"],
-    ] as const) {
-      const row = catalogEntryFor("jina", id);
-      const reference = registry.find(
-        (model) =>
-          model.model === id && model.client === "jina-webtool" && model.base_url === endpoint,
-      )?.pricing;
-      expect(reference).toBeDefined();
-      const price = toolPricingFor(row, { baseUrl: endpoint + "/", clientType: "jina-webtool" });
-      expect(price).toMatchObject({
-        source: "mmsp",
-        currency: reference!.currency,
-        rates: [
-          { unit: "inputTokens", amount: reference!.prompt_tokens },
-          { unit: "thoughtTokens", amount: reference!.thoughts_tokens },
-          { unit: "textOutputTokens", amount: reference!.response_tokens },
-        ],
-      });
-      for (const suffix of ["/proxy", "?via=reseller", "#proxy"])
-        expect(toolPricingFor(row, { baseUrl: endpoint + suffix })).toBeUndefined();
-      expect(toolPricingFor(row, { baseUrl: endpoint, clientType: "mmsp" })).toBeUndefined();
-      expect(
-        toolPricingFor(row, {
-          baseUrl: id === "jina-search" ? "https://r.jina.ai" : "https://s.jina.ai",
-        }),
-      ).toBeUndefined();
-      expect(toolPricingFor(catalogEntryFor("custom", id))).toBeUndefined();
-    }
-  });
-
   it("(provider, model_id) pairs are unique, and the one recommended group leads the default order with custom last", () => {
     // Bare model ids may repeat across providers (a gateway reselling a vendor model keeps the
     // vendor's upstream id) — uniqueness is the (provider, model_id) pair, matching the
@@ -341,11 +305,6 @@ describe("model-catalog", () => {
       "Qwen/Qwen3.8-Flash-Next",
     ]);
     for (const m of MODEL_CATALOG) {
-      if (m.capability) {
-        // Media and web tools do not have a conversational context limit or a chat tariff.
-        expect(m.pricing).toBeUndefined();
-        continue;
-      }
       if (m.pricing === undefined) {
         expect(UNPRICED.has(m.modelId), m.modelId).toBe(true);
       } else if (
@@ -716,12 +675,7 @@ describe("MMSP's clients as the catalog reads them", () => {
       const official = vendorClientType(id)!;
       expect(CLIENT_CREDENTIALS[official], id).toBeDefined();
       for (const m of MODEL_CATALOG.filter((row) => row.provider === id)) {
-        const routed = routedClientType(m.modelId, null);
-        if (m.capability)
-          expect(CLIENT_CREDENTIALS[routed!]?.apiKeyEnv).toBe(
-            CLIENT_CREDENTIALS[official]!.apiKeyEnv,
-          );
-        else expect(routed, `${id}/${m.modelId}`).toBe(official);
+        expect(routedClientType(m.modelId, null), `${id}/${m.modelId}`).toBe(official);
       }
     }
     for (const id of ["penguin-go", "tokendance", "openrouter", "vllm", "custom", "my-group"]) {
@@ -756,14 +710,6 @@ describe("MMSP's clients as the catalog reads them", () => {
         // same split as custom.
         expect(env!.envKey, m.modelId).toBe("ANTHROPIC_API_KEY");
         expect(env!.envBaseUrlKey, m.modelId).toBe("ANTHROPIC_BASE_URL");
-        continue;
-      }
-      if (
-        m.provider === "tokendance" &&
-        (m.clientType === "deepseek-webtool" || m.clientType === "deepseek-transcription")
-      ) {
-        expect(env!.envKey).toBe("DEEPSEEK_API_KEY");
-        expect(env!.envBaseUrlKey).toBe("DEEPSEEK_BASE_URL");
         continue;
       }
       if (m.provider === "opencode-go" && m.clientType === "google-genai") {
@@ -1206,16 +1152,7 @@ describe("off-peak schedules", () => {
  *   a base URL MMSP refuses; the endpoint's variable only with no base URL anywhere.
  */
 describe("environment variable names (what MMSP's routed client reads)", () => {
-  const VENDORS = [
-    "jina",
-    "deepseek",
-    "google",
-    "openai",
-    "anthropic",
-    "zhipu",
-    "moonshot",
-    "minimax",
-  ];
+  const VENDORS = ["deepseek", "google", "openai", "anthropic", "zhipu", "moonshot", "minimax"];
 
   it("under a new Project's tables, every vendor preset reads its vendor's variable and no gateway preset reads any", () => {
     const table = presetProviderTable();

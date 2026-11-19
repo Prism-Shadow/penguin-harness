@@ -96,17 +96,6 @@ CREATE TABLE IF NOT EXISTS sessions (
   created_at    TEXT NOT NULL
 );                                            -- the Session's SOURCE (user/api/schedule/subagent/cli/company) is NOT stored: session_meta in the Trace is the single source of truth (see runtime/session-sources.ts); "client" is a different, DB-only axis (who created the row), read for the source only where the Trace records none ('org' → company)
 CREATE INDEX IF NOT EXISTS idx_sessions_agent_created ON sessions(project_id, agent_id, created_at DESC);
-CREATE TABLE IF NOT EXISTS capability_runs (
-  id TEXT PRIMARY KEY,
-  project_id TEXT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
-  session_id TEXT,
-  created_at TEXT NOT NULL,
-  status TEXT NOT NULL,
-  data TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS capability_runs_project_time ON capability_runs(project_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS capability_runs_session_time ON capability_runs(project_id, session_id, created_at DESC);
-
 CREATE TABLE IF NOT EXISTS usage_records (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,
   ts                TEXT NOT NULL,

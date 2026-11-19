@@ -49,7 +49,6 @@ import { WeChatScanTransportProvider } from "./runtime/messaging/wechat-scan.js"
 import { PluginConfig, PluginConfigProvider } from "./plugin/config.js";
 import { PluginConfigAdmin, PluginConfigPage } from "./plugin/config-page.js";
 import { IndexSources, PluginIndexSettings, StoredIndexSources } from "./plugin/index-config.js";
-import { ModelCapabilities, ModelCapabilitiesProvider } from "./cli/model-capabilities.js";
 import { PluginCliCommandsProvider } from "./plugin/cli-commands.js";
 import { ToolModelBindings, ToolModelBindingsProvider } from "./services/tool-model-bindings.js";
 import {
@@ -552,13 +551,12 @@ export class CompanyModule {}
     NpmPluginPackages,
     InstalledPluginRoutes,
     PluginCliCommandsProvider,
-    ModelCapabilitiesProvider,
     PluginUiRoutes,
     SuggestIdRoutes,
     LanguagesModule,
     LanguageRoutes,
   ],
-  exports: [Http, WebShell, UpdateCheck, ModelCapabilities],
+  exports: [Http, WebShell, UpdateCheck],
 })
 export class ApiModule {}
 

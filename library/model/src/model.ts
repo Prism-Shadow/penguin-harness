@@ -76,10 +76,6 @@ export interface PlatformModelApplyResult {
 // ---------------------------------------------------------------------------
 
 export interface ModelInfo {
-  /** False for models dedicated to tools rather than chat. */
-  chatEligible?: boolean;
-  /** False when the effective project or environment connection differs from the registry's quoted upstream. */
-  referencePriceEligible?: false;
   /** Provider group id (anthropic / openai / …, see core's MODEL_PROVIDERS; custom models use `custom`). */
   provider: string;
   /** Upstream model id (the request id actually sent to MMSP); paired with `provider` forms the entry's unique key. */
@@ -241,8 +237,6 @@ export interface ModelUpdateEntry {
 }
 
 export interface ModelsUpdateRequest {
-  /** Use this newly added model only if chat has no default and the model can hold a conversation. */
-  initialChatModel?: ModelRefDto;
   /** Must be included in models (matched by paired reference). */
   defaultModel?: ModelRefDto;
   /** Vision model used as a proxy reader for read_file: must be included in models and not annotated vision=false; omitted keeps the existing value. */
