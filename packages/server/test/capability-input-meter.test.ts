@@ -104,7 +104,7 @@ describe("tool input meters", () => {
       unit: "billed_character",
       quantity: 3,
     });
-    expect((await run("fish-audio/drama-3", "openai-speech", item)).inputMeter).toEqual({
+    expect((await run("custom-speech-alias", "openai-speech", item)).inputMeter).toEqual({
       unit: "utf8_byte",
       quantity: 4,
     });
