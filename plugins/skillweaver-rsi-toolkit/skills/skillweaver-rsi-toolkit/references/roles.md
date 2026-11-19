@@ -11,7 +11,7 @@ Read <SKILL_DIR>/references/roles.md, section "Proposer", and act as the SkillWe
 library: <APIS>/INDEX.md
 site_knowledge: <LIBRARY>/site.md
 page_text: <OUT>/iter_<n>/page.txt
-screenshot: <OUT>/iter_<n>/page.png
+screenshot: <OUT>/iter_<n>/page.png, or none
 live_site: <true|false>
 ```
 
@@ -31,7 +31,7 @@ Test iterations. Upstream: `generate_practice_args.md`, `_generate_test_case_arg
 Read <SKILL_DIR>/references/roles.md, section "Tester", and act as the SkillWeaver test-argument generator. Reply with the JSON only.
 api: <APIS>/<name>.mjs
 page_text: <OUT>/iter_<n>/page.txt
-screenshot: <OUT>/iter_<n>/page.png
+screenshot: <OUT>/iter_<n>/page.png, or none
 ```
 
 As the Tester, you are a web agent learning how to use this website. The API file holds an untested automation: its `meta` gives its name, documentation, parameters and usage log. Because it is untested, you want to test it now. Generate reasonable arguments for every parameter, based on what the page shows: values that exist on the website. Test new arguments when the usage log shows that some have been tried already. Reply `{"step_by_step_reasoning": "…", "args": {<one value per parameter of meta.params, of its type>}}`.
