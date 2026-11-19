@@ -1,7 +1,7 @@
 ---
 name: skillweaver-rsi-toolkit
 description: Run SkillWeaver (Zheng et al. 2025) on an agent - let it explore a website on its own, propose skills worth having, practise them, and hone the successful ones into tested, reusable API scripts in a skill library, then freeze the library and measure it on a published Benchmark of tasks on that site. Use when asked to make an agent better at a website by learning skills or APIs from self-directed practice.
-version: 2026.11.18.1
+version: 2026.11.20.1
 ---
 
 # SkillWeaver
@@ -80,7 +80,7 @@ Follow `references/initialization.md`. It creates the empty skill library Skill 
 
 ## Measure
 
-With a `benchmark_id`, every measurement is a full case × `runs` matrix through `references/evaluation.md`, following its controller section, and lands in that Benchmark's `scoreboard.yaml`. Measure H1 before the first practice cell. A prior record is reusable only when its State version, case set, runtime and runs all match. Practice cells are never scored and never enter a scoreboard.
+With a `benchmark_id`, every measurement is a full case × `runs` matrix through `references/evaluation.md`, following its controller section, and lands in that Benchmark's `scoreboard.yaml`. Measure H1 before the first practice cell. A prior record is reusable only when its State version, case set, runtime and runs all match. Practice cells are never scored and never enter a scoreboard. Before and after each measurement matrix, record `TOOL fingerprint STATE`. The Target must keep its State read-only, including memory, throughout measurement. If the fingerprint changes, retain the records, mark the matrix invalid, and stop.
 
 ### The same site for both measurements
 
@@ -91,6 +91,7 @@ Practice changes a sandboxed site (it creates, edits and filters data), so H1 an
 These are the checks the run enforces itself, not instructions to anyone:
 
 - **The library changes only through Publish.** After every Publish, record `TOOL fingerprint LIBRARY` in `OUT/state.yaml`. Before and after every practice cell and every role call, compute it again; any difference you did not publish is a stop (`a Target edit to LIBRARY` or `a role edit to LIBRARY`), and the changed files are named in the report.
+- **No Target State changes during a practice cell.** Immediately before and after each practice cell, save `TOOL fingerprint STATE` in that iteration's records, in addition to the library fingerprint. If the State differs (including memory), record the changed paths and stop before judging or publishing. The check detects changes after execution and does not restrict the Target's tools.
 - **The runtime is the shipped one.** Before every practice cell, `TOOL verify-runtime APIS` must report no problem.
 - **Every API passed the checker.** Only files `TOOL check` accepted are registered, and `INDEX.md` lists registered APIs only.
 
@@ -118,7 +119,7 @@ A practice cell is one execution of the Target in a fresh Workspace, the launche
 Website: <site_url>
 Task: <the proposed skill, or "Test the API <name> with the arguments <json>">
 
-Do this in the agent browser with `penguin browser`, on this website only. Use at most 10 browser actions.
+Do this in the agent browser with `penguin browser`, on this website only. Use at most 10 browser actions. Your Agent State is read-only for this task, including its memory and memory index. Do not save observations, corrections, or discoveries to memory. Write any task output only in this Workspace.
 <for a test: Call it exactly as INDEX.md describes, with these arguments, and report its output.>
 <when live_site: Do not create accounts, publish or submit content, reserve anything, contact support, or do anything else that could affect other users of the website; stop instead.>
 When you are done, try `penguin browser screenshot -o final.png` in this Workspace (skip it if it fails; it is optional) and say in one or two sentences what you did and whether it worked.
@@ -139,7 +140,7 @@ A reply that adds nothing that passes publishes nothing. There is no cap on the 
 
 ### Stops
 
-Stop when the budget is spent, when the browser stays unavailable, when an integrity check fails, on `version_changed` or `benchmark_invalid`, on an `evaluation_failed` with no repair left, on a runtime mismatch, on a Target edit to `LIBRARY`, and when a Benchmark case, a rubric or a score enters a role's context (discard that output as contaminated). The last published State stays; never publish a partial or contaminated change, and say what stopped the run.
+Stop when the budget is spent, when the browser stays unavailable, when an integrity check fails, on `version_changed` or `benchmark_invalid`, on an `evaluation_failed` with no repair left, on a runtime mismatch, on a Target edit to State during practice, when a role Trace shows it drove the website or executed a candidate API (discard the role output before Publish), and when a Benchmark case, a rubric or a score enters a role's context (discard that output as contaminated). The last published State stays; never publish a partial or contaminated change, and say what stopped the run.
 
 ## Freeze and report
 
@@ -152,5 +153,5 @@ Report:
 - the practice log iteration by iteration (explore or test, the task, the Judge's verdict, what was published);
 - with a Benchmark, the baseline and final scores per case, and the APIs the Traces show the Target calling (a read is not a use, and a use is not a gain); without one, that nothing was measured;
 - the cost of every role and cell from the Sessions' recorded usage, including retried iterations, failed cells, the Synthesiser's regeneration rounds and role output discarded as contaminated;
-- what is enforced and what is only an instruction: the library fingerprint, the runtime check and the code check are enforced by this run; the roles' read limits, the live-site safety rules, the 10-action limit and the Target's duty not to edit its State are instructions the Traces can show being followed or broken but nothing prevents. The code check is a quality gate, not a sandbox: an API runs with the same rights as the Target's own shell;
+- what is enforced and what is only an instruction: the library fingerprint, the State fingerprints around practice cells and measurement matrices, the runtime check and the code check are checked at run time; role scope, live-site safety rules, the 10-action limit and the Target's duty to keep State read-only during execution are instructions. A role's Trace can show out-of-scope actions, but the audit does not prevent them. The code check is a quality gate, not a sandbox: an API runs with the same rights as the Target's own shell;
 - the source links and revision, and every adaptation: APIs are Node scripts over `penguin browser`, not Playwright Python; the agent is the Target with its own tools, not upstream's code-generating agent, and the 10-action limit is an instruction, not enforced; the Target picks APIs by reading `INDEX.md`, not through upstream's retrieval call; the success checker is an agent Judge on the Trace and, when one could be taken, the final screenshot, where the paper's reward model also sees a screenshot per step; the Proposer and Tester see a screenshot only when the browser could render one (a page outside the Browser panel cannot), else the page text alone; exploration is sequential, one attempt per iteration; the paper's information-seeking proposals and scraping prompts (§2.1, Appendix A.7) are not used, as upstream's exploration loop does not load them at this revision; upstream repairs a failing locator inside the call (`allow_recovery`) and feeds those repairs to the update, while here the Target works around a failing call with its own tools and the Synthesiser updates the API from that Trace. This is not a reproduction of the paper's WebArena numbers.

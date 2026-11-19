@@ -2,6 +2,10 @@
 
 Every role is one `run_subagent` call (omit `agent_id`, so the role is your own Agent and can read this file), each in a fresh context, on your own model. Its prompt is the block given below with the paths filled in, and nothing else: no advice, scores, Benchmark cases or other iterations' outcomes. A role reads only the inputs its block names and replies as it says; keep each request and raw reply in `OUT/iter_<n>/`. A reply that is not in the asked form is asked once more of the same role, never repaired by you. A role's read limits are instructions: nothing stops a role from reading more, so the controller checks what matters itself (the library fingerprint before and after each call, see the Skill's integrity checks) and discards an output whose Trace shows it read a Benchmark case, a rubric or a score. Paths are those of the Skill's "Paths and records". The instructions are adapted from upstream's `skillweaver/templates/` (see `source-notes.md`).
 
+The website is operated only by the controller's home-page step and by the Target in a practice or test cell. In all four roles, do not use `penguin browser`, Playwright, `curl`, HTTP requests, or any other means to access the site. Work from the supplied files. When a Trace is needed, local commands may extract information from that named Trace without running anything recorded in it. The Synthesiser must not run a candidate, invoke the checker, or stage a test runtime. The controller checks candidates during Publish, and a later Target cell tests a registered API. Before using a role reply, inspect the role Trace for site access or candidate execution. If either occurred, preserve the request, raw reply and offending tool call, discard the output, and stop the run.
+
+Validate the complete final assistant reply. Streaming tool output can include intermediate assistant narration or tool events. Use the role's final assistant text from its Trace when the output stream does not delimit it. If the final text contains prose around the JSON, ask the same role to resend it as specified.
+
 ## Proposer
 
 Explore iterations. Upstream: `propose_skill.md`, `_choose_explore_task`.
@@ -54,7 +58,7 @@ As the Judge, observe the action log of someone using a computer: the tool calls
 Every attempt the Judge admits. Upstream: `kb_procedural_update_base.md`, `kb_procedural_update_single.md`, `kb_semantic_update.md`, `KnowledgeBase.update`.
 
 ```text
-Read <SKILL_DIR>/references/roles.md, section "Synthesiser", and act as the SkillWeaver API synthesiser. Reply as it says.
+Read <SKILL_DIR>/references/roles.md, section "Synthesiser", and act as the SkillWeaver API synthesiser. Work offline from the supplied files. Do not browse, execute or test your scripts, or invoke the checker. Reply as the format specifies.
 format: <SKILL_DIR>/references/api-format.md
 library: <APIS>/INDEX.md
 api_sources: <the APIs that are tested, and every API the Trace shows being called: APIS/<name>.mjs, …>
