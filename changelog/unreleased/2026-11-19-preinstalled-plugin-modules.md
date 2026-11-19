@@ -3,6 +3,7 @@
 - **Date:** 2026-11-19
 - **Type:** feature
 - **Scope:** `server`, `db`, `docs`
+- **PR:** [#1642](https://github.com/Prism-Shadow/penguin-harness/pull/1642)
 
 [中文版](2026-11-19-preinstalled-plugin-modules.zh.md)
 
