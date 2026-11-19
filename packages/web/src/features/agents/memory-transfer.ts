@@ -20,7 +20,7 @@ import { S } from "../../lib/strings";
 const SCOPE_FORMAT: MemoryScopeExport["format"] = "penguin-memory-scope";
 /**
  * The JSON document an export wrote before the zip; the server still imports it. Retired with
- * the server's reader at 1.0 (server services/memory-transfer-document.ts says what goes).
+ * the server's reader at 1.0 (the agent domain library's memory-transfer-document says what goes).
  */
 const SCOPE_FORMAT_VERSION: MemoryScopeExport["version"] = 1;
 

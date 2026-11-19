@@ -28,7 +28,7 @@ import { resolveConnection } from "../connection.js";
 import { zipFolder } from "../zip-folder.js";
 import type { Messages } from "../i18n.js";
 
-/** The server's caps on an Agent package (its services/agent-zip.ts). */
+/** The server's caps on an Agent package (the agent domain library's agent-zip). */
 const AGENT_CAPS = {
   files: 20_000,
   fileBytes: 512 * 1024 * 1024,

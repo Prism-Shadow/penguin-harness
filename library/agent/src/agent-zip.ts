@@ -13,7 +13,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { unzipSync } from "fflate";
-import { HttpError, badRequest } from "../http/errors.js";
+import { HttpError, badRequest } from "@prismshadow/penguin-library-http";
 import { assertSafeEntryPath } from "@prismshadow/penguin-library-http/skill-import-limits";
 import {
   assertDistinctPaths,

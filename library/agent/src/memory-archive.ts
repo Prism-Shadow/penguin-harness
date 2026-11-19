@@ -15,7 +15,7 @@
 import { isUtf8 } from "node:buffer";
 import { zipSync } from "fflate";
 import { MEMORY_INDEX_FILENAME } from "@prismshadow/penguin-core";
-import { HttpError, badRequest } from "../http/errors.js";
+import { HttpError, badRequest } from "@prismshadow/penguin-library-http";
 import {
   MAX_ARCHIVE_BYTES,
   MAX_FILE_BYTES,
