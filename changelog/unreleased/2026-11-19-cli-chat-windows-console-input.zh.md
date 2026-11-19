@@ -3,6 +3,7 @@
 - **Date:** 2026-11-19
 - **Type:** fix
 - **Scope:** `cli`
+- **PR:** [#1634](https://github.com/Prism-Shadow/penguin-harness/pull/1634)
 - **Issue:** [#1629](https://github.com/Prism-Shadow/penguin-harness/issues/1629)
 
 [English](2026-11-19-cli-chat-windows-console-input.md)
