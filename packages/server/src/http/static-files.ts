@@ -1,7 +1,7 @@
 /**
- * Serving a file a package ships for an iframe: a workflow's `ui/` (workflows/routes.ts) and an
- * installed plugin's `ui/` (http/routes/plugin-ui.ts). One content-type table and one set of
- * response headers, so the two documents the app frames are served alike.
+ * Serving a file a workbench ships for its iframe (`workbenches/routes.ts`): a safe relative path
+ * checked against the workbench's `ui/` directory on both sides of symlinks, one content-type
+ * table, and revalidated response headers.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
