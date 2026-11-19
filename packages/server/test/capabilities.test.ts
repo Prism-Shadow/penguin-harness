@@ -219,7 +219,7 @@ describe("project model capabilities", () => {
       const reply = await api.post(capabilities + "/stt/run", { audio });
       expect(await reply.json()).toMatchObject({ model, text: "Transcribed" });
       const cli = await api.post(capabilities + "/cli", { args: ["stt", "sample.wav"], audio });
-      const started = await cli.json();
+      const started = (await cli.json()) as { result: { id: string } };
       expect(started).toMatchObject({ kind: "run", detached: false, result: { model } });
       await expect
         .poll(async () => (await api.get(capabilities + "/runs/" + started.result.id)).json())
