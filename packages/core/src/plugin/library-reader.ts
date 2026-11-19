@@ -34,6 +34,7 @@ import { formatFrontmatter } from "@prismshadow/skills";
 import { collectVaultRefs, resolveMCPServer } from "../environment/mcp/config.js";
 import type { HookCommand, QuickStart } from "./library.js";
 import { libraryContributions } from "./contributions.js";
+import { shipsServerModules } from "./kinds.js";
 import type { LibraryContributions, PluginMcpServer } from "./contributions.js";
 import { readPluginIcon } from "./icon.js";
 import type { IconImage } from "./icon.js";
@@ -140,6 +141,11 @@ export interface LibraryPlugin {
   mcpServers: PluginMcpServer[];
   /** The demo the Plugins page's quick start pre-fills (the card's `quickStart`, optional). */
   quickStart?: QuickStart;
+  /**
+   * Whether the package also ships server modules (./kinds.ts): a hybrid plugin, whose install on
+   * an Agent also asks for its modules to run on the Agent's server (PRFC-0031).
+   */
+  modules: boolean;
 }
 
 /** Reads one root: a shipped plugin that will not read throws; an installed one is left out (null) with a warning. */
@@ -459,6 +465,8 @@ function readPluginDir(name: string, root: LibraryRoot): LibraryPlugin {
     ...(workbenches.length > 0 ? { workbenches } : {}),
     mcpServers,
     ...(quickStart !== undefined ? { quickStart } : {}),
+    // From the table already read and the entry's existence: no extra read of any Skill.
+    modules: shipsServerModules(dir, table),
   };
 }
 

@@ -229,6 +229,24 @@ CREATE TABLE IF NOT EXISTS server_settings (   -- admin-level server-global sett
   key   TEXT PRIMARY KEY,                     -- setting name, e.g. 'proxy_for_app'
   value TEXT NOT NULL                         -- JSON-encoded value; an absent row means the setting's built-in default
 );
+CREATE TABLE IF NOT EXISTS plugin_module_requests ( -- who asked this server to run a plugin's server module, and what an administrator decided; one row per package. The record of asks and decisions, not of what runs: the plugin tables are that
+  package      TEXT PRIMARY KEY,              -- npm package name, as a plugin table lists it
+  plugin       TEXT NOT NULL,                 -- the library plugin's name, for display
+  project_id   TEXT REFERENCES projects(project_id) ON DELETE SET NULL, -- whose table lists it, or will; NULL once that Project is gone, and for a preinstalled module (every Project's)
+  agent_id     TEXT,                          -- the Agent whose install asked first; display only
+  requested_by TEXT NOT NULL,                 -- user id; '' when no person was behind it (company mode's reconcile, a preinstall's one-time listing)
+  requested_at TEXT NOT NULL,
+  decision     TEXT,                          -- NULL pending | 'enabled' | 'declined'
+  decided_by   TEXT,                          -- equals requested_by when nobody else had to decide
+  decided_at   TEXT,
+  via          TEXT                           -- how it was enabled: 'builtin' | 'admin' | 'approval'; NULL while pending or declined
+);
+CREATE TABLE IF NOT EXISTS plugin_module_preinstalls ( -- the preinstalled built-in modules this server has handled for each Project (PRFC-0030): listed in its own table once, or passed over for good. A Project with a row never gets the one-time listing of that package again, so an administrator's removal stands
+  package    TEXT NOT NULL,                   -- npm package name, as a plugin table lists it
+  project_id TEXT NOT NULL,                   -- the Project directory's id; no foreign key: a directory the CLI made has no row yet
+  listed_at  TEXT NOT NULL,                   -- when this server handled the pair
+  PRIMARY KEY (package, project_id)
+);
 CREATE TABLE IF NOT EXISTS machine (           -- this server's OWN identity, minted here and never assigned from outside (what 'penguin server status' reports)
   singleton  INTEGER PRIMARY KEY CHECK (singleton = 1),  -- exactly one row, enforced by the schema rather than by convention
   machine_id TEXT NOT NULL                    -- 16 base64url characters; what every stored reference to this machine points at

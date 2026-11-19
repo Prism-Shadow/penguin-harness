@@ -265,6 +265,8 @@ describe("organization routes", () => {
         ownerProject,
         { orgId: "acme", mission: "Build a marketplace", name: "Acme" },
         "olivia",
+        // Who creates it, for the CEO's plugins' server modules.
+        { userId: "olivia", isAdmin: false },
       ],
     });
   });
@@ -279,7 +281,12 @@ describe("organization routes", () => {
     ).toBe(201);
     expect(calls.at(-1)).toMatchObject({
       method: "create",
-      args: [ownerProject, { orgId: "acme", mission: "做一个市场", language: "zh" }, "olivia"],
+      args: [
+        ownerProject,
+        { orgId: "acme", mission: "做一个市场", language: "zh" },
+        "olivia",
+        { userId: "olivia", isAdmin: false },
+      ],
     });
     expect((await owner.patch(`${base}/acme`, { language: "de" })).status).toBe(400);
     expect((await owner.patch(`${base}/acme`, { language: "en" })).status).toBe(200);
