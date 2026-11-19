@@ -27,6 +27,7 @@
  * caught by the stat. The cached table is shared between callers and must be treated
  * as immutable — every mutating method here copies before changing.
  */
+import { CLIENT_CREDENTIALS } from "@prismshadow/mmsp/credentials";
 import { projectPluginTables } from "../plugin/project-defaults.js";
 import type { CapabilitySettingsPatch, ModelOperation } from "../api/capabilities.js";
 import {
@@ -111,6 +112,7 @@ import {
   unroutableVendorModel,
   vendorClientType,
 } from "../model-catalog/catalog.js";
+import { toolPricingFor } from "../model-catalog/tool-pricing.js";
 import { clientEnvKey, modelEnvPreviewKey } from "../model-catalog/env-keys.js";
 import {
   catalogGroupConnection,
@@ -1731,7 +1733,17 @@ export class ProjectConfigService implements ProjectConfigStore {
               ? { apiKeyMasked: envKeyMasked }
               : {}),
         };
+        const registry =
+          cat?.toolPricing?.source === "mmsp" ? cat.toolPricing.registryRoute : undefined;
+        const referenceMismatch =
+          registry &&
+          !toolPricingFor(cat, {
+            clientType: eff.clientType,
+            baseUrl:
+              eff.baseUrl || process.env[CLIENT_CREDENTIALS[registry.clientType]!.baseUrlEnv],
+          });
         const info: ModelInfo = {
+          ...(referenceMismatch ? { referencePriceEligible: false as const } : {}),
           ...(!chatEligibleForConnection(provider, modelId, eff.clientType)
             ? { chatEligible: false }
             : {}),

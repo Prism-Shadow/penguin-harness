@@ -24,3 +24,5 @@ Project owners can edit the instructions for polishing voice transcripts and res
 A dedicated image, video, speech or web tool can be assigned to its own operation. New chats use a model that supports conversation.
 
 The tool catalog also includes seller rates for transcription, speech synthesis, image and video generation, and web requests in their original billing units.
+
+Jina Search and Reader use MMSP’s reference of US$0.05 per million reported input tokens on their official endpoints. Jina account plans determine the actual charge.

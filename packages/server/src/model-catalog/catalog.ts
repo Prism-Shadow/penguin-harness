@@ -826,6 +826,21 @@ export function effectivePricing(
   };
 }
 
+// Jina sells account-specific token packages. MMSP publishes reference rates for these two
+// official routes at https://mmsp.penguin.ooo/models/ in its usage_metadata token buckets.
+function jinaReferencePrice(baseUrl: string): ToolPricing {
+  return {
+    source: "mmsp",
+    registryRoute: { clientType: "jina-webtool", baseUrl },
+    currency: "USD",
+    rates: [
+      { unit: "inputTokens", amount: 0.05 },
+      { unit: "thoughtTokens", amount: 0 },
+      { unit: "textOutputTokens", amount: 0 },
+    ],
+  };
+}
+
 const seedreamLiteYuanPerImage = 0.22;
 
 /**
@@ -3879,6 +3894,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   {
     provider: "jina",
     modelId: "jina-search",
+    toolPricing: jinaReferencePrice("https://s.jina.ai"),
     displayName: "Jina Search",
     capability: "search",
     supportsVision: false,
@@ -3886,6 +3902,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   {
     provider: "jina",
     modelId: "jina-fetch",
+    toolPricing: jinaReferencePrice("https://r.jina.ai"),
     displayName: "Jina Reader",
     capability: "fetch",
     supportsVision: false,
