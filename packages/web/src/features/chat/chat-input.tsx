@@ -174,6 +174,7 @@ import {
 
 import { isStopAction, midRunAction } from "./composer-send";
 import { composerNotice } from "./composer-notice";
+import { RefusedHandoffNotice } from "./refused-handoff-notice";
 import { FileDropZone } from "./drop-zone";
 import { ContextGauge } from "./context-gauge";
 import { splitDroppedFiles } from "../../lib/file-drop";
@@ -598,6 +599,7 @@ export function ChatInput({
   onChangeCompactionLimit,
   onOpenAgentSettings,
   refusalHandoff,
+  onShowRefusal,
   contextNow,
   contextStale = false,
   sessionId,
@@ -778,8 +780,13 @@ export function ChatInput({
   onChangeCompactionLimit?: (maxContextLength: number) => Promise<void>;
   /** Opens the Session Agent's settings, where the compaction threshold is edited: the attention notice's action. */
   onOpenAgentSettings?: () => void;
-  /** The Session's refusal hand-off occurrence (`refusalHandoffOccurrence`), raising its notice; absent off session state. */
-  refusalHandoff?: string | null;
+  /**
+   * The Session's refusal hand-off (`refusalHandoff`): its occurrence, and the provider's words
+   * when it sent any, raising its notice; absent off session state.
+   */
+  refusalHandoff?: { occurrence: string; message?: string } | null;
+  /** Opens the refused request's failure details from the notice's 「[详情]」; absent where the host cannot show them. */
+  onShowRefusal?: () => void;
   /** Current context usage (total of the most recent main-session Request). */
   contextNow: number;
   /** After a successful compaction, before the next regular Request reports usage: usage is **unknown** (not 0); the ring is drawn empty and the value shown as `—`. */
@@ -2258,12 +2265,14 @@ export function ChatInput({
               }
             : {})}
         >
-          {attention.kind === "refused"
-            ? S.chat.contextRefusedHandoff
-            : S.chat.contextWindowUnderThreshold(
-                humanizeTokens(attention.window),
-                humanizeTokens(attention.threshold),
-              )}
+          {attention.kind === "refused" ? (
+            <RefusedHandoffNotice message={attention.message} onDetails={onShowRefusal} />
+          ) : (
+            S.chat.contextWindowUnderThreshold(
+              humanizeTokens(attention.window),
+              humanizeTokens(attention.threshold),
+            )
+          )}
         </Notice>
       )}
 
