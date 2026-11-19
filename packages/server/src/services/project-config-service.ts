@@ -29,7 +29,8 @@
  */
 import { projectPluginTables } from "../plugin/project-defaults.js";
 import type { CapabilitySettingsPatch, ModelOperation } from "../api/capabilities.js";
-import { applyCapabilitySettings } from "./capability-settings.js";
+import { applyCapabilitySettings, modelOperationsForConnection } from "./capability-settings.js";
+import { TRANSCRIPTION_PROBE_AUDIO } from "./transcription-probe.js";
 import type {
   ChatDefaultsDto,
   CommandPolicyDto,
@@ -83,6 +84,7 @@ import {
   effectiveConnection,
   groupKeyReaches,
   imageUrlMessage,
+  inlineData,
   metaMaxTokens,
   migrateProjectConfigTable,
   parseProviderTable,
@@ -1467,9 +1469,11 @@ export class ProjectConfigService implements ProjectConfigStore {
         maxTokens: req.speed ? 64 : 16,
         requestTimeoutMs: 20_000,
       });
-      const gen = llm.streamGenerate({
-        newMessages: [userText(req.speed ? SPEED_PROBE_PROMPT : PROBE_PROMPT)],
-      });
+      const transcription = modelOperationsForConnection(req.modelId, clientType).includes("stt");
+      const prompt = transcription
+        ? inlineData("user", TRANSCRIPTION_PROBE_AUDIO, "audio/ogg")
+        : userText(req.speed ? SPEED_PROBE_PROMPT : PROBE_PROMPT);
+      const gen = llm.streamGenerate({ newMessages: [prompt] });
       let sawContent = false;
       let firstContentAt: number | null = null;
       let outputTokens = 0;

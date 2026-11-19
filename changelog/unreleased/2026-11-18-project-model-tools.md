@@ -15,7 +15,7 @@ Use `penguin tools --help` to see which commands your Project’s plugins provid
 
 `penguin tools usage` shows the model, operation, reported token counts and observed units. `penguin tools artifacts` lists generated files. From an Agent terminal, both commands default to the calling Session. Tool and transcript-editing requests carry that same Session ID to MMSP for provider cache routing.
 
-For DeepSeek ASR, upload a 16-bit PCM WAV or an Ogg Opus recording. Penguin checks the format before calling the provider.
+For DeepSeek ASR, upload a 16-bit PCM WAV or an Ogg Opus recording. Penguin checks the format before calling the provider. Model connection tests send a short built-in speech sample to transcription models.
 
 Project tool models share a single `[tools]` table. The vision proxy uses `i2t`, and enabling transcript editing uses `t2t`. Existing bindings migrate on first read. The default chat model is selected separately. [Project tool model migration](2026-11-19-backward-compatibility.md)
 
