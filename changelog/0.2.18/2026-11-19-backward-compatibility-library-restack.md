@@ -12,14 +12,14 @@ The server's HTTP vocabulary (the unified error shape, request validation, the J
 Old import paths keep working, in two different ways:
 
 - **Package subpaths** that existed before — `@prismshadow/penguin-server/model-catalog`, `@prismshadow/penguin-server/api` — still export the moved names, re-exported from the library. Code importing these package paths runs unchanged.
-- **In-repo source paths** — the server source files the moved modules used to live in (`packages/server/src/http/errors.ts`, `packages/server/src/http/page-csp.ts`, and their siblings) — are now one-line re-export files. Code inside this repository that imports them relatively keeps resolving.
+- **In-repo source forwards** — the server source files a moved module's consumers still import (`packages/server/src/http/errors.ts`, `packages/server/src/http/validate.ts`, `packages/server/src/services/platform-auth-types.ts`, and the `services/*-service.ts` assemblies) — re-export or forward to the library. Code inside this repository that imports these paths keeps resolving.
 
-`services/platform-auth-types.ts` is the one deliberate exception: the file is deleted rather than re-exported, because the shapes it carried are single-sourced in the library's `platform-auth-flow`; the file is back as a pure re-export shim, so even this path resolves.
+Most of the moved modules' old source files are already gone: only the forwards above remain, and everything else now imports the library packages directly. `services/platform-auth-types.ts` is one of those forwards — its shapes are single-sourced in the library's `platform-auth-flow`, and the file only re-exports them.
 
 ### What you need to do
 
-If you import these modules, import them from the library packages instead — `@prismshadow/penguin-library-http` and `@prismshadow/penguin-library-model`. The new paths are where the modules live now; the old ones are only forwards.
+If you import these modules, import them from the library packages instead — `@prismshadow/penguin-library-http` and `@prismshadow/penguin-library-model`. The new paths are where the modules live now; the forwards exist only for the imports this repository has not moved over yet.
 
 ### Lifetime
 
-These re-export entries will be deleted in penguin v0.3. After that, importing a moved module from `@prismshadow/penguin-server` fails; import it from its library package.
+The remaining forwards will be deleted in penguin v0.3, together with the in-repo imports that still go through them. After that, importing a moved module from `@prismshadow/penguin-server` or from the old server source paths fails; import it from its library package.

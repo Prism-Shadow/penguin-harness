@@ -60,7 +60,7 @@ export function parseCookieHeader(header: string | null | undefined): Record<str
   return parse(header ?? "");
 }
 
-// The origin comparison lives with the public-origin rule (http/public-origin.ts); re-exported
+// The origin comparison lives with the public-origin rule (@prismshadow/penguin-library-http/public-origin); re-exported
 // for the callers that reach it here.
 export { isOwnOrigin } from "@prismshadow/penguin-library-http/public-origin";
 

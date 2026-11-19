@@ -98,7 +98,7 @@ export interface ServerConfig {
   portFile: string | null;
   /**
    * Trust `x-forwarded-proto` and `x-forwarded-host` from the request (PENGUIN_TRUST_PROXY=1),
-   * each only as a single value (http/public-origin.ts). Off by default: the headers are
+   * each only as a single value (@prismshadow/penguin-library-http/public-origin). Off by default: the headers are
    * caller-supplied, so on a non-loopback bind an untrusted caller could set the scheme to
    * `https` to walk through the hot-update network gate (hmr/routes.ts) while actually speaking
    * plaintext, get session cookies stamped `Secure` over plain HTTP, which the browser then never

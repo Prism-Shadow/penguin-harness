@@ -732,7 +732,7 @@ function staticResponse(
     "Cache-Control": cacheControlFor(servedPath),
     ETag: responseEtag,
   };
-  // The page's own policy (http/page-csp.ts), on HTML only: a header governs the document it
+  // The page's own policy (@prismshadow/penguin-library-http/page-csp), on HTML only: a header governs the document it
   // arrives with, and the scripts, stylesheets and fonts are not documents. On the 304 too: a
   // revalidation updates the stored response's headers, so a shell cached before the policy
   // existed picks it up without a re-download.
