@@ -142,6 +142,7 @@
   },
   "devDependencies": {
     "@prismshadow/penguin-hmr": "workspace:*",
+    "@prismshadow/penguin-library-agent": "workspace:*",
     "@prismshadow/penguin-library-agent-api": "workspace:*",
     "@prismshadow/penguin-library-auth": "workspace:*",
     "@prismshadow/penguin-library-db": "workspace:*",

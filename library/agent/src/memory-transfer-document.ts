@@ -7,8 +7,8 @@
  * reader's JSON branch (web features/agents/memory-transfer.ts) at 1.0's release preparation,
  * with the version 1 import test; a JSON file is then refused like any other non-zip upload.
  */
-import type { MemoryScopeExport, MemoryTransferFile } from "../api/types.js";
-import { badRequest } from "../http/validate.js";
+import type { MemoryScopeExport, MemoryTransferFile } from "./types.js";
+import { badRequest } from "@prismshadow/penguin-library-http/validate";
 import type { MemoryImportSet } from "./memory-archive.js";
 
 /** The document's format marker, checked before anything in it is believed. Typed against the DTO so the two literals cannot drift apart. */

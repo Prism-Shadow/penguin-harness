@@ -62,14 +62,17 @@ import type {
   MemoryOverviewResponse,
   ProjectCreateResponse,
 } from "../src/api/types.js";
-import { MAX_MEMORY_ARCHIVE_FILES } from "../src/services/memory-archive.js";
+import { MAX_MEMORY_ARCHIVE_FILES } from "@prismshadow/penguin-library-agent/memory-archive";
 import {
   MAX_IMPORT_FILE_BYTES,
   MAX_IMPORT_FILES,
   MAX_IMPORT_NAME_BYTES,
   MAX_IMPORT_TOTAL_BYTES,
-} from "../src/services/memory-transfer-document.js";
-import { MAX_FILE_BYTES, MAX_TOTAL_BYTES } from "@prismshadow/penguin-library-http/skill-import-limits";
+} from "@prismshadow/penguin-library-agent/memory-transfer-document";
+import {
+  MAX_FILE_BYTES,
+  MAX_TOTAL_BYTES,
+} from "@prismshadow/penguin-library-http/skill-import-limits";
 import { apiClient, canCreateSymlink, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 

@@ -1,8 +1,8 @@
 /**
  * Agent export and import, the zip being the Agent's directory:
- *   GET  /api/projects/:p/agents/:a/archive?<parts>&traces=…  (any member; services/agent-export.ts)
+ *   GET  /api/projects/:p/agents/:a/archive?<parts>&traces=…  (any member; the agent domain library's agent-export)
  *   POST /api/projects/:p/agents/import?agentId=&overwrite=1  (the raw zip, or a `.tar.gz` snapshot
- *        package exported before; services/agent-zip.ts)
+ *        package exported before; the agent domain library's agent-zip)
  * An import under a free id creates the Agent, which any member may; a taken id is 409
  * `agent_exists` unless `overwrite=1`, which is the owner's and takes a backup first. Either way
  * the State is swapped in by the snapshot import, then the package's Sessions land, those this
@@ -17,9 +17,13 @@ import type { AgentConfig, AgentLifecycle, Snapshots } from "../../mechanisms/ag
 import type { Access } from "@prismshadow/penguin-library-project";
 import type { Traces } from "@prismshadow/penguin-library-trace";
 import type { Workbenches } from "../../mechanisms/workbenches.js";
-import { exportAgent } from "../../services/agent-export.js";
-import type { AgentExportDeps } from "../../services/agent-export.js";
-import { isZip, readPackageTraces, zipTopDirectory } from "../../services/agent-zip.js";
+import { exportAgent } from "@prismshadow/penguin-library-agent/agent-export";
+import type { AgentExportDeps } from "@prismshadow/penguin-library-agent/agent-export";
+import {
+  isZip,
+  readPackageTraces,
+  zipTopDirectory,
+} from "@prismshadow/penguin-library-agent/agent-zip";
 import { migrateWorkbenches } from "../../workbenches/migrate.js";
 import { ensureWorkbenchLinkTarget } from "../../workbenches/migrate-state.js";
 import { HttpError } from "../errors.js";
