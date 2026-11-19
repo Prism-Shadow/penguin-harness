@@ -10,6 +10,7 @@
 import type {
   AgentApiSettings,
   AppCenterResponse,
+  WorkbenchInfo,
   AppCenterShortcut,
   AgentConfigResponse,
   AgentSummary,
@@ -181,10 +182,15 @@ export interface DemoFixtures {
   schedules: ProjectScheduleItem[];
   library: PluginLibraryResponse;
   pluginFiles: Record<string, Record<string, string>>;
-  /** Per Agent: its Skills and hook packages, and whether its Agent-wide workbench switch is off. */
+  /** Installed parts and the workbench settings for each Agent in this demo. */
   installed: Record<
     string,
-    { skills: SkillMetadataItem[]; hooks: HookItem[]; workbenchesOff?: boolean }
+    {
+      skills: SkillMetadataItem[];
+      hooks: HookItem[];
+      workbenches?: WorkbenchInfo[];
+      workbenchesOff?: boolean;
+    }
   >;
   installedPlugins: InstalledPluginsResponse;
   pluginIndex: PluginIndexResponse;

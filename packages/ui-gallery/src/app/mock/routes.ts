@@ -2849,16 +2849,23 @@ router
 // ---------------------------------------------------------------------------------------------
 
 router
-  .get("/api/projects/:projectId/agents/:agentId/workbenches", (ctx): WorkbenchesResponse => ({
-    workbenches: [],
-    enabled: installedOf(ctx).workbenchesOff !== true,
-  }))
+  .get("/api/projects/:projectId/agents/:agentId/workbenches", (ctx): WorkbenchesResponse => {
+    const installed = installedOf(ctx);
+    const workbenches = installed.workbenches ?? [];
+    return {
+      workbenches:
+        ctx.query.get("view") === "chat"
+          ? workbenches.filter((w) => w.showInChat !== false)
+          : workbenches,
+      enabled: installed.workbenchesOff !== true,
+    };
+  })
   .put(
     "/api/projects/:projectId/agents/:agentId/workbenches/enabled",
     (ctx): WorkbenchesResponse => {
       const installed = installedOf(ctx);
       installed.workbenchesOff = record(ctx.body).enabled === false;
-      return { workbenches: [], enabled: !installed.workbenchesOff };
+      return { workbenches: installed.workbenches ?? [], enabled: !installed.workbenchesOff };
     },
   )
   .put("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId/enabled", () =>
@@ -2885,6 +2892,23 @@ router
   .delete("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId", () =>
     notFound("Workbench"),
   )
+  .patch("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId/chat-tabs", (ctx) => {
+    const installed = installedOf(ctx);
+    const show = record(ctx.body).show;
+    if (typeof show !== "boolean") fail(400, "bad_request", "show must be true or false");
+    const all = installed.workbenches ?? [];
+    const current = all.find((w) => w.id === ctx.params.workbenchId);
+    if (!current) notFound("Workbench");
+    const workbench = { ...current, showInChat: show };
+    installed.workbenches = all.map((w) => (w.id === workbench.id ? workbench : w));
+    ctx.store.userChannel.event({
+      type: "workbench_updated",
+      projectId: ctx.params.projectId!,
+      agentId: ctx.params.agentId!,
+      workbench,
+    });
+    return { workbench };
+  })
   .patch("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId/app-center", () =>
     notFound("Workbench"),
   )

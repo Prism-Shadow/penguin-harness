@@ -105,6 +105,55 @@ describe("the mocked API", () => {
     await expect(api.getSession("nope")).rejects.toMatchObject({ status: 404, code: "not_found" });
   });
 
+  it("hides one installed workbench from Chat while keeping its pages and App Center shortcut", async () => {
+    const store = resetStore({ lang: "en", signedIn: true });
+    const project = store.f.project.projectId;
+    const shortcut = store.f.appCenter.shortcuts[0]!;
+    const { agentId, workbenchId: id, title } = shortcut;
+    const installed = store.f.installed[agentId]!;
+    installed.workbenches = [
+      {
+        id,
+        name: id,
+        version: "1.0",
+        revision: "demo",
+        uiRev: "demo",
+        error: null,
+        hints: [],
+        loadedAt: new Date(store.f.now).toISOString(),
+        enabled: true,
+        appCenter: { show: true },
+        tabs: [
+          {
+            id,
+            key: "main",
+            title,
+            renderer: {
+              iframe: {
+                src: `/api/projects/${project}/agents/${agentId}/workbenches/${id}/ui/index.html`,
+              },
+            },
+          },
+        ],
+      },
+    ];
+    const chat = async () => (await api.getWorkbenches(project, agentId, null, "chat")).workbenches;
+    expect(await chat()).toHaveLength(1);
+    await api.setWorkbenchChatVisibility(project, agentId, id, false, null);
+    expect(await chat()).toEqual([]);
+    expect((await api.getWorkbenches(project, agentId, null)).workbenches[0]).toMatchObject({
+      id,
+      showInChat: false,
+      tabs: [{ key: "main" }],
+    });
+    expect((await api.getAppCenter(project)).shortcuts).toContainEqual(shortcut);
+    await api.setWorkbenchChatVisibility(project, agentId, id, true, null);
+    expect(await chat()).toMatchObject([{ id, showInChat: true }]);
+    await expect(
+      api.setWorkbenchChatVisibility(project, agentId, "missing", true, null),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+
   it("pages a Session list per category with totals, own rows only", async () => {
     const store = resetStore({ lang: "en", signedIn: true });
     const project = store.f.project.projectId;
