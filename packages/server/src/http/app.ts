@@ -24,7 +24,7 @@ import { attributedProjectId } from "@prismshadow/penguin-library-http/attributi
 import { jsonCompression } from "@prismshadow/penguin-library-http/json-compression";
 import { jsonValidators } from "@prismshadow/penguin-library-http/json-validators";
 import { bodyLimitBytes } from "@prismshadow/penguin-library-setting/attachment-limits";
-import { isAgentImport, MAX_PACKAGE_BYTES } from "../services/agent-zip.js";
+import { isAgentImport, MAX_PACKAGE_BYTES } from "@prismshadow/penguin-library-agent/agent-zip";
 import { declined } from "../hmr/hono-seam.js";
 import type { Auth, Users } from "@prismshadow/penguin-library-auth";
 import type { Access } from "@prismshadow/penguin-library-project";

@@ -2,13 +2,17 @@
  * An employee's avatar: an image file in the organization directory, `avatars/<agent_id>.<ext>`.
  *
  * The organization's rather than the Agent's, like the employee's name: the same Agent may be
- * pictured differently somewhere else, and its own picture (services/agent-avatar.ts) is what
+ * pictured differently somewhere else, and its own picture (the agent domain library's agent-avatar) is what
  * an organization view falls back to. The rule the file is written and read by is the one
- * every avatar has (services/avatar-file.ts).
+ * every avatar has (the agent domain library's avatar-file).
  */
 import path from "node:path";
-import { avatarFileRev, readAvatarFile, writeAvatarFile } from "../services/avatar-file.js";
-import type { AvatarImage, StoredAvatar } from "../services/avatar-file.js";
+import {
+  avatarFileRev,
+  readAvatarFile,
+  writeAvatarFile,
+} from "@prismshadow/penguin-library-agent/avatar-file";
+import type { AvatarImage, StoredAvatar } from "@prismshadow/penguin-library-agent/avatar-file";
 
 export function avatarsDir(dir: string): string {
   return path.join(dir, "avatars");

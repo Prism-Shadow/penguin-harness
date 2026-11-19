@@ -18,14 +18,14 @@ import {
   tracesDir,
   workbenchesDir,
 } from "@prismshadow/penguin-core";
-import type { AgentArchiveQuery } from "../api/types.js";
-import { HttpError, badRequest } from "../http/errors.js";
+import type { AgentArchiveQuery } from "./types.js";
+import { HttpError, badRequest } from "@prismshadow/penguin-library-http";
 import type { SessionIndex } from "@prismshadow/penguin-library-session";
 import type { TraceIndex, TraceIndexStore } from "@prismshadow/penguin-library-trace";
-import { isWorkbenchId, STATE_FILE } from "../workbenches/store.js";
+import { isWorkbenchId, STATE_FILE } from "./agent-vocab.js";
 import { collectAppData } from "./agent-app-data.js";
 import { MAX_ENTRIES, MAX_PACKAGE_BYTES, MAX_UNPACKED_BYTES } from "./agent-zip.js";
-import { isGitEntry, isLeftOut } from "./snapshot-service.js";
+import { isGitEntry, isLeftOut } from "./agent-vocab.js";
 
 export interface AgentExportDeps {
   root: string;

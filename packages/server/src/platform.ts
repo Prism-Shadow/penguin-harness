@@ -114,7 +114,7 @@ import {
 import { AuthService, InitialProjectProvisioner } from "./auth/service.js";
 import { AdminService } from "./services/admin-service.js";
 import { Scheduler, ScheduleSessionCreator, ScheduleTaskRunner } from "./runtime/scheduler.js";
-import { AgentConfigService } from "./services/agent-config-service.js";
+import { AgentConfigServiceProvider } from "./services/agent-config-service.js";
 import { SnapshotService } from "./services/snapshot-service.js";
 import { AgentRoutes } from "./services/agent-routes.js";
 import { AgentService } from "./services/agent-service.js";
@@ -123,7 +123,7 @@ import { RootDataLayout } from "./services/data-layout.js";
 import { DataLayout } from "./mechanisms/data-layout.js";
 import { DeletingFolders } from "./mechanisms/deleting-folders.js";
 import { SessionActivity } from "./runtime/session-activity.js";
-import { MemoryService } from "./services/memory-service.js";
+import { MemoryServiceProvider } from "./services/memory-service.js";
 import { BenchmarkServiceProvider } from "./services/benchmark-service.js";
 import { ProjectsRoutes } from "./http/routes/dirs.js";
 import { SandboxModule } from "./sandbox/service.js";
@@ -509,11 +509,11 @@ export class TracesModule {}
 
 @Module({
   children: [
-    AgentConfigService,
+    AgentConfigServiceProvider,
     SnapshotService,
     AgentService,
     DeletingFoldersService,
-    MemoryService,
+    MemoryServiceProvider,
     BenchmarkServiceProvider,
     InstalledAgentSkills,
     AgentRoutes,

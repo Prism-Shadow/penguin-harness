@@ -83,6 +83,7 @@ export default defineConfig({
     "@prismshadow/penguin-library-session",
     "@prismshadow/penguin-library-messaging",
     "@prismshadow/penguin-library-organization",
+    "@prismshadow/penguin-library-agent",
     "@prismshadow/penguin-library-agent-api",
     "@prismshadow/penguin-library-http",
     "@prismshadow/penguin-library-machine",

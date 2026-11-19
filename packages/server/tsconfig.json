@@ -14,6 +14,38 @@
         "../../library/auth/src/repos/user-drafts.ts"
       ],
       "@prismshadow/penguin-library-agent-api": ["../../library/agent-api/src/index.ts"],
+      "@prismshadow/penguin-library-agent": ["../../library/agent/src/index.ts"],
+      "@prismshadow/penguin-library-agent/contract": ["../../library/agent/src/contract.ts"],
+      "@prismshadow/penguin-library-agent/ports": ["../../library/agent/src/ports.ts"],
+      "@prismshadow/penguin-library-agent/types": ["../../library/agent/src/types.ts"],
+      "@prismshadow/penguin-library-agent/agent-vocab": ["../../library/agent/src/agent-vocab.ts"],
+      "@prismshadow/penguin-library-agent/agent-config-service": [
+        "../../library/agent/src/agent-config-service.ts"
+      ],
+      "@prismshadow/penguin-library-agent/system-agent": ["../../library/agent/src/system-agent.ts"],
+      "@prismshadow/penguin-library-agent/agent-app-data": [
+        "../../library/agent/src/agent-app-data.ts"
+      ],
+      "@prismshadow/penguin-library-agent/workbench-dirs": [
+        "../../library/agent/src/workbench-dirs.ts"
+      ],
+      "@prismshadow/penguin-library-agent/memory-service": [
+        "../../library/agent/src/memory-service.ts"
+      ],
+      "@prismshadow/penguin-library-agent/memory-archive": [
+        "../../library/agent/src/memory-archive.ts"
+      ],
+      "@prismshadow/penguin-library-agent/memory-transfer-document": [
+        "../../library/agent/src/memory-transfer-document.ts"
+      ],
+      "@prismshadow/penguin-library-agent/agent-export": [
+        "../../library/agent/src/agent-export.ts"
+      ],
+      "@prismshadow/penguin-library-agent/agent-zip": ["../../library/agent/src/agent-zip.ts"],
+      "@prismshadow/penguin-library-agent/agent-avatar": [
+        "../../library/agent/src/agent-avatar.ts"
+      ],
+      "@prismshadow/penguin-library-agent/avatar-file": ["../../library/agent/src/avatar-file.ts"],
       "@prismshadow/penguin-library-benchmark": ["../../library/benchmark/src/index.ts"],
       "@prismshadow/penguin-library-benchmark/contract": [
         "../../library/benchmark/src/contract.ts"
