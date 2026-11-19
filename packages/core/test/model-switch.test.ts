@@ -1275,6 +1275,9 @@ describe("in-session model switch", () => {
     expect(result).toBe("aborted");
     expect(compactionEvents(all)[1]).toMatchObject({ reason: "manual", status: "aborted" });
     expect(hasMeta(all)).toBe(false);
+    // A stopped switch records nothing: its pair ends the file.
+    expect(payloadTypes(all)).not.toContain("session_update");
+    expect(payloadTypes(await readTrace(h.trace.currentPath())).at(-1)).toBe("compaction_end");
     expect(h.session.modelId).toBe(MODEL_A.model_id);
     expect(h.opens).toEqual([]);
     expect(await h.files()).toEqual([`${SESSION_ID}_001.jsonl`]);
@@ -1341,6 +1344,7 @@ describe("in-session model switch", () => {
       error_message: "no LLM prepared for a context on model-b",
     });
     expect(hasMeta(all)).toBe(false);
+    expect(payloadTypes(all)).not.toContain("session_update");
     expect(h.opens).toEqual([MODEL_B]);
     expect(h.session.modelId).toBe(MODEL_A.model_id);
     expect(await h.files()).toEqual([`${SESSION_ID}_001.jsonl`]);
