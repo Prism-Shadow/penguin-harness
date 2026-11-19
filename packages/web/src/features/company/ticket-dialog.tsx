@@ -349,8 +349,8 @@ function TicketDialog({
     });
   };
 
-  /** The move the footer asked for, once its confirmation (a reason, when rejecting) is answered. */
-  const commitMove = (reason: string) => {
+  /** The move the footer asked for, once its confirmation (a reason when rejecting, an optional note otherwise) is answered. */
+  const commitMove = (reason: string, note?: string) => {
     if (detail === null || pendingMove === null) return;
     const to = pendingMove;
     setPendingMove(null);
@@ -359,6 +359,12 @@ function TicketDialog({
         status: to,
         ...(moveNeedsReason(to) ? { reason: reason.trim() } : {}),
       });
+      const trimmed = (note ?? "").trim();
+      if (trimmed !== "") {
+        await api.progressOrgTicket(projectId, orgId, detail.ticketId, {
+          text: trimmed,
+        });
+      }
       setMoveTarget("");
     }, S.company.tickets.moved);
   };
@@ -1096,15 +1102,17 @@ export function MoveTicketConfirm({
   move: { title: string; to: OrgTicketStatus } | null;
   busy: boolean;
   onClose: () => void;
-  onConfirm: (reason: string) => void;
+  onConfirm: (reason: string, note: string) => void;
 }) {
   const [reason, setReason] = useState("");
+  const [note, setNote] = useState("");
   // Emptied on the move itself, never on the object carrying it: the callers build that inline,
   // so a dependency on its identity would clear the box on every keystroke's render.
   const movedTitle = move?.title ?? null;
   const movedTo = move?.to ?? null;
   useEffect(() => {
     setReason("");
+    setNote("");
   }, [movedTitle, movedTo]);
   const needsReason = move !== null && moveNeedsReason(move.to);
   return (
@@ -1117,7 +1125,7 @@ export function MoveTicketConfirm({
       confirmDisabled={needsReason && reason.trim() === ""}
       busy={busy}
       onClose={onClose}
-      onConfirm={() => onConfirm(reason)}
+      onConfirm={() => onConfirm(reason, note)}
     >
       <div className="space-y-2">
         <p className="text-sm text-gray-600 dark:text-gray-300">
@@ -1137,6 +1145,15 @@ export function MoveTicketConfirm({
             info={S.company.tickets.rejectReasonHint}
             autoFocus
             onChange={(e) => setReason(e.target.value)}
+          />
+        )}
+        {!needsReason && move !== null && (
+          <Input
+            size="sm"
+            label={S.company.tickets.moveNote}
+            value={note}
+            info={S.company.tickets.moveNoteHint}
+            onChange={(e) => setNote(e.target.value)}
           />
         )}
       </div>
