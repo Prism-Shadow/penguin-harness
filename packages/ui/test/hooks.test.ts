@@ -164,7 +164,8 @@ const HOSTS: Readonly<Record<(typeof HOOKS)[number], readonly string[]>> = {
   // SVG ones. The basic charts drawn from data (2026-10-19): the line chart's bare frame, the pie
   // and the scatter plot draw their own svg, and the horizontal bar chart is HTML rows of tracks
   // and bars, like the timeline's lanes. A weather widget's next hours, once a line chart of
-  // their own (2026-10-04), are the line chart's bare frame.
+  // their own (2026-10-04), are the line chart's bare frame. The usage bar (2026-11-19) is one
+  // HTML track of stacked bars, like a horizontal bar chart's row.
   "ui-chart": [
     "ChartFrame",
     "TokenDonut",
@@ -175,6 +176,7 @@ const HOSTS: Readonly<Record<(typeof HOOKS)[number], readonly string[]>> = {
     "HBarChart",
     "PieChart",
     "ScatterChart",
+    "UsageBar",
   ],
   // The dimmed backdrop (2026-09-30): a sibling behind a sheet, a drawer or a picker's phone
   // sheet, or the full-viewport overlay a modal, the command palette, the harness overlay and
