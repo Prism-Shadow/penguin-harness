@@ -1,0 +1,19 @@
+# The agent browser is the preinstalled browser-automation plugin
+
+- **Date:** 2026-11-19
+- **Type:** refactor
+- **Scope:** `server`, `web`, `cli`, `core`, `plugins`, `docs`
+
+[中文版](2026-11-19-browser-use-plugin.zh.md)
+
+The agent browser moved out of the server, the Web App and the CLI into its own plugin, `@penguinharness/browser-automation`, beside the Skill it already carried. It is the first built-in plugin whose server module is preinstalled: every new Project lists it, and the first boot of this version lists it once in every existing Project ([backward compatibility](2026-11-19-backward-compatibility.md)). Routes, events, the dock panel, Settings pages, CLI output and the extension's wire stay as they were while the module runs.
+
+## Details
+
+- **Three halves in one package.** `plugins/browser-automation` carries the server half (`.`, `BuiltinBrowserModule` with its routes, drivers, page scripts, import, history, extension link and pairing), the web half (`./web`: the layer, the dock panel, the two Settings pages, the link menu row, strings, stylesheet and endpoint wrappers) and the CLI half (`./cli`: `penguin browser`). The web and CLI halves are TypeScript source the Web App's and the CLI's builds compile in; the server half is one bundled file the plugin loader imports from the builtin plugin prefix. The card says `preinstall: true`.
+- **What stays in the host.** The desktop shell's guest and CDP mechanism, the Chrome extension package, the wire vocabulary in `library/machine`, the `browser_extensions` table, the browser's data shapes in `@prismshadow/penguin-server/api` (the shell, the extension and the gallery compile against them; the plugin reads them as types), the runtime's frozen legacy handshake and the admin switch `browserExtensionsEnabled`. The legacy names stay: `BuiltinBrowserModule`, `BrowserExtensionGate`, `/api/builtin-browser`, `builtin_browser_*`, the `builtin-browser` dock kind, `<root>/builtin-browser/*.json` and the partitions.
+- **When its module is not running.** An administrator can stop the module under Settings › Plugins or take it out of a Project's list; a later boot never adds it back. While no Project on the server runs it, the browser's routes answer 404, the Web App draws none of its UI, and `penguin browser status` exits 1 with `browser_unavailable` and what to tell the user. Safe mode loads no plugins, so it has no browser either.
+- **No package cycle.** The server depends on the plugin (it lists the plugin library), so the plugin does not depend on the server package: it reaches the server's plugin face from source through tsconfig `paths`, and bundles the face's values, Hono, ws and the library values it uses. Its server half imports nothing from core's root entry, so the bundle stays small (core's `./plugin` subpath gains `atomicWriteFile`, and the face's `profileFromEnv` moved to a module of its own).
+- **Interface tables.** `penguin-gen-ifaces` gains `--sources <dir>`: a package compiled against another package's sources projects only its own files. A default export in another package's file is no longer taken for the table's plugin declaration, so the Web App's table holds every plugin web half it compiles in. The web table reads a workspace plugin's web half with the app's own program.
+- **A checkout's servers.** `scripts/stage-dev-plugins.mjs` stages the preinstalled plugins at `packages/server/plugins/`, the builtin prefix a server run from the checkout loads; `dev-prebuild.mjs` and the web e2e runner call it. Desktop builds and releases stage their prefix as before.
+- **Tests.** The server half's unit suites moved with it into `plugins/browser-automation/test/`; the suites that boot the whole App, the CLI's and the Web App's stay in their packages and load the plugin from its sources.

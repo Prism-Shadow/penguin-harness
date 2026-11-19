@@ -12,6 +12,11 @@
  *   package has no `typescript` of its own, so this run also compiles with core's.
  * - Given a decorator whose whole meta is held in a constant, the build fails: read as a
  *   reference, its contributions would silently vanish from the table.
+ * - Given a package whose program reaches another package's sources (a plugin compiled against
+ *   its host's face through tsconfig paths), built with `--sources src`, its table holds its own
+ *   modules and plugin declaration and none of the other package's classes.
+ * - Given the same program built without `--sources`, the other package's default export is not
+ *   taken for this package's plugin declaration: the build passes and the declaration is its own.
  */
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import fs from "node:fs";
@@ -197,4 +202,68 @@ export default { modules: [DemoPlugin, OtherPlugin] } satisfies Plugin;
       `${SOURCE}:${lineOf(source, "@Component(META)")}: @Component(META) on OtherPlugin: the argument must be an object literal`,
     );
   });
+});
+
+describe("a package whose program reaches another package's sources", () => {
+  let root: string;
+  beforeAll(() => {
+    root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "gen-ifaces-")));
+    dirs.push(root);
+    const files: Record<string, string> = {
+      "host/package.json": JSON.stringify({ name: "@example/host", version: "1.0.0" }),
+      "host/src/face.ts": `${HEADER}
+@Component({})
+export class HostService {}
+
+export default { modules: [HostService] } satisfies Plugin;
+`,
+      "demo/package.json": JSON.stringify({ name: "@example/demo", version: "1.0.0" }),
+      "demo/tsconfig.json": JSON.stringify({
+        compilerOptions: { target: "es2022", module: "nodenext", noLib: true, types: [] },
+        include: ["src"],
+      }),
+      "demo/src/index.ts": `${HEADER}import { HostService } from "../../host/src/face.js";
+
+@Component({})
+export class DemoPlugin {
+  host = HostService;
+}
+
+export default { modules: [DemoPlugin] } satisfies Plugin;
+`,
+    };
+    for (const [rel, text] of Object.entries(files)) {
+      fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true });
+      fs.writeFileSync(path.join(root, rel), text);
+    }
+  });
+
+  const generate = (...extra: string[]): SpawnSyncReturns<string> =>
+    spawnSync(
+      process.execPath,
+      [BIN, "--project", "tsconfig.json", ...extra, "--out", "ifaces.json"],
+      { cwd: path.join(root, "demo"), encoding: "utf8" },
+    );
+  const table = () => JSON.parse(fs.readFileSync(path.join(root, "demo", "ifaces.json"), "utf8"));
+
+  it(
+    "with --sources src, keeps the other package's classes out of its table",
+    () => {
+      const run = generate("--sources", "src");
+      expect(run.status).toBe(0);
+      expect(Object.keys(table().modules)).toEqual(["DemoPlugin"]);
+      expect(table().plugin).toEqual({ modules: ["DemoPlugin"], replaces: [] });
+    },
+    SPAWN_BUDGET,
+  );
+
+  it(
+    "without it, does not take the other package's default export for its plugin declaration",
+    () => {
+      const run = generate();
+      expect(run.status).toBe(0);
+      expect(table().plugin).toEqual({ modules: ["DemoPlugin"], replaces: [] });
+    },
+    SPAWN_BUDGET,
+  );
 });
