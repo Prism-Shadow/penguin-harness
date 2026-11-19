@@ -121,14 +121,14 @@ export function AppCenterPage() {
   const folderParam = params.get("folder");
   // Direct interaction must be visible in the same frame; the router also accepts browser Back
   // and links from full-screen workbenches, which can arrive in a deferred React transition.
-  const [openFolderId, setOpenFolderId] = useState(folderParam);
-  useLayoutEffect(() => setOpenFolderId(folderParam), [folderParam]);
+  const [openFolderId, setSelectedFolderId] = useState(folderParam);
+  useLayoutEffect(() => setSelectedFolderId(folderParam), [folderParam]);
   // Keep the departing folder mounted until its icons reach their previews, including on Back.
   const [displayedFolderId, setDisplayedFolderId] = useState(openFolderId);
   if (openFolderId !== null && displayedFolderId !== openFolderId)
     setDisplayedFolderId(openFolderId);
-  const showFolder = (id: string | null) => {
-    setOpenFolderId(id);
+  const setOpenFolderId = (id: string | null) => {
+    setSelectedFolderId(id);
     const next = new URLSearchParams(params);
     if (id === null) next.delete("folder");
     else next.set("folder", id);
@@ -156,9 +156,9 @@ export function AppCenterPage() {
 
   /** Shows a new arrangement and stores it; one that changes nothing writes nothing. */
   const commit = (next: GridItem[], leaveFolder = false) => {
-    if (grid === null || sameArrangement(grid, next)) return;
     if (openFolderId !== null && (leaveFolder || !next.some((item) => item.id === openFolderId)))
-      showFolder(null);
+      setOpenFolderId(null);
+    if (grid === null || sameArrangement(grid, next)) return;
     saveLayout(layoutOf(next));
   };
 
@@ -236,7 +236,7 @@ export function AppCenterPage() {
                 null,
               )
               .then(reload, toastApiError),
-          openFolder: (folder) => showFolder(folder.id),
+          openFolder: (folder) => setOpenFolderId(folder.id),
           newFolder: (app) => setNewFolderPicked(app === null ? [] : [app.id]),
           renameFolder: setRenaming,
           dissolveFolder: (folder) => commit(dissolveFolder(grid, folder.id)),
@@ -346,7 +346,9 @@ export function AppCenterPage() {
                                 <FolderMenu folder={item} actions={actions} close={close} />
                               )
                             }
-                            onOpen={() => showFolder(openFolderId === item.id ? null : item.id)}
+                            onOpen={() =>
+                              setOpenFolderId(openFolderId === item.id ? null : item.id)
+                            }
                           />
                         ),
                       )}
@@ -356,7 +358,7 @@ export function AppCenterPage() {
                         key={displayedFolder.id}
                         folder={displayedFolder}
                         open={openFolderId === displayedFolder.id}
-                        onClose={() => showFolder(null)}
+                        onClose={() => setOpenFolderId(null)}
                         onExited={() => setDisplayedFolderId(null)}
                         draggingOut={drag.dragged?.from === displayedFolder.id}
                         onTakeOut={() => drag.dropNow({ kind: "outOfFolder" })}
