@@ -462,6 +462,33 @@
     }
   }
 
+  /* A theme can turn the inner sheet as its track folds. The outer track and its ink stay put. */
+  @media (prefers-reduced-motion: no-preference) {
+    :root:not([data-motion="reduced"])
+      .ui-frame
+      > [data-slot="head"]
+      + [data-slot="body"]
+      > [data-sheet-phase] {
+      transform-origin: top center;
+      animation: var(--_fold-sheet-animation, none) var(--ui-dur-layout) var(--ui-ease-layout) both;
+    }
+    :root:not([data-motion="reduced"])
+      .ui-frame
+      > [data-slot="head"]
+      + [data-slot="body"]
+      > [data-sheet-phase="closing"] {
+      animation-direction: reverse;
+    }
+  }
+  @keyframes ui-fold-paper {
+    from {
+      transform: perspective(42rem) rotateX(-5deg) translateY(-0.12rem);
+    }
+    to {
+      transform: perspective(42rem) rotateX(0) translateY(0);
+    }
+  }
+
   /* A run settling (`ui-activity`, running → done or error): the label, the mark and the details
      ease into their settled ink rather than flipping, on the theme's base duration — a colour
      change, not movement, so reduced motion keeps it as it keeps a hover's. The glyph and the

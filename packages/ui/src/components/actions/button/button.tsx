@@ -98,7 +98,8 @@ export function Button({
     isSquare(size) && rest["aria-label"] === undefined && rest["aria-labelledby"] === undefined;
   const spinner = loading ? <Spinner size="sm" label={loadingLabel ?? strings.loading} /> : null;
   // A button with a fill or a line has a box whose edge a theme may draw; a ghost or a link
-  // button has none.
+  // button has none. The box names its variant, so a theme that draws the edge can tell a
+  // filled button from a neutral and a destructive one.
   const edge = variant === "ghost" || variant === "link" ? "" : "ui-edge";
   return (
     <button
@@ -107,6 +108,7 @@ export function Button({
       {...(nameless && title !== undefined ? { "aria-label": title } : {})}
       aria-busy={loading || undefined}
       disabled={disabled || loading}
+      data-variant={edge === "" ? undefined : variant}
       className={`${BASE} disabled:cursor-not-allowed disabled:opacity-60 ${look(variant, size)} ${edge} ${className}`}
       {...rest}
     >

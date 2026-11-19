@@ -22,8 +22,10 @@
  * pen; 2026-11-04), the nineteenth to twenty-third, the section hooks `ui-start`,
  * `ui-library`, `ui-ledger`, `ui-empty` and `ui-run` (a section a pack may dress as a whole: the
  * start page, the model library, a ledger of figures, an empty state, the run indicator;
- * 2026-11-05), and the twenty-fourth, `ui-avatar` (an Agent's default avatar, the mascot drawn in
- * every theme's style; 2026-11-04). This suite holds the source to it:
+ * 2026-11-05), the twenty-fourth, `ui-avatar` (an Agent's default avatar, the mascot drawn in
+ * every theme's style; 2026-11-04), and the twenty-fifth and twenty-sixth, `ui-segmented` (the
+ * segmented control) and `ui-action` (the primary action that heads a navigation list), which let
+ * a pack draw Material 3's button group and FAB (2026-11-17). This suite holds the source to it:
  *
  * - no `ui-*` class in markup, and no `.ui-*` selector in a stylesheet, outside the list — in the
  *   package, the web app and the gallery;
@@ -227,6 +229,10 @@ const HOSTS: Readonly<Record<(typeof HOOKS)[number], readonly string[]>> = {
   "ui-run": ["RunStatus"],
   // An Agent's default avatar in every theme's style (2026-11-04): the one avatar component.
   "ui-avatar": ["AgentAvatar"],
+  // The segmented control, and the primary action that heads a navigation list, on the pinned
+  // sidebar and on the folded rail (2026-11-17).
+  "ui-segmented": ["Segmented"],
+  "ui-action": ["NavRow", "RailItem"],
 };
 
 /** CSS keywords that start with `ui-` and are not classes. */

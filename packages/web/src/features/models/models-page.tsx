@@ -2759,6 +2759,7 @@ export function ModelCard({
           {usedTokens !== undefined && usedTokens > 0 && (
             <span
               className="shrink-0 text-xs tabular-nums text-gray-400 dark:text-gray-500"
+              data-slot="meta"
               data-tooltip={S.models.usedTokensTitle}
             >
               {S.models.usedTokens(humanizeTokens(usedTokens))}
@@ -2786,7 +2787,10 @@ export function ModelCard({
         {/* 3. Meta line: the truncating text takes the flexible space; speed badges keep their own
             non-shrinking slot on the right so the numbers never wrap or get pushed out. */}
         <span className="flex w-full items-center gap-1.5">
-          <span className="min-w-0 flex-1 truncate text-xs text-gray-400 dark:text-gray-500">
+          <span
+            data-slot="meta"
+            className="min-w-0 flex-1 truncate text-xs text-gray-400 dark:text-gray-500"
+          >
             {meta.map((part, i) => (
               <Fragment key={i}>
                 {i > 0 && " · "}
