@@ -134,6 +134,8 @@ export interface LibraryPlugin {
   skills: LibrarySkill[];
   workbenches?: LibraryWorkbench[];
   hooks?: LibraryHooks;
+  /** The card's `composerMode`, kept only when the hook package has a `trigger: "host"` `user_prompt` command. */
+  composerMode?: true;
   /** The MCP servers the plugin contributes, each with its full list of setup keys; [] when none. */
   mcpServers: PluginMcpServer[];
   /** The demo the Plugins page's quick start pre-fills (the card's `quickStart`, optional). */
@@ -400,6 +402,16 @@ function readPluginDir(name: string, root: LibraryRoot): LibraryPlugin {
   }
   for (const rel of skipped) warnings.push(`${rel} is not a text file; it is not installed`);
   const mcpServers = readMcpServerEntries(contributions.mcpServers, warnings);
+  // The composer switch runs the hook package's host-triggered user_prompt command, so a card
+  // without one would offer a switch that adds nothing.
+  const composerMode =
+    card.composerMode === true &&
+    (hooks?.manifest.user_prompt ?? []).some((command) => command.trigger === "host");
+  if (card.composerMode === true && !composerMode) {
+    warnings.push(
+      'the card\'s composerMode needs a hook package with a trigger: "host" user_prompt command; ignored',
+    );
+  }
   let quickStart = card.quickStart;
   if (quickStart?.skills !== undefined) {
     const unknown = quickStart.skills.filter((n) => !skills.some((s) => s.name === n));
@@ -443,6 +455,7 @@ function readPluginDir(name: string, root: LibraryRoot): LibraryPlugin {
       }),
     ),
     ...(hooks !== undefined ? { hooks } : {}),
+    ...(composerMode ? { composerMode: true as const } : {}),
     ...(workbenches.length > 0 ? { workbenches } : {}),
     mcpServers,
     ...(quickStart !== undefined ? { quickStart } : {}),
