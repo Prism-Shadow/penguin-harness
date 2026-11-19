@@ -934,6 +934,10 @@ function PromptTab({ data, onSave }: FormTabProps) {
   );
 }
 
+/** The bar that titles each section of the Runtime tab's card. */
+const runtimeSectionHeadClass =
+  "border-t border-b border-gray-200 bg-gray-50/80 px-3 py-2 text-xs font-semibold text-gray-500 dark:border-gray-800 dark:bg-gray-900";
+
 function RuntimeTab({ data, onSave, projectId }: FormTabProps & { projectId: string }) {
   const machineId = useAgentLocation();
   const [projectThinking, setProjectThinking] = useState<string | null>(null);
@@ -953,8 +957,15 @@ function RuntimeTab({ data, onSave, projectId }: FormTabProps & { projectId: str
     };
   }, [projectId, machineId]);
   const cfg = data.config;
-  // The five numbers, the two menus and the prompt are one form: the menus sit inside it, so
-  // they save with it (a menu that stood alone in its row would write at once instead).
+  // A server that predates the tool rounds and the two texts reports none of them (a machine on
+  // an older server): their fields stay off rather than offering an edit it would drop.
+  const reported = {
+    maxRounds: cfg.compaction?.maxRounds !== undefined,
+    reminder: cfg.compaction?.reminder !== undefined,
+    handoffNote: cfg.compaction?.handoffNote !== undefined,
+  };
+  // The six numbers, the two menus and the three texts are one form: the menus sit inside it,
+  // so they save with it (a menu that stood alone in its row would write at once instead).
   const form = useFormDraft(runtimeDraftOf(cfg), { normalize: normalizeRuntime });
   const errors = runtimeErrors(form.draft, form.baseline);
   const [saving, setSaving] = useState(false);
@@ -962,7 +973,9 @@ function RuntimeTab({ data, onSave, projectId }: FormTabProps & { projectId: str
   /** A number box's inline error, judged only once it differs from the stored value. */
   const errorOf = (field: RuntimeNumberField): string | undefined => {
     const error = errors?.[field];
-    if (error === "invalid") return S.agent.numberInvalid;
+    if (error === "invalid") {
+      return field === "maxRounds" ? S.agent.maxRoundsInvalid : S.agent.numberInvalid;
+    }
     if (error === "cannotClear") return S.agent.numberCannotClear;
     return undefined;
   };
@@ -1038,11 +1051,9 @@ function RuntimeTab({ data, onSave, projectId }: FormTabProps & { projectId: str
           </div>
         </div>
 
-        <div className="border-t border-b border-gray-200 bg-gray-50/80 px-3 py-2 text-xs font-semibold text-gray-500 dark:border-gray-800 dark:bg-gray-900">
-          {S.agent.compaction}
-        </div>
+        <div className={runtimeSectionHeadClass}>{S.agent.compaction}</div>
         <div className="p-3">
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <Input
               label={S.agent.maxContextLength}
               info={S.agent.maxContextLengthHint}
@@ -1074,12 +1085,24 @@ function RuntimeTab({ data, onSave, projectId }: FormTabProps & { projectId: str
               onChange={(mode) => form.patch({ mode })}
               options={compactionModeOptions}
             />
+            {reported.maxRounds && (
+              <Input
+                label={S.agent.maxRounds}
+                info={S.agent.maxRoundsInfo}
+                infoLabel={S.agent.maxRounds}
+                hint={S.agent.maxRoundsHint}
+                size="sm"
+                value={form.draft.maxRounds}
+                error={errorOf("maxRounds")}
+                onChange={(e) => setNumber("maxRounds", e.target.value)}
+                inputMode="numeric"
+                className="font-mono"
+              />
+            )}
           </div>
         </div>
 
-        <div className="border-t border-b border-gray-200 bg-gray-50/80 px-3 py-2 text-xs font-semibold text-gray-500 dark:border-gray-800 dark:bg-gray-900">
-          {S.agent.compactionPrompt}
-        </div>
+        <div className={runtimeSectionHeadClass}>{S.agent.compactionPrompt}</div>
         <div className="p-3">
           <Textarea
             aria-label={S.agent.compactionPrompt}
@@ -1090,6 +1113,50 @@ function RuntimeTab({ data, onSave, projectId }: FormTabProps & { projectId: str
             onChange={(e) => form.patch({ prompt: e.target.value })}
           />
         </div>
+
+        {reported.reminder && (
+          <>
+            <div className={`flex items-center gap-1.5 ${runtimeSectionHeadClass}`}>
+              {S.agent.compactionReminder}
+              <InfoPopover label={S.agent.compactionReminder}>
+                {S.agent.compactionReminderInfo}
+              </InfoPopover>
+            </div>
+            <div className="p-3">
+              <Textarea
+                aria-label={S.agent.compactionReminder}
+                hint={S.agent.compactionReminderHint}
+                mono
+                size="sm"
+                rows={2}
+                value={form.draft.reminder}
+                onChange={(e) => form.patch({ reminder: e.target.value })}
+              />
+            </div>
+          </>
+        )}
+
+        {reported.handoffNote && (
+          <>
+            <div className={`flex items-center gap-1.5 ${runtimeSectionHeadClass}`}>
+              {S.agent.compactionHandoffNote}
+              <InfoPopover label={S.agent.compactionHandoffNote}>
+                {S.agent.compactionHandoffNoteInfo}
+              </InfoPopover>
+            </div>
+            <div className="p-3">
+              <Textarea
+                aria-label={S.agent.compactionHandoffNote}
+                hint={S.agent.compactionHandoffNoteHint}
+                mono
+                size="sm"
+                rows={4}
+                value={form.draft.handoffNote}
+                onChange={(e) => form.patch({ handoffNote: e.target.value })}
+              />
+            </div>
+          </>
+        )}
       </Card>
 
       <SaveRow
