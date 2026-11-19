@@ -270,12 +270,13 @@
 }
 /* Folds: the leading mark is the fold — ▸ closed, ▾ open, in the row's state ink (subtle when
    settled, danger on error). While the row runs its spinner stays; the
-   chevrons go. */
+   chevrons go. A settled row that needs attention (`data-attention`) keeps its own mark after
+   the fold: its tooltip is the only place that says why. */
 :root[data-theme="geek"] .ui-activity :is([data-slot="toggle"], [data-slot="toggle-end"]) {
   display: none;
 }
 :root[data-theme="geek"]
-  .ui-activity:has([data-slot="toggle"]):not([data-state="running"])
+  .ui-activity:has([data-slot="toggle"]):not([data-state="running"], [data-attention])
   [data-slot="mark"]
   > * {
   display: none;

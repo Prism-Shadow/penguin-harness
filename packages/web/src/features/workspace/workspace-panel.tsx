@@ -40,6 +40,7 @@ export function WorkspacePanel({ active }: { active: boolean }) {
   return (
     <WorkspaceBrowser
       scope={{ kind: "session", sessionId: selected.sessionId }}
+      workspacePath={selected.workspace}
       openRequest={fileOpenRequest}
       active={active}
       reloadSignal={settledTurnSignal}

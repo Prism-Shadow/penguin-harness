@@ -129,6 +129,12 @@ export interface ActivityGroupProps {
   stateLabel?: string;
   /** A mark naming the activity in place of the status icon (an injected message's hook); a registry glyph's path or a node. */
   mark?: ReactNode;
+  /**
+   * A settled activity that needs the reader's attention, said by its `mark` (an attention-ink
+   * glyph whose tooltip and accessible name say why: a compaction that wrote no full summary). The
+   * head carries `data-attention`, so a theme that draws no status marks keeps this one.
+   */
+  attention?: boolean;
   /** A count as words ("3 steps"), mono after the title. Hidden below `sm`: the head must stay one uncut line on a phone. */
   count?: string;
   /** One line of status or result, where names go (servers, a failure's reason); mono, truncating, with the full text as its tooltip. */
@@ -149,6 +155,11 @@ export interface ActivityGroupProps {
   rows?: readonly ActivityGroupRow[];
   /** A body of one piece the caller styles, in place of rows; its presence adds the chevron too. */
   children?: ReactNode;
+  /**
+   * Text actions after the duration (a failed row's 「[报告问题]」), on a head that does not
+   * expand only: an expandable head is one button, and a press cannot nest in it.
+   */
+  actions?: ReactNode;
 }
 
 export function ActivityGroup({
@@ -158,6 +169,7 @@ export function ActivityGroup({
   title,
   stateLabel,
   mark,
+  attention = false,
   count,
   detail,
   startMs,
@@ -165,6 +177,7 @@ export function ActivityGroup({
   pending = false,
   rows,
   children,
+  actions,
 }: ActivityGroupProps) {
   const hookState = activityState(state);
   const running = hookState === "running";
@@ -233,6 +246,11 @@ export function ActivityGroup({
         />
       )}
       <ActivityProgress running={inFlight} />
+      {!expandable && actions !== undefined && actions !== null && (
+        <span data-slot="actions" className="flex shrink-0 items-baseline gap-x-2 text-xs">
+          {actions}
+        </span>
+      )}
       {expandable && <ActivityToggle open={shown} />}
       <span className="min-w-0 flex-1" />
     </>
@@ -258,6 +276,7 @@ export function ActivityGroup({
           data-slot="head"
           data-kind={kind}
           data-state={hookState}
+          data-attention={attention ? "" : undefined}
         >
           <WallpaperBackdrop />
           {parts}
@@ -268,6 +287,7 @@ export function ActivityGroup({
           data-slot="head"
           data-kind={kind}
           data-state={hookState}
+          data-attention={attention ? "" : undefined}
         >
           {parts}
         </div>

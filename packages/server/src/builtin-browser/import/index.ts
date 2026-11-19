@@ -11,12 +11,16 @@
  *   chromium-cookies.ts  a Chromium profile's cookies
  *   firefox-cookies.ts   a Firefox profile's cookies
  *   history.ts           either family's history
+ *   extension-cookies.ts the cookies the user's Chrome extension hands over
  *   cookie-rules.ts      the domain filter and the shell's cookie shape
+ *   skips.ts             why each cookie left behind was skipped
  *   sqlite-copy.ts       reading a store through a private copy
  *   system-env.ts        the ImportEnv of the machine the server runs on
  */
 import type {
+  BuiltinBrowserCookieSkip,
   BuiltinBrowserHistoryEntry,
+  BuiltinBrowserImportNote,
   BuiltinBrowserImportSource,
   DesktopBrowserCookie,
 } from "../../api/types.js";
@@ -42,17 +46,14 @@ export interface CookieReadResult {
   cookies: DesktopBrowserCookie[];
   /** Rows read from the store that fall within `domains`, before any other filtering. */
   found: number;
-  /**
-   * Rows that could not be decrypted, were expired, or belong to a single context: a Firefox
-   * container, or one top-level site (Chromium's partitioned cookies).
-   */
-  skipped: number;
-  warnings: string[];
+  /** Why each row within `domains` that is not among `cookies` stayed behind (skips.ts). */
+  skips: BuiltinBrowserCookieSkip[];
+  notes: BuiltinBrowserImportNote[];
 }
 
 export interface HistoryReadResult {
   entries: BuiltinBrowserHistoryEntry[];
-  warnings: string[];
+  notes: BuiltinBrowserImportNote[];
 }
 
 /** No profile with the source's id on this machine (any more). */

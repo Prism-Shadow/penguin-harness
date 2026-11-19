@@ -65,7 +65,6 @@ import {
   Modal,
   Select,
   Textarea,
-  toastError,
   toastSuccess,
   useFormDraft,
   useGuardedClose,
@@ -95,11 +94,12 @@ import {
   orgDraftKey,
   saveOrgDraft,
 } from "./org-draft";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError, toastFailure } from "../../lib/toast-api-error";
 import { failedList } from "../../lib/bulk-update";
 import { followAgentDeletion } from "../../lib/agent-deletion-progress";
 import { orgDeletePlan } from "./org-delete-plan";
 import type { OrgDeletePlan } from "./org-delete-plan";
+import { toldFailure } from "../../lib/failure";
 
 const APPROVAL_MODES: readonly OrgApprovalMode[] = ["allow-all", "read-only", "deny-all"];
 
@@ -767,7 +767,13 @@ function OrganizationSettingsForm({
         );
         // The report carries each refusal's code: worded as the same error answered alone would be.
         const reason = apiErrorText(new ApiError(409, firstFailure.code, firstFailure.message));
-        toastError(`${S.company.deleteOrgAgentsFailed(orgId, names)} — ${reason}${kept}`);
+        toastFailure(
+          toldFailure(`${S.company.deleteOrgAgentsFailed(orgId, names)} — ${reason}${kept}`, {
+            what: "an organization's Agents could not all be deleted",
+            code: firstFailure.code,
+            detail: firstFailure.message,
+          }),
+        );
       } else if (report.deletedAgents.length > 0) {
         toastSuccess(`${S.company.deletedWithAgents(orgId, report.deletedAgents.length)}${kept}`);
       } else {

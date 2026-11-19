@@ -1010,7 +1010,7 @@ interface RunFormLive {
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| POST | `/tasks` | 启动一个 Task：`{input: TaskInputPart[], queueIfBusy?, interrupt?, steerIfBusy?, goal?}` → 202 |
+| POST | `/tasks` | 启动一个 Task：`{input: TaskInputPart[], queueIfBusy?, interrupt?, steerIfBusy?, goal?, promptHooks?}` → 202 |
 | POST | `/steer` | 为正在运行的 Task 排入一条插话消息：`{text, images?}` → 202 |
 | DELETE | `/steer/:steerId` | 撤回一条尚未投递的插话消息 |
 | DELETE | `/follow-ups/:followUpId` | 撤回一个排队的后续 Task |
@@ -1029,6 +1029,7 @@ interface RunFormLive {
 - `POST /tasks` 带 `interrupt: true` 时，忙碌的 Session 会停止当前运行，并把输入接在被打断的那一轮之后发出。输入排到后续 Task 队列的最前面（排在更早的打断之后，同样受队列上限约束），运行按 `POST /abort` 的方式中止，收尾后它最先启动（`queued: true`）；在它之前排队的后续 Task 在它之后启动。被打断那一轮已经产出的内容排在它前面一起发出，已提交的历史不变。尚未投递的插话与 `POST /abort` 时一样退回（`returnedSteering`）。启动之前，该条目以 `interrupt: true` 列在 `pendingFollowUps` 里，可以撤回。Session 空闲时直接启动 Task。与 `queueIfBusy` 或 `goal` 同时使用时返回 400。
 - `POST /tasks` 带 `steerIfBusy: true` 时，不论 Session 此刻在做什么都只需这一个请求，由服务端在会话锁内判定。空闲的 Session 直接启动 Task。有 Task 在运行时，输入作为插话送入，与 `POST /steer` 同一路径：插话镜像、撤回与退回照旧，`file` 部分以 `[attached file: <path>]` 行随插话送达；响应 `{sessionId, queued: false, steered: true}`。压缩期间没有 Task 可插话，运行恰在收束时也不再接受插话，这两种情况按 `queueIfBusy` 入队（`queued: true`）。与 `interrupt` 或 `goal` 同时使用时返回 400；同时带 `queueIfBusy` 不改变任何行为。
 - `POST /tasks` 带 `goal: {budget?}` 时改为启动目标循环。Agent 没有安装 `goal` 插件时返回 409 `goal_plugin_not_installed`。插件的启动钩子运行失败（脚本报错或超时，或沙盒拒绝运行它）时返回 409 `goal_start_failed` 并附上原因，不启动任何 Task。目标就是输入里的文本（去掉开头的标记块），所以输入必须带非空文本（否则返回 400）：只有图片说明不了目标。图片作为普通输入随第 1 轮发送，之后各轮只重新注入目标文本。`file` 部分一律以 400 拒绝，因为没有办法把文件带进每一轮都重新注入的目标。见[目标模式](/goal-mode)。
+- `POST /tasks` 带 `promptHooks: [name, …]` 时，携带的是输入框的开关。对所列的每个钩子包，服务端按顺序以用户的原话运行它 `"trigger": "host"` 的 `user_prompt` 命令，并把 context 以 `sender: "harness"` 标记紧随这条消息发出。这些命令在请求被接受时运行，所以排队或打断的输入带着各自的 context 等待，排队行与撤回仍只是用户自己的内容；转为插话的输入不运行任何命令。Agent 没有该钩子包、或包里没有这样的命令时返回 409 `prompt_hook_not_installed`；命令运行失败时返回 409 `prompt_hook_failed` 并附上原因。两种情况都不启动、也不入队。与 `goal` 同时使用时返回 400。
 - `POST /steer` 在轮次之间把消息作为一条独立的 `[user_steering]` 用户消息投递，图片紧随其后。`text` 和 `images` 任一字段都能单独携带消息，但两者都缺时返回 400。没有 Task 在运行时返回 409 `not_running`。
 - `DELETE /steer/:steerId` 接收 `task_state` 里 `pendingSteering` 的 id，把那条消息从队列撤回。响应 200，带原始内容 `{text, images, files}`，便于输入框恢复消息供编辑：文件以 data URL 的形式从暂存区读回，磁盘上的副本随之删除。消息已经投递给模型时返回 409 `not_pending`。
 - `DELETE /follow-ups/:followUpId` 接收 `task_state` 里 `pendingFollowUps` 的 id，在后续 Task 启动前把它移除。响应 200，带原始内容 `{text, images, files}`；无论以哪种方式排队，每个排队的后续 Task 都带这些内容。后续 Task 已经启动、或 id 未知时返回 409 `follow_up_started`。
@@ -1362,8 +1363,8 @@ Agent 用 `penguin browser` 驱动的浏览器，路由位于 `/api/builtin-brow
 | POST | `/tabs/:tab/activate` | 设为当前标签页；在 `chrome` 上，Chrome 也会切到该标签页 |
 | DELETE | `/tabs/:tab` | 关闭标签页；`204` |
 | POST | `/tabs/:tab/navigate`、`scan`、`exec`、`click`、`type`、`screenshot`、`cdp` | Agent 的各项操作，见 [penguin browser](/cli#penguin-browser) |
-| GET | `/import/sources` | 内置：可导入的系统浏览器个人资料 |
-| POST | `/import` | 内置：导入 Cookie 与历史记录：`{sourceId, cookies?, history?, domains?}` |
+| GET | `/import/sources` | 内置：可导入的系统浏览器个人资料，以及调用者已连接的 Chrome 扩展（`chrome-extension`，只有 Cookie）→ `{sources, extension?}`，`extension` 说明扩展为何未列出 |
+| POST | `/import` | 内置：导入 Cookie 与历史记录：`{sourceId, cookies?, history?, domains?}` → `{sourceId, browserName, cookies?: {found, imported, skipped, failed, skips}, history?, notes}`；跳过原因与提示都是代码加计数。经扩展导入须用户在 Chrome 中允许（否则 403 `import_declined`） |
 | GET / PUT | `/settings` | 主页：`{homepage}`。仅管理员 |
 | GET / DELETE | `/history?q=&limit=` | 内置：搜索或清空历史记录 |
 | POST | `/clear-data` | 内置：`{storages}`，取 `cookies`、`cache` 和 `storage` 中的若干项 |

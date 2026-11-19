@@ -22,18 +22,20 @@ import {
   NoticeStrip,
   SettingsEmpty,
   SkeletonList,
-  toastError,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
+import { failureOf } from "../../lib/failure";
+import { toastFailure } from "../../lib/toast-api-error";
 import { useProject } from "../../state/project";
 import { useAgentLocation } from "../../lib/agent-location";
 import { useAgentsOn } from "../../lib/machine-agent-lists";
 import { usePromptInjection } from "./prompt-injection-controls";
 import { AiCreateModal, AiCreateButtons } from "../ai-create";
 import { VaultAddDialog } from "./vault-add-dialog";
+import type { Failure } from "@prismshadow/penguin-ui";
 
 export function VaultTab({
   agentId,
@@ -91,8 +93,8 @@ export function VaultTab({
   }, [load]);
 
   /** Persist a change immediately (add / delete): returns null on success, an error message on failure — the caller decides whether it lands inside the modal or at the tab level. */
-  const persist = async (body: VaultUpdateRequest): Promise<string | null> => {
-    if (!projectId || !agentId) return S.common.unknownError;
+  const persist = async (body: VaultUpdateRequest): Promise<Failure | null> => {
+    if (!projectId || !agentId) return { text: S.common.unknownError, report: null };
     setBusy(true);
     try {
       const res = await api.putVault(projectId, agentId, body, machineId);
@@ -102,7 +104,7 @@ export function VaultTab({
       if (machineId === null) void reloadAgents();
       return null;
     } catch (e) {
-      return apiErrorText(e);
+      return failureOf(e);
     } finally {
       setBusy(false);
     }
@@ -118,14 +120,14 @@ export function VaultTab({
    * The add dialog's write. Upsert by key name: the existing entry is not resent beside the new
    * one, which PUT's duplicate-key validation would refuse.
    */
-  const addEntry = (key: string, value: string) =>
-    persist({ entries: [...keepEntries(key), { key, value }] });
+  const addEntry = async (key: string, value: string) =>
+    (await persist({ entries: [...keepEntries(key), { key, value }] }))?.text ?? null;
 
   /** Confirm modal's "Confirm": closes the modal after deletion; a failure pops a toast. */
   const confirmRemove = async () => {
     if (deleting === null) return;
-    const err = await persist({ entries: keepEntries(deleting) });
-    if (err !== null) toastError(err);
+    const failure = await persist({ entries: keepEntries(deleting) });
+    if (failure !== null) toastFailure(failure);
     setDeleting(null);
   };
 

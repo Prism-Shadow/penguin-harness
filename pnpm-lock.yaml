@@ -477,6 +477,9 @@ importers:
       '@penguinharness/goal':
         specifier: workspace:*
         version: link:../../plugins/goal
+      '@penguinharness/plan':
+        specifier: workspace:*
+        version: link:../../plugins/plan
       '@penguinharness/humanizer':
         specifier: workspace:*
         version: link:../../plugins/humanizer
@@ -656,6 +659,9 @@ importers:
       '@penguinharness/goal':
         specifier: workspace:*
         version: link:../../plugins/goal
+      '@penguinharness/plan':
+        specifier: workspace:*
+        version: link:../../plugins/plan
       '@penguinharness/humanizer':
         specifier: workspace:*
         version: link:../../plugins/humanizer
@@ -852,6 +858,9 @@ importers:
       '@penguinharness/goal':
         specifier: workspace:*
         version: link:../../plugins/goal
+      '@penguinharness/plan':
+        specifier: workspace:*
+        version: link:../../plugins/plan
       '@penguinharness/humanizer':
         specifier: workspace:*
         version: link:../../plugins/humanizer
@@ -993,6 +1002,9 @@ importers:
       '@penguinharness/goal':
         specifier: workspace:*
         version: link:../../plugins/goal
+      '@penguinharness/plan':
+        specifier: workspace:*
+        version: link:../../plugins/plan
       '@penguinharness/humanizer':
         specifier: workspace:*
         version: link:../../plugins/humanizer
@@ -1589,6 +1601,12 @@ importers:
         version: file:packages/core(ws@8.21.0)
 
   plugins/goal:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
+
+  plugins/plan:
     devDependencies:
       '@prismshadow/penguin-core':
         specifier: workspace:*
@@ -2787,6 +2805,8 @@ packages:
 
   '@penguinharness/goal@file:plugins/goal':
     resolution: {directory: plugins/goal, type: directory}
+  '@penguinharness/plan@file:plugins/plan':
+    resolution: {directory: plugins/plan, type: directory}
 
   '@penguinharness/humanizer@file:plugins/humanizer':
     resolution: {directory: plugins/humanizer, type: directory}
@@ -7550,6 +7570,7 @@ snapshots:
   '@penguinharness/default-rsi-toolkit@file:plugins/default-rsi-toolkit': {}
 
   '@penguinharness/goal@file:plugins/goal': {}
+  '@penguinharness/plan@file:plugins/plan': {}
 
   '@penguinharness/humanizer@file:plugins/humanizer': {}
 
@@ -7681,6 +7702,7 @@ snapshots:
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
       '@penguinharness/goal': file:plugins/goal
+      '@penguinharness/plan': file:plugins/plan
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
@@ -7731,6 +7753,7 @@ snapshots:
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
       '@penguinharness/goal': file:plugins/goal
+      '@penguinharness/plan': file:plugins/plan
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
@@ -8002,6 +8025,7 @@ snapshots:
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
       '@penguinharness/goal': file:plugins/goal
+      '@penguinharness/plan': file:plugins/plan
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
@@ -8066,6 +8090,7 @@ snapshots:
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
       '@penguinharness/goal': file:plugins/goal
+      '@penguinharness/plan': file:plugins/plan
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
@@ -8130,6 +8155,7 @@ snapshots:
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
       '@penguinharness/goal': file:plugins/goal
+      '@penguinharness/plan': file:plugins/plan
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
