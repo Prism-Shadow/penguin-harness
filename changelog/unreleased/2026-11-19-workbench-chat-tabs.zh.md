@@ -3,6 +3,7 @@
 - **Date:** 2026-11-19
 - **Type:** feat
 - **Scope:** `server`, `web`
+- **PR:** [#1624](https://github.com/Prism-Shadow/penguin-harness/pull/1624)
 
 [English](2026-11-19-workbench-chat-tabs.md)
 

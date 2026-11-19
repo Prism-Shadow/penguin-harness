@@ -302,6 +302,16 @@ test("a workbench can stay in the App Center without loading in Chat", async ({
       page.frameLocator("iframe[title='Clear']").getByRole("heading", { name: "Board" }),
     ).toBeVisible();
     expect(resources.some((url) => url.includes("/ui/clear.html"))).toBe(true);
+    const appLink = page.url();
+    await page.goto("about:blank");
+    await page.goto(appLink);
+    await expect(
+      page.frameLocator("iframe[title='Clear']").getByRole("heading", { name: "Board" }),
+    ).toBeVisible();
+    await page.goto(`${BASE}/app/${projectId}/default_agent/window-demo/clear`);
+    await expect(
+      page.frameLocator("iframe[title='Clear']").getByRole("heading", { name: "Board" }),
+    ).toBeVisible();
     await toggle.click();
     await expect(toggle).toBeChecked();
     await page.goto(`${BASE}/chat/${sessionId}`);
