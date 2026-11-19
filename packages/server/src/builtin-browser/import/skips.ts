@@ -4,7 +4,10 @@
  * the user can act on first (app-bound, then a key the platform kept), what is expected last
  * (partitioned, expired) — whatever order the rows came in.
  */
-import type { BuiltinBrowserCookieSkip, BuiltinBrowserCookieSkipReason } from "../../api/types.js";
+import type {
+  BuiltinBrowserCookieSkip,
+  BuiltinBrowserCookieSkipReason,
+} from "@prismshadow/penguin-server/api";
 
 const ORDER: readonly BuiltinBrowserCookieSkipReason[] = [
   "app_bound",

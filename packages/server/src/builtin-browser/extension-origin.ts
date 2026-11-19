@@ -4,10 +4,11 @@
  * the Chrome Web Store), and — on a dev-profile server only — any extension's, so a build
  * loaded with another id can be tried. A web page's origin never does.
  *
- * Runs in the runtime's upgrade handler as well as in the platform, so it imports nothing of
- * the platform's.
+ * Runs in the runtime's legacy upgrade fallback as well as in the platform, so it imports
+ * nothing of the platform's: the plugin face's `profileFromEnv` is a pure reading of the
+ * environment.
  */
-import { profileFromEnv } from "../machines/layout.js";
+import { profileFromEnv } from "../plugin/index.js";
 
 /** The extension's id, as its pinned manifest key fixes it. */
 export const PENGUIN_EXTENSION_ID = "dodgfhpcbmkjfcbgnoidablfgjjhhmgp";

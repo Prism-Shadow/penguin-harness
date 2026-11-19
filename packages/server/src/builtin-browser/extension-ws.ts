@@ -2,9 +2,13 @@
  * The chrome backend's transport: `GET /api/builtin-browser/extension/ws` (Upgrade), the socket
  * the PenguinHarness Browser extension opens to this server.
  *
- * Runtime, and only the handshake — as the terminal stream's (terminal/ws.ts): a WebSocket
- * cannot cross the platform seam, so this checks the request, upgrades, and hands the live
- * socket to the current generation's hub, which owns the protocol (extension-link.ts).
+ * Only the handshake: it checks the request, upgrades, and hands the live socket to the hub,
+ * which owns the protocol (extension-link.ts). The browser module contributes it as a WebSocket
+ * endpoint (`HttpModule.upgrades`, module.ts), so the runtime only dispatches the upgrade to the
+ * current generation (hmr/upgrade-seam.ts) and the handshake travels with a push. A runtime
+ * still does this same handshake itself for a platform pushed before that slot, over the gate it
+ * looks up by name (hmr/legacy-browser.ts) — so this file imports nothing of the platform's but
+ * types.
  *
  * Auth is the extension's own token, never the session cookie: a cookie rides along with any
  * page's request, and a page must never ride a signed-in session into the hub, so cookies are
@@ -20,10 +24,11 @@
  * with a close code it can act on: 4003 revoked, 4009 switched off by the admin, 4005 when the
  * subprotocol `penguin-browser.1` is missing.
  */
-import type { IncomingMessage, Server as HttpServer } from "node:http";
+import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocketServer } from "ws";
 import type { RawData, WebSocket } from "ws";
+import type { WebSocketUpgrade } from "../plugin/index.js";
 import type { ExtensionSocket } from "./extension-link.js";
 import { isPenguinExtensionOrigin } from "./extension-origin.js";
 
@@ -33,8 +38,9 @@ const TOKEN_PREFIX = "token.";
 /** A screenshot of a tall page is the largest frame: well under this. */
 const MAX_FRAME_BYTES = 64 * 1024 * 1024;
 /**
- * CLOSE.protocolMismatch (extension-link.ts), spelled here: this file runs in the runtime, which
- * a pushed platform cannot update, so it imports nothing of the platform's but types.
+ * CLOSE.protocolMismatch (extension-link.ts), spelled here: this file also runs in the runtime's
+ * fallback, which a pushed platform cannot update, so it imports nothing of the platform's but
+ * types.
  */
 const PROTOCOL_MISMATCH = 4005;
 
@@ -45,8 +51,8 @@ export interface ExtensionGate {
 }
 
 export interface ExtensionWebSocketDeps {
-  /** The current generation's gate; null while there is none (a bare kernel, an older push). */
-  gate(): Promise<ExtensionGate | null>;
+  /** The gate the socket goes to; null while there is none (a bare kernel, an older push). */
+  gate(): Promise<ExtensionGate | null> | ExtensionGate | null;
   log(line: string): void;
 }
 
@@ -89,7 +95,12 @@ function isAllowedOrigin(origin: string | undefined): boolean {
   return origin === undefined || origin === "" || isPenguinExtensionOrigin(origin);
 }
 
-export function attachExtensionWebSocket(server: HttpServer, deps: ExtensionWebSocketDeps): void {
+/**
+ * The extension's endpoint: one upgrade at a time, handed over untouched. A path other than
+ * {@link EXTENSION_WS_PATH} — one below it, which the endpoint's prefix also covers — is answered
+ * 404: nothing is served there.
+ */
+export function extensionUpgrade(deps: ExtensionWebSocketDeps): WebSocketUpgrade {
   const wss = new WebSocketServer({
     noServer: true,
     perMessageDeflate: false,
@@ -99,17 +110,16 @@ export function attachExtensionWebSocket(server: HttpServer, deps: ExtensionWebS
       protocols.has(EXTENSION_SUBPROTOCOL) ? EXTENSION_SUBPROTOCOL : false,
   });
 
-  server.on("upgrade", (req: IncomingMessage, socket: Duplex, head: Buffer) => {
+  const upgrade = (req: IncomingMessage, socket: Duplex, head: Buffer): void => {
     const url = new URL(req.url ?? "/", "http://localhost");
-    // Not ours: leave the socket for another upgrade handler.
-    if (url.pathname !== EXTENSION_WS_PATH) return;
+    if (url.pathname !== EXTENSION_WS_PATH) return refuse(socket, 404, "Not Found");
 
     if (!isAllowedOrigin(req.headers.origin)) return refuse(socket, 403, "Forbidden");
     const { offered, token } = readSubprotocols(req.headers["sec-websocket-protocol"]);
     if (token === null) return refuse(socket, 401, "Unauthorized");
 
-    void deps
-      .gate()
+    void Promise.resolve()
+      .then(() => deps.gate())
       .then((gate) => {
         if (gate === null) return refuse(socket, 503, "Service Unavailable");
         if (gate.admit(token) === "unknown") return refuse(socket, 401, "Unauthorized");
@@ -128,7 +138,8 @@ export function attachExtensionWebSocket(server: HttpServer, deps: ExtensionWebS
         );
         refuse(socket, 500, "Internal Server Error");
       });
-  });
+  };
+  return { upgrade };
 }
 
 function refuse(socket: Duplex, status: number, text: string): void {

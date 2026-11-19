@@ -1,3 +1,5 @@
+import type { IncomingMessage } from "node:http";
+import type { Duplex } from "node:stream";
 import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { Opaque, Slot, ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { Hono } from "hono";
@@ -14,6 +16,9 @@ import {
 import { AMSP_PREFIX, amspAllowOrigin } from "../amsp/cors.js";
 import { HttpError, handleError } from "./errors.js";
 import { originRule } from "./public-origin.js";
+import { ownOriginRule } from "./own-origin.js";
+import type { OwnOrigin } from "./own-origin.js";
+import { mostSpecific } from "./route-prefix.js";
 import { attributedProjectId } from "./attribution.js";
 import { jsonCompression } from "./json-compression.js";
 import { jsonValidators } from "./json-validators.js";
@@ -41,18 +46,55 @@ export abstract class Http {
     userId: string,
     request: Opaque<"Request", Request>,
   ): Promise<Opaque<"Response", Response>>;
+  /**
+   * Hands a WebSocket upgrade to the contributed endpoint (`HttpModule.upgrades`) whose prefix
+   * covers its path most specifically, and answers true; false when none does, leaving the socket
+   * untouched. The runtime asks this per upgrade of the generation current at that moment
+   * (hmr/upgrade-seam.ts): a socket cannot cross the HTTP seam, so this is the in-process half.
+   */
+  abstract upgrade(
+    request: Opaque<"IncomingMessage", IncomingMessage>,
+    socket: Opaque<"Duplex", Duplex>,
+    head: Opaque<"Buffer", Buffer>,
+  ): boolean;
+  /**
+   * Whether the route group serving `path` judges its callers' origin itself (`origin: "own"`,
+   * http/own-origin.ts). The runtime's own copy of the same-origin rule, in front of the seam,
+   * asks this too (app.ts).
+   */
+  abstract ownOrigin(path: string): boolean;
+}
+
+/**
+ * A WebSocket endpoint's code half: it receives the upgrade request untouched — nothing has
+ * answered or read it — and owns the handshake. It refuses by writing a status line and
+ * destroying the socket, or upgrades it (with `ws`'s `handleUpgrade`, say) and holds the
+ * connection from then on. The connection belongs to the generation that contributed the
+ * endpoint: its module closes it on dispose, and the client reconnects to the next one.
+ */
+export interface WebSocketUpgrade {
+  upgrade(request: IncomingMessage, socket: Duplex, head: Buffer): void;
 }
 
 export interface HttpSlots {
   /**
    * A route group. `auth: "user"` accepts a cookie or the local API token; `"token"` accepts
    * only the local API token, without renewing cookies; `"none"` is public. `order` is the
-   * mount position (a stable number, since Hono matches in order). The code half is the Hono app.
+   * mount position (a stable number, since Hono matches in order). `origin: "own"` says the
+   * group judges its callers' origin itself (a caller that is cross-origin by design, such as a
+   * browser extension), so the same-origin rule for writes does not apply to the paths it
+   * covers (http/own-origin.ts). The code half is the Hono app.
    */
   routes: Slot<
-    { prefix: string; auth: "user" | "token" | "none"; order: number },
+    { prefix: string; auth: "user" | "token" | "none"; order: number; origin?: "own" },
     Opaque<"Hono", Hono<AppEnv>>
   >;
+  /**
+   * A WebSocket endpoint: the upgrades whose path `prefix` covers (that path, or below it) are
+   * handed to the code half. The runtime's own upgrades (a terminal's stream, the API socket)
+   * are never offered here.
+   */
+  upgrades: Slot<{ prefix: string }, Opaque<"WebSocketUpgrade", WebSocketUpgrade>>;
 }
 
 /**
@@ -77,29 +119,42 @@ export class HttpModule {
         prefix: c.data.prefix as string,
         auth: c.data.auth as "user" | "token" | "none",
         order: c.data.order as number,
+        ...(c.data.origin === "own" ? { origin: "own" as const } : {}),
         app: c.code as Hono<AppEnv>,
       }))
       .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+    const ownOrigin = ownOriginRule(routes);
+    const upgrades = [...(contributions.upgrades ?? [])]
+      .map((c) => ({ id: c.id, prefix: c.data.prefix as string, code: c.code as WebSocketUpgrade }))
+      .sort((a, b) => a.id.localeCompare(b.id));
 
     // The HTTP surface, gated on the cookie; and the same surface once per socket user,
     // gated on that user — assembled lazily, since most users never open a socket, and kept,
     // since the one who did opens it on every page load. Hono copies a group's routes into
     // each parent it is mounted on, so mounting the groups twice shares handlers, not state.
-    const cookieGated = this.assemble(routes, authMiddleware(this.auth, this.config.trustProxy));
+    const cookieGated = this.assemble(
+      routes,
+      authMiddleware(this.auth, this.config.trustProxy),
+      ownOrigin,
+    );
     const asUser = new Map<string, Hono<AppEnv>>();
     const enteredAs = (userId: string): Hono<AppEnv> => {
       let app = asUser.get(userId);
       if (app === undefined) {
-        app = this.assemble(routes, async (c, next) => {
-          const user = this.users.findById(userId);
-          if (user === null) throw new HttpError(401, "unauthorized", "Unknown user.");
-          c.set("user", user);
-          // The handshake does not say how the cookie behind it was minted, so the most
-          // demanding kind is assumed; the routes whose answer turns on the kind never reach
-          // here, the socket declines them for HTTP (api/types.ts sessionKindPath).
-          c.set("sessionVia", "password");
-          await next();
-        });
+        app = this.assemble(
+          routes,
+          async (c, next) => {
+            const user = this.users.findById(userId);
+            if (user === null) throw new HttpError(401, "unauthorized", "Unknown user.");
+            c.set("user", user);
+            // The handshake does not say how the cookie behind it was minted, so the most
+            // demanding kind is assumed; the routes whose answer turns on the kind never reach
+            // here, the socket declines them for HTTP (api/types.ts sessionKindPath).
+            c.set("sessionVia", "password");
+            await next();
+          },
+          ownOrigin,
+        );
         asUser.set(userId, app);
       }
       return app;
@@ -108,6 +163,14 @@ export class HttpModule {
       fetch: (request: Request) => Promise.resolve(cookieGated.fetch(request)),
       fetchAs: (userId: string, request: Request) =>
         Promise.resolve(enteredAs(userId).fetch(request)),
+      upgrade: (request: IncomingMessage, socket: Duplex, head: Buffer) => {
+        const path = new URL(request.url ?? "/", "http://localhost").pathname;
+        const endpoint = mostSpecific(upgrades, path)[0];
+        if (endpoint === undefined) return false;
+        endpoint.code.upgrade(request, socket, head);
+        return true;
+      },
+      ownOrigin,
     };
   }
 
@@ -115,6 +178,7 @@ export class HttpModule {
   private assemble(
     routes: { prefix: string; auth: "user" | "token" | "none"; order: number; app: Hono<AppEnv> }[],
     gate: MiddlewareHandler<AppEnv>,
+    ownOrigin: OwnOrigin,
   ): Hono<AppEnv> {
     const errors = this.errors;
     const access = this.access;
@@ -172,7 +236,7 @@ export class HttpModule {
       return capped.mw(c, next);
     });
     const origins = originRule(this.config);
-    app.use("/api/*", sameOriginWrites(origins));
+    app.use("/api/*", sameOriginWrites(origins, ownOrigin));
     // A machine's API is reached through this server (machines/proxy.ts), with this server's
     // cookie: the same question, asked here because the hop drops the Origin.
     app.use("/server/*", sameOriginWrites(origins));

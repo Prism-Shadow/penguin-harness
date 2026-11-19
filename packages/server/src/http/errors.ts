@@ -8,9 +8,17 @@
  *
  * `details` carries the facts a client acts on beside the code — the id a 409 is about, say — so
  * that no client has to parse them out of the message, which is prose and may change.
+ *
+ * An HttpError is recognised by its brand, not by `instanceof`: a code plugin bundles its own copy
+ * of this class (it reaches it through `@prismshadow/penguin-server/plugin`), and `instanceof`
+ * against the host's class would miss every refusal its routes throw and answer them 500. The
+ * brand is a key in the global symbol registry, so every copy of this module stamps and reads the
+ * same one.
  */
 import type { Context } from "hono";
 import type { ErrorBody, ErrorDetails } from "../api/types.js";
+
+const HTTP_ERROR_BRAND = Symbol.for("penguin.http-error");
 
 export class HttpError extends Error {
   constructor(
@@ -23,6 +31,23 @@ export class HttpError extends Error {
     super(message);
     this.name = "HttpError";
   }
+}
+Object.defineProperty(HttpError.prototype, HTTP_ERROR_BRAND, { value: true });
+
+/**
+ * Whether `err` is an HttpError from any copy of this module: it carries the brand and the fields
+ * a response is built from. A look-alike without the brand (an error that merely calls itself
+ * HttpError) is not one, and stays an unknown error.
+ */
+export function isHttpError(err: unknown): err is HttpError {
+  if (typeof err !== "object" || err === null) return false;
+  const e = err as Partial<HttpError> & { [HTTP_ERROR_BRAND]?: unknown };
+  return (
+    e[HTTP_ERROR_BRAND] === true &&
+    typeof e.status === "number" &&
+    typeof e.code === "string" &&
+    typeof e.message === "string"
+  );
 }
 
 /** A 400 for a request the route cannot take as it is; validate.ts re-exports it beside its checks. */
@@ -54,9 +79,9 @@ export function modelCredentialMissing(modelId: string): HttpError {
   );
 }
 
-/** app.onError handler: maps HttpError through as-is; everything else is logged and converged to 500. */
+/** app.onError handler: maps HttpError (any copy, see isHttpError) through as-is; everything else is logged and converged to 500. */
 export function handleError(err: Error, c: Context): Response {
-  if (err instanceof HttpError) {
+  if (isHttpError(err)) {
     if (err.retryAfterSeconds !== undefined) {
       c.header("Retry-After", String(err.retryAfterSeconds));
     }

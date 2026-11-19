@@ -13,8 +13,8 @@
  *   is not an error: the call reports `{ reloaded: true }`, as TMWebDriver's `closed` does.
  * - A script that throws is a PageScriptError carrying the page's own message.
  */
-import type { BrowserBackend } from "../api/types.js";
-import { HttpError } from "../http/errors.js";
+import type { BrowserBackend } from "@prismshadow/penguin-server/api";
+import { HttpError } from "../plugin/index.js";
 import {
   BrowserLinkError,
   BrowserUnavailableError,

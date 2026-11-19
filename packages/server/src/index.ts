@@ -35,10 +35,11 @@ import { clearInitialAdminPassword, renderFirstLoginNotice } from "./initial-pas
 import { applyProxySettings, installGlobalProxyDispatcher } from "./net/proxy.js";
 import { PluginHost } from "./plugin/host.js";
 import { loadPlugins } from "./plugin/loader.js";
-import { attachTerminalWebSocket } from "./terminal/ws.js";
+import { attachTerminalWebSocket, isRuntimeUpgradePath } from "./terminal/ws.js";
 import { originRule } from "./http/public-origin.js";
-import { attachExtensionWebSocket } from "./builtin-browser/extension-ws.js";
-import type { ExtensionGate } from "./builtin-browser/extension-ws.js";
+import { attachUpgradeSeam } from "./hmr/upgrade-seam.js";
+import type { UpgradeSurface } from "./hmr/upgrade-seam.js";
+import { legacyExtensionUpgrade } from "./hmr/legacy-browser.js";
 import { loopbackHostRoles } from "./services/preview-token.js";
 import { acquireServerLock, liveServerLock, releaseServerLock } from "./lock.js";
 import { shellPortOf, wireShellUpdatePort } from "./services/desktop-update-port.js";
@@ -294,25 +295,20 @@ class PenguinServer {
 
   /**
    * Assembles the layer's middleware and routes; from here the listening port answers
-   * with them. The terminal stream is a WebSocket upgrade, which never reaches the fetch
-   * handler — it is bound on each Node listener here, once the platform it asks exists.
+   * with them. The terminal stream and the contributed WebSocket endpoints are upgrades, which
+   * never reach the fetch handler — they are bound on each Node listener here, once the
+   * platform they ask exists.
    */
   buildApp(): void {
     this.app = createApp(this.deps);
     attachTerminalWebSocket(this.httpServer as unknown as HttpServer, this.terminalWebSocketDeps());
-    attachExtensionWebSocket(
-      this.httpServer as unknown as HttpServer,
-      this.extensionWebSocketDeps(),
-    );
+    attachUpgradeSeam(this.httpServer as unknown as HttpServer, this.upgradeSeamDeps());
     if (this.ipv6Loopback !== null) {
       attachTerminalWebSocket(
         this.ipv6Loopback as unknown as HttpServer,
         this.terminalWebSocketDeps(),
       );
-      attachExtensionWebSocket(
-        this.ipv6Loopback as unknown as HttpServer,
-        this.extensionWebSocketDeps(),
-      );
+      attachUpgradeSeam(this.ipv6Loopback as unknown as HttpServer, this.upgradeSeamDeps());
     }
   }
 
@@ -529,29 +525,32 @@ class PenguinServer {
     // loopback opened after buildApp() (never in practice) gets it here.
     if (this.app !== undefined) {
       attachTerminalWebSocket(loopback as unknown as HttpServer, this.terminalWebSocketDeps());
-      attachExtensionWebSocket(loopback as unknown as HttpServer, this.extensionWebSocketDeps());
+      attachUpgradeSeam(loopback as unknown as HttpServer, this.upgradeSeamDeps());
     }
   }
 
   /**
-   * The Chrome extension's WebSocket wiring, beside the terminal's on every listener: the
-   * upgrade is checked here, and the socket handed to the current generation's browser module.
+   * The contributed WebSocket endpoints' wiring, beside the terminal's on every listener: each
+   * upgrade goes to the current generation's HTTP surface (`HttpModule.upgrades`), and to the
+   * extension's legacy gate when that generation predates the slot (hmr/legacy-browser.ts).
    */
-  private extensionWebSocketDeps() {
+  private upgradeSeamDeps() {
     const hmr = this.deps.hmr;
+    const log = (line: string) => console.log(line);
     return {
-      gate: async (): Promise<ExtensionGate | null> => {
+      current: async (): Promise<UpgradeSurface | null> => {
         const platform = await hmr.ensure();
         const tree = typeof platform.api.business === "function" ? platform.api.business() : null;
-        if (tree === null || !tree.has("BuiltinBrowserModule")) return null;
+        if (tree === null) return null;
         try {
-          return tree.api<ExtensionGate>("BuiltinBrowserModule", "BrowserExtensionGate");
+          return tree.api<UpgradeSurface>("ApiModule", "Http");
         } catch {
-          // A pushed platform from before the extension: no gate, so the upgrade is a 503.
           return null;
         }
       },
-      log: (line: string) => console.log(line),
+      reserved: isRuntimeUpgradePath,
+      fallback: legacyExtensionUpgrade(hmr, log),
+      log,
     };
   }
 

@@ -6,10 +6,17 @@
  *   replaces with a fake shell.
  * - `BuiltinBrowserRoutes` builds the generation's BuiltinBrowser — the built-in browser over
  *   that port, and the users' own Chromes through the extension hub — mounts the routes, and
- *   provides the gate the runtime's WebSocket upgrade (extension-ws.ts) hands sockets to. The
- *   browser (and with it the port listener and every extension socket) is disposed with the
- *   App: a hot swap hands the port to the next generation's link, and the extensions reconnect
- *   to the next generation's hub (close 1012).
+ *   contributes the extension's WebSocket endpoint (`HttpModule.upgrades`, extension-ws.ts),
+ *   which the runtime hands the upgrade to. The browser (and with it the port listener and
+ *   every extension socket) is disposed with the App: a hot swap hands the port to the next
+ *   generation's link, and the extensions reconnect to the next generation's hub (close 1012).
+ * - It reaches the host only through the plugin face (`../plugin/index.js`, published as
+ *   `@prismshadow/penguin-server/plugin`), the API's types (`@prismshadow/penguin-server/api`),
+ *   core and the library packages, so moving it into a plugin package changes import paths only.
+ *
+ * Two names are kept for runtimes older than the WebSocket slot, which find the extension's gate
+ * by name rather than by path: this module stays `BuiltinBrowserModule` and keeps exporting
+ * `BrowserExtensionGate` (hmr/legacy-browser.ts; until 1.0).
  *
  * The built-in browser's UI events go to every admin who has the event stream open (it is the
  * admins' tool, see routes.ts); a user's Chrome's go to that user. A channel nobody listens on
@@ -20,20 +27,34 @@ import { buildInfo } from "@prismshadow/penguin-core";
 import { Bind, Component, Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx, Opaque } from "@prismshadow/penguin-core/kernel";
 import type { Hono } from "hono";
-import type { BrowserBackend, BuiltinBrowserServerEvent, UiPrefs } from "../api/types.js";
-import type { AppEnv } from "../auth/middleware.js";
+import type {
+  BrowserBackend,
+  BuiltinBrowserServerEvent,
+  UiPrefs,
+} from "@prismshadow/penguin-server/api";
 import { BrowserExtensionsRepo } from "@prismshadow/penguin-library-machine/browser-extensions";
 import { BROWSER_EXTENSIONS_KEY } from "@prismshadow/penguin-library-setting/repos/server-settings";
-import type { Channels, Clock, Config, Db, Desktop, Log, Paths } from "../hmr/capabilities.js";
-import { userChannelKey } from "../http/routes/events.js";
-import { ensureInstallId } from "../install-id.js";
-import type { Users } from "@prismshadow/penguin-library-auth";
-import type { SessionDrivers, SessionIndex } from "@prismshadow/penguin-library-session";
-import type { Settings, UiPrefsStore } from "@prismshadow/penguin-library-setting";
-import { shellPortOf } from "../services/desktop-update-port.js";
+import { ensureInstallId, shellPortOf, userChannelKey } from "../plugin/index.js";
+import type {
+  AppEnv,
+  Channels,
+  Clock,
+  Config,
+  Db,
+  Desktop,
+  Log,
+  Paths,
+  SessionDrivers,
+  SessionIndex,
+  Settings,
+  UiPrefsStore,
+  Users,
+  WebSocketUpgrade,
+} from "../plugin/index.js";
 import type { BrowserExtensionAdmission } from "./extension-hub.js";
 import type { ExtensionSocket } from "./extension-link.js";
 import { ExtensionPairing } from "./extension-pairing.js";
+import { extensionUpgrade } from "./extension-ws.js";
 import { builtinBrowserRoutes, extensionPairRoutes } from "./routes.js";
 import { BuiltinBrowser } from "./service.js";
 import type { BrowserShellPort } from "./shell-link.js";
@@ -53,8 +74,10 @@ export class ProcessShellPort implements BuiltinBrowserPort {
 }
 
 /**
- * Where the runtime's WebSocket upgrade hands an extension's socket: it asks what the token may
- * do before upgrading (an unknown one is refused 401), then gives the live socket over.
+ * Where the extension's WebSocket hands its socket: it asks what the token may do before
+ * upgrading (an unknown one is refused 401), then gives the live socket over. The contributed
+ * endpoint uses it in-process; a runtime older than the WebSocket slot looks it up by this name
+ * (`BuiltinBrowserModule` / `BrowserExtensionGate`) and does the handshake itself.
  */
 @Interface()
 export abstract class BrowserExtensionGate {
@@ -96,11 +119,31 @@ function backendPrefs(store: UiPrefsStore) {
       },
       {
         // In front of the cookie gate (the first gated group mounts at order 10): the
-        // extension pairs with a code, not a session.
+        // extension pairs with a code, not a session. It calls from its own
+        // `chrome-extension://` origin, which the route admits itself (extensionPairRoutes):
+        // the same-origin rule for writes is not this group's.
         id: "BuiltinBrowserRoutes.pair",
         prefix: "/api/builtin-browser/extension/pair",
         auth: "none",
         order: 7,
+        origin: "own",
+      },
+    ],
+    "HttpModule.upgrades": [
+      {
+        id: "BuiltinBrowserRoutes.extensionSocket",
+        prefix: "/api/builtin-browser/extension/ws",
+      },
+    ],
+    "MeRoutes.ownedPrefs": [
+      {
+        // Which browser the user's agents drive has its own route, which checks what the user
+        // may choose, waits out an agent's action in flight, and tells their windows; a plain
+        // prefs write would skip all three.
+        id: "BuiltinBrowserRoutes.backendPref",
+        key: "browserBackend",
+        message:
+          "browserBackend is chosen through PUT /api/builtin-browser/backend, not the prefs.",
       },
     ],
   },
@@ -122,6 +165,7 @@ export class BuiltinBrowserRoutes {
   @Provide() gate!: BrowserExtensionGate;
   @Bind("BuiltinBrowserRoutes.routes") routes!: Hono<AppEnv>;
   @Bind("BuiltinBrowserRoutes.pair") pairRoutes!: Hono<AppEnv>;
+  @Bind("BuiltinBrowserRoutes.extensionSocket") extensionSocket!: WebSocketUpgrade;
 
   setup({ effect }: ClassCtx) {
     const users = this.users;
@@ -187,6 +231,8 @@ export class BuiltinBrowserRoutes {
       admit: (token) => browser.admit(token),
       connect: (token, socket) => browser.connect(token, socket as ExtensionSocket),
     };
+    const gate = this.gate;
+    this.extensionSocket = extensionUpgrade({ gate: () => gate, log: (line) => log.line(line) });
     // The admin's switch acts at once: off closes every connected Chrome (4009).
     const unwatch = settings.watch((key) => {
       if (key === BROWSER_EXTENSIONS_KEY && !settings.getBrowserExtensionsEnabled()) {

@@ -7,7 +7,7 @@
  * The reply comes from outside the server, so it is checked whole before anything is read: a
  * reply that is not a list of cookies fails the import rather than importing part of it.
  */
-import type { ChromeExtensionCookie } from "../../api/types.js";
+import type { ChromeExtensionCookie } from "@prismshadow/penguin-server/api";
 import { inDomains, isExpired, toDesktopCookie, type StoredCookie } from "./cookie-rules.js";
 import type { CookieReadResult } from "./index.js";
 import { SkipTally } from "./skips.js";
