@@ -50,7 +50,9 @@ const openedInBrowser = vi.hoisted(() => [] as string[]);
 
 vi.mock("../../../plugins/browser-automation/src/web/browser-actions", async (importOriginal) => {
   const actual =
-    await importOriginal<typeof import("../../../plugins/browser-automation/src/web/browser-actions")>();
+    await importOriginal<
+      typeof import("../../../plugins/browser-automation/src/web/browser-actions")
+    >();
   return {
     ...actual,
     openLinkInBrowser: (url: string) => {

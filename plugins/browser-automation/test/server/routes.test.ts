@@ -31,12 +31,7 @@ import type { UserRow } from "@prismshadow/penguin-library-auth/repos/users";
 import { handleError } from "./host.js";
 import { ImportSourceNotFoundError } from "../../src/server/import/index.js";
 import { builtinBrowserRoutes } from "../../src/server/routes.js";
-import {
-  BuiltinBrowser,
-  MAX_TABS,
-  browserUrl,
-  homepageUrl,
-} from "../../src/server/service.js";
+import { BuiltinBrowser, MAX_TABS, browserUrl, homepageUrl } from "../../src/server/service.js";
 import type { Importer } from "../../src/server/service.js";
 import { FakeShell, evaluated, expressionOf, tab } from "./fake-shell.js";
 import type { CdpHandler } from "./fake-shell.js";

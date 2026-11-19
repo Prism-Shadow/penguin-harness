@@ -33,7 +33,10 @@ import "../src/web-app/plugin-host";
 import { BuiltinBrowserPanel } from "../../../plugins/browser-automation/src/web/browser-panel";
 import { ChromeStatusRow } from "../../../plugins/browser-automation/src/web/chrome-status-row";
 import { switchBrowserBackend } from "../../../plugins/browser-automation/src/web/browser-actions";
-import { browserState, dispatchBrowser } from "../../../plugins/browser-automation/src/web/browser-store";
+import {
+  browserState,
+  dispatchBrowser,
+} from "../../../plugins/browser-automation/src/web/browser-store";
 import { S as B } from "../../../plugins/browser-automation/src/web/strings";
 import { apiError, json, stubFetch } from "./helpers/fetch";
 

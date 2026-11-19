@@ -4,7 +4,10 @@
  * the typed text, like a browser's address bar, and every other key stays the field's.
  */
 import { describe, expect, it } from "vitest";
-import { NO_HIGHLIGHT, moveHighlight } from "../../../plugins/browser-automation/src/web/suggestion-nav";
+import {
+  NO_HIGHLIGHT,
+  moveHighlight,
+} from "../../../plugins/browser-automation/src/web/suggestion-nav";
 
 describe("moveHighlight", () => {
   it("walks down the rows and back to the typed text", () => {

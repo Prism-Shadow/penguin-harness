@@ -8,11 +8,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import {
-  listImportSources,
-  readCookies,
-  readHistory,
-} from "../../src/server/import/index.js";
+import { listImportSources, readCookies, readHistory } from "../../src/server/import/index.js";
 import { HISTORY_LIMIT } from "../../src/server/import/history.js";
 import { unreadableStoreNote } from "../../src/server/import/sqlite-copy.js";
 import {

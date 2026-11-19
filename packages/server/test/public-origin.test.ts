@@ -120,7 +120,9 @@ async function onSocket(
 }
 
 describe("a desktop behind the relay", () => {
-  const d = deployment(() => createDesktopApp({ plugins: browserPlugin(), config: { trustProxy: true } }));
+  const d = deployment(() =>
+    createDesktopApp({ plugins: browserPlugin(), config: { trustProxy: true } }),
+  );
 
   it("redirects a key authorization back to the https address the browser is on", async () => {
     const res = await relayed(d, START, PUBLIC, KEY);
@@ -176,7 +178,9 @@ describe("a desktop behind the relay", () => {
 });
 
 describe("a server behind a trusted proxy", () => {
-  const d = deployment(() => createTestApp({ plugins: browserPlugin(), config: { trustProxy: true } }));
+  const d = deployment(() =>
+    createTestApp({ plugins: browserPlugin(), config: { trustProxy: true } }),
+  );
   const server = { trustProxy: true, acceptOwnOrigin: false };
 
   it("takes the public origin, and refuses http:// on the public host even with no body", async () => {

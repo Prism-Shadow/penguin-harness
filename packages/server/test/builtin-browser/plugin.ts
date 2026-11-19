@@ -18,10 +18,7 @@ import {
 } from "../../../../plugins/browser-automation/src/server/module.js";
 import type { BrowserShellPort } from "../../../../plugins/browser-automation/src/server/shell-link.js";
 
-export {
-  FakeShell,
-  tab,
-} from "../../../../plugins/browser-automation/test/server/fake-shell.js";
+export { FakeShell, tab } from "../../../../plugins/browser-automation/test/server/fake-shell.js";
 export type { ExtensionSocket } from "../../../../plugins/browser-automation/src/server/extension-link.js";
 export { PENGUIN_EXTENSION_ID } from "../../../../plugins/browser-automation/src/server/extension-origin.js";
 export { ExtensionPairing } from "../../../../plugins/browser-automation/src/server/extension-pairing.js";

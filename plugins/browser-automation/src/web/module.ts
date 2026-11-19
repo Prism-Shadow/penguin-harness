@@ -23,7 +23,9 @@ import { invalidateSlotClips } from "./slot-registry";
 
 @Module({
   contributes: {
-    "WebAppModule.serverModules": [{ id: "builtin-browser.server", module: "BuiltinBrowserModule" }],
+    "WebAppModule.serverModules": [
+      { id: "builtin-browser.server", module: "BuiltinBrowserModule" },
+    ],
     "WebAppModule.layers": [{ id: "builtin-browser.layer", order: 30 }],
     "SessionsModule.userEvents": [{ id: "builtin-browser.events", order: 20 }],
     "DockModule.panels": [

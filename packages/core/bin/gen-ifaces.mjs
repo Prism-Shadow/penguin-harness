@@ -95,7 +95,7 @@ const checkOnly = args.includes("--check");
 /** The name in the package.json nearest above `fileName` (null when there is none). */
 const packageNames = new Map();
 function packageNameOf(fileName) {
-  for (let dir = path.dirname(fileName); ; ) {
+  for (let dir = path.dirname(fileName); ;) {
     if (packageNames.has(dir)) return packageNames.get(dir);
     const file = path.join(dir, "package.json");
     if (fs.existsSync(file)) {
@@ -113,7 +113,14 @@ const ownPackage = packageNameOf(path.resolve(projects[0] ?? "tsconfig.json"));
 
 /** `--sources <dir>`: the directories whose source files are projected (absolute, `/`-separated). */
 const sourceRoots = args.flatMap((a, i) =>
-  a === "--sources" ? [`${path.resolve(args[i + 1]).split(path.sep).join("/")}/`] : [],
+  a === "--sources"
+    ? [
+        `${path
+          .resolve(args[i + 1])
+          .split(path.sep)
+          .join("/")}/`,
+      ]
+    : [],
 );
 /** A source file this run projects: not a declaration, not installed, and under --sources if given. */
 const projectsFile = (sf) =>
@@ -214,9 +221,7 @@ for (const project of projects) {
   const program = ts.createProgram({ rootNames: parsed.fileNames, options: parsed.options });
   const checker = program.getTypeChecker();
 
-  const sourceFiles = program
-    .getSourceFiles()
-    .filter(projectsFile);
+  const sourceFiles = program.getSourceFiles().filter(projectsFile);
   /** An `@Interface()` decorator, like every other decorator here a factory call. */
   const hasInterfaceDecorator = (d) =>
     (ts.getDecorators?.(d) ?? []).some(

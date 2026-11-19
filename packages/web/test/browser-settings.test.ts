@@ -23,7 +23,10 @@ import type { BrowserExtensionRecord, ServerSettings } from "@prismshadow/pengui
 import { Button } from "@prismshadow/penguin-ui";
 // The browser reaches the app's own helpers through the plugin face; this hands them over.
 import "../src/web-app/plugin-host";
-import { PairedChromes, RevokeConfirm } from "../../../plugins/browser-automation/src/web/browser-section";
+import {
+  PairedChromes,
+  RevokeConfirm,
+} from "../../../plugins/browser-automation/src/web/browser-section";
 import { ExtensionsOffConfirm } from "../../../plugins/browser-automation/src/web/chrome-extension-section";
 import { S as B } from "../../../plugins/browser-automation/src/web/strings";
 import { apiError, json, stubFetch } from "./helpers/fetch";

@@ -22,7 +22,10 @@ import {
   adoptBrowserSession,
   openBrowserTab,
 } from "../../../plugins/browser-automation/src/web/browser-actions";
-import { browserState, dispatchBrowser } from "../../../plugins/browser-automation/src/web/browser-store";
+import {
+  browserState,
+  dispatchBrowser,
+} from "../../../plugins/browser-automation/src/web/browser-store";
 import { guestKey } from "../../../plugins/browser-automation/src/web/browser-state";
 import {
   dockVersion,

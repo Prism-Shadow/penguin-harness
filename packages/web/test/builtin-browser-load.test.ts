@@ -11,7 +11,10 @@ import {
   loadWarningText,
   newWarnings,
 } from "../../../plugins/browser-automation/src/web/load";
-import { en as browserEn, zh as browserZh } from "../../../plugins/browser-automation/src/web/strings";
+import {
+  en as browserEn,
+  zh as browserZh,
+} from "../../../plugins/browser-automation/src/web/strings";
 
 const EN = browserEn.builtinBrowser.load;
 

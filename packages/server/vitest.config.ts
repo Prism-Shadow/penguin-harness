@@ -71,7 +71,9 @@ export default defineConfig({
       "@prismshadow/penguin-server/plugin": fileURLToPath(
         new URL("./src/plugin/index.ts", import.meta.url),
       ),
-      "@prismshadow/penguin-server/api": fileURLToPath(new URL("./src/api/types.ts", import.meta.url)),
+      "@prismshadow/penguin-server/api": fileURLToPath(
+        new URL("./src/api/types.ts", import.meta.url),
+      ),
     },
   },
   test: {

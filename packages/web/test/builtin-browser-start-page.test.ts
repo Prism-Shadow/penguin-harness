@@ -32,7 +32,10 @@ import {
   type BrowserState,
 } from "../../../plugins/browser-automation/src/web/browser-state";
 import { dispatchBrowser } from "../../../plugins/browser-automation/src/web/browser-store";
-import { NewTabPage, START_PAGE_SITES } from "../../../plugins/browser-automation/src/web/new-tab-page";
+import {
+  NewTabPage,
+  START_PAGE_SITES,
+} from "../../../plugins/browser-automation/src/web/new-tab-page";
 import { S as B } from "../../../plugins/browser-automation/src/web/strings";
 
 const BUILTIN = {
