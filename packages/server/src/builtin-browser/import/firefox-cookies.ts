@@ -15,7 +15,8 @@ import {
 } from "./cookie-rules.js";
 import type { DiscoveredProfile } from "./discovery.js";
 import type { CookieReadResult, ImportEnv } from "./index.js";
-import { columnsOf, readDatabaseCopy, unreadableStoreWarning } from "./sqlite-copy.js";
+import { SkipTally } from "./skips.js";
+import { columnsOf, readDatabaseCopy, unreadableStoreNote } from "./sqlite-copy.js";
 
 /** Above this, `expiry` is milliseconds rather than seconds. */
 export const EXPIRY_MS_THRESHOLD = 1e11;
@@ -40,27 +41,18 @@ export async function readFirefoxCookies(
   env: ImportEnv,
 ): Promise<CookieReadResult> {
   if (profile.cookiesFile === null) {
-    return { cookies: [], found: 0, skipped: 0, warnings: ["This profile has no cookie store."] };
+    return { cookies: [], found: 0, skips: [], notes: [{ code: "no_cookie_store" }] };
   }
   let rows: FirefoxCookieRow[];
   try {
     rows = await readDatabaseCopy(profile.cookiesFile, env, readStore);
   } catch (err) {
-    return {
-      cookies: [],
-      found: 0,
-      skipped: 0,
-      warnings: [unreadableStoreWarning(err, "Firefox", "cookie store")],
-    };
+    return { cookies: [], found: 0, skips: [], notes: [unreadableStoreNote(err, "cookies")] };
   }
   const matching = rows.filter((row) => inDomains(row.host, domains));
   const now = Math.floor(Date.now() / 1000);
-  const result: CookieReadResult = {
-    cookies: [],
-    found: matching.length,
-    skipped: 0,
-    warnings: [],
-  };
+  const cookies: CookieReadResult["cookies"] = [];
+  const skips = new SkipTally();
   for (const row of matching) {
     const stored: StoredCookie = {
       host: row.host,
@@ -72,13 +64,11 @@ export async function readFirefoxCookies(
       expires: Math.max(0, Math.floor(row.expires)),
       sameSite: firefoxSameSite(row.same_site),
     };
-    if (row.origin !== "" || isExpired(stored, now)) {
-      result.skipped++;
-      continue;
-    }
-    result.cookies.push(toDesktopCookie(stored));
+    if (row.origin !== "") skips.add("partitioned");
+    else if (isExpired(stored, now)) skips.add("expired");
+    else cookies.push(toDesktopCookie(stored));
   }
-  return result;
+  return { cookies, found: matching.length, skips: skips.list(), notes: [] };
 }
 
 function readStore(db: DatabaseSync): FirefoxCookieRow[] {

@@ -19,7 +19,7 @@ import type {
   ProjectsResponse,
   SemanticIdSuggestResponse,
 } from "../src/api/types.js";
-import type { UtilityCompletion } from "../src/services/project-config-service.js";
+import type { UtilityCompletion } from "@prismshadow/penguin-library-project";
 import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 

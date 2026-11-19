@@ -97,7 +97,7 @@ import type {
   SessionCreateResponse,
   UsageResponse,
 } from "../src/api/types.js";
-import { UsageRepo } from "../src/db/repos/usage.js";
+import { UsageRepo } from "@prismshadow/penguin-library-observability/repos/usage";
 import { ProjectConfigService } from "../src/services/project-config-service.js";
 import type { ChannelEvent } from "../src/runtime/channel.js";
 import { jsonResponse, stubFetch } from "./fixtures/fetch.js";

@@ -19,7 +19,7 @@
  * field's error shows once it differs from what the dialog opened with (an untouched one has its
  * asterisk). A rejection from the server lands under the form, and the dialog stays open.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type {
   ModelInfo,
   ModelRefDto,
@@ -45,13 +45,13 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { useProject } from "../../state/project";
 import { useAgentLocation } from "../../lib/agent-location";
 import { ModelCatalogSelect } from "../model-picker";
 import { WorkspaceSelect } from "../workspace";
 import { sameModelRef } from "../models";
 import { itemModelRef } from "./schedule-upsert";
+import { failureNode } from "../../lib/failure";
 
 /** ISO → the date-and-time picker's value (local timezone, minute precision); "" when missing/invalid. */
 function toLocalInput(iso: string | undefined): string {
@@ -283,7 +283,7 @@ function ScheduleFormDialog({
   /** The machine the Agent lives on (null: this server): its models, Workspaces and tasks. */
   const machineId = useAgentLocation();
   // A submit rejection that isn't attributable to one field, under the form.
-  const [formError, setFormError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<ReactNode>(null);
   const [busy, setBusy] = useState(false);
   // Model dropdown data; a load failure doesn't block the form — falling back to "Project default" is fine.
   const [models, setModels] = useState<ModelInfo[]>([]);
@@ -370,7 +370,7 @@ function ScheduleFormDialog({
       onSaved();
     } catch (e) {
       // A 400 (validated with the same rules as hand-written files) isn't tied to one field — show it under the form.
-      setFormError(apiErrorText(e));
+      setFormError(failureNode(e, { what: "a scheduled task could not be saved" }));
     } finally {
       setBusy(false);
     }

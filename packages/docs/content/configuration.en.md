@@ -438,7 +438,7 @@ The harness fills these placeholders:
 | `{{LAST_TURN}}` | `handoff_note` | The last completed request before the compaction: its text and its last four tool calls with their outputs, each cut at 500 characters |
 | `{{TRACE_PATH}}` | `handoff_note` | The absolute path of the Trace file the compaction closed |
 
-A placeholder with nothing to quote reads `(not recorded)`. A blank text means no prose from the harness: a blank `reminder` sends a round's tool outputs alone, so an empty reply, which leaves nothing to send, ends with the note; a blank `handoff_note` gives the four quoted values, one per line. A key missing from the file reads as its default: a file written before `max_rounds`, `reminder` and `handoff_note` existed runs on their defaults and keeps a `prompt` edited there; the new keys appear in the file once a [kernel update](#kernel-updates) or a restore of defaults rewrites the section.
+A placeholder with nothing to quote reads `(not recorded)`. A blank text means no prose from the harness: a blank `reminder` sends a round's tool outputs alone, so an empty reply, which leaves nothing to send, ends with the note; a blank `handoff_note` gives the four quoted values, one per line. A key missing from the file reads as its default: a file written before `max_rounds`, `reminder` and `handoff_note` existed runs on their defaults and keeps a `prompt` edited there; the new keys appear in the file once a [kernel update](#kernel-updates) or a restore of defaults rewrites the section, or once one is saved on the agent's **Runtime** tab, where all three are edited beside the `prompt`.
 
 ### When the provider refuses a request
 

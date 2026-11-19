@@ -12,7 +12,7 @@
  * creating one, any member may import one (benchmark-import-modal.tsx): through an Agent from a
  * repository folder, or from a package zip.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import type {
   AgentSummary,
@@ -42,7 +42,6 @@ import {
 import * as api from "../../api/endpoints";
 import { useAgentAvatarSrc } from "../../lib/agent-avatar";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { cardBodyClick } from "../../lib/card-open";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { formatRelativeShort, formatScore, signedDelta } from "../../lib/format";
@@ -67,6 +66,7 @@ import { useBenchmarksAcross } from "./benchmark-sources";
 import { CreateBenchmarkModal } from "./create-benchmark-modal";
 import { UseBenchmarkModal } from "./use-benchmark-modal";
 import { toastApiError } from "../../lib/toast-api-error";
+import { failureNode } from "../../lib/failure";
 
 /** The Skills a design conversation is opened with (see the create modal below). */
 const BENCHMARK_DESIGN_SKILLS = ["benchmark-design", "agent-evaluation"];
@@ -74,9 +74,9 @@ const BENCHMARK_DESIGN_SKILLS = ["benchmark-design", "agent-evaluation"];
 /** How many tested Agents a card names before the rest fold into a "+n". */
 const AVATARS_SHOWN = 3;
 
-function deltaTone(delta: number | null): string {
-  if (delta === null || delta === 0) return toneInk.muted;
-  return delta > 0 ? toneInk.success : toneInk.danger;
+function deltaTone(delta: number | null): "muted" | "success" | "danger" {
+  if (delta === null || delta === 0) return "muted";
+  return delta > 0 ? "success" : "danger";
 }
 
 /**
@@ -206,6 +206,7 @@ export function BenchmarkCard({
   onDelete: () => void;
 }) {
   const latest = latestWithDelta(benchmark.evaluations);
+  const scoreTone = deltaTone(latest?.delta ?? null);
   const series = sparklineSeries(benchmark.evaluations);
   // A Benchmark that is not published is masked and inert: a draft is still being written and
   // calibrated by the agent, and a failed one never finished calibrating and can only be thrown
@@ -298,7 +299,8 @@ export function BenchmarkCard({
               </span>
               <span
                 data-slot="label"
-                className={`block whitespace-nowrap text-xs tabular-nums ${deltaTone(latest.delta)}`}
+                data-tone={scoreTone}
+                className={`block whitespace-nowrap text-xs tabular-nums ${toneInk[scoreTone]}`}
               >
                 {latest.delta === null
                   ? S.benchmark.firstEvaluation
@@ -310,6 +312,7 @@ export function BenchmarkCard({
           ) : (
             <span
               data-slot="label"
+              data-tone="muted"
               className="block whitespace-nowrap text-xs text-gray-400 dark:text-gray-500"
             >
               {S.benchmark.notEvaluated}
@@ -420,7 +423,14 @@ export function BenchmarkPage() {
   // flight. A machine that connects re-asks, with the cards on screen kept.
   const listed = useBenchmarksAcross(projectId, machineIds, reload);
   const benchmarks = listed.benchmarks;
-  const error = listed.error === null ? null : apiErrorText(listed.error);
+  // Made once per failure, so its report keeps the time it failed at.
+  const error = useMemo(
+    () =>
+      listed.error === null
+        ? null
+        : failureNode(listed.error, { what: "a Project's Benchmarks could not be listed" }),
+    [listed.error],
+  );
 
   // The Project's models, for the Use dialog's conversation-model picker; a failure just
   // leaves the picker at the Project default.

@@ -17,13 +17,13 @@ import { originRule } from "./public-origin.js";
 import { attributedProjectId } from "./attribution.js";
 import { jsonCompression } from "./json-compression.js";
 import { jsonValidators } from "./json-validators.js";
-import { bodyLimitBytes } from "../services/attachment-limits.js";
+import { bodyLimitBytes } from "@prismshadow/penguin-library-setting/attachment-limits";
 import { isAgentImport, MAX_PACKAGE_BYTES } from "../services/agent-zip.js";
 import { declined } from "../hmr/hono-seam.js";
-import type { Auth, Users } from "../mechanisms/identity.js";
-import type { Access } from "../mechanisms/projects.js";
-import type { Errors } from "../mechanisms/observability.js";
-import type { Settings } from "../mechanisms/settings.js";
+import type { Auth, Users } from "@prismshadow/penguin-library-auth";
+import type { Access } from "@prismshadow/penguin-library-project";
+import type { Errors } from "@prismshadow/penguin-library-observability";
+import type { Settings } from "@prismshadow/penguin-library-setting";
 
 /**
  * The assembled business surface: one request in, one response (or a decline) out.

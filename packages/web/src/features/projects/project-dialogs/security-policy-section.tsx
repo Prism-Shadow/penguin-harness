@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type {
   CommandPolicyActionDto,
   CommandPolicyDto,
@@ -22,11 +22,11 @@ import {
 import { ApiError } from "../../../api/client";
 import * as api from "../../../api/endpoints";
 import { S } from "../../../lib/strings";
-import { apiErrorText } from "../../../lib/api-error";
 import { toastApiError } from "../../../lib/toast-api-error";
 import { useInstantSetting } from "../../../lib/instant-setting";
 import { PROJECT_SETTINGS_SCOPE } from "./shared";
 import { RuleTable, pageCountOf, pageOf, type RejectedRule } from "./command-policy-table";
+import { failureNode } from "../../../lib/failure";
 
 /**
  * The row a refused Save is about: the server answers a pattern it cannot compile with that
@@ -190,7 +190,7 @@ export function SecurityPolicySection({
   isOwner: boolean;
 }) {
   const [saved, setSaved] = useState<CommandPolicyDto | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<ReactNode>(null);
   /** The list's Save is in flight, which holds the dialog's close (the switch's write does not). */
   const [busy, setBusy] = useState(false);
   useSaving(busy, PROJECT_SETTINGS_SCOPE);
@@ -239,7 +239,9 @@ export function SecurityPolicySection({
         if (!cancelled) setSaved(res);
       })
       .catch((e: unknown) => {
-        if (!cancelled) setLoadError(apiErrorText(e));
+        if (!cancelled) {
+          setLoadError(failureNode(e, { what: "a Project's command policy could not be loaded" }));
+        }
       });
     return () => {
       cancelled = true;
