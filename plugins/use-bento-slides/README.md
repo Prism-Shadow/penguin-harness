@@ -9,12 +9,12 @@ Make slide decks with [Bento Slides](https://bento.page), a slide editor whose d
 
 ## The Slides workbench
 
-- **Find a presentation.** The workbench opens your saved presentations, ordered by the last edit. Open, rename or delete one there. Use **Save**, **Ctrl+S** or **Cmd+S** to write the open presentation, including the text you are typing.
+- **Find a presentation.** The workbench opens your saved presentations, ordered by the last edit. Open, rename or delete one there. Use **File → Save presentation**, **Ctrl+S** or **Cmd+S** to write the open presentation, including the text you are typing.
 - **A full slide editor in a tab.** Bento's own editor: slide list, canvas, text, shapes, pictures, tables, charts, morph transitions, presenter mode.
 - **Ask in plain words.** The rail beside the editor sends your request to the Agent together with the slide you are on and the elements you selected, so "make this a bar chart of the numbers" means this slide.
 - **Both of you edit one deck.** A deck is one file. The editor saves your changes to it and the Agent edits it with its own tools; whichever side saved last is loaded into the other within a second. Asking from the ordinary chat works the same way: the Agent writes the same file.
-- **Both sides' edits are kept.** When the Agent saves while you have unsaved changes, your changes are replayed on top of its version, element by element. If you both changed the same property, yours is kept, the workbench says so, and the Agent's version goes to the deck's **History**, from which any version can be restored.
-- **Decks you can take away.** **Export as PowerPoint file (.pptx)** downloads an editable .pptx with native text, shapes, tables and supported charts. For the original animations, media and editor, **Download Bento HTML file (.html)** gives a self-contained `.bento.html` that opens in any browser with the editor inside it. **Import Bento HTML file (.html)** opens it again, or a deck's `.json`.
+- **Both sides' edits are kept.** When the Agent saves while you have unsaved changes, your changes are replayed on top of its version, element by element. If you both changed the same property, yours is kept, the workbench says so, and the Agent's version goes to the deck’s **File → Version history**, from which any version can be restored.
+- **Decks you can take away.** **Export as PowerPoint file (.pptx)** downloads an editable .pptx with native text, shapes, tables and supported charts. For the original animations, media and editor, **Download Bento HTML file (.html)** gives a self-contained `.bento.html` that opens in any browser with the editor inside it. **Import Bento HTML or JSON…** opens it again, or a deck's `.json`.
 
 To start, open the **Slides** tab beside the Agent's chat, or the **AI PPT** tile in the App Center. Describe a deck and choose **Create with AI**, choose a blank deck or a three-slide project brief, or open the sample deck. Use **Present** to play the current deck. Then click a slide, type a change in the rail on the right, and keep editing while the Agent works.
 

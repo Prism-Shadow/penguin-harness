@@ -1,4 +1,4 @@
-// The Slides page: a deck picker, the Bento editor in a sandboxed frame, and a rail that asks
+// The Slides page: presentation files, the Bento editor in a sandboxed frame, and a rail that asks
 // the Agent to change the open deck.
 //
 // One deck is one file the handler serves. The page keeps the editor and the file in step:
@@ -9,6 +9,7 @@
 // policy that allows no connection, so the Bento runtime cannot reach the network or the app.
 import { exportPowerPoint } from "./powerpoint.js";
 import { deckFiles } from "./deck-files.js";
+import { setupFileMenu } from "./file-menu.js";
 import { bridge, connectSave, captureSave, editorDocument, editorToken } from "./bridge.js";
 import { newConversation, readConversation } from "./conversation.js";
 import { showConversation } from "./conversation-view.js";
@@ -51,7 +52,8 @@ frame.title = S.frameTitle;
 frame.parentElement.setAttribute("aria-label", S.frameTitle);
 $("player-frame").title = S.present;
 $("player").setAttribute("aria-label", S.present);
-$("rail-toggle").setAttribute("aria-controls", "rail");
+setupFileMenu($("file-button"), $("file-menu"));
+$("save-shortcut").textContent = /Mac|iPhone|iPad/i.test(navigator.platform) ? "⌘S" : "Ctrl+S";
 app.dataset.rail = matchMedia("(max-width: 850px)").matches ? "off" : "on";
 $("rail-toggle").setAttribute("aria-pressed", String(app.dataset.rail === "on"));
 $("prompt").placeholder = S.promptPlaceholder;
@@ -106,9 +108,6 @@ function notice(text, ms = 12_000, action = null) {
   if (ms > 0) noticeTimer = setTimeout(() => (line.hidden = true), ms);
 }
 
-const TRASH =
-  '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-
 let listRequest = 0;
 let connected = false;
 const filesPage = deckFiles({
@@ -144,53 +143,8 @@ async function refreshDecks() {
     return;
   }
   filesPage.render(decks, "ready");
-  renderDeckMenu();
   const current = decks.find((deck) => deck.id === open?.id);
   $("deck-title").textContent = current?.title || open?.shown?.title || S.untitled;
-}
-
-/** The deck whose delete button has had its first click, for a few seconds: it waits for the second. */
-let armed = null;
-let armedTimer = null;
-function arm(id) {
-  armed = id;
-  clearTimeout(armedTimer);
-  if (id !== null) {
-    armedTimer = setTimeout(() => {
-      armed = null;
-      renderDeckMenu();
-    }, 4000);
-  }
-}
-
-function renderDeckMenu() {
-  $("deck-menu").replaceChildren(
-    ...decks.map((deck) => {
-      const item = document.createElement("li");
-      item.setAttribute("role", "option");
-      item.setAttribute("aria-selected", String(open?.id === deck.id));
-      item.dataset.id = deck.id;
-      const name = document.createElement("span");
-      name.className = "name";
-      name.textContent = deck.title || S.untitled;
-      const meta = document.createElement("span");
-      meta.className = "meta";
-      meta.textContent = S.slides(deck.slides);
-      // Deleting takes a second click on the same button: the frame has no confirm().
-      const remove = document.createElement("button");
-      remove.type = "button";
-      remove.className = "row-action";
-      remove.dataset.delete = deck.id;
-      remove.title = S.deleteDeck;
-      remove.setAttribute("aria-label", S.deleteDeck);
-      if (armed === deck.id) {
-        remove.dataset.armed = "1";
-        remove.textContent = S.confirmDelete;
-      } else remove.innerHTML = TRASH;
-      item.append(name, meta, remove);
-      return item;
-    }),
-  );
 }
 
 // ---- the editor frame ---------------------------------------------------------------------
@@ -198,8 +152,15 @@ function renderDeckMenu() {
 /** The Bento runtime with `doc` in it, the frame's policy, and the bridge that reports to us. */
 function frameHead(token) {
   const policy = `<meta http-equiv="Content-Security-Policy" content="${FRAME_POLICY}">`;
+  // The host provides loading and save feedback. Bento's disk-only notice has a single
+  // acknowledgement button. Recovery and file-conflict banners have multiple actions.
+  const embeddedChrome = `<style>
+    html #bento-splash,
+    .ed-recover:has(> span:first-child + button.ed-btn-primary:last-child) { display: none; }
+  </style>`;
   return (
     policy +
+    embeddedChrome +
     `<script>(${connectSave.toString()})(${JSON.stringify(token)},(${captureSave.toString()}),${JSON.stringify(S.saveDeck)})</` +
     "script>"
   );
@@ -616,41 +577,47 @@ const when = (ms) =>
     minute: "2-digit",
   });
 
+let historyRequest = 0;
 async function showHistory() {
-  const menu = $("history-menu");
-  if (!menu.hidden || open === null) {
-    closeMenus();
-    return;
-  }
-  closeMenus();
-  let versions = [];
+  const request = ++historyRequest;
+  const deck = open;
+  if (!deck) return;
+  const dialog = $("history-dialog");
+  const status = $("history-status");
+  const list = $("history-menu");
+  list.replaceChildren();
+  status.hidden = false;
+  status.textContent = S.historyLoading;
+  dialog.showModal();
   try {
-    versions = (await getJson(`/decks/${open.id}/history`)).versions;
+    const { versions } = await getJson(`/decks/${deck.id}/history`);
+    if (request !== historyRequest || !dialog.open || open !== deck) return;
+    status.hidden = versions.length > 0;
+    status.textContent = versions.length ? "" : S.historyEmpty;
+    for (const version of versions) {
+      const row = document.createElement("li");
+      const author = document.createElement("strong");
+      author.textContent = S.versionBy[version.by] ?? version.by;
+      const time = document.createElement("time");
+      time.dateTime = new Date(version.at).toISOString();
+      time.textContent = when(version.at);
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = S.restoreVersion;
+      button.setAttribute(
+        "aria-label",
+        [S.restoreVersion, author.textContent, time.textContent].join(" · "),
+      );
+      button.onclick = () => {
+        dialog.close();
+        void restore(deck, version.name);
+      };
+      row.append(author, time, button);
+      list.append(row);
+    }
   } catch {
-    versions = [];
+    if (request === historyRequest) status.textContent = S.historyFailed;
   }
-  const rows = versions.map((version) => {
-    const item = document.createElement("li");
-    item.setAttribute("role", "option");
-    item.dataset.version = version.name;
-    const name = document.createElement("span");
-    name.className = "name";
-    name.textContent = S.versionBy[version.by] ?? version.by;
-    const meta = document.createElement("span");
-    meta.className = "meta";
-    meta.textContent = when(version.at);
-    item.append(name, meta);
-    return item;
-  });
-  if (rows.length === 0) {
-    const item = document.createElement("li");
-    item.className = "empty";
-    item.textContent = S.historyEmpty;
-    rows.push(item);
-  }
-  menu.replaceChildren(...rows);
-  menu.hidden = false;
-  $("history").setAttribute("aria-expanded", "true");
 }
 
 /**
@@ -692,7 +659,6 @@ async function showFiles() {
     if (!previous.gone) await savedSnapshot(previous);
     if (next !== opening || unsaved(previous).length) return;
   }
-  closeMenus();
   closeDeck();
   setView("start");
   $("start-blank").focus();
@@ -703,29 +669,6 @@ async function removeFile(id) {
   const res = await api(`/decks/${id}`, { method: "DELETE" });
   if (!res.ok) throw new Error(String(res.status));
   await refreshDecks();
-}
-
-async function deleteDeck(id) {
-  const wasOpen = open?.id === id;
-  if (wasOpen) closeDeck();
-  try {
-    await removeFile(id);
-    if (!open) setView("start");
-  } catch (error) {
-    notice(S.deleteFailed(error.message || "offline"));
-    if (wasOpen) await openDeck(id);
-  }
-}
-
-function closeMenus() {
-  arm(null);
-  for (const [menu, button] of [
-    ["deck-menu", "deck-button"],
-    ["history-menu", "history"],
-  ]) {
-    $(menu).hidden = true;
-    $(button).setAttribute("aria-expanded", "false");
-  }
 }
 
 // ---- asking the Agent ---------------------------------------------------------------------
@@ -926,44 +869,7 @@ async function ask(text) {
 
 // ---- wiring -------------------------------------------------------------------------------
 
-$("deck-button").onclick = () => {
-  const show = $("deck-menu").hidden;
-  closeMenus();
-  if (!show) return;
-  renderDeckMenu();
-  $("deck-menu").hidden = false;
-  $("deck-button").setAttribute("aria-expanded", "true");
-};
-$("deck-menu").onclick = (event) => {
-  // The menu handles its own clicks: re-rendering a row detaches the clicked node, which the
-  // outside-click handler would read as a click outside the menu.
-  event.stopPropagation();
-  const remove = event.target.closest("[data-delete]");
-  if (remove) {
-    const id = remove.dataset.delete;
-    if (armed === id) {
-      closeMenus();
-      void deleteDeck(id);
-      return;
-    }
-    arm(id);
-    renderDeckMenu();
-    return;
-  }
-  const id = event.target.closest("li")?.dataset.id;
-  closeMenus();
-  if (id && id !== open?.id) void openDeck(id);
-};
 $("history").onclick = () => void showHistory();
-$("history-menu").onclick = (event) => {
-  const name = event.target.closest("li")?.dataset.version;
-  if (!name) return;
-  closeMenus();
-  if (open !== null) void restore(open, name);
-};
-document.addEventListener("click", (event) => {
-  if (!event.target.closest(".deck-pick, .history-pick")) closeMenus();
-});
 function newPresentation() {
   $("create-name").value = S.untitled;
   $("create-layout").value = "blank";

@@ -13,54 +13,81 @@
   <body>
     <div class="app" id="app" data-view="loading">
       <header class="bar">
-        <button id="show-decks" type="button"></button>
-        <div class="deck-pick">
+        <button id="show-decks" class="back-link" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6M9 12h12" /></svg>
+        </button>
+        <div class="document-info">
+          <h1 id="deck-title" class="deck-title"></h1>
+          <span id="sync" class="sync" role="status"></span>
+        </div>
+        <div class="file-picker">
           <button
-            id="deck-button"
+            id="file-button"
+            class="quiet-command"
             type="button"
-            class="deck-button"
-            aria-haspopup="listbox"
+            aria-haspopup="menu"
             aria-expanded="false"
+            aria-controls="file-menu"
           >
-            <span id="deck-title" class="deck-title"></span>
-            <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
-              <path
-                d="M3 4.5 6 7.5 9 4.5"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.5"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
+            <span data-copy="fileMenu"></span>
+            <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 9l6 6 6-6" />
             </svg>
           </button>
-          <ul id="deck-menu" class="menu" role="listbox" hidden></ul>
+          <div id="file-menu" class="file-menu" role="menu" aria-labelledby="file-button" hidden>
+            <button
+              id="new"
+              type="button"
+              role="menuitem"
+              tabindex="-1"
+              data-copy="newTitle"
+            ></button>
+            <button
+              id="import"
+              type="button"
+              role="menuitem"
+              tabindex="-1"
+              data-copy="importDeck"
+            ></button>
+            <hr role="separator" />
+            <button id="save" type="button" role="menuitem" tabindex="-1">
+              <span data-copy="saveDeck"></span><kbd id="save-shortcut" aria-hidden="true"></kbd>
+            </button>
+            <button
+              id="history"
+              type="button"
+              role="menuitem"
+              tabindex="-1"
+              aria-haspopup="dialog"
+              data-copy="history"
+            ></button>
+            <hr role="separator" />
+            <button id="pptx" type="button" role="menuitem" tabindex="-1" data-copy="pptx"></button>
+            <button
+              id="export"
+              type="button"
+              role="menuitem"
+              tabindex="-1"
+              data-copy="exportDeck"
+            ></button>
+          </div>
         </div>
-        <span id="sync" class="sync" role="status"></span>
-        <span class="grow"></span>
-        <button id="new" type="button" data-copy="newDeck"></button>
-        <button id="import" type="button" data-copy="importDeck"></button>
-        <button id="save" type="button" data-copy="saveDeck"></button>
-        <button id="present" type="button" data-copy="present"></button>
-        <button id="pptx" type="button" data-copy="pptx"></button>
-        <button id="export" type="button" data-copy="exportDeck"></button>
-        <div class="history-pick">
+        <div class="editor-actions">
           <button
-            id="history"
+            id="rail-toggle"
             type="button"
-            aria-haspopup="listbox"
-            aria-expanded="false"
-            data-copy="history"
-          ></button>
-          <ul id="history-menu" class="menu menu-end" role="listbox" hidden></ul>
+            class="quiet-command"
+            aria-pressed="true"
+            aria-controls="rail"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM14 5v14" /></svg>
+            <span data-copy="askAi"></span>
+          </button>
+          <button id="present" type="button" class="wb-primary">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4l13 8-13 8z" /></svg>
+            <span data-copy="present"></span>
+          </button>
         </div>
-        <button
-          id="rail-toggle"
-          type="button"
-          class="wb-primary"
-          aria-pressed="true"
-          data-copy="askAi"
-        ></button>
         <input id="file" type="file" accept=".html,.json,text/html,application/json" hidden />
       </header>
 
@@ -163,6 +190,14 @@
             ><button type="submit" class="wb-primary" data-copy="create"></button>
           </div>
         </form>
+      </dialog>
+      <dialog id="history-dialog" aria-labelledby="history-heading">
+        <header>
+          <h2 id="history-heading" data-copy="history"></h2>
+          <form method="dialog"><button type="submit" data-copy="close"></button></form>
+        </header>
+        <p id="history-status" role="status"></p>
+        <ul id="history-menu" aria-labelledby="history-heading"></ul>
       </dialog>
       <dialog id="player" aria-label="Presentation">
         <header>

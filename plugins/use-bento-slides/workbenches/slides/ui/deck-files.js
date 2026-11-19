@@ -65,7 +65,8 @@ const action = (label, hint = label) => {
 export function deckFiles({ onOpen, onRename, onDelete, onRefresh, onBack }) {
   for (const node of document.querySelectorAll("[data-files-copy]"))
     node.textContent = labels[node.dataset.filesCopy];
-  $("show-decks").textContent = labels.returnHome;
+  $("show-decks").setAttribute("aria-label", labels.returnHome);
+  $("show-decks").title = labels.returnHome;
   $("show-decks").onclick = onBack;
   $("start-import").title = labels.importHint;
   $("retry-decks").onclick = onRefresh;
