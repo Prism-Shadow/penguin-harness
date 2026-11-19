@@ -1,0 +1,62 @@
+{
+  "name": "@prismshadow/penguin-library-messaging",
+  "version": "0.2.18",
+  "description": "The messaging domain: the MessagingBindings and MessagingConversations mechanisms and their repos. A library package - the server imports it; nothing here imports the server.",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Prism-Shadow",
+    "url": "https://github.com/Prism-Shadow"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "library/messaging"
+  },
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./messaging": {
+      "types": "./dist/messaging.d.ts",
+      "import": "./dist/messaging.js"
+    },
+    "./repos/messaging-bindings": {
+      "types": "./dist/repos/messaging-bindings.d.ts",
+      "import": "./dist/repos/messaging-bindings.js"
+    },
+    "./repos/messaging-conversations": {
+      "types": "./dist/repos/messaging-conversations.d.ts",
+      "import": "./dist/repos/messaging-conversations.js"
+    },
+    "./repos": {
+      "types": "./dist/repos/index.d.ts",
+      "import": "./dist/repos/index.js"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "build": "tsup"
+  },
+  "dependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/penguin-library-db": "workspace:*"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.12"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "private": true
+}
