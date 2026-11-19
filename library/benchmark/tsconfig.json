@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "paths": {
+      "@prismshadow/penguin-library-auth": ["../auth/src/index.ts"],
+      "@prismshadow/penguin-library-auth/repos/users": ["../auth/src/repos/users.ts"],
+      "@prismshadow/penguin-library-http": ["../http/src/index.ts"],
+      "@prismshadow/penguin-library-http/skill-import-limits": [
+        "../http/src/skill-import-limits.ts"
+      ],
+      "@prismshadow/penguin-library-http/zip-entries": ["../http/src/zip-entries.ts"],
+      "@prismshadow/penguin-library-workspace": ["../workspace/src/index.ts"],
+      "@prismshadow/penguin-library-workspace/contract": ["../workspace/src/contract.ts"],
+      "@prismshadow/penguin-library-workspace/types": ["../workspace/src/types.ts"]
+    }
+  },
+  "include": ["src", "test"]
+}

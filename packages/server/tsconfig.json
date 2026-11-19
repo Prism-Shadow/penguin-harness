@@ -12,6 +12,21 @@
         "../../library/auth/src/repos/user-drafts.ts"
       ],
       "@prismshadow/penguin-library-agent-api": ["../../library/agent-api/src/index.ts"],
+      "@prismshadow/penguin-library-benchmark": [
+        "../../library/benchmark/src/index.ts"
+      ],
+      "@prismshadow/penguin-library-benchmark/contract": [
+        "../../library/benchmark/src/contract.ts"
+      ],
+      "@prismshadow/penguin-library-benchmark/benchmark-service": [
+        "../../library/benchmark/src/benchmark-service.ts"
+      ],
+      "@prismshadow/penguin-library-benchmark/benchmark-archive": [
+        "../../library/benchmark/src/benchmark-archive.ts"
+      ],
+      "@prismshadow/penguin-library-benchmark/types": [
+        "../../library/benchmark/src/types.ts"
+      ],
       "@prismshadow/penguin-library-agent-api/agent-api": [
         "../../library/agent-api/src/agent-api.ts"
       ],
