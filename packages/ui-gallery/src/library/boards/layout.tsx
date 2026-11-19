@@ -226,7 +226,7 @@ export function LayoutBoard() {
         {/* The app window as the Web App lays it out: the pinned sidebar's end edge drags its
             width (and steps it with the arrow keys once focused), a double click puts back the
             theme's width, and folding to the rail and out again keeps the width dragged. */}
-        <div className="lib-box" style={{ height: 280 }}>
+        <div className="lib-box" style={{ height: 360 }}>
           <AppShell
             navCollapsed={shellFolded}
             navResize={{ width: shellWidth, label: t.shellResize, onChange: setShellWidth }}
